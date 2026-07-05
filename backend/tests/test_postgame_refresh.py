@@ -288,6 +288,96 @@ def test_postgame_refresh_processes_newly_completed_games(app, monkeypatch):
     assert payload['last_completed_game_refresh_run']['job_name'] == sync_metadata.JOB_POSTGAME_REFRESH
 
 
+def test_postgame_refresh_publishes_public_snapshots_before_internal_stages(
+    app,
+    monkeypatch,
+):
+    events = []
+    with app.app_context():
+        _seed_pitchers()
+    _patch_mlb(monkeypatch, [_game()])
+
+    def fake_complete(sync_run_id, **kwargs):
+        events.append('dashboard_snapshot_publish')
+        run = sync_metadata.finish_sync_run(
+            sync_run_id,
+            status=kwargs['final_status'],
+            records_processed=kwargs.get('records_processed', 0),
+            records_failed=kwargs.get('records_failed', 0),
+            new_logs_added=kwargs.get('new_logs_added', 0),
+            pitchers_updated=kwargs.get('pitchers_updated', 0),
+            errors=kwargs.get('errors', 0),
+            api_calls_made=kwargs.get('api_calls_made', 0),
+            retries_used=kwargs.get('retries_used', 0),
+            error_message=kwargs.get('error_message'),
+            source=kwargs.get('source', 'test'),
+            started_at=kwargs.get('started_at'),
+            job_name=kwargs.get('job_name', sync_metadata.JOB_POSTGAME_REFRESH),
+            published_dashboard_snapshot_id=456,
+        )
+        return run, SimpleNamespace(id=456)
+
+    def fake_completed_game_context(*args, **kwargs):
+        kwargs['status']['completed_game_contexts_upserted'] += 1
+
+    def fake_intelligence_snapshot(schedule_date, *, status, run_logger):
+        events.append('intelligence_snapshot_publish')
+        status['intelligence_snapshot'] = 'ok'
+
+    monkeypatch.setattr(sync_service, 'complete_sync_run_with_snapshot', fake_complete)
+    monkeypatch.setattr(
+        sync_service,
+        '_safe_generate_completed_game_context',
+        fake_completed_game_context,
+    )
+    monkeypatch.setattr(
+        sync_service,
+        '_safe_generate_intelligence_surface_snapshot',
+        fake_intelligence_snapshot,
+    )
+    monkeypatch.setattr(
+        sync_service,
+        '_safe_build_workload_recovery_evidence_stage',
+        lambda *args, **kwargs: (
+            events.append(sync_metadata.STAGE_WORKLOAD_EVIDENCE)
+            or {'status': 'built'}
+        ),
+    )
+    monkeypatch.setattr(
+        sync_service,
+        '_safe_build_composed_reads_stage',
+        lambda *args, **kwargs: (
+            events.append(sync_metadata.STAGE_COMPOSED_READS)
+            or {'status': 'built'}
+        ),
+    )
+    monkeypatch.setattr(
+        sync_service,
+        '_safe_run_legacy_read_reconciliation_audit_stage',
+        lambda *args, **kwargs: (
+            events.append(sync_service.STAGE_LEGACY_READ_RECONCILIATION_AUDIT)
+            or {'status': 'completed'}
+        ),
+    )
+
+    status = _run(app)
+
+    assert status['status'] == sync_metadata.STATUS_SUCCESS
+    assert status['dashboard_snapshot_id'] == 456
+    assert status['intelligence_snapshot'] == 'ok'
+    assert events == [
+        'dashboard_snapshot_publish',
+        'intelligence_snapshot_publish',
+        sync_metadata.STAGE_WORKLOAD_EVIDENCE,
+        sync_metadata.STAGE_COMPOSED_READS,
+        sync_service.STAGE_LEGACY_READ_RECONCILIATION_AUDIT,
+    ]
+    with app.app_context():
+        run = SyncRun.query.order_by(SyncRun.id.desc()).first()
+        assert run.stage == sync_metadata.STAGE_PUBLISHED
+        assert run.published_dashboard_snapshot_id == 456
+
+
 def test_postgame_refresh_is_idempotent_for_already_processed_games(app, monkeypatch):
     with app.app_context():
         _seed_pitchers()

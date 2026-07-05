@@ -253,11 +253,11 @@ def test_daily_sync_logs_post_fatigue_phase_instrumentation(
     assert status['dashboard_snapshot_id'] == 88
 
     expected_phases = [
+        'sync_completion_snapshot_publish',
         sync_metadata.STAGE_WORKLOAD_EVIDENCE,
         sync_metadata.STAGE_COMPOSED_READS,
         sync_service.STAGE_LEGACY_READ_RECONCILIATION_AUDIT,
         sync_metadata.STAGE_BACKTEST_REFRESH,
-        'sync_completion_snapshot_publish',
         'writer_guard_release',
         'local_status_write',
         'logger_cleanup',
@@ -268,6 +268,23 @@ def test_daily_sync_logs_post_fatigue_phase_instrumentation(
             and 'elapsed_seconds=' in message
             for message in messages
         ), phase
+    phase_completed_messages = {
+        phase: next(
+            index
+            for index, message in enumerate(messages)
+            if f'Daily sync post-fatigue phase completed: phase={phase}' in message
+        )
+        for phase in expected_phases
+    }
+    assert (
+        phase_completed_messages['sync_completion_snapshot_publish']
+        < phase_completed_messages[sync_metadata.STAGE_WORKLOAD_EVIDENCE]
+        < phase_completed_messages[sync_metadata.STAGE_COMPOSED_READS]
+        < phase_completed_messages[
+            sync_service.STAGE_LEGACY_READ_RECONCILIATION_AUDIT
+        ]
+        < phase_completed_messages[sync_metadata.STAGE_BACKTEST_REFRESH]
+    )
     assert any(
         'Daily sync post-fatigue phase duration summary:' in message
         and sync_metadata.STAGE_COMPOSED_READS in message
@@ -275,6 +292,94 @@ def test_daily_sync_logs_post_fatigue_phase_instrumentation(
         and 'sync_completion_snapshot_publish' in message
         for message in messages
     ), messages
+
+
+def test_daily_sync_public_snapshot_survives_post_publish_internal_failure(
+    client,
+    monkeypatch,
+    caplog,
+):
+    events = []
+    monkeypatch.setattr(sync_service, 'sync_team_assignments', lambda: {
+        'pitchers_refreshed': 1,
+        'pitchers_changed': 0,
+        'reassigned_count': 0,
+        'no_organization_count': 0,
+        'unknown_count': 0,
+        'errors': 0,
+        'by_status': {'ASSIGNED': 1},
+        'error_details': [],
+    })
+    monkeypatch.setattr(sync_service, 'sync_roster_statuses', lambda **_kwargs: {
+        'pitchers_refreshed': 1,
+        'pitchers_changed': 0,
+        'unknown_count': 0,
+        'records_failed': 0,
+        'errors': 0,
+        'error_details': [],
+    })
+    monkeypatch.setattr(sync_service, 'sync_transactions', lambda **_kwargs: {
+        'records_fetched': 0,
+        'records_stored': 0,
+        'unknown_type_count': 0,
+        'records_failed': 0,
+        'errors': 0,
+        'error_details': [],
+    })
+    monkeypatch.setattr(sync_service, 'sync_recent_logs', lambda **_kwargs: {
+        'new_logs_added': 1,
+        'pitchers_touched': 1,
+        'errors': 0,
+        'records_failed': 0,
+        'logs_corrected': 0,
+        'correction_attempts_failed': 0,
+    })
+    monkeypatch.setattr(sync_service, 'recalculate_all_fatigue', lambda: 2)
+
+    def fake_complete(*args, **kwargs):
+        events.append('public_snapshot')
+        return SimpleNamespace(id=1), SimpleNamespace(id=88)
+
+    def fail_workload(*args, **kwargs):
+        events.append('workload_evidence')
+        raise RuntimeError('internal evidence failed')
+
+    monkeypatch.setattr(sync_service, 'complete_sync_run_with_snapshot', fake_complete)
+    monkeypatch.setattr(
+        sync_service,
+        '_safe_build_workload_recovery_evidence_stage',
+        fail_workload,
+    )
+    monkeypatch.setattr(
+        sync_service,
+        '_safe_build_composed_reads_stage',
+        lambda *args, **kwargs: {'status': 'built'},
+    )
+    monkeypatch.setattr(
+        sync_service,
+        '_safe_run_legacy_read_reconciliation_audit_stage',
+        lambda *args, **kwargs: {'status': 'completed'},
+    )
+
+    import services.availability_backtest as availability_backtest
+
+    monkeypatch.setattr(
+        availability_backtest,
+        'refresh_availability_backtest',
+        lambda: {'status': 'skipped', 'computed_at': None},
+    )
+
+    with caplog.at_level(logging.INFO, logger='baseballos.daily_sync'):
+        status = sync_service.run_daily_sync(client.application, days_back=7)
+
+    assert events[:2] == ['public_snapshot', 'workload_evidence']
+    assert status['status'] == sync_metadata.STATUS_SUCCESS
+    assert status['dashboard_snapshot_id'] == 88
+    assert any(
+        'Daily sync post-publish internal phase failed after public snapshot publish'
+        in record.getMessage()
+        for record in caplog.records
+    )
 
 
 def test_stale_running_sync_run_is_reclaimed_before_new_writer_starts(client, monkeypatch):
