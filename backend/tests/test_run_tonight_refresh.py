@@ -10,6 +10,7 @@ and a warm failure is reported safely without crashing the refresh.
 
 from contextlib import contextmanager
 from datetime import date
+import logging
 
 import pytest
 
@@ -115,6 +116,53 @@ def test_partial_when_schedule_ingestion_reports_row_errors():
 
 
 # ── Failure handling ──────────────────────────────────────────────────────────
+
+def test_schedule_timeout_propagates_with_clear_log(monkeypatch, caplog):
+    def fake_run_with_timeout(fn, *, phase_name, timeout_seconds):
+        assert timeout_seconds == 0.01
+        if phase_name == 'Schedule refresh':
+            raise rtr.TonightRefreshTimeout('Schedule refresh exceeded 0.01s')
+        return fn()
+
+    monkeypatch.setattr(rtr, '_run_with_timeout', fake_run_with_timeout)
+
+    with caplog.at_level(logging.ERROR, logger='baseballos.tonight_refresh'):
+        with pytest.raises(rtr.TonightRefreshTimeout):
+            rtr.run_refresh(
+                _FakeApp(), source='manual', reference_date=None,
+                ingest_fn=_ok_ingest([]), today_fn=_today_fn(),
+                warm_fn=lambda today, source: {'status': 'ok'},
+                schedule_timeout_seconds=0.01,
+                warm_timeout_seconds=None)
+
+    messages = [r.getMessage() for r in caplog.records]
+    assert any('Schedule refresh timed out:' in m for m in messages), messages
+
+
+def test_tonight_warm_timeout_is_reported_fail_soft(monkeypatch, caplog):
+    def fake_run_with_timeout(fn, *, phase_name, timeout_seconds):
+        if phase_name == 'Tonight snapshot warm':
+            assert timeout_seconds == 0.01
+            raise rtr.TonightRefreshTimeout('Tonight snapshot warm exceeded 0.01s')
+        return fn()
+
+    monkeypatch.setattr(rtr, '_run_with_timeout', fake_run_with_timeout)
+
+    with caplog.at_level(logging.WARNING, logger='baseballos.tonight_refresh'):
+        out = rtr.run_refresh(
+            _FakeApp(), source='manual', reference_date=None,
+            ingest_fn=_ok_ingest([]), today_fn=_today_fn(),
+            warm_fn=lambda today, source: {'status': 'ok'},
+            schedule_timeout_seconds=None,
+            warm_timeout_seconds=0.01)
+
+    messages = [r.getMessage() for r in caplog.records]
+    assert out['status'] == 'ok'
+    assert out['tonight_snapshot']['status'] == 'failed'
+    assert out['tonight_snapshot']['timeout_seconds'] == 0.01
+    assert 'Tonight snapshot warm exceeded 0.01s' in out['tonight_snapshot']['error']
+    assert any('Tonight snapshot warm timed out' in m for m in messages), messages
+
 
 def test_schedule_ingestion_exception_propagates():
     # A true ingestion failure must surface (the caller exits nonzero).
