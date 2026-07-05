@@ -524,6 +524,11 @@ def _notify_workload_evidence_game_log_correction(
             'services.appearance_context_evidence',
             'mark_game_log_correction_for_appearance_context',
         ),
+        (
+            'inherited traffic',
+            'services.inherited_traffic_evidence',
+            'mark_game_log_correction_for_inherited_traffic',
+        ),
     )
     for label, module_name, function_name in markers:
         try:
@@ -2162,6 +2167,10 @@ def _safe_build_workload_recovery_evidence_stage(
             build_appearance_context_evidence,
             rebuild_marked_appearance_context_evidence,
         )
+        from services.inherited_traffic_evidence import (
+            build_inherited_traffic_evidence,
+            rebuild_marked_inherited_traffic_evidence,
+        )
         from services.workload_recovery_evidence import (
             build_workload_recovery_evidence,
             rebuild_marked_workload_recovery_evidence,
@@ -2172,6 +2181,10 @@ def _safe_build_workload_recovery_evidence_stage(
             source=source,
         )
         appearance_rebuild = rebuild_marked_appearance_context_evidence(
+            sync_run_id=sync_run_id,
+            source=source,
+        )
+        inherited_rebuild = rebuild_marked_inherited_traffic_evidence(
             sync_run_id=sync_run_id,
             source=source,
         )
@@ -2191,17 +2204,27 @@ def _safe_build_workload_recovery_evidence_stage(
             )
             for product_date in dates
         ]
+        inherited_builds = [
+            build_inherited_traffic_evidence(
+                product_date,
+                sync_run_id=sync_run_id,
+                source=source,
+            )
+            for product_date in dates
+        ]
         db.session.commit()
         elapsed_ms = round((time.perf_counter() - started) * 1000, 1)
         logger_to_use.info(
             'Phase 0D evidence stage complete: dates=%s workload_rebuilt=%s '
-            'appearance_rebuilt=%s workload_objects_built=%s '
-            'appearance_objects_built=%s elapsed_ms=%s.',
+            'appearance_rebuilt=%s inherited_rebuilt=%s workload_objects_built=%s '
+            'appearance_objects_built=%s inherited_objects_built=%s elapsed_ms=%s.',
             ','.join(day.isoformat() for day in dates),
             rebuild.get('objects_rebuilt', 0),
             appearance_rebuild.get('objects_rebuilt', 0),
+            inherited_rebuild.get('objects_rebuilt', 0),
             sum(item.get('objects_built', 0) for item in builds),
             sum(item.get('objects_built', 0) for item in appearance_builds),
+            sum(item.get('objects_built', 0) for item in inherited_builds),
             elapsed_ms,
         )
         return {
@@ -2211,6 +2234,8 @@ def _safe_build_workload_recovery_evidence_stage(
             'builds': builds,
             'appearance_rebuild': appearance_rebuild,
             'appearance_builds': appearance_builds,
+            'inherited_rebuild': inherited_rebuild,
+            'inherited_builds': inherited_builds,
             'elapsed_ms': elapsed_ms,
         }
     except Exception as exc:  # noqa: BLE001 - optional evidence stage is fail-soft
