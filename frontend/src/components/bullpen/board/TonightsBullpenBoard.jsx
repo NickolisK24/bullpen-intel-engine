@@ -9,6 +9,7 @@ import BullpenBoardView from './BullpenBoardView'
 import TeamGameContextCard from './TeamGameContextCard'
 import StoryCard from './StoryCard'
 import PitcherDetail from '../PitcherDetail'
+import TeamReliefWorkPanel from '../TeamReliefWorkPanel'
 import {
   BULLPEN_VIEW_MODE_UNAVAILABLE_ONLY,
   BULLPEN_VIEW_MODES,
@@ -37,13 +38,31 @@ export function resolveTeamId(teamList, requested) {
   return byName ? byName.team_id : null
 }
 
+const staticFetchState = (data) => ({
+  data,
+  loading: false,
+  error: null,
+  refetch: () => {},
+})
+
 // Tonight's Bullpen Board lives inside the Bullpen workflow. It receives the
 // shared teams fetch so it does not double-load the team list, manages its own
 // single-team selection, and renders the grouped board for that team. A
 // `requestedTeam` deep-link (e.g. from the landscape drilldown) preselects a team.
-export default function TonightsBullpenBoard({ teams, requestedTeam = null }) {
+export default function TonightsBullpenBoard({
+  teams,
+  requestedTeam = null,
+  initialSelectedTeam = null,
+  boardPayload,
+  gameContextPayload,
+  storyPayload,
+  teamReliefWorkPayload,
+  teamReliefWorkLoading,
+  teamReliefWorkError,
+}) {
   const teamList = teams?.data || []
-  const [selectedTeam, setSelectedTeam] = useState(null)
+  const selectedTeamSeed = initialSelectedTeam ?? resolveTeamId(teamList, requestedTeam)
+  const [selectedTeam, setSelectedTeam] = useState(selectedTeamSeed)
   const [boardViewMode, setBoardViewMode] = useState(DEFAULT_BULLPEN_VIEW_MODE)
   // Opening a pitcher's detail reuses the existing PitcherDetail panel — the
   // board never duplicates that screen.
@@ -110,11 +129,14 @@ export default function TonightsBullpenBoard({ teams, requestedTeam = null }) {
     () => (selectedTeam == null ? Promise.resolve(null) : getTeamStory(selectedTeam)),
     [selectedTeam],
   )
-  const filteredBoard = filterBoardForViewMode(board.data, boardViewMode)
+  const boardState = boardPayload !== undefined ? staticFetchState(boardPayload) : board
+  const gameContextState = gameContextPayload !== undefined ? staticFetchState(gameContextPayload) : gameContext
+  const storyState = storyPayload !== undefined ? staticFetchState(storyPayload) : story
+  const filteredBoard = filterBoardForViewMode(boardState.data, boardViewMode)
   const selectedViewMode = BULLPEN_VIEW_MODES.find(mode => mode.id === boardViewMode)
-  const teamOperatingRead = toOperatingStateReadModel(board.data || {}, {
+  const teamOperatingRead = toOperatingStateReadModel(boardState.data || {}, {
     scope: 'team',
-    team: board.data?.team,
+    team: boardState.data?.team,
     cta: { href: '#pitcher-lanes', label: 'Review pitcher lanes' },
     density: 'compact',
   })
@@ -184,21 +206,29 @@ export default function TonightsBullpenBoard({ teams, requestedTeam = null }) {
 
       {selectedTeam == null ? (
         <EmptyState title="Pick a team" subtitle="Select a team above to see its current bullpen board." />
-      ) : board.loading ? (
+      ) : boardState.loading ? (
         <LoadingPane message="Building current bullpen board..." />
-      ) : board.error ? (
-        <ErrorState message={board.error} onRetry={board.refetch} />
+      ) : boardState.error ? (
+        <ErrorState message={boardState.error} onRetry={boardState.refetch} />
       ) : (
         <div className="flex flex-col gap-6 2xl:flex-row 2xl:items-start">
           <div className="min-w-0 flex-1">
             <BullpenOperatingStateCard
               readModel={teamOperatingRead}
               staleWithError={teamOperatingRead.freshness?.isStale || teamOperatingRead.freshness?.failClosed}
-              onRetry={board.refetch}
+              onRetry={boardState.refetch}
               lastSyncLabel="Bullpen read synced"
               density="compact"
               className="mb-4"
             />
+            <div className="mb-4">
+              <TeamReliefWorkPanel
+                teamId={selectedTeam}
+                payload={teamReliefWorkPayload}
+                loading={teamReliefWorkLoading}
+                error={teamReliefWorkError}
+              />
+            </div>
             <BullpenBoardView
               board={filteredBoard}
               onSelectPitcher={setDetailPitcherId}
@@ -207,15 +237,15 @@ export default function TonightsBullpenBoard({ teams, requestedTeam = null }) {
               emptyState={getBullpenViewModeEmptyState(boardViewMode)}
             />
             <StoryCard
-              story={story.data}
-              loading={story.loading}
-              error={story.error}
-              onRetry={story.refetch}
+              story={storyState.data}
+              loading={storyState.loading}
+              error={storyState.error}
+              onRetry={storyState.refetch}
             />
             <TeamGameContextCard
-              gameContext={gameContext.data}
-              loading={gameContext.loading}
-              error={gameContext.error}
+              gameContext={gameContextState.data}
+              loading={gameContextState.loading}
+              error={gameContextState.error}
               compact
             />
           </div>

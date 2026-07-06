@@ -96,6 +96,19 @@ function ReliefWorkWindows({ windows }) {
   )
 }
 
+function PanelShell({ children }) {
+  return (
+    <section className="space-y-3" aria-labelledby="team-relief-work-title">
+      <div>
+        <div id="team-relief-work-title" className="text-chalk600 text-[10px] font-mono uppercase tracking-wider">
+          Recent Bullpen Work
+        </div>
+      </div>
+      {children}
+    </section>
+  )
+}
+
 export default function TeamReliefWorkPanel({
   teamId,
   payload,
@@ -114,27 +127,26 @@ export default function TeamReliefWorkPanel({
 
   if (loading) {
     return (
-      <section className="rounded border border-dirt bg-field/45 p-3">
-        <div className="font-mono text-sm text-chalk400">Loading recent bullpen work…</div>
-      </section>
+      <PanelShell>
+        <section className="rounded border border-dirt bg-field/45 p-3">
+          <div className="font-mono text-sm text-chalk400">Loading recent bullpen work…</div>
+        </section>
+      </PanelShell>
     )
   }
 
   if (error) {
     return (
-      <section className="rounded border border-dirt bg-field/45 p-3">
-        <div className="font-mono text-sm text-chalk400">Recent bullpen work is unavailable.</div>
-      </section>
+      <PanelShell>
+        <section className="rounded border border-dirt bg-field/45 p-3">
+          <div className="font-mono text-sm text-chalk400">Recent bullpen work is unavailable.</div>
+        </section>
+      </PanelShell>
     )
   }
 
   return (
-    <section className="space-y-3" aria-labelledby="team-relief-work-title">
-      <div>
-        <div id="team-relief-work-title" className="text-chalk600 text-[10px] font-mono uppercase tracking-wider">
-          Recent Bullpen Work
-        </div>
-      </div>
+    <PanelShell>
       <Sentence>{data?.scope_sentence}</Sentence>
       <DataCurrency payload={data} />
       <ReliefWorkByDate
@@ -142,6 +154,6 @@ export default function TeamReliefWorkPanel({
         absenceSentence={data?.absence_sentence}
       />
       <ReliefWorkWindows windows={data?.windows} />
-    </section>
+    </PanelShell>
   )
 }
