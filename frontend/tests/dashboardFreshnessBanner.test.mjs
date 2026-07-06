@@ -45,12 +45,21 @@ test('healthy durable freshness renders the current banner, not a snapshot', () 
   assert.ok(!htmlIncludes(html, 'End-of-Season Read'))
 })
 
-test('non-current freshness renders the honest snapshot label', () => {
+test('non-current freshness renders the honest season snapshot label', () => {
   const html = inRouter(React.createElement(DashboardView, {
     data: withFreshness({ is_current: false, sync_status: 'metadata_unavailable', data_through: '2026-04-01', last_successful_sync: null }),
   }))
-  assert.ok(htmlIncludes(html, '2026 End-of-Season Read'))
+  assert.ok(htmlIncludes(html, '2026 Season Snapshot'))
+  assert.ok(!htmlIncludes(html, 'End-of-Season Read'))
   assert.ok(!htmlIncludes(html, 'Current — 2026 Season'))
+})
+
+test('in-season July dashboard does not show end-of-season copy', () => {
+  const html = inRouter(React.createElement(DashboardView, {
+    data: withFreshness({ is_current: true, data_through: '2026-07-05', last_successful_sync: '2026-07-06T04:00:00Z' }),
+  }))
+  assert.ok(htmlIncludes(html, 'Current — 2026 Season'))
+  assert.ok(!htmlIncludes(html, 'End-of-Season Read'))
 })
 
 test('a failed latest sync does not render as current even with a recent data date', () => {
@@ -59,6 +68,7 @@ test('a failed latest sync does not render as current even with a recent data da
     data: withFreshness({ is_current: true, sync_status: 'failed', data_through: '2026-06-04', last_successful_sync: '2026-06-01T12:00:00Z' }),
   }))
   assert.ok(!htmlIncludes(html, 'Current — 2026 Season'))
+  assert.ok(!htmlIncludes(html, 'End-of-Season Read'))
 })
 
 test('running background lane does not make the dashboard look generally mid-sync', () => {

@@ -20,6 +20,24 @@ const failedStatuses = new Set(['failed', 'error'])
 const successfulStatuses = new Set(['success', 'ok'])
 const staleStates = new Set(['stale', 'historical'])
 const missingStates = new Set(['missing', 'metadata_unavailable', 'unknown'])
+const limitedStates = new Set(['limited', 'partial', 'degraded'])
+
+function normalizedKey(value) {
+  return String(value || '').trim().toLowerCase().replace(/[-\s]+/g, '_')
+}
+
+function freshnessAuthorityIsCurrent(freshnessAuthority) {
+  if (!freshnessAuthority || typeof freshnessAuthority !== 'object') return false
+  const state = normalizedKey(freshnessAuthority.freshness_state || freshnessAuthority.state)
+  const syncStatus = normalizedKey(freshnessAuthority.sync_status)
+  return Boolean(freshnessAuthority.data_through)
+    && freshnessAuthority.is_current !== false
+    && freshnessAuthority.is_stale !== true
+    && !staleStates.has(state)
+    && !missingStates.has(state)
+    && !limitedStates.has(state)
+    && !failedStatuses.has(syncStatus)
+}
 
 export function getSyncStatusView(data, { now = Date.now(), freshnessAuthority } = {}) {
   const status = data?.status
@@ -53,8 +71,17 @@ export function getSyncStatusView(data, { now = Date.now(), freshnessAuthority }
     && dataThroughSource
     && rawDataThroughSource
     && rawDataThroughSource > dataThroughSource
-  const authorityLabel = freshnessAuthority?.label
+  const authorityIsCurrent = freshnessAuthorityIsCurrent(freshnessAuthority)
+  const authorityLabel = freshnessAuthority?.label || (
+    authorityIsCurrent && dataThrough
+      ? `Public bullpen data is current through ${dataThrough}.`
+      : null
+  )
   const freshnessHelper = (baseHelper, { limited = false } = {}) => {
+    if (authorityIsCurrent) {
+      return authorityLabel
+    }
+
     if (!checkedDateAheadOfPublic || !dataThrough || !checkedDataThrough) {
       return hasFreshnessAuthority && !limited && authorityLabel
         ? authorityLabel
@@ -103,12 +130,14 @@ export function getSyncStatusView(data, { now = Date.now(), freshnessAuthority }
   }
 
   if (successfulSync) {
-    const limited = stale || missing || freshness.is_current === false || limitations.length > 0
+    const rawLimited = stale || missing || freshness.is_current === false || limitations.length > 0
+    const limited = authorityIsCurrent ? false : rawLimited
+    const displayStale = authorityIsCurrent ? false : stale
     return {
-      variant: stale ? 'stale' : (limited ? 'limited' : 'synced'),
-      healthLabel: stale ? 'Not Current' : (limited ? 'Limited' : 'Healthy'),
-      dot: stale || limited ? '#f5a623' : '#10b981',
-      style: stale
+      variant: displayStale ? 'stale' : (limited ? 'limited' : 'synced'),
+      healthLabel: displayStale ? 'Not Current' : (limited ? 'Limited' : 'Healthy'),
+      dot: displayStale || limited ? '#f5a623' : '#10b981',
+      style: displayStale
         ? { borderColor: '#f5a62355', backgroundColor: '#f5a62312', color: '#f5a623' }
         : limited
           ? { borderColor: '#f5a62355', backgroundColor: '#f5a62312', color: '#f5a623' }
@@ -125,14 +154,14 @@ export function getSyncStatusView(data, { now = Date.now(), freshnessAuthority }
       coverageValue,
       refreshed: coverageValue,
       helper: freshnessHelper(
-        stale
+        displayStale
           ? (freshness.label || 'Workload data is outside the active freshness window.')
           : freshness.label,
         { limited },
       ),
-      limitations,
-      reasonCodes,
-      freshnessState,
+      limitations: authorityIsCurrent ? [] : limitations,
+      reasonCodes: authorityIsCurrent ? [] : reasonCodes,
+      freshnessState: authorityIsCurrent ? (freshnessAuthority?.freshness_state || 'current') : freshnessState,
     }
   }
 

@@ -182,7 +182,38 @@ test('Data & Trust separates public data-through from a newer incomplete checked
   }))
 
   assert.ok(html.includes('June 16, 2026'), 'public data-through date was not rendered')
-  assert.ok(html.includes('Public bullpen data remains through June 16, 2026.'))
-  assert.ok(html.includes('Latest checked baseball date June 17, 2026 is not publishable yet.'))
+  assert.ok(html.includes('DATA STATUS:') || html.includes('Data Status:'))
+  assert.ok(html.includes('Healthy'))
+  assert.ok(html.includes('Current baseball data through 2026-06-16.'))
+  assert.equal(html.includes('Baseball data through 2026-06-17 is incomplete and is not publishable as current.'), false)
+  assert.equal(html.includes('Latest checked baseball date June 17, 2026 is not publishable yet.'), false)
+})
+
+test('Data & Trust limited state still explains incomplete unpublished coverage', () => {
+  const limitedFreshness = {
+    data_through: '2026-06-17',
+    latest_workload_date: '2026-06-17',
+    last_successful_sync: '2026-06-17T11:42:26.740902',
+    sync_status: 'success',
+    is_current: false,
+    is_stale: false,
+    freshness_state: 'limited',
+    label: 'Baseball data through 2026-06-17 is incomplete and is not publishable as current.',
+    limitations: ['Missing completed-game coverage for the checked date.'],
+    reason_codes: ['slate_log_coverage_incomplete'],
+  }
+  const html = render(React.createElement(DataTrustView, {
+    backtest: fetchState(null),
+    dashboard: fetchState({
+      ...dashboard,
+      freshness: limitedFreshness,
+    }),
+    overview: fetchState(null),
+    sync: fetchState(syncAheadIncomplete),
+    v2BullpenState: fetchState(null),
+    teamOperationsReadiness: fetchState(null),
+  }))
+
+  assert.ok(html.includes('Limited'))
   assert.ok(html.includes('Baseball data through 2026-06-17 is incomplete and is not publishable as current.'))
 })

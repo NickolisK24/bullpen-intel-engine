@@ -407,7 +407,7 @@ function TonightFreshnessRow({
         <FreshnessBadge
           state={stale ? 'stale' : 'current'}
           freshness={freshness}
-          label={publishedFreshnessBadgeLabel(stale, freshness)}
+          label={stale ? 'Tonight slate unavailable' : publishedFreshnessBadgeLabel(stale, freshness)}
         />
       )}
       <DataThroughStamp date={dataThrough} label="Published view through" />
