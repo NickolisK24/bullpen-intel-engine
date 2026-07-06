@@ -189,6 +189,70 @@ test('Data & Trust separates public data-through from a newer incomplete checked
   assert.equal(html.includes('Latest checked baseball date June 17, 2026 is not publishable yet.'), false)
 })
 
+test('Data & Trust treats publishable live dashboard freshness as current despite legacy incomplete fields', () => {
+  const liveDashboardFreshness = {
+    data_through: '2026-07-05',
+    latest_workload_date: '2026-07-05',
+    last_successful_sync: '2026-07-06T04:34:36.959321Z',
+    sync_status: 'success',
+    complete_enough_to_publish: true,
+    validations_passed: true,
+    is_current: false,
+    is_stale: false,
+    freshness_state: 'incomplete',
+    label: 'Baseball data through 2026-07-05 is incomplete and is not publishable as current.',
+    limitations: [
+      'Scheduled games on this slate are not final yet.',
+      'Slate completeness cannot be proven from stored coverage.',
+      'Slate coverage validations did not pass.',
+    ],
+    reason_codes: ['scheduled_games_not_final', 'completeness_unknown', 'validations_failed'],
+    slate_coverage: {
+      complete_enough_to_publish: true,
+      validations_passed: true,
+      games_final: 15,
+      games_fully_ingested: 15,
+      games_incomplete: 0,
+      reason_codes: ['slate_complete'],
+    },
+  }
+  const html = render(React.createElement(DataTrustView, {
+    backtest: fetchState(null),
+    dashboard: fetchState({
+      ...dashboard,
+      freshness: liveDashboardFreshness,
+    }),
+    overview: fetchState(null),
+    sync: fetchState({
+      ...syncAhead,
+      last_checked: '2026-07-06T05:25:31.750027Z',
+      last_sync: '2026-07-06T05:25:31.750027Z',
+      last_successful_sync: '2026-07-06T05:25:33.280226Z',
+      data: {
+        ...syncAhead.data,
+        latest_game_date: '2026-07-05',
+        latest_workload_date: '2026-07-05',
+      },
+      freshness: {
+        is_current: true,
+        is_stale: false,
+        freshness_state: 'current',
+        label: 'Current baseball data through 2026-07-05.',
+        limitations: [],
+        reason_codes: [],
+      },
+    }),
+    v2BullpenState: fetchState(null),
+    teamOperationsReadiness: fetchState(null),
+  }))
+
+  assert.ok(html.includes('July 5, 2026'), 'public data-through date was not rendered')
+  assert.ok(html.includes('Healthy'))
+  assert.ok(html.includes('Public bullpen data is current through July 5, 2026.'))
+  assert.equal(html.includes('Baseball data through 2026-07-05 is incomplete and is not publishable as current.'), false)
+  assert.equal(html.includes('Slate coverage validations did not pass.'), false)
+})
+
 test('Data & Trust limited state still explains incomplete unpublished coverage', () => {
   const limitedFreshness = {
     data_through: '2026-06-17',

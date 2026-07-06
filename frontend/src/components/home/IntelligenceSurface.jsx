@@ -25,6 +25,10 @@ import {
   trackAnalyticsEvent,
   trackAnalyticsEventOnce,
 } from '../../utils/analytics'
+import {
+  freshnessDataThrough,
+  freshnessIsCurrent,
+} from '../dashboard/syncStatusView'
 
 const AROUND_BASEBALL_UNAVAILABLE =
   'No other league bullpen movement is ready to show yet.'
@@ -349,12 +353,13 @@ function sectionFreshness(payload, fallbackFreshness) {
 
 function publishedFreshnessBadgeLabel(stale, freshness) {
   const sample = isSampleFreshness(freshness)
-  const syncStatus = String(freshness?.sync_status || '').toLowerCase()
-  const staleState = String(freshness?.freshness_state || freshness?.state || '').toLowerCase()
+  const syncStatus = String(freshness?.sync_status || freshness?.syncStatus || '').toLowerCase()
+  const staleState = String(freshness?.freshness_state || freshness?.freshnessState || freshness?.state || '').toLowerCase()
   const publishedCurrent = !sample
     && !stale
-    && freshness?.is_current !== false
+    && freshnessIsCurrent(freshness)
     && freshness?.is_stale !== true
+    && freshness?.isStale !== true
     && staleState !== 'stale'
     && staleState !== 'historical'
     && syncStatus !== 'failed'
@@ -773,8 +778,8 @@ function AroundBaseball({
   const items = getAroundBaseballItems(dashboard, leadStory)
   const freshness = dashboardFreshness(dashboard)
   const rowFreshness = sectionFreshness(dashboard, freshness)
-  const dataThrough = textValue(rowFreshness?.data_through)
-  const lastSync = textValue(rowFreshness?.last_successful_sync)
+  const dataThrough = textValue(freshnessDataThrough(rowFreshness))
+  const lastSync = firstTextValue(rowFreshness?.last_successful_sync, rowFreshness?.lastSuccessfulSync)
   return (
     <SectionShell
       id="around-baseball"
@@ -991,8 +996,8 @@ function TonightSection({
     freshness,
   )
   const slateDate = textValue(tonight?.reference_date)
-  const dataThrough = textValue(rowFreshness?.data_through)
-  const lastSync = textValue(rowFreshness?.last_successful_sync)
+  const dataThrough = textValue(freshnessDataThrough(rowFreshness))
+  const lastSync = firstTextValue(rowFreshness?.last_successful_sync, rowFreshness?.lastSuccessfulSync)
   const generatedAt = textValue(tonight?.snapshot?.generated_at)
   const emptyReason = textValue(tonight?.empty_reason)
   const snapshotUnavailable = [
@@ -1094,9 +1099,9 @@ function BullpenPicture({
   const rowFreshness = sectionFreshness(landscape, freshness)
   const dataThrough = firstTextValue(
     landscape?.games?.as_of_date,
-    rowFreshness?.data_through,
+    freshnessDataThrough(rowFreshness),
   )
-  const lastSync = textValue(rowFreshness?.last_successful_sync)
+  const lastSync = firstTextValue(rowFreshness?.last_successful_sync, rowFreshness?.lastSuccessfulSync)
   return (
     <SectionShell
       id="bullpen-picture"

@@ -9,6 +9,7 @@ import {
 import { ANALYTICS_EVENTS, trackAnalyticsEventOnce } from '../../utils/analytics'
 import { SectionHeader, StaleDataNotice } from '../UI'
 import { SyncStatusContent } from '../dashboard/SyncStatus'
+import { freshnessDataThrough } from '../dashboard/syncStatusView'
 import AvailabilityDashboardSummary from '../dashboard/AvailabilityDashboardSummary'
 import AvailabilityBacktestCard from './AvailabilityBacktestCard'
 import { getDataProvenance } from '../bullpen/board/tonightsBullpenBoardView'
@@ -57,6 +58,7 @@ export function DataTrustView({
   sync,
 }) {
   const servedFreshness = dashboard?.data?.freshness || null
+  const servedDataThrough = freshnessDataThrough(servedFreshness)
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto">
@@ -111,15 +113,7 @@ export function DataTrustView({
           BaseballOS updates after completed MLB games and when the latest sync succeeds.
         </p>
         {(() => {
-          const provenance = getDataProvenance({
-            data_through: servedFreshness?.data_through,
-            is_current: servedFreshness?.is_current,
-            sync_status: servedFreshness?.sync_status,
-            is_stale: servedFreshness?.is_stale,
-            freshness_state: servedFreshness?.freshness_state,
-            served_consistency_state: servedFreshness?.served_consistency_state,
-            current_sync_status: servedFreshness?.current_sync_status,
-          })
+          const provenance = getDataProvenance(servedFreshness)
           return (
             <div className="mb-3 flex flex-wrap items-center gap-3">
               <span
@@ -143,7 +137,7 @@ export function DataTrustView({
         )}
         {dashboard?.staleWithError && (
           <StaleDataNotice
-            dataThrough={servedFreshness?.data_through}
+            dataThrough={servedDataThrough}
             onRetry={dashboard.refetch}
           />
         )}

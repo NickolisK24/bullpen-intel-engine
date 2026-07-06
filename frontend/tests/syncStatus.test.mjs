@@ -367,6 +367,111 @@ test('current served freshness suppresses stale raw sync helper copy', () => {
   assert.equal(htmlIncludes(html, 'incomplete and is not publishable'), false)
 })
 
+test('publishable served freshness suppresses stale incomplete dashboard label', () => {
+  const data = {
+    status: 'success',
+    last_checked: '2026-07-06T05:25:31Z',
+    last_sync: '2026-07-06T05:25:31Z',
+    last_successful_sync: '2026-07-06T05:25:33Z',
+    pitchers_updated: 0,
+    data: {
+      game_logs: 36000,
+      latest_game_date: '2026-07-05',
+      latest_workload_date: '2026-07-05',
+    },
+    freshness: {
+      is_current: true,
+      is_stale: false,
+      freshness_state: 'current',
+      reason_codes: [],
+      label: 'Current baseball data through 2026-07-05.',
+      limitations: [],
+    },
+  }
+  const servedFreshness = {
+    data_through: '2026-07-05',
+    latest_workload_date: '2026-07-05',
+    last_successful_sync: '2026-07-06T04:34:36Z',
+    sync_status: 'success',
+    complete_enough_to_publish: true,
+    validations_passed: true,
+    is_current: false,
+    is_stale: false,
+    freshness_state: 'incomplete',
+    label: 'Baseball data through 2026-07-05 is incomplete and is not publishable as current.',
+    limitations: [
+      'Scheduled games on this slate are not final yet.',
+      'Slate completeness cannot be proven from stored coverage.',
+    ],
+    reason_codes: ['scheduled_games_not_final', 'completeness_unknown'],
+    slate_coverage: {
+      complete_enough_to_publish: true,
+      validations_passed: true,
+      games_final: 15,
+      games_fully_ingested: 15,
+      games_incomplete: 0,
+      reason_codes: ['slate_complete'],
+    },
+  }
+
+  const view = getSyncStatusView(data, { now, freshnessAuthority: servedFreshness })
+  const html = renderToStaticMarkup(
+    React.createElement(SyncStatusContent, {
+      data,
+      loading: false,
+      error: null,
+      now,
+      freshnessAuthority: servedFreshness,
+    }),
+  )
+
+  assert.equal(view.healthLabel, 'Healthy')
+  assert.equal(view.helper, 'Public bullpen data is current through July 5, 2026.')
+  assert.equal(view.reasonCodes.length, 0)
+  assert.equal(view.freshnessState, 'current')
+  assert.ok(htmlIncludes(html, 'Healthy'))
+  assert.ok(htmlIncludes(html, 'Public bullpen data is current through July 5, 2026.'))
+  assert.equal(htmlIncludes(html, 'incomplete and is not publishable'), false)
+})
+
+test('non-publishable limited served freshness preserves incomplete copy', () => {
+  const data = {
+    status: 'success',
+    last_checked: '2026-07-06T05:25:31Z',
+    last_sync: '2026-07-06T05:25:31Z',
+    last_successful_sync: '2026-07-06T05:25:33Z',
+    data: {
+      latest_game_date: '2026-07-05',
+    },
+    freshness: {
+      is_current: false,
+      is_stale: false,
+      freshness_state: 'limited',
+      reason_codes: ['scheduled_games_not_final'],
+      label: 'Baseball data through 2026-07-05 is incomplete and is not publishable as current.',
+      limitations: ['Slate coverage validations did not pass.'],
+    },
+  }
+  const servedFreshness = {
+    data_through: '2026-07-05',
+    sync_status: 'success',
+    complete_enough_to_publish: false,
+    validations_passed: false,
+    is_current: false,
+    is_stale: false,
+    freshness_state: 'incomplete',
+    label: 'Baseball data through 2026-07-05 is incomplete and is not publishable as current.',
+    limitations: ['Slate coverage validations did not pass.'],
+    reason_codes: ['validations_failed'],
+  }
+
+  const view = getSyncStatusView(data, { now, freshnessAuthority: servedFreshness })
+
+  assert.equal(view.healthLabel, 'Limited')
+  assert.ok(view.helper.includes('incomplete and is not publishable'))
+  assert.ok(view.limitations.includes('Slate coverage validations did not pass.'))
+})
+
 test('uses stable freshness labels across sync job types', () => {
   const postgame = {
     status: 'success',

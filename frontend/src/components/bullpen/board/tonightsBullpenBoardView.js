@@ -9,7 +9,13 @@ import {
   getTeamOperatingStateContext as getOperatingTeamStateContext,
   teamOperatingStateFreshnessIsDegraded as operatingStateFreshnessIsDegraded,
 } from '../../../adapters/operatingStateReadModel'
-import { completedGamesDataLine, fmtDataDate, fmtSyncDate } from '../../dashboard/syncStatusView'
+import {
+  completedGamesDataLine,
+  fmtDataDate,
+  fmtSyncDate,
+  freshnessDataThrough,
+  freshnessIsCurrent,
+} from '../../dashboard/syncStatusView'
 import { isSampleFreshness } from '../../UI/Freshness'
 import {
   compactWorkloadAppearanceLabel,
@@ -457,14 +463,19 @@ export function getBoardCardView(card, freshness = null, now = new Date()) {
 
 export function getDataProvenance(freshness) {
   const f = freshness || {}
-  const dataThrough = fmtDataDate(f.data_through)
-  const completedGamesLine = completedGamesDataLine(f.data_through)
-  const servedPreviousView = f.served_consistency_state === 'previous_published_view'
-  const syncStatus = String(f.sync_status || '').toLowerCase()
+  const dataThroughSource = freshnessDataThrough(f)
+  const dataThrough = fmtDataDate(dataThroughSource)
+  const completedGamesLine = completedGamesDataLine(dataThroughSource)
+  const servedPreviousView = (
+    f.served_consistency_state === 'previous_published_view'
+    || f.servedConsistencyState === 'previous_published_view'
+  )
+  const syncStatus = String(f.sync_status || f.syncStatus || '').toLowerCase()
+  const freshnessState = String(f.freshness_state || f.freshnessState || f.state || '').toLowerCase()
   const isExplicitSample = isSampleFreshness(f)
   const isExplicitFailure = syncStatus === 'failed' || syncStatus === 'error'
-  const isStale = f.is_stale === true || f.freshness_state === 'stale'
-  const isLive = f.is_current === true && !isExplicitSample && !isExplicitFailure && !isStale
+  const isStale = f.is_stale === true || f.isStale === true || freshnessState === 'stale'
+  const isLive = freshnessIsCurrent(f) && !isExplicitSample && !isExplicitFailure && !isStale
 
   if (!dataThrough) {
     return {
@@ -479,7 +490,7 @@ export function getDataProvenance(freshness) {
     }
   }
   if (servedPreviousView) {
-    const failed = f.current_sync_status === 'failed'
+    const failed = (f.current_sync_status || f.currentSyncStatus) === 'failed'
     return {
       state: failed ? 'previous_failed' : 'previous_running',
       label: failed ? 'Last published view' : 'Published view; background refresh running',
@@ -543,16 +554,17 @@ export function getDataProvenance(freshness) {
 
 export function getBoardFreshnessView(freshness) {
   const f = freshness || {}
-  const isCurrent = f.is_current !== false && f.is_stale !== true && f.freshness_state !== 'stale'
-  const isStale = f.is_stale === true || f.freshness_state === 'stale' || !isCurrent
+  const isCurrent = freshnessIsCurrent(f)
+  const freshnessState = String(f.freshness_state || f.freshnessState || f.state || '').toLowerCase()
+  const isStale = f.is_stale === true || f.isStale === true || freshnessState === 'stale' || !isCurrent
   const limitations = Array.isArray(f.limitations) ? f.limitations : []
   return {
     isCurrent,
     isStale,
-    dataThrough: fmtDataDate(f.data_through) || null,
-    lastSync: fmtSyncDate(f.last_successful_sync) || null,
-    syncStatus: f.sync_status || null,
-    freshnessState: f.freshness_state || null,
+    dataThrough: fmtDataDate(freshnessDataThrough(f)) || null,
+    lastSync: fmtSyncDate(f.last_successful_sync || f.lastSuccessfulSync) || null,
+    syncStatus: f.sync_status || f.syncStatus || null,
+    freshnessState: f.freshness_state || f.freshnessState || f.state || null,
     reasonCodes: Array.isArray(f.reason_codes) ? f.reason_codes : [],
     dataAgeDays: f.data_age_days ?? null,
     label: f.label || null,

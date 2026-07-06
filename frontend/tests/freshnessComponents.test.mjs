@@ -59,6 +59,30 @@ test('freshness metadata can downgrade an explicit current badge', () => {
   }))
   assert.ok(htmlIncludes(retainedSample, 'Sample intelligence state'))
   assert.equal(htmlIncludes(retainedSample, 'Freshness: Current'), false)
+
+  const camelSample = render(React.createElement(FreshnessBadge, {
+    state: 'current',
+    freshness: { freshnessState: 'sample', dataThrough: '2026-04-01' },
+  }))
+  assert.ok(htmlIncludes(camelSample, 'Sample intelligence state'))
+  assert.equal(htmlIncludes(camelSample, 'Freshness: Current'), false)
+})
+
+test('freshness badge treats publishable live payloads as current', () => {
+  const live = render(React.createElement(FreshnessBadge, {
+    state: 'current',
+    freshness: {
+      data_through: '2026-07-05',
+      is_current: false,
+      freshness_state: 'incomplete',
+      complete_enough_to_publish: true,
+      validations_passed: true,
+      slate_coverage: { complete_enough_to_publish: true, validations_passed: true },
+    },
+  }))
+
+  assert.ok(htmlIncludes(live, 'Freshness: Current'))
+  assert.equal(htmlIncludes(live, 'Refresh delayed'), false)
 })
 
 test('data-through and last-sync labels format trusted payload values', () => {
