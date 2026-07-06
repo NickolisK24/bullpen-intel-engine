@@ -11,6 +11,7 @@ import {
   workloadAppearanceDetailLabel,
 } from '../../utils/appearanceLanguage'
 import AvailabilitySummary from './AvailabilitySummary'
+import RecentWorkPanel from './RecentWorkPanel'
 import ExplanationDisclosure from '../explanations/ExplanationDisclosure'
 import {
   RadarChart, PolarGrid, PolarAngleAxis, Radar,
@@ -265,6 +266,8 @@ export default function PitcherDetail({ pitcherId, onClose }) {
               </div>
             </>
           )}
+
+          <RecentWorkPanel pitcherId={pitcherId} />
 
           {/* Recent logs — proper table */}
           {recent_logs?.length > 0 && (
