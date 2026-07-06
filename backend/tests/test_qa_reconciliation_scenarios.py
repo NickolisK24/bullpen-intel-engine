@@ -281,10 +281,14 @@ def test_phase0e_switches_and_legacy_public_files_not_modified():
     allowed_phase0f_public_recent_work_files = {
         'backend/api/recent_work.py',
     }
+    allowed_phase0g_public_team_relief_files = {
+        'backend/api/team_recent_work.py',
+    }
     allowed_files = (
         allowed_public_freshness_display_files
         | allowed_internal_admin_files
         | allowed_phase0f_public_recent_work_files
+        | allowed_phase0g_public_team_relief_files
     )
     forbidden_prefixes = (
         'backend/api/',
@@ -312,6 +316,15 @@ def test_phase0e_switches_and_legacy_public_files_not_modified():
         assert text.count('@recent_work_bp.route') == 1
         assert not re.search(
             r'\b(evidence|composed_read|legacy_read|audit|reconciliation|internal_pitcher)\b',
+            text,
+            flags=re.I,
+        )
+    if 'backend/api/team_recent_work.py' in [path.replace('\\', '/') for path in changed]:
+        text = (REPO_ROOT / 'backend/api/team_recent_work.py').read_text(encoding='utf-8')
+        assert '/relief-work' in text
+        assert text.count('@team_recent_work_bp.route') == 1
+        assert not re.search(
+            r'\b(evidence|composed_read|legacy_read|audit|reconciliation|internal_pitcher|internal_team)\b',
             text,
             flags=re.I,
         )
