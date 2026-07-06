@@ -320,6 +320,53 @@ test('served freshness authority wins when sync data is ahead of publish', () =>
   assert.equal(htmlIncludes(html, 'June 17, 2026'), false)
 })
 
+test('current served freshness suppresses stale raw sync helper copy', () => {
+  const data = {
+    status: 'success',
+    last_checked: '2026-07-06T04:00:00Z',
+    last_sync: '2026-07-06T04:00:00Z',
+    last_successful_sync: '2026-07-06T04:00:00Z',
+    pitchers_updated: 454,
+    data: {
+      game_logs: 36000,
+      latest_game_date: '2026-07-05',
+      latest_workload_date: '2026-07-05',
+    },
+    freshness: {
+      is_current: true,
+      is_stale: false,
+      freshness_state: 'current',
+      reason_codes: ['scheduled_games_not_final', 'completeness_unknown'],
+      label: 'Baseball data through 2026-07-05 is incomplete and is not publishable as current.',
+      limitations: [],
+    },
+  }
+  const servedFreshness = {
+    data_through: '2026-07-05',
+    is_current: true,
+    is_stale: false,
+    freshness_state: 'current',
+  }
+
+  const view = getSyncStatusView(data, { now, freshnessAuthority: servedFreshness })
+  const html = renderToStaticMarkup(
+    React.createElement(SyncStatusContent, {
+      data,
+      loading: false,
+      error: null,
+      now,
+      freshnessAuthority: servedFreshness,
+    }),
+  )
+
+  assert.equal(view.healthLabel, 'Healthy')
+  assert.equal(view.helper, 'Public bullpen data is current through July 5, 2026.')
+  assert.equal(view.reasonCodes.length, 0)
+  assert.ok(htmlIncludes(html, 'Healthy'))
+  assert.ok(htmlIncludes(html, 'Public bullpen data is current through July 5, 2026.'))
+  assert.equal(htmlIncludes(html, 'incomplete and is not publishable'), false)
+})
+
 test('uses stable freshness labels across sync job types', () => {
   const postgame = {
     status: 'success',

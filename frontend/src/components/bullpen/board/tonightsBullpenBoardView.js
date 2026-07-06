@@ -10,6 +10,7 @@ import {
   teamOperatingStateFreshnessIsDegraded as operatingStateFreshnessIsDegraded,
 } from '../../../adapters/operatingStateReadModel'
 import { completedGamesDataLine, fmtDataDate, fmtSyncDate } from '../../dashboard/syncStatusView'
+import { isSampleFreshness } from '../../UI/Freshness'
 import {
   compactWorkloadAppearanceLabel,
   currentUserBaseballDay,
@@ -459,8 +460,11 @@ export function getDataProvenance(freshness) {
   const dataThrough = fmtDataDate(f.data_through)
   const completedGamesLine = completedGamesDataLine(f.data_through)
   const servedPreviousView = f.served_consistency_state === 'previous_published_view'
-  const isLive = f.is_current === true && (f.sync_status === 'success' || f.sync_status === 'ok')
+  const syncStatus = String(f.sync_status || '').toLowerCase()
+  const isExplicitSample = isSampleFreshness(f)
+  const isExplicitFailure = syncStatus === 'failed' || syncStatus === 'error'
   const isStale = f.is_stale === true || f.freshness_state === 'stale'
+  const isLive = f.is_current === true && !isExplicitSample && !isExplicitFailure && !isStale
 
   if (!dataThrough) {
     return {
@@ -497,6 +501,18 @@ export function getDataProvenance(freshness) {
       dataThrough,
       completedGamesLine,
       throughHint: f.label || 'Completed-game coverage is outside the active freshness window.',
+      isLive: false,
+      tone: { borderColor: '#f5a62355', backgroundColor: '#f5a62312', color: '#f5a623', dot: '#f5a623' },
+    }
+  }
+  if (isExplicitSample) {
+    return {
+      state: 'sample',
+      label: 'Sample data',
+      detail: `through ${dataThrough}`,
+      dataThrough,
+      completedGamesLine,
+      throughHint: 'Data coverage uses the most recent completed game in the dataset (historical data, not live).',
       isLive: false,
       tone: { borderColor: '#f5a62355', backgroundColor: '#f5a62312', color: '#f5a623', dot: '#f5a623' },
     }

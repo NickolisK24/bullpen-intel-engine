@@ -47,7 +47,16 @@ export function DashboardView({ data, loading = false, error = null, staleWithEr
   const lastSync = fmtSyncDate(freshness.last_successful_sync)
   const isCurrent = freshness.is_current !== false
   const season = (freshness.data_through || '').slice(0, 4) || '2024'
-  const isLive = isCurrent && (freshness.sync_status === 'success' || freshness.sync_status === 'ok')
+  const syncStatus = String(freshness.sync_status || '').toLowerCase()
+  const freshnessState = String(freshness.freshness_state || freshness.state || '').toLowerCase()
+  const isLive = isCurrent
+    && freshness.is_stale !== true
+    && freshness.sample !== true
+    && freshness.demo !== true
+    && freshnessState !== 'stale'
+    && freshnessState !== 'sample'
+    && syncStatus !== 'failed'
+    && syncStatus !== 'error'
 
   return (
     <div className="p-4 sm:p-5 lg:p-6 max-w-7xl mx-auto">
