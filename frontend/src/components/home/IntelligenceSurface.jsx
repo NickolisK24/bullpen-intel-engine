@@ -718,7 +718,7 @@ function SeesHeader() {
         See which bullpens are fresh, stretched, or vulnerable tonight — and why.
       </h1>
       <p className="mt-4 max-w-3xl text-base leading-relaxed text-chalk300 sm:text-lg">
-        BaseballOS reads public MLB usage and workload after every game, so you can tell which pens are gassed and which are loaded — and see the evidence behind each read.
+        BaseballOS reads public MLB usage and workload after every game, so you can tell which pens are gassed and which are loaded — with the data date and confidence always shown.
       </p>
       <p className="mt-3 max-w-2xl text-sm leading-relaxed text-chalk500">
         Descriptive only — we show what we see and what we can't. No picks, no predictions.

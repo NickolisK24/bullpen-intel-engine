@@ -39,6 +39,11 @@ const internalShareTitleLabels = [
   'Thinning Trust Lane',
 ]
 const publicProductRoutes = ['/', '/dashboard', '/bullpen', '/stories', '/methodology', '/trust']
+const safeHeroDescription = 'BaseballOS reads public MLB usage and workload after every game, so you can tell which pens are gassed and which are loaded — with the data date and confidence always shown.'
+const blockedEvidenceCopyPatterns = [
+  /see the evidence behind/i,
+  /evidence behind (?:each|every) read/i,
+]
 
 function routeByPath(path) {
   return APP_ROUTES.find(route => route.path === path)
@@ -48,12 +53,24 @@ test('root HTML uses the public BaseballOS domain for canonical and social metad
   const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8')
 
   assert.ok(htmlIncludes(html, '<title>BaseballOS | MLB Bullpen Intelligence</title>'))
-  assert.ok(htmlIncludes(html, 'BaseballOS reads public MLB usage and workload after every game, so you can tell which pens are gassed and which are loaded — and see the evidence behind each read.'))
+  assert.ok(htmlIncludes(html, safeHeroDescription))
   assert.ok(htmlIncludes(html, '<link rel="canonical" href="https://baseballos.app/" />'))
   assert.ok(htmlIncludes(html, '<meta property="og:url" content="https://baseballos.app/" />'))
   assert.ok(htmlIncludes(html, '<meta property="og:image" content="https://baseballos.app/og/baseballos-card.svg" />'))
   assert.ok(htmlIncludes(html, '<meta name="twitter:image" content="https://baseballos.app/og/baseballos-card.svg" />'))
   assert.equal(htmlIncludes(html, 'baseballos.vercel.app'), false)
+})
+
+test('public homepage and README copy do not imply evidence surfacing', () => {
+  const publicCopy = [
+    readFileSync(new URL('../index.html', import.meta.url), 'utf8'),
+    readFileSync(new URL('../src/components/home/IntelligenceSurface.jsx', import.meta.url), 'utf8'),
+    readFileSync(new URL('../../README.md', import.meta.url), 'utf8'),
+  ].join('\n')
+
+  for (const pattern of blockedEvidenceCopyPatterns) {
+    assert.equal(pattern.test(publicCopy), false, String(pattern))
+  }
 })
 
 test('/today redirects to the Today surface and catch-all routes home', () => {

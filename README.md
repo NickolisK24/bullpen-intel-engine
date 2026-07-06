@@ -4,7 +4,8 @@ BaseballOS is a public MLB bullpen intelligence platform that explains which
 bullpens are fresh, stretched, or vulnerable — and why.
 
 It reads public MLB workload, availability, and late-game context, then presents
-a daily descriptive view of bullpen state with visible freshness and evidence.
+a daily descriptive view of bullpen state with visible freshness, data dates,
+and confidence context.
 BaseballOS is trust-first by design: it explains what it sees, shows how current
 the data is, and states what it cannot know.
 
@@ -23,7 +24,7 @@ BaseballOS pulls that context into one readable product surface. It focuses on:
 - Public MLB bullpen intelligence.
 - Workload, availability, and late-game context.
 - Fresh, stretched, and vulnerable bullpen reads.
-- Evidence behind each read.
+- Data dates and confidence context.
 - Freshness and data transparency.
 - Descriptive language instead of predictions or advice.
 
@@ -34,7 +35,7 @@ BaseballOS pulls that context into one readable product surface. It focuses on:
   on public workload and roster context.
 - Summarizes league-wide bullpen state through daily reads such as Most
   Available, On Watch, and Most Stretched.
-- Explains team bullpen boards with availability groups, workload evidence,
+- Explains team bullpen boards with availability groups, workload context,
   roster context, and freshness indicators.
 - Surfaces daily bullpen storylines without ranking pitchers or forecasting
   outcomes.
