@@ -332,6 +332,35 @@ def get_pipeline_health():
         }), 200
 
 
+@system_bp.route('/internal/team-evidence', methods=['GET'])
+@require_admin_token
+def get_internal_team_evidence():
+    """Internal Phase 0G team evidence trail for operator review."""
+    from services.internal_team_evidence import (
+        TeamEvidenceNotFound,
+        TeamEvidenceRequestError,
+        build_internal_team_evidence_payload,
+        error_payload,
+    )
+
+    product_date = (
+        request.args.get('date')
+        or request.args.get('data_through')
+        or request.args.get('dataThrough')
+    )
+    try:
+        payload = build_internal_team_evidence_payload(
+            team_id=request.args.get('team_id') or request.args.get('teamId'),
+            product_date=product_date,
+        )
+    except TeamEvidenceRequestError as exc:
+        return jsonify(error_payload(str(exc), status=400)), 400
+    except TeamEvidenceNotFound as exc:
+        return jsonify(error_payload(str(exc), status=404)), 404
+
+    return jsonify(payload)
+
+
 @system_bp.route('/internal/pitcher-evidence', methods=['GET'])
 @require_admin_token
 def get_internal_pitcher_evidence():
