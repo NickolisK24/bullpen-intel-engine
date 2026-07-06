@@ -8,7 +8,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from models.dashboard_snapshot import DashboardSnapshot
 from models.sync_run import SyncRun
-from services import slate_coverage
+from services import schedule_ingestion, slate_coverage
 from services import sync_metadata
 from services.availability_reference_date import (
     parse_reference_date,
@@ -105,12 +105,46 @@ def _coverage_matches_payload_data_through(payload, coverage):
     return parse_reference_date(coverage.get('slate_date')) == data_through
 
 
-def _compute_payload_slate_coverage(payload):
+def _coverage_publishable(coverage):
+    return (
+        isinstance(coverage, Mapping)
+        and coverage.get('validations_passed') is True
+        and coverage.get('complete_enough_to_publish') is True
+    )
+
+
+def _refresh_stale_non_final_slate_games(data_through, *, commit=True):
+    result = schedule_ingestion.refresh_non_final_games_for_slate(
+        data_through,
+        source='snapshot_slate_finality_refresh',
+        commit=commit,
+    )
+    if result.get('status') == 'refreshed':
+        logger.info(
+            'Dashboard snapshot stale slate finality refresh completed '
+            'slate_date=%s candidate_games=%s elapsed_ms=%s.',
+            result.get('slate_date'),
+            len(result.get('candidate_game_pks') or ()),
+            result.get('elapsed_ms'),
+        )
+    return result
+
+
+def _compute_payload_slate_coverage(payload, *, refresh_stale_finality=False, commit=True):
     data_through = _data_through_from_payload(payload)
     if data_through is None:
         return slate_coverage.unknown_slate_coverage(None)
 
     freshness = _payload_freshness(payload)
+    if refresh_stale_finality:
+        try:
+            _refresh_stale_non_final_slate_games(data_through, commit=commit)
+        except Exception as exc:  # noqa: BLE001 - freshness must fail closed
+            logger.warning(
+                'Could not refresh dashboard snapshot slate finality for %s: %s',
+                data_through,
+                exc,
+            )
     try:
         return slate_coverage.compute_slate_coverage(
             data_through,
@@ -125,15 +159,26 @@ def _compute_payload_slate_coverage(payload):
         return slate_coverage.unknown_slate_coverage(data_through)
 
 
-def _payload_with_slate_coverage(payload):
+def _payload_with_slate_coverage(payload, *, refresh_stale_finality=False, commit=True):
     if not isinstance(payload, Mapping):
         return payload
 
     result = dict(payload)
     freshness = dict(_payload_freshness(result))
     coverage = freshness.get('slate_coverage')
-    if not _coverage_matches_payload_data_through(result, coverage):
-        coverage = _compute_payload_slate_coverage(result)
+    if (
+        not _coverage_matches_payload_data_through(result, coverage)
+        or (
+            refresh_stale_finality
+            and _data_through_from_payload(result) is not None
+            and not _coverage_publishable(coverage)
+        )
+    ):
+        coverage = _compute_payload_slate_coverage(
+            result,
+            refresh_stale_finality=refresh_stale_finality,
+            commit=commit,
+        )
 
     result['freshness'] = slate_coverage.append_slate_coverage_to_freshness(
         freshness,
@@ -220,7 +265,11 @@ def store_dashboard_snapshot(
         publish,
         sync_run_id,
     )
-    stored_payload = _json_payload(_payload_with_slate_coverage(payload))
+    stored_payload = _json_payload(_payload_with_slate_coverage(
+        payload,
+        refresh_stale_finality=publish,
+        commit=commit,
+    ))
     logger.info(
         'Dashboard snapshot JSON serialization completed in %.2f ms source=%s.',
         _elapsed_ms(serialize_started),

@@ -270,6 +270,7 @@ def test_phase0e_switches_and_legacy_public_files_not_modified():
     if not changed:
         pytest.skip('git diff against origin/main unavailable')
     allowed_public_freshness_display_files = {
+        'backend/services/dashboard_snapshot.py',
         'backend/migrations/versions/fa9c1d2e3b47_add_sync_jobs.py',
         'frontend/src/components/Sidebar.jsx',
         'frontend/src/components/dashboard/syncStatusView.js',

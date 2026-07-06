@@ -15,7 +15,7 @@ from models.postgame_processed_game import PostgameProcessedGame
 from models.scheduled_game import ScheduledGame
 from models.sync_run import SyncRun
 import models.prospect  # noqa: F401
-from services import dashboard_snapshot, sync_metadata
+from services import dashboard_snapshot, schedule_ingestion, sync_metadata
 from services.roster_status import STATUS_ACTIVE
 from utils.db import db
 from utils.time import utc_now_naive
@@ -114,6 +114,92 @@ def _seed_complete_slate(game_date, game_pks):
             game_date=game_date,
             processing_status=PostgameProcessedGame.STATUS_FULLY_PROCESSED,
         ))
+
+
+def _mlb_schedule_game(
+    game_pk,
+    game_date,
+    *,
+    status_code='F',
+    detailed_state='Final',
+    abstract_state='Final',
+    home_id=108,
+    away_id=111,
+):
+    return {
+        'gamePk': game_pk,
+        'officialDate': game_date.isoformat(),
+        'gameDate': f'{game_date.isoformat()}T20:10:00Z',
+        'gameType': 'R',
+        'status': {
+            'statusCode': status_code,
+            'detailedState': detailed_state,
+            'abstractGameState': abstract_state,
+        },
+        'teams': {
+            'home': {'team': {'id': home_id, 'name': 'Home Club'}},
+            'away': {'team': {'id': away_id, 'name': 'Away Club'}},
+        },
+    }
+
+
+def _seed_stale_non_final_slate(game_date, game_pk=824010):
+    db.session.add_all([
+        ScheduledGame(
+            team_id=108,
+            game_pk=game_pk,
+            game_date=game_date,
+            game_type='R',
+            status_code='I',
+            status_state=ScheduledGame.STATE_OTHER,
+            home_away='home',
+            opponent_team_id=111,
+        ),
+        ScheduledGame(
+            team_id=111,
+            game_pk=game_pk,
+            game_date=game_date,
+            game_type='R',
+            status_code='I',
+            status_state=ScheduledGame.STATE_OTHER,
+            home_away='away',
+            opponent_team_id=108,
+        ),
+    ])
+
+
+def _seed_full_postgame_marker(game_date, game_pk=824010):
+    db.session.add(PostgameProcessedGame(
+        mlb_game_pk=game_pk,
+        game_date=game_date,
+        processing_status=PostgameProcessedGame.STATUS_FULLY_PROCESSED,
+    ))
+
+
+def _payload_requiring_slate_recheck(game_date):
+    payload = _minimal_dashboard_payload()
+    payload['freshness']['data_through'] = game_date.isoformat()
+    payload['freshness']['latest_workload_date'] = game_date.isoformat()
+    payload['freshness']['availability_reference_date'] = (
+        game_date + timedelta(days=1)
+    ).isoformat()
+    payload['freshness']['sync_status'] = 'success'
+    payload['freshness']['slate_coverage'] = {
+        **_complete_slate_coverage(game_date),
+        'games_scheduled': 1,
+        'games_final': 0,
+        'games_incomplete': 1,
+        'validations_passed': False,
+        'complete_enough_to_publish': False,
+        'reason_codes': [
+            'scheduled_games_not_final',
+            'completeness_unknown',
+            'validations_failed',
+        ],
+    }
+    payload['freshness']['validations_passed'] = False
+    payload['freshness']['complete_enough_to_publish'] = False
+    return payload
 
 
 def _seed_dashboard_data():
@@ -531,6 +617,143 @@ class TestDashboardSnapshotService:
                 dashboard_snapshot.snapshot_unavailable_reason(snapshot)
                 == 'dashboard_snapshot_slate_coverage_incomplete'
             )
+
+    def test_publish_refreshes_stale_non_final_slate_before_validation(self, app, monkeypatch):
+        slate_date = date(2026, 7, 5)
+
+        monkeypatch.setattr(
+            schedule_ingestion.mlb_client,
+            'get_schedule',
+            lambda **_kwargs: [_mlb_schedule_game(824010, slate_date)],
+        )
+        with app.app_context():
+            _seed_stale_non_final_slate(slate_date)
+            _seed_full_postgame_marker(slate_date)
+            db.session.commit()
+            run = _create_sync_run(slate_date)
+
+            snapshot = dashboard_snapshot.store_dashboard_snapshot(
+                _payload_requiring_slate_recheck(slate_date),
+                sync_run_id=run.id,
+                source='test',
+                publish=True,
+            )
+
+            coverage = snapshot.payload['freshness']['slate_coverage']
+            rows = ScheduledGame.query.filter_by(game_pk=824010).all()
+            assert snapshot.status == dashboard_snapshot.SNAPSHOT_STATUS_READY
+            assert snapshot.is_published is True
+            assert coverage['slate_date'] == '2026-07-05'
+            assert coverage['games_scheduled'] == 1
+            assert coverage['games_final'] == 1
+            assert coverage['games_fully_ingested'] == 1
+            assert coverage['complete_enough_to_publish'] is True
+            assert coverage['reason_codes'] == ['slate_complete']
+            assert {row.status_state for row in rows} == {ScheduledGame.STATE_FINAL}
+            assert {row.status_code for row in rows} == {'F'}
+
+    def test_publish_stays_limited_when_slate_source_is_still_non_final(self, app, monkeypatch):
+        slate_date = date(2026, 7, 5)
+
+        monkeypatch.setattr(
+            schedule_ingestion.mlb_client,
+            'get_schedule',
+            lambda **_kwargs: [
+                _mlb_schedule_game(
+                    824010,
+                    slate_date,
+                    status_code='I',
+                    detailed_state='In Progress',
+                    abstract_state='Live',
+                )
+            ],
+        )
+        with app.app_context():
+            _seed_stale_non_final_slate(slate_date)
+            db.session.commit()
+            run = _create_sync_run(slate_date)
+
+            snapshot = dashboard_snapshot.store_dashboard_snapshot(
+                _payload_requiring_slate_recheck(slate_date),
+                sync_run_id=run.id,
+                source='test',
+                publish=True,
+            )
+
+            coverage = snapshot.payload['freshness']['slate_coverage']
+            assert snapshot.status == dashboard_snapshot.SNAPSHOT_STATUS_PENDING
+            assert snapshot.is_published is False
+            assert snapshot.error_message == 'dashboard_snapshot_slate_coverage_incomplete'
+            assert coverage['games_final'] == 0
+            assert coverage['complete_enough_to_publish'] is False
+            assert 'scheduled_games_not_final' in coverage['reason_codes']
+            assert 'completeness_unknown' in coverage['reason_codes']
+            assert 'validations_failed' in coverage['reason_codes']
+
+    def test_publish_still_requires_markers_after_finality_refresh(self, app, monkeypatch):
+        slate_date = date(2026, 7, 5)
+
+        monkeypatch.setattr(
+            schedule_ingestion.mlb_client,
+            'get_schedule',
+            lambda **_kwargs: [_mlb_schedule_game(824010, slate_date)],
+        )
+        with app.app_context():
+            _seed_stale_non_final_slate(slate_date)
+            db.session.commit()
+            run = _create_sync_run(slate_date)
+
+            snapshot = dashboard_snapshot.store_dashboard_snapshot(
+                _payload_requiring_slate_recheck(slate_date),
+                sync_run_id=run.id,
+                source='test',
+                publish=True,
+            )
+
+            coverage = snapshot.payload['freshness']['slate_coverage']
+            assert snapshot.status == dashboard_snapshot.SNAPSHOT_STATUS_PENDING
+            assert snapshot.is_published is False
+            assert coverage['games_final'] == 1
+            assert coverage['games_fully_ingested'] == 0
+            assert 'final_games_not_fully_ingested' in coverage['reason_codes']
+            assert 'postgame_markers_incomplete' in coverage['reason_codes']
+
+    def test_publish_preserves_suspended_resumed_slate_safeguard(self, app, monkeypatch):
+        slate_date = date(2026, 7, 5)
+
+        monkeypatch.setattr(
+            schedule_ingestion.mlb_client,
+            'get_schedule',
+            lambda **_kwargs: [
+                _mlb_schedule_game(
+                    824010,
+                    slate_date,
+                    status_code='U',
+                    detailed_state='Suspended',
+                    abstract_state='Live',
+                ) | {'rescheduledGamePk': 824099, 'rescheduleDate': '2026-07-06'}
+            ],
+        )
+        with app.app_context():
+            _seed_stale_non_final_slate(slate_date)
+            _seed_full_postgame_marker(slate_date)
+            db.session.commit()
+            run = _create_sync_run(slate_date)
+
+            snapshot = dashboard_snapshot.store_dashboard_snapshot(
+                _payload_requiring_slate_recheck(slate_date),
+                sync_run_id=run.id,
+                source='test',
+                publish=True,
+            )
+
+            coverage = snapshot.payload['freshness']['slate_coverage']
+            assert snapshot.status == dashboard_snapshot.SNAPSHOT_STATUS_PENDING
+            assert snapshot.is_published is False
+            assert coverage['games_suspended'] == 1
+            assert coverage['games_final'] == 0
+            assert 'suspended_games_not_final' in coverage['reason_codes']
+            assert 'resumed_linkage_unresolved' in coverage['reason_codes']
 
     def test_incomplete_slate_snapshot_is_stored_but_not_published(self, app):
         with app.app_context():
