@@ -838,6 +838,7 @@ export const searchPitchers    = (params = {}) => {
   return request(`/pitchers/search${buildQuery(queryParams)}`)
 }
 export const getPitcherLogs    = (id, days = 30) => request(`/bullpen/pitchers/${id}/logs?days=${days}`)
+export const getPitcherRecentWork = (id) => request(`/bullpen/pitchers/${encodeURIComponent(id)}/recent-work`)
 
 export const getTeams          = () => request('/bullpen/teams')
 export const getTeamBullpen    = (teamId, params = {}) => {

@@ -57,3 +57,10 @@ content. The server owns all endpoint prose through neutral recent-work
 templates documented in `docs/phase0f/public_recent_work_panel.md`.
 
 Frontend Pitcher Detail integration remains deferred to a later Phase 0F branch.
+
+## Branch 04: Public Recent Work Panel
+
+Branch 04 mounts the public recent-work endpoint in Pitcher Detail as a
+frontend-only panel below the existing availability/fatigue read and above the
+raw logs table. The panel renders endpoint prose verbatim and does not alter
+backend, sync, methodology, or Data & Trust surfaces.
