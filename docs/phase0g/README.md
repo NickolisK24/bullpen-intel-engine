@@ -62,3 +62,26 @@ not change frontend, Data & Trust, sync, methodology, or migrations.
   changes.
 - No sync cadence, flag, or rebuild changes.
 - No public wording decisions for later Phase 0G surfaces.
+
+## Branch 02: Public Team Relief Work Endpoint
+
+This branch adds a public, backend-only team relief-work endpoint:
+
+`GET /api/bullpen/teams/<team_id>/relief-work`
+
+The endpoint is the team-grain sibling of the Phase 0F pitcher recent-work
+endpoint. It uses only already-public game-log fields, stored pitcher roster
+assignment fields, and the existing public freshness block. It does not expose
+evidence objects, citations, read components, source-readiness details,
+reconciliation content, or internal review payloads.
+
+Relief classification is based only on the public `games_started` signal:
+`0` rows are counted, `1` rows are excluded as starts, and `NULL` rows are
+excluded and disclosed in window copy. Because game logs do not store
+historical team assignment, team attribution is current-roster based and is
+disclosed in the payload's scope sentence.
+
+Frontend integration is deferred. The Phase 0B public evidence gate remains
+closed, and this branch does not change frontend, Data & Trust, sync,
+methodology, migrations, static team previews, or existing public route
+behavior.
