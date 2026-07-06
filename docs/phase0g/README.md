@@ -85,3 +85,11 @@ Frontend integration is deferred. The Phase 0B public evidence gate remains
 closed, and this branch does not change frontend, Data & Trust, sync,
 methodology, migrations, static team previews, or existing public route
 behavior.
+
+## Branch 03: Public Team Relief Work Panel
+
+This branch adds a frontend-only Recent Bullpen Work panel that consumes the
+Branch 02 endpoint and renders server-owned copy verbatim. It adds no backend,
+Data & Trust, sync, methodology, static preview, Today, dashboard/board, or
+legacy fatigue/availability changes. The Phase 0B public evidence gate remains
+closed.

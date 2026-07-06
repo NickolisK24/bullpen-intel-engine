@@ -841,6 +841,7 @@ export const getPitcherLogs    = (id, days = 30) => request(`/bullpen/pitchers/$
 export const getPitcherRecentWork = (id) => request(`/bullpen/pitchers/${encodeURIComponent(id)}/recent-work`)
 
 export const getTeams          = () => request('/bullpen/teams')
+export const getTeamReliefWork = (teamId) => request(`/bullpen/teams/${encodeURIComponent(teamId)}/relief-work`)
 export const getTeamBullpen    = (teamId, params = {}) => {
   const q = new URLSearchParams(params).toString()
   return request(`/bullpen/teams/${teamId}/bullpen${q ? `?${q}` : ''}`)

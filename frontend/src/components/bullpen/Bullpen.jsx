@@ -12,6 +12,7 @@ import TeamBullpenComparison from './board/TeamBullpenComparison'
 import { getBullpenEmptyState } from './emptyState'
 import AvailabilityBadge from './AvailabilityBadge'
 import PitcherSearch from './PitcherSearch'
+import TeamReliefWorkPanel from './TeamReliefWorkPanel'
 import {
   AVAILABILITY_FILTERS,
   filterRowsByAvailability,
@@ -356,6 +357,12 @@ function PitcherView({
           </button>
         ))}
       </div>
+
+      {selectedTeam != null && (
+        <div className="mb-5">
+          <TeamReliefWorkPanel teamId={selectedTeam} />
+        </div>
+      )}
 
       <div className="flex flex-col gap-6 2xl:flex-row 2xl:items-start">
         {/* Main table */}
