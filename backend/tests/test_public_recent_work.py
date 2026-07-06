@@ -1,6 +1,5 @@
 import ast
 import re
-import subprocess
 from datetime import date
 from pathlib import Path
 
@@ -19,6 +18,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 SERVICE_PATH = REPO_ROOT / 'backend/services/public_recent_work.py'
 API_PATH = REPO_ROOT / 'backend/api/recent_work.py'
 APP_PATH = REPO_ROOT / 'backend/app.py'
+BULLPEN_API_PATH = REPO_ROOT / 'backend/api/bullpen.py'
 FORBIDDEN_PUBLIC_COPY_TERMS = (
     'rested',
     'fresh',
@@ -496,14 +496,26 @@ def test_app_factory_registers_recent_work_blueprint_static_contract():
 
 
 def test_legacy_public_logs_route_diff_clean_static_behavior_freeze():
-    result = subprocess.run(
-        ['git', 'diff', '--name-only', 'origin/main', '--', 'backend/api/bullpen.py'],
-        cwd=REPO_ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
+    text = BULLPEN_API_PATH.read_text(encoding='utf-8')
+    assert '/recent-work' not in text
+    assert 'public_recent_work' not in text
+    assert 'recent_work_bp' not in text
+    assert 'build_public_recent_work_payload' not in text
+
+    route = _extract_bullpen_logs_route(text)
+    assert text.count("@bullpen_bp.route('/pitchers/<int:pitcher_id>/logs'") == 1
+    assert "def get_pitcher_logs(pitcher_id):" in route
+    assert "parse_int_param(" in route
+    assert "'days'" in route
+    assert "default=30" in route
+    assert "maximum=PITCHER_LOG_DAYS_MAX" in route
+    assert "since = date.today() - timedelta(days=days)" in route
+    assert (
+        ".filter(GameLog.pitcher_id == pitcher_id, GameLog.game_date >= since)"
+        in route
     )
-    assert result.stdout.strip() == ''
+    assert ".order_by(desc(GameLog.game_date))" in route
+    assert "return jsonify([log.to_dict() for log in logs])" in route
 
 
 def _freshness_block():
@@ -593,6 +605,18 @@ def _import_modules(path):
         elif isinstance(node, ast.ImportFrom):
             modules.add(node.module)
     return modules
+
+
+def _extract_bullpen_logs_route(source):
+    match = re.search(
+        r"@bullpen_bp\.route\('/pitchers/<int:pitcher_id>/logs', methods=\['GET'\]\)"
+        r".*?"
+        r"(?=\n\n# .+ Teams)",
+        source,
+        flags=re.S,
+    )
+    assert match is not None
+    return match.group(0)
 
 
 def _assert_recent_work_api_guard(source):
