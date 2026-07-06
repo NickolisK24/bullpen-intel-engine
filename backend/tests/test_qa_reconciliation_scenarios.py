@@ -275,6 +275,10 @@ def test_phase0e_switches_and_legacy_public_files_not_modified():
         'frontend/src/components/Sidebar.jsx',
         'frontend/src/components/dashboard/syncStatusView.js',
     }
+    allowed_internal_admin_files = {
+        'backend/api/system.py',
+    }
+    allowed_files = allowed_public_freshness_display_files | allowed_internal_admin_files
     forbidden_prefixes = (
         'backend/api/',
         'frontend/src/',
@@ -288,9 +292,13 @@ def test_phase0e_switches_and_legacy_public_files_not_modified():
     )
     assert not [
         path for path in changed
-        if path.replace('\\', '/') not in allowed_public_freshness_display_files
+        if path.replace('\\', '/') not in allowed_files
         if any(path.replace('\\', '/').startswith(prefix) for prefix in forbidden_prefixes)
     ]
+    if 'backend/api/system.py' in [path.replace('\\', '/') for path in changed]:
+        diff = _diff_vs_main('backend/api/system.py')
+        assert "/internal/pitcher-evidence" in diff
+        assert '@require_admin_token' in diff
     if 'backend/services/sync.py' in [path.replace('\\', '/') for path in changed]:
         diff = _diff_vs_main('backend/services/sync.py')
         forbidden_sync_terms = (
