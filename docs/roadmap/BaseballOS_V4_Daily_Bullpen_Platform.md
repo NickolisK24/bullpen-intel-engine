@@ -822,7 +822,7 @@ Review cadence:
 | 4 | Phase 0C - Reliever Appearance Evidence Layer | Complete | Branches 0C-01 through 0C-08 completed; foundation report added and source readiness coverage integrated before public evidence interpretation. |
 | 5 | Phase 0D - Pitch-Level / Pitch-Trend Feasibility Layer | Complete | Evidence contract, families, classification registry, decision register, language packages, and exit report completed via PRs #381-#388 plus PR #389. |
 | 6 | Phase 0E - Bullpen Read Quality Model | In progress | Read contract, reliever/team daily reads, legacy-read reconciliation audit, read QA, editorial decisions, and 0E-06 legal review paper and exit report are the internal-only Phase 0E package; public surfacing remains blocked by legal/source review and a later surface phase. |
-| 7 | Phase 0F - Pitcher Detail Evidence Surface | Not started | Explain what happened and what changed for relievers. |
+| 7 | Phase 0F - Pitcher Detail Evidence Surface | In progress | Internal review endpoint is available; Branch 03 adds a backend-only public recent-work endpoint without public evidence surfacing. |
 | 8 | Phase 0G - Team Bullpen Evidence Surface | Not started | Connect team reads to visible bullpen evidence. |
 | 9 | Phase 0H - Trusted Snapshot + What Changed Foundation | Not started | Compare only trusted, comparable states. |
 | 10 | Phase 0I - Roster Availability Context | Not started | Use public roster evidence without private health claims. |

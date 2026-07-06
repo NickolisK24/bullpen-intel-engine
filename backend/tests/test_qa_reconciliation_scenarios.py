@@ -278,7 +278,14 @@ def test_phase0e_switches_and_legacy_public_files_not_modified():
     allowed_internal_admin_files = {
         'backend/api/system.py',
     }
-    allowed_files = allowed_public_freshness_display_files | allowed_internal_admin_files
+    allowed_phase0f_public_recent_work_files = {
+        'backend/api/recent_work.py',
+    }
+    allowed_files = (
+        allowed_public_freshness_display_files
+        | allowed_internal_admin_files
+        | allowed_phase0f_public_recent_work_files
+    )
     forbidden_prefixes = (
         'backend/api/',
         'frontend/src/',
@@ -299,6 +306,15 @@ def test_phase0e_switches_and_legacy_public_files_not_modified():
         diff = _diff_vs_main('backend/api/system.py')
         assert "/internal/pitcher-evidence" in diff
         assert '@require_admin_token' in diff
+    if 'backend/api/recent_work.py' in [path.replace('\\', '/') for path in changed]:
+        text = (REPO_ROOT / 'backend/api/recent_work.py').read_text(encoding='utf-8')
+        assert '/recent-work' in text
+        assert text.count('@recent_work_bp.route') == 1
+        assert not re.search(
+            r'\b(evidence|composed_read|legacy_read|audit|reconciliation|internal_pitcher)\b',
+            text,
+            flags=re.I,
+        )
     if 'backend/services/sync.py' in [path.replace('\\', '/') for path in changed]:
         diff = _diff_vs_main('backend/services/sync.py')
         forbidden_sync_terms = (
