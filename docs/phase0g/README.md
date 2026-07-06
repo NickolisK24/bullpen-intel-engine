@@ -1,4 +1,20 @@
-# Phase 0G Internal Team Evidence Review
+# Phase 0G Team Bullpen Evidence Surface
+
+## Exit Status
+
+Phase 0G status: Complete after Branches 01, 02, 03, and this Branch 04 exit
+audit PR.
+
+- Branch 01: Internal/admin-only team evidence endpoint.
+- Branch 02: Public backend-only team relief-work endpoint.
+- Branch 03: Public Recent Bullpen Work panel.
+- Branch 04: Exit audit report and roadmap status cleanup.
+
+The Phase 0B public evidence gate remains closed.
+
+Next phase: Phase 0H, not Phase 1.
+
+See `docs/phase0g/phase0g_exit_report.md` for the exit report.
 
 ## Branch 01: Internal Team Evidence Endpoint
 

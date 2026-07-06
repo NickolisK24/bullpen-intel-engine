@@ -821,10 +821,10 @@ Review cadence:
 | 3 | Phase 0B - Data Source Inventory & Acquisition Strategy | Complete | Branches 0B-01 through 0B-07 completed; acquisition strategy and matrix added; Phase 0C sequencing plan is the next step. |
 | 4 | Phase 0C - Reliever Appearance Evidence Layer | Complete | Branches 0C-01 through 0C-08 completed; foundation report added and source readiness coverage integrated before public evidence interpretation. |
 | 5 | Phase 0D - Pitch-Level / Pitch-Trend Feasibility Layer | Complete | Evidence contract, families, classification registry, decision register, language packages, and exit report completed via PRs #381-#388 plus PR #389. |
-| 6 | Phase 0E - Bullpen Read Quality Model | In progress | Read contract, reliever/team daily reads, legacy-read reconciliation audit, read QA, editorial decisions, and 0E-06 legal review paper and exit report are the internal-only Phase 0E package; public surfacing remains blocked by legal/source review and a later surface phase. |
-| 7 | Phase 0F - Pitcher Detail Evidence Surface | In progress | Internal review endpoint is available; Branch 03 adds a backend-only public recent-work endpoint without public evidence surfacing. |
-| 8 | Phase 0G - Team Bullpen Evidence Surface | Not started | Connect team reads to visible bullpen evidence. |
-| 9 | Phase 0H - Trusted Snapshot + What Changed Foundation | Not started | Compare only trusted, comparable states. |
+| 6 | Phase 0E - Bullpen Read Quality Model | Complete | Read contract, reliever/team daily reads, legacy-read reconciliation audit, read QA, editorial decisions, and 0E-06 legal review paper and exit report are the internal-only Phase 0E package; public surfacing remains blocked by legal/source review and a later surface phase. |
+| 7 | Phase 0F - Pitcher Detail Evidence Surface | Complete | Internal pitcher evidence review, public backend recent-work endpoint, public Recent Work panel, and exit audit completed without public evidence surfacing. |
+| 8 | Phase 0G - Team Bullpen Evidence Surface | Complete | Complete after the Phase 0G exit audit branch passes; internal team evidence review, public team relief-work endpoint, public Recent Bullpen Work panel, and source-separation audit are recorded. |
+| 9 | Phase 0H - Trusted Snapshot + What Changed Foundation | Not started / next | Compare only trusted, comparable states. |
 | 10 | Phase 0I - Roster Availability Context | Not started | Use public roster evidence without private health claims. |
 | 11 | Phase 0J - Starter Exposure Context | Not started | Explain recent starter-length pressure without prediction. |
 | 12 | Phase 0K - Methodology, Limitations, and Data Trust Rewrite | Not started | Align methodology and trust docs with the V4 evidence layer. |
