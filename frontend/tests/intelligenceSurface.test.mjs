@@ -426,9 +426,10 @@ test('Intelligence Surface renders a populated StoryPackage without raw JSON fie
   assert.equal(htmlIncludes(html, 'Why BaseballOS Sees It'), false)
   assert.equal(htmlIncludes(html, 'The relievers could not hold the lead.'), false)
   assert.equal(htmlIncludes(html, 'Starter: Landen Roupp, 6.0 IP, 95 pitches'), false)
-  assert.ok(htmlIncludes(html, 'Freshness: Current'))
+  assert.ok(htmlIncludes(html, 'Published view current'))
+  assert.equal(htmlIncludes(html, 'Freshness: Current'), false)
   assert.ok(htmlIncludes(html, 'Tonight watch generated 11:30 PM ET'))
-  assert.ok(htmlIncludes(html, 'Bullpen data through Jun 25'))
+  assert.ok(htmlIncludes(html, 'Published view through Jun 25'))
   assert.ok(htmlIncludes(html, 'Last synced 6:04 AM ET'))
   assert.ok(htmlIncludes(html, 'href="/bullpen?view=board&amp;team=SF&amp;source=landscape"'))
   assert.ok(htmlIncludes(html, 'Tonight&#x27;s Bullpen Watch'))
@@ -509,10 +510,10 @@ test('homepage freshness separates Tonight slate from completed-game bullpen dat
 
   assert.ok(htmlIncludes(html, 'Tonight slate: Jun 27'))
   assert.ok(htmlIncludes(html, 'Tonight watch generated 11:30 PM ET'))
-  assert.ok(htmlIncludes(html, 'Bullpen data through Jun 26'))
+  assert.ok(htmlIncludes(html, 'Published view through Jun 26'))
   assert.ok(htmlIncludes(html, 'Last synced 11:04 AM ET'))
   assert.equal(htmlIncludes(html, 'Data through Jun 27'), false)
-  assert.equal(htmlIncludes(html, 'Bullpen data through Jun 27'), false)
+  assert.equal(htmlIncludes(html, 'Published view through Jun 27'), false)
 })
 
 test('sample Today intelligence is not rendered as a current homepage story', () => {
@@ -959,7 +960,7 @@ test('Bullpen Picture renders existing landscape lanes and handles missing data'
 
   assert.ok(htmlIncludes(html, 'Today&#x27;s Bullpen Picture'))
   assert.ok(htmlIncludes(html, 'A quick look at which bullpens look rested and available, stretched, or on watch.'))
-  assert.ok(htmlIncludes(html, 'Bullpen data through Jun 25'))
+  assert.ok(htmlIncludes(html, 'Published view through Jun 25'))
   assert.ok(htmlIncludes(html, 'Most Available'))
   assert.ok(htmlIncludes(html, 'Most Stretched'))
   assert.ok(htmlIncludes(html, 'On Watch'))

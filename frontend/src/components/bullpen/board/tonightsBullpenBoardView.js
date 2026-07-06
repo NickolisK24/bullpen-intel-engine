@@ -478,13 +478,13 @@ export function getDataProvenance(freshness) {
     const failed = f.current_sync_status === 'failed'
     return {
       state: failed ? 'previous_failed' : 'previous_running',
-      label: failed ? 'Last published view' : 'Sync in progress',
+      label: failed ? 'Last published view' : 'Published view; background refresh running',
       detail: `through ${dataThrough}`,
       dataThrough,
       completedGamesLine,
       throughHint: failed
         ? 'Latest sync failed before publish; serving the last fully published view.'
-        : 'Sync is in progress; serving the last fully published view.',
+        : 'A background refresh is still running; serving the last fully published view.',
       isLive: false,
       tone: { borderColor: '#f5a62355', backgroundColor: '#f5a62312', color: '#f5a623', dot: '#f5a623' },
     }
@@ -504,7 +504,7 @@ export function getDataProvenance(freshness) {
   if (isLive) {
     return {
       state: 'live',
-      label: 'Current stored data',
+      label: 'Published view current',
       detail: `through ${dataThrough}`,
       dataThrough,
       completedGamesLine,

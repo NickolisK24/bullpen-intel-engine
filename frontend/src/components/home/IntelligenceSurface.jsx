@@ -347,19 +347,38 @@ function sectionFreshness(payload, fallbackFreshness) {
   return Object.keys(base).length ? base : null
 }
 
+function publishedFreshnessBadgeLabel(stale, freshness) {
+  const sample = isSampleFreshness(freshness)
+  const syncStatus = String(freshness?.sync_status || '').toLowerCase()
+  const staleState = String(freshness?.freshness_state || freshness?.state || '').toLowerCase()
+  const publishedCurrent = !sample
+    && !stale
+    && freshness?.is_current !== false
+    && freshness?.is_stale !== true
+    && staleState !== 'stale'
+    && staleState !== 'historical'
+    && syncStatus !== 'failed'
+    && syncStatus !== 'error'
+  return publishedCurrent ? 'Published view current' : undefined
+}
+
 function SectionFreshnessRow({
   dataThrough,
   lastSync,
   stale = false,
   freshness,
-  dataThroughLabel = 'Bullpen data through',
+  dataThroughLabel = 'Published view through',
   className = '',
 }) {
   const sample = isSampleFreshness(freshness)
   if (!dataThrough && !lastSync && !stale && !freshness) return null
   return (
     <div className={`mb-3 flex flex-wrap items-center gap-2 ${className}`}>
-      <FreshnessBadge state={stale ? 'stale' : 'current'} freshness={freshness} />
+      <FreshnessBadge
+        state={stale ? 'stale' : 'current'}
+        freshness={freshness}
+        label={publishedFreshnessBadgeLabel(stale, freshness)}
+      />
       <DataThroughStamp date={dataThrough} label={dataThroughLabel} />
       <LastSyncLabel value={lastSync} />
       {sample && (
@@ -385,9 +404,13 @@ function TonightFreshnessRow({
     <div className="mb-3 flex flex-wrap items-center gap-2">
       <SlateDateStamp date={slateDate} />
       {(dataThrough || lastSync || stale || freshness) && (
-        <FreshnessBadge state={stale ? 'stale' : 'current'} freshness={freshness} />
+        <FreshnessBadge
+          state={stale ? 'stale' : 'current'}
+          freshness={freshness}
+          label={publishedFreshnessBadgeLabel(stale, freshness)}
+        />
       )}
-      <DataThroughStamp date={dataThrough} label="Bullpen data through" />
+      <DataThroughStamp date={dataThrough} label="Published view through" />
       <LastSyncLabel value={generatedAt} label="Tonight watch generated" />
       <LastSyncLabel value={lastSync} />
       {sample && (
