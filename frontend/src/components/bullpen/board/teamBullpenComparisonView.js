@@ -61,7 +61,7 @@ function freshnessRow(freshness) {
     dataThrough: fmtDataDate(f.data_through) || null,
     completedGamesLine: provenance.completedGamesLine,
     lastSync: fmtSyncDate(f.last_successful_sync) || null,
-    healthLabel: provenance.label,         // "Current stored data" / "Sample data"
+    healthLabel: provenance.label,
     provenanceDetail: provenance.detail,
     throughHint: provenance.throughHint,
     dot: provenance.tone.dot,

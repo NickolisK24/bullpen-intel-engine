@@ -119,8 +119,8 @@ const comparison = makeComparison(
 
 const expectedLine = 'Updated after completed games through Jun 16, 2026'
 const syncAheadLine = 'Updated after completed games through Jun 17, 2026'
-const todayExpectedLine = 'Bullpen data through Jun 16'
-const todaySyncAheadLine = 'Bullpen data through Jun 17'
+const todayExpectedLine = 'Published view through Jun 16'
+const todaySyncAheadLine = 'Published view through Jun 17'
 
 function assertUsesServedFreshness(surface, html) {
   assert.ok(html.includes(expectedLine), `${surface} did not show served freshness data-through`)
@@ -157,6 +157,8 @@ test('user-facing data-through surfaces use served freshness when sync is ahead 
 
   for (const [surface, html] of Object.entries(surfaces)) {
     if (surface === 'Today') {
+      assert.ok(html.includes('Published view current'), `${surface} did not label the published view as current`)
+      assert.equal(html.includes('Freshness: Current'), false, `${surface} used generic current freshness copy`)
       assert.ok(html.includes(todayExpectedLine), `${surface} did not show served freshness data-through`)
       assert.equal(html.includes(todaySyncAheadLine), false, `${surface} leaked raw sync data-through`)
     } else if (surface === 'Sidebar') {

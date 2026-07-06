@@ -60,3 +60,21 @@ test('a failed latest sync does not render as current even with a recent data da
   }))
   assert.ok(!htmlIncludes(html, 'Current — 2026 Season'))
 })
+
+test('running background lane does not make the dashboard look generally mid-sync', () => {
+  const html = inRouter(React.createElement(DashboardView, {
+    data: withFreshness({
+      is_current: true,
+      sync_status: 'success',
+      data_through: '2026-07-03',
+      last_successful_sync: '2026-07-04T12:00:00Z',
+      served_consistency_state: 'previous_published_view',
+      current_sync_status: 'running',
+      current_sync_stage: 'workload_evidence',
+    }),
+  }))
+
+  assert.ok(htmlIncludes(html, 'Published view; background refresh running'))
+  assert.ok(htmlIncludes(html, 'Updated after completed games through Jul 3, 2026'))
+  assert.equal(htmlIncludes(html, 'Sync in progress'), false)
+})
