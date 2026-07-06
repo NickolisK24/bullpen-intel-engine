@@ -401,9 +401,14 @@ function TonightFreshnessRow({
   lastSync,
   generatedAt,
   stale = false,
+  slateUnavailable = false,
+  publishedViewCurrent = false,
   freshness,
 }) {
   const sample = isSampleFreshness(freshness)
+  const scopedStaleLabel = slateUnavailable && publishedViewCurrent
+    ? 'Tonight slate unavailable'
+    : null
   if (!slateDate && !dataThrough && !lastSync && !generatedAt && !stale && !freshness) return null
   return (
     <div className="mb-3 flex flex-wrap items-center gap-2">
@@ -412,7 +417,7 @@ function TonightFreshnessRow({
         <FreshnessBadge
           state={stale ? 'stale' : 'current'}
           freshness={freshness}
-          label={stale ? 'Tonight slate unavailable' : publishedFreshnessBadgeLabel(stale, freshness)}
+          label={scopedStaleLabel || publishedFreshnessBadgeLabel(stale, freshness)}
         />
       )}
       <DataThroughStamp date={dataThrough} label="Published view through" />
@@ -990,7 +995,9 @@ function TonightSection({
   const cards = getTonightCards(tonight, teams)
   const sectionLimitations = cleanTonightList(tonight?.limitations)
   const freshness = dashboardFreshness(dashboard)
+  const publishedViewCurrent = freshnessIsCurrent(freshness)
   const missingCompletedPayload = !tonight && !loading && !error
+  const tonightPayloadUnavailable = payloadIsFailClosed(tonight)
   const rowFreshness = sectionFreshness(
     missingCompletedPayload ? { status: 'error' } : tonight,
     freshness,
@@ -1005,6 +1012,7 @@ function TonightSection({
     'tonight_snapshot_build_unavailable',
     'tonight_snapshot_unavailable',
   ].includes(emptyReason)
+  const slateUnavailable = snapshotUnavailable || missingCompletedPayload || tonightPayloadUnavailable
   const showUnavailable = Boolean(error && !tonight) || snapshotUnavailable
 
   if (loading && !tonight) {
@@ -1040,6 +1048,8 @@ function TonightSection({
           lastSync={lastSync}
           generatedAt={generatedAt}
           stale={staleWithError}
+          slateUnavailable={staleWithError}
+          publishedViewCurrent={publishedViewCurrent}
           freshness={rowFreshness}
         />
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
@@ -1078,7 +1088,9 @@ function TonightSection({
           dataThrough={dataThrough}
           lastSync={lastSync}
           generatedAt={generatedAt}
-          stale={staleWithError || snapshotUnavailable || missingCompletedPayload}
+          stale={staleWithError || slateUnavailable}
+          slateUnavailable={staleWithError || slateUnavailable}
+          publishedViewCurrent={publishedViewCurrent}
           freshness={rowFreshness}
         />
       )}
