@@ -47,7 +47,7 @@ from utils.db import db
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 MIGRATIONS_DIR = REPO_ROOT / 'backend/migrations/versions'
-EXPECTED_ALEMBIC_HEAD = 'e4b7c9d2a6f0'
+EXPECTED_ALEMBIC_HEAD = 'fa9c1d2e3b47'
 FORBIDDEN_HEADLINE_TERMS = (
     'headline',
     'read_label',
@@ -270,6 +270,7 @@ def test_phase0e_switches_and_legacy_public_files_not_modified():
     if not changed:
         pytest.skip('git diff against origin/main unavailable')
     allowed_public_freshness_display_files = {
+        'backend/migrations/versions/fa9c1d2e3b47_add_sync_jobs.py',
         'frontend/src/components/Sidebar.jsx',
         'frontend/src/components/dashboard/syncStatusView.js',
     }

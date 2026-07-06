@@ -13,6 +13,7 @@ from models.game_log import GameLog
 from models.pitcher import Pitcher
 from models.play_by_play_foundation import GamePlayByPlayEvent, PlayByPlayProcessedGame
 from models.postgame_processed_game import PostgameProcessedGame
+from models.sync_job import SyncJob
 from models.sync_run import SyncRun
 import models.fatigue_score  # noqa: F401
 import models.prospect  # noqa: F401
@@ -412,6 +413,7 @@ def test_postgame_refresh_public_only_skips_internal_enrichment(app, monkeypatch
         run = SyncRun.query.order_by(SyncRun.id.desc()).first()
         assert run.job_name == sync_metadata.JOB_POSTGAME_REFRESH
         assert run.stage == sync_metadata.STAGE_PUBLISHED
+        assert SyncJob.query.count() == 0
 
 
 def test_postgame_refresh_is_idempotent_for_already_processed_games(app, monkeypatch):

@@ -13,6 +13,7 @@ from tests.db_config import configure_test_database, create_test_schema, drop_te
 import models.prospect  # noqa: F401
 import services.sync as sync_service
 from api.bullpen import bullpen_bp
+from models.sync_job import SyncJob
 from models.sync_run import SyncRun
 from services import sync_metadata
 from utils.db import db
@@ -459,6 +460,8 @@ def test_daily_sync_public_only_skips_internal_enrichment(
     assert status['status'] == sync_metadata.STATUS_SUCCESS
     assert status['dashboard_snapshot_id'] == 88
     assert status['internal_enrichment'] == 'skipped_public_only'
+    with client.application.app_context():
+        assert SyncJob.query.count() == 0
 
 
 def test_internal_enrichment_runs_internal_phases_without_public_snapshot(
@@ -526,6 +529,7 @@ def test_internal_enrichment_runs_internal_phases_without_public_snapshot(
         assert run.job_name == sync_metadata.JOB_INTERNAL_ENRICHMENT
         assert run.status == sync_metadata.STATUS_SUCCESS
         assert run.published_dashboard_snapshot_id is None
+        assert SyncJob.query.count() == 4
 
 
 def test_internal_enrichment_failure_is_isolated_from_public_sync(
@@ -611,6 +615,8 @@ def test_internal_enrichment_failure_is_isolated_from_public_sync(
     assert internal_status['failed_phases'] == [
         sync_metadata.STAGE_WORKLOAD_EVIDENCE
     ]
+    with client.application.app_context():
+        assert SyncJob.query.count() == 3
 
 
 def test_internal_enrichment_lock_does_not_block_public_sync_lock(client):

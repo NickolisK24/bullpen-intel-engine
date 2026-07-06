@@ -27,6 +27,7 @@ from models.scheduled_game import ScheduledGame
 from models.sync_run import SyncRun
 from models.sync_failure import SyncFailure
 from services import dead_letter
+from services import sync_jobs
 from services import sync_metadata
 from services.availability_reference_date import resolve_product_day
 from services.completed_game_context_payload_adapter import build_completed_game_payload
@@ -2843,6 +2844,69 @@ def _internal_phase_failed(result):
     return False
 
 
+def _aggregate_internal_checkpoint_results(phase_name, jobs, results):
+    if not jobs:
+        return {
+            'status': 'skipped',
+            'reason': 'no_jobs_planned',
+            'jobs': [],
+        }
+    failed = [result for result in results if _internal_phase_failed(result)]
+    if failed:
+        status = sync_metadata.STATUS_FAILED
+    elif all(
+        isinstance(result, dict) and result.get('status') == sync_jobs.STATUS_SKIPPED
+        for result in results
+    ):
+        status = sync_jobs.STATUS_SKIPPED
+    elif any(
+        isinstance(result, dict) and result.get('status') == sync_metadata.STATUS_PARTIAL
+        for result in results
+    ):
+        status = sync_metadata.STATUS_PARTIAL
+    else:
+        status = 'completed'
+    return {
+        'status': status,
+        'phase': phase_name,
+        'dates': [
+            job.product_date.isoformat()
+            for job in jobs
+            if job.product_date is not None
+        ],
+        'jobs': results,
+    }
+
+
+def _run_checkpointed_internal_enrichment_phase(
+    *,
+    run_logger,
+    timings,
+    phase_name,
+    jobs,
+    sync_run_id,
+    operation_for_job,
+):
+    results = []
+    for job in jobs:
+        job_phase_name = f'{phase_name}:{job.product_date.isoformat()}'
+        results.append(
+            _run_logged_internal_enrichment_phase(
+                run_logger,
+                timings,
+                job_phase_name,
+                lambda job=job: sync_jobs.run_checkpointed_job(
+                    job,
+                    lambda job=job: operation_for_job(job),
+                    sync_run_id=sync_run_id,
+                    reclaim_abandoned=True,
+                    run_logger=run_logger,
+                ),
+            )
+        )
+    return _aggregate_internal_checkpoint_results(phase_name, jobs, results)
+
+
 def _run_internal_enrichment_phases(
     product_dates,
     *,
@@ -2864,14 +2928,41 @@ def _run_internal_enrichment_phases(
 
     timings = []
     phase_results = {}
+    planned_jobs = sync_jobs.plan_internal_enrichment_jobs(
+        dates,
+        include_backtest=include_backtest,
+        sync_run_id=sync_run_id,
+        run_logger=run_logger,
+    )
+    sync_jobs.reclaim_running_jobs(
+        planned_jobs,
+        reason='internal enrichment lock acquired',
+        reclaim_abandoned=True,
+        run_logger=run_logger,
+    )
+    checkpoint_jobs = sync_jobs.jobs_by_name(planned_jobs)
+    checkpoint_summary = sync_jobs.summary_for_product_dates(dates)
+    run_logger.info(
+        'Internal enrichment checkpoint summary after planning: '
+        'dates=%s total=%s succeeded=%s pending=%s running=%s failed=%s skipped=%s.',
+        ','.join(day.isoformat() for day in dates),
+        checkpoint_summary['total'],
+        checkpoint_summary['succeeded'],
+        checkpoint_summary['pending'],
+        checkpoint_summary['running'],
+        checkpoint_summary['failed'],
+        checkpoint_summary['skipped'],
+    )
 
     phase_results[sync_metadata.STAGE_WORKLOAD_EVIDENCE] = (
-        _run_logged_internal_enrichment_phase(
-            run_logger,
-            timings,
-            sync_metadata.STAGE_WORKLOAD_EVIDENCE,
-            lambda: _safe_build_workload_recovery_evidence_stage(
-                dates,
+        _run_checkpointed_internal_enrichment_phase(
+            run_logger=run_logger,
+            timings=timings,
+            phase_name=sync_metadata.STAGE_WORKLOAD_EVIDENCE,
+            jobs=checkpoint_jobs.get(sync_metadata.STAGE_WORKLOAD_EVIDENCE, []),
+            sync_run_id=sync_run_id,
+            operation_for_job=lambda checkpoint_job: _safe_build_workload_recovery_evidence_stage(
+                [checkpoint_job.product_date],
                 sync_run_id=sync_run_id,
                 source=source,
                 job_name=job_name,
@@ -2880,12 +2971,14 @@ def _run_internal_enrichment_phases(
         )
     )
     phase_results[sync_metadata.STAGE_COMPOSED_READS] = (
-        _run_logged_internal_enrichment_phase(
-            run_logger,
-            timings,
-            sync_metadata.STAGE_COMPOSED_READS,
-            lambda: _safe_build_composed_reads_stage(
-                dates,
+        _run_checkpointed_internal_enrichment_phase(
+            run_logger=run_logger,
+            timings=timings,
+            phase_name=sync_metadata.STAGE_COMPOSED_READS,
+            jobs=checkpoint_jobs.get(sync_metadata.STAGE_COMPOSED_READS, []),
+            sync_run_id=sync_run_id,
+            operation_for_job=lambda checkpoint_job: _safe_build_composed_reads_stage(
+                [checkpoint_job.product_date],
                 sync_run_id=sync_run_id,
                 source=source,
                 job_name=job_name,
@@ -2894,12 +2987,14 @@ def _run_internal_enrichment_phases(
         )
     )
     phase_results[STAGE_LEGACY_READ_RECONCILIATION_AUDIT] = (
-        _run_logged_internal_enrichment_phase(
-            run_logger,
-            timings,
-            STAGE_LEGACY_READ_RECONCILIATION_AUDIT,
-            lambda: _safe_run_legacy_read_reconciliation_audit_stage(
-                dates,
+        _run_checkpointed_internal_enrichment_phase(
+            run_logger=run_logger,
+            timings=timings,
+            phase_name=STAGE_LEGACY_READ_RECONCILIATION_AUDIT,
+            jobs=checkpoint_jobs.get(STAGE_LEGACY_READ_RECONCILIATION_AUDIT, []),
+            sync_run_id=sync_run_id,
+            operation_for_job=lambda checkpoint_job: _safe_run_legacy_read_reconciliation_audit_stage(
+                [checkpoint_job.product_date],
                 sync_run_id=sync_run_id,
                 source=source,
                 job_name=job_name,
@@ -2909,11 +3004,13 @@ def _run_internal_enrichment_phases(
     )
     if include_backtest:
         phase_results[sync_metadata.STAGE_BACKTEST_REFRESH] = (
-            _run_logged_internal_enrichment_phase(
-                run_logger,
-                timings,
-                sync_metadata.STAGE_BACKTEST_REFRESH,
-                lambda: _refresh_availability_backtest_phase(
+            _run_checkpointed_internal_enrichment_phase(
+                run_logger=run_logger,
+                timings=timings,
+                phase_name=sync_metadata.STAGE_BACKTEST_REFRESH,
+                jobs=checkpoint_jobs.get(sync_metadata.STAGE_BACKTEST_REFRESH, []),
+                sync_run_id=sync_run_id,
+                operation_for_job=lambda _checkpoint_job: _refresh_availability_backtest_phase(
                     sync_run_id,
                     status,
                     run_logger,
@@ -2935,6 +3032,7 @@ def _run_internal_enrichment_phases(
         'phase_results': phase_results,
         'failed_phases': failed_phases,
         'phase_timings': timings,
+        'checkpoint_summary': sync_jobs.summary_for_product_dates(dates),
     }
 
 
@@ -3880,6 +3978,7 @@ def run_internal_enrichment(
         'include_backtest': include_backtest,
         'phase_results': {},
         'failed_phases': [],
+        'checkpoint_summary': {},
         'message': '',
         'errors': 0,
     }
@@ -3916,6 +4015,7 @@ def run_internal_enrichment(
                 'phase_results': phase_result['phase_results'],
                 'failed_phases': phase_result['failed_phases'],
                 'phase_timings': phase_result['phase_timings'],
+                'checkpoint_summary': phase_result.get('checkpoint_summary', {}),
             })
             status['errors'] = len(status['failed_phases'])
             if status['failed_phases']:
