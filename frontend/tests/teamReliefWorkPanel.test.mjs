@@ -4,6 +4,7 @@ import test, { after } from 'node:test'
 import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { createServer } from 'vite'
+import { populatedBoard } from './fixtures/bullpenBoardFixtures.mjs'
 
 const server = await createServer({
   root: process.cwd(),
@@ -18,6 +19,9 @@ after(async () => {
 
 const { default: TeamReliefWorkPanel } = await server.ssrLoadModule(
   '/src/components/bullpen/TeamReliefWorkPanel.jsx',
+)
+const { default: TonightsBullpenBoard } = await server.ssrLoadModule(
+  '/src/components/bullpen/board/TonightsBullpenBoard.jsx',
 )
 const { getTeamReliefWork } = await server.ssrLoadModule('/src/utils/api.js')
 
@@ -102,6 +106,32 @@ function renderPanel(props = {}) {
   )
 }
 
+function renderSelectedTeamBoard(props = {}) {
+  return renderToStaticMarkup(
+    React.createElement(TonightsBullpenBoard, {
+      teams: {
+        loading: false,
+        data: [
+          { team_id: 110, team_name: 'Test Club', team_abbreviation: 'TST' },
+          { team_id: 147, team_name: 'New York Yankees', team_abbreviation: 'NYY' },
+        ],
+      },
+      initialSelectedTeam: 147,
+      boardPayload: {
+        ...populatedBoard,
+        team: { team_id: 147, team_name: 'New York Yankees', team_abbreviation: 'NYY' },
+      },
+      storyPayload: null,
+      gameContextPayload: null,
+      teamReliefWorkPayload: {
+        ...teamReliefWorkPayload,
+        team: { team_id: 147, team_name: 'New York Yankees', team_abbreviation: 'NYY' },
+      },
+      ...props,
+    }),
+  )
+}
+
 function headerKeys(headers = {}) {
   return Object.keys(headers).map(key => key.toLowerCase())
 }
@@ -125,6 +155,26 @@ test('fetches the public team relief-work route without privileged headers', asy
   assert.equal(calls[0].url, '/api/bullpen/teams/110/relief-work')
   assert.equal(calls[0].url.includes('/api/system/internal/team-evidence'), false)
   assert.equal(calls[0].url.includes('/api/system/internal/pitcher-evidence'), false)
+  assert.equal(headerKeys(calls[0].options.headers).includes('x-admin-token'), false)
+})
+
+test('fetch helper uses the selected MLB team id for team relief work', async (t) => {
+  const originalFetch = globalThis.fetch
+  const calls = []
+  t.after(() => {
+    globalThis.fetch = originalFetch
+  })
+
+  globalThis.fetch = async (url, options = {}) => {
+    calls.push({ url, options })
+    return { ok: true, json: async () => teamReliefWorkPayload }
+  }
+
+  await getTeamReliefWork(147)
+
+  assert.equal(calls.length, 1)
+  assert.equal(calls[0].url, '/api/bullpen/teams/147/relief-work')
+  assert.equal(calls[0].url.includes('/api/bullpen/pitchers/147'), false)
   assert.equal(headerKeys(calls[0].options.headers).includes('x-admin-token'), false)
 })
 
@@ -194,11 +244,50 @@ test('renders exact loading and error states', () => {
   const loadingHtml = renderPanel({ loading: true })
   const errorHtml = renderPanel({ error: 'network details must not render' })
 
+  assert.ok(htmlIncludes(loadingHtml, 'Recent Bullpen Work'))
   assert.ok(htmlIncludes(loadingHtml, 'Loading recent bullpen work…'))
-  assert.equal(htmlIncludes(loadingHtml, 'Recent Bullpen Work'), false)
+  assert.ok(htmlIncludes(errorHtml, 'Recent Bullpen Work'))
   assert.ok(htmlIncludes(errorHtml, 'Recent bullpen work is unavailable.'))
   assert.equal(htmlIncludes(errorHtml, 'network details must not render'), false)
-  assert.equal(htmlIncludes(errorHtml, 'Recent Bullpen Work'), false)
+})
+
+test('selected team board renders Recent Bullpen Work in the visible board path', () => {
+  const html = renderSelectedTeamBoard()
+
+  assert.ok(htmlIncludes(html, 'Recent Bullpen Work'))
+  assert.ok(htmlIncludes(html, 'Review pitcher lanes'))
+  assert.ok(htmlIncludes(html, 'Overall Availability: Elevated'))
+  assert.ok(htmlIncludes(html, 'Tonight&#x27;s Bullpen Board — New York Yankees'))
+  assert.ok(htmlIncludes(html, teamReliefWorkPayload.scope_sentence))
+
+  const operatingIndex = html.indexOf('Review pitcher lanes')
+  const reliefIndex = html.indexOf('Recent Bullpen Work')
+  const boardIndex = html.indexOf('Tonight&#x27;s Bullpen Board — New York Yankees')
+
+  assert.ok(operatingIndex !== -1)
+  assert.ok(reliefIndex !== -1)
+  assert.ok(boardIndex !== -1)
+  assert.ok(operatingIndex < reliefIndex)
+  assert.ok(reliefIndex < boardIndex)
+})
+
+test('selected team board keeps relief work visible on endpoint failure', () => {
+  const html = renderSelectedTeamBoard({
+    teamReliefWorkPayload: undefined,
+    teamReliefWorkError: 'request failed',
+  })
+
+  assert.ok(htmlIncludes(html, 'Recent Bullpen Work'))
+  assert.ok(htmlIncludes(html, 'Recent bullpen work is unavailable.'))
+  assert.equal(htmlIncludes(html, 'request failed'), false)
+  assert.ok(htmlIncludes(html, 'Tonight&#x27;s Bullpen Board — New York Yankees'))
+})
+
+test('selected team board renders one Recent Bullpen Work panel', () => {
+  const html = renderSelectedTeamBoard()
+  const matches = html.match(/Recent Bullpen Work/g) || []
+
+  assert.equal(matches.length, 1)
 })
 
 test('source guard blocks private routes and fields from the new panel and mount', async () => {
@@ -210,7 +299,11 @@ test('source guard blocks private routes and fields from the new panel and mount
     new URL('../src/components/bullpen/Bullpen.jsx', import.meta.url),
     'utf8',
   )
-  const source = `${panelSource}\n${bullpenSource}`
+  const boardSource = await readFile(
+    new URL('../src/components/bullpen/board/TonightsBullpenBoard.jsx', import.meta.url),
+    'utf8',
+  )
+  const source = `${panelSource}\n${bullpenSource}\n${boardSource}`
 
   for (const forbidden of [
     '/api/system/internal/team-evidence',
@@ -324,4 +417,22 @@ test('Bullpen mounts the panel additively before the existing table', async () =
   ]) {
     assert.ok(source.includes(legacyText), legacyText)
   }
+})
+
+test('team board mounts the panel between operating state and board lanes', async () => {
+  const source = await readFile(
+    new URL('../src/components/bullpen/board/TonightsBullpenBoard.jsx', import.meta.url),
+    'utf8',
+  )
+  const operatingIndex = source.indexOf('<BullpenOperatingStateCard')
+  const mountIndex = source.indexOf('<TeamReliefWorkPanel')
+  const boardIndex = source.indexOf('<BullpenBoardView')
+
+  assert.notEqual(operatingIndex, -1)
+  assert.notEqual(mountIndex, -1)
+  assert.notEqual(boardIndex, -1)
+  assert.ok(operatingIndex < mountIndex)
+  assert.ok(mountIndex < boardIndex)
+  assert.ok(source.includes('teamId={selectedTeam}'))
+  assert.equal(source.includes('teamId={detailPitcherId}'), false)
 })
