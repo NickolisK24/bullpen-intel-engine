@@ -23,6 +23,7 @@ const { DashboardView } = await server.ssrLoadModule('/src/components/dashboard/
 const { IntelligenceSurfaceView } = await server.ssrLoadModule('/src/components/home/IntelligenceSurface.jsx')
 const { StoriesView } = await server.ssrLoadModule('/src/components/stories/Stories.jsx')
 const { DataTrustView } = await server.ssrLoadModule('/src/components/trust/DataTrust.jsx')
+const { SidebarDataFreshnessCard, sidebarFreshness } = await server.ssrLoadModule('/src/components/Sidebar.jsx')
 const { default: BullpenBoardView } = await server.ssrLoadModule('/src/components/bullpen/board/BullpenBoardView.jsx')
 const { default: BullpenComparisonView } = await server.ssrLoadModule('/src/components/bullpen/board/BullpenComparisonView.jsx')
 
@@ -67,6 +68,18 @@ const syncAhead = {
     freshness_state: 'current',
     label: 'Current baseball data through 2026-06-17.',
     limitations: [],
+  },
+}
+
+const syncAheadIncomplete = {
+  ...syncAhead,
+  freshness: {
+    is_current: false,
+    is_stale: false,
+    freshness_state: 'limited',
+    label: 'Baseball data through 2026-06-17 is incomplete and is not publishable as current.',
+    limitations: ['Missing completed-game coverage for the checked date.'],
+    reason_codes: ['slate_log_coverage_incomplete'],
   },
 }
 
@@ -137,14 +150,37 @@ test('user-facing data-through surfaces use served freshness when sync is ahead 
     Stories: render(React.createElement(StoriesView, { dashboard })),
     Bullpen: render(React.createElement(BullpenBoardView, { board })),
     Comparison: render(React.createElement(BullpenComparisonView, { payload: comparison })),
+    Sidebar: render(React.createElement(SidebarDataFreshnessCard, {
+      freshness: sidebarFreshness(syncAhead, false, null, servedFreshness),
+    })),
   }
 
   for (const [surface, html] of Object.entries(surfaces)) {
     if (surface === 'Today') {
       assert.ok(html.includes(todayExpectedLine), `${surface} did not show served freshness data-through`)
       assert.equal(html.includes(todaySyncAheadLine), false, `${surface} leaked raw sync data-through`)
+    } else if (surface === 'Sidebar') {
+      assert.ok(html.includes('Bullpen data through'), `${surface} did not label public data-through`)
+      assert.ok(html.includes('June 16, 2026'), `${surface} did not show served freshness data-through`)
+      assert.equal(html.includes('June 17, 2026'), false, `${surface} leaked raw sync data-through`)
     } else {
       assertUsesServedFreshness(surface, html)
     }
   }
+})
+
+test('Data & Trust separates public data-through from a newer incomplete checked date', () => {
+  const html = render(React.createElement(DataTrustView, {
+    backtest: fetchState(null),
+    dashboard: fetchState(dashboard),
+    overview: fetchState(null),
+    sync: fetchState(syncAheadIncomplete),
+    v2BullpenState: fetchState(null),
+    teamOperationsReadiness: fetchState(null),
+  }))
+
+  assert.ok(html.includes('June 16, 2026'), 'public data-through date was not rendered')
+  assert.ok(html.includes('Public bullpen data remains through June 16, 2026.'))
+  assert.ok(html.includes('Latest checked baseball date June 17, 2026 is not publishable yet.'))
+  assert.ok(html.includes('Baseball data through 2026-06-17 is incomplete and is not publishable as current.'))
 })

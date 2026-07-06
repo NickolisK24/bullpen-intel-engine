@@ -156,6 +156,37 @@ test('Sidebar Data Freshness keeps date-only data through values timezone-safe',
   assert.notEqual(freshness.dataThrough, 'May 31, 2026')
 })
 
+test('Sidebar Data Freshness uses published freshness when sync checked an incomplete newer date', () => {
+  const freshness = sidebarFreshness({
+    status: 'success',
+    last_checked: '2026-07-06T00:27:00Z',
+    last_sync: '2026-07-06T00:27:00Z',
+    last_successful_sync: '2026-07-06T00:27:00Z',
+    data_through: '2026-07-05',
+    data: { game_logs: 1, latest_game_date: '2026-07-05' },
+    freshness: {
+      is_current: false,
+      freshness_state: 'limited',
+      label: 'Baseball data through 2026-07-05 is incomplete and is not publishable as current.',
+      limitations: ['Missing completed-game coverage for the checked date.'],
+      reason_codes: ['slate_log_coverage_incomplete'],
+    },
+  }, false, null, {
+    data_through: '2026-07-03',
+    latest_workload_date: '2026-07-03',
+    last_successful_sync: '2026-07-04T10:42:00Z',
+    sync_status: 'success',
+    is_current: true,
+    is_stale: false,
+    freshness_state: 'current',
+    label: 'Current baseball data through 2026-07-03.',
+    limitations: [],
+  })
+
+  assert.equal(freshness.dataThrough, 'July 3, 2026')
+  assert.notEqual(freshness.dataThrough, 'July 5, 2026')
+})
+
 test('desktop shell keeps the navigation rail fixed while content scrolls', () => {
   const sidebarSource = readFileSync(new URL('../src/components/Sidebar.jsx', import.meta.url), 'utf8')
   const appSource = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8')

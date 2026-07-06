@@ -25,10 +25,13 @@ export function getSyncStatusView(data, { now = Date.now(), freshnessAuthority }
   const status = data?.status
   const latestAttempt = data?.last_checked || data?.last_sync
   const successfulSync = data?.last_successful_sync || (successfulStatuses.has(status) ? data?.last_sync : null)
-  const dataThroughSource = freshnessAuthority === undefined
-    ? (data?.data_through || data?.data?.latest_game_date)
-    : freshnessAuthority?.data_through
+  const rawDataThroughSource = data?.data_through || data?.data?.latest_game_date
+  const hasFreshnessAuthority = freshnessAuthority !== undefined
+  const dataThroughSource = hasFreshnessAuthority
+    ? freshnessAuthority?.data_through
+    : rawDataThroughSource
   const dataThrough = formatDateOnly(dataThroughSource, { month: 'long' })
+  const checkedDataThrough = formatDateOnly(rawDataThroughSource, { month: 'long' })
   const dataCoverageLine = completedGamesDataLine(dataThroughSource)
   const lastCheckedValue = formatUtcDateTimeEt(latestAttempt, { includeDate: false })
   const lastDataUpdateValue = formatUtcDateTimeEt(successfulSync, { includeDate: false })
@@ -46,6 +49,28 @@ export function getSyncStatusView(data, { now = Date.now(), freshnessAuthority }
   const coverageValue = data?.pitchers_updated > 0
     ? `${data.pitchers_updated.toLocaleString()} Pitchers Refreshed`
     : null
+  const checkedDateAheadOfPublic = hasFreshnessAuthority
+    && dataThroughSource
+    && rawDataThroughSource
+    && rawDataThroughSource > dataThroughSource
+  const authorityLabel = freshnessAuthority?.label
+  const freshnessHelper = (baseHelper, { limited = false } = {}) => {
+    if (!checkedDateAheadOfPublic || !dataThrough || !checkedDataThrough) {
+      return hasFreshnessAuthority && !limited && authorityLabel
+        ? authorityLabel
+        : baseHelper
+    }
+
+    if (limited) {
+      return [
+        baseHelper,
+        `Public bullpen data remains through ${dataThrough}.`,
+        `Latest checked baseball date ${checkedDataThrough} is not publishable yet.`,
+      ].filter(Boolean).join(' ')
+    }
+
+    return authorityLabel || `Public bullpen data is through ${dataThrough}.`
+  }
 
   if (failedStatuses.has(status)) {
     return {
@@ -65,9 +90,12 @@ export function getSyncStatusView(data, { now = Date.now(), freshnessAuthority }
       dataValue: dataThrough,
       dataCoverageLine,
       coverageValue,
-      helper: stale
-        ? (freshness.label || data?.message || 'Latest sync attempt failed.')
-        : (data?.message || 'Latest sync attempt failed.'),
+      helper: freshnessHelper(
+        stale
+          ? (freshness.label || data?.message || 'Latest sync attempt failed.')
+          : (data?.message || 'Latest sync attempt failed.'),
+        { limited: true },
+      ),
       limitations,
       reasonCodes,
       freshnessState,
@@ -96,9 +124,12 @@ export function getSyncStatusView(data, { now = Date.now(), freshnessAuthority }
       dataCoverageLine,
       coverageValue,
       refreshed: coverageValue,
-      helper: stale
-        ? (freshness.label || 'Workload data is outside the active freshness window.')
-        : freshness.label,
+      helper: freshnessHelper(
+        stale
+          ? (freshness.label || 'Workload data is outside the active freshness window.')
+          : freshness.label,
+        { limited },
+      ),
       limitations,
       reasonCodes,
       freshnessState,

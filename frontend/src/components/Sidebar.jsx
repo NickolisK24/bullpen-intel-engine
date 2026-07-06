@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { NavLink } from 'react-router-dom'
 import { useFetch } from '../hooks/useFetch'
-import { getSyncStatus } from '../utils/api'
+import { getBullpenDashboard, getSyncStatus } from '../utils/api'
 import { getSyncStatusView } from './dashboard/syncStatusView'
 
 const NAV = [
@@ -13,7 +13,7 @@ const NAV = [
   { to: '/trust',       icon: '🛡', label: 'Data & Trust' },
 ]
 
-export function sidebarFreshness(syncStatus, loading, error) {
+export function sidebarFreshness(syncStatus, loading, error, freshnessAuthority) {
   if (loading && !syncStatus) {
     return {
       lastChecked: 'Loading',
@@ -30,7 +30,7 @@ export function sidebarFreshness(syncStatus, loading, error) {
     }
   }
 
-  const view = getSyncStatusView(syncStatus)
+  const view = getSyncStatusView(syncStatus, { freshnessAuthority })
   return {
     lastChecked: view.lastCheckedValue || 'Unavailable',
     lastDataUpdate: view.lastDataUpdateValue || (
@@ -72,11 +72,13 @@ export default function Sidebar() {
   // Mobile-only collapsible nav. On lg+ the nav is always shown and this
   // state is irrelevant (the hamburger is hidden and `lg:flex` forces it open).
   const [open, setOpen] = useState(false)
+  const dashboard = useFetch(getBullpenDashboard)
   const syncStatus = useFetch(getSyncStatus)
   const freshness = sidebarFreshness(
     syncStatus.data,
     syncStatus.loading,
     syncStatus.error,
+    dashboard.data?.freshness || null,
   )
 
   return (
