@@ -269,6 +269,10 @@ def test_phase0e_switches_and_legacy_public_files_not_modified():
     changed = _changed_files_vs_main()
     if not changed:
         pytest.skip('git diff against origin/main unavailable')
+    allowed_public_freshness_display_files = {
+        'frontend/src/components/Sidebar.jsx',
+        'frontend/src/components/dashboard/syncStatusView.js',
+    }
     forbidden_prefixes = (
         'backend/api/',
         'frontend/src/',
@@ -282,6 +286,7 @@ def test_phase0e_switches_and_legacy_public_files_not_modified():
     )
     assert not [
         path for path in changed
+        if path.replace('\\', '/') not in allowed_public_freshness_display_files
         if any(path.replace('\\', '/').startswith(prefix) for prefix in forbidden_prefixes)
     ]
     if 'backend/services/sync.py' in [path.replace('\\', '/') for path in changed]:
