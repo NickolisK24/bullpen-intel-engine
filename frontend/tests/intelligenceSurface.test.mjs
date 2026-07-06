@@ -874,6 +874,74 @@ test('live publishable dashboard freshness keeps Today current while Tonight is 
   assert.equal(htmlIncludes(tonightHtml, 'Refresh delayed'), false)
 })
 
+test('Bullpen Picture uses current published freshness when landscape freshness is incomplete', () => {
+  const liveDashboard = clone(dashboard)
+  liveDashboard.freshness = {
+    data_through: '2026-07-05',
+    latest_workload_date: '2026-07-05',
+    last_successful_sync: '2026-07-06T04:34:36Z',
+    sync_status: 'success',
+    complete_enough_to_publish: true,
+    validations_passed: true,
+    is_current: false,
+    is_stale: false,
+    freshness_state: 'incomplete',
+    label: 'Baseball data through 2026-07-05 is incomplete and is not publishable as current.',
+    limitations: ['Slate coverage validations did not pass.'],
+    slate_coverage: {
+      complete_enough_to_publish: true,
+      validations_passed: true,
+      games_final: 15,
+      games_fully_ingested: 15,
+    },
+  }
+  const incompleteLandscape = clone(landscape)
+  incompleteLandscape.reference_date = '2026-07-06'
+  incompleteLandscape.games = {
+    ...incompleteLandscape.games,
+    as_of_date: '2026-07-05',
+    as_of_count: 15,
+    data_state: 'historical',
+    is_today: false,
+    today_count: 0,
+  }
+  incompleteLandscape.freshness = {
+    data_through: '2026-07-05',
+    latest_workload_date: '2026-07-05',
+    last_successful_sync: '2026-07-06T04:34:36Z',
+    sync_status: 'success',
+    complete_enough_to_publish: false,
+    validations_passed: false,
+    is_current: false,
+    is_stale: false,
+    freshness_state: 'incomplete',
+    label: 'Baseball data through 2026-07-05 is incomplete and is not publishable as current.',
+    limitations: ['Slate coverage validations did not pass.'],
+    slate_coverage: {
+      complete_enough_to_publish: false,
+      validations_passed: false,
+      games_final: 14,
+      games_fully_ingested: 14,
+      games_included: 15,
+      games_incomplete: 1,
+    },
+  }
+
+  const html = render(React.createElement(IntelligenceSurfaceView, {
+    intelligence: intelligenceOk,
+    tonight: tonightOk,
+    dashboard: liveDashboard,
+    landscape: incompleteLandscape,
+    teams,
+  }))
+  const pictureHtml = sectionSlice(html, 'Today&#x27;s Bullpen Picture', 'Tonight&#x27;s Bullpen Watch')
+
+  assert.ok(htmlIncludes(pictureHtml, 'Published view current'))
+  assert.ok(htmlIncludes(pictureHtml, 'Published view through Jul 5'))
+  assert.ok(htmlIncludes(pictureHtml, 'Last synced 12:34 AM ET'))
+  assert.equal(htmlIncludes(pictureHtml, 'Refresh delayed'), false)
+})
+
 test('Tonight fail-closed payload scopes stale chip to the slate when published view is current', () => {
   const html = render(React.createElement(IntelligenceSurfaceView, {
     intelligence: intelligenceOk,

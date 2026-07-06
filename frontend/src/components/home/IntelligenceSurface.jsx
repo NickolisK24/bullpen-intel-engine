@@ -1108,7 +1108,9 @@ function BullpenPicture({
   freshness,
 }) {
   const picture = getBullpenPictureView(landscape)
-  const rowFreshness = sectionFreshness(landscape, freshness)
+  const rowFreshness = freshnessIsCurrent(freshness)
+    ? freshness
+    : sectionFreshness(landscape, freshness)
   const dataThrough = firstTextValue(
     landscape?.games?.as_of_date,
     freshnessDataThrough(rowFreshness),
