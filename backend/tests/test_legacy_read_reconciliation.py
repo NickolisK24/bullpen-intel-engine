@@ -60,6 +60,7 @@ from db_config import configure_test_database, create_test_schema, drop_test_sch
 REPO_ROOT = Path(__file__).resolve().parents[2]
 MIGRATIONS_DIR = REPO_ROOT / 'backend' / 'migrations' / 'versions'
 AUDIT_REVISION = 'e4b7c9d2a6f0'
+EXPECTED_ALEMBIC_HEAD = 'fa9c1d2e3b47'
 PRIOR_REVISION = 'a9d4e7c2f6b1'
 PRODUCT_DATE = date(2026, 7, 5)
 
@@ -292,7 +293,7 @@ def test_legacy_read_audit_migration_round_trip_single_head_and_uniqueness(app):
         if rev:
             revisions[rev.group(1)] = down.group(1).strip() if down else None
     referenced = {down for down in revisions.values() if down and down != 'None'}
-    assert set(revisions) - referenced == {AUDIT_REVISION}
+    assert set(revisions) - referenced == {EXPECTED_ALEMBIC_HEAD}
 
     engine = sa.create_engine('sqlite:///:memory:')
     metadata = sa.MetaData()

@@ -53,6 +53,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 MIGRATIONS_DIR = REPO_ROOT / 'backend' / 'migrations' / 'versions'
 PHASE0E_REVISION = 'a9d4e7c2f6b1'
 PHASE0E_AUDIT_REVISION = 'e4b7c9d2a6f0'
+EXPECTED_ALEMBIC_HEAD = 'fa9c1d2e3b47'
 PHASE0D_REVISION = 'c8d2f4a1b6e9'
 PRODUCT_DATE = date(2026, 7, 5)
 
@@ -708,7 +709,7 @@ def test_phase0e_migration_round_trip_and_single_head_static():
         if rev:
             revisions[rev.group(1)] = (down.group(1).strip() if down else None)
     referenced = {down for down in revisions.values() if down and down != 'None'}
-    assert set(revisions) - referenced == {PHASE0E_AUDIT_REVISION}
+    assert set(revisions) - referenced == {EXPECTED_ALEMBIC_HEAD}
 
     engine = sa.create_engine('sqlite:///:memory:')
     metadata = sa.MetaData()
