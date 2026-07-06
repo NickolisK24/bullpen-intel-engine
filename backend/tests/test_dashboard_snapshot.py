@@ -640,7 +640,7 @@ class TestDashboardSnapshotService:
                 lambda: True,
             )
 
-            def busy_lock(*, job_name=None, source=None):
+            def busy_lock(*, job_name=None, source=None, lock_scope=None):
                 raise sync_metadata.SyncWriterConflict(
                     reason=sync_metadata.SYNC_WRITER_ALREADY_RUNNING,
                     job_name=job_name,

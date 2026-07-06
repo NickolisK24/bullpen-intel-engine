@@ -2771,6 +2771,173 @@ def _restore_completed_sync_publish_stage(sync_run_id, *, run_logger=None):
         return None
 
 
+def _refresh_availability_backtest_phase(sync_run_id, status, run_logger):
+    try:
+        from services.availability_backtest import refresh_availability_backtest
+        backtest = refresh_availability_backtest()
+        if status is not None:
+            status['availability_backtest_status'] = backtest.get('status')
+            status['availability_backtest_computed_at'] = backtest.get('computed_at')
+        run_logger.info(
+            'Refreshed availability backtest (%s)',
+            backtest.get('computed_at') or backtest.get('status'),
+        )
+        result = {'status': backtest.get('status') or 'completed'}
+    except Exception as exc:
+        db.session.rollback()
+        if status is not None:
+            status['availability_backtest_status'] = 'failed'
+            status['availability_backtest_error'] = str(exc)
+        run_logger.warning('Availability backtest refresh failed: %s', exc)
+        result = {'status': 'failed', 'error': str(exc)}
+    sync_metadata.set_sync_stage(sync_run_id, sync_metadata.STAGE_BACKTEST_REFRESH)
+    return result
+
+
+def _run_logged_internal_enrichment_phase(
+    run_logger,
+    timings,
+    phase_name,
+    operation,
+):
+    started = time.perf_counter()
+    run_logger.info('Internal enrichment phase starting: phase=%s.', phase_name)
+    try:
+        result = operation()
+    except Exception as exc:
+        elapsed_seconds = round(time.perf_counter() - started, 3)
+        timings.append({
+            'phase': phase_name,
+            'status': 'failed',
+            'elapsed_seconds': elapsed_seconds,
+        })
+        run_logger.warning(
+            'Internal enrichment phase failed: phase=%s elapsed_seconds=%s '
+            'error=%s',
+            phase_name,
+            elapsed_seconds,
+            exc,
+        )
+        raise
+
+    elapsed_seconds = round(time.perf_counter() - started, 3)
+    status = _daily_sync_phase_status(result)
+    timings.append({
+        'phase': phase_name,
+        'status': status,
+        'elapsed_seconds': elapsed_seconds,
+    })
+    run_logger.info(
+        'Internal enrichment phase completed: phase=%s status=%s '
+        'elapsed_seconds=%s.',
+        phase_name,
+        status,
+        elapsed_seconds,
+    )
+    return result
+
+
+def _internal_phase_failed(result):
+    if isinstance(result, dict):
+        return result.get('status') == 'failed'
+    return False
+
+
+def _run_internal_enrichment_phases(
+    product_dates,
+    *,
+    sync_run_id,
+    source,
+    job_name,
+    run_logger,
+    include_backtest,
+    status=None,
+):
+    dates = sorted({_date for _date in product_dates or [] if _date is not None})
+    if not dates:
+        return {
+            'status': 'skipped',
+            'reason': 'no_product_dates',
+            'product_dates': [],
+            'phase_results': {},
+        }
+
+    timings = []
+    phase_results = {}
+
+    phase_results[sync_metadata.STAGE_WORKLOAD_EVIDENCE] = (
+        _run_logged_internal_enrichment_phase(
+            run_logger,
+            timings,
+            sync_metadata.STAGE_WORKLOAD_EVIDENCE,
+            lambda: _safe_build_workload_recovery_evidence_stage(
+                dates,
+                sync_run_id=sync_run_id,
+                source=source,
+                job_name=job_name,
+                run_logger=run_logger,
+            ),
+        )
+    )
+    phase_results[sync_metadata.STAGE_COMPOSED_READS] = (
+        _run_logged_internal_enrichment_phase(
+            run_logger,
+            timings,
+            sync_metadata.STAGE_COMPOSED_READS,
+            lambda: _safe_build_composed_reads_stage(
+                dates,
+                sync_run_id=sync_run_id,
+                source=source,
+                job_name=job_name,
+                run_logger=run_logger,
+            ),
+        )
+    )
+    phase_results[STAGE_LEGACY_READ_RECONCILIATION_AUDIT] = (
+        _run_logged_internal_enrichment_phase(
+            run_logger,
+            timings,
+            STAGE_LEGACY_READ_RECONCILIATION_AUDIT,
+            lambda: _safe_run_legacy_read_reconciliation_audit_stage(
+                dates,
+                sync_run_id=sync_run_id,
+                source=source,
+                job_name=job_name,
+                run_logger=run_logger,
+            ),
+        )
+    )
+    if include_backtest:
+        phase_results[sync_metadata.STAGE_BACKTEST_REFRESH] = (
+            _run_logged_internal_enrichment_phase(
+                run_logger,
+                timings,
+                sync_metadata.STAGE_BACKTEST_REFRESH,
+                lambda: _refresh_availability_backtest_phase(
+                    sync_run_id,
+                    status,
+                    run_logger,
+                ),
+            )
+        )
+
+    failed_phases = [
+        phase_name
+        for phase_name, result in phase_results.items()
+        if _internal_phase_failed(result)
+    ]
+    return {
+        'status': (
+            sync_metadata.STATUS_FAILED if failed_phases
+            else sync_metadata.STATUS_SUCCESS
+        ),
+        'product_dates': [day.isoformat() for day in dates],
+        'phase_results': phase_results,
+        'failed_phases': failed_phases,
+        'phase_timings': timings,
+    }
+
+
 def _log_daily_sync_phase_summary(run_logger, timings):
     if not timings:
         return
@@ -2864,6 +3031,7 @@ def run_postgame_refresh(
     app,
     schedule_date: date | None = None,
     source: str = sync_metadata.SOURCE_GITHUB_ACTIONS,
+    include_internal_enrichment: bool = True,
 ):
     """
     Lightweight completed-game refresh.
@@ -3193,46 +3361,49 @@ def run_postgame_refresh(
                     _safe_generate_intelligence_surface_snapshot(
                         schedule_date, status=status, run_logger=run_logger)
 
-                active_stage = sync_metadata.STAGE_WORKLOAD_EVIDENCE
-                _run_post_publish_internal_postgame_phase(
-                    run_logger,
-                    sync_metadata.STAGE_WORKLOAD_EVIDENCE,
-                    lambda: _safe_build_workload_recovery_evidence_stage(
-                        [schedule_date],
-                        sync_run_id=sync_run_id,
-                        source='postgame_refresh',
-                        job_name=sync_metadata.JOB_POSTGAME_REFRESH,
+                if include_internal_enrichment:
+                    active_stage = sync_metadata.STAGE_WORKLOAD_EVIDENCE
+                    _run_post_publish_internal_postgame_phase(
+                        run_logger,
+                        sync_metadata.STAGE_WORKLOAD_EVIDENCE,
+                        lambda: _safe_build_workload_recovery_evidence_stage(
+                            [schedule_date],
+                            sync_run_id=sync_run_id,
+                            source='postgame_refresh',
+                            job_name=sync_metadata.JOB_POSTGAME_REFRESH,
+                            run_logger=run_logger,
+                        ),
+                    )
+                    active_stage = sync_metadata.STAGE_COMPOSED_READS
+                    _run_post_publish_internal_postgame_phase(
+                        run_logger,
+                        sync_metadata.STAGE_COMPOSED_READS,
+                        lambda: _safe_build_composed_reads_stage(
+                            [schedule_date],
+                            sync_run_id=sync_run_id,
+                            source='postgame_refresh',
+                            job_name=sync_metadata.JOB_POSTGAME_REFRESH,
+                            run_logger=run_logger,
+                        ),
+                    )
+                    active_stage = STAGE_LEGACY_READ_RECONCILIATION_AUDIT
+                    _run_post_publish_internal_postgame_phase(
+                        run_logger,
+                        STAGE_LEGACY_READ_RECONCILIATION_AUDIT,
+                        lambda: _safe_run_legacy_read_reconciliation_audit_stage(
+                            [schedule_date],
+                            sync_run_id=sync_run_id,
+                            source='postgame_refresh',
+                            job_name=sync_metadata.JOB_POSTGAME_REFRESH,
+                            run_logger=run_logger,
+                        ),
+                    )
+                    _restore_completed_sync_publish_stage(
+                        sync_run_id,
                         run_logger=run_logger,
-                    ),
-                )
-                active_stage = sync_metadata.STAGE_COMPOSED_READS
-                _run_post_publish_internal_postgame_phase(
-                    run_logger,
-                    sync_metadata.STAGE_COMPOSED_READS,
-                    lambda: _safe_build_composed_reads_stage(
-                        [schedule_date],
-                        sync_run_id=sync_run_id,
-                        source='postgame_refresh',
-                        job_name=sync_metadata.JOB_POSTGAME_REFRESH,
-                        run_logger=run_logger,
-                    ),
-                )
-                active_stage = STAGE_LEGACY_READ_RECONCILIATION_AUDIT
-                _run_post_publish_internal_postgame_phase(
-                    run_logger,
-                    STAGE_LEGACY_READ_RECONCILIATION_AUDIT,
-                    lambda: _safe_run_legacy_read_reconciliation_audit_stage(
-                        [schedule_date],
-                        sync_run_id=sync_run_id,
-                        source='postgame_refresh',
-                        job_name=sync_metadata.JOB_POSTGAME_REFRESH,
-                        run_logger=run_logger,
-                    ),
-                )
-                _restore_completed_sync_publish_stage(
-                    sync_run_id,
-                    run_logger=run_logger,
-                )
+                    )
+                else:
+                    status['internal_enrichment'] = 'skipped_public_only'
             else:
                 sync_metadata.finish_sync_run(
                     sync_run_id,
@@ -3313,7 +3484,12 @@ def run_postgame_refresh(
     return status
 
 
-def run_daily_sync(app, days_back: int = 7, source: str = sync_metadata.SOURCE_SCHEDULED):
+def run_daily_sync(
+    app,
+    days_back: int = 7,
+    source: str = sync_metadata.SOURCE_SCHEDULED,
+    include_internal_enrichment: bool = True,
+):
     """
     Full daily refresh — pulls new logs, recalculates fatigue using each
     pitcher's last game date, and records durable sync_runs metadata for
@@ -3524,78 +3700,63 @@ def run_daily_sync(app, days_back: int = 7, source: str = sync_metadata.SOURCE_S
                 _complete_sync_phase,
             )
 
-            active_stage = sync_metadata.STAGE_WORKLOAD_EVIDENCE
-            _run_post_publish_internal_daily_sync_phase(
-                run_logger,
-                post_fatigue_phase_timings,
-                sync_metadata.STAGE_WORKLOAD_EVIDENCE,
-                lambda: _safe_build_workload_recovery_evidence_stage(
-                    [product_day.calendar_date],
-                    sync_run_id=sync_run_id,
-                    source='scheduled_sync',
-                    job_name=sync_metadata.JOB_DAILY_SYNC,
+            if include_internal_enrichment:
+                active_stage = sync_metadata.STAGE_WORKLOAD_EVIDENCE
+                _run_post_publish_internal_daily_sync_phase(
+                    run_logger,
+                    post_fatigue_phase_timings,
+                    sync_metadata.STAGE_WORKLOAD_EVIDENCE,
+                    lambda: _safe_build_workload_recovery_evidence_stage(
+                        [product_day.calendar_date],
+                        sync_run_id=sync_run_id,
+                        source='scheduled_sync',
+                        job_name=sync_metadata.JOB_DAILY_SYNC,
+                        run_logger=run_logger,
+                    ),
+                )
+                active_stage = sync_metadata.STAGE_COMPOSED_READS
+                _run_post_publish_internal_daily_sync_phase(
+                    run_logger,
+                    post_fatigue_phase_timings,
+                    sync_metadata.STAGE_COMPOSED_READS,
+                    lambda: _safe_build_composed_reads_stage(
+                        [product_day.calendar_date],
+                        sync_run_id=sync_run_id,
+                        source='scheduled_sync',
+                        job_name=sync_metadata.JOB_DAILY_SYNC,
+                        run_logger=run_logger,
+                    ),
+                )
+                active_stage = STAGE_LEGACY_READ_RECONCILIATION_AUDIT
+                _run_post_publish_internal_daily_sync_phase(
+                    run_logger,
+                    post_fatigue_phase_timings,
+                    STAGE_LEGACY_READ_RECONCILIATION_AUDIT,
+                    lambda: _safe_run_legacy_read_reconciliation_audit_stage(
+                        [product_day.calendar_date],
+                        sync_run_id=sync_run_id,
+                        source='scheduled_sync',
+                        job_name=sync_metadata.JOB_DAILY_SYNC,
+                        run_logger=run_logger,
+                    ),
+                )
+                active_stage = sync_metadata.STAGE_BACKTEST_REFRESH
+                _run_post_publish_internal_daily_sync_phase(
+                    run_logger,
+                    post_fatigue_phase_timings,
+                    sync_metadata.STAGE_BACKTEST_REFRESH,
+                    lambda: _refresh_availability_backtest_phase(
+                        sync_run_id,
+                        status,
+                        run_logger,
+                    ),
+                )
+                _restore_completed_sync_publish_stage(
+                    sync_run_id,
                     run_logger=run_logger,
-                ),
-            )
-            active_stage = sync_metadata.STAGE_COMPOSED_READS
-            _run_post_publish_internal_daily_sync_phase(
-                run_logger,
-                post_fatigue_phase_timings,
-                sync_metadata.STAGE_COMPOSED_READS,
-                lambda: _safe_build_composed_reads_stage(
-                    [product_day.calendar_date],
-                    sync_run_id=sync_run_id,
-                    source='scheduled_sync',
-                    job_name=sync_metadata.JOB_DAILY_SYNC,
-                    run_logger=run_logger,
-                ),
-            )
-            active_stage = STAGE_LEGACY_READ_RECONCILIATION_AUDIT
-            _run_post_publish_internal_daily_sync_phase(
-                run_logger,
-                post_fatigue_phase_timings,
-                STAGE_LEGACY_READ_RECONCILIATION_AUDIT,
-                lambda: _safe_run_legacy_read_reconciliation_audit_stage(
-                    [product_day.calendar_date],
-                    sync_run_id=sync_run_id,
-                    source='scheduled_sync',
-                    job_name=sync_metadata.JOB_DAILY_SYNC,
-                    run_logger=run_logger,
-                ),
-            )
-
-            active_stage = sync_metadata.STAGE_BACKTEST_REFRESH
-
-            def _refresh_backtest_phase():
-                try:
-                    from services.availability_backtest import refresh_availability_backtest
-                    backtest = refresh_availability_backtest()
-                    status['availability_backtest_status'] = backtest.get('status')
-                    status['availability_backtest_computed_at'] = backtest.get('computed_at')
-                    run_logger.info(
-                        'Refreshed availability backtest (%s)',
-                        backtest.get('computed_at') or backtest.get('status'),
-                    )
-                    result = {'status': backtest.get('status') or 'completed'}
-                except Exception as exc:
-                    db.session.rollback()
-                    status['availability_backtest_status'] = 'failed'
-                    status['availability_backtest_error'] = str(exc)
-                    run_logger.warning('Availability backtest refresh failed: %s', exc)
-                    result = {'status': 'failed', 'error': str(exc)}
-                sync_metadata.set_sync_stage(sync_run_id, sync_metadata.STAGE_BACKTEST_REFRESH)
-                return result
-
-            _run_post_publish_internal_daily_sync_phase(
-                run_logger,
-                post_fatigue_phase_timings,
-                sync_metadata.STAGE_BACKTEST_REFRESH,
-                _refresh_backtest_phase,
-            )
-            _restore_completed_sync_publish_stage(
-                sync_run_id,
-                run_logger=run_logger,
-            )
+                )
+            else:
+                status['internal_enrichment'] = 'skipped_public_only'
     except sync_metadata.SyncWriterConflict as conflict:
         status.update(sync_metadata.sync_writer_conflict_payload(conflict))
         run_logger.warning('Daily sync blocked: %s', conflict.reason)
@@ -3674,6 +3835,161 @@ def run_daily_sync(app, days_back: int = 7, source: str = sync_metadata.SOURCE_S
         file_handler.close()
 
     return status
+
+
+def run_internal_enrichment(
+    app,
+    product_dates=None,
+    *,
+    source: str = sync_metadata.SOURCE_GITHUB_ACTIONS,
+    include_backtest: bool = True,
+):
+    """
+    Run internal-only evidence/read/audit enrichment outside the public sync lane.
+
+    This entrypoint intentionally does not publish dashboard snapshots or update
+    public freshness state. It records its own sync_runs row under the internal
+    job name and uses the internal writer lock scope so it cannot block public
+    daily/postgame publication.
+    """
+    _ensure_logs_dir()
+    log_file = _STATUS_DIR / 'internal_enrichment.log'
+    file_handler = logging.FileHandler(log_file, encoding='utf-8')
+    file_handler.setFormatter(logging.Formatter(
+        '%(asctime)s  %(levelname)-7s  %(message)s'
+    ))
+    run_logger = logging.getLogger('baseballos.internal_enrichment')
+    if not any(isinstance(h, logging.FileHandler) and getattr(h, 'baseFilename', None) == str(log_file)
+               for h in run_logger.handlers):
+        run_logger.addHandler(file_handler)
+    run_logger.setLevel(logging.INFO)
+
+    started_at = datetime.now(timezone.utc)
+    dates = sorted({_date for _date in product_dates or [] if _date is not None})
+    if not dates:
+        dates = [resolve_product_day(started_at).calendar_date]
+    sync_run_id = None
+    writer_guard = None
+    active_stage = None
+    enrichment_started = time.perf_counter()
+    status = {
+        'last_sync': started_at.isoformat(),
+        'status': sync_metadata.STATUS_SUCCESS,
+        'job_name': sync_metadata.JOB_INTERNAL_ENRICHMENT,
+        'product_dates': [day.isoformat() for day in dates],
+        'include_backtest': include_backtest,
+        'phase_results': {},
+        'failed_phases': [],
+        'message': '',
+        'errors': 0,
+    }
+    run_logger.info(
+        '── Internal enrichment starting (dates=%s include_backtest=%s) ──',
+        ','.join(status['product_dates']),
+        include_backtest,
+    )
+
+    try:
+        with app.app_context():
+            writer_guard = sync_metadata.acquire_sync_writer_guard(
+                job_name=sync_metadata.JOB_INTERNAL_ENRICHMENT,
+                source=source,
+                lock_scope=sync_metadata.LOCK_SCOPE_INTERNAL,
+            )
+            sync_run_id = sync_metadata.start_sync_run(
+                source=source,
+                started_at=started_at.replace(tzinfo=None),
+                job_name=sync_metadata.JOB_INTERNAL_ENRICHMENT,
+            )
+            active_stage = sync_metadata.STAGE_WORKLOAD_EVIDENCE
+            phase_result = _run_internal_enrichment_phases(
+                dates,
+                sync_run_id=sync_run_id,
+                source=source,
+                job_name=sync_metadata.JOB_INTERNAL_ENRICHMENT,
+                run_logger=run_logger,
+                include_backtest=include_backtest,
+                status=status,
+            )
+            status.update({
+                'status': phase_result['status'],
+                'phase_results': phase_result['phase_results'],
+                'failed_phases': phase_result['failed_phases'],
+                'phase_timings': phase_result['phase_timings'],
+            })
+            status['errors'] = len(status['failed_phases'])
+            if status['failed_phases']:
+                status['message'] = (
+                    'Internal enrichment failed phase(s): '
+                    + ','.join(status['failed_phases'])
+                )
+                active_stage = status['failed_phases'][0]
+            else:
+                status['message'] = 'Internal enrichment completed.'
+                active_stage = sync_metadata.STAGE_BACKTEST_REFRESH if include_backtest else STAGE_LEGACY_READ_RECONCILIATION_AUDIT
+            sync_metadata.finish_sync_run(
+                sync_run_id,
+                status=status['status'],
+                records_processed=len(status['phase_results']),
+                records_failed=len(status['failed_phases']),
+                errors=status['errors'],
+                error_message=status['message'] or None,
+                source=source,
+                started_at=started_at.replace(tzinfo=None),
+                job_name=sync_metadata.JOB_INTERNAL_ENRICHMENT,
+                stage=(
+                    sync_metadata.STAGE_FAILED
+                    if status['status'] == sync_metadata.STATUS_FAILED
+                    else active_stage
+                ),
+                failed_stage=(
+                    active_stage
+                    if status['status'] == sync_metadata.STATUS_FAILED
+                    else None
+                ),
+            )
+    except sync_metadata.SyncWriterConflict as conflict:
+        status.update(sync_metadata.sync_writer_conflict_payload(conflict))
+        status['job_name'] = sync_metadata.JOB_INTERNAL_ENRICHMENT
+        run_logger.warning('Internal enrichment blocked: %s', conflict.reason)
+    except Exception as exc:
+        status['status'] = sync_metadata.STATUS_FAILED
+        status['message'] = str(exc)
+        status['errors'] = max(1, status.get('errors', 0))
+        run_logger.exception('Internal enrichment failed: %s', exc)
+        with app.app_context():
+            existing_run = db.session.get(SyncRun, sync_run_id) if sync_run_id else None
+            if existing_run is None or existing_run.status != sync_metadata.STATUS_FAILED:
+                sync_metadata.finish_sync_run(
+                    sync_run_id,
+                    status=sync_metadata.STATUS_FAILED,
+                    source=source,
+                    started_at=started_at.replace(tzinfo=None),
+                    errors=status['errors'],
+                    error_message=str(exc),
+                    job_name=sync_metadata.JOB_INTERNAL_ENRICHMENT,
+                    stage=sync_metadata.STAGE_FAILED,
+                    failed_stage=active_stage,
+                )
+
+    if writer_guard is not None:
+        writer_guard.release()
+
+    status['finished_at'] = datetime.now(timezone.utc).isoformat()
+    status['elapsed_ms'] = round((time.perf_counter() - enrichment_started) * 1000, 1)
+    run_logger.info(
+        'internal_enrichment completed status=%s dates=%s failed_phases=%s '
+        'elapsed_ms=%s',
+        status['status'],
+        ','.join(status['product_dates']),
+        ','.join(status.get('failed_phases') or []),
+        status['elapsed_ms'],
+    )
+    run_logger.info('── Internal enrichment finished: %s ──', status['status'])
+    run_logger.removeHandler(file_handler)
+    file_handler.close()
+    return status
+
 
 def write_status(status: dict) -> None:
     """

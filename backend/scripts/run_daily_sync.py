@@ -30,6 +30,11 @@ def _parse_args(argv=None):
         default='github_actions',
         help='SyncRun source label to persist with durable sync metadata.',
     )
+    parser.add_argument(
+        '--public-only',
+        action='store_true',
+        help='Exit after public dashboard/Data & Trust snapshot publication.',
+    )
     return parser.parse_args(argv)
 
 
@@ -49,14 +54,16 @@ def main(argv=None):
         app,
         days_back=args.days_back,
         source=source,
+        include_internal_enrichment=not args.public_only,
     )
     summary = {
         'status': status.get('status'),
         'source': source,
         'days_back': args.days_back,
+        'public_only': args.public_only,
         'sync': status,
     }
-    print(json.dumps(summary, sort_keys=True))
+    print(json.dumps(summary, sort_keys=True, default=str))
 
     return 0 if status.get('status') in sync_metadata.SUCCESSFUL_STATUSES else 1
 

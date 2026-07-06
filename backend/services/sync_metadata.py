@@ -52,8 +52,13 @@ JOB_DAILY_SYNC = 'daily_sync'
 JOB_POSTGAME_REFRESH = 'postgame_refresh'
 JOB_FATIGUE_RECALCULATION = 'fatigue_recalculation'
 JOB_DASHBOARD_SNAPSHOT_BUILD = 'dashboard_snapshot_build'
+JOB_INTERNAL_ENRICHMENT = 'internal_enrichment'
 
 SYNC_WRITER_LOCK_KEY = 820260801
+INTERNAL_ENRICHMENT_LOCK_KEY = 820260802
+LOCK_SCOPE_PUBLIC = 'public'
+LOCK_SCOPE_INTERNAL = 'internal'
+INTERNAL_SYNC_JOB_NAMES = (JOB_INTERNAL_ENRICHMENT,)
 SYNC_WRITER_ALREADY_RUNNING = 'sync_writer_already_running'
 SYNC_WRITER_LOCK_UNAVAILABLE = 'sync_writer_lock_unavailable'
 SYNC_WRITER_STALE_RECLAIMED = 'sync_writer_stale_reclaimed'
@@ -61,7 +66,10 @@ SYNC_WRITER_ABANDONED_RECLAIMED = 'sync_writer_abandoned_reclaimed'
 SYNC_WRITER_STALE_AFTER_MINUTES = 120
 
 logger = logging.getLogger(__name__)
-_process_writer_lock = threading.Lock()
+_process_writer_locks = {
+    LOCK_SCOPE_PUBLIC: threading.Lock(),
+    LOCK_SCOPE_INTERNAL: threading.Lock(),
+}
 
 
 def _now():
@@ -97,30 +105,61 @@ def _sync_run_summary(run):
     }
 
 
-def latest_running_sync_run():
+def _normalize_lock_scope(lock_scope=None, *, job_name=None):
+    if lock_scope in (LOCK_SCOPE_PUBLIC, LOCK_SCOPE_INTERNAL):
+        return lock_scope
+    if job_name in INTERNAL_SYNC_JOB_NAMES:
+        return LOCK_SCOPE_INTERNAL
+    return LOCK_SCOPE_PUBLIC
+
+
+def _lock_key_for_scope(lock_scope):
     return (
-        SyncRun.query
-        .filter(SyncRun.status == STATUS_RUNNING)
+        INTERNAL_ENRICHMENT_LOCK_KEY
+        if lock_scope == LOCK_SCOPE_INTERNAL
+        else SYNC_WRITER_LOCK_KEY
+    )
+
+
+def _process_writer_lock_for_scope(lock_scope):
+    return _process_writer_locks[_normalize_lock_scope(lock_scope)]
+
+
+def _running_sync_query(lock_scope=None):
+    query = SyncRun.query.filter(SyncRun.status == STATUS_RUNNING)
+    if lock_scope == LOCK_SCOPE_PUBLIC:
+        return query.filter(
+            db.or_(
+                ~SyncRun.job_name.in_(INTERNAL_SYNC_JOB_NAMES),
+                SyncRun.job_name.is_(None),
+            )
+        )
+    if lock_scope == LOCK_SCOPE_INTERNAL:
+        return query.filter(SyncRun.job_name.in_(INTERNAL_SYNC_JOB_NAMES))
+    return query
+
+
+def latest_running_sync_run(lock_scope=None):
+    return (
+        _running_sync_query(lock_scope)
         .order_by(SyncRun.started_at.desc(), SyncRun.id.desc())
         .first()
     )
 
 
-def stale_running_sync_runs(now=None):
+def stale_running_sync_runs(now=None, *, lock_scope=None):
     cutoff = _sync_writer_stale_cutoff(now)
     return (
-        SyncRun.query
-        .filter(SyncRun.status == STATUS_RUNNING)
+        _running_sync_query(lock_scope)
         .filter(SyncRun.started_at <= cutoff)
         .order_by(SyncRun.started_at.asc(), SyncRun.id.asc())
         .all()
     )
 
 
-def running_sync_runs():
+def running_sync_runs(lock_scope=None):
     return (
-        SyncRun.query
-        .filter(SyncRun.status == STATUS_RUNNING)
+        _running_sync_query(lock_scope)
         .order_by(SyncRun.started_at.asc(), SyncRun.id.asc())
         .all()
     )
@@ -148,7 +187,7 @@ def _mark_running_sync_runs_reclaimed(runs, *, completed_at, message, commit):
     return runs
 
 
-def recover_stale_running_sync_runs(now=None, *, commit=True):
+def recover_stale_running_sync_runs(now=None, *, commit=True, lock_scope=None):
     """
     Mark abandoned running rows failed after the writer lock is held.
 
@@ -157,7 +196,7 @@ def recover_stale_running_sync_runs(now=None, *, commit=True):
     rows older than the configured timeout.
     """
     now = now or _now()
-    stale_runs = stale_running_sync_runs(now)
+    stale_runs = stale_running_sync_runs(now, lock_scope=lock_scope)
     if not stale_runs:
         return []
     message = (
@@ -172,7 +211,7 @@ def recover_stale_running_sync_runs(now=None, *, commit=True):
     )
 
 
-def recover_abandoned_running_sync_runs(now=None, *, commit=True):
+def recover_abandoned_running_sync_runs(now=None, *, commit=True, lock_scope=None):
     """
     Mark all durable running rows failed while the Postgres writer lock is held.
 
@@ -181,7 +220,7 @@ def recover_abandoned_running_sync_runs(now=None, *, commit=True):
     was left behind by an interrupted process and should not block retries.
     """
     now = now or _now()
-    abandoned_runs = running_sync_runs()
+    abandoned_runs = running_sync_runs(lock_scope)
     if not abandoned_runs:
         return []
     message = (
@@ -234,9 +273,17 @@ class SyncWriterConflict(RuntimeError):
 
 
 class SyncWriterGuard:
-    def __init__(self, *, connection=None, process_lock_acquired=False):
+    def __init__(
+        self,
+        *,
+        connection=None,
+        process_lock_acquired=False,
+        lock_scope=LOCK_SCOPE_PUBLIC,
+    ):
         self.connection = connection
         self.process_lock_acquired = process_lock_acquired
+        self.lock_scope = _normalize_lock_scope(lock_scope)
+        self.lock_key = _lock_key_for_scope(self.lock_scope)
         self.released = False
 
     def release(self):
@@ -247,13 +294,13 @@ class SyncWriterGuard:
             if self.connection is not None:
                 self.connection.execute(
                     text('SELECT pg_advisory_unlock(:lock_key)'),
-                    {'lock_key': SYNC_WRITER_LOCK_KEY},
+                    {'lock_key': self.lock_key},
                 )
         finally:
             if self.connection is not None:
                 self.connection.close()
             if self.process_lock_acquired:
-                _process_writer_lock.release()
+                _process_writer_lock_for_scope(self.lock_scope).release()
 
     def __enter__(self):
         return self
@@ -263,12 +310,13 @@ class SyncWriterGuard:
         return False
 
 
-def _acquire_postgres_writer_lock(job_name=None, source=None):
+def _acquire_postgres_writer_lock(job_name=None, source=None, lock_scope=None):
+    lock_scope = _normalize_lock_scope(lock_scope, job_name=job_name)
     connection = db.engine.connect()
     try:
         locked = connection.execute(
             text('SELECT pg_try_advisory_lock(:lock_key)'),
-            {'lock_key': SYNC_WRITER_LOCK_KEY},
+            {'lock_key': _lock_key_for_scope(lock_scope)},
         ).scalar()
     except SQLAlchemyError as exc:
         connection.close()
@@ -285,39 +333,55 @@ def _acquire_postgres_writer_lock(job_name=None, source=None):
             reason=SYNC_WRITER_ALREADY_RUNNING,
             job_name=job_name,
             source=source,
-            active_run=latest_running_sync_run(),
+            active_run=latest_running_sync_run(lock_scope),
         )
-    return SyncWriterGuard(connection=connection)
+    return SyncWriterGuard(connection=connection, lock_scope=lock_scope)
 
 
-def _acquire_process_writer_lock(job_name=None, source=None):
-    if not _process_writer_lock.acquire(blocking=False):
+def _acquire_process_writer_lock(job_name=None, source=None, lock_scope=None):
+    lock_scope = _normalize_lock_scope(lock_scope, job_name=job_name)
+    process_lock = _process_writer_lock_for_scope(lock_scope)
+    if not process_lock.acquire(blocking=False):
         raise SyncWriterConflict(
             reason=SYNC_WRITER_ALREADY_RUNNING,
             job_name=job_name,
             source=source,
-            active_run=latest_running_sync_run(),
+            active_run=latest_running_sync_run(lock_scope),
         )
-    return SyncWriterGuard(process_lock_acquired=True)
+    return SyncWriterGuard(process_lock_acquired=True, lock_scope=lock_scope)
 
 
 def _uses_postgres_advisory_writer_lock():
     return getattr(db.engine.dialect, 'name', '') == 'postgresql'
 
 
-def acquire_sync_writer_guard(*, job_name=JOB_DAILY_SYNC, source=SOURCE_MANUAL):
+def acquire_sync_writer_guard(
+    *,
+    job_name=JOB_DAILY_SYNC,
+    source=SOURCE_MANUAL,
+    lock_scope=None,
+):
+    lock_scope = _normalize_lock_scope(lock_scope, job_name=job_name)
     uses_postgres_lock = _uses_postgres_advisory_writer_lock()
     guard = (
-        _acquire_postgres_writer_lock(job_name=job_name, source=source)
+        _acquire_postgres_writer_lock(
+            job_name=job_name,
+            source=source,
+            lock_scope=lock_scope,
+        )
         if uses_postgres_lock
-        else _acquire_process_writer_lock(job_name=job_name, source=source)
+        else _acquire_process_writer_lock(
+            job_name=job_name,
+            source=source,
+            lock_scope=lock_scope,
+        )
     )
     try:
         if uses_postgres_lock:
-            recover_abandoned_running_sync_runs()
+            recover_abandoned_running_sync_runs(lock_scope=lock_scope)
         else:
-            recover_stale_running_sync_runs()
-        active_run = latest_running_sync_run()
+            recover_stale_running_sync_runs(lock_scope=lock_scope)
+        active_run = latest_running_sync_run(lock_scope)
         if active_run is not None:
             raise SyncWriterConflict(
                 reason=SYNC_WRITER_ALREADY_RUNNING,

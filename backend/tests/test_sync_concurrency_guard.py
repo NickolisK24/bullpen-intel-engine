@@ -382,6 +382,276 @@ def test_daily_sync_public_snapshot_survives_post_publish_internal_failure(
     )
 
 
+def test_daily_sync_public_only_skips_internal_enrichment(
+    client,
+    monkeypatch,
+):
+    monkeypatch.setattr(sync_service, 'sync_team_assignments', lambda: {
+        'pitchers_refreshed': 1,
+        'pitchers_changed': 0,
+        'reassigned_count': 0,
+        'no_organization_count': 0,
+        'unknown_count': 0,
+        'errors': 0,
+        'by_status': {'ASSIGNED': 1},
+        'error_details': [],
+    })
+    monkeypatch.setattr(sync_service, 'sync_roster_statuses', lambda **_kwargs: {
+        'pitchers_refreshed': 1,
+        'pitchers_changed': 0,
+        'unknown_count': 0,
+        'records_failed': 0,
+        'errors': 0,
+        'error_details': [],
+    })
+    monkeypatch.setattr(sync_service, 'sync_transactions', lambda **_kwargs: {
+        'records_fetched': 0,
+        'records_stored': 0,
+        'unknown_type_count': 0,
+        'records_failed': 0,
+        'errors': 0,
+        'error_details': [],
+    })
+    monkeypatch.setattr(sync_service, 'sync_recent_logs', lambda **_kwargs: {
+        'new_logs_added': 1,
+        'pitchers_touched': 1,
+        'errors': 0,
+        'records_failed': 0,
+        'logs_corrected': 0,
+        'correction_attempts_failed': 0,
+    })
+    monkeypatch.setattr(sync_service, 'recalculate_all_fatigue', lambda: 2)
+    monkeypatch.setattr(
+        sync_service,
+        'complete_sync_run_with_snapshot',
+        lambda *args, **kwargs: (SimpleNamespace(id=1), SimpleNamespace(id=88)),
+    )
+    monkeypatch.setattr(
+        sync_service,
+        '_safe_build_workload_recovery_evidence_stage',
+        lambda *args, **kwargs: pytest.fail('workload evidence should not run'),
+    )
+    monkeypatch.setattr(
+        sync_service,
+        '_safe_build_composed_reads_stage',
+        lambda *args, **kwargs: pytest.fail('composed reads should not run'),
+    )
+    monkeypatch.setattr(
+        sync_service,
+        '_safe_run_legacy_read_reconciliation_audit_stage',
+        lambda *args, **kwargs: pytest.fail('reconciliation audit should not run'),
+    )
+
+    import services.availability_backtest as availability_backtest
+
+    monkeypatch.setattr(
+        availability_backtest,
+        'refresh_availability_backtest',
+        lambda: pytest.fail('backtest should not run'),
+    )
+
+    status = sync_service.run_daily_sync(
+        client.application,
+        days_back=7,
+        include_internal_enrichment=False,
+    )
+
+    assert status['status'] == sync_metadata.STATUS_SUCCESS
+    assert status['dashboard_snapshot_id'] == 88
+    assert status['internal_enrichment'] == 'skipped_public_only'
+
+
+def test_internal_enrichment_runs_internal_phases_without_public_snapshot(
+    client,
+    monkeypatch,
+):
+    events = []
+    monkeypatch.setattr(
+        sync_service,
+        'complete_sync_run_with_snapshot',
+        lambda *args, **kwargs: pytest.fail('public snapshot should not publish'),
+    )
+    monkeypatch.setattr(
+        sync_service,
+        '_safe_build_workload_recovery_evidence_stage',
+        lambda *args, **kwargs: (
+            events.append(sync_metadata.STAGE_WORKLOAD_EVIDENCE)
+            or {'status': 'built'}
+        ),
+    )
+    monkeypatch.setattr(
+        sync_service,
+        '_safe_build_composed_reads_stage',
+        lambda *args, **kwargs: (
+            events.append(sync_metadata.STAGE_COMPOSED_READS)
+            or {'status': 'built'}
+        ),
+    )
+    monkeypatch.setattr(
+        sync_service,
+        '_safe_run_legacy_read_reconciliation_audit_stage',
+        lambda *args, **kwargs: (
+            events.append(sync_service.STAGE_LEGACY_READ_RECONCILIATION_AUDIT)
+            or {'status': 'completed'}
+        ),
+    )
+
+    import services.availability_backtest as availability_backtest
+
+    monkeypatch.setattr(
+        availability_backtest,
+        'refresh_availability_backtest',
+        lambda: (
+            events.append(sync_metadata.STAGE_BACKTEST_REFRESH)
+            or {'status': 'computed', 'computed_at': None}
+        ),
+    )
+
+    status = sync_service.run_internal_enrichment(
+        client.application,
+        product_dates=[date(2026, 7, 5)],
+        source='test',
+        include_backtest=True,
+    )
+
+    assert status['status'] == sync_metadata.STATUS_SUCCESS
+    assert events == [
+        sync_metadata.STAGE_WORKLOAD_EVIDENCE,
+        sync_metadata.STAGE_COMPOSED_READS,
+        sync_service.STAGE_LEGACY_READ_RECONCILIATION_AUDIT,
+        sync_metadata.STAGE_BACKTEST_REFRESH,
+    ]
+    with client.application.app_context():
+        run = SyncRun.query.order_by(SyncRun.id.desc()).first()
+        assert run.job_name == sync_metadata.JOB_INTERNAL_ENRICHMENT
+        assert run.status == sync_metadata.STATUS_SUCCESS
+        assert run.published_dashboard_snapshot_id is None
+
+
+def test_internal_enrichment_failure_is_isolated_from_public_sync(
+    client,
+    monkeypatch,
+):
+    events = []
+    monkeypatch.setattr(sync_service, 'sync_team_assignments', lambda: {
+        'pitchers_refreshed': 1,
+        'pitchers_changed': 0,
+        'reassigned_count': 0,
+        'no_organization_count': 0,
+        'unknown_count': 0,
+        'errors': 0,
+        'by_status': {'ASSIGNED': 1},
+        'error_details': [],
+    })
+    monkeypatch.setattr(sync_service, 'sync_roster_statuses', lambda **_kwargs: {
+        'pitchers_refreshed': 1,
+        'pitchers_changed': 0,
+        'unknown_count': 0,
+        'records_failed': 0,
+        'errors': 0,
+        'error_details': [],
+    })
+    monkeypatch.setattr(sync_service, 'sync_transactions', lambda **_kwargs: {
+        'records_fetched': 0,
+        'records_stored': 0,
+        'unknown_type_count': 0,
+        'records_failed': 0,
+        'errors': 0,
+        'error_details': [],
+    })
+    monkeypatch.setattr(sync_service, 'sync_recent_logs', lambda **_kwargs: {
+        'new_logs_added': 1,
+        'pitchers_touched': 1,
+        'errors': 0,
+        'records_failed': 0,
+        'logs_corrected': 0,
+        'correction_attempts_failed': 0,
+    })
+    monkeypatch.setattr(sync_service, 'recalculate_all_fatigue', lambda: 2)
+    monkeypatch.setattr(
+        sync_service,
+        'complete_sync_run_with_snapshot',
+        lambda *args, **kwargs: (
+            events.append('public_snapshot')
+            or (SimpleNamespace(id=1), SimpleNamespace(id=88))
+        ),
+    )
+    monkeypatch.setattr(
+        sync_service,
+        '_safe_build_workload_recovery_evidence_stage',
+        lambda *args, **kwargs: {'status': 'failed', 'error': 'internal failed'},
+    )
+    monkeypatch.setattr(
+        sync_service,
+        '_safe_build_composed_reads_stage',
+        lambda *args, **kwargs: {'status': 'built'},
+    )
+    monkeypatch.setattr(
+        sync_service,
+        '_safe_run_legacy_read_reconciliation_audit_stage',
+        lambda *args, **kwargs: {'status': 'completed'},
+    )
+
+    public_status = sync_service.run_daily_sync(
+        client.application,
+        days_back=7,
+        include_internal_enrichment=False,
+    )
+    internal_status = sync_service.run_internal_enrichment(
+        client.application,
+        product_dates=[date(2026, 7, 5)],
+        source='test',
+        include_backtest=False,
+    )
+
+    assert public_status['status'] == sync_metadata.STATUS_SUCCESS
+    assert public_status['dashboard_snapshot_id'] == 88
+    assert events == ['public_snapshot']
+    assert internal_status['status'] == sync_metadata.STATUS_FAILED
+    assert internal_status['failed_phases'] == [
+        sync_metadata.STAGE_WORKLOAD_EVIDENCE
+    ]
+
+
+def test_internal_enrichment_lock_does_not_block_public_sync_lock(client):
+    with client.application.app_context():
+        internal_guard = sync_metadata.acquire_sync_writer_guard(
+            job_name=sync_metadata.JOB_INTERNAL_ENRICHMENT,
+            source='internal',
+        )
+        try:
+            public_guard = sync_metadata.acquire_sync_writer_guard(
+                job_name=sync_metadata.JOB_DAILY_SYNC,
+                source='scheduled',
+            )
+            public_guard.release()
+        finally:
+            internal_guard.release()
+
+
+def test_internal_running_row_does_not_block_public_sync_guard(client):
+    with client.application.app_context():
+        run = SyncRun(
+            job_name=sync_metadata.JOB_INTERNAL_ENRICHMENT,
+            started_at=utc_now_naive(),
+            status=sync_metadata.STATUS_RUNNING,
+            stage=sync_metadata.STAGE_WORKLOAD_EVIDENCE,
+            source='internal',
+            created_at=utc_now_naive(),
+        )
+        db.session.add(run)
+        db.session.commit()
+
+        guard = sync_metadata.acquire_sync_writer_guard(
+            job_name=sync_metadata.JOB_DAILY_SYNC,
+            source='scheduled',
+        )
+        guard.release()
+
+        db.session.refresh(run)
+        assert run.status == sync_metadata.STATUS_RUNNING
+
+
 def test_stale_running_sync_run_is_reclaimed_before_new_writer_starts(client, monkeypatch):
     with client.application.app_context():
         monkeypatch.setattr(
@@ -434,7 +704,7 @@ def test_postgres_busy_advisory_lock_preserves_active_running_row(
             lambda: True,
         )
 
-        def busy_lock(*, job_name=None, source=None):
+        def busy_lock(*, job_name=None, source=None, lock_scope=None):
             raise sync_metadata.SyncWriterConflict(
                 reason=sync_metadata.SYNC_WRITER_ALREADY_RUNNING,
                 job_name=job_name,
