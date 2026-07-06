@@ -9,6 +9,7 @@ from tests.db_config import configure_test_database, create_test_schema, drop_te
 
 import services.sync as sync_service
 from models.sync_job import SyncJob
+from models.sync_run import SyncRun
 from services import sync_jobs, sync_metadata
 from utils.db import db
 from utils.time import utc_now_naive
@@ -38,6 +39,21 @@ def _jobs_by_name():
         job.job_name: job
         for job in SyncJob.query.order_by(SyncJob.job_name.asc()).all()
     }
+
+
+def _create_sync_run():
+    now = utc_now_naive()
+    sync_run = SyncRun(
+        job_name=sync_metadata.JOB_INTERNAL_ENRICHMENT,
+        started_at=now,
+        status=sync_metadata.STATUS_RUNNING,
+        stage=sync_metadata.STAGE_WORKLOAD_EVIDENCE,
+        source='test',
+        created_at=now,
+    )
+    db.session.add(sync_run)
+    db.session.commit()
+    return sync_run
 
 
 def test_sync_jobs_table_has_unique_constraint_and_indexes(app):
@@ -98,10 +114,12 @@ def test_sync_job_planning_and_lifecycle_are_idempotent(app):
         assert len(second) == 4
         assert SyncJob.query.count() == 4
 
+        sync_run = _create_sync_run()
         job = _jobs_by_name()[sync_metadata.STAGE_WORKLOAD_EVIDENCE]
-        claimed = sync_jobs.claim_job(job, sync_run_id=10)
+        claimed = sync_jobs.claim_job(job, sync_run_id=sync_run.id)
         assert claimed.status == sync_jobs.STATUS_RUNNING
         assert claimed.attempts == 1
+        assert claimed.sync_run_id == sync_run.id
 
         sync_jobs.complete_job(claimed, result={'status': 'built'})
         assert claimed.status == sync_jobs.STATUS_SUCCEEDED
@@ -109,6 +127,20 @@ def test_sync_job_planning_and_lifecycle_are_idempotent(app):
         assert claimed.duration_ms is not None
         assert sync_jobs.claim_job(claimed) is None
         assert claimed.status == sync_jobs.STATUS_SUCCEEDED
+
+
+def test_sync_job_claim_allows_nullable_sync_run_id(app):
+    with app.app_context():
+        jobs = sync_jobs.plan_internal_enrichment_jobs(
+            [PRODUCT_DATE],
+            include_backtest=False,
+        )
+        job = sync_jobs.jobs_by_name(jobs)[sync_metadata.STAGE_WORKLOAD_EVIDENCE][0]
+
+        claimed = sync_jobs.claim_job(job, sync_run_id=None)
+
+        assert claimed.status == sync_jobs.STATUS_RUNNING
+        assert claimed.sync_run_id is None
 
 
 def test_failed_retryable_and_stale_running_jobs_can_be_reclaimed(app):
