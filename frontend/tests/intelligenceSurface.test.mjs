@@ -874,6 +874,61 @@ test('live publishable dashboard freshness keeps Today current while Tonight is 
   assert.equal(htmlIncludes(tonightHtml, 'Refresh delayed'), false)
 })
 
+test('Tonight fail-closed payload scopes stale chip to the slate when published view is current', () => {
+  const html = render(React.createElement(IntelligenceSurfaceView, {
+    intelligence: intelligenceOk,
+    tonight: {
+      status: 'error',
+      reference_date: '2026-06-26',
+      cards: [],
+      limitations: ['Tonight watch is temporarily unavailable.'],
+      snapshot: {
+        generated_at: '2026-06-26T03:30:00',
+      },
+    },
+    dashboard,
+    landscape,
+    teams,
+  }))
+  const tonightHtml = sectionSlice(html, 'Tonight&#x27;s Bullpen Watch', 'Learn &amp; Explore BaseballOS')
+
+  assert.ok(htmlIncludes(tonightHtml, 'Tonight slate unavailable'))
+  assert.ok(htmlIncludes(tonightHtml, 'Published view through Jun 25'))
+  assert.ok(htmlIncludes(tonightHtml, 'Last synced 6:04 AM ET'))
+  assert.equal(htmlIncludes(tonightHtml, 'Refresh delayed'), false)
+})
+
+test('Tonight unavailable keeps generic stale copy when published bullpen view is stale', () => {
+  const staleDashboard = {
+    ...dashboard,
+    freshness: {
+      ...dashboard.freshness,
+      freshness_state: 'stale',
+      is_current: false,
+      is_stale: true,
+    },
+  }
+  const html = render(React.createElement(IntelligenceSurfaceView, {
+    intelligence: intelligenceOk,
+    tonight: {
+      status: 'error',
+      reference_date: '2026-06-26',
+      cards: [],
+      snapshot: {
+        generated_at: '2026-06-26T03:30:00',
+      },
+    },
+    dashboard: staleDashboard,
+    landscape,
+    teams,
+  }))
+  const tonightHtml = sectionSlice(html, 'Tonight&#x27;s Bullpen Watch', 'Learn &amp; Explore BaseballOS')
+
+  assert.ok(htmlIncludes(tonightHtml, 'Refresh delayed'))
+  assert.equal(htmlIncludes(tonightHtml, 'Tonight slate unavailable'), false)
+  assert.equal(htmlIncludes(tonightHtml, 'Freshness: Current'), false)
+})
+
 test('Tonight error shows unavailable state when dashboard observations exist', () => {
   const html = render(React.createElement(IntelligenceSurfaceView, {
     intelligence: intelligenceOk,
