@@ -825,6 +825,55 @@ test('Tonight live build timeout reason renders unavailable state without fallba
   assert.equal(htmlIncludes(html, 'New York Mets added 2 rested arms'), false)
 })
 
+test('live publishable dashboard freshness keeps Today current while Tonight is unavailable', () => {
+  const liveDashboard = clone(dashboard)
+  liveDashboard.freshness = {
+    data_through: '2026-07-05',
+    latest_workload_date: '2026-07-05',
+    last_successful_sync: '2026-07-06T04:34:36Z',
+    sync_status: 'success',
+    complete_enough_to_publish: true,
+    validations_passed: true,
+    is_current: false,
+    is_stale: false,
+    freshness_state: 'incomplete',
+    label: 'Baseball data through 2026-07-05 is incomplete and is not publishable as current.',
+    limitations: ['Slate coverage validations did not pass.'],
+    slate_coverage: {
+      complete_enough_to_publish: true,
+      validations_passed: true,
+      games_final: 15,
+      games_fully_ingested: 15,
+    },
+  }
+  const liveLandscape = clone(landscape)
+  liveLandscape.games.as_of_date = null
+  const html = render(React.createElement(IntelligenceSurfaceView, {
+    intelligence: intelligenceOk,
+    tonight: {
+      ...tonightEmpty,
+      reference_date: '2026-07-06',
+      empty_reason: 'tonight_live_build_timeout',
+      snapshot: {
+        served_from: 'live_build_timeout',
+        source: 'on_demand',
+        generated_at: '2026-07-06T05:24:49',
+      },
+    },
+    dashboard: liveDashboard,
+    landscape: liveLandscape,
+    teams,
+  }))
+  const tonightHtml = sectionSlice(html, 'Tonight&#x27;s Bullpen Watch', 'Learn &amp; Explore BaseballOS')
+
+  assert.ok(htmlIncludes(html, 'Published view current'))
+  assert.ok(htmlIncludes(html, 'Published view through Jul 5'))
+  assert.ok(htmlIncludes(tonightHtml, 'Tonight slate unavailable'))
+  assert.equal(htmlIncludes(html, 'Sample data'), false)
+  assert.equal(htmlIncludes(html, 'incomplete and is not publishable'), false)
+  assert.equal(htmlIncludes(tonightHtml, 'Refresh delayed'), false)
+})
+
 test('Tonight error shows unavailable state when dashboard observations exist', () => {
   const html = render(React.createElement(IntelligenceSurfaceView, {
     intelligence: intelligenceOk,

@@ -18,25 +18,115 @@ export const completedGamesDataLine = (ymd) => {
 
 const failedStatuses = new Set(['failed', 'error'])
 const successfulStatuses = new Set(['success', 'ok'])
+const currentStates = new Set(['current', 'fresh', 'healthy', 'success', 'ok'])
 const staleStates = new Set(['stale', 'historical'])
 const missingStates = new Set(['missing', 'metadata_unavailable', 'unknown'])
-const limitedStates = new Set(['limited', 'partial', 'degraded'])
+const limitedStates = new Set(['limited', 'partial', 'degraded', 'incomplete'])
 
 function normalizedKey(value) {
   return String(value || '').trim().toLowerCase().replace(/[-\s]+/g, '_')
 }
 
-function freshnessAuthorityIsCurrent(freshnessAuthority) {
-  if (!freshnessAuthority || typeof freshnessAuthority !== 'object') return false
-  const state = normalizedKey(freshnessAuthority.freshness_state || freshnessAuthority.state)
-  const syncStatus = normalizedKey(freshnessAuthority.sync_status)
-  return Boolean(freshnessAuthority.data_through)
-    && freshnessAuthority.is_current !== false
-    && freshnessAuthority.is_stale !== true
-    && !staleStates.has(state)
-    && !missingStates.has(state)
-    && !limitedStates.has(state)
-    && !failedStatuses.has(syncStatus)
+function firstPresent(...values) {
+  return values.find(value => value !== undefined && value !== null && value !== '')
+}
+
+function boolValue(value) {
+  if (value === true || value === false) return value
+  if (typeof value === 'string') {
+    const normalized = normalizedKey(value)
+    if (normalized === 'true') return true
+    if (normalized === 'false') return false
+  }
+  return null
+}
+
+export function freshnessDataThrough(freshness) {
+  if (!freshness || typeof freshness !== 'object') return null
+  return firstPresent(
+    freshness.data_through,
+    freshness.dataThrough,
+    freshness.latest_workload_date,
+    freshness.latestWorkloadDate,
+  ) || null
+}
+
+function freshnessState(freshness) {
+  if (!freshness || typeof freshness !== 'object') return ''
+  return normalizedKey(firstPresent(
+    freshness.freshness_state,
+    freshness.freshnessState,
+    freshness.state,
+    freshness.status,
+    freshness.data_status,
+    freshness.dataStatus,
+  ))
+}
+
+function freshnessSyncStatus(freshness) {
+  if (!freshness || typeof freshness !== 'object') return ''
+  return normalizedKey(firstPresent(
+    freshness.sync_status,
+    freshness.syncStatus,
+    freshness.latest_sync_status,
+    freshness.latestSyncStatus,
+    freshness.current_sync_status,
+    freshness.currentSyncStatus,
+  ))
+}
+
+function freshnessFlag(freshness, ...keys) {
+  if (!freshness || typeof freshness !== 'object') return null
+  for (const key of keys) {
+    const value = boolValue(freshness[key])
+    if (value !== null) return value
+  }
+  return null
+}
+
+function freshnessIsSample(freshness) {
+  if (!freshness || typeof freshness !== 'object') return false
+  const state = freshnessState(freshness)
+  return freshnessFlag(freshness, 'sample', 'demo', 'is_demo', 'isDemo', 'non_live', 'nonLive') === true
+    || freshnessFlag(freshness, 'is_live', 'isLive') === false
+    || state === 'sample'
+    || state === 'sample_state'
+    || state === 'demo'
+    || state === 'demo_state'
+}
+
+function freshnessIsPublishable(freshness) {
+  if (!freshness || typeof freshness !== 'object') return false
+  const coverage = freshness.slate_coverage || freshness.slateCoverage || {}
+  const completeEnough = freshnessFlag(freshness, 'complete_enough_to_publish', 'completeEnoughToPublish')
+  const validationsPassed = freshnessFlag(freshness, 'validations_passed', 'validationsPassed')
+  const coverageComplete = freshnessFlag(coverage, 'complete_enough_to_publish', 'completeEnoughToPublish')
+  const coverageValidated = freshnessFlag(coverage, 'validations_passed', 'validationsPassed')
+
+  return completeEnough === true
+    && validationsPassed !== false
+    && coverageComplete !== false
+    && coverageValidated !== false
+}
+
+export function freshnessIsCurrent(freshness) {
+  if (!freshness || typeof freshness !== 'object') return false
+  if (!freshnessDataThrough(freshness)) return false
+  if (freshnessIsSample(freshness)) return false
+  if (freshnessFlag(freshness, 'fail_closed', 'failClosed') === true) return false
+
+  const state = freshnessState(freshness)
+  const syncStatus = freshnessSyncStatus(freshness)
+  const staleFlag = freshnessFlag(freshness, 'is_stale', 'isStale', 'stale')
+  const currentFlag = freshnessFlag(freshness, 'is_current', 'isCurrent', 'current')
+  const publishable = freshnessIsPublishable(freshness)
+
+  if (failedStatuses.has(syncStatus)) return false
+  if (publishable) return true
+  if (currentFlag === false || staleFlag === true) return false
+  if (staleStates.has(state) || missingStates.has(state) || limitedStates.has(state)) return false
+  if (currentFlag === true) return true
+  return currentStates.has(state) || successfulStatuses.has(syncStatus)
 }
 
 export function getSyncStatusView(data, { now = Date.now(), freshnessAuthority } = {}) {
@@ -46,7 +136,7 @@ export function getSyncStatusView(data, { now = Date.now(), freshnessAuthority }
   const rawDataThroughSource = data?.data_through || data?.data?.latest_game_date
   const hasFreshnessAuthority = freshnessAuthority !== undefined
   const dataThroughSource = hasFreshnessAuthority
-    ? freshnessAuthority?.data_through
+    ? freshnessDataThrough(freshnessAuthority)
     : rawDataThroughSource
   const dataThrough = formatDateOnly(dataThroughSource, { month: 'long' })
   const checkedDataThrough = formatDateOnly(rawDataThroughSource, { month: 'long' })
@@ -55,15 +145,22 @@ export function getSyncStatusView(data, { now = Date.now(), freshnessAuthority }
   const lastDataUpdateValue = formatUtcDateTimeEt(successfulSync, { includeDate: false })
   const logCount = data?.data?.game_logs
   const freshness = data?.freshness || {}
-  const limitations = freshness.limitations || []
-  const reasonCodes = Array.isArray(freshness.reason_codes) ? freshness.reason_codes : []
-  const freshnessState = freshness.freshness_state
-    || freshness.state
+  const limitations = Array.isArray(freshness.limitations) ? freshness.limitations : []
+  const reasonCodes = Array.isArray(freshness.reason_codes)
+    ? freshness.reason_codes
+    : (Array.isArray(freshness.reasonCodes) ? freshness.reasonCodes : [])
+  const freshnessState = firstPresent(
+    freshness.freshness_state,
+    freshness.freshnessState,
+    freshness.state,
+    freshness.status,
+  )
     || (freshness.is_current === true ? 'current' : null)
-  const stale = freshness.is_stale === true
-    || staleStates.has(String(freshnessState || '').toLowerCase())
+  const normalizedFreshnessState = normalizedKey(freshnessState)
+  const stale = freshnessFlag(freshness, 'is_stale', 'isStale', 'stale') === true
+    || staleStates.has(normalizedFreshnessState)
     || reasonCodes.includes('workload_data_outside_active_window')
-  const missing = missingStates.has(String(freshnessState || '').toLowerCase())
+  const missing = missingStates.has(normalizedFreshnessState)
   const coverageValue = data?.pitchers_updated > 0
     ? `${data.pitchers_updated.toLocaleString()} Pitchers Refreshed`
     : null
@@ -71,12 +168,15 @@ export function getSyncStatusView(data, { now = Date.now(), freshnessAuthority }
     && dataThroughSource
     && rawDataThroughSource
     && rawDataThroughSource > dataThroughSource
-  const authorityIsCurrent = freshnessAuthorityIsCurrent(freshnessAuthority)
-  const authorityLabel = freshnessAuthority?.label || (
-    authorityIsCurrent && dataThrough
-      ? `Public bullpen data is current through ${dataThrough}.`
-      : null
-  )
+  const authorityIsCurrent = freshnessIsCurrent(freshnessAuthority)
+  const rawAuthorityLabel = freshnessAuthority?.label || freshnessAuthority?.message
+  const authorityLabel = authorityIsCurrent
+    ? (
+        rawAuthorityLabel && !/incomplete and is not publishable/i.test(rawAuthorityLabel)
+          ? rawAuthorityLabel
+          : (dataThrough ? `Public bullpen data is current through ${dataThrough}.` : null)
+      )
+    : rawAuthorityLabel
   const freshnessHelper = (baseHelper, { limited = false } = {}) => {
     if (authorityIsCurrent) {
       return authorityLabel
@@ -130,7 +230,7 @@ export function getSyncStatusView(data, { now = Date.now(), freshnessAuthority }
   }
 
   if (successfulSync) {
-    const rawLimited = stale || missing || freshness.is_current === false || limitations.length > 0
+    const rawLimited = stale || missing || freshnessFlag(freshness, 'is_current', 'isCurrent', 'current') === false || limitations.length > 0
     const limited = authorityIsCurrent ? false : rawLimited
     const displayStale = authorityIsCurrent ? false : stale
     return {
@@ -161,7 +261,7 @@ export function getSyncStatusView(data, { now = Date.now(), freshnessAuthority }
       ),
       limitations: authorityIsCurrent ? [] : limitations,
       reasonCodes: authorityIsCurrent ? [] : reasonCodes,
-      freshnessState: authorityIsCurrent ? (freshnessAuthority?.freshness_state || 'current') : freshnessState,
+      freshnessState: authorityIsCurrent ? 'current' : freshnessState,
     }
   }
 

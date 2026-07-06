@@ -62,6 +62,37 @@ test('in-season July dashboard does not show end-of-season copy', () => {
   assert.ok(!htmlIncludes(html, 'End-of-Season Read'))
 })
 
+test('publishable live dashboard freshness does not render as sample or snapshot', () => {
+  const html = inRouter(React.createElement(DashboardView, {
+    data: withFreshness({
+      data_through: '2026-07-05',
+      latest_workload_date: '2026-07-05',
+      last_successful_sync: '2026-07-06T04:34:36Z',
+      sync_status: 'success',
+      complete_enough_to_publish: true,
+      validations_passed: true,
+      is_current: false,
+      is_stale: false,
+      freshness_state: 'incomplete',
+      label: 'Baseball data through 2026-07-05 is incomplete and is not publishable as current.',
+      limitations: ['Slate coverage validations did not pass.'],
+      slate_coverage: {
+        complete_enough_to_publish: true,
+        validations_passed: true,
+        games_final: 15,
+        games_fully_ingested: 15,
+      },
+    }),
+  }))
+
+  assert.ok(htmlIncludes(html, 'Current — 2026 Season'))
+  assert.ok(htmlIncludes(html, 'Published view current'))
+  assert.ok(htmlIncludes(html, 'Updated after completed games through Jul 5, 2026'))
+  assert.equal(htmlIncludes(html, 'Sample data'), false)
+  assert.equal(htmlIncludes(html, '2026 Season Snapshot'), false)
+  assert.equal(htmlIncludes(html, 'incomplete and is not publishable'), false)
+})
+
 test('a failed latest sync does not render as current even with a recent data date', () => {
   // status drives Current; a failed durable sync must not be painted healthy.
   const html = inRouter(React.createElement(DashboardView, {

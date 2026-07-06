@@ -34,8 +34,19 @@ const liveBoard = makeBoard({ cardsByStatus: { Available: [{ pitcher_id: 7, name
 test('getDataProvenance distinguishes live, sample, and no-data', () => {
   assert.equal(view.getDataProvenance({ is_current: true, sync_status: 'success', data_through: '2026-06-04' }).label, 'Published view current')
   assert.equal(view.getDataProvenance({ is_current: true, data_through: '2026-07-05' }).label, 'Published view current')
+  assert.equal(view.getDataProvenance({
+    is_current: false,
+    freshness_state: 'incomplete',
+    label: 'Baseball data through 2026-07-05 is incomplete and is not publishable as current.',
+    data_through: '2026-07-05',
+    complete_enough_to_publish: true,
+    validations_passed: true,
+    slate_coverage: { complete_enough_to_publish: true, validations_passed: true },
+  }).label, 'Published view current')
+  assert.equal(view.getDataProvenance({ dataThrough: '2026-07-05', status: 'healthy' }).label, 'Published view current')
   assert.equal(view.getDataProvenance({ is_current: false, sync_status: 'metadata_unavailable', data_through: '2026-04-01' }).label, 'Sample data')
   assert.equal(view.getDataProvenance({ is_current: true, freshness_state: 'sample', data_through: '2026-04-01' }).label, 'Sample data')
+  assert.equal(view.getDataProvenance({ isCurrent: true, freshnessState: 'sample', dataThrough: '2026-04-01' }).label, 'Sample data')
   assert.equal(view.getDataProvenance({
     is_current: true,
     sync_status: 'success',

@@ -10,7 +10,7 @@ import {
   getInjuryIlContextSummary,
   normalizeInjuryIlContext,
 } from './injuryIlContextView'
-import { fmtSyncDate } from './syncStatusView'
+import { fmtSyncDate, freshnessDataThrough } from './syncStatusView'
 import {
   getBoardContextView,
   getDataProvenance,
@@ -44,19 +44,11 @@ export function DashboardView({ data, loading = false, error = null, staleWithEr
   const injuryIlContext = normalizeInjuryIlContext(data)
 
   const freshness = data?.freshness || {}
-  const lastSync = fmtSyncDate(freshness.last_successful_sync)
-  const isCurrent = freshness.is_current !== false
-  const season = (freshness.data_through || '').slice(0, 4) || '2024'
-  const syncStatus = String(freshness.sync_status || '').toLowerCase()
-  const freshnessState = String(freshness.freshness_state || freshness.state || '').toLowerCase()
-  const isLive = isCurrent
-    && freshness.is_stale !== true
-    && freshness.sample !== true
-    && freshness.demo !== true
-    && freshnessState !== 'stale'
-    && freshnessState !== 'sample'
-    && syncStatus !== 'failed'
-    && syncStatus !== 'error'
+  const provenance = getDataProvenance(freshness)
+  const dataThroughSource = freshnessDataThrough(freshness)
+  const lastSync = fmtSyncDate(freshness.last_successful_sync || freshness.lastSuccessfulSync)
+  const season = (dataThroughSource || '').slice(0, 4) || '2024'
+  const isLive = provenance.isLive
 
   return (
     <div className="p-4 sm:p-5 lg:p-6 max-w-7xl mx-auto">
@@ -84,7 +76,7 @@ export function DashboardView({ data, loading = false, error = null, staleWithEr
               </span>
               <SeasonBanner season={season} isLive={isLive} />
               <FreshnessPill
-                provenance={getDataProvenance(freshness)}
+                provenance={provenance}
                 lastSync={lastSync}
                 confidenceLabel={context.confidenceLabel}
               />
@@ -110,7 +102,7 @@ export function DashboardView({ data, loading = false, error = null, staleWithEr
         <>
           {staleWithError && (
             <StaleDataNotice
-              dataThrough={freshness.data_through}
+              dataThrough={dataThroughSource}
               onRetry={onRetry}
             />
           )}

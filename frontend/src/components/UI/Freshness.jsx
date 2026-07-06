@@ -2,6 +2,10 @@ import {
   formatDateOnly,
   formatUtcDateTimeEt,
 } from '../../utils/dateDisplay'
+import {
+  freshnessDataThrough,
+  freshnessIsCurrent,
+} from '../dashboard/syncStatusView'
 
 const BADGE_TONE = {
   current: 'border-emerald-400/30 bg-emerald-400/10 text-emerald-200',
@@ -45,14 +49,29 @@ export function isSampleFreshness(freshness) {
     freshness.sample === true ||
     freshness.demo === true ||
     freshness.is_demo === true ||
+    freshness.isDemo === true ||
     freshness.non_live === true ||
-    freshness.is_live === false
+    freshness.nonLive === true ||
+    freshness.is_live === false ||
+    freshness.isLive === false
   ) return true
 
-  const state = normalizedText(freshness.freshness_state || freshness.state)
+  const state = normalizedText(freshness.freshness_state || freshness.freshnessState || freshness.state)
   if (NON_LIVE_FRESHNESS_STATES.has(state)) return true
 
-  for (const key of ['status', 'source', 'data_source', 'metadata_source', 'mode', 'served_from', 'collection_id']) {
+  for (const key of [
+    'status',
+    'source',
+    'data_source',
+    'dataSource',
+    'metadata_source',
+    'metadataSource',
+    'mode',
+    'served_from',
+    'servedFrom',
+    'collection_id',
+    'collectionId',
+  ]) {
     const value = normalizedText(freshness[key])
     if (NON_LIVE_FRESHNESS_STATES.has(value)) return true
     if (/(^|_)(sample|demo)($|_)/.test(value)) return true
@@ -65,20 +84,30 @@ function normalizeFreshnessMetadata(freshness) {
   if (!freshness || typeof freshness !== 'object') return null
 
   const freshnessState = String(
-    freshness.freshness_state || freshness.state || '',
+    freshness.freshness_state || freshness.freshnessState || freshness.state || '',
   ).toLowerCase()
-  const syncStatus = String(freshness.sync_status || '').toLowerCase()
+  const syncStatus = String(freshness.sync_status || freshness.syncStatus || '').toLowerCase()
 
   if (isSampleFreshness(freshness)) return 'sample'
+  if (freshnessIsCurrent(freshness)) return 'current'
   if (
     freshness.fail_closed === true ||
+    freshness.failClosed === true ||
     freshness.is_stale === true ||
+    freshness.isStale === true ||
     freshness.is_current === false ||
+    freshness.isCurrent === false ||
     freshnessState === 'stale' ||
     freshnessState === 'historical'
   ) return 'stale'
   if (syncStatus === 'failed' || syncStatus === 'error') return 'limited'
-  if (freshness.is_current === true || freshness.data_through || freshness.last_successful_sync) {
+  if (
+    freshness.is_current === true ||
+    freshness.isCurrent === true ||
+    freshnessDataThrough(freshness) ||
+    freshness.last_successful_sync ||
+    freshness.lastSuccessfulSync
+  ) {
     return 'current'
   }
   return null
