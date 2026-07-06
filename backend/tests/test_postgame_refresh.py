@@ -378,6 +378,42 @@ def test_postgame_refresh_publishes_public_snapshots_before_internal_stages(
         assert run.published_dashboard_snapshot_id == 456
 
 
+def test_postgame_refresh_public_only_skips_internal_enrichment(app, monkeypatch):
+    with app.app_context():
+        _seed_pitchers()
+    _patch_mlb(monkeypatch, [_game()])
+    monkeypatch.setattr(
+        sync_service,
+        '_safe_build_workload_recovery_evidence_stage',
+        lambda *args, **kwargs: pytest.fail('workload evidence should not run'),
+    )
+    monkeypatch.setattr(
+        sync_service,
+        '_safe_build_composed_reads_stage',
+        lambda *args, **kwargs: pytest.fail('composed reads should not run'),
+    )
+    monkeypatch.setattr(
+        sync_service,
+        '_safe_run_legacy_read_reconciliation_audit_stage',
+        lambda *args, **kwargs: pytest.fail('reconciliation audit should not run'),
+    )
+
+    status = sync_service.run_postgame_refresh(
+        app,
+        schedule_date=date(2026, 6, 20),
+        source='test',
+        include_internal_enrichment=False,
+    )
+
+    assert status['status'] == sync_metadata.STATUS_SUCCESS
+    assert status['dashboard_snapshot_id'] == 123
+    assert status['internal_enrichment'] == 'skipped_public_only'
+    with app.app_context():
+        run = SyncRun.query.order_by(SyncRun.id.desc()).first()
+        assert run.job_name == sync_metadata.JOB_POSTGAME_REFRESH
+        assert run.stage == sync_metadata.STAGE_PUBLISHED
+
+
 def test_postgame_refresh_is_idempotent_for_already_processed_games(app, monkeypatch):
     with app.app_context():
         _seed_pitchers()
@@ -638,7 +674,7 @@ def test_postgame_sync_workflow_job_timeout_is_25_minutes():
     text = workflow.read_text(encoding='utf-8').replace('\r\n', '\n')
 
     jobs_section = text.split('\njobs:\n', 1)[1]
-    sync_body = jobs_section.split('  sync:\n', 1)[1]
+    sync_body = jobs_section.split('  public-sync:\n', 1)[1]
     sync_lines = []
     for line in sync_body.splitlines():
         if line.startswith('  ') and not line.startswith('    '):
@@ -711,7 +747,7 @@ def test_sync_workflow_direct_sync_steps_have_command_timeouts():
     assert 'Direct daily sync completed at' in daily_block
     assert (
         'timeout --kill-after=30s "$DAILY_SYNC_COMMAND_TIMEOUT" '
-        'python backend/scripts/run_daily_sync.py --days-back 7 --source github_actions'
+        'python backend/scripts/run_daily_sync.py --days-back 7 --source github_actions --public-only'
     ) in daily_block
     assert '::error::Direct daily sync timed out after $DAILY_SYNC_COMMAND_TIMEOUT.' in daily_block
 
@@ -720,9 +756,39 @@ def test_sync_workflow_direct_sync_steps_have_command_timeouts():
     assert 'Direct postgame refresh completed at' in postgame_block
     assert (
         'timeout --kill-after=30s "$POSTGAME_REFRESH_COMMAND_TIMEOUT" '
-        'python backend/scripts/run_postgame_refresh.py --source github_actions'
+        'python backend/scripts/run_postgame_refresh.py --source github_actions --public-only'
     ) in postgame_block
     assert (
         '::error::Direct postgame refresh timed out after $POSTGAME_REFRESH_COMMAND_TIMEOUT.'
         in postgame_block
     )
+
+
+def test_sync_workflow_splits_public_and_internal_enrichment_jobs():
+    from pathlib import Path
+
+    workflow = Path(__file__).resolve().parents[2] / '.github/workflows/baseballos-sync.yml'
+    text = workflow.read_text(encoding='utf-8').replace('\r\n', '\n')
+    jobs_section = text.split('\njobs:\n', 1)[1]
+    public_body = jobs_section.split('  public-sync:\n', 1)[1].split(
+        '\n  internal-enrichment:\n',
+        1,
+    )[0]
+    internal_body = jobs_section.split('  internal-enrichment:\n', 1)[1].split(
+        '\n  static-team-story-preview:\n',
+        1,
+    )[0]
+    static_body = jobs_section.split('  static-team-story-preview:\n', 1)[1]
+
+    assert 'backend/scripts/run_daily_sync.py --days-back 7 --source github_actions --public-only' in public_body
+    assert 'backend/scripts/run_postgame_refresh.py --source github_actions --public-only' in public_body
+    assert 'backend/scripts/run_internal_enrichment.py' not in public_body
+    assert 'continue-on-error: true' in internal_body
+    assert 'needs: public-sync' in internal_body
+    assert 'backend/scripts/run_internal_enrichment.py --mode daily --source github_actions_internal' in internal_body
+    assert (
+        'backend/scripts/run_internal_enrichment.py --mode postgame '
+        '--source github_actions_internal --skip-backtest'
+    ) in internal_body
+    assert 'needs: public-sync' in static_body
+    assert 'backend/scripts/export_team_story_pages.py' in static_body
