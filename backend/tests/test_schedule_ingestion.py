@@ -289,6 +289,163 @@ def test_ingest_schedule_empty_result_is_safe(app, monkeypatch):
         assert summary['rows_created'] == 0
 
 
+def test_refresh_non_final_games_for_slate_updates_stale_prior_game_to_final(app, monkeypatch):
+    slate_date = date(2026, 7, 5)
+    seen = {}
+
+    def fake_schedule(start_date=None, end_date=None, team_id=None):
+        seen['start'] = start_date
+        seen['end'] = end_date
+        return [
+            _game(
+                game_pk=824010,
+                home_id=108,
+                away_id=111,
+                official_date=slate_date.isoformat(),
+                game_date='2026-07-05T20:10:00Z',
+                status_code='F',
+                detailed_state='Final',
+                abstract_state='Final',
+            )
+        ]
+
+    monkeypatch.setattr(schedule_ingestion.mlb_client, 'get_schedule', fake_schedule)
+    with app.app_context():
+        ingest_games([
+            _game(
+                game_pk=824010,
+                home_id=108,
+                away_id=111,
+                official_date=slate_date.isoformat(),
+                game_date='2026-07-05T20:10:00Z',
+                status_code='I',
+                detailed_state='In Progress',
+                abstract_state='Live',
+            )
+        ], source='initial')
+
+        result = schedule_ingestion.refresh_non_final_games_for_slate(
+            slate_date,
+            source='test_finality_refresh',
+        )
+
+        rows = _by_team(824010)
+        assert seen == {'start': '2026-07-05', 'end': '2026-07-05'}
+        assert result['status'] == 'refreshed'
+        assert result['candidate_game_pks'] == [824010]
+        assert result['summary']['rows_updated'] == 2
+        assert rows[108].status_state == ScheduledGame.STATE_FINAL
+        assert rows[111].status_state == ScheduledGame.STATE_FINAL
+        assert rows[108].status_code == 'F'
+
+
+def test_refresh_non_final_games_for_slate_keeps_source_non_final(app, monkeypatch):
+    slate_date = date(2026, 7, 5)
+
+    monkeypatch.setattr(
+        schedule_ingestion.mlb_client,
+        'get_schedule',
+        lambda **_kwargs: [
+            _game(
+                game_pk=824010,
+                home_id=108,
+                away_id=111,
+                official_date=slate_date.isoformat(),
+                game_date='2026-07-05T20:10:00Z',
+                status_code='I',
+                detailed_state='In Progress',
+                abstract_state='Live',
+            )
+        ],
+    )
+    with app.app_context():
+        ingest_games([
+            _game(
+                game_pk=824010,
+                home_id=108,
+                away_id=111,
+                official_date=slate_date.isoformat(),
+                game_date='2026-07-05T20:10:00Z',
+                status_code='I',
+                detailed_state='In Progress',
+                abstract_state='Live',
+            )
+        ], source='initial')
+
+        result = schedule_ingestion.refresh_non_final_games_for_slate(slate_date)
+
+        rows = _by_team(824010)
+        assert result['status'] == 'refreshed'
+        assert result['status_states_by_game_pk'] == {'824010': [ScheduledGame.STATE_OTHER]}
+        assert rows[108].status_state == ScheduledGame.STATE_OTHER
+        assert rows[111].status_state == ScheduledGame.STATE_OTHER
+
+
+def test_refresh_non_final_games_for_slate_skips_final_and_postponed_games(app, monkeypatch):
+    def fail_schedule(**_kwargs):
+        raise AssertionError('final or postponed slate should not be re-fetched')
+
+    monkeypatch.setattr(schedule_ingestion.mlb_client, 'get_schedule', fail_schedule)
+    with app.app_context():
+        ingest_games([
+            _game(game_pk=824011, status_code='F', detailed_state='Final',
+                  abstract_state='Final'),
+            _game(game_pk=824012, status_code='DR', detailed_state='Postponed',
+                  abstract_state='Preview'),
+        ], source='initial')
+
+        result = schedule_ingestion.refresh_non_final_games_for_slate(date(2026, 6, 25))
+
+        assert result == {
+            'status': 'skipped',
+            'reason': 'no_non_final_games',
+            'slate_date': '2026-06-25',
+            'candidate_game_pks': [],
+        }
+
+
+def test_refresh_non_final_games_for_slate_preserves_suspended_source(app, monkeypatch):
+    slate_date = date(2026, 7, 5)
+
+    monkeypatch.setattr(
+        schedule_ingestion.mlb_client,
+        'get_schedule',
+        lambda **_kwargs: [
+            _game(
+                game_pk=824010,
+                home_id=108,
+                away_id=111,
+                official_date=slate_date.isoformat(),
+                game_date='2026-07-05T20:10:00Z',
+                status_code='U',
+                detailed_state='Suspended',
+                abstract_state='Live',
+            ) | {'rescheduledGamePk': 824099, 'rescheduleDate': '2026-07-06'}
+        ],
+    )
+    with app.app_context():
+        ingest_games([
+            _game(
+                game_pk=824010,
+                home_id=108,
+                away_id=111,
+                official_date=slate_date.isoformat(),
+                game_date='2026-07-05T20:10:00Z',
+                status_code='I',
+                detailed_state='In Progress',
+                abstract_state='Live',
+            )
+        ], source='initial')
+
+        result = schedule_ingestion.refresh_non_final_games_for_slate(slate_date)
+
+        rows = _by_team(824010)
+        assert result['status'] == 'refreshed'
+        assert rows[108].status_state == ScheduledGame.STATE_SUSPENDED
+        assert rows[108].resumed_to_game_pk == 824099
+        assert rows[108].resumed_product_date == slate_date.replace(day=6)
+
+
 # ── Script argument / window resolution ───────────────────────────────────────
 
 def test_script_resolves_explicit_window():
