@@ -63,6 +63,18 @@ asserts the public set is exactly `['/', '/dashboard', '/bullpen', '/stories',
 > from the footer's learn/trust link row (About, How to Read, Methodology, Data & Trust).
 > The six-lane sidebar hierarchy above is unchanged.
 
+> **Update (2026-07, phase-0-clarity/02):** league-view ownership was consolidated.
+> The Dashboard is now the only full league-board surface (landscape lanes, one
+> league state read, roster availability context; the orientation strip, the
+> League-Wide Bullpen Read count tiles, and the Quick Actions cards were removed
+> as duplicates of the landscape, the state card, and the sidebar). Today's
+> "Bullpen Picture" is a teaser strip — one standout team per lane plus a
+> "View full league board" handoff to `/dashboard`. The Bullpen page's "All
+> Teams" tab (the 30-team Avg Workload / risk-tier score table) was retired so
+> no score-forward league table competes with the Dashboard; `/bullpen` now has
+> three tabs (Team Board, Compare Bullpens, All Pitchers) and `?view=teams`
+> deep-links fall back to the Team Board. Route set unchanged.
+
 ## 4. Hidden / private / admin route assessment
 
 Four non-public routes remain and are intentional: `/signin` and `/auth/verify` (auth),

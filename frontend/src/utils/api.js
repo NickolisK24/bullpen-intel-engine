@@ -505,10 +505,6 @@ export const getPitcherRecentWork = (id) => request(`/bullpen/pitchers/${encodeU
 
 export const getTeams          = () => request('/bullpen/teams')
 export const getTeamReliefWork = (teamId) => request(`/bullpen/teams/${encodeURIComponent(teamId)}/relief-work`)
-export const getTeamBullpen    = (teamId, params = {}) => {
-  const q = new URLSearchParams(params).toString()
-  return request(`/bullpen/teams/${teamId}/bullpen${q ? `?${q}` : ''}`)
-}
 // Tonight's Bullpen Board — existing availability classifications grouped for a
 // coach-facing read. Presentation only (no ranking/selection).
 export const getTeamBullpenBoard = (teamId, params = {}) => {

@@ -58,9 +58,9 @@ BaseballOS is descriptive by design. It does not:
 
 | Surface | Route | Purpose |
 | --- | --- | --- |
-| Today | `/` | Daily front door with the current bullpen picture, bullpen watch, around-baseball context, and learning links. |
-| Dashboard | `/dashboard` | League-wide bullpen overview, availability distribution, workload context, and league read cards. |
-| Bullpen | `/bullpen` | Team bullpen board and comparison workflow for team-specific availability and workload reads. |
+| Today | `/` | Daily front door: tonight's bullpen watch, a quick league teaser that hands off to the Dashboard, and learning links. |
+| Dashboard | `/dashboard` | The full league bullpen board: the landscape lanes, one league state read, and roster availability context. |
+| Bullpen | `/bullpen` | Team bullpen board, two-team comparison, and the all-pitchers reference table for team-specific reads. |
 | Stories | `/stories` | Browseable bullpen intelligence feed for the day's storylines and league context. |
 | Methodology | `/methodology` | Explanation of how BaseballOS builds its public bullpen reads. |
 | Data & Trust | `/trust` | Freshness, data coverage, provenance, and trust limitations. |

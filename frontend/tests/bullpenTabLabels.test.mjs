@@ -28,15 +28,17 @@ function renderBullpen(initialEntries = ['/bullpen']) {
 
 const html = renderBullpen()
 
-// The four Bullpen view tabs read as a clear hierarchy: the two new flagship
-// surfaces first, then the full reference tables (renamed from "Pitchers" /
-// "Team Summary" so they don't read as a second comparison surface).
+// The three Bullpen view tabs read as a clear hierarchy: the flagship team
+// board and comparison first, then the full pitcher reference table. The old
+// "All Teams" league score table was retired in phase-0-clarity/02 — the
+// Dashboard owns the league view.
 test('bullpen tabs use the clarified labels', () => {
   // ("Tonight's Board" has an apostrophe React escapes to &#x27; — match the rest.)
-  for (const label of ['Compare Bullpens', 'All Pitchers', 'All Teams']) {
+  for (const label of ['Compare Bullpens', 'All Pitchers']) {
     assert.ok(htmlIncludes(html, label), `missing tab label: ${label}`)
   }
   assert.ok(htmlIncludes(html, 'Board'))
+  assert.equal(htmlIncludes(html, '>All Teams<'), false)
 })
 
 test('bullpen section is framed as team-specific', () => {

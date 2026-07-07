@@ -6,7 +6,6 @@ import { LoadingPane, ErrorState, EmptyState, FatigueBar, RiskBadge, SectionHead
 import { riskColor } from '../../utils/formatters'
 import { ANALYTICS_EVENTS, trackAnalyticsEvent, trackAnalyticsEventOnce } from '../../utils/analytics'
 import PitcherDetail from './PitcherDetail'
-import TeamComparison from './TeamComparison'
 import TonightsBullpenBoard from './board/TonightsBullpenBoard'
 import TeamBullpenComparison from './board/TeamBullpenComparison'
 import { getBullpenEmptyState } from './emptyState'
@@ -22,11 +21,15 @@ import {
 } from './availabilityView'
 
 const RISK_FILTERS = ['ALL', 'CRITICAL', 'HIGH', 'MODERATE', 'LOW']
+// The old "All Teams" score-table tab (30-team Avg Workload / risk-tier counts)
+// was retired in phase-0-clarity/02: it competed with the Dashboard's league
+// landscape and read as a score-forward leaderboard. The Dashboard is the only
+// full league-board surface; /bullpen?view=teams deep-links fall back to the
+// Team Board below.
 const VIEW_MODES   = [
   { id: 'board',    label: 'Team Board' },
   { id: 'compare',  label: 'Compare Bullpens' },
   { id: 'pitchers', label: 'All Pitchers' },
-  { id: 'teams',    label: 'All Teams' },
 ]
 const PAGE_SIZE = 50
 
@@ -173,8 +176,6 @@ export default function Bullpen() {
         </>
       ) : viewMode === 'compare' ? (
         <TeamBullpenComparison teams={teams} />
-      ) : viewMode === 'teams' ? (
-        <TeamComparison />
       ) : (
         <PitcherView
           teams={teams}
