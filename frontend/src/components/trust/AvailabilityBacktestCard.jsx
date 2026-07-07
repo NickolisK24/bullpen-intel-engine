@@ -43,7 +43,33 @@ function publicAvailabilityCopy(value) {
     .replace(/\bAvoid\s+and\s+Unavailable\b/g, 'Unavailable')
     .replace(/\bAvoid\s+or\s+Unavailable\b/g, 'Unavailable')
     .replace(/\bAvoid\b/g, 'Unavailable')
+    .replace(/\bbacktest\b/gi, 'usage check')
 }
+
+// The framing block (title / summary / claim / caveat) is backend-supplied
+// copy. It is quoted, never trusted: a framing string that reads as
+// prediction, accuracy, betting, ranking, or internal tooling is withheld and
+// the card falls back to its fixed descriptive copy — same pattern as the
+// internal-language guards on the Today and Stories surfaces.
+export const BLOCKED_FRAMING_COPY_PATTERN = new RegExp(
+  `\\b(${[
+    'predict\\w*', 'forecast\\w*', 'accura\\w*', 'probabilit\\w*', 'proves?',
+    'odds', 'bet', 'bets', 'betting', 'wager\\w*', 'picks?', 'edge',
+    'guarantee\\w*', 'rank\\w*', 'scores?', 'scored', 'model\\w*',
+    'deterministic\\w*', 'endpoint\\w*', 'backend', 'governance', 'snapshot\\w*',
+    'COIN', 'V[2-5]',
+  ].join('|')})\\b`,
+  'i',
+)
+
+export function publicFramingCopy(value) {
+  const text = publicAvailabilityCopy(value)
+  if (!text) return ''
+  return BLOCKED_FRAMING_COPY_PATTERN.test(text) ? '' : text
+}
+
+const FALLBACK_CAVEAT =
+  'Observed next-day relief usage on completed games. Descriptive context only — not a claim about future outings.'
 
 function TierRateRow({ tier }) {
   const tone = TIER_TONES[tier.tier] || 'border-dirt bg-field/45 text-chalk300'
@@ -113,13 +139,13 @@ export default function AvailabilityBacktestCard({
       <div className="mb-4 flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <div className="font-mono text-xs uppercase tracking-widest text-amber/75">
-            Operational Backtest
+            Usage Check
           </div>
           <h2 className="mt-1 font-display text-2xl tracking-wider text-chalk100">
-            {publicAvailabilityCopy(framing.title) || 'Availability Tier Usage Check'}
+            {publicFramingCopy(framing.title) || 'Availability Tier Usage Check'}
           </h2>
           <p className="mt-2 max-w-3xl text-sm leading-relaxed text-chalk400">
-            {publicAvailabilityCopy(framing.summary) || 'Stored next-day usage results are not available yet.'}
+            {publicFramingCopy(framing.summary) || 'Stored next-day usage results are not available yet.'}
           </p>
         </div>
         <div className="rounded border border-dirt bg-field/60 px-3 py-2 font-mono text-[11px] text-chalk500">
@@ -128,20 +154,20 @@ export default function AvailabilityBacktestCard({
       </div>
 
       {loading ? (
-        <LoadingPane message="Loading operational backtest..." />
+        <LoadingPane message="Loading the usage check..." />
       ) : error ? (
-        <ErrorState message="Operational backtest could not be loaded." onRetry={onRetry} />
+        <ErrorState message="The usage check could not be loaded." onRetry={onRetry} />
       ) : data?.status !== 'ok' ? (
         <EmptyState
           icon="📊"
-          title="Operational backtest not computed"
-          subtitle="Stored backtest results will appear after the backtest refresh runs."
+          title="Usage check not computed yet"
+          subtitle="Stored next-day usage results will appear after the next scheduled data refresh."
         />
       ) : (
         <div className="space-y-4">
-          {framing.claim && (
+          {publicFramingCopy(framing.claim) && (
             <div className="rounded border border-emerald-400/25 bg-emerald-400/5 p-3 text-sm leading-relaxed text-emerald-100">
-              {publicAvailabilityCopy(framing.claim)}
+              {publicFramingCopy(framing.claim)}
             </div>
           )}
 
@@ -151,7 +177,7 @@ export default function AvailabilityBacktestCard({
           ))}
 
           <div className="rounded border border-dirt bg-chalk/20 p-3 text-xs leading-relaxed text-chalk500">
-            {publicAvailabilityCopy(framing.caveat)}
+            {publicFramingCopy(framing.caveat) || FALLBACK_CAVEAT}
           </div>
         </div>
       )}

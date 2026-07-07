@@ -88,13 +88,16 @@ function visibleText(html) {
   return html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
 }
 
-test('renders stored backtest values and honest framing', () => {
+test('renders stored usage-check values and honest framing', () => {
   const text = visibleText(renderCard())
 
-  assert.ok(text.includes('Operational Backtest'))
+  assert.ok(text.includes('Usage Check'))
+  assert.equal(text.includes('Operational Backtest'), false)
   assert.ok(text.includes('Computed Jun 15, 2026, 3:00 AM ET'))
   assert.ok(text.includes('Data through June 14, 2026'))
-  assert.ok(text.includes('Operational Availability Backtest'))
+  // Backend framing still says "Backtest"; the public layer rewrites it.
+  assert.ok(text.includes('Operational Availability usage check'))
+  assert.equal(text.includes('Backtest'), false)
   assert.ok(text.includes('43.2%'))
   assert.ok(text.includes('n=12,345'))
   assert.ok(text.includes('4.3%'))
@@ -108,8 +111,38 @@ test('renders stored backtest values and honest framing', () => {
 test('renders an honest empty state when no stored computation exists', () => {
   const text = visibleText(renderCard({ status: 'not_computed', framing: {}, windows: [] }))
 
-  assert.ok(text.includes('Operational backtest not computed'))
-  assert.ok(text.includes('Stored backtest results will appear after the backtest refresh runs.'))
+  assert.ok(text.includes('Usage check not computed yet'))
+  assert.ok(text.includes('Stored next-day usage results will appear after the next scheduled data refresh.'))
+})
+
+test('backend framing that reads as prediction, betting, or internal tooling is withheld', () => {
+  const text = visibleText(renderCard({
+    ...payload,
+    framing: {
+      title: 'Availability model accuracy',
+      summary: 'Our model predicts next-day usage.',
+      claim: 'Tiers forecast appearances with 90% accuracy — bet accordingly.',
+      caveat: 'Backtested against the V2 endpoint.',
+    },
+  }))
+
+  // Every unsafe framing string falls back to the card's fixed copy.
+  assert.equal(text.includes('accuracy'), false)
+  assert.equal(text.includes('predicts'), false)
+  assert.equal(text.includes('forecast'), false)
+  assert.equal(text.includes('bet accordingly'), false)
+  assert.equal(text.includes('V2'), false)
+  assert.ok(text.includes('Availability Tier Usage Check'))
+  assert.ok(text.includes('Stored next-day usage results are not available yet.'))
+  assert.ok(text.includes('Descriptive context only'))
+  // The observed rates themselves still render — only framing copy is guarded.
+  assert.ok(text.includes('43.2%'))
+})
+
+test('safe backend framing passes the guard unchanged', () => {
+  const text = visibleText(renderCard())
+  assert.ok(text.includes('Unavailable was used less often than Available.'))
+  assert.ok(text.includes('observed association'))
 })
 
 test('backtest display contains no audited-result literals', () => {

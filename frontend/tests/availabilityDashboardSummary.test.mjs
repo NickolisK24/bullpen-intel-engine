@@ -98,7 +98,7 @@ test('renders dashboard summary without claiming stale data is current', () => {
   assert.ok(htmlIncludes(html, 'No Workload Record'))
   assert.ok(htmlIncludes(html, 'Fetch Failed'))
   assert.ok(htmlIncludes(html, 'Some relievers have stale, missing, failed, or incomplete workload evidence, so the bullpen picture is less certain.'))
-  assert.ok(htmlIncludes(html, 'Show pitchers outside the freshness window, inspect no-record arms, or retry refreshes with failed workload fetches.'))
+  assert.ok(htmlIncludes(html, 'Includes pitchers outside the freshness window, arms with no recent workload record, and arms whose latest workload data did not load.'))
   assert.doesNotMatch(html, /latest_workload_snapshot/)
 })
 
