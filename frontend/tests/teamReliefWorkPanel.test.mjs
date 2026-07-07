@@ -27,6 +27,9 @@ const { getTeamReliefWork } = await server.ssrLoadModule('/src/utils/api.js')
 
 const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const htmlIncludes = (html, text) => new RegExp(escapeRegExp(text)).test(html)
+const detailsTagFor = (html, ariaLabel) => (
+  html.match(new RegExp(`<details[^>]*aria-label="${escapeRegExp(ariaLabel)}"[^>]*>`))?.[0] || ''
+)
 
 const teamReliefWorkPayload = {
   capability: 'public_team_relief_work',
@@ -45,6 +48,31 @@ const teamReliefWorkPayload = {
   scope_sentence: 'Covers pitchers currently on the TST roster per MLB roster data.',
   relief_by_date: [
     {
+      game_date: '2026-07-05',
+      relief_appearances: 1,
+      outs_total: 3,
+      pitches_total: 20,
+      appearances_with_pitches: 1,
+      sentence: 'July 5 - 1 relief appearance, 1.0 IP, 20 pitches.',
+      appearances: [
+        {
+          pitcher_id: 2,
+          pitcher_mlb_id: 90002,
+          pitcher_full_name: 'Beta Reliever',
+          roster_status_sentence: 'On the active roster per MLB roster data.',
+          game_date: '2026-07-05',
+          innings_pitched: '1.0',
+          innings_pitched_outs: 3,
+          pitches_thrown: 20,
+          strikeouts: 1,
+          walks: 0,
+          hits_allowed: 1,
+          runs_allowed: 0,
+          sentence: 'Beta Reliever - 1.0 IP, 20 pitches, 1 K, 0 BB, 1 H, 0 R.',
+        },
+      ],
+    },
+    {
       game_date: '2026-07-03',
       relief_appearances: 2,
       outs_total: 11,
@@ -58,6 +86,13 @@ const teamReliefWorkPayload = {
           pitcher_full_name: 'Alpha Reliever',
           roster_status_sentence: 'On the active roster per MLB roster data.',
           game_date: '2026-07-03',
+          innings_pitched: '1.2',
+          innings_pitched_outs: 5,
+          pitches_thrown: 24,
+          strikeouts: 2,
+          walks: 1,
+          hits_allowed: 2,
+          runs_allowed: 1,
           sentence: 'Alpha Reliever - 1.2 IP, 24 pitches, 2 K, 1 BB, 2 H, 1 R.',
         },
       ],
@@ -187,6 +222,9 @@ test('renders server-authored team relief-work sentences verbatim', () => {
     teamReliefWorkPayload.relief_by_date[0].sentence,
     teamReliefWorkPayload.relief_by_date[0].appearances[0].sentence,
     teamReliefWorkPayload.relief_by_date[0].appearances[0].roster_status_sentence,
+    teamReliefWorkPayload.relief_by_date[1].sentence,
+    teamReliefWorkPayload.relief_by_date[1].appearances[0].sentence,
+    teamReliefWorkPayload.relief_by_date[1].appearances[0].roster_status_sentence,
     teamReliefWorkPayload.windows.window_7.sentence,
     teamReliefWorkPayload.windows.window_7.pitchers_sentence,
     teamReliefWorkPayload.windows.window_7.pitches_sentence,
@@ -198,6 +236,50 @@ test('renders server-authored team relief-work sentences verbatim', () => {
   ]) {
     assert.ok(htmlIncludes(html, sentence), sentence)
   }
+})
+
+test('renders relief work windows before date groups', () => {
+  const html = renderPanel({ payload: teamReliefWorkPayload })
+  const windowsIndex = html.indexOf('Relief Work Windows')
+  const byDateIndex = html.indexOf('Relief Work by Date')
+
+  assert.notEqual(windowsIndex, -1)
+  assert.notEqual(byDateIndex, -1)
+  assert.ok(windowsIndex < byDateIndex)
+})
+
+test('date groups are collapsible with the latest date expanded', () => {
+  const html = renderPanel({ payload: teamReliefWorkPayload })
+  const latestSentence = teamReliefWorkPayload.relief_by_date[0].sentence
+  const olderSentence = teamReliefWorkPayload.relief_by_date[1].sentence
+  const latestDetails = detailsTagFor(html, latestSentence)
+  const olderDetails = detailsTagFor(html, olderSentence)
+
+  assert.ok(htmlIncludes(html, latestSentence))
+  assert.ok(htmlIncludes(html, olderSentence))
+  assert.ok(latestDetails.includes('open'))
+  assert.ok(!olderDetails.includes('open'))
+})
+
+test('appearance rows use payload facts without new interpretation', () => {
+  const html = renderPanel({ payload: teamReliefWorkPayload })
+  const appearance = teamReliefWorkPayload.relief_by_date[0].appearances[0]
+
+  assert.ok(htmlIncludes(html, appearance.pitcher_full_name))
+  assert.ok(htmlIncludes(html, 'IP'))
+  assert.ok(htmlIncludes(html, 'P'))
+  assert.ok(htmlIncludes(html, 'K'))
+  assert.ok(htmlIncludes(html, 'BB'))
+  assert.ok(htmlIncludes(html, 'H'))
+  assert.ok(htmlIncludes(html, 'R'))
+  assert.ok(htmlIncludes(html, appearance.innings_pitched))
+  assert.ok(htmlIncludes(html, String(appearance.pitches_thrown)))
+  assert.ok(htmlIncludes(html, String(appearance.strikeouts)))
+  assert.ok(htmlIncludes(html, String(appearance.walks)))
+  assert.ok(htmlIncludes(html, String(appearance.hits_allowed)))
+  assert.ok(htmlIncludes(html, String(appearance.runs_allowed)))
+  assert.ok(htmlIncludes(html, appearance.sentence))
+  assert.ok(htmlIncludes(html, appearance.roster_status_sentence))
 })
 
 test('degraded no-anchor payload renders only safe sections', () => {
