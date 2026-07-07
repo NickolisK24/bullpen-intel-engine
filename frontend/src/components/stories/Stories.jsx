@@ -14,11 +14,11 @@ import {
   LoadingPane,
   StaleDataNotice,
 } from '../UI'
-import { SectionHeading, StoryBlueprint, StoryDisclosureNote } from '../home/BullpenStories'
+import { SectionHeading, StoryBlueprint, StoryDisclosureNote } from './storyPresentation'
 import {
   getMastheadView,
-  homeTone,
-} from '../home/homePresentationView'
+  storyTone,
+} from './storiesPresentationView'
 import { completedGamesDataLine } from '../dashboard/syncStatusView'
 import TeamShareButton from '../share/TeamShareButton'
 import {
@@ -272,7 +272,7 @@ function FeedScope({ feed, counts }) {
 
       <div className="mt-4 flex flex-wrap gap-2">
         {lanes.map(lane => {
-          const tone = homeTone(lane.tone)
+          const tone = storyTone(lane.tone)
           return (
             <span
               key={lane.key}
@@ -314,7 +314,7 @@ function StoryFeedEmptyState({ state, onReset }) {
 // (story_viewed on first expand) and an explicit Team Board CTA owns navigation
 // (story_team_board_opened) — two distinct, non-conflicting controls.
 function FeedStoryCard({ story, impressionRef }) {
-  const tone = homeTone(story.tone)
+  const tone = storyTone(story.tone)
   const hasDestination = Boolean(story.href)
   const hasTeam = story.teamId != null && Boolean(story.abbr)
   const hasBlueprint = Array.isArray(story.blueprint) && story.blueprint.length > 0
@@ -351,7 +351,7 @@ function FeedStoryCard({ story, impressionRef }) {
           className="mt-1.5 inline-flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-widest text-chalk500"
           title={`${story.read.display}: ${story.read.detail}`}
         >
-          <span className="h-1 w-1 rounded-full" style={{ backgroundColor: homeTone(story.read.tone).dot }} aria-hidden="true" />
+          <span className="h-1 w-1 rounded-full" style={{ backgroundColor: storyTone(story.read.tone).dot }} aria-hidden="true" />
           {story.read.display}
         </div>
       )}

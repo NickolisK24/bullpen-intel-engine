@@ -30,8 +30,6 @@ import {
   freshnessIsCurrent,
 } from '../dashboard/syncStatusView'
 
-const AROUND_BASEBALL_UNAVAILABLE =
-  'No other league bullpen movement is ready to show yet.'
 const TONIGHT_SECTION_TITLE = "Tonight's Bullpen Watch"
 const TONIGHT_SECTION_SUBTITLE =
   'What BaseballOS is watching before first pitch.'
@@ -136,10 +134,6 @@ function cleanTeamName(value) {
   const text = textValue(value)
   if (!text) return null
   return text.replace(/^the\s+/i, '')
-}
-
-function aroundTeamLabel(team) {
-  return cleanTeamName(team?.teamName) || textValue(team?.teamAbbr) || 'This bullpen'
 }
 
 function teamIdOf(value) {
@@ -516,85 +510,6 @@ export function getLeadStoryView(response, teams = []) {
   }
 }
 
-function sameTeam(left, right) {
-  const leftId = teamIdOf(left?.team_id ?? left?.teamId)
-  const rightId = teamIdOf(right?.team_id ?? right?.teamId)
-  if (leftId != null && rightId != null) return leftId === rightId
-  const leftAbbr = textValue(left?.team_abbreviation ?? left?.teamAbbr)
-  const rightAbbr = textValue(right?.team_abbreviation ?? right?.teamAbbr)
-  return Boolean(leftAbbr && rightAbbr && leftAbbr.toLowerCase() === rightAbbr.toLowerCase())
-}
-
-function restedMovement(item) {
-  const text = [
-    item?.public_headline,
-    item?.public_summary,
-  ].map(textValue).filter(Boolean).join(' ')
-
-  const moved = /\bmoved\s+from\s+(\d+)\s+to\s+(\d+)\s+rested\s+relievers?\b/i.exec(text)
-  if (moved) {
-    const from = numberValue(moved[1])
-    const to = numberValue(moved[2])
-    if (from != null && to != null) return { from, to, delta: to - from }
-  }
-
-  const more = /\b(\d+)\s+more\s+rested\s+relievers?\b/i.exec(text)
-  if (more) {
-    const delta = numberValue(more[1])
-    if (delta != null) return { from: null, to: null, delta }
-  }
-
-  const fewer = /\b(\d+)\s+fewer\s+rested\s+relievers?\b/i.exec(text)
-  if (fewer) {
-    const delta = numberValue(fewer[1])
-    if (delta != null) return { from: null, to: null, delta: -delta }
-  }
-
-  return null
-}
-
-function aroundBaseballTitle(item, team) {
-  const label = aroundTeamLabel(team)
-  const movement = restedMovement(item)
-  if (movement) {
-    if (movement.delta > 1) return `${label} added ${movement.delta} rested arms`
-    if (movement.delta === 1) return `${label} added a rested arm`
-    if (movement.delta < -1) return `${label} lost ${Math.abs(movement.delta)} rested arms`
-    if (movement.delta === -1) return `${label} lost a rested arm`
-    return `${label} held steady`
-  }
-
-  const rawTitle = textValue(item?.public_headline)
-  if (rawTitle && !/\bmoved\s+from\b/i.test(rawTitle)) return publicTerminology(rawTitle)
-  return `${label} bullpen movement`
-}
-
-export function getAroundBaseballItems(dashboard, leadStory, limit = 3) {
-  const rawItems = dashboard?.what_changed_since_yesterday?.items
-  const items = Array.isArray(rawItems) ? rawItems : []
-  const leadTeam = leadStory?.team || null
-
-  return items
-    .filter(item => !sameTeam(item, leadTeam))
-    .map(item => {
-      const team = teamOptionValue(item)
-      const title = aroundBaseballTitle(item, team)
-      const body = publicTerminology(textValue(item.public_summary))
-      if (!title || !body) return null
-      return {
-        key: textValue(item.key) || `${team?.teamId || team?.teamAbbr || title}`,
-        title,
-        body,
-        teamName: team?.teamName || team?.teamAbbr || 'Team',
-        teamAbbr: team?.teamAbbr || null,
-        teamId: team?.teamId ?? null,
-        href: teamBoardHref(team, 'intelligence-around-baseball'),
-      }
-    })
-    .filter(Boolean)
-    .slice(0, limit)
-}
-
 function resolveTonightTeam(card, teams = []) {
   const direct = teamOptionValue(card)
   const byId = buildTeamsById(teams)
@@ -752,116 +667,6 @@ function SeesHeader() {
         One email a week. No spam, no picks.
       </p>
     </header>
-  )
-}
-
-function UpcomingGames() {
-  return (
-    <SectionShell
-      id="upcoming-games"
-      eyebrow="Today"
-      title="Upcoming Games"
-      className="mb-12"
-    >
-      <div className="border border-dirt bg-dugout p-4">
-        <p className="text-sm leading-relaxed text-chalk500">
-          Upcoming games will appear here when today’s slate is available.
-        </p>
-      </div>
-    </SectionShell>
-  )
-}
-
-function AroundBaseball({
-  dashboard,
-  leadStory,
-  loading,
-  error,
-  staleWithError,
-  onRetry,
-}) {
-  const items = getAroundBaseballItems(dashboard, leadStory)
-  const freshness = dashboardFreshness(dashboard)
-  const rowFreshness = sectionFreshness(dashboard, freshness)
-  const dataThrough = textValue(freshnessDataThrough(rowFreshness))
-  const lastSync = firstTextValue(rowFreshness?.last_successful_sync, rowFreshness?.lastSuccessfulSync)
-  return (
-    <SectionShell
-      id="around-baseball"
-      eyebrow="Around Baseball"
-      title="Around Baseball"
-      subtitle="Other bullpen movement BaseballOS is tracking across the league."
-    >
-      {loading && !dashboard ? (
-        <div className="border border-dirt bg-dugout p-4" role="status" aria-live="polite">
-          <p className="font-mono text-xs uppercase tracking-widest text-chalk500">
-            Loading secondary observations...
-          </p>
-        </div>
-      ) : error && !dashboard ? (
-        <div className="border border-dirt bg-dugout p-4">
-          <p className="text-sm leading-relaxed text-chalk500">
-            {AROUND_BASEBALL_UNAVAILABLE}
-          </p>
-          {onRetry && (
-            <button
-              type="button"
-              onClick={onRetry}
-              className="mt-3 rounded border border-dirt px-3 py-2 font-mono text-[11px] uppercase tracking-widest text-chalk300 transition-colors hover:border-amber/40 hover:text-amber"
-            >
-              Try Again
-            </button>
-          )}
-        </div>
-      ) : (
-        <>
-          {staleWithError && (
-            <StaleDataNotice
-              dataThrough={dataThrough}
-              onRetry={onRetry}
-            />
-          )}
-          <SectionFreshnessRow
-            dataThrough={dataThrough}
-            lastSync={lastSync}
-            stale={staleWithError}
-            freshness={rowFreshness}
-          />
-          {items.length ? (
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-              {items.map(item => (
-                <Link
-                  key={item.key}
-                  to={item.href}
-                  onClick={() => trackAnalyticsEvent(ANALYTICS_EVENTS.TEAM_INTEREST_CLICKED, {
-                    surface: 'home',
-                    route: '/',
-                    source: 'around_baseball',
-                    team_abbrev: item.teamAbbr,
-                    team_id: item.teamId,
-                  })}
-                  className="min-w-0 border border-dirt bg-dugout p-4 transition-colors hover:border-amber/35 hover:bg-amber/5"
-                  aria-label={`Open the bullpen board for ${item.teamName}`}
-                >
-                  <h3 className="break-words font-display text-xl leading-tight tracking-wide text-chalk100">
-                    {item.title}
-                  </h3>
-                  <p className="mt-2 text-sm leading-relaxed text-chalk400">
-                    {item.body}
-                  </p>
-                </Link>
-              ))}
-            </div>
-          ) : (
-            <div className="border border-dirt bg-dugout p-4">
-              <p className="text-sm leading-relaxed text-chalk500">
-                {AROUND_BASEBALL_UNAVAILABLE}
-              </p>
-            </div>
-          )}
-        </>
-      )}
-    </SectionShell>
   )
 }
 
@@ -1276,7 +1081,6 @@ export function IntelligenceSurfaceView({
   return (
     <div className="mx-auto max-w-6xl px-4 py-5 sm:px-6 lg:px-8">
       <SeesHeader />
-      <UpcomingGames />
       <BullpenPicture
         landscape={landscape}
         loading={landscapeLoading}

@@ -20,17 +20,10 @@ const {
   default: ExplanationDisclosure,
 } = await server.ssrLoadModule('/src/components/explanations/ExplanationDisclosure.jsx')
 const {
-  default: OperationalReadinessSection,
-} = await server.ssrLoadModule('/src/components/dashboard/OperationalReadinessSection.jsx')
-const {
   normalizeV4ExplanationApiResponse,
 } = await server.ssrLoadModule('/src/utils/api.js')
 const pitcherDetailSource = await readFile(
   new URL('../src/components/bullpen/PitcherDetail.jsx', import.meta.url),
-  'utf8',
-)
-const operationalReadinessSource = await readFile(
-  new URL('../src/components/dashboard/OperationalReadinessSection.jsx', import.meta.url),
   'utf8',
 )
 
@@ -153,81 +146,10 @@ const failClosedEnvelope = {
   governance,
 }
 
-const v2State = {
-  contractState: 'available',
-  isContractSafe: true,
-  isFailClosed: false,
-  governance: {
-    rankingApplied: false,
-    selectionMade: false,
-  },
-  bullpenState: {
-    status: 'available_context',
-    stress_level: 'elevated',
-  },
-  freshness: {
-    freshness_state: 'current',
-  },
-}
-
-const readinessState = {
-  contractState: 'available',
-  sourceContractState: 'available',
-  isContractSafe: true,
-  isDegraded: false,
-  isRefused: false,
-  isFailClosed: false,
-  isInternal: true,
-  isInternalUncertified: true,
-  governance: {
-    rankingApplied: false,
-    selectionMade: false,
-    trustRankingApplied: false,
-    trustSelectionMade: false,
-  },
-  routeStatus: {
-    exposure: 'internal',
-    productionStatus: 'non_production',
-    certificationStatus: 'uncertified',
-  },
-  readinessStatus: 'operationally_stable',
-  readinessSummary: 'Team-level bullpen readiness looks steady from current public workload evidence.',
-  readiness: {
-    status: 'Operationally Stable',
-    summary: 'Team-level bullpen readiness looks steady from current public workload evidence.',
-  },
-  team: {
-    team_id: 7,
-    team_abbreviation: 'SEA',
-  },
-  workloadPressure: {
-    pressure_level: 'elevated',
-    summary: 'Workload pressure is elevated at the team level.',
-  },
-  availabilityDistribution: {
-    available: 240,
-    total: 679,
-  },
-  freshness: {
-    freshness_state: 'current',
-    data_through: '2026-06-03',
-  },
-}
-
 function renderDisclosure(props = {}) {
   return renderToStaticMarkup(
     React.createElement(ExplanationDisclosure, {
       fetchExplanation: async () => normalizeV4ExplanationApiResponse(explanationEnvelope),
-      ...props,
-    }),
-  )
-}
-
-function renderOperationalReadiness(props = {}) {
-  return renderToStaticMarkup(
-    React.createElement(OperationalReadinessSection, {
-      v2State,
-      readinessState,
       ...props,
     }),
   )
@@ -316,25 +238,6 @@ test('does not render prohibited explanation surface language', () => {
   const text = withoutGovernanceSentence(html)
 
   assert.equal(/\buse this pitcher\b|\bbest option\b|\bpreferred arm\b|\brecommended arm\b|\bchoose this option\b|\bmatchup advice\b/i.test(text), false)
-})
-
-test('Operational Readiness renders the Why this state action without inline evidence by default', () => {
-  const html = renderOperationalReadiness()
-
-  assert.ok(htmlIncludes(html, 'Why this state?'))
-  assert.ok(htmlIncludes(html, 'Explanation'))
-  assert.equal(htmlIncludes(html, 'Availability Distribution Total'), false)
-  assert.equal(htmlIncludes(html, explanationEnvelope.explanation.summary), false)
-  // The Dashboard surface now states the decision boundary in plain language; the raw
-  // ranking_applied / selection_made booleans remain in the API payload and in
-  // the Evidence & Source Detail drawer rather than as user-facing copy.
-  assert.ok(htmlIncludes(html, 'Context only - BaseballOS does not choose the next arm.'))
-})
-
-test('Operational Readiness uses the certified team readiness explanation client', () => {
-  assert.ok(operationalReadinessSource.includes('getTeamReadinessExplanation'))
-  assert.ok(operationalReadinessSource.includes('Why this state?'))
-  assert.equal(/risk_distribution|recommendation_explanation/.test(operationalReadinessSource), false)
 })
 
 test('Pitcher detail uses the certified availability explanation client without dashboard card stacks', () => {

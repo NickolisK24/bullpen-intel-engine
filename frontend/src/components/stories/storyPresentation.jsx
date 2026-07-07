@@ -1,51 +1,9 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
-import { homeTone } from './homePresentationView'
 
-// Section 2 — Three Things To Watch. The briefing cut: only the few signals
-// that matter most this morning, in plain baseball language — what the
-// workload data shows, never what anyone should do about it. The full feed
-// lives on the Stories page.
-export const SHORT_LIST_LIMIT = 3
-
-export default function BullpenStories({ stories, showCta = true, registerImpressionRef = null, onTeamBoardOpen = null }) {
-  const shortList = (Array.isArray(stories?.items) ? stories.items : []).slice(0, SHORT_LIST_LIMIT)
-
-  return (
-    <section className="mb-8" aria-label="Three things to watch">
-      <SectionHeading
-        title="Three Things To Watch"
-        subtitle="The briefing-level signals behind the flagship observation."
-      />
-
-      {!stories?.hasStories ? (
-        <div className="card p-5 text-sm text-chalk400">{stories?.fallback}</div>
-      ) : (
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {shortList.map((story, index) => (
-            <StoryCard
-              key={`${story.kicker}-${index}`}
-              story={story}
-              impressionRef={registerImpressionRef ? registerImpressionRef(story) : undefined}
-              onTeamBoardOpen={onTeamBoardOpen}
-            />
-          ))}
-        </div>
-      )}
-
-      {showCta && (
-        <div className="mt-3 text-right">
-          <Link
-            to="/stories"
-            className="inline-flex items-center rounded border border-dirt bg-dugout px-3 py-1.5 font-mono text-[11px] uppercase tracking-widest text-chalk200 transition-colors hover:border-amber/40 hover:text-amber"
-          >
-            Open Stories for more observations →
-          </Link>
-        </div>
-      )}
-    </section>
-  )
-}
+// Shared story presentation pieces for the Stories feed: section heading,
+// labeled blueprint sections, flat narrative fallback, and the disclosure
+// note. Presentation only — everything renders backend-authored copy and
+// invents nothing.
 
 export function SectionHeading({ title, subtitle, right }) {
   return (
@@ -294,48 +252,5 @@ export function StoryDisclosureNote({ note, className = '' }) {
     <p className={`mt-3 border-t border-dirt/60 pt-2 text-[11px] leading-relaxed text-chalk600 ${className}`}>
       {text}
     </p>
-  )
-}
-
-// A story card is a doorway: team stories step into that club's bullpen
-// board, league notes open the league view, data notes open Data & Trust.
-// A story with no meaningful destination renders as plain copy — no CTA, no
-// pretend link.
-function StoryCard({ story, impressionRef, onTeamBoardOpen }) {
-  const tone = homeTone(story.tone)
-  const hasDestination = Boolean(story.href)
-
-  const inner = (
-    <>
-      <span className="h-1 w-8 rounded-full" style={{ backgroundColor: tone.dot }} aria-hidden="true" />
-
-      <h3 className="mt-3 font-display text-xl leading-tight tracking-wide text-chalk100 group-hover:text-amber transition-colors">
-        {story.title}
-      </h3>
-
-      <StoryPresentation story={story} compact className="mt-2 flex-1" />
-      <StoryDisclosureNote note={story.disclosureNote || story.disclosure_note} />
-
-      {hasDestination && (
-        <div className="mt-3 font-mono text-[10px] uppercase tracking-widest text-chalk600 group-hover:text-amber transition-colors">
-          {story.cta || 'Open the full picture'} →
-        </div>
-      )}
-    </>
-  )
-
-  if (!hasDestination) {
-    return <article ref={impressionRef} className="card flex flex-col p-4">{inner}</article>
-  }
-
-  return (
-    <Link
-      ref={impressionRef}
-      to={story.href}
-      onClick={() => { if (typeof onTeamBoardOpen === 'function') onTeamBoardOpen(story) }}
-      className="card group flex flex-col p-4 transition-all duration-200 hover:border-amber/40 hover:bg-amber/5"
-    >
-      {inner}
-    </Link>
   )
 }

@@ -16,7 +16,7 @@ after(async () => {
 })
 
 const { StoryBlueprint, StoryPresentation } = await server.ssrLoadModule(
-  '/src/components/home/BullpenStories.jsx',
+  '/src/components/stories/storyPresentation.jsx',
 )
 const { getCanonicalStoryFeed } = await server.ssrLoadModule(
   '/src/components/stories/storiesCanonicalFeedView.js',
