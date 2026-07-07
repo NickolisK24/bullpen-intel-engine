@@ -1,5 +1,17 @@
 import { Link } from 'react-router-dom'
-import { CONCEPT_DEFINITIONS } from '../../utils/bullpenConcepts'
+import {
+  ARM_AVAILABILITY_DEFINITIONS,
+  CONCEPT_DEFINITIONS,
+  FRESHNESS_LABEL_DEFINITIONS,
+  SUPPORTING_CONCEPT_DEFINITIONS,
+  TEAM_STATE_DEFINITIONS,
+} from '../../utils/bullpenConcepts'
+import { PUBLIC_BOUNDARIES } from '../../utils/publicBoundaries'
+
+// Every definition on this page renders from the canonical public dictionary
+// (utils/bullpenConcepts.js) and the canonical boundary language
+// (utils/publicBoundaries.js) — no hardcoded copies.
+const asCard = ({ name, definition }) => ({ title: name, body: definition })
 
 const HERO = {
   eyebrow: 'HOW TO READ',
@@ -8,83 +20,25 @@ const HERO = {
   sub: "Every label on the site describes today's context — how much a bullpen is carrying, who's rested, and where the late-inning margin is thin. Here's what each term means, in one line.",
 }
 
-const TEAM_STATES = [
-  {
-    title: 'Fresh',
-    body: 'The bullpen comes in mostly rested, with room to maneuver late.',
-  },
-  {
-    title: 'Stretched',
-    body: 'The bullpen is thin on rested arms after recent work.',
-  },
-  {
-    title: 'Vulnerable',
-    body: 'Little late-inning margin remains if the game runs long.',
-  },
-]
+const TEAM_STATES = TEAM_STATE_DEFINITIONS.map(asCard)
 
-const ARM_STATES = [
-  {
-    title: 'Available',
-    body: 'Rested enough to pitch today.',
-  },
-  {
-    title: 'On Watch',
-    body: 'Usable, but recent work is worth watching.',
-  },
-  {
-    title: 'Limited',
-    body: 'Available only in a reduced role after recent work.',
-  },
-  {
-    title: 'Unavailable',
-    body: 'Not available today because of rest or roster status.',
-  },
-]
+const ARM_STATES = ARM_AVAILABILITY_DEFINITIONS.map(asCard)
 
-// TODO: Move Coverage Safety and Trusted Arms into bullpenConcepts.js when they become shared public concepts.
 const BULLPEN_READS = [
-  {
-    title: CONCEPT_DEFINITIONS.pressure.name,
-    body: 'How much workload strain the bullpen is carrying today.',
-  },
-  {
-    title: CONCEPT_DEFINITIONS.recovery.name,
-    body: CONCEPT_DEFINITIONS.recovery.definition,
-  },
-  {
-    title: CONCEPT_DEFINITIONS.concentration.name,
-    body: 'Whether recent work is spread around or clustered on a few arms.',
-  },
-  {
-    title: CONCEPT_DEFINITIONS.cleanOptions.name,
-    body: CONCEPT_DEFINITIONS.cleanOptions.definition,
-  },
-  {
-    title: 'Coverage Safety',
-    body: 'Whether the bullpen can cover the late innings if the game runs long.',
-  },
-  {
-    title: 'Trusted Arms',
-    body: 'The rested, unrestricted arms a manager can lean on late.',
-  },
-]
+  CONCEPT_DEFINITIONS.pressure,
+  CONCEPT_DEFINITIONS.recovery,
+  CONCEPT_DEFINITIONS.concentration,
+  CONCEPT_DEFINITIONS.cleanOptions,
+  SUPPORTING_CONCEPT_DEFINITIONS.coverageSafety,
+  SUPPORTING_CONCEPT_DEFINITIONS.trustedArms,
+].map(asCard)
 
-const FRESHNESS_LABELS = [
-  {
-    title: 'Data through',
-    body: 'The latest completed MLB date included in the read.',
-  },
-  {
-    title: 'Updated',
-    body: 'When BaseballOS last wrote new baseball data.',
-  },
-]
+const FRESHNESS_LABELS = FRESHNESS_LABEL_DEFINITIONS.map(asCard)
 
 const USING_READS = [
-  'BaseballOS describes bullpen context. It does not predict outcomes, rank pitchers, or tell you who to use.',
+  PUBLIC_BOUNDARIES.descriptiveScope,
   'It shows how current the data is, explains how each read is built, and clearly states what it cannot see, including manager intent, bullpen phones, and final game-day decisions.',
-  "When a read cannot be made with confidence, BaseballOS says so instead of guessing.",
+  PUBLIC_BOUNDARIES.saysSoInsteadOfGuessing,
   'The picture is a starting point for your own read—not a verdict.',
 ]
 

@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom'
+import { PUBLIC_BOUNDARIES, PUBLIC_BOUNDARY_LIST } from '../../utils/publicBoundaries'
 
 const HERO = {
   eyebrow: 'ABOUT',
@@ -27,17 +28,13 @@ const PRODUCT_CARDS = [
   },
 ]
 
-const DOES_NOT_DO = [
-  'No picks. It never tells you who to use or who to bet.',
-  "No predictions. It describes today's context, not tomorrow's outcome.",
-  'No betting advice. It is not a wagering or odds product.',
-  'No private injury claims. The absence of a public flag is not a health claim.',
-  'No certainty about manager decisions. It cannot see bullpen phones, intent, or final game-day calls.',
-]
+// The boundary list renders from the canonical public boundary language so
+// About can never drift from How to Read or Methodology.
+const DOES_NOT_DO = PUBLIC_BOUNDARY_LIST
 
 const TRUST_BODY = [
   "BaseballOS is built to be checkable. Every read shows how current it is — the date the data runs through and when it was last updated — so you always know what you're looking at. The reasoning behind each read is documented, and the limits are stated plainly rather than hidden.",
-  "If a read can't be made with confidence, BaseballOS says so instead of guessing.",
+  PUBLIC_BOUNDARIES.saysSoInsteadOfGuessing,
 ]
 
 function Section({ title, children, className = '' }) {

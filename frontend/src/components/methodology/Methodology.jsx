@@ -4,6 +4,7 @@ import { useFetch } from '../../hooks/useFetch'
 import { getMethodology } from '../../utils/api'
 import { ANALYTICS_EVENTS, trackAnalyticsEventOnce } from '../../utils/analytics'
 import { LoadingPane, ErrorState, SectionHeader, Divider } from '../UI'
+import { PUBLIC_BOUNDARIES } from '../../utils/publicBoundaries'
 
 const TIER_HEX = {
   LOW:      { bg: '#0f1f1a', border: '#10b981', text: '#34d399' },
@@ -321,13 +322,13 @@ export function MethodologyView({ data }) {
           availability, usage, and recent game context; it stays descriptive and evidence-backed.
         </p>
         <ul className="mt-4 space-y-2 text-sm leading-relaxed text-chalk400">
+          {/* The boundary statements render from the canonical public boundary
+              language so Methodology stays word-for-word aligned with About
+              and How to Read. */}
+          <li>{PUBLIC_BOUNDARIES.unknowns}</li>
           <li>
-            Manager intent, bullpen phone activity, private medical availability, and final
-            game-day decisions are not known to BaseballOS.
-          </li>
-          <li>
-            Injury and injured-list context is limited to public roster and injury signals.
-            The absence of a public flag is not a health claim.
+            Injury and injured-list context is limited to public roster and injury signals.{' '}
+            {PUBLIC_BOUNDARIES.notHealthClaim}
           </li>
           <li>
             Freshness labels show the latest completed-game bullpen data available to the page.
