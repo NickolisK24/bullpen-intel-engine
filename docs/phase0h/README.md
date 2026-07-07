@@ -18,3 +18,14 @@ snapshot builder change.
 
 Legacy What Changed surfaces remain frozen and untouched. Public daily-changes
 work remains blocked pending separate ratification.
+
+## Branch 02
+
+Branch 02 hardens the internal snapshot-audit output. It adds controlled
+extraction for stored legacy What Changed comparison metadata, adjacent
+published/trusted baseline summary diagnostics, and flags for stored comparison
+metadata that does not match the adjacent trusted snapshot contract.
+
+It changes no trust rules, public surfaces, sync, schema, migrations, dashboard
+snapshot builder behavior, or legacy What Changed behavior. Public daily-changes
+work remains blocked.

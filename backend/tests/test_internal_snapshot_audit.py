@@ -72,7 +72,21 @@ def _slate_coverage(ref):
     }
 
 
-def _payload(ref, *, state='insufficient_context', reason_codes=None, limitations=None):
+def _payload(
+    ref,
+    *,
+    state='insufficient_context',
+    reason_codes=None,
+    limitations=None,
+    what_changed_overrides=None,
+):
+    what_changed = {
+        'state': state,
+        'reason_codes': list(reason_codes or ['stored_reason']),
+        'limitations': list(limitations or ['Stored comparison limitation.']),
+        'ignored_large_field': {'not': 'returned'},
+    }
+    what_changed.update(what_changed_overrides or {})
     return {
         'capability': 'bullpen_dashboard',
         'generated_at': datetime(2026, 7, ref.day, 12, 0, 0).isoformat(),
@@ -89,12 +103,7 @@ def _payload(ref, *, state='insufficient_context', reason_codes=None, limitation
             'reason_codes': ['stored_freshness_reason'],
             'limitations': ['Stored freshness limitation.'],
         },
-        'what_changed_since_yesterday': {
-            'state': state,
-            'reason_codes': list(reason_codes or ['stored_reason']),
-            'limitations': list(limitations or ['Stored comparison limitation.']),
-            'ignored_large_field': {'not': 'returned'},
-        },
+        'what_changed_since_yesterday': what_changed,
     }
 
 
@@ -248,6 +257,16 @@ def test_snapshot_audit_quotes_stored_snapshot_trust_state(app, client):
         'prior_published_snapshot_id': baseline_id,
         'adjacent_published_baseline_present': True,
     }
+    assert current_entry['comparison_contract_check'] == {
+        'prior_required_data_through': '2026-07-04',
+        'adjacent_published_baseline_present': True,
+        'adjacent_trusted_baseline_present': True,
+        'stored_comparison_available': None,
+        'stored_comparison_current_date': None,
+        'stored_comparison_baseline_date': None,
+        'stored_comparison_matches_adjacent_contract': None,
+        'notes': ['stored_comparison_metadata_absent'],
+    }
 
     baseline_entry = _entry(payload, baseline_id)
     assert baseline_entry['baseline_adjacency'] == {
@@ -265,8 +284,169 @@ def test_snapshot_audit_empty_table_is_valid(client):
     assert payload['latest_snapshot'] is None
     assert payload['latest_valid_snapshot_id'] is None
     assert payload['recent_snapshots'] == []
+    assert payload['snapshot_adjacency_summary'] == {
+        'published_snapshot_count': 0,
+        'trusted_published_snapshot_count': 0,
+        'data_through_dates': [],
+        'adjacent_published_pairs': [],
+        'adjacent_published_pair_count': 0,
+        'missing_prior_dates': [],
+        'trusted_pair_count': 0,
+    }
     assert 'latest_snapshot' in payload['missing_sections']
     assert 'recent_snapshots' in payload['missing_sections']
+
+
+def test_snapshot_audit_extracts_nested_what_changed_without_dumping_items(app, client):
+    with app.app_context():
+        _snapshot(date(2026, 6, 30), generated_offset_minutes=1)
+        current = _snapshot(
+            date(2026, 7, 1),
+            generated_offset_minutes=2,
+            payload=_payload(
+                date(2026, 7, 1),
+                what_changed_overrides={
+                    'comparison_available': False,
+                    'current_date': '2026-07-01',
+                    'baseline_date': '2026-06-30',
+                    'item_count': 2,
+                    'items': [{'team': 'not_returned'}],
+                    'unknown_top_level': 'not_returned',
+                    'comparison': {
+                        'comparison_available': True,
+                        'current_date': '2026-07-01',
+                        'baseline_date': '2026-06-28',
+                        'reason_codes': ['example_reason'],
+                        'items': [{'team': 'not_returned_nested'}],
+                        'unknown_nested': 'not_returned',
+                    },
+                },
+            ),
+        )
+        db.session.commit()
+        current_id = current.id
+
+    response = client.get(f'{ROUTE}?dataThrough=2026-07-01', headers=ADMIN_HEADERS)
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    current_entry = _entry(payload, current_id)
+    assert current_entry['embedded_what_changed'] == {
+        'state': 'insufficient_context',
+        'reason_codes': ['stored_reason'],
+        'limitations': ['Stored comparison limitation.'],
+        'comparison_available': False,
+        'baseline_date': '2026-06-30',
+        'current_date': '2026-07-01',
+        'item_count': 2,
+        'comparison': {
+            'reason_codes': ['example_reason'],
+            'comparison_available': True,
+            'baseline_date': '2026-06-28',
+            'current_date': '2026-07-01',
+        },
+    }
+    serialized = json.dumps(current_entry)
+    assert 'not_returned' not in serialized
+    assert 'items' not in serialized
+    assert 'unknown_top_level' not in serialized
+    assert 'unknown_nested' not in serialized
+    assert current_entry['comparison_contract_check']['stored_comparison_available'] is True
+    assert current_entry['comparison_contract_check']['stored_comparison_current_date'] == '2026-07-01'
+    assert current_entry['comparison_contract_check']['stored_comparison_baseline_date'] == '2026-06-28'
+    assert (
+        current_entry['comparison_contract_check']['stored_comparison_matches_adjacent_contract']
+        is False
+    )
+    assert 'stored_comparison_non_adjacent' in current_entry['comparison_contract_check']['notes']
+
+
+def test_snapshot_audit_adjacent_stored_comparison_passes_contract(app, client):
+    with app.app_context():
+        _snapshot(date(2026, 6, 30), generated_offset_minutes=1)
+        current = _snapshot(
+            date(2026, 7, 1),
+            generated_offset_minutes=2,
+            payload=_payload(
+                date(2026, 7, 1),
+                what_changed_overrides={
+                    'comparison': {
+                        'comparison_available': True,
+                        'current_date': '2026-07-01',
+                        'baseline_date': '2026-06-30',
+                    },
+                },
+            ),
+        )
+        db.session.commit()
+        current_id = current.id
+
+    response = client.get(f'{ROUTE}?dataThrough=2026-07-01', headers=ADMIN_HEADERS)
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    contract_check = _entry(payload, current_id)['comparison_contract_check']
+    assert contract_check['stored_comparison_available'] is True
+    assert contract_check['stored_comparison_current_date'] == '2026-07-01'
+    assert contract_check['stored_comparison_baseline_date'] == '2026-06-30'
+    assert contract_check['stored_comparison_matches_adjacent_contract'] is True
+    assert 'stored_comparison_non_adjacent' not in contract_check['notes']
+
+
+def test_snapshot_audit_summarizes_adjacent_published_and_trusted_pairs(app, client):
+    with app.app_context():
+        first = _snapshot(date(2026, 6, 29), generated_offset_minutes=1)
+        second = _snapshot(date(2026, 6, 30), generated_offset_minutes=2)
+        untrusted = _snapshot(
+            date(2026, 7, 1),
+            generated_offset_minutes=3,
+            payload_version=dashboard_snapshot.DASHBOARD_PAYLOAD_VERSION + 1,
+        )
+        missing_prior = _snapshot(date(2026, 7, 3), generated_offset_minutes=4)
+        db.session.commit()
+        ids = {
+            'first': first.id,
+            'second': second.id,
+            'untrusted': untrusted.id,
+            'missing_prior': missing_prior.id,
+        }
+
+    response = client.get(f'{ROUTE}?dataThrough=2026-07-03', headers=ADMIN_HEADERS)
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    summary = payload['snapshot_adjacency_summary']
+    assert summary['published_snapshot_count'] == 4
+    assert summary['trusted_published_snapshot_count'] == 3
+    assert summary['data_through_dates'] == [
+        '2026-06-29',
+        '2026-06-30',
+        '2026-07-01',
+        '2026-07-03',
+    ]
+    assert summary['adjacent_published_pairs'] == [
+        {
+            'current_data_through': '2026-06-30',
+            'prior_data_through': '2026-06-29',
+            'current_snapshot_id': ids['second'],
+            'prior_snapshot_id': ids['first'],
+        },
+        {
+            'current_data_through': '2026-07-01',
+            'prior_data_through': '2026-06-30',
+            'current_snapshot_id': ids['untrusted'],
+            'prior_snapshot_id': ids['second'],
+        },
+    ]
+    assert summary['adjacent_published_pair_count'] == 2
+    assert summary['trusted_pair_count'] == 1
+    assert summary['missing_prior_dates'] == ['2026-06-29', '2026-07-03']
+    missing_prior_entry = _entry(payload, ids['missing_prior'])
+    assert missing_prior_entry['comparison_contract_check']['adjacent_published_baseline_present'] is False
+    assert missing_prior_entry['comparison_contract_check']['adjacent_trusted_baseline_present'] is False
+    assert 'adjacent_baseline_missing' in missing_prior_entry['comparison_contract_check']['notes']
+    untrusted_entry = _entry(payload, ids['untrusted'])
+    assert untrusted_entry['trust']['unavailable_reason'] == 'dashboard_snapshot_version_mismatch'
 
 
 def test_snapshot_audit_date_and_window_params(app, client):
@@ -374,6 +554,8 @@ def test_snapshot_audit_import_surface():
         r'import\s+flask\b',
         r'from\s+services\.what_changed_since_yesterday\b',
         r'import\s+services\.what_changed_since_yesterday\b',
+        r'from\s+services\.what_changed_since_yesterday_public\b',
+        r'import\s+services\.what_changed_since_yesterday_public\b',
         r'from\s+services\.team_changes\b',
         r'import\s+services\.team_changes\b',
         r'from\s+models\.(evidence|composed_read|legacy_read)',

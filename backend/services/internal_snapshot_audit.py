@@ -47,6 +47,33 @@ SNAPSHOT_CONSTANTS = (
     DASHBOARD_SNAPSHOT_SLATE_COVERAGE_MISSING,
 )
 
+WHAT_CHANGED_KEYS = (
+    'state',
+    'reason_codes',
+    'limitations',
+    'comparison_available',
+    'baseline_date',
+    'current_date',
+    'data_through',
+    'prior_data_through',
+    'item_count',
+    'items_count',
+    'change_count',
+    'max_items',
+    'omitted_count',
+)
+
+WHAT_CHANGED_COMPARISON_KEYS = (
+    'state',
+    'reason_codes',
+    'limitations',
+    'comparison_available',
+    'baseline_date',
+    'current_date',
+    'data_through',
+    'prior_data_through',
+)
+
 
 class SnapshotAuditRequestError(ValueError):
     pass
@@ -69,6 +96,7 @@ def build_internal_snapshot_audit_payload(
         'latest_snapshot': latest_snapshot is not None,
         'latest_valid_snapshot': latest_valid is not None,
         'recent_snapshots': bool(recent_snapshots),
+        'snapshot_adjacency_summary': True,
         'diagnostics': True,
     }
 
@@ -84,6 +112,7 @@ def build_internal_snapshot_audit_payload(
         'latest_snapshot': _snapshot_entry(latest_snapshot),
         'latest_valid_snapshot_id': latest_valid.id if latest_valid is not None else None,
         'recent_snapshots': [_snapshot_entry(row) for row in recent_snapshots],
+        'snapshot_adjacency_summary': _snapshot_adjacency_summary(recent_snapshots),
         'diagnostics': snapshot_diagnostics(latest_snapshot),
         'sections_present': sections_present,
         'missing_sections': [
@@ -196,6 +225,9 @@ def _snapshot_entry(row: DashboardSnapshot | None) -> dict | None:
         return None
     sync_run = _sync_run(row.sync_run_id)
     payload = row.payload if isinstance(row.payload, dict) else {}
+    embedded_what_changed = _embedded_what_changed(payload)
+    adjacent_baseline = _adjacent_published_baseline(row)
+    baseline_adjacency = _baseline_adjacency(row, adjacent_baseline)
     return {
         'id': row.id,
         'snapshot_type': row.snapshot_type,
@@ -216,8 +248,14 @@ def _snapshot_entry(row: DashboardSnapshot | None) -> dict | None:
             'payload_version_valid': payload_version_valid(row),
         },
         'payload_freshness': payload.get('freshness') if payload else None,
-        'embedded_what_changed': _embedded_what_changed(payload),
-        'baseline_adjacency': _baseline_adjacency(row),
+        'embedded_what_changed': embedded_what_changed,
+        'baseline_adjacency': baseline_adjacency,
+        'comparison_contract_check': _comparison_contract_check(
+            row,
+            embedded_what_changed,
+            baseline_adjacency,
+            adjacent_baseline,
+        ),
     }
 
 
@@ -244,14 +282,25 @@ def _embedded_what_changed(payload: dict) -> dict | None:
     value = payload.get('what_changed_since_yesterday')
     if not isinstance(value, dict):
         return None
-    return {
-        'state': value.get('state'),
-        'reason_codes': value.get('reason_codes'),
-        'limitations': value.get('limitations'),
-    }
+    extracted = _controlled_extract(value, WHAT_CHANGED_KEYS)
+    comparison = value.get('comparison')
+    if isinstance(comparison, dict):
+        extracted['comparison'] = _controlled_extract(
+            comparison,
+            WHAT_CHANGED_COMPARISON_KEYS,
+        )
+    return extracted
 
 
-def _baseline_adjacency(row: DashboardSnapshot) -> dict:
+def _controlled_extract(value: dict, keys: tuple[str, ...]) -> dict:
+    extracted = {}
+    for key in keys:
+        if key in value:
+            extracted[key] = value.get(key)
+    return extracted
+
+
+def _adjacent_published_baseline(row: DashboardSnapshot) -> DashboardSnapshot | None:
     prior_data_through = (
         row.data_through - timedelta(days=1)
         if row.data_through is not None
@@ -262,12 +311,207 @@ def _baseline_adjacency(row: DashboardSnapshot) -> dict:
         prior_snapshot is not None
         and prior_snapshot.data_through != prior_data_through
     ):
-        prior_snapshot = None
+        return None
+    return prior_snapshot
+
+
+def _baseline_adjacency(
+    row: DashboardSnapshot,
+    prior_snapshot: DashboardSnapshot | None = None,
+) -> dict:
+    prior_data_through = (
+        row.data_through - timedelta(days=1)
+        if row.data_through is not None
+        else None
+    )
+    if prior_snapshot is None:
+        prior_snapshot = _adjacent_published_baseline(row)
     return {
         'prior_data_through': _iso(prior_data_through),
         'prior_published_snapshot_id': prior_snapshot.id if prior_snapshot else None,
         'adjacent_published_baseline_present': prior_snapshot is not None,
     }
+
+
+def _comparison_contract_check(
+    row: DashboardSnapshot,
+    embedded_what_changed: dict | None,
+    baseline_adjacency: dict,
+    adjacent_baseline: DashboardSnapshot | None,
+) -> dict:
+    prior_required_data_through = (
+        row.data_through - timedelta(days=1)
+        if row.data_through is not None
+        else None
+    )
+    adjacent_trusted_baseline_present = (
+        adjacent_baseline is not None
+        and snapshot_unavailable_reason(adjacent_baseline) is None
+    )
+    stored_comparison_available = _stored_comparison_available(embedded_what_changed)
+    stored_current_date = _stored_comparison_date(
+        embedded_what_changed,
+        'current_date',
+        fallback_key='data_through',
+    )
+    stored_baseline_date = _stored_comparison_date(
+        embedded_what_changed,
+        'baseline_date',
+        fallback_key='prior_data_through',
+    )
+    stored_metadata_present = _stored_comparison_metadata_present(embedded_what_changed)
+    expected_current_date = _iso(row.data_through)
+    expected_baseline_date = _iso(prior_required_data_through)
+    if not stored_metadata_present:
+        stored_matches_contract = None
+    else:
+        stored_matches_contract = (
+            stored_current_date == expected_current_date
+            and stored_baseline_date == expected_baseline_date
+        )
+
+    notes = []
+    if not stored_metadata_present:
+        notes.append('stored_comparison_metadata_absent')
+    elif stored_matches_contract is False:
+        notes.append('stored_comparison_non_adjacent')
+    if not baseline_adjacency.get('adjacent_published_baseline_present'):
+        notes.append('adjacent_baseline_missing')
+    elif not adjacent_trusted_baseline_present:
+        notes.append('adjacent_baseline_untrusted')
+
+    return {
+        'prior_required_data_through': _iso(prior_required_data_through),
+        'adjacent_published_baseline_present': bool(
+            baseline_adjacency.get('adjacent_published_baseline_present')
+        ),
+        'adjacent_trusted_baseline_present': adjacent_trusted_baseline_present,
+        'stored_comparison_available': stored_comparison_available,
+        'stored_comparison_current_date': stored_current_date,
+        'stored_comparison_baseline_date': stored_baseline_date,
+        'stored_comparison_matches_adjacent_contract': stored_matches_contract,
+        'notes': notes,
+    }
+
+
+def _stored_comparison_metadata_present(embedded_what_changed: dict | None) -> bool:
+    if not isinstance(embedded_what_changed, dict):
+        return False
+    metadata_keys = (
+        'comparison_available',
+        'baseline_date',
+        'current_date',
+        'data_through',
+        'prior_data_through',
+    )
+    comparison = embedded_what_changed.get('comparison')
+    for key in metadata_keys:
+        if key in embedded_what_changed:
+            return True
+        if isinstance(comparison, dict) and key in comparison:
+            return True
+    return False
+
+
+def _stored_comparison_available(embedded_what_changed: dict | None) -> bool | None:
+    value = _stored_comparison_value(embedded_what_changed, 'comparison_available')
+    return value if isinstance(value, bool) else None
+
+
+def _stored_comparison_date(
+    embedded_what_changed: dict | None,
+    key: str,
+    *,
+    fallback_key: str,
+) -> str | None:
+    value = _stored_comparison_value(embedded_what_changed, key)
+    if value is None:
+        value = _stored_comparison_value(embedded_what_changed, fallback_key)
+    return _date_text(value)
+
+
+def _stored_comparison_value(embedded_what_changed: dict | None, key: str):
+    if not isinstance(embedded_what_changed, dict):
+        return None
+    comparison = embedded_what_changed.get('comparison')
+    if isinstance(comparison, dict) and key in comparison:
+        return comparison.get(key)
+    if key in embedded_what_changed:
+        return embedded_what_changed.get(key)
+    return None
+
+
+def _date_text(value) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.date().isoformat()
+    if isinstance(value, date):
+        return value.isoformat()
+    text = str(value).strip()
+    return text or None
+
+
+def _snapshot_adjacency_summary(rows: list[DashboardSnapshot]) -> dict:
+    published_rows = [row for row in rows if bool(row.is_published)]
+    trusted_published_rows = [
+        row for row in published_rows
+        if snapshot_unavailable_reason(row) is None
+    ]
+    published_by_date = _latest_published_rows_by_date(published_rows)
+    data_through_dates = sorted(published_by_date)
+    adjacent_pairs = []
+    missing_prior_dates = []
+    trusted_pair_count = 0
+    for current_data_through in data_through_dates:
+        prior_data_through = current_data_through - timedelta(days=1)
+        current_snapshot = published_by_date.get(current_data_through)
+        prior_snapshot = published_by_date.get(prior_data_through)
+        if prior_snapshot is None:
+            missing_prior_dates.append(current_data_through.isoformat())
+            continue
+        adjacent_pairs.append({
+            'current_data_through': current_data_through.isoformat(),
+            'prior_data_through': prior_data_through.isoformat(),
+            'current_snapshot_id': current_snapshot.id,
+            'prior_snapshot_id': prior_snapshot.id,
+        })
+        if (
+            snapshot_unavailable_reason(current_snapshot) is None
+            and snapshot_unavailable_reason(prior_snapshot) is None
+        ):
+            trusted_pair_count += 1
+
+    return {
+        'published_snapshot_count': len(published_rows),
+        'trusted_published_snapshot_count': len(trusted_published_rows),
+        'data_through_dates': [
+            data_through.isoformat()
+            for data_through in data_through_dates
+        ],
+        'adjacent_published_pairs': adjacent_pairs,
+        'adjacent_published_pair_count': len(adjacent_pairs),
+        'missing_prior_dates': missing_prior_dates,
+        'trusted_pair_count': trusted_pair_count,
+    }
+
+
+def _latest_published_rows_by_date(rows: list[DashboardSnapshot]) -> dict:
+    by_date = {}
+    for row in rows:
+        if row.data_through is None:
+            continue
+        current = by_date.get(row.data_through)
+        if current is None or _row_order_key(row) > _row_order_key(current):
+            by_date[row.data_through] = row
+    return by_date
+
+
+def _row_order_key(row: DashboardSnapshot):
+    return (
+        row.snapshot_generated_at or datetime.min,
+        row.id or 0,
+    )
 
 
 def _watermark() -> dict:
