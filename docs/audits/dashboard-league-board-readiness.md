@@ -10,6 +10,14 @@
 Branch: `audit/dashboard-league-board-readiness`
 Base commit: `b0f1c5f` (latest main)
 
+> **Update (2026-07, phase-0-clarity/02):** this is a point-in-time audit. Since its
+> base commit the Dashboard was consolidated as the only full league-board surface:
+> the DashboardOrientation strip, the League-Wide Bullpen Read count tiles, and the
+> Quick Actions cards described below were removed as duplicates of the landscape,
+> the state card, and the sidebar. Today's Bullpen Picture became a teaser that
+> hands off to the Dashboard, and the Bullpen "All Teams" score table was retired.
+> See `docs/audits/release-demo-readiness-inventory.md` for the current state.
+
 ## 1. Executive decision
 
 **Dashboard already works as a league operating board** — it is not a pile of

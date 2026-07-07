@@ -1081,6 +1081,20 @@ test('Bullpen Picture renders existing landscape lanes and handles missing data'
     'Most Stretched',
   ])
   assert.equal(picture.columns.find(column => column.title === 'Most Stretched')?.entries[0]?.restricted, 4)
+  // Teaser view-model: one standout team per lane plus an overflow count.
+  assert.equal(picture.columns.find(column => column.title === 'Most Stretched')?.lead?.restricted, 4)
+  assert.equal(picture.columns.every(column => column.moreCount === 0), true)
+
+  const crowdedPicture = getBullpenPictureView({
+    ...landscape,
+    available_bullpens: [
+      ...landscape.available_bullpens,
+      { team_id: 121, team_name: 'New York Mets', team_abbreviation: 'NYM', total_relievers: 8, available: 5, monitor: 2, restricted: 1 },
+    ],
+  })
+  const availableLane = crowdedPicture.columns.find(column => column.title === 'Most Available')
+  assert.equal(availableLane?.lead?.teamAbbrev, 'SF')
+  assert.equal(availableLane?.moreCount, 1)
 
   const html = render(React.createElement(IntelligenceSurfaceView, {
     intelligence: intelligenceOk,
@@ -1099,8 +1113,6 @@ test('Bullpen Picture renders existing landscape lanes and handles missing data'
   assert.ok(htmlIncludes(html, 'SF'))
   assert.ok(htmlIncludes(html, 'MIL'))
   assert.ok(htmlIncludes(html, 'TOR'))
-  assert.ok(htmlIncludes(html, 'flex-col items-start gap-1'))
-  assert.ok(htmlIncludes(html, 'max-w-full break-words font-mono text-xs'))
   assert.ok(htmlIncludes(html, 'href="/dashboard"'))
   assert.ok(htmlIncludes(html, 'View full league board'))
 

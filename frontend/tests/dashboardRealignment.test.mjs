@@ -86,12 +86,15 @@ test('dashboard leads with bullpen language, not operations/governance language'
   assert.ok(!htmlIncludes(html, 'governed recommendation context'))
 })
 
-test('dashboard renders the five bullpen sections', () => {
+test('dashboard renders the core bullpen sections without duplicate league summaries', () => {
   const html = inRouter(React.createElement(DashboardView, { data: dashboardData }))
-  assert.ok(htmlIncludes(html, 'Bullpen Read'))
+  assert.ok(htmlIncludes(html, 'Bullpen Landscape'))
   assert.ok(htmlIncludes(html, 'Bullpen State'))
   assert.ok(htmlIncludes(html, 'Usage Roles'))
-  assert.ok(htmlIncludes(html, 'Quick Actions'))
+  // phase-0-clarity/02: the count-tile league summary and quick-action nav
+  // cards are gone — the landscape plus one state read carry the league view.
+  assert.equal(htmlIncludes(html, 'League-Wide Bullpen Read'), false)
+  assert.equal(htmlIncludes(html, 'Quick Actions'), false)
 })
 
 test('dashboard landscape uses canonical group titles and keeps descriptive subtitles', () => {
@@ -138,11 +141,9 @@ test('league-wide bullpen state sits directly after the landscape', () => {
   const html = inRouter(React.createElement(DashboardView, { data: dashboardData }))
   const landscapeIndex = html.indexOf('Bullpen Landscape')
   const stateIndex = html.indexOf('League-Wide Bullpen State')
-  const readIndex = html.indexOf('League-Wide Bullpen Read')
 
   assert.ok(landscapeIndex >= 0)
   assert.ok(stateIndex > landscapeIndex)
-  assert.ok(readIndex > stateIndex)
 })
 
 test('bullpen read cards show the four public availability labels', () => {
@@ -195,15 +196,14 @@ test('usage-roles summary shows distinct role composition counts', () => {
   assert.equal((html.match(/Bridge Arm/g) || []).length, 0)
 })
 
-test('quick actions deep-link into the bullpen workflow and methodology', () => {
+test('dashboard keeps team deep links without a quick-actions nav block', () => {
   const html = inRouter(React.createElement(DashboardView, { data: dashboardData }))
-  assert.ok(htmlIncludes(html, 'href="/bullpen?view=board"'))
-  assert.ok(htmlIncludes(html, 'href="/bullpen?view=compare"'))
-  assert.ok(htmlIncludes(html, 'href="/bullpen?view=pitchers"'))
-  assert.ok(htmlIncludes(html, 'href="/stories"'))
-  assert.ok(htmlIncludes(html, 'Read bullpen stories'))
-  assert.ok(htmlIncludes(html, 'Follow deeper bullpen trends and developing workload stories.'))
-  assert.ok(htmlIncludes(html, 'href="/methodology"'))
+  // The landscape rows and the state card still route into the team board...
+  assert.ok(htmlIncludes(html, 'href="/bullpen?view=board'))
+  // ...but the sidebar-duplicating action cards are gone.
+  assert.equal(htmlIncludes(html, 'Quick Actions'), false)
+  assert.equal(htmlIncludes(html, 'Read bullpen stories'), false)
+  assert.equal(htmlIncludes(html, 'href="/bullpen?view=pitchers"'), false)
 })
 
 test('dashboard links to the Data & Trust destination instead of exposing it inline', () => {
@@ -237,7 +237,7 @@ test('dashboard labels retained data when the latest refresh failed', () => {
 
   assert.ok(htmlIncludes(html, 'Refresh delayed'))
   assert.ok(htmlIncludes(html, 'showing last loaded data from Jun 4.'))
-  assert.ok(htmlIncludes(html, 'Bullpen Read'))
+  assert.ok(htmlIncludes(html, 'Bullpen State'))
 })
 
 test('Data & Trust page hosts trust detail without duplicate operational sections', () => {

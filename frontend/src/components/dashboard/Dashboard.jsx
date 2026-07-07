@@ -5,7 +5,6 @@ import { getBullpenDashboard } from '../../utils/api'
 import { LoadingPane, ErrorState, StaleDataNotice } from '../UI'
 import SeasonBanner from './SeasonBanner'
 import BullpenLandscape from './BullpenLandscape'
-import DashboardOrientation from './DashboardOrientation'
 import {
   getInjuryIlContextSummary,
   normalizeInjuryIlContext,
@@ -18,9 +17,10 @@ import {
 } from '../bullpen/board/tonightsBullpenBoardView'
 import BullpenOperatingStateCard from '../bullpen/BullpenOperatingStateCard'
 
-// BaseballOS landing. Centered on the bullpen: availability, workload, health,
-// and usage-role composition. Trust/freshness summaries are shown; the deep
-// governance/diagnostic detail lives on the Data & Trust page.
+// The league bullpen board: the only full league-wide landscape surface.
+// Centered on the bullpen landscape with one league state read, roster
+// context, and usage-role composition. Trust/freshness summaries are shown;
+// the deep governance/diagnostic detail lives on the Data & Trust page.
 export default function Dashboard() {
   const dash = useFetch(getBullpenDashboard)
   return (
@@ -61,7 +61,7 @@ export function DashboardView({ data, loading = false, error = null, staleWithEr
               League-Wide Bullpen Overview
             </div>
             <h1 className="font-display text-4xl sm:text-5xl tracking-wider text-chalk100 leading-none mb-2">
-              BASEBALL<span className="text-gradient-amber">OS</span>
+              League Bullpen Board
             </h1>
             <p className="text-chalk400 text-sm max-w-2xl font-mono leading-relaxed">
               A league-wide bullpen board from the latest completed data - who looks
@@ -90,9 +90,6 @@ export function DashboardView({ data, loading = false, error = null, staleWithEr
           </div>
         </div>
       </div>
-
-      {/* Orientation layer — what BaseballOS is + what to do next (always shown) */}
-      <DashboardOrientation />
 
       {loading && !data ? (
         <LoadingPane message="Loading bullpen overview..." />
@@ -124,21 +121,6 @@ export function DashboardView({ data, loading = false, error = null, staleWithEr
 
           <InjuryIlContextSection context={injuryIlContext} />
 
-          {/* Section 3 — Bullpen Read */}
-          <Section title="League-Wide Bullpen Read" subtitle={`${context.metrics.total} bullpen-eligible relievers in the current bullpen availability set`}>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-              {context.snapshot.map(row => (
-                <div key={row.status} className="card p-4">
-                  <div className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-wider text-chalk500">
-                    <span className="h-1.5 w-1.5 rounded-full" style={row.badge.dotStyle} aria-hidden="true" />
-                    {row.label}
-                  </div>
-                  <div className="mt-1 font-mono text-3xl text-chalk100">{row.count}</div>
-                </div>
-              ))}
-            </div>
-          </Section>
-
           {/* Section 4 — Usage Roles Summary */}
           <Section
             title="League-Wide Usage Roles"
@@ -154,24 +136,6 @@ export function DashboardView({ data, loading = false, error = null, staleWithEr
             </div>
           </Section>
 
-          {/* Section 5 — Quick Actions */}
-          <Section
-            title="Quick Actions"
-            subtitle="From the league-wide view, drill into a single team, a matchup, or a pitcher."
-          >
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
-              <ActionCard to="/bullpen?view=board" icon="🔥" title="Team Bullpen Board"
-                desc="One team's current availability read" />
-              <ActionCard to="/bullpen?view=compare" icon="⚖️" title="Compare Bullpens"
-                desc="Two teams, side-by-side" />
-              <ActionCard to="/bullpen?view=pitchers" icon="📋" title="Pitcher Details"
-                desc="One pitcher's fatigue & workload" />
-              <ActionCard to="/stories" icon="📰" title="Read bullpen stories"
-                desc="Follow deeper bullpen trends and developing workload stories." />
-              <ActionCard to="/methodology" icon="📐" title="Methodology"
-                desc="How every number is computed" />
-            </div>
-          </Section>
         </>
       )}
 
@@ -272,20 +236,5 @@ function FreshnessPill({ provenance, lastSync, confidenceLabel }) {
         <span className="text-chalk500">· Workload Read: {confidenceLabel}</span>
       </span>
     </div>
-  )
-}
-
-function ActionCard({ to, icon, title, desc }) {
-  return (
-    <Link
-      to={to}
-      className="card p-4 transition-all duration-200 hover:border-amber/30 hover:bg-amber/5 group"
-    >
-      <div className="text-2xl">{icon}</div>
-      <div className="mt-2 font-display text-lg tracking-wide text-chalk100 group-hover:text-amber transition-colors">
-        {title}
-      </div>
-      <div className="mt-1 text-xs font-mono text-chalk400">{desc}</div>
-    </Link>
   )
 }

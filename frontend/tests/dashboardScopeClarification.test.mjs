@@ -54,10 +54,13 @@ test('hero states the dashboard is a league-wide / MLB-wide view', () => {
   assert.ok(htmlIncludes(html, 'for a single team'))
 })
 
-test('bullpen read is scoped to the bullpen-eligible set', () => {
+test('the duplicate league count summary no longer renders', () => {
+  // phase-0-clarity/02: the League-Wide Bullpen Read count tiles duplicated
+  // the landscape lanes and the state card; the Dashboard now carries one
+  // league summary.
   const html = renderDashboard()
-  assert.ok(htmlIncludes(html, 'League-Wide Bullpen Read'))
-  assert.ok(htmlIncludes(html, 'bullpen-eligible relievers in the current bullpen availability set'))
+  assert.equal(htmlIncludes(html, 'League-Wide Bullpen Read'), false)
+  assert.equal(htmlIncludes(html, 'bullpen-eligible relievers in the current bullpen availability set'), false)
 })
 
 test('bullpen state is clearly league-wide, not a single team', () => {
@@ -88,16 +91,16 @@ test('usage roles are described as a league-wide distribution', () => {
   assert.equal((html.match(/Bridge Arm/g) || []).length, 0)
 })
 
-test('quick actions reinforce the league -> team / matchup / pitcher hierarchy', () => {
+test('quick actions no longer duplicate sidebar navigation', () => {
   const html = renderDashboard()
-  assert.ok(htmlIncludes(html, 'drill into a single team'))
-  assert.ok(htmlIncludes(html, "One team's current availability read") || htmlIncludes(html, 'One team&#x27;s current availability read'))
-  assert.ok(htmlIncludes(html, 'Two teams, side-by-side'))
+  assert.equal(htmlIncludes(html, 'Quick Actions'), false)
+  assert.equal(htmlIncludes(html, 'drill into a single team'), false)
+  assert.equal(htmlIncludes(html, 'Two teams, side-by-side'), false)
 })
 
 test('existing realignment headings remain (substrings preserved for stability)', () => {
   const html = renderDashboard()
-  for (const heading of ['Bullpen Overview', 'Bullpen Read', 'Bullpen State', 'Usage Roles', 'Quick Actions']) {
+  for (const heading of ['Bullpen Overview', 'Bullpen State', 'Usage Roles']) {
     assert.ok(htmlIncludes(html, heading), `missing heading substring: ${heading}`)
   }
 })

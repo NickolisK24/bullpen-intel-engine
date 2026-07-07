@@ -113,8 +113,10 @@ test('board explains the recent workload scale', () => {
 
 test('bullpen tabs read as a clear hierarchy', () => {
   const html = inRouter(React.createElement(Bullpen))
-  for (const label of ['Compare Bullpens', 'All Pitchers', 'All Teams']) {
+  for (const label of ['Compare Bullpens', 'All Pitchers']) {
     assert.ok(htmlIncludes(html, label), `missing tab label: ${label}`)
   }
   assert.ok(!htmlIncludes(html, '>Team Summary<'))
+  // The league score table moved off /bullpen in phase-0-clarity/02.
+  assert.ok(!htmlIncludes(html, '>All Teams<'))
 })
