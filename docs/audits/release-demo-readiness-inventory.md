@@ -75,6 +75,20 @@ asserts the public set is exactly `['/', '/dashboard', '/bullpen', '/stories',
 > three tabs (Team Board, Compare Bullpens, All Pitchers) and `?view=teams`
 > deep-links fall back to the Team Board. Route set unchanged.
 
+> **Update (2026-07, phase-0-clarity/03):** the Team Board was consolidated to
+> answer one question ("who in this bullpen can pitch tonight, who can't, and
+> why"). The compact Team State card is now the single team-state read — the
+> Overall Availability stress strip and the Team Context/"Bullpen Read" count
+> snapshot that restated it were removed (the availability groups are the
+> primary visual). The three-mode "View" segmented control became a single
+> "Show unavailable arms" toggle on the team-selector row; the unavailable-only
+> audit view left the public controls (the roster banner's evidence list covers
+> that inspection job). Recent Bullpen Work (Phase 0G) stays the Team Board's
+> evidence surface and its duplicate mount on the All Pitchers tab was removed.
+> Compare Bullpens keeps the freshness chips, side-by-side read, and
+> observations, and now links to each full team board instead of embedding two
+> complete boards. Route set unchanged.
+
 ## 4. Hidden / private / admin route assessment
 
 Four non-public routes remain and are intentional: `/signin` and `/auth/verify` (auth),
