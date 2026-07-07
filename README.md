@@ -254,6 +254,7 @@ Future work is expected to build toward:
 - [Setup Guide](docs/current/SETUP.md)
 - [Current Roadmap](docs/current/ROADMAP.md)
 - [V4 Foundation Integrity & Bullpen Evidence Roadmap](docs/roadmap/BaseballOS_V4_Daily_Bullpen_Platform.md)
+- [Product Vision Specification](docs/product/product-vision-specification.md)
 - [Product Credibility Pass Completion Audit](docs/audits/product-credibility-pass-completion.md)
 - [Data Freshness Validation Summary](backend/reports/data_freshness_validation_summary.md)
 
