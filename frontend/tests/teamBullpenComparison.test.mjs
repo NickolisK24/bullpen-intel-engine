@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test, { after } from 'node:test'
 import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
+import { MemoryRouter } from 'react-router-dom'
 import { createServer } from 'vite'
 
 import {
@@ -30,7 +31,9 @@ const view = await server.ssrLoadModule(
 
 const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const htmlIncludes = (html, text) => new RegExp(escapeRegExp(text)).test(html)
-const render = (payload) => renderToStaticMarkup(React.createElement(BullpenComparisonView, { payload }))
+const render = (payload) => renderToStaticMarkup(
+  React.createElement(MemoryRouter, null, React.createElement(BullpenComparisonView, { payload })),
+)
 
 test('renders side-by-side snapshot with both teams and their counts', () => {
   const html = render(differingComparison)
@@ -80,17 +83,21 @@ test('stale bullpen surfaces freshness limitations and degraded confidence', () 
   assert.ok(htmlIncludes(html, 'Recent workload unclear — read with caution'))
   assert.ok(htmlIncludes(html, 'Workload Read: Unclear Read'))
   assert.ok(htmlIncludes(html, 'one or both bullpens have degraded freshness'))
-  assert.ok(htmlIncludes(html, 'outside the 14-day freshness window'))
+  // The board-level freshness limitation text now lives on the linked team
+  // boards, not inside the comparison (the boards are no longer embedded).
 })
 
-test('renders both full bullpen boards beneath the comparison', () => {
+test('links to both team boards instead of embedding two full boards', () => {
   const html = render(differingComparison)
-  // Board section labels come from BullpenBoardView's groups.
-  assert.ok(htmlIncludes(html, 'Available group'))
-  // Both team headings present.
-  const acesIdx = html.indexOf('Aces')
-  const bearsBoardIdx = html.lastIndexOf('Bears')
-  assert.ok(acesIdx > -1 && bearsBoardIdx > -1)
+  // phase-0-clarity/03: the comparison compares; the full boards live on the
+  // Team Board tab behind links.
+  assert.equal(htmlIncludes(html, 'Available group'), false)
+  assert.equal(htmlIncludes(html, "Tonight's Bullpen Board"), false)
+  assert.ok(htmlIncludes(html, 'Full Team Boards'))
+  assert.ok(htmlIncludes(html, 'href="/bullpen?view=board&amp;team=ACE&amp;source=comparison"'))
+  assert.ok(htmlIncludes(html, 'href="/bullpen?view=board&amp;team=BEA&amp;source=comparison"'))
+  assert.ok(htmlIncludes(html, 'Open the Aces board'))
+  assert.ok(htmlIncludes(html, 'Open the Bears board'))
 })
 
 test('empty payload prompts for two teams instead of crashing', () => {
