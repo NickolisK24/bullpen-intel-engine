@@ -1,5 +1,5 @@
+import { Link } from 'react-router-dom'
 import { EmptyState } from '../../UI'
-import BullpenBoardView from './BullpenBoardView'
 import { getComparisonView } from './teamBullpenComparisonView'
 
 function FreshnessChip({ label, freshness }) {
@@ -149,15 +149,29 @@ export default function BullpenComparisonView({ payload }) {
         )}
       </section>
 
-      {/* 5 & 6. The two full boards, reused as-is. */}
-      <section aria-label={`${view.labelA} bullpen board`}>
-        <h3 className="mb-3 font-display text-xl tracking-wide text-chalk100">{view.labelA}</h3>
-        <BullpenBoardView board={payload?.team_a} />
-      </section>
-      <section aria-label={`${view.labelB} bullpen board`}>
-        <h3 className="mb-3 font-display text-xl tracking-wide text-chalk100">{view.labelB}</h3>
-        <BullpenBoardView board={payload?.team_b} />
+      {/* 5. Team board links. The comparison compares; each full board lives
+          on the Team Board tab instead of being embedded twice here. */}
+      <section aria-label="Open a full team board">
+        <h3 className="mb-2 font-mono text-xs uppercase tracking-widest text-chalk400">Full Team Boards</h3>
+        <div className="flex flex-wrap gap-3">
+          <TeamBoardLink team={payload?.team_a?.team} label={view.labelA} />
+          <TeamBoardLink team={payload?.team_b?.team} label={view.labelB} />
+        </div>
       </section>
     </div>
+  )
+}
+
+function TeamBoardLink({ team, label }) {
+  const param = team?.team_abbreviation
+    || (team?.team_id != null ? String(team.team_id) : null)
+  if (!param) return null
+  return (
+    <Link
+      to={`/bullpen?view=board&team=${encodeURIComponent(param)}&source=comparison`}
+      className="inline-flex min-h-10 items-center rounded border border-dirt bg-field/60 px-4 py-2 font-mono text-xs uppercase tracking-wider text-chalk300 transition-colors hover:border-amber/40 hover:text-amber"
+    >
+      Open the {label} board →
+    </Link>
   )
 }
