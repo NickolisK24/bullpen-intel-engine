@@ -103,9 +103,9 @@ test('trust and clean option chips do not carry layer prefixes', () => {
   const board = makeBoard({ cardsByStatus: { Available: [roleCard('Terry Trust', 'Available', trustRole)] } })
   const html = render(board)
   const text = visibleText(html).toUpperCase()
-  assert.ok(text.includes('TRUST ARM'))
+  assert.ok(text.includes('TRUSTED ARM'))
   assert.ok(text.includes('CLEAN OPTION'))
-  assert.equal(text.includes('ROLE TRUST ARM'), false)
+  assert.equal(text.includes('ROLE TRUSTED ARM'), false)
   assert.equal(text.includes('READ CLEAN OPTION'), false)
 })
 
@@ -128,7 +128,7 @@ test('pitcher card renders role chip before read chip and ahead of caveats', () 
   const cardStart = html.indexOf('Terry Trust')
   const roleKindIndex = html.indexOf('data-label-kind="role"', cardStart)
   const readKindIndex = html.indexOf('data-label-kind="read"', cardStart)
-  const roleLabelIndex = html.indexOf('Trust Arm', cardStart)
+  const roleLabelIndex = html.indexOf('Trusted Arm', cardStart)
   const readLabelIndex = html.indexOf('Watch Arm', cardStart)
   const caveatIndex = html.indexOf('Active MLB', cardStart)
 
@@ -185,9 +185,9 @@ test('pitcher label key renders both label layers', () => {
   assert.ok(htmlIncludes(html, 'Read:'))
   assert.ok(htmlIncludes(html, 'What type of bullpen arm is this?'))
   assert.ok(htmlIncludes(html, 'What do workload and availability say about this pitcher tonight?'))
-  assert.ok(htmlIncludes(html, 'Trust Arm'))
+  assert.ok(htmlIncludes(html, 'Trusted Arm'))
   assert.ok(htmlIncludes(html, 'Limited Rest'))
-  assert.ok(!htmlIncludes(html, 'Role</span>Trust Arm'))
+  assert.ok(!htmlIncludes(html, 'Role</span>Trusted Arm'))
   assert.ok(!htmlIncludes(html, 'Read</span>Clean Option'))
 })
 
@@ -205,7 +205,9 @@ test('pitcher label key uses the approved public terminology only', () => {
     assert.ok(keyHtml.includes(label), `missing read label: ${label}`)
   }
   for (const rejected of [
-    'Trusted Arm',
+    'Trust Arm',
+    'Bridge Arm',
+    'Depth Arm',
     'High Trust Arm',
     'Late-Inning Arm',
     'Clean Arm',
@@ -238,18 +240,18 @@ test('visible board text does not leak prefixed label or raw label keys', () => 
   })
   const html = render(board)
   for (const term of [
-    'Role</span>Trust Arm',
+    'Role</span>Trusted Arm',
     'Read</span>Clean Option',
-    'Role</span>Bridge Arm',
+    'Role</span>Setup Arm',
     'Read</span>Watch Arm',
   ]) {
     assert.equal(htmlIncludes(html, term), false, `leaked term: ${term}`)
   }
   const text = visibleText(html).toUpperCase()
   for (const term of [
-    'ROLE TRUST ARM',
+    'ROLE TRUSTED ARM',
     'READ CLEAN OPTION',
-    'ROLE BRIDGE ARM',
+    'ROLE SETUP ARM',
     'ROLE_',
     'READ_',
   ]) {

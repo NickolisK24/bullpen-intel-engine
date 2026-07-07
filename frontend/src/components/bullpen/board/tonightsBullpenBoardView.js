@@ -66,26 +66,60 @@ const GROUP_FALLBACK_META = {
   Available: { label: 'Available', description: 'Recent usage leaves these arms in a clean spot for normal bullpen coverage.' },
   Monitor: { label: 'On Watch', description: 'Recent work should be checked before counting on a full late-game lane.' },
   Limited: { label: 'Limited', description: 'Recent usage narrows how comfortably these arms can be used.' },
-  Avoid: { label: 'Unavailable', description: "Recent workload keeps these arms out of today's available group." },
-  Unavailable: { label: 'Unavailable Pitchers', description: "Roster or workload context keeps these pitchers out of tonight's bullpen plan." },
+  Unavailable: { label: 'Unavailable', description: "Recent workload or roster context keeps these arms out of tonight's available group." },
 }
 
 const EMPTY_GROUP_COPY = {
   Available: 'No relievers are fully clear of recent workload right now.',
   Monitor: 'No relievers need an extra workload check right now.',
   Limited: 'No relievers have a narrowed-use read right now.',
-  Avoid: 'No relievers are carrying enough recent use to fall out of the normal plan.',
-  Unavailable: 'No pitchers are currently hidden from the bullpen plan.',
+  Unavailable: "No pitchers are currently out of tonight's available group.",
+}
+
+// The backend can send both a workload-based 'Avoid' group and a roster-based
+// 'Unavailable' group. Publicly there is only one Unavailable read, so the two
+// buckets merge into a single group before anything renders. Workload-based
+// arms list first, matching the canonical backend order.
+function mergePublicUnavailableGroups(groups) {
+  const unavailableStatuses = new Set(['Avoid', 'Unavailable'])
+  const toMerge = groups.filter(group => unavailableStatuses.has(group?.status))
+  if (!toMerge.length) return groups
+
+  const merged = {
+    status: 'Unavailable',
+    label: GROUP_FALLBACK_META.Unavailable.label,
+    description: GROUP_FALLBACK_META.Unavailable.description,
+    count: toMerge.reduce((sum, group) => sum + group.count, 0),
+    pitchers: toMerge.flatMap(group => group.pitchers),
+    emptyCopy: EMPTY_GROUP_COPY.Unavailable,
+    badge: getAvailabilityBadgeView('Unavailable'),
+  }
+
+  const result = []
+  let placed = false
+  for (const group of groups) {
+    if (unavailableStatuses.has(group?.status)) {
+      if (!placed) {
+        result.push(merged)
+        placed = true
+      }
+      continue
+    }
+    result.push(group)
+  }
+  return result
 }
 
 export function getBoardGroups(board) {
   const groups = Array.isArray(board?.groups) ? board.groups : []
   if (groups.length) {
-    return groups.map(group => normalizeGroup(group))
+    return mergePublicUnavailableGroups(groups.map(group => normalizeGroup(group)))
   }
   // Fallback: present every canonical group as empty so the board structure is
   // stable even if the payload omitted groups.
-  return BOARD_GROUP_ORDER.map(status => normalizeGroup({ status, pitchers: [] }))
+  return mergePublicUnavailableGroups(
+    BOARD_GROUP_ORDER.map(status => normalizeGroup({ status, pitchers: [] })),
+  )
 }
 
 function normalizeGroup(group) {

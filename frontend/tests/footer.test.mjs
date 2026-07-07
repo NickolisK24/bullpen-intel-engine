@@ -49,16 +49,29 @@ test('site footer renders the centered brand card and trust copy', () => {
   assert.equal(text.includes('baseballoshq@gmail.com'), false)
 })
 
+test('site footer links to the learn and trust pages', () => {
+  const html = render(React.createElement(Footer))
+  const text = visibleText(html)
+
+  for (const [href, label] of [
+    ['/about', 'About'],
+    ['/how-to-read', 'How to Read'],
+    ['/methodology', 'Methodology'],
+    ['/trust', 'Data & Trust'],
+  ]) {
+    assert.ok(htmlIncludes(html, `href="${href}"`), href)
+    assert.ok(text.includes(label), label)
+  }
+  // The footer stays a learn/trust rail — the sidebar owns product navigation.
+  for (const href of ['/dashboard', '/bullpen', '/stories']) {
+    assert.equal(htmlIncludes(html, `href="${href}"`), false, href)
+  }
+})
+
 test('site footer keeps icon-only connect links and shell wiring intact', () => {
   const html = render(React.createElement(Footer))
   const appSource = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8')
   const text = visibleText(html)
-
-  for (const href of ['/', '/dashboard', '/bullpen', '/stories', '/about', '/how-to-read', '/methodology', '/trust']) {
-    assert.equal(htmlIncludes(html, `href="${href}"`), false, href)
-  }
-  assert.equal(htmlIncludes(html, 'Product'), false)
-  assert.equal(htmlIncludes(html, 'Learn'), false)
   assert.equal(text.includes('X: @baseballoshq'), false)
   assert.equal(text.includes('Instagram: @baseballoshq'), false)
   assert.equal(text.includes('Email: baseballoshq@gmail.com'), false)

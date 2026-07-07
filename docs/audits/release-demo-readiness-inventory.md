@@ -39,6 +39,8 @@ outside review; an optional final hardening branch is listed but not required.
 | `/stories` | `Stories` | public in-lane (selective feed) |
 | `/methodology` | `Methodology` | public in-lane (definitions) |
 | `/trust` | `DataTrust` | public in-lane (freshness/sync/reliability/backtest) |
+| `/about` | `About` | public support page (added after this audit's base commit) |
+| `/how-to-read` | `HowToRead` | public support page (added after this audit's base commit) |
 | `/signin` | `SignIn` | hidden/auth — intentional |
 | `/auth/verify` | `VerifySignIn` | hidden/auth — intentional |
 | `/admin/product-intelligence` | `ProductIntelligenceAdmin` | hidden/admin — intentional |
@@ -54,6 +56,12 @@ Stories → Methodology → Data & Trust) and match the Sidebar nav one-for-one.
 redirects to `/` so the documented alias never dead-ends. `navigationRoutes.test.mjs`
 asserts the public set is exactly `['/', '/dashboard', '/bullpen', '/stories',
 '/methodology', '/trust']`. All public routes are in-lane and demo-ready.
+
+> **Update (2026-07, phase-0-clarity/01):** two public support pages were added after
+> this audit's base commit — `/about` (About) and `/how-to-read` (How to Read). They are
+> not sidebar lanes; they are reachable from the Today page's Learn & Explore cards and
+> from the footer's learn/trust link row (About, How to Read, Methodology, Data & Trust).
+> The six-lane sidebar hierarchy above is unchanged.
 
 ## 4. Hidden / private / admin route assessment
 

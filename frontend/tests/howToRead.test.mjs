@@ -62,11 +62,11 @@ test('How to Read page exposes the expected section anchors', () => {
   }
 })
 
-test('simplified footer does not duplicate guide navigation', () => {
+test('footer links the guide pages without joining the sidebar', () => {
   const html = render(React.createElement(Footer))
 
-  assert.equal(htmlIncludes(html, 'href="/about"'), false)
-  assert.equal(htmlIncludes(html, 'href="/how-to-read"'), false)
-  assert.equal(htmlIncludes(html, 'href="/methodology"'), false)
-  assert.equal(htmlIncludes(html, 'href="/trust"'), false)
+  assert.ok(htmlIncludes(html, 'href="/about"'))
+  assert.ok(htmlIncludes(html, 'href="/how-to-read"'))
+  assert.ok(htmlIncludes(html, 'href="/methodology"'))
+  assert.ok(htmlIncludes(html, 'href="/trust"'))
 })

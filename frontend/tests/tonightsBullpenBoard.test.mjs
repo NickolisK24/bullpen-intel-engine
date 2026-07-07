@@ -38,6 +38,7 @@ const view = await server.ssrLoadModule(
 
 const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const htmlIncludes = (html, text) => new RegExp(escapeRegExp(text)).test(html)
+const countOccurrences = (html, text) => (html.match(new RegExp(escapeRegExp(text), 'g')) || []).length
 const render = (board) => renderToStaticMarkup(React.createElement(BullpenBoardView, { board }))
 const renderWithOptions = (props) => renderToStaticMarkup(React.createElement(BullpenBoardView, props))
 const tonightsBullpenBoardSource = readFileSync('src/components/bullpen/board/TonightsBullpenBoard.jsx', 'utf8')
@@ -80,15 +81,18 @@ const staleActivatedAssignmentBoard = makeBoard({
   },
 })
 
-test('renders all five availability groups in order', () => {
+test('renders the four public availability groups in order', () => {
   const html = render(populatedBoard)
   assert.ok(htmlIncludes(html, 'id="pitcher-lanes"'))
-  for (const label of ['Available', 'On Watch', 'Limited', 'Unavailable', 'Unavailable Pitchers']) {
+  for (const label of ['Available', 'On Watch', 'Limited', 'Unavailable']) {
     assert.ok(htmlIncludes(html, label), `missing group: ${label}`)
   }
   assert.equal(htmlIncludes(html, 'Avoid'), false)
-  // Available must appear before Unavailable Pitchers on the board.
-  assert.ok(html.indexOf('Available') < html.lastIndexOf('Unavailable Pitchers'))
+  // One public Unavailable bucket: the workload-based and roster-based groups merge.
+  assert.equal(htmlIncludes(html, 'Unavailable Pitchers'), false)
+  assert.equal(countOccurrences(html, 'aria-label="Unavailable group"'), 1)
+  // Available must appear before the Unavailable group on the board.
+  assert.ok(html.indexOf('aria-label="Available group"') < html.indexOf('aria-label="Unavailable group"'))
 })
 
 test('board view mode control defaults to Active and replaces show-unavailable copy', () => {
@@ -285,7 +289,7 @@ test('groups with no pitchers render their own empty copy', () => {
     cardsByStatus: { Available: populatedBoard.groups[0].pitchers },
   })
   const html = render(board)
-  assert.ok(htmlIncludes(html, 'No pitchers are currently hidden from the bullpen plan.'))
+  assert.ok(htmlIncludes(html, 'No pitchers are currently out of tonight&#x27;s available group.'))
 })
 
 test('stale data surfaces existing trust messaging', () => {
@@ -306,7 +310,8 @@ test('stale data surfaces existing trust messaging', () => {
 
 test('unavailable roster pitchers render status labels without active availability', () => {
   const html = render(rosterContextBoard)
-  assert.ok(htmlIncludes(html, 'Unavailable Pitchers'))
+  assert.ok(htmlIncludes(html, 'aria-label="Unavailable group"'))
+  assert.equal(htmlIncludes(html, 'Unavailable Pitchers'), false)
   assert.ok(htmlIncludes(html, 'Graham Ashcraft'))
   assert.ok(htmlIncludes(html, '60-Day IL'))
   assert.ok(htmlIncludes(html, 'Jose Franco'))
@@ -348,7 +353,8 @@ test('NYY-like: 40-man (not active) arms shown as cards back the unavailable cou
   // Both inactive arms are shown as cards and are inspectable in the canonical banner; no
   // separate "not shown" line is needed. (The legacy getRosterStatusSummaryView was retired in CRC-10.)
   const html = render(fortyManShownBoard)
-  assert.ok(htmlIncludes(html, 'Unavailable Pitchers'))
+  assert.ok(htmlIncludes(html, 'aria-label="Unavailable group"'))
+  assert.equal(htmlIncludes(html, 'Unavailable Pitchers'), false)
   assert.ok(htmlIncludes(html, '40-Man (not active)'))
   assert.ok(htmlIncludes(html, 'Milo Marquez'))
   assert.ok(htmlIncludes(html, 'Nate Nunez'))
@@ -518,7 +524,7 @@ test('does not expose raw governance fields or jargon on the baseball surface', 
 
 test('view helpers group, total, and detect stale freshness deterministically', () => {
   const groups = view.getBoardGroups(populatedBoard)
-  assert.deepEqual(groups.map(g => g.status), ['Available', 'Monitor', 'Limited', 'Avoid', 'Unavailable'])
+  assert.deepEqual(groups.map(g => g.status), ['Available', 'Monitor', 'Limited', 'Unavailable'])
 
   const totals = view.getBoardTotals(populatedBoard)
   assert.equal(totals.total, 6)

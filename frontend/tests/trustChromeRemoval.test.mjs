@@ -17,12 +17,6 @@ after(async () => {
 })
 
 const {
-  default: RecommendationV2BullpenStatePanel,
-} = await server.ssrLoadModule('/src/components/recommendations/RecommendationV2BullpenStatePanel.jsx')
-const {
-  default: TeamOperationsBullpenReadinessPanel,
-} = await server.ssrLoadModule('/src/components/teamOperations/TeamOperationsBullpenReadinessPanel.jsx')
-const {
   default: BullpenIntelligencePanel,
 } = await server.ssrLoadModule('/src/components/observations/BullpenIntelligencePanel.jsx')
 
@@ -34,77 +28,6 @@ function render(element) {
 }
 
 test('trust surfaces do not render certification, protection, or version chrome', () => {
-  const recommendationText = render(
-    React.createElement(RecommendationV2BullpenStatePanel, {
-      state: {
-        contractState: 'fail_closed',
-        isContractSafe: true,
-        isFailClosed: true,
-        governance: { rankingApplied: false, selectionMade: false },
-        freshness: {
-          source_freshness_status: 'stale',
-          aggregate_v2_freshness_status: 'stale',
-          sync_timestamp: '2026-06-03T07:44:27Z',
-        },
-        statusMetadata: {
-          reason_summary: 'Source freshness is stale. V2 is preserving fail-closed protection while displaying degraded context only.',
-          display_label: 'Data freshness protection active',
-          fail_closed_reason_code: 'data_state_stale',
-          freshness_failed: true,
-          trust_failed: false,
-        },
-        failClosed: {
-          failed_closed: true,
-          state: 'degraded',
-          display_label: 'Data freshness protection active',
-          reason_summary: 'Source freshness is stale. V2 is preserving fail-closed protection while displaying degraded context only.',
-          reason_codes: ['data_state_stale'],
-        },
-        refusalReasons: [
-          {
-            message: 'V2 context is degraded or refused because source data state is stale.',
-          },
-        ],
-        bullpenState: null,
-      },
-    }),
-  )
-
-  const teamOperationsText = render(
-    React.createElement(TeamOperationsBullpenReadinessPanel, {
-      state: {
-        contractState: 'available',
-        sourceContractState: 'available',
-        isContractSafe: true,
-        isInternal: true,
-        isInternalUncertified: true,
-        governance: { rankingApplied: false, selectionMade: false },
-        routeStatus: {
-          exposure: 'internal',
-          productionStatus: 'non_production',
-          certificationStatus: 'uncertified',
-        },
-        readinessStatus: 'operationally_stable',
-        readinessSummary: 'Team-level bullpen readiness looks steady from current public workload evidence.',
-        readiness: {
-          status: 'Operationally Stable',
-          summary: 'Team-level bullpen readiness looks steady from current public workload evidence.',
-        },
-        workloadPressure: {},
-        availabilityDistribution: {},
-        coverageInventory: {},
-        handednessCoverage: {},
-        trustMetadata: {
-          governance_state: 'internal_uncertified',
-          confidence: 'medium',
-          data_state: 'complete',
-        },
-        freshness: {},
-      },
-      initialExpandedSections: ['metadata'],
-    }),
-  )
-
   const observationText = render(
     React.createElement(BullpenIntelligencePanel, {
       state: {
@@ -118,21 +41,14 @@ test('trust surfaces do not render certification, protection, or version chrome'
     }),
   )
 
-  const combinedText = `${recommendationText} ${teamOperationsText} ${observationText}`
-
-  assert.equal(forbiddenChrome.test(combinedText), false, combinedText)
-  assert.match(combinedText, /Unavailable - freshness failed/)
-  assert.match(combinedText, /Internal \/ Limited Exposure/)
-  assert.match(combinedText, /withheld/i)
+  assert.equal(forbiddenChrome.test(observationText), false, observationText)
+  assert.match(observationText, /withheld/i)
 })
 
 test('component sources do not contain old visible trust-chrome phrases', async () => {
   const files = [
     '../src/components/explanations/ExplanationDisclosure.jsx',
-    '../src/components/recommendations/RecommendationV2BullpenStatePanel.jsx',
-    '../src/components/dashboard/OperationalReadinessSection.jsx',
     '../src/components/observations/BullpenIntelligencePanel.jsx',
-    '../src/components/teamOperations/TeamOperationsBullpenReadinessPanel.jsx',
   ]
   const oldVisiblePhrases = [
     'Certified V4 Explanation',

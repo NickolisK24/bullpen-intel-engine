@@ -67,7 +67,7 @@ test('raw Avoid status displays as public Unavailable copy', () => {
 
 test('formats fixture confidence values for display', () => {
   for (const row of availabilityFixtureRows) {
-    assert.match(formatConfidence(row.availability.confidence), /^(Strong Read|Limited Read|Unclear Read)$/)
+    assert.match(formatConfidence(row.availability.confidence), /^(Strong Read|Partial Read|Unclear Read)$/)
   }
   assert.equal(formatConfidence(null), 'Unknown Read')
 })

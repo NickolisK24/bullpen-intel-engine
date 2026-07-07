@@ -55,7 +55,7 @@ test('the opponent reads before the trust metadata (hierarchy)', () => {
 test('trust metadata stays visible: data state, confidence, status, missing fields', () => {
   const html = render({ gameContext: present })
   assert.ok(htmlIncludes(html, 'Historical Game Log'))
-  assert.ok(htmlIncludes(html, 'Limited Read'))
+  assert.ok(htmlIncludes(html, 'Partial Read'))
   assert.ok(htmlIncludes(html, 'Final'))
   assert.ok(htmlIncludes(html, 'Stored game-log context'))
   assert.ok(htmlIncludes(html, 'Home/away and Scheduled time unavailable in stored game-log data.'))

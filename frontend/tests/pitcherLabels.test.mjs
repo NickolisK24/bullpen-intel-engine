@@ -39,7 +39,7 @@ const authoredCard = {
 
 test('pitcher labels consume backend-authored role and read chips', () => {
   const labels = getPitcherLabels(authoredCard)
-  assert.equal(labels.role.label, 'Trust Arm')
+  assert.equal(labels.role.label, 'Trusted Arm')
   assert.equal(labels.role.key, 'trust_arm')
   assert.equal(labels.role.source, 'backend:role_key:late_high_leverage')
   assert.equal(labels.read.label, 'Clean Option')
@@ -100,7 +100,7 @@ test('unknown backend keys fail closed to Limited Read', () => {
 })
 
 test('individual helpers read the same backend-authored payload', () => {
-  assert.equal(derivePitcherRoleLabel(authoredCard).label, 'Trust Arm')
+  assert.equal(derivePitcherRoleLabel(authoredCard).label, 'Trusted Arm')
   assert.equal(derivePitcherReadLabel(authoredCard).label, 'Clean Option')
 })
 
@@ -117,10 +117,10 @@ test('definitions exist and keep role/read boundaries clear', () => {
 
 test('public label sets remain unchanged', () => {
   assert.deepEqual(APPROVED_ROLE_LABELS, [
-    'Trust Arm',
-    'Bridge Arm',
+    'Trusted Arm',
+    'Setup Arm',
     'Coverage Arm',
-    'Depth Arm',
+    'Middle Relief Arm',
     'Limited Read',
   ])
   assert.deepEqual(APPROVED_READ_LABELS, [
@@ -153,5 +153,19 @@ test('label copy avoids advisory and speculative language', () => {
     'best option',
   ]) {
     assert.equal(copy.includes(term), false, `leaked term: ${term}`)
+  }
+})
+
+test('retired backend role wording is rewritten to the canonical public set', () => {
+  const cases = [
+    { key: 'trust_arm', label: 'Trust Arm', expected: 'Trusted Arm' },
+    { key: 'bridge_arm', label: 'Bridge Arm', expected: 'Setup Arm' },
+    { key: 'depth_arm', label: 'Depth Arm', expected: 'Middle Relief Arm' },
+  ]
+  for (const { key, label, expected } of cases) {
+    const labels = getPitcherLabels({
+      pitcher_labels: { role: { kind: 'role', key, label, source: 'backend:test' } },
+    })
+    assert.equal(labels.role.label, expected)
   }
 })
