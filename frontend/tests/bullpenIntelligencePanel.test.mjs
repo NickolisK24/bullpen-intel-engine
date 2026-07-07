@@ -229,7 +229,7 @@ test('renders title, summary, evidence, limitations, metadata, and governance co
   assert.ok(htmlIncludes(html, 'Workload Read'))
   assert.ok(htmlIncludes(html, 'Clear Visibility'))
   assert.ok(htmlIncludes(html, 'current'))
-  assert.ok(htmlIncludes(html, 'Limited Read'))
+  assert.ok(htmlIncludes(html, 'Partial Read'))
   assert.ok(htmlIncludes(html, 'Explanation Reference'))
   assert.ok(htmlIncludes(html, 'v5.observations.inventory'))
   assert.ok(htmlIncludes(html, 'Observations describe bullpen movement and decision context without choosing an arm.'))

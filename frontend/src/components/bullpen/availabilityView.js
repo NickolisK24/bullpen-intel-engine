@@ -195,9 +195,12 @@ export function getAvailabilityBadgeView(availabilityOrStatus) {
 // Baseball-facing labels for classification confidence: the user sees how
 // clear the workload read is, not an internal confidence grade. Raw API
 // values ('high'/'medium'/'low') are preserved everywhere outside display.
+// 'Limited Read' is reserved for the pitcher label that means "not enough
+// data for a clear role/availability label" — confidence uses 'Partial Read'
+// so the two concepts never share a public name.
 const CONFIDENCE_READ_LABELS = {
   high: 'Strong Read',
-  medium: 'Limited Read',
+  medium: 'Partial Read',
   low: 'Unclear Read',
   none: 'No Read',
   unknown: 'Unknown Read',

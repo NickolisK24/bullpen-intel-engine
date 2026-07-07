@@ -17,14 +17,14 @@ const read = (key, label, definition, tone) => Object.freeze({
 export const PITCHER_ROLE_LABELS = Object.freeze({
   TRUST_ARM: role(
     'trust_arm',
-    'Trust Arm',
+    'Trusted Arm',
     'Existing usage read points to the primary late-inning trust lane.',
     { borderColor: 'rgba(125,211,252,0.36)', backgroundColor: 'rgba(125,211,252,0.09)', color: '#bae6fd' },
   ),
   BRIDGE_ARM: role(
     'bridge_arm',
-    'Bridge Arm',
-    'Existing usage read points to the bridge or handoff layer.',
+    'Setup Arm',
+    'Existing usage read points to the setup or handoff layer.',
     { borderColor: 'rgba(196,181,253,0.34)', backgroundColor: 'rgba(196,181,253,0.08)', color: '#ddd6fe' },
   ),
   COVERAGE_ARM: role(
@@ -35,8 +35,8 @@ export const PITCHER_ROLE_LABELS = Object.freeze({
   ),
   DEPTH_ARM: role(
     'depth_arm',
-    'Depth Arm',
-    'Existing usage read points to lighter or depth bullpen usage; a usage label, not a talent judgment.',
+    'Middle Relief Arm',
+    'Existing usage read points to lighter middle-relief usage; a usage label, not a talent judgment.',
     { borderColor: 'rgba(203,213,225,0.30)', backgroundColor: 'rgba(203,213,225,0.07)', color: '#cbd5e1' },
   ),
   LIMITED_READ: role(
@@ -110,11 +110,17 @@ function normalizeKey(value) {
   return String(value || '').trim().toLowerCase()
 }
 
+// One public role vocabulary: backend-authored labels that still use the
+// retired role wording are rewritten to the canonical public set
+// (Trusted Arm / Setup Arm / Middle Relief Arm / Coverage Arm / Limited Read).
 function publicLabel(value) {
   return String(value || '')
     .replace(/\bRest-Restricted\b/g, 'Limited Rest')
     .replace(/\bMonitor\b/g, 'On Watch')
     .replace(/\bRestricted\b/g, 'Limited')
+    .replace(/\bTrust Arm\b/g, 'Trusted Arm')
+    .replace(/\bBridge Arm\b/g, 'Setup Arm')
+    .replace(/\bDepth Arm\b/g, 'Middle Relief Arm')
 }
 
 function authoredLabels(card) {
