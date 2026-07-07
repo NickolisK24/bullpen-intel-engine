@@ -61,7 +61,7 @@ const teamReliefWorkPayload = {
           pitcher_full_name: 'Beta Reliever',
           roster_status_sentence: 'On the active roster per MLB roster data.',
           game_date: '2026-07-05',
-          innings_pitched: '1.0',
+          innings_pitched: '1',
           innings_pitched_outs: 3,
           pitches_thrown: 20,
           strikeouts: 1,
@@ -69,6 +69,36 @@ const teamReliefWorkPayload = {
           hits_allowed: 1,
           runs_allowed: 0,
           sentence: 'Beta Reliever - 1.0 IP, 20 pitches, 1 K, 0 BB, 1 H, 0 R.',
+        },
+        {
+          pitcher_id: 3,
+          pitcher_mlb_id: 90003,
+          pitcher_full_name: 'Gamma Reliever',
+          roster_status_sentence: 'On the active roster per MLB roster data.',
+          game_date: '2026-07-05',
+          innings_pitched: '1.3333333333333333',
+          innings_pitched_outs: 4,
+          pitches_thrown: 18,
+          strikeouts: 1,
+          walks: 1,
+          hits_allowed: 0,
+          runs_allowed: 1,
+          sentence: 'Gamma Reliever - 1.1 IP, 18 pitches, 1 K, 1 BB, 0 H, 1 R.',
+        },
+        {
+          pitcher_id: 4,
+          pitcher_mlb_id: 90004,
+          pitcher_full_name: 'Delta Reliever',
+          roster_status_sentence: 'On the active roster per MLB roster data.',
+          game_date: '2026-07-05',
+          innings_pitched: '0.6666666666666666',
+          innings_pitched_outs: 2,
+          pitches_thrown: 14,
+          strikeouts: 0,
+          walks: 1,
+          hits_allowed: 1,
+          runs_allowed: 0,
+          sentence: 'Delta Reliever - 0.2 IP, 14 pitches, 0 K, 1 BB, 1 H, 0 R.',
         },
       ],
     },
@@ -86,7 +116,7 @@ const teamReliefWorkPayload = {
           pitcher_full_name: 'Alpha Reliever',
           roster_status_sentence: 'On the active roster per MLB roster data.',
           game_date: '2026-07-03',
-          innings_pitched: '1.2',
+          innings_pitched: '1.6666666666666667',
           innings_pitched_outs: 5,
           pitches_thrown: 24,
           strikeouts: 2,
@@ -222,6 +252,8 @@ test('renders server-authored team relief-work sentences verbatim', () => {
     teamReliefWorkPayload.relief_by_date[0].sentence,
     teamReliefWorkPayload.relief_by_date[0].appearances[0].sentence,
     teamReliefWorkPayload.relief_by_date[0].appearances[0].roster_status_sentence,
+    teamReliefWorkPayload.relief_by_date[0].appearances[1].sentence,
+    teamReliefWorkPayload.relief_by_date[0].appearances[2].sentence,
     teamReliefWorkPayload.relief_by_date[1].sentence,
     teamReliefWorkPayload.relief_by_date[1].appearances[0].sentence,
     teamReliefWorkPayload.relief_by_date[1].appearances[0].roster_status_sentence,
@@ -261,6 +293,28 @@ test('date groups are collapsible with the latest date expanded', () => {
   assert.ok(!olderDetails.includes('open'))
 })
 
+test('date summary rows expose a stable header marker', () => {
+  const html = renderPanel({ payload: teamReliefWorkPayload })
+  const matches = html.match(/data-testid="team-relief-date-summary"/g) || []
+
+  assert.equal(matches.length, teamReliefWorkPayload.relief_by_date.length)
+})
+
+test('formats pitcher IP from outs using baseball notation', () => {
+  const html = renderPanel({ payload: teamReliefWorkPayload })
+
+  for (const value of ['1.0', '1.1', '1.2', '0.2']) {
+    assert.ok(htmlIncludes(html, value), value)
+  }
+  for (const rawDecimal of [
+    '1.3333333333333333',
+    '1.6666666666666667',
+    '0.6666666666666666',
+  ]) {
+    assert.equal(htmlIncludes(html, rawDecimal), false, rawDecimal)
+  }
+})
+
 test('appearance rows use payload facts without new interpretation', () => {
   const html = renderPanel({ payload: teamReliefWorkPayload })
   const appearance = teamReliefWorkPayload.relief_by_date[0].appearances[0]
@@ -272,7 +326,7 @@ test('appearance rows use payload facts without new interpretation', () => {
   assert.ok(htmlIncludes(html, 'BB'))
   assert.ok(htmlIncludes(html, 'H'))
   assert.ok(htmlIncludes(html, 'R'))
-  assert.ok(htmlIncludes(html, appearance.innings_pitched))
+  assert.ok(htmlIncludes(html, '1.0'))
   assert.ok(htmlIncludes(html, String(appearance.pitches_thrown)))
   assert.ok(htmlIncludes(html, String(appearance.strikeouts)))
   assert.ok(htmlIncludes(html, String(appearance.walks)))
