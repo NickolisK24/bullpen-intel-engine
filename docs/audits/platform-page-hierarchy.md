@@ -9,6 +9,12 @@
 Branch: `audit/platform-page-hierarchy`
 Base commit: `ba774f6` (latest main)
 
+> **Update (2026-07, phase-0-clarity/01):** this is a point-in-time audit. Since its
+> base commit, `/prospects` has been fully removed, and two public support pages were
+> added outside the six sidebar lanes: `/about` (About) and `/how-to-read` (How to
+> Read), linked from the Today page's Learn & Explore cards and the footer. See
+> `docs/audits/release-demo-readiness-inventory.md` for the current route inventory.
+
 ## 1. Executive decision
 
 The page set is close to the intended hierarchy, with three real problems to fix

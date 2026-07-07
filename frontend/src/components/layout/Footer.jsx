@@ -1,4 +1,14 @@
+import { Link } from 'react-router-dom'
 import { ANALYTICS_EVENTS, currentAnalyticsRoute, trackAnalyticsEvent } from '../../utils/analytics'
+
+// Trust-first footer navigation: the explainer and trust surfaces stay one
+// click away from the bottom of every page.
+const LEARN_LINKS = [
+  { to: '/about', label: 'About' },
+  { to: '/how-to-read', label: 'How to Read' },
+  { to: '/methodology', label: 'Methodology' },
+  { to: '/trust', label: 'Data & Trust' },
+]
 
 const CONNECT_LINKS = [
   {
@@ -101,6 +111,18 @@ export default function Footer() {
         </p>
 
         <ConnectLinks />
+
+        <nav aria-label="Learn and trust pages" className="mt-6 flex flex-wrap items-center justify-center gap-x-5 gap-y-2">
+          {LEARN_LINKS.map(link => (
+            <Link
+              key={link.to}
+              to={link.to}
+              className="font-mono text-[11px] uppercase tracking-widest text-chalk400 transition-colors hover:text-amber focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/60"
+            >
+              {link.label}
+            </Link>
+          ))}
+        </nav>
 
         <div className="mt-6 border-t border-dirt pt-5">
           <p className="mx-auto max-w-3xl text-xs leading-5 text-chalk500">
