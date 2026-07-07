@@ -392,7 +392,6 @@ test('selected team board renders Recent Bullpen Work in the visible board path'
 
   assert.ok(htmlIncludes(html, 'Recent Bullpen Work'))
   assert.ok(htmlIncludes(html, 'Review pitcher lanes'))
-  assert.ok(htmlIncludes(html, 'Overall Availability: Elevated'))
   assert.ok(htmlIncludes(html, 'Tonight&#x27;s Bullpen Board — New York Yankees'))
   assert.ok(htmlIncludes(html, teamReliefWorkPayload.scope_sentence))
 
@@ -524,23 +523,19 @@ test('new panel source does not author forbidden public vocabulary', async () =>
   assert.equal(/last\s+14\s+days/i.test(source), false)
 })
 
-test('Bullpen mounts the panel additively before the existing table', async () => {
+test('the relief work panel mounts once, on the team board only', async () => {
   const source = await readFile(
     new URL('../src/components/bullpen/Bullpen.jsx', import.meta.url),
     'utf8',
   )
-  const teamFilterIndex = source.indexOf('{/* Team filter pills */}')
-  const tableIndex = source.indexOf('{/* Main table */}')
-  const mountIndex = source.indexOf('<TeamReliefWorkPanel teamId={selectedTeam} />')
-  const detailIndex = source.indexOf('{/* Detail panel')
-
-  assert.notEqual(teamFilterIndex, -1)
-  assert.notEqual(tableIndex, -1)
-  assert.notEqual(mountIndex, -1)
-  assert.notEqual(detailIndex, -1)
-  assert.ok(teamFilterIndex < mountIndex)
-  assert.ok(mountIndex < tableIndex)
-  assert.ok(mountIndex < detailIndex)
+  const boardSource = await readFile(
+    new URL('../src/components/bullpen/board/TonightsBullpenBoard.jsx', import.meta.url),
+    'utf8',
+  )
+  // phase-0-clarity/03: the duplicate mount on the All Pitchers tab was
+  // removed — the Phase 0G evidence panel renders once, on the Team Board.
+  assert.equal(source.includes('TeamReliefWorkPanel'), false)
+  assert.ok(boardSource.includes('<TeamReliefWorkPanel'))
   for (const legacyText of [
     'All Teams',
     'Recent Load',

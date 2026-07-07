@@ -11,12 +11,9 @@ import StoryCard from './StoryCard'
 import PitcherDetail from '../PitcherDetail'
 import TeamReliefWorkPanel from '../TeamReliefWorkPanel'
 import {
-  BULLPEN_VIEW_MODE_UNAVAILABLE_ONLY,
-  BULLPEN_VIEW_MODES,
-  DEFAULT_BULLPEN_VIEW_MODE,
-  bullpenViewModeRequiresUnavailableContext,
+  BULLPEN_VIEW_MODE_ACTIVE,
+  BULLPEN_VIEW_MODE_ACTIVE_PLUS_UNAVAILABLE,
   filterBoardForViewMode,
-  getBullpenViewModeEmptyState,
 } from './tonightsBullpenBoardView'
 
 // Resolve a deep-link `team` param (abbreviation like "SF", a team id, or a name)
@@ -63,7 +60,14 @@ export default function TonightsBullpenBoard({
   const teamList = teams?.data || []
   const selectedTeamSeed = initialSelectedTeam ?? resolveTeamId(teamList, requestedTeam)
   const [selectedTeam, setSelectedTeam] = useState(selectedTeamSeed)
-  const [boardViewMode, setBoardViewMode] = useState(DEFAULT_BULLPEN_VIEW_MODE)
+  // One control instead of the old three-mode "View" row: the board shows the
+  // active bullpen by default, and the toggle adds roster-unavailable arms as
+  // context. The unavailable-only audit view moved out of the public controls
+  // in phase-0-clarity/03 (the roster banner's evidence list covers that job).
+  const [showUnavailable, setShowUnavailable] = useState(false)
+  const boardViewMode = showUnavailable
+    ? BULLPEN_VIEW_MODE_ACTIVE_PLUS_UNAVAILABLE
+    : BULLPEN_VIEW_MODE_ACTIVE
   // Opening a pitcher's detail reuses the existing PitcherDetail panel — the
   // board never duplicates that screen.
   const [detailPitcherId, setDetailPitcherId] = useState(null)
@@ -114,10 +118,10 @@ export default function TonightsBullpenBoard({
       if (selectedTeam == null) return Promise.resolve(null)
       return getTeamBullpenBoard(
         selectedTeam,
-        bullpenViewModeRequiresUnavailableContext(boardViewMode) ? { include_stale: true } : {},
+        showUnavailable ? { include_stale: true } : {},
       )
     },
-    [selectedTeam, boardViewMode],
+    [selectedTeam, showUnavailable],
   )
 
   // Game context for the selected team (stored game-log only).
@@ -133,7 +137,6 @@ export default function TonightsBullpenBoard({
   const gameContextState = gameContextPayload !== undefined ? staticFetchState(gameContextPayload) : gameContext
   const storyState = storyPayload !== undefined ? staticFetchState(storyPayload) : story
   const filteredBoard = filterBoardForViewMode(boardState.data, boardViewMode)
-  const selectedViewMode = BULLPEN_VIEW_MODES.find(mode => mode.id === boardViewMode)
   const teamOperatingRead = toOperatingStateReadModel(boardState.data || {}, {
     scope: 'team',
     team: boardState.data?.team,
@@ -141,67 +144,49 @@ export default function TonightsBullpenBoard({
     density: 'compact',
   })
 
-  // The Team Board's single story surface is the canonical StoryCard near the
-  // board. The board strips render compact alongside it, except in the
-  // unavailable-only view mode.
-  const compactBoardContext = boardViewMode !== BULLPEN_VIEW_MODE_UNAVAILABLE_ONLY
-
   return (
     <div>
-      {/* Team selector — single team; the board is always one bullpen. */}
-      <div className="mb-4 flex flex-wrap gap-1.5">
-        {teams?.loading && teamList.length === 0 ? (
-          <span className="font-mono text-xs text-chalk500">Loading teams…</span>
-        ) : (
-          teamList.map(team => (
-            <button
-              key={team.team_id}
-              onClick={() => setSelectedTeam(team.team_id)}
-              aria-pressed={selectedTeam === team.team_id}
-              className={`rounded border px-2.5 py-1 text-xs font-mono transition-all ${
-                selectedTeam === team.team_id
-                  ? 'bg-amber/10 border-amber/40 text-amber'
-                  : 'border-dirt text-chalk400 hover:border-chalk400'
-              }`}
-            >
-              {team.team_abbreviation || team.team_name}
-            </button>
-          ))
-        )}
-      </div>
-
-      <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div className="min-w-0">
-          <div className="font-mono text-[10px] uppercase tracking-widest text-chalk500">View</div>
-          <div className="mt-1 flex w-fit max-w-full flex-wrap gap-1 rounded-lg border border-dirt bg-chalk/30 p-1">
-            {BULLPEN_VIEW_MODES.map(mode => (
+      {/* One controls row: team selector plus the unavailable toggle. */}
+      <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+        <div className="flex min-w-0 flex-wrap gap-1.5">
+          {teams?.loading && teamList.length === 0 ? (
+            <span className="font-mono text-xs text-chalk500">Loading teams…</span>
+          ) : (
+            teamList.map(team => (
               <button
-                key={mode.id}
-                type="button"
-                onClick={() => setBoardViewMode(mode.id)}
-                aria-pressed={boardViewMode === mode.id}
-                title={mode.description}
-                className={`rounded px-3 py-1.5 font-mono text-xs transition-all ${
-                  boardViewMode === mode.id
-                    ? 'bg-chalk text-chalk200 shadow'
-                    : 'text-chalk400 hover:text-chalk200'
+                key={team.team_id}
+                onClick={() => setSelectedTeam(team.team_id)}
+                aria-pressed={selectedTeam === team.team_id}
+                className={`rounded border px-2.5 py-1 text-xs font-mono transition-all ${
+                  selectedTeam === team.team_id
+                    ? 'bg-amber/10 border-amber/40 text-amber'
+                    : 'border-dirt text-chalk400 hover:border-chalk400'
                 }`}
               >
-                {mode.label}
+                {team.team_abbreviation || team.team_name}
               </button>
-            ))}
-          </div>
-          {selectedViewMode?.description && (
-            <p className="sr-only" aria-live="polite">
-              {selectedViewMode.description}
-            </p>
+            ))
           )}
         </div>
-        {bullpenViewModeRequiresUnavailableContext(boardViewMode) && (
-          <span className="w-fit rounded border border-dirt bg-dugout px-2 py-1 font-mono text-[10px] uppercase tracking-widest text-chalk500">
-            Unavailable relievers are context only.
-          </span>
-        )}
+        <div className="flex shrink-0 flex-col items-end gap-1">
+          <button
+            type="button"
+            onClick={() => setShowUnavailable(value => !value)}
+            aria-pressed={showUnavailable}
+            className={`rounded border px-2.5 py-1 font-mono text-xs transition-all ${
+              showUnavailable
+                ? 'bg-amber/10 border-amber/40 text-amber'
+                : 'border-dirt text-chalk400 hover:border-chalk400'
+            }`}
+          >
+            Show unavailable arms
+          </button>
+          {showUnavailable && (
+            <span className="rounded border border-dirt bg-dugout px-2 py-1 font-mono text-[10px] uppercase tracking-widest text-chalk500">
+              Unavailable relievers are context only.
+            </span>
+          )}
+        </div>
       </div>
 
       {selectedTeam == null ? (
@@ -232,9 +217,7 @@ export default function TonightsBullpenBoard({
             <BullpenBoardView
               board={filteredBoard}
               onSelectPitcher={setDetailPitcherId}
-              compact={compactBoardContext}
               showRoutineFreshness={false}
-              emptyState={getBullpenViewModeEmptyState(boardViewMode)}
             />
             <StoryCard
               story={storyState.data}

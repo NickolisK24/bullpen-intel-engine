@@ -1,6 +1,4 @@
 import { EmptyState } from '../../UI'
-import BullpenStressSummary from './BullpenStressSummary'
-import BullpenContextSummary from './BullpenContextSummary'
 import {
   getBoardCardView,
   getBoardFreshnessView,
@@ -475,13 +473,13 @@ function BoardGroup({ group, freshness, onViewDetails, now }) {
   )
 }
 
-// `compact` renders the board strips (stress + context snapshot) in their compact
-// form for Tonight's Board, where the canonical StoryCard sits above the board.
-// Embedded uses like the side-by-side comparison keep the full strips.
+// The board renders the freshness/roster banners and the availability groups.
+// The team-state read (state, explanation, context reads) lives in the single
+// Team State card above the board — phase-0-clarity/03 removed the stress and
+// context summary strips that restated it here.
 export default function BullpenBoardView({
   board,
   onSelectPitcher,
-  compact = false,
   showRoutineFreshness = true,
   emptyState = null,
   now,
@@ -489,7 +487,6 @@ export default function BullpenBoardView({
   const groups = getBoardGroups(board)
   const totals = getBoardTotals(board)
   const teamName = board?.team?.team_name || board?.team?.team_abbreviation
-  const hasStress = Boolean(board?.stress)
 
   return (
     <div id="pitcher-lanes">
@@ -505,10 +502,6 @@ export default function BullpenBoardView({
           {totals.total === 1 ? '' : 's'} shown.
         </p>
       </div>
-
-      <BullpenStressSummary stress={board?.stress} compact={compact} />
-
-      <BullpenContextSummary board={board} showHealthSummary={!hasStress} compactSnapshot={compact} />
 
       {totals.isEmpty ? (
         <EmptyState

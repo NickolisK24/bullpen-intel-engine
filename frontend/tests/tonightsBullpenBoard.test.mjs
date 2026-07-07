@@ -95,7 +95,7 @@ test('renders the four public availability groups in order', () => {
   assert.ok(html.indexOf('aria-label="Available group"') < html.indexOf('aria-label="Unavailable group"'))
 })
 
-test('board view mode control defaults to Active and replaces show-unavailable copy', () => {
+test('board controls collapse to one row with an unavailable toggle', () => {
   const html = renderToStaticMarkup(React.createElement(TonightsBullpenBoard, {
     teams: {
       loading: false,
@@ -103,12 +103,14 @@ test('board view mode control defaults to Active and replaces show-unavailable c
     },
   }))
 
-  assert.ok(htmlIncludes(html, 'View'))
-  assert.ok(htmlIncludes(html, 'Active'))
-  assert.ok(htmlIncludes(html, 'Active + Unavailable'))
-  assert.ok(htmlIncludes(html, 'Unavailable Only'))
-  assert.ok(htmlIncludes(html, 'aria-pressed="true"'))
-  assert.ok(!htmlIncludes(html, 'Show unavailable pitchers'))
+  // phase-0-clarity/03: the three-mode "View" segmented control became a
+  // single "Show unavailable arms" toggle beside the team selector; the board
+  // defaults to the active bullpen.
+  assert.ok(htmlIncludes(html, 'Show unavailable arms'))
+  assert.equal(htmlIncludes(html, 'Active + Unavailable'), false)
+  assert.equal(htmlIncludes(html, 'Unavailable Only'), false)
+  assert.ok(htmlIncludes(html, 'aria-pressed="false"'))
+  assert.equal(htmlIncludes(html, 'Unavailable relievers are context only.'), false)
 })
 
 test('team board launch landing is neutral and ignores stale preferred team state', () => {
@@ -138,15 +140,15 @@ test('team board uses compact operating card density', () => {
   assert.ok(tonightsBullpenBoardSource.includes('showRoutineFreshness={false}'))
 })
 
-test('renders bullpen stress from the backend payload', () => {
+test('board no longer restates the team state above the groups', () => {
   const html = render(populatedBoard)
 
-  assert.ok(htmlIncludes(html, 'Overall Availability: Elevated'))
-  assert.ok(htmlIncludes(html, 'Cleanly available options are limited right now.'))
-  assert.ok(!htmlIncludes(html, 'This pen has less room than usual.'))
+  // phase-0-clarity/03: the stress and context summary strips moved into the
+  // single Team State card rendered above the board; the board itself carries
+  // only the banners, the heading, and the availability groups.
+  assert.equal(htmlIncludes(html, 'Overall Availability:'), false)
+  assert.equal(htmlIncludes(html, 'Bullpen Read'), false)
   assert.ok(!htmlIncludes(html, 'than usual'))
-  assert.ok(htmlIncludes(html, 'Availability classifications are workload-based only.'))
-  assert.ok(!htmlIncludes(html, 'Bullpen workload is elevated.'))
   assert.ok(!htmlIncludes(html, 'Stress Score'))
 })
 
@@ -295,9 +297,6 @@ test('groups with no pitchers render their own empty copy', () => {
 test('stale data surfaces existing trust messaging', () => {
   const html = render(staleBoard)
   assert.ok(htmlIncludes(html, 'Outside Freshness Window'))
-  assert.ok(htmlIncludes(html, 'Overall Availability: No Read'))
-  assert.ok(htmlIncludes(html, 'Availability note is limited by data freshness.'))
-  assert.ok(htmlIncludes(html, 'Limited read - review freshness before treating this as current.'))
   assert.ok(htmlIncludes(html, 'Roster Status Pending'))
   assert.ok(htmlIncludes(html, 'Roster status unavailable'))
   assert.ok(htmlIncludes(html, 'Bullpen Arms'))
