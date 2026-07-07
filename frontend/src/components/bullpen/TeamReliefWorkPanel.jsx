@@ -32,16 +32,29 @@ function DataCurrency({ payload }) {
 
 const displayValue = (value) => (value === undefined || value === null || value === '' ? '--' : value)
 
-function inningsValue(appearance) {
-  if (isFilled(appearance?.innings_pitched)) return appearance.innings_pitched
-  if (!Number.isFinite(appearance?.innings_pitched_outs)) return '--'
-  const outs = appearance.innings_pitched_outs
+export function formatBaseballIpFromOuts(outs) {
+  if (!Number.isFinite(outs)) return '--'
   return `${Math.floor(outs / 3)}.${outs % 3}`
+}
+
+function inningsValue(appearance) {
+  if (Number.isFinite(appearance?.innings_pitched_outs)) {
+    return formatBaseballIpFromOuts(appearance.innings_pitched_outs)
+  }
+
+  if (!isFilled(appearance?.innings_pitched)) return '--'
+  const numericInnings = Number(appearance.innings_pitched)
+  if (!Number.isFinite(numericInnings)) return String(appearance.innings_pitched)
+
+  const rawText = String(appearance.innings_pitched)
+  if (/^\d+\.[012]$/.test(rawText)) return rawText
+
+  return formatBaseballIpFromOuts(Math.round(numericInnings * 3))
 }
 
 function DateSummary({ children }) {
   if (!textValue(children)) return null
-  return <span className="font-mono text-sm leading-snug text-chalk200">{children}</span>
+  return <span className="font-mono text-sm leading-snug text-chalk100">{children}</span>
 }
 
 function AppearanceRow({ appearance }) {
@@ -78,11 +91,14 @@ function ReliefWorkByDate({ groups, absenceSentence }) {
       {dateGroups.map((group, groupIndex) => (
         <details
           key={`${group?.game_date || 'group'}:${groupIndex}`}
-          className="rounded border border-dirt/60 bg-chalk/20"
+          className="overflow-hidden rounded border border-dirt/70 bg-chalk/20"
           aria-label={textValue(group?.sentence) || `Relief work date ${groupIndex + 1}`}
           open={groupIndex === 0}
         >
-          <summary className="cursor-pointer list-none px-2.5 py-2 marker:hidden">
+          <summary
+            className="cursor-pointer list-none border-l-2 border-l-amber/40 bg-dugout/70 px-3 py-2.5 marker:hidden transition-colors hover:bg-dugout focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/50"
+            data-testid="team-relief-date-summary"
+          >
             <DateSummary>{group?.sentence}</DateSummary>
           </summary>
           {asArray(group?.appearances).length > 0 && (
