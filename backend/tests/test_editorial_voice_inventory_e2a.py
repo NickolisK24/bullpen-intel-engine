@@ -86,9 +86,11 @@ PUBLIC_STORY_SURFACE_INVENTORY = (
         'uses_editorial_pools': 'yes',
         'voice_system': 'editorial_voice_contract_v1',
         'files': (
+            # frontend/src/components/dashboard/WhatChangedCard.jsx was removed in
+            # phase-0-clarity/01 as an orphaned surface (no live importer); the
+            # backend copy layer below is the remaining What Changed voice source.
             'backend/services/what_changed_since_yesterday_copy.py',
             'backend/services/what_changed_since_yesterday_public.py',
-            'frontend/src/components/dashboard/WhatChangedCard.jsx',
             'frontend/src/components/home/IntelligenceSurface.jsx',
         ),
     },
@@ -252,25 +254,17 @@ PUBLIC_STORY_SURFACE_INVENTORY = (
         'uses_editorial_pools': 'yes',
         'voice_system': 'public_label_layer',
         'files': (
+            # frontend/src/utils/teamBullpenScoring.js was removed in
+            # phase-0-clarity/01 as an orphaned module (no live importer).
             'backend/services/team_bullpen_shape.py',
-            'frontend/src/utils/teamBullpenScoring.js',
             'frontend/src/utils/bullpenConcepts.js',
         ),
     },
-    {
-        'surface': 'Dormant frontend language layer',
-        'writer_component': 'bullpenLanguage SIGNAL_HEADLINES',
-        'voice_source': 'frontend headline pools',
-        'shared_library': 'no',
-        'hardcoded': 'yes',
-        'uses_editorial_pools': 'yes',
-        'voice_system': 'dormant_duplicate',
-        'currently_imported': False,
-        'files': (
-            'frontend/src/utils/bullpenLanguage.js',
-            'docs/product/LANGUAGE_ENGINE_V1.md',
-        ),
-    },
+    # The 'Dormant frontend language layer' row (bullpenLanguage SIGNAL_HEADLINES,
+    # voice_system 'dormant_duplicate', currently_imported False) was removed in
+    # phase-0-clarity/01: frontend/src/utils/bullpenLanguage.js was deleted as a
+    # never-imported duplicate, so the dormant layer no longer exists to inventory.
+    # docs/product/LANGUAGE_ENGINE_V1.md remains as the historical design record.
 )
 
 REQUIRED_PUBLIC_SURFACES = {
@@ -391,10 +385,13 @@ def test_shared_story_voice_library_covers_documented_public_beats():
             assert purposes.get(purpose), (beat, purpose)
 
 
-def test_dormant_duplicate_frontend_language_layer_is_explicitly_marked():
-    row = next(
-        item for item in PUBLIC_STORY_SURFACE_INVENTORY
-        if item['surface'] == 'Dormant frontend language layer'
-    )
-    assert row['voice_system'] == 'dormant_duplicate'
-    assert row['currently_imported'] is False
+def test_no_dormant_duplicate_language_layers_remain_inventoried():
+    # phase-0-clarity/01 deleted the never-imported frontend language layer
+    # (frontend/src/utils/bullpenLanguage.js). Nothing in the inventory should
+    # claim a dormant duplicate voice system exists anymore.
+    dormant = [
+        row['surface']
+        for row in PUBLIC_STORY_SURFACE_INVENTORY
+        if row['voice_system'] == 'dormant_duplicate'
+    ]
+    assert dormant == []
