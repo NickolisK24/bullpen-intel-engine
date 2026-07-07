@@ -594,9 +594,14 @@ export function getBullpenPictureView(landscape) {
     gamesLabel: view.games?.label || null,
     columns: specs.map(spec => {
       const column = pictureColumnByKey(view, spec.sourceKey)
+      const entries = Array.isArray(column.entries) ? column.entries : []
       return {
         ...spec,
-        entries: Array.isArray(column.entries) ? column.entries : [],
+        entries,
+        // Today shows a teaser: one standout team per lane. The full lane
+        // lists live on the Dashboard league board.
+        lead: entries[0] || null,
+        moreCount: Math.max(0, entries.length - 1),
       }
     }),
   }
@@ -959,6 +964,8 @@ function BullpenPicture({
             stale={staleWithError}
             freshness={rowFreshness}
           />
+          {/* Teaser strip: one standout team per lane. The Dashboard owns the
+              full league landscape — Today only points there. */}
           <div className="border border-dirt bg-dugout p-4">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
               <p className="font-mono text-[11px] uppercase tracking-widest text-chalk500">
@@ -970,38 +977,39 @@ function BullpenPicture({
                 </p>
               )}
             </div>
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+            <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
               {picture.columns.map(column => (
                 <div key={column.title} className="min-w-0 border border-dirt/75 bg-field/45 p-3">
                   <h3 className="font-mono text-[10px] uppercase tracking-widest text-chalk400">
                     {column.title}
                   </h3>
-                  {column.entries.length ? (
-                    <ol className="mt-3 space-y-2">
-                      {column.entries.map(entry => (
-                        <li key={entry.teamId ?? entry.label}>
-                          <Link
-                            to={entry.teamHref || '/bullpen'}
-                            onClick={() => trackAnalyticsEvent(ANALYTICS_EVENTS.TEAM_INTEREST_CLICKED, {
-                              surface: 'home',
-                              route: '/',
-                              source: 'bullpen_picture',
-                              team_abbrev: entry.teamAbbrev,
-                              team_id: entry.teamId,
-                            })}
-                            className="group flex min-w-0 flex-col items-start gap-1 rounded px-1 py-1 transition-colors hover:bg-amber/5 sm:flex-row sm:items-baseline sm:justify-between sm:gap-2"
-                            aria-label={`Open the bullpen board for ${entry.teamName || entry.label}`}
-                          >
-                            <span className="truncate text-sm text-chalk200 group-hover:text-amber">
-                              {entry.label}
-                            </span>
-                            <span className="max-w-full break-words font-mono text-xs leading-snug text-chalk400 sm:shrink-0 sm:text-right">
-                              {entry[column.metric]} <span className="text-chalk600">{column.suffix}</span>
-                            </span>
-                          </Link>
-                        </li>
-                      ))}
-                    </ol>
+                  {column.lead ? (
+                    <>
+                      <Link
+                        to={column.lead.teamHref || '/bullpen'}
+                        onClick={() => trackAnalyticsEvent(ANALYTICS_EVENTS.TEAM_INTEREST_CLICKED, {
+                          surface: 'home',
+                          route: '/',
+                          source: 'bullpen_picture',
+                          team_abbrev: column.lead.teamAbbrev,
+                          team_id: column.lead.teamId,
+                        })}
+                        className="group mt-2 flex min-w-0 items-baseline justify-between gap-2 rounded px-1 py-1 transition-colors hover:bg-amber/5"
+                        aria-label={`Open the bullpen board for ${column.lead.teamName || column.lead.label}`}
+                      >
+                        <span className="truncate text-sm text-chalk200 group-hover:text-amber">
+                          {column.lead.label}
+                        </span>
+                        <span className="shrink-0 font-mono text-xs leading-snug text-chalk400">
+                          {column.lead[column.metric]} <span className="text-chalk600">{column.suffix}</span>
+                        </span>
+                      </Link>
+                      {column.moreCount > 0 && (
+                        <p className="mt-1 px-1 font-mono text-[11px] text-chalk600">
+                          +{column.moreCount} more on the league board
+                        </p>
+                      )}
+                    </>
                   ) : (
                     <p className="mt-3 text-xs text-chalk600">
                       {column.emptyCopy}
