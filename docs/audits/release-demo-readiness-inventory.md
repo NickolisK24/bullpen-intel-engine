@@ -89,6 +89,22 @@ asserts the public set is exactly `['/', '/dashboard', '/bullpen', '/stories',
 > observations, and now links to each full team board instead of embedding two
 > complete boards. Route set unchanged.
 
+> **Update (2026-07, phase-0-clarity/04):** trust language and the public
+> dictionary are single-sourced. `frontend/src/utils/publicBoundaries.js` owns
+> the canonical boundary statements (no picks / no predictions / no betting
+> advice / no private injury claims / manager decisions unknown / says-so-
+> instead-of-guessing); About, How to Read, and Methodology render from it.
+> `frontend/src/utils/bullpenConcepts.js` owns the public dictionary — the four
+> derived reads plus the supporting glossary (Coverage Safety, Trusted Arms),
+> team states, arm availability, and freshness labels — and How to Read renders
+> entirely from it (the long-standing TODO is resolved). On Data & Trust, the
+> backtest card is publicly named "Usage Check", operator-facing wording was
+> rewritten for readers, and the backend-supplied framing copy (title / summary
+> / claim / caveat) now passes a fail-closed public-language guard
+> (`BLOCKED_FRAMING_COPY_PATTERN`): framing that reads as prediction, accuracy,
+> betting, ranking, or internal tooling is withheld and the card falls back to
+> fixed descriptive copy. No backend contracts changed.
+
 ## 4. Hidden / private / admin route assessment
 
 Four non-public routes remain and are intentional: `/signin` and `/auth/verify` (auth),

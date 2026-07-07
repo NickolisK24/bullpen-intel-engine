@@ -84,6 +84,16 @@ BaseballOS is descriptive by design. It does not:
   on a few arms.
 - **Clean Options**: how many arms enter today without major recent workload
   restriction.
+- **Coverage Safety**: whether the bullpen can cover the late innings if the
+  game runs long.
+- **Trusted Arms**: the rested, unrestricted arms a manager can lean on late.
+
+The canonical public dictionary lives in
+`frontend/src/utils/bullpenConcepts.js`, and the canonical public boundary
+language (descriptive-not-predictive, no betting advice, manager decisions
+unknown) lives in `frontend/src/utils/publicBoundaries.js`. About, How to
+Read, and Methodology render from those modules rather than keeping their own
+copies.
 
 ### Team State
 
