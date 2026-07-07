@@ -361,6 +361,32 @@ def get_internal_team_evidence():
     return jsonify(payload)
 
 
+@system_bp.route('/internal/snapshot-audit', methods=['GET'])
+@require_admin_token
+def get_internal_snapshot_audit():
+    """Internal Phase 0H trusted snapshot audit for operator review."""
+    from services.internal_snapshot_audit import (
+        SnapshotAuditRequestError,
+        build_internal_snapshot_audit_payload,
+        error_payload,
+    )
+
+    product_date = (
+        request.args.get('date')
+        or request.args.get('data_through')
+        or request.args.get('dataThrough')
+    )
+    try:
+        payload = build_internal_snapshot_audit_payload(
+            product_date=product_date,
+            window_days=request.args.get('window'),
+        )
+    except SnapshotAuditRequestError as exc:
+        return jsonify(error_payload(str(exc), status=400)), 400
+
+    return jsonify(payload)
+
+
 @system_bp.route('/internal/pitcher-evidence', methods=['GET'])
 @require_admin_token
 def get_internal_pitcher_evidence():

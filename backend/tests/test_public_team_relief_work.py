@@ -596,12 +596,33 @@ def test_existing_public_routes_behavior_freeze(monkeypatch):
         'backend/services/team_story_previews.py',
         'backend/services/sync.py',
     }
+    allowed_internal_admin_files = {
+        'backend/api/system.py',
+    }
     assert not [
         path for path in changed
-        if path in blocked_files
+        if (path in blocked_files and path not in allowed_internal_admin_files)
         or path.startswith('frontend/')
         or path.startswith('backend/migrations/')
     ]
+
+    if 'backend/api/system.py' in changed:
+        diff = _diff_vs_main('backend/api/system.py')
+        assert '/internal/snapshot-audit' in diff
+        assert '/internal/pitcher-evidence' in diff
+        assert '@require_admin_token' in diff
+
+        system_text = (REPO_ROOT / 'backend/api/system.py').read_text(encoding='utf-8')
+        for route in (
+            '/internal/team-evidence',
+            '/internal/snapshot-audit',
+            '/internal/pitcher-evidence',
+        ):
+            assert route in system_text
+            assert re.search(
+                rf"@system_bp\.route\('{re.escape(route)}', methods=\['GET'\]\)\s+@require_admin_token",
+                system_text,
+            )
 
     monkeypatch.setenv('APP_ENV', 'test')
     monkeypatch.setenv('DATABASE_URL', 'sqlite:///:memory:')
@@ -718,3 +739,17 @@ def _changed_files_vs_main():
         return []
     values = tracked.stdout.splitlines() + untracked.stdout.splitlines()
     return [line.strip() for line in values if line.strip()]
+
+
+def _diff_vs_main(path):
+    try:
+        result = subprocess.run(
+            ['git', 'diff', 'origin/main', '--', path],
+            cwd=REPO_ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except Exception:
+        return ''
+    return result.stdout
