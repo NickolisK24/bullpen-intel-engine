@@ -30,6 +30,31 @@ and phase gates. It does not authorize product-code changes by itself. Each
 implementation phase must still ship through its own scoped branch, review,
 validation, and commit.
 
+## Required Reading: Product Vision Specification
+
+[`docs/product/product-vision-specification.md`](../product/product-vision-specification.md)
+is the canonical page-level product vision — what each public page exists to
+do, what belongs on it, what never belongs on it, and what "finished" means.
+This roadmap records WHAT gets built and in what order; the vision records what
+each page is becoming. Read it before designing any surface work.
+
+Before implementation begins, every future phase (0I onward, and Phases 1–4)
+should be checked against the vision:
+
+- **Page mission** — the work serves the target page's stated mission and does
+  not quietly change it.
+- **One question per page** — the page still owns exactly one user question,
+  and the work does not make two pages answer the same question.
+- **Altitude discipline** — the page stays at its single altitude (League /
+  Team / Arm / Meta) and links across altitudes instead of mixing them.
+- **The read contract** — every claim-bearing surface keeps
+  State → Why → Evidence → Freshness → Limitations, in that order.
+- **The refusal** — no predictions, no betting language, no rankings, no
+  black-box outputs, and no new slot where such a verdict could ever live.
+
+A phase that cannot pass these checks should be redesigned before it is
+implemented, not patched after.
+
 ## V4 Operating Thesis
 
 BaseballOS should become the best public bullpen intelligence platform by being

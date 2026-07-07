@@ -29,6 +29,8 @@ preserved without cluttering the current view.
 
 - New to the project: [`current/PROJECT_STATE_2026_06.md`](current/PROJECT_STATE_2026_06.md)
   then [`current/ROADMAP.md`](current/ROADMAP.md).
+- What each public page is becoming (read before any surface work):
+  [`product/product-vision-specification.md`](product/product-vision-specification.md).
 - Setting up locally: [`current/SETUP.md`](current/SETUP.md).
 - Understanding the intelligence model:
   [`methodology/BULLPEN_AVAILABILITY_ENGINE_V1.md`](methodology/BULLPEN_AVAILABILITY_ENGINE_V1.md).
@@ -50,6 +52,7 @@ under `archive/` — provide history and context but do not override these.
 | Canonical project state | [`current/PROJECT_STATE_2026_06.md`](current/PROJECT_STATE_2026_06.md) |
 | Roadmap | [`current/ROADMAP.md`](current/ROADMAP.md) |
 | V4 foundation integrity and bullpen evidence roadmap | [`roadmap/BaseballOS_V4_Daily_Bullpen_Platform.md`](roadmap/BaseballOS_V4_Daily_Bullpen_Platform.md) |
+| Product vision specification (page-level end-state vision) | [`product/product-vision-specification.md`](product/product-vision-specification.md) |
 | Setup and deployment | [`current/SETUP.md`](current/SETUP.md) |
 | Changelog | [`current/CHANGELOG.md`](current/CHANGELOG.md) |
 | Availability / fatigue engine | [`methodology/BULLPEN_AVAILABILITY_ENGINE_V1.md`](methodology/BULLPEN_AVAILABILITY_ENGINE_V1.md) |
@@ -84,6 +87,7 @@ under `archive/` — provide history and context but do not override these.
 
 ### product/
 
+- [`product-vision-specification.md`](product/product-vision-specification.md)
 - [`BASEBALLOS_STORY_RULES.md`](product/BASEBALLOS_STORY_RULES.md)
 - [`BASEBALLOS_WRITING_RULES.md`](product/BASEBALLOS_WRITING_RULES.md)
 - [`PRODUCT_AUDIT_JUNE_2026.md`](product/PRODUCT_AUDIT_JUNE_2026.md)
