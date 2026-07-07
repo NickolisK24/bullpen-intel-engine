@@ -161,8 +161,10 @@ test('Data & Trust owns the full availability backtest without duplicate page se
   const html = renderDataTrust()
   const text = visibleText(html)
 
-  assert.ok(text.includes('Operational Backtest'))
-  assert.ok(text.includes('Operational Availability Backtest'))
+  assert.ok(text.includes('Usage Check'))
+  // Backend framing still says "Backtest"; the public layer rewrites it.
+  assert.ok(text.includes('Operational Availability usage check'))
+  assert.equal(text.includes('Operational Backtest'), false)
   assert.ok(text.includes('Public Trust'))
   assert.ok(text.includes('Freshness / Update Schedule'))
   assert.ok(text.includes('BaseballOS updates after completed MLB games'))

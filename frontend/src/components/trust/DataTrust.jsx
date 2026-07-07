@@ -68,10 +68,10 @@ export function DataTrustView({
       />
 
       <p className="mb-6 max-w-3xl text-sm leading-relaxed text-chalk400">
-        The bullpen views show the summary you need to act. This page keeps the
+        The bullpen views show the summary you need. This page keeps the
         reliability layer: how fresh the data is, what completed games are
-        included, whether sync is healthy, and how availability tiers have
-        matched completed-game usage.
+        included, whether updates are arriving on schedule, and how
+        availability tiers have matched completed-game usage.
       </p>
 
       <section className="mb-6 rounded border border-dirt bg-dugout/50 p-4" aria-label="Public trust links">
@@ -99,7 +99,7 @@ export function DataTrustView({
       />
       {backtest.staleWithError && (
         <StaleDataNotice
-          message="The operational backtest shown is the last loaded result because the latest refresh failed."
+          message="The usage check shown is the last loaded result because the latest refresh failed."
           onRetry={backtest.refetch}
         />
       )}
