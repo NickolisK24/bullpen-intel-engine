@@ -8,6 +8,7 @@ import models.prospect  # noqa: F401
 import services.sync as sync_service
 from models.game_log import GameLog
 from models.pitcher import Pitcher
+from models.sync_failure import SyncFailure
 from services.mlb_api import mlb_client
 from utils.db import db
 
@@ -252,12 +253,21 @@ def test_daily_ingestion_excludes_non_final_game_splits(app, monkeypatch, game_s
     assert game_pks == [1999]
 
 
-def test_daily_ingestion_excludes_ambiguous_statusless_split(app, monkeypatch):
+def test_daily_ingestion_dead_letters_ambiguous_statusless_split(app, monkeypatch):
+    """A statusless split with no scheduled_games coverage is not ingested,
+    but it must be dead-lettered and counted — never silently dropped."""
     splits = [_split(3001) | {'game': {'gamePk': 3001, 'gameType': 'R'}}]
     monkeypatch.setattr(mlb_client, 'get_pitcher_game_logs', lambda mlb_id, season=None: splits)
 
     with app.app_context():
         result = sync_service.sync_recent_logs(days_back=7, reference_date=date(2026, 6, 10))
+        unresolved = SyncFailure.query.filter_by(
+            entity_type=sync_service.GAME_LOG_UNRESOLVED_FINALITY_ENTITY_TYPE
+        ).count()
+        assert GameLog.query.count() == 0
 
     assert result['new_logs_added'] == 0
-    assert GameLog.query.count() == 0
+    assert result['unresolved_finality'] == 1
+    assert result['records_failed'] >= 1
+    assert result['lane_health'] == 'all_window_splits_dropped'
+    assert unresolved == 1
