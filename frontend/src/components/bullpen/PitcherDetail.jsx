@@ -1,8 +1,7 @@
 import { useFetch } from '../../hooks/useFetch'
 import { getAvailabilityExplanation, getPitcherFatigue } from '../../utils/api'
-import { LoadingPane, ErrorState, FatigueBar, RiskBadge, Divider } from '../UI'
-import { fmtIP, fmtDate, riskColor } from '../../utils/formatters'
-import { FATIGUE_FACTORS, RISK_BLURB } from '../../utils/fatigueModel'
+import { LoadingPane, ErrorState, Divider } from '../UI'
+import { fmtIP, fmtDate } from '../../utils/formatters'
 import {
   isWorkloadAppearance,
   latestWorkloadAppearanceFromLogs,
@@ -13,11 +12,6 @@ import {
 import AvailabilitySummary from './AvailabilitySummary'
 import RecentWorkPanel from './RecentWorkPanel'
 import ExplanationDisclosure from '../explanations/ExplanationDisclosure'
-import {
-  RadarChart, PolarGrid, PolarAngleAxis, Radar,
-  LineChart, Line, XAxis, YAxis, CartesianGrid, ReferenceLine,
-  ResponsiveContainer, Tooltip,
-} from 'recharts'
 
 // Spring-training detector — covers both the MLB gameType code and the
 // "SIM"/"Simulated" opponent markers that sneak through on some feeds.
@@ -25,14 +19,6 @@ const isSpringTraining = (log) =>
   log?.game_type === 'S' ||
   log?.opponent_abbreviation === 'SIM' ||
   log?.opponent === 'Simulated'
-
-// Short date label for the trend chart — "Apr 16"
-const trendDateFmt = (iso) => {
-  if (!iso) return ''
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return ''
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-}
 
 export default function PitcherDetail({ pitcherId, onClose }) {
   const { data, loading, error, refetch } = useFetch(
@@ -47,6 +33,10 @@ export default function PitcherDetail({ pitcherId, onClose }) {
     <div className="card h-full"><ErrorState message={error} onRetry={refetch} /></div>
   )
 
+  return <PitcherDetailContent data={data} pitcherId={pitcherId} onClose={onClose} />
+}
+
+export function PitcherDetailContent({ data, pitcherId, onClose }) {
   const {
     pitcher,
     current_fatigue: cf,
@@ -57,7 +47,6 @@ export default function PitcherDetail({ pitcherId, onClose }) {
     last_appearance: lastAppearance,
     last_workload_appearance: lastWorkloadAppearance,
     recent_logs,
-    fatigue_trend,
   } = data || {}
   const platformDate = platformDateFromFreshness(freshness)
   const workloadAppearance = isWorkloadAppearance(lastWorkloadAppearance)
@@ -66,26 +55,14 @@ export default function PitcherDetail({ pitcherId, onClose }) {
   const legacyAppearance = isWorkloadAppearance(lastAppearance) ? normalizeAppearance(lastAppearance) : null
   const mostRecentAppearance = workloadAppearance || legacyAppearance || latestWorkloadAppearanceFromLogs(recent_logs)
   const mostRecentAppearanceLabel = workloadAppearanceDetailLabel(mostRecentAppearance, platformDate)
-
-  // Radar — component breakdown. Driven by the shared four-factor model so
-  // it always matches the backend (no Leverage Index — see fatigueModel.js).
-  const radarData = cf
-    ? FATIGUE_FACTORS.map((f) => ({
-        component: f.short,
-        value: Math.round(cf[f.scoreField] ?? 0),
-      }))
-    : []
-
-  // Trend — sorted ascending by date for a clean left-to-right line
-  const trendData = (fatigue_trend ?? [])
-    .filter(s => s?.calculated_at && s?.raw_score != null)
-    .map(s => ({
-      date:  trendDateFmt(s.calculated_at),
-      score: Math.round(s.raw_score),
-      iso:   s.calculated_at,
-      risk:  s.risk_level,
-    }))
-    .sort((a, b) => new Date(a.iso) - new Date(b.iso))
+  const hasCurrentRead = Boolean(cf || availability)
+  const workloadFacts = cf ? [
+    { label: 'Days Rest',  value: cf.days_since_last_appearance != null ? `${cf.days_since_last_appearance}d` : '---' },
+    { label: 'Pitches/7d', value: cf.pitches_last_7_days ?? 0 },
+    { label: 'Apps/7d',    value: cf.appearances_last_7 ?? 0 },
+    { label: 'IP/7d',      value: fmtIP(cf.innings_last_7_days) },
+    { label: 'Apps/14d',   value: cf.appearances_last_14 ?? 0 },
+  ] : []
 
   return (
     <div className="card sticky top-6 w-full min-w-0 max-w-full max-h-[calc(100vh-3rem)] overflow-y-auto">
@@ -112,34 +89,24 @@ export default function PitcherDetail({ pitcherId, onClose }) {
         </button>
       </div>
 
-      {cf ? (
+      {hasCurrentRead ? (
         <div className="min-w-0 p-4 space-y-5 sm:p-5">
-          {/* Score + Risk */}
-          <div className="flex items-center gap-4">
-            <div className={`font-display text-6xl tracking-wider ${riskColor(cf.risk_level)}`}>
-              {Math.round(cf.raw_score)}
-            </div>
-            <div className="min-w-0">
-              <RiskBadge level={cf.risk_level} />
-              <div className="text-chalk400 text-xs font-mono mt-1">Workload Index · 0-100</div>
-            </div>
-          </div>
-
-          <FatigueBar score={cf.raw_score} height="h-2" />
-
-          {RISK_BLURB[cf.risk_level] && (
-            <div className="text-chalk400 text-xs font-mono leading-relaxed">
-              {RISK_BLURB[cf.risk_level]} Workload risk only — not an injury or performance prediction.
-            </div>
+          {availability ? (
+            <AvailabilitySummary
+              availability={availability}
+              workloadSignal={workloadSignal}
+              rosterStatus={rosterStatus}
+              freshness={freshness}
+              lastAppearance={mostRecentAppearance}
+            />
+          ) : (
+            <section className="rounded border border-dirt bg-chalk/30 p-4 sm:p-5">
+              <div className="text-chalk600 text-[10px] font-mono uppercase tracking-wider">Current Status</div>
+              <p className="mt-2 text-sm font-mono leading-relaxed text-chalk400">
+                Current availability is not available for this pitcher yet.
+              </p>
+            </section>
           )}
-
-          <AvailabilitySummary
-            availability={availability}
-            workloadSignal={workloadSignal}
-            rosterStatus={rosterStatus}
-            freshness={freshness}
-            lastAppearance={mostRecentAppearance}
-          />
 
           {mostRecentAppearanceLabel && (
             <div className="rounded border border-dirt bg-field/50 p-3">
@@ -155,114 +122,19 @@ export default function PitcherDetail({ pitcherId, onClose }) {
             fetchExplanation={() => getAvailabilityExplanation(pitcherId)}
           />
 
-          {/* Quick stats */}
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-            {[
-              { label: 'Days Rest',  value: cf.days_since_last_appearance != null ? `${cf.days_since_last_appearance}d` : '---' },
-              { label: 'Pitches/7d', value: cf.pitches_last_7_days ?? 0 },
-              { label: 'Apps/7d',    value: cf.appearances_last_7 ?? 0 },
-              { label: 'IP/7d',      value: fmtIP(cf.innings_last_7_days) },
-              { label: 'Apps/14d',   value: cf.appearances_last_14 ?? 0 },
-            ].map(({ label, value }) => (
-              <div key={label} className="bg-chalk/40 border border-dirt rounded p-2.5 text-center">
-                <div className="font-mono font-semibold text-chalk200">{value}</div>
-                <div className="text-chalk600 text-[10px] font-mono mt-0.5">{label}</div>
-              </div>
-            ))}
-          </div>
-
-          {/* Component breakdown — horizontal bars with weights. Sourced from
-              the shared four-factor model so weights always match the backend. */}
-          <Divider label="Workload Contributors" />
-          <div className="space-y-2.5">
-            {FATIGUE_FACTORS.map(({ key, label, scoreField, weight }) => {
-              const score = cf[scoreField]
-              return (
-                <div key={key}>
-                  <div className="flex justify-between mb-1">
-                    <span className="text-chalk400 text-xs font-mono">{label}</span>
-                    <div className="flex gap-2">
-                      <span className="text-chalk600 text-xs font-mono">{weight}%</span>
-                      <span className="text-chalk200 text-xs font-mono w-6 text-right">{Math.round(score ?? 0)}</span>
-                    </div>
+          {workloadFacts.length > 0 && (
+            <>
+              <Divider label="Recent Workload Snapshot" />
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                {workloadFacts.map(({ label, value }) => (
+                  <div key={label} className="bg-chalk/40 border border-dirt rounded p-2.5 text-center">
+                    <div className="font-mono font-semibold text-chalk200">{value}</div>
+                    <div className="text-chalk600 text-[10px] font-mono mt-0.5">{label}</div>
                   </div>
-                  <FatigueBar score={score} height="h-1" />
-                </div>
-              )
-            })}
-          </div>
-
-          {/* Radar — component profile */}
-          {radarData.length > 0 && (
-            <>
-              <Divider label="Workload Profile" />
-              <div className="h-44">
-                <ResponsiveContainer width="100%" height="100%">
-                  <RadarChart data={radarData}>
-                    <PolarGrid stroke="#242b35" />
-                    <PolarAngleAxis dataKey="component" tick={{ fill: '#8899aa', fontSize: 10, fontFamily: 'JetBrains Mono' }} />
-                    <Radar dataKey="value" stroke="#f5a623" fill="#f5a623" fillOpacity={0.15} strokeWidth={2} />
-                    <Tooltip
-                      contentStyle={{ background: '#111418', border: '1px solid #242b35', borderRadius: '6px', fontFamily: 'JetBrains Mono', fontSize: '11px' }}
-                      labelStyle={{ color: '#d1dce8' }}
-                      itemStyle={{ color: '#f5a623' }}
-                    />
-                  </RadarChart>
-                </ResponsiveContainer>
+                ))}
               </div>
-            </>
-          )}
-
-          {/* Trend chart — fatigue_trend from API */}
-          {trendData.length > 1 && (
-            <>
-              <Divider label="Workload Trend" />
-              <div className="h-48">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={trendData} margin={{ top: 8, right: 12, bottom: 0, left: -8 }}>
-                    <CartesianGrid stroke="#242b35" strokeDasharray="3 3" vertical={false} />
-                    <XAxis
-                      dataKey="date"
-                      tick={{ fill: '#8899aa', fontSize: 10, fontFamily: 'JetBrains Mono' }}
-                      tickLine={{ stroke: '#242b35' }}
-                      axisLine={{ stroke: '#242b35' }}
-                    />
-                    <YAxis
-                      domain={[0, 100]}
-                      tick={{ fill: '#8899aa', fontSize: 10, fontFamily: 'JetBrains Mono' }}
-                      tickLine={{ stroke: '#242b35' }}
-                      axisLine={{ stroke: '#242b35' }}
-                      width={30}
-                    />
-                    <ReferenceLine
-                      y={81}
-                      stroke="#dc2626"
-                      strokeDasharray="4 4"
-                      label={{
-                        value: 'CRITICAL',
-                        position: 'insideTopRight',
-                        fill: '#f87171',
-                        fontFamily: 'JetBrains Mono',
-                        fontSize: 10,
-                        fontWeight: 600,
-                      }}
-                    />
-                    <Tooltip
-                      contentStyle={{ background: '#111418', border: '1px solid #242b35', borderRadius: '6px', fontFamily: 'JetBrains Mono', fontSize: '11px' }}
-                      labelStyle={{ color: '#d1dce8' }}
-                      itemStyle={{ color: '#f5a623' }}
-                      formatter={(value) => [`${value}`, 'Workload']}
-                    />
-                    <Line
-                      type="monotone"
-                      dataKey="score"
-                      stroke="#f5a623"
-                      strokeWidth={2}
-                      dot={{ r: 3, fill: '#f5a623', stroke: '#f5a623' }}
-                      activeDot={{ r: 5, fill: '#f5a623', stroke: '#111418', strokeWidth: 2 }}
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
+              <div className="rounded border border-dirt bg-field/40 px-3 py-2 text-xs font-mono leading-relaxed text-chalk400">
+                Workload units describe recent usage only; they do not describe injury status or future performance.
               </div>
             </>
           )}

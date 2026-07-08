@@ -7,7 +7,6 @@ export function getBullpenEmptyState({
   includeStale = false,
   selectedTeam = null,
   selectedTeamLabel = null,
-  riskFilter = 'ALL',
   availabilityFilter = 'ALL',
   searchTerm = '',
 } = {}) {
@@ -44,21 +43,14 @@ export function getBullpenEmptyState({
   if (query) {
     return {
       title: 'No pitchers match your search.',
-      subtitle: 'Clear the search or adjust the team, availability, risk, or freshness filters.',
+      subtitle: 'Clear the search or adjust the team, availability, or freshness filters.',
     }
   }
 
   if (availabilityFilter && availabilityFilter !== 'ALL') {
     return {
       title: `No pitchers match the ${getAvailabilityStatusLabel(availabilityFilter)} availability filter.`,
-      subtitle: 'Adjust the availability status, team, risk, or freshness setting to expand the list.',
-    }
-  }
-
-  if (riskFilter && riskFilter !== 'ALL') {
-    return {
-      title: `No ${riskFilter.toLowerCase()} risk pitchers match the current filters.`,
-      subtitle: 'Adjust the risk tier, team, or freshness setting to expand the list.',
+      subtitle: 'Adjust the availability status, team, or freshness setting to expand the list.',
     }
   }
 
@@ -71,6 +63,6 @@ export function getBullpenEmptyState({
 
   return {
     title: 'No pitchers match the current filters.',
-    subtitle: 'Adjust the team, availability, risk, search, or freshness controls.',
+    subtitle: 'Adjust the team, availability, search, or freshness controls.',
   }
 }

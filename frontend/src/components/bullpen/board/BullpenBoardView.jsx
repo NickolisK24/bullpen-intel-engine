@@ -410,10 +410,6 @@ function PitcherCard({ card, freshness, onViewDetails, now }) {
       )}
 
       <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 font-mono text-[11px] text-chalk500">
-        <span title="Recent workload index: 0-100, higher means heavier recent use">
-          <span className="text-chalk600">Recent Load</span>{' '}
-          <span className="text-chalk200">{view.fatigueScore != null ? view.fatigueScore : '—'}</span>
-        </span>
         <span>
           <span className="text-chalk600">Workload Read</span>{' '}
           <span className="text-chalk200">{view.confidenceLabel}</span>

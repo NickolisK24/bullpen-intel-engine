@@ -41,12 +41,6 @@ test('keeps public no-data guidance for a genuinely empty database', () => {
 })
 
 test('reports visible filter misses separately from data availability', () => {
-  const riskState = getBullpenEmptyState({
-    allRowsCount: 5,
-    visibleRowsCount: 0,
-    riskFilter: 'CRITICAL',
-    meta: { total_game_logs: 10, total_scored_pitchers: 5 },
-  })
   const searchState = getBullpenEmptyState({
     allRowsCount: 5,
     visibleRowsCount: 0,
@@ -54,8 +48,8 @@ test('reports visible filter misses separately from data availability', () => {
     meta: { total_game_logs: 10, total_scored_pitchers: 5 },
   })
 
-  assert.match(riskState.title, /critical risk/)
   assert.equal(searchState.title, 'No pitchers match your search.')
+  assert.doesNotMatch(searchState.subtitle, /risk/i)
 })
 
 test('reports availability filter misses without setup guidance', () => {
@@ -68,5 +62,6 @@ test('reports availability filter misses without setup guidance', () => {
 
   assert.equal(state.title, 'No pitchers match the Unavailable availability filter.')
   assert.match(state.subtitle, /availability status/)
+  assert.doesNotMatch(state.subtitle, /risk/i)
   assert.doesNotMatch(state.subtitle, /seed\.py/)
 })

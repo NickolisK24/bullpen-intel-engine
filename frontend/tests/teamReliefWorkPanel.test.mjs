@@ -538,15 +538,20 @@ test('the relief work panel mounts once, on the team board only', async () => {
   assert.ok(boardSource.includes('<TeamReliefWorkPanel'))
   for (const legacyText of [
     'All Teams',
-    'Recent Load',
     'Availability',
     'P/7d',
     'Rest',
     'App/7d',
-    'Risk',
     'Show pitchers outside the freshness window',
   ]) {
     assert.ok(source.includes(legacyText), legacyText)
+  }
+  for (const removedLeaderboardText of [
+    'Recent Load',
+    "<th className={thStyle('score')}",
+    '<RiskBadge',
+  ]) {
+    assert.equal(source.includes(removedLeaderboardText), false, removedLeaderboardText)
   }
 })
 

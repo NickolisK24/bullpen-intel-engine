@@ -102,11 +102,13 @@ test('pitcher cards omit the View details affordance when no handler is provided
   assert.ok(!htmlIncludes(html, 'Open pitcher context'))
 })
 
-// ── Priority 3: workload legend ────────────────────────────────────────────
+// ── Priority 3: workload framing ───────────────────────────────────────────
 
-test('board explains the recent workload scale', () => {
+test('board cards do not explain a numeric recent workload scale', () => {
   const html = renderToStaticMarkup(React.createElement(BullpenBoardView, { board: liveBoard }))
-  assert.ok(htmlIncludes(html, 'higher means heavier recent use'))
+  assert.equal(htmlIncludes(html, 'higher means heavier recent use'), false)
+  assert.equal(htmlIncludes(html, 'Recent Load'), false)
+  assert.equal(htmlIncludes(html, '0-100'), false)
 })
 
 // ── Priority 4: clarified tab labels ───────────────────────────────────────

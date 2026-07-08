@@ -19,6 +19,9 @@ after(async () => {
 const { default: AvailabilitySummary } = await server.ssrLoadModule(
   '/src/components/bullpen/AvailabilitySummary.jsx',
 )
+const { PitcherDetailContent } = await server.ssrLoadModule(
+  '/src/components/bullpen/PitcherDetail.jsx',
+)
 
 const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const htmlIncludes = (html, text) => new RegExp(escapeRegExp(text)).test(html)
@@ -52,6 +55,16 @@ function finalAvailability(rosterLabel, rosterStatus, workloadStatus) {
 function renderSummary(payload) {
   return renderToStaticMarkup(
     React.createElement(AvailabilitySummary, payload),
+  )
+}
+
+function renderDetail(data) {
+  return renderToStaticMarkup(
+    React.createElement(PitcherDetailContent, {
+      data,
+      pitcherId: 42,
+      onClose: () => {},
+    }),
   )
 }
 
@@ -164,4 +177,85 @@ test('PitcherDetail passes final availability workload signal and roster status 
   assert.ok(source.includes('rosterStatus={rosterStatus}'))
   assert.ok(source.includes('freshness={freshness}'))
   assert.ok(source.includes('lastAppearance={mostRecentAppearance}'))
+})
+
+test('PitcherDetail leads with availability and workload facts instead of a black-box score', () => {
+  const html = renderDetail({
+    pitcher: {
+      full_name: 'Test Reliever',
+      team_name: 'Test Club',
+      position: 'P',
+      throws: 'R',
+    },
+    current_fatigue: {
+      raw_score: 88,
+      risk_level: 'CRITICAL',
+      days_since_last_appearance: 1,
+      pitches_last_7_days: 61,
+      appearances_last_7: 3,
+      innings_last_7_days: 2,
+      appearances_last_14: 5,
+    },
+    availability: {
+      availability_status: 'Limited',
+      confidence: 'medium',
+      data_state: 'fresh',
+      reasons: ['61 pitches across three appearances in the last seven days.'],
+      limitations: ['No injury information available.'],
+      roster_status: {
+        status: 'ACTIVE',
+        label: 'Active MLB',
+        confidence: 'high',
+        is_authoritative: true,
+        is_inactive_context: false,
+      },
+    },
+    workload_signal: {
+      availability_status: 'Limited',
+      confidence: 'medium',
+      data_state: 'fresh',
+      reasons: ['61 pitches across three appearances in the last seven days.'],
+      limitations: ['No injury information available.'],
+    },
+    freshness: {
+      data_through: '2026-07-05',
+      availability_reference_date: '2026-07-06',
+    },
+    last_workload_appearance: {
+      game_date: '2026-07-05',
+      pitches: 28,
+    },
+    recent_logs: [
+      {
+        id: 1,
+        game_date: '2026-07-05',
+        opponent_abbreviation: 'BOS',
+        innings_pitched: 1,
+        innings_pitched_outs: 3,
+        pitches_thrown: 28,
+      },
+    ],
+  })
+
+  assert.ok(htmlIncludes(html, 'Final availability: Limited'))
+  assert.ok(htmlIncludes(html, 'Final Availability Reasons'))
+  assert.ok(htmlIncludes(html, '61 pitches across three appearances in the last seven days.'))
+  assert.ok(htmlIncludes(html, 'Limitations'))
+  assert.ok(htmlIncludes(html, 'No injury information available.'))
+  assert.ok(htmlIncludes(html, 'Most Recent Workload Appearance'))
+  assert.ok(htmlIncludes(html, 'Recent Workload Snapshot'))
+  assert.ok(htmlIncludes(html, 'Pitches/7d'))
+  assert.ok(htmlIncludes(html, '61'))
+  assert.ok(htmlIncludes(html, 'Days Rest'))
+
+  for (const forbidden of [
+    'Workload Index',
+    '0-100',
+    'Workload Profile',
+    'Workload Trend',
+    'CRITICAL',
+    '>88<',
+  ]) {
+    assert.equal(htmlIncludes(html, forbidden), false, forbidden)
+  }
 })

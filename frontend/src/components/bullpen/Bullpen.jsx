@@ -2,8 +2,7 @@ import { useState, useEffect, useMemo, useRef } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useFetch } from '../../hooks/useFetch'
 import { getFatigueScores, getTeams } from '../../utils/api'
-import { LoadingPane, ErrorState, EmptyState, FatigueBar, RiskBadge, SectionHeader } from '../UI'
-import { riskColor } from '../../utils/formatters'
+import { LoadingPane, ErrorState, EmptyState, SectionHeader } from '../UI'
 import { ANALYTICS_EVENTS, trackAnalyticsEvent, trackAnalyticsEventOnce } from '../../utils/analytics'
 import PitcherDetail from './PitcherDetail'
 import TonightsBullpenBoard from './board/TonightsBullpenBoard'
@@ -19,7 +18,6 @@ import {
   getRowAvailabilityStatus,
 } from './availabilityView'
 
-const RISK_FILTERS = ['ALL', 'CRITICAL', 'HIGH', 'MODERATE', 'LOW']
 // The old "All Teams" score-table tab (30-team Avg Workload / risk-tier counts)
 // was retired in phase-0-clarity/02: it competed with the Dashboard's league
 // landscape and read as a score-forward leaderboard. The Dashboard is the only
@@ -48,9 +46,8 @@ export default function Bullpen() {
   const hasRequestedPitcher = Number.isFinite(requestedPitcherId) && requestedPitcherId > 0
   const [viewMode, setViewMode]           = useState(VALID_VIEWS.has(requestedView) ? requestedView : 'board')
   const [selectedTeam, setSelectedTeam]   = useState(null)
-  const [riskFilter, setRiskFilter]       = useState('ALL')
   const [selectedPitcher, setSelected]    = useState(null)
-  const [sortBy, setSortBy]               = useState('score')
+  const [sortBy, setSortBy]               = useState('pitches')
   const [includeStale, setIncludeStale]   = useState(false)
   const [availabilityFilter, setAvailabilityFilter] = useState('ALL')
   const boardDetailRegionRef = useRef(null)
@@ -181,8 +178,6 @@ export default function Bullpen() {
           allScores={allScores}
           selectedTeam={selectedTeam}
           setSelectedTeam={setSelectedTeam}
-          riskFilter={riskFilter}
-          setRiskFilter={setRiskFilter}
           selectedPitcher={selectedPitcher}
           setSelected={setSelected}
           sortBy={sortBy}
@@ -199,7 +194,6 @@ export default function Bullpen() {
 function PitcherView({
   teams, allScores,
   selectedTeam, setSelectedTeam,
-  riskFilter, setRiskFilter,
   selectedPitcher, setSelected,
   sortBy, setSortBy,
   includeStale,
@@ -214,24 +208,20 @@ function PitcherView({
   const fatiguePayload = allScores.data
   const allRows = Array.isArray(fatiguePayload) ? fatiguePayload : (fatiguePayload?.data || [])
   const meta = Array.isArray(fatiguePayload) ? null : fatiguePayload?.meta
-  const counts = { ALL: allRows.length, CRITICAL: 0, HIGH: 0, MODERATE: 0, LOW: 0 }
-  allRows.forEach(r => { if (counts[r.risk_level] != null) counts[r.risk_level]++ })
   const availabilityCounts = getAvailabilityFilterCounts(allRows)
   const selectedTeamInfo = (teams.data || []).find(t => t.team_id === selectedTeam)
   const selectedTeamLabel = selectedTeamInfo?.team_abbreviation || selectedTeamInfo?.team_name
   const normalizedSearch = searchTerm.trim().toLowerCase()
 
-  // Filter by risk/search for actual display. Team and freshness are applied
+  // Filter by search for actual display. Team and freshness are applied
   // by the backend so metadata can explain when those filters exclude data.
   const availabilityRows = filterRowsByAvailability(allRows, availabilityFilter)
   const rows = availabilityRows.filter(r => {
-    if (riskFilter !== 'ALL' && r.risk_level !== riskFilter) return false
     if (!normalizedSearch) return true
     const haystack = [
       r.pitcher?.full_name,
       r.pitcher?.team_name,
       r.pitcher?.team_abbreviation,
-      r.risk_level,
       getRowAvailabilityStatus(r),
       getAvailabilityStatusLabel(getRowAvailabilityStatus(r)),
     ].filter(Boolean).join(' ').toLowerCase()
@@ -240,7 +230,6 @@ function PitcherView({
 
   // Sort
   const sorted = useMemo(() => [...rows].sort((a, b) => {
-    if (sortBy === 'score')   return b.raw_score - a.raw_score
     if (sortBy === 'name')    return a.pitcher?.full_name?.localeCompare(b.pitcher?.full_name)
     if (sortBy === 'rest')    return (a.days_since_last_appearance ?? 99) - (b.days_since_last_appearance ?? 99)
     if (sortBy === 'pitches') return b.pitches_last_7_days - a.pitches_last_7_days
@@ -261,13 +250,12 @@ function PitcherView({
     includeStale,
     selectedTeam,
     selectedTeamLabel,
-    riskFilter,
     availabilityFilter,
     searchTerm,
   })
 
   // Reset page to 1 when filters change (so filtering doesn't drop you onto an empty page)
-  useEffect(() => { setPage(1) }, [riskFilter, availabilityFilter, selectedTeam, sortBy, searchTerm, includeStale])
+  useEffect(() => { setPage(1) }, [availabilityFilter, selectedTeam, sortBy, searchTerm, includeStale])
 
   useEffect(() => {
     if (selectedPitcher) {
@@ -317,19 +305,8 @@ function PitcherView({
         ))}
       </div>
 
-      {/* Risk/search filters */}
-      <div className="flex flex-col gap-3 mb-5 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex flex-wrap gap-1 bg-chalk/30 p-1 rounded-lg w-fit border border-dirt">
-          {RISK_FILTERS.map(f => (
-            <button
-              key={f}
-              onClick={() => setRiskFilter(f)}
-              className={`px-3 py-1.5 rounded text-xs font-mono transition-all ${riskFilter === f ? 'bg-chalk border-dirt text-chalk200 shadow' : 'text-chalk400 hover:text-chalk200'}`}
-            >
-              {f} <span className="opacity-60">({counts[f] ?? 0})</span>
-            </button>
-          ))}
-        </div>
+      {/* Search filter */}
+      <div className="flex flex-col gap-3 mb-5 sm:flex-row sm:items-center sm:justify-end">
         <input
           type="search"
           value={searchTerm}
@@ -375,13 +352,10 @@ function PitcherView({
                   <tr>
                     <th className={thStyle('name')} onClick={() => setSortBy('name')}>Pitcher {sortBy === 'name' && '↑'}</th>
                     <th className="text-chalk400">Team</th>
-                    <th className={thStyle('score')} onClick={() => setSortBy('score')}>Workload {sortBy === 'score' && '↓'}</th>
-                    <th className="text-chalk400 hidden md:table-cell">Recent Load</th>
                     <th className="text-chalk400">Availability</th>
                     <th className={thStyle('pitches')} onClick={() => setSortBy('pitches')}>P/7d {sortBy === 'pitches' && '↓'}</th>
                     <th className={thStyle('rest')} onClick={() => setSortBy('rest')}>Rest {sortBy === 'rest' && '↑'}</th>
                     <th className="text-chalk400">App/7d</th>
-                    <th className="text-chalk400">Risk</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -397,15 +371,10 @@ function PitcherView({
                     >
                       <td className="text-chalk200 font-medium">{row.pitcher?.full_name ?? '—'}</td>
                       <td className="font-mono text-xs text-chalk400">{row.pitcher?.team_abbreviation}</td>
-                      <td className={`font-mono font-semibold ${riskColor(row.risk_level)}`}>{Math.round(row.raw_score ?? 0)}</td>
-                      <td className="hidden md:table-cell w-28">
-                        <FatigueBar score={row.raw_score} height="h-1" />
-                      </td>
                       <td><AvailabilityBadge availability={row.availability} showDataState /></td>
                       <td className="font-mono text-xs text-chalk200">{row.pitches_last_7_days ?? 0}</td>
                       <td className="font-mono text-xs text-chalk400">{row.days_since_last_appearance != null ? `${row.days_since_last_appearance}d` : '---'}</td>
                       <td className="font-mono text-xs text-chalk200">{row.appearances_last_7 ?? 0}</td>
-                      <td><RiskBadge level={row.risk_level} /></td>
                     </tr>
                   ))}
                 </tbody>

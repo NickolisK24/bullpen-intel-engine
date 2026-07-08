@@ -188,7 +188,7 @@ test('team board can delegate routine freshness to the operating card while pres
   assert.ok(htmlIncludes(staleHtml, 'read with caution'))
 })
 
-test('renders pitcher cards with name, status, fatigue, confidence and short reason', () => {
+test('renders pitcher cards with name, status, workload read and short reason', () => {
   // "Today" / "Yesterday" workload labels are relative to the user's current day, injected here
   // for a deterministic test (the populated fixture dates its workloads relative to June 4).
   const html = renderWithOptions({ board: populatedBoard, now: new Date(2026, 5, 4) })
@@ -198,7 +198,8 @@ test('renders pitcher cards with name, status, fatigue, confidence and short rea
   assert.ok(htmlIncludes(html, 'Last workload: Yesterday (29 pitches)'))
   assert.ok(htmlIncludes(html, 'Last workload: May 30 (42 pitches)'))
   assert.ok(!htmlIncludes(html, '18 pitches yesterday'))
-  assert.ok(htmlIncludes(html, 'Recent Load'))
+  assert.equal(htmlIncludes(html, 'Recent Load'), false)
+  assert.equal(htmlIncludes(html, '0-100'), false)
   assert.ok(htmlIncludes(html, 'Workload Read'))
   assert.ok(htmlIncludes(html, 'Limited Read'))           // confidence formatted
 })
