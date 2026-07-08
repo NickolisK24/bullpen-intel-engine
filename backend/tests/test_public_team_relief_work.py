@@ -602,9 +602,18 @@ def test_existing_public_routes_behavior_freeze(monkeypatch):
     allowed_internal_admin_files = {
         'backend/api/system.py',
     }
+    allowed_phase_a_audience_signup_files = {
+        'backend/migrations/versions/2f7b9c1a5d43_add_audience_subscribers.py',
+        'frontend/src/components/home/IntelligenceSurface.jsx',
+        'frontend/src/utils/api.js',
+        'frontend/tests/intelligenceSurface.test.mjs',
+    }
     assert not [
         path for path in changed
-        if (path in blocked_files and path not in allowed_internal_admin_files)
+        if path not in allowed_phase_a_audience_signup_files
+        if (
+            path in blocked_files and path not in allowed_internal_admin_files
+        )
         or path.startswith('frontend/')
         or path.startswith('backend/migrations/')
     ]

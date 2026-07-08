@@ -220,9 +220,23 @@ def test_frozen_legacy_what_changed_files_untouched():
         'backend/services/board_freshness.py',
         'backend/services/slate_coverage.py',
     }
+    allowed_phase_a_audience_signup_files = {
+        'backend/migrations/versions/2f7b9c1a5d43_add_audience_subscribers.py',
+        'frontend/src/components/home/IntelligenceSurface.jsx',
+        'frontend/src/utils/api.js',
+        'frontend/tests/intelligenceSurface.test.mjs',
+    }
     assert not sorted(frozen_paths & changed)
-    assert not sorted(path for path in changed if path.startswith('frontend/'))
-    assert not sorted(path for path in changed if path.startswith('backend/migrations/'))
+    assert not sorted(
+        path for path in changed
+        if path.startswith('frontend/')
+        if path not in allowed_phase_a_audience_signup_files
+    )
+    assert not sorted(
+        path for path in changed
+        if path.startswith('backend/migrations/')
+        if path not in allowed_phase_a_audience_signup_files
+    )
 
 
 def test_route_map_freeze(monkeypatch):

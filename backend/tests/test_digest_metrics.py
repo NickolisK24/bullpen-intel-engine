@@ -457,6 +457,9 @@ _PHASE0E_LEGACY_READ_AUDIT_REVISION = 'e4b7c9d2a6f0'
 # Internal enrichment sync job checkpoints chain on top of the Phase 0E audit
 # without adding evidence rules or public payloads.
 _SYNC_JOBS_REVISION = 'fa9c1d2e3b47'
+# Audience email capture chains on top of sync jobs, advancing the single
+# alembic head without adding digest automation or preference storage.
+_AUDIENCE_SUBSCRIBERS_REVISION = '2f7b9c1a5d43'
 
 
 def test_metrics_migration_is_well_formed_and_chains_off_identity():
@@ -482,7 +485,7 @@ def test_migrations_have_a_single_head():
             revisions[rev.group(1)] = (down.group(1).strip() if down else None)
     referenced = {d for d in revisions.values() if d and d != 'None'}
     heads = set(revisions) - referenced
-    assert heads == {_SYNC_JOBS_REVISION}
+    assert heads == {_AUDIENCE_SUBSCRIBERS_REVISION}
     # The chain advances: event log -> completed-game-context -> surface snapshot
     # -> scheduled_games -> tonight snapshot -> unknown-safe pitch counts
     # -> stat-correction provenance -> postgame marker lifecycle.
@@ -518,3 +521,4 @@ def test_migrations_have_a_single_head():
     assert (revisions[_PHASE0E_LEGACY_READ_AUDIT_REVISION]
             == _PHASE0E_COMPOSED_READ_REVISION)
     assert revisions[_SYNC_JOBS_REVISION] == _PHASE0E_LEGACY_READ_AUDIT_REVISION
+    assert revisions[_AUDIENCE_SUBSCRIBERS_REVISION] == _SYNC_JOBS_REVISION

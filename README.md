@@ -192,6 +192,7 @@ Backend:
 | `MLB_API_BASE` | Optional MLB Stats API base URL override. |
 | `AUTO_SYNC` | Enables the local in-process scheduler when set to a true-like value. |
 | `ADMIN_API_TOKEN` | Gates protected operational endpoints. |
+| `EMAIL_PROVIDER` / `EMAIL_API_KEY` / `EMAIL_FROM` | Optional transactional email config. Missing provider config does not block audience signup persistence; welcome email is skipped safely. |
 
 Frontend:
 

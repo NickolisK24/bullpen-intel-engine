@@ -377,6 +377,15 @@ export const requestMagicLink = (email) => request('/auth/request-link', {
   body: JSON.stringify({ email }),
 })
 
+export const signupAudience = (email, options = {}) => request('/audience/signup', {
+  method: 'POST',
+  authToken: null,
+  body: JSON.stringify({
+    email,
+    source: options.source || 'homepage_hero',
+  }),
+})
+
 function payloadWithProductAnonId(payload = {}) {
   const anonId = payload.anon_id === undefined
     ? getOrCreateProductAnonId()

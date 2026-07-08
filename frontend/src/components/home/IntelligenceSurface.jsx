@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useFetch } from '../../hooks/useFetch'
 import {
@@ -6,6 +6,7 @@ import {
   getBullpenLandscape,
   getTeams,
   getTonightIntelligence,
+  signupAudience,
 } from '../../utils/api'
 import {
   DataThroughStamp,
@@ -41,8 +42,19 @@ const TONIGHT_ERROR_TITLE =
   "Tonight's bullpen reads are temporarily unavailable."
 const TONIGHT_ERROR_BODY =
   'The rest of Today can still be used.'
-const WEEKLY_NOTES_MAILTO =
-  'mailto:baseballoshq@gmail.com?subject=BaseballOS%20weekly%20bullpen%20notes&body=I%27d%20like%20weekly%20bullpen%20notes.%0A%0AFavorite%20team%3A%20'
+export const AUDIENCE_SIGNUP_IDLE = 'idle'
+export const AUDIENCE_SIGNUP_LOADING = 'loading'
+export const AUDIENCE_SIGNUP_SUCCESS = 'success'
+export const AUDIENCE_SIGNUP_INVALID = 'invalid'
+export const AUDIENCE_SIGNUP_ERROR = 'error'
+const AUDIENCE_SIGNUP_SOURCE = 'homepage_hero'
+const AUDIENCE_SIGNUP_SUCCESS_MESSAGE =
+  'You are on the list for BaseballOS bullpen notes.'
+const AUDIENCE_SIGNUP_INVALID_MESSAGE = 'Enter a valid email address.'
+const AUDIENCE_SIGNUP_ERROR_MESSAGE =
+  'We could not save that signup. Please try again.'
+const AUDIENCE_SIGNUP_IDLE_MESSAGE =
+  'No picks. No betting. Just bullpen context and product updates.'
 
 const INTERNAL_TODAY_COPY_PATTERN =
   /\b(COIN|V2|V3|V4|deterministic|snapshot|endpoint|backend|recommendation engine|baseline distribution|governance layer|sample state)\b/i
@@ -67,6 +79,47 @@ const FAIL_CLOSED_SERVED_FROM = new Set([
   'live_build_failed',
   'snapshot_unavailable',
 ])
+
+export function isValidAudienceEmail(value) {
+  const email = String(value || '').trim()
+  if (!email || /\s/.test(email)) return false
+  const parts = email.split('@')
+  if (parts.length !== 2) return false
+  const [local, domain] = parts
+  return Boolean(local && domain && domain.includes('.'))
+}
+
+export async function submitAudienceSignup({
+  email,
+  signup = signupAudience,
+  setStatus = () => {},
+  setError = () => {},
+} = {}) {
+  const trimmedEmail = String(email || '').trim()
+  if (!isValidAudienceEmail(trimmedEmail)) {
+    setError(null)
+    setStatus(AUDIENCE_SIGNUP_INVALID)
+    return false
+  }
+
+  setError(null)
+  setStatus(AUDIENCE_SIGNUP_LOADING)
+  try {
+    const response = await signup(trimmedEmail)
+    if (response?.success === false) {
+      setStatus(response.reason === 'invalid_email'
+        ? AUDIENCE_SIGNUP_INVALID
+        : AUDIENCE_SIGNUP_ERROR)
+      return false
+    }
+    setStatus(AUDIENCE_SIGNUP_SUCCESS)
+    return true
+  } catch (error) {
+    setError(error)
+    setStatus(AUDIENCE_SIGNUP_ERROR)
+    return false
+  }
+}
 
 const EXPLORE_LINKS = [
   {
@@ -630,14 +683,121 @@ function SectionShell({ id, title, eyebrow, subtitle, children, className = '' }
   )
 }
 
-function SeesHeader() {
-  const handleNewsletterInterest = () => {
-    trackAnalyticsEvent(ANALYTICS_EVENTS.NEWSLETTER_INTEREST_CLICKED, {
-      surface: 'home',
-      route: '/',
-      source: 'hero_cta',
-    })
+function audienceSignupMessage(status) {
+  if (status === AUDIENCE_SIGNUP_SUCCESS) return AUDIENCE_SIGNUP_SUCCESS_MESSAGE
+  if (status === AUDIENCE_SIGNUP_INVALID) return AUDIENCE_SIGNUP_INVALID_MESSAGE
+  if (status === AUDIENCE_SIGNUP_ERROR) return AUDIENCE_SIGNUP_ERROR_MESSAGE
+  return AUDIENCE_SIGNUP_IDLE_MESSAGE
+}
+
+export function AudienceSignupFormView({
+  email,
+  status,
+  onEmailChange,
+  onSubmit,
+}) {
+  const isLoading = status === AUDIENCE_SIGNUP_LOADING
+  const isInvalid = status === AUDIENCE_SIGNUP_INVALID
+  const isError = status === AUDIENCE_SIGNUP_ERROR
+  const isSuccess = status === AUDIENCE_SIGNUP_SUCCESS
+  const message = audienceSignupMessage(status)
+  const messageTone = isInvalid || isError
+    ? 'text-red-300'
+    : isSuccess
+      ? 'text-amber'
+      : 'text-chalk500'
+
+  return (
+    <form
+      className="w-full max-w-xl"
+      onSubmit={onSubmit}
+      noValidate
+    >
+      <label
+        htmlFor="audience-signup-email"
+        className="mb-2 block text-xs font-semibold uppercase tracking-widest text-chalk300"
+      >
+        Get BaseballOS bullpen notes in your inbox.
+      </label>
+      <div className="flex flex-col gap-2 sm:flex-row">
+        <input
+          id="audience-signup-email"
+          name="email"
+          type="email"
+          autoComplete="email"
+          inputMode="email"
+          value={email}
+          onChange={onEmailChange}
+          placeholder="you@example.com"
+          aria-invalid={isInvalid ? 'true' : 'false'}
+          aria-describedby="audience-signup-message"
+          disabled={isLoading}
+          className="min-h-11 flex-1 rounded border border-dirt bg-black/20 px-3 py-2 text-sm text-chalk100 placeholder:text-chalk500 transition-colors focus:border-amber/60 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/50 disabled:cursor-wait disabled:opacity-70"
+        />
+        <button
+          type="submit"
+          disabled={isLoading}
+          className="inline-flex min-h-11 items-center justify-center rounded border border-amber/40 bg-amber/10 px-4 py-2 font-mono text-xs uppercase tracking-widest text-amber transition-colors hover:border-amber/70 hover:bg-amber/15 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/60 disabled:cursor-wait disabled:border-dirt disabled:bg-field/50 disabled:text-chalk500 sm:w-auto"
+        >
+          {isLoading ? 'Joining...' : 'Get bullpen notes'}
+        </button>
+      </div>
+      <p
+        id="audience-signup-message"
+        className={`mt-2 text-xs leading-relaxed ${messageTone}`}
+        role={isInvalid || isError ? 'alert' : 'status'}
+        aria-live="polite"
+      >
+        {message}
+      </p>
+    </form>
+  )
+}
+
+function AudienceSignupForm() {
+  const [email, setEmail] = useState('')
+  const [status, setStatus] = useState(AUDIENCE_SIGNUP_IDLE)
+  const [, setError] = useState(null)
+
+  const handleEmailChange = (event) => {
+    setEmail(event.target.value)
+    if (
+      status === AUDIENCE_SIGNUP_INVALID ||
+      status === AUDIENCE_SIGNUP_ERROR ||
+      status === AUDIENCE_SIGNUP_SUCCESS
+    ) {
+      setStatus(AUDIENCE_SIGNUP_IDLE)
+    }
   }
+
+  const handleSubmit = async (event) => {
+    event.preventDefault()
+    const submitted = await submitAudienceSignup({
+      email,
+      signup: (value) => signupAudience(value, { source: AUDIENCE_SIGNUP_SOURCE }),
+      setStatus,
+      setError,
+    })
+    if (submitted) {
+      trackAnalyticsEvent(ANALYTICS_EVENTS.NEWSLETTER_INTEREST_CLICKED, {
+        surface: 'home',
+        route: '/',
+        source: 'email_capture_form',
+      })
+    }
+  }
+
+  return (
+    <AudienceSignupFormView
+      email={email}
+      status={status}
+      onEmailChange={handleEmailChange}
+      onSubmit={handleSubmit}
+    />
+  )
+}
+
+function SeesHeader() {
 
   return (
     <header className="mb-7 max-w-4xl pt-2 sm:pt-4">
@@ -653,24 +813,15 @@ function SeesHeader() {
       <p className="mt-3 max-w-2xl text-sm leading-relaxed text-chalk500">
         Descriptive only — we show what we see and what we can't. No picks, no predictions.
       </p>
-      <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center">
+      <div className="mt-5 grid max-w-4xl gap-4 lg:grid-cols-[auto_minmax(20rem,1fr)] lg:items-start">
         <a
           href="#bullpen-picture"
-          className="inline-flex w-full items-center justify-center rounded border border-amber/40 bg-amber/10 px-4 py-3 font-mono text-xs uppercase tracking-widest text-amber transition-colors hover:border-amber/70 hover:bg-amber/15 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/60 sm:w-auto"
+          className="inline-flex min-h-11 w-full items-center justify-center rounded border border-amber/40 bg-amber/10 px-4 py-3 font-mono text-xs uppercase tracking-widest text-amber transition-colors hover:border-amber/70 hover:bg-amber/15 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/60 lg:w-auto"
         >
           Explore today's bullpen picture
         </a>
-        <a
-          href={WEEKLY_NOTES_MAILTO}
-          onClick={handleNewsletterInterest}
-          className="inline-flex w-full items-center justify-center rounded border border-dirt bg-field/60 px-4 py-3 font-mono text-xs uppercase tracking-widest text-chalk300 transition-colors hover:border-amber/40 hover:text-amber focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/60 sm:w-auto"
-        >
-          Get the weekly Bullpen Report
-        </a>
+        <AudienceSignupForm />
       </div>
-      <p className="mt-3 max-w-xl text-xs leading-relaxed text-chalk500">
-        One email a week. No spam, no picks.
-      </p>
     </header>
   )
 }
