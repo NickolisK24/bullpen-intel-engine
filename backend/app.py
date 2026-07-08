@@ -138,6 +138,7 @@ def create_app(config_name=None):
     from models.user import User, UserFollowedTeam
     from models.digest_metrics import DigestRun, DigestDelivery
     from models.product_event import ProductEvent
+    from models.audience_subscriber import AudienceSubscriber
     from models.player_transaction import PlayerTransaction, PlayerTransactionSyncWindow
     from models.play_by_play_foundation import GamePlayByPlayEvent, PlayByPlayProcessedGame
     from models.team_game_pitching_split import TeamGamePitchingSplit
@@ -160,6 +161,7 @@ def create_app(config_name=None):
     from api.digest import digest_bp
     from api.product_events import product_bp
     from api.private_posts import private_posts_bp
+    from api.audience import audience_bp
 
     app.register_blueprint(bullpen_bp, url_prefix='/api/bullpen')
     app.register_blueprint(prospects_bp, url_prefix='/api/prospects')
@@ -177,6 +179,7 @@ def create_app(config_name=None):
     app.register_blueprint(digest_bp, url_prefix='/api/digest')
     app.register_blueprint(product_bp, url_prefix='/api/product')
     app.register_blueprint(private_posts_bp, url_prefix='/api/private-posts')
+    app.register_blueprint(audience_bp, url_prefix='/api/audience')
 
     @app.route('/api/health')
     def health():

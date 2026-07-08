@@ -23,14 +23,22 @@ afterEach(() => {
 })
 
 const {
+  AUDIENCE_SIGNUP_ERROR,
+  AUDIENCE_SIGNUP_IDLE,
+  AUDIENCE_SIGNUP_INVALID,
+  AUDIENCE_SIGNUP_LOADING,
+  AUDIENCE_SIGNUP_SUCCESS,
+  AudienceSignupFormView,
   IntelligenceSurfaceView,
   getBullpenPictureView,
   getLeadStoryView,
   getTonightCards,
+  submitAudienceSignup,
 } = await server.ssrLoadModule('/src/components/home/IntelligenceSurface.jsx')
 const {
   getTodayIntelligence,
   getTonightIntelligence,
+  signupAudience,
 } = await server.ssrLoadModule('/src/utils/api.js')
 
 const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -318,6 +326,132 @@ test('getTonightIntelligence times out a stuck Tonight request', async () => {
   )
 })
 
+test('signupAudience posts the public audience signup payload', async () => {
+  const calls = []
+  globalThis.fetch = async (url, options = {}) => {
+    calls.push({ url, options })
+    return {
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      json: async () => ({ success: true, message: 'ok' }),
+    }
+  }
+
+  await signupAudience(' fan@example.com ', { source: 'homepage_hero' })
+
+  assert.equal(calls.length, 1)
+  assert.equal(calls[0].url, '/api/audience/signup')
+  assert.equal(calls[0].options.method, 'POST')
+  assert.deepEqual(JSON.parse(calls[0].options.body), {
+    email: ' fan@example.com ',
+    source: 'homepage_hero',
+  })
+})
+
+test('audience signup helper rejects invalid email before calling the API', async () => {
+  const statuses = []
+  let called = false
+
+  const submitted = await submitAudienceSignup({
+    email: 'not-an-email',
+    signup: async () => {
+      called = true
+    },
+    setStatus: status => statuses.push(status),
+  })
+
+  assert.equal(submitted, false)
+  assert.equal(called, false)
+  assert.deepEqual(statuses, [AUDIENCE_SIGNUP_INVALID])
+})
+
+test('audience signup helper handles success, duplicate success, and API failure', async () => {
+  const successStatuses = []
+  let requestedEmail = null
+  const submitted = await submitAudienceSignup({
+    email: ' fan@example.com ',
+    signup: async (email) => {
+      requestedEmail = email
+      return { success: true, message: 'ok' }
+    },
+    setStatus: status => successStatuses.push(status),
+  })
+
+  assert.equal(submitted, true)
+  assert.equal(requestedEmail, 'fan@example.com')
+  assert.deepEqual(successStatuses, [AUDIENCE_SIGNUP_LOADING, AUDIENCE_SIGNUP_SUCCESS])
+
+  const duplicateStatuses = []
+  const duplicateSubmitted = await submitAudienceSignup({
+    email: 'fan@example.com',
+    signup: async () => ({ success: true, message: 'already ok' }),
+    setStatus: status => duplicateStatuses.push(status),
+  })
+  assert.equal(duplicateSubmitted, true)
+  assert.deepEqual(duplicateStatuses, [AUDIENCE_SIGNUP_LOADING, AUDIENCE_SIGNUP_SUCCESS])
+
+  const errorStatuses = []
+  let capturedError = null
+  const failed = await submitAudienceSignup({
+    email: 'fan@example.com',
+    signup: async () => {
+      throw new Error('network')
+    },
+    setStatus: status => errorStatuses.push(status),
+    setError: error => {
+      capturedError = error
+    },
+  })
+  assert.equal(failed, false)
+  assert.equal(capturedError.message, 'network')
+  assert.deepEqual(errorStatuses, [AUDIENCE_SIGNUP_LOADING, AUDIENCE_SIGNUP_ERROR])
+})
+
+test('Audience signup form renders loading, invalid, success, and failure states', () => {
+  const idleHtml = render(React.createElement(AudienceSignupFormView, {
+    email: '',
+    status: AUDIENCE_SIGNUP_IDLE,
+    onEmailChange: () => {},
+    onSubmit: () => {},
+  }))
+  const loadingHtml = render(React.createElement(AudienceSignupFormView, {
+    email: 'fan@example.com',
+    status: AUDIENCE_SIGNUP_LOADING,
+    onEmailChange: () => {},
+    onSubmit: () => {},
+  }))
+  const invalidHtml = render(React.createElement(AudienceSignupFormView, {
+    email: 'bad',
+    status: AUDIENCE_SIGNUP_INVALID,
+    onEmailChange: () => {},
+    onSubmit: () => {},
+  }))
+  const successHtml = render(React.createElement(AudienceSignupFormView, {
+    email: 'fan@example.com',
+    status: AUDIENCE_SIGNUP_SUCCESS,
+    onEmailChange: () => {},
+    onSubmit: () => {},
+  }))
+  const errorHtml = render(React.createElement(AudienceSignupFormView, {
+    email: 'fan@example.com',
+    status: AUDIENCE_SIGNUP_ERROR,
+    onEmailChange: () => {},
+    onSubmit: () => {},
+  }))
+
+  assert.ok(htmlIncludes(idleHtml, 'Get BaseballOS bullpen notes in your inbox.'))
+  assert.ok(htmlIncludes(idleHtml, 'type="email"'))
+  assert.ok(htmlIncludes(idleHtml, 'Get bullpen notes'))
+  assert.ok(htmlIncludes(idleHtml, 'No picks. No betting. Just bullpen context and product updates.'))
+  assert.ok(htmlIncludes(loadingHtml, 'Joining...'))
+  assert.ok(/<button[^>]*disabled/.test(loadingHtml))
+  assert.ok(htmlIncludes(invalidHtml, 'aria-invalid="true"'))
+  assert.ok(htmlIncludes(invalidHtml, 'Enter a valid email address.'))
+  assert.ok(htmlIncludes(successHtml, 'You are on the list for BaseballOS bullpen notes.'))
+  assert.ok(htmlIncludes(errorHtml, 'We could not save that signup. Please try again.'))
+})
+
 test('lead story view resolves team, prose, evidence, metadata, and snapshot', () => {
   const view = getLeadStoryView(intelligenceOk, teams)
 
@@ -362,10 +496,11 @@ test('Intelligence Surface shell renders before data resolves', () => {
   assert.ok(htmlIncludes(html, 'See which bullpens are fresh, stretched, or vulnerable tonight — and why.'))
   assert.ok(htmlIncludes(html, 'Explore today&#x27;s bullpen picture'))
   assert.ok(htmlIncludes(html, 'href="#bullpen-picture"'))
-  assert.ok(htmlIncludes(html, 'Get the weekly Bullpen Report'))
-  assert.ok(htmlIncludes(html, 'mailto:baseballoshq@gmail.com'))
-  assert.ok(htmlIncludes(html, 'Favorite%20team%3A%20'))
-  assert.ok(htmlIncludes(html, 'One email a week. No spam, no picks.'))
+  assert.ok(htmlIncludes(html, 'Get BaseballOS bullpen notes in your inbox.'))
+  assert.ok(htmlIncludes(html, 'type="email"'))
+  assert.ok(htmlIncludes(html, 'Get bullpen notes'))
+  assert.ok(htmlIncludes(html, 'No picks. No betting. Just bullpen context and product updates.'))
+  assert.equal(htmlIncludes(html, 'mailto:baseballoshq@gmail.com'), false)
   assert.equal(htmlIncludes(html, 'mailto:nickoliskacludis@gmail.com'), false)
   assert.equal(htmlIncludes(html, 'Upcoming Games'), false)
   assert.equal(htmlIncludes(html, 'Today&#x27;s Story'), false)
