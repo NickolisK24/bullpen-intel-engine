@@ -2053,16 +2053,23 @@ def sync_recent_logs(
         if touched_this_pitcher:
             pitchers_touched += 1
 
-    # Lane-health canary: if the window contained ingestable splits but every
-    # single one was dropped before the upsert, the daily lane is not merely
-    # quiet — it is dead (the exact failure mode that hid the July 4 hole).
+    # Lane-health canary: if the window contained ingestable splits and every
+    # single one was dropped at the finality gate (never reached the upsert),
+    # the daily lane is not merely quiet — it is dead (the exact failure mode
+    # that hid the July 4 hole). Unsafe correction attempts do NOT trip the
+    # canary: they reach the upsert and are already dead-lettered per record.
     ingestable_splits = (
         splits_seen
         - skip_counts['missing_key']
         - skip_counts['before_cutoff']
     )
     ingested_splits = new_logs + corrected_logs + unchanged_logs
-    if ingestable_splits > 0 and ingested_splits == 0:
+    dropped_at_finality = skip_counts['not_completed'] + unresolved_finality
+    if (
+        ingestable_splits > 0
+        and ingested_splits == 0
+        and dropped_at_finality >= ingestable_splits
+    ):
         lane_health = 'all_window_splits_dropped'
         records_failed += 1
         logger.error(
