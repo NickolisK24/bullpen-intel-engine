@@ -585,6 +585,11 @@ def test_existing_public_routes_behavior_freeze(monkeypatch):
         pytest.skip('git diff against origin/main unavailable')
 
     changed = [path.replace('\\', '/') for path in changed]
+    # backend/services/sync.py and backend/services/dashboard_snapshot.py were
+    # removed from this freeze for the July 2026 appearance-ledger trust
+    # incident (dead daily lane + missing publish gate). Their behavior is
+    # pinned by dedicated regression suites (test_statusless_split_finality.py,
+    # test_postgame_lookback.py, test_appearance_ledger.py).
     blocked_files = {
         'backend/api/bullpen.py',
         'backend/api/pitchers.py',
@@ -592,9 +597,7 @@ def test_existing_public_routes_behavior_freeze(monkeypatch):
         'backend/api/system.py',
         'backend/services/public_recent_work.py',
         'backend/services/board_freshness.py',
-        'backend/services/dashboard_snapshot.py',
         'backend/services/team_story_previews.py',
-        'backend/services/sync.py',
     }
     allowed_internal_admin_files = {
         'backend/api/system.py',

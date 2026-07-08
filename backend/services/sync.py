@@ -65,6 +65,8 @@ from utils.time import utc_now_naive
 
 logger = logging.getLogger(__name__)
 PITCHER_GAME_LOG_FAILURE_ENTITY_TYPE = 'pitcher_game_logs'
+GAME_LOG_UNRESOLVED_FINALITY_ENTITY_TYPE = 'game_log_unresolved_finality'
+DAILY_GAME_LOG_LANE_FAILURE_ENTITY_TYPE = 'daily_game_log_lane'
 GAME_LOG_CORRECTION_FAILURE_ENTITY_TYPE = 'game_log_correction_attempt'
 PITCHER_RESOLUTION_FAILURE_ENTITY_TYPE = 'pitcher_resolution'
 POSTGAME_GAME_FAILURE_ENTITY_TYPE = 'postgame_completed_game'
@@ -74,6 +76,7 @@ COMPOSED_READ_FAILURE_ENTITY_TYPE = 'phase0e_composed_reads'
 LEGACY_READ_AUDIT_FAILURE_ENTITY_TYPE = 'phase0e_legacy_read_reconciliation_audit'
 STAGE_LEGACY_READ_RECONCILIATION_AUDIT = 'legacy_read_reconciliation_audit'
 POSTGAME_EARLY_MORNING_CUTOFF_HOUR = 6
+POSTGAME_DEFAULT_LOOKBACK_DAYS = 2
 POSTGAME_SNAPSHOT_DEFAULT_TIMEOUT_SECONDS = 120.0
 DAILY_GAME_LOG_CORRECTION_SOURCE = 'daily_game_log'
 POSTGAME_BOXSCORE_CORRECTION_SOURCE = 'postgame_boxscore'
@@ -142,9 +145,93 @@ def postgame_schedule_date(now: datetime | None = None) -> date:
     return local.date()
 
 
+def _postgame_lookback_days() -> int:
+    """Trailing slate dates a postgame refresh sweeps in addition to its
+    primary date. Env-tunable; never negative."""
+    raw = os.environ.get('POSTGAME_LOOKBACK_DAYS')
+    try:
+        value = int(raw) if raw not in (None, '') else POSTGAME_DEFAULT_LOOKBACK_DAYS
+    except (TypeError, ValueError):
+        value = POSTGAME_DEFAULT_LOOKBACK_DAYS
+    return max(0, value)
+
+
+def postgame_schedule_dates(
+    now: datetime | None = None,
+    lookback_days: int | None = None,
+) -> list[date]:
+    """
+    Slate dates a postgame refresh sweeps, oldest first.
+
+    A crashed or timed-out overnight run must self-heal: markers make
+    re-checking an already-ingested slate nearly free (fully-processed games
+    are skipped before any boxscore fetch), so each run re-sweeps the trailing
+    dates. Oldest first, so recovery of a missed night lands even if the run
+    is cut short.
+    """
+    if lookback_days is None:
+        lookback_days = _postgame_lookback_days()
+    primary = postgame_schedule_date(now)
+    return [
+        primary - timedelta(days=offset)
+        for offset in range(lookback_days, -1, -1)
+    ]
+
+
 def is_completed_game(game: dict) -> bool:
     """Return True only for games with safe final status precedence."""
     return has_safe_final_status(game)
+
+
+# Finality resolution for daily gameLog splits.
+#
+# The MLB `people/{id}/stats?stats=gameLog` endpoint returns a `game` object
+# that does NOT carry a `status` block, so the split alone cannot prove the
+# game is final. Treating "no status" as "not final" silently disabled the
+# entire daily ingestion/correction lane (every split skipped). Instead we
+# resolve finality from the durable schedule ledger (scheduled_games, ingested
+# ±10 days daily): final there → ingest; determinately non-final → skip and
+# retry on a later run; genuinely unknown → dead-letter, never silently drop.
+SPLIT_FINALITY_FINAL = 'final'
+SPLIT_FINALITY_NOT_FINAL = 'not_final'
+SPLIT_FINALITY_UNKNOWN = 'unknown'
+
+
+def _split_has_own_status(game_info: dict) -> bool:
+    status = (game_info or {}).get('status')
+    if not isinstance(status, dict):
+        return False
+    return any(
+        status.get(key) not in (None, '')
+        for key in ('statusCode', 'detailedState', 'abstractGameState')
+    )
+
+
+def resolve_scheduled_game_finality(game_pk, finality_cache: dict | None = None) -> str:
+    """
+    Resolve a game's finality from stored scheduled_games rows.
+
+    Returns SPLIT_FINALITY_FINAL, SPLIT_FINALITY_NOT_FINAL, or
+    SPLIT_FINALITY_UNKNOWN. Suspended games and unresolved resumed-game
+    linkage fail closed to NOT_FINAL so partial lines are never ingested from
+    the daily lane; they retry on later runs once linkage resolves.
+    """
+    if finality_cache is not None and game_pk in finality_cache:
+        return finality_cache[game_pk]
+
+    rows = ScheduledGame.query.filter_by(game_pk=game_pk).all()
+    if not rows:
+        state = SPLIT_FINALITY_UNKNOWN
+    elif scheduled_rows_have_unresolved_resumed_linkage(rows):
+        state = SPLIT_FINALITY_NOT_FINAL
+    elif any(row.status_state == ScheduledGame.STATE_FINAL for row in rows):
+        state = SPLIT_FINALITY_FINAL
+    else:
+        state = SPLIT_FINALITY_NOT_FINAL
+
+    if finality_cache is not None:
+        finality_cache[game_pk] = state
+    return state
 
 
 def completed_games_for_postgame_refresh(schedule_date: date) -> list[dict]:
@@ -1848,11 +1935,17 @@ def sync_recent_logs(
     pitchers        = Pitcher.query.filter_by(active=True).all()
     new_logs        = 0
     corrected_logs  = 0
+    unchanged_logs  = 0
     errors          = 0
     records_failed  = 0
     correction_attempts_failed = 0
+    unresolved_finality = 0
     pitchers_touched = 0
+    splits_seen     = 0
+    skip_counts     = {'missing_key': 0, 'not_completed': 0, 'before_cutoff': 0}
     affected_game_pks = set()
+    # One finality resolution per game_pk per run, shared across pitchers.
+    finality_cache = {}
 
     for pitcher in pitchers:
         try:
@@ -1891,8 +1984,10 @@ def sync_recent_logs(
             game_info     = split.get('game', {})
             game_pk       = game_info.get('gamePk')
             game_date_str = split.get('date')
+            splits_seen  += 1
 
             if not game_pk or not game_date_str:
+                skip_counts['missing_key'] += 1
                 continue
 
             # Process one record in isolation: a single poisoned record is
@@ -1904,6 +1999,7 @@ def sync_recent_logs(
                     split,
                     cutoff,
                     team_abbr_map,
+                    finality_cache=finality_cache,
                     sync_run_id=sync_run_id,
                     job_name=job_name,
                 )
@@ -1938,12 +2034,73 @@ def sync_recent_logs(
                 corrected_logs += 1
                 touched_this_pitcher = True
                 affected_game_pks.add(_positive_external_id(game_pk))
+            elif result['status'] == 'unchanged':
+                unchanged_logs += 1
             elif result['status'] == 'unsafe':
                 records_failed += 1
                 correction_attempts_failed += 1
+            elif result['status'] == 'unresolved_finality':
+                # Already dead-lettered inside the split ingester. Counted as a
+                # failed record so the run surfaces as partial — an appearance
+                # we could not prove final must never disappear silently.
+                records_failed += 1
+                unresolved_finality += 1
+            elif result['status'] == 'skipped':
+                reason = result.get('reason')
+                if reason in skip_counts:
+                    skip_counts[reason] += 1
 
         if touched_this_pitcher:
             pitchers_touched += 1
+
+    # Lane-health canary: if the window contained ingestable splits and every
+    # single one was dropped at the finality gate (never reached the upsert),
+    # the daily lane is not merely quiet — it is dead (the exact failure mode
+    # that hid the July 4 hole). Unsafe correction attempts do NOT trip the
+    # canary: they reach the upsert and are already dead-lettered per record.
+    ingestable_splits = (
+        splits_seen
+        - skip_counts['missing_key']
+        - skip_counts['before_cutoff']
+    )
+    ingested_splits = new_logs + corrected_logs + unchanged_logs
+    dropped_at_finality = skip_counts['not_completed'] + unresolved_finality
+    if (
+        ingestable_splits > 0
+        and ingested_splits == 0
+        and dropped_at_finality >= ingestable_splits
+    ):
+        lane_health = 'all_window_splits_dropped'
+        records_failed += 1
+        logger.error(
+            'Daily gameLog lane ingested nothing: %s split(s) in window, all '
+            'dropped (not_completed=%s unresolved_finality=%s unsafe=%s). '
+            'Treating the run as partial.',
+            ingestable_splits,
+            skip_counts['not_completed'],
+            unresolved_finality,
+            correction_attempts_failed,
+        )
+        dead_letter.record_failure(
+            DAILY_GAME_LOG_LANE_FAILURE_ENTITY_TYPE,
+            'daily gameLog lane dropped every in-window split',
+            entity_ref=reference_date.isoformat(),
+            payload={
+                'reference_date': reference_date.isoformat(),
+                'cutoff': cutoff.isoformat(),
+                'splits_seen': splits_seen,
+                'ingestable_splits': ingestable_splits,
+                'skip_counts': dict(skip_counts),
+                'unresolved_finality': unresolved_finality,
+                'correction_attempts_failed': correction_attempts_failed,
+            },
+            sync_run_id=sync_run_id,
+            job_name=job_name,
+        )
+    elif ingestable_splits == 0:
+        lane_health = 'no_window_splits'
+    else:
+        lane_health = 'ok'
 
     db.session.commit()
     for game_pk in sorted(game_pk for game_pk in affected_game_pks if game_pk is not None):
@@ -1957,10 +2114,15 @@ def sync_recent_logs(
     result = {
         'new_logs_added':    new_logs,
         'logs_corrected':    corrected_logs,
+        'logs_unchanged':    unchanged_logs,
         'pitchers_touched':  pitchers_touched,
         'errors':            errors,
         'records_failed':    records_failed,
         'correction_attempts_failed': correction_attempts_failed,
+        'unresolved_finality': unresolved_finality,
+        'splits_seen':       splits_seen,
+        'splits_skipped':    dict(skip_counts),
+        'lane_health':       lane_health,
         'days_back':         days_back,
         'season':            season,
         'reference_date':    reference_date.isoformat(),
@@ -1977,6 +2139,7 @@ def _ingest_game_log_split(
     cutoff,
     team_abbr_map,
     *,
+    finality_cache=None,
     sync_run_id=None,
     job_name=sync_metadata.JOB_DAILY_SYNC,
 ):
@@ -1984,7 +2147,8 @@ def _ingest_game_log_split(
     Insert or correct a single game-log split for a pitcher.
 
     Returns a result dict with status inserted, corrected, unchanged, unsafe,
-    or skipped. Skipped covers before-cutoff and malformed-but-empty keys.
+    unresolved_finality, or skipped. Skipped covers before-cutoff,
+    determinately non-final games, and malformed-but-empty keys.
     Raises on a genuinely poisoned record so the caller can dead-letter it.
     """
     game_info     = split.get('game', {})
@@ -1996,13 +2160,41 @@ def _ingest_game_log_split(
     if not game_pk or not game_date_str:
         return {'status': 'skipped', 'reason': 'missing_key'}
 
-    if not is_completed_game(game_info):
-        return {'status': 'skipped', 'reason': 'not_completed'}
-
     game_date = datetime.strptime(game_date_str, '%Y-%m-%d').date()
 
+    # Cutoff before finality: gameLog returns the whole season, so the window
+    # check must run first to keep schedule-ledger lookups bounded.
     if game_date < cutoff:
         return {'status': 'skipped', 'reason': 'before_cutoff'}
+
+    if _split_has_own_status(game_info):
+        # The split carries an explicit status (fixtures, hydrated responses):
+        # trust it — it is the closest authority for this game.
+        if not is_completed_game(game_info):
+            return {'status': 'skipped', 'reason': 'not_completed'}
+    else:
+        # Statusless split (the production shape of the gameLog endpoint):
+        # resolve finality from the scheduled_games ledger instead of
+        # silently dropping the appearance.
+        finality = resolve_scheduled_game_finality(game_pk, finality_cache)
+        if finality == SPLIT_FINALITY_NOT_FINAL:
+            return {'status': 'skipped', 'reason': 'not_completed'}
+        if finality == SPLIT_FINALITY_UNKNOWN:
+            dead_letter.record_failure(
+                GAME_LOG_UNRESOLVED_FINALITY_ENTITY_TYPE,
+                'statusless gameLog split with no scheduled_games coverage',
+                entity_ref=game_pk,
+                payload={
+                    'pitcher_id': pitcher.id,
+                    'mlb_id': pitcher.mlb_id,
+                    'game_pk': game_pk,
+                    'game_date': game_date_str,
+                    'game_type': game_type,
+                },
+                sync_run_id=sync_run_id,
+                job_name=job_name,
+            )
+            return {'status': 'unresolved_finality', 'reason': 'unresolved_finality'}
 
     opponent = split.get('opponent', {})
     values = _game_log_values_from_stats(
@@ -3134,10 +3326,15 @@ def run_postgame_refresh(
     """
     Lightweight completed-game refresh.
 
-    This job checks one MLB schedule date, finds completed games not yet marked
-    as processed, fetches only those games' boxscores, and ingests pitching
-    lines for tracked active pitchers. It leaves the full morning sync path
-    intact: no roster refresh, no full-league game-log sweep.
+    This job sweeps the primary MLB schedule date plus a trailing lookback
+    window (oldest first), finds completed games not yet marked as processed,
+    fetches only those games' boxscores, and ingests pitching lines for
+    tracked active pitchers. Fully-processed markers make re-sweeping old
+    slates nearly free, and the lookback means a crashed overnight run
+    self-heals on the next pass instead of leaving a permanent hole. An
+    explicit ``schedule_date`` restricts the sweep to exactly that date
+    (manual replays). It leaves the full morning sync path intact: no roster
+    refresh, no full-league game-log sweep.
     """
     _ensure_logs_dir()
     log_file = _STATUS_DIR / 'postgame_refresh.log'
@@ -3152,7 +3349,11 @@ def run_postgame_refresh(
     run_logger.setLevel(logging.INFO)
 
     started_at = datetime.now(timezone.utc)
-    schedule_date = schedule_date or postgame_schedule_date(started_at)
+    if schedule_date is not None:
+        schedule_dates = [schedule_date]
+    else:
+        schedule_dates = postgame_schedule_dates(started_at)
+        schedule_date = schedule_dates[-1]
     sync_run_id = None
     active_stage = None
     writer_guard = None
@@ -3161,6 +3362,7 @@ def run_postgame_refresh(
         'status': sync_metadata.STATUS_SUCCESS,
         'job_name': sync_metadata.JOB_POSTGAME_REFRESH,
         'schedule_date': schedule_date.isoformat(),
+        'schedule_dates': [slate.isoformat() for slate in schedule_dates],
         'completed_games_found': 0,
         'newly_completed_games': 0,
         'games_already_processed': 0,
@@ -3185,7 +3387,10 @@ def run_postgame_refresh(
         'intelligence_snapshot': 'skipped',
         'message': '',
     }
-    run_logger.info('── Postgame refresh starting (schedule_date=%s) ──', schedule_date)
+    run_logger.info(
+        '── Postgame refresh starting (schedule_dates=%s) ──',
+        ','.join(slate.isoformat() for slate in schedule_dates),
+    )
     refresh_started = time.perf_counter()
 
     try:
@@ -3202,7 +3407,15 @@ def run_postgame_refresh(
             mlb_client.metrics.reset()
             active_stage = sync_metadata.STAGE_LOG_INGESTION
 
-            completed_games = completed_games_for_postgame_refresh(schedule_date)
+            completed_games = []
+            slate_by_game_pk = {}
+            for slate_date in schedule_dates:
+                for game in completed_games_for_postgame_refresh(slate_date):
+                    game_pk = _game_pk(game)
+                    if game_pk in slate_by_game_pk:
+                        continue
+                    slate_by_game_pk[game_pk] = slate_date
+                    completed_games.append(game)
             unprocessed_games, marker_counts = _unprocessed_completed_games(completed_games)
             status['completed_games_found'] = len(completed_games)
             status['newly_completed_games'] = len(unprocessed_games)
@@ -3210,9 +3423,11 @@ def run_postgame_refresh(
             status['games_retryable_incomplete'] = marker_counts['retryable_incomplete']
             status['games_failed_markers'] = marker_counts['failed']
             run_logger.info(
-                'Found %s completed game(s); %s fully processed, '
-                '%s retryable incomplete, %s failed, %s pending.',
+                'Found %s completed game(s) across %s slate date(s); '
+                '%s fully processed, %s retryable incomplete, %s failed, '
+                '%s pending.',
                 len(completed_games),
+                len(schedule_dates),
                 marker_counts['fully_processed'],
                 marker_counts['retryable_incomplete'],
                 marker_counts['failed'],
@@ -3220,14 +3435,16 @@ def run_postgame_refresh(
             )
 
             pbp_foundation_attempted_game_pks = set()
+            changed_slate_dates = set()
             for game in unprocessed_games:
                 game_pk = _game_pk(game)
+                game_slate_date = slate_by_game_pk.get(game_pk, schedule_date)
                 game_started = time.perf_counter()
                 outcome = 'processed'
                 try:
                     result = process_completed_game_for_postgame_refresh(
                         game,
-                        schedule_date=schedule_date,
+                        schedule_date=game_slate_date,
                         sync_run_id=sync_run_id,
                     )
                     db.session.commit()
@@ -3246,6 +3463,8 @@ def run_postgame_refresh(
                         if result['processing_status'] == POSTGAME_MARKER_STATUS_FAILED:
                             status['games_failed_markers'] += 1
                         outcome = result['processing_status']
+                    if result['logs_added'] or result['logs_corrected']:
+                        changed_slate_dates.add(game_slate_date)
                     status['new_logs_added'] += result['logs_added']
                     status['logs_corrected'] += result['logs_corrected']
                     status['correction_attempts_failed'] += result['correction_attempts_failed']
@@ -3281,7 +3500,7 @@ def run_postgame_refresh(
                     )
                     _safe_recompute_team_game_pitching_splits(
                         game,
-                        schedule_date=schedule_date,
+                        schedule_date=game_slate_date,
                         sync_run_id=sync_run_id,
                         run_logger=run_logger,
                     )
@@ -3289,7 +3508,7 @@ def run_postgame_refresh(
                     _safe_process_final_play_by_play_foundation(
                         game,
                         boxscore=result.get('boxscore'),
-                        schedule_date=schedule_date,
+                        schedule_date=game_slate_date,
                         play_by_play=optional_inputs['play_by_play'],
                         play_by_play_error=optional_inputs['play_by_play_error'],
                         sync_run_id=sync_run_id,
@@ -3301,7 +3520,7 @@ def run_postgame_refresh(
                     _safe_generate_completed_game_context(
                         game,
                         boxscore=result.get('boxscore'),
-                        schedule_date=schedule_date,
+                        schedule_date=game_slate_date,
                         linescore=optional_inputs['linescore'],
                         play_by_play=optional_inputs['play_by_play'],
                         sync_run_id=sync_run_id,
@@ -3319,7 +3538,7 @@ def run_postgame_refresh(
                         entity_ref=game_pk,
                         payload={
                             'game_pk': game_pk,
-                            'schedule_date': schedule_date.isoformat(),
+                            'schedule_date': game_slate_date.isoformat(),
                             'status': game.get('status') if isinstance(game, dict) else None,
                         },
                         sync_run_id=sync_run_id,
@@ -3340,13 +3559,14 @@ def run_postgame_refresh(
                 exclude_game_pks=pbp_foundation_attempted_game_pks,
             ):
                 game_pk = _game_pk(game)
+                game_slate_date = slate_by_game_pk.get(game_pk, schedule_date)
                 try:
                     boxscore = mlb_client.get_game_boxscore(game_pk)
                     optional_inputs = _fetch_completed_game_optional_inputs(game_pk)
                     _safe_process_final_play_by_play_foundation(
                         game,
                         boxscore=boxscore,
-                        schedule_date=schedule_date,
+                        schedule_date=game_slate_date,
                         play_by_play=optional_inputs['play_by_play'],
                         play_by_play_error=optional_inputs['play_by_play_error'],
                         sync_run_id=sync_run_id,
@@ -3361,7 +3581,7 @@ def run_postgame_refresh(
                         entity_ref=game_pk,
                         payload={
                             'game_pk': game_pk,
-                            'schedule_date': schedule_date.isoformat(),
+                            'schedule_date': game_slate_date.isoformat(),
                             'phase': 'play_by_play_retry',
                         },
                         sync_run_id=sync_run_id,
@@ -3378,7 +3598,7 @@ def run_postgame_refresh(
                 'Postgame ingestion complete for %s: processed=%s skipped=%s '
                 'incomplete=%s failed=%s contexts=%s logs_added=%s logs_corrected=%s '
                 'pitchers_created=%s pitchers_reactivated=%s.',
-                schedule_date,
+                ','.join(slate.isoformat() for slate in schedule_dates),
                 status['games_processed'],
                 status['games_skipped'],
                 status['games_incomplete'],
@@ -3460,12 +3680,15 @@ def run_postgame_refresh(
                         schedule_date, status=status, run_logger=run_logger)
 
                 if include_internal_enrichment:
+                    enrichment_slate_dates = (
+                        sorted(changed_slate_dates) or [schedule_date]
+                    )
                     active_stage = sync_metadata.STAGE_WORKLOAD_EVIDENCE
                     _run_post_publish_internal_postgame_phase(
                         run_logger,
                         sync_metadata.STAGE_WORKLOAD_EVIDENCE,
                         lambda: _safe_build_workload_recovery_evidence_stage(
-                            [schedule_date],
+                            enrichment_slate_dates,
                             sync_run_id=sync_run_id,
                             source='postgame_refresh',
                             job_name=sync_metadata.JOB_POSTGAME_REFRESH,
@@ -3477,7 +3700,7 @@ def run_postgame_refresh(
                         run_logger,
                         sync_metadata.STAGE_COMPOSED_READS,
                         lambda: _safe_build_composed_reads_stage(
-                            [schedule_date],
+                            enrichment_slate_dates,
                             sync_run_id=sync_run_id,
                             source='postgame_refresh',
                             job_name=sync_metadata.JOB_POSTGAME_REFRESH,
@@ -3489,7 +3712,7 @@ def run_postgame_refresh(
                         run_logger,
                         STAGE_LEGACY_READ_RECONCILIATION_AUDIT,
                         lambda: _safe_run_legacy_read_reconciliation_audit_stage(
-                            [schedule_date],
+                            enrichment_slate_dates,
                             sync_run_id=sync_run_id,
                             source='postgame_refresh',
                             job_name=sync_metadata.JOB_POSTGAME_REFRESH,
@@ -3705,10 +3928,17 @@ def run_daily_sync(
             logs_corrected = pull.get('logs_corrected', 0)
             correction_attempts_failed = pull.get('correction_attempts_failed', 0)
             run_logger.info(
-                'Pulled %s new logs, corrected %s logs (touched %s pitchers, '
-                '%s errors, %s dead-lettered)',
-                pull['new_logs_added'], logs_corrected, pull['pitchers_touched'], pull['errors'],
+                'Pulled %s new logs, corrected %s logs, %s unchanged '
+                '(touched %s pitchers, %s errors, %s dead-lettered, '
+                'splits_seen=%s skipped=%s unresolved_finality=%s lane_health=%s)',
+                pull['new_logs_added'], logs_corrected,
+                pull.get('logs_unchanged', 0),
+                pull['pitchers_touched'], pull['errors'],
                 pull['records_failed'],
+                pull.get('splits_seen', 0),
+                pull.get('splits_skipped', {}),
+                pull.get('unresolved_finality', 0),
+                pull.get('lane_health', 'unknown'),
             )
             records_failed = (
                 pull['records_failed']
@@ -3718,8 +3948,13 @@ def run_daily_sync(
             )
             status['new_logs_added'] = pull['new_logs_added']
             status['logs_corrected'] = logs_corrected
+            status['logs_unchanged'] = pull.get('logs_unchanged', 0)
             status['records_failed'] = records_failed
             status['correction_attempts_failed'] = correction_attempts_failed
+            status['unresolved_finality'] = pull.get('unresolved_finality', 0)
+            status['splits_seen'] = pull.get('splits_seen', 0)
+            status['splits_skipped'] = pull.get('splits_skipped', {})
+            status['game_log_lane_health'] = pull.get('lane_health', 'unknown')
             status['errors'] = (
                 pull['errors']
                 + roster['errors']
