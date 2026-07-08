@@ -94,6 +94,11 @@ jobs:
           ADMIN_API_TOKEN: ${{ secrets.BASEBALLOS_ADMIN_API_TOKEN }}
           AUTO_SYNC: 'false'
           DAILY_SYNC_COMMAND_TIMEOUT: 20m
+          # Soft budget for the gameLog ingestion stage: when exceeded the
+          # sync finishes cleanly as PARTIAL (remaining pitchers
+          # dead-lettered and retried next run) instead of being SIGKILLed
+          # by the 20m hard timeout with no sync metadata.
+          DAILY_SYNC_INGESTION_BUDGET_SECONDS: '720'
         run: |
           set -euo pipefail
           if [ -z "${DATABASE_URL:-}" ] || [ -z "${SECRET_KEY:-}" ] || [ -z "${ADMIN_API_TOKEN:-}" ]; then

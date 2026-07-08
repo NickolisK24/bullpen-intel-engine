@@ -77,6 +77,8 @@ LEGACY_READ_AUDIT_FAILURE_ENTITY_TYPE = 'phase0e_legacy_read_reconciliation_audi
 STAGE_LEGACY_READ_RECONCILIATION_AUDIT = 'legacy_read_reconciliation_audit'
 POSTGAME_EARLY_MORNING_CUTOFF_HOUR = 6
 POSTGAME_DEFAULT_LOOKBACK_DAYS = 2
+DAILY_SYNC_DEFAULT_INGESTION_BUDGET_SECONDS = 720.0
+DAILY_GAME_LOG_BUDGET_FAILURE_ENTITY_TYPE = 'daily_game_log_budget'
 POSTGAME_SNAPSHOT_DEFAULT_TIMEOUT_SECONDS = 120.0
 DAILY_GAME_LOG_CORRECTION_SOURCE = 'daily_game_log'
 POSTGAME_BOXSCORE_CORRECTION_SOURCE = 'postgame_boxscore'
@@ -648,11 +650,13 @@ def _upsert_game_log_from_authoritative_values(
     sync_run_id=None,
     job_name='daily_sync',
     include_leverage_index=False,
+    existing=_OPTIONAL_INPUT_NOT_PROVIDED,
 ):
-    existing = GameLog.query.filter_by(
-        pitcher_id=pitcher.id,
-        mlb_game_pk=game_pk,
-    ).first()
+    if existing is _OPTIONAL_INPUT_NOT_PROVIDED:
+        existing = GameLog.query.filter_by(
+            pitcher_id=pitcher.id,
+            mlb_game_pk=game_pk,
+        ).first()
     if existing is None:
         log = GameLog(**values)
         db.session.add(log)
@@ -1883,11 +1887,25 @@ def _safe_generate_intelligence_surface_snapshot(schedule_date, *, status, run_l
         )
 
 
+def _daily_sync_ingestion_budget_seconds() -> float | None:
+    """Soft wall-clock budget for the gameLog ingestion stage. When exceeded,
+    the stage finishes cleanly as partial (remaining pitchers dead-lettered)
+    instead of being SIGKILLed mid-transaction by the workflow's hard timeout.
+    0 or negative disables the budget."""
+    raw = os.environ.get('DAILY_SYNC_INGESTION_BUDGET_SECONDS')
+    try:
+        value = float(raw) if raw not in (None, '') else DAILY_SYNC_DEFAULT_INGESTION_BUDGET_SECONDS
+    except (TypeError, ValueError):
+        value = DAILY_SYNC_DEFAULT_INGESTION_BUDGET_SECONDS
+    return value if value > 0 else None
+
+
 def sync_recent_logs(
     days_back: int = 7,
     reference_date: date | None = None,
     sync_run_id=None,
     job_name=sync_metadata.JOB_DAILY_SYNC,
+    time_budget_seconds=_OPTIONAL_INPUT_NOT_PROVIDED,
 ):
     """
     Pull recent game logs from the MLB Stats API for every active pitcher,
@@ -1932,6 +1950,9 @@ def sync_recent_logs(
         .all()
     )
 
+    if time_budget_seconds is _OPTIONAL_INPUT_NOT_PROVIDED:
+        time_budget_seconds = _daily_sync_ingestion_budget_seconds()
+
     pitchers        = Pitcher.query.filter_by(active=True).all()
     new_logs        = 0
     corrected_logs  = 0
@@ -1946,13 +1967,74 @@ def sync_recent_logs(
     affected_game_pks = set()
     # One finality resolution per game_pk per run, shared across pitchers.
     finality_cache = {}
+    # One boxscore fetch per game_pk for leverage-index backfill, not per log.
+    pitching_lines_cache = {}
+    # One SELECT for every window row, instead of one SELECT per split per
+    # pitcher — the dominant cost of this stage against a remote database.
+    existing_by_key = {
+        (row.pitcher_id, row.mlb_game_pk): row
+        for row in GameLog.query.filter(GameLog.game_date >= cutoff).all()
+    }
+    # One SELECT for outstanding fetch failures; per-pitcher resolution
+    # UPDATEs run only for pitchers that actually have one to resolve.
+    unresolved_fetch_refs = {
+        ref
+        for (ref,) in (
+            db.session.query(SyncFailure.entity_ref)
+            .filter(SyncFailure.entity_type == PITCHER_GAME_LOG_FAILURE_ENTITY_TYPE)
+            .filter(SyncFailure.resolved.is_(False))
+            .all()
+        )
+    }
+    fetch_seconds = 0.0
+    ingestion_started = time.monotonic()
+    budget_exhausted_pitchers = 0
 
-    for pitcher in pitchers:
+    for index, pitcher in enumerate(pitchers):
+        if (
+            time_budget_seconds is not None
+            and time.monotonic() - ingestion_started > time_budget_seconds
+        ):
+            # Finish cleanly as partial instead of dying to the hard workflow
+            # timeout mid-transaction. Remaining pitchers are dead-lettered in
+            # one batch so the shortfall is visible, counted, and retried by
+            # the next run — never silently absorbed.
+            remaining = pitchers[index:]
+            budget_exhausted_pitchers = len(remaining)
+            records_failed += budget_exhausted_pitchers
+            logger.error(
+                'Daily gameLog ingestion exceeded its %.0fs budget after %s of '
+                '%s pitcher(s); dead-lettering the remaining %s and finishing '
+                'partial.',
+                time_budget_seconds,
+                index,
+                len(pitchers),
+                budget_exhausted_pitchers,
+            )
+            dead_letter.record_failure(
+                DAILY_GAME_LOG_BUDGET_FAILURE_ENTITY_TYPE,
+                'daily gameLog ingestion time budget exhausted',
+                entity_ref=reference_date.isoformat(),
+                payload={
+                    'reference_date': reference_date.isoformat(),
+                    'budget_seconds': time_budget_seconds,
+                    'pitchers_total': len(pitchers),
+                    'pitchers_processed': index,
+                    'pitchers_remaining': budget_exhausted_pitchers,
+                    'remaining_mlb_ids': [p.mlb_id for p in remaining[:200]],
+                },
+                sync_run_id=sync_run_id,
+                job_name=job_name,
+            )
+            break
+
+        fetch_started = time.monotonic()
         try:
             splits = mlb_client.get_pitcher_game_logs(pitcher.mlb_id, season=season)
         except Exception as e:
             # A per-pitcher fetch failure is dead-lettered with enough payload
             # to retry, then skipped — the rest of the league still syncs.
+            fetch_seconds += time.monotonic() - fetch_started
             logger.warning('MLB fetch failed for %s (mlb_id=%s): %s',
                            pitcher.full_name, pitcher.mlb_id, e)
             errors += 1
@@ -1971,12 +2053,15 @@ def sync_recent_logs(
                 job_name=job_name,
             )
             continue
+        fetch_seconds += time.monotonic() - fetch_started
 
-        dead_letter.resolve_entity_failures(
-            PITCHER_GAME_LOG_FAILURE_ENTITY_TYPE,
-            pitcher.mlb_id,
-            job_name=job_name,
-        )
+        if str(pitcher.mlb_id) in unresolved_fetch_refs:
+            dead_letter.resolve_entity_failures(
+                PITCHER_GAME_LOG_FAILURE_ENTITY_TYPE,
+                pitcher.mlb_id,
+                job_name=job_name,
+            )
+            unresolved_fetch_refs.discard(str(pitcher.mlb_id))
 
         touched_this_pitcher = False
 
@@ -2000,6 +2085,8 @@ def sync_recent_logs(
                     cutoff,
                     team_abbr_map,
                     finality_cache=finality_cache,
+                    existing_by_key=existing_by_key,
+                    pitching_lines_cache=pitching_lines_cache,
                     sync_run_id=sync_run_id,
                     job_name=job_name,
                 )
@@ -2029,7 +2116,6 @@ def sync_recent_logs(
                 new_logs += 1
                 touched_this_pitcher = True
                 affected_game_pks.add(_positive_external_id(game_pk))
-                time.sleep(0.1)
             elif result['status'] == 'corrected':
                 corrected_logs += 1
                 touched_this_pitcher = True
@@ -2065,7 +2151,11 @@ def sync_recent_logs(
     )
     ingested_splits = new_logs + corrected_logs + unchanged_logs
     dropped_at_finality = skip_counts['not_completed'] + unresolved_finality
-    if (
+    if budget_exhausted_pitchers:
+        # Budget exhaustion already dead-lettered and counted the shortfall;
+        # the canary would misread a truncated run as a dead lane.
+        lane_health = 'budget_exhausted'
+    elif (
         ingestable_splits > 0
         and ingested_splits == 0
         and dropped_at_finality >= ingestable_splits
@@ -2111,11 +2201,13 @@ def sync_recent_logs(
         )
         db.session.commit()
 
+    elapsed_seconds = time.monotonic() - ingestion_started
     result = {
         'new_logs_added':    new_logs,
         'logs_corrected':    corrected_logs,
         'logs_unchanged':    unchanged_logs,
         'pitchers_touched':  pitchers_touched,
+        'pitchers_total':    len(pitchers),
         'errors':            errors,
         'records_failed':    records_failed,
         'correction_attempts_failed': correction_attempts_failed,
@@ -2123,6 +2215,11 @@ def sync_recent_logs(
         'splits_seen':       splits_seen,
         'splits_skipped':    dict(skip_counts),
         'lane_health':       lane_health,
+        'budget_exhausted_pitchers': budget_exhausted_pitchers,
+        'time_budget_seconds': time_budget_seconds,
+        'elapsed_seconds':   round(elapsed_seconds, 1),
+        'fetch_seconds':     round(fetch_seconds, 1),
+        'process_seconds':   round(elapsed_seconds - fetch_seconds, 1),
         'days_back':         days_back,
         'season':            season,
         'reference_date':    reference_date.isoformat(),
@@ -2140,6 +2237,8 @@ def _ingest_game_log_split(
     team_abbr_map,
     *,
     finality_cache=None,
+    existing_by_key=None,
+    pitching_lines_cache=None,
     sync_run_id=None,
     job_name=sync_metadata.JOB_DAILY_SYNC,
 ):
@@ -2150,6 +2249,13 @@ def _ingest_game_log_split(
     unresolved_finality, or skipped. Skipped covers before-cutoff,
     determinately non-final games, and malformed-but-empty keys.
     Raises on a genuinely poisoned record so the caller can dead-letter it.
+
+    ``existing_by_key`` is an optional prefetched {(pitcher_id, game_pk): row}
+    map covering the sync window. A hit skips the per-split SELECT (the
+    dominant cost against a remote database); a miss still falls back to a
+    real query before inserting, so correctness is unchanged.
+    ``pitching_lines_cache`` dedupes the leverage-index boxscore fetch per
+    game_pk (one game produces many inserted lines).
     """
     game_info     = split.get('game', {})
     stat          = split.get('stat', {})
@@ -2207,6 +2313,12 @@ def _ingest_game_log_split(
         opponent_abbreviation=team_abbr_map.get(opponent.get('id')),
         games_started=parse_games_started(stat.get('gamesStarted')),
     )
+    row_key = (pitcher.id, _positive_external_id(game_pk))
+    preloaded = (
+        existing_by_key.get(row_key)
+        if existing_by_key is not None and row_key[1] is not None
+        else None
+    )
     result = _upsert_game_log_from_authoritative_values(
         pitcher=pitcher,
         game_pk=game_pk,
@@ -2215,6 +2327,9 @@ def _ingest_game_log_split(
         source=DAILY_GAME_LOG_CORRECTION_SOURCE,
         sync_run_id=sync_run_id,
         job_name=job_name,
+        # A map hit avoids the per-split SELECT; a miss keeps the real query
+        # so a row stored under an out-of-window date is never double-inserted.
+        **({'existing': preloaded} if preloaded is not None else {}),
     )
 
     # Backfill leverage index from the boxscore. A failed call or a missing LI
@@ -2222,12 +2337,19 @@ def _ingest_game_log_split(
     if result['status'] != 'inserted':
         return result
     log = result['log']
+    if existing_by_key is not None and row_key[1] is not None:
+        existing_by_key[row_key] = log
 
-    try:
-        pitching_lines = mlb_client.get_game_pitching_lines(game_pk)
-    except Exception as e:
-        logger.warning('Boxscore fetch failed for game_pk=%s: %s', game_pk, e)
-        pitching_lines = []
+    if pitching_lines_cache is not None and game_pk in pitching_lines_cache:
+        pitching_lines = pitching_lines_cache[game_pk]
+    else:
+        try:
+            pitching_lines = mlb_client.get_game_pitching_lines(game_pk)
+        except Exception as e:
+            logger.warning('Boxscore fetch failed for game_pk=%s: %s', game_pk, e)
+            pitching_lines = []
+        if pitching_lines_cache is not None:
+            pitching_lines_cache[game_pk] = pitching_lines
 
     for line in pitching_lines or []:
         if line.get('player_id') == pitcher.mlb_id:
@@ -3872,8 +3994,12 @@ def run_daily_sync(
             # Fresh API metrics for this run so api_calls_made / retries_used
             # reflect only this sync's activity.
             mlb_client.metrics.reset()
+            stage_timings = {}
+            status['stage_timings'] = stage_timings
+            stage_started = time.monotonic()
             active_stage = sync_metadata.STAGE_TEAM_ASSIGNMENTS
             team_assignment = sync_team_assignments()
+            stage_timings['team_assignments'] = round(time.monotonic() - stage_started, 1)
             sync_metadata.set_sync_stage(sync_run_id, sync_metadata.STAGE_TEAM_ASSIGNMENTS)
             team_assignment_records_failed = record_sync_error_details(
                 'team_assignment_fetch',
@@ -3890,10 +4016,12 @@ def run_daily_sync(
                 team_assignment['errors'],
             )
             active_stage = sync_metadata.STAGE_ROSTER_STATUS
+            stage_started = time.monotonic()
             roster = sync_roster_statuses(
                 sync_run_id=sync_run_id,
                 snapshot_date=product_day.calendar_date,
             )
+            stage_timings['roster_statuses'] = round(time.monotonic() - stage_started, 1)
             sync_metadata.set_sync_stage(sync_run_id, sync_metadata.STAGE_ROSTER_STATUS)
             roster_records_failed = roster.get('records_failed', 0)
             run_logger.info(
@@ -3904,10 +4032,12 @@ def run_daily_sync(
                 roster['errors'],
             )
             active_stage = sync_metadata.STAGE_TRANSACTIONS
+            stage_started = time.monotonic()
             transactions = sync_transactions(
                 sync_run_id=sync_run_id,
                 end_date=product_day.calendar_date,
             )
+            stage_timings['transactions'] = round(time.monotonic() - stage_started, 1)
             sync_metadata.set_sync_stage(sync_run_id, sync_metadata.STAGE_TRANSACTIONS)
             transaction_records_failed = transactions.get('records_failed', 0)
             run_logger.info(
@@ -3919,26 +4049,38 @@ def run_daily_sync(
                 transactions['errors'],
             )
             active_stage = sync_metadata.STAGE_LOG_INGESTION
+            stage_started = time.monotonic()
             pull = sync_recent_logs(
                 days_back=days_back,
                 reference_date=product_day.calendar_date,
                 sync_run_id=sync_run_id,
             )
+            stage_timings['log_ingestion'] = round(time.monotonic() - stage_started, 1)
+            stage_timings['log_ingestion_fetch'] = pull.get('fetch_seconds')
+            stage_timings['log_ingestion_process'] = pull.get('process_seconds')
             sync_metadata.set_sync_stage(sync_run_id, sync_metadata.STAGE_LOG_INGESTION)
             logs_corrected = pull.get('logs_corrected', 0)
             correction_attempts_failed = pull.get('correction_attempts_failed', 0)
             run_logger.info(
                 'Pulled %s new logs, corrected %s logs, %s unchanged '
-                '(touched %s pitchers, %s errors, %s dead-lettered, '
-                'splits_seen=%s skipped=%s unresolved_finality=%s lane_health=%s)',
+                '(touched %s of %s pitchers, %s errors, %s dead-lettered, '
+                'splits_seen=%s skipped=%s unresolved_finality=%s '
+                'lane_health=%s elapsed_s=%s fetch_s=%s process_s=%s '
+                'budget_exhausted_pitchers=%s)',
                 pull['new_logs_added'], logs_corrected,
                 pull.get('logs_unchanged', 0),
-                pull['pitchers_touched'], pull['errors'],
+                pull['pitchers_touched'],
+                pull.get('pitchers_total', 0),
+                pull['errors'],
                 pull['records_failed'],
                 pull.get('splits_seen', 0),
                 pull.get('splits_skipped', {}),
                 pull.get('unresolved_finality', 0),
                 pull.get('lane_health', 'unknown'),
+                pull.get('elapsed_seconds'),
+                pull.get('fetch_seconds'),
+                pull.get('process_seconds'),
+                pull.get('budget_exhausted_pitchers', 0),
             )
             records_failed = (
                 pull['records_failed']
@@ -3955,6 +4097,7 @@ def run_daily_sync(
             status['splits_seen'] = pull.get('splits_seen', 0)
             status['splits_skipped'] = pull.get('splits_skipped', {})
             status['game_log_lane_health'] = pull.get('lane_health', 'unknown')
+            status['budget_exhausted_pitchers'] = pull.get('budget_exhausted_pitchers', 0)
             status['errors'] = (
                 pull['errors']
                 + roster['errors']
@@ -3982,10 +4125,21 @@ def run_daily_sync(
                     run_logger.info('No games found — offseason skip.')
 
             active_stage = sync_metadata.STAGE_FATIGUE_RECALCULATION
+            stage_started = time.monotonic()
             pitchers_updated = recalculate_all_fatigue()
+            stage_timings['fatigue'] = round(time.monotonic() - stage_started, 1)
             sync_metadata.set_sync_stage(sync_run_id, sync_metadata.STAGE_FATIGUE_RECALCULATION)
             status['pitchers_updated'] = pitchers_updated
             run_logger.info('Recalculated fatigue for %s pitchers', pitchers_updated)
+            api_summary = mlb_client.metrics.snapshot()
+            status['api_calls_by_endpoint'] = api_summary.get('by_endpoint', {})
+            run_logger.info(
+                'Daily sync stage timings (s): %s; API calls: %s total, %s retries, by endpoint: %s',
+                stage_timings,
+                api_summary.get('api_calls'),
+                api_summary.get('retries'),
+                api_summary.get('by_endpoint'),
+            )
             post_fatigue_instrumentation_started = True
 
             def _complete_sync_phase():

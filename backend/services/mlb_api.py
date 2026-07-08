@@ -1,6 +1,7 @@
 import logging
 import random
 import time
+import re
 
 import requests
 from flask import current_app, has_app_context
@@ -28,6 +29,15 @@ _DEFAULT_BACKOFF_JITTER = True
 _RETRYABLE_STATUS = {429, 500, 502, 503, 504}
 
 
+_ENDPOINT_ID_PATTERN = re.compile(r'/\d+')
+
+
+def normalize_endpoint_template(endpoint) -> str:
+    """Collapse numeric path segments so calls group by endpoint shape,
+    e.g. /people/694363/stats -> /people/{id}/stats."""
+    return _ENDPOINT_ID_PATTERN.sub('/{id}', str(endpoint or ''))
+
+
 class MlbApiMetrics:
     """
     Lightweight accumulator for one sync run's worth of API activity.
@@ -36,18 +46,45 @@ class MlbApiMetrics:
     job + the GitHub Actions concurrency group), so a per-client counter is
     sufficient and avoids threading machinery. Reset at the start of a run and
     snapshot at the end to populate sync_runs.api_calls_made / retries_used.
+
+    ``by_endpoint`` groups call counts and cumulative latency per normalized
+    endpoint template so every sync run can report where its API budget went.
     """
 
     def __init__(self):
         self.api_calls = 0
         self.retries = 0
+        self.by_endpoint = {}
 
     def reset(self):
         self.api_calls = 0
         self.retries = 0
+        self.by_endpoint = {}
+
+    def record_endpoint_call(self, endpoint, latency_ms=None):
+        template = normalize_endpoint_template(endpoint)
+        entry = self.by_endpoint.setdefault(
+            template, {'calls': 0, 'latency_ms': 0.0}
+        )
+        entry['calls'] += 1
+        if latency_ms is not None:
+            entry['latency_ms'] += float(latency_ms)
 
     def snapshot(self):
-        return {'api_calls': self.api_calls, 'retries': self.retries}
+        return {
+            'api_calls': self.api_calls,
+            'retries': self.retries,
+            'by_endpoint': {
+                template: {
+                    'calls': entry['calls'],
+                    'latency_ms': round(entry['latency_ms'], 1),
+                }
+                for template, entry in sorted(
+                    self.by_endpoint.items(),
+                    key=lambda item: -item[1]['calls'],
+                )
+            },
+        }
 
 
 class MlbApiError(Exception):
@@ -149,6 +186,7 @@ class MLBApiClient:
                     url, params=params, timeout=settings['timeout']
                 )
                 latency_ms = (time.monotonic() - started) * 1000.0
+                self.metrics.record_endpoint_call(endpoint, latency_ms)
                 status = response.status_code
 
                 if status in _RETRYABLE_STATUS:
@@ -216,6 +254,7 @@ class MLBApiClient:
             except (requests.exceptions.ConnectionError,
                     requests.exceptions.Timeout) as exc:
                 latency_ms = (time.monotonic() - started) * 1000.0
+                self.metrics.record_endpoint_call(endpoint, latency_ms)
                 last_exc = exc
                 if attempt <= max_retries:
                     delay = self._backoff_delay(
@@ -247,6 +286,7 @@ class MLBApiClient:
                 # Anything else (e.g. malformed URL, too many redirects) is not
                 # something a retry will fix.
                 latency_ms = (time.monotonic() - started) * 1000.0
+                self.metrics.record_endpoint_call(endpoint, latency_ms)
                 logger.error(
                     'MLB API error endpoint=%s attempt=%s outcome=non_transient '
                     'error=%s latency_ms=%.1f',

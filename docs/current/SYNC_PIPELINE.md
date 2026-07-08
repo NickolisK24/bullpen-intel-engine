@@ -82,6 +82,24 @@ and static page publication from advancing on unproven data.
 - **Snapshot withheld (`error_message` on the pending snapshot row)** → the
   in-process gate fired before the workflow audit; same remediation.
 
+## Runtime budgets and profiling
+
+Every daily sync logs a per-stage timing summary and an MLB API call count
+grouped by endpoint template (`Daily sync stage timings (s): ... API calls:
+... by endpoint: ...`), and the summary JSON carries `stage_timings`,
+`api_calls_by_endpoint`, `elapsed_seconds` / `fetch_seconds` /
+`process_seconds` for the gameLog stage, and `budget_exhausted_pitchers`.
+
+The gameLog ingestion stage runs under a **soft time budget**
+(`DAILY_SYNC_INGESTION_BUDGET_SECONDS`, default 720s; the workflow sets it
+explicitly). When exceeded, the stage stops cleanly: the remaining pitchers
+are dead-lettered in one `daily_game_log_budget` record (counts + mlb_ids),
+`records_failed` includes them, the run finishes **partial** with
+`lane_health=budget_exhausted`, and the next daily run (or the postgame
+lookback) retries them. This is fail-closed by construction — a truncated
+sweep is visible and counted, never absorbed — and it guarantees the step
+completes inside the 20-minute hard timeout with sync metadata intact.
+
 ## Operator tools
 
 - `python backend/scripts/appearance_ledger_audit.py [--end-date D --days N --deep --json]`
