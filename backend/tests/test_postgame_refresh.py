@@ -667,9 +667,11 @@ def test_intelligence_surface_snapshot_timeout_is_logged_and_fail_soft(
     ), messages
 
 
-def test_postgame_sync_workflow_job_timeout_is_25_minutes():
+def test_postgame_sync_workflow_job_timeout_is_40_minutes():
     """Static guard: the sync job timeout must give the postgame path enough
-    headroom for the homepage rebuild (regression lock for the 15m cancellation)."""
+    headroom for the homepage rebuild (regression lock for the 15m
+    cancellation) plus the appearance ledger audit step — worst case is
+    20m sync + 10m tonight warm + 5m ledger audit."""
     from pathlib import Path
 
     workflow = Path(__file__).resolve().parents[2] / '.github/workflows/baseballos-sync.yml'
@@ -684,7 +686,7 @@ def test_postgame_sync_workflow_job_timeout_is_25_minutes():
         sync_lines.append(line)
     sync_block = '\n'.join(sync_lines)
 
-    assert '    timeout-minutes: 25' in sync_block
+    assert '    timeout-minutes: 40' in sync_block
     assert "    - cron: '0 10 * * *'" in text
     assert "    - cron: '0 2,4,6 * * *'" in text
     assert '\nconcurrency:\n  group: baseballos-sync\n  cancel-in-progress: false\n' in text
