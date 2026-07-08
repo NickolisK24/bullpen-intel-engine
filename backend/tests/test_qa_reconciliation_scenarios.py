@@ -47,7 +47,7 @@ from utils.db import db
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 MIGRATIONS_DIR = REPO_ROOT / 'backend/migrations/versions'
-EXPECTED_ALEMBIC_HEAD = 'fa9c1d2e3b47'
+EXPECTED_ALEMBIC_HEAD = '2f7b9c1a5d43'
 FORBIDDEN_HEADLINE_TERMS = (
     'headline',
     'read_label',
@@ -271,7 +271,7 @@ def test_phase0e_switches_and_legacy_public_files_not_modified():
         pytest.skip('git diff against origin/main unavailable')
     allowed_public_freshness_display_files = {
         'backend/services/dashboard_snapshot.py',
-        'backend/migrations/versions/fa9c1d2e3b47_add_sync_jobs.py',
+        'backend/migrations/versions/2f7b9c1a5d43_add_audience_subscribers.py',
         'frontend/src/components/Sidebar.jsx',
         'frontend/src/components/dashboard/syncStatusView.js',
     }
@@ -284,11 +284,18 @@ def test_phase0e_switches_and_legacy_public_files_not_modified():
     allowed_phase0g_public_team_relief_files = {
         'backend/api/team_recent_work.py',
     }
+    allowed_phase_a_audience_signup_files = {
+        'backend/api/audience.py',
+        'backend/migrations/versions/2f7b9c1a5d43_add_audience_subscribers.py',
+        'frontend/src/components/home/IntelligenceSurface.jsx',
+        'frontend/src/utils/api.js',
+    }
     allowed_files = (
         allowed_public_freshness_display_files
         | allowed_internal_admin_files
         | allowed_phase0f_public_recent_work_files
         | allowed_phase0g_public_team_relief_files
+        | allowed_phase_a_audience_signup_files
     )
     forbidden_prefixes = (
         'backend/api/',
