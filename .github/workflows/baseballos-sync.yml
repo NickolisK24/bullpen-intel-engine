@@ -302,7 +302,7 @@ jobs:
     needs: public-sync
     if: ${{ needs.public-sync.result == 'success' }}
     continue-on-error: true
-    timeout-minutes: 25
+    timeout-minutes: 50
     steps:
       - uses: actions/checkout@v4
 
@@ -324,7 +324,7 @@ jobs:
           SECRET_KEY: ${{ secrets.SECRET_KEY }}
           ADMIN_API_TOKEN: ${{ secrets.BASEBALLOS_ADMIN_API_TOKEN }}
           AUTO_SYNC: 'false'
-          INTERNAL_ENRICHMENT_COMMAND_TIMEOUT: 20m
+          INTERNAL_ENRICHMENT_COMMAND_TIMEOUT: 45m
         run: |
           set -euo pipefail
           if [ -z "${DATABASE_URL:-}" ] || [ -z "${SECRET_KEY:-}" ] || [ -z "${ADMIN_API_TOKEN:-}" ]; then
