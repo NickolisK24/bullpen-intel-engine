@@ -142,6 +142,13 @@ class Config:
     # Unset in development = those endpoints are allowed locally (with a warning).
     ADMIN_API_TOKEN = os.environ.get('ADMIN_API_TOKEN')
 
+    # Email allowlist for the private posting board. Empty/unset fails closed:
+    # authenticated users are still denied unless explicitly listed.
+    PRIVATE_POSTING_BOARD_ALLOWED_EMAILS = os.environ.get(
+        'PRIVATE_POSTING_BOARD_ALLOWED_EMAILS',
+        '',
+    )
+
     # ── User identity / magic-link authentication (Phase D1C) ────────────────
     # Signing secret for stateless magic-link and bearer tokens. Reuses the
     # validated SECRET_KEY unless a dedicated USER_AUTH_SECRET is provided; in

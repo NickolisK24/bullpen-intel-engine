@@ -528,6 +528,7 @@ export const getBullpenOverview = () => request('/bullpen/stats/overview')
 // League-wide bullpen landing summary: availability snapshot, Team Context
 // health, and usage-role composition. Context only (no ranking/selection).
 export const getBullpenDashboard = () => request('/bullpen/dashboard')
+export const getPrivatePostsDashboard = () => request('/private-posts/dashboard')
 // Tonight's Bullpen Landscape — league-wide bullpen context (descriptive only).
 export const getBullpenLandscape = () => request('/bullpen/landscape')
 // Intelligence Surface — the single league lead story for the homepage.

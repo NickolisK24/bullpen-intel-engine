@@ -19,7 +19,10 @@ after(async () => {
 
 const { APP_ROUTES } = await server.ssrLoadModule('/src/App.jsx')
 const { default: Sidebar } = await server.ssrLoadModule('/src/components/Sidebar.jsx')
-const { PrivatePostsView } = await server.ssrLoadModule('/src/components/posts/PrivatePosts.jsx')
+const {
+  PrivatePostsAccessDenied,
+  PrivatePostsView,
+} = await server.ssrLoadModule('/src/components/posts/PrivatePosts.jsx')
 const {
   DRAFT_SOURCE_GENERATED,
   DRAFT_SOURCE_TEMPLATE_FALLBACK,
@@ -414,6 +417,7 @@ test('Reddit and X do not center the product while LinkedIn can mention it, and 
 test('private posts route is obscure, noindexed, robots-excluded, and not in navigation', () => {
   const route = APP_ROUTES.find(item => item.path === PRIVATE_POSTS_PATH)
   const navHtml = render(React.createElement(Sidebar))
+  const sidebarSource = readFileSync(new URL('../src/components/Sidebar.jsx', import.meta.url), 'utf8')
   const config = JSON.parse(readFileSync(new URL('../vercel.json', import.meta.url), 'utf8'))
   const robots = readFileSync(new URL('../public/robots.txt', import.meta.url), 'utf8')
 
@@ -421,6 +425,7 @@ test('private posts route is obscure, noindexed, robots-excluded, and not in nav
   assert.notEqual(PRIVATE_POSTS_PATH, '/posts')
   assert.match(PRIVATE_POSTS_PATH, /^\/posts-[a-z0-9-]{8,}$/)
   assert.equal(htmlIncludes(navHtml, `href="${PRIVATE_POSTS_PATH}"`), false)
+  assert.equal(sidebarSource.includes(PRIVATE_POSTS_PATH), false)
   assert.ok(robots.includes(`Disallow: ${PRIVATE_POSTS_PATH}`))
   assert.deepEqual(config.headers?.[0], {
     source: PRIVATE_POSTS_PATH,
@@ -440,6 +445,28 @@ test('private posts route is obscure, noindexed, robots-excluded, and not in nav
     source: '/(.*)',
     destination: '/index.html',
   })
+})
+
+test('private posts direct route uses protected API instead of public dashboard data', () => {
+  const pageSource = readFileSync(new URL('../src/components/posts/PrivatePosts.jsx', import.meta.url), 'utf8')
+  const apiSource = readFileSync(new URL('../src/utils/api.js', import.meta.url), 'utf8')
+
+  assert.ok(pageSource.includes('useAuthState'))
+  assert.ok(pageSource.includes('getPrivatePostsDashboard'))
+  assert.equal(pageSource.includes('getBullpenDashboard'), false)
+  assert.ok(apiSource.includes("getPrivatePostsDashboard = () => request('/private-posts/dashboard')"))
+})
+
+test('private posts direct route renders no posting board content before authorization', () => {
+  const html = render(React.createElement(PrivatePostsAccessDenied))
+
+  assert.ok(htmlIncludes(html, 'data-private-posts-access="denied"'))
+  assert.ok(htmlIncludes(html, 'Access Restricted'))
+  assert.equal(htmlIncludes(html, 'Private Posting Board'), false)
+  assert.equal(htmlIncludes(html, "TONIGHT&#x27;S POSTABLE TAKES"), false)
+  assert.equal(htmlIncludes(html, 'Story Authority'), false)
+  assert.equal(htmlIncludes(html, 'Verified Facts Object'), false)
+  assert.equal(htmlIncludes(html, 'data-copy-draft='), false)
 })
 
 test('draft generation stays isolated from public story and bullpen surfaces', () => {

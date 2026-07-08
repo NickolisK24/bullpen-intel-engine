@@ -2844,27 +2844,31 @@ def build_dashboard_snapshot_endpoint():
 
 @bullpen_bp.route('/dashboard', methods=['GET'])
 def get_bullpen_dashboard():
+    return jsonify(bullpen_dashboard_response_payload())
+
+
+def bullpen_dashboard_response_payload():
     snapshot = dashboard_snapshot_service.get_latest_valid_dashboard_snapshot()
     if snapshot is not None:
-        return jsonify(_dashboard_payload_with_snapshot_metadata(
+        return _dashboard_payload_with_snapshot_metadata(
             snapshot.payload,
             'cache',
             snapshot=snapshot,
-        ))
+        )
 
     if not _dashboard_live_fallback_enabled():
         latest_record = dashboard_snapshot_service.get_latest_dashboard_snapshot_record()
         reason = dashboard_snapshot_service.snapshot_unavailable_reason(latest_record)
-        return jsonify(_dashboard_snapshot_unavailable_payload(
+        return _dashboard_snapshot_unavailable_payload(
             reason,
             snapshot=latest_record,
-        ))
+        )
 
     payload = build_bullpen_dashboard_payload()
-    return jsonify(_dashboard_payload_with_snapshot_metadata(
+    return _dashboard_payload_with_snapshot_metadata(
         payload,
         'live_fallback',
-    ))
+    )
 
 
 @bullpen_bp.route('/landscape', methods=['GET'])

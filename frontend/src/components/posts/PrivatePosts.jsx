@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useFetch } from '../../hooks/useFetch'
-import { getBullpenDashboard } from '../../utils/api'
+import { useAuthState } from '../../hooks/useAuthState'
+import { getPrivatePostsDashboard } from '../../utils/api'
 import { ErrorState, LoadingPane, StaleDataNotice } from '../UI'
 import {
   PRIVATE_POSTS_PATH,
@@ -12,7 +13,25 @@ import {
 
 export default function PrivatePosts() {
   usePrivateRobotsMeta()
-  const dash = useFetch(getBullpenDashboard)
+  const auth = useAuthState()
+
+  if (auth.loading) {
+    return <PrivatePostsAccessState loading />
+  }
+
+  if (!auth.authenticated) {
+    return <PrivatePostsAccessDenied />
+  }
+
+  return <PrivatePostsAuthorized />
+}
+
+function PrivatePostsAuthorized() {
+  const dash = useFetch(getPrivatePostsDashboard)
+
+  if (isPrivatePostsAccessError(dash.error) && !dash.data) {
+    return <PrivatePostsAccessDenied />
+  }
 
   return (
     <PrivatePostsView
@@ -23,6 +42,41 @@ export default function PrivatePosts() {
       onRetry={dash.refetch}
     />
   )
+}
+
+function isPrivatePostsAccessError(error) {
+  return /^API (401|403):/.test(String(error || ''))
+}
+
+export function PrivatePostsAccessState({ loading = false }) {
+  return (
+    <div
+      className="mx-auto flex min-h-[60vh] max-w-3xl items-center p-4 sm:p-5 lg:p-6"
+      data-private-posts-access={loading ? 'checking' : 'denied'}
+    >
+      <div className="w-full border border-dirt bg-dugout p-5">
+        {loading ? (
+          <LoadingPane message="Checking access..." />
+        ) : (
+          <>
+            <div className="font-mono text-[10px] uppercase tracking-widest text-chalk600">
+              Page unavailable
+            </div>
+            <h1 className="mt-2 font-display text-3xl leading-none tracking-wider text-chalk100">
+              Access Restricted
+            </h1>
+            <p className="mt-3 text-sm leading-relaxed text-chalk400">
+              This page is restricted to authorized accounts.
+            </p>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
+export function PrivatePostsAccessDenied() {
+  return <PrivatePostsAccessState />
 }
 
 function usePrivateRobotsMeta() {
