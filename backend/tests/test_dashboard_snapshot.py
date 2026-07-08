@@ -176,6 +176,26 @@ def _seed_full_postgame_marker(game_date, game_pk=824010):
     ))
 
 
+def _seed_game_appearance(game_date, game_pk=824010, mlb_id=910000):
+    """A final game must hold appearance rows to pass the ledger gate."""
+    pitcher = Pitcher(
+        mlb_id=mlb_id,
+        full_name=f'Ledger Reliever {mlb_id}',
+        team_id=116,
+        active=True,
+    )
+    db.session.add(pitcher)
+    db.session.flush()
+    db.session.add(GameLog(
+        pitcher_id=pitcher.id,
+        mlb_game_pk=game_pk,
+        game_date=game_date,
+        innings_pitched=1.0,
+        innings_pitched_outs=3,
+        pitches_thrown=12,
+    ))
+
+
 def _payload_requiring_slate_recheck(game_date):
     payload = _minimal_dashboard_payload()
     payload['freshness']['data_through'] = game_date.isoformat()
@@ -629,6 +649,7 @@ class TestDashboardSnapshotService:
         with app.app_context():
             _seed_stale_non_final_slate(slate_date)
             _seed_full_postgame_marker(slate_date)
+            _seed_game_appearance(slate_date)
             db.session.commit()
             run = _create_sync_run(slate_date)
 

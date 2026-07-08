@@ -8,7 +8,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from models.dashboard_snapshot import DashboardSnapshot
 from models.sync_run import SyncRun
-from services import schedule_ingestion, slate_coverage
+from services import appearance_ledger, schedule_ingestion, slate_coverage
 from services import sync_metadata
 from services.availability_reference_date import (
     parse_reference_date,
@@ -28,9 +28,13 @@ DASHBOARD_PAYLOAD_VERSION = 1
 SNAPSHOT_SOURCE_BUILDER_V2 = 'snapshot_builder_v2'
 DASHBOARD_SNAPSHOT_SLATE_COVERAGE_MISSING = 'dashboard_snapshot_slate_coverage_missing'
 DASHBOARD_SNAPSHOT_SLATE_COVERAGE_INCOMPLETE = 'dashboard_snapshot_slate_coverage_incomplete'
+DASHBOARD_SNAPSHOT_APPEARANCE_LEDGER_INCOMPLETE = (
+    'dashboard_snapshot_appearance_ledger_incomplete'
+)
 _PUBLISH_WITHHELD_REASONS = {
     DASHBOARD_SNAPSHOT_SLATE_COVERAGE_MISSING,
     DASHBOARD_SNAPSHOT_SLATE_COVERAGE_INCOMPLETE,
+    DASHBOARD_SNAPSHOT_APPEARANCE_LEDGER_INCOMPLETE,
 }
 
 
@@ -325,6 +329,32 @@ def publish_dashboard_snapshot(snapshot, *, commit=True):
         snapshot.is_published = False
         snapshot.error_message = coverage_reason
         db.session.add(snapshot)
+        if commit:
+            db.session.commit()
+        else:
+            db.session.flush()
+        return snapshot
+
+    # Appearance Ledger integrity gate: slate coverage only proves the single
+    # newest data date; the ledger proves the trailing window. If any final
+    # game in the window lacks appearance rows (or holds fewer rows than its
+    # ingest saw pitching lines), we do not publish — the previous trusted
+    # snapshot keeps serving and the exact deficit is logged.
+    ledger_end = snapshot.data_through or _data_through_from_payload(snapshot.payload)
+    ledger_reason, ledger = appearance_ledger.appearance_ledger_publish_block(
+        end_date=ledger_end,
+    )
+    if ledger_reason is not None:
+        snapshot.status = SNAPSHOT_STATUS_PENDING
+        snapshot.is_published = False
+        snapshot.error_message = DASHBOARD_SNAPSHOT_APPEARANCE_LEDGER_INCOMPLETE
+        db.session.add(snapshot)
+        logger.error(
+            'Dashboard snapshot publish withheld snapshot_id=%s: %s (%s).',
+            snapshot.id,
+            DASHBOARD_SNAPSHOT_APPEARANCE_LEDGER_INCOMPLETE,
+            ledger_reason if ledger is None else '; '.join(ledger['reasons']),
+        )
         if commit:
             db.session.commit()
         else:

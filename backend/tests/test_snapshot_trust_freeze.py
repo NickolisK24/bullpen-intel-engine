@@ -205,15 +205,20 @@ def test_frozen_legacy_what_changed_files_untouched():
     if not changed:
         pytest.skip('git diff against origin/main unavailable')
 
+    # backend/services/sync.py and backend/services/dashboard_snapshot.py were
+    # removed from this freeze for the July 2026 appearance-ledger trust
+    # incident: the daily gameLog lane and the snapshot publish gate had to
+    # change to stop incomplete appearance history from publishing as current.
+    # Their behavior is now pinned by dedicated regression suites
+    # (test_statusless_split_finality.py, test_postgame_lookback.py,
+    # test_appearance_ledger.py) instead of a diff freeze.
     frozen_paths = {
         'backend/services/what_changed_since_yesterday.py',
         'backend/services/what_changed_since_yesterday_public.py',
         'backend/services/team_changes.py',
         'frontend/src/components/dashboard/WhatChangedCard.jsx',
-        'backend/services/dashboard_snapshot.py',
         'backend/services/board_freshness.py',
         'backend/services/slate_coverage.py',
-        'backend/services/sync.py',
     }
     assert not sorted(frozen_paths & changed)
     assert not sorted(path for path in changed if path.startswith('frontend/'))
