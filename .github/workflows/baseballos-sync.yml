@@ -7,6 +7,16 @@ name: BaseballOS Bullpen Sync
 # endpoints remain available for manual emergency use, but scheduled automation
 # does not run large jobs inside Render/Gunicorn web requests.
 #
+# Pipeline order (see docs/current/SYNC_PIPELINE.md):
+#   1. sync (daily gameLog lane / postgame boxscore lane, lookback sweep)
+#   2. appearance ledger audit — publish-eligibility verdict (fail-closed)
+#   3. snapshot publish/withhold happens INSIDE the sync via the same ledger
+#      gate; the audit step re-proves it and fails this workflow loudly on
+#      any deficit
+#   4. dashboard snapshot cache verification
+# Historical backfills are NEVER automatic: trigger mode=backfill with an
+# explicit backfill_date from the Actions tab.
+#
 # Required repository secrets (Settings -> Secrets and variables -> Actions):
 #   DATABASE_URL                production Postgres connection URL
 #   SECRET_KEY                  production Flask secret key
@@ -36,6 +46,15 @@ on:
         options:
           - daily
           - postgame
+          - backfill
+      backfill_date:
+        description: >-
+          Slate date (YYYY-MM-DD) to replay when mode=backfill. Backfills are
+          never automatic — this input is the only way to reprocess a
+          historical slate.
+        required: false
+        default: ''
+        type: string
 
 # Never let scheduled + manual runs pile up on top of each other.
 concurrency:
@@ -49,8 +68,10 @@ jobs:
   public-sync:
     runs-on: ubuntu-latest
     # Public freshness lane only: acquisition, public derived state, snapshot
-    # publication, Tonight warm, and dashboard cache verification.
-    timeout-minutes: 25
+    # publication, Tonight warm, appearance ledger audit, and dashboard cache
+    # verification. 40 minutes gives headroom for the worst case of the step
+    # timeouts below (20m sync + 10m tonight + 5m audit).
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
 
@@ -187,6 +208,96 @@ jobs:
             exit "$exit_code"
           fi
           echo "Refresh schedule and warm Tonight after postgame completed at $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+
+      # Explicit historical backfill only. Never runs on a schedule — an
+      # operator must dispatch mode=backfill with a concrete slate date.
+      - name: Run explicit backfill
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.mode == 'backfill' }}
+        env:
+          APP_ENV: production
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SECRET_KEY: ${{ secrets.SECRET_KEY }}
+          ADMIN_API_TOKEN: ${{ secrets.BASEBALLOS_ADMIN_API_TOKEN }}
+          AUTO_SYNC: 'false'
+          BACKFILL_DATE: ${{ inputs.backfill_date }}
+          BACKFILL_COMMAND_TIMEOUT: 20m
+        run: |
+          set -euo pipefail
+          if [ -z "${DATABASE_URL:-}" ] || [ -z "${SECRET_KEY:-}" ] || [ -z "${ADMIN_API_TOKEN:-}" ]; then
+            echo "::error::Missing DATABASE_URL, SECRET_KEY, or BASEBALLOS_ADMIN_API_TOKEN repository secret."
+            exit 1
+          fi
+          if ! [[ "${BACKFILL_DATE:-}" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+            echo "::error::mode=backfill requires backfill_date in YYYY-MM-DD form (got '${BACKFILL_DATE:-}')."
+            exit 1
+          fi
+          echo "Explicit backfill for slate ${BACKFILL_DATE} starting at $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          set +e
+          timeout --kill-after=30s "$BACKFILL_COMMAND_TIMEOUT" python backend/scripts/run_postgame_refresh.py --date "$BACKFILL_DATE" --source github_actions_backfill --public-only
+          exit_code=$?
+          set -e
+          if [ "$exit_code" -ne 0 ]; then
+            if [ "$exit_code" -eq 124 ] || [ "$exit_code" -eq 137 ] || [ "$exit_code" -eq 143 ]; then
+              echo "::error::Explicit backfill timed out after $BACKFILL_COMMAND_TIMEOUT."
+            else
+              echo "::error::Explicit backfill failed with exit code $exit_code."
+            fi
+            exit "$exit_code"
+          fi
+          echo "Explicit backfill completed at $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+
+      # Appearance Ledger audit — the publish-eligibility verdict. Runs after
+      # every sync mode (daily, postgame, backfill). Exit 0 = ledger proven
+      # complete; exit 1 = deficits (the snapshot publisher withheld or will
+      # withhold publication); exit 2 = the audit itself could not run. Any
+      # non-zero verdict fails this workflow loudly — an unprovable appearance
+      # ledger is a trust incident, not a warning.
+      - name: Appearance ledger audit (publish eligibility)
+        env:
+          APP_ENV: production
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SECRET_KEY: ${{ secrets.SECRET_KEY }}
+          ADMIN_API_TOKEN: ${{ secrets.BASEBALLOS_ADMIN_API_TOKEN }}
+          AUTO_SYNC: 'false'
+          LEDGER_AUDIT_COMMAND_TIMEOUT: 5m
+        run: |
+          set -euo pipefail
+          if [ -z "${DATABASE_URL:-}" ] || [ -z "${SECRET_KEY:-}" ] || [ -z "${ADMIN_API_TOKEN:-}" ]; then
+            echo "::error::Missing DATABASE_URL, SECRET_KEY, or BASEBALLOS_ADMIN_API_TOKEN repository secret."
+            exit 1
+          fi
+          echo "Appearance ledger audit starting at $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          set +e
+          timeout --kill-after=30s "$LEDGER_AUDIT_COMMAND_TIMEOUT" \
+            python backend/scripts/appearance_ledger_audit.py --days 10 --deep \
+            | tee ledger_audit_report.txt
+          exit_code=${PIPESTATUS[0]}
+          set -e
+          case "$exit_code" in
+            0)
+              echo "::notice title=Appearance Ledger::Publish eligible: YES — appearance ledger proven complete for the trailing window."
+              ;;
+            1)
+              echo "::error title=Appearance Ledger::Publish eligible: NO — appearance ledger has deficits. Snapshot publication is withheld (fail-closed). See the audit report above for missing game_pks and affected players; replay with mode=backfill and the flagged slate date."
+              exit 1
+              ;;
+            124|137|143)
+              echo "::error title=Appearance Ledger::Ledger audit timed out after $LEDGER_AUDIT_COMMAND_TIMEOUT — publish eligibility is UNPROVEN."
+              exit "$exit_code"
+              ;;
+            *)
+              echo "::error title=Appearance Ledger::Ledger audit could not run (exit $exit_code) — publish eligibility is UNPROVEN."
+              exit "$exit_code"
+              ;;
+          esac
+
+      - name: Upload appearance ledger audit report
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: appearance-ledger-audit-${{ github.run_id }}
+          path: ledger_audit_report.txt
+          if-no-files-found: ignore
 
       - name: Verify dashboard snapshot cache
         env:
