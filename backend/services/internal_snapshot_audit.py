@@ -108,12 +108,12 @@ def build_internal_snapshot_audit_payload(
             'date': ref.isoformat() if ref else None,
             'window_days': normalized_window,
         },
-        'served_freshness': board_freshness.board_freshness_block(),
+        'served_freshness': _json_safe(board_freshness.board_freshness_block()),
         'latest_snapshot': _snapshot_entry(latest_snapshot),
         'latest_valid_snapshot_id': latest_valid.id if latest_valid is not None else None,
         'recent_snapshots': [_snapshot_entry(row) for row in recent_snapshots],
         'snapshot_adjacency_summary': _snapshot_adjacency_summary(recent_snapshots),
-        'diagnostics': snapshot_diagnostics(latest_snapshot),
+        'diagnostics': _json_safe(snapshot_diagnostics(latest_snapshot)),
         'sections_present': sections_present,
         'missing_sections': [
             key for key, present in sections_present.items() if not present
@@ -247,7 +247,7 @@ def _snapshot_entry(row: DashboardSnapshot | None) -> dict | None:
             'current_enough': snapshot_current_enough(row),
             'payload_version_valid': payload_version_valid(row),
         },
-        'payload_freshness': payload.get('freshness') if payload else None,
+        'payload_freshness': _json_safe(payload.get('freshness')) if payload else None,
         'embedded_what_changed': embedded_what_changed,
         'baseline_adjacency': baseline_adjacency,
         'comparison_contract_check': _comparison_contract_check(
@@ -296,7 +296,7 @@ def _controlled_extract(value: dict, keys: tuple[str, ...]) -> dict:
     extracted = {}
     for key in keys:
         if key in value:
-            extracted[key] = value.get(key)
+            extracted[key] = _json_safe(value.get(key))
     return extracted
 
 
@@ -522,6 +522,23 @@ def _watermark() -> dict:
         'public_evidence_exposure': False,
         'quote_only_rendered_claims': True,
     }
+
+
+def _json_safe(value):
+    if value is None or isinstance(value, (bool, int, float, str)):
+        return value
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, date):
+        return value.isoformat()
+    if isinstance(value, dict):
+        return {
+            str(key): _json_safe(nested)
+            for key, nested in value.items()
+        }
+    if isinstance(value, (list, tuple, set)):
+        return [_json_safe(nested) for nested in value]
+    return f'non_json_value:{type(value).__name__}'
 
 
 def _iso(value):
