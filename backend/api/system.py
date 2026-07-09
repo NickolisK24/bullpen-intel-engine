@@ -376,13 +376,27 @@ def get_internal_snapshot_audit():
         or request.args.get('data_through')
         or request.args.get('dataThrough')
     )
+    window_days = (
+        request.args.get('window')
+        or request.args.get('window_days')
+        or request.args.get('windowDays')
+    )
     try:
         payload = build_internal_snapshot_audit_payload(
             product_date=product_date,
-            window_days=request.args.get('window'),
+            window_days=window_days,
         )
     except SnapshotAuditRequestError as exc:
         return jsonify(error_payload(str(exc), status=400)), 400
+    except Exception:
+        current_app.logger.exception(
+            'Internal route /internal/snapshot-audit failed; '
+            '@require_admin_token remains aligned with /internal/pitcher-evidence.'
+        )
+        return jsonify(error_payload(
+            'internal_snapshot_audit_failed',
+            status=500,
+        )), 500
 
     return jsonify(payload)
 

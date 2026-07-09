@@ -297,6 +297,172 @@ def test_snapshot_audit_empty_table_is_valid(client):
     assert 'recent_snapshots' in payload['missing_sections']
 
 
+def test_snapshot_audit_window_14_and_production_shaped_rows_are_bounded(
+    app,
+    client,
+    monkeypatch,
+):
+    from services import internal_snapshot_audit as audit_service
+
+    monkeypatch.setattr(
+        audit_service.board_freshness,
+        'board_freshness_block',
+        lambda: {
+            'data_through': date(2026, 7, 5),
+            'generated_at': datetime(2026, 7, 5, 12, 30, 0),
+            'reason_codes': ('published_snapshot_served',),
+            'diagnostic_marker': object(),
+        },
+    )
+    monkeypatch.setattr(
+        audit_service,
+        'snapshot_diagnostics',
+        lambda snapshot: {
+            'snapshot_id': snapshot.id if snapshot is not None else None,
+            'checked_at': datetime(2026, 7, 5, 12, 31, 0),
+            'diagnostic_date': date(2026, 7, 5),
+            'opaque_marker': object(),
+        },
+    )
+
+    with app.app_context():
+        _snapshot(date(2026, 7, 4), generated_offset_minutes=1)
+        current = _snapshot(
+            date(2026, 7, 5),
+            generated_offset_minutes=2,
+            payload=_payload(
+                date(2026, 7, 5),
+                what_changed_overrides={
+                    'comparison_available': False,
+                    'current_date': '2026-07-05',
+                    'baseline_date': '2026-07-03',
+                    'items_count': 12,
+                    'omitted_count': 3,
+                    'comparison': {
+                        'comparison_available': False,
+                        'current_date': '2026-07-05',
+                        'baseline_date': '2026-07-03',
+                        'reason_codes': ['stored_non_adjacent_baseline'],
+                    },
+                },
+            ),
+        )
+        db.session.commit()
+        current_id = current.id
+
+    response = client.get(
+        f'{ROUTE}?dataThrough=2026-07-05&window=14',
+        headers=ADMIN_HEADERS,
+    )
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload['request'] == {'date': '2026-07-05', 'window_days': 14}
+    assert payload['served_freshness']['data_through'] == '2026-07-05'
+    assert payload['served_freshness']['generated_at'] == '2026-07-05T12:30:00'
+    assert payload['served_freshness']['reason_codes'] == ['published_snapshot_served']
+    assert payload['served_freshness']['diagnostic_marker'] == 'non_json_value:object'
+    assert payload['diagnostics']['diagnostic_date'] == '2026-07-05'
+    assert payload['diagnostics']['checked_at'] == '2026-07-05T12:31:00'
+    assert payload['diagnostics']['opaque_marker'] == 'non_json_value:object'
+
+    current_entry = _entry(payload, current_id)
+    assert current_entry['embedded_what_changed']['items_count'] == 12
+    assert current_entry['embedded_what_changed']['omitted_count'] == 3
+    contract_check = current_entry['comparison_contract_check']
+    assert contract_check['stored_comparison_available'] is False
+    assert contract_check['stored_comparison_current_date'] == '2026-07-05'
+    assert contract_check['stored_comparison_baseline_date'] == '2026-07-03'
+    assert contract_check['stored_comparison_matches_adjacent_contract'] is False
+    assert 'stored_comparison_non_adjacent' in contract_check['notes']
+
+
+def test_snapshot_audit_missing_incomplete_sections_are_diagnostics_not_crashes(
+    app,
+    client,
+):
+    with app.app_context():
+        current = _snapshot(
+            date(2026, 7, 5),
+            payload={
+                'capability': 'bullpen_dashboard',
+                'freshness': {
+                    'data_through': '2026-07-05',
+                    'reason_codes': ['stored_freshness_without_slate_coverage'],
+                },
+                'what_changed_since_yesterday': {
+                    'state': 'insufficient_context',
+                    'reason_codes': ['stored_comparison_unavailable'],
+                    'comparison_available': False,
+                },
+            },
+        )
+        db.session.commit()
+        current_id = current.id
+
+    response = client.get(
+        f'{ROUTE}?dataThrough=2026-07-05&window=14',
+        headers=ADMIN_HEADERS,
+    )
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload['latest_valid_snapshot_id'] is None
+    assert 'latest_valid_snapshot' in payload['missing_sections']
+    assert payload['diagnostics']['reason'] == 'dashboard_snapshot_slate_coverage_missing'
+
+    current_entry = _entry(payload, current_id)
+    assert current_entry['trust']['unavailable_reason'] == (
+        'dashboard_snapshot_slate_coverage_missing'
+    )
+    assert current_entry['payload_freshness'] == {
+        'data_through': '2026-07-05',
+        'reason_codes': ['stored_freshness_without_slate_coverage'],
+    }
+    assert current_entry['comparison_contract_check']['stored_comparison_available'] is False
+    assert 'adjacent_baseline_missing' in current_entry['comparison_contract_check']['notes']
+
+
+def test_snapshot_audit_unexpected_exception_returns_bounded_internal_error(
+    client,
+    monkeypatch,
+):
+    from services import internal_snapshot_audit as audit_service
+
+    def fail_payload(**_kwargs):
+        raise RuntimeError(
+            'database password=secret token=abc123 host=internal.example'
+        )
+
+    monkeypatch.setattr(
+        audit_service,
+        'build_internal_snapshot_audit_payload',
+        fail_payload,
+    )
+
+    response = client.get(ROUTE, headers=ADMIN_HEADERS)
+
+    assert response.status_code == 500
+    payload = response.get_json()
+    assert payload == {
+        'capability': 'phase0h_internal_snapshot_audit',
+        'route_status': 'internal_admin_only',
+        'internal_only_watermark': {
+            'internal_only': True,
+            'admin_gated': True,
+            'phase0b_public_evidence_gate': 'closed',
+            'public_evidence_exposure': False,
+            'quote_only_rendered_claims': True,
+        },
+        'status': 'error',
+        'error': 'internal_snapshot_audit_failed',
+        'http_status': 500,
+    }
+    body = json.dumps(payload).lower()
+    for leaked in ('password', 'secret', 'token', 'internal.example', 'abc123'):
+        assert leaked not in body
+
+
 def test_snapshot_audit_extracts_nested_what_changed_without_dumping_items(app, client):
     with app.app_context():
         _snapshot(date(2026, 6, 30), generated_offset_minutes=1)
