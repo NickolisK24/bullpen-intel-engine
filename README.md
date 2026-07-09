@@ -199,6 +199,9 @@ Frontend:
 | Variable | Purpose |
 | --- | --- |
 | `VITE_API_BASE_URL` | Backend origin when hosted separately. |
+| `VITE_SENTRY_DSN` | Optional Sentry DSN for production/staging frontend error monitoring. Missing config is a safe no-op. |
+| `VITE_APP_ENV` | Optional frontend environment label for error monitoring (`production`, `staging`, `preview`, or local defaults). |
+| `VITE_RELEASE_SHA` | Optional release identifier attached to captured frontend errors. |
 
 The frontend has no admin token. Privileged operational endpoints are gated by
 the backend `ADMIN_API_TOKEN` and are triggered server-side or with manual
