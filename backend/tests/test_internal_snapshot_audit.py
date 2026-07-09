@@ -199,7 +199,6 @@ def test_snapshot_audit_quotes_stored_snapshot_trust_state(app, client):
         baseline_id = baseline.id
         current_id = current.id
         pending_id = pending.id
-        current_payload_freshness = current.payload['freshness']
         current_what_changed = current.payload['what_changed_since_yesterday']
         current_sync_run_id = current.sync_run_id
         current_trust = {
@@ -246,7 +245,17 @@ def test_snapshot_audit_quotes_stored_snapshot_trust_state(app, client):
         'published_dashboard_snapshot_id': current_id,
     }
     assert current_entry['trust'] == current_trust
-    assert current_entry['payload_freshness'] == current_payload_freshness
+    assert current_entry['payload_freshness']['data_through'] == '2026-07-05'
+    assert current_entry['payload_freshness']['availability_reference_date'] == '2026-07-05'
+    assert current_entry['payload_freshness']['reason_codes'] == ['stored_freshness_reason']
+    assert current_entry['payload_freshness']['slate_coverage'] == {
+        'slate_date': '2026-07-05',
+        'validations_passed': True,
+        'complete_enough_to_publish': True,
+        'coverage_known': True,
+        'reason_codes': ['no_scheduled_games', 'slate_complete'],
+    }
+    assert 'games_scheduled' not in current_entry['payload_freshness']['slate_coverage']
     assert current_entry['embedded_what_changed'] == {
         'state': current_what_changed['state'],
         'reason_codes': current_what_changed['reason_codes'],
@@ -265,7 +274,10 @@ def test_snapshot_audit_quotes_stored_snapshot_trust_state(app, client):
         'stored_comparison_current_date': None,
         'stored_comparison_baseline_date': None,
         'stored_comparison_matches_adjacent_contract': None,
-        'notes': ['stored_comparison_metadata_absent'],
+        'notes': [
+            'stored_comparison_metadata_absent',
+            'stored_comparison_not_available',
+        ],
     }
 
     baseline_entry = _entry(payload, baseline_id)
@@ -284,15 +296,20 @@ def test_snapshot_audit_empty_table_is_valid(client):
     assert payload['latest_snapshot'] is None
     assert payload['latest_valid_snapshot_id'] is None
     assert payload['recent_snapshots'] == []
-    assert payload['snapshot_adjacency_summary'] == {
-        'published_snapshot_count': 0,
-        'trusted_published_snapshot_count': 0,
-        'data_through_dates': [],
-        'adjacent_published_pairs': [],
-        'adjacent_published_pair_count': 0,
-        'missing_prior_dates': [],
-        'trusted_pair_count': 0,
-    }
+    summary = payload['snapshot_adjacency_summary']
+    assert summary['published_snapshot_count'] == 0
+    assert summary['trusted_published_snapshot_count'] == 0
+    assert summary['data_through_dates'] == []
+    assert summary['adjacent_published_pairs'] == []
+    assert summary['adjacent_published_pair_count'] == 0
+    assert summary['missing_prior_dates'] == []
+    assert summary['trusted_pair_count'] == 0
+    assert summary['comparable_adjacent_pair_count'] == 0
+    assert summary['non_comparable_count'] == 0
+    assert summary['non_comparable_reason_codes'] == []
+    assert summary['non_adjacent_comparison_count'] == 0
+    assert summary['non_adjacent_comparisons'] == []
+    assert summary['response_mode'] == 'bounded_summary'
     assert 'latest_snapshot' in payload['missing_sections']
     assert 'recent_snapshots' in payload['missing_sections']
 
@@ -300,31 +317,7 @@ def test_snapshot_audit_empty_table_is_valid(client):
 def test_snapshot_audit_window_14_and_production_shaped_rows_are_bounded(
     app,
     client,
-    monkeypatch,
 ):
-    from services import internal_snapshot_audit as audit_service
-
-    monkeypatch.setattr(
-        audit_service.board_freshness,
-        'board_freshness_block',
-        lambda: {
-            'data_through': date(2026, 7, 5),
-            'generated_at': datetime(2026, 7, 5, 12, 30, 0),
-            'reason_codes': ('published_snapshot_served',),
-            'diagnostic_marker': object(),
-        },
-    )
-    monkeypatch.setattr(
-        audit_service,
-        'snapshot_diagnostics',
-        lambda snapshot: {
-            'snapshot_id': snapshot.id if snapshot is not None else None,
-            'checked_at': datetime(2026, 7, 5, 12, 31, 0),
-            'diagnostic_date': date(2026, 7, 5),
-            'opaque_marker': object(),
-        },
-    )
-
     with app.app_context():
         _snapshot(date(2026, 7, 4), generated_offset_minutes=1)
         current = _snapshot(
@@ -359,12 +352,10 @@ def test_snapshot_audit_window_14_and_production_shaped_rows_are_bounded(
     payload = response.get_json()
     assert payload['request'] == {'date': '2026-07-05', 'window_days': 14}
     assert payload['served_freshness']['data_through'] == '2026-07-05'
-    assert payload['served_freshness']['generated_at'] == '2026-07-05T12:30:00'
-    assert payload['served_freshness']['reason_codes'] == ['published_snapshot_served']
-    assert payload['served_freshness']['diagnostic_marker'] == 'non_json_value:object'
-    assert payload['diagnostics']['diagnostic_date'] == '2026-07-05'
-    assert payload['diagnostics']['checked_at'] == '2026-07-05T12:31:00'
-    assert payload['diagnostics']['opaque_marker'] == 'non_json_value:object'
+    assert payload['served_freshness']['snapshot_id'] == current_id
+    assert payload['served_freshness']['response_mode'] == 'bounded_summary'
+    assert payload['diagnostics']['response_mode'] == 'bounded_summary'
+    assert payload['served_freshness']['data_through'] == '2026-07-05'
 
     current_entry = _entry(payload, current_id)
     assert current_entry['embedded_what_changed']['items_count'] == 12
@@ -375,6 +366,75 @@ def test_snapshot_audit_window_14_and_production_shaped_rows_are_bounded(
     assert contract_check['stored_comparison_baseline_date'] == '2026-07-03'
     assert contract_check['stored_comparison_matches_adjacent_contract'] is False
     assert 'stored_comparison_non_adjacent' in contract_check['notes']
+
+
+def test_snapshot_audit_large_payloads_return_compact_summaries(app, client):
+    raw_marker = 'raw-dashboard-fragment-should-not-return'
+    start = date(2026, 6, 20)
+
+    def large_payload(ref):
+        prior = ref - timedelta(days=1)
+        payload = _payload(
+            ref,
+            what_changed_overrides={
+                'comparison': {
+                    'comparison_available': True,
+                    'current_date': ref.isoformat(),
+                    'baseline_date': prior.isoformat(),
+                    'reason_codes': ['stored_adjacent_comparison'],
+                    'items': [
+                        {'marker': raw_marker, 'blob': 'x' * 1000}
+                        for _ in range(30)
+                    ],
+                },
+                'items': [
+                    {'marker': raw_marker, 'blob': 'y' * 1000}
+                    for _ in range(30)
+                ],
+                'unknown_top_level': raw_marker,
+            },
+        )
+        payload['teams'] = [
+            {'marker': raw_marker, 'blob': 'z' * 2000}
+            for _ in range(50)
+        ]
+        payload['freshness']['raw_large_marker'] = raw_marker
+        payload['freshness']['slate_coverage']['raw_coverage_marker'] = raw_marker
+        return payload
+
+    with app.app_context():
+        for offset in range(15):
+            ref = start + timedelta(days=offset)
+            _snapshot(
+                ref,
+                generated_offset_minutes=offset,
+                payload=large_payload(ref),
+            )
+        db.session.commit()
+
+    response = client.get(
+        f'{ROUTE}?dataThrough=2026-07-04&window=14',
+        headers=ADMIN_HEADERS,
+    )
+
+    assert response.status_code == 200
+    assert len(response.data) < 70000
+    body = response.get_data(as_text=True)
+    assert raw_marker not in body
+    assert '"teams"' not in body
+    assert '"items"' not in body
+    payload = response.get_json()
+    assert len(payload['recent_snapshots']) == 15
+    assert all(
+        row['response_mode'] == 'bounded_summary'
+        for row in payload['recent_snapshots']
+    )
+    summary = payload['snapshot_adjacency_summary']
+    assert summary['trusted_pair_count'] == 14
+    assert summary['comparable_adjacent_pair_count'] == 14
+    assert summary['non_comparable_count'] == 0
+    assert summary['non_adjacent_comparison_count'] == 0
+    assert summary['non_comparable_reason_codes'] == []
 
 
 def test_snapshot_audit_missing_incomplete_sections_are_diagnostics_not_crashes(
@@ -420,6 +480,7 @@ def test_snapshot_audit_missing_incomplete_sections_are_diagnostics_not_crashes(
         'reason_codes': ['stored_freshness_without_slate_coverage'],
     }
     assert current_entry['comparison_contract_check']['stored_comparison_available'] is False
+    assert 'stored_comparison_not_available' in current_entry['comparison_contract_check']['notes']
     assert 'adjacent_baseline_missing' in current_entry['comparison_contract_check']['notes']
 
 
@@ -606,6 +667,11 @@ def test_snapshot_audit_summarizes_adjacent_published_and_trusted_pairs(app, cli
     ]
     assert summary['adjacent_published_pair_count'] == 2
     assert summary['trusted_pair_count'] == 1
+    assert summary['comparable_adjacent_pair_count'] == 0
+    assert summary['non_comparable_count'] == 2
+    assert 'stored_comparison_metadata_absent' in summary['non_comparable_reason_codes']
+    assert 'stored_comparison_not_available' in summary['non_comparable_reason_codes']
+    assert summary['non_adjacent_comparison_count'] == 0
     assert summary['missing_prior_dates'] == ['2026-06-29', '2026-07-03']
     missing_prior_entry = _entry(payload, ids['missing_prior'])
     assert missing_prior_entry['comparison_contract_check']['adjacent_published_baseline_present'] is False
@@ -694,13 +760,8 @@ def test_snapshot_audit_import_surface():
             'SNAPSHOT_STATUS_PENDING',
             'SNAPSHOT_STATUS_READY',
             'SNAPSHOT_TYPE_BULLPEN_DASHBOARD',
-            'get_latest_dashboard_snapshot',
-            'get_latest_published_dashboard_snapshot_before',
-            'get_latest_valid_dashboard_snapshot',
-            'get_recent_dashboard_snapshots_before',
             'payload_version_valid',
             'snapshot_current_enough',
-            'snapshot_diagnostics',
             'snapshot_unavailable_reason',
         },
     }
