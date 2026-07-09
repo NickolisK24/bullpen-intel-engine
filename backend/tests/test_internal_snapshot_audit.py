@@ -1,5 +1,6 @@
 import ast
 import json
+import logging
 import re
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -484,11 +485,18 @@ def test_snapshot_audit_missing_incomplete_sections_are_diagnostics_not_crashes(
     assert 'adjacent_baseline_missing' in current_entry['comparison_contract_check']['notes']
 
 
-def test_snapshot_audit_unexpected_exception_returns_bounded_internal_error(
+def test_snapshot_audit_unexpected_exception_returns_degraded_fallback_json(
+    app,
     client,
     monkeypatch,
 ):
+    """Summary failure degrades to bounded DB-row fallback JSON — never 502."""
     from services import internal_snapshot_audit as audit_service
+
+    with app.app_context():
+        row = _snapshot(date(2026, 7, 5))
+        db.session.commit()
+        row_id = row.id
 
     def fail_payload(**_kwargs):
         raise RuntimeError(
@@ -499,6 +507,157 @@ def test_snapshot_audit_unexpected_exception_returns_bounded_internal_error(
         audit_service,
         'build_internal_snapshot_audit_payload',
         fail_payload,
+    )
+
+    response = client.get(f'{ROUTE}?window=14', headers=ADMIN_HEADERS)
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload['capability'] == 'phase0h_internal_snapshot_audit'
+    assert payload['route_status'] == 'degraded'
+    assert payload['route_access'] == 'internal_admin_only'
+    assert payload['response_mode'] == 'fallback_db_row_metadata'
+    assert payload['internal_only_watermark'] == {
+        'internal_only': True,
+        'admin_gated': True,
+        'phase0b_public_evidence_gate': 'closed',
+        'public_evidence_exposure': False,
+        'quote_only_rendered_claims': True,
+    }
+    assert payload['request'] == {'date': None, 'window_days': 14}
+    assert payload['ratification_ready'] is False
+    assert payload['decision_4_5_supported'] is False
+    assert payload['ratification_blocked_reason'] == (
+        'fallback_row_metadata_cannot_prove_trusted_pairs'
+    )
+
+    diagnostic_codes = {entry['code'] for entry in payload['diagnostics']}
+    assert 'audit_summary_unavailable' in diagnostic_codes
+    assert 'fallback_db_row_summary_only' in diagnostic_codes
+    summary_diagnostic = next(
+        entry for entry in payload['diagnostics']
+        if entry['code'] == 'audit_summary_unavailable'
+    )
+    assert summary_diagnostic['failure_code'] == 'summary_exception:RuntimeError'
+
+    latest = payload['latest_snapshot']
+    assert latest['id'] == row_id
+    assert latest['data_through'] == '2026-07-05'
+    assert latest['status'] == dashboard_snapshot.SNAPSHOT_STATUS_READY
+    assert latest['is_published'] is True
+    assert latest['trust_evaluated'] is False
+    assert latest['response_mode'] == 'db_row_metadata_only'
+    assert 'trust' not in latest
+    assert payload['recent_snapshot_count'] == len(payload['recent_snapshots'])
+    assert payload['recent_snapshots'][0]['id'] == row_id
+
+    adjacency = payload['snapshot_adjacency_summary']
+    assert adjacency['available'] is False
+    assert adjacency['trusted_pair_count'] is None
+    assert adjacency['comparable_adjacent_pair_count'] is None
+    assert adjacency['non_comparable_count'] is None
+    assert adjacency['non_comparable_reason_codes'] is None
+    assert adjacency['non_adjacent_comparison_count'] is None
+
+    body = response.get_data(as_text=True).lower()
+    for leaked in ('password', 'secret', 'token', 'internal.example', 'abc123'):
+        assert leaked not in body
+
+
+def test_snapshot_audit_time_budget_exceeded_raises_summary_unavailable(app):
+    from services import internal_snapshot_audit as audit_service
+
+    with app.app_context():
+        with pytest.raises(audit_service.SnapshotAuditSummaryUnavailable) as excinfo:
+            audit_service.build_internal_snapshot_audit_payload(
+                time_budget_seconds=-1,
+            )
+    assert excinfo.value.code == 'summary_time_budget_exceeded'
+    assert excinfo.value.stage == 'summary_build_started'
+
+
+def test_snapshot_audit_time_budget_exceeded_returns_degraded_fallback(
+    app,
+    client,
+    monkeypatch,
+):
+    from services import internal_snapshot_audit as audit_service
+
+    with app.app_context():
+        _snapshot(date(2026, 7, 5))
+        db.session.commit()
+
+    monkeypatch.setattr(audit_service, 'SUMMARY_TIME_BUDGET_SECONDS', -1)
+
+    response = client.get(f'{ROUTE}?window=14', headers=ADMIN_HEADERS)
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload['route_status'] == 'degraded'
+    assert payload['ratification_ready'] is False
+    assert payload['decision_4_5_supported'] is False
+    assert payload['request']['window_days'] == 14
+    summary_diagnostic = next(
+        entry for entry in payload['diagnostics']
+        if entry['code'] == 'audit_summary_unavailable'
+    )
+    assert summary_diagnostic['failure_code'] == 'summary_time_budget_exceeded'
+    assert summary_diagnostic['failure_stage'] == 'summary_build_started'
+    assert payload['latest_snapshot']['data_through'] == '2026-07-05'
+
+
+def test_snapshot_audit_empty_table_fallback_reports_no_rows_without_faking(
+    client,
+    monkeypatch,
+):
+    from services import internal_snapshot_audit as audit_service
+
+    def fail_payload(**_kwargs):
+        raise RuntimeError('summary unavailable')
+
+    monkeypatch.setattr(
+        audit_service,
+        'build_internal_snapshot_audit_payload',
+        fail_payload,
+    )
+
+    response = client.get(ROUTE, headers=ADMIN_HEADERS)
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload['route_status'] == 'degraded'
+    assert payload['request'] == {'date': None, 'window_days': 7}
+    assert payload['latest_snapshot'] is None
+    assert payload['recent_snapshots'] == []
+    assert payload['recent_snapshot_count'] == 0
+    assert payload['snapshot_adjacency_summary']['trusted_pair_count'] is None
+    assert payload['snapshot_adjacency_summary']['available'] is False
+    assert payload['ratification_ready'] is False
+
+
+def test_snapshot_audit_returns_bounded_error_when_fallback_also_fails(
+    client,
+    monkeypatch,
+):
+    from services import internal_snapshot_audit as audit_service
+
+    def fail_summary(**_kwargs):
+        raise RuntimeError(
+            'database password=secret token=abc123 host=internal.example'
+        )
+
+    def fail_fallback(**_kwargs):
+        raise RuntimeError('fallback also failed password=secret')
+
+    monkeypatch.setattr(
+        audit_service,
+        'build_internal_snapshot_audit_payload',
+        fail_summary,
+    )
+    monkeypatch.setattr(
+        audit_service,
+        'build_internal_snapshot_audit_fallback_payload',
+        fail_fallback,
     )
 
     response = client.get(ROUTE, headers=ADMIN_HEADERS)
@@ -522,6 +681,52 @@ def test_snapshot_audit_unexpected_exception_returns_bounded_internal_error(
     body = json.dumps(payload).lower()
     for leaked in ('password', 'secret', 'token', 'internal.example', 'abc123'):
         assert leaked not in body
+
+
+def test_snapshot_audit_checkpoint_logs_redact_token_and_payloads(
+    app,
+    client,
+    caplog,
+    monkeypatch,
+):
+    raw_marker = 'raw-dashboard-fragment-should-not-log'
+    with app.app_context():
+        payload = _payload(date(2026, 7, 5))
+        payload['freshness']['raw_log_marker'] = raw_marker
+        _snapshot(date(2026, 7, 5), payload=payload)
+        db.session.commit()
+
+    with caplog.at_level(logging.INFO):
+        success = client.get(f'{ROUTE}?window=14', headers=ADMIN_HEADERS)
+    assert success.status_code == 200
+    log_text = ' '.join(record.getMessage() for record in caplog.records)
+    assert '[snapshot-audit] stage=auth_passed' in log_text
+    assert 'stage=latest_snapshot_query_started' in log_text
+    assert 'stage=response_construction_finished' in log_text
+    assert 'stage=summary_succeeded' in log_text
+    assert 'admin-secret' not in log_text
+    assert raw_marker not in log_text
+    assert 'stored_freshness_reason' not in log_text
+
+    caplog.clear()
+    from services import internal_snapshot_audit as audit_service
+
+    def fail_payload(**_kwargs):
+        raise RuntimeError('boom admin-secret should never be logged anyway')
+
+    monkeypatch.setattr(
+        audit_service,
+        'build_internal_snapshot_audit_payload',
+        fail_payload,
+    )
+    with caplog.at_level(logging.INFO):
+        degraded = client.get(ROUTE, headers=ADMIN_HEADERS)
+    assert degraded.status_code == 200
+    failure_log_text = ' '.join(record.getMessage() for record in caplog.records)
+    assert 'error_type=RuntimeError' in failure_log_text
+    assert 'stage=fallback_succeeded' in failure_log_text
+    assert 'admin-secret' not in failure_log_text
+    assert raw_marker not in failure_log_text
 
 
 def test_snapshot_audit_extracts_nested_what_changed_without_dumping_items(app, client):
@@ -747,10 +952,12 @@ def test_snapshot_audit_import_surface():
     allowed_from_imports = {
         '__future__': {'annotations'},
         'datetime': {'date', 'datetime', 'timedelta'},
-        'sqlalchemy': {'desc'},
+        'time': {'monotonic'},
+        'sqlalchemy': {'desc', 'text'},
         'models.dashboard_snapshot': {'DashboardSnapshot'},
         'models.sync_run': {'SyncRun'},
         'services': {'board_freshness'},
+        'utils.db': {'db'},
         'services.dashboard_snapshot': {
             'DASHBOARD_PAYLOAD_VERSION',
             'DASHBOARD_SNAPSHOT_SLATE_COVERAGE_INCOMPLETE',
