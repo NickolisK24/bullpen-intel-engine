@@ -202,6 +202,9 @@ The one optional frontend variable lives in `frontend/.env`
 | `ADMIN_API_TOKEN` | backend | No (required in production) | (none) | Token gating admin endpoints (`POST /api/bullpen/sync`, `POST /api/bullpen/fatigue/recalculate`, `GET /api/bullpen/fatigue/snapshot`) via the `X-Admin-Token` header. Unset locally -> those routes are allowed in development (with a warning). |
 | `EMAIL_PROVIDER` / `EMAIL_API_KEY` / `EMAIL_FROM` | backend | No | `resend` / unset / unset | Optional transactional email config. Audience signups persist when provider config is missing; the welcome email is skipped safely. |
 | `VITE_API_BASE_URL` | frontend | No | (uses dev proxy) | Backend origin for the frontend to call (no trailing `/api`). Only needed when the backend is hosted separately. |
+| `VITE_SENTRY_DSN` | frontend | No | unset | Optional Sentry browser DSN for production/staging runtime error monitoring. Missing config is a safe no-op. |
+| `VITE_APP_ENV` | frontend | No | Vite mode | Optional frontend environment label for error monitoring. Monitoring sends only for `production`, `staging`, or `preview`. |
+| `VITE_RELEASE_SHA` | frontend | No | unset | Optional release identifier attached to captured frontend errors. |
 
 There is no frontend admin token. The protected admin endpoints below are
 triggered server-side or with curl, never from the browser, so the admin
