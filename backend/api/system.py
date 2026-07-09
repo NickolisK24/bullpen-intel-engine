@@ -8,6 +8,7 @@ backed by live, healthy data. Gated behind the same admin token that protects
 the sync/recalculate write endpoints.
 """
 
+import time
 from datetime import datetime, timezone
 
 from flask import Blueprint, current_app, jsonify, request
@@ -364,13 +365,36 @@ def get_internal_team_evidence():
 @system_bp.route('/internal/snapshot-audit', methods=['GET'])
 @require_admin_token
 def get_internal_snapshot_audit():
-    """Internal Phase 0H trusted snapshot audit for operator review."""
+    """Internal Phase 0H trusted snapshot audit for operator review.
+
+    Never intentionally 502s: if the full bounded summary cannot finish
+    inside safe request limits (statement timeout / time budget / any
+    unexpected error), the route degrades to a cheap DB-row fallback payload
+    that is explicitly marked non-ratifiable. Stage checkpoints are logged
+    (stage names and elapsed ms only — never tokens, query values, or
+    payload contents) so a production failure pinpoints the exact stage.
+    """
     from services.internal_snapshot_audit import (
         SnapshotAuditRequestError,
+        SnapshotAuditSummaryUnavailable,
+        build_internal_snapshot_audit_fallback_payload,
         build_internal_snapshot_audit_payload,
         error_payload,
     )
+    from utils.db import db
 
+    started = time.monotonic()
+    stages = []
+
+    def checkpoint(stage_name):
+        stages.append(stage_name)
+        current_app.logger.info(
+            '[snapshot-audit] stage=%s elapsed_ms=%d',
+            stage_name,
+            int((time.monotonic() - started) * 1000),
+        )
+
+    checkpoint('auth_passed')
     product_date = (
         request.args.get('date')
         or request.args.get('data_through')
@@ -381,16 +405,53 @@ def get_internal_snapshot_audit():
         or request.args.get('window_days')
         or request.args.get('windowDays')
     )
+    checkpoint('request_normalized')
+
+    failure_stage = None
+    failure_code = None
     try:
         payload = build_internal_snapshot_audit_payload(
             product_date=product_date,
             window_days=window_days,
+            checkpoint=checkpoint,
         )
+        checkpoint('summary_succeeded')
+        return jsonify(payload)
     except SnapshotAuditRequestError as exc:
         return jsonify(error_payload(str(exc), status=400)), 400
+    except SnapshotAuditSummaryUnavailable as exc:
+        failure_stage = exc.stage
+        failure_code = exc.code
+        current_app.logger.warning(
+            '[snapshot-audit] summary unavailable; degrading to DB-row '
+            'fallback. stage=%s code=%s',
+            failure_stage,
+            failure_code,
+        )
+    except Exception as exc:
+        failure_stage = stages[-1] if stages else None
+        # Class name only: DB error messages can embed connection details.
+        failure_code = f'summary_exception:{type(exc).__name__}'
+        current_app.logger.warning(
+            '[snapshot-audit] summary failed; degrading to DB-row fallback. '
+            'stage=%s error_type=%s',
+            failure_stage,
+            type(exc).__name__,
+        )
+
+    db.session.rollback()
+    checkpoint('fallback_started')
+    try:
+        fallback = build_internal_snapshot_audit_fallback_payload(
+            product_date=product_date,
+            window_days=window_days,
+            failure_stage=failure_stage,
+            failure_code=failure_code,
+            checkpoint=checkpoint,
+        )
     except Exception:
         current_app.logger.exception(
-            'Internal route /internal/snapshot-audit failed; '
+            'Internal route /internal/snapshot-audit fallback failed; '
             '@require_admin_token remains aligned with /internal/pitcher-evidence.'
         )
         return jsonify(error_payload(
@@ -398,7 +459,8 @@ def get_internal_snapshot_audit():
             status=500,
         )), 500
 
-    return jsonify(payload)
+    checkpoint('fallback_succeeded')
+    return jsonify(fallback), 200
 
 
 @system_bp.route('/internal/pitcher-evidence', methods=['GET'])
