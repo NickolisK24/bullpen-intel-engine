@@ -6,6 +6,22 @@ import { ANALYTICS_EVENTS, trackAnalyticsEventOnce } from '../../utils/analytics
 import { LoadingPane, ErrorState, SectionHeader, Divider } from '../UI'
 import { PUBLIC_BOUNDARIES } from '../../utils/publicBoundaries'
 
+const WORKLOAD_SUMMARY = (
+  'BaseballOS combines four recent-workload inputs: pitch count load, rest days, '
+  + 'appearance frequency, and innings load. Together, they help describe whether '
+  + 'an arm\'s recent work has been light, building, heavy, or strongly pointing '
+  + 'toward rest. Public pages show the resulting availability and workload '
+  + 'context in baseball language, supported by recent-work evidence rather than '
+  + 'a numeric grade.'
+)
+
+const WORKLOAD_COMPONENT_COPY = {
+  'Pitch Count Load': 'Recent pitch volume is the most direct workload signal. Higher totals across the recent window add more concern.',
+  'Rest Days': 'Time since the most recent appearance is the primary recovery signal. Back-to-back use carries a different workload context than several days of rest.',
+  'Appearance Frequency': 'Repeated use can narrow bullpen flexibility even when individual outings are short.',
+  'Innings Load': 'Recent innings provide a second volume check when pitch-count information is incomplete or noisy.',
+}
+
 function displayCopy(value) {
   return String(value ?? '')
     .replace(/\bgameLog endpoint\b/gi, 'game log feed')
@@ -25,6 +41,10 @@ function displayCopy(value) {
     .replace(/\bRestricted\b/g, 'Limited')
     .replace(/\bconstrained\b/g, 'stretched')
     .replace(/\bConstrained\b/g, 'Stretched')
+}
+
+function workloadComponentCopy(component) {
+  return WORKLOAD_COMPONENT_COPY[component?.name] ?? displayCopy(component?.rationale)
 }
 
 export default function Methodology() {
@@ -94,7 +114,7 @@ export function MethodologyView({ data }) {
             {displayCopy(fe.title)}
           </div>
           <p className="text-chalk300 text-sm leading-relaxed mb-6 max-w-3xl">
-            {displayCopy(fe.summary)}
+            {WORKLOAD_SUMMARY}
           </p>
 
           <Divider label="Components" />
@@ -112,7 +132,7 @@ export function MethodologyView({ data }) {
                     {displayCopy(c.name)}
                   </div>
                   <div className="text-chalk400 text-xs leading-relaxed">
-                    {displayCopy(c.rationale)}
+                    {workloadComponentCopy(c)}
                   </div>
                 </div>
               </div>

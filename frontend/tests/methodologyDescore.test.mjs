@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
 import test, { after } from 'node:test'
 import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
@@ -24,34 +25,52 @@ const render = (element) => renderToStaticMarkup(
 const visibleText = (html) => html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
 const htmlIncludes = (html, text) => html.includes(text)
 
+const forbiddenPublicMethodologyTerms = [
+  '0 to 100',
+  '0–100',
+  '0-100',
+  '[0, 100]',
+  '0d=',
+  '1d=',
+  'thresholds at',
+  '0–24',
+  '0-24',
+  '25–49',
+  '25-49',
+  '50–80',
+  '50-80',
+  '81–100',
+  '81-100',
+]
+
 const methodologyData = {
   fatigue_engine: {
     title: 'Bullpen Recent Workload Read',
     summary: (
-      'BaseballOS combines four recent-workload inputs: pitch count load (35%), '
-      + 'rest days (30%), appearance frequency (20%), and innings load (15%). '
-      + 'Public pages show baseball-language availability and workload context rather than a numeric grade.'
+      'A weighted composite read that turns recent reliever usage into a '
+      + '0 to 100 workload index. Each component returns a 0–100 sub-read; '
+      + 'the final index is the weighted sum, clamped to the [0, 100] range.'
     ),
     components: [
       {
         name: 'Pitch Count Load',
         weight: '35%',
-        rationale: 'Pitch totals show recent arm volume in the workload window.',
+        rationale: 'Sub-score scales linearly across thresholds at 50, 90, and 120 pitches.',
       },
       {
         name: 'Rest Days',
         weight: '30%',
-        rationale: 'Days since last appearance are the primary recovery signal.',
+        rationale: 'Discrete mapping: 0d=100, 1d=80, 2d=55, 3d=30, 4d=10, 5+d=0.',
       },
       {
         name: 'Appearance Frequency',
         weight: '20%',
-        rationale: 'Repeated appearances can narrow bullpen choices even when individual outings are short.',
+        rationale: 'Blends 7-day and 14-day windows (70/15 weighted).',
       },
       {
         name: 'Innings Load',
         weight: '15%',
-        rationale: 'Innings pitched add context beyond the raw number of appearances.',
+        rationale: 'Scales linearly across 4 IP and 6 IP thresholds in a 7-day window.',
       },
     ],
     interpretation: [
@@ -97,16 +116,16 @@ test('Methodology route content renders with workload inputs and baseball-unit e
   for (const required of [
     'Pitch Count Load',
     '35%',
-    'Pitch totals',
+    'Recent pitch volume',
     'Rest Days',
     '30%',
-    'Days since last appearance',
+    'Time since the most recent appearance',
     'Appearance Frequency',
     '20%',
-    'Repeated appearances',
+    'Repeated use can narrow bullpen flexibility',
     'Innings Load',
     '15%',
-    'Innings pitched',
+    'Recent innings provide a second volume check',
     'Public Read',
     'Data Sources',
     'Known Limitations',
@@ -125,17 +144,7 @@ test('Methodology does not render public workload score ranges or risk-tier card
   const text = visibleText(html)
 
   for (const forbidden of [
-    '0 to 100 workload index',
-    '0–100',
-    '0-100',
-    '0–24',
-    '0-24',
-    '25–49',
-    '25-49',
-    '50–80',
-    '50-80',
-    '81–100',
-    '81-100',
+    ...forbiddenPublicMethodologyTerms,
     'Risk Tiers',
     'LOW',
     'MODERATE',
@@ -145,6 +154,11 @@ test('Methodology does not render public workload score ranges or risk-tier card
     assert.equal(text.includes(forbidden), false, forbidden)
   }
 
+  assert.equal(text.includes('sub-read'), false)
+  assert.equal(text.includes('weighted sum'), false)
+  assert.equal(text.includes('50, 90, and 120'), false)
+  assert.equal(text.includes('2d=55'), false)
+  assert.equal(text.includes('70/15 weighted'), false)
   assert.equal(/Low\s+0[-–]24/i.test(text), false)
   assert.equal(/Moderate\s+25[-–]49/i.test(text), false)
   assert.equal(/High\s+50[-–]80/i.test(text), false)
@@ -167,5 +181,27 @@ test('Methodology does not render the exploratory ERA section or hidden tier fra
     'CRITICAL n=',
   ]) {
     assert.equal(text.includes(forbidden), false, forbidden)
+  }
+})
+
+test('public Methodology payload source has no score construction details', async () => {
+  const source = await readFile(
+    new URL('../../backend/api/methodology.py', import.meta.url),
+    'utf8',
+  )
+
+  for (const forbidden of [
+    ...forbiddenPublicMethodologyTerms,
+    'sub-read',
+    'Sub-score',
+    'weighted score',
+    'weighted sum',
+    '50, 90, and 120',
+    '2d=55',
+    '70/15 weighted',
+    'risk_tiers',
+    'Recent Workload vs. Next-Outing ERA',
+  ]) {
+    assert.equal(source.includes(forbidden), false, forbidden)
   }
 })

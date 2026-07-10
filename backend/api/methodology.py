@@ -21,49 +21,47 @@ def get_methodology():
         'fatigue_engine': {
             'title':   'Bullpen Recent Workload Read',
             'summary': (
-                'BaseballOS combines four recent-workload inputs derived from '
-                'MLB Stats API game logs: pitch count load (35%), rest days '
-                '(30%), appearance frequency (20%), and innings load (15%). '
-                'These inputs help describe whether recent usage is light, '
-                'building, heavy, or strongly pointing toward rest. Public '
-                'pages show baseball-language availability and workload '
-                'context rather than a numeric grade.'
+                'BaseballOS combines four recent-workload inputs: pitch count '
+                'load, rest days, appearance frequency, and innings load. '
+                'Together, they help describe whether an arm\'s recent work '
+                'has been light, building, heavy, or strongly pointing toward '
+                'rest. Public pages show the resulting availability and '
+                'workload context in baseball language, supported by '
+                'recent-work evidence rather than a numeric grade.'
             ),
             'components': [
                 {
                     'name':      'Pitch Count Load',
                     'weight':    '35%',
                     'rationale': (
-                        'Pitch totals are the most direct indicator of recent '
-                        'arm volume in the workload window. More pitches in '
-                        'close succession point to heavier recent work.'
+                        'Recent pitch volume is the most direct workload '
+                        'signal. Higher totals across the recent window add '
+                        'more concern.'
                     ),
                 },
                 {
                     'name':      'Rest Days',
                     'weight':    '30%',
                     'rationale': (
-                        'Days since last appearance are the primary recovery '
-                        'signal. Back-to-back use creates a different bullpen '
-                        'read than several days between outings.'
+                        'Time since the most recent appearance is the primary '
+                        'recovery signal. Back-to-back use carries a different '
+                        'workload context than several days of rest.'
                     ),
                 },
                 {
                     'name':      'Appearance Frequency',
                     'weight':    '20%',
                     'rationale': (
-                        'Repeated use can narrow bullpen choices even on low-pitch '
-                        'appearances. Recent and trailing appearance patterns '
-                        'keep one-batter outings and multi-day usage visible.'
+                        'Repeated use can narrow bullpen flexibility even when '
+                        'individual outings are short.'
                     ),
                 },
                 {
                     'name':      'Innings Load',
                     'weight':    '15%',
                     'rationale': (
-                        'Innings pitched provide a workload floor when pitch '
-                        'counts are noisy. Longer recent outings add context '
-                        'beyond the raw number of appearances.'
+                        'Recent innings provide a second volume check when '
+                        'pitch-count information is incomplete or noisy.'
                     ),
                 },
             ],
