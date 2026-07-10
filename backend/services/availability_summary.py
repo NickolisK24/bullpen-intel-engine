@@ -58,7 +58,7 @@ def _summary_notes(total_pitchers, data_state_counts, is_current_availability=Tr
     if total_pitchers == 0:
         if is_current_availability:
             return ['No availability classifications are available yet.']
-        return ['No scored pitcher inventory records are available yet.']
+        return ['No pitcher workload inventory records are available yet.']
 
     stale = data_state_counts.get('stale', 0)
     missing = data_state_counts.get('missing', 0)
@@ -70,17 +70,17 @@ def _summary_notes(total_pitchers, data_state_counts, is_current_availability=Tr
         if is_current_availability:
             notes.append('Recent usage information is missing for most pitchers, so most availability reads are less certain.')
         else:
-            notes.append('Recent usage information is missing for most scored pitchers, so inventory workload reads are less certain.')
+            notes.append('Recent usage information is missing for most pitchers with workload reads, so inventory workload reads are less certain.')
     elif limited > 0:
         if is_current_availability:
             notes.append('Recent usage information is incomplete for some pitchers, so some availability reads are less certain.')
         else:
-            notes.append('Recent usage information is incomplete for some scored pitchers, so inventory workload reads are less certain.')
+            notes.append('Recent usage information is incomplete for some pitchers with workload reads, so inventory workload reads are less certain.')
     else:
         if is_current_availability:
             notes.append('Availability classifications are based on current workload data.')
         else:
-            notes.append('Scored pitcher inventory is based on current workload data.')
+            notes.append('Pitcher workload inventory is based on current workload data.')
 
     if stale:
         if is_current_availability:
