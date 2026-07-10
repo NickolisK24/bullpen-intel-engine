@@ -56,7 +56,7 @@ const inventorySummary = {
   mode: 'scored_pitcher_inventory',
   is_current_availability: false,
   notes: [
-    'Recent usage information is missing for most scored pitchers, so inventory workload reads are less certain.',
+    'Recent usage information is missing for most pitchers with workload reads, so inventory workload reads are less certain.',
     'Stale workload data is retained here as inventory context, not bullpen availability.',
   ],
 }

@@ -13,44 +13,39 @@ def get_availability_backtest():
 @methodology_bp.route('/', methods=['GET'])
 def get_methodology():
     """
-    Returns the documented methodology behind BaseballOS — the workload
-    scoring read, the analytical insights surfaced from the dataset, and
-    the data sources we trust. This is the substantive companion to the
-    bullpen and pipeline modules: anyone evaluating the tool should be able
-    to read this page and understand exactly how every number on the
-    dashboard was computed.
+    Returns the documented methodology behind BaseballOS: the public workload
+    read, the data sources we trust, and the limits around what the read does
+    and does not claim.
     """
     return jsonify({
         'fatigue_engine': {
             'title':   'Bullpen Recent Workload Read',
             'summary': (
-                'A weighted composite read that turns recent reliever usage '
-                'into a 0 to 100 workload index using four inputs derived from MLB Stats API '
-                'game logs: pitch count load (35%), rest days (30%), '
-                'appearance frequency (20%), and innings load (15%). '
-                'Each component returns a 0-100 sub-read; the final index '
-                'is the weighted sum, clamped to the [0, 100] range, so users see '
-                'whether recent usage is widening or narrowing the manager\'s choices.'
+                'BaseballOS combines four recent-workload inputs derived from '
+                'MLB Stats API game logs: pitch count load (35%), rest days '
+                '(30%), appearance frequency (20%), and innings load (15%). '
+                'These inputs help describe whether recent usage is light, '
+                'building, heavy, or strongly pointing toward rest. Public '
+                'pages show baseball-language availability and workload '
+                'context rather than a numeric grade.'
             ),
             'components': [
                 {
                     'name':      'Pitch Count Load',
                     'weight':    '35%',
                     'rationale': (
-                        'Raw pitch count is the most direct indicator of '
-                        'arm stress in a rolling 7-day window. Sub-score '
-                        'scales linearly across thresholds at 50, 90, and '
-                        '120 pitches.'
+                        'Pitch totals are the most direct indicator of recent '
+                        'arm volume in the workload window. More pitches in '
+                        'close succession point to heavier recent work.'
                     ),
                 },
                 {
                     'name':      'Rest Days',
                     'weight':    '30%',
                     'rationale': (
-                        'Days since last appearance — the primary recovery '
-                        'signal. Back-to-back use is physiologically '
-                        'different from three days of rest. Discrete '
-                        'mapping: 0d=100, 1d=80, 2d=55, 3d=30, 4d=10, 5+d=0.'
+                        'Days since last appearance are the primary recovery '
+                        'signal. Back-to-back use creates a different bullpen '
+                        'read than several days between outings.'
                     ),
                 },
                 {
@@ -58,26 +53,24 @@ def get_methodology():
                     'weight':    '20%',
                     'rationale': (
                         'Repeated use can narrow bullpen choices even on low-pitch '
-                        'appearances. Five appearances in seven days is a '
-                        'managerial warning regardless of pitch counts. Blends '
-                        '7-day and 14-day windows (70/15 weighted).'
+                        'appearances. Recent and trailing appearance patterns '
+                        'keep one-batter outings and multi-day usage visible.'
                     ),
                 },
                 {
                     'name':      'Innings Load',
                     'weight':    '15%',
                     'rationale': (
-                        'A volume floor — ensures workload is captured '
-                        'even when pitch counts are noisy. Scales linearly '
-                        'across 4 IP and 6 IP thresholds in a 7-day window.'
+                        'Innings pitched provide a workload floor when pitch '
+                        'counts are noisy. Longer recent outings add context '
+                        'beyond the raw number of appearances.'
                     ),
                 },
             ],
-            'risk_tiers': [
-                {'level': 'LOW',      'range': '0–24',   'interpretation': 'Fresh and available.'},
-                {'level': 'MODERATE', 'range': '25–49',  'interpretation': 'Some recent use. Monitor.'},
-                {'level': 'HIGH',     'range': '50–80',  'interpretation': 'Heavy recent workload. Use with caution.'},
-                {'level': 'CRITICAL', 'range': '81–100', 'interpretation': 'Recent usage strongly points toward rest.'},
+            'interpretation': [
+                'More rest and lighter recent work generally support availability.',
+                'Repeated appearances, elevated pitch counts, and limited recovery increase workload concern.',
+                'The final public read is explained with recent-work evidence rather than a numeric grade.',
             ],
             'excluded': {
                 'name':      'Leverage Index',
@@ -90,61 +83,11 @@ def get_methodology():
                     'Rather than fake the data with a constant default, '
                     'we removed the component and redistributed its weight '
                     'across the four factors we measure reliably. The '
-                    'leverage_score column on the FatigueScore model is '
-                    'preserved for schema stability but is no longer used '
+                    'historical leverage field is preserved for compatibility '
+                    'but is no longer used '
                     'in the workload calculation.'
                 ),
             },
-        },
-
-        'insights': {
-            'title':   'Recent Workload vs. Next-Outing ERA (Exploratory, Secondary)',
-            'summary': (
-                'A retrospective, exploratory look across the 2024 and 2025 '
-                'MLB seasons at whether a higher recent-workload read going into an '
-                'appearance is associated with a worse next-appearance ERA. '
-                'We walked every game log chronologically per pitcher, '
-                'reconstructed the workload read they carried into each '
-                'appearance, and aggregated their next-outing IP and ER by '
-                'risk tier. This is a simple association — not a controlled '
-                'or causal study.'
-            ),
-            'finding': (
-                'Appearances made after HIGH or CRITICAL workload reads were followed '
-                'by a 3.96 next-outing ERA, versus 3.59 after MODERATE-tier '
-                '(rested-baseline) appearances — about a 10% difference. '
-                'This is an observed association across the seasons studied, '
-                'not evidence that heavy workload causes runs: the comparison is '
-                'not adjusted for the factors listed below, and higher-'
-                'workload outings skew toward higher-volume (starter-style) '
-                'appearances.'
-            ),
-            'caveat': (
-                'LOW-tier appearances are structurally rare here: a pitcher '
-                'with five-plus days of rest has, by definition, not pitched '
-                'recently enough to form a next-appearance pair, so MODERATE '
-                'is used as the rested baseline. CRITICAL is also very sparse '
-                '(see sample sizes). Treat the result as a preliminary, '
-                'directional finding worth deeper study, not a settled '
-                'conclusion.'
-            ),
-            # n per tier mirrors the current generated artifact
-            # (analysis/fatigue_era_results.json). Regenerating the analysis
-            # would update these counts.
-            'samples': {'LOW': 0, 'MODERATE': 16385, 'HIGH': 14495, 'CRITICAL': 6},
-            'measured': [
-                'Recent-workload tier carried into an appearance',
-                'Next-appearance ERA (earned runs × 9 / innings pitched)',
-                'Number of appearances in each tier (sample size)',
-            ],
-            'not_measured': [
-                'Pitcher role (starters vs. relievers are not separated)',
-                'Opponent quality',
-                'Park factors',
-                'Game state / score',
-                'Leverage',
-                'Defense behind the pitcher',
-            ],
         },
 
         'role_authority': {

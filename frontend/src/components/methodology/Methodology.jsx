@@ -6,13 +6,6 @@ import { ANALYTICS_EVENTS, trackAnalyticsEventOnce } from '../../utils/analytics
 import { LoadingPane, ErrorState, SectionHeader, Divider } from '../UI'
 import { PUBLIC_BOUNDARIES } from '../../utils/publicBoundaries'
 
-const TIER_HEX = {
-  LOW:      { bg: '#0f1f1a', border: '#10b981', text: '#34d399' },
-  MODERATE: { bg: '#1f1c0f', border: '#fbbf24', text: '#fcd34d' },
-  HIGH:     { bg: '#2a1a0f', border: '#fb923c', text: '#fdba74' },
-  CRITICAL: { bg: '#2a0f0f', border: '#ef4444', text: '#fca5a5' },
-}
-
 function displayCopy(value) {
   return String(value ?? '')
     .replace(/\bgameLog endpoint\b/gi, 'game log feed')
@@ -66,7 +59,6 @@ export default function Methodology() {
 
 export function MethodologyView({ data }) {
   const fe       = data?.fatigue_engine
-  const insights = data?.insights
   const sources  = data?.data_sources ?? []
   const stack    = data?.stack ?? []
 
@@ -127,38 +119,19 @@ export function MethodologyView({ data }) {
             ))}
           </div>
 
-          <Divider label="Risk Tiers" />
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-6">
-            {(fe.risk_tiers ?? []).map((t) => {
-              const style = TIER_HEX[t.level] ?? TIER_HEX.MODERATE
-              return (
-                <div
-                  key={t.level}
-                  className="rounded border p-4"
-                  style={{
-                    backgroundColor: style.bg,
-                    borderColor:     `${style.border}55`,
-                  }}
-                >
-                  <div
-                    className="font-mono text-xs uppercase tracking-widest mb-1"
-                    style={{ color: style.border }}
-                  >
-                    {t.level}
-                  </div>
-                  <div
-                    className="font-display text-2xl tracking-wider mb-2"
-                    style={{ color: style.text }}
-                  >
-                    {t.range}
-                  </div>
-                  <div className="text-chalk400 text-xs leading-relaxed">
-                    {displayCopy(t.interpretation)}
-                  </div>
-                </div>
-              )
-            })}
-          </div>
+          {(fe.interpretation ?? []).length > 0 && (
+            <>
+              <Divider label="Public Read" />
+              <ul className="mb-6 space-y-2 text-sm leading-relaxed text-chalk400">
+                {fe.interpretation.map((item) => (
+                  <li key={item} className="flex gap-2">
+                    <span className="text-amber" aria-hidden="true">&bull;</span>
+                    <span>{displayCopy(item)}</span>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
 
           {fe.excluded && (
             <>
@@ -176,91 +149,11 @@ export function MethodologyView({ data }) {
         </section>
       )}
 
-      {/* ── Secondary Exploratory Insight ──────────────────────────────── */}
-      {insights && (
-        <section
-          className="card p-6 animate-fade-up opacity-0"
-          style={{ animationDelay: '200ms', animationFillMode: 'forwards' }}
-        >
-          <div className="font-display text-2xl tracking-wider text-chalk100 mb-2">
-            {displayCopy(insights.title)}
-          </div>
-          <p className="text-chalk300 text-sm leading-relaxed mb-4 max-w-3xl">
-            {displayCopy(insights.summary)}
-          </p>
-
-          <div
-            className="p-4 rounded border-l-2 mb-4"
-            style={{
-              backgroundColor: '#2a1a0f',
-              borderLeftColor: '#fb923c',
-            }}
-          >
-            <div className="font-mono text-amber text-xs uppercase tracking-widest mb-2">
-              Finding
-            </div>
-            <div className="text-chalk100 text-sm leading-relaxed">
-              {displayCopy(insights.finding)}
-            </div>
-          </div>
-
-          {insights.samples && (
-            <div className="flex flex-wrap gap-x-5 gap-y-1 mb-4 text-xs font-mono">
-              <span className="text-chalk600 uppercase tracking-widest">Sample sizes:</span>
-              {['LOW', 'MODERATE', 'HIGH', 'CRITICAL'].map((tier) => (
-                <span key={tier} className="text-chalk400">
-                  {tier} <span className="text-chalk200">n={(insights.samples[tier] ?? 0).toLocaleString()}</span>
-                </span>
-              ))}
-            </div>
-          )}
-
-          {(insights.measured || insights.not_measured) && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-              {insights.measured && (
-                <div>
-                  <div className="font-mono text-chalk400 text-xs uppercase tracking-widest mb-2">
-                    What was measured
-                  </div>
-                  <ul className="space-y-1">
-                    {insights.measured.map((m) => (
-                      <li key={m} className="text-chalk400 text-xs leading-relaxed flex gap-2">
-                        <span className="text-emerald-400">✓</span>{displayCopy(m)}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-              {insights.not_measured && (
-                <div>
-                  <div className="font-mono text-chalk400 text-xs uppercase tracking-widest mb-2">
-                    What was not measured
-                  </div>
-                  <ul className="space-y-1">
-                    {insights.not_measured.map((m) => (
-                      <li key={m} className="text-chalk400 text-xs leading-relaxed flex gap-2">
-                        <span className="text-chalk600">—</span>{displayCopy(m)}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </div>
-          )}
-
-          {insights.caveat && (
-            <div className="text-chalk500 text-xs leading-relaxed italic max-w-3xl">
-              {displayCopy(insights.caveat)}
-            </div>
-          )}
-        </section>
-      )}
-
       {/* ── Data Sources & Stack ───────────────────────────────────────── */}
       <section
         id="data-sources"
         className="card p-6 animate-fade-up opacity-0"
-        style={{ animationDelay: '300ms', animationFillMode: 'forwards' }}
+        style={{ animationDelay: '200ms', animationFillMode: 'forwards' }}
       >
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div>
@@ -312,7 +205,7 @@ export function MethodologyView({ data }) {
       <section
         id="known-limitations"
         className="card p-6 animate-fade-up opacity-0"
-        style={{ animationDelay: '400ms', animationFillMode: 'forwards' }}
+        style={{ animationDelay: '300ms', animationFillMode: 'forwards' }}
       >
         <div className="font-mono text-chalk400 text-xs uppercase tracking-widest mb-3">
           Known Limitations

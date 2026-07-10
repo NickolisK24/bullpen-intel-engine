@@ -154,7 +154,11 @@ test('Methodology explains the reliability check and links to Data & Trust inste
   assert.ok(html.includes('The live reliability read belongs in Data &amp; Trust'))
   assert.equal(text.includes('Operational Backtest'), false)
   assert.equal(text.includes('Operational Availability Backtest'), false)
-  assert.ok(text.includes('Exploratory ERA Study'))
+  assert.equal(text.includes('Exploratory ERA Study'), false)
+  assert.equal(text.includes('LOW n='), false)
+  assert.equal(text.includes('MODERATE n='), false)
+  assert.equal(text.includes('HIGH n='), false)
+  assert.equal(text.includes('CRITICAL n='), false)
 })
 
 test('Data & Trust owns the full availability backtest without duplicate page sections', () => {
