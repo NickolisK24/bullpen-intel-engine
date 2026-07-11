@@ -464,6 +464,236 @@ def test_team_relief_work_date_groups_cap_and_ordering(client):
     ]
 
 
+def test_team_relief_work_game_context_extended_bullpen_coverage(client):
+    with client.application.app_context():
+        starter = _pitcher(name='Delta Starter', mlb_id=95001)
+        relievers = [
+            _pitcher(name=f'Reliever {suffix}', mlb_id=95002 + index)
+            for index, suffix in enumerate(['One', 'Two', 'Three', 'Four', 'Five', 'Six'])
+        ]
+        db.session.add_all([starter, *relievers])
+        db.session.flush()
+        db.session.add(_log(
+            starter.id, 9601, date(2026, 7, 5), games_started=1, outs=6, pitches=35,
+        ))
+        for reliever, outs, pitches in zip(
+            relievers,
+            (3, 3, 3, 4, 4, 4),
+            (15, 17, 18, 19, 19, 19),
+        ):
+            db.session.add(_log(
+                reliever.id, 9601, date(2026, 7, 5), outs=outs, pitches=pitches,
+            ))
+        db.session.commit()
+        starter_id = starter.id
+        starter_pitcher_ids = {starter.id}
+
+    body = client.get(f'/api/bullpen/teams/{TEAM_ID}/relief-work').get_json()
+    group = body['relief_by_date'][0]
+
+    assert group['relief_appearances'] == 6
+    assert group['outs_total'] == 21
+    assert group['pitches_total'] == 107
+    assert starter_pitcher_ids.isdisjoint(
+        {line['pitcher_id'] for line in group['appearances']}
+    )
+    assert body['windows']['window_7']['relief_appearances'] == 6
+    assert group['games'] == [
+        {
+            'mlb_game_pk': 9601,
+            'opponent': 'New York Yankees',
+            'opponent_abbreviation': 'NYY',
+            'game_shape': 'short_start',
+            'context_label': 'Extended bullpen coverage',
+            'starter': {
+                'pitcher_id': starter_id,
+                'pitcher_mlb_id': 95001,
+                'pitcher_full_name': 'Delta Starter',
+                'outs': 6,
+                'innings': '2.0',
+                'pitches': 35,
+            },
+            'relief': {
+                'pitcher_count': 6,
+                'outs': 21,
+                'innings': '7.0',
+                'pitches': 107,
+            },
+            'total': {
+                'pitcher_count': 7,
+                'outs': 27,
+                'innings': '9.0',
+                'pitches': 142,
+            },
+            'context_sentences': [
+                'Delta Starter started and recorded 6 outs (2.0 IP) on 35 pitches.',
+                '6 relievers covered the remaining 21 outs (7.0 IP) on 107 pitches.',
+                '7 pitchers combined for 27 outs (9.0 IP) and 142 pitches.',
+            ],
+        },
+    ]
+
+
+def test_team_relief_work_game_context_omitted_without_credited_start(client):
+    with client.application.app_context():
+        pitcher = _pitcher()
+        db.session.add(pitcher)
+        db.session.flush()
+        db.session.add(_log(pitcher.id, 9611, date(2026, 7, 5), pitches=14))
+        db.session.commit()
+
+    body = client.get(f'/api/bullpen/teams/{TEAM_ID}/relief-work').get_json()
+
+    assert 'games' not in body['relief_by_date'][0]
+
+
+def test_team_relief_work_game_context_omitted_when_start_flag_unknown(client):
+    with client.application.app_context():
+        starter = _pitcher(name='Delta Starter', mlb_id=95001)
+        reliever = _pitcher(name='Echo Reliever', mlb_id=95002)
+        unknown = _pitcher(name='Foxtrot Unknown', mlb_id=95003)
+        db.session.add_all([starter, reliever, unknown])
+        db.session.flush()
+        db.session.add_all([
+            _log(starter.id, 9621, date(2026, 7, 5), games_started=1, outs=6, pitches=35),
+            _log(reliever.id, 9621, date(2026, 7, 5), outs=21, pitches=90),
+            _log(unknown.id, 9621, date(2026, 7, 5), games_started=None, outs=3, pitches=12),
+        ])
+        db.session.commit()
+
+    body = client.get(f'/api/bullpen/teams/{TEAM_ID}/relief-work').get_json()
+
+    assert 'games' not in body['relief_by_date'][0]
+
+
+def test_team_relief_work_game_context_normal_start_facts_without_label(client):
+    with client.application.app_context():
+        starter = _pitcher(name='Delta Starter', mlb_id=95001)
+        first = _pitcher(name='Echo Reliever', mlb_id=95002)
+        second = _pitcher(name='Foxtrot Reliever', mlb_id=95003)
+        db.session.add_all([starter, first, second])
+        db.session.flush()
+        db.session.add_all([
+            _log(starter.id, 9631, date(2026, 7, 5), games_started=1, outs=18, pitches=92),
+            _log(first.id, 9631, date(2026, 7, 5), outs=5, pitches=20),
+            _log(second.id, 9631, date(2026, 7, 5), outs=4, pitches=15),
+        ])
+        db.session.commit()
+
+    body = client.get(f'/api/bullpen/teams/{TEAM_ID}/relief-work').get_json()
+    game = body['relief_by_date'][0]['games'][0]
+
+    assert game['game_shape'] == 'normal_start'
+    assert game['context_label'] is None
+    assert game['total'] == {
+        'pitcher_count': 3,
+        'outs': 27,
+        'innings': '9.0',
+        'pitches': 127,
+    }
+    assert game['context_sentences'] == [
+        'Delta Starter started and recorded 18 outs (6.0 IP) on 92 pitches.',
+        '2 relievers covered the remaining 9 outs (3.0 IP) on 35 pitches.',
+    ]
+    assert 'Extended bullpen coverage' not in json.dumps(body)
+
+
+def test_team_relief_work_game_context_missing_pitches_stay_null(client):
+    with client.application.app_context():
+        starter = _pitcher(name='Delta Starter', mlb_id=95001)
+        relievers = [
+            _pitcher(name=f'Reliever {suffix}', mlb_id=95002 + index)
+            for index, suffix in enumerate(['One', 'Two', 'Three', 'Four', 'Five', 'Six'])
+        ]
+        db.session.add_all([starter, *relievers])
+        db.session.flush()
+        db.session.add(_log(
+            starter.id, 9641, date(2026, 7, 5), games_started=1, outs=6, pitches=None,
+        ))
+        for reliever, outs, pitches in zip(
+            relievers,
+            (3, 3, 3, 4, 4, 4),
+            (15, 17, 18, 19, 19, None),
+        ):
+            db.session.add(_log(
+                reliever.id, 9641, date(2026, 7, 5), outs=outs, pitches=pitches,
+            ))
+        db.session.commit()
+
+    body = client.get(f'/api/bullpen/teams/{TEAM_ID}/relief-work').get_json()
+    group = body['relief_by_date'][0]
+    game = group['games'][0]
+
+    assert group['pitches_total'] is None
+    assert game['context_label'] == 'Extended bullpen coverage'
+    assert game['starter']['pitches'] is None
+    assert game['relief']['pitches'] is None
+    assert game['total']['pitches'] is None
+    assert game['context_sentences'] == [
+        'Delta Starter started and recorded 6 outs (2.0 IP).',
+        '6 relievers covered the remaining 21 outs (7.0 IP).',
+        '7 pitchers combined for 27 outs (9.0 IP).',
+    ]
+
+
+def test_team_relief_work_game_context_doubleheader_games_stay_separate(client):
+    with client.application.app_context():
+        first_starter = _pitcher(name='Delta Starter', mlb_id=95001)
+        second_starter = _pitcher(name='Golf Starter', mlb_id=95002)
+        first_reliever = _pitcher(name='Echo Reliever', mlb_id=95003)
+        second_reliever = _pitcher(name='Foxtrot Reliever', mlb_id=95004)
+        third_reliever = _pitcher(name='Hotel Reliever', mlb_id=95005)
+        db.session.add_all([
+            first_starter, second_starter,
+            first_reliever, second_reliever, third_reliever,
+        ])
+        db.session.flush()
+        db.session.add_all([
+            _log(first_starter.id, 9651, date(2026, 7, 5), games_started=1, outs=6, pitches=30),
+            _log(first_reliever.id, 9651, date(2026, 7, 5), outs=8, pitches=33),
+            _log(second_reliever.id, 9651, date(2026, 7, 5), outs=7, pitches=29),
+            _log(second_starter.id, 9652, date(2026, 7, 5), games_started=1, outs=15, pitches=77),
+            _log(third_reliever.id, 9652, date(2026, 7, 5), outs=3, pitches=13),
+        ])
+        db.session.commit()
+
+    body = client.get(f'/api/bullpen/teams/{TEAM_ID}/relief-work').get_json()
+    group = body['relief_by_date'][0]
+
+    assert group['relief_appearances'] == 3
+    assert [game['mlb_game_pk'] for game in group['games']] == [9651, 9652]
+    assert group['games'][0]['context_label'] == 'Extended bullpen coverage'
+    assert group['games'][0]['relief']['outs'] == 15
+    assert group['games'][1]['context_label'] is None
+    assert group['games'][1]['game_shape'] == 'normal_start'
+
+
+def test_team_relief_work_game_context_label_thresholds_are_strict(client):
+    with client.application.app_context():
+        first_starter = _pitcher(name='Delta Starter', mlb_id=95001)
+        second_starter = _pitcher(name='Golf Starter', mlb_id=95002)
+        first_reliever = _pitcher(name='Echo Reliever', mlb_id=95003)
+        second_reliever = _pitcher(name='Foxtrot Reliever', mlb_id=95004)
+        db.session.add_all([
+            first_starter, second_starter, first_reliever, second_reliever,
+        ])
+        db.session.flush()
+        db.session.add_all([
+            _log(first_starter.id, 9661, date(2026, 7, 4), games_started=1, outs=7, pitches=32),
+            _log(first_reliever.id, 9661, date(2026, 7, 4), outs=21, pitches=88),
+            _log(second_starter.id, 9662, date(2026, 7, 3), games_started=1, outs=6, pitches=28),
+            _log(second_reliever.id, 9662, date(2026, 7, 3), outs=14, pitches=61),
+        ])
+        db.session.commit()
+
+    body = client.get(f'/api/bullpen/teams/{TEAM_ID}/relief-work').get_json()
+    groups = {group['game_date']: group for group in body['relief_by_date']}
+
+    assert groups['2026-07-04']['games'][0]['context_label'] is None
+    assert groups['2026-07-03']['games'][0]['context_label'] is None
+    assert 'Extended bullpen coverage' not in json.dumps(body)
+
+
 def test_team_relief_work_returns_404_for_unknown_team(client):
     response = client.get('/api/bullpen/teams/999999/relief-work')
     assert response.status_code == 404
@@ -608,9 +838,14 @@ def test_existing_public_routes_behavior_freeze(monkeypatch):
         'frontend/src/utils/api.js',
         'frontend/tests/intelligenceSurface.test.mjs',
     }
+    allowed_bullpen_game_context_files = {
+        'frontend/src/components/bullpen/TeamReliefWorkPanel.jsx',
+        'frontend/tests/teamReliefWorkPanel.test.mjs',
+    }
     assert not [
         path for path in changed
         if path not in allowed_phase_a_audience_signup_files
+        if path not in allowed_bullpen_game_context_files
         if (
             path in blocked_files and path not in allowed_internal_admin_files
         )

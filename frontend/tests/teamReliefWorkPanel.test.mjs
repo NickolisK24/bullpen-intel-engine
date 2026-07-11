@@ -101,6 +101,40 @@ const teamReliefWorkPayload = {
           sentence: 'Delta Reliever - 0.2 IP, 14 pitches, 0 K, 1 BB, 1 H, 0 R.',
         },
       ],
+      games: [
+        {
+          mlb_game_pk: 9601,
+          opponent: 'New York Yankees',
+          opponent_abbreviation: 'NYY',
+          game_shape: 'short_start',
+          context_label: 'Extended bullpen coverage',
+          starter: {
+            pitcher_id: 9,
+            pitcher_mlb_id: 90009,
+            pitcher_full_name: 'Delta Starter',
+            outs: 6,
+            innings: '2.0',
+            pitches: 35,
+          },
+          relief: {
+            pitcher_count: 6,
+            outs: 21,
+            innings: '7.0',
+            pitches: 107,
+          },
+          total: {
+            pitcher_count: 7,
+            outs: 27,
+            innings: '9.0',
+            pitches: 142,
+          },
+          context_sentences: [
+            'Delta Starter started and recorded 6 outs (2.0 IP) on 35 pitches.',
+            '6 relievers covered the remaining 21 outs (7.0 IP) on 107 pitches.',
+            '7 pitchers combined for 27 outs (9.0 IP) and 142 pitches.',
+          ],
+        },
+      ],
     },
     {
       game_date: '2026-07-03',
@@ -124,6 +158,39 @@ const teamReliefWorkPayload = {
           hits_allowed: 2,
           runs_allowed: 1,
           sentence: 'Alpha Reliever - 1.2 IP, 24 pitches, 2 K, 1 BB, 2 H, 1 R.',
+        },
+      ],
+      games: [
+        {
+          mlb_game_pk: 9602,
+          opponent: 'New York Yankees',
+          opponent_abbreviation: 'NYY',
+          game_shape: 'normal_start',
+          context_label: null,
+          starter: {
+            pitcher_id: 10,
+            pitcher_mlb_id: 90010,
+            pitcher_full_name: 'Golf Starter',
+            outs: 18,
+            innings: '6.0',
+            pitches: 92,
+          },
+          relief: {
+            pitcher_count: 2,
+            outs: 9,
+            innings: '3.0',
+            pitches: 35,
+          },
+          total: {
+            pitcher_count: 3,
+            outs: 27,
+            innings: '9.0',
+            pitches: 127,
+          },
+          context_sentences: [
+            'Golf Starter started and recorded 18 outs (6.0 IP) on 92 pitches.',
+            '2 relievers covered the remaining 9 outs (3.0 IP) on 35 pitches.',
+          ],
         },
       ],
     },
@@ -298,6 +365,43 @@ test('date summary rows expose a stable header marker', () => {
   const matches = html.match(/data-testid="team-relief-date-summary"/g) || []
 
   assert.equal(matches.length, teamReliefWorkPayload.relief_by_date.length)
+})
+
+test('renders server-authored game context label and sentences verbatim', () => {
+  const html = renderPanel({ payload: teamReliefWorkPayload })
+  const labeledGame = teamReliefWorkPayload.relief_by_date[0].games[0]
+
+  assert.ok(htmlIncludes(html, labeledGame.context_label))
+  for (const sentence of labeledGame.context_sentences) {
+    assert.ok(htmlIncludes(html, sentence), sentence)
+  }
+  assert.equal(htmlIncludes(html, labeledGame.game_shape), false)
+})
+
+test('omits game context that has no server-authored label', () => {
+  const html = renderPanel({ payload: teamReliefWorkPayload })
+  const unlabeledGame = teamReliefWorkPayload.relief_by_date[1].games[0]
+  const matches = html.match(/data-testid="team-relief-game-context"/g) || []
+
+  assert.equal(matches.length, 1)
+  for (const sentence of unlabeledGame.context_sentences) {
+    assert.equal(htmlIncludes(html, sentence), false, sentence)
+  }
+  assert.equal(htmlIncludes(html, unlabeledGame.game_shape), false)
+})
+
+test('date groups without games render no game context container', () => {
+  const payload = {
+    ...teamReliefWorkPayload,
+    relief_by_date: teamReliefWorkPayload.relief_by_date.map((group) => {
+      const { games, ...rest } = group
+      return rest
+    }),
+  }
+  const html = renderPanel({ payload })
+  const matches = html.match(/data-testid="team-relief-game-context"/g) || []
+
+  assert.equal(matches.length, 0)
 })
 
 test('formats pitcher IP from outs using baseball notation', () => {
