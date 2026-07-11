@@ -12,6 +12,8 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from services.starter_assignment_context import (
+    COVERAGE_SCOPE_PITCHER_SEASON_TO_TARGET,
+    COVERAGE_STATE_COMPLETE,
     FIRST_SEASON_START_MIN_RELIEF_APPEARANCES,
     MIN_CONSECUTIVE_RELIEF_APPEARANCES,
     MIN_DAYS_SINCE_PREVIOUS_START,
@@ -41,14 +43,44 @@ def _target(game_date=date(2026, 7, 5), game_pk=9900):
     return _row(game_date, game_pk, games_started=1)
 
 
-def test_combined_sentence_from_prior_start_and_relief_run():
+def _verified_coverage(target, history, *, source_appearances=None, source_starts=None):
+    counted = {target.mlb_game_pk: target}
+    for row in history:
+        if row.game_date is None or row.mlb_game_pk is None:
+            continue
+        if row.game_date > target.game_date:
+            continue
+        if row.game_date == target.game_date and row.mlb_game_pk > target.mlb_game_pk:
+            continue
+        counted.setdefault(row.mlb_game_pk, row)
+    appearances = len(counted)
+    starts = sum(1 for row in counted.values() if row.games_started == 1)
+    return {
+        'coverage_state': COVERAGE_STATE_COMPLETE,
+        'coverage_scope': COVERAGE_SCOPE_PITCHER_SEASON_TO_TARGET,
+        'stored_appearance_count': appearances,
+        'source_appearance_count': (
+            appearances if source_appearances is None else source_appearances
+        ),
+        'stored_games_started_count': starts,
+        'source_games_started_count': starts if source_starts is None else source_starts,
+    }
+
+
+def test_reconciled_ledger_produces_combined_sentence():
     history = [
         _row(date(2026, 5, 28), 9800, games_started=1),
         _row(date(2026, 6, 1), 9801),
         _row(date(2026, 6, 8), 9802),
         _row(date(2026, 6, 20), 9803),
     ]
-    context = derive_starter_assignment_context(_target(), PITCHER, history)
+    target = _target()
+    context = derive_starter_assignment_context(
+        target,
+        PITCHER,
+        history,
+        history_coverage=_verified_coverage(target, history),
+    )
 
     assert context == {
         'narrative_type': NARRATIVE_FIRST_START_IN_DAYS,
@@ -77,7 +109,13 @@ def test_duplicate_game_rows_count_once():
         _row(date(2026, 6, 8), 9802),
         _row(date(2026, 6, 20), 9803),
     ]
-    context = derive_starter_assignment_context(_target(), PITCHER, history)
+    target = _target()
+    context = derive_starter_assignment_context(
+        target,
+        PITCHER,
+        history,
+        history_coverage=_verified_coverage(target, history),
+    )
 
     assert context['consecutive_relief_appearances'] == 3
 
@@ -94,7 +132,12 @@ def test_doubleheader_rows_order_by_game_identifier():
         _row(date(2026, 7, 5), 9899),
         _row(date(2026, 7, 5), 9901),
     ]
-    context = derive_starter_assignment_context(target, PITCHER, history)
+    context = derive_starter_assignment_context(
+        target,
+        PITCHER,
+        history,
+        history_coverage=_verified_coverage(target, history),
+    )
 
     assert context['consecutive_relief_appearances'] == 3
     assert context['days_since_previous_start'] == 20
@@ -162,7 +205,13 @@ def test_first_start_of_season_after_relief_only_history():
         _row(date(2026, 6, 1 + offset), 9801 + offset)
         for offset in range(FIRST_SEASON_START_MIN_RELIEF_APPEARANCES)
     ]
-    context = derive_starter_assignment_context(_target(), PITCHER, history)
+    target = _target()
+    context = derive_starter_assignment_context(
+        target,
+        PITCHER,
+        history,
+        history_coverage=_verified_coverage(target, history),
+    )
 
     assert context == {
         'narrative_type': NARRATIVE_FIRST_SEASON_START,
@@ -178,6 +227,164 @@ def test_first_start_of_season_after_relief_only_history():
 
 def test_empty_history_stays_silent():
     assert derive_starter_assignment_context(_target(), PITCHER, []) is None
+
+
+def test_ledger_without_affirmative_coverage_stays_silent():
+    history = [
+        _row(date(2026, 5, 28), 9800, games_started=1),
+        _row(date(2026, 6, 1), 9801),
+        _row(date(2026, 6, 8), 9802),
+        _row(date(2026, 6, 20), 9803),
+    ]
+
+    assert derive_starter_assignment_context(_target(), PITCHER, history) is None
+
+
+def test_missing_relief_appearance_inside_short_gap_stays_silent():
+    target = _target()
+    history = [
+        _row(date(2026, 5, 28), 9800, games_started=1),
+        _row(date(2026, 6, 1), 9801),
+        # Missing June 5 relief appearance is represented by source count only.
+        _row(date(2026, 6, 8), 9803),
+        _row(date(2026, 6, 12), 9804),
+    ]
+    coverage = _verified_coverage(
+        target,
+        history,
+        source_appearances=len(history) + 2,
+    )
+
+    assert (
+        derive_starter_assignment_context(
+            target,
+            PITCHER,
+            history,
+            history_coverage=coverage,
+        )
+        is None
+    )
+
+
+def test_missing_intervening_start_stays_silent():
+    target = _target()
+    history = [
+        _row(date(2026, 5, 28), 9800, games_started=1),
+        _row(date(2026, 6, 1), 9801),
+        _row(date(2026, 6, 8), 9802),
+        _row(date(2026, 6, 20), 9803),
+    ]
+    coverage = _verified_coverage(target, history, source_starts=3)
+
+    assert (
+        derive_starter_assignment_context(
+            target,
+            PITCHER,
+            history,
+            history_coverage=coverage,
+        )
+        is None
+    )
+
+
+def test_stored_appearance_count_mismatch_stays_silent():
+    target = _target()
+    history = [
+        _row(date(2026, 5, 28), 9800, games_started=1),
+        _row(date(2026, 6, 1), 9801),
+        _row(date(2026, 6, 8), 9802),
+        _row(date(2026, 6, 20), 9803),
+    ]
+    coverage = _verified_coverage(target, history)
+    coverage['stored_appearance_count'] -= 1
+
+    assert (
+        derive_starter_assignment_context(
+            target,
+            PITCHER,
+            history,
+            history_coverage=coverage,
+        )
+        is None
+    )
+
+
+def test_stored_games_started_count_mismatch_stays_silent():
+    target = _target()
+    history = [
+        _row(date(2026, 5, 28), 9800, games_started=1),
+        _row(date(2026, 6, 1), 9801),
+        _row(date(2026, 6, 8), 9802),
+        _row(date(2026, 6, 20), 9803),
+    ]
+    coverage = _verified_coverage(target, history)
+    coverage['stored_games_started_count'] -= 1
+
+    assert (
+        derive_starter_assignment_context(
+            target,
+            PITCHER,
+            history,
+            history_coverage=coverage,
+        )
+        is None
+    )
+
+
+def test_unknown_source_totals_stay_silent():
+    target = _target()
+    history = [
+        _row(date(2026, 5, 28), 9800, games_started=1),
+        _row(date(2026, 6, 1), 9801),
+        _row(date(2026, 6, 8), 9802),
+        _row(date(2026, 6, 20), 9803),
+    ]
+    coverage = _verified_coverage(target, history)
+    coverage['source_appearance_count'] = None
+
+    assert (
+        derive_starter_assignment_context(
+            target,
+            PITCHER,
+            history,
+            history_coverage=coverage,
+        )
+        is None
+    )
+
+
+def test_blackburn_complete_verified_ledger_produces_sentence():
+    target = _row(date(2026, 7, 9), 9900, games_started=1)
+    history = [_row(date(2026, 5, 7), 9700, games_started=1)]
+    history.extend(
+        _row(date(2026, 5, 10 + offset), 9701 + offset)
+        for offset in range(20)
+    )
+    pitcher = SimpleNamespace(full_name='Paul Blackburn')
+
+    context = derive_starter_assignment_context(
+        target,
+        pitcher,
+        history,
+        history_coverage=_verified_coverage(target, history),
+    )
+
+    assert context['sentence'] == (
+        'Paul Blackburn made his first start in 63 days after '
+        '20 consecutive relief appearances.'
+    )
+
+
+def test_blackburn_truncated_ledger_without_coverage_stays_silent():
+    target = _row(date(2026, 7, 9), 9900, games_started=1)
+    history = [_row(date(2026, 5, 7), 9700, games_started=1)]
+    history.extend(
+        _row(date(2026, 5, 10 + offset), 9701 + offset)
+        for offset in range(12)
+    )
+    pitcher = SimpleNamespace(full_name='Paul Blackburn')
+
+    assert derive_starter_assignment_context(target, pitcher, history) is None
 
 
 def test_non_regular_season_target_stays_silent():

@@ -29,6 +29,8 @@ NARRATIVE_FIRST_START_IN_DAYS = 'first_start_in_days_after_relief_run'
 NARRATIVE_FIRST_SEASON_START = 'first_start_of_season_after_relief'
 
 REGULAR_SEASON_GAME_TYPE = 'R'
+COVERAGE_STATE_COMPLETE = 'complete'
+COVERAGE_SCOPE_PITCHER_SEASON_TO_TARGET = 'pitcher_regular_season_through_target'
 
 
 def build_starter_assignment_context(starter_log, pitcher):
@@ -53,16 +55,26 @@ def build_starter_assignment_context(starter_log, pitcher):
         .order_by(desc(GameLog.game_date), desc(GameLog.mlb_game_pk))
         .all()
     )
-    return derive_starter_assignment_context(starter_log, pitcher, history_rows)
+    return derive_starter_assignment_context(
+        starter_log,
+        pitcher,
+        history_rows,
+        history_coverage=None,
+    )
 
 
-def derive_starter_assignment_context(starter_log, pitcher, history_rows):
+def derive_starter_assignment_context(
+    starter_log,
+    pitcher,
+    history_rows,
+    *,
+    history_coverage=None,
+):
     """Pure derivation over already-fetched same-season rows.
 
-    Fails closed to ``None`` whenever the rows cannot prove a claim: a
-    missing date or game id anywhere in the history, an unknown
-    start/relief flag inside the sequence, or numbers below the
-    conservative thresholds above.
+    Fails closed to ``None`` whenever the rows cannot prove a claim: missing
+    row identity, an unknown start/relief flag, absent pitcher-season source
+    counts, or numbers below the conservative thresholds above.
     """
     target_date = getattr(starter_log, 'game_date', None)
     target_game_pk = getattr(starter_log, 'mlb_game_pk', None)
@@ -74,22 +86,12 @@ def derive_starter_assignment_context(starter_log, pitcher, history_rows):
     if not name:
         return None
 
-    prior = []
-    seen_game_pks = set()
-    for row in history_rows or []:
-        row_date = getattr(row, 'game_date', None)
-        row_game_pk = getattr(row, 'mlb_game_pk', None)
-        if row_date is None or row_game_pk is None:
-            return None
-        if row_game_pk in seen_game_pks or row_game_pk == target_game_pk:
-            continue
-        seen_game_pks.add(row_game_pk)
-        if row_date > target_date:
-            continue
-        if row_date == target_date and row_game_pk > target_game_pk:
-            continue
-        prior.append((row_date, row_game_pk, row))
-    prior.sort(key=lambda item: (item[0], item[1]), reverse=True)
+    prepared = _prepare_history(starter_log, history_rows, target_date, target_game_pk)
+    if prepared is None:
+        return None
+    if not _has_verified_history_coverage(history_coverage, prepared):
+        return None
+    prior = prepared['prior']
 
     consecutive_relief = 0
     previous_start_date = None
@@ -149,3 +151,89 @@ def _start_relief_state(log):
 
 def _relief_appearance_word(count):
     return 'relief appearance' if count == 1 else 'relief appearances'
+
+
+def _prepare_history(starter_log, history_rows, target_date, target_game_pk):
+    target_state = _start_relief_state(starter_log)
+    if target_state != START:
+        return None
+
+    counted = {target_game_pk: starter_log}
+    prior = []
+    for row in history_rows or []:
+        row_date = getattr(row, 'game_date', None)
+        row_game_pk = getattr(row, 'mlb_game_pk', None)
+        if row_date is None or row_game_pk is None:
+            return None
+        if row_date > target_date:
+            continue
+        if row_date == target_date and row_game_pk > target_game_pk:
+            continue
+        if row_game_pk == target_game_pk:
+            continue
+        if row_game_pk in counted:
+            continue
+        counted[row_game_pk] = row
+        prior.append((row_date, row_game_pk, row))
+
+    starts = 0
+    for row in counted.values():
+        state = _start_relief_state(row)
+        if state == START:
+            starts += 1
+            continue
+        if state == RELIEF:
+            continue
+        return None
+
+    prior.sort(key=lambda item: (item[0], item[1]), reverse=True)
+    return {
+        'prior': prior,
+        'stored_appearance_count': len(counted),
+        'stored_games_started_count': starts,
+    }
+
+
+def _has_verified_history_coverage(history_coverage, prepared):
+    if not isinstance(history_coverage, dict):
+        return False
+    if history_coverage.get('coverage_state') != COVERAGE_STATE_COMPLETE:
+        return False
+    if (
+        history_coverage.get('coverage_scope')
+        != COVERAGE_SCOPE_PITCHER_SEASON_TO_TARGET
+    ):
+        return False
+
+    stored_appearances = prepared['stored_appearance_count']
+    stored_starts = prepared['stored_games_started_count']
+    coverage_stored_appearances = _as_nonnegative_int(
+        history_coverage.get('stored_appearance_count')
+    )
+    coverage_source_appearances = _as_nonnegative_int(
+        history_coverage.get('source_appearance_count')
+    )
+    coverage_stored_starts = _as_nonnegative_int(
+        history_coverage.get('stored_games_started_count')
+    )
+    coverage_source_starts = _as_nonnegative_int(
+        history_coverage.get('source_games_started_count')
+    )
+    return (
+        coverage_stored_appearances == stored_appearances
+        and coverage_source_appearances == stored_appearances
+        and coverage_stored_starts == stored_starts
+        and coverage_source_starts == stored_starts
+    )
+
+
+def _as_nonnegative_int(value):
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+    if parsed < 0:
+        return None
+    return parsed

@@ -698,7 +698,7 @@ def test_team_relief_work_game_context_label_thresholds_are_strict(client):
     assert 'Extended bullpen coverage' not in json.dumps(body)
 
 
-def test_team_relief_work_starter_assignment_combined_sentence(client):
+def test_team_relief_work_starter_assignment_without_coverage_stays_silent(client):
     with client.application.app_context():
         starter = _pitcher(name='Delta Starter', mlb_id=95001)
         relievers = [
@@ -736,23 +736,11 @@ def test_team_relief_work_starter_assignment_combined_sentence(client):
     game = group['games'][0]
 
     assert game['context_label'] == 'Extended bullpen coverage'
-    assert game['starter_assignment'] == {
-        'narrative_type': 'first_start_in_days_after_relief_run',
-        'sentence': (
-            'Delta Starter made his first start in 38 days after '
-            '15 consecutive relief appearances.'
-        ),
-        'previous_start_date': '2026-05-28',
-        'days_since_previous_start': 38,
-        'consecutive_relief_appearances': 15,
-    }
+    assert 'starter_assignment' not in game
     assert game['context_sentences'] == [
-        (
-            'Delta Starter made his first start in 38 days after '
-            '15 consecutive relief appearances.'
-        ),
-        'He recorded 6 outs (2.0 IP) on 35 pitches.',
+        'Delta Starter started and recorded 6 outs (2.0 IP) on 35 pitches.',
         '6 relievers covered the remaining 21 outs (7.0 IP) on 107 pitches.',
+        '7 pitchers combined for 27 outs (9.0 IP) and 142 pitches.',
     ]
     assert game['total'] == {
         'pitcher_count': 7,
@@ -764,7 +752,7 @@ def test_team_relief_work_starter_assignment_combined_sentence(client):
     assert group['outs_total'] == 21
 
 
-def test_team_relief_work_starter_assignment_run_stops_at_previous_start(client):
+def test_team_relief_work_previous_start_history_without_coverage_stays_silent(client):
     with client.application.app_context():
         starter = _pitcher(name='Echo Starter', mlb_id=95001)
         first = _pitcher(name='Reliever One', mlb_id=95002)
@@ -792,16 +780,13 @@ def test_team_relief_work_starter_assignment_run_stops_at_previous_start(client)
     )
     game = group['games'][0]
 
-    assert game['starter_assignment']['narrative_type'] == (
-        'first_start_in_days_after_relief_run'
-    )
-    assert game['starter_assignment']['previous_start_date'] == '2026-06-20'
-    assert game['starter_assignment']['days_since_previous_start'] == 15
-    assert game['starter_assignment']['consecutive_relief_appearances'] == 4
-    assert game['starter_assignment']['sentence'] == (
-        'Echo Starter made his first start in 15 days after '
-        '4 consecutive relief appearances.'
-    )
+    assert game['context_label'] == 'Extended bullpen coverage'
+    assert 'starter_assignment' not in game
+    assert game['context_sentences'] == [
+        'Echo Starter started and recorded 6 outs (2.0 IP) on 31 pitches.',
+        '2 relievers covered the remaining 15 outs (5.0 IP) on 62 pitches.',
+        '3 pitchers combined for 21 outs (7.0 IP) and 93 pitches.',
+    ]
 
 
 def test_team_relief_work_starter_assignment_short_gap_stays_silent(client):
@@ -889,7 +874,7 @@ def test_team_relief_work_starter_assignment_unknown_flag_stays_silent(client):
     assert 'starter_assignment' not in game
 
 
-def test_team_relief_work_starter_assignment_first_start_of_season(client):
+def test_team_relief_work_first_start_of_season_without_coverage_stays_silent(client):
     with client.application.app_context():
         starter = _pitcher(name='Echo Starter', mlb_id=95001)
         reliever = _pitcher(name='Reliever One', mlb_id=95002)
@@ -916,16 +901,13 @@ def test_team_relief_work_starter_assignment_first_start_of_season(client):
     )
     game = group['games'][0]
 
-    assert game['starter_assignment'] == {
-        'narrative_type': 'first_start_of_season_after_relief',
-        'sentence': (
-            'Echo Starter made his first start of the season after '
-            '6 relief appearances.'
-        ),
-        'previous_start_date': None,
-        'days_since_previous_start': None,
-        'consecutive_relief_appearances': 6,
-    }
+    assert game['context_label'] == 'Extended bullpen coverage'
+    assert 'starter_assignment' not in game
+    assert game['context_sentences'] == [
+        'Echo Starter started and recorded 6 outs (2.0 IP) on 27 pitches.',
+        '1 reliever covered the remaining 15 outs (5.0 IP) on 57 pitches.',
+        '2 pitchers combined for 21 outs (7.0 IP) and 84 pitches.',
+    ]
     serialized = json.dumps(body)
     assert 'major-league' not in serialized
     assert 'first start for' not in serialized
