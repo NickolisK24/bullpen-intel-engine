@@ -36,6 +36,7 @@ ROUTE_STATUS_DEGRADED = 'degraded'
 DEFAULT_WINDOW_DAYS = 7
 MAX_WINDOW_DAYS = 14
 RECENT_ROW_QUERY_LIMIT = 64
+MAX_RECENT_ROW_QUERY_LIMIT = 512
 MAX_REASON_CODES = 20
 MAX_LIMITATIONS = 5
 MAX_ADJACENT_DETAILS = 20
@@ -104,6 +105,7 @@ def build_internal_snapshot_audit_payload(
     *,
     product_date=None,
     window_days=None,
+    recent_row_query_limit=None,
     checkpoint=None,
     statement_timeout_ms=None,
     time_budget_seconds=None,
@@ -127,6 +129,9 @@ def build_internal_snapshot_audit_payload(
     stage('summary_build_started')
     ref = _parse_product_date(product_date)
     normalized_window = _parse_window_days(window_days)
+    normalized_recent_row_limit = _parse_recent_row_query_limit(
+        recent_row_query_limit,
+    )
     stage('request_parsed')
     _set_local_statement_timeout(
         SUMMARY_STATEMENT_TIMEOUT_MS
@@ -143,7 +148,11 @@ def build_internal_snapshot_audit_payload(
         else None
     )
     stage('recent_snapshot_query_started')
-    recent_rows = _recent_snapshot_rows(anchor_date, normalized_window)
+    recent_rows = _recent_snapshot_rows(
+        anchor_date,
+        normalized_window,
+        normalized_recent_row_limit,
+    )
     stage('recent_snapshot_query_finished')
     latest_valid = _latest_valid_snapshot(recent_rows)
     stage('sync_run_query_started')
@@ -171,6 +180,7 @@ def build_internal_snapshot_audit_payload(
         recent_rows,
         published_by_date,
         sync_runs,
+        recent_row_query_limit=normalized_recent_row_limit,
     )
     stage('adjacency_summary_finished')
 
@@ -204,7 +214,7 @@ def build_internal_snapshot_audit_payload(
         'diagnostics': _diagnostics_summary(
             latest_snapshot_entry,
             recent_row_count=len(recent_rows),
-            recent_query_limit=RECENT_ROW_QUERY_LIMIT,
+            recent_query_limit=normalized_recent_row_limit,
         ),
         'sections_present': sections_present,
         'missing_sections': [
@@ -363,6 +373,18 @@ def _parse_window_days(value) -> int:
     return min(parsed, MAX_WINDOW_DAYS)
 
 
+def _parse_recent_row_query_limit(value) -> int:
+    if value is None or str(value).strip() == '':
+        return RECENT_ROW_QUERY_LIMIT
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError) as exc:
+        raise SnapshotAuditRequestError('recent_row_query_limit_invalid') from exc
+    if parsed <= 0:
+        raise SnapshotAuditRequestError('recent_row_query_limit_invalid')
+    return min(parsed, MAX_RECENT_ROW_QUERY_LIMIT)
+
+
 def _latest_snapshot_row(ref: date | None) -> dict | None:
     query = _snapshot_projection_query()
     if ref is not None:
@@ -380,7 +402,11 @@ def _latest_snapshot_row(ref: date | None) -> dict | None:
     return _projection_dict(query.first())
 
 
-def _recent_snapshot_rows(anchor_date: date | None, window_days: int) -> list[dict]:
+def _recent_snapshot_rows(
+    anchor_date: date | None,
+    window_days: int,
+    recent_row_query_limit: int,
+) -> list[dict]:
     if anchor_date is None:
         return []
 
@@ -394,7 +420,7 @@ def _recent_snapshot_rows(anchor_date: date | None, window_days: int) -> list[di
             desc(DashboardSnapshot.snapshot_generated_at),
             desc(DashboardSnapshot.id),
         )
-        .limit(RECENT_ROW_QUERY_LIMIT)
+        .limit(recent_row_query_limit)
         .all()
     )
     return [
@@ -782,6 +808,8 @@ def _snapshot_adjacency_summary(
     rows: list[dict],
     published_by_date: dict,
     sync_runs: dict,
+    *,
+    recent_row_query_limit: int,
 ) -> dict:
     published_rows = [row for row in rows if bool(row.get('is_published'))]
     trusted_published_rows = [
@@ -865,8 +893,8 @@ def _snapshot_adjacency_summary(
             non_adjacent_comparisons[:MAX_ADJACENT_DETAILS]
         ),
         'response_mode': 'bounded_summary',
-        'recent_row_query_limit': RECENT_ROW_QUERY_LIMIT,
-        'recent_rows_truncated': len(rows) >= RECENT_ROW_QUERY_LIMIT,
+        'recent_row_query_limit': recent_row_query_limit,
+        'recent_rows_truncated': len(rows) >= recent_row_query_limit,
     }
 
 

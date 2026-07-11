@@ -20,6 +20,11 @@ on:
         required: true
         default: '14'
         type: string
+      audit_recent_row_limit:
+        description: Phase 0H operator audit recent row limit; web route remains request-safe
+        required: true
+        default: '256'
+        type: string
       season:
         description: Regular season year for ledger backfill
         required: true
@@ -123,10 +128,19 @@ jobs:
         if: ${{ inputs.operation == 'phase0h_snapshot_audit' }}
         env:
           AUDIT_WINDOW: ${{ inputs.audit_window }}
+          AUDIT_RECENT_ROW_LIMIT: ${{ inputs.audit_recent_row_limit }}
         run: |
           set -euo pipefail
           if [ "$AUDIT_WINDOW" != '14' ]; then
             echo "::error::Phase 0H production ratification requires audit_window=14."
+            exit 1
+          fi
+          if [[ ! "$AUDIT_RECENT_ROW_LIMIT" =~ ^[0-9]+$ ]]; then
+            echo "::error::audit_recent_row_limit must contain only digits."
+            exit 1
+          fi
+          if [ "$AUDIT_RECENT_ROW_LIMIT" -lt 64 ] || [ "$AUDIT_RECENT_ROW_LIMIT" -gt 512 ]; then
+            echo "::error::audit_recent_row_limit must be between 64 and 512."
             exit 1
           fi
           echo "Phase 0H audit inputs validated."
@@ -250,6 +264,7 @@ jobs:
         working-directory: backend
         env:
           AUDIT_WINDOW: ${{ inputs.audit_window }}
+          AUDIT_RECENT_ROW_LIMIT: ${{ inputs.audit_recent_row_limit }}
           AUDIT_OUTPUT_DIR: ${{ runner.temp }}/phase0h-snapshot-audit
         run: |
           set -euo pipefail
@@ -261,6 +276,7 @@ jobs:
           set +e
           python scripts/run_internal_snapshot_audit.py \
             --window "$AUDIT_WINDOW" \
+            --recent-row-limit "$AUDIT_RECENT_ROW_LIMIT" \
             --compact \
             > "$audit_json" \
             2> "$audit_stderr"
@@ -276,9 +292,41 @@ jobs:
           audit_exit_code = int(sys.argv[2])
           summary_path = Path(sys.argv[3])
 
+          def load_audit_payload(path):
+              text = path.read_text(encoding='utf-8')
+              try:
+                  parsed = json.loads(text)
+              except json.JSONDecodeError as exc:
+                  last_error = exc
+              else:
+                  if isinstance(parsed, dict):
+                      return parsed
+                  raise ValueError('Audit output JSON was not an object.')
+
+              decoder = json.JSONDecoder()
+              lines = text.splitlines()
+              for index in range(len(lines) - 1, -1, -1):
+                  raw_line = lines[index]
+                  if not raw_line.lstrip().startswith('{'):
+                      continue
+                  candidate = '\n'.join(lines[index:]).strip()
+                  try:
+                      parsed = json.loads(candidate)
+                  except json.JSONDecodeError:
+                      try:
+                          parsed, _ = decoder.raw_decode(candidate)
+                      except json.JSONDecodeError as exc:
+                          last_error = exc
+                          continue
+                  if isinstance(parsed, dict):
+                      return parsed
+              raise ValueError(
+                  f'No JSON audit object found in command output: {last_error}'
+              )
+
           try:
-              payload = json.loads(audit_json.read_text(encoding='utf-8'))
-          except json.JSONDecodeError as exc:
+              payload = load_audit_payload(audit_json)
+          except ValueError as exc:
               summary_path.write_text(
                   '## Phase 0H Production Snapshot Audit\n\n'
                   f'- Exit code: `{audit_exit_code}`\n'
@@ -325,6 +373,11 @@ jobs:
                   'recent_rows_truncated='
                   f"{adjacency.get('recent_rows_truncated')!r}"
               )
+          if not isinstance(adjacency.get('recent_row_query_limit'), int):
+              errors.append(
+                  'recent_row_query_limit='
+                  f"{adjacency.get('recent_row_query_limit')!r}"
+              )
           for field in count_fields:
               if not isinstance(adjacency.get(field), int):
                   errors.append(f'{field}={adjacency.get(field)!r}')
@@ -350,6 +403,7 @@ jobs:
               f"- Non-comparable count: `{adjacency.get('non_comparable_count')}`",
               f"- Non-comparable reason codes: `{adjacency.get('non_comparable_reason_codes')}`",
               f"- Non-adjacent comparison count: `{adjacency.get('non_adjacent_comparison_count')}`",
+              f"- Recent row query limit: `{adjacency.get('recent_row_query_limit')}`",
               f"- Recent rows truncated: `{adjacency.get('recent_rows_truncated')}`",
               f"- Diagnostics count: `{len(diagnostics)}`",
           ]

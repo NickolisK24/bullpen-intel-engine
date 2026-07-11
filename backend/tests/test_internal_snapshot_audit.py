@@ -438,6 +438,45 @@ def test_snapshot_audit_large_payloads_return_compact_summaries(app, client):
     assert summary['non_comparable_reason_codes'] == []
 
 
+def test_snapshot_audit_operator_recent_row_limit_override(app):
+    with app.app_context():
+        for offset in range(5):
+            _snapshot(
+                date(2026, 7, 5),
+                generated_offset_minutes=offset,
+            )
+        db.session.commit()
+
+        from services import internal_snapshot_audit as audit_service
+
+        payload = audit_service.build_internal_snapshot_audit_payload(
+            product_date='2026-07-05',
+            window_days='14',
+            recent_row_query_limit='3',
+        )
+
+    summary = payload['snapshot_adjacency_summary']
+    assert summary['recent_row_query_limit'] == 3
+    assert summary['recent_rows_truncated'] is True
+    assert payload['diagnostics']['recent_row_query_limit'] == 3
+    assert payload['diagnostics']['recent_rows_truncated'] is True
+
+
+def test_snapshot_audit_rejects_invalid_recent_row_limit(app):
+    with app.app_context():
+        from services import internal_snapshot_audit as audit_service
+
+        with pytest.raises(
+            audit_service.SnapshotAuditRequestError,
+            match='recent_row_query_limit_invalid',
+        ):
+            audit_service.build_internal_snapshot_audit_payload(
+                product_date='2026-07-05',
+                window_days='14',
+                recent_row_query_limit='0',
+            )
+
+
 def test_snapshot_audit_missing_incomplete_sections_are_diagnostics_not_crashes(
     app,
     client,
