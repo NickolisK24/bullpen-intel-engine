@@ -14,6 +14,7 @@ from datetime import date
 from sqlalchemy import desc
 
 from models.game_log import GameLog
+from services import pitcher_season_ledger_coverage
 from utils.games_started import RELIEF, START, games_started_state
 
 
@@ -33,7 +34,7 @@ COVERAGE_STATE_COMPLETE = 'complete'
 COVERAGE_SCOPE_PITCHER_SEASON_TO_TARGET = 'pitcher_regular_season_through_target'
 
 
-def build_starter_assignment_context(starter_log, pitcher):
+def build_starter_assignment_context(starter_log, pitcher, *, history_coverage=None):
     """Fetch same-season history for the credited starter and derive."""
     target_date = getattr(starter_log, 'game_date', None)
     target_game_pk = getattr(starter_log, 'mlb_game_pk', None)
@@ -59,7 +60,7 @@ def build_starter_assignment_context(starter_log, pitcher):
         starter_log,
         pitcher,
         history_rows,
-        history_coverage=None,
+        history_coverage=history_coverage,
     )
 
 
@@ -86,7 +87,13 @@ def derive_starter_assignment_context(
     if not name:
         return None
 
-    prepared = _prepare_history(starter_log, history_rows, target_date, target_game_pk)
+    prepared = _prepare_history(
+        starter_log,
+        pitcher,
+        history_rows,
+        target_date,
+        target_game_pk,
+    )
     if prepared is None:
         return None
     if not _has_verified_history_coverage(history_coverage, prepared):
@@ -153,7 +160,7 @@ def _relief_appearance_word(count):
     return 'relief appearance' if count == 1 else 'relief appearances'
 
 
-def _prepare_history(starter_log, history_rows, target_date, target_game_pk):
+def _prepare_history(starter_log, pitcher, history_rows, target_date, target_game_pk):
     target_state = _start_relief_state(starter_log)
     if target_state != START:
         return None
@@ -189,8 +196,21 @@ def _prepare_history(starter_log, history_rows, target_date, target_game_pk):
     prior.sort(key=lambda item: (item[0], item[1]), reverse=True)
     return {
         'prior': prior,
+        'pitcher_id': getattr(starter_log, 'pitcher_id', None),
+        'pitcher_mlb_id': getattr(pitcher, 'mlb_id', None),
+        'season': target_date.year,
+        'game_type': _game_type(starter_log),
+        'target_game_pk': target_game_pk,
+        'covered_through_date': target_date.isoformat(),
         'stored_appearance_count': len(counted),
         'stored_games_started_count': starts,
+        'stored_manifest_fingerprint': (
+            pitcher_season_ledger_coverage.manifest_fingerprint(
+                pitcher_season_ledger_coverage.build_stored_manifest_from_rows(
+                    counted.values()
+                )['entries']
+            )
+        ),
     }
 
 
@@ -204,9 +224,22 @@ def _has_verified_history_coverage(history_coverage, prepared):
         != COVERAGE_SCOPE_PITCHER_SEASON_TO_TARGET
     ):
         return False
+    if history_coverage.get('pitcher_id') != prepared['pitcher_id']:
+        return False
+    if history_coverage.get('pitcher_mlb_id') != prepared['pitcher_mlb_id']:
+        return False
+    if history_coverage.get('season') != prepared['season']:
+        return False
+    if history_coverage.get('game_type') != prepared['game_type']:
+        return False
+    if history_coverage.get('target_game_pk') != prepared['target_game_pk']:
+        return False
+    if history_coverage.get('covered_through_date') != prepared['covered_through_date']:
+        return False
 
     stored_appearances = prepared['stored_appearance_count']
     stored_starts = prepared['stored_games_started_count']
+    stored_fingerprint = prepared['stored_manifest_fingerprint']
     coverage_stored_appearances = _as_nonnegative_int(
         history_coverage.get('stored_appearance_count')
     )
@@ -224,6 +257,8 @@ def _has_verified_history_coverage(history_coverage, prepared):
         and coverage_source_appearances == stored_appearances
         and coverage_stored_starts == stored_starts
         and coverage_source_starts == stored_starts
+        and history_coverage.get('stored_manifest_fingerprint') == stored_fingerprint
+        and history_coverage.get('source_manifest_fingerprint') == stored_fingerprint
     )
 
 

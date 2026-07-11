@@ -11,6 +11,8 @@ from flask import Flask
 from api.team_recent_work import team_recent_work_bp
 from models.game_log import GameLog
 from models.pitcher import Pitcher
+from models.scheduled_game import ScheduledGame
+from services import pitcher_season_ledger_coverage
 from services import public_team_relief_work
 from tests.db_config import configure_test_database, create_test_schema, drop_test_schema
 from utils.db import db
@@ -530,7 +532,7 @@ def test_team_relief_work_game_context_extended_bullpen_coverage(client):
             },
             'context_sentences': [
                 'Delta Starter started and recorded 6 outs (2.0 IP) on 35 pitches.',
-                '6 relievers covered the remaining 21 outs (7.0 IP) on 107 pitches.',
+                'Six relievers covered the remaining 21 outs (7.0 IP) on 107 pitches.',
                 '7 pitchers combined for 27 outs (9.0 IP) and 142 pitches.',
             ],
         },
@@ -596,7 +598,7 @@ def test_team_relief_work_game_context_normal_start_facts_without_label(client):
     }
     assert game['context_sentences'] == [
         'Delta Starter started and recorded 18 outs (6.0 IP) on 92 pitches.',
-        '2 relievers covered the remaining 9 outs (3.0 IP) on 35 pitches.',
+        'Two relievers covered the remaining 9 outs (3.0 IP) on 35 pitches.',
     ]
     assert 'starter_assignment' not in game
     assert 'Extended bullpen coverage' not in json.dumps(body)
@@ -635,7 +637,7 @@ def test_team_relief_work_game_context_missing_pitches_stay_null(client):
     assert game['total']['pitches'] is None
     assert game['context_sentences'] == [
         'Delta Starter started and recorded 6 outs (2.0 IP).',
-        '6 relievers covered the remaining 21 outs (7.0 IP).',
+        'Six relievers covered the remaining 21 outs (7.0 IP).',
         '7 pitchers combined for 27 outs (9.0 IP).',
     ]
 
@@ -739,7 +741,7 @@ def test_team_relief_work_starter_assignment_without_coverage_stays_silent(clien
     assert 'starter_assignment' not in game
     assert game['context_sentences'] == [
         'Delta Starter started and recorded 6 outs (2.0 IP) on 35 pitches.',
-        '6 relievers covered the remaining 21 outs (7.0 IP) on 107 pitches.',
+        'Six relievers covered the remaining 21 outs (7.0 IP) on 107 pitches.',
         '7 pitchers combined for 27 outs (9.0 IP) and 142 pitches.',
     ]
     assert game['total'] == {
@@ -750,6 +752,117 @@ def test_team_relief_work_starter_assignment_without_coverage_stays_silent(clien
     }
     assert group['relief_appearances'] == 6
     assert group['outs_total'] == 21
+
+
+def test_team_relief_work_verified_blackburn_ledger_emits_assignment(
+    client,
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        public_team_relief_work.board_freshness,
+        'board_freshness_block',
+        lambda: {
+            'data_through': '2026-07-09',
+            'freshness_state': 'current',
+            'is_current': True,
+            'label': 'Public bullpen data is current through July 9, 2026.',
+        },
+    )
+    appearance_dates = [
+        (9700, date(2026, 5, 7), 1),
+        (9701, date(2026, 5, 10), 0),
+        (9702, date(2026, 5, 13), 0),
+        (9703, date(2026, 5, 16), 0),
+        (9704, date(2026, 5, 18), 0),
+        (9705, date(2026, 5, 21), 0),
+        (9706, date(2026, 5, 29), 0),
+        (9707, date(2026, 6, 3), 0),
+        (9708, date(2026, 6, 5), 0),
+        (9709, date(2026, 6, 8), 0),
+        (9710, date(2026, 6, 9), 0),
+        (9711, date(2026, 6, 17), 0),
+        (9712, date(2026, 6, 21), 0),
+        (9713, date(2026, 6, 22), 0),
+        (9714, date(2026, 6, 25), 0),
+        (9715, date(2026, 6, 27), 0),
+        (9716, date(2026, 6, 28), 0),
+        (9717, date(2026, 7, 1), 0),
+        (9718, date(2026, 7, 3), 0),
+        (9719, date(2026, 7, 5), 0),
+        (9720, date(2026, 7, 7), 0),
+        (9900, date(2026, 7, 9), 1),
+    ]
+    with client.application.app_context():
+        starter = _pitcher(name='Paul Blackburn', mlb_id=621112)
+        relievers = [
+            _pitcher(name=f'Reliever {suffix}', mlb_id=96002 + index)
+            for index, suffix in enumerate(['One', 'Two', 'Three', 'Four', 'Five', 'Six'])
+        ]
+        db.session.add_all([starter, *relievers])
+        db.session.flush()
+        for game_pk, game_date, games_started in appearance_dates:
+            db.session.add(_final_game(game_pk, game_date))
+            db.session.add(_log(
+                starter.id,
+                game_pk,
+                game_date,
+                games_started=games_started,
+                outs=6 if game_pk == 9900 else 3,
+                pitches=35 if game_pk == 9900 else 12,
+            ))
+        for reliever, outs, pitches in zip(
+            relievers,
+            (3, 3, 3, 4, 4, 4),
+            (15, 17, 18, 19, 19, 19),
+        ):
+            db.session.add(_log(
+                reliever.id, 9900, date(2026, 7, 9), outs=outs, pitches=pitches,
+            ))
+        db.session.flush()
+        pitcher_season_ledger_coverage.reconcile_pitcher_season_coverage(
+            starter,
+            [
+                _source_split(game_pk, game_date, games_started)
+                for game_pk, game_date, games_started in appearance_dates
+            ],
+            season=2026,
+            through_date=date(2026, 7, 9),
+        )
+        db.session.commit()
+
+    body = client.get(f'/api/bullpen/teams/{TEAM_ID}/relief-work').get_json()
+    group = next(
+        entry for entry in body['relief_by_date']
+        if entry['game_date'] == '2026-07-09'
+    )
+    game = group['games'][0]
+
+    assert group['relief_appearances'] == 6
+    assert group['outs_total'] == 21
+    assert group['pitches_total'] == 107
+    assert game['starter_assignment'] == {
+        'narrative_type': 'first_start_in_days_after_relief_run',
+        'sentence': (
+            'Paul Blackburn made his first start in 63 days after '
+            '20 consecutive relief appearances.'
+        ),
+        'previous_start_date': '2026-05-07',
+        'days_since_previous_start': 63,
+        'consecutive_relief_appearances': 20,
+    }
+    assert game['context_sentences'] == [
+        (
+            'Paul Blackburn made his first start in 63 days after '
+            '20 consecutive relief appearances.'
+        ),
+        'He recorded 6 outs (2.0 IP) on 35 pitches.',
+        'Six relievers covered the remaining 21 outs (7.0 IP) on 107 pitches.',
+    ]
+    serialized = json.dumps(game)
+    assert 'source_manifest_fingerprint' not in serialized
+    assert 'stored_manifest_fingerprint' not in serialized
+    assert 'coverage_status' not in serialized
+    assert 'reason_codes' not in serialized
 
 
 def test_team_relief_work_previous_start_history_without_coverage_stays_silent(client):
@@ -784,7 +897,7 @@ def test_team_relief_work_previous_start_history_without_coverage_stays_silent(c
     assert 'starter_assignment' not in game
     assert game['context_sentences'] == [
         'Echo Starter started and recorded 6 outs (2.0 IP) on 31 pitches.',
-        '2 relievers covered the remaining 15 outs (5.0 IP) on 62 pitches.',
+        'Two relievers covered the remaining 15 outs (5.0 IP) on 62 pitches.',
         '3 pitchers combined for 21 outs (7.0 IP) and 93 pitches.',
     ]
 
@@ -817,7 +930,7 @@ def test_team_relief_work_starter_assignment_short_gap_stays_silent(client):
     assert 'starter_assignment' not in game
     assert game['context_sentences'] == [
         'Delta Starter started and recorded 6 outs (2.0 IP) on 30 pitches.',
-        '1 reliever covered the remaining 15 outs (5.0 IP) on 55 pitches.',
+        'One reliever covered the remaining 15 outs (5.0 IP) on 55 pitches.',
         '2 pitchers combined for 21 outs (7.0 IP) and 85 pitches.',
     ]
 
@@ -905,7 +1018,7 @@ def test_team_relief_work_first_start_of_season_without_coverage_stays_silent(cl
     assert 'starter_assignment' not in game
     assert game['context_sentences'] == [
         'Echo Starter started and recorded 6 outs (2.0 IP) on 27 pitches.',
-        '1 reliever covered the remaining 15 outs (5.0 IP) on 57 pitches.',
+        'One reliever covered the remaining 15 outs (5.0 IP) on 57 pitches.',
         '2 pitchers combined for 21 outs (7.0 IP) and 84 pitches.',
     ]
     serialized = json.dumps(body)
@@ -1014,6 +1127,7 @@ def test_public_team_relief_work_import_guard_allows_only_public_sources():
         'datetime',
         'sqlalchemy',
         'models.game_log',
+        'services',
         'utils.games_started',
     }
     assert _import_modules(API_PATH) == {
@@ -1093,10 +1207,14 @@ def test_existing_public_routes_behavior_freeze(monkeypatch):
         'frontend/src/components/bullpen/TeamReliefWorkPanel.jsx',
         'frontend/tests/teamReliefWorkPanel.test.mjs',
     }
+    allowed_pitcher_ledger_coverage_files = {
+        'backend/migrations/versions/7c4d2e9f1a6b_add_pitcher_season_ledger_coverage.py',
+    }
     assert not [
         path for path in changed
         if path not in allowed_phase_a_audience_signup_files
         if path not in allowed_bullpen_game_context_files
+        if path not in allowed_pitcher_ledger_coverage_files
         if (
             path in blocked_files and path not in allowed_internal_admin_files
         )
@@ -1204,6 +1322,25 @@ def _log(
         win=win,
         loss=loss,
     )
+
+
+def _final_game(game_pk, game_date):
+    return ScheduledGame(
+        team_id=TEAM_ID,
+        game_pk=game_pk,
+        game_date=game_date,
+        status_state=ScheduledGame.STATE_FINAL,
+        status_code='F',
+        game_type='R',
+    )
+
+
+def _source_split(game_pk, game_date, games_started):
+    return {
+        'game': {'gamePk': game_pk, 'gameType': 'R'},
+        'date': game_date.isoformat(),
+        'stat': {'gamesStarted': games_started, 'inningsPitched': '1.0'},
+    }
 
 
 def _import_modules(path):

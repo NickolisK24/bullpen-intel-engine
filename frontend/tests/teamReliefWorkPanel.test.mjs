@@ -144,7 +144,7 @@ const teamReliefWorkPayload = {
               + '15 consecutive relief appearances.'
             ),
             'He recorded 6 outs (2.0 IP) on 35 pitches.',
-            '6 relievers covered the remaining 21 outs (7.0 IP) on 107 pitches.',
+            'Six relievers covered the remaining 21 outs (7.0 IP) on 107 pitches.',
           ],
         },
       ],
@@ -202,7 +202,7 @@ const teamReliefWorkPayload = {
           },
           context_sentences: [
             'Golf Starter started and recorded 18 outs (6.0 IP) on 92 pitches.',
-            '2 relievers covered the remaining 9 outs (3.0 IP) on 35 pitches.',
+            'Two relievers covered the remaining 9 outs (3.0 IP) on 35 pitches.',
           ],
         },
       ],
@@ -421,7 +421,7 @@ test('game context without a starter-assignment sentence renders as before', () 
   const { starter_assignment, ...gameWithoutAssignment } = labeledGame
   const classicSentences = [
     'Delta Starter started and recorded 6 outs (2.0 IP) on 35 pitches.',
-    '6 relievers covered the remaining 21 outs (7.0 IP) on 107 pitches.',
+    'Six relievers covered the remaining 21 outs (7.0 IP) on 107 pitches.',
     '7 pitchers combined for 27 outs (9.0 IP) and 142 pitches.',
   ]
   const payload = {

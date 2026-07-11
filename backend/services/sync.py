@@ -27,6 +27,7 @@ from models.scheduled_game import ScheduledGame
 from models.sync_run import SyncRun
 from models.sync_failure import SyncFailure
 from services import dead_letter
+from services import pitcher_season_ledger_coverage
 from services import sync_jobs
 from services import sync_metadata
 from services.availability_reference_date import resolve_product_day
@@ -1938,6 +1939,7 @@ def sync_recent_logs(
         timezone_limitations = product_day.limitations
     cutoff         = reference_date - timedelta(days=days_back)
     season         = _season_for(reference_date)
+    season_opening = date(season, 1, 1)
 
     # Build a team_id -> abbreviation map from existing pitcher rows.
     # MLB's gameLog endpoint returns the opponent's id and name but NOT the
@@ -1969,11 +1971,18 @@ def sync_recent_logs(
     finality_cache = {}
     # One boxscore fetch per game_pk for leverage-index backfill, not per log.
     pitching_lines_cache = {}
-    # One SELECT for every window row, instead of one SELECT per split per
-    # pitcher — the dominant cost of this stage against a remote database.
+    # One SELECT for every current-season row, instead of one SELECT per split
+    # per pitcher. The same prefetch feeds both upserts and ledger coverage.
     existing_by_key = {
         (row.pitcher_id, row.mlb_game_pk): row
-        for row in GameLog.query.filter(GameLog.game_date >= cutoff).all()
+        for row in (
+            GameLog.query
+            .filter(
+                GameLog.game_date >= season_opening,
+                GameLog.game_date <= reference_date,
+            )
+            .all()
+        )
     }
     # One SELECT for outstanding fetch failures; per-pitcher resolution
     # UPDATEs run only for pitchers that actually have one to resolve.
@@ -1989,6 +1998,9 @@ def sync_recent_logs(
     fetch_seconds = 0.0
     ingestion_started = time.monotonic()
     budget_exhausted_pitchers = 0
+    ledger_coverage_records = 0
+    ledger_coverage_complete = 0
+    ledger_coverage_incomplete = 0
 
     for index, pitcher in enumerate(pitchers):
         if (
@@ -2139,6 +2151,19 @@ def sync_recent_logs(
         if touched_this_pitcher:
             pitchers_touched += 1
 
+        coverage = pitcher_season_ledger_coverage.reconcile_pitcher_season_coverage(
+            pitcher,
+            splits,
+            season=season,
+            through_date=reference_date,
+            sync_run_id=sync_run_id,
+            finality_cache=finality_cache,
+            stored_rows=existing_by_key.values(),
+        )
+        ledger_coverage_records += coverage['coverage_records_upserted']
+        ledger_coverage_complete += coverage['coverage_records_complete']
+        ledger_coverage_incomplete += coverage['coverage_records_incomplete']
+
     # Lane-health canary: if the window contained ingestable splits and every
     # single one was dropped at the finality gate (never reached the upsert),
     # the daily lane is not merely quiet — it is dead (the exact failure mode
@@ -2214,6 +2239,9 @@ def sync_recent_logs(
         'unresolved_finality': unresolved_finality,
         'splits_seen':       splits_seen,
         'splits_skipped':    dict(skip_counts),
+        'ledger_coverage_records': ledger_coverage_records,
+        'ledger_coverage_complete': ledger_coverage_complete,
+        'ledger_coverage_incomplete': ledger_coverage_incomplete,
         'lane_health':       lane_health,
         'budget_exhausted_pitchers': budget_exhausted_pitchers,
         'time_budget_seconds': time_budget_seconds,
@@ -2241,6 +2269,7 @@ def _ingest_game_log_split(
     pitching_lines_cache=None,
     sync_run_id=None,
     job_name=sync_metadata.JOB_DAILY_SYNC,
+    correction_source=DAILY_GAME_LOG_CORRECTION_SOURCE,
 ):
     """
     Insert or correct a single game-log split for a pitcher.
@@ -2324,7 +2353,7 @@ def _ingest_game_log_split(
         game_pk=game_pk,
         values=values,
         stats=stat,
-        source=DAILY_GAME_LOG_CORRECTION_SOURCE,
+        source=correction_source,
         sync_run_id=sync_run_id,
         job_name=job_name,
         # A map hit avoids the per-split SELECT; a miss keeps the real query

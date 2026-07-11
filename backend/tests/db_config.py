@@ -135,6 +135,7 @@ def create_test_schema(app):
     import models.game_log  # noqa: F401
     import models.legacy_read_audit  # noqa: F401
     import models.pitcher  # noqa: F401
+    import models.pitcher_season_ledger_coverage  # noqa: F401
     import models.play_by_play_foundation  # noqa: F401
     import models.postgame_processed_game  # noqa: F401
     import models.roster_status_snapshot  # noqa: F401

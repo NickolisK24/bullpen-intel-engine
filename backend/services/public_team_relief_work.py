@@ -6,6 +6,7 @@ from models.game_log import GameLog
 from models.pitcher import Pitcher
 from services import board_freshness
 from services import game_shape
+from services import pitcher_season_ledger_coverage
 from services import starter_assignment_context
 
 
@@ -221,8 +222,16 @@ def _game_context_block(game_pk, entries):
 
     assignment = None
     if label is not None:
+        history_coverage = (
+            pitcher_season_ledger_coverage.history_coverage_for_game_log(
+                starter_log,
+                starter_pitcher,
+            )
+        )
         assignment = starter_assignment_context.build_starter_assignment_context(
-            starter_log, starter_pitcher
+            starter_log,
+            starter_pitcher,
+            history_coverage=history_coverage,
         )
 
     if assignment is not None:
@@ -307,7 +316,7 @@ def _starter_followup_sentence(outs, pitches):
 
 def _relief_context_sentence(relief_count, outs, pitches):
     sentence = (
-        f'{_reliever_count_text(relief_count)} covered the remaining '
+        f'{_sentence_start_reliever_count_text(relief_count)} covered the remaining '
         f'{_out_count_text(outs)} ({_ip_text(outs)} IP)'
     )
     if pitches is not None:
@@ -331,6 +340,22 @@ def _out_count_text(count):
 
 def _reliever_count_text(count):
     return f'{count} {"reliever" if count == 1 else "relievers"}'
+
+
+def _sentence_start_reliever_count_text(count):
+    words = {
+        1: 'One',
+        2: 'Two',
+        3: 'Three',
+        4: 'Four',
+        5: 'Five',
+        6: 'Six',
+        7: 'Seven',
+        8: 'Eight',
+        9: 'Nine',
+    }
+    label = words.get(count, str(count))
+    return f'{label} {"reliever" if count == 1 else "relievers"}'
 
 
 def _date_group(game_date, entries):

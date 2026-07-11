@@ -230,17 +230,22 @@ def test_frozen_legacy_what_changed_files_untouched():
         'frontend/src/components/bullpen/TeamReliefWorkPanel.jsx',
         'frontend/tests/teamReliefWorkPanel.test.mjs',
     }
+    allowed_pitcher_ledger_coverage_files = {
+        'backend/migrations/versions/7c4d2e9f1a6b_add_pitcher_season_ledger_coverage.py',
+    }
     assert not sorted(frozen_paths & changed)
     assert not sorted(
         path for path in changed
         if path.startswith('frontend/')
         if path not in allowed_phase_a_audience_signup_files
         if path not in allowed_bullpen_game_context_files
+        if path not in allowed_pitcher_ledger_coverage_files
     )
     assert not sorted(
         path for path in changed
         if path.startswith('backend/migrations/')
         if path not in allowed_phase_a_audience_signup_files
+        if path not in allowed_pitcher_ledger_coverage_files
     )
 
 

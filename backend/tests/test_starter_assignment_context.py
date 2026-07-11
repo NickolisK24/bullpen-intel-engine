@@ -11,6 +11,7 @@ from datetime import date, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 
+from services import pitcher_season_ledger_coverage
 from services.starter_assignment_context import (
     COVERAGE_SCOPE_PITCHER_SEASON_TO_TARGET,
     COVERAGE_STATE_COMPLETE,
@@ -26,7 +27,7 @@ from services.starter_assignment_context import (
 REPO_ROOT = Path(__file__).resolve().parents[2]
 MODULE_PATH = REPO_ROOT / 'backend/services/starter_assignment_context.py'
 
-PITCHER = SimpleNamespace(full_name='Stub Pitcher')
+PITCHER = SimpleNamespace(full_name='Stub Pitcher', mlb_id=12345)
 
 
 def _row(game_date, game_pk, games_started=0, game_type='R'):
@@ -55,15 +56,28 @@ def _verified_coverage(target, history, *, source_appearances=None, source_start
         counted.setdefault(row.mlb_game_pk, row)
     appearances = len(counted)
     starts = sum(1 for row in counted.values() if row.games_started == 1)
+    fingerprint = pitcher_season_ledger_coverage.manifest_fingerprint(
+        pitcher_season_ledger_coverage.build_stored_manifest_from_rows(
+            counted.values()
+        )['entries']
+    )
     return {
         'coverage_state': COVERAGE_STATE_COMPLETE,
         'coverage_scope': COVERAGE_SCOPE_PITCHER_SEASON_TO_TARGET,
+        'pitcher_id': target.pitcher_id,
+        'pitcher_mlb_id': PITCHER.mlb_id,
+        'season': target.game_date.year,
+        'game_type': target.game_type,
+        'target_game_pk': target.mlb_game_pk,
+        'covered_through_date': target.game_date.isoformat(),
         'stored_appearance_count': appearances,
         'source_appearance_count': (
             appearances if source_appearances is None else source_appearances
         ),
         'stored_games_started_count': starts,
         'source_games_started_count': starts if source_starts is None else source_starts,
+        'source_manifest_fingerprint': fingerprint,
+        'stored_manifest_fingerprint': fingerprint,
     }
 
 
@@ -353,6 +367,50 @@ def test_unknown_source_totals_stay_silent():
     )
 
 
+def test_wrong_target_game_coverage_stays_silent():
+    target = _target()
+    history = [
+        _row(date(2026, 5, 28), 9800, games_started=1),
+        _row(date(2026, 6, 1), 9801),
+        _row(date(2026, 6, 8), 9802),
+        _row(date(2026, 6, 20), 9803),
+    ]
+    coverage = _verified_coverage(target, history)
+    coverage['target_game_pk'] = 9901
+
+    assert (
+        derive_starter_assignment_context(
+            target,
+            PITCHER,
+            history,
+            history_coverage=coverage,
+        )
+        is None
+    )
+
+
+def test_count_matched_manifest_mismatch_stays_silent():
+    target = _target()
+    history = [
+        _row(date(2026, 5, 28), 9800, games_started=1),
+        _row(date(2026, 6, 1), 9801),
+        _row(date(2026, 6, 8), 9802),
+        _row(date(2026, 6, 20), 9803),
+    ]
+    coverage = _verified_coverage(target, history)
+    coverage['source_manifest_fingerprint'] = 'b' * 64
+
+    assert (
+        derive_starter_assignment_context(
+            target,
+            PITCHER,
+            history,
+            history_coverage=coverage,
+        )
+        is None
+    )
+
+
 def test_blackburn_complete_verified_ledger_produces_sentence():
     target = _row(date(2026, 7, 9), 9900, games_started=1)
     history = [_row(date(2026, 5, 7), 9700, games_started=1)]
@@ -360,7 +418,7 @@ def test_blackburn_complete_verified_ledger_produces_sentence():
         _row(date(2026, 5, 10 + offset), 9701 + offset)
         for offset in range(20)
     )
-    pitcher = SimpleNamespace(full_name='Paul Blackburn')
+    pitcher = SimpleNamespace(full_name='Paul Blackburn', mlb_id=PITCHER.mlb_id)
 
     context = derive_starter_assignment_context(
         target,
