@@ -25,6 +25,7 @@ Exit codes: 0 = full summary produced; 1 = degraded DB-row fallback only
 Usage (from backend/, e.g. a Render shell against the production service):
     python scripts/run_internal_snapshot_audit.py --window 14
     python scripts/run_internal_snapshot_audit.py --window 14 --date 2026-07-08 --compact
+    python scripts/run_internal_snapshot_audit.py --window 14 --recent-row-limit 256 --compact
 """
 
 import argparse
@@ -44,6 +45,7 @@ os.environ['AUTO_SYNC'] = 'false'
 
 CLI_DEFAULT_STATEMENT_TIMEOUT_MS = 600000  # 10 minutes per statement.
 CLI_DEFAULT_TIME_BUDGET_SECONDS = 0  # 0 disables the in-request time budget.
+CLI_DEFAULT_RECENT_ROW_QUERY_LIMIT = 256
 
 
 def _parse_args(argv=None):
@@ -75,6 +77,15 @@ def _parse_args(argv=None):
         type=float,
         default=CLI_DEFAULT_TIME_BUDGET_SECONDS,
         help='Overall soft budget; 0 disables it (default 0 for CLI runs).',
+    )
+    parser.add_argument(
+        '--recent-row-limit',
+        type=int,
+        default=CLI_DEFAULT_RECENT_ROW_QUERY_LIMIT,
+        help=(
+            'Recent snapshot row query limit for operator runs '
+            '(default 256; service max 512).'
+        ),
     )
     parser.add_argument(
         '--compact',
@@ -126,6 +137,7 @@ def main(argv=None):
             payload = build_internal_snapshot_audit_payload(
                 product_date=args.product_date,
                 window_days=args.window_days,
+                recent_row_query_limit=args.recent_row_limit,
                 checkpoint=checkpoint,
                 statement_timeout_ms=args.statement_timeout_ms,
                 time_budget_seconds=args.time_budget_seconds,

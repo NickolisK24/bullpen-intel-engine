@@ -57,6 +57,7 @@ def _audit_payload(**overrides):
             'non_comparable_count': 0,
             'non_comparable_reason_codes': [],
             'non_adjacent_comparison_count': 0,
+            'recent_row_query_limit': 256,
             'recent_rows_truncated': False,
         },
     }
@@ -64,10 +65,10 @@ def _audit_payload(**overrides):
     return payload
 
 
-def _run_audit_validator(tmp_path, payload, exit_code=0):
+def _run_audit_validator(tmp_path, payload, exit_code=0, prefix=''):
     output_path = tmp_path / 'phase0h-snapshot-audit.json'
     summary_path = tmp_path / 'step-summary.md'
-    output_path.write_text(json.dumps(payload), encoding='utf-8')
+    output_path.write_text(prefix + json.dumps(payload), encoding='utf-8')
     return subprocess.run(
         [
             sys.executable,
@@ -183,6 +184,7 @@ def test_workflow_has_read_only_phase0h_snapshot_audit_operation():
     assert 'RUN_PHASE0H_PRODUCTION_AUDIT' in text
     assert 'python scripts/run_internal_snapshot_audit.py \\' in text
     assert '--window "$AUDIT_WINDOW"' in text
+    assert '--recent-row-limit "$AUDIT_RECENT_ROW_LIMIT"' in text
     assert '--compact' in text
     assert '> "$audit_json"' in text
     assert '2> "$audit_stderr"' in text
@@ -191,7 +193,9 @@ def test_workflow_has_read_only_phase0h_snapshot_audit_operation():
     assert 'if: ${{ inputs.operation == \'phase0h_snapshot_audit\' }}' in text
     assert 'if: ${{ always() && inputs.operation == \'phase0h_snapshot_audit\' }}' in text
     assert 'Phase 0H production ratification requires audit_window=14.' in text
+    assert 'audit_recent_row_limit must be between 64 and 512.' in text
     assert 'AUDIT_WINDOW: ${{ inputs.audit_window }}' in text
+    assert 'AUDIT_RECENT_ROW_LIMIT: ${{ inputs.audit_recent_row_limit }}' in text
     assert 'DATABASE_URL: ${{ secrets.DATABASE_URL }}' in text
     assert 'ADMIN_API_TOKEN: ${{ secrets.BASEBALLOS_ADMIN_API_TOKEN }}' in text
 
@@ -200,6 +204,42 @@ def test_phase0h_audit_validator_accepts_full_bounded_summary(tmp_path):
     result = _run_audit_validator(tmp_path, _audit_payload())
 
     assert result.returncode == 0, result.stderr
+
+
+def test_phase0h_audit_validator_ignores_scheduler_banner_before_json(tmp_path):
+    result = _run_audit_validator(
+        tmp_path,
+        _audit_payload(),
+        prefix='[scheduler] AUTO_SYNC disabled - daily scheduler not started.\n',
+    )
+
+    assert result.returncode == 0, result.stderr
+
+
+def test_phase0h_audit_validator_rejects_missing_audit_json(tmp_path):
+    output_path = tmp_path / 'phase0h-snapshot-audit.json'
+    summary_path = tmp_path / 'step-summary.md'
+    output_path.write_text(
+        '[scheduler] AUTO_SYNC disabled\nINFO no audit summary emitted\n',
+        encoding='utf-8',
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            '-',
+            str(output_path),
+            '0',
+            str(summary_path),
+        ],
+        input=_audit_validator_source(),
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode != 0
+    assert 'Audit output was not valid JSON' in result.stderr
 
 
 def test_phase0h_audit_validator_rejects_degraded_fallback(tmp_path):
