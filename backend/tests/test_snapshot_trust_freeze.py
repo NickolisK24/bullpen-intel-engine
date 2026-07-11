@@ -233,7 +233,15 @@ def test_frozen_legacy_what_changed_files_untouched():
     allowed_pitcher_ledger_coverage_files = {
         'backend/migrations/versions/7c4d2e9f1a6b_add_pitcher_season_ledger_coverage.py',
     }
-    assert not sorted(frozen_paths & changed)
+    allowed_public_what_changed_contract_files = {
+        # Ratified Branch 1 backend-contract completion for the stored public
+        # what_changed_since_yesterday payload's top-level state. The raw
+        # comparison service and trust gates remain frozen.
+        'backend/services/what_changed_since_yesterday_public.py',
+    }
+    assert not sorted(
+        (frozen_paths & changed) - allowed_public_what_changed_contract_files
+    )
     assert not sorted(
         path for path in changed
         if path.startswith('frontend/')

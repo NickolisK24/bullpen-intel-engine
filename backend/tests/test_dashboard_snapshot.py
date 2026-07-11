@@ -992,6 +992,20 @@ class TestDashboardRouteSnapshotBehavior:
         assert body['status'] == 'snapshot_unavailable'
         assert body['reason'] == 'dashboard_snapshot_missing'
         assert body['snapshot']['served_from'] == 'snapshot_unavailable'
+        assert body['what_changed_since_yesterday']['state'] == 'insufficient_context'
+        assert body['what_changed_since_yesterday']['comparison'] == {
+            'current_data_through': None,
+            'previous_data_through': None,
+            'comparison_available': False,
+            'reason_codes': ['dashboard_snapshot_missing'],
+        }
+        assert body['what_changed_since_yesterday']['items'] == []
+        assert body['what_changed_since_yesterday']['item_count'] == 0
+        assert body['what_changed_since_yesterday']['reason_codes'] == [
+            'dashboard_snapshot_missing',
+        ]
+        assert 'status' not in body['what_changed_since_yesterday']
+        assert 'empty_state' not in body['what_changed_since_yesterday']
         assert body['ranking_applied'] is False
         assert body['selection_made'] is False
 
@@ -1266,6 +1280,9 @@ class TestSyncSnapshotIntegration:
             assert dashboard_snapshot.get_latest_valid_dashboard_snapshot() is None
 
     def test_successful_scheduled_sync_publishes_dashboard_snapshot(self, app, monkeypatch):
+        # This fixture seeds only the snapshot publish path; production schedule
+        # finality preflight is covered separately and requires broader slate data.
+        monkeypatch.setenv('SYNC_SCHEDULE_FINALITY_PREFLIGHT', 'false')
         monkeypatch.setattr(sync_service, 'sync_team_assignments', _sync_scaffolding)
         monkeypatch.setattr(sync_service, 'sync_roster_statuses', _sync_scaffolding)
         monkeypatch.setattr(sync_service, 'sync_recent_logs', lambda **kwargs: {

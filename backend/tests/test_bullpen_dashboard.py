@@ -311,6 +311,7 @@ class TestDashboardEndpoint:
     def test_dashboard_surfaces_withheld_what_changed_reason_codes(self, client, monkeypatch):
         public_payload = {
             'capability': 'what_changed_since_yesterday_public_v1',
+            'state': 'insufficient_context',
             'ranking_applied': False,
             'selection_made': False,
             'prediction_applied': False,
@@ -355,6 +356,39 @@ class TestDashboardEndpoint:
         assert changes == public_payload
         assert calls['kwargs']['require_trusted_snapshots'] is True
         assert calls['kwargs']['current_snapshot_metadata']['trusted_current_payload'] is True
+
+    def test_dashboard_surfaces_quiet_what_changed_contract(self, client, monkeypatch):
+        public_payload = {
+            'capability': 'what_changed_since_yesterday_public_v1',
+            'state': 'no_meaningful_changes',
+            'ranking_applied': False,
+            'selection_made': False,
+            'prediction_applied': False,
+            'ordering_basis': 'team_abbreviation_then_team_name',
+            'item_limit': 30,
+            'comparison': {
+                'current_data_through': '2026-06-19',
+                'previous_data_through': '2026-06-18',
+                'comparison_available': True,
+                'reason_codes': [],
+            },
+            'items': [],
+            'item_count': 0,
+            'limitations': [],
+            'reason_codes': [],
+        }
+
+        monkeypatch.setattr(
+            bullpen_api,
+            'build_what_changed_public_payload',
+            lambda current, prior, **kwargs: public_payload,
+        )
+        with client.application.app_context():
+            _seed_pitcher('A One', team_id=1, mlb_id=1001)
+
+        body = client.get('/api/bullpen/dashboard').get_json()
+
+        assert body['what_changed_since_yesterday'] == public_payload
 
     def test_dashboard_what_changed_workload_payload_lists_top_relief_pitch_counts(self, client):
         current = date.today()

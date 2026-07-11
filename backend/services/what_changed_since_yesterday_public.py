@@ -11,6 +11,9 @@ from services.editorial_voice_contract_v1 import (
 )
 from services.what_changed_since_yesterday import (
     STATUS_AVAILABLE,
+    STATE_CHANGES_DETECTED,
+    STATE_INSUFFICIENT_CONTEXT,
+    STATE_NO_MEANINGFUL_CHANGES,
     build_what_changed_since_yesterday_payload,
 )
 from services.what_changed_since_yesterday_copy import (
@@ -315,6 +318,14 @@ def _without_private_fields(item: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _public_state(changes: dict[str, Any], items: list[dict[str, Any]]) -> str:
+    if changes.get('status') != STATUS_AVAILABLE:
+        return STATE_INSUFFICIENT_CONTEXT
+    if items:
+        return STATE_CHANGES_DETECTED
+    return STATE_NO_MEANINGFUL_CHANGES
+
+
 def build_what_changed_public_payload(
     current_payload: dict[str, Any] | None,
     prior_payload: dict[str, Any] | None,
@@ -363,9 +374,11 @@ def build_what_changed_public_payload(
         if len(items) >= limit:
             break
 
+    state = _public_state(changes, items)
     return {
         'capability': CAPABILITY,
         'source': 'backend',
+        'state': state,
         'ranking_applied': False,
         'selection_made': False,
         'prediction_applied': False,

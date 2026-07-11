@@ -2575,8 +2575,7 @@ def build_bullpen_dashboard_payload(*, use_published_freshness=False):
             what_changed_previous_snapshot
         ),
     )
-    if changes['items'] or not changes.get('comparison', {}).get('comparison_available'):
-        payload['what_changed_since_yesterday'] = changes
+    payload['what_changed_since_yesterday'] = changes
 
     return payload
 
@@ -2664,6 +2663,7 @@ def _dashboard_snapshot_unavailable_payload(reason, *, snapshot=None):
         'landscape': {},
         'what_changed_since_yesterday': {
             'capability': 'what_changed_since_yesterday_public_v1',
+            'state': 'insufficient_context',
             'ranking_applied': False,
             'selection_made': False,
             'prediction_applied': False,
@@ -2673,12 +2673,14 @@ def _dashboard_snapshot_unavailable_payload(reason, *, snapshot=None):
                 'current_data_through': None,
                 'previous_data_through': None,
                 'comparison_available': False,
+                'reason_codes': [reason or 'dashboard_snapshot_unavailable'],
             },
             'items': [],
             'item_count': 0,
             'limitations': [
                 'Dashboard snapshot is unavailable; production live fallback is disabled.',
             ],
+            'reason_codes': [reason or 'dashboard_snapshot_unavailable'],
         },
         'freshness': {
             'freshness_state': 'snapshot_unavailable',
