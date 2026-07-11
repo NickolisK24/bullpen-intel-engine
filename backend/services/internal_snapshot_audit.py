@@ -743,7 +743,10 @@ def _comparison_contract_check(
     notes = []
     if not stored_metadata_present:
         notes.append('stored_comparison_metadata_absent')
-    elif stored_matches_contract is False:
+    elif (
+        stored_comparison_available is True
+        and stored_matches_contract is False
+    ):
         notes.append('stored_comparison_non_adjacent')
     if not baseline_adjacency.get('adjacent_published_baseline_present'):
         notes.append('adjacent_baseline_missing')
@@ -922,7 +925,10 @@ def _snapshot_adjacency_summary(
             non_comparable_reason_codes.extend(
                 _non_comparable_reasons(current_entry)
             )
-        if contract_check.get('stored_comparison_matches_adjacent_contract') is False:
+        if (
+            contract_check.get('stored_comparison_available') is True
+            and contract_check.get('stored_comparison_matches_adjacent_contract') is False
+        ):
             non_adjacent_comparisons.append({
                 'snapshot_id': current_snapshot.get('id'),
                 'data_through': current_data_through.isoformat(),

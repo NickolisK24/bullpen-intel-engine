@@ -372,7 +372,8 @@ def test_snapshot_audit_window_14_and_production_shaped_rows_are_bounded(
     assert contract_check['stored_comparison_current_date'] == '2026-07-05'
     assert contract_check['stored_comparison_baseline_date'] == '2026-07-03'
     assert contract_check['stored_comparison_matches_adjacent_contract'] is False
-    assert 'stored_comparison_non_adjacent' in contract_check['notes']
+    assert 'stored_comparison_not_available' in contract_check['notes']
+    assert 'stored_comparison_non_adjacent' not in contract_check['notes']
 
 
 def test_snapshot_audit_large_payloads_return_compact_summaries(app, client):
@@ -1050,6 +1051,187 @@ def test_snapshot_audit_accepts_public_current_previous_data_through_keys(
         'stored_comparison_matches_adjacent_contract': True,
         'notes': [],
     }
+
+
+def test_snapshot_audit_counts_available_non_adjacent_comparison(app, client):
+    with app.app_context():
+        baseline = _snapshot(
+            date(2026, 7, 9),
+            is_published=False,
+            published_at=datetime(2026, 7, 9, 12, 5, 0),
+            generated_offset_minutes=1,
+        )
+        current = _snapshot(
+            date(2026, 7, 10),
+            generated_offset_minutes=2,
+            payload=_payload(
+                date(2026, 7, 10),
+                what_changed_overrides={
+                    'comparison': {
+                        'comparison_available': True,
+                        'current_data_through': '2026-07-10',
+                        'previous_data_through': '2026-07-08',
+                        'reason_codes': [],
+                    },
+                    'item_count': 8,
+                },
+            ),
+        )
+        db.session.commit()
+        baseline_id = baseline.id
+        current_id = current.id
+
+    response = client.get(
+        f'{ROUTE}?dataThrough=2026-07-10&window=14',
+        headers=ADMIN_HEADERS,
+    )
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    summary = payload['snapshot_adjacency_summary']
+    assert summary['trusted_pair_count'] == 1
+    assert summary['comparable_adjacent_pair_count'] == 0
+    assert summary['non_comparable_count'] == 1
+    assert summary['non_adjacent_comparison_count'] == 1
+    assert summary['non_adjacent_comparisons'] == [{
+        'snapshot_id': current_id,
+        'data_through': '2026-07-10',
+        'stored_baseline_date': '2026-07-08',
+        'expected_baseline_date': '2026-07-09',
+    }]
+    adjacent_pair = summary['adjacent_published_pairs'][0]
+    assert adjacent_pair.items() >= {
+        'current_data_through': '2026-07-10',
+        'prior_data_through': '2026-07-09',
+        'current_snapshot_id': current_id,
+        'prior_snapshot_id': baseline_id,
+        'stored_comparison_available': True,
+        'stored_comparison_baseline_date': '2026-07-08',
+        'stored_comparison_current_date': '2026-07-10',
+        'expected_baseline_date': '2026-07-09',
+        'expected_current_date': '2026-07-10',
+        'stored_comparison_matches_adjacent_contract': False,
+    }.items()
+    assert adjacent_pair['audit_notes'] == ['stored_comparison_non_adjacent']
+
+
+def test_snapshot_audit_does_not_count_withheld_missing_dates_as_non_adjacent(
+    app,
+    client,
+):
+    with app.app_context():
+        _snapshot(
+            date(2026, 7, 6),
+            is_published=False,
+            published_at=datetime(2026, 7, 6, 12, 5, 0),
+            generated_offset_minutes=1,
+        )
+        withheld = _snapshot(
+            date(2026, 7, 7),
+            is_published=False,
+            published_at=datetime(2026, 7, 7, 12, 5, 0),
+            generated_offset_minutes=2,
+            payload=_payload(
+                date(2026, 7, 7),
+                reason_codes=['comparison_withheld'],
+                limitations=['Legacy comparison unavailable.'],
+                what_changed_overrides={
+                    'comparison': {
+                        'comparison_available': False,
+                        'reason_codes': [
+                            'no_prior_snapshot',
+                            'data_through_missing',
+                            'comparison_withheld',
+                        ],
+                    },
+                },
+            ),
+        )
+        baseline = _snapshot(
+            date(2026, 7, 9),
+            is_published=False,
+            published_at=datetime(2026, 7, 9, 12, 5, 0),
+            generated_offset_minutes=3,
+        )
+        current = _snapshot(
+            date(2026, 7, 10),
+            generated_offset_minutes=4,
+            payload=_payload(
+                date(2026, 7, 10),
+                what_changed_overrides={
+                    'comparison': {
+                        'comparison_available': True,
+                        'current_data_through': '2026-07-10',
+                        'previous_data_through': '2026-07-09',
+                        'reason_codes': [],
+                    },
+                    'item_count': 8,
+                    'items': [{'team': 'not_returned'}],
+                },
+            ),
+        )
+        db.session.commit()
+        withheld_id = withheld.id
+        baseline_id = baseline.id
+        current_id = current.id
+
+    response = client.get(
+        f'{ROUTE}?dataThrough=2026-07-10&window=14',
+        headers=ADMIN_HEADERS,
+    )
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    summary = payload['snapshot_adjacency_summary']
+    assert summary['trusted_pair_count'] == 2
+    assert summary['comparable_adjacent_pair_count'] == 1
+    assert summary['non_comparable_count'] == 1
+    assert summary['non_adjacent_comparison_count'] == 0
+    assert summary['non_adjacent_comparisons'] == []
+    assert 'comparison_withheld' in summary['non_comparable_reason_codes']
+    assert 'stored_comparison_not_available' in (
+        summary['non_comparable_reason_codes']
+    )
+    assert 'stored_comparison_non_adjacent' not in (
+        summary['non_comparable_reason_codes']
+    )
+
+    pairs_by_current = {
+        pair['current_snapshot_id']: pair
+        for pair in summary['adjacent_published_pairs']
+    }
+    withheld_pair = pairs_by_current[withheld_id]
+    assert withheld_pair.items() >= {
+        'current_data_through': '2026-07-07',
+        'prior_data_through': '2026-07-06',
+        'stored_comparison_available': False,
+        'expected_baseline_date': '2026-07-06',
+        'expected_current_date': '2026-07-07',
+        'stored_comparison_matches_adjacent_contract': False,
+    }.items()
+    assert withheld_pair['stored_reason_codes'] == [
+        'comparison_withheld',
+        'no_prior_snapshot',
+        'data_through_missing',
+    ]
+    assert withheld_pair['audit_notes'] == [
+        'stored_comparison_not_available',
+    ]
+
+    current_pair = pairs_by_current[current_id]
+    assert current_pair.items() >= {
+        'current_data_through': '2026-07-10',
+        'prior_data_through': '2026-07-09',
+        'current_snapshot_id': current_id,
+        'prior_snapshot_id': baseline_id,
+        'stored_comparison_available': True,
+        'stored_comparison_baseline_date': '2026-07-09',
+        'stored_comparison_current_date': '2026-07-10',
+        'expected_baseline_date': '2026-07-09',
+        'expected_current_date': '2026-07-10',
+        'stored_comparison_matches_adjacent_contract': True,
+    }.items()
+    assert current_pair.get('audit_notes') in (None, [])
 
 
 def test_snapshot_audit_never_published_ready_snapshot_does_not_qualify(
