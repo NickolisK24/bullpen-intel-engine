@@ -47,7 +47,7 @@ from utils.db import db
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 MIGRATIONS_DIR = REPO_ROOT / 'backend/migrations/versions'
-EXPECTED_ALEMBIC_HEAD = '2f7b9c1a5d43'
+EXPECTED_ALEMBIC_HEAD = '7c4d2e9f1a6b'
 FORBIDDEN_HEADLINE_TERMS = (
     'headline',
     'read_label',
@@ -294,6 +294,9 @@ def test_phase0e_switches_and_legacy_public_files_not_modified():
         'frontend/src/components/bullpen/TeamReliefWorkPanel.jsx',
         'frontend/tests/teamReliefWorkPanel.test.mjs',
     }
+    allowed_pitcher_ledger_coverage_files = {
+        'backend/migrations/versions/7c4d2e9f1a6b_add_pitcher_season_ledger_coverage.py',
+    }
     allowed_files = (
         allowed_public_freshness_display_files
         | allowed_internal_admin_files
@@ -301,6 +304,7 @@ def test_phase0e_switches_and_legacy_public_files_not_modified():
         | allowed_phase0g_public_team_relief_files
         | allowed_phase_a_audience_signup_files
         | allowed_bullpen_game_context_files
+        | allowed_pitcher_ledger_coverage_files
     )
     forbidden_prefixes = (
         'backend/api/',

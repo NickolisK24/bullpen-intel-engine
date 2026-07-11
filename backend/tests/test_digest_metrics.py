@@ -460,6 +460,9 @@ _SYNC_JOBS_REVISION = 'fa9c1d2e3b47'
 # Audience email capture chains on top of sync jobs, advancing the single
 # alembic head without adding digest automation or preference storage.
 _AUDIENCE_SUBSCRIBERS_REVISION = '2f7b9c1a5d43'
+# Pitcher ledger coverage chains on top of audience capture, advancing the
+# single alembic head for target-game starter-assignment verification.
+_PITCHER_LEDGER_COVERAGE_REVISION = '7c4d2e9f1a6b'
 
 
 def test_metrics_migration_is_well_formed_and_chains_off_identity():
@@ -485,7 +488,7 @@ def test_migrations_have_a_single_head():
             revisions[rev.group(1)] = (down.group(1).strip() if down else None)
     referenced = {d for d in revisions.values() if d and d != 'None'}
     heads = set(revisions) - referenced
-    assert heads == {_AUDIENCE_SUBSCRIBERS_REVISION}
+    assert heads == {_PITCHER_LEDGER_COVERAGE_REVISION}
     # The chain advances: event log -> completed-game-context -> surface snapshot
     # -> scheduled_games -> tonight snapshot -> unknown-safe pitch counts
     # -> stat-correction provenance -> postgame marker lifecycle.
