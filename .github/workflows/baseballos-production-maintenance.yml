@@ -10,9 +10,15 @@ on:
         options:
           - migrate
           - ledger_backfill
+          - phase0h_snapshot_audit
       confirmation:
-        description: Type RUN_PRODUCTION_MAINTENANCE to confirm
+        description: Type RUN_PRODUCTION_MAINTENANCE, or RUN_PHASE0H_PRODUCTION_AUDIT for phase0h_snapshot_audit
         required: true
+        type: string
+      audit_window:
+        description: Phase 0H audit window in days; ratification gate requires 14
+        required: true
+        default: '14'
         type: string
       season:
         description: Regular season year for ledger backfill
@@ -69,10 +75,15 @@ jobs:
       - name: Validate confirmation and production secrets
         env:
           CONFIRMATION: ${{ inputs.confirmation }}
+          OPERATION: ${{ inputs.operation }}
         run: |
           set -euo pipefail
-          if [ "$CONFIRMATION" != 'RUN_PRODUCTION_MAINTENANCE' ]; then
-            echo "::error::Confirmation must be exactly RUN_PRODUCTION_MAINTENANCE."
+          expected_confirmation='RUN_PRODUCTION_MAINTENANCE'
+          if [ "$OPERATION" = 'phase0h_snapshot_audit' ]; then
+            expected_confirmation='RUN_PHASE0H_PRODUCTION_AUDIT'
+          fi
+          if [ "$CONFIRMATION" != "$expected_confirmation" ]; then
+            echo "::error::Confirmation must be exactly $expected_confirmation for operation=$OPERATION."
             exit 1
           fi
           if [ -z "${DATABASE_URL:-}" ] || [ -z "${SECRET_KEY:-}" ] || [ -z "${ADMIN_API_TOKEN:-}" ]; then
@@ -107,6 +118,18 @@ jobs:
             exit 1
           fi
           echo "Ledger backfill inputs validated."
+
+      - name: Validate Phase 0H audit inputs
+        if: ${{ inputs.operation == 'phase0h_snapshot_audit' }}
+        env:
+          AUDIT_WINDOW: ${{ inputs.audit_window }}
+        run: |
+          set -euo pipefail
+          if [ "$AUDIT_WINDOW" != '14' ]; then
+            echo "::error::Phase 0H production ratification requires audit_window=14."
+            exit 1
+          fi
+          echo "Phase 0H audit inputs validated."
 
       - name: Run production migration
         if: ${{ inputs.operation == 'migrate' }}
@@ -221,3 +244,136 @@ jobs:
           "${backfill_command[@]}" | tee "$backfill_summary_file"
           validate_summary "$backfill_summary_file" backfill
           echo "=== Production ledger backfill completed ==="
+
+      - name: Run Phase 0H production snapshot audit
+        if: ${{ inputs.operation == 'phase0h_snapshot_audit' }}
+        working-directory: backend
+        env:
+          AUDIT_WINDOW: ${{ inputs.audit_window }}
+          AUDIT_OUTPUT_DIR: ${{ runner.temp }}/phase0h-snapshot-audit
+        run: |
+          set -euo pipefail
+          mkdir -p "$AUDIT_OUTPUT_DIR"
+          audit_json="$AUDIT_OUTPUT_DIR/phase0h-snapshot-audit.json"
+          audit_stderr="$AUDIT_OUTPUT_DIR/phase0h-snapshot-audit.stderr.log"
+
+          echo "=== Phase 0H production snapshot audit starting ==="
+          set +e
+          python scripts/run_internal_snapshot_audit.py \
+            --window "$AUDIT_WINDOW" \
+            --compact \
+            > "$audit_json" \
+            2> "$audit_stderr"
+          audit_exit_code=$?
+          set -e
+
+          python - "$audit_json" "$audit_exit_code" "$GITHUB_STEP_SUMMARY" <<'PY'
+          import json
+          from pathlib import Path
+          import sys
+
+          audit_json = Path(sys.argv[1])
+          audit_exit_code = int(sys.argv[2])
+          summary_path = Path(sys.argv[3])
+
+          try:
+              payload = json.loads(audit_json.read_text(encoding='utf-8'))
+          except json.JSONDecodeError as exc:
+              summary_path.write_text(
+                  '## Phase 0H Production Snapshot Audit\n\n'
+                  f'- Exit code: `{audit_exit_code}`\n'
+                  '- Result: invalid JSON output\n',
+                  encoding='utf-8',
+              )
+              raise SystemExit(f'Audit output was not valid JSON: {exc}')
+
+          adjacency = payload.get('snapshot_adjacency_summary') or {}
+          request = payload.get('request') or {}
+          latest = payload.get('latest_snapshot') or {}
+          recent = payload.get('recent_snapshots') or []
+          diagnostics = payload.get('diagnostics') or []
+
+          count_fields = (
+              'published_snapshot_count',
+              'trusted_published_snapshot_count',
+              'adjacent_published_pair_count',
+              'trusted_pair_count',
+              'comparable_adjacent_pair_count',
+              'non_comparable_count',
+              'non_adjacent_comparison_count',
+          )
+          errors = []
+          if audit_exit_code != 0:
+              errors.append(f'audit_exit_code={audit_exit_code}')
+          if payload.get('route_status') != 'internal_admin_only':
+              errors.append(f"route_status={payload.get('route_status')!r}")
+          if payload.get('response_mode') == 'fallback_db_row_metadata':
+              errors.append('top-level fallback response_mode observed')
+          if adjacency.get('response_mode') != 'bounded_summary':
+              errors.append(
+                  'snapshot_adjacency_summary.response_mode='
+                  f"{adjacency.get('response_mode')!r}"
+              )
+          if request.get('window_days') != 14:
+              errors.append(f"request.window_days={request.get('window_days')!r}")
+          if not latest:
+              errors.append('latest_snapshot missing')
+          if not isinstance(recent, list) or not recent:
+              errors.append('recent_snapshots missing or empty')
+          if adjacency.get('recent_rows_truncated') is not False:
+              errors.append(
+                  'recent_rows_truncated='
+                  f"{adjacency.get('recent_rows_truncated')!r}"
+              )
+          for field in count_fields:
+              if not isinstance(adjacency.get(field), int):
+                  errors.append(f'{field}={adjacency.get(field)!r}')
+          if not isinstance(adjacency.get('non_comparable_reason_codes'), list):
+              errors.append(
+                  'non_comparable_reason_codes='
+                  f"{adjacency.get('non_comparable_reason_codes')!r}"
+              )
+
+          lines = [
+              '## Phase 0H Production Snapshot Audit',
+              '',
+              f'- Exit code: `{audit_exit_code}`',
+              f"- Route status: `{payload.get('route_status')}`",
+              f"- Audit window: `{request.get('window_days')}`",
+              f"- Latest snapshot date: `{latest.get('data_through')}`",
+              f"- Latest snapshot id: `{latest.get('id')}`",
+              f"- Published snapshots: `{adjacency.get('published_snapshot_count')}`",
+              f"- Trusted published snapshots: `{adjacency.get('trusted_published_snapshot_count')}`",
+              f"- Adjacent published pairs: `{adjacency.get('adjacent_published_pair_count')}`",
+              f"- Trusted pairs: `{adjacency.get('trusted_pair_count')}`",
+              f"- Comparable adjacent pairs: `{adjacency.get('comparable_adjacent_pair_count')}`",
+              f"- Non-comparable count: `{adjacency.get('non_comparable_count')}`",
+              f"- Non-comparable reason codes: `{adjacency.get('non_comparable_reason_codes')}`",
+              f"- Non-adjacent comparison count: `{adjacency.get('non_adjacent_comparison_count')}`",
+              f"- Recent rows truncated: `{adjacency.get('recent_rows_truncated')}`",
+              f"- Diagnostics count: `{len(diagnostics)}`",
+          ]
+          if errors:
+              lines.extend(('', '### Validation Errors'))
+              lines.extend(f'- `{error}`' for error in errors)
+          else:
+              lines.extend(('', 'Full bounded-summary production evidence captured.'))
+          summary_path.write_text('\n'.join(lines) + '\n', encoding='utf-8')
+
+          if errors:
+              raise SystemExit(
+                  'Phase 0H production audit did not produce ratification-ready '
+                  f'bounded summary evidence: {errors}'
+              )
+          PY
+
+          echo "=== Phase 0H production snapshot audit completed ==="
+
+      - name: Upload Phase 0H audit artifact
+        if: ${{ always() && inputs.operation == 'phase0h_snapshot_audit' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase0h-snapshot-audit-${{ github.run_id }}
+          path: ${{ runner.temp }}/phase0h-snapshot-audit/
+          if-no-files-found: error
+          retention-days: 14
