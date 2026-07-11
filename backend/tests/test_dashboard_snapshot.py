@@ -499,9 +499,18 @@ class TestDashboardSnapshotService:
             db.session.refresh(first)
             db.session.refresh(second)
             assert first.is_published is False
+            assert first.published_at is not None
             assert second.is_published is True
+            assert second.published_at is not None
             assert first_run.published_dashboard_snapshot_id == second.id
             assert second_run.published_dashboard_snapshot_id == second.id
+            active_snapshots = (
+                DashboardSnapshot.query
+                .filter(DashboardSnapshot.is_published == True)
+                .all()
+            )
+            assert [row.id for row in active_snapshots] == [second.id]
+            assert dashboard_snapshot.get_latest_dashboard_snapshot().id == second.id
 
     def test_snapshot_validation_rejects_payload_version_mismatch(self, app):
         with app.app_context():

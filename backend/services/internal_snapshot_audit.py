@@ -158,27 +158,29 @@ def build_internal_snapshot_audit_payload(
     stage('sync_run_query_started')
     sync_runs = _sync_runs_by_id(_dedupe_rows(recent_rows, latest_snapshot))
     stage('sync_run_query_finished')
-    published_by_date = _latest_published_rows_by_date(recent_rows)
+    historical_by_date = _latest_historically_published_rows_by_date(
+        recent_rows,
+    )
 
     stage('adjacency_summary_started')
     recent_snapshot_rows = _latest_rows_by_date(recent_rows)
     recent_snapshots = [
-        _snapshot_entry(row, published_by_date, sync_runs)
+        _snapshot_entry(row, historical_by_date, sync_runs)
         for row in recent_snapshot_rows
     ]
     latest_snapshot_entry = _snapshot_entry(
         latest_snapshot,
-        published_by_date,
+        historical_by_date,
         sync_runs,
     )
     latest_valid_entry = _snapshot_entry(
         latest_valid,
-        published_by_date,
+        historical_by_date,
         sync_runs,
     )
     adjacency_summary = _snapshot_adjacency_summary(
         recent_rows,
-        published_by_date,
+        historical_by_date,
         sync_runs,
         recent_row_query_limit=normalized_recent_row_limit,
     )
@@ -522,15 +524,16 @@ def _projection_dict(row) -> dict | None:
 
 def _snapshot_entry(
     row: dict | None,
-    published_by_date: dict,
+    historical_by_date: dict,
     sync_runs: dict,
 ) -> dict | None:
     if row is None:
         return None
     embedded_what_changed = _embedded_what_changed(row)
-    adjacent_baseline = _adjacent_published_baseline(row, published_by_date)
+    adjacent_baseline = _adjacent_historical_baseline(row, historical_by_date)
     baseline_adjacency = _baseline_adjacency(row, adjacent_baseline)
     trust = _trust_summary(row)
+    historical_publication = _historical_publication_summary(row)
     return {
         'id': row.get('id'),
         'snapshot_type': row.get('snapshot_type'),
@@ -546,6 +549,7 @@ def _snapshot_entry(
         'sync_run_id': row.get('sync_run_id'),
         'sync_run': _sync_run_entry(sync_runs.get(row.get('sync_run_id'))),
         'trust': trust,
+        'historical_publication': historical_publication,
         'payload_freshness': _payload_freshness_summary(row),
         'embedded_what_changed': embedded_what_changed,
         'baseline_adjacency': baseline_adjacency,
@@ -656,11 +660,11 @@ def _embedded_what_changed(row: dict) -> dict | None:
     return extracted if extracted else None
 
 
-def _adjacent_published_baseline(row: dict, published_by_date: dict) -> dict | None:
+def _adjacent_historical_baseline(row: dict, historical_by_date: dict) -> dict | None:
     data_through = row.get('data_through')
     if data_through is None:
         return None
-    return published_by_date.get(data_through - timedelta(days=1))
+    return historical_by_date.get(data_through - timedelta(days=1))
 
 
 def _baseline_adjacency(
@@ -694,7 +698,7 @@ def _comparison_contract_check(
     )
     adjacent_trusted_baseline_present = (
         adjacent_baseline is not None
-        and _snapshot_unavailable_reason(adjacent_baseline) is None
+        and _historical_publication_unavailable_reason(adjacent_baseline) is None
     )
     stored_comparison_available = _stored_comparison_available(embedded_what_changed)
     stored_current_date = _stored_comparison_date(
@@ -806,17 +810,21 @@ def _date_text(value) -> str | None:
 
 def _snapshot_adjacency_summary(
     rows: list[dict],
-    published_by_date: dict,
+    historical_by_date: dict,
     sync_runs: dict,
     *,
     recent_row_query_limit: int,
 ) -> dict:
-    published_rows = [row for row in rows if bool(row.get('is_published'))]
-    trusted_published_rows = [
-        row for row in published_rows
-        if _snapshot_unavailable_reason(row) is None
+    active_published_rows = [row for row in rows if bool(row.get('is_published'))]
+    historical_publication_candidate_rows = [
+        row for row in rows
+        if row.get('published_at') is not None
     ]
-    data_through_dates = sorted(published_by_date)
+    historically_published_rows = [
+        row for row in historical_publication_candidate_rows
+        if _historical_publication_unavailable_reason(row) is None
+    ]
+    data_through_dates = sorted(historical_by_date)
     adjacent_pairs = []
     missing_prior_dates = []
     trusted_pair_count = 0
@@ -827,8 +835,8 @@ def _snapshot_adjacency_summary(
 
     for current_data_through in data_through_dates:
         prior_data_through = current_data_through - timedelta(days=1)
-        current_snapshot = published_by_date.get(current_data_through)
-        prior_snapshot = published_by_date.get(prior_data_through)
+        current_snapshot = historical_by_date.get(current_data_through)
+        prior_snapshot = historical_by_date.get(prior_data_through)
         if prior_snapshot is None:
             missing_prior_dates.append(current_data_through.isoformat())
             continue
@@ -841,12 +849,12 @@ def _snapshot_adjacency_summary(
         }
         adjacent_pairs.append(adjacent_pair)
         if (
-            _snapshot_unavailable_reason(current_snapshot) is None
-            and _snapshot_unavailable_reason(prior_snapshot) is None
+            _historical_publication_unavailable_reason(current_snapshot) is None
+            and _historical_publication_unavailable_reason(prior_snapshot) is None
         ):
             trusted_pair_count += 1
 
-        current_entry = _snapshot_entry(current_snapshot, published_by_date, sync_runs)
+        current_entry = _snapshot_entry(current_snapshot, historical_by_date, sync_runs)
         contract_check = current_entry.get('comparison_contract_check') or {}
         if (
             contract_check.get('stored_comparison_available') is True
@@ -872,8 +880,15 @@ def _snapshot_adjacency_summary(
             })
 
     return {
-        'published_snapshot_count': len(published_rows),
-        'trusted_published_snapshot_count': len(trusted_published_rows),
+        'publication_basis': 'historical_published_at',
+        'active_published_snapshot_count': len(active_published_rows),
+        'historical_publication_candidate_count': len(
+            historical_publication_candidate_rows,
+        ),
+        'historically_published_snapshot_count': len(historically_published_rows),
+        'trusted_historical_snapshot_count': len(historically_published_rows),
+        'published_snapshot_count': len(historically_published_rows),
+        'trusted_published_snapshot_count': len(historically_published_rows),
         'data_through_dates': [
             data_through.isoformat()
             for data_through in data_through_dates
@@ -900,9 +915,9 @@ def _snapshot_adjacency_summary(
 
 def _non_comparable_reasons(entry: dict) -> list[str]:
     reasons = []
-    trust = entry.get('trust') or {}
-    if trust.get('unavailable_reason'):
-        reasons.append(trust.get('unavailable_reason'))
+    historical_publication = entry.get('historical_publication') or {}
+    if historical_publication.get('unavailable_reason'):
+        reasons.append(historical_publication.get('unavailable_reason'))
     changed = entry.get('embedded_what_changed') or {}
     reasons.extend(_limited_list(changed.get('reason_codes')))
     comparison = changed.get('comparison') or {}
@@ -928,11 +943,14 @@ def _latest_rows_by_date(rows: list[dict]) -> list[dict]:
     )
 
 
-def _latest_published_rows_by_date(rows: list[dict]) -> dict:
+def _latest_historically_published_rows_by_date(rows: list[dict]) -> dict:
     by_date = {}
     for row in rows:
         data_through = row.get('data_through')
-        if data_through is None or not bool(row.get('is_published')):
+        if (
+            data_through is None
+            or _historical_publication_unavailable_reason(row) is not None
+        ):
             continue
         current = by_date.get(data_through)
         if current is None or _row_order_key(row) > _row_order_key(current):
@@ -963,6 +981,26 @@ def _trust_summary(row: dict) -> dict:
         'current_enough': snapshot_current_enough(adapter),
         'payload_version_valid': payload_version_valid(adapter),
     }
+
+
+def _historical_publication_summary(row: dict) -> dict:
+    reason = _historical_publication_unavailable_reason(row)
+    return {
+        'historically_published': reason is None,
+        'unavailable_reason': reason,
+        'published_at': _iso(row.get('published_at')),
+        'active_publication_required': False,
+    }
+
+
+def _historical_publication_unavailable_reason(row: dict | None) -> str | None:
+    if row is None:
+        return 'dashboard_snapshot_missing'
+    if row.get('published_at') is None:
+        return 'dashboard_snapshot_never_published'
+    historical_row = dict(row)
+    historical_row['is_published'] = True
+    return _snapshot_unavailable_reason(historical_row)
 
 
 def _snapshot_unavailable_reason(row: dict) -> str | None:
