@@ -490,6 +490,12 @@ def _snapshot_projection_entities():
         ),
         changed['baseline_date'].as_string().label('changed_baseline_date'),
         changed['current_date'].as_string().label('changed_current_date'),
+        changed['previous_data_through'].as_string().label(
+            'changed_previous_data_through',
+        ),
+        changed['current_data_through'].as_string().label(
+            'changed_current_data_through',
+        ),
         changed['data_through'].as_string().label('changed_data_through'),
         changed['prior_data_through'].as_string().label(
             'changed_prior_data_through',
@@ -507,6 +513,12 @@ def _snapshot_projection_entities():
         ),
         comparison['baseline_date'].as_string().label('comparison_baseline_date'),
         comparison['current_date'].as_string().label('comparison_current_date'),
+        comparison['previous_data_through'].as_string().label(
+            'comparison_previous_data_through',
+        ),
+        comparison['current_data_through'].as_string().label(
+            'comparison_current_data_through',
+        ),
         comparison['data_through'].as_string().label('comparison_data_through'),
         comparison['prior_data_through'].as_string().label(
             'comparison_prior_data_through',
@@ -635,6 +647,8 @@ def _embedded_what_changed(row: dict) -> dict | None:
         'comparison_available': row.get('comparison_available'),
         'baseline_date': row.get('comparison_baseline_date'),
         'current_date': row.get('comparison_current_date'),
+        'previous_data_through': row.get('comparison_previous_data_through'),
+        'current_data_through': row.get('comparison_current_data_through'),
         'data_through': row.get('comparison_data_through'),
         'prior_data_through': row.get('comparison_prior_data_through'),
     })
@@ -648,6 +662,8 @@ def _embedded_what_changed(row: dict) -> dict | None:
         'comparison_available': row.get('changed_comparison_available'),
         'baseline_date': row.get('changed_baseline_date'),
         'current_date': row.get('changed_current_date'),
+        'previous_data_through': row.get('changed_previous_data_through'),
+        'current_data_through': row.get('changed_current_data_through'),
         'data_through': row.get('changed_data_through'),
         'prior_data_through': row.get('changed_prior_data_through'),
         'item_count': row.get('changed_item_count'),
@@ -704,12 +720,12 @@ def _comparison_contract_check(
     stored_current_date = _stored_comparison_date(
         embedded_what_changed,
         'current_date',
-        fallback_key='data_through',
+        fallback_keys=('current_data_through', 'data_through'),
     )
     stored_baseline_date = _stored_comparison_date(
         embedded_what_changed,
         'baseline_date',
-        fallback_key='prior_data_through',
+        fallback_keys=('previous_data_through', 'prior_data_through'),
     )
     stored_metadata_present = _stored_comparison_metadata_present(
         embedded_what_changed,
@@ -757,6 +773,8 @@ def _stored_comparison_metadata_present(embedded_what_changed: dict | None) -> b
         'comparison_available',
         'baseline_date',
         'current_date',
+        'previous_data_through',
+        'current_data_through',
         'data_through',
         'prior_data_through',
     )
@@ -778,10 +796,12 @@ def _stored_comparison_date(
     embedded_what_changed: dict | None,
     key: str,
     *,
-    fallback_key: str,
+    fallback_keys: tuple[str, ...],
 ) -> str | None:
     value = _stored_comparison_value(embedded_what_changed, key)
-    if value is None:
+    for fallback_key in fallback_keys:
+        if value is not None:
+            break
         value = _stored_comparison_value(embedded_what_changed, fallback_key)
     return _date_text(value)
 
@@ -847,7 +867,6 @@ def _snapshot_adjacency_summary(
             'current_snapshot_id': current_snapshot.get('id'),
             'prior_snapshot_id': prior_snapshot.get('id'),
         }
-        adjacent_pairs.append(adjacent_pair)
         if (
             _historical_publication_unavailable_reason(current_snapshot) is None
             and _historical_publication_unavailable_reason(prior_snapshot) is None
@@ -856,6 +875,42 @@ def _snapshot_adjacency_summary(
 
         current_entry = _snapshot_entry(current_snapshot, historical_by_date, sync_runs)
         contract_check = current_entry.get('comparison_contract_check') or {}
+        changed = current_entry.get('embedded_what_changed') or {}
+        comparison = changed.get('comparison') or {}
+        adjacent_pair.update(_drop_empty({
+            'current_snapshot_generated_at': current_entry.get(
+                'snapshot_generated_at',
+            ),
+            'current_snapshot_published_at': current_entry.get('published_at'),
+            'stored_comparison_state': (
+                comparison.get('state') or changed.get('state')
+            ),
+            'stored_comparison_available': contract_check.get(
+                'stored_comparison_available',
+            ),
+            'stored_comparison_baseline_date': contract_check.get(
+                'stored_comparison_baseline_date',
+            ),
+            'stored_comparison_current_date': contract_check.get(
+                'stored_comparison_current_date',
+            ),
+            'expected_baseline_date': contract_check.get(
+                'prior_required_data_through',
+            ),
+            'expected_current_date': current_entry.get('data_through'),
+            'stored_comparison_matches_adjacent_contract': contract_check.get(
+                'stored_comparison_matches_adjacent_contract',
+            ),
+            'stored_reason_codes': _dedupe_text(
+                [
+                    *_limited_list(changed.get('reason_codes')),
+                    *_limited_list(comparison.get('reason_codes')),
+                ],
+                limit=MAX_REASON_CODES,
+            ),
+            'audit_notes': _limited_list(contract_check.get('notes')),
+        }))
+        adjacent_pairs.append(adjacent_pair)
         if (
             contract_check.get('stored_comparison_available') is True
             and contract_check.get('stored_comparison_matches_adjacent_contract') is True

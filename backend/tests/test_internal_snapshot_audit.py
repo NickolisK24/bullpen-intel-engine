@@ -924,12 +924,22 @@ def test_snapshot_audit_uses_historical_publication_for_deactivated_baseline(
     assert summary['comparable_adjacent_pair_count'] == 1
     assert summary['non_comparable_count'] == 0
     assert summary['non_adjacent_comparison_count'] == 0
-    assert summary['adjacent_published_pairs'] == [{
+    assert len(summary['adjacent_published_pairs']) == 1
+    adjacent_pair = summary['adjacent_published_pairs'][0]
+    assert adjacent_pair.items() >= {
         'current_data_through': '2026-07-10',
         'prior_data_through': '2026-07-09',
         'current_snapshot_id': current_id,
         'prior_snapshot_id': baseline_id,
-    }]
+        'current_snapshot_generated_at': '2026-07-10T12:02:00',
+        'current_snapshot_published_at': '2026-07-10T12:07:00',
+        'stored_comparison_available': True,
+        'stored_comparison_baseline_date': '2026-07-09',
+        'stored_comparison_current_date': '2026-07-10',
+        'expected_baseline_date': '2026-07-09',
+        'expected_current_date': '2026-07-10',
+        'stored_comparison_matches_adjacent_contract': True,
+    }.items()
 
     baseline_entry = _entry(payload, baseline_id)
     assert baseline_entry['is_published'] is False
@@ -944,6 +954,92 @@ def test_snapshot_audit_uses_historical_publication_for_deactivated_baseline(
     }
 
     current_entry = _entry(payload, current_id)
+    assert current_entry['comparison_contract_check'] == {
+        'prior_required_data_through': '2026-07-09',
+        'adjacent_published_baseline_present': True,
+        'adjacent_trusted_baseline_present': True,
+        'stored_comparison_available': True,
+        'stored_comparison_current_date': '2026-07-10',
+        'stored_comparison_baseline_date': '2026-07-09',
+        'stored_comparison_matches_adjacent_contract': True,
+        'notes': [],
+    }
+
+
+def test_snapshot_audit_accepts_public_current_previous_data_through_keys(
+    app,
+    client,
+):
+    with app.app_context():
+        baseline = _snapshot(
+            date(2026, 7, 9),
+            is_published=False,
+            published_at=datetime(2026, 7, 9, 12, 5, 0),
+            generated_offset_minutes=1,
+        )
+        current = _snapshot(
+            date(2026, 7, 10),
+            generated_offset_minutes=2,
+            payload=_payload(
+                date(2026, 7, 10),
+                what_changed_overrides={
+                    'comparison': {
+                        'comparison_available': True,
+                        'current_data_through': '2026-07-10',
+                        'previous_data_through': '2026-07-09',
+                        'reason_codes': [],
+                    },
+                    'item_count': 8,
+                    'items': [{'team': 'not_returned'}],
+                },
+            ),
+        )
+        db.session.commit()
+        baseline_id = baseline.id
+        current_id = current.id
+
+    response = client.get(
+        f'{ROUTE}?dataThrough=2026-07-10&window=14',
+        headers=ADMIN_HEADERS,
+    )
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    summary = payload['snapshot_adjacency_summary']
+    assert summary['trusted_pair_count'] == 1
+    assert summary['comparable_adjacent_pair_count'] == 1
+    assert summary['non_comparable_count'] == 0
+    assert summary['non_adjacent_comparison_count'] == 0
+    assert len(summary['adjacent_published_pairs']) == 1
+    adjacent_pair = summary['adjacent_published_pairs'][0]
+    assert adjacent_pair.items() >= {
+        'current_data_through': '2026-07-10',
+        'prior_data_through': '2026-07-09',
+        'current_snapshot_id': current_id,
+        'prior_snapshot_id': baseline_id,
+        'current_snapshot_generated_at': '2026-07-10T12:02:00',
+        'current_snapshot_published_at': '2026-07-10T12:07:00',
+        'stored_comparison_available': True,
+        'stored_comparison_baseline_date': '2026-07-09',
+        'stored_comparison_current_date': '2026-07-10',
+        'expected_baseline_date': '2026-07-09',
+        'expected_current_date': '2026-07-10',
+        'stored_comparison_matches_adjacent_contract': True,
+    }.items()
+
+    current_entry = _entry(payload, current_id)
+    assert current_entry['embedded_what_changed'] == {
+        'state': 'insufficient_context',
+        'reason_codes': ['stored_reason'],
+        'limitations': ['Stored comparison limitation.'],
+        'item_count': 8,
+        'comparison': {
+            'comparison_available': True,
+            'previous_data_through': '2026-07-09',
+            'current_data_through': '2026-07-10',
+        },
+    }
+    assert 'items' not in json.dumps(current_entry)
     assert current_entry['comparison_contract_check'] == {
         'prior_required_data_through': '2026-07-09',
         'adjacent_published_baseline_present': True,
@@ -1140,13 +1236,23 @@ def test_snapshot_audit_summarizes_adjacent_published_and_trusted_pairs(app, cli
         '2026-06-30',
         '2026-07-03',
     ]
-    assert summary['adjacent_published_pairs'] == [
-        {
-            'current_data_through': '2026-06-30',
-            'prior_data_through': '2026-06-29',
-            'current_snapshot_id': ids['second'],
-            'prior_snapshot_id': ids['first'],
-        },
+    assert len(summary['adjacent_published_pairs']) == 1
+    adjacent_pair = summary['adjacent_published_pairs'][0]
+    assert adjacent_pair.items() >= {
+        'current_data_through': '2026-06-30',
+        'prior_data_through': '2026-06-29',
+        'current_snapshot_id': ids['second'],
+        'prior_snapshot_id': ids['first'],
+        'current_snapshot_generated_at': '2026-07-30T12:02:00',
+        'current_snapshot_published_at': '2026-07-30T12:07:00',
+        'stored_comparison_state': 'insufficient_context',
+        'expected_baseline_date': '2026-06-29',
+        'expected_current_date': '2026-06-30',
+    }.items()
+    assert adjacent_pair['stored_reason_codes'] == ['stored_reason']
+    assert adjacent_pair['audit_notes'] == [
+        'stored_comparison_metadata_absent',
+        'stored_comparison_not_available',
     ]
     assert summary['adjacent_published_pair_count'] == 1
     assert summary['trusted_pair_count'] == 1
