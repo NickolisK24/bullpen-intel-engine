@@ -297,6 +297,12 @@ def test_phase0e_switches_and_legacy_public_files_not_modified():
     allowed_pitcher_ledger_coverage_files = {
         'backend/migrations/versions/7c4d2e9f1a6b_add_pitcher_season_ledger_coverage.py',
     }
+    allowed_public_what_changed_contract_files = {
+        # Branch 1 public What Changed contract completion permits the stored
+        # public payload's top-level state and unconditional dashboard storage.
+        'backend/api/bullpen.py',
+        'backend/services/what_changed_since_yesterday_public.py',
+    }
     allowed_files = (
         allowed_public_freshness_display_files
         | allowed_internal_admin_files
@@ -305,6 +311,7 @@ def test_phase0e_switches_and_legacy_public_files_not_modified():
         | allowed_phase_a_audience_signup_files
         | allowed_bullpen_game_context_files
         | allowed_pitcher_ledger_coverage_files
+        | allowed_public_what_changed_contract_files
     )
     forbidden_prefixes = (
         'backend/api/',
@@ -322,6 +329,21 @@ def test_phase0e_switches_and_legacy_public_files_not_modified():
         if path.replace('\\', '/') not in allowed_files
         if any(path.replace('\\', '/').startswith(prefix) for prefix in forbidden_prefixes)
     ]
+    if 'backend/api/bullpen.py' in [path.replace('\\', '/') for path in changed]:
+        diff = _diff_vs_main('backend/api/bullpen.py')
+        assert "payload['what_changed_since_yesterday'] = changes" in diff
+        assert "'state': 'insufficient_context'" in diff
+        assert "'reason_codes': [reason or 'dashboard_snapshot_unavailable']" in diff
+    if (
+        'backend/services/what_changed_since_yesterday_public.py'
+        in [path.replace('\\', '/') for path in changed]
+    ):
+        diff = _diff_vs_main('backend/services/what_changed_since_yesterday_public.py')
+        assert "'state': state" in diff
+        assert 'def _public_state(' in diff
+        assert "'status':" not in diff
+        assert "'empty_state':" not in diff
+        assert "'state': state," not in diff[diff.find("'comparison': {"):]
     if 'backend/api/system.py' in [path.replace('\\', '/') for path in changed]:
         diff = _diff_vs_main('backend/api/system.py')
         assert "/internal/pitcher-evidence" in diff

@@ -5,6 +5,9 @@ from services.editorial_voice_contract_v1 import contains_editorial_banned_langu
 from services.what_changed_since_yesterday import (
     REASON_COMPARISON_WITHHELD,
     REASON_PRIOR_SLATE_COVERAGE_MISSING,
+    STATE_CHANGES_DETECTED,
+    STATE_INSUFFICIENT_CONTEXT,
+    STATE_NO_MEANINGFUL_CHANGES,
 )
 from services.what_changed_since_yesterday_public import (
     CAPABILITY,
@@ -143,11 +146,33 @@ def test_public_payload_includes_only_frontend_safe_copy_items():
     )
 
     assert result['capability'] == CAPABILITY
+    assert result['state'] == STATE_CHANGES_DETECTED
     assert result['ranking_applied'] is False
     assert result['selection_made'] is False
     assert result['prediction_applied'] is False
     assert result['comparison']['comparison_available'] is True
     assert result['item_count'] == 1
+    assert set(result) == {
+        'capability',
+        'source',
+        'state',
+        'ranking_applied',
+        'selection_made',
+        'prediction_applied',
+        'ordering_basis',
+        'item_limit',
+        'comparison',
+        'items',
+        'item_count',
+        'limitations',
+        'reason_codes',
+    }
+    assert set(result['comparison']) == {
+        'current_data_through',
+        'previous_data_through',
+        'comparison_available',
+        'reason_codes',
+    }
     assert result['items'] == [
         {
             'key': 'AAA-what-changed',
@@ -393,9 +418,25 @@ def test_public_payload_skips_no_prior_no_change_and_tiny_flagged_changes():
     )
 
     assert no_prior['items'] == []
+    assert no_prior['state'] == STATE_INSUFFICIENT_CONTEXT
     assert no_prior['comparison']['comparison_available'] is False
+    assert 'status' not in no_prior
+    assert 'state' not in no_prior['comparison']
+    assert 'empty_state' not in no_prior
     assert no_change['items'] == []
+    assert no_change['state'] == STATE_NO_MEANINGFUL_CHANGES
+    assert no_change['comparison'] == {
+        'current_data_through': '2026-06-19',
+        'previous_data_through': '2026-06-18',
+        'comparison_available': True,
+        'reason_codes': [],
+    }
+    assert no_change['item_count'] == 0
+    assert 'status' not in no_change
+    assert 'state' not in no_change['comparison']
+    assert 'empty_state' not in no_change
     assert tiny_only['items'] == []
+    assert tiny_only['state'] == STATE_NO_MEANINGFUL_CHANGES
 
 
 def test_public_payload_withheld_trusted_gate_returns_no_comparison_metadata():
@@ -426,9 +467,13 @@ def test_public_payload_withheld_trusted_gate_returns_no_comparison_metadata():
     )
     encoded = json.dumps(result).lower()
 
+    assert result['state'] == STATE_INSUFFICIENT_CONTEXT
     assert result['comparison']['comparison_available'] is False
     assert result['item_count'] == 0
     assert result['items'] == []
+    assert 'status' not in result
+    assert 'state' not in result['comparison']
+    assert 'empty_state' not in result
     assert result['prediction_applied'] is False
     assert result['ranking_applied'] is False
     assert result['selection_made'] is False

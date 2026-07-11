@@ -15,6 +15,22 @@ It compares existing BaseballOS intelligence only:
 V1 focuses on change detection. It emits meaningful team-level changes with a
 change type, direction, summary, significance, confidence, and supporting facts.
 
+The stored public dashboard contract exposes the frontend-safe projection under
+`what_changed_since_yesterday`. That public contract includes a typed `state`
+plus the existing `comparison`, `items`, `item_count`, `limitations`, and
+`reason_codes` fields so a future renderer can distinguish:
+
+- `state: changes_detected` — trusted comparison is available and at least one
+  public-safe change item is present.
+- `state: no_meaningful_changes` — trusted comparison is available, but no
+  team-level bullpen movement cleared the public note threshold.
+- `state: insufficient_context` — comparison is unavailable or withheld;
+  `comparison.reason_codes`, top-level `reason_codes`, and `limitations`
+  explain why without emitting partial diffs.
+
+The dashboard stores this public contract for all three states. A quiet
+comparable day is not omitted from the stored payload.
+
 ## What It Does
 
 What Changed Since Yesterday V1 looks for meaningful movement in:

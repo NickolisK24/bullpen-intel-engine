@@ -93,15 +93,17 @@ Conversely, snapshot trust does not certify internal read or evidence readiness.
 `PHASE0E_READ_BUILD`, recompute status, and reconciliation remain separate
 internal concerns.
 
-## Frozen Legacy Surfaces
+## Phase 0H Legacy Surface Boundary
 
-The legacy What Changed surfaces are frozen:
+During Phase 0H, the legacy What Changed surfaces were intentionally frozen:
 
 - `backend/services/what_changed_since_yesterday.py`
 - `backend/services/what_changed_since_yesterday_public.py`
 
-They run as-is. Phase 0H does not extend, rename, wrap, or re-derive those
-surfaces, and the snapshot audit endpoint does not import them.
+They ran as-is in that phase. Phase 0H did not extend, rename, wrap, or
+re-derive those surfaces, and the snapshot audit endpoint does not import them.
+Later backend-contract work may extend the stored public payload shape while
+preserving these trusted-snapshot comparability gates.
 
 ## Gate Statement
 

@@ -16,8 +16,8 @@ Phase 0B public evidence gate remains closed. This branch adds no public
 endpoint, no frontend, no sync change, no schema change, no migration, and no
 snapshot builder change.
 
-Legacy What Changed surfaces remain frozen and untouched. Public daily-changes
-work remains blocked pending separate ratification.
+Legacy What Changed surfaces remained frozen and untouched during this phase.
+Public daily-changes work remained blocked pending separate ratification.
 
 ## Branch 02
 
