@@ -747,6 +747,9 @@ def test_sync_workflow_direct_sync_steps_have_command_timeouts():
     postgame_block = text.split(postgame_step, 1)[1].split('\n      - name:', 1)[0]
 
     assert 'DAILY_SYNC_COMMAND_TIMEOUT: 20m' in daily_block
+    assert "DAILY_SYNC_TOTAL_BUDGET_SECONDS: '1080'" in daily_block
+    assert "DAILY_SYNC_FINAL_PHASE_RESERVE_SECONDS: '300'" in daily_block
+    assert "DAILY_SYNC_INGESTION_BUDGET_SECONDS: '720'" in daily_block
     assert 'Direct daily sync starting at' in daily_block
     assert 'Direct daily sync completed at' in daily_block
     assert (
@@ -766,6 +769,23 @@ def test_sync_workflow_direct_sync_steps_have_command_timeouts():
         '::error::Direct postgame refresh timed out after $POSTGAME_REFRESH_COMMAND_TIMEOUT.'
         in postgame_block
     )
+
+
+def test_sync_workflow_runs_publish_diagnostics_after_partial_or_failure():
+    """Static guard: clean partial syncs and timeout failures should still
+    preserve ledger/cache evidence whenever the runner can continue."""
+    from pathlib import Path
+
+    workflow = Path(__file__).resolve().parents[2] / '.github/workflows/baseballos-sync.yml'
+    text = workflow.read_text(encoding='utf-8').replace('\r\n', '\n')
+
+    ledger_step = '      - name: Appearance ledger audit (publish eligibility)\n'
+    cache_step = '      - name: Verify dashboard snapshot cache\n'
+    ledger_block = text.split(ledger_step, 1)[1].split('\n      - name:', 1)[0]
+    cache_block = text.split(cache_step, 1)[1].split('\n      - name:', 1)[0]
+
+    assert 'if: ${{ always() }}' in ledger_block
+    assert 'if: ${{ always() }}' in cache_block
 
 
 def test_sync_workflow_splits_public_and_internal_enrichment_jobs():

@@ -11,6 +11,7 @@ to the workflow's hard timeout.
 """
 
 from datetime import date
+from types import SimpleNamespace
 
 import pytest
 from flask import Flask
@@ -22,8 +23,10 @@ import models.prospect  # noqa: F401
 import services.sync as sync_service
 from models.game_log import GameLog
 from models.pitcher import Pitcher
+from models.pitcher_season_ledger_coverage import PitcherSeasonLedgerCoverage
 from models.scheduled_game import ScheduledGame
 from models.sync_failure import SyncFailure
+from services import sync_metadata
 from services.mlb_api import MlbApiMetrics, mlb_client, normalize_endpoint_template
 from utils.db import db
 
@@ -41,7 +44,24 @@ def _split(pk, game_date, pitches=15):
         'stat': {
             'inningsPitched': '1.0', 'numberOfPitches': pitches, 'strikes': 8,
             'hits': 1, 'runs': 0, 'earnedRuns': 0, 'baseOnBalls': 0,
-            'strikeOuts': 2, 'homeRuns': 0,
+            'strikeOuts': 2, 'homeRuns': 0, 'gamesStarted': 0,
+        },
+    }
+
+
+def _schedule_api_game(game_pk, game_date):
+    return {
+        'gamePk': game_pk,
+        'gameType': 'R',
+        'officialDate': game_date.isoformat(),
+        'status': {
+            'statusCode': 'F',
+            'detailedState': 'Final',
+            'abstractGameState': 'Final',
+        },
+        'teams': {
+            'home': {'team': {'id': 108, 'name': 'Home Club'}},
+            'away': {'team': {'id': 111, 'name': 'Away Club'}},
         },
     }
 
@@ -83,6 +103,7 @@ def _seed_row(pitcher, pk, game_date, pitches=15):
     db.session.add(GameLog(
         pitcher_id=pitcher.id, mlb_game_pk=pk, game_date=game_date,
         opponent='Boston Red Sox',
+        games_started=0,
         innings_pitched=1.0, innings_pitched_outs=3, pitches_thrown=pitches,
         strikes=8, hits_allowed=1, strikeouts=2,
     ))
@@ -211,6 +232,115 @@ def test_time_budget_dead_letters_remaining_pitchers(app, monkeypatch):
     assert budget_failures[0].payload['pitchers_processed'] == 0
 
 
+def test_runtime_budget_reserves_headroom_after_slow_pre_ingestion(monkeypatch):
+    monkeypatch.setenv('DAILY_SYNC_TOTAL_BUDGET_SECONDS', '1080')
+    monkeypatch.setenv('DAILY_SYNC_FINAL_PHASE_RESERVE_SECONDS', '300')
+    monkeypatch.setenv('DAILY_SYNC_INGESTION_BUDGET_SECONDS', '720')
+    monkeypatch.setattr(sync_service.time, 'monotonic', lambda: 1250.0)
+
+    budget = sync_service._daily_sync_runtime_budget(1000.0)
+
+    assert budget['elapsed_before_ingestion_seconds'] == 250.0
+    assert budget['remaining_total_seconds'] == 830.0
+    assert budget['budget_after_reserve_seconds'] == 530.0
+    assert budget['ingestion_budget_seconds'] == 530.0
+
+
+def test_runtime_budget_returns_zero_when_final_phase_reserve_is_gone(monkeypatch):
+    monkeypatch.setenv('DAILY_SYNC_TOTAL_BUDGET_SECONDS', '1080')
+    monkeypatch.setenv('DAILY_SYNC_FINAL_PHASE_RESERVE_SECONDS', '300')
+    monkeypatch.setenv('DAILY_SYNC_INGESTION_BUDGET_SECONDS', '720')
+    monkeypatch.setattr(sync_service.time, 'monotonic', lambda: 1790.0)
+
+    budget = sync_service._daily_sync_runtime_budget(1000.0)
+
+    assert budget['remaining_total_seconds'] == 290.0
+    assert budget['budget_after_reserve_seconds'] == 0.0
+    assert budget['ingestion_budget_seconds'] == 0.0
+
+
+def test_daily_sync_clean_partial_finishes_snapshot_and_metadata(app, monkeypatch):
+    captured = {}
+    monkeypatch.setattr(sync_service, '_sync_schedule_finality_preflight_enabled', lambda: False)
+    monkeypatch.setattr(sync_service, '_daily_sync_runtime_budget', lambda started: {
+        'total_budget_seconds': 1080.0,
+        'stage_budget_cap_seconds': 720.0,
+        'final_phase_reserve_seconds': 300.0,
+        'elapsed_before_ingestion_seconds': 900.0,
+        'remaining_total_seconds': 180.0,
+        'budget_after_reserve_seconds': 0.0,
+        'ingestion_budget_seconds': 0.0,
+    })
+    monkeypatch.setattr(sync_service, 'resolve_product_day', lambda started: SimpleNamespace(
+        calendar_date=REFERENCE_DATE,
+        limitations=(),
+    ))
+    monkeypatch.setattr(sync_service, 'sync_team_assignments', lambda: {
+        'pitchers_refreshed': 1,
+        'pitchers_changed': 0,
+        'reassigned_count': 0,
+        'no_organization_count': 0,
+        'unknown_count': 0,
+        'errors': 0,
+        'by_status': {'ASSIGNED': 1},
+        'error_details': [],
+    })
+    monkeypatch.setattr(sync_service, 'sync_roster_statuses', lambda **_kwargs: {
+        'pitchers_refreshed': 1,
+        'pitchers_changed': 0,
+        'unknown_count': 0,
+        'records_failed': 0,
+        'errors': 0,
+        'error_details': [],
+    })
+    monkeypatch.setattr(sync_service, 'sync_transactions', lambda **_kwargs: {
+        'records_fetched': 0,
+        'records_stored': 0,
+        'unknown_type_count': 0,
+        'records_failed': 0,
+        'errors': 0,
+        'error_details': [],
+    })
+
+    def fake_sync_recent_logs(**kwargs):
+        captured['time_budget_seconds'] = kwargs['time_budget_seconds']
+        return {
+            'new_logs_added': 0,
+            'logs_corrected': 0,
+            'logs_unchanged': 0,
+            'pitchers_touched': 0,
+            'pitchers_total': 777,
+            'errors': 0,
+            'records_failed': 493,
+            'correction_attempts_failed': 0,
+            'unresolved_finality': 0,
+            'splits_seen': 0,
+            'splits_skipped': {},
+            'lane_health': 'budget_exhausted',
+            'budget_exhausted_pitchers': 493,
+            'fetch_seconds': 21.8,
+            'process_seconds': 760.0,
+        }
+
+    monkeypatch.setattr(sync_service, 'sync_recent_logs', fake_sync_recent_logs)
+    monkeypatch.setattr(sync_service, 'recalculate_all_fatigue', lambda: 2)
+    monkeypatch.setattr(sync_service, 'complete_sync_run_with_snapshot',
+                        lambda *args, **kwargs: (SimpleNamespace(id=1), SimpleNamespace(id=88)))
+
+    status = sync_service.run_daily_sync(
+        app,
+        days_back=7,
+        include_internal_enrichment=False,
+    )
+
+    assert captured['time_budget_seconds'] == 0.0
+    assert status['status'] == sync_metadata.STATUS_PARTIAL
+    assert status['runtime_budget']['ingestion_budget_seconds'] == 0.0
+    assert status['budget_exhausted_pitchers'] == 493
+    assert status['dashboard_snapshot_id'] == 88
+    assert status['finished_at']
+
+
 def test_budget_env_default_and_override(monkeypatch):
     monkeypatch.delenv('DAILY_SYNC_INGESTION_BUDGET_SECONDS', raising=False)
     assert sync_service._daily_sync_ingestion_budget_seconds() == (
@@ -262,6 +392,177 @@ def test_resolution_updates_only_run_for_prior_failures(app, monkeypatch):
     assert resolved_refs == [str(flagged_mlb_id)]
     assert remaining == 0
     assert str(healthy_mlb_id) not in resolved_refs
+
+
+def test_daily_coverage_reconciles_only_current_window_targets(app, monkeypatch):
+    with app.app_context():
+        pitcher = _seed_pitcher(700600, 'Targeted Coverage Starter')
+        _seed_final(824800, date(2026, 6, 15))
+        _seed_final(824930, JULY_6)
+        _seed_row(pitcher, 824800, date(2026, 6, 15))
+        _seed_row(pitcher, 824930, JULY_6)
+        db.session.commit()
+        monkeypatch.setattr(
+            mlb_client,
+            'get_pitcher_game_logs',
+            lambda mlb_id, season=None: [
+                _split(824800, date(2026, 6, 15)),
+                _split(824930, JULY_6),
+            ],
+        )
+
+        result = sync_service.sync_recent_logs(
+            days_back=7,
+            reference_date=REFERENCE_DATE,
+        )
+        coverage_rows = PitcherSeasonLedgerCoverage.query.all()
+
+    assert result['ledger_coverage_records'] == 1
+    assert len(coverage_rows) == 1
+    assert coverage_rows[0].target_game_pk == 824930
+    assert coverage_rows[0].coverage_status == PitcherSeasonLedgerCoverage.STATUS_COMPLETE
+
+
+def test_daily_finality_preflight_runs_before_statusless_ingestion(app, monkeypatch):
+    with app.app_context():
+        pitcher = _seed_pitcher(700700, 'Delayed Finality Reliever')
+        db.session.commit()
+
+    monkeypatch.setenv('DAILY_SYNC_SCHEDULE_FINALITY_PREFLIGHT', 'true')
+    monkeypatch.setattr(sync_service, 'resolve_product_day', lambda started: SimpleNamespace(
+        calendar_date=REFERENCE_DATE,
+        limitations=(),
+    ))
+    monkeypatch.setattr(
+        sync_service.schedule_ingestion.mlb_client,
+        'get_schedule',
+        lambda start_date=None, end_date=None, team_id=None: [
+            _schedule_api_game(824940, JULY_6)
+        ],
+    )
+    monkeypatch.setattr(sync_service, 'sync_team_assignments', lambda: {
+        'pitchers_refreshed': 1,
+        'pitchers_changed': 0,
+        'reassigned_count': 0,
+        'no_organization_count': 0,
+        'unknown_count': 0,
+        'errors': 0,
+        'by_status': {'ASSIGNED': 1},
+        'error_details': [],
+    })
+    monkeypatch.setattr(sync_service, 'sync_roster_statuses', lambda **_kwargs: {
+        'pitchers_refreshed': 1,
+        'pitchers_changed': 0,
+        'unknown_count': 0,
+        'records_failed': 0,
+        'errors': 0,
+        'error_details': [],
+    })
+    monkeypatch.setattr(sync_service, 'sync_transactions', lambda **_kwargs: {
+        'records_fetched': 0,
+        'records_stored': 0,
+        'unknown_type_count': 0,
+        'records_failed': 0,
+        'errors': 0,
+        'error_details': [],
+    })
+    monkeypatch.setattr(
+        mlb_client,
+        'get_pitcher_game_logs',
+        lambda mlb_id, season=None: [_split(824940, JULY_6)],
+    )
+    monkeypatch.setattr(mlb_client, 'get_game_pitching_lines', lambda pk: [])
+    monkeypatch.setattr(sync_service, 'recalculate_all_fatigue', lambda: 2)
+    monkeypatch.setattr(sync_service, 'complete_sync_run_with_snapshot',
+                        lambda *args, **kwargs: (SimpleNamespace(id=1), SimpleNamespace(id=88)))
+
+    status = sync_service.run_daily_sync(
+        app,
+        days_back=7,
+        include_internal_enrichment=False,
+    )
+
+    with app.app_context():
+        log = GameLog.query.filter_by(mlb_game_pk=824940).one()
+        schedule_states = {
+            row.status_state
+            for row in ScheduledGame.query.filter_by(game_pk=824940).all()
+        }
+
+    assert status['status'] == sync_metadata.STATUS_SUCCESS
+    assert status['schedule_finality_preflight']['status'] == 'ok'
+    assert log.game_date == JULY_6
+    assert schedule_states == {ScheduledGame.STATE_FINAL}
+
+
+def test_daily_finality_preflight_failure_finishes_clean_partial(app, monkeypatch):
+    monkeypatch.setenv('DAILY_SYNC_SCHEDULE_FINALITY_PREFLIGHT', 'true')
+    monkeypatch.setattr(sync_service, 'resolve_product_day', lambda started: SimpleNamespace(
+        calendar_date=REFERENCE_DATE,
+        limitations=(),
+    ))
+    monkeypatch.setattr(
+        sync_service.schedule_ingestion.mlb_client,
+        'get_schedule',
+        lambda **_kwargs: (_ for _ in ()).throw(RuntimeError('schedule unavailable')),
+    )
+    monkeypatch.setattr(sync_service, 'sync_team_assignments', lambda: {
+        'pitchers_refreshed': 1,
+        'pitchers_changed': 0,
+        'reassigned_count': 0,
+        'no_organization_count': 0,
+        'unknown_count': 0,
+        'errors': 0,
+        'by_status': {'ASSIGNED': 1},
+        'error_details': [],
+    })
+    monkeypatch.setattr(sync_service, 'sync_roster_statuses', lambda **_kwargs: {
+        'pitchers_refreshed': 1,
+        'pitchers_changed': 0,
+        'unknown_count': 0,
+        'records_failed': 0,
+        'errors': 0,
+        'error_details': [],
+    })
+    monkeypatch.setattr(sync_service, 'sync_transactions', lambda **_kwargs: {
+        'records_fetched': 0,
+        'records_stored': 0,
+        'unknown_type_count': 0,
+        'records_failed': 0,
+        'errors': 0,
+        'error_details': [],
+    })
+    monkeypatch.setattr(sync_service, 'sync_recent_logs', lambda **kwargs: {
+        'new_logs_added': 0,
+        'logs_corrected': 0,
+        'logs_unchanged': 0,
+        'pitchers_touched': 0,
+        'pitchers_total': 0,
+        'errors': 0,
+        'records_failed': 0,
+        'correction_attempts_failed': 0,
+        'unresolved_finality': 0,
+        'splits_seen': 0,
+        'splits_skipped': {},
+        'lane_health': 'no_window_splits',
+        'budget_exhausted_pitchers': 0,
+        'fetch_seconds': 0.0,
+        'process_seconds': 0.0,
+    })
+    monkeypatch.setattr(sync_service, 'recalculate_all_fatigue', lambda: 0)
+    monkeypatch.setattr(sync_service, 'complete_sync_run_with_snapshot',
+                        lambda *args, **kwargs: (SimpleNamespace(id=1), SimpleNamespace(id=88)))
+
+    status = sync_service.run_daily_sync(
+        app,
+        days_back=7,
+        include_internal_enrichment=False,
+    )
+
+    assert status['status'] == sync_metadata.STATUS_PARTIAL
+    assert status['schedule_finality_preflight']['status'] == 'failed'
+    assert status['records_failed'] == 1
+    assert status['dashboard_snapshot_id'] == 88
 
 
 def test_metrics_by_endpoint_normalization():

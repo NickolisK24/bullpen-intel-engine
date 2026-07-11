@@ -20,6 +20,7 @@ from utils.db import db
 from models.game_log import GameLog
 from models.play_by_play_foundation import PlayByPlayProcessedGame
 from models.postgame_processed_game import PostgameProcessedGame
+from models.scheduled_game import ScheduledGame
 import models.fatigue_score  # noqa: F401
 import models.prospect  # noqa: F401
 
@@ -255,3 +256,58 @@ def test_explicit_schedule_date_restricts_sweep(app, monkeypatch):
     assert status['games_processed'] == 1
     with app.app_context():
         assert GameLog.query.filter_by(mlb_game_pk=824600).count() == 1
+
+
+def test_delayed_finality_self_heals_before_postgame_selection(app, monkeypatch):
+    """A slate that was stored as non-final must be refreshed before postgame
+    selection so the next scheduled pass repairs it without manual backfill."""
+    monkeypatch.setenv('DAILY_SYNC_SCHEDULE_FINALITY_PREFLIGHT', 'true')
+    monkeypatch.setattr(
+        sync_service,
+        'postgame_schedule_dates',
+        lambda now=None, lookback_days=None: [SLATE_MISSED],
+    )
+    with app.app_context():
+        db.session.add_all([
+            ScheduledGame(
+                team_id=1,
+                game_pk=824800,
+                game_date=SLATE_MISSED,
+                status_state=ScheduledGame.STATE_SCHEDULED,
+                status_code='S',
+                home_away='home',
+                opponent_team_id=2,
+            ),
+            ScheduledGame(
+                team_id=2,
+                game_pk=824800,
+                game_date=SLATE_MISSED,
+                status_state=ScheduledGame.STATE_SCHEDULED,
+                status_code='S',
+                home_away='away',
+                opponent_team_id=1,
+            ),
+        ])
+        db.session.commit()
+
+    games_by_date = {SLATE_MISSED.isoformat(): [_game(824800, SLATE_MISSED)]}
+    boxscores = {824800: _boxscore(696519, 'Delayed Finality Reliever')}
+    _patch_mlb(monkeypatch, games_by_date, boxscores)
+
+    first = sync_service.run_postgame_refresh(app, source='test')
+    second = sync_service.run_postgame_refresh(app, source='test')
+
+    with app.app_context():
+        rows = ScheduledGame.query.filter_by(game_pk=824800).all()
+        marker = PostgameProcessedGame.query.filter_by(mlb_game_pk=824800).one()
+        log_count = GameLog.query.filter_by(mlb_game_pk=824800).count()
+
+    assert first['status'] == sync_metadata.STATUS_SUCCESS
+    assert first['schedule_finality_preflight']['slates_refreshed'] == 1
+    assert first['games_processed'] == 1
+    assert second['games_already_processed'] == 1
+    assert second['games_processed'] == 0
+    assert {row.status_state for row in rows} == {ScheduledGame.STATE_FINAL}
+    assert marker.processing_status == PostgameProcessedGame.STATUS_FULLY_PROCESSED
+    assert marker.attempt_count == 1
+    assert log_count == 1

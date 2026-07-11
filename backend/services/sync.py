@@ -28,6 +28,7 @@ from models.sync_run import SyncRun
 from models.sync_failure import SyncFailure
 from services import dead_letter
 from services import pitcher_season_ledger_coverage
+from services import schedule_ingestion
 from services import sync_jobs
 from services import sync_metadata
 from services.availability_reference_date import resolve_product_day
@@ -79,6 +80,8 @@ STAGE_LEGACY_READ_RECONCILIATION_AUDIT = 'legacy_read_reconciliation_audit'
 POSTGAME_EARLY_MORNING_CUTOFF_HOUR = 6
 POSTGAME_DEFAULT_LOOKBACK_DAYS = 2
 DAILY_SYNC_DEFAULT_INGESTION_BUDGET_SECONDS = 720.0
+DAILY_SYNC_DEFAULT_TOTAL_BUDGET_SECONDS = 1080.0
+DAILY_SYNC_DEFAULT_FINAL_PHASE_RESERVE_SECONDS = 300.0
 DAILY_GAME_LOG_BUDGET_FAILURE_ENTITY_TYPE = 'daily_game_log_budget'
 POSTGAME_SNAPSHOT_DEFAULT_TIMEOUT_SECONDS = 120.0
 DAILY_GAME_LOG_CORRECTION_SOURCE = 'daily_game_log'
@@ -1888,17 +1891,180 @@ def _safe_generate_intelligence_surface_snapshot(schedule_date, *, status, run_l
         )
 
 
-def _daily_sync_ingestion_budget_seconds() -> float | None:
-    """Soft wall-clock budget for the gameLog ingestion stage. When exceeded,
-    the stage finishes cleanly as partial (remaining pitchers dead-lettered)
-    instead of being SIGKILLed mid-transaction by the workflow's hard timeout.
-    0 or negative disables the budget."""
-    raw = os.environ.get('DAILY_SYNC_INGESTION_BUDGET_SECONDS')
+def _env_seconds(name: str, default: float | None) -> float | None:
+    raw = os.environ.get(name)
     try:
-        value = float(raw) if raw not in (None, '') else DAILY_SYNC_DEFAULT_INGESTION_BUDGET_SECONDS
+        value = float(raw) if raw not in (None, '') else default
     except (TypeError, ValueError):
-        value = DAILY_SYNC_DEFAULT_INGESTION_BUDGET_SECONDS
+        value = default
+    if value is None:
+        return None
     return value if value > 0 else None
+
+
+def _daily_sync_ingestion_budget_seconds() -> float | None:
+    """Maximum soft wall-clock budget for the gameLog ingestion stage."""
+    return _env_seconds(
+        'DAILY_SYNC_INGESTION_BUDGET_SECONDS',
+        DAILY_SYNC_DEFAULT_INGESTION_BUDGET_SECONDS,
+    )
+
+
+def _daily_sync_total_budget_seconds() -> float | None:
+    """Total Python-process budget for the public daily sync command.
+
+    This is deliberately shorter than the workflow command timeout so the
+    process can finish metadata, release the writer guard, and exit cleanly.
+    """
+    return _env_seconds(
+        'DAILY_SYNC_TOTAL_BUDGET_SECONDS',
+        DAILY_SYNC_DEFAULT_TOTAL_BUDGET_SECONDS,
+    )
+
+
+def _daily_sync_final_phase_reserve_seconds() -> float:
+    return (
+        _env_seconds(
+            'DAILY_SYNC_FINAL_PHASE_RESERVE_SECONDS',
+            DAILY_SYNC_DEFAULT_FINAL_PHASE_RESERVE_SECONDS,
+        )
+        or 0.0
+    )
+
+
+def _sync_schedule_finality_preflight_enabled() -> bool:
+    raw = (
+        os.environ.get('SYNC_SCHEDULE_FINALITY_PREFLIGHT')
+        or os.environ.get('DAILY_SYNC_SCHEDULE_FINALITY_PREFLIGHT')
+    )
+    if raw is not None:
+        return raw.strip().lower() not in _FALSEY_ENV_VALUES
+    return os.environ.get('APP_ENV') == 'production'
+
+
+def _daily_sync_runtime_budget(run_started_monotonic: float) -> dict:
+    stage_budget = _daily_sync_ingestion_budget_seconds()
+    total_budget = _daily_sync_total_budget_seconds()
+    final_phase_reserve = _daily_sync_final_phase_reserve_seconds()
+    elapsed_before_ingestion = max(time.monotonic() - run_started_monotonic, 0.0)
+    remaining_total = (
+        None
+        if total_budget is None
+        else max(total_budget - elapsed_before_ingestion, 0.0)
+    )
+    budget_after_reserve = (
+        None
+        if remaining_total is None
+        else max(remaining_total - final_phase_reserve, 0.0)
+    )
+    if budget_after_reserve is None:
+        ingestion_budget = stage_budget
+    elif stage_budget is None:
+        ingestion_budget = budget_after_reserve
+    else:
+        ingestion_budget = min(stage_budget, budget_after_reserve)
+
+    return {
+        'total_budget_seconds': total_budget,
+        'stage_budget_cap_seconds': stage_budget,
+        'final_phase_reserve_seconds': final_phase_reserve,
+        'elapsed_before_ingestion_seconds': round(elapsed_before_ingestion, 1),
+        'remaining_total_seconds': (
+            round(remaining_total, 1) if remaining_total is not None else None
+        ),
+        'budget_after_reserve_seconds': (
+            round(budget_after_reserve, 1)
+            if budget_after_reserve is not None
+            else None
+        ),
+        'ingestion_budget_seconds': (
+            round(ingestion_budget, 1) if ingestion_budget is not None else None
+        ),
+    }
+
+
+def _refresh_daily_schedule_finality_window(
+    reference_date: date,
+    days_back: int,
+    *,
+    source: str = 'daily_finality_preflight',
+) -> dict:
+    start_date = reference_date - timedelta(days=max(int(days_back or 0), 0))
+    started = time.perf_counter()
+    try:
+        summary = schedule_ingestion.ingest_schedule(
+            start_date,
+            reference_date,
+            source=source,
+        )
+    except Exception as exc:  # noqa: BLE001 - daily sync can continue fail-closed
+        db.session.rollback()
+        return {
+            'status': 'failed',
+            'source': source,
+            'start_date': start_date.isoformat(),
+            'end_date': reference_date.isoformat(),
+            'summary': {'errors': 1},
+            'error': str(exc),
+            'elapsed_ms': round((time.perf_counter() - started) * 1000, 1),
+        }
+    return {
+        'status': 'ok' if int((summary or {}).get('errors') or 0) == 0 else 'partial',
+        'source': source,
+        'start_date': start_date.isoformat(),
+        'end_date': reference_date.isoformat(),
+        'summary': summary,
+        'elapsed_ms': round((time.perf_counter() - started) * 1000, 1),
+    }
+
+
+def _refresh_postgame_schedule_finality(
+    schedule_dates,
+    *,
+    source: str = 'postgame_finality_preflight',
+) -> dict:
+    started = time.perf_counter()
+    results = []
+    for slate_date in schedule_dates or []:
+        try:
+            results.append(
+                schedule_ingestion.refresh_non_final_games_for_slate(
+                    slate_date,
+                    source=source,
+                )
+            )
+        except Exception as exc:  # noqa: BLE001 - postgame can continue fail-closed
+            db.session.rollback()
+            results.append({
+                'status': 'failed',
+                'reason': 'finality_preflight_failed',
+                'slate_date': (
+                    slate_date.isoformat()
+                    if hasattr(slate_date, 'isoformat')
+                    else str(slate_date)
+                ),
+                'candidate_game_pks': [],
+                'summary': {'errors': 1},
+                'error': str(exc),
+            })
+    refreshed = [item for item in results if item.get('status') == 'refreshed']
+    errors = [
+        item
+        for item in results
+        if item.get('summary', {}).get('errors')
+    ]
+    return {
+        'status': 'ok' if not errors else 'partial',
+        'source': source,
+        'slates_checked': len(results),
+        'slates_refreshed': len(refreshed),
+        'candidate_game_count': sum(
+            len(item.get('candidate_game_pks') or [])
+            for item in results
+        ),
+        'results': results,
+        'elapsed_ms': round((time.perf_counter() - started) * 1000, 1),
+    }
 
 
 def sync_recent_logs(
@@ -1973,17 +2139,21 @@ def sync_recent_logs(
     pitching_lines_cache = {}
     # One SELECT for every current-season row, instead of one SELECT per split
     # per pitcher. The same prefetch feeds both upserts and ledger coverage.
+    existing_rows = (
+        GameLog.query
+        .filter(
+            GameLog.game_date >= season_opening,
+            GameLog.game_date <= reference_date,
+        )
+        .all()
+    )
     existing_by_key = {
         (row.pitcher_id, row.mlb_game_pk): row
-        for row in (
-            GameLog.query
-            .filter(
-                GameLog.game_date >= season_opening,
-                GameLog.game_date <= reference_date,
-            )
-            .all()
-        )
+        for row in existing_rows
     }
+    existing_rows_by_pitcher = {}
+    for row in existing_rows:
+        existing_rows_by_pitcher.setdefault(row.pitcher_id, []).append(row)
     # One SELECT for outstanding fetch failures; per-pitcher resolution
     # UPDATEs run only for pitchers that actually have one to resolve.
     unresolved_fetch_refs = {
@@ -2005,7 +2175,7 @@ def sync_recent_logs(
     for index, pitcher in enumerate(pitchers):
         if (
             time_budget_seconds is not None
-            and time.monotonic() - ingestion_started > time_budget_seconds
+            and time.monotonic() - ingestion_started >= time_budget_seconds
         ):
             # Finish cleanly as partial instead of dying to the hard workflow
             # timeout mid-transaction. Remaining pitchers are dead-lettered in
@@ -2076,6 +2246,7 @@ def sync_recent_logs(
             unresolved_fetch_refs.discard(str(pitcher.mlb_id))
 
         touched_this_pitcher = False
+        coverage_target_game_pks = set()
 
         for split in splits or []:
             game_info     = split.get('game', {})
@@ -2127,13 +2298,22 @@ def sync_recent_logs(
             if result['status'] == 'inserted':
                 new_logs += 1
                 touched_this_pitcher = True
-                affected_game_pks.add(_positive_external_id(game_pk))
+                positive_game_pk = _positive_external_id(game_pk)
+                affected_game_pks.add(positive_game_pk)
+                coverage_target_game_pks.add(positive_game_pk)
+                log = result.get('log')
+                if log is not None:
+                    existing_rows_by_pitcher.setdefault(pitcher.id, []).append(log)
             elif result['status'] == 'corrected':
                 corrected_logs += 1
                 touched_this_pitcher = True
-                affected_game_pks.add(_positive_external_id(game_pk))
+                positive_game_pk = _positive_external_id(game_pk)
+                affected_game_pks.add(positive_game_pk)
+                coverage_target_game_pks.add(positive_game_pk)
             elif result['status'] == 'unchanged':
                 unchanged_logs += 1
+                positive_game_pk = _positive_external_id(game_pk)
+                coverage_target_game_pks.add(positive_game_pk)
             elif result['status'] == 'unsafe':
                 records_failed += 1
                 correction_attempts_failed += 1
@@ -2151,18 +2331,21 @@ def sync_recent_logs(
         if touched_this_pitcher:
             pitchers_touched += 1
 
-        coverage = pitcher_season_ledger_coverage.reconcile_pitcher_season_coverage(
-            pitcher,
-            splits,
-            season=season,
-            through_date=reference_date,
-            sync_run_id=sync_run_id,
-            finality_cache=finality_cache,
-            stored_rows=existing_by_key.values(),
-        )
-        ledger_coverage_records += coverage['coverage_records_upserted']
-        ledger_coverage_complete += coverage['coverage_records_complete']
-        ledger_coverage_incomplete += coverage['coverage_records_incomplete']
+        coverage_target_game_pks.discard(None)
+        if coverage_target_game_pks:
+            coverage = pitcher_season_ledger_coverage.reconcile_pitcher_season_coverage(
+                pitcher,
+                splits,
+                season=season,
+                through_date=reference_date,
+                sync_run_id=sync_run_id,
+                finality_cache=finality_cache,
+                stored_rows=existing_rows_by_pitcher.get(pitcher.id, ()),
+                target_game_pks=coverage_target_game_pks,
+            )
+            ledger_coverage_records += coverage['coverage_records_upserted']
+            ledger_coverage_complete += coverage['coverage_records_complete']
+            ledger_coverage_incomplete += coverage['coverage_records_incomplete']
 
     # Lane-health canary: if the window contained ingestable splits and every
     # single one was dropped at the finality gate (never reached the upsert),
@@ -3556,6 +3739,43 @@ def run_postgame_refresh(
                 job_name=sync_metadata.JOB_POSTGAME_REFRESH,
             )
             mlb_client.metrics.reset()
+            stage_timings = {}
+            status['stage_timings'] = stage_timings
+            schedule_finality_records_failed = 0
+            if _sync_schedule_finality_preflight_enabled():
+                active_stage = sync_metadata.STAGE_SCHEDULE_FINALITY_PREFLIGHT
+                preflight_started = time.monotonic()
+                preflight = _refresh_postgame_schedule_finality(schedule_dates)
+                stage_timings['schedule_finality_preflight'] = round(
+                    time.monotonic() - preflight_started,
+                    1,
+                )
+                status['schedule_finality_preflight'] = preflight
+                schedule_finality_records_failed = sum(
+                    int((item.get('summary') or {}).get('errors') or 0)
+                    for item in preflight.get('results') or []
+                )
+                sync_metadata.set_sync_stage(
+                    sync_run_id,
+                    sync_metadata.STAGE_SCHEDULE_FINALITY_PREFLIGHT,
+                )
+                run_logger.info(
+                    'Postgame schedule finality preflight completed: '
+                    'status=%s slates_checked=%s slates_refreshed=%s '
+                    'candidate_games=%s elapsed_ms=%s.',
+                    preflight.get('status'),
+                    preflight.get('slates_checked'),
+                    preflight.get('slates_refreshed'),
+                    preflight.get('candidate_game_count'),
+                    preflight.get('elapsed_ms'),
+                )
+            else:
+                status['schedule_finality_preflight'] = {
+                    'status': 'skipped',
+                    'reason': 'disabled',
+                }
+            status['records_failed'] += schedule_finality_records_failed
+            status['errors'] += schedule_finality_records_failed
             active_stage = sync_metadata.STAGE_LOG_INGESTION
 
             completed_games = []
@@ -3990,6 +4210,7 @@ def run_daily_sync(
     run_logger.setLevel(logging.INFO)
 
     started_at = datetime.now(timezone.utc)
+    sync_started = time.monotonic()
     product_day = resolve_product_day(started_at)
     sync_run_id = None
     active_stage = None
@@ -4077,12 +4298,64 @@ def run_daily_sync(
                 transactions['unknown_type_count'],
                 transactions['errors'],
             )
+            schedule_finality_records_failed = 0
+            if _sync_schedule_finality_preflight_enabled():
+                active_stage = sync_metadata.STAGE_SCHEDULE_FINALITY_PREFLIGHT
+                stage_started = time.monotonic()
+                finality_preflight = _refresh_daily_schedule_finality_window(
+                    product_day.calendar_date,
+                    days_back,
+                )
+                stage_timings['schedule_finality_preflight'] = round(
+                    time.monotonic() - stage_started,
+                    1,
+                )
+                status['schedule_finality_preflight'] = finality_preflight
+                schedule_finality_records_failed = int(
+                    (finality_preflight.get('summary') or {}).get('errors') or 0
+                )
+                sync_metadata.set_sync_stage(
+                    sync_run_id,
+                    sync_metadata.STAGE_SCHEDULE_FINALITY_PREFLIGHT,
+                )
+                run_logger.info(
+                    'Daily schedule finality preflight completed: status=%s '
+                    'window=%s..%s games_seen=%s rows_created=%s '
+                    'rows_updated=%s errors=%s elapsed_ms=%s.',
+                    finality_preflight.get('status'),
+                    finality_preflight.get('start_date'),
+                    finality_preflight.get('end_date'),
+                    (finality_preflight.get('summary') or {}).get('games_seen'),
+                    (finality_preflight.get('summary') or {}).get('rows_created'),
+                    (finality_preflight.get('summary') or {}).get('rows_updated'),
+                    (finality_preflight.get('summary') or {}).get('errors'),
+                    finality_preflight.get('elapsed_ms'),
+                )
+            else:
+                status['schedule_finality_preflight'] = {
+                    'status': 'skipped',
+                    'reason': 'disabled',
+                }
             active_stage = sync_metadata.STAGE_LOG_INGESTION
+            runtime_budget = _daily_sync_runtime_budget(sync_started)
+            status['runtime_budget'] = runtime_budget
+            run_logger.info(
+                'Daily sync runtime budget: total=%s stage_cap=%s reserve=%s '
+                'elapsed_before_ingestion=%s remaining_total=%s '
+                'derived_ingestion_budget=%s.',
+                runtime_budget.get('total_budget_seconds'),
+                runtime_budget.get('stage_budget_cap_seconds'),
+                runtime_budget.get('final_phase_reserve_seconds'),
+                runtime_budget.get('elapsed_before_ingestion_seconds'),
+                runtime_budget.get('remaining_total_seconds'),
+                runtime_budget.get('ingestion_budget_seconds'),
+            )
             stage_started = time.monotonic()
             pull = sync_recent_logs(
                 days_back=days_back,
                 reference_date=product_day.calendar_date,
                 sync_run_id=sync_run_id,
+                time_budget_seconds=runtime_budget.get('ingestion_budget_seconds'),
             )
             stage_timings['log_ingestion'] = round(time.monotonic() - stage_started, 1)
             stage_timings['log_ingestion_fetch'] = pull.get('fetch_seconds')
@@ -4116,6 +4389,7 @@ def run_daily_sync(
                 + team_assignment_records_failed
                 + roster_records_failed
                 + transaction_records_failed
+                + schedule_finality_records_failed
             )
             status['new_logs_added'] = pull['new_logs_added']
             status['logs_corrected'] = logs_corrected
@@ -4132,6 +4406,7 @@ def run_daily_sync(
                 + roster['errors']
                 + team_assignment['errors']
                 + transactions['errors']
+                + schedule_finality_records_failed
             )
             status['team_assignments_refreshed'] = team_assignment['pitchers_refreshed']
             status['team_assignments_changed'] = team_assignment['pitchers_changed']
@@ -4197,6 +4472,7 @@ def run_daily_sync(
                         + roster['errors']
                         + team_assignment['errors']
                         + transactions['errors']
+                        + schedule_finality_records_failed
                     ),
                     api_calls_made=api_metrics['api_calls'],
                     retries_used=api_metrics['retries'],

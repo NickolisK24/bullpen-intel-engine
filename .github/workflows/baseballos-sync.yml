@@ -8,12 +8,13 @@ name: BaseballOS Bullpen Sync
 # does not run large jobs inside Render/Gunicorn web requests.
 #
 # Pipeline order (see docs/current/SYNC_PIPELINE.md):
-#   1. sync (daily gameLog lane / postgame boxscore lane, lookback sweep)
-#   2. appearance ledger audit — publish-eligibility verdict (fail-closed)
+#   1. production schedule/finality preflight inside the sync command
+#   2. sync (daily gameLog lane / postgame boxscore lane, lookback sweep)
 #   3. snapshot publish/withhold happens INSIDE the sync via the same ledger
 #      gate; the audit step re-proves it and fails this workflow loudly on
 #      any deficit
-#   4. dashboard snapshot cache verification
+#   4. appearance ledger audit — publish-eligibility verdict (fail-closed)
+#   5. dashboard snapshot cache verification
 # Historical backfills are NEVER automatic: trigger mode=backfill with an
 # explicit backfill_date from the Actions tab.
 #
@@ -94,10 +95,16 @@ jobs:
           ADMIN_API_TOKEN: ${{ secrets.BASEBALLOS_ADMIN_API_TOKEN }}
           AUTO_SYNC: 'false'
           DAILY_SYNC_COMMAND_TIMEOUT: 20m
-          # Soft budget for the gameLog ingestion stage: when exceeded the
-          # sync finishes cleanly as PARTIAL (remaining pitchers
-          # dead-lettered and retried next run) instead of being SIGKILLed
-          # by the 20m hard timeout with no sync metadata.
+          # Whole-command runtime governance. The Python process keeps the
+          # daily sync inside this total budget and reserves enough time for
+          # fatigue, snapshot publish/withhold, metadata, writer-guard release,
+          # and cleanup. The 20m shell timeout is a last-resort kill, not normal
+          # control flow.
+          DAILY_SYNC_TOTAL_BUDGET_SECONDS: '1080'
+          DAILY_SYNC_FINAL_PHASE_RESERVE_SECONDS: '300'
+          # Maximum soft budget for the gameLog ingestion stage. The actual
+          # budget is the smaller of this cap and the total remaining runtime
+          # after final-phase reserve.
           DAILY_SYNC_INGESTION_BUDGET_SECONDS: '720'
         run: |
           set -euo pipefail
@@ -258,6 +265,7 @@ jobs:
       # non-zero verdict fails this workflow loudly — an unprovable appearance
       # ledger is a trust incident, not a warning.
       - name: Appearance ledger audit (publish eligibility)
+        if: ${{ always() }}
         env:
           APP_ENV: production
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
@@ -305,6 +313,7 @@ jobs:
           if-no-files-found: ignore
 
       - name: Verify dashboard snapshot cache
+        if: ${{ always() }}
         env:
           SYNC_URL: ${{ secrets.BASEBALLOS_SYNC_URL }}
         run: |

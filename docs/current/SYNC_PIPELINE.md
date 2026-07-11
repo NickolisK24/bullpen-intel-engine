@@ -1,13 +1,13 @@
 # BaseballOS Sync Pipeline — Execution Order and Trust Gates
 
-Last updated: 2026-07-08 (appearance ledger restoration).
+Last updated: 2026-07-11 (runtime governance and finality preflight).
 Workflow: `.github/workflows/baseballos-sync.yml` · Incident background:
 `docs/audits/sync-reliability-audit-2026-07-08.md` and
 `docs/audits/appearance-ledger-restoration-2026-07-08.md`.
 
 ## The order, in one line
 
-**sync → appearance ledger audit → publish eligibility → snapshot publish/withhold → dashboard cache verification**
+**schedule finality preflight → sync → publish/withhold → appearance ledger audit → dashboard cache verification**
 
 The foundational rule: if we cannot prove the appearance ledger is complete,
 we do not publish. The previous trusted snapshot keeps serving.
@@ -30,13 +30,15 @@ with a concrete `YYYY-MM-DD` slate date.
 
 1. **Sync (acquisition + derived state + snapshot build)**
    - daily: `run_daily_sync.py --days-back 7 --public-only` — team
-     assignments, roster statuses, transactions, the per-pitcher gameLog lane
+     assignments, roster statuses, transactions, production schedule/finality
+     preflight for the gameLog window, the per-pitcher gameLog lane
      (statusless splits resolved against `scheduled_games`; unresolvable
      finality is dead-lettered, never silently skipped), fatigue, then the
      snapshot build.
-   - postgame: `run_postgame_refresh.py --public-only` — sweeps the primary
-     slate plus the trailing lookback dates, ingests completed-game boxscores,
-     fatigue, then the snapshot build.
+   - postgame: `run_postgame_refresh.py --public-only` — production
+     schedule/finality preflight for stale non-final stored slates, then sweeps
+     the primary slate plus the trailing lookback dates, ingests completed-game
+     boxscores, fatigue, then the snapshot build.
    - backfill: `run_postgame_refresh.py --date <backfill_date>` — exactly one
      explicitly requested slate.
 2. **Snapshot publish/withhold (inside the sync process)** —
@@ -90,15 +92,27 @@ grouped by endpoint template (`Daily sync stage timings (s): ... API calls:
 `api_calls_by_endpoint`, `elapsed_seconds` / `fetch_seconds` /
 `process_seconds` for the gameLog stage, and `budget_exhausted_pitchers`.
 
-The gameLog ingestion stage runs under a **soft time budget**
-(`DAILY_SYNC_INGESTION_BUDGET_SECONDS`, default 720s; the workflow sets it
-explicitly). When exceeded, the stage stops cleanly: the remaining pitchers
-are dead-lettered in one `daily_game_log_budget` record (counts + mlb_ids),
-`records_failed` includes them, the run finishes **partial** with
-`lane_health=budget_exhausted`, and the next daily run (or the postgame
-lookback) retries them. This is fail-closed by construction — a truncated
-sweep is visible and counted, never absorbed — and it guarantees the step
-completes inside the 20-minute hard timeout with sync metadata intact.
+The daily command runs under a **whole-process soft budget**
+(`DAILY_SYNC_TOTAL_BUDGET_SECONDS`, workflow value 1080s) with explicit reserve
+for required final phases (`DAILY_SYNC_FINAL_PHASE_RESERVE_SECONDS`, workflow
+value 300s). The gameLog ingestion budget is derived from the total remaining
+time after that reserve and capped by `DAILY_SYNC_INGESTION_BUDGET_SECONDS`
+(workflow value 720s).
+
+When the derived ingestion budget is exceeded, the stage stops cleanly: the
+remaining pitchers are dead-lettered in one `daily_game_log_budget` record
+(counts + mlb_ids), `records_failed` includes them, the run finishes **partial**
+with `lane_health=budget_exhausted`, and the next daily run (or the postgame
+lookback) retries them. This is fail-closed by construction — a truncated sweep
+is visible and counted, never absorbed — and the Python process keeps enough
+headroom to run fatigue, snapshot publish/withhold, durable metadata,
+writer-guard release, and cleanup before the 20-minute shell timeout.
+
+Pitcher-season ledger coverage is not recomputed for every full-season target
+on every daily run. The daily hot path verifies only the accepted current-window
+targets while preserving the same source-vs-stored manifest proof for each
+target. Full-season coverage maintenance remains available through the
+production maintenance workflow.
 
 ## Operator tools
 

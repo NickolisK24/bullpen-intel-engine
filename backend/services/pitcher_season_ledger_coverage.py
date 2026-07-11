@@ -19,6 +19,7 @@ from utils.games_started import InvalidGamesStartedValue, parse_games_started
 from utils.time import utc_now_naive
 
 
+_OPTIONAL_INPUT_NOT_PROVIDED = object()
 COVERAGE_SCOPE_PITCHER_SEASON_TO_TARGET = (
     'pitcher_regular_season_through_target'
 )
@@ -52,9 +53,11 @@ def reconcile_pitcher_season_coverage(
     game_type: str = REGULAR_SEASON_GAME_TYPE,
     finality_cache: dict | None = None,
     stored_rows=None,
+    target_game_pks=None,
 ) -> dict:
     """Persist target-game coverage records from one full-season split response."""
     session = session or db.session
+    target_game_pk_set = _positive_int_set(target_game_pks)
     source_result = build_source_manifest(
         splits,
         through_date=through_date,
@@ -83,7 +86,17 @@ def reconcile_pitcher_season_coverage(
     upserted = 0
     complete = 0
     incomplete = 0
-    targets = source_result['entries']
+    targets = [
+        entry for entry in source_result['entries']
+        if target_game_pk_set is None or entry['mlb_game_pk'] in target_game_pk_set
+    ]
+    existing_records = _coverage_records_by_target(
+        session=session,
+        pitcher_id=pitcher.id,
+        season=season,
+        game_type=game_type,
+        target_game_pks=[target['mlb_game_pk'] for target in targets],
+    )
     for target in targets:
         source_subset = _subset_through_target(source_result['entries'], target)
         stored_subset = _subset_through_target(stored_result['entries'], target)
@@ -116,6 +129,7 @@ def reconcile_pitcher_season_coverage(
             status=status,
             reason_codes=sorted(reason_codes),
             sync_run_id=sync_run_id,
+            existing_record=existing_records.get(target['mlb_game_pk']),
         )
         session.add(record)
         upserted += 1
@@ -130,6 +144,7 @@ def reconcile_pitcher_season_coverage(
         'coverage_records_incomplete': incomplete,
         'source_entries': len(source_result['entries']),
         'stored_entries': len(stored_result['entries']),
+        'target_entries': len(targets),
         'source_reason_codes': sorted(source_result['reason_codes']),
         'stored_reason_codes': sorted(stored_result['reason_codes']),
     }
@@ -338,17 +353,21 @@ def _upsert_coverage_record(
     status,
     reason_codes,
     sync_run_id,
+    existing_record=_OPTIONAL_INPUT_NOT_PROVIDED,
 ):
-    record = (
-        session.query(PitcherSeasonLedgerCoverage)
-        .filter(
-            PitcherSeasonLedgerCoverage.pitcher_id == pitcher.id,
-            PitcherSeasonLedgerCoverage.season == season,
-            PitcherSeasonLedgerCoverage.game_type == game_type,
-            PitcherSeasonLedgerCoverage.target_game_pk == target['mlb_game_pk'],
+    if existing_record is _OPTIONAL_INPUT_NOT_PROVIDED:
+        record = (
+            session.query(PitcherSeasonLedgerCoverage)
+            .filter(
+                PitcherSeasonLedgerCoverage.pitcher_id == pitcher.id,
+                PitcherSeasonLedgerCoverage.season == season,
+                PitcherSeasonLedgerCoverage.game_type == game_type,
+                PitcherSeasonLedgerCoverage.target_game_pk == target['mlb_game_pk'],
+            )
+            .one_or_none()
         )
-        .one_or_none()
-    )
+    else:
+        record = existing_record
     if record is None:
         record = PitcherSeasonLedgerCoverage(
             pitcher_id=pitcher.id,
@@ -371,6 +390,30 @@ def _upsert_coverage_record(
     record.verified_at = utc_now_naive()
     record.sync_run_id = sync_run_id
     return record
+
+
+def _coverage_records_by_target(
+    *,
+    session,
+    pitcher_id: int,
+    season: int,
+    game_type: str,
+    target_game_pks,
+) -> dict[int, PitcherSeasonLedgerCoverage]:
+    target_game_pk_set = _positive_int_set(target_game_pks) or set()
+    if not target_game_pk_set:
+        return {}
+    rows = (
+        session.query(PitcherSeasonLedgerCoverage)
+        .filter(
+            PitcherSeasonLedgerCoverage.pitcher_id == pitcher_id,
+            PitcherSeasonLedgerCoverage.season == season,
+            PitcherSeasonLedgerCoverage.game_type == game_type,
+            PitcherSeasonLedgerCoverage.target_game_pk.in_(target_game_pk_set),
+        )
+        .all()
+    )
+    return {row.target_game_pk: row for row in rows}
 
 
 def _split_finality(game_info, game_pk, finality_cache):
@@ -457,3 +500,14 @@ def _positive_int(raw: Any) -> int | None:
     except (TypeError, ValueError):
         return None
     return value if value > 0 else None
+
+
+def _positive_int_set(values) -> set[int] | None:
+    if values is None:
+        return None
+    result = set()
+    for raw in values:
+        value = _positive_int(raw)
+        if value is not None:
+            result.add(value)
+    return result
