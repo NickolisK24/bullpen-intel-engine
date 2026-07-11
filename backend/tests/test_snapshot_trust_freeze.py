@@ -226,11 +226,16 @@ def test_frozen_legacy_what_changed_files_untouched():
         'frontend/src/utils/api.js',
         'frontend/tests/intelligenceSurface.test.mjs',
     }
+    allowed_bullpen_game_context_files = {
+        'frontend/src/components/bullpen/TeamReliefWorkPanel.jsx',
+        'frontend/tests/teamReliefWorkPanel.test.mjs',
+    }
     assert not sorted(frozen_paths & changed)
     assert not sorted(
         path for path in changed
         if path.startswith('frontend/')
         if path not in allowed_phase_a_audience_signup_files
+        if path not in allowed_bullpen_game_context_files
     )
     assert not sorted(
         path for path in changed

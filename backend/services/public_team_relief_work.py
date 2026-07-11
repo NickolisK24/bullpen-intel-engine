@@ -5,12 +5,29 @@ from sqlalchemy import asc, desc
 from models.game_log import GameLog
 from models.pitcher import Pitcher
 from services import board_freshness
+from services import game_shape
 
 
 CAPABILITY = 'public_team_relief_work'
 RECENT_GAME_DATES_MAX = 5
 LOOKBACK_DAYS = 30
 WINDOW_DAYS = (7, 14)
+
+# Game-level context qualifier. Both bounds reuse the canonical game-shape
+# constants: a credited start of two innings or fewer (6 outs) followed by
+# five-plus relief innings (15 outs) qualifies as extended bullpen coverage.
+EXTENDED_BULLPEN_COVERAGE_LABEL = 'Extended bullpen coverage'
+EXTENDED_COVERAGE_STARTER_MAX_OUTS = game_shape.OPENER_MAX_OUTS
+EXTENDED_COVERAGE_RELIEF_MIN_OUTS = game_shape.NORMAL_START_MIN_OUTS
+
+# Shapes with exactly one credited starter and fully classified pitching
+# lines. Any other shape (including unknown and no-credited-starter games)
+# omits the game context block entirely.
+CONTEXT_ELIGIBLE_GAME_SHAPES = (
+    game_shape.SHAPE_NORMAL_START,
+    game_shape.SHAPE_SHORT_START,
+    game_shape.SHAPE_OPENER_BULK_GAME,
+)
 
 MONTH_NAMES = (
     None,
@@ -75,8 +92,11 @@ def build_public_team_relief_work_payload(team_id):
         for log, pitcher in rows
         if log.games_started == 0
     ]
+    all_rows_by_date = {}
+    for log, pitcher in rows:
+        all_rows_by_date.setdefault(log.game_date, []).append((log, pitcher))
 
-    payload['relief_by_date'] = _relief_by_date(relief_rows)
+    payload['relief_by_date'] = _relief_by_date(relief_rows, all_rows_by_date)
     if not relief_rows:
         payload['absence_sentence'] = (
             f'No relief appearances in the {LOOKBACK_DAYS} days through '
@@ -113,7 +133,7 @@ def _scope_sentence(pitcher):
     return f'Covers pitchers currently on the {club} roster per MLB roster data.'
 
 
-def _relief_by_date(relief_rows):
+def _relief_by_date(relief_rows, all_rows_by_date):
     by_date = {}
     for log, pitcher in relief_rows:
         by_date.setdefault(log.game_date, []).append((log, pitcher))
@@ -124,8 +144,166 @@ def _relief_by_date(relief_rows):
             by_date[game_date],
             key=lambda item: (item[1].full_name or '', item[0].id or 0),
         )
-        groups.append(_date_group(game_date, entries))
+        group = _date_group(game_date, entries)
+        games = _game_context_blocks(all_rows_by_date.get(game_date) or [])
+        if games:
+            group['games'] = games
+        groups.append(group)
     return groups
+
+
+def _game_context_blocks(date_entries):
+    by_game = {}
+    for log, pitcher in date_entries:
+        if log.mlb_game_pk is None:
+            continue
+        by_game.setdefault(log.mlb_game_pk, []).append((log, pitcher))
+
+    blocks = []
+    for game_pk in sorted(by_game):
+        block = _game_context_block(game_pk, by_game[game_pk])
+        if block is not None:
+            blocks.append(block)
+    return blocks
+
+
+def _game_context_block(game_pk, entries):
+    shape_payload = game_shape.classify_game_shape(
+        [log for log, _pitcher in entries]
+    )
+    if shape_payload['shape'] not in CONTEXT_ELIGIBLE_GAME_SHAPES:
+        return None
+
+    starters = [
+        (log, pitcher) for log, pitcher in entries if log.games_started == 1
+    ]
+    relief = [
+        (log, pitcher) for log, pitcher in entries if log.games_started == 0
+    ]
+    if len(starters) != 1 or not relief:
+        return None
+
+    starter_log, starter_pitcher = starters[0]
+    starter_outs = _known_outs(starter_log)
+    relief_outs_each = [_known_outs(log) for log, _pitcher in relief]
+    if starter_outs is None or any(outs is None for outs in relief_outs_each):
+        return None
+
+    relief_outs = sum(relief_outs_each)
+    total_outs = starter_outs + relief_outs
+    relief_count = len(relief)
+    total_pitchers = 1 + relief_count
+
+    starter_pitches = starter_log.pitches_thrown
+    relief_known_pitches = [
+        log.pitches_thrown
+        for log, _pitcher in relief
+        if log.pitches_thrown is not None
+    ]
+    relief_pitches = (
+        sum(relief_known_pitches)
+        if len(relief_known_pitches) == relief_count
+        else None
+    )
+    total_pitches = (
+        starter_pitches + relief_pitches
+        if starter_pitches is not None and relief_pitches is not None
+        else None
+    )
+
+    label = None
+    if (
+        starter_outs <= EXTENDED_COVERAGE_STARTER_MAX_OUTS
+        and relief_outs >= EXTENDED_COVERAGE_RELIEF_MIN_OUTS
+    ):
+        label = EXTENDED_BULLPEN_COVERAGE_LABEL
+
+    sentences = [
+        _starter_context_sentence(starter_pitcher, starter_outs, starter_pitches),
+        _relief_context_sentence(relief_count, relief_outs, relief_pitches),
+    ]
+    if label is not None:
+        sentences.append(
+            _total_context_sentence(total_pitchers, total_outs, total_pitches)
+        )
+
+    return {
+        'mlb_game_pk': game_pk,
+        'opponent': starter_log.opponent,
+        'opponent_abbreviation': starter_log.opponent_abbreviation,
+        'game_shape': shape_payload['shape'],
+        'context_label': label,
+        'starter': {
+            'pitcher_id': starter_pitcher.id,
+            'pitcher_mlb_id': starter_pitcher.mlb_id,
+            'pitcher_full_name': starter_pitcher.full_name,
+            'outs': starter_outs,
+            'innings': _ip_text(starter_outs),
+            'pitches': starter_pitches,
+        },
+        'relief': {
+            'pitcher_count': relief_count,
+            'outs': relief_outs,
+            'innings': _ip_text(relief_outs),
+            'pitches': relief_pitches,
+        },
+        'total': {
+            'pitcher_count': total_pitchers,
+            'outs': total_outs,
+            'innings': _ip_text(total_outs),
+            'pitches': total_pitches,
+        },
+        'context_sentences': sentences,
+    }
+
+
+def _known_outs(log):
+    outs = log.innings_pitched_outs
+    if outs is None:
+        return None
+    try:
+        parsed = int(outs)
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed >= 0 else None
+
+
+def _starter_context_sentence(pitcher, outs, pitches):
+    sentence = (
+        f'{pitcher.full_name} started and recorded {_out_count_text(outs)} '
+        f'({_ip_text(outs)} IP)'
+    )
+    if pitches is not None:
+        sentence = f'{sentence} on {_pitch_count_text(pitches)}'
+    return f'{sentence}.'
+
+
+def _relief_context_sentence(relief_count, outs, pitches):
+    sentence = (
+        f'{_reliever_count_text(relief_count)} covered the remaining '
+        f'{_out_count_text(outs)} ({_ip_text(outs)} IP)'
+    )
+    if pitches is not None:
+        sentence = f'{sentence} on {_pitch_count_text(pitches)}'
+    return f'{sentence}.'
+
+
+def _total_context_sentence(pitcher_count, outs, pitches):
+    sentence = (
+        f'{_pitcher_count_text(pitcher_count)} combined for '
+        f'{_out_count_text(outs)} ({_ip_text(outs)} IP)'
+    )
+    if pitches is not None:
+        sentence = f'{sentence} and {_pitch_count_text(pitches)}'
+    return f'{sentence}.'
+
+
+def _out_count_text(count):
+    return f'{count} {"out" if count == 1 else "outs"}'
+
+
+def _reliever_count_text(count):
+    return f'{count} {"reliever" if count == 1 else "relievers"}'
 
 
 def _date_group(game_date, entries):

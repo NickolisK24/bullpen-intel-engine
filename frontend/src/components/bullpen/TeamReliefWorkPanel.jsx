@@ -80,6 +80,24 @@ function AppearanceRow({ appearance }) {
   )
 }
 
+function GameContextNote({ game }) {
+  const label = textValue(game?.context_label)
+  if (!label) return null
+  const sentences = asArray(game?.context_sentences).filter((sentence) => textValue(sentence))
+
+  return (
+    <div
+      className="space-y-1 border-t border-dirt/60 bg-chalk/25 px-3 py-2"
+      data-testid="team-relief-game-context"
+    >
+      <div className="font-mono text-[10px] uppercase tracking-wider text-amber/80">{label}</div>
+      {sentences.map((sentence, index) => (
+        <Sentence key={`${sentence}:${index}`}>{sentence}</Sentence>
+      ))}
+    </div>
+  )
+}
+
 function ReliefWorkByDate({ groups, absenceSentence }) {
   const dateGroups = asArray(groups)
   const hasAbsence = Boolean(textValue(absenceSentence))
@@ -101,6 +119,12 @@ function ReliefWorkByDate({ groups, absenceSentence }) {
           >
             <DateSummary>{group?.sentence}</DateSummary>
           </summary>
+          {asArray(group?.games).map((game, index) => (
+            <GameContextNote
+              key={`${game?.mlb_game_pk || 'game'}:${index}`}
+              game={game}
+            />
+          ))}
           {asArray(group?.appearances).length > 0 && (
             <ul className="divide-y divide-dirt/60 border-t border-dirt/60">
               {asArray(group.appearances).map((appearance, index) => (

@@ -290,12 +290,17 @@ def test_phase0e_switches_and_legacy_public_files_not_modified():
         'frontend/src/components/home/IntelligenceSurface.jsx',
         'frontend/src/utils/api.js',
     }
+    allowed_bullpen_game_context_files = {
+        'frontend/src/components/bullpen/TeamReliefWorkPanel.jsx',
+        'frontend/tests/teamReliefWorkPanel.test.mjs',
+    }
     allowed_files = (
         allowed_public_freshness_display_files
         | allowed_internal_admin_files
         | allowed_phase0f_public_recent_work_files
         | allowed_phase0g_public_team_relief_files
         | allowed_phase_a_audience_signup_files
+        | allowed_bullpen_game_context_files
     )
     forbidden_prefixes = (
         'backend/api/',
