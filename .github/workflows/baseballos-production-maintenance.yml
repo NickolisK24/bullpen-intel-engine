@@ -1,0 +1,194 @@
+name: BaseballOS Production Maintenance
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Production maintenance operation to run
+        required: true
+        type: choice
+        options:
+          - migrate
+          - ledger_backfill
+      confirmation:
+        description: Type RUN_PRODUCTION_MAINTENANCE to confirm
+        required: true
+        type: string
+      season:
+        description: Regular season year for ledger backfill
+        required: true
+        default: '2026'
+        type: string
+      start_date:
+        description: Schedule ingestion start date (YYYY-MM-DD)
+        required: true
+        default: '2026-03-30'
+        type: string
+      through_date:
+        description: Ledger coverage end date (YYYY-MM-DD)
+        required: true
+        default: '2026-07-09'
+        type: string
+      pitcher_mlb_id:
+        description: Optional MLB pitcher ID; leave empty to backfill all pitchers
+        required: false
+        default: '621112'
+        type: string
+
+concurrency:
+  group: baseballos-production-maintenance
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  maintain-production:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      APP_ENV: production
+      AUTO_SYNC: 'false'
+      FLASK_APP: app.py
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      SECRET_KEY: ${{ secrets.SECRET_KEY }}
+      ADMIN_API_TOKEN: ${{ secrets.BASEBALLOS_ADMIN_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install backend dependencies
+        run: pip install -r backend/requirements.txt
+
+      - name: Validate confirmation and production secrets
+        env:
+          CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          set -euo pipefail
+          if [ "$CONFIRMATION" != 'RUN_PRODUCTION_MAINTENANCE' ]; then
+            echo "::error::Confirmation must be exactly RUN_PRODUCTION_MAINTENANCE."
+            exit 1
+          fi
+          if [ -z "${DATABASE_URL:-}" ] || [ -z "${SECRET_KEY:-}" ] || [ -z "${ADMIN_API_TOKEN:-}" ]; then
+            echo "::error::Missing DATABASE_URL, SECRET_KEY, or BASEBALLOS_ADMIN_API_TOKEN repository secret."
+            exit 1
+          fi
+          echo "Production maintenance confirmation and required secrets validated."
+
+      - name: Validate ledger backfill inputs
+        if: ${{ inputs.operation == 'ledger_backfill' }}
+        env:
+          SEASON: ${{ inputs.season }}
+          START_DATE: ${{ inputs.start_date }}
+          THROUGH_DATE: ${{ inputs.through_date }}
+          PITCHER_MLB_ID: ${{ inputs.pitcher_mlb_id }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$SEASON" =~ ^[0-9]{4}$ ]]; then
+            echo "::error::season must contain exactly four digits."
+            exit 1
+          fi
+          if [[ ! "$START_DATE" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+            echo "::error::start_date must use YYYY-MM-DD format."
+            exit 1
+          fi
+          if [[ ! "$THROUGH_DATE" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+            echo "::error::through_date must use YYYY-MM-DD format."
+            exit 1
+          fi
+          if [ -n "$PITCHER_MLB_ID" ] && [[ ! "$PITCHER_MLB_ID" =~ ^[0-9]+$ ]]; then
+            echo "::error::pitcher_mlb_id must be empty or contain only digits."
+            exit 1
+          fi
+          echo "Ledger backfill inputs validated."
+
+      - name: Run production migration
+        if: ${{ inputs.operation == 'migrate' }}
+        working-directory: backend
+        run: |
+          set -euo pipefail
+          echo "=== Production migration starting ==="
+          echo "--- Current migration revision (before upgrade) ---"
+          flask db current
+          echo "--- Applying migrations ---"
+          flask db upgrade
+          echo "--- Current migration revision (after upgrade) ---"
+          flask db current
+          echo "=== Production migration completed ==="
+
+      - name: Run production ledger backfill
+        if: ${{ inputs.operation == 'ledger_backfill' }}
+        working-directory: backend
+        env:
+          SEASON: ${{ inputs.season }}
+          START_DATE: ${{ inputs.start_date }}
+          THROUGH_DATE: ${{ inputs.through_date }}
+          PITCHER_MLB_ID: ${{ inputs.pitcher_mlb_id }}
+        run: |
+          set -euo pipefail
+          schedule_summary_file="$(mktemp)"
+          backfill_summary_file="$(mktemp)"
+          trap 'rm -f "$schedule_summary_file" "$backfill_summary_file"' EXIT
+
+          echo "=== Production ledger backfill starting ==="
+          echo "--- Ingesting schedule finality evidence ---"
+          python scripts/ingest_schedule.py \
+            --start-date "$START_DATE" \
+            --end-date "$THROUGH_DATE" \
+            --source starter_assignment_coverage \
+            | tee "$schedule_summary_file"
+          python - "$schedule_summary_file" <<'PY'
+          import json
+          from pathlib import Path
+          import sys
+
+          summary = json.loads(Path(sys.argv[1]).read_text(encoding='utf-8'))
+          if summary.get('status') != 'ok':
+              raise SystemExit(
+                  'Schedule ingestion did not complete successfully: '
+                  f"status={summary.get('status')!r}"
+              )
+          PY
+
+          echo "--- Backfilling verified pitcher ledgers ---"
+          backfill_command=(
+            python scripts/backfill_pitcher_game_logs.py
+            --season "$SEASON"
+            --through-date "$THROUGH_DATE"
+            --source starter_assignment_coverage
+            --apply
+          )
+          if [ -n "$PITCHER_MLB_ID" ]; then
+            backfill_command+=(--pitcher-mlb-id "$PITCHER_MLB_ID")
+          fi
+          "${backfill_command[@]}" | tee "$backfill_summary_file"
+          python - "$backfill_summary_file" <<'PY'
+          import json
+          from pathlib import Path
+          import sys
+
+          summary = json.loads(Path(sys.argv[1]).read_text(encoding='utf-8'))
+          if int(summary.get('pitchers_total', 0)) <= 0:
+              raise SystemExit('Ledger backfill matched no pitchers.')
+          failure_fields = (
+              'fetch_failures',
+              'records_failed',
+              'coverage_records_incomplete',
+          )
+          failures = {
+              field: int(summary.get(field, 0))
+              for field in failure_fields
+              if int(summary.get(field, 0)) > 0
+          }
+          if failures:
+              raise SystemExit(
+                  f'Ledger backfill reported incomplete work: {failures}'
+              )
+          PY
+          echo "=== Production ledger backfill completed ==="
