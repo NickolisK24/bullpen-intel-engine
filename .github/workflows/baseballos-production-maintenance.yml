@@ -136,6 +136,68 @@ jobs:
           backfill_summary_file="$(mktemp)"
           trap 'rm -f "$schedule_summary_file" "$backfill_summary_file"' EXIT
 
+          validate_summary() {
+            local summary_file="$1"
+            local summary_kind="$2"
+            python - "$summary_file" "$summary_kind" <<'PY'
+          import json
+          from pathlib import Path
+          import sys
+
+          lines = Path(sys.argv[1]).read_text(encoding='utf-8').splitlines()
+          summary_kind = sys.argv[2]
+          summary = None
+          decoder = json.JSONDecoder()
+
+          for index in range(len(lines) - 1, -1, -1):
+              raw_line = lines[index]
+              candidate = raw_line.strip()
+              if not candidate:
+                  continue
+              try:
+                  parsed = json.loads(candidate)
+              except json.JSONDecodeError:
+                  if not raw_line.startswith('{'):
+                      continue
+                  try:
+                      parsed, _ = decoder.raw_decode('\n'.join(lines[index:]))
+                  except json.JSONDecodeError:
+                      continue
+              if isinstance(parsed, dict):
+                  summary = parsed
+                  break
+
+          if summary is None:
+              raise SystemExit('No JSON summary object found in command output.')
+
+          if summary_kind == 'schedule':
+              if summary.get('status') != 'ok':
+                  raise SystemExit(
+                      'Schedule ingestion did not complete successfully: '
+                      f"status={summary.get('status')!r}"
+                  )
+          elif summary_kind == 'backfill':
+              if int(summary.get('pitchers_total', 0)) <= 0:
+                  raise SystemExit('Ledger backfill matched no pitchers.')
+              failure_fields = (
+                  'fetch_failures',
+                  'records_failed',
+                  'coverage_records_incomplete',
+              )
+              failures = {
+                  field: int(summary.get(field, 0))
+                  for field in failure_fields
+                  if int(summary.get(field, 0)) > 0
+              }
+              if failures:
+                  raise SystemExit(
+                      f'Ledger backfill reported incomplete work: {failures}'
+                  )
+          else:
+              raise SystemExit(f'Unknown summary kind: {summary_kind!r}')
+          PY
+          }
+
           echo "=== Production ledger backfill starting ==="
           echo "--- Ingesting schedule finality evidence ---"
           python scripts/ingest_schedule.py \
@@ -143,18 +205,7 @@ jobs:
             --end-date "$THROUGH_DATE" \
             --source starter_assignment_coverage \
             | tee "$schedule_summary_file"
-          python - "$schedule_summary_file" <<'PY'
-          import json
-          from pathlib import Path
-          import sys
-
-          summary = json.loads(Path(sys.argv[1]).read_text(encoding='utf-8'))
-          if summary.get('status') != 'ok':
-              raise SystemExit(
-                  'Schedule ingestion did not complete successfully: '
-                  f"status={summary.get('status')!r}"
-              )
-          PY
+          validate_summary "$schedule_summary_file" schedule
 
           echo "--- Backfilling verified pitcher ledgers ---"
           backfill_command=(
@@ -168,27 +219,5 @@ jobs:
             backfill_command+=(--pitcher-mlb-id "$PITCHER_MLB_ID")
           fi
           "${backfill_command[@]}" | tee "$backfill_summary_file"
-          python - "$backfill_summary_file" <<'PY'
-          import json
-          from pathlib import Path
-          import sys
-
-          summary = json.loads(Path(sys.argv[1]).read_text(encoding='utf-8'))
-          if int(summary.get('pitchers_total', 0)) <= 0:
-              raise SystemExit('Ledger backfill matched no pitchers.')
-          failure_fields = (
-              'fetch_failures',
-              'records_failed',
-              'coverage_records_incomplete',
-          )
-          failures = {
-              field: int(summary.get(field, 0))
-              for field in failure_fields
-              if int(summary.get(field, 0)) > 0
-          }
-          if failures:
-              raise SystemExit(
-                  f'Ledger backfill reported incomplete work: {failures}'
-              )
-          PY
+          validate_summary "$backfill_summary_file" backfill
           echo "=== Production ledger backfill completed ==="
