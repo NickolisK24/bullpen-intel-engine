@@ -6,6 +6,7 @@ from models.game_log import GameLog
 from models.pitcher import Pitcher
 from services import board_freshness
 from services import game_shape
+from services import starter_assignment_context
 
 
 CAPABILITY = 'public_team_relief_work'
@@ -218,16 +219,32 @@ def _game_context_block(game_pk, entries):
     ):
         label = EXTENDED_BULLPEN_COVERAGE_LABEL
 
-    sentences = [
-        _starter_context_sentence(starter_pitcher, starter_outs, starter_pitches),
-        _relief_context_sentence(relief_count, relief_outs, relief_pitches),
-    ]
+    assignment = None
     if label is not None:
-        sentences.append(
-            _total_context_sentence(total_pitchers, total_outs, total_pitches)
+        assignment = starter_assignment_context.build_starter_assignment_context(
+            starter_log, starter_pitcher
         )
 
-    return {
+    if assignment is not None:
+        # The assignment lead already names the starter and carries the
+        # combined-workload meaning, so the follow-up uses a pronoun and
+        # the total-workload prose is left to the total block below.
+        sentences = [
+            assignment['sentence'],
+            _starter_followup_sentence(starter_outs, starter_pitches),
+            _relief_context_sentence(relief_count, relief_outs, relief_pitches),
+        ]
+    else:
+        sentences = [
+            _starter_context_sentence(starter_pitcher, starter_outs, starter_pitches),
+            _relief_context_sentence(relief_count, relief_outs, relief_pitches),
+        ]
+        if label is not None:
+            sentences.append(
+                _total_context_sentence(total_pitchers, total_outs, total_pitches)
+            )
+
+    block = {
         'mlb_game_pk': game_pk,
         'opponent': starter_log.opponent,
         'opponent_abbreviation': starter_log.opponent_abbreviation,
@@ -255,6 +272,9 @@ def _game_context_block(game_pk, entries):
         },
         'context_sentences': sentences,
     }
+    if assignment is not None:
+        block['starter_assignment'] = assignment
+    return block
 
 
 def _known_outs(log):
@@ -273,6 +293,13 @@ def _starter_context_sentence(pitcher, outs, pitches):
         f'{pitcher.full_name} started and recorded {_out_count_text(outs)} '
         f'({_ip_text(outs)} IP)'
     )
+    if pitches is not None:
+        sentence = f'{sentence} on {_pitch_count_text(pitches)}'
+    return f'{sentence}.'
+
+
+def _starter_followup_sentence(outs, pitches):
+    sentence = f'He recorded {_out_count_text(outs)} ({_ip_text(outs)} IP)'
     if pitches is not None:
         sentence = f'{sentence} on {_pitch_count_text(pitches)}'
     return f'{sentence}.'

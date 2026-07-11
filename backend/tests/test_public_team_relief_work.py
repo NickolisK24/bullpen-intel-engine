@@ -18,6 +18,9 @@ from utils.db import db
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SERVICE_PATH = REPO_ROOT / 'backend/services/public_team_relief_work.py'
+STARTER_ASSIGNMENT_PATH = (
+    REPO_ROOT / 'backend/services/starter_assignment_context.py'
+)
 API_PATH = REPO_ROOT / 'backend/api/team_recent_work.py'
 APP_PATH = REPO_ROOT / 'backend/app.py'
 TEAM_ID = 110
@@ -595,6 +598,7 @@ def test_team_relief_work_game_context_normal_start_facts_without_label(client):
         'Delta Starter started and recorded 18 outs (6.0 IP) on 92 pitches.',
         '2 relievers covered the remaining 9 outs (3.0 IP) on 35 pitches.',
     ]
+    assert 'starter_assignment' not in game
     assert 'Extended bullpen coverage' not in json.dumps(body)
 
 
@@ -694,6 +698,265 @@ def test_team_relief_work_game_context_label_thresholds_are_strict(client):
     assert 'Extended bullpen coverage' not in json.dumps(body)
 
 
+def test_team_relief_work_starter_assignment_combined_sentence(client):
+    with client.application.app_context():
+        starter = _pitcher(name='Delta Starter', mlb_id=95001)
+        relievers = [
+            _pitcher(name=f'Reliever {suffix}', mlb_id=95002 + index)
+            for index, suffix in enumerate(['One', 'Two', 'Three', 'Four', 'Five', 'Six'])
+        ]
+        db.session.add_all([starter, *relievers])
+        db.session.flush()
+        db.session.add(_log(
+            starter.id, 9700, date(2026, 5, 28), games_started=1, outs=15, pitches=80,
+        ))
+        for offset in range(15):
+            db.session.add(_log(
+                starter.id, 9701 + offset, date(2026, 6, 1 + offset),
+                outs=3, pitches=14,
+            ))
+        db.session.add(_log(
+            starter.id, 9716, date(2026, 7, 5), games_started=1, outs=6, pitches=35,
+        ))
+        for reliever, outs, pitches in zip(
+            relievers,
+            (3, 3, 3, 4, 4, 4),
+            (15, 17, 18, 19, 19, 19),
+        ):
+            db.session.add(_log(
+                reliever.id, 9716, date(2026, 7, 5), outs=outs, pitches=pitches,
+            ))
+        db.session.commit()
+
+    body = client.get(f'/api/bullpen/teams/{TEAM_ID}/relief-work').get_json()
+    group = next(
+        entry for entry in body['relief_by_date']
+        if entry['game_date'] == '2026-07-05'
+    )
+    game = group['games'][0]
+
+    assert game['context_label'] == 'Extended bullpen coverage'
+    assert game['starter_assignment'] == {
+        'narrative_type': 'first_start_in_days_after_relief_run',
+        'sentence': (
+            'Delta Starter made his first start in 38 days after '
+            '15 consecutive relief appearances.'
+        ),
+        'previous_start_date': '2026-05-28',
+        'days_since_previous_start': 38,
+        'consecutive_relief_appearances': 15,
+    }
+    assert game['context_sentences'] == [
+        (
+            'Delta Starter made his first start in 38 days after '
+            '15 consecutive relief appearances.'
+        ),
+        'He recorded 6 outs (2.0 IP) on 35 pitches.',
+        '6 relievers covered the remaining 21 outs (7.0 IP) on 107 pitches.',
+    ]
+    assert game['total'] == {
+        'pitcher_count': 7,
+        'outs': 27,
+        'innings': '9.0',
+        'pitches': 142,
+    }
+    assert group['relief_appearances'] == 6
+    assert group['outs_total'] == 21
+
+
+def test_team_relief_work_starter_assignment_run_stops_at_previous_start(client):
+    with client.application.app_context():
+        starter = _pitcher(name='Echo Starter', mlb_id=95001)
+        first = _pitcher(name='Reliever One', mlb_id=95002)
+        second = _pitcher(name='Reliever Two', mlb_id=95003)
+        db.session.add_all([starter, first, second])
+        db.session.flush()
+        db.session.add_all([
+            _log(starter.id, 9720, date(2026, 6, 1), outs=3, pitches=12),
+            _log(starter.id, 9721, date(2026, 6, 2), outs=3, pitches=13),
+            _log(starter.id, 9722, date(2026, 6, 20), games_started=1, outs=15, pitches=82),
+            _log(starter.id, 9723, date(2026, 6, 25), outs=3, pitches=11),
+            _log(starter.id, 9724, date(2026, 6, 28), outs=3, pitches=15),
+            _log(starter.id, 9725, date(2026, 7, 1), outs=3, pitches=16),
+            _log(starter.id, 9726, date(2026, 7, 3), outs=3, pitches=17),
+            _log(starter.id, 9727, date(2026, 7, 5), games_started=1, outs=6, pitches=31),
+            _log(first.id, 9727, date(2026, 7, 5), outs=8, pitches=34),
+            _log(second.id, 9727, date(2026, 7, 5), outs=7, pitches=28),
+        ])
+        db.session.commit()
+
+    body = client.get(f'/api/bullpen/teams/{TEAM_ID}/relief-work').get_json()
+    group = next(
+        entry for entry in body['relief_by_date']
+        if entry['game_date'] == '2026-07-05'
+    )
+    game = group['games'][0]
+
+    assert game['starter_assignment']['narrative_type'] == (
+        'first_start_in_days_after_relief_run'
+    )
+    assert game['starter_assignment']['previous_start_date'] == '2026-06-20'
+    assert game['starter_assignment']['days_since_previous_start'] == 15
+    assert game['starter_assignment']['consecutive_relief_appearances'] == 4
+    assert game['starter_assignment']['sentence'] == (
+        'Echo Starter made his first start in 15 days after '
+        '4 consecutive relief appearances.'
+    )
+
+
+def test_team_relief_work_starter_assignment_short_gap_stays_silent(client):
+    with client.application.app_context():
+        starter = _pitcher(name='Delta Starter', mlb_id=95001)
+        reliever = _pitcher(name='Reliever One', mlb_id=95002)
+        db.session.add_all([starter, reliever])
+        db.session.flush()
+        db.session.add_all([
+            _log(starter.id, 9730, date(2026, 6, 25), games_started=1, outs=15, pitches=88),
+            _log(starter.id, 9731, date(2026, 6, 27), outs=3, pitches=12),
+            _log(starter.id, 9732, date(2026, 6, 29), outs=3, pitches=13),
+            _log(starter.id, 9733, date(2026, 7, 1), outs=3, pitches=14),
+            _log(starter.id, 9734, date(2026, 7, 3), outs=3, pitches=15),
+            _log(starter.id, 9735, date(2026, 7, 5), games_started=1, outs=6, pitches=30),
+            _log(reliever.id, 9735, date(2026, 7, 5), outs=15, pitches=55),
+        ])
+        db.session.commit()
+
+    body = client.get(f'/api/bullpen/teams/{TEAM_ID}/relief-work').get_json()
+    group = next(
+        entry for entry in body['relief_by_date']
+        if entry['game_date'] == '2026-07-05'
+    )
+    game = group['games'][0]
+
+    assert game['context_label'] == 'Extended bullpen coverage'
+    assert 'starter_assignment' not in game
+    assert game['context_sentences'] == [
+        'Delta Starter started and recorded 6 outs (2.0 IP) on 30 pitches.',
+        '1 reliever covered the remaining 15 outs (5.0 IP) on 55 pitches.',
+        '2 pitchers combined for 21 outs (7.0 IP) and 85 pitches.',
+    ]
+
+
+def test_team_relief_work_starter_assignment_short_relief_run_stays_silent(client):
+    with client.application.app_context():
+        starter = _pitcher(name='Delta Starter', mlb_id=95001)
+        reliever = _pitcher(name='Reliever One', mlb_id=95002)
+        db.session.add_all([starter, reliever])
+        db.session.flush()
+        db.session.add_all([
+            _log(starter.id, 9740, date(2026, 5, 28), games_started=1, outs=15, pitches=90),
+            _log(starter.id, 9741, date(2026, 7, 1), outs=3, pitches=12),
+            _log(starter.id, 9742, date(2026, 7, 3), outs=3, pitches=13),
+            _log(starter.id, 9743, date(2026, 7, 5), games_started=1, outs=6, pitches=29),
+            _log(reliever.id, 9743, date(2026, 7, 5), outs=15, pitches=58),
+        ])
+        db.session.commit()
+
+    body = client.get(f'/api/bullpen/teams/{TEAM_ID}/relief-work').get_json()
+    group = next(
+        entry for entry in body['relief_by_date']
+        if entry['game_date'] == '2026-07-05'
+    )
+
+    assert 'starter_assignment' not in group['games'][0]
+
+
+def test_team_relief_work_starter_assignment_unknown_flag_stays_silent(client):
+    with client.application.app_context():
+        starter = _pitcher(name='Delta Starter', mlb_id=95001)
+        reliever = _pitcher(name='Reliever One', mlb_id=95002)
+        db.session.add_all([starter, reliever])
+        db.session.flush()
+        db.session.add_all([
+            _log(starter.id, 9750, date(2026, 5, 28), games_started=1, outs=15, pitches=85),
+            _log(starter.id, 9751, date(2026, 6, 1), outs=3, pitches=12),
+            _log(starter.id, 9752, date(2026, 6, 3), outs=3, pitches=13),
+            _log(starter.id, 9753, date(2026, 6, 5), outs=3, pitches=14),
+            _log(starter.id, 9754, date(2026, 6, 15), games_started=None, outs=3, pitches=15),
+            _log(starter.id, 9757, date(2026, 7, 5), games_started=1, outs=6, pitches=33),
+            _log(reliever.id, 9757, date(2026, 7, 5), outs=15, pitches=52),
+        ])
+        db.session.commit()
+
+    body = client.get(f'/api/bullpen/teams/{TEAM_ID}/relief-work').get_json()
+    group = next(
+        entry for entry in body['relief_by_date']
+        if entry['game_date'] == '2026-07-05'
+    )
+    game = group['games'][0]
+
+    assert game['context_label'] == 'Extended bullpen coverage'
+    assert 'starter_assignment' not in game
+
+
+def test_team_relief_work_starter_assignment_first_start_of_season(client):
+    with client.application.app_context():
+        starter = _pitcher(name='Echo Starter', mlb_id=95001)
+        reliever = _pitcher(name='Reliever One', mlb_id=95002)
+        db.session.add_all([starter, reliever])
+        db.session.flush()
+        db.session.add(_log(
+            starter.id, 9759, date(2025, 9, 20), games_started=1, outs=15, pitches=84,
+        ))
+        for offset in range(6):
+            db.session.add(_log(
+                starter.id, 9760 + offset, date(2026, 6, 1 + offset),
+                outs=3, pitches=14,
+            ))
+        db.session.add_all([
+            _log(starter.id, 9766, date(2026, 7, 5), games_started=1, outs=6, pitches=27),
+            _log(reliever.id, 9766, date(2026, 7, 5), outs=15, pitches=57),
+        ])
+        db.session.commit()
+
+    body = client.get(f'/api/bullpen/teams/{TEAM_ID}/relief-work').get_json()
+    group = next(
+        entry for entry in body['relief_by_date']
+        if entry['game_date'] == '2026-07-05'
+    )
+    game = group['games'][0]
+
+    assert game['starter_assignment'] == {
+        'narrative_type': 'first_start_of_season_after_relief',
+        'sentence': (
+            'Echo Starter made his first start of the season after '
+            '6 relief appearances.'
+        ),
+        'previous_start_date': None,
+        'days_since_previous_start': None,
+        'consecutive_relief_appearances': 6,
+    }
+    serialized = json.dumps(body)
+    assert 'major-league' not in serialized
+    assert 'first start for' not in serialized
+
+
+def test_team_relief_work_starter_assignment_few_season_relief_stays_silent(client):
+    with client.application.app_context():
+        starter = _pitcher(name='Echo Starter', mlb_id=95001)
+        reliever = _pitcher(name='Reliever One', mlb_id=95002)
+        db.session.add_all([starter, reliever])
+        db.session.flush()
+        for offset in range(4):
+            db.session.add(_log(
+                starter.id, 9770 + offset, date(2026, 6, 1 + offset),
+                outs=3, pitches=14,
+            ))
+        db.session.add_all([
+            _log(starter.id, 9776, date(2026, 7, 5), games_started=1, outs=6, pitches=26),
+            _log(reliever.id, 9776, date(2026, 7, 5), outs=15, pitches=51),
+        ])
+        db.session.commit()
+
+    body = client.get(f'/api/bullpen/teams/{TEAM_ID}/relief-work').get_json()
+    group = next(
+        entry for entry in body['relief_by_date']
+        if entry['game_date'] == '2026-07-05'
+    )
+
+    assert 'starter_assignment' not in group['games'][0]
+
+
 def test_team_relief_work_returns_404_for_unknown_team(client):
     response = client.get('/api/bullpen/teams/999999/relief-work')
     assert response.status_code == 404
@@ -740,14 +1003,14 @@ def test_team_relief_work_scope_sentence_present(client, monkeypatch):
 
 
 def test_team_relief_work_no_host_local_dates():
-    for path in (SERVICE_PATH, API_PATH):
+    for path in (SERVICE_PATH, STARTER_ASSIGNMENT_PATH, API_PATH):
         text = path.read_text(encoding='utf-8')
         for token in ('date.today', 'datetime.now', 'datetime.utcnow', 'utc_now'):
             assert token not in text
 
 
 def test_team_relief_work_forbidden_vocabulary_lint():
-    for path in (SERVICE_PATH, API_PATH):
+    for path in (SERVICE_PATH, STARTER_ASSIGNMENT_PATH, API_PATH):
         text = path.read_text(encoding='utf-8')
         for term in FORBIDDEN_TERMS:
             assert not re.search(
@@ -764,6 +1027,12 @@ def test_public_team_relief_work_import_guard_allows_only_public_sources():
         'models.game_log',
         'models.pitcher',
         'services',
+    }
+    assert _import_modules(STARTER_ASSIGNMENT_PATH) == {
+        'datetime',
+        'sqlalchemy',
+        'models.game_log',
+        'utils.games_started',
     }
     assert _import_modules(API_PATH) == {
         'flask',

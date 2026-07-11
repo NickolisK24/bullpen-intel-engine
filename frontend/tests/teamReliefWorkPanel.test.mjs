@@ -128,10 +128,23 @@ const teamReliefWorkPayload = {
             innings: '9.0',
             pitches: 142,
           },
+          starter_assignment: {
+            narrative_type: 'first_start_in_days_after_relief_run',
+            sentence: (
+              'Delta Starter made his first start in 38 days after '
+              + '15 consecutive relief appearances.'
+            ),
+            previous_start_date: '2026-05-28',
+            days_since_previous_start: 38,
+            consecutive_relief_appearances: 15,
+          },
           context_sentences: [
-            'Delta Starter started and recorded 6 outs (2.0 IP) on 35 pitches.',
+            (
+              'Delta Starter made his first start in 38 days after '
+              + '15 consecutive relief appearances.'
+            ),
+            'He recorded 6 outs (2.0 IP) on 35 pitches.',
             '6 relievers covered the remaining 21 outs (7.0 IP) on 107 pitches.',
-            '7 pitchers combined for 27 outs (9.0 IP) and 142 pitches.',
           ],
         },
       ],
@@ -376,6 +389,58 @@ test('renders server-authored game context label and sentences verbatim', () => 
     assert.ok(htmlIncludes(html, sentence), sentence)
   }
   assert.equal(htmlIncludes(html, labeledGame.game_shape), false)
+})
+
+test('starter-assignment sentence renders first, before the game facts', () => {
+  const html = renderPanel({ payload: teamReliefWorkPayload })
+  const labeledGame = teamReliefWorkPayload.relief_by_date[0].games[0]
+  const [assignmentSentence, followupSentence, coverageSentence] = labeledGame.context_sentences
+
+  const assignmentIndex = html.indexOf(assignmentSentence)
+  const followupIndex = html.indexOf(followupSentence)
+  const coverageIndex = html.indexOf(coverageSentence)
+
+  assert.notEqual(assignmentIndex, -1)
+  assert.notEqual(followupIndex, -1)
+  assert.notEqual(coverageIndex, -1)
+  assert.ok(assignmentIndex < followupIndex)
+  assert.ok(followupIndex < coverageIndex)
+})
+
+test('raw starter-assignment identifiers never render', () => {
+  const html = renderPanel({ payload: teamReliefWorkPayload })
+  const labeledGame = teamReliefWorkPayload.relief_by_date[0].games[0]
+
+  assert.equal(htmlIncludes(html, labeledGame.starter_assignment.narrative_type), false)
+  assert.equal(htmlIncludes(html, 'starter_assignment'), false)
+  assert.equal(htmlIncludes(html, 'narrative_type'), false)
+})
+
+test('game context without a starter-assignment sentence renders as before', () => {
+  const labeledGame = teamReliefWorkPayload.relief_by_date[0].games[0]
+  const { starter_assignment, ...gameWithoutAssignment } = labeledGame
+  const classicSentences = [
+    'Delta Starter started and recorded 6 outs (2.0 IP) on 35 pitches.',
+    '6 relievers covered the remaining 21 outs (7.0 IP) on 107 pitches.',
+    '7 pitchers combined for 27 outs (9.0 IP) and 142 pitches.',
+  ]
+  const payload = {
+    ...teamReliefWorkPayload,
+    relief_by_date: [
+      {
+        ...teamReliefWorkPayload.relief_by_date[0],
+        games: [{ ...gameWithoutAssignment, context_sentences: classicSentences }],
+      },
+      teamReliefWorkPayload.relief_by_date[1],
+    ],
+  }
+  const html = renderPanel({ payload })
+
+  assert.ok(htmlIncludes(html, labeledGame.context_label))
+  for (const sentence of classicSentences) {
+    assert.ok(htmlIncludes(html, sentence), sentence)
+  }
+  assert.equal(htmlIncludes(html, starter_assignment.sentence), false)
 })
 
 test('omits game context that has no server-authored label', () => {
