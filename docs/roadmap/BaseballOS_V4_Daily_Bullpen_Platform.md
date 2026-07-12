@@ -615,6 +615,8 @@ Exit criteria:
 
 ### 11. Phase 0J - Starter Exposure Context
 
+Status: Complete.
+
 Goal: explain recent starter-length pressure on bullpen workload without
 predicting tonight.
 
@@ -636,6 +638,9 @@ Exit criteria:
 - Evidence and freshness remain visible.
 - BaseballOS can explain whether bullpen stress is driven by reliever usage,
   starter exposure, roster depth, or a combination.
+- Final closeout keeps the Team Board as the canonical public surface, links the
+  starter-length read into Recent Bullpen Work receipts, and keeps Today as a
+  teaser instead of a complete starter-exposure read.
 
 ### 12. Phase 0K - Methodology, Limitations, and Data Trust Rewrite
 
@@ -851,7 +856,7 @@ Review cadence:
 | 8 | Phase 0G - Team Bullpen Evidence Surface | Complete | Complete after the Phase 0G exit audit branch passes; internal team evidence review, public team relief-work endpoint, public Recent Bullpen Work panel, and source-separation audit are recorded. |
 | 9 | Phase 0H - Trusted Snapshot + What Changed Foundation | Complete | Production ratified July 12, 2026: 11 historically published snapshots, 11 trusted published snapshots, six trusted adjacent pairs, two fully comparable adjacent pairs, four unsuitable pairs withheld, zero non-adjacent comparisons, recent rows not truncated, incomplete candidate did not replace the last valid publication, Decisions 4/5 ratified, D-15 closed, and public What Changed technically unblocked. Recent partial scheduled syncs remain an operational monitoring concern but did not invalidate Phase 0H because the system failed closed correctly. |
 | 10 | Phase 0I - Roster Availability Context | Not started | Use public roster evidence without private health claims. |
-| 11 | Phase 0J - Starter Exposure Context | In progress | Branch 1 verifies the backend starter-exposure contract against historical team attribution, split-row limitations, and seven-day/under-five-inning definitions. Frontend receipts/limitations closeout and final Phase 0J exit verification remain open. |
+| 11 | Phase 0J - Starter Exposure Context | Complete | Backend contract verification and frontend closeout are complete: Team Board renders factual seven-day starter-length context, links to Recent Bullpen Work receipts, shows limited states honestly, and Today remains a teaser to the Team Board. |
 | 12 | Phase 0K - Methodology, Limitations, and Data Trust Rewrite | Not started | Align methodology and trust docs with the V4 evidence layer. |
 | 13 | Phase 0L - Analytics Event Alignment | Not started | Measure evidence use and comprehension without changing baseball claims. |
 | 14 | Phase 1 - Daily Bullpen Home | Deferred | Begins after foundation gates support a stronger daily product. |

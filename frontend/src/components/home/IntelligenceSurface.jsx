@@ -796,7 +796,9 @@ export function getTonightCards(response, teams = [], limit = 3) {
         teamContext: cleanTonightCopy(story?.team_context),
         whyItMatters: cleanTonightCopy(story?.why_it_matters),
         keyNote: cleanTonightCopy(story?.key_note),
-        starterDependency: cleanTonightCopy(story?.starter_dependency),
+        starterDependency: cleanTonightCopy(story?.starter_dependency)
+          ? 'Starter-length context lives on the team board with recent completed-game detail.'
+          : null,
         watchPoint: cleanTonightCopy(story?.watch_point),
         evidence: cleanTonightList(card?.evidence),
         limitations: cleanTonightList(card?.limitations),

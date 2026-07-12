@@ -1,13 +1,14 @@
 # Phase 0J Starter Exposure Context
 
-Phase 0J status: in progress.
+Phase 0J status: complete.
 
 This document records Branch 1:
 `phase-0j-starter-exposure-contract-verification`.
+It also records Branch 2:
+`phase-0j-starter-support-closeout`.
 
-Branch 1 is the backend starter-exposure contract verification branch. It does
-not complete all of Phase 0J. Frontend receipts/limitations closeout and final
-Phase 0J exit verification remain open.
+Branch 1 is the backend starter-exposure contract verification branch. Branch 2
+is the frontend closeout branch. Together they complete Phase 0J.
 
 ## What Already Existed
 
@@ -106,15 +107,19 @@ The contract represents:
 
 ## Remaining Frontend Closeout
 
-The frontend closeout branch still needs to:
+Branch 2 completed the frontend closeout:
 
-- retire public display of graded starter-support status labels;
-- render factual starter-length language on the Team Board;
-- make limitations and source limitations visible in the intended public
-  receipts flow;
-- keep Today as a teaser/link toward the Team Board rather than duplicating the
-  complete starter-exposure read;
-- verify final public copy against the accepted Phase 0J vocabulary decisions.
+- public display of graded starter-support status labels was retired;
+- the Team Board now renders factual recent starter-length language from games
+  analyzed, average starter innings, short starts, bullpen innings covered, and
+  the seven-day window;
+- limited starter-length states render a quiet explanation instead of hiding;
+- the Team Board starter-length read links into the existing Recent Bullpen Work
+  receipts layer rather than duplicating game-level rows or calling another API;
+- Today keeps starter-length context as a teaser toward the Team Board and does
+  not restate the complete Team Board read;
+- final public copy avoids public vocabulary for `supportive`, `neutral`,
+  `moderate_pressure`, and `heavy_pressure`.
 
 ## Deferred Work
 
@@ -136,6 +141,12 @@ The frontend closeout branch still needs to:
 - Backend contract tests assert the served Team Board payload carries the
   split-backed source limitations and no longer carries current-assignment
   source wording for starter exposure.
+- Frontend adapter and Team Board component tests freeze factual starter-length
+  copy, limited-state copy, in-page receipts linking, and retirement of public
+  graded starter-support vocabulary.
+- Team Relief Work tests freeze the focusable Recent Bullpen Work anchor target.
+- Today/Intelligence Surface tests freeze the starter-length teaser behavior and
+  prevent raw starter-dependency detail from becoming the complete read.
 
 ## Known Limits
 

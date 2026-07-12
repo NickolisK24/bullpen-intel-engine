@@ -576,17 +576,24 @@ test('team card carries degraded freshness limitations when freshness fails clos
   assert.equal(teamOperatingStateFreshnessIsDegraded(board.freshness), true)
 })
 
-test('team card omits unsupported rows and gates starter support by sample size', () => {
+test('team card omits unsupported rows and renders limited starter length context', () => {
   const limitedStarterBoard = {
     ...teamOperatingBoard(),
     rotation_support_pressure: {
       status: 'limited_read',
       games_analyzed: 1,
+      games_in_window: 4,
+      window_days: 7,
+      starter_avg_innings: 4.8,
+      bullpen_outs_required: 25,
+      short_start_count: 1,
+      limitation_reasons: ['insufficient_trustworthy_games'],
       summary: 'Low-sample starter support should not render.',
-      limitations: ['Rotation support sample is limited.'],
+      limitations: ['Rotation Support Pressure raw limitation should not render.'],
     },
   }
   const limitedHtml = renderTeamOperatingCard(limitedStarterBoard)
+  const limitedCompactHtml = renderCompactTeamOperatingCard(limitedStarterBoard)
 
   const zeroMonitorBoard = teamOperatingBoard()
   zeroMonitorBoard.context = {
@@ -612,47 +619,68 @@ test('team card omits unsupported rows and gates starter support by sample size'
     'Workload Concentration',
     'Trend Since Yesterday',
     'Low-sample starter support should not render.',
-    'Rotation support sample is limited.',
+    'Rotation Support Pressure raw limitation should not render.',
+    'Starter Support',
   ]) {
     assert.equal(htmlIncludes(limitedHtml, phrase), false, `rendered unsupported copy: ${phrase}`)
-    assert.equal(htmlIncludes(renderCompactTeamOperatingCard(limitedStarterBoard), phrase), false, `rendered unsupported compact copy: ${phrase}`)
+    assert.equal(htmlIncludes(limitedCompactHtml, phrase), false, `rendered unsupported compact copy: ${phrase}`)
   }
+  assert.ok(htmlIncludes(limitedHtml, 'Recent Starter Length'))
+  assert.ok(htmlIncludes(limitedHtml, 'Starter-length context is limited. 1 of 4 recent games can be analyzed.'))
+  assert.ok(htmlIncludes(limitedHtml, 'Not enough complete recent starts are available for a full starter-length read.'))
+  assert.ok(htmlIncludes(limitedHtml, 'href="#team-relief-work"'))
+  assert.ok(htmlIncludes(limitedHtml, 'View game-level work'))
 
   const supportedStarterBoard = {
     ...teamOperatingBoard(),
     rotation_support_pressure: {
       status: 'moderate_pressure',
-      games_analyzed: 3,
-      summary: 'The rotation averaged 5.4 innings per start over the last 7 days, requiring 8.2 bullpen innings.',
+      games_in_window: 5,
+      games_analyzed: 5,
+      window_days: 7,
+      starter_avg_innings: 4.8,
+      bullpen_outs_required: 63,
+      short_start_count: 3,
+      summary: 'The rotation averaged 4.8 innings per start over the last 7 days, requiring 21.0 bullpen innings.',
       limitations: ['Some recent team games are excluded because starter/relief workload data is incomplete or ambiguous.'],
     },
   }
   const supportedHtml = renderTeamOperatingCard(supportedStarterBoard)
   const supportedCompactHtml = renderCompactTeamOperatingCard(supportedStarterBoard)
 
-  assert.ok(htmlIncludes(supportedHtml, 'Starter Support'))
-  assert.ok(htmlIncludes(supportedHtml, 'Recent starter length has increased the chance this bullpen needs to cover more outs.'))
-  assert.ok(htmlIncludes(supportedHtml, 'The rotation averaged 5.4 innings per start over the last 7 days, requiring 8.2 bullpen innings.'))
-  assert.ok(htmlIncludes(supportedCompactHtml, 'Starter Support'))
-  assert.ok(htmlIncludes(supportedCompactHtml, 'Recent starter length has increased the chance this bullpen needs to cover more outs.'))
-  assert.ok(htmlIncludes(supportedCompactHtml, 'The rotation averaged 5.4 innings per start over the last 7 days, requiring 8.2 bullpen innings.'))
-  assert.ok(htmlIncludes(supportedHtml, 'Some recent team games are excluded because starter/relief workload data is incomplete or ambiguous.'))
+  assert.ok(htmlIncludes(supportedHtml, 'Recent Starter Length'))
+  assert.ok(htmlIncludes(supportedHtml, 'Across the seven-day window, starters averaged 4.8 innings in 5 analyzed starts. The bullpen covered 21 innings after those starts.'))
+  assert.ok(htmlIncludes(supportedHtml, '3 of 5 analyzed starts ended before five innings.'))
+  assert.ok(htmlIncludes(supportedCompactHtml, 'Recent Starter Length'))
+  assert.ok(htmlIncludes(supportedCompactHtml, 'Across the seven-day window, starters averaged 4.8 innings in 5 analyzed starts. The bullpen covered 21 innings after those starts.'))
+  assert.ok(htmlIncludes(supportedCompactHtml, '3 of 5 analyzed starts ended before five innings.'))
+  assert.equal(htmlIncludes(supportedHtml, 'Starter Support'), false)
+  assert.equal(htmlIncludes(supportedHtml, 'moderate_pressure'), false)
+  assert.equal(htmlIncludes(supportedHtml, 'The rotation averaged 4.8 innings per start over the last 7 days'), false)
+  assert.equal(htmlIncludes(supportedHtml, 'Some recent team games are excluded because starter/relief workload data is incomplete or ambiguous.'), false)
 })
 
-test('team card renders stable starter support only when safe', () => {
+test('team card renders stable starter samples as facts', () => {
   const stableBoard = {
     ...teamOperatingBoard(),
     rotation_support_pressure: {
       status: 'supportive',
+      games_in_window: 4,
       games_analyzed: 4,
+      window_days: 7,
+      starter_avg_innings: 6.1,
+      bullpen_outs_required: 35,
+      short_start_count: 0,
       summary: 'The rotation averaged 6.1 innings per start over the last 7 days.',
     },
   }
   const stableHtml = renderCompactTeamOperatingCard(stableBoard)
 
-  assert.ok(htmlIncludes(stableHtml, 'Starter Support'))
-  assert.ok(htmlIncludes(stableHtml, 'Recent starter length has not added a major coverage warning.'))
-  assert.ok(htmlIncludes(stableHtml, 'The rotation averaged 6.1 innings per start over the last 7 days.'))
+  assert.ok(htmlIncludes(stableHtml, 'Recent Starter Length'))
+  assert.ok(htmlIncludes(stableHtml, 'Across the seven-day window, starters averaged 6.1 innings in 4 analyzed starts. The bullpen covered 11 2/3 innings after those starts.'))
+  assert.ok(htmlIncludes(stableHtml, 'None of the 4 analyzed starts ended before five innings.'))
+  assert.equal(htmlIncludes(stableHtml, 'Starter Support'), false)
+  assert.equal(htmlIncludes(stableHtml, 'supportive'), false)
   assert.equal(htmlIncludes(stableHtml, 'Unknown'), false)
   assert.equal(htmlIncludes(stableHtml, 'N/A'), false)
   assert.equal(htmlIncludes(stableHtml, 'No data'), false)

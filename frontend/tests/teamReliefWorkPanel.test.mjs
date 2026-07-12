@@ -560,6 +560,8 @@ test('selected team board renders Recent Bullpen Work in the visible board path'
   const html = renderSelectedTeamBoard()
 
   assert.ok(htmlIncludes(html, 'Recent Bullpen Work'))
+  assert.ok(htmlIncludes(html, 'id="team-relief-work"'))
+  assert.ok(htmlIncludes(html, 'tabindex="-1"'))
   assert.ok(htmlIncludes(html, 'Review pitcher lanes'))
   assert.ok(htmlIncludes(html, 'Tonight&#x27;s Bullpen Board — New York Yankees'))
   assert.ok(htmlIncludes(html, teamReliefWorkPayload.scope_sentence))

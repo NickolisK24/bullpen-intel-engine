@@ -82,9 +82,8 @@ const DEFAULT_TONE = { borderColor: '#94a3b855', backgroundColor: '#94a3b812', c
 const LEAGUE_SCOPE_LIMITATION = 'This is a league-wide read, not a team-specific diagnosis. Availability classifications are workload-based only and do not include manager intent, bullpen phone activity, or private medical availability.'
 const TEAM_SCOPE_LIMITATION = 'BaseballOS does not know manager intent, bullpen phone activity, private medical availability, unreported injuries, or final game-day availability decisions.'
 const ROTATION_SUPPORT_MIN_ANALYZED_GAMES = 3
-const ROTATION_SUPPORT_LIMITED_STATUSES = new Set(['limited_read', 'no_data'])
-const ROTATION_SUPPORT_PRESSURE_STATUSES = new Set(['heavy_pressure', 'moderate_pressure'])
-const ROTATION_SUPPORT_STABLE_STATUSES = new Set(['neutral', 'supportive'])
+const ROTATION_SUPPORT_RECEIPTS_TARGET = '#team-relief-work'
+const ROTATION_SUPPORT_RECEIPTS_LABEL = 'View game-level work'
 const UNSUPPORTED_FIELDS = [
   'Trend Since Yesterday',
 ]
@@ -277,6 +276,53 @@ function pluralArms(count) {
   return count === 1 ? 'arm' : 'arms'
 }
 
+function pluralGames(count) {
+  return count === 1 ? 'game' : 'games'
+}
+
+function pluralStarts(count) {
+  return count === 1 ? 'start' : 'starts'
+}
+
+function numericValue(value) {
+  const number = Number(value)
+  return Number.isFinite(number) ? number : null
+}
+
+function nonNegativeNumber(value) {
+  const number = numericValue(value)
+  return number != null && number >= 0 ? number : null
+}
+
+function nonNegativeCount(value) {
+  const number = nonNegativeNumber(value)
+  return number == null ? 0 : Math.floor(number)
+}
+
+function formatFixedOne(value) {
+  const number = nonNegativeNumber(value)
+  return number == null ? null : number.toFixed(1)
+}
+
+function formatAverageInnings(value) {
+  const formatted = formatFixedOne(value)
+  return formatted ? `${formatted} innings` : null
+}
+
+function formatOutsAsInnings(outs) {
+  const number = nonNegativeNumber(outs)
+  if (number == null) return null
+  const roundedOuts = Math.round(number)
+  const whole = Math.floor(roundedOuts / 3)
+  const remainder = roundedOuts % 3
+  const value = remainder === 0 ? `${whole}` : `${whole} ${remainder}/3`
+  return `${value} ${whole === 1 && remainder === 0 ? 'inning' : 'innings'}`
+}
+
+function windowPhrase(days) {
+  return days === 7 ? 'seven-day' : `${days}-day`
+}
+
 function rowCount(context, status) {
   const rows = Array.isArray(context?.snapshot) ? context.snapshot : []
   const row = rows.find(item => item?.status === status || item?.label === status)
@@ -462,30 +508,110 @@ function buildRosterPressure(authority) {
   }
 }
 
+function starterLengthLimitations(reasons, rotationSupport, gamesAnalyzed, gamesInWindow) {
+  const reasonSet = new Set((Array.isArray(reasons) ? reasons : []).map(normalizeStateKey).filter(Boolean))
+  const limitations = []
+  const add = (value) => {
+    if (value && !limitations.includes(value)) limitations.push(value)
+  }
+  if (reasonSet.has('no_recent_games')) {
+    add('No recent completed games are available for this starter-length window.')
+  }
+  if (reasonSet.has('insufficient_trustworthy_games') || gamesAnalyzed < ROTATION_SUPPORT_MIN_ANALYZED_GAMES) {
+    add('Not enough complete recent starts are available for a full starter-length read.')
+  }
+  if (reasonSet.has('incomplete_starter_identification')) {
+    add('Some recent games cannot be included because the starter could not be identified cleanly.')
+  }
+  if (reasonSet.has('incomplete_historical_team_attribution')) {
+    add('Some recent games cannot be included because the stored team-game starter and bullpen work is incomplete.')
+  }
+  if (reasonSet.has('partial_source_coverage')) {
+    add('The recent game window is partial, so this starter-length read is limited.')
+  }
+  if (reasonSet.has('material_exclusion_share')) {
+    add('Too many recent games are incomplete for a full starter-length read.')
+  }
+  if (reasonSet.has('opener_bulk_handling')) {
+    add('Opener/bulk and bullpen games are separated only when the game shape can be verified.')
+  }
+  if (limitations.length === 0 && nonNegativeCount(rotationSupport?.games_excluded) > 0) {
+    add('Some recent games cannot be included because starter and bullpen work is incomplete.')
+  }
+  return limitations
+}
+
 function buildStarterSupportPressure(rotationSupport) {
   if (!rotationSupport || typeof rotationSupport !== 'object') return null
-  const gamesAnalyzed = numericCount(rotationSupport.games_analyzed)
-  const status = normalizeStateKey(rotationSupport.status)
-  const sourceSummary = safeText(rotationSupport.summary)
-  const shouldShow = (
-    gamesAnalyzed >= ROTATION_SUPPORT_MIN_ANALYZED_GAMES &&
-    sourceSummary &&
-    !ROTATION_SUPPORT_LIMITED_STATUSES.has(status) &&
-    (ROTATION_SUPPORT_PRESSURE_STATUSES.has(status) || ROTATION_SUPPORT_STABLE_STATUSES.has(status))
-  )
-  if (!shouldShow) return null
-  const summary = ROTATION_SUPPORT_PRESSURE_STATUSES.has(status)
-    ? 'Recent starter length has increased the chance this bullpen needs to cover more outs.'
-    : 'Recent starter length has not added a major coverage warning.'
+  const gamesAnalyzed = nonNegativeCount(rotationSupport.games_analyzed)
+  const gamesInWindow = nonNegativeCount(rotationSupport.games_in_window)
+  const windowDays = nonNegativeCount(rotationSupport.window_days) || 7
+  const starterAvgInnings = formatAverageInnings(rotationSupport.starter_avg_innings)
+  const bullpenInnings = formatOutsAsInnings(rotationSupport.bullpen_outs_required)
+  const shortStartCount = nonNegativeCount(rotationSupport.short_start_count)
+  const limitationReasons = Array.isArray(rotationSupport.limitation_reasons)
+    ? rotationSupport.limitation_reasons.map(normalizeStateKey).filter(Boolean)
+    : []
+  const limitedByStatus = normalizeStateKey(rotationSupport.status) === 'limited_read'
+  const limitations = starterLengthLimitations(limitationReasons, rotationSupport, gamesAnalyzed, gamesInWindow)
+  const isLimited = limitedByStatus || limitations.length > 0
+  const windowLabel = windowPhrase(windowDays)
+
+  if (gamesAnalyzed <= 0 && gamesInWindow <= 0 && !isLimited) return null
+
+  if (isLimited) {
+    const sampleText = gamesInWindow > 0
+      ? `${gamesAnalyzed} of ${gamesInWindow} recent ${pluralGames(gamesInWindow)} can be analyzed.`
+      : `No recent completed games are available in the ${windowLabel} window.`
+    const partialFacts = []
+    if (gamesAnalyzed > 0 && starterAvgInnings) {
+      partialFacts.push(`In the analyzed ${pluralStarts(gamesAnalyzed)}, starters averaged ${starterAvgInnings}.`)
+    }
+    if (gamesAnalyzed > 0 && bullpenInnings) {
+      partialFacts.push(`The bullpen covered ${bullpenInnings} after those analyzed starts.`)
+    }
+
+    return {
+      status: 'limited',
+      gamesAnalyzed,
+      label: null,
+      summary: `Starter-length context is limited. ${sampleText}`,
+      reasons: safeTextList([
+        ...partialFacts,
+        ...(limitations.length > 0 ? limitations : ['The recent starter-length sample is incomplete.']),
+      ]),
+      evidence: safeTextList(partialFacts),
+      limitations: safeTextList(limitations),
+      receiptsHref: ROTATION_SUPPORT_RECEIPTS_TARGET,
+      receiptsLabel: ROTATION_SUPPORT_RECEIPTS_LABEL,
+    }
+  }
+
+  if (!starterAvgInnings || !bullpenInnings || gamesAnalyzed < ROTATION_SUPPORT_MIN_ANALYZED_GAMES) return null
+
+  const shortStartText = shortStartCount > 0
+    ? `${shortStartCount} of ${gamesAnalyzed} analyzed ${pluralStarts(gamesAnalyzed)} ended before five innings.`
+    : `None of the ${gamesAnalyzed} analyzed ${pluralStarts(gamesAnalyzed)} ended before five innings.`
+  const summary = `Across the ${windowLabel} window, starters averaged ${starterAvgInnings} in ${gamesAnalyzed} analyzed ${pluralStarts(gamesAnalyzed)}. The bullpen covered ${bullpenInnings} after those starts.`
 
   return {
-    status,
+    status: 'available',
     gamesAnalyzed,
     label: null,
     summary,
-    reasons: [sourceSummary],
-    evidence: [sourceSummary],
-    limitations: safeTextList(rotationSupport.limitations),
+    reasons: safeTextList([
+      shortStartText,
+      gamesInWindow > gamesAnalyzed
+        ? `${gamesAnalyzed} of ${gamesInWindow} recent ${pluralGames(gamesInWindow)} count toward this starter-length read.`
+        : null,
+    ]),
+    evidence: safeTextList([
+      summary,
+      shortStartText,
+    ]),
+    limitations: [],
+    receiptsHref: ROTATION_SUPPORT_RECEIPTS_TARGET,
+    receiptsLabel: ROTATION_SUPPORT_RECEIPTS_LABEL,
   }
 }
 
