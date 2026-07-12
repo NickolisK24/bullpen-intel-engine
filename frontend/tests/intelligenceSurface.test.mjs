@@ -203,6 +203,13 @@ const dashboardWithSinceYesterdayChanges = {
         workload_added: [
           { name: 'Reed Garrett', pitches: 21 },
         ],
+        public_evidence: [
+          {
+            label: 'Resource pool',
+            yesterday: 'tight',
+            today: 'less tight',
+          },
+        ],
       },
       {
         key: 'SF-what-changed',
@@ -630,6 +637,14 @@ test('Since Yesterday renders changes in stored order with public copy and team 
   assert.equal(view.state, 'changes_detected')
   assert.equal(view.comparisonAvailable, true)
   assert.deepEqual(view.items.map(item => item.teamAbbr), ['NYM', 'SF'])
+  assert.deepEqual(view.items[0].publicEvidence, [
+    {
+      key: 'Resource pool-tight-less tight-0',
+      label: 'Resource pool',
+      yesterday: 'tight',
+      today: 'less tight',
+    },
+  ])
   assert.equal(view.footerCopy, 'Teams are listed alphabetically. 2 teams show meaningful, evidence-backed movement in this daily comparison.')
 
   const sourceOrderedDashboard = clone(dashboardWithSinceYesterdayChanges)
@@ -655,6 +670,10 @@ test('Since Yesterday renders changes in stored order with public copy and team 
   assert.ok(htmlIncludes(sinceHtml, 'Mets bullpen has more breathing room today.'))
   assert.ok(htmlIncludes(sinceHtml, 'New York has more usable late-inning margin than yesterday.'))
   assert.ok(htmlIncludes(sinceHtml, 'That creates more ways through a close game tonight.'))
+  assert.ok(htmlIncludes(sinceHtml, 'Evidence shown'))
+  assert.ok(htmlIncludes(sinceHtml, 'Resource pool'))
+  assert.ok(htmlIncludes(sinceHtml, 'Yesterday tight'))
+  assert.ok(htmlIncludes(sinceHtml, 'Today less tight'))
   assert.ok(htmlIncludes(sinceHtml, 'Giants bullpen has a thinner cushion today.'))
   assert.ok(htmlIncludes(sinceHtml, 'Reed Garrett'))
   assert.ok(htmlIncludes(sinceHtml, '21 pitches'))
@@ -665,6 +684,7 @@ test('Since Yesterday renders changes in stored order with public copy and team 
   assert.equal(countOccurrences(sinceHtml, '<details'), 2)
   assert.equal(countOccurrences(sinceHtml, '<summary'), 2)
   assert.equal(/<details[^>]*\sopen(?:=|>|\s)/i.test(sinceHtml), false)
+  assert.equal(htmlIncludes(sinceHtml, 'what_changed_item_opened'), false)
 })
 
 test('Since Yesterday analytics emit only the approved events and fields', async () => {

@@ -347,8 +347,19 @@ def test_phase0e_switches_and_legacy_public_files_not_modified():
         in [path.replace('\\', '/') for path in changed]
     ):
         diff = _diff_vs_main('backend/services/what_changed_since_yesterday_public.py')
-        assert "'state': state" in diff
-        assert 'def _public_state(' in diff
+        branch1_contract_diff = (
+            "'state': state" in diff
+            and 'def _public_state(' in diff
+        )
+        content_consistency_diff = (
+            # Public What Changed content-consistency fix: permit only the
+            # visible rested-count contradiction guard and its explicit public
+            # evidence row for non-rested top changes.
+            'def _copy_contradicts_visible_counts' in diff
+            and 'def _primary_public_evidence' in diff
+            and "item['public_evidence'] = [primary_evidence]" in diff
+        )
+        assert branch1_contract_diff or content_consistency_diff
         assert "'status':" not in diff
         assert "'empty_state':" not in diff
         assert "'state': state," not in diff[diff.find("'comparison': {"):]
