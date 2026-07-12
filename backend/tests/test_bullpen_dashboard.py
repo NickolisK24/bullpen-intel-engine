@@ -31,6 +31,8 @@ from utils.innings import outs_to_decimal_innings, parse_mlb_innings_to_outs
 from models.pitcher import Pitcher
 from models.game_log import GameLog
 from models.fatigue_score import FatigueScore
+from models.scheduled_game import ScheduledGame
+from models.team_game_pitching_split import TeamGamePitchingSplit
 import models.prospect  # noqa: F401
 import api.bullpen as bullpen_api
 from api.bullpen import bullpen_bp
@@ -104,6 +106,48 @@ def _landscape_entries_for_team(landscape, team_id):
             if entry.get('team_id') == team_id
         )
     return entries
+
+
+def _seed_team_game_split(team_id, game_pk, game_date, starter, *, starter_outs, bullpen_outs):
+    db.session.add(ScheduledGame(
+        team_id=team_id,
+        game_pk=game_pk,
+        game_date=game_date,
+        status_state=ScheduledGame.STATE_FINAL,
+        status_code='F',
+        home_away='home',
+        opponent_team_id=999,
+        game_type='R',
+    ))
+    db.session.add(TeamGamePitchingSplit(
+        team_id=team_id,
+        mlb_game_pk=game_pk,
+        game_date=game_date,
+        game_type='R',
+        opponent_team_id=999,
+        home_away='home',
+        starter_pitcher_id=starter.id,
+        starter_mlb_id=starter.mlb_id,
+        starter_identity_status=TeamGamePitchingSplit.STARTER_KNOWN,
+        starter_outs_recorded=starter_outs,
+        starter_pitches_thrown=88,
+        starter_batters_faced=25,
+        starter_games_started=1,
+        bullpen_outs_recorded=bullpen_outs,
+        bullpen_pitches_thrown=0 if bullpen_outs == 0 else 36,
+        bullpen_batters_faced=0 if bullpen_outs == 0 else 10,
+        relievers_used_count=0 if bullpen_outs == 0 else 1,
+        total_team_outs=starter_outs + bullpen_outs,
+        total_team_pitches=88 if bullpen_outs == 0 else 124,
+        total_team_batters_faced=25 if bullpen_outs == 0 else 35,
+        split_completeness_status=TeamGamePitchingSplit.STATUS_COMPLETE,
+        split_reason_codes=[],
+        suspended_resumed_linkage_status=TeamGamePitchingSplit.LINKAGE_NONE,
+        calendar_context_status=TeamGamePitchingSplit.STATUS_COMPLETE,
+        calendar_reason_codes=[],
+        source='test:team_game_pitching_split',
+    ))
+    db.session.commit()
 
 
 class TestDashboardEndpoint:
@@ -687,7 +731,7 @@ class TestDashboardEndpoint:
 
     def test_dashboard_exposes_rotation_support_pressure_payload(self, client):
         with client.application.app_context():
-            _seed_pitcher(
+            starter = _seed_pitcher(
                 'Dashboard Rotation Starter',
                 team_id=177,
                 mlb_id=17701,
@@ -695,6 +739,14 @@ class TestDashboardEndpoint:
                 days_ago=[1],
                 roster_status=STATUS_ACTIVE,
                 games_started=[1],
+            )
+            _seed_team_game_split(
+                177,
+                1770100,
+                date.today() - timedelta(days=1),
+                starter,
+                starter_outs=24,
+                bullpen_outs=0,
             )
 
         body = client.get('/api/bullpen/dashboard').get_json()

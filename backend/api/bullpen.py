@@ -64,8 +64,8 @@ from services.bullpen_stability import (
 )
 from services.rotation_support_pressure import (
     build_league_rotation_support_payload,
-    build_team_rotation_support_pressure,
-    recent_team_game_logs,
+    build_team_rotation_support_pressure_from_splits,
+    recent_team_game_splits,
 )
 from services.bullpen_comparison import build_team_comparison
 from services.bullpen_context import (
@@ -1053,8 +1053,8 @@ def _capacity_intelligence_for_records(team_info, records, reference_date):
 
 def _rotation_support_for_team(team_info, reference_date):
     team_id = (team_info or {}).get('team_id')
-    return build_team_rotation_support_pressure(
-        recent_team_game_logs(
+    return build_team_rotation_support_pressure_from_splits(
+        recent_team_game_splits(
             team_id,
             reference_date=reference_date,
         ),
