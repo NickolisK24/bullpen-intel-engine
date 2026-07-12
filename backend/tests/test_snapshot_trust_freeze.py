@@ -239,6 +239,13 @@ def test_frozen_legacy_what_changed_files_untouched():
         # comparison service and trust gates remain frozen.
         'backend/services/what_changed_since_yesterday_public.py',
     }
+    allowed_public_since_yesterday_rendering_files = {
+        # Branch 2 Today rendering permits only the client analytics helper and
+        # tests for the what_changed_viewed, what_changed_item_opened, and
+        # what_changed_team_clicked observations.
+        'frontend/src/utils/analytics.js',
+        'frontend/tests/analytics.test.mjs',
+    }
     assert not sorted(
         (frozen_paths & changed) - allowed_public_what_changed_contract_files
     )
@@ -248,6 +255,7 @@ def test_frozen_legacy_what_changed_files_untouched():
         if path not in allowed_phase_a_audience_signup_files
         if path not in allowed_bullpen_game_context_files
         if path not in allowed_pitcher_ledger_coverage_files
+        if path not in allowed_public_since_yesterday_rendering_files
     )
     assert not sorted(
         path for path in changed

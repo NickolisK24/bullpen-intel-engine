@@ -87,13 +87,19 @@ test('V4 analytics constants keep implemented and reserved names stable', () => 
   assert.equal(ANALYTICS_EVENTS.APP_VIEWED, 'app_viewed')
   assert.equal(ANALYTICS_EVENTS.HOMEPAGE_VIEWED, 'homepage_viewed')
   assert.equal(ANALYTICS_EVENTS.SHARE_INTENT_CLICKED, 'share_intent_clicked')
+  assert.equal(ANALYTICS_EVENTS.WHAT_CHANGED_VIEWED, 'what_changed_viewed')
+  assert.equal(ANALYTICS_EVENTS.WHAT_CHANGED_ITEM_OPENED, 'what_changed_item_opened')
+  assert.equal(ANALYTICS_EVENTS.WHAT_CHANGED_TEAM_CLICKED, 'what_changed_team_clicked')
   assert.equal(ANALYTICS_EVENTS.TEAM_FOLLOW_STARTED, 'team_follow_started')
   assert.ok(IMPLEMENTED_ANALYTICS_EVENT_NAMES.includes('social_outbound_clicked'))
+  assert.ok(IMPLEMENTED_ANALYTICS_EVENT_NAMES.includes('what_changed_viewed'))
+  assert.ok(IMPLEMENTED_ANALYTICS_EVENT_NAMES.includes('what_changed_item_opened'))
+  assert.ok(IMPLEMENTED_ANALYTICS_EVENT_NAMES.includes('what_changed_team_clicked'))
   assert.equal(IMPLEMENTED_ANALYTICS_EVENT_NAMES.includes('team_follow_started'), false)
 })
 
 test('analytics payload builder keeps only safe, useful fields', () => {
-  assert.deepEqual(buildAnalyticsEventPayload(ANALYTICS_EVENTS.TEAM_SURFACE_VIEWED, {
+  assert.deepEqual(buildAnalyticsEventPayload(ANALYTICS_EVENTS.WHAT_CHANGED_VIEWED, {
     surface: 'Bullpen',
     route: '/bullpen?view=board&email=fan@example.com',
     source: 'team_selector',
@@ -101,9 +107,10 @@ test('analytics payload builder keeps only safe, useful fields', () => {
     team_id: '137',
     player_id: '657277',
     freshness_state: 'current',
+    state: 'changes_detected',
     ignored: 'not stored',
   }), {
-    event_name: 'team_surface_viewed',
+    event_name: 'what_changed_viewed',
     surface: 'bullpen',
     route: '/bullpen',
     source: 'team_selector',
@@ -111,6 +118,7 @@ test('analytics payload builder keeps only safe, useful fields', () => {
     player_id: 657277,
     freshness_state: 'current',
     team_id: 137,
+    state: 'changes_detected',
   })
 
   assert.deepEqual(buildAnalyticsEventPayload(ANALYTICS_EVENTS.SOCIAL_OUTBOUND_CLICKED, {
@@ -120,6 +128,7 @@ test('analytics payload builder keeps only safe, useful fields', () => {
     team_abbrev: 'too-long',
     player_id: 'player-name',
     freshness_state: 'current state',
+    state: 'quiet day',
   }), {
     event_name: 'social_outbound_clicked',
     surface: 'footer',
@@ -168,7 +177,7 @@ test('analytics tracker sends sanitized payload and once helper dedupes by paylo
   ])
   assert.equal(
     analyticsObservationKey(calls[0]),
-    'methodology_viewed|/methodology|methodology|page|none|none|none',
+    'methodology_viewed|/methodology|methodology|page|none|none|none|none',
   )
 })
 

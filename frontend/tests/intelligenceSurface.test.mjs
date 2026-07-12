@@ -20,6 +20,7 @@ const originalFetch = globalThis.fetch
 
 afterEach(() => {
   globalThis.fetch = originalFetch
+  resetAnalyticsDedupeForTests()
 })
 
 const {
@@ -32,9 +33,14 @@ const {
   IntelligenceSurfaceView,
   getBullpenPictureView,
   getLeadStoryView,
+  getSinceYesterdayView,
   getTonightCards,
   submitAudienceSignup,
+  trackSinceYesterdayItemOpened,
+  trackSinceYesterdayTeamClicked,
+  trackSinceYesterdayViewed,
 } = await server.ssrLoadModule('/src/components/home/IntelligenceSurface.jsx')
+const { resetAnalyticsDedupeForTests } = await server.ssrLoadModule('/src/utils/analytics.js')
 const {
   getTodayIntelligence,
   getTonightIntelligence,
@@ -168,6 +174,85 @@ const dashboard = {
         public_summary: 'Toronto still has 4 rested relievers today.',
       },
     ],
+  },
+}
+
+const dashboardWithSinceYesterdayChanges = {
+  ...dashboard,
+  what_changed_since_yesterday: {
+    capability: 'what_changed_since_yesterday_public_v1',
+    state: 'changes_detected',
+    comparison: {
+      comparison_available: true,
+      previous_data_through: '2026-06-24',
+      current_data_through: '2026-06-25',
+    },
+    ordering_basis: 'team_abbreviation_then_team_name',
+    item_count: 2,
+    items: [
+      {
+        key: 'NYM-what-changed',
+        team_id: 121,
+        team_name: 'New York Mets',
+        team_abbreviation: 'NYM',
+        public_headline: 'Mets bullpen has more breathing room today.',
+        public_summary: 'New York has more usable late-inning margin than yesterday.',
+        public_context: 'That creates more ways through a close game tonight.',
+        yesterday_rested_count: 3,
+        today_rested_count: 5,
+        workload_added: [
+          { name: 'Reed Garrett', pitches: 21 },
+        ],
+      },
+      {
+        key: 'SF-what-changed',
+        team_id: 137,
+        team_name: 'San Francisco Giants',
+        team_abbreviation: 'SF',
+        public_headline: 'Giants bullpen has a thinner cushion today.',
+        public_summary: 'San Francisco has fewer rested relievers than yesterday.',
+        public_context: 'That puts more weight on the middle innings.',
+        yesterday_rested_count: 4,
+        today_rested_count: 2,
+        workload_added: [
+          { name: 'Erik Miller', pitches: 18 },
+        ],
+      },
+    ],
+  },
+}
+
+const dashboardWithSinceYesterdayQuiet = {
+  ...dashboard,
+  what_changed_since_yesterday: {
+    capability: 'what_changed_since_yesterday_public_v1',
+    state: 'no_meaningful_changes',
+    comparison: {
+      comparison_available: true,
+      previous_data_through: '2026-06-24',
+      current_data_through: '2026-06-25',
+    },
+    reason_codes: [],
+    limitations: [],
+    items: [],
+    item_count: 0,
+  },
+}
+
+const dashboardWithSinceYesterdayInsufficient = {
+  ...dashboard,
+  what_changed_since_yesterday: {
+    capability: 'what_changed_since_yesterday_public_v1',
+    state: 'insufficient_context',
+    comparison: {
+      comparison_available: false,
+      previous_data_through: '2026-06-24',
+      current_data_through: '2026-06-26',
+    },
+    reason_codes: ['non_adjacent_data_through_dates'],
+    limitations: ['Internal audit note should not render.'],
+    items: [],
+    item_count: 0,
   },
 }
 
@@ -519,7 +604,7 @@ test('homepage sections introduce the bullpen picture before Tonight watch', () 
   const html = render(React.createElement(IntelligenceSurfaceView, {
     intelligence: intelligenceOk,
     tonight: tonightOk,
-    dashboard,
+    dashboard: dashboardWithSinceYesterdayChanges,
     landscape,
     teams,
   }))
@@ -527,6 +612,8 @@ test('homepage sections introduce the bullpen picture before Tonight watch', () 
   const orderedSections = [
     'See which bullpens are fresh, stretched, or vulnerable tonight — and why.',
     'Today&#x27;s Bullpen Picture',
+    'SINCE YESTERDAY',
+    'What changed across MLB bullpens',
     'Tonight&#x27;s Bullpen Watch',
     'Learn &amp; Explore BaseballOS',
   ]
@@ -535,6 +622,199 @@ test('homepage sections introduce the bullpen picture before Tonight watch', () 
     const index = html.indexOf(section)
     assert.ok(index > previousIndex, section)
     previousIndex = index
+  }
+})
+
+test('Since Yesterday renders changes in stored order with public copy and team links', () => {
+  const view = getSinceYesterdayView(dashboardWithSinceYesterdayChanges, teams)
+  assert.equal(view.state, 'changes_detected')
+  assert.equal(view.comparisonAvailable, true)
+  assert.deepEqual(view.items.map(item => item.teamAbbr), ['NYM', 'SF'])
+  assert.equal(view.footerCopy, 'Teams are listed alphabetically. 2 teams show meaningful, evidence-backed movement in this daily comparison.')
+
+  const sourceOrderedDashboard = clone(dashboardWithSinceYesterdayChanges)
+  sourceOrderedDashboard.what_changed_since_yesterday.ordering_basis = 'stored_payload_order'
+  sourceOrderedDashboard.what_changed_since_yesterday.items.reverse()
+  const sourceOrderView = getSinceYesterdayView(sourceOrderedDashboard, teams)
+  assert.deepEqual(sourceOrderView.items.map(item => item.teamAbbr), ['SF', 'NYM'])
+  assert.equal(sourceOrderView.footerCopy, '2 teams show meaningful, evidence-backed movement in this daily comparison.')
+
+  const html = render(React.createElement(IntelligenceSurfaceView, {
+    intelligence: intelligenceOk,
+    tonight: tonightOk,
+    dashboard: dashboardWithSinceYesterdayChanges,
+    landscape,
+    teams,
+  }))
+  const sinceHtml = sectionSlice(html, 'SINCE YESTERDAY', 'Tonight&#x27;s Bullpen Watch')
+
+  assert.ok(htmlIncludes(sinceHtml, 'What changed across MLB bullpens'))
+  assert.ok(htmlIncludes(sinceHtml, 'Comparing complete, adjacent daily views only. Movement is descriptive, not predictive.'))
+  assert.ok(htmlIncludes(sinceHtml, 'Previous view Jun 24'))
+  assert.ok(htmlIncludes(sinceHtml, 'Current view Jun 25'))
+  assert.ok(htmlIncludes(sinceHtml, 'Mets bullpen has more breathing room today.'))
+  assert.ok(htmlIncludes(sinceHtml, 'New York has more usable late-inning margin than yesterday.'))
+  assert.ok(htmlIncludes(sinceHtml, 'That creates more ways through a close game tonight.'))
+  assert.ok(htmlIncludes(sinceHtml, 'Giants bullpen has a thinner cushion today.'))
+  assert.ok(htmlIncludes(sinceHtml, 'Reed Garrett'))
+  assert.ok(htmlIncludes(sinceHtml, '21 pitches'))
+  assert.ok(htmlIncludes(sinceHtml, 'Yesterday'))
+  assert.ok(htmlIncludes(sinceHtml, 'Today'))
+  assert.ok(htmlIncludes(sinceHtml, 'href="/bullpen?view=board&amp;team=NYM&amp;source=since-yesterday"'))
+  assert.ok(htmlIncludes(sinceHtml, 'href="/bullpen?view=board&amp;team=SF&amp;source=since-yesterday"'))
+  assert.equal(countOccurrences(sinceHtml, '<details'), 2)
+  assert.equal(countOccurrences(sinceHtml, '<summary'), 2)
+  assert.equal(/<details[^>]*\sopen(?:=|>|\s)/i.test(sinceHtml), false)
+})
+
+test('Since Yesterday analytics emit only the approved events and fields', async () => {
+  const view = getSinceYesterdayView(dashboardWithSinceYesterdayChanges, teams)
+  const calls = []
+  const send = async payload => calls.push(payload)
+
+  assert.equal(await trackSinceYesterdayViewed(view, { send }), true)
+  assert.equal(await trackSinceYesterdayViewed(view, { send }), false)
+  assert.equal(await trackSinceYesterdayItemOpened(view.items[0], { send }), true)
+  assert.equal(await trackSinceYesterdayTeamClicked(view.items[1], { send }), true)
+
+  assert.deepEqual(calls, [
+    {
+      event_name: 'what_changed_viewed',
+      surface: 'home',
+      route: '/',
+      source: 'since_yesterday',
+      state: 'changes_detected',
+    },
+    {
+      event_name: 'what_changed_item_opened',
+      surface: 'home',
+      route: '/',
+      source: 'since_yesterday',
+      team_abbrev: 'NYM',
+      team_id: 121,
+    },
+    {
+      event_name: 'what_changed_team_clicked',
+      surface: 'home',
+      route: '/',
+      source: 'since_yesterday',
+      team_abbrev: 'SF',
+      team_id: 137,
+    },
+  ])
+})
+
+test('Since Yesterday renders quiet comparable days without empty cards', async () => {
+  const view = getSinceYesterdayView(dashboardWithSinceYesterdayQuiet, teams)
+  assert.equal(view.state, 'no_meaningful_changes')
+  assert.equal(view.comparisonAvailable, true)
+  assert.deepEqual(view.items, [])
+  assert.equal(view.itemCount, 0)
+  assert.equal(view.quietCopy, 'No meaningful bullpen movement was found between Jun 24 and Jun 25. Quiet days are reported as quiet — nothing is padded.')
+
+  const html = render(React.createElement(IntelligenceSurfaceView, {
+    intelligence: intelligenceOk,
+    tonight: tonightOk,
+    dashboard: dashboardWithSinceYesterdayQuiet,
+    landscape,
+    teams,
+  }))
+  const sinceHtml = sectionSlice(html, 'SINCE YESTERDAY', 'Tonight&#x27;s Bullpen Watch')
+  assert.ok(htmlIncludes(sinceHtml, 'No meaningful bullpen movement was found between Jun 24 and Jun 25. Quiet days are reported as quiet — nothing is padded.'))
+  assert.equal(countOccurrences(sinceHtml, '<details'), 0)
+
+  const calls = []
+  assert.equal(await trackSinceYesterdayViewed(view, { send: async payload => calls.push(payload) }), true)
+  assert.deepEqual(calls.map(call => call.state), ['no_meaningful_changes'])
+})
+
+test('Since Yesterday renders withheld comparison safely without raw reason codes', async () => {
+  const view = getSinceYesterdayView(dashboardWithSinceYesterdayInsufficient, teams)
+  assert.equal(view.state, 'insufficient_context')
+  assert.equal(view.comparisonAvailable, false)
+  assert.deepEqual(view.items, [])
+
+  const html = render(React.createElement(IntelligenceSurfaceView, {
+    intelligence: intelligenceOk,
+    tonight: tonightOk,
+    dashboard: dashboardWithSinceYesterdayInsufficient,
+    landscape,
+    teams,
+  }))
+  const sinceHtml = sectionSlice(html, 'SINCE YESTERDAY', 'Tonight&#x27;s Bullpen Watch')
+  assert.ok(htmlIncludes(sinceHtml, 'Since-yesterday movement is unavailable because the two daily views could not be compared safely. BaseballOS only compares complete, adjacent days.'))
+  assert.equal(htmlIncludes(sinceHtml, 'non_adjacent_data_through_dates'), false)
+  assert.equal(htmlIncludes(sinceHtml, 'Internal audit note should not render.'), false)
+  assert.equal(countOccurrences(sinceHtml, '<details'), 0)
+
+  const calls = []
+  assert.equal(await trackSinceYesterdayViewed(view, { send: async payload => calls.push(payload) }), true)
+  assert.deepEqual(calls.map(call => call.state), ['insufficient_context'])
+})
+
+test('Since Yesterday hides legacy, missing, and fail-closed dashboard blocks', async () => {
+  const legacyView = getSinceYesterdayView(dashboard, teams)
+  const missingView = getSinceYesterdayView({ freshness: dashboard.freshness }, teams)
+  const failClosedView = getSinceYesterdayView({
+    status: 'error',
+    what_changed_since_yesterday: dashboardWithSinceYesterdayChanges.what_changed_since_yesterday,
+  }, teams)
+
+  assert.equal(legacyView, null)
+  assert.equal(missingView, null)
+  assert.equal(failClosedView, null)
+
+  for (const currentDashboard of [dashboard, { freshness: dashboard.freshness }]) {
+    const html = render(React.createElement(IntelligenceSurfaceView, {
+      intelligence: intelligenceOk,
+      tonight: tonightOk,
+      dashboard: currentDashboard,
+      landscape,
+      teams,
+    }))
+    assert.equal(htmlIncludes(html, 'SINCE YESTERDAY'), false)
+    assert.equal(htmlIncludes(html, 'What changed across MLB bullpens'), false)
+  }
+
+  const calls = []
+  assert.equal(await trackSinceYesterdayViewed(legacyView, { send: async payload => calls.push(payload) }), false)
+  assert.deepEqual(calls, [])
+})
+
+test('Since Yesterday markup stays semantic, single-column, and free of internal fields', () => {
+  const html = render(React.createElement(IntelligenceSurfaceView, {
+    intelligence: intelligenceOk,
+    tonight: tonightOk,
+    dashboard: dashboardWithSinceYesterdayChanges,
+    landscape,
+    teams,
+  }))
+  const sinceHtml = sectionSlice(html, 'SINCE YESTERDAY', 'Tonight&#x27;s Bullpen Watch')
+  const visibleText = sinceHtml
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+
+  assert.ok(htmlIncludes(sinceHtml, 'grid grid-cols-1'))
+  assert.ok(htmlIncludes(sinceHtml, '<details'))
+  assert.ok(htmlIncludes(sinceHtml, '<summary'))
+  for (const raw of [
+    'snapshot',
+    'backend',
+    'deterministic',
+    'audit',
+    'reason code',
+    'engine',
+    'reason_codes',
+    'item_count',
+    'public_headline',
+    'ranking',
+    'score',
+    'projection',
+    'prediction',
+    'recommendation',
+  ]) {
+    assert.equal(new RegExp(escapeRegExp(raw), 'i').test(visibleText), false, raw)
   }
 })
 

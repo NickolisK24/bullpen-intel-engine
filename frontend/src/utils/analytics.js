@@ -18,6 +18,8 @@ export const ANALYTICS_EVENTS = Object.freeze({
   TEAM_FOLLOW_COMPLETED: 'team_follow_completed',
   DAILY_HOME_VIEWED: 'daily_home_viewed',
   WHAT_CHANGED_VIEWED: 'what_changed_viewed',
+  WHAT_CHANGED_ITEM_OPENED: 'what_changed_item_opened',
+  WHAT_CHANGED_TEAM_CLICKED: 'what_changed_team_clicked',
   TEAM_PAGE_VIEWED: 'team_page_viewed',
   SHARE_CARD_CLICKED: 'share_card_clicked',
   SHARE_CARD_DOWNLOADED: 'share_card_downloaded',
@@ -41,6 +43,9 @@ export const IMPLEMENTED_ANALYTICS_EVENT_NAMES = Object.freeze([
   ANALYTICS_EVENTS.NEWSLETTER_INTEREST_CLICKED,
   ANALYTICS_EVENTS.TEAM_INTEREST_CLICKED,
   ANALYTICS_EVENTS.SHARE_INTENT_CLICKED,
+  ANALYTICS_EVENTS.WHAT_CHANGED_VIEWED,
+  ANALYTICS_EVENTS.WHAT_CHANGED_ITEM_OPENED,
+  ANALYTICS_EVENTS.WHAT_CHANGED_TEAM_CLICKED,
 ])
 
 const implementedEvents = new Set(IMPLEMENTED_ANALYTICS_EVENT_NAMES)
@@ -48,6 +53,11 @@ const observedAnalyticsEvents = new Set()
 const SAFE_SLUG_PATTERN = /^[a-z0-9][a-z0-9_.:-]*$/
 const SAFE_FRESHNESS_PATTERN = /^[a-z0-9][a-z0-9_.:-]*$/
 const TEAM_ABBREV_PATTERN = /^[A-Z0-9]{2,5}$/
+const WHAT_CHANGED_STATES = new Set([
+  'changes_detected',
+  'no_meaningful_changes',
+  'insufficient_context',
+])
 
 function textValue(value) {
   const text = value == null ? '' : String(value).trim()
@@ -99,6 +109,11 @@ function cleanFreshnessState(value) {
   return SAFE_FRESHNESS_PATTERN.test(state) ? state : null
 }
 
+function cleanWhatChangedState(value) {
+  const state = textValue(value)?.toLowerCase()
+  return WHAT_CHANGED_STATES.has(state) ? state : null
+}
+
 export function currentAnalyticsRoute(env = globalThis) {
   const pathname = env?.window?.location?.pathname
   return cleanRoute(pathname) || null
@@ -116,6 +131,7 @@ export function buildAnalyticsEventPayload(eventName, props = {}) {
   const playerId = cleanPlayerId(props.player_id ?? props.playerId)
   const freshnessState = cleanFreshnessState(props.freshness_state ?? props.freshnessState)
   const teamId = cleanTeamId(props.team_id ?? props.teamId)
+  const state = cleanWhatChangedState(props.state)
 
   if (surface) payload.surface = surface
   if (route) payload.route = route
@@ -124,6 +140,7 @@ export function buildAnalyticsEventPayload(eventName, props = {}) {
   if (playerId != null) payload.player_id = playerId
   if (freshnessState) payload.freshness_state = freshnessState
   if (teamId != null) payload.team_id = teamId
+  if (state) payload.state = state
 
   return payload
 }
@@ -138,6 +155,7 @@ export function analyticsObservationKey(payload) {
     payload.team_abbrev || payload.team_id || 'none',
     payload.player_id || 'none',
     payload.freshness_state || 'none',
+    payload.state || 'none',
   ].join('|')
 }
 

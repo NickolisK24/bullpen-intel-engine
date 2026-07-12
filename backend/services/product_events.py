@@ -139,12 +139,16 @@ SOCIAL_OUTBOUND_CLICKED = 'social_outbound_clicked'
 NEWSLETTER_INTEREST_CLICKED = 'newsletter_interest_clicked'
 TEAM_INTEREST_CLICKED = 'team_interest_clicked'
 SHARE_INTENT_CLICKED = 'share_intent_clicked'
+WHAT_CHANGED_VIEWED = 'what_changed_viewed'
+WHAT_CHANGED_ITEM_OPENED = 'what_changed_item_opened'
+WHAT_CHANGED_TEAM_CLICKED = 'what_changed_team_clicked'
 
 V4_PRODUCT_EVENTS = (
     APP_VIEWED, HOMEPAGE_VIEWED, BULLPEN_BOARD_VIEWED, TEAM_SURFACE_VIEWED,
     PITCHER_SURFACE_VIEWED, METHODOLOGY_VIEWED, TRUST_SURFACE_VIEWED,
     FRESHNESS_SURFACE_VIEWED, SOCIAL_OUTBOUND_CLICKED, NEWSLETTER_INTEREST_CLICKED,
-    TEAM_INTEREST_CLICKED, SHARE_INTENT_CLICKED,
+    TEAM_INTEREST_CLICKED, SHARE_INTENT_CLICKED, WHAT_CHANGED_VIEWED,
+    WHAT_CHANGED_ITEM_OPENED, WHAT_CHANGED_TEAM_CLICKED,
 )
 
 # Reserved by the V4 roadmap/catalog but intentionally not accepted until the
@@ -154,7 +158,6 @@ V4_RESERVED_EVENT_NAMES = (
     'team_follow_started',
     'team_follow_completed',
     'daily_home_viewed',
-    'what_changed_viewed',
     'team_page_viewed',
     'share_card_clicked',
     'share_card_downloaded',
@@ -248,6 +251,11 @@ TEAM_ABBREV_MAX_LEN = 5
 _SAFE_SLUG_RE = re.compile(r'^[a-z0-9][a-z0-9_.:-]*$')
 _SAFE_FRESHNESS_RE = re.compile(r'^[a-z0-9][a-z0-9_.:-]*$')
 _SAFE_TEAM_ABBREV_RE = re.compile(r'^[A-Z0-9]{2,5}$')
+WHAT_CHANGED_STATES = (
+    'changes_detected',
+    'no_meaningful_changes',
+    'insufficient_context',
+)
 
 
 def normalize_arrival_source(value):
@@ -363,6 +371,13 @@ def normalize_v4_freshness_state(value):
     if not _SAFE_FRESHNESS_RE.match(cleaned):
         return None
     return cleaned
+
+
+def normalize_v4_state(value):
+    """Normalize the public What Changed state for V4 product observations."""
+    if isinstance(value, str) and value.strip().lower() in WHAT_CHANGED_STATES:
+        return value.strip().lower()
+    return None
 
 
 def normalize_short_text(value, *, max_len=STORY_FIELD_MAX_LEN):
@@ -640,7 +655,8 @@ def record_story_interacted(*, user_id=None, anon_id=None, team_id=None, story_i
 
 def record_v4_product_event(event_name, *, user_id=None, anon_id=None, team_id=None,
                             source=None, surface=None, route=None, team_abbrev=None,
-                            player_id=None, freshness_state=None, occurred_at=None):
+                            player_id=None, freshness_state=None, state=None,
+                            occurred_at=None):
     """Append one V4 product-loop observation under a validated event name."""
     payload = {}
     if surface is not None:
@@ -653,6 +669,8 @@ def record_v4_product_event(event_name, *, user_id=None, anon_id=None, team_id=N
         payload['player_id'] = player_id
     if freshness_state is not None:
         payload['freshness_state'] = freshness_state
+    if state is not None:
+        payload['state'] = state
 
     return record_event(
         event_name, occurred_at=occurred_at, user_id=user_id, anon_id=anon_id,
