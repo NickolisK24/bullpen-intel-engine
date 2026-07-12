@@ -431,6 +431,30 @@ function normalizeSinceYesterdayWorkload(value) {
     .filter(Boolean)
 }
 
+function sinceYesterdayEvidenceValue(value) {
+  if (value == null) return null
+  const text = String(value).trim()
+  return text || null
+}
+
+function normalizeSinceYesterdayEvidence(value) {
+  return (Array.isArray(value) ? value : [])
+    .map((row, index) => {
+      if (!row || typeof row !== 'object') return null
+      const label = textValue(row.label)
+      const yesterday = sinceYesterdayEvidenceValue(row.yesterday)
+      const today = sinceYesterdayEvidenceValue(row.today)
+      if (!label || !yesterday || !today) return null
+      return {
+        key: `${label}-${yesterday}-${today}-${index}`,
+        label,
+        yesterday,
+        today,
+      }
+    })
+    .filter(Boolean)
+}
+
 function normalizeSinceYesterdayItem(item, teamsById, teams, index) {
   if (!item || typeof item !== 'object') return null
   const teamId = teamIdOf(item.team_id ?? item.teamId)
@@ -458,6 +482,7 @@ function normalizeSinceYesterdayItem(item, teamsById, teams, index) {
   const yesterdayRestedCount = numberValue(item.yesterday_rested_count)
   const todayRestedCount = numberValue(item.today_rested_count)
   const workloadAdded = normalizeSinceYesterdayWorkload(item.workload_added)
+  const publicEvidence = normalizeSinceYesterdayEvidence(item.public_evidence)
 
   if (!teamName && !headline && !summary && !context) return null
 
@@ -473,6 +498,7 @@ function normalizeSinceYesterdayItem(item, teamsById, teams, index) {
     todayRestedCount,
     hasRestedCounts: yesterdayRestedCount != null && todayRestedCount != null,
     workloadAdded,
+    publicEvidence,
     href,
   }
 }
@@ -1146,6 +1172,26 @@ function SinceYesterdayItem({ item }) {
           <p className="mt-2 text-sm leading-relaxed text-chalk500">
             {item.context}
           </p>
+        )}
+        {item.publicEvidence.length > 0 && (
+          <div className="mt-4 border border-dirt/75 bg-field/45 p-3">
+            <h3 className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
+              Evidence shown
+            </h3>
+            <dl className="mt-2 space-y-2">
+              {item.publicEvidence.map(row => (
+                <div key={row.key} className="grid grid-cols-1 gap-1 text-sm sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-baseline sm:gap-3">
+                  <dt className="text-chalk300">{row.label}</dt>
+                  <dd className="font-mono text-xs uppercase tracking-wider text-chalk500">
+                    Yesterday {row.yesterday}
+                  </dd>
+                  <dd className="font-mono text-xs uppercase tracking-wider text-chalk500">
+                    Today {row.today}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          </div>
         )}
         {item.hasRestedCounts && (
           <dl className="mt-4 grid grid-cols-2 gap-2 sm:max-w-sm">

@@ -245,6 +245,112 @@ def test_public_payload_renders_worsening_movement_as_baseball_consequence():
     assert 'fewer rested' not in text
 
 
+def test_public_payload_does_not_emit_healthier_copy_when_visible_counts_tighten():
+    result = build_public(
+        [
+            snapshot(
+                team_name='Boston Red Sox',
+                team_abbreviation='BOS',
+                clean=2,
+                resource_state='moderate',
+                capacity_state='thin',
+            ),
+        ],
+        [
+            snapshot(
+                team_name='Boston Red Sox',
+                team_abbreviation='BOS',
+                clean=3,
+                resource_state='strained',
+                capacity_state='thin',
+            ),
+        ],
+        workload={
+            'by_team_id': {
+                '1': {
+                    'workload_added': [
+                        {'pitcher_id': 81, 'name': 'Danny Coulombe', 'pitches': 37},
+                        {'pitcher_id': 90, 'name': 'Jovani Moran', 'pitches': 25},
+                        {'pitcher_id': 91, 'name': 'Justin Slaten', 'pitches': 17},
+                    ],
+                },
+            },
+        },
+    )
+    item = result['items'][0]
+    text = ' '.join([
+        item['public_headline'],
+        item['public_summary'],
+        item['public_context'],
+    ]).lower()
+
+    assert item['yesterday_rested_count'] == 3
+    assert item['today_rested_count'] == 2
+    assert item['workload_added'] == [
+        {'pitcher_id': 81, 'name': 'Danny Coulombe', 'pitches': 37},
+        {'pitcher_id': 90, 'name': 'Jovani Moran', 'pitches': 25},
+        {'pitcher_id': 91, 'name': 'Justin Slaten', 'pitches': 17},
+    ]
+    assert 'healthier' not in text
+    assert 'more breathing room' not in text
+    assert 'more ways to cover' not in text
+    assert 'thinner' in text
+    assert 'middle innings' in text
+    assert item['public_evidence'] == [
+        {
+            'label': 'Resource pool',
+            'yesterday': 'tight',
+            'today': 'less tight',
+        },
+    ]
+
+
+def test_public_payload_exposes_broader_non_rested_evidence_when_copy_uses_it():
+    result = build_public(
+        [
+            snapshot(
+                team_name='Milwaukee Brewers',
+                team_abbreviation='MIL',
+                active=9,
+                clean=3,
+                resource_state='strained',
+                capacity_state='reduced',
+            ),
+        ],
+        [
+            snapshot(
+                team_name='Milwaukee Brewers',
+                team_abbreviation='MIL',
+                active=7,
+                clean=3,
+                resource_state='strained',
+                capacity_state='reduced',
+            ),
+        ],
+        workload={
+            'by_team_id': {
+                '1': {
+                    'workload_added': [
+                        {'pitcher_id': 738, 'name': 'Craig Yoho', 'pitches': 25},
+                    ],
+                },
+            },
+        },
+    )
+    item = result['items'][0]
+
+    assert item['yesterday_rested_count'] == 3
+    assert item['today_rested_count'] == 3
+    assert 'more full-game coverage' in item['public_summary']
+    assert item['public_evidence'] == [
+        {
+            'label': 'Full-game routes',
+            'yesterday': 7,
+            'today': 9,
+        },
+    ]
+
+
 def test_public_payload_zero_count_prose_protection_and_banned_scan():
     result = build_public(
         [snapshot(team_name='Alpha Club', team_abbreviation='AAA', clean=3)],

@@ -10,6 +10,11 @@ from services.editorial_voice_contract_v1 import (
     count_to_baseball_language,
 )
 from services.what_changed_since_yesterday import (
+    CHANGE_COVERAGE_SAFETY,
+    CHANGE_RESOURCE_HEALTH,
+    CHANGE_RESTED_OPTIONS,
+    CHANGE_TRUST_STRUCTURE,
+    CHANGE_USABLE_DEPTH,
     STATUS_AVAILABLE,
     STATE_CHANGES_DETECTED,
     STATE_INSUFFICIENT_CONTEXT,
@@ -27,6 +32,15 @@ CAPABILITY = 'what_changed_since_yesterday_public_v1'
 DEFAULT_PUBLIC_ITEM_LIMIT = 6
 PUBLIC_WORKLOAD_ADDED_LIMIT = 3
 VOICE_SURFACE = 'what_changed_public'
+_IMPROVEMENT_DIRECTIONS = {'increased', 'improved', 'expanded'}
+_TIGHTENING_DIRECTIONS = {'decreased', 'worsened', 'narrowed'}
+_RESOURCE_STATE_LABELS = {
+    'strong': 'strong',
+    'moderate': 'less tight',
+    'strained': 'tight',
+    'depleted': 'depleted',
+    'unknown': 'unknown',
+}
 
 
 def _public_top_change(changes: list[dict[str, Any]]) -> dict[str, Any] | None:
@@ -138,6 +152,88 @@ def _public_workload_added(workload_team: dict[str, Any] | None) -> list[dict[st
         rows,
         key=lambda row: (-int(row.get('pitches') or 0), str(row.get('name') or '').lower()),
     )[:PUBLIC_WORKLOAD_ADDED_LIMIT]
+
+
+def _direction_family(direction: Any) -> str | None:
+    normalized = str(direction or '').strip().lower()
+    if normalized in _IMPROVEMENT_DIRECTIONS:
+        return 'improving'
+    if normalized in _TIGHTENING_DIRECTIONS:
+        return 'tightening'
+    return None
+
+
+def _rested_direction_family(counts: dict[str, int | None]) -> str | None:
+    yesterday = counts.get('yesterday_rested_count')
+    today = counts.get('today_rested_count')
+    if yesterday is None or today is None or yesterday == today:
+        return None
+    return 'improving' if today > yesterday else 'tightening'
+
+
+def _copy_contradicts_visible_counts(
+    top_change: dict[str, Any],
+    counts: dict[str, int | None],
+) -> bool:
+    top_direction = _direction_family(top_change.get('change_direction'))
+    rested_direction = _rested_direction_family(counts)
+    return bool(
+        top_direction
+        and rested_direction
+        and top_direction != rested_direction
+    )
+
+
+def _public_value(value: Any) -> str | int | None:
+    if value is None:
+        return None
+    if isinstance(value, int):
+        return value
+    text = str(value).replace(' Coverage Safety', '').replace('_', ' ').strip()
+    return text.lower() if text else None
+
+
+def _resource_value(value: Any) -> str | None:
+    normalized = str(value or '').strip().lower()
+    return _RESOURCE_STATE_LABELS.get(normalized) or _public_value(value)
+
+
+def _primary_public_evidence(top_change: dict[str, Any]) -> dict[str, Any] | None:
+    change_type = top_change.get('change_type')
+    if change_type == CHANGE_RESTED_OPTIONS:
+        return None
+
+    facts = _facts(top_change)
+    fact = facts[0] if facts else {}
+    previous = fact.get('previous_value')
+    current = fact.get('current_value')
+    if previous is None or current is None:
+        return None
+
+    labels = {
+        CHANGE_USABLE_DEPTH: 'Full-game routes',
+        CHANGE_RESOURCE_HEALTH: 'Resource pool',
+        CHANGE_COVERAGE_SAFETY: 'Game-stretch margin',
+        CHANGE_TRUST_STRUCTURE: 'Late-inning support arms',
+    }
+    label = labels.get(change_type)
+    if not label:
+        return None
+
+    if change_type == CHANGE_RESOURCE_HEALTH:
+        previous = _resource_value(previous)
+        current = _resource_value(current)
+    else:
+        previous = _public_value(previous)
+        current = _public_value(current)
+    if previous is None or current is None:
+        return None
+
+    return {
+        'label': label,
+        'yesterday': previous,
+        'today': current,
+    }
 
 
 def _safe_public_copy(text: str, fallback: str) -> str:
@@ -278,14 +374,24 @@ def _public_item(
     team_name = str(team_change.get('team_name') or 'This club').strip()
     counts = _rested_counts(team_change, top_change)
     workload_added = _public_workload_added(workload_team)
+    use_count_aligned_copy = _copy_contradicts_visible_counts(top_change, counts)
+    primary_evidence = _primary_public_evidence(top_change)
 
-    return {
+    item = {
         'key': f'{_team_key(team_change)}-what-changed',
         'team_id': team_change.get('team_id'),
         'team_name': team_change.get('team_name'),
         'team_abbreviation': team_change.get('team_abbreviation'),
-        'public_headline': copy.get('public_headline') or _public_headline(team_name, counts),
-        'public_summary': copy.get('public_summary') or _public_summary(team_name, counts),
+        'public_headline': (
+            _public_headline(team_name, counts)
+            if use_count_aligned_copy
+            else copy.get('public_headline') or _public_headline(team_name, counts)
+        ),
+        'public_summary': (
+            _public_summary(team_name, counts)
+            if use_count_aligned_copy
+            else copy.get('public_summary') or _public_summary(team_name, counts)
+        ),
         'public_context': _public_why_it_matters(team_name, counts, workload_added),
         'yesterday_rested_count': counts.get('yesterday_rested_count'),
         'today_rested_count': counts.get('today_rested_count'),
@@ -294,6 +400,9 @@ def _public_item(
         '_copy_summary': copy.get('public_summary'),
         '_copy_review_flags': list(copy.get('copy_review_flags') or []),
     }
+    if primary_evidence:
+        item['public_evidence'] = [primary_evidence]
+    return item
 
 
 def _repeated_values(items: list[dict[str, Any]], field: str) -> set[str]:
