@@ -303,6 +303,13 @@ def test_phase0e_switches_and_legacy_public_files_not_modified():
         'backend/api/bullpen.py',
         'backend/services/what_changed_since_yesterday_public.py',
     }
+    allowed_public_since_yesterday_rendering_files = {
+        # Branch 2 Today rendering permits only the product-event route and
+        # client analytics helper needed for what_changed_* observations and
+        # the stored public state field.
+        'backend/api/product_events.py',
+        'frontend/src/utils/analytics.js',
+    }
     allowed_files = (
         allowed_public_freshness_display_files
         | allowed_internal_admin_files
@@ -312,6 +319,7 @@ def test_phase0e_switches_and_legacy_public_files_not_modified():
         | allowed_bullpen_game_context_files
         | allowed_pitcher_ledger_coverage_files
         | allowed_public_what_changed_contract_files
+        | allowed_public_since_yesterday_rendering_files
     )
     forbidden_prefixes = (
         'backend/api/',

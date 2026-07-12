@@ -37,6 +37,7 @@ from services.product_events import (
     normalize_v4_player_id,
     normalize_v4_route,
     normalize_v4_source,
+    normalize_v4_state,
     normalize_v4_surface,
     normalize_v4_team_abbrev,
     record_story_event,
@@ -194,6 +195,7 @@ def product_event():
             team_abbrev=normalize_v4_team_abbrev(data.get('team_abbrev')),
             player_id=normalize_v4_player_id(data.get('player_id')),
             freshness_state=normalize_v4_freshness_state(data.get('freshness_state')),
+            state=normalize_v4_state(data.get('state')),
         )
         _commit_event_best_effort()
     return jsonify({'ok': True}), 200

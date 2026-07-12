@@ -23,6 +23,9 @@ from services.product_events import (
     TEAM_SURFACE_VIEWED,
     V4_PRODUCT_EVENTS,
     V4_RESERVED_EVENT_NAMES,
+    WHAT_CHANGED_ITEM_OPENED,
+    WHAT_CHANGED_TEAM_CLICKED,
+    WHAT_CHANGED_VIEWED,
 )
 
 
@@ -112,6 +115,62 @@ def test_product_event_records_team_and_player_context(app, client):
         }
 
 
+def test_product_event_records_what_changed_state(app, client):
+    client.post('/api/product/event', json={
+        'event_name': WHAT_CHANGED_VIEWED,
+        'anon_id': 'anon-v4',
+        'source': 'since_yesterday',
+        'surface': 'home',
+        'route': '/',
+        'state': 'no_meaningful_changes',
+    })
+
+    with app.app_context():
+        ev = _events(WHAT_CHANGED_VIEWED)[0]
+        assert ev.anon_id == 'anon-v4'
+        assert ev.source == 'since_yesterday'
+        assert ev.payload == {
+            'surface': 'home',
+            'route': '/',
+            'state': 'no_meaningful_changes',
+        }
+
+
+def test_product_event_records_what_changed_team_actions(app, client):
+    client.post('/api/product/event', json={
+        'event_name': WHAT_CHANGED_ITEM_OPENED,
+        'team_id': '121',
+        'team_abbrev': 'nym',
+        'source': 'since_yesterday',
+        'surface': 'home',
+        'route': '/',
+    })
+    client.post('/api/product/event', json={
+        'event_name': WHAT_CHANGED_TEAM_CLICKED,
+        'team_id': '137',
+        'team_abbrev': 'sf',
+        'source': 'since_yesterday',
+        'surface': 'home',
+        'route': '/',
+    })
+
+    with app.app_context():
+        opened = _events(WHAT_CHANGED_ITEM_OPENED)[0]
+        clicked = _events(WHAT_CHANGED_TEAM_CLICKED)[0]
+        assert opened.team_id == 121
+        assert opened.payload == {
+            'surface': 'home',
+            'route': '/',
+            'team_abbrev': 'NYM',
+        }
+        assert clicked.team_id == 137
+        assert clicked.payload == {
+            'surface': 'home',
+            'route': '/',
+            'team_abbrev': 'SF',
+        }
+
+
 def test_product_event_ignores_unknown_and_reserved_events(app, client):
     assert client.post('/api/product/event', json={'event_name': 'story_engaged'}).status_code == 200
     assert client.post('/api/product/event', json={'event_name': 'feedback_intent_clicked'}).status_code == 200
@@ -131,6 +190,7 @@ def test_product_event_drops_unsafe_optional_properties(app, client):
         'team_abbrev': 'too-long',
         'player_id': 'not-a-player',
         'freshness_state': 'current state',
+        'state': 'quiet day',
     })
 
     with app.app_context():

@@ -17,6 +17,7 @@ import {
   StaleDataNotice,
   UnavailableDataState,
 } from '../UI'
+import { formatFreshnessDate } from '../UI/Freshness'
 import {
   BULLPEN_LANDSCAPE_COLUMNS,
   getLandscapeView,
@@ -42,6 +43,18 @@ const TONIGHT_ERROR_TITLE =
   "Tonight's bullpen reads are temporarily unavailable."
 const TONIGHT_ERROR_BODY =
   'The rest of Today can still be used.'
+const SINCE_YESTERDAY_STATES = new Set([
+  'changes_detected',
+  'no_meaningful_changes',
+  'insufficient_context',
+])
+const SINCE_YESTERDAY_ALPHABETICAL_ORDERING = 'team_abbreviation_then_team_name'
+const SINCE_YESTERDAY_SOURCE = 'since_yesterday'
+const SINCE_YESTERDAY_TEAM_LINK_SOURCE = 'since-yesterday'
+const SINCE_YESTERDAY_EXPLAINER =
+  'Comparing complete, adjacent daily views only. Movement is descriptive, not predictive.'
+const SINCE_YESTERDAY_UNAVAILABLE_COPY =
+  'Since-yesterday movement is unavailable because the two daily views could not be compared safely. BaseballOS only compares complete, adjacent days.'
 export const AUDIENCE_SIGNUP_IDLE = 'idle'
 export const AUDIENCE_SIGNUP_LOADING = 'loading'
 export const AUDIENCE_SIGNUP_SUCCESS = 'success'
@@ -396,6 +409,165 @@ function sectionFreshness(payload, fallbackFreshness) {
   }
 
   return Object.keys(base).length ? base : null
+}
+
+function formatComparisonDate(value, fallback) {
+  return formatFreshnessDate(value) || textValue(value) || fallback
+}
+
+function normalizeSinceYesterdayWorkload(value) {
+  return (Array.isArray(value) ? value : [])
+    .map((row, index) => {
+      if (!row || typeof row !== 'object') return null
+      const name = firstTextValue(row.name, row.pitcher_name, row.player_name)
+      const pitches = numberValue(row.pitches)
+      if (!name || pitches == null) return null
+      return {
+        key: `${name}-${pitches}-${index}`,
+        name,
+        pitches,
+      }
+    })
+    .filter(Boolean)
+}
+
+function normalizeSinceYesterdayItem(item, teamsById, teams, index) {
+  if (!item || typeof item !== 'object') return null
+  const teamId = teamIdOf(item.team_id ?? item.teamId)
+  const fromTeams = teamId != null ? teamsById.get(teamId) : null
+  const directTeam = teamOptionValue(item)
+  const fromName = findTeamByName(item.team_name, teams)
+  const teamName = cleanTeamName(item.team_name)
+    || fromTeams?.teamName
+    || fromName?.teamName
+    || directTeam?.teamName
+    || directTeam?.teamAbbr
+    || (teamId != null ? `Team ${teamId}` : null)
+  const teamAbbr = textValue(item.team_abbreviation)
+    || fromTeams?.teamAbbr
+    || fromName?.teamAbbr
+    || directTeam?.teamAbbr
+  const resolvedTeamId = teamId ?? fromTeams?.teamId ?? fromName?.teamId ?? directTeam?.teamId
+  const href = teamBoardHrefIfResolvable({
+    teamId: resolvedTeamId,
+    teamAbbr,
+  }, SINCE_YESTERDAY_TEAM_LINK_SOURCE)
+  const headline = textValue(item.public_headline)
+  const summary = textValue(item.public_summary)
+  const context = textValue(item.public_context)
+  const yesterdayRestedCount = numberValue(item.yesterday_rested_count)
+  const todayRestedCount = numberValue(item.today_rested_count)
+  const workloadAdded = normalizeSinceYesterdayWorkload(item.workload_added)
+
+  if (!teamName && !headline && !summary && !context) return null
+
+  return {
+    key: textValue(item.key) || `${resolvedTeamId || teamAbbr || teamName || 'team'}-${index}`,
+    teamId: resolvedTeamId,
+    teamName: teamName || teamAbbr || 'This club',
+    teamAbbr,
+    headline,
+    summary,
+    context,
+    yesterdayRestedCount,
+    todayRestedCount,
+    hasRestedCounts: yesterdayRestedCount != null && todayRestedCount != null,
+    workloadAdded,
+    href,
+  }
+}
+
+export function getSinceYesterdayView(dashboard, teams = []) {
+  if (!dashboard || typeof dashboard !== 'object' || payloadIsFailClosed(dashboard)) {
+    return null
+  }
+  const block = dashboard.what_changed_since_yesterday
+  if (!block || typeof block !== 'object') return null
+
+  const state = textValue(block.state)
+  if (!SINCE_YESTERDAY_STATES.has(state)) return null
+
+  const comparison = block.comparison && typeof block.comparison === 'object'
+    ? block.comparison
+    : {}
+  const previousDate = textValue(comparison.previous_data_through)
+  const currentDate = textValue(comparison.current_data_through)
+  const itemCountValue = numberValue(block.item_count)
+  const baseView = {
+    state,
+    comparisonAvailable: comparison.comparison_available === true,
+    previousDate,
+    currentDate,
+    previousDateLabel: formatComparisonDate(previousDate, 'the previous view'),
+    currentDateLabel: formatComparisonDate(currentDate, 'the current view'),
+  }
+
+  if (state === 'changes_detected') {
+    const teamsById = buildTeamsById(teams)
+    const items = (Array.isArray(block.items) ? block.items : [])
+      .map((item, index) => normalizeSinceYesterdayItem(item, teamsById, teams, index))
+      .filter(Boolean)
+    if (items.length === 0) return null
+    const itemCount = itemCountValue ?? items.length
+    const countCopy = `${itemCount} teams show meaningful, evidence-backed movement in this daily comparison.`
+    return {
+      ...baseView,
+      items,
+      itemCount,
+      orderingBasis: textValue(block.ordering_basis),
+      footerCopy: block.ordering_basis === SINCE_YESTERDAY_ALPHABETICAL_ORDERING
+        ? `Teams are listed alphabetically. ${countCopy}`
+        : countCopy,
+    }
+  }
+
+  if (state === 'no_meaningful_changes') {
+    return {
+      ...baseView,
+      items: [],
+      itemCount: itemCountValue ?? 0,
+      quietCopy: `No meaningful bullpen movement was found between ${baseView.previousDateLabel} and ${baseView.currentDateLabel}. Quiet days are reported as quiet — nothing is padded.`,
+    }
+  }
+
+  return {
+    ...baseView,
+    items: [],
+    itemCount: itemCountValue ?? 0,
+    unavailableCopy: SINCE_YESTERDAY_UNAVAILABLE_COPY,
+  }
+}
+
+export function trackSinceYesterdayViewed(view, options = {}) {
+  if (!view?.state) return Promise.resolve(false)
+  return trackAnalyticsEventOnce(ANALYTICS_EVENTS.WHAT_CHANGED_VIEWED, {
+    surface: 'home',
+    route: '/',
+    source: SINCE_YESTERDAY_SOURCE,
+    state: view.state,
+  }, options)
+}
+
+export function trackSinceYesterdayItemOpened(item, options = {}) {
+  if (!item) return Promise.resolve(false)
+  return trackAnalyticsEvent(ANALYTICS_EVENTS.WHAT_CHANGED_ITEM_OPENED, {
+    surface: 'home',
+    route: '/',
+    source: SINCE_YESTERDAY_SOURCE,
+    team_id: item.teamId,
+    team_abbrev: item.teamAbbr,
+  }, options)
+}
+
+export function trackSinceYesterdayTeamClicked(item, options = {}) {
+  if (!item) return Promise.resolve(false)
+  return trackAnalyticsEvent(ANALYTICS_EVENTS.WHAT_CHANGED_TEAM_CLICKED, {
+    surface: 'home',
+    route: '/',
+    source: SINCE_YESTERDAY_SOURCE,
+    team_id: item.teamId,
+    team_abbrev: item.teamAbbr,
+  }, options)
 }
 
 function publishedFreshnessBadgeLabel(stale, freshness) {
@@ -944,6 +1116,143 @@ function TonightCard({ card }) {
   )
 }
 
+function SinceYesterdayItem({ item }) {
+  return (
+    <details
+      className="group border border-dirt bg-dugout p-0"
+      onToggle={event => {
+        if (event.currentTarget.open) {
+          trackSinceYesterdayItemOpened(item)
+        }
+      }}
+    >
+      <summary className="flex cursor-pointer list-none flex-col gap-1 px-4 py-3 transition-colors hover:bg-amber/5 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/60">
+        <span className="font-mono text-[11px] uppercase tracking-widest text-chalk500">
+          {item.teamName}
+        </span>
+        {item.headline && (
+          <span className="font-display text-xl leading-tight tracking-wide text-chalk100">
+            {item.headline}
+          </span>
+        )}
+      </summary>
+      <div className="border-t border-dirt px-4 py-4">
+        {item.summary && (
+          <p className="text-sm leading-relaxed text-chalk300">
+            {item.summary}
+          </p>
+        )}
+        {item.context && (
+          <p className="mt-2 text-sm leading-relaxed text-chalk500">
+            {item.context}
+          </p>
+        )}
+        {item.hasRestedCounts && (
+          <dl className="mt-4 grid grid-cols-2 gap-2 sm:max-w-sm">
+            <div className="border border-dirt/75 bg-field/45 p-3">
+              <dt className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
+                Yesterday
+              </dt>
+              <dd className="mt-1 font-display text-2xl tracking-wide text-chalk100">
+                {item.yesterdayRestedCount}
+              </dd>
+              <dd className="mt-1 text-xs text-chalk500">
+                rested relievers
+              </dd>
+            </div>
+            <div className="border border-dirt/75 bg-field/45 p-3">
+              <dt className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
+                Today
+              </dt>
+              <dd className="mt-1 font-display text-2xl tracking-wide text-chalk100">
+                {item.todayRestedCount}
+              </dd>
+              <dd className="mt-1 text-xs text-chalk500">
+                rested relievers
+              </dd>
+            </div>
+          </dl>
+        )}
+        {item.workloadAdded.length > 0 && (
+          <div className="mt-4 border border-dirt/75 bg-field/45 p-3">
+            <h3 className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
+              Workload added
+            </h3>
+            <ul className="mt-2 space-y-1">
+              {item.workloadAdded.map(row => (
+                <li key={row.key} className="flex flex-wrap items-baseline justify-between gap-2 text-sm text-chalk300">
+                  <span>{row.name}</span>
+                  <span className="font-mono text-xs uppercase tracking-wider text-chalk500">
+                    {row.pitches} {row.pitches === 1 ? 'pitch' : 'pitches'}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {item.href && (
+          <div className="mt-4">
+            <Link
+              to={item.href}
+              onClick={() => trackSinceYesterdayTeamClicked(item)}
+              className="inline-flex min-h-10 items-center rounded border border-amber/40 bg-amber/10 px-4 py-2 font-mono text-xs uppercase tracking-wider text-amber transition-colors hover:bg-amber/20"
+              aria-label={`Open the bullpen board for ${item.teamName}`}
+            >
+              Open team bullpen board
+            </Link>
+          </div>
+        )}
+      </div>
+    </details>
+  )
+}
+
+function SinceYesterdaySection({ dashboard, teams }) {
+  const view = getSinceYesterdayView(dashboard, teams)
+
+  useEffect(() => {
+    trackSinceYesterdayViewed(view)
+  }, [view?.state])
+
+  if (!view) return null
+
+  return (
+    <SectionShell
+      id="since-yesterday"
+      eyebrow="SINCE YESTERDAY"
+      title="What changed across MLB bullpens"
+      subtitle={SINCE_YESTERDAY_EXPLAINER}
+    >
+      {(view.previousDate || view.currentDate) && (
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <DataThroughStamp date={view.previousDate} label="Previous view" />
+          <DataThroughStamp date={view.currentDate} label="Current view" />
+        </div>
+      )}
+      {view.state === 'changes_detected' ? (
+        <>
+          <div className="grid grid-cols-1 gap-3">
+            {view.items.map(item => (
+              <SinceYesterdayItem key={item.key} item={item} />
+            ))}
+          </div>
+          <p className="mt-3 text-xs leading-relaxed text-chalk500">
+            {view.footerCopy}
+          </p>
+        </>
+      ) : (
+        <div className="border border-dirt bg-dugout p-4" role="status">
+          <p className="text-sm leading-relaxed text-chalk300">
+            {view.state === 'no_meaningful_changes'
+              ? view.quietCopy
+              : view.unavailableCopy}
+          </p>
+        </div>
+      )}
+    </SectionShell>
+  )
+}
+
 function TonightSection({
   tonight,
   teams,
@@ -1248,6 +1557,7 @@ export function IntelligenceSurfaceView({
         onRetry={onRetryLandscape}
         freshness={pageFreshness}
       />
+      <SinceYesterdaySection dashboard={dashboard} teams={teams} />
       <TonightSection
         tonight={tonight}
         teams={teams}

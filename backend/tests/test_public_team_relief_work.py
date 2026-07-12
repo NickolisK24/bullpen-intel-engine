@@ -1215,12 +1215,20 @@ def test_existing_public_routes_behavior_freeze(monkeypatch):
         # dashboard storage condition and snapshot-unavailable fallback state.
         'backend/api/bullpen.py',
     }
+    allowed_public_since_yesterday_rendering_files = {
+        # Branch 2 Today rendering permits only the client analytics helper and
+        # tests for the what_changed_viewed, what_changed_item_opened, and
+        # what_changed_team_clicked observations.
+        'frontend/src/utils/analytics.js',
+        'frontend/tests/analytics.test.mjs',
+    }
     assert not [
         path for path in changed
         if path not in allowed_phase_a_audience_signup_files
         if path not in allowed_bullpen_game_context_files
         if path not in allowed_pitcher_ledger_coverage_files
         if path not in allowed_public_what_changed_contract_files
+        if path not in allowed_public_since_yesterday_rendering_files
         if (
             path in blocked_files and path not in allowed_internal_admin_files
         )
