@@ -8,6 +8,8 @@ from api.bullpen import bullpen_bp
 from models.fatigue_score import FatigueScore
 from models.game_log import GameLog
 from models.pitcher import Pitcher
+from models.scheduled_game import ScheduledGame
+from models.team_game_pitching_split import TeamGamePitchingSplit
 import models.prospect  # noqa: F401
 from services.availability import STATUS_AVAILABLE
 from services.bullpen_capacity import (
@@ -23,7 +25,7 @@ from services.bullpen_stability import (
 )
 from services.rotation_support_pressure import (
     CAPABILITY as ROTATION_CAPABILITY,
-    CURRENT_ASSIGNMENT_LIMITATION as ROTATION_CURRENT_ASSIGNMENT_LIMITATION,
+    HISTORICAL_TEAM_ATTRIBUTION_LIMITATION as ROTATION_HISTORICAL_ATTRIBUTION_LIMITATION,
     OPENER_BULK_LIMITATION,
 )
 from services.roster_status import STATUS_ACTIVE, STATUS_IL_15
@@ -117,6 +119,52 @@ def _add_log(
     ))
 
 
+def _add_scheduled_game(team_id, game_pk, days_ago):
+    game_day = date.today() - timedelta(days=days_ago)
+    db.session.add(ScheduledGame(
+        team_id=team_id,
+        game_pk=game_pk,
+        game_date=game_day,
+        status_state=ScheduledGame.STATE_FINAL,
+        status_code='F',
+        home_away='home',
+        opponent_team_id=999,
+        game_type='R',
+    ))
+
+
+def _add_team_game_split(team_id, game_pk, days_ago, starter, *, starter_outs, bullpen_outs):
+    game_day = date.today() - timedelta(days=days_ago)
+    db.session.add(TeamGamePitchingSplit(
+        team_id=team_id,
+        mlb_game_pk=game_pk,
+        game_date=game_day,
+        game_type='R',
+        opponent_team_id=999,
+        home_away='home',
+        starter_pitcher_id=starter.id,
+        starter_mlb_id=starter.mlb_id,
+        starter_identity_status=TeamGamePitchingSplit.STARTER_KNOWN,
+        starter_outs_recorded=starter_outs,
+        starter_pitches_thrown=76,
+        starter_batters_faced=20,
+        starter_games_started=1,
+        bullpen_outs_recorded=bullpen_outs,
+        bullpen_pitches_thrown=36,
+        bullpen_batters_faced=10,
+        relievers_used_count=3,
+        total_team_outs=starter_outs + bullpen_outs,
+        total_team_pitches=112,
+        total_team_batters_faced=30,
+        split_completeness_status=TeamGamePitchingSplit.STATUS_COMPLETE,
+        split_reason_codes=[],
+        suspended_resumed_linkage_status=TeamGamePitchingSplit.LINKAGE_NONE,
+        calendar_context_status=TeamGamePitchingSplit.STATUS_COMPLETE,
+        calendar_reason_codes=[],
+        source='test:team_game_pitching_split',
+    ))
+
+
 def _seed_supportive_rotation_with_elevated_capacity():
     team_id = TEAM_CAPACITY_ELEVATED
     team_abbr = 'CIX'
@@ -143,6 +191,8 @@ def _seed_supportive_rotation_with_elevated_capacity():
     ]
     for idx, starter in enumerate(starters, start=1):
         game_pk = 601000 + idx
+        _add_scheduled_game(team_id, game_pk, idx)
+        _add_team_game_split(team_id, game_pk, idx, starter, starter_outs=18, bullpen_outs=9)
         _add_log(starter, game_pk=game_pk, days_ago=idx, outs=18, games_started=1, pitches=76)
         for reliever in relievers:
             _add_log(reliever, game_pk=game_pk, days_ago=idx, outs=3, games_started=0, pitches=10)
@@ -172,6 +222,8 @@ def _seed_heavy_rotation_with_clear_capacity():
     ]
     for idx, starter in enumerate(starters, start=1):
         game_pk = 602000 + idx
+        _add_scheduled_game(team_id, game_pk, idx)
+        _add_team_game_split(team_id, game_pk, idx, starter, starter_outs=12, bullpen_outs=15)
         _add_log(starter, game_pk=game_pk, days_ago=idx, outs=12, games_started=1, pitches=66)
         for reliever in relievers:
             _add_log(reliever, game_pk=game_pk, days_ago=idx, outs=5, games_started=0, pitches=14)
@@ -394,11 +446,14 @@ def test_source_limitations_and_definitions_survive_in_final_board_payload(clien
     assert 'not classified as fully unavailable' in available_definition
     assert 'not be read as clean or fully available capacity' in available_definition
 
-    assert ROTATION_CURRENT_ASSIGNMENT_LIMITATION in rotation['source_limitations']
+    assert ROTATION_HISTORICAL_ATTRIBUTION_LIMITATION in rotation['source_limitations']
     assert OPENER_BULK_LIMITATION in rotation['source_limitations']
+    assert ROTATION_HISTORICAL_ATTRIBUTION_LIMITATION in rotation['limitations']
+    assert OPENER_BULK_LIMITATION in rotation['limitations']
+    assert all('currently assigned pitchers' not in item for item in rotation['source_limitations'])
     assert STABILITY_CURRENT_ASSIGNMENT_LIMITATION in stability['source_limitations']
     assert STABILITY_USAGE_PATTERN_LIMITATION in stability['source_limitations']
-    assert ROTATION_CURRENT_ASSIGNMENT_LIMITATION in environment['source_limitations']
+    assert ROTATION_HISTORICAL_ATTRIBUTION_LIMITATION in environment['source_limitations']
     assert OPENER_BULK_LIMITATION in environment['source_limitations']
     assert STABILITY_CURRENT_ASSIGNMENT_LIMITATION in environment['source_limitations']
     assert STABILITY_USAGE_PATTERN_LIMITATION in environment['source_limitations']

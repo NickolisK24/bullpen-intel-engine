@@ -67,3 +67,29 @@ prove trusted pairs without guessing, which is forbidden.
 
 Decision 4/5 cannot be ratified from fallback-only evidence. The route stays
 admin-gated and internal-only. Public daily-changes work remains blocked.
+
+## Production Ratification - July 12, 2026
+
+Phase 0H production ratification is recorded from the July 12, 2026 protected
+audit evidence.
+
+Verified evidence:
+
+- The snapshot-audit route remained internal/admin-only.
+- The audit window was 14 days.
+- 11 historically published snapshots were inspected.
+- 11 published snapshots were trusted.
+- Six trusted adjacent pairs were found.
+- Two adjacent pairs were fully comparable.
+- Four unsuitable adjacent pairs were correctly withheld.
+- Zero non-adjacent comparisons were produced.
+- Recent rows were not truncated.
+- An incomplete candidate snapshot did not replace the last valid publication.
+- Decisions 4/5 were ratified.
+- D-15 is closed.
+- Public What Changed is technically unblocked.
+
+Recent partial scheduled syncs remain an operational monitoring concern. They
+do not invalidate Phase 0H ratification because the trusted snapshot path failed
+closed correctly: partial or incomplete candidates did not replace the last
+valid publication and unsuitable comparisons were withheld.
