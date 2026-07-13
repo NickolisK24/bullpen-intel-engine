@@ -66,19 +66,29 @@ const DATA_STATE_STYLE = {
   },
 }
 
+function asOptionalNumber(value) {
+  if (value === null || value === undefined || value === '') return null
+  const number = Number(value)
+  return Number.isFinite(number) ? number : null
+}
+
 function buildRows(counts = {}, order = [], labelFor = value => value, styleFor = () => ({})) {
   return order.map((key) => ({
     key,
     label: labelFor(key),
-    count: Number(counts?.[key] || 0),
+    count: asOptionalNumber(counts?.[key]),
     style: styleFor(key),
   }))
 }
 
 function publicStatusCounts(statuses = {}) {
+  const unavailable = asOptionalNumber(statuses?.Unavailable)
+  const avoid = asOptionalNumber(statuses?.Avoid)
   return {
     ...statuses,
-    Unavailable: Number(statuses?.Unavailable || 0) + Number(statuses?.Avoid || 0),
+    Unavailable: unavailable === null && avoid === null
+      ? null
+      : Number(unavailable || 0) + Number(avoid || 0),
   }
 }
 
@@ -95,13 +105,17 @@ function getPrimaryTrustNote(summary, limitedByData, isCurrentAvailability) {
 }
 
 function getDominantStatusRow(rows = []) {
-  return rows.reduce((dominant, row) => {
+  return rows.filter(row => row.count !== null).reduce((dominant, row) => {
     if (!dominant) return row
     return row.count > dominant.count ? row : dominant
   }, null)
 }
 
-function getOperationalSummary(rows = [], total = 0, isCurrentAvailability = true) {
+function getOperationalSummary(rows = [], total = 0, isCurrentAvailability = true, countsWithheld = false) {
+  if (countsWithheld) {
+    return 'Current active-roster coverage could not be verified, so dashboard availability counts are withheld.'
+  }
+
   if (total <= 0) {
     return isCurrentAvailability
       ? 'No current bullpen availability records are available for this summary.'
@@ -165,14 +179,15 @@ function getModeCopy(mode, isCurrentAvailability) {
 
 export function getAvailabilityDashboardSummaryView(summary = null) {
   const mode = summary?.mode || 'unknown'
-  const totalPitchers = Number(summary?.total_pitchers || 0)
+  const countsWithheld = summary?.counts_withheld === true || summary?.countsWithheld === true
+  const totalPitchers = countsWithheld ? null : Number(summary?.total_pitchers || 0)
   const dataState = summary?.data_state || {}
-  const stale = Number(dataState.stale || 0)
-  const missing = Number(dataState.missing || 0)
-  const incomplete = Number(dataState.incomplete || 0)
-  const failed = Number(dataState.failed || 0)
-  const historical = Number(dataState.historical || 0)
-  const unknown = Number(dataState.unknown || 0)
+  const stale = Number(asOptionalNumber(dataState.stale) || 0)
+  const missing = Number(asOptionalNumber(dataState.missing) || 0)
+  const incomplete = Number(asOptionalNumber(dataState.incomplete) || 0)
+  const failed = Number(asOptionalNumber(dataState.failed) || 0)
+  const historical = Number(asOptionalNumber(dataState.historical) || 0)
+  const unknown = Number(asOptionalNumber(dataState.unknown) || 0)
   const limitedDataCount = stale + missing + incomplete + failed + historical + unknown
   const limitedByData = totalPitchers > 0 && limitedDataCount > totalPitchers / 2
   const isCurrentAvailability = summary?.is_current_availability === true
@@ -183,12 +198,15 @@ export function getAvailabilityDashboardSummaryView(summary = null) {
     getAvailabilityStatusLabel,
     status => getAvailabilityBadgeView(status).style,
   )
-  const statusTotal = statusRows.reduce((total, row) => total + row.count, 0)
+  const statusTotal = countsWithheld
+    ? null
+    : statusRows.reduce((total, row) => total + Number(row.count || 0), 0)
 
   return {
     mode,
     ...modeCopy,
     isCurrentAvailability,
+    countsWithheld,
     totalPitchers,
     limitedByData,
     limitedDataCount,
@@ -197,7 +215,7 @@ export function getAvailabilityDashboardSummaryView(summary = null) {
     statusRows,
     statusTotal,
     dominantStatus: getDominantStatusRow(statusRows),
-    operationalSummary: getOperationalSummary(statusRows, statusTotal, isCurrentAvailability),
+    operationalSummary: getOperationalSummary(statusRows, statusTotal, isCurrentAvailability, countsWithheld),
     confidenceRows: buildRows(
       summary?.confidence,
       DASHBOARD_CONFIDENCE_ORDER,

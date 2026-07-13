@@ -49,7 +49,7 @@ from services.play_by_play_foundation import (
     FINAL_PBP_FETCH_ENTITY_TYPE,
     process_final_play_by_play_foundation,
 )
-from services.roster_status import STATUS_ACTIVE
+from services.roster_status import STATUS_ACTIVE, STATUS_UNKNOWN
 from services.roster_status_sync import sync_roster_statuses
 from services.team_game_pitching_splits import (
     safe_recompute_team_game_pitching_splits_for_game,
@@ -89,6 +89,8 @@ POSTGAME_BOXSCORE_CORRECTION_SOURCE = 'postgame_boxscore'
 POSTGAME_PITCHER_RESOLUTION_SOURCE = 'mlb_stats_api:postgame_boxscore_pitching_line'
 POSTGAME_PITCHING_LINE_AUTHORITY = 'completed_game_boxscore_pitching_section'
 POSTGAME_PITCHER_TEAM_ASSIGNMENT_STATUS = 'ASSIGNED'
+OFFICIAL_ROSTER_SYNC_SOURCE_PREFIX = 'mlb_stats_api:roster_sync:'
+OFFICIAL_TEAM_ASSIGNMENT_SOURCE_PREFIX = 'mlb_stats_api:team_assignment_sync:'
 POSTGAME_MARKER_STATUS_FULLY_PROCESSED = PostgameProcessedGame.STATUS_FULLY_PROCESSED
 POSTGAME_MARKER_STATUS_INCOMPLETE = PostgameProcessedGame.STATUS_INCOMPLETE
 POSTGAME_MARKER_STATUS_FAILED = PostgameProcessedGame.STATUS_FAILED
@@ -881,6 +883,29 @@ def _pitcher_resolution_failure(
     }
 
 
+def _source_startswith(value, prefix):
+    return bool(value and str(value).startswith(prefix))
+
+
+def _official_roster_cache_blocks_postgame_active(pitcher):
+    source = getattr(pitcher, 'roster_status_source', None)
+    if not _source_startswith(source, OFFICIAL_ROSTER_SYNC_SOURCE_PREFIX):
+        return False
+    return getattr(pitcher, 'roster_status', None) != STATUS_ACTIVE
+
+
+def _official_assignment_blocks_postgame_current(pitcher, team):
+    source = getattr(pitcher, 'team_assignment_source', None)
+    if not _source_startswith(source, OFFICIAL_TEAM_ASSIGNMENT_SOURCE_PREFIX):
+        return False
+    status = getattr(pitcher, 'team_assignment_status', None)
+    current_team_id = getattr(pitcher, 'team_id', None)
+    return (
+        status != POSTGAME_PITCHER_TEAM_ASSIGNMENT_STATUS
+        or current_team_id not in (None, team.get('team_id'))
+    )
+
+
 def _apply_pitcher_authority_from_line(
     pitcher,
     line: dict,
@@ -898,31 +923,46 @@ def _apply_pitcher_authority_from_line(
         pitcher.full_name = line_name
 
     desired = {
-        'active': True,
         'position': pitcher.position or _pitching_line_record_position(line) or 'P',
-        'team_id': team['team_id'],
-        'team_name': team.get('team_name') or pitcher.team_name,
-        'team_abbreviation': team.get('team_abbreviation') or pitcher.team_abbreviation,
-        'team_assignment_status': POSTGAME_PITCHER_TEAM_ASSIGNMENT_STATUS,
-        'team_assignment_source': POSTGAME_PITCHER_RESOLUTION_SOURCE,
-        'roster_status': STATUS_ACTIVE,
-        'roster_status_source': POSTGAME_PITCHER_RESOLUTION_SOURCE,
-        'roster_status_raw_code': STATUS_ACTIVE,
-        'roster_status_raw_description': (
-            'Final-game pitching line; position_override_from_pitching_line'
-            if position_override
-            else 'Final-game pitching line'
-        ),
     }
+    assignment_blocked = _official_assignment_blocks_postgame_current(pitcher, team)
+    roster_blocked = _official_roster_cache_blocks_postgame_active(pitcher)
+
+    if not assignment_blocked:
+        desired.update({
+            'active': True,
+            'team_id': team['team_id'],
+            'team_name': team.get('team_name') or pitcher.team_name,
+            'team_abbreviation': team.get('team_abbreviation') or pitcher.team_abbreviation,
+            'team_assignment_status': POSTGAME_PITCHER_TEAM_ASSIGNMENT_STATUS,
+            'team_assignment_source': POSTGAME_PITCHER_RESOLUTION_SOURCE,
+        })
+
+    if not roster_blocked and getattr(pitcher, 'roster_status', None) != STATUS_ACTIVE:
+        desired.update({
+            'roster_status': STATUS_UNKNOWN,
+            'roster_status_source': POSTGAME_PITCHER_RESOLUTION_SOURCE,
+            'roster_status_raw_code': None,
+            'roster_status_raw_description': (
+                'Final-game pitching line; current roster status unverified; '
+                'position_override_from_pitching_line'
+                if position_override
+                else 'Final-game pitching line; current roster status unverified'
+            ),
+        })
     changed = False
     for attr, value in desired.items():
         if getattr(pitcher, attr) != value:
             setattr(pitcher, attr, value)
             changed = True
 
-    if changed or pitcher.team_assignment_updated_at is None:
+    if not assignment_blocked and (changed or pitcher.team_assignment_updated_at is None):
         pitcher.team_assignment_updated_at = timestamp
-    if changed or pitcher.roster_status_updated_at is None:
+    if (
+        'roster_status' in desired
+        and not roster_blocked
+        and (changed or pitcher.roster_status_updated_at is None)
+    ):
         pitcher.roster_status_updated_at = timestamp
 
     return {

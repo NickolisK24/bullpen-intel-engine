@@ -591,6 +591,8 @@ Exit criteria:
 
 ### 10. Phase 0I - Roster Availability Context
 
+Status: Complete.
+
 Goal: explain public roster pressure without private injury or health claims.
 
 Scope:
@@ -855,7 +857,7 @@ Review cadence:
 | 7 | Phase 0F - Pitcher Detail Evidence Surface | Complete | Internal pitcher evidence review, public backend recent-work endpoint, public Recent Work panel, and exit audit completed without public evidence surfacing. |
 | 8 | Phase 0G - Team Bullpen Evidence Surface | Complete | Complete after the Phase 0G exit audit branch passes; internal team evidence review, public team relief-work endpoint, public Recent Bullpen Work panel, and source-separation audit are recorded. |
 | 9 | Phase 0H - Trusted Snapshot + What Changed Foundation | Complete | Production ratified July 12, 2026: 11 historically published snapshots, 11 trusted published snapshots, six trusted adjacent pairs, two fully comparable adjacent pairs, four unsuitable pairs withheld, zero non-adjacent comparisons, recent rows not truncated, incomplete candidate did not replace the last valid publication, Decisions 4/5 ratified, D-15 closed, and public What Changed technically unblocked. Recent partial scheduled syncs remain an operational monitoring concern but did not invalidate Phase 0H because the system failed closed correctly. |
-| 10 | Phase 0I - Roster Availability Context | Not started | Use public roster evidence without private health claims. |
+| 10 | Phase 0I - Roster Availability Context | Complete | Public roster-readiness contract added; Team Board and dashboard fail closed by withholding current roster-depth counts when official roster snapshot evidence is stale, missing, partial, or inconsistent; postgame cache writes no longer override official roster evidence. |
 | 11 | Phase 0J - Starter Exposure Context | Complete | Backend contract verification and frontend closeout are complete: Team Board renders factual seven-day starter-length context, links to Recent Bullpen Work receipts, shows limited states honestly, and Today remains a teaser to the Team Board. |
 | 12 | Phase 0K - Methodology, Limitations, and Data Trust Rewrite | Not started | Align methodology and trust docs with the V4 evidence layer. |
 | 13 | Phase 0L - Analytics Event Alignment | Not started | Measure evidence use and comprehension without changing baseball claims. |

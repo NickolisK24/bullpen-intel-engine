@@ -81,9 +81,22 @@ const injuryIlContext = {
   ],
 }
 
+const readyRosterReadiness = {
+  capability: 'public_roster_readiness_v1',
+  readiness_state: 'ready',
+  claims_available: true,
+  counts_withheld: false,
+  data_through: '2026-06-04',
+  reader_limitations: [],
+}
+
 test('injury il context normalizes the dashboard payload', () => {
   const view = normalizeInjuryIlContext({
-    injury_il_context: injuryIlContext,
+    roster_readiness: readyRosterReadiness,
+    injury_il_context: {
+      ...injuryIlContext,
+      roster_readiness: readyRosterReadiness,
+    },
   })
 
   assert.equal(view.league.injuredListCount, 9)
@@ -99,7 +112,14 @@ test('injury il context normalizes the dashboard payload', () => {
 
 test('dashboard renders compact league bullpen availability context', () => {
   const html = inRouter(React.createElement(DashboardView, {
-    data: { ...dashboardData, injury_il_context: injuryIlContext },
+    data: {
+      ...dashboardData,
+      roster_readiness: readyRosterReadiness,
+      injury_il_context: {
+        ...injuryIlContext,
+        roster_readiness: readyRosterReadiness,
+      },
+    },
   }))
 
   assert.ok(htmlIncludes(html, 'Bullpen Availability Context'))
@@ -117,7 +137,14 @@ test('dashboard renders compact league bullpen availability context', () => {
 
 test('dashboard does not render followed team context on the Phase 0 launch surface', () => {
   const html = inRouter(React.createElement(DashboardView, {
-    data: { ...dashboardData, injury_il_context: injuryIlContext },
+    data: {
+      ...dashboardData,
+      roster_readiness: readyRosterReadiness,
+      injury_il_context: {
+        ...injuryIlContext,
+        roster_readiness: readyRosterReadiness,
+      },
+    },
   }))
 
   assert.ok(!htmlIncludes(html, 'Followed Team'))
@@ -139,4 +166,15 @@ test('dashboard suppresses injury il section when league context is unusable', (
   }))
 
   assert.ok(!htmlIncludes(html, 'Bullpen Availability Context'))
+})
+
+test('dashboard withholds roster context counts when readiness is missing', () => {
+  const html = inRouter(React.createElement(DashboardView, {
+    data: { ...dashboardData, injury_il_context: injuryIlContext },
+  }))
+
+  assert.ok(htmlIncludes(html, 'Current active-roster coverage could not be verified'))
+  assert.ok(htmlIncludes(html, 'Roster counts withheld'))
+  assert.ok(htmlIncludes(html, 'Withheld'))
+  assert.ok(!htmlIncludes(html, '9 bullpen arms are currently on the injured list.'))
 })

@@ -80,7 +80,16 @@ const EMPTY_GROUP_COPY = {
 // 'Unavailable' group. Publicly there is only one Unavailable read, so the two
 // buckets merge into a single group before anything renders. Workload-based
 // arms list first, matching the canonical backend order.
-function mergePublicUnavailableGroups(groups) {
+function rosterClaimNumber(value) {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null
+}
+
+export function rosterCountsAreWithheld(board) {
+  const readiness = board?.roster_authority?.readiness || board?.rosterReadiness || board?.roster_readiness || {}
+  return readiness.counts_withheld === true || readiness.countsWithheld === true || readiness.claims_available === false || readiness.claimsAvailable === false
+}
+
+function mergePublicUnavailableGroups(groups, { countsWithheld = false } = {}) {
   const unavailableStatuses = new Set(['Avoid', 'Unavailable'])
   const toMerge = groups.filter(group => unavailableStatuses.has(group?.status))
   if (!toMerge.length) return groups
@@ -89,7 +98,8 @@ function mergePublicUnavailableGroups(groups) {
     status: 'Unavailable',
     label: GROUP_FALLBACK_META.Unavailable.label,
     description: GROUP_FALLBACK_META.Unavailable.description,
-    count: toMerge.reduce((sum, group) => sum + group.count, 0),
+    count: countsWithheld ? null : toMerge.reduce((sum, group) => sum + (group.count || 0), 0),
+    countWithheld: countsWithheld || toMerge.some(group => group.countWithheld),
     pitchers: toMerge.flatMap(group => group.pitchers),
     emptyCopy: EMPTY_GROUP_COPY.Unavailable,
     badge: getAvailabilityBadgeView('Unavailable'),
@@ -112,25 +122,32 @@ function mergePublicUnavailableGroups(groups) {
 
 export function getBoardGroups(board) {
   const groups = Array.isArray(board?.groups) ? board.groups : []
+  const countsWithheld = rosterCountsAreWithheld(board)
   if (groups.length) {
-    return mergePublicUnavailableGroups(groups.map(group => normalizeGroup(group)))
+    return mergePublicUnavailableGroups(
+      groups.map(group => normalizeGroup(group, { countsWithheld })),
+      { countsWithheld },
+    )
   }
   // Fallback: present every canonical group as empty so the board structure is
   // stable even if the payload omitted groups.
   return mergePublicUnavailableGroups(
-    BOARD_GROUP_ORDER.map(status => normalizeGroup({ status, pitchers: [] })),
+    BOARD_GROUP_ORDER.map(status => normalizeGroup({ status, pitchers: [] }, { countsWithheld })),
+    { countsWithheld },
   )
 }
 
-function normalizeGroup(group) {
+function normalizeGroup(group, { countsWithheld = false } = {}) {
   const status = group?.status
   const fallback = GROUP_FALLBACK_META[status] || { label: status || 'Unknown', description: '' }
   const pitchers = Array.isArray(group?.pitchers) ? group.pitchers : []
+  const countWithheld = countsWithheld || group?.count_withheld === true || group?.countWithheld === true
   return {
     status,
     label: getAvailabilityStatusLabel(group?.label || fallback.label),
     description: group?.description || fallback.description,
-    count: typeof group?.count === 'number' ? group.count : pitchers.length,
+    count: countWithheld ? null : (typeof group?.count === 'number' ? group.count : pitchers.length),
+    countWithheld,
     pitchers,
     emptyCopy: EMPTY_GROUP_COPY[status] || 'No pitchers in this group.',
     badge: getAvailabilityBadgeView(status),
@@ -262,12 +279,14 @@ export function filterBoardForViewMode(board, mode) {
     }))
     .map(group => ({
       ...group,
-      count: group.pitchers.length,
+      count: rosterCountsAreWithheld(board) ? null : group.pitchers.length,
     }))
   const displayGroups = normalized === BULLPEN_VIEW_MODE_UNAVAILABLE_ONLY
-    ? filteredGroups.filter(group => group.status === 'Unavailable' || group.count > 0)
+    ? filteredGroups.filter(group => group.status === 'Unavailable' || (group.count || 0) > 0)
     : filteredGroups
-  const totalPitchers = displayGroups.reduce((sum, group) => sum + group.count, 0)
+  const totalPitchers = rosterCountsAreWithheld(board)
+    ? null
+    : displayGroups.reduce((sum, group) => sum + group.count, 0)
 
   return {
     ...board,
@@ -357,12 +376,19 @@ export function getRosterAuthorityView(rosterAuthority, { renderedCards = null }
   const population = authority.population || {}
   const evidence = authority.evidence || {}
   const limitations = Array.isArray(authority.limitations) ? authority.limitations : []
+  const readiness = authority.readiness || {}
+  const readinessLimitations = Array.isArray(readiness.reader_limitations)
+    ? readiness.reader_limitations
+    : Array.isArray(readiness.readerLimitations)
+      ? readiness.readerLimitations
+      : []
+  const countsWithheld = readiness.counts_withheld === true || readiness.claims_available === false
   const hasAuthority = Boolean(authority.capability || authority.counts || authority.population)
 
-  const bullpenArms = Number(counts.bullpen_arms || 0)
-  const offActiveRoster = Number(counts.inactive_roster_context_count || 0)
-  const rosterStatusPending = Number(counts.roster_unknown_count || 0)
-  const totalCandidates = Number(population.total_candidates || 0)
+  const bullpenArms = rosterClaimNumber(counts.bullpen_arms)
+  const offActiveRoster = rosterClaimNumber(counts.inactive_roster_context_count)
+  const rosterStatusPending = rosterClaimNumber(counts.roster_unknown_count)
+  const totalCandidates = rosterClaimNumber(population.total_candidates)
   const coverage = typeof population.roster_status_coverage === 'number'
     ? population.roster_status_coverage
     : null
@@ -377,37 +403,43 @@ export function getRosterAuthorityView(rosterAuthority, { renderedCards = null }
     : null
   const shownOffActiveRoster = renderedIds == null
     ? null
-    : offRosterEvidence.filter(entry => entry.pitcherId != null && renderedIds.has(entry.pitcherId)).length
+    : countsWithheld
+      ? null
+      : offRosterEvidence.filter(entry => entry.pitcherId != null && renderedIds.has(entry.pitcherId)).length
 
-  const statusLabel = coverage == null
+  const statusLabel = countsWithheld
+    ? 'Roster status unverified'
+    : coverage == null
     ? 'Roster status not loaded'
     : coverage >= 1
       ? 'Roster status confirmed'
       : coverage > 0
         ? 'Roster status partial'
         : 'Roster status unavailable'
-  const isComplete = coverage != null && coverage >= 1 && rosterStatusPending === 0
+  const isComplete = !countsWithheld && coverage != null && coverage >= 1 && rosterStatusPending === 0
+  const mergedLimitations = [...limitations, ...readinessLimitations]
 
   return {
     hasAuthority,
     invariant: authority.invariant === true,
     shouldShow: hasAuthority && (
-      totalCandidates > 0 || offActiveRoster > 0 || rosterStatusPending > 0 || limitations.length > 0
+      countsWithheld || (totalCandidates || 0) > 0 || (offActiveRoster || 0) > 0 || (rosterStatusPending || 0) > 0 || mergedLimitations.length > 0
     ),
-    isProminent: !isComplete || offActiveRoster > 0 || limitations.length > 0,
+    isProminent: countsWithheld || !isComplete || (offActiveRoster || 0) > 0 || mergedLimitations.length > 0,
+    countsWithheld,
     statusLabel,
     bullpenArms,
     offActiveRoster,
     shownOffActiveRoster,
     rosterStatusPending,
     coverage,
-    coverageLabel: coverage == null ? 'Not loaded' : `${Math.round(coverage * 100)}%`,
+    coverageLabel: countsWithheld ? 'Withheld' : (coverage == null ? 'Not loaded' : `${Math.round(coverage * 100)}%`),
     evidence: {
       bullpenArms: bullpenEvidence,
       offActiveRoster: offRosterEvidence,
       rosterStatusPending: pendingEvidence,
     },
-    limitations,
+    limitations: mergedLimitations,
     tone: isComplete
       ? { borderColor: '#10b98155', backgroundColor: '#10b98112', color: '#6ee7b7' }
       : { borderColor: '#f5a62355', backgroundColor: '#f5a62312', color: '#f5a623' },
@@ -694,12 +726,16 @@ export function getTeamOperatingStateContext(board) {
 
 export function getBoardTotals(board) {
   const groups = getBoardGroups(board)
-  const total = typeof board?.total_pitchers === 'number'
+  const countsWithheld = rosterCountsAreWithheld(board)
+  const total = countsWithheld
+    ? null
+    : typeof board?.total_pitchers === 'number'
     ? board.total_pitchers
     : groups.reduce((sum, group) => sum + group.count, 0)
   return {
     total,
-    isEmpty: total === 0,
+    countWithheld: countsWithheld,
+    isEmpty: !countsWithheld && total === 0,
     countsByStatus: Object.fromEntries(groups.map(group => [group.status, group.count])),
   }
 }

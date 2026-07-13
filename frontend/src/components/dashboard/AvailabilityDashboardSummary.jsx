@@ -3,7 +3,20 @@ import { useState } from 'react'
 import { getAvailabilityDashboardSummaryView } from './availabilityDashboardSummaryView'
 
 function getPct(count, total) {
-  return total > 0 ? Math.round((count / total) * 100) : 0
+  return total > 0 && count !== null ? Math.round((count / total) * 100) : 0
+}
+
+function formatCount(count) {
+  return count === null || count === undefined ? 'Withheld' : count.toLocaleString()
+}
+
+function formatCountTitle(label, count, pct) {
+  if (count === null || count === undefined) return `${label}: Withheld`
+  return `${label}: ${count.toLocaleString()} (${pct}%)`
+}
+
+function formatPctLabel(count, pct) {
+  return count === null || count === undefined ? 'Withheld' : `${pct}%`
 }
 
 function DistributionRows({ title, rows, total }) {
@@ -12,7 +25,7 @@ function DistributionRows({ title, rows, total }) {
       <div className="mb-3 text-chalk600 text-[10px] font-mono uppercase tracking-wider">{title}</div>
       <div className="space-y-2.5">
         {rows.map((row) => {
-          const pct = total > 0 ? Math.round((row.count / total) * 100) : 0
+          const pct = getPct(row.count, total)
           return (
             <div key={row.key}>
               <div className="mb-1 flex items-center justify-between gap-3">
@@ -25,7 +38,7 @@ function DistributionRows({ title, rows, total }) {
                   <span className="truncate font-mono text-xs text-chalk400">{row.label}</span>
                 </div>
                 <span className="shrink-0 font-mono text-xs font-semibold text-chalk200">
-                  {row.count.toLocaleString()}
+                  {formatCount(row.count)}
                 </span>
               </div>
               <div className="h-1.5 overflow-hidden rounded-full bg-dirt">
@@ -35,7 +48,7 @@ function DistributionRows({ title, rows, total }) {
                     width: `${pct}%`,
                     backgroundColor: row.style.color || '#94a3b8',
                   }}
-                  title={`${row.label}: ${row.count.toLocaleString()} (${pct}%)`}
+                  title={formatCountTitle(row.label, row.count, pct)}
                 />
               </div>
             </div>
@@ -47,11 +60,11 @@ function DistributionRows({ title, rows, total }) {
 }
 
 function AvailabilityDistributionBar({ rows, total, summary, title, ariaLabel }) {
-  const maxCount = rows.reduce((max, row) => Math.max(max, row.count), 0)
+  const maxCount = rows.reduce((max, row) => Math.max(max, Number(row.count || 0)), 0)
   const rowSummary = rows
     .map((row) => {
       const pct = getPct(row.count, total)
-      return `${row.label}: ${row.count.toLocaleString()} (${pct}%)`
+      return formatCountTitle(row.label, row.count, pct)
     })
     .join('; ')
 
@@ -65,7 +78,7 @@ function AvailabilityDistributionBar({ rows, total, summary, title, ariaLabel })
           <p className="mt-1 text-xs leading-relaxed text-chalk500">{summary}</p>
         </div>
         <div className="shrink-0 font-mono text-[11px] text-chalk600">
-          {total.toLocaleString()} status records
+          {formatCount(total)} status records
         </div>
       </div>
 
@@ -75,7 +88,7 @@ function AvailabilityDistributionBar({ rows, total, summary, title, ariaLabel })
         aria-label={`${ariaLabel}. ${summary}. ${rowSummary}`}
       >
         {rows.map((row) => {
-          const pct = total > 0 ? (row.count / total) * 100 : 0
+          const pct = total > 0 && row.count !== null ? (row.count / total) * 100 : 0
           return (
             <div
               key={row.key}
@@ -84,7 +97,7 @@ function AvailabilityDistributionBar({ rows, total, summary, title, ariaLabel })
                 width: `${pct}%`,
                 backgroundColor: row.style.color || '#94a3b8',
               }}
-              title={`${row.label}: ${row.count.toLocaleString()} (${Math.round(pct)}%)`}
+              title={formatCountTitle(row.label, row.count, Math.round(pct))}
             />
           )
         })}
@@ -111,11 +124,11 @@ function AvailabilityDistributionBar({ rows, total, summary, title, ariaLabel })
                     aria-hidden="true"
                   />
                   <span className="truncate font-mono text-[11px] text-chalk400">
-                    {row.label}: {row.count.toLocaleString()}
+                    {row.label}: {formatCount(row.count)}
                   </span>
                 </span>
                 <span className="shrink-0 font-mono text-[10px] text-chalk600">
-                  {pct}%
+                  {formatPctLabel(row.count, pct)}
                 </span>
               </div>
             </div>
@@ -143,7 +156,7 @@ export default function AvailabilityDashboardSummary({ summary, compact = false,
           <div className="min-w-0">
             <div className="text-chalk400 font-mono text-xs uppercase tracking-widest">{view.title}</div>
             <div className="mt-1 text-chalk600 font-mono text-[11px] leading-relaxed">
-              {view.modeLabel} · {view.totalPitchers.toLocaleString()} {view.totalLabel}
+              {view.modeLabel} · {formatCount(view.totalPitchers)} {view.totalLabel}
             </div>
           </div>
           <div className={`rounded border px-3 py-2 text-xs font-mono leading-relaxed ${trustClass}`}>
@@ -199,7 +212,7 @@ export default function AvailabilityDashboardSummary({ summary, compact = false,
         <div className="min-w-0">
           <div className="text-chalk400 font-mono text-xs uppercase tracking-widest">{view.title}</div>
           <div className="mt-1 text-chalk600 font-mono text-[11px] leading-relaxed">
-            {view.modeLabel} · {view.totalPitchers.toLocaleString()} {view.totalLabel}
+            {view.modeLabel} · {formatCount(view.totalPitchers)} {view.totalLabel}
           </div>
         </div>
         <div className={`rounded border px-3 py-2 text-xs font-mono leading-relaxed ${trustClass}`}>

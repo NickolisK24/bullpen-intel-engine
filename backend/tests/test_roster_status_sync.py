@@ -17,6 +17,7 @@ from models.fatigue_score import FatigueScore
 from models.game_log import GameLog
 from models.pitcher import Pitcher
 from models.roster_status_snapshot import RosterStatusSnapshot
+from models.sync_run import SyncRun
 from services.roster_status import (
     STATUS_40_MAN_ONLY,
     STATUS_ACTIVE,
@@ -110,6 +111,21 @@ def seed_pitcher(name, mlb_id, team_id=113, days_ago=1, innings=1.0):
     ))
     db.session.commit()
     return pitcher
+
+
+def seed_successful_roster_sync_run(timestamp=None):
+    timestamp = timestamp or datetime.utcnow()
+    run = SyncRun(
+        job_name='daily_sync',
+        status='success',
+        stage='complete',
+        source='test_fixture',
+        started_at=timestamp,
+        completed_at=timestamp,
+    )
+    db.session.add(run)
+    db.session.flush()
+    return run
 
 
 def reds_rosters():
@@ -319,7 +335,13 @@ def test_roster_sync_feeds_default_board_filtering_and_context_labels(client):
         seed_pitcher('Pierce Johnson', 572955)
         seed_pitcher('Connor Phillips', 683175)
         seed_pitcher('Jose Franco', 683742)
-        sync_roster_statuses(team_ids=[113], client=FakeRosterClient(reds_rosters()))
+        sync_run = seed_successful_roster_sync_run()
+        sync_roster_statuses(
+            team_ids=[113],
+            client=FakeRosterClient(reds_rosters()),
+            sync_run_id=sync_run.id,
+            snapshot_date=date.today(),
+        )
 
     default_body = client.get('/api/bullpen/teams/113/board').get_json()
     default_cards = [card for group in default_body['groups'] for card in group['pitchers']]

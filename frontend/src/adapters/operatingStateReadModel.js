@@ -469,6 +469,29 @@ function getWorkloadEvidence(context) {
 }
 
 function buildRosterPressure(authority) {
+  const readiness = authority?.readiness || {}
+  const readinessLimitations = Array.isArray(readiness.reader_limitations)
+    ? readiness.reader_limitations
+    : Array.isArray(readiness.readerLimitations)
+      ? readiness.readerLimitations
+      : []
+  if (readiness.counts_withheld === true || readiness.claims_available === false) {
+    return {
+      hasPressure: false,
+      injuredList: null,
+      inactive: null,
+      unknown: null,
+      concern: buildConcern(
+        'Current roster depth is unverified',
+        'Recent workload evidence is available, but current usable bullpen depth is withheld until roster status is verified.',
+      ),
+      evidence: [],
+      limitations: safeTextList([
+        ...safeTextList(authority?.limitations),
+        ...readinessLimitations,
+      ]),
+    }
+  }
   const counts = authority?.counts || {}
   const categories = authority?.category_counts || {}
   const injuredList = numericCount(categories.injured_list)

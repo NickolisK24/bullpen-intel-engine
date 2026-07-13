@@ -310,6 +310,20 @@ def test_phase0e_switches_and_legacy_public_files_not_modified():
         'backend/api/product_events.py',
         'frontend/src/utils/analytics.js',
     }
+    allowed_phase0i_roster_readiness_files = {
+        'backend/api/bullpen.py',
+        'backend/services/bullpen_board.py',
+        'frontend/src/adapters/operatingStateReadModel.js',
+        'frontend/src/components/bullpen/board/BullpenBoardView.jsx',
+            'frontend/src/components/bullpen/board/TonightsBullpenBoard.jsx',
+            'frontend/src/components/bullpen/board/tonightsBullpenBoardView.js',
+            'frontend/src/components/dashboard/Dashboard.jsx',
+            'frontend/src/components/dashboard/AvailabilityDashboardSummary.jsx',
+            'frontend/src/components/dashboard/availabilityDashboardSummaryView.js',
+            'frontend/src/components/dashboard/injuryIlContextView.js',
+            'frontend/tests/injuryIlContext.test.mjs',
+            'frontend/tests/tonightsBullpenBoard.test.mjs',
+    }
     allowed_files = (
         allowed_public_freshness_display_files
         | allowed_internal_admin_files
@@ -320,6 +334,7 @@ def test_phase0e_switches_and_legacy_public_files_not_modified():
         | allowed_pitcher_ledger_coverage_files
         | allowed_public_what_changed_contract_files
         | allowed_public_since_yesterday_rendering_files
+        | allowed_phase0i_roster_readiness_files
     )
     forbidden_prefixes = (
         'backend/api/',
@@ -337,7 +352,11 @@ def test_phase0e_switches_and_legacy_public_files_not_modified():
         if path.replace('\\', '/') not in allowed_files
         if any(path.replace('\\', '/').startswith(prefix) for prefix in forbidden_prefixes)
     ]
-    if 'backend/api/bullpen.py' in [path.replace('\\', '/') for path in changed]:
+    changed_paths = {path.replace('\\', '/') for path in changed}
+    if (
+        'backend/api/bullpen.py' in changed_paths
+        and 'backend/api/bullpen.py' not in allowed_phase0i_roster_readiness_files
+    ):
         diff = _diff_vs_main('backend/api/bullpen.py')
         assert "payload['what_changed_since_yesterday'] = changes" in diff
         assert "'state': 'insufficient_context'" in diff

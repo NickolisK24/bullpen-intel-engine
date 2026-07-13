@@ -3,6 +3,7 @@ from datetime import date, datetime, timedelta
 import pytest
 from flask import Flask
 from tests.db_config import configure_test_database, create_test_schema, drop_test_schema
+from tests.roster_readiness_fixture import seed_roster_readiness_snapshots
 from sqlalchemy import inspect
 
 import services.sync as sync_service
@@ -28,6 +29,11 @@ def client(tmp_path, monkeypatch):
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     db.init_app(app)
     app.register_blueprint(bullpen_bp, url_prefix='/api/bullpen')
+
+    @app.before_request
+    def _seed_ready_roster_snapshots_for_team_change_tests():
+        seed_roster_readiness_snapshots()
+
     with app.app_context():
         create_test_schema(app)
         try:

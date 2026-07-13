@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 
 import pytest
 from flask import Flask
@@ -16,7 +16,7 @@ from models.sync_failure import SyncFailure
 from services.bullpen_population import eligible_bullpen_pitcher_contexts
 from services import sync_metadata
 from services.mlb_api import mlb_client
-from services.roster_status import STATUS_ACTIVE, STATUS_MINORS
+from services.roster_status import STATUS_IL_15, STATUS_MINORS, STATUS_UNKNOWN
 from utils.db import db
 
 
@@ -179,7 +179,7 @@ def test_unknown_postgame_pitcher_is_created_and_not_duplicated(app, monkeypatch
     assert pitcher_payload['team_id'] == 1
     assert pitcher_payload['team_abbreviation'] == 'HME'
     assert pitcher_payload['team_assignment_status'] == 'ASSIGNED'
-    assert pitcher_payload['roster_status'] == STATUS_ACTIVE
+    assert pitcher_payload['roster_status'] == STATUS_UNKNOWN
     assert len(logs) == 1
     assert pitcher_count == 1
     assert failure_count == 0
@@ -232,8 +232,47 @@ def test_inactive_pitcher_is_reactivated_from_authoritative_final_line(app, monk
     assert pitcher_payload['team_name'] == 'Home Club'
     assert pitcher_payload['team_abbreviation'] == 'HME'
     assert pitcher_payload['team_assignment_status'] == 'ASSIGNED'
-    assert pitcher_payload['roster_status'] == STATUS_ACTIVE
+    assert pitcher_payload['roster_status'] == STATUS_UNKNOWN
     assert pitches_thrown == 14
+
+
+def test_postgame_line_does_not_override_official_inactive_roster_status(app, monkeypatch):
+    with app.app_context():
+        pitcher = Pitcher(
+            mlb_id=405,
+            full_name='Official IL Reliever',
+            team_id=1,
+            team_name='Home Club',
+            team_abbreviation='HME',
+            team_assignment_status='ASSIGNED',
+            team_assignment_source='mlb_stats_api:team_assignment_sync:active',
+            team_assignment_updated_at=datetime(2026, 6, 20, 10, 0, 0),
+            position='P',
+            active=True,
+            roster_status=STATUS_IL_15,
+            roster_status_source='mlb_stats_api:roster_sync:fullRoster',
+            roster_status_updated_at=datetime(2026, 6, 20, 10, 0, 0),
+        )
+        db.session.add(pitcher)
+        db.session.commit()
+        monkeypatch.setattr(
+            mlb_client,
+            'get_game_boxscore',
+            lambda game_pk: _boxscore(player_id=405, name='Official IL Reliever'),
+        )
+
+        result = sync_service.process_completed_game_for_postgame_refresh(
+            _game(8107),
+            schedule_date=date(2026, 6, 20),
+        )
+        db.session.commit()
+        refreshed = Pitcher.query.filter_by(mlb_id=405).one()
+        log = GameLog.query.filter_by(pitcher_id=refreshed.id, mlb_game_pk=8107).one()
+
+    assert result['logs_added'] == 1
+    assert log.pitches_thrown == 14
+    assert refreshed.roster_status == STATUS_IL_15
+    assert refreshed.roster_status_source == 'mlb_stats_api:roster_sync:fullRoster'
 
 
 def test_authoritative_two_way_pitching_line_ingests_without_bullpen_overclaim(
@@ -329,10 +368,10 @@ def test_authoritative_two_way_pitching_line_ingests_without_bullpen_overclaim(
     assert log_count == 1
     assert pitcher_payload['full_name'] == 'Shohei Ohtani'
     assert pitcher_payload['position'] == 'DH'
-    assert pitcher_payload['roster_status'] == STATUS_ACTIVE
+    assert pitcher_payload['roster_status'] == STATUS_UNKNOWN
     assert (
         pitcher_payload['roster_status_raw_description']
-        == 'Final-game pitching line; position_override_from_pitching_line'
+        == 'Final-game pitching line; current roster status unverified; position_override_from_pitching_line'
     )
     assert log_payload['games_started'] == 1
     assert log_payload['pitches_thrown'] == 87
