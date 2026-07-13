@@ -120,3 +120,57 @@ production maintenance workflow.
 - `python backend/scripts/sync_trace.py --player <mlb_id> --date <YYYY-MM-DD> [--game-pk PK] [--no-network]`
 - `python backend/scripts/run_postgame_refresh.py --date <YYYY-MM-DD> --source manual_backfill`
 - Kill switch (operators only, logged): `APPEARANCE_LEDGER_GATE_ENABLED=false`
+
+## Roster-readiness recovery notes (2026-07-13)
+
+Two production blockers were fixed together after Phase 0I shipped; the
+behaviors below are load-bearing for the daily pipeline.
+
+**Batched roster cache-divergence scan.** Roster readiness
+(`public_roster_readiness_v1`) checks cache-vs-snapshot divergence on every
+Team Board build. The scan is set-based: one query for the active-pitcher
+universe plus one window-function query for each pitcher's latest snapshot
+(`latest_roster_status_snapshots_by_pitcher_id`), instead of one query per
+pitcher. Divergence semantics are unchanged — same pitcher universe, same
+latest-snapshot ordering (`snapshot_date desc, updated_at desc, id desc`),
+same compared fields — and equivalence plus a query-count bound (≤10 queries
+per readiness evaluation, flat as the population grows) are enforced by
+`backend/tests/test_roster_divergence_batching.py`. This keeps the static
+team-story export (30 boards per run) far inside its 15-minute job timeout;
+the export also logs one `Building team board i/N` line per team so a failed
+run identifies the last completed team.
+
+**Non-player transaction components.** The MLB transactions feed includes
+team-level trade components (cash considerations, players to be named later,
+international slot money) that reference no person. Rows whose structured
+record carries neither `player_mlb_id` nor `player_full_name` are classified
+`non_player_transaction`: counted in the sync summary (`non_player_count`),
+logged with their transaction id and type code, never stored as player
+transactions, and never dead-lettered. A row that references a person (a name
+is present) but lacks a usable id is still a `player_transactions_identity`
+dead letter and keeps the run partial — that gate is unchanged.
+
+**Dead-letter reconciliation.** When a source transaction is later stored
+successfully or deterministically classified non-player, its exact matching
+unresolved `player_transactions_identity` dead letters are marked resolved
+(timestamped, idempotent; rows are preserved, never deleted). A failure that
+repeats across runs still counts against `records_failed` on every run but no
+longer accumulates one duplicate unresolved row per run.
+
+**Verifying roster readiness after a deploy or sync:**
+
+```
+curl -s https://<backend-host>/api/bullpen/teams/142/board \
+  | jq '.roster_authority.readiness | {readiness_state, claims_available, counts_withheld, reason_codes, coverage}'
+```
+
+`claims_available: true` means roster claims are being served; otherwise
+`reason_codes` names the exact blocker.
+
+**Confirming the current run's snapshot published (not an older one):** the
+sync log line `Dashboard snapshot DB write completed snapshot_id=<id>
+status=ready published=True` must show the new id, and
+`/api/bullpen/dashboard` must serve that same `snapshot.snapshot_id`. A line
+showing `status=pending published=False` means publication was withheld for
+this run and the previously trusted snapshot is still serving — the workflow's
+cache-verification step alone does not prove the new candidate published.

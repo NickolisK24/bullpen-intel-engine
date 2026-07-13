@@ -538,6 +538,46 @@ def latest_roster_status_snapshot_for_pitcher(pitcher_id):
     )
 
 
+def latest_roster_status_snapshots_by_pitcher_id(pitcher_ids):
+    """
+    Latest roster snapshot per pitcher, resolved in one set-based query.
+
+    Shares the exact recency authority of
+    ``latest_roster_status_snapshot_for_pitcher`` (snapshot_date desc,
+    updated_at desc, id desc) via a window function, so batched readers and the
+    per-pitcher reader can never disagree about which snapshot is latest.
+    """
+    pitcher_ids = tuple(dict.fromkeys(pitcher_ids or ()))
+    if not pitcher_ids:
+        return {}
+    recency_rank = db.func.row_number().over(
+        partition_by=RosterStatusSnapshot.pitcher_id,
+        order_by=(
+            RosterStatusSnapshot.snapshot_date.desc(),
+            RosterStatusSnapshot.updated_at.desc(),
+            RosterStatusSnapshot.id.desc(),
+        ),
+    ).label('recency_rank')
+    ranked = (
+        db.session.query(
+            RosterStatusSnapshot.id.label('snapshot_id'),
+            recency_rank,
+        )
+        .filter(RosterStatusSnapshot.pitcher_id.in_(pitcher_ids))
+        .subquery()
+    )
+    latest_ids = (
+        db.select(ranked.c.snapshot_id)
+        .where(ranked.c.recency_rank == 1)
+    )
+    snapshots = (
+        RosterStatusSnapshot.query
+        .filter(RosterStatusSnapshot.id.in_(latest_ids))
+        .all()
+    )
+    return {snapshot.pitcher_id: snapshot for snapshot in snapshots}
+
+
 def _cache_timestamp(snapshot):
     return (
         snapshot.last_corrected_at
@@ -575,9 +615,20 @@ def roster_status_cache_divergences(team_ids=None):
     if team_ids:
         query = query.filter(Pitcher.team_id.in_(tuple(team_ids)))
 
+    # Set-based: one query for the pitcher universe, one window-function query
+    # for every pitcher's latest snapshot. Same universe, same recency
+    # authority, and same field comparison as the historical per-pitcher loop —
+    # only the query shape changed (the loop issued one query per pitcher).
+    pitchers = query.all()
+    if not pitchers:
+        return []
+    latest_by_pitcher_id = latest_roster_status_snapshots_by_pitcher_id(
+        pitcher.id for pitcher in pitchers
+    )
+
     divergences = []
-    for pitcher in query.all():
-        snapshot = latest_roster_status_snapshot_for_pitcher(pitcher.id)
+    for pitcher in pitchers:
+        snapshot = latest_by_pitcher_id.get(pitcher.id)
         if snapshot is None:
             continue
         mismatched = [
