@@ -178,7 +178,12 @@ function ReliefWorkWindows({ windows }) {
 
 function PanelShell({ children }) {
   return (
-    <section className="space-y-2.5" aria-labelledby="team-relief-work-title">
+    <section
+      id="team-relief-work"
+      className="scroll-mt-24 space-y-2.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/50"
+      aria-labelledby="team-relief-work-title"
+      tabIndex={-1}
+    >
       <div>
         <div id="team-relief-work-title" className="text-chalk600 text-[10px] font-mono uppercase tracking-wider">
           Recent Bullpen Work

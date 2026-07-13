@@ -397,76 +397,134 @@ test('stale and fail-closed freshness carries degraded flags and limitations', (
   assert.ok(model.limitations.includes('Latest workload data is outside the active freshness window.'))
 })
 
-test('starter support is omitted when sample is insufficient', () => {
+function assertNoStarterStatusLanguage(value) {
+  const json = JSON.stringify(value)
+  for (const term of ['supportive', 'neutral', 'moderate_pressure', 'heavy_pressure']) {
+    assert.equal(json.includes(term), false, `leaked starter status ${term}`)
+  }
+}
+
+test('starter support renders a quiet limited state when sample is insufficient', () => {
   const board = teamOperatingBoard()
   board.rotation_support_pressure = {
     status: 'limited_read',
     games_analyzed: 1,
+    games_in_window: 4,
+    window_days: 7,
+    starter_avg_innings: 4.8,
+    bullpen_outs_required: 25,
+    short_start_count: 1,
+    limitation_reasons: ['insufficient_trustworthy_games', 'partial_source_coverage'],
     summary: 'Low-sample starter support should not render.',
-    limitations: ['Rotation support sample is limited.'],
+    limitations: ['Rotation Support Pressure raw limitation should not render.'],
   }
   const model = modelFor(board, { scope: 'team' })
 
-  assert.equal(model.starterSupportPressure, null)
+  assert.equal(model.starterSupportPressure.status, 'limited')
+  assert.equal(model.starterSupportPressure.summary, 'Starter-length context is limited. 1 of 4 recent games can be analyzed.')
+  assert.deepEqual(model.starterSupportPressure.reasons, [
+    'In the analyzed start, starters averaged 4.8 innings.',
+    'The bullpen covered 8 1/3 innings after those analyzed starts.',
+    'Not enough complete recent starts are available for a full starter-length read.',
+    'The recent game window is partial, so this starter-length read is limited.',
+  ])
+  assert.deepEqual(model.starterSupportPressure.limitations, [
+    'Not enough complete recent starts are available for a full starter-length read.',
+    'The recent game window is partial, so this starter-length read is limited.',
+  ])
+  assert.equal(model.starterSupportPressure.receiptsHref, '#team-relief-work')
+  assert.equal(model.starterSupportPressure.receiptsLabel, 'View game-level work')
   assert.equal(JSON.stringify(model).includes('Low-sample starter support should not render.'), false)
-  assert.equal(JSON.stringify(model).includes('Rotation support sample is limited.'), false)
+  assert.equal(JSON.stringify(model).includes('Rotation Support Pressure raw limitation should not render.'), false)
+  assertNoStarterStatusLanguage(model)
 })
 
-test('starter support renders when sample and status are safe', () => {
+test('starter support renders factual starter length and bullpen coverage', () => {
   const board = teamOperatingBoard()
   board.rotation_support_pressure = {
-    status: 'moderate_pressure',
-    games_analyzed: 3,
-    summary: 'The rotation averaged 5.4 innings per start over the last 7 days.',
-    limitations: ['Some recent team games are excluded because starter workload data is incomplete.'],
+    status: 'heavy_pressure',
+    games_in_window: 5,
+    games_analyzed: 5,
+    window_days: 7,
+    starter_avg_innings: 4.8,
+    bullpen_outs_required: 63,
+    short_start_count: 3,
+    summary: 'The rotation averaged 4.8 innings per start over the last 7 days, requiring 21.0 bullpen innings.',
+    limitations: ['Rotation Support Pressure should not render.'],
   }
   const model = modelFor(board, { scope: 'team' })
 
   assert.deepEqual(model.starterSupportPressure, {
-    status: 'moderate_pressure',
-    gamesAnalyzed: 3,
+    status: 'available',
+    gamesAnalyzed: 5,
     label: null,
-    summary: 'Recent starter length has increased the chance this bullpen needs to cover more outs.',
-    reasons: ['The rotation averaged 5.4 innings per start over the last 7 days.'],
-    evidence: ['The rotation averaged 5.4 innings per start over the last 7 days.'],
-    limitations: ['Some recent team games are excluded because starter workload data is incomplete.'],
+    summary: 'Across the seven-day window, starters averaged 4.8 innings in 5 analyzed starts. The bullpen covered 21 innings after those starts.',
+    reasons: ['3 of 5 analyzed starts ended before five innings.'],
+    evidence: [
+      'Across the seven-day window, starters averaged 4.8 innings in 5 analyzed starts. The bullpen covered 21 innings after those starts.',
+      '3 of 5 analyzed starts ended before five innings.',
+    ],
+    limitations: [],
+    receiptsHref: '#team-relief-work',
+    receiptsLabel: 'View game-level work',
   })
-  assert.ok(model.evidence.includes('The rotation averaged 5.4 innings per start over the last 7 days.'))
-  assert.ok(model.limitations.includes('Some recent team games are excluded because starter workload data is incomplete.'))
+  assert.ok(model.evidence.includes('Across the seven-day window, starters averaged 4.8 innings in 5 analyzed starts. The bullpen covered 21 innings after those starts.'))
+  assert.equal(JSON.stringify(model).includes('The rotation averaged 4.8 innings per start over the last 7 days'), false)
+  assertNoStarterStatusLanguage(model)
 })
 
-test('starter support renders stable copy for neutral or supportive reads', () => {
+test('starter support renders factual copy without grading stable samples', () => {
   const board = teamOperatingBoard()
   board.rotation_support_pressure = {
     status: 'supportive',
+    games_in_window: 4,
     games_analyzed: 4,
+    window_days: 7,
+    starter_avg_innings: 6.1,
+    bullpen_outs_required: 35,
+    short_start_count: 0,
     summary: 'The rotation averaged 6.1 innings per start over the last 7 days.',
   }
   const model = modelFor(board, { scope: 'team' })
 
-  assert.equal(model.starterSupportPressure.summary, 'Recent starter length has not added a major coverage warning.')
-  assert.deepEqual(model.starterSupportPressure.reasons, ['The rotation averaged 6.1 innings per start over the last 7 days.'])
+  assert.equal(model.starterSupportPressure.summary, 'Across the seven-day window, starters averaged 6.1 innings in 4 analyzed starts. The bullpen covered 11 2/3 innings after those starts.')
+  assert.deepEqual(model.starterSupportPressure.reasons, ['None of the 4 analyzed starts ended before five innings.'])
+  assertNoStarterStatusLanguage(model)
   assertNoForbiddenLanguage(model)
 })
 
-test('starter support is omitted for unsupported status or unsafe copy', () => {
+test('starter support ignores unsupported status vocabulary and unsafe backend summary copy', () => {
   const unsupportedBoard = teamOperatingBoard()
   unsupportedBoard.rotation_support_pressure = {
     status: 'experimental_status',
+    games_in_window: 4,
     games_analyzed: 4,
+    window_days: 7,
+    starter_avg_innings: 5.4,
+    bullpen_outs_required: 44,
+    short_start_count: 1,
     summary: 'The rotation averaged 5.4 innings per start.',
   }
-  assert.equal(modelFor(unsupportedBoard, { scope: 'team' }).starterSupportPressure, null)
+  assert.equal(
+    modelFor(unsupportedBoard, { scope: 'team' }).starterSupportPressure.summary,
+    'Across the seven-day window, starters averaged 5.4 innings in 4 analyzed starts. The bullpen covered 14 2/3 innings after those starts.',
+  )
 
   const unsafeBoard = teamOperatingBoard()
   unsafeBoard.rotation_support_pressure = {
     status: 'moderate_pressure',
+    games_in_window: 4,
     games_analyzed: 4,
+    window_days: 7,
+    starter_avg_innings: 5.4,
+    bullpen_outs_required: 44,
+    short_start_count: 1,
     summary: 'backend endpoint snapshot should not render.',
   }
   const unsafeModel = modelFor(unsafeBoard, { scope: 'team' })
-  assert.equal(unsafeModel.starterSupportPressure, null)
+  assert.equal(unsafeModel.starterSupportPressure.summary, 'Across the seven-day window, starters averaged 5.4 innings in 4 analyzed starts. The bullpen covered 14 2/3 innings after those starts.')
   assert.equal(JSON.stringify(unsafeModel).includes('backend endpoint snapshot should not render.'), false)
+  assertNoStarterStatusLanguage(unsafeModel)
 })
 
 test('unsupported fields are named for awareness but not rendered as placeholders', () => {

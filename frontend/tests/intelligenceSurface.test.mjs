@@ -290,6 +290,7 @@ const tonightOk = {
         watching: 'BaseballOS is watching how much usable bullpen margin is left before the next rest day.',
         why_it_matters: 'This matters because clean options are limited with a long stretch before the next off day.',
         key_note: 'Key bullpen note: clean options are limited, with several arms on watch after recent work.',
+        starter_dependency: 'Starters averaged 4.8 innings over the last seven days, requiring 21.0 bullpen innings.',
         watch_point: 'The key question is whether the bridge to the late innings stays manageable without leaning on the same arms again.',
       },
       evidence: [
@@ -1053,6 +1054,7 @@ test('Tonight renders endpoint cards without exposing internal fields', () => {
   assert.equal(cards[0].summary, 'BaseballOS is watching how much usable bullpen margin is left before the next rest day.')
   assert.equal(cards[0].whyItMatters, 'This matters because Clean Options are limited with a long stretch before the next off day.')
   assert.equal(cards[0].keyNote, 'Key bullpen note: Clean Options are limited, with several arms on watch after recent work.')
+  assert.equal(cards[0].starterDependency, 'Starter-length context lives on the team board with recent completed-game detail.')
   assert.equal(cards[0].watchPoint, 'The key question is whether the bridge to the late innings stays manageable without leaning on the same arms again.')
 
   const html = render(React.createElement(IntelligenceSurfaceView, {
@@ -1073,6 +1075,9 @@ test('Tonight renders endpoint cards without exposing internal fields', () => {
   assert.ok(htmlIncludes(html, 'This matters because Clean Options are limited with a long stretch before the next off day.'))
   assert.ok(htmlIncludes(html, 'Key Note'))
   assert.ok(htmlIncludes(html, 'Key bullpen note: Clean Options are limited, with several arms on watch after recent work.'))
+  assert.ok(htmlIncludes(html, 'Starter Length'))
+  assert.ok(htmlIncludes(html, 'Starter-length context lives on the team board with recent completed-game detail.'))
+  assert.equal(htmlIncludes(html, 'Starters averaged 4.8 innings over the last seven days'), false)
   assert.ok(htmlIncludes(html, 'Watch Point'))
   assert.ok(htmlIncludes(html, 'The key question is whether the bridge to the late innings stays manageable without leaning on the same arms again.'))
   assert.ok(htmlIncludes(html, 'Clean Options are limited'))

@@ -82,7 +82,7 @@ function getTeamContextReadRows(view) {
     { key: 'cleanOptions', label: 'Clean Options', read: view.cleanOptions },
     { key: 'coverageSafety', label: 'Coverage Safety', read: view.coverageSafety },
     { key: 'workloadConcentration', label: 'Workload Concentration', read: view.workloadConcentration },
-    { key: 'starterSupport', label: 'Starter Support', read: view.starterSupportPressure },
+    { key: 'starterSupport', label: 'Recent Starter Length', read: view.starterSupportPressure },
   ].filter(row => row.read?.label || row.read?.summary || row.read?.reasons?.length)
 }
 
@@ -534,6 +534,7 @@ function CompactContextReads({ view }) {
                 </ul>
               </div>
             )}
+            <ContextReadLink read={row.read} compact />
           </div>
         )
       })}
@@ -556,6 +557,31 @@ function OperatingStateCta({ view, compact = false }) {
     <Link to={view.ctaHref} className={className}>
       {view.ctaLabel}
     </Link>
+  )
+}
+
+function focusAnchorTarget(href) {
+  if (typeof document === 'undefined' || typeof window === 'undefined') return
+  if (!String(href || '').startsWith('#')) return
+  const target = document.getElementById(String(href).slice(1))
+  if (!target || typeof target.focus !== 'function') return
+  window.requestAnimationFrame(() => {
+    target.focus({ preventScroll: true })
+  })
+}
+
+function ContextReadLink({ read, compact = false }) {
+  if (!read?.receiptsHref || !read?.receiptsLabel) return null
+  return (
+    <a
+      href={read.receiptsHref}
+      onClick={() => focusAnchorTarget(read.receiptsHref)}
+      className={`mt-2 inline-flex min-h-8 items-center rounded border border-dirt bg-field/50 font-mono uppercase tracking-wider text-chalk400 transition-colors hover:border-amber/40 hover:text-amber focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/50 ${
+        compact ? 'px-2 py-1 text-[10px]' : 'px-2.5 py-1.5 text-[11px]'
+      }`}
+    >
+      {read.receiptsLabel}
+    </a>
   )
 }
 
@@ -612,6 +638,7 @@ function OperatingContextReadRow({ label, read }) {
           </ul>
         </div>
       )}
+      <ContextReadLink read={read} />
     </div>
   )
 }
