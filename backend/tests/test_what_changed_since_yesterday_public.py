@@ -5,6 +5,7 @@ from services.editorial_voice_contract_v1 import contains_editorial_banned_langu
 from services.what_changed_since_yesterday import (
     REASON_COMPARISON_WITHHELD,
     REASON_PRIOR_SLATE_COVERAGE_MISSING,
+    REASON_SNAPSHOTS_NOT_COMPARABLE,
     STATE_CHANGES_DETECTED,
     STATE_INSUFFICIENT_CONTEXT,
     STATE_NO_MEANINGFUL_CHANGES,
@@ -705,3 +706,54 @@ def test_public_payload_does_not_leak_internal_keys_scores_confidence_or_identit
         'best reliever',
     ):
         assert forbidden not in encoded_items
+
+
+def _trusted_metadata_pair(current_through, prior_through):
+    return {
+        'current_snapshot_metadata': {
+            'source': 'live_dashboard_build',
+            'trusted_current_payload': True,
+            'data_through': current_through,
+        },
+        'prior_snapshot_metadata': {
+            'source': 'dashboard_snapshot',
+            'snapshot_id': 21,
+            'status': 'ready',
+            'is_published': True,
+            'data_through': prior_through,
+        },
+    }
+
+
+def test_non_adjacent_views_withhold_then_adjacent_pair_recovers_automatically():
+    """
+    An off-day gap (non-adjacent data-through dates) is withheld with the
+    specific reason code; the very next adjacent pair compares again with no
+    manual cleanup — the recovery is purely data-driven.
+    """
+    current = [snapshot(team_name='Alpha Club', team_abbreviation='AAA', clean=5)]
+    prior = [snapshot(team_name='Alpha Club', team_abbreviation='AAA', clean=2)]
+
+    # League off-day gap: 2026-06-15 -> 2026-06-19 are not adjacent days.
+    gapped = build_what_changed_public_payload(
+        payload(current, data_through='2026-06-19', include_slate_coverage=True),
+        payload(prior, data_through='2026-06-15', include_slate_coverage=True),
+        require_trusted_snapshots=True,
+        **_trusted_metadata_pair('2026-06-19', '2026-06-15'),
+    )
+    assert gapped['state'] == STATE_INSUFFICIENT_CONTEXT
+    assert gapped['comparison']['comparison_available'] is False
+    assert REASON_SNAPSHOTS_NOT_COMPARABLE in gapped['comparison']['reason_codes']
+    assert REASON_COMPARISON_WITHHELD in gapped['comparison']['reason_codes']
+    assert gapped['items'] == []
+
+    # Next comparable game-day pair: adjacent dates, same trust inputs.
+    recovered = build_what_changed_public_payload(
+        payload(current, data_through='2026-06-19', include_slate_coverage=True),
+        payload(prior, data_through='2026-06-18', include_slate_coverage=True),
+        require_trusted_snapshots=True,
+        **_trusted_metadata_pair('2026-06-19', '2026-06-18'),
+    )
+    assert recovered['comparison']['comparison_available'] is True
+    assert recovered['comparison']['reason_codes'] == []
+    assert recovered['state'] in (STATE_CHANGES_DETECTED, STATE_NO_MEANINGFUL_CHANGES)

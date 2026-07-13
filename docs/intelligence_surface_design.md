@@ -463,3 +463,46 @@ structure, not by crowding it.
 Next step after approval: a separate implementation plan that begins with the
 backend endpoint for Today's Story (the one genuine gap), then the page shell, then
 each section against its confirmed data source.
+
+## 12. Off-Day and Empty-State Contract (2026-07-13)
+
+Today renders distinct, evidence-backed states for its two comparison-driven
+sections. None of these states are date- or team-specific; each recovers
+automatically when the underlying data returns.
+
+**Tonight's Bullpen Watch** maps the Tonight endpoint's `empty_reason`:
+
+- `no_teams_playing_today` — **verified no-game slate.** Stored schedule rows
+  exist near the reference date and no team plays on it. Copy: "No MLB games
+  scheduled tonight." / "A league off-day. Bullpen Watch returns with the next
+  MLB game slate." The stored schedule source does not carry an authoritative
+  All-Star-break label, so generic league-off-day language is used. This state
+  is never presented as missing data or as an analyzed-but-quiet slate.
+- `no_tonight_signals` — **games exist, nothing qualified.** Copy keeps
+  "No standout bullpen watch point tonight." and states that games are on the
+  slate but no situation cleared the publication standard.
+- `no_schedule_context` — **schedule missing/unverified.** Fails closed as a
+  limited read ("Tonight's schedule view is unavailable."); never described as
+  a verified off-day. Snapshot/timeout reasons and transport errors keep their
+  existing unavailable states.
+
+**Since Yesterday** maps the stored comparison `reason_codes` when
+`comparison_available` is false (the comparison itself always stays withheld —
+reason-specific copy only changes the explanation and never implies zero
+movement):
+
+- `no_prior_snapshot` / `prior_snapshot_unpublished` — temporary
+  snapshot-chain gap (e.g. a same-data-day republish superseded yesterday's
+  published view): copy says BaseballOS is waiting for two consecutive
+  complete daily views.
+- `snapshots_not_comparable` — the two most recent complete views are not
+  adjacent days (league off-days/All-Star break): copy says movement resumes
+  after the next comparable game-day view.
+- Any other reason — the existing generic could-not-compare-safely copy.
+
+**Automatic recovery:** comparison eligibility is strictly "complete, adjacent
+days" (`prior_date == current_date - 1`). After an off-day gap the first new
+game-day view is still non-adjacent to the last pre-gap view (correctly
+withheld); the section resumes on the second consecutive game-day view. The
+Tonight section resumes on the first slate with scheduled games. No manual
+cleanup, backfill, or hard-coded dates are involved.

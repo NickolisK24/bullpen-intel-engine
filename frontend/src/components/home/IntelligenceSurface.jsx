@@ -38,11 +38,21 @@ const TONIGHT_SECTION_SUBTITLE =
 const TONIGHT_EMPTY_TITLE =
   'No standout bullpen watch point tonight.'
 const TONIGHT_EMPTY_BODY =
-  'No standout bullpen watch point tonight based on the latest available usage data.'
+  "Games are on tonight's slate, but no bullpen situation cleared the BaseballOS publication standard."
+const TONIGHT_OFF_DAY_TITLE =
+  'No MLB games scheduled tonight.'
+const TONIGHT_OFF_DAY_BODY =
+  'A league off-day. Bullpen Watch returns with the next MLB game slate.'
+const TONIGHT_SCHEDULE_UNVERIFIED_TITLE =
+  "Tonight's schedule view is unavailable."
+const TONIGHT_SCHEDULE_UNVERIFIED_BODY =
+  "BaseballOS could not verify tonight's MLB schedule, so Bullpen Watch is holding its read instead of guessing."
 const TONIGHT_ERROR_TITLE =
   "Tonight's bullpen reads are temporarily unavailable."
 const TONIGHT_ERROR_BODY =
   'The rest of Today can still be used.'
+const TONIGHT_EMPTY_REASON_OFF_DAY = 'no_teams_playing_today'
+const TONIGHT_EMPTY_REASON_SCHEDULE_UNVERIFIED = 'no_schedule_context'
 const SINCE_YESTERDAY_STATES = new Set([
   'changes_detected',
   'no_meaningful_changes',
@@ -55,6 +65,15 @@ const SINCE_YESTERDAY_EXPLAINER =
   'Comparing complete, adjacent daily views only. Movement is descriptive, not predictive.'
 const SINCE_YESTERDAY_UNAVAILABLE_COPY =
   'Since-yesterday movement is unavailable because the two daily views could not be compared safely. BaseballOS only compares complete, adjacent days.'
+const SINCE_YESTERDAY_WAITING_FOR_PAIR_COPY =
+  'Movement comparison is paused while BaseballOS waits for two consecutive complete daily views. It resumes automatically when two consecutive complete game-day views are available — no movement is being hidden or assumed.'
+const SINCE_YESTERDAY_OFF_DAY_GAP_COPY =
+  'The two most recent complete daily views are not adjacent days — a league off-day gap. Movement comparison resumes automatically after the next comparable game-day view.'
+const SINCE_YESTERDAY_WAITING_REASONS = new Set([
+  'no_prior_snapshot',
+  'prior_snapshot_unpublished',
+])
+const SINCE_YESTERDAY_OFF_DAY_GAP_REASON = 'snapshots_not_comparable'
 export const AUDIENCE_SIGNUP_IDLE = 'idle'
 export const AUDIENCE_SIGNUP_LOADING = 'loading'
 export const AUDIENCE_SIGNUP_SUCCESS = 'success'
@@ -560,8 +579,26 @@ export function getSinceYesterdayView(dashboard, teams = []) {
     ...baseView,
     items: [],
     itemCount: itemCountValue ?? 0,
-    unavailableCopy: SINCE_YESTERDAY_UNAVAILABLE_COPY,
+    unavailableCopy: sinceYesterdayUnavailableCopy(block, comparison),
   }
+}
+
+function sinceYesterdayUnavailableCopy(block, comparison) {
+  const reasonCodes = new Set(
+    []
+      .concat(Array.isArray(block?.reason_codes) ? block.reason_codes : [])
+      .concat(Array.isArray(comparison?.reason_codes) ? comparison.reason_codes : [])
+      .map(value => String(value || '').toLowerCase()),
+  )
+  // Reason-specific fail-closed copy: the comparison stays withheld either
+  // way; only the explanation changes. Never implies zero movement.
+  if ([...SINCE_YESTERDAY_WAITING_REASONS].some(reason => reasonCodes.has(reason))) {
+    return SINCE_YESTERDAY_WAITING_FOR_PAIR_COPY
+  }
+  if (reasonCodes.has(SINCE_YESTERDAY_OFF_DAY_GAP_REASON)) {
+    return SINCE_YESTERDAY_OFF_DAY_GAP_COPY
+  }
+  return SINCE_YESTERDAY_UNAVAILABLE_COPY
 }
 
 export function trackSinceYesterdayViewed(view, options = {}) {
@@ -1046,7 +1083,33 @@ function TonightLoadingState() {
   )
 }
 
-function TonightEmptyState({ isError, onRetry }) {
+function TonightEmptyState({ isError, emptyReason, onRetry }) {
+  if (!isError && emptyReason === TONIGHT_EMPTY_REASON_OFF_DAY) {
+    // Verified from stored schedule evidence: zero MLB games on this slate.
+    // A deliberate league-off-day pause, not an analysis that found nothing.
+    return (
+      <div className="border border-dirt bg-dugout p-4 sm:p-5" role="status">
+        <h3 className="font-display text-2xl leading-tight tracking-wide text-chalk100">
+          {TONIGHT_OFF_DAY_TITLE}
+        </h3>
+        <p className="mt-2 max-w-prose text-sm leading-relaxed text-chalk400">
+          {TONIGHT_OFF_DAY_BODY}
+        </p>
+      </div>
+    )
+  }
+  if (!isError && emptyReason === TONIGHT_EMPTY_REASON_SCHEDULE_UNVERIFIED) {
+    // Fail closed: the stored schedule near this date could not be verified,
+    // so this is a limited read — never presented as a verified off-day.
+    return (
+      <UnavailableDataState
+        title={TONIGHT_SCHEDULE_UNVERIFIED_TITLE}
+        message={TONIGHT_SCHEDULE_UNVERIFIED_BODY}
+        onRetry={onRetry}
+        className="sm:p-5"
+      />
+    )
+  }
   return (
     <UnavailableDataState
       title={isError ? TONIGHT_ERROR_TITLE : TONIGHT_EMPTY_TITLE}
@@ -1330,7 +1393,13 @@ function TonightSection({
     'tonight_snapshot_build_unavailable',
     'tonight_snapshot_unavailable',
   ].includes(emptyReason)
-  const slateUnavailable = snapshotUnavailable || missingCompletedPayload || tonightPayloadUnavailable
+  const scheduleUnverified = emptyReason === TONIGHT_EMPTY_REASON_SCHEDULE_UNVERIFIED
+  const slateUnavailable = (
+    snapshotUnavailable
+    || scheduleUnverified
+    || missingCompletedPayload
+    || tonightPayloadUnavailable
+  )
   const showUnavailable = Boolean(error && !tonight) || snapshotUnavailable
 
   if (loading && !tonight) {
@@ -1412,7 +1481,11 @@ function TonightSection({
           freshness={rowFreshness}
         />
       )}
-      <TonightEmptyState isError={showUnavailable} onRetry={onRetry} />
+      <TonightEmptyState
+        isError={showUnavailable}
+        emptyReason={emptyReason}
+        onRetry={onRetry}
+      />
     </SectionShell>
   )
 }
