@@ -1193,7 +1193,7 @@ test('Tonight empty response shows honest empty state when dashboard observation
 
   assert.ok(htmlIncludes(html, 'Tonight&#x27;s Bullpen Watch'))
   assert.ok(htmlIncludes(html, 'No standout bullpen watch point tonight.'))
-  assert.ok(htmlIncludes(html, 'No standout bullpen watch point tonight based on the latest available usage data.'))
+  assert.ok(htmlIncludes(html, 'Games are on tonight&#x27;s slate, but no bullpen situation cleared the BaseballOS publication standard.'))
   assert.equal(htmlIncludes(html, 'Reading tonight&#x27;s bullpen context...'), false)
   assert.equal(htmlIncludes(html, 'Around Baseball'), false)
   assert.equal(htmlIncludes(html, 'New York Mets added 2 rested arms'), false)
@@ -1209,7 +1209,7 @@ test('Tonight empty response shows a muted empty state when fallback has no item
   }))
 
   assert.ok(htmlIncludes(html, 'No standout bullpen watch point tonight.'))
-  assert.ok(htmlIncludes(html, 'No standout bullpen watch point tonight based on the latest available usage data.'))
+  assert.ok(htmlIncludes(html, 'Games are on tonight&#x27;s slate, but no bullpen situation cleared the BaseballOS publication standard.'))
   assert.equal(htmlIncludes(html, 'No other league bullpen movement is ready to show yet.'), false)
 })
 
@@ -1224,7 +1224,7 @@ test('Tonight completed missing payload exits skeleton into empty state', () => 
   }))
 
   assert.ok(htmlIncludes(html, 'No standout bullpen watch point tonight.'))
-  assert.ok(htmlIncludes(html, 'No standout bullpen watch point tonight based on the latest available usage data.'))
+  assert.ok(htmlIncludes(html, 'Games are on tonight&#x27;s slate, but no bullpen situation cleared the BaseballOS publication standard.'))
   assert.equal(htmlIncludes(html, 'Reading tonight&#x27;s bullpen context...'), false)
   assert.equal(htmlIncludes(html, 'Around Baseball'), false)
 })
@@ -1476,7 +1476,7 @@ test('Tonight empty state renders when neither Tonight nor fallback observations
   }))
 
   assert.ok(htmlIncludes(html, 'No standout bullpen watch point tonight.'))
-  assert.ok(htmlIncludes(html, 'No standout bullpen watch point tonight based on the latest available usage data.'))
+  assert.ok(htmlIncludes(html, 'Games are on tonight&#x27;s slate, but no bullpen situation cleared the BaseballOS publication standard.'))
 })
 
 test('fallback dashboard failure does not prevent Today sections rendering', () => {
@@ -1662,4 +1662,137 @@ test('Today visible text avoids internal platform terms', () => {
   ]) {
     assert.equal(new RegExp(escapeRegExp(term), 'i').test(visibleText), false, term)
   }
+})
+
+test('Tonight verified off-day slate renders a deliberate league pause, not an empty analysis', () => {
+  const html = render(React.createElement(IntelligenceSurfaceView, {
+    intelligence: intelligenceOk,
+    tonight: {
+      status: 'empty',
+      reference_date: '2026-07-13',
+      card_count: 0,
+      cards: [],
+      empty_reason: 'no_teams_playing_today',
+      limitations: [],
+    },
+    dashboard,
+    landscape,
+    teams,
+  }))
+
+  assert.ok(htmlIncludes(html, 'No MLB games scheduled tonight.'))
+  assert.ok(htmlIncludes(html, 'A league off-day. Bullpen Watch returns with the next MLB game slate.'))
+  // A verified empty slate is never presented as an analyzed-but-quiet slate,
+  // a missing-data problem, or an error.
+  assert.equal(htmlIncludes(html, 'No standout bullpen watch point tonight.'), false)
+  assert.equal(htmlIncludes(html, 'Tonight&#x27;s schedule view is unavailable.'), false)
+  assert.equal(htmlIncludes(html, 'Tonight&#x27;s bullpen reads are temporarily unavailable.'), false)
+})
+
+test('Tonight unverified schedule fails closed as a limited read, never as an off-day', () => {
+  const html = render(React.createElement(IntelligenceSurfaceView, {
+    intelligence: intelligenceOk,
+    tonight: {
+      status: 'empty',
+      reference_date: '2026-07-13',
+      card_count: 0,
+      cards: [],
+      empty_reason: 'no_schedule_context',
+      limitations: [],
+    },
+    dashboard,
+    landscape,
+    teams,
+  }))
+
+  assert.ok(htmlIncludes(html, 'Tonight&#x27;s schedule view is unavailable.'))
+  assert.ok(htmlIncludes(html, 'BaseballOS could not verify tonight&#x27;s MLB schedule, so Bullpen Watch is holding its read instead of guessing.'))
+  assert.equal(htmlIncludes(html, 'No MLB games scheduled tonight.'), false)
+  assert.equal(htmlIncludes(html, 'No standout bullpen watch point tonight.'), false)
+})
+
+test('Tonight no-signal slate keeps the standout copy and says games exist', () => {
+  const html = render(React.createElement(IntelligenceSurfaceView, {
+    intelligence: intelligenceOk,
+    tonight: {
+      status: 'empty',
+      reference_date: '2026-07-17',
+      card_count: 0,
+      cards: [],
+      empty_reason: 'no_tonight_signals',
+      limitations: [],
+    },
+    dashboard,
+    landscape,
+    teams,
+  }))
+
+  assert.ok(htmlIncludes(html, 'No standout bullpen watch point tonight.'))
+  assert.ok(htmlIncludes(html, 'Games are on tonight&#x27;s slate, but no bullpen situation cleared the BaseballOS publication standard.'))
+  assert.equal(htmlIncludes(html, 'No MLB games scheduled tonight.'), false)
+})
+
+test('Since Yesterday snapshot-chain gap explains the wait for two consecutive views', () => {
+  const dashboardWaiting = {
+    ...dashboard,
+    what_changed_since_yesterday: {
+      capability: 'what_changed_since_yesterday_public_v1',
+      state: 'insufficient_context',
+      comparison: {
+        comparison_available: false,
+        previous_data_through: null,
+        current_data_through: '2026-07-12',
+        reason_codes: ['no_prior_snapshot', 'comparison_withheld'],
+      },
+      reason_codes: ['no_prior_snapshot', 'comparison_withheld'],
+      limitations: [],
+      items: [],
+      item_count: 0,
+    },
+  }
+  const view = getSinceYesterdayView(dashboardWaiting, teams)
+  assert.equal(view.state, 'insufficient_context')
+
+  const html = render(React.createElement(IntelligenceSurfaceView, {
+    intelligence: intelligenceOk,
+    tonight: tonightOk,
+    dashboard: dashboardWaiting,
+    landscape,
+    teams,
+  }))
+  assert.ok(htmlIncludes(html, 'Movement comparison is paused while BaseballOS waits for two consecutive complete daily views.'))
+  assert.ok(htmlIncludes(html, 'It resumes automatically when two consecutive complete game-day views are available — no movement is being hidden or assumed.'))
+  assert.equal(htmlIncludes(html, 'could not be compared safely'), false)
+  // Comparison stays withheld — the copy never reads as quiet/zero movement.
+  assert.equal(htmlIncludes(html, 'No meaningful bullpen movement was found'), false)
+})
+
+test('Since Yesterday non-adjacent views explain a league off-day gap', () => {
+  const dashboardOffDayGap = {
+    ...dashboard,
+    what_changed_since_yesterday: {
+      capability: 'what_changed_since_yesterday_public_v1',
+      state: 'insufficient_context',
+      comparison: {
+        comparison_available: false,
+        previous_data_through: '2026-07-12',
+        current_data_through: '2026-07-17',
+        reason_codes: ['snapshots_not_comparable', 'comparison_withheld'],
+      },
+      reason_codes: ['snapshots_not_comparable', 'comparison_withheld'],
+      limitations: [],
+      items: [],
+      item_count: 0,
+    },
+  }
+  const html = render(React.createElement(IntelligenceSurfaceView, {
+    intelligence: intelligenceOk,
+    tonight: tonightOk,
+    dashboard: dashboardOffDayGap,
+    landscape,
+    teams,
+  }))
+  assert.ok(htmlIncludes(html, 'The two most recent complete daily views are not adjacent days — a league off-day gap.'))
+  assert.ok(htmlIncludes(html, 'resumes automatically after the next comparable game-day view'))
+  assert.equal(htmlIncludes(html, 'No meaningful bullpen movement was found'), false)
 })
