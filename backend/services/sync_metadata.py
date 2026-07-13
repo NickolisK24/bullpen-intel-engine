@@ -54,15 +54,17 @@ JOB_POSTGAME_REFRESH = 'postgame_refresh'
 JOB_FATIGUE_RECALCULATION = 'fatigue_recalculation'
 JOB_DASHBOARD_SNAPSHOT_BUILD = 'dashboard_snapshot_build'
 JOB_INTERNAL_ENRICHMENT = 'internal_enrichment'
+PUBLIC_SYNC_METADATA_JOB_NAMES = (
+    JOB_DAILY_SYNC,
+    JOB_POSTGAME_REFRESH,
+    JOB_FATIGUE_RECALCULATION,
+)
 
 SYNC_WRITER_LOCK_KEY = 820260801
 INTERNAL_ENRICHMENT_LOCK_KEY = 820260802
 LOCK_SCOPE_PUBLIC = 'public'
 LOCK_SCOPE_INTERNAL = 'internal'
 INTERNAL_SYNC_JOB_NAMES = (JOB_INTERNAL_ENRICHMENT,)
-SYNC_METADATA_EXCLUDED_SOURCES = frozenset({
-    'roster_readiness_fixture',
-})
 SYNC_WRITER_ALREADY_RUNNING = 'sync_writer_already_running'
 SYNC_WRITER_LOCK_UNAVAILABLE = 'sync_writer_lock_unavailable'
 SYNC_WRITER_STALE_RECLAIMED = 'sync_writer_stale_reclaimed'
@@ -653,21 +655,18 @@ def finish_sync_run(
         return None
 
 
-def _sync_metadata_run_query():
-    query = SyncRun.query
-    if not SYNC_METADATA_EXCLUDED_SOURCES:
-        return query
-    return query.filter(
+def _public_sync_metadata_run_query():
+    return SyncRun.query.filter(
         db.or_(
-            SyncRun.source.is_(None),
-            ~SyncRun.source.in_(tuple(SYNC_METADATA_EXCLUDED_SOURCES)),
+            SyncRun.job_name.in_(PUBLIC_SYNC_METADATA_JOB_NAMES),
+            SyncRun.job_name.is_(None),
         )
     )
 
 
 def latest_sync_run():
     return (
-        _sync_metadata_run_query()
+        _public_sync_metadata_run_query()
         .order_by(SyncRun.started_at.desc(), SyncRun.id.desc())
         .first()
     )
@@ -678,7 +677,7 @@ def latest_successful_sync_run():
     # only the records that failed), so it counts as a successful data write
     # for freshness purposes.
     return (
-        _sync_metadata_run_query()
+        _public_sync_metadata_run_query()
         .filter(SyncRun.status.in_(SUCCESSFUL_STATUSES))
         .order_by(SyncRun.completed_at.desc(), SyncRun.started_at.desc(), SyncRun.id.desc())
         .first()
@@ -687,7 +686,7 @@ def latest_successful_sync_run():
 
 def latest_successful_run_for_job(job_name):
     return (
-        _sync_metadata_run_query()
+        SyncRun.query
         .filter(SyncRun.job_name == job_name)
         .filter(SyncRun.status.in_(SUCCESSFUL_STATUSES))
         .order_by(SyncRun.completed_at.desc(), SyncRun.started_at.desc(), SyncRun.id.desc())
@@ -699,12 +698,12 @@ def last_run_per_job():
     """Latest sync_runs row for each distinct job_name, most-recent first."""
     job_names = [
         row[0]
-        for row in _sync_metadata_run_query().with_entities(SyncRun.job_name).distinct().all()
+        for row in db.session.query(SyncRun.job_name).distinct().all()
     ]
     runs = []
     for job_name in job_names:
         run = (
-            _sync_metadata_run_query()
+            SyncRun.query
             .filter_by(job_name=job_name)
             .order_by(SyncRun.started_at.desc(), SyncRun.id.desc())
             .first()

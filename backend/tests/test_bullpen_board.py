@@ -961,11 +961,18 @@ class TestBoardEndpoint:
                 roster_status_raw_description='Bereavement List',
                 roster_status_updated_at=datetime.utcnow(),
             )
+            seed_roster_readiness_snapshots()
 
         default_body = client.get('/api/bullpen/teams/135/board').get_json()
         default_cards = [card for group in default_body['groups'] for card in group['pitchers']]
+        readiness = default_body['roster_authority']['readiness']
 
         assert default_cards == []
+        assert readiness['claims_available'] is True
+        assert readiness['readiness_state'] == 'ready'
+        assert readiness['counts_withheld'] is False
+        assert readiness['reason_codes'] == []
+        assert readiness['coverage']['team_covered'] is True
         assert default_body['total_pitchers'] == 0
         assert default_body['roster_authority']['counts']['inactive_roster_context_count'] == 1
 
@@ -1085,6 +1092,7 @@ class TestBoardEndpoint:
                 roster_status_source='mlb_stats_api:roster_sync:fullRoster',
                 roster_status_updated_at=datetime(2026, 4, 13, 12, 0, 0),
             )
+            seed_roster_readiness_snapshots()
 
         default_body = client.get('/api/bullpen/teams/115/board').get_json()
         default_cards = [
@@ -1092,8 +1100,14 @@ class TestBoardEndpoint:
             for group in default_body['groups']
             for card in group['pitchers']
         ]
+        readiness = default_body['roster_authority']['readiness']
 
         assert default_cards == []
+        assert readiness['claims_available'] is True
+        assert readiness['readiness_state'] == 'ready'
+        assert readiness['counts_withheld'] is False
+        assert readiness['reason_codes'] == []
+        assert readiness['coverage']['team_covered'] is True
         assert default_body['total_pitchers'] == 0
         assert default_body['roster_authority']['counts']['bullpen_arms'] == 0
         assert default_body['roster_authority']['counts']['inactive_roster_context_count'] == 1
