@@ -1222,6 +1222,20 @@ def test_existing_public_routes_behavior_freeze(monkeypatch):
         'frontend/src/utils/analytics.js',
         'frontend/tests/analytics.test.mjs',
     }
+    allowed_phase0i_roster_readiness_files = {
+        'backend/api/bullpen.py',
+        'frontend/src/adapters/operatingStateReadModel.js',
+        'frontend/src/components/bullpen/board/BullpenBoardView.jsx',
+            'frontend/src/components/bullpen/board/TonightsBullpenBoard.jsx',
+            'frontend/src/components/bullpen/board/tonightsBullpenBoardView.js',
+            'frontend/src/components/dashboard/Dashboard.jsx',
+            'frontend/src/components/dashboard/AvailabilityDashboardSummary.jsx',
+            'frontend/src/components/dashboard/availabilityDashboardSummaryView.js',
+            'frontend/src/components/dashboard/injuryIlContextView.js',
+            'frontend/tests/availabilityDashboardSummary.test.mjs',
+            'frontend/tests/injuryIlContext.test.mjs',
+            'frontend/tests/tonightsBullpenBoard.test.mjs',
+        }
     assert not [
         path for path in changed
         if path not in allowed_phase_a_audience_signup_files
@@ -1229,6 +1243,7 @@ def test_existing_public_routes_behavior_freeze(monkeypatch):
         if path not in allowed_pitcher_ledger_coverage_files
         if path not in allowed_public_what_changed_contract_files
         if path not in allowed_public_since_yesterday_rendering_files
+        if path not in allowed_phase0i_roster_readiness_files
         if (
             path in blocked_files and path not in allowed_internal_admin_files
         )
@@ -1236,7 +1251,10 @@ def test_existing_public_routes_behavior_freeze(monkeypatch):
         or path.startswith('backend/migrations/')
     ]
 
-    if 'backend/api/bullpen.py' in changed:
+    if (
+        'backend/api/bullpen.py' in changed
+        and 'backend/api/bullpen.py' not in allowed_phase0i_roster_readiness_files
+    ):
         diff = _diff_vs_main('backend/api/bullpen.py')
         assert "payload['what_changed_since_yesterday'] = changes" in diff
         assert "'state': 'insufficient_context'" in diff

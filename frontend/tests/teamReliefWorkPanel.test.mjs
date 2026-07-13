@@ -277,6 +277,43 @@ function renderSelectedTeamBoard(props = {}) {
   )
 }
 
+function boardWithRosterContextLimited(board = populatedBoard) {
+  return {
+    ...board,
+    roster_authority: {
+      ...(board.roster_authority || {}),
+      readiness: {
+        capability: 'public_roster_readiness_v1',
+        claims_available: false,
+        counts_withheld: true,
+        reader_limitations: ['Current active-roster coverage could not be verified.'],
+      },
+      counts: {
+        bullpen_arms: null,
+        active_bullpen_arms: null,
+        inactive_roster_context_count: null,
+        roster_unknown_count: null,
+        available_count: null,
+        monitor_count: null,
+        limited_count: null,
+        unavailable_count: null,
+      },
+      population: {
+        total_candidates: null,
+        known_count: null,
+        unknown_count: null,
+        roster_status_coverage: null,
+      },
+      evidence: {
+        bullpen_arms: [],
+        inactive_roster_context_count: [],
+        roster_unknown_count: [],
+      },
+      limitations: ['Current active-roster coverage could not be verified.'],
+    },
+  }
+}
+
 function headerKeys(headers = {}) {
   return Object.keys(headers).map(key => key.toLowerCase())
 }
@@ -348,6 +385,20 @@ test('renders server-authored team relief-work sentences verbatim', () => {
   ]) {
     assert.ok(htmlIncludes(html, sentence), sentence)
   }
+})
+
+test('roster-limited relief work keeps workload facts without current roster claims', () => {
+  const html = renderPanel({
+    payload: teamReliefWorkPayload,
+    rosterContextLimited: true,
+  })
+
+  assert.ok(htmlIncludes(html, 'Recent workload remains visible, but current roster coverage is not verified.'))
+  assert.ok(htmlIncludes(html, teamReliefWorkPayload.windows.window_7.sentence))
+  assert.ok(htmlIncludes(html, teamReliefWorkPayload.relief_by_date[0].sentence))
+  assert.ok(htmlIncludes(html, teamReliefWorkPayload.relief_by_date[0].appearances[0].pitcher_full_name))
+  assert.equal(htmlIncludes(html, teamReliefWorkPayload.scope_sentence), false)
+  assert.equal(htmlIncludes(html, teamReliefWorkPayload.relief_by_date[0].appearances[0].roster_status_sentence), false)
 })
 
 test('renders relief work windows before date groups', () => {
@@ -594,6 +645,20 @@ test('selected team board renders one Recent Bullpen Work panel', () => {
   const matches = html.match(/Recent Bullpen Work/g) || []
 
   assert.equal(matches.length, 1)
+})
+
+test('selected team board passes roster-limited state to recent relief work', () => {
+  const html = renderSelectedTeamBoard({
+    boardPayload: boardWithRosterContextLimited({
+      ...populatedBoard,
+      team: { team_id: 147, team_name: 'New York Yankees', team_abbreviation: 'NYY' },
+    }),
+  })
+
+  assert.ok(htmlIncludes(html, 'Recent Bullpen Work'))
+  assert.ok(htmlIncludes(html, 'Recent workload remains visible, but current roster coverage is not verified.'))
+  assert.equal(htmlIncludes(html, teamReliefWorkPayload.scope_sentence), false)
+  assert.equal(htmlIncludes(html, teamReliefWorkPayload.relief_by_date[0].appearances[0].roster_status_sentence), false)
 })
 
 test('source guard blocks private routes and fields from the new panel and mount', async () => {

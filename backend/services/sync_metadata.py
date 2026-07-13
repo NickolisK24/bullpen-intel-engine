@@ -54,6 +54,11 @@ JOB_POSTGAME_REFRESH = 'postgame_refresh'
 JOB_FATIGUE_RECALCULATION = 'fatigue_recalculation'
 JOB_DASHBOARD_SNAPSHOT_BUILD = 'dashboard_snapshot_build'
 JOB_INTERNAL_ENRICHMENT = 'internal_enrichment'
+PUBLIC_SYNC_METADATA_JOB_NAMES = (
+    JOB_DAILY_SYNC,
+    JOB_POSTGAME_REFRESH,
+    JOB_FATIGUE_RECALCULATION,
+)
 
 SYNC_WRITER_LOCK_KEY = 820260801
 INTERNAL_ENRICHMENT_LOCK_KEY = 820260802
@@ -650,8 +655,21 @@ def finish_sync_run(
         return None
 
 
+def _public_sync_metadata_run_query():
+    return SyncRun.query.filter(
+        db.or_(
+            SyncRun.job_name.in_(PUBLIC_SYNC_METADATA_JOB_NAMES),
+            SyncRun.job_name.is_(None),
+        )
+    )
+
+
 def latest_sync_run():
-    return SyncRun.query.order_by(SyncRun.started_at.desc(), SyncRun.id.desc()).first()
+    return (
+        _public_sync_metadata_run_query()
+        .order_by(SyncRun.started_at.desc(), SyncRun.id.desc())
+        .first()
+    )
 
 
 def latest_successful_sync_run():
@@ -659,7 +677,7 @@ def latest_successful_sync_run():
     # only the records that failed), so it counts as a successful data write
     # for freshness purposes.
     return (
-        SyncRun.query
+        _public_sync_metadata_run_query()
         .filter(SyncRun.status.in_(SUCCESSFUL_STATUSES))
         .order_by(SyncRun.completed_at.desc(), SyncRun.started_at.desc(), SyncRun.id.desc())
         .first()

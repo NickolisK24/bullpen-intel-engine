@@ -145,6 +145,7 @@ export function DashboardView({ data, loading = false, error = null, staleWithEr
 
 function InjuryIlContextSection({ context }) {
   if (!context) return null
+  const valueLabel = (value) => value == null ? 'Withheld' : value
 
   const stats = [
     {
@@ -179,7 +180,9 @@ function InjuryIlContextSection({ context }) {
             </p>
           </div>
           <div className="shrink-0 rounded border border-dirt bg-dugout/60 px-2.5 py-1 font-mono text-[10px] uppercase tracking-widest text-chalk500">
-            {context.league.bullpenPopulationCount} dashboard relievers
+            {context.countsWithheld
+              ? 'Roster counts withheld'
+              : `${context.league.bullpenPopulationCount} dashboard relievers`}
           </div>
         </div>
 
@@ -189,11 +192,19 @@ function InjuryIlContextSection({ context }) {
               <div className="font-mono text-[10px] uppercase tracking-wider text-chalk500">
                 {stat.label}
               </div>
-              <div className="mt-1 font-mono text-2xl text-chalk100">{stat.value}</div>
+              <div className="mt-1 font-mono text-2xl text-chalk100">{valueLabel(stat.value)}</div>
               <div className="mt-1 text-[11px] leading-relaxed text-chalk500">{stat.detail}</div>
             </div>
           ))}
         </div>
+
+        {context.limitations.length > 0 && (
+          <ul className="mt-3 space-y-1">
+            {context.limitations.map((limitation, index) => (
+              <li key={index} className="text-[11px] leading-relaxed text-chalk500">• {limitation}</li>
+            ))}
+          </ul>
+        )}
 
         <p className="mt-3 text-[11px] leading-relaxed text-chalk500">
           <span className="text-chalk300">Why it matters:</span> Bullpen workload can become concentrated when active relief depth is reduced.

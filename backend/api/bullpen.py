@@ -111,6 +111,11 @@ from services.roster_authority import (
     CANONICAL_POPULATION_FLAGS,
     build_roster_authority,
 )
+from services.public_roster_readiness import (
+    apply_public_roster_readiness,
+    build_public_roster_readiness,
+    roster_claims_available,
+)
 from services.roster_status_audit import with_recent_inactive_roster_audit
 from services.baseline_distribution import build_baseline_payload
 from services.season_era import build_season_era_payload
@@ -1541,11 +1546,18 @@ def build_team_roster_authority(team_id, reference_date=None):
         reference_date=ref,
         calculated_at_lte=_served_score_cutoff(),
     )
-    return build_roster_authority(
+    team_info = _team_info_lookup(team_id)
+    authority = build_roster_authority(
         _roster_authority_records(rows, availability_by_pitcher, ref),
-        team=_team_info_lookup(team_id),
+        team=team_info,
         reference_date=ref,
     )
+    readiness = build_public_roster_readiness(
+        reference_date=ref,
+        team_id=team_id,
+        scope='team',
+    )
+    return apply_public_roster_readiness(authority, readiness)
 
 
 def _build_team_board(team_id, include_stale=False, freshness=None, reference_date=None):
@@ -1660,10 +1672,19 @@ def _build_team_board(team_id, include_stale=False, freshness=None, reference_da
     # ``include_stale`` so the snapshot is invariant across board views. This reuses the
     # already-fetched ``context_rows`` (no extra row query) and is exposed alongside —
     # never instead of — roster_status. The board cards and roster_status are unchanged.
-    roster_authority = build_roster_authority(
+    raw_roster_authority = build_roster_authority(
         _roster_authority_records(context_rows, availability_by_pitcher, ref),
         team=team_info,
         reference_date=ref,
+    )
+    roster_readiness = build_public_roster_readiness(
+        reference_date=ref,
+        team_id=team_info.get('team_id') if isinstance(team_info, dict) else team_id,
+        scope='team',
+    )
+    roster_authority = apply_public_roster_readiness(
+        raw_roster_authority,
+        roster_readiness,
     )
     return build_board_payload(
         team=team_info,
@@ -2370,6 +2391,55 @@ def get_stats_overview():
     })
 
 
+def _dashboard_injury_il_context_for_roster_readiness(context, readiness):
+    if roster_claims_available(readiness):
+        result = dict(context or {})
+        result['roster_readiness'] = readiness
+        return result
+
+    result = dict(context or {})
+    league = dict(result.get('league') or {})
+    result['roster_readiness'] = readiness
+    result['counts_withheld'] = True
+    result['league'] = {
+        'population_scope': league.get('population_scope') or 'dashboard_bullpen_population',
+        'injured_list_count': None,
+        'inactive_count': None,
+        'teams_with_multiple_unavailable': None,
+        'bullpen_population_count': None,
+        'tracked_pitchers_count': None,
+    }
+    result['followed_team'] = None
+    limitations = list(result.get('limitations') or [])
+    for item in readiness.get('reader_limitations') or []:
+        if item not in limitations:
+            limitations.append(item)
+    result['limitations'] = limitations
+    return result
+
+
+def _dashboard_availability_summary_for_roster_readiness(summary, readiness):
+    result = dict(summary or {})
+    result['roster_readiness'] = readiness
+    result['current_roster_claims_available'] = roster_claims_available(readiness)
+    result['counts_withheld'] = not roster_claims_available(readiness)
+    if roster_claims_available(readiness):
+        return result
+
+    def _withheld_count_map(values):
+        return {key: None for key in (values or {}).keys()}
+
+    result['total_pitchers'] = None
+    result['statuses'] = _withheld_count_map(result.get('statuses'))
+    result['confidence'] = _withheld_count_map(result.get('confidence'))
+    result['data_state'] = _withheld_count_map(result.get('data_state'))
+    result['notes'] = _merge_limitations(
+        readiness.get('reader_limitations'),
+        result.get('notes'),
+    )
+    return result
+
+
 def build_bullpen_dashboard_payload(*, use_published_freshness=False):
     """
     League-wide bullpen overview for the landing dashboard.
@@ -2420,10 +2490,22 @@ def build_bullpen_dashboard_payload(*, use_published_freshness=False):
         reference_date=reference_date,
         freshness=freshness,
     )
+    roster_readiness = build_public_roster_readiness(
+        reference_date=reference_date,
+        scope='league',
+    )
+    summary = _dashboard_availability_summary_for_roster_readiness(
+        summary,
+        roster_readiness,
+    )
     injury_il_context = build_injury_il_context_payload(
         pitchers=[pitcher for _score, pitcher in latest_rows],
         availability_records=availability_records,
         reference_date=reference_date,
+    )
+    injury_il_context = _dashboard_injury_il_context_for_roster_readiness(
+        injury_il_context,
+        roster_readiness,
     )
     season_era = build_season_era_payload(
         availability_records,
@@ -2504,6 +2586,7 @@ def build_bullpen_dashboard_payload(*, use_published_freshness=False):
         },
         'landscape': landscape,
         'injury_il_context': injury_il_context,
+        'roster_readiness': roster_readiness,
         'capacity_intelligence': capacity_intelligence,
         'rotation_support_pressure': rotation_support_pressure,
         'bullpen_stability': bullpen_stability,

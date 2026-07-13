@@ -26,6 +26,7 @@ from services.bullpen_stability import (
 )
 from services.rotation_support_pressure import LIMITED_SAMPLE_LIMITATION as ROTATION_LIMITED_SAMPLE_LIMITATION
 from services.roster_status import STATUS_ACTIVE, STATUS_IL_15, STATUS_MINORS
+from tests.roster_readiness_fixture import seed_roster_readiness_snapshots
 from utils.db import db
 from utils.innings import outs_to_decimal_innings, parse_mlb_innings_to_outs
 from models.pitcher import Pitcher
@@ -547,7 +548,11 @@ class TestDashboardEndpoint:
         body = client.get('/api/bullpen/dashboard').get_json()
         assert 'ranking_applied' not in body['context']
         assert 'selection_made' not in body['context']
-        assert body['availability_summary']['total_pitchers'] >= 0
+        assert body['availability_summary']['counts_withheld'] is True
+        assert body['availability_summary']['total_pitchers'] is None
+        assert body['availability_summary']['statuses']['Available'] is None
+        assert body['availability_summary']['roster_readiness']['claims_available'] is False
+        assert body['injury_il_context']['counts_withheld'] is True
 
     def test_dashboard_attaches_league_workload_concentration_baselines(self, client):
         # Teams with recent relief workload feed a league distribution sample.
@@ -601,6 +606,7 @@ class TestDashboardEndpoint:
                 days_ago=[1, 3, 5],
                 roster_status=STATUS_ACTIVE,
             )
+            seed_roster_readiness_snapshots()
 
         body = client.get('/api/bullpen/dashboard').get_json()
 
@@ -638,6 +644,7 @@ class TestDashboardEndpoint:
                 reference_date=reference_date,
             )
             authority_summary = summarize_availability_records(authority_records)
+            seed_roster_readiness_snapshots(snapshot_dates=[reference_date])
 
         dashboard = client.get('/api/bullpen/dashboard').get_json()
         overview = client.get('/api/bullpen/stats/overview').get_json()
@@ -688,6 +695,7 @@ class TestDashboardEndpoint:
                 days_ago=[ROLE_WINDOW_DAYS + 5, ROLE_WINDOW_DAYS + 7, ROLE_WINDOW_DAYS + 9],
                 roster_status=STATUS_IL_15,
             )
+            seed_roster_readiness_snapshots()
 
         body = client.get('/api/bullpen/dashboard').get_json()
 
@@ -836,6 +844,7 @@ class TestDashboardEndpoint:
                 days_ago=[ACTIVE_WINDOW_DAYS + 2, ACTIVE_WINDOW_DAYS + 4, ACTIVE_WINDOW_DAYS + 6],
                 roster_status=STATUS_ACTIVE,
             )
+            seed_roster_readiness_snapshots()
 
         default_board = client.get('/api/bullpen/teams/139/board').get_json()
         default_names = [
@@ -851,6 +860,7 @@ class TestDashboardEndpoint:
         ]
         dashboard = client.get('/api/bullpen/dashboard').get_json()
         landscape_entries = _landscape_entries_for_team(dashboard['landscape'], 139)
+        roster_readiness = dashboard['availability_summary']['roster_readiness']
 
         assert 'Nick Martinez' in default_names
         assert 'Nick Martinez' in expanded_names
@@ -862,6 +872,11 @@ class TestDashboardEndpoint:
         assert expanded_board['visibility']['active_hidden_count'] == 0
 
         assert dashboard['context']['metrics']['total_relievers'] == 10
+        assert roster_readiness['claims_available'] is True
+        assert roster_readiness['readiness_state'] == 'ready'
+        assert roster_readiness['counts_withheld'] is False
+        assert roster_readiness['reason_codes'] == []
+        assert roster_readiness['coverage']['complete'] is True
         assert dashboard['availability_summary']['total_pitchers'] == 10
         assert dashboard['availability_summary']['statuses']['Available'] == 5
         assert dashboard['availability_summary']['statuses']['Monitor'] == 5

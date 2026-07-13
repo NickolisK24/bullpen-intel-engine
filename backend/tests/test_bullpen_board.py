@@ -16,6 +16,7 @@ from types import SimpleNamespace
 import pytest
 from flask import Flask
 from tests.db_config import configure_test_database, create_test_schema, drop_test_schema
+from tests.roster_readiness_fixture import seed_roster_readiness_snapshots
 
 import services.sync as sync_service
 from services.availability import ACTIVE_WINDOW_DAYS
@@ -309,6 +310,11 @@ def client(tmp_path, monkeypatch):
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     db.init_app(app)
     app.register_blueprint(bullpen_bp, url_prefix='/api/bullpen')
+
+    @app.before_request
+    def _seed_ready_roster_snapshots_for_board_tests():
+        seed_roster_readiness_snapshots()
+
     with app.app_context():
         create_test_schema(app)
         try:
@@ -522,8 +528,10 @@ class TestBoardEndpoint:
 
     def test_empty_team_returns_all_groups_and_zero_total(self, client):
         body = client.get('/api/bullpen/teams/999/board').get_json()
-        assert body['total_pitchers'] == 0
+        assert body['total_pitchers'] is None
         assert [g['status'] for g in body['groups']] == BOARD_GROUP_ORDER
+        assert all(group['count'] is None for group in body['groups'])
+        assert body['roster_authority']['readiness']['counts_withheld'] is True
 
     def test_no_raw_governance_flags_leak_into_cards(self, client):
         with client.application.app_context():
@@ -953,11 +961,18 @@ class TestBoardEndpoint:
                 roster_status_raw_description='Bereavement List',
                 roster_status_updated_at=datetime.utcnow(),
             )
+            seed_roster_readiness_snapshots()
 
         default_body = client.get('/api/bullpen/teams/135/board').get_json()
         default_cards = [card for group in default_body['groups'] for card in group['pitchers']]
+        readiness = default_body['roster_authority']['readiness']
 
         assert default_cards == []
+        assert readiness['claims_available'] is True
+        assert readiness['readiness_state'] == 'ready'
+        assert readiness['counts_withheld'] is False
+        assert readiness['reason_codes'] == []
+        assert readiness['coverage']['team_covered'] is True
         assert default_body['total_pitchers'] == 0
         assert default_body['roster_authority']['counts']['inactive_roster_context_count'] == 1
 
@@ -1077,6 +1092,7 @@ class TestBoardEndpoint:
                 roster_status_source='mlb_stats_api:roster_sync:fullRoster',
                 roster_status_updated_at=datetime(2026, 4, 13, 12, 0, 0),
             )
+            seed_roster_readiness_snapshots()
 
         default_body = client.get('/api/bullpen/teams/115/board').get_json()
         default_cards = [
@@ -1084,8 +1100,14 @@ class TestBoardEndpoint:
             for group in default_body['groups']
             for card in group['pitchers']
         ]
+        readiness = default_body['roster_authority']['readiness']
 
         assert default_cards == []
+        assert readiness['claims_available'] is True
+        assert readiness['readiness_state'] == 'ready'
+        assert readiness['counts_withheld'] is False
+        assert readiness['reason_codes'] == []
+        assert readiness['coverage']['team_covered'] is True
         assert default_body['total_pitchers'] == 0
         assert default_body['roster_authority']['counts']['bullpen_arms'] == 0
         assert default_body['roster_authority']['counts']['inactive_roster_context_count'] == 1

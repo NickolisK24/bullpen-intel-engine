@@ -25,6 +25,7 @@ from services.availability import (
 )
 from services.bullpen_stress import build_bullpen_stress
 from services.pitcher_public_labels import build_pitcher_labels
+from services.public_roster_readiness import roster_claims_available
 from services.team_bullpen_shape import build_team_bullpen_shape
 from services.bullpen_visibility import default_visible_contract, summarize_visibility
 from services.workload_appearance import pitch_count_workload_logs
@@ -443,6 +444,95 @@ def group_cards(cards):
     return groups
 
 
+def _roster_counts_withheld(roster_authority):
+    readiness = (roster_authority or {}).get('readiness') or {}
+    return readiness.get('counts_withheld') is True or (
+        readiness and not roster_claims_available(readiness)
+    )
+
+
+def _withhold_group_counts(groups):
+    return [
+        {
+            **group,
+            'count': None,
+            'count_withheld': True,
+            'description': (
+                'Recent workload evidence is available; current usable depth is '
+                'withheld until roster status is verified.'
+            ),
+        }
+        for group in groups
+    ]
+
+
+def _withhold_team_shape(team_shape, roster_authority):
+    readiness = (roster_authority or {}).get('readiness') or {}
+    result = dict(team_shape or {})
+    limitations = list(result.get('limitations') or [])
+    for item in readiness.get('reader_limitations') or []:
+        if item not in limitations:
+            limitations.append(item)
+    result.update({
+        'current_roster_claims_available': False,
+        'counts_withheld': True,
+        'reads': [],
+        'by_key': {},
+        'limitations': limitations,
+    })
+    return result
+
+
+def _withhold_team_context(context, roster_authority):
+    readiness = (roster_authority or {}).get('readiness') or {}
+    limitations = list((context or {}).get('limitations') or [])
+    for item in readiness.get('reader_limitations') or []:
+        if item not in limitations:
+            limitations.append(item)
+    return {
+        'metrics': {
+            'total_relievers': None,
+            'available': None,
+            'monitor': None,
+            'limited': None,
+            'avoid': None,
+            'unavailable': None,
+            'restricted': None,
+            'pct_available': None,
+            'pct_unavailable': None,
+            'pct_restricted': None,
+        },
+        'health': {
+            'state': 'no_data',
+            'label': 'Roster status unverified',
+            'reasons': list(readiness.get('reader_limitations') or []),
+        },
+        'confidence': 'low',
+        'limitations': limitations,
+        'current_roster_claims_available': False,
+        'counts_withheld': True,
+    }
+
+
+def _withhold_bullpen_stress(stress, roster_authority):
+    readiness = (roster_authority or {}).get('readiness') or {}
+    return {
+        **(stress or {}),
+        'state': 'no_data',
+        'label': 'Roster status unverified',
+        'summary': (
+            'Recent workload evidence is available, but current usable bullpen '
+            'depth is withheld until roster status is verified.'
+        ),
+        'confidence': 'low',
+        'reason_codes': list(readiness.get('reason_codes') or []),
+        'limitations': list(readiness.get('reader_limitations') or []),
+        'tone': 'muted',
+        'current_roster_claims_available': False,
+        'counts_withheld': True,
+    }
+
+
 def build_board_payload(
     team,
     records,
@@ -487,7 +577,8 @@ def build_board_payload(
         for record in records
     ]
     groups = group_cards(cards)
-    grouped_total = sum(group['count'] for group in groups)
+    counts_withheld = _roster_counts_withheld(roster_authority)
+    grouped_total = None if counts_withheld else sum(group['count'] for group in groups)
     generated = generated_at or datetime.now(timezone.utc).isoformat()
     context = build_team_context(groups, freshness=freshness)
     stress = build_bullpen_stress(context)
@@ -499,6 +590,11 @@ def build_board_payload(
         bullpen_environment=bullpen_environment,
     )
     visibility = summarize_visibility(cards)
+    if counts_withheld:
+        groups = _withhold_group_counts(groups)
+        context = _withhold_team_context(context, roster_authority)
+        stress = _withhold_bullpen_stress(stress, roster_authority)
+        team_shape = _withhold_team_shape(team_shape, roster_authority)
 
     return {
         'capability': CAPABILITY,
@@ -518,7 +614,7 @@ def build_board_payload(
         'visibility': visibility,
         'groups': groups,
         'total_pitchers': grouped_total,
-        'ungrouped_pitchers': max(len(cards) - grouped_total, 0),
+        'ungrouped_pitchers': None if counts_withheld else max(len(cards) - grouped_total, 0),
         'freshness': freshness or {},
         # Roster Authority is the single source of roster truth (CRC). The legacy
         # roster_status board summary was retired in CRC-10; this is the only

@@ -413,6 +413,43 @@ test('the board ships no legacy roster_status and the banner reads only Roster A
   assert.ok(htmlIncludes(html, 'Bullpen Arms'))
 })
 
+test('withheld roster readiness does not render zero substituted counts', () => {
+  const board = makeBoard({
+    cardsByStatus: { Available: [populatedBoard.groups[0].pitchers[0]] },
+  })
+  const withheld = {
+    ...board,
+    total_pitchers: null,
+    roster_authority: {
+      ...board.roster_authority,
+      readiness: {
+        capability: 'public_roster_readiness_v1',
+        claims_available: false,
+        counts_withheld: true,
+        reader_limitations: ['Current active-roster coverage could not be verified.'],
+      },
+      counts: {
+        bullpen_arms: null,
+        inactive_roster_context_count: null,
+        roster_unknown_count: null,
+      },
+      population: { total_candidates: null, roster_status_coverage: null },
+      evidence: { bullpen_arms: [], inactive_roster_context_count: [], roster_unknown_count: [] },
+    },
+  }
+
+  const auth = view.getRosterAuthorityView(withheld.roster_authority)
+  const totals = view.getBoardTotals(withheld)
+  const html = render(withheld)
+
+  assert.equal(auth.countsWithheld, true)
+  assert.equal(auth.bullpenArms, null)
+  assert.equal(totals.total, null)
+  assert.ok(htmlIncludes(html, 'Current usable bullpen depth withheld'))
+  assert.ok(htmlIncludes(html, 'Withheld'))
+  assert.ok(!htmlIncludes(html, 'Bullpen Arms 0'))
+})
+
 test('getRosterAuthorityView derives shown-in-view without changing canonical counts', () => {
   const onlyIkeRendered = view.getRosterAuthorityView(rosterContextExcludedBoard.roster_authority, {
     renderedCards: [{ pitcher_id: 21 }],

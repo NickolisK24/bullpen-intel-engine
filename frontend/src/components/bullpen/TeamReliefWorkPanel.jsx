@@ -57,8 +57,8 @@ function DateSummary({ children }) {
   return <span className="font-mono text-sm leading-snug text-chalk100">{children}</span>
 }
 
-function AppearanceRow({ appearance }) {
-  const status = textValue(appearance?.roster_status_sentence)
+function AppearanceRow({ appearance, rosterContextLimited = false }) {
+  const status = rosterContextLimited ? null : textValue(appearance?.roster_status_sentence)
   return (
     <li
       className="grid gap-1.5 px-2 py-1.5 text-xs text-chalk300 sm:grid-cols-[minmax(9rem,1.5fr)_repeat(6,minmax(2.25rem,auto))_minmax(8rem,1fr)] sm:items-center"
@@ -98,7 +98,7 @@ function GameContextNote({ game }) {
   )
 }
 
-function ReliefWorkByDate({ groups, absenceSentence }) {
+function ReliefWorkByDate({ groups, absenceSentence, rosterContextLimited = false }) {
   const dateGroups = asArray(groups)
   const hasAbsence = Boolean(textValue(absenceSentence))
   if (dateGroups.length === 0 && !hasAbsence) return null
@@ -131,6 +131,7 @@ function ReliefWorkByDate({ groups, absenceSentence }) {
                 <AppearanceRow
                   key={`${appearance?.pitcher_id || 'pitcher'}:${appearance?.game_date || 'date'}:${index}`}
                   appearance={appearance}
+                  rosterContextLimited={rosterContextLimited}
                 />
               ))}
             </ul>
@@ -194,11 +195,19 @@ function PanelShell({ children }) {
   )
 }
 
+function ScopeSentence({ payload, rosterContextLimited = false }) {
+  if (rosterContextLimited) {
+    return <Sentence>Recent workload remains visible, but current roster coverage is not verified.</Sentence>
+  }
+  return <Sentence>{payload?.scope_sentence}</Sentence>
+}
+
 export default function TeamReliefWorkPanel({
   teamId,
   payload,
   loading: loadingOverride,
   error: errorOverride,
+  rosterContextLimited = false,
 }) {
   const fetched = useFetch(
     () => (payload !== undefined || !isFilled(teamId)
@@ -232,12 +241,13 @@ export default function TeamReliefWorkPanel({
 
   return (
     <PanelShell>
-      <Sentence>{data?.scope_sentence}</Sentence>
+      <ScopeSentence payload={data} rosterContextLimited={rosterContextLimited} />
       <DataCurrency payload={data} />
       <ReliefWorkWindows windows={data?.windows} />
       <ReliefWorkByDate
         groups={data?.relief_by_date}
         absenceSentence={data?.absence_sentence}
+        rosterContextLimited={rosterContextLimited}
       />
     </PanelShell>
   )

@@ -120,30 +120,38 @@ function RosterStatusBanner({ board }) {
   const rosterFacts = (
     <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
       <span className="font-mono text-[11px] uppercase tracking-widest">{view.statusLabel}</span>
-      <span
-        className="font-mono text-xs"
-        title="Relievers on the team's active MLB roster — the club's current bullpen."
-      >
-        <span className="text-chalk500">Bullpen Arms</span> {view.bullpenArms}
-      </span>
-      <span
-        className="font-mono text-xs"
-        title="Relievers off the active roster (injured list, optioned, or 40-man only). Open the list below to see every one."
-      >
-        <span className="text-chalk500">Off the Active Roster</span> {view.offActiveRoster}{shownNote}
-      </span>
-      <span
-        className="font-mono text-xs"
-        title="Share of bullpen candidates with a confirmed roster status."
-      >
-        <span className="text-chalk500">Roster Status Coverage</span> {view.coverageLabel}
-      </span>
-      <span
-        className="font-mono text-xs"
-        title="Bullpen candidates whose roster status is not yet confirmed."
-      >
-        <span className="text-chalk500">Roster Status Pending</span> {view.rosterStatusPending}
-      </span>
+      {view.countsWithheld ? (
+        <span className="font-mono text-xs text-chalk300">
+          Current usable bullpen depth withheld
+        </span>
+      ) : (
+        <>
+          <span
+            className="font-mono text-xs"
+            title="Relievers on the team's active MLB roster — the club's current bullpen."
+          >
+            <span className="text-chalk500">Bullpen Arms</span> {view.bullpenArms}
+          </span>
+          <span
+            className="font-mono text-xs"
+            title="Relievers off the active roster (injured list, optioned, or 40-man only). Open the list below to see every one."
+          >
+            <span className="text-chalk500">Off the Active Roster</span> {view.offActiveRoster}{shownNote}
+          </span>
+          <span
+            className="font-mono text-xs"
+            title="Share of bullpen candidates with a confirmed roster status."
+          >
+            <span className="text-chalk500">Roster Status Coverage</span> {view.coverageLabel}
+          </span>
+          <span
+            className="font-mono text-xs"
+            title="Bullpen candidates whose roster status is not yet confirmed."
+          >
+            <span className="text-chalk500">Roster Status Pending</span> {view.rosterStatusPending}
+          </span>
+        </>
+      )}
     </div>
   )
 
@@ -169,7 +177,9 @@ function RosterStatusBanner({ board }) {
         <summary className="flex cursor-pointer flex-wrap items-center gap-x-4 gap-y-1 font-mono text-[10px] uppercase tracking-widest text-chalk500 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/60">
           <span>Roster Context</span>
           <span className="normal-case tracking-normal text-chalk400">
-            {view.bullpenArms} bullpen arms · {view.coverageLabel} coverage
+            {view.countsWithheld
+              ? 'Current usable depth withheld'
+              : `${view.bullpenArms} bullpen arms · ${view.coverageLabel} coverage`}
           </span>
         </summary>
         <div className="mt-2">{rosterFacts}{evidenceBlock}</div>
@@ -448,7 +458,9 @@ function BoardGroup({ group, freshness, onViewDetails, now }) {
             <span className="h-2.5 w-2.5 rounded-full" style={group.badge.dotStyle} aria-hidden="true" />
             {group.label}
           </h3>
-          <span className="font-mono text-xs text-chalk400">{group.count}</span>
+          <span className="font-mono text-xs text-chalk400">
+            {group.count == null ? 'Withheld' : group.count}
+          </span>
         </div>
         {group.description && (
           <p className="mt-1 text-xs leading-relaxed text-chalk500">{group.description}</p>
@@ -494,8 +506,9 @@ export default function BullpenBoardView({
           Tonight's Bullpen Board{teamName ? ` — ${teamName}` : ''}
         </h2>
         <p className="mt-1 text-xs text-chalk500">
-          Grouped by how recent usage changes tonight's options. {totals.total} pitcher
-          {totals.total === 1 ? '' : 's'} shown.
+          {totals.countWithheld
+            ? 'Recent workload evidence is available; current usable bullpen depth is withheld until roster status is verified.'
+            : `Grouped by how recent usage changes tonight's options. ${totals.total} pitcher${totals.total === 1 ? '' : 's'} shown.`}
         </p>
       </div>
 

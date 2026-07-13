@@ -61,6 +61,41 @@ const inventorySummary = {
   ],
 }
 
+const withheldSummary = {
+  mode: 'current_availability',
+  is_current_availability: true,
+  total_pitchers: null,
+  counts_withheld: true,
+  statuses: {
+    Available: null,
+    Monitor: null,
+    Limited: null,
+    Unavailable: null,
+    Avoid: null,
+  },
+  confidence: {
+    high: null,
+    medium: null,
+    low: null,
+  },
+  data_state: {
+    fresh: null,
+    stale: null,
+    missing: null,
+    incomplete: null,
+    failed: null,
+  },
+  roster_readiness: {
+    capability: 'public_roster_readiness_v1',
+    claims_available: false,
+    counts_withheld: true,
+    readiness_state: 'stale',
+  },
+  notes: [
+    'Current active-roster coverage could not be verified.',
+  ],
+}
+
 const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const htmlIncludes = (html, text) => new RegExp(escapeRegExp(text)).test(html)
 const visibleText = html => html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
@@ -130,6 +165,32 @@ test('renders compact availability summary with secondary evidence collapsed', (
   assert.ok(htmlIncludes(expandedHtml, 'Hide Availability Detail'))
   assert.ok(htmlIncludes(expandedHtml, 'Workload Read'))
   assert.ok(htmlIncludes(expandedHtml, 'Data State'))
+})
+
+test('renders withheld dashboard counts without zero substitution', () => {
+  const view = getAvailabilityDashboardSummaryView(withheldSummary)
+  const html = renderToStaticMarkup(
+    React.createElement(AvailabilityDashboardSummary, { summary: withheldSummary, compact: true }),
+  )
+  const text = visibleText(html)
+
+  assert.equal(view.countsWithheld, true)
+  assert.equal(view.totalPitchers, null)
+  assert.equal(view.statusTotal, null)
+  assert.equal(view.dominantStatus, null)
+  assert.equal(view.statusRows.find(row => row.label === 'Available').count, null)
+  assert.equal(
+    view.operationalSummary,
+    'Current active-roster coverage could not be verified, so dashboard availability counts are withheld.',
+  )
+  assert.ok(htmlIncludes(html, 'Withheld pitchers with a current read'))
+  assert.ok(htmlIncludes(html, 'Withheld status records'))
+  assert.ok(htmlIncludes(html, 'Available: Withheld'))
+  assert.ok(htmlIncludes(html, 'On Watch: Withheld'))
+  assert.ok(htmlIncludes(html, 'Current active-roster coverage could not be verified, so dashboard availability counts are withheld.'))
+  assert.equal(/Available:\s*0/.test(text), false)
+  assert.equal(/On Watch:\s*0/.test(text), false)
+  assert.equal(/0 status records/.test(text), false)
 })
 
 test('availability distribution summary avoids recommendation language', () => {

@@ -252,6 +252,15 @@ def unknown_source_readiness_payload(reason='readiness_framework_unavailable') -
     }
 
 
+def roster_status_snapshot_readiness_payload(*, reference_date: date | None = None) -> dict:
+    """Public helper for consumers that need the roster source family only."""
+    return _safe_family(
+        FAMILY_ROSTER_STATUS_SNAPSHOTS,
+        _roster_status_snapshot_readiness,
+        reference_date,
+    ).to_dict()
+
+
 def _finality_authority_readiness(reference_date=None):
     return SourceReadiness(
         source_family=FAMILY_FINALITY_AUTHORITY,

@@ -14,6 +14,7 @@ import {
   BULLPEN_VIEW_MODE_ACTIVE,
   BULLPEN_VIEW_MODE_ACTIVE_PLUS_UNAVAILABLE,
   filterBoardForViewMode,
+  rosterCountsAreWithheld,
 } from './tonightsBullpenBoardView'
 
 // Resolve a deep-link `team` param (abbreviation like "SF", a team id, or a name)
@@ -136,6 +137,7 @@ export default function TonightsBullpenBoard({
   const boardState = boardPayload !== undefined ? staticFetchState(boardPayload) : board
   const gameContextState = gameContextPayload !== undefined ? staticFetchState(gameContextPayload) : gameContext
   const storyState = storyPayload !== undefined ? staticFetchState(storyPayload) : story
+  const rosterContextLimited = rosterCountsAreWithheld(boardState.data)
   const filteredBoard = filterBoardForViewMode(boardState.data, boardViewMode)
   const teamOperatingRead = toOperatingStateReadModel(boardState.data || {}, {
     scope: 'team',
@@ -143,6 +145,12 @@ export default function TonightsBullpenBoard({
     cta: { href: '#pitcher-lanes', label: 'Review pitcher lanes' },
     density: 'compact',
   })
+
+  useEffect(() => {
+    if (rosterContextLimited && showUnavailable) {
+      setShowUnavailable(false)
+    }
+  }, [rosterContextLimited, showUnavailable])
 
   return (
     <div>
@@ -173,15 +181,22 @@ export default function TonightsBullpenBoard({
             type="button"
             onClick={() => setShowUnavailable(value => !value)}
             aria-pressed={showUnavailable}
+            disabled={rosterContextLimited}
             className={`rounded border px-2.5 py-1 font-mono text-xs transition-all ${
-              showUnavailable
-                ? 'bg-amber/10 border-amber/40 text-amber'
-                : 'border-dirt text-chalk400 hover:border-chalk400'
+              rosterContextLimited
+                ? 'cursor-not-allowed border-dirt text-chalk600 opacity-70'
+                : showUnavailable
+                  ? 'bg-amber/10 border-amber/40 text-amber'
+                  : 'border-dirt text-chalk400 hover:border-chalk400'
             }`}
           >
             Show unavailable arms
           </button>
-          {showUnavailable && (
+          {rosterContextLimited ? (
+            <span className="rounded border border-dirt bg-dugout px-2 py-1 font-mono text-[10px] uppercase tracking-widest text-chalk500">
+              Unavailable roster context withheld.
+            </span>
+          ) : showUnavailable && (
             <span className="rounded border border-dirt bg-dugout px-2 py-1 font-mono text-[10px] uppercase tracking-widest text-chalk500">
               Unavailable relievers are context only.
             </span>
@@ -212,6 +227,7 @@ export default function TonightsBullpenBoard({
                 payload={teamReliefWorkPayload}
                 loading={teamReliefWorkLoading}
                 error={teamReliefWorkError}
+                rosterContextLimited={rosterContextLimited}
               />
             </div>
             <BullpenBoardView

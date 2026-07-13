@@ -6,6 +6,8 @@ Unavailable), and leaves the legacy payload untouched. These tests also record t
 observed parity between the authority and the legacy summary. No consumer is migrated.
 """
 
+from datetime import date
+
 import pytest
 from flask import Flask
 from tests.db_config import configure_test_database, create_test_schema, drop_test_schema
@@ -13,10 +15,14 @@ from tests.db_config import configure_test_database, create_test_schema, drop_te
 import services.sync as sync_service
 import models.prospect  # noqa: F401  (register on db.metadata)
 from api.bullpen import bullpen_bp, build_team_roster_authority
+from models.pitcher import Pitcher
+from models.roster_status_snapshot import RosterStatusSnapshot
+from models.sync_run import SyncRun
 from services.roster_authority import CAPABILITY as ROSTER_AUTHORITY_CAPABILITY
-from services.roster_status import STATUS_ACTIVE, STATUS_IL_60, STATUS_MINORS
+from services.roster_status import STATUS_ACTIVE, STATUS_IL_60, STATUS_MINORS, STATUS_UNKNOWN
 from tests.test_bullpen_board import _seed_pitcher
 from utils.db import db
+from utils.time import utc_now_naive
 
 
 TEAM_ID = 147
@@ -46,7 +52,37 @@ def _seed_team():
     _seed_pitcher('Cody Active', team_id=TEAM_ID, mlb_id=70003, roster_status=STATUS_ACTIVE, raw_score=30.0)
     _seed_pitcher('Ike Injured', team_id=TEAM_ID, mlb_id=70004, roster_status=STATUS_IL_60, raw_score=10.0)
     _seed_pitcher('Omar Optioned', team_id=TEAM_ID, mlb_id=70005, roster_status=STATUS_MINORS, raw_score=10.0)
-    _seed_pitcher('Quincy Question', team_id=TEAM_ID, mlb_id=70006, roster_status=None, raw_score=10.0)
+    _seed_pitcher('Quincy Question', team_id=TEAM_ID, mlb_id=70006, roster_status=STATUS_UNKNOWN, raw_score=10.0)
+    _seed_roster_snapshots_for_team()
+
+
+def _seed_roster_snapshots_for_team(team_id=TEAM_ID):
+    timestamp = utc_now_naive()
+    run = SyncRun(
+        job_name='daily_sync',
+        status='success',
+        stage='complete',
+        source='test_fixture',
+        started_at=timestamp,
+        completed_at=timestamp,
+    )
+    db.session.add(run)
+    db.session.flush()
+    for pitcher in Pitcher.query.filter_by(team_id=team_id).all():
+        db.session.add(RosterStatusSnapshot(
+            pitcher_id=pitcher.id,
+            mlb_id=pitcher.mlb_id,
+            team_id=team_id,
+            snapshot_date=date.today(),
+            roster_status=pitcher.roster_status or STATUS_UNKNOWN,
+            active_roster=pitcher.roster_status == STATUS_ACTIVE,
+            forty_man_roster=pitcher.roster_status in {STATUS_ACTIVE, STATUS_IL_60, STATUS_MINORS, STATUS_UNKNOWN},
+            source=pitcher.roster_status_source or 'mlb_stats_api:roster_sync:unavailable',
+            sync_run_id=run.id,
+            first_seen_at=timestamp,
+            updated_at=timestamp,
+        ))
+    db.session.commit()
 
 
 def _board(client, *, include_stale=False):
@@ -79,6 +115,29 @@ def test_board_payload_no_longer_exposes_legacy_roster_status(client):
     assert 'roster_status' not in body
     # The canonical payload remains and is the only roster-context object on the board.
     assert 'roster_authority' in body
+
+
+def test_missing_roster_readiness_withholds_public_counts(client):
+    with client.application.app_context():
+        _seed_pitcher(
+            'Unverified Active',
+            team_id=TEAM_ID,
+            mlb_id=70101,
+            roster_status=STATUS_ACTIVE,
+            raw_score=10.0,
+        )
+
+    body = _board(client)
+    authority = body['roster_authority']
+
+    assert authority['readiness']['claims_available'] is False
+    assert authority['readiness']['counts_withheld'] is True
+    assert authority['counts']['bullpen_arms'] is None
+    assert authority['counts']['available_count'] is None
+    assert authority['population']['total_candidates'] is None
+    assert authority['evidence']['bullpen_arms'] == []
+    assert body['total_pitchers'] is None
+    assert all(group['count'] is None for group in body['groups'])
 
 
 # 3. Invariant fields match expected authority values, each backed by evidence.

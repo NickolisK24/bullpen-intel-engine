@@ -3,6 +3,12 @@ const asNumber = (value) => {
   return Number.isFinite(number) ? number : 0
 }
 
+const asOptionalNumber = (value) => {
+  if (value == null) return null
+  const number = Number(value)
+  return Number.isFinite(number) ? number : null
+}
+
 const asArray = (value) => Array.isArray(value) ? value : []
 
 const normalizeUnavailablePitcher = (pitcher) => {
@@ -36,29 +42,45 @@ export function normalizeInjuryIlContext(payload) {
   const source = payload?.injury_il_context || payload?.injuryIlContext || payload
   if (!source || typeof source !== 'object') return null
   if (!source.league || typeof source.league !== 'object') return null
+  const readiness = source.roster_readiness || source.rosterReadiness || payload?.roster_readiness || payload?.rosterReadiness || null
+  const countsWithheld = (
+    source.counts_withheld === true
+    || source.countsWithheld === true
+    || readiness?.counts_withheld === true
+    || readiness?.claims_available === false
+    || !readiness
+  )
 
   const league = {
     populationScope: source.league.population_scope || 'dashboard_bullpen_population',
-    injuredListCount: asNumber(source.league.injured_list_count),
-    inactiveCount: asNumber(source.league.inactive_count),
-    teamsWithMultipleUnavailable: asNumber(source.league.teams_with_multiple_unavailable),
-    bullpenPopulationCount: asNumber(
+    injuredListCount: countsWithheld ? null : asOptionalNumber(source.league.injured_list_count),
+    inactiveCount: countsWithheld ? null : asOptionalNumber(source.league.inactive_count),
+    teamsWithMultipleUnavailable: countsWithheld ? null : asOptionalNumber(source.league.teams_with_multiple_unavailable),
+    bullpenPopulationCount: countsWithheld ? null : asOptionalNumber(
       source.league.bullpen_population_count ?? source.league.tracked_pitchers_count
     ),
-    trackedPitchersCount: asNumber(source.league.tracked_pitchers_count),
+    trackedPitchersCount: countsWithheld ? null : asOptionalNumber(source.league.tracked_pitchers_count),
   }
 
   return {
     capability: source.capability || 'injury_il_context_v1',
     rankingApplied: source.ranking_applied === true,
     predictionApplied: source.prediction_applied === true,
+    countsWithheld,
+    rosterReadiness: readiness,
     league,
     followedTeam: normalizeFollowedTeam(source.followed_team),
-    limitations: asArray(source.limitations).filter(Boolean),
+    limitations: [
+      ...asArray(source.limitations),
+      ...asArray(readiness?.reader_limitations || readiness?.readerLimitations),
+    ].filter(Boolean),
   }
 }
 
 export function getInjuryIlContextSummary(view) {
+  if (view?.countsWithheld) {
+    return 'Current active-roster coverage could not be verified, so dashboard roster counts are withheld.'
+  }
   const league = view?.league || {}
   const unavailable = (
     asNumber(league.injuredListCount)
