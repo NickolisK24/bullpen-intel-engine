@@ -374,7 +374,15 @@ def test_shape_surprise_deadletters_and_degrades_readiness(app):
     with app.app_context():
         result = sync_transactions(
             client=FakeTransactionClient([
-                _tx(transaction_id='tx-missing-identity', player_mlb_id=None),
+                # A person-referencing row (name present) whose id is missing
+                # is a malformed player row and must keep failing closed. Rows
+                # with no person reference at all are covered separately as
+                # non-player classifications.
+                _tx(
+                    transaction_id='tx-missing-identity',
+                    player_mlb_id=None,
+                    player_full_name='Identified Person Without Id',
+                ),
             ]),
             start_date=date(2026, 6, 27),
             end_date=date(2026, 7, 4),
@@ -463,3 +471,175 @@ def test_daily_sync_transaction_stage_is_bounded_and_non_authoritative(app, monk
     assert status['status'] == 'partial'
     assert status['records_failed'] == 1
     assert captured['end_date'] == date(2026, 7, 4)
+
+
+def _seed_identity_dead_letter(entity_ref, created_at=datetime(2026, 7, 12, 10, 55, 0)):
+    failure = SyncFailure(
+        job_name='daily_sync',
+        entity_type=TRANSACTION_IDENTITY_ENTITY_TYPE,
+        entity_ref=str(entity_ref),
+        payload={'reason': 'missing_player_identity'},
+        error='Transaction row missing player identity',
+        created_at=created_at,
+        resolved=False,
+    )
+    db.session.add(failure)
+    db.session.commit()
+    return failure
+
+
+def _non_player_trade_component(transaction_id, *, from_team_id, to_team_id):
+    """
+    Captured source shape of a team-level trade component: the structured
+    client mapped no person object and no person name from the raw row.
+    """
+    return _tx(
+        transaction_id=transaction_id,
+        player_mlb_id=None,
+        player_full_name=None,
+        transaction_type_code='TRADE',
+        from_team_id=from_team_id,
+        to_team_id=to_team_id,
+        transaction_date='2026-07-12',
+    )
+
+
+def _person_row_missing_id(transaction_id='tx-name-only'):
+    """A person-referencing row whose id is missing: must stay fail-closed."""
+    return _tx(
+        transaction_id=transaction_id,
+        player_mlb_id=None,
+        player_full_name='Unresolvable Person',
+        transaction_type_code='RECALL',
+    )
+
+
+def test_non_player_rows_classify_generically_without_identity_failures(app):
+    with app.app_context():
+        run = _run()
+        result = sync_transactions(
+            client=FakeTransactionClient([
+                _non_player_trade_component('926807', from_team_id=142, to_team_id=133),
+                _non_player_trade_component('926870', from_team_id=133, to_team_id=142),
+            ]),
+            start_date=date(2026, 7, 6),
+            end_date=date(2026, 7, 13),
+            timestamp=datetime(2026, 7, 13, 10, 55, 0),
+            sync_run_id=run.id,
+        )
+        failure_count = SyncFailure.query.count()
+        stored_count = PlayerTransaction.query.count()
+        window = (
+            PlayerTransactionSyncWindow.query
+            .order_by(PlayerTransactionSyncWindow.id.desc())
+            .first()
+        )
+
+    assert result['non_player_count'] == 2
+    assert result['records_failed'] == 0
+    assert result['errors'] == 0
+    assert failure_count == 0
+    # Non-player components never enter player roster calculations.
+    assert stored_count == 0
+    assert window.status == 'success'
+
+
+def test_person_row_missing_id_still_fails_closed(app):
+    with app.app_context():
+        run = _run()
+        result = sync_transactions(
+            client=FakeTransactionClient([_person_row_missing_id()]),
+            start_date=date(2026, 7, 6),
+            end_date=date(2026, 7, 13),
+            timestamp=datetime(2026, 7, 13, 10, 55, 0),
+            sync_run_id=run.id,
+        )
+        failures = SyncFailure.query.filter_by(
+            entity_type=TRANSACTION_IDENTITY_ENTITY_TYPE,
+            resolved=False,
+        ).all()
+        window = (
+            PlayerTransactionSyncWindow.query
+            .order_by(PlayerTransactionSyncWindow.id.desc())
+            .first()
+        )
+
+    assert result['records_failed'] == 1
+    assert result['non_player_count'] == 0
+    assert len(failures) == 1
+    assert failures[0].entity_ref == 'tx-name-only'
+    assert window.status == 'partial'
+
+
+def test_repeated_identity_failure_does_not_duplicate_dead_letters(app):
+    with app.app_context():
+        run = _run()
+        for _ in range(2):
+            result = sync_transactions(
+                client=FakeTransactionClient([_person_row_missing_id()]),
+                start_date=date(2026, 7, 6),
+                end_date=date(2026, 7, 13),
+                timestamp=datetime(2026, 7, 13, 10, 55, 0),
+                sync_run_id=run.id,
+            )
+            # Honesty is preserved on every run even without a duplicate row.
+            assert result['records_failed'] == 1
+        rows = SyncFailure.query.filter_by(
+            entity_type=TRANSACTION_IDENTITY_ENTITY_TYPE,
+            entity_ref='tx-name-only',
+        ).all()
+
+    assert len(rows) == 1
+    assert rows[0].resolved is False
+
+
+def test_non_player_reprocessing_resolves_prior_dead_letter_idempotently(app):
+    with app.app_context():
+        run = _run()
+        original = _seed_identity_dead_letter('926807')
+        original_id = original.id
+
+        for _ in range(2):
+            result = sync_transactions(
+                client=FakeTransactionClient([
+                    _non_player_trade_component('926807', from_team_id=142, to_team_id=133),
+                ]),
+                start_date=date(2026, 7, 6),
+                end_date=date(2026, 7, 13),
+                timestamp=datetime(2026, 7, 13, 10, 55, 0),
+                sync_run_id=run.id,
+            )
+            assert result['records_failed'] == 0
+            assert result['non_player_count'] == 1
+
+        rows = SyncFailure.query.filter_by(entity_ref='926807').all()
+
+    # The historical dead letter is preserved, resolved exactly once, and no
+    # replacement failures were recorded.
+    assert len(rows) == 1
+    assert rows[0].id == original_id
+    assert rows[0].resolved is True
+    assert rows[0].resolved_at is not None
+
+
+def test_successful_storage_resolves_prior_identity_dead_letter(app):
+    with app.app_context():
+        pitcher = _pitcher()
+        _snapshot(pitcher)
+        run = _run()
+        _seed_identity_dead_letter('tx-1')
+
+        result = sync_transactions(
+            client=FakeTransactionClient([_tx()]),
+            start_date=date(2026, 6, 27),
+            end_date=date(2026, 7, 4),
+            timestamp=datetime(2026, 7, 4, 12, 0, 0),
+            sync_run_id=run.id,
+        )
+        row = SyncFailure.query.filter_by(entity_ref='tx-1').one()
+        stored = PlayerTransaction.query.count()
+
+    assert result['records_stored'] == 1
+    assert stored == 1
+    assert row.resolved is True
+    assert row.resolved_at is not None

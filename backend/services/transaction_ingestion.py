@@ -57,6 +57,8 @@ WINDOW_STATUS_SUCCESS = 'success'
 WINDOW_STATUS_PARTIAL = 'partial'
 WINDOW_STATUS_FAILED = 'failed'
 
+NON_PLAYER_TRANSACTION_REASON = 'non_player_transaction'
+
 _CATEGORY_BY_TYPE_CODE = {
     'RECALL': CATEGORY_RECALL,
     'RECALLED': CATEGORY_RECALL,
@@ -160,6 +162,28 @@ def normalize_transaction_category(type_code):
     return _CATEGORY_BY_TYPE_CODE.get(code, CATEGORY_UNKNOWN)
 
 
+def is_non_player_transaction(transaction):
+    """
+    True when the source row carries no person reference of any kind.
+
+    The MLB transactions feed includes team-level transaction components (for
+    example cash considerations, players to be named later, or international
+    slot money in a trade) that reference no person. The structured client
+    maps every person-bearing source shape (``person``/``player`` objects and
+    the flat id/name variants) into ``player_mlb_id`` and
+    ``player_full_name``; when both are absent, the source row is a non-player
+    fact, not a malformed player row, so requiring player identity from it is
+    a category error. A row that does reference a person (a name is present)
+    but lacks a usable id remains an identity failure and fails closed.
+    """
+    if not isinstance(transaction, dict):
+        return False
+    return (
+        _int_or_none(transaction.get('player_mlb_id')) is None
+        and _string_or_none(transaction.get('player_full_name')) is None
+    )
+
+
 def sync_transactions(
     *,
     start_date=None,
@@ -239,6 +263,29 @@ def sync_transactions(
             errors.append(detail)
             continue
 
+        if is_non_player_transaction(transaction):
+            # Deterministic source-shape classification: no person reference
+            # exists anywhere in the row, so player identity is not required.
+            # The row is intentionally ignored for player roster purposes and
+            # never enters player calculations. Prior identity dead letters
+            # for this exact source record are resolved as reprocessed.
+            counts['non_player_count'] += 1
+            transaction_ref = _string_or_none(transaction.get('transaction_id'))
+            logger.info(
+                'Transaction %s classified %s (type_code=%s); '
+                'player identity not required.',
+                transaction_ref,
+                NON_PLAYER_TRANSACTION_REASON,
+                _string_or_none(transaction.get('transaction_type_code')),
+            )
+            if transaction_ref:
+                dead_letter.resolve_entity_failures(
+                    TRANSACTION_IDENTITY_ENTITY_TYPE,
+                    transaction_ref,
+                    job_name='daily_sync',
+                )
+            continue
+
         values, detail = _values_from_transaction(
             transaction,
             start_date=start_date,
@@ -265,6 +312,17 @@ def sync_transactions(
         )
         if row is None:
             continue
+
+        # Successful reprocessing of this exact source record resolves any
+        # prior identity dead letters recorded against it (idempotent; the
+        # historical rows are preserved with a resolution timestamp).
+        stored_ref = _string_or_none(values.get('transaction_id'))
+        if stored_ref:
+            dead_letter.resolve_entity_failures(
+                TRANSACTION_IDENTITY_ENTITY_TYPE,
+                stored_ref,
+                job_name='daily_sync',
+            )
 
         counts['records_stored'] += 1
         counts[f'records_{action}'] += 1
@@ -525,6 +583,18 @@ def _record_transaction_failure(entity_type, detail, *, entity_ref=None, sync_ru
     payload = dict(detail)
     payload.pop('entity_type', None)
     payload.pop('entity_ref', None)
+    # A source record that keeps failing across runs still counts against this
+    # run's honesty (records_failed / partial status are unchanged), but it
+    # must not accumulate one duplicate unresolved dead-letter row per run.
+    # The original row remains the durable record until it is resolved.
+    if entity_ref is not None and _unresolved_failure_exists(entity_type, entity_ref):
+        logger.warning(
+            'Transaction failure repeated for entity_type=%s entity_ref=%s; '
+            'existing unresolved dead letter retained without duplication.',
+            entity_type,
+            entity_ref,
+        )
+        return True
     failure = dead_letter.record_failure(
         entity_type,
         payload.get('error') or payload.get('reason') or 'Transaction ingest failed',
@@ -534,6 +604,25 @@ def _record_transaction_failure(entity_type, detail, *, entity_ref=None, sync_ru
         job_name='daily_sync',
     )
     return failure is not None
+
+
+def _unresolved_failure_exists(entity_type, entity_ref):
+    from models.sync_failure import SyncFailure
+
+    try:
+        return db.session.query(
+            SyncFailure.query
+            .filter_by(
+                entity_type=entity_type,
+                entity_ref=str(entity_ref),
+                job_name='daily_sync',
+                resolved=False,
+            )
+            .exists()
+        ).scalar()
+    except Exception:  # noqa: BLE001 - never let dedup checks hide a failure
+        db.session.rollback()
+        return False
 
 
 def _summary(start_date, end_date, counts, errors):
@@ -551,6 +640,7 @@ def _summary(start_date, end_date, counts, errors):
         'alignment_unknown_count': counts.get('alignment_unknown_count', 0),
         'alignment_misaligned_count': counts.get('alignment_misaligned_count', 0),
         'alignment_no_snapshot_count': counts.get('alignment_no_snapshot_count', 0),
+        'non_player_count': counts.get('non_player_count', 0),
         'records_failed': counts.get('records_failed', 0),
         'errors': counts.get('errors', 0),
         'error_details': errors,

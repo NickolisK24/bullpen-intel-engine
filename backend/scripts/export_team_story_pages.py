@@ -81,11 +81,19 @@ def active_teams():
 def build_team_boards(teams):
     from api.bullpen import _build_team_board
 
-    return [
-        _build_team_board(team['team_id'])
-        for team in teams
-        if team.get('team_id') is not None
-    ]
+    export_logger = logging.getLogger('baseballos.team_story_export')
+    boards = []
+    eligible = [team for team in teams if team.get('team_id') is not None]
+    for index, team in enumerate(eligible, start=1):
+        export_logger.info(
+            'Building team board %s/%s: %s (team_id=%s)',
+            index,
+            len(eligible),
+            team.get('team_abbreviation') or team.get('team_name'),
+            team['team_id'],
+        )
+        boards.append(_build_team_board(team['team_id']))
+    return boards
 
 
 def load_dashboard_payload():

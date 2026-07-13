@@ -1554,3 +1554,155 @@ class TestSyncSnapshotIntegration:
 
         row = next(item for item in body['data'] if item['pitcher']['full_name'] == 'Published Arm')
         assert row['raw_score'] == 12.0
+
+
+class _FakeTransactionsSourceClient:
+    """Network-boundary stand-in only; ingestion logic stays real."""
+
+    def __init__(self, records):
+        self.records = records
+
+    def get_transactions(self, **_kwargs):
+        return [dict(record) for record in self.records]
+
+
+def _real_sync_transactions_with(records):
+    import services.transaction_ingestion as transaction_ingestion
+
+    def _sync_transactions(**kwargs):
+        return transaction_ingestion.sync_transactions(
+            client=_FakeTransactionsSourceClient(records),
+            **kwargs,
+        )
+
+    return _sync_transactions
+
+
+def _non_player_trade_component_record(transaction_id):
+    return {
+        'transaction_id': transaction_id,
+        'transaction_date': '2026-07-12',
+        'effective_date': None,
+        'resolution_date': None,
+        'player_mlb_id': None,
+        'player_full_name': None,
+        'from_team_id': 142,
+        'to_team_id': 133,
+        'transaction_type_code': 'TRADE',
+        'source_endpoint': '/transactions',
+        'source_query_start_date': '2026-07-06',
+        'source_query_end_date': '2026-07-13',
+    }
+
+
+def test_daily_sync_with_non_player_components_reaches_success_and_publishes(app, monkeypatch):
+    """
+    Partial-to-success recovery: rows with no person reference classify as
+    non-player instead of identity failures, the daily sync reaches success,
+    and the CURRENT candidate snapshot publishes with Phase 0I readiness.
+    """
+    from models.sync_failure import SyncFailure
+    from services.transaction_ingestion import TRANSACTION_IDENTITY_ENTITY_TYPE
+
+    monkeypatch.setenv('SYNC_SCHEDULE_FINALITY_PREFLIGHT', 'false')
+    monkeypatch.setattr(sync_service, 'sync_team_assignments', _sync_scaffolding)
+    monkeypatch.setattr(sync_service, 'sync_roster_statuses', _sync_scaffolding)
+    monkeypatch.setattr(sync_service, 'sync_recent_logs', lambda **kwargs: {
+        'new_logs_added': 0,
+        'pitchers_touched': 0,
+        'errors': 0,
+        'records_failed': 0,
+        'days_back': 7,
+        'season': date.today().year,
+        'cutoff': date.today().isoformat(),
+    })
+    monkeypatch.setattr(sync_service, 'recalculate_all_fatigue', lambda: 1)
+    monkeypatch.setattr(
+        sync_service,
+        'sync_transactions',
+        _real_sync_transactions_with([
+            _non_player_trade_component_record('926807'),
+            _non_player_trade_component_record('926870'),
+        ]),
+    )
+
+    with app.app_context():
+        _seed_dashboard_data()
+        prior, _ = _build_published_dashboard_snapshot()
+        prior_snapshot_id = prior['snapshot_id']
+        db.session.add(SyncFailure(
+            job_name='daily_sync',
+            entity_type=TRANSACTION_IDENTITY_ENTITY_TYPE,
+            entity_ref='926807',
+            payload={'reason': 'missing_player_identity'},
+            error='Transaction row missing player identity',
+            created_at=utc_now_naive() - timedelta(days=1),
+            resolved=False,
+        ))
+        db.session.commit()
+
+    status = sync_service.run_daily_sync(app, days_back=7)
+
+    assert status['status'] == 'success'
+    assert status['records_failed'] == 0
+    assert status['errors'] == 0
+
+    with app.app_context():
+        snapshot = DashboardSnapshot.query.order_by(DashboardSnapshot.id.desc()).first()
+        run = SyncRun.query.order_by(SyncRun.id.desc()).first()
+        assert snapshot.status == dashboard_snapshot.SNAPSHOT_STATUS_READY
+        assert snapshot.is_published is True
+        # Current-candidate verification: this run's snapshot — not the prior
+        # published one — is what serves after the sync.
+        assert snapshot.id != prior_snapshot_id
+        assert run.published_dashboard_snapshot_id == snapshot.id
+        assert dashboard_snapshot.get_latest_valid_dashboard_snapshot().id == snapshot.id
+        readiness = (snapshot.payload or {}).get('roster_readiness') or {}
+        assert readiness.get('capability') == 'public_roster_readiness_v1'
+        resolved_row = SyncFailure.query.filter_by(entity_ref='926807').one()
+        assert resolved_row.resolved is True
+        assert resolved_row.resolved_at is not None
+
+
+def test_daily_sync_with_unresolved_person_identity_stays_partial_and_withholds(app, monkeypatch):
+    """A genuinely ambiguous person identity still fails closed end to end."""
+    monkeypatch.setenv('SYNC_SCHEDULE_FINALITY_PREFLIGHT', 'false')
+    monkeypatch.setattr(sync_service, 'sync_team_assignments', _sync_scaffolding)
+    monkeypatch.setattr(sync_service, 'sync_roster_statuses', _sync_scaffolding)
+    monkeypatch.setattr(sync_service, 'sync_recent_logs', lambda **kwargs: {
+        'new_logs_added': 0,
+        'pitchers_touched': 0,
+        'errors': 0,
+        'records_failed': 0,
+        'days_back': 7,
+        'season': date.today().year,
+        'cutoff': date.today().isoformat(),
+    })
+    monkeypatch.setattr(sync_service, 'recalculate_all_fatigue', lambda: 1)
+    ambiguous = dict(
+        _non_player_trade_component_record('tx-ambiguous-person'),
+        player_full_name='Unresolvable Person',
+        transaction_type_code='RECALL',
+    )
+    monkeypatch.setattr(
+        sync_service,
+        'sync_transactions',
+        _real_sync_transactions_with([ambiguous]),
+    )
+
+    with app.app_context():
+        _seed_dashboard_data()
+        prior, _ = _build_published_dashboard_snapshot()
+        prior_snapshot_id = prior['snapshot_id']
+
+    status = sync_service.run_daily_sync(app, days_back=7)
+
+    assert status['status'] == 'partial'
+    assert status['records_failed'] == 1
+
+    with app.app_context():
+        newest = DashboardSnapshot.query.order_by(DashboardSnapshot.id.desc()).first()
+        assert newest.is_published is False
+        assert newest.status == dashboard_snapshot.SNAPSHOT_STATUS_PENDING
+        # The previous trusted snapshot keeps serving; publication is withheld.
+        assert dashboard_snapshot.get_latest_valid_dashboard_snapshot().id == prior_snapshot_id
