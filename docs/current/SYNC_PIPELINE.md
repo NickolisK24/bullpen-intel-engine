@@ -167,6 +167,31 @@ curl -s https://<backend-host>/api/bullpen/teams/142/board \
 `claims_available: true` means roster claims are being served; otherwise
 `reason_codes` names the exact blocker.
 
+**Roster dead-letter reconciliation.** Public roster readiness fails closed on
+ANY unresolved `roster_status_fetch` / `roster_status_snapshot_identity` /
+`roster_status_snapshot_conflict` dead letter (reason code
+`dead_letters_unresolved`; the gate is league-wide, so one genuine conflict
+withholds every team). The daily roster sync now reconciles these against
+newer authoritative official roster evidence, and only that:
+
+- *fetch* rows resolve when the same team's roster feeds fetch successfully
+  (pre-existing behavior);
+- *identity* rows resolve when a later sync enumerates the same team's feeds
+  and identifies every entry (a run that records a fresh identity failure for
+  the team resolves nothing);
+- *conflict* rows resolve when a later sync writes or confirms the same
+  pitcher's official snapshot without a team conflict (a pitcher whose upsert
+  conflicts in the current run is never self-resolved).
+
+Rows are never deleted — resolution sets `resolved`/`resolved_at` only, is
+idempotent, resolves duplicate rows for the same entity together, and genuine
+or ambiguous conflicts stay unresolved and keep claims withheld. Inspect the
+current blockers (read-only) with:
+
+```
+python backend/scripts/roster_readiness_dead_letter_report.py [--json] [--include-resolved]
+```
+
 **Confirming the current run's snapshot published (not an older one):** the
 sync log line `Dashboard snapshot DB write completed snapshot_id=<id>
 status=ready published=True` must show the new id, and

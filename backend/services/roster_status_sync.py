@@ -680,6 +680,8 @@ def sync_roster_statuses(
     snapshot_rows_unchanged = 0
     snapshot_conflicts = 0
     records_failed = 0
+    dead_letters_resolved = Counter()
+    reconciled_conflict_refs = []
 
     for team_id in team_ids:
         index, team_errors = build_team_roster_status_index(team_id, client=client)
@@ -700,11 +702,22 @@ def sync_roster_statuses(
                 if _record_roster_failure(detail, sync_run_id=sync_run_id):
                     records_failed += 1
             continue
-        dead_letter.resolve_entity_failures(
+        dead_letters_resolved['fetch'] += dead_letter.resolve_entity_failures(
             ROSTER_STATUS_FETCH_ENTITY_TYPE,
             team_id,
             job_name='daily_sync',
         )
+        if not identity_errors:
+            # Newer authoritative evidence: this run enumerated every entry of
+            # the team's official roster feeds and identified all of them, so
+            # historical missing-identity conflicts for this team no longer
+            # describe current official evidence. A run that recorded a fresh
+            # identity failure for this team resolves nothing here.
+            dead_letters_resolved['identity'] += dead_letter.resolve_entity_failures(
+                ROSTER_STATUS_IDENTITY_ENTITY_TYPE,
+                team_id,
+                job_name='daily_sync',
+            )
         pitchers = (
             Pitcher.query
             .filter(Pitcher.team_id == team_id)
@@ -745,11 +758,23 @@ def sync_roster_statuses(
                 snapshot_rows_corrected += 1
             else:
                 snapshot_rows_unchanged += 1
+            reconciled_conflict_refs.append(pitcher.mlb_id)
 
             latest_snapshot = latest_roster_status_snapshot_for_pitcher(pitcher.id)
             if latest_snapshot and _apply_snapshot_to_pitcher_cache(pitcher, latest_snapshot):
                 changed += 1
             refreshed += 1
+
+    # Newer authoritative evidence: each pitcher above now has an official
+    # roster snapshot written (or confirmed) without a team conflict by this
+    # later sync, so older unresolved conflict dead letters for those exact
+    # pitchers are superseded. A pitcher whose upsert conflicted in THIS run
+    # never reaches this list, so a live conflict is never self-resolved.
+    dead_letters_resolved['conflict'] += dead_letter.resolve_entity_failures_bulk(
+        ROSTER_STATUS_CONFLICT_ENTITY_TYPE,
+        reconciled_conflict_refs,
+        job_name='daily_sync',
+    )
 
     if commit:
         db.session.commit()
@@ -764,6 +789,11 @@ def sync_roster_statuses(
         'snapshots_corrected': snapshot_rows_corrected,
         'snapshots_unchanged': snapshot_rows_unchanged,
         'snapshot_conflicts': snapshot_conflicts,
+        'dead_letters_resolved': {
+            'fetch': dead_letters_resolved.get('fetch', 0),
+            'identity': dead_letters_resolved.get('identity', 0),
+            'conflict': dead_letters_resolved.get('conflict', 0),
+        },
         'records_failed': records_failed,
         'missing_from_roster_sources': missing,
         'unknown_count': unknown,

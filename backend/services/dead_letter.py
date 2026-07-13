@@ -145,3 +145,48 @@ def resolve_entity_failures(entity_type, entity_ref, job_name='daily_sync'):
             exc,
         )
         return 0
+
+
+def resolve_entity_failures_bulk(entity_type, entity_refs, job_name='daily_sync'):
+    """
+    Mark unresolved failures for a set of retryable entities as resolved.
+
+    Set-based variant of ``resolve_entity_failures`` for callers that verified
+    many entities in one pass (for example a full roster sync). Same semantics:
+    rows are preserved, only ``resolved``/``resolved_at`` change, resolved rows
+    are never touched again, and the caller owns the surrounding commit.
+    """
+    refs = tuple(dict.fromkeys(
+        str(ref) for ref in (entity_refs or ()) if ref is not None
+    ))
+    if not refs:
+        return 0
+    try:
+        rows = (
+            SyncFailure.query
+            .filter(
+                SyncFailure.entity_type == entity_type,
+                SyncFailure.entity_ref.in_(refs),
+                SyncFailure.job_name == job_name,
+                SyncFailure.resolved.is_(False),
+            )
+            .all()
+        )
+        if not rows:
+            return 0
+        resolved_at = utc_now_naive()
+        for row in rows:
+            row.resolved = True
+            row.resolved_at = resolved_at
+            db.session.add(row)
+        db.session.flush()
+        return len(rows)
+    except SQLAlchemyError as exc:
+        db.session.rollback()
+        logger.error(
+            'Could not bulk-resolve dead-letters entity_type=%s (%s refs): %s',
+            entity_type,
+            len(refs),
+            exc,
+        )
+        return 0
