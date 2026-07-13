@@ -31,7 +31,7 @@ def seed_roster_readiness_snapshots(snapshot_dates=None):
         return
 
     timestamp = utc_now_naive()
-    sync_run_id = db.session.query(db.func.max(SyncRun.id)).scalar() or 0
+    sync_run = _create_roster_readiness_sync_run(timestamp)
 
     for pitcher, snapshot_date in pending:
         status = pitcher.roster_status or STATUS_UNKNOWN
@@ -51,11 +51,26 @@ def seed_roster_readiness_snapshots(snapshot_dates=None):
             roster_status_raw_code=pitcher.roster_status_raw_code,
             roster_status_raw_description=pitcher.roster_status_raw_description,
             source=source,
-            sync_run_id=sync_run_id,
+            sync_run_id=sync_run.id,
             first_seen_at=timestamp,
             updated_at=timestamp,
         ))
     db.session.commit()
+
+
+def _create_roster_readiness_sync_run(timestamp):
+    run = SyncRun(
+        job_name='roster_status_snapshot_fixture',
+        started_at=timestamp,
+        completed_at=timestamp,
+        status='success',
+        stage='roster_status',
+        source='roster_readiness_fixture',
+        created_at=timestamp,
+    )
+    db.session.add(run)
+    db.session.flush()
+    return run
 
 
 def _snapshot_dates(extra_dates=None):
