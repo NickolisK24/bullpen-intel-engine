@@ -85,7 +85,34 @@ const insufficientRole = {
   limitations: ['No usable recent appearances with innings data.'],
 }
 
+const middleRole = {
+  role_key: 'middle_relief',
+  role: 'Middle Relief Pattern',
+  confidence: 'high',
+  short_reason: 'Recent usage shows regular, shorter outings.',
+  evidence: ['4 appearances in the recent window', 'Average recent IP: 1.0'],
+  limitations: ['Role is inferred from recent workload patterns only.'],
+}
+
+const setupRole = {
+  role_key: 'setup_bridge',
+  role: 'Setup / Bridge Pattern',
+  confidence: 'high',
+  short_reason: 'Recent usage shows setup or bridge outings.',
+  evidence: ['4 appearances in the recent window', '2 hold(s) recorded'],
+  limitations: ['Role is inferred from recent workload patterns only.'],
+}
+
 const render = (board) => renderToStaticMarkup(React.createElement(BullpenBoardView, { board }))
+
+// The page-level label key legend always lists the full role vocabulary, so
+// per-card wording assertions must scope to that pitcher's own card markup.
+const CARD_MARKER = 'rounded-lg border border-dirt bg-field/60 p-3'
+function cardMarkup(html, name) {
+  const segment = html.split(CARD_MARKER).find(part => part.includes(name))
+  assert.ok(segment, `no rendered card found for ${name}`)
+  return segment
+}
 
 test('role and read label chips render product labels only on the pitcher card', () => {
   const board = makeBoard({ cardsByStatus: { Available: [roleCard('Lou Long', 'Available', longRole)] } })
@@ -284,4 +311,70 @@ test('getRoleView maps key, labels, confidence, and neutral tone', () => {
   assert.equal(view.getRoleView(null), null)
   // Insufficient/low use the muted tone; defined roles use the neutral tone.
   assert.notEqual(view.getRoleView(longRole).tone.color, view.getRoleView(insufficientRole).tone.color)
+})
+
+test('a middle-relief card chips Middle Relief Arm over Middle Relief Pattern evidence', () => {
+  const board = makeBoard({
+    cardsByStatus: {
+      Available: [
+        roleCard('Milo Middle', 'Available', middleRole),
+        roleCard('Sam Setup', 'Available', setupRole),
+      ],
+    },
+  })
+  const html = render(board)
+
+  const middleCard = visibleText(cardMarkup(html, 'Milo Middle'))
+  assert.ok(middleCard.includes('Middle Relief Arm'))
+  assert.ok(middleCard.includes('Observed role: Middle Relief Pattern'))
+  // The proven audit contradiction: a middle reliever must never carry the
+  // Setup Arm chip while the expanded evidence says Middle Relief Pattern.
+  assert.equal(middleCard.includes('Setup Arm'), false)
+
+  const cardView = view.getBoardCardView(board.groups[0].pitchers[0])
+  assert.equal(cardView.pitcherLabels.role.key, 'depth_arm')
+  assert.equal(cardView.pitcherLabels.role.label, 'Middle Relief Arm')
+  assert.equal(cardView.role.label, 'Middle Relief Pattern')
+})
+
+test('a setup card chips Setup Arm over Setup / Bridge Pattern evidence', () => {
+  const board = makeBoard({
+    cardsByStatus: {
+      Available: [
+        roleCard('Sam Setup', 'Available', setupRole),
+        roleCard('Milo Middle', 'Available', middleRole),
+      ],
+    },
+  })
+  const html = render(board)
+
+  const setupCard = visibleText(cardMarkup(html, 'Sam Setup'))
+  assert.ok(setupCard.includes('Setup Arm'))
+  assert.ok(setupCard.includes('Observed role: Setup / Bridge Pattern'))
+  assert.equal(setupCard.includes('Middle Relief Arm'), false)
+
+  const cardView = view.getBoardCardView(board.groups[0].pitchers[0])
+  assert.equal(cardView.pitcherLabels.role.key, 'bridge_arm')
+  assert.equal(cardView.pitcherLabels.role.label, 'Setup Arm')
+  assert.equal(cardView.role.label, 'Setup / Bridge Pattern')
+})
+
+test('dashboard role composition counts middle relief separately from setup', () => {
+  const summary = view.getRolesSummaryView({
+    order: [
+      'late_high_leverage', 'setup_bridge', 'middle_relief',
+      'long_multi_inning', 'low_unclear', 'insufficient_data',
+    ],
+    counts: { middle_relief: 3, setup_bridge: 1 },
+    total: 4,
+  })
+  const byKey = Object.fromEntries(summary.rows.map(row => [row.key, row]))
+  // A middle_relief pitcher contributes to the Middle Relief category with the
+  // same canonical wording as the Team Board chip — never the Setup category.
+  assert.equal(byKey.middle_relief.label, 'Middle Relief Arm')
+  assert.equal(byKey.middle_relief.count, 3)
+  assert.equal(byKey.setup_bridge.label, 'Setup Arm')
+  assert.equal(byKey.setup_bridge.count, 1)
+  assert.equal(byKey.late_high_leverage.label, 'Trusted Arm')
+  assert.equal(byKey.long_multi_inning.label, 'Coverage Arm')
 })

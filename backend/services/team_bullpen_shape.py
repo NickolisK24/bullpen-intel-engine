@@ -2,6 +2,7 @@
 
 from services.bullpen_coverage_safety import build_bullpen_coverage_safety_read
 from services.bullpen_eligibility_vocabulary import record_is_swing_bulk
+from services.pitcher_public_labels import ROLE_PUBLIC_LABELS
 from services.workload_concentration import RECENT_WORKLOAD_WINDOW_DAYS
 
 
@@ -73,6 +74,13 @@ ROLE_KEY_BY_LABEL_KEY = {
     'bridge_arm': 'bridge',
     'coverage_arm': 'coverage',
     'depth_arm': 'depth',
+}
+
+# Role-count display labels come from the one canonical public role vocabulary;
+# this module never maintains its own role wording.
+ROLE_COUNT_LABELS = {
+    label_key: ROLE_PUBLIC_LABELS[label_key]['label']
+    for label_key in ('trust_arm', 'bridge_arm', 'coverage_arm', 'depth_arm', 'limited_read')
 }
 
 READ_KEY_BY_LABEL_KEY = {
@@ -230,7 +238,7 @@ def _card_fatigue(card):
 def _summarize_cards(groups, context=None):
     cards = _flatten_cards(groups)
     read_counts = _empty_counts(READ_LABELS.values())
-    role_counts = _empty_counts(['Trust Arm', 'Bridge Arm', 'Coverage Arm', 'Depth Arm', 'Limited Read'])
+    role_counts = _empty_counts(ROLE_COUNT_LABELS.values())
     role_read_counts = {
         role: _empty_counts(READ_LABELS.values())
         for role in ROLE_KEYS
@@ -240,13 +248,13 @@ def _summarize_cards(groups, context=None):
     for card in cards:
         role_key = _label_key(card, 'role')
         read_key = _label_key(card, 'read')
-        role_label = (card.get('pitcher_labels') or {}).get('role', {}).get('label') or 'Limited Read'
+        role_label = ROLE_COUNT_LABELS.get(role_key, ROLE_COUNT_LABELS['limited_read'])
         read_label = READ_KEY_BY_LABEL_KEY.get(read_key, 'Limited Read')
         # Swing/Bulk arms support coverage/depth context but are held out of the
         # trust/bridge lanes and the clean-option headline.
         is_swing_bulk = record_is_swing_bulk(card)
-        suppress_trust_bridge = is_swing_bulk and role_label in ('Trust Arm', 'Bridge Arm')
-        if role_label in role_counts and not suppress_trust_bridge:
+        suppress_trust_bridge = is_swing_bulk and role_key in ('trust_arm', 'bridge_arm')
+        if not suppress_trust_bridge:
             role_counts[role_label] += 1
         if read_label in read_counts and not (is_swing_bulk and read_label == READ_LABELS['clean']):
             read_counts[read_label] += 1
@@ -259,7 +267,7 @@ def _summarize_cards(groups, context=None):
     total = len(cards)
     unavailable = read_counts[READ_LABELS['unavailable']]
     active = max(0, total - unavailable)
-    role_known = total - role_counts['Limited Read']
+    role_known = total - role_counts[ROLE_COUNT_LABELS['limited_read']]
     read_known = total - read_counts['Limited Read']
     tiny = total > 0 and total < 4
 
@@ -307,7 +315,7 @@ def _role_limited_explanation(role_known_count, total, concept):
 
 def _trust_availability(summary):
     trust_reads = summary['roleReadCounts']['trust']
-    trust_arms = summary['roleCounts']['Trust Arm']
+    trust_arms = summary['roleCounts'][ROLE_COUNT_LABELS['trust_arm']]
     clean = trust_reads[READ_LABELS['clean']]
     watch = trust_reads[READ_LABELS['watch']]
     restricted = trust_reads[READ_LABELS['restricted']]
@@ -448,10 +456,10 @@ def _bullpen_pressure(summary):
     depth_pressure = _role_pressure(depth_reads, ROLE_INFLUENCE['depth_arm'])
     weighted_pressure = trust_pressure + bridge_pressure + coverage_pressure + depth_pressure
     full_influence = (
-        summary['roleCounts']['Trust Arm'] * ROLE_INFLUENCE['trust_arm']
-        + summary['roleCounts']['Bridge Arm'] * ROLE_INFLUENCE['bridge_arm']
-        + summary['roleCounts']['Coverage Arm'] * ROLE_INFLUENCE['coverage_arm']
-        + summary['roleCounts']['Depth Arm'] * ROLE_INFLUENCE['depth_arm']
+        summary['roleCounts'][ROLE_COUNT_LABELS['trust_arm']] * ROLE_INFLUENCE['trust_arm']
+        + summary['roleCounts'][ROLE_COUNT_LABELS['bridge_arm']] * ROLE_INFLUENCE['bridge_arm']
+        + summary['roleCounts'][ROLE_COUNT_LABELS['coverage_arm']] * ROLE_INFLUENCE['coverage_arm']
+        + summary['roleCounts'][ROLE_COUNT_LABELS['depth_arm']] * ROLE_INFLUENCE['depth_arm']
     )
     pressure_share = weighted_pressure / full_influence if full_influence > 0 else 0
     clean_trust = trust_reads[READ_LABELS['clean']]
@@ -601,7 +609,7 @@ def _workload_concentration(workload):
 def _legacy_coverage_safety(summary):
     coverage_reads = summary['roleReadCounts']['coverage']
     bridge_reads = summary['roleReadCounts']['bridge']
-    coverage_arms = summary['roleCounts']['Coverage Arm']
+    coverage_arms = summary['roleCounts'][ROLE_COUNT_LABELS['coverage_arm']]
     clean = coverage_reads[READ_LABELS['clean']]
     watch = coverage_reads[READ_LABELS['watch']]
     restricted = coverage_reads[READ_LABELS['restricted']]
@@ -675,7 +683,7 @@ def _legacy_coverage_safety(summary):
 def _depth_safety(summary):
     depth_reads = summary['roleReadCounts']['depth']
     trust_reads = summary['roleReadCounts']['trust']
-    depth_arms = summary['roleCounts']['Depth Arm']
+    depth_arms = summary['roleCounts'][ROLE_COUNT_LABELS['depth_arm']]
     clean = depth_reads[READ_LABELS['clean']]
     watch = depth_reads[READ_LABELS['watch']]
     restricted = depth_reads[READ_LABELS['restricted']]

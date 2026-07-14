@@ -203,7 +203,7 @@ class TestCard:
             availability('Available'),
             role={'role_key': 'late_high_leverage', 'confidence': 'high', 'sample_size': 4},
         )
-        assert card['pitcher_labels']['role']['label'] == 'Trust Arm'
+        assert card['pitcher_labels']['role']['label'] == 'Trusted Arm'
         assert card['pitcher_labels']['role']['source'] == 'backend:role_key:late_high_leverage'
         assert card['pitcher_labels']['read']['label'] == 'Rested'
         assert card['pitcher_labels']['read']['source'] == 'backend:availability_status'
@@ -516,6 +516,43 @@ class TestBoardEndpoint:
         )
         assert body['stress']['state'] == body['context']['health']['state']
         assert body['stress']['summary']
+
+    def test_middle_relief_card_uses_canonical_depth_arm_public_label(self, client):
+        # Contract: a realistic middle-relief pitcher must carry the raw
+        # middle_relief role AND the depth_arm / Middle Relief Arm public
+        # label — never the setup/bridge slot. A setup pitcher on the same
+        # board keeps Setup Arm, so the two roles stay distinct end to end.
+        with client.application.app_context():
+            _seed_pitcher(
+                'Milo Middle', team_id=1, mlb_id=40101,
+                innings=[1.0, 1.0, 1.0, 1.0], days_ago=[2, 5, 9, 12],
+            )
+            setup = _seed_pitcher(
+                'Sam Setup', team_id=1, mlb_id=40102,
+                innings=[1.0, 1.0, 1.0, 1.0], days_ago=[1, 4, 8, 11],
+            )
+            setup_log = GameLog.query.filter_by(pitcher_id=setup.id).first()
+            setup_log.hold = True
+            db.session.commit()
+
+        body = client.get('/api/bullpen/teams/1/board').get_json()
+        cards = {c['name']: c for g in body['groups'] for c in g['pitchers']}
+
+        middle_card = cards['Milo Middle']
+        assert middle_card['role']['role_key'] == 'middle_relief'
+        assert middle_card['role']['role'] == 'Middle Relief Pattern'
+        assert middle_card['pitcher_labels']['role']['key'] == 'depth_arm'
+        assert middle_card['pitcher_labels']['role']['label'] == 'Middle Relief Arm'
+        # Chip and expanded observed-role wording must describe the same
+        # baseball role: never a Setup Arm chip over middle-relief evidence.
+        assert middle_card['pitcher_labels']['role']['key'] != 'bridge_arm'
+        assert middle_card['pitcher_labels']['role']['label'] != 'Setup Arm'
+
+        setup_card = cards['Sam Setup']
+        assert setup_card['role']['role_key'] == 'setup_bridge'
+        assert setup_card['role']['role'] == 'Setup / Bridge Pattern'
+        assert setup_card['pitcher_labels']['role']['key'] == 'bridge_arm'
+        assert setup_card['pitcher_labels']['role']['label'] == 'Setup Arm'
 
     def test_board_excludes_other_teams(self, client):
         with client.application.app_context():

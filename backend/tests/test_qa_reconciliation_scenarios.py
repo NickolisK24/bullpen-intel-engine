@@ -324,6 +324,16 @@ def test_phase0e_switches_and_legacy_public_files_not_modified():
             'frontend/tests/injuryIlContext.test.mjs',
             'frontend/tests/tonightsBullpenBoard.test.mjs',
     }
+    allowed_public_role_vocabulary_files = {
+        # fix/public-relief-role-consistency: one canonical public relief-role
+        # vocabulary (middle_relief -> depth_arm -> Middle Relief Arm) across
+        # the chip, disclosure, and dashboard surfaces.
+        'frontend/src/utils/pitcherLabels.js',
+        'frontend/src/components/bullpen/board/tonightsBullpenBoardView.js',
+        'frontend/tests/fixtures/bullpenBoardFixtures.mjs',
+        'frontend/tests/pitcherLabels.test.mjs',
+        'frontend/tests/pitcherUsageRole.test.mjs',
+    }
     allowed_files = (
         allowed_public_freshness_display_files
         | allowed_internal_admin_files
@@ -335,6 +345,7 @@ def test_phase0e_switches_and_legacy_public_files_not_modified():
         | allowed_public_what_changed_contract_files
         | allowed_public_since_yesterday_rendering_files
         | allowed_phase0i_roster_readiness_files
+        | allowed_public_role_vocabulary_files
     )
     forbidden_prefixes = (
         'backend/api/',

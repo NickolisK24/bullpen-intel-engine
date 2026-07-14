@@ -21,7 +21,9 @@ appear and is guarded by tests.
 
 ## Data inputs (this repo only)
 
-Per pitcher, from recent `GameLog` rows in a **21-day** window:
+Per pitcher, from recent `GameLog` rows in a **45-day** window
+(`ROLE_WINDOW_DAYS` in `backend/services/pitcher_role.py`; staleness is flagged
+against the separate 14-day active freshness window):
 
 | Field | Used for |
 | --- | --- |
@@ -32,8 +34,9 @@ Per pitcher, from recent `GameLog` rows in a **21-day** window:
 | `save_situation` | supporting evidence |
 | `leverage_index` | late/setup signal **when present** |
 
-No data is invented. `games_finished` and `inning_entered` do **not** exist in
-the schema and are not used. `leverage_index` is often null (it is only
+No data is invented. `games_finished` exists in the schema (nullable on
+`GameLog`) but is **not currently consumed by the role classifier**; no
+`inning_entered` field exists. `leverage_index` is often null (it is only
 populated by live sync, not the seed); when missing, late/setup are read from
 save/hold flags only and confidence is capped — this is stated in the limitations.
 
@@ -135,8 +138,9 @@ comparison (which renders two boards) both consume it.
   planned deployment.
 - `leverage_index` is frequently null (seed data has none); without it, late/setup
   rely on save/hold flags and confidence is capped.
-- No `games_finished`/`inning_entered` fields exist, so "closer vs setup" is
-  approximated via saves vs holds and leverage.
+- `games_finished` exists in the schema but is not consumed by the classifier,
+  and no `inning_entered` field exists, so "closer vs setup" is approximated
+  via saves vs holds and leverage.
 - Small samples and stale data degrade confidence rather than forcing a label.
 - The decimal-innings reading slightly understates fractional MLB-notation
   innings (conservative for the multi-inning rules).

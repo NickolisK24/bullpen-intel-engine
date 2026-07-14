@@ -228,10 +228,10 @@ def test_context_explanation_editorial_review_fixture_backed_healthy_corpus(tmp_
         'Unavailable',
     }.issubset(set(coverage['board_card_groups_found']))
     assert {
-        'Trust Arm',
-        'Bridge Arm',
+        'Trusted Arm',
+        'Setup Arm',
         'Coverage Arm',
-        'Depth Arm',
+        'Middle Relief Arm',
         'Limited Read',
     }.issubset(set(coverage['role_labels_found']))
     assert {

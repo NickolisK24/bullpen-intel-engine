@@ -10,17 +10,20 @@ from services.roster_authority import (
 )
 
 
+# One canonical public role vocabulary. These labels are the authority for
+# every public surface; the frontend renders them verbatim and must never
+# reinterpret one role key as another baseball role.
 ROLE_PUBLIC_LABELS = {
     'trust_arm': {
         'kind': 'role',
         'key': 'trust_arm',
-        'label': 'Trust Arm',
+        'label': 'Trusted Arm',
         'source': 'backend',
     },
     'bridge_arm': {
         'kind': 'role',
         'key': 'bridge_arm',
-        'label': 'Bridge Arm',
+        'label': 'Setup Arm',
         'source': 'backend',
     },
     'coverage_arm': {
@@ -32,7 +35,7 @@ ROLE_PUBLIC_LABELS = {
     'depth_arm': {
         'kind': 'role',
         'key': 'depth_arm',
-        'label': 'Depth Arm',
+        'label': 'Middle Relief Arm',
         'source': 'backend',
     },
     'limited_read': {
@@ -76,6 +79,8 @@ READ_PUBLIC_LABELS = {
     },
 }
 
+# Canonical usage-role -> public-role mapping. middle_relief is a distinct
+# baseball role and must never collapse into the setup/bridge slot.
 ROLE_KEY_TO_PUBLIC_KEY = {
     'late_high_leverage': 'trust_arm',
     'high_leverage': 'trust_arm',
@@ -84,8 +89,8 @@ ROLE_KEY_TO_PUBLIC_KEY = {
     'setup_bridge': 'bridge_arm',
     'setup': 'bridge_arm',
     'bridge': 'bridge_arm',
-    'middle_relief': 'bridge_arm',
-    'middle': 'bridge_arm',
+    'middle_relief': 'depth_arm',
+    'middle': 'depth_arm',
     'long_multi_inning': 'coverage_arm',
     'long_relief': 'coverage_arm',
     'multi_inning': 'coverage_arm',

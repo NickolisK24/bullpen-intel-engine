@@ -24,7 +24,7 @@ import {
   dayAwareAppearanceReasons,
   isWorkloadAppearance,
 } from '../../../utils/appearanceLanguage'
-import { getPitcherLabels } from '../../../utils/pitcherLabels'
+import { getPitcherLabels, USAGE_ROLE_PUBLIC_ROLES } from '../../../utils/pitcherLabels'
 
 // Canonical group order, mirrored from the backend. Used only as a fallback
 // when the payload is missing or malformed — the backend is the source of
@@ -157,13 +157,15 @@ function normalizeGroup(group, { countsWithheld = false } = {}) {
 // Observed usage role (Pitcher Usage Role Separation V1). Descriptive only —
 // neutral styling so a role never reads as "better" than another. Defined roles
 // share one neutral tone; low/insufficient roles are muted.
+// Role wording comes from the one canonical public role vocabulary in
+// utils/pitcherLabels.js so the dashboard and the pitcher chips can never
+// describe the same role key with different baseball meanings. low_unclear
+// keeps its own presentation wording for the same limited-read meaning.
 const ROLE_SHORT_LABELS = {
-  late_high_leverage: 'Trusted Arm',
-  setup_bridge: 'Setup Arm',
-  middle_relief: 'Middle Relief Arm',
-  long_multi_inning: 'Coverage Arm',
+  ...Object.fromEntries(
+    Object.entries(USAGE_ROLE_PUBLIC_ROLES).map(([key, role]) => [key, role.label]),
+  ),
   low_unclear: 'Unclear Role',
-  insufficient_data: 'Limited Read',
 }
 
 const ELIGIBILITY_LABELS = {

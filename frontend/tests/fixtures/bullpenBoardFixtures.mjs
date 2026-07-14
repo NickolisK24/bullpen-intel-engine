@@ -12,12 +12,12 @@ const GROUP_META = {
 }
 
 const ROLE_LABELS_BY_KEY = {
-  late_high_leverage: { kind: 'role', key: 'trust_arm', label: 'Trust Arm', source: 'backend:test_fixture' },
-  high_leverage: { kind: 'role', key: 'trust_arm', label: 'Trust Arm', source: 'backend:test_fixture' },
-  setup_bridge: { kind: 'role', key: 'bridge_arm', label: 'Bridge Arm', source: 'backend:test_fixture' },
-  middle_relief: { kind: 'role', key: 'bridge_arm', label: 'Bridge Arm', source: 'backend:test_fixture' },
+  late_high_leverage: { kind: 'role', key: 'trust_arm', label: 'Trusted Arm', source: 'backend:test_fixture' },
+  high_leverage: { kind: 'role', key: 'trust_arm', label: 'Trusted Arm', source: 'backend:test_fixture' },
+  setup_bridge: { kind: 'role', key: 'bridge_arm', label: 'Setup Arm', source: 'backend:test_fixture' },
+  middle_relief: { kind: 'role', key: 'depth_arm', label: 'Middle Relief Arm', source: 'backend:test_fixture' },
   long_multi_inning: { kind: 'role', key: 'coverage_arm', label: 'Coverage Arm', source: 'backend:test_fixture' },
-  depth: { kind: 'role', key: 'depth_arm', label: 'Depth Arm', source: 'backend:test_fixture' },
+  depth: { kind: 'role', key: 'depth_arm', label: 'Middle Relief Arm', source: 'backend:test_fixture' },
 }
 
 const LIMITED_ROLE_LABEL = { kind: 'role', key: 'limited_read', label: 'Limited Read', source: 'backend:test_fixture' }

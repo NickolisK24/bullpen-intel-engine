@@ -84,6 +84,20 @@ export const APPROVED_ROLE_LABELS = Object.freeze(
   Object.values(PITCHER_ROLE_LABELS).map(label => label.label),
 )
 
+// Canonical observed-usage-role -> public-role association. This mirrors the
+// backend authority (services/pitcher_public_labels.py ROLE_KEY_TO_PUBLIC_KEY)
+// and is the only frontend source for usage-role wording, so surfaces cannot
+// drift apart. middle_relief is a distinct baseball role and must never render
+// through the setup/bridge slot.
+export const USAGE_ROLE_PUBLIC_ROLES = Object.freeze({
+  late_high_leverage: PITCHER_ROLE_LABELS.TRUST_ARM,
+  setup_bridge: PITCHER_ROLE_LABELS.BRIDGE_ARM,
+  middle_relief: PITCHER_ROLE_LABELS.DEPTH_ARM,
+  long_multi_inning: PITCHER_ROLE_LABELS.COVERAGE_ARM,
+  low_unclear: PITCHER_ROLE_LABELS.LIMITED_READ,
+  insufficient_data: PITCHER_ROLE_LABELS.LIMITED_READ,
+})
+
 export const APPROVED_READ_LABELS = Object.freeze(
   Object.values(PITCHER_READ_LABELS).map(label => label.label),
 )
@@ -127,7 +141,7 @@ function authoredLabels(card) {
   return card?.pitcher_labels || card?.pitcherLabels || {}
 }
 
-function mergeAuthoredLabel(payload, catalogByKey, fallback) {
+function mergeAuthoredLabel(payload, catalogByKey, fallback, { preferCatalogLabel = false } = {}) {
   if (!payload || typeof payload !== 'object') {
     return {
       ...fallback,
@@ -146,16 +160,20 @@ function mergeAuthoredLabel(payload, catalogByKey, fallback) {
 
   return {
     ...catalog,
-    label: publicLabel(payload.label || catalog.label),
+    label: preferCatalogLabel ? catalog.label : publicLabel(payload.label || catalog.label),
     source: payload.source || 'backend',
   }
 }
 
 export function derivePitcherRoleLabel(card) {
+  // The backend-authored role KEY is the authority; the rendered wording always
+  // comes from the canonical catalog so one role key can never be rewritten
+  // into another baseball role's label.
   return mergeAuthoredLabel(
     authoredLabels(card).role,
     ROLE_BY_KEY,
     PITCHER_ROLE_LABELS.LIMITED_READ,
+    { preferCatalogLabel: true },
   )
 }
 

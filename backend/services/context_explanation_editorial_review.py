@@ -559,7 +559,7 @@ def _collect_current_examples(app) -> tuple[list[dict[str, Any]], dict[str, Any]
         ],
         'role_label_examples': (
             'Current board records produced no eligible visible pitcher cards, '
-            'so Trust Arm, Bridge Arm, Coverage Arm, and Depth Arm role examples '
+            'so Trusted Arm, Setup Arm, Coverage Arm, and Middle Relief Arm role examples '
             'were not available from stored board data.'
         ),
         'team_shape_non_limited_examples': (
@@ -646,10 +646,10 @@ def _fixture_pitcher_examples(
         STATUS_UNAVAILABLE: {'raw_score': 30.0, 'days_ago': 1, 'pitches': 52},
     }
     role_specs = (
-        ('late_high_leverage', 'Trust Arm'),
-        ('setup_bridge', 'Bridge Arm'),
+        ('late_high_leverage', 'Trusted Arm'),
+        ('setup_bridge', 'Setup Arm'),
         ('long_relief', 'Coverage Arm'),
-        ('low_leverage', 'Depth Arm'),
+        ('low_leverage', 'Middle Relief Arm'),
         ('insufficient_data', 'Limited Read'),
     )
 
