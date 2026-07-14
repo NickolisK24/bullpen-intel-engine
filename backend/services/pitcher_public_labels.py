@@ -105,6 +105,17 @@ ROLE_KEY_TO_PUBLIC_KEY = {
     'insufficient_data': 'limited_read',
 }
 
+# Public role composition buckets for league-wide role summaries. These are
+# the final public conclusions pitcher cards present, so dashboard counts can
+# never disagree with the chips (a guarded pitcher counts as limited_read).
+PUBLIC_ROLE_COMPOSITION_KEYS = (
+    'trust_arm',
+    'bridge_arm',
+    'depth_arm',
+    'coverage_arm',
+    'limited_read',
+)
+
 COVERAGE_ROLE_KEYS = {
     'long_multi_inning',
     'long_relief',

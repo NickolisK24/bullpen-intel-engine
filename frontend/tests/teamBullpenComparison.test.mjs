@@ -122,3 +122,97 @@ test('getComparisonView maps labels, observations, and degraded confidence', () 
   assert.equal(view.getComparisonView(staleComparison).isDegraded, true)
   assert.equal(view.getComparisonView({}).hasComparison, false)
 })
+
+test('a guarded card inherits one Limited Read conclusion through Compare', async () => {
+  const { makeBoard } = await import('./fixtures/bullpenBoardFixtures.mjs')
+  const boardView = await server.ssrLoadModule(
+    '/src/components/bullpen/board/tonightsBullpenBoardView.js',
+  )
+  const guardedCard = {
+    pitcher_id: 51,
+    name: 'Paul Conflict',
+    availability_status: 'Available',
+    role: {
+      role_key: 'late_high_leverage',
+      role: 'Late-Inning / High-Leverage Pattern',
+      confidence: 'high',
+      short_reason: 'Recent usage shows late-inning, high-leverage outings.',
+      evidence: ['17 appearances in the recent window'],
+      limitations: [],
+    },
+    pitcher_labels: {
+      role: { kind: 'role', key: 'limited_read', label: 'Limited Read', source: 'backend:mixed_starter_reliever' },
+      read: { kind: 'read', key: 'clean_option', label: 'Rested', source: 'backend:availability_status' },
+    },
+  }
+  const payload = {
+    ...differingComparison,
+    team_a: makeBoard({
+      team: { team_id: 1, team_name: 'Aces', team_abbreviation: 'ACE' },
+      cardsByStatus: { Available: [guardedCard] },
+    }),
+  }
+
+  // Compare embeds board cards untransformed: the same view adapter resolves
+  // the same one public conclusion for the embedded card.
+  const embedded = payload.team_a.groups
+    .flatMap(group => group.pitchers)
+    .find(card => card.name === 'Paul Conflict')
+  assert.ok(embedded.public_role_read)
+  assert.equal(embedded.public_role_read.key, 'limited_read')
+  const cardView = boardView.getBoardCardView(embedded)
+  assert.equal(cardView.role.label, 'Limited Read')
+  assert.equal(cardView.pitcherLabels.role.label, 'Limited Read')
+
+  // The Compare surface itself introduces no concrete role wording.
+  const html = render(payload)
+  assert.equal(htmlIncludes(html, 'Late-Inning / High-Leverage Pattern'), false)
+  for (const label of ['Trusted Arm', 'Setup Arm', 'Middle Relief Arm', 'Coverage Arm']) {
+    assert.equal(htmlIncludes(html, label), false, `Compare leaked ${label}`)
+  }
+})
+
+test('a legacy guarded card resolves the same safe Limited Read through Compare', async () => {
+  const { makeBoard } = await import('./fixtures/bullpenBoardFixtures.mjs')
+  const boardView = await server.ssrLoadModule(
+    '/src/components/bullpen/board/tonightsBullpenBoardView.js',
+  )
+  // Legacy payload: guarded chip + conflicting raw role, no public_role_read.
+  const legacyGuardedCard = {
+    pitcher_id: 52,
+    name: 'Legacy Conflict',
+    availability_status: 'Available',
+    role: {
+      role_key: 'late_high_leverage',
+      role: 'Late-Inning / High-Leverage Pattern',
+      confidence: 'medium',
+      short_reason: 'Recent usage shows late-inning, high-leverage outings.',
+      evidence: ['17 appearances in the recent window'],
+      limitations: [],
+    },
+    pitcher_labels: {
+      role: { kind: 'role', key: 'limited_read', label: 'Limited Read', source: 'backend:mixed_starter_reliever' },
+    },
+    public_role_read: null,
+  }
+  const payload = {
+    ...differingComparison,
+    team_a: makeBoard({
+      team: { team_id: 1, team_name: 'Aces', team_abbreviation: 'ACE' },
+      cardsByStatus: { Available: [legacyGuardedCard] },
+    }),
+  }
+
+  const embedded = payload.team_a.groups
+    .flatMap(group => group.pitchers)
+    .find(card => card.name === 'Legacy Conflict')
+  assert.equal(embedded.public_role_read, null)
+  // The same board adapter Compare relies on resolves the same safe verdict.
+  const cardView = boardView.getBoardCardView(embedded)
+  assert.equal(cardView.role.key, 'limited_read')
+  assert.equal(cardView.role.label, 'Limited Read')
+  assert.equal(cardView.pitcherLabels.role.label, 'Limited Read')
+
+  const html = render(payload)
+  assert.equal(htmlIncludes(html, 'Late-Inning / High-Leverage Pattern'), false)
+})

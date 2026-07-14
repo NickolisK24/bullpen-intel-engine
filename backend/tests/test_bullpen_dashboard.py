@@ -18,7 +18,8 @@ from services.availability import ACTIVE_WINDOW_DAYS
 from services.availability_population import CURRENT_AVAILABILITY_SCOPE, current_availability_records
 from services.availability_snapshot import latest_fatigue_rows as availability_latest_fatigue_rows
 from services.availability_summary import summarize_availability_records
-from services.pitcher_role import ROLE_KEYS, ROLE_WINDOW_DAYS
+from services.pitcher_public_labels import PUBLIC_ROLE_COMPOSITION_KEYS
+from services.pitcher_role import ROLE_WINDOW_DAYS
 from services.bullpen_stability import (
     CAPABILITY as STABILITY_CAPABILITY,
     CURRENT_ASSIGNMENT_LIMITATION as STABILITY_CURRENT_ASSIGNMENT_LIMITATION,
@@ -159,7 +160,7 @@ class TestDashboardEndpoint:
         assert body['selection_made'] is False
         assert body['context']['health']['state'] == 'no_data'
         assert body['roles']['total'] == 0
-        assert set(body['roles']['counts']) == set(ROLE_KEYS)
+        assert set(body['roles']['counts']) == set(PUBLIC_ROLE_COMPOSITION_KEYS)
         assert body['role_change_detection']['capability'] == 'bullpen_role_change_detection_v1'
         assert body['role_change_detection']['status'] == 'unavailable'
         assert body['role_change_detection']['ranking_applied'] is False
@@ -184,8 +185,9 @@ class TestDashboardEndpoint:
 
     def test_middle_relief_counts_in_middle_relief_not_setup(self, client):
         # A middle-relief pitcher must contribute to the dashboard's
-        # middle_relief role composition and never to the setup_bridge slot,
-        # matching the canonical Team Board vocabulary for the same pitcher.
+        # Middle Relief (depth_arm) composition and never to the Setup
+        # (bridge_arm) slot, matching the canonical Team Board chips. The
+        # composition counts the final public role authority per pitcher.
         with client.application.app_context():
             _seed_pitcher(
                 'Milo Middle', team_id=1, mlb_id=50101,
@@ -201,9 +203,44 @@ class TestDashboardEndpoint:
 
         body = client.get('/api/bullpen/dashboard').get_json()
 
-        assert body['roles']['counts']['middle_relief'] == 1
-        assert body['roles']['counts']['setup_bridge'] == 1
+        assert body['roles']['counts']['depth_arm'] == 1
+        assert body['roles']['counts']['bridge_arm'] == 1
         assert body['roles']['total'] == 2
+
+    def test_guarded_pitcher_counts_as_limited_read_not_concrete_role(self, client):
+        # A Blackburn-style conflict pitcher (mixed usage + save/hold) is
+        # guarded to Limited Read on his card; the dashboard composition must
+        # count the same final public conclusion — never the rejected raw
+        # late/setup/middle/coverage classifier output.
+        with client.application.app_context():
+            pitcher = _seed_pitcher(
+                'Paul Conflict', team_id=1, mlb_id=50201,
+                innings=[5.0, 5.0, 1.2, 1.1, 1.1, 1.1, 1.1],
+                days_ago=[4, 11, 2, 7, 13, 20, 27],
+                games_started=[1, 1, 0, 0, 0, 0, 0],
+            )
+            relief_logs = (
+                GameLog.query
+                .filter_by(pitcher_id=pitcher.id, games_started=0)
+                .order_by(GameLog.game_date.desc())
+                .all()
+            )
+            relief_logs[0].save = True
+            relief_logs[0].save_situation = True
+            relief_logs[1].hold = True
+            db.session.commit()
+
+        body = client.get('/api/bullpen/dashboard').get_json()
+        counts = body['roles']['counts']
+
+        assert counts['limited_read'] == 1
+        assert counts['trust_arm'] == 0
+        assert counts['bridge_arm'] == 0
+        assert counts['depth_arm'] == 0
+        assert counts['coverage_arm'] == 0
+        # Raw classifier keys are not composition buckets at all.
+        for raw_key in ('late_high_leverage', 'setup_bridge', 'middle_relief', 'long_multi_inning'):
+            assert raw_key not in counts
 
     def test_dashboard_includes_canonical_stories_and_keeps_legacy(self, client, monkeypatch):
         # Canonical contract keys every story item must carry.

@@ -554,6 +554,76 @@ class TestBoardEndpoint:
         assert setup_card['pitcher_labels']['role']['key'] == 'bridge_arm'
         assert setup_card['pitcher_labels']['role']['label'] == 'Setup Arm'
 
+    def test_guarded_conflict_card_presents_one_limited_read_conclusion(self, client):
+        # Paul Blackburn-style conflict: mixed start/relief usage, one save,
+        # one hold, longer outings, no leverage-index data. The raw classifier
+        # may keep a concrete diagnostic role, but the card must present ONE
+        # public conclusion: Limited Read on the chip AND in the disclosure.
+        with client.application.app_context():
+            pitcher = _seed_pitcher(
+                'Paul Conflict', team_id=1, mlb_id=40201,
+                innings=[5.0, 5.0, 1.2, 1.1, 1.1, 1.1, 1.1],
+                days_ago=[4, 11, 2, 7, 13, 20, 27],
+                games_started=[1, 1, 0, 0, 0, 0, 0],
+            )
+            relief_logs = (
+                GameLog.query
+                .filter_by(pitcher_id=pitcher.id, games_started=0)
+                .order_by(GameLog.game_date.desc())
+                .all()
+            )
+            relief_logs[0].save = True
+            relief_logs[0].save_situation = True
+            relief_logs[1].hold = True
+            db.session.commit()
+
+        body = client.get('/api/bullpen/teams/1/board').get_json()
+        cards = {c['name']: c for g in body['groups'] for c in g['pitchers']}
+        card = cards['Paul Conflict']
+
+        # Population Role Authority still sees the complete start/relief
+        # record: the pitcher keeps his Ambiguous (swing/bulk) caveat.
+        assert card['eligibility']['status'] == 'role_ambiguous'
+        assert card['eligibility']['eligibility_type'] == 'swing_bulk_relief'
+
+        # Raw diagnostic role remains available but is not the public verdict.
+        assert card['role']['role_key'] == 'late_high_leverage'
+
+        # One authoritative public Limited Read conclusion.
+        assert card['pitcher_labels']['role']['key'] == 'limited_read'
+        assert card['pitcher_labels']['role']['label'] == 'Limited Read'
+        assert card['public_role_read']['key'] == 'limited_read'
+        assert card['public_role_read']['label'] == 'Limited Read'
+        assert card['public_role_read']['headline'] == 'Limited Read'
+        assert 'Late-Inning' not in card['public_role_read']['headline']
+        assert card['public_role_read']['reason'] == (
+            'Recent usage does not support one clear bullpen role.'
+        )
+        # Evidence stays auditable and start innings never inflate relief IP.
+        evidence_text = ' '.join(card['public_role_read']['evidence'])
+        assert 'save situation finish' in evidence_text
+        assert 'hold(s) recorded' in evidence_text
+        # 1.4 is the relief-only average; the two 5.0-IP starts are excluded
+        # (including them would read ~2.4).
+        assert 'Average recent IP: 1.4' in evidence_text
+        assert 'starting appearances excluded' in evidence_text
+
+    def test_confirmed_cards_public_read_matches_chip_and_pattern(self, client):
+        with client.application.app_context():
+            _seed_pitcher(
+                'Milo Depth', team_id=1, mlb_id=40301,
+                innings=[1.0, 1.0, 1.0, 1.0], days_ago=[2, 5, 9, 12],
+            )
+
+        body = client.get('/api/bullpen/teams/1/board').get_json()
+        cards = {c['name']: c for g in body['groups'] for c in g['pitchers']}
+        card = cards['Milo Depth']
+
+        assert card['pitcher_labels']['role']['key'] == 'depth_arm'
+        assert card['public_role_read']['key'] == 'depth_arm'
+        assert card['public_role_read']['label'] == 'Middle Relief Arm'
+        assert card['public_role_read']['headline'] == 'Middle Relief Pattern'
+
     def test_board_excludes_other_teams(self, client):
         with client.application.app_context():
             _seed_pitcher('Home Arm', team_id=1, mlb_id=1)

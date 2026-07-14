@@ -296,6 +296,56 @@ class TestCompareEndpoint:
         assert body['comparison']['snapshot']['team_b']['total_relievers'] == 1
         assert len(body['comparison']['observations']) == 3
 
+    def test_compare_embeds_the_same_public_role_read_as_the_team_board(self, client):
+        # Compare renders the same board payloads; a guarded Limited Read card
+        # must inherit the identical public role conclusion with no
+        # independent role transformation.
+        with client.application.app_context():
+            pitcher = _seed_pitcher('Guard A', team_id=1, mlb_id=11)
+            today = date.today()
+            db.session.add(GameLog(
+                pitcher_id=pitcher.id, mlb_game_pk=999901,
+                game_date=today - timedelta(days=4), pitches_thrown=80,
+                innings_pitched=5.0, innings_pitched_outs=15,
+                games_started=1, game_type='R',
+            ))
+            db.session.add(GameLog(
+                pitcher_id=pitcher.id, mlb_game_pk=999902,
+                game_date=today - timedelta(days=9), pitches_thrown=80,
+                innings_pitched=5.0, innings_pitched_outs=15,
+                games_started=1, game_type='R',
+            ))
+            db.session.add(GameLog(
+                pitcher_id=pitcher.id, mlb_game_pk=999903,
+                game_date=today - timedelta(days=2), pitches_thrown=15,
+                innings_pitched=1.0, innings_pitched_outs=3,
+                games_started=0, game_type='R', save=True, save_situation=True,
+            ))
+            db.session.add(GameLog(
+                pitcher_id=pitcher.id, mlb_game_pk=999904,
+                game_date=today - timedelta(days=6), pitches_thrown=15,
+                innings_pitched=1.0, innings_pitched_outs=3,
+                games_started=0, game_type='R', hold=True,
+            ))
+            db.session.commit()
+            _seed_pitcher('B One', team_id=2, mlb_id=12)
+
+        board = client.get('/api/bullpen/teams/1/board').get_json()
+        board_card = next(
+            card for group in board['groups'] for card in group['pitchers']
+            if card['name'] == 'Guard A'
+        )
+        compare = client.get('/api/bullpen/teams/compare?team_a=1&team_b=2').get_json()
+        compare_card = next(
+            card for group in compare['team_a']['groups'] for card in group['pitchers']
+            if card['name'] == 'Guard A'
+        )
+
+        assert compare_card['public_role_read'] == board_card['public_role_read']
+        assert compare_card['pitcher_labels']['role'] == board_card['pitcher_labels']['role']
+        assert compare_card['public_role_read']['key'] == 'limited_read'
+        assert compare_card['public_role_read']['headline'] == 'Limited Read'
+
     def test_missing_team_param_is_a_400(self, client):
         assert client.get('/api/bullpen/teams/compare?team_a=1').status_code == 400
 

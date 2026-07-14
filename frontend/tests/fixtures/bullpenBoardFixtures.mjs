@@ -49,7 +49,11 @@ const INACTIVE_ROSTER_STATUSES = new Set([
 ])
 
 function authoredPitcherLabels(card) {
-  if (card.pitcher_labels || card.pitcherLabels) return card.pitcher_labels || card.pitcherLabels
+  // An explicit key (including null) opts out of authoring — this lets tests
+  // express legacy/historical payloads that never carried the field.
+  if ('pitcher_labels' in card || 'pitcherLabels' in card) {
+    return card.pitcher_labels ?? card.pitcherLabels ?? null
+  }
 
   const roleKey = card.role?.role_key
   const role = card.role?.confidence === 'none' || card.role?.confidence === 'low'
@@ -71,10 +75,51 @@ function authoredPitcherLabels(card) {
   return { role, read }
 }
 
+const CONCRETE_ROLE_KEYS = new Set([
+  'late_high_leverage',
+  'high_leverage',
+  'setup_bridge',
+  'middle_relief',
+  'long_multi_inning',
+])
+
+const GUARDED_PUBLIC_REASON = 'Recent usage does not support one clear bullpen role.'
+
+// Mirrors backend services/pitcher_role_authority.py author_public_role_read:
+// the guarded public label is the verdict; a rejected concrete classifier
+// role never headlines the disclosure.
+function authoredPublicRoleRead(card, labels) {
+  // An explicit key (including null) opts out of authoring — this lets tests
+  // express legacy payloads created before public_role_read existed.
+  if ('public_role_read' in card || 'publicRoleRead' in card) {
+    return card.public_role_read ?? card.publicRoleRead ?? null
+  }
+  if (!card.role) return null
+  const role = card.role
+  const rolePayload = (labels && labels.role) || {}
+  const publicKey = rolePayload.key || 'limited_read'
+  const publicLabel = rolePayload.label || 'Limited Read'
+  const guarded = publicKey === 'limited_read' && CONCRETE_ROLE_KEYS.has(role.role_key)
+  const limited = publicKey === 'limited_read'
+  return {
+    kind: 'public_role_read',
+    key: publicKey,
+    label: publicLabel,
+    headline: limited ? publicLabel : (role.role || publicLabel),
+    confidence: guarded ? 'low' : (role.confidence || 'none'),
+    reason: guarded ? GUARDED_PUBLIC_REASON : (role.short_reason || (limited ? GUARDED_PUBLIC_REASON : null)),
+    evidence: Array.isArray(role.evidence) ? role.evidence : [],
+    limitations: Array.isArray(role.limitations) ? role.limitations : [],
+    source: rolePayload.source || 'backend:test_fixture',
+  }
+}
+
 function normalizeCardForBackendPayload(card) {
+  const pitcherLabels = authoredPitcherLabels(card)
   return {
     ...card,
-    pitcher_labels: authoredPitcherLabels(card),
+    pitcher_labels: pitcherLabels,
+    public_role_read: authoredPublicRoleRead(card, pitcherLabels),
   }
 }
 

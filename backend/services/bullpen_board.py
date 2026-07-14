@@ -25,6 +25,7 @@ from services.availability import (
 )
 from services.bullpen_stress import build_bullpen_stress
 from services.pitcher_public_labels import build_pitcher_labels
+from services.pitcher_role_authority import author_public_role_read
 from services.public_roster_readiness import roster_claims_available
 from services.team_bullpen_shape import build_team_bullpen_shape
 from services.bullpen_visibility import default_visible_contract, summarize_visibility
@@ -359,6 +360,7 @@ def build_card(
     roster_status=None,
     visibility=None,
     pitcher_labels=None,
+    public_role_read=None,
     last_appearance=None,
     last_workload_appearance=None,
 ):
@@ -375,6 +377,13 @@ def build_card(
         last_workload_appearance
         if last_workload_appearance is not None
         else last_appearance
+    )
+
+    authored_labels = pitcher_labels or build_pitcher_labels(
+        availability=availability,
+        role=role,
+        eligibility=eligibility,
+        roster_status=roster_status,
     )
 
     return {
@@ -398,11 +407,13 @@ def build_card(
         'roster_status': roster_status,
         # Public role/read chips are authored on the backend so frontend
         # consumers render them without re-deriving classification.
-        'pitcher_labels': pitcher_labels or build_pitcher_labels(
-            availability=availability,
-            role=role,
-            eligibility=eligibility,
-            roster_status=roster_status,
+        'pitcher_labels': authored_labels,
+        # The one backend-authored public role conclusion. It owns both the
+        # role chip and the expanded Usage Role headline, so the disclosure
+        # can never assert a concrete role the public authority rejected.
+        # None when no observed-role classification exists for the card.
+        'public_role_read': public_role_read or (
+            author_public_role_read(role, authored_labels) if role is not None else None
         ),
         # Visibility is the explicit board/story trust contract. Default board
         # payload tests pass already-visible records, so a safe visible default
@@ -571,6 +582,7 @@ def build_board_payload(
             roster_status=record.get('roster_status'),
             visibility=record.get('visibility'),
             pitcher_labels=record.get('pitcher_labels'),
+            public_role_read=record.get('public_role_read'),
             last_appearance=record.get('last_appearance'),
             last_workload_appearance=record.get('last_workload_appearance'),
         )

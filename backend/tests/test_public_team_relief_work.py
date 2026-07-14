@@ -1246,6 +1246,11 @@ def test_existing_public_routes_behavior_freeze(monkeypatch):
         'frontend/tests/pitcherLabels.test.mjs',
         'frontend/tests/pitcherUsageRole.test.mjs',
     }
+    allowed_relief_role_input_integrity_files = {
+        # fix/relief-role-input-integrity: one backend-authored public role
+        # read owns the chip and disclosure; Compare inherits it untransformed.
+        'frontend/tests/teamBullpenComparison.test.mjs',
+    }
     assert not [
         path for path in changed
         if path not in allowed_phase_a_audience_signup_files
@@ -1255,6 +1260,7 @@ def test_existing_public_routes_behavior_freeze(monkeypatch):
         if path not in allowed_public_since_yesterday_rendering_files
         if path not in allowed_phase0i_roster_readiness_files
         if path not in allowed_public_role_vocabulary_files
+        if path not in allowed_relief_role_input_integrity_files
         if (
             path in blocked_files and path not in allowed_internal_admin_files
         )

@@ -269,6 +269,11 @@ def test_frozen_legacy_what_changed_files_untouched():
         'frontend/tests/pitcherLabels.test.mjs',
         'frontend/tests/pitcherUsageRole.test.mjs',
     }
+    allowed_relief_role_input_integrity_files = {
+        # fix/relief-role-input-integrity: one backend-authored public role
+        # read owns the chip and disclosure; Compare inherits it untransformed.
+        'frontend/tests/teamBullpenComparison.test.mjs',
+    }
     assert not sorted(
         (frozen_paths & changed) - allowed_public_what_changed_contract_files
     )
@@ -281,6 +286,7 @@ def test_frozen_legacy_what_changed_files_untouched():
         if path not in allowed_public_since_yesterday_rendering_files
         if path not in allowed_phase0i_roster_readiness_files
         if path not in allowed_public_role_vocabulary_files
+        if path not in allowed_relief_role_input_integrity_files
     )
     assert not sorted(
         path for path in changed
