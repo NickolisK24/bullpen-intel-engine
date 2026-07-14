@@ -182,6 +182,29 @@ class TestDashboardEndpoint:
         # Freshness/data-through is present for the hero.
         assert 'data_through' in body['freshness']
 
+    def test_middle_relief_counts_in_middle_relief_not_setup(self, client):
+        # A middle-relief pitcher must contribute to the dashboard's
+        # middle_relief role composition and never to the setup_bridge slot,
+        # matching the canonical Team Board vocabulary for the same pitcher.
+        with client.application.app_context():
+            _seed_pitcher(
+                'Milo Middle', team_id=1, mlb_id=50101,
+                innings=[1.0, 1.0, 1.0, 1.0], days_ago=[2, 5, 9, 12],
+            )
+            setup = _seed_pitcher(
+                'Sam Setup', team_id=1, mlb_id=50102,
+                innings=[1.0, 1.0, 1.0, 1.0], days_ago=[1, 4, 8, 11],
+            )
+            setup_log = GameLog.query.filter_by(pitcher_id=setup.id).first()
+            setup_log.hold = True
+            db.session.commit()
+
+        body = client.get('/api/bullpen/dashboard').get_json()
+
+        assert body['roles']['counts']['middle_relief'] == 1
+        assert body['roles']['counts']['setup_bridge'] == 1
+        assert body['roles']['total'] == 2
+
     def test_dashboard_includes_canonical_stories_and_keeps_legacy(self, client, monkeypatch):
         # Canonical contract keys every story item must carry.
         required_keys = {

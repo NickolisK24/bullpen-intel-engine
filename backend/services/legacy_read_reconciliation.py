@@ -61,6 +61,10 @@ LEGACY_VOCABULARY_MAP = {
     'Limited': 'decisive_caution',
     'Avoid': 'decisive_negative',
     'Unavailable': 'decisive_negative',
+    'Trusted Arm': 'informational_role_display',
+    'Setup Arm': 'informational_role_display',
+    'Middle Relief Arm': 'informational_role_display',
+    # Retired role label wordings, kept so historical reads still reconcile.
     'Trust Arm': 'informational_role_display',
     'Bridge Arm': 'informational_role_display',
     'Coverage Arm': 'informational_role_display',

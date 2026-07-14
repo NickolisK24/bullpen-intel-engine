@@ -1236,6 +1236,16 @@ def test_existing_public_routes_behavior_freeze(monkeypatch):
             'frontend/tests/injuryIlContext.test.mjs',
             'frontend/tests/tonightsBullpenBoard.test.mjs',
         }
+    allowed_public_role_vocabulary_files = {
+        # fix/public-relief-role-consistency: one canonical public relief-role
+        # vocabulary (middle_relief -> depth_arm -> Middle Relief Arm) across
+        # the chip, disclosure, and dashboard surfaces.
+        'frontend/src/utils/pitcherLabels.js',
+        'frontend/src/components/bullpen/board/tonightsBullpenBoardView.js',
+        'frontend/tests/fixtures/bullpenBoardFixtures.mjs',
+        'frontend/tests/pitcherLabels.test.mjs',
+        'frontend/tests/pitcherUsageRole.test.mjs',
+    }
     assert not [
         path for path in changed
         if path not in allowed_phase_a_audience_signup_files
@@ -1244,6 +1254,7 @@ def test_existing_public_routes_behavior_freeze(monkeypatch):
         if path not in allowed_public_what_changed_contract_files
         if path not in allowed_public_since_yesterday_rendering_files
         if path not in allowed_phase0i_roster_readiness_files
+        if path not in allowed_public_role_vocabulary_files
         if (
             path in blocked_files and path not in allowed_internal_admin_files
         )

@@ -1,9 +1,10 @@
-from datetime import date, timedelta
+from datetime import timedelta
 
 from models.game_log import GameLog
 from models.pitcher import Pitcher
 from models.roster_status_snapshot import RosterStatusSnapshot
 from models.sync_run import SyncRun
+from services.availability_reference_date import product_current_date
 from services.roster_status import STATUS_ACTIVE, STATUS_UNKNOWN
 from utils.db import db
 from utils.time import utc_now_naive
@@ -74,7 +75,10 @@ def _create_roster_readiness_sync_run(timestamp):
 
 
 def _snapshot_dates(extra_dates=None):
-    dates = {date.today()}
+    # Snapshot coverage is judged against the product calendar day
+    # (America/New_York), not the host-local day — a host clock in another
+    # timezone must not shift the seeded coverage off the readiness window.
+    dates = {product_current_date()}
     latest_game_date = db.session.query(db.func.max(GameLog.game_date)).scalar()
     if latest_game_date is not None:
         dates.add(latest_game_date)

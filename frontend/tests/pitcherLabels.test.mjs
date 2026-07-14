@@ -7,6 +7,7 @@ import {
   PITCHER_LABEL_KEY_COPY,
   PITCHER_READ_LABELS,
   PITCHER_ROLE_LABELS,
+  USAGE_ROLE_PUBLIC_ROLES,
   derivePitcherReadLabel,
   derivePitcherRoleLabel,
   getPitcherLabels,
@@ -168,4 +169,54 @@ test('retired backend role wording is rewritten to the canonical public set', ()
     })
     assert.equal(labels.role.label, expected)
   }
+})
+
+test('canonical role keys render their canonical labels', () => {
+  const cases = [
+    { key: 'trust_arm', expected: 'Trusted Arm' },
+    { key: 'bridge_arm', expected: 'Setup Arm' },
+    { key: 'depth_arm', expected: 'Middle Relief Arm' },
+    { key: 'coverage_arm', expected: 'Coverage Arm' },
+    { key: 'limited_read', expected: 'Limited Read' },
+  ]
+  for (const { key, expected } of cases) {
+    const labels = getPitcherLabels({
+      pitcher_labels: { role: { kind: 'role', key, label: expected, source: 'backend:test' } },
+    })
+    assert.equal(labels.role.key, key)
+    assert.equal(labels.role.label, expected)
+  }
+})
+
+test('a backend-authored depth_arm role can never render as Setup Arm', () => {
+  // The role KEY is the authority: even a malformed payload that carries
+  // another role's wording must render the key's canonical label, so one
+  // baseball role can never be reinterpreted as another.
+  const malformed = getPitcherLabels({
+    pitcher_labels: { role: { kind: 'role', key: 'depth_arm', label: 'Bridge Arm', source: 'backend:test' } },
+  })
+  assert.equal(malformed.role.key, 'depth_arm')
+  assert.equal(malformed.role.label, 'Middle Relief Arm')
+  assert.notEqual(malformed.role.label, 'Setup Arm')
+})
+
+test('usage-role vocabulary contract matches the backend canonical table', () => {
+  // Vocabulary drift guard, mirroring backend
+  // tests/test_pitcher_public_labels.py::test_canonical_vocabulary_contract.
+  const expected = {
+    late_high_leverage: { key: 'trust_arm', label: 'Trusted Arm' },
+    setup_bridge: { key: 'bridge_arm', label: 'Setup Arm' },
+    middle_relief: { key: 'depth_arm', label: 'Middle Relief Arm' },
+    long_multi_inning: { key: 'coverage_arm', label: 'Coverage Arm' },
+    low_unclear: { key: 'limited_read', label: 'Limited Read' },
+    insufficient_data: { key: 'limited_read', label: 'Limited Read' },
+  }
+  assert.deepEqual(Object.keys(USAGE_ROLE_PUBLIC_ROLES).sort(), Object.keys(expected).sort())
+  for (const [roleKey, { key, label }] of Object.entries(expected)) {
+    assert.equal(USAGE_ROLE_PUBLIC_ROLES[roleKey].key, key, `usage role ${roleKey} public key`)
+    assert.equal(USAGE_ROLE_PUBLIC_ROLES[roleKey].label, label, `usage role ${roleKey} public label`)
+  }
+  // middle_relief must never collapse into the setup/bridge slot.
+  assert.notEqual(USAGE_ROLE_PUBLIC_ROLES.middle_relief.key, 'bridge_arm')
+  assert.notEqual(USAGE_ROLE_PUBLIC_ROLES.middle_relief.label, 'Setup Arm')
 })
