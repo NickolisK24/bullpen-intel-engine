@@ -275,8 +275,10 @@ class TestAuthorityCases:
         )
         role, labels, public_read = _author(logs, eligibility={'status': 'role_ambiguous'})
 
-        # Diagnostic raw role may still be concrete (save/hold rules unchanged).
-        assert role['role_key'] == 'late_high_leverage'
+        # Calibrated raw role: one isolated save and hold no longer meet the
+        # sustained categorical thresholds, so the short-relief pattern reads
+        # middle relief — the public verdict below is still one Limited Read.
+        assert role['role_key'] == 'middle_relief'
         # The public authority resolves to one Limited Read conclusion.
         assert labels['role']['key'] == 'limited_read'
         assert public_read['key'] == 'limited_read'
@@ -290,3 +292,94 @@ class TestAuthorityCases:
         assert 'hold(s) recorded' in evidence_text
         assert 'appearances in the recent window' in evidence_text
         assert 'starting appearances excluded' in evidence_text
+
+
+# ── Branch 3: production-equivalent calibration patterns (synthetic only) ────
+
+class TestCalibratedPublicReads:
+    def test_fernando_style_setup_majority_reads_setup_arm(self):
+        # 18 qualifying relief appearances, one save, six holds (one recent),
+        # avg IP ~0.9, no leverage coverage.
+        logs = (
+            [LogStub(d, innings=1.0, hold=True) for d in (2, 24, 27, 30, 33, 36)]
+            + [LogStub(38, innings=1.0, save=True, save_situation=True)]
+            + [LogStub(d, innings=1.0) for d in (4, 6, 9, 12, 15, 18, 21)]
+            + [LogStub(d, innings=0.2) for d in (3, 7, 11, 14)]
+        )
+        role, labels, public_read = _author(logs)
+        assert role['role_key'] == 'setup_bridge'
+        assert labels['role']['key'] == 'bridge_arm'
+        assert public_read['label'] == 'Setup Arm'
+        assert public_read['headline'] == 'Setup / Bridge Pattern'
+        assert public_read['label'] != 'Trusted Arm'
+        assert role['confidence'] == 'medium'  # save/hold frequency without leverage
+
+    def test_jake_style_isolated_hold_reads_middle_relief_arm(self):
+        # 14 qualifying relief appearances, one hold, one save-situation
+        # appearance without a save, no leverage coverage.
+        logs = (
+            [LogStub(10, innings=1.0, hold=True)]
+            + [LogStub(12, innings=1.0, save_situation=True)]
+            + [LogStub(d, innings=1.0) for d in (2, 4, 6, 8, 14, 16, 18, 20)]
+            + [LogStub(d, innings=0.2) for d in (3, 5, 7, 9)]
+        )
+        role, labels, public_read = _author(logs)
+        assert role['role_key'] == 'middle_relief'
+        assert public_read['key'] == 'depth_arm'
+        assert public_read['label'] == 'Middle Relief Arm'
+        assert public_read['label'] != 'Setup Arm'
+
+    def test_paul_style_mixed_long_relief_fails_closed_to_limited_read(self):
+        # 16 qualifying relief appearances (11 above 1.0 IP, avg >= 1.5), one
+        # save, one hold, mixed population eligibility. Calibrated raw role is
+        # the long-relief pattern; the mixed guard resolves the public verdict
+        # to ONE Limited Read (recorded save/hold events keep the mixed read
+        # from asserting Coverage Arm).
+        logs = (
+            [LogStub(2, innings=2.0, save=True, save_situation=True)]
+            + [LogStub(6, innings=2.0, hold=True)]
+            + [LogStub(d, innings=2.0) for d in (4, 9, 12, 15, 18, 22, 26, 30, 34)]
+            + [LogStub(d, innings=1.0) for d in (3, 7, 11, 19, 27)]
+        )
+        role, labels, public_read = _author(logs, eligibility={'status': 'role_ambiguous'})
+        assert role['role_key'] == 'long_multi_inning'
+        assert labels['role']['key'] == 'limited_read'
+        assert public_read['key'] == 'limited_read'
+        assert public_read['label'] == 'Limited Read'
+        assert public_read['headline'] == 'Limited Read'
+        assert public_read['label'] not in ('Trusted Arm', 'Setup Arm')
+
+    def test_chivilli_style_quiet_middle_relief_stays_stable(self):
+        # Four qualifying relief appearances, no save/hold/leverage evidence.
+        logs = [LogStub(d, innings=ip) for d, ip in ((2, 1.0), (6, 1.0), (10, 2.0), (14, 1.0))]
+        role, labels, public_read = _author(logs)
+        assert role['role_key'] == 'middle_relief'
+        assert public_read['key'] == 'depth_arm'
+        assert public_read['label'] == 'Middle Relief Arm'
+        assert public_read['headline'] == 'Middle Relief Pattern'
+
+    def test_sustained_closer_pattern_reads_trusted_arm(self):
+        logs = (
+            [LogStub(d, innings=1.0, save=True, save_situation=True) for d in (2, 6, 10, 14)]
+            + [LogStub(18, innings=1.0, hold=True)]
+            + [LogStub(d, innings=1.0) for d in (4, 8, 12, 16)]
+        )
+        role, labels, public_read = _author(logs)
+        assert role['role_key'] == 'late_high_leverage'
+        assert public_read['key'] == 'trust_arm'
+        assert public_read['label'] == 'Trusted Arm'
+        assert public_read['headline'] == 'Late-Inning / High-Leverage Pattern'
+
+    def test_tied_save_hold_evidence_reads_one_limited_read(self):
+        logs = (
+            [LogStub(d, innings=1.0, save=True, save_situation=True) for d in (2, 24, 28)]
+            + [LogStub(d, innings=1.0, hold=True) for d in (4, 26, 30)]
+            + [LogStub(d, innings=1.0) for d in (6, 8, 10, 12, 14, 16)]
+        )
+        role, labels, public_read = _author(logs)
+        assert role['role_key'] == 'low_unclear'
+        assert public_read['key'] == 'limited_read'
+        assert public_read['headline'] == 'Limited Read'
+        # The conflict is explained honestly, never presented as a concrete role.
+        assert 'equally sustained' in public_read['reason']
+        assert any('equally sustained' in lim for lim in public_read['limitations'])

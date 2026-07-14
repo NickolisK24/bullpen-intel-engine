@@ -180,3 +180,36 @@ def test_non_current_data_and_roster_unavailable_degrade_read_label():
     assert stale['read']['source'] == 'backend:limited_data'
     assert roster_unavailable['read']['label'] == 'Unavailable'
     assert roster_unavailable['read']['source'] == 'backend:unavailable_status'
+
+
+def test_mixed_coverage_with_recorded_save_or_hold_events_fails_closed():
+    # A clean mixed/coverage profile keeps Coverage Arm; recorded save/hold
+    # events on a mixed profile fail closed to Limited Read instead of
+    # asserting a concrete role.
+    clean = build_pitcher_labels(
+        availability=availability(),
+        role=role(
+            'long_multi_inning',
+            role='Long Relief / Multi-Inning Pattern',
+            evidence=['6 appearances in the recent window', 'Average recent IP: 2.0'],
+        ),
+        eligibility={'status': 'role_ambiguous'},
+    )
+    with_events = build_pitcher_labels(
+        availability=availability(),
+        role=role(
+            'long_multi_inning',
+            role='Long Relief / Multi-Inning Pattern',
+            evidence=[
+                '16 appearances in the recent window',
+                'Average recent IP: 1.7',
+                '1 save situation finish(es) recorded',
+                '1 hold(s) recorded',
+            ],
+        ),
+        eligibility={'status': 'role_ambiguous'},
+    )
+
+    assert clean['role']['key'] == 'coverage_arm'
+    assert with_events['role']['key'] == 'limited_read'
+    assert with_events['role']['source'] == 'backend:mixed_starter_reliever'

@@ -531,8 +531,14 @@ class TestBoardEndpoint:
                 'Sam Setup', team_id=1, mlb_id=40102,
                 innings=[1.0, 1.0, 1.0, 1.0], days_ago=[1, 4, 8, 11],
             )
-            setup_log = GameLog.query.filter_by(pitcher_id=setup.id).first()
-            setup_log.hold = True
+            setup_logs = (
+                GameLog.query
+                .filter_by(pitcher_id=setup.id)
+                .order_by(GameLog.game_date.desc())
+                .all()
+            )
+            setup_logs[0].hold = True
+            setup_logs[1].hold = True
             db.session.commit()
 
         body = client.get('/api/bullpen/teams/1/board').get_json()
@@ -587,7 +593,9 @@ class TestBoardEndpoint:
         assert card['eligibility']['eligibility_type'] == 'swing_bulk_relief'
 
         # Raw diagnostic role remains available but is not the public verdict.
-        assert card['role']['role_key'] == 'late_high_leverage'
+        # Calibrated: one isolated save and hold no longer meet the sustained
+        # categorical thresholds, so the short-relief sample reads middle relief.
+        assert card['role']['role_key'] == 'middle_relief'
 
         # One authoritative public Limited Read conclusion.
         assert card['pitcher_labels']['role']['key'] == 'limited_read'

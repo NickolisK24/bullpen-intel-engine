@@ -208,6 +208,17 @@ def _has_coverage_usage_signal(role):
     return any(term in text for term in ('long relief', 'multi inning', 'multi innings', 'bulk', 'coverage'))
 
 
+def _has_save_or_hold_events(role):
+    """Whether the observed-role evidence records any save or hold events.
+
+    Keyed to the classifier's stable evidence phrasing ('N save situation
+    finish(es) recorded' / 'N hold(s) recorded'), which is emitted exactly when
+    the corresponding event count is nonzero.
+    """
+    text = _normalize_text((role or {}).get('evidence'))
+    return 'save situation finish' in text or 'hold(s) recorded' in text
+
+
 def _is_mixed_starter_reliever(role, eligibility):
     role = role or {}
     eligibility = eligibility or {}
@@ -259,7 +270,11 @@ def _role_label(role, eligibility=None):
     if _weak_role_confidence(role):
         return _label({'key': 'limited_read', 'source': 'backend:weak_role_confidence'}, ROLE_PUBLIC_LABELS)
     if _is_mixed_starter_reliever(role, eligibility):
-        if key in COVERAGE_ROLE_KEYS and _has_coverage_usage_signal(role):
+        # A mixed starter/reliever keeps a Coverage Arm read only when the
+        # relief evidence is cleanly multi-inning. Recorded save/hold events on
+        # a mixed profile make the public read genuinely murkier, so the label
+        # fails closed to Limited Read instead of asserting a concrete role.
+        if key in COVERAGE_ROLE_KEYS and _has_coverage_usage_signal(role) and not _has_save_or_hold_events(role):
             return _label({'key': 'coverage_arm', 'source': f'backend:mixed_coverage:{key}'}, ROLE_PUBLIC_LABELS)
         return _label({'key': 'limited_read', 'source': 'backend:mixed_starter_reliever'}, ROLE_PUBLIC_LABELS)
     return _label(

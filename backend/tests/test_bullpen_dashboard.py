@@ -197,8 +197,14 @@ class TestDashboardEndpoint:
                 'Sam Setup', team_id=1, mlb_id=50102,
                 innings=[1.0, 1.0, 1.0, 1.0], days_ago=[1, 4, 8, 11],
             )
-            setup_log = GameLog.query.filter_by(pitcher_id=setup.id).first()
-            setup_log.hold = True
+            setup_logs = (
+                GameLog.query
+                .filter_by(pitcher_id=setup.id)
+                .order_by(GameLog.game_date.desc())
+                .all()
+            )
+            setup_logs[0].hold = True
+            setup_logs[1].hold = True
             db.session.commit()
 
         body = client.get('/api/bullpen/dashboard').get_json()
@@ -241,6 +247,62 @@ class TestDashboardEndpoint:
         # Raw classifier keys are not composition buckets at all.
         for raw_key in ('late_high_leverage', 'setup_bridge', 'middle_relief', 'long_multi_inning'):
             assert raw_key not in counts
+
+    def test_calibrated_composition_counts_final_public_keys(self, client):
+        # Production-equivalent calibration patterns (synthetic evidence only):
+        # a setup-majority arm counts under bridge_arm, an isolated-hold arm
+        # under depth_arm, a mixed long-relief arm with save/hold events under
+        # limited_read, and a sustained closer under trust_arm.
+        with client.application.app_context():
+            setup_majority = _seed_pitcher(
+                'Setup Majority Arm', team_id=1, mlb_id=60101,
+                innings=[1.0] * 8, days_ago=[2, 4, 7, 10, 13, 16, 19, 22],
+            )
+            isolated_hold = _seed_pitcher(
+                'Isolated Hold Arm', team_id=1, mlb_id=60102,
+                innings=[1.0] * 6, days_ago=[3, 6, 9, 12, 15, 18],
+            )
+            mixed_long = _seed_pitcher(
+                'Mixed Long Arm', team_id=1, mlb_id=60103,
+                innings=[5.0, 5.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0],
+                days_ago=[5, 12, 2, 6, 10, 14, 18, 22],
+                games_started=[1, 1, 0, 0, 0, 0, 0, 0],
+            )
+            closer = _seed_pitcher(
+                'Sustained Closer Arm', team_id=1, mlb_id=60104,
+                innings=[1.0] * 8, days_ago=[1, 4, 8, 11, 14, 17, 20, 23],
+            )
+
+            def relief_logs(pitcher):
+                return (
+                    GameLog.query
+                    .filter_by(pitcher_id=pitcher.id, games_started=0)
+                    .order_by(GameLog.game_date.desc())
+                    .all()
+                )
+
+            for log in relief_logs(setup_majority)[:3]:
+                log.hold = True
+            relief_logs(setup_majority)[7].save = True
+            relief_logs(isolated_hold)[0].hold = True
+            mixed = relief_logs(mixed_long)
+            mixed[0].save = True
+            mixed[0].save_situation = True
+            mixed[1].hold = True
+            for log in relief_logs(closer)[:4]:
+                log.save = True
+                log.save_situation = True
+            db.session.commit()
+
+        body = client.get('/api/bullpen/dashboard').get_json()
+        counts = body['roles']['counts']
+
+        assert counts['bridge_arm'] == 1     # setup majority (1 save never outranks 3 holds)
+        assert counts['depth_arm'] == 1      # isolated hold reads middle relief
+        assert counts['limited_read'] == 1   # mixed long relief with save/hold events fails closed
+        assert counts['trust_arm'] == 1      # sustained closer pattern
+        assert counts['coverage_arm'] == 0
+        assert body['roles']['total'] == 4
 
     def test_dashboard_includes_canonical_stories_and_keeps_legacy(self, client, monkeypatch):
         # Canonical contract keys every story item must carry.
