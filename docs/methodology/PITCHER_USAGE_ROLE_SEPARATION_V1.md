@@ -22,8 +22,23 @@ appear and is guarded by tests.
 ## Data inputs (this repo only)
 
 Per pitcher, from recent `GameLog` rows in a **45-day** window
-(`ROLE_WINDOW_DAYS` in `backend/services/pitcher_role.py`; staleness is flagged
-against the separate 14-day active freshness window):
+(`ROLE_WINDOW_DAYS` in `backend/services/pitcher_role.py` — unchanged;
+staleness is flagged against the separate 14-day active freshness window).
+
+Within that window, only **confirmed regular-season relief appearances**
+qualify for the observed role (`qualifying_relief_logs` in
+`backend/services/pitcher_role_authority.py`): a row must have a valid
+`game_date`, `game_type == 'R'`, and `games_started == 0`.
+
+- Starts (`games_started == 1`) are excluded — they belong to the
+  bullpen-population Role Authority, which continues to receive the complete
+  start/relief record.
+- Rows with unknown `games_started` are **not assumed to be relief**; they are
+  excluded and disclosed through limitations.
+- Spring-training and postseason games are excluded from the current-season
+  public role read.
+
+Qualifying rows feed these fields:
 
 | Field | Used for |
 | --- | --- |
@@ -101,6 +116,16 @@ lack that evidence.
 - **Pitcher cards (priority):** a compact, neutral role chip (role + confidence)
   plus an expandable **Usage role** section (reason, evidence, limitations). The
   chip styling is intentionally uniform so a role never reads as "better".
+- **One public conclusion per card:** the backend-authored public role read
+  (`author_public_role_read` in `backend/services/pitcher_role_authority.py`,
+  emitted as `public_role_read` on each card) owns BOTH the role chip and the
+  disclosure headline. When the public authority confirms a concrete role, the
+  disclosure headlines the matching observed pattern; when the public result is
+  guarded to **Limited Read**, the disclosure headlines Limited Read with a
+  generic uncertainty explanation — a rejected concrete classifier role can
+  never publicly headline the card. The raw classifier result remains available
+  as diagnostic evidence, and the recorded appearances, innings, saves, holds,
+  and limitations stay visible below the final conclusion.
 - **Team Context Layer / Team Comparison:** intentionally **not** changed in V1
   to avoid clutter and noise. Because the comparison reuses the same board
   builder, both teams' cards carry roles automatically wherever the board
@@ -127,8 +152,9 @@ comparison (which renders two boards) both consume it.
 | Layer | File |
 | --- | --- |
 | Classifier (pure) | `backend/services/pitcher_role.py` |
+| Relief-log qualification + public role read | `backend/services/pitcher_role_authority.py` (`qualifying_relief_logs`, `author_public_role_read`) |
 | Card + endpoint wiring | `backend/services/bullpen_board.py`, `backend/api/bullpen.py` |
-| View helper | `frontend/src/components/bullpen/board/tonightsBullpenBoardView.js` (`getRoleView`) |
+| View helper | `frontend/src/components/bullpen/board/tonightsBullpenBoardView.js` (`getPublicRoleReadView`, `getRoleView` fallback) |
 | Card UI | `frontend/src/components/bullpen/board/BullpenBoardView.jsx` (role chip + disclosure) |
 | Tests | `backend/tests/test_pitcher_role.py`, `frontend/tests/pitcherUsageRole.test.mjs` |
 

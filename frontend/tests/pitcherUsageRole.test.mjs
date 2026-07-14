@@ -378,3 +378,277 @@ test('dashboard role composition counts middle relief separately from setup', ()
   assert.equal(byKey.late_high_leverage.label, 'Trusted Arm')
   assert.equal(byKey.long_multi_inning.label, 'Coverage Arm')
 })
+
+const guardedRole = {
+  role_key: 'late_high_leverage',
+  role: 'Late-Inning / High-Leverage Pattern',
+  confidence: 'high',
+  short_reason: 'Recent usage shows late-inning, high-leverage outings.',
+  evidence: [
+    '17 appearances in the recent window',
+    'Average recent IP: 1.5',
+    '12 of 17 outings above 1.0 IP',
+    '1 save situation finish(es) recorded',
+    '1 hold(s) recorded',
+  ],
+  limitations: ['Leverage-index data was not available; role uses save/hold flags only.'],
+}
+
+const guardedLabels = {
+  role: { kind: 'role', key: 'limited_read', label: 'Limited Read', source: 'backend:mixed_starter_reliever' },
+  read: { kind: 'read', key: 'clean_option', label: 'Rested', source: 'backend:availability_status' },
+}
+
+test('a guarded card presents one Limited Read conclusion with auditable evidence', () => {
+  const board = makeBoard({
+    cardsByStatus: {
+      Available: [roleCard('Paul Conflict', 'Available', guardedRole, { pitcher_labels: guardedLabels })],
+    },
+  })
+  const html = render(board)
+  const card = visibleText(cardMarkup(html, 'Paul Conflict'))
+
+  assert.ok(card.includes('Limited Read'))
+  assert.ok(card.includes('Observed role: Limited Read'))
+  assert.ok(card.includes('Recent usage does not support one clear bullpen role.'))
+  // The rejected concrete role never appears as the public verdict.
+  assert.equal(card.includes('Late-Inning / High-Leverage Pattern'), false)
+  // The raw evidence remains visible below the final conclusion.
+  assert.ok(card.includes('1 save situation finish(es) recorded'))
+  assert.ok(card.includes('1 hold(s) recorded'))
+  assert.ok(card.includes('Average recent IP: 1.5'))
+})
+
+test('frontend cannot select the raw role headline when a public read exists', () => {
+  const cardView = view.getBoardCardView({
+    pitcher_id: 9,
+    name: 'Guard',
+    availability_status: 'Available',
+    role: guardedRole,
+    pitcher_labels: guardedLabels,
+    public_role_read: {
+      kind: 'public_role_read',
+      key: 'limited_read',
+      label: 'Limited Read',
+      headline: 'Limited Read',
+      confidence: 'low',
+      reason: 'Recent usage does not support one clear bullpen role.',
+      evidence: guardedRole.evidence,
+      limitations: guardedRole.limitations,
+      source: 'backend:mixed_starter_reliever',
+    },
+  })
+  assert.equal(cardView.role.key, 'limited_read')
+  assert.equal(cardView.role.label, 'Limited Read')
+  assert.notEqual(cardView.role.label, 'Late-Inning / High-Leverage Pattern')
+  assert.equal(cardView.role.reason, 'Recent usage does not support one clear bullpen role.')
+})
+
+test('trusted and coverage cards keep chip and disclosure on the same role', () => {
+  const board = makeBoard({
+    cardsByStatus: {
+      Available: [
+        roleCard('Terry Trust', 'Available', trustRole),
+        roleCard('Lou Long', 'Available', longRole),
+      ],
+    },
+  })
+  const html = render(board)
+
+  const trustCard = visibleText(cardMarkup(html, 'Terry Trust'))
+  assert.ok(trustCard.includes('Trusted Arm'))
+  assert.ok(trustCard.includes('Observed role: Late / High-Leverage Pattern'))
+  for (const other of ['Setup Arm', 'Middle Relief Arm', 'Coverage Arm']) {
+    assert.equal(trustCard.includes(other), false, `trust card leaked ${other}`)
+  }
+
+  const coverageCard = visibleText(cardMarkup(html, 'Lou Long'))
+  assert.ok(coverageCard.includes('Coverage Arm'))
+  assert.ok(coverageCard.includes('Observed role: Long Relief / Multi-Inning Pattern'))
+  for (const other of ['Setup Arm', 'Middle Relief Arm', 'Trusted Arm']) {
+    assert.equal(coverageCard.includes(other), false, `coverage card leaked ${other}`)
+  }
+})
+
+test('dashboard role composition renders final public role keys with canonical labels', () => {
+  const summary = view.getRolesSummaryView({
+    order: ['trust_arm', 'bridge_arm', 'depth_arm', 'coverage_arm', 'limited_read'],
+    counts: { trust_arm: 2, bridge_arm: 1, depth_arm: 3, coverage_arm: 1, limited_read: 2 },
+    total: 9,
+  })
+  const byKey = Object.fromEntries(summary.rows.map(row => [row.key, row]))
+  assert.equal(byKey.trust_arm.label, 'Trusted Arm')
+  assert.equal(byKey.bridge_arm.label, 'Setup Arm')
+  assert.equal(byKey.depth_arm.label, 'Middle Relief Arm')
+  assert.equal(byKey.coverage_arm.label, 'Coverage Arm')
+  // A guarded pitcher counts under Limited Read, not a concrete category.
+  assert.equal(byKey.limited_read.label, 'Limited Read')
+  assert.equal(byKey.limited_read.count, 2)
+  assert.equal(summary.total, 9)
+})
+
+// ── Legacy payload compatibility (payloads without public_role_read) ─────────
+
+test('legacy guarded payload cannot recreate the Limited Read contradiction', () => {
+  // Exact unsafe legacy shape: guarded chip + conflicting raw role, no
+  // public_role_read. The public verdict must own the disclosure headline.
+  const board = makeBoard({
+    cardsByStatus: {
+      Available: [
+        roleCard('Legacy Conflict', 'Available', {
+          role_key: 'late_high_leverage',
+          role: 'Late-Inning / High-Leverage Pattern',
+          confidence: 'medium',
+          short_reason: 'Recent usage shows late-inning, high-leverage outings.',
+          evidence: [
+            '17 appearances in the recent window',
+            '1 save situation finish(es) recorded',
+            '1 hold(s) recorded',
+          ],
+          limitations: ['Leverage-index data was not available; role uses save/hold flags only.'],
+        }, {
+          pitcher_labels: {
+            role: { kind: 'role', key: 'limited_read', label: 'Limited Read', source: 'backend:mixed_starter_reliever' },
+          },
+          public_role_read: null,
+        }),
+      ],
+    },
+  })
+  const html = render(board)
+  const card = visibleText(cardMarkup(html, 'Legacy Conflict'))
+
+  assert.ok(card.includes('Limited Read'))
+  assert.ok(card.includes('Observed role: Limited Read'))
+  assert.ok(card.includes('Recent usage does not support one clear bullpen role.'))
+  // Raw evidence and limitations remain visible.
+  assert.ok(card.includes('1 save situation finish(es) recorded'))
+  assert.ok(card.includes('Leverage-index data was not available; role uses save/hold flags only.'))
+  // The rejected concrete role never appears as the public verdict.
+  assert.equal(card.includes('Late-Inning / High-Leverage Pattern'), false)
+})
+
+test('legacy matching setup payload keeps its detailed pattern wording', () => {
+  const board = makeBoard({
+    cardsByStatus: {
+      Available: [
+        roleCard('Legacy Setup', 'Available', setupRole, {
+          pitcher_labels: {
+            role: { kind: 'role', key: 'bridge_arm', label: 'Setup Arm', source: 'backend:role_key:setup_bridge' },
+          },
+          public_role_read: null,
+        }),
+      ],
+    },
+  })
+  const card = visibleText(cardMarkup(render(board), 'Legacy Setup'))
+  assert.ok(card.includes('Setup Arm'))
+  assert.ok(card.includes('Observed role: Setup / Bridge Pattern'))
+  assert.ok(card.includes('2 hold(s) recorded'))
+  assert.equal(card.includes('Observed role: Limited Read'), false)
+})
+
+test('legacy matching middle-relief payload keeps its detailed pattern wording', () => {
+  const board = makeBoard({
+    cardsByStatus: {
+      Available: [
+        roleCard('Legacy Middle', 'Available', middleRole, {
+          pitcher_labels: {
+            role: { kind: 'role', key: 'depth_arm', label: 'Middle Relief Arm', source: 'backend:role_key:middle_relief' },
+          },
+          public_role_read: null,
+        }),
+      ],
+    },
+  })
+  const card = visibleText(cardMarkup(render(board), 'Legacy Middle'))
+  assert.ok(card.includes('Middle Relief Arm'))
+  assert.ok(card.includes('Observed role: Middle Relief Pattern'))
+  assert.equal(card.includes('Setup Arm'), false)
+})
+
+test('legacy mismatched concrete payload resolves to the public label pattern', () => {
+  const board = makeBoard({
+    cardsByStatus: {
+      Available: [
+        roleCard('Legacy Mismatch', 'Available', setupRole, {
+          pitcher_labels: {
+            role: { kind: 'role', key: 'depth_arm', label: 'Middle Relief Arm', source: 'backend:role_key:middle_relief' },
+          },
+          public_role_read: null,
+        }),
+      ],
+    },
+  })
+  const card = visibleText(cardMarkup(render(board), 'Legacy Mismatch'))
+  // The backend-authored public label remains authoritative.
+  assert.ok(card.includes('Middle Relief Arm'))
+  assert.ok(card.includes('Observed role: Middle Relief Pattern'))
+  // No contradictory role wording appears anywhere on the card.
+  assert.equal(card.includes('Setup / Bridge Pattern'), false)
+  assert.equal(card.includes('Setup Arm'), false)
+  assert.equal(card.includes('Recent usage shows setup or bridge outings.'), false)
+  // Raw numeric evidence is preserved as diagnostics.
+  assert.ok(card.includes('4 appearances in the recent window'))
+})
+
+test('raw-only historical payload keeps the legacy raw-role fallback', () => {
+  const board = makeBoard({
+    cardsByStatus: {
+      Available: [
+        roleCard('Old Snapshot Arm', 'Available', longRole, {
+          pitcher_labels: null,
+          public_role_read: null,
+        }),
+      ],
+    },
+  })
+  const card = visibleText(cardMarkup(render(board), 'Old Snapshot Arm'))
+  assert.ok(card.includes('Observed role: Long Relief / Multi-Inning Pattern'))
+  assert.ok(card.includes('Average recent IP: 1.9'))
+})
+
+test('public_role_read outranks both legacy fields when all three disagree', () => {
+  const cardView = view.getBoardCardView({
+    pitcher_id: 77,
+    name: 'Modern Precedence',
+    availability_status: 'Available',
+    role: setupRole,
+    pitcher_labels: {
+      role: { kind: 'role', key: 'depth_arm', label: 'Middle Relief Arm', source: 'backend:test' },
+    },
+    public_role_read: {
+      kind: 'public_role_read',
+      key: 'coverage_arm',
+      label: 'Coverage Arm',
+      headline: 'Long Relief / Multi-Inning Pattern',
+      confidence: 'high',
+      reason: 'Recent outings show repeated multi-inning workload.',
+      evidence: [],
+      limitations: [],
+      source: 'backend:role_key:long_multi_inning',
+    },
+  })
+  assert.equal(cardView.role.key, 'coverage_arm')
+  assert.equal(cardView.role.label, 'Long Relief / Multi-Inning Pattern')
+})
+
+test('cards with no role data fail closed without inventing a conclusion', () => {
+  const board = makeBoard({
+    cardsByStatus: {
+      Available: [{
+        pitcher_id: 99,
+        name: 'No Data Arm',
+        availability_status: 'Available',
+        pitcher_labels: null,
+        public_role_read: null,
+      }],
+    },
+  })
+  const html = render(board)
+  const card = visibleText(cardMarkup(html, 'No Data Arm'))
+  assert.equal(card.includes('Observed role:'), false)
+  for (const label of ['Trusted Arm', 'Setup Arm', 'Middle Relief Arm', 'Coverage Arm']) {
+    assert.equal(card.includes(label), false, `invented ${label}`)
+  }
+})

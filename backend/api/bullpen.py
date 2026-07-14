@@ -90,7 +90,7 @@ from services.narrative_memory import (
     build_team_pitcher_usage_trend_continuity,
     build_team_workload_concentration_continuity,
 )
-from services.pitcher_role import ROLE_KEYS
+from services.pitcher_public_labels import PUBLIC_ROLE_COMPOSITION_KEYS
 from services.pitcher_role_authority import author_role_read_labels, role_logs_by_pitcher
 from services.story_intelligence_service_v1 import (
     build_team_story as build_story_intelligence_team_story,
@@ -1413,7 +1413,7 @@ def _eligible_records_for_rows(
             'eligibility': context['eligibility'],
             'roster_status': context['roster_status'],
         }
-        role, labels = author_role_read_labels(role_record, logs_by_pitcher, ref)
+        role, labels, public_role_read = author_role_read_labels(role_record, logs_by_pitcher, ref)
         last_workload_appearance = last_workload_appearance_from_logs(context['logs'])
         records.append({
             'name': pitcher.full_name,
@@ -1424,6 +1424,7 @@ def _eligible_records_for_rows(
             'last_workload_appearance': last_workload_appearance,
             'role': role,
             'pitcher_labels': labels,
+            'public_role_read': public_role_read,
             'eligibility': context['eligibility'],
             'roster_status': context['roster_status'],
             'visibility': build_visibility_contract(
@@ -1463,7 +1464,7 @@ def _board_records_from_authority_records(authority_records, reference_date=None
         score = record.get('score')
         if pitcher is None or score is None:
             continue
-        role, labels = author_role_read_labels(record, logs_by_pitcher, ref)
+        role, labels, public_role_read = author_role_read_labels(record, logs_by_pitcher, ref)
         last_workload_appearance = last_workload_appearance_from_logs(
             logs_by_pitcher.get(pitcher.id, [])
         )
@@ -1476,6 +1477,7 @@ def _board_records_from_authority_records(authority_records, reference_date=None
             'last_workload_appearance': last_workload_appearance,
             'role': role,
             'pitcher_labels': labels,
+            'public_role_read': public_role_read,
             'eligibility': record.get('eligibility'),
             'roster_status': record.get('roster_status'),
             'visibility': record.get('visibility'),
@@ -2477,10 +2479,15 @@ def build_bullpen_dashboard_payload(*, use_published_freshness=False):
         pitcher_ids,
         reference_date=reference_date,
     )
-    role_counts = {key: 0 for key in ROLE_KEYS}
+    # Composition counts use the same final public role authority the pitcher
+    # cards present, so a pitcher guarded to Limited Read counts as Limited
+    # Read — never as the raw classifier role the public authority rejected.
+    role_counts = {key: 0 for key in PUBLIC_ROLE_COMPOSITION_KEYS}
     for record in availability_records:
-        role, _labels = author_role_read_labels(record, logs_by_pitcher, reference_date)
-        key = role['role_key']
+        _role, _labels, public_role_read = author_role_read_labels(
+            record, logs_by_pitcher, reference_date,
+        )
+        key = public_role_read['key']
         role_counts[key] = role_counts.get(key, 0) + 1
 
     # Tonight's Bullpen Landscape — league orientation, reusing the records we
@@ -2580,7 +2587,7 @@ def build_bullpen_dashboard_payload(*, use_published_freshness=False):
         'scope': CURRENT_AVAILABILITY_SCOPE,
         'context': context,
         'roles': {
-            'order': list(ROLE_KEYS),
+            'order': list(PUBLIC_ROLE_COMPOSITION_KEYS),
             'counts': role_counts,
             'total': len(pitcher_ids),
         },
@@ -2739,7 +2746,7 @@ def _dashboard_snapshot_unavailable_payload(reason, *, snapshot=None):
         'scope': CURRENT_AVAILABILITY_SCOPE,
         'context': {},
         'roles': {
-            'order': list(ROLE_KEYS),
+            'order': list(PUBLIC_ROLE_COMPOSITION_KEYS),
             'counts': {},
             'total': 0,
         },

@@ -24,7 +24,7 @@ import {
   dayAwareAppearanceReasons,
   isWorkloadAppearance,
 } from '../../../utils/appearanceLanguage'
-import { getPitcherLabels, USAGE_ROLE_PUBLIC_ROLES } from '../../../utils/pitcherLabels'
+import { getPitcherLabels, PITCHER_ROLE_LABELS, USAGE_ROLE_PUBLIC_ROLES } from '../../../utils/pitcherLabels'
 
 // Canonical group order, mirrored from the backend. Used only as a fallback
 // when the payload is missing or malformed — the backend is the source of
@@ -167,6 +167,39 @@ const ROLE_SHORT_LABELS = {
   ),
   low_unclear: 'Unclear Role',
 }
+
+// Final public role keys (backend public_role_read / dashboard composition)
+// labeled from the same canonical catalog as the pitcher chips.
+const PUBLIC_ROLE_SHORT_LABELS = Object.fromEntries(
+  Object.values(PITCHER_ROLE_LABELS).map(role => [role.key, role.label]),
+)
+
+// Legacy-payload compatibility (payloads authored before public_role_read
+// existed). Detailed observed-pattern wording per public role key, and the one
+// raw classifier key each public key confirms. Used ONLY to resolve legacy
+// cards safely — the frontend never reclassifies usage or invents evidence.
+const PUBLIC_KEY_TO_PATTERN = {
+  trust_arm: 'Late-Inning / High-Leverage Pattern',
+  bridge_arm: 'Setup / Bridge Pattern',
+  depth_arm: 'Middle Relief Pattern',
+  coverage_arm: 'Long Relief / Multi-Inning Pattern',
+}
+
+const COMPATIBLE_RAW_ROLE_KEY = {
+  trust_arm: 'late_high_leverage',
+  bridge_arm: 'setup_bridge',
+  depth_arm: 'middle_relief',
+  coverage_arm: 'long_multi_inning',
+}
+
+const LIMITED_RAW_ROLE_KEYS = new Set(['low_unclear', 'insufficient_data'])
+
+const GUARDED_PUBLIC_REASON = 'Recent usage does not support one clear bullpen role.'
+
+const MUTED_ROLE_KEYS = new Set(['insufficient_data', 'low_unclear', 'limited_read'])
+
+const MUTED_ROLE_TONE = { borderColor: 'rgba(148,163,184,0.30)', backgroundColor: 'rgba(148,163,184,0.08)', color: '#cbd5e1' }
+const NEUTRAL_ROLE_TONE = { borderColor: 'rgba(129,140,248,0.40)', backgroundColor: 'rgba(129,140,248,0.12)', color: '#c7d2fe' }
 
 const ELIGIBILITY_LABELS = {
   inactive_bullpen_relevant: 'Outside Freshness Window',
@@ -451,7 +484,7 @@ export function getRosterAuthorityView(rosterAuthority, { renderedCards = null }
 export function getRoleView(role) {
   if (!role) return null
   const key = role.role_key || 'insufficient_data'
-  const muted = key === 'insufficient_data' || key === 'low_unclear'
+  const muted = MUTED_ROLE_KEYS.has(key)
   return {
     key,
     label: role.role || ROLE_SHORT_LABELS[key] || 'Usage role',
@@ -461,9 +494,87 @@ export function getRoleView(role) {
     reason: role.short_reason || null,
     evidence: Array.isArray(role.evidence) ? role.evidence : [],
     limitations: Array.isArray(role.limitations) ? role.limitations : [],
-    tone: muted
-      ? { borderColor: 'rgba(148,163,184,0.30)', backgroundColor: 'rgba(148,163,184,0.08)', color: '#cbd5e1' }
-      : { borderColor: 'rgba(129,140,248,0.40)', backgroundColor: 'rgba(129,140,248,0.12)', color: '#c7d2fe' },
+    tone: muted ? MUTED_ROLE_TONE : NEUTRAL_ROLE_TONE,
+  }
+}
+
+// Mirrors backend author_public_role_read for legacy payloads authored before
+// public_role_read existed: the backend-authored public label is the verdict;
+// the raw role only supplies compatible pattern wording, evidence, and
+// limitations. A contradictory raw headline (or a raw reason that reads as the
+// rejected verdict) is replaced by the canonical public wording.
+function legacyPublicRoleRead(role, label) {
+  const publicKey = String(label.key || '').trim().toLowerCase()
+  const pattern = PUBLIC_KEY_TO_PATTERN[publicKey]
+  const evidence = Array.isArray(role.evidence) ? role.evidence : []
+  const limitations = Array.isArray(role.limitations) ? role.limitations : []
+
+  if (pattern) {
+    const compatible = COMPATIBLE_RAW_ROLE_KEY[publicKey] === role.role_key
+    return {
+      kind: 'public_role_read',
+      key: publicKey,
+      label: PUBLIC_ROLE_SHORT_LABELS[publicKey] || label.label,
+      headline: compatible ? (role.role || pattern) : pattern,
+      confidence: role.confidence,
+      reason: compatible ? role.short_reason : null,
+      evidence,
+      limitations,
+      source: label.source || 'backend',
+    }
+  }
+
+  // limited_read (or an unrecognized key, which fails closed the same way):
+  // never headline a concrete raw role the public authority did not confirm.
+  const naturallyLimited = LIMITED_RAW_ROLE_KEYS.has(role.role_key)
+  return {
+    kind: 'public_role_read',
+    key: 'limited_read',
+    label: PUBLIC_ROLE_SHORT_LABELS.limited_read,
+    headline: PUBLIC_ROLE_SHORT_LABELS.limited_read,
+    confidence: naturallyLimited ? role.confidence : 'low',
+    reason: naturallyLimited ? role.short_reason : GUARDED_PUBLIC_REASON,
+    evidence,
+    limitations,
+    source: label.source || 'backend',
+  }
+}
+
+// One resolver for the public role conclusion, in authority order:
+//   1. public_role_read (modern payloads)
+//   2. backend-authored pitcher_labels.role, resolved against the raw role
+//      (legacy payloads authored before public_role_read)
+//   3. raw role alone (historical payloads that predate both public fields)
+// The raw role can never override or contradict an existing backend-authored
+// public role label.
+export function resolvePublicRoleRead(card) {
+  if (card?.public_role_read) return getPublicRoleReadView(card.public_role_read)
+  const labels = card?.pitcher_labels || card?.pitcherLabels || {}
+  const label = labels.role
+  const role = card?.role
+  if (!label || typeof label !== 'object' || !label.key) return getRoleView(role)
+  if (!role) return null
+  return getPublicRoleReadView(legacyPublicRoleRead(role, label))
+}
+
+// Final backend-authored public role read. When present it is the ONE public
+// conclusion for the card: the disclosure headline comes from the backend
+// (`headline`), so the frontend never re-selects the raw classifier role after
+// the public authority has rejected it.
+export function getPublicRoleReadView(read) {
+  if (!read) return null
+  const key = read.key || 'limited_read'
+  const muted = MUTED_ROLE_KEYS.has(key)
+  return {
+    key,
+    label: read.headline || read.label || PUBLIC_ROLE_SHORT_LABELS[key] || 'Usage role',
+    shortLabel: read.label || PUBLIC_ROLE_SHORT_LABELS[key] || 'Usage role',
+    confidence: read.confidence || 'none',
+    confidenceLabel: formatConfidence(read.confidence),
+    reason: read.reason || null,
+    evidence: Array.isArray(read.evidence) ? read.evidence : [],
+    limitations: Array.isArray(read.limitations) ? read.limitations : [],
+    tone: muted ? MUTED_ROLE_TONE : NEUTRAL_ROLE_TONE,
   }
 }
 
@@ -480,14 +591,12 @@ export function getRolesSummaryView(roles) {
   return {
     total,
     rows: order.map(key => {
-      const muted = key === 'insufficient_data' || key === 'low_unclear'
+      const muted = MUTED_ROLE_KEYS.has(key)
       return {
         key,
-        label: ROLE_SHORT_LABELS[key] || key,
+        label: ROLE_SHORT_LABELS[key] || PUBLIC_ROLE_SHORT_LABELS[key] || key,
         count: Number(counts[key]) || 0,
-        tone: muted
-          ? { borderColor: 'rgba(148,163,184,0.30)', backgroundColor: 'rgba(148,163,184,0.08)', color: '#cbd5e1' }
-          : { borderColor: 'rgba(129,140,248,0.40)', backgroundColor: 'rgba(129,140,248,0.12)', color: '#c7d2fe' },
+        tone: muted ? MUTED_ROLE_TONE : NEUTRAL_ROLE_TONE,
       }
     }),
   }
@@ -523,7 +632,9 @@ export function getBoardCardView(card, freshness = null, now = new Date()) {
     reasons: dayAwareAppearanceReasons(card?.reasons, lastAppearance, userDay),
     limitations: Array.isArray(card?.limitations) ? card.limitations : [],
     pitcherLabels: getPitcherLabels(card),
-    role: getRoleView(card?.role),
+    // The one public role conclusion, resolved in authority order:
+    // public_role_read -> pitcher_labels.role (legacy) -> raw role (historical).
+    role: resolvePublicRoleRead(card),
     eligibility: getEligibilityView(card?.eligibility),
     rosterStatus: getRosterStatusView(card?.roster_status),
   }
