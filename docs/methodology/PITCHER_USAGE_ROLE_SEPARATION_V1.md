@@ -71,23 +71,54 @@ save/hold flags only and confidence is capped — this is stated in the limitati
 | `low_unclear` | Low Recent Usage / Unclear Pattern |
 | `insufficient_data` | Insufficient Data |
 
-## Deterministic rules (priority order, first match wins)
+## Deterministic rules
+
+The **45-day** stability window is unchanged. Inside it, a **21-day
+recent-confirmation window** (`ROLE_SIGNAL_RECENCY_DAYS`) decides whether a
+role signal is still current enough to define the role: the classifier
+describes the pitcher's *primary recent* relief usage, not the most prestigious
+event anywhere in the window.
 
 1. **Insufficient Data** — no usable appearances (0 outings, or no innings data).
 2. **Low Recent Usage / Unclear** — fewer than **2** recent appearances.
-3. **Late-Inning / High-Leverage** — `saves ≥ 1`, or (leverage present and
-   average leverage ≥ **1.5**). Requires real supporting fields — never faked
-   from fatigue score.
-4. **Setup / Bridge** — `holds ≥ 1`, or (leverage present and average leverage ≥
-   **1.0**).
-5. **Long Relief / Multi-Inning** — average recent IP ≥ **1.5**, or ≥ 2 outings
+3. **Sustained categorical (save/hold) role** — a save-based (Late) or
+   hold-based (Setup) role qualifies only when ALL hold
+   (`MIN_CATEGORICAL_ROLE_EVENTS` / `MIN_CATEGORICAL_ROLE_SHARE` /
+   `MIN_RECENT_CATEGORICAL_ROLE_EVENTS`):
+   - at least **2** corresponding events in the 45-day window,
+   - those events are at least **15%** of qualifying relief appearances,
+   - at least **1** corresponding event inside the latest **21 days**.
+   One isolated save or hold never establishes a role. A `save_situation`
+   appearance without a recorded save is supporting evidence only.
+   When BOTH save and hold patterns qualify, they are **compared** — the larger
+   sustained pattern wins, recent event counts break ties, and a genuine tie
+   fails closed (rule 6) rather than forcing a role. Saves never outrank a
+   larger hold pattern merely by prestige-first ordering.
+4. **Recent leverage role** — leverage index defines a concrete role only with
+   at least **3** qualifying relief appearances carrying leverage values inside
+   the 21-day window (`MIN_RECENT_LEVERAGE_APPEARANCES`): recent average ≥
+   **1.5** supports Late; ≥ **1.0** and < 1.5 supports Setup; below 1.0
+   establishes neither. One isolated leverage value never defines a role.
+   Full-window leverage remains visible as context only.
+5. **Reconciliation** — categorical and leverage candidates are derived
+   independently: if only one produces a concrete role, it is used; if both
+   agree, it is used; if they disagree (one Late, one Setup), the result fails
+   closed (rule 6) and both evidence sources are disclosed.
+6. **Low Recent Usage / Unclear (conflict)** — tied sustained save/hold
+   patterns with no decisive recent leverage, or a leverage/categorical
+   disagreement, return Low/Unclear at **low** confidence with the conflict
+   explained. The public authority maps this to **Limited Read**.
+7. **Long Relief / Multi-Inning** — average recent IP ≥ **1.5**, or ≥ 2 outings
    of ≥ 1.5 IP making up at least half of recent outings.
-6. **Middle Relief** — the default: regular, shorter outings with no late/setup
-   evidence.
+8. **Middle Relief** — the default: regular, shorter outings with no sustained
+   late/setup evidence.
 
-Save/hold/leverage evidence (a *defined* late/setup usage) intentionally
-outranks innings length; the multi-inning rule then catches long relievers who
-lack that evidence.
+A *sustained* late/setup pattern still outranks innings length; isolated
+save/hold evidence that fails the thresholds no longer blocks a strong
+long-relief read. Old role events demote before they leave the 45-day window:
+without recent confirmation they remain visible as evidence but stop defining
+the current role. These thresholds are deterministic product rules, not
+validated predictions of manager intent.
 
 ## Confidence
 
@@ -96,8 +127,15 @@ lack that evidence.
 - `< 3` recent appearances → capped at **medium** (small sample).
 - some outings missing innings data → capped at **medium**.
 - latest outing outside the 14-day freshness window → capped at **low** (stale).
-- late/setup read from save/hold flags with no leverage data → capped at
-  **medium**.
+- late/setup established from save/hold frequency without confirming recent
+  leverage coverage (no leverage data at all, or fewer than 3 recent
+  leverage-bearing appearances) → capped at **medium**.
+- conflict-based Low/Unclear results are always **low**, with the conflicting
+  evidence disclosed — never described as a concrete role.
+- strong recent leverage coverage (≥ 3 recent leverage-bearing appearances, no
+  categorical contradiction) may support **high** confidence, subject to the
+  sample/completeness/staleness caps above. One save or hold alone never makes
+  a result high-confidence.
 - insufficient data → **none**; low/unclear → **low**.
 
 ## Explanation (every pitcher)
