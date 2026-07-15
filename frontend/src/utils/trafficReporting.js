@@ -2,6 +2,13 @@ import { readAuthToken } from './api'
 
 export const TRAFFIC_REPORTING_PATH = '/admin/product-intelligence'
 export const TRAFFIC_REPORTING_RANGES = Object.freeze(['7d', '30d', '90d', 'all'])
+export const TRAFFIC_CONTEXT_DEFINITIONS = Object.freeze([
+  'entry_source',
+  'evidence_target_views',
+  'shared_link_landing_sessions',
+  'evidence_depth',
+  'comparison_pairs',
+])
 
 function reportingUrl(range, configuredBackendOrigin = import.meta.env.VITE_API_BASE_URL) {
   const apiBase = configuredBackendOrigin ? `${configuredBackendOrigin}/api` : '/api'

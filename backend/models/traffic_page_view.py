@@ -15,6 +15,12 @@ class TrafficPageView(db.Model):
         db.Index('ix_traffic_page_views_route_occurred', 'route', 'occurred_at'),
         db.Index('ix_traffic_page_views_site_host_occurred', 'site_host', 'occurred_at'),
         db.Index('ix_traffic_page_views_bot_occurred', 'is_bot', 'occurred_at'),
+        db.Index('ix_traffic_page_views_occurred_entry_source', 'occurred_at', 'entry_source'),
+        db.Index('ix_traffic_page_views_occurred_evidence_target', 'occurred_at', 'evidence_target'),
+        db.Index(
+            'ix_traffic_page_views_occurred_comparison_pair',
+            'occurred_at', 'team_a_ref', 'team_b_ref',
+        ),
     )
 
     id = db.Column(db.Integer, primary_key=True)
@@ -26,7 +32,11 @@ class TrafficPageView(db.Model):
     surface = db.Column(db.String(32), nullable=False)
     view_mode = db.Column(db.String(16))
     team_ref = db.Column(db.String(16))
+    team_a_ref = db.Column(db.String(16))
+    team_b_ref = db.Column(db.String(16))
     pitcher_id = db.Column(db.Integer)
+    entry_source = db.Column(db.String(32))
+    evidence_target = db.Column(db.String(32))
     referrer_domain = db.Column(db.String(253))
     utm_source = db.Column(db.String(64))
     utm_medium = db.Column(db.String(64))
@@ -35,5 +45,5 @@ class TrafficPageView(db.Model):
     site_host = db.Column(db.String(253), nullable=False)
     device_class = db.Column(db.String(16), nullable=False, default='unknown')
     is_bot = db.Column(db.Boolean, nullable=False, default=False)
-    schema_version = db.Column(db.Integer, nullable=False, default=1)
+    schema_version = db.Column(db.Integer, nullable=False, default=2)
     created_at = db.Column(db.DateTime, nullable=False, default=utc_now_naive)

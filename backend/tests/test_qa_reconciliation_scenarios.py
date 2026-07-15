@@ -47,7 +47,7 @@ from utils.db import db
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 MIGRATIONS_DIR = REPO_ROOT / 'backend/migrations/versions'
-EXPECTED_ALEMBIC_HEAD = 'a9e4c7d2f1b6'
+EXPECTED_ALEMBIC_HEAD = 'b2e7c4a9d1f3'
 FORBIDDEN_HEADLINE_TERMS = (
     'headline',
     'read_label',
@@ -353,6 +353,7 @@ def test_phase0e_switches_and_legacy_public_files_not_modified():
     allowed_trusted_traffic_files = {
         'backend/api/traffic.py',
         'backend/migrations/versions/a9e4c7d2f1b6_add_trusted_external_traffic.py',
+        'backend/migrations/versions/b2e7c4a9d1f3_add_traffic_evidence_context.py',
         'frontend/src/components/TrafficRouteObserver.jsx',
         'frontend/src/components/admin/TrafficIntelligenceAdmin.jsx',
         'frontend/src/utils/trafficMeasurement.js',

@@ -143,6 +143,143 @@ def test_daily_and_visited_surface_aggregates(reporting_app):
     assert report['most_visited_surfaces'][0] == {'surface': 'bullpen_board', 'page_views': 1}
 
 
+def test_version_one_rows_remain_reportable_with_empty_context(reporting_app):
+    add_view(datetime(2026, 7, 10, 12, 0), 'legacy-visitor', 'legacy-session')
+    db.session.commit()
+    report = build_traffic_summary('7d', now=NOW)
+    assert report['summary']['page_views'] == 1
+    assert report['evidence_exploration'] == {
+        'team_read_views': 0,
+        'team_relief_work_views': 0,
+        'pitcher_lanes_views': 0,
+        'pitcher_detail_views': 0,
+        'comparison_read_views': 0,
+        'comparison_evidence_views': 0,
+        'team_contexts': [],
+        'comparison_pairs': [],
+        'entry_sources': [],
+    }
+
+
+def test_evidence_targets_team_contexts_and_entry_sources_aggregate(reporting_app):
+    add_view(
+        datetime(2026, 7, 10, 10, 0), 'visitor-one', 'session-one',
+        surface='bullpen_board', view_mode='board', team_ref='BOS',
+        evidence_target='team_read', entry_source='dashboard',
+    )
+    add_view(
+        datetime(2026, 7, 10, 10, 1), 'visitor-one', 'session-one',
+        surface='bullpen_board', view_mode='board', team_ref='BOS',
+        evidence_target='team_relief_work', entry_source='dashboard',
+    )
+    add_view(
+        datetime(2026, 7, 10, 11, 0), 'visitor-two', 'session-two',
+        surface='bullpen_board', view_mode='board', team_ref='NYY', pitcher_id=42,
+        evidence_target='pitcher_detail', entry_source='stories',
+    )
+    add_view(
+        datetime(2026, 7, 10, 12, 0), 'visitor-three', 'session-three',
+        surface='bullpen_board', view_mode='board', team_ref='NYY',
+        evidence_target='pitcher_lanes',
+    )
+    db.session.commit()
+
+    evidence = build_traffic_summary('7d', now=NOW)['evidence_exploration']
+    assert evidence['team_read_views'] == 1
+    assert evidence['team_relief_work_views'] == 1
+    assert evidence['pitcher_lanes_views'] == 1
+    assert evidence['pitcher_detail_views'] == 1
+    assert evidence['team_contexts'] == [
+        {'team_ref': 'BOS', 'page_views': 2},
+        {'team_ref': 'NYY', 'page_views': 2},
+    ]
+    assert evidence['entry_sources'] == [
+        {'entry_source': 'dashboard', 'page_views': 2, 'sessions': 1},
+        {'entry_source': 'stories', 'page_views': 1, 'sessions': 1},
+    ]
+
+
+def test_comparison_pairs_aggregate_reverse_order_and_sort_deterministically(reporting_app):
+    pairs = [
+        ('NYY', 'BOS'), ('BOS', 'NYY'), ('SEA', 'BOS'), ('BOS', 'SEA'),
+        ('BOS', 'NYY'), ('BOS', None), ('BOS', 'BOS'),
+    ]
+    for index, (team_a, team_b) in enumerate(pairs):
+        add_view(
+            datetime(2026, 7, 10, 10, index), f'visitor-{index}', f'session-{index}',
+            surface='compare_bullpens', view_mode='compare', team_a_ref=team_a, team_b_ref=team_b,
+            evidence_target=(
+                'comparison_evidence' if index == 0
+                else 'comparison_read' if team_a and team_b and team_a != team_b
+                else None
+            ),
+        )
+    db.session.commit()
+
+    evidence = build_traffic_summary('7d', now=NOW)['evidence_exploration']
+    assert evidence['comparison_read_views'] == 4
+    assert evidence['comparison_evidence_views'] == 1
+    assert evidence['comparison_pairs'] == [
+        {'team_a_ref': 'BOS', 'team_b_ref': 'NYY', 'pair_key': 'BOS:NYY', 'page_views': 3},
+        {'team_a_ref': 'BOS', 'team_b_ref': 'SEA', 'pair_key': 'BOS:SEA', 'page_views': 2},
+    ]
+
+
+def test_shared_link_landings_use_only_first_session_page_and_distinct_visitors(reporting_app):
+    add_view(
+        datetime(2026, 7, 9, 10, 0), 'shared-visitor', 'shared-session-one',
+        surface='bullpen_board', entry_source='share_link',
+    )
+    add_view(
+        datetime(2026, 7, 9, 10, 1), 'shared-visitor', 'shared-session-one',
+        surface='bullpen_board', entry_source='dashboard',
+    )
+    add_view(
+        datetime(2026, 7, 9, 11, 0), 'shared-visitor', 'shared-session-two',
+        surface='compare_bullpens', entry_source='share_card',
+    )
+    add_view(datetime(2026, 7, 9, 12, 0), 'late-visitor', 'late-session', surface='today')
+    add_view(
+        datetime(2026, 7, 9, 12, 1), 'late-visitor', 'late-session',
+        surface='bullpen_board', entry_source='share',
+    )
+    db.session.commit()
+
+    shared = build_traffic_summary('7d', now=NOW)['shared_link_landings']
+    assert shared == {
+        'share_origin_sessions': 2,
+        'share_origin_visitors': 1,
+        'share_origin_page_views': 2,
+    }
+
+
+def test_evidence_depth_uses_external_bullpen_sessions_as_denominator(reporting_app):
+    add_view(
+        datetime(2026, 7, 10, 10, 0), 'deep-one', 'deep-session',
+        surface='bullpen_board', evidence_target='team_read',
+    )
+    add_view(
+        datetime(2026, 7, 10, 10, 1), 'deep-one', 'deep-session',
+        surface='bullpen_board', evidence_target='team_relief_work',
+    )
+    add_view(
+        datetime(2026, 7, 10, 11, 0), 'shallow-one', 'shallow-session',
+        surface='compare_bullpens', evidence_target='comparison_read',
+    )
+    add_view(datetime(2026, 7, 10, 12, 0), 'non-bullpen', 'today-session')
+    add_view(
+        datetime(2026, 7, 10, 13, 0), 'bot-deep', 'bot-session',
+        surface='bullpen_board', evidence_target='pitcher_detail', is_bot=True,
+    )
+    db.session.commit()
+
+    depth = build_traffic_summary('7d', now=NOW)['evidence_depth']
+    assert depth == {
+        'sessions_opening_deeper_evidence': 1,
+        'percentage_of_bullpen_sessions_opening_deeper_evidence': 50.0,
+    }
+
+
 def test_acquisition_uses_first_ever_page_in_active_session(reporting_app):
     add_view(datetime(2026, 7, 2, 12, 0), 'visitor-one', 'long-session', surface='about')
     add_view(
@@ -256,6 +393,15 @@ def test_empty_state_response_and_invalid_range(reporting_app):
         'direct_unknown': {'sessions': 0, 'percentage': None},
     }
     assert len(report['daily']) == 7
+    assert report['shared_link_landings'] == {
+        'share_origin_sessions': 0,
+        'share_origin_visitors': 0,
+        'share_origin_page_views': 0,
+    }
+    assert report['evidence_depth'] == {
+        'sessions_opening_deeper_evidence': 0,
+        'percentage_of_bullpen_sessions_opening_deeper_evidence': None,
+    }
     with pytest.raises(ValueError, match='invalid_range'):
         build_traffic_summary('365d', now=NOW)
 
