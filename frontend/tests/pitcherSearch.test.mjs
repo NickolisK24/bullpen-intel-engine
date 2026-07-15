@@ -100,8 +100,8 @@ test('Pitcher Search result clicks open existing Pitcher Detail from Bullpen', a
   )
 
   assert.ok(searchSource.includes('onClick={() => onSelectPitcher(result)}'))
-  assert.ok(bullpenSource.includes("nextSearchParams.set('pitcher', String(result.player_id))"))
-  assert.ok(bullpenSource.includes('navigate(`${location.pathname}?${nextSearchParams.toString()}`)'))
+  assert.ok(bullpenSource.includes("handlePitcherSelect(result.player_id, result, 'pitcher_search')"))
+  assert.ok(bullpenSource.includes('navigate(buildPitcherHref(pitcherId'))
   assert.ok(bullpenSource.includes('<PitcherDetail pitcherId={selectedPitcher.pitcher_id} onClose={closeSelectedPitcher} />'))
   assert.ok(apiSource.includes('export const searchPitchers'))
   assert.ok(apiSource.includes('/pitchers/search'))

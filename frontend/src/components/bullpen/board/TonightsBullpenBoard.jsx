@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useFetch } from '../../../hooks/useFetch'
 import { toOperatingStateReadModel } from '../../../adapters/operatingStateReadModel'
 import { getTeamBullpenBoard, getTeamGameContext, getTeamStory } from '../../../utils/api'
@@ -7,8 +7,8 @@ import BullpenOperatingStateCard from '../BullpenOperatingStateCard'
 import BullpenBoardView from './BullpenBoardView'
 import TeamGameContextCard from './TeamGameContextCard'
 import StoryCard from './StoryCard'
-import PitcherDetail from '../PitcherDetail'
 import TeamReliefWorkPanel from '../TeamReliefWorkPanel'
+import { resolveTeamId } from '../../../utils/evidenceLinks'
 import {
   BULLPEN_VIEW_MODE_ACTIVE,
   BULLPEN_VIEW_MODE_ACTIVE_PLUS_UNAVAILABLE,
@@ -16,24 +16,7 @@ import {
   rosterCountsAreWithheld,
 } from './tonightsBullpenBoardView'
 
-// Resolve a deep-link `team` param (abbreviation like "SF", a team id, or a name)
-// against the loaded team list. Returns the matching team_id, or null.
-export function resolveTeamId(teamList, requested) {
-  if (requested == null) return null
-  const raw = String(requested).trim()
-  if (!raw || !Array.isArray(teamList)) return null
-
-  const asNum = Number(raw)
-  if (Number.isInteger(asNum)) {
-    const byId = teamList.find(team => team.team_id === asNum)
-    if (byId) return byId.team_id
-  }
-  const lower = raw.toLowerCase()
-  const byAbbr = teamList.find(team => (team.team_abbreviation || '').toLowerCase() === lower)
-  if (byAbbr) return byAbbr.team_id
-  const byName = teamList.find(team => (team.team_name || '').toLowerCase() === lower)
-  return byName ? byName.team_id : null
-}
+export { resolveTeamId } from '../../../utils/evidenceLinks'
 
 const staticFetchState = (data) => ({
   data,
@@ -50,6 +33,8 @@ export default function TonightsBullpenBoard({
   teams,
   requestedTeam = null,
   initialSelectedTeam = null,
+  onSelectTeam = () => {},
+  onSelectPitcher = () => {},
   boardPayload,
   gameContextPayload,
   storyPayload,
@@ -58,8 +43,7 @@ export default function TonightsBullpenBoard({
   teamReliefWorkError,
 }) {
   const teamList = teams?.data || []
-  const selectedTeamSeed = initialSelectedTeam ?? resolveTeamId(teamList, requestedTeam)
-  const [selectedTeam, setSelectedTeam] = useState(selectedTeamSeed)
+  const selectedTeam = initialSelectedTeam ?? resolveTeamId(teamList, requestedTeam)
   // One control instead of the old three-mode "View" row: the board shows the
   // active bullpen by default, and the toggle adds roster-unavailable arms as
   // context. The unavailable-only audit view moved out of the public controls
@@ -68,31 +52,6 @@ export default function TonightsBullpenBoard({
   const boardViewMode = showUnavailable
     ? BULLPEN_VIEW_MODE_ACTIVE_PLUS_UNAVAILABLE
     : BULLPEN_VIEW_MODE_ACTIVE
-  // Opening a pitcher's detail reuses the existing PitcherDetail panel — the
-  // board never duplicates that screen.
-  const [detailPitcherId, setDetailPitcherId] = useState(null)
-  const detailRef = useRef(null)
-  const selectedTeamInfo = teamList.find(team => team.team_id === selectedTeam)
-  // Apply a given requestedTeam deep-link only once, so a later manual team
-  // click is never overridden by the URL.
-  const appliedRequestRef = useRef(null)
-
-  useEffect(() => {
-    if (detailPitcherId != null) {
-      detailRef.current?.focus()
-    }
-  }, [detailPitcherId])
-
-  // Preselect the deep-linked team (landscape drilldown), once per requested value.
-  useEffect(() => {
-    if (!requestedTeam || teamList.length === 0) return
-    if (appliedRequestRef.current === requestedTeam) return
-    const resolved = resolveTeamId(teamList, requestedTeam)
-    if (resolved != null) {
-      setSelectedTeam(resolved)
-      appliedRequestRef.current = requestedTeam
-    }
-  }, [requestedTeam, teamList])
 
   const board = useFetch(
     () => {
@@ -143,7 +102,7 @@ export default function TonightsBullpenBoard({
             teamList.map(team => (
               <button
                 key={team.team_id}
-                onClick={() => setSelectedTeam(team.team_id)}
+                onClick={() => onSelectTeam(team.team_id)}
                 aria-pressed={selectedTeam === team.team_id}
                 className={`rounded border px-2.5 py-1 text-xs font-mono transition-all ${
                   selectedTeam === team.team_id
@@ -212,7 +171,7 @@ export default function TonightsBullpenBoard({
             </div>
             <BullpenBoardView
               board={filteredBoard}
-              onSelectPitcher={setDetailPitcherId}
+              onSelectPitcher={onSelectPitcher}
               showRoutineFreshness={false}
             />
             <StoryCard
@@ -228,17 +187,6 @@ export default function TonightsBullpenBoard({
               compact
             />
           </div>
-          {detailPitcherId != null && (
-            <div
-              ref={detailRef}
-              tabIndex={-1}
-              role="region"
-              aria-label="Selected pitcher detail"
-              className="fixed inset-0 z-40 overflow-y-auto bg-field/95 p-4 focus:outline-none lg:static lg:inset-auto lg:z-auto lg:bg-transparent lg:p-0 2xl:w-[34rem] 2xl:shrink-0"
-            >
-              <PitcherDetail pitcherId={detailPitcherId} onClose={() => setDetailPitcherId(null)} />
-            </div>
-          )}
         </div>
       )}
     </div>

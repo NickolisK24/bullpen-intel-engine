@@ -9,6 +9,8 @@
 // canonical payload; only short status labels and the league card framing are
 // derived from structured fields.
 
+import { buildTeamBoardHref } from '../../utils/evidenceLinks'
+
 export const CANONICAL_STORIES_FALLBACK =
   'No bullpen story has enough movement yet today.'
 export const STORIES_LIMITATIONS_FALLBACK =
@@ -185,7 +187,7 @@ function kickerOf(item) {
 
 function teamHref(item) {
   const abbr = cleanText(item?.team_abbreviation)
-  return abbr ? `/bullpen?view=board&team=${encodeURIComponent(abbr)}` : null
+  return abbr ? buildTeamBoardHref(item, { source: 'stories' }) : null
 }
 
 // Continuity -> the existing card "read" badge, for the noteworthy states only.

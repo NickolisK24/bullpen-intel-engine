@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom'
 import { toOperatingStateReadModel } from '../../adapters/operatingStateReadModel'
 import { useFetch } from '../../hooks/useFetch'
 import { getBullpenDashboard } from '../../utils/api'
+import { buildTeamBoardHref } from '../../utils/evidenceLinks'
 import { LoadingPane, ErrorState, StaleDataNotice } from '../UI'
 import SeasonBanner from './SeasonBanner'
 import BullpenLandscape from './BullpenLandscape'
@@ -38,7 +39,7 @@ export function DashboardView({ data, loading = false, error = null, staleWithEr
   const context = getBoardContextView(data || {})
   const operatingStateRead = toOperatingStateReadModel(data || {}, {
     scope: 'league',
-    cta: { href: '/bullpen?view=board', label: 'Open Bullpen Board' },
+    cta: { href: buildTeamBoardHref(null, { source: 'dashboard' }), label: 'Open Bullpen Board' },
   })
   const roles = getRolesSummaryView(data?.roles)
   const injuryIlContext = normalizeInjuryIlContext(data)

@@ -675,8 +675,8 @@ test('Since Yesterday renders changes in stored order with public copy and team 
   assert.ok(htmlIncludes(sinceHtml, '21 pitches'))
   assert.ok(htmlIncludes(sinceHtml, 'Yesterday'))
   assert.ok(htmlIncludes(sinceHtml, 'Today'))
-  assert.ok(htmlIncludes(sinceHtml, 'href="/bullpen?view=board&amp;team=NYM&amp;source=since-yesterday"'))
-  assert.ok(htmlIncludes(sinceHtml, 'href="/bullpen?view=board&amp;team=SF&amp;source=since-yesterday"'))
+  assert.ok(htmlIncludes(sinceHtml, 'href="/bullpen?view=board&amp;team=NYM&amp;source=today"'))
+  assert.ok(htmlIncludes(sinceHtml, 'href="/bullpen?view=board&amp;team=SF&amp;source=today"'))
   assert.equal(countOccurrences(sinceHtml, '<details'), 2)
   assert.equal(countOccurrences(sinceHtml, '<summary'), 2)
   assert.equal(/<details[^>]*\sopen(?:=|>|\s)/i.test(sinceHtml), false)
@@ -998,7 +998,7 @@ test('empty Intelligence Surface response does not render a homepage story fallb
 test('Tonight renders endpoint cards without exposing internal fields', () => {
   const cards = getTonightCards(tonightOk, teams)
   assert.equal(cards.length, 2)
-  assert.equal(cards[0].href, '/bullpen?view=board&team=CHC&source=intelligence-tonight')
+  assert.equal(cards[0].href, '/bullpen?view=board&team=CHC&source=today')
   assert.equal(cards[0].headline, 'Narrow bullpen margin before first pitch')
   assert.equal(cards[0].summary, 'BaseballOS is watching how much usable bullpen margin is left before the next rest day.')
   assert.equal(cards[0].whyItMatters, 'This matters because Clean Options are limited with a long stretch before the next off day.')
@@ -1032,7 +1032,7 @@ test('Tonight renders endpoint cards without exposing internal fields', () => {
   assert.ok(htmlIncludes(html, 'Clean Options are limited'))
   assert.ok(htmlIncludes(html, 'Schedule and bullpen context can still change before first pitch.'))
   assert.ok(htmlIncludes(html, 'Schedule context can change before lineup lock.'))
-  assert.ok(htmlIncludes(html, 'href="/bullpen?view=board&amp;team=CHC&amp;source=intelligence-tonight"'))
+  assert.ok(htmlIncludes(html, 'href="/bullpen?view=board&amp;team=CHC&amp;source=today"'))
   assert.equal(htmlIncludes(html, 'Around Baseball'), false)
   for (const raw of ['signal_family', 'schedule_pressure', 'internal_strength', 'ranking_score', 'recommendation', 'Do not render this field.', 'fatigue score', 'confidence score']) {
     assert.equal(html.includes(raw), false, raw)
@@ -1128,7 +1128,7 @@ test('Tonight renders only returned cards and does not backfill from Around Base
   assert.equal(htmlIncludes(html, 'Late-game path worth monitoring'), false)
   assert.equal(htmlIncludes(html, 'Around Baseball'), false)
   assert.equal(htmlIncludes(html, 'New York Mets added 2 rested arms'), false)
-  assert.equal(countOccurrences(html, 'source=intelligence-tonight'), 1)
+  assert.equal(countOccurrences(html, 'source=today'), 1)
 })
 
 test('Tonight empty response shows honest empty state when dashboard observations exist', () => {

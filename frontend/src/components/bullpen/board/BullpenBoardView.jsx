@@ -497,12 +497,17 @@ export default function BullpenBoardView({
   const teamName = board?.team?.team_name || board?.team?.team_abbreviation
 
   return (
-    <div id="pitcher-lanes">
+    <div
+      id="pitcher-lanes"
+      tabIndex={-1}
+      className="scroll-mt-24 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/60"
+      aria-labelledby="pitcher-lanes-title"
+    >
       <FreshnessBanner freshness={board?.freshness} showRoutine={showRoutineFreshness} />
       <RosterStatusBanner board={board} />
 
       <div className="mb-4">
-        <h2 className="font-display text-xl tracking-wide text-chalk100">
+        <h2 id="pitcher-lanes-title" className="font-display text-xl tracking-wide text-chalk100">
           Tonight's Bullpen Board{teamName ? ` — ${teamName}` : ''}
         </h2>
         <p className="mt-1 text-xs text-chalk500">

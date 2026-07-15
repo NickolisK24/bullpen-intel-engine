@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 import { EmptyState } from '../../UI'
+import { buildTeamBoardHref } from '../../../utils/evidenceLinks'
 import { getComparisonView } from './teamBullpenComparisonView'
 
 function FreshnessChip({ label, freshness }) {
@@ -120,7 +121,12 @@ export default function BullpenComparisonView({ payload }) {
       </section>
 
       {/* 4. Context comparison observations */}
-      <section aria-label="Bullpen comparison observations">
+      <section
+        id="comparison-evidence"
+        tabIndex={-1}
+        aria-label="Bullpen comparison observations"
+        className="scroll-mt-24 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/60"
+      >
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
           <h3 className="font-mono text-xs uppercase tracking-widest text-chalk400">Comparison</h3>
           <span className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
@@ -163,12 +169,11 @@ export default function BullpenComparisonView({ payload }) {
 }
 
 function TeamBoardLink({ team, label }) {
-  const param = team?.team_abbreviation
-    || (team?.team_id != null ? String(team.team_id) : null)
-  if (!param) return null
+  const href = buildTeamBoardHref(team, { source: 'comparison' })
+  if (!team?.team_abbreviation && team?.team_id == null) return null
   return (
     <Link
-      to={`/bullpen?view=board&team=${encodeURIComponent(param)}&source=comparison`}
+      to={href}
       className="inline-flex min-h-10 items-center rounded border border-dirt bg-field/60 px-4 py-2 font-mono text-xs uppercase tracking-wider text-chalk300 transition-colors hover:border-amber/40 hover:text-amber"
     >
       Open the {label} board →

@@ -1,3 +1,5 @@
+import { buildTeamBoardHref } from './evidenceLinks.js'
+
 export const PREFERRED_TEAM_STORAGE_KEY = 'baseballos.preferredTeam'
 export const LEGACY_FOLLOWED_TEAM_STORAGE_KEY = 'baseballos.followedTeam'
 export const LEGACY_WHAT_CHANGED_TEAM_STORAGE_KEY = 'baseballos.whatChangedTeam'
@@ -321,19 +323,7 @@ export function resolvePreferredTeam(preference, teams = []) {
 
 export function buildPreferredTeamHref(team, source = 'preferred-team') {
   const normalized = normalizePreferredTeam(team)
-  if (!normalized) return '/bullpen?view=board'
-
-  const teamParam = normalized.team_abbreviation || (
-    normalized.team_id != null ? String(normalized.team_id) : ''
-  )
-  if (!teamParam) return '/bullpen?view=board'
-
-  const query = new URLSearchParams({
-    view: 'board',
-    team: teamParam,
-    source,
-  })
-  return `/bullpen?${query.toString()}`
+  return buildTeamBoardHref(normalized, { source })
 }
 
 export function preferredTeamLabel(team, fallback = 'your team') {

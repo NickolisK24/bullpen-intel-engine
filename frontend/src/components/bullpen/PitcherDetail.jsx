@@ -20,6 +20,19 @@ const isSpringTraining = (log) =>
   log?.opponent_abbreviation === 'SIM' ||
   log?.opponent === 'Simulated'
 
+function ClosePitcherDetailButton({ onClose }) {
+  return (
+    <button
+      type="button"
+      onClick={onClose}
+      aria-label="Close selected pitcher detail"
+      className="shrink-0 rounded px-2 py-1 text-lg leading-none text-chalk400 hover:text-chalk200 focus-visible:ring-2 focus-visible:ring-amber/70"
+    >
+      ✕
+    </button>
+  )
+}
+
 export default function PitcherDetail({ pitcherId, onClose }) {
   const { data, loading, error, refetch } = useFetch(
     () => getPitcherFatigue(pitcherId),
@@ -27,10 +40,16 @@ export default function PitcherDetail({ pitcherId, onClose }) {
   )
 
   if (loading) return (
-    <div className="card h-full"><LoadingPane message="Loading pitcher..." /></div>
+    <div className="card h-full">
+      <div className="flex justify-end border-b border-dirt p-2"><ClosePitcherDetailButton onClose={onClose} /></div>
+      <LoadingPane message="Loading pitcher..." />
+    </div>
   )
   if (error) return (
-    <div className="card h-full"><ErrorState message={error} onRetry={refetch} /></div>
+    <div className="card h-full">
+      <div className="flex justify-end border-b border-dirt p-2"><ClosePitcherDetailButton onClose={onClose} /></div>
+      <ErrorState message={error} onRetry={refetch} />
+    </div>
   )
 
   return <PitcherDetailContent data={data} pitcherId={pitcherId} onClose={onClose} />
@@ -79,14 +98,7 @@ export function PitcherDetailContent({ data, pitcherId, onClose }) {
             {pitcher?.jersey_number && <><span>·</span><span>#{pitcher.jersey_number}</span></>}
           </div>
         </div>
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="Close selected pitcher detail"
-          className="shrink-0 rounded px-2 py-1 text-lg leading-none text-chalk400 hover:text-chalk200 focus-visible:ring-2 focus-visible:ring-amber/70"
-        >
-          ✕
-        </button>
+        <ClosePitcherDetailButton onClose={onClose} />
       </div>
 
       {hasCurrentRead ? (
