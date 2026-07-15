@@ -164,6 +164,9 @@ class Config:
     MAGIC_LINK_TTL_SECONDS = int(os.environ.get('MAGIC_LINK_TTL_SECONDS', '900'))
     AUTH_TOKEN_TTL_SECONDS = int(os.environ.get('AUTH_TOKEN_TTL_SECONDS', '2592000'))
     FRONTEND_BASE_URL = os.environ.get('FRONTEND_BASE_URL', 'http://localhost:5173')
+    # Normalized email allowlist used only to mark pseudonymous visitor ids as
+    # founder/internal traffic. Email values are never written to traffic tables.
+    TRAFFIC_INTERNAL_EMAILS = os.environ.get('TRAFFIC_INTERNAL_EMAILS', '')
 
     # ── Transactional email delivery (Phase D2B) ─────────────────────────────
     # The provider is only used in production; development and test always

@@ -25,8 +25,6 @@ class User(db.Model):
     email = db.Column(db.String(320), nullable=False)
     email_verified_at = db.Column(db.DateTime)
     onboarded_at = db.Column(db.DateTime)
-    # Legacy and unused. Retained temporarily for a later schema-cleanup migration.
-    notification_prefs = db.Column(db.JSON)
     created_at = db.Column(db.DateTime, nullable=False, default=utc_now_naive)
     last_login_at = db.Column(db.DateTime)
 
