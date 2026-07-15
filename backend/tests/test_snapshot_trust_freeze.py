@@ -296,7 +296,10 @@ def test_frozen_legacy_what_changed_files_untouched():
     allowed_trusted_traffic_files = {
         'backend/migrations/versions/a9e4c7d2f1b6_add_trusted_external_traffic.py',
         'frontend/src/components/TrafficRouteObserver.jsx',
+        'frontend/src/components/admin/TrafficIntelligenceAdmin.jsx',
         'frontend/src/utils/trafficMeasurement.js',
+        'frontend/src/utils/trafficReporting.js',
+        'frontend/tests/trafficIntelligenceAdmin.test.mjs',
         'frontend/tests/trafficMeasurement.test.mjs',
     }
     assert not sorted(
