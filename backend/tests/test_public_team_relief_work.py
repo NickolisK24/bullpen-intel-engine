@@ -1274,7 +1274,10 @@ def test_existing_public_routes_behavior_freeze(monkeypatch):
     allowed_trusted_traffic_files = {
         'backend/migrations/versions/a9e4c7d2f1b6_add_trusted_external_traffic.py',
         'frontend/src/components/TrafficRouteObserver.jsx',
+        'frontend/src/components/admin/TrafficIntelligenceAdmin.jsx',
         'frontend/src/utils/trafficMeasurement.js',
+        'frontend/src/utils/trafficReporting.js',
+        'frontend/tests/trafficIntelligenceAdmin.test.mjs',
         'frontend/tests/trafficMeasurement.test.mjs',
     }
     assert not [

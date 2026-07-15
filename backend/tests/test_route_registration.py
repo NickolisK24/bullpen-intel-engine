@@ -34,3 +34,4 @@ def test_retired_routes_are_absent_and_preserved_routes_remain(monkeypatch):
     assert '/api/system/pipeline-health' in rules
     assert '/api/system/internal/pitcher-evidence' in rules
     assert '/api/traffic/page-view' in rules
+    assert '/api/traffic/internal/summary' in rules

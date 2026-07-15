@@ -354,7 +354,9 @@ def test_phase0e_switches_and_legacy_public_files_not_modified():
         'backend/api/traffic.py',
         'backend/migrations/versions/a9e4c7d2f1b6_add_trusted_external_traffic.py',
         'frontend/src/components/TrafficRouteObserver.jsx',
+        'frontend/src/components/admin/TrafficIntelligenceAdmin.jsx',
         'frontend/src/utils/trafficMeasurement.js',
+        'frontend/src/utils/trafficReporting.js',
     }
     allowed_files = (
         allowed_public_freshness_display_files

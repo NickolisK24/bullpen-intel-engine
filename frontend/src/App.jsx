@@ -16,6 +16,8 @@ import VerifySignIn from './components/auth/VerifySignIn'
 import { PRIVATE_POSTS_PATH } from './components/posts/privatePostsView'
 import { cleanupLaunchPreferredTeamStorage } from './utils/preferredTeam'
 import TrafficRouteObserver from './components/TrafficRouteObserver'
+import TrafficIntelligenceAdmin from './components/admin/TrafficIntelligenceAdmin'
+import { TRAFFIC_REPORTING_PATH } from './utils/trafficReporting'
 
 export const APP_ROUTES = [
   { path: '/', Component: Home },
@@ -29,6 +31,7 @@ export const APP_ROUTES = [
   { path: '/trust', Component: DataTrust },
   { path: '/signin', Component: SignIn },
   { path: '/auth/verify', Component: VerifySignIn },
+  { path: TRAFFIC_REPORTING_PATH, Component: TrafficIntelligenceAdmin },
   { path: PRIVATE_POSTS_PATH, Component: PrivatePosts },
   { path: '*', redirectTo: '/' },
 ]
