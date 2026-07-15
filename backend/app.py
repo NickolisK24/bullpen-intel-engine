@@ -69,15 +69,6 @@ def _init_scheduler(app):
             misfire_grace_time=60 * 60,
         )
 
-        # Daily team digest job — only registered when explicitly enabled, so
-        # turning on AUTO_SYNC alone never starts emailing. Per-user opt-in is
-        # still required for any individual digest to send.
-        if app.config.get('DIGEST_SEND_ENABLED'):
-            from services.digest_delivery import register_digest_job
-            digest_hour = int(app.config.get('DIGEST_SEND_HOUR_ET', 7))
-            register_digest_job(_scheduler, app, hour=digest_hour, minute=0, timezone=eastern)
-            print(f'[scheduler] Daily team digest scheduled at {digest_hour:02d}:00 ET.', flush=True)
-
         _scheduler.start()
         print('[scheduler] Daily bullpen sync scheduled at 06:00 ET.', flush=True)
 
@@ -136,8 +127,6 @@ def create_app(config_name=None):
     from models.scheduled_game import ScheduledGame
     from models.tonight_intelligence_snapshot import TonightIntelligenceSnapshot
     from models.user import User, UserFollowedTeam
-    from models.digest_metrics import DigestRun, DigestDelivery
-    from models.product_event import ProductEvent
     from models.audience_subscriber import AudienceSubscriber
     from models.player_transaction import PlayerTransaction, PlayerTransactionSyncWindow
     from models.play_by_play_foundation import GamePlayByPlayEvent, PlayByPlayProcessedGame
@@ -159,8 +148,6 @@ def create_app(config_name=None):
     from api.system import system_bp
     from api.auth import auth_bp
     from api.me import me_bp
-    from api.digest import digest_bp
-    from api.product_events import product_bp
     from api.private_posts import private_posts_bp
     from api.audience import audience_bp
 
@@ -177,8 +164,6 @@ def create_app(config_name=None):
     app.register_blueprint(system_bp, url_prefix='/api/system')
     app.register_blueprint(auth_bp, url_prefix='/api/auth')
     app.register_blueprint(me_bp, url_prefix='/api/me')
-    app.register_blueprint(digest_bp, url_prefix='/api/digest')
-    app.register_blueprint(product_bp, url_prefix='/api/product')
     app.register_blueprint(private_posts_bp, url_prefix='/api/private-posts')
     app.register_blueprint(audience_bp, url_prefix='/api/audience')
 

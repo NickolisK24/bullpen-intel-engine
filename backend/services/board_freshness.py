@@ -2,10 +2,9 @@
 
 The compact freshness/trust block the Today board and the team "What Changed"
 surface present, derived from the published dashboard snapshot (preferred) or
-durable sync metadata (fallback). This lives in a service so every caller — the
-API routes AND the digest path — produces the SAME freshness. The digest
-previously passed no freshness, which made the shared team_changes builder fail
-closed to a stale state; sourcing this block keeps the digest aligned with Today.
+durable sync metadata (fallback). This lives in a service so every public caller
+produces the same freshness and the shared team_changes builder fails closed when
+published freshness is unavailable.
 
 Pure derivation over existing services (dashboard snapshot + durable sync
 metadata). No request/Flask state, no ranking, selection, recommendation, or

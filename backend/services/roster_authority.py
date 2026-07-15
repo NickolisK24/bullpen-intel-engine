@@ -7,7 +7,7 @@ surface can eventually read from, so no consumer recomputes its own roster truth
 This module is the *foundation only*. It introduces the authority object and a pure
 builder over already-classified bullpen records. It does not query the database,
 render anything, attach to any payload, or change any existing consumer. Wiring the
-authority into the board / story / digest payloads and migrating consumers off their
+authority into the board and story payloads and migrating consumers off their
 private counts is deferred to later phases. See
 ``docs/methodology/ROSTER_AUTHORITY_V1.md`` and the audit at
 ``docs/methodology/CANONICAL_ROSTER_CONTEXT_AUDIT_AND_DESIGN.md``.

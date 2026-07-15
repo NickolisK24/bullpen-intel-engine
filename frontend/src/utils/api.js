@@ -6,7 +6,6 @@ import {
   OBSERVATION_ITEM_REQUIRED_FIELDS,
   OBSERVATION_RESPONSE_REQUIRED_FIELDS,
 } from '../types/observations'
-import { getOrCreateProductAnonId } from './productIdentity'
 
 const BASE = import.meta.env.VITE_API_BASE_URL
   ? `${import.meta.env.VITE_API_BASE_URL}/api`
@@ -386,23 +385,10 @@ export const signupAudience = (email, options = {}) => request('/audience/signup
   }),
 })
 
-function payloadWithProductAnonId(payload = {}) {
-  const anonId = payload.anon_id === undefined
-    ? getOrCreateProductAnonId()
-    : payload.anon_id
-  return {
-    ...payload,
-    ...(anonId ? { anon_id: anonId } : {}),
-  }
-}
-
-export const verifyMagicLink = async (token, options = {}) => {
+export const verifyMagicLink = async (token) => {
   const response = await request('/auth/verify', {
     method: 'POST',
-    body: JSON.stringify(payloadWithProductAnonId({
-      token,
-      ...(options.anonId === undefined ? {} : { anon_id: options.anonId }),
-    })),
+    body: JSON.stringify({ token }),
     authToken: null,
   })
   storeAuthToken(response?.token)
@@ -416,57 +402,6 @@ export const logoutAuth = async () => {
     clearAuthToken()
   }
 }
-
-// ── Product Intelligence ───────────────────────────────────
-export const recordTodayLoaded = (payload = {}) => request('/product/today-loaded', {
-  method: 'POST',
-  body: JSON.stringify(payloadWithProductAnonId(payload)),
-  silent: true,
-})
-
-export const recordStoryViewed = (payload = {}) => request('/product/story-viewed', {
-  method: 'POST',
-  body: JSON.stringify(payloadWithProductAnonId(payload)),
-  silent: true,
-})
-
-export const recordStoryInteracted = (payload = {}) => request('/product/story-interacted', {
-  method: 'POST',
-  body: JSON.stringify(payloadWithProductAnonId(payload)),
-  silent: true,
-})
-
-// V3-1: story_impression posts through the owned generic story-event endpoint.
-// event_name is fixed here so the client can only ever emit the allowlisted name.
-export const recordStoryImpression = (payload = {}) => request('/product/story-event', {
-  method: 'POST',
-  body: JSON.stringify(payloadWithProductAnonId({ ...payload, event_name: 'story_impression' })),
-  silent: true,
-})
-
-// V3-2: story_team_board_opened posts through the same owned story-event endpoint.
-// Fires once per physical click (not deduped) — each Team Board open is a signal.
-export const recordStoryTeamBoardOpened = (payload = {}) => request('/product/story-event', {
-  method: 'POST',
-  body: JSON.stringify(payloadWithProductAnonId({ ...payload, event_name: 'story_team_board_opened' })),
-  silent: true,
-})
-
-// V3-3: story_share_clicked posts through the same owned story-event endpoint.
-// Fired on Share click intent (not native-share / copy success); per-click, not deduped.
-export const recordStoryShareClicked = (payload = {}) => request('/product/story-event', {
-  method: 'POST',
-  body: JSON.stringify(payloadWithProductAnonId({ ...payload, event_name: 'story_share_clicked' })),
-  silent: true,
-})
-
-// V4.0: generic owned product-loop observations. Event names are centralized in
-// utils/analytics.js; this seam only posts the already-normalized payload.
-export const recordProductEvent = (payload = {}) => request('/product/event', {
-  method: 'POST',
-  body: JSON.stringify(payloadWithProductAnonId(payload)),
-  silent: true,
-})
 
 // ── User Team Following ────────────────────────────────────
 export const getFollowedTeams = () => request('/me/teams')

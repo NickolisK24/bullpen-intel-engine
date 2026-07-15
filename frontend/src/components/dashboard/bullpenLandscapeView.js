@@ -40,7 +40,7 @@ function entryLabel(entry) {
 
 // Deep-link a landscape team row into its bullpen board, reusing the existing
 // /bullpen?view= deep-link pattern. Prefers the abbreviation (e.g. SF) and falls
-// back to the numeric team id; source=landscape is passed for later UX analytics.
+// back to the numeric team id; source=landscape preserves navigation context.
 export function buildLandscapeTeamHref(entry) {
   const param = entry?.team_abbreviation || (entry?.team_id != null ? String(entry.team_id) : null)
   if (!param) return null
@@ -106,7 +106,7 @@ export function getLandscapeView(landscape) {
 
 // Tonight's Storylines — a compact, descriptive recap of current bullpen
 // situations already present in the landscape data. This is storytelling, not a new
-// analytics layer: every observation is derived from the same availability/workload
+// data layer: every observation is derived from the same availability/workload
 // counts that power the constrained/available/monitoring columns. No rankings,
 // recommendations, predictions, or matchup advice — just plain baseball language.
 export const STORYLINES_FALLBACK =

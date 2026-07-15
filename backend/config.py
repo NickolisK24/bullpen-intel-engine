@@ -175,31 +175,6 @@ class Config:
     EMAIL_FROM = os.environ.get('EMAIL_FROM')
     EMAIL_API_KEY = os.environ.get('EMAIL_API_KEY')
     EMAIL_SEND_TIMEOUT = float(os.environ.get('EMAIL_SEND_TIMEOUT', '10'))
-    # Signing secret for the provider deliverability webhook (Svix scheme). When
-    # unset, the webhook is accepted in development (with a warning) and disabled
-    # (403) in production, mirroring the admin-token gate. No secret in code.
-    EMAIL_WEBHOOK_SECRET = os.environ.get('EMAIL_WEBHOOK_SECRET')
-
-    # ── Team digest scheduling & delivery (Phase D2D) ────────────────────────
-    # The daily digest job is registered only when DIGEST_SEND_ENABLED is true,
-    # so turning on AUTO_SYNC alone never starts emailing. Per-user opt-in is
-    # still required regardless of this flag. DIGEST_SEND_HOUR_ET is when the
-    # daily job runs (Eastern). PUBLIC_API_BASE_URL is the backend's public
-    # origin, used to build the absolute open/click tracking and one-click
-    # unsubscribe links in the email. BACKEND_BASE_URL is accepted as an alias
-    # (the operator-facing name on the host) so the origin still resolves when
-    # only that variable is set; without it those links would be host-less and
-    # render as the invalid http:///api/digest/click in mail clients.
-    DIGEST_SEND_ENABLED = (
-        os.environ.get('DIGEST_SEND_ENABLED', 'false').lower()
-        in ('1', 'true', 'yes', 'on')
-    )
-    DIGEST_SEND_HOUR_ET = int(os.environ.get('DIGEST_SEND_HOUR_ET', '7'))
-    PUBLIC_API_BASE_URL = (
-        os.environ.get('PUBLIC_API_BASE_URL')
-        or os.environ.get('BACKEND_BASE_URL', '')
-    )
-
     # ── Story Quality contract (scoring + gating) ────────────────────────────
     # The Story Quality scorer always runs and annotates every generated story
     # with a rule-by-rule scorecard. Enforcement is opt-in and fail-open: with

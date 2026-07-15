@@ -8,9 +8,9 @@ AUDIENCE_SUBSCRIBER_STATUS_SUBSCRIBED = 'subscribed'
 class AudienceSubscriber(db.Model):
     """Durable email capture for the public BaseballOS audience.
 
-    This is intentionally separate from users, team following, digest
-    preferences, and delivery metrics. It records only the signup channel and
-    the welcome-email attempt state needed for the public capture form.
+    This is intentionally separate from users and team following. It records
+    only the signup channel and the welcome-email attempt state needed for the
+    public capture form.
     """
     __tablename__ = 'audience_subscribers'
 

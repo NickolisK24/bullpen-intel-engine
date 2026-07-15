@@ -1,8 +1,6 @@
-import { useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { useFetch } from '../../hooks/useFetch'
 import { getMethodology } from '../../utils/api'
-import { ANALYTICS_EVENTS, trackAnalyticsEventOnce } from '../../utils/analytics'
 import { LoadingPane, ErrorState, SectionHeader, Divider } from '../UI'
 import { PUBLIC_BOUNDARIES } from '../../utils/publicBoundaries'
 
@@ -49,14 +47,6 @@ function workloadComponentCopy(component) {
 
 export default function Methodology() {
   const { data, loading, error, refetch } = useFetch(getMethodology)
-
-  useEffect(() => {
-    trackAnalyticsEventOnce(ANALYTICS_EVENTS.METHODOLOGY_VIEWED, {
-      surface: 'methodology',
-      route: '/methodology',
-      source: 'page',
-    })
-  }, [])
 
   if (loading) {
     return (

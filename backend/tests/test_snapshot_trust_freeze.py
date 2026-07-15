@@ -239,13 +239,6 @@ def test_frozen_legacy_what_changed_files_untouched():
         # comparison service and trust gates remain frozen.
         'backend/services/what_changed_since_yesterday_public.py',
     }
-    allowed_public_since_yesterday_rendering_files = {
-        # Branch 2 Today rendering permits only the client analytics helper and
-        # tests for the what_changed_viewed, what_changed_item_opened, and
-        # what_changed_team_clicked observations.
-        'frontend/src/utils/analytics.js',
-        'frontend/tests/analytics.test.mjs',
-    }
     allowed_phase0i_roster_readiness_files = {
         'frontend/src/adapters/operatingStateReadModel.js',
         'frontend/src/components/bullpen/board/BullpenBoardView.jsx',
@@ -274,6 +267,32 @@ def test_frozen_legacy_what_changed_files_untouched():
         # read owns the chip and disclosure; Compare inherits it untransformed.
         'frontend/tests/teamBullpenComparison.test.mjs',
     }
+    allowed_legacy_retirement_files = {
+        'frontend/package-lock.json',
+        'frontend/package.json',
+        'frontend/src/App.jsx',
+        'frontend/src/components/admin/ProductIntelligenceAdmin.jsx',
+        'frontend/src/components/bullpen/Bullpen.jsx',
+        'frontend/src/components/dashboard/BullpenLandscape.jsx',
+        'frontend/src/components/home/IntelligenceSurface.jsx',
+        'frontend/src/components/layout/Footer.jsx',
+        'frontend/src/components/methodology/Methodology.jsx',
+        'frontend/src/components/share/TeamShareButton.jsx',
+        'frontend/src/components/stories/Stories.jsx',
+        'frontend/src/components/trust/DataTrust.jsx',
+        'frontend/src/hooks/useProductIntelligence.js',
+        'frontend/src/utils/adminProductEvents.js',
+        'frontend/src/utils/analytics.js',
+        'frontend/src/utils/api.js',
+        'frontend/src/utils/productIdentity.js',
+        'frontend/src/utils/productIntelligence.js',
+        'frontend/tests/analytics.test.mjs',
+        'frontend/tests/authClient.test.mjs',
+        'frontend/tests/intelligenceSurface.test.mjs',
+        'frontend/tests/navigationRoutes.test.mjs',
+        'frontend/tests/productIntelligence.test.mjs',
+        'frontend/tests/productIntelligenceAdmin.test.mjs',
+    }
     assert not sorted(
         (frozen_paths & changed) - allowed_public_what_changed_contract_files
     )
@@ -283,10 +302,10 @@ def test_frozen_legacy_what_changed_files_untouched():
         if path not in allowed_phase_a_audience_signup_files
         if path not in allowed_bullpen_game_context_files
         if path not in allowed_pitcher_ledger_coverage_files
-        if path not in allowed_public_since_yesterday_rendering_files
         if path not in allowed_phase0i_roster_readiness_files
         if path not in allowed_public_role_vocabulary_files
         if path not in allowed_relief_role_input_integrity_files
+        if path not in allowed_legacy_retirement_files
     )
     assert not sorted(
         path for path in changed

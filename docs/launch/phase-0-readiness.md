@@ -1,11 +1,9 @@
 # Phase 0 Launch Readiness
 
-## Analytics
+## Usage measurement
 
-- Vercel Analytics is installed and mounted in the frontend app.
-- The mounted integration is `@vercel/analytics/react` in `frontend/src/App.jsx`.
-- No GA4 or PostHog script, ID, API key, or secret-bearing config was added in Phase 0.
-- GA4 or PostHog should be added only after the production account exists and the public measurement ID or public project key is available through the deployment environment. Do not hardcode analytics IDs or private keys.
+- The application does not include usage-tracking instrumentation.
+- Do not add client or server usage tracking without a separately approved product and privacy plan.
 
 ## Search Console
 
@@ -17,7 +15,7 @@
 
 ## UTM Rules
 
-Use UTM parameters on public launch, social, newsletter, and creator-outreach links so traffic is readable in Vercel Analytics and any later analytics provider.
+Use UTM parameters on public launch, social, newsletter, and creator-outreach links to keep distributed links consistently labeled if campaign measurement is introduced later.
 
 Standard fields:
 

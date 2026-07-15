@@ -1,6 +1,5 @@
 import { useEffect } from 'react'
-import { BrowserRouter, Navigate, Routes, Route, useLocation } from 'react-router-dom'
-import { Analytics } from '@vercel/analytics/react'
+import { BrowserRouter, Navigate, Routes, Route } from 'react-router-dom'
 import Sidebar from './components/Sidebar'
 import Footer from './components/layout/Footer'
 import Home from './components/home/Home'
@@ -14,10 +13,7 @@ import DataTrust from './components/trust/DataTrust'
 import PrivatePosts from './components/posts/PrivatePosts'
 import SignIn from './components/auth/SignIn'
 import VerifySignIn from './components/auth/VerifySignIn'
-import ProductIntelligenceAdmin from './components/admin/ProductIntelligenceAdmin'
 import { PRIVATE_POSTS_PATH } from './components/posts/privatePostsView'
-import { ADMIN_PRODUCT_EVENTS_PATH } from './utils/adminProductEvents'
-import { ANALYTICS_EVENTS, trackAnalyticsEvent } from './utils/analytics'
 import { cleanupLaunchPreferredTeamStorage } from './utils/preferredTeam'
 
 export const APP_ROUTES = [
@@ -32,7 +28,6 @@ export const APP_ROUTES = [
   { path: '/trust', Component: DataTrust },
   { path: '/signin', Component: SignIn },
   { path: '/auth/verify', Component: VerifySignIn },
-  { path: ADMIN_PRODUCT_EVENTS_PATH, Component: ProductIntelligenceAdmin },
   { path: PRIVATE_POSTS_PATH, Component: PrivatePosts },
   { path: '*', redirectTo: '/' },
 ]
@@ -51,20 +46,6 @@ export function AppRoutes() {
   )
 }
 
-function AnalyticsRouteObserver() {
-  const location = useLocation()
-
-  useEffect(() => {
-    trackAnalyticsEvent(ANALYTICS_EVENTS.APP_VIEWED, {
-      surface: 'app',
-      route: location.pathname,
-      source: 'app',
-    })
-  }, [location.pathname])
-
-  return null
-}
-
 export default function App() {
   useEffect(() => {
     cleanupLaunchPreferredTeamStorage()
@@ -75,12 +56,10 @@ export default function App() {
       <div className="app-shell bg-noise flex-col lg:flex-row">
         <Sidebar />
         <main className="flex-1 min-w-0 lg:ml-56">
-          <AnalyticsRouteObserver />
           <AppRoutes />
           <Footer />
         </main>
       </div>
-      <Analytics />
     </BrowserRouter>
   )
 }

@@ -8,10 +8,9 @@ roster truth that could drift from the authority's categories. They now read the
 canonical ``roster_status_category_for_status``; the IL/non-IL split is a coarsening of the
 authority's off-roster categories.
 
-These tests prove the editorial pipeline (injury context → Story → Digest, and the Today/feed
-surface) consumes the authority's categories, that its roster counts reconcile with the
-authority's ``category_counts`` over the same population, and that story/digest output is
-unchanged (only the source of roster truth moved).
+These tests prove the editorial pipeline and Today/feed surface consume the authority's
+categories, and that roster counts reconcile with the authority's ``category_counts`` over
+the same population.
 """
 
 from datetime import date
@@ -21,7 +20,6 @@ import pytest
 
 import services.injury_context as injury_context_mod
 import services.injury_il_context as injury_il_context_mod
-from services.digest_composer import compose_digest
 from services.injury_context import build_injury_context
 from services.injury_il_context import (
     STATUS_GROUP_ACTIVE,
@@ -56,7 +54,6 @@ from services.roster_status import (
 )
 from services.story_intelligence_service_v1 import build_team_story
 from services.story_observation_engine import TYPE_DEPTH_PRESSURE, build_team_observations
-from services.team_changes import STATE_CHANGES
 
 
 REF = date(2026, 6, 20)
@@ -264,27 +261,3 @@ def test_story_output_is_stable_after_migration():
     cause_paragraph = story['written_story']['cause_paragraph']
     for name in ('IL Fifteen', 'IL Sixty', 'Opt'):
         assert name in cause_paragraph
-
-
-# ── Digest carries the authority-sourced story unchanged ──────────────────────
-
-def test_digest_carries_authority_sourced_story():
-    team_context, _authority = _depth_pressure_team_context()
-    story = build_team_story(1, as_of_date=REF, team_context=team_context)
-    changes = {
-        'state': STATE_CHANGES,
-        'team': {'team_id': 1, 'team_name': 'Team 1', 'team_abbreviation': 'T1'},
-        'pitcher_changes': [{'name': 'Some Arm', 'change': 'monitor'}],
-        'team_summary': 'Bullpen depth is thinning.',
-        'freshness': {'data_through': REF.isoformat(), 'is_current': True, 'freshness_state': 'current'},
-    }
-    digest = compose_digest(team_id=1, changes=changes, story=story, reference_date=REF.isoformat())
-
-    assert digest['send'] is True
-    team_story = digest['sections']['team_story']
-    # The digest faithfully carries the authority-sourced story — same type, and the beat is the
-    # story's narrative passed through unchanged (the digest computes no roster truth of its own).
-    assert team_story['available'] is True
-    assert team_story['story_type'] == 'depth_constraint'
-    assert team_story['beat'] == story['written_story']['observation_paragraph'] or team_story['beat'] == story['written_story']['cause_paragraph']
-    assert team_story['beat']

@@ -1215,13 +1215,6 @@ def test_existing_public_routes_behavior_freeze(monkeypatch):
         # dashboard storage condition and snapshot-unavailable fallback state.
         'backend/api/bullpen.py',
     }
-    allowed_public_since_yesterday_rendering_files = {
-        # Branch 2 Today rendering permits only the client analytics helper and
-        # tests for the what_changed_viewed, what_changed_item_opened, and
-        # what_changed_team_clicked observations.
-        'frontend/src/utils/analytics.js',
-        'frontend/tests/analytics.test.mjs',
-    }
     allowed_phase0i_roster_readiness_files = {
         'backend/api/bullpen.py',
         'frontend/src/adapters/operatingStateReadModel.js',
@@ -1251,16 +1244,43 @@ def test_existing_public_routes_behavior_freeze(monkeypatch):
         # read owns the chip and disclosure; Compare inherits it untransformed.
         'frontend/tests/teamBullpenComparison.test.mjs',
     }
+    allowed_legacy_retirement_files = {
+        'backend/api/system.py',
+        'frontend/package-lock.json',
+        'frontend/package.json',
+        'frontend/src/App.jsx',
+        'frontend/src/components/admin/ProductIntelligenceAdmin.jsx',
+        'frontend/src/components/bullpen/Bullpen.jsx',
+        'frontend/src/components/dashboard/BullpenLandscape.jsx',
+        'frontend/src/components/home/IntelligenceSurface.jsx',
+        'frontend/src/components/layout/Footer.jsx',
+        'frontend/src/components/methodology/Methodology.jsx',
+        'frontend/src/components/share/TeamShareButton.jsx',
+        'frontend/src/components/stories/Stories.jsx',
+        'frontend/src/components/trust/DataTrust.jsx',
+        'frontend/src/hooks/useProductIntelligence.js',
+        'frontend/src/utils/adminProductEvents.js',
+        'frontend/src/utils/analytics.js',
+        'frontend/src/utils/api.js',
+        'frontend/src/utils/productIdentity.js',
+        'frontend/src/utils/productIntelligence.js',
+        'frontend/tests/analytics.test.mjs',
+        'frontend/tests/authClient.test.mjs',
+        'frontend/tests/intelligenceSurface.test.mjs',
+        'frontend/tests/navigationRoutes.test.mjs',
+        'frontend/tests/productIntelligence.test.mjs',
+        'frontend/tests/productIntelligenceAdmin.test.mjs',
+    }
     assert not [
         path for path in changed
         if path not in allowed_phase_a_audience_signup_files
         if path not in allowed_bullpen_game_context_files
         if path not in allowed_pitcher_ledger_coverage_files
         if path not in allowed_public_what_changed_contract_files
-        if path not in allowed_public_since_yesterday_rendering_files
         if path not in allowed_phase0i_roster_readiness_files
         if path not in allowed_public_role_vocabulary_files
         if path not in allowed_relief_role_input_integrity_files
+        if path not in allowed_legacy_retirement_files
         if (
             path in blocked_files and path not in allowed_internal_admin_files
         )
@@ -1277,7 +1297,10 @@ def test_existing_public_routes_behavior_freeze(monkeypatch):
         assert "'state': 'insufficient_context'" in diff
         assert "'reason_codes': [reason or 'dashboard_snapshot_unavailable']" in diff
 
-    if 'backend/api/system.py' in changed:
+    if (
+        'backend/api/system.py' in changed
+        and 'backend/api/system.py' not in allowed_legacy_retirement_files
+    ):
         diff = _diff_vs_main('backend/api/system.py')
         assert '/internal/snapshot-audit' in diff
         assert '/internal/pitcher-evidence' in diff

@@ -23,11 +23,6 @@ import {
   getLandscapeView,
 } from '../dashboard/bullpenLandscapeView'
 import {
-  ANALYTICS_EVENTS,
-  trackAnalyticsEvent,
-  trackAnalyticsEventOnce,
-} from '../../utils/analytics'
-import {
   freshnessDataThrough,
   freshnessIsCurrent,
 } from '../dashboard/syncStatusView'
@@ -601,38 +596,6 @@ function sinceYesterdayUnavailableCopy(block, comparison) {
   return SINCE_YESTERDAY_UNAVAILABLE_COPY
 }
 
-export function trackSinceYesterdayViewed(view, options = {}) {
-  if (!view?.state) return Promise.resolve(false)
-  return trackAnalyticsEventOnce(ANALYTICS_EVENTS.WHAT_CHANGED_VIEWED, {
-    surface: 'home',
-    route: '/',
-    source: SINCE_YESTERDAY_SOURCE,
-    state: view.state,
-  }, options)
-}
-
-export function trackSinceYesterdayItemOpened(item, options = {}) {
-  if (!item) return Promise.resolve(false)
-  return trackAnalyticsEvent(ANALYTICS_EVENTS.WHAT_CHANGED_ITEM_OPENED, {
-    surface: 'home',
-    route: '/',
-    source: SINCE_YESTERDAY_SOURCE,
-    team_id: item.teamId,
-    team_abbrev: item.teamAbbr,
-  }, options)
-}
-
-export function trackSinceYesterdayTeamClicked(item, options = {}) {
-  if (!item) return Promise.resolve(false)
-  return trackAnalyticsEvent(ANALYTICS_EVENTS.WHAT_CHANGED_TEAM_CLICKED, {
-    surface: 'home',
-    route: '/',
-    source: SINCE_YESTERDAY_SOURCE,
-    team_id: item.teamId,
-    team_abbrev: item.teamAbbr,
-  }, options)
-}
-
 function publishedFreshnessBadgeLabel(stale, freshness) {
   const sample = isSampleFreshness(freshness)
   const syncStatus = String(freshness?.sync_status || freshness?.syncStatus || '').toLowerCase()
@@ -1009,19 +972,12 @@ function AudienceSignupForm() {
 
   const handleSubmit = async (event) => {
     event.preventDefault()
-    const submitted = await submitAudienceSignup({
+    await submitAudienceSignup({
       email,
       signup: (value) => signupAudience(value, { source: AUDIENCE_SIGNUP_SOURCE }),
       setStatus,
       setError,
     })
-    if (submitted) {
-      trackAnalyticsEvent(ANALYTICS_EVENTS.NEWSLETTER_INTEREST_CLICKED, {
-        surface: 'home',
-        route: '/',
-        source: 'email_capture_form',
-      })
-    }
   }
 
   return (
@@ -1190,13 +1146,6 @@ function TonightCard({ card }) {
       {card.href && (
         <Link
           to={card.href}
-          onClick={() => trackAnalyticsEvent(ANALYTICS_EVENTS.TEAM_INTEREST_CLICKED, {
-            surface: 'home',
-            route: '/',
-            source: 'tonights_bullpen_watch',
-            team_abbrev: card.teamAbbr,
-            team_id: card.teamId,
-          })}
           className="mt-5 inline-flex min-h-10 w-fit items-center rounded border border-dirt bg-field/60 px-3 py-2 font-mono text-[11px] uppercase tracking-wider text-chalk300 transition-colors hover:border-amber/40 hover:text-amber"
           aria-label={`Open the bullpen board for ${card.teamName}`}
         >
@@ -1211,11 +1160,6 @@ function SinceYesterdayItem({ item }) {
   return (
     <details
       className="group border border-dirt bg-dugout p-0"
-      onToggle={event => {
-        if (event.currentTarget.open) {
-          trackSinceYesterdayItemOpened(item)
-        }
-      }}
     >
       <summary className="flex cursor-pointer list-none flex-col gap-1 px-4 py-3 transition-colors hover:bg-amber/5 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/60">
         <span className="font-mono text-[11px] uppercase tracking-widest text-chalk500">
@@ -1305,7 +1249,6 @@ function SinceYesterdayItem({ item }) {
           <div className="mt-4">
             <Link
               to={item.href}
-              onClick={() => trackSinceYesterdayTeamClicked(item)}
               className="inline-flex min-h-10 items-center rounded border border-amber/40 bg-amber/10 px-4 py-2 font-mono text-xs uppercase tracking-wider text-amber transition-colors hover:bg-amber/20"
               aria-label={`Open the bullpen board for ${item.teamName}`}
             >
@@ -1320,10 +1263,6 @@ function SinceYesterdayItem({ item }) {
 
 function SinceYesterdaySection({ dashboard, teams }) {
   const view = getSinceYesterdayView(dashboard, teams)
-
-  useEffect(() => {
-    trackSinceYesterdayViewed(view)
-  }, [view?.state])
 
   if (!view) return null
 
@@ -1568,13 +1507,6 @@ function BullpenPicture({
                     <>
                       <Link
                         to={column.lead.teamHref || '/bullpen'}
-                        onClick={() => trackAnalyticsEvent(ANALYTICS_EVENTS.TEAM_INTEREST_CLICKED, {
-                          surface: 'home',
-                          route: '/',
-                          source: 'bullpen_picture',
-                          team_abbrev: column.lead.teamAbbrev,
-                          team_id: column.lead.teamId,
-                        })}
                         className="group mt-2 flex min-w-0 items-baseline justify-between gap-2 rounded px-1 py-1 transition-colors hover:bg-amber/5"
                         aria-label={`Open the bullpen board for ${column.lead.teamName || column.lead.label}`}
                       >
@@ -1658,14 +1590,6 @@ export function IntelligenceSurfaceView({
   teams = [],
 }) {
   const pageFreshness = dashboardFreshness(dashboard)
-
-  useEffect(() => {
-    trackAnalyticsEventOnce(ANALYTICS_EVENTS.HOMEPAGE_VIEWED, {
-      surface: 'home',
-      route: '/',
-      source: 'page',
-    })
-  }, [])
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-5 sm:px-6 lg:px-8">

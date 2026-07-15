@@ -20,7 +20,6 @@ const originalFetch = globalThis.fetch
 
 afterEach(() => {
   globalThis.fetch = originalFetch
-  resetAnalyticsDedupeForTests()
 })
 
 const {
@@ -36,11 +35,7 @@ const {
   getSinceYesterdayView,
   getTonightCards,
   submitAudienceSignup,
-  trackSinceYesterdayItemOpened,
-  trackSinceYesterdayTeamClicked,
-  trackSinceYesterdayViewed,
 } = await server.ssrLoadModule('/src/components/home/IntelligenceSurface.jsx')
-const { resetAnalyticsDedupeForTests } = await server.ssrLoadModule('/src/utils/analytics.js')
 const {
   getTodayIntelligence,
   getTonightIntelligence,
@@ -688,43 +683,6 @@ test('Since Yesterday renders changes in stored order with public copy and team 
   assert.equal(htmlIncludes(sinceHtml, 'what_changed_item_opened'), false)
 })
 
-test('Since Yesterday analytics emit only the approved events and fields', async () => {
-  const view = getSinceYesterdayView(dashboardWithSinceYesterdayChanges, teams)
-  const calls = []
-  const send = async payload => calls.push(payload)
-
-  assert.equal(await trackSinceYesterdayViewed(view, { send }), true)
-  assert.equal(await trackSinceYesterdayViewed(view, { send }), false)
-  assert.equal(await trackSinceYesterdayItemOpened(view.items[0], { send }), true)
-  assert.equal(await trackSinceYesterdayTeamClicked(view.items[1], { send }), true)
-
-  assert.deepEqual(calls, [
-    {
-      event_name: 'what_changed_viewed',
-      surface: 'home',
-      route: '/',
-      source: 'since_yesterday',
-      state: 'changes_detected',
-    },
-    {
-      event_name: 'what_changed_item_opened',
-      surface: 'home',
-      route: '/',
-      source: 'since_yesterday',
-      team_abbrev: 'NYM',
-      team_id: 121,
-    },
-    {
-      event_name: 'what_changed_team_clicked',
-      surface: 'home',
-      route: '/',
-      source: 'since_yesterday',
-      team_abbrev: 'SF',
-      team_id: 137,
-    },
-  ])
-})
-
 test('Since Yesterday renders quiet comparable days without empty cards', async () => {
   const view = getSinceYesterdayView(dashboardWithSinceYesterdayQuiet, teams)
   assert.equal(view.state, 'no_meaningful_changes')
@@ -744,9 +702,6 @@ test('Since Yesterday renders quiet comparable days without empty cards', async 
   assert.ok(htmlIncludes(sinceHtml, 'No meaningful bullpen movement was found between Jun 24 and Jun 25. Quiet days are reported as quiet — nothing is padded.'))
   assert.equal(countOccurrences(sinceHtml, '<details'), 0)
 
-  const calls = []
-  assert.equal(await trackSinceYesterdayViewed(view, { send: async payload => calls.push(payload) }), true)
-  assert.deepEqual(calls.map(call => call.state), ['no_meaningful_changes'])
 })
 
 test('Since Yesterday renders withheld comparison safely without raw reason codes', async () => {
@@ -768,9 +723,6 @@ test('Since Yesterday renders withheld comparison safely without raw reason code
   assert.equal(htmlIncludes(sinceHtml, 'Internal audit note should not render.'), false)
   assert.equal(countOccurrences(sinceHtml, '<details'), 0)
 
-  const calls = []
-  assert.equal(await trackSinceYesterdayViewed(view, { send: async payload => calls.push(payload) }), true)
-  assert.deepEqual(calls.map(call => call.state), ['insufficient_context'])
 })
 
 test('Since Yesterday hides legacy, missing, and fail-closed dashboard blocks', async () => {
@@ -797,9 +749,6 @@ test('Since Yesterday hides legacy, missing, and fail-closed dashboard blocks', 
     assert.equal(htmlIncludes(html, 'What changed across MLB bullpens'), false)
   }
 
-  const calls = []
-  assert.equal(await trackSinceYesterdayViewed(legacyView, { send: async payload => calls.push(payload) }), false)
-  assert.deepEqual(calls, [])
 })
 
 test('Since Yesterday markup stays semantic, single-column, and free of internal fields', () => {

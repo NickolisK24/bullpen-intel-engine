@@ -19,14 +19,13 @@ class User(db.Model):
     )
 
     id = db.Column(db.Integer, primary_key=True)
-    # Lowercased email is both the identity and the channel a future digest (D2)
-    # will use. Normalization (lowercasing) is the caller's responsibility; the
-    # column only guarantees uniqueness.
+    # Lowercased email is the account identity and transactional-email channel.
+    # Normalization is the caller's responsibility; the column only guarantees
+    # uniqueness.
     email = db.Column(db.String(320), nullable=False)
     email_verified_at = db.Column(db.DateTime)
     onboarded_at = db.Column(db.DateTime)
-    # Reserved for D2 notification preferences so that phase needs no migration.
-    # Null means "defaults apply". Holds preferences only — never intelligence.
+    # Legacy and unused. Retained temporarily for a later schema-cleanup migration.
     notification_prefs = db.Column(db.JSON)
     created_at = db.Column(db.DateTime, nullable=False, default=utc_now_naive)
     last_login_at = db.Column(db.DateTime)

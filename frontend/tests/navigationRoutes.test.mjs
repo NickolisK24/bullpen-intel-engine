@@ -95,9 +95,10 @@ test('public product routes stay on the single bullpen operating lane', () => {
 })
 
 test('hidden technical and auth routes stay registered but outside primary product navigation', () => {
-  for (const path of ['/signin', '/auth/verify', '/admin/product-intelligence', '/posts-bpen-7f3d9c']) {
+  for (const path of ['/signin', '/auth/verify', '/posts-bpen-7f3d9c']) {
     assert.ok(routeByPath(path)?.Component, `missing technical route: ${path}`)
   }
+  assert.equal(routeByPath('/admin/product-intelligence'), undefined)
 })
 
 test('sidebar preserves public route order and excludes Prospects', () => {

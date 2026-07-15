@@ -303,13 +303,6 @@ def test_phase0e_switches_and_legacy_public_files_not_modified():
         'backend/api/bullpen.py',
         'backend/services/what_changed_since_yesterday_public.py',
     }
-    allowed_public_since_yesterday_rendering_files = {
-        # Branch 2 Today rendering permits only the product-event route and
-        # client analytics helper needed for what_changed_* observations and
-        # the stored public state field.
-        'backend/api/product_events.py',
-        'frontend/src/utils/analytics.js',
-    }
     allowed_phase0i_roster_readiness_files = {
         'backend/api/bullpen.py',
         'backend/services/bullpen_board.py',
@@ -334,6 +327,29 @@ def test_phase0e_switches_and_legacy_public_files_not_modified():
         'frontend/tests/pitcherLabels.test.mjs',
         'frontend/tests/pitcherUsageRole.test.mjs',
     }
+    allowed_legacy_retirement_files = {
+        'backend/api/auth.py',
+        'backend/api/digest.py',
+        'backend/api/me.py',
+        'backend/api/product_events.py',
+        'backend/api/system.py',
+        'frontend/src/App.jsx',
+        'frontend/src/components/admin/ProductIntelligenceAdmin.jsx',
+        'frontend/src/components/bullpen/Bullpen.jsx',
+        'frontend/src/components/dashboard/BullpenLandscape.jsx',
+        'frontend/src/components/home/IntelligenceSurface.jsx',
+        'frontend/src/components/layout/Footer.jsx',
+        'frontend/src/components/methodology/Methodology.jsx',
+        'frontend/src/components/share/TeamShareButton.jsx',
+        'frontend/src/components/stories/Stories.jsx',
+        'frontend/src/components/trust/DataTrust.jsx',
+        'frontend/src/hooks/useProductIntelligence.js',
+        'frontend/src/utils/adminProductEvents.js',
+        'frontend/src/utils/analytics.js',
+        'frontend/src/utils/api.js',
+        'frontend/src/utils/productIdentity.js',
+        'frontend/src/utils/productIntelligence.js',
+    }
     allowed_files = (
         allowed_public_freshness_display_files
         | allowed_internal_admin_files
@@ -343,9 +359,9 @@ def test_phase0e_switches_and_legacy_public_files_not_modified():
         | allowed_bullpen_game_context_files
         | allowed_pitcher_ledger_coverage_files
         | allowed_public_what_changed_contract_files
-        | allowed_public_since_yesterday_rendering_files
         | allowed_phase0i_roster_readiness_files
         | allowed_public_role_vocabulary_files
+        | allowed_legacy_retirement_files
     )
     forbidden_prefixes = (
         'backend/api/',
@@ -393,7 +409,10 @@ def test_phase0e_switches_and_legacy_public_files_not_modified():
         assert "'status':" not in diff
         assert "'empty_state':" not in diff
         assert "'state': state," not in diff[diff.find("'comparison': {"):]
-    if 'backend/api/system.py' in [path.replace('\\', '/') for path in changed]:
+    if (
+        'backend/api/system.py' in [path.replace('\\', '/') for path in changed]
+        and 'backend/api/system.py' not in allowed_legacy_retirement_files
+    ):
         diff = _diff_vs_main('backend/api/system.py')
         assert "/internal/pitcher-evidence" in diff
         assert '@require_admin_token' in diff
