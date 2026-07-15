@@ -4,8 +4,10 @@ from flask import Blueprint, current_app, jsonify, request
 from sqlalchemy.exc import IntegrityError
 
 from models.traffic_page_view import TrafficPageView
+from models.traffic_share_action import TrafficShareAction
 from services.traffic_measurement import record_page_view
 from services.traffic_measurement import parse_internal_emails
+from services.traffic_share_actions import record_share_action
 from services.traffic_reporting import build_traffic_summary
 from utils.auth_tokens import normalize_email
 from utils.db import db
@@ -62,4 +64,32 @@ def page_view():
     except Exception:
         db.session.rollback()
         current_app.logger.exception('Traffic page-view persistence failed.')
+    return '', 202
+
+
+@traffic_bp.route('/share-action', methods=['POST'])
+def share_action():
+    payload = None
+    try:
+        payload = request.get_json(silent=True)
+        outcome = record_share_action(
+            payload,
+            user_agent=request.headers.get('User-Agent', ''),
+            current_user=resolve_current_user(),
+            internal_emails=current_app.config.get('TRAFFIC_INTERNAL_EMAILS', ''),
+        )
+        if outcome != 'rejected':
+            db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        event_id = payload.get('event_id') if isinstance(payload, dict) else None
+        try:
+            if event_id and TrafficShareAction.query.filter_by(event_id=event_id).first() is None:
+                current_app.logger.exception('Traffic share-action persistence failed.')
+        except Exception:
+            db.session.rollback()
+            current_app.logger.exception('Traffic share-action persistence failed.')
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception('Traffic share-action persistence failed.')
     return '', 202

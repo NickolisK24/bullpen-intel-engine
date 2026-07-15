@@ -8,6 +8,7 @@ import {
   TRAFFIC_REPORTING_RANGES,
 } from '../../utils/trafficReporting'
 import { ErrorState, LoadingPane, SectionHeader } from '../UI'
+import { formatAdminDateTime } from '../../utils/adminDateTime'
 
 export const TRAFFIC_ROBOTS_CONTENT = 'noindex,nofollow'
 export const TRAFFIC_EMPTY_COPY = 'No external traffic has been recorded in this period. Internal browsers and known bots are excluded.'
@@ -28,6 +29,10 @@ const CONTEXT_DEFINITION_LABELS = {
   shared_link_landing_sessions: 'Shared-Link Landing Sessions',
   evidence_depth: 'Evidence Depth',
   comparison_pairs: 'Comparison Pairs',
+  completed_share_actions: 'Completed Share Actions',
+  copied_links: 'Copied Links',
+  card_downloads: 'Card Downloads',
+  share_action_visitors: 'Anonymous Visitors Completing Share Actions',
 }
 
 function formatValue(value) {
@@ -239,6 +244,7 @@ export function TrafficReport({ report }) {
           ['Page Views', report.shared_link_landings?.share_origin_page_views],
         ]} />
         <EvidenceDepthSection data={report.evidence_depth || {}} />
+        <SharingSection data={report.sharing || {}} />
         <HealthSection data={report.measurement_health || {}} />
       </div>
       <MetricDefinitions definitions={report.definitions || {}} />
@@ -322,6 +328,24 @@ function EvidenceDepthSection({ data }) {
   return <SectionShell title="Evidence Depth"><dl className="space-y-2"><div className="flex justify-between gap-3 text-sm"><dt className="text-chalk500">Sessions Opening Deeper Evidence</dt><dd className="font-mono text-chalk200">{formatValue(data.sessions_opening_deeper_evidence)}</dd></div><div className="flex justify-between gap-3 text-sm"><dt className="text-chalk500">Percentage of Bullpen Sessions</dt><dd className="font-mono text-chalk200">{formatPercentage(data.percentage_of_bullpen_sessions_opening_deeper_evidence)}</dd></div></dl></SectionShell>
 }
 
+function CompactRanking({ rows = [], labelKey }) {
+  return rows.length ? <ol className="mt-2 space-y-1">{rows.map(row => <li key={row[labelKey]} className="flex justify-between gap-3 text-xs"><span className="text-chalk500">{formatSurface(row[labelKey])}</span><span className="font-mono text-chalk300">{formatValue(row.completed_actions)}</span></li>)}</ol> : <p className="mt-2 text-xs text-chalk600">No completed actions in this period.</p>
+}
+
+function SharingSection({ data }) {
+  return <SectionShell title="Sharing"><dl className="space-y-2">{[
+    ['Completed Share Actions', data.completed_share_actions],
+    ['Anonymous Visitors Completing Share Actions', data.anonymous_visitors_completing_share_actions],
+    ['Team Card Actions', data.team_card_actions],
+    ['Comparison Card Actions', data.comparison_card_actions],
+    ['Link-Only Actions', data.link_only_actions],
+    ['Native Card Shares', data.native_card_shares],
+    ['Native Link Shares', data.native_link_shares],
+    ['Copied Links', data.copied_links],
+    ['Card Downloads', data.card_downloads],
+  ].map(([label, value]) => <div key={label} className="flex justify-between gap-3 text-sm"><dt className="text-chalk500">{label}</dt><dd className="font-mono text-chalk200">{formatValue(value)}</dd></div>)}</dl><div className="mt-4 grid gap-4 sm:grid-cols-2"><div><h3 className="font-mono text-[10px] uppercase tracking-widest text-chalk500">Share Methods</h3><CompactRanking rows={data.share_methods} labelKey="action" /></div><div><h3 className="font-mono text-[10px] uppercase tracking-widest text-chalk500">Most Shared Teams</h3><CompactRanking rows={data.most_shared_teams} labelKey="team_ref" /></div><div><h3 className="font-mono text-[10px] uppercase tracking-widest text-chalk500">Most Shared Comparison Pairs</h3><CompactRanking rows={data.most_shared_comparison_pairs} labelKey="pair_key" /></div><div><h3 className="font-mono text-[10px] uppercase tracking-widest text-chalk500">Share Actions by Surface</h3><CompactRanking rows={data.actions_by_surface} labelKey="surface" /></div><div><h3 className="font-mono text-[10px] uppercase tracking-widest text-chalk500">Share Actions by Evidence Target</h3><CompactRanking rows={data.actions_by_evidence_target} labelKey="evidence_target" /></div></div><p className="mt-4 text-xs leading-relaxed text-chalk500">Completed actions are browser-observed completions. Shared-link landing sessions remain separate and do not prove where or to whom a link was shared.</p></SectionShell>
+}
+
 function RankedList({ rows, labelKey, valueKey }) {
   return rows.length ? <ol className="space-y-1">{rows.map(row => <li key={row[labelKey]} className="flex justify-between text-xs"><span className="text-chalk500">{row[labelKey]}</span><span className="font-mono text-chalk300">{formatValue(row[valueKey])}</span></li>)}</ol> : <p className="text-xs text-chalk600">No team context recorded.</p>
 }
@@ -338,7 +362,12 @@ function HealthSection({ data }) {
     ['Selected-Period Excluded Internal Page Views', selected.excluded_internal_page_views],
     ['Selected-Period Excluded Bot Page Views', selected.excluded_bot_page_views],
     ['Selected-Period Unknown-Device External Page Views', selected.unknown_device_external_page_views],
-  ].map(([label, value]) => <div key={label} className="flex justify-between gap-3 text-sm"><dt className="text-chalk500">{label}</dt><dd className="break-all text-right font-mono text-chalk200">{formatValue(value)}</dd></div>)}</dl></SectionShell>
+  ].map(([label, value], index) => <div key={label} className="flex justify-between gap-3 text-sm"><dt className="text-chalk500">{label}</dt><dd className="break-all text-right font-mono text-chalk200">{index < 3 ? <AdminTimestamp value={value} /> : formatValue(value)}</dd></div>)}</dl></SectionShell>
+}
+
+export function AdminTimestamp({ value }) {
+  const formatted = formatAdminDateTime(value)
+  return <time title={formatted.title || undefined} dateTime={formatted.title || undefined}>{formatted.display}</time>
 }
 
 function MetricDefinitions({ definitions }) {

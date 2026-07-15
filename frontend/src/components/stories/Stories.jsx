@@ -17,7 +17,8 @@ import {
   storyTone,
 } from './storiesPresentationView'
 import { completedGamesDataLine } from '../dashboard/syncStatusView'
-import TeamShareButton from '../share/TeamShareButton'
+import EvidenceShareMenu from '../share/EvidenceShareMenu'
+import { EVIDENCE_CARD_ORIGIN } from '../../utils/evidenceCardModel'
 import {
   DEFAULT_STORY_FILTER,
   STORY_FILTERS,
@@ -306,12 +307,6 @@ function FeedStoryCard({ story }) {
   const hasDestination = Boolean(story.href)
   const hasTeam = story.teamId != null && Boolean(story.abbr)
   const hasBlueprint = Array.isArray(story.blueprint) && story.blueprint.length > 0
-  const team = {
-    team_id: story.teamId,
-    team_name: story.teamName,
-    team_abbreviation: story.abbr,
-  }
-
   return (
     <article
       className={`card flex flex-col p-5${hasDestination ? ' group transition-all duration-200 hover:border-amber/40 hover:bg-amber/5' : ''}`}
@@ -325,8 +320,16 @@ function FeedStoryCard({ story }) {
               : 'Around the league'}
           </span>
           {hasTeam && (
-            <TeamShareButton
-              team={team}
+            <EvidenceShareMenu
+              linkOnly
+              destinationUrl={`${EVIDENCE_CARD_ORIGIN}${story.href}`}
+              shareText={`${story.teamName || story.abbr}'s current bullpen read.`}
+              context={{
+                surface: 'stories',
+                cardType: 'link_only',
+                team_ref: story.abbr,
+                evidence_target: 'team_read',
+              }}
             />
           )}
         </div>

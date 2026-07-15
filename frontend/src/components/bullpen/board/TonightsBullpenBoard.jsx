@@ -8,7 +8,9 @@ import BullpenBoardView from './BullpenBoardView'
 import TeamGameContextCard from './TeamGameContextCard'
 import StoryCard from './StoryCard'
 import TeamReliefWorkPanel from '../TeamReliefWorkPanel'
-import { resolveTeamId } from '../../../utils/evidenceLinks'
+import { buildTeamBoardHref, resolveTeamId } from '../../../utils/evidenceLinks'
+import { EVIDENCE_CARD_ORIGIN, buildTeamEvidenceCard } from '../../../utils/evidenceCardModel'
+import EvidenceShareMenu from '../../share/EvidenceShareMenu'
 import {
   BULLPEN_VIEW_MODE_ACTIVE,
   BULLPEN_VIEW_MODE_ACTIVE_PLUS_UNAVAILABLE,
@@ -32,6 +34,7 @@ const staticFetchState = (data) => ({
 export default function TonightsBullpenBoard({
   teams,
   requestedTeam = null,
+  requestedSection = null,
   initialSelectedTeam = null,
   onSelectTeam = () => {},
   onSelectPitcher = () => {},
@@ -44,6 +47,7 @@ export default function TonightsBullpenBoard({
 }) {
   const teamList = teams?.data || []
   const selectedTeam = initialSelectedTeam ?? resolveTeamId(teamList, requestedTeam)
+  const selectedTeamRecord = teamList.find(team => Number(team.team_id) === Number(selectedTeam)) || boardPayload?.team || null
   // One control instead of the old three-mode "View" row: the board shows the
   // active bullpen by default, and the toggle adds roster-unavailable arms as
   // context. The unavailable-only audit view moved out of the public controls
@@ -84,6 +88,15 @@ export default function TonightsBullpenBoard({
     cta: { href: '#pitcher-lanes', label: 'Review pitcher lanes' },
     density: 'compact',
   })
+  const normalizedRequestedSection = String(requestedSection || '').replace(/^#/, '')
+  const teamDestinationPath = buildTeamBoardHref(selectedTeamRecord, { section: normalizedRequestedSection })
+  const teamDestinationUrl = teamDestinationPath ? `${EVIDENCE_CARD_ORIGIN}${teamDestinationPath}` : null
+  const teamCard = buildTeamEvidenceCard(teamOperatingRead, { destinationUrl: teamDestinationUrl })
+  const teamEvidenceTarget = normalizedRequestedSection === 'team-relief-work'
+    ? 'team_relief_work'
+    : normalizedRequestedSection === 'pitcher-lanes'
+      ? 'pitcher_lanes'
+      : 'team_read'
 
   useEffect(() => {
     if (rosterContextLimited && showUnavailable) {
@@ -152,14 +165,29 @@ export default function TonightsBullpenBoard({
       ) : (
         <div className="flex flex-col gap-6 2xl:flex-row 2xl:items-start">
           <div className="min-w-0 flex-1">
-            <BullpenOperatingStateCard
-              readModel={teamOperatingRead}
-              staleWithError={teamOperatingRead.freshness?.isStale || teamOperatingRead.freshness?.failClosed}
-              onRetry={boardState.refetch}
-              lastSyncLabel="Bullpen read synced"
-              density="compact"
-              className="mb-4"
-            />
+            <div className="mb-4">
+              <div className="mb-2 flex justify-end">
+                <EvidenceShareMenu
+                  cardModel={teamCard}
+                  destinationUrl={teamDestinationUrl}
+                  shareText={`${teamOperatingRead.teamName || 'This team'}'s current bullpen read, with the recent-work receipts.`}
+                  context={{
+                    surface: 'bullpen_board',
+                    cardType: 'team',
+                    team_ref: teamOperatingRead.teamAbbreviation,
+                    evidence_target: teamEvidenceTarget,
+                    data_through: teamOperatingRead.freshness?.dataThrough,
+                  }}
+                />
+              </div>
+              <BullpenOperatingStateCard
+                readModel={teamOperatingRead}
+                staleWithError={teamOperatingRead.freshness?.isStale || teamOperatingRead.freshness?.failClosed}
+                onRetry={boardState.refetch}
+                lastSyncLabel="Bullpen read synced"
+                density="compact"
+              />
+            </div>
             <div className="mb-4">
               <TeamReliefWorkPanel
                 teamId={selectedTeam}

@@ -1,6 +1,8 @@
 import { Link } from 'react-router-dom'
 import { EmptyState } from '../../UI'
-import { buildTeamBoardHref } from '../../../utils/evidenceLinks'
+import { buildComparisonHref, buildTeamBoardHref, normalizeTeamReference } from '../../../utils/evidenceLinks'
+import { EVIDENCE_CARD_ORIGIN, buildComparisonEvidenceCard } from '../../../utils/evidenceCardModel'
+import EvidenceShareMenu from '../../share/EvidenceShareMenu'
 import { getComparisonView } from './teamBullpenComparisonView'
 
 function FreshnessChip({ label, freshness }) {
@@ -102,9 +104,38 @@ export default function BullpenComparisonView({ payload }) {
   if (!view.hasComparison) {
     return <EmptyState title="Pick two teams to compare" subtitle="Choose Team A and Team B above." />
   }
+  const teamA = payload?.team_a?.team || payload?.comparison?.teams?.team_a?.team
+  const teamB = payload?.team_b?.team || payload?.comparison?.teams?.team_b?.team
+  const teamARef = normalizeTeamReference(teamA)
+  const teamBRef = normalizeTeamReference(teamB)
+  const destinationPath = buildComparisonHref(teamARef, teamBRef, { section: 'comparison-evidence' })
+  const destinationUrl = teamARef && teamBRef ? `${EVIDENCE_CARD_ORIGIN}${destinationPath}` : null
+  const cardModel = buildComparisonEvidenceCard(view, {
+    teamA,
+    teamB,
+    destinationUrl,
+  })
+  const sharedDataThrough = view.freshnessA?.dataThroughRaw === view.freshnessB?.dataThroughRaw
+    ? view.freshnessA?.dataThroughRaw
+    : null
 
   return (
     <div className="space-y-8">
+      <div className="flex justify-end">
+        <EvidenceShareMenu
+          cardModel={cardModel}
+          destinationUrl={destinationUrl}
+          shareText={`${view.labelA} and ${view.labelB}'s current bullpen workload comparison.`}
+          context={{
+            surface: 'compare_bullpens',
+            cardType: 'comparison',
+            team_a_ref: teamARef,
+            team_b_ref: teamBRef,
+            evidence_target: 'comparison_evidence',
+            data_through: sharedDataThrough,
+          }}
+        />
+      </div>
       {/* 2. Freshness information */}
       <section aria-label="Comparison freshness">
         <h3 className="mb-2 font-mono text-xs uppercase tracking-widest text-chalk400">Freshness</h3>

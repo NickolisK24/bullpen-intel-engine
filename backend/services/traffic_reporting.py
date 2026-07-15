@@ -10,6 +10,7 @@ from sqlalchemy import exists, func
 
 from models.traffic_internal_visitor import TrafficInternalVisitor
 from models.traffic_page_view import TrafficPageView
+from models.traffic_share_action import TrafficShareAction
 
 
 REPORTING_TIMEZONE = 'America/New_York'
@@ -42,6 +43,10 @@ METRIC_DEFINITIONS = {
     'shared_link_landing_sessions': 'Qualifying sessions whose first page view begins from a BaseballOS share-oriented URL.',
     'evidence_depth': 'Qualifying Bullpen sessions that opened at least one deeper evidence destination.',
     'comparison_pairs': 'Descriptive canonical URL selections aggregated without left-right order; they are not game predictions.',
+    'completed_share_actions': 'Browser sharing actions BaseballOS observed completing; native completion does not verify a destination or recipient.',
+    'copied_links': 'Clipboard writes that completed successfully; shared-link landings remain a separate metric.',
+    'card_downloads': 'Card downloads whose browser download initiation completed.',
+    'share_action_visitors': 'Anonymous browser identities completing share actions, not verified individuals.',
 }
 
 
@@ -79,6 +84,20 @@ def _period_rows(start, end):
     if end is not None:
         query = query.filter(TrafficPageView.occurred_at < _utc_naive(end))
     return query.order_by(TrafficPageView.occurred_at.asc(), TrafficPageView.id.asc()).all()
+
+
+def _period_share_actions(start, end):
+    internal = exists().where(TrafficInternalVisitor.visitor_id == TrafficShareAction.visitor_id)
+    query = TrafficShareAction.query.filter(
+        TrafficShareAction.site_host == CANONICAL_SITE_HOST,
+        TrafficShareAction.is_bot.is_(False),
+        ~internal,
+    )
+    if start is not None:
+        query = query.filter(TrafficShareAction.occurred_at >= _utc_naive(start))
+    if end is not None:
+        query = query.filter(TrafficShareAction.occurred_at < _utc_naive(end))
+    return query.order_by(TrafficShareAction.occurred_at.asc(), TrafficShareAction.id.asc()).all()
 
 
 def _measurement_start():
@@ -328,6 +347,53 @@ def _evidence_depth(rows):
     }
 
 
+def _sharing(rows):
+    action_counts = Counter(row.action for row in rows)
+    card_counts = Counter(row.card_type for row in rows)
+    team_counts = Counter(row.team_ref for row in rows if row.team_ref)
+    surface_counts = Counter(row.surface for row in rows)
+    evidence_counts = Counter(row.evidence_target for row in rows if row.evidence_target)
+    pair_counts = Counter(
+        tuple(sorted((row.team_a_ref, row.team_b_ref)))
+        for row in rows
+        if row.team_a_ref and row.team_b_ref and row.team_a_ref != row.team_b_ref
+    )
+    return {
+        'completed_share_actions': len(rows),
+        'anonymous_visitors_completing_share_actions': len({row.visitor_id for row in rows}),
+        'team_card_actions': card_counts['team'],
+        'comparison_card_actions': card_counts['comparison'],
+        'link_only_actions': card_counts['link_only'],
+        'card_downloads': action_counts['download_card'],
+        'native_card_shares': action_counts['native_card_share'],
+        'native_link_shares': action_counts['native_link_share'],
+        'copied_links': action_counts['copy_link'],
+        'share_methods': [
+            {'action': action, 'completed_actions': count}
+            for action, count in sorted(action_counts.items(), key=lambda item: (-item[1], item[0]))
+        ],
+        'most_shared_teams': [
+            {'team_ref': team_ref, 'completed_actions': count}
+            for team_ref, count in sorted(team_counts.items(), key=lambda item: (-item[1], item[0]))[:20]
+        ],
+        'most_shared_comparison_pairs': [
+            {
+                'team_a_ref': pair[0],
+                'team_b_ref': pair[1],
+                'pair_key': f'{pair[0]}:{pair[1]}',
+                'completed_actions': count,
+            }
+            for pair, count in sorted(pair_counts.items(), key=lambda item: (-item[1], item[0]))[:20]
+        ],
+        'actions_by_surface': [
+            {'surface': surface, 'completed_actions': count}
+            for surface, count in sorted(surface_counts.items(), key=lambda item: (-item[1], item[0]))
+        ],
+        'actions_by_evidence_target': [
+            {'evidence_target': target, 'completed_actions': count}
+            for target, count in sorted(evidence_counts.items(), key=lambda item: (-item[1], item[0]))
+        ],
+    }
 def _measurement_health(start, end, external_rows):
     canonical_rows = (
         TrafficPageView.query
@@ -393,6 +459,7 @@ def build_traffic_summary(range_key='7d', *, now=None):
     end = now_utc
 
     rows = _period_rows(start, end)
+    share_actions = _period_share_actions(start, end)
     summary = _summary(rows, start)
     landing_views = _landing_views_for_sessions({row.session_id for row in rows})
     acquisition = _acquisition(landing_views, summary['sessions'])
@@ -462,5 +529,6 @@ def build_traffic_summary(range_key='7d', *, now=None):
         'evidence_exploration': _evidence_exploration(rows),
         'shared_link_landings': _shared_link_landings(landing_views),
         'evidence_depth': _evidence_depth(rows),
+        'sharing': _sharing(share_actions),
         'measurement_health': _measurement_health(start, end, rows),
     }

@@ -8,6 +8,7 @@ import pytest
 from api.traffic import traffic_bp
 from models.traffic_internal_visitor import TrafficInternalVisitor
 from models.traffic_page_view import TrafficPageView
+from models.traffic_share_action import TrafficShareAction
 from services.traffic_reporting import build_traffic_summary
 from utils.db import db
 
@@ -41,6 +42,26 @@ def add_view(occurred_at, visitor, session, *, surface='today', **values):
         occurred_at=occurred_at,
         route='/bullpen' if surface in {'bullpen_board', 'compare_bullpens', 'all_pitchers'} else '/',
         surface=surface,
+        site_host=values.pop('site_host', 'baseballos.app'),
+        device_class=values.pop('device_class', 'desktop'),
+        is_bot=values.pop('is_bot', False),
+        schema_version=1,
+        created_at=occurred_at,
+        **values,
+    )
+    db.session.add(row)
+    return row
+
+
+def add_share(occurred_at, visitor, session, *, action='copy_link', card_type='team', **values):
+    row = TrafficShareAction(
+        event_id=str(uuid.uuid4()),
+        visitor_id=visitor,
+        session_id=session,
+        occurred_at=occurred_at,
+        surface=values.pop('surface', 'bullpen_board'),
+        card_type=card_type,
+        action=action,
         site_host=values.pop('site_host', 'baseballos.app'),
         device_class=values.pop('device_class', 'desktop'),
         is_bot=values.pop('is_bot', False),
@@ -280,6 +301,82 @@ def test_evidence_depth_uses_external_bullpen_sessions_as_denominator(reporting_
     }
 
 
+def test_completed_sharing_aggregates_methods_subjects_surfaces_and_evidence(reporting_app):
+    add_view(datetime(2026, 7, 1, 12, 0), 'baseline', 'baseline-session')
+    add_share(
+        datetime(2026, 7, 10, 10, 0), 'share-visitor', 'share-session-one',
+        team_ref='BOS', evidence_target='team_read',
+    )
+    add_share(
+        datetime(2026, 7, 10, 10, 1), 'share-visitor', 'share-session-one',
+        action='download_card', team_ref='BOS', evidence_target='team_relief_work',
+    )
+    add_share(
+        datetime(2026, 7, 10, 11, 0), 'comparison-visitor', 'comparison-session',
+        surface='compare_bullpens', card_type='comparison', action='native_card_share',
+        team_a_ref='NYY', team_b_ref='BOS', evidence_target='comparison_evidence',
+    )
+    add_share(
+        datetime(2026, 7, 10, 11, 1), 'comparison-visitor', 'comparison-session',
+        surface='compare_bullpens', card_type='comparison', action='native_link_share',
+        team_a_ref='BOS', team_b_ref='NYY', evidence_target='comparison_read',
+    )
+    add_share(
+        datetime(2026, 7, 10, 12, 0), 'story-visitor', 'story-session',
+        surface='stories', card_type='link_only', team_ref='NYY', evidence_target='team_read',
+    )
+    db.session.commit()
+
+    sharing = build_traffic_summary('7d', now=NOW)['sharing']
+    assert sharing['completed_share_actions'] == 5
+    assert sharing['anonymous_visitors_completing_share_actions'] == 3
+    assert sharing['team_card_actions'] == 2
+    assert sharing['comparison_card_actions'] == 2
+    assert sharing['link_only_actions'] == 1
+    assert sharing['card_downloads'] == 1
+    assert sharing['native_card_shares'] == 1
+    assert sharing['native_link_shares'] == 1
+    assert sharing['copied_links'] == 2
+    assert sharing['share_methods'][0] == {'action': 'copy_link', 'completed_actions': 2}
+    assert sharing['most_shared_teams'] == [
+        {'team_ref': 'BOS', 'completed_actions': 2},
+        {'team_ref': 'NYY', 'completed_actions': 1},
+    ]
+    assert sharing['most_shared_comparison_pairs'] == [{
+        'team_a_ref': 'BOS', 'team_b_ref': 'NYY', 'pair_key': 'BOS:NYY', 'completed_actions': 2,
+    }]
+    assert sharing['actions_by_surface'] == [
+        {'surface': 'bullpen_board', 'completed_actions': 2},
+        {'surface': 'compare_bullpens', 'completed_actions': 2},
+        {'surface': 'stories', 'completed_actions': 1},
+    ]
+    assert sharing['actions_by_evidence_target'][0] == {
+        'evidence_target': 'team_read', 'completed_actions': 2,
+    }
+
+
+def test_internal_bot_and_noncanonical_share_actions_are_excluded(reporting_app):
+    add_view(datetime(2026, 7, 1, 12, 0), 'baseline', 'baseline-session')
+    db.session.add(TrafficInternalVisitor(
+        visitor_id='internal-share',
+        registered_at=datetime(2026, 7, 1, 12, 0),
+        registered_by_user_id=7,
+        registration_source='authenticated_email_allowlist',
+    ))
+    add_share(datetime(2026, 7, 10, 10, 0), 'external-share', 'external-session', team_ref='BOS')
+    add_share(datetime(2026, 7, 10, 10, 1), 'internal-share', 'internal-session', team_ref='BOS')
+    add_share(datetime(2026, 7, 10, 10, 2), 'bot-share', 'bot-session', team_ref='BOS', is_bot=True)
+    add_share(
+        datetime(2026, 7, 10, 10, 3), 'preview-share', 'preview-session',
+        team_ref='BOS', site_host='preview.baseballos.app',
+    )
+    db.session.commit()
+
+    sharing = build_traffic_summary('7d', now=NOW)['sharing']
+    assert sharing['completed_share_actions'] == 1
+    assert sharing['anonymous_visitors_completing_share_actions'] == 1
+
+
 def test_acquisition_uses_first_ever_page_in_active_session(reporting_app):
     add_view(datetime(2026, 7, 2, 12, 0), 'visitor-one', 'long-session', surface='about')
     add_view(
@@ -401,6 +498,22 @@ def test_empty_state_response_and_invalid_range(reporting_app):
     assert report['evidence_depth'] == {
         'sessions_opening_deeper_evidence': 0,
         'percentage_of_bullpen_sessions_opening_deeper_evidence': None,
+    }
+    assert report['sharing'] == {
+        'completed_share_actions': 0,
+        'anonymous_visitors_completing_share_actions': 0,
+        'team_card_actions': 0,
+        'comparison_card_actions': 0,
+        'link_only_actions': 0,
+        'card_downloads': 0,
+        'native_card_shares': 0,
+        'native_link_shares': 0,
+        'copied_links': 0,
+        'share_methods': [],
+        'most_shared_teams': [],
+        'most_shared_comparison_pairs': [],
+        'actions_by_surface': [],
+        'actions_by_evidence_target': [],
     }
     with pytest.raises(ValueError, match='invalid_range'):
         build_traffic_summary('365d', now=NOW)
