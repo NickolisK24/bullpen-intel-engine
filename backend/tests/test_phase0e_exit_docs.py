@@ -8,7 +8,7 @@ from services.evidence_classification import validate_evidence_classifications
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-EXPECTED_ALEMBIC_HEAD = 'b2e7c4a9d1f3'
+EXPECTED_ALEMBIC_HEAD = 'c4f8a2d6e9b3'
 EXPECTED_CHANGED_PATHS = {
     'backend/tests/test_phase0e_exit_docs.py',
     'docs/phase0e/README.md',

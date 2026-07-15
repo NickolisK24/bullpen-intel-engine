@@ -192,6 +192,7 @@ export default function Bullpen() {
           <TonightsBullpenBoard
             teams={teams}
             requestedTeam={urlState.team}
+            requestedSection={urlState.section}
             onSelectTeam={handleTeamSelect}
             onSelectPitcher={handlePitcherSelect}
           />

@@ -28,6 +28,7 @@ const {
   TRAFFIC_REPORTING_PATH,
 } = await server.ssrLoadModule('/src/utils/trafficReporting.js')
 const { canonicalPage } = await server.ssrLoadModule('/src/utils/trafficMeasurement.js')
+const { formatAdminDateTime } = await server.ssrLoadModule('/src/utils/adminDateTime.js')
 
 function render(element) {
   return renderToStaticMarkup(React.createElement(MemoryRouter, null, element))
@@ -52,6 +53,10 @@ function reportFixture(overrides = {}) {
       shared_link_landing_sessions: 'Sessions beginning from a share-oriented URL.',
       evidence_depth: 'Bullpen sessions opening deeper evidence.',
       comparison_pairs: 'Descriptive URL selections, not game predictions.',
+      completed_share_actions: 'Browser-observed completed sharing actions.',
+      copied_links: 'Successful clipboard writes.',
+      card_downloads: 'Successful browser download starts.',
+      anonymous_share_visitors: 'Distinct anonymous browser identities completing an action.',
     },
     summary: {
       external_visitors: 12,
@@ -107,6 +112,22 @@ function reportFixture(overrides = {}) {
     evidence_depth: {
       sessions_opening_deeper_evidence: 4,
       percentage_of_bullpen_sessions_opening_deeper_evidence: 40,
+    },
+    sharing: {
+      completed_share_actions: 9,
+      anonymous_visitors_completing_share_actions: 4,
+      team_card_actions: 4,
+      comparison_card_actions: 3,
+      link_only_actions: 2,
+      card_downloads: 2,
+      native_card_shares: 2,
+      native_link_shares: 1,
+      copied_links: 4,
+      share_methods: [{ action: 'copy_link', completed_actions: 4 }],
+      most_shared_teams: [{ team_ref: 'NYY', completed_actions: 4 }],
+      most_shared_comparison_pairs: [{ pair_key: 'BOS:NYY', completed_actions: 3 }],
+      actions_by_surface: [{ surface: 'bullpen_board', completed_actions: 5 }],
+      actions_by_evidence_target: [{ evidence_target: 'team_read', completed_actions: 3 }],
     },
     measurement_health: {
       measurement_started_at: '2026-07-01T15:00:00Z',
@@ -184,7 +205,7 @@ test('summary, comparison, reporting sections, and definitions render honestly',
     'Multi-Page Sessions', 'Pages per Session', 'Daily Traffic', 'Acquisition',
     'Landing Surfaces', 'Most Visited Surfaces', 'Top Referrer Domains', 'Campaigns',
     'Bullpen Exploration', 'Evidence Exploration', 'Top Team Evidence', 'Top Comparison Pairs',
-    'Entry Sources', 'Shared-Link Landings', 'Evidence Depth', 'Measurement Health', 'Metric Definitions',
+    'Entry Sources', 'Shared-Link Landings', 'Evidence Depth', 'Sharing', 'Measurement Health', 'Metric Definitions',
   ]) assert.ok(html.includes(text), text)
   assert.ok(html.includes('distinct browser identities, not confirmed individual people'))
   assert.equal(/engaged users/i.test(html), false)
@@ -220,6 +241,20 @@ test('empty evidence sections remain compact and zero-safe', () => {
   assert.equal(html.includes('Infinity'), false)
 })
 
+test('sharing reports completed actions separately from shared-link landings', () => {
+  const html = render(React.createElement(TrafficReport, { report: reportFixture() }))
+  for (const text of [
+    'Completed Share Actions', 'Anonymous Visitors Completing Share Actions',
+    'Team Card Actions', 'Comparison Card Actions', 'Link-Only Actions',
+    'Card Downloads', 'Native Card Shares', 'Native Link Shares', 'Copied Links',
+    'Share Methods', 'Most Shared Teams', 'Most Shared Comparison Pairs',
+    'Share Actions by Surface', 'Share Actions by Evidence Target',
+    'Copy Link', 'NYY', 'BOS:NYY', 'Bullpen Board', 'Team Read',
+    'do not prove where or to whom a link was shared',
+  ]) assert.ok(html.includes(text), text)
+  assert.equal(/recipient|platform/i.test(html), false)
+})
+
 test('acquisition renders session percentages and remains zero-safe', () => {
   const populated = render(React.createElement(TrafficReport, { report: reportFixture() }))
   for (const value of ['3 sessions · 20%', '4 sessions · 26.67%', '8 sessions · 53.33%']) {
@@ -253,8 +288,24 @@ test('measurement health renders all-time state and selected-period labels', () 
     'Registered Internal Browser IDs', 'Selected-Period Canonical Page Views',
     'Selected-Period External Page Views', 'Selected-Period Excluded Internal Page Views',
     'Selected-Period Excluded Bot Page Views', 'Selected-Period Unknown-Device External Page Views',
-    '2026-07-01T15:00:00Z', '2026-07-14T15:30:00Z',
+    'July 1, 2026 at 11:00 AM ET', 'July 14, 2026 at 11:30 AM ET',
   ]) assert.ok(html.includes(text), text)
+  assert.ok(html.includes('title="2026-07-01T15:00:00Z"'))
+  assert.ok(html.includes('title="2026-07-14T15:30:00Z"'))
+  assert.equal(html.includes('>2026-07-01T15:00:00Z<'), false)
+})
+
+test('admin timestamp formatter is readable, raw-preserving, and timezone-safe', () => {
+  assert.deepEqual(formatAdminDateTime('2026-07-15T23:22:00Z'), {
+    display: 'July 15, 2026 at 7:22 PM ET',
+    title: '2026-07-15T23:22:00Z',
+  })
+  assert.deepEqual(formatAdminDateTime('2026-07-15'), {
+    display: 'July 15, 2026',
+    title: '2026-07-15',
+  })
+  assert.deepEqual(formatAdminDateTime('not-a-date'), { display: '—', title: null })
+  assert.deepEqual(formatAdminDateTime(null), { display: '—', title: null })
 })
 
 test('comparison unavailable reason is visible without invented percentage', () => {
