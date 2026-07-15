@@ -1,6 +1,3 @@
-import importlib
-import os
-
 import pytest
 
 
@@ -80,48 +77,6 @@ def test_production_config_accepts_explicit_remote_database_url(monkeypatch):
     assert app.config['SQLALCHEMY_DATABASE_URI'] == (
         'postgresql://user:pass@db.example.com/baseballos'
     )
-
-
-def _reload_config_with_env(public, backend):
-    """Reload the config module with the two origin vars set/cleared.
-
-    PUBLIC_API_BASE_URL is resolved at class-definition time, so the env must be
-    in place before the module is (re)imported. Caller is responsible for
-    restoring the environment and reloading once more.
-    """
-    import config as config_module
-
-    for name, value in (('PUBLIC_API_BASE_URL', public), ('BACKEND_BASE_URL', backend)):
-        if value is None:
-            os.environ.pop(name, None)
-        else:
-            os.environ[name] = value
-    return importlib.reload(config_module).Config
-
-
-def test_public_api_base_url_falls_back_to_backend_base_url():
-    """Regression: the backend public origin must resolve from BACKEND_BASE_URL
-    when PUBLIC_API_BASE_URL is unset.
-
-    The operator sets BACKEND_BASE_URL on the host; the tracking/unsubscribe URL
-    builders read PUBLIC_API_BASE_URL. Without this fallback that key is empty
-    and the email's open/click links become host-less, which mail clients render
-    as the invalid http:///api/digest/click. PUBLIC_API_BASE_URL still wins when
-    both are present.
-    """
-    saved_public = os.environ.get('PUBLIC_API_BASE_URL')
-    saved_backend = os.environ.get('BACKEND_BASE_URL')
-    try:
-        cfg = _reload_config_with_env(None, 'https://baseballos-api.onrender.com')
-        assert cfg.PUBLIC_API_BASE_URL == 'https://baseballos-api.onrender.com'
-
-        cfg = _reload_config_with_env('https://api.example.com', 'https://baseballos-api.onrender.com')
-        assert cfg.PUBLIC_API_BASE_URL == 'https://api.example.com'
-
-        cfg = _reload_config_with_env(None, None)
-        assert cfg.PUBLIC_API_BASE_URL == ''
-    finally:
-        _reload_config_with_env(saved_public, saved_backend)
 
 
 # ── SQLAlchemy engine options (stale-connection hardening) ────────────────────

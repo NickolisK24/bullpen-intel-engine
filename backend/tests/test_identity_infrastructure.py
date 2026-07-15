@@ -76,7 +76,6 @@ def test_user_model_defaults_and_to_dict(app):
     assert isinstance(user.created_at, datetime)
     assert user.email_verified_at is None
     assert user.onboarded_at is None
-    assert user.notification_prefs is None
     assert user.last_login_at is None
 
     payload = user.to_dict()

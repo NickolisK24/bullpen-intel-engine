@@ -1,10 +1,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useFetch } from '../../hooks/useFetch'
-import { useStoryImpressionObservations } from '../../hooks/useProductIntelligence'
-import { getBullpenDashboard, recordStoryShareClicked, recordStoryTeamBoardOpened, recordStoryViewed } from '../../utils/api'
-import { ANALYTICS_EVENTS, trackAnalyticsEvent } from '../../utils/analytics'
-import { observeStoryShareClicked, observeStoryTeamBoardOpened, observeStoryViewedOnce } from '../../utils/productIntelligence'
+import { getBullpenDashboard } from '../../utils/api'
 import { formatTeamLabel } from '../../utils/formatters'
 import {
   DataThroughStamp,
@@ -71,13 +68,6 @@ export function StoriesView({
   const activeCount = counts[activeFilter] ?? 0
   const activeLabel = getActiveStoryFilterLabel(activeFilter, activeCount)
   const visible = filterStoryFeed(feed.items, activeFilter)
-  const productLoaded = Boolean(dashboard) && !loading
-
-  const registerStoryImpression = useStoryImpressionObservations({
-    enabled: productLoaded,
-    surface: 'stories',
-  })
-
   return (
     <div className="p-4 sm:p-5 lg:p-6 max-w-7xl mx-auto">
       <header className="mb-5 border-b border-dirt pb-4 animate-fade-up opacity-0" style={{ animationFillMode: 'forwards' }}>
@@ -167,7 +157,6 @@ export function StoriesView({
                   <FeedStoryCard
                     key={`${story.kicker}-${story.teamId ?? 'league'}-${index}`}
                     story={story}
-                    impressionRef={registerStoryImpression(story)}
                   />
                 ))}
               </div>
@@ -311,9 +300,8 @@ function StoryFeedEmptyState({ state, onReset }) {
 
 // A feed entry with the club named when the story belongs to one. The card is no
 // longer a single full-bleed link: the blueprint owns an in-card expand control
-// (story_viewed on first expand) and an explicit Team Board CTA owns navigation
-// (story_team_board_opened) — two distinct, non-conflicting controls.
-function FeedStoryCard({ story, impressionRef }) {
+// and an explicit Team Board CTA owns navigation as a distinct control.
+function FeedStoryCard({ story }) {
   const tone = storyTone(story.tone)
   const hasDestination = Boolean(story.href)
   const hasTeam = story.teamId != null && Boolean(story.abbr)
@@ -326,7 +314,6 @@ function FeedStoryCard({ story, impressionRef }) {
 
   return (
     <article
-      ref={impressionRef}
       className={`card flex flex-col p-5${hasDestination ? ' group transition-all duration-200 hover:border-amber/40 hover:bg-amber/5' : ''}`}
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -340,7 +327,6 @@ function FeedStoryCard({ story, impressionRef }) {
           {hasTeam && (
             <TeamShareButton
               team={team}
-              onShareClick={() => observeStoryShareClicked({ story, surface: 'stories', send: recordStoryShareClicked })}
             />
           )}
         </div>
@@ -375,7 +361,6 @@ function FeedStoryCard({ story, impressionRef }) {
         <StoryBlueprint
           sections={story.blueprint}
           collapsible
-          onExpand={() => observeStoryViewedOnce({ stories: [story], surface: 'stories', send: recordStoryViewed })}
           className="mt-3 flex-1"
         />
       ) : (
@@ -386,16 +371,6 @@ function FeedStoryCard({ story, impressionRef }) {
       {hasDestination && (
         <Link
           to={story.href}
-          onClick={() => {
-            observeStoryTeamBoardOpened({ story, surface: 'stories', send: recordStoryTeamBoardOpened })
-            trackAnalyticsEvent(ANALYTICS_EVENTS.TEAM_INTEREST_CLICKED, {
-              surface: 'stories',
-              route: '/stories',
-              source: 'story_card',
-              team_abbrev: story.abbr,
-              team_id: story.teamId,
-            })
-          }}
           className="mt-3 inline-flex items-center font-mono text-[10px] uppercase tracking-widest text-chalk500 transition-colors hover:text-amber group-hover:text-amber"
         >
           {story.cta || 'Open the team board'} →

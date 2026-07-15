@@ -151,8 +151,7 @@ test('magic-link helpers request and verify auth without sign-in UI', async () =
     assert.equal(url, '/api/auth/verify')
     assert.equal(options.headers.Authorization, undefined)
     const verifyPayload = JSON.parse(options.body)
-    assert.equal(verifyPayload.token, 'magic-token')
-    assert.match(verifyPayload.anon_id, /^anon:/)
+    assert.deepEqual(verifyPayload, { token: 'magic-token' })
     return { json: { token: 'bearer-token', user: { id: 1 } } }
   })
 

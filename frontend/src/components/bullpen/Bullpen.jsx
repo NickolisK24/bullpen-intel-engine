@@ -3,7 +3,6 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { useFetch } from '../../hooks/useFetch'
 import { getFatigueScores, getTeams } from '../../utils/api'
 import { LoadingPane, ErrorState, EmptyState, SectionHeader } from '../UI'
-import { ANALYTICS_EVENTS, trackAnalyticsEvent, trackAnalyticsEventOnce } from '../../utils/analytics'
 import PitcherDetail from './PitcherDetail'
 import TonightsBullpenBoard from './board/TonightsBullpenBoard'
 import TeamBullpenComparison from './board/TeamBullpenComparison'
@@ -64,16 +63,6 @@ export default function Bullpen() {
   )
 
   useEffect(() => {
-    if (viewMode === 'board') {
-      trackAnalyticsEventOnce(ANALYTICS_EVENTS.BULLPEN_BOARD_VIEWED, {
-        surface: 'bullpen',
-        route: '/bullpen',
-        source: 'page',
-      })
-    }
-  }, [viewMode])
-
-  useEffect(() => {
     if (
       viewMode === 'board'
       && hasRequestedPitcher
@@ -86,13 +75,6 @@ export default function Bullpen() {
   useEffect(() => {
     if (showBoardDetail) {
       boardDetailRegionRef.current?.focus()
-      trackAnalyticsEvent(ANALYTICS_EVENTS.PITCHER_SURFACE_VIEWED, {
-        surface: 'bullpen',
-        route: '/bullpen',
-        source: 'pitcher_detail',
-        team_abbrev: selectedPitcher?.pitcher?.team_abbreviation,
-        player_id: selectedPitcher?.pitcher_id,
-      })
     }
   }, [showBoardDetail, selectedPitcher?.pitcher_id])
 
@@ -260,13 +242,6 @@ function PitcherView({
   useEffect(() => {
     if (selectedPitcher) {
       detailRegionRef.current?.focus()
-      trackAnalyticsEvent(ANALYTICS_EVENTS.PITCHER_SURFACE_VIEWED, {
-        surface: 'bullpen',
-        route: '/bullpen',
-        source: 'pitcher_table',
-        team_abbrev: selectedPitcher?.pitcher?.team_abbreviation,
-        player_id: selectedPitcher?.pitcher_id,
-      })
     }
   }, [selectedPitcher])
 

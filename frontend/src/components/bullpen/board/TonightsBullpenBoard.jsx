@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react'
 import { useFetch } from '../../../hooks/useFetch'
 import { toOperatingStateReadModel } from '../../../adapters/operatingStateReadModel'
 import { getTeamBullpenBoard, getTeamGameContext, getTeamStory } from '../../../utils/api'
-import { ANALYTICS_EVENTS, trackAnalyticsEvent } from '../../../utils/analytics'
 import { LoadingPane, ErrorState, EmptyState } from '../../UI'
 import BullpenOperatingStateCard from '../BullpenOperatingStateCard'
 import BullpenBoardView from './BullpenBoardView'
@@ -81,27 +80,8 @@ export default function TonightsBullpenBoard({
   useEffect(() => {
     if (detailPitcherId != null) {
       detailRef.current?.focus()
-      trackAnalyticsEvent(ANALYTICS_EVENTS.PITCHER_SURFACE_VIEWED, {
-        surface: 'bullpen',
-        route: '/bullpen',
-        source: 'team_board',
-        team_abbrev: selectedTeamInfo?.team_abbreviation,
-        team_id: selectedTeam,
-        player_id: detailPitcherId,
-      })
     }
-  }, [detailPitcherId, selectedTeam, selectedTeamInfo?.team_abbreviation])
-
-  useEffect(() => {
-    if (selectedTeam == null) return
-    trackAnalyticsEvent(ANALYTICS_EVENTS.TEAM_SURFACE_VIEWED, {
-      surface: 'bullpen',
-      route: '/bullpen',
-      source: 'team_board',
-      team_abbrev: selectedTeamInfo?.team_abbreviation,
-      team_id: selectedTeam,
-    })
-  }, [selectedTeam, selectedTeamInfo?.team_abbreviation])
+  }, [detailPitcherId])
 
   // Preselect the deep-linked team (landscape drilldown), once per requested value.
   useEffect(() => {
