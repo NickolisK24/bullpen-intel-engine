@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { useAuthState } from '../../hooks/useAuthState'
 import {
   fetchTrafficSummary,
+  TRAFFIC_CONTEXT_DEFINITIONS,
   TRAFFIC_REPORTING_PATH,
   TRAFFIC_REPORTING_RANGES,
 } from '../../utils/trafficReporting'
@@ -20,6 +21,13 @@ const METRIC_LABELS = {
   new_visitors: 'New Visitors',
   multi_page_sessions: 'Multi-Page Sessions',
   pages_per_session: 'Pages per Session',
+}
+const CONTEXT_DEFINITION_LABELS = {
+  entry_source: 'Entry Source',
+  evidence_target_views: 'Evidence-Target Views',
+  shared_link_landing_sessions: 'Shared-Link Landing Sessions',
+  evidence_depth: 'Evidence Depth',
+  comparison_pairs: 'Comparison Pairs',
 }
 
 function formatValue(value) {
@@ -221,6 +229,16 @@ export function TrafficReport({ report }) {
         <RankedSection title="Top Referrer Domains" rows={report.top_referrers} labelKey="referrer_domain" valueKey="sessions" />
         <CampaignSection rows={report.campaigns || []} />
         <BullpenSection data={report.bullpen_exploration || {}} />
+        <EvidenceExplorationSection data={report.evidence_exploration || {}} />
+        <RankedSection title="Top Team Evidence" rows={report.evidence_exploration?.team_contexts} labelKey="team_ref" valueKey="page_views" />
+        <RankedSection title="Top Comparison Pairs" rows={report.evidence_exploration?.comparison_pairs} labelKey="pair_key" valueKey="page_views" />
+        <EntrySourcesSection rows={report.evidence_exploration?.entry_sources || []} />
+        <CountSection title="Shared-Link Landings" rows={[
+          ['Sessions', report.shared_link_landings?.share_origin_sessions],
+          ['Anonymous Visitors', report.shared_link_landings?.share_origin_visitors],
+          ['Page Views', report.shared_link_landings?.share_origin_page_views],
+        ]} />
+        <EvidenceDepthSection data={report.evidence_depth || {}} />
         <HealthSection data={report.measurement_health || {}} />
       </div>
       <MetricDefinitions definitions={report.definitions || {}} />
@@ -285,6 +303,25 @@ function BullpenSection({ data }) {
   ].map(([label, value]) => <div key={label} className="flex justify-between text-sm"><dt className="text-chalk500">{label}</dt><dd className="font-mono text-chalk200">{formatValue(value)}</dd></div>)}</dl><div className="mt-3"><RankedList rows={data.team_contexts || []} labelKey="team_ref" valueKey="page_views" /></div></SectionShell>
 }
 
+function EvidenceExplorationSection({ data }) {
+  return <CountSection title="Evidence Exploration" rows={[
+    ['Team Read Views', data.team_read_views],
+    ['Recent Relief Work Views', data.team_relief_work_views],
+    ['Pitcher Lanes Views', data.pitcher_lanes_views],
+    ['Pitcher Detail Views', data.pitcher_detail_views],
+    ['Comparison Read Views', data.comparison_read_views],
+    ['Comparison Evidence Views', data.comparison_evidence_views],
+  ]} />
+}
+
+function EntrySourcesSection({ rows }) {
+  return <SectionShell title="Entry Sources">{rows.length ? <div className="space-y-2">{rows.map(row => <div key={row.entry_source} className="grid grid-cols-[1fr_auto_auto] gap-3 text-sm"><span className="text-chalk400">{formatSurface(row.entry_source)}</span><span className="font-mono text-chalk200">{formatValue(row.page_views)} views</span><span className="font-mono text-chalk200">{formatValue(row.sessions)} sessions</span></div>)}</div> : <p className="text-sm text-chalk600">No bounded entry source recorded.</p>}</SectionShell>
+}
+
+function EvidenceDepthSection({ data }) {
+  return <SectionShell title="Evidence Depth"><dl className="space-y-2"><div className="flex justify-between gap-3 text-sm"><dt className="text-chalk500">Sessions Opening Deeper Evidence</dt><dd className="font-mono text-chalk200">{formatValue(data.sessions_opening_deeper_evidence)}</dd></div><div className="flex justify-between gap-3 text-sm"><dt className="text-chalk500">Percentage of Bullpen Sessions</dt><dd className="font-mono text-chalk200">{formatPercentage(data.percentage_of_bullpen_sessions_opening_deeper_evidence)}</dd></div></dl></SectionShell>
+}
+
 function RankedList({ rows, labelKey, valueKey }) {
   return rows.length ? <ol className="space-y-1">{rows.map(row => <li key={row[labelKey]} className="flex justify-between text-xs"><span className="text-chalk500">{row[labelKey]}</span><span className="font-mono text-chalk300">{formatValue(row[valueKey])}</span></li>)}</ol> : <p className="text-xs text-chalk600">No team context recorded.</p>
 }
@@ -305,5 +342,9 @@ function HealthSection({ data }) {
 }
 
 function MetricDefinitions({ definitions }) {
-  return <section className="mt-5 border border-dirt bg-field/60 p-4"><h2 className="font-display text-xl tracking-wide text-chalk100">Metric Definitions</h2><p className="mt-2 text-sm font-semibold text-chalk300">External Visitors represents distinct browser identities, not confirmed individual people.</p><dl className="mt-4 space-y-3">{Object.entries(METRIC_LABELS).map(([key, label]) => <div key={key}><dt className="font-mono text-[10px] uppercase tracking-widest text-chalk500">{label}</dt><dd className="mt-1 text-sm leading-relaxed text-chalk500">{definitions[key] || 'Definition unavailable.'}</dd></div>)}</dl></section>
+  const labels = {
+    ...METRIC_LABELS,
+    ...Object.fromEntries(TRAFFIC_CONTEXT_DEFINITIONS.map(key => [key, CONTEXT_DEFINITION_LABELS[key]])),
+  }
+  return <section className="mt-5 border border-dirt bg-field/60 p-4"><h2 className="font-display text-xl tracking-wide text-chalk100">Metric Definitions</h2><p className="mt-2 text-sm font-semibold text-chalk300">External Visitors represents distinct browser identities, not confirmed individual people.</p><dl className="mt-4 space-y-3">{Object.entries(labels).map(([key, label]) => <div key={key}><dt className="font-mono text-[10px] uppercase tracking-widest text-chalk500">{label}</dt><dd className="mt-1 text-sm leading-relaxed text-chalk500">{definitions[key] || 'Definition unavailable.'}</dd></div>)}</dl></section>
 }

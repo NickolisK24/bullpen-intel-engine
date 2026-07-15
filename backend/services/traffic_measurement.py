@@ -13,7 +13,7 @@ from utils.db import db
 
 
 CANONICAL_SITE_HOST = 'baseballos.app'
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 INTERNAL_REGISTRATION_SOURCE = 'authenticated_email_allowlist'
 
 PUBLIC_ROUTE_SURFACES = {
@@ -42,7 +42,11 @@ PAYLOAD_KEYS = frozenset({
     'surface',
     'view_mode',
     'team_ref',
+    'team_a_ref',
+    'team_b_ref',
     'pitcher_id',
+    'entry_source',
+    'evidence_target',
     'referrer_domain',
     'utm_source',
     'utm_medium',
@@ -50,6 +54,19 @@ PAYLOAD_KEYS = frozenset({
     'utm_content',
     'site_host',
 })
+
+ENTRY_SOURCE_ALLOWLIST = frozenset({
+    'today', 'dashboard', 'landscape', 'stories', 'comparison',
+    'all_pitchers', 'pitcher_search', 'share', 'share_link', 'share_card',
+})
+EVIDENCE_TARGET_ALLOWLIST = frozenset({
+    'team_read', 'team_relief_work', 'pitcher_lanes', 'pitcher_detail',
+    'comparison_read', 'comparison_evidence',
+})
+BOARD_EVIDENCE_TARGETS = frozenset({
+    'team_read', 'team_relief_work', 'pitcher_lanes', 'pitcher_detail',
+})
+COMPARE_EVIDENCE_TARGETS = frozenset({'comparison_read', 'comparison_evidence'})
 
 _UTM_LIMITS = {
     'utm_source': 64,
@@ -147,6 +164,23 @@ def normalize_pitcher_id(value):
     return number if number > 0 and str(value).strip() == str(number) else None
 
 
+def normalize_bounded_value(value, allowlist):
+    if value is None or value == '':
+        return None
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip().lower()
+    return normalized if normalized in allowlist else None
+
+
+def normalize_entry_source(value):
+    return normalize_bounded_value(value, ENTRY_SOURCE_ALLOWLIST)
+
+
+def normalize_evidence_target(value):
+    return normalize_bounded_value(value, EVIDENCE_TARGET_ALLOWLIST)
+
+
 def normalize_utm(value, *, limit):
     if value is None or value == '':
         return None
@@ -201,6 +235,7 @@ def normalize_page_view(payload, *, user_agent=''):
         return None
     string_only_fields = (
         'view_id', 'visitor_id', 'session_id', 'route', 'surface', 'view_mode',
+        'entry_source', 'evidence_target',
         'referrer_domain', 'utm_source', 'utm_medium', 'utm_campaign',
         'utm_content', 'site_host',
     )
@@ -223,24 +258,77 @@ def normalize_page_view(payload, *, user_agent=''):
     supplied_surface = payload.get('surface')
     view_mode = payload.get('view_mode')
     team_ref = payload.get('team_ref')
+    team_a_ref = payload.get('team_a_ref')
+    team_b_ref = payload.get('team_b_ref')
     pitcher_id = payload.get('pitcher_id')
+    entry_source = normalize_entry_source(payload.get('entry_source'))
+    evidence_target = normalize_evidence_target(payload.get('evidence_target'))
+    if payload.get('evidence_target') not in (None, '') and evidence_target is None:
+        return None
     if route == '/bullpen':
         if not isinstance(view_mode, str) or view_mode not in BULLPEN_SURFACES:
             return None
         surface = BULLPEN_SURFACES[view_mode]
         normalized_team = normalize_team_ref(team_ref)
+        normalized_team_a = normalize_team_ref(team_a_ref)
+        normalized_team_b = normalize_team_ref(team_b_ref)
         normalized_pitcher = normalize_pitcher_id(pitcher_id)
-        if team_ref not in (None, '') and normalized_team is None:
-            return None
-        if pitcher_id not in (None, '') and normalized_pitcher is None:
-            return None
+        if view_mode == 'board':
+            if any(value not in (None, '') for value in (team_a_ref, team_b_ref)):
+                return None
+            if team_ref not in (None, '') and normalized_team is None:
+                return None
+            if pitcher_id not in (None, '') and normalized_pitcher is None:
+                return None
+            if evidence_target not in BOARD_EVIDENCE_TARGETS | {None}:
+                return None
+            if evidence_target in {'team_read', 'team_relief_work', 'pitcher_lanes'} and not normalized_team:
+                return None
+            if evidence_target == 'pitcher_detail' and normalized_pitcher is None:
+                return None
+            normalized_team_a = None
+            normalized_team_b = None
+        elif view_mode == 'compare':
+            if any(value not in (None, '') for value in (team_ref, pitcher_id)):
+                return None
+            if team_a_ref not in (None, '') and normalized_team_a is None:
+                return None
+            if team_b_ref not in (None, '') and normalized_team_b is None:
+                return None
+            if normalized_team_a and normalized_team_b and normalized_team_a == normalized_team_b:
+                normalized_team_a = None
+                normalized_team_b = None
+            completed_pair = bool(normalized_team_a and normalized_team_b)
+            if evidence_target not in COMPARE_EVIDENCE_TARGETS | {None}:
+                return None
+            if evidence_target and not completed_pair:
+                return None
+            normalized_team = None
+            normalized_pitcher = None
+        else:
+            if any(value not in (None, '') for value in (team_a_ref, team_b_ref, pitcher_id)):
+                return None
+            if team_ref not in (None, '') and normalized_team is None:
+                return None
+            if evidence_target is not None:
+                return None
+            normalized_team_a = None
+            normalized_team_b = None
+            normalized_pitcher = None
     else:
         surface = PUBLIC_ROUTE_SURFACES[route]
-        if any(value not in (None, '') for value in (view_mode, team_ref, pitcher_id)):
+        if any(value not in (None, '') for value in (
+            view_mode, team_ref, team_a_ref, team_b_ref, pitcher_id,
+            payload.get('entry_source'), payload.get('evidence_target'),
+        )):
             return None
         view_mode = None
         normalized_team = None
+        normalized_team_a = None
+        normalized_team_b = None
         normalized_pitcher = None
+        entry_source = None
+        evidence_target = None
 
     if supplied_surface != surface or supplied_surface not in SURFACE_ALLOWLIST:
         return None
@@ -253,7 +341,11 @@ def normalize_page_view(payload, *, user_agent=''):
         'surface': surface,
         'view_mode': view_mode,
         'team_ref': normalized_team,
+        'team_a_ref': normalized_team_a,
+        'team_b_ref': normalized_team_b,
         'pitcher_id': normalized_pitcher,
+        'entry_source': entry_source,
+        'evidence_target': evidence_target,
         'referrer_domain': normalize_referrer_domain(payload.get('referrer_domain')),
         **{
             key: normalize_utm(payload.get(key), limit=limit)

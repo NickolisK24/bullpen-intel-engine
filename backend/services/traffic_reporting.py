@@ -21,6 +21,13 @@ OWNED_REFERRER_DOMAINS = frozenset({
 })
 RANGE_DAYS = {'7d': 7, '30d': 30, '90d': 90}
 RANGE_LABELS = {'7d': 'Last 7 days', '30d': 'Last 30 days', '90d': 'Last 90 days', 'all': 'All time'}
+SHARE_ENTRY_SOURCES = frozenset({'share', 'share_link', 'share_card'})
+DEEP_EVIDENCE_TARGETS = frozenset({
+    'team_relief_work', 'pitcher_lanes', 'pitcher_detail', 'comparison_evidence',
+})
+TEAM_EVIDENCE_TARGETS = frozenset({
+    'team_read', 'team_relief_work', 'pitcher_lanes', 'pitcher_detail',
+})
 
 METRIC_DEFINITIONS = {
     'external_visitors': 'Distinct qualifying browser identities active in the selected period; these are not verified individual people.',
@@ -30,6 +37,11 @@ METRIC_DEFINITIONS = {
     'new_visitors': 'Qualifying browser identities whose first-ever qualifying page view occurred inside the selected period.',
     'multi_page_sessions': 'Qualifying sessions with at least two page views.',
     'pages_per_session': 'Qualifying page views divided by qualifying sessions; unavailable when there are no sessions.',
+    'entry_source': 'Bounded navigation context attached to a canonical Bullpen URL; it is separate from campaign attribution.',
+    'evidence_target_views': 'Canonical exact-destination page views; opening a destination does not prove every item was read.',
+    'shared_link_landing_sessions': 'Qualifying sessions whose first page view begins from a BaseballOS share-oriented URL.',
+    'evidence_depth': 'Qualifying Bullpen sessions that opened at least one deeper evidence destination.',
+    'comparison_pairs': 'Descriptive canonical URL selections aggregated without left-right order; they are not game predictions.',
 }
 
 
@@ -243,6 +255,79 @@ def _bullpen_exploration(rows):
     }
 
 
+def _evidence_exploration(rows):
+    target_counts = Counter(row.evidence_target for row in rows if row.evidence_target)
+    team_counts = Counter(
+        row.team_ref for row in rows
+        if row.team_ref and row.evidence_target in TEAM_EVIDENCE_TARGETS
+    )
+    pair_counts = Counter()
+    source_views = Counter()
+    source_sessions = defaultdict(set)
+    for row in rows:
+        if row.team_a_ref and row.team_b_ref and row.team_a_ref != row.team_b_ref:
+            pair_counts[tuple(sorted((row.team_a_ref, row.team_b_ref)))] += 1
+        if row.entry_source:
+            source_views[row.entry_source] += 1
+            source_sessions[row.entry_source].add(row.session_id)
+
+    return {
+        'team_read_views': target_counts['team_read'],
+        'team_relief_work_views': target_counts['team_relief_work'],
+        'pitcher_lanes_views': target_counts['pitcher_lanes'],
+        'pitcher_detail_views': target_counts['pitcher_detail'],
+        'comparison_read_views': target_counts['comparison_read'],
+        'comparison_evidence_views': target_counts['comparison_evidence'],
+        'team_contexts': [
+            {'team_ref': team_ref, 'page_views': count}
+            for team_ref, count in sorted(team_counts.items(), key=lambda item: (-item[1], item[0]))[:20]
+        ],
+        'comparison_pairs': [
+            {
+                'team_a_ref': pair[0],
+                'team_b_ref': pair[1],
+                'pair_key': f'{pair[0]}:{pair[1]}',
+                'page_views': count,
+            }
+            for pair, count in sorted(pair_counts.items(), key=lambda item: (-item[1], item[0]))[:20]
+        ],
+        'entry_sources': [
+            {
+                'entry_source': source,
+                'page_views': count,
+                'sessions': len(source_sessions[source]),
+            }
+            for source, count in sorted(source_views.items(), key=lambda item: (-item[1], item[0]))
+        ],
+    }
+
+
+def _shared_link_landings(landing_views):
+    share_landings = [row for row in landing_views if row.entry_source in SHARE_ENTRY_SOURCES]
+    return {
+        'share_origin_sessions': len({row.session_id for row in share_landings}),
+        'share_origin_visitors': len({row.visitor_id for row in share_landings}),
+        'share_origin_page_views': len(share_landings),
+    }
+
+
+def _evidence_depth(rows):
+    bullpen_sessions = {
+        row.session_id for row in rows
+        if row.surface in {'bullpen_board', 'compare_bullpens', 'all_pitchers'}
+    }
+    deeper_sessions = {
+        row.session_id for row in rows if row.evidence_target in DEEP_EVIDENCE_TARGETS
+    }
+    count = len(deeper_sessions)
+    return {
+        'sessions_opening_deeper_evidence': count,
+        'percentage_of_bullpen_sessions_opening_deeper_evidence': (
+            round(count / len(bullpen_sessions) * 100, 2) if bullpen_sessions else None
+        ),
+    }
+
+
 def _measurement_health(start, end, external_rows):
     canonical_rows = (
         TrafficPageView.query
@@ -374,5 +459,8 @@ def build_traffic_summary(range_key='7d', *, now=None):
         'landing_surfaces': acquisition['landing_surfaces'],
         'most_visited_surfaces': _visited_surfaces(rows),
         'bullpen_exploration': _bullpen_exploration(rows),
+        'evidence_exploration': _evidence_exploration(rows),
+        'shared_link_landings': _shared_link_landings(landing_views),
+        'evidence_depth': _evidence_depth(rows),
         'measurement_health': _measurement_health(start, end, rows),
     }

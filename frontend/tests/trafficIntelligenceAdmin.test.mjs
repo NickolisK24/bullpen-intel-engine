@@ -47,6 +47,11 @@ function reportFixture(overrides = {}) {
       new_visitors: 'First qualifying view occurred in the period.',
       multi_page_sessions: 'Sessions with at least two page views.',
       pages_per_session: 'Page views divided by sessions.',
+      entry_source: 'Bounded navigation context.',
+      evidence_target_views: 'Opening does not prove every item was read.',
+      shared_link_landing_sessions: 'Sessions beginning from a share-oriented URL.',
+      evidence_depth: 'Bullpen sessions opening deeper evidence.',
+      comparison_pairs: 'Descriptive URL selections, not game predictions.',
     },
     summary: {
       external_visitors: 12,
@@ -82,6 +87,26 @@ function reportFixture(overrides = {}) {
       all_pitchers_views: 2,
       team_contexts: [{ team_ref: 'NYY', page_views: 2 }],
       pitcher_context_page_views: 1,
+    },
+    evidence_exploration: {
+      team_read_views: 7,
+      team_relief_work_views: 4,
+      pitcher_lanes_views: 3,
+      pitcher_detail_views: 2,
+      comparison_read_views: 5,
+      comparison_evidence_views: 1,
+      team_contexts: [{ team_ref: 'BOS', page_views: 6 }],
+      comparison_pairs: [{ team_a_ref: 'BOS', team_b_ref: 'NYY', pair_key: 'BOS:NYY', page_views: 5 }],
+      entry_sources: [{ entry_source: 'share_link', page_views: 3, sessions: 2 }],
+    },
+    shared_link_landings: {
+      share_origin_sessions: 2,
+      share_origin_visitors: 1,
+      share_origin_page_views: 2,
+    },
+    evidence_depth: {
+      sessions_opening_deeper_evidence: 4,
+      percentage_of_bullpen_sessions_opening_deeper_evidence: 40,
     },
     measurement_health: {
       measurement_started_at: '2026-07-01T15:00:00Z',
@@ -158,10 +183,41 @@ test('summary, comparison, reporting sections, and definitions render honestly',
     'External Visitors', 'Sessions', 'Page Views', 'Returning Visitors', 'New Visitors',
     'Multi-Page Sessions', 'Pages per Session', 'Daily Traffic', 'Acquisition',
     'Landing Surfaces', 'Most Visited Surfaces', 'Top Referrer Domains', 'Campaigns',
-    'Bullpen Exploration', 'Measurement Health', 'Metric Definitions',
+    'Bullpen Exploration', 'Evidence Exploration', 'Top Team Evidence', 'Top Comparison Pairs',
+    'Entry Sources', 'Shared-Link Landings', 'Evidence Depth', 'Measurement Health', 'Metric Definitions',
   ]) assert.ok(html.includes(text), text)
   assert.ok(html.includes('distinct browser identities, not confirmed individual people'))
   assert.equal(/engaged users/i.test(html), false)
+})
+
+test('evidence context sections render bounded counts and precise labels', () => {
+  const html = render(React.createElement(TrafficReport, { report: reportFixture() }))
+  for (const text of [
+    'Team Read Views', 'Recent Relief Work Views', 'Pitcher Lanes Views', 'Pitcher Detail Views',
+    'Comparison Read Views', 'Comparison Evidence Views', 'BOS:NYY', 'Share Link',
+    '3 views', '2 sessions', 'Anonymous Visitors', 'Sessions Opening Deeper Evidence',
+    'Percentage of Bullpen Sessions', '40%',
+  ]) assert.ok(html.includes(text), text)
+  for (const definition of [
+    'Entry Source', 'Evidence-Target Views', 'Shared-Link Landing Sessions',
+    'Evidence Depth', 'Comparison Pairs', 'not game predictions',
+  ]) assert.ok(html.includes(definition), definition)
+  for (const forbidden of ['People who read', 'Share conversions', 'Viral traffic', 'Engagement score']) {
+    assert.equal(html.includes(forbidden), false)
+  }
+})
+
+test('empty evidence sections remain compact and zero-safe', () => {
+  const report = reportFixture({
+    evidence_exploration: {},
+    shared_link_landings: {},
+    evidence_depth: {},
+  })
+  const html = render(React.createElement(TrafficReport, { report }))
+  assert.ok(html.includes('No bounded entry source recorded.'))
+  assert.ok(html.includes('Percentage unavailable'))
+  assert.equal(html.includes('NaN'), false)
+  assert.equal(html.includes('Infinity'), false)
 })
 
 test('acquisition renders session percentages and remains zero-safe', () => {

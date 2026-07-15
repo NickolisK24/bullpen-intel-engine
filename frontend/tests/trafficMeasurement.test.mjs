@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import test, { after, beforeEach } from 'node:test'
 import { createServer } from 'vite'
 
@@ -28,6 +29,12 @@ const {
 } = traffic
 
 beforeEach(() => resetObservedTrafficEntriesForTests())
+
+test('route observer includes hash state in payload derivation and dependencies', () => {
+  const source = readFileSync('src/components/TrafficRouteObserver.jsx', 'utf8')
+  assert.ok(source.includes('hash: location.hash'))
+  assert.ok(source.includes('[location.key, location.pathname, location.search, location.hash]'))
+})
 
 function storage() {
   const values = new Map()
@@ -90,10 +97,11 @@ test('canonical route mapping excludes private, admin, and wildcard routes', () 
   assert.equal(canonicalPage('/anything'), null)
 })
 
-test('bullpen mapping retains only allowlisted context and never raw query', () => {
-  const page = canonicalPage('/bullpen', '?view=compare&team=nyy&pitcher=42&secret=token')
+test('bullpen mapping retains only route-compatible allowlisted context and never raw query', () => {
+  const page = canonicalPage('/bullpen', '?view=compare&team_a=nyy&team_b=bos&team=sea&pitcher=42&secret=token')
   assert.deepEqual(page, {
-    route: '/bullpen', surface: 'compare_bullpens', view_mode: 'compare', team_ref: 'NYY', pitcher_id: 42,
+    route: '/bullpen', surface: 'compare_bullpens', view_mode: 'compare',
+    team_a_ref: 'NYY', team_b_ref: 'BOS', evidence_target: 'comparison_read',
   })
   const payload = buildPageView({
     hostname: 'baseballos.app', pathname: '/bullpen',
@@ -103,6 +111,80 @@ test('bullpen mapping retains only allowlisted context and never raw query', () 
   assert.equal(payload.surface, 'all_pitchers')
   assert.equal('search' in payload, false)
   assert.equal(JSON.stringify(payload).includes('unknown'), false)
+})
+
+test('team board canonical context maps default and exact evidence destinations', () => {
+  assert.deepEqual(canonicalPage('/bullpen', '?view=board&team=bos'), {
+    route: '/bullpen', surface: 'bullpen_board', view_mode: 'board',
+    team_ref: 'BOS', evidence_target: 'team_read',
+  })
+  assert.equal(
+    canonicalPage('/bullpen', '?view=board&team=BOS', '#team-relief-work').evidence_target,
+    'team_relief_work',
+  )
+  assert.equal(
+    canonicalPage('/bullpen', '?view=board&team=BOS', '#pitcher-lanes').evidence_target,
+    'pitcher_lanes',
+  )
+})
+
+test('pitcher detail yields to a supported exact evidence hash', () => {
+  const detail = canonicalPage('/bullpen', '?view=board&team=BOS&pitcher=123456')
+  assert.equal(detail.pitcher_id, 123456)
+  assert.equal(detail.evidence_target, 'pitcher_detail')
+  assert.equal(
+    canonicalPage('/bullpen', '?view=board&team=BOS&pitcher=123456', '#pitcher-lanes').evidence_target,
+    'pitcher_lanes',
+  )
+})
+
+test('comparison context preserves visible order and maps exact evidence', () => {
+  assert.deepEqual(canonicalPage(
+    '/bullpen', '?view=compare&team_a=BOS&team_b=NYY&source=comparison', '#comparison-evidence',
+  ), {
+    route: '/bullpen', surface: 'compare_bullpens', view_mode: 'compare', entry_source: 'comparison',
+    team_a_ref: 'BOS', team_b_ref: 'NYY', evidence_target: 'comparison_evidence',
+  })
+})
+
+test('invalid and same-team comparisons remain generic compare views', () => {
+  for (const search of [
+    '?view=compare&team_a=BOS&team_b=BOS',
+    '?view=compare&team_a=BOS&team_b=Boston',
+    '?view=compare&team_a=BOS',
+  ]) {
+    assert.deepEqual(canonicalPage('/bullpen', search, '#comparison-evidence'), {
+      route: '/bullpen', surface: 'compare_bullpens', view_mode: 'compare',
+    })
+  }
+})
+
+test('all pitchers keeps an optional team filter without evidence context', () => {
+  assert.deepEqual(canonicalPage('/bullpen', '?view=pitchers&team=BOS&pitcher=123', '#pitcher-lanes'), {
+    route: '/bullpen', surface: 'all_pitchers', view_mode: 'pitchers', team_ref: 'BOS',
+  })
+})
+
+test('bounded entry sources are accepted and unknown source or hash values are omitted', () => {
+  for (const source of ['today', 'dashboard', 'landscape', 'stories', 'comparison', 'all_pitchers', 'pitcher_search', 'share', 'share_link', 'share_card']) {
+    assert.equal(canonicalPage('/bullpen', `?view=board&team=BOS&source=${source}`).entry_source, source)
+  }
+  const page = canonicalPage('/bullpen', '?view=board&team=BOS&source=private', '#private-section')
+  assert.equal('entry_source' in page, false)
+  assert.equal(page.evidence_target, 'team_read')
+  assert.equal(JSON.stringify(page).includes('private'), false)
+})
+
+test('direct exact-link payload includes hash-derived evidence context', () => {
+  const payload = buildPageView({
+    hostname: 'baseballos.app', pathname: '/bullpen',
+    search: '?view=board&team=BOS&source=share_link', hash: '#team-relief-work',
+    storage: storage(), now: 1, cryptoObject: cryptoSequence(),
+  })
+  assert.equal(payload.team_ref, 'BOS')
+  assert.equal(payload.entry_source, 'share_link')
+  assert.equal(payload.evidence_target, 'team_relief_work')
+  assert.equal('hash' in payload, false)
 })
 
 test('UTM and referrer acquisition are normalized and bounded', () => {
@@ -183,6 +265,23 @@ test('immediate StrictMode duplicates are suppressed while later history revisit
   assert.equal(observeTrafficRoute(input), true)
   assert.equal(observeTrafficRoute(input), false)
   assert.equal(calls.length, 3)
+})
+
+test('meaningful hash and canonical context changes record without rerender duplicates', () => {
+  const calls = []
+  const input = {
+    locationKey: 'bullpen-entry', hostname: 'baseballos.app', pathname: '/bullpen',
+    search: '?view=board&team=BOS&source=dashboard', hash: '', storage: storage(), now: 1,
+    cryptoObject: cryptoSequence(),
+    fetchImpl: (...args) => { calls.push(args); return Promise.resolve({ ok: true }) },
+  }
+  assert.equal(observeTrafficRoute(input), true)
+  assert.equal(observeTrafficRoute(input), false)
+  assert.equal(observeTrafficRoute({ ...input, hash: '#team-relief-work' }), true)
+  assert.equal(observeTrafficRoute({ ...input, hash: '#team-relief-work' }), false)
+  assert.equal(observeTrafficRoute({ ...input, search: '?view=board&team=NYY&source=dashboard' }), true)
+  assert.equal(observeTrafficRoute({ ...input, search: '?view=compare&team_a=BOS&team_b=NYY' }), true)
+  assert.equal(calls.length, 4)
 })
 
 test('request failure is isolated and request excludes token and raw query from body', () => {

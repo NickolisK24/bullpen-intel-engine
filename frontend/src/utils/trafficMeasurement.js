@@ -1,4 +1,10 @@
 import { readAuthToken } from './api'
+import {
+  BULLPEN_VIEWS,
+  EVIDENCE_SECTIONS,
+  normalizeBullpenSource,
+  normalizeTeamReference,
+} from './evidenceLinks'
 
 export const TRAFFIC_VISITOR_STORAGE_KEY = 'baseballos.traffic.visitor.v1'
 export const TRAFFIC_SESSION_STORAGE_KEY = 'baseballos.traffic.session.v1'
@@ -91,19 +97,12 @@ export function getOrCreateSession(storage, now, cryptoObject = globalThis.crypt
   return session
 }
 
-function normalizeTeam(value) {
-  const text = String(value || '').trim().toUpperCase()
-  if (/^[A-Z]{2,4}$/.test(text)) return text
-  if (/^[1-9]\d*$/.test(text)) return String(Number(text))
-  return null
-}
-
 function normalizePitcher(value) {
   const text = String(value || '').trim()
   return /^[1-9]\d*$/.test(text) ? Number(text) : null
 }
 
-export function canonicalPage(pathname, search = '') {
+export function canonicalPage(pathname, search = '', hash = '') {
   const path = pathname === '/' ? '/' : String(pathname || '').replace(/\/+$/, '')
   if (STATIC_ROUTES[path]) {
     return { route: path, surface: STATIC_ROUTES[path] }
@@ -115,10 +114,39 @@ export function canonicalPage(pathname, search = '') {
   const surface = BULLPEN_SURFACES[viewMode]
   if (!surface) return null
   const page = { route: '/bullpen', surface, view_mode: viewMode }
-  const teamRef = normalizeTeam(params.get('team'))
-  const pitcherId = normalizePitcher(params.get('pitcher'))
+  const entrySource = normalizeBullpenSource(params.get('source'))
+  if (entrySource) page.entry_source = entrySource
+
+  if (viewMode === BULLPEN_VIEWS.COMPARE) {
+    const teamARef = normalizeTeamReference(params.get('team_a'))
+    const teamBRef = normalizeTeamReference(params.get('team_b'))
+    const completedPair = teamARef && teamBRef && teamARef !== teamBRef
+    if (completedPair) {
+      page.team_a_ref = teamARef
+      page.team_b_ref = teamBRef
+      page.evidence_target = String(hash || '').replace(/^#/, '') === EVIDENCE_SECTIONS.COMPARISON_EVIDENCE
+        ? 'comparison_evidence'
+        : 'comparison_read'
+    }
+    return page
+  }
+
+  const teamRef = normalizeTeamReference(params.get('team'))
   if (teamRef) page.team_ref = teamRef
+  if (viewMode === BULLPEN_VIEWS.PITCHERS) return page
+
+  const pitcherId = normalizePitcher(params.get('pitcher'))
   if (pitcherId) page.pitcher_id = pitcherId
+  const section = String(hash || '').replace(/^#/, '')
+  if (section === EVIDENCE_SECTIONS.TEAM_RELIEF_WORK && teamRef) {
+    page.evidence_target = 'team_relief_work'
+  } else if (section === EVIDENCE_SECTIONS.PITCHER_LANES && teamRef) {
+    page.evidence_target = 'pitcher_lanes'
+  } else if (pitcherId) {
+    page.evidence_target = 'pitcher_detail'
+  } else if (teamRef) {
+    page.evidence_target = 'team_read'
+  }
   return page
 }
 
@@ -154,9 +182,9 @@ export function acquisitionFields(search = '', referrer = '') {
   return acquisition
 }
 
-export function buildPageView({ hostname, pathname, search, referrer, storage, now, cryptoObject }) {
+export function buildPageView({ hostname, pathname, search, hash, referrer, storage, now, cryptoObject }) {
   if (hostname !== TRAFFIC_CANONICAL_HOST) return null
-  const page = canonicalPage(pathname, search)
+  const page = canonicalPage(pathname, search, hash)
   if (!page) return null
   const visitorId = getOrCreateVisitorId(storage, cryptoObject)
   const session = getOrCreateSession(storage, now, cryptoObject)
@@ -203,6 +231,7 @@ export function observeTrafficRoute({
   hostname,
   pathname,
   search = '',
+  hash = '',
   referrer = '',
   storage,
   now = Date.now(),
@@ -210,12 +239,22 @@ export function observeTrafficRoute({
   fetchImpl = globalThis.fetch,
 }) {
   if (hostname !== TRAFFIC_CANONICAL_HOST) return false
-  const page = canonicalPage(pathname, search)
+  const page = canonicalPage(pathname, search, hash)
   if (!page) return false
-  const identity = [page.route, page.surface, page.view_mode || '', page.team_ref || '', page.pitcher_id || ''].join('|')
+  const identity = [
+    page.route,
+    page.surface,
+    page.view_mode || '',
+    page.team_ref || '',
+    page.team_a_ref || '',
+    page.team_b_ref || '',
+    page.pitcher_id || '',
+    page.evidence_target || '',
+    page.entry_source || '',
+  ].join('|')
   const dedupeKey = `${locationKey || 'unknown'}|${identity}`
   if (lastObservedEntry === dedupeKey) return false
-  const payload = buildPageView({ hostname, pathname, search, referrer, storage, now, cryptoObject })
+  const payload = buildPageView({ hostname, pathname, search, hash, referrer, storage, now, cryptoObject })
   if (!payload) return false
   lastObservedEntry = dedupeKey
   sendPageView(payload, { fetchImpl, storage })
