@@ -15,6 +15,7 @@ import SignIn from './components/auth/SignIn'
 import VerifySignIn from './components/auth/VerifySignIn'
 import { PRIVATE_POSTS_PATH } from './components/posts/privatePostsView'
 import { cleanupLaunchPreferredTeamStorage } from './utils/preferredTeam'
+import TrafficRouteObserver from './components/TrafficRouteObserver'
 
 export const APP_ROUTES = [
   { path: '/', Component: Home },
@@ -53,6 +54,7 @@ export default function App() {
 
   return (
     <BrowserRouter>
+      <TrafficRouteObserver />
       <div className="app-shell bg-noise flex-col lg:flex-row">
         <Sidebar />
         <main className="flex-1 min-w-0 lg:ml-56">

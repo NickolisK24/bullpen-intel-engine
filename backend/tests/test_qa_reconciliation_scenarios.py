@@ -47,7 +47,7 @@ from utils.db import db
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 MIGRATIONS_DIR = REPO_ROOT / 'backend/migrations/versions'
-EXPECTED_ALEMBIC_HEAD = '7c4d2e9f1a6b'
+EXPECTED_ALEMBIC_HEAD = 'a9e4c7d2f1b6'
 FORBIDDEN_HEADLINE_TERMS = (
     'headline',
     'read_label',
@@ -350,6 +350,12 @@ def test_phase0e_switches_and_legacy_public_files_not_modified():
         'frontend/src/utils/productIdentity.js',
         'frontend/src/utils/productIntelligence.js',
     }
+    allowed_trusted_traffic_files = {
+        'backend/api/traffic.py',
+        'backend/migrations/versions/a9e4c7d2f1b6_add_trusted_external_traffic.py',
+        'frontend/src/components/TrafficRouteObserver.jsx',
+        'frontend/src/utils/trafficMeasurement.js',
+    }
     allowed_files = (
         allowed_public_freshness_display_files
         | allowed_internal_admin_files
@@ -362,6 +368,7 @@ def test_phase0e_switches_and_legacy_public_files_not_modified():
         | allowed_phase0i_roster_readiness_files
         | allowed_public_role_vocabulary_files
         | allowed_legacy_retirement_files
+        | allowed_trusted_traffic_files
     )
     forbidden_prefixes = (
         'backend/api/',

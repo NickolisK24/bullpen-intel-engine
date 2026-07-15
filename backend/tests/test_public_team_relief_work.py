@@ -1271,6 +1271,12 @@ def test_existing_public_routes_behavior_freeze(monkeypatch):
         'frontend/tests/productIntelligence.test.mjs',
         'frontend/tests/productIntelligenceAdmin.test.mjs',
     }
+    allowed_trusted_traffic_files = {
+        'backend/migrations/versions/a9e4c7d2f1b6_add_trusted_external_traffic.py',
+        'frontend/src/components/TrafficRouteObserver.jsx',
+        'frontend/src/utils/trafficMeasurement.js',
+        'frontend/tests/trafficMeasurement.test.mjs',
+    }
     assert not [
         path for path in changed
         if path not in allowed_phase_a_audience_signup_files
@@ -1281,6 +1287,7 @@ def test_existing_public_routes_behavior_freeze(monkeypatch):
         if path not in allowed_public_role_vocabulary_files
         if path not in allowed_relief_role_input_integrity_files
         if path not in allowed_legacy_retirement_files
+        if path not in allowed_trusted_traffic_files
         if (
             path in blocked_files and path not in allowed_internal_admin_files
         )

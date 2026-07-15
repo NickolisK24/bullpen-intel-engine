@@ -128,6 +128,8 @@ def create_app(config_name=None):
     from models.tonight_intelligence_snapshot import TonightIntelligenceSnapshot
     from models.user import User, UserFollowedTeam
     from models.audience_subscriber import AudienceSubscriber
+    from models.traffic_internal_visitor import TrafficInternalVisitor
+    from models.traffic_page_view import TrafficPageView
     from models.player_transaction import PlayerTransaction, PlayerTransactionSyncWindow
     from models.play_by_play_foundation import GamePlayByPlayEvent, PlayByPlayProcessedGame
     from models.pitcher_season_ledger_coverage import PitcherSeasonLedgerCoverage
@@ -150,6 +152,7 @@ def create_app(config_name=None):
     from api.me import me_bp
     from api.private_posts import private_posts_bp
     from api.audience import audience_bp
+    from api.traffic import traffic_bp
 
     app.register_blueprint(bullpen_bp, url_prefix='/api/bullpen')
     app.register_blueprint(prospects_bp, url_prefix='/api/prospects')
@@ -166,6 +169,7 @@ def create_app(config_name=None):
     app.register_blueprint(me_bp, url_prefix='/api/me')
     app.register_blueprint(private_posts_bp, url_prefix='/api/private-posts')
     app.register_blueprint(audience_bp, url_prefix='/api/audience')
+    app.register_blueprint(traffic_bp, url_prefix='/api/traffic')
 
     @app.route('/api/health')
     def health():

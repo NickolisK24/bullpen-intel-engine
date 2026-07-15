@@ -293,6 +293,12 @@ def test_frozen_legacy_what_changed_files_untouched():
         'frontend/tests/productIntelligence.test.mjs',
         'frontend/tests/productIntelligenceAdmin.test.mjs',
     }
+    allowed_trusted_traffic_files = {
+        'backend/migrations/versions/a9e4c7d2f1b6_add_trusted_external_traffic.py',
+        'frontend/src/components/TrafficRouteObserver.jsx',
+        'frontend/src/utils/trafficMeasurement.js',
+        'frontend/tests/trafficMeasurement.test.mjs',
+    }
     assert not sorted(
         (frozen_paths & changed) - allowed_public_what_changed_contract_files
     )
@@ -306,12 +312,14 @@ def test_frozen_legacy_what_changed_files_untouched():
         if path not in allowed_public_role_vocabulary_files
         if path not in allowed_relief_role_input_integrity_files
         if path not in allowed_legacy_retirement_files
+        if path not in allowed_trusted_traffic_files
     )
     assert not sorted(
         path for path in changed
         if path.startswith('backend/migrations/')
         if path not in allowed_phase_a_audience_signup_files
         if path not in allowed_pitcher_ledger_coverage_files
+        if path not in allowed_trusted_traffic_files
     )
 
 
