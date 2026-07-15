@@ -1,7 +1,19 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useFetch } from '../../hooks/useFetch'
+import useEvidenceHashNavigation from '../../hooks/useEvidenceHashNavigation'
 import { getFatigueScores, getTeams } from '../../utils/api'
+import {
+  BULLPEN_VIEWS,
+  buildAllPitchersHref,
+  buildCanonicalBullpenHref,
+  buildComparisonHref,
+  buildPitcherHref,
+  buildTeamBoardHref,
+  readBullpenLocation,
+  resolveTeamId,
+  resolveTeamReference,
+} from '../../utils/evidenceLinks'
 import { LoadingPane, ErrorState, EmptyState, SectionHeader } from '../UI'
 import PitcherDetail from './PitcherDetail'
 import TonightsBullpenBoard from './board/TonightsBullpenBoard'
@@ -29,30 +41,27 @@ const VIEW_MODES   = [
 ]
 const PAGE_SIZE = 50
 
-const VALID_VIEWS = new Set(VIEW_MODES.map(m => m.id))
-
 export default function Bullpen() {
   const location = useLocation()
   const navigate = useNavigate()
-  // Allow deep-links to a specific tab and team, e.g. the dashboard Quick Actions
-  // (/bullpen?view=compare) and the landscape team drilldown
-  // (/bullpen?view=board&team=SF). Defaults to Tonight's Board.
-  const searchParams = new URLSearchParams(location.search)
-  const requestedView = searchParams.get('view')
-  const requestedTeam = searchParams.get('team')
-  const requestedPitcher = searchParams.get('pitcher')
-  const requestedPitcherId = Number.parseInt(requestedPitcher || '', 10)
-  const hasRequestedPitcher = Number.isFinite(requestedPitcherId) && requestedPitcherId > 0
-  const [viewMode, setViewMode]           = useState(VALID_VIEWS.has(requestedView) ? requestedView : 'board')
-  const [selectedTeam, setSelectedTeam]   = useState(null)
-  const [selectedPitcher, setSelected]    = useState(null)
+  const urlState = useMemo(
+    () => readBullpenLocation(location.search, location.hash),
+    [location.hash, location.search],
+  )
+  const viewMode = urlState.view
   const [sortBy, setSortBy]               = useState('pitches')
   const [includeStale, setIncludeStale]   = useState(false)
   const [availabilityFilter, setAvailabilityFilter] = useState('ALL')
   const boardDetailRegionRef = useRef(null)
-  const showBoardDetail = viewMode === 'board' && selectedPitcher
+  const showBoardDetail = viewMode === BULLPEN_VIEWS.BOARD && urlState.pitcherId != null
 
   const teams    = useFetch(getTeams)
+  const teamList = teams.data || []
+  const teamsReady = !teams.loading && !teams.error && teamList.length > 0
+  const selectedTeam = resolveTeamId(teamList, urlState.team)
+  const canonicalTeam = resolveTeamReference(teamList, urlState.team)
+  const activeTeamRef = canonicalTeam || urlState.team
+  const selectedPitcher = showBoardDetail ? { pitcher_id: urlState.pitcherId } : null
   const allScores = useFetch(
     () => {
       const params = { limit: 750, include_stale: includeStale, with_meta: true }
@@ -62,15 +71,24 @@ export default function Bullpen() {
     [selectedTeam, includeStale]
   )
 
+  useEvidenceHashNavigation(viewMode)
+
   useEffect(() => {
-    if (
-      viewMode === 'board'
-      && hasRequestedPitcher
-      && selectedPitcher?.pitcher_id !== requestedPitcherId
-    ) {
-      setSelected({ pitcher_id: requestedPitcherId })
+    const resolvedState = { ...urlState }
+    if (teamsReady) {
+      if (urlState.view === BULLPEN_VIEWS.COMPARE) {
+        resolvedState.teamA = resolveTeamReference(teamList, urlState.teamA)
+        resolvedState.teamB = resolveTeamReference(teamList, urlState.teamB)
+      } else {
+        resolvedState.team = resolveTeamReference(teamList, urlState.team)
+      }
     }
-  }, [hasRequestedPitcher, requestedPitcherId, selectedPitcher?.pitcher_id, viewMode])
+
+    let canonicalHref = buildCanonicalBullpenHref(resolvedState)
+    if (urlState.unsupportedHash) canonicalHref += `#${urlState.unsupportedHash}`
+    const currentHref = `${location.pathname}${location.search}${location.hash}`
+    if (canonicalHref !== currentHref) navigate(canonicalHref, { replace: true })
+  }, [location.hash, location.pathname, location.search, navigate, teamList, teamsReady, urlState])
 
   useEffect(() => {
     if (showBoardDetail) {
@@ -78,28 +96,62 @@ export default function Bullpen() {
     }
   }, [showBoardDetail, selectedPitcher?.pitcher_id])
 
+  const handleViewChange = (nextView) => {
+    if (nextView === BULLPEN_VIEWS.COMPARE) {
+      navigate(buildComparisonHref(urlState.teamA, urlState.teamB, { source: urlState.source }))
+    } else if (nextView === BULLPEN_VIEWS.PITCHERS) {
+      navigate(buildAllPitchersHref({ teamRef: activeTeamRef, source: urlState.source }))
+    } else {
+      navigate(buildTeamBoardHref(activeTeamRef, { source: urlState.source }))
+    }
+  }
+
+  const handleTeamSelect = (teamId) => {
+    const team = resolveTeamReference(teamList, teamId)
+    navigate(buildTeamBoardHref(team, {
+      source: urlState.source,
+      section: urlState.section,
+    }))
+  }
+
+  const handlePitcherSelect = (pitcherId, teamRef = activeTeamRef, source = urlState.source) => {
+    navigate(buildPitcherHref(pitcherId, {
+      teamRef,
+      source,
+      section: urlState.section,
+    }))
+  }
+
   const handlePitcherSearchSelect = (result) => {
     if (!result?.player_id) return
-    const nextSearchParams = new URLSearchParams(location.search)
-    nextSearchParams.set('view', 'board')
-    nextSearchParams.set('pitcher', String(result.player_id))
-    setSelected({
-      pitcher_id: result.player_id,
-      pitcher: {
-        full_name: result.player_name,
-        team_name: result.team_name,
-        team_abbreviation: result.team_abbreviation,
-      },
-    })
-    navigate(`${location.pathname}?${nextSearchParams.toString()}`)
+    handlePitcherSelect(result.player_id, result, 'pitcher_search')
   }
 
   const closeSelectedPitcher = () => {
-    const nextSearchParams = new URLSearchParams(location.search)
-    nextSearchParams.delete('pitcher')
-    const nextQuery = nextSearchParams.toString()
-    setSelected(null)
-    navigate(`${location.pathname}${nextQuery ? `?${nextQuery}` : ''}`, { replace: true })
+    navigate(buildTeamBoardHref(activeTeamRef, {
+      source: urlState.source,
+      section: urlState.section,
+    }), { replace: true })
+  }
+
+  const handleComparisonTeamChange = (side, teamId) => {
+    const changedTeam = resolveTeamReference(teamList, teamId)
+    const teamA = side === 'a' ? changedTeam : resolveTeamReference(teamList, urlState.teamA)
+    const teamB = side === 'b' ? changedTeam : resolveTeamReference(teamList, urlState.teamB)
+    navigate(buildComparisonHref(teamA, teamB, {
+      source: urlState.source,
+      section: urlState.section,
+    }))
+  }
+
+  const handleAllPitchersTeamChange = (teamId) => {
+    const team = resolveTeamReference(teamList, teamId)
+    navigate(buildAllPitchersHref({ teamRef: team, source: urlState.source }))
+  }
+
+  const handleAllPitchersSelect = (row) => {
+    const teamRef = row?.pitcher || resolveTeamReference(teamList, selectedTeam)
+    handlePitcherSelect(row?.pitcher_id, teamRef, 'all_pitchers')
   }
 
   return (
@@ -113,7 +165,7 @@ export default function Bullpen() {
               {VIEW_MODES.map(m => (
                 <button
                   key={m.id}
-                  onClick={() => setViewMode(m.id)}
+                  onClick={() => handleViewChange(m.id)}
                   className={`px-3 py-1.5 rounded text-xs font-mono transition-all ${
                     viewMode === m.id
                       ? 'bg-chalk border-dirt text-chalk200 shadow'
@@ -134,16 +186,21 @@ export default function Bullpen() {
         }
       />
 
-      {viewMode === 'board' ? (
+      {viewMode === BULLPEN_VIEWS.BOARD ? (
         <>
           <PitcherSearch onSelectPitcher={handlePitcherSearchSelect} />
-          <TonightsBullpenBoard teams={teams} requestedTeam={requestedTeam} />
+          <TonightsBullpenBoard
+            teams={teams}
+            requestedTeam={urlState.team}
+            onSelectTeam={handleTeamSelect}
+            onSelectPitcher={handlePitcherSelect}
+          />
           {showBoardDetail && (
             <div
               ref={boardDetailRegionRef}
               tabIndex={-1}
               role="region"
-              aria-label={`Selected pitcher detail for ${selectedPitcher.pitcher?.full_name ?? 'pitcher'}`}
+              aria-label="Selected pitcher detail"
               className="fixed inset-0 z-40 overflow-y-auto bg-field/95 p-4 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-amber/70 lg:p-6"
             >
               <div className="mx-auto max-w-5xl">
@@ -152,16 +209,21 @@ export default function Bullpen() {
             </div>
           )}
         </>
-      ) : viewMode === 'compare' ? (
-        <TeamBullpenComparison teams={teams} />
+      ) : viewMode === BULLPEN_VIEWS.COMPARE ? (
+        <TeamBullpenComparison
+          teams={teams}
+          requestedTeamA={urlState.teamA}
+          requestedTeamB={urlState.teamB}
+          onTeamAChange={teamId => handleComparisonTeamChange('a', teamId)}
+          onTeamBChange={teamId => handleComparisonTeamChange('b', teamId)}
+        />
       ) : (
         <PitcherView
           teams={teams}
           allScores={allScores}
           selectedTeam={selectedTeam}
-          setSelectedTeam={setSelectedTeam}
-          selectedPitcher={selectedPitcher}
-          setSelected={setSelected}
+          onSelectTeam={handleAllPitchersTeamChange}
+          onSelectPitcher={handleAllPitchersSelect}
           sortBy={sortBy}
           setSortBy={setSortBy}
           includeStale={includeStale}
@@ -175,15 +237,14 @@ export default function Bullpen() {
 
 function PitcherView({
   teams, allScores,
-  selectedTeam, setSelectedTeam,
-  selectedPitcher, setSelected,
+  selectedTeam, onSelectTeam,
+  onSelectPitcher,
   sortBy, setSortBy,
   includeStale,
   availabilityFilter, setAvailabilityFilter,
 }) {
   const [page, setPage] = useState(1)
   const [searchTerm, setSearchTerm] = useState('')
-  const detailRegionRef = useRef(null)
 
   // Compute counts from the full dataset, BEFORE filtering — tab labels
   // describe what's available, not what's currently shown.
@@ -239,20 +300,10 @@ function PitcherView({
   // Reset page to 1 when filters change (so filtering doesn't drop you onto an empty page)
   useEffect(() => { setPage(1) }, [availabilityFilter, selectedTeam, sortBy, searchTerm, includeStale])
 
-  useEffect(() => {
-    if (selectedPitcher) {
-      detailRegionRef.current?.focus()
-    }
-  }, [selectedPitcher])
-
-  const toggleSelectedPitcher = (row) => {
-    setSelected(selectedPitcher?.pitcher_id === row.pitcher_id ? null : row)
-  }
-
   const handlePitcherRowKeyDown = (event, row) => {
     if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault()
-      toggleSelectedPitcher(row)
+      onSelectPitcher(row)
     }
   }
 
@@ -264,7 +315,7 @@ function PitcherView({
       {/* Team filter pills */}
       <div className="flex flex-wrap gap-2 mb-6 animate-fade-up opacity-0" style={{ animationFillMode: 'forwards' }}>
         <button
-          onClick={() => setSelectedTeam(null)}
+          onClick={() => onSelectTeam(null)}
           className={`px-3 py-1.5 rounded border text-xs font-mono transition-all ${!selectedTeam ? 'bg-amber/10 border-amber/40 text-amber' : 'border-dirt text-chalk400 hover:border-chalk400'}`}
         >
           All Teams
@@ -272,7 +323,7 @@ function PitcherView({
         {(teams.data || []).map(t => (
           <button
             key={t.team_id}
-            onClick={() => setSelectedTeam(t.team_id)}
+            onClick={() => onSelectTeam(t.team_id)}
             className={`px-3 py-1.5 rounded border text-xs font-mono transition-all ${selectedTeam === t.team_id ? 'bg-amber/10 border-amber/40 text-amber' : 'border-dirt text-chalk400 hover:border-chalk400'}`}
           >
             {t.team_abbreviation}
@@ -337,12 +388,11 @@ function PitcherView({
                   {visible.map(row => (
                     <tr
                       key={row.id || row.pitcher_id}
-                      onClick={() => toggleSelectedPitcher(row)}
+                      onClick={() => onSelectPitcher(row)}
                       onKeyDown={(event) => handlePitcherRowKeyDown(event, row)}
                       tabIndex={0}
-                      aria-selected={selectedPitcher?.pitcher_id === row.pitcher_id}
                       aria-label={`Open pitcher detail for ${row.pitcher?.full_name ?? 'pitcher'}`}
-                      className={`${selectedPitcher?.pitcher_id === row.pitcher_id ? 'bg-amber/5 border-l-2 border-l-amber' : ''} focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-amber/70`}
+                      className="focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-amber/70"
                     >
                       <td className="text-chalk200 font-medium">{row.pitcher?.full_name ?? '—'}</td>
                       <td className="font-mono text-xs text-chalk400">{row.pitcher?.team_abbreviation}</td>
@@ -369,20 +419,6 @@ function PitcherView({
           )}
         </div>
 
-        {/* Detail panel — side column on desktop, full-screen overlay on mobile
-            so selecting a pitcher always reveals the detail (it was hidden
-            below the lg breakpoint before). PitcherDetail's header ✕ closes it. */}
-        {selectedPitcher && (
-          <div
-            ref={detailRegionRef}
-            tabIndex={-1}
-            role="region"
-            aria-label={`Selected pitcher detail for ${selectedPitcher.pitcher?.full_name ?? 'pitcher'}`}
-            className="fixed inset-0 z-40 overflow-y-auto bg-field/95 p-4 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-amber/70 lg:static lg:inset-auto lg:z-auto lg:w-full lg:max-w-none lg:overflow-visible lg:bg-transparent lg:p-0 2xl:w-[36rem] 2xl:shrink-0"
-          >
-            <PitcherDetail pitcherId={selectedPitcher.pitcher_id} onClose={() => setSelected(null)} />
-          </div>
-        )}
       </div>
     </>
   )

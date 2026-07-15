@@ -404,7 +404,7 @@ test('Stories filter lanes, empty states, and CTAs remain intact', () => {
   assert.equal(htmlIncludes(stressedHtml, POSITIVE_HEADLINE), false)
   assert.ok(htmlIncludes(stressedHtml, 'href="/"'))
   assert.ok(htmlIncludes(stressedHtml, 'Back to Today'))
-  assert.ok(htmlIncludes(stressedHtml, 'href="/bullpen?view=board&amp;team=MIL"'))
+  assert.ok(htmlIncludes(stressedHtml, 'href="/bullpen?view=board&amp;team=MIL&amp;source=stories"'))
   assert.ok(htmlIncludes(emptyLeagueHtml, 'No league-wide bullpen movement stands out yet.'))
   assert.ok(htmlIncludes(emptyLeagueHtml, 'Show All Stories'))
 })

@@ -8,6 +8,7 @@ import {
   getTonightIntelligence,
   signupAudience,
 } from '../../utils/api'
+import { buildTeamBoardHref } from '../../utils/evidenceLinks'
 import {
   DataThroughStamp,
   FreshnessBadge,
@@ -55,7 +56,7 @@ const SINCE_YESTERDAY_STATES = new Set([
 ])
 const SINCE_YESTERDAY_ALPHABETICAL_ORDERING = 'team_abbreviation_then_team_name'
 const SINCE_YESTERDAY_SOURCE = 'since_yesterday'
-const SINCE_YESTERDAY_TEAM_LINK_SOURCE = 'since-yesterday'
+const SINCE_YESTERDAY_TEAM_LINK_SOURCE = 'today'
 const SINCE_YESTERDAY_EXPLAINER =
   'Comparing complete, adjacent daily views only. Movement is descriptive, not predictive.'
 const SINCE_YESTERDAY_UNAVAILABLE_COPY =
@@ -233,30 +234,16 @@ function teamOptionValue(team) {
   }
 }
 
-function teamBoardHref(team, source = 'intelligence-surface') {
-  const teamParam = textValue(team?.teamAbbr) || (
-    team?.teamId != null ? String(team.teamId) : null
-  )
-  if (!teamParam) return '/bullpen?view=board'
-  const query = new URLSearchParams({
-    view: 'board',
-    team: teamParam,
-    source,
-  })
-  return `/bullpen?${query.toString()}`
+function teamBoardHref(team, source = 'today') {
+  return buildTeamBoardHref(team, { source })
 }
 
-function teamBoardHrefIfResolvable(team, source = 'intelligence-surface') {
+function teamBoardHrefIfResolvable(team, source = 'today') {
   const teamParam = textValue(team?.teamAbbr) || (
     team?.teamId != null ? String(team.teamId) : null
   )
   if (!teamParam) return null
-  const query = new URLSearchParams({
-    view: 'board',
-    team: teamParam,
-    source,
-  })
-  return `/bullpen?${query.toString()}`
+  return buildTeamBoardHref(team, { source })
 }
 
 function buildTeamsById(teams = []) {
@@ -804,7 +791,7 @@ export function getTonightCards(response, teams = [], limit = 3) {
         limitations: cleanTonightList(card?.limitations),
         teamAbbr: team?.teamAbbr || null,
         teamId: team?.teamId ?? null,
-        href: teamBoardHrefIfResolvable(team, 'intelligence-tonight'),
+        href: teamBoardHrefIfResolvable(team, 'today'),
       }
     })
     .filter(Boolean)

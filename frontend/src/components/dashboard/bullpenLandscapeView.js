@@ -1,4 +1,5 @@
 import { fmtDataDate } from './syncStatusView'
+import { buildTeamBoardHref } from '../../utils/evidenceLinks'
 
 // Neutral tones per callout column — describing situations, never "good/bad".
 const COLUMN_TONE = {
@@ -42,10 +43,8 @@ function entryLabel(entry) {
 // /bullpen?view= deep-link pattern. Prefers the abbreviation (e.g. SF) and falls
 // back to the numeric team id; source=landscape preserves navigation context.
 export function buildLandscapeTeamHref(entry) {
-  const param = entry?.team_abbreviation || (entry?.team_id != null ? String(entry.team_id) : null)
-  if (!param) return null
-  const query = new URLSearchParams({ view: 'board', team: param, source: 'landscape' })
-  return `/bullpen?${query.toString()}`
+  if (!entry?.team_abbreviation && entry?.team_id == null) return null
+  return buildTeamBoardHref(entry, { source: 'landscape' })
 }
 
 function mapEntries(list) {

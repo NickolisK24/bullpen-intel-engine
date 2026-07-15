@@ -100,9 +100,10 @@ test('preferred team helpers build the team board path and clear state', () => {
 
   savePreferredTeamPreference(teams[0], storage)
   assert.equal(
-    buildPreferredTeamHref(teams[0], 'test-source'),
-    '/bullpen?view=board&team=ACE&source=test-source',
+    buildPreferredTeamHref(teams[0], 'today'),
+    '/bullpen?view=board&team=ACE&source=today',
   )
+  assert.equal(buildPreferredTeamHref(teams[0], 'test-source'), '/bullpen?view=board&team=ACE')
   assert.equal(preferredTeamLogoUrl(teams[0]), 'https://www.mlbstatic.com/team-logos/1.svg')
   assert.equal(clearPreferredTeamPreference(storage), true)
   assert.equal(readPreferredTeamPreference(storage), null)
@@ -118,7 +119,7 @@ test('preferred team labels do not expose raw ids while metadata is loading', ()
   assert.equal(preferredTeamShortLabel(teams[0]), 'ACE')
   assert.equal(preferredTeamLabel({ team_name: '147', team_abbreviation: '147' }), 'your team')
   assert.equal(preferredTeamShortLabel({ team_name: '147', team_abbreviation: '147' }), 'Team')
-  assert.equal(buildPreferredTeamHref(idOnlyTeam, 'test-source'), '/bullpen?view=board&team=147&source=test-source')
+  assert.equal(buildPreferredTeamHref(idOnlyTeam, 'dashboard'), '/bullpen?view=board&team=147&source=dashboard')
 })
 
 test('preferred team storage refresh is limited to preference keys', () => {
