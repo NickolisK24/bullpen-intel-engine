@@ -580,10 +580,12 @@ test('team card omits unsupported rows and renders limited starter length contex
   const limitedStarterBoard = {
     ...teamOperatingBoard(),
     rotation_support_pressure: {
+      capability: 'rotation_support_pressure_v1',
       status: 'limited_read',
       games_analyzed: 1,
       games_in_window: 4,
       window_days: 7,
+      starter_outs: 14,
       starter_avg_innings: 4.8,
       bullpen_outs_required: 25,
       short_start_count: 1,
@@ -634,10 +636,12 @@ test('team card omits unsupported rows and renders limited starter length contex
   const supportedStarterBoard = {
     ...teamOperatingBoard(),
     rotation_support_pressure: {
+      capability: 'rotation_support_pressure_v1',
       status: 'moderate_pressure',
       games_in_window: 5,
       games_analyzed: 5,
       window_days: 7,
+      starter_outs: 65,
       starter_avg_innings: 4.8,
       bullpen_outs_required: 63,
       short_start_count: 3,
@@ -649,10 +653,10 @@ test('team card omits unsupported rows and renders limited starter length contex
   const supportedCompactHtml = renderCompactTeamOperatingCard(supportedStarterBoard)
 
   assert.ok(htmlIncludes(supportedHtml, 'Recent Starter Length'))
-  assert.ok(htmlIncludes(supportedHtml, 'Across the seven-day window, starters averaged 4.8 innings in 5 analyzed starts. The bullpen covered 21 innings after those starts.'))
+  assert.ok(htmlIncludes(supportedHtml, 'Across the seven-day window, starters averaged 4.1 innings per start. The bullpen covered 21 innings after those starts.'))
   assert.ok(htmlIncludes(supportedHtml, '3 of 5 analyzed starts ended before five innings.'))
   assert.ok(htmlIncludes(supportedCompactHtml, 'Recent Starter Length'))
-  assert.ok(htmlIncludes(supportedCompactHtml, 'Across the seven-day window, starters averaged 4.8 innings in 5 analyzed starts. The bullpen covered 21 innings after those starts.'))
+  assert.ok(htmlIncludes(supportedCompactHtml, 'Across the seven-day window, starters averaged 4.1 innings per start. The bullpen covered 21 innings after those starts.'))
   assert.ok(htmlIncludes(supportedCompactHtml, '3 of 5 analyzed starts ended before five innings.'))
   assert.equal(htmlIncludes(supportedHtml, 'Starter Support'), false)
   assert.equal(htmlIncludes(supportedHtml, 'moderate_pressure'), false)
@@ -664,10 +668,12 @@ test('team card renders stable starter samples as facts', () => {
   const stableBoard = {
     ...teamOperatingBoard(),
     rotation_support_pressure: {
+      capability: 'rotation_support_pressure_v1',
       status: 'supportive',
       games_in_window: 4,
       games_analyzed: 4,
       window_days: 7,
+      starter_outs: 72,
       starter_avg_innings: 6.1,
       bullpen_outs_required: 35,
       short_start_count: 0,
@@ -677,7 +683,7 @@ test('team card renders stable starter samples as facts', () => {
   const stableHtml = renderCompactTeamOperatingCard(stableBoard)
 
   assert.ok(htmlIncludes(stableHtml, 'Recent Starter Length'))
-  assert.ok(htmlIncludes(stableHtml, 'Across the seven-day window, starters averaged 6.1 innings in 4 analyzed starts. The bullpen covered 11 2/3 innings after those starts.'))
+  assert.ok(htmlIncludes(stableHtml, 'Across the seven-day window, starters averaged 6.0 innings per start. The bullpen covered 11 2/3 innings after those starts.'))
   assert.ok(htmlIncludes(stableHtml, 'None of the 4 analyzed starts ended before five innings.'))
   assert.equal(htmlIncludes(stableHtml, 'Starter Support'), false)
   assert.equal(htmlIncludes(stableHtml, 'supportive'), false)

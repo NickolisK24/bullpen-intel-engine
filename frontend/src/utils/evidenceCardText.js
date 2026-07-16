@@ -45,7 +45,7 @@ export function fitCompleteCardText(value, options) {
   const text = normalizeCardText(value)
   if (!text) return null
   if (wrapCardText(text, options)) return text
-  const sentences = text.match(/[^.!?]+[.!?]+/g) || []
+  const sentences = text.match(/(?:\d+\.\d+|[^.!?])+[.!?]+/g) || []
   for (const sentence of sentences) {
     const candidate = normalizeCardText(sentence)
     if (isCompleteCardSentence(candidate) && wrapCardText(candidate, options)) return candidate
