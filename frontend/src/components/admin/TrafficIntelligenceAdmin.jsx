@@ -33,6 +33,8 @@ const CONTEXT_DEFINITION_LABELS = {
   copied_links: 'Copied Links',
   card_downloads: 'Card Downloads',
   share_action_visitors: 'Anonymous Visitors Completing Share Actions',
+  card_version: 'Card Version',
+  story_angle: 'Story Angle',
 }
 
 function formatValue(value) {
@@ -245,6 +247,8 @@ export function TrafficReport({ report }) {
         ]} />
         <EvidenceDepthSection data={report.evidence_depth || {}} />
         <SharingSection data={report.sharing || {}} />
+        <CardVersionsSection rows={report.sharing?.actions_by_card_version} />
+        <StoryAnglesSection rows={report.sharing?.actions_by_story_angle} />
         <HealthSection data={report.measurement_health || {}} />
       </div>
       <MetricDefinitions definitions={report.definitions || {}} />
@@ -336,6 +340,8 @@ function SharingSection({ data }) {
   return <SectionShell title="Sharing"><dl className="space-y-2">{[
     ['Completed Share Actions', data.completed_share_actions],
     ['Anonymous Visitors Completing Share Actions', data.anonymous_visitors_completing_share_actions],
+    ['Story-Classified Actions', data.story_classified_actions],
+    ['Unversioned Share Actions', data.unversioned_share_actions],
     ['Team Card Actions', data.team_card_actions],
     ['Comparison Card Actions', data.comparison_card_actions],
     ['Link-Only Actions', data.link_only_actions],
@@ -343,7 +349,15 @@ function SharingSection({ data }) {
     ['Native Link Shares', data.native_link_shares],
     ['Copied Links', data.copied_links],
     ['Card Downloads', data.card_downloads],
-  ].map(([label, value]) => <div key={label} className="flex justify-between gap-3 text-sm"><dt className="text-chalk500">{label}</dt><dd className="font-mono text-chalk200">{formatValue(value)}</dd></div>)}</dl><div className="mt-4 grid gap-4 sm:grid-cols-2"><div><h3 className="font-mono text-[10px] uppercase tracking-widest text-chalk500">Share Methods</h3><CompactRanking rows={data.share_methods} labelKey="action" /></div><div><h3 className="font-mono text-[10px] uppercase tracking-widest text-chalk500">Most Shared Teams</h3><CompactRanking rows={data.most_shared_teams} labelKey="team_ref" /></div><div><h3 className="font-mono text-[10px] uppercase tracking-widest text-chalk500">Most Shared Comparison Pairs</h3><CompactRanking rows={data.most_shared_comparison_pairs} labelKey="pair_key" /></div><div><h3 className="font-mono text-[10px] uppercase tracking-widest text-chalk500">Share Actions by Surface</h3><CompactRanking rows={data.actions_by_surface} labelKey="surface" /></div><div><h3 className="font-mono text-[10px] uppercase tracking-widest text-chalk500">Share Actions by Evidence Target</h3><CompactRanking rows={data.actions_by_evidence_target} labelKey="evidence_target" /></div></div><p className="mt-4 text-xs leading-relaxed text-chalk500">Completed actions are browser-observed completions. Shared-link landing sessions remain separate and do not prove where or to whom a link was shared.</p></SectionShell>
+  ].map(([label, value]) => <div key={label} className="flex justify-between gap-3 text-sm"><dt className="text-chalk500">{label}</dt><dd className="font-mono text-chalk200">{formatValue(value)}</dd></div>)}</dl><div className="mt-4 grid gap-4 sm:grid-cols-2"><div><h3 className="font-mono text-[10px] uppercase tracking-widest text-chalk500">Share Methods</h3><CompactRanking rows={data.share_methods} labelKey="action" /></div><div><h3 className="font-mono text-[10px] uppercase tracking-widest text-chalk500">Most Shared Teams</h3><CompactRanking rows={data.most_shared_teams} labelKey="team_ref" /></div><div><h3 className="font-mono text-[10px] uppercase tracking-widest text-chalk500">Most Shared Comparison Pairs</h3><CompactRanking rows={data.most_shared_comparison_pairs} labelKey="pair_key" /></div><div><h3 className="font-mono text-[10px] uppercase tracking-widest text-chalk500">Share Actions by Surface</h3><CompactRanking rows={data.actions_by_surface} labelKey="surface" /></div><div><h3 className="font-mono text-[10px] uppercase tracking-widest text-chalk500">Share Actions by Evidence Target</h3><CompactRanking rows={data.actions_by_evidence_target} labelKey="evidence_target" /></div></div><p className="mt-4 text-xs leading-relaxed text-chalk500">Completed actions are browser-observed completions. Shared-link landing sessions remain separate and do not prove where or to whom a link was shared. Unversioned actions have no recorded card-version or story-angle context. They may come from historical or cached clients, or link-only fallbacks, and are not failures.</p></SectionShell>
+}
+
+function CardVersionsSection({ rows = [] }) {
+  return <SectionShell title="Card Versions">{rows.length ? <div className="overflow-x-auto"><table className="w-full border-collapse text-left text-sm"><caption className="sr-only">Completed actions and anonymous visitors by card version</caption><thead><tr className="border-b border-dirt font-mono text-[10px] uppercase tracking-widest text-chalk500"><th className="py-2 pr-3">Version</th><th className="px-3 py-2 text-right">Completed Actions</th><th className="py-2 pl-3 text-right">Anonymous Visitors</th></tr></thead><tbody>{rows.map(row => <tr key={row.card_version} className="border-b border-dirt/60 last:border-0"><th scope="row" className="py-2 pr-3 font-normal text-chalk400">{formatSurface(row.card_version)}</th><td className="px-3 py-2 text-right font-mono text-chalk200">{formatValue(row.completed_actions)}</td><td className="py-2 pl-3 text-right font-mono text-chalk200">{formatValue(row.anonymous_visitors)}</td></tr>)}</tbody></table></div> : <p className="text-sm text-chalk600">No versioned card actions were recorded in this period.</p>}</SectionShell>
+}
+
+function StoryAnglesSection({ rows = [] }) {
+  return <SectionShell title="Story Angles">{rows.length ? <div className="overflow-x-auto"><table className="w-full border-collapse text-left text-sm"><caption className="sr-only">Completed actions, anonymous visitors, and methods by story angle</caption><thead><tr className="border-b border-dirt font-mono text-[10px] uppercase tracking-widest text-chalk500"><th className="py-2 pr-3">Story Angle</th><th className="px-2 py-2 text-right">Completed</th><th className="px-2 py-2 text-right">Anonymous Visitors</th><th className="px-2 py-2 text-right">Native Card Shares</th><th className="px-2 py-2 text-right">Native Link Shares</th><th className="px-2 py-2 text-right">Copied Links</th><th className="py-2 pl-2 text-right">Card Downloads</th></tr></thead><tbody>{rows.map(row => <tr key={row.story_angle} className="border-b border-dirt/60 last:border-0"><th scope="row" className="py-2 pr-3 font-normal text-chalk400">{formatSurface(row.story_angle)}</th><td className="px-2 py-2 text-right font-mono text-chalk200">{formatValue(row.completed_actions)}</td><td className="px-2 py-2 text-right font-mono text-chalk200">{formatValue(row.anonymous_visitors)}</td><td className="px-2 py-2 text-right font-mono text-chalk200">{formatValue(row.native_card_shares)}</td><td className="px-2 py-2 text-right font-mono text-chalk200">{formatValue(row.native_link_shares)}</td><td className="px-2 py-2 text-right font-mono text-chalk200">{formatValue(row.copied_links)}</td><td className="py-2 pl-2 text-right font-mono text-chalk200">{formatValue(row.card_downloads)}</td></tr>)}</tbody></table></div> : <p className="text-sm text-chalk600">No story-classified card actions were recorded in this period.</p>}</SectionShell>
 }
 
 function RankedList({ rows, labelKey, valueKey }) {

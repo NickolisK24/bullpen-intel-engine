@@ -47,6 +47,8 @@ METRIC_DEFINITIONS = {
     'copied_links': 'Clipboard writes that completed successfully; shared-link landings remain a separate metric.',
     'card_downloads': 'Card downloads whose browser download initiation completed.',
     'share_action_visitors': 'Anonymous browser identities completing share actions, not verified individuals.',
+    'card_version': 'A bounded implementation identifier attached when a generated evidence-card model was available. Unversioned actions may include historical clients or link-only fallbacks.',
+    'story_angle': 'A bounded editorial category describing the evidence-led headline type on a generated card. It does not represent user intent, delivery to any person, or an outcome.',
 }
 
 
@@ -347,6 +349,14 @@ def _evidence_depth(rows):
     }
 
 
+STORY_ANGLE_METHODS = (
+    ('native_card_shares', 'native_card_share'),
+    ('native_link_shares', 'native_link_share'),
+    ('copied_links', 'copy_link'),
+    ('card_downloads', 'download_card'),
+)
+
+
 def _sharing(rows):
     action_counts = Counter(row.action for row in rows)
     card_counts = Counter(row.card_type for row in rows)
@@ -358,9 +368,31 @@ def _sharing(rows):
         for row in rows
         if row.team_a_ref and row.team_b_ref and row.team_a_ref != row.team_b_ref
     )
+
+    # Ingestion rejects half-populated pairs, so every row is either fully
+    # story-classified or fully unversioned; the two counts sum to the total.
+    story_classified = sum(1 for row in rows if row.card_version and row.story_angle)
+    unversioned = sum(1 for row in rows if row.card_version is None and row.story_angle is None)
+
+    version_counts = Counter(row.card_version for row in rows if row.card_version)
+    version_visitors = defaultdict(set)
+    for row in rows:
+        if row.card_version:
+            version_visitors[row.card_version].add(row.visitor_id)
+
+    angle_counts = Counter(row.story_angle for row in rows if row.story_angle)
+    angle_visitors = defaultdict(set)
+    angle_methods = defaultdict(Counter)
+    for row in rows:
+        if row.story_angle:
+            angle_visitors[row.story_angle].add(row.visitor_id)
+            angle_methods[row.story_angle][row.action] += 1
+
     return {
         'completed_share_actions': len(rows),
         'anonymous_visitors_completing_share_actions': len({row.visitor_id for row in rows}),
+        'story_classified_actions': story_classified,
+        'unversioned_share_actions': unversioned,
         'team_card_actions': card_counts['team'],
         'comparison_card_actions': card_counts['comparison'],
         'link_only_actions': card_counts['link_only'],
@@ -392,6 +424,23 @@ def _sharing(rows):
         'actions_by_evidence_target': [
             {'evidence_target': target, 'completed_actions': count}
             for target, count in sorted(evidence_counts.items(), key=lambda item: (-item[1], item[0]))
+        ],
+        'actions_by_card_version': [
+            {
+                'card_version': version,
+                'completed_actions': count,
+                'anonymous_visitors': len(version_visitors[version]),
+            }
+            for version, count in sorted(version_counts.items(), key=lambda item: (-item[1], item[0]))
+        ],
+        'actions_by_story_angle': [
+            {
+                'story_angle': angle,
+                'completed_actions': count,
+                'anonymous_visitors': len(angle_visitors[angle]),
+                **{key: angle_methods[angle][action] for key, action in STORY_ANGLE_METHODS},
+            }
+            for angle, count in sorted(angle_counts.items(), key=lambda item: (-item[1], item[0]))
         ],
     }
 def _measurement_health(start, end, external_rows):

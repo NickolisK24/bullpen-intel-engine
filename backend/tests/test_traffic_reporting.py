@@ -65,7 +65,7 @@ def add_share(occurred_at, visitor, session, *, action='copy_link', card_type='t
         site_host=values.pop('site_host', 'baseballos.app'),
         device_class=values.pop('device_class', 'desktop'),
         is_bot=values.pop('is_bot', False),
-        schema_version=1,
+        schema_version=values.pop('schema_version', 1),
         created_at=occurred_at,
         **values,
     )
@@ -355,6 +355,91 @@ def test_completed_sharing_aggregates_methods_subjects_surfaces_and_evidence(rep
     }
 
 
+def test_story_angle_and_card_version_aggregates_are_bounded_and_deterministic(reporting_app):
+    add_view(datetime(2026, 7, 1, 12, 0), 'baseline', 'baseline-session')
+
+    def story_share(visitor, action, card_type, angle, version, **extra):
+        add_share(
+            datetime(2026, 7, 10, 10, 0), visitor, f'{visitor}-session',
+            action=action, card_type=card_type, card_version=version, story_angle=angle,
+            schema_version=2, **extra,
+        )
+
+    # availability_constraint: four actions, two visitors, all four methods.
+    story_share('visitor-a', 'copy_link', 'team', 'availability_constraint', 'team_story_v2', team_ref='BOS')
+    story_share('visitor-a', 'native_card_share', 'team', 'availability_constraint', 'team_story_v2', team_ref='BOS')
+    story_share('visitor-b', 'download_card', 'team', 'availability_constraint', 'team_story_v2', team_ref='NYY')
+    story_share('visitor-b', 'native_link_share', 'team', 'availability_constraint', 'team_story_v2', team_ref='NYY')
+    # starter_support: one team action from a third visitor.
+    story_share('visitor-c', 'copy_link', 'team', 'starter_support', 'team_story_v2', team_ref='SEA')
+    # comparison angles: one visitor completing two comparison actions.
+    story_share(
+        'visitor-d', 'native_card_share', 'comparison', 'comparison_availability', 'comparison_story_v2',
+        surface='compare_bullpens', team_a_ref='NYY', team_b_ref='BOS',
+    )
+    story_share(
+        'visitor-d', 'copy_link', 'comparison', 'comparison_no_separation', 'comparison_story_v2',
+        surface='compare_bullpens', team_a_ref='CLE', team_b_ref='DET',
+    )
+
+    # Unversioned rows: a legacy team action and a link-only action (both null context).
+    add_share(datetime(2026, 7, 10, 11, 0), 'visitor-e', 'e-session', team_ref='BOS')
+    add_share(
+        datetime(2026, 7, 10, 11, 1), 'visitor-f', 'f-session',
+        action='native_link_share', card_type='link_only', surface='stories', team_ref='NYY',
+    )
+
+    # Excluded rows must never reach the story aggregates.
+    db.session.add(TrafficInternalVisitor(
+        visitor_id='internal-story',
+        registered_at=datetime(2026, 7, 1, 12, 0),
+        registered_by_user_id=7,
+        registration_source='authenticated_email_allowlist',
+    ))
+    story_share('internal-story', 'copy_link', 'team', 'workload_concentration', 'team_story_v2', team_ref='BOS')
+    story_share('bot-story', 'copy_link', 'team', 'repeated_usage', 'team_story_v2', team_ref='BOS', is_bot=True)
+    story_share(
+        'preview-story', 'copy_link', 'team', 'availability_depth', 'team_story_v2',
+        team_ref='BOS', site_host='preview.baseballos.app',
+    )
+    db.session.commit()
+
+    sharing = build_traffic_summary('7d', now=NOW)['sharing']
+
+    assert sharing['completed_share_actions'] == 9
+    assert sharing['story_classified_actions'] == 7
+    assert sharing['unversioned_share_actions'] == 2
+    assert sharing['story_classified_actions'] + sharing['unversioned_share_actions'] == sharing['completed_share_actions']
+
+    assert sharing['actions_by_card_version'] == [
+        {'card_version': 'team_story_v2', 'completed_actions': 5, 'anonymous_visitors': 3},
+        {'card_version': 'comparison_story_v2', 'completed_actions': 2, 'anonymous_visitors': 1},
+    ]
+
+    assert sharing['actions_by_story_angle'] == [
+        {
+            'story_angle': 'availability_constraint', 'completed_actions': 4, 'anonymous_visitors': 2,
+            'native_card_shares': 1, 'native_link_shares': 1, 'copied_links': 1, 'card_downloads': 1,
+        },
+        {
+            'story_angle': 'comparison_availability', 'completed_actions': 1, 'anonymous_visitors': 1,
+            'native_card_shares': 1, 'native_link_shares': 0, 'copied_links': 0, 'card_downloads': 0,
+        },
+        {
+            'story_angle': 'comparison_no_separation', 'completed_actions': 1, 'anonymous_visitors': 1,
+            'native_card_shares': 0, 'native_link_shares': 0, 'copied_links': 1, 'card_downloads': 0,
+        },
+        {
+            'story_angle': 'starter_support', 'completed_actions': 1, 'anonymous_visitors': 1,
+            'native_card_shares': 0, 'native_link_shares': 0, 'copied_links': 1, 'card_downloads': 0,
+        },
+    ]
+
+    # Excluded traffic never appears among the bounded aggregates.
+    seen_angles = {entry['story_angle'] for entry in sharing['actions_by_story_angle']}
+    assert seen_angles.isdisjoint({'workload_concentration', 'repeated_usage', 'availability_depth'})
+
+
 def test_internal_bot_and_noncanonical_share_actions_are_excluded(reporting_app):
     add_view(datetime(2026, 7, 1, 12, 0), 'baseline', 'baseline-session')
     db.session.add(TrafficInternalVisitor(
@@ -502,6 +587,8 @@ def test_empty_state_response_and_invalid_range(reporting_app):
     assert report['sharing'] == {
         'completed_share_actions': 0,
         'anonymous_visitors_completing_share_actions': 0,
+        'story_classified_actions': 0,
+        'unversioned_share_actions': 0,
         'team_card_actions': 0,
         'comparison_card_actions': 0,
         'link_only_actions': 0,
@@ -514,6 +601,8 @@ def test_empty_state_response_and_invalid_range(reporting_app):
         'most_shared_comparison_pairs': [],
         'actions_by_surface': [],
         'actions_by_evidence_target': [],
+        'actions_by_card_version': [],
+        'actions_by_story_angle': [],
     }
     with pytest.raises(ValueError, match='invalid_range'):
         build_traffic_summary('365d', now=NOW)

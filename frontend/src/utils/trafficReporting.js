@@ -12,6 +12,8 @@ export const TRAFFIC_CONTEXT_DEFINITIONS = Object.freeze([
   'copied_links',
   'card_downloads',
   'share_action_visitors',
+  'card_version',
+  'story_angle',
 ])
 
 function reportingUrl(range, configuredBackendOrigin = import.meta.env.VITE_API_BASE_URL) {

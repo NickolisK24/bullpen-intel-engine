@@ -57,6 +57,8 @@ function reportFixture(overrides = {}) {
       copied_links: 'Successful clipboard writes.',
       card_downloads: 'Successful browser download starts.',
       anonymous_share_visitors: 'Distinct anonymous browser identities completing an action.',
+      card_version: 'A bounded implementation identifier attached when a generated evidence-card model was available. Unversioned actions may include historical clients or link-only fallbacks.',
+      story_angle: 'A bounded editorial category describing the evidence-led headline type on a generated card. It does not represent user intent, delivery to any person, or an outcome.',
     },
     summary: {
       external_visitors: 12,
@@ -116,6 +118,8 @@ function reportFixture(overrides = {}) {
     sharing: {
       completed_share_actions: 9,
       anonymous_visitors_completing_share_actions: 4,
+      story_classified_actions: 7,
+      unversioned_share_actions: 2,
       team_card_actions: 4,
       comparison_card_actions: 3,
       link_only_actions: 2,
@@ -128,6 +132,20 @@ function reportFixture(overrides = {}) {
       most_shared_comparison_pairs: [{ pair_key: 'BOS:NYY', completed_actions: 3 }],
       actions_by_surface: [{ surface: 'bullpen_board', completed_actions: 5 }],
       actions_by_evidence_target: [{ evidence_target: 'team_read', completed_actions: 3 }],
+      actions_by_card_version: [
+        { card_version: 'team_story_v2', completed_actions: 5, anonymous_visitors: 3 },
+        { card_version: 'comparison_story_v2', completed_actions: 2, anonymous_visitors: 1 },
+      ],
+      actions_by_story_angle: [
+        {
+          story_angle: 'availability_constraint', completed_actions: 4, anonymous_visitors: 2,
+          native_card_shares: 1, native_link_shares: 1, copied_links: 1, card_downloads: 1,
+        },
+        {
+          story_angle: 'comparison_availability', completed_actions: 2, anonymous_visitors: 1,
+          native_card_shares: 1, native_link_shares: 0, copied_links: 1, card_downloads: 0,
+        },
+      ],
     },
     measurement_health: {
       measurement_started_at: '2026-07-01T15:00:00Z',
@@ -253,6 +271,64 @@ test('sharing reports completed actions separately from shared-link landings', (
     'do not prove where or to whom a link was shared',
   ]) assert.ok(html.includes(text), text)
   assert.equal(/recipient|platform/i.test(html), false)
+})
+
+test('sharing summary reports story-classified and unversioned actions honestly', () => {
+  const html = render(React.createElement(TrafficReport, { report: reportFixture() }))
+  assert.ok(html.includes('Story-Classified Actions'))
+  assert.ok(html.includes('Unversioned Share Actions'))
+  // Completed actions stay distinct from landing sessions.
+  assert.ok(html.includes('Completed actions are browser-observed completions'))
+  assert.ok(html.includes('Shared-link landing sessions remain separate'))
+  // Accurate meaning: no recorded version/angle context, not "no card model existed".
+  assert.ok(html.includes('no recorded card-version or story-angle context'))
+  assert.ok(html.includes('historical or cached clients'))
+  assert.ok(html.includes('link-only fallbacks'))
+  assert.ok(html.includes('are not failures'))
+  // The obsolete, too-absolute claim must be gone.
+  assert.equal(html.includes('carry no generated card model'), false)
+  assert.equal(html.includes('no generated card model'), false)
+  assert.equal(/unversioned actions[^<]*fail/i.test(html.replace('are not failures', '')), false)
+})
+
+test('card versions and story angles render bounded counts, visitors, and method breakdowns', () => {
+  const html = render(React.createElement(TrafficReport, { report: reportFixture() }))
+  assert.ok(html.includes('Card Versions'))
+  assert.ok(html.includes('Story Angles'))
+  // Human-readable underscore-to-label formatting.
+  assert.ok(html.includes('Team Story V2'))
+  assert.ok(html.includes('Comparison Story V2'))
+  assert.ok(html.includes('Availability Constraint'))
+  assert.ok(html.includes('Comparison Availability'))
+  // Column headers for the story-angle method breakdown.
+  for (const heading of ['Native Card Shares', 'Native Link Shares', 'Copied Links', 'Card Downloads', 'Anonymous Visitors']) {
+    assert.ok(html.includes(heading), heading)
+  }
+  // Definitions render with matching keys.
+  assert.ok(html.includes('Card Version'))
+  assert.ok(html.includes('Story Angle'))
+  assert.ok(html.includes('bounded editorial category'))
+  // Descriptive only — never engagement, virality, or winner framing.
+  for (const forbidden of [/conversion/i, /viral/i, /virality/i, /recipient/i, /best-performing/i, /engagement score/i]) {
+    assert.equal(forbidden.test(html), false, String(forbidden))
+  }
+})
+
+test('empty card version and story angle sections stay compact and zero-safe', () => {
+  const report = reportFixture({
+    sharing: {
+      ...reportFixture().sharing,
+      story_classified_actions: 0,
+      unversioned_share_actions: 0,
+      actions_by_card_version: [],
+      actions_by_story_angle: [],
+    },
+  })
+  const html = render(React.createElement(TrafficReport, { report }))
+  assert.ok(html.includes('No versioned card actions were recorded in this period.'))
+  assert.ok(html.includes('No story-classified card actions were recorded in this period.'))
+  assert.equal(html.includes('NaN'), false)
+  assert.equal(html.includes('undefined'), false)
 })
 
 test('acquisition renders session percentages and remains zero-safe', () => {

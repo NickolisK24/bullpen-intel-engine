@@ -22,6 +22,16 @@ const context = {
   data_through: '2026-07-14',
 }
 const model = { destinationUrl, fileName: 'baseballos-nyy-vs-bos-2026-07-14.png' }
+const storyModel = {
+  destinationUrl,
+  fileName: 'baseballos-nyy-vs-bos-2026-07-14.png',
+  cardVersion: 'comparison_story_v2',
+  storyAngle: 'comparison_availability',
+}
+
+function recordedBody(calls) {
+  return JSON.parse(calls.find(call => call.url).options.body)
+}
 
 function identityOptions(calls = []) {
   let id = 0
@@ -150,6 +160,157 @@ test('payload contains only bounded identity and context fields', () => {
   assert.equal('url' in payload, false)
   assert.equal('recipient' in payload, false)
   assert.equal('platform' in payload, false)
+})
+
+test('native card share attaches the card model version and story angle', async () => {
+  const calls = []
+  class FakeFile { constructor(parts, name, options) { this.name = name; this.type = options.type } }
+  const env = {
+    File: FakeFile,
+    localStorage: identityOptions().storage,
+    navigator: {
+      canShare: payload => payload.files[0].name === storyModel.fileName,
+      share: async payload => calls.push({ shared: payload }),
+    },
+  }
+  const options = identityOptions(calls)
+  options.storage = env.localStorage
+  const result = await share.shareEvidenceCard({ model: storyModel, shareText: 'observation', context }, env, options)
+  assert.equal(result.status, 'shared_card')
+  const body = recordedBody(calls)
+  assert.equal(body.action, 'native_card_share')
+  assert.equal(body.card_version, 'comparison_story_v2')
+  assert.equal(body.story_angle, 'comparison_availability')
+})
+
+test('native-link fallback from a generated card still carries the story fields', async () => {
+  const calls = []
+  const env = {
+    File: class {},
+    localStorage: identityOptions().storage,
+    navigator: { canShare: () => false, share: async payload => calls.push({ shared: payload }) },
+  }
+  const options = identityOptions(calls)
+  options.storage = env.localStorage
+  const result = await share.shareEvidenceCard({ model: storyModel, context }, env, options)
+  assert.equal(result.status, 'shared_link')
+  const body = recordedBody(calls)
+  assert.equal(body.action, 'native_link_share')
+  assert.equal(body.card_version, 'comparison_story_v2')
+  assert.equal(body.story_angle, 'comparison_availability')
+})
+
+test('copy-link and card download from a generated card carry the story fields', async () => {
+  const copyCalls = []
+  const storage = identityOptions().storage
+  const copyResult = await share.copyExactLink(
+    { destinationUrl, context, cardModel: storyModel },
+    { localStorage: storage, navigator: { clipboard: { writeText: async () => copyCalls.push('copied') } } },
+    { ...identityOptions(copyCalls), storage },
+  )
+  assert.equal(copyResult.status, 'copied')
+  const copyBody = recordedBody(copyCalls)
+  assert.equal(copyBody.action, 'copy_link')
+  assert.equal(copyBody.card_version, 'comparison_story_v2')
+  assert.equal(copyBody.story_angle, 'comparison_availability')
+
+  const downloadCalls = []
+  const downloadResult = await share.downloadEvidenceCard(
+    { model: storyModel, context },
+    {
+      localStorage: storage,
+      document: { createElement: () => ({ click: () => {} }) },
+      URL: { createObjectURL: () => 'blob:png', revokeObjectURL: () => {} },
+    },
+    { ...identityOptions(downloadCalls), storage },
+  )
+  assert.equal(downloadResult.status, 'downloaded')
+  const downloadBody = recordedBody(downloadCalls)
+  assert.equal(downloadBody.action, 'download_card')
+  assert.equal(downloadBody.card_version, 'comparison_story_v2')
+  assert.equal(downloadBody.story_angle, 'comparison_availability')
+})
+
+test('the card model overrides conflicting caller-supplied story context', async () => {
+  const calls = []
+  const storage = identityOptions().storage
+  const spoofedContext = { ...context, card_version: 'team_story_v2', story_angle: 'starter_support' }
+  await share.copyExactLink(
+    { destinationUrl, context: spoofedContext, cardModel: storyModel },
+    { localStorage: storage, navigator: { clipboard: { writeText: async () => {} } } },
+    { ...identityOptions(calls), storage },
+  )
+  const body = recordedBody(calls)
+  assert.equal(body.card_version, 'comparison_story_v2')
+  assert.equal(body.story_angle, 'comparison_availability')
+})
+
+test('withCardStoryContext returns a new object, omits fields without a model, and never mutates inputs', () => {
+  const base = { surface: 'bullpen_board', cardType: 'team', card_version: 'stale', story_angle: 'stale' }
+  const withModel = share.withCardStoryContext(base, { cardVersion: 'team_story_v2', storyAngle: 'availability_constraint' })
+  assert.equal(withModel.card_version, 'team_story_v2')
+  assert.equal(withModel.story_angle, 'availability_constraint')
+  assert.notEqual(withModel, base)
+  // Caller-supplied fields are stripped when there is no model.
+  const withoutModel = share.withCardStoryContext(base, null)
+  assert.equal('card_version' in withoutModel, false)
+  assert.equal('story_angle' in withoutModel, false)
+  // A model missing one half of the pair attaches neither.
+  const partial = share.withCardStoryContext(base, { cardVersion: 'team_story_v2' })
+  assert.equal('card_version' in partial, false)
+  assert.equal('story_angle' in partial, false)
+  // Inputs are not mutated.
+  assert.equal(base.card_version, 'stale')
+})
+
+test('no card model means the story fields are omitted from the payload', () => {
+  const withModel = share.buildShareActionPayload(
+    share.withCardStoryContext(context, storyModel), 'copy_link', identityOptions(),
+  )
+  assert.equal(withModel.card_version, 'comparison_story_v2')
+  assert.equal(withModel.story_angle, 'comparison_availability')
+  const withoutModel = share.buildShareActionPayload(
+    share.withCardStoryContext(context, null), 'copy_link', identityOptions(),
+  )
+  assert.equal('card_version' in withoutModel, false)
+  assert.equal('story_angle' in withoutModel, false)
+})
+
+test('story-context payloads still exclude URL, headline, receipts, share text, recipient, and platform', () => {
+  const payload = share.buildShareActionPayload(
+    share.withCardStoryContext({
+      ...context,
+      headline: 'NYY HAVE MORE',
+      supportingLine: 'context',
+      receipts: ['a', 'b'],
+      shareText: 'text',
+      destinationUrl,
+      recipient: 'fan@example.com',
+      platform: 'social',
+    }, storyModel),
+    'copy_link',
+    identityOptions(),
+  )
+  assert.deepEqual(Object.keys(payload).sort(), [
+    'action', 'card_type', 'card_version', 'data_through', 'event_id', 'evidence_target',
+    'session_id', 'site_host', 'story_angle', 'surface', 'team_a_ref', 'team_b_ref', 'visitor_id',
+  ])
+  for (const key of ['headline', 'supportingLine', 'receipts', 'shareText', 'destinationUrl', 'url', 'recipient', 'platform']) {
+    assert.equal(key in payload, false, key)
+  }
+})
+
+test('cancelled and failed story-card actions still record nothing', async () => {
+  const cancelledCalls = []
+  const error = new Error('cancelled')
+  error.name = 'AbortError'
+  const cancelled = await share.shareEvidenceCard(
+    { model: storyModel, context },
+    { File: class {}, localStorage: identityOptions().storage, navigator: { canShare: () => true, share: async () => { throw error } } },
+    identityOptions(cancelledCalls),
+  )
+  assert.equal(cancelled.status, 'cancelled')
+  assert.equal(cancelledCalls.length, 0)
 })
 
 test('share menu keeps one in-flight action and exposes accessibility behavior', async () => {

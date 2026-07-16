@@ -17,6 +17,8 @@ class TrafficShareAction(db.Model):
             'ix_traffic_share_actions_occurred_comparison_pair',
             'occurred_at', 'team_a_ref', 'team_b_ref',
         ),
+        db.Index('ix_traffic_share_actions_occurred_card_version', 'occurred_at', 'card_version'),
+        db.Index('ix_traffic_share_actions_occurred_story_angle', 'occurred_at', 'story_angle'),
     )
 
     id = db.Column(db.Integer, primary_key=True)
@@ -31,6 +33,8 @@ class TrafficShareAction(db.Model):
     team_a_ref = db.Column(db.String(16))
     team_b_ref = db.Column(db.String(16))
     evidence_target = db.Column(db.String(32))
+    card_version = db.Column(db.String(32))
+    story_angle = db.Column(db.String(48))
     data_through = db.Column(db.Date)
     site_host = db.Column(db.String(253), nullable=False)
     device_class = db.Column(db.String(16), nullable=False, default='unknown')
