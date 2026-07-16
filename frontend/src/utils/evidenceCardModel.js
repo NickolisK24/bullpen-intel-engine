@@ -12,8 +12,24 @@ import {
 
 export const EVIDENCE_CARD_ORIGIN = 'https://baseballos.app'
 const INTERNAL_TERMS = /\b(endpoint|backend|snapshot|governance|threshold|model score|ranking_applied|selection_made|reason_codes?|private medical|bullpen phone)\b/i
-const UNSAFE_COMPARISON_TERMS = /\b(winner|wins?|advantage|better|best|rank(?:ing)?|score|edge|pick|prediction)\b/i
+const UNSAFE_COMPARISON_TERMS = /\b(winner|wins?|advantage|better|best|stronger|rank(?:ing)?|score|edge|pick|prediction|likely|should)\b/i
 const LOW_VALUE_ZERO = /^(?:0 of \d+ .*|no relievers? (?:are )?(?:marked|classified) (?:unavailable|on watch))\.?$/i
+const TEAM_RECEIPT_PRIORITY = new Map([
+  ['availability', 0],
+  ['workload_concentration', 1],
+  ['recent_work_volume', 2],
+  ['repeated_appearances', 3],
+  ['clean_options', 4],
+  ['roster_context', 5],
+  ['starter_support', 6],
+  ['other', 7],
+])
+const COMPARISON_DIMENSION_PRIORITY = new Map([
+  ['Available', 0],
+  ['Limited', 1],
+  ['Unavailable', 2],
+  ['On Watch', 3],
+])
 
 function cleanText(value, limit) {
   const text = normalizeCardText(value)
@@ -50,21 +66,122 @@ function fitSafeCardText(value, options) {
   return text && !INTERNAL_TERMS.test(text) ? fitCompleteCardText(text, options) : null
 }
 
-export function selectTeamReceipts(evidence) {
-  const seen = new Set()
-  const receipts = []
-  for (const item of Array.isArray(evidence) ? evidence : []) {
-    const raw = normalizeCardText(item)
-    const text = !INTERNAL_TERMS.test(raw)
-      ? fitCompleteCardText(raw, { maxWidth: 420, maxLines: 2, fontSize: 18 })
-      : null
-    const key = text?.toLowerCase()
-    if (!text || LOW_VALUE_ZERO.test(text) || seen.has(key)) continue
-    seen.add(key)
-    receipts.push(text)
-    if (receipts.length === 3) break
+function comparisonCountPhrase(label, count) {
+  const singular = count === 1
+  if (label === 'On Watch') return `${count} ${singular ? 'arm' : 'arms'} On Watch`
+  return `${count} ${label.toLowerCase()} ${singular ? 'arm' : 'arms'}`
+}
+
+function comparisonDimensionSentence(row, labelA, labelB) {
+  const aLeads = row.valueA > row.valueB
+  const leaderLabel = aLeads ? labelA : labelB
+  const otherLabel = aLeads ? labelB : labelA
+  const leaderValue = aLeads ? row.valueA : row.valueB
+  const otherValue = aLeads ? row.valueB : row.valueA
+  return `The ${leaderLabel} have ${comparisonCountPhrase(row.label, leaderValue)}; the ${otherLabel} have ${otherValue}.`
+}
+
+export function rankComparisonRows(rows) {
+  return (Array.isArray(rows) ? rows : [])
+    .filter(row => COMPARISON_DIMENSION_PRIORITY.has(row?.label))
+    .map(row => ({
+      ...row,
+      valueA: Number(row.valueA),
+      valueB: Number(row.valueB),
+      difference: Math.abs(Number(row.valueA) - Number(row.valueB)),
+    }))
+    .filter(row => Number.isFinite(row.valueA) && Number.isFinite(row.valueB))
+    .sort((left, right) => (
+      Number(left.difference === 0) - Number(right.difference === 0)
+      || right.difference - left.difference
+      || COMPARISON_DIMENSION_PRIORITY.get(left.label) - COMPARISON_DIMENSION_PRIORITY.get(right.label)
+    ))
+}
+
+export function comparisonObservationCandidates(rows, labelA, labelB) {
+  const differences = rankComparisonRows(rows).filter(row => row.difference > 0)
+  if (differences.length === 0) {
+    return ['The bullpens match across every availability group in the current read.']
   }
-  return receipts
+
+  const primary = comparisonDimensionSentence(differences[0], labelA, labelB)
+  if (differences.length === 1) return [primary]
+
+  const secondary = comparisonDimensionSentence(differences[1], labelA, labelB)
+  return [`${primary} ${secondary}`, primary]
+}
+
+export function classifyTeamReceiptFamily(receipt) {
+  const text = normalizeCardText(receipt).toLowerCase()
+  if (!text) return 'other'
+  if (/\b(?:injured list|inactive or unavailable|unconfirmed roster status|roster status)\b/.test(text)) return 'roster_context'
+  if (/\b(?:starters? averaged|analyzed starts?|starter-length|bullpen covered)\b/.test(text)) return 'starter_support'
+  if (/\b(?:classified available|relievers? (?:are|is) available from the latest completed workload data)\b/.test(text)) return 'availability'
+  if (/\b(?:clean options?|cleanly available)\b/.test(text)) return 'clean_options'
+  if (/\b(?:consecutive days|appeared at least twice|worked at least twice|repeated appearances?)\b/.test(text)) return 'repeated_appearances'
+  if (/\b(?:workload (?:is )?concentrated|worked yesterday|worked today|recent work)\b/.test(text)) return 'workload_concentration'
+  if (/\b(?:appearances? in the recent window|recent relief work|relief innings|innings in relief)\b/.test(text)) return 'recent_work_volume'
+  return 'other'
+}
+
+function availabilityPrecision(text) {
+  if (/\b\d+ of \d+ active relievers? are classified Available\./i.test(text)) return 3
+  if (/\b\d+ of \d+ relievers? are classified Available\./i.test(text)) return 2
+  if (/\brelievers? (?:are|is) available from the latest completed workload data\./i.test(text)) return 1
+  return 0
+}
+
+function formatTeamReceipt(receipt, family) {
+  let text = receipt
+  if (family === 'availability') {
+    text = text.replace(/^(\d+ of \d+) relievers?( are classified Available\.)$/i, '$1 active relievers$2')
+  }
+  if (family === 'roster_context' && !/^Roster context:/i.test(text)) {
+    text = `Roster context: ${text}`
+  }
+  return text
+}
+
+export function selectTeamReceipts(evidence) {
+  const candidates = (Array.isArray(evidence) ? evidence : [])
+    .map((item, index) => {
+      const raw = normalizeCardText(item)
+      const family = classifyTeamReceiptFamily(raw)
+      const formatted = formatTeamReceipt(raw, family)
+      const text = !INTERNAL_TERMS.test(formatted) && !LOW_VALUE_ZERO.test(formatted)
+        ? fitCompleteCardText(formatted, { maxWidth: 420, maxLines: 2, fontSize: 18 })
+        : null
+      return { text, family, index, precision: availabilityPrecision(formatted) }
+    })
+    .filter(candidate => candidate.text)
+
+  const bestByFamily = new Map()
+  for (const candidate of candidates) {
+    const familyKey = candidate.family === 'other'
+      ? `other:${candidate.text.toLowerCase()}`
+      : candidate.family
+    const current = bestByFamily.get(familyKey)
+    if (!current || candidate.precision > current.precision) bestByFamily.set(familyKey, candidate)
+  }
+
+  const distinct = [...bestByFamily.values()]
+    .sort((left, right) => (
+      TEAM_RECEIPT_PRIORITY.get(left.family) - TEAM_RECEIPT_PRIORITY.get(right.family)
+      || left.index - right.index
+    ))
+  const selected = []
+  const takeFirst = families => {
+    const match = distinct.find(candidate => families.includes(candidate.family) && !selected.includes(candidate))
+    if (match) selected.push(match)
+  }
+  takeFirst(['availability'])
+  takeFirst(['workload_concentration', 'recent_work_volume', 'repeated_appearances'])
+  takeFirst(['roster_context', 'starter_support'])
+  for (const candidate of distinct) {
+    if (selected.length === 3) break
+    if (!selected.includes(candidate)) selected.push(candidate)
+  }
+  return selected.map(candidate => candidate.text)
 }
 
 export function buildTeamEvidenceCard(readModel, { destinationUrl = null } = {}) {
@@ -143,9 +260,10 @@ export function buildComparisonEvidenceCard(view, { teamA, teamB, destinationUrl
     maxLines: 6,
     fontSize: 20,
   }))
+  const rankedStatements = comparisonObservationCandidates(view?.snapshot, teamAName, teamBName)
   const observation = selectCompleteCardStatement({
-    preferred: statements[0],
-    alternatives: statements.slice(1),
+    preferred: rankedStatements[0],
+    alternatives: [...rankedStatements.slice(1), ...statements],
     summary: !summaryUnsafe ? summaryStatement : null,
     fallback: 'The current side-by-side counts are shown at left.',
     fit: observationFits,

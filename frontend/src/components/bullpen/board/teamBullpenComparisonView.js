@@ -1,6 +1,7 @@
 import { formatConfidence, getAvailabilityBadgeView, getAvailabilityStatusLabel } from '../availabilityView'
 import { fmtDataDate, fmtSyncDate } from '../../dashboard/syncStatusView'
 import { getDataProvenance } from './tonightsBullpenBoardView'
+import { comparisonObservationCandidates } from '../../../utils/evidenceCardModel'
 
 // Snapshot rows shown in the side-by-side table, in the board's reading order.
 // Counts are descriptive only — no scores, ranks, or grades.
@@ -94,6 +95,7 @@ export function getComparisonView(payload) {
     leaderTone: LEADER_TONE[o.leader] || LEADER_TONE.tie,
     reasons: Array.isArray(o.reasons) ? o.reasons.map(displayPublicCopy) : [],
   }))
+  const featuredObservation = comparisonObservationCandidates(snapshot, labelA, labelB)[0]
 
   const confidence = comparison.confidence || 'high'
 
@@ -105,9 +107,10 @@ export function getComparisonView(payload) {
     metricsB,
     snapshot,
     observations,
+    featuredObservation,
     summary: {
       state: comparison.summary?.state || 'differ',
-      statement: displayPublicCopy(comparison.summary?.statement) || null,
+      statement: featuredObservation || displayPublicCopy(comparison.summary?.statement) || null,
       reasons: Array.isArray(comparison.summary?.reasons) ? comparison.summary.reasons.map(displayPublicCopy) : [],
     },
     confidence,
