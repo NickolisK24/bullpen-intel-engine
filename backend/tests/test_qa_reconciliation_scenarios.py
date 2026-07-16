@@ -47,7 +47,7 @@ from utils.db import db
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 MIGRATIONS_DIR = REPO_ROOT / 'backend/migrations/versions'
-EXPECTED_ALEMBIC_HEAD = 'c4f8a2d6e9b3'
+EXPECTED_ALEMBIC_HEAD = 'd7e4f1a8c2b6'
 FORBIDDEN_HEADLINE_TERMS = (
     'headline',
     'read_label',
@@ -360,6 +360,8 @@ def test_phase0e_switches_and_legacy_public_files_not_modified():
         'frontend/src/components/stories/Stories.jsx',
         'frontend/src/utils/adminDateTime.js',
         'frontend/src/utils/evidenceCardModel.js',
+        'frontend/src/utils/evidenceCardStory.js',
+        'frontend/tests/canonicalEvidenceLinks.test.mjs',
         'frontend/src/utils/evidenceCardRenderer.js',
         'frontend/src/utils/evidenceCardText.js',
         'frontend/src/utils/shareActions.js',
@@ -372,6 +374,7 @@ def test_phase0e_switches_and_legacy_public_files_not_modified():
         'backend/migrations/versions/a9e4c7d2f1b6_add_trusted_external_traffic.py',
         'backend/migrations/versions/b2e7c4a9d1f3_add_traffic_evidence_context.py',
         'backend/migrations/versions/c4f8a2d6e9b3_add_traffic_share_actions.py',
+        'backend/migrations/versions/d7e4f1a8c2b6_add_share_story_context.py',
         'frontend/src/components/TrafficRouteObserver.jsx',
         'frontend/src/components/admin/TrafficIntelligenceAdmin.jsx',
         'frontend/src/utils/trafficMeasurement.js',

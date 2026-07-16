@@ -65,10 +65,10 @@ export default function EvidenceShareMenu({
       let result
       if (action === 'share') {
         result = linkOnly
-          ? await shareExactLink({ destinationUrl: shareDestination, shareText: nativeShareText, context })
+          ? await shareExactLink({ destinationUrl: shareDestination, shareText: nativeShareText, context, cardModel })
           : await shareEvidenceCard({ model: cardModel, shareText: nativeShareText, context })
       } else if (action === 'copy') {
-        result = await copyExactLink({ destinationUrl: shareDestination, context })
+        result = await copyExactLink({ destinationUrl: shareDestination, context, cardModel })
       } else {
         result = await downloadEvidenceCard({ model: cardModel, context })
       }

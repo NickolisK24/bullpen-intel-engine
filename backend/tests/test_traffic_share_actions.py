@@ -13,7 +13,12 @@ from api.traffic import traffic_bp
 from models.traffic_internal_visitor import TrafficInternalVisitor
 from models.traffic_page_view import TrafficPageView
 from models.traffic_share_action import TrafficShareAction
-from services.traffic_share_actions import normalize_share_action, record_share_action
+from services.traffic_share_actions import (
+    COMPARISON_STORY_ANGLES,
+    TEAM_STORY_ANGLES,
+    normalize_share_action,
+    record_share_action,
+)
 from utils.db import db
 
 
@@ -21,6 +26,17 @@ MIGRATION_PATH = (
     Path(__file__).resolve().parents[1]
     / 'migrations' / 'versions' / 'c4f8a2d6e9b3_add_traffic_share_actions.py'
 )
+STORY_MIGRATION_PATH = (
+    Path(__file__).resolve().parents[1]
+    / 'migrations' / 'versions' / 'd7e4f1a8c2b6_add_share_story_context.py'
+)
+
+
+def _load_migration(path):
+    spec = importlib.util.spec_from_file_location(path.stem, path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 @pytest.fixture
@@ -58,6 +74,16 @@ def payload(**changes):
     return result
 
 
+def comparison_payload(**changes):
+    body = payload(
+        surface='compare_bullpens', card_type='comparison', action='native_card_share',
+        team_ref=None, team_a_ref='NYY', team_b_ref='BOS',
+        evidence_target='comparison_evidence', data_through=None,
+    )
+    body.update(changes)
+    return body
+
+
 def test_valid_team_action_and_duplicate_event_are_idempotent(traffic_app):
     body = payload()
     client = traffic_app.test_client()
@@ -67,7 +93,9 @@ def test_valid_team_action_and_duplicate_event_are_idempotent(traffic_app):
         row = TrafficShareAction.query.one()
         assert row.team_ref == 'BOS'
         assert row.data_through.isoformat() == '2026-07-15'
-        assert row.schema_version == 1
+        assert row.schema_version == 2
+        assert row.card_version is None
+        assert row.story_angle is None
 
 
 def test_valid_comparison_preserves_visible_order():
@@ -169,3 +197,157 @@ def test_context_migration_creates_share_table_without_touching_page_views():
 
         migration.downgrade()
         assert 'traffic_share_actions' not in sa.inspect(connection).get_table_names()
+
+
+def test_valid_team_story_v2_action_normalizes_and_versions(traffic_app):
+    body = payload(card_version='team_story_v2', story_angle='availability_constraint')
+    client = traffic_app.test_client()
+    assert client.post('/api/traffic/share-action', json=body).status_code == 202
+    with traffic_app.app_context():
+        row = TrafficShareAction.query.one()
+        assert row.card_version == 'team_story_v2'
+        assert row.story_angle == 'availability_constraint'
+        assert row.schema_version == 2
+
+
+@pytest.mark.parametrize('story_angle', sorted(TEAM_STORY_ANGLES))
+def test_every_team_story_angle_is_accepted_with_team_version(story_angle):
+    normalized = normalize_share_action(payload(
+        card_version='team_story_v2', story_angle=story_angle,
+    ))
+    assert normalized['card_version'] == 'team_story_v2'
+    assert normalized['story_angle'] == story_angle
+
+
+def test_valid_comparison_story_v2_action():
+    normalized = normalize_share_action(comparison_payload(
+        card_version='comparison_story_v2', story_angle='comparison_availability',
+    ))
+    assert normalized['card_version'] == 'comparison_story_v2'
+    assert normalized['story_angle'] == 'comparison_availability'
+    assert normalized['schema_version'] == 2
+
+
+@pytest.mark.parametrize('story_angle', sorted(COMPARISON_STORY_ANGLES))
+def test_every_comparison_story_angle_is_accepted_with_comparison_version(story_angle):
+    normalized = normalize_share_action(comparison_payload(
+        card_version='comparison_story_v2', story_angle=story_angle,
+    ))
+    assert normalized['card_version'] == 'comparison_story_v2'
+    assert normalized['story_angle'] == story_angle
+
+
+def test_story_context_values_are_normalized_to_lowercase():
+    normalized = normalize_share_action(payload(
+        card_version='TEAM_STORY_V2', story_angle='Availability_Constraint',
+    ))
+    assert normalized['card_version'] == 'team_story_v2'
+    assert normalized['story_angle'] == 'availability_constraint'
+
+
+def test_team_and_comparison_actions_without_story_fields_remain_accepted():
+    team = normalize_share_action(payload())
+    assert team['card_version'] is None
+    assert team['story_angle'] is None
+    comparison = normalize_share_action(comparison_payload())
+    assert comparison['card_version'] is None
+    assert comparison['story_angle'] is None
+
+
+def test_link_only_action_without_story_fields_remains_accepted():
+    normalized = normalize_share_action(payload(
+        surface='stories', card_type='link_only', action='native_link_share',
+        evidence_target='team_read', data_through=None,
+    ))
+    assert normalized['card_version'] is None
+    assert normalized['story_angle'] is None
+
+
+@pytest.mark.parametrize('changes', [
+    # Story metadata on a link-only action.
+    {'surface': 'stories', 'card_type': 'link_only', 'action': 'native_link_share',
+     'team_ref': 'BOS', 'card_version': 'team_story_v2', 'story_angle': 'availability_constraint'},
+    # Unknown card version / unknown story angle.
+    {'card_version': 'team_story_v3', 'story_angle': 'availability_constraint'},
+    {'card_version': 'team_story_v2', 'story_angle': 'made_up_angle'},
+    # Team version paired with a comparison angle, and the reverse.
+    {'card_version': 'team_story_v2', 'story_angle': 'comparison_availability'},
+    # One-sided version/angle payloads.
+    {'card_version': 'team_story_v2'},
+    {'story_angle': 'availability_constraint'},
+])
+def test_invalid_story_context_combinations_are_rejected(changes):
+    assert normalize_share_action(payload(**changes)) is None
+
+
+@pytest.mark.parametrize('changes', [
+    {'card_version': 'comparison_story_v2', 'story_angle': 'availability_constraint'},
+    {'card_version': 'team_story_v2', 'story_angle': 'comparison_availability'},
+    {'card_version': 'comparison_story_v2'},
+    {'story_angle': 'comparison_availability'},
+])
+def test_invalid_comparison_story_context_combinations_are_rejected(changes):
+    assert normalize_share_action(comparison_payload(**changes)) is None
+
+
+def test_team_action_cannot_claim_the_comparison_card_version():
+    # Correct card type but the wrong bounded version for it.
+    assert normalize_share_action(payload(
+        card_version='comparison_story_v2', story_angle='comparison_availability',
+    )) is None
+
+
+def test_story_context_migration_adds_nullable_columns_and_preserves_legacy_rows():
+    engine = sa.create_engine('sqlite:///:memory:')
+    base = _load_migration(MIGRATION_PATH)
+    story_migration = _load_migration(STORY_MIGRATION_PATH)
+
+    with engine.begin() as connection:
+        base.op = Operations(MigrationContext.configure(connection))
+        base.upgrade()
+        connection.execute(sa.text(
+            'INSERT INTO traffic_share_actions '
+            '(event_id, visitor_id, session_id, occurred_at, surface, card_type, action, '
+            'site_host, device_class, is_bot, schema_version, created_at) VALUES '
+            "('evt-legacy', 'vis-legacy', 'ses-legacy', '2026-07-15 12:00:00', 'bullpen_board', "
+            "'team', 'copy_link', 'baseballos.app', 'desktop', 0, 1, '2026-07-15 12:00:00')"
+        ))
+
+        story_migration.op = Operations(MigrationContext.configure(connection))
+        story_migration.upgrade()
+
+        inspector = sa.inspect(connection)
+        columns = {column['name']: column for column in inspector.get_columns('traffic_share_actions')}
+        assert 'card_version' in columns
+        assert 'story_angle' in columns
+        assert columns['card_version']['nullable'] is True
+        assert columns['story_angle']['nullable'] is True
+
+        legacy = connection.execute(sa.text(
+            'SELECT event_id, card_version, story_angle, schema_version FROM traffic_share_actions'
+        )).one()
+        assert legacy.event_id == 'evt-legacy'
+        assert legacy.card_version is None
+        assert legacy.story_angle is None
+        assert legacy.schema_version == 1
+
+        indexes = {index['name'] for index in inspector.get_indexes('traffic_share_actions')}
+        assert 'ix_traffic_share_actions_occurred_card_version' in indexes
+        assert 'ix_traffic_share_actions_occurred_story_angle' in indexes
+
+        story_migration.downgrade()
+
+        after = sa.inspect(connection)
+        assert 'traffic_share_actions' in after.get_table_names()
+        columns_after = {column['name'] for column in after.get_columns('traffic_share_actions')}
+        assert 'card_version' not in columns_after
+        assert 'story_angle' not in columns_after
+        remaining = connection.execute(
+            sa.text('SELECT event_id FROM traffic_share_actions')
+        ).scalar_one()
+        assert remaining == 'evt-legacy'
+        indexes_after = {index['name'] for index in after.get_indexes('traffic_share_actions')}
+        assert 'ix_traffic_share_actions_occurred_card_version' not in indexes_after
+        assert 'ix_traffic_share_actions_occurred_story_angle' not in indexes_after
+        assert 'ix_traffic_share_actions_event_id' in indexes_after
+        assert 'ix_traffic_share_actions_occurred_action' in indexes_after

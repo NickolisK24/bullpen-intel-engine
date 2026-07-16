@@ -50,6 +50,23 @@ export function buildExactShareUrl(
   }
 }
 
+// Combine the bounded caller context with the generated card model's story
+// metadata. The card model is the authority: it strips any caller-supplied
+// story fields and, when both are present, attaches its own bounded pair.
+// Returns a new object and never mutates its arguments.
+export function withCardStoryContext(context, cardModel = null) {
+  const merged = { ...(context || {}) }
+  delete merged.card_version
+  delete merged.story_angle
+  const cardVersion = cardModel?.cardVersion
+  const storyAngle = cardModel?.storyAngle
+  if (cardVersion && storyAngle) {
+    merged.card_version = cardVersion
+    merged.story_angle = storyAngle
+  }
+  return merged
+}
+
 export function buildShareActionPayload(context, action, {
   storage,
   now = Date.now(),
@@ -68,7 +85,10 @@ export function buildShareActionPayload(context, action, {
     action,
     site_host: TRAFFIC_CANONICAL_HOST,
   }
-  for (const key of ['team_ref', 'team_a_ref', 'team_b_ref', 'evidence_target', 'data_through']) {
+  for (const key of [
+    'team_ref', 'team_a_ref', 'team_b_ref', 'evidence_target', 'data_through',
+    'card_version', 'story_angle',
+  ]) {
     if (context[key] != null && context[key] !== '') payload[key] = context[key]
   }
   return payload
@@ -132,32 +152,34 @@ async function measure(context, action, options) {
   await recordCompletedShareAction(context, action, options)
 }
 
-export async function copyExactLink({ destinationUrl, context }, env = globalThis, options = {}) {
+export async function copyExactLink({ destinationUrl, context, cardModel = null }, env = globalThis, options = {}) {
   const url = buildExactShareUrl(destinationUrl)
   if (!url) return { status: 'unavailable' }
+  const storyContext = withCardStoryContext(context, cardModel)
   try {
     if (!await copyText(url, env)) return { status: 'unavailable', url }
-    await measure(context, 'copy_link', { ...options, storage: options.storage || env.localStorage })
+    await measure(storyContext, 'copy_link', { ...options, storage: options.storage || env.localStorage })
     return { status: 'copied', url }
   } catch {
     return { status: 'unavailable', url }
   }
 }
 
-export async function shareExactLink({ destinationUrl, shareText, context }, env = globalThis, options = {}) {
+export async function shareExactLink({ destinationUrl, shareText, context, cardModel = null }, env = globalThis, options = {}) {
   const url = buildExactShareUrl(destinationUrl)
   if (!url) return { status: 'unavailable' }
+  const storyContext = withCardStoryContext(context, cardModel)
   if (typeof env?.navigator?.share === 'function') {
     try {
       await env.navigator.share({ text: shareText, url })
-      await measure(context, 'native_link_share', { ...options, storage: options.storage || env.localStorage })
+      await measure(storyContext, 'native_link_share', { ...options, storage: options.storage || env.localStorage })
       return { status: 'shared_link', url }
     } catch (error) {
       if (isCancel(error)) return { status: 'cancelled', url }
       return { status: 'unavailable', url }
     }
   }
-  return copyExactLink({ destinationUrl, context }, env, options)
+  return copyExactLink({ destinationUrl, context, cardModel }, env, options)
 }
 
 export async function shareEvidenceCard({ model, shareText, context }, env = globalThis, options = {}) {
@@ -172,6 +194,7 @@ export async function shareEvidenceCard({ model, shareText, context }, env = glo
   const cardUrl = buildExactShareUrl(model.destinationUrl, PUBLIC_SHARE_ORIGIN, 'share_card')
   const linkUrl = buildExactShareUrl(model.destinationUrl)
   if (!cardUrl || !linkUrl) return { status: 'unavailable' }
+  const storyContext = withCardStoryContext(context, model)
   const FileCtor = env?.File
   const nav = env?.navigator
   let file = null
@@ -193,7 +216,7 @@ export async function shareEvidenceCard({ model, shareText, context }, env = glo
     if (canShareFiles) {
       try {
         await nav.share({ files: [file], text: shareText, url: cardUrl })
-        await measure(context, 'native_card_share', { ...options, storage: options.storage || env.localStorage })
+        await measure(storyContext, 'native_card_share', { ...options, storage: options.storage || env.localStorage })
         return { status: 'shared_card', url: cardUrl }
       } catch (error) {
         return { status: isCancel(error) ? 'cancelled' : 'unavailable', url: cardUrl }
@@ -204,13 +227,13 @@ export async function shareEvidenceCard({ model, shareText, context }, env = glo
   if (typeof nav?.share === 'function') {
     try {
       await nav.share({ text: shareText, url: linkUrl })
-      await measure(context, 'native_link_share', { ...options, storage: options.storage || env.localStorage })
+      await measure(storyContext, 'native_link_share', { ...options, storage: options.storage || env.localStorage })
       return { status: 'shared_link', url: linkUrl }
     } catch (error) {
       return { status: isCancel(error) ? 'cancelled' : 'unavailable', url: linkUrl }
     }
   }
-  return copyExactLink({ destinationUrl: model.destinationUrl, context }, env, options)
+  return copyExactLink({ destinationUrl: model.destinationUrl, context, cardModel: model }, env, options)
 }
 
 export async function downloadEvidenceCard({ model, context }, env = globalThis, options = {}) {
@@ -224,6 +247,7 @@ export async function downloadEvidenceCard({ model, context }, env = globalThis,
   const documentRef = env?.document
   const urlApi = env?.URL
   if (!documentRef?.createElement || !urlApi?.createObjectURL) return { status: 'unavailable' }
+  const storyContext = withCardStoryContext(context, model)
   const objectUrl = urlApi.createObjectURL(blob)
   try {
     const anchor = documentRef.createElement('a')
@@ -231,7 +255,7 @@ export async function downloadEvidenceCard({ model, context }, env = globalThis,
     anchor.download = model.fileName
     anchor.rel = 'noopener'
     anchor.click()
-    await measure(context, 'download_card', { ...options, storage: options.storage || env.localStorage })
+    await measure(storyContext, 'download_card', { ...options, storage: options.storage || env.localStorage })
     return { status: 'downloaded', fileName: model.fileName }
   } catch {
     return { status: 'unavailable' }
