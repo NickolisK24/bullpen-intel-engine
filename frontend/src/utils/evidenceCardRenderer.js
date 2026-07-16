@@ -1,3 +1,5 @@
+import { wrapCardText } from './evidenceCardText'
+
 export const EVIDENCE_CARD_WIDTH = 1200
 export const EVIDENCE_CARD_HEIGHT = 630
 
@@ -8,29 +10,6 @@ export function escapeSvgText(value) {
     .replaceAll('>', '&gt;')
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&apos;')
-}
-
-function bounded(value, limit) {
-  const text = String(value || '').trim().replace(/\s+/g, ' ')
-  return text.length <= limit ? text : `${text.slice(0, limit - 1).trimEnd()}…`
-}
-
-function wrap(value, maxChars, maxLines) {
-  const words = bounded(value, maxChars * maxLines).split(' ').filter(Boolean)
-  const lines = []
-  for (const word of words) {
-    const current = lines.at(-1)
-    if (!current || `${current} ${word}`.length > maxChars) {
-      if (lines.length === maxLines) break
-      lines.push(word)
-    } else {
-      lines[lines.length - 1] = `${current} ${word}`
-    }
-  }
-  if (words.length && lines.join(' ').length < words.join(' ').length) {
-    lines[lines.length - 1] = bounded(lines.at(-1), Math.max(2, maxChars - 1)).replace(/…?$/, '…')
-  }
-  return lines
 }
 
 function textBlock(lines, { x, y, size, lineHeight, fill = '#F3F0E8', weight = 500 }) {
@@ -44,25 +23,36 @@ function shell(content) {
 }
 
 function footer(model) {
-  const destination = bounded(model.destinationUrl.replace(/^https?:\/\//, ''), 82)
   return `<line x1="56" y1="536" x2="1144" y2="536" stroke="#38503F"/>${textBlock([
     model.limitation,
   ], { x: 56, y: 565, size: 18, lineHeight: 22, fill: '#B7C1B9' })}${textBlock([
-    destination,
+    model.displayUrl,
   ], { x: 1144, y: 592, size: 18, lineHeight: 22, fill: '#F5A623', weight: 700 }).replace('x="1144"', 'x="1144" text-anchor="end"')}`
 }
 
 function teamSvg(model) {
-  const receiptLines = model.receipts.flatMap(receipt => wrap(`• ${receipt}`, 74, 2))
+  const teamNameLines = wrapCardText(`${model.teamName.toUpperCase()} BULLPEN`, {
+    maxWidth: 548, maxLines: 2, fontSize: 31,
+  })
+  const summaryLines = wrapCardText(model.summary, { maxWidth: 548, maxLines: 3, fontSize: 23 })
+  const whyLines = wrapCardText(model.why, { maxWidth: 548, maxLines: 3, fontSize: 20 })
+  const receipts = model.receipts.slice(0, 3).map(receipt => wrapCardText(receipt, {
+    maxWidth: 404, maxLines: 2, fontSize: 18,
+  })).filter(Boolean)
+  const receiptBlocks = receipts.map((lines, index) => textBlock(
+    lines.map((line, lineIndex) => `${lineIndex === 0 ? '• ' : '  '}${line}`),
+    { x: 700, y: 220 + index * 72, size: 18, lineHeight: 25, fill: '#D8DDD8' },
+  )).join('')
   return shell(`
     ${textBlock(['BASEBALLOS', 'BULLPEN INTELLIGENCE'], { x: 72, y: 70, size: 20, lineHeight: 26, fill: '#F5A623', weight: 700 })}
-    ${textBlock([`${model.teamName.toUpperCase()} BULLPEN`], { x: 56, y: 150, size: 34, lineHeight: 40, weight: 700 })}
-    ${textBlock([model.stateLabel.toUpperCase()], { x: 56, y: 207, size: 46, lineHeight: 50, fill: '#F5A623', weight: 800 })}
-    ${textBlock(wrap(model.summary, 68, 2), { x: 56, y: 246, size: 24, lineHeight: 30 })}
-    ${textBlock(['WHY'], { x: 56, y: 326, size: 16, lineHeight: 20, fill: '#8FA298', weight: 700 })}
-    ${textBlock(wrap(model.why, 70, 2), { x: 56, y: 358, size: 21, lineHeight: 27 })}
-    ${textBlock(['RECEIPTS'], { x: 646, y: 207, size: 16, lineHeight: 20, fill: '#8FA298', weight: 700 })}
-    ${textBlock(receiptLines.slice(0, 6), { x: 646, y: 242, size: 18, lineHeight: 27, fill: '#D8DDD8' })}
+    ${textBlock(teamNameLines, { x: 56, y: 142, size: 31, lineHeight: 35, weight: 700 })}
+    ${textBlock([model.stateLabel.toUpperCase()], { x: 56, y: 224, size: 44, lineHeight: 48, fill: '#F5A623', weight: 800 })}
+    ${textBlock(summaryLines, { x: 56, y: 263, size: 23, lineHeight: 29 })}
+    ${textBlock(['WHY'], { x: 56, y: 367, size: 16, lineHeight: 20, fill: '#8FA298', weight: 700 })}
+    ${textBlock(whyLines, { x: 56, y: 398, size: 20, lineHeight: 26 })}
+    <rect x="668" y="132" width="476" height="342" rx="8" fill="#0D1712" stroke="#38503F"/>
+    ${textBlock(['RECEIPTS'], { x: 700, y: 174, size: 16, lineHeight: 20, fill: '#8FA298', weight: 700 })}
+    ${receiptBlocks}
     ${textBlock([`Data through ${model.dataThroughLabel}`], { x: 56, y: 510, size: 18, lineHeight: 22, fill: '#D8DDD8', weight: 700 })}
     ${footer(model)}
   `)
@@ -72,21 +62,31 @@ function comparisonSvg(model) {
   const startY = 270
   const rows = model.rows.map((row, index) => {
     const y = startY + index * 48
-    return `<line x1="56" y1="${y + 14}" x2="720" y2="${y + 14}" stroke="#38503F"/>${textBlock([row.label.toUpperCase()], { x: 56, y, size: 18, lineHeight: 22, fill: '#B7C1B9', weight: 700 })}${textBlock([String(row.valueA)], { x: 516, y, size: 24, lineHeight: 26, weight: 700 }).replace('x="516"', 'x="516" text-anchor="end"')}${textBlock([String(row.valueB)], { x: 704, y, size: 24, lineHeight: 26, weight: 700 }).replace('x="704"', 'x="704" text-anchor="end"')}`
+    return `<line x1="56" y1="${y + 14}" x2="720" y2="${y + 14}" stroke="#38503F"/>${textBlock([row.label.toUpperCase()], { x: 56, y, size: 18, lineHeight: 22, fill: '#B7C1B9', weight: 700 })}${textBlock([String(row.valueA)], { x: 360, y, size: 24, lineHeight: 26, weight: 700 }).replace('x="360"', 'x="360" text-anchor="middle"')}${textBlock([String(row.valueB)], { x: 640, y, size: 24, lineHeight: 26, weight: 700 }).replace('x="640"', 'x="640" text-anchor="middle"')}`
   }).join('')
   const freshness = model.freshnessA === model.freshnessB
     ? `Data through ${model.freshnessALabel}`
     : `${model.teamA.abbreviation}: ${model.freshnessALabel}  •  ${model.teamB.abbreviation}: ${model.freshnessBLabel}`
+  const teamALines = wrapCardText(model.teamA.name.toUpperCase(), {
+    maxWidth: 220, maxLines: 2, fontSize: 22,
+  })
+  const teamBLines = wrapCardText(model.teamB.name.toUpperCase(), {
+    maxWidth: 220, maxLines: 2, fontSize: 22,
+  })
+  const observationLines = wrapCardText(model.observation, {
+    maxWidth: 328, maxLines: 6, fontSize: 20,
+  })
   return shell(`
     ${textBlock(['BASEBALLOS', 'CURRENT BULLPEN COMPARISON'], { x: 72, y: 70, size: 20, lineHeight: 26, fill: '#F5A623', weight: 700 })}
-    ${textBlock([model.teamA.name.toUpperCase()], { x: 56, y: 164, size: 30, lineHeight: 34, weight: 700 })}
-    ${textBlock([model.teamB.name.toUpperCase()], { x: 704, y: 164, size: 30, lineHeight: 34, weight: 700 }).replace('x="704"', 'x="704" text-anchor="end"')}
-    ${textBlock([model.teamA.abbreviation], { x: 516, y: 218, size: 16, lineHeight: 20, fill: '#F5A623', weight: 700 }).replace('x="516"', 'x="516" text-anchor="end"')}
-    ${textBlock([model.teamB.abbreviation], { x: 704, y: 218, size: 16, lineHeight: 20, fill: '#F5A623', weight: 700 }).replace('x="704"', 'x="704" text-anchor="end"')}
+    ${textBlock(teamALines, { x: 360, y: 146, size: 22, lineHeight: 25, weight: 700 }).replaceAll('x="360"', 'x="360" text-anchor="middle"')}
+    ${textBlock(['VS'], { x: 500, y: 158, size: 16, lineHeight: 20, fill: '#8FA298', weight: 700 }).replace('x="500"', 'x="500" text-anchor="middle"')}
+    ${textBlock(teamBLines, { x: 640, y: 146, size: 22, lineHeight: 25, weight: 700 }).replaceAll('x="640"', 'x="640" text-anchor="middle"')}
+    ${textBlock([model.teamA.abbreviation], { x: 360, y: 218, size: 16, lineHeight: 20, fill: '#F5A623', weight: 700 }).replace('x="360"', 'x="360" text-anchor="middle"')}
+    ${textBlock([model.teamB.abbreviation], { x: 640, y: 218, size: 16, lineHeight: 20, fill: '#F5A623', weight: 700 }).replace('x="640"', 'x="640" text-anchor="middle"')}
     ${rows}
     <rect x="760" y="190" width="384" height="256" rx="8" fill="#0D1712" stroke="#38503F"/>
     ${textBlock(['WHAT DIFFERS'], { x: 788, y: 226, size: 16, lineHeight: 20, fill: '#8FA298', weight: 700 })}
-    ${textBlock(wrap(model.observation, 34, 5), { x: 788, y: 266, size: 22, lineHeight: 31 })}
+    ${textBlock(observationLines, { x: 788, y: 266, size: 20, lineHeight: 29 })}
     ${textBlock([freshness], { x: 56, y: 510, size: 18, lineHeight: 22, fill: '#D8DDD8', weight: 700 })}
     ${footer(model)}
   `)

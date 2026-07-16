@@ -84,10 +84,10 @@ class TestObservations:
         available = next(o for o in comp['observations'] if o['dimension'] == 'available')
         assert available['leader'] == 'A'
         assert available['statement'].startswith(
-            'Aces has the clearer late-inning coverage because '
+            'The Aces have the clearer late-inning coverage because '
         )
-        assert 'Aces has six available arms' in available['statement']
-        assert 'Bears has three available arms' in available['statement']
+        assert 'The Aces have six available arms' in available['statement']
+        assert 'The Bears have three available arms' in available['statement']
         assert 'That ' in available['statement']
         assert available['team_a_value'] == 6
         assert available['team_b_value'] == 3
@@ -98,8 +98,8 @@ class TestObservations:
         comp = build_team_comparison(a, b)
         available = next(o for o in comp['observations'] if o['dimension'] == 'available')
         assert available['reasons'] == [
-            'Aces has six available arms ready.',
-            'Bears has three available arms ready.',
+            'The Aces have six available arms ready.',
+            'The Bears have three available arms ready.',
         ]
         assert available['team_a_value'] == 6
         assert available['team_b_value'] == 3
@@ -111,9 +111,9 @@ class TestObservations:
         comp = build_team_comparison(a, b)
         restricted = next(o for o in comp['observations'] if o['dimension'] == 'restricted')
         assert restricted['leader'] == 'B'  # Bears have 5 restricted vs 2
-        assert restricted['statement'].startswith('Bears has less rested late-inning cover because ')
-        assert 'Bears has five restricted arms' in restricted['statement']
-        assert 'Aces has both restricted arms' in restricted['statement']
+        assert restricted['statement'].startswith('The Bears have less rested late-inning cover because ')
+        assert 'The Bears have five restricted arms' in restricted['statement']
+        assert 'The Aces have both restricted arms' in restricted['statement']
         assert restricted['team_a_value'] == 2
         assert restricted['team_b_value'] == 5
 
@@ -155,6 +155,16 @@ class TestObservations:
         for text in copy:
             assert raw_count_matches(text) == [], text
 
+    def test_team_subject_grammar_uses_the_team_name_with_plural_have(self):
+        a = board('Boston Red Sox', 'BOS', {'Available': 6})
+        b = board('Cleveland Guardians', 'CLE', {'Available': 3})
+        copy = ' '.join(public_comparison_copy(build_team_comparison(a, b)))
+
+        assert 'The Boston Red Sox have' in copy
+        assert 'The Cleveland Guardians have' in copy
+        assert 'Boston Red Sox has' not in copy
+        assert 'Cleveland Guardians has' not in copy
+
 
 class TestSummary:
     def test_tie_across_all_dimensions_reads_as_similar(self):
@@ -172,7 +182,7 @@ class TestSummary:
         comp = build_team_comparison(a, b)
         assert comp['summary']['state'] == 'differ'
         assert comp['summary']['statement'].startswith(
-            'Aces has the clearer late-inning coverage because '
+            'The Aces have the clearer late-inning coverage because '
         )
 
     def test_both_empty_reads_as_no_data(self):

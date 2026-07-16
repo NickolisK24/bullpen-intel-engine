@@ -41,6 +41,10 @@ function identityOptions(calls = []) {
 
 test('exact share URLs preserve the destination and add only the bounded source', () => {
   assert.equal(
+    share.buildExactShareUrl('https://baseballos.app/bullpen?view=board&team=NYY#team-relief-work'),
+    'https://baseballos.app/bullpen?view=board&team=NYY&source=share_link#team-relief-work',
+  )
+  assert.equal(
     share.buildExactShareUrl(destinationUrl),
     'https://baseballos.app/bullpen?view=compare&team_a=NYY&team_b=BOS&source=share_link#comparison-evidence',
   )
