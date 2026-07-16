@@ -2,7 +2,12 @@ import assert from 'node:assert/strict'
 import test, { after } from 'node:test'
 import { createServer } from 'vite'
 
-import { differingComparison, staleComparison } from './fixtures/bullpenComparisonFixtures.mjs'
+import {
+  differingComparison,
+  makeComparison,
+  similarComparison,
+  staleComparison,
+} from './fixtures/bullpenComparisonFixtures.mjs'
 
 const server = await createServer({
   root: process.cwd(),
@@ -62,6 +67,41 @@ test('team card drops zero-value filler and duplicate receipts', () => {
   assert.deepEqual(model.receipts, ['Two relievers worked yesterday.'])
 })
 
+test('team card selects one precise active-availability receipt plus distinct workload and roster context', () => {
+  const model = cards.buildTeamEvidenceCard(teamRead({
+    evidence: [
+      'Nine relievers are available from the latest completed workload data.',
+      '9 of 9 relievers are classified Available.',
+      'Three relievers worked yesterday.',
+      '5 bullpen arms are inactive or unavailable.',
+      'Two relievers have appeared on consecutive days.',
+    ],
+  }))
+
+  assert.deepEqual(model.receipts, [
+    '9 of 9 active relievers are classified Available.',
+    'Three relievers worked yesterday.',
+    'Roster context: 5 bullpen arms are inactive or unavailable.',
+  ])
+  assert.equal(model.receipts.filter(receipt => /available from|classified Available/i.test(receipt)).length, 1)
+  assert.equal(model.receipts[0].includes('5'), false)
+})
+
+test('team card does not pad one or two distinct evidence families with semantic duplicates', () => {
+  assert.deepEqual(cards.selectTeamReceipts([
+    'Nine relievers are available from the latest completed workload data.',
+    '9 of 9 relievers are classified Available.',
+  ]), ['9 of 9 active relievers are classified Available.'])
+  assert.deepEqual(cards.selectTeamReceipts([
+    '9 of 9 relievers are classified Available.',
+    'Three relievers worked yesterday.',
+    ' three relievers worked yesterday. ',
+  ]), [
+    '9 of 9 active relievers are classified Available.',
+    'Three relievers worked yesterday.',
+  ])
+})
+
 test('team card fails closed for stale, sample, incomplete, or internal text', () => {
   assert.equal(cards.buildTeamEvidenceCard(teamRead({ freshness: { dataThrough: '2026-07-14', isCurrent: false } })), null)
   assert.equal(cards.buildTeamEvidenceCard(teamRead({ freshness: { dataThrough: '2026-07-14', isCurrent: true, isSample: true } })), null)
@@ -70,7 +110,7 @@ test('team card fails closed for stale, sample, incomplete, or internal text', (
   assert.equal(cards.buildTeamEvidenceCard(teamRead({ stateSummary: 'Backend model score threshold changed.' })), null)
 })
 
-test('comparison card preserves the selected order and all four public rows', () => {
+test('comparison card preserves team order and all four public rows while selecting visible differences', () => {
   const view = comparison.getComparisonView(differingComparison)
   const model = cards.buildComparisonEvidenceCard(view, { teamA: 'ACE', teamB: 'BEA' })
   assert.equal(model.teamA.abbreviation, 'ACE')
@@ -79,8 +119,59 @@ test('comparison card preserves the selected order and all four public rows', ()
   assert.equal(model.destinationUrl, 'https://baseballos.app/bullpen?view=compare&team_a=ACE&team_b=BEA#comparison-evidence')
   assert.equal(model.displayUrl, 'baseballos.app · Compare ACE vs BEA')
   assert.equal(model.fileName, 'baseballos-ace-vs-bea-2026-06-04.png')
-  assert.equal(model.observation, view.observations[0].statement)
-  assert.match(model.observation, /^The Aces currently have/)
+  assert.match(model.observation, /^The Aces have 6 available arms; the Bears have 3\./)
+  assert.match(model.observation, /The Bears have 5 unavailable arms; the Aces have 2\./)
+})
+
+test('comparison selection prefers the largest non-tied row and applies the display-order tie break', () => {
+  const candidates = cards.buildComparisonEvidenceCard({
+    ...comparison.getComparisonView(differingComparison),
+    labelA: 'Alpha Club',
+    labelB: 'Beta Club',
+    snapshot: [
+      { label: 'Available', valueA: 7, valueB: 4 },
+      { label: 'On Watch', valueA: 1, valueB: 1 },
+      { label: 'Limited', valueA: 3, valueB: 1 },
+      { label: 'Unavailable', valueA: 2, valueB: 2 },
+    ],
+  }, { teamA: 'ALP', teamB: 'BET' })
+  assert.match(candidates.observation, /^The Alpha Club have 7 available arms; the Beta Club have 4\./)
+  assert.equal(candidates.observation.includes('On Watch'), false)
+
+  const equalDifferences = cards.buildComparisonEvidenceCard({
+    ...comparison.getComparisonView(differingComparison),
+    snapshot: [
+      { label: 'Available', valueA: 5, valueB: 3 },
+      { label: 'On Watch', valueA: 4, valueB: 2 },
+      { label: 'Limited', valueA: 1, valueB: 3 },
+      { label: 'Unavailable', valueA: 2, valueB: 2 },
+    ],
+  }, { teamA: 'ACE', teamB: 'BEA' })
+  assert.match(equalDifferences.observation, /^The Aces have 5 available arms/)
+  assert.match(equalDifferences.observation, /The Bears have 3 limited arms/)
+  assert.equal(equalDifferences.observation.includes('On Watch'), false)
+})
+
+test('Cleveland versus Boston selects the 7-to-4 Available difference before the tied On Watch row', () => {
+  const payload = makeComparison(
+    { team: { team_id: 1, team_name: 'Cleveland Guardians', team_abbreviation: 'CLE' }, counts: { Available: 4, Monitor: 1, Limited: 3 } },
+    { team: { team_id: 2, team_name: 'Boston Red Sox', team_abbreviation: 'BOS' }, counts: { Available: 7, Monitor: 1, Limited: 1 } },
+  )
+  const view = comparison.getComparisonView(payload)
+  const model = cards.buildComparisonEvidenceCard(view, { teamA: 'CLE', teamB: 'BOS' })
+
+  assert.match(model.observation, /^The Boston Red Sox have 7 available arms; the Cleveland Guardians have 4\./)
+  assert.match(model.observation, /The Cleveland Guardians have 3 limited arms; the Boston Red Sox have 1\./)
+  assert.equal(model.observation.includes('On Watch'), false)
+  assert.equal(view.summary.statement, view.featuredObservation)
+})
+
+test('all-tied comparisons use one neutral complete summary', () => {
+  const view = comparison.getComparisonView(similarComparison)
+  const model = cards.buildComparisonEvidenceCard(view, { teamA: 'ACE', teamB: 'BEA' })
+  assert.equal(model.observation, 'The bullpens match across every availability group in the current read.')
+  assert.equal(view.summary.statement, model.observation)
+  assert.equal(/advantage|better|edge|winner/i.test(model.observation), false)
 })
 
 test('comparison card fails closed for degraded, same-team, incomplete, or predictive reads', () => {
@@ -129,7 +220,7 @@ test('long team copy keeps complete fields and omits receipts that cannot fit', 
   }))
   assert.equal(model.summary, 'Recent work is concentrated. This extra sentence is intentionally long but remains secondary.')
   assert.equal(model.receipts.includes(tooLong), false)
-  assert.equal(model.receipts.length, 2)
+  assert.equal(model.receipts.length, 1)
   const svg = renderer.renderEvidenceCardSvg(model)
   assert.equal(svg.includes('…'), false)
   assert.ok(svg.includes('baseballos.app/team/TST'))
@@ -144,17 +235,27 @@ test('comparison statement selection preserves complete sentences and uses bound
     ...view,
     observations: [{ statement: long }, { statement: short }],
   }, { teamA: 'ACE', teamB: 'BEA' })
-  assert.equal(shorterModel.observation, short)
+  assert.match(shorterModel.observation, /^The Aces have 6 available arms/)
 
   const fallbackModel = cards.buildComparisonEvidenceCard({
     ...view,
+    snapshot: [],
     observations: [{ statement: long }],
     summary: { statement: long },
   }, { teamA: 'ACE', teamB: 'BEA' })
-  assert.equal(fallbackModel.observation, 'The current side-by-side counts are shown at left.')
-  assert.equal(/[.!?]$/.test(fallbackModel.observation), true)
-  assert.equal(fallbackModel.observation.endsWith('...'), false)
-  assert.equal(fallbackModel.observation.endsWith('…'), false)
+  assert.equal(fallbackModel, null)
+
+  const noFitModel = cards.buildComparisonEvidenceCard({
+    ...view,
+    labelA: 'A'.repeat(42),
+    labelB: 'B'.repeat(42),
+    observations: [{ statement: long }],
+    summary: { statement: long },
+  }, { teamA: 'ACE', teamB: 'BEA' })
+  assert.equal(noFitModel.observation, 'The current side-by-side counts are shown at left.')
+  assert.equal(/[.!?]$/.test(noFitModel.observation), true)
+  assert.equal(noFitModel.observation.endsWith('...'), false)
+  assert.equal(noFitModel.observation.endsWith('…'), false)
 })
 
 test('long comparison headings stay in separate regions around centered VS', () => {

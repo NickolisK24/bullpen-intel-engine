@@ -75,7 +75,7 @@ test('each observation explains itself with both raw counts', () => {
 
 test('similar distributions read as similar, not as a winner', () => {
   const html = render(similarComparison)
-  assert.ok(htmlIncludes(html, 'Both bullpens currently show similar availability distributions.'))
+  assert.ok(htmlIncludes(html, 'The bullpens match across every availability group in the current read.'))
 })
 
 test('stale bullpen surfaces freshness limitations and degraded confidence', () => {
