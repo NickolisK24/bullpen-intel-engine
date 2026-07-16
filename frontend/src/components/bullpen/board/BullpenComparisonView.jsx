@@ -109,12 +109,11 @@ export default function BullpenComparisonView({ payload }) {
   const teamARef = normalizeTeamReference(teamA)
   const teamBRef = normalizeTeamReference(teamB)
   const destinationPath = buildComparisonHref(teamARef, teamBRef, { section: 'comparison-evidence' })
-  const destinationUrl = teamARef && teamBRef ? `${EVIDENCE_CARD_ORIGIN}${destinationPath}` : null
-  const cardModel = buildComparisonEvidenceCard(view, {
-    teamA,
-    teamB,
-    destinationUrl,
-  })
+  const cardModel = buildComparisonEvidenceCard(view, { teamA, teamB })
+  const destinationUrl = cardModel?.destinationUrl
+    || (teamARef && teamBRef ? `${EVIDENCE_CARD_ORIGIN}${destinationPath}` : null)
+  const comparisonShareText = cardModel?.shareText
+    || `Current ${view.labelA} and ${view.labelB} bullpen availability comparison on BaseballOS.`
   const sharedDataThrough = view.freshnessA?.dataThroughRaw === view.freshnessB?.dataThroughRaw
     ? view.freshnessA?.dataThroughRaw
     : null
@@ -125,7 +124,7 @@ export default function BullpenComparisonView({ payload }) {
         <EvidenceShareMenu
           cardModel={cardModel}
           destinationUrl={destinationUrl}
-          shareText={`${view.labelA} and ${view.labelB}'s current bullpen workload comparison.`}
+          shareText={comparisonShareText}
           context={{
             surface: 'compare_bullpens',
             cardType: 'comparison',
