@@ -1286,6 +1286,8 @@ def test_existing_public_routes_behavior_freeze(monkeypatch):
         'frontend/src/utils/shareActions.js',
         'frontend/src/utils/teamShare.js',
         'frontend/tests/evidenceCards.test.mjs',
+        'frontend/tests/bullpenOperatingStateCard.test.mjs',
+        'frontend/tests/operatingStateReadModel.test.mjs',
         'frontend/tests/fixtures/bullpenComparisonFixtures.mjs',
         'frontend/tests/shareActions.test.mjs',
         'frontend/tests/teamShare.test.mjs',

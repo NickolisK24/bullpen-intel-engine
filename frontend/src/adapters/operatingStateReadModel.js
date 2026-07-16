@@ -82,6 +82,8 @@ const DEFAULT_TONE = { borderColor: '#94a3b855', backgroundColor: '#94a3b812', c
 const LEAGUE_SCOPE_LIMITATION = 'This is a league-wide read, not a team-specific diagnosis. Availability classifications are workload-based only and do not include manager intent, bullpen phone activity, or private medical availability.'
 const TEAM_SCOPE_LIMITATION = 'BaseballOS does not know manager intent, bullpen phone activity, private medical availability, unreported injuries, or final game-day availability decisions.'
 const ROTATION_SUPPORT_MIN_ANALYZED_GAMES = 3
+const ROTATION_SUPPORT_CAPABILITY = 'rotation_support_pressure_v1'
+const ROTATION_SUPPORT_WINDOW_DAYS = 7
 const ROTATION_SUPPORT_RECEIPTS_TARGET = '#team-relief-work'
 const ROTATION_SUPPORT_RECEIPTS_LABEL = 'View game-level work'
 const UNSUPPORTED_FIELDS = [
@@ -299,14 +301,25 @@ function nonNegativeCount(value) {
   return number == null ? 0 : Math.floor(number)
 }
 
-function formatFixedOne(value) {
-  const number = nonNegativeNumber(value)
-  return number == null ? null : number.toFixed(1)
-}
+function starterAverageReceipt(rotationSupport) {
+  if (rotationSupport?.capability !== ROTATION_SUPPORT_CAPABILITY) return null
+  if (rotationSupport?.window_days !== ROTATION_SUPPORT_WINDOW_DAYS) return null
+  if (!Number.isSafeInteger(rotationSupport?.games_analyzed) || rotationSupport.games_analyzed <= 0) return null
 
-function formatAverageInnings(value) {
-  const formatted = formatFixedOne(value)
-  return formatted ? `${formatted} innings` : null
+  const starterOuts = rotationSupport?.starter_outs
+  if (!Number.isSafeInteger(starterOuts) || starterOuts < 0) return null
+
+  const averageOuts = starterOuts / rotationSupport.games_analyzed
+  if (!Number.isFinite(averageOuts) || averageOuts < 0) return null
+  // Outs are nonnegative, so floor(value + 0.5) is deterministic half-up rounding.
+  const roundedOuts = Math.floor(averageOuts + 0.5)
+  const wholeInnings = Math.floor(roundedOuts / 3)
+  const remainingOuts = roundedOuts % 3
+  if (remainingOuts < 0 || remainingOuts > 2) return null
+
+  const formatted = `${wholeInnings}.${remainingOuts}`
+  const unit = formatted === '1.0' ? 'inning' : 'innings'
+  return `Across the seven-day window, starters averaged ${formatted} ${unit} per start.`
 }
 
 function formatOutsAsInnings(outs) {
@@ -564,12 +577,13 @@ function starterLengthLimitations(reasons, rotationSupport, gamesAnalyzed, games
   return limitations
 }
 
-function buildStarterSupportPressure(rotationSupport) {
+function buildStarterSupportPressure(rotationSupport, freshness) {
   if (!rotationSupport || typeof rotationSupport !== 'object') return null
+  if (!freshness?.isCurrent || freshness?.isStale || freshness?.failClosed || freshness?.isSample) return null
   const gamesAnalyzed = nonNegativeCount(rotationSupport.games_analyzed)
   const gamesInWindow = nonNegativeCount(rotationSupport.games_in_window)
-  const windowDays = nonNegativeCount(rotationSupport.window_days) || 7
-  const starterAvgInnings = formatAverageInnings(rotationSupport.starter_avg_innings)
+  const windowDays = nonNegativeCount(rotationSupport.window_days)
+  const averageReceipt = starterAverageReceipt(rotationSupport)
   const bullpenInnings = formatOutsAsInnings(rotationSupport.bullpen_outs_required)
   const shortStartCount = nonNegativeCount(rotationSupport.short_start_count)
   const limitationReasons = Array.isArray(rotationSupport.limitation_reasons)
@@ -587,9 +601,6 @@ function buildStarterSupportPressure(rotationSupport) {
       ? `${gamesAnalyzed} of ${gamesInWindow} recent ${pluralGames(gamesInWindow)} can be analyzed.`
       : `No recent completed games are available in the ${windowLabel} window.`
     const partialFacts = []
-    if (gamesAnalyzed > 0 && starterAvgInnings) {
-      partialFacts.push(`In the analyzed ${pluralStarts(gamesAnalyzed)}, starters averaged ${starterAvgInnings}.`)
-    }
     if (gamesAnalyzed > 0 && bullpenInnings) {
       partialFacts.push(`The bullpen covered ${bullpenInnings} after those analyzed starts.`)
     }
@@ -610,12 +621,12 @@ function buildStarterSupportPressure(rotationSupport) {
     }
   }
 
-  if (!starterAvgInnings || !bullpenInnings || gamesAnalyzed < ROTATION_SUPPORT_MIN_ANALYZED_GAMES) return null
+  if (!averageReceipt || !bullpenInnings || gamesAnalyzed < ROTATION_SUPPORT_MIN_ANALYZED_GAMES) return null
 
   const shortStartText = shortStartCount > 0
     ? `${shortStartCount} of ${gamesAnalyzed} analyzed ${pluralStarts(gamesAnalyzed)} ended before five innings.`
     : `None of the ${gamesAnalyzed} analyzed ${pluralStarts(gamesAnalyzed)} ended before five innings.`
-  const summary = `Across the ${windowLabel} window, starters averaged ${starterAvgInnings} in ${gamesAnalyzed} analyzed ${pluralStarts(gamesAnalyzed)}. The bullpen covered ${bullpenInnings} after those starts.`
+  const summary = `${averageReceipt} The bullpen covered ${bullpenInnings} after those starts.`
 
   return {
     status: 'available',
@@ -842,7 +853,9 @@ export function toOperatingStateReadModel(payload, { scope = 'league', team = nu
   const stateLabel = isLeague && stateMeta.leagueLabel ? stateMeta.leagueLabel : stateMeta.label
   const stateSummary = isLeague && stateMeta.leagueSummary ? stateMeta.leagueSummary : stateMeta.summary
   const rosterPressure = resolvedScope === 'team' ? buildRosterPressure(payload?.roster_authority) : null
-  const starterSupportPressure = resolvedScope === 'team' ? buildStarterSupportPressure(payload?.rotation_support_pressure) : null
+  const starterSupportPressure = resolvedScope === 'team'
+    ? buildStarterSupportPressure(payload?.rotation_support_pressure, freshness)
+    : null
   const teamContextReads = buildTeamContextReads(payload, resolvedScope)
   const primaryConcern = safeConcern(getWorkloadConcern(context, stateKey))
   const secondaryConcern = resolvedScope === 'team'

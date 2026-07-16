@@ -35,7 +35,12 @@ function teamSvg(model) {
     maxWidth: 548, maxLines: 2, fontSize: 31,
   })
   const summaryLines = wrapCardText(model.summary, { maxWidth: 548, maxLines: 3, fontSize: 23 })
-  const whyLines = wrapCardText(model.why, { maxWidth: 548, maxLines: 3, fontSize: 20 })
+  const whyLines = model.why
+    ? wrapCardText(model.why, { maxWidth: 548, maxLines: 3, fontSize: 20 })
+    : []
+  const whyBlock = whyLines.length
+    ? `${textBlock(['WHY'], { x: 56, y: 367, size: 16, lineHeight: 20, fill: '#8FA298', weight: 700 })}${textBlock(whyLines, { x: 56, y: 398, size: 20, lineHeight: 26 })}`
+    : ''
   const receipts = model.receipts.slice(0, 3).map(receipt => wrapCardText(receipt, {
     maxWidth: 404, maxLines: 2, fontSize: 18,
   })).filter(Boolean)
@@ -48,8 +53,7 @@ function teamSvg(model) {
     ${textBlock(teamNameLines, { x: 56, y: 142, size: 31, lineHeight: 35, weight: 700 })}
     ${textBlock([model.stateLabel.toUpperCase()], { x: 56, y: 224, size: 44, lineHeight: 48, fill: '#F5A623', weight: 800 })}
     ${textBlock(summaryLines, { x: 56, y: 263, size: 23, lineHeight: 29 })}
-    ${textBlock(['WHY'], { x: 56, y: 367, size: 16, lineHeight: 20, fill: '#8FA298', weight: 700 })}
-    ${textBlock(whyLines, { x: 56, y: 398, size: 20, lineHeight: 26 })}
+    ${whyBlock}
     <rect x="668" y="132" width="476" height="342" rx="8" fill="#0D1712" stroke="#38503F"/>
     ${textBlock(['RECEIPTS'], { x: 700, y: 174, size: 16, lineHeight: 20, fill: '#8FA298', weight: 700 })}
     ${receiptBlocks}

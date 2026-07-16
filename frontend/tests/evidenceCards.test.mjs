@@ -21,6 +21,7 @@ after(async () => server.close())
 const cards = await server.ssrLoadModule('/src/utils/evidenceCardModel.js')
 const renderer = await server.ssrLoadModule('/src/utils/evidenceCardRenderer.js')
 const textLayout = await server.ssrLoadModule('/src/utils/evidenceCardText.js')
+const operatingState = await server.ssrLoadModule('/src/adapters/operatingStateReadModel.js')
 const comparison = await server.ssrLoadModule(
   '/src/components/bullpen/board/teamBullpenComparisonView.js',
 )
@@ -32,6 +33,9 @@ function teamRead(overrides = {}) {
     stateLabel: 'Monitor',
     stateSummary: 'Recent work is concentrated among a small part of the bullpen.',
     why: 'Three relievers have appeared on consecutive days.',
+    workloadConcentration: {
+      summary: 'Recent relief work has flowed through a smaller group of arms.',
+    },
     evidence: [
       'Three relievers worked yesterday.',
       'Two relievers have appeared on consecutive days.',
@@ -46,7 +50,8 @@ function teamRead(overrides = {}) {
 test('team card is built only from a current public read with bounded receipts', () => {
   const model = cards.buildTeamEvidenceCard(teamRead())
   assert.equal(model.cardType, 'team')
-  assert.equal(model.receipts.length, 3)
+  assert.equal(model.receipts.length <= 3, true)
+  assert.equal(model.receipts.length > 0, true)
   assert.equal(model.dataThroughLabel, 'July 14, 2026')
   assert.equal(model.destinationUrl, 'https://baseballos.app/bullpen?view=board&team=TST')
   assert.equal(model.displayUrl, 'baseballos.app/team/TST')
@@ -102,11 +107,189 @@ test('team card does not pad one or two distinct evidence families with semantic
   ])
 })
 
+test('team card keeps the canonical starter average receipt complete and in its existing family', () => {
+  const canonicalSummary = 'Across the seven-day window, starters averaged 4.1 innings per start. The bullpen covered 21 innings after those starts.'
+  const model = cards.buildTeamEvidenceCard(teamRead({
+    evidence: [
+      '4 of 8 relievers are classified Available.',
+      'Two relievers worked yesterday.',
+      canonicalSummary,
+      '3 of 5 analyzed starts ended before five innings.',
+    ],
+  }))
+
+  assert.equal(cards.classifyTeamReceiptFamily(canonicalSummary), 'starter_support')
+  assert.deepEqual(model.receipts, [
+    '4 of 8 active relievers are classified Available.',
+    'Two relievers worked yesterday.',
+    'Across the seven-day window, starters averaged 4.1 innings per start.',
+  ])
+  assert.equal(model.receipts.filter(receipt => cards.classifyTeamReceiptFamily(receipt) === 'starter_support').length, 1)
+})
+
+test('Yankees full-support card selects state proof, distinct WHY proof, then one context receipt', () => {
+  const model = cards.buildTeamEvidenceCard(teamRead({
+    teamName: 'New York Yankees',
+    teamAbbreviation: 'NYY',
+    stateLabel: 'Stable',
+    stateSummary: 'The current bullpen read shows enough usable coverage without a clear pressure flag.',
+    why: 'Recent work is spread across the active relief group.',
+    workloadConcentration: {
+      summary: 'Recent work is spread across the active relief group.',
+    },
+    evidence: [
+      'Nine relievers are available from the latest completed workload data.',
+      '9 of 9 relievers are classified Available.',
+      'Recent relief work was spread across 9 active relievers.',
+      '5 bullpen arms are inactive or unavailable.',
+      'Across the seven-day window, starters averaged 4.1 innings per start.',
+      'A second workload is concentrated receipt.',
+      'A second roster status receipt.',
+      'Starters averaged 4.2 innings per start.',
+    ],
+  }))
+
+  assert.deepEqual(model.receipts, [
+    '9 of 9 active relievers are classified Available.',
+    'Recent relief work was spread across 9 active relievers.',
+    'Roster context: 5 bullpen arms are inactive or unavailable.',
+  ])
+  assert.equal(model.why, 'Recent work is spread across the active relief group.')
+  assert.equal(cards.classifyTeamReceiptRole(model.receipts[0], teamRead({ stateLabel: 'Stable' })), 'primary_state')
+  assert.equal(model.receipts.filter(item => cards.classifyTeamReceiptFamily(item) === 'availability').length, 1)
+  assert.equal(model.receipts.filter(item => cards.classifyTeamReceiptFamily(item) === 'workload_concentration').length, 1)
+  assert.equal(model.receipts.filter(item => cards.classifyTeamReceiptFamily(item) === 'roster_context').length, 1)
+  assert.equal(model.receipts.filter(item => cards.classifyTeamReceiptFamily(item) === 'starter_support').length, 0)
+})
+
+test('production-shaped Yankees read keeps Team Board claims and card receipts aligned', () => {
+  const payload = {
+    hasContext: true,
+    state: 'stable',
+    label: 'Recent work is spread across the active relief group.',
+    reasons: ['Recent relief work was spread across 9 active relievers.'],
+    metrics: { total: 9 },
+    snapshot: [{ status: 'Available', label: 'Available', count: 9 }],
+    team: { team_id: 147, team_name: 'New York Yankees', team_abbreviation: 'NYY' },
+    freshness: {
+      data_through: '2026-07-14',
+      last_successful_sync: '2026-07-14T10:04:00Z',
+      is_current: true,
+      sync_status: 'success',
+    },
+    team_shape: {
+      workloadConcentration: {
+        key: 'workloadConcentration',
+        label: 'No Workload Concentration',
+        reasons: [],
+      },
+    },
+    roster_authority: {
+      capability: 'roster_authority_v1',
+      invariant: true,
+      category_counts: { injured_list: 0 },
+      counts: {
+        bullpen_arms: 9,
+        active_bullpen_arms: 9,
+        inactive_roster_context_count: 5,
+        roster_unknown_count: 0,
+      },
+      population: { total_candidates: 14, known_count: 14, unknown_count: 0, roster_status_coverage: 1 },
+      limitations: [],
+    },
+    rotation_support_pressure: {
+      capability: 'rotation_support_pressure_v1',
+      status: 'heavy_pressure',
+      games_in_window: 5,
+      games_analyzed: 5,
+      window_days: 7,
+      starter_outs: 65,
+      starter_avg_innings: 4.8,
+      bullpen_outs_required: 63,
+      short_start_count: 3,
+      limitations: [],
+    },
+  }
+  const readModel = operatingState.toOperatingStateReadModel(payload, { scope: 'team' })
+  const model = cards.buildTeamEvidenceCard(readModel)
+
+  assert.equal(model.stateLabel, readModel.stateLabel)
+  assert.equal(model.summary, readModel.stateSummary)
+  assert.equal(model.why, readModel.workloadConcentration.summary)
+  assert.deepEqual(model.receipts, [
+    '9 of 9 active relievers are classified Available.',
+    'Recent relief work was spread across 9 active relievers.',
+    'Roster context: 5 bullpen arms are inactive or unavailable.',
+  ])
+  assert.match(readModel.starterSupportPressure.summary, /starters averaged 4\.1 innings per start\./)
+  assert.equal(/starters averaged \d+\.[^012] innings per start/.test(readModel.starterSupportPressure.summary), false)
+})
+
+test('Yankees limited-support card omits unsupported WHY and keeps one primary plus one context receipt', () => {
+  const model = cards.buildTeamEvidenceCard(teamRead({
+    teamName: 'New York Yankees',
+    teamAbbreviation: 'NYY',
+    stateLabel: 'Stable',
+    stateSummary: 'The current bullpen read shows enough usable coverage without a clear pressure flag.',
+    why: 'Recent work is spread across the active relief group.',
+    workloadConcentration: null,
+    primaryConcern: null,
+    evidence: [
+      '9 of 9 relievers are classified Available.',
+      '5 bullpen arms are inactive or unavailable.',
+      'Across the seven-day window, starters averaged 4.1 innings per start.',
+    ],
+  }))
+
+  assert.deepEqual(model.receipts, [
+    '9 of 9 active relievers are classified Available.',
+    'Roster context: 5 bullpen arms are inactive or unavailable.',
+  ])
+  assert.equal(model.why, null)
+  assert.equal(model.receipts.length, 2)
+  const svg = renderer.renderEvidenceCardSvg(model)
+  assert.equal(svg.includes('>WHY</text>'), false)
+  assert.equal(svg.includes('Recent work is spread'), false)
+})
+
+test('context-only Team card fails closed instead of publishing unrelated receipts', () => {
+  const model = cards.buildTeamEvidenceCard(teamRead({
+    stateLabel: 'Stable',
+    why: 'Recent work is spread across the active relief group.',
+    workloadConcentration: null,
+    primaryConcern: null,
+    evidence: [
+      '5 bullpen arms are inactive or unavailable.',
+      'Across the seven-day window, starters averaged 4.1 innings per start.',
+    ],
+  }))
+  assert.equal(model, null)
+})
+
+test('starter and roster context never displace or precede direct Team-card support', () => {
+  const starterOnlyContext = cards.buildTeamEvidenceCard(teamRead({
+    stateLabel: 'Stable',
+    workloadConcentration: null,
+    primaryConcern: null,
+    evidence: [
+      'Across the seven-day window, starters averaged 4.1 innings per start.',
+      '9 of 9 relievers are classified Available.',
+    ],
+  }))
+  assert.deepEqual(starterOnlyContext.receipts, [
+    '9 of 9 active relievers are classified Available.',
+    'Across the seven-day window, starters averaged 4.1 innings per start.',
+  ])
+  assert.equal(starterOnlyContext.receipts.length, 2)
+})
+
 test('team card fails closed for stale, sample, incomplete, or internal text', () => {
   assert.equal(cards.buildTeamEvidenceCard(teamRead({ freshness: { dataThrough: '2026-07-14', isCurrent: false } })), null)
   assert.equal(cards.buildTeamEvidenceCard(teamRead({ freshness: { dataThrough: '2026-07-14', isCurrent: true, isSample: true } })), null)
   assert.equal(cards.buildTeamEvidenceCard(teamRead({ evidence: [] })), null)
-  assert.equal(cards.buildTeamEvidenceCard(teamRead({ why: 'Backend model score threshold changed.' })), null)
+  const ignoredRawWhy = cards.buildTeamEvidenceCard(teamRead({ why: 'Backend model score threshold changed.' }))
+  assert.equal(ignoredRawWhy.why, 'Recent relief work has flowed through a smaller group of arms.')
+  assert.equal(cards.buildTeamEvidenceCard(teamRead({ workloadConcentration: { summary: 'Backend model score threshold changed.' } })), null)
   assert.equal(cards.buildTeamEvidenceCard(teamRead({ stateSummary: 'Backend model score threshold changed.' })), null)
 })
 

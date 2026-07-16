@@ -24,6 +24,9 @@ const TEAM_RECEIPT_PRIORITY = new Map([
   ['starter_support', 6],
   ['other', 7],
 ])
+const STATE_SUPPORT_FAMILIES = ['availability', 'clean_options']
+const WHY_WORKLOAD_FAMILIES = ['workload_concentration', 'recent_work_volume', 'repeated_appearances']
+const PUBLIC_TEAM_STATES = /^(?:stable|usable|worth watching|monitor|thin|stretched|stressed|recovering)$/i
 const COMPARISON_DIMENSION_PRIORITY = new Map([
   ['Available', 0],
   ['Limited', 1],
@@ -116,10 +119,10 @@ export function classifyTeamReceiptFamily(receipt) {
   if (!text) return 'other'
   if (/\b(?:injured list|inactive or unavailable|unconfirmed roster status|roster status)\b/.test(text)) return 'roster_context'
   if (/\b(?:starters? averaged|analyzed starts?|starter-length|bullpen covered)\b/.test(text)) return 'starter_support'
-  if (/\b(?:classified available|relievers? (?:are|is) available from the latest completed workload data)\b/.test(text)) return 'availability'
+  if (/\b(?:classified available|relievers? (?:are|is) available from the latest completed workload data|relievers? are (?:limited or unavailable|in the on watch (?:group|lane)))\b/.test(text)) return 'availability'
   if (/\b(?:clean options?|cleanly available)\b/.test(text)) return 'clean_options'
   if (/\b(?:consecutive days|appeared at least twice|worked at least twice|repeated appearances?)\b/.test(text)) return 'repeated_appearances'
-  if (/\b(?:workload (?:is )?concentrated|worked yesterday|worked today|recent work)\b/.test(text)) return 'workload_concentration'
+  if (/\b(?:workload (?:is )?concentrated|worked yesterday|worked today|recent work|recent (?:relief )?work (?:is|was) (?:spread|distributed|shared))\b/.test(text)) return 'workload_concentration'
   if (/\b(?:appearances? in the recent window|recent relief work|relief innings|innings in relief)\b/.test(text)) return 'recent_work_volume'
   return 'other'
 }
@@ -142,7 +145,7 @@ function formatTeamReceipt(receipt, family) {
   return text
 }
 
-export function selectTeamReceipts(evidence) {
+function distinctTeamReceiptCandidates(evidence) {
   const candidates = (Array.isArray(evidence) ? evidence : [])
     .map((item, index) => {
       const raw = normalizeCardText(item)
@@ -169,6 +172,11 @@ export function selectTeamReceipts(evidence) {
       TEAM_RECEIPT_PRIORITY.get(left.family) - TEAM_RECEIPT_PRIORITY.get(right.family)
       || left.index - right.index
     ))
+  return distinct
+}
+
+export function selectTeamReceipts(evidence) {
+  const distinct = distinctTeamReceiptCandidates(evidence)
   const selected = []
   const takeFirst = families => {
     const match = distinct.find(candidate => families.includes(candidate.family) && !selected.includes(candidate))
@@ -184,6 +192,65 @@ export function selectTeamReceipts(evidence) {
   return selected.map(candidate => candidate.text)
 }
 
+function receiptSupportsState(candidate, readModel) {
+  if (!PUBLIC_TEAM_STATES.test(normalizeCardText(readModel?.stateLabel))) return false
+  if (candidate.family === 'availability') return true
+  return candidate.family === 'clean_options' && Boolean(readModel?.cleanOptions)
+}
+
+function whySupportFamilies(readModel) {
+  if (readModel?.workloadConcentration?.summary) return WHY_WORKLOAD_FAMILIES
+  if (readModel?.primaryConcern?.body) return STATE_SUPPORT_FAMILIES
+  return []
+}
+
+function supportedWhyCopy(readModel) {
+  if (readModel?.workloadConcentration?.summary) return readModel.workloadConcentration.summary
+  if (readModel?.primaryConcern?.body) return readModel.primaryConcern.body
+  return null
+}
+
+function receiptSupportsWhy(candidate, readModel) {
+  return whySupportFamilies(readModel).includes(candidate.family)
+}
+
+export function classifyTeamReceiptRole(receipt, readModel) {
+  const candidate = { family: classifyTeamReceiptFamily(receipt) }
+  if (receiptSupportsState(candidate, readModel)) return 'primary_state'
+  if (receiptSupportsWhy(candidate, readModel)) return 'primary_why'
+  if (WHY_WORKLOAD_FAMILIES.includes(candidate.family)) return 'secondary_workload'
+  if (candidate.family === 'roster_context') return 'context_roster'
+  if (candidate.family === 'starter_support') return 'context_starter'
+  return 'context_other'
+}
+
+export function selectAlignedTeamReceipts(readModel) {
+  const candidates = distinctTeamReceiptCandidates(readModel?.evidence).map(candidate => ({
+    ...candidate,
+    supportsState: receiptSupportsState(candidate, readModel),
+    supportsWhy: receiptSupportsWhy(candidate, readModel),
+  }))
+  const selected = []
+  const take = predicate => {
+    const match = candidates.find(candidate => predicate(candidate) && !selected.includes(candidate))
+    if (match) selected.push(match)
+  }
+
+  take(candidate => candidate.supportsState)
+  take(candidate => candidate.supportsWhy)
+  if (selected.length > 0) {
+    take(candidate => ['roster_context', 'starter_support', 'other'].includes(candidate.family))
+  }
+
+  const hasStateSupport = selected.some(candidate => candidate.supportsState)
+  const hasWhySupport = selected.some(candidate => candidate.supportsWhy)
+  return {
+    receipts: selected.slice(0, 3).map(candidate => candidate.text),
+    hasStateSupport,
+    hasWhySupport,
+  }
+}
+
 export function buildTeamEvidenceCard(readModel, { destinationUrl = null } = {}) {
   const teamName = cleanText(readModel?.teamName || readModel?.teamLabel, 48)
   const teamAbbreviation = normalizeTeamReference(readModel?.teamAbbreviation)
@@ -191,13 +258,11 @@ export function buildTeamEvidenceCard(readModel, { destinationUrl = null } = {})
   const summary = [readModel?.stateSummary, readModel?.stateDetail]
     .map(value => fitSafeCardText(value, { maxWidth: 548, maxLines: 3, fontSize: 23 }))
     .find(Boolean) || null
-  const why = [
-    readModel?.workloadConcentration?.summary,
-    readModel?.primaryConcern?.body,
-    readModel?.why,
-  ].map(value => fitSafeCardText(value, { maxWidth: 548, maxLines: 3, fontSize: 20 }))
-    .find(Boolean) || null
-  const receipts = selectTeamReceipts(readModel?.evidence)
+  const selection = selectAlignedTeamReceipts(readModel)
+  const why = selection.hasWhySupport
+    ? fitSafeCardText(supportedWhyCopy(readModel), { maxWidth: 548, maxLines: 3, fontSize: 20 })
+    : null
+  const receipts = selection.receipts
   const dataThrough = validDate(readModel?.freshness?.dataThrough || readModel?.freshness?.data_through)
   const freshnessUnsafe = (
     !readModel?.freshness?.isCurrent
@@ -213,9 +278,8 @@ export function buildTeamEvidenceCard(readModel, { destinationUrl = null } = {})
     || !teamAbbreviation
     || !stateLabel
     || !summary
-    || !why
     || !dataThrough
-    || receipts.length === 0
+    || (!selection.hasStateSupport && !(selection.hasWhySupport && why))
   ) return null
 
   const destination = destinationUrl || canonicalUrl(buildTeamBoardHref(teamAbbreviation))

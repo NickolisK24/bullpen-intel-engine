@@ -308,6 +308,8 @@ def test_frozen_legacy_what_changed_files_untouched():
         'frontend/src/utils/shareActions.js',
         'frontend/src/utils/teamShare.js',
         'frontend/tests/evidenceCards.test.mjs',
+        'frontend/tests/bullpenOperatingStateCard.test.mjs',
+        'frontend/tests/operatingStateReadModel.test.mjs',
         'frontend/tests/fixtures/bullpenComparisonFixtures.mjs',
         'frontend/tests/shareActions.test.mjs',
         'frontend/tests/teamShare.test.mjs',

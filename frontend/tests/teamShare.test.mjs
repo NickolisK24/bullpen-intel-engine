@@ -31,3 +31,10 @@ test('stories use the bounded link-only menu without fetching card data', () => 
   assert.equal(menu.includes('/bullpen/teams/'), false)
   assert.equal(menu.includes('fetch('), false)
 })
+
+test('Team card fail-closed state still leaves Copy exact link available', () => {
+  const menu = readFileSync('src/components/share/EvidenceShareMenu.jsx', 'utf8')
+  assert.ok(menu.includes('disabled={busy || (!linkOnly && !cardAvailable)}'))
+  assert.ok(menu.includes('Copy exact link'))
+  assert.ok(menu.includes('disabled={busy}'))
+})

@@ -407,10 +407,12 @@ function assertNoStarterStatusLanguage(value) {
 test('starter support renders a quiet limited state when sample is insufficient', () => {
   const board = teamOperatingBoard()
   board.rotation_support_pressure = {
+    capability: 'rotation_support_pressure_v1',
     status: 'limited_read',
     games_analyzed: 1,
     games_in_window: 4,
     window_days: 7,
+    starter_outs: 14,
     starter_avg_innings: 4.8,
     bullpen_outs_required: 25,
     short_start_count: 1,
@@ -423,7 +425,6 @@ test('starter support renders a quiet limited state when sample is insufficient'
   assert.equal(model.starterSupportPressure.status, 'limited')
   assert.equal(model.starterSupportPressure.summary, 'Starter-length context is limited. 1 of 4 recent games can be analyzed.')
   assert.deepEqual(model.starterSupportPressure.reasons, [
-    'In the analyzed start, starters averaged 4.8 innings.',
     'The bullpen covered 8 1/3 innings after those analyzed starts.',
     'Not enough complete recent starts are available for a full starter-length read.',
     'The recent game window is partial, so this starter-length read is limited.',
@@ -442,10 +443,12 @@ test('starter support renders a quiet limited state when sample is insufficient'
 test('starter support renders factual starter length and bullpen coverage', () => {
   const board = teamOperatingBoard()
   board.rotation_support_pressure = {
+    capability: 'rotation_support_pressure_v1',
     status: 'heavy_pressure',
     games_in_window: 5,
     games_analyzed: 5,
     window_days: 7,
+    starter_outs: 65,
     starter_avg_innings: 4.8,
     bullpen_outs_required: 63,
     short_start_count: 3,
@@ -458,28 +461,100 @@ test('starter support renders factual starter length and bullpen coverage', () =
     status: 'available',
     gamesAnalyzed: 5,
     label: null,
-    summary: 'Across the seven-day window, starters averaged 4.8 innings in 5 analyzed starts. The bullpen covered 21 innings after those starts.',
+    summary: 'Across the seven-day window, starters averaged 4.1 innings per start. The bullpen covered 21 innings after those starts.',
     reasons: ['3 of 5 analyzed starts ended before five innings.'],
     evidence: [
-      'Across the seven-day window, starters averaged 4.8 innings in 5 analyzed starts. The bullpen covered 21 innings after those starts.',
+      'Across the seven-day window, starters averaged 4.1 innings per start. The bullpen covered 21 innings after those starts.',
       '3 of 5 analyzed starts ended before five innings.',
     ],
     limitations: [],
     receiptsHref: '#team-relief-work',
     receiptsLabel: 'View game-level work',
   })
-  assert.ok(model.evidence.includes('Across the seven-day window, starters averaged 4.8 innings in 5 analyzed starts. The bullpen covered 21 innings after those starts.'))
+  assert.ok(model.evidence.includes('Across the seven-day window, starters averaged 4.1 innings per start. The bullpen covered 21 innings after those starts.'))
   assert.equal(JSON.stringify(model).includes('The rotation averaged 4.8 innings per start over the last 7 days'), false)
   assertNoStarterStatusLanguage(model)
+})
+
+test('starter average receipts preserve units, denominator, rounding, and fail-closed authority', () => {
+  const rotationSupport = (overrides = {}) => ({
+    capability: 'rotation_support_pressure_v1',
+    status: 'moderate_pressure',
+    games_in_window: 5,
+    games_analyzed: 5,
+    window_days: 7,
+    starter_outs: 60,
+    starter_avg_innings: 4.37,
+    bullpen_outs_required: 63,
+    short_start_count: 2,
+    ...overrides,
+  })
+  const starterRead = (overrides = {}, boardOverrides = {}) => {
+    const board = teamOperatingBoard(boardOverrides)
+    board.rotation_support_pressure = rotationSupport(overrides)
+    return modelFor(board, { scope: 'team' }).starterSupportPressure
+  }
+
+  for (const [starterOuts, analyzedStarts, expected] of [
+    [60, 5, '4.0 innings per start'],
+    [65, 5, '4.1 innings per start'],
+    [70, 5, '4.2 innings per start'],
+    [75, 5, '5.0 innings per start'],
+    [66, 5, '4.1 innings per start'],
+    [73, 5, '5.0 innings per start'],
+    [54, 4, '4.2 innings per start'],
+    [9, 3, '1.0 inning per start'],
+    [0, 5, '0.0 innings per start'],
+  ]) {
+    const read = starterRead({ starter_outs: starterOuts, games_analyzed: analyzedStarts })
+    assert.ok(
+      read.summary.startsWith(`Across the seven-day window, starters averaged ${expected}.`),
+      `${starterOuts} outs across ${analyzedStarts} starts produced: ${read.summary}`,
+    )
+    assert.match(read.summary, /averaged \d+\.[012] innings? per start\./)
+    assert.equal(/starters averaged \d+(?:\.\d+)?\.$/.test(read.evidence[0]), false)
+  }
+
+  for (const overrides of [
+    { starter_outs: null },
+    { starter_outs: undefined },
+    { starter_outs: '65' },
+    { starter_outs: 65.5 },
+    { starter_outs: -1 },
+    { starter_outs: undefined, starter_avg_innings: 4.37 },
+    { starter_outs: undefined, starter_avg_innings: 4.3 },
+    { games_analyzed: 0 },
+    { games_analyzed: undefined },
+    { capability: undefined },
+    { capability: 'unsupported_rotation_read' },
+    { window_days: undefined },
+    { window_days: 14 },
+  ]) {
+    const read = starterRead(overrides)
+    assert.equal((read?.evidence || []).some(item => item.includes('starters averaged')), false)
+    assert.equal(JSON.stringify(read).includes('4.4 innings per start'), false)
+    assert.equal(JSON.stringify(read).includes('4.3 innings per start'), false)
+  }
+
+  const staleFreshness = {
+    data_through: '2026-06-01',
+    is_current: false,
+    is_stale: true,
+    fail_closed: true,
+    freshness_state: 'stale',
+  }
+  assert.equal(starterRead({}, { freshness: staleFreshness }), null)
 })
 
 test('starter support renders factual copy without grading stable samples', () => {
   const board = teamOperatingBoard()
   board.rotation_support_pressure = {
+    capability: 'rotation_support_pressure_v1',
     status: 'supportive',
     games_in_window: 4,
     games_analyzed: 4,
     window_days: 7,
+    starter_outs: 72,
     starter_avg_innings: 6.1,
     bullpen_outs_required: 35,
     short_start_count: 0,
@@ -487,7 +562,7 @@ test('starter support renders factual copy without grading stable samples', () =
   }
   const model = modelFor(board, { scope: 'team' })
 
-  assert.equal(model.starterSupportPressure.summary, 'Across the seven-day window, starters averaged 6.1 innings in 4 analyzed starts. The bullpen covered 11 2/3 innings after those starts.')
+  assert.equal(model.starterSupportPressure.summary, 'Across the seven-day window, starters averaged 6.0 innings per start. The bullpen covered 11 2/3 innings after those starts.')
   assert.deepEqual(model.starterSupportPressure.reasons, ['None of the 4 analyzed starts ended before five innings.'])
   assertNoStarterStatusLanguage(model)
   assertNoForbiddenLanguage(model)
@@ -496,10 +571,12 @@ test('starter support renders factual copy without grading stable samples', () =
 test('starter support ignores unsupported status vocabulary and unsafe backend summary copy', () => {
   const unsupportedBoard = teamOperatingBoard()
   unsupportedBoard.rotation_support_pressure = {
+    capability: 'rotation_support_pressure_v1',
     status: 'experimental_status',
     games_in_window: 4,
     games_analyzed: 4,
     window_days: 7,
+    starter_outs: 65,
     starter_avg_innings: 5.4,
     bullpen_outs_required: 44,
     short_start_count: 1,
@@ -507,22 +584,24 @@ test('starter support ignores unsupported status vocabulary and unsafe backend s
   }
   assert.equal(
     modelFor(unsupportedBoard, { scope: 'team' }).starterSupportPressure.summary,
-    'Across the seven-day window, starters averaged 5.4 innings in 4 analyzed starts. The bullpen covered 14 2/3 innings after those starts.',
+    'Across the seven-day window, starters averaged 5.1 innings per start. The bullpen covered 14 2/3 innings after those starts.',
   )
 
   const unsafeBoard = teamOperatingBoard()
   unsafeBoard.rotation_support_pressure = {
+    capability: 'rotation_support_pressure_v1',
     status: 'moderate_pressure',
     games_in_window: 4,
     games_analyzed: 4,
     window_days: 7,
+    starter_outs: 65,
     starter_avg_innings: 5.4,
     bullpen_outs_required: 44,
     short_start_count: 1,
     summary: 'backend endpoint snapshot should not render.',
   }
   const unsafeModel = modelFor(unsafeBoard, { scope: 'team' })
-  assert.equal(unsafeModel.starterSupportPressure.summary, 'Across the seven-day window, starters averaged 5.4 innings in 4 analyzed starts. The bullpen covered 14 2/3 innings after those starts.')
+  assert.equal(unsafeModel.starterSupportPressure.summary, 'Across the seven-day window, starters averaged 5.1 innings per start. The bullpen covered 14 2/3 innings after those starts.')
   assert.equal(JSON.stringify(unsafeModel).includes('backend endpoint snapshot should not render.'), false)
   assertNoStarterStatusLanguage(unsafeModel)
 })
