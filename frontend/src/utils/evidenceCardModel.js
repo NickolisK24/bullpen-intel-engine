@@ -3,6 +3,12 @@ import {
   buildTeamBoardHref,
   normalizeTeamReference,
 } from './evidenceLinks'
+import {
+  fitCompleteCardText,
+  normalizeCardText,
+  selectCompleteCardStatement,
+  wrapCardText,
+} from './evidenceCardText'
 
 export const EVIDENCE_CARD_ORIGIN = 'https://baseballos.app'
 const INTERNAL_TERMS = /\b(endpoint|backend|snapshot|governance|threshold|model score|ranking_applied|selection_made|reason_codes?|private medical|bullpen phone)\b/i
@@ -10,10 +16,9 @@ const UNSAFE_COMPARISON_TERMS = /\b(winner|wins?|advantage|better|best|rank(?:in
 const LOW_VALUE_ZERO = /^(?:0 of \d+ .*|no relievers? (?:are )?(?:marked|classified) (?:unavailable|on watch))\.?$/i
 
 function cleanText(value, limit) {
-  const text = typeof value === 'string' ? value.trim().replace(/\s+/g, ' ') : ''
+  const text = normalizeCardText(value)
   if (!text || INTERNAL_TERMS.test(text)) return null
-  if (text.length <= limit) return text
-  return `${text.slice(0, Math.max(1, limit - 1)).trimEnd()}…`
+  return text.length <= limit ? text : null
 }
 
 function validDate(value) {
@@ -40,11 +45,19 @@ function safeFilePart(value) {
   return String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
 }
 
+function fitSafeCardText(value, options) {
+  const text = normalizeCardText(value)
+  return text && !INTERNAL_TERMS.test(text) ? fitCompleteCardText(text, options) : null
+}
+
 export function selectTeamReceipts(evidence) {
   const seen = new Set()
   const receipts = []
   for (const item of Array.isArray(evidence) ? evidence : []) {
-    const text = cleanText(item, 150)
+    const raw = normalizeCardText(item)
+    const text = !INTERNAL_TERMS.test(raw)
+      ? fitCompleteCardText(raw, { maxWidth: 420, maxLines: 2, fontSize: 18 })
+      : null
     const key = text?.toLowerCase()
     if (!text || LOW_VALUE_ZERO.test(text) || seen.has(key)) continue
     seen.add(key)
@@ -58,13 +71,15 @@ export function buildTeamEvidenceCard(readModel, { destinationUrl = null } = {})
   const teamName = cleanText(readModel?.teamName || readModel?.teamLabel, 48)
   const teamAbbreviation = normalizeTeamReference(readModel?.teamAbbreviation)
   const stateLabel = cleanText(readModel?.stateLabel, 28)
-  const summary = cleanText(readModel?.stateSummary || readModel?.stateDetail, 105)
-  const why = cleanText(
-    readModel?.workloadConcentration?.summary
-      || readModel?.primaryConcern?.body
-      || readModel?.why,
-    135,
-  )
+  const summary = [readModel?.stateSummary, readModel?.stateDetail]
+    .map(value => fitSafeCardText(value, { maxWidth: 548, maxLines: 3, fontSize: 23 }))
+    .find(Boolean) || null
+  const why = [
+    readModel?.workloadConcentration?.summary,
+    readModel?.primaryConcern?.body,
+    readModel?.why,
+  ].map(value => fitSafeCardText(value, { maxWidth: 548, maxLines: 3, fontSize: 20 }))
+    .find(Boolean) || null
   const receipts = selectTeamReceipts(readModel?.evidence)
   const dataThrough = validDate(readModel?.freshness?.dataThrough || readModel?.freshness?.data_through)
   const freshnessUnsafe = (
@@ -102,6 +117,7 @@ export function buildTeamEvidenceCard(readModel, { destinationUrl = null } = {})
     dataThroughLabel: dateLabel,
     limitation,
     destinationUrl: destination,
+    displayUrl: `${EVIDENCE_CARD_ORIGIN.replace(/^https?:\/\//, '')}/team/${teamAbbreviation}`,
     altText: cleanText(
       `BaseballOS card for the ${teamName} bullpen. Current state: ${stateLabel}. The card lists ${receipts.length} recent-work ${receipts.length === 1 ? 'receipt' : 'receipts'}, data through ${dateLabel}, and notes that the read describes workload rather than predicting usage.`,
       320,
@@ -117,7 +133,23 @@ export function buildComparisonEvidenceCard(view, { teamA, teamB, destinationUrl
   const teamBName = cleanText(view?.labelB, 42)
   const freshnessA = validDate(view?.freshnessA?.dataThroughRaw || view?.freshnessA?.dataThrough)
   const freshnessB = validDate(view?.freshnessB?.dataThroughRaw || view?.freshnessB?.dataThrough)
-  const observation = cleanText(view?.summary?.statement, 150)
+  const statements = (Array.isArray(view?.observations) ? view.observations : [])
+    .map(item => normalizeCardText(item?.statement))
+    .filter(text => text && !INTERNAL_TERMS.test(text) && !UNSAFE_COMPARISON_TERMS.test(text))
+  const summaryStatement = normalizeCardText(view?.summary?.statement)
+  const summaryUnsafe = UNSAFE_COMPARISON_TERMS.test(summaryStatement)
+  const observationFits = text => Boolean(wrapCardText(text, {
+    maxWidth: 328,
+    maxLines: 6,
+    fontSize: 20,
+  }))
+  const observation = selectCompleteCardStatement({
+    preferred: statements[0],
+    alternatives: statements.slice(1),
+    summary: !summaryUnsafe ? summaryStatement : null,
+    fallback: 'The current side-by-side counts are shown at left.',
+    fit: observationFits,
+  })
   const rows = (Array.isArray(view?.snapshot) ? view.snapshot : []).slice(0, 4).map(row => ({
     label: cleanText(row?.label, 24),
     valueA: Number.isFinite(Number(row?.valueA)) ? Math.max(0, Math.floor(Number(row.valueA))) : null,
@@ -141,6 +173,7 @@ export function buildComparisonEvidenceCard(view, { teamA, teamB, destinationUrl
     || !freshnessA
     || !freshnessB
     || rows.length !== 4
+    || summaryUnsafe
     || !observation
     || UNSAFE_COMPARISON_TERMS.test(observation)
   ) return null
@@ -164,6 +197,7 @@ export function buildComparisonEvidenceCard(view, { teamA, teamB, destinationUrl
     freshnessBLabel: formatCardDate(freshnessB),
     limitation,
     destinationUrl: destination,
+    displayUrl: `${EVIDENCE_CARD_ORIGIN.replace(/^https?:\/\//, '')} · Compare ${teamARef} vs ${teamBRef}`,
     altText: cleanText(
       `BaseballOS comparison card for the ${teamAName} and ${teamBName} bullpens. The card compares Available, On Watch, Limited, and Unavailable reliever counts, includes a neutral workload observation, and shows current data dates.`,
       320,

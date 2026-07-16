@@ -23,10 +23,10 @@ function observation(dim, labelA, labelB, a, b) {
   let statement = `Both bullpens currently have the same number of relievers ${dim.descriptor} (${a}).`
   if (a > b) {
     leader = 'A'
-    statement = `${labelA} currently has more relievers ${dim.descriptor}.`
+    statement = `The ${labelA} currently have more relievers ${dim.descriptor}.`
   } else if (a < b) {
     leader = 'B'
-    statement = `${labelB} currently has more relievers ${dim.descriptor}.`
+    statement = `The ${labelB} currently have more relievers ${dim.descriptor}.`
   }
   return {
     dimension: dim.key,

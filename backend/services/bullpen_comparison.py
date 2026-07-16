@@ -47,8 +47,12 @@ def _count_phrase(count, singular, plural=None):
     return count_to_baseball_language(count, singular, plural)
 
 
+def _team_subject(label):
+    return f'The {label}'
+
+
 def _has_count(label, count, singular, plural=None):
-    return f'{label} has {_count_phrase(count, singular, plural)}'
+    return f'{_team_subject(label)} have {_count_phrase(count, singular, plural)}'
 
 
 def _safe_public_copy(text, fallback):
@@ -136,7 +140,7 @@ def _tie_statement(dimension_key, value):
 def _leader_statement(dimension_key, leader_label, other_label, leader_value, other_value):
     if dimension_key == 'available':
         return _comparison_sentence(
-            subject=f'{leader_label} has the clearer late-inning coverage',
+            subject=f'{_team_subject(leader_label)} have the clearer late-inning coverage',
             reason=(
                 f'{_has_count(leader_label, leader_value, "available arm", "available arms")} '
                 f'while {_has_count(other_label, other_value, "available arm", "available arms")}'
@@ -146,7 +150,7 @@ def _leader_statement(dimension_key, leader_label, other_label, leader_value, ot
         )
     if dimension_key == 'restricted':
         return _comparison_sentence(
-            subject=f'{leader_label} has less rested late-inning cover',
+            subject=f'{_team_subject(leader_label)} have less rested late-inning cover',
             reason=(
                 f'{_has_count(leader_label, leader_value, "restricted arm", "restricted arms")} '
                 'needing rest or unavailable while '
@@ -156,7 +160,7 @@ def _leader_statement(dimension_key, leader_label, other_label, leader_value, ot
             stable_parts=('compare_bullpens', dimension_key, leader_label, other_label, leader_value, other_value),
         )
     return _comparison_sentence(
-        subject=f'{leader_label} has more bullpen watch traffic',
+        subject=f'{_team_subject(leader_label)} have more bullpen watch traffic',
         reason=(
             f'{_has_count(leader_label, leader_value, "watch-list arm", "watch-list arms")} '
             'carrying recent workload while '
@@ -286,7 +290,7 @@ def _difference_summary(label_a, label_b, metrics_a, metrics_b, observations):
         leader_value = max(metrics_a['available'], metrics_b['available'])
         other_value = min(metrics_a['available'], metrics_b['available'])
         statement = _comparison_sentence(
-            subject=f'{leader_label} has the clearer late-inning coverage',
+            subject=f'{_team_subject(leader_label)} have the clearer late-inning coverage',
             reason=(
                 f'{_has_count(leader_label, leader_value, "available arm", "available arms")} '
                 f'while {_has_count(other_label, other_value, "available arm", "available arms")}'
@@ -301,7 +305,7 @@ def _difference_summary(label_a, label_b, metrics_a, metrics_b, observations):
         thinner_value = max(metrics_a['restricted'], metrics_b['restricted'])
         cleaner_value = min(metrics_a['restricted'], metrics_b['restricted'])
         statement = _comparison_sentence(
-            subject=f'{cleaner_label} has more rested late-inning cover',
+            subject=f'{_team_subject(cleaner_label)} have more rested late-inning cover',
             reason=(
                 f'{thinner_label} carries {_count_phrase(thinner_value, "restricted arm", "restricted arms")} '
                 'needing rest or unavailable while '
@@ -317,7 +321,7 @@ def _difference_summary(label_a, label_b, metrics_a, metrics_b, observations):
         higher_value = max(metrics_a['monitor'], metrics_b['monitor'])
         lower_value = min(metrics_a['monitor'], metrics_b['monitor'])
         statement = _comparison_sentence(
-            subject=f'{lower_label} has the cleaner watch picture',
+            subject=f'{_team_subject(lower_label)} have the cleaner watch picture',
             reason=(
                 f'{higher_label} carries {_count_phrase(higher_value, "watch-list arm", "watch-list arms")} '
                 f'while {lower_label} carries {_count_phrase(lower_value, "watch-list arm", "watch-list arms")}'

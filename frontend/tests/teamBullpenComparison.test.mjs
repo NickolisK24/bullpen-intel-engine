@@ -61,8 +61,8 @@ test('comparison snapshot shows one public Unavailable row with combined raw cou
 
 test('renders deterministic comparison observations naming the team with more', () => {
   const html = render(differingComparison)
-  assert.ok(htmlIncludes(html, 'Aces currently has more relievers classified Available.'))
-  assert.ok(htmlIncludes(html, 'Bears currently has more relievers marked Unavailable.'))
+  assert.ok(htmlIncludes(html, 'The Aces currently have more relievers classified Available.'))
+  assert.ok(htmlIncludes(html, 'The Bears currently have more relievers marked Unavailable.'))
   assert.equal(htmlIncludes(html, 'Avoid or Unavailable'), false)
 })
 
