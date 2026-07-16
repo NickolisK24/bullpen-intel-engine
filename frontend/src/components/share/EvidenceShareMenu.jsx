@@ -32,6 +32,8 @@ export default function EvidenceShareMenu({
   const rootRef = useRef(null)
   const busyRef = useRef(false)
   const cardAvailable = Boolean(cardModel)
+  const shareDestination = cardModel?.destinationUrl || destinationUrl
+  const nativeShareText = cardModel?.shareText || shareText
 
   useEffect(() => {
     if (!open) return undefined
@@ -63,10 +65,10 @@ export default function EvidenceShareMenu({
       let result
       if (action === 'share') {
         result = linkOnly
-          ? await shareExactLink({ destinationUrl, shareText, context })
-          : await shareEvidenceCard({ model: cardModel, shareText, context })
+          ? await shareExactLink({ destinationUrl: shareDestination, shareText: nativeShareText, context })
+          : await shareEvidenceCard({ model: cardModel, shareText: nativeShareText, context })
       } else if (action === 'copy') {
-        result = await copyExactLink({ destinationUrl, context })
+        result = await copyExactLink({ destinationUrl: shareDestination, context })
       } else {
         result = await downloadEvidenceCard({ model: cardModel, context })
       }
@@ -80,7 +82,7 @@ export default function EvidenceShareMenu({
     }
   }
 
-  if (!destinationUrl) return null
+  if (!shareDestination) return null
 
   return (
     <div ref={rootRef} className={`relative inline-flex ${className}`} data-evidence-share-menu>

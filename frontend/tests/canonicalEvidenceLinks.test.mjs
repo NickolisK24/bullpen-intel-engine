@@ -168,7 +168,7 @@ test('static team previews preserve all teams, Boston metadata, redirect, and ge
   assert.equal(directories.length, 30)
 
   const boston = readFileSync(new URL('BOS/index.html', teamRoot), 'utf8')
-  assert.ok(boston.includes('<meta property="og:title" content="Boston Red Sox bullpen:'))
+  assert.ok(boston.includes('<meta property="og:title" content="Where the Boston Red Sox Bullpen Stands Tonight"'))
   assert.ok(boston.includes('<meta property="og:description" content="'))
   assert.ok(boston.includes('<link rel="canonical" href="https://baseballos.app/team/BOS" />'))
   assert.ok(boston.includes('window.location.replace("/bullpen?view=board&team=BOS&source=share")'))

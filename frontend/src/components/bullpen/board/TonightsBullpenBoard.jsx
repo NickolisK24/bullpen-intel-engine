@@ -89,14 +89,18 @@ export default function TonightsBullpenBoard({
     density: 'compact',
   })
   const normalizedRequestedSection = String(requestedSection || '').replace(/^#/, '')
-  const teamDestinationPath = buildTeamBoardHref(selectedTeamRecord, { section: normalizedRequestedSection })
-  const teamDestinationUrl = teamDestinationPath ? `${EVIDENCE_CARD_ORIGIN}${teamDestinationPath}` : null
-  const teamCard = buildTeamEvidenceCard(teamOperatingRead, { destinationUrl: teamDestinationUrl })
-  const teamEvidenceTarget = normalizedRequestedSection === 'team-relief-work'
-    ? 'team_relief_work'
-    : normalizedRequestedSection === 'pitcher-lanes'
-      ? 'pitcher_lanes'
-      : 'team_read'
+  const teamCard = buildTeamEvidenceCard(teamOperatingRead)
+  const teamLinkFallbackPath = buildTeamBoardHref(selectedTeamRecord, { section: normalizedRequestedSection })
+  const teamDestinationUrl = teamCard?.destinationUrl
+    || (teamLinkFallbackPath ? `${EVIDENCE_CARD_ORIGIN}${teamLinkFallbackPath}` : null)
+  const teamEvidenceTarget = teamCard?.evidenceTarget
+    || (normalizedRequestedSection === 'team-relief-work'
+      ? 'team_relief_work'
+      : normalizedRequestedSection === 'pitcher-lanes'
+        ? 'pitcher_lanes'
+        : 'team_read')
+  const teamShareText = teamCard?.shareText
+    || `Current ${teamOperatingRead.teamName || 'team'} bullpen evidence on BaseballOS.`
 
   useEffect(() => {
     if (rosterContextLimited && showUnavailable) {
@@ -170,7 +174,7 @@ export default function TonightsBullpenBoard({
                 <EvidenceShareMenu
                   cardModel={teamCard}
                   destinationUrl={teamDestinationUrl}
-                  shareText={`${teamOperatingRead.teamName || 'This team'}'s current bullpen read, with the recent-work receipts.`}
+                  shareText={teamShareText}
                   context={{
                     surface: 'bullpen_board',
                     cardType: 'team',
