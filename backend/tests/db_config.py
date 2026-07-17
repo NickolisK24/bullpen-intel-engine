@@ -149,10 +149,89 @@ def create_test_schema(app):
     db.create_all()
 
 
+def _test_app_engines(app):
+    """Return the distinct SQLAlchemy ``Engine`` objects Flask-SQLAlchemy created
+    for ``app`` — the default engine plus every configured bind.
+
+    Uses the extension's per-app engine registry keyed by the exact ``app``, so it
+    does not depend on an ambient ``current_app`` and never raises if the contexts
+    do not match; falls back to the public ``db.engines`` mapping (which requires
+    a matching active app context). Returns an empty list when no engine was ever
+    initialized for ``app``.
+    """
+    from utils.db import db
+
+    registry = getattr(db, '_app_engines', None)
+    if registry is not None:
+        try:
+            per_app = registry.get(app)
+        except TypeError:
+            per_app = None
+        if per_app:
+            return list(per_app.values())
+    try:
+        return list(db.engines.values())
+    except Exception:
+        return []
+
+
+def dispose_test_database_engines(app):
+    """Dispose every SQLAlchemy engine Flask-SQLAlchemy created for the test
+    ``app`` so its pooled database connections are released at teardown.
+
+    Each backend test builds a fresh Flask app and engine; without disposal the
+    engine's connection pool keeps an open connection that is never returned, so
+    connections accumulate across the whole test process and eventually exhaust
+    the PostgreSQL server (``FATAL: sorry, too many clients already``). Disposing
+    the engine closes its pooled connections and releases them from the server.
+
+    Defensive and idempotent: safe when no engine was ever initialized, when the
+    engine collection is empty, when schema creation failed partway through, and
+    when the scoped session was already removed. Only ever operates on engines
+    bound to a disposable test target — never a production or non-disposable
+    database. Works for PostgreSQL, in-memory and temporary-file SQLite, and
+    multiple configured binds.
+    """
+    from utils.db import db
+
+    # Release any scoped session (and its checked-out connection) before disposing
+    # the pool. Never fatal — the caller may already have removed the session.
+    try:
+        db.session.remove()
+    except Exception:
+        pass
+
+    seen_ids = set()
+    for engine in _test_app_engines(app):
+        if engine is None or id(engine) in seen_ids:
+            continue
+        seen_ids.add(id(engine))
+        # Belt-and-suspenders: only dispose engines pointed at a disposable test
+        # target, so a misconfigured fixture can never dispose a real database.
+        try:
+            engine_url = engine.url.render_as_string(hide_password=False)
+        except Exception:
+            engine_url = None
+        if engine_url is not None and not is_disposable_test_target(engine_url):
+            continue
+        try:
+            engine.dispose()
+        except Exception:
+            pass
+
+
 def drop_test_schema(app):
     assert_disposable_test_target(
         _app_database_url(app),
         operation='drop test schema',
     )
     from utils.db import db
-    db.drop_all()
+    try:
+        db.drop_all()
+    finally:
+        # Always release pooled connections, even if drop_all() raised, so the
+        # test database server never accumulates client connections across the
+        # suite. drop_test_schema is the shared teardown surface every fixture
+        # already calls, so engine disposal is owned centrally here rather than in
+        # dozens of individual test modules.
+        dispose_test_database_engines(app)
