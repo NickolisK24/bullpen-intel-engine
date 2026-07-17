@@ -20,6 +20,7 @@ we do not publish. The previous trusted snapshot keeps serving.
 | cron `0 2,4,6 * * *` | overnight passes | postgame |
 | Run workflow → `mode: daily` / `postgame` | manual | same as above |
 | Run workflow → `mode: backfill` + `backfill_date` | manual only | explicit historical replay |
+| Run workflow → `mode: intraday` | manual only | audit-only intraday reconciliation (Phase 1 — no writes) |
 
 Historical backfills are **never automatic**. The postgame job self-heals the
 trailing `POSTGAME_LOOKBACK_DAYS` (default 2) slate dates as part of normal
@@ -71,6 +72,65 @@ with a concrete `YYYY-MM-DD` slate date.
 Downstream jobs (`internal-enrichment`, `static-team-story-preview`) run only
 after `public-sync` succeeds, so a failed ledger verdict also stops enrichment
 and static page publication from advancing on unproven data.
+
+## Intraday reconciliation (audit-only, Phase 1)
+
+**Canonical reference: [`INTRADAY_RECONCILIATION.md`](INTRADAY_RECONCILIATION.md)**
+— the four-mode architecture, motivating incident, output contract and status
+meanings, locking/overlap behavior, required validation period, and future
+phases. The summary below is the pipeline-level view; that document is
+authoritative.
+
+A real production gap on 2026-07-16 — the Phillies recalled Seth Johnson after
+the morning daily sync, and BaseballOS kept treating him as outside the active
+roster until the next full sync — motivated a fourth mode, `intraday`: a
+lightweight, delta-aware reconciliation throughout the baseball day. This branch
+ships **Phase 1 of that mode only, and it is AUDIT-ONLY: manual, read-only, and
+non-publishing.** It proves change detection is accurate before any write
+behavior is authorized.
+
+- **Trigger:** manual only (`Run workflow → mode: intraday`). There is **no
+  cron** for it and it must never become an hourly full sync. It runs in the
+  isolated `intraday-audit` job, so it never touches the publish lane (no snapshot
+  publish/withhold, no appearance-ledger gate, no dashboard-cache verification).
+- **What it does:** fetches current authoritative source state through the same
+  MLB client, retry policy, product-date authority, and read-only source helpers
+  the daily/postgame syncs already own (`build_team_roster_status_index` /
+  `classify_roster_evidence`, `get_transactions` + `is_non_player_transaction`,
+  `get_schedule` + `classify_status` + `resolve_scheduled_game_finality`),
+  compares it with stored state, and reports the differences.
+- **What it never does:** no canonical baseball-data writes, no roster/status/
+  transaction/dead-letter mutation, no snapshot publication, no fatigue
+  recalculation, no story generation, no public cache warming, and it never
+  acquires the sync writer guard. The service self-certifies this with a
+  `write_guard` check that fails closed if the ORM session ever holds a pending
+  write.
+- **Lanes:**
+  1. *Active roster + team assignment* — official active-roster evidence for
+     every MLB team vs stored pitcher state: recalls, options, IL moves, DFA,
+     team-assignment changes, newly discovered active pitchers, conflicting
+     official team evidence, and source rows that cannot be safely matched to an
+     MLB identity (never name-matched).
+  2. *Transactions* — recent official transactions vs stored transaction
+     evidence, classified with the daily sync's exact order (non-player →
+     unresolved identity → actionable-not-stored / stored-conflict / already
+     reflected).
+  3. *Schedule + game finality* — the current and previous slate dates: newly
+     final games, postponements/reschedules, in-progress games, and stored
+     finality conflicts.
+  4. *Impact plan* — a dry-run `would_refresh` projection (which teams, pitcher
+     logs, and completed game_pks a future write phase would touch, and whether
+     it would republish/warm). Every value is a projection; this audit performs
+     none of it.
+- **Operator command (read-only):**
+
+  ```
+  python backend/scripts/run_intraday_reconcile.py --source manual --json [--output PATH] [--lanes roster_assignment,transactions,schedule_finality]
+  ```
+
+  Human-readable progress goes to stderr; a single JSON audit artifact goes to
+  stdout with `--json`. The workflow uploads it as the `intraday-audit-<run id>`
+  artifact.
 
 ## Reading a failure
 

@@ -40,7 +40,10 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: Sync mode to run
+        description: >-
+          Sync mode to run. intraday is a manual-only, AUDIT-ONLY check that
+          reports what would change without writing any baseball data,
+          publishing a snapshot, or warming caches.
         required: true
         default: daily
         type: choice
@@ -48,6 +51,7 @@ on:
           - daily
           - postgame
           - backfill
+          - intraday
       backfill_date:
         description: >-
           Slate date (YYYY-MM-DD) to replay when mode=backfill. Backfills are
@@ -68,6 +72,10 @@ permissions:
 jobs:
   public-sync:
     runs-on: ubuntu-latest
+    # The intraday mode is audit-only and never publishes; it runs in the
+    # isolated intraday-audit job below and must not trigger any part of this
+    # publish-oriented lane (including the always() ledger/snapshot steps).
+    if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.mode == 'intraday') }}
     # Public freshness lane only: acquisition, public derived state, snapshot
     # publication, Tonight warm, appearance ledger audit, and dashboard cache
     # verification. 40 minutes gives headroom for the worst case of the step
@@ -553,3 +561,75 @@ jobs:
           git add frontend/public/team frontend/public/og/baseballos-card.svg
           git commit -m "docs: update team story preview pages"
           git push
+
+  # Manual-only, AUDIT-ONLY intraday reconciliation (Phase 1). This job never
+  # runs on a schedule — there is deliberately no cron entry for it. It reads
+  # authoritative source state, compares it with stored BaseballOS state, and
+  # uploads a structured JSON audit of what would need to change. It performs no
+  # canonical baseball-data writes, publishes no snapshot, runs no fatigue/story
+  # work, and warms no public cache, so it is fully isolated from the publish
+  # lane above (no ledger gate, no snapshot-cache verification).
+  intraday-audit:
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.mode == 'intraday' }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install backend dependencies
+        run: pip install -r backend/requirements.txt
+
+      - name: Run intraday reconciliation audit (check-only, no writes)
+        env:
+          APP_ENV: production
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SECRET_KEY: ${{ secrets.SECRET_KEY }}
+          AUTO_SYNC: 'false'
+          INTRADAY_AUDIT_COMMAND_TIMEOUT: 15m
+        run: |
+          set -euo pipefail
+          if [ -z "${DATABASE_URL:-}" ] || [ -z "${SECRET_KEY:-}" ]; then
+            echo "::error::Missing DATABASE_URL or SECRET_KEY repository secret."
+            exit 1
+          fi
+          echo "Intraday reconciliation audit starting at $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          # The command writes the JSON artifact to --output and also prints the
+          # single JSON object to stdout (workflow log). We capture its exit code
+          # but do NOT fail the step here, so the always() upload step below runs
+          # first; the original exit code is re-applied afterward.
+          set +e
+          timeout --kill-after=30s "$INTRADAY_AUDIT_COMMAND_TIMEOUT" \
+            python backend/scripts/run_intraday_reconcile.py \
+            --source github_actions --json --output intraday-reconciliation-audit.json
+          exit_code=$?
+          set -e
+          echo "$exit_code" > intraday-audit-exit-code
+          case "$exit_code" in
+            0) echo "Intraday reconciliation audit completed (success/skipped) at $(date -u +'%Y-%m-%dT%H:%M:%SZ')." ;;
+            1) echo "::warning::Intraday reconciliation audit returned partial/failed verification (exit 1). See the uploaded artifact." ;;
+            124|137|143) echo "::error::Intraday reconciliation audit timed out after $INTRADAY_AUDIT_COMMAND_TIMEOUT." ;;
+            *) echo "::error::Intraday reconciliation audit failed with exit code $exit_code." ;;
+          esac
+
+      - name: Upload intraday audit artifact
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: intraday-reconciliation-audit-${{ github.run_id }}
+          path: intraday-reconciliation-audit.json
+          if-no-files-found: ignore
+
+      - name: Preserve intraday audit exit code
+        if: ${{ always() }}
+        run: |
+          set -euo pipefail
+          code="$(cat intraday-audit-exit-code 2>/dev/null || echo 1)"
+          echo "Re-applying intraday audit exit code: $code"
+          exit "$code"
