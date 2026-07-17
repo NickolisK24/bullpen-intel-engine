@@ -132,22 +132,30 @@ behavior is authorized.
      effect whose latest applicable event and current roster-lane membership prove
      the pitcher is correctly outside the active bullpen is benign
      (`transaction_detail_mismatch` / `superseded_transaction`), never material;
-     only a genuine current mismatch is `public_bullpen_effect_unreflected`. Public
-     team impact is scoped to the governed MLB clubs — affiliate / minor-league ids
-     stay in evidence (`non_mlb_team_ids_observed`) but never in `affected_team_ids`
-     or `recalculate_team_reads`. Only **meaningful** findings are serialized;
-     benign inventory is counted, bounded-sampled, and reported with a
+     only a genuine current mismatch is `public_bullpen_effect_unreflected`.
+     **Transaction-record actionability is separate from public materiality**
+     (contract 1.3.0, Observation #3): a missing/actionable record is
+     transaction-ledger actionable but is NOT public-material unless its type can
+     change active membership AND the roster lane confirms a current change —
+     organization/ledger records (`SGN`/`SFA`/`ASG`), `effect_direction=none`, and
+     unknown types (fail-closed) never publish. Public team impact is scoped to the
+     governed MLB clubs — affiliate / minor-league ids stay in evidence
+     (`non_mlb_team_ids_observed`) but never in `affected_team_ids` /
+     `recalculate_team_reads`. Only **meaningful** findings are serialized; benign
+     inventory is counted, bounded-sampled, and reported with a
      `benign_records_suppressed` total.
   3. *Schedule + game finality* — the current and previous slate dates: newly
      final games, postponements/reschedules, in-progress games, and stored
      finality conflicts.
-  4. *Impact plan* — a dry-run `would_refresh` projection (which teams, pitcher
-     logs, and completed game_pks a future write phase would touch, and whether
-     it would republish/warm). Every value is a projection; this audit performs
-     none of it. It is derived from **actionable** findings only — benign
-     inventory and review-required findings never plan a write. A transaction-only
-     storage delta never warms Tonight (only a roster-population or schedule delta
-     does).
+  4. *Impact plan* — a dry-run `would_refresh` projection split into two
+     sub-plans: `public_bullpen_state` (roster/current-state-authoritative — teams,
+     targeted pitcher logs, completed game_pks, publish/warm) and
+     `transaction_ledger` (records to ingest/reconcile). The flat `would_refresh`
+     fields derive **only** from `public_bullpen_state`; transaction-ledger-only
+     findings never set public teams, targeted workload, snapshot, or warm. Every
+     value is a projection; this audit performs none of it. The roster lane owns
+     public current-state materiality and overlapping players/teams are deduped to
+     one public impact.
 - **`changed` vs material.** Top-level `changed` is true when any meaningful
   finding exists (actionable *or* review-required), so a real
   human-review-required finding is never hidden. `material_change_detected` is

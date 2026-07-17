@@ -90,12 +90,21 @@ CAPABILITY = 'intraday_reconciliation_audit_v1'
 #                    impact is scoped to the governed MLB clubs; exact
 #                    transaction-state alignment is separated from public
 #                    active-bullpen membership; historical option/IL effects are
-#                    chronology- and current-membership-aware. All additions are
-#                    backward-compatible within capability v1 — new fields and
-#                    new classifications are added, none of the fields the
-#                    workflow validator checks (capability/mode/check_only/status)
-#                    change — so this is a backward-compatible minor bump.
-VERSION = '1.2.0'
+#                    chronology- and current-membership-aware.
+#   1.2.0 -> 1.3.0 : transaction-ledger vs public-materiality split (Production
+#                    Observation #3). A missing/actionable transaction record is
+#                    no longer conflated with a current public bullpen-state
+#                    change: every meaningful transaction finding now exposes two
+#                    independent axes (transaction_record_actionable and
+#                    public_bullpen_material). Public impact (affected teams,
+#                    targeted workload, snapshot, warm) is derived from the roster
+#                    lane's current-state authority only; transaction-ledger-only
+#                    findings get a separate would_refresh.transaction_ledger
+#                    plan. Additive only (new fields / sub-plans / summary
+#                    buckets; the flat would_refresh fields stay, now sourced from
+#                    public_bullpen_state), and none of the fields the workflow
+#                    validator checks change — a backward-compatible minor bump.
+VERSION = '1.3.0'
 
 MODE = 'intraday'
 PHASE = 1
@@ -187,6 +196,7 @@ BULLPEN_RELEVANT_ROLES = frozenset({ROLE_PROVEN_PITCHER, ROLE_PROVEN_TWO_WAY})
 
 # How the role was established (role_verification_status).
 ROLE_SOURCE_STORED_PITCHER = 'stored_pitcher'          # tracked Pitcher row
+ROLE_SOURCE_ROSTER_REUSE = 'roster_lane_reuse'         # already resolved by roster lane
 ROLE_SOURCE_ROSTER_EVIDENCE = 'source_position_evidence'  # position on the source row
 ROLE_SOURCE_PEOPLE_LOOKUP = 'mlb_people_lookup'        # /people/{id} primaryPosition
 ROLE_SOURCE_LOOKUP_FAILED = 'people_lookup_failed'
@@ -286,6 +296,47 @@ _TX_LEAVE_CATEGORIES = frozenset({
     transactions_service.CATEGORY_RELEASE,
 })
 _TX_ROSTER_AFFECTING_CATEGORIES = _TX_ENTER_CATEGORIES | _TX_LEAVE_CATEGORIES
+
+# ── Transaction public-effect governance (Corrections 1/2/3, Observation #3) ──
+# Whether a transaction TYPE can plausibly change current MLB active-bullpen
+# membership. This is the single governed surface used to decide public
+# materiality; the reconciliation loop never guesses inline.
+EFFECT_SCOPE_ACTIVE_ROSTER = 'active_roster_affecting'
+EFFECT_SCOPE_LEDGER_ONLY = 'organization_or_ledger_only'
+EFFECT_SCOPE_CONTEXT_DEPENDENT = 'context_dependent'
+EFFECT_SCOPE_UNKNOWN = 'unknown'
+
+# Context-dependent categories: they MAY change active membership, but only a
+# current roster confirmation can establish it — the transaction alone cannot.
+_TX_CONTEXT_DEPENDENT_CATEGORIES = frozenset({
+    transactions_service.CATEGORY_TRADE,
+    transactions_service.CATEGORY_CONTRACT_SELECTION,
+    transactions_service.CATEGORY_OUTRIGHT,
+})
+# Organization / transaction-ledger-only source type codes: signings, assignments
+# and similar records that do NOT by themselves establish active MLB status.
+# Normalized category is CATEGORY_UNKNOWN for these, so they are recognized by
+# their raw source type code, failing closed to ledger-only.
+_TX_LEDGER_ONLY_TYPE_CODES = frozenset({
+    'SGN', 'SIGNED', 'SFA', 'FA', 'ASG', 'ASGN', 'ASSIGNED', 'AA', 'RELEASE_ANN',
+    'ASG_ORG', 'SE', 'CLW_ORG',
+})
+
+# Roster-confirmation status of a transaction participant against the roster
+# lane's current-state authority (Correction 4/7).
+ROSTER_CONFIRM_CHANGE = 'confirmed_change'      # official != stored -> current change
+ROSTER_CONFIRM_ALIGNED = 'confirmed_aligned'    # official == stored -> already reflected
+ROSTER_CONFIRM_UNVERIFIED = 'unverified'        # not on a fetched roster / unknown
+ROSTER_CONFIRM_NOT_APPLICABLE = 'not_applicable'
+
+# Transaction classifications whose RECORD a future write phase would ingest or
+# reconcile (transaction-ledger actionable). This is independent of whether the
+# event proves a current public bullpen-state change.
+TX_LEDGER_ACTIONABLE_CLASSES = frozenset({
+    TX_ACTIONABLE_NOT_STORED,
+    TX_STORED_CONFLICT,
+    TX_COMPOUND_NEW,
+})
 
 # Current public active-bullpen membership alignment (Correction 4).
 MEMBERSHIP_ALIGNED = 'aligned'
@@ -973,13 +1024,30 @@ class _RoleResolver:
     closed (unresolved) on lookup error or when the per-run budget is exhausted —
     an unchecked player is never classified as a pitcher (Corrections 1 and 2)."""
 
-    def __init__(self, client, *, max_lookups=DEFAULT_MAX_ROLE_LOOKUPS):
+    def __init__(self, client, *, max_lookups=DEFAULT_MAX_ROLE_LOOKUPS, roster_current_state=None):
         self._client = client
         self._max_lookups = max(0, int(max_lookups))
+        self._roster_current_state = roster_current_state or {}
         self._cache = {}
+        self._candidate_ids = set()
         self.lookups_used = 0
+        self.lookups_avoided = 0
         self.budget_exceeded = False
         self.lookup_failures = 0
+
+    @property
+    def candidates(self):
+        return len(self._candidate_ids)
+
+    def _stored_role(self, status):
+        return {
+            'bullpen_relevance': ROLE_PROVEN_PITCHER,
+            'role_verification_status': status,
+            'role_evidence_source': status,
+            'official_position_code': None,
+            'official_position_abbreviation': None,
+            'official_position_type': None,
+        }
 
     def _unresolved(self, status):
         return {
@@ -992,24 +1060,35 @@ class _RoleResolver:
         }
 
     def resolve(self, *, mlb_id, stored_pitcher_id, transaction=None):
-        if stored_pitcher_id is not None:
-            # A tracked Pitcher row exists — BaseballOS only tracks pitchers /
-            # two-way arms, so the participant is proven bullpen-relevant.
-            return {
-                'bullpen_relevance': ROLE_PROVEN_PITCHER,
-                'role_verification_status': ROLE_SOURCE_STORED_PITCHER,
-                'role_evidence_source': ROLE_SOURCE_STORED_PITCHER,
-                'official_position_code': None,
-                'official_position_abbreviation': None,
-                'official_position_type': None,
-            }
         if mlb_id is None:
+            if stored_pitcher_id is not None:
+                return self._stored_role(ROLE_SOURCE_STORED_PITCHER)
             return self._unresolved(ROLE_SOURCE_NO_EVIDENCE)
         if mlb_id in self._cache:
             return self._cache[mlb_id]
 
+        # This participant genuinely needs a role decision (a lookup candidate).
+        self._candidate_ids.add(mlb_id)
+
+        # A tracked Pitcher row exists — proven bullpen-relevant, no /people lookup.
+        if stored_pitcher_id is not None:
+            self.lookups_avoided += 1
+            result = self._stored_role(ROLE_SOURCE_STORED_PITCHER)
+            self._cache[mlb_id] = result
+            return result
+
+        # Reuse the roster lane's evidence: a player it already resolved to a
+        # tracked pitcher needs no /people lookup (Correction 9).
+        roster_state = self._roster_current_state.get(mlb_id)
+        if roster_state and roster_state.get('stored_pitcher_id') is not None:
+            self.lookups_avoided += 1
+            result = self._stored_role(ROLE_SOURCE_ROSTER_REUSE)
+            self._cache[mlb_id] = result
+            return result
+
         evidence = _role_evidence_from_source(transaction)
         if evidence is not None:
+            self.lookups_avoided += 1
             self._cache[mlb_id] = evidence
             return evidence
 
@@ -1238,6 +1317,11 @@ def reconcile_transactions(
         '_all_findings': all_findings,
         'limitations': limitations,
         'role_verification': {
+            'role_lookups_used': role_resolver.lookups_used,
+            'role_lookups_avoided': role_resolver.lookups_avoided,
+            'role_lookup_candidates': role_resolver.candidates,
+            'role_lookup_budget': role_resolver._max_lookups,
+            # Back-compat aliases.
             'lookups_used': role_resolver.lookups_used,
             'lookup_budget': role_resolver._max_lookups,
             'budget_exceeded': role_resolver.budget_exceeded,
@@ -1248,7 +1332,7 @@ def reconcile_transactions(
     }
     if fetch_error is not None:
         lane['fetch_error'] = fetch_error
-    _finalize_transaction_lane(lane, sample_limit=sample_limit)
+    _finalize_transaction_lane(lane, roster_current_state, sample_limit=sample_limit)
     return lane
 
 
@@ -1260,16 +1344,153 @@ def _tx_effect_direction(category):
     return EFFECT_NONE
 
 
-def _finalize_transaction_lane(lane, *, sample_limit=DEFAULT_TX_SAMPLE_LIMIT):
-    """Recompute serialized differences, counts, samples, and MLB-scoped affected
-    sets from ``lane['_all_findings']``. Idempotent, so the cross-lane membership
-    step can re-run it after resolving deferred findings."""
+def classify_transaction_public_effect(transaction_type_code, normalized_category):
+    """Governed classification of whether a transaction TYPE can plausibly change
+    current MLB active-bullpen membership (Correction 2). The single surface used
+    to decide public materiality; unknown types fail closed (never public-material
+    without independent current roster evidence).
+
+    Returns a dict with ``transaction_effect_scope``,
+    ``may_change_active_mlb_membership``, ``effect_direction``,
+    ``requires_roster_confirmation``, ``ledger_relevant``, and
+    ``public_effect_reason``.
+    """
+    code = (_string_or_none(transaction_type_code) or '').strip().upper()
+    if normalized_category in _TX_ROSTER_AFFECTING_CATEGORIES:
+        return {
+            'transaction_effect_scope': EFFECT_SCOPE_ACTIVE_ROSTER,
+            'may_change_active_mlb_membership': True,
+            'effect_direction': _tx_effect_direction(normalized_category),
+            'requires_roster_confirmation': True,
+            'ledger_relevant': True,
+            'public_effect_reason': (
+                'active-roster-affecting transaction category; may change active '
+                'MLB membership, subject to current roster confirmation'
+            ),
+        }
+    if normalized_category in _TX_CONTEXT_DEPENDENT_CATEGORIES:
+        return {
+            'transaction_effect_scope': EFFECT_SCOPE_CONTEXT_DEPENDENT,
+            'may_change_active_mlb_membership': True,
+            'effect_direction': EFFECT_NONE,
+            'requires_roster_confirmation': True,
+            'ledger_relevant': True,
+            'public_effect_reason': (
+                'context-dependent transaction (trade / selection / outright); only '
+                'current roster evidence can establish an active-membership change'
+            ),
+        }
+    if code in _TX_LEDGER_ONLY_TYPE_CODES:
+        return {
+            'transaction_effect_scope': EFFECT_SCOPE_LEDGER_ONLY,
+            'may_change_active_mlb_membership': False,
+            'effect_direction': EFFECT_NONE,
+            'requires_roster_confirmation': True,
+            'ledger_relevant': True,
+            'public_effect_reason': (
+                'organization / transaction-ledger-only record (signing, assignment); '
+                'does not establish current active MLB bullpen membership'
+            ),
+        }
+    return {
+        'transaction_effect_scope': EFFECT_SCOPE_UNKNOWN,
+        'may_change_active_mlb_membership': False,
+        'effect_direction': EFFECT_NONE,
+        'requires_roster_confirmation': True,
+        'ledger_relevant': True,
+        'public_effect_reason': (
+            'unknown / unsupported transaction type; fails closed — not '
+            'public-material without independent current roster evidence'
+        ),
+    }
+
+
+def _roster_confirmation(state):
+    """Map a roster-lane current-state entry to a confirmation status + membership
+    alignment for a transaction participant (Correction 4/7)."""
+    if not state or not state.get('verified') or state.get('official_active') is None:
+        return ROSTER_CONFIRM_UNVERIFIED, MEMBERSHIP_UNKNOWN
+    official_active = bool(state.get('official_active'))
+    stored_active = state.get('stored_active')
+    if stored_active is None:
+        # Source-only (unstored) player the roster lane sees as active — a current
+        # bullpen-population change owned by the roster lane.
+        if official_active:
+            return ROSTER_CONFIRM_CHANGE, MEMBERSHIP_MISALIGNED
+        return ROSTER_CONFIRM_UNVERIFIED, MEMBERSHIP_UNKNOWN
+    if official_active != bool(stored_active):
+        return ROSTER_CONFIRM_CHANGE, MEMBERSHIP_MISALIGNED
+    return ROSTER_CONFIRM_ALIGNED, MEMBERSHIP_ALIGNED
+
+
+def _apply_actionability_axes(record, roster_current_state):
+    """Attach the two independent actionability axes to a meaningful transaction
+    finding (Correction 1): ``transaction_record_actionable`` (does the ledger
+    need this record?) and ``public_bullpen_material`` (does this event prove a
+    current public MLB bullpen-state change?). Public materiality requires an
+    active-roster-affecting type AND roster-lane confirmation of a current change
+    for a proven bullpen-relevant player — never role, recency, or a missing
+    record alone."""
+    classification = record.get('classification')
+    scope = classify_transaction_public_effect(
+        record.get('transaction_type_code'), record.get('normalized_category'),
+    )
+    record['transaction_effect_scope'] = scope['transaction_effect_scope']
+    record['may_change_active_mlb_membership'] = scope['may_change_active_mlb_membership']
+
+    record['transaction_record_actionable'] = classification in TX_LEDGER_ACTIONABLE_CLASSES
+
+    mlb_id = record.get('player_mlb_id')
+    state = roster_current_state.get(mlb_id) if mlb_id is not None else None
+    confirmation, membership = _roster_confirmation(state)
+    record['roster_confirmation_status'] = confirmation
+
+    relevant = record.get('bullpen_relevance') in BULLPEN_RELEVANT_ROLES
+    if classification == TX_PUBLIC_BULLPEN_EFFECT_UNREFLECTED:
+        record['public_bullpen_material'] = True
+        record['public_bullpen_material_reason'] = (
+            'roster lane confirms current active-bullpen membership differs from '
+            'stored state for this proven pitcher'
+        )
+    elif (scope['may_change_active_mlb_membership'] and relevant
+          and confirmation == ROSTER_CONFIRM_CHANGE):
+        record['public_bullpen_material'] = True
+        record['public_bullpen_material_reason'] = (
+            'active-roster-affecting transaction for a proven pitcher whose current '
+            'membership change is confirmed by roster evidence'
+        )
+    else:
+        record['public_bullpen_material'] = False
+        if not scope['may_change_active_mlb_membership']:
+            record['public_bullpen_material_reason'] = (
+                'transaction type cannot establish a current active MLB bullpen '
+                'change; ledger-relevant only'
+            )
+        elif not relevant:
+            record['public_bullpen_material_reason'] = (
+                'participant is not a proven bullpen-relevant pitcher'
+            )
+        else:
+            record['public_bullpen_material_reason'] = (
+                'no current roster confirmation of an active-bullpen change'
+            )
+    return record
+
+
+def _finalize_transaction_lane(lane, roster_current_state=None, *, sample_limit=DEFAULT_TX_SAMPLE_LIMIT):
+    """Recompute serialized differences, counts, samples, and the two independent
+    result surfaces from ``lane['_all_findings']`` (Observation #3, Correction 5):
+    a PUBLIC surface (proven current bullpen-state changes only — a subset of the
+    roster lane's authority) and a transaction-LEDGER surface (records a future
+    write phase would ingest/reconcile). Idempotent."""
+    roster_current_state = roster_current_state or {}
     all_findings = lane.get('_all_findings') or []
     counts = defaultdict(int)
     differences = []
     benign_samples = defaultdict(list)
 
     for finding in all_findings:
+        _apply_actionability_axes(finding, roster_current_state)
         classification = finding.get('classification')
         counts[classification] += 1
         if classification in TX_MEANINGFUL_CLASSES:
@@ -1279,25 +1500,37 @@ def _finalize_transaction_lane(lane, *, sample_limit=DEFAULT_TX_SAMPLE_LIMIT):
 
     actionable = [d for d in differences if d.get('severity') == SEVERITY_ACTIONABLE]
     review = [d for d in differences if d.get('severity') == SEVERITY_REVIEW]
+    ledger_findings = [d for d in differences if d.get('transaction_record_actionable')]
+    public_findings = [d for d in differences if d.get('public_bullpen_material')]
 
-    # Affected identity sets derive from ACTIONABLE, proven bullpen-relevant
-    # findings only; public team ids are scoped to the governed MLB clubs, while
-    # every observed team id (including affiliates) is preserved in evidence.
-    affected_pitcher_ids = set()
-    affected_pitcher_mlb_ids = set()
-    affected_team_ids_raw = set()
+    # PUBLIC surface — only findings that prove a current public bullpen-state
+    # change (always a subset of the roster lane's authority). Team ids MLB-scoped.
+    public_pitcher_ids = set()
+    public_pitcher_mlb_ids = set()
+    public_team_ids_raw = set()
+    for d in public_findings:
+        public_pitcher_ids.update(_finding_bullpen_pitcher_ids(d))
+        public_pitcher_mlb_ids.update(_finding_bullpen_mlb_ids(d))
+        public_team_ids_raw.update(_finding_bullpen_team_ids(d))
+
+    # LEDGER surface — records to ingest / reconcile, independent of public state.
+    ledger_participant_mlb_ids = set()
+    ledger_team_ids_raw = set()
+    ingest_event_keys = set()
+    reconcile_event_keys = set()
+    for d in ledger_findings:
+        ledger_participant_mlb_ids.update(_finding_bullpen_mlb_ids(d))
+        ledger_team_ids_raw.update(t for t in _finding_team_ids(d) if t is not None)
+        event_key = d.get('event_key')
+        if event_key:
+            if d.get('classification') == TX_STORED_CONFLICT:
+                reconcile_event_keys.add(event_key)
+            else:
+                ingest_event_keys.add(event_key)
+
     all_team_ids_raw = set()
     for finding in all_findings:
         all_team_ids_raw.update(t for t in _finding_team_ids(finding) if t is not None)
-    for d in actionable:
-        for pid in _finding_bullpen_pitcher_ids(d):
-            affected_pitcher_ids.add(pid)
-        for mid in _finding_bullpen_mlb_ids(d):
-            affected_pitcher_mlb_ids.add(mid)
-        for team_id in _finding_bullpen_team_ids(d):
-            affected_team_ids_raw.add(team_id)
-
-    affected_team_ids = _mlb_team_ids(affected_team_ids_raw)
     non_mlb_team_ids_observed = _non_mlb_team_ids(all_team_ids_raw)
 
     differences.sort(key=lambda d: (
@@ -1328,6 +1561,9 @@ def _finalize_transaction_lane(lane, *, sample_limit=DEFAULT_TX_SAMPLE_LIMIT):
         'meaningful_differences': len(differences),
         'actionable_differences': len(actionable),
         'review_required_differences': len(review),
+        # Two independent axes (Correction 1).
+        'transaction_record_actionable': len(ledger_findings),
+        'public_bullpen_material': len(public_findings),
         # Back-compat alias for the pre-1.1 impact-plan reader.
         'actionable_player_transactions': len(actionable),
         'already_reflected': already_reflected_count,
@@ -1360,10 +1596,20 @@ def _finalize_transaction_lane(lane, *, sample_limit=DEFAULT_TX_SAMPLE_LIMIT):
     lane['informational_samples'] = {
         cls: benign_samples[cls] for cls in benign_sample_classes if benign_samples[cls]
     }
-    lane['affected_team_ids'] = affected_team_ids
+    # PUBLIC surface (subset of roster authority).
+    lane['affected_team_ids'] = _mlb_team_ids(public_team_ids_raw)
+    lane['affected_pitcher_ids'] = sorted(public_pitcher_ids)
+    lane['affected_pitcher_mlb_ids'] = sorted(public_pitcher_mlb_ids)
     lane['related_non_mlb_team_ids'] = non_mlb_team_ids_observed
-    lane['affected_pitcher_ids'] = sorted(affected_pitcher_ids)
-    lane['affected_pitcher_mlb_ids'] = sorted(affected_pitcher_mlb_ids)
+    # LEDGER surface.
+    lane['transaction_ledger'] = {
+        'ingest_transaction_event_keys': sorted(ingest_event_keys),
+        'reconcile_transaction_event_keys': sorted(reconcile_event_keys),
+        'transaction_participant_mlb_ids': sorted(ledger_participant_mlb_ids),
+        'transaction_related_mlb_team_ids': _mlb_team_ids(ledger_team_ids_raw),
+        'transaction_related_non_mlb_team_ids': _non_mlb_team_ids(ledger_team_ids_raw),
+        'record_actionable_count': len(ledger_findings),
+    }
 
 
 def _apply_role_gate(record, role_evidence):
@@ -1518,6 +1764,22 @@ def _resolve_single_membership(record, component, player_events, roster_current_
     whose exact stored state is misaligned (Corrections 4/5/6/7). Uses roster-lane
     current-state authority; never claims a material mismatch when the roster lane
     proves current public membership is already correct."""
+    # A transaction type that cannot establish a current active-bullpen change
+    # (organization / ledger-only / unknown) is never public-material, even when
+    # its exact stored detail differs (Correction 3).
+    scope = classify_transaction_public_effect(
+        record.get('transaction_type_code'), component['normalized_category'],
+    )
+    if not scope['may_change_active_mlb_membership']:
+        record['classification'] = TX_TRANSACTION_DETAIL_MISMATCH
+        record['severity'] = None
+        record['public_bullpen_membership_alignment'] = MEMBERSHIP_UNKNOWN
+        record['reason'] = (
+            'transaction type cannot establish a current active-bullpen change; '
+            'exact stored detail differs only'
+        )
+        return
+
     chronology_status, latest_key, superseded_by = _chronology_for_player(component, player_events)
     record['chronology_status'] = chronology_status
     record['latest_applicable_event_key'] = latest_key
@@ -2101,21 +2363,19 @@ def build_impact_plan(lane_roster, lane_transactions, lane_schedule):
     transactions = lane_transactions or {}
     schedule = lane_schedule or {}
 
-    # Roster status/assignment change counts already exclude conflicting and
-    # unresolved (review-required) findings.
+    # ── PUBLIC bullpen-state plan (Correction 4/5/6/7) ───────────────────────
+    # The ROSTER lane is the sole authority for current active-bullpen membership,
+    # targeted recent-work acquisition, and public team-read recomputation. The
+    # transaction lane's public-material findings are, by construction, a subset of
+    # the roster lane's authority (a confirmed current change is always also a
+    # roster finding), so unioning them adds no NEW public teams/pitchers — it only
+    # deduplicates. Transaction-ledger-only findings never enter this plan.
     roster_checked = roster.get('checked') or {}
     roster_statuses_changed = bool(roster_checked.get('roster_status_differences'))
     team_assignments_changed = bool(roster_checked.get('team_assignment_differences'))
 
-    # Transactions drive a write only through ACTIONABLE findings, which are now
-    # gated to proven bullpen-relevant players and current-membership materiality
-    # (Corrections 1/5/8). Benign inventory and review-required findings never do.
     tx_checked = transactions.get('checked') or {}
-    transactions_actionable = bool(tx_checked.get('actionable_differences'))
-    # A transaction proves a CURRENT roster-population change only when official
-    # active-bullpen membership disagrees with stored state (Correction 8) — an
-    # exact-detail or storage conflict does not.
-    transactions_population_change = bool(tx_checked.get('public_bullpen_effect_unreflected'))
+    public_membership_mismatches = int(tx_checked.get('public_bullpen_material', 0))
 
     completed_game_pks = list(schedule.get('completed_game_pks') or [])
     schedule_actionable_diffs = [
@@ -2130,14 +2390,13 @@ def build_impact_plan(lane_roster, lane_transactions, lane_schedule):
         if team_id is not None
     }
 
-    # Every contributing lane already scopes its public team ids to the governed
-    # MLB clubs; re-scope defensively so no affiliate id can enter public planning.
-    affected_team_ids = _mlb_team_ids(
+    # Public teams/pitchers come from the roster lane (+ schedule) and the deduped
+    # transaction public-material subset. All MLB-scoped.
+    public_team_ids = _mlb_team_ids(
         set(roster.get('affected_team_ids') or [])
         | set(transactions.get('affected_team_ids') or [])
         | schedule_affected_team_ids
     )
-
     targeted_pitcher_ids = sorted(
         set(roster.get('targeted_recent_work_pitcher_ids') or [])
         | set(transactions.get('affected_pitcher_ids') or [])
@@ -2147,40 +2406,76 @@ def build_impact_plan(lane_roster, lane_transactions, lane_schedule):
         | set(transactions.get('affected_pitcher_mlb_ids') or [])
     )
 
-    # A future authorized write / recompute is required only for actionable
-    # findings (or newly final games). Review-required findings never plan a
-    # write; benign inventory never plans anything.
-    material_change = bool(
+    public_bullpen_change_detected = bool(
         roster_statuses_changed
         or team_assignments_changed
-        or transactions_actionable
-        or schedule_actionable
-        or completed_game_pks
+        or public_membership_mismatches
     )
+    # material = a proven current public-state change requires a future public
+    # write/recompute. Transaction-ledger gaps NEVER make it true.
+    material_change = bool(public_bullpen_change_detected or completed_game_pks)
+
+    public_bullpen_state = {
+        'roster_statuses': roster_statuses_changed,
+        'team_assignments': team_assignments_changed,
+        'targeted_pitcher_logs': targeted_pitcher_ids,
+        'targeted_pitcher_mlb_ids': targeted_pitcher_mlb_ids,
+        'affected_team_ids': public_team_ids,
+        'recalculate_team_reads': public_team_ids,
+        'completed_game_pks': completed_game_pks,
+        'publish_snapshot': material_change,
+        # Only a proven roster-population or schedule delta warms Tonight.
+        'warm_tonight': bool(
+            schedule_actionable
+            or roster_statuses_changed
+            or team_assignments_changed
+            or public_membership_mismatches
+        ),
+        'recalculate_current_pen_era': bool(completed_game_pks),
+        'recalculate_league_era_rank': bool(completed_game_pks),
+    }
+
+    # ── TRANSACTION-LEDGER plan (Correction 5) ───────────────────────────────
+    # Records a future write phase would ingest / reconcile — completely separate
+    # from public state, and never sets any public field above.
+    tx_ledger = transactions.get('transaction_ledger') or {}
+    transaction_ledger = {
+        'ingest_transaction_event_keys': list(tx_ledger.get('ingest_transaction_event_keys') or []),
+        'reconcile_transaction_event_keys': list(tx_ledger.get('reconcile_transaction_event_keys') or []),
+        'transaction_participant_mlb_ids': list(tx_ledger.get('transaction_participant_mlb_ids') or []),
+        'transaction_related_mlb_team_ids': list(tx_ledger.get('transaction_related_mlb_team_ids') or []),
+        'transaction_related_non_mlb_team_ids': list(tx_ledger.get('transaction_related_non_mlb_team_ids') or []),
+        'record_actionable_count': int(tx_ledger.get('record_actionable_count', 0)),
+    }
+    transaction_ledger_change_detected = transaction_ledger['record_actionable_count'] > 0
+
+    # Backward-compatible flat would_refresh: derived ONLY from public_bullpen_state
+    # (Correction 5) plus the two sub-plans. The flat `transactions` flag reflects a
+    # public transaction-driven change (a confirmed membership mismatch), never a
+    # ledger-only gap.
+    would_refresh = {
+        'roster_statuses': public_bullpen_state['roster_statuses'],
+        'team_assignments': public_bullpen_state['team_assignments'],
+        'transactions': bool(public_membership_mismatches),
+        'targeted_pitcher_logs': public_bullpen_state['targeted_pitcher_logs'],
+        'targeted_pitcher_mlb_ids': public_bullpen_state['targeted_pitcher_mlb_ids'],
+        'completed_game_pks': public_bullpen_state['completed_game_pks'],
+        'affected_team_ids': public_bullpen_state['affected_team_ids'],
+        'recalculate_team_reads': public_bullpen_state['recalculate_team_reads'],
+        'recalculate_current_pen_era': public_bullpen_state['recalculate_current_pen_era'],
+        'recalculate_league_era_rank': public_bullpen_state['recalculate_league_era_rank'],
+        'publish_snapshot': public_bullpen_state['publish_snapshot'],
+        'warm_tonight': public_bullpen_state['warm_tonight'],
+        # Split sub-plans (Correction 5).
+        'public_bullpen_state': public_bullpen_state,
+        'transaction_ledger': transaction_ledger,
+    }
 
     return {
-        'would_refresh': {
-            'roster_statuses': roster_statuses_changed,
-            'team_assignments': team_assignments_changed,
-            'transactions': transactions_actionable,
-            'targeted_pitcher_logs': targeted_pitcher_ids,
-            'targeted_pitcher_mlb_ids': targeted_pitcher_mlb_ids,
-            'completed_game_pks': completed_game_pks,
-            'affected_team_ids': affected_team_ids,
-            'recalculate_team_reads': affected_team_ids,
-            'recalculate_current_pen_era': bool(completed_game_pks),
-            'recalculate_league_era_rank': bool(completed_game_pks),
-            'publish_snapshot': material_change,
-            # Only a proven roster-population or schedule delta warms Tonight; an
-            # exact-detail or storage-only transaction conflict never does.
-            'warm_tonight': bool(
-                schedule_actionable
-                or roster_statuses_changed
-                or team_assignments_changed
-                or transactions_population_change
-            ),
-        },
+        'would_refresh': would_refresh,
         'material_change_detected': material_change,
+        'public_bullpen_change_detected': public_bullpen_change_detected,
+        'transaction_ledger_change_detected': transaction_ledger_change_detected,
     }
 
 
@@ -2287,6 +2582,8 @@ def run_intraday_audit(
             roster_current_state = (
                 (lane_results.get(LANE_ROSTER_ASSIGNMENT) or {}).get('current_state_index') or {}
             )
+            # Let the role resolver reuse the roster lane's evidence (Correction 9).
+            role_resolver._roster_current_state = roster_current_state
             lane_results[LANE_TRANSACTIONS] = reconcile_transactions(
                 client=client,
                 team_map=team_map,
@@ -2373,6 +2670,33 @@ def _safety_block(write_guard=None):
     return block
 
 
+def _empty_public_bullpen_state():
+    return {
+        'roster_statuses': False,
+        'team_assignments': False,
+        'targeted_pitcher_logs': [],
+        'targeted_pitcher_mlb_ids': [],
+        'affected_team_ids': [],
+        'recalculate_team_reads': [],
+        'completed_game_pks': [],
+        'publish_snapshot': False,
+        'warm_tonight': False,
+        'recalculate_current_pen_era': False,
+        'recalculate_league_era_rank': False,
+    }
+
+
+def _empty_transaction_ledger():
+    return {
+        'ingest_transaction_event_keys': [],
+        'reconcile_transaction_event_keys': [],
+        'transaction_participant_mlb_ids': [],
+        'transaction_related_mlb_team_ids': [],
+        'transaction_related_non_mlb_team_ids': [],
+        'record_actionable_count': 0,
+    }
+
+
 def _empty_would_refresh():
     return {
         'roster_statuses': False,
@@ -2387,6 +2711,8 @@ def _empty_would_refresh():
         'recalculate_league_era_rank': False,
         'publish_snapshot': False,
         'warm_tonight': False,
+        'public_bullpen_state': _empty_public_bullpen_state(),
+        'transaction_ledger': _empty_transaction_ledger(),
     }
 
 
@@ -2489,6 +2815,19 @@ def _build_completed_artifact(
         status=status,
         lanes_run=lanes_run,
     )
+    roster_lane = lane_results.get(LANE_ROSTER_ASSIGNMENT) or {}
+    roster_lane_checked = roster_lane.get('checked') or {}
+    public_roster_changes = (
+        int(roster_lane_checked.get('roster_status_differences', 0))
+        + int(roster_lane_checked.get('team_assignment_differences', 0))
+    )
+    public_bullpen_material_count = int(tx_checked.get('public_bullpen_material', 0))
+    ledger_actionable_count = int(tx_checked.get('transaction_record_actionable', 0))
+    tx_ledger = tx_lane.get('transaction_ledger') or {}
+    role_verification = tx_lane.get('role_verification') or {}
+    public_bullpen_change_detected = bool(impact_plan.get('public_bullpen_change_detected'))
+    transaction_ledger_change_detected = bool(impact_plan.get('transaction_ledger_change_detected'))
+
     artifact.update({
         'changed': bool(total_differences),
         'changed_lanes': changed_lanes,
@@ -2498,6 +2837,9 @@ def _build_completed_artifact(
         'lanes': lane_results,
         'would_refresh': would_refresh,
         'material_change_detected': impact_plan['material_change_detected'],
+        # Independent change axes (Correction 10).
+        'public_bullpen_change_detected': public_bullpen_change_detected,
+        'transaction_ledger_change_detected': transaction_ledger_change_detected,
         'limitations': limitations,
         'source_api': api_metrics,
         'safety': _safety_block(write_guard),
@@ -2506,21 +2848,31 @@ def _build_completed_artifact(
             'total_differences': total_differences,
             'records_checked': records_checked,
             'actionable_differences': actionable_count,
-            # Actionable differences are proven bullpen-relevant by construction.
             'actionable_bullpen_differences': actionable_count,
+            # Two independent axes (Correction 1/11).
+            'transaction_record_actionable_count': ledger_actionable_count,
+            'transaction_ledger_change_detected': transaction_ledger_change_detected,
+            'public_bullpen_material_count': public_bullpen_material_count,
+            'public_bullpen_change_detected': public_bullpen_change_detected,
+            'public_roster_changes': public_roster_changes,
+            'transaction_ledger_only_findings': max(0, ledger_actionable_count - public_bullpen_material_count),
             'review_required_findings': review_required_count,
             'unresolved_findings': unresolved_count,
             'role_unresolved_findings': tx_checked.get('bullpen_relevance_unresolved', 0),
             'non_pitcher_transactions': tx_checked.get('non_pitcher_transactions', 0),
             'transaction_detail_mismatches': tx_checked.get('transaction_detail_mismatches', 0),
             'superseded_transactions': tx_checked.get('superseded_transactions', 0),
-            'public_membership_mismatches': tx_checked.get('public_bullpen_effect_unreflected', 0),
+            'public_membership_mismatches': public_bullpen_material_count,
             'chronology_unresolved_findings': tx_checked.get('chronology_unresolved', 0),
+            'role_lookups_used': role_verification.get('role_lookups_used', 0),
+            'role_lookups_avoided': role_verification.get('role_lookups_avoided', 0),
             'informational_records': informational_records,
             'benign_records_suppressed': benign_records_suppressed,
             'material_change_detected': impact_plan['material_change_detected'],
             'affected_team_ids': would_refresh['affected_team_ids'],
             'mlb_teams_affected': would_refresh['affected_team_ids'],
+            'mlb_public_teams_affected': would_refresh['affected_team_ids'],
+            'transaction_related_mlb_teams': list(tx_ledger.get('transaction_related_mlb_team_ids') or []),
             'non_mlb_team_ids_observed': non_mlb_team_ids_observed,
         },
     })
@@ -2574,6 +2926,8 @@ def _skipped_artifact(*, client, source, product_date, lanes, check_timestamp_is
         'lanes': {},
         'would_refresh': _empty_would_refresh(),
         'material_change_detected': False,
+        'public_bullpen_change_detected': False,
+        'transaction_ledger_change_detected': False,
         'limitations': [conflict.message],
         'source_api': api_metrics,
         'safety': _safety_block({'clean': True, 'pending_new': 0, 'pending_dirty': 0, 'pending_deleted': 0}),
@@ -2644,6 +2998,8 @@ def build_bootstrap_failure_artifact(
         'lanes': {lane: {'verification_status': LANE_NOT_CHECKED} for lane in lanes},
         'would_refresh': _empty_would_refresh(),
         'material_change_detected': False,
+        'public_bullpen_change_detected': False,
+        'transaction_ledger_change_detected': False,
         'limitations': [limitation],
         # Source acquisition never began.
         'source_api': {'api_calls': 0, 'retries': 0, 'by_endpoint': {}},
