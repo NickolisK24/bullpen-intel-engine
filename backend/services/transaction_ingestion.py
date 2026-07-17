@@ -154,6 +154,11 @@ _TRANSACTION_FACT_FIELDS = (
     'source_query_end_date',
 )
 
+# Public alias of the canonical stored-transaction fact fields, so read-only
+# consumers (for example the intraday reconciliation audit) can compare a source
+# transaction against a stored row without importing a private name.
+TRANSACTION_FACT_FIELDS = _TRANSACTION_FACT_FIELDS
+
 
 def normalize_transaction_category(type_code):
     code = _normalized_source_code(type_code)
@@ -448,6 +453,36 @@ def _values_from_transaction(
     )
     values['transaction_key'] = _transaction_key(values)
     return values, None
+
+
+def read_transaction_values(
+    transaction,
+    *,
+    start_date,
+    end_date,
+    timestamp=None,
+    sync_run_id=None,
+):
+    """Read-only classification of one source transaction.
+
+    Returns ``(values, error_detail)`` exactly like the internal ingestion path
+    (``values`` is the would-be-stored fact dict including ``transaction_key``,
+    ``normalized_category``, resolved ``pitcher_id`` and
+    ``roster_snapshot_alignment``; ``error_detail`` names an identity/shape
+    failure). It performs only SELECT reads (pitcher + roster-snapshot lookups)
+    and **never** adds, flushes, commits, dead-letters, or otherwise mutates the
+    database — so audit callers can reuse the canonical classification and the
+    ``transaction_key`` dedup without duplicating any logic. This is the public,
+    side-effect-free entry point over ``_values_from_transaction``; the daily
+    sync's persisting path is unchanged.
+    """
+    return _values_from_transaction(
+        transaction,
+        start_date=start_date,
+        end_date=end_date,
+        timestamp=timestamp or utc_now_naive(),
+        sync_run_id=sync_run_id,
+    )
 
 
 def _upsert_player_transaction(values, *, sync_run_id=None, timestamp=None):

@@ -401,6 +401,37 @@ def acquire_sync_writer_guard(
     return guard
 
 
+def acquire_public_sync_read_lock(*, source=SOURCE_MANUAL):
+    """Acquire the PUBLIC sync writer advisory lock for a read-only audit.
+
+    This uses the SAME advisory-lock identity and mechanism as the public sync
+    writers (daily / postgame / backfill) — ``SYNC_WRITER_LOCK_KEY`` under
+    ``LOCK_SCOPE_PUBLIC`` — so a read-only intraday reconciliation audit can
+    never overlap any public writer (or another intraday audit) that holds it.
+
+    Unlike :func:`acquire_sync_writer_guard`, it deliberately does the acquire
+    step ONLY. It never creates, reclaims, updates, or otherwise mutates
+    ``SyncRun`` rows, and it never treats an existing running ``SyncRun`` as the
+    conflict signal — the advisory lock alone is the coordination point, and a
+    healthy active writer is left completely untouched.
+
+    Returns a :class:`SyncWriterGuard` (release it in a ``finally``). Raises
+    :class:`SyncWriterConflict` when the lock is already held or its state is
+    unavailable; callers must skip immediately and must not wait or queue.
+    """
+    if _uses_postgres_advisory_writer_lock():
+        return _acquire_postgres_writer_lock(
+            job_name=None,
+            source=source,
+            lock_scope=LOCK_SCOPE_PUBLIC,
+        )
+    return _acquire_process_writer_lock(
+        job_name=None,
+        source=source,
+        lock_scope=LOCK_SCOPE_PUBLIC,
+    )
+
+
 def sync_writer_conflict_payload(conflict):
     if isinstance(conflict, SyncWriterConflict):
         return conflict.to_dict()
