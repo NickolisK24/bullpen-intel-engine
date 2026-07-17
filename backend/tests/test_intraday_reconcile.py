@@ -149,7 +149,8 @@ class FakeMlbClient:
     """Read-only MLB client stand-in that counts every source method call."""
 
     def __init__(self, *, rosters=None, transactions=None, schedule=None, teams=None,
-                 roster_errors=None, transactions_error=None, schedule_error=None):
+                 roster_errors=None, transactions_error=None, schedule_error=None,
+                 people=None, people_errors=None):
         self.rosters = rosters or {}
         self.transactions = transactions or []
         self.schedule = schedule or []
@@ -157,6 +158,9 @@ class FakeMlbClient:
         self.roster_errors = roster_errors or {}
         self.transactions_error = transactions_error
         self.schedule_error = schedule_error
+        # people: {mlb_id: {'primaryPosition': {...}}}; people_errors: {mlb_id: msg}
+        self.people = people or {}
+        self.people_errors = people_errors or {}
         self.metrics = _FakeMetrics()
         self.calls = {}
 
@@ -198,6 +202,25 @@ class FakeMlbClient:
     def get_pitcher_game_logs(self, player_id, season=None):
         self._count('get_pitcher_game_logs')
         return []
+
+    def get_player_info(self, player_id):
+        self._count('get_player_info')
+        if player_id in self.people_errors:
+            raise RuntimeError(self.people_errors[player_id])
+        return self.people.get(player_id)
+
+
+# Official position evidence builders (role verification fixtures).
+POSITION_PITCHER = {'code': '1', 'abbreviation': 'P', 'type': 'Pitcher', 'name': 'Pitcher'}
+POSITION_TWO_WAY = {'code': 'Y', 'abbreviation': 'TWP', 'type': 'Two-Way Player',
+                    'name': 'Two-Way Player'}
+POSITION_CATCHER = {'code': '2', 'abbreviation': 'C', 'type': 'Catcher', 'name': 'Catcher'}
+POSITION_OUTFIELD = {'code': '8', 'abbreviation': 'CF', 'type': 'Outfielder', 'name': 'Outfielder'}
+
+
+def person(position):
+    """An MLB /people response person object carrying a primaryPosition."""
+    return {'primaryPosition': dict(position)}
 
 
 def roster_entry(player_id, name='Player', position='P', status=None):
@@ -502,34 +525,43 @@ def test_lane1_partial_source_failure_is_not_false_no_change(app):
 def test_lane2_classifies_transactions(scenario):
     lane = _run(scenario)['lanes'][intraday_reconcile.LANE_TRANSACTIONS]
     by_txid = {r.get('transaction_id'): r for r in lane['differences']}
-    # Only meaningful findings are serialized: t1 (actionable new), t3 (unresolved
-    # identity), t5 (status-effect unreflected). Benign t2 (non-player) and t4
-    # (already reflected) are counted, not serialized.
+    # Only meaningful findings are serialized: t1 (actionable new, proven pitcher)
+    # and t3 (unresolved identity). Benign t2 (non-player), t4 (already reflected),
+    # and t5 (exact-detail mismatch, membership aligned) are counted, not serialized.
     assert by_txid['t1']['classification'] == intraday_reconcile.TX_ACTIONABLE_NOT_STORED
     assert by_txid['t1']['player_mlb_id'] == 999
+    assert by_txid['t1']['bullpen_relevance'] == intraday_reconcile.ROLE_PROVEN_PITCHER
     assert by_txid['t3']['classification'] == intraday_reconcile.TX_UNRESOLVED_IDENTITY
     assert 't2' not in by_txid  # non-player is informational, not a difference
     assert 't4' not in by_txid  # already reflected is benign, not a difference
+    assert 't5' not in by_txid  # membership aligned -> benign, not a difference
     checked = lane['checked']
-    assert checked['actionable_differences'] >= 2  # t1 + t5
+    assert checked['actionable_differences'] == 1  # t1 only (t5 is now benign)
     assert checked['non_player_transactions'] == 1
     assert checked['already_reflected'] >= 1
     assert checked['unresolved_identity'] == 1
     assert lane['informational_counts']['non_player_count'] == 1
 
 
-def test_lane2_stored_effect_not_reflected(scenario):
+def test_lane2_stored_effect_is_membership_aware(scenario):
+    # t5: a stored RECALL-to-NYM for pitcher 400, whose same-day snapshot was PHI
+    # (exact-state misaligned). But current official active-bullpen membership
+    # (400 is active on PHI) already matches stored state, so under the
+    # bullpen-relevance correction this is a benign exact-detail mismatch — never
+    # a material public-state change.
     lane = _run(scenario)['lanes'][intraday_reconcile.LANE_TRANSACTIONS]
-    by_txid = {r.get('transaction_id'): r for r in lane['differences']}
-    t5 = by_txid['t5']
-    # A stored transaction whose recall (to NYM) is not reflected by the current
-    # roster snapshot (still PHI) gets its OWN classification — never
-    # already_reflected — and is an actionable difference.
-    assert t5['classification'] == intraday_reconcile.TX_STATUS_EFFECT_UNREFLECTED
-    assert t5['classification'] != intraday_reconcile.TX_ALREADY_REFLECTED
-    assert t5['severity'] == intraday_reconcile.SEVERITY_ACTIONABLE
-    assert t5['status_effect_unreflected'] is True
-    assert lane['checked']['status_effect_unreflected'] >= 1
+    assert all(d.get('transaction_id') != 't5' for d in lane['differences'])
+    sample = lane['informational_samples'].get(
+        intraday_reconcile.TX_TRANSACTION_DETAIL_MISMATCH, []
+    )
+    t5 = {r.get('transaction_id'): r for r in sample}.get('t5')
+    assert t5 is not None
+    assert t5['classification'] == intraday_reconcile.TX_TRANSACTION_DETAIL_MISMATCH
+    assert t5['classification'] != intraday_reconcile.TX_STATUS_EFFECT_UNREFLECTED
+    assert t5['public_bullpen_membership_alignment'] == intraday_reconcile.MEMBERSHIP_ALIGNED
+    assert t5['severity'] is None
+    assert lane['checked']['transaction_detail_mismatches'] >= 1
+    assert lane['checked']['public_bullpen_effect_unreflected'] == 0
 
 
 def test_lane2_partial_source_failure_is_not_false_no_change(scenario):
@@ -1060,11 +1092,18 @@ def _tx(transaction_id, player_mlb_id=None, *, type_code='RECALL', to_team_id=No
     return row
 
 
-def _tx_client(transactions, *, rosters=None, teams=None, schedule=None):
+def _tx_client(transactions, *, rosters=None, teams=None, schedule=None,
+               people=None, people_errors=None):
     return FakeMlbClient(
         rosters=rosters or {}, transactions=transactions,
         schedule=schedule or [], teams=teams or [],
+        people=people or {}, people_errors=people_errors or {},
     )
+
+
+def _pitchers(*mlb_ids):
+    """Role-evidence map marking each id as a proven pitcher."""
+    return {mlb_id: person(POSITION_PITCHER) for mlb_id in mlb_ids}
 
 
 def _tx_lane(artifact):
@@ -1165,28 +1204,45 @@ def test_lane2_differences_are_meaningful_only(app):
                                      intraday_reconcile.SEVERITY_REVIEW)
 
 
-# ── C2: status_effect_unreflected is its own class with deterministic precedence
+# ── C4/C5: exact-state alignment vs public bullpen membership ─────────────────
 
-def test_lane2_status_effect_precedence(app):
-    tx = _seed_status_effect_case(690916, 'Andre Granillo', 'se1')
-    lane = _tx_lane(_run(_tx_client([tx]), team_ids=[PHI],
-                         lanes=[intraday_reconcile.LANE_TRANSACTIONS]))
-    d = {r['transaction_id']: r for r in lane['differences']}['se1']
-    assert d['classification'] == intraday_reconcile.TX_STATUS_EFFECT_UNREFLECTED
-    assert d['classification'] != intraday_reconcile.TX_ALREADY_REFLECTED
-    assert d['status_effect_unreflected'] is True
-    assert d['severity'] == intraday_reconcile.SEVERITY_ACTIONABLE
+def test_public_bullpen_effect_unreflected_is_material(app):
+    # A proven pitcher officially RECALLED (now active on PHI) while BaseballOS
+    # still shows him inactive AND the stored same-day snapshot disagreed with the
+    # transaction team (exact state misaligned): current public bullpen membership
+    # is misaligned — a genuine, materially actionable public-state mismatch.
+    p = _seed_pitcher(676467, 'Colton Gordon', PHI, 'PHI', roster_status=STATUS_OPTIONED, active=False)
+    _seed_snapshot(p, NYM, SIGNAL_DATE, STATUS_ACTIVE)  # BaseballOS thought NYM -> misaligned
+    tx = _tx('recall1', 676467, type_code='RECALL', to_team_id=PHI, player_full_name='Colton Gordon')
+    _seed_stored_transaction(tx)
+    client = _tx_client(
+        [tx],
+        rosters={(PHI, ROSTER_TYPE_ACTIVE): [roster_entry(676467, 'Colton Gordon', status=ACTIVE)]},
+        teams=[{'id': PHI, 'name': 'Phillies', 'abbreviation': 'PHI'}],
+    )
+    d = {r.get('transaction_id'): r for r in _tx_lane(_run(client, team_ids=[PHI]))['differences']}
+    assert d['recall1']['classification'] == intraday_reconcile.TX_PUBLIC_BULLPEN_EFFECT_UNREFLECTED
+    assert d['recall1']['severity'] == intraday_reconcile.SEVERITY_ACTIONABLE
+    assert d['recall1']['public_bullpen_membership_alignment'] == intraday_reconcile.MEMBERSHIP_MISALIGNED
+    assert d['recall1']['classification'] != intraday_reconcile.TX_STORED_CONFLICT
 
 
-def test_lane2_status_effect_not_a_conflict(app):
-    tx = _seed_status_effect_case(681911, 'Cam Sanders', 'se2')
-    lane = _tx_lane(_run(_tx_client([tx]), team_ids=[PHI],
-                         lanes=[intraday_reconcile.LANE_TRANSACTIONS]))
-    d = {r['transaction_id']: r for r in lane['differences']}['se2']
-    # A misaligned roster effect is NOT a stored source-fact conflict.
-    assert d['classification'] != intraday_reconcile.TX_STORED_CONFLICT
+def test_exact_state_misalignment_is_not_a_conflict(app):
+    # A misaligned exact roster snapshot alone is never a stored source-fact
+    # conflict, and — when current membership is correct — never material.
+    _seed_pitcher(681911, 'Cam Sanders', PHI, 'PHI', roster_status=STATUS_ACTIVE, active=True)
+    p = Pitcher.query.filter_by(mlb_id=681911).first()
+    _seed_snapshot(p, PHI, SIGNAL_DATE, STATUS_ACTIVE)
+    tx = _tx('se2', 681911, type_code='RECALL', to_team_id=NYM, player_full_name='Cam Sanders')
+    _seed_stored_transaction(tx)
+    client = _tx_client(
+        [tx],
+        rosters={(PHI, ROSTER_TYPE_ACTIVE): [roster_entry(681911, 'Cam Sanders', status=ACTIVE)]},
+        teams=[{'id': PHI, 'name': 'Phillies', 'abbreviation': 'PHI'}],
+    )
+    lane = _tx_lane(_run(client, team_ids=[PHI]))
     assert lane['checked']['stored_conflicts'] == 0
-    assert lane['checked']['status_effect_unreflected'] == 1
+    assert lane['checked']['public_bullpen_effect_unreflected'] == 0
 
 
 # ── C3: compound events are event-aware (one finding per MLB transaction id) ──
@@ -1215,8 +1271,8 @@ def test_lane2_compound_reflected_no_false_conflict(app):
 def test_lane2_compound_new_single_finding(app):
     # 926870: two components, no stored row -> exactly one compound_new finding.
     components = _compound_pair('926870', 660003, 660004)
-    lane = _tx_lane(_run(_tx_client(components), team_ids=[PHI],
-                         lanes=[intraday_reconcile.LANE_TRANSACTIONS]))
+    lane = _tx_lane(_run(_tx_client(components, people=_pitchers(660003, 660004)),
+                         team_ids=[PHI], lanes=[intraday_reconcile.LANE_TRANSACTIONS]))
     compound = [d for d in lane['differences'] if d.get('event_key') == 'statsapi:926870']
     assert len(compound) == 1
     finding = compound[0]
@@ -1249,8 +1305,8 @@ def test_lane2_compound_conflict_excludes_player_fields(app):
     _seed_stored_transaction(_tx('930000', 660007, type_code='TR',
                                  from_team_id=PHI, to_team_id=NYM,
                                  transaction_date='2026-07-10'))
-    lane = _tx_lane(_run(_tx_client(components), team_ids=[PHI],
-                         lanes=[intraday_reconcile.LANE_TRANSACTIONS]))
+    lane = _tx_lane(_run(_tx_client(components, people=_pitchers(660007, 660008)),
+                         team_ids=[PHI], lanes=[intraday_reconcile.LANE_TRANSACTIONS]))
     finding = [d for d in lane['differences'] if d.get('event_key') == 'statsapi:930000'][0]
     assert finding['classification'] == intraday_reconcile.TX_STORED_CONFLICT
     assert 'transaction_date' in finding['conflicting_fields']
@@ -1326,9 +1382,9 @@ def test_summary_records_checked(app):
 
 
 def test_material_change_only_when_actionable(app):
-    # A brand-new, not-yet-stored player transaction is actionable -> material.
+    # A brand-new, not-yet-stored PROVEN-PITCHER transaction is actionable -> material.
     source = [_tx('m1', 996, type_code='RECALL', to_team_id=PHI)]
-    artifact = _run(_tx_client(source), team_ids=[PHI])
+    artifact = _run(_tx_client(source, people=_pitchers(996)), team_ids=[PHI])
     assert artifact['changed'] is True
     assert artifact['material_change_detected'] is True
     assert artifact['would_refresh']['publish_snapshot'] is True
@@ -1357,7 +1413,7 @@ def test_affected_excludes_benign_and_review(app):
         _tx('a2', None, type_code='SIGNED', player_full_name='Ghost'),  # review (unresolved)
         _tx('a3', 700101, type_code='RECALL', to_team_id=PHI),       # actionable
     ]
-    artifact = _run(_tx_client(source), team_ids=[PHI])
+    artifact = _run(_tx_client(source, people=_pitchers(700101)), team_ids=[PHI])
     assert 700101 in artifact['affected_pitcher_mlb_ids']
     assert 700100 not in artifact['affected_pitcher_mlb_ids']
 
@@ -1378,7 +1434,7 @@ def test_warm_tonight_not_from_transaction_only(app):
     # An actionable transaction with no roster/schedule population change must not
     # warm Tonight, even though it is material (publish_snapshot true).
     source = [_tx('w1', 700300, type_code='RECALL', to_team_id=PHI)]
-    artifact = _run(_tx_client(source), team_ids=[PHI])
+    artifact = _run(_tx_client(source, people=_pitchers(700300)), team_ids=[PHI])
     assert artifact['material_change_detected'] is True
     assert artifact['would_refresh']['warm_tonight'] is False
 
@@ -1509,7 +1565,9 @@ def observation_one(app):
         {'id': TOR, 'name': 'Blue Jays', 'abbreviation': 'TOR'},
         {'id': ATH, 'name': 'Athletics', 'abbreviation': 'ATH'},
     ]
-    return _tx_client(transactions, rosters=rosters, teams=teams)
+    # The compound-new components are proven pitchers via role evidence.
+    people = _pitchers(650003, 650004)
+    return _tx_client(transactions, rosters=rosters, teams=teams, people=people)
 
 
 def _obs_run(observation_one):
@@ -1525,9 +1583,12 @@ def test_observation_one_transactions_signal(observation_one):
     assert checked['compound_events_reflected'] == 1
     for d in lane['differences']:
         assert d['classification'] in intraday_reconcile.TX_MEANINGFUL_CLASSES
-    # The three status-effect contradictions surface as their own class.
-    assert checked['status_effect_unreflected'] == 3
-    # Benign records beyond the sample are suppressed with a count.
+    # The three former status-effect contradictions (proven pitchers whose current
+    # active-bullpen membership is correct) are now benign exact-detail mismatches,
+    # not material findings.
+    assert checked['transaction_detail_mismatches'] == 3
+    assert checked['public_bullpen_effect_unreflected'] == 0
+    # Benign already-reflected records beyond the sample are suppressed.
     assert lane['suppressed_counts']['benign_records_suppressed'] == 5 - intraday_reconcile.DEFAULT_TX_SAMPLE_LIMIT
 
 
@@ -1565,11 +1626,12 @@ def test_observation_one_summary_and_material(observation_one):
     artifact = _obs_run(observation_one)
     summary = artifact['summary']
     # Changed is true (there ARE meaningful findings), but the honest total never
-    # includes the 5 already-reflected + 2 non-player + 1 reflected-compound rows.
+    # includes the 5 already-reflected + 2 non-player + 1 reflected-compound + 3
+    # exact-detail-mismatch benign rows.
     assert artifact['changed'] is True
-    assert summary['informational_records'] == 5 + 2 + 1
+    assert summary['informational_records'] == 5 + 2 + 1 + 3
     assert summary['total_differences'] == summary['actionable_differences'] + summary['review_required_findings']
-    # Actionable findings exist (compound_new, status_effect, newly-discovered),
+    # Actionable findings exist (compound_new, newly-discovered proven pitchers),
     # so a future write would be required.
     assert summary['material_change_detected'] is True
     # The already-reflected benign players never enter the affected write plan.
@@ -1589,17 +1651,20 @@ def test_lane2_invalid_shape_is_review(app):
 
 
 def test_lane2_actionable_not_stored_is_actionable(app):
-    lane = _tx_lane(_run(_tx_client([_tx('n', 800, type_code='RECALL', to_team_id=PHI)]),
-                         team_ids=[PHI], lanes=[intraday_reconcile.LANE_TRANSACTIONS]))
+    lane = _tx_lane(_run(
+        _tx_client([_tx('n', 800, type_code='RECALL', to_team_id=PHI)], people=_pitchers(800)),
+        team_ids=[PHI], lanes=[intraday_reconcile.LANE_TRANSACTIONS]))
     d = lane['differences'][0]
     assert d['classification'] == intraday_reconcile.TX_ACTIONABLE_NOT_STORED
     assert d['severity'] == intraday_reconcile.SEVERITY_ACTIONABLE
+    assert d['bullpen_relevance'] == intraday_reconcile.ROLE_PROVEN_PITCHER
 
 
 def test_lane2_single_player_stored_conflict(app):
     _seed_stored_transaction(_tx('sc', 801, type_code='RECALL', to_team_id=PHI))
-    lane = _tx_lane(_run(_tx_client([_tx('sc', 801, type_code='RECALL', to_team_id=NYM)]),
-                         team_ids=[PHI], lanes=[intraday_reconcile.LANE_TRANSACTIONS]))
+    lane = _tx_lane(_run(
+        _tx_client([_tx('sc', 801, type_code='RECALL', to_team_id=NYM)], people=_pitchers(801)),
+        team_ids=[PHI], lanes=[intraday_reconcile.LANE_TRANSACTIONS]))
     d = lane['differences'][0]
     assert d['classification'] == intraday_reconcile.TX_STORED_CONFLICT
     assert d['severity'] == intraday_reconcile.SEVERITY_ACTIONABLE
@@ -1638,7 +1703,7 @@ def test_informational_records_equals_informational_counts_sum(app):
 
 def test_lane2_compound_new_contributes_affected_teams(app):
     components = _compound_pair('cn', 820001, 820002)  # PHI<->NYM trade
-    artifact = _run(_tx_client(components), team_ids=[PHI])
+    artifact = _run(_tx_client(components, people=_pitchers(820001, 820002)), team_ids=[PHI])
     tx = _tx_lane(artifact)
     assert PHI in tx['affected_team_ids'] and NYM in tx['affected_team_ids']
     assert 820001 in tx['affected_pitcher_mlb_ids']
@@ -1735,3 +1800,501 @@ def test_active_only_default_does_not_read_non_active_types(app):
                         teams=[{'id': PHI, 'name': 'Phillies', 'abbreviation': 'PHI'}])
     _run(client, team_ids=[PHI], lanes=[intraday_reconcile.LANE_ROSTER_ASSIGNMENT])
     assert client.calls.get('get_team_roster', 0) == 1  # active only
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# Bullpen-relevance correction (contract v1.2.0) — Production Observation #2
+#
+# Observation #2 (2026-07-17, v1.1.0) passed infrastructure, read-only safety,
+# API efficiency, compactness, compound grouping, and source-name preservation,
+# but FAILED bullpen-relevance filtering, MLB-team impact scoping, and
+# public-state materiality: four unstored players with no proof of pitcher role
+# became actionable; minor-league team ids (512/556/568) entered public team
+# planning; and historical option/IL effects were treated as material without
+# chronology or current-membership proof. These tests pin the correction.
+# ═════════════════════════════════════════════════════════════════════════════
+
+BAL, DET, PIT, SEA, ATL, WSH = 110, 116, 134, 136, 144, 158
+AFFILIATE_A, AFFILIATE_B, AFFILIATE_C = 512, 556, 568
+OPT = 'OPT'
+
+
+def _two_way(*ids):
+    return {i: person(POSITION_TWO_WAY) for i in ids}
+
+
+def _non_pitchers(*ids):
+    return {i: person(POSITION_CATCHER) for i in ids}
+
+
+def _tx2(client, **kw):
+    kw.setdefault('team_ids', [PHI])
+    kw['lanes'] = [intraday_reconcile.LANE_TRANSACTIONS]
+    return _tx_lane(_run(client, **kw))
+
+
+# ── C1: prove bullpen relevance before actionable classification ─────────────
+
+def test_unstored_proven_pitcher_actionable(app):
+    lane = _tx2(_tx_client([_tx('p', 900001, type_code='RECALL', to_team_id=PHI)],
+                           people=_pitchers(900001)))
+    d = lane['differences'][0]
+    assert d['classification'] == intraday_reconcile.TX_ACTIONABLE_NOT_STORED
+    assert d['severity'] == intraday_reconcile.SEVERITY_ACTIONABLE
+    assert d['bullpen_relevance'] == intraday_reconcile.ROLE_PROVEN_PITCHER
+
+
+def test_unstored_two_way_actionable(app):
+    lane = _tx2(_tx_client([_tx('tw', 900002, type_code='RECALL', to_team_id=PHI)],
+                           people=_two_way(900002)))
+    d = lane['differences'][0]
+    assert d['classification'] == intraday_reconcile.TX_ACTIONABLE_NOT_STORED
+    assert d['bullpen_relevance'] == intraday_reconcile.ROLE_PROVEN_TWO_WAY
+    assert d['severity'] == intraday_reconcile.SEVERITY_ACTIONABLE
+
+
+def test_unstored_non_pitcher_is_informational(app):
+    lane = _tx2(_tx_client([_tx('np', 900003, type_code='RECALL', to_team_id=PHI)],
+                           people=_non_pitchers(900003)))
+    assert lane['differences'] == []
+    assert lane['checked']['non_pitcher_transactions'] == 1
+    assert lane['informational_counts']['non_pitcher_count'] == 1
+    sample = lane['informational_samples'][intraday_reconcile.TX_NON_PITCHER][0]
+    assert sample['bullpen_relevance'] == intraday_reconcile.ROLE_PROVEN_NON_PITCHER
+    assert sample['severity'] is None
+
+
+def test_unstored_unresolved_role_is_review(app):
+    lane = _tx2(_tx_client([_tx('u', 900004, type_code='RECALL', to_team_id=PHI)]))
+    d = lane['differences'][0]
+    assert d['classification'] == intraday_reconcile.TX_BULLPEN_RELEVANCE_UNRESOLVED
+    assert d['severity'] == intraday_reconcile.SEVERITY_REVIEW
+    assert d['bullpen_relevance'] == intraday_reconcile.ROLE_UNRESOLVED
+    assert lane['limitations']  # role could not be verified
+
+
+def test_unresolved_role_not_in_targeted(app):
+    artifact = _run(_tx_client([_tx('u', 900005, type_code='RECALL', to_team_id=PHI)]),
+                    team_ids=[PHI])
+    assert 900005 not in artifact['would_refresh']['targeted_pitcher_mlb_ids']
+    assert 900005 not in artifact['affected_pitcher_mlb_ids']
+
+
+def test_non_pitcher_not_in_targeted(app):
+    artifact = _run(_tx_client([_tx('np', 900006, type_code='RECALL', to_team_id=PHI)],
+                               people=_non_pitchers(900006)), team_ids=[PHI])
+    assert 900006 not in artifact['would_refresh']['targeted_pitcher_mlb_ids']
+    assert 900006 not in artifact['affected_pitcher_mlb_ids']
+
+
+def test_role_identity_uses_mlb_id_only(app):
+    # A participant whose NAME reads like a pitcher but whose official position is
+    # a catcher is a proven non-pitcher — role is never inferred from the name.
+    lane = _tx2(_tx_client(
+        [_tx('n', 900007, type_code='RECALL', to_team_id=PHI, player_full_name='Ace Fireballer')],
+        people=_non_pitchers(900007)))
+    assert lane['differences'] == []
+    assert lane['checked']['non_pitcher_transactions'] == 1
+
+
+def test_role_evidence_preserves_position_fields(app):
+    lane = _tx2(_tx_client([_tx('p', 900008, type_code='RECALL', to_team_id=PHI)],
+                           people=_pitchers(900008)))
+    d = lane['differences'][0]
+    assert d['official_position_code'] == '1'
+    assert d['official_position_abbreviation'] == 'P'
+    assert d['official_position_type'] == 'Pitcher'
+    assert d['role_verification_status'] == intraday_reconcile.ROLE_SOURCE_PEOPLE_LOOKUP
+
+
+# ── C2: role acquisition is targeted and bounded ─────────────────────────────
+
+def test_role_lookup_deduplicated(app):
+    # Same player in two separate events -> exactly one /people lookup.
+    client = _tx_client(
+        [_tx('a', 900009, type_code='RECALL', to_team_id=PHI),
+         _tx('b', 900009, type_code='RECALL', to_team_id=NYM)],
+        people=_pitchers(900009),
+    )
+    _tx2(client)
+    assert client.calls.get('get_player_info', 0) == 1
+
+
+def test_role_lookup_only_for_unstored_meaningful(app):
+    # An already-reflected transaction and a non-player row never trigger a lookup.
+    _seed_stored_transaction(_tx('ar', 900010, type_code='SFA'))
+    client = _tx_client(
+        [_tx('ar', 900010, type_code='SFA'), _tx('np', None, type_code='CASH')],
+        people=_pitchers(900010),
+    )
+    _tx2(client)
+    assert 'get_player_info' not in client.calls
+
+
+def test_role_lookup_budget_enforced(app):
+    ids = [900101, 900102, 900103]
+    client = _tx_client([_tx(f'b{i}', mlb, type_code='RECALL', to_team_id=PHI)
+                         for i, mlb in enumerate(ids)], people=_pitchers(*ids))
+    lane = _tx_lane(_run(client, team_ids=[PHI],
+                         lanes=[intraday_reconcile.LANE_TRANSACTIONS], max_role_lookups=1))
+    assert lane['role_verification']['lookups_used'] == 1
+    assert lane['role_verification']['budget_exceeded'] is True
+    # Two participants remain unresolved (never assumed pitchers).
+    assert lane['checked']['bullpen_relevance_unresolved'] == 2
+    assert client.calls.get('get_player_info', 0) == 1
+
+
+def test_role_lookup_failure_fails_closed(app):
+    client = _tx_client([_tx('f', 900012, type_code='RECALL', to_team_id=PHI)],
+                        people_errors={900012: 'people endpoint down'})
+    lane = _tx2(client)
+    d = lane['differences'][0]
+    assert d['classification'] == intraday_reconcile.TX_BULLPEN_RELEVANCE_UNRESOLVED
+    assert d['severity'] == intraday_reconcile.SEVERITY_REVIEW
+    assert lane['role_verification']['lookup_failures'] >= 1
+
+
+# ── C3: MLB-team impact scope ────────────────────────────────────────────────
+
+def test_non_mlb_team_ids_preserved_but_not_public(app):
+    # Proven pitcher optioned PIT(MLB) -> 512(affiliate): 512 stays in evidence
+    # but never enters public affected teams or team-read recomputation.
+    tx = _tx('aff', 930001, type_code='RECALL', from_team_id=PIT, to_team_id=AFFILIATE_A)
+    artifact = _run(_tx_client([tx], people=_pitchers(930001)), team_ids=[PHI])
+    lane = _tx_lane(artifact)
+    finding = lane['differences'][0]
+    # Both ids preserved on the finding as evidence.
+    assert finding['from_team_id'] == PIT and finding['to_team_id'] == AFFILIATE_A
+    assert AFFILIATE_A in lane['related_non_mlb_team_ids']
+    # Public impact contains the MLB club only.
+    assert PIT in lane['affected_team_ids']
+    assert AFFILIATE_A not in lane['affected_team_ids']
+    assert AFFILIATE_A not in artifact['would_refresh']['affected_team_ids']
+    assert AFFILIATE_A not in artifact['would_refresh']['recalculate_team_reads']
+    assert AFFILIATE_A in artifact['summary']['non_mlb_team_ids_observed']
+
+
+def test_mlb_teams_remain_affected(app):
+    tx = _tx('mlb', 930002, type_code='RECALL', from_team_id=BAL, to_team_id=DET)
+    artifact = _run(_tx_client([tx], people=_pitchers(930002)), team_ids=[PHI])
+    assert BAL in artifact['would_refresh']['affected_team_ids']
+    assert DET in artifact['would_refresh']['affected_team_ids']
+
+
+# ── C4/C5/C6/C7: state alignment vs public membership; chronology; cross-lane ─
+
+def _seed_membership_case(mlb_id, *, stored_active, snapshot_team, tx_id, type_code,
+                          to_team_id=None, from_team_id=None):
+    status = STATUS_ACTIVE if stored_active else STATUS_OPTIONED
+    p = _seed_pitcher(mlb_id, f'P{mlb_id}', PHI, 'PHI', roster_status=status, active=stored_active)
+    _seed_snapshot(p, snapshot_team, SIGNAL_DATE, STATUS_ACTIVE)
+    tx = _tx(tx_id, mlb_id, type_code=type_code, to_team_id=to_team_id, from_team_id=from_team_id)
+    _seed_stored_transaction(tx)
+    return tx
+
+
+def test_transaction_state_alignment_distinct_from_membership(app):
+    # Optioned pitcher correctly outside the active bullpen: exact stored state is
+    # misaligned, but public membership is aligned -> benign detail mismatch.
+    tx = _seed_membership_case(931001, stored_active=False, snapshot_team=PHI,
+                               tx_id='opt', type_code=OPT, to_team_id=AFFILIATE_A)
+    client = _tx_client([tx], rosters={(PHI, ROSTER_TYPE_ACTIVE): []},
+                        teams=[{'id': PHI, 'name': 'Phillies', 'abbreviation': 'PHI'}])
+    lane = _tx_lane(_run(client, team_ids=[PHI]))
+    d = {r.get('transaction_id'): r for r in
+         lane['informational_samples'].get(intraday_reconcile.TX_TRANSACTION_DETAIL_MISMATCH, [])}
+    f = d['opt']
+    assert f['transaction_state_alignment'] == 'misaligned'
+    assert f['public_bullpen_membership_alignment'] == intraday_reconcile.MEMBERSHIP_ALIGNED
+    assert f['classification'] == intraday_reconcile.TX_TRANSACTION_DETAIL_MISMATCH
+
+
+def test_affiliate_mismatch_non_material_when_membership_correct(app):
+    tx = _seed_membership_case(931002, stored_active=False, snapshot_team=PHI,
+                               tx_id='opt', type_code=OPT, to_team_id=AFFILIATE_A)
+    client = _tx_client([tx], rosters={(PHI, ROSTER_TYPE_ACTIVE): []},
+                        teams=[{'id': PHI, 'name': 'Phillies', 'abbreviation': 'PHI'}])
+    artifact = _run(client, team_ids=[PHI])
+    assert artifact['material_change_detected'] is False
+    assert artifact['would_refresh']['publish_snapshot'] is False
+
+
+def test_official_inactive_stored_active_is_material(app):
+    # Stored ACTIVE but officially gone from the active roster (option), exact
+    # state misaligned -> material public mismatch.
+    tx = _seed_membership_case(931003, stored_active=True, snapshot_team=NYM,
+                               tx_id='opt', type_code=OPT, to_team_id=AFFILIATE_A)
+    client = _tx_client([tx], rosters={(PHI, ROSTER_TYPE_ACTIVE): []},
+                        teams=[{'id': PHI, 'name': 'Phillies', 'abbreviation': 'PHI'}])
+    d = {r.get('transaction_id'): r for r in _tx_lane(_run(client, team_ids=[PHI]))['differences']}
+    assert d['opt']['classification'] == intraday_reconcile.TX_PUBLIC_BULLPEN_EFFECT_UNREFLECTED
+    assert d['opt']['severity'] == intraday_reconcile.SEVERITY_ACTIONABLE
+
+
+def test_option_superseded_by_recall_is_non_material(app):
+    p = _seed_pitcher(932001, 'Sup', PHI, 'PHI', roster_status=STATUS_ACTIVE, active=True)
+    _seed_snapshot(p, PHI, date(2026, 7, 12), STATUS_ACTIVE)
+    option = _tx('opt', 932001, type_code=OPT, to_team_id=AFFILIATE_A, transaction_date='2026-07-12')
+    recall = _tx('rec', 932001, type_code='RECALL', to_team_id=PHI, transaction_date='2026-07-14')
+    _seed_stored_transaction(option)
+    _seed_stored_transaction(recall)
+    client = _tx_client([option, recall],
+                        rosters={(PHI, ROSTER_TYPE_ACTIVE): [roster_entry(932001, 'Sup', status=ACTIVE)]},
+                        teams=[{'id': PHI, 'name': 'Phillies', 'abbreviation': 'PHI'}])
+    lane = _tx_lane(_run(client, team_ids=[PHI]))
+    sup = {r.get('transaction_id'): r for r in
+           lane['informational_samples'].get(intraday_reconcile.TX_SUPERSEDED_TRANSACTION, [])}
+    assert 'opt' in sup
+    assert sup['opt']['classification'] == intraday_reconcile.TX_SUPERSEDED_TRANSACTION
+    assert sup['opt']['superseded_by_event_key'] == 'statsapi:rec'
+    assert sup['opt']['severity'] is None
+
+
+def test_recall_superseded_by_option_is_non_material(app):
+    p = _seed_pitcher(932002, 'Sup2', PHI, 'PHI', roster_status=STATUS_OPTIONED, active=False)
+    _seed_snapshot(p, NYM, date(2026, 7, 12), STATUS_ACTIVE)
+    recall = _tx('rec', 932002, type_code='RECALL', to_team_id=PHI, transaction_date='2026-07-12')
+    option = _tx('opt', 932002, type_code=OPT, to_team_id=AFFILIATE_A, transaction_date='2026-07-14')
+    _seed_stored_transaction(recall)
+    _seed_stored_transaction(option)
+    client = _tx_client([recall, option], rosters={(PHI, ROSTER_TYPE_ACTIVE): []},
+                        teams=[{'id': PHI, 'name': 'Phillies', 'abbreviation': 'PHI'}])
+    lane = _tx_lane(_run(client, team_ids=[PHI]))
+    sup = {r.get('transaction_id'): r for r in
+           lane['informational_samples'].get(intraday_reconcile.TX_SUPERSEDED_TRANSACTION, [])}
+    assert 'rec' in sup
+    assert sup['rec']['latest_applicable_event_key'] == 'statsapi:opt'
+
+
+def test_ambiguous_chronology_is_review_and_no_publish(app):
+    p = _seed_pitcher(933001, 'Amb', PHI, 'PHI', roster_status=STATUS_ACTIVE, active=True)
+    _seed_snapshot(p, PHI, date(2026, 7, 15), STATUS_ACTIVE)
+    option = _tx('opt', 933001, type_code=OPT, to_team_id=AFFILIATE_A, transaction_date='2026-07-15')
+    recall = _tx('rec', 933001, type_code='RECALL', to_team_id=PHI, transaction_date='2026-07-15')
+    _seed_stored_transaction(option)
+    _seed_stored_transaction(recall)
+    client = _tx_client([option, recall],
+                        rosters={(PHI, ROSTER_TYPE_ACTIVE): [roster_entry(933001, 'Amb', status=ACTIVE)]},
+                        teams=[{'id': PHI, 'name': 'Phillies', 'abbreviation': 'PHI'}])
+    artifact = _run(client, team_ids=[PHI])
+    lane = _tx_lane(artifact)
+    d = {r.get('transaction_id'): r for r in lane['differences']}
+    assert d['opt']['classification'] == intraday_reconcile.TX_CHRONOLOGY_UNRESOLVED
+    assert d['opt']['severity'] == intraday_reconcile.SEVERITY_REVIEW
+    assert artifact['would_refresh']['publish_snapshot'] is False
+
+
+def test_current_roster_overrides_historical_option(app):
+    # A stored option (implying the pitcher LEFT) is misaligned, but the roster
+    # lane proves the pitcher is currently ACTIVE. The historical option's
+    # implication is overridden by current evidence: the audit asserts no material
+    # mismatch (it is a review-only chronology finding, never material).
+    tx = _seed_membership_case(934001, stored_active=True, snapshot_team=NYM,
+                               tx_id='opt', type_code=OPT, to_team_id=AFFILIATE_A)
+    client = _tx_client([tx],
+                        rosters={(PHI, ROSTER_TYPE_ACTIVE): [roster_entry(934001, 'P934001', status=ACTIVE)]},
+                        teams=[{'id': PHI, 'name': 'Phillies', 'abbreviation': 'PHI'}])
+    artifact = _run(client, team_ids=[PHI])
+    lane = _tx_lane(artifact)
+    assert lane['checked']['public_bullpen_effect_unreflected'] == 0
+    d = {r.get('transaction_id'): r for r in lane['differences']}
+    assert d['opt']['classification'] == intraday_reconcile.TX_CHRONOLOGY_UNRESOLVED
+    assert d['opt']['severity'] == intraday_reconcile.SEVERITY_REVIEW
+
+
+# ── C8: impact-plan safety ───────────────────────────────────────────────────
+
+def test_detail_mismatch_does_not_warm_tonight(app):
+    tx = _seed_membership_case(935001, stored_active=False, snapshot_team=PHI,
+                               tx_id='opt', type_code=OPT, to_team_id=AFFILIATE_A)
+    client = _tx_client([tx], rosters={(PHI, ROSTER_TYPE_ACTIVE): []},
+                        teams=[{'id': PHI, 'name': 'Phillies', 'abbreviation': 'PHI'}])
+    artifact = _run(client, team_ids=[PHI])
+    assert artifact['would_refresh']['warm_tonight'] is False
+
+
+def test_membership_mismatch_may_warm_tonight(app):
+    tx = _seed_membership_case(935002, stored_active=True, snapshot_team=NYM,
+                               tx_id='opt', type_code=OPT, to_team_id=AFFILIATE_A)
+    client = _tx_client([tx], rosters={(PHI, ROSTER_TYPE_ACTIVE): []},
+                        teams=[{'id': PHI, 'name': 'Phillies', 'abbreviation': 'PHI'}])
+    artifact = _run(client, team_ids=[PHI])
+    assert artifact['would_refresh']['warm_tonight'] is True
+
+
+def test_non_pitcher_does_not_set_transactions_refresh(app):
+    artifact = _run(_tx_client([_tx('np', 936001, type_code='RECALL', to_team_id=PHI)],
+                               people=_non_pitchers(936001)), team_ids=[PHI])
+    assert artifact['would_refresh']['transactions'] is False
+    assert artifact['would_refresh']['publish_snapshot'] is False
+
+
+def test_review_role_finding_changed_not_material(app):
+    artifact = _run(_tx_client([_tx('u', 936002, type_code='RECALL', to_team_id=PHI)]),
+                    team_ids=[PHI])
+    assert artifact['changed'] is True
+    assert artifact['material_change_detected'] is False
+    assert artifact['summary']['role_unresolved_findings'] >= 1
+
+
+def test_affected_pitcher_ids_only_from_stored_proven(app):
+    # Unstored proven pitcher -> mlb id affected, but no internal db pitcher id.
+    artifact = _run(_tx_client([_tx('p', 937001, type_code='RECALL', to_team_id=PHI)],
+                               people=_pitchers(937001)), team_ids=[PHI])
+    assert 937001 in artifact['affected_pitcher_mlb_ids']
+    assert artifact['affected_pitcher_ids'] == []
+
+
+def test_affected_mlb_ids_exclude_non_pitcher_and_unresolved(app):
+    source = [
+        _tx('p', 938001, type_code='RECALL', to_team_id=PHI),   # proven pitcher
+        _tx('np', 938002, type_code='RECALL', to_team_id=PHI),  # non-pitcher
+        _tx('u', 938003, type_code='RECALL', to_team_id=PHI),   # unresolved
+    ]
+    artifact = _run(_tx_client(source, people={**_pitchers(938001), **_non_pitchers(938002)}),
+                    team_ids=[PHI])
+    assert artifact['affected_pitcher_mlb_ids'] == [938001]
+
+
+# ── C10: Production Observation #2 regression fixture ────────────────────────
+
+@pytest.fixture
+def observation_two(app):
+    """Compact fixture mirroring the structure of Production Observation #2:
+    two newly-discovered active pitchers (with source names), four unstored
+    transaction participants covering every role outcome, minor-league team ids
+    that must stay evidence-only, and the three named historical option/recall
+    players covering supersession, correct-membership, and genuine mismatch."""
+    # Named chronology players (stored pitchers on PHI).
+    granillo = _seed_pitcher(701552, 'Andre Granillo', PHI, 'PHI',
+                             roster_status=STATUS_ACTIVE, active=True)
+    _seed_snapshot(granillo, PHI, date(2026, 7, 12), STATUS_ACTIVE)
+    g_option = _tx('gran-opt', 701552, type_code=OPT, to_team_id=AFFILIATE_A,
+                   transaction_date='2026-07-12')
+    g_recall = _tx('gran-rec', 701552, type_code='RECALL', to_team_id=PHI,
+                   transaction_date='2026-07-14')
+    _seed_stored_transaction(g_option)
+    _seed_stored_transaction(g_recall)
+
+    sanders = _seed_pitcher(676742, 'Cam Sanders', PHI, 'PHI',
+                            roster_status=STATUS_OPTIONED, active=False)
+    _seed_snapshot(sanders, PHI, SIGNAL_DATE, STATUS_ACTIVE)
+    s_option = _tx('san-opt', 676742, type_code=OPT, to_team_id=AFFILIATE_B)
+    _seed_stored_transaction(s_option)
+
+    gordon = _seed_pitcher(676467, 'Colton Gordon', PHI, 'PHI',
+                           roster_status=STATUS_OPTIONED, active=False)
+    _seed_snapshot(gordon, NYM, SIGNAL_DATE, STATUS_ACTIVE)
+    go_recall = _tx('gor-rec', 676467, type_code='RECALL', to_team_id=PHI)
+    _seed_stored_transaction(go_recall)
+
+    # Four unstored transaction participants — every role outcome.
+    risley = _tx('risley', 836083, type_code=OPT, from_team_id=PIT, to_team_id=AFFILIATE_A,
+                 player_full_name='Braydon Risley')            # proven pitcher
+    taylor = _tx('taylor', 694930, type_code='TR', from_team_id=SEA, to_team_id=AFFILIATE_B,
+                 player_full_name='Carson Taylor')             # proven non-pitcher
+    brenner = _tx('brenner', 836200, type_code='RECALL', from_team_id=WSH, to_team_id=ATL,
+                  player_full_name='Jack Brenner')             # unresolved role
+    dorland = _tx('dorland', 836451, type_code='RECALL', from_team_id=ATL, to_team_id=AFFILIATE_C,
+                  player_full_name='Cole Dorland')             # proven two-way
+    bal_det = _tx('baldet', 939001, type_code='TR', from_team_id=BAL, to_team_id=DET)  # pitcher
+
+    transactions = [
+        g_option, g_recall, s_option, go_recall,
+        risley, taylor, brenner, dorland, bal_det,
+    ]
+    rosters = {
+        (PHI, ROSTER_TYPE_ACTIVE): [
+            roster_entry(701552, 'Andre Granillo', status=ACTIVE),  # stays active
+            roster_entry(676467, 'Colton Gordon', status=ACTIVE),   # genuine mismatch
+        ],
+        (TOR, ROSTER_TYPE_ACTIVE): [roster_entry(669310, 'CJ Van Eyk', status=ACTIVE)],
+        (ATH, ROSTER_TYPE_ACTIVE): [roster_entry(814305, 'Yunior Tur', status=ACTIVE)],
+    }
+    teams = [
+        {'id': PHI, 'name': 'Phillies', 'abbreviation': 'PHI'},
+        {'id': TOR, 'name': 'Blue Jays', 'abbreviation': 'TOR'},
+        {'id': ATH, 'name': 'Athletics', 'abbreviation': 'ATH'},
+    ]
+    people = {
+        **_pitchers(836083, 939001),
+        **_two_way(836451),
+        **_non_pitchers(694930),
+        # 836200 (Jack Brenner) intentionally absent -> unresolved role.
+    }
+    return _tx_client(transactions, rosters=rosters, teams=teams, people=people)
+
+
+def _obs2_run(observation_two):
+    return _run(observation_two, team_ids=[PHI, TOR, ATH])
+
+
+def test_observation_two_role_gating(observation_two):
+    lane = _tx_lane(_obs2_run(observation_two))
+    by_txid = {r.get('transaction_id'): r for r in lane['differences']}
+    # Proven pitcher and two-way become actionable.
+    assert by_txid['risley']['classification'] == intraday_reconcile.TX_ACTIONABLE_NOT_STORED
+    assert by_txid['risley']['bullpen_relevance'] == intraday_reconcile.ROLE_PROVEN_PITCHER
+    assert by_txid['dorland']['bullpen_relevance'] == intraday_reconcile.ROLE_PROVEN_TWO_WAY
+    assert by_txid['dorland']['classification'] == intraday_reconcile.TX_ACTIONABLE_NOT_STORED
+    # Proven non-pitcher is informational, never a difference.
+    assert 'taylor' not in by_txid
+    assert lane['checked']['non_pitcher_transactions'] == 1
+    # Unresolved role is review-required, never actionable.
+    assert by_txid['brenner']['classification'] == intraday_reconcile.TX_BULLPEN_RELEVANCE_UNRESOLVED
+    assert by_txid['brenner']['severity'] == intraday_reconcile.SEVERITY_REVIEW
+
+
+def test_observation_two_non_mlb_scoping(observation_two):
+    artifact = _obs2_run(observation_two)
+    lane = _tx_lane(artifact)
+    for affiliate in (AFFILIATE_A, AFFILIATE_B, AFFILIATE_C):
+        assert affiliate not in artifact['would_refresh']['affected_team_ids']
+        assert affiliate not in artifact['would_refresh']['recalculate_team_reads']
+        assert affiliate not in lane['affected_team_ids']
+    # But the affiliate ids remain visible as evidence.
+    observed = set(artifact['summary']['non_mlb_team_ids_observed'])
+    assert {AFFILIATE_A, AFFILIATE_C}.issubset(observed)
+    # Governed MLB clubs still enter public impact.
+    assert PIT in lane['affected_team_ids']  # Risley from Pittsburgh (proven pitcher)
+
+
+def test_observation_two_chronology(observation_two):
+    lane = _tx_lane(_obs2_run(observation_two))
+    # Granillo: the older option superseded by the later recall is non-material.
+    superseded = {r.get('transaction_id'): r for r in
+                  lane['informational_samples'].get(intraday_reconcile.TX_SUPERSEDED_TRANSACTION, [])}
+    assert superseded['gran-opt']['classification'] == intraday_reconcile.TX_SUPERSEDED_TRANSACTION
+    # Sanders: option correctly reflected (still inactive) -> benign detail mismatch.
+    detail = {r.get('transaction_id'): r for r in
+              lane['informational_samples'].get(intraday_reconcile.TX_TRANSACTION_DETAIL_MISMATCH, [])}
+    assert detail['san-opt']['public_bullpen_membership_alignment'] == intraday_reconcile.MEMBERSHIP_ALIGNED
+    # Gordon: genuine current membership mismatch -> material.
+    by_txid = {r.get('transaction_id'): r for r in lane['differences']}
+    assert by_txid['gor-rec']['classification'] == intraday_reconcile.TX_PUBLIC_BULLPEN_EFFECT_UNREFLECTED
+    assert by_txid['gor-rec']['severity'] == intraday_reconcile.SEVERITY_ACTIONABLE
+
+
+def test_observation_two_newly_discovered_names(observation_two):
+    diffs = _lane1_by_id(_obs2_run(observation_two))
+    assert diffs[669310]['change_type'] == intraday_reconcile.CHANGE_NEWLY_DISCOVERED_ACTIVE
+    assert diffs[669310]['player_name'] == 'CJ Van Eyk'
+    assert diffs[814305]['player_name'] == 'Yunior Tur'
+
+
+def test_observation_two_honest_materiality(observation_two):
+    artifact = _obs2_run(observation_two)
+    summary = artifact['summary']
+    # There ARE proven material findings (Gordon mismatch, unstored proven pitchers,
+    # newly-discovered active pitchers), so a future write would be required.
+    assert artifact['material_change_detected'] is True
+    assert summary['public_membership_mismatches'] >= 1
+    assert summary['superseded_transactions'] >= 1
+    assert summary['non_pitcher_transactions'] == 1
+    assert summary['role_unresolved_findings'] >= 1
+    # The non-pitcher and unresolved-role players never enter the write plan.
+    assert 694930 not in artifact['affected_pitcher_mlb_ids']  # Carson Taylor (non-pitcher)
+    assert 836200 not in artifact['affected_pitcher_mlb_ids']  # Jack Brenner (unresolved)
+    # Proven pitchers do.
+    assert 836083 in artifact['affected_pitcher_mlb_ids']      # Braydon Risley
+    assert summary['mlb_teams_affected'] == artifact['would_refresh']['affected_team_ids']

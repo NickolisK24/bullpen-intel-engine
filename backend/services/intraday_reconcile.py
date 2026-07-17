@@ -81,14 +81,21 @@ logger = logging.getLogger(__name__)
 # contract major version so consumers (and the workflow's artifact validator)
 # can pin to it; VERSION is the fine-grained contract version.
 CAPABILITY = 'intraday_reconciliation_audit_v1'
-# Fine-grained contract version. Bumped 1.0.0 -> 1.1.0 for the signal-quality
-# correction: transaction `differences` now carries only meaningful findings
-# (benign inventory is aggregated, not serialized), several summary buckets were
-# added, and the default roster scope is active-only. The capability major
-# identifier is unchanged and the workflow validator (capability/mode/
-# check_only/status) still accepts the artifact, so this is a backward-
-# compatible minor bump, not a breaking major change.
-VERSION = '1.1.0'
+# Fine-grained contract version.
+#   1.0.0 -> 1.1.0 : signal-quality correction (benign inventory aggregated, not
+#                    serialized; summary buckets; active-roster-only default).
+#   1.1.0 -> 1.2.0 : bullpen-relevance correction (Production Observation #2).
+#                    Transaction findings now prove bullpen relevance (pitcher /
+#                    two-way) before becoming materially actionable; public team
+#                    impact is scoped to the governed MLB clubs; exact
+#                    transaction-state alignment is separated from public
+#                    active-bullpen membership; historical option/IL effects are
+#                    chronology- and current-membership-aware. All additions are
+#                    backward-compatible within capability v1 — new fields and
+#                    new classifications are added, none of the fields the
+#                    workflow validator checks (capability/mode/check_only/status)
+#                    change — so this is a backward-compatible minor bump.
+VERSION = '1.2.0'
 
 MODE = 'intraday'
 PHASE = 1
@@ -166,41 +173,130 @@ EFFECT_NONE = 'none'
 SEVERITY_ACTIONABLE = 'actionable'
 SEVERITY_REVIEW = 'review_required'
 
-# Lane 2 transaction classifications. Event-aware: single-player events use the
-# player-level classes; compound events (multiple source components sharing one
-# MLB transaction id) use the compound_* classes so one event never manufactures
-# several per-component conflicts.
+# ── Bullpen-role verification (Correction 1) ────────────────────────────────
+# BaseballOS is a bullpen-only product, so a transaction is materially actionable
+# only when it is proven to involve a pitcher or two-way player. Role is resolved
+# from the MLB numeric id alone — never inferred from transaction type, player
+# name, destination team, or stored absence.
+ROLE_PROVEN_PITCHER = 'proven_pitcher'
+ROLE_PROVEN_TWO_WAY = 'proven_two_way'
+ROLE_PROVEN_NON_PITCHER = 'proven_non_pitcher'
+ROLE_UNRESOLVED = 'unresolved'
+# Only these two roles may become materially actionable bullpen findings.
+BULLPEN_RELEVANT_ROLES = frozenset({ROLE_PROVEN_PITCHER, ROLE_PROVEN_TWO_WAY})
+
+# How the role was established (role_verification_status).
+ROLE_SOURCE_STORED_PITCHER = 'stored_pitcher'          # tracked Pitcher row
+ROLE_SOURCE_ROSTER_EVIDENCE = 'source_position_evidence'  # position on the source row
+ROLE_SOURCE_PEOPLE_LOOKUP = 'mlb_people_lookup'        # /people/{id} primaryPosition
+ROLE_SOURCE_LOOKUP_FAILED = 'people_lookup_failed'
+ROLE_SOURCE_LOOKUP_BUDGET = 'people_lookup_budget_exceeded'
+ROLE_SOURCE_NO_EVIDENCE = 'no_role_evidence'
+
+# Bounded role acquisition (Correction 2): at most this many /people lookups per
+# audit run. Beyond it, remaining roles stay unresolved with a limitation — never
+# guessed as pitchers.
+DEFAULT_MAX_ROLE_LOOKUPS = 40
+
+# MLB pitcher / two-way identity from official position evidence.
+_PITCHER_POSITION_CODES = frozenset({'1'})
+_TWO_WAY_POSITION_CODES = frozenset({'Y'})
+_PITCHER_POSITION_ABBRS = frozenset({'P'})
+_TWO_WAY_POSITION_ABBRS = frozenset({'TWP'})
+
+# ── MLB-team impact scope (Correction 3) ────────────────────────────────────
+# Only the governed MLB clubs may enter public team-level recomputation or public
+# snapshot planning. Minor-league / affiliate / academy / unknown team ids remain
+# in transaction evidence but never in public impact fields.
+MLB_TEAM_ID_SET = frozenset(MLB_TEAM_IDS)
+
+# ── Lane 2 transaction classifications ──────────────────────────────────────
+# Event-aware: single-player events use the player-level classes; compound events
+# (multiple source components sharing one MLB transaction id) use the compound_*
+# classes so one event never manufactures several per-component conflicts.
 TX_NON_PLAYER = 'non_player_transaction'
 TX_UNRESOLVED_IDENTITY = 'unresolved_identity'
 TX_INVALID_SHAPE = 'invalid_shape'
 TX_ACTIONABLE_NOT_STORED = 'actionable_not_stored'
 TX_STORED_CONFLICT = 'stored_conflict'
-TX_STATUS_EFFECT_UNREFLECTED = 'status_effect_unreflected'
 TX_ALREADY_REFLECTED = 'already_reflected'
 TX_COMPOUND_NEW = 'compound_transaction_new'
 TX_COMPOUND_REVIEW = 'compound_transaction_review_required'
 TX_COMPOUND_REFLECTED = 'compound_event_reflected'
+# Bullpen-relevance (Correction 1) and refined membership semantics (Corrections
+# 4/5/6). ``status_effect_unreflected`` is retained only as a deprecated alias —
+# it is no longer emitted; the refined classes below replace it so an exact
+# transaction-detail difference never masquerades as a material public-state
+# change.
+TX_STATUS_EFFECT_UNREFLECTED = 'status_effect_unreflected'  # deprecated (unused)
+TX_NON_PITCHER = 'non_pitcher_transaction'
+TX_BULLPEN_RELEVANCE_UNRESOLVED = 'bullpen_relevance_unresolved'
+TX_PUBLIC_BULLPEN_EFFECT_UNREFLECTED = 'public_bullpen_effect_unreflected'
+TX_TRANSACTION_DETAIL_MISMATCH = 'transaction_detail_mismatch'
+TX_SUPERSEDED_TRANSACTION = 'superseded_transaction'
+TX_CURRENT_STATE_ALIGNED = 'current_state_aligned'
+TX_CHRONOLOGY_UNRESOLVED = 'chronology_unresolved'
 
 # Which transaction classifications are meaningful (serialized into differences)
-# and, of those, which imply an actionable future write.
+# and, of those, which imply an actionable future write. Only proven
+# bullpen-relevant, current-state-material findings are actionable.
 TX_ACTIONABLE_CLASSES = frozenset({
     TX_ACTIONABLE_NOT_STORED,
     TX_STORED_CONFLICT,
-    TX_STATUS_EFFECT_UNREFLECTED,
+    TX_PUBLIC_BULLPEN_EFFECT_UNREFLECTED,
     TX_COMPOUND_NEW,
 })
 TX_REVIEW_CLASSES = frozenset({
     TX_UNRESOLVED_IDENTITY,
     TX_INVALID_SHAPE,
     TX_COMPOUND_REVIEW,
+    TX_BULLPEN_RELEVANCE_UNRESOLVED,
+    TX_CHRONOLOGY_UNRESOLVED,
 })
 TX_MEANINGFUL_CLASSES = TX_ACTIONABLE_CLASSES | TX_REVIEW_CLASSES
 # Benign / informational classes are counted but never serialized row-by-row.
+# Non-pitcher transactions, superseded historical effects, and exact non-governed
+# detail differences whose current public bullpen membership is correct are all
+# benign for a bullpen product.
 TX_BENIGN_CLASSES = frozenset({
     TX_ALREADY_REFLECTED,
     TX_NON_PLAYER,
     TX_COMPOUND_REFLECTED,
+    TX_NON_PITCHER,
+    TX_TRANSACTION_DETAIL_MISMATCH,
+    TX_SUPERSEDED_TRANSACTION,
+    TX_CURRENT_STATE_ALIGNED,
 })
+
+# Roster-affecting transaction categories and the active-bullpen direction each
+# implies (Correction 6 chronology). A category not listed here does not by
+# itself flip active-roster membership.
+_TX_ENTER_CATEGORIES = frozenset({
+    transactions_service.CATEGORY_RECALL,
+    transactions_service.CATEGORY_IL_ACTIVATION,
+    transactions_service.CATEGORY_ROSTER_ACTIVATION,
+    transactions_service.CATEGORY_CONTRACT_SELECTION,
+})
+_TX_LEAVE_CATEGORIES = frozenset({
+    transactions_service.CATEGORY_OPTION,
+    transactions_service.CATEGORY_IL_PLACEMENT,
+    transactions_service.CATEGORY_ROSTER_DEACTIVATION,
+    transactions_service.CATEGORY_DFA,
+    transactions_service.CATEGORY_OUTRIGHT,
+    transactions_service.CATEGORY_RELEASE,
+})
+_TX_ROSTER_AFFECTING_CATEGORIES = _TX_ENTER_CATEGORIES | _TX_LEAVE_CATEGORIES
+
+# Current public active-bullpen membership alignment (Correction 4).
+MEMBERSHIP_ALIGNED = 'aligned'
+MEMBERSHIP_MISALIGNED = 'misaligned'
+MEMBERSHIP_UNKNOWN = 'unknown'
+
+# Chronology resolution states (Correction 6).
+CHRONOLOGY_LATEST = 'latest_applicable'
+CHRONOLOGY_SUPERSEDED = 'superseded'
+CHRONOLOGY_UNRESOLVED = 'unresolved'
+CHRONOLOGY_NOT_APPLICABLE = 'not_applicable'
 
 # Provenance/query-window fields on a stored transaction are not substantive
 # facts — a stored transaction is not "in conflict" merely because a later audit
@@ -656,7 +752,8 @@ def reconcile_active_rosters_and_assignments(
     # conflicting or unresolved evidence never adds a team or pitcher to a write
     # plan.
     actionable_diffs = [d for d in differences if d.get('severity') == SEVERITY_ACTIONABLE]
-    affected_team_ids = sorted({
+    # Public team impact is scoped to the governed MLB clubs (Correction 3).
+    affected_team_ids = _mlb_team_ids({
         d['team_id'] for d in actionable_diffs if d.get('team_id') is not None
     } | {
         d['stored_team_id'] for d in actionable_diffs if d.get('stored_team_id') is not None
@@ -667,6 +764,14 @@ def reconcile_active_rosters_and_assignments(
     affected_pitcher_mlb_ids = sorted({
         d['mlb_player_id'] for d in actionable_diffs if d.get('mlb_player_id') is not None
     })
+
+    # Current active-bullpen membership authority for the cross-lane transaction
+    # reconciliation (Correction 7): official active membership vs stored state,
+    # keyed by MLB id. A player whose relevant team could not be fetched is left
+    # unverified so the transaction lane never asserts a mismatch it cannot prove.
+    current_state_index = _build_current_state_index(
+        official, stored_pitchers, requested_team_ids, failed_team_ids,
+    )
 
     # A team whose rosters could not be fully fetched means this lane could not
     # fully verify — its "no change" for that team is not proof of no change.
@@ -701,6 +806,7 @@ def reconcile_active_rosters_and_assignments(
         'affected_team_ids': affected_team_ids,
         'affected_pitcher_ids': affected_pitcher_ids,
         'affected_pitcher_mlb_ids': affected_pitcher_mlb_ids,
+        'current_state_index': current_state_index,
         'targeted_recent_work_pitcher_ids': sorted({
             d['stored_pitcher_id']
             for d in differences
@@ -712,6 +818,52 @@ def reconcile_active_rosters_and_assignments(
             if d.get('targeted_recent_work_required') and d.get('mlb_player_id') is not None
         }),
     }
+
+
+def _official_active_membership(official_teams):
+    """Return (mlb_team_id, official_active) for a player's official evidence:
+    active on a governed MLB club's active roster, or (None, False)."""
+    for team_id, entry in (official_teams or {}).items():
+        if int(team_id) in MLB_TEAM_ID_SET and entry.get('active_roster') \
+                and _status_is_active(entry['classification']['status']):
+            return int(team_id), True
+    return None, False
+
+
+def _build_current_state_index(official, stored_pitchers, requested_team_ids, failed_team_ids):
+    index = {}
+    for pitcher in stored_pitchers:
+        mlb_id = pitcher.mlb_id
+        if mlb_id is None:
+            continue
+        stored_state = classify_roster_status(pitcher)
+        official_teams = official.get(mlb_id) or {}
+        official_team_id, official_active = _official_active_membership(official_teams)
+        team_fetched = (
+            pitcher.team_id is not None
+            and int(pitcher.team_id) in requested_team_ids
+            and pitcher.team_id not in failed_team_ids
+        )
+        verified = bool(official_teams) or team_fetched
+        index[mlb_id] = {
+            'official_active': official_active if verified else None,
+            'official_team_id': official_team_id,
+            'stored_active': stored_state['is_active_mlb'],
+            'stored_pitcher_id': pitcher.id,
+            'verified': verified,
+        }
+    for mlb_id, official_teams in official.items():
+        if mlb_id in index:
+            continue
+        official_team_id, official_active = _official_active_membership(official_teams)
+        index[mlb_id] = {
+            'official_active': official_active,
+            'official_team_id': official_team_id,
+            'stored_active': None,
+            'stored_pitcher_id': None,
+            'verified': True,
+        }
+    return index
 
 
 def _lane1_difference(
@@ -759,6 +911,160 @@ def _lane1_difference(
     return difference
 
 
+# ── Bullpen-role verification + MLB-team scope (Corrections 1, 2, 3) ─────────
+
+def _classify_role_from_position(*, code, abbreviation, position_type):
+    """Governed bullpen role from official MLB position evidence. Never inferred
+    from transaction type, player name, or destination team."""
+    code = _string_or_none(code)
+    abbr = (_string_or_none(abbreviation) or '').upper()
+    ptype = (_string_or_none(position_type) or '').lower()
+    if code in _TWO_WAY_POSITION_CODES or abbr in _TWO_WAY_POSITION_ABBRS or 'two-way' in ptype:
+        return ROLE_PROVEN_TWO_WAY
+    if code in _PITCHER_POSITION_CODES or abbr in _PITCHER_POSITION_ABBRS or ptype == 'pitcher':
+        return ROLE_PROVEN_PITCHER
+    if code or abbr or ptype:
+        return ROLE_PROVEN_NON_PITCHER
+    return ROLE_UNRESOLVED
+
+
+def _position_fields(position):
+    position = position or {}
+    return {
+        'official_position_code': _string_or_none(position.get('code')),
+        'official_position_abbreviation': _string_or_none(position.get('abbreviation')),
+        'official_position_type': _string_or_none(position.get('type')),
+    }
+
+
+def _role_evidence_from_source(transaction):
+    """Reuse any position evidence already present on the source transaction row.
+    Most MLB transaction rows carry no position, so this usually returns None and
+    a bounded ``/people`` lookup is used instead."""
+    person = (transaction or {}).get('person') or {}
+    position = (
+        (transaction or {}).get('position')
+        or person.get('primaryPosition')
+        or {}
+    )
+    fields = _position_fields(position)
+    if not any(fields.values()):
+        return None
+    relevance = _classify_role_from_position(
+        code=fields['official_position_code'],
+        abbreviation=fields['official_position_abbreviation'],
+        position_type=fields['official_position_type'],
+    )
+    if relevance == ROLE_UNRESOLVED:
+        return None
+    return {
+        'bullpen_relevance': relevance,
+        'role_verification_status': ROLE_SOURCE_ROSTER_EVIDENCE,
+        'role_evidence_source': ROLE_SOURCE_ROSTER_EVIDENCE,
+        **fields,
+    }
+
+
+class _RoleResolver:
+    """Resolve bullpen relevance for transaction participants, MLB id only.
+
+    Precedence: a tracked Pitcher row → proven_pitcher; else position evidence on
+    the source row; else a bounded, deduplicated, cached ``/people`` lookup. Fails
+    closed (unresolved) on lookup error or when the per-run budget is exhausted —
+    an unchecked player is never classified as a pitcher (Corrections 1 and 2)."""
+
+    def __init__(self, client, *, max_lookups=DEFAULT_MAX_ROLE_LOOKUPS):
+        self._client = client
+        self._max_lookups = max(0, int(max_lookups))
+        self._cache = {}
+        self.lookups_used = 0
+        self.budget_exceeded = False
+        self.lookup_failures = 0
+
+    def _unresolved(self, status):
+        return {
+            'bullpen_relevance': ROLE_UNRESOLVED,
+            'role_verification_status': status,
+            'role_evidence_source': status,
+            'official_position_code': None,
+            'official_position_abbreviation': None,
+            'official_position_type': None,
+        }
+
+    def resolve(self, *, mlb_id, stored_pitcher_id, transaction=None):
+        if stored_pitcher_id is not None:
+            # A tracked Pitcher row exists — BaseballOS only tracks pitchers /
+            # two-way arms, so the participant is proven bullpen-relevant.
+            return {
+                'bullpen_relevance': ROLE_PROVEN_PITCHER,
+                'role_verification_status': ROLE_SOURCE_STORED_PITCHER,
+                'role_evidence_source': ROLE_SOURCE_STORED_PITCHER,
+                'official_position_code': None,
+                'official_position_abbreviation': None,
+                'official_position_type': None,
+            }
+        if mlb_id is None:
+            return self._unresolved(ROLE_SOURCE_NO_EVIDENCE)
+        if mlb_id in self._cache:
+            return self._cache[mlb_id]
+
+        evidence = _role_evidence_from_source(transaction)
+        if evidence is not None:
+            self._cache[mlb_id] = evidence
+            return evidence
+
+        if self.lookups_used >= self._max_lookups:
+            self.budget_exceeded = True
+            result = self._unresolved(ROLE_SOURCE_LOOKUP_BUDGET)
+            self._cache[mlb_id] = result
+            return result
+
+        # Count the lookup before issuing it so a failure still consumes budget
+        # and can never be silently retried into a pitcher classification.
+        self.lookups_used += 1
+        try:
+            person = self._client.get_player_info(mlb_id)
+        except Exception as exc:  # noqa: BLE001 - fail closed, never guess a role
+            logger.warning('intraday audit: role lookup failed for mlb_id=%s: %s', mlb_id, exc)
+            self.lookup_failures += 1
+            result = self._unresolved(ROLE_SOURCE_LOOKUP_FAILED)
+            self._cache[mlb_id] = result
+            return result
+
+        position = (person or {}).get('primaryPosition') or {}
+        fields = _position_fields(position)
+        relevance = _classify_role_from_position(
+            code=fields['official_position_code'],
+            abbreviation=fields['official_position_abbreviation'],
+            position_type=fields['official_position_type'],
+        )
+        if relevance == ROLE_UNRESOLVED:
+            # Position evidence absent/unusable — fail closed rather than guess.
+            self.lookup_failures += 1
+            result = self._unresolved(ROLE_SOURCE_LOOKUP_FAILED)
+            self._cache[mlb_id] = result
+            return result
+        result = {
+            'bullpen_relevance': relevance,
+            'role_verification_status': ROLE_SOURCE_PEOPLE_LOOKUP,
+            'role_evidence_source': ROLE_SOURCE_PEOPLE_LOOKUP,
+            **fields,
+        }
+        self._cache[mlb_id] = result
+        return result
+
+
+def _mlb_team_ids(ids):
+    """Filter an iterable of team ids to the governed MLB clubs only."""
+    return sorted({int(t) for t in ids if t is not None and int(t) in MLB_TEAM_ID_SET})
+
+
+def _non_mlb_team_ids(ids):
+    """The non-MLB (affiliate / minor-league / unknown) team ids observed —
+    preserved as evidence, never entered into public impact planning."""
+    return sorted({int(t) for t in ids if t is not None and int(t) not in MLB_TEAM_ID_SET})
+
+
 # ── Lane 2: transactions ────────────────────────────────────────────────────
 
 def reconcile_transactions(
@@ -770,18 +1076,27 @@ def reconcile_transactions(
     end_date,
     window_days=transactions_service.TRANSACTION_SYNC_WINDOW_DAYS,
     sample_limit=DEFAULT_TX_SAMPLE_LIMIT,
+    role_resolver=None,
+    roster_current_state=None,
 ):
     """Compare recent official transactions against stored transaction evidence.
 
-    Event-aware and signal-selective. Source records are grouped by their stable
-    MLB transaction-event id, so a compound event (several player components plus
-    a non-player component sharing one transaction id) never manufactures one
-    stored-conflict per component. Only meaningful findings — actionable or
-    review-required — are serialized into ``differences``; benign inventory
-    (already-reflected, non-player, reflected compound events) is counted and
-    optionally sampled, never repeated row-by-row. Read-only: no insert, update,
-    resolution, or dead-letter write.
+    Event-aware, bullpen-relevance-gated, and current-membership-aware. Source
+    records are grouped by their stable MLB transaction-event id. A transaction is
+    materially actionable only when it is proven to involve a pitcher or two-way
+    player (Correction 1): role is resolved from the MLB numeric id via a stored
+    Pitcher row, source position evidence, or a bounded ``/people`` lookup
+    (Correction 2). Exact stored-transaction alignment is separated from public
+    active-bullpen membership (Correction 4); a historical option/IL effect whose
+    latest applicable event and current official membership prove the player is
+    correctly outside the active bullpen is benign, not material (Corrections
+    5/6). Public team impact is scoped to the governed MLB clubs (Correction 3).
+    Only meaningful findings are serialized; benign inventory is counted and
+    bounded-sampled. Read-only: no insert, update, resolution, or dead-letter
+    write.
     """
+    role_resolver = role_resolver or _RoleResolver(client)
+    roster_current_state = roster_current_state or {}
     start_date = end_date - timedelta(days=window_days)
     evidence_source = transactions_service.SOURCE_ENDPOINT
 
@@ -797,19 +1112,17 @@ def reconcile_transactions(
     if not isinstance(source_transactions, list):
         source_transactions = []
 
-    counts = defaultdict(int)
-    differences = []
-    benign_samples = defaultdict(list)
+    all_findings = []
+    non_player_by_event = defaultdict(int)
 
     # ── Phase 1: classify each source record into a component with an event key.
     events = {}          # event_key -> list of player component dicts
     event_order = []     # first-seen order of event keys (deterministic)
-    non_player_by_event = defaultdict(int)
+    player_events = defaultdict(list)  # mlb_id -> [component] for chronology
 
     for transaction in source_transactions:
         if not isinstance(transaction, dict):
-            counts[TX_INVALID_SHAPE] += 1
-            differences.append({
+            all_findings.append({
                 'classification': TX_INVALID_SHAPE,
                 'severity': SEVERITY_REVIEW,
                 'reason': 'transaction row is not an object',
@@ -819,15 +1132,15 @@ def reconcile_transactions(
             continue
 
         if transactions_service.is_non_player_transaction(transaction):
-            counts[TX_NON_PLAYER] += 1
             tx_id = _string_or_none(transaction.get('transaction_id'))
             if tx_id is not None:
                 non_player_by_event[f'statsapi:{tx_id}'] += 1
-            if len(benign_samples[TX_NON_PLAYER]) < sample_limit:
-                benign_samples[TX_NON_PLAYER].append(_lane2_base_record(
-                    transaction, team_map, evidence_source, check_timestamp_iso,
-                    classification=TX_NON_PLAYER,
-                ))
+            record = _lane2_base_record(
+                transaction, team_map, evidence_source, check_timestamp_iso,
+                classification=TX_NON_PLAYER,
+            )
+            record['severity'] = None
+            all_findings.append(record)
             continue
 
         values, detail = transactions_service.read_transaction_values(
@@ -843,36 +1156,41 @@ def reconcile_transactions(
                 if detail.get('entity_type') == transactions_service.TRANSACTION_IDENTITY_ENTITY_TYPE
                 else TX_INVALID_SHAPE
             )
-            counts[classification] += 1
             record = _lane2_base_record(
                 transaction, team_map, evidence_source, check_timestamp_iso,
                 classification=classification,
             )
             record['severity'] = SEVERITY_REVIEW
             record['reason'] = detail.get('reason')
-            differences.append(record)
+            all_findings.append(record)
             continue
 
         # A resolvable player component. Group by the shared event key.
         event_key = values['transaction_key']
+        category = values.get('normalized_category')
         component = {
             'transaction': transaction,
             'values': values,
+            'event_key': event_key,
             'player_mlb_id': values.get('player_mlb_id'),
             'from_team_id': values.get('from_team_id'),
             'to_team_id': values.get('to_team_id'),
-            'normalized_category': values.get('normalized_category'),
+            'normalized_category': category,
             'pitcher_id': values.get('pitcher_id'),
-            'status_effect_unreflected': (
-                values.get('roster_snapshot_alignment') == transactions_service.ALIGNMENT_MISALIGNED
-            ),
+            # Exact stored-state alignment (Correction 4): NOT public membership.
+            'transaction_state_alignment': values.get('roster_snapshot_alignment'),
+            'effect_direction': _tx_effect_direction(category),
         }
         if event_key not in events:
             events[event_key] = []
             event_order.append(event_key)
         events[event_key].append(component)
+        if component['player_mlb_id'] is not None:
+            player_events[component['player_mlb_id']].append(component)
 
-    # ── Phase 2: reconcile each event (single-player or compound).
+    # ── Phase 2: reconcile each event (single-player or compound). Role is
+    # resolved only for events that reach a meaningful/membership classification,
+    # so lookups stay bounded to unstored, potentially-meaningful participants.
     for event_key in event_order:
         components = events[event_key]
         existing = PlayerTransaction.query.filter_by(transaction_key=event_key).first()
@@ -880,49 +1198,14 @@ def reconcile_transactions(
             finding = _reconcile_single_player_event(
                 components[0], existing, event_key, team_map,
                 evidence_source, check_timestamp_iso,
+                role_resolver, player_events, roster_current_state,
             )
         else:
             finding = _reconcile_compound_event(
                 components, existing, event_key, non_player_by_event.get(event_key, 0),
-                team_map, evidence_source, check_timestamp_iso,
+                team_map, evidence_source, check_timestamp_iso, role_resolver,
             )
-        classification = finding['classification']
-        counts[classification] += 1
-        if classification in TX_MEANINGFUL_CLASSES:
-            differences.append(finding)
-        elif len(benign_samples[classification]) < sample_limit:
-            benign_samples[classification].append(finding)
-
-    actionable = [d for d in differences if d.get('severity') == SEVERITY_ACTIONABLE]
-    review = [d for d in differences if d.get('severity') == SEVERITY_REVIEW]
-
-    # Affected identity sets are derived from ACTIONABLE findings only — benign
-    # or review-required rows never add teams or pitchers to a write plan.
-    affected_team_ids = sorted({
-        team_id for d in actionable for team_id in _finding_team_ids(d) if team_id is not None
-    })
-    affected_pitcher_ids = sorted({
-        pid for d in actionable for pid in _finding_pitcher_ids(d) if pid is not None
-    })
-    affected_pitcher_mlb_ids = sorted({
-        mid for d in actionable for mid in _finding_player_mlb_ids(d) if mid is not None
-    })
-
-    # Deterministic ordering of meaningful findings.
-    differences.sort(key=lambda d: (
-        str(d.get('classification')),
-        str(d.get('event_key') or d.get('transaction_id') or ''),
-        d.get('player_mlb_id') or 0,
-    ))
-
-    already_reflected_count = counts[TX_ALREADY_REFLECTED]
-    non_player_count = counts[TX_NON_PLAYER]
-    compound_reflected_count = counts[TX_COMPOUND_REFLECTED]
-    benign_records_suppressed = (
-        max(0, already_reflected_count - len(benign_samples[TX_ALREADY_REFLECTED]))
-        + max(0, non_player_count - len(benign_samples[TX_NON_PLAYER]))
-        + max(0, compound_reflected_count - len(benign_samples[TX_COMPOUND_REFLECTED]))
-    )
+        all_findings.append(finding)
 
     limitations = []
     if fetch_error is not None:
@@ -933,6 +1216,17 @@ def reconcile_transactions(
         )
     else:
         verification_status = LANE_COMPLETE
+    if role_resolver.budget_exceeded:
+        limitations.append(
+            'role-verification lookup budget was exhausted this run; the remaining '
+            'transaction participants could not be verified as bullpen-relevant and '
+            'are reported unresolved (never assumed to be pitchers)'
+        )
+    if role_resolver.lookup_failures:
+        limitations.append(
+            f'{role_resolver.lookup_failures} role-verification lookup(s) failed; '
+            'those participants are reported unresolved, not assumed pitchers'
+        )
 
     lane = {
         'verification_status': verification_status,
@@ -941,54 +1235,180 @@ def reconcile_transactions(
             'end_date': end_date.isoformat(),
             'window_days': window_days,
         },
-        'checked': {
-            'source_transactions': len(source_transactions),
-            'source_events': len(event_order),
-            'meaningful_differences': len(differences),
-            'actionable_differences': len(actionable),
-            'review_required_differences': len(review),
-            # Back-compat alias for the pre-1.1 impact-plan reader.
-            'actionable_player_transactions': len(actionable),
-            'already_reflected': already_reflected_count,
-            'non_player_transactions': non_player_count,
-            'compound_events_reflected': compound_reflected_count,
-            'compound_new': counts[TX_COMPOUND_NEW],
-            'compound_review_required': counts[TX_COMPOUND_REVIEW],
-            'stored_conflicts': counts[TX_STORED_CONFLICT],
-            'status_effect_unreflected': counts[TX_STATUS_EFFECT_UNREFLECTED],
-            'unresolved_identity': counts[TX_UNRESOLVED_IDENTITY],
-            'invalid_shape': counts[TX_INVALID_SHAPE],
-        },
-        'differences': differences,
-        'informational_counts': {
-            'already_reflected_count': already_reflected_count,
-            'non_player_count': non_player_count,
-            'compound_events_reflected_count': compound_reflected_count,
-        },
-        'suppressed_counts': {
-            'benign_records_suppressed': benign_records_suppressed,
-        },
-        'informational_samples': {
-            cls: benign_samples[cls]
-            for cls in (TX_ALREADY_REFLECTED, TX_NON_PLAYER, TX_COMPOUND_REFLECTED)
-            if benign_samples[cls]
-        },
+        '_all_findings': all_findings,
         'limitations': limitations,
-        'affected_team_ids': affected_team_ids,
-        'affected_pitcher_ids': affected_pitcher_ids,
-        'affected_pitcher_mlb_ids': affected_pitcher_mlb_ids,
+        'role_verification': {
+            'lookups_used': role_resolver.lookups_used,
+            'lookup_budget': role_resolver._max_lookups,
+            'budget_exceeded': role_resolver.budget_exceeded,
+            'lookup_failures': role_resolver.lookup_failures,
+        },
+        '_source_transactions': len(source_transactions),
+        '_source_events': len(event_order),
     }
     if fetch_error is not None:
         lane['fetch_error'] = fetch_error
+    _finalize_transaction_lane(lane, sample_limit=sample_limit)
     return lane
+
+
+def _tx_effect_direction(category):
+    if category in _TX_ENTER_CATEGORIES:
+        return EFFECT_ENTER
+    if category in _TX_LEAVE_CATEGORIES:
+        return EFFECT_LEAVE
+    return EFFECT_NONE
+
+
+def _finalize_transaction_lane(lane, *, sample_limit=DEFAULT_TX_SAMPLE_LIMIT):
+    """Recompute serialized differences, counts, samples, and MLB-scoped affected
+    sets from ``lane['_all_findings']``. Idempotent, so the cross-lane membership
+    step can re-run it after resolving deferred findings."""
+    all_findings = lane.get('_all_findings') or []
+    counts = defaultdict(int)
+    differences = []
+    benign_samples = defaultdict(list)
+
+    for finding in all_findings:
+        classification = finding.get('classification')
+        counts[classification] += 1
+        if classification in TX_MEANINGFUL_CLASSES:
+            differences.append(finding)
+        elif len(benign_samples[classification]) < sample_limit:
+            benign_samples[classification].append(finding)
+
+    actionable = [d for d in differences if d.get('severity') == SEVERITY_ACTIONABLE]
+    review = [d for d in differences if d.get('severity') == SEVERITY_REVIEW]
+
+    # Affected identity sets derive from ACTIONABLE, proven bullpen-relevant
+    # findings only; public team ids are scoped to the governed MLB clubs, while
+    # every observed team id (including affiliates) is preserved in evidence.
+    affected_pitcher_ids = set()
+    affected_pitcher_mlb_ids = set()
+    affected_team_ids_raw = set()
+    all_team_ids_raw = set()
+    for finding in all_findings:
+        all_team_ids_raw.update(t for t in _finding_team_ids(finding) if t is not None)
+    for d in actionable:
+        for pid in _finding_bullpen_pitcher_ids(d):
+            affected_pitcher_ids.add(pid)
+        for mid in _finding_bullpen_mlb_ids(d):
+            affected_pitcher_mlb_ids.add(mid)
+        for team_id in _finding_bullpen_team_ids(d):
+            affected_team_ids_raw.add(team_id)
+
+    affected_team_ids = _mlb_team_ids(affected_team_ids_raw)
+    non_mlb_team_ids_observed = _non_mlb_team_ids(all_team_ids_raw)
+
+    differences.sort(key=lambda d: (
+        str(d.get('classification')),
+        str(d.get('event_key') or d.get('transaction_id') or ''),
+        d.get('player_mlb_id') or 0,
+    ))
+
+    already_reflected_count = counts[TX_ALREADY_REFLECTED]
+    non_player_count = counts[TX_NON_PLAYER]
+    compound_reflected_count = counts[TX_COMPOUND_REFLECTED]
+    non_pitcher_count = counts[TX_NON_PITCHER]
+    detail_mismatch_count = counts[TX_TRANSACTION_DETAIL_MISMATCH]
+    superseded_count = counts[TX_SUPERSEDED_TRANSACTION]
+    current_state_aligned_count = counts[TX_CURRENT_STATE_ALIGNED]
+
+    benign_sample_classes = (
+        TX_ALREADY_REFLECTED, TX_NON_PLAYER, TX_COMPOUND_REFLECTED, TX_NON_PITCHER,
+        TX_TRANSACTION_DETAIL_MISMATCH, TX_SUPERSEDED_TRANSACTION, TX_CURRENT_STATE_ALIGNED,
+    )
+    benign_records_suppressed = sum(
+        max(0, counts[cls] - len(benign_samples[cls])) for cls in benign_sample_classes
+    )
+
+    lane['checked'] = {
+        'source_transactions': lane.get('_source_transactions', 0),
+        'source_events': lane.get('_source_events', 0),
+        'meaningful_differences': len(differences),
+        'actionable_differences': len(actionable),
+        'review_required_differences': len(review),
+        # Back-compat alias for the pre-1.1 impact-plan reader.
+        'actionable_player_transactions': len(actionable),
+        'already_reflected': already_reflected_count,
+        'non_player_transactions': non_player_count,
+        'non_pitcher_transactions': non_pitcher_count,
+        'bullpen_relevance_unresolved': counts[TX_BULLPEN_RELEVANCE_UNRESOLVED],
+        'public_bullpen_effect_unreflected': counts[TX_PUBLIC_BULLPEN_EFFECT_UNREFLECTED],
+        'transaction_detail_mismatches': detail_mismatch_count,
+        'superseded_transactions': superseded_count,
+        'current_state_aligned': current_state_aligned_count,
+        'chronology_unresolved': counts[TX_CHRONOLOGY_UNRESOLVED],
+        'compound_events_reflected': compound_reflected_count,
+        'compound_new': counts[TX_COMPOUND_NEW],
+        'compound_review_required': counts[TX_COMPOUND_REVIEW],
+        'stored_conflicts': counts[TX_STORED_CONFLICT],
+        'unresolved_identity': counts[TX_UNRESOLVED_IDENTITY],
+        'invalid_shape': counts[TX_INVALID_SHAPE],
+    }
+    lane['differences'] = differences
+    lane['informational_counts'] = {
+        'already_reflected_count': already_reflected_count,
+        'non_player_count': non_player_count,
+        'non_pitcher_count': non_pitcher_count,
+        'transaction_detail_mismatch_count': detail_mismatch_count,
+        'superseded_transaction_count': superseded_count,
+        'current_state_aligned_count': current_state_aligned_count,
+        'compound_events_reflected_count': compound_reflected_count,
+    }
+    lane['suppressed_counts'] = {'benign_records_suppressed': benign_records_suppressed}
+    lane['informational_samples'] = {
+        cls: benign_samples[cls] for cls in benign_sample_classes if benign_samples[cls]
+    }
+    lane['affected_team_ids'] = affected_team_ids
+    lane['related_non_mlb_team_ids'] = non_mlb_team_ids_observed
+    lane['affected_pitcher_ids'] = sorted(affected_pitcher_ids)
+    lane['affected_pitcher_mlb_ids'] = sorted(affected_pitcher_mlb_ids)
+
+
+def _apply_role_gate(record, role_evidence):
+    """Attach role evidence and, when the participant is not a proven pitcher,
+    downgrade a would-be-actionable finding: proven non-pitcher → informational,
+    unresolved role → review-required. Returns True when the finding remains
+    bullpen-relevant (proven pitcher / two-way) and may keep its classification."""
+    record.update({
+        'bullpen_relevance': role_evidence.get('bullpen_relevance'),
+        'role_verification_status': role_evidence.get('role_verification_status'),
+        'role_evidence_source': role_evidence.get('role_evidence_source'),
+        'official_position_code': role_evidence.get('official_position_code'),
+        'official_position_abbreviation': role_evidence.get('official_position_abbreviation'),
+        'official_position_type': role_evidence.get('official_position_type'),
+    })
+    relevance = role_evidence.get('bullpen_relevance')
+    if relevance in BULLPEN_RELEVANT_ROLES:
+        return True
+    if relevance == ROLE_PROVEN_NON_PITCHER:
+        record['classification'] = TX_NON_PITCHER
+        record['severity'] = None
+        record['reason'] = (
+            'transaction participant is a proven non-pitcher; not bullpen-relevant '
+            'and never materially actionable for the bullpen product'
+        )
+    else:
+        record['classification'] = TX_BULLPEN_RELEVANCE_UNRESOLVED
+        record['severity'] = SEVERITY_REVIEW
+        record['reason'] = (
+            'transaction participant role could not be verified from official MLB '
+            'position evidence; not assumed to be a pitcher and never materially '
+            'actionable until resolved'
+        )
+    return False
 
 
 def _reconcile_single_player_event(
     component, existing, event_key, team_map, evidence_source, check_timestamp_iso,
+    role_resolver, player_events, roster_current_state,
 ):
     """Classify a single-player transaction event with deterministic precedence:
-    no stored evidence → genuine source-fact conflict → status-effect unreflected
-    → already reflected."""
+    no stored evidence → genuine governed-fact conflict → exact-state/membership
+    resolution → already reflected. Bullpen relevance is proven before any
+    actionable classification; membership materiality uses the roster lane's
+    current-state authority."""
     values = component['values']
     record = _lane2_base_record(
         component['transaction'], team_map, evidence_source, check_timestamp_iso,
@@ -999,15 +1419,27 @@ def _reconcile_single_player_event(
         'transaction_key': event_key,
         'normalized_category': values.get('normalized_category'),
         'stored_pitcher_id': values.get('pitcher_id'),
-        'roster_snapshot_alignment': values.get('roster_snapshot_alignment'),
-        'status_effect_unreflected': component['status_effect_unreflected'],
+        'transaction_state_alignment': component['transaction_state_alignment'],
+        'effect_direction': component['effect_direction'],
         'component_count': 1,
         'stored_transaction_row_id': existing.id if existing is not None else None,
     })
 
+    # Exact stored-state alignment is misaligned only when a same-day snapshot
+    # existed and disagreed with the transaction's team.
+    state_misaligned = (
+        component['transaction_state_alignment'] == transactions_service.ALIGNMENT_MISALIGNED
+    )
+
     if existing is None:
+        role_evidence = role_resolver.resolve(
+            mlb_id=component['player_mlb_id'],
+            stored_pitcher_id=component['pitcher_id'],
+            transaction=component['transaction'],
+        )
         record['classification'] = TX_ACTIONABLE_NOT_STORED
         record['severity'] = SEVERITY_ACTIONABLE
+        _apply_role_gate(record, role_evidence)
         return record
 
     differing = [
@@ -1015,16 +1447,30 @@ def _reconcile_single_player_event(
         if getattr(existing, field) != values.get(field)
     ]
     if differing:
+        role_evidence = role_resolver.resolve(
+            mlb_id=component['player_mlb_id'],
+            stored_pitcher_id=component['pitcher_id'],
+            transaction=component['transaction'],
+        )
         record['classification'] = TX_STORED_CONFLICT
         record['severity'] = SEVERITY_ACTIONABLE
         record['conflicting_fields'] = differing
+        _apply_role_gate(record, role_evidence)
         return record
 
-    if component['status_effect_unreflected']:
-        # Stored, source facts match, but the transaction's roster effect is not
-        # reflected in current roster state — its own class, above already-reflected.
-        record['classification'] = TX_STATUS_EFFECT_UNREFLECTED
-        record['severity'] = SEVERITY_ACTIONABLE
+    if state_misaligned:
+        # Stored, governed facts match, but the exact stored roster effect differs
+        # from the transaction. Whether that is materially actionable depends on
+        # bullpen relevance, chronology, and CURRENT public membership — resolved
+        # against the roster lane's current-state authority (Corrections 4/5/6/7).
+        role_evidence = role_resolver.resolve(
+            mlb_id=component['player_mlb_id'],
+            stored_pitcher_id=component['pitcher_id'],
+            transaction=component['transaction'],
+        )
+        if not _apply_role_gate(record, role_evidence):
+            return record  # non-pitcher (informational) or unresolved (review)
+        _resolve_single_membership(record, component, player_events, roster_current_state)
         return record
 
     record['classification'] = TX_ALREADY_REFLECTED
@@ -1032,19 +1478,194 @@ def _reconcile_single_player_event(
     return record
 
 
+def _chronology_for_player(component, player_events):
+    """Resolve where ``component`` sits in the player's roster-affecting sequence.
+
+    Returns (chronology_status, latest_event_key, superseded_by_event_key). Uses
+    only stable, present source ordering signals; when ordering is ambiguous it
+    returns ``unresolved`` rather than overstating supersession."""
+    mlb_id = component['player_mlb_id']
+    affecting = [
+        c for c in player_events.get(mlb_id, [])
+        if c['normalized_category'] in _TX_ROSTER_AFFECTING_CATEGORIES
+    ]
+    if len(affecting) <= 1:
+        return CHRONOLOGY_LATEST, component['event_key'], None
+
+    def _date_key(c):
+        # Only real time signals order transactions; the transaction id is NOT a
+        # chronology signal, so it is never used to disambiguate same-date events.
+        v = c['values']
+        return (_iso_date(v.get('transaction_date')) or '', _iso_date(v.get('effective_date')) or '')
+
+    latest_date_key = max(_date_key(c) for c in affecting)
+    latest_components = [c for c in affecting if _date_key(c) == latest_date_key]
+    latest_key = sorted(str(c['event_key']) for c in latest_components)[-1]
+    directions = {
+        c['effect_direction'] for c in latest_components if c['effect_direction'] != EFFECT_NONE
+    }
+    if len(directions) > 1:
+        # The latest-dated roster-affecting events disagree on direction and the
+        # source gives no finer ordering — we cannot tell which is current.
+        return CHRONOLOGY_UNRESOLVED, latest_key, None
+    if _date_key(component) == latest_date_key:
+        return CHRONOLOGY_LATEST, latest_key, None
+    return CHRONOLOGY_SUPERSEDED, latest_key, latest_key
+
+
+def _resolve_single_membership(record, component, player_events, roster_current_state):
+    """Cross-lane public-membership resolution for a proven-pitcher transaction
+    whose exact stored state is misaligned (Corrections 4/5/6/7). Uses roster-lane
+    current-state authority; never claims a material mismatch when the roster lane
+    proves current public membership is already correct."""
+    chronology_status, latest_key, superseded_by = _chronology_for_player(component, player_events)
+    record['chronology_status'] = chronology_status
+    record['latest_applicable_event_key'] = latest_key
+    record['superseded_by_event_key'] = superseded_by
+
+    if chronology_status == CHRONOLOGY_UNRESOLVED:
+        record['classification'] = TX_CHRONOLOGY_UNRESOLVED
+        record['severity'] = SEVERITY_REVIEW
+        record['reason'] = (
+            'the order of this player\'s roster-affecting transactions could not be '
+            'resolved from available source timestamps; current bullpen effect is '
+            'not asserted'
+        )
+        return
+
+    if chronology_status == CHRONOLOGY_SUPERSEDED:
+        record['classification'] = TX_SUPERSEDED_TRANSACTION
+        record['severity'] = None
+        record['reason'] = (
+            'this roster-affecting transaction was superseded by a later applicable '
+            'transaction for the same player; its historical effect is not currently '
+            'unreflected'
+        )
+        return
+
+    # This is the latest applicable roster-affecting transaction. Compare current
+    # official active-bullpen membership (roster lane) against stored state.
+    state = roster_current_state.get(component['player_mlb_id'])
+    if not state or not state.get('verified') or state.get('official_active') is None:
+        record['classification'] = TX_CHRONOLOGY_UNRESOLVED
+        record['severity'] = SEVERITY_REVIEW
+        record['chronology_status'] = CHRONOLOGY_UNRESOLVED
+        record['current_official_active_state'] = None
+        record['public_bullpen_membership_alignment'] = MEMBERSHIP_UNKNOWN
+        record['reason'] = (
+            'current official active-roster membership for this player was not '
+            'verified this run; a material public-state mismatch is not asserted'
+        )
+        return
+
+    official_active = bool(state.get('official_active'))
+    stored_active = state.get('stored_active')
+    record['current_official_active_state'] = official_active
+    record['stored_active_state'] = stored_active
+    expected_active = (
+        True if component['effect_direction'] == EFFECT_ENTER
+        else False if component['effect_direction'] == EFFECT_LEAVE
+        else None
+    )
+    record['expected_active_after_transaction'] = expected_active
+
+    # The latest applicable transaction should explain the current official state;
+    # if it does not, something else moved the player — do not overclaim.
+    if expected_active is not None and expected_active != official_active:
+        record['classification'] = TX_CHRONOLOGY_UNRESOLVED
+        record['severity'] = SEVERITY_REVIEW
+        record['chronology_status'] = CHRONOLOGY_UNRESOLVED
+        record['public_bullpen_membership_alignment'] = MEMBERSHIP_UNKNOWN
+        record['reason'] = (
+            'the latest applicable transaction does not match current official '
+            'active-roster evidence; current bullpen effect is not asserted'
+        )
+        return
+
+    if stored_active is not None and official_active != bool(stored_active):
+        # Current official active-bullpen membership disagrees with stored state
+        # for a proven pitcher — a genuine, materially actionable public mismatch.
+        record['classification'] = TX_PUBLIC_BULLPEN_EFFECT_UNREFLECTED
+        record['severity'] = SEVERITY_ACTIONABLE
+        record['public_bullpen_membership_alignment'] = MEMBERSHIP_MISALIGNED
+        record['bullpen_population_effect'] = EFFECT_ENTER if official_active else EFFECT_LEAVE
+        record['reason'] = (
+            'official active-bullpen membership for this proven pitcher differs '
+            'from stored BaseballOS state; the transaction effect is not reflected'
+        )
+        return
+
+    # Current public bullpen membership is already correct. The exact stored
+    # detail (e.g. minor-league affiliate destination) may still differ, but that
+    # is not a material public-state change for a bullpen product.
+    record['public_bullpen_membership_alignment'] = MEMBERSHIP_ALIGNED
+    if _state_misaligned_detail(component):
+        record['classification'] = TX_TRANSACTION_DETAIL_MISMATCH
+        record['reason'] = (
+            'exact stored transaction detail differs (e.g. minor-league affiliate '
+            'destination) but current public active-bullpen membership is correct; '
+            'not materially actionable'
+        )
+    else:
+        record['classification'] = TX_CURRENT_STATE_ALIGNED
+        record['reason'] = (
+            'the transaction effect is already reflected in current public '
+            'active-bullpen membership'
+        )
+    record['severity'] = None
+
+
+def _state_misaligned_detail(component):
+    return component['transaction_state_alignment'] == transactions_service.ALIGNMENT_MISALIGNED
+
+
 def _reconcile_compound_event(
     components, existing, event_key, non_player_count, team_map,
-    evidence_source, check_timestamp_iso,
+    evidence_source, check_timestamp_iso, role_resolver,
 ):
     """Classify a compound event (multiple player components sharing one MLB
-    transaction id). Produces at most one event-level finding — never one
-    stored-conflict per component."""
+    transaction id). Produces at most one event-level finding, gated by bullpen
+    relevance across its components."""
     ordered = sorted(components, key=lambda c: c['player_mlb_id'] or 0)
     event_values = components[0]['values']
     player_mlb_ids = sorted({c['player_mlb_id'] for c in components if c['player_mlb_id'] is not None})
     from_team_ids = sorted({c['from_team_id'] for c in components if c['from_team_id'] is not None})
     to_team_ids = sorted({c['to_team_id'] for c in components if c['to_team_id'] is not None})
-    any_unreflected = any(c['status_effect_unreflected'] for c in components)
+
+    # Resolve role for each component (MLB id only).
+    component_summary = []
+    bullpen_relevant_mlb_ids = []
+    bullpen_relevant_pitcher_ids = []
+    bullpen_relevant_team_ids = set()
+    any_relevant = False
+    any_unresolved = False
+    for c in ordered:
+        role_evidence = role_resolver.resolve(
+            mlb_id=c['player_mlb_id'],
+            stored_pitcher_id=c['pitcher_id'],
+            transaction=c['transaction'],
+        )
+        relevance = role_evidence.get('bullpen_relevance')
+        component_summary.append({
+            'player_mlb_id': c['player_mlb_id'],
+            'from_team_id': c['from_team_id'],
+            'to_team_id': c['to_team_id'],
+            'normalized_category': c['normalized_category'],
+            'stored_pitcher_id': c['pitcher_id'],
+            'bullpen_relevance': relevance,
+            'role_verification_status': role_evidence.get('role_verification_status'),
+        })
+        if relevance in BULLPEN_RELEVANT_ROLES:
+            any_relevant = True
+            if c['player_mlb_id'] is not None:
+                bullpen_relevant_mlb_ids.append(c['player_mlb_id'])
+            if c['pitcher_id'] is not None:
+                bullpen_relevant_pitcher_ids.append(c['pitcher_id'])
+            for team_id in (c['from_team_id'], c['to_team_id']):
+                if team_id is not None:
+                    bullpen_relevant_team_ids.add(team_id)
+        elif relevance == ROLE_UNRESOLVED:
+            any_unresolved = True
 
     finding = {
         'event_key': event_key,
@@ -1058,44 +1679,56 @@ def _reconcile_compound_event(
         'player_mlb_ids': player_mlb_ids,
         'from_team_ids': from_team_ids,
         'to_team_ids': to_team_ids,
-        'component_summary': [{
-            'player_mlb_id': c['player_mlb_id'],
-            'from_team_id': c['from_team_id'],
-            'to_team_id': c['to_team_id'],
-            'normalized_category': c['normalized_category'],
-            'stored_pitcher_id': c['pitcher_id'],
-            'status_effect_unreflected': c['status_effect_unreflected'],
-        } for c in ordered],
+        'component_summary': component_summary,
+        'bullpen_relevant_mlb_ids': sorted(bullpen_relevant_mlb_ids),
+        'bullpen_relevant_pitcher_ids': sorted(bullpen_relevant_pitcher_ids),
+        'bullpen_relevant_team_ids': sorted(bullpen_relevant_team_ids),
         'stored_transaction_row_id': existing.id if existing is not None else None,
         'evidence_source': evidence_source,
         'check_timestamp': check_timestamp_iso,
     }
 
-    if existing is None:
-        finding['classification'] = TX_COMPOUND_NEW
-        finding['severity'] = SEVERITY_ACTIONABLE
+    def _gate_compound(default_class):
+        if any_relevant:
+            return default_class, SEVERITY_ACTIONABLE
+        if any_unresolved:
+            finding['reason'] = (
+                'compound transaction role could not be verified for any component; '
+                'not assumed bullpen-relevant'
+            )
+            return TX_BULLPEN_RELEVANCE_UNRESOLVED, SEVERITY_REVIEW
         finding['reason'] = (
-            'compound transaction event with multiple player components is not '
-            'stored; a future write phase would need to ingest the event'
+            'compound transaction involves no proven pitcher or two-way player; '
+            'not bullpen-relevant'
         )
+        return TX_NON_PITCHER, None
+
+    if existing is None:
+        cls, severity = _gate_compound(TX_COMPOUND_NEW)
+        finding['classification'] = cls
+        finding['severity'] = severity
+        if cls == TX_COMPOUND_NEW:
+            finding['reason'] = (
+                'compound transaction event with a proven bullpen-relevant player '
+                'component is not stored; a future write phase would ingest the event'
+            )
         return finding
 
-    # Compare only shared event-level facts — never per-component player fields.
     event_conflict_fields = [
         field for field in _TX_EVENT_LEVEL_FIELDS
         if getattr(existing, field) != event_values.get(field)
     ]
     if event_conflict_fields:
-        finding['classification'] = TX_STORED_CONFLICT
-        finding['severity'] = SEVERITY_ACTIONABLE
+        cls, severity = _gate_compound(TX_STORED_CONFLICT)
+        finding['classification'] = cls
+        finding['severity'] = severity
         finding['conflicting_fields'] = event_conflict_fields
-        finding['reason'] = 'compound transaction event-level facts conflict with the stored row'
+        if cls == TX_STORED_CONFLICT:
+            finding['reason'] = 'compound transaction event-level facts conflict with the stored row'
         return finding
 
-    # The event is represented, but PlayerTransaction stores one row per MLB
-    # transaction id, so per-component equivalence cannot be proven here.
     stored_player_in_components = existing.player_mlb_id in set(player_mlb_ids)
-    if stored_player_in_components and not any_unreflected:
+    if stored_player_in_components:
         finding['classification'] = TX_COMPOUND_REFLECTED
         finding['severity'] = None
         return finding
@@ -1118,22 +1751,32 @@ def _finding_team_ids(finding):
     return ids
 
 
-def _finding_pitcher_ids(finding):
-    ids = []
-    if finding.get('stored_pitcher_id') is not None:
-        ids.append(finding['stored_pitcher_id'])
-    for component in finding.get('component_summary') or []:
-        if component.get('stored_pitcher_id') is not None:
-            ids.append(component['stored_pitcher_id'])
-    return ids
+def _finding_bullpen_team_ids(finding):
+    """Team ids that may enter public impact — from bullpen-relevant evidence
+    only (MLB scoping is applied separately)."""
+    if finding.get('component_summary'):
+        return list(finding.get('bullpen_relevant_team_ids') or [])
+    if finding.get('bullpen_relevance') in BULLPEN_RELEVANT_ROLES:
+        return [t for t in (finding.get('from_team_id'), finding.get('to_team_id')) if t is not None]
+    return []
 
 
-def _finding_player_mlb_ids(finding):
-    ids = []
-    if finding.get('player_mlb_id') is not None:
-        ids.append(finding['player_mlb_id'])
-    ids.extend(finding.get('player_mlb_ids') or [])
-    return ids
+def _finding_bullpen_pitcher_ids(finding):
+    if finding.get('component_summary'):
+        return list(finding.get('bullpen_relevant_pitcher_ids') or [])
+    if finding.get('bullpen_relevance') in BULLPEN_RELEVANT_ROLES \
+            and finding.get('stored_pitcher_id') is not None:
+        return [finding['stored_pitcher_id']]
+    return []
+
+
+def _finding_bullpen_mlb_ids(finding):
+    if finding.get('component_summary'):
+        return list(finding.get('bullpen_relevant_mlb_ids') or [])
+    if finding.get('bullpen_relevance') in BULLPEN_RELEVANT_ROLES \
+            and finding.get('player_mlb_id') is not None:
+        return [finding['player_mlb_id']]
+    return []
 
 
 def _lane2_base_record(transaction, team_map, evidence_source, check_timestamp_iso, *, classification):
@@ -1296,7 +1939,8 @@ def reconcile_schedule_finality(
             doubleheader=any((r.doubleheader or 'N') not in ('N', '') for r in rows),
         ))
 
-    affected_team_ids = sorted({
+    # Public team impact is scoped to the governed MLB clubs (Correction 3).
+    affected_team_ids = _mlb_team_ids({
         team_id
         for d in differences
         for team_id in d.get('affected_team_ids', [])
@@ -1463,9 +2107,15 @@ def build_impact_plan(lane_roster, lane_transactions, lane_schedule):
     roster_statuses_changed = bool(roster_checked.get('roster_status_differences'))
     team_assignments_changed = bool(roster_checked.get('team_assignment_differences'))
 
-    # Transactions drive a write only through ACTIONABLE findings; benign
-    # inventory and review-required findings never do.
-    transactions_actionable = bool((transactions.get('checked') or {}).get('actionable_differences'))
+    # Transactions drive a write only through ACTIONABLE findings, which are now
+    # gated to proven bullpen-relevant players and current-membership materiality
+    # (Corrections 1/5/8). Benign inventory and review-required findings never do.
+    tx_checked = transactions.get('checked') or {}
+    transactions_actionable = bool(tx_checked.get('actionable_differences'))
+    # A transaction proves a CURRENT roster-population change only when official
+    # active-bullpen membership disagrees with stored state (Correction 8) — an
+    # exact-detail or storage conflict does not.
+    transactions_population_change = bool(tx_checked.get('public_bullpen_effect_unreflected'))
 
     completed_game_pks = list(schedule.get('completed_game_pks') or [])
     schedule_actionable_diffs = [
@@ -1480,7 +2130,9 @@ def build_impact_plan(lane_roster, lane_transactions, lane_schedule):
         if team_id is not None
     }
 
-    affected_team_ids = sorted(
+    # Every contributing lane already scopes its public team ids to the governed
+    # MLB clubs; re-scope defensively so no affiliate id can enter public planning.
+    affected_team_ids = _mlb_team_ids(
         set(roster.get('affected_team_ids') or [])
         | set(transactions.get('affected_team_ids') or [])
         | schedule_affected_team_ids
@@ -1519,12 +2171,27 @@ def build_impact_plan(lane_roster, lane_transactions, lane_schedule):
             'recalculate_current_pen_era': bool(completed_game_pks),
             'recalculate_league_era_rank': bool(completed_game_pks),
             'publish_snapshot': material_change,
-            # A transaction-only storage conflict never warms Tonight; only a
-            # roster-population or schedule delta does.
-            'warm_tonight': bool(schedule_actionable or roster_statuses_changed or team_assignments_changed),
+            # Only a proven roster-population or schedule delta warms Tonight; an
+            # exact-detail or storage-only transaction conflict never does.
+            'warm_tonight': bool(
+                schedule_actionable
+                or roster_statuses_changed
+                or team_assignments_changed
+                or transactions_population_change
+            ),
         },
         'material_change_detected': material_change,
     }
+
+
+_INTERNAL_LANE_KEYS = ('_all_findings', '_source_transactions', '_source_events', 'current_state_index')
+
+
+def _strip_internal_lane_keys(lane_results):
+    for lane in (lane_results or {}).values():
+        if isinstance(lane, dict):
+            for key in _INTERNAL_LANE_KEYS:
+                lane.pop(key, None)
 
 
 # ── Orchestrator ────────────────────────────────────────────────────────────
@@ -1541,6 +2208,7 @@ def run_intraday_audit(
     schedule_lookback_days=DEFAULT_SCHEDULE_LOOKBACK_DAYS,
     lanes=ALL_LANES,
     use_writer_lock=True,
+    max_role_lookups=DEFAULT_MAX_ROLE_LOOKUPS,
 ):
     """Run the audit-only intraday reconciliation and return a structured,
     versioned artifact. This function never writes canonical baseball data,
@@ -1597,6 +2265,9 @@ def run_intraday_audit(
 
         team_map = _build_team_identity_map(client)
         lane_results = {}
+        # One shared, budgeted role resolver per run — dedups and caches /people
+        # lookups across the transaction lane (Correction 2).
+        role_resolver = _RoleResolver(client, max_lookups=max_role_lookups)
 
         if LANE_ROSTER_ASSIGNMENT in lanes:
             logger.info('intraday audit: lane 1 — active roster + team assignment check')
@@ -1610,6 +2281,12 @@ def run_intraday_audit(
 
         if LANE_TRANSACTIONS in lanes:
             logger.info('intraday audit: lane 2 — transaction check')
+            # Cross-lane authority: the roster lane's current active-bullpen
+            # membership index resolves whether a transaction effect is genuinely
+            # unreflected in current public state (Correction 7).
+            roster_current_state = (
+                (lane_results.get(LANE_ROSTER_ASSIGNMENT) or {}).get('current_state_index') or {}
+            )
             lane_results[LANE_TRANSACTIONS] = reconcile_transactions(
                 client=client,
                 team_map=team_map,
@@ -1617,6 +2294,8 @@ def run_intraday_audit(
                 check_timestamp_iso=check_timestamp_iso,
                 end_date=resolved_product_date,
                 window_days=transaction_window_days,
+                role_resolver=role_resolver,
+                roster_current_state=roster_current_state,
             )
 
         if LANE_SCHEDULE_FINALITY in lanes:
@@ -1634,6 +2313,11 @@ def run_intraday_audit(
             lane_results.get(LANE_TRANSACTIONS),
             lane_results.get(LANE_SCHEDULE_FINALITY),
         )
+
+        # Internal cross-lane working state (full finding inventory, current-state
+        # authority index) is consumed above; drop it so the published artifact
+        # stays compact and carries only serialized differences + bounded samples.
+        _strip_internal_lane_keys(lane_results)
 
         try:
             api_metrics = client.metrics.snapshot()
@@ -1783,16 +2467,19 @@ def _build_completed_artifact(
         limitations.extend((lane_results.get(lane) or {}).get('limitations') or [])
 
     tx_lane = lane_results.get(LANE_TRANSACTIONS) or {}
+    tx_checked = tx_lane.get('checked') or {}
     tx_informational = tx_lane.get('informational_counts') or {}
     informational_records = sum(v for v in tx_informational.values() if isinstance(v, int))
     benign_records_suppressed = (tx_lane.get('suppressed_counts') or {}).get(
         'benign_records_suppressed', 0
     )
     records_checked = (
-        (tx_lane.get('checked') or {}).get('source_transactions', 0)
+        tx_checked.get('source_transactions', 0)
         + ((lane_results.get(LANE_ROSTER_ASSIGNMENT) or {}).get('checked') or {}).get('stored_pitchers', 0)
         + ((lane_results.get(LANE_SCHEDULE_FINALITY) or {}).get('checked') or {}).get('source_games', 0)
     )
+    # A meaningful, actionable difference is a proven bullpen-relevant change.
+    non_mlb_team_ids_observed = list(tx_lane.get('related_non_mlb_team_ids') or [])
 
     artifact = _base_artifact_fields(
         source=source,
@@ -1819,12 +2506,22 @@ def _build_completed_artifact(
             'total_differences': total_differences,
             'records_checked': records_checked,
             'actionable_differences': actionable_count,
+            # Actionable differences are proven bullpen-relevant by construction.
+            'actionable_bullpen_differences': actionable_count,
             'review_required_findings': review_required_count,
             'unresolved_findings': unresolved_count,
+            'role_unresolved_findings': tx_checked.get('bullpen_relevance_unresolved', 0),
+            'non_pitcher_transactions': tx_checked.get('non_pitcher_transactions', 0),
+            'transaction_detail_mismatches': tx_checked.get('transaction_detail_mismatches', 0),
+            'superseded_transactions': tx_checked.get('superseded_transactions', 0),
+            'public_membership_mismatches': tx_checked.get('public_bullpen_effect_unreflected', 0),
+            'chronology_unresolved_findings': tx_checked.get('chronology_unresolved', 0),
             'informational_records': informational_records,
             'benign_records_suppressed': benign_records_suppressed,
             'material_change_detected': impact_plan['material_change_detected'],
             'affected_team_ids': would_refresh['affected_team_ids'],
+            'mlb_teams_affected': would_refresh['affected_team_ids'],
+            'non_mlb_team_ids_observed': non_mlb_team_ids_observed,
         },
     })
     return artifact
@@ -1832,7 +2529,12 @@ def _build_completed_artifact(
 
 def _is_unresolved_finding(difference):
     return (
-        difference.get('classification') in (TX_UNRESOLVED_IDENTITY, TX_INVALID_SHAPE)
+        difference.get('classification') in (
+            TX_UNRESOLVED_IDENTITY,
+            TX_INVALID_SHAPE,
+            TX_BULLPEN_RELEVANCE_UNRESOLVED,
+            TX_CHRONOLOGY_UNRESOLVED,
+        )
         or difference.get('change_type') == CHANGE_UNRESOLVED_SOURCE_IDENTITY
     )
 
