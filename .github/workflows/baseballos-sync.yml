@@ -591,19 +591,25 @@ jobs:
           APP_ENV: production
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           SECRET_KEY: ${{ secrets.SECRET_KEY }}
+          # Production Flask initialization (create_app under APP_ENV=production)
+          # requires the admin token so operational write endpoints are never
+          # exposed to anonymous callers. The audit itself remains read-only;
+          # supplying this token neither authorizes nor triggers any write.
+          ADMIN_API_TOKEN: ${{ secrets.BASEBALLOS_ADMIN_API_TOKEN }}
           AUTO_SYNC: 'false'
           INTRADAY_AUDIT_COMMAND_TIMEOUT: 15m
         run: |
           set -euo pipefail
-          if [ -z "${DATABASE_URL:-}" ] || [ -z "${SECRET_KEY:-}" ]; then
-            echo "::error::Missing DATABASE_URL or SECRET_KEY repository secret."
+          if [ -z "${DATABASE_URL:-}" ] || [ -z "${SECRET_KEY:-}" ] || [ -z "${ADMIN_API_TOKEN:-}" ]; then
+            echo "::error::Missing DATABASE_URL, SECRET_KEY, or BASEBALLOS_ADMIN_API_TOKEN repository secret."
             exit 1
           fi
           echo "Intraday reconciliation audit starting at $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
           # The command writes the JSON artifact to --output and also prints the
           # single JSON object to stdout (workflow log). We capture its exit code
-          # but do NOT fail the step here, so the always() upload step below runs
-          # first; the original exit code is re-applied afterward.
+          # but do NOT fail the step here, so the always() validate + upload steps
+          # below run first; the original exit code is re-applied afterward. Even
+          # a bootstrap failure produces a valid failed JSON artifact.
           set +e
           timeout --kill-after=30s "$INTRADAY_AUDIT_COMMAND_TIMEOUT" \
             python backend/scripts/run_intraday_reconcile.py \
@@ -618,6 +624,27 @@ jobs:
             *) echo "::error::Intraday reconciliation audit failed with exit code $exit_code." ;;
           esac
 
+      # Validate the audit artifact BEFORE upload, without hiding the command's
+      # original exit code. A missing / empty / malformed / wrong-capability
+      # artifact is an artifact-contract failure, distinct from a normal
+      # partial/failed audit (which still produces a valid, recognized JSON
+      # report). The result is recorded for the exit-code step below.
+      - name: Validate intraday audit artifact contract
+        if: ${{ always() }}
+        run: |
+          set -euo pipefail
+          set +e
+          python backend/scripts/validate_intraday_artifact.py intraday-reconciliation-audit.json
+          validate_code=$?
+          set -e
+          if [ "$validate_code" -eq 0 ]; then
+            echo "1" > intraday-audit-artifact-valid
+            echo "Intraday audit artifact passed the output-contract check."
+          else
+            echo "0" > intraday-audit-artifact-valid
+            echo "::error::Intraday audit artifact failed the output-contract check (missing, empty, malformed, or wrong capability/mode/check_only/status)."
+          fi
+
       - name: Upload intraday audit artifact
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
@@ -631,5 +658,15 @@ jobs:
         run: |
           set -euo pipefail
           code="$(cat intraday-audit-exit-code 2>/dev/null || echo 1)"
+          artifact_valid="$(cat intraday-audit-artifact-valid 2>/dev/null || echo 0)"
+          # A genuine failed/partial audit keeps its own exit code (never turned
+          # green). If no valid artifact was produced at all, report an
+          # artifact-contract failure rather than a normal partial audit.
+          if [ "$artifact_valid" != "1" ]; then
+            echo "::error::Intraday audit artifact-contract failure: no valid intraday-reconciliation-audit.json was produced. This is an artifact-contract failure, not a normal partial audit."
+            if [ "$code" = "0" ]; then
+              code=1
+            fi
+          fi
           echo "Re-applying intraday audit exit code: $code"
           exit "$code"

@@ -616,7 +616,8 @@ def test_artifact_is_json_serializable_and_versioned(scenario):
     import json
     artifact = _run(scenario)
     parsed = json.loads(json.dumps(artifact, sort_keys=True))
-    assert parsed['capability'] == 'intraday_reconciliation_audit'
+    assert parsed['capability'] == 'intraday_reconciliation_audit_v1'
+    assert parsed['capability'] == intraday_reconcile.CAPABILITY
     assert parsed['version'] == '1.0.0'
     assert parsed['mode'] == 'intraday'
     assert parsed['check_only'] is True
@@ -843,7 +844,7 @@ def test_does_not_mutate_running_sync_run(scenario):
 
 def _canned(status='success', **extra):
     artifact = {
-        'capability': 'intraday_reconciliation_audit', 'version': '1.0.0', 'mode': 'intraday',
+        'capability': intraday_reconcile.CAPABILITY, 'version': '1.0.0', 'mode': 'intraday',
         'phase': 1, 'check_only': True, 'status': status, 'source': 'manual',
         'product_date': '2026-07-16', 'started_at': 'x', 'completed_at': 'y',
         'changed': False, 'changed_lanes': [], 'affected_team_ids': [],

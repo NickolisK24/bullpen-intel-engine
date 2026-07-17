@@ -77,8 +77,10 @@ from utils.time import to_utc_iso, utc_now_naive
 
 logger = logging.getLogger(__name__)
 
-# Stable, versioned output contract identity.
-CAPABILITY = 'intraday_reconciliation_audit'
+# Stable, versioned output contract identity. The capability string carries the
+# contract major version so consumers (and the workflow's artifact validator)
+# can pin to it; VERSION is the fine-grained contract version.
+CAPABILITY = 'intraday_reconciliation_audit_v1'
 VERSION = '1.0.0'
 
 MODE = 'intraday'
@@ -89,15 +91,21 @@ STATUS_SUCCESS = 'success'
 STATUS_PARTIAL = 'partial'
 STATUS_FAILED = 'failed'
 STATUS_SKIPPED = 'skipped'
+RECOGNIZED_STATUSES = (STATUS_SUCCESS, STATUS_PARTIAL, STATUS_FAILED, STATUS_SKIPPED)
 
 # Reason code emitted when a public sync writer already holds the advisory lock.
 REASON_PUBLIC_SYNC_WRITER_ACTIVE = 'public_sync_writer_active'
 REASON_PUBLIC_SYNC_LOCK_UNAVAILABLE = 'public_sync_writer_lock_unavailable'
+# Reason code emitted when production Flask initialization / audit startup fails
+# before the audit could acquire the lock or read any source (e.g. a required
+# production secret such as ADMIN_API_TOKEN is missing).
+REASON_APPLICATION_BOOTSTRAP_FAILED = 'application_bootstrap_failed'
 
 # Per-lane verification status.
 LANE_COMPLETE = 'complete'
 LANE_PARTIAL = 'partial'
 LANE_FAILED = 'failed'
+LANE_NOT_CHECKED = 'not_checked'
 
 # The three reconciliation lanes this audit runs, plus the derived plan lane.
 LANE_ROSTER_ASSIGNMENT = 'roster_assignment'
@@ -1506,6 +1514,75 @@ def _skipped_artifact(*, client, source, product_date, lanes, check_timestamp_is
         },
     })
     return artifact
+
+
+def build_bootstrap_failure_artifact(
+    *,
+    source,
+    started_at_iso,
+    completed_at_iso=None,
+    reason_code=REASON_APPLICATION_BOOTSTRAP_FAILED,
+    exception_class=None,
+    lanes=ALL_LANES,
+):
+    """Versioned ``failed`` artifact for a failure that occurs before or during
+    application startup — before the audit can acquire the lock or read any
+    source.
+
+    This is a pure dict builder: it needs no Flask app context and no database,
+    so a caller whose ``create_app()`` raised can still emit a valid, contract-
+    shaped result. It proves no work occurred (no lanes checked, zero API calls,
+    empty would-refresh, clean write guard) and records only a **sanitized**
+    limitation — the exception *class* name at most, never its message, a
+    traceback, or any secret / connection string. Callers must write the raw
+    diagnostic detail to stderr, not into this artifact.
+    """
+    lanes = tuple(lanes or ALL_LANES)
+    completed_at_iso = completed_at_iso or started_at_iso
+    detail = f' ({exception_class})' if exception_class else ''
+    limitation = (
+        f'Application bootstrap failed{detail} before the audit could start '
+        f'({reason_code}); this is a bootstrap failure, not a partial source '
+        'verification. No source acquisition, no advisory-lock acquisition, and '
+        'no writes occurred. See stderr for the sanitized traceback.'
+    )
+    clean_guard = {'clean': True, 'pending_new': 0, 'pending_dirty': 0, 'pending_deleted': 0}
+    return {
+        'capability': CAPABILITY,
+        'version': VERSION,
+        'mode': MODE,
+        'phase': PHASE,
+        'check_only': True,
+        'audit_only': True,
+        'status': STATUS_FAILED,
+        'reason_code': reason_code,
+        'source': source,
+        # Not established when the app cannot initialize — explicitly null.
+        'product_date': None,
+        'started_at': started_at_iso,
+        'completed_at': completed_at_iso,
+        'check_timestamp': started_at_iso,
+        'lanes_run': list(lanes),
+        'changed': False,
+        'changed_lanes': [],
+        'affected_team_ids': [],
+        'affected_pitcher_ids': [],
+        'affected_pitcher_mlb_ids': [],
+        # Every lane is explicitly not-checked — never falsely successful.
+        'lanes': {lane: {'verification_status': LANE_NOT_CHECKED} for lane in lanes},
+        'would_refresh': _empty_would_refresh(),
+        'material_change_detected': False,
+        'limitations': [limitation],
+        # Source acquisition never began.
+        'source_api': {'api_calls': 0, 'retries': 0, 'by_endpoint': {}},
+        'safety': _safety_block(clean_guard),
+        'write_guard': clean_guard,
+        'summary': {
+            'total_differences': 0,
+            'material_change_detected': False,
+            'affected_team_ids': [],
+        },
+    }
 
 
 def _assert_no_pending_writes():

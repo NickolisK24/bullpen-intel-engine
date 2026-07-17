@@ -111,7 +111,8 @@ The audit emits one stable, versioned JSON object (`capability`,
 `completed_at`, `product_date`, `changed`, `changed_lanes`,
 `affected_team_ids`, `affected_pitcher_ids`, `affected_pitcher_mlb_ids`, the
 per-lane `lanes` results, `would_refresh`, a `safety` block of guarantees, the
-`source_api` call totals grouped by endpoint, and `limitations`).
+`source_api` call totals grouped by endpoint, and `limitations`). The
+`capability` value is `intraday_reconciliation_audit_v1`.
 
 `status` is one of:
 
@@ -119,7 +120,7 @@ per-lane `lanes` results, `would_refresh`, a `safety` block of guarantees, the
 |---|---|---|
 | `success` | every requested lane fully verified | 0 |
 | `partial` | at least one lane could not be fully verified this run (for example a source fetch failed); successfully checked lanes keep their findings, and the unverified lane carries an explicit limitation — a partial source failure never presents as a clean "no change" | 1 |
-| `failed` | verification could not be established (all lanes unverifiable, or an internal integrity issue such as an unexpected pending ORM write) | 1 |
+| `failed` | verification could not be established — all lanes unverifiable, an internal integrity issue such as an unexpected pending ORM write, or a production application bootstrap failure before the audit could start (`reason_code: application_bootstrap_failed`; see the operational note below) | 1 |
 | `skipped` | a public sync writer was active, so the audit safely did no work (see §7) | 0 |
 
 Detected roster moves, transactions, postponements, and newly final games are
@@ -188,3 +189,31 @@ only: audit-only, manual, non-writing, non-publishing, non-scheduling intraday
 reconciliation. It adds no production writes, no automatic scheduling, no
 snapshot publication, no fatigue/story/cache work, no public UI changes, no
 database migration, and no new production data table.
+
+## 12. Operational note — production configuration and bootstrap failures
+
+The intraday job runs with `APP_ENV=production`, so it initializes the
+production Flask app. Production initialization requires `DATABASE_URL`,
+`SECRET_KEY`, and `ADMIN_API_TOKEN` (the admin token gate keeps operational
+write endpoints from being exposed to anonymous callers). The workflow maps the
+existing `BASEBALLOS_ADMIN_API_TOKEN` repository secret to `ADMIN_API_TOKEN` —
+the same secret the daily, postgame, backfill, and enrichment jobs already use.
+Supplying the admin token does not authorize or trigger any write: the audit
+stays read-only.
+
+If required configuration is missing, the command fails during application
+startup — this is a **bootstrap failure, not a partial source verification**.
+The audit never acquires the lock, reads a source, or writes anything. The CLI
+still emits a valid, versioned `failed` JSON artifact with
+`reason_code: application_bootstrap_failed`, `product_date: null`, all lanes
+marked not-checked, zero API calls, and a sanitized limitation (the raw
+traceback goes only to stderr, never into the artifact); it exits `1`. The
+workflow validates the artifact's contract before upload and preserves that exit
+code, so a bootstrap failure surfaces loudly instead of masquerading as a normal
+partial audit.
+
+This is an operational configuration incident, not a data or trust failure: no
+public baseball data was written, no snapshot was published, and the audit's
+read-only boundary is unchanged. (Historical note: the first production intraday
+run on 2026-07-17 hit exactly this, because the job had not yet supplied
+`ADMIN_API_TOKEN`.)

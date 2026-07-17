@@ -3,6 +3,7 @@ import json
 import logging
 import os
 import sys
+import traceback
 from pathlib import Path
 
 
@@ -116,39 +117,15 @@ def _log_human_summary(artifact):
     logging.info('─' * 60)
 
 
-def main(argv=None):
-    args = _parse_args(argv)
-    source = str(args.source or 'manual')[:100]
-    logging.basicConfig(
-        level=os.environ.get('LOG_LEVEL', 'INFO').upper(),
-        format='%(asctime)s %(levelname)s %(name)s %(message)s',
-        stream=sys.stderr,
-    )
+def _emit_result(artifact, args):
+    """Single, reusable result writer shared by the normal and bootstrap-failure
+    paths: writes --output, logs the human summary to stderr, prints exactly one
+    JSON object to stdout with --json, and returns the exit code.
 
-    from app import app
-    from services import intraday_reconcile
-    from utils.db import db
-
-    lanes = _selected_lanes(args.lanes, intraday_reconcile.ALL_LANES)
-
-    kwargs = {
-        'source': source,
-        'lanes': lanes,
-    }
-    if args.transaction_window_days is not None:
-        kwargs['transaction_window_days'] = args.transaction_window_days
-    if args.schedule_lookback_days is not None:
-        kwargs['schedule_lookback_days'] = args.schedule_lookback_days
-
-    with app.app_context():
-        try:
-            artifact = intraday_reconcile.run_intraday_audit(**kwargs)
-        finally:
-            # This command never writes; rolling back discards any read-only
-            # transaction state so nothing can leak a write.
-            db.session.rollback()
-            db.session.remove()
-
+    Exit code reflects verification status, not whether differences were found
+    (differences are the expected, successful outcome):
+      success -> 0   skipped -> 0   partial -> 1   failed -> 1
+    """
     payload = json.dumps(artifact, sort_keys=True, default=str)
 
     if args.output:
@@ -160,17 +137,73 @@ def main(argv=None):
     _log_human_summary(artifact)
 
     if args.as_json:
-        # Exactly one JSON object on stdout when --json is requested.
+        # Exactly one JSON object on stdout when --json is requested — identical
+        # to what --output wrote.
         print(payload)
 
-    # Exit code reflects verification status, not whether differences were
-    # found (differences are the expected, successful outcome):
-    #   success  -> 0   (lanes fully verified)
-    #   skipped  -> 0   (public sync writer active; safe no-op)
-    #   partial  -> 1   (a lane could not be fully verified this run)
-    #   failed   -> 1   (verification could not be established / integrity issue)
     status = artifact.get('status')
     return 0 if status in ('success', 'skipped') else 1
+
+
+def main(argv=None):
+    args = _parse_args(argv)
+    source = str(args.source or 'manual')[:100]
+    logging.basicConfig(
+        level=os.environ.get('LOG_LEVEL', 'INFO').upper(),
+        format='%(asctime)s %(levelname)s %(name)s %(message)s',
+        stream=sys.stderr,
+    )
+
+    # The service module imports without a Flask app context or a database, so
+    # its constants and the bootstrap-failure builder are available even if the
+    # production app cannot initialize below.
+    from services import intraday_reconcile
+    from utils.time import to_utc_iso, utc_now_naive
+
+    started_at_iso = to_utc_iso(utc_now_naive())
+    lanes = _selected_lanes(args.lanes, intraday_reconcile.ALL_LANES)
+
+    kwargs = {'source': source, 'lanes': lanes}
+    if args.transaction_window_days is not None:
+        kwargs['transaction_window_days'] = args.transaction_window_days
+    if args.schedule_lookback_days is not None:
+        kwargs['schedule_lookback_days'] = args.schedule_lookback_days
+
+    # Import and initialize the production Flask app, then run the audit inside
+    # its context. A failure anywhere in this startup path — most importantly a
+    # missing required production secret (e.g. ADMIN_API_TOKEN) surfacing while
+    # importing app.py — must NOT crash without a result. It is a bootstrap
+    # failure: the audit never acquired the lock, never read a source, and never
+    # wrote anything. We still emit a valid, versioned failed artifact.
+    try:
+        from app import app
+        from utils.db import db
+
+        with app.app_context():
+            try:
+                artifact = intraday_reconcile.run_intraday_audit(**kwargs)
+            finally:
+                # This command never writes; rolling back discards any read-only
+                # transaction state so nothing can leak a write.
+                db.session.rollback()
+                db.session.remove()
+    except Exception as exc:  # noqa: BLE001 - any startup failure yields a valid artifact
+        # Diagnostic detail and the full traceback go to stderr only — never
+        # into stdout or the JSON artifact (which must not carry secrets).
+        logging.error(
+            'Intraday audit bootstrap failed before the audit could start: %s: %s',
+            type(exc).__name__, exc,
+        )
+        traceback.print_exc(file=sys.stderr)
+        artifact = intraday_reconcile.build_bootstrap_failure_artifact(
+            source=source,
+            started_at_iso=started_at_iso,
+            completed_at_iso=to_utc_iso(utc_now_naive()),
+            exception_class=type(exc).__name__,
+            lanes=lanes,
+        )
+
+    return _emit_result(artifact, args)
 
 
 if __name__ == '__main__':
