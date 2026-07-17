@@ -74,23 +74,57 @@ a **local** JSON artifact file when `--output` is given.
 
 The audit runs three source-vs-stored comparison lanes and one derived lane:
 
-1. **Roster and team assignment.** Official active-roster evidence for every
+1. **Roster and team assignment.** Official **active-roster** evidence for every
    MLB team (via the same acquisition helpers the daily sync uses:
    `build_team_roster_status_index` + `classify_roster_evidence`) compared with
-   stored pitcher state. Detects: player now active but stored inactive; player
-   now inactive but stored active; recall; option; IL placement; IL activation;
-   DFA / removal from the active roster; team-assignment change; newly
-   discovered active player; a stored player on the wrong team; a source player
-   that cannot be safely matched to an MLB identity; and conflicting official
-   team evidence. Identity is resolved **only** by MLB numeric id — never by
-   name — so an unmatchable source row stays unresolved.
+   stored pitcher state. The production default fetches **active-roster evidence
+   only** — one request per team (~30 calls), not the full four-roster-type sweep
+   (~120) — because the approved intraday question is only whether a player's
+   *active*-roster membership changed after the morning sync. It detects: player
+   now active but stored inactive; player now inactive but stored active; recall
+   and IL activation (inferred from the *stored* status, so still detected under
+   the active-only default); team-assignment change; newly discovered active
+   player (with the MLB-supplied source name preserved for evidence); a source
+   player that cannot be safely matched to an MLB identity; and conflicting
+   official team evidence. Where only a departure from the active roster is
+   proven, a neutral `removed_from_active_roster` change type is used — an exact
+   inactive destination (IL placement, option, DFA) is **never** inferred from
+   active-roster absence alone. Reading the specific inactive destination directly
+   from non-active roster evidence is a manual **deep-diagnostic** capability
+   (`--deep-roster`, `roster_types=DEEP_ROSTER_TYPES`); the production GitHub
+   Actions run uses the lightweight active-only default. Identity is resolved
+   **only** by MLB numeric id — never by name — so an unmatchable source row stays
+   unresolved, and a preserved source name is used for human-readable evidence
+   only, never for matching.
 
 2. **Transactions.** Recent official transactions compared with stored
-   transaction evidence, using the daily sync's exact classification order
-   (non-player → unresolved identity → invalid shape → actionable-not-stored /
-   stored-conflict / already-reflected), plus a flag for a stored transaction
-   whose roster effect is not reflected in current roster state. No transaction
-   or dead-letter row is inserted, updated, resolved, or deleted.
+   transaction evidence, **event-aware and signal-selective**. Source components
+   are grouped by their stable MLB transaction-event id (`statsapi:{id}`), the
+   same key the daily sync dedups on, so a *compound* event — several player
+   components (and any non-player component) sharing one transaction id — is
+   reconciled as **one event** and never manufactures one stored-conflict per
+   component. Each event is classified with deterministic precedence:
+   - single-player events → not-stored (`actionable_not_stored`) → genuine
+     source-fact conflict (`stored_conflict`) → roster effect unreflected
+     (`status_effect_unreflected`, its own class — a stored transaction whose
+     roster effect is not reflected in current roster state, never mislabeled
+     `already_reflected`) → `already_reflected`;
+   - compound events → not stored (`compound_transaction_new`) → event-level
+     source-fact conflict (`stored_conflict`, comparing only shared event-level
+     facts — date, type code, normalized category — never per-component player
+     fields) → represented but unprovable component equivalence
+     (`compound_transaction_review_required`, because `PlayerTransaction` stores a
+     single row per transaction id and this audit makes no schema/migration
+     change) → reflected (`compound_event_reflected`).
+
+   Only **meaningful** findings — actionable or review-required — are serialized
+   into `differences`. Benign inventory (`already_reflected`, `non_player_transaction`,
+   `compound_event_reflected`) is counted, bounded-sampled, and reported with a
+   suppressed count; it is never repeated row-by-row. Source-fact comparison
+   excludes provenance/query-window fields and the audit's own derived alignment
+   fields, so a stored transaction is never called "in conflict" merely because a
+   later audit used a different query window. No transaction or dead-letter row is
+   inserted, updated, resolved, or deleted.
 
 3. **Schedule and game finality.** The current and previous slate dates: a
    scheduled game now postponed; a postponed game now rescheduled; a game now
@@ -110,9 +144,41 @@ The audit emits one stable, versioned JSON object (`capability`,
 `version`, `mode`, `check_only`, `status`, `source`, `started_at`,
 `completed_at`, `product_date`, `changed`, `changed_lanes`,
 `affected_team_ids`, `affected_pitcher_ids`, `affected_pitcher_mlb_ids`, the
-per-lane `lanes` results, `would_refresh`, a `safety` block of guarantees, the
-`source_api` call totals grouped by endpoint, and `limitations`). The
-`capability` value is `intraday_reconciliation_audit_v1`.
+per-lane `lanes` results, `would_refresh`, `material_change_detected`, a
+`summary` block, a `safety` block of guarantees, the `source_api` call totals
+grouped by endpoint, and `limitations`). The `capability` value is
+`intraday_reconciliation_audit_v1` and is the pinned contract identity; the
+finer-grained `version` is currently `1.1.0`. The signal-quality correction was
+a **backward-compatible minor bump** (1.0.0 → 1.1.0): the capability identity is
+unchanged and the workflow's artifact validator (which checks only
+`capability` / `mode` / `check_only` / `status`) still accepts the artifact.
+
+Signal semantics the contract guarantees:
+
+- **`changed` reflects meaningful findings only.** It is `true` when any
+  actionable *or* review-required finding exists, so a genuine
+  human-review-required finding is never hidden — but benign inventory
+  (already-reflected / non-player / reflected compound events) never sets it.
+  A lane whose only transaction activity is benign is **not** listed in
+  `changed_lanes`.
+- **`material_change_detected` is stricter than `changed`.** It is `true` only
+  when a future authorized write/recompute would actually be required — an
+  actionable finding or a newly-final game. Review-required findings are
+  `changed` but **not** material, and `would_refresh.publish_snapshot` follows
+  `material_change_detected`.
+- **`summary`** carries honest buckets: `records_checked`, `total_differences`
+  (meaningful only), `actionable_differences`, `review_required_findings`,
+  `unresolved_findings`, `informational_records`, `benign_records_suppressed`,
+  and `material_change_detected`.
+- **Per-lane transaction inventory** lives in the transaction lane's `checked`
+  counts, `informational_counts`, bounded `informational_samples`, and
+  `suppressed_counts.benign_records_suppressed` — so the full benign volume is
+  auditable by count without bloating `differences`.
+- **Affected identity sets** (`affected_team_ids` / `affected_pitcher_ids` /
+  `affected_pitcher_mlb_ids`) and the `would_refresh` plan are derived from
+  **actionable** findings only; benign and review-required findings never add a
+  team or pitcher to a write plan, and a transaction-only delta never warms
+  Tonight.
 
 `status` is one of:
 
@@ -217,3 +283,52 @@ public baseball data was written, no snapshot was published, and the audit's
 read-only boundary is unchanged. (Historical note: the first production intraday
 run on 2026-07-17 hit exactly this, because the job had not yet supplied
 `ADMIN_API_TOKEN`.)
+
+## 13. Production Observation #1 (2026-07-17) and the signal-quality correction
+
+Once `ADMIN_API_TOKEN` was supplied, the **first valid production intraday run**
+executed on 2026-07-17 (Production Observation #1). It confirmed the
+infrastructure is sound: the audit initialized the production app, acquired and
+released the read-only advisory lock, read all official sources, wrote nothing,
+and left a clean write guard. Read-only, locking, and source-coverage behavior
+all passed.
+
+Its **signal classification, however, was wrong**, and this branch corrects it.
+Observation #1 exposed four defects:
+
+1. **Benign inventory presented as change.** All 354 transaction records — 342
+   `already_reflected` and 7 non-player — were serialized into
+   `transactions.differences`, so the run reported `changed: true` with a
+   "360 differences" total that was almost entirely benign. Transactions showed
+   up as a changed lane when nothing actionable had happened.
+2. **A self-contradictory transaction label.** Three records
+   (Andre Granillo, Cam Sanders, Colton Gordon) carried
+   `already_reflected` **and** `status_effect_unreflected: true` **and**
+   `roster_snapshot_alignment: misaligned` simultaneously — contradictory
+   semantics.
+3. **Manufactured stored conflicts.** Five `stored_conflict` findings came from
+   three **compound** transactions (ids `927651`, `926870`, `926807`) whose
+   multiple player components share one MLB transaction id and were each compared,
+   per component, against the single stored `PlayerTransaction` row for that id.
+4. **Dropped source names.** Two newly-discovered active pitchers
+   (MLB `669310` CJ Van Eyk / Toronto, `814305` Yunior Tur / Athletics) were
+   reported with `player_name: null` even though the source supplied names. The
+   run also made 120 roster calls (four roster types × 30 teams) for a question
+   that only needed active-roster evidence.
+
+The correction, captured in the contract `version` bump to `1.1.0` and pinned by
+the tests in `backend/tests/test_intraday_reconcile.py` (including a compact
+Observation #1 regression fixture), makes `differences` carry **only meaningful**
+findings, gives `status_effect_unreflected` its **own** classification with
+deterministic precedence, reconciles compound events **event-first** (one finding
+per MLB transaction id; `compound_transaction_review_required` where per-component
+equivalence cannot be proven under the one-row-per-id schema — no migration),
+**preserves** source names, and defaults roster acquisition to **active-only**
+(~30 calls).
+
+**Observation #1 is not evidence of signal accuracy.** It was the run that
+revealed the signal defects; it validates only the read-only/locking/coverage
+boundary. A **new** production observation is required after this correction to
+begin the representative validation period of §9. Nothing here authorizes hourly
+scheduling, a write phase, or any Phase 2+ behavior; the mode remains manual,
+audit-only, and non-writing.

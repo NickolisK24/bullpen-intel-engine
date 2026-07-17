@@ -399,30 +399,49 @@ def test_lane1_recall(scenario):
     assert d['stored_pitcher_id'] is not None
 
 
-def test_lane1_il_placement(scenario):
-    d = _lane1_by_id(_run(scenario))[300]
+def _deep(client, **kwargs):
+    # The specific inactive-destination classifications (IL / option / DFA) are a
+    # DEEP-diagnostic capability that reads non-active roster evidence directly.
+    kwargs['roster_types'] = intraday_reconcile.DEEP_ROSTER_TYPES
+    return _run(client, **kwargs)
+
+
+def test_lane1_il_placement_deep(scenario):
+    d = _lane1_by_id(_deep(scenario))[300]
     assert d['change_type'] == intraday_reconcile.CHANGE_IL_PLACEMENT
     assert d['observed_official_status'] == STATUS_IL_15
     assert d['bullpen_population_effect'] == intraday_reconcile.EFFECT_LEAVE
 
 
 def test_lane1_il_activation(scenario):
+    # Activation is inferred from the STORED status, so it is detected even under
+    # the active-only default (the pitcher appears on the active roster now).
     d = _lane1_by_id(_run(scenario))[301]
     assert d['change_type'] == intraday_reconcile.CHANGE_IL_ACTIVATION
     assert d['bullpen_population_effect'] == intraday_reconcile.EFFECT_ENTER
     assert d['targeted_recent_work_required'] is True
 
 
-def test_lane1_option(scenario):
-    d = _lane1_by_id(_run(scenario))[302]
+def test_lane1_option_deep(scenario):
+    d = _lane1_by_id(_deep(scenario))[302]
     assert d['change_type'] == intraday_reconcile.CHANGE_OPTION
     assert d['bullpen_population_effect'] == intraday_reconcile.EFFECT_LEAVE
 
 
-def test_lane1_dfa(scenario):
-    d = _lane1_by_id(_run(scenario))[303]
+def test_lane1_dfa_deep(scenario):
+    d = _lane1_by_id(_deep(scenario))[303]
     assert d['change_type'] == intraday_reconcile.CHANGE_DFA
     assert d['bullpen_population_effect'] == intraday_reconcile.EFFECT_LEAVE
+
+
+def test_lane1_active_only_default_uses_neutral_departure(scenario):
+    # Under the active-only production default, 300/302/303 are absent from the
+    # active roster and are reported with the neutral departure change type — an
+    # exact inactive destination is never inferred from active-roster absence.
+    diffs = _lane1_by_id(_run(scenario))
+    for mlb_id in (300, 302, 303):
+        assert diffs[mlb_id]['change_type'] == intraday_reconcile.CHANGE_REMOVED_FROM_ACTIVE_ROSTER
+        assert diffs[mlb_id]['bullpen_population_effect'] == intraday_reconcile.EFFECT_LEAVE
 
 
 def test_lane1_team_assignment_change(scenario):
@@ -483,24 +502,32 @@ def test_lane1_partial_source_failure_is_not_false_no_change(app):
 def test_lane2_classifies_transactions(scenario):
     lane = _run(scenario)['lanes'][intraday_reconcile.LANE_TRANSACTIONS]
     by_txid = {r.get('transaction_id'): r for r in lane['differences']}
+    # Only meaningful findings are serialized: t1 (actionable new), t3 (unresolved
+    # identity), t5 (status-effect unreflected). Benign t2 (non-player) and t4
+    # (already reflected) are counted, not serialized.
     assert by_txid['t1']['classification'] == intraday_reconcile.TX_ACTIONABLE_NOT_STORED
     assert by_txid['t1']['player_mlb_id'] == 999
-    assert by_txid['t2']['classification'] == intraday_reconcile.TX_NON_PLAYER
     assert by_txid['t3']['classification'] == intraday_reconcile.TX_UNRESOLVED_IDENTITY
-    assert by_txid['t4']['classification'] == intraday_reconcile.TX_ALREADY_REFLECTED
+    assert 't2' not in by_txid  # non-player is informational, not a difference
+    assert 't4' not in by_txid  # already reflected is benign, not a difference
     checked = lane['checked']
-    assert checked['actionable_player_transactions'] == 1
+    assert checked['actionable_differences'] >= 2  # t1 + t5
     assert checked['non_player_transactions'] == 1
+    assert checked['already_reflected'] >= 1
     assert checked['unresolved_identity'] == 1
+    assert lane['informational_counts']['non_player_count'] == 1
 
 
 def test_lane2_stored_effect_not_reflected(scenario):
     lane = _run(scenario)['lanes'][intraday_reconcile.LANE_TRANSACTIONS]
     by_txid = {r.get('transaction_id'): r for r in lane['differences']}
     t5 = by_txid['t5']
-    # Stored transaction whose recall (to NYM) is not reflected by the current
-    # roster snapshot (which still shows PHI): a misaligned, unreflected effect.
-    assert t5['roster_snapshot_alignment'] == transaction_ingestion.ALIGNMENT_MISALIGNED
+    # A stored transaction whose recall (to NYM) is not reflected by the current
+    # roster snapshot (still PHI) gets its OWN classification — never
+    # already_reflected — and is an actionable difference.
+    assert t5['classification'] == intraday_reconcile.TX_STATUS_EFFECT_UNREFLECTED
+    assert t5['classification'] != intraday_reconcile.TX_ALREADY_REFLECTED
+    assert t5['severity'] == intraday_reconcile.SEVERITY_ACTIONABLE
     assert t5['status_effect_unreflected'] is True
     assert lane['checked']['status_effect_unreflected'] >= 1
 
@@ -618,7 +645,7 @@ def test_artifact_is_json_serializable_and_versioned(scenario):
     parsed = json.loads(json.dumps(artifact, sort_keys=True))
     assert parsed['capability'] == 'intraday_reconciliation_audit_v1'
     assert parsed['capability'] == intraday_reconcile.CAPABILITY
-    assert parsed['version'] == '1.0.0'
+    assert parsed['version'] == intraday_reconcile.VERSION
     assert parsed['mode'] == 'intraday'
     assert parsed['check_only'] is True
     assert parsed['status'] in ('success', 'partial', 'failed', 'skipped')
@@ -844,7 +871,7 @@ def test_does_not_mutate_running_sync_run(scenario):
 
 def _canned(status='success', **extra):
     artifact = {
-        'capability': intraday_reconcile.CAPABILITY, 'version': '1.0.0', 'mode': 'intraday',
+        'capability': intraday_reconcile.CAPABILITY, 'version': intraday_reconcile.VERSION, 'mode': 'intraday',
         'phase': 1, 'check_only': True, 'status': status, 'source': 'manual',
         'product_date': '2026-07-16', 'started_at': 'x', 'completed_at': 'y',
         'changed': False, 'changed_lanes': [], 'affected_team_ids': [],
@@ -956,3 +983,755 @@ def test_cli_defaults_disable_auto_sync():
     import os
     import scripts.run_intraday_reconcile  # noqa: F401 - import sets the AUTO_SYNC guard
     assert os.environ.get('AUTO_SYNC') == 'false'
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# Signal-quality correction (contract v1.1.0)
+#
+# These tests pin the corrections that Production Observation #1 (the first valid
+# production intraday run, 2026-07-17) exposed. That run passed the read-only,
+# infrastructure, and source-coverage checks but its SIGNAL classification was
+# wrong: all 354 transaction records (342 already-reflected + 7 non-player) were
+# serialized into transactions.differences, so `changed=true` and a "360
+# differences" total presented benign inventory as a changed lane; three records
+# carried a self-contradictory already_reflected + status_effect_unreflected
+# label; five stored_conflict findings were manufactured from compound events
+# (multiple player components sharing one MLB transaction id compared against one
+# stored PlayerTransaction row); and two newly-discovered active pitchers lost
+# their source names. Observation #1 therefore did NOT prove signal accuracy and
+# a fresh observation is required after this correction.
+#
+# Signal-quality item → proving test:
+#   C1 benign transactions never serialized ..... test_lane2_all_reflected_no_differences,
+#                                                 test_lane2_already_reflected_not_serialized
+#   C1 non-player is informational .............. test_lane2_non_player_is_informational
+#   C1 benign counted + bounded-sampled ......... test_lane2_benign_suppressed_count,
+#                                                 test_lane2_informational_samples_bounded
+#   C1 differences carry only meaningful ........ test_lane2_differences_are_meaningful_only
+#   C2 status_effect is its own class ........... test_lane2_status_effect_precedence,
+#                                                 test_lane2_status_effect_not_a_conflict
+#   C3 compound reflected -> no false conflict .. test_lane2_compound_reflected_no_false_conflict
+#   C3 compound new -> exactly one finding ...... test_lane2_compound_new_single_finding
+#   C3 compound ambiguous -> one review ......... test_lane2_compound_ambiguous_single_review
+#   C3 event conflict excludes player fields .... test_lane2_compound_conflict_excludes_player_fields
+#   C3 components grouped into one event ........ test_lane2_compound_groups_components
+#   C4 changed derives from meaningful only ..... test_changed_false_when_only_benign_transactions
+#   C4 changed_lanes excludes benign tx ......... test_changed_lanes_excludes_benign_transactions
+#   C4 summary buckets present + accurate ....... test_summary_buckets_present_and_accurate,
+#                                                 test_summary_records_checked
+#   C4 material only when write required ......... test_material_change_only_when_actionable
+#   C4 review-required is changed, not material . test_review_required_changed_not_material
+#   C5 affected excludes benign/review .......... test_affected_excludes_benign_and_review
+#   C5 publish_snapshot not from benign ......... test_publish_snapshot_not_from_benign,
+#                                                 test_publish_snapshot_not_from_review_only
+#   C5 warm_tonight not from transaction-only ... test_warm_tonight_not_from_transaction_only,
+#                                                 test_warm_tonight_true_on_roster_change
+#   C6 active-roster budget <= 30 calls ......... test_active_roster_budget_is_bounded
+#   C6 deep sweep reads every roster type ....... test_deep_roster_sweeps_all_types
+#   C6 active-only neutral departure ............ test_lane1_active_only_default_uses_neutral_departure
+#   C7 newly-discovered source name preserved ... test_lane1_newly_discovered_preserves_name
+#   C8 minor version bump, capability stable .... test_contract_is_backward_compatible_minor_bump
+#   C8 informational samples deterministic ...... test_informational_samples_deterministic
+#   C9 Observation #1 regression fixture ........ test_observation_one_* (five tests)
+# ═════════════════════════════════════════════════════════════════════════════
+
+TOR = 141
+ATH = 133
+SIGNAL_DATE = date(2026, 7, 16)
+
+
+def _tx(transaction_id, player_mlb_id=None, *, type_code='RECALL', to_team_id=None,
+        from_team_id=None, transaction_date='2026-07-16', player_full_name=None):
+    """Build a source transaction row for the signal-quality suite."""
+    row = {
+        'transaction_id': transaction_id,
+        'transaction_date': transaction_date,
+        'transaction_type_code': type_code,
+        'source_endpoint': transaction_ingestion.SOURCE_ENDPOINT,
+    }
+    if player_mlb_id is not None:
+        row['player_mlb_id'] = player_mlb_id
+    if to_team_id is not None:
+        row['to_team_id'] = to_team_id
+    if from_team_id is not None:
+        row['from_team_id'] = from_team_id
+    if player_full_name is not None:
+        row['player_full_name'] = player_full_name
+    return row
+
+
+def _tx_client(transactions, *, rosters=None, teams=None, schedule=None):
+    return FakeMlbClient(
+        rosters=rosters or {}, transactions=transactions,
+        schedule=schedule or [], teams=teams or [],
+    )
+
+
+def _tx_lane(artifact):
+    return artifact['lanes'][intraday_reconcile.LANE_TRANSACTIONS]
+
+
+def _tx_by_class(lane):
+    out = {}
+    for d in lane['differences']:
+        out.setdefault(d['classification'], []).append(d)
+    return out
+
+
+def _seed_status_effect_case(mlb_id, name, transaction_id):
+    """Stored pitcher active on PHI + a same-day PHI roster snapshot + a stored
+    RECALL-to-NYM transaction. The transaction's roster effect (now on NYM) is
+    not reflected by the snapshot (still PHI): a status_effect_unreflected case,
+    exactly the Andre Granillo / Cam Sanders / Colton Gordon contradiction."""
+    pitcher = _seed_pitcher(mlb_id, name, PHI, 'PHI', roster_status=STATUS_ACTIVE, active=True)
+    _seed_snapshot(pitcher, PHI, SIGNAL_DATE, STATUS_ACTIVE)
+    tx = _tx(transaction_id, mlb_id, type_code='RECALL', to_team_id=NYM, player_full_name=name)
+    _seed_stored_transaction(tx)
+    return tx
+
+
+# ── C1: benign transactions are counted, never serialized ────────────────────
+
+def test_lane2_all_reflected_no_differences(app):
+    for i in range(4):
+        _seed_stored_transaction(_tx(f'r{i}', 900 + i, type_code='SFA'))
+    source = [_tx(f'r{i}', 900 + i, type_code='SFA') for i in range(4)]
+    artifact = _run(_tx_client(source), team_ids=[PHI],
+                    lanes=[intraday_reconcile.LANE_TRANSACTIONS])
+    lane = _tx_lane(artifact)
+    assert lane['differences'] == []
+    assert lane['checked']['already_reflected'] == 4
+    assert lane['checked']['meaningful_differences'] == 0
+    assert artifact['changed'] is False
+    assert artifact['changed_lanes'] == []
+
+
+def test_lane2_already_reflected_not_serialized(app):
+    _seed_stored_transaction(_tx('ar', 950, type_code='SFA'))
+    lane = _tx_lane(_run(_tx_client([_tx('ar', 950, type_code='SFA')]), team_ids=[PHI],
+                         lanes=[intraday_reconcile.LANE_TRANSACTIONS]))
+    assert all(d['classification'] != intraday_reconcile.TX_ALREADY_REFLECTED
+               for d in lane['differences'])
+    assert lane['informational_counts']['already_reflected_count'] == 1
+
+
+def test_lane2_non_player_is_informational(app):
+    source = [_tx('np1', None, type_code='CASH'), _tx('np2', None, type_code='CASH')]
+    lane = _tx_lane(_run(_tx_client(source), team_ids=[PHI],
+                         lanes=[intraday_reconcile.LANE_TRANSACTIONS]))
+    assert all(d['classification'] != intraday_reconcile.TX_NON_PLAYER
+               for d in lane['differences'])
+    assert lane['checked']['non_player_transactions'] == 2
+    assert lane['informational_counts']['non_player_count'] == 2
+    # A bounded sample is retained for evidence, but not in differences.
+    assert lane['informational_samples'][intraday_reconcile.TX_NON_PLAYER]
+
+
+def test_lane2_benign_suppressed_count(app):
+    # Seven already-reflected records; only the first sample_limit are sampled.
+    for i in range(7):
+        _seed_stored_transaction(_tx(f'b{i}', 960 + i, type_code='SFA'))
+    source = [_tx(f'b{i}', 960 + i, type_code='SFA') for i in range(7)]
+    lane = _tx_lane(_run(_tx_client(source), team_ids=[PHI],
+                         lanes=[intraday_reconcile.LANE_TRANSACTIONS]))
+    assert lane['checked']['already_reflected'] == 7
+    sampled = lane['informational_samples'].get(intraday_reconcile.TX_ALREADY_REFLECTED, [])
+    assert len(sampled) == intraday_reconcile.DEFAULT_TX_SAMPLE_LIMIT
+    assert lane['suppressed_counts']['benign_records_suppressed'] == 7 - intraday_reconcile.DEFAULT_TX_SAMPLE_LIMIT
+
+
+def test_lane2_informational_samples_bounded(app):
+    for i in range(5):
+        _seed_stored_transaction(_tx(f's{i}', 970 + i, type_code='SFA'))
+    source = [_tx(f's{i}', 970 + i, type_code='SFA') for i in range(5)]
+    lane = _tx_lane(_run(_tx_client(source), team_ids=[PHI],
+                         lanes=[intraday_reconcile.LANE_TRANSACTIONS]))
+    for cls, sample in lane['informational_samples'].items():
+        assert len(sample) <= intraday_reconcile.DEFAULT_TX_SAMPLE_LIMIT, cls
+
+
+def test_lane2_differences_are_meaningful_only(app):
+    _seed_stored_transaction(_tx('ok', 980, type_code='SFA'))       # already reflected
+    source = [
+        _tx('ok', 980, type_code='SFA'),                             # benign
+        _tx('np', None, type_code='CASH'),                           # benign
+        _tx('new', 981, type_code='RECALL', to_team_id=PHI),         # actionable (not stored)
+    ]
+    lane = _tx_lane(_run(_tx_client(source), team_ids=[PHI],
+                         lanes=[intraday_reconcile.LANE_TRANSACTIONS]))
+    for d in lane['differences']:
+        assert d['classification'] in intraday_reconcile.TX_MEANINGFUL_CLASSES
+        assert d.get('severity') in (intraday_reconcile.SEVERITY_ACTIONABLE,
+                                     intraday_reconcile.SEVERITY_REVIEW)
+
+
+# ── C2: status_effect_unreflected is its own class with deterministic precedence
+
+def test_lane2_status_effect_precedence(app):
+    tx = _seed_status_effect_case(690916, 'Andre Granillo', 'se1')
+    lane = _tx_lane(_run(_tx_client([tx]), team_ids=[PHI],
+                         lanes=[intraday_reconcile.LANE_TRANSACTIONS]))
+    d = {r['transaction_id']: r for r in lane['differences']}['se1']
+    assert d['classification'] == intraday_reconcile.TX_STATUS_EFFECT_UNREFLECTED
+    assert d['classification'] != intraday_reconcile.TX_ALREADY_REFLECTED
+    assert d['status_effect_unreflected'] is True
+    assert d['severity'] == intraday_reconcile.SEVERITY_ACTIONABLE
+
+
+def test_lane2_status_effect_not_a_conflict(app):
+    tx = _seed_status_effect_case(681911, 'Cam Sanders', 'se2')
+    lane = _tx_lane(_run(_tx_client([tx]), team_ids=[PHI],
+                         lanes=[intraday_reconcile.LANE_TRANSACTIONS]))
+    d = {r['transaction_id']: r for r in lane['differences']}['se2']
+    # A misaligned roster effect is NOT a stored source-fact conflict.
+    assert d['classification'] != intraday_reconcile.TX_STORED_CONFLICT
+    assert lane['checked']['stored_conflicts'] == 0
+    assert lane['checked']['status_effect_unreflected'] == 1
+
+
+# ── C3: compound events are event-aware (one finding per MLB transaction id) ──
+
+def _compound_pair(transaction_id, id_a, id_b, *, type_code='TR', transaction_date='2026-07-16'):
+    return [
+        _tx(transaction_id, id_a, type_code=type_code, from_team_id=PHI, to_team_id=NYM,
+            transaction_date=transaction_date),
+        _tx(transaction_id, id_b, type_code=type_code, from_team_id=NYM, to_team_id=PHI,
+            transaction_date=transaction_date),
+    ]
+
+
+def test_lane2_compound_reflected_no_false_conflict(app):
+    # 927651: two player components share one transaction id; one is already
+    # stored. The event is reflected — it must NOT manufacture a stored conflict.
+    components = _compound_pair('927651', 660001, 660002)
+    _seed_stored_transaction(components[0])
+    lane = _tx_lane(_run(_tx_client(components), team_ids=[PHI],
+                         lanes=[intraday_reconcile.LANE_TRANSACTIONS]))
+    assert lane['checked']['stored_conflicts'] == 0
+    assert lane['checked']['compound_events_reflected'] == 1
+    assert all(d.get('event_key') != 'statsapi:927651' for d in lane['differences'])
+
+
+def test_lane2_compound_new_single_finding(app):
+    # 926870: two components, no stored row -> exactly one compound_new finding.
+    components = _compound_pair('926870', 660003, 660004)
+    lane = _tx_lane(_run(_tx_client(components), team_ids=[PHI],
+                         lanes=[intraday_reconcile.LANE_TRANSACTIONS]))
+    compound = [d for d in lane['differences'] if d.get('event_key') == 'statsapi:926870']
+    assert len(compound) == 1
+    finding = compound[0]
+    assert finding['classification'] == intraday_reconcile.TX_COMPOUND_NEW
+    assert finding['severity'] == intraday_reconcile.SEVERITY_ACTIONABLE
+    assert finding['component_count'] == 2
+    assert finding['player_mlb_ids'] == [660003, 660004]
+
+
+def test_lane2_compound_ambiguous_single_review(app):
+    # 926807: two components, a stored row for a DIFFERENT player under the same
+    # transaction id. Per-component equivalence cannot be proven -> one review.
+    components = _compound_pair('926807', 660005, 660006)
+    _seed_stored_transaction(_tx('926807', 660099, type_code='TR',
+                                 from_team_id=PHI, to_team_id=NYM))
+    lane = _tx_lane(_run(_tx_client(components), team_ids=[PHI],
+                         lanes=[intraday_reconcile.LANE_TRANSACTIONS]))
+    compound = [d for d in lane['differences'] if d.get('event_key') == 'statsapi:926807']
+    assert len(compound) == 1
+    assert compound[0]['classification'] == intraday_reconcile.TX_COMPOUND_REVIEW
+    assert compound[0]['severity'] == intraday_reconcile.SEVERITY_REVIEW
+    assert compound[0].get('reason')
+
+
+def test_lane2_compound_conflict_excludes_player_fields(app):
+    # Same transaction id, but the stored event date differs from the source:
+    # the event-level conflict names only shared event-level fields, never a
+    # per-component player field.
+    components = _compound_pair('930000', 660007, 660008, transaction_date='2026-07-16')
+    _seed_stored_transaction(_tx('930000', 660007, type_code='TR',
+                                 from_team_id=PHI, to_team_id=NYM,
+                                 transaction_date='2026-07-10'))
+    lane = _tx_lane(_run(_tx_client(components), team_ids=[PHI],
+                         lanes=[intraday_reconcile.LANE_TRANSACTIONS]))
+    finding = [d for d in lane['differences'] if d.get('event_key') == 'statsapi:930000'][0]
+    assert finding['classification'] == intraday_reconcile.TX_STORED_CONFLICT
+    assert 'transaction_date' in finding['conflicting_fields']
+    assert set(finding['conflicting_fields']).issubset(set(intraday_reconcile._TX_EVENT_LEVEL_FIELDS))
+    assert 'player_mlb_id' not in finding['conflicting_fields']
+
+
+def test_lane2_compound_groups_components(app):
+    # Three components under one id collapse to a single source event.
+    components = [
+        _tx('940000', 660010, type_code='TR', from_team_id=PHI, to_team_id=NYM),
+        _tx('940000', 660011, type_code='TR', from_team_id=NYM, to_team_id=PHI),
+        _tx('940000', 660012, type_code='TR', from_team_id=NYM, to_team_id=PHI),
+    ]
+    lane = _tx_lane(_run(_tx_client(components), team_ids=[PHI],
+                         lanes=[intraday_reconcile.LANE_TRANSACTIONS]))
+    assert lane['checked']['source_transactions'] == 3
+    assert lane['checked']['source_events'] == 1
+    finding = [d for d in lane['differences'] if d.get('event_key') == 'statsapi:940000'][0]
+    assert finding['player_component_count'] == 3
+    assert finding['player_mlb_ids'] == [660010, 660011, 660012]
+
+
+# ── C4: changed / material / summary semantics ───────────────────────────────
+
+def test_changed_false_when_only_benign_transactions(app):
+    _seed_stored_transaction(_tx('c1', 991, type_code='SFA'))
+    source = [_tx('c1', 991, type_code='SFA'), _tx('c2', None, type_code='CASH')]
+    artifact = _run(_tx_client(source), team_ids=[PHI])
+    assert artifact['changed'] is False
+    assert artifact['material_change_detected'] is False
+    assert artifact['would_refresh']['publish_snapshot'] is False
+
+
+def test_changed_lanes_excludes_benign_transactions(app):
+    # A real roster recall (lane 1) alongside a benign-only transaction lane:
+    # transactions must NOT appear as a changed lane.
+    _seed_pitcher(992, 'Recalled Arm', PHI, 'PHI', roster_status=STATUS_OPTIONED, active=False)
+    _seed_stored_transaction(_tx('c3', 993, type_code='SFA'))
+    client = _tx_client(
+        [_tx('c3', 993, type_code='SFA')],
+        rosters={(PHI, ROSTER_TYPE_ACTIVE): [roster_entry(992, 'Recalled Arm', status=ACTIVE)]},
+        teams=[{'id': PHI, 'name': 'Phillies', 'abbreviation': 'PHI'}],
+    )
+    artifact = _run(client, team_ids=[PHI])
+    assert intraday_reconcile.LANE_ROSTER_ASSIGNMENT in artifact['changed_lanes']
+    assert intraday_reconcile.LANE_TRANSACTIONS not in artifact['changed_lanes']
+
+
+def test_summary_buckets_present_and_accurate(scenario):
+    summary = _run(scenario)['summary']
+    for key in ('total_differences', 'records_checked', 'actionable_differences',
+                'review_required_findings', 'unresolved_findings',
+                'informational_records', 'benign_records_suppressed',
+                'material_change_detected', 'affected_team_ids'):
+        assert key in summary, key
+    assert summary['actionable_differences'] + summary['review_required_findings'] \
+        == summary['total_differences']
+    assert summary['informational_records'] >= 0
+
+
+def test_summary_records_checked(app):
+    _seed_stored_transaction(_tx('rc', 994, type_code='SFA'))
+    _seed_pitcher(995, 'Any Arm', PHI, 'PHI', roster_status=STATUS_ACTIVE, active=True)
+    client = _tx_client(
+        [_tx('rc', 994, type_code='SFA')],
+        rosters={(PHI, ROSTER_TYPE_ACTIVE): [roster_entry(995, 'Any Arm', status=ACTIVE)]},
+        teams=[{'id': PHI, 'name': 'Phillies', 'abbreviation': 'PHI'}],
+    )
+    summary = _run(client, team_ids=[PHI])['summary']
+    # records_checked aggregates source transactions + stored pitchers + source games.
+    assert summary['records_checked'] >= 1
+
+
+def test_material_change_only_when_actionable(app):
+    # A brand-new, not-yet-stored player transaction is actionable -> material.
+    source = [_tx('m1', 996, type_code='RECALL', to_team_id=PHI)]
+    artifact = _run(_tx_client(source), team_ids=[PHI])
+    assert artifact['changed'] is True
+    assert artifact['material_change_detected'] is True
+    assert artifact['would_refresh']['publish_snapshot'] is True
+
+
+def test_review_required_changed_not_material(app):
+    # A source row with a name but no id is an unresolved identity (review): a
+    # real finding that sets changed=true but is NOT a material (writable) change.
+    source = [_tx('rev', None, type_code='SIGNED', player_full_name='Unknown Prospect')]
+    artifact = _run(_tx_client(source), team_ids=[PHI])
+    lane = _tx_lane(artifact)
+    assert any(d['classification'] == intraday_reconcile.TX_UNRESOLVED_IDENTITY
+               for d in lane['differences'])
+    assert artifact['changed'] is True
+    assert artifact['material_change_detected'] is False
+    assert artifact['would_refresh']['publish_snapshot'] is False
+    assert artifact['summary']['unresolved_findings'] >= 1
+
+
+# ── C5: impact plan derives from actionable findings only ────────────────────
+
+def test_affected_excludes_benign_and_review(app):
+    _seed_stored_transaction(_tx('a1', 700100, type_code='SFA'))     # benign player 700100
+    source = [
+        _tx('a1', 700100, type_code='SFA'),                          # benign
+        _tx('a2', None, type_code='SIGNED', player_full_name='Ghost'),  # review (unresolved)
+        _tx('a3', 700101, type_code='RECALL', to_team_id=PHI),       # actionable
+    ]
+    artifact = _run(_tx_client(source), team_ids=[PHI])
+    assert 700101 in artifact['affected_pitcher_mlb_ids']
+    assert 700100 not in artifact['affected_pitcher_mlb_ids']
+
+
+def test_publish_snapshot_not_from_benign(app):
+    _seed_stored_transaction(_tx('p1', 700200, type_code='SFA'))
+    artifact = _run(_tx_client([_tx('p1', 700200, type_code='SFA')]), team_ids=[PHI])
+    assert artifact['would_refresh']['publish_snapshot'] is False
+
+
+def test_publish_snapshot_not_from_review_only(app):
+    source = [_tx('p2', None, type_code='SIGNED', player_full_name='Ghost')]
+    artifact = _run(_tx_client(source), team_ids=[PHI])
+    assert artifact['would_refresh']['publish_snapshot'] is False
+
+
+def test_warm_tonight_not_from_transaction_only(app):
+    # An actionable transaction with no roster/schedule population change must not
+    # warm Tonight, even though it is material (publish_snapshot true).
+    source = [_tx('w1', 700300, type_code='RECALL', to_team_id=PHI)]
+    artifact = _run(_tx_client(source), team_ids=[PHI])
+    assert artifact['material_change_detected'] is True
+    assert artifact['would_refresh']['warm_tonight'] is False
+
+
+def test_warm_tonight_true_on_roster_change(app):
+    _seed_pitcher(700400, 'Warm Arm', PHI, 'PHI', roster_status=STATUS_OPTIONED, active=False)
+    client = _tx_client(
+        [],
+        rosters={(PHI, ROSTER_TYPE_ACTIVE): [roster_entry(700400, 'Warm Arm', status=ACTIVE)]},
+        teams=[{'id': PHI, 'name': 'Phillies', 'abbreviation': 'PHI'}],
+    )
+    artifact = _run(client, team_ids=[PHI])
+    assert artifact['would_refresh']['warm_tonight'] is True
+
+
+# ── C6: active-roster-only default budget + deep sweep ───────────────────────
+
+def test_active_roster_budget_is_bounded(app):
+    team_ids = list(range(1000, 1030))  # 30 teams
+    rosters = {(tid, ROSTER_TYPE_ACTIVE): [] for tid in team_ids}
+    client = _tx_client([], rosters=rosters)
+    _run(client, team_ids=team_ids, lanes=[intraday_reconcile.LANE_ROSTER_ASSIGNMENT])
+    # Active-only default: exactly one roster fetch per team, never the 4x sweep.
+    assert client.calls.get('get_team_roster', 0) <= 30
+    assert client.calls.get('get_team_roster', 0) == len(team_ids)
+
+
+def test_deep_roster_sweeps_all_types(app):
+    team_ids = list(range(1100, 1105))  # 5 teams
+    rosters = {(tid, rt): [] for tid in team_ids for rt in intraday_reconcile.DEEP_ROSTER_TYPES}
+    client = _tx_client([], rosters=rosters)
+    _deep(client, team_ids=team_ids, lanes=[intraday_reconcile.LANE_ROSTER_ASSIGNMENT])
+    # Deep diagnostic reads every roster type: strictly more calls than active-only.
+    assert client.calls.get('get_team_roster', 0) == len(team_ids) * len(intraday_reconcile.DEEP_ROSTER_TYPES)
+    assert client.calls['get_team_roster'] > len(team_ids)
+
+
+# ── C7: newly-discovered source names are preserved ──────────────────────────
+
+def test_lane1_newly_discovered_preserves_name(app):
+    client = _tx_client(
+        [],
+        rosters={(PHI, ROSTER_TYPE_ACTIVE): [roster_entry(700500, 'Fresh Arm', status=ACTIVE)]},
+        teams=[{'id': PHI, 'name': 'Phillies', 'abbreviation': 'PHI'}],
+    )
+    d = _lane1_by_id(_run(client, team_ids=[PHI]))[700500]
+    assert d['change_type'] == intraday_reconcile.CHANGE_NEWLY_DISCOVERED_ACTIVE
+    assert d['stored_pitcher_id'] is None
+    # The MLB-supplied name is retained (identity matching still used the id only).
+    assert d['player_name'] == 'Fresh Arm'
+
+
+# ── C8: contract compactness / versioning ────────────────────────────────────
+
+def test_contract_is_backward_compatible_minor_bump(scenario):
+    artifact = _run(scenario)
+    assert artifact['capability'] == 'intraday_reconciliation_audit_v1'  # unchanged
+    assert artifact['version'] == intraday_reconcile.VERSION
+    assert artifact['version'].startswith('1.')  # minor bump, not a new major
+    assert artifact['check_only'] is True
+    assert artifact['mode'] == 'intraday'
+
+
+def test_informational_samples_deterministic(app):
+    for i in range(6):
+        _seed_stored_transaction(_tx(f'd{i}', 700600 + i, type_code='SFA'))
+    source = [_tx(f'd{i}', 700600 + i, type_code='SFA') for i in range(6)]
+    first = _tx_lane(_run(_tx_client(source), team_ids=[PHI],
+                          lanes=[intraday_reconcile.LANE_TRANSACTIONS]))
+    second = _tx_lane(_run(_tx_client(source), team_ids=[PHI],
+                           lanes=[intraday_reconcile.LANE_TRANSACTIONS]))
+    # Sample identity/order/content is deterministic (timestamps aside).
+    assert _scrub(first['informational_samples']) == _scrub(second['informational_samples'])
+    assert first['suppressed_counts'] == second['suppressed_counts']
+
+
+# ── C9: Production Observation #1 regression fixture ─────────────────────────
+
+@pytest.fixture
+def observation_one(app):
+    """A compact fixture mirroring the structure of Production Observation #1:
+    a large benign already-reflected inventory, non-player components, the three
+    status_effect_unreflected contradictions, three compound events (reflected /
+    new / ambiguous), and two newly-discovered active pitchers that arrive with
+    source names. Kept small but structurally faithful."""
+    # Status-effect contradictions (Granillo / Sanders / Gordon), stored active
+    # on PHI, so lane 1 sees no roster change for them.
+    se = [
+        _seed_status_effect_case(690916, 'Andre Granillo', 'se-granillo'),
+        _seed_status_effect_case(681911, 'Cam Sanders', 'se-sanders'),
+        _seed_status_effect_case(700241, 'Colton Gordon', 'se-gordon'),
+    ]
+    # Five already-reflected transactions (benign, suppressed beyond the sample).
+    reflected = []
+    for i in range(5):
+        row = _tx(f'reflected-{i}', 640000 + i, type_code='SFA')
+        _seed_stored_transaction(row)
+        reflected.append(row)
+    # Two non-player components (cash considerations).
+    non_player = [_tx('cash-1', None, type_code='CASH'), _tx('cash-2', None, type_code='CASH')]
+    # Compound event 927651 — reflected (one component already stored).
+    c_reflected = _compound_pair('927651', 650001, 650002)
+    _seed_stored_transaction(c_reflected[0])
+    # Compound event 926870 — new (no stored row).
+    c_new = _compound_pair('926870', 650003, 650004)
+    # Compound event 926807 — ambiguous (stored row for a different player).
+    c_review = _compound_pair('926807', 650005, 650006)
+    _seed_stored_transaction(_tx('926807', 650099, type_code='TR',
+                                 from_team_id=PHI, to_team_id=NYM))
+
+    transactions = (
+        se + reflected + non_player + c_reflected + c_new + c_review
+    )
+    rosters = {
+        # PHI active roster still carries the three status_effect pitchers, so
+        # lane 1 reports no roster change for them.
+        (PHI, ROSTER_TYPE_ACTIVE): [
+            roster_entry(690916, 'Andre Granillo', status=ACTIVE),
+            roster_entry(681911, 'Cam Sanders', status=ACTIVE),
+            roster_entry(700241, 'Colton Gordon', status=ACTIVE),
+        ],
+        # Two newly-discovered active pitchers arrive WITH names from the source.
+        (TOR, ROSTER_TYPE_ACTIVE): [roster_entry(669310, 'CJ Van Eyk', status=ACTIVE)],
+        (ATH, ROSTER_TYPE_ACTIVE): [roster_entry(814305, 'Yunior Tur', status=ACTIVE)],
+    }
+    teams = [
+        {'id': PHI, 'name': 'Phillies', 'abbreviation': 'PHI'},
+        {'id': TOR, 'name': 'Blue Jays', 'abbreviation': 'TOR'},
+        {'id': ATH, 'name': 'Athletics', 'abbreviation': 'ATH'},
+    ]
+    return _tx_client(transactions, rosters=rosters, teams=teams)
+
+
+def _obs_run(observation_one):
+    return _run(observation_one, team_ids=[PHI, TOR, ATH])
+
+
+def test_observation_one_transactions_signal(observation_one):
+    lane = _tx_lane(_obs_run(observation_one))
+    checked = lane['checked']
+    # Benign inventory is counted, never serialized.
+    assert checked['already_reflected'] == 5
+    assert checked['non_player_transactions'] == 2
+    assert checked['compound_events_reflected'] == 1
+    for d in lane['differences']:
+        assert d['classification'] in intraday_reconcile.TX_MEANINGFUL_CLASSES
+    # The three status-effect contradictions surface as their own class.
+    assert checked['status_effect_unreflected'] == 3
+    # Benign records beyond the sample are suppressed with a count.
+    assert lane['suppressed_counts']['benign_records_suppressed'] == 5 - intraday_reconcile.DEFAULT_TX_SAMPLE_LIMIT
+
+
+def test_observation_one_no_false_stored_conflicts(observation_one):
+    lane = _tx_lane(_obs_run(observation_one))
+    # The compound-event false-conflict class of bug is gone.
+    assert lane['checked']['stored_conflicts'] == 0
+
+
+def test_observation_one_compound_events(observation_one):
+    lane = _tx_lane(_obs_run(observation_one))
+    by_event = {d.get('event_key'): d for d in lane['differences'] if d.get('event_key')}
+    # 927651 reflected -> benign, not serialized.
+    assert 'statsapi:927651' not in by_event
+    # 926870 new -> one actionable finding.
+    assert by_event['statsapi:926870']['classification'] == intraday_reconcile.TX_COMPOUND_NEW
+    # 926807 ambiguous -> one review finding.
+    assert by_event['statsapi:926807']['classification'] == intraday_reconcile.TX_COMPOUND_REVIEW
+    # Each compound id yields at most one finding.
+    for event_key in ('statsapi:926870', 'statsapi:926807'):
+        assert sum(1 for d in lane['differences'] if d.get('event_key') == event_key) == 1
+
+
+def test_observation_one_newly_discovered_names(observation_one):
+    diffs = _lane1_by_id(_obs_run(observation_one))
+    assert diffs[669310]['change_type'] == intraday_reconcile.CHANGE_NEWLY_DISCOVERED_ACTIVE
+    assert diffs[669310]['player_name'] == 'CJ Van Eyk'
+    assert diffs[814305]['player_name'] == 'Yunior Tur'
+    # The status_effect pitchers are unchanged on the active roster (no lane-1 diff).
+    for mlb_id in (690916, 681911, 700241):
+        assert mlb_id not in diffs
+
+
+def test_observation_one_summary_and_material(observation_one):
+    artifact = _obs_run(observation_one)
+    summary = artifact['summary']
+    # Changed is true (there ARE meaningful findings), but the honest total never
+    # includes the 5 already-reflected + 2 non-player + 1 reflected-compound rows.
+    assert artifact['changed'] is True
+    assert summary['informational_records'] == 5 + 2 + 1
+    assert summary['total_differences'] == summary['actionable_differences'] + summary['review_required_findings']
+    # Actionable findings exist (compound_new, status_effect, newly-discovered),
+    # so a future write would be required.
+    assert summary['material_change_detected'] is True
+    # The already-reflected benign players never enter the affected write plan.
+    assert 640000 not in artifact['affected_pitcher_mlb_ids']
+
+
+# ── additional focused coverage (per-behavior signal-quality assertions) ─────
+
+def test_lane2_invalid_shape_is_review(app):
+    lane = _tx_lane(_run(_tx_client([42, 'not-a-dict']), team_ids=[PHI],
+                         lanes=[intraday_reconcile.LANE_TRANSACTIONS]))
+    invalid = [d for d in lane['differences']
+               if d['classification'] == intraday_reconcile.TX_INVALID_SHAPE]
+    assert len(invalid) == 2
+    assert all(d['severity'] == intraday_reconcile.SEVERITY_REVIEW for d in invalid)
+    assert lane['checked']['invalid_shape'] == 2
+
+
+def test_lane2_actionable_not_stored_is_actionable(app):
+    lane = _tx_lane(_run(_tx_client([_tx('n', 800, type_code='RECALL', to_team_id=PHI)]),
+                         team_ids=[PHI], lanes=[intraday_reconcile.LANE_TRANSACTIONS]))
+    d = lane['differences'][0]
+    assert d['classification'] == intraday_reconcile.TX_ACTIONABLE_NOT_STORED
+    assert d['severity'] == intraday_reconcile.SEVERITY_ACTIONABLE
+
+
+def test_lane2_single_player_stored_conflict(app):
+    _seed_stored_transaction(_tx('sc', 801, type_code='RECALL', to_team_id=PHI))
+    lane = _tx_lane(_run(_tx_client([_tx('sc', 801, type_code='RECALL', to_team_id=NYM)]),
+                         team_ids=[PHI], lanes=[intraday_reconcile.LANE_TRANSACTIONS]))
+    d = lane['differences'][0]
+    assert d['classification'] == intraday_reconcile.TX_STORED_CONFLICT
+    assert d['severity'] == intraday_reconcile.SEVERITY_ACTIONABLE
+    assert 'to_team_id' in d['conflicting_fields']
+
+
+def test_lane2_benign_sample_has_no_severity(app):
+    _seed_stored_transaction(_tx('bs', 802, type_code='SFA'))
+    lane = _tx_lane(_run(_tx_client([_tx('bs', 802, type_code='SFA')]), team_ids=[PHI],
+                         lanes=[intraday_reconcile.LANE_TRANSACTIONS]))
+    sample = lane['informational_samples'][intraday_reconcile.TX_ALREADY_REFLECTED][0]
+    assert sample['severity'] is None
+
+
+def test_lane2_benign_suppressed_zero_under_limit(app):
+    for i in range(2):  # fewer than the sample limit
+        _seed_stored_transaction(_tx(f'u{i}', 803 + i, type_code='SFA'))
+    source = [_tx(f'u{i}', 803 + i, type_code='SFA') for i in range(2)]
+    lane = _tx_lane(_run(_tx_client(source), team_ids=[PHI],
+                         lanes=[intraday_reconcile.LANE_TRANSACTIONS]))
+    assert lane['suppressed_counts']['benign_records_suppressed'] == 0
+
+
+def test_informational_records_equals_informational_counts_sum(app):
+    for i in range(3):
+        _seed_stored_transaction(_tx(f'ir{i}', 810 + i, type_code='SFA'))
+    source = (
+        [_tx(f'ir{i}', 810 + i, type_code='SFA') for i in range(3)]
+        + [_tx('np-a', None, type_code='CASH'), _tx('np-b', None, type_code='CASH')]
+    )
+    artifact = _run(_tx_client(source), team_ids=[PHI])
+    tx = _tx_lane(artifact)
+    assert sum(tx['informational_counts'].values()) == artifact['summary']['informational_records']
+    assert artifact['summary']['informational_records'] == 5
+
+
+def test_lane2_compound_new_contributes_affected_teams(app):
+    components = _compound_pair('cn', 820001, 820002)  # PHI<->NYM trade
+    artifact = _run(_tx_client(components), team_ids=[PHI])
+    tx = _tx_lane(artifact)
+    assert PHI in tx['affected_team_ids'] and NYM in tx['affected_team_ids']
+    assert 820001 in tx['affected_pitcher_mlb_ids']
+
+
+def test_lane2_compound_review_adds_no_affected_pitchers(app):
+    components = _compound_pair('cr', 821001, 821002)
+    _seed_stored_transaction(_tx('cr', 821099, type_code='TR', from_team_id=PHI, to_team_id=NYM))
+    tx = _tx_lane(_run(_tx_client(components), team_ids=[PHI],
+                       lanes=[intraday_reconcile.LANE_TRANSACTIONS]))
+    # Review-required compound events never plan a write.
+    assert tx['affected_pitcher_mlb_ids'] == []
+    assert 821001 not in tx['affected_pitcher_mlb_ids']
+
+
+def test_lane2_compound_counts_non_player_component(app):
+    source = [
+        _tx('mix', 822001, type_code='TR', from_team_id=PHI, to_team_id=NYM),
+        _tx('mix', 822002, type_code='TR', from_team_id=NYM, to_team_id=PHI),
+        _tx('mix', None, type_code='CASH'),  # non-player component of the SAME event
+    ]
+    lane = _tx_lane(_run(_tx_client(source), team_ids=[PHI],
+                         lanes=[intraday_reconcile.LANE_TRANSACTIONS]))
+    finding = [d for d in lane['differences'] if d.get('event_key') == 'statsapi:mix'][0]
+    assert finding['non_player_component_count'] == 1
+    assert finding['player_component_count'] == 2
+    assert lane['checked']['non_player_transactions'] == 1
+
+
+def test_summary_total_equals_serialized_differences(scenario):
+    artifact = _run(scenario)
+    serialized = sum(
+        len(artifact['lanes'][lane]['differences'])
+        for lane in intraday_reconcile.ALL_LANES
+        if lane in artifact['lanes']
+    )
+    assert artifact['summary']['total_differences'] == serialized
+
+
+def test_changed_true_when_only_review_finding(app):
+    source = [_tx('ro', None, type_code='SIGNED', player_full_name='Prospect X')]
+    artifact = _run(_tx_client(source), team_ids=[PHI])
+    assert artifact['changed'] is True
+    assert artifact['summary']['review_required_findings'] >= 1
+    assert artifact['summary']['actionable_differences'] == 0
+
+
+def test_lane1_recall_severity_is_actionable(scenario):
+    assert _lane1_by_id(_run(scenario))[999]['severity'] == intraday_reconcile.SEVERITY_ACTIONABLE
+
+
+def test_lane1_conflicting_team_severity_is_review(scenario):
+    assert _lane1_by_id(_run(scenario))[555]['severity'] == intraday_reconcile.SEVERITY_REVIEW
+
+
+def test_lane1_unresolved_identity_severity_is_review(scenario):
+    lane = _run(scenario)['lanes'][intraday_reconcile.LANE_ROSTER_ASSIGNMENT]
+    unresolved = [d for d in lane['differences']
+                  if d.get('change_type') == intraday_reconcile.CHANGE_UNRESOLVED_SOURCE_IDENTITY]
+    assert unresolved
+    assert all(d['severity'] == intraday_reconcile.SEVERITY_REVIEW for d in unresolved)
+
+
+def test_lane1_newly_discovered_severity_is_actionable(scenario):
+    assert _lane1_by_id(_run(scenario))[777]['severity'] == intraday_reconcile.SEVERITY_ACTIONABLE
+
+
+def test_lane3_newly_final_severity_is_actionable(scenario):
+    assert _lane3_by_pk(_run(scenario))[700]['severity'] == intraday_reconcile.SEVERITY_ACTIONABLE
+
+
+def test_lane3_stored_finality_conflict_severity_is_review(scenario):
+    assert _lane3_by_pk(_run(scenario))[705]['severity'] == intraday_reconcile.SEVERITY_REVIEW
+
+
+def test_material_true_on_newly_final_game(app):
+    _scheduled_pair(800, PHI, NYM, status_code='S', status_state=ScheduledGame.STATE_SCHEDULED)
+    client = _tx_client(
+        [], schedule=[_game(800, PHI, NYM, status_code='F', detailed='Final', abstract='Final')],
+        teams=[{'id': PHI, 'name': 'Phillies', 'abbreviation': 'PHI'},
+               {'id': NYM, 'name': 'Mets', 'abbreviation': 'NYM'}],
+    )
+    artifact = _run(client, team_ids=[PHI, NYM])
+    assert 800 in artifact['would_refresh']['completed_game_pks']
+    assert artifact['material_change_detected'] is True
+    assert artifact['would_refresh']['publish_snapshot'] is True
+
+
+def test_active_only_default_does_not_read_non_active_types(app):
+    # A pitcher who is stored active but absent from the (empty) active roster is
+    # a neutral departure; the audit must not have fetched 40-man/full/nonRoster.
+    _seed_pitcher(830, 'Gone Arm', PHI, 'PHI', roster_status=STATUS_ACTIVE, active=True)
+    client = _tx_client([], rosters={(PHI, ROSTER_TYPE_ACTIVE): []},
+                        teams=[{'id': PHI, 'name': 'Phillies', 'abbreviation': 'PHI'}])
+    _run(client, team_ids=[PHI], lanes=[intraday_reconcile.LANE_ROSTER_ASSIGNMENT])
+    assert client.calls.get('get_team_roster', 0) == 1  # active only

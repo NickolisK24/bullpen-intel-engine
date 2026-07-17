@@ -81,7 +81,14 @@ logger = logging.getLogger(__name__)
 # contract major version so consumers (and the workflow's artifact validator)
 # can pin to it; VERSION is the fine-grained contract version.
 CAPABILITY = 'intraday_reconciliation_audit_v1'
-VERSION = '1.0.0'
+# Fine-grained contract version. Bumped 1.0.0 -> 1.1.0 for the signal-quality
+# correction: transaction `differences` now carries only meaningful findings
+# (benign inventory is aggregated, not serialized), several summary buckets were
+# added, and the default roster scope is active-only. The capability major
+# identifier is unchanged and the workflow validator (capability/mode/
+# check_only/status) still accepts the artifact, so this is a backward-
+# compatible minor bump, not a breaking major change.
+VERSION = '1.1.0'
 
 MODE = 'intraday'
 PHASE = 1
@@ -113,6 +120,15 @@ LANE_TRANSACTIONS = 'transactions'
 LANE_SCHEDULE_FINALITY = 'schedule_finality'
 ALL_LANES = (LANE_ROSTER_ASSIGNMENT, LANE_TRANSACTIONS, LANE_SCHEDULE_FINALITY)
 
+# Roster source scope. The approved intraday question is only whether the current
+# MLB *active*-roster state changed after the morning sync, so the production
+# default fetches one active-roster request per team (~30 calls), not the full
+# four-roster-type sweep (~120 calls). The deep set stays available for manual
+# diagnostics where the specific inactive destination (IL / optioned / DFA) must
+# be read directly from official evidence.
+DEFAULT_ROSTER_TYPES = (ROSTER_TYPE_ACTIVE,)
+DEEP_ROSTER_TYPES = ROSTER_TYPES
+
 # How many trailing slate dates the schedule/finality lane inspects in addition
 # to the current product date. One day back catches games that ended after
 # midnight ET or that were still non-final when the morning sync ran.
@@ -143,14 +159,48 @@ EFFECT_ENTER = 'enter'
 EFFECT_LEAVE = 'leave'
 EFFECT_NONE = 'none'
 
-# Lane 2 transaction classifications (mirrors the daily sync's classification
-# order: non-player → identity/shape failure → stored/unstored comparison).
+# Finding severity — drives changed vs material_change semantics.
+#   actionable      → a future authorized write / recompute would be required.
+#   review_required → a real finding a human must resolve, but the audit cannot
+#                     safely determine a write action (changed, but not material).
+SEVERITY_ACTIONABLE = 'actionable'
+SEVERITY_REVIEW = 'review_required'
+
+# Lane 2 transaction classifications. Event-aware: single-player events use the
+# player-level classes; compound events (multiple source components sharing one
+# MLB transaction id) use the compound_* classes so one event never manufactures
+# several per-component conflicts.
 TX_NON_PLAYER = 'non_player_transaction'
 TX_UNRESOLVED_IDENTITY = 'unresolved_identity'
 TX_INVALID_SHAPE = 'invalid_shape'
 TX_ACTIONABLE_NOT_STORED = 'actionable_not_stored'
 TX_STORED_CONFLICT = 'stored_conflict'
+TX_STATUS_EFFECT_UNREFLECTED = 'status_effect_unreflected'
 TX_ALREADY_REFLECTED = 'already_reflected'
+TX_COMPOUND_NEW = 'compound_transaction_new'
+TX_COMPOUND_REVIEW = 'compound_transaction_review_required'
+TX_COMPOUND_REFLECTED = 'compound_event_reflected'
+
+# Which transaction classifications are meaningful (serialized into differences)
+# and, of those, which imply an actionable future write.
+TX_ACTIONABLE_CLASSES = frozenset({
+    TX_ACTIONABLE_NOT_STORED,
+    TX_STORED_CONFLICT,
+    TX_STATUS_EFFECT_UNREFLECTED,
+    TX_COMPOUND_NEW,
+})
+TX_REVIEW_CLASSES = frozenset({
+    TX_UNRESOLVED_IDENTITY,
+    TX_INVALID_SHAPE,
+    TX_COMPOUND_REVIEW,
+})
+TX_MEANINGFUL_CLASSES = TX_ACTIONABLE_CLASSES | TX_REVIEW_CLASSES
+# Benign / informational classes are counted but never serialized row-by-row.
+TX_BENIGN_CLASSES = frozenset({
+    TX_ALREADY_REFLECTED,
+    TX_NON_PLAYER,
+    TX_COMPOUND_REFLECTED,
+})
 
 # Provenance/query-window fields on a stored transaction are not substantive
 # facts — a stored transaction is not "in conflict" merely because a later audit
@@ -166,6 +216,25 @@ _TX_MEANINGFUL_FIELDS = tuple(
     for field in transactions_service.TRANSACTION_FACT_FIELDS
     if field not in _TX_PROVENANCE_FIELDS
 )
+# Audit-derived fields (roster-snapshot alignment) are the audit's own
+# computation, not source facts. They must not manufacture a stored_conflict —
+# a misaligned alignment is surfaced through the status_effect_unreflected
+# classification instead. Source-fact comparison excludes them.
+_TX_DERIVED_FIELDS = frozenset({
+    'roster_snapshot_alignment',
+    'alignment_reason_code',
+    'explanatory_linkage_eligible',
+})
+_TX_SOURCE_FACT_FIELDS = tuple(
+    field for field in _TX_MEANINGFUL_FIELDS if field not in _TX_DERIVED_FIELDS
+)
+# Event-level facts shared by all components of one MLB transaction event. Only
+# these are compared for a compound event — never per-component player fields.
+_TX_EVENT_LEVEL_FIELDS = ('transaction_date', 'transaction_type_code', 'normalized_category')
+
+# Maximum benign-record samples included per informational class (deterministic,
+# with an explicit suppressed count). Actionable/review findings are NEVER capped.
+DEFAULT_TX_SAMPLE_LIMIT = 3
 
 # Lane 3 schedule/finality change types.
 GAME_POSTPONED = 'game_postponed'
@@ -237,6 +306,20 @@ def _first_entry(evidence):
             return entry
     # Fall back to whatever roster type is present.
     return next(iter(entries.values()), None)
+
+
+def _entry_player_name(entry):
+    """Source player name for human-readable evidence (never used for matching)."""
+    person = (entry or {}).get('person') or {}
+    return _string_or_none(person.get('fullName'))
+
+
+def _roster_severity(change_type):
+    """Actionable roster changes imply a future write; conflicting/unresolved
+    evidence is review-required (changed, but not safely writable)."""
+    if change_type in (CHANGE_CONFLICTING_OFFICIAL_TEAM, CHANGE_UNRESOLVED_SOURCE_IDENTITY):
+        return SEVERITY_REVIEW
+    return SEVERITY_ACTIONABLE
 
 
 def _status_is_active(status):
@@ -323,10 +406,20 @@ def reconcile_active_rosters_and_assignments(
     team_map,
     check_timestamp_iso,
     team_ids=None,
-    roster_types=ROSTER_TYPES,
+    roster_types=DEFAULT_ROSTER_TYPES,
 ):
     """Compare official active-roster / team-assignment evidence for every MLB
-    team against the stored BaseballOS pitcher state. Read-only."""
+    team against the stored BaseballOS pitcher state. Read-only.
+
+    The production default fetches active-roster evidence only (one request per
+    team). It still detects entry to / departure from the active roster, team
+    movement, newly discovered active pitchers, duplicate active-roster evidence,
+    unresolved source identities, and fetch failures. Where only entry or
+    departure is proven, neutral change types (``roster_activation`` /
+    ``removed_from_active_roster``) are used unless the stored status or
+    transaction context safely provides a more specific reason; an exact inactive
+    destination is never inferred from absence on the active roster alone. Pass
+    ``roster_types=DEEP_ROSTER_TYPES`` for the manual deep-diagnostic sweep."""
     team_ids = list(team_ids or MLB_TEAM_IDS)
     requested_team_ids = {int(team_id) for team_id in team_ids}
     evidence_source = 'mlb_stats_api:roster'
@@ -370,6 +463,9 @@ def reconcile_active_rosters_and_assignments(
                 'classification': classification,
                 'is_pitcher': _entry_is_pitcher(entry),
                 'active_roster': ROSTER_TYPE_ACTIVE in set(evidence.get('roster_types') or ()),
+                # Source name is kept for human-readable evidence only; the MLB
+                # numeric id remains the sole identity-matching authority.
+                'player_name': _entry_player_name(entry),
             }
 
     differences = []
@@ -512,7 +608,8 @@ def reconcile_active_rosters_and_assignments(
         differences.append({
             'mlb_player_id': mlb_id,
             'stored_pitcher_id': None,
-            'player_name': None,
+            # Human-readable source name preserved when MLB supplies it.
+            'player_name': entry.get('player_name'),
             'team_id': active_pitcher_team,
             'team_abbreviation': _abbr(team_map, active_pitcher_team),
             'stored_status': None,
@@ -522,11 +619,19 @@ def reconcile_active_rosters_and_assignments(
             'observed_official_team_id': active_pitcher_team,
             'observed_official_team_abbreviation': _abbr(team_map, active_pitcher_team),
             'change_type': CHANGE_NEWLY_DISCOVERED_ACTIVE,
+            'severity': SEVERITY_ACTIONABLE,
             'evidence_source': entry['classification'].get('source') or evidence_source,
             'check_timestamp': check_timestamp_iso,
             'bullpen_population_effect': EFFECT_ENTER,
             'targeted_recent_work_required': True,
         })
+
+    # Fold unresolved source identities into differences as review-required
+    # findings (they set changed=true but never drive a write plan), while also
+    # keeping the named list for detailed reporting.
+    for entry in unresolved_source_identities:
+        entry['severity'] = SEVERITY_REVIEW
+    differences.extend(unresolved_source_identities)
 
     roster_status_change_types = {
         CHANGE_RECALL, CHANGE_OPTION, CHANGE_IL_ACTIVATION, CHANGE_IL_PLACEMENT,
@@ -547,16 +652,20 @@ def reconcile_active_rosters_and_assignments(
         key=lambda e: (e.get('team_id') or 0, str(e.get('roster_type')))
     )
 
+    # Affected identity sets are derived from ACTIONABLE roster findings only —
+    # conflicting or unresolved evidence never adds a team or pitcher to a write
+    # plan.
+    actionable_diffs = [d for d in differences if d.get('severity') == SEVERITY_ACTIONABLE]
     affected_team_ids = sorted({
-        d['team_id'] for d in differences if d.get('team_id') is not None
+        d['team_id'] for d in actionable_diffs if d.get('team_id') is not None
     } | {
-        d['stored_team_id'] for d in differences if d.get('stored_team_id') is not None
+        d['stored_team_id'] for d in actionable_diffs if d.get('stored_team_id') is not None
     })
     affected_pitcher_ids = sorted({
-        d['stored_pitcher_id'] for d in differences if d.get('stored_pitcher_id') is not None
+        d['stored_pitcher_id'] for d in actionable_diffs if d.get('stored_pitcher_id') is not None
     })
     affected_pitcher_mlb_ids = sorted({
-        d['mlb_player_id'] for d in differences if d.get('mlb_player_id') is not None
+        d['mlb_player_id'] for d in actionable_diffs if d.get('mlb_player_id') is not None
     })
 
     # A team whose rosters could not be fully fetched means this lane could not
@@ -639,6 +748,7 @@ def _lane1_difference(
         'observed_official_team_id': observed_official_team_id,
         'observed_official_team_abbreviation': _abbr(team_map, observed_official_team_id),
         'change_type': change_type,
+        'severity': _roster_severity(change_type),
         'evidence_source': evidence_source,
         'check_timestamp': check_timestamp_iso,
         'bullpen_population_effect': bullpen_effect,
@@ -659,12 +769,18 @@ def reconcile_transactions(
     check_timestamp_iso,
     end_date,
     window_days=transactions_service.TRANSACTION_SYNC_WINDOW_DAYS,
+    sample_limit=DEFAULT_TX_SAMPLE_LIMIT,
 ):
     """Compare recent official transactions against stored transaction evidence.
 
-    Mirrors the daily sync's classification order exactly (non-player →
-    identity/shape failure → stored/unstored comparison) but performs no insert,
-    update, resolution, or dead-letter write.
+    Event-aware and signal-selective. Source records are grouped by their stable
+    MLB transaction-event id, so a compound event (several player components plus
+    a non-player component sharing one transaction id) never manufactures one
+    stored-conflict per component. Only meaningful findings — actionable or
+    review-required — are serialized into ``differences``; benign inventory
+    (already-reflected, non-player, reflected compound events) is counted and
+    optionally sampled, never repeated row-by-row. Read-only: no insert, update,
+    resolution, or dead-letter write.
     """
     start_date = end_date - timedelta(days=window_days)
     evidence_source = transactions_service.SOURCE_ENDPOINT
@@ -681,14 +797,21 @@ def reconcile_transactions(
     if not isinstance(source_transactions, list):
         source_transactions = []
 
-    records = []
     counts = defaultdict(int)
+    differences = []
+    benign_samples = defaultdict(list)
+
+    # ── Phase 1: classify each source record into a component with an event key.
+    events = {}          # event_key -> list of player component dicts
+    event_order = []     # first-seen order of event keys (deterministic)
+    non_player_by_event = defaultdict(int)
 
     for transaction in source_transactions:
         if not isinstance(transaction, dict):
             counts[TX_INVALID_SHAPE] += 1
-            records.append({
+            differences.append({
                 'classification': TX_INVALID_SHAPE,
+                'severity': SEVERITY_REVIEW,
                 'reason': 'transaction row is not an object',
                 'evidence_source': evidence_source,
                 'check_timestamp': check_timestamp_iso,
@@ -697,10 +820,14 @@ def reconcile_transactions(
 
         if transactions_service.is_non_player_transaction(transaction):
             counts[TX_NON_PLAYER] += 1
-            records.append(_lane2_base_record(
-                transaction, team_map, evidence_source, check_timestamp_iso,
-                classification=TX_NON_PLAYER,
-            ))
+            tx_id = _string_or_none(transaction.get('transaction_id'))
+            if tx_id is not None:
+                non_player_by_event[f'statsapi:{tx_id}'] += 1
+            if len(benign_samples[TX_NON_PLAYER]) < sample_limit:
+                benign_samples[TX_NON_PLAYER].append(_lane2_base_record(
+                    transaction, team_map, evidence_source, check_timestamp_iso,
+                    classification=TX_NON_PLAYER,
+                ))
             continue
 
         values, detail = transactions_service.read_transaction_values(
@@ -711,88 +838,92 @@ def reconcile_transactions(
             sync_run_id=None,
         )
         if detail is not None:
-            entity_type = detail.get('entity_type')
-            if entity_type == transactions_service.TRANSACTION_IDENTITY_ENTITY_TYPE:
-                classification = TX_UNRESOLVED_IDENTITY
-            else:
-                classification = TX_INVALID_SHAPE
+            classification = (
+                TX_UNRESOLVED_IDENTITY
+                if detail.get('entity_type') == transactions_service.TRANSACTION_IDENTITY_ENTITY_TYPE
+                else TX_INVALID_SHAPE
+            )
             counts[classification] += 1
             record = _lane2_base_record(
                 transaction, team_map, evidence_source, check_timestamp_iso,
                 classification=classification,
             )
+            record['severity'] = SEVERITY_REVIEW
             record['reason'] = detail.get('reason')
-            records.append(record)
+            differences.append(record)
             continue
 
-        transaction_key = values['transaction_key']
-        existing = (
-            PlayerTransaction.query
-            .filter_by(transaction_key=transaction_key)
-            .first()
-        )
-        alignment = values.get('roster_snapshot_alignment')
-        status_effect_unreflected = alignment == transactions_service.ALIGNMENT_MISALIGNED
-
-        if existing is None:
-            classification = TX_ACTIONABLE_NOT_STORED
-        else:
-            differing = [
-                field
-                for field in _TX_MEANINGFUL_FIELDS
-                if getattr(existing, field) != values.get(field)
-            ]
-            classification = TX_STORED_CONFLICT if differing else TX_ALREADY_REFLECTED
-
-        counts[classification] += 1
-        record = _lane2_base_record(
-            transaction, team_map, evidence_source, check_timestamp_iso,
-            classification=classification,
-        )
-        record.update({
-            'transaction_key': transaction_key,
+        # A resolvable player component. Group by the shared event key.
+        event_key = values['transaction_key']
+        component = {
+            'transaction': transaction,
+            'values': values,
+            'player_mlb_id': values.get('player_mlb_id'),
+            'from_team_id': values.get('from_team_id'),
+            'to_team_id': values.get('to_team_id'),
             'normalized_category': values.get('normalized_category'),
-            'stored_pitcher_id': values.get('pitcher_id'),
-            'roster_snapshot_alignment': alignment,
-            'status_effect_unreflected': status_effect_unreflected,
-            'stored_transaction_row_id': existing.id if existing is not None else None,
-        })
-        if existing is not None and classification == TX_STORED_CONFLICT:
-            record['conflicting_fields'] = differing
-        records.append(record)
+            'pitcher_id': values.get('pitcher_id'),
+            'status_effect_unreflected': (
+                values.get('roster_snapshot_alignment') == transactions_service.ALIGNMENT_MISALIGNED
+            ),
+        }
+        if event_key not in events:
+            events[event_key] = []
+            event_order.append(event_key)
+        events[event_key].append(component)
 
-    actionable = [
-        r for r in records
-        if r['classification'] in (TX_ACTIONABLE_NOT_STORED, TX_STORED_CONFLICT)
-    ]
-    unreflected = [r for r in records if r.get('status_effect_unreflected')]
+    # ── Phase 2: reconcile each event (single-player or compound).
+    for event_key in event_order:
+        components = events[event_key]
+        existing = PlayerTransaction.query.filter_by(transaction_key=event_key).first()
+        if len(components) == 1:
+            finding = _reconcile_single_player_event(
+                components[0], existing, event_key, team_map,
+                evidence_source, check_timestamp_iso,
+            )
+        else:
+            finding = _reconcile_compound_event(
+                components, existing, event_key, non_player_by_event.get(event_key, 0),
+                team_map, evidence_source, check_timestamp_iso,
+            )
+        classification = finding['classification']
+        counts[classification] += 1
+        if classification in TX_MEANINGFUL_CLASSES:
+            differences.append(finding)
+        elif len(benign_samples[classification]) < sample_limit:
+            benign_samples[classification].append(finding)
 
+    actionable = [d for d in differences if d.get('severity') == SEVERITY_ACTIONABLE]
+    review = [d for d in differences if d.get('severity') == SEVERITY_REVIEW]
+
+    # Affected identity sets are derived from ACTIONABLE findings only — benign
+    # or review-required rows never add teams or pitchers to a write plan.
     affected_team_ids = sorted({
-        team_id
-        for r in actionable
-        for team_id in (r.get('from_team_id'), r.get('to_team_id'))
-        if team_id is not None
+        team_id for d in actionable for team_id in _finding_team_ids(d) if team_id is not None
     })
     affected_pitcher_ids = sorted({
-        r['stored_pitcher_id']
-        for r in actionable
-        if r.get('stored_pitcher_id') is not None
+        pid for d in actionable for pid in _finding_pitcher_ids(d) if pid is not None
     })
     affected_pitcher_mlb_ids = sorted({
-        r['player_mlb_id']
-        for r in actionable
-        if r.get('player_mlb_id') is not None
+        mid for d in actionable for mid in _finding_player_mlb_ids(d) if mid is not None
     })
 
-    # Deterministic ordering.
-    records.sort(key=lambda r: (
-        str(r.get('classification')),
-        str(r.get('transaction_id') or ''),
-        r.get('player_mlb_id') or 0,
+    # Deterministic ordering of meaningful findings.
+    differences.sort(key=lambda d: (
+        str(d.get('classification')),
+        str(d.get('event_key') or d.get('transaction_id') or ''),
+        d.get('player_mlb_id') or 0,
     ))
 
-    # If the transactions feed could not be fetched at all, this lane could not
-    # verify anything — do not present zero changes as a fully-checked lane.
+    already_reflected_count = counts[TX_ALREADY_REFLECTED]
+    non_player_count = counts[TX_NON_PLAYER]
+    compound_reflected_count = counts[TX_COMPOUND_REFLECTED]
+    benign_records_suppressed = (
+        max(0, already_reflected_count - len(benign_samples[TX_ALREADY_REFLECTED]))
+        + max(0, non_player_count - len(benign_samples[TX_NON_PLAYER]))
+        + max(0, compound_reflected_count - len(benign_samples[TX_COMPOUND_REFLECTED]))
+    )
+
     limitations = []
     if fetch_error is not None:
         verification_status = LANE_FAILED
@@ -812,15 +943,36 @@ def reconcile_transactions(
         },
         'checked': {
             'source_transactions': len(source_transactions),
+            'source_events': len(event_order),
+            'meaningful_differences': len(differences),
+            'actionable_differences': len(actionable),
+            'review_required_differences': len(review),
+            # Back-compat alias for the pre-1.1 impact-plan reader.
             'actionable_player_transactions': len(actionable),
-            'non_player_transactions': counts[TX_NON_PLAYER],
-            'already_reflected': counts[TX_ALREADY_REFLECTED],
-            'unresolved_identity': counts[TX_UNRESOLVED_IDENTITY],
+            'already_reflected': already_reflected_count,
+            'non_player_transactions': non_player_count,
+            'compound_events_reflected': compound_reflected_count,
+            'compound_new': counts[TX_COMPOUND_NEW],
+            'compound_review_required': counts[TX_COMPOUND_REVIEW],
             'stored_conflicts': counts[TX_STORED_CONFLICT],
+            'status_effect_unreflected': counts[TX_STATUS_EFFECT_UNREFLECTED],
+            'unresolved_identity': counts[TX_UNRESOLVED_IDENTITY],
             'invalid_shape': counts[TX_INVALID_SHAPE],
-            'status_effect_unreflected': len(unreflected),
         },
-        'differences': records,
+        'differences': differences,
+        'informational_counts': {
+            'already_reflected_count': already_reflected_count,
+            'non_player_count': non_player_count,
+            'compound_events_reflected_count': compound_reflected_count,
+        },
+        'suppressed_counts': {
+            'benign_records_suppressed': benign_records_suppressed,
+        },
+        'informational_samples': {
+            cls: benign_samples[cls]
+            for cls in (TX_ALREADY_REFLECTED, TX_NON_PLAYER, TX_COMPOUND_REFLECTED)
+            if benign_samples[cls]
+        },
         'limitations': limitations,
         'affected_team_ids': affected_team_ids,
         'affected_pitcher_ids': affected_pitcher_ids,
@@ -829,6 +981,159 @@ def reconcile_transactions(
     if fetch_error is not None:
         lane['fetch_error'] = fetch_error
     return lane
+
+
+def _reconcile_single_player_event(
+    component, existing, event_key, team_map, evidence_source, check_timestamp_iso,
+):
+    """Classify a single-player transaction event with deterministic precedence:
+    no stored evidence → genuine source-fact conflict → status-effect unreflected
+    → already reflected."""
+    values = component['values']
+    record = _lane2_base_record(
+        component['transaction'], team_map, evidence_source, check_timestamp_iso,
+        classification=TX_ALREADY_REFLECTED,
+    )
+    record.update({
+        'event_key': event_key,
+        'transaction_key': event_key,
+        'normalized_category': values.get('normalized_category'),
+        'stored_pitcher_id': values.get('pitcher_id'),
+        'roster_snapshot_alignment': values.get('roster_snapshot_alignment'),
+        'status_effect_unreflected': component['status_effect_unreflected'],
+        'component_count': 1,
+        'stored_transaction_row_id': existing.id if existing is not None else None,
+    })
+
+    if existing is None:
+        record['classification'] = TX_ACTIONABLE_NOT_STORED
+        record['severity'] = SEVERITY_ACTIONABLE
+        return record
+
+    differing = [
+        field for field in _TX_SOURCE_FACT_FIELDS
+        if getattr(existing, field) != values.get(field)
+    ]
+    if differing:
+        record['classification'] = TX_STORED_CONFLICT
+        record['severity'] = SEVERITY_ACTIONABLE
+        record['conflicting_fields'] = differing
+        return record
+
+    if component['status_effect_unreflected']:
+        # Stored, source facts match, but the transaction's roster effect is not
+        # reflected in current roster state — its own class, above already-reflected.
+        record['classification'] = TX_STATUS_EFFECT_UNREFLECTED
+        record['severity'] = SEVERITY_ACTIONABLE
+        return record
+
+    record['classification'] = TX_ALREADY_REFLECTED
+    record['severity'] = None
+    return record
+
+
+def _reconcile_compound_event(
+    components, existing, event_key, non_player_count, team_map,
+    evidence_source, check_timestamp_iso,
+):
+    """Classify a compound event (multiple player components sharing one MLB
+    transaction id). Produces at most one event-level finding — never one
+    stored-conflict per component."""
+    ordered = sorted(components, key=lambda c: c['player_mlb_id'] or 0)
+    event_values = components[0]['values']
+    player_mlb_ids = sorted({c['player_mlb_id'] for c in components if c['player_mlb_id'] is not None})
+    from_team_ids = sorted({c['from_team_id'] for c in components if c['from_team_id'] is not None})
+    to_team_ids = sorted({c['to_team_id'] for c in components if c['to_team_id'] is not None})
+    any_unreflected = any(c['status_effect_unreflected'] for c in components)
+
+    finding = {
+        'event_key': event_key,
+        'transaction_id': _string_or_none(components[0]['transaction'].get('transaction_id')),
+        'transaction_date': _string_or_none(components[0]['transaction'].get('transaction_date')),
+        'transaction_type_code': event_values.get('transaction_type_code'),
+        'normalized_category': event_values.get('normalized_category'),
+        'component_count': len(components),
+        'player_component_count': len(components),
+        'non_player_component_count': non_player_count,
+        'player_mlb_ids': player_mlb_ids,
+        'from_team_ids': from_team_ids,
+        'to_team_ids': to_team_ids,
+        'component_summary': [{
+            'player_mlb_id': c['player_mlb_id'],
+            'from_team_id': c['from_team_id'],
+            'to_team_id': c['to_team_id'],
+            'normalized_category': c['normalized_category'],
+            'stored_pitcher_id': c['pitcher_id'],
+            'status_effect_unreflected': c['status_effect_unreflected'],
+        } for c in ordered],
+        'stored_transaction_row_id': existing.id if existing is not None else None,
+        'evidence_source': evidence_source,
+        'check_timestamp': check_timestamp_iso,
+    }
+
+    if existing is None:
+        finding['classification'] = TX_COMPOUND_NEW
+        finding['severity'] = SEVERITY_ACTIONABLE
+        finding['reason'] = (
+            'compound transaction event with multiple player components is not '
+            'stored; a future write phase would need to ingest the event'
+        )
+        return finding
+
+    # Compare only shared event-level facts — never per-component player fields.
+    event_conflict_fields = [
+        field for field in _TX_EVENT_LEVEL_FIELDS
+        if getattr(existing, field) != event_values.get(field)
+    ]
+    if event_conflict_fields:
+        finding['classification'] = TX_STORED_CONFLICT
+        finding['severity'] = SEVERITY_ACTIONABLE
+        finding['conflicting_fields'] = event_conflict_fields
+        finding['reason'] = 'compound transaction event-level facts conflict with the stored row'
+        return finding
+
+    # The event is represented, but PlayerTransaction stores one row per MLB
+    # transaction id, so per-component equivalence cannot be proven here.
+    stored_player_in_components = existing.player_mlb_id in set(player_mlb_ids)
+    if stored_player_in_components and not any_unreflected:
+        finding['classification'] = TX_COMPOUND_REFLECTED
+        finding['severity'] = None
+        return finding
+
+    finding['classification'] = TX_COMPOUND_REVIEW
+    finding['severity'] = SEVERITY_REVIEW
+    finding['reason'] = (
+        'compound transaction event is represented by one stored row, but the '
+        'PlayerTransaction schema stores a single row per MLB transaction id, so '
+        'per-component equivalence cannot be proven; human review required '
+        '(this audit makes no migration or schema change)'
+    )
+    return finding
+
+
+def _finding_team_ids(finding):
+    ids = [finding.get('from_team_id'), finding.get('to_team_id')]
+    ids.extend(finding.get('from_team_ids') or [])
+    ids.extend(finding.get('to_team_ids') or [])
+    return ids
+
+
+def _finding_pitcher_ids(finding):
+    ids = []
+    if finding.get('stored_pitcher_id') is not None:
+        ids.append(finding['stored_pitcher_id'])
+    for component in finding.get('component_summary') or []:
+        if component.get('stored_pitcher_id') is not None:
+            ids.append(component['stored_pitcher_id'])
+    return ids
+
+
+def _finding_player_mlb_ids(finding):
+    ids = []
+    if finding.get('player_mlb_id') is not None:
+        ids.append(finding['player_mlb_id'])
+    ids.extend(finding.get('player_mlb_ids') or [])
+    return ids
 
 
 def _lane2_base_record(transaction, team_map, evidence_source, check_timestamp_iso, *, classification):
@@ -1082,12 +1387,27 @@ def _lane3_difference(
         'stored_status_state': stored_state,
         'stored_finality': stored_finality,
         'change_type': change_type,
+        'severity': _schedule_severity(change_type),
         'evidence_source': 'mlb_stats_api:schedule',
         'check_timestamp': check_timestamp_iso,
         'affected_team_ids': affected,
         'doubleheader': bool(doubleheader),
         'would_require_targeted_postgame': bool(would_require_targeted_postgame),
     }
+
+
+# Schedule findings that describe a concrete slate/finality change a future
+# write phase would act on are actionable; ambiguous/stored-conflict findings
+# are review-required (changed, but not safely writable).
+_SCHEDULE_REVIEW_CHANGE_TYPES = frozenset({
+    GAME_STORED_FINALITY_CONFLICT,
+    GAME_ABSENT_FROM_SOURCE,
+    GAME_RESCHEDULE_IDENTITY_ISSUE,
+})
+
+
+def _schedule_severity(change_type):
+    return SEVERITY_REVIEW if change_type in _SCHEDULE_REVIEW_CHANGE_TYPES else SEVERITY_ACTIONABLE
 
 
 def _g_pk(game):
@@ -1137,22 +1457,33 @@ def build_impact_plan(lane_roster, lane_transactions, lane_schedule):
     transactions = lane_transactions or {}
     schedule = lane_schedule or {}
 
-    roster_statuses_changed = bool(
-        (roster.get('checked') or {}).get('roster_status_differences')
-    )
-    team_assignments_changed = bool(
-        (roster.get('checked') or {}).get('team_assignment_differences')
-    )
-    transactions_actionable = bool(
-        (transactions.get('checked') or {}).get('actionable_player_transactions')
-    )
+    # Roster status/assignment change counts already exclude conflicting and
+    # unresolved (review-required) findings.
+    roster_checked = roster.get('checked') or {}
+    roster_statuses_changed = bool(roster_checked.get('roster_status_differences'))
+    team_assignments_changed = bool(roster_checked.get('team_assignment_differences'))
+
+    # Transactions drive a write only through ACTIONABLE findings; benign
+    # inventory and review-required findings never do.
+    transactions_actionable = bool((transactions.get('checked') or {}).get('actionable_differences'))
+
     completed_game_pks = list(schedule.get('completed_game_pks') or [])
-    schedule_changed = bool((schedule.get('checked') or {}).get('total_differences'))
+    schedule_actionable_diffs = [
+        d for d in (schedule.get('differences') or [])
+        if d.get('severity') == SEVERITY_ACTIONABLE
+    ]
+    schedule_actionable = bool(schedule_actionable_diffs)
+    schedule_affected_team_ids = {
+        team_id
+        for d in schedule_actionable_diffs
+        for team_id in (d.get('affected_team_ids') or [])
+        if team_id is not None
+    }
 
     affected_team_ids = sorted(
         set(roster.get('affected_team_ids') or [])
         | set(transactions.get('affected_team_ids') or [])
-        | set(schedule.get('affected_team_ids') or [])
+        | schedule_affected_team_ids
     )
 
     targeted_pitcher_ids = sorted(
@@ -1164,11 +1495,15 @@ def build_impact_plan(lane_roster, lane_transactions, lane_schedule):
         | set(transactions.get('affected_pitcher_mlb_ids') or [])
     )
 
+    # A future authorized write / recompute is required only for actionable
+    # findings (or newly final games). Review-required findings never plan a
+    # write; benign inventory never plans anything.
     material_change = bool(
         roster_statuses_changed
         or team_assignments_changed
         or transactions_actionable
-        or schedule_changed
+        or schedule_actionable
+        or completed_game_pks
     )
 
     return {
@@ -1184,7 +1519,9 @@ def build_impact_plan(lane_roster, lane_transactions, lane_schedule):
             'recalculate_current_pen_era': bool(completed_game_pks),
             'recalculate_league_era_rank': bool(completed_game_pks),
             'publish_snapshot': material_change,
-            'warm_tonight': bool(schedule_changed or roster_statuses_changed or team_assignments_changed),
+            # A transaction-only storage conflict never warms Tonight; only a
+            # roster-population or schedule delta does.
+            'warm_tonight': bool(schedule_actionable or roster_statuses_changed or team_assignments_changed),
         },
         'material_change_detected': material_change,
     }
@@ -1199,7 +1536,7 @@ def run_intraday_audit(
     now=None,
     product_date=None,
     team_ids=None,
-    roster_types=ROSTER_TYPES,
+    roster_types=DEFAULT_ROSTER_TYPES,
     transaction_window_days=transactions_service.TRANSACTION_SYNC_WINDOW_DAYS,
     schedule_lookback_days=DEFAULT_SCHEDULE_LOOKBACK_DAYS,
     lanes=ALL_LANES,
@@ -1415,10 +1752,18 @@ def _build_completed_artifact(
     would_refresh = impact_plan['would_refresh']
     status = _derive_status(lane_results, lanes_run, write_guard['clean'])
 
-    total_differences = sum(
-        len((lane_results.get(lane) or {}).get('differences') or [])
+    # Every serialized difference is meaningful (benign inventory is not
+    # serialized), so counts are honest by construction.
+    all_diffs = [
+        d
         for lane in ALL_LANES
-    )
+        for d in ((lane_results.get(lane) or {}).get('differences') or [])
+    ]
+    total_differences = len(all_diffs)
+    actionable_count = sum(1 for d in all_diffs if d.get('severity') == SEVERITY_ACTIONABLE)
+    review_required_count = sum(1 for d in all_diffs if d.get('severity') == SEVERITY_REVIEW)
+    unresolved_count = sum(1 for d in all_diffs if _is_unresolved_finding(d))
+
     changed_lanes = sorted(
         lane for lane in lanes_run
         if (lane_results.get(lane) or {}).get('differences')
@@ -1436,6 +1781,18 @@ def _build_completed_artifact(
     limitations = []
     for lane in lanes_run:
         limitations.extend((lane_results.get(lane) or {}).get('limitations') or [])
+
+    tx_lane = lane_results.get(LANE_TRANSACTIONS) or {}
+    tx_informational = tx_lane.get('informational_counts') or {}
+    informational_records = sum(v for v in tx_informational.values() if isinstance(v, int))
+    benign_records_suppressed = (tx_lane.get('suppressed_counts') or {}).get(
+        'benign_records_suppressed', 0
+    )
+    records_checked = (
+        (tx_lane.get('checked') or {}).get('source_transactions', 0)
+        + ((lane_results.get(LANE_ROSTER_ASSIGNMENT) or {}).get('checked') or {}).get('stored_pitchers', 0)
+        + ((lane_results.get(LANE_SCHEDULE_FINALITY) or {}).get('checked') or {}).get('source_games', 0)
+    )
 
     artifact = _base_artifact_fields(
         source=source,
@@ -1460,11 +1817,24 @@ def _build_completed_artifact(
         'write_guard': write_guard,
         'summary': {
             'total_differences': total_differences,
+            'records_checked': records_checked,
+            'actionable_differences': actionable_count,
+            'review_required_findings': review_required_count,
+            'unresolved_findings': unresolved_count,
+            'informational_records': informational_records,
+            'benign_records_suppressed': benign_records_suppressed,
             'material_change_detected': impact_plan['material_change_detected'],
             'affected_team_ids': would_refresh['affected_team_ids'],
         },
     })
     return artifact
+
+
+def _is_unresolved_finding(difference):
+    return (
+        difference.get('classification') in (TX_UNRESOLVED_IDENTITY, TX_INVALID_SHAPE)
+        or difference.get('change_type') == CHANGE_UNRESOLVED_SOURCE_IDENTITY
+    )
 
 
 def _skipped_artifact(*, client, source, product_date, lanes, check_timestamp_iso, conflict):

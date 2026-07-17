@@ -106,22 +106,49 @@ behavior is authorized.
   `write_guard` check that fails closed if the ORM session ever holds a pending
   write.
 - **Lanes:**
-  1. *Active roster + team assignment* — official active-roster evidence for
-     every MLB team vs stored pitcher state: recalls, options, IL moves, DFA,
-     team-assignment changes, newly discovered active pitchers, conflicting
-     official team evidence, and source rows that cannot be safely matched to an
-     MLB identity (never name-matched).
+  1. *Active roster + team assignment* — official **active-roster** evidence for
+     every MLB team vs stored pitcher state. The production default fetches one
+     active-roster request per team (~30 calls), not the four-roster-type sweep
+     (~120), because the intraday question is only whether *active*-roster state
+     moved after the morning sync. It still detects entry to / departure from the
+     active roster, team-assignment changes, newly discovered active pitchers
+     (with their source names preserved), conflicting official team evidence, and
+     source rows that cannot be safely matched to an MLB identity (never
+     name-matched). Where only a departure is proven, a neutral
+     `removed_from_active_roster` change type is used — an exact inactive
+     destination (IL / optioned / DFA) is never inferred from active-roster
+     absence alone. The specific-destination classification remains available as
+     a manual deep-diagnostic sweep (`--deep-roster`).
   2. *Transactions* — recent official transactions vs stored transaction
-     evidence, classified with the daily sync's exact order (non-player →
-     unresolved identity → actionable-not-stored / stored-conflict / already
-     reflected).
+     evidence, **event-aware and signal-selective**. Source components are
+     grouped by their stable MLB transaction-event id, so a compound event
+     (several player components sharing one id) yields at most one finding rather
+     than one manufactured conflict per component. Only **meaningful** findings —
+     actionable (`actionable_not_stored`, `stored_conflict`,
+     `status_effect_unreflected`, `compound_transaction_new`) or review-required
+     (`unresolved_identity`, `invalid_shape`, `compound_transaction_review_required`)
+     — are serialized into `differences`. Benign inventory (already-reflected,
+     non-player, reflected compound events) is counted in `informational_counts`,
+     bounded-sampled, and reported with a `benign_records_suppressed` total; it is
+     never repeated row-by-row.
   3. *Schedule + game finality* — the current and previous slate dates: newly
      final games, postponements/reschedules, in-progress games, and stored
      finality conflicts.
   4. *Impact plan* — a dry-run `would_refresh` projection (which teams, pitcher
      logs, and completed game_pks a future write phase would touch, and whether
      it would republish/warm). Every value is a projection; this audit performs
-     none of it.
+     none of it. It is derived from **actionable** findings only — benign
+     inventory and review-required findings never plan a write. A transaction-only
+     storage delta never warms Tonight (only a roster-population or schedule delta
+     does).
+- **`changed` vs material.** Top-level `changed` is true when any meaningful
+  finding exists (actionable *or* review-required), so a real
+  human-review-required finding is never hidden. `material_change_detected` is
+  true only when a future authorized write/recompute would actually be required
+  (an actionable finding or a newly-final game). Benign inventory sets neither.
+  The `summary` block carries honest buckets — `records_checked`,
+  `actionable_differences`, `review_required_findings`, `unresolved_findings`,
+  `informational_records`, and `benign_records_suppressed`.
 - **Operator command (read-only):**
 
   ```
