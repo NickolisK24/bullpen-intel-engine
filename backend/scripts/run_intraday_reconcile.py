@@ -63,6 +63,15 @@ def _parse_args(argv=None):
         default=None,
         help='Slate dates before the product date to inspect (default: 1).',
     )
+    parser.add_argument(
+        '--deep-roster',
+        action='store_true',
+        help=(
+            'Manual diagnostic: sweep all roster types (active, 40-man, full, '
+            'non-roster) instead of the lightweight active-roster-only default. '
+            'The production GitHub Actions run uses the active-only default.'
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -168,6 +177,8 @@ def main(argv=None):
         kwargs['transaction_window_days'] = args.transaction_window_days
     if args.schedule_lookback_days is not None:
         kwargs['schedule_lookback_days'] = args.schedule_lookback_days
+    if args.deep_roster:
+        kwargs['roster_types'] = intraday_reconcile.DEEP_ROSTER_TYPES
 
     # Import and initialize the production Flask app, then run the audit inside
     # its context. A failure anywhere in this startup path — most importantly a
