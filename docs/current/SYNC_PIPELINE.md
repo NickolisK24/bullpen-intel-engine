@@ -120,17 +120,24 @@ behavior is authorized.
      absence alone. The specific-destination classification remains available as
      a manual deep-diagnostic sweep (`--deep-roster`).
   2. *Transactions* — recent official transactions vs stored transaction
-     evidence, **event-aware and signal-selective**. Source components are
-     grouped by their stable MLB transaction-event id, so a compound event
-     (several player components sharing one id) yields at most one finding rather
-     than one manufactured conflict per component. Only **meaningful** findings —
-     actionable (`actionable_not_stored`, `stored_conflict`,
-     `status_effect_unreflected`, `compound_transaction_new`) or review-required
-     (`unresolved_identity`, `invalid_shape`, `compound_transaction_review_required`)
-     — are serialized into `differences`. Benign inventory (already-reflected,
-     non-player, reflected compound events) is counted in `informational_counts`,
-     bounded-sampled, and reported with a `benign_records_suppressed` total; it is
-     never repeated row-by-row.
+     evidence, **event-aware, bullpen-relevance-gated, and current-membership-
+     aware** (contract 1.2.0). Source components are grouped by their stable MLB
+     transaction-event id, so a compound event yields at most one finding. A
+     finding is materially actionable only when its participant is proven a
+     pitcher / two-way player from the MLB id (a tracked `Pitcher` row, source
+     position evidence, or a bounded/deduplicated `/people` lookup — never from
+     name or transaction type); proven non-pitchers are informational and
+     unresolved roles are review-required. Exact stored-state alignment is
+     separated from public active-bullpen membership: a historical option/IL
+     effect whose latest applicable event and current roster-lane membership prove
+     the pitcher is correctly outside the active bullpen is benign
+     (`transaction_detail_mismatch` / `superseded_transaction`), never material;
+     only a genuine current mismatch is `public_bullpen_effect_unreflected`. Public
+     team impact is scoped to the governed MLB clubs — affiliate / minor-league ids
+     stay in evidence (`non_mlb_team_ids_observed`) but never in `affected_team_ids`
+     or `recalculate_team_reads`. Only **meaningful** findings are serialized;
+     benign inventory is counted, bounded-sampled, and reported with a
+     `benign_records_suppressed` total.
   3. *Schedule + game finality* — the current and previous slate dates: newly
      final games, postponements/reschedules, in-progress games, and stored
      finality conflicts.

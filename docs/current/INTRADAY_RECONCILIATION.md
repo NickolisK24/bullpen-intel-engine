@@ -98,33 +98,48 @@ The audit runs three source-vs-stored comparison lanes and one derived lane:
    only, never for matching.
 
 2. **Transactions.** Recent official transactions compared with stored
-   transaction evidence, **event-aware and signal-selective**. Source components
-   are grouped by their stable MLB transaction-event id (`statsapi:{id}`), the
-   same key the daily sync dedups on, so a *compound* event — several player
-   components (and any non-player component) sharing one transaction id — is
-   reconciled as **one event** and never manufactures one stored-conflict per
-   component. Each event is classified with deterministic precedence:
-   - single-player events → not-stored (`actionable_not_stored`) → genuine
-     source-fact conflict (`stored_conflict`) → roster effect unreflected
-     (`status_effect_unreflected`, its own class — a stored transaction whose
-     roster effect is not reflected in current roster state, never mislabeled
-     `already_reflected`) → `already_reflected`;
-   - compound events → not stored (`compound_transaction_new`) → event-level
-     source-fact conflict (`stored_conflict`, comparing only shared event-level
-     facts — date, type code, normalized category — never per-component player
-     fields) → represented but unprovable component equivalence
-     (`compound_transaction_review_required`, because `PlayerTransaction` stores a
-     single row per transaction id and this audit makes no schema/migration
-     change) → reflected (`compound_event_reflected`).
+   transaction evidence, **event-aware, bullpen-relevance-gated, and
+   current-membership-aware**. Source components are grouped by their stable MLB
+   transaction-event id (`statsapi:{id}`), so a *compound* event never
+   manufactures one stored-conflict per component. Before any finding becomes
+   materially actionable, its participant's **bullpen relevance** is proven from
+   the MLB numeric id alone (Correction 1) — a tracked `Pitcher` row, position
+   evidence on the source row, or a bounded, deduplicated, cached
+   `get_player_info` (`/people/{id}`) lookup (Correction 2). Role is **never**
+   inferred from transaction type, player name, destination team, or stored
+   absence. Governed roles: `proven_pitcher`, `proven_two_way`,
+   `proven_non_pitcher`, `unresolved`. Only proven pitchers / two-way players may
+   become actionable bullpen findings; a `proven_non_pitcher` is informational
+   (`non_pitcher_transaction`), and an `unresolved` role is review-required
+   (`bullpen_relevance_unresolved`) and never assumed to be a pitcher.
 
-   Only **meaningful** findings — actionable or review-required — are serialized
-   into `differences`. Benign inventory (`already_reflected`, `non_player_transaction`,
-   `compound_event_reflected`) is counted, bounded-sampled, and reported with a
-   suppressed count; it is never repeated row-by-row. Source-fact comparison
-   excludes provenance/query-window fields and the audit's own derived alignment
-   fields, so a stored transaction is never called "in conflict" merely because a
-   later audit used a different query window. No transaction or dead-letter row is
-   inserted, updated, resolved, or deleted.
+   Exact stored-transaction alignment is separated from **public active-bullpen
+   membership** (Correction 4). A stored transaction whose exact snapshot detail
+   differs is not automatically material: the audit resolves the player's
+   **chronology** (the latest applicable roster-affecting event; earlier ones are
+   `superseded_transaction`; ambiguous ordering is `chronology_unresolved`,
+   Correction 6) and consults the **roster lane's current active-membership
+   authority** (Correction 7). If current official membership already matches
+   stored state, the finding is benign (`transaction_detail_mismatch` or
+   `current_state_aligned`) — for example an option to a minor-league affiliate
+   whose pitcher is correctly outside the active bullpen. Only when current
+   official membership genuinely disagrees with stored state for a proven pitcher
+   is it `public_bullpen_effect_unreflected` (materially actionable). Compound
+   events remain event-level: `compound_transaction_new` (gated by relevance),
+   event-level `stored_conflict`, `compound_transaction_review_required`, or
+   `compound_event_reflected`.
+
+   Only **meaningful** findings (actionable or review-required) are serialized
+   into `differences`. Benign inventory (`already_reflected`,
+   `non_player_transaction`, `compound_event_reflected`, `non_pitcher_transaction`,
+   `transaction_detail_mismatch`, `superseded_transaction`, `current_state_aligned`)
+   is counted, bounded-sampled, and reported with a suppressed count. Public team
+   impact is scoped to the governed MLB clubs (`MLB_TEAM_IDS`, Correction 3):
+   minor-league / affiliate / unknown team ids stay in the finding's evidence and
+   in `non_mlb_team_ids_observed`, but never enter `affected_team_ids` or
+   `recalculate_team_reads`. No transaction or dead-letter row is inserted,
+   updated, resolved, or deleted. (`status_effect_unreflected` from contract 1.1
+   is retired in favour of the refined membership classes.)
 
 3. **Schedule and game finality.** The current and previous slate dates: a
    scheduled game now postponed; a postponed game now rescheduled; a game now
@@ -148,10 +163,20 @@ per-lane `lanes` results, `would_refresh`, `material_change_detected`, a
 `summary` block, a `safety` block of guarantees, the `source_api` call totals
 grouped by endpoint, and `limitations`). The `capability` value is
 `intraday_reconciliation_audit_v1` and is the pinned contract identity; the
-finer-grained `version` is currently `1.1.0`. The signal-quality correction was
-a **backward-compatible minor bump** (1.0.0 → 1.1.0): the capability identity is
-unchanged and the workflow's artifact validator (which checks only
-`capability` / `mode` / `check_only` / `status`) still accepts the artifact.
+finer-grained `version` is currently `1.2.0`. Two backward-compatible minor bumps
+have shipped inside capability v1: `1.0.0 → 1.1.0` (signal-quality: benign
+inventory aggregated, summary buckets, active-roster-only default) and
+`1.1.0 → 1.2.0` (bullpen-relevance: role-gated actionability, MLB-team impact
+scoping, exact-state vs public-membership separation, chronology). Each bump only
+**adds** fields and classifications; none of the fields the workflow's artifact
+validator checks (`capability` / `mode` / `check_only` / `status`) change, so the
+validator still accepts the artifact. The `summary` block additionally carries
+`actionable_bullpen_differences`, `role_unresolved_findings`,
+`non_pitcher_transactions`, `transaction_detail_mismatches`,
+`superseded_transactions`, `public_membership_mismatches`, `mlb_teams_affected`,
+and `non_mlb_team_ids_observed`. Only the governed MLB clubs appear in
+`affected_team_ids` / `would_refresh.recalculate_team_reads`; affiliate ids are
+evidence-only.
 
 Signal semantics the contract guarantees:
 
@@ -332,3 +357,54 @@ boundary. A **new** production observation is required after this correction to
 begin the representative validation period of §9. Nothing here authorizes hourly
 scheduling, a write phase, or any Phase 2+ behavior; the mode remains manual,
 audit-only, and non-writing.
+
+## 14. Production Observation #2 (2026-07-17) and the bullpen-relevance correction
+
+The second valid production intraday run (Production Observation #2, contract
+version 1.1.0) completed successfully and confirmed the signal-quality
+correction held: API calls fell from 123 to 33, roster calls from 120 to 30,
+benign transactions no longer entered `differences`, `summary.total_differences`
+fell from 360 to 9, 337 benign records were suppressed, compound events were
+grouped correctly, source player names were preserved, and every read-only
+guarantee passed.
+
+Its **relevance and materiality**, however, were wrong, and this branch corrects
+it. Observation #2 exposed three defects:
+
+1. **Bullpen relevance not proven.** Four unstored transaction participants —
+   Braydon Risley (836083), Carson Taylor (694930), Jack Brenner (836200), and
+   Cole Dorland (836451) — became `actionable_not_stored` and entered
+   `affected_pitcher_mlb_ids`, `targeted_pitcher_mlb_ids`, affected teams, and
+   snapshot planning **without any evidence that they are pitchers**. For a
+   bullpen-only product this is unsafe.
+2. **MLB-team impact not scoped.** Minor-league / affiliate team ids 512, 556,
+   and 568 entered `affected_team_ids`, `would_refresh.affected_team_ids`, and
+   `recalculate_team_reads`, even though only the governed 30 MLB clubs may enter
+   public team-level recomputation.
+3. **Public-state materiality overstated.** Three historical option records
+   (Andre Granillo 701552, Cam Sanders 676742, Colton Gordon 676467) were treated
+   as materially actionable purely because `roster_snapshot_alignment=misaligned`,
+   without proving the transaction was not superseded, that current official state
+   was known, or that BaseballOS's current public active-bullpen membership was
+   actually wrong. An option whose pitcher is correctly outside the active bullpen
+   is already publicly reflected even if the exact minor-league affiliate is not
+   retained.
+
+The correction (contract `version` 1.2.0, pinned by the tests in
+`backend/tests/test_intraday_reconcile.py`, including a compact Observation #2
+regression fixture) adds: bullpen-role verification from the MLB id (bounded,
+deduplicated `/people` lookups; fail-closed; only proven pitchers / two-way
+players become actionable); MLB-club impact scoping (affiliate ids stay
+evidence-only); separation of exact `transaction_state` alignment from
+`public_bullpen_membership` alignment; chronology / supersession using the latest
+applicable roster-affecting event; and a cross-lane step that uses the roster
+lane's current active-membership as authority so the transaction lane never
+claims a material mismatch the roster proves is already aligned.
+
+**Observation #2 is not evidence of full audit accuracy.** It validated the
+infrastructure, efficiency, compactness, compound grouping, source naming, and
+read-only boundary, and it revealed the relevance/materiality defects. A **new**
+Production Observation #3 is required after this correction merges before the
+representative validation period of §9 can be considered met. Nothing here
+authorizes automatic hourly scheduling, a write phase, or any Phase 2+ behavior;
+the mode remains manual, audit-only, and non-writing.
