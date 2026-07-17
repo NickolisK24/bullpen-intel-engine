@@ -1382,12 +1382,17 @@ def test_summary_records_checked(app):
 
 
 def test_material_change_only_when_actionable(app):
-    # A brand-new, not-yet-stored PROVEN-PITCHER transaction is actionable -> material.
+    # A brand-new, not-yet-stored PROVEN-PITCHER transaction with NO roster
+    # confirmation is transaction-ledger actionable but NOT public-material
+    # (Observation #3 correction): it never publishes a snapshot by itself.
     source = [_tx('m1', 996, type_code='RECALL', to_team_id=PHI)]
     artifact = _run(_tx_client(source, people=_pitchers(996)), team_ids=[PHI])
     assert artifact['changed'] is True
-    assert artifact['material_change_detected'] is True
-    assert artifact['would_refresh']['publish_snapshot'] is True
+    assert artifact['transaction_ledger_change_detected'] is True
+    assert artifact['public_bullpen_change_detected'] is False
+    assert artifact['material_change_detected'] is False
+    assert artifact['would_refresh']['publish_snapshot'] is False
+    assert 996 in artifact['would_refresh']['transaction_ledger']['transaction_participant_mlb_ids']
 
 
 def test_review_required_changed_not_material(app):
@@ -1411,11 +1416,15 @@ def test_affected_excludes_benign_and_review(app):
     source = [
         _tx('a1', 700100, type_code='SFA'),                          # benign
         _tx('a2', None, type_code='SIGNED', player_full_name='Ghost'),  # review (unresolved)
-        _tx('a3', 700101, type_code='RECALL', to_team_id=PHI),       # actionable
+        _tx('a3', 700101, type_code='RECALL', to_team_id=PHI),       # ledger-actionable
     ]
     artifact = _run(_tx_client(source, people=_pitchers(700101)), team_ids=[PHI])
-    assert 700101 in artifact['affected_pitcher_mlb_ids']
-    assert 700100 not in artifact['affected_pitcher_mlb_ids']
+    # Public affected pitchers require roster confirmation — a missing transaction
+    # alone (700101) is ledger-only, benign (700100) never counts either.
+    assert artifact['affected_pitcher_mlb_ids'] == []
+    ledger = artifact['would_refresh']['transaction_ledger']['transaction_participant_mlb_ids']
+    assert 700101 in ledger
+    assert 700100 not in ledger
 
 
 def test_publish_snapshot_not_from_benign(app):
@@ -1431,11 +1440,11 @@ def test_publish_snapshot_not_from_review_only(app):
 
 
 def test_warm_tonight_not_from_transaction_only(app):
-    # An actionable transaction with no roster/schedule population change must not
-    # warm Tonight, even though it is material (publish_snapshot true).
+    # A ledger-only transaction (missing record, no roster confirmation) must not
+    # warm Tonight and is not material.
     source = [_tx('w1', 700300, type_code='RECALL', to_team_id=PHI)]
     artifact = _run(_tx_client(source, people=_pitchers(700300)), team_ids=[PHI])
-    assert artifact['material_change_detected'] is True
+    assert artifact['material_change_detected'] is False
     assert artifact['would_refresh']['warm_tonight'] is False
 
 
@@ -1701,12 +1710,18 @@ def test_informational_records_equals_informational_counts_sum(app):
     assert artifact['summary']['informational_records'] == 5
 
 
-def test_lane2_compound_new_contributes_affected_teams(app):
+def test_lane2_compound_new_contributes_ledger_teams(app):
+    # A missing compound event is transaction-ledger actionable (not public) —
+    # its MLB teams land in the ledger plan, never in public affected teams.
     components = _compound_pair('cn', 820001, 820002)  # PHI<->NYM trade
     artifact = _run(_tx_client(components, people=_pitchers(820001, 820002)), team_ids=[PHI])
     tx = _tx_lane(artifact)
-    assert PHI in tx['affected_team_ids'] and NYM in tx['affected_team_ids']
-    assert 820001 in tx['affected_pitcher_mlb_ids']
+    ledger = tx['transaction_ledger']
+    assert PHI in ledger['transaction_related_mlb_team_ids']
+    assert NYM in ledger['transaction_related_mlb_team_ids']
+    assert 820001 in ledger['transaction_participant_mlb_ids']
+    assert tx['affected_team_ids'] == []
+    assert tx['affected_pitcher_mlb_ids'] == []
 
 
 def test_lane2_compound_review_adds_no_affected_pitchers(app):
@@ -1957,28 +1972,35 @@ def test_role_lookup_failure_fails_closed(app):
 # ── C3: MLB-team impact scope ────────────────────────────────────────────────
 
 def test_non_mlb_team_ids_preserved_but_not_public(app):
-    # Proven pitcher optioned PIT(MLB) -> 512(affiliate): 512 stays in evidence
-    # but never enters public affected teams or team-read recomputation.
+    # Proven pitcher, missing RECALL PIT(MLB) -> 512(affiliate). This is a ledger
+    # record (no roster confirmation), so PIT lands in the ledger plan and 512
+    # stays evidence-only — neither enters public affected teams / recomputation.
     tx = _tx('aff', 930001, type_code='RECALL', from_team_id=PIT, to_team_id=AFFILIATE_A)
     artifact = _run(_tx_client([tx], people=_pitchers(930001)), team_ids=[PHI])
     lane = _tx_lane(artifact)
     finding = lane['differences'][0]
-    # Both ids preserved on the finding as evidence.
     assert finding['from_team_id'] == PIT and finding['to_team_id'] == AFFILIATE_A
     assert AFFILIATE_A in lane['related_non_mlb_team_ids']
-    # Public impact contains the MLB club only.
-    assert PIT in lane['affected_team_ids']
-    assert AFFILIATE_A not in lane['affected_team_ids']
+    ledger = lane['transaction_ledger']
+    assert PIT in ledger['transaction_related_mlb_team_ids']
+    assert AFFILIATE_A in ledger['transaction_related_non_mlb_team_ids']
+    # Public impact contains neither (ledger-only, no roster confirmation).
+    assert lane['affected_team_ids'] == []
+    assert PIT not in artifact['would_refresh']['affected_team_ids']
     assert AFFILIATE_A not in artifact['would_refresh']['affected_team_ids']
     assert AFFILIATE_A not in artifact['would_refresh']['recalculate_team_reads']
     assert AFFILIATE_A in artifact['summary']['non_mlb_team_ids_observed']
 
 
-def test_mlb_teams_remain_affected(app):
+def test_mlb_teams_in_ledger_not_public(app):
+    # A missing MLB<->MLB transaction is a ledger record; its teams never enter
+    # public affected-team planning without roster confirmation.
     tx = _tx('mlb', 930002, type_code='RECALL', from_team_id=BAL, to_team_id=DET)
     artifact = _run(_tx_client([tx], people=_pitchers(930002)), team_ids=[PHI])
-    assert BAL in artifact['would_refresh']['affected_team_ids']
-    assert DET in artifact['would_refresh']['affected_team_ids']
+    ledger = artifact['would_refresh']['transaction_ledger']
+    assert BAL in ledger['transaction_related_mlb_team_ids']
+    assert DET in ledger['transaction_related_mlb_team_ids']
+    assert artifact['would_refresh']['affected_team_ids'] == []
 
 
 # ── C4/C5/C6/C7: state alignment vs public membership; chronology; cross-lane ─
@@ -2137,23 +2159,27 @@ def test_review_role_finding_changed_not_material(app):
     assert artifact['summary']['role_unresolved_findings'] >= 1
 
 
-def test_affected_pitcher_ids_only_from_stored_proven(app):
-    # Unstored proven pitcher -> mlb id affected, but no internal db pitcher id.
+def test_ledger_participants_only_proven_pitchers(app):
+    # A missing proven-pitcher transaction is a ledger participant (public affected
+    # pitchers require roster confirmation, which this run does not have).
     artifact = _run(_tx_client([_tx('p', 937001, type_code='RECALL', to_team_id=PHI)],
                                people=_pitchers(937001)), team_ids=[PHI])
-    assert 937001 in artifact['affected_pitcher_mlb_ids']
-    assert artifact['affected_pitcher_ids'] == []
+    assert artifact['affected_pitcher_mlb_ids'] == []
+    ledger = artifact['would_refresh']['transaction_ledger']
+    assert 937001 in ledger['transaction_participant_mlb_ids']
 
 
-def test_affected_mlb_ids_exclude_non_pitcher_and_unresolved(app):
+def test_ledger_participants_exclude_non_pitcher_and_unresolved(app):
     source = [
-        _tx('p', 938001, type_code='RECALL', to_team_id=PHI),   # proven pitcher
-        _tx('np', 938002, type_code='RECALL', to_team_id=PHI),  # non-pitcher
-        _tx('u', 938003, type_code='RECALL', to_team_id=PHI),   # unresolved
+        _tx('p', 938001, type_code='RECALL', to_team_id=PHI),   # proven pitcher -> ledger
+        _tx('np', 938002, type_code='RECALL', to_team_id=PHI),  # non-pitcher -> informational
+        _tx('u', 938003, type_code='RECALL', to_team_id=PHI),   # unresolved -> review
     ]
     artifact = _run(_tx_client(source, people={**_pitchers(938001), **_non_pitchers(938002)}),
                     team_ids=[PHI])
-    assert artifact['affected_pitcher_mlb_ids'] == [938001]
+    ledger = artifact['would_refresh']['transaction_ledger']
+    assert ledger['transaction_participant_mlb_ids'] == [938001]
+    assert artifact['affected_pitcher_mlb_ids'] == []
 
 
 # ── C10: Production Observation #2 regression fixture ────────────────────────
@@ -2252,11 +2278,13 @@ def test_observation_two_non_mlb_scoping(observation_two):
         assert affiliate not in artifact['would_refresh']['affected_team_ids']
         assert affiliate not in artifact['would_refresh']['recalculate_team_reads']
         assert affiliate not in lane['affected_team_ids']
-    # But the affiliate ids remain visible as evidence.
+    # The affiliate ids remain visible as evidence.
     observed = set(artifact['summary']['non_mlb_team_ids_observed'])
     assert {AFFILIATE_A, AFFILIATE_C}.issubset(observed)
-    # Governed MLB clubs still enter public impact.
-    assert PIT in lane['affected_team_ids']  # Risley from Pittsburgh (proven pitcher)
+    # Risley (missing OPT from Pittsburgh, no roster confirmation) is ledger-only:
+    # PIT lands in the ledger plan, never in public impact.
+    assert PIT in lane['transaction_ledger']['transaction_related_mlb_team_ids']
+    assert PIT not in lane['affected_team_ids']
 
 
 def test_observation_two_chronology(observation_two):
@@ -2292,9 +2320,330 @@ def test_observation_two_honest_materiality(observation_two):
     assert summary['superseded_transactions'] >= 1
     assert summary['non_pitcher_transactions'] == 1
     assert summary['role_unresolved_findings'] >= 1
-    # The non-pitcher and unresolved-role players never enter the write plan.
+    # The non-pitcher and unresolved-role players never enter any write plan.
     assert 694930 not in artifact['affected_pitcher_mlb_ids']  # Carson Taylor (non-pitcher)
     assert 836200 not in artifact['affected_pitcher_mlb_ids']  # Jack Brenner (unresolved)
-    # Proven pitchers do.
-    assert 836083 in artifact['affected_pitcher_mlb_ids']      # Braydon Risley
+    ledger = artifact['would_refresh']['transaction_ledger']
+    assert 694930 not in ledger['transaction_participant_mlb_ids']
+    assert 836200 not in ledger['transaction_participant_mlb_ids']
+    # Braydon Risley (proven pitcher, missing record) is ledger-only, not public.
+    assert 836083 in ledger['transaction_participant_mlb_ids']
+    assert 836083 not in artifact['affected_pitcher_mlb_ids']
     assert summary['mlb_teams_affected'] == artifact['would_refresh']['affected_team_ids']
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# Transaction-ledger vs public-materiality split (contract v1.3.0) — Obs #3
+#
+# Observation #3 (2026-07-17, v1.2.0) passed role verification, lookup governance,
+# MLB-team scoping, chronology, and read-only safety, but still conflated a
+# MISSING transaction record with a current public bullpen change: 20 missing
+# org/ledger records drove public workload + team recomputation despite zero
+# public membership mismatches, while the roster lane proved only four real
+# current bullpen-population changes. These tests pin the ledger/public split.
+# ═════════════════════════════════════════════════════════════════════════════
+
+BOS, TB = 111, 139
+
+
+def _lg(artifact):
+    return artifact['would_refresh']['transaction_ledger']
+
+
+# ── C1/C2/C3: ledger actionability is independent of public materiality ───────
+
+def test_missing_sgn_pitcher_is_ledger_actionable(app):
+    artifact = _run(_tx_client([_tx('s', 950001, type_code='SGN', to_team_id=PIT)],
+                               people=_pitchers(950001)), team_ids=[PHI])
+    lane = _tx_lane(artifact)
+    d = lane['differences'][0]
+    assert d['transaction_record_actionable'] is True
+    assert d['transaction_effect_scope'] == intraday_reconcile.EFFECT_SCOPE_LEDGER_ONLY
+    assert 950001 in _lg(artifact)['transaction_participant_mlb_ids']
+
+
+def test_missing_sgn_not_public_without_roster(app):
+    artifact = _run(_tx_client([_tx('s', 950001, type_code='SGN', to_team_id=PIT)],
+                               people=_pitchers(950001)), team_ids=[PHI])
+    d = _tx_lane(artifact)['differences'][0]
+    assert d['public_bullpen_material'] is False
+    assert artifact['public_bullpen_change_detected'] is False
+    assert artifact['material_change_detected'] is False
+
+
+def test_missing_sfa_not_public(app):
+    artifact = _run(_tx_client([_tx('s', 950002, type_code='SFA', to_team_id=SEA)],
+                               people=_pitchers(950002)), team_ids=[PHI])
+    d = _tx_lane(artifact)['differences'][0]
+    assert d['transaction_record_actionable'] is True
+    assert d['public_bullpen_material'] is False
+
+
+def test_missing_asg_not_public(app):
+    artifact = _run(_tx_client([_tx('a', 950003, type_code='ASG', to_team_id=ATL)],
+                               people=_pitchers(950003)), team_ids=[PHI])
+    d = _tx_lane(artifact)['differences'][0]
+    assert d['public_bullpen_material'] is False
+    assert d['may_change_active_mlb_membership'] is False
+
+
+def test_effect_none_cannot_be_public_alone(app):
+    artifact = _run(_tx_client([_tx('s', 950004, type_code='SGN', to_team_id=PHI)],
+                               people=_pitchers(950004)), team_ids=[PHI])
+    d = _tx_lane(artifact)['differences'][0]
+    assert d['effect_direction'] == intraday_reconcile.EFFECT_NONE
+    assert d['public_bullpen_material'] is False
+
+
+def test_unknown_transaction_type_fails_closed(app):
+    artifact = _run(_tx_client([_tx('x', 950005, type_code='ZZZ', to_team_id=PHI)],
+                               people=_pitchers(950005)), team_ids=[PHI])
+    d = _tx_lane(artifact)['differences'][0]
+    assert d['transaction_effect_scope'] == intraday_reconcile.EFFECT_SCOPE_UNKNOWN
+    assert d['public_bullpen_material'] is False
+    assert d['transaction_record_actionable'] is True
+
+
+def test_active_affecting_public_with_roster_confirmation(app):
+    # Stored inactive pitcher, missing RECALL, roster confirms now active -> public.
+    _seed_pitcher(950006, 'Conf Arm', BOS, 'BOS', roster_status=STATUS_OPTIONED, active=False)
+    tx = _tx('r', 950006, type_code='RECALL', to_team_id=BOS)
+    client = _tx_client([tx],
+                        rosters={(BOS, ROSTER_TYPE_ACTIVE): [roster_entry(950006, 'Conf Arm', status=ACTIVE)]},
+                        teams=[{'id': BOS, 'name': 'BoSox', 'abbreviation': 'BOS'}])
+    artifact = _run(client, team_ids=[BOS])
+    d = {r.get('transaction_id'): r for r in _tx_lane(artifact)['differences']}['r']
+    assert d['public_bullpen_material'] is True
+    assert d['roster_confirmation_status'] == intraday_reconcile.ROSTER_CONFIRM_CHANGE
+    assert artifact['material_change_detected'] is True
+
+
+def test_active_affecting_not_public_without_confirmation(app):
+    # Missing RECALL for a pitcher not on any fetched active roster -> unverified.
+    artifact = _run(_tx_client([_tx('r', 950007, type_code='RECALL', to_team_id=PHI)],
+                               people=_pitchers(950007)), team_ids=[PHI])
+    d = _tx_lane(artifact)['differences'][0]
+    assert d['public_bullpen_material'] is False
+    assert d['roster_confirmation_status'] == intraday_reconcile.ROSTER_CONFIRM_UNVERIFIED
+
+
+def test_two_axes_independent(app):
+    artifact = _run(_tx_client([_tx('s', 950008, type_code='SGN', to_team_id=PHI)],
+                               people=_pitchers(950008)), team_ids=[PHI])
+    d = _tx_lane(artifact)['differences'][0]
+    assert d['transaction_record_actionable'] != d['public_bullpen_material']
+
+
+# ── C10: ledger-only findings never enter the public plan ────────────────────
+
+def _ledger_only_artifact(app_ignored):
+    return _run(_tx_client([_tx('s', 950009, type_code='SGN', from_team_id=PIT, to_team_id=AFFILIATE_A)],
+                           people=_pitchers(950009)), team_ids=[PHI])
+
+
+def test_ledger_only_sets_changed_true(app):
+    a = _ledger_only_artifact(app)
+    assert a['changed'] is True
+    assert a['transaction_ledger_change_detected'] is True
+
+
+def test_ledger_only_not_material(app):
+    assert _ledger_only_artifact(app)['material_change_detected'] is False
+
+
+def test_ledger_only_no_publish(app):
+    assert _ledger_only_artifact(app)['would_refresh']['publish_snapshot'] is False
+
+
+def test_ledger_only_no_warm(app):
+    assert _ledger_only_artifact(app)['would_refresh']['warm_tonight'] is False
+
+
+def test_ledger_only_no_team_recompute(app):
+    assert _ledger_only_artifact(app)['would_refresh']['recalculate_team_reads'] == []
+
+
+def test_ledger_only_not_in_targeted(app):
+    a = _ledger_only_artifact(app)
+    assert a['would_refresh']['targeted_pitcher_mlb_ids'] == []
+    assert 950009 not in a['would_refresh']['targeted_pitcher_mlb_ids']
+
+
+# ── C4/C6/C7: roster authority + cross-lane dedup ─────────────────────────────
+
+def test_roster_activation_enters_targeted_and_public_team(app):
+    _seed_pitcher(951001, 'Act Arm', TB, 'TB', roster_status=STATUS_OPTIONED, active=False)
+    client = _tx_client([], rosters={(TB, ROSTER_TYPE_ACTIVE): [roster_entry(951001, 'Act Arm', status=ACTIVE)]},
+                        teams=[{'id': TB, 'name': 'Rays', 'abbreviation': 'TB'}])
+    artifact = _run(client, team_ids=[TB])
+    assert 951001 in artifact['would_refresh']['targeted_pitcher_mlb_ids']
+    assert TB in artifact['would_refresh']['affected_team_ids']
+
+
+def test_roster_and_transaction_overlap_deduplicated(app):
+    # Same pitcher activated (roster) AND missing recall (transaction, public):
+    # appears once in targeted workload and the team once in recompute.
+    _seed_pitcher(951002, 'Dup Arm', BOS, 'BOS', roster_status=STATUS_OPTIONED, active=False)
+    tx = _tx('r', 951002, type_code='RECALL', to_team_id=BOS)
+    client = _tx_client([tx],
+                        rosters={(BOS, ROSTER_TYPE_ACTIVE): [roster_entry(951002, 'Dup Arm', status=ACTIVE)]},
+                        teams=[{'id': BOS, 'name': 'BoSox', 'abbreviation': 'BOS'}])
+    wr = _run(client, team_ids=[BOS])['would_refresh']
+    assert wr['targeted_pitcher_mlb_ids'].count(951002) == 1
+    assert wr['affected_team_ids'].count(BOS) == 1
+
+
+# ── C5: split ledger plan ────────────────────────────────────────────────────
+
+def test_ledger_plan_retains_event_keys_and_teams(app):
+    tx = _tx('s', 951003, type_code='SGN', from_team_id=BAL, to_team_id=AFFILIATE_A)
+    ledger = _lg(_run(_tx_client([tx], people=_pitchers(951003)), team_ids=[PHI]))
+    assert 'statsapi:s' in ledger['ingest_transaction_event_keys']
+    assert BAL in ledger['transaction_related_mlb_team_ids']
+    assert AFFILIATE_A in ledger['transaction_related_non_mlb_team_ids']
+    assert ledger['record_actionable_count'] == 1
+
+
+def test_stored_conflict_goes_to_reconcile_event_keys(app):
+    _seed_stored_transaction(_tx('sc', 951004, type_code='RECALL', to_team_id=PHI))
+    ledger = _lg(_run(_tx_client([_tx('sc', 951004, type_code='RECALL', to_team_id=NYM)],
+                                 people=_pitchers(951004)), team_ids=[PHI]))
+    assert 'statsapi:sc' in ledger['reconcile_transaction_event_keys']
+
+
+# ── C9: role-lookup gating + metrics ─────────────────────────────────────────
+
+def test_role_lookup_reused_from_roster_evidence(app):
+    # A stored pitcher on the active roster is resolved from stored/roster
+    # evidence — no /people lookup is spent.
+    _seed_pitcher(951005, 'Roster Arm', BOS, 'BOS', roster_status=STATUS_ACTIVE, active=True)
+    tx = _tx('s', 951005, type_code='SGN', to_team_id=BOS)
+    client = _tx_client([tx],
+                        rosters={(BOS, ROSTER_TYPE_ACTIVE): [roster_entry(951005, 'Roster Arm', status=ACTIVE)]},
+                        teams=[{'id': BOS, 'name': 'BoSox', 'abbreviation': 'BOS'}])
+    artifact = _run(client, team_ids=[BOS])
+    rv = _tx_lane(artifact)['role_verification']
+    assert client.calls.get('get_player_info', 0) == 0
+    assert rv['role_lookups_used'] == 0
+    assert rv['role_lookups_avoided'] >= 1
+
+
+def test_role_lookup_performed_when_needed(app):
+    client = _tx_client([_tx('s', 951006, type_code='SGN', to_team_id=PHI)], people=_pitchers(951006))
+    artifact = _run(client, team_ids=[PHI])
+    rv = _tx_lane(artifact)['role_verification']
+    assert rv['role_lookups_used'] == 1
+    assert rv['role_lookup_candidates'] >= 1
+
+
+def test_role_lookup_metrics_accurate(app):
+    # Two unstored candidates -> two lookups; one stored -> avoided.
+    _seed_pitcher(951007, 'Stored', PHI, 'PHI', roster_status=STATUS_ACTIVE, active=True)
+    source = [
+        _tx('a', 951007, type_code='SGN', to_team_id=PHI),   # stored -> avoided
+        _tx('b', 951008, type_code='SGN', to_team_id=PHI),   # lookup
+        _tx('c', 951009, type_code='SGN', to_team_id=PHI),   # lookup
+    ]
+    client = _tx_client(source, people=_pitchers(951008, 951009))
+    rv = _tx_lane(_run(client, team_ids=[PHI]))['role_verification']
+    assert rv['role_lookups_used'] == 2
+    assert rv['role_lookups_avoided'] >= 1
+    assert rv['role_lookup_candidates'] == 3
+
+
+# ── C12: Production Observation #3 regression fixture ─────────────────────────
+
+@pytest.fixture
+def observation_three(app):
+    """Compact fixture mirroring Observation #3: four real roster-driven current
+    bullpen changes (two newly-discovered, two activations) plus a spread of
+    transaction-ledger records (org signings, assignments, an MLB-org signing,
+    an affiliate destination, a non-pitcher, an unresolved role, a benign detail
+    mismatch, and a reflected compound event)."""
+    _seed_pitcher(669438, 'Mason Englert', TB, 'TB', roster_status=STATUS_OPTIONED, active=False)
+    _seed_pitcher(687941, 'Alec Gamboa', BOS, 'BOS', roster_status=STATUS_OPTIONED, active=False)
+    dmp = _seed_pitcher(950110, 'Detail Arm', PHI, 'PHI', roster_status=STATUS_OPTIONED, active=False)
+    _seed_snapshot(dmp, PHI, SIGNAL_DATE, STATUS_ACTIVE)
+    dm_opt = _tx('dm-opt', 950110, type_code=OPT, to_team_id=AFFILIATE_B)
+    _seed_stored_transaction(dm_opt)
+    c_reflected = _compound_pair('cref', 950120, 950121)
+    _seed_stored_transaction(c_reflected[0])
+
+    transactions = [
+        _tx('sgn1', 950101, type_code='SGN', from_team_id=PIT, to_team_id=AFFILIATE_A),  # ledger pitcher
+        _tx('sfa1', 950102, type_code='SFA', from_team_id=SEA, to_team_id=SEA),          # ledger pitcher
+        _tx('asg-eng', 669438, type_code='ASG', to_team_id=TB),                          # ledger (stored, overlaps roster)
+        _tx('rec-gam', 687941, type_code='RECALL', to_team_id=BOS),                      # active-affecting, overlaps roster
+        _tx('np1', 950103, type_code='SGN', from_team_id=ATL, to_team_id=AFFILIATE_C),   # non-pitcher
+        _tx('unr1', 950104, type_code='SGN', from_team_id=WSH, to_team_id=WSH),          # unresolved role
+        _tx('mlborg', 950105, type_code='SGN', from_team_id=BAL, to_team_id=DET),        # ledger MLB org
+        dm_opt,
+    ] + c_reflected
+    rosters = {
+        (TB, ROSTER_TYPE_ACTIVE): [roster_entry(669438, 'Mason Englert', status=ACTIVE)],
+        (BOS, ROSTER_TYPE_ACTIVE): [roster_entry(687941, 'Alec Gamboa', status=ACTIVE)],
+        (TOR, ROSTER_TYPE_ACTIVE): [roster_entry(669310, 'CJ Van Eyk', status=ACTIVE)],
+        (ATH, ROSTER_TYPE_ACTIVE): [roster_entry(814305, 'Yunior Tur', status=ACTIVE)],
+        (PHI, ROSTER_TYPE_ACTIVE): [],
+    }
+    teams = [{'id': t, 'name': f'Team{t}', 'abbreviation': f'T{t}'}
+             for t in (TB, BOS, TOR, ATH, PHI)]
+    people = {**_pitchers(950101, 950102, 950105), **_non_pitchers(950103)}
+    return _tx_client(transactions, rosters=rosters, teams=teams, people=people)
+
+
+def _obs3_run(observation_three):
+    return _run(observation_three, team_ids=[TB, BOS, TOR, ATH, PHI])
+
+
+def test_observation_three_public_targeted_only_roster_four(observation_three):
+    wr = _obs3_run(observation_three)['would_refresh']
+    # Public targeted workload contains ONLY the four roster-driven players.
+    assert sorted(wr['targeted_pitcher_mlb_ids']) == [669310, 669438, 687941, 814305]
+
+
+def test_observation_three_public_teams_only_roster_four(observation_three):
+    wr = _obs3_run(observation_three)['would_refresh']
+    # Public affected teams contain ONLY the four roster clubs (111/133/139/141).
+    assert sorted(wr['affected_team_ids']) == [BOS, ATH, TB, TOR]  # 111, 133, 139, 141
+    assert sorted(wr['recalculate_team_reads']) == [BOS, ATH, TB, TOR]
+
+
+def test_observation_three_ledger_orgs_not_public(observation_three):
+    artifact = _obs3_run(observation_three)
+    ledger = _lg(artifact)
+    public_teams = set(artifact['would_refresh']['affected_team_ids'])
+    # Transaction-ledger MLB organizations stay in the ledger plan, never public.
+    for org in (PIT, SEA, WSH, BAL, DET, ATL):
+        assert org in ledger['transaction_related_mlb_team_ids'] or org not in public_teams
+    assert PIT not in public_teams and BAL not in public_teams and DET not in public_teams
+    # Affiliate ids evidence-only.
+    for aff in (AFFILIATE_A, AFFILIATE_B, AFFILIATE_C):
+        assert aff not in public_teams
+        assert aff in artifact['summary']['non_mlb_team_ids_observed']
+
+
+def test_observation_three_ledger_participants_exclude_non_public(observation_three):
+    ledger = _lg(_obs3_run(observation_three))
+    participants = set(ledger['transaction_participant_mlb_ids'])
+    # Proven-pitcher ledger records are participants.
+    assert {950101, 950102}.issubset(participants)
+    # Non-pitcher (950103) and unresolved (950104) are never ledger participants.
+    assert 950103 not in participants and 950104 not in participants
+
+
+def test_observation_three_honest_change_and_material(observation_three):
+    artifact = _obs3_run(observation_three)
+    summary = artifact['summary']
+    assert artifact['changed'] is True
+    assert artifact['public_bullpen_change_detected'] is True     # four roster changes
+    assert artifact['transaction_ledger_change_detected'] is True  # missing records
+    assert artifact['material_change_detected'] is True            # roster changes are material
+    assert summary['transaction_ledger_only_findings'] >= 1
+    assert summary['public_roster_changes'] >= 4
+
+
+def test_observation_three_newly_discovered_names(observation_three):
+    diffs = _lane1_by_id(_obs3_run(observation_three))
+    assert diffs[669310]['player_name'] == 'CJ Van Eyk'
+    assert diffs[814305]['player_name'] == 'Yunior Tur'

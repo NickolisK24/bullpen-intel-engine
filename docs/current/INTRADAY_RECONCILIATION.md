@@ -129,17 +129,33 @@ The audit runs three source-vs-stored comparison lanes and one derived lane:
    event-level `stored_conflict`, `compound_transaction_review_required`, or
    `compound_event_reflected`.
 
+   **Transaction-ledger actionability is separated from public materiality
+   (Observation #3).** A transaction type is classified by
+   `classify_transaction_public_effect` into whether it can plausibly change
+   current MLB active-bullpen membership (`active_roster_affecting`,
+   `organization_or_ledger_only`, `context_dependent`, or `unknown`; unknown fails
+   closed). A missing record (`actionable_not_stored` / `compound_transaction_new`)
+   or a governed-fact conflict (`stored_conflict`) is **transaction-record
+   actionable** — the ledger would ingest/reconcile it — but is **not**
+   public-material unless the transaction type can change membership AND the roster
+   lane confirms a current change for the proven pitcher. Organization/ledger-only
+   records (signings, assignments — `SGN` / `SFA` / `ASG`), `effect_direction=none`
+   events, and unknown types are never public-material on their own; the roster
+   lane remains the sole authority for current bullpen membership, targeted
+   workload, and public team-read recomputation, and a player appearing in both
+   lanes is deduplicated to a single public impact.
+
    Only **meaningful** findings (actionable or review-required) are serialized
    into `differences`. Benign inventory (`already_reflected`,
    `non_player_transaction`, `compound_event_reflected`, `non_pitcher_transaction`,
    `transaction_detail_mismatch`, `superseded_transaction`, `current_state_aligned`)
    is counted, bounded-sampled, and reported with a suppressed count. Public team
-   impact is scoped to the governed MLB clubs (`MLB_TEAM_IDS`, Correction 3):
-   minor-league / affiliate / unknown team ids stay in the finding's evidence and
-   in `non_mlb_team_ids_observed`, but never enter `affected_team_ids` or
-   `recalculate_team_reads`. No transaction or dead-letter row is inserted,
-   updated, resolved, or deleted. (`status_effect_unreflected` from contract 1.1
-   is retired in favour of the refined membership classes.)
+   impact is scoped to the governed MLB clubs (`MLB_TEAM_IDS`): minor-league /
+   affiliate / unknown team ids stay in the finding's evidence and in
+   `non_mlb_team_ids_observed` / the `transaction_ledger` sub-plan, but never enter
+   `affected_team_ids` or `recalculate_team_reads`. No transaction or dead-letter
+   row is inserted, updated, resolved, or deleted. (`status_effect_unreflected`
+   from contract 1.1 is retired in favour of the refined membership classes.)
 
 3. **Schedule and game finality.** The current and previous slate dates: a
    scheduled game now postponed; a postponed game now rescheduled; a game now
@@ -163,20 +179,35 @@ per-lane `lanes` results, `would_refresh`, `material_change_detected`, a
 `summary` block, a `safety` block of guarantees, the `source_api` call totals
 grouped by endpoint, and `limitations`). The `capability` value is
 `intraday_reconciliation_audit_v1` and is the pinned contract identity; the
-finer-grained `version` is currently `1.2.0`. Two backward-compatible minor bumps
-have shipped inside capability v1: `1.0.0 → 1.1.0` (signal-quality: benign
-inventory aggregated, summary buckets, active-roster-only default) and
+finer-grained `version` is currently `1.3.0`. Three backward-compatible minor
+bumps have shipped inside capability v1: `1.0.0 → 1.1.0` (signal-quality: benign
+inventory aggregated, summary buckets, active-roster-only default);
 `1.1.0 → 1.2.0` (bullpen-relevance: role-gated actionability, MLB-team impact
-scoping, exact-state vs public-membership separation, chronology). Each bump only
-**adds** fields and classifications; none of the fields the workflow's artifact
-validator checks (`capability` / `mode` / `check_only` / `status`) change, so the
-validator still accepts the artifact. The `summary` block additionally carries
-`actionable_bullpen_differences`, `role_unresolved_findings`,
-`non_pitcher_transactions`, `transaction_detail_mismatches`,
-`superseded_transactions`, `public_membership_mismatches`, `mlb_teams_affected`,
-and `non_mlb_team_ids_observed`. Only the governed MLB clubs appear in
-`affected_team_ids` / `would_refresh.recalculate_team_reads`; affiliate ids are
-evidence-only.
+scoping, exact-state vs public-membership separation, chronology); and
+`1.2.0 → 1.3.0` (transaction-ledger vs public-materiality split). Each bump only
+**adds** fields, sub-plans, and classifications; none of the fields the
+workflow's artifact validator checks (`capability` / `mode` / `check_only` /
+`status`) change, so the validator still accepts the artifact.
+
+Two independent actionability axes (Observation #3). Every meaningful transaction
+finding exposes `transaction_record_actionable` (does the ledger need this
+record?) and `public_bullpen_material` (does this event prove a current public
+MLB bullpen-state change?). A missing/actionable transaction record is no longer
+conflated with a current public change: `would_refresh` now carries two
+sub-plans, `public_bullpen_state` (roster/current-state-authoritative — teams,
+targeted workload, snapshot, warm) and `transaction_ledger` (records to ingest /
+reconcile). The flat `would_refresh` fields are derived **only** from
+`public_bullpen_state`; transaction-ledger-only findings never set
+`affected_team_ids`, `recalculate_team_reads`, `targeted_pitcher_*`,
+`publish_snapshot`, or `warm_tonight`. Top-level `material_change_detected`,
+`public_bullpen_change_detected`, and `transaction_ledger_change_detected` are
+independent. The `summary` block additionally carries
+`transaction_record_actionable_count`, `public_bullpen_material_count`,
+`public_roster_changes`, `transaction_ledger_only_findings`,
+`role_lookups_used` / `role_lookups_avoided`, `mlb_public_teams_affected`,
+`transaction_related_mlb_teams`, and `non_mlb_team_ids_observed`. Only the
+governed MLB clubs appear in `affected_team_ids` /
+`would_refresh.recalculate_team_reads`; affiliate ids are evidence-only.
 
 Signal semantics the contract guarantees:
 
@@ -408,3 +439,51 @@ Production Observation #3 is required after this correction merges before the
 representative validation period of §9 can be considered met. Nothing here
 authorizes automatic hourly scheduling, a write phase, or any Phase 2+ behavior;
 the mode remains manual, audit-only, and non-writing.
+
+## 15. Production Observation #3 (2026-07-17) and the ledger/materiality split
+
+The third valid production intraday run (Production Observation #3, contract
+version 1.2.0) completed successfully and confirmed the bullpen-relevance
+correction held: exactly 30 active-roster calls, 34 bounded and deduplicated role
+lookups (under the governed maximum of 40, zero failures), proven non-pitchers
+informational, unresolved roles non-material, affiliate/minor-league team ids out
+of public planning, current roster evidence governing public membership,
+historical option-detail mismatches benign, compound events grouped, artifact
+compact, and every read-only and writer-lock safeguard passing.
+
+One materiality defect remained, and this branch corrects it: **missing
+transaction records were still treated as current public bullpen changes.** The
+roster lane proved only four real current bullpen-population changes —
+CJ Van Eyk (669310, Toronto, newly discovered), Yunior Tur (814305, Athletics,
+newly discovered), Mason Englert (669438, Tampa Bay, activation), and Alec Gamboa
+(687941, Boston, activation). But the transaction lane produced 20
+`actionable_not_stored` findings — many organization-level signings/assignments
+(`SGN` / `SFA` / `ASG`) with `effect_direction=none`, `normalized_category=unknown`,
+and no proof of an active MLB bullpen change — and those missing rows were folded
+into public planning: they entered `targeted_pitcher_mlb_ids`, added many
+organizations to `affected_team_ids`, recomputed team reads for 16 MLB teams, set
+`publish_snapshot=true`, and set `transactions=true` in the same plan used for
+public state — despite **zero** public membership mismatches. Their pitcher roles
+were correctly proven, but pitcher role alone does not prove current MLB bullpen
+membership or justify public recomputation.
+
+The correction (contract `version` 1.3.0, pinned by the tests in
+`backend/tests/test_intraday_reconcile.py`, including a compact Observation #3
+regression fixture) makes transaction-record actionability and public-bullpen
+materiality two independent axes; adds a governed transaction-type public-effect
+classification that fails closed for unknown types; makes `effect_direction=none`
+never public-material on its own; keeps the roster lane the sole authority for
+public current-state materiality and deduplicates players/teams that appear in
+both lanes; splits `would_refresh` into a `public_bullpen_state` plan and a
+`transaction_ledger` plan; derives targeted workload, public team impact,
+snapshot publication, and Tonight warming from proven public findings only; and
+gates role lookups by effect scope + roster reuse.
+
+**Observation #3 is not evidence of full audit accuracy.** It validated the
+infrastructure, efficiency, role governance, MLB-team scoping, chronology,
+transaction-detail handling, and read-only boundary, and it revealed the
+ledger/materiality conflation. A **new** Production Observation #4 is required
+after this correction merges before the representative validation period of §9
+can be considered met. Nothing here authorizes automatic hourly scheduling, a
+write phase, or any Phase 2+ behavior; the mode remains manual, audit-only, and
+non-writing.
