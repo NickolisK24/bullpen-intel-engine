@@ -911,7 +911,7 @@ def _canned(status='success', **extra):
         'would_refresh': intraday_reconcile._empty_would_refresh(),
         'material_change_detected': False, 'limitations': [],
         'source_api': {}, 'safety': {}, 'write_guard': {'clean': True},
-        'summary': {'total_differences': 0, 'material_change_detected': False},
+        'summary': {'total_meaningful_findings': 0, 'material_change_detected': False},
         'reason_code': 'public_sync_writer_active',
     }
     artifact.update(extra)
@@ -1358,13 +1358,18 @@ def test_changed_lanes_excludes_benign_transactions(app):
 
 def test_summary_buckets_present_and_accurate(scenario):
     summary = _run(scenario)['summary']
-    for key in ('total_differences', 'records_checked', 'actionable_differences',
-                'review_required_findings', 'unresolved_findings',
-                'informational_records', 'benign_records_suppressed',
-                'material_change_detected', 'affected_team_ids'):
+    for key in ('total_meaningful_findings', 'records_checked',
+                'total_actionable_findings', 'review_required_findings',
+                'unresolved_findings', 'transaction_record_actionable_count',
+                'transaction_ledger_only_findings',
+                'transaction_public_bullpen_material_count',
+                'public_roster_change_count', 'schedule_public_change_count',
+                'public_bullpen_change_count', 'informational_records',
+                'benign_records_suppressed', 'material_change_detected',
+                'affected_team_ids'):
         assert key in summary, key
-    assert summary['actionable_differences'] + summary['review_required_findings'] \
-        == summary['total_differences']
+    assert summary['total_actionable_findings'] + summary['review_required_findings'] \
+        == summary['total_meaningful_findings']
     assert summary['informational_records'] >= 0
 
 
@@ -1639,7 +1644,7 @@ def test_observation_one_summary_and_material(observation_one):
     # exact-detail-mismatch benign rows.
     assert artifact['changed'] is True
     assert summary['informational_records'] == 5 + 2 + 1 + 3
-    assert summary['total_differences'] == summary['actionable_differences'] + summary['review_required_findings']
+    assert summary['total_meaningful_findings'] == summary['total_actionable_findings'] + summary['review_required_findings']
     # Actionable findings exist (compound_new, newly-discovered proven pitchers),
     # so a future write would be required.
     assert summary['material_change_detected'] is True
@@ -1755,7 +1760,7 @@ def test_summary_total_equals_serialized_differences(scenario):
         for lane in intraday_reconcile.ALL_LANES
         if lane in artifact['lanes']
     )
-    assert artifact['summary']['total_differences'] == serialized
+    assert artifact['summary']['total_meaningful_findings'] == serialized
 
 
 def test_changed_true_when_only_review_finding(app):
@@ -1763,7 +1768,7 @@ def test_changed_true_when_only_review_finding(app):
     artifact = _run(_tx_client(source), team_ids=[PHI])
     assert artifact['changed'] is True
     assert artifact['summary']['review_required_findings'] >= 1
-    assert artifact['summary']['actionable_differences'] == 0
+    assert artifact['summary']['total_actionable_findings'] == 0
 
 
 def test_lane1_recall_severity_is_actionable(scenario):
@@ -2316,7 +2321,7 @@ def test_observation_two_honest_materiality(observation_two):
     # There ARE proven material findings (Gordon mismatch, unstored proven pitchers,
     # newly-discovered active pitchers), so a future write would be required.
     assert artifact['material_change_detected'] is True
-    assert summary['public_membership_mismatches'] >= 1
+    assert summary['transaction_public_bullpen_material_count'] >= 1
     assert summary['superseded_transactions'] >= 1
     assert summary['non_pitcher_transactions'] == 1
     assert summary['role_unresolved_findings'] >= 1
@@ -2640,10 +2645,449 @@ def test_observation_three_honest_change_and_material(observation_three):
     assert artifact['transaction_ledger_change_detected'] is True  # missing records
     assert artifact['material_change_detected'] is True            # roster changes are material
     assert summary['transaction_ledger_only_findings'] >= 1
-    assert summary['public_roster_changes'] >= 4
+    assert summary['public_roster_change_count'] >= 4
 
 
 def test_observation_three_newly_discovered_names(observation_three):
     diffs = _lane1_by_id(_obs3_run(observation_three))
     assert diffs[669310]['player_name'] == 'CJ Van Eyk'
     assert diffs[814305]['player_name'] == 'Yunior Tur'
+
+
+# ── C8: Production Observation #4 regression fixture (summary contract) ────────
+
+@pytest.fixture
+def observation_four(app):
+    """Compact fixture mirroring Production Observation #4: four real
+    roster-driven current public bullpen changes (two stored activations, two
+    source-only newly-discovered actives) plus 24 transaction-record-actionable
+    ledger findings (SGN / SFA / ASG / CU, none public-material), two of which
+    overlap roster-proven players, alongside benign inventory (three
+    transaction_detail_mismatch cases, informational non-pitcher records, a
+    reflected compound event, and non-MLB affiliate evidence). The reconciliation
+    and impact plan are the 1.3.0 behavior; only the summary counts are exercised.
+    """
+    # Two STORED pitchers activated (optioned -> active on the same club).
+    _seed_pitcher(669438, 'Mason Englert', TB, 'TB', roster_status=STATUS_OPTIONED, active=False)
+    _seed_pitcher(687941, 'Alec Gamboa', BOS, 'BOS', roster_status=STATUS_OPTIONED, active=False)
+    # Three benign transaction_detail_mismatch cases, stored active on PHI.
+    se = [
+        _seed_status_effect_case(990001, 'DM One', 'dm1'),
+        _seed_status_effect_case(990002, 'DM Two', 'dm2'),
+        _seed_status_effect_case(990003, 'DM Three', 'dm3'),
+    ]
+    # One reflected compound event (one component already stored) — benign.
+    c_reflected = _compound_pair('cref4', 980001, 980002)
+    _seed_stored_transaction(c_reflected[0])
+
+    # 24 transaction-record-actionable ledger findings; NONE public-material
+    # because every type is ledger-only (SGN/SFA/ASG) or unknown scope (CU). The
+    # first two overlap roster-proven players (669438 / 687941).
+    ledger = [
+        _tx('asg-eng', 669438, type_code='ASG', to_team_id=TB),
+        _tx('asg-gam', 687941, type_code='ASG', to_team_id=BOS),
+    ]
+    ledger += [_tx(f'sgn{i}', 960000 + i, type_code='SGN', from_team_id=PIT, to_team_id=AFFILIATE_A)
+               for i in range(1, 7)]                                   # 960001..960006
+    ledger += [_tx(f'sfa{i}', 960006 + i, type_code='SFA', from_team_id=SEA, to_team_id=SEA)
+               for i in range(1, 7)]                                   # 960007..960012
+    ledger += [_tx(f'asg{i}', 960012 + i, type_code='ASG', from_team_id=BAL, to_team_id=DET)
+               for i in range(1, 7)]                                   # 960013..960018
+    ledger += [_tx(f'cu{i}', 960018 + i, type_code='CU', from_team_id=WSH, to_team_id=ATL)
+               for i in range(1, 5)]                                   # 960019..960022
+    # Informational non-pitcher records (never serialized, never public).
+    non_pitchers = [_tx(f'np{i}', 970000 + i, type_code='SGN', to_team_id=AFFILIATE_C)
+                    for i in range(1, 19)]                             # 18 records
+
+    transactions = ledger + non_pitchers + se + c_reflected
+    rosters = {
+        (TB, ROSTER_TYPE_ACTIVE): [roster_entry(669438, 'Mason Englert', status=ACTIVE)],
+        (BOS, ROSTER_TYPE_ACTIVE): [roster_entry(687941, 'Alec Gamboa', status=ACTIVE)],
+        (TOR, ROSTER_TYPE_ACTIVE): [roster_entry(669310, 'CJ Van Eyk', status=ACTIVE)],
+        (ATH, ROSTER_TYPE_ACTIVE): [roster_entry(814305, 'Yunior Tur', status=ACTIVE)],
+        # PHI still carries the three detail-mismatch pitchers, so lane 1 reports
+        # no roster change for them and PHI never becomes a public team.
+        (PHI, ROSTER_TYPE_ACTIVE): [
+            roster_entry(990001, 'DM One', status=ACTIVE),
+            roster_entry(990002, 'DM Two', status=ACTIVE),
+            roster_entry(990003, 'DM Three', status=ACTIVE),
+        ],
+    }
+    teams = [{'id': t, 'name': f'Team{t}', 'abbreviation': f'T{t}'}
+             for t in (TB, BOS, TOR, ATH, PHI)]
+    people = {**_pitchers(*range(960001, 960023)), **_non_pitchers(*range(970001, 970019))}
+    return _tx_client(transactions, rosters=rosters, teams=teams, people=people)
+
+
+def _obs4_run(observation_four):
+    return _run(observation_four, team_ids=[TB, BOS, TOR, ATH, PHI])
+
+
+# The exact controlled Observation #4 canonical summary values (test items 1-8).
+OBS4_EXPECTED = {
+    'total_meaningful_findings': 28,
+    'total_actionable_findings': 28,
+    'transaction_record_actionable_count': 24,
+    'transaction_ledger_only_findings': 24,
+    'public_roster_change_count': 4,
+    'transaction_public_bullpen_material_count': 0,
+    'schedule_public_change_count': 0,
+    'public_bullpen_change_count': 4,
+    'review_required_findings': 0,
+    'unresolved_findings': 0,
+}
+
+
+def test_observation_four_canonical_summary_values(observation_four):
+    summary = _obs4_run(observation_four)['summary']
+    for key, expected in OBS4_EXPECTED.items():
+        assert summary[key] == expected, (key, summary[key], expected)
+
+
+def test_observation_four_public_bullpen_change_count_is_four_not_28(observation_four):
+    # The whole point of the correction: 28 meaningful/actionable findings but only
+    # FOUR are current public bullpen changes. No summary field reports 28 as a
+    # public bullpen change.
+    summary = _obs4_run(observation_four)['summary']
+    assert summary['public_bullpen_change_count'] == 4
+    assert summary['total_actionable_findings'] == 28
+    assert 28 not in (summary['public_bullpen_change_count'],
+                      summary['public_roster_change_count'],
+                      summary['transaction_public_bullpen_material_count'])
+
+
+def test_observation_four_change_and_material_flags(observation_four):
+    artifact = _obs4_run(observation_four)
+    assert artifact['changed'] is True
+    assert artifact['public_bullpen_change_detected'] is True
+    assert artifact['transaction_ledger_change_detected'] is True
+    assert artifact['material_change_detected'] is True
+
+
+def test_observation_four_impact_plan_unchanged(observation_four):
+    # Correction 5: the correct 1.3.0 impact plan must be byte-for-byte preserved.
+    wr = _obs4_run(observation_four)['would_refresh']
+    pub = wr['public_bullpen_state']
+    assert sorted(wr['targeted_pitcher_mlb_ids']) == [669310, 669438, 687941, 814305]
+    assert sorted(wr['affected_team_ids']) == [BOS, ATH, TB, TOR]  # 111, 133, 139, 141
+    assert sorted(pub['targeted_pitcher_mlb_ids']) == [669310, 669438, 687941, 814305]
+    assert sorted(pub['affected_team_ids']) == [BOS, ATH, TB, TOR]
+    assert pub['publish_snapshot'] is True
+    assert pub['warm_tonight'] is True
+    assert wr['roster_statuses'] is True
+    assert wr['transactions'] is False  # no public membership mismatch
+
+
+def test_observation_four_transaction_ledger_unchanged(observation_four):
+    ledger = _lg(_obs4_run(observation_four))
+    assert ledger['record_actionable_count'] == 24
+    # The 24 missing records surface as ingest event keys; overlaps included.
+    assert len(ledger['ingest_transaction_event_keys']) == 24
+    keys = ledger['ingest_transaction_event_keys']
+    assert any(k.endswith('asg-eng') for k in keys)
+    assert any(k.endswith('asg-gam') for k in keys)
+
+
+def test_observation_four_roster_transaction_overlap_counts_once(observation_four):
+    # 669438 / 687941 each have a roster activation AND a ledger ASG record. The
+    # public change count is 4 (the four roster players), never inflated by the
+    # overlapping ledger records.
+    summary = _obs4_run(observation_four)['summary']
+    assert summary['public_bullpen_change_count'] == 4
+    assert summary['public_roster_change_count'] == 4
+    assert summary['transaction_record_actionable_count'] == 24
+
+
+def test_observation_four_ledger_only_findings_not_public(observation_four):
+    artifact = _obs4_run(observation_four)
+    public_teams = set(artifact['would_refresh']['affected_team_ids'])
+    # Ledger-only organizations and affiliates never become public teams.
+    for org in (PIT, SEA, BAL, DET, WSH, ATL):
+        assert org not in public_teams
+    for aff in (AFFILIATE_A, AFFILIATE_C):
+        assert aff not in public_teams
+
+
+def test_observation_four_legacy_fields_removed(observation_four):
+    # Correction 2: the ambiguous legacy names are gone from the contract.
+    summary = _obs4_run(observation_four)['summary']
+    for legacy in ('actionable_bullpen_differences', 'actionable_differences',
+                   'public_bullpen_material_count', 'public_roster_changes',
+                   'total_differences', 'public_membership_mismatches'):
+        assert legacy not in summary, legacy
+
+
+def test_observation_four_deterministic(observation_four):
+    first = _obs4_run(observation_four)['summary']
+    second = _run(observation_four, team_ids=[TB, BOS, TOR, ATH, PHI])['summary']
+    assert first == second
+
+
+def test_observation_four_role_metrics_unchanged(observation_four):
+    # Correction 6: summary derivation does not alter role-lookup behavior.
+    artifact = _obs4_run(observation_four)
+    summary = artifact['summary']
+    role = artifact['lanes'][intraday_reconcile.LANE_TRANSACTIONS].get('role_verification') or {}
+    assert summary['role_lookups_used'] == role.get('role_lookups_used', 0)
+    assert summary['role_lookups_avoided'] == role.get('role_lookups_avoided', 0)
+    assert summary['role_lookups_used'] <= intraday_reconcile.DEFAULT_MAX_ROLE_LOOKUPS
+
+
+def test_observation_four_summary_invariants_hold(observation_four):
+    artifact = _obs4_run(observation_four)
+    impact = {
+        'would_refresh': artifact['would_refresh'],
+        'public_bullpen_change_detected': artifact['public_bullpen_change_detected'],
+        'transaction_ledger_change_detected': artifact['transaction_ledger_change_detected'],
+        'material_change_detected': artifact['material_change_detected'],
+    }
+    assert intraday_reconcile._summary_contract_invariants(artifact['summary'], impact) == []
+
+
+# ── Summary-contract behavior (Corrections 1-4) ──────────────────────────────
+
+def _ledger_only_client(n):
+    """n proven-pitcher, not-stored ledger-only signings and an empty PHI roster:
+    ledger-actionable findings with zero public bullpen change."""
+    txns = [_tx(f'sgn{i}', 940000 + i, type_code='SGN', to_team_id=AFFILIATE_A)
+            for i in range(1, n + 1)]
+    return _tx_client(txns, rosters={(PHI, ROSTER_TYPE_ACTIVE): []},
+                      teams=[{'id': PHI, 'name': 'Phillies', 'abbreviation': 'PHI'}],
+                      people=_pitchers(*range(940001, 940001 + n)))
+
+
+def test_ledger_only_no_public_change_count_zero(app):
+    summary = _run(_ledger_only_client(5), team_ids=[PHI])['summary']
+    assert summary['transaction_record_actionable_count'] == 5
+    assert summary['public_bullpen_change_count'] == 0
+    assert summary['transaction_ledger_only_findings'] == 5
+
+
+def test_ledger_only_change_detected_but_not_public(app):
+    artifact = _run(_ledger_only_client(3), team_ids=[PHI])
+    assert artifact['transaction_ledger_change_detected'] is True
+    assert artifact['public_bullpen_change_detected'] is False
+    assert artifact['would_refresh']['publish_snapshot'] is False
+    assert artifact['would_refresh']['warm_tonight'] is False
+    assert artifact['would_refresh']['recalculate_team_reads'] == []
+
+
+def test_public_bullpen_change_detected_matches_count_positive(app):
+    # A roster activation -> public_bullpen_change_count > 0 and detected True.
+    _seed_pitcher(945001, 'Act', TB, 'TB', roster_status=STATUS_OPTIONED, active=False)
+    client = _tx_client([], rosters={(TB, ROSTER_TYPE_ACTIVE): [roster_entry(945001, 'Act', status=ACTIVE)]},
+                        teams=[{'id': TB, 'name': 'Rays', 'abbreviation': 'TB'}])
+    artifact = _run(client, team_ids=[TB])
+    summary = artifact['summary']
+    assert summary['public_bullpen_change_count'] >= 1
+    assert artifact['public_bullpen_change_detected'] is (summary['public_bullpen_change_count'] > 0)
+
+
+def test_public_bullpen_change_detected_matches_count_zero(app):
+    artifact = _run(_ledger_only_client(2), team_ids=[PHI])
+    summary = artifact['summary']
+    assert summary['public_bullpen_change_count'] == 0
+    assert artifact['public_bullpen_change_detected'] is (summary['public_bullpen_change_count'] > 0)
+
+
+def test_roster_transaction_public_overlap_counts_once(app):
+    # 931003 is officially gone from PHI's active roster (roster removal change) AND
+    # its transaction proves the same unreflected public bullpen effect. One player,
+    # one public change.
+    tx = _seed_membership_case(946001, stored_active=True, snapshot_team=NYM,
+                               tx_id='pm', type_code=OPT, to_team_id=AFFILIATE_A)
+    client = _tx_client([tx], rosters={(PHI, ROSTER_TYPE_ACTIVE): []},
+                        teams=[{'id': PHI, 'name': 'Phillies', 'abbreviation': 'PHI'}])
+    summary = _run(client, team_ids=[PHI])['summary']
+    assert summary['transaction_public_bullpen_material_count'] >= 1
+    assert summary['public_roster_change_count'] >= 1
+    # The single player is not counted twice.
+    assert summary['public_bullpen_change_count'] == summary['public_roster_change_count']
+
+
+def test_public_membership_mismatch_single_player_counts_once(app):
+    # One player surfaces via BOTH the roster lane (removed from PHI's active
+    # roster) and the transaction lane (unreflected public effect). It is one
+    # deduplicated public bullpen change, not two.
+    tx = _seed_membership_case(947001, stored_active=True, snapshot_team=NYM,
+                               tx_id='pm', type_code=OPT, to_team_id=AFFILIATE_A)
+    client = _tx_client([tx], rosters={(PHI, ROSTER_TYPE_ACTIVE): []},
+                        teams=[{'id': PHI, 'name': 'Phillies', 'abbreviation': 'PHI'}])
+    summary = _run(client, team_ids=[PHI])['summary']
+    assert summary['transaction_public_bullpen_material_count'] >= 1
+    assert summary['public_bullpen_change_count'] == 1
+
+
+def test_roster_aligned_transaction_not_public_material(app):
+    # When the roster still carries the pitcher active, the transaction's implied
+    # effect is aligned with current state: not public-material, no public change.
+    tx = _seed_membership_case(947002, stored_active=True, snapshot_team=NYM,
+                               tx_id='al', type_code=OPT, to_team_id=AFFILIATE_A)
+    client = _tx_client([tx], rosters={(PHI, ROSTER_TYPE_ACTIVE): [roster_entry(947002, 'P947002', status=ACTIVE)]},
+                        teams=[{'id': PHI, 'name': 'Phillies', 'abbreviation': 'PHI'}])
+    summary = _run(client, team_ids=[PHI])['summary']
+    assert summary['public_roster_change_count'] == 0
+    assert summary['transaction_public_bullpen_material_count'] == 0
+    assert summary['public_bullpen_change_count'] == 0
+
+
+def test_schedule_public_change_counted_under_governed_rule(app):
+    # A newly-final game is a governed schedule public change; it feeds
+    # schedule_public_change_count but NOT the bullpen-membership change count.
+    client = FakeMlbClient(
+        rosters={(PHI, ROSTER_TYPE_ACTIVE): []}, transactions=[],
+        schedule=[_game(870, PHI, NYM, status_code='F', detailed='Final', abstract='Final')],
+        teams=[{'id': PHI, 'name': 'Phillies', 'abbreviation': 'PHI'},
+               {'id': NYM, 'name': 'Mets', 'abbreviation': 'NYM'}],
+    )
+    artifact = _run(client, team_ids=[PHI])
+    summary = artifact['summary']
+    assert summary['schedule_public_change_count'] >= 1
+    assert summary['public_bullpen_change_count'] == 0
+    assert artifact['public_bullpen_change_detected'] is False
+
+
+def test_review_required_increments_meaningful_not_actionable(app):
+    source = [_tx('ro', None, type_code='SIGNED', player_full_name='Prospect X')]
+    summary = _run(_tx_client(source), team_ids=[PHI])['summary']
+    assert summary['review_required_findings'] >= 1
+    assert summary['total_meaningful_findings'] >= summary['total_actionable_findings']
+    assert summary['total_meaningful_findings'] == summary['total_actionable_findings'] + summary['review_required_findings']
+
+
+def test_informational_records_not_in_meaningful_or_actionable(app):
+    # A proven non-pitcher signing is informational only: it changes neither total.
+    client = _tx_client([_tx('np', 948001, type_code='SGN', to_team_id=AFFILIATE_A)],
+                        rosters={(PHI, ROSTER_TYPE_ACTIVE): []},
+                        teams=[{'id': PHI, 'name': 'Phillies', 'abbreviation': 'PHI'}],
+                        people=_non_pitchers(948001))
+    summary = _run(client, team_ids=[PHI])['summary']
+    assert summary['non_pitcher_transactions'] == 1
+    assert summary['total_meaningful_findings'] == 0
+    assert summary['total_actionable_findings'] == 0
+
+
+def test_transaction_record_actionable_matches_ledger_plan(app):
+    artifact = _run(_ledger_only_client(4), team_ids=[PHI])
+    assert artifact['summary']['transaction_record_actionable_count'] \
+        == artifact['would_refresh']['transaction_ledger']['record_actionable_count']
+
+
+def test_transaction_ledger_only_never_exceeds_actionable(observation_four):
+    summary = _obs4_run(observation_four)['summary']
+    assert summary['transaction_ledger_only_findings'] <= summary['transaction_record_actionable_count']
+
+
+def test_transaction_public_material_matches_serialized(app):
+    tx = _seed_membership_case(949001, stored_active=True, snapshot_team=NYM,
+                               tx_id='pm', type_code=OPT, to_team_id=AFFILIATE_A)
+    client = _tx_client([tx], rosters={(PHI, ROSTER_TYPE_ACTIVE): [roster_entry(949001, 'P949001', status=ACTIVE)]},
+                        teams=[{'id': PHI, 'name': 'Phillies', 'abbreviation': 'PHI'}])
+    artifact = _run(client, team_ids=[PHI])
+    serialized = sum(1 for d in _tx_lane(artifact)['differences'] if d.get('public_bullpen_material'))
+    assert artifact['summary']['transaction_public_bullpen_material_count'] == serialized
+
+
+def test_public_roster_change_count_matches_roster_findings(observation_four):
+    artifact = _obs4_run(observation_four)
+    checked = artifact['lanes'][intraday_reconcile.LANE_ROSTER_ASSIGNMENT]['checked']
+    expected = checked['roster_status_differences'] + checked['team_assignment_differences']
+    assert artifact['summary']['public_roster_change_count'] == expected
+
+
+def test_schedule_public_change_count_matches_schedule_findings(app):
+    client = FakeMlbClient(
+        rosters={(PHI, ROSTER_TYPE_ACTIVE): []}, transactions=[],
+        schedule=[_game(871, PHI, NYM, status_code='F', detailed='Final', abstract='Final')],
+        teams=[{'id': PHI, 'name': 'Phillies', 'abbreviation': 'PHI'},
+               {'id': NYM, 'name': 'Mets', 'abbreviation': 'NYM'}],
+    )
+    artifact = _run(client, team_ids=[PHI])
+    sched = artifact['lanes'][intraday_reconcile.LANE_SCHEDULE_FINALITY]['differences']
+    expected = sum(1 for d in sched if d.get('severity') == intraday_reconcile.SEVERITY_ACTIONABLE)
+    assert artifact['summary']['schedule_public_change_count'] == expected
+
+
+# Canonical 1.4.0 summary count fields and the ambiguous names removed from the
+# contract, asserted structurally by the pure (no-database) contract tests below.
+_CANONICAL_SUMMARY_KEYS = (
+    'total_meaningful_findings', 'total_actionable_findings',
+    'review_required_findings', 'unresolved_findings',
+    'transaction_record_actionable_count', 'transaction_ledger_only_findings',
+    'transaction_public_bullpen_material_count', 'public_roster_change_count',
+    'schedule_public_change_count', 'public_bullpen_change_count',
+)
+_REMOVED_LEGACY_SUMMARY_KEYS = (
+    'actionable_bullpen_differences', 'actionable_differences',
+    'public_bullpen_material_count', 'public_roster_changes',
+    'total_differences', 'public_membership_mismatches',
+)
+
+
+class _StubLockConflict:
+    """Minimal stand-in for the writer-lock conflict object consumed by the
+    skipped-artifact builder — no Flask app context or database required."""
+    reason = sync_metadata.SYNC_WRITER_ALREADY_RUNNING
+    message = 'A public sync writer already holds the advisory lock.'
+
+    def to_dict(self):
+        return {'reason': self.reason, 'message': self.message}
+
+
+def _assert_canonical_zero_summary(summary):
+    # Every canonical count is present and zero; no ambiguous legacy name remains;
+    # no public or ledger count is accidentally populated.
+    for key in _CANONICAL_SUMMARY_KEYS:
+        assert key in summary, key
+        assert summary[key] == 0, (key, summary[key])
+    for legacy in _REMOVED_LEGACY_SUMMARY_KEYS:
+        assert legacy not in summary, legacy
+
+
+def _assert_zero_work_contract(artifact, *, status):
+    assert artifact['capability'] == 'intraday_reconciliation_audit_v1'
+    assert artifact['mode'] == 'intraday'
+    assert artifact['phase'] == 1
+    assert artifact['check_only'] is True
+    assert artifact['audit_only'] is True
+    assert artifact['status'] == status
+    assert artifact['version'] == intraday_reconcile.VERSION  # 1.4.0
+    _assert_canonical_zero_summary(artifact['summary'])
+
+
+# Pure contract tests: these validate dictionary construction only, so they take
+# no app/db fixture and open no Postgres connection (a fixture that ran
+# db.create_all() per test accumulated connections and exhausted the CI Postgres
+# ceiling). build_bootstrap_failure_artifact, _skipped_artifact, _empty_summary,
+# and _summary_contract_invariants need no Flask app context or database.
+
+def test_skipped_and_bootstrap_summaries_use_canonical_names():
+    # Bootstrap-failure artifact (pure builder).
+    boot = intraday_reconcile.build_bootstrap_failure_artifact(
+        source='manual', started_at_iso='2026-07-17T00:00:00Z')
+    _assert_zero_work_contract(boot, status='failed')
+
+    # Skipped artifact, built with stub client/conflict — no app context, no DB.
+    skipped = intraday_reconcile._skipped_artifact(
+        client=FakeMlbClient(),
+        source='manual',
+        product_date=date(2026, 7, 17),
+        lanes=intraday_reconcile.ALL_LANES,
+        check_timestamp_iso='2026-07-17T00:00:00Z',
+        conflict=_StubLockConflict(),
+    )
+    _assert_zero_work_contract(skipped, status='skipped')
+    # Ledger/public plans are empty and no public work is implied.
+    assert skipped['public_bullpen_change_detected'] is False
+    assert skipped['transaction_ledger_change_detected'] is False
+    assert skipped['would_refresh']['transaction_ledger']['record_actionable_count'] == 0
+    assert skipped['would_refresh']['public_bullpen_state']['affected_team_ids'] == []
+
+
+def test_empty_summary_passes_invariants():
+    summary = intraday_reconcile._empty_summary()
+    _assert_canonical_zero_summary(summary)
+    impact = {'would_refresh': intraday_reconcile._empty_would_refresh(),
+              'public_bullpen_change_detected': False,
+              'transaction_ledger_change_detected': False}
+    assert intraday_reconcile._summary_contract_invariants(summary, impact) == []

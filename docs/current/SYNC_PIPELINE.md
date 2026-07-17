@@ -161,9 +161,18 @@ behavior is authorized.
   human-review-required finding is never hidden. `material_change_detected` is
   true only when a future authorized write/recompute would actually be required
   (an actionable finding or a newly-final game). Benign inventory sets neither.
-  The `summary` block carries honest buckets — `records_checked`,
-  `actionable_differences`, `review_required_findings`, `unresolved_findings`,
-  `informational_records`, and `benign_records_suppressed`.
+  The `summary` block (contract `version` 1.4.0) carries honest, explicitly
+  scoped buckets — `records_checked`, `total_meaningful_findings`,
+  `total_actionable_findings`, `review_required_findings`, `unresolved_findings`,
+  the transaction-ledger axis (`transaction_record_actionable_count`,
+  `transaction_ledger_only_findings`,
+  `transaction_public_bullpen_material_count`), the public axis
+  (`public_roster_change_count`, `schedule_public_change_count`,
+  `public_bullpen_change_count`), `informational_records`, and
+  `benign_records_suppressed`. Each aggregate has one derivation source, and the
+  deduplicated `public_bullpen_change_count` is `> 0` exactly when
+  `public_bullpen_change_detected` is true — a meaningful/actionable finding does
+  not by itself imply a public bullpen change.
 - **Operator command (read-only):**
 
   ```

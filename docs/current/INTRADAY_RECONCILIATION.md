@@ -179,13 +179,16 @@ per-lane `lanes` results, `would_refresh`, `material_change_detected`, a
 `summary` block, a `safety` block of guarantees, the `source_api` call totals
 grouped by endpoint, and `limitations`). The `capability` value is
 `intraday_reconciliation_audit_v1` and is the pinned contract identity; the
-finer-grained `version` is currently `1.3.0`. Three backward-compatible minor
+finer-grained `version` is currently `1.4.0`. Four backward-compatible minor
 bumps have shipped inside capability v1: `1.0.0 → 1.1.0` (signal-quality: benign
 inventory aggregated, summary buckets, active-roster-only default);
 `1.1.0 → 1.2.0` (bullpen-relevance: role-gated actionability, MLB-team impact
-scoping, exact-state vs public-membership separation, chronology); and
-`1.2.0 → 1.3.0` (transaction-ledger vs public-materiality split). Each bump only
-**adds** fields, sub-plans, and classifications; none of the fields the
+scoping, exact-state vs public-membership separation, chronology);
+`1.2.0 → 1.3.0` (transaction-ledger vs public-materiality split); and
+`1.3.0 → 1.4.0` (summary-contract clarification: one derivation source and one
+explicit scope per aggregate count, deduplicated `public_bullpen_change_count`,
+and removal of the ambiguous legacy count names). Each bump only **adds** or
+**clarifies** fields, sub-plans, and classifications; none of the fields the
 workflow's artifact validator checks (`capability` / `mode` / `check_only` /
 `status`) change, so the validator still accepts the artifact.
 
@@ -201,13 +204,23 @@ reconcile). The flat `would_refresh` fields are derived **only** from
 `affected_team_ids`, `recalculate_team_reads`, `targeted_pitcher_*`,
 `publish_snapshot`, or `warm_tonight`. Top-level `material_change_detected`,
 `public_bullpen_change_detected`, and `transaction_ledger_change_detected` are
-independent. The `summary` block additionally carries
-`transaction_record_actionable_count`, `public_bullpen_material_count`,
-`public_roster_changes`, `transaction_ledger_only_findings`,
-`role_lookups_used` / `role_lookups_avoided`, `mlb_public_teams_affected`,
-`transaction_related_mlb_teams`, and `non_mlb_team_ids_observed`. Only the
-governed MLB clubs appear in `affected_team_ids` /
-`would_refresh.recalculate_team_reads`; affiliate ids are evidence-only.
+independent. As of contract version **1.4.0** (Production Observation #4) every
+aggregate `summary` count is derived from one source (`_derive_summary_counts`)
+and has one explicit, unambiguous scope: all-lane finding tallies
+(`total_meaningful_findings`, `total_actionable_findings`,
+`review_required_findings`, `unresolved_findings`); the transaction-LEDGER axis
+(`transaction_record_actionable_count`, `transaction_ledger_only_findings`,
+`transaction_public_bullpen_material_count`); the per-lane public tallies
+(`public_roster_change_count`, `schedule_public_change_count`); and the
+deduplicated GLOBAL `public_bullpen_change_count` (same roster authority and
+overlap rules as `build_impact_plan`, so a roster/transaction overlap for one
+player counts once and ledger-only or completed-game findings never inflate it).
+The earlier ambiguous names `actionable_bullpen_differences`,
+`actionable_differences`, `public_bullpen_material_count`,
+`public_roster_changes`, `total_differences`, and `public_membership_mismatches`
+were removed (no runtime consumer depended on them). Only the governed MLB clubs
+appear in `affected_team_ids` / `would_refresh.recalculate_team_reads`; affiliate
+ids are evidence-only.
 
 Signal semantics the contract guarantees:
 
@@ -222,10 +235,18 @@ Signal semantics the contract guarantees:
   actionable finding or a newly-final game. Review-required findings are
   `changed` but **not** material, and `would_refresh.publish_snapshot` follows
   `material_change_detected`.
-- **`summary`** carries honest buckets: `records_checked`, `total_differences`
-  (meaningful only), `actionable_differences`, `review_required_findings`,
-  `unresolved_findings`, `informational_records`, `benign_records_suppressed`,
-  and `material_change_detected`.
+- **`summary`** carries honest, explicitly-scoped buckets: `records_checked`,
+  `total_meaningful_findings` (meaningful only), `total_actionable_findings`,
+  `review_required_findings`, `unresolved_findings`, the transaction-ledger axis
+  (`transaction_record_actionable_count`, `transaction_ledger_only_findings`,
+  `transaction_public_bullpen_material_count`), the public axis
+  (`public_roster_change_count`, `schedule_public_change_count`,
+  `public_bullpen_change_count`), `informational_records`,
+  `benign_records_suppressed`, and `material_change_detected`. A count that is
+  meaningful/actionable does **not** imply a public bullpen change — that is the
+  distinct `public_bullpen_change_count`, which equals the deduplicated set of
+  current public changes and is `> 0` exactly when
+  `public_bullpen_change_detected` is `true`.
 - **Per-lane transaction inventory** lives in the transaction lane's `checked`
   counts, `informational_counts`, bounded `informational_samples`, and
   `suppressed_counts.benign_records_suppressed` — so the full benign volume is
@@ -394,8 +415,9 @@ audit-only, and non-writing.
 The second valid production intraday run (Production Observation #2, contract
 version 1.1.0) completed successfully and confirmed the signal-quality
 correction held: API calls fell from 123 to 33, roster calls from 120 to 30,
-benign transactions no longer entered `differences`, `summary.total_differences`
-fell from 360 to 9, 337 benign records were suppressed, compound events were
+benign transactions no longer entered `differences`, the meaningful-difference
+total (then `summary.total_differences`, renamed `total_meaningful_findings` in
+1.4.0) fell from 360 to 9, 337 benign records were suppressed, compound events were
 grouped correctly, source player names were preserved, and every read-only
 guarantee passed.
 
@@ -487,3 +509,56 @@ after this correction merges before the representative validation period of §9
 can be considered met. Nothing here authorizes automatic hourly scheduling, a
 write phase, or any Phase 2+ behavior; the mode remains manual, audit-only, and
 non-writing.
+
+## 16. Production Observation #4 (2026-07-17) and the summary-contract clarification
+
+The fourth valid production intraday run (Production Observation #4, contract
+version 1.3.0) completed successfully and confirmed that the deployed
+transaction-ledger/public-materiality split works correctly. The run proved four
+current public bullpen changes (pitchers 669310 / 669438 / 687941 / 814305 on
+MLB teams 111 / 133 / 139 / 141) while 24 missing transaction records stayed in
+the `transaction_ledger` plan; public targeted workload and affected teams were
+restricted to the four roster-proven changes, there were zero public membership
+mismatches, affiliate ids remained evidence-only, cross-lane overlap was
+deduplicated, and no canonical write, snapshot build, or fatigue recompute
+occurred. Writer-lock, read-only safety, active-roster efficiency, role
+verification and governance, chronology/supersession, and compound-event
+handling all passed.
+
+The one defect Observation #4 surfaced was **naming, not behavior**: two
+aggregate summary names remained misleading. `actionable_bullpen_differences`
+counted all 28 actionable findings (four public roster changes plus 24
+ledger-only records), which partially re-introduced the ledger/public conflation
+at the summary layer; and `public_bullpen_material_count` sounded global while it
+counted only the transaction lane's public-material findings (zero), even though
+the artifact simultaneously reported four public roster changes and
+`public_bullpen_change_detected = true`. A downstream consumer should not have to
+know a field's provenance or inspect lane internals to read the totals.
+
+The correction (contract `version` 1.4.0, pinned by the tests in
+`backend/tests/test_intraday_reconcile.py`, including a compact Observation #4
+regression fixture) does not change any reconciliation, source-acquisition,
+materiality, impact-plan, or role-lookup behavior. It gives every aggregate count
+one explicit scope and one derivation source (`_derive_summary_counts`): the
+all-lane tallies `total_meaningful_findings` / `total_actionable_findings`; the
+transaction-ledger axis `transaction_record_actionable_count` /
+`transaction_ledger_only_findings` / `transaction_public_bullpen_material_count`;
+the per-lane public tallies `public_roster_change_count` /
+`schedule_public_change_count`; and the deduplicated GLOBAL
+`public_bullpen_change_count`, which reuses `build_impact_plan`'s roster authority
+and overlap rules so a roster/transaction overlap for one player counts once and
+ledger-only or completed-game findings never inflate it. The invariant
+`public_bullpen_change_detected == (public_bullpen_change_count > 0)` is asserted,
+and a pure `_summary_contract_invariants` check guards the arithmetic
+structurally (logged, never fatal). The ambiguous legacy names
+(`actionable_bullpen_differences`, `actionable_differences`,
+`public_bullpen_material_count`, `public_roster_changes`, `total_differences`,
+`public_membership_mismatches`) were **removed** because no runtime consumer
+depended on them; the two in-repo log lines that read `total_differences` now
+read `total_meaningful_findings`.
+
+**Observation #4 validates the architecture but not the final summary contract.**
+A **new** Production Observation #5 is required after this correction merges
+before the representative validation period of §9 can be considered met. Nothing
+here authorizes automatic hourly scheduling, a write phase, or any Phase 2+
+behavior; the mode remains manual, audit-only, and non-writing.

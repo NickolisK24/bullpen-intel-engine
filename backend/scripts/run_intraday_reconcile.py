@@ -107,7 +107,7 @@ def _log_human_summary(artifact):
         return
     logging.info(
         'Changed: %s | differences: %s | material change: %s',
-        artifact.get('changed'), summary.get('total_differences'),
+        artifact.get('changed'), summary.get('total_meaningful_findings'),
         summary.get('material_change_detected'),
     )
     for limitation in artifact.get('limitations') or []:

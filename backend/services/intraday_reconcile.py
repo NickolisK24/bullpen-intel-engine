@@ -104,7 +104,27 @@ CAPABILITY = 'intraday_reconciliation_audit_v1'
 #                    buckets; the flat would_refresh fields stay, now sourced from
 #                    public_bullpen_state), and none of the fields the workflow
 #                    validator checks change — a backward-compatible minor bump.
-VERSION = '1.3.0'
+#   1.3.0 -> 1.4.0 : summary-contract clarification (Production Observation #4).
+#                    The reconciliation, source acquisition, materiality
+#                    decisions, and impact plan are UNCHANGED; only the aggregate
+#                    summary counts are made unambiguous. Every summary count now
+#                    has one explicit scope and one derivation source
+#                    (_derive_summary_counts): all-lane finding tallies
+#                    (total_meaningful_findings / total_actionable_findings), the
+#                    transaction-LEDGER axis (transaction_record_actionable_count /
+#                    transaction_ledger_only_findings /
+#                    transaction_public_bullpen_material_count), the per-lane
+#                    public tallies (public_roster_change_count /
+#                    schedule_public_change_count), and the deduplicated GLOBAL
+#                    public_bullpen_change_count (same roster authority + overlap
+#                    rules as build_impact_plan). The ambiguous legacy names
+#                    actionable_bullpen_differences, actionable_differences,
+#                    public_bullpen_material_count, public_roster_changes,
+#                    total_differences, and public_membership_mismatches are
+#                    removed (no runtime consumer depended on them). Additive/
+#                    clarifying only; capability identity and the fields the
+#                    workflow validator checks are unchanged — a minor bump.
+VERSION = '1.4.0'
 
 MODE = 'intraday'
 PHASE = 1
@@ -2639,7 +2659,8 @@ def run_intraday_audit(
         logger.info(
             'intraday audit complete: status=%s changed=%s differences=%d '
             '(no writes performed)',
-            artifact['status'], artifact['changed'], artifact['summary']['total_differences'],
+            artifact['status'], artifact['changed'],
+            artifact['summary']['total_meaningful_findings'],
         )
         return artifact
     finally:
@@ -2716,6 +2737,29 @@ def _empty_would_refresh():
     }
 
 
+def _empty_summary():
+    """Canonical zero-work summary for skipped / bootstrap-failure artifacts.
+    Carries the same explicitly-scoped count names as a completed artifact so a
+    consumer can read them uniformly regardless of status (Correction 1)."""
+    return {
+        'records_checked': 0,
+        'total_meaningful_findings': 0,
+        'total_actionable_findings': 0,
+        'review_required_findings': 0,
+        'unresolved_findings': 0,
+        'transaction_record_actionable_count': 0,
+        'transaction_ledger_only_findings': 0,
+        'transaction_public_bullpen_material_count': 0,
+        'transaction_ledger_change_detected': False,
+        'public_roster_change_count': 0,
+        'schedule_public_change_count': 0,
+        'public_bullpen_change_count': 0,
+        'public_bullpen_change_detected': False,
+        'material_change_detected': False,
+        'affected_team_ids': [],
+    }
+
+
 def _base_artifact_fields(*, source, product_date, check_timestamp_iso, completed_iso, status, lanes_run):
     return {
         'capability': CAPABILITY,
@@ -2748,6 +2792,140 @@ def _derive_status(lane_results, lanes_run, write_guard_clean):
     return STATUS_PARTIAL
 
 
+def _derive_summary_counts(lane_results, impact_plan):
+    """Single derivation surface for every aggregate summary count (Corrections
+    1/3/4). Each field has exactly one explicit scope and one source, so a
+    downstream consumer never needs to know a count's provenance or inspect lane
+    internals, and no two counts can silently diverge from one another or from the
+    impact plan.
+
+    Scopes:
+      * total_meaningful_findings / total_actionable_findings /
+        review_required_findings / unresolved_findings — ALL-lane finding tallies.
+        A meaningful finding is any serialized difference (benign inventory is
+        never serialized). This does not imply every finding affects the public
+        bullpen.
+      * transaction_record_actionable_count / transaction_ledger_only_findings /
+        transaction_public_bullpen_material_count — the transaction-LEDGER axis,
+        independent of public materiality.
+      * public_roster_change_count / schedule_public_change_count — per-lane
+        current-public-state change tallies.
+      * public_bullpen_change_count — the deduplicated GLOBAL count of current
+        public bullpen changes, using the SAME roster authority and cross-lane
+        overlap rules as build_impact_plan: the roster lane owns current
+        membership; a transaction public-material finding for a player the roster
+        lane already proved is the same public change and is not counted twice;
+        ledger-only records and completed-game/schedule findings never inflate it.
+    """
+    roster_lane = lane_results.get(LANE_ROSTER_ASSIGNMENT) or {}
+    tx_lane = lane_results.get(LANE_TRANSACTIONS) or {}
+    schedule_lane = lane_results.get(LANE_SCHEDULE_FINALITY) or {}
+    roster_checked = roster_lane.get('checked') or {}
+    tx_checked = tx_lane.get('checked') or {}
+
+    all_diffs = [
+        d
+        for lane in ALL_LANES
+        for d in ((lane_results.get(lane) or {}).get('differences') or [])
+    ]
+    total_meaningful_findings = len(all_diffs)
+    total_actionable_findings = sum(
+        1 for d in all_diffs if d.get('severity') == SEVERITY_ACTIONABLE
+    )
+    review_required_findings = sum(
+        1 for d in all_diffs if d.get('severity') == SEVERITY_REVIEW
+    )
+    unresolved_findings = sum(1 for d in all_diffs if _is_unresolved_finding(d))
+
+    # Transaction-LEDGER axis. transaction_ledger_only_findings is counted
+    # precisely from the findings (ledger-actionable AND not public-material)
+    # rather than by subtraction, so it stays correct even if a public-material
+    # finding is not itself ledger-actionable.
+    tx_diffs = tx_lane.get('differences') or []
+    transaction_record_actionable_count = int(tx_checked.get('transaction_record_actionable', 0))
+    transaction_public_bullpen_material_count = int(tx_checked.get('public_bullpen_material', 0))
+    transaction_ledger_only_findings = sum(
+        1
+        for d in tx_diffs
+        if d.get('transaction_record_actionable') and not d.get('public_bullpen_material')
+    )
+
+    # Per-lane current-public-state tallies.
+    public_roster_change_count = (
+        int(roster_checked.get('roster_status_differences', 0))
+        + int(roster_checked.get('team_assignment_differences', 0))
+    )
+    schedule_public_change_count = sum(
+        1
+        for d in (schedule_lane.get('differences') or [])
+        if d.get('severity') == SEVERITY_ACTIONABLE
+    )
+
+    # Deduplicated GLOBAL public bullpen-change count. The roster lane is the sole
+    # authority for current membership; a transaction public-material finding for a
+    # player the roster lane already proved is the SAME public change (matches
+    # build_impact_plan's union-dedup of public players), so it is not added again.
+    roster_public_mlb_ids = set(roster_lane.get('affected_pitcher_mlb_ids') or [])
+    tx_public_mlb_ids = set(tx_lane.get('affected_pitcher_mlb_ids') or [])
+    transaction_public_only = len(tx_public_mlb_ids - roster_public_mlb_ids)
+    public_bullpen_change_count = public_roster_change_count + transaction_public_only
+
+    return {
+        'total_meaningful_findings': total_meaningful_findings,
+        'total_actionable_findings': total_actionable_findings,
+        'review_required_findings': review_required_findings,
+        'unresolved_findings': unresolved_findings,
+        'transaction_record_actionable_count': transaction_record_actionable_count,
+        'transaction_ledger_only_findings': transaction_ledger_only_findings,
+        'transaction_public_bullpen_material_count': transaction_public_bullpen_material_count,
+        'public_roster_change_count': public_roster_change_count,
+        'schedule_public_change_count': schedule_public_change_count,
+        'public_bullpen_change_count': public_bullpen_change_count,
+    }
+
+
+def _summary_contract_invariants(summary, impact_plan):
+    """Return the list of violated summary-arithmetic invariants (Correction 4),
+    empty when the summary is internally consistent. Pure and side-effect free.
+    Used by tests and as a defensive pre-return check; a violation signals a
+    derivation bug, never a data condition, and never fails the audit."""
+    impact_plan = impact_plan or {}
+    tx_ledger = (impact_plan.get('would_refresh') or {}).get('transaction_ledger') or {}
+    violations = []
+
+    def check(name, condition):
+        if not condition:
+            violations.append(name)
+
+    check(
+        'transaction_record_actionable_count==transaction_ledger.record_actionable_count',
+        summary['transaction_record_actionable_count'] == int(tx_ledger.get('record_actionable_count', 0)),
+    )
+    check(
+        'transaction_ledger_only_findings<=transaction_record_actionable_count',
+        summary['transaction_ledger_only_findings'] <= summary['transaction_record_actionable_count'],
+    )
+    check(
+        'public_bullpen_change_detected==public_bullpen_change_count>0',
+        bool(impact_plan.get('public_bullpen_change_detected'))
+        == (summary['public_bullpen_change_count'] > 0),
+    )
+    check(
+        'transaction_ledger_change_detected==transaction_record_actionable_count>0',
+        bool(impact_plan.get('transaction_ledger_change_detected'))
+        == (summary['transaction_record_actionable_count'] > 0),
+    )
+    check(
+        'total_actionable_findings>=public_bullpen_change_count',
+        summary['total_actionable_findings'] >= summary['public_bullpen_change_count'],
+    )
+    check(
+        'total_meaningful_findings>=total_actionable_findings',
+        summary['total_meaningful_findings'] >= summary['total_actionable_findings'],
+    )
+    return violations
+
+
 def _build_completed_artifact(
     *,
     source,
@@ -2763,16 +2941,9 @@ def _build_completed_artifact(
     status = _derive_status(lane_results, lanes_run, write_guard['clean'])
 
     # Every serialized difference is meaningful (benign inventory is not
-    # serialized), so counts are honest by construction.
-    all_diffs = [
-        d
-        for lane in ALL_LANES
-        for d in ((lane_results.get(lane) or {}).get('differences') or [])
-    ]
-    total_differences = len(all_diffs)
-    actionable_count = sum(1 for d in all_diffs if d.get('severity') == SEVERITY_ACTIONABLE)
-    review_required_count = sum(1 for d in all_diffs if d.get('severity') == SEVERITY_REVIEW)
-    unresolved_count = sum(1 for d in all_diffs if _is_unresolved_finding(d))
+    # serialized). All aggregate counts come from ONE derivation source
+    # (_derive_summary_counts) so no two can silently diverge (Correction 1/4).
+    counts = _derive_summary_counts(lane_results, impact_plan)
 
     changed_lanes = sorted(
         lane for lane in lanes_run
@@ -2815,21 +2986,62 @@ def _build_completed_artifact(
         status=status,
         lanes_run=lanes_run,
     )
-    roster_lane = lane_results.get(LANE_ROSTER_ASSIGNMENT) or {}
-    roster_lane_checked = roster_lane.get('checked') or {}
-    public_roster_changes = (
-        int(roster_lane_checked.get('roster_status_differences', 0))
-        + int(roster_lane_checked.get('team_assignment_differences', 0))
-    )
-    public_bullpen_material_count = int(tx_checked.get('public_bullpen_material', 0))
-    ledger_actionable_count = int(tx_checked.get('transaction_record_actionable', 0))
     tx_ledger = tx_lane.get('transaction_ledger') or {}
     role_verification = tx_lane.get('role_verification') or {}
     public_bullpen_change_detected = bool(impact_plan.get('public_bullpen_change_detected'))
     transaction_ledger_change_detected = bool(impact_plan.get('transaction_ledger_change_detected'))
 
+    summary = {
+        'records_checked': records_checked,
+        # ── Canonical, explicitly-scoped counts (Correction 1) ───────────────
+        # All-lane finding tallies. A meaningful finding is any serialized
+        # difference; being meaningful/actionable does NOT imply a public bullpen
+        # change (that is public_bullpen_change_count below).
+        'total_meaningful_findings': counts['total_meaningful_findings'],
+        'total_actionable_findings': counts['total_actionable_findings'],
+        'review_required_findings': counts['review_required_findings'],
+        'unresolved_findings': counts['unresolved_findings'],
+        # Transaction-LEDGER axis — future ledger reconciliation only, never
+        # public materiality.
+        'transaction_record_actionable_count': counts['transaction_record_actionable_count'],
+        'transaction_ledger_only_findings': counts['transaction_ledger_only_findings'],
+        'transaction_public_bullpen_material_count': counts['transaction_public_bullpen_material_count'],
+        'transaction_ledger_change_detected': transaction_ledger_change_detected,
+        # Public current-state axis — per-lane tallies plus the deduplicated
+        # GLOBAL public bullpen-change count.
+        'public_roster_change_count': counts['public_roster_change_count'],
+        'schedule_public_change_count': counts['schedule_public_change_count'],
+        'public_bullpen_change_count': counts['public_bullpen_change_count'],
+        'public_bullpen_change_detected': public_bullpen_change_detected,
+        # Retained, unambiguous informational buckets.
+        'role_unresolved_findings': tx_checked.get('bullpen_relevance_unresolved', 0),
+        'non_pitcher_transactions': tx_checked.get('non_pitcher_transactions', 0),
+        'transaction_detail_mismatches': tx_checked.get('transaction_detail_mismatches', 0),
+        'superseded_transactions': tx_checked.get('superseded_transactions', 0),
+        'chronology_unresolved_findings': tx_checked.get('chronology_unresolved', 0),
+        'role_lookups_used': role_verification.get('role_lookups_used', 0),
+        'role_lookups_avoided': role_verification.get('role_lookups_avoided', 0),
+        'informational_records': informational_records,
+        'benign_records_suppressed': benign_records_suppressed,
+        'material_change_detected': impact_plan['material_change_detected'],
+        'affected_team_ids': would_refresh['affected_team_ids'],
+        'mlb_teams_affected': would_refresh['affected_team_ids'],
+        'mlb_public_teams_affected': would_refresh['affected_team_ids'],
+        'transaction_related_mlb_teams': list(tx_ledger.get('transaction_related_mlb_team_ids') or []),
+        'non_mlb_team_ids_observed': non_mlb_team_ids_observed,
+    }
+    # Defensive, non-fatal: the single derivation source guarantees these hold, so
+    # a violation is a derivation bug, never a data condition. It is logged, never
+    # raised, and never changes the audit status (Correction 4).
+    invariant_violations = _summary_contract_invariants(summary, impact_plan)
+    if invariant_violations:
+        logger.warning(
+            'intraday summary invariant(s) violated (derivation bug, not a data '
+            'condition): %s', ', '.join(invariant_violations),
+        )
+
     artifact.update({
-        'changed': bool(total_differences),
+        'changed': bool(counts['total_meaningful_findings']),
         'changed_lanes': changed_lanes,
         'affected_team_ids': would_refresh['affected_team_ids'],
         'affected_pitcher_ids': affected_pitcher_ids,
@@ -2837,44 +3049,14 @@ def _build_completed_artifact(
         'lanes': lane_results,
         'would_refresh': would_refresh,
         'material_change_detected': impact_plan['material_change_detected'],
-        # Independent change axes (Correction 10).
+        # Independent change axes (Correction 10, retained).
         'public_bullpen_change_detected': public_bullpen_change_detected,
         'transaction_ledger_change_detected': transaction_ledger_change_detected,
         'limitations': limitations,
         'source_api': api_metrics,
         'safety': _safety_block(write_guard),
         'write_guard': write_guard,
-        'summary': {
-            'total_differences': total_differences,
-            'records_checked': records_checked,
-            'actionable_differences': actionable_count,
-            'actionable_bullpen_differences': actionable_count,
-            # Two independent axes (Correction 1/11).
-            'transaction_record_actionable_count': ledger_actionable_count,
-            'transaction_ledger_change_detected': transaction_ledger_change_detected,
-            'public_bullpen_material_count': public_bullpen_material_count,
-            'public_bullpen_change_detected': public_bullpen_change_detected,
-            'public_roster_changes': public_roster_changes,
-            'transaction_ledger_only_findings': max(0, ledger_actionable_count - public_bullpen_material_count),
-            'review_required_findings': review_required_count,
-            'unresolved_findings': unresolved_count,
-            'role_unresolved_findings': tx_checked.get('bullpen_relevance_unresolved', 0),
-            'non_pitcher_transactions': tx_checked.get('non_pitcher_transactions', 0),
-            'transaction_detail_mismatches': tx_checked.get('transaction_detail_mismatches', 0),
-            'superseded_transactions': tx_checked.get('superseded_transactions', 0),
-            'public_membership_mismatches': public_bullpen_material_count,
-            'chronology_unresolved_findings': tx_checked.get('chronology_unresolved', 0),
-            'role_lookups_used': role_verification.get('role_lookups_used', 0),
-            'role_lookups_avoided': role_verification.get('role_lookups_avoided', 0),
-            'informational_records': informational_records,
-            'benign_records_suppressed': benign_records_suppressed,
-            'material_change_detected': impact_plan['material_change_detected'],
-            'affected_team_ids': would_refresh['affected_team_ids'],
-            'mlb_teams_affected': would_refresh['affected_team_ids'],
-            'mlb_public_teams_affected': would_refresh['affected_team_ids'],
-            'transaction_related_mlb_teams': list(tx_ledger.get('transaction_related_mlb_team_ids') or []),
-            'non_mlb_team_ids_observed': non_mlb_team_ids_observed,
-        },
+        'summary': summary,
     })
     return artifact
 
@@ -2933,11 +3115,7 @@ def _skipped_artifact(*, client, source, product_date, lanes, check_timestamp_is
         'safety': _safety_block({'clean': True, 'pending_new': 0, 'pending_dirty': 0, 'pending_deleted': 0}),
         'write_guard': {'clean': True, 'pending_new': 0, 'pending_dirty': 0, 'pending_deleted': 0},
         'conflict': conflict.to_dict(),
-        'summary': {
-            'total_differences': 0,
-            'material_change_detected': False,
-            'affected_team_ids': [],
-        },
+        'summary': _empty_summary(),
     })
     return artifact
 
@@ -3005,11 +3183,7 @@ def build_bootstrap_failure_artifact(
         'source_api': {'api_calls': 0, 'retries': 0, 'by_endpoint': {}},
         'safety': _safety_block(clean_guard),
         'write_guard': clean_guard,
-        'summary': {
-            'total_differences': 0,
-            'material_change_detected': False,
-            'affected_team_ids': [],
-        },
+        'summary': _empty_summary(),
     }
 
 
