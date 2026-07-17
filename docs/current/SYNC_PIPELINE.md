@@ -129,8 +129,19 @@ behavior is authorized.
   ```
 
   Human-readable progress goes to stderr; a single JSON audit artifact goes to
-  stdout with `--json`. The workflow uploads it as the `intraday-audit-<run id>`
-  artifact.
+  stdout with `--json`. The workflow uploads it as the
+  `intraday-reconciliation-audit-<run id>` artifact.
+
+- **Production configuration.** The intraday job runs `APP_ENV=production`, so
+  production Flask initialization requires `DATABASE_URL`, `SECRET_KEY`, and
+  `ADMIN_API_TOKEN`. The workflow maps the existing `BASEBALLOS_ADMIN_API_TOKEN`
+  repository secret to `ADMIN_API_TOKEN` (the admin token gates operational
+  write endpoints; it does not authorize any write — the audit stays read-only).
+  Missing configuration is a **bootstrap failure, not a partial source
+  verification**: the CLI still emits a valid `failed` JSON artifact
+  (`reason_code: application_bootstrap_failed`) and exits 1, and the workflow
+  validates the artifact contract before upload. See
+  [`INTRADAY_RECONCILIATION.md` §12](INTRADAY_RECONCILIATION.md).
 
 ## Reading a failure
 
