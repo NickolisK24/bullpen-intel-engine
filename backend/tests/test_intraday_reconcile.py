@@ -630,6 +630,240 @@ def test_lane3_partial_source_failure_is_not_false_no_change(scenario):
     assert artifact['status'] == intraday_reconcile.STATUS_PARTIAL
 
 
+def test_schedule_source_exact_duplicates_collapse():
+    game = _game(824410, 114, 134, status_code='S', detailed='Scheduled', abstract='Preview')
+    normalized = intraday_reconcile._normalize_schedule_source_games(
+        [game, dict(game)],
+        fallback_date=date(2026, 7, 18),
+    )
+    assert len(normalized) == 1
+    assert normalized[0]['game_pk'] == 824410
+    assert normalized[0]['source_record_count'] == 2
+    assert normalized[0]['source_conflict_fields'] == []
+
+
+def test_schedule_source_semantic_duplicates_ignore_irrelevant_payload_and_any_doubleheader():
+    first = _game(824411, 114, 134, status_code='I', detailed='In Progress', abstract='Live')
+    second = _game(
+        824411, 114, 134, status_code='I', detailed='In Progress', abstract='Live',
+        doubleheader='Y',
+    )
+    first['irrelevant_feed_metadata'] = {'sequence': 99}
+    second['irrelevant_feed_metadata'] = {'sequence': 1, 'note': 'different'}
+    normalized = intraday_reconcile._normalize_schedule_source_games(
+        [second, first],
+        fallback_date=date(2026, 7, 18),
+    )
+    assert len(normalized) == 1
+    assert normalized[0]['source_conflict_fields'] == []
+    assert normalized[0]['official_status_behavior'] == 'in_progress'
+    # Documented governance rule: one positive doubleheader flag survives a
+    # duplicate row that omits it.
+    assert normalized[0]['doubleheader'] is True
+
+
+def test_schedule_source_core_identity_disagreement_is_conflict():
+    first = _game(824413, 114, 134, status_code='S', detailed='Scheduled', abstract='Preview')
+    second = _game(824413, 115, 134, status_code='S', detailed='Scheduled', abstract='Preview')
+    normalized = intraday_reconcile._normalize_schedule_source_games(
+        [first, second],
+        fallback_date=date(2026, 7, 18),
+    )
+    assert len(normalized) == 1
+    assert normalized[0]['source_conflict_fields'] == ['home_team_id']
+    assert normalized[0]['home_team_id'] is None
+    assert normalized[0]['source_team_ids'] == [114, 115, 134]
+
+
+def test_equivalent_duplicate_final_records_plan_once(app):
+    game_date = date(2026, 7, 18)
+    _scheduled_pair(
+        824412, 114, 134, status_code='S',
+        status_state=ScheduledGame.STATE_SCHEDULED, game_date=game_date,
+    )
+    final = _game(
+        824412, 114, 134, status_code='F', detailed='Final', abstract='Final',
+        game_date=game_date,
+    )
+    duplicate = dict(final)
+    duplicate['irrelevant_feed_metadata'] = {'broadcast': 'alternate'}
+    client = FakeMlbClient(
+        schedule=[duplicate, final],
+        teams=[{'id': 114, 'abbreviation': 'CLE'}, {'id': 134, 'abbreviation': 'PIT'}],
+    )
+    artifact = _run(
+        client,
+        product_date=game_date,
+        team_ids=[],
+        lanes=[intraday_reconcile.LANE_SCHEDULE_FINALITY],
+    )
+    lane = artifact['lanes'][intraday_reconcile.LANE_SCHEDULE_FINALITY]
+    assert lane['checked']['source_games'] == 1
+    assert lane['checked']['total_differences'] == 1
+    assert lane['completed_game_pks'] == [824412]
+    assert artifact['would_refresh']['completed_game_pks'] == [824412]
+    assert artifact['would_refresh']['recalculate_current_pen_era'] is True
+    assert artifact['would_refresh']['recalculate_league_era_rank'] is True
+
+
+def test_observation_six_i_vs_dd_conflict_fails_closed(app):
+    game_date = date(2026, 7, 18)
+    _scheduled_pair(
+        824414, 114, 134, status_code='S',
+        status_state=ScheduledGame.STATE_SCHEDULED, game_date=game_date,
+    )
+    schedule = [
+        _game(
+            824414, 114, 134, status_code='DD', detailed='Postponed',
+            abstract='Preview', game_date=game_date,
+        ),
+        _game(
+            824414, 114, 134, status_code='I', detailed='In Progress',
+            abstract='Live', game_date=game_date, doubleheader='Y',
+        ),
+    ]
+    client = FakeMlbClient(
+        rosters={(114, ROSTER_TYPE_ACTIVE): [], (134, ROSTER_TYPE_ACTIVE): []},
+        schedule=schedule,
+        teams=[{'id': 114, 'abbreviation': 'CLE'}, {'id': 134, 'abbreviation': 'PIT'}],
+    )
+    before = _row_snapshot()
+    artifact = _run(client, product_date=game_date, team_ids=[114, 134])
+    after = _row_snapshot()
+
+    lane = artifact['lanes'][intraday_reconcile.LANE_SCHEDULE_FINALITY]
+    assert lane['checked']['source_games'] == 1
+    assert lane['checked']['source_conflicts'] == 1
+    assert lane['checked']['total_differences'] == 1
+    assert len(lane['differences']) == len({d['game_pk'] for d in lane['differences']})
+    conflict = lane['differences'][0]
+    assert conflict['game_pk'] == 824414
+    assert conflict['change_type'] == intraday_reconcile.GAME_SOURCE_CONFLICT
+    assert conflict['severity'] == intraday_reconcile.SEVERITY_REVIEW
+    assert conflict['official_status_code'] is None
+    assert conflict['official_status_state'] is None
+    assert conflict['source_record_count'] == 2
+    assert conflict['source_team_ids'] == [114, 134]
+    assert conflict['affected_team_ids'] == []
+    assert conflict['would_require_targeted_postgame'] is False
+    assert [candidate['official_status_code']
+            for candidate in conflict['source_status_candidates']] == ['I', 'DD']
+    assert [candidate['official_status_state']
+            for candidate in conflict['source_status_candidates']] == ['other', 'postponed']
+    assert all(set(candidate) == {
+        'official_status_code', 'official_status_state', 'game_date',
+        'home_team_id', 'away_team_id', 'doubleheader', 'final_status',
+    } for candidate in conflict['source_status_candidates'])
+    assert lane['completed_game_pks'] == []
+    assert lane['verification_status'] == intraday_reconcile.LANE_PARTIAL
+    assert any('824414' in limitation for limitation in lane['limitations'])
+    assert artifact['status'] == intraday_reconcile.STATUS_PARTIAL
+    assert artifact['changed'] is True
+    assert artifact['changed_lanes'] == [intraday_reconcile.LANE_SCHEDULE_FINALITY]
+    assert artifact['summary']['total_meaningful_findings'] == 1
+    assert artifact['summary']['total_actionable_findings'] == 0
+    assert artifact['summary']['review_required_findings'] == 1
+    assert artifact['summary']['unresolved_findings'] == 1
+    assert artifact['summary']['schedule_public_change_count'] == 0
+    assert artifact['summary']['public_bullpen_change_count'] == 0
+    assert artifact['material_change_detected'] is False
+    assert artifact['public_bullpen_change_detected'] is False
+    refresh = artifact['would_refresh']
+    assert refresh['completed_game_pks'] == []
+    assert refresh['affected_team_ids'] == []
+    assert refresh['recalculate_team_reads'] == []
+    assert refresh['publish_snapshot'] is False
+    assert refresh['warm_tonight'] is False
+    assert refresh['recalculate_current_pen_era'] is False
+    assert refresh['recalculate_league_era_rank'] is False
+    assert client.calls['get_schedule'] == 1
+    assert artifact['write_guard']['clean'] is True
+    assert before == after
+
+
+def test_schedule_conflict_preserves_valid_other_game(app):
+    game_date = date(2026, 7, 18)
+    for game_pk, home_id, away_id in ((824414, 114, 134), (824415, 115, 138)):
+        _scheduled_pair(
+            game_pk, home_id, away_id, status_code='S',
+            status_state=ScheduledGame.STATE_SCHEDULED, game_date=game_date,
+        )
+    schedule = [
+        _game(824414, 114, 134, status_code='I', detailed='In Progress',
+              abstract='Live', game_date=game_date),
+        _game(824414, 114, 134, status_code='DD', detailed='Postponed',
+              abstract='Preview', game_date=game_date),
+        _game(824415, 115, 138, status_code='F', detailed='Final',
+              abstract='Final', game_date=game_date),
+    ]
+    teams = [
+        {'id': team_id, 'abbreviation': str(team_id)}
+        for team_id in (114, 115, 134, 138)
+    ]
+    artifact = _run(
+        FakeMlbClient(schedule=schedule, teams=teams),
+        product_date=game_date,
+        team_ids=[],
+        lanes=[intraday_reconcile.LANE_SCHEDULE_FINALITY],
+    )
+    lane = artifact['lanes'][intraday_reconcile.LANE_SCHEDULE_FINALITY]
+    by_pk = {finding['game_pk']: finding for finding in lane['differences']}
+    assert set(by_pk) == {824414, 824415}
+    assert by_pk[824414]['change_type'] == intraday_reconcile.GAME_SOURCE_CONFLICT
+    assert by_pk[824415]['change_type'] == intraday_reconcile.GAME_NOW_FINAL
+    assert lane['completed_game_pks'] == [824415]
+    assert artifact['summary']['schedule_public_change_count'] == 1
+    assert artifact['would_refresh']['affected_team_ids'] == [115, 138]
+
+
+def test_schedule_difference_publication_invariant_fails_closed():
+    duplicate_differences = [
+        {
+            'game_pk': 824414, 'game_date': '2026-07-18',
+            'home_team_id': 114, 'away_team_id': 134,
+            'official_status_code': 'I', 'official_status_state': 'other',
+            'stored_status_state': 'scheduled', 'stored_finality': 'not_final',
+            'change_type': intraday_reconcile.GAME_IN_PROGRESS,
+            'doubleheader': True,
+        },
+        {
+            'game_pk': 824414, 'game_date': '2026-07-18',
+            'home_team_id': 114, 'away_team_id': 134,
+            'official_status_code': 'DD', 'official_status_state': 'postponed',
+            'stored_status_state': 'scheduled', 'stored_finality': 'not_final',
+            'change_type': intraday_reconcile.GAME_POSTPONED,
+            'doubleheader': False,
+        },
+    ]
+    governed, collision_pks = intraday_reconcile._govern_schedule_differences(
+        duplicate_differences,
+        team_map={114: {'abbreviation': 'CLE'}, 134: {'abbreviation': 'PIT'}},
+        check_timestamp_iso='2026-07-18T17:25:57.372521Z',
+    )
+    assert collision_pks == {824414}
+    assert len(governed) == 1
+    assert governed[0]['change_type'] == intraday_reconcile.GAME_SOURCE_CONFLICT
+    assert governed[0]['severity'] == intraday_reconcile.SEVERITY_REVIEW
+
+
+def test_unique_source_absence_behavior_remains_review_required(app):
+    game_date = date(2026, 7, 18)
+    _scheduled_pair(
+        824416, 114, 134, status_code='S',
+        status_state=ScheduledGame.STATE_SCHEDULED, game_date=game_date,
+    )
+    artifact = _run(
+        FakeMlbClient(schedule=[], teams=[]),
+        product_date=game_date,
+        team_ids=[],
+        lanes=[intraday_reconcile.LANE_SCHEDULE_FINALITY],
+    )
+    finding = artifact['lanes'][intraday_reconcile.LANE_SCHEDULE_FINALITY]['differences'][0]
+    assert finding['game_pk'] == 824416
+    assert finding['change_type'] == intraday_reconcile.GAME_ABSENT_FROM_SOURCE
+    assert finding['severity'] == intraday_reconcile.SEVERITY_REVIEW
+
+
 # ── impact plan / contract ───────────────────────────────────────────────────
 
 def test_changed_result_includes_lanes_teams_pitchers(scenario):
@@ -3253,16 +3487,255 @@ def test_observation_five_real_lane_departing_pitcher_stays_public(app):
     assert 657649 not in wr['targeted_pitcher_mlb_ids']
 
 
-def test_observation_five_artifact_version_is_1_4_1_and_validates(app):
-    # Item 42: a fresh artifact is version 1.4.1 and passes the output-contract
+def test_fresh_artifact_version_is_1_4_2_and_validates(app):
+    # A fresh artifact is version 1.4.2 and passes the output-contract
     # validator (capability/mode/check_only/status unchanged).
     from scripts.validate_intraday_artifact import validate_artifact
     import json as _json
     artifact = _run(_tx_client([], rosters={(PHI, ROSTER_TYPE_ACTIVE): []},
                                teams=[{'id': PHI, 'name': 'Phillies', 'abbreviation': 'PHI'}]),
                     team_ids=[PHI])
-    assert artifact['version'] == '1.4.1'
-    assert intraday_reconcile.VERSION == '1.4.1'
+    assert artifact['version'] == '1.4.2'
+    assert intraday_reconcile.VERSION == '1.4.2'
+    ok, reason = validate_artifact(_json.dumps(artifact))
+    assert ok is True, reason
+
+
+# ── Production Observation #6: schedule-source conflict governance (v1.4.2) ──
+
+OBS6_TARGETED_STORED = [168, 198, 557, 568]
+OBS6_TARGETED_MLB = [608372, 656240, 663893, 671106, 681751, 694753]
+OBS6_DEPARTING = [(785, 669310), (554, 671936), (184, 676105)]
+OBS6_PUBLIC_TEAMS = [114, 115, 134, 138, 141]
+OBS6_SUMMARY = {
+    'total_meaningful_findings': 25,
+    'total_actionable_findings': 23,
+    'review_required_findings': 2,
+    'unresolved_findings': 2,
+    'transaction_record_actionable_count': 14,
+    'transaction_ledger_only_findings': 12,
+    'transaction_public_bullpen_material_count': 2,
+    'public_roster_change_count': 9,
+    'schedule_public_change_count': 0,
+    'public_bullpen_change_count': 9,
+}
+
+
+@pytest.fixture
+def observation_six(app):
+    """Compact full Observation #6 reconstruction.
+
+    Lane 3 consumes the real contradictory schedule source rows and stored
+    scheduled/not-final state. Lanes 1/2 retain the production aggregate,
+    targeted-workload, ledger, public-team, and role-budget evidence without
+    hard-coding production values into application logic.
+    """
+    game_date = date(2026, 7, 18)
+    timestamp = '2026-07-18T17:25:57.372521Z'
+    _scheduled_pair(
+        824414, 114, 134, status_code='S',
+        status_state=ScheduledGame.STATE_SCHEDULED, game_date=game_date,
+    )
+    unchanged_schedule = []
+    for game_pk in range(824500, 824529):
+        _scheduled_pair(
+            game_pk, 114, 134, status_code='S',
+            status_state=ScheduledGame.STATE_SCHEDULED, game_date=game_date,
+        )
+        unchanged_schedule.append(
+            _game(game_pk, 114, 134, status_code='S', detailed='Scheduled',
+                  abstract='Preview', game_date=game_date)
+        )
+    schedule_client = FakeMlbClient(schedule=unchanged_schedule + [
+        _game(824414, 114, 134, status_code='DD', detailed='Postponed',
+              abstract='Preview', game_date=game_date),
+        _game(824414, 114, 134, status_code='I', detailed='In Progress',
+              abstract='Live', game_date=game_date, doubleheader='Y'),
+    ])
+    team_map = {
+        114: {'abbreviation': 'CLE'},
+        134: {'abbreviation': 'PIT'},
+    }
+    schedule_lane = intraday_reconcile.reconcile_schedule_finality(
+        client=schedule_client,
+        team_map=team_map,
+        check_timestamp_iso=timestamp,
+        product_date=game_date,
+    )
+
+    departing_stored = [stored for stored, _ in OBS6_DEPARTING]
+    departing_mlb = [mlb_id for _, mlb_id in OBS6_DEPARTING]
+    roster = _o5_roster(
+        targeted_ids=OBS6_TARGETED_STORED,
+        targeted_mlb=OBS6_TARGETED_MLB,
+        affected_mlb=OBS6_TARGETED_MLB + departing_mlb,
+        affected_teams=OBS6_PUBLIC_TEAMS,
+        roster_status_diffs=9,
+        differences=[_o5_diff(_ACT, change_type='roster_change') for _ in range(9)],
+    )
+    roster.update({
+        'verification_status': intraday_reconcile.LANE_COMPLETE,
+        'limitations': [],
+    })
+    roster['checked']['stored_pitchers'] = 9
+
+    ledger_only = [
+        _o5_diff(
+            _ACT,
+            classification=intraday_reconcile.TX_ACTIONABLE_NOT_STORED,
+            transaction_record_actionable=True,
+            public_bullpen_material=False,
+        )
+        for _ in range(12)
+    ]
+    public_material = [
+        _o5_diff(
+            _ACT,
+            classification=intraday_reconcile.TX_PUBLIC_BULLPEN_EFFECT_UNREFLECTED,
+            transaction_record_actionable=True,
+            public_bullpen_material=True,
+            player_mlb_id=mlb_id,
+        )
+        for mlb_id in OBS6_TARGETED_MLB[:2]
+    ]
+    chronology_review = _o5_diff(
+        _REV,
+        classification=intraday_reconcile.TX_CHRONOLOGY_UNRESOLVED,
+        transaction_record_actionable=False,
+        public_bullpen_material=False,
+    )
+    transaction_keys = [f'statsapi:{960000 + index}' for index in range(14)]
+    transactions = _o5_tx(
+        record_actionable=14,
+        public_material=2,
+        affected_teams=[114, 134],
+        affected_mlb=OBS6_TARGETED_MLB[:2],
+        ledger={
+            'ingest_transaction_event_keys': transaction_keys,
+            'reconcile_transaction_event_keys': [],
+            'transaction_participant_mlb_ids': OBS6_TARGETED_MLB[:2],
+            'transaction_related_mlb_team_ids': [114, 134],
+            'transaction_related_non_mlb_team_ids': [],
+            'record_actionable_count': 14,
+        },
+        differences=ledger_only + public_material + [chronology_review],
+    )
+    transactions.update({
+        'verification_status': intraday_reconcile.LANE_COMPLETE,
+        'limitations': [],
+        'informational_counts': {},
+        'suppressed_counts': {'benign_records_suppressed': 0},
+        'role_verification': {
+            'role_lookups_used': 9,
+            'role_lookups_avoided': 15,
+            'role_lookup_candidates': 9,
+            'role_lookup_budget': 40,
+            'lookups_used': 9,
+            'lookup_budget': 40,
+            'budget_exceeded': False,
+            'lookup_failures': 0,
+        },
+    })
+    transactions['checked'].update({
+        'source_transactions': 15,
+        'chronology_unresolved': 1,
+    })
+
+    lane_results = {
+        _LANE_R: roster,
+        _LANE_T: transactions,
+        _LANE_S: schedule_lane,
+    }
+    plan = intraday_reconcile.build_impact_plan(roster, transactions, schedule_lane)
+    write_guard = intraday_reconcile._assert_no_pending_writes()
+    artifact = intraday_reconcile._build_completed_artifact(
+        source='manual',
+        product_date=game_date,
+        lanes_run=intraday_reconcile.ALL_LANES,
+        lane_results=lane_results,
+        impact_plan=plan,
+        check_timestamp_iso=timestamp,
+        api_metrics=schedule_client.metrics.snapshot(),
+        write_guard=write_guard,
+    )
+    return {
+        'artifact': artifact,
+        'departing_stored': departing_stored,
+        'departing_mlb': departing_mlb,
+    }
+
+
+def test_observation_six_corrected_summary(observation_six):
+    artifact = observation_six['artifact']
+    assert {key: artifact['summary'][key] for key in OBS6_SUMMARY} == OBS6_SUMMARY
+    assert intraday_reconcile._summary_contract_invariants(
+        artifact['summary'],
+        {
+            'would_refresh': artifact['would_refresh'],
+            'public_bullpen_change_detected': artifact['public_bullpen_change_detected'],
+            'transaction_ledger_change_detected': artifact['transaction_ledger_change_detected'],
+        },
+    ) == []
+
+
+def test_observation_six_schedule_conflict_and_partial_status(observation_six):
+    artifact = observation_six['artifact']
+    lane = artifact['lanes'][_LANE_S]
+    assert lane['checked']['source_games'] == 30
+    assert lane['checked']['stored_games'] == 30
+    assert lane['checked']['total_differences'] == 1
+    assert lane['verification_status'] == intraday_reconcile.LANE_PARTIAL
+    assert artifact['status'] == intraday_reconcile.STATUS_PARTIAL
+    assert lane['differences'][0]['game_pk'] == 824414
+    assert lane['differences'][0]['change_type'] == intraday_reconcile.GAME_SOURCE_CONFLICT
+    assert '824414' in ' '.join(lane['limitations'])
+    assert lane['completed_game_pks'] == []
+
+
+def test_observation_six_targeted_workload_authority_unchanged(observation_six):
+    refresh = observation_six['artifact']['would_refresh']
+    assert refresh['targeted_pitcher_logs'] == OBS6_TARGETED_STORED
+    assert refresh['targeted_pitcher_mlb_ids'] == OBS6_TARGETED_MLB
+    assert refresh['targeted_pitcher_logs'] \
+        == refresh['public_bullpen_state']['targeted_pitcher_logs']
+    assert refresh['targeted_pitcher_mlb_ids'] \
+        == refresh['public_bullpen_state']['targeted_pitcher_mlb_ids']
+    assert not set(observation_six['departing_stored']) & set(refresh['targeted_pitcher_logs'])
+    assert not set(observation_six['departing_mlb']) & set(refresh['targeted_pitcher_mlb_ids'])
+
+
+def test_observation_six_public_teams_and_ledger_unchanged(observation_six):
+    artifact = observation_six['artifact']
+    refresh = artifact['would_refresh']
+    assert refresh['affected_team_ids'] == OBS6_PUBLIC_TEAMS
+    assert refresh['recalculate_team_reads'] == OBS6_PUBLIC_TEAMS
+    ledger = refresh['transaction_ledger']
+    assert ledger['record_actionable_count'] == 14
+    assert len(ledger['ingest_transaction_event_keys']) == 14
+    assert artifact['summary']['transaction_ledger_only_findings'] == 12
+    assert artifact['summary']['transaction_public_bullpen_material_count'] == 2
+
+
+def test_observation_six_role_verification_and_read_only_unchanged(observation_six):
+    artifact = observation_six['artifact']
+    role = artifact['lanes'][_LANE_T]['role_verification']
+    assert role['role_lookup_budget'] == 40
+    assert role['role_lookups_used'] == 9
+    assert role['role_lookups_avoided'] == 15
+    assert role['lookup_failures'] == 0
+    assert role['budget_exceeded'] is False
+    assert artifact['write_guard']['clean'] is True
+    assert artifact['safety']['writes_performed'] is False
+    assert artifact['safety']['canonical_writes'] is False
+
+
+def test_observation_six_artifact_version_1_4_2_validates(observation_six):
+    import json as _json
+    from scripts.validate_intraday_artifact import validate_artifact
+
+    artifact = observation_six['artifact']
+    assert artifact['capability'] == intraday_reconcile.CAPABILITY
+    assert artifact['version'] == '1.4.2'
     ok, reason = validate_artifact(_json.dumps(artifact))
     assert ok is True, reason
 
@@ -3474,7 +3947,7 @@ def _assert_zero_work_contract(artifact, *, status):
     assert artifact['check_only'] is True
     assert artifact['audit_only'] is True
     assert artifact['status'] == status
-    assert artifact['version'] == intraday_reconcile.VERSION  # 1.4.1
+    assert artifact['version'] == intraday_reconcile.VERSION  # 1.4.2
     _assert_canonical_zero_summary(artifact['summary'])
 
 
