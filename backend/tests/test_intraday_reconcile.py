@@ -2844,6 +2844,429 @@ def test_observation_four_summary_invariants_hold(observation_four):
     assert intraday_reconcile._summary_contract_invariants(artifact['summary'], impact) == []
 
 
+# ── Production Observation #5: targeted-workload authority (contract v1.4.1) ──
+#
+# The impact plan must derive targeted recent-work acquisition EXCLUSIVELY from the
+# roster lane's governed targeted_recent_work_* output. A public-material
+# transaction for a roster-DEPARTING pitcher (effect=leave,
+# targeted_recent_work_required=false) must never re-enter the targeted workload
+# lists — the Observation #5 defect (Jared Koenig).
+
+_LANE_R = intraday_reconcile.LANE_ROSTER_ASSIGNMENT
+_LANE_T = intraday_reconcile.LANE_TRANSACTIONS
+_LANE_S = intraday_reconcile.LANE_SCHEDULE_FINALITY
+_ACT = intraday_reconcile.SEVERITY_ACTIONABLE
+_REV = intraday_reconcile.SEVERITY_REVIEW
+
+
+def _o5_roster(*, targeted_ids=(), targeted_mlb=(), affected_mlb=(), affected_teams=(),
+               roster_status_diffs=0, team_assignment_diffs=0, differences=()):
+    return {
+        'checked': {
+            'roster_status_differences': roster_status_diffs,
+            'team_assignment_differences': team_assignment_diffs,
+        },
+        'affected_team_ids': list(affected_teams),
+        'affected_pitcher_ids': [],
+        'affected_pitcher_mlb_ids': list(affected_mlb),
+        'targeted_recent_work_pitcher_ids': list(targeted_ids),
+        'targeted_recent_work_mlb_ids': list(targeted_mlb),
+        'differences': list(differences),
+    }
+
+
+def _o5_tx(*, record_actionable=0, public_material=0, affected_teams=(), affected_mlb=(),
+           ledger=None, differences=()):
+    return {
+        'checked': {
+            'transaction_record_actionable': record_actionable,
+            'public_bullpen_material': public_material,
+        },
+        'affected_team_ids': list(affected_teams),
+        'affected_pitcher_ids': [],
+        'affected_pitcher_mlb_ids': list(affected_mlb),
+        'transaction_ledger': ledger or {
+            'ingest_transaction_event_keys': [],
+            'reconcile_transaction_event_keys': [],
+            'transaction_participant_mlb_ids': [],
+            'transaction_related_mlb_team_ids': [],
+            'transaction_related_non_mlb_team_ids': [],
+            'record_actionable_count': record_actionable,
+        },
+        'differences': list(differences),
+    }
+
+
+def _o5_sched(*, completed_game_pks=(), differences=()):
+    return {'completed_game_pks': list(completed_game_pks), 'differences': list(differences)}
+
+
+def _o5_plan(roster, tx, sched):
+    return intraday_reconcile.build_impact_plan(roster, tx, sched)
+
+
+def _o5_summary(roster, tx, sched):
+    plan = intraday_reconcile.build_impact_plan(roster, tx, sched)
+    counts = intraday_reconcile._derive_summary_counts(
+        {_LANE_R: roster, _LANE_T: tx, _LANE_S: sched}, plan)
+    return counts, plan
+
+
+def _o5_diff(severity, **extra):
+    d = {'severity': severity}
+    d.update(extra)
+    return d
+
+
+# ── Focused targeted-workload authority invariants (Corrections 1/5/6) ────────
+
+def test_targeted_stored_ids_only_from_roster():
+    # Item 1 + 3: transaction affected stored ids never expand targeted stored ids.
+    roster = _o5_roster(targeted_ids=[10, 20], targeted_mlb=[1000, 2000])
+    tx = _o5_tx(public_material=1, affected_mlb=[9999])
+    tx['affected_pitcher_ids'] = [999]
+    wr = _o5_plan(roster, tx, _o5_sched())['would_refresh']
+    assert wr['targeted_pitcher_logs'] == [10, 20]
+    assert 999 not in wr['targeted_pitcher_logs']
+
+
+def test_targeted_mlb_ids_only_from_roster():
+    # Item 2 + 4: transaction affected mlb ids never expand targeted mlb ids.
+    roster = _o5_roster(targeted_ids=[10], targeted_mlb=[1000])
+    tx = _o5_tx(public_material=1, affected_mlb=[9999])
+    wr = _o5_plan(roster, tx, _o5_sched())['would_refresh']
+    assert wr['targeted_pitcher_mlb_ids'] == [1000]
+    assert 9999 not in wr['targeted_pitcher_mlb_ids']
+
+
+def test_public_material_leaving_pitcher_not_targeted():
+    # Item 5: a public-material transaction for a roster-departing pitcher (not in
+    # the roster targeted list) must not target workload.
+    roster = _o5_roster(targeted_ids=[10], targeted_mlb=[1000],
+                        affected_mlb=[1000, 657649], roster_status_diffs=2)
+    tx = _o5_tx(record_actionable=1, public_material=1, affected_mlb=[657649])
+    wr = _o5_plan(roster, tx, _o5_sched())['would_refresh']
+    assert 657649 not in wr['targeted_pitcher_mlb_ids']
+    assert wr['targeted_pitcher_mlb_ids'] == [1000]
+
+
+def test_ledger_only_pitcher_not_targeted():
+    # Item 6: a transaction-ledger-only pitcher (no public-material, not roster
+    # targeted) never targets workload.
+    roster = _o5_roster(targeted_ids=[10], targeted_mlb=[1000])
+    tx = _o5_tx(record_actionable=5, public_material=0, affected_mlb=[])
+    wr = _o5_plan(roster, tx, _o5_sched())['would_refresh']
+    assert wr['targeted_pitcher_mlb_ids'] == [1000]
+
+
+def test_transaction_only_public_material_pitcher_not_targeted():
+    # Item 7: even a transaction-only affected mlb id marked public-material never
+    # enters the targeted plan; only the roster lane authorizes targeting.
+    roster = _o5_roster(targeted_ids=[], targeted_mlb=[], affected_mlb=[555],
+                        roster_status_diffs=1)
+    tx = _o5_tx(public_material=1, affected_mlb=[555])
+    wr = _o5_plan(roster, tx, _o5_sched())['would_refresh']
+    assert wr['targeted_pitcher_mlb_ids'] == []
+    assert wr['targeted_pitcher_logs'] == []
+
+
+def test_roster_entering_pitcher_remains_targeted():
+    # Item 8: a roster-entering pitcher with targeted_recent_work_required=true
+    # remains targeted.
+    roster = _o5_roster(targeted_ids=[392], targeted_mlb=[676742], roster_status_diffs=1)
+    wr = _o5_plan(roster, _o5_tx(), _o5_sched())['would_refresh']
+    assert wr['targeted_pitcher_logs'] == [392]
+    assert wr['targeted_pitcher_mlb_ids'] == [676742]
+
+
+def test_roster_transaction_overlap_targets_once():
+    # Item 9 + Correction 5 (Cam Sanders): a roster/transaction overlap for an
+    # entering pitcher is targeted exactly once, authorized by the roster lane.
+    roster = _o5_roster(targeted_ids=[392], targeted_mlb=[676742],
+                        affected_mlb=[676742], roster_status_diffs=1)
+    tx = _o5_tx(public_material=1, affected_mlb=[676742])
+    wr = _o5_plan(roster, tx, _o5_sched())['would_refresh']
+    assert wr['targeted_pitcher_mlb_ids'].count(676742) == 1
+    assert wr['targeted_pitcher_logs'].count(392) == 1
+
+
+def test_targeted_flat_and_nested_lists_match():
+    # Correction 4: the flat compatibility fields and nested public-state fields
+    # never diverge.
+    roster = _o5_roster(targeted_ids=[10, 20], targeted_mlb=[1000, 2000],
+                        roster_status_diffs=2)
+    tx = _o5_tx(public_material=1, affected_mlb=[9999])
+    plan = _o5_plan(roster, tx, _o5_sched())
+    wr = plan['would_refresh']
+    pub = wr['public_bullpen_state']
+    assert wr['targeted_pitcher_logs'] == pub['targeted_pitcher_logs']
+    assert wr['targeted_pitcher_mlb_ids'] == pub['targeted_pitcher_mlb_ids']
+    assert 9999 not in pub['targeted_pitcher_mlb_ids']
+
+
+# ── Exact Production Observation #5 reconstruction (Corrections 2/3/4/8) ──────
+
+OBS5_TARGETED_STORED = [77, 242, 243, 392, 520]
+OBS5_TARGETED_MLB = [621121, 656240, 669310, 669438, 676742, 678906, 687941, 814305]
+OBS5_PUBLIC_TEAMS = [110, 111, 114, 117, 133, 134, 138, 139, 141, 158]
+KOENIG_STORED, KOENIG_MLB, KOENIG_TEAM = 744, 657649, 158
+SANDERS_STORED, SANDERS_MLB = 392, 676742
+OBS5_EVENT_KEY = 'statsapi:928241'
+OBS5_LEDGER_RECORD_COUNT = 35
+OBS5_SUMMARY = {
+    'total_meaningful_findings': 91,
+    'total_actionable_findings': 47,
+    'review_required_findings': 44,
+    'unresolved_findings': 44,
+    'transaction_record_actionable_count': 35,
+    'transaction_ledger_only_findings': 34,
+    'transaction_public_bullpen_material_count': 2,
+    'public_roster_change_count': 10,
+    'schedule_public_change_count': 2,
+    'public_bullpen_change_count': 10,
+}
+
+
+def _obs5_lanes():
+    """Reconstruct the exact Production Observation #5 aggregate as three lane
+    results, with the real production IDs. The roster lane authorizes eight
+    entering targeted pitchers (five stored, three source-only) and reports ten
+    public roster changes; Jared Koenig is a roster-DEPARTING pitcher whose OPT is
+    public-material and record-actionable, so he appears in transaction evidence,
+    the ledger plan, and the summary dedup — but never in the targeted lists."""
+    # Roster lane: 10 actionable current roster changes (feeds the tallies); the
+    # governed targeted output authorizes only the 8 entering pitchers. The
+    # affected-mlb set (used only by the summary dedup) includes departing Koenig.
+    roster_diffs = [_o5_diff(_ACT, change_type='roster_change') for _ in range(10)]
+    roster = _o5_roster(
+        targeted_ids=OBS5_TARGETED_STORED,
+        targeted_mlb=OBS5_TARGETED_MLB,
+        affected_mlb=sorted(set(OBS5_TARGETED_MLB) | {KOENIG_MLB, SANDERS_MLB}),
+        affected_teams=OBS5_PUBLIC_TEAMS,
+        roster_status_diffs=10,
+        team_assignment_diffs=0,
+        differences=roster_diffs,
+    )
+
+    # Transaction lane: 35 record-actionable ledger findings (34 ledger-only + the
+    # Koenig OPT which is BOTH record-actionable and public-material), 2 public-
+    # material total (Koenig + Sanders), and 44 review-required role-unresolved
+    # findings (role budget exhausted, fail-closed). 34+1+44 = 79 differences.
+    ledger_only = [
+        _o5_diff(_ACT, transaction_record_actionable=True, public_bullpen_material=False,
+                 classification='transaction_record_actionable')
+        for _ in range(34)
+    ]
+    koenig = [_o5_diff(_ACT, transaction_record_actionable=True, public_bullpen_material=True,
+                       classification=intraday_reconcile.TX_PUBLIC_BULLPEN_EFFECT_UNREFLECTED,
+                       mlb_player_id=KOENIG_MLB, stored_pitcher_id=KOENIG_STORED)]
+    role_unresolved = [
+        _o5_diff(_REV, classification=intraday_reconcile.TX_BULLPEN_RELEVANCE_UNRESOLVED)
+        for _ in range(44)
+    ]
+    event_keys = [OBS5_EVENT_KEY] + [f'statsapi:{900000 + i}' for i in range(34)]
+    tx = _o5_tx(
+        record_actionable=OBS5_LEDGER_RECORD_COUNT,
+        public_material=2,
+        affected_teams=[KOENIG_TEAM, 111],
+        affected_mlb=[KOENIG_MLB, SANDERS_MLB],
+        ledger={
+            'ingest_transaction_event_keys': event_keys,
+            'reconcile_transaction_event_keys': [],
+            'transaction_participant_mlb_ids': [KOENIG_MLB, SANDERS_MLB],
+            'transaction_related_mlb_team_ids': [KOENIG_TEAM],
+            'transaction_related_non_mlb_team_ids': [],
+            'record_actionable_count': OBS5_LEDGER_RECORD_COUNT,
+        },
+        differences=ledger_only + koenig + role_unresolved,
+    )
+
+    # Schedule lane: one completed game + two actionable public schedule changes.
+    sched = _o5_sched(
+        completed_game_pks=[824766],
+        differences=[
+            _o5_diff(_ACT, affected_team_ids=[139]),
+            _o5_diff(_ACT, affected_team_ids=[141]),
+        ],
+    )
+    return roster, tx, sched
+
+
+def test_observation_five_summary_counts_unchanged():
+    # Items 26/27/28: the fix touches only targeted workload; every summary count
+    # matches Observation #5 exactly.
+    counts, _ = _o5_summary(*_obs5_lanes())
+    assert counts == OBS5_SUMMARY
+
+
+def test_observation_five_summary_invariants_hold():
+    roster, tx, sched = _obs5_lanes()
+    counts, plan = _o5_summary(roster, tx, sched)
+    assert intraday_reconcile._summary_contract_invariants(counts, plan) == []
+
+
+def test_observation_five_targeted_stored_ids_exact():
+    # Item 19 + 21: exact roster-authoritative stored targeted ids; Koenig absent.
+    wr = _o5_plan(*_obs5_lanes())['would_refresh']
+    assert wr['targeted_pitcher_logs'] == OBS5_TARGETED_STORED
+    assert KOENIG_STORED not in wr['targeted_pitcher_logs']
+
+
+def test_observation_five_targeted_mlb_ids_exact():
+    # Item 20 + 22: exact roster-authoritative mlb targeted ids; Koenig absent.
+    wr = _o5_plan(*_obs5_lanes())['would_refresh']
+    assert wr['targeted_pitcher_mlb_ids'] == OBS5_TARGETED_MLB
+    assert KOENIG_MLB not in wr['targeted_pitcher_mlb_ids']
+
+
+def test_observation_five_source_only_entering_in_mlb_targeted():
+    # Source-only entering pitchers (no stored id) still appear in the mlb targeted
+    # list; stored entering pitchers appear in both lists.
+    wr = _o5_plan(*_obs5_lanes())['would_refresh']
+    source_only = set(OBS5_TARGETED_MLB) - {621121, 656240, 669310, 676742, 687941}
+    assert source_only.issubset(set(wr['targeted_pitcher_mlb_ids']))
+    assert len(wr['targeted_pitcher_logs']) == 5
+    assert len(wr['targeted_pitcher_mlb_ids']) == 8
+
+
+def test_observation_five_sanders_targeted_once():
+    # Correction 5: the roster/transaction overlap (Cam Sanders) targets once.
+    wr = _o5_plan(*_obs5_lanes())['would_refresh']
+    assert wr['targeted_pitcher_mlb_ids'].count(SANDERS_MLB) == 1
+    assert wr['targeted_pitcher_logs'].count(SANDERS_STORED) == 1
+
+
+def test_observation_five_public_teams_unchanged():
+    # Items 12/15/23: public affected teams stay the exact ten, including Koenig's
+    # club (158). Team scope is unchanged by the targeted-workload fix.
+    wr = _o5_plan(*_obs5_lanes())['would_refresh']
+    assert sorted(wr['affected_team_ids']) == OBS5_PUBLIC_TEAMS
+    assert sorted(wr['recalculate_team_reads']) == OBS5_PUBLIC_TEAMS
+    assert KOENIG_TEAM in wr['affected_team_ids']
+
+
+def test_observation_five_public_flags_unchanged():
+    # Item 14/16: public flags match Observation #5.
+    plan = _o5_plan(*_obs5_lanes())
+    wr = plan['would_refresh']
+    assert wr['roster_statuses'] is True
+    assert wr['team_assignments'] is False
+    assert wr['transactions'] is True
+    assert wr['publish_snapshot'] is True
+    assert wr['warm_tonight'] is True
+    assert plan['material_change_detected'] is True
+    assert plan['public_bullpen_change_detected'] is True
+    assert plan['transaction_ledger_change_detected'] is True
+
+
+def test_observation_five_completed_game_planning_unchanged():
+    # Items 13/17/18: completed-game planning ties Current-Pen ERA and league ERA
+    # rank recalculation to the completed game only.
+    wr = _o5_plan(*_obs5_lanes())['would_refresh']
+    assert wr['completed_game_pks'] == [824766]
+    assert wr['recalculate_current_pen_era'] is True
+    assert wr['recalculate_league_era_rank'] is True
+
+
+def test_observation_five_current_pen_era_requires_completed_game():
+    # Current-Pen ERA / league ERA rank recalculation is False without a completed
+    # game, even with public roster and transaction changes present.
+    roster, tx, _ = _obs5_lanes()
+    wr = _o5_plan(roster, tx, _o5_sched())['would_refresh']
+    assert wr['recalculate_current_pen_era'] is False
+    assert wr['recalculate_league_era_rank'] is False
+    assert wr['publish_snapshot'] is True  # roster/transaction changes still material
+
+
+def test_observation_five_transaction_ledger_unchanged():
+    # Items 11/16/24/25: Koenig stays in the ledger plan; 35 records and the OPT
+    # event key are preserved.
+    plan = _o5_plan(*_obs5_lanes())
+    ledger = plan['would_refresh']['transaction_ledger']
+    assert ledger['record_actionable_count'] == OBS5_LEDGER_RECORD_COUNT
+    assert len(ledger['ingest_transaction_event_keys']) == OBS5_LEDGER_RECORD_COUNT
+    assert OBS5_EVENT_KEY in ledger['ingest_transaction_event_keys']
+    assert KOENIG_MLB in ledger['transaction_participant_mlb_ids']
+    assert KOENIG_TEAM in ledger['transaction_related_mlb_team_ids']
+
+
+def test_observation_five_koenig_public_but_not_targeted():
+    # Item 10: Koenig stays public/ledger relevant (public-material count, team,
+    # ledger participant) yet is excluded from targeted workload.
+    roster, tx, sched = _obs5_lanes()
+    counts, plan = _o5_summary(roster, tx, sched)
+    wr = plan['would_refresh']
+    assert counts['transaction_public_bullpen_material_count'] == 2
+    assert counts['public_bullpen_change_count'] == 10
+    assert KOENIG_MLB in tx['affected_pitcher_mlb_ids']
+    assert KOENIG_MLB not in wr['targeted_pitcher_mlb_ids']
+    assert KOENIG_STORED not in wr['targeted_pitcher_logs']
+
+
+# ── Real-lane enter/leave proof through the full pipeline ────────────────────
+
+def test_observation_five_real_lane_departing_pitcher_not_targeted(app):
+    # End-to-end: a stored-active pitcher gone from the active roster with a
+    # public-material OPT (roster removal, effect=leave) plus an activated pitcher.
+    # The departing pitcher stays public-material but is never targeted; the
+    # entering pitcher is targeted exactly once.
+    leaver = _seed_pitcher(657649, 'Jared Koenig', PHI, 'PHI',
+                           roster_status=STATUS_ACTIVE, active=True)
+    _seed_snapshot(leaver, NYM, SIGNAL_DATE, STATUS_ACTIVE)
+    leave_tx = _tx('koenig-opt', 657649, type_code=OPT, to_team_id=AFFILIATE_A)
+    _seed_stored_transaction(leave_tx)
+    _seed_pitcher(676742, 'Cam Sanders', BOS, 'BOS',
+                  roster_status=STATUS_OPTIONED, active=False)
+    rosters = {
+        (PHI, ROSTER_TYPE_ACTIVE): [],
+        (BOS, ROSTER_TYPE_ACTIVE): [roster_entry(676742, 'Cam Sanders', status=ACTIVE)],
+    }
+    teams = [{'id': PHI, 'name': 'Phillies', 'abbreviation': 'PHI'},
+             {'id': BOS, 'name': 'Red Sox', 'abbreviation': 'BOS'}]
+    artifact = _run(_tx_client([leave_tx], rosters=rosters, teams=teams),
+                    team_ids=[PHI, BOS])
+    wr = artifact['would_refresh']
+    tx_lane = _tx_lane(artifact)
+    # The OPT is a proven public membership mismatch: it must be public-material.
+    assert 657649 in tx_lane['affected_pitcher_mlb_ids']
+    assert wr['transactions'] is True
+    # The fix: the departing pitcher is NOT targeted; the entering one is, once.
+    assert 657649 not in wr['targeted_pitcher_mlb_ids']
+    assert wr['targeted_pitcher_mlb_ids'].count(676742) == 1
+
+
+def test_observation_five_real_lane_departing_pitcher_stays_public(app):
+    # The departing pitcher remains in public evidence (his club is a public team)
+    # even though he is not targeted for recent-work acquisition.
+    leaver = _seed_pitcher(657649, 'Jared Koenig', PHI, 'PHI',
+                           roster_status=STATUS_ACTIVE, active=True)
+    _seed_snapshot(leaver, NYM, SIGNAL_DATE, STATUS_ACTIVE)
+    leave_tx = _tx('koenig-opt', 657649, type_code=OPT, to_team_id=AFFILIATE_A)
+    _seed_stored_transaction(leave_tx)
+    artifact = _run(_tx_client([leave_tx],
+                               rosters={(PHI, ROSTER_TYPE_ACTIVE): []},
+                               teams=[{'id': PHI, 'name': 'Phillies', 'abbreviation': 'PHI'}]),
+                    team_ids=[PHI])
+    wr = artifact['would_refresh']
+    assert PHI in wr['affected_team_ids']
+    assert wr['publish_snapshot'] is True
+    assert 657649 not in wr['targeted_pitcher_mlb_ids']
+
+
+def test_observation_five_artifact_version_is_1_4_1_and_validates(app):
+    # Item 42: a fresh artifact is version 1.4.1 and passes the output-contract
+    # validator (capability/mode/check_only/status unchanged).
+    from scripts.validate_intraday_artifact import validate_artifact
+    import json as _json
+    artifact = _run(_tx_client([], rosters={(PHI, ROSTER_TYPE_ACTIVE): []},
+                               teams=[{'id': PHI, 'name': 'Phillies', 'abbreviation': 'PHI'}]),
+                    team_ids=[PHI])
+    assert artifact['version'] == '1.4.1'
+    assert intraday_reconcile.VERSION == '1.4.1'
+    ok, reason = validate_artifact(_json.dumps(artifact))
+    assert ok is True, reason
+
+
 # ── Summary-contract behavior (Corrections 1-4) ──────────────────────────────
 
 def _ledger_only_client(n):
@@ -3008,7 +3431,7 @@ def test_schedule_public_change_count_matches_schedule_findings(app):
     assert artifact['summary']['schedule_public_change_count'] == expected
 
 
-# Canonical 1.4.0 summary count fields and the ambiguous names removed from the
+# Canonical 1.4.x summary count fields and the ambiguous names removed from the
 # contract, asserted structurally by the pure (no-database) contract tests below.
 _CANONICAL_SUMMARY_KEYS = (
     'total_meaningful_findings', 'total_actionable_findings',
@@ -3051,7 +3474,7 @@ def _assert_zero_work_contract(artifact, *, status):
     assert artifact['check_only'] is True
     assert artifact['audit_only'] is True
     assert artifact['status'] == status
-    assert artifact['version'] == intraday_reconcile.VERSION  # 1.4.0
+    assert artifact['version'] == intraday_reconcile.VERSION  # 1.4.1
     _assert_canonical_zero_summary(artifact['summary'])
 
 

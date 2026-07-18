@@ -124,7 +124,21 @@ CAPABILITY = 'intraday_reconciliation_audit_v1'
 #                    removed (no runtime consumer depended on them). Additive/
 #                    clarifying only; capability identity and the fields the
 #                    workflow validator checks are unchanged — a minor bump.
-VERSION = '1.4.0'
+#   1.4.0 -> 1.4.1 : targeted-workload authority fix (Production Observation #5).
+#                    build_impact_plan documented the roster lane as the sole
+#                    authority for targeted recent-work acquisition, but its
+#                    implementation unioned the transaction lane's affected pitcher
+#                    IDs into targeted_pitcher_ids / targeted_pitcher_mlb_ids. That
+#                    re-added a roster-DEPARTING pitcher (effect=leave,
+#                    targeted_recent_work_required=false) whose OPT was public-
+#                    material back into the targeted workload lists. Targeted
+#                    workload is now derived EXCLUSIVELY from
+#                    roster.targeted_recent_work_pitcher_ids /
+#                    targeted_recent_work_mlb_ids. Behavioral bug fix only: no
+#                    artifact-shape change, no field added/removed, no capability
+#                    change, summary contract and arithmetic unchanged — a
+#                    backward-compatible patch bump.
+VERSION = '1.4.1'
 
 MODE = 'intraday'
 PHASE = 1
@@ -2383,13 +2397,17 @@ def build_impact_plan(lane_roster, lane_transactions, lane_schedule):
     transactions = lane_transactions or {}
     schedule = lane_schedule or {}
 
-    # ── PUBLIC bullpen-state plan (Correction 4/5/6/7) ───────────────────────
-    # The ROSTER lane is the sole authority for current active-bullpen membership,
-    # targeted recent-work acquisition, and public team-read recomputation. The
-    # transaction lane's public-material findings are, by construction, a subset of
-    # the roster lane's authority (a confirmed current change is always also a
-    # roster finding), so unioning them adds no NEW public teams/pitchers — it only
-    # deduplicates. Transaction-ledger-only findings never enter this plan.
+    # ── PUBLIC bullpen-state plan (Correction 4/5/6/7 + targeted-workload
+    #    authority) ─────────────────────────────────────────────────────────────
+    # The ROSTER lane is the SOLE authority for targeted recent-work acquisition:
+    # only roster findings whose governed `targeted_recent_work_required` decision
+    # is true populate the targeted workload lists. Public affected TEAMS still
+    # union the roster, schedule, and transaction public-material sets (that only
+    # deduplicates the MLB team scope). But targeted PITCHER workload is roster-only:
+    # a transaction public-material finding is NOT, in general, a roster
+    # targeted-work finding — a pitcher LEAVING the active bullpen (effect=leave,
+    # targeted_recent_work_required=false) changes public membership yet requires no
+    # new recent-work fetch. Transaction-ledger-only findings never enter this plan.
     roster_checked = roster.get('checked') or {}
     roster_statuses_changed = bool(roster_checked.get('roster_status_differences'))
     team_assignments_changed = bool(roster_checked.get('team_assignment_differences'))
@@ -2410,21 +2428,23 @@ def build_impact_plan(lane_roster, lane_transactions, lane_schedule):
         if team_id is not None
     }
 
-    # Public teams/pitchers come from the roster lane (+ schedule) and the deduped
-    # transaction public-material subset. All MLB-scoped.
+    # Public affected TEAMS come from the roster lane (+ schedule) and the deduped
+    # transaction public-material subset. All MLB-scoped. (Team scope is unchanged
+    # by the targeted-workload correction — a departing pitcher's club still counts
+    # as a public team effect.)
     public_team_ids = _mlb_team_ids(
         set(roster.get('affected_team_ids') or [])
         | set(transactions.get('affected_team_ids') or [])
         | schedule_affected_team_ids
     )
-    targeted_pitcher_ids = sorted(
-        set(roster.get('targeted_recent_work_pitcher_ids') or [])
-        | set(transactions.get('affected_pitcher_ids') or [])
-    )
-    targeted_pitcher_mlb_ids = sorted(
-        set(roster.get('targeted_recent_work_mlb_ids') or [])
-        | set(transactions.get('affected_pitcher_mlb_ids') or [])
-    )
+    # Targeted recent-work acquisition is EXCLUSIVELY roster-authoritative: it is
+    # exactly the roster lane's governed targeted_recent_work_required output. The
+    # transaction lane's affected pitchers — even public-material ones — must NEVER
+    # expand this list. Unioning them re-targeted a roster-departing pitcher for a
+    # recent-work fetch he does not need (Observation #5: Jared Koenig, effect=leave,
+    # targeted_recent_work_required=false).
+    targeted_pitcher_ids = sorted(set(roster.get('targeted_recent_work_pitcher_ids') or []))
+    targeted_pitcher_mlb_ids = sorted(set(roster.get('targeted_recent_work_mlb_ids') or []))
 
     public_bullpen_change_detected = bool(
         roster_statuses_changed
