@@ -179,18 +179,22 @@ per-lane `lanes` results, `would_refresh`, `material_change_detected`, a
 `summary` block, a `safety` block of guarantees, the `source_api` call totals
 grouped by endpoint, and `limitations`). The `capability` value is
 `intraday_reconciliation_audit_v1` and is the pinned contract identity; the
-finer-grained `version` is currently `1.4.0`. Four backward-compatible minor
-bumps have shipped inside capability v1: `1.0.0 → 1.1.0` (signal-quality: benign
-inventory aggregated, summary buckets, active-roster-only default);
+finer-grained `version` is currently `1.4.1`. Five backward-compatible minor and
+patch bumps have shipped inside capability v1: `1.0.0 → 1.1.0` (signal-quality:
+benign inventory aggregated, summary buckets, active-roster-only default);
 `1.1.0 → 1.2.0` (bullpen-relevance: role-gated actionability, MLB-team impact
 scoping, exact-state vs public-membership separation, chronology);
-`1.2.0 → 1.3.0` (transaction-ledger vs public-materiality split); and
+`1.2.0 → 1.3.0` (transaction-ledger vs public-materiality split);
 `1.3.0 → 1.4.0` (summary-contract clarification: one derivation source and one
 explicit scope per aggregate count, deduplicated `public_bullpen_change_count`,
-and removal of the ambiguous legacy count names). Each bump only **adds** or
-**clarifies** fields, sub-plans, and classifications; none of the fields the
-workflow's artifact validator checks (`capability` / `mode` / `check_only` /
-`status`) change, so the validator still accepts the artifact.
+and removal of the ambiguous legacy count names); and `1.4.0 → 1.4.1`
+(targeted-workload authority: the impact plan derives targeted recent-work
+acquisition **exclusively** from the roster lane, so a roster-departing pitcher's
+public-material transaction can no longer re-enter the targeted lists — a
+behavioral bug fix with no artifact-shape change). Each bump only **adds**,
+**clarifies**, or **corrects** fields, sub-plans, and classifications; none of the
+fields the workflow's artifact validator checks (`capability` / `mode` /
+`check_only` / `status`) change, so the validator still accepts the artifact.
 
 Two independent actionability axes (Observation #3). Every meaningful transaction
 finding exposes `transaction_record_actionable` (does the ledger need this
@@ -562,3 +566,72 @@ A **new** Production Observation #5 is required after this correction merges
 before the representative validation period of §9 can be considered met. Nothing
 here authorizes automatic hourly scheduling, a write phase, or any Phase 2+
 behavior; the mode remains manual, audit-only, and non-writing.
+
+## 17. Production Observation #5 (2026-07-17) and the targeted-workload authority correction
+
+The fifth valid production intraday run (Production Observation #5, contract
+version 1.4.0) completed successfully and confirmed that the deployed summary
+contract is correct. The `1.4.0` summary contract clarity passed, the canonical
+count arithmetic reconciled (`total_meaningful_findings` 91, `total_actionable_findings`
+47, `review_required_findings` 44, `unresolved_findings` 44,
+`transaction_record_actionable_count` 35, `transaction_ledger_only_findings` 34,
+`transaction_public_bullpen_material_count` 2, `public_roster_change_count` 10,
+`schedule_public_change_count` 2, `public_bullpen_change_count` 10), the
+transaction-ledger/public-materiality separation held (35 ledger records planned,
+only 2 public-material), the public-change deduplication counted overlaps once,
+and schedule finality and postponement detection worked (one newly-final game,
+`game_pk` 824766). Affiliate ids stayed evidence-only, role-lookup budget
+exhaustion **failed closed and was reported honestly** (budget 40, used 40,
+avoided 17, failures 0, budget exceeded, 43 unresolved role findings — outside
+this branch and not a correctness defect), and all read-only and writer-lock
+safety guarantees passed: ORM pending writes were clean and no canonical data,
+snapshot, fatigue recompute, or `SyncRun` was written.
+
+The one defect Observation #5 surfaced was in the **impact plan**: transaction
+lane affected pitcher IDs were unioned into targeted recent-work acquisition.
+`build_impact_plan` documented the roster lane as the sole authority for targeted
+recent-work acquisition, but its implementation computed
+`targeted_pitcher_ids = roster.targeted_recent_work_pitcher_ids ∪ transactions.affected_pitcher_ids`
+(and the same for the MLB-id list). **Jared Koenig** (stored pitcher id 744, MLB
+player id 657649, Milwaukee / team 158) was correctly marked as leaving the active
+roster: the roster lane classified him `removed_from_active_roster` with
+`bullpen_population_effect = leave` and `targeted_recent_work_required = false`,
+and correctly **excluded** him from `targeted_recent_work_pitcher_ids` /
+`targeted_recent_work_mlb_ids`. His missing OPT transaction was correctly
+`transaction_record_actionable = true` and `public_bullpen_material = true`
+(effect `leave`, `roster_confirmation_status = confirmed_change`). But because the
+impact plan unioned the transaction lane's public-material affected pitchers into
+the targeted lists, Koenig re-entered `would_refresh.targeted_pitcher_logs`,
+`would_refresh.targeted_pitcher_mlb_ids`, and both nested
+`public_bullpen_state.targeted_pitcher_*` fields. A pitcher **leaving** the active
+bullpen does not require a new recent-work fetch for the future public-state
+refresh.
+
+The correction (contract `version` 1.4.1, pinned by the tests in
+`backend/tests/test_intraday_reconcile.py`, including a compact Observation #5
+regression fixture) makes targeted recent-work acquisition **exclusively
+roster-authoritative**: `targeted_pitcher_ids` and `targeted_pitcher_mlb_ids` are
+derived only from `roster.targeted_recent_work_pitcher_ids` /
+`roster.targeted_recent_work_mlb_ids` — the roster lane's governed
+`targeted_recent_work_required` output. The transaction lane still confirms public
+membership changes, contributes transaction-ledger actions, sets the
+transaction-specific public-change flag, and preserves affected-player evidence;
+it simply never expands the targeted workload plan. Nothing else changes — public
+team scope, completed-game planning, summary counts, arithmetic, role
+verification, role-lookup budgets, transaction classification, schedule
+classification, and the transaction-ledger plan are all identical. For
+Observation #5 the roster-authoritative targeted lists are stored pitcher ids
+`[77, 242, 243, 392, 520]` and MLB ids
+`[621121, 656240, 669310, 669438, 676742, 678906, 687941, 814305]`; Koenig
+(744 / 657649) is absent from targeting yet remains public-material, a
+transaction-ledger participant, and part of the ten public affected teams
+(110, 111, 114, 117, 133, 134, 138, 139, 141, 158). **Cam Sanders** (stored 392,
+MLB 676742), a roster activation whose transaction overlaps, remains targeted
+exactly once, authorized by the roster lane.
+
+**Observation #5 validates the audit's public/ledger separation but not the final
+impact plan.** A **new** Production Observation #6 is required after this
+correction merges before the representative multi-day validation period of §9 can
+be considered started or met. Automatic intraday scheduling remains unapproved,
+Phase 2 remains blocked, and the mode remains manual, audit-only, and
+non-writing.

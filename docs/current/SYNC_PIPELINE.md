@@ -152,7 +152,11 @@ behavior is authorized.
      targeted pitcher logs, completed game_pks, publish/warm) and
      `transaction_ledger` (records to ingest/reconcile). The flat `would_refresh`
      fields derive **only** from `public_bullpen_state`; transaction-ledger-only
-     findings never set public teams, targeted workload, snapshot, or warm. Every
+     findings never set public teams, targeted workload, snapshot, or warm.
+     Targeted recent-work acquisition is **exclusively roster-authoritative**
+     (the roster lane's governed `targeted_recent_work_required` decision), so a
+     roster-departing pitcher's public-material transaction never adds a target
+     (contract `version` 1.4.1, Production Observation #5). Every
      value is a projection; this audit performs none of it. The roster lane owns
      public current-state materiality and overlapping players/teams are deduped to
      one public impact.
@@ -161,7 +165,7 @@ behavior is authorized.
   human-review-required finding is never hidden. `material_change_detected` is
   true only when a future authorized write/recompute would actually be required
   (an actionable finding or a newly-final game). Benign inventory sets neither.
-  The `summary` block (contract `version` 1.4.0) carries honest, explicitly
+  The `summary` block (contract `version` 1.4.1) carries honest, explicitly
   scoped buckets — `records_checked`, `total_meaningful_findings`,
   `total_actionable_findings`, `review_required_findings`, `unresolved_findings`,
   the transaction-ledger axis (`transaction_record_actionable_count`,
