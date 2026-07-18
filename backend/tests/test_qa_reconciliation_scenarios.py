@@ -47,7 +47,7 @@ from utils.db import db
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 MIGRATIONS_DIR = REPO_ROOT / 'backend/migrations/versions'
-EXPECTED_ALEMBIC_HEAD = 'e6b4c2a8d1f3'
+EXPECTED_ALEMBIC_HEAD = 'f7c5d3b9a2e1'
 FORBIDDEN_HEADLINE_TERMS = (
     'headline',
     'read_label',
@@ -385,6 +385,7 @@ def test_phase0e_switches_and_legacy_public_files_not_modified():
         'backend/migrations/versions/e6b4c2a8d1f3_add_slate_games.py',
         'frontend/src/components/posts/PrivatePosts.jsx',
         'frontend/src/components/posts/privatePostsView.js',
+        'backend/migrations/versions/f7c5d3b9a2e1_add_editorial_post_history.py',
     }
     allowed_files = (
         allowed_public_freshness_display_files

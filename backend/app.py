@@ -126,6 +126,7 @@ def create_app(config_name=None):
     from models.intelligence_surface_snapshot import IntelligenceSurfaceSnapshot
     from models.scheduled_game import ScheduledGame
     from models.slate_game import SlateGame
+    from models.editorial_post_history import EditorialPostHistory
     from models.tonight_intelligence_snapshot import TonightIntelligenceSnapshot
     from models.user import User, UserFollowedTeam
     from models.audience_subscriber import AudienceSubscriber

@@ -30,6 +30,7 @@ const {
   PRIVATE_POSTS_ROBOTS,
   POST_DRAFT_PLATFORMS,
   X_LEAD_CHARACTER_LIMIT,
+  auditGeneratedFactClaims,
   buildDraftGenerationPayload,
   buildGeneratedPlatformDrafts,
   buildVerifiedFactSet,
@@ -386,6 +387,10 @@ test('generation payload contains the verified fact object and platform constrai
   assert.equal('evidence' in payload, false)
   assert.equal('postability' in payload, false)
   assert.equal(payload.constraints.use_only_verified_facts, true)
+  assert.equal(payload.constraints.return_structured_fact_claims.required, true)
+  assert.deepEqual(payload.constraints.return_structured_fact_claims.fields, [
+    'names', 'dates', 'pitch_counts', 'percentages', 'teams', 'matchup_facts',
+  ])
   assert.equal(payload.constraints.x_lead_character_limit, X_LEAD_CHARACTER_LIMIT)
   assert.equal(payload.writing_instructions.interpretive_license, 'medium')
   assert.match(payload.writing_instructions.lead, /human claim/)
@@ -408,6 +413,83 @@ test('generated drafts clear the absent-number guard while fabricated numbers ar
   const rogueText = 'MIL bullpen tonight: 9/9 arms available and No. 99 of 30.'
   // Canonical takes verify no numbers, so every numeric token in rogue copy is flagged.
   assert.deepEqual(findUnverifiedNumbers(rogueText, take.verifiedFacts), ['9/9', '9', '99', '30'])
+})
+
+test('generated fact claims check names, dates, pitch counts, percentages, teams, and matchup facts', () => {
+  const verifiedFacts = {
+    teams: ['Houston Astros', 'Seattle Mariners'],
+    matchup_facts: ['Houston Astros at Seattle Mariners'],
+    named_arms: [{
+      name: 'Bryan Abreu',
+      last_outing_date: '2026-07-17',
+      pitch_counts: [18, 22],
+      workload_share_pct: 31.4,
+    }],
+  }
+  const valid = auditGeneratedFactClaims({
+    names: ['Bryan Abreu'],
+    dates: ['2026-07-17'],
+    pitch_counts: [18, 22],
+    percentages: [31.4],
+    teams: ['Houston Astros', 'Seattle Mariners'],
+    matchup_facts: ['Houston Astros at Seattle Mariners'],
+  }, verifiedFacts)
+  const invalid = auditGeneratedFactClaims({
+    names: ['Invented Arm'],
+    dates: ['2026-07-01'],
+    pitch_counts: [99],
+    percentages: [70.8],
+    teams: ['New York Yankees'],
+    matchup_facts: ['Houston Astros at New York Yankees'],
+  }, verifiedFacts)
+
+  assert.deepEqual(valid, { checked: true, valid: true, violations: [] })
+  assert.equal(invalid.valid, false)
+  assert.equal(invalid.violations.length, 6)
+})
+
+test('external generated drafts without structured fact claims fail closed to templates', async () => {
+  const [take] = getPrivatePostTakes(dashboard)
+  const packageWithoutClaims = await resolveGeneratedDraftPackage(take, {
+    requestDrafts: async () => buildGeneratedPlatformDrafts(take),
+  })
+
+  assert.equal(packageWithoutClaims.source, DRAFT_SOURCE_TEMPLATE_FALLBACK)
+  assert.match(packageWithoutClaims.fallbackReason, /no usable copy/i)
+})
+
+test('external generated drafts with an unverified structured claim fail closed to templates', async () => {
+  const [take] = getPrivatePostTakes(dashboard)
+  const drafts = buildGeneratedPlatformDrafts(take)
+  for (const draft of flattenTakeDrafts({ drafts })) {
+    draft.factClaims = { teams: ['Invented Club'] }
+  }
+  const guarded = await resolveGeneratedDraftPackage(take, {
+    requestDrafts: async () => drafts,
+  })
+
+  assert.equal(guarded.source, DRAFT_SOURCE_TEMPLATE_FALLBACK)
+})
+
+test('external generated drafts pass only with a complete verified claims contract', async () => {
+  const [take] = getPrivatePostTakes(dashboard)
+  const drafts = buildGeneratedPlatformDrafts(take)
+  for (const draft of flattenTakeDrafts({ drafts })) {
+    draft.factClaims = {
+      names: [],
+      dates: [],
+      pitch_counts: [],
+      percentages: [],
+      teams: ['Milwaukee Brewers'],
+      matchup_facts: [],
+    }
+  }
+  const guarded = await resolveGeneratedDraftPackage(take, {
+    requestDrafts: async () => drafts,
+  })
+
+  assert.equal(guarded.source, DRAFT_SOURCE_GENERATED)
+  assert.ok(flattenTakeDrafts({ drafts: guarded.drafts }).every(draft => draft.reviewFlags.length === 0))
 })
 
 test('generated drafts lead with human interpretation instead of template residue or stat lists', () => {
