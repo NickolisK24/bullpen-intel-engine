@@ -8,6 +8,7 @@ email allowlist check.
 from flask import Blueprint, current_app, g, jsonify
 
 from api.bullpen import bullpen_dashboard_response_payload
+from services.schedule_authority import build_postability_schedule_contract
 from utils.auth_tokens import normalize_email
 from utils.identity import require_authenticated_user
 
@@ -51,4 +52,6 @@ def get_private_posts_dashboard():
     """Serve the posting-board data only to explicitly allowed users."""
     if not user_can_access_private_posting_board(g.current_user):
         return jsonify({'error': 'posting_board_forbidden'}), 403
-    return jsonify(bullpen_dashboard_response_payload())
+    payload = bullpen_dashboard_response_payload()
+    payload['schedule_authority'] = build_postability_schedule_contract()
+    return jsonify(payload)

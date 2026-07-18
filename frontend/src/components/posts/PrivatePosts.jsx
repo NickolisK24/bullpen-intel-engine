@@ -1,14 +1,21 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useFetch } from '../../hooks/useFetch'
 import { useAuthState } from '../../hooks/useAuthState'
-import { getPrivatePostsDashboard } from '../../utils/api'
+import {
+  getPrivatePostsDashboard,
+  getSlateBriefing,
+  getSlateBriefingHistory,
+  markSlateBriefingPosted,
+} from '../../utils/api'
 import { ErrorState, LoadingPane, StaleDataNotice } from '../UI'
 import {
   PRIVATE_POSTS_PATH,
   PRIVATE_POSTS_ROBOTS,
   flattenTakeDrafts,
   getPrivatePostTakes,
+  defaultSlateCandidateId,
   resolveGeneratedDraftPackage,
+  slateCandidateLabel,
 } from './privatePostsView'
 
 export default function PrivatePosts() {
@@ -28,6 +35,8 @@ export default function PrivatePosts() {
 
 function PrivatePostsAuthorized() {
   const dash = useFetch(getPrivatePostsDashboard)
+  const briefing = useFetch(() => getSlateBriefing({ date: 'tomorrow' }))
+  const history = useFetch(() => getSlateBriefingHistory({ limit: 10 }))
 
   if (isPrivatePostsAccessError(dash.error) && !dash.data) {
     return <PrivatePostsAccessDenied />
@@ -40,6 +49,12 @@ function PrivatePostsAuthorized() {
       error={dash.error}
       staleWithError={dash.staleWithError}
       onRetry={dash.refetch}
+      briefing={briefing.data}
+      briefingLoading={briefing.loading}
+      briefingError={briefing.error}
+      onBriefingRetry={briefing.refetch}
+      postingHistory={history.data?.posting_records || []}
+      onHistoryRefresh={history.refetch}
     />
   )
 }
@@ -158,7 +173,14 @@ export function PrivatePostsView({
   error = null,
   staleWithError = false,
   onRetry,
+  briefing = null,
+  briefingLoading = false,
+  briefingError = null,
+  onBriefingRetry,
+  postingHistory = [],
+  onHistoryRefresh,
 }) {
+  const [activeTab, setActiveTab] = useState('postable-takes')
   const takes = useMemo(() => getPrivatePostTakes(dashboard), [dashboard])
   const endpointDraftPackages = useEndpointDraftPackages(takes)
   const generatedAt = dashboard?.freshness?.data_through
@@ -166,6 +188,8 @@ export function PrivatePostsView({
     || dashboard?.freshness?.generated_at
     || dashboard?.generated_at
     || 'latest read'
+  const scheduleFreshness = dashboard?.schedule_authority?.freshness || {}
+  const scheduleDataThrough = scheduleFreshness.schedule_data_through || 'unavailable'
 
   return (
     <div className="mx-auto max-w-7xl p-4 sm:p-5 lg:p-6" data-private-posts-path={PRIVATE_POSTS_PATH}>
@@ -181,6 +205,9 @@ export function PrivatePostsView({
           </div>
           <div className="flex flex-wrap gap-2 font-mono text-[11px] text-chalk400">
             <span className="rounded border border-dirt bg-dugout px-2 py-1">{generatedAt}</span>
+            <span className="rounded border border-dirt bg-dugout px-2 py-1">
+              Schedule through {scheduleDataThrough}
+            </span>
             <span className="rounded border border-amber/30 bg-amber/5 px-2 py-1 text-amber/80">
               noindex
             </span>
@@ -188,6 +215,28 @@ export function PrivatePostsView({
         </div>
       </header>
 
+      <nav className="mb-5 flex gap-2" aria-label="Private posting board sections">
+        <button type="button" onClick={() => setActiveTab('postable-takes')} data-private-posts-tab="postable-takes" className={`rounded border px-3 py-2 font-mono text-[11px] uppercase tracking-widest ${activeTab === 'postable-takes' ? 'border-amber/50 bg-amber/10 text-amber' : 'border-dirt bg-dugout text-chalk400'}`}>
+          Postable Takes
+        </button>
+        <button type="button" onClick={() => setActiveTab('slate-briefing')} data-private-posts-tab="slate-briefing" className={`rounded border px-3 py-2 font-mono text-[11px] uppercase tracking-widest ${activeTab === 'slate-briefing' ? 'border-amber/50 bg-amber/10 text-amber' : 'border-dirt bg-dugout text-chalk400'}`}>
+          Slate Briefing
+        </button>
+      </nav>
+
+      {activeTab === 'slate-briefing' ? (
+        <SlateBriefingPanel
+          briefing={briefing}
+          loading={briefingLoading}
+          error={briefingError}
+          onRetry={onBriefingRetry}
+          postingHistory={postingHistory}
+          onPosted={async () => {
+            await Promise.all([onBriefingRetry?.(), onHistoryRefresh?.()])
+          }}
+        />
+      ) : (
+        <>
       {loading && !dashboard ? (
         <LoadingPane message="Loading postable takes..." />
       ) : error && !dashboard ? (
@@ -199,6 +248,17 @@ export function PrivatePostsView({
               dataThrough={dashboard?.freshness?.data_through}
               onRetry={onRetry}
             />
+          )}
+
+          {scheduleFreshness.is_fresh !== true && (
+            <div
+              className="mb-5 border border-amber/40 bg-amber/10 px-4 py-3 text-sm text-amber"
+              role="status"
+              data-schedule-freshness={scheduleFreshness.state || 'unavailable'}
+            >
+              Schedule data is {scheduleFreshness.state || 'unavailable'} through {scheduleDataThrough}.
+              Postable takes are withheld until a fresh schedule refresh completes.
+            </div>
           )}
 
           <section className="mb-5 grid grid-cols-1 gap-3 md:grid-cols-3" aria-label="Private take summary">
@@ -215,7 +275,7 @@ export function PrivatePostsView({
 
           {takes.length === 0 ? (
             <div className="card p-5">
-              <p className="font-semibold text-chalk100">No four-beat team stories are available in this read.</p>
+              <p className="font-semibold text-chalk100">No schedule-cleared team stories are available in this read.</p>
               <p className="mt-2 text-sm leading-relaxed text-chalk400">
                 The private board stays empty instead of inventing a post angle.
               </p>
@@ -234,7 +294,193 @@ export function PrivatePostsView({
           )}
         </>
       )}
+        </>
+      )}
     </div>
+  )
+}
+
+export function SlateBriefingPanel({
+  briefing,
+  loading = false,
+  error = null,
+  onRetry,
+  postingHistory = [],
+  onPosted,
+}) {
+  const [expandedId, setExpandedId] = useState(() => defaultSlateCandidateId(briefing))
+
+  useEffect(() => {
+    setExpandedId(defaultSlateCandidateId(briefing))
+  }, [briefing?.briefing_date, briefing?.top_recommendation, briefing?.ranked_highest])
+
+  if (loading && !briefing) return <LoadingPane message="Loading slate briefing..." />
+  if (error && !briefing) return <ErrorState message={error} onRetry={onRetry} />
+  const candidates = briefing?.candidates || []
+  return (
+    <section aria-label="Slate Briefing" data-slate-briefing-date={briefing?.briefing_date || 'unavailable'}>
+      {error && briefing && <StaleDataNotice dataThrough={briefing.briefing_date} onRetry={onRetry} />}
+      <div className="mb-4 flex flex-wrap items-end justify-between gap-3 border border-dirt bg-dugout p-4">
+        <div>
+          <div className="font-mono text-[10px] uppercase tracking-widest text-amber/70">Ranked editorial slate</div>
+          <h2 className="mt-1 font-display text-3xl tracking-wide text-chalk100">{briefing?.briefing_date || 'Tomorrow'}</h2>
+        </div>
+        <div className="font-mono text-[11px] text-chalk400">
+          {briefing?.has_publishable_candidate ? 'Publishable recommendation available' : 'No publishable story in this slate'}
+        </div>
+      </div>
+      {candidates.length === 0 ? (
+        <div className="card p-5" data-slate-empty="true">
+          <p className="font-semibold text-chalk100">No games are available for this slate.</p>
+          <p className="mt-2 text-sm text-chalk400">The briefing remains empty instead of inventing a matchup.</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {candidates.map(candidate => (
+            <SlateCandidateCard
+              key={candidate.candidate_id}
+              candidate={candidate}
+              expanded={expandedId === candidate.candidate_id}
+              onToggle={() => setExpandedId(expandedId === candidate.candidate_id ? null : candidate.candidate_id)}
+              onPosted={onPosted}
+            />
+          ))}
+        </div>
+      )}
+      <RecentPostingHistory records={postingHistory} />
+    </section>
+  )
+}
+
+function SlateCandidateCard({ candidate, expanded, onToggle, onPosted }) {
+  const label = slateCandidateLabel(candidate)
+  const featured = candidate.featured_team || {}
+  const status = candidate.games || []
+  return (
+    <article className="card p-4" data-slate-candidate={candidate.candidate_id} data-publishable={String(Boolean(candidate.publishable))}>
+      <button type="button" onClick={onToggle} className="w-full text-left" aria-expanded={expanded}>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <div className="flex flex-wrap gap-2">
+              <span className={`rounded border px-2 py-1 font-mono text-[10px] uppercase tracking-widest ${candidate.recommended_to_post ? 'border-emerald-400/40 bg-emerald-400/10 text-emerald-200' : 'border-amber/30 bg-amber/5 text-amber'}`}>{label}</span>
+              <span className="rounded border border-dirt bg-field/70 px-2 py-1 font-mono text-[10px] uppercase tracking-widest text-chalk500">#{candidate.rank} · Score {candidate.final_editorial_score}</span>
+              {candidate.doubleheader && <span className="rounded border border-dirt px-2 py-1 font-mono text-[10px] text-chalk400">DH</span>}
+            </div>
+            <h3 className="mt-2 font-display text-2xl tracking-wide text-chalk100">{candidate.matchup?.label}</h3>
+            <p className="mt-1 text-sm text-chalk400">First pitch {formatEasternTime(candidate.first_pitch_et)} · Featured: {featured.team_name || featured.team_abbreviation} · {candidate.shape || 'No publishable shape'}</p>
+          </div>
+          <span className="font-mono text-xs text-chalk500">{expanded ? 'Collapse' : 'Expand'}</span>
+        </div>
+      </button>
+      {expanded && (
+        <div className="mt-4 space-y-4 border-t border-dirt pt-4">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <MetricTile label="Home story" value={candidate.home_team_story_score} />
+            <MetricTile label="Away story" value={candidate.away_team_story_score} />
+            <MetricTile label="Contrast" value={candidate.matchup_contrast_score} />
+            <MetricTile label="Evidence" value={candidate.evidence_completeness?.featured_team ? 'Complete' : 'Incomplete'} />
+          </div>
+          <p className="border-l-2 border-amber/40 pl-3 text-sm leading-relaxed text-chalk200">{candidate.plain_one_liner || 'No deterministic one-liner is released while this candidate is withheld.'}</p>
+          <FreshnessAndReasons candidate={candidate} />
+          <div className="grid gap-3 lg:grid-cols-2">
+            <NamedArmsTable label={candidate.matchup?.away_team_name} evidence={candidate.named_arms_evidence?.away_team} />
+            <NamedArmsTable label={candidate.matchup?.home_team_name} evidence={candidate.named_arms_evidence?.home_team} />
+          </div>
+          <ComponentScores breakdown={candidate.component_breakdown} />
+          {candidate.publishable ? <SlatePostingEditor candidate={candidate} onPosted={onPosted} /> : (
+            <div className="border border-amber/40 bg-amber/10 p-3 text-sm text-amber">This candidate cannot be marked posted until every withholding reason clears.</div>
+          )}
+          {status.length > 0 && <div className="font-mono text-[10px] text-chalk600">Games: {status.map(game => `#${game.game_pk} ${game.status?.detailed || game.status?.normalized}`).join(' · ')}</div>}
+        </div>
+      )}
+    </article>
+  )
+}
+
+function formatEasternTime(value) {
+  if (!value) return 'TBD'
+  return new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/New_York', timeZoneName: 'short' }).format(new Date(value))
+}
+
+function FreshnessAndReasons({ candidate }) {
+  const schedule = candidate.schedule_freshness || {}
+  const bullpen = candidate.bullpen_data_freshness || {}
+  return (
+    <div className="grid gap-3 md:grid-cols-2">
+      <div className="border border-dirt bg-field/50 p-3 text-xs text-chalk400">Schedule: {schedule.state || 'unavailable'} through {schedule.schedule_data_through || 'unavailable'}<br />Bullpen: away {bullpen.away_team?.state || 'unavailable'}, home {bullpen.home_team?.state || 'unavailable'}</div>
+      <div className="border border-dirt bg-field/50 p-3 text-xs text-chalk400">Withholding: {(candidate.withholding_reasons || []).length ? candidate.withholding_reasons.join(', ') : 'none'}</div>
+    </div>
+  )
+}
+
+function NamedArmsTable({ label, evidence = {} }) {
+  return (
+    <div className="overflow-x-auto border border-dirt bg-field/50 p-3">
+      <div className="font-mono text-[10px] uppercase tracking-widest text-chalk600">{label} named arms</div>
+      <table className="mt-2 min-w-full text-left text-xs">
+        <thead className="text-chalk600"><tr><th className="pr-3">Pitcher</th><th className="pr-3">Last outing</th><th className="pr-3">7d pitches/share</th><th>Outings</th></tr></thead>
+        <tbody className="text-chalk300">
+          {(evidence.top_relievers || []).map(arm => <tr key={arm.player_id} className="border-t border-dirt"><td className="py-2 pr-3 font-semibold">{arm.name}</td><td className="pr-3">{arm.last_outing_date}</td><td className="pr-3">{arm.trailing_pitches} / {arm.workload_share_pct}%</td><td>{(arm.appearances || []).map(item => `${item.date}: ${item.pitch_count}`).join(', ')}</td></tr>)}
+          {(evidence.top_relievers || []).length === 0 && <tr><td colSpan="4" className="py-2 text-chalk600">No complete named-arm evidence.</td></tr>}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+function ComponentScores({ breakdown = {} }) {
+  return <details className="border border-dirt bg-field/50 p-3"><summary className="cursor-pointer font-mono text-[10px] uppercase tracking-widest text-chalk500">Component score breakdown</summary><pre className="mt-2 overflow-auto whitespace-pre-wrap text-[10px] text-chalk400">{JSON.stringify(breakdown, null, 2)}</pre></details>
+}
+
+function SlatePostingEditor({ candidate, onPosted }) {
+  const platforms = Object.keys(candidate.platform_drafts || {})
+  const [platform, setPlatform] = useState(platforms[0] || 'X')
+  const [finalText, setFinalText] = useState(candidate.platform_drafts?.[platform]?.text || '')
+  const [externalUrl, setExternalUrl] = useState('')
+  const [state, setState] = useState({ saving: false, error: null, record: null })
+  const selectPlatform = (value) => {
+    setPlatform(value)
+    setFinalText(candidate.platform_drafts?.[value]?.text || '')
+  }
+  const submit = async () => {
+    setState({ saving: true, error: null, record: null })
+    try {
+      const generated = candidate.platform_drafts?.[platform]?.text || ''
+      const response = await markSlateBriefingPosted({ candidate_id: candidate.candidate_id, evidence_reference: candidate.evidence_reference, source_briefing_date: candidate.briefing_date, platform, generated_draft_text: generated, final_post_text: finalText, external_post_url: externalUrl || undefined })
+      setState({ saving: false, error: null, record: response.posting_record })
+      await onPosted?.()
+    } catch (error) {
+      setState({ saving: false, error: error.message || 'Failed to mark posted', record: null })
+    }
+  }
+  return (
+    <section className="border border-dirt bg-dugout p-3" aria-label="Posting editor">
+      <div className="mb-3 grid gap-3 lg:grid-cols-2">
+        {platforms.map(value => (
+          <DraftCard key={value} draft={{
+            label: value,
+            audience: `${value} slate draft`,
+            text: candidate.platform_drafts[value].text,
+            sourceLabel: 'Deterministic slate draft',
+          }} />
+        ))}
+      </div>
+      <div className="flex flex-wrap gap-2">{platforms.map(value => <button type="button" key={value} onClick={() => selectPlatform(value)} className={`rounded border px-2 py-1 font-mono text-[10px] ${platform === value ? 'border-amber/50 text-amber' : 'border-dirt text-chalk500'}`}>{value}</button>)}</div>
+      <label className="mt-3 block text-xs text-chalk500">Editable final post<textarea value={finalText} onChange={event => setFinalText(event.target.value)} rows="5" className="mt-1 w-full border border-dirt bg-field p-2 text-sm text-chalk200" /></label>
+      <label className="mt-3 block text-xs text-chalk500">External URL (optional)<input value={externalUrl} onChange={event => setExternalUrl(event.target.value)} className="mt-1 w-full border border-dirt bg-field p-2 text-sm text-chalk200" /></label>
+      {state.error && <p className="mt-2 text-sm text-red-200" role="alert">{state.error}</p>}
+      {state.record && <p className="mt-2 text-sm text-emerald-200" role="status">Recorded as posted on {state.record.platform}.</p>}
+      <button type="button" onClick={submit} disabled={state.saving || !finalText.trim()} className="mt-3 rounded border border-emerald-400/40 bg-emerald-400/10 px-3 py-2 font-mono text-[11px] uppercase tracking-widest text-emerald-200 disabled:opacity-50">{state.saving ? 'Saving...' : 'Mark posted'}</button>
+    </section>
+  )
+}
+
+function RecentPostingHistory({ records }) {
+  return (
+    <section className="mt-5 border border-dirt bg-dugout p-4" aria-label="Recent posting history">
+      <h3 className="font-display text-xl tracking-wide text-chalk100">Recent Posting History</h3>
+      {records.length === 0 ? <p className="mt-2 text-sm text-chalk500">No posting receipts yet.</p> : <ul className="mt-2 space-y-2 text-xs text-chalk400">{records.map(record => <li key={record.id} className="border-t border-dirt pt-2"><span className="font-semibold text-chalk200">{record.platform}</span> · {record.story_shape} · {record.posted_at}{record.external_post_url && <> · <a href={record.external_post_url} className="text-amber">Open post</a></>}</li>)}</ul>}
+    </section>
   )
 }
 

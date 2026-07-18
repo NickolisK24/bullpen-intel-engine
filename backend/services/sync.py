@@ -28,7 +28,7 @@ from models.sync_run import SyncRun
 from models.sync_failure import SyncFailure
 from services import dead_letter
 from services import pitcher_season_ledger_coverage
-from services import schedule_ingestion
+from services import schedule_authority, schedule_ingestion
 from services import sync_jobs
 from services import sync_metadata
 from services.availability_reference_date import resolve_product_day
@@ -2056,6 +2056,29 @@ def _refresh_daily_schedule_finality_window(
         'summary': summary,
         'elapsed_ms': round((time.perf_counter() - started) * 1000, 1),
     }
+
+
+def _refresh_daily_slate_schedule_window(reference_date: date) -> dict:
+    """Refresh the WP42 yesterday-through-+3 schedule authority window."""
+    started = time.perf_counter()
+    try:
+        result = schedule_authority.ingest_rolling_window(
+            reference_date,
+            source='daily_slate_schedule',
+        )
+    except Exception as exc:  # noqa: BLE001 - sync continues with stale authority
+        db.session.rollback()
+        start_date, end_date = schedule_authority.rolling_window(reference_date)
+        return {
+            'status': 'failed',
+            'start_date': start_date.isoformat(),
+            'end_date': end_date.isoformat(),
+            'summary': {'errors': 1},
+            'error': str(exc),
+            'elapsed_ms': round((time.perf_counter() - started) * 1000, 1),
+        }
+    result['elapsed_ms'] = round((time.perf_counter() - started) * 1000, 1)
+    return result
 
 
 def _refresh_postgame_schedule_finality(
@@ -4339,6 +4362,7 @@ def run_daily_sync(
                 transactions['errors'],
             )
             schedule_finality_records_failed = 0
+            slate_schedule_records_failed = 0
             if _sync_schedule_finality_preflight_enabled():
                 active_stage = sync_metadata.STAGE_SCHEDULE_FINALITY_PREFLIGHT
                 stage_started = time.monotonic()
@@ -4371,8 +4395,32 @@ def run_daily_sync(
                     (finality_preflight.get('summary') or {}).get('errors'),
                     finality_preflight.get('elapsed_ms'),
                 )
+                slate_schedule = _refresh_daily_slate_schedule_window(
+                    product_day.calendar_date
+                )
+                status['slate_schedule_refresh'] = slate_schedule
+                slate_schedule_records_failed = int(
+                    (slate_schedule.get('summary') or {}).get('errors') or 0
+                )
+                run_logger.info(
+                    'Daily slate schedule refresh completed: status=%s '
+                    'window=%s..%s games_seen=%s slate_created=%s '
+                    'slate_updated=%s errors=%s elapsed_ms=%s.',
+                    slate_schedule.get('status'),
+                    slate_schedule.get('start_date'),
+                    slate_schedule.get('end_date'),
+                    (slate_schedule.get('summary') or {}).get('games_seen'),
+                    (slate_schedule.get('summary') or {}).get('slate_games_created'),
+                    (slate_schedule.get('summary') or {}).get('slate_games_updated'),
+                    (slate_schedule.get('summary') or {}).get('errors'),
+                    slate_schedule.get('elapsed_ms'),
+                )
             else:
                 status['schedule_finality_preflight'] = {
+                    'status': 'skipped',
+                    'reason': 'disabled',
+                }
+                status['slate_schedule_refresh'] = {
                     'status': 'skipped',
                     'reason': 'disabled',
                 }
@@ -4430,6 +4478,7 @@ def run_daily_sync(
                 + roster_records_failed
                 + transaction_records_failed
                 + schedule_finality_records_failed
+                + slate_schedule_records_failed
             )
             status['new_logs_added'] = pull['new_logs_added']
             status['logs_corrected'] = logs_corrected
@@ -4447,6 +4496,7 @@ def run_daily_sync(
                 + team_assignment['errors']
                 + transactions['errors']
                 + schedule_finality_records_failed
+                + slate_schedule_records_failed
             )
             status['team_assignments_refreshed'] = team_assignment['pitchers_refreshed']
             status['team_assignments_changed'] = team_assignment['pitchers_changed']
@@ -4513,6 +4563,7 @@ def run_daily_sync(
                         + team_assignment['errors']
                         + transactions['errors']
                         + schedule_finality_records_failed
+                        + slate_schedule_records_failed
                     ),
                     api_calls_made=api_metrics['api_calls'],
                     retries_used=api_metrics['retries'],

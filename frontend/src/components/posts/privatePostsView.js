@@ -17,6 +17,16 @@ export const POST_DRAFT_PLATFORMS = [
   'x',
 ]
 
+export function slateCandidateLabel(candidate) {
+  if (candidate?.recommended_to_post) return 'Recommended'
+  if (candidate?.ranked_highest) return 'Ranked highest but withheld'
+  return 'Withheld'
+}
+
+export function defaultSlateCandidateId(briefing) {
+  return briefing?.top_recommendation || briefing?.ranked_highest || null
+}
+
 const TENSION_RULE_KEYS = new Set([
   'stress_transfer',
   'sustainability_question',
@@ -469,6 +479,14 @@ function classifyPostability(story, facts) {
     cleanText(story?.body),
   ].join(' ').toLowerCase()
   const saysBut = /\bbut\b/.test(storyText)
+  const schedule = isObject(story?.schedule_postability)
+    ? story.schedule_postability
+    : {
+        postable: false,
+        state: 'uncertain',
+        reason: 'schedule_authority_unavailable',
+        games: [],
+      }
 
   const tension = []
   if (
@@ -538,6 +556,11 @@ function classifyPostability(story, facts) {
     leadDimension,
     leadScore,
     storyStrength: strength,
+    schedulePostable: schedule.postable === true,
+    scheduleState: cleanText(schedule.state) || 'uncertain',
+    scheduleReason: cleanText(schedule.reason) || 'schedule_authority_unavailable',
+    scheduleGames: Array.isArray(schedule.games) ? schedule.games : [],
+    doubleheader: schedule.doubleheader === true,
     rationale: [
       ...tension.map(value => `Tension: ${value}.`),
       ...superlatives.map(value => `Superlative: ${value}.`),
@@ -948,10 +971,70 @@ export function findUnverifiedNumbers(text, verifiedFacts) {
   return extractNumberTokens(text).filter(token => !allowed.has(token))
 }
 
+function verifiedFactValuesByKind(verifiedFacts) {
+  const values = new Map()
+  const add = (kind, entry) => {
+    if (!values.has(kind)) values.set(kind, new Set())
+    values.get(kind).add(String(entry).trim().toLowerCase())
+  }
+  const visit = (entry, path = []) => {
+    if (Array.isArray(entry)) {
+      entry.forEach(item => visit(item, path))
+      return
+    }
+    if (isObject(entry)) {
+      Object.entries(entry).forEach(([key, item]) => visit(item, [...path, key]))
+      return
+    }
+    if (entry === null || entry === undefined || entry === '') return
+    const key = String(path.at(-1) || '').toLowerCase()
+    const ancestors = path.map(part => String(part).toLowerCase())
+    if (/name$/.test(key) && ancestors.some(part => /arm|reliever|pitcher|named/.test(part))) add('names', entry)
+    if (/date$/.test(key)) add('dates', entry)
+    if (/pitch.*count|pitch_counts|trailing_pitches/.test(key)) add('pitch_counts', entry)
+    if (/percent|percentage|_pct$|share_pct/.test(key)) add('percentages', entry)
+    if (/team/.test(key) || ancestors.some(part => part === 'team' || part === 'teams')) add('teams', entry)
+    if (/matchup/.test(key) || ancestors.some(part => /matchup/.test(part))) add('matchup_facts', entry)
+  }
+  visit(verifiedFacts || {})
+  return values
+}
+
+export function auditGeneratedFactClaims(factClaims, verifiedFacts) {
+  if (!isObject(factClaims)) {
+    return { checked: false, valid: false, violations: ['Missing structured fact claims'] }
+  }
+  const allowedByKind = verifiedFactValuesByKind(verifiedFacts)
+  const violations = []
+  const requiredKinds = ['names', 'dates', 'pitch_counts', 'percentages', 'teams', 'matchup_facts']
+  for (const kind of requiredKinds) {
+    if (!Array.isArray(factClaims[kind])) {
+      violations.push(`Missing ${kind.replaceAll('_', ' ')} claims`)
+    }
+  }
+  for (const [kind, claims] of Object.entries(factClaims)) {
+    const values = Array.isArray(claims) ? claims : [claims]
+    for (const value of values.filter(item => item !== null && item !== undefined && item !== '')) {
+      const allowed = allowedByKind.get(kind) || new Set()
+      if (!allowed.has(String(value).trim().toLowerCase())) {
+        violations.push(`Unverified ${kind.replaceAll('_', ' ')}: ${value}`)
+      }
+    }
+  }
+  return { checked: true, valid: violations.length === 0, violations }
+}
+
 function decorateDraft(draft, verifiedFacts, options = {}) {
   if (!draft) return draft
   const textToCheck = [draft.lead, draft.support, draft.text].map(cleanText).filter(Boolean).join('\n')
   const unverifiedNumbers = findUnverifiedNumbers(textToCheck, verifiedFacts)
+  const claimAudit = options.requireFactClaims || draft.factClaims
+    ? auditGeneratedFactClaims(draft.factClaims, verifiedFacts)
+    : { checked: false, valid: true, violations: [] }
+  const reviewFlags = [
+    ...unverifiedNumbers.map(value => `Unverified number: ${value}`),
+    ...claimAudit.violations,
+  ]
   return {
     ...draft,
     source: options.source,
@@ -960,8 +1043,9 @@ function decorateDraft(draft, verifiedFacts, options = {}) {
     factCheck: {
       checked: true,
       unverifiedNumbers,
+      claims: claimAudit,
     },
-    reviewFlags: unverifiedNumbers.map(value => `Unverified number: ${value}`),
+    reviewFlags,
   }
 }
 
@@ -990,6 +1074,15 @@ function hasCompleteDraftSet(drafts) {
   )
 }
 
+function generatedDraftFactsAreValid(drafts, verifiedFacts, requireFactClaims) {
+  return flattenTakeDrafts({ drafts }).every(draft => {
+    const text = [draft?.lead, draft?.support, draft?.text].map(cleanText).filter(Boolean).join('\n')
+    if (findUnverifiedNumbers(text, verifiedFacts).length > 0) return false
+    if (!requireFactClaims) return true
+    return auditGeneratedFactClaims(draft?.factClaims, verifiedFacts).valid
+  })
+}
+
 export function buildDraftGenerationPayload(take) {
   const verifiedFacts = take.verifiedFacts || buildVerifiedFactSet(take.story, take.facts)
   return {
@@ -1011,6 +1104,10 @@ export function buildDraftGenerationPayload(take) {
     },
     constraints: {
       use_only_verified_facts: true,
+      return_structured_fact_claims: {
+        required: true,
+        fields: ['names', 'dates', 'pitch_counts', 'percentages', 'teams', 'matchup_facts'],
+      },
       x_lead_character_limit: X_LEAD_CHARACTER_LIMIT,
       no_public_product_centering_for: ['reddit_league', 'reddit_team', 'x'],
       forbidden_residue: [
@@ -1032,7 +1129,11 @@ export function buildDraftGenerationPayload(take) {
 
 export function resolveDraftPackage(take, candidateDrafts, options = {}) {
   const verifiedFacts = take.verifiedFacts || buildVerifiedFactSet(take.story, take.facts)
-  const hasGeneratedDrafts = hasCompleteDraftSet(candidateDrafts)
+  const generatedFactClaimsComplete = !options.requireFactClaims || flattenTakeDrafts({ drafts: candidateDrafts })
+    .every(draft => isObject(draft.factClaims))
+  const generatedFactsValid = generatedFactClaimsComplete
+    && generatedDraftFactsAreValid(candidateDrafts, verifiedFacts, options.requireFactClaims)
+  const hasGeneratedDrafts = hasCompleteDraftSet(candidateDrafts) && generatedFactsValid
   const source = hasGeneratedDrafts ? DRAFT_SOURCE_GENERATED : DRAFT_SOURCE_TEMPLATE_FALLBACK
   const drafts = hasGeneratedDrafts
     ? candidateDrafts
@@ -1043,6 +1144,7 @@ export function resolveDraftPackage(take, candidateDrafts, options = {}) {
     fallbackReason: hasGeneratedDrafts ? null : (options.fallbackReason || 'Generated draft request returned no usable copy.'),
     drafts: decorateDraftTree(drafts, verifiedFacts, {
       source,
+      requireFactClaims: source === DRAFT_SOURCE_GENERATED && options.requireFactClaims,
       fallbackReason: hasGeneratedDrafts ? null : (options.fallbackReason || 'Generated draft request returned no usable copy.'),
     }),
   }
@@ -1052,7 +1154,10 @@ export async function resolveGeneratedDraftPackage(take, options = {}) {
   if (typeof options.requestDrafts === 'function') {
     try {
       const response = await options.requestDrafts(buildDraftGenerationPayload(take))
-      return resolveDraftPackage(take, response?.drafts || response, options)
+      return resolveDraftPackage(take, response?.drafts || response, {
+        ...options,
+        requireFactClaims: true,
+      })
     } catch (error) {
       return resolveDraftPackage(take, null, {
         ...options,
@@ -1154,6 +1259,7 @@ export function canonicalPostableStories(dashboard) {
         tone: item.tone,
         category: item.category,
         continuity: item.continuity || null,
+        schedule_postability: schedulePostabilityForTeam(dashboard, item.team_id),
         beats: [
           { key: 'signal', text: item.headline },
           { key: 'evidence', text: evidence || cleanText(item.narrative) },
@@ -1167,7 +1273,7 @@ export function getPrivatePostTakes(dashboard, options = {}) {
   const limit = Math.max(1, finiteNumber(options.limit, DEFAULT_POSTABLE_TAKE_LIMIT))
   return canonicalPostableStories(dashboard)
     .map(buildPostableTake)
-    .filter(Boolean)
+    .filter(take => take?.postability?.schedulePostable === true)
     .sort((a, b) => (
       b.postability.score - a.postability.score
       || b.postability.storyStrength - a.postability.storyStrength
@@ -1175,4 +1281,28 @@ export function getPrivatePostTakes(dashboard, options = {}) {
       || a.abbr.localeCompare(b.abbr)
     ))
     .slice(0, limit)
+}
+
+function schedulePostabilityForTeam(dashboard, teamId) {
+  const authority = isObject(dashboard?.schedule_authority)
+    ? dashboard.schedule_authority
+    : {}
+  const freshness = isObject(authority.freshness) ? authority.freshness : {}
+  if (freshness.is_fresh !== true) {
+    return {
+      postable: false,
+      state: 'uncertain',
+      reason: `schedule_${cleanText(freshness.state) || 'unavailable'}`,
+      games: [],
+    }
+  }
+  const team = isObject(authority.teams?.[String(teamId)])
+    ? authority.teams[String(teamId)]
+    : null
+  return team || {
+    postable: false,
+    state: 'cancelled',
+    reason: 'team_not_on_slate',
+    games: [],
+  }
 }

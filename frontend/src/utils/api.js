@@ -473,6 +473,12 @@ export const getBullpenOverview = () => request('/bullpen/stats/overview')
 // health, and usage-role composition. Context only (no ranking/selection).
 export const getBullpenDashboard = () => request('/bullpen/dashboard')
 export const getPrivatePostsDashboard = () => request('/private-posts/dashboard')
+export const getSlateBriefing = (params = {}) => request(`/slate-briefing${buildQuery(params)}`)
+export const getSlateBriefingHistory = (params = {}) => request(`/slate-briefing/history${buildQuery(params)}`)
+export const markSlateBriefingPosted = (payload) => request('/slate-briefing/mark-posted', {
+  method: 'POST',
+  body: JSON.stringify(payload),
+})
 // Tonight's Bullpen Landscape — league-wide bullpen context (descriptive only).
 export const getBullpenLandscape = () => request('/bullpen/landscape')
 // Intelligence Surface — the single league lead story for the homepage.

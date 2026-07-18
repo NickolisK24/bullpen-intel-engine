@@ -1304,6 +1304,14 @@ def test_existing_public_routes_behavior_freeze(monkeypatch):
         'frontend/tests/trafficIntelligenceAdmin.test.mjs',
         'frontend/tests/trafficMeasurement.test.mjs',
     }
+    allowed_wp42_schedule_files = {
+        'backend/migrations/versions/e6b4c2a8d1f3_add_slate_games.py',
+        'frontend/src/components/posts/PrivatePosts.jsx',
+        'frontend/src/components/posts/privatePostsView.js',
+        'frontend/tests/privatePosts.test.mjs',
+        'backend/migrations/versions/f7c5d3b9a2e1_add_editorial_post_history.py',
+        'backend/migrations/versions/a1d8e4c6b2f0_extend_editorial_post_history.py',
+    }
     assert not [
         path for path in changed
         if path not in allowed_phase_a_audience_signup_files
@@ -1315,6 +1323,7 @@ def test_existing_public_routes_behavior_freeze(monkeypatch):
         if path not in allowed_relief_role_input_integrity_files
         if path not in allowed_legacy_retirement_files
         if path not in allowed_trusted_traffic_files
+        if path not in allowed_wp42_schedule_files
         if (
             path in blocked_files and path not in allowed_internal_admin_files
         )

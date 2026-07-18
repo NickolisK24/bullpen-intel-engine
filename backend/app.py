@@ -125,6 +125,8 @@ def create_app(config_name=None):
     from models.completed_game_context import CompletedGameContext
     from models.intelligence_surface_snapshot import IntelligenceSurfaceSnapshot
     from models.scheduled_game import ScheduledGame
+    from models.slate_game import SlateGame
+    from models.editorial_post_history import EditorialPostHistory
     from models.tonight_intelligence_snapshot import TonightIntelligenceSnapshot
     from models.user import User, UserFollowedTeam
     from models.audience_subscriber import AudienceSubscriber
@@ -151,6 +153,7 @@ def create_app(config_name=None):
     from api.auth import auth_bp
     from api.me import me_bp
     from api.private_posts import private_posts_bp
+    from api.slate_briefing import slate_briefing_bp
     from api.audience import audience_bp
     from api.traffic import traffic_bp
 
@@ -168,6 +171,7 @@ def create_app(config_name=None):
     app.register_blueprint(auth_bp, url_prefix='/api/auth')
     app.register_blueprint(me_bp, url_prefix='/api/me')
     app.register_blueprint(private_posts_bp, url_prefix='/api/private-posts')
+    app.register_blueprint(slate_briefing_bp, url_prefix='/api')
     app.register_blueprint(audience_bp, url_prefix='/api/audience')
     app.register_blueprint(traffic_bp, url_prefix='/api/traffic')
 

@@ -1,0 +1,45 @@
+{
+  "score_version": "slate_editorial_v1",
+  "windows": {
+    "workload_days": 7,
+    "recent_days": 3,
+    "upcoming_days": 3,
+    "repetition_days": 5,
+    "data_freshness_days": 2
+  },
+  "group_caps": {
+    "current_condition": 35,
+    "evidence_strength": 35,
+    "editorial_stakes": 30
+  },
+  "state_severity_points": {
+    "fresh": 0,
+    "stretched": 12,
+    "vulnerable": 22,
+    "unknown": 0
+  },
+  "weights": {
+    "clean_option_scarcity_per_missing": 4,
+    "clean_option_target": 5,
+    "concentration_threshold_pct": 70,
+    "concentration_max_points": 20,
+    "recent_game_points": 4,
+    "consecutive_usage_points": 3,
+    "named_arms_complete_points": 5,
+    "upcoming_game_points": 4,
+    "contrast_points": 12,
+    "same_team_same_shape_penalty": 18,
+    "same_team_other_shape_penalty": 7
+  },
+  "shape_gates": {
+    "minimum_relief_pitches": 60,
+    "minimum_named_arms": 3,
+    "narrow_concentration_pct": 70,
+    "narrow_recent_games_max": 1,
+    "gassed_recent_games_min": 2,
+    "gassed_consecutive_arms_min": 1,
+    "thin_clean_options_max": 2,
+    "recovered_rest_days_min": 2,
+    "contrast_state_gap_min": 2
+  }
+}

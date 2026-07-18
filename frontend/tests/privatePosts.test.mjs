@@ -22,6 +22,7 @@ const { default: Sidebar } = await server.ssrLoadModule('/src/components/Sidebar
 const {
   PrivatePostsAccessDenied,
   PrivatePostsView,
+  SlateBriefingPanel,
 } = await server.ssrLoadModule('/src/components/posts/PrivatePosts.jsx')
 const {
   DRAFT_SOURCE_GENERATED,
@@ -30,6 +31,7 @@ const {
   PRIVATE_POSTS_ROBOTS,
   POST_DRAFT_PLATFORMS,
   X_LEAD_CHARACTER_LIMIT,
+  auditGeneratedFactClaims,
   buildDraftGenerationPayload,
   buildGeneratedPlatformDrafts,
   buildVerifiedFactSet,
@@ -38,8 +40,10 @@ const {
   findUnverifiedNumbers,
   flattenTakeDrafts,
   getPrivatePostTakes,
+  defaultSlateCandidateId,
   resolveDraftPackage,
   resolveGeneratedDraftPackage,
+  slateCandidateLabel,
 } = await server.ssrLoadModule('/src/components/posts/privatePostsView.js')
 
 const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -170,8 +174,32 @@ const leagueContext = {
   quality_status: 'published',
 }
 
+function scheduleTeam(teamId, overrides = {}) {
+  return {
+    postable: true,
+    state: 'upcoming',
+    reason: 'upcoming_game_available',
+    doubleheader: false,
+    games: [{ game_pk: 800000 + teamId, game_number: 1, status: { normalized: 'upcoming' } }],
+    ...overrides,
+  }
+}
+
 const dashboard = {
   freshness: { data_through: '2026-06-17' },
+  schedule_authority: {
+    slate_date_et: '2026-06-17',
+    freshness: {
+      state: 'fresh',
+      is_fresh: true,
+      schedule_data_through: '2026-06-17T12:00:00Z',
+    },
+    teams: {
+      136: scheduleTeam(136),
+      141: scheduleTeam(141),
+      158: scheduleTeam(158),
+    },
+  },
   stories: {
     capability: 'baseballos_canonical_story_v1',
     items: [neutralStory, restedStory, pressureStory, suppressedStory],
@@ -235,6 +263,53 @@ test('postability selector is deterministic and ranks the tension story above ne
   assert.equal(byTeam.MIL.ruleLabel, 'Same Few Arms')
   assert.equal(byTeam.SEA.ruleKey, 'availability_depth')
   assert.equal(byTeam.SEA.ruleLabel, 'More Options')
+})
+
+test('postability withholds completed, live, uncertain, and cancelled team moments', () => {
+  for (const state of ['completed', 'live', 'uncertain', 'cancelled']) {
+    const copy = structuredClone(dashboard)
+    copy.schedule_authority.teams['158'] = scheduleTeam(158, {
+      postable: false,
+      state,
+      reason: `game_${state}`,
+    })
+    assert.equal(
+      getPrivatePostTakes(copy).some(take => take.teamId === 158),
+      false,
+      state,
+    )
+  }
+})
+
+test('split doubleheader stays postable when game one is final and game two is upcoming', () => {
+  const copy = structuredClone(dashboard)
+  copy.schedule_authority.teams['158'] = scheduleTeam(158, {
+    doubleheader: true,
+    games: [
+      { game_pk: 900001, game_number: 1, status: { normalized: 'completed' } },
+      { game_pk: 900002, game_number: 2, status: { normalized: 'upcoming' } },
+    ],
+  })
+
+  const take = getPrivatePostTakes(copy).find(item => item.teamId === 158)
+  assert.equal(take.postability.schedulePostable, true)
+  assert.equal(take.postability.doubleheader, true)
+  assert.deepEqual(take.postability.scheduleGames.map(game => game.game_pk), [900001, 900002])
+})
+
+test('missing or stale schedule authority fails closed and renders freshness warning', () => {
+  assert.deepEqual(getPrivatePostTakes({ stories: dashboard.stories }), [])
+
+  const stale = structuredClone(dashboard)
+  stale.schedule_authority.freshness = {
+    state: 'stale',
+    is_fresh: false,
+    schedule_data_through: '2026-06-16T12:00:00Z',
+  }
+  assert.deepEqual(getPrivatePostTakes(stale), [])
+  const html = render(React.createElement(PrivatePostsView, { dashboard: stale }))
+  assert.ok(htmlIncludes(html, 'Schedule data is stale through 2026-06-16T12:00:00Z.'))
+  assert.ok(htmlIncludes(html, 'Postable takes are withheld'))
 })
 
 test('canonical takes derive signal and evidence from story content, with no structured computed facts', () => {
@@ -315,6 +390,10 @@ test('generation payload contains the verified fact object and platform constrai
   assert.equal('evidence' in payload, false)
   assert.equal('postability' in payload, false)
   assert.equal(payload.constraints.use_only_verified_facts, true)
+  assert.equal(payload.constraints.return_structured_fact_claims.required, true)
+  assert.deepEqual(payload.constraints.return_structured_fact_claims.fields, [
+    'names', 'dates', 'pitch_counts', 'percentages', 'teams', 'matchup_facts',
+  ])
   assert.equal(payload.constraints.x_lead_character_limit, X_LEAD_CHARACTER_LIMIT)
   assert.equal(payload.writing_instructions.interpretive_license, 'medium')
   assert.match(payload.writing_instructions.lead, /human claim/)
@@ -337,6 +416,83 @@ test('generated drafts clear the absent-number guard while fabricated numbers ar
   const rogueText = 'MIL bullpen tonight: 9/9 arms available and No. 99 of 30.'
   // Canonical takes verify no numbers, so every numeric token in rogue copy is flagged.
   assert.deepEqual(findUnverifiedNumbers(rogueText, take.verifiedFacts), ['9/9', '9', '99', '30'])
+})
+
+test('generated fact claims check names, dates, pitch counts, percentages, teams, and matchup facts', () => {
+  const verifiedFacts = {
+    teams: ['Houston Astros', 'Seattle Mariners'],
+    matchup_facts: ['Houston Astros at Seattle Mariners'],
+    named_arms: [{
+      name: 'Bryan Abreu',
+      last_outing_date: '2026-07-17',
+      pitch_counts: [18, 22],
+      workload_share_pct: 31.4,
+    }],
+  }
+  const valid = auditGeneratedFactClaims({
+    names: ['Bryan Abreu'],
+    dates: ['2026-07-17'],
+    pitch_counts: [18, 22],
+    percentages: [31.4],
+    teams: ['Houston Astros', 'Seattle Mariners'],
+    matchup_facts: ['Houston Astros at Seattle Mariners'],
+  }, verifiedFacts)
+  const invalid = auditGeneratedFactClaims({
+    names: ['Invented Arm'],
+    dates: ['2026-07-01'],
+    pitch_counts: [99],
+    percentages: [70.8],
+    teams: ['New York Yankees'],
+    matchup_facts: ['Houston Astros at New York Yankees'],
+  }, verifiedFacts)
+
+  assert.deepEqual(valid, { checked: true, valid: true, violations: [] })
+  assert.equal(invalid.valid, false)
+  assert.equal(invalid.violations.length, 6)
+})
+
+test('external generated drafts without structured fact claims fail closed to templates', async () => {
+  const [take] = getPrivatePostTakes(dashboard)
+  const packageWithoutClaims = await resolveGeneratedDraftPackage(take, {
+    requestDrafts: async () => buildGeneratedPlatformDrafts(take),
+  })
+
+  assert.equal(packageWithoutClaims.source, DRAFT_SOURCE_TEMPLATE_FALLBACK)
+  assert.match(packageWithoutClaims.fallbackReason, /no usable copy/i)
+})
+
+test('external generated drafts with an unverified structured claim fail closed to templates', async () => {
+  const [take] = getPrivatePostTakes(dashboard)
+  const drafts = buildGeneratedPlatformDrafts(take)
+  for (const draft of flattenTakeDrafts({ drafts })) {
+    draft.factClaims = { teams: ['Invented Club'] }
+  }
+  const guarded = await resolveGeneratedDraftPackage(take, {
+    requestDrafts: async () => drafts,
+  })
+
+  assert.equal(guarded.source, DRAFT_SOURCE_TEMPLATE_FALLBACK)
+})
+
+test('external generated drafts pass only with a complete verified claims contract', async () => {
+  const [take] = getPrivatePostTakes(dashboard)
+  const drafts = buildGeneratedPlatformDrafts(take)
+  for (const draft of flattenTakeDrafts({ drafts })) {
+    draft.factClaims = {
+      names: [],
+      dates: [],
+      pitch_counts: [],
+      percentages: [],
+      teams: ['Milwaukee Brewers'],
+      matchup_facts: [],
+    }
+  }
+  const guarded = await resolveGeneratedDraftPackage(take, {
+    requestDrafts: async () => drafts,
+  })
+
+  assert.equal(guarded.source, DRAFT_SOURCE_GENERATED)
+  assert.ok(flattenTakeDrafts({ drafts: guarded.drafts }).every(draft => draft.reviewFlags.length === 0))
 })
 
 test('generated drafts lead with human interpretation instead of template residue or stat lists', () => {
@@ -500,4 +656,91 @@ test('private posts surface renders selected takes, internals, and copy affordan
   assert.ok(htmlIncludes(html, 'data-copy-draft="Reddit - team subreddit"'))
   assert.ok(htmlIncludes(html, 'data-copy-draft="LinkedIn"'))
   assert.ok(htmlIncludes(html, 'data-copy-draft="X lead tweet"'))
+})
+
+function slateCandidate(overrides = {}) {
+  const evidence = {
+    complete: true,
+    top_relievers: [{
+      player_id: 10,
+      name: 'Example Arm',
+      last_outing_date: '2026-07-18',
+      trailing_pitches: 42,
+      workload_share_pct: 35,
+      appearances: [{ date: '2026-07-18', pitch_count: 22 }],
+    }],
+  }
+  return {
+    candidate_id: '2026-07-19:2-1:7001', briefing_date: '2026-07-19', rank: 1,
+    ranked_highest: true, recommended_to_post: true, publishable: true,
+    matchup: { label: 'Away Club at Home Club', away_team_name: 'Away Club', home_team_name: 'Home Club' },
+    first_pitch_et: '2026-07-19T19:10:00-04:00', doubleheader: false,
+    games: [{ game_pk: 7001, status: { detailed: 'Scheduled' } }],
+    featured_team: { team_name: 'Home Club' }, shape: 'narrow', final_editorial_score: 72,
+    home_team_story_score: 72, away_team_story_score: 44, matchup_contrast_score: 0,
+    evidence_completeness: { featured_team: true },
+    named_arms_evidence: { home_team: evidence, away_team: evidence },
+    schedule_freshness: { state: 'fresh', schedule_data_through: '2026-07-18T12:00:00Z' },
+    bullpen_data_freshness: { home_team: { state: 'fresh' }, away_team: { state: 'fresh' } },
+    withholding_reasons: [], component_breakdown: { home_team: { current_condition: { score: 30 } } },
+    plain_one_liner: 'Home Club has a narrow relief-work pattern worth monitoring.',
+    evidence_reference: 'evidence-1',
+    platform_drafts: { X: { text: 'X draft' }, Instagram: { text: 'Instagram draft' }, LinkedIn: { text: 'LinkedIn draft' }, Reddit: { text: 'Reddit draft' } },
+    ...overrides,
+  }
+}
+
+test('private posting board preserves existing tab and adds Slate Briefing tab', () => {
+  const html = render(React.createElement(PrivatePostsView, { dashboard }))
+  assert.ok(htmlIncludes(html, 'data-private-posts-tab="postable-takes"'))
+  assert.ok(htmlIncludes(html, 'data-private-posts-tab="slate-briefing"'))
+  assert.ok(htmlIncludes(html, 'Slate Briefing'))
+})
+
+test('slate labels distinguish recommendation from ranked-highest withholding', () => {
+  assert.equal(slateCandidateLabel(slateCandidate()), 'Recommended')
+  assert.equal(slateCandidateLabel(slateCandidate({ recommended_to_post: false, publishable: false })), 'Ranked highest but withheld')
+  assert.equal(slateCandidateLabel(slateCandidate({ recommended_to_post: false, ranked_highest: false })), 'Withheld')
+})
+
+test('default expansion prefers publishable recommendation then highest ranked', () => {
+  assert.equal(defaultSlateCandidateId({ top_recommendation: 'recommended', ranked_highest: 'highest' }), 'recommended')
+  assert.equal(defaultSlateCandidateId({ top_recommendation: null, ranked_highest: 'highest' }), 'highest')
+})
+
+test('slate briefing renders ranking, evidence, copy, edit, and posting workflow', () => {
+  const candidate = slateCandidate()
+  const briefing = { briefing_date: '2026-07-19', ranked_highest: candidate.candidate_id, top_recommendation: candidate.candidate_id, has_publishable_candidate: true, candidates: [candidate] }
+  const html = render(React.createElement(SlateBriefingPanel, { briefing }))
+  for (const text of ['Recommended', 'Away Club at Home Club', 'Example Arm', '42 / 35%', 'Component score breakdown', 'Editable final post', 'Mark posted', 'Recent Posting History']) {
+    assert.ok(htmlIncludes(html, text), text)
+  }
+  for (const platform of ['X', 'Instagram', 'LinkedIn', 'Reddit']) {
+    assert.ok(htmlIncludes(html, `data-copy-draft="${platform}"`), platform)
+  }
+})
+
+test('withheld slate expands highest candidate and shows refusal without posting control', () => {
+  const candidate = slateCandidate({ recommended_to_post: false, publishable: false, withholding_reasons: ['schedule_data_not_fresh'], plain_one_liner: null, platform_drafts: {} })
+  const briefing = { briefing_date: '2026-07-19', ranked_highest: candidate.candidate_id, top_recommendation: null, has_publishable_candidate: false, candidates: [candidate] }
+  const html = render(React.createElement(SlateBriefingPanel, { briefing }))
+  assert.ok(htmlIncludes(html, 'Ranked highest but withheld'))
+  assert.ok(htmlIncludes(html, 'schedule_data_not_fresh'))
+  assert.ok(htmlIncludes(html, 'cannot be marked posted'))
+  assert.equal(htmlIncludes(html, '>Mark posted<'), false)
+})
+
+test('slate briefing handles empty, loading, error, and recent history states', () => {
+  const empty = render(React.createElement(SlateBriefingPanel, { briefing: { briefing_date: '2026-07-19', candidates: [] }, postingHistory: [{ id: 1, platform: 'Reddit', story_shape: 'thin', posted_at: '2026-07-18T12:00:00Z' }] }))
+  assert.ok(htmlIncludes(empty, 'No games are available for this slate.'))
+  assert.ok(htmlIncludes(empty, 'Reddit'))
+  assert.ok(htmlIncludes(render(React.createElement(SlateBriefingPanel, { loading: true })), 'Loading slate briefing'))
+  assert.ok(htmlIncludes(render(React.createElement(SlateBriefingPanel, { error: 'Briefing failed' })), 'Briefing failed'))
+})
+
+test('copy action remains separate from mark-posted request', () => {
+  const source = readFileSync(new URL('../src/components/posts/PrivatePosts.jsx', import.meta.url), 'utf8')
+  const copyBody = source.slice(source.indexOf('function DraftCard'))
+  assert.ok(copyBody.includes('clipboard'))
+  assert.equal(copyBody.includes('markSlateBriefingPosted'), false)
 })

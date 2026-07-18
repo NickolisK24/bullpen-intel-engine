@@ -47,7 +47,7 @@ from utils.db import db
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 MIGRATIONS_DIR = REPO_ROOT / 'backend/migrations/versions'
-EXPECTED_ALEMBIC_HEAD = 'd7e4f1a8c2b6'
+EXPECTED_ALEMBIC_HEAD = 'a1d8e4c6b2f0'
 FORBIDDEN_HEADLINE_TERMS = (
     'headline',
     'read_label',
@@ -380,6 +380,15 @@ def test_phase0e_switches_and_legacy_public_files_not_modified():
         'frontend/src/utils/trafficMeasurement.js',
         'frontend/src/utils/trafficReporting.js',
     }
+    allowed_wp42_schedule_files = {
+        'backend/api/private_posts.py',
+        'backend/api/slate_briefing.py',
+        'backend/migrations/versions/e6b4c2a8d1f3_add_slate_games.py',
+        'frontend/src/components/posts/PrivatePosts.jsx',
+        'frontend/src/components/posts/privatePostsView.js',
+        'backend/migrations/versions/f7c5d3b9a2e1_add_editorial_post_history.py',
+        'backend/migrations/versions/a1d8e4c6b2f0_extend_editorial_post_history.py',
+    }
     allowed_files = (
         allowed_public_freshness_display_files
         | allowed_internal_admin_files
@@ -393,6 +402,7 @@ def test_phase0e_switches_and_legacy_public_files_not_modified():
         | allowed_public_role_vocabulary_files
         | allowed_legacy_retirement_files
         | allowed_trusted_traffic_files
+        | allowed_wp42_schedule_files
     )
     forbidden_prefixes = (
         'backend/api/',

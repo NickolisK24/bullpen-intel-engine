@@ -21,7 +21,9 @@ from time import perf_counter
 from models.scheduled_game import ScheduledGame
 from services.game_finality import normalize_schedule_status_state
 from services.mlb_api import mlb_client
+from services.schedule_authority import upsert_slate_game
 from utils.db import db
+from utils.time import utc_now_naive
 
 logger = logging.getLogger(__name__)
 
@@ -65,8 +67,12 @@ def ingest_games(games, *, source=DEFAULT_SOURCE, commit=True):
         'games_skipped': 0,
         'rows_created': 0,
         'rows_updated': 0,
+        'slate_games_created': 0,
+        'slate_games_updated': 0,
+        'slate_games_skipped': 0,
         'errors': 0,
     }
+    synced_at = utc_now_naive()
 
     for game in games or []:
         summary['games_seen'] += 1
@@ -75,6 +81,8 @@ def ingest_games(games, *, source=DEFAULT_SOURCE, commit=True):
             summary['games_skipped'] += 1
             continue
         try:
+            slate_outcome = upsert_slate_game(game, synced_at=synced_at)
+            summary[f'slate_games_{slate_outcome}'] += 1
             for team_id, opponent_id, home_away in (
                 (parsed['home_team_id'], parsed['away_team_id'], 'home'),
                 (parsed['away_team_id'], parsed['home_team_id'], 'away'),
