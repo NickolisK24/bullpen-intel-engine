@@ -2,6 +2,7 @@ import pytest
 from flask import Flask
 
 from api.private_posts import private_posts_bp
+from api.slate_briefing import slate_briefing_bp
 from models.user import User
 from tests.db_config import configure_test_database, create_test_schema, drop_test_schema
 from utils.auth_tokens import generate_bearer_token
@@ -19,6 +20,7 @@ def app():
     app.config['PRIVATE_POSTING_BOARD_ALLOWED_EMAILS'] = 'owner@example.com'
     db.init_app(app)
     app.register_blueprint(private_posts_bp, url_prefix='/api/private-posts')
+    app.register_blueprint(slate_briefing_bp, url_prefix='/api')
     with app.app_context():
         create_test_schema(app)
         try:
@@ -136,3 +138,41 @@ def test_private_posts_dashboard_is_registered_on_real_app(monkeypatch):
 
     assert response.status_code == 401
     assert response.get_json() == {'error': 'authentication_required'}
+
+
+@pytest.mark.parametrize('path,method', [
+    ('/api/slate-briefing', 'get'),
+    ('/api/slate-briefing/history', 'get'),
+    ('/api/slate-briefing/mark-posted', 'post'),
+])
+def test_slate_briefing_routes_require_authentication(client, path, method):
+    response = getattr(client, method)(path)
+    assert response.status_code == 401
+    assert response.get_json() == {'error': 'authentication_required'}
+
+
+def test_slate_briefing_rejects_authenticated_user_outside_allowlist(app, client):
+    token = _bearer(app, 'reader@example.com')
+    response = client.get('/api/slate-briefing', headers=_auth(token))
+    assert response.status_code == 403
+    assert response.get_json() == {'error': 'posting_board_forbidden'}
+
+
+def test_slate_briefing_allows_authorized_user(app, client, monkeypatch):
+    monkeypatch.setattr('api.slate_briefing.build_slate_briefing', lambda value: {
+        'briefing_date': value, 'ranked_highest': None,
+        'has_publishable_candidate': False, 'candidates': [],
+    })
+    token = _bearer(app, 'owner@example.com')
+    response = client.get('/api/slate-briefing?date=2026-07-19', headers=_auth(token))
+    assert response.status_code == 200
+    assert response.get_json()['briefing_date'] == '2026-07-19'
+
+
+def test_slate_briefing_invalid_date_returns_400(app, client, monkeypatch):
+    from services.slate_briefing import PostingValidationError
+    monkeypatch.setattr('api.slate_briefing.build_slate_briefing', lambda _value: (_ for _ in ()).throw(PostingValidationError('invalid_briefing_date')))
+    token = _bearer(app, 'owner@example.com')
+    response = client.get('/api/slate-briefing?date=bad', headers=_auth(token))
+    assert response.status_code == 400
+    assert response.get_json() == {'error': 'invalid_briefing_date'}

@@ -8,9 +8,11 @@ facts that are absent from the candidate evidence payload.
 from __future__ import annotations
 
 import json
+import hashlib
 from collections import defaultdict
 from datetime import date, datetime, time, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import or_
 from sqlalchemy.orm import joinedload
@@ -29,6 +31,7 @@ from utils.time import utc_now_naive
 CONFIG_PATH = Path(__file__).resolve().parent.parent / 'config' / 'slate_editorial_ranker_v1.json'
 SHAPES = {'gassed', 'narrow', 'thin', 'recovered', 'contrast'}
 STATE_ORDER = {'unknown': 0, 'fresh': 1, 'stretched': 2, 'vulnerable': 3}
+EASTERN = ZoneInfo('America/New_York')
 
 
 def load_ranker_config(path=None):
@@ -76,6 +79,28 @@ def _datetime(value):
 
 def _team_label(team):
     return team.get('team_name') or team.get('team_abbreviation') or f"Team {team.get('team_id')}"
+
+
+def _candidate_id(slate_date, home_team_id, away_team_id, game_pks):
+    game_key = '-'.join(str(value) for value in sorted(_integer(pk) for pk in game_pks))
+    return f'{slate_date}:{_integer(away_team_id)}-{_integer(home_team_id)}:{game_key}'
+
+
+def candidate_evidence_reference(candidate):
+    """Return a stable digest for the facts that authorize a posting record."""
+    evidence = {
+        'candidate_id': candidate.get('candidate_id'),
+        'score_version': candidate.get('score_version'),
+        'shape': candidate.get('shape'),
+        'publishable': candidate.get('publishable'),
+        'withholding_reasons': candidate.get('withholding_reasons') or [],
+        'game_pks': candidate.get('game_pks') or [],
+        'home_team': candidate.get('home_team'),
+        'away_team': candidate.get('away_team'),
+        'data_freshness': candidate.get('data_freshness'),
+    }
+    serialized = json.dumps(evidence, sort_keys=True, separators=(',', ':'), default=str)
+    return hashlib.sha256(serialized.encode('utf-8')).hexdigest()
 
 
 def build_named_arms_evidence(logs, *, reference_date, config=None):
@@ -345,9 +370,13 @@ def rank_matchup(matchup, *, config=None, history=None, as_of=None):
     schedule = matchup.get('schedule_freshness') or {'state': 'unavailable'}
     reasons = _withholding_reasons(featured, shape, schedule)
     candidate = {
+        'candidate_id': matchup.get('candidate_id'),
+        'briefing_date': matchup.get('briefing_date'),
         'game_pk': matchup.get('game_pk'),
         'game_pks': list(matchup.get('game_pks') or [matchup.get('game_pk')]),
         'doubleheader': bool(matchup.get('doubleheader')),
+        'first_pitch_et': matchup.get('first_pitch_et'),
+        'games': list(matchup.get('games') or []),
         'score_version': config['score_version'],
         'home_team': home,
         'away_team': away,
@@ -368,6 +397,7 @@ def rank_matchup(matchup, *, config=None, history=None, as_of=None):
         'data_freshness': {'schedule': schedule, 'featured_team': featured.get('data_freshness') or {}},
     }
     candidate['plain_one_liner'] = render_plain_one_liner(candidate)
+    candidate['evidence_reference'] = candidate_evidence_reference(candidate)
     return candidate
 
 
@@ -455,10 +485,17 @@ def build_ranked_slate(slate_date, *, prior_states=None, as_of=None, config=None
         grouped_rows.items(), key=lambda item: (item[1][0].game_time_utc, item[1][0].game_pk),
     ):
         row = games[0]
+        sorted_games = sorted(games, key=lambda game: (game.game_time_utc, game.game_pk))
+        game_pks = [game.game_pk for game in sorted_games]
+        first_pitch = sorted_games[0].game_time_utc.replace(tzinfo=ZoneInfo('UTC')).astimezone(EASTERN)
         matchups.append({
             'game_pk': row.game_pk,
-            'game_pks': [game.game_pk for game in games],
+            'candidate_id': _candidate_id(ref.isoformat(), row.home_team_id, row.away_team_id, game_pks),
+            'briefing_date': ref.isoformat(),
+            'game_pks': game_pks,
             'doubleheader': len(games) > 1,
+            'first_pitch_et': first_pitch.isoformat(),
+            'games': [game.to_dict() for game in sorted_games],
             'schedule_freshness': freshness,
             'home_team': build_team_ranking_input(row.home_team_id, reference_date=ref, config=config, prior_state=prior_states.get(row.home_team_id)),
             'away_team': build_team_ranking_input(row.away_team_id, reference_date=ref, config=config, prior_state=prior_states.get(row.away_team_id)),
@@ -519,6 +556,7 @@ __all__ = [
     'build_named_arms_evidence',
     'build_ranked_slate',
     'build_team_ranking_input',
+    'candidate_evidence_reference',
     'classify_team_shape',
     'load_ranker_config',
     'rank_matchup',

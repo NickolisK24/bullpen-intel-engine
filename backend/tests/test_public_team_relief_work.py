@@ -1310,6 +1310,7 @@ def test_existing_public_routes_behavior_freeze(monkeypatch):
         'frontend/src/components/posts/privatePostsView.js',
         'frontend/tests/privatePosts.test.mjs',
         'backend/migrations/versions/f7c5d3b9a2e1_add_editorial_post_history.py',
+        'backend/migrations/versions/a1d8e4c6b2f0_extend_editorial_post_history.py',
     }
     assert not [
         path for path in changed

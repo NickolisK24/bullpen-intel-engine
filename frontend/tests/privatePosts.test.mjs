@@ -22,6 +22,7 @@ const { default: Sidebar } = await server.ssrLoadModule('/src/components/Sidebar
 const {
   PrivatePostsAccessDenied,
   PrivatePostsView,
+  SlateBriefingPanel,
 } = await server.ssrLoadModule('/src/components/posts/PrivatePosts.jsx')
 const {
   DRAFT_SOURCE_GENERATED,
@@ -39,8 +40,10 @@ const {
   findUnverifiedNumbers,
   flattenTakeDrafts,
   getPrivatePostTakes,
+  defaultSlateCandidateId,
   resolveDraftPackage,
   resolveGeneratedDraftPackage,
+  slateCandidateLabel,
 } = await server.ssrLoadModule('/src/components/posts/privatePostsView.js')
 
 const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -653,4 +656,91 @@ test('private posts surface renders selected takes, internals, and copy affordan
   assert.ok(htmlIncludes(html, 'data-copy-draft="Reddit - team subreddit"'))
   assert.ok(htmlIncludes(html, 'data-copy-draft="LinkedIn"'))
   assert.ok(htmlIncludes(html, 'data-copy-draft="X lead tweet"'))
+})
+
+function slateCandidate(overrides = {}) {
+  const evidence = {
+    complete: true,
+    top_relievers: [{
+      player_id: 10,
+      name: 'Example Arm',
+      last_outing_date: '2026-07-18',
+      trailing_pitches: 42,
+      workload_share_pct: 35,
+      appearances: [{ date: '2026-07-18', pitch_count: 22 }],
+    }],
+  }
+  return {
+    candidate_id: '2026-07-19:2-1:7001', briefing_date: '2026-07-19', rank: 1,
+    ranked_highest: true, recommended_to_post: true, publishable: true,
+    matchup: { label: 'Away Club at Home Club', away_team_name: 'Away Club', home_team_name: 'Home Club' },
+    first_pitch_et: '2026-07-19T19:10:00-04:00', doubleheader: false,
+    games: [{ game_pk: 7001, status: { detailed: 'Scheduled' } }],
+    featured_team: { team_name: 'Home Club' }, shape: 'narrow', final_editorial_score: 72,
+    home_team_story_score: 72, away_team_story_score: 44, matchup_contrast_score: 0,
+    evidence_completeness: { featured_team: true },
+    named_arms_evidence: { home_team: evidence, away_team: evidence },
+    schedule_freshness: { state: 'fresh', schedule_data_through: '2026-07-18T12:00:00Z' },
+    bullpen_data_freshness: { home_team: { state: 'fresh' }, away_team: { state: 'fresh' } },
+    withholding_reasons: [], component_breakdown: { home_team: { current_condition: { score: 30 } } },
+    plain_one_liner: 'Home Club has a narrow relief-work pattern worth monitoring.',
+    evidence_reference: 'evidence-1',
+    platform_drafts: { X: { text: 'X draft' }, Instagram: { text: 'Instagram draft' }, LinkedIn: { text: 'LinkedIn draft' }, Reddit: { text: 'Reddit draft' } },
+    ...overrides,
+  }
+}
+
+test('private posting board preserves existing tab and adds Slate Briefing tab', () => {
+  const html = render(React.createElement(PrivatePostsView, { dashboard }))
+  assert.ok(htmlIncludes(html, 'data-private-posts-tab="postable-takes"'))
+  assert.ok(htmlIncludes(html, 'data-private-posts-tab="slate-briefing"'))
+  assert.ok(htmlIncludes(html, 'Slate Briefing'))
+})
+
+test('slate labels distinguish recommendation from ranked-highest withholding', () => {
+  assert.equal(slateCandidateLabel(slateCandidate()), 'Recommended')
+  assert.equal(slateCandidateLabel(slateCandidate({ recommended_to_post: false, publishable: false })), 'Ranked highest but withheld')
+  assert.equal(slateCandidateLabel(slateCandidate({ recommended_to_post: false, ranked_highest: false })), 'Withheld')
+})
+
+test('default expansion prefers publishable recommendation then highest ranked', () => {
+  assert.equal(defaultSlateCandidateId({ top_recommendation: 'recommended', ranked_highest: 'highest' }), 'recommended')
+  assert.equal(defaultSlateCandidateId({ top_recommendation: null, ranked_highest: 'highest' }), 'highest')
+})
+
+test('slate briefing renders ranking, evidence, copy, edit, and posting workflow', () => {
+  const candidate = slateCandidate()
+  const briefing = { briefing_date: '2026-07-19', ranked_highest: candidate.candidate_id, top_recommendation: candidate.candidate_id, has_publishable_candidate: true, candidates: [candidate] }
+  const html = render(React.createElement(SlateBriefingPanel, { briefing }))
+  for (const text of ['Recommended', 'Away Club at Home Club', 'Example Arm', '42 / 35%', 'Component score breakdown', 'Editable final post', 'Mark posted', 'Recent Posting History']) {
+    assert.ok(htmlIncludes(html, text), text)
+  }
+  for (const platform of ['X', 'Instagram', 'LinkedIn', 'Reddit']) {
+    assert.ok(htmlIncludes(html, `data-copy-draft="${platform}"`), platform)
+  }
+})
+
+test('withheld slate expands highest candidate and shows refusal without posting control', () => {
+  const candidate = slateCandidate({ recommended_to_post: false, publishable: false, withholding_reasons: ['schedule_data_not_fresh'], plain_one_liner: null, platform_drafts: {} })
+  const briefing = { briefing_date: '2026-07-19', ranked_highest: candidate.candidate_id, top_recommendation: null, has_publishable_candidate: false, candidates: [candidate] }
+  const html = render(React.createElement(SlateBriefingPanel, { briefing }))
+  assert.ok(htmlIncludes(html, 'Ranked highest but withheld'))
+  assert.ok(htmlIncludes(html, 'schedule_data_not_fresh'))
+  assert.ok(htmlIncludes(html, 'cannot be marked posted'))
+  assert.equal(htmlIncludes(html, '>Mark posted<'), false)
+})
+
+test('slate briefing handles empty, loading, error, and recent history states', () => {
+  const empty = render(React.createElement(SlateBriefingPanel, { briefing: { briefing_date: '2026-07-19', candidates: [] }, postingHistory: [{ id: 1, platform: 'Reddit', story_shape: 'thin', posted_at: '2026-07-18T12:00:00Z' }] }))
+  assert.ok(htmlIncludes(empty, 'No games are available for this slate.'))
+  assert.ok(htmlIncludes(empty, 'Reddit'))
+  assert.ok(htmlIncludes(render(React.createElement(SlateBriefingPanel, { loading: true })), 'Loading slate briefing'))
+  assert.ok(htmlIncludes(render(React.createElement(SlateBriefingPanel, { error: 'Briefing failed' })), 'Briefing failed'))
+})
+
+test('copy action remains separate from mark-posted request', () => {
+  const source = readFileSync(new URL('../src/components/posts/PrivatePosts.jsx', import.meta.url), 'utf8')
+  const copyBody = source.slice(source.indexOf('function DraftCard'))
+  assert.ok(copyBody.includes('clipboard'))
+  assert.equal(copyBody.includes('markSlateBriefingPosted'), false)
 })

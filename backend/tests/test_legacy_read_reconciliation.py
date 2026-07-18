@@ -60,7 +60,7 @@ from db_config import configure_test_database, create_test_schema, drop_test_sch
 REPO_ROOT = Path(__file__).resolve().parents[2]
 MIGRATIONS_DIR = REPO_ROOT / 'backend' / 'migrations' / 'versions'
 AUDIT_REVISION = 'e4b7c9d2a6f0'
-EXPECTED_ALEMBIC_HEAD = 'f7c5d3b9a2e1'
+EXPECTED_ALEMBIC_HEAD = 'a1d8e4c6b2f0'
 PRIOR_REVISION = 'a9d4e7c2f6b1'
 PRODUCT_DATE = date(2026, 7, 5)
 

@@ -332,6 +332,7 @@ def test_frozen_legacy_what_changed_files_untouched():
         'frontend/src/components/posts/privatePostsView.js',
         'frontend/tests/privatePosts.test.mjs',
         'backend/migrations/versions/f7c5d3b9a2e1_add_editorial_post_history.py',
+        'backend/migrations/versions/a1d8e4c6b2f0_extend_editorial_post_history.py',
     }
     assert not sorted(
         (frozen_paths & changed) - allowed_public_what_changed_contract_files

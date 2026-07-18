@@ -153,6 +153,7 @@ def create_app(config_name=None):
     from api.auth import auth_bp
     from api.me import me_bp
     from api.private_posts import private_posts_bp
+    from api.slate_briefing import slate_briefing_bp
     from api.audience import audience_bp
     from api.traffic import traffic_bp
 
@@ -170,6 +171,7 @@ def create_app(config_name=None):
     app.register_blueprint(auth_bp, url_prefix='/api/auth')
     app.register_blueprint(me_bp, url_prefix='/api/me')
     app.register_blueprint(private_posts_bp, url_prefix='/api/private-posts')
+    app.register_blueprint(slate_briefing_bp, url_prefix='/api')
     app.register_blueprint(audience_bp, url_prefix='/api/audience')
     app.register_blueprint(traffic_bp, url_prefix='/api/traffic')
 

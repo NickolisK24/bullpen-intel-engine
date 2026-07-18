@@ -17,6 +17,16 @@ export const POST_DRAFT_PLATFORMS = [
   'x',
 ]
 
+export function slateCandidateLabel(candidate) {
+  if (candidate?.recommended_to_post) return 'Recommended'
+  if (candidate?.ranked_highest) return 'Ranked highest but withheld'
+  return 'Withheld'
+}
+
+export function defaultSlateCandidateId(briefing) {
+  return briefing?.top_recommendation || briefing?.ranked_highest || null
+}
+
 const TENSION_RULE_KEYS = new Set([
   'stress_transfer',
   'sustainability_question',
