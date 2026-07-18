@@ -19,6 +19,29 @@ const teams = [
   { team_id: 147, team_name: 'New York Yankees', team_abbreviation: 'NYY' },
 ]
 
+const extractTagAttribute = (tag, attribute) => {
+  const match = tag.match(new RegExp(`\\b${attribute}\\s*=\\s*["']([^"']*)["']`, 'i'))
+  return match?.[1]?.trim() ?? ''
+}
+
+const extractHtmlTitle = html => (
+  html.match(/<title\b[^>]*>([\s\S]*?)<\/title>/i)?.[1]?.trim() ?? ''
+)
+
+const extractMetaContent = (html, selectorAttribute, selectorValue) => {
+  const tag = (html.match(/<meta\b[^>]*>/gi) ?? []).find(
+    candidate => extractTagAttribute(candidate, selectorAttribute) === selectorValue,
+  )
+  return tag ? extractTagAttribute(tag, 'content') : ''
+}
+
+const extractCanonicalHref = html => {
+  const tag = (html.match(/<link\b[^>]*>/gi) ?? []).find(candidate => (
+    extractTagAttribute(candidate, 'rel').split(/\s+/).includes('canonical')
+  ))
+  return tag ? extractTagAttribute(tag, 'href') : ''
+}
+
 test('team evidence links prefer abbreviations and use deterministic parameters', () => {
   assert.equal(
     buildTeamBoardHref(teams[0], { source: 'dashboard' }),
@@ -162,19 +185,40 @@ test('Dashboard, Stories, Today, Compare, and preferred-team links use the canon
   }
 })
 
-test('static team previews preserve all teams, Boston metadata, redirect, and generic fallback', () => {
+test('static team previews preserve all teams, synchronized Boston metadata, redirect, and generic fallback', () => {
   const teamRoot = new URL('../public/team/', import.meta.url)
   const directories = readdirSync(teamRoot, { withFileTypes: true }).filter(entry => entry.isDirectory())
   assert.equal(directories.length, 30)
 
   const boston = readFileSync(new URL('BOS/index.html', teamRoot), 'utf8')
-  assert.ok(boston.includes('<meta property="og:title" content="Where the Boston Red Sox Bullpen Stands Tonight"'))
-  assert.ok(boston.includes('<meta property="og:description" content="'))
-  assert.ok(boston.includes('<link rel="canonical" href="https://baseballos.app/team/BOS" />'))
+  const title = extractHtmlTitle(boston)
+  const description = extractMetaContent(boston, 'name', 'description')
+  const ogTitle = extractMetaContent(boston, 'property', 'og:title')
+  const ogDescription = extractMetaContent(boston, 'property', 'og:description')
+  const twitterTitle = extractMetaContent(boston, 'name', 'twitter:title')
+  const twitterDescription = extractMetaContent(boston, 'name', 'twitter:description')
+
+  assert.notEqual(title, '')
+  assert.match(title, /Boston Red Sox/)
+  assert.notEqual(title, 'BaseballOS | Team Story Preview')
+  assert.equal(ogTitle, title)
+  assert.equal(twitterTitle, title)
+  assert.notEqual(description, '')
+  assert.equal(ogDescription, description)
+  assert.equal(twitterDescription, description)
+  assert.equal(
+    extractMetaContent(boston, 'property', 'og:url'),
+    'https://baseballos.app/team/BOS',
+  )
+  assert.equal(extractCanonicalHref(boston), 'https://baseballos.app/team/BOS')
   assert.ok(boston.includes('window.location.replace("/bullpen?view=board&team=BOS&source=share")'))
 
   const fallback = readFileSync(new URL('index.html', teamRoot), 'utf8')
-  assert.ok(fallback.includes('<meta property="og:title" content="BaseballOS | Team Story Preview" />'))
+  assert.equal(extractHtmlTitle(fallback), 'BaseballOS | Team Story Preview')
+  assert.equal(
+    extractMetaContent(fallback, 'property', 'og:title'),
+    'BaseballOS | Team Story Preview',
+  )
   assert.ok(fallback.includes('window.location.replace("/")'))
   assert.equal(fallback.includes('Boston Red Sox'), false)
 })
