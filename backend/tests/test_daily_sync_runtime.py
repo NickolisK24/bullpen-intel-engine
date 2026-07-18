@@ -561,7 +561,8 @@ def test_daily_finality_preflight_failure_finishes_clean_partial(app, monkeypatc
 
     assert status['status'] == sync_metadata.STATUS_PARTIAL
     assert status['schedule_finality_preflight']['status'] == 'failed'
-    assert status['records_failed'] == 1
+    assert status['slate_schedule_refresh']['status'] == 'failed'
+    assert status['records_failed'] == 2
     assert status['dashboard_snapshot_id'] == 88
 
 

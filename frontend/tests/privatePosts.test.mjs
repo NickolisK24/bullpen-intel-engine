@@ -170,8 +170,32 @@ const leagueContext = {
   quality_status: 'published',
 }
 
+function scheduleTeam(teamId, overrides = {}) {
+  return {
+    postable: true,
+    state: 'upcoming',
+    reason: 'upcoming_game_available',
+    doubleheader: false,
+    games: [{ game_pk: 800000 + teamId, game_number: 1, status: { normalized: 'upcoming' } }],
+    ...overrides,
+  }
+}
+
 const dashboard = {
   freshness: { data_through: '2026-06-17' },
+  schedule_authority: {
+    slate_date_et: '2026-06-17',
+    freshness: {
+      state: 'fresh',
+      is_fresh: true,
+      schedule_data_through: '2026-06-17T12:00:00Z',
+    },
+    teams: {
+      136: scheduleTeam(136),
+      141: scheduleTeam(141),
+      158: scheduleTeam(158),
+    },
+  },
   stories: {
     capability: 'baseballos_canonical_story_v1',
     items: [neutralStory, restedStory, pressureStory, suppressedStory],
@@ -235,6 +259,53 @@ test('postability selector is deterministic and ranks the tension story above ne
   assert.equal(byTeam.MIL.ruleLabel, 'Same Few Arms')
   assert.equal(byTeam.SEA.ruleKey, 'availability_depth')
   assert.equal(byTeam.SEA.ruleLabel, 'More Options')
+})
+
+test('postability withholds completed, live, uncertain, and cancelled team moments', () => {
+  for (const state of ['completed', 'live', 'uncertain', 'cancelled']) {
+    const copy = structuredClone(dashboard)
+    copy.schedule_authority.teams['158'] = scheduleTeam(158, {
+      postable: false,
+      state,
+      reason: `game_${state}`,
+    })
+    assert.equal(
+      getPrivatePostTakes(copy).some(take => take.teamId === 158),
+      false,
+      state,
+    )
+  }
+})
+
+test('split doubleheader stays postable when game one is final and game two is upcoming', () => {
+  const copy = structuredClone(dashboard)
+  copy.schedule_authority.teams['158'] = scheduleTeam(158, {
+    doubleheader: true,
+    games: [
+      { game_pk: 900001, game_number: 1, status: { normalized: 'completed' } },
+      { game_pk: 900002, game_number: 2, status: { normalized: 'upcoming' } },
+    ],
+  })
+
+  const take = getPrivatePostTakes(copy).find(item => item.teamId === 158)
+  assert.equal(take.postability.schedulePostable, true)
+  assert.equal(take.postability.doubleheader, true)
+  assert.deepEqual(take.postability.scheduleGames.map(game => game.game_pk), [900001, 900002])
+})
+
+test('missing or stale schedule authority fails closed and renders freshness warning', () => {
+  assert.deepEqual(getPrivatePostTakes({ stories: dashboard.stories }), [])
+
+  const stale = structuredClone(dashboard)
+  stale.schedule_authority.freshness = {
+    state: 'stale',
+    is_fresh: false,
+    schedule_data_through: '2026-06-16T12:00:00Z',
+  }
+  assert.deepEqual(getPrivatePostTakes(stale), [])
+  const html = render(React.createElement(PrivatePostsView, { dashboard: stale }))
+  assert.ok(htmlIncludes(html, 'Schedule data is stale through 2026-06-16T12:00:00Z.'))
+  assert.ok(htmlIncludes(html, 'Postable takes are withheld'))
 })
 
 test('canonical takes derive signal and evidence from story content, with no structured computed facts', () => {

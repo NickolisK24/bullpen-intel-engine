@@ -469,6 +469,14 @@ function classifyPostability(story, facts) {
     cleanText(story?.body),
   ].join(' ').toLowerCase()
   const saysBut = /\bbut\b/.test(storyText)
+  const schedule = isObject(story?.schedule_postability)
+    ? story.schedule_postability
+    : {
+        postable: false,
+        state: 'uncertain',
+        reason: 'schedule_authority_unavailable',
+        games: [],
+      }
 
   const tension = []
   if (
@@ -538,6 +546,11 @@ function classifyPostability(story, facts) {
     leadDimension,
     leadScore,
     storyStrength: strength,
+    schedulePostable: schedule.postable === true,
+    scheduleState: cleanText(schedule.state) || 'uncertain',
+    scheduleReason: cleanText(schedule.reason) || 'schedule_authority_unavailable',
+    scheduleGames: Array.isArray(schedule.games) ? schedule.games : [],
+    doubleheader: schedule.doubleheader === true,
     rationale: [
       ...tension.map(value => `Tension: ${value}.`),
       ...superlatives.map(value => `Superlative: ${value}.`),
@@ -1154,6 +1167,7 @@ export function canonicalPostableStories(dashboard) {
         tone: item.tone,
         category: item.category,
         continuity: item.continuity || null,
+        schedule_postability: schedulePostabilityForTeam(dashboard, item.team_id),
         beats: [
           { key: 'signal', text: item.headline },
           { key: 'evidence', text: evidence || cleanText(item.narrative) },
@@ -1167,7 +1181,7 @@ export function getPrivatePostTakes(dashboard, options = {}) {
   const limit = Math.max(1, finiteNumber(options.limit, DEFAULT_POSTABLE_TAKE_LIMIT))
   return canonicalPostableStories(dashboard)
     .map(buildPostableTake)
-    .filter(Boolean)
+    .filter(take => take?.postability?.schedulePostable === true)
     .sort((a, b) => (
       b.postability.score - a.postability.score
       || b.postability.storyStrength - a.postability.storyStrength
@@ -1175,4 +1189,28 @@ export function getPrivatePostTakes(dashboard, options = {}) {
       || a.abbr.localeCompare(b.abbr)
     ))
     .slice(0, limit)
+}
+
+function schedulePostabilityForTeam(dashboard, teamId) {
+  const authority = isObject(dashboard?.schedule_authority)
+    ? dashboard.schedule_authority
+    : {}
+  const freshness = isObject(authority.freshness) ? authority.freshness : {}
+  if (freshness.is_fresh !== true) {
+    return {
+      postable: false,
+      state: 'uncertain',
+      reason: `schedule_${cleanText(freshness.state) || 'unavailable'}`,
+      games: [],
+    }
+  }
+  const team = isObject(authority.teams?.[String(teamId)])
+    ? authority.teams[String(teamId)]
+    : null
+  return team || {
+    postable: false,
+    state: 'cancelled',
+    reason: 'team_not_on_slate',
+    games: [],
+  }
 }

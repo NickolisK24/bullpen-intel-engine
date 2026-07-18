@@ -32,6 +32,10 @@ on:
     # Cron is always UTC and does NOT observe DST. 10:00 UTC is ~6 AM ET during
     # daylight time (most of the MLB season) and ~5 AM ET during standard time.
     - cron: '0 10 * * *'
+    # Lightweight schedule-only morning correction pass. This uses the same
+    # singleton workflow/concurrency lane and performs a full rolling-window
+    # upsert so time, date, doubleheader, and status changes all stay current.
+    - cron: '0 14 * * *'
     # Targeted postgame refreshes after most games are complete. 02:00/04:00/06:00
     # UTC is ~10 PM/12 AM/2 AM ET during daylight time, covering the overnight
     # window with a few passes instead of an every-30-minute cadence.
@@ -167,8 +171,26 @@ jobs:
           fi
           echo "Refresh schedule and warm Tonight completed at $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
 
+      - name: Run morning slate schedule refresh
+        if: ${{ github.event_name == 'schedule' && github.event.schedule == '0 14 * * *' }}
+        env:
+          APP_ENV: production
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SECRET_KEY: ${{ secrets.SECRET_KEY }}
+          AUTO_SYNC: 'false'
+          SLATE_SCHEDULE_COMMAND_TIMEOUT: 5m
+        run: |
+          set -euo pipefail
+          if [ -z "${DATABASE_URL:-}" ] || [ -z "${SECRET_KEY:-}" ]; then
+            echo "::error::Missing DATABASE_URL or SECRET_KEY repository secret."
+            exit 1
+          fi
+          echo "Morning slate schedule refresh starting at $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          timeout --kill-after=30s "$SLATE_SCHEDULE_COMMAND_TIMEOUT" python backend/scripts/refresh_slate_schedule.py --source github_actions_morning
+          echo "Morning slate schedule refresh completed at $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+
       - name: Run direct postgame refresh
-        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.mode == 'postgame') || (github.event_name == 'schedule' && github.event.schedule != '0 10 * * *') }}
+        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.mode == 'postgame') || (github.event_name == 'schedule' && github.event.schedule == '0 2,4,6 * * *') }}
         env:
           APP_ENV: production
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
@@ -198,7 +220,7 @@ jobs:
           echo "Direct postgame refresh completed at $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
 
       - name: Refresh schedule and warm Tonight after postgame
-        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.mode == 'postgame') || (github.event_name == 'schedule' && github.event.schedule != '0 10 * * *') }}
+        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.mode == 'postgame') || (github.event_name == 'schedule' && github.event.schedule == '0 2,4,6 * * *') }}
         env:
           APP_ENV: production
           DATABASE_URL: ${{ secrets.DATABASE_URL }}

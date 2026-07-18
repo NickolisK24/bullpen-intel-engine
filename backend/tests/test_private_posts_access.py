@@ -88,6 +88,15 @@ def test_private_posts_dashboard_allows_authorized_user(app, client, monkeypatch
             'selection_made': False,
         },
     )
+    monkeypatch.setattr(
+        'api.private_posts.build_postability_schedule_contract',
+        lambda: {
+            'slate_date_et': '2026-07-18',
+            'freshness': {'state': 'unavailable', 'is_fresh': False},
+            'games': [],
+            'teams': {},
+        },
+    )
     token = _bearer(app, 'OWNER@EXAMPLE.COM')
 
     response = client.get('/api/private-posts/dashboard', headers=_auth(token))
@@ -98,6 +107,12 @@ def test_private_posts_dashboard_allows_authorized_user(app, client, monkeypatch
         'stories': {'items': []},
         'ranking_applied': False,
         'selection_made': False,
+        'schedule_authority': {
+            'slate_date_et': '2026-07-18',
+            'freshness': {'state': 'unavailable', 'is_fresh': False},
+            'games': [],
+            'teams': {},
+        },
     }
 
 

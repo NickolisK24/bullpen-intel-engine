@@ -53,7 +53,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 MIGRATIONS_DIR = REPO_ROOT / 'backend' / 'migrations' / 'versions'
 PHASE0E_REVISION = 'a9d4e7c2f6b1'
 PHASE0E_AUDIT_REVISION = 'e4b7c9d2a6f0'
-EXPECTED_ALEMBIC_HEAD = 'd7e4f1a8c2b6'
+EXPECTED_ALEMBIC_HEAD = 'e6b4c2a8d1f3'
 PHASE0D_REVISION = 'c8d2f4a1b6e9'
 PRODUCT_DATE = date(2026, 7, 5)
 

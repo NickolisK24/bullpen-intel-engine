@@ -166,6 +166,8 @@ export function PrivatePostsView({
     || dashboard?.freshness?.generated_at
     || dashboard?.generated_at
     || 'latest read'
+  const scheduleFreshness = dashboard?.schedule_authority?.freshness || {}
+  const scheduleDataThrough = scheduleFreshness.schedule_data_through || 'unavailable'
 
   return (
     <div className="mx-auto max-w-7xl p-4 sm:p-5 lg:p-6" data-private-posts-path={PRIVATE_POSTS_PATH}>
@@ -181,6 +183,9 @@ export function PrivatePostsView({
           </div>
           <div className="flex flex-wrap gap-2 font-mono text-[11px] text-chalk400">
             <span className="rounded border border-dirt bg-dugout px-2 py-1">{generatedAt}</span>
+            <span className="rounded border border-dirt bg-dugout px-2 py-1">
+              Schedule through {scheduleDataThrough}
+            </span>
             <span className="rounded border border-amber/30 bg-amber/5 px-2 py-1 text-amber/80">
               noindex
             </span>
@@ -201,6 +206,17 @@ export function PrivatePostsView({
             />
           )}
 
+          {scheduleFreshness.is_fresh !== true && (
+            <div
+              className="mb-5 border border-amber/40 bg-amber/10 px-4 py-3 text-sm text-amber"
+              role="status"
+              data-schedule-freshness={scheduleFreshness.state || 'unavailable'}
+            >
+              Schedule data is {scheduleFreshness.state || 'unavailable'} through {scheduleDataThrough}.
+              Postable takes are withheld until a fresh schedule refresh completes.
+            </div>
+          )}
+
           <section className="mb-5 grid grid-cols-1 gap-3 md:grid-cols-3" aria-label="Private take summary">
             <MetricTile label="Selected Takes" value={takes.length} />
             <MetricTile
@@ -215,7 +231,7 @@ export function PrivatePostsView({
 
           {takes.length === 0 ? (
             <div className="card p-5">
-              <p className="font-semibold text-chalk100">No four-beat team stories are available in this read.</p>
+              <p className="font-semibold text-chalk100">No schedule-cleared team stories are available in this read.</p>
               <p className="mt-2 text-sm leading-relaxed text-chalk400">
                 The private board stays empty instead of inventing a post angle.
               </p>

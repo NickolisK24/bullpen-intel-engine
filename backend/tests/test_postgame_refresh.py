@@ -688,6 +688,7 @@ def test_postgame_sync_workflow_job_timeout_is_40_minutes():
 
     assert '    timeout-minutes: 40' in sync_block
     assert "    - cron: '0 10 * * *'" in text
+    assert "    - cron: '0 14 * * *'" in text
     assert "    - cron: '0 2,4,6 * * *'" in text
     assert '\nconcurrency:\n  group: baseballos-sync\n  cancel-in-progress: false\n' in text
     assert '          - daily\n          - postgame\n' in text
@@ -721,7 +722,7 @@ def test_postgame_sync_workflow_warms_tonight_after_postgame_refresh():
     ) in daily_block
 
     assert "inputs.mode == 'postgame'" in postgame_block
-    assert "github.event.schedule != '0 10 * * *'" in postgame_block
+    assert "github.event.schedule == '0 2,4,6 * * *'" in postgame_block
     assert 'TONIGHT_REFRESH_COMMAND_TIMEOUT: 10m' in postgame_block
     assert "TONIGHT_REFRESH_SCHEDULE_TIMEOUT_SECONDS: '180'" in postgame_block
     assert "TONIGHT_REFRESH_WARM_TIMEOUT_SECONDS: '300'" in postgame_block
