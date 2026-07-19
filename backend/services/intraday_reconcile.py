@@ -138,7 +138,16 @@ CAPABILITY = 'intraday_reconciliation_audit_v1'
 #                    artifact-shape change, no field added/removed, no capability
 #                    change, summary contract and arithmetic unchanged — a
 #                    backward-compatible patch bump.
-VERSION = '1.4.1'
+#   1.4.1 -> 1.4.2 : schedule-source identity governance fix (Production
+#                    Observation #6). Official schedule rows are normalized by
+#                    integer game_pk before classification. Semantically
+#                    equivalent duplicates collapse; doubleheader evidence uses
+#                    boolean any(); unresolved core/status contradictions fail
+#                    closed as one review-required game_source_conflict and never
+#                    enter actionable planning. Optional bounded conflict evidence
+#                    is additive; capability, mode, phase, safety, and writer
+#                    behavior are unchanged — a backward-compatible patch bump.
+VERSION = '1.4.2'
 
 MODE = 'intraday'
 PHASE = 1
@@ -427,6 +436,7 @@ GAME_NEWLY_DISCOVERED = 'newly_discovered_game'
 GAME_ABSENT_FROM_SOURCE = 'stored_game_absent_from_source'
 GAME_RESCHEDULE_IDENTITY_ISSUE = 'reschedule_identity_issue'
 GAME_SCHEDULE_STATUS_CHANGE = 'schedule_status_change'
+GAME_SOURCE_CONFLICT = 'game_source_conflict'
 
 
 # ── small pure helpers ──────────────────────────────────────────────────────
@@ -2096,6 +2106,175 @@ def _lane2_base_record(transaction, team_map, evidence_source, check_timestamp_i
 
 # ── Lane 3: schedule + game finality ────────────────────────────────────────
 
+_SCHEDULE_SOURCE_EQUIVALENCE_FIELDS = (
+    'game_date',
+    'home_team_id',
+    'away_team_id',
+    'official_status_state',
+    'final_status',
+    'official_status_behavior',
+)
+
+
+def _schedule_source_candidate(game, fallback_date):
+    """Return the bounded, governed comparison view for one source row.
+
+    Source payload order and irrelevant payload fields are deliberately absent.
+    ``official_status_behavior`` retains the existing in-progress distinction
+    within the broad ``other`` state so duplicate governance cannot alter unique
+    row classification.
+    """
+    game_pk = _g_pk(game)
+    decision = classify_status((game or {}).get('status'), game_pk=game_pk)
+    return {
+        'game_pk': game_pk,
+        'game_date': _g_date(game, fallback_date),
+        'home_team_id': _g_team_id(game, 'home'),
+        'away_team_id': _g_team_id(game, 'away'),
+        'official_status_state': decision.status_state,
+        'official_status_code': _string_or_none(((game or {}).get('status') or {}).get('statusCode')),
+        'final_status': bool(decision.final_status),
+        'official_status_behavior': (
+            'in_progress'
+            if decision.reason == 'live_or_in_progress_status'
+            else decision.status_state
+        ),
+        'official_status_reason': decision.reason,
+        'doubleheader': _game_is_doubleheader(game),
+    }
+
+
+def _schedule_candidate_evidence(candidate):
+    """Serialize only bounded source facts needed to audit a disagreement."""
+    return {
+        'official_status_code': candidate.get('official_status_code'),
+        'official_status_state': candidate.get('official_status_state'),
+        'game_date': _iso_date(candidate.get('game_date')),
+        'home_team_id': candidate.get('home_team_id'),
+        'away_team_id': candidate.get('away_team_id'),
+        'doubleheader': bool(candidate.get('doubleheader')),
+        'final_status': bool(candidate.get('final_status')),
+    }
+
+
+def _schedule_candidate_sort_key(candidate):
+    """Total ordering for bounded source evidence, including missing values."""
+    return tuple(
+        '' if value is None else str(value)
+        for value in (
+            candidate.get('game_date'),
+            candidate.get('home_team_id'),
+            candidate.get('away_team_id'),
+            candidate.get('official_status_state'),
+            candidate.get('official_status_code'),
+            candidate.get('doubleheader'),
+            candidate.get('final_status'),
+        )
+    )
+
+
+def _dedupe_schedule_candidate_evidence(candidates):
+    return _sort_dedupe_schedule_evidence(
+        _schedule_candidate_evidence(candidate) for candidate in candidates
+    )
+
+
+def _sort_dedupe_schedule_evidence(evidence_rows):
+    evidence_by_key = {}
+    for evidence in evidence_rows:
+        key = tuple(evidence.get(field) for field in (
+            'official_status_code',
+            'official_status_state',
+            'game_date',
+            'home_team_id',
+            'away_team_id',
+            'doubleheader',
+            'final_status',
+        ))
+        evidence_by_key[key] = evidence
+    return sorted(evidence_by_key.values(), key=_schedule_candidate_sort_key)
+
+
+def _common_schedule_value(candidates, field):
+    values = {candidate.get(field) for candidate in candidates}
+    return next(iter(values)) if len(values) == 1 else None
+
+
+def _normalize_schedule_source_games(official_games, *, fallback_date):
+    """Govern official schedule rows by normalized integer ``game_pk``.
+
+    Equivalent rows agree on core identity and the classified status conclusion.
+    They collapse to one deterministic source game. The doubleheader flag is
+    aggregated with ``any()`` so a positive authoritative indication is not
+    erased by a duplicate row that omits it. If governed identity/status fields
+    disagree, no response-order or unsupported status precedence is used: one
+    bounded source-conflict view is returned for the game identity.
+    """
+    grouped = defaultdict(list)
+    for game in official_games or []:
+        candidate = _schedule_source_candidate(game, fallback_date)
+        if candidate['game_pk'] is not None:
+            grouped[candidate['game_pk']].append(candidate)
+
+    normalized = []
+    for game_pk in sorted(grouped):
+        candidates = grouped[game_pk]
+        conflict_fields = sorted(
+            field
+            for field in _SCHEDULE_SOURCE_EQUIVALENCE_FIELDS
+            if len({candidate.get(field) for candidate in candidates}) > 1
+        )
+        status_candidates = _dedupe_schedule_candidate_evidence(candidates)
+        if conflict_fields:
+            normalized.append({
+                'game_pk': game_pk,
+                'game_date': _common_schedule_value(candidates, 'game_date'),
+                'home_team_id': _common_schedule_value(candidates, 'home_team_id'),
+                'away_team_id': _common_schedule_value(candidates, 'away_team_id'),
+                'official_status_state': None,
+                'official_status_code': None,
+                'official_status_reason': None,
+                'final_status': False,
+                'doubleheader': any(candidate['doubleheader'] for candidate in candidates),
+                'source_record_count': len(candidates),
+                'source_conflict_fields': conflict_fields,
+                'source_status_candidates': status_candidates,
+                'source_team_ids': sorted({
+                    team_id
+                    for candidate in candidates
+                    for team_id in (
+                        candidate.get('home_team_id'),
+                        candidate.get('away_team_id'),
+                    )
+                    if team_id is not None
+                }),
+            })
+            continue
+
+        # Response order is not evidence. Pick the representative row from the
+        # deterministic bounded ordering; code-only differences are harmless
+        # when classified identity/status behavior is equivalent.
+        representative = sorted(candidates, key=_schedule_candidate_sort_key)[0]
+        governed = dict(representative)
+        governed.update({
+            'doubleheader': any(candidate['doubleheader'] for candidate in candidates),
+            'source_record_count': len(candidates),
+            'source_conflict_fields': [],
+            'source_status_candidates': status_candidates,
+            'source_team_ids': sorted({
+                team_id
+                for candidate in candidates
+                for team_id in (
+                    candidate.get('home_team_id'),
+                    candidate.get('away_team_id'),
+                )
+                if team_id is not None
+            }),
+        })
+        normalized.append(governed)
+    return normalized
+
+
 def reconcile_schedule_finality(
     *,
     client,
@@ -2142,25 +2321,38 @@ def reconcile_schedule_finality(
 
     differences = []
     completed_game_pks = set()
-    source_pks = set()
-    doubleheaders_by_date_team = defaultdict(set)
+    normalized_source_games = _normalize_schedule_source_games(
+        official_games,
+        fallback_date=product_date,
+    )
+    source_pks = {game['game_pk'] for game in normalized_source_games}
+    source_conflict_pks = set()
 
-    for game in official_games:
-        game_pk = _g_pk(game)
-        if game_pk is None:
-            continue
-        source_pks.add(game_pk)
-        game_date = _g_date(game, product_date)
-        decision = classify_status(game.get('status'), game_pk=game_pk)
-        official_state = decision.status_state
-        official_final = decision.final_status
-        home_id = _g_team_id(game, 'home')
-        away_id = _g_team_id(game, 'away')
-        for team_id in (home_id, away_id):
-            if team_id is not None:
-                doubleheaders_by_date_team[(game_date, int(team_id))].add(game_pk)
+    for game in normalized_source_games:
+        game_pk = game['game_pk']
+        game_date = game.get('game_date')
+        official_state = game.get('official_status_state')
+        official_final = bool(game.get('final_status'))
+        home_id = game.get('home_team_id')
+        away_id = game.get('away_team_id')
 
         rows = stored_by_pk.get(game_pk)
+        if game.get('source_conflict_fields'):
+            source_conflict_pks.add(game_pk)
+            stored_finality = (
+                resolve_scheduled_game_finality(game_pk)
+                if rows
+                else 'unknown'
+            )
+            differences.append(_lane3_source_conflict(
+                game=game,
+                rows=rows,
+                team_map=team_map,
+                stored_finality=stored_finality,
+                check_timestamp_iso=check_timestamp_iso,
+            ))
+            continue
+
         change_type = None
         would_require_targeted_postgame = False
 
@@ -2179,7 +2371,8 @@ def reconcile_schedule_finality(
                 change_type = GAME_POSTPONED
             elif stored_state == POSTPONED_STATUS_STATE and official_state != POSTPONED_STATUS_STATE:
                 change_type = GAME_RESCHEDULED
-            elif decision.reason == 'live_or_in_progress_status' and stored_state == SCHEDULED_STATUS_STATE:
+            elif game.get('official_status_behavior') == 'in_progress' \
+                    and stored_state == SCHEDULED_STATUS_STATE:
                 change_type = GAME_IN_PROGRESS
             elif official_final and not stored_final:
                 change_type = GAME_NOW_FINAL
@@ -2203,13 +2396,13 @@ def reconcile_schedule_finality(
             away_id=away_id,
             team_map=team_map,
             official_state=official_state,
-            official_status_code=(game.get('status') or {}).get('statusCode'),
+            official_status_code=game.get('official_status_code'),
             stored_state=stored_state,
             stored_finality=stored_finality,
             change_type=change_type,
             would_require_targeted_postgame=would_require_targeted_postgame,
             check_timestamp_iso=check_timestamp_iso,
-            doubleheader=_game_is_doubleheader(game),
+            doubleheader=game.get('doubleheader'),
         ))
 
     # Stored games in the window that the source no longer lists for that slate
@@ -2235,6 +2428,18 @@ def reconcile_schedule_finality(
             doubleheader=any((r.doubleheader or 'N') not in ('N', '') for r in rows),
         ))
 
+    # Defensive publication invariant: even an unexpected future classifier bug
+    # must not serialize multiple schedule instructions for one game identity.
+    # Any collision fails closed to one bounded review finding and is removed
+    # from completed/actionable planning rather than silently discarding evidence.
+    differences, invariant_conflict_pks = _govern_schedule_differences(
+        differences,
+        team_map=team_map,
+        check_timestamp_iso=check_timestamp_iso,
+    )
+    source_conflict_pks.update(invariant_conflict_pks)
+    completed_game_pks.difference_update(invariant_conflict_pks)
+
     # Public team impact is scoped to the governed MLB clubs (Correction 3).
     affected_team_ids = _mlb_team_ids({
         team_id
@@ -2243,7 +2448,7 @@ def reconcile_schedule_finality(
         if team_id is not None
     })
 
-    # Deterministic ordering.
+    # Deterministic ordering (one difference at most for each game_pk).
     differences.sort(key=lambda d: (d.get('game_pk') or 0, str(d.get('change_type'))))
 
     # If the schedule feed could not be fetched, the source side is unverified;
@@ -2255,6 +2460,16 @@ def reconcile_schedule_finality(
         limitations.append(
             f'schedule source fetch failed ({fetch_error}); official schedule '
             'state could not be verified this run'
+        )
+    elif source_conflict_pks:
+        verification_status = LANE_PARTIAL
+        conflict_ids = ', '.join(str(game_pk) for game_pk in sorted(source_conflict_pks))
+        count = len(source_conflict_pks)
+        identity_word = 'identity' if count == 1 else 'identities'
+        limitations.append(
+            f'{count} schedule game {identity_word} conflicted (game_pks: '
+            f'{conflict_ids}); no conflicting status was assumed authoritative, '
+            'and conflicting games were excluded from actionable planning'
         )
     else:
         verification_status = LANE_COMPLETE
@@ -2268,6 +2483,7 @@ def reconcile_schedule_finality(
             'stored_games': len(stored_pks_in_window),
             'total_differences': len(differences),
             'newly_final_games': len(completed_game_pks),
+            'source_conflicts': len(source_conflict_pks),
         },
         'differences': differences,
         'completed_game_pks': sorted(completed_game_pks),
@@ -2296,6 +2512,136 @@ def _representative_stored_state(rows):
         if state in states:
             return state
     return next(iter(states), None) if states else None
+
+
+def _lane3_source_conflict(
+    *,
+    game,
+    rows,
+    team_map,
+    stored_finality,
+    check_timestamp_iso,
+):
+    """Build one non-actionable finding without choosing a source candidate."""
+    home_id = game.get('home_team_id')
+    away_id = game.get('away_team_id')
+    game_date = game.get('game_date')
+    return {
+        'game_pk': game.get('game_pk'),
+        'game_date': _iso_date(game_date) or _string_or_none(game_date),
+        'home_team_id': home_id,
+        'home_team_abbreviation': _abbr(team_map, home_id),
+        'away_team_id': away_id,
+        'away_team_abbreviation': _abbr(team_map, away_id),
+        # No candidate status is asserted as authoritative.
+        'official_status_state': None,
+        'official_status_code': None,
+        'official_final_status': False,
+        'stored_status_state': (
+            _representative_stored_state(rows)
+            if rows
+            else game.get('stored_status_state')
+        ),
+        'stored_finality': stored_finality,
+        'change_type': GAME_SOURCE_CONFLICT,
+        'severity': SEVERITY_REVIEW,
+        'evidence_source': 'mlb_stats_api:schedule',
+        'check_timestamp': check_timestamp_iso,
+        # Source teams remain available as evidence, but do not enter public
+        # affected-team recomputation or any action plan.
+        'source_team_ids': list(game.get('source_team_ids') or []),
+        'affected_team_ids': [],
+        'doubleheader': bool(game.get('doubleheader')),
+        'would_require_targeted_postgame': False,
+        'source_record_count': int(game.get('source_record_count') or 0),
+        'source_conflict_fields': sorted(set(game.get('source_conflict_fields') or [])),
+        'source_status_candidates': list(game.get('source_status_candidates') or []),
+    }
+
+
+def _govern_schedule_differences(differences, *, team_map, check_timestamp_iso):
+    """Enforce the serialized one-finding-per-game_pk invariant.
+
+    Normal source governance makes collisions unreachable today. This final
+    boundary protects future classifiers: a collision is converted to one
+    review-required source conflict with bounded candidate evidence, never an
+    arbitrary first/last-row choice.
+    """
+    grouped = defaultdict(list)
+    without_identity = []
+    for difference in differences or []:
+        game_pk = _int_or_none(difference.get('game_pk'))
+        if game_pk is None:
+            without_identity.append(difference)
+        else:
+            grouped[game_pk].append(difference)
+
+    governed = list(without_identity)
+    collision_pks = set()
+    for game_pk in sorted(grouped):
+        game_differences = grouped[game_pk]
+        if len(game_differences) == 1:
+            governed.append(game_differences[0])
+            continue
+
+        collision_pks.add(game_pk)
+        evidence_rows = []
+        for difference in game_differences:
+            existing_candidates = difference.get('source_status_candidates') or []
+            if existing_candidates:
+                evidence_rows.extend(existing_candidates)
+            else:
+                evidence_rows.append({
+                    'official_status_code': difference.get('official_status_code'),
+                    'official_status_state': difference.get('official_status_state'),
+                    'game_date': difference.get('game_date'),
+                    'home_team_id': difference.get('home_team_id'),
+                    'away_team_id': difference.get('away_team_id'),
+                    'doubleheader': bool(difference.get('doubleheader')),
+                    'final_status': bool(
+                        difference.get('official_final_status')
+                        or difference.get('official_status_state') == ScheduledGame.STATE_FINAL
+                    ),
+                })
+        evidence_rows = _sort_dedupe_schedule_evidence(evidence_rows)
+        home_ids = {row.get('home_team_id') for row in evidence_rows}
+        away_ids = {row.get('away_team_id') for row in evidence_rows}
+        game_dates = {row.get('game_date') for row in evidence_rows}
+        source_team_ids = sorted({
+            team_id
+            for row in evidence_rows
+            for team_id in (row.get('home_team_id'), row.get('away_team_id'))
+            if team_id is not None
+        })
+        stored_states = {d.get('stored_status_state') for d in game_differences}
+        stored_finalities = {d.get('stored_finality') for d in game_differences}
+        synthetic_game = {
+            'game_pk': game_pk,
+            'game_date': next(iter(game_dates)) if len(game_dates) == 1 else None,
+            'home_team_id': next(iter(home_ids)) if len(home_ids) == 1 else None,
+            'away_team_id': next(iter(away_ids)) if len(away_ids) == 1 else None,
+            'doubleheader': any(row.get('doubleheader') for row in evidence_rows),
+            'source_record_count': sum(
+                int(d.get('source_record_count') or 1) for d in game_differences
+            ),
+            'source_conflict_fields': ['internal_schedule_difference_collision'],
+            'source_status_candidates': evidence_rows,
+            'source_team_ids': source_team_ids,
+            'stored_status_state': (
+                next(iter(stored_states)) if len(stored_states) == 1 else None
+            ),
+        }
+        governed.append(_lane3_source_conflict(
+            game=synthetic_game,
+            rows=[],
+            team_map=team_map,
+            stored_finality=(
+                next(iter(stored_finalities)) if len(stored_finalities) == 1 else None
+            ),
+            check_timestamp_iso=check_timestamp_iso,
+        ))
+
+    return governed, collision_pks
 
 
 def _lane3_difference(
@@ -2343,6 +2689,7 @@ _SCHEDULE_REVIEW_CHANGE_TYPES = frozenset({
     GAME_STORED_FINALITY_CONFLICT,
     GAME_ABSENT_FROM_SOURCE,
     GAME_RESCHEDULE_IDENTITY_ISSUE,
+    GAME_SOURCE_CONFLICT,
 })
 
 
@@ -3090,6 +3437,7 @@ def _is_unresolved_finding(difference):
             TX_CHRONOLOGY_UNRESOLVED,
         )
         or difference.get('change_type') == CHANGE_UNRESOLVED_SOURCE_IDENTITY
+        or difference.get('change_type') == GAME_SOURCE_CONFLICT
     )
 
 

@@ -163,7 +163,15 @@ The audit runs three source-vs-stored comparison lanes and one derived lane:
    schedule evidence; a stored finality conflicting with the source; a newly
    discovered game; and doubleheader / rescheduled-game identity issues. A
    newly final game is a detected delta, not an error; box scores and game logs
-   are **not** ingested.
+   are **not** ingested. As of contract `1.4.2`, official source rows are first
+   grouped by normalized integer `game_pk`. Equivalent duplicates are processed
+   once; their doubleheader flag uses deterministic boolean `any()`. If rows for
+   one `game_pk` disagree on governed identity or classified status and no
+   trustworthy freshness field resolves them, the lane assumes neither status:
+   it emits one non-final, non-actionable, review-required
+   `game_source_conflict`, reports bounded candidate evidence, becomes partial,
+   and excludes that game from completed-game and public impact planning. A
+   completed artifact contains at most one schedule finding per `game_pk`.
 
 4. **Dry-run impact plan.** A `would_refresh` projection describing which
    teams, pitcher logs, and completed game_pks a *future* write phase would
@@ -179,7 +187,7 @@ per-lane `lanes` results, `would_refresh`, `material_change_detected`, a
 `summary` block, a `safety` block of guarantees, the `source_api` call totals
 grouped by endpoint, and `limitations`). The `capability` value is
 `intraday_reconciliation_audit_v1` and is the pinned contract identity; the
-finer-grained `version` is currently `1.4.1`. Five backward-compatible minor and
+finer-grained `version` is currently `1.4.2`. Six backward-compatible minor and
 patch bumps have shipped inside capability v1: `1.0.0 → 1.1.0` (signal-quality:
 benign inventory aggregated, summary buckets, active-roster-only default);
 `1.1.0 → 1.2.0` (bullpen-relevance: role-gated actionability, MLB-team impact
@@ -187,11 +195,16 @@ scoping, exact-state vs public-membership separation, chronology);
 `1.2.0 → 1.3.0` (transaction-ledger vs public-materiality split);
 `1.3.0 → 1.4.0` (summary-contract clarification: one derivation source and one
 explicit scope per aggregate count, deduplicated `public_bullpen_change_count`,
-and removal of the ambiguous legacy count names); and `1.4.0 → 1.4.1`
+and removal of the ambiguous legacy count names); `1.4.0 → 1.4.1`
 (targeted-workload authority: the impact plan derives targeted recent-work
 acquisition **exclusively** from the roster lane, so a roster-departing pitcher's
 public-material transaction can no longer re-enter the targeted lists — a
-behavioral bug fix with no artifact-shape change). Each bump only **adds**,
+behavioral bug fix with no artifact-shape change); and `1.4.1 → 1.4.2`
+(schedule-source identity governance: official rows are grouped by integer
+`game_pk`, equivalent duplicates collapse with boolean `any()` for the
+doubleheader indicator, and unresolved identity/status contradictions become one
+bounded `game_source_conflict` review finding that cannot enter actionable
+planning). Each bump only **adds**,
 **clarifies**, or **corrects** fields, sub-plans, and classifications; none of the
 fields the workflow's artifact validator checks (`capability` / `mode` /
 `check_only` / `status`) change, so the validator still accepts the artifact.
@@ -635,3 +648,56 @@ correction merges before the representative multi-day validation period of §9 c
 be considered started or met. Automatic intraday scheduling remains unapproved,
 Phase 2 remains blocked, and the mode remains manual, audit-only, and
 non-writing.
+
+## 18. Production Observation #6 (2026-07-18) and schedule-source conflict governance
+
+Production Observation #6 ran successfully at
+`2026-07-18T17:25:57.372521Z` on contract version 1.4.1. It confirmed the
+targeted-workload authority correction passed in production: roster-entering
+pitchers were targeted as stored ids `[168, 198, 557, 568]` and MLB ids
+`[608372, 656240, 663893, 671106, 681751, 694753]`, while departing pitchers CJ
+Van Eyk (785 / 669310), Adam Macko (554 / 671936), and Jeff Criswell
+(184 / 676105) remained excluded. Transaction and ledger evidence remained
+intact. Role verification stayed within its budget (40 available, 9 used,
+15 avoided, no failures, budget not exceeded), and all audit-only/read-only
+safety guarantees passed.
+
+The observation was **not** a fully clean validation run. The schedule source
+contained two rows for `game_pk` 824414 on 2026-07-18 (Pittsburgh 134 at
+Cleveland 114) with the same audit timestamp and core game identity but
+contradictory statuses: `I` / `other` (in progress, doubleheader true) and `DD` /
+`postponed` (doubleheader false). Version 1.4.1 processed each source row
+independently, so it emitted both `game_in_progress` and `game_postponed` as
+actionable findings for one game. Although `source_games` correctly remained 30
+unique game ids, `schedule total_differences` and
+`schedule_public_change_count` were both inflated to 2, aggregate counts were
+inflated, and the downstream schedule plan received contradictory instructions.
+Response-list order provided no trustworthy freshness evidence and therefore
+could not justify choosing either row.
+
+Contract version 1.4.2 is a backward-compatible patch correction. The capability
+remains `intraday_reconciliation_audit_v1`; mode, Phase 1, `check_only`,
+`audit_only`, safety, lock, and writer behavior are unchanged. Schedule source
+rows are now governed by normalized integer `game_pk` before delta
+classification. Exact and semantically equivalent duplicates collapse to one
+source game, with boolean `any()` as the deterministic doubleheader aggregation
+rule. An unresolved contradiction becomes exactly one
+`game_source_conflict` with `review_required` severity and bounded,
+deterministically sorted candidate evidence. No candidate is claimed as
+authoritative. The conflicted game remains meaningful and unresolved, makes the
+schedule lane and overall artifact partial, and is excluded from actionable
+counts, `completed_game_pks`, targeted postgame behavior, public affected-team
+recomputation, Current-Pen ERA and league ERA-rank recalculation, snapshot
+publication, and Tonight warming. Valid findings for other game ids remain
+available and can drive their normal plans.
+
+A **new Production Observation #7 is required after 1.4.2 merges**. Run the
+manual `workflow_dispatch` intraday audit under the shared public sync advisory
+lock, download and validate the fresh artifact, confirm no game id has more than
+one schedule difference, inspect any conflict candidate evidence and lane
+limitations, reconcile summary/impact arithmetic, verify targeted workload,
+transaction ledger, role budget, and all read-only guarantees, and retain the
+artifact as the new baseline. The representative multi-day validation window
+has not started and must restart from the first clean 1.4.2 production
+observation. Automatic intraday scheduling remains unapproved, no write phase is
+authorized, and Phase 2 remains blocked.

@@ -146,7 +146,14 @@ behavior is authorized.
      `benign_records_suppressed` total.
   3. *Schedule + game finality* — the current and previous slate dates: newly
      final games, postponements/reschedules, in-progress games, and stored
-     finality conflicts.
+     finality conflicts. Contract `1.4.2` groups official rows by normalized
+     integer `game_pk` before classification. Equivalent duplicates collapse
+     (doubleheader evidence uses boolean `any()`); an unresolved core/status
+     contradiction becomes one bounded, review-required `game_source_conflict`,
+     makes the lane partial, and is excluded from completed-game and public
+     action planning. No response-order freshness or unsupported status
+     precedence is assumed, and no completed artifact carries more than one
+     schedule difference per `game_pk`.
   4. *Impact plan* — a dry-run `would_refresh` projection split into two
      sub-plans: `public_bullpen_state` (roster/current-state-authoritative — teams,
      targeted pitcher logs, completed game_pks, publish/warm) and
@@ -165,7 +172,7 @@ behavior is authorized.
   human-review-required finding is never hidden. `material_change_detected` is
   true only when a future authorized write/recompute would actually be required
   (an actionable finding or a newly-final game). Benign inventory sets neither.
-  The `summary` block (contract `version` 1.4.1) carries honest, explicitly
+  The `summary` block (contract `version` 1.4.2) carries honest, explicitly
   scoped buckets — `records_checked`, `total_meaningful_findings`,
   `total_actionable_findings`, `review_required_findings`, `unresolved_findings`,
   the transaction-ledger axis (`transaction_record_actionable_count`,
