@@ -70,6 +70,19 @@ const SINCE_YESTERDAY_WAITING_REASONS = new Set([
   'prior_snapshot_unpublished',
 ])
 const SINCE_YESTERDAY_OFF_DAY_GAP_REASON = 'snapshots_not_comparable'
+// Descriptive movement lanes, authored by the backend (item.movement_lane).
+// The frontend only maps the lane key to a display label and a fixed order; it
+// never infers a lane from headline wording. An unknown/absent lane fails
+// closed into the neutral lane rather than being dropped.
+const SINCE_YESTERDAY_LANE_ORDER = [
+  { key: 'more_breathing_room', label: 'More breathing room', summaryLabel: 'gained breathing room' },
+  { key: 'tighter_today', label: 'Tighter today', summaryLabel: 'became tighter' },
+  { key: 'structure_changed', label: 'Structure changed', summaryLabel: 'changed structurally' },
+  { key: 'other_meaningful_changes', label: 'Other meaningful change', summaryLabel: 'had other meaningful movement' },
+]
+const SINCE_YESTERDAY_LANE_KEYS = new Set(SINCE_YESTERDAY_LANE_ORDER.map(lane => lane.key))
+const SINCE_YESTERDAY_NEUTRAL_LANE = 'other_meaningful_changes'
+const SINCE_YESTERDAY_TEAM_SEARCH_ID = 'since-yesterday-team-search'
 export const AUDIENCE_SIGNUP_IDLE = 'idle'
 export const AUDIENCE_SIGNUP_LOADING = 'loading'
 export const AUDIENCE_SIGNUP_SUCCESS = 'success'
@@ -456,6 +469,97 @@ function normalizeSinceYesterdayEvidence(value) {
     .filter(Boolean)
 }
 
+function sinceYesterdayDeltaValue(value) {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  return sinceYesterdayEvidenceValue(value)
+}
+
+function normalizeSinceYesterdayPrimaryDelta(value) {
+  if (!value || typeof value !== 'object') return null
+  const label = textValue(value.label)
+  const previous = sinceYesterdayDeltaValue(value.previous)
+  const current = sinceYesterdayDeltaValue(value.current)
+  if (!label || previous == null || current == null) return null
+  // A signed net is only meaningful when the backend actually provides one;
+  // a missing/null net_delta must stay null (never coerced to 0).
+  const rawNet = value.net_delta
+  const netDelta = rawNet == null ? null : numberValue(rawNet)
+  return {
+    label,
+    previous,
+    current,
+    netDelta,
+  }
+}
+
+function normalizeSinceYesterdaySummary(value) {
+  if (!value || typeof value !== 'object') return null
+  const count = key => numberValue(value[key])
+  const summary = {
+    meaningfulChangeCount: count('meaningful_change_count'),
+    moreBreathingRoomCount: count('more_breathing_room_count'),
+    tighterTodayCount: count('tighter_today_count'),
+    structureChangedCount: count('structure_changed_count'),
+    otherMeaningfulChangeCount: count('other_meaningful_change_count'),
+    countsComplete: value.counts_complete === true,
+  }
+  // Steady is only trustworthy when the whole population was comparable, so the
+  // backend only emits steady_count then. Never synthesize it here.
+  const steadyCount = count('steady_count')
+  if (steadyCount != null) {
+    summary.steadyCount = steadyCount
+    summary.steadyTeams = (Array.isArray(value.steady_teams) ? value.steady_teams : [])
+      .map(team => {
+        if (!team || typeof team !== 'object') return null
+        const teamAbbr = textValue(team.team_abbreviation)
+        const teamName = cleanTeamName(team.team_name) || teamAbbr
+        if (!teamName) return null
+        return { teamId: teamIdOf(team.team_id), teamName, teamAbbr }
+      })
+      .filter(Boolean)
+  }
+  return summary
+}
+
+function sinceYesterdayLaneKey(item) {
+  return item.movementLane && SINCE_YESTERDAY_LANE_KEYS.has(item.movementLane)
+    ? item.movementLane
+    : SINCE_YESTERDAY_NEUTRAL_LANE
+}
+
+function buildSinceYesterdayLanes(items) {
+  const byLane = new Map()
+  for (const item of items) {
+    const laneKey = sinceYesterdayLaneKey(item)
+    if (!byLane.has(laneKey)) byLane.set(laneKey, [])
+    byLane.get(laneKey).push(item)
+  }
+  return SINCE_YESTERDAY_LANE_ORDER
+    .map(lane => ({
+      key: lane.key,
+      label: lane.label,
+      summaryLabel: lane.summaryLabel,
+      items: byLane.get(lane.key) || [],
+    }))
+    .filter(lane => lane.items.length > 0)
+}
+
+function sinceYesterdayItemMatchesQuery(item, query) {
+  return [item.teamName, item.teamAbbr]
+    .some(value => value && String(value).toLowerCase().includes(query))
+}
+
+export function filterSinceYesterdayLanes(lanes, query) {
+  const normalized = String(query || '').trim().toLowerCase()
+  if (!normalized) return lanes
+  return lanes
+    .map(lane => ({
+      ...lane,
+      items: lane.items.filter(item => sinceYesterdayItemMatchesQuery(item, normalized)),
+    }))
+    .filter(lane => lane.items.length > 0)
+}
+
 function normalizeSinceYesterdayItem(item, teamsById, teams, index) {
   if (!item || typeof item !== 'object') return null
   const teamId = teamIdOf(item.team_id ?? item.teamId)
@@ -484,6 +588,9 @@ function normalizeSinceYesterdayItem(item, teamsById, teams, index) {
   const todayRestedCount = numberValue(item.today_rested_count)
   const workloadAdded = normalizeSinceYesterdayWorkload(item.workload_added)
   const publicEvidence = normalizeSinceYesterdayEvidence(item.public_evidence)
+  const movementLane = textValue(item.movement_lane)
+  const movementLabel = textValue(item.movement_label)
+  const primaryDelta = normalizeSinceYesterdayPrimaryDelta(item.primary_delta)
 
   if (!teamName && !headline && !summary && !context) return null
 
@@ -492,6 +599,9 @@ function normalizeSinceYesterdayItem(item, teamsById, teams, index) {
     teamId: resolvedTeamId,
     teamName: teamName || teamAbbr || 'This club',
     teamAbbr,
+    movementLane,
+    movementLabel,
+    primaryDelta,
     headline,
     summary,
     context,
@@ -529,6 +639,8 @@ export function getSinceYesterdayView(dashboard, teams = []) {
     currentDateLabel: formatComparisonDate(currentDate, 'the current view'),
   }
 
+  const summary = normalizeSinceYesterdaySummary(block.summary)
+
   if (state === 'changes_detected') {
     const teamsById = buildTeamsById(teams)
     const items = (Array.isArray(block.items) ? block.items : [])
@@ -541,6 +653,8 @@ export function getSinceYesterdayView(dashboard, teams = []) {
       ...baseView,
       items,
       itemCount,
+      lanes: buildSinceYesterdayLanes(items),
+      summary,
       orderingBasis: textValue(block.ordering_basis),
       footerCopy: block.ordering_basis === SINCE_YESTERDAY_ALPHABETICAL_ORDERING
         ? `Teams are listed alphabetically. ${countCopy}`
@@ -553,6 +667,8 @@ export function getSinceYesterdayView(dashboard, teams = []) {
       ...baseView,
       items: [],
       itemCount: itemCountValue ?? 0,
+      lanes: [],
+      summary,
       quietCopy: `No meaningful bullpen movement was found between ${baseView.previousDateLabel} and ${baseView.currentDateLabel}. Quiet days are reported as quiet — nothing is padded.`,
     }
   }
@@ -1143,108 +1259,300 @@ function TonightCard({ card }) {
   )
 }
 
-function SinceYesterdayItem({ item }) {
+function sinceYesterdayNetLabel(netDelta) {
+  if (typeof netDelta !== 'number' || netDelta === 0) return null
+  return netDelta > 0 ? `+${netDelta}` : String(netDelta)
+}
+
+function SinceYesterdayPrimaryDelta({ delta }) {
+  if (!delta) return null
+  const net = sinceYesterdayNetLabel(delta.netDelta)
   return (
-    <details
-      className="group border border-dirt bg-dugout p-0"
-    >
-      <summary className="flex cursor-pointer list-none flex-col gap-1 px-4 py-3 transition-colors hover:bg-amber/5 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/60">
-        <span className="font-mono text-[11px] uppercase tracking-widest text-chalk500">
-          {item.teamName}
+    <div className="mt-3">
+      <p className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
+        {delta.label}
+      </p>
+      <p className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+        <span className="font-display text-3xl leading-none tracking-wide text-chalk100">
+          <span className="sr-only">Yesterday </span>{delta.previous}
         </span>
-        {item.headline && (
-          <span className="font-display text-xl leading-tight tracking-wide text-chalk100">
-            {item.headline}
+        <span aria-hidden="true" className="font-display text-2xl leading-none text-chalk500">
+          →
+        </span>
+        <span className="font-display text-3xl leading-none tracking-wide text-amber">
+          <span className="sr-only">today </span>{delta.current}
+        </span>
+        {net && (
+          <span className="font-mono text-xs uppercase tracking-wider text-chalk300">
+            <span className="sr-only">net change </span>{net}
           </span>
         )}
+      </p>
+    </div>
+  )
+}
+
+function SinceYesterdayWorkload({ rows }) {
+  if (!rows || rows.length === 0) return null
+  return (
+    <div className="mt-3">
+      <p className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
+        Worked yesterday
+      </p>
+      <ul className="mt-1 space-y-1">
+        {rows.map(row => (
+          <li
+            key={row.key}
+            className="flex flex-wrap items-baseline justify-between gap-2 text-sm text-chalk300"
+          >
+            <span>{row.name}</span>
+            <span className="font-mono text-xs uppercase tracking-wider text-chalk500">
+              {row.pitches} {row.pitches === 1 ? 'pitch' : 'pitches'}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+function SinceYesterdayEvidenceRow({ label, yesterday, today }) {
+  return (
+    <div className="grid grid-cols-1 gap-1 text-sm sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-baseline sm:gap-3">
+      <dt className="text-chalk300">{label}</dt>
+      <dd className="font-mono text-xs uppercase tracking-wider text-chalk500">
+        Yesterday {yesterday}
+      </dd>
+      <dd className="font-mono text-xs uppercase tracking-wider text-chalk500">
+        Today {today}
+      </dd>
+    </div>
+  )
+}
+
+function SinceYesterdayEvidence({ item }) {
+  const showRested = item.hasRestedCounts
+  const rows = item.publicEvidence
+  if (!showRested && rows.length === 0) return null
+  return (
+    <details className="group mt-3 border border-dirt/75 bg-field/45">
+      <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 font-mono text-[10px] uppercase tracking-widest text-chalk500 transition-colors hover:text-amber focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/60">
+        <span className="group-open:hidden">View evidence</span>
+        <span className="hidden group-open:inline">Hide evidence</span>
       </summary>
-      <div className="border-t border-dirt px-4 py-4">
-        {item.summary && (
-          <p className="text-sm leading-relaxed text-chalk300">
-            {item.summary}
-          </p>
+      <dl className="space-y-2 border-t border-dirt/75 px-3 py-3">
+        {showRested && (
+          <SinceYesterdayEvidenceRow
+            label="Rested relievers"
+            yesterday={item.yesterdayRestedCount}
+            today={item.todayRestedCount}
+          />
         )}
-        {item.context && (
-          <p className="mt-2 text-sm leading-relaxed text-chalk500">
-            {item.context}
-          </p>
-        )}
-        {item.publicEvidence.length > 0 && (
-          <div className="mt-4 border border-dirt/75 bg-field/45 p-3">
-            <h3 className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
-              Evidence shown
-            </h3>
-            <dl className="mt-2 space-y-2">
-              {item.publicEvidence.map(row => (
-                <div key={row.key} className="grid grid-cols-1 gap-1 text-sm sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-baseline sm:gap-3">
-                  <dt className="text-chalk300">{row.label}</dt>
-                  <dd className="font-mono text-xs uppercase tracking-wider text-chalk500">
-                    Yesterday {row.yesterday}
-                  </dd>
-                  <dd className="font-mono text-xs uppercase tracking-wider text-chalk500">
-                    Today {row.today}
-                  </dd>
-                </div>
-              ))}
-            </dl>
-          </div>
-        )}
-        {item.hasRestedCounts && (
-          <dl className="mt-4 grid grid-cols-2 gap-2 sm:max-w-sm">
-            <div className="border border-dirt/75 bg-field/45 p-3">
-              <dt className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
-                Yesterday
-              </dt>
-              <dd className="mt-1 font-display text-2xl tracking-wide text-chalk100">
-                {item.yesterdayRestedCount}
-              </dd>
-              <dd className="mt-1 text-xs text-chalk500">
-                rested relievers
-              </dd>
-            </div>
-            <div className="border border-dirt/75 bg-field/45 p-3">
-              <dt className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
-                Today
-              </dt>
-              <dd className="mt-1 font-display text-2xl tracking-wide text-chalk100">
-                {item.todayRestedCount}
-              </dd>
-              <dd className="mt-1 text-xs text-chalk500">
-                rested relievers
-              </dd>
-            </div>
-          </dl>
-        )}
-        {item.workloadAdded.length > 0 && (
-          <div className="mt-4 border border-dirt/75 bg-field/45 p-3">
-            <h3 className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
-              Workload added
-            </h3>
-            <ul className="mt-2 space-y-1">
-              {item.workloadAdded.map(row => (
-                <li key={row.key} className="flex flex-wrap items-baseline justify-between gap-2 text-sm text-chalk300">
-                  <span>{row.name}</span>
-                  <span className="font-mono text-xs uppercase tracking-wider text-chalk500">
-                    {row.pitches} {row.pitches === 1 ? 'pitch' : 'pitches'}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-        {item.href && (
-          <div className="mt-4">
-            <Link
-              to={item.href}
-              className="inline-flex min-h-10 items-center rounded border border-amber/40 bg-amber/10 px-4 py-2 font-mono text-xs uppercase tracking-wider text-amber transition-colors hover:bg-amber/20"
-              aria-label={`Open the bullpen board for ${item.teamName}`}
-            >
-              Open team bullpen board
-            </Link>
-          </div>
+        {rows.map(row => (
+          <SinceYesterdayEvidenceRow
+            key={row.key}
+            label={row.label}
+            yesterday={row.yesterday}
+            today={row.today}
+          />
+        ))}
+      </dl>
+    </details>
+  )
+}
+
+function SinceYesterdayCard({ item }) {
+  const explanation = item.summary || item.headline
+  return (
+    <article className="flex flex-col border border-dirt bg-dugout p-4">
+      <div className="flex items-start justify-between gap-3">
+        <h3 className="font-mono text-[11px] uppercase tracking-widest text-chalk500">
+          {item.teamName}
+        </h3>
+        {item.movementLabel && (
+          <span className="shrink-0 border border-dirt/75 bg-field/60 px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-chalk300">
+            {item.movementLabel}
+          </span>
         )}
       </div>
+      <SinceYesterdayPrimaryDelta delta={item.primaryDelta} />
+      {explanation && (
+        <p className="mt-3 text-sm leading-relaxed text-chalk300">{explanation}</p>
+      )}
+      <SinceYesterdayWorkload rows={item.workloadAdded} />
+      {item.context && (
+        <p className="mt-3 text-sm leading-relaxed text-chalk500">
+          <span className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
+            Why it matters{' '}
+          </span>
+          {item.context}
+        </p>
+      )}
+      <SinceYesterdayEvidence item={item} />
+      {item.href && (
+        <div className="mt-4">
+          <Link
+            to={item.href}
+            className="inline-flex min-h-10 items-center rounded border border-amber/40 bg-amber/10 px-4 py-2 font-mono text-xs uppercase tracking-wider text-amber transition-colors hover:bg-amber/20"
+            aria-label={`Open the bullpen board for ${item.teamName}`}
+          >
+            Open bullpen board
+          </Link>
+        </div>
+      )}
+    </article>
+  )
+}
+
+function SinceYesterdayLaneGroup({ lane }) {
+  return (
+    <section aria-label={lane.label} className="mt-5 first:mt-0">
+      <h3 className="flex items-baseline gap-2 border-b border-dirt/60 pb-1 font-mono text-[11px] uppercase tracking-widest text-amber">
+        <span>{lane.label}</span>
+        <span className="text-chalk500">{lane.items.length}</span>
+      </h3>
+      <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+        {lane.items.map(item => (
+          <SinceYesterdayCard key={item.key} item={item} />
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function SinceYesterdayLeagueSummary({ summary }) {
+  if (!summary) return null
+  const rows = [
+    ['more_breathing_room', summary.moreBreathingRoomCount, 'gained breathing room'],
+    ['tighter_today', summary.tighterTodayCount, 'became tighter'],
+    ['structure_changed', summary.structureChangedCount, 'changed structurally'],
+    ['other_meaningful', summary.otherMeaningfulChangeCount, 'had other meaningful movement'],
+  ].filter(([, count]) => typeof count === 'number' && count > 0)
+  const showSteady = typeof summary.steadyCount === 'number' && summary.steadyCount > 0
+  if (rows.length === 0 && !showSteady) return null
+  return (
+    <div className="mb-4 border border-dirt bg-dugout p-4">
+      <h3 className="font-mono text-[11px] uppercase tracking-widest text-chalk500">
+        Across MLB since yesterday
+      </h3>
+      <ul className="mt-2 flex flex-wrap gap-x-6 gap-y-2">
+        {rows.map(([key, count, label]) => (
+          <li key={key} className="text-sm text-chalk300">
+            <span className="font-display text-xl tracking-wide text-chalk100">{count}</span>{' '}
+            {label}
+          </li>
+        ))}
+        {showSteady && (
+          <li className="text-sm text-chalk300">
+            <span className="font-display text-xl tracking-wide text-chalk100">
+              {summary.steadyCount}
+            </span>{' '}
+            remained steady
+          </li>
+        )}
+      </ul>
+    </div>
+  )
+}
+
+function SinceYesterdaySteadyDisclosure({ summary }) {
+  if (!summary || typeof summary.steadyCount !== 'number' || summary.steadyCount === 0) {
+    return null
+  }
+  const teams = summary.steadyTeams || []
+  return (
+    <details className="group mt-4 border border-dirt bg-dugout">
+      <summary className="cursor-pointer list-none px-4 py-3 text-sm text-chalk300 transition-colors hover:bg-amber/5 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/60">
+        {summary.steadyCount} {summary.steadyCount === 1 ? 'team' : 'teams'} had no meaningful
+        bullpen movement in this comparison.
+      </summary>
+      {teams.length > 0 && (
+        <ul className="flex flex-wrap gap-x-4 gap-y-1 border-t border-dirt px-4 py-3 text-sm text-chalk500">
+          {teams.map(team => (
+            <li key={team.teamId ?? team.teamAbbr ?? team.teamName}>{team.teamName}</li>
+          ))}
+        </ul>
+      )}
     </details>
+  )
+}
+
+function SinceYesterdayTeamSearch({ query, onChange, onReset }) {
+  return (
+    <div className="mb-4 flex flex-wrap items-center gap-2">
+      <label
+        htmlFor={SINCE_YESTERDAY_TEAM_SEARCH_ID}
+        className="font-mono text-[10px] uppercase tracking-widest text-chalk500"
+      >
+        Find a team
+      </label>
+      <input
+        id={SINCE_YESTERDAY_TEAM_SEARCH_ID}
+        type="search"
+        value={query}
+        onChange={event => onChange(event.target.value)}
+        placeholder="Team name or abbreviation"
+        autoComplete="off"
+        className="min-h-10 flex-1 border border-dirt bg-field/60 px-3 py-2 text-sm text-chalk100 placeholder:text-chalk500 focus:border-amber/60 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/40"
+      />
+      {query && (
+        <button
+          type="button"
+          onClick={onReset}
+          className="min-h-10 border border-dirt bg-field/60 px-3 py-2 font-mono text-xs uppercase tracking-wider text-chalk300 transition-colors hover:text-amber focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/40"
+        >
+          Reset
+        </button>
+      )}
+    </div>
+  )
+}
+
+function SinceYesterdayBriefing({ view }) {
+  const [query, setQuery] = useState('')
+  const lanes = filterSinceYesterdayLanes(view.lanes || [], query)
+  const hasMatches = lanes.some(lane => lane.items.length > 0)
+  const trimmedQuery = query.trim()
+  return (
+    <>
+      <SinceYesterdayLeagueSummary summary={view.summary} />
+      <SinceYesterdayTeamSearch
+        query={query}
+        onChange={setQuery}
+        onReset={() => setQuery('')}
+      />
+      {hasMatches ? (
+        lanes.map(lane => <SinceYesterdayLaneGroup key={lane.key} lane={lane} />)
+      ) : (
+        <div className="border border-dirt bg-dugout p-4" role="status">
+          <p className="text-sm leading-relaxed text-chalk300">
+            No meaningful published movement matches “{trimmedQuery}”. That does not mean those
+            teams were steady — reset to see every team with movement in this comparison.
+          </p>
+          <button
+            type="button"
+            onClick={() => setQuery('')}
+            className="mt-3 inline-flex min-h-10 items-center border border-dirt bg-field/60 px-3 py-2 font-mono text-xs uppercase tracking-wider text-chalk300 transition-colors hover:text-amber focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/40"
+          >
+            Reset search
+          </button>
+        </div>
+      )}
+      <SinceYesterdaySteadyDisclosure summary={view.summary} />
+      <p className="mt-4 text-xs leading-relaxed text-chalk500">{view.footerCopy}</p>
+    </>
+  )
+}
+
+function SinceYesterdayQuiet({ view }) {
+  return (
+    <>
+      <SinceYesterdayLeagueSummary summary={view.summary} />
+      <div className="border border-dirt bg-dugout p-4" role="status">
+        <p className="text-sm leading-relaxed text-chalk300">{view.quietCopy}</p>
+      </div>
+      <SinceYesterdaySteadyDisclosure summary={view.summary} />
+    </>
   )
 }
 
@@ -1267,22 +1575,13 @@ function SinceYesterdaySection({ dashboard, teams }) {
         </div>
       )}
       {view.state === 'changes_detected' ? (
-        <>
-          <div className="grid grid-cols-1 gap-3">
-            {view.items.map(item => (
-              <SinceYesterdayItem key={item.key} item={item} />
-            ))}
-          </div>
-          <p className="mt-3 text-xs leading-relaxed text-chalk500">
-            {view.footerCopy}
-          </p>
-        </>
+        <SinceYesterdayBriefing view={view} />
+      ) : view.state === 'no_meaningful_changes' ? (
+        <SinceYesterdayQuiet view={view} />
       ) : (
         <div className="border border-dirt bg-dugout p-4" role="status">
           <p className="text-sm leading-relaxed text-chalk300">
-            {view.state === 'no_meaningful_changes'
-              ? view.quietCopy
-              : view.unavailableCopy}
+            {view.unavailableCopy}
           </p>
         </div>
       )}
