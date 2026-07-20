@@ -609,7 +609,8 @@ export function buildSinceYesterdayTabs(items) {
 // The complete, trusted league-wide count for a tab: the total meaningful
 // changes for "All", or the lane count for a category. This is the number the
 // league summary reports, which can exceed the number of detailed cards because
-// some teams moved but have no published, review-cleared write-up yet.
+// some teams are inside the trusted league population but have no public-safe
+// detailed card.
 function sinceYesterdayCompleteCount(tab, summary) {
   if (!tab || !summary) return null
   if (tab.key === SINCE_YESTERDAY_ALL_TAB_KEY) {
@@ -623,29 +624,59 @@ function sinceYesterdayCompleteCount(tab, summary) {
   return typeof laneCount === 'number' ? laneCount : null
 }
 
-// Explains, in the panel, why a tab may show fewer detailed cards than the
-// league summary counts. When every moving team has a card, it reassures that
-// all are shown. When some are missing, it says so plainly — the missing teams
-// moved, they simply lack a published write-up, and are never called steady. It
-// never invents a denominator or shows "of 0"; if the complete count is
-// unknown or smaller than the cards on hand, it just reports what is shown.
+// Small number-to-word table for the withheld-card sentence, which starts with
+// the spelled-out count. MLB has 30 teams, so the withheld count never exceeds
+// that; anything beyond the table falls back to digits rather than guessing.
+const SINCE_YESTERDAY_NUMBER_WORDS = [
+  'zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine',
+  'ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen',
+  'seventeen', 'eighteen', 'nineteen', 'twenty', 'twenty-one', 'twenty-two',
+  'twenty-three', 'twenty-four', 'twenty-five', 'twenty-six', 'twenty-seven',
+  'twenty-eight', 'twenty-nine', 'thirty',
+]
+
+function sinceYesterdaySentenceCountWord(value) {
+  const word = SINCE_YESTERDAY_NUMBER_WORDS[value] || String(value)
+  return word.charAt(0).toUpperCase() + word.slice(1)
+}
+
+// Explains, in the panel, how the detailed cards relate to the complete league
+// movement counts. When every moving team has a detailed card, it reassures
+// that all are shown. When there are fewer cards than complete movements, it
+// says the additional teams are part of the trusted league counts but have no
+// public-safe detailed card — and, on the All tab, that they are still not
+// counted as steady. It never invents a denominator or shows "of 0"; if the
+// complete count is unknown or smaller than the cards on hand, it just reports
+// what is shown, with no withheld-card explanation.
 export function sinceYesterdayCountClarity(tab, summary) {
   if (!tab) return null
   const count = tab.count
-  const noun = count === 1 ? 'team change' : 'team changes'
-  const scope = tab.key === SINCE_YESTERDAY_ALL_TAB_KEY ? '' : ' in this category'
+  const isAll = tab.key === SINCE_YESTERDAY_ALL_TAB_KEY
+  const scope = isAll ? '' : ' in this category'
   const complete = sinceYesterdayCompleteCount(tab, summary)
   if (complete == null || complete < count) {
+    const noun = count === 1 ? 'team change' : 'team changes'
     return `Showing ${count} detailed ${noun}${scope}.`
   }
   if (complete === count) {
+    const noun = count === 1 ? 'team change' : 'team changes'
     return `Showing all ${count} detailed ${noun}${scope}.`
   }
   const withheld = complete - count
-  const withheldClause = withheld === 1
-    ? 'The other 1 moved too, but has no published write-up yet — it is not steady.'
-    : `The other ${withheld} moved too, but have no published write-up yet — they are not steady.`
-  return `Showing ${count} of ${complete} teams with movement${scope}. ${withheldClause}`
+  const withheldWord = sinceYesterdaySentenceCountWord(withheld)
+  const withheldTeams = withheld === 1 ? 'team' : 'teams'
+  const isIncluded = withheld === 1 ? 'is' : 'are'
+  const hasCard = withheld === 1 ? 'does not have' : 'do not have'
+  // The league summary is the complete-population framing for All; a single
+  // lane's tab reconciles against that lane's league count instead.
+  const population = isAll ? 'league summary' : 'league count'
+  let explanation =
+    `${withheldWord} additional ${withheldTeams} ${isIncluded} included in the ${population} but ${hasCard} a publishable detailed card.`
+  if (isAll) {
+    const steadySubject = withheld === 1 ? 'It is' : 'They are'
+    explanation += ` ${steadySubject} not counted as steady.`
+  }
+  return `Showing ${count} of ${complete} teams with movement${scope}. ${explanation}`
 }
 
 function normalizeSinceYesterdayItem(item, teamsById, teams, index) {

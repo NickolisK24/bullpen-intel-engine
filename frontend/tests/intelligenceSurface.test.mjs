@@ -2070,37 +2070,64 @@ test('Since Yesterday count clarity reconciles detailed cards with the complete 
   const [allTab, moreRoomTab, tighterTab] = view.tabs
   assert.deepEqual([allTab.key, moreRoomTab.key, tighterTab.key], ['all', 'more_breathing_room', 'tighter_today'])
 
-  // Fewer cards than the complete count: explain the gap, and never call the
-  // withheld teams steady.
+  // All tab, plural withheld: the additional teams belong to the trusted league
+  // summary but have no public-safe card, and are explicitly not steady.
+  const allClarity = sinceYesterdayCountClarity(allTab, view.summary)
   assert.equal(
-    sinceYesterdayCountClarity(allTab, view.summary),
-    'Showing 2 of 5 teams with movement. The other 3 moved too, but have no published write-up yet — they are not steady.',
+    allClarity,
+    'Showing 2 of 5 teams with movement. Three additional teams are included in the league summary but do not have a publishable detailed card. They are not counted as steady.',
   )
+  // Category tab, plural withheld: reconciles against the lane league count and
+  // does not repeat the steady clarification.
   assert.equal(
     sinceYesterdayCountClarity(moreRoomTab, view.summary),
-    'Showing 1 of 3 teams with movement in this category. The other 2 moved too, but have no published write-up yet — they are not steady.',
+    'Showing 1 of 3 teams with movement in this category. Two additional teams are included in the league count but do not have a publishable detailed card.',
   )
-  // Singular remainder reads naturally.
+  // Category tab, singular withheld: "One additional team ... does not have".
   assert.equal(
     sinceYesterdayCountClarity(tighterTab, view.summary),
-    'Showing 1 of 2 teams with movement in this category. The other 1 moved too, but has no published write-up yet — it is not steady.',
+    'Showing 1 of 2 teams with movement in this category. One additional team is included in the league count but does not have a publishable detailed card.',
   )
 
-  // When every moving team has a card, reassure that all are shown.
-  const completeView = getSinceYesterdayView(dashboardWithSinceYesterdayChanges, teams)
+  // All tab, large plural example (11 of 22) spelled-out and steady-qualified.
   assert.equal(
-    sinceYesterdayCountClarity(completeView.tabs[0], completeView.summary),
-    'Showing all 2 detailed team changes.',
+    sinceYesterdayCountClarity({ key: 'all', count: 11 }, { meaningfulChangeCount: 22 }),
+    'Showing 11 of 22 teams with movement. Eleven additional teams are included in the league summary but do not have a publishable detailed card. They are not counted as steady.',
   )
+  // Category tab, larger example (6 of 10) — uses "league count", no steady line.
+  assert.equal(
+    sinceYesterdayCountClarity({ key: 'more_breathing_room', count: 6 }, { moreBreathingRoomCount: 10 }),
+    'Showing 6 of 10 teams with movement in this category. Four additional teams are included in the league count but do not have a publishable detailed card.',
+  )
+  // All tab, singular withheld: both 1-of-2 and 2-of-3 leave exactly one team
+  // withheld and must read "One additional team ... does not have ... It is not
+  // counted as steady."
+  assert.equal(
+    sinceYesterdayCountClarity({ key: 'all', count: 1 }, { meaningfulChangeCount: 2 }),
+    'Showing 1 of 2 teams with movement. One additional team is included in the league summary but does not have a publishable detailed card. It is not counted as steady.',
+  )
+  assert.equal(
+    sinceYesterdayCountClarity({ key: 'all', count: 2 }, { meaningfulChangeCount: 3 }),
+    'Showing 2 of 3 teams with movement. One additional team is included in the league summary but does not have a publishable detailed card. It is not counted as steady.',
+  )
+
+  // When every moving team has a card, reassure that all are shown — with no
+  // additional-team sentence at all.
+  const completeView = getSinceYesterdayView(dashboardWithSinceYesterdayChanges, teams)
+  const allComplete = sinceYesterdayCountClarity(completeView.tabs[0], completeView.summary)
+  assert.equal(allComplete, 'Showing all 2 detailed team changes.')
+  assert.equal(/additional team/.test(allComplete), false)
   assert.equal(
     sinceYesterdayCountClarity(completeView.tabs[1], completeView.summary),
     'Showing all 1 detailed team change in this category.',
   )
 
-  // No summary / unknown denominator: report only what is shown, never "of 0".
+  // No summary / unknown denominator: numerator only, never "of 0", and no
+  // withheld-card explanation.
   const numeratorOnly = sinceYesterdayCountClarity(completeView.tabs[0], null)
   assert.equal(numeratorOnly, 'Showing 2 detailed team changes.')
   assert.equal(/of 0/.test(numeratorOnly), false)
+  assert.equal(/additional team/.test(numeratorOnly), false)
 
   // A complete count smaller than the cards on hand is ignored, not shown as a
   // zero or negative remainder.
@@ -2108,6 +2135,20 @@ test('Since Yesterday count clarity reconciles detailed cards with the complete 
     sinceYesterdayCountClarity({ key: 'all', count: 3 }, { meaningfulChangeCount: 1 }),
     'Showing 3 detailed team changes.',
   )
+
+  // The retired internal-sounding phrasing never appears in any produced copy.
+  const everyString = [
+    allClarity,
+    sinceYesterdayCountClarity(moreRoomTab, view.summary),
+    sinceYesterdayCountClarity(tighterTab, view.summary),
+    sinceYesterdayCountClarity({ key: 'all', count: 11 }, { meaningfulChangeCount: 22 }),
+    sinceYesterdayCountClarity({ key: 'all', count: 1 }, { meaningfulChangeCount: 2 }),
+    allComplete,
+    numeratorOnly,
+  ].join('')
+  for (const banned of ['published write-up', 'write-up yet', 'moved too']) {
+    assert.equal(everyString.includes(banned), false, banned)
+  }
 })
 
 test('Since Yesterday panel explains when detailed cards are fewer than the league count', () => {
@@ -2127,13 +2168,18 @@ test('Since Yesterday panel explains when detailed cards are fewer than the leag
   // The league summary still reports the complete counts...
   assert.ok(htmlIncludes(sinceHtml, 'gained breathing room'))
   assert.ok(htmlIncludes(sinceHtml, 'remained steady'))
-  // ...and the active All panel reconciles them with the detailed cards shown,
-  // without ever calling the withheld teams steady or inventing a failure.
+  // ...and the active All panel reconciles them with the detailed cards shown:
+  // the additional teams are inside the league summary but have no public-safe
+  // card, and are explicitly not counted as steady.
   assert.ok(htmlIncludes(
     sinceHtml,
-    'Showing 2 of 5 teams with movement. The other 3 moved too, but have no published write-up yet — they are not steady.',
+    'Showing 2 of 5 teams with movement. Three additional teams are included in the league summary but do not have a publishable detailed card. They are not counted as steady.',
   ))
   assert.equal(/\bof 0\b/.test(sinceHtml), false)
+  // Retired internal-sounding phrasing is gone from the rendered copy.
+  for (const banned of ['published write-up', 'write-up yet', 'moved too']) {
+    assert.equal(sinceHtml.includes(banned), false, banned)
+  }
 })
 
 test('Since Yesterday tabs expose roving focus and panel wiring, with only the active panel mounted', () => {
