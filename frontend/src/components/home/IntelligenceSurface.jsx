@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useFetch } from '../../hooks/useFetch'
 import {
@@ -75,14 +75,23 @@ const SINCE_YESTERDAY_OFF_DAY_GAP_REASON = 'snapshots_not_comparable'
 // never infers a lane from headline wording. An unknown/absent lane fails
 // closed into the neutral lane rather than being dropped.
 const SINCE_YESTERDAY_LANE_ORDER = [
-  { key: 'more_breathing_room', label: 'More breathing room', summaryLabel: 'gained breathing room' },
-  { key: 'tighter_today', label: 'Tighter today', summaryLabel: 'became tighter' },
-  { key: 'structure_changed', label: 'Structure changed', summaryLabel: 'changed structurally' },
-  { key: 'other_meaningful_changes', label: 'Other meaningful change', summaryLabel: 'had other meaningful movement' },
+  { key: 'more_breathing_room', label: 'More breathing room', shortLabel: 'More room', summaryLabel: 'gained breathing room', summaryCountKey: 'moreBreathingRoomCount' },
+  { key: 'tighter_today', label: 'Tighter today', shortLabel: 'Tighter', summaryLabel: 'became tighter', summaryCountKey: 'tighterTodayCount' },
+  { key: 'structure_changed', label: 'Structure changed', shortLabel: 'Structure', summaryLabel: 'changed structurally', summaryCountKey: 'structureChangedCount' },
+  { key: 'other_meaningful_changes', label: 'Other meaningful change', shortLabel: 'Other', summaryLabel: 'had other meaningful movement', summaryCountKey: 'otherMeaningfulChangeCount' },
 ]
 const SINCE_YESTERDAY_LANE_KEYS = new Set(SINCE_YESTERDAY_LANE_ORDER.map(lane => lane.key))
+const SINCE_YESTERDAY_LANE_BY_KEY = new Map(SINCE_YESTERDAY_LANE_ORDER.map(lane => [lane.key, lane]))
 const SINCE_YESTERDAY_NEUTRAL_LANE = 'other_meaningful_changes'
 const SINCE_YESTERDAY_TEAM_SEARCH_ID = 'since-yesterday-team-search'
+// The "All changes" tab is not a backend lane; it shows every detailed card.
+const SINCE_YESTERDAY_ALL_TAB_KEY = 'all'
+const SINCE_YESTERDAY_ALL_TAB_LABEL = 'All changes'
+const SINCE_YESTERDAY_ALL_TAB_SHORT_LABEL = 'All'
+const SINCE_YESTERDAY_TAB_ID_PREFIX = 'since-yesterday-tab-'
+const SINCE_YESTERDAY_PANEL_ID_PREFIX = 'since-yesterday-panel-'
+const sinceYesterdayTabId = key => `${SINCE_YESTERDAY_TAB_ID_PREFIX}${key}`
+const sinceYesterdayPanelId = key => `${SINCE_YESTERDAY_PANEL_ID_PREFIX}${key}`
 export const AUDIENCE_SIGNUP_IDLE = 'idle'
 export const AUDIENCE_SIGNUP_LOADING = 'loading'
 export const AUDIENCE_SIGNUP_SUCCESS = 'success'
@@ -560,6 +569,85 @@ export function filterSinceYesterdayLanes(lanes, query) {
     .filter(lane => lane.items.length > 0)
 }
 
+// Search filters the cards shown inside the active tab. It never changes a
+// tab's count: the counts are computed once, before any search, so a team the
+// user filtered away is never mistaken for a team that did not move.
+export function filterSinceYesterdayItems(items, query) {
+  const list = Array.isArray(items) ? items : []
+  const normalized = String(query || '').trim().toLowerCase()
+  if (!normalized) return list
+  return list.filter(item => sinceYesterdayItemMatchesQuery(item, normalized))
+}
+
+// Tabs are the "All changes" view plus one tab per non-empty movement lane, in
+// canonical order. Empty lanes never get a tab (there is nothing to show and no
+// "Steady" tab, so steadiness is never framed as a movement category). Every
+// item lands in exactly one lane, so the category counts always sum to the All
+// count.
+export function buildSinceYesterdayTabs(items) {
+  const list = Array.isArray(items) ? items : []
+  const allTab = {
+    key: SINCE_YESTERDAY_ALL_TAB_KEY,
+    label: SINCE_YESTERDAY_ALL_TAB_LABEL,
+    shortLabel: SINCE_YESTERDAY_ALL_TAB_SHORT_LABEL,
+    items: list,
+    count: list.length,
+  }
+  const categoryTabs = buildSinceYesterdayLanes(list).map(lane => {
+    const meta = SINCE_YESTERDAY_LANE_BY_KEY.get(lane.key)
+    return {
+      key: lane.key,
+      label: meta.label,
+      shortLabel: meta.shortLabel,
+      items: lane.items,
+      count: lane.items.length,
+    }
+  })
+  return [allTab, ...categoryTabs]
+}
+
+// The complete, trusted league-wide count for a tab: the total meaningful
+// changes for "All", or the lane count for a category. This is the number the
+// league summary reports, which can exceed the number of detailed cards because
+// some teams moved but have no published, review-cleared write-up yet.
+function sinceYesterdayCompleteCount(tab, summary) {
+  if (!tab || !summary) return null
+  if (tab.key === SINCE_YESTERDAY_ALL_TAB_KEY) {
+    return typeof summary.meaningfulChangeCount === 'number'
+      ? summary.meaningfulChangeCount
+      : null
+  }
+  const lane = SINCE_YESTERDAY_LANE_BY_KEY.get(tab.key)
+  if (!lane) return null
+  const laneCount = summary[lane.summaryCountKey]
+  return typeof laneCount === 'number' ? laneCount : null
+}
+
+// Explains, in the panel, why a tab may show fewer detailed cards than the
+// league summary counts. When every moving team has a card, it reassures that
+// all are shown. When some are missing, it says so plainly — the missing teams
+// moved, they simply lack a published write-up, and are never called steady. It
+// never invents a denominator or shows "of 0"; if the complete count is
+// unknown or smaller than the cards on hand, it just reports what is shown.
+export function sinceYesterdayCountClarity(tab, summary) {
+  if (!tab) return null
+  const count = tab.count
+  const noun = count === 1 ? 'team change' : 'team changes'
+  const scope = tab.key === SINCE_YESTERDAY_ALL_TAB_KEY ? '' : ' in this category'
+  const complete = sinceYesterdayCompleteCount(tab, summary)
+  if (complete == null || complete < count) {
+    return `Showing ${count} detailed ${noun}${scope}.`
+  }
+  if (complete === count) {
+    return `Showing all ${count} detailed ${noun}${scope}.`
+  }
+  const withheld = complete - count
+  const withheldClause = withheld === 1
+    ? 'The other 1 moved too, but has no published write-up yet — it is not steady.'
+    : `The other ${withheld} moved too, but have no published write-up yet — they are not steady.`
+  return `Showing ${count} of ${complete} teams with movement${scope}. ${withheldClause}`
+}
+
 function normalizeSinceYesterdayItem(item, teamsById, teams, index) {
   if (!item || typeof item !== 'object') return null
   const teamId = teamIdOf(item.team_id ?? item.teamId)
@@ -654,6 +742,7 @@ export function getSinceYesterdayView(dashboard, teams = []) {
       items,
       itemCount,
       lanes: buildSinceYesterdayLanes(items),
+      tabs: buildSinceYesterdayTabs(items),
       summary,
       orderingBasis: textValue(block.ordering_basis),
       footerCopy: block.ordering_basis === SINCE_YESTERDAY_ALPHABETICAL_ORDERING
@@ -1404,19 +1493,74 @@ function SinceYesterdayCard({ item }) {
   )
 }
 
-function SinceYesterdayLaneGroup({ lane }) {
+function SinceYesterdayTabs({ tabs, activeKey, onActivate }) {
+  const tabRefs = useRef(new Map())
+  const activeIndex = Math.max(0, tabs.findIndex(tab => tab.key === activeKey))
+  const focusTab = key => {
+    const node = tabRefs.current.get(key)
+    if (node && typeof node.focus === 'function') node.focus()
+  }
+  const handleKeyDown = event => {
+    let nextIndex = null
+    if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+      nextIndex = (activeIndex + 1) % tabs.length
+    } else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+      nextIndex = (activeIndex - 1 + tabs.length) % tabs.length
+    } else if (event.key === 'Home') {
+      nextIndex = 0
+    } else if (event.key === 'End') {
+      nextIndex = tabs.length - 1
+    }
+    if (nextIndex == null) return
+    event.preventDefault()
+    const nextKey = tabs[nextIndex].key
+    onActivate(nextKey)
+    focusTab(nextKey)
+  }
   return (
-    <section aria-label={lane.label} className="mt-5 first:mt-0">
-      <h3 className="flex items-baseline gap-2 border-b border-dirt/60 pb-1 font-mono text-[11px] uppercase tracking-widest text-amber">
-        <span>{lane.label}</span>
-        <span className="text-chalk500">{lane.items.length}</span>
-      </h3>
-      <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-        {lane.items.map(item => (
-          <SinceYesterdayCard key={item.key} item={item} />
-        ))}
-      </div>
-    </section>
+    <div
+      role="tablist"
+      aria-label="Movement categories"
+      aria-orientation="horizontal"
+      className="mb-4 flex flex-wrap gap-2"
+      onKeyDown={handleKeyDown}
+    >
+      {tabs.map(tab => {
+        const selected = tab.key === activeKey
+        return (
+          <button
+            key={tab.key}
+            type="button"
+            role="tab"
+            id={sinceYesterdayTabId(tab.key)}
+            aria-selected={selected ? 'true' : 'false'}
+            aria-controls={sinceYesterdayPanelId(tab.key)}
+            aria-label={`${tab.label}, ${tab.count} ${tab.count === 1 ? 'team' : 'teams'}`}
+            tabIndex={selected ? 0 : -1}
+            ref={node => {
+              if (node) tabRefs.current.set(tab.key, node)
+              else tabRefs.current.delete(tab.key)
+            }}
+            onClick={() => onActivate(tab.key)}
+            className={`inline-flex min-h-10 items-center gap-2 border px-3 py-2 font-mono text-xs uppercase tracking-wider transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/40 ${
+              selected
+                ? 'border-amber bg-amber/10 text-amber'
+                : 'border-dirt bg-field/60 text-chalk300 hover:text-amber'
+            }`}
+          >
+            <span>{tab.shortLabel}</span>
+            <span
+              aria-hidden="true"
+              className={`font-display text-sm leading-none tracking-wide ${
+                selected ? 'text-amber' : 'text-chalk500'
+              }`}
+            >
+              {tab.count}
+            </span>
+          </button>
+        )
+      })}
+    </div>
   )
 }
 
@@ -1509,35 +1653,64 @@ function SinceYesterdayTeamSearch({ query, onChange, onReset }) {
 }
 
 function SinceYesterdayBriefing({ view }) {
+  const tabs = view.tabs && view.tabs.length > 0
+    ? view.tabs
+    : buildSinceYesterdayTabs(view.items || [])
+  const [activeKey, setActiveKey] = useState(SINCE_YESTERDAY_ALL_TAB_KEY)
+  // Search persists across tab switches; it only ever filters the cards inside
+  // whichever tab is active.
   const [query, setQuery] = useState('')
-  const lanes = filterSinceYesterdayLanes(view.lanes || [], query)
-  const hasMatches = lanes.some(lane => lane.items.length > 0)
+  // If the active tab is no longer available (data refreshed), fall back to All
+  // so the panel and tablist can never disagree.
+  const activeTab = tabs.find(tab => tab.key === activeKey) || tabs[0]
+  const effectiveKey = activeTab ? activeTab.key : SINCE_YESTERDAY_ALL_TAB_KEY
+  const clarity = sinceYesterdayCountClarity(activeTab, view.summary)
+  const visibleItems = filterSinceYesterdayItems(activeTab ? activeTab.items : [], query)
   const trimmedQuery = query.trim()
+  const hasMatches = visibleItems.length > 0
   return (
     <>
       <SinceYesterdayLeagueSummary summary={view.summary} />
+      <SinceYesterdayTabs tabs={tabs} activeKey={effectiveKey} onActivate={setActiveKey} />
       <SinceYesterdayTeamSearch
         query={query}
         onChange={setQuery}
         onReset={() => setQuery('')}
       />
-      {hasMatches ? (
-        lanes.map(lane => <SinceYesterdayLaneGroup key={lane.key} lane={lane} />)
-      ) : (
-        <div className="border border-dirt bg-dugout p-4" role="status">
-          <p className="text-sm leading-relaxed text-chalk300">
-            No meaningful published movement matches “{trimmedQuery}”. That does not mean those
-            teams were steady — reset to see every team with movement in this comparison.
+      <div
+        role="tabpanel"
+        id={sinceYesterdayPanelId(effectiveKey)}
+        aria-labelledby={sinceYesterdayTabId(effectiveKey)}
+        tabIndex={0}
+        className="focus:outline-none"
+      >
+        {clarity && (
+          <p className="mb-3 font-mono text-[11px] leading-relaxed text-chalk500">
+            {clarity}
           </p>
-          <button
-            type="button"
-            onClick={() => setQuery('')}
-            className="mt-3 inline-flex min-h-10 items-center border border-dirt bg-field/60 px-3 py-2 font-mono text-xs uppercase tracking-wider text-chalk300 transition-colors hover:text-amber focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/40"
-          >
-            Reset search
-          </button>
-        </div>
-      )}
+        )}
+        {hasMatches ? (
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {visibleItems.map(item => (
+              <SinceYesterdayCard key={item.key} item={item} />
+            ))}
+          </div>
+        ) : (
+          <div className="border border-dirt bg-dugout p-4" role="status">
+            <p className="text-sm leading-relaxed text-chalk300">
+              No published movement in this tab matches “{trimmedQuery}”. That does not mean those
+              teams were steady — reset to see every team with movement here.
+            </p>
+            <button
+              type="button"
+              onClick={() => setQuery('')}
+              className="mt-3 inline-flex min-h-10 items-center border border-dirt bg-field/60 px-3 py-2 font-mono text-xs uppercase tracking-wider text-chalk300 transition-colors hover:text-amber focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/40"
+            >
+              Reset search
+            </button>
+          </div>
+        )}
+      </div>
       <SinceYesterdaySteadyDisclosure summary={view.summary} />
       <p className="mt-4 text-xs leading-relaxed text-chalk500">{view.footerCopy}</p>
     </>
