@@ -376,7 +376,13 @@ def test_snapshot_audit_window_14_and_production_shaped_rows_are_bounded(
     assert 'stored_comparison_non_adjacent' not in contract_check['notes']
 
 
-def test_snapshot_audit_large_payloads_return_compact_summaries(app, client):
+def test_snapshot_audit_large_payloads_return_compact_summaries(app, client, monkeypatch):
+    # Pin the product-date authority the freshness gate reads so this audit is
+    # deterministic forever. The date is set well past the 30-day unavailable
+    # threshold for every seeded snapshot (oldest is 2026-06-20, ~73 days back),
+    # proving historical publication trust ignores present-day data age: all 14
+    # adjacent historical pairs must stay trusted regardless of the wall clock.
+    monkeypatch.setattr(dashboard_snapshot, 'product_current_date', lambda: date(2026, 9, 1))
     raw_marker = 'raw-dashboard-fragment-should-not-return'
     start = date(2026, 6, 20)
 
@@ -1536,6 +1542,11 @@ def test_snapshot_audit_import_surface():
             'SNAPSHOT_STATUS_PENDING',
             'SNAPSHOT_STATUS_READY',
             'SNAPSHOT_TYPE_BULLPEN_DASHBOARD',
+            # Canonical payload-date helpers, reused so the historical audit's
+            # post-freshness integrity re-check stays exactly in step with
+            # production's data-through / availability-reference checks.
+            '_availability_reference_date_from_payload',
+            '_data_through_from_payload',
             'payload_version_valid',
             'snapshot_current_enough',
             'snapshot_unavailable_reason',
@@ -1595,3 +1606,175 @@ def test_snapshot_audit_not_referenced_by_public_modules():
             source = path.read_text(encoding='utf-8')
             assert 'internal_snapshot_audit' not in source, path
             assert 'internal/snapshot-audit' not in source, path
+
+
+# ---------------------------------------------------------------------------
+# Historical publication trust must be independent of the wall clock, while
+# current-serving freshness must still fail closed. These regressions pin both
+# sides of that boundary against the clock-dependence fix.
+# ---------------------------------------------------------------------------
+
+def test_snapshot_audit_historical_trusted_pairs_are_wall_clock_independent(
+    app,
+    monkeypatch,
+):
+    from services import internal_snapshot_audit as audit_service
+
+    start = date(2026, 6, 20)
+    with app.app_context():
+        for offset in range(15):
+            ref = start + timedelta(days=offset)
+            _snapshot(ref, generated_offset_minutes=offset, payload=_payload(ref))
+        db.session.commit()
+
+        counts = []
+        # A near date (nothing aged out) and a far date (everything aged out).
+        for mocked_today in (date(2026, 7, 5), date(2027, 6, 1)):
+            monkeypatch.setattr(
+                dashboard_snapshot,
+                'product_current_date',
+                lambda captured=mocked_today: captured,
+            )
+            audit_payload = audit_service.build_internal_snapshot_audit_payload(
+                product_date='2026-07-04',
+                window_days='14',
+            )
+            counts.append(
+                audit_payload['snapshot_adjacency_summary']['trusted_pair_count']
+            )
+
+    # Identical regardless of how old the data has become.
+    assert counts == [14, 14]
+
+
+def test_snapshot_audit_aged_snapshot_keeps_history_but_current_serving_fails_closed(
+    app,
+    monkeypatch,
+):
+    from services import internal_snapshot_audit as audit_service
+
+    # Far past the 30-day unavailable threshold for the seeded snapshot.
+    monkeypatch.setattr(
+        dashboard_snapshot,
+        'product_current_date',
+        lambda: date(2026, 9, 1),
+    )
+    with app.app_context():
+        aged = _snapshot(date(2026, 6, 25), generated_offset_minutes=1)
+        db.session.commit()
+        aged_id = aged.id
+
+        # Current-serving trust is UNCHANGED: an aged snapshot still fails closed.
+        assert (
+            dashboard_snapshot.snapshot_unavailable_reason(aged)
+            == 'dashboard_snapshot_freshness_fail_closed'
+        )
+        assert dashboard_snapshot.snapshot_current_enough(aged) is False
+
+        audit_payload = audit_service.build_internal_snapshot_audit_payload(
+            product_date='2026-06-25',
+            window_days='14',
+        )
+
+    # Historical publication trust ignores age: the aged snapshot stays trusted.
+    entry = _entry(audit_payload, aged_id)
+    assert entry['historical_publication']['unavailable_reason'] is None
+    assert entry['historical_publication']['historically_published'] is True
+    summary = audit_payload['snapshot_adjacency_summary']
+    assert summary['historically_published_snapshot_count'] == 1
+    assert summary['trusted_historical_snapshot_count'] == 1
+
+
+@pytest.mark.parametrize(
+    ('case', 'expected_reason'),
+    (
+        ('never_published', 'dashboard_snapshot_never_published'),
+        ('pending', 'dashboard_snapshot_not_ready'),
+        ('failed', 'dashboard_snapshot_not_ready'),
+        ('version_mismatch', 'dashboard_snapshot_version_mismatch'),
+        ('null_payload', 'dashboard_snapshot_slate_coverage_missing'),
+        ('missing_coverage', 'dashboard_snapshot_slate_coverage_missing'),
+        ('incomplete_coverage', 'dashboard_snapshot_slate_coverage_incomplete'),
+        ('data_through_mismatch', 'dashboard_snapshot_data_through_mismatch'),
+        ('availability_mismatch', 'dashboard_snapshot_availability_reference_mismatch'),
+    ),
+)
+def test_snapshot_audit_old_publication_and_integrity_failures_stay_rejected(
+    app,
+    monkeypatch,
+    case,
+    expected_reason,
+):
+    from services import internal_snapshot_audit as audit_service
+
+    # Every seeded snapshot is well past the 30-day freshness threshold. The
+    # historical path ignores freshness, so this proves it still rejects every
+    # publication/integrity failure — including the data-through and
+    # availability-reference mismatches production only checks AFTER the freshness
+    # gate, which a naive freshness-skip would wrongly let through.
+    monkeypatch.setattr(
+        dashboard_snapshot,
+        'product_current_date',
+        lambda: date(2026, 9, 1),
+    )
+    ref = date(2026, 6, 25)
+    prior = ref - timedelta(days=1)
+
+    with app.app_context():
+        kwargs = {}
+        if case == 'never_published':
+            kwargs = {'is_published': False, 'published_at': None}
+        elif case == 'pending':
+            kwargs = {
+                'status': dashboard_snapshot.SNAPSHOT_STATUS_PENDING,
+                'is_published': False,
+                'published_at': datetime(2026, 6, 25, 12, 5, 0),
+            }
+        elif case == 'failed':
+            kwargs = {
+                'status': dashboard_snapshot.SNAPSHOT_STATUS_FAILED,
+                'is_published': False,
+                'published_at': datetime(2026, 6, 25, 12, 5, 0),
+            }
+        elif case == 'version_mismatch':
+            kwargs = {
+                'payload_version': dashboard_snapshot.DASHBOARD_PAYLOAD_VERSION + 1,
+            }
+        elif case == 'null_payload':
+            kwargs = {'payload': {}}
+        elif case == 'missing_coverage':
+            snapshot_payload = _payload(ref)
+            snapshot_payload['freshness'].pop('slate_coverage')
+            kwargs = {'payload': snapshot_payload}
+        elif case == 'incomplete_coverage':
+            snapshot_payload = _payload(ref)
+            snapshot_payload['freshness']['slate_coverage'][
+                'complete_enough_to_publish'
+            ] = False
+            kwargs = {'payload': snapshot_payload}
+        elif case == 'data_through_mismatch':
+            # Stored data_through column stays ref, but the payload's freshness
+            # data_through is the prior day: a real integrity mismatch.
+            kwargs = {'payload': _payload(prior)}
+        elif case == 'availability_mismatch':
+            snapshot_payload = _payload(ref)
+            snapshot_payload['freshness']['availability_reference_date'] = (
+                prior.isoformat()
+            )
+            kwargs = {'payload': snapshot_payload}
+
+        candidate = _snapshot(ref, generated_offset_minutes=1, **kwargs)
+        db.session.commit()
+        candidate_id = candidate.id
+
+        audit_payload = audit_service.build_internal_snapshot_audit_payload(
+            product_date='2026-06-25',
+            window_days='14',
+        )
+
+    entry = _entry(audit_payload, candidate_id)
+    assert entry['historical_publication']['unavailable_reason'] == expected_reason
+    assert entry['historical_publication']['historically_published'] is False
+    summary = audit_payload['snapshot_adjacency_summary']
+    assert summary['trusted_historical_snapshot_count'] == 0
+    assert summary['trusted_pair_count'] == 0
