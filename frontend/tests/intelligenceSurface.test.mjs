@@ -34,6 +34,9 @@ const {
   getLeadStoryView,
   getSinceYesterdayView,
   filterSinceYesterdayLanes,
+  filterSinceYesterdayItems,
+  buildSinceYesterdayTabs,
+  sinceYesterdayCountClarity,
   getTonightCards,
   submitAudienceSignup,
 } = await server.ssrLoadModule('/src/components/home/IntelligenceSurface.jsx')
@@ -686,6 +689,16 @@ test('Since Yesterday groups changes into descriptive lanes led by the primary d
   assert.deepEqual(view.lanes[0].items.map(item => item.teamAbbr), ['NYM'])
   assert.deepEqual(view.lanes[1].items.map(item => item.teamAbbr), ['SF'])
 
+  // Tabs lead with "All changes" then each non-empty lane in canonical order.
+  assert.deepEqual(view.tabs.map(tab => tab.key), ['all', 'more_breathing_room', 'tighter_today'])
+  assert.deepEqual(view.tabs.map(tab => tab.shortLabel), ['All', 'More room', 'Tighter'])
+  // Category counts always sum to the All count (each team lands in one lane).
+  assert.equal(view.tabs[0].count, 2)
+  assert.equal(
+    view.tabs.slice(1).reduce((total, tab) => total + tab.count, 0),
+    view.tabs[0].count,
+  )
+
   // League summary counts are normalized from the backend, not inferred here.
   assert.equal(view.summary.moreBreathingRoomCount, 1)
   assert.equal(view.summary.tighterTodayCount, 1)
@@ -727,9 +740,24 @@ test('Since Yesterday groups changes into descriptive lanes led by the primary d
   assert.ok(htmlIncludes(sinceHtml, 'gained breathing room'))
   assert.ok(htmlIncludes(sinceHtml, 'became tighter'))
   assert.ok(htmlIncludes(sinceHtml, 'remained steady'))
-  // Lane headings + team search.
-  assert.ok(htmlIncludes(sinceHtml, 'More breathing room'))
-  assert.ok(htmlIncludes(sinceHtml, 'Tighter today'))
+  // Movement tabs replace the stacked lanes: a tablist with a tab per category.
+  assert.ok(htmlIncludes(sinceHtml, 'role="tablist"'))
+  assert.equal(countOccurrences(sinceHtml, 'role="tab"'), 3)
+  // The full lane name reaches screen readers through the tab aria-label,
+  // even though the visible chip uses the compact label.
+  assert.ok(htmlIncludes(sinceHtml, 'aria-label="More breathing room, 1 team"'))
+  assert.ok(htmlIncludes(sinceHtml, 'aria-label="Tighter today, 1 team"'))
+  assert.ok(htmlIncludes(sinceHtml, 'aria-label="All changes, 2 teams"'))
+  // "All changes" is the default active tab; exactly one panel is in the DOM.
+  assert.ok(htmlIncludes(sinceHtml, 'id="since-yesterday-tab-all" aria-selected="true"'))
+  assert.equal(countOccurrences(sinceHtml, 'aria-selected="true"'), 1)
+  assert.equal(countOccurrences(sinceHtml, 'role="tabpanel"'), 1)
+  assert.ok(htmlIncludes(sinceHtml, 'id="since-yesterday-panel-all"'))
+  assert.ok(htmlIncludes(sinceHtml, 'aria-labelledby="since-yesterday-tab-all"'))
+  // No "Steady" tab is ever offered — steadiness is not a movement category.
+  assert.equal(htmlIncludes(sinceHtml, 'aria-label="Steady'), false)
+  // The default All panel shows every card and states how many are detailed.
+  assert.ok(htmlIncludes(sinceHtml, 'Showing all 2 detailed team changes.'))
   assert.ok(htmlIncludes(sinceHtml, 'Find a team'))
   // Primary delta anchor (numbers + signed net) and consolidated prose.
   assert.ok(htmlIncludes(sinceHtml, 'Rested relievers'))
@@ -1977,4 +2005,158 @@ test('Since Yesterday item without a backend lane falls closed to the neutral la
   assert.ok(htmlIncludes(sinceHtml, 'Other meaningful change'))
   assert.ok(htmlIncludes(sinceHtml, 'Movement without a backend-authored lane.'))
   assert.equal(htmlIncludes(sinceHtml, 'Across MLB since yesterday'), false)
+})
+
+// A day where the league summary counts more moving teams than there are
+// published cards: several teams moved but their write-ups were held back by
+// copy review, so no detailed card is emitted for them. The counts are correct;
+// the UI must reconcile them rather than hide the gap or imply steadiness.
+const dashboardWithSuppressedCards = (() => {
+  const base = clone(dashboardWithSinceYesterdayChanges)
+  const block = base.what_changed_since_yesterday
+  block.summary.meaningful_change_count = 5
+  block.summary.more_breathing_room_count = 3
+  block.summary.tighter_today_count = 2
+  block.summary.steady_count = 1
+  block.summary.steady_teams = [
+    { team_id: 158, team_name: 'Milwaukee Brewers', team_abbreviation: 'MIL' },
+  ]
+  return base
+})()
+
+test('Since Yesterday tabs lead with All, hide empty lanes, and keep counts consistent', () => {
+  const view = getSinceYesterdayView(dashboardWithSinceYesterdayChanges, teams)
+  const tabs = buildSinceYesterdayTabs(view.items)
+
+  // "All changes" leads, then each non-empty lane in canonical order. Empty
+  // lanes get no tab, and there is never a "Steady" tab.
+  assert.deepEqual(tabs.map(tab => tab.key), ['all', 'more_breathing_room', 'tighter_today'])
+  assert.equal(tabs.some(tab => tab.key === 'structure_changed'), false)
+  assert.equal(tabs.some(tab => /steady/i.test(tab.label)), false)
+
+  // The All tab holds every item; the categories partition it exactly, so the
+  // tab counts can never disagree with the total.
+  assert.equal(tabs[0].count, view.items.length)
+  assert.equal(tabs.slice(1).reduce((total, tab) => total + tab.count, 0), tabs[0].count)
+
+  // A single change with no backend lane collapses to exactly All + Other.
+  const neutralView = getSinceYesterdayView(dashboardLegacyChangeNoLane, teams)
+  const neutralTabs = buildSinceYesterdayTabs(neutralView.items)
+  assert.deepEqual(neutralTabs.map(tab => tab.key), ['all', 'other_meaningful_changes'])
+  assert.deepEqual(neutralTabs.map(tab => tab.shortLabel), ['All', 'Other'])
+
+  // Empty input yields just the All tab with a zero count (never "of 0" copy).
+  const emptyTabs = buildSinceYesterdayTabs([])
+  assert.deepEqual(emptyTabs.map(tab => tab.key), ['all'])
+  assert.equal(emptyTabs[0].count, 0)
+})
+
+test('Since Yesterday item filter matches name and abbreviation without touching counts', () => {
+  const view = getSinceYesterdayView(dashboardWithSinceYesterdayChanges, teams)
+  const allItems = view.tabs[0].items
+
+  assert.deepEqual(filterSinceYesterdayItems(allItems, 'new york').map(item => item.teamAbbr), ['NYM'])
+  assert.deepEqual(filterSinceYesterdayItems(allItems, 'SF').map(item => item.teamAbbr), ['SF'])
+  // Blank/whitespace queries return the full list.
+  assert.deepEqual(filterSinceYesterdayItems(allItems, '  ').map(item => item.teamAbbr), ['NYM', 'SF'])
+  // A no-match returns an empty list, never a "steady" implication.
+  assert.deepEqual(filterSinceYesterdayItems(allItems, 'zzz nonexistent'), [])
+  // Search filters the rendered cards only; the pre-search tab count is intact.
+  assert.equal(view.tabs[0].count, 2)
+})
+
+test('Since Yesterday count clarity reconciles detailed cards with the complete league counts', () => {
+  const view = getSinceYesterdayView(dashboardWithSuppressedCards, teams)
+  const [allTab, moreRoomTab, tighterTab] = view.tabs
+  assert.deepEqual([allTab.key, moreRoomTab.key, tighterTab.key], ['all', 'more_breathing_room', 'tighter_today'])
+
+  // Fewer cards than the complete count: explain the gap, and never call the
+  // withheld teams steady.
+  assert.equal(
+    sinceYesterdayCountClarity(allTab, view.summary),
+    'Showing 2 of 5 teams with movement. The other 3 moved too, but have no published write-up yet — they are not steady.',
+  )
+  assert.equal(
+    sinceYesterdayCountClarity(moreRoomTab, view.summary),
+    'Showing 1 of 3 teams with movement in this category. The other 2 moved too, but have no published write-up yet — they are not steady.',
+  )
+  // Singular remainder reads naturally.
+  assert.equal(
+    sinceYesterdayCountClarity(tighterTab, view.summary),
+    'Showing 1 of 2 teams with movement in this category. The other 1 moved too, but has no published write-up yet — it is not steady.',
+  )
+
+  // When every moving team has a card, reassure that all are shown.
+  const completeView = getSinceYesterdayView(dashboardWithSinceYesterdayChanges, teams)
+  assert.equal(
+    sinceYesterdayCountClarity(completeView.tabs[0], completeView.summary),
+    'Showing all 2 detailed team changes.',
+  )
+  assert.equal(
+    sinceYesterdayCountClarity(completeView.tabs[1], completeView.summary),
+    'Showing all 1 detailed team change in this category.',
+  )
+
+  // No summary / unknown denominator: report only what is shown, never "of 0".
+  const numeratorOnly = sinceYesterdayCountClarity(completeView.tabs[0], null)
+  assert.equal(numeratorOnly, 'Showing 2 detailed team changes.')
+  assert.equal(/of 0/.test(numeratorOnly), false)
+
+  // A complete count smaller than the cards on hand is ignored, not shown as a
+  // zero or negative remainder.
+  assert.equal(
+    sinceYesterdayCountClarity({ key: 'all', count: 3 }, { meaningfulChangeCount: 1 }),
+    'Showing 3 detailed team changes.',
+  )
+})
+
+test('Since Yesterday panel explains when detailed cards are fewer than the league count', () => {
+  const view = getSinceYesterdayView(dashboardWithSuppressedCards, teams)
+  assert.equal(view.summary.meaningfulChangeCount, 5)
+  assert.equal(view.tabs[0].count, 2)
+
+  const html = render(React.createElement(IntelligenceSurfaceView, {
+    intelligence: intelligenceOk,
+    tonight: tonightOk,
+    dashboard: dashboardWithSuppressedCards,
+    landscape,
+    teams,
+  }))
+  const sinceHtml = sectionSlice(html, 'SINCE YESTERDAY', 'Tonight&#x27;s Bullpen Watch')
+
+  // The league summary still reports the complete counts...
+  assert.ok(htmlIncludes(sinceHtml, 'gained breathing room'))
+  assert.ok(htmlIncludes(sinceHtml, 'remained steady'))
+  // ...and the active All panel reconciles them with the detailed cards shown,
+  // without ever calling the withheld teams steady or inventing a failure.
+  assert.ok(htmlIncludes(
+    sinceHtml,
+    'Showing 2 of 5 teams with movement. The other 3 moved too, but have no published write-up yet — they are not steady.',
+  ))
+  assert.equal(/\bof 0\b/.test(sinceHtml), false)
+})
+
+test('Since Yesterday tabs expose roving focus and panel wiring, with only the active panel mounted', () => {
+  const html = render(React.createElement(IntelligenceSurfaceView, {
+    intelligence: intelligenceOk,
+    tonight: tonightOk,
+    dashboard: dashboardWithSinceYesterdayChanges,
+    landscape,
+    teams,
+  }))
+  const sinceHtml = sectionSlice(html, 'SINCE YESTERDAY', 'Tonight&#x27;s Bullpen Watch')
+
+  // Roving tabindex: only the active tab is focusable; the other two are -1.
+  assert.equal(countOccurrences(sinceHtml, 'tabindex="-1"'), 2)
+  // Every tab points at its own panel id (arrow-key handler is attached to the
+  // labelled, horizontally oriented tablist).
+  assert.ok(htmlIncludes(sinceHtml, 'aria-label="Movement categories"'))
+  assert.ok(htmlIncludes(sinceHtml, 'aria-orientation="horizontal"'))
+  assert.ok(htmlIncludes(sinceHtml, 'aria-controls="since-yesterday-panel-all"'))
+  assert.ok(htmlIncludes(sinceHtml, 'aria-controls="since-yesterday-panel-more_breathing_room"'))
+  assert.ok(htmlIncludes(sinceHtml, 'aria-controls="since-yesterday-panel-tighter_today"'))
+  // Only the active tab's panel is in the DOM; inactive panels are not mounted.
+  assert.equal(countOccurrences(sinceHtml, 'role="tabpanel"'), 1)
+  assert.equal(htmlIncludes(sinceHtml, 'id="since-yesterday-panel-more_breathing_room"'), false)
+  assert.equal(htmlIncludes(sinceHtml, 'id="since-yesterday-panel-tighter_today"'), false)
 })
