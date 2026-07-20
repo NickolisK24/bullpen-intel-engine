@@ -1706,3 +1706,255 @@ def test_daily_sync_with_unresolved_person_identity_stays_partial_and_withholds(
         assert newest.status == dashboard_snapshot.SNAPSHOT_STATUS_PENDING
         # The previous trusted snapshot keeps serving; publication is withheld.
         assert dashboard_snapshot.get_latest_valid_dashboard_snapshot().id == prior_snapshot_id
+
+
+def _trusted_prior_snapshot(
+    data_through,
+    *,
+    is_published=True,
+    published_at=None,
+    status=dashboard_snapshot.SNAPSHOT_STATUS_READY,
+    name='prior',
+    sync_run_id=None,
+    generated_offset_minutes=30,
+):
+    """A prior-date snapshot row with an explicit publication history.
+
+    The defaults describe a snapshot that already passed publication (ready +
+    populated ``published_at``). Callers flip ``is_published`` to False to model
+    a snapshot that was rotated out of the served slot by a newer publish while
+    keeping its durable publication proof.
+    """
+    return DashboardSnapshot(
+        snapshot_type=dashboard_snapshot.SNAPSHOT_TYPE_BULLPEN_DASHBOARD,
+        sync_run_id=sync_run_id,
+        status=status,
+        is_published=is_published,
+        published_at=published_at,
+        payload={**_minimal_dashboard_payload(), 'name': name},
+        payload_version=dashboard_snapshot.DASHBOARD_PAYLOAD_VERSION,
+        data_through=data_through,
+        availability_reference_date=data_through,
+        snapshot_generated_at=utc_now_naive() - timedelta(minutes=generated_offset_minutes),
+        source='test',
+    )
+
+
+class TestTrustedComparisonBaselineSelection:
+    """`get_latest_trusted_dashboard_snapshot_before` separates historical
+    publication trust from the transient currently-served selector."""
+
+    def test_trusted_baseline_survives_rotation_to_unpublished(self, app):
+        with app.app_context():
+            run = _create_sync_run()
+            current_data_through = date(2026, 7, 19)
+            prior_date = date(2026, 7, 18)
+            # Published earlier, then rotated out of the served slot by a newer
+            # same-date publish. is_published is False but published_at endures.
+            rotated_prior = _trusted_prior_snapshot(
+                prior_date,
+                is_published=False,
+                published_at=utc_now_naive() - timedelta(hours=20),
+                sync_run_id=run.id,
+                name='rotated-prior',
+            )
+            db.session.add(rotated_prior)
+            db.session.commit()
+
+            trusted = dashboard_snapshot.get_latest_trusted_dashboard_snapshot_before(
+                current_data_through
+            )
+
+            assert trusted is not None
+            assert trusted.id == rotated_prior.id
+            assert trusted.is_published is False
+            assert trusted.published_at is not None
+            # The currently-published lookup cannot see it anymore — proving the
+            # two concepts are genuinely distinct.
+            assert (
+                dashboard_snapshot.get_latest_published_dashboard_snapshot_before(
+                    current_data_through
+                )
+                is None
+            )
+
+    def test_trusted_baseline_skips_never_published_snapshot(self, app):
+        with app.app_context():
+            current_data_through = date(2026, 7, 19)
+            # Ready-looking but never actually published: no published_at proof.
+            never_published = _trusted_prior_snapshot(
+                date(2026, 7, 18),
+                is_published=False,
+                published_at=None,
+                name='never-published',
+            )
+            db.session.add(never_published)
+            db.session.commit()
+
+            assert (
+                dashboard_snapshot.get_latest_trusted_dashboard_snapshot_before(
+                    current_data_through
+                )
+                is None
+            )
+
+    def test_trusted_baseline_skips_pending_and_failed_snapshots(self, app):
+        with app.app_context():
+            current_data_through = date(2026, 7, 19)
+            pending = _trusted_prior_snapshot(
+                date(2026, 7, 18),
+                is_published=False,
+                published_at=None,
+                status=dashboard_snapshot.SNAPSHOT_STATUS_PENDING,
+                name='pending',
+            )
+            failed = _trusted_prior_snapshot(
+                date(2026, 7, 18),
+                is_published=False,
+                published_at=None,
+                status=dashboard_snapshot.SNAPSHOT_STATUS_FAILED,
+                name='failed',
+            )
+            db.session.add_all([pending, failed])
+            db.session.commit()
+
+            assert (
+                dashboard_snapshot.get_latest_trusted_dashboard_snapshot_before(
+                    current_data_through
+                )
+                is None
+            )
+
+    def test_trusted_baseline_returns_latest_proven_prior_date(self, app):
+        with app.app_context():
+            run = _create_sync_run()
+            current_data_through = date(2026, 7, 19)
+            older = _trusted_prior_snapshot(
+                date(2026, 7, 16),
+                is_published=False,
+                published_at=utc_now_naive() - timedelta(days=3),
+                sync_run_id=run.id,
+                name='older-proven',
+                generated_offset_minutes=4320,
+            )
+            adjacent = _trusted_prior_snapshot(
+                date(2026, 7, 18),
+                is_published=False,
+                published_at=utc_now_naive() - timedelta(hours=20),
+                sync_run_id=run.id,
+                name='adjacent-proven',
+            )
+            db.session.add_all([older, adjacent])
+            db.session.commit()
+
+            trusted = dashboard_snapshot.get_latest_trusted_dashboard_snapshot_before(
+                current_data_through
+            )
+
+            assert trusted.id == adjacent.id
+            assert trusted.data_through == date(2026, 7, 18)
+
+
+class TestRepeatedSameDatePublicationPreservesComparison:
+    """End-to-end lifecycle: repeated same-date publishes must keep a valid
+    ``what_changed_since_yesterday`` comparison in the STORED public payload."""
+
+    def _seed_adjacent_published_prior(self, workload_date):
+        """Publish-proven prior-date snapshot that mirrors the live team shape."""
+        current = bullpen_api.build_bullpen_dashboard_payload()
+        team_item = dict(current['capacity_intelligence']['by_team_id']['1'])
+        prior_date = workload_date - timedelta(days=1)
+        payload = _minimal_dashboard_payload()
+        payload['freshness']['data_through'] = prior_date.isoformat()
+        payload['freshness']['latest_workload_date'] = prior_date.isoformat()
+        payload['freshness']['availability_reference_date'] = workload_date.isoformat()
+        payload['freshness']['slate_coverage'] = _complete_slate_coverage(prior_date)
+        payload['capacity_intelligence'] = {
+            'teams': [team_item],
+            'by_team_id': {str(team_item['team_id']): team_item},
+        }
+        prior_run = _create_sync_run(prior_date)
+        prior_snapshot = DashboardSnapshot(
+            snapshot_type=dashboard_snapshot.SNAPSHOT_TYPE_BULLPEN_DASHBOARD,
+            sync_run_id=prior_run.id,
+            status=dashboard_snapshot.SNAPSHOT_STATUS_READY,
+            is_published=True,
+            published_at=utc_now_naive() - timedelta(hours=20),
+            payload=payload,
+            payload_version=dashboard_snapshot.DASHBOARD_PAYLOAD_VERSION,
+            data_through=prior_date,
+            availability_reference_date=workload_date,
+            snapshot_generated_at=utc_now_naive() - timedelta(hours=20),
+            source='test',
+        )
+        db.session.add(prior_snapshot)
+        db.session.commit()
+        return prior_snapshot, prior_date
+
+    def _build_and_publish_current(self):
+        run = _create_sync_run()
+        result = dashboard_snapshot.build_bullpen_dashboard_snapshot_v2(
+            source='test',
+            publish=True,
+            sync_run_id=run.id,
+        )
+        assert result['status'] == 'ready', result
+        snapshot = db.session.get(DashboardSnapshot, result['snapshot_id'])
+        return snapshot
+
+    def _stored_comparison(self, snapshot):
+        return snapshot.payload['what_changed_since_yesterday']['comparison']
+
+    def test_repeated_same_date_publication_preserves_stored_comparison(self, app):
+        with app.app_context():
+            workload_date = _seed_dashboard_data()          # data_through 2026-07-19
+            prior_snapshot, prior_date = self._seed_adjacent_published_prior(
+                workload_date
+            )
+            prior_snapshot_id = prior_snapshot.id
+
+            # 1) First adjacent publication compares against the prior date and
+            #    rotates that prior out of the served slot.
+            first = self._build_and_publish_current()
+            first_comparison = self._stored_comparison(first)
+            assert first_comparison['comparison_available'] is True
+            assert first_comparison['reason_codes'] == []
+            assert first_comparison['previous_data_through'] == prior_date.isoformat()
+
+            db.session.refresh(prior_snapshot)
+            assert prior_snapshot.is_published is False       # rotated by publish
+            assert prior_snapshot.published_at is not None     # durable proof kept
+
+            # 2) & 3) Repeated same-date publications keep comparing against the
+            #    now-unpublished-but-publication-proven prior date.
+            repeated_ids = []
+            for _ in range(3):
+                repeated = self._build_and_publish_current()
+                repeated_ids.append(repeated.id)
+                comparison = self._stored_comparison(repeated)
+                assert comparison['comparison_available'] is True, comparison
+                assert comparison['reason_codes'] == [], comparison
+                assert 'no_prior_snapshot' not in comparison['reason_codes']
+                assert 'prior_snapshot_unpublished' not in comparison['reason_codes']
+                assert comparison['previous_data_through'] == prior_date.isoformat()
+
+            # 4) Only the newest current snapshot is served; older same-date
+            #    publishes rotate out, and the prior date never returns to serving.
+            newest_id = repeated_ids[-1]
+            published = (
+                DashboardSnapshot.query
+                .filter(DashboardSnapshot.is_published == True)
+                .all()
+            )
+            assert [row.id for row in published] == [newest_id]
+            assert dashboard_snapshot.get_latest_valid_dashboard_snapshot().id == newest_id
+            assert newest_id != prior_snapshot_id
+
+    def test_missing_trusted_prior_still_fails_closed_honestly(self, app):
+        with app.app_context():
+            _seed_dashboard_data()
+            # No prior-date snapshot exists at all.
+            current = self._build_and_publish_current()
+            comparison = self._stored_comparison(current)
+            assert comparison['comparison_available'] is False
+            assert 'no_prior_snapshot' in comparison['reason_codes']

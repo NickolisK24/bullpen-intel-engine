@@ -235,9 +235,15 @@ def test_frozen_legacy_what_changed_files_untouched():
     }
     allowed_public_what_changed_contract_files = {
         # Ratified Branch 1 backend-contract completion for the stored public
-        # what_changed_since_yesterday payload's top-level state. The raw
-        # comparison service and trust gates remain frozen.
+        # what_changed_since_yesterday payload's top-level state.
         'backend/services/what_changed_since_yesterday_public.py',
+        # fix/what-changed-daily-sync: the prior-snapshot trust gate now anchors
+        # on durable publication proof (published_at / was_published) instead of
+        # the transient is_published serving flag, so repeated same-date syncs no
+        # longer strand the daily comparison as no_prior_snapshot /
+        # prior_snapshot_unpublished. Public vocabulary, reason codes, states,
+        # and prediction/ranking/evidence boundaries are unchanged.
+        'backend/services/what_changed_since_yesterday.py',
     }
     allowed_phase0i_roster_readiness_files = {
         'frontend/src/adapters/operatingStateReadModel.js',

@@ -374,6 +374,52 @@ def test_trusted_gate_withholds_unpublished_prior_snapshot():
     assert_withheld(result, REASON_PRIOR_SNAPSHOT_UNPUBLISHED)
 
 
+def test_trusted_gate_allows_rotated_prior_with_was_published_proof():
+    # A prior-date snapshot rotated out of the served slot by a newer same-date
+    # publish keeps is_published False but carries durable publication proof.
+    rotated_prior = prior_metadata(published=False)
+    rotated_prior['was_published'] = True
+
+    result = trusted_comparison(
+        dashboard_payload([snapshot(clean=5)], data_through='2026-06-19'),
+        dashboard_payload([snapshot(clean=2)], data_through='2026-06-18'),
+        prior_meta=rotated_prior,
+    )
+
+    assert result['status'] == STATUS_AVAILABLE
+    assert result['reason_codes'] == []
+    assert first_change(result, CHANGE_RESTED_OPTIONS)['change_direction'] == 'increased'
+
+
+def test_trusted_gate_allows_rotated_prior_proven_by_published_at():
+    rotated_prior = prior_metadata(published=False)
+    rotated_prior['published_at'] = '2026-06-18T09:15:00'
+
+    result = trusted_comparison(
+        dashboard_payload([snapshot(clean=5)], data_through='2026-06-19'),
+        dashboard_payload([snapshot(clean=2)], data_through='2026-06-18'),
+        prior_meta=rotated_prior,
+    )
+
+    assert result['status'] == STATUS_AVAILABLE
+    assert result['reason_codes'] == []
+
+
+def test_trusted_gate_still_withholds_nonadjacent_prior_with_publication_proof():
+    # Durable publication proof must never soften strict date adjacency: a real
+    # off-day gap stays fail-closed even when the prior snapshot was published.
+    rotated_prior = prior_metadata(data_through='2026-06-15', published=False)
+    rotated_prior['was_published'] = True
+
+    result = trusted_comparison(
+        dashboard_payload([snapshot(clean=5)], data_through='2026-06-19'),
+        dashboard_payload([snapshot(clean=2)], data_through='2026-06-15'),
+        prior_meta=rotated_prior,
+    )
+
+    assert_withheld(result, REASON_SNAPSHOTS_NOT_COMPARABLE)
+
+
 def test_trusted_gate_withholds_prior_missing_slate_coverage():
     result = trusted_comparison(
         dashboard_payload([snapshot(clean=5)], data_through='2026-06-19'),
