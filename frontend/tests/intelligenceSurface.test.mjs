@@ -33,6 +33,7 @@ const {
   getBullpenPictureView,
   getLeadStoryView,
   getSinceYesterdayView,
+  filterSinceYesterdayLanes,
   getTonightCards,
   submitAudienceSignup,
 } = await server.ssrLoadModule('/src/components/home/IntelligenceSurface.jsx')
@@ -184,12 +185,33 @@ const dashboardWithSinceYesterdayChanges = {
     },
     ordering_basis: 'team_abbreviation_then_team_name',
     item_count: 2,
+    summary: {
+      meaningful_change_count: 2,
+      more_breathing_room_count: 1,
+      tighter_today_count: 1,
+      structure_changed_count: 0,
+      other_meaningful_change_count: 0,
+      counts_complete: true,
+      steady_count: 2,
+      steady_teams: [
+        { team_id: 158, team_name: 'Milwaukee Brewers', team_abbreviation: 'MIL' },
+        { team_id: 141, team_name: 'Toronto Blue Jays', team_abbreviation: 'TOR' },
+      ],
+    },
     items: [
       {
         key: 'NYM-what-changed',
         team_id: 121,
         team_name: 'New York Mets',
         team_abbreviation: 'NYM',
+        movement_lane: 'more_breathing_room',
+        movement_label: 'More breathing room',
+        primary_delta: {
+          label: 'Rested relievers',
+          previous: 3,
+          current: 5,
+          net_delta: 2,
+        },
         public_headline: 'Mets bullpen has more breathing room today.',
         public_summary: 'New York has more usable late-inning margin than yesterday.',
         public_context: 'That creates more ways through a close game tonight.',
@@ -211,6 +233,14 @@ const dashboardWithSinceYesterdayChanges = {
         team_id: 137,
         team_name: 'San Francisco Giants',
         team_abbreviation: 'SF',
+        movement_lane: 'tighter_today',
+        movement_label: 'Tighter today',
+        primary_delta: {
+          label: 'Rested relievers',
+          previous: 4,
+          current: 2,
+          net_delta: -2,
+        },
         public_headline: 'Giants bullpen has a thinner cushion today.',
         public_summary: 'San Francisco has fewer rested relievers than yesterday.',
         public_context: 'That puts more weight on the middle innings.',
@@ -628,11 +658,41 @@ test('homepage sections introduce the bullpen picture before Tonight watch', () 
   }
 })
 
-test('Since Yesterday renders changes in stored order with public copy and team links', () => {
+test('Since Yesterday groups changes into descriptive lanes led by the primary delta', () => {
   const view = getSinceYesterdayView(dashboardWithSinceYesterdayChanges, teams)
   assert.equal(view.state, 'changes_detected')
   assert.equal(view.comparisonAvailable, true)
   assert.deepEqual(view.items.map(item => item.teamAbbr), ['NYM', 'SF'])
+
+  // Backend-authored lane and primary delta flow straight through.
+  assert.equal(view.items[0].movementLane, 'more_breathing_room')
+  assert.equal(view.items[0].movementLabel, 'More breathing room')
+  assert.deepEqual(view.items[0].primaryDelta, {
+    label: 'Rested relievers',
+    previous: 3,
+    current: 5,
+    netDelta: 2,
+  })
+  assert.equal(view.items[1].movementLane, 'tighter_today')
+  assert.deepEqual(view.items[1].primaryDelta, {
+    label: 'Rested relievers',
+    previous: 4,
+    current: 2,
+    netDelta: -2,
+  })
+
+  // Lanes render in the canonical order, one team each, alphabetical inside.
+  assert.deepEqual(view.lanes.map(lane => lane.key), ['more_breathing_room', 'tighter_today'])
+  assert.deepEqual(view.lanes[0].items.map(item => item.teamAbbr), ['NYM'])
+  assert.deepEqual(view.lanes[1].items.map(item => item.teamAbbr), ['SF'])
+
+  // League summary counts are normalized from the backend, not inferred here.
+  assert.equal(view.summary.moreBreathingRoomCount, 1)
+  assert.equal(view.summary.tighterTodayCount, 1)
+  assert.equal(view.summary.meaningfulChangeCount, 2)
+  assert.equal(view.summary.steadyCount, 2)
+  assert.deepEqual(view.summary.steadyTeams.map(team => team.teamAbbr), ['MIL', 'TOR'])
+
   assert.deepEqual(view.items[0].publicEvidence, [
     {
       key: 'Resource pool-tight-less tight-0',
@@ -641,14 +701,13 @@ test('Since Yesterday renders changes in stored order with public copy and team 
       today: 'less tight',
     },
   ])
-  assert.equal(view.footerCopy, 'Teams are listed alphabetically. 2 teams show meaningful, evidence-backed movement in this daily comparison.')
 
+  // Lane order is backend-authored and stable regardless of item order.
   const sourceOrderedDashboard = clone(dashboardWithSinceYesterdayChanges)
-  sourceOrderedDashboard.what_changed_since_yesterday.ordering_basis = 'stored_payload_order'
   sourceOrderedDashboard.what_changed_since_yesterday.items.reverse()
   const sourceOrderView = getSinceYesterdayView(sourceOrderedDashboard, teams)
   assert.deepEqual(sourceOrderView.items.map(item => item.teamAbbr), ['SF', 'NYM'])
-  assert.equal(sourceOrderView.footerCopy, '2 teams show meaningful, evidence-backed movement in this daily comparison.')
+  assert.deepEqual(sourceOrderView.lanes.map(lane => lane.key), ['more_breathing_room', 'tighter_today'])
 
   const html = render(React.createElement(IntelligenceSurfaceView, {
     intelligence: intelligenceOk,
@@ -663,24 +722,44 @@ test('Since Yesterday renders changes in stored order with public copy and team 
   assert.ok(htmlIncludes(sinceHtml, 'Comparing complete, adjacent daily views only. Movement is descriptive, not predictive.'))
   assert.ok(htmlIncludes(sinceHtml, 'Previous view Jun 24'))
   assert.ok(htmlIncludes(sinceHtml, 'Current view Jun 25'))
-  assert.ok(htmlIncludes(sinceHtml, 'Mets bullpen has more breathing room today.'))
+  // League movement summary.
+  assert.ok(htmlIncludes(sinceHtml, 'Across MLB since yesterday'))
+  assert.ok(htmlIncludes(sinceHtml, 'gained breathing room'))
+  assert.ok(htmlIncludes(sinceHtml, 'became tighter'))
+  assert.ok(htmlIncludes(sinceHtml, 'remained steady'))
+  // Lane headings + team search.
+  assert.ok(htmlIncludes(sinceHtml, 'More breathing room'))
+  assert.ok(htmlIncludes(sinceHtml, 'Tighter today'))
+  assert.ok(htmlIncludes(sinceHtml, 'Find a team'))
+  // Primary delta anchor (numbers + signed net) and consolidated prose.
+  assert.ok(htmlIncludes(sinceHtml, 'Rested relievers'))
+  assert.ok(htmlIncludes(sinceHtml, '+2'))
   assert.ok(htmlIncludes(sinceHtml, 'New York has more usable late-inning margin than yesterday.'))
   assert.ok(htmlIncludes(sinceHtml, 'That creates more ways through a close game tonight.'))
-  assert.ok(htmlIncludes(sinceHtml, 'Evidence shown'))
+  assert.ok(htmlIncludes(sinceHtml, 'San Francisco has fewer rested relievers than yesterday.'))
+  // Compact workload evidence.
+  assert.ok(htmlIncludes(sinceHtml, 'Worked yesterday'))
+  assert.ok(htmlIncludes(sinceHtml, 'Reed Garrett'))
+  assert.ok(htmlIncludes(sinceHtml, '21 pitches'))
+  // Expandable evidence keeps the structured rows available.
+  assert.ok(htmlIncludes(sinceHtml, 'View evidence'))
   assert.ok(htmlIncludes(sinceHtml, 'Resource pool'))
   assert.ok(htmlIncludes(sinceHtml, 'Yesterday tight'))
   assert.ok(htmlIncludes(sinceHtml, 'Today less tight'))
-  assert.ok(htmlIncludes(sinceHtml, 'Giants bullpen has a thinner cushion today.'))
-  assert.ok(htmlIncludes(sinceHtml, 'Reed Garrett'))
-  assert.ok(htmlIncludes(sinceHtml, '21 pitches'))
-  assert.ok(htmlIncludes(sinceHtml, 'Yesterday'))
-  assert.ok(htmlIncludes(sinceHtml, 'Today'))
+  // Steady disclosure lists proven-steady teams only.
+  assert.ok(htmlIncludes(sinceHtml, 'had no meaningful'))
+  assert.ok(htmlIncludes(sinceHtml, 'Milwaukee Brewers'))
+  assert.ok(htmlIncludes(sinceHtml, 'Toronto Blue Jays'))
+  // Team-board links preserved with the existing analytics source.
   assert.ok(htmlIncludes(sinceHtml, 'href="/bullpen?view=board&amp;team=NYM&amp;source=today"'))
   assert.ok(htmlIncludes(sinceHtml, 'href="/bullpen?view=board&amp;team=SF&amp;source=today"'))
-  assert.equal(countOccurrences(sinceHtml, '<details'), 2)
-  assert.equal(countOccurrences(sinceHtml, '<summary'), 2)
+  // Two card evidence disclosures + one steady disclosure, none open by default.
+  assert.equal(countOccurrences(sinceHtml, '<details'), 3)
+  assert.equal(countOccurrences(sinceHtml, '<summary'), 3)
   assert.equal(/<details[^>]*\sopen(?:=|>|\s)/i.test(sinceHtml), false)
   assert.equal(htmlIncludes(sinceHtml, 'what_changed_item_opened'), false)
+  // The old repetitive headline line is no longer shown as separate prose.
+  assert.equal(htmlIncludes(sinceHtml, 'Mets bullpen has more breathing room today.'), false)
 })
 
 test('Since Yesterday renders quiet comparable days without empty cards', async () => {
@@ -1744,4 +1823,158 @@ test('Since Yesterday non-adjacent views explain a league off-day gap', () => {
   assert.ok(htmlIncludes(html, 'The two most recent complete daily views are not adjacent days — a league off-day gap.'))
   assert.ok(htmlIncludes(html, 'resumes automatically after the next comparable game-day view'))
   assert.equal(htmlIncludes(html, 'No meaningful bullpen movement was found'), false)
+})
+
+
+// ---------------------------------------------------------------------------
+// Daily briefing enhancements: lanes, team filtering, league summary, deltas.
+// ---------------------------------------------------------------------------
+
+const dashboardStructureIncompleteCounts = {
+  ...dashboard,
+  what_changed_since_yesterday: {
+    capability: 'what_changed_since_yesterday_public_v1',
+    state: 'changes_detected',
+    comparison: {
+      comparison_available: true,
+      previous_data_through: '2026-06-24',
+      current_data_through: '2026-06-25',
+    },
+    ordering_basis: 'team_abbreviation_then_team_name',
+    item_count: 1,
+    summary: {
+      meaningful_change_count: 1,
+      more_breathing_room_count: 0,
+      tighter_today_count: 0,
+      structure_changed_count: 1,
+      other_meaningful_change_count: 0,
+      counts_complete: false,
+    },
+    items: [
+      {
+        key: 'LAD-what-changed',
+        team_id: 119,
+        team_name: 'Los Angeles Dodgers',
+        team_abbreviation: 'LAD',
+        movement_lane: 'structure_changed',
+        movement_label: 'Structure changed',
+        primary_delta: {
+          label: 'Late-inning support arms',
+          previous: 2,
+          current: 5,
+          net_delta: null,
+        },
+        public_summary: 'Los Angeles reshaped its late-inning support group.',
+        public_context: 'That changes the path to the final outs tonight.',
+      },
+    ],
+  },
+}
+
+const dashboardLegacyChangeNoLane = {
+  ...dashboard,
+  what_changed_since_yesterday: {
+    capability: 'what_changed_since_yesterday_public_v1',
+    state: 'changes_detected',
+    comparison: {
+      comparison_available: true,
+      previous_data_through: '2026-06-24',
+      current_data_through: '2026-06-25',
+    },
+    ordering_basis: 'team_abbreviation_then_team_name',
+    item_count: 1,
+    items: [
+      {
+        key: 'ATH-what-changed',
+        team_id: 133,
+        team_name: 'Athletics',
+        team_abbreviation: 'ATH',
+        public_summary: 'Movement without a backend-authored lane.',
+        public_context: 'Context sentence.',
+        yesterday_rested_count: 2,
+        today_rested_count: 4,
+      },
+    ],
+  },
+}
+
+test('Since Yesterday team filter matches full name and abbreviation', () => {
+  const view = getSinceYesterdayView(dashboardWithSinceYesterdayChanges, teams)
+
+  const byName = filterSinceYesterdayLanes(view.lanes, 'new york')
+  assert.deepEqual(byName.flatMap(lane => lane.items.map(item => item.teamAbbr)), ['NYM'])
+
+  const byAbbr = filterSinceYesterdayLanes(view.lanes, 'sf')
+  assert.deepEqual(byAbbr.flatMap(lane => lane.items.map(item => item.teamAbbr)), ['SF'])
+
+  const empty = filterSinceYesterdayLanes(view.lanes, '')
+  assert.deepEqual(empty.map(lane => lane.key), ['more_breathing_room', 'tighter_today'])
+})
+
+test('Since Yesterday team filter no-match returns no lanes (never implies steady)', () => {
+  const view = getSinceYesterdayView(dashboardWithSinceYesterdayChanges, teams)
+  const noMatch = filterSinceYesterdayLanes(view.lanes, 'zzz nonexistent')
+  assert.deepEqual(noMatch, [])
+})
+
+test('Since Yesterday structure lane renders a delta with no signed net', () => {
+  const view = getSinceYesterdayView(dashboardStructureIncompleteCounts, teams)
+  assert.deepEqual(view.lanes.map(lane => lane.key), ['structure_changed'])
+  assert.equal(view.items[0].primaryDelta.netDelta, null)
+
+  const html = render(React.createElement(IntelligenceSurfaceView, {
+    intelligence: intelligenceOk,
+    tonight: tonightOk,
+    dashboard: dashboardStructureIncompleteCounts,
+    landscape,
+    teams,
+  }))
+  const sinceHtml = sectionSlice(html, 'SINCE YESTERDAY', 'Tonight&#x27;s Bullpen Watch')
+  assert.ok(htmlIncludes(sinceHtml, 'Structure changed'))
+  assert.ok(htmlIncludes(sinceHtml, 'Late-inning support arms'))
+  assert.ok(htmlIncludes(sinceHtml, 'changed structurally'))
+  // A structural delta must not fabricate a +/- net value.
+  assert.equal(/net change/.test(sinceHtml), false)
+})
+
+test('Since Yesterday summary omits zero-count lanes and withholds unproven steady count', () => {
+  const html = render(React.createElement(IntelligenceSurfaceView, {
+    intelligence: intelligenceOk,
+    tonight: tonightOk,
+    dashboard: dashboardStructureIncompleteCounts,
+    landscape,
+    teams,
+  }))
+  const sinceHtml = sectionSlice(html, 'SINCE YESTERDAY', 'Tonight&#x27;s Bullpen Watch')
+  const view = getSinceYesterdayView(dashboardStructureIncompleteCounts, teams)
+
+  assert.equal(view.summary.countsComplete, false)
+  assert.equal('steadyCount' in view.summary, false)
+  assert.ok(htmlIncludes(sinceHtml, 'changed structurally'))
+  // Zero-count directions are not rendered as "0 gained breathing room".
+  assert.equal(htmlIncludes(sinceHtml, 'gained breathing room'), false)
+  assert.equal(htmlIncludes(sinceHtml, 'became tighter'), false)
+  // Steady is withheld when the population is not provably complete.
+  assert.equal(htmlIncludes(sinceHtml, 'remained steady'), false)
+  assert.equal(htmlIncludes(sinceHtml, 'had no meaningful'), false)
+})
+
+test('Since Yesterday item without a backend lane falls closed to the neutral lane', () => {
+  const view = getSinceYesterdayView(dashboardLegacyChangeNoLane, teams)
+  assert.deepEqual(view.lanes.map(lane => lane.key), ['other_meaningful_changes'])
+  assert.deepEqual(view.lanes[0].items.map(item => item.teamAbbr), ['ATH'])
+  // No backend summary block -> no synthesized league counts.
+  assert.equal(view.summary, null)
+
+  const html = render(React.createElement(IntelligenceSurfaceView, {
+    intelligence: intelligenceOk,
+    tonight: tonightOk,
+    dashboard: dashboardLegacyChangeNoLane,
+    landscape,
+    teams,
+  }))
+  const sinceHtml = sectionSlice(html, 'SINCE YESTERDAY', 'Tonight&#x27;s Bullpen Watch')
+  assert.ok(htmlIncludes(sinceHtml, 'Other meaningful change'))
+  assert.ok(htmlIncludes(sinceHtml, 'Movement without a backend-authored lane.'))
+  assert.equal(htmlIncludes(sinceHtml, 'Across MLB since yesterday'), false)
 })

@@ -13,6 +13,12 @@ from services.what_changed_since_yesterday import (
 from services.what_changed_since_yesterday_public import (
     CAPABILITY,
     DEFAULT_PUBLIC_ITEM_LIMIT,
+    LANE_MORE_BREATHING_ROOM,
+    LANE_OTHER_MEANINGFUL,
+    LANE_STRUCTURE_CHANGED,
+    LANE_TIGHTER_TODAY,
+    _movement_lane,
+    _primary_delta,
     build_what_changed_public_payload,
 )
 
@@ -167,6 +173,7 @@ def test_public_payload_includes_only_frontend_safe_copy_items():
         'item_count',
         'limitations',
         'reason_codes',
+        'summary',
     }
     assert set(result['comparison']) == {
         'current_data_through',
@@ -180,6 +187,14 @@ def test_public_payload_includes_only_frontend_safe_copy_items():
             'team_id': 1,
             'team_name': 'Alpha Club',
             'team_abbreviation': 'AAA',
+            'movement_lane': 'more_breathing_room',
+            'movement_label': 'More breathing room',
+            'primary_delta': {
+                'label': 'Rested relievers',
+                'previous': 2,
+                'current': 5,
+                'net_delta': 3,
+            },
             'public_headline': 'The Alpha Club bullpen has more rested arms for a close game.',
             'public_summary': (
                 'The Alpha Club bullpen has more close-game room because the rested side gained '
@@ -382,6 +397,9 @@ def test_public_payload_preserves_structured_fields_after_voice_migration():
         'team_id',
         'team_name',
         'team_abbreviation',
+        'movement_lane',
+        'movement_label',
+        'primary_delta',
         'public_headline',
         'public_summary',
         'public_context',
@@ -790,3 +808,261 @@ def test_public_payload_trusts_rotated_prior_after_repeated_same_date_publish():
     assert result['comparison']['comparison_available'] is True
     assert result['comparison']['reason_codes'] == []
     assert result['state'] in (STATE_CHANGES_DETECTED, STATE_NO_MEANINGFUL_CHANGES)
+
+
+# ---------------------------------------------------------------------------
+# Daily-briefing movement lanes, primary deltas, and league summary counts.
+# ---------------------------------------------------------------------------
+
+_ALL_LANES = {
+    LANE_MORE_BREATHING_ROOM,
+    LANE_TIGHTER_TODAY,
+    LANE_STRUCTURE_CHANGED,
+    LANE_OTHER_MEANINGFUL,
+}
+
+
+def _structure_snapshot(trusted_group, **kwargs):
+    # Only the trusted-group size moves, so the trusted-group change is the top
+    # change and the team lands in the structure lane.
+    return snapshot(
+        clean=4,
+        active=7,
+        resource_state='moderate',
+        coverage_label='Stable Coverage Safety',
+        trusted_group=trusted_group,
+        **kwargs,
+    )
+
+
+def test_every_published_item_carries_exactly_one_valid_movement_lane():
+    result = build_public(
+        [
+            snapshot(team_id=1, team_name='Alpha Club', team_abbreviation='AAA', clean=6),
+            snapshot(team_id=2, team_name='Beta Club', team_abbreviation='BBB', clean=1),
+        ],
+        [
+            snapshot(team_id=1, team_name='Alpha Club', team_abbreviation='AAA', clean=2),
+            snapshot(team_id=2, team_name='Beta Club', team_abbreviation='BBB', clean=6),
+        ],
+    )
+
+    assert result['items']
+    for item in result['items']:
+        assert item['movement_lane'] in _ALL_LANES
+        # Exactly one lane, and the human label matches that single lane.
+        assert isinstance(item['movement_lane'], str)
+        assert isinstance(item['movement_label'], str)
+
+
+def test_rested_increase_lands_in_more_breathing_room_lane():
+    result = build_public(
+        [snapshot(team_name='Alpha Club', team_abbreviation='AAA', clean=6)],
+        [snapshot(team_name='Alpha Club', team_abbreviation='AAA', clean=2)],
+    )
+    item = result['items'][0]
+
+    assert item['movement_lane'] == LANE_MORE_BREATHING_ROOM
+    assert item['movement_label'] == 'More breathing room'
+
+
+def test_rested_decrease_lands_in_tighter_today_lane():
+    result = build_public(
+        [snapshot(team_name='Alpha Club', team_abbreviation='AAA', clean=2)],
+        [snapshot(team_name='Alpha Club', team_abbreviation='AAA', clean=6)],
+    )
+    item = result['items'][0]
+
+    assert item['movement_lane'] == LANE_TIGHTER_TODAY
+    assert item['movement_label'] == 'Tighter today'
+
+
+def test_trusted_group_movement_lands_in_structure_lane():
+    result = build_public(
+        [_structure_snapshot(5, team_name='Alpha Club', team_abbreviation='AAA')],
+        [_structure_snapshot(2, team_name='Alpha Club', team_abbreviation='AAA')],
+    )
+    item = result['items'][0]
+
+    assert item['movement_lane'] == LANE_STRUCTURE_CHANGED
+    assert item['movement_label'] == 'Structure changed'
+
+
+def test_movement_lane_fails_closed_to_neutral_for_unknown_direction():
+    # A meaningful-but-unclassifiable change must not be forced into a room
+    # lane; it falls into the neutral "other" lane instead of being dropped.
+    neutral = _movement_lane(
+        {'change_type': 'some_future_change', 'change_direction': 'shifted'},
+        {'yesterday_rested_count': None, 'today_rested_count': None},
+    )
+    assert neutral == LANE_OTHER_MEANINGFUL
+
+
+def test_primary_delta_for_rested_carries_signed_net_delta():
+    up = build_public(
+        [snapshot(team_name='Alpha Club', team_abbreviation='AAA', clean=6)],
+        [snapshot(team_name='Alpha Club', team_abbreviation='AAA', clean=2)],
+    )['items'][0]['primary_delta']
+    down = build_public(
+        [snapshot(team_name='Beta Club', team_abbreviation='BBB', clean=2)],
+        [snapshot(team_name='Beta Club', team_abbreviation='BBB', clean=6)],
+    )['items'][0]['primary_delta']
+
+    assert up == {'label': 'Rested relievers', 'previous': 2, 'current': 6, 'net_delta': 4}
+    assert down == {'label': 'Rested relievers', 'previous': 6, 'current': 2, 'net_delta': -4}
+
+
+def test_primary_delta_for_structure_change_has_no_net_delta():
+    item = build_public(
+        [_structure_snapshot(5, team_name='Alpha Club', team_abbreviation='AAA')],
+        [_structure_snapshot(2, team_name='Alpha Club', team_abbreviation='AAA')],
+    )['items'][0]
+    delta = item['primary_delta']
+
+    assert delta is not None
+    assert delta['net_delta'] is None
+    assert delta['previous'] is not None and delta['current'] is not None
+
+
+def test_primary_delta_omits_net_when_one_side_unknown():
+    # Directly exercise the fail-closed guard: a missing side yields no delta.
+    assert _primary_delta(
+        {'change_type': 'rested_options_changed'},
+        {'yesterday_rested_count': 3, 'today_rested_count': None},
+        None,
+        use_count_aligned=False,
+    ) is None
+
+
+def test_summary_counts_use_full_population_before_display_limit():
+    current = [
+        snapshot(team_id=i, team_name=f'Team {i}', team_abbreviation=f'T{i}', clean=6)
+        for i in range(1, 9)
+    ]
+    prior = [
+        snapshot(team_id=i, team_name=f'Team {i}', team_abbreviation=f'T{i}', clean=1)
+        for i in range(1, 9)
+    ]
+
+    result = build_public(current, prior, limit=3)
+
+    # Only three cards are shown, but the league count reflects all eight.
+    assert result['item_count'] == 3
+    assert result['summary']['more_breathing_room_count'] == 8
+    assert result['summary']['meaningful_change_count'] == 8
+
+
+def test_summary_lane_counts_split_direction_and_structure():
+    current = [
+        snapshot(team_id=1, team_name='Up Club', team_abbreviation='UPC', clean=6),
+        snapshot(team_id=2, team_name='Down Club', team_abbreviation='DNC', clean=1),
+        _structure_snapshot(5, team_id=3, team_name='Shape Club', team_abbreviation='SHC'),
+    ]
+    prior = [
+        snapshot(team_id=1, team_name='Up Club', team_abbreviation='UPC', clean=2),
+        snapshot(team_id=2, team_name='Down Club', team_abbreviation='DNC', clean=6),
+        _structure_snapshot(2, team_id=3, team_name='Shape Club', team_abbreviation='SHC'),
+    ]
+
+    summary = build_public(current, prior)['summary']
+
+    assert summary['more_breathing_room_count'] == 1
+    assert summary['tighter_today_count'] == 1
+    assert summary['structure_changed_count'] == 1
+    assert summary['meaningful_change_count'] == 3
+
+
+def test_summary_reports_proven_steady_teams_when_population_complete():
+    current = [
+        snapshot(team_id=1, team_name='Moved Club', team_abbreviation='MVC', clean=6),
+        snapshot(team_id=2, team_name='Steady Club', team_abbreviation='STC', clean=4),
+    ]
+    prior = [
+        snapshot(team_id=1, team_name='Moved Club', team_abbreviation='MVC', clean=2),
+        snapshot(team_id=2, team_name='Steady Club', team_abbreviation='STC', clean=4),
+    ]
+
+    summary = build_public(current, prior)['summary']
+
+    assert summary['counts_complete'] is True
+    assert summary['steady_count'] == 1
+    assert summary['steady_teams'] == [
+        {'team_id': 2, 'team_name': 'Steady Club', 'team_abbreviation': 'STC'},
+    ]
+
+
+def test_summary_withholds_steady_count_and_never_counts_uncompared_team_as_steady():
+    # Beta has no prior counterpart -> comparison unavailable for it. It must
+    # not be counted as steady, and the incomplete population withholds the
+    # steady count entirely.
+    current = [
+        snapshot(team_id=1, team_name='Moved Club', team_abbreviation='MVC', clean=6),
+        snapshot(team_id=2, team_name='Orphan Club', team_abbreviation='ORC', clean=4),
+    ]
+    prior = [
+        snapshot(team_id=1, team_name='Moved Club', team_abbreviation='MVC', clean=2),
+    ]
+
+    summary = build_public(current, prior)['summary']
+
+    assert summary['counts_complete'] is False
+    assert 'steady_count' not in summary
+    assert 'steady_teams' not in summary
+    assert summary['meaningful_change_count'] == 1
+
+
+def test_summary_absent_when_comparison_unavailable():
+    result = build_public(
+        [snapshot(team_name='Alpha Club', team_abbreviation='AAA', clean=5)],
+        None,
+    )
+
+    assert result['state'] == STATE_INSUFFICIENT_CONTEXT
+    assert 'summary' not in result
+
+
+def test_items_stay_alphabetical_and_are_not_ranked_by_delta_magnitude():
+    # Bravo has the larger delta but must not jump ahead of Alpha.
+    current = [
+        snapshot(team_id=1, team_name='Alpha Club', team_abbreviation='AAA', clean=4),
+        snapshot(team_id=2, team_name='Bravo Club', team_abbreviation='BBB', clean=8),
+    ]
+    prior = [
+        snapshot(team_id=1, team_name='Alpha Club', team_abbreviation='AAA', clean=2),
+        snapshot(team_id=2, team_name='Bravo Club', team_abbreviation='BBB', clean=1),
+    ]
+
+    result = build_public(current, prior)
+
+    assert [item['team_abbreviation'] for item in result['items']] == ['AAA', 'BBB']
+    assert result['ranking_applied'] is False
+    assert result['selection_made'] is False
+    assert result['prediction_applied'] is False
+
+
+def test_movement_lane_labels_pass_the_editorial_banned_language_scan():
+    for label in ('More breathing room', 'Tighter today', 'Structure changed', 'Other meaningful change'):
+        assert not contains_editorial_banned_language(label)
+
+
+def test_summary_and_lane_fields_do_not_leak_internal_terminology():
+    result = build_public(
+        [_structure_snapshot(5, team_name='Alpha Club', team_abbreviation='AAA')],
+        [_structure_snapshot(2, team_name='Alpha Club', team_abbreviation='AAA')],
+    )
+    encoded = json.dumps({'summary': result.get('summary'), 'items': result['items']}).lower()
+    for forbidden in (
+        'change_type',
+        'change_direction',
+        'confidence',
+        'significance',
+        'supporting_facts',
+        'raw_score',
+        'score',
+        'coverage',
+        'rested options',
+        'ranking',
+        'prediction',
+        'identity_label',
+    ):
+        assert forbidden not in encoded

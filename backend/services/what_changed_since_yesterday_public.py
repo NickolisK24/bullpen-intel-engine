@@ -11,6 +11,7 @@ from services.editorial_voice_contract_v1 import (
 )
 from services.what_changed_since_yesterday import (
     CHANGE_COVERAGE_SAFETY,
+    CHANGE_IDENTITY,
     CHANGE_RESOURCE_HEALTH,
     CHANGE_RESTED_OPTIONS,
     CHANGE_TRUST_STRUCTURE,
@@ -41,6 +42,27 @@ _RESOURCE_STATE_LABELS = {
     'depleted': 'depleted',
     'unknown': 'unknown',
 }
+
+# Descriptive movement lanes for the daily briefing. These describe the
+# DIRECTION of a team's meaningful movement so the frontend can group cards
+# without re-interpreting bullpen state. They are not rankings — teams stay in
+# alphabetical order inside every lane, and no lane implies "best" or "worst".
+LANE_MORE_BREATHING_ROOM = 'more_breathing_room'
+LANE_TIGHTER_TODAY = 'tighter_today'
+LANE_STRUCTURE_CHANGED = 'structure_changed'
+LANE_OTHER_MEANINGFUL = 'other_meaningful_changes'
+
+_LANE_LABELS = {
+    LANE_MORE_BREATHING_ROOM: 'More breathing room',
+    LANE_TIGHTER_TODAY: 'Tighter today',
+    LANE_STRUCTURE_CHANGED: 'Structure changed',
+    LANE_OTHER_MEANINGFUL: 'Other meaningful change',
+}
+
+# Trusted-group and identity movement is a change to the SHAPE of the group,
+# not to how much room a team has, so it lands in the structure lane regardless
+# of direction. Every other change family is a room-direction change.
+_STRUCTURAL_LANE_CHANGE_TYPES = {CHANGE_TRUST_STRUCTURE, CHANGE_IDENTITY}
 
 
 def _public_top_change(changes: list[dict[str, Any]]) -> dict[str, Any] | None:
@@ -236,6 +258,69 @@ def _primary_public_evidence(top_change: dict[str, Any]) -> dict[str, Any] | Non
     }
 
 
+def _movement_lane(
+    top_change: dict[str, Any] | None,
+    counts: dict[str, int | None],
+) -> str:
+    """Classify a team's meaningful movement into one descriptive lane.
+
+    Trusted-group / identity movement is structural. Everything else is a
+    room-direction change, and the visible rested-count delta (the card's
+    numeric anchor) is preferred so a card's lane always matches what the
+    reader sees; the change direction is only a fallback when counts are
+    unknown. Unknown direction fails closed into the neutral lane rather than
+    forcing a team into a room lane.
+    """
+    change_type = (top_change or {}).get('change_type')
+    if change_type in _STRUCTURAL_LANE_CHANGE_TYPES:
+        return LANE_STRUCTURE_CHANGED
+    family = _rested_direction_family(counts) or _direction_family(
+        (top_change or {}).get('change_direction')
+    )
+    if family == 'improving':
+        return LANE_MORE_BREATHING_ROOM
+    if family == 'tightening':
+        return LANE_TIGHTER_TODAY
+    return LANE_OTHER_MEANINGFUL
+
+
+def _primary_delta(
+    top_change: dict[str, Any] | None,
+    counts: dict[str, int | None],
+    primary_evidence: dict[str, Any] | None,
+    *,
+    use_count_aligned: bool,
+) -> dict[str, Any] | None:
+    """The single numeric or structural movement the card leads with.
+
+    Rested-option movement (the common anchor) carries a signed ``net_delta``;
+    structural movement carries a ``previous -> current`` label pair with no
+    net number. ``net_delta`` is emitted only when both sides are known so the
+    frontend never renders a plus/minus against an unknown value.
+    """
+    yesterday = counts.get('yesterday_rested_count')
+    today = counts.get('today_rested_count')
+    rested = None
+    if isinstance(yesterday, int) and isinstance(today, int):
+        rested = {
+            'label': 'Rested relievers',
+            'previous': yesterday,
+            'current': today,
+            'net_delta': today - yesterday,
+        }
+    change_type = (top_change or {}).get('change_type')
+    if use_count_aligned or change_type == CHANGE_RESTED_OPTIONS:
+        return rested
+    if primary_evidence:
+        return {
+            'label': primary_evidence.get('label'),
+            'previous': primary_evidence.get('yesterday'),
+            'current': primary_evidence.get('today'),
+            'net_delta': None,
+        }
+    return rested
+
+
 def _safe_public_copy(text: str, fallback: str) -> str:
     """Fail closed if future public context trips the shared banned scan."""
     return fallback if contains_editorial_banned_language(text) else text
@@ -376,12 +461,21 @@ def _public_item(
     workload_added = _public_workload_added(workload_team)
     use_count_aligned_copy = _copy_contradicts_visible_counts(top_change, counts)
     primary_evidence = _primary_public_evidence(top_change)
+    lane = _movement_lane(top_change, counts)
 
     item = {
         'key': f'{_team_key(team_change)}-what-changed',
         'team_id': team_change.get('team_id'),
         'team_name': team_change.get('team_name'),
         'team_abbreviation': team_change.get('team_abbreviation'),
+        'movement_lane': lane,
+        'movement_label': _LANE_LABELS[lane],
+        'primary_delta': _primary_delta(
+            top_change,
+            counts,
+            primary_evidence,
+            use_count_aligned=use_count_aligned_copy,
+        ),
         'public_headline': (
             _public_headline(team_name, counts)
             if use_count_aligned_copy
@@ -425,6 +519,68 @@ def _without_private_fields(item: dict[str, Any]) -> dict[str, Any]:
         for key, value in item.items()
         if not key.startswith('_')
     }
+
+
+def _movement_summary(changes: dict[str, Any]) -> dict[str, Any] | None:
+    """League-level movement counts derived from the COMPLETE comparison.
+
+    Counts are taken from every compared team before any public-card display
+    limit, so the league orientation stays honest even if some cards are
+    withheld. A team is counted as steady only when it was actually compared
+    and cleared no meaningful movement — never inferred from a missing or
+    withheld team. ``steady_count`` (and the steady team list) are emitted only
+    when the whole population was comparable (``counts_complete``); otherwise
+    only the proven movement counts are exposed. Returns ``None`` when no
+    trusted comparison exists.
+    """
+    if changes.get('status') != STATUS_AVAILABLE:
+        return None
+
+    lane_counts = {lane: 0 for lane in _LANE_LABELS}
+    steady_teams = []
+    counts_complete = True
+    for team in changes.get('teams') or []:
+        if team.get('status') != STATUS_AVAILABLE:
+            # A team we could not compare cannot be called steady, and its
+            # absence makes the league steady count unprovable.
+            counts_complete = False
+            continue
+        team_changes = team.get('changes') or []
+        if team_changes:
+            representative = _public_top_change(team_changes) or team_changes[0]
+            lane = _movement_lane(
+                representative,
+                _rested_counts(team, representative),
+            )
+            lane_counts[lane] += 1
+        else:
+            steady_teams.append(team)
+
+    summary = {
+        'meaningful_change_count': sum(lane_counts.values()),
+        'more_breathing_room_count': lane_counts[LANE_MORE_BREATHING_ROOM],
+        'tighter_today_count': lane_counts[LANE_TIGHTER_TODAY],
+        'structure_changed_count': lane_counts[LANE_STRUCTURE_CHANGED],
+        'other_meaningful_change_count': lane_counts[LANE_OTHER_MEANINGFUL],
+        'counts_complete': counts_complete,
+    }
+    if counts_complete:
+        summary['steady_count'] = len(steady_teams)
+        summary['steady_teams'] = [
+            {
+                'team_id': team.get('team_id'),
+                'team_name': team.get('team_name'),
+                'team_abbreviation': team.get('team_abbreviation'),
+            }
+            for team in sorted(
+                steady_teams,
+                key=lambda team: (
+                    str(team.get('team_abbreviation') or ''),
+                    str(team.get('team_name') or ''),
+                ),
+            )
+        ]
+    return summary
 
 
 def _public_state(changes: dict[str, Any], items: list[dict[str, Any]]) -> str:
@@ -484,7 +640,8 @@ def build_what_changed_public_payload(
             break
 
     state = _public_state(changes, items)
-    return {
+    summary = _movement_summary(changes)
+    payload = {
         'capability': CAPABILITY,
         'source': 'backend',
         'state': state,
@@ -504,10 +661,19 @@ def build_what_changed_public_payload(
         'limitations': list(changes.get('limitations') or []),
         'reason_codes': list(changes.get('reason_codes') or []),
     }
+    # League-level orientation, derived from the complete comparison before any
+    # display limit. Omitted entirely when no trusted comparison exists.
+    if summary is not None:
+        payload['summary'] = summary
+    return payload
 
 
 __all__ = [
     'CAPABILITY',
     'DEFAULT_PUBLIC_ITEM_LIMIT',
+    'LANE_MORE_BREATHING_ROOM',
+    'LANE_OTHER_MEANINGFUL',
+    'LANE_STRUCTURE_CHANGED',
+    'LANE_TIGHTER_TODAY',
     'build_what_changed_public_payload',
 ]
