@@ -1256,11 +1256,25 @@ def _dashboard_payload_data_through(payload):
 def _what_changed_snapshot_metadata(snapshot):
     if snapshot is None:
         return None
+    published_at = getattr(snapshot, 'published_at', None)
+    status = getattr(snapshot, 'status', None)
     return {
         'source': getattr(snapshot, 'source', None) or 'dashboard_snapshot',
         'snapshot_id': getattr(snapshot, 'id', None),
-        'status': getattr(snapshot, 'status', None),
+        'status': status,
+        # ``is_published`` reflects only whether this snapshot is the one the
+        # public dashboard serves right now. It is rotated to False whenever a
+        # newer snapshot publishes (including repeated same-date syncs), so it
+        # must not be used as the historical trust signal for daily comparisons.
         'is_published': bool(getattr(snapshot, 'is_published', False)),
+        # Durable proof this snapshot cleared every publication gate at least
+        # once (status ready + a populated published_at). This survives snapshot
+        # rotation and is what "What Changed" trusts for comparison eligibility.
+        'was_published': (
+            bool(published_at)
+            and status == dashboard_snapshot_service.SNAPSHOT_STATUS_READY
+        ),
+        'published_at': published_at.isoformat() if published_at else None,
         'payload_version': getattr(snapshot, 'payload_version', None),
         'data_through': (
             snapshot.data_through.isoformat()
@@ -2613,10 +2627,16 @@ def build_bullpen_dashboard_payload(*, use_published_freshness=False):
     )
     previous_snapshot = dashboard_snapshot_service.get_latest_dashboard_snapshot_before(data_through)
     previous_payload = previous_snapshot.payload if previous_snapshot is not None else None
+    # "What Changed" compares against the most recent prior-date snapshot that
+    # durably passed publication (status ready + a populated published_at), not
+    # against whichever snapshot is currently served. Repeated same-date syncs
+    # rotate the prior day's is_published flag to False, but its publication
+    # proof endures — so historical comparison trust must not depend on it still
+    # being the served snapshot.
     what_changed_previous_snapshot = (
-        previous_snapshot
-        if previous_snapshot is not None and previous_snapshot.is_published
-        else dashboard_snapshot_service.get_latest_published_dashboard_snapshot_before(data_through)
+        dashboard_snapshot_service.get_latest_trusted_dashboard_snapshot_before(
+            data_through
+        )
     )
     what_changed_previous_payload = (
         what_changed_previous_snapshot.payload

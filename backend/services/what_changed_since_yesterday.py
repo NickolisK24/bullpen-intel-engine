@@ -246,6 +246,28 @@ def _coverage_reason_codes(
     return _unique(reasons)
 
 
+def _prior_publication_proven(metadata: dict[str, Any]) -> bool:
+    """Durable proof a prior snapshot passed publication at least once.
+
+    ``is_published`` marks only the single snapshot currently served by the
+    public dashboard and is rotated to False on every republish — including the
+    repeated same-date syncs (overnight postgame, morning daily, manual) that
+    BaseballOS runs — so it cannot represent historical trust. A prior snapshot
+    is trusted for comparison when it carries durable publication proof: an
+    explicit ``was_published``/``publication_proven`` flag, a populated
+    ``published_at``, or — for the snapshot still being served — ``is_published``
+    True. This separates "was published and historically trusted" from
+    "currently published/served" without overloading ``is_published``.
+    """
+    if metadata.get('was_published') is True:
+        return True
+    if metadata.get('publication_proven') is True:
+        return True
+    if metadata.get('published_at'):
+        return True
+    return metadata.get('is_published') is True
+
+
 def _trusted_snapshot_reason_codes(
     payload: dict[str, Any] | None,
     *,
@@ -256,7 +278,7 @@ def _trusted_snapshot_reason_codes(
     if role == 'prior':
         if payload is None:
             return [REASON_NO_PRIOR_SNAPSHOT]
-        if metadata.get('is_published') is not True:
+        if not _prior_publication_proven(metadata):
             return [REASON_PRIOR_SNAPSHOT_UNPUBLISHED]
         if metadata.get('status') not in (None, 'ready'):
             return [REASON_PRIOR_SNAPSHOT_UNPUBLISHED]

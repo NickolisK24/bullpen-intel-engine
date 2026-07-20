@@ -302,6 +302,13 @@ def test_phase0e_switches_and_legacy_public_files_not_modified():
         # public payload's top-level state and unconditional dashboard storage.
         'backend/api/bullpen.py',
         'backend/services/what_changed_since_yesterday_public.py',
+        # fix/what-changed-daily-sync: the prior-snapshot trust gate now anchors
+        # on durable publication proof (published_at / was_published) instead of
+        # the transient is_published serving flag, so repeated same-date syncs no
+        # longer strand the daily comparison as no_prior_snapshot /
+        # prior_snapshot_unpublished. Public vocabulary, reason codes, states,
+        # and prediction/ranking/evidence boundaries are unchanged.
+        'backend/services/what_changed_since_yesterday.py',
     }
     allowed_phase0i_roster_readiness_files = {
         'backend/api/bullpen.py',

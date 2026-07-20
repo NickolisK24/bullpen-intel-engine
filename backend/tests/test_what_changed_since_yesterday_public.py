@@ -757,3 +757,36 @@ def test_non_adjacent_views_withhold_then_adjacent_pair_recovers_automatically()
     assert recovered['comparison']['comparison_available'] is True
     assert recovered['comparison']['reason_codes'] == []
     assert recovered['state'] in (STATE_CHANGES_DETECTED, STATE_NO_MEANINGFUL_CHANGES)
+
+
+def test_public_payload_trusts_rotated_prior_after_repeated_same_date_publish():
+    """Production scenario: repeated same-date syncs rotate the prior day's
+    snapshot to is_published False, but its durable publication proof keeps the
+    public comparison available."""
+    current = [snapshot(team_name='Alpha Club', team_abbreviation='AAA', clean=5)]
+    prior = [snapshot(team_name='Alpha Club', team_abbreviation='AAA', clean=2)]
+
+    result = build_what_changed_public_payload(
+        payload(current, data_through='2026-06-19', include_slate_coverage=True),
+        payload(prior, data_through='2026-06-18', include_slate_coverage=True),
+        require_trusted_snapshots=True,
+        current_snapshot_metadata={
+            'source': 'live_dashboard_build',
+            'trusted_current_payload': True,
+            'data_through': '2026-06-19',
+        },
+        prior_snapshot_metadata={
+            'source': 'dashboard_snapshot',
+            'snapshot_id': 18,
+            'status': 'ready',
+            # Rotated out of the served slot, but publication is proven.
+            'is_published': False,
+            'was_published': True,
+            'published_at': '2026-06-18T09:15:00',
+            'data_through': '2026-06-18',
+        },
+    )
+
+    assert result['comparison']['comparison_available'] is True
+    assert result['comparison']['reason_codes'] == []
+    assert result['state'] in (STATE_CHANGES_DETECTED, STATE_NO_MEANINGFUL_CHANGES)

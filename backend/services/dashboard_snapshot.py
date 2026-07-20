@@ -791,6 +791,50 @@ def get_latest_published_dashboard_snapshot_before(
         return None
 
 
+def get_latest_trusted_dashboard_snapshot_before(
+    data_through,
+    snapshot_type=SNAPSHOT_TYPE_BULLPEN_DASHBOARD,
+):
+    """Latest prior-date snapshot with durable proof it passed publication.
+
+    "Trusted for comparison" is deliberately distinct from "currently
+    published/served". ``is_published`` marks the single snapshot the public
+    dashboard serves right now, and :func:`publish_dashboard_snapshot` rotates
+    every older snapshot to ``is_published = False`` on each publish — including
+    the repeated same-``data_through`` publishes produced by overnight postgame
+    runs, the morning daily sync, and manual runs. A prior-date snapshot that
+    already cleared every publication gate keeps its durable proof — ``status``
+    ready and a populated ``published_at`` — even after it stops being the
+    served snapshot. Daily "What Changed" comparisons must anchor on that
+    durable proof, not on the transient serving selector, so this lookup does
+    not filter on ``is_published``.
+    """
+    if data_through is None:
+        return None
+
+    try:
+        return (
+            DashboardSnapshot.query
+            .filter_by(
+                snapshot_type=snapshot_type,
+                status=SNAPSHOT_STATUS_READY,
+                payload_version=DASHBOARD_PAYLOAD_VERSION,
+            )
+            .filter(DashboardSnapshot.published_at.isnot(None))
+            .filter(DashboardSnapshot.data_through < data_through)
+            .order_by(
+                DashboardSnapshot.data_through.desc(),
+                DashboardSnapshot.snapshot_generated_at.desc(),
+                DashboardSnapshot.id.desc(),
+            )
+            .first()
+        )
+    except SQLAlchemyError as exc:
+        db.session.rollback()
+        logger.warning('Could not read trusted prior dashboard snapshot: %s', exc)
+        return None
+
+
 def get_recent_dashboard_snapshots_before(
     data_through,
     *,
