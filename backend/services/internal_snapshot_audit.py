@@ -23,6 +23,8 @@ from services.dashboard_snapshot import (
     SNAPSHOT_STATUS_PENDING,
     SNAPSHOT_STATUS_READY,
     SNAPSHOT_TYPE_BULLPEN_DASHBOARD,
+    _availability_reference_date_from_payload,
+    _data_through_from_payload,
     payload_version_valid,
     snapshot_current_enough,
     snapshot_unavailable_reason,
@@ -53,6 +55,19 @@ FALLBACK_RESPONSE_MODE = 'fallback_db_row_metadata'
 DIAGNOSTIC_SUMMARY_UNAVAILABLE = 'audit_summary_unavailable'
 DIAGNOSTIC_FALLBACK_ROW_SUMMARY_ONLY = 'fallback_db_row_summary_only'
 SUMMARY_TIME_BUDGET_EXCEEDED = 'summary_time_budget_exceeded'
+
+# Snapshot availability reasons this module reasons about explicitly.
+# ``dashboard_snapshot_freshness_fail_closed`` is the only availability reason
+# that turns on the present-day wall clock rather than on how a snapshot
+# published, so it is the only reason ignored on the historical-audit trust
+# path. The two integrity reasons are re-checked there because production
+# evaluates freshness before them, and ignoring freshness must never mask a
+# real integrity failure.
+DASHBOARD_SNAPSHOT_FRESHNESS_FAIL_CLOSED = 'dashboard_snapshot_freshness_fail_closed'
+DASHBOARD_SNAPSHOT_DATA_THROUGH_MISMATCH = 'dashboard_snapshot_data_through_mismatch'
+DASHBOARD_SNAPSHOT_AVAILABILITY_REFERENCE_MISMATCH = (
+    'dashboard_snapshot_availability_reference_mismatch'
+)
 
 SNAPSHOT_CONSTANTS = (
     SNAPSHOT_SOURCE_BUILDER_V2,
@@ -1055,13 +1070,47 @@ def _historical_publication_summary(row: dict) -> dict:
 
 
 def _historical_publication_unavailable_reason(row: dict | None) -> str | None:
+    """Reason a previously published snapshot is not trusted for historical audit.
+
+    Historical publication trust proves a snapshot passed its publication gates
+    when it was built; it must not decay simply because the snapshot's data has
+    since aged past the current-serving freshness window. So every structural
+    and integrity rejection from the normal availability path still applies,
+    but the one reason that reflects only present-day serving freshness —
+    ``dashboard_snapshot_freshness_fail_closed`` — is ignored here (and only
+    here). Because production evaluates that freshness gate *before* the
+    data-through and availability-reference integrity checks, ignoring it must
+    not let those two be skipped, so they are re-run explicitly.
+    """
     if row is None:
         return 'dashboard_snapshot_missing'
     if row.get('published_at') is None:
         return 'dashboard_snapshot_never_published'
     historical_row = dict(row)
     historical_row['is_published'] = True
-    return _snapshot_unavailable_reason(historical_row)
+    reason = _snapshot_unavailable_reason(historical_row)
+    if reason != DASHBOARD_SNAPSHOT_FRESHNESS_FAIL_CLOSED:
+        return reason
+    return _historical_integrity_reason_after_freshness(historical_row)
+
+
+def _historical_integrity_reason_after_freshness(row: dict) -> str | None:
+    """Re-run the integrity checks production evaluates after the freshness gate.
+
+    Reuses the same compact-payload adapter and canonical payload-date helpers
+    as :func:`_snapshot_unavailable_reason`, so this stays exactly in step with
+    production's data-through and availability-reference integrity checks — it
+    only skips the wall-clock freshness gate that shadowed them.
+    """
+    adapter = _TrustSnapshotAdapter(row, _compact_payload(row))
+    if adapter.data_through != _data_through_from_payload(adapter.payload):
+        return DASHBOARD_SNAPSHOT_DATA_THROUGH_MISMATCH
+    if (
+        adapter.availability_reference_date
+        != _availability_reference_date_from_payload(adapter.payload)
+    ):
+        return DASHBOARD_SNAPSHOT_AVAILABILITY_REFERENCE_MISMATCH
+    return None
 
 
 def _snapshot_unavailable_reason(row: dict) -> str | None:
