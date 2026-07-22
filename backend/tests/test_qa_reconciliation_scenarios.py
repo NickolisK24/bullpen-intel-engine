@@ -418,6 +418,15 @@ def test_phase0e_switches_and_legacy_public_files_not_modified():
         'frontend/tests/mobileNavigation.test.mjs',
         'frontend/tests/intelligenceSurface.test.mjs',
     }
+    allowed_team_board_answer_hierarchy_files = {
+        # feat/team-board-answer-hierarchy: the Team Board leads with the answer and
+        # moves the secondary story and game context behind disclosures. The
+        # availability distribution reuses the existing board count authority; no
+        # bullpen calculation or availability/role changes.
+        'frontend/src/components/bullpen/board/TonightsBullpenBoard.jsx',
+        'frontend/src/components/bullpen/board/BullpenAvailabilityDistribution.jsx',
+        'frontend/tests/teamBoardAnswerHierarchy.test.mjs',
+    }
     allowed_files = (
         allowed_public_freshness_display_files
         | allowed_internal_admin_files
@@ -434,6 +443,7 @@ def test_phase0e_switches_and_legacy_public_files_not_modified():
         | allowed_wp42_schedule_files
         | allowed_public_trust_consistency_files
         | allowed_mobile_navigation_first_use_files
+        | allowed_team_board_answer_hierarchy_files
     )
     forbidden_prefixes = (
         'backend/api/',

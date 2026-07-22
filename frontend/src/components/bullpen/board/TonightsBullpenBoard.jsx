@@ -4,6 +4,7 @@ import { toOperatingStateReadModel } from '../../../adapters/operatingStateReadM
 import { getTeamBullpenBoard, getTeamGameContext, getTeamStory } from '../../../utils/api'
 import { LoadingPane, ErrorState, EmptyState } from '../../UI'
 import BullpenOperatingStateCard from '../BullpenOperatingStateCard'
+import BullpenAvailabilityDistribution from './BullpenAvailabilityDistribution'
 import BullpenBoardView from './BullpenBoardView'
 import TeamGameContextCard from './TeamGameContextCard'
 import StoryCard from './StoryCard'
@@ -167,8 +168,14 @@ export default function TonightsBullpenBoard({
       ) : boardState.error ? (
         <ErrorState message={boardState.error} onRetry={boardState.refetch} />
       ) : (
-        <div className="flex flex-col gap-6 2xl:flex-row 2xl:items-start">
+        // Keyed by team so a team switch fully remounts the answer: no prior
+        // team's state, distribution, evidence, or disclosure state can linger.
+        <div key={selectedTeam} className="flex flex-col gap-6 2xl:flex-row 2xl:items-start">
           <div className="min-w-0 flex-1">
+            {/* Answer zone: team identity, current state, one-sentence why,
+                immediate receipts, freshness, and limitations live in the
+                operating-state card; the availability distribution sits directly
+                beneath it so the four public counts are part of the fast answer. */}
             <div className="mb-4">
               <div className="mb-2 flex justify-end">
                 <EvidenceShareMenu
@@ -191,6 +198,7 @@ export default function TonightsBullpenBoard({
                 lastSyncLabel="Bullpen read synced"
                 density="compact"
               />
+              <BullpenAvailabilityDistribution board={filteredBoard} />
             </div>
             <div className="mb-4">
               <TeamReliefWorkPanel
@@ -206,18 +214,37 @@ export default function TonightsBullpenBoard({
               onSelectPitcher={onSelectPitcher}
               showRoutineFreshness={false}
             />
-            <StoryCard
-              story={storyState.data}
-              loading={storyState.loading}
-              error={storyState.error}
-              onRetry={storyState.refetch}
-            />
-            <TeamGameContextCard
-              gameContext={gameContextState.data}
-              loading={gameContextState.loading}
-              error={gameContextState.error}
-              compact
-            />
+            {/* Secondary narrative context moves behind clear disclosures so the
+                default view stays focused on the bullpen answer. Neither carries
+                an inbound evidence anchor, so collapsing them breaks no links. */}
+            <details className="mt-6 rounded-lg border border-dirt bg-dugout/35" aria-label="Team story">
+              <summary className="flex cursor-pointer items-center justify-between gap-2 px-4 py-3 font-mono text-[11px] uppercase tracking-widest text-chalk300 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/60">
+                <span>Read the team story</span>
+                <span className="text-[10px] text-chalk600">Today's bullpen storyline</span>
+              </summary>
+              <div className="px-3 pb-3">
+                <StoryCard
+                  story={storyState.data}
+                  loading={storyState.loading}
+                  error={storyState.error}
+                  onRetry={storyState.refetch}
+                />
+              </div>
+            </details>
+            <details className="mt-4 rounded-lg border border-dirt bg-dugout/35" aria-label="Recent game context">
+              <summary className="flex cursor-pointer items-center justify-between gap-2 px-4 py-3 font-mono text-[11px] uppercase tracking-widest text-chalk300 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/60">
+                <span>See recent game context</span>
+                <span className="text-[10px] text-chalk600">Latest completed-game detail</span>
+              </summary>
+              <div className="px-3 pb-3">
+                <TeamGameContextCard
+                  gameContext={gameContextState.data}
+                  loading={gameContextState.loading}
+                  error={gameContextState.error}
+                  compact
+                />
+              </div>
+            </details>
           </div>
         </div>
       )}
