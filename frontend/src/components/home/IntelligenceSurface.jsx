@@ -2022,18 +2022,32 @@ function BullpenPicture({
                   </h3>
                   {column.lead ? (
                     <>
-                      <Link
-                        to={column.lead.teamHref || '/bullpen'}
-                        className="group mt-2 flex min-w-0 items-baseline justify-between gap-2 rounded px-1 py-1 transition-colors hover:bg-amber/5"
-                        aria-label={`Open the bullpen board for ${column.lead.teamName || column.lead.label}`}
-                      >
-                        <span className="truncate text-sm text-chalk200 group-hover:text-amber">
-                          {column.lead.label}
-                        </span>
-                        <span className="shrink-0 font-mono text-xs leading-snug text-chalk400">
-                          {column.lead[column.metric]} <span className="text-chalk600">{column.suffix}</span>
-                        </span>
-                      </Link>
+                      {column.lead.teamHref ? (
+                        <Link
+                          to={column.lead.teamHref}
+                          className="group mt-2 flex min-w-0 items-baseline justify-between gap-2 rounded px-1 py-1 transition-colors hover:bg-amber/5"
+                          aria-label={`Open the bullpen board for ${column.lead.teamName || column.lead.label}`}
+                        >
+                          <span className="truncate text-sm text-chalk200 group-hover:text-amber">
+                            {column.lead.label}
+                          </span>
+                          <span className="shrink-0 font-mono text-xs leading-snug text-chalk400">
+                            {column.lead[column.metric]} <span className="text-chalk600">{column.suffix}</span>
+                          </span>
+                        </Link>
+                      ) : (
+                        // Fail closed: without a resolvable team identifier there is no
+                        // exact Team Board to open, so the standout stays a plain read
+                        // instead of a link that promises a team page it cannot deliver.
+                        <div className="mt-2 flex min-w-0 items-baseline justify-between gap-2 px-1 py-1">
+                          <span className="truncate text-sm text-chalk200">
+                            {column.lead.label}
+                          </span>
+                          <span className="shrink-0 font-mono text-xs leading-snug text-chalk400">
+                            {column.lead[column.metric]} <span className="text-chalk600">{column.suffix}</span>
+                          </span>
+                        </div>
+                      )}
                       {column.moreCount > 0 && (
                         <p className="mt-1 px-1 font-mono text-[11px] text-chalk600">
                           +{column.moreCount} more on the league board

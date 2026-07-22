@@ -665,6 +665,78 @@ test('homepage sections introduce the bullpen picture before Tonight watch', () 
   }
 })
 
+// ── Bullpen picture teaser: exact team links, honest fail-closed ─────────────
+
+test('a bullpen picture standout builds an exact team board link from its stable identifier', () => {
+  const view = getBullpenPictureView(landscape)
+  const availableColumn = view.columns.find(column => column.metric === 'available')
+  // San Francisco is the standout in "Most Available"; its lead resolves to the
+  // exact team board via the stable abbreviation, carrying landscape provenance.
+  assert.equal(
+    availableColumn.lead.teamHref,
+    '/bullpen?view=board&team=SF&source=landscape',
+  )
+})
+
+test('a bullpen picture standout without a resolvable team fails closed to no link', () => {
+  // A standout whose backend row carries neither a team id nor an abbreviation
+  // has no exact Team Board destination — the lead keeps its label and count but
+  // exposes no href to fall back on.
+  const unresolvable = {
+    ...landscape,
+    available_bullpens: [
+      { team_name: 'Unlisted Club', available: 5, monitor: 0, restricted: 0, total_relievers: 8 },
+    ],
+  }
+  const view = getBullpenPictureView(unresolvable)
+  const availableColumn = view.columns.find(column => column.metric === 'available')
+  assert.equal(availableColumn.lead.teamHref, null)
+  assert.equal(availableColumn.lead.label, 'Unlisted Club')
+  assert.equal(availableColumn.lead.available, 5)
+})
+
+test('the bullpen picture teaser deep-links standouts to their exact board and never a broad fallback', () => {
+  const html = render(React.createElement(IntelligenceSurfaceView, {
+    intelligence: intelligenceOk,
+    tonight: tonightOk,
+    dashboard: dashboardWithSinceYesterdayChanges,
+    landscape,
+    teams,
+  }))
+  // Slice to just the teaser's standout grid (excludes the generic first-use
+  // browse area, whose entry points legitimately include a bare /bullpen link).
+  const teaser = sectionSlice(html, 'tracked teams', 'View full league board')
+  assert.ok(teaser.length > 0)
+  // The standout is a real anchor to the exact team board (abbr + provenance).
+  assert.ok(
+    /href="\/bullpen\?view=board&(?:amp;)?team=SF&(?:amp;)?source=landscape"/.test(teaser),
+    'exact team board deep link is present',
+  )
+  // No standout degrades to the bare bullpen page.
+  assert.equal(/href="\/bullpen"/.test(teaser), false)
+})
+
+test('a bullpen picture standout with no resolvable team renders as plain text, not a broad link', () => {
+  const unresolvable = {
+    ...landscape,
+    available_bullpens: [
+      { team_name: 'Unlisted Club', available: 5, monitor: 0, restricted: 0, total_relievers: 8 },
+    ],
+  }
+  const html = render(React.createElement(IntelligenceSurfaceView, {
+    intelligence: intelligenceOk,
+    tonight: tonightOk,
+    dashboard: dashboardWithSinceYesterdayChanges,
+    landscape: unresolvable,
+    teams,
+  }))
+  const teaser = sectionSlice(html, 'tracked teams', 'View full league board')
+  // The claim survives as readable text...
+  assert.ok(htmlIncludes(teaser, 'Unlisted Club'))
+  // ...but there is no misleading bare-bullpen link promising a team board.
+  assert.equal(/href="\/bullpen"/.test(teaser), false)
+})
+
 test('Since Yesterday groups changes into descriptive lanes led by the primary delta', () => {
   const view = getSinceYesterdayView(dashboardWithSinceYesterdayChanges, teams)
   assert.equal(view.state, 'changes_detected')
