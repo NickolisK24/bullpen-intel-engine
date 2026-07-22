@@ -772,15 +772,15 @@ test('the relief work panel mounts once, on the team board only', async () => {
   // removed — the Phase 0G evidence panel renders once, on the Team Board.
   assert.equal(source.includes('TeamReliefWorkPanel'), false)
   assert.ok(boardSource.includes('<TeamReliefWorkPanel'))
-  for (const legacyText of [
-    'All Teams',
+  for (const finderMarker of [
+    'All teams',
     'Availability',
-    'P/7d',
+    'Pitches (7d)',
     'Rest',
-    'App/7d',
+    'Appearances (7d)',
     'Show pitchers outside the freshness window',
   ]) {
-    assert.ok(source.includes(legacyText), legacyText)
+    assert.ok(source.includes(finderMarker), finderMarker)
   }
   for (const removedLeaderboardText of [
     'Recent Load',
