@@ -102,17 +102,26 @@ test('hidden technical, auth, and internal routes stay outside primary product n
 
 test('sidebar preserves public route order and excludes Prospects', () => {
   const html = render(React.createElement(Sidebar))
-  const labels = ['Today', 'Dashboard', 'Bullpen', 'Stories', 'Methodology', 'Data &amp; Trust']
+  // Primary destinations use plain baseball labels; the old ambiguous
+  // "Dashboard"/"Bullpen" and population-overstating "All Pitchers" are gone.
+  const primaryLabels = ['Today', 'League Board', 'Team Bullpens', 'Compare Bullpens', 'Reliever Finder', 'Stories']
+  const supportingLabels = ['How to Read', 'Methodology', 'Data &amp; Trust', 'About']
   const routeIndexes = publicProductRoutes.map(route => html.indexOf(`href="${route}"`))
 
   assert.ok(htmlIncludes(html, 'href="/"'))
   assert.deepEqual([...routeIndexes].sort((a, b) => a - b), routeIndexes)
-  for (const label of labels) {
+  for (const label of [...primaryLabels, ...supportingLabels]) {
     assert.ok(htmlIncludes(html, label), label)
   }
   for (const route of publicProductRoutes) {
     assert.ok(htmlIncludes(html, `href="${route}"`), route)
   }
+  // Compare Bullpens and Reliever Finder are direct destinations from the menu.
+  assert.ok(htmlIncludes(html, 'href="/bullpen?view=compare"'))
+  assert.ok(htmlIncludes(html, 'href="/bullpen?view=pitchers"'))
+  // Ambiguous or population-overstating labels no longer appear.
+  assert.equal(htmlIncludes(html, '>Dashboard<'), false)
+  assert.equal(htmlIncludes(html, 'All Pitchers'), false)
   assert.equal(htmlIncludes(html, 'href="/prospects"'), false)
   assert.equal(htmlIncludes(html, 'Prospects'), false)
   assert.equal(htmlIncludes(html, 'Following'), false)

@@ -37,7 +37,9 @@ import {
 const VIEW_MODES   = [
   { id: 'board',    label: 'Team Board' },
   { id: 'compare',  label: 'Compare Bullpens' },
-  { id: 'pitchers', label: 'All Pitchers' },
+  // The pitchers view lists the reliever-eligible population only, so its public
+  // label is "Reliever Finder" — "All Pitchers" would overstate the population.
+  { id: 'pitchers', label: 'Reliever Finder' },
 ]
 const PAGE_SIZE = 50
 
@@ -161,7 +163,7 @@ export default function Bullpen() {
         subtitle="Team-specific bullpen analysis from latest completed data - current availability, recent workload, and role context"
         action={
           <div className="flex items-center gap-3 flex-wrap">
-            <div className="flex gap-1 bg-chalk/30 p-1 rounded-lg border border-dirt">
+            <div className="flex flex-wrap gap-1 bg-chalk/30 p-1 rounded-lg border border-dirt">
               {VIEW_MODES.map(m => (
                 <button
                   key={m.id}
@@ -313,6 +315,23 @@ function PitcherView({
 
   return (
     <>
+      {/* Reliever search — kept at the top of the finder so it is reachable on
+          mobile without scrolling past the team pills or the result list. */}
+      <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <label htmlFor="reliever-finder-search" className="font-mono text-[11px] uppercase tracking-widest text-chalk500">
+          Find a reliever
+        </label>
+        <input
+          id="reliever-finder-search"
+          type="search"
+          value={searchTerm}
+          onChange={e => setSearchTerm(e.target.value)}
+          aria-label="Search relievers"
+          placeholder="Search reliever"
+          className="w-full sm:w-64 rounded border border-dirt bg-field/70 px-3 py-2 font-mono text-xs text-chalk200 outline-none transition-colors placeholder:text-chalk600 focus:border-amber/50"
+        />
+      </div>
+
       {/* Team filter pills */}
       <div className="flex flex-wrap gap-2 mb-6 animate-fade-up opacity-0" style={{ animationFillMode: 'forwards' }}>
         <button
@@ -330,18 +349,6 @@ function PitcherView({
             {t.team_abbreviation}
           </button>
         ))}
-      </div>
-
-      {/* Search filter */}
-      <div className="flex flex-col gap-3 mb-5 sm:flex-row sm:items-center sm:justify-end">
-        <input
-          type="search"
-          value={searchTerm}
-          onChange={e => setSearchTerm(e.target.value)}
-          aria-label="Search pitchers"
-          placeholder="Search pitcher"
-          className="w-full sm:w-64 rounded border border-dirt bg-field/70 px-3 py-2 font-mono text-xs text-chalk200 outline-none transition-colors placeholder:text-chalk600 focus:border-amber/50"
-        />
       </div>
 
       {/* Availability filter */}

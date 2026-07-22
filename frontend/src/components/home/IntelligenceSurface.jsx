@@ -171,6 +171,33 @@ export async function submitAudienceSignup({
   }
 }
 
+// Compact first-use entry path: the four primary product surfaces a new
+// visitor most often wants, using the existing bullpen routes and query views.
+// It sits after the daily read, never replacing it, so returning visitors still
+// reach today's answer first.
+const FIRST_USE_ACTIONS = [
+  {
+    title: "See Today's Bullpen Read",
+    body: 'Fresh, stretched, and vulnerable pens tonight.',
+    to: '/',
+  },
+  {
+    title: 'Find a Team',
+    body: 'Open any team bullpen board.',
+    to: '/bullpen',
+  },
+  {
+    title: 'Compare Two Bullpens',
+    body: 'Put two pens side by side.',
+    to: '/bullpen?view=compare',
+  },
+  {
+    title: 'Find a Reliever',
+    body: 'Search a reliever and scan workload.',
+    to: '/bullpen?view=pitchers',
+  },
+]
+
 const EXPLORE_LINKS = [
   {
     title: 'About BaseballOS',
@@ -2036,6 +2063,40 @@ function BullpenPicture({
   )
 }
 
+// Compact primary-action row placed right after the daily read. It helps a
+// first-time visitor reach the strongest surfaces without hunting through the
+// product, and stays short so it never reads as a marketing landing page.
+function ExploreBaseballOS() {
+  return (
+    <section id="explore-baseballos" aria-labelledby="explore-baseballos-title" className="mb-10">
+      <div className="mb-3 border-t border-dirt pt-4">
+        <div className="mb-1 font-mono text-[10px] uppercase tracking-widest text-amber/75">
+          Explore BaseballOS
+        </div>
+        <h2 id="explore-baseballos-title" className="font-display text-2xl tracking-wide text-chalk100">
+          Where do you want to go next?
+        </h2>
+      </div>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {FIRST_USE_ACTIONS.map(action => (
+          <Link
+            key={action.title}
+            to={action.to}
+            className="min-w-0 rounded border border-dirt bg-dugout p-4 transition-colors hover:border-amber/40 hover:bg-amber/5 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/60"
+          >
+            <h3 className="font-display text-lg tracking-wide text-chalk100">
+              {action.title}
+            </h3>
+            <p className="mt-1 text-xs leading-relaxed text-chalk500">
+              {action.body}
+            </p>
+          </Link>
+        ))}
+      </div>
+    </section>
+  )
+}
+
 function Explore() {
   return (
     <SectionShell
@@ -2092,6 +2153,7 @@ export function IntelligenceSurfaceView({
         onRetry={onRetryLandscape}
         freshness={pageFreshness}
       />
+      <ExploreBaseballOS />
       <SinceYesterdaySection dashboard={dashboard} teams={teams} />
       <TonightSection
         tonight={tonight}

@@ -404,6 +404,20 @@ def test_phase0e_switches_and_legacy_public_files_not_modified():
         'frontend/src/components/trust/AvailabilityBacktestCard.jsx',
         'frontend/tests/availabilityBacktest.test.mjs',
     }
+    allowed_mobile_navigation_first_use_files = {
+        # feat/mobile-navigation-first-use-clarity: plain-language mobile menu with
+        # primary bullpen destinations and a compact first-use entry area on Today.
+        # Routes, query behavior, and bullpen calculations are unchanged.
+        'frontend/src/components/Sidebar.jsx',
+        'frontend/src/utils/navigation.js',
+        'frontend/src/components/home/IntelligenceSurface.jsx',
+        'frontend/src/components/bullpen/Bullpen.jsx',
+        'frontend/tests/navigationRoutes.test.mjs',
+        'frontend/tests/bullpenTabLabels.test.mjs',
+        'frontend/tests/demoReadinessPolish.test.mjs',
+        'frontend/tests/mobileNavigation.test.mjs',
+        'frontend/tests/intelligenceSurface.test.mjs',
+    }
     allowed_files = (
         allowed_public_freshness_display_files
         | allowed_internal_admin_files
@@ -419,6 +433,7 @@ def test_phase0e_switches_and_legacy_public_files_not_modified():
         | allowed_trusted_traffic_files
         | allowed_wp42_schedule_files
         | allowed_public_trust_consistency_files
+        | allowed_mobile_navigation_first_use_files
     )
     forbidden_prefixes = (
         'backend/api/',

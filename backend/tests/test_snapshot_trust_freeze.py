@@ -351,6 +351,20 @@ def test_frozen_legacy_what_changed_files_untouched():
         'frontend/src/components/trust/AvailabilityBacktestCard.jsx',
         'frontend/tests/availabilityBacktest.test.mjs',
     }
+    allowed_mobile_navigation_first_use_files = {
+        # feat/mobile-navigation-first-use-clarity: plain-language mobile menu with
+        # primary bullpen destinations and a compact first-use entry area on Today.
+        # Routes, query behavior, and bullpen calculations are unchanged.
+        'frontend/src/components/Sidebar.jsx',
+        'frontend/src/utils/navigation.js',
+        'frontend/src/components/home/IntelligenceSurface.jsx',
+        'frontend/src/components/bullpen/Bullpen.jsx',
+        'frontend/tests/navigationRoutes.test.mjs',
+        'frontend/tests/bullpenTabLabels.test.mjs',
+        'frontend/tests/demoReadinessPolish.test.mjs',
+        'frontend/tests/mobileNavigation.test.mjs',
+        'frontend/tests/intelligenceSurface.test.mjs',
+    }
     assert not sorted(
         path for path in changed
         if path.startswith('frontend/')
@@ -364,6 +378,7 @@ def test_frozen_legacy_what_changed_files_untouched():
         if path not in allowed_trusted_traffic_files
         if path not in allowed_wp42_schedule_files
         if path not in allowed_public_trust_consistency_files
+        if path not in allowed_mobile_navigation_first_use_files
     )
     assert not sorted(
         path for path in changed
