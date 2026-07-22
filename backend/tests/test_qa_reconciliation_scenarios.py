@@ -439,6 +439,16 @@ def test_phase0e_switches_and_legacy_public_files_not_modified():
         'frontend/tests/relieverFinder.test.mjs',
         'frontend/tests/phaseALaunchProtection.test.mjs',
     }
+    allowed_methodology_public_first_files = {
+        # feat/methodology-public-first-rewrite: the Methodology page is a static,
+        # public-first explanation of the read process with one fixed illustrative
+        # worked example. Composite-score/weight framing and the backend
+        # methodology fetch are removed; presentation copy only. No calculation,
+        # threshold, classification, or vocabulary changes.
+        'frontend/src/components/methodology/Methodology.jsx',
+        'frontend/tests/methodologyDescore.test.mjs',
+        'frontend/tests/pageHierarchyDedupe.test.mjs',
+    }
     allowed_files = (
         allowed_public_freshness_display_files
         | allowed_internal_admin_files
@@ -457,6 +467,7 @@ def test_phase0e_switches_and_legacy_public_files_not_modified():
         | allowed_mobile_navigation_first_use_files
         | allowed_team_board_answer_hierarchy_files
         | allowed_reliever_finder_search_first_files
+        | allowed_methodology_public_first_files
     )
     forbidden_prefixes = (
         'backend/api/',
