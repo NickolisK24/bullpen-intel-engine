@@ -374,6 +374,18 @@ def test_frozen_legacy_what_changed_files_untouched():
         'frontend/src/components/bullpen/board/BullpenAvailabilityDistribution.jsx',
         'frontend/tests/teamBoardAnswerHierarchy.test.mjs',
     }
+    allowed_reliever_finder_search_first_files = {
+        # feat/reliever-finder-search-first: the Reliever Finder opens in a
+        # neutral, search-first state, defaults to a neutral name A-Z order,
+        # compacts the search/team/availability/freshness controls to fit a 320px
+        # column, and clarifies the workload column labels. No bullpen
+        # calculation, availability classification, role authority, or
+        # route/query changes.
+        'frontend/src/components/bullpen/Bullpen.jsx',
+        'frontend/src/components/bullpen/relieverFinderView.js',
+        'frontend/tests/relieverFinder.test.mjs',
+        'frontend/tests/phaseALaunchProtection.test.mjs',
+    }
     assert not sorted(
         path for path in changed
         if path.startswith('frontend/')
@@ -389,6 +401,7 @@ def test_frozen_legacy_what_changed_files_untouched():
         if path not in allowed_public_trust_consistency_files
         if path not in allowed_mobile_navigation_first_use_files
         if path not in allowed_team_board_answer_hierarchy_files
+        if path not in allowed_reliever_finder_search_first_files
     )
     assert not sorted(
         path for path in changed

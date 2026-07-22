@@ -1347,6 +1347,20 @@ def test_existing_public_routes_behavior_freeze(monkeypatch):
         'frontend/src/components/bullpen/board/BullpenAvailabilityDistribution.jsx',
         'frontend/tests/teamBoardAnswerHierarchy.test.mjs',
     }
+    allowed_reliever_finder_search_first_files = {
+        # feat/reliever-finder-search-first: the Reliever Finder opens in a
+        # neutral, search-first state (no broad reliever list until the visitor
+        # searches, selects a team, or selects a public availability status),
+        # defaults to a neutral name A-Z order, compacts the
+        # search/team/availability/freshness controls into one responsive area
+        # that fits a 320px column, and clarifies the workload column labels. No
+        # bullpen calculation, availability classification, role authority, or
+        # route/query changes.
+        'frontend/src/components/bullpen/Bullpen.jsx',
+        'frontend/src/components/bullpen/relieverFinderView.js',
+        'frontend/tests/relieverFinder.test.mjs',
+        'frontend/tests/phaseALaunchProtection.test.mjs',
+    }
     assert not [
         path for path in changed
         if path not in allowed_phase_a_audience_signup_files
@@ -1362,6 +1376,7 @@ def test_existing_public_routes_behavior_freeze(monkeypatch):
         if path not in allowed_public_trust_consistency_files
         if path not in allowed_mobile_navigation_first_use_files
         if path not in allowed_team_board_answer_hierarchy_files
+        if path not in allowed_reliever_finder_search_first_files
         if (
             path in blocked_files and path not in allowed_internal_admin_files
         )

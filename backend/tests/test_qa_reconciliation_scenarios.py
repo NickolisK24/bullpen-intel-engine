@@ -427,6 +427,18 @@ def test_phase0e_switches_and_legacy_public_files_not_modified():
         'frontend/src/components/bullpen/board/BullpenAvailabilityDistribution.jsx',
         'frontend/tests/teamBoardAnswerHierarchy.test.mjs',
     }
+    allowed_reliever_finder_search_first_files = {
+        # feat/reliever-finder-search-first: the Reliever Finder opens in a
+        # neutral, search-first state, defaults to a neutral name A-Z order,
+        # compacts the search/team/availability/freshness controls to fit a 320px
+        # column, and clarifies the workload column labels. No bullpen
+        # calculation, availability classification, role authority, or
+        # route/query changes.
+        'frontend/src/components/bullpen/Bullpen.jsx',
+        'frontend/src/components/bullpen/relieverFinderView.js',
+        'frontend/tests/relieverFinder.test.mjs',
+        'frontend/tests/phaseALaunchProtection.test.mjs',
+    }
     allowed_files = (
         allowed_public_freshness_display_files
         | allowed_internal_admin_files
@@ -444,6 +456,7 @@ def test_phase0e_switches_and_legacy_public_files_not_modified():
         | allowed_public_trust_consistency_files
         | allowed_mobile_navigation_first_use_files
         | allowed_team_board_answer_hierarchy_files
+        | allowed_reliever_finder_search_first_files
     )
     forbidden_prefixes = (
         'backend/api/',

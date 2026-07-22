@@ -21,13 +21,18 @@ import TeamBullpenComparison from './board/TeamBullpenComparison'
 import { getBullpenEmptyState } from './emptyState'
 import AvailabilityBadge from './AvailabilityBadge'
 import PitcherSearch from './PitcherSearch'
+import { filterRowsByAvailability } from './availabilityView'
 import {
-  AVAILABILITY_FILTERS,
-  filterRowsByAvailability,
-  getAvailabilityFilterCounts,
-  getAvailabilityStatusLabel,
-  getRowAvailabilityStatus,
-} from './availabilityView'
+  computeFinderIntent,
+  describeActiveSort,
+  DEFAULT_FINDER_SORT,
+  filterRelieverRowsBySearch,
+  formatRestDays,
+  formatWorkloadCount,
+  getAvailabilityFilterOptions,
+  getTeamOptionLabel,
+  sortRelieverRows,
+} from './relieverFinderView'
 
 // The old "All Teams" score-table tab (30-team Avg Workload / risk-tier counts)
 // was retired in phase-0-clarity/02: it competed with the Dashboard's league
@@ -51,7 +56,9 @@ export default function Bullpen() {
     [location.hash, location.search],
   )
   const viewMode = urlState.view
-  const [sortBy, setSortBy]               = useState('pitches')
+  // The Reliever Finder opens on a neutral name A–Z order so it never reads as a
+  // workload leaderboard; the pitches and rest orderings stay user-selectable.
+  const [sortBy, setSortBy]               = useState(DEFAULT_FINDER_SORT)
   const [includeStale, setIncludeStale]   = useState(false)
   const [availabilityFilter, setAvailabilityFilter] = useState('ALL')
   const boardDetailRegionRef = useRef(null)
@@ -178,12 +185,6 @@ export default function Bullpen() {
                 </button>
               ))}
             </div>
-            {viewMode === 'pitchers' && (
-              <StaleToggle
-                active={includeStale}
-                onToggle={() => setIncludeStale(v => !v)}
-              />
-            )}
           </div>
         }
       />
@@ -230,6 +231,7 @@ export default function Bullpen() {
           sortBy={sortBy}
           setSortBy={setSortBy}
           includeStale={includeStale}
+          onToggleStale={() => setIncludeStale(v => !v)}
           availabilityFilter={availabilityFilter}
           setAvailabilityFilter={setAvailabilityFilter}
         />
@@ -243,44 +245,35 @@ function PitcherView({
   selectedTeam, onSelectTeam,
   onSelectPitcher,
   sortBy, setSortBy,
-  includeStale,
+  includeStale, onToggleStale,
   availabilityFilter, setAvailabilityFilter,
 }) {
   const [page, setPage] = useState(1)
   const [searchTerm, setSearchTerm] = useState('')
 
-  // Compute counts from the full dataset, BEFORE filtering — tab labels
-  // describe what's available, not what's currently shown.
   const fatiguePayload = allScores.data
   const allRows = Array.isArray(fatiguePayload) ? fatiguePayload : (fatiguePayload?.data || [])
   const meta = Array.isArray(fatiguePayload) ? null : fatiguePayload?.meta
-  const availabilityCounts = getAvailabilityFilterCounts(allRows)
   const selectedTeamInfo = (teams.data || []).find(t => t.team_id === selectedTeam)
-  const selectedTeamLabel = selectedTeamInfo?.team_abbreviation || selectedTeamInfo?.team_name
-  const normalizedSearch = searchTerm.trim().toLowerCase()
+  const selectedTeamLabel = getTeamOptionLabel(selectedTeamInfo) || null
 
-  // Filter by search for actual display. Team and freshness are applied
-  // by the backend so metadata can explain when those filters exclude data.
-  const availabilityRows = filterRowsByAvailability(allRows, availabilityFilter)
-  const rows = availabilityRows.filter(r => {
-    if (!normalizedSearch) return true
-    const haystack = [
-      r.pitcher?.full_name,
-      r.pitcher?.team_name,
-      r.pitcher?.team_abbreviation,
-      getRowAvailabilityStatus(r),
-      getAvailabilityStatusLabel(getRowAvailabilityStatus(r)),
-    ].filter(Boolean).join(' ').toLowerCase()
-    return haystack.includes(normalizedSearch)
-  })
+  // The finder is search-first: a broad reliever list appears only once the
+  // visitor asks for something — a name, a team, or a public availability
+  // status. Until then the surface stays a calm finder, not a league dump.
+  const { hasIntent } = computeFinderIntent({ searchTerm, selectedTeam, availabilityFilter })
 
-  // Sort
-  const sorted = useMemo(() => [...rows].sort((a, b) => {
-    if (sortBy === 'name')    return a.pitcher?.full_name?.localeCompare(b.pitcher?.full_name)
-    if (sortBy === 'rest')    return (a.days_since_last_appearance ?? 99) - (b.days_since_last_appearance ?? 99)
-    if (sortBy === 'pitches') return b.pitches_last_7_days - a.pitches_last_7_days
-    return 0
-  }), [rows, sortBy])
+  // Availability filter → search filter → neutral (or user-chosen) order. Each
+  // step reuses the shared authority; nothing here reclassifies a reliever.
+  const sorted = useMemo(
+    () => sortRelieverRows(
+      filterRelieverRowsBySearch(
+        filterRowsByAvailability(allRows, availabilityFilter),
+        searchTerm,
+      ),
+      sortBy,
+    ),
+    [allRows, availabilityFilter, searchTerm, sortBy],
+  )
 
   // Pagination math
   const totalRows  = sorted.length
@@ -289,6 +282,8 @@ function PitcherView({
   const startIdx   = (safePage - 1) * PAGE_SIZE
   const endIdx     = Math.min(startIdx + PAGE_SIZE, totalRows)
   const visible    = sorted.slice(startIdx, endIdx)
+  // The empty state only speaks once the visitor has expressed intent — it never
+  // reports "no results" against the neutral opening view.
   const emptyState = getBullpenEmptyState({
     allRowsCount: allRows.length,
     visibleRowsCount: sorted.length,
@@ -300,8 +295,18 @@ function PitcherView({
     searchTerm,
   })
 
+  const availabilityOptions = getAvailabilityFilterOptions()
+
   // Reset page to 1 when filters change (so filtering doesn't drop you onto an empty page)
   useEffect(() => { setPage(1) }, [availabilityFilter, selectedTeam, sortBy, searchTerm, includeStale])
+
+  const handleClear = () => {
+    setSearchTerm('')
+    setAvailabilityFilter('ALL')
+    setSortBy(DEFAULT_FINDER_SORT)
+    if (includeStale) onToggleStale?.()
+    if (selectedTeam != null) onSelectTeam(null)
+  }
 
   const handlePitcherRowKeyDown = (event, row) => {
     if (event.key === 'Enter' || event.key === ' ') {
@@ -313,121 +318,173 @@ function PitcherView({
   const thStyle = (key) =>
     `cursor-pointer select-none ${sortBy === key ? 'text-amber' : 'text-chalk400'} hover:text-chalk200 transition-colors`
 
+  // Sortable column headers are reachable by keyboard and announce the active
+  // order, so the explicit workload/rest sorts are not mouse-only.
+  const sortHeaderProps = (key) => ({
+    className: `${thStyle(key)} focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-amber/70`,
+    role: 'button',
+    tabIndex: 0,
+    'aria-sort': sortBy === key ? (key === 'pitches' ? 'descending' : 'ascending') : 'none',
+    onClick: () => setSortBy(key),
+    onKeyDown: (event) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault()
+        setSortBy(key)
+      }
+    },
+  })
+
   return (
     <>
-      {/* Reliever search — kept at the top of the finder so it is reachable on
-          mobile without scrolling past the team pills or the result list. */}
-      <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <label htmlFor="reliever-finder-search" className="font-mono text-[11px] uppercase tracking-widest text-chalk500">
-          Find a reliever
-        </label>
-        <input
-          id="reliever-finder-search"
-          type="search"
-          value={searchTerm}
-          onChange={e => setSearchTerm(e.target.value)}
-          aria-label="Search relievers"
-          placeholder="Search reliever"
-          className="w-full sm:w-64 rounded border border-dirt bg-field/70 px-3 py-2 font-mono text-xs text-chalk200 outline-none transition-colors placeholder:text-chalk600 focus:border-amber/50"
-        />
-      </div>
-
-      {/* Team filter pills */}
-      <div className="flex flex-wrap gap-2 mb-6 animate-fade-up opacity-0" style={{ animationFillMode: 'forwards' }}>
-        <button
-          onClick={() => onSelectTeam(null)}
-          className={`px-3 py-1.5 rounded border text-xs font-mono transition-all ${!selectedTeam ? 'bg-amber/10 border-amber/40 text-amber' : 'border-dirt text-chalk400 hover:border-chalk400'}`}
-        >
-          All Teams
-        </button>
-        {(teams.data || []).map(t => (
-          <button
-            key={t.team_id}
-            onClick={() => onSelectTeam(t.team_id)}
-            className={`px-3 py-1.5 rounded border text-xs font-mono transition-all ${selectedTeam === t.team_id ? 'bg-amber/10 border-amber/40 text-amber' : 'border-dirt text-chalk400 hover:border-chalk400'}`}
-          >
-            {t.team_abbreviation}
-          </button>
-        ))}
-      </div>
-
-      {/* Availability filter */}
-      <div className="mb-5 flex flex-wrap gap-1 rounded-lg border border-dirt bg-chalk/30 p-1 w-fit max-w-full">
-        {AVAILABILITY_FILTERS.map(f => (
-          <button
-            key={f}
-            onClick={() => setAvailabilityFilter(f)}
-            className={`px-3 py-1.5 rounded text-xs font-mono transition-all ${
-              availabilityFilter === f
-                ? 'bg-chalk border-dirt text-chalk200 shadow'
-                : 'text-chalk400 hover:text-chalk200'
-            }`}
-          >
-            {getAvailabilityStatusLabel(f)}{' '}
-            <span className="opacity-60">({availabilityCounts[f] ?? 0})</span>
-          </button>
-        ))}
-      </div>
-
-      <div className="flex flex-col gap-6 2xl:flex-row 2xl:items-start">
-        {/* Main table */}
-        <div className="min-w-0 flex-1 card overflow-hidden transition-all duration-300">
-          {allScores.loading ? (
-            <LoadingPane message="Loading recent workload data..." />
-          ) : allScores.error ? (
-            <ErrorState message={allScores.error} onRetry={allScores.refetch} />
-          ) : sorted.length === 0 ? (
-            <EmptyState title={emptyState.title} subtitle={emptyState.subtitle} />
-          ) : (
-            <>
-              <div className="overflow-x-auto">
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th className={thStyle('name')} onClick={() => setSortBy('name')}>Pitcher {sortBy === 'name' && '↑'}</th>
-                    <th className="text-chalk400">Team</th>
-                    <th className="text-chalk400">Availability</th>
-                    <th className={thStyle('pitches')} onClick={() => setSortBy('pitches')}>P/7d {sortBy === 'pitches' && '↓'}</th>
-                    <th className={thStyle('rest')} onClick={() => setSortBy('rest')}>Rest {sortBy === 'rest' && '↑'}</th>
-                    <th className="text-chalk400">App/7d</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {visible.map(row => (
-                    <tr
-                      key={row.id || row.pitcher_id}
-                      onClick={() => onSelectPitcher(row)}
-                      onKeyDown={(event) => handlePitcherRowKeyDown(event, row)}
-                      tabIndex={0}
-                      aria-label={`Open pitcher detail for ${row.pitcher?.full_name ?? 'pitcher'}`}
-                      className="focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-amber/70"
-                    >
-                      <td className="text-chalk200 font-medium">{row.pitcher?.full_name ?? '—'}</td>
-                      <td className="font-mono text-xs text-chalk400">{row.pitcher?.team_abbreviation}</td>
-                      <td><AvailabilityBadge availability={row.availability} showDataState /></td>
-                      <td className="font-mono text-xs text-chalk200">{row.pitches_last_7_days ?? 0}</td>
-                      <td className="font-mono text-xs text-chalk400">{row.days_since_last_appearance != null ? `${row.days_since_last_appearance}d` : '---'}</td>
-                      <td className="font-mono text-xs text-chalk200">{row.appearances_last_7 ?? 0}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              </div>
-              {totalPages > 1 && (
-                <Pagination
-                  page={safePage}
-                  totalPages={totalPages}
-                  startIdx={startIdx}
-                  endIdx={endIdx}
-                  totalRows={totalRows}
-                  onPageChange={setPage}
-                />
-              )}
-            </>
+      {/* One coherent finder control area: search → team → availability →
+          freshness window → clear. Every field can shrink (min-w-0) and the row
+          wraps deliberately, so the whole group fits a 320px column. */}
+      <section aria-label="Reliever finder controls" className="mb-6 rounded-lg border border-dirt bg-field/30 p-3 sm:p-4">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="min-w-0 sm:col-span-2 lg:col-span-1">
+            <label htmlFor="reliever-finder-search" className="block font-mono text-[11px] uppercase tracking-widest text-chalk500">
+              Find a reliever
+            </label>
+            <input
+              id="reliever-finder-search"
+              type="search"
+              value={searchTerm}
+              onChange={e => setSearchTerm(e.target.value)}
+              aria-label="Search relievers by name"
+              placeholder="Search reliever"
+              className="mt-1 w-full min-w-0 rounded border border-dirt bg-field/70 px-3 py-2 font-mono text-xs text-chalk200 outline-none transition-colors placeholder:text-chalk600 focus:border-amber/50"
+            />
+          </div>
+          <div className="min-w-0">
+            <label htmlFor="reliever-finder-team" className="block font-mono text-[11px] uppercase tracking-widest text-chalk500">
+              Team
+            </label>
+            <select
+              id="reliever-finder-team"
+              value={selectedTeam != null ? String(selectedTeam) : ''}
+              onChange={e => onSelectTeam(e.target.value ? Number(e.target.value) : null)}
+              className="mt-1 w-full min-w-0 rounded border border-dirt bg-field/70 px-3 py-2 font-mono text-xs text-chalk200 outline-none transition-colors focus:border-amber/50"
+            >
+              <option value="">All teams</option>
+              {(teams.data || []).map(t => (
+                <option key={t.team_id} value={t.team_id}>{getTeamOptionLabel(t)}</option>
+              ))}
+            </select>
+          </div>
+          <div className="min-w-0">
+            <label htmlFor="reliever-finder-availability" className="block font-mono text-[11px] uppercase tracking-widest text-chalk500">
+              Availability
+            </label>
+            <select
+              id="reliever-finder-availability"
+              value={availabilityFilter}
+              onChange={e => setAvailabilityFilter(e.target.value)}
+              className="mt-1 w-full min-w-0 rounded border border-dirt bg-field/70 px-3 py-2 font-mono text-xs text-chalk200 outline-none transition-colors focus:border-amber/50"
+            >
+              {availabilityOptions.map(option => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+        <div className="mt-3 flex flex-wrap items-start justify-between gap-3">
+          <StaleToggle active={includeStale} onToggle={onToggleStale} />
+          {hasIntent && (
+            <button
+              type="button"
+              onClick={handleClear}
+              className="shrink-0 rounded border border-dirt px-3 py-1.5 font-mono text-[11px] uppercase tracking-widest text-chalk300 transition-colors hover:border-chalk400 hover:text-chalk100 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/60"
+            >
+              Clear filters
+            </button>
           )}
         </div>
+      </section>
 
-      </div>
+      {!hasIntent ? (
+        // Neutral opening view: one short instruction, no result list, no result
+        // count, no ranked examples. It reads as an invitation, not an error.
+        <div className="rounded-lg border border-dirt bg-field/30 p-6 text-center">
+          <p className="font-mono text-[11px] uppercase tracking-widest text-chalk500">Reliever Finder</p>
+          <p className="mx-auto mt-2 max-w-md text-sm text-chalk300">
+            Search for a reliever or choose a team to inspect recent workload.
+          </p>
+          <p className="mx-auto mt-1 max-w-md text-xs text-chalk500">
+            You can also filter by public availability status: Available, On Watch, Limited, or Unavailable.
+          </p>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-6 2xl:flex-row 2xl:items-start">
+          {/* Main table */}
+          <div className="min-w-0 flex-1 card overflow-hidden transition-all duration-300">
+            {allScores.loading ? (
+              <LoadingPane message="Loading recent workload data..." />
+            ) : allScores.error ? (
+              <ErrorState message={allScores.error} onRetry={allScores.refetch} />
+            ) : sorted.length === 0 ? (
+              <EmptyState title={emptyState.title} subtitle={emptyState.subtitle} />
+            ) : (
+              <>
+                {/* Result summary + active order + column-abbreviation legend.
+                    Wraps cleanly so nothing is clipped at 320px. */}
+                <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-b border-dirt bg-chalk/20 px-4 py-2">
+                  <p className="min-w-0 font-mono text-[11px] text-chalk500">
+                    <span className="text-chalk300">{totalRows}</span>{' '}
+                    reliever{totalRows === 1 ? '' : 's'} · sorted by {describeActiveSort(sortBy)}
+                  </p>
+                  <p className="min-w-0 font-mono text-[10px] text-chalk600">
+                    7d = last 7 days · Rest = days since last outing
+                  </p>
+                </div>
+                <div className="overflow-x-auto">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th {...sortHeaderProps('name')}>Pitcher {sortBy === 'name' && '↑'}</th>
+                      <th className="text-chalk400">Team</th>
+                      <th className="text-chalk400">Availability</th>
+                      <th {...sortHeaderProps('pitches')}>Pitches (7d) {sortBy === 'pitches' && '↓'}</th>
+                      <th {...sortHeaderProps('rest')}>Rest {sortBy === 'rest' && '↑'}</th>
+                      <th className="text-chalk400">Appearances (7d)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {visible.map(row => (
+                      <tr
+                        key={row.id || row.pitcher_id}
+                        onClick={() => onSelectPitcher(row)}
+                        onKeyDown={(event) => handlePitcherRowKeyDown(event, row)}
+                        tabIndex={0}
+                        aria-label={`Open pitcher detail for ${row.pitcher?.full_name ?? 'pitcher'}`}
+                        className="focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-amber/70"
+                      >
+                        <td className="text-chalk200 font-medium">{row.pitcher?.full_name ?? '—'}</td>
+                        <td className="font-mono text-xs text-chalk400">{row.pitcher?.team_abbreviation ?? '—'}</td>
+                        <td><AvailabilityBadge availability={row.availability} showDataState /></td>
+                        <td className="font-mono text-xs text-chalk200">{formatWorkloadCount(row.pitches_last_7_days)}</td>
+                        <td className="font-mono text-xs text-chalk400">{formatRestDays(row.days_since_last_appearance)}</td>
+                        <td className="font-mono text-xs text-chalk200">{formatWorkloadCount(row.appearances_last_7)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                </div>
+                {totalPages > 1 && (
+                  <Pagination
+                    page={safePage}
+                    totalPages={totalPages}
+                    startIdx={startIdx}
+                    endIdx={endIdx}
+                    totalRows={totalRows}
+                    onPageChange={setPage}
+                  />
+                )}
+              </>
+            )}
+          </div>
+
+        </div>
+      )}
     </>
   )
 }
@@ -511,12 +568,12 @@ function StaleToggle({ active, onToggle }) {
       type="button"
       onClick={onToggle}
       aria-pressed={active}
-      className="px-3 py-1.5 rounded border text-left transition-colors"
+      className="w-full min-w-0 sm:w-auto sm:max-w-sm px-3 py-1.5 rounded border text-left transition-colors"
       style={{ borderColor: ringColor, backgroundColor: bgColor }}
     >
-      <div className="flex items-center gap-2">
+      <div className="flex items-start gap-2">
         <span
-          className="inline-flex items-center justify-center w-3 h-3 rounded-sm border"
+          className="mt-0.5 inline-flex shrink-0 items-center justify-center w-3 h-3 rounded-sm border"
           style={{ borderColor: boxBorder, backgroundColor: boxFill }}
         >
           {active && (
@@ -532,11 +589,11 @@ function StaleToggle({ active, onToggle }) {
             </svg>
           )}
         </span>
-        <span className="font-mono text-xs" style={{ color: labelColor }}>
+        <span className="min-w-0 font-mono text-xs leading-snug" style={{ color: labelColor }}>
           Show pitchers outside the freshness window
         </span>
       </div>
-      <div className="font-mono text-[10px] mt-0.5 ml-5 text-chalk600">
+      <div className="font-mono text-[10px] mt-0.5 ml-5 leading-snug text-chalk600">
         Includes pitchers outside the active freshness window
       </div>
     </button>

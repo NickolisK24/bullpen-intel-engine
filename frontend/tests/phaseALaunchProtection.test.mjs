@@ -34,27 +34,37 @@ test('Pitcher Detail source has no score-first chart or threshold framing', asyn
   }
 })
 
-test('All Pitchers source uses workload units instead of score or risk leaderboard behavior', async () => {
+test('Reliever Finder source shows honest workload facts with a neutral default order, not a score or leaderboard', async () => {
   const source = await readFile(
     new URL('../src/components/bullpen/Bullpen.jsx', import.meta.url),
     'utf8',
   )
 
   for (const required of [
-    "useState('pitches')",
-    "if (sortBy === 'pitches') return b.pitches_last_7_days - a.pitches_last_7_days",
-    'P/7d',
+    // Neutral default order (name A–Z) instead of a workload-descending open.
+    'useState(DEFAULT_FINDER_SORT)',
+    // The pitches and rest orderings stay user-selectable, keyboard-reachable
+    // sorts of honest baseball facts.
+    "sortHeaderProps('pitches')",
+    "sortHeaderProps('rest')",
+    // Reader-clear column labels replace the cramped P/7d and App/7d.
+    'Pitches (7d)',
+    'Appearances (7d)',
     'Rest',
-    'App/7d',
     '<AvailabilityBadge availability={row.availability} showDataState />',
   ]) {
     assert.ok(source.includes(required), required)
   }
 
   for (const forbidden of [
+    // The finder must not open ranked by workload.
+    "useState('pitches')",
     "useState('score')",
     "sortBy === 'score'",
     "setSortBy('score')",
+    // The retired cramped column abbreviations must not return.
+    'P/7d',
+    'App/7d',
     '<RiskBadge',
     '<FatigueBar',
     'riskFilter',
@@ -63,6 +73,23 @@ test('All Pitchers source uses workload units instead of score or risk leaderboa
     'Recent Load',
     '>Risk<',
   ]) {
+    assert.equal(source.includes(forbidden), false, forbidden)
+  }
+})
+
+test('Reliever Finder ordering uses honest workload facts, never a composite metric', async () => {
+  const source = await readFile(
+    new URL('../src/components/bullpen/relieverFinderView.js', import.meta.url),
+    'utf8',
+  )
+
+  // The explicit orderings sort real pitch and rest facts; the default is name.
+  assert.ok(source.includes('pitches_last_7_days'))
+  assert.ok(source.includes('days_since_last_appearance'))
+  assert.ok(source.includes("NAME: 'name'"))
+  assert.ok(source.includes('DEFAULT_FINDER_SORT = FINDER_SORTS.NAME'))
+
+  for (const forbidden of ['raw_score', 'fatigueScore', 'compositeScore', 'RISK_', 'grade']) {
     assert.equal(source.includes(forbidden), false, forbidden)
   }
 })
