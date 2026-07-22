@@ -1336,6 +1336,17 @@ def test_existing_public_routes_behavior_freeze(monkeypatch):
         'frontend/tests/mobileNavigation.test.mjs',
         'frontend/tests/intelligenceSurface.test.mjs',
     }
+    allowed_team_board_answer_hierarchy_files = {
+        # feat/team-board-answer-hierarchy: the Team Board leads with the answer
+        # (state, why, availability distribution, receipts, freshness) and moves
+        # the secondary team story and game context behind clear disclosures. The
+        # availability distribution reads the existing board count authority; no
+        # bullpen calculation, availability classification, or role authority
+        # changes.
+        'frontend/src/components/bullpen/board/TonightsBullpenBoard.jsx',
+        'frontend/src/components/bullpen/board/BullpenAvailabilityDistribution.jsx',
+        'frontend/tests/teamBoardAnswerHierarchy.test.mjs',
+    }
     assert not [
         path for path in changed
         if path not in allowed_phase_a_audience_signup_files
@@ -1350,6 +1361,7 @@ def test_existing_public_routes_behavior_freeze(monkeypatch):
         if path not in allowed_wp42_schedule_files
         if path not in allowed_public_trust_consistency_files
         if path not in allowed_mobile_navigation_first_use_files
+        if path not in allowed_team_board_answer_hierarchy_files
         if (
             path in blocked_files and path not in allowed_internal_admin_files
         )

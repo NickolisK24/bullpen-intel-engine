@@ -365,6 +365,15 @@ def test_frozen_legacy_what_changed_files_untouched():
         'frontend/tests/mobileNavigation.test.mjs',
         'frontend/tests/intelligenceSurface.test.mjs',
     }
+    allowed_team_board_answer_hierarchy_files = {
+        # feat/team-board-answer-hierarchy: the Team Board leads with the answer and
+        # moves the secondary story and game context behind disclosures. The
+        # availability distribution reuses the existing board count authority; no
+        # bullpen calculation or availability/role changes.
+        'frontend/src/components/bullpen/board/TonightsBullpenBoard.jsx',
+        'frontend/src/components/bullpen/board/BullpenAvailabilityDistribution.jsx',
+        'frontend/tests/teamBoardAnswerHierarchy.test.mjs',
+    }
     assert not sorted(
         path for path in changed
         if path.startswith('frontend/')
@@ -379,6 +388,7 @@ def test_frozen_legacy_what_changed_files_untouched():
         if path not in allowed_wp42_schedule_files
         if path not in allowed_public_trust_consistency_files
         if path not in allowed_mobile_navigation_first_use_files
+        if path not in allowed_team_board_answer_hierarchy_files
     )
     assert not sorted(
         path for path in changed
