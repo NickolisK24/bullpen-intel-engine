@@ -33,11 +33,13 @@ const html = renderBullpen()
 // "All Teams" league score table was retired in phase-0-clarity/02 — the
 // Dashboard owns the league view.
 test('bullpen tabs use the clarified labels', () => {
-  // ("Tonight's Board" has an apostrophe React escapes to &#x27; — match the rest.)
-  for (const label of ['Compare Bullpens', 'All Pitchers']) {
+  // The reliever-only view is publicly labeled "Reliever Finder", never the
+  // population-overstating "All Pitchers".
+  for (const label of ['Compare Bullpens', 'Reliever Finder']) {
     assert.ok(htmlIncludes(html, label), `missing tab label: ${label}`)
   }
   assert.ok(htmlIncludes(html, 'Board'))
+  assert.equal(htmlIncludes(html, 'All Pitchers'), false)
   assert.equal(htmlIncludes(html, '>All Teams<'), false)
 })
 

@@ -632,7 +632,11 @@ test('Intelligence Surface shell renders before data resolves', () => {
   assert.ok(htmlIncludes(html, 'Reading tonight&#x27;s bullpen context...'))
   assert.ok(htmlIncludes(html, 'Today&#x27;s Bullpen Picture'))
   assert.ok(htmlIncludes(html, 'Loading bullpen picture...'))
-  assert.equal(htmlIncludes(html, 'href="/bullpen"'), false)
+  // The persistent first-use entry area links to the primary bullpen surfaces
+  // even in the loading shell, but no team-specific board deep link appears
+  // before data resolves.
+  assert.ok(htmlIncludes(html, 'href="/bullpen?view=compare"'))
+  assert.equal(htmlIncludes(html, 'team='), false)
   assert.equal(htmlIncludes(html, 'No lead bullpen story has cleared the bar yet.'), false)
 })
 
@@ -1680,12 +1684,15 @@ test('Explore links render to existing routes', () => {
   for (const removedTitle of ['Dashboard', 'Bullpen', 'Stories']) {
     assert.equal(htmlIncludes(exploreHtml, removedTitle), false, removedTitle)
   }
+  // The Learn & Explore (supporting) section links only to the trust/explainer
+  // pages — the primary bullpen links live in the separate first-use entry area.
   assert.equal(htmlIncludes(exploreHtml, 'href="/dashboard"'), false)
   assert.equal(htmlIncludes(exploreHtml, 'href="/bullpen"'), false)
   assert.equal(htmlIncludes(exploreHtml, 'href="/stories"'), false)
 
-  assert.equal(countOccurrences(html, 'href="/bullpen"'), 0)
-  assert.equal(htmlIncludes(html, 'href="/bullpen?view=compare"'), false)
+  // The first-use entry area does link to the primary bullpen surfaces.
+  assert.ok(htmlIncludes(html, 'href="/bullpen?view=compare"'))
+  assert.ok(htmlIncludes(html, 'href="/bullpen?view=pitchers"'))
 })
 
 test('Today visible text avoids internal platform terms', () => {
