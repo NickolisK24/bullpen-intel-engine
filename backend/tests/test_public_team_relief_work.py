@@ -1361,6 +1361,17 @@ def test_existing_public_routes_behavior_freeze(monkeypatch):
         'frontend/tests/relieverFinder.test.mjs',
         'frontend/tests/phaseALaunchProtection.test.mjs',
     }
+    allowed_methodology_public_first_files = {
+        # feat/methodology-public-first-rewrite: the Methodology page explains the
+        # public read process (evidence -> arm read -> team read -> freshness ->
+        # limitations) in plain baseball language, with one fixed illustrative
+        # worked example. It removes the composite-score/weight framing and no
+        # longer fetches backend methodology data; it is presentation copy only.
+        # No calculation, threshold, classification, or vocabulary changes.
+        'frontend/src/components/methodology/Methodology.jsx',
+        'frontend/tests/methodologyDescore.test.mjs',
+        'frontend/tests/pageHierarchyDedupe.test.mjs',
+    }
     assert not [
         path for path in changed
         if path not in allowed_phase_a_audience_signup_files
@@ -1377,6 +1388,7 @@ def test_existing_public_routes_behavior_freeze(monkeypatch):
         if path not in allowed_mobile_navigation_first_use_files
         if path not in allowed_team_board_answer_hierarchy_files
         if path not in allowed_reliever_finder_search_first_files
+        if path not in allowed_methodology_public_first_files
         if (
             path in blocked_files and path not in allowed_internal_admin_files
         )

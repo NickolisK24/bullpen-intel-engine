@@ -137,21 +137,19 @@ test('sidebar renders the requested public page order', () => {
   assert.equal(htmlIncludes(html, 'href="/prospects"'), false)
 })
 
-test('Methodology explains the reliability check and links to Data & Trust instead of rendering the full backtest', () => {
+test('Methodology links to Data & Trust and preserves its inbound anchors instead of rendering the backtest', () => {
   const html = render(React.createElement(MethodologyView, { data: methodologyData }))
   const text = visibleText(html)
 
-  assert.ok(htmlIncludes(html, 'Reliability Check'))
   assert.ok(htmlIncludes(html, 'href="/trust"'))
-  assert.ok(htmlIncludes(html, 'View Data &amp; Trust'))
   assert.ok(htmlIncludes(html, 'id="methodology"'))
   assert.ok(htmlIncludes(html, 'id="data-sources"'))
   assert.ok(htmlIncludes(html, 'id="known-limitations"'))
-  assert.ok(htmlIncludes(html, 'Known Limitations'))
+  assert.ok(text.includes('Limitations and refusals'))
   assert.ok(text.includes('public MLB data'))
-  assert.ok(text.includes('descriptive and evidence-backed'))
   assert.ok(text.includes('not a health claim'))
-  assert.ok(html.includes('The live reliability read belongs in Data &amp; Trust'))
+  // The live reliability report stays on Data & Trust; Methodology only links there.
+  assert.ok(text.includes('current system status, coverage, and validation'))
   assert.equal(text.includes('Operational Backtest'), false)
   assert.equal(text.includes('Operational Availability Backtest'), false)
   assert.equal(text.includes('Exploratory ERA Study'), false)
@@ -201,8 +199,8 @@ test('Methodology and Data & Trust rendered text does not leak internal labels',
 
   assert.equal(forbiddenVisibleTerms.test(methodologyText), false)
   assert.equal(forbiddenVisibleTerms.test(trustText), false)
-  assert.ok(methodologyText.includes('game log feed'))
-  assert.ok(methodologyText.includes('BaseballOS service'))
+  assert.ok(methodologyText.includes('public MLB data'))
+  assert.ok(methodologyText.includes('On Watch'))
 })
 
 test('dashboard landscape notes soften internal sorting language', () => {

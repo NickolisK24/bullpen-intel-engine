@@ -19,188 +19,159 @@ after(async () => {
 
 const { MethodologyView } = await server.ssrLoadModule('/src/components/methodology/Methodology.jsx')
 
-const render = (element) => renderToStaticMarkup(
-  React.createElement(MemoryRouter, null, element),
+const render = () => renderToStaticMarkup(
+  React.createElement(MemoryRouter, null, React.createElement(MethodologyView)),
 )
-const visibleText = (html) => html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
-const htmlIncludes = (html, text) => html.includes(text)
+const decodeEntities = (value) => value
+  .replace(/&#x27;/g, "'").replace(/&#39;/g, "'").replace(/&apos;/g, "'")
+  .replace(/&mdash;/g, '—').replace(/&ndash;/g, '–')
+  .replace(/&middot;/g, '·').replace(/&bull;/g, '•')
+  .replace(/&rsquo;/g, '’').replace(/&lsquo;/g, '‘')
+  .replace(/&ldquo;/g, '“').replace(/&rdquo;/g, '”')
+  .replace(/&amp;/g, '&')
+const visibleText = (html) => decodeEntities(html.replace(/<[^>]*>/g, ' ')).replace(/\s+/g, ' ').trim()
+const html = render()
+const text = visibleText(html)
 
-const forbiddenPublicMethodologyTerms = [
-  '0 to 100',
-  '0–100',
-  '0-100',
-  '[0, 100]',
-  '0d=',
-  '1d=',
-  'thresholds at',
-  '0–24',
-  '0-24',
-  '25–49',
-  '25-49',
-  '50–80',
-  '50-80',
-  '81–100',
-  '81-100',
-]
+// The worked example is anchored to the canonical availability rule proven by
+// backend/tests/test_availability.py::TestAvailabilityClassification
+// ::test_monitor_for_light_yesterday_workload — one 16-pitch appearance
+// yesterday classifies as STATUS_MONITOR, whose public label is "On Watch".
+const EXAMPLE_PITCHES = '16 pitches'
+const EXAMPLE_STATUS = 'On Watch'
 
-const methodologyData = {
-  fatigue_engine: {
-    title: 'Bullpen Recent Workload Read',
-    summary: (
-      'A weighted composite read that turns recent reliever usage into a '
-      + '0 to 100 workload index. Each component returns a 0–100 sub-read; '
-      + 'the final index is the weighted sum, clamped to the [0, 100] range.'
-    ),
-    components: [
-      {
-        name: 'Pitch Count Load',
-        weight: '35%',
-        rationale: 'Sub-score scales linearly across thresholds at 50, 90, and 120 pitches.',
-      },
-      {
-        name: 'Rest Days',
-        weight: '30%',
-        rationale: 'Discrete mapping: 0d=100, 1d=80, 2d=55, 3d=30, 4d=10, 5+d=0.',
-      },
-      {
-        name: 'Appearance Frequency',
-        weight: '20%',
-        rationale: 'Blends 7-day and 14-day windows (70/15 weighted).',
-      },
-      {
-        name: 'Innings Load',
-        weight: '15%',
-        rationale: 'Scales linearly across 4 IP and 6 IP thresholds in a 7-day window.',
-      },
-    ],
-    interpretation: [
-      'More rest and lighter recent work generally support availability.',
-      'Repeated appearances, elevated pitch counts, and limited recovery increase workload concern.',
-      'The final public read is explained with recent-work evidence rather than a numeric grade.',
-    ],
-    risk_tiers: [
-      { level: 'LOW', range: '0-24', interpretation: 'Fresh and available.' },
-      { level: 'MODERATE', range: '25-49', interpretation: 'Some recent use. Monitor.' },
-      { level: 'HIGH', range: '50-80', interpretation: 'Heavy recent workload. Use with caution.' },
-      { level: 'CRITICAL', range: '81-100', interpretation: 'Recent usage strongly points toward rest.' },
-    ],
-    excluded: {
-      name: 'Leverage Index',
-      reason: 'Leverage Index is excluded because the public game log feed does not reliably expose it.',
-    },
-  },
-  insights: {
-    title: 'Recent Workload vs. Next-Outing ERA (Exploratory, Secondary)',
-    summary: 'Grouped by Low / Moderate / High / Critical score tiers.',
-    finding: 'HIGH and CRITICAL workload reads showed a tier-based finding.',
-    samples: { LOW: 0, MODERATE: 16385, HIGH: 14495, CRITICAL: 6 },
-  },
-  data_sources: [
-    {
-      name: 'MLB Stats API',
-      url: 'https://example.test/mlb',
-      use: 'Primary source for rosters, game logs, and box scores.',
-    },
-  ],
-  stack: ['React', 'Vite'],
-}
+test('Methodology stays the /methodology route and leads with the public read, not a formula', async () => {
+  const app = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8')
+  assert.ok(app.includes("path: '/methodology'"))
 
-test('Methodology route content renders with workload inputs and baseball-unit explanations', () => {
-  const html = render(React.createElement(MethodologyView, { data: methodologyData }))
-  const text = visibleText(html)
+  // Exactly one primary heading, and it frames the reading of a bullpen.
+  assert.equal((html.match(/<h1\b/g) || []).length, 1)
+  assert.match(html, /<h1[^>]*>How BaseballOS reads a bullpen<\/h1>/)
 
-  assert.ok(text.includes('Methodology'))
-  assert.ok(text.includes('Bullpen Recent Workload Read'))
-  assert.ok(text.includes('Reliability Check'))
-
-  for (const required of [
-    'Pitch Count Load',
-    '35%',
-    'Recent pitch volume',
-    'Rest Days',
-    '30%',
-    'Time since the most recent appearance',
-    'Appearance Frequency',
-    '20%',
-    'Repeated use can narrow bullpen flexibility',
-    'Innings Load',
-    '15%',
-    'Recent innings provide a second volume check',
-    'Public Read',
-    'Data Sources',
-    'Known Limitations',
-    'Leverage Index',
-  ]) {
-    assert.ok(text.includes(required), required)
-  }
-
-  assert.ok(htmlIncludes(html, 'id="methodology"'))
-  assert.ok(htmlIncludes(html, 'id="data-sources"'))
-  assert.ok(htmlIncludes(html, 'id="known-limitations"'))
+  // The opening names the evidence it examines before any mechanism detail.
+  const intro = text.indexOf('reads recent workload, rest, role and roster')
+  const examines = text.indexOf('The evidence behind a read')
+  assert.ok(intro > -1)
+  assert.ok(examines > intro)
 })
 
-test('Methodology does not render public workload score ranges or risk-tier cards', () => {
-  const html = render(React.createElement(MethodologyView, { data: methodologyData }))
-  const text = visibleText(html)
-
-  for (const forbidden of [
-    ...forbiddenPublicMethodologyTerms,
-    'Risk Tiers',
-    'LOW',
-    'MODERATE',
-    'HIGH',
-    'CRITICAL',
-  ]) {
-    assert.equal(text.includes(forbidden), false, forbidden)
+test('Methodology uses the canonical public vocabulary and no implementation-first artifacts', () => {
+  for (const status of ['Available', 'On Watch', 'Limited', 'Unavailable']) {
+    assert.ok(text.includes(status), status)
   }
+  for (const state of ['Fresh', 'Stretched', 'Vulnerable']) {
+    assert.ok(text.includes(state), state)
+  }
+  // The internal Avoid tier is never surfaced as a public status.
+  assert.equal(/\bAvoid\b/.test(text), false)
 
-  assert.equal(text.includes('sub-read'), false)
-  assert.equal(text.includes('weighted sum'), false)
-  assert.equal(text.includes('50, 90, and 120'), false)
-  assert.equal(text.includes('2d=55'), false)
-  assert.equal(text.includes('70/15 weighted'), false)
-  assert.equal(/Low\s+0[-–]24/i.test(text), false)
-  assert.equal(/Moderate\s+25[-–]49/i.test(text), false)
-  assert.equal(/High\s+50[-–]80/i.test(text), false)
-  assert.equal(/Critical\s+81[-–]100/i.test(text), false)
-})
-
-test('Methodology does not render the exploratory ERA section or hidden tier framing', () => {
-  const html = render(React.createElement(MethodologyView, { data: methodologyData }))
-  const text = visibleText(html)
-
-  for (const forbidden of [
-    'Recent Workload vs. Next-Outing ERA',
-    'Exploratory, Secondary',
-    'Sample sizes:',
-    'Grouped by Low / Moderate / High / Critical score tiers.',
-    'tier-based finding',
-    'LOW n=',
-    'MODERATE n=',
-    'HIGH n=',
-    'CRITICAL n=',
-  ]) {
-    assert.equal(text.includes(forbidden), false, forbidden)
+  const forbidden = [
+    '0-100', '0–100', '0 to 100', '[0, 100]',
+    '35%', '30%', '20%', '15%',
+    '35 / 30 / 20 / 15', 'weighted sum', 'sub-read', 'composite',
+    'LOW', 'MODERATE', 'HIGH', 'CRITICAL',
+    'Risk Tier', 'risk score', 'fatigue score', 'Fatigue Score',
+    'Leverage Index', 'radar', 'Stack',
+    'V1', 'V2', 'V3', 'V4', 'COIN',
+    'algorithm', 'proprietary', 'black box', 'optimal', 'Recommended',
+    'reason_code', 'reason code', 'raw_score', 'endpoint',
+  ]
+  for (const term of forbidden) {
+    assert.equal(text.includes(term), false, term)
   }
 })
 
-test('public Methodology payload source has no score construction details', async () => {
+test('Methodology explains workload, rest, role, and roster evidence with honest boundaries', () => {
+  // Workload evidence: recent appearances, pitch counts, windows.
+  assert.ok(text.includes('Pitch counts'))
+  assert.ok(text.includes('Recent appearances'))
+  // Rest evidence.
+  assert.ok(text.includes('Days since the last appearance'))
+  // Observed role/eligibility — usage, described without a manager-intent claim.
+  assert.ok(text.includes('Observed relief usage and eligibility'))
+  assert.ok(text.includes('not a manager’s plan'))
+  // Roster context is not a health claim.
+  assert.ok(text.includes('Roster context describes'))
+  assert.ok(text.includes('The absence of a public flag is not a health claim.'))
+  // Unknown and zero are different.
+  assert.ok(text.includes('never treated as zero'))
+  assert.ok(text.includes('stays partly unknown'))
+  // Workload is not quality; team state is not a ranking.
+  assert.ok(text.includes('not a measure of pitcher quality'))
+  assert.ok(text.includes('not a ranking'))
+})
+
+test('Methodology worked example is illustrative and follows State -> Why -> Evidence -> Freshness -> Limitations', () => {
+  assert.ok(text.includes('Illustrative example'))
+  assert.ok(text.includes('not current MLB data'))
+  assert.ok(text.includes('Example Reliever'))
+  assert.ok(text.includes(EXAMPLE_STATUS))
+  assert.ok(text.includes(EXAMPLE_PITCHES))
+
+  // Order is checked within the worked-example block so unrelated occurrences of
+  // these words elsewhere on the page cannot satisfy the sequence.
+  const start = text.indexOf('Illustrative example')
+  const end = text.indexOf('When BaseballOS publishes')
+  const block = end > start ? text.slice(start, end) : text.slice(start)
+  let previous = -1
+  for (const label of ['Illustrative example', 'State', 'Why', 'Evidence', 'Freshness', 'Limitations']) {
+    const index = block.indexOf(label)
+    assert.ok(index > previous, label)
+    previous = index
+  }
+
+  // No prediction, health, manager-intent, or live-data claim in the example.
+  assert.ok(text.includes('does not predict whether he will appear'))
+  assert.ok(text.includes('not live tracking'))
+})
+
+test('Methodology explains freshness, publication gates, and refusals without duplicating other pages', () => {
+  assert.ok(text.includes('data-through date'))
+  assert.ok(text.includes('Stale data is labeled'))
+  assert.ok(text.includes('may publish no read'))
+  assert.ok(text.includes('not real-time'))
+  assert.ok(text.includes('does not predict whether a pitcher will appear'))
+
+  // Refusals render from the canonical boundary module.
+  assert.ok(text.includes("No predictions. It describes today's context, not tomorrow's outcome."))
+  assert.ok(text.includes('No betting advice. It is not a wagering or odds product.'))
+  assert.ok(text.includes('Quiet or withheld output is intentional.'))
+})
+
+test('Methodology links the live product and canonical pages, and exposes no admin or internal targets', () => {
+  const hrefs = [...html.matchAll(/href="([^"]+)"/g)].map(m => m[1])
+  for (const target of ['/how-to-read', '/trust', '/bullpen', '/bullpen?view=compare', '/bullpen?view=pitchers']) {
+    assert.ok(hrefs.includes(target), target)
+  }
+  // Descriptive labels, never generic.
+  assert.ok(text.includes('How to Read'))
+  assert.ok(text.includes('Data & Trust'))
+  assert.ok(text.includes('Reliever Finder'))
+  assert.equal(/Learn more|View details|Read more|Click here/i.test(text), false)
+  // No admin surfaces or internal docs from the public page.
+  assert.equal(hrefs.some(href => /\/admin|\/docs|token=|\.md$/.test(href)), false)
+})
+
+test('Methodology preserves the inbound Data & Trust anchors and a semantic heading order', () => {
+  for (const id of ['methodology', 'data-sources', 'known-limitations']) {
+    assert.ok(html.includes(`id="${id}"`), id)
+  }
+  // h1 precedes the first h2.
+  const h1 = html.indexOf('<h1')
+  const h2 = html.indexOf('<h2')
+  assert.ok(h1 > -1 && h2 > h1)
+})
+
+test('public Methodology payload source still carries no score construction details', async () => {
   const source = await readFile(
     new URL('../../backend/api/methodology.py', import.meta.url),
     'utf8',
   )
-
   for (const forbidden of [
-    ...forbiddenPublicMethodologyTerms,
-    'sub-read',
-    'Sub-score',
-    'weighted score',
-    'weighted sum',
-    '50, 90, and 120',
-    '2d=55',
-    '70/15 weighted',
-    'risk_tiers',
-    'Recent Workload vs. Next-Outing ERA',
+    '0 to 100', '0–100', '0-100', '[0, 100]',
+    'sub-read', 'Sub-score', 'weighted score', 'weighted sum',
+    '50, 90, and 120', '2d=55', '70/15 weighted',
+    'risk_tiers', 'Recent Workload vs. Next-Outing ERA',
   ]) {
     assert.equal(source.includes(forbidden), false, forbidden)
   }

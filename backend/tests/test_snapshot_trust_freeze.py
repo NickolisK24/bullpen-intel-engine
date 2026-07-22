@@ -386,6 +386,16 @@ def test_frozen_legacy_what_changed_files_untouched():
         'frontend/tests/relieverFinder.test.mjs',
         'frontend/tests/phaseALaunchProtection.test.mjs',
     }
+    allowed_methodology_public_first_files = {
+        # feat/methodology-public-first-rewrite: the Methodology page is a static,
+        # public-first explanation of the read process with one fixed illustrative
+        # worked example. Composite-score/weight framing and the backend
+        # methodology fetch are removed; presentation copy only. No calculation,
+        # threshold, classification, or vocabulary changes.
+        'frontend/src/components/methodology/Methodology.jsx',
+        'frontend/tests/methodologyDescore.test.mjs',
+        'frontend/tests/pageHierarchyDedupe.test.mjs',
+    }
     assert not sorted(
         path for path in changed
         if path.startswith('frontend/')
@@ -402,6 +412,7 @@ def test_frozen_legacy_what_changed_files_untouched():
         if path not in allowed_mobile_navigation_first_use_files
         if path not in allowed_team_board_answer_hierarchy_files
         if path not in allowed_reliever_finder_search_first_files
+        if path not in allowed_methodology_public_first_files
     )
     assert not sorted(
         path for path in changed
