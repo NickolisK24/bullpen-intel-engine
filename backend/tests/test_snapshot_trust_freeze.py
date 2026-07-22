@@ -343,6 +343,14 @@ def test_frozen_legacy_what_changed_files_untouched():
     assert not sorted(
         (frozen_paths & changed) - allowed_public_what_changed_contract_files
     )
+    allowed_public_trust_consistency_files = {
+        # fix/public-trust-consistency: the Data & Trust availability usage check
+        # folds the internal Avoid tier into the single public Unavailable row so
+        # the same public label never appears twice. Public vocabulary, sample
+        # sizes, and conservative framing are unchanged.
+        'frontend/src/components/trust/AvailabilityBacktestCard.jsx',
+        'frontend/tests/availabilityBacktest.test.mjs',
+    }
     assert not sorted(
         path for path in changed
         if path.startswith('frontend/')
@@ -355,6 +363,7 @@ def test_frozen_legacy_what_changed_files_untouched():
         if path not in allowed_legacy_retirement_files
         if path not in allowed_trusted_traffic_files
         if path not in allowed_wp42_schedule_files
+        if path not in allowed_public_trust_consistency_files
     )
     assert not sorted(
         path for path in changed

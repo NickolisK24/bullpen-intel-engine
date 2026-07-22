@@ -77,7 +77,10 @@ REQUIRED_KEYS = {
 AS_OF = date(2026, 6, 22)
 
 
-def _available_payload(team_id=1, observation_type='rotation_pressure', story_type='coverage_pressure'):
+def _available_payload(team_id=1, observation_type='rotation_pressure', story_type='coverage_pressure', relievers=None):
+    selected = {'type': observation_type, 'severity': 'high'}
+    if relievers is not None:
+        selected['constraint_inputs'] = {'top_three_relievers_10d': list(relievers)}
     return {
         'team_id': team_id,
         'team_name': f'Team {team_id}',
@@ -86,7 +89,7 @@ def _available_payload(team_id=1, observation_type='rotation_pressure', story_ty
         'story_available': True,
         'story_type': story_type,
         'story_type_label': 'Coverage Pressure',
-        'selected_observation': {'type': observation_type, 'severity': 'high'},
+        'selected_observation': selected,
         'construction_frame': {'observation_type': observation_type},
         'public_story_beat': {'story_type': story_type, 'story_type_label': 'Coverage Pressure'},
         'written_story': {
@@ -349,6 +352,96 @@ class TestFeed:
         assert context['mode']
         assert context['day_class']
         assert _no_forbidden_language(context)
+
+
+class TestEvidenceDeduplication:
+    """The public feed must not show materially redundant stories built from the
+    same underlying evidence, while keeping genuinely distinct observations and
+    honoring quiet days. Similarity is defined on grounded attributes: the
+    observation family and the reliever subject set."""
+
+    def _feed(self, mapping):
+        descriptors = [_descriptor(team_id) for team_id in mapping]
+        return build_canonical_story_feed(
+            descriptors,
+            as_of_date=AS_OF,
+            story_builder=_builder(mapping),
+        )
+
+    def test_exact_duplicate_evidence_collapses_keeping_the_first(self):
+        feed = self._feed({
+            1: _available_payload(1, relievers=['Alpha', 'Bravo', 'Charlie']),
+            2: _available_payload(2, relievers=['Alpha', 'Bravo', 'Charlie']),
+        })
+        available = [item for item in feed['items'] if item['story_available']]
+        assert feed['available_count'] == 1
+        assert len(available) == 1
+        assert available[0]['team_id'] == 1  # deterministic keep-first
+
+    def test_same_evidence_with_reordered_reliever_names_collapses(self):
+        feed = self._feed({
+            1: _available_payload(1, relievers=['Alpha', 'Bravo', 'Charlie']),
+            2: _available_payload(2, relievers=['Charlie', 'Alpha', 'Bravo']),
+        })
+        assert feed['available_count'] == 1
+
+    def test_same_evidence_through_two_templates_collapses(self):
+        # Same observation family and reliever subjects, different public beat.
+        feed = self._feed({
+            1: _available_payload(1, story_type='coverage_pressure', relievers=['Alpha', 'Bravo']),
+            2: _available_payload(2, story_type='route_change', relievers=['Alpha', 'Bravo']),
+        })
+        assert feed['available_count'] == 1
+
+    def test_distinct_reliever_subjects_are_both_kept(self):
+        feed = self._feed({
+            1: _available_payload(1, relievers=['Alpha', 'Bravo', 'Charlie']),
+            2: _available_payload(2, relievers=['Delta', 'Echo', 'Foxtrot']),
+        })
+        assert feed['available_count'] == 2
+
+    def test_same_subjects_different_observation_family_are_both_kept(self):
+        feed = self._feed({
+            1: _available_payload(1, observation_type='rotation_pressure', relievers=['Alpha', 'Bravo']),
+            2: _available_payload(2, observation_type='bridge_instability', relievers=['Alpha', 'Bravo']),
+        })
+        assert feed['available_count'] == 2
+
+    def test_unknown_reliever_subject_is_never_collapsed(self):
+        # No reliever subject on either story → fail open: keep both rather than
+        # collapse two possibly-distinct observations on an unproven match.
+        feed = self._feed({
+            1: _available_payload(1, relievers=None),
+            2: _available_payload(2, relievers=None),
+        })
+        assert feed['available_count'] == 2
+
+    def test_quiet_slate_with_one_valid_story_is_unchanged(self):
+        feed = self._feed({
+            1: _available_payload(1, relievers=['Alpha', 'Bravo']),
+            2: _neutral_payload(2),
+        })
+        assert feed['available_count'] == 1
+        assert feed['suppressed_count'] == 1
+
+    def test_no_valid_stories_stays_empty_and_is_not_padded(self):
+        feed = self._feed({
+            1: _neutral_payload(1),
+            2: _neutral_payload(2),
+        })
+        assert feed['available_count'] == 0
+
+    def test_dedup_is_deterministic_across_repeated_builds(self):
+        mapping = {
+            1: _available_payload(1, relievers=['Alpha', 'Bravo', 'Charlie']),
+            2: _available_payload(2, relievers=['Bravo', 'Charlie', 'Alpha']),
+            3: _available_payload(3, relievers=['Delta', 'Echo']),
+        }
+        first = self._feed(mapping)
+        second = self._feed(mapping)
+        ids_first = [item['team_id'] for item in first['items'] if item['story_available']]
+        ids_second = [item['team_id'] for item in second['items'] if item['story_available']]
+        assert ids_first == ids_second == [1, 3]
 
 
 class TestStoryDayClassification:

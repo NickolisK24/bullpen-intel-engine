@@ -68,8 +68,8 @@ function SnapshotTable({ view }) {
           </tr>
           <tr>
             <td className="text-chalk400">% Unavailable</td>
-            <td className="text-right font-mono text-chalk400">{view.metricsA.pct_unavailable}%</td>
-            <td className="text-right font-mono text-chalk400">{view.metricsB.pct_unavailable}%</td>
+            <td className="text-right font-mono text-chalk400">{view.metricsA.pct_restricted}%</td>
+            <td className="text-right font-mono text-chalk400">{view.metricsB.pct_restricted}%</td>
           </tr>
         </tbody>
       </table>

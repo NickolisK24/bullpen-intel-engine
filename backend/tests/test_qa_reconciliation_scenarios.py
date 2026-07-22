@@ -396,6 +396,14 @@ def test_phase0e_switches_and_legacy_public_files_not_modified():
         'backend/migrations/versions/f7c5d3b9a2e1_add_editorial_post_history.py',
         'backend/migrations/versions/a1d8e4c6b2f0_extend_editorial_post_history.py',
     }
+    allowed_public_trust_consistency_files = {
+        # fix/public-trust-consistency: the Data & Trust availability usage check
+        # folds the internal Avoid tier into the single public Unavailable row so
+        # the same public label never appears twice. Public vocabulary, sample
+        # sizes, and conservative framing are unchanged.
+        'frontend/src/components/trust/AvailabilityBacktestCard.jsx',
+        'frontend/tests/availabilityBacktest.test.mjs',
+    }
     allowed_files = (
         allowed_public_freshness_display_files
         | allowed_internal_admin_files
@@ -410,6 +418,7 @@ def test_phase0e_switches_and_legacy_public_files_not_modified():
         | allowed_legacy_retirement_files
         | allowed_trusted_traffic_files
         | allowed_wp42_schedule_files
+        | allowed_public_trust_consistency_files
     )
     forbidden_prefixes = (
         'backend/api/',

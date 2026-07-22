@@ -30,6 +30,12 @@ function safeMetrics(metrics) {
     restricted: Number(m.restricted) || 0,
     pct_available: Number(m.pct_available) || 0,
     pct_unavailable: Number(m.pct_unavailable) || 0,
+    // The public "Unavailable" row combines the Avoid and Unavailable groups
+    // (getAvailabilityStatusLabel folds Avoid into Unavailable), so its matching
+    // percentage is pct_restricted — the share of that same combined population.
+    // pct_unavailable alone counts only the strict Unavailable group and would
+    // read 0% next to a non-zero combined count.
+    pct_restricted: Number(m.pct_restricted) || 0,
   }
 }
 
