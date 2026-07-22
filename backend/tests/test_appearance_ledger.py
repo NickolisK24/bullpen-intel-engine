@@ -162,15 +162,21 @@ def test_incomplete_marker_on_final_game_is_a_deficit(app):
 
 
 def test_non_final_games_create_no_expectation(app):
+    # Four distinct non-final games, one per non-final status state. Each row
+    # gets an explicit, distinct game_pk so the (team_id, game_pk) identity is
+    # deterministic across processes, Python versions, hash seeds, and dialects.
+    non_final_games = (
+        (ScheduledGame.STATE_SCHEDULED, 900601),
+        (ScheduledGame.STATE_POSTPONED, 900602),
+        (ScheduledGame.STATE_SUSPENDED, 900603),
+        (ScheduledGame.STATE_OTHER, 900604),
+    )
+    assert len({game_pk for _, game_pk in non_final_games}) == len(non_final_games)
+
     with app.app_context():
-        for state in (
-            ScheduledGame.STATE_SCHEDULED,
-            ScheduledGame.STATE_POSTPONED,
-            ScheduledGame.STATE_SUSPENDED,
-            ScheduledGame.STATE_OTHER,
-        ):
+        for state, game_pk in non_final_games:
             db.session.add(ScheduledGame(
-                team_id=108, game_pk=900000 + hash(state) % 1000,
+                team_id=108, game_pk=game_pk,
                 game_date=JULY_4, status_state=state,
             ))
         db.session.commit()
