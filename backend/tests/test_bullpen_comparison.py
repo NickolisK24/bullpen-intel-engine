@@ -83,12 +83,14 @@ class TestObservations:
         comp = build_team_comparison(a, b)
         available = next(o for o in comp['observations'] if o['dimension'] == 'available')
         assert available['leader'] == 'A'
+        # Descriptive availability language — never a late-inning/leverage claim
+        # the availability counts cannot authorize.
         assert available['statement'].startswith(
-            'The Aces have the clearer late-inning coverage because '
+            'The Aces currently have more relievers in the Available group because '
         )
         assert 'The Aces have six available arms' in available['statement']
         assert 'The Bears have three available arms' in available['statement']
-        assert 'That ' in available['statement']
+        assert 'late-inning' not in available['statement'].lower()
         assert available['team_a_value'] == 6
         assert available['team_b_value'] == 3
 
@@ -111,9 +113,12 @@ class TestObservations:
         comp = build_team_comparison(a, b)
         restricted = next(o for o in comp['observations'] if o['dimension'] == 'restricted')
         assert restricted['leader'] == 'B'  # Bears have 5 restricted vs 2
-        assert restricted['statement'].startswith('The Bears have less rested late-inning cover because ')
+        assert restricted['statement'].startswith(
+            'The Bears currently have more relievers marked Avoid or Unavailable because '
+        )
         assert 'The Bears have five restricted arms' in restricted['statement']
         assert 'The Aces have both restricted arms' in restricted['statement']
+        assert 'late-inning' not in restricted['statement'].lower()
         assert restricted['team_a_value'] == 2
         assert restricted['team_b_value'] == 5
 
@@ -126,7 +131,7 @@ class TestObservations:
 
         assert monitor['leader'] == 'A'
         assert 'carrying recent workload' in monitor['statement']
-        assert 'fewer workload flags' in comp['summary']['statement']
+        assert 'fewer relievers in the Monitor group' in comp['summary']['statement']
         assert 'carrying caution' not in text
 
     def test_uses_neutral_language_no_grading_terms(self):
@@ -166,6 +171,96 @@ class TestObservations:
         assert 'Cleveland Guardians has' not in copy
 
 
+class TestNarrativeEvidenceAlignment:
+    """Defect 5: every Compare sentence must be authorized by the availability
+    counts it reports. Availability alone never becomes a late-inning, leverage,
+    trusted-arm, or manager-intent claim; the comparison carries no role
+    evidence, so no role certainty may appear."""
+
+    # Language that would assert leverage-role coverage, a route through a game,
+    # trusted/late-inning arms, or manager intent — none of which availability
+    # counts can authorize.
+    FORBIDDEN_TERMS = (
+        'late-inning', 'late inning', 'late arms', 'leverage', 'high-leverage',
+        'trusted', 'route through', 'more than one route', 'cover the late',
+        'get through a close game', 'closer', 'setup arm', 'bridge', 'manager',
+        'depth pressure', 'rested late-inning',
+    )
+
+    def _all_copy(self, comp):
+        return ' '.join(public_comparison_copy(comp))
+
+    def test_available_leader_names_the_available_group_without_role_claims(self):
+        a = board('Aces', 'AAA', {'Available': 6, 'Monitor': 2})
+        b = board('Bears', 'BBB', {'Available': 3, 'Monitor': 2})
+        comp = build_team_comparison(a, b)
+        available = next(o for o in comp['observations'] if o['dimension'] == 'available')
+        assert 'in the Available group' in available['statement']
+        # The reason carries the counts that authorize the claim.
+        assert 'six available arms' in ' '.join(available['reasons'])
+        assert 'three available arms' in ' '.join(available['reasons'])
+
+    def test_more_available_arms_is_not_described_as_leverage_coverage(self):
+        a = board('Aces', 'AAA', {'Available': 7, 'Monitor': 1})
+        b = board('Bears', 'BBB', {'Available': 2, 'Avoid': 3})
+        text = self._all_copy(build_team_comparison(a, b)).lower()
+        for term in self.FORBIDDEN_TERMS:
+            assert term not in text, term
+
+    def test_equal_availability_reads_as_descriptive_tie_without_leverage(self):
+        a = board('Aces', 'AAA', {'Available': 4, 'Monitor': 2, 'Avoid': 2})
+        b = board('Bears', 'BBB', {'Available': 4, 'Monitor': 2, 'Avoid': 2})
+        comp = build_team_comparison(a, b)
+        available = next(o for o in comp['observations'] if o['dimension'] == 'available')
+        assert available['leader'] == 'tie'
+        assert 'same number of relievers in the Available group' in available['statement']
+        text = self._all_copy(comp).lower()
+        for term in self.FORBIDDEN_TERMS:
+            assert term not in text, term
+
+    def test_restricted_and_monitor_statements_name_their_own_groups(self):
+        a = board('Aces', 'AAA', {'Available': 5, 'Monitor': 3, 'Avoid': 1})
+        b = board('Bears', 'BBB', {'Available': 5, 'Monitor': 1, 'Avoid': 3})
+        comp = build_team_comparison(a, b)
+        restricted = next(o for o in comp['observations'] if o['dimension'] == 'restricted')
+        monitor = next(o for o in comp['observations'] if o['dimension'] == 'monitor')
+        assert 'marked Avoid or Unavailable' in restricted['statement']
+        assert 'in the Monitor group' in monitor['statement']
+
+    def test_no_leverage_or_manager_language_across_many_distributions(self):
+        distributions = [
+            ({'Available': 6}, {'Available': 1, 'Avoid': 5}),
+            ({'Available': 1, 'Monitor': 5}, {'Available': 5, 'Monitor': 1}),
+            ({'Avoid': 4, 'Unavailable': 2}, {'Available': 6}),
+            ({'Available': 3, 'Monitor': 3, 'Avoid': 2}, {'Available': 3, 'Monitor': 3, 'Avoid': 2}),
+        ]
+        for counts_a, counts_b in distributions:
+            comp = build_team_comparison(board('Aces', 'AAA', counts_a), board('Bears', 'BBB', counts_b))
+            text = self._all_copy(comp).lower()
+            for term in self.FORBIDDEN_TERMS:
+                assert term not in text, (term, counts_a, counts_b)
+
+    def test_no_trustworthy_comparison_renders_an_honest_limited_state(self):
+        # Both bullpens empty → an honest no-data state, not a filled-in claim.
+        comp = build_team_comparison(board('Aces', 'AAA', {}), board('Bears', 'BBB', {}))
+        assert comp['summary']['state'] == 'no_data'
+        text = self._all_copy(comp).lower()
+        for term in self.FORBIDDEN_TERMS:
+            assert term not in text, term
+
+    def test_team_name_grammar_stays_natural_in_summary_and_reasons(self):
+        a = board('Boston Red Sox', 'BOS', {'Available': 2, 'Avoid': 5})
+        b = board('Cleveland Guardians', 'CLE', {'Available': 6, 'Avoid': 1})
+        copy = ' '.join(public_comparison_copy(build_team_comparison(a, b)))
+        assert 'The Boston Red Sox have' in copy
+        assert 'The Cleveland Guardians have' in copy
+        # No singular verb paired with a plural team name.
+        assert 'Red Sox has' not in copy
+        assert 'Guardians has' not in copy
+        assert 'Red Sox carries' not in copy
+        assert 'Guardians carries' not in copy
+
+
 class TestSummary:
     def test_tie_across_all_dimensions_reads_as_similar(self):
         a = board('Aces', 'AAA', {'Available': 4, 'Monitor': 2, 'Avoid': 1, 'Unavailable': 1})
@@ -182,7 +277,7 @@ class TestSummary:
         comp = build_team_comparison(a, b)
         assert comp['summary']['state'] == 'differ'
         assert comp['summary']['statement'].startswith(
-            'The Aces have the clearer late-inning coverage because '
+            'The Aces currently have more relievers in the Available group because '
         )
 
     def test_both_empty_reads_as_no_data(self):

@@ -239,6 +239,72 @@ def story_id_for(team_id: Any, date_value: Any) -> str:
     return f"{team_id}:{_date_str(date_value)}"
 
 
+def _reliever_subject_key(selected: dict) -> tuple:
+    """Order-independent key of a story's reliever subjects, or () when absent.
+
+    The reliever set is the grounded subject of a story. Sorting normalizes name
+    order so the same arms listed in a different order read as the same subject.
+    An empty key means the subject is unknown and must never collapse two stories.
+    """
+    constraint_inputs = _dict(selected.get('constraint_inputs'))
+    relievers = (
+        constraint_inputs.get('top_three_relievers_10d')
+        or constraint_inputs.get('current_operational_core')
+        or []
+    )
+    names = sorted({
+        _clean(name).lower()
+        for name in relievers
+        if isinstance(name, str) and _clean(name)
+    })
+    return tuple(names)
+
+
+def _story_evidence_signature(service_payload) -> tuple | None:
+    """A grounded content signature for an available story, or None to keep it.
+
+    Two available stories share a signature only when they describe the same
+    observation family about the same reliever subjects — i.e. the same
+    underlying evidence, whether that surfaces for two teams, through two
+    templates, or with the reliever names reordered. When either the observation
+    family or the reliever subject is unknown, the signature is None so the story
+    is never collapsed: an unproven match must not suppress a distinct
+    observation. The public story_type (template) is deliberately excluded so the
+    same evidence emitted through two templates still collapses.
+    """
+    payload = _dict(service_payload)
+    if payload.get('story_available') is not True:
+        return None
+    selected = _dict(payload.get('selected_observation'))
+    frame = _dict(payload.get('construction_frame'))
+    family = _clean(selected.get('type') or frame.get('observation_type'))
+    reliever_key = _reliever_subject_key(selected)
+    if not family or not reliever_key:
+        return None
+    return (family, reliever_key)
+
+
+def _dedupe_available_by_evidence(available, payload_by_story_id) -> list:
+    """Drop available stories that repeat an already-kept story's evidence.
+
+    Deterministic and remove-only: the first story in feed order (the strongest
+    by landscape priority) is kept, and any later story carrying the same
+    evidence signature is dropped. Stories whose signature is None (unknown
+    subject) are always kept, so genuinely distinct observations and quiet days
+    are preserved. The feed is never padded — only collapsed.
+    """
+    kept = []
+    seen_signatures: set = set()
+    for story in available:
+        signature = _story_evidence_signature(payload_by_story_id.get(story.get('story_id')))
+        if signature is not None:
+            if signature in seen_signatures:
+                continue
+            seen_signatures.add(signature)
+        kept.append(story)
+    return kept
+
+
 def _tone_category(observation_type, story_type):
     if observation_type in _OBSERVATION_TONE:
         return _OBSERVATION_TONE[observation_type]
@@ -656,6 +722,7 @@ def build_canonical_story_feed(
     date_value = _date_str(as_of_date)
 
     items: list[dict] = []
+    payload_by_story_id: dict = {}
     seen: set = set()
     for descriptor in teams or []:
         team = descriptor if isinstance(descriptor, dict) else {'team_id': descriptor}
@@ -668,14 +735,17 @@ def build_canonical_story_feed(
         except Exception:
             # An individual team's failure must not break the dashboard payload.
             service_payload = None
-        items.append(
-            canonical_story_from_service_payload(
-                service_payload,
-                team_id=team_id,
-                team=team,
-                date=as_of_date,
-            )
+        canonical = canonical_story_from_service_payload(
+            service_payload,
+            team_id=team_id,
+            team=team,
+            date=as_of_date,
         )
+        items.append(canonical)
+        # Retain the source payload so feed-level de-duplication can read the
+        # grounded evidence (observation family + reliever subjects) that the
+        # canonical item does not carry.
+        payload_by_story_id[canonical['story_id']] = service_payload
 
     # Attach continuity by comparing each story to the prior snapshot's canonical
     # story for the same team. Both published and suppressed items get a state.
@@ -696,6 +766,12 @@ def build_canonical_story_feed(
         available = apply_feed_variety(available)
     except Exception:
         logger.debug('[story_feed] feed variety skipped', exc_info=True)
+    # Feed-level content de-duplication: after variety phrasing, collapse any
+    # available stories that repeat the same underlying evidence (same
+    # observation family + reliever subjects) so the public feed never shows
+    # materially redundant cards. Remove-only and deterministic — quiet days and
+    # genuinely distinct observations are preserved, and the feed is never padded.
+    available = _dedupe_available_by_evidence(available, payload_by_story_id)
     suppression_reasons: dict[str, int] = {}
     for story in suppressed:
         reason = story.get('suppression_reason') or 'unknown'

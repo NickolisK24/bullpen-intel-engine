@@ -3,7 +3,7 @@ import {
   formatDateOnly,
   formatUtcDateTimeEt,
 } from '../../utils/dateDisplay'
-import { getAvailabilityStatusLabel } from '../bullpen/availabilityView'
+import { getAvailabilityStatusLabel, getPublicAvailabilityStatus } from '../bullpen/availabilityView'
 
 const TIER_TONES = {
   Available: 'border-emerald-400/35 bg-emerald-400/5 text-emerald-300',
@@ -15,6 +15,55 @@ const TIER_TONES = {
 
 function asArray(value) {
   return Array.isArray(value) ? value : []
+}
+
+// The backend keeps five internal availability tiers; the public vocabulary has
+// four states, with the Avoid tier folded into Unavailable
+// (getPublicAvailabilityStatus). Rendering the raw tiers produced two rows both
+// labeled "Unavailable" (the Avoid rate and the strict-Unavailable rate). Merge
+// tiers by their public status first — summing sample sizes and recomputing the
+// next-day rate from the combined next-day appearances — so each public label
+// appears exactly once with its sample size intact. This never invents a label:
+// Monitor stays On Watch, and a genuine non-availability tier (were the backend
+// to add one) would surface under its own public status, not Unavailable.
+function mergeTiersByPublicStatus(tiers) {
+  const order = []
+  const groups = new Map()
+  for (const tier of asArray(tiers)) {
+    const publicStatus = getPublicAvailabilityStatus(tier.tier) || tier.tier
+    let group = groups.get(publicStatus)
+    if (!group) {
+      group = { tier: tier.tier, n: 0, next_day_appearances: 0 }
+      groups.set(publicStatus, group)
+      order.push(publicStatus)
+    }
+    const n = Number(tier.n) || 0
+    let appearances = Number(tier.next_day_appearances)
+    if (!Number.isFinite(appearances)) {
+      // Older stored rows may omit the raw next-day count; reconstruct it from
+      // the stored rate so the merged percentage stays faithful to the data.
+      const rate = Number.isFinite(Number(tier.next_day_rate))
+        ? Number(tier.next_day_rate)
+        : (Number(tier.next_day_rate_pct) || 0) / 100
+      appearances = Math.round(rate * n)
+    }
+    group.n += n
+    group.next_day_appearances += appearances
+    // Keep the most-severe raw tier (Avoid then Unavailable arrive in tier order)
+    // as the label/tone source, so the merged row reads and colors as Unavailable.
+    group.tier = tier.tier
+  }
+  return order.map((publicStatus) => {
+    const group = groups.get(publicStatus)
+    const rate = group.n > 0 ? group.next_day_appearances / group.n : 0
+    return {
+      tier: group.tier,
+      n: group.n,
+      next_day_appearances: group.next_day_appearances,
+      next_day_rate: rate,
+      next_day_rate_pct: Math.round(rate * 1000) / 10,
+    }
+  })
 }
 
 function formatPct(value) {
@@ -94,7 +143,7 @@ function TierRateRow({ tier }) {
 }
 
 function WindowPanel({ window }) {
-  const tiers = asArray(window.tiers)
+  const tiers = mergeTiersByPublicStatus(window.tiers)
   const stability = window.stability || {}
 
   return (
@@ -113,7 +162,7 @@ function WindowPanel({ window }) {
           {' '}({formatCount(stability.no_appearance_tier_flips)} / {formatCount(stability.no_appearance_days)})
         </div>
       </div>
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-5">
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
         {tiers.map((tier) => (
           <TierRateRow key={tier.tier} tier={tier} />
         ))}

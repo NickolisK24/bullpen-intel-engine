@@ -224,6 +224,38 @@ def _recent_pitcher_ids_subquery(days: int = ACTIVE_WINDOW_DAYS, reference_date=
     )
 
 
+def _recent_pitcher_id_set(days: int = ACTIVE_WINDOW_DAYS, reference_date=None):
+    """Materialized set of pitcher_ids inside the active freshness window."""
+    subquery = _recent_pitcher_ids_subquery(days=days, reference_date=reference_date)
+    return {row[0] for row in db.session.query(subquery.c.pitcher_id).all()}
+
+
+def _reliever_population_rows(rows, reference_date=None):
+    """
+    Filter (FatigueScore, Pitcher) rows to the shared bullpen reliever population.
+
+    Applies the same Role Authority the Bullpen Board uses (via
+    ``eligible_bullpen_pitcher_contexts``): confirmed starters are excluded and
+    unknown-role arms fail closed. ``include_unknown_roster`` keeps a reliever
+    visible before its roster status is authoritative — matching the legacy
+    list's roster-agnostic reach while the role filter alone decides membership.
+    No role is re-derived here; the population helper owns that contract.
+    """
+    rows = list(rows or [])
+    if not rows:
+        return rows
+    ref = reference_date or product_current_date()
+    contexts = eligible_bullpen_pitcher_contexts(
+        [pitcher for _score, pitcher in rows],
+        include_stale=True,
+        include_inactive_context=False,
+        include_unknown_roster=True,
+        reference_date=ref,
+    )
+    eligible_ids = {context['pitcher'].id for context in contexts}
+    return [row for row in rows if row[1].id in eligible_ids]
+
+
 def _served_score_cutoff():
     snapshot = dashboard_snapshot_service.get_latest_valid_dashboard_snapshot()
     if snapshot is None:
@@ -374,19 +406,25 @@ def get_fatigue_scores():
         risk_level=risk_level,
         calculated_at_lte=score_cutoff,
     )
-    filtered_count = base_query.count()
-    recent         = _recent_pitcher_ids_subquery(reference_date=reference_date)
-    fresh_query    = base_query.join(recent, recent.c.pitcher_id == Pitcher.id)
-    fresh_count    = fresh_query.count()
-    query          = base_query
-    if not include_stale:
-        query  = query.join(recent, recent.c.pitcher_id == Pitcher.id)
+    # The public All Pitchers list is a reliever finder, not a league-wide pitcher
+    # workload leaderboard. Gate every scored pitcher through the shared bullpen
+    # role authority before counting, freshness-splitting, or limiting so that
+    # confirmed starters never appear and unknown-role arms fail closed. Counts and
+    # the limit are then computed over this reliever population so the displayed
+    # totals match what is shown.
+    candidate_rows = base_query.order_by(desc(FatigueScore.raw_score)).all()
+    reliever_rows  = _reliever_population_rows(candidate_rows, reference_date=reference_date)
 
-    query   = query.order_by(desc(FatigueScore.raw_score)).limit(limit)
-    results = query.all()
+    recent_ids     = _recent_pitcher_id_set(reference_date=reference_date)
+    fresh_rows     = [row for row in reliever_rows if row[1].id in recent_ids]
+
+    filtered_count = len(reliever_rows)
+    fresh_count    = len(fresh_rows)
+
+    served_rows = (reliever_rows if include_stale else fresh_rows)[:limit]
 
     records = classify_fatigue_rows(
-        results,
+        served_rows,
         reference_date=reference_date,
         mode=CURRENT_AVAILABILITY_MODE,
     )

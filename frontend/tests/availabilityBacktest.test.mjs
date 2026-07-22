@@ -45,11 +45,11 @@ const payload = {
       is_primary: true,
       data_through: '2026-06-14',
       tiers: [
-        { tier: 'Available', n: 12345, next_day_rate_pct: 43.2 },
-        { tier: 'Monitor', n: 9876, next_day_rate_pct: 32.1 },
-        { tier: 'Limited', n: 4567, next_day_rate_pct: 21.0 },
-        { tier: 'Avoid', n: 321, next_day_rate_pct: 4.3 },
-        { tier: 'Unavailable', n: 54, next_day_rate_pct: 0.0 },
+        { tier: 'Available', n: 12345, next_day_appearances: 5333, next_day_rate_pct: 43.2 },
+        { tier: 'Monitor', n: 9876, next_day_appearances: 3170, next_day_rate_pct: 32.1 },
+        { tier: 'Limited', n: 4567, next_day_appearances: 959, next_day_rate_pct: 21.0 },
+        { tier: 'Avoid', n: 321, next_day_appearances: 14, next_day_rate_pct: 4.4 },
+        { tier: 'Unavailable', n: 54, next_day_appearances: 0, next_day_rate_pct: 0.0 },
       ],
       stability: {
         no_appearance_days: 6789,
@@ -63,11 +63,11 @@ const payload = {
       is_primary: false,
       data_through: '2025-09-30',
       tiers: [
-        { tier: 'Available', n: 22222, next_day_rate_pct: 41.9 },
-        { tier: 'Monitor', n: 11111, next_day_rate_pct: 29.8 },
-        { tier: 'Limited', n: 7777, next_day_rate_pct: 19.6 },
-        { tier: 'Avoid', n: 888, next_day_rate_pct: 3.2 },
-        { tier: 'Unavailable', n: 99, next_day_rate_pct: 0.0 },
+        { tier: 'Available', n: 22222, next_day_appearances: 9311, next_day_rate_pct: 41.9 },
+        { tier: 'Monitor', n: 11111, next_day_appearances: 3311, next_day_rate_pct: 29.8 },
+        { tier: 'Limited', n: 7777, next_day_appearances: 1524, next_day_rate_pct: 19.6 },
+        { tier: 'Avoid', n: 888, next_day_appearances: 28, next_day_rate_pct: 3.2 },
+        { tier: 'Unavailable', n: 99, next_day_appearances: 0, next_day_rate_pct: 0.0 },
       ],
       stability: {
         no_appearance_days: 20000,
@@ -100,12 +100,76 @@ test('renders stored usage-check values and honest framing', () => {
   assert.equal(text.includes('Backtest'), false)
   assert.ok(text.includes('43.2%'))
   assert.ok(text.includes('n=12,345'))
-  assert.ok(text.includes('4.3%'))
+  // The Avoid and Unavailable tiers fold into one public Unavailable row: the
+  // sample size sums (321 + 54 = 375) and the rate is recomputed from the
+  // combined next-day appearances (14 / 375 → 3.7%).
+  assert.ok(text.includes('n=375'))
+  assert.ok(text.includes('3.7%'))
   assert.ok(text.includes('2025 secondary'))
   assert.ok(text.includes('No-appearance tier flips: 1.8%'))
   assert.ok(text.includes('observed association'))
   assert.ok(text.includes('not a physiological proof or causal workload claim'))
   assert.equal(text.includes('Avoid'), false)
+})
+
+// ── Defect 2: no duplicate "Unavailable" availability label ────────────────
+// The backend returns five internal tiers; Avoid and Unavailable both carry the
+// public label "Unavailable". Rendering raw tiers produced two rows labeled
+// "Unavailable" (one near the Avoid rate, one near 0%). Each public label must
+// appear once, with the sample sizes preserved and the rate recomputed.
+
+test('Defect 2: each window shows one Unavailable row, not a duplicate Avoid+Unavailable pair', () => {
+  // Frame text stripped so only tier-row labels contribute to the label counts.
+  const singleWindow = {
+    status: 'ok',
+    computed_at: '2026-06-15T07:00:00Z',
+    framing: {},
+    windows: [payload.windows[0]],
+  }
+  const text = visibleText(renderCard(singleWindow))
+  const occurrences = (needle) => text.split(needle).length - 1
+
+  // Exactly one row per canonical public availability label.
+  assert.equal(occurrences('Unavailable'), 1)
+  assert.equal(occurrences('Available'), 1)
+  assert.equal(occurrences('On Watch'), 1)
+  assert.equal(occurrences('Limited'), 1)
+  // Avoid is an internal tier only; it must never surface as a public label.
+  assert.equal(text.includes('Avoid'), false)
+  // Sample sizes remain attached: merged n is the sum of the two folded tiers.
+  assert.ok(text.includes('n=375'))
+  assert.ok(text.includes('3.7%'))
+  // The distinct upstream tiers (Available/On Watch/Limited) keep their sizes.
+  assert.ok(text.includes('n=12,345'))
+})
+
+test('Defect 2: an unknown non-availability tier is not folded into Unavailable', () => {
+  // A hypothetical no-read tier the public label layer does not recognize keeps
+  // its own row rather than being silently relabeled Unavailable.
+  const withUnknownTier = {
+    status: 'ok',
+    computed_at: '2026-06-15T07:00:00Z',
+    framing: {},
+    windows: [{
+      season: 2026,
+      label: '2026 primary',
+      is_primary: true,
+      data_through: '2026-06-14',
+      tiers: [
+        { tier: 'Available', n: 100, next_day_appearances: 40, next_day_rate_pct: 40.0 },
+        { tier: 'Avoid', n: 20, next_day_appearances: 1, next_day_rate_pct: 5.0 },
+        { tier: 'Unavailable', n: 10, next_day_appearances: 0, next_day_rate_pct: 0.0 },
+        { tier: 'No Read', n: 7, next_day_appearances: 0, next_day_rate_pct: 0.0 },
+      ],
+      stability: { no_appearance_days: 0, no_appearance_tier_flips: 0, no_appearance_tier_flip_rate_pct: 0.0 },
+    }],
+  }
+  const text = visibleText(renderCard(withUnknownTier))
+  const occurrences = (needle) => text.split(needle).length - 1
+  // Avoid + Unavailable merge to one Unavailable row (n = 30); the unrecognized
+  // tier stays separate and is not counted as Unavailable.
+  assert.equal(occurrences('Unavailable'), 1)
+  assert.ok(text.includes('n=30'))
 })
 
 test('renders an honest empty state when no stored computation exists', () => {

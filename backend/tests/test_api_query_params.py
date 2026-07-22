@@ -60,6 +60,9 @@ def _seed_scored_pitcher(name='Craig Kimbrel', mlb_id=518886, raw_score=72.0):
         pitches_thrown=12,
         innings_pitched=1.0,
         innings_pitched_outs=3,
+        # Relief appearance: the public fatigue list is reliever-only, so seeded
+        # pitchers need relief-role evidence to be served.
+        games_started=0,
     ))
     db.session.add(FatigueScore(
         pitcher_id=pitcher.id,

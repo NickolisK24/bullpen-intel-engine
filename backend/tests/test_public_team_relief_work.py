@@ -1312,6 +1312,14 @@ def test_existing_public_routes_behavior_freeze(monkeypatch):
         'backend/migrations/versions/f7c5d3b9a2e1_add_editorial_post_history.py',
         'backend/migrations/versions/a1d8e4c6b2f0_extend_editorial_post_history.py',
     }
+    allowed_public_trust_consistency_files = {
+        # fix/public-trust-consistency: the Data & Trust availability usage check
+        # folds the internal Avoid tier into the single public Unavailable row so
+        # the same public label never appears twice. Public vocabulary, sample
+        # sizes, and conservative framing are unchanged.
+        'frontend/src/components/trust/AvailabilityBacktestCard.jsx',
+        'frontend/tests/availabilityBacktest.test.mjs',
+    }
     assert not [
         path for path in changed
         if path not in allowed_phase_a_audience_signup_files
@@ -1324,6 +1332,7 @@ def test_existing_public_routes_behavior_freeze(monkeypatch):
         if path not in allowed_legacy_retirement_files
         if path not in allowed_trusted_traffic_files
         if path not in allowed_wp42_schedule_files
+        if path not in allowed_public_trust_consistency_files
         if (
             path in blocked_files and path not in allowed_internal_admin_files
         )
