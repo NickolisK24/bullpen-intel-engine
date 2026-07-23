@@ -1,10 +1,4 @@
-"""Single-lock intraday schedule and completed-game repair orchestration.
-
-The intraday audit remains the detection authority. This service acquires the
-public writer guard once, applies the governed schedule write primitive, processes
-only newly-final games that are re-proven from current MLB schedule evidence, and
-publishes the same public intelligence surfaces used by the mature sync paths.
-"""
+"""Single-lock intraday schedule and completed-game repair orchestration."""
 
 from __future__ import annotations
 
@@ -44,7 +38,7 @@ def run_intraday_completed_game_repair(
     publication_proof_builder=None,
     client=None,
 ):
-    """Repair proven schedule deltas and ingest newly-final games under one lock."""
+    """Repair proven schedule deltas and newly-final games under one writer lock."""
     from services import sync as sync_service
     from services.intelligence_surface_snapshot import generate_snapshot_for_date
     from services.tonight_intelligence_snapshot import generate_tonight_snapshot_for_date
@@ -95,7 +89,9 @@ def run_intraday_completed_game_repair(
             result['message'] = 'No governed intraday schedule changes detected.'
             return result
         if scope['status'] != 'ready':
-            result['message'] = 'Intraday schedule changes were withheld because not every finding was safe.'
+            result['message'] = (
+                'Intraday schedule changes were withheld because not every finding was safe.'
+            )
             return result
 
         writer_guard = None
@@ -111,15 +107,15 @@ def run_intraday_completed_game_repair(
                 job_name=JOB_INTRADAY_COMPLETED_GAME_REPAIR,
             )
 
-            sync_metadata.set_sync_stage(sync_run_id, sync_metadata.STAGE_SCHEDULE_INGESTION)
+            sync_metadata.set_sync_stage(
+                sync_run_id,
+                sync_metadata.STAGE_SCHEDULE_FINALITY_PREFLIGHT,
+            )
             schedule_result = schedule_writer(scope['repairable_findings'])
             result['schedule_repair'] = schedule_result
             db.session.commit()
 
-            completed_games = _fetch_exact_completed_games(
-                scope,
-                client=client,
-            )
+            completed_games = _fetch_exact_completed_games(scope, client=client)
             if set(completed_games) != set(scope['completed_game_pks']):
                 raise IntradayCompletedGameRepairError(
                     'Not every audited newly-final game remained safely final at write time.'
@@ -127,38 +123,17 @@ def run_intraday_completed_game_repair(
 
             if completed_games:
                 sync_metadata.set_sync_stage(sync_run_id, sync_metadata.STAGE_LOG_INGESTION)
-            touched_pitchers = set()
             for game_pk in sorted(completed_games):
-                game = completed_games[game_pk]
-                schedule_date = _game_date(game)
                 processed = completed_game_processor(
-                    game,
-                    schedule_date=schedule_date,
+                    completed_games[game_pk],
+                    schedule_date=_game_date(completed_games[game_pk]),
                     sync_run_id=sync_run_id,
                 ) or {}
-                public_result = _public_completed_game_summary(processed)
-                result['completed_games'].append(public_result)
-                if processed.get('skipped') and processed.get('reason') not in ('already_processed',):
-                    raise IntradayCompletedGameRepairError(
-                        f'Completed game {game_pk} was not safely processed.'
-                    )
-                if processed.get('processing_status') not in (None, 'fully_processed'):
-                    raise IntradayCompletedGameRepairError(
-                        f'Completed game {game_pk} did not reach fully processed state.'
-                    )
-                if int(processed.get('pitcher_resolution_failures') or 0):
-                    raise IntradayCompletedGameRepairError(
-                        f'Completed game {game_pk} had unresolved pitchers.'
-                    )
-                if int(processed.get('correction_attempts_failed') or 0):
-                    raise IntradayCompletedGameRepairError(
-                        f'Completed game {game_pk} had failed corrections.'
-                    )
+                result['completed_games'].append(_public_completed_game_summary(processed))
+                _require_complete_processing(game_pk, processed)
                 result['new_logs_added'] += int(processed.get('logs_added') or 0)
                 result['logs_corrected'] += int(processed.get('logs_corrected') or 0)
-                for pitcher_id in processed.get('touched_pitcher_ids') or []:
-                    if isinstance(pitcher_id, int):
-                        touched_pitchers.add(pitcher_id)
+                result['pitchers_touched'] += int(processed.get('pitchers_touched') or 0)
                 db.session.commit()
 
             changed_workload = result['new_logs_added'] + result['logs_corrected'] > 0
@@ -177,7 +152,9 @@ def run_intraday_completed_game_repair(
             )
             result['today_snapshot'] = _surface_summary(today)
             if (today or {}).get('status') not in ('ok', 'empty', 'generated'):
-                raise IntradayCompletedGameRepairError('Today intelligence rebuild did not complete.')
+                raise IntradayCompletedGameRepairError(
+                    'Today intelligence rebuild did not complete.'
+                )
 
             tonight = tonight_builder(
                 product_current_date(),
@@ -185,9 +162,10 @@ def run_intraday_completed_game_repair(
             )
             result['tonight_snapshot'] = _surface_summary(tonight)
             if (tonight or {}).get('status') not in ('ok', 'empty'):
-                raise IntradayCompletedGameRepairError('Tonight intelligence rebuild did not complete.')
+                raise IntradayCompletedGameRepairError(
+                    'Tonight intelligence rebuild did not complete.'
+                )
 
-            result['pitchers_touched'] = len(touched_pitchers)
             run, snapshot = complete_with_snapshot(
                 sync_run_id,
                 final_status=sync_metadata.STATUS_SUCCESS,
@@ -220,7 +198,9 @@ def run_intraday_completed_game_repair(
 
             result['status'] = sync_metadata.STATUS_SUCCESS
             result['sync_run_id'] = getattr(run, 'id', sync_run_id)
-            result['message'] = 'Intraday schedule and completed-game repair published successfully.'
+            result['message'] = (
+                'Intraday schedule and completed-game repair published successfully.'
+            )
             return result
         except sync_metadata.SyncWriterConflict as exc:
             db.session.rollback()
@@ -248,6 +228,25 @@ def run_intraday_completed_game_repair(
                 writer_guard.release()
 
 
+def _require_complete_processing(game_pk, processed):
+    if processed.get('skipped') and processed.get('reason') != 'already_processed':
+        raise IntradayCompletedGameRepairError(
+            f'Completed game {game_pk} was not safely processed.'
+        )
+    if processed.get('processing_status') not in (None, 'fully_processed'):
+        raise IntradayCompletedGameRepairError(
+            f'Completed game {game_pk} did not reach fully processed state.'
+        )
+    if int(processed.get('pitcher_resolution_failures') or 0):
+        raise IntradayCompletedGameRepairError(
+            f'Completed game {game_pk} had unresolved pitchers.'
+        )
+    if int(processed.get('correction_attempts_failed') or 0):
+        raise IntradayCompletedGameRepairError(
+            f'Completed game {game_pk} had failed corrections.'
+        )
+
+
 def _fetch_exact_completed_games(scope, *, client):
     required = set(scope.get('completed_game_pks') or [])
     if not required:
@@ -267,8 +266,7 @@ def _fetch_exact_completed_games(scope, *, client):
             raise IntradayCompletedGameRepairError(
                 f'Official schedule no longer contains completed game {game_pk}.'
             )
-        signatures = {_game_signature(game) for game in candidates}
-        if len(signatures) != 1:
+        if len({_game_signature(game) for game in candidates}) != 1:
             raise IntradayCompletedGameRepairError(
                 f'Official schedule has conflicting completed-game rows for {game_pk}.'
             )
@@ -300,7 +298,9 @@ def _game_date(game):
     try:
         return date.fromisoformat(str(raw)[:10])
     except (TypeError, ValueError) as exc:
-        raise IntradayCompletedGameRepairError('Completed game lacks a valid official date.') from exc
+        raise IntradayCompletedGameRepairError(
+            'Completed game lacks a valid official date.'
+        ) from exc
 
 
 def _positive_int(value):
