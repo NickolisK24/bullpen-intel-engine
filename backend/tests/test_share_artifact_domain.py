@@ -732,7 +732,11 @@ def test_migration_round_trip_and_single_head():
         if rev:
             revisions[rev.group(1)] = down.group(1).strip() if down else None
     referenced = {down for down in revisions.values() if down and down != 'None'}
-    assert set(revisions) - referenced == {SHARE_REVISION}
+    # Exactly one Alembic head is preserved; the SC-01 migration remains a valid
+    # revision in the chain (later sprints may add migrations on top of it, so it
+    # is no longer required to be the tip).
+    assert len(set(revisions) - referenced) == 1
+    assert SHARE_REVISION in revisions
 
     engine = sa.create_engine('sqlite:///:memory:')
     # The share_artifacts.source_sync_run_id FK targets sync_runs, created by an

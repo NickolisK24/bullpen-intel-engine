@@ -47,7 +47,7 @@ from utils.db import db
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 MIGRATIONS_DIR = REPO_ROOT / 'backend/migrations/versions'
-EXPECTED_ALEMBIC_HEAD = 'c1a7f4e2b9d6'
+EXPECTED_ALEMBIC_HEAD = 'e2b8d5a3c9f1'
 FORBIDDEN_HEADLINE_TERMS = (
     'headline',
     'read_label',
@@ -481,6 +481,11 @@ def test_phase0e_switches_and_legacy_public_files_not_modified():
         # artifact domain. Backend domain + migration only — no rendering, routes,
         # public runtime, or classification changes.
         'backend/migrations/versions/c1a7f4e2b9d6_add_share_artifacts.py',
+        # feature/share-artifact-generation-cutover (Share Cards SC-03A): the
+        # governed generation audit migration and the internal admin generation
+        # endpoint. Backend orchestration/audit only — no public route or renderer.
+        'backend/migrations/versions/e2b8d5a3c9f1_add_share_artifact_generation_audits.py',
+        'backend/api/share_artifacts_admin.py',
     }
     allowed_files = (
         allowed_public_freshness_display_files
