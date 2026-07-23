@@ -26,6 +26,14 @@ from services.team_state_eligibility import (
     BLOCK_MISSING_SNAPSHOT,
     BLOCK_STALE_SNAPSHOT,
     BLOCK_UNSUPPORTED_TEAM_STATE,
+    REASON_READINESS_SUMMARY_MISSING,
+    REASON_READINESS_TEAM_ID_INVALID,
+    REASON_READINESS_TEAM_ID_MISSING,
+    REASON_READINESS_TEAM_MISMATCH,
+    REASON_READINESS_TEAM_MISSING,
+    REASON_SNAPSHOT_PRODUCT_DATE_MISMATCH,
+    REASON_TEAM_ABBREVIATION_MISSING,
+    REASON_TEAM_NAME_MISSING,
     TEAM_STATE_V1,
     TRUST_FAIL_CLOSED,
     TRUST_INSUFFICIENT,
@@ -169,12 +177,13 @@ def _authority(*, trusted=True, unavailable_reason=None, snapshot_id=SNAPSHOT_ID
     )
 
 
-def _source(*, team_valid=True, snapshot=None, readiness=None, team_id=TEAM_ID):
+def _source(*, team_valid=True, snapshot=None, readiness=None, team_id=TEAM_ID, requested_date=None):
     return TeamStateSource(
         team_id=team_id,
         team_valid=team_valid,
         snapshot=snapshot if snapshot is not None else _authority(),
         readiness=readiness if readiness is not None else _readiness(),
+        requested_date=requested_date,
     )
 
 
@@ -573,3 +582,170 @@ def test_equivalent_payloads_deduplicate_through_sc01(app):
         **build_team_state_payload(_source(snapshot=_authority(sync_run_id=run.id))).to_share_artifact_kwargs()
     )
     assert first.id == second.id  # SC-01 deduplicates equivalent published artifacts
+
+
+# ---------------------------------------------------------------------------
+# Correction 1 — readiness team authority is required (fail closed)
+# ---------------------------------------------------------------------------
+
+
+def test_missing_team_block_fails_authority():
+    readiness = _readiness()
+    del readiness['team']
+    result = evaluate_team_state_eligibility(_source(readiness=readiness))
+    assert result.eligible is False
+    assert BLOCK_AUTHORITY_VALIDATION_FAILED in result.blocking_conditions
+    assert REASON_READINESS_TEAM_MISSING in result.reasons
+
+
+def test_missing_team_id_fails_authority():
+    readiness = _readiness()
+    readiness['team'] = {'team_name': 'Test Club', 'team_abbreviation': 'TST'}
+    result = evaluate_team_state_eligibility(_source(readiness=readiness))
+    assert result.eligible is False
+    assert BLOCK_AUTHORITY_VALIDATION_FAILED in result.blocking_conditions
+    assert REASON_READINESS_TEAM_ID_MISSING in result.reasons
+
+
+def test_invalid_team_id_fails_authority():
+    readiness = _readiness()
+    readiness['team']['team_id'] = 'not-an-int'
+    result = evaluate_team_state_eligibility(_source(readiness=readiness))
+    assert result.eligible is False
+    assert BLOCK_AUTHORITY_VALIDATION_FAILED in result.blocking_conditions
+    assert REASON_READINESS_TEAM_ID_INVALID in result.reasons
+
+
+def test_boolean_team_id_is_invalid():
+    readiness = _readiness()
+    readiness['team']['team_id'] = True
+    result = evaluate_team_state_eligibility(_source(readiness=readiness))
+    assert REASON_READINESS_TEAM_ID_INVALID in result.reasons
+
+
+def test_mismatched_team_id_uses_precise_reason():
+    result = evaluate_team_state_eligibility(_source(readiness=_readiness(team_id=999)))
+    assert BLOCK_AUTHORITY_VALIDATION_FAILED in result.blocking_conditions
+    assert REASON_READINESS_TEAM_MISMATCH in result.reasons
+
+
+def test_valid_matching_team_id_passes_authority():
+    result = evaluate_team_state_eligibility(_source(readiness=_readiness(team_id=TEAM_ID)))
+    assert result.eligible is True
+
+
+def test_build_refuses_when_readiness_team_missing():
+    readiness = _readiness()
+    del readiness['team']
+    with pytest.raises(TeamStatePayloadRefused) as excinfo:
+        build_team_state_payload(_source(readiness=readiness))
+    assert BLOCK_AUTHORITY_VALIDATION_FAILED in excinfo.value.eligibility.blocking_conditions
+
+
+# ---------------------------------------------------------------------------
+# Correction 2 — requested date must match the trusted snapshot
+# ---------------------------------------------------------------------------
+
+
+def test_requested_date_match_is_eligible():
+    result = evaluate_team_state_eligibility(_source(requested_date=date(2026, 7, 20)))
+    assert result.eligible is True
+    assert REASON_SNAPSHOT_PRODUCT_DATE_MISMATCH not in result.reasons
+
+
+def test_requested_date_mismatch_fails_authority():
+    result = evaluate_team_state_eligibility(_source(requested_date=date(2026, 7, 19)))
+    assert result.eligible is False
+    assert BLOCK_AUTHORITY_VALIDATION_FAILED in result.blocking_conditions
+    assert REASON_SNAPSHOT_PRODUCT_DATE_MISMATCH in result.reasons
+
+
+def test_requested_date_with_missing_data_through_fails():
+    snapshot = TeamStateSnapshotAuthority(
+        snapshot_id=SNAPSHOT_ID,
+        sync_run_id=None,
+        data_through=None,
+        published_at=datetime(2026, 7, 20, 13, 0, 0),
+        unavailable_reason=None,
+    )
+    result = evaluate_team_state_eligibility(
+        _source(snapshot=snapshot, requested_date=date(2026, 7, 20))
+    )
+    assert result.eligible is False
+    assert BLOCK_AUTHORITY_VALIDATION_FAILED in result.blocking_conditions
+    assert REASON_SNAPSHOT_PRODUCT_DATE_MISMATCH in result.reasons
+
+
+def test_no_requested_date_preserves_latest_snapshot_behavior():
+    result = evaluate_team_state_eligibility(_source(requested_date=None))
+    assert result.eligible is True
+    assert REASON_SNAPSHOT_PRODUCT_DATE_MISMATCH not in result.reasons
+
+
+def test_requested_date_mismatch_refuses_build():
+    with pytest.raises(TeamStatePayloadRefused) as excinfo:
+        build_team_state_payload(_source(requested_date=date(2026, 7, 19)))
+    assert REASON_SNAPSHOT_PRODUCT_DATE_MISMATCH in excinfo.value.eligibility.reasons
+
+
+# ---------------------------------------------------------------------------
+# Correction 3 — minimum public payload content is required (fail closed)
+# ---------------------------------------------------------------------------
+
+
+def test_missing_team_name_blocks_incomplete():
+    readiness = _readiness()
+    readiness['team']['team_name'] = None
+    result = evaluate_team_state_eligibility(_source(readiness=readiness))
+    assert result.eligible is False
+    assert BLOCK_INCOMPLETE_EVIDENCE in result.blocking_conditions
+    assert REASON_TEAM_NAME_MISSING in result.reasons
+
+
+def test_blank_team_name_blocks_incomplete():
+    readiness = _readiness()
+    readiness['team']['team_name'] = '   '
+    result = evaluate_team_state_eligibility(_source(readiness=readiness))
+    assert REASON_TEAM_NAME_MISSING in result.reasons
+
+
+def test_missing_team_abbreviation_blocks_incomplete():
+    readiness = _readiness()
+    del readiness['team']['team_abbreviation']
+    result = evaluate_team_state_eligibility(_source(readiness=readiness))
+    assert BLOCK_INCOMPLETE_EVIDENCE in result.blocking_conditions
+    assert REASON_TEAM_ABBREVIATION_MISSING in result.reasons
+
+
+def test_blank_summary_blocks_incomplete():
+    readiness = _readiness()
+    readiness['readiness']['summary'] = ''
+    result = evaluate_team_state_eligibility(_source(readiness=readiness))
+    assert BLOCK_INCOMPLETE_EVIDENCE in result.blocking_conditions
+    assert REASON_READINESS_SUMMARY_MISSING in result.reasons
+
+
+def test_null_summary_blocks_incomplete():
+    readiness = _readiness()
+    readiness['readiness']['summary'] = None
+    result = evaluate_team_state_eligibility(_source(readiness=readiness))
+    assert REASON_READINESS_SUMMARY_MISSING in result.reasons
+
+
+def test_complete_public_content_is_eligible():
+    result = evaluate_team_state_eligibility(_source())
+    assert result.eligible is True
+    for reason in (
+        REASON_TEAM_NAME_MISSING,
+        REASON_TEAM_ABBREVIATION_MISSING,
+        REASON_READINESS_SUMMARY_MISSING,
+    ):
+        assert reason not in result.reasons
+
+
+def test_build_refuses_when_public_content_missing():
+    readiness = _readiness()
+    readiness['team']['team_name'] = None
+    with pytest.raises(TeamStatePayloadRefused) as excinfo:
+        build_team_state_payload(_source(readiness=readiness))
+    assert BLOCK_INCOMPLETE_EVIDENCE in excinfo.value.eligibility.blocking_conditions
