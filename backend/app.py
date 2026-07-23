@@ -138,6 +138,12 @@ def create_app(config_name=None):
     from models.team_game_pitching_split import TeamGamePitchingSplit
     from models.evidence_contract import EvidenceCitation, EvidenceObject
     from models.composed_read import ComposedRead, ComposedReadComponent, ComposedReadEvidenceCitation
+    from models.share_artifact import (
+        ShareArtifact,
+        ShareArtifactAsset,
+        ShareArtifactEvidence,
+        ShareArtifactRelation,
+    )
 
     from api.bullpen import bullpen_bp
     from api.prospects import prospects_bp
