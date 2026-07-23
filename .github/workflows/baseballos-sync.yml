@@ -177,6 +177,7 @@ jobs:
           APP_ENV: production
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           SECRET_KEY: ${{ secrets.SECRET_KEY }}
+          ADMIN_API_TOKEN: ${{ secrets.BASEBALLOS_ADMIN_API_TOKEN }}
           AUTO_SYNC: 'false'
           SLATE_SCHEDULE_COMMAND_TIMEOUT: 5m
         run: |
