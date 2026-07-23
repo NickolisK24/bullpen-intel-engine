@@ -1,0 +1,73 @@
+name: BaseballOS Intraday Roster Repair
+
+# Lightweight public-state reconciliation between the morning daily sync and
+# overnight postgame passes. The command itself fails closed whenever the audit
+# is incomplete, a finding is outside the authorized roster-status slice, or the
+# exact replacement dashboard snapshot is not serving.
+on:
+  schedule:
+    # Cron is UTC and does not observe DST. During daylight time these run at
+    # approximately noon, 4 PM, and 8 PM Eastern; during standard time they run
+    # at approximately 11 AM, 3 PM, and 7 PM Eastern.
+    - cron: '0 0,16,20 * * *'
+  workflow_dispatch:
+
+# Share the same queue as daily, postgame, backfill, and schedule correction.
+# Never cancel a public data writer that is already running.
+concurrency:
+  group: baseballos-sync
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  intraday-roster-repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install backend dependencies
+        run: pip install -r backend/requirements.txt
+
+      - name: Run governed intraday roster repair
+        env:
+          APP_ENV: production
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SECRET_KEY: ${{ secrets.SECRET_KEY }}
+          ADMIN_API_TOKEN: ${{ secrets.BASEBALLOS_ADMIN_API_TOKEN }}
+          AUTO_SYNC: 'false'
+          INTRADAY_REPAIR_COMMAND_TIMEOUT: 20m
+        run: |
+          set -euo pipefail
+          if [ -z "${DATABASE_URL:-}" ] || [ -z "${SECRET_KEY:-}" ] || [ -z "${ADMIN_API_TOKEN:-}" ]; then
+            echo "::error::Missing DATABASE_URL, SECRET_KEY, or BASEBALLOS_ADMIN_API_TOKEN repository secret."
+            exit 1
+          fi
+
+          echo "Intraday roster repair starting at $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          set +e
+          timeout --kill-after=30s "$INTRADAY_REPAIR_COMMAND_TIMEOUT" \
+            python backend/scripts/run_intraday_repair.py \
+              --source github_actions_intraday \
+              --days-back 7
+          exit_code=$?
+          set -e
+
+          if [ "$exit_code" -ne 0 ]; then
+            if [ "$exit_code" -eq 124 ] || [ "$exit_code" -eq 137 ] || [ "$exit_code" -eq 143 ]; then
+              echo "::error::Intraday roster repair timed out after $INTRADAY_REPAIR_COMMAND_TIMEOUT."
+            else
+              echo "::error::Intraday roster repair failed or withheld with exit code $exit_code."
+            fi
+            exit "$exit_code"
+          fi
+          echo "Intraday roster repair completed at $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
