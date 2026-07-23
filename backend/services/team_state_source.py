@@ -120,6 +120,27 @@ def _safe_is_valid_team_id(team_id) -> bool:
         return False
 
 
+def resolve_latest_trusted_snapshot(snapshot=None):
+    """Resolve the trusted-source snapshot authority for generation.
+
+    This reuses the exact same seam single-team gathering uses
+    (``get_latest_dashboard_snapshot`` + ``snapshot_unavailable_reason`` via
+    ``_snapshot_authority``), so a batch caller validates and threads one shared
+    source snapshot instead of inferring it through a second path. Returns a
+    ``(snapshot, TeamStateSnapshotAuthority)`` pair: ``snapshot`` is the raw
+    trusted-source record (or ``None``) suitable for threading straight back into
+    ``gather_team_state_source``/``generate_team_state_artifact``, and the
+    authority carries the trust verdict. Fails closed — an unreadable snapshot
+    store is treated as a missing snapshot.
+    """
+    if snapshot is None:
+        try:
+            snapshot = get_latest_dashboard_snapshot()
+        except Exception:
+            snapshot = None
+    return snapshot, _snapshot_authority(snapshot)
+
+
 def gather_team_state_source(
     team_id: int,
     *,

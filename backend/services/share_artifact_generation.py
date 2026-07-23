@@ -300,6 +300,7 @@ def generate_team_state_artifact(
     actor: Optional[str] = None,
     request_source: Optional[str] = None,
     readiness_resolver=None,
+    snapshot=None,
     session=None,
 ) -> TeamStateGenerationResult:
     """Generate (or reuse, or refuse) a Team State Share Artifact for a team.
@@ -307,6 +308,12 @@ def generate_team_state_artifact(
     Deterministic outcome: ``published`` / ``reused`` / ``refused`` /
     ``failed_closed``. Publication and its durable audit commit atomically;
     refusals and operational failures are also durably audited.
+
+    ``snapshot`` optionally pins the trusted source snapshot authority. When
+    omitted (the default and the single-team admin path), the latest published
+    daily snapshot is resolved as before. A batch caller that has already
+    resolved and validated one shared source snapshot passes it here so every
+    team is generated against the identical authority instead of re-resolving it.
     """
     session = session or db.session
     resolver = readiness_resolver or resolve_team_readiness_payload
@@ -323,7 +330,8 @@ def generate_team_state_artifact(
     # 2. Gather the governed source (snapshot authority + team + readiness).
     try:
         source = gather_team_state_source(
-            team_id, readiness_payload=readiness, requested_date=requested_date, session=session,
+            team_id, readiness_payload=readiness, snapshot=snapshot,
+            requested_date=requested_date, session=session,
         )
     except Exception:
         return _fail_closed(
