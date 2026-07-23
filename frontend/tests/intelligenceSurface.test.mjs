@@ -854,9 +854,9 @@ test('Since Yesterday groups changes into descriptive lanes led by the primary d
   assert.ok(htmlIncludes(sinceHtml, 'had no meaningful'))
   assert.ok(htmlIncludes(sinceHtml, 'Milwaukee Brewers'))
   assert.ok(htmlIncludes(sinceHtml, 'Toronto Blue Jays'))
-  // Team-board links preserved with the existing analytics source.
-  assert.ok(htmlIncludes(sinceHtml, 'href="/bullpen?view=board&amp;team=NYM&amp;source=today"'))
-  assert.ok(htmlIncludes(sinceHtml, 'href="/bullpen?view=board&amp;team=SF&amp;source=today"'))
+  // Team-board links carry the trusted-change provenance for evidence measurement.
+  assert.ok(htmlIncludes(sinceHtml, 'href="/bullpen?view=board&amp;team=NYM&amp;source=since_yesterday"'))
+  assert.ok(htmlIncludes(sinceHtml, 'href="/bullpen?view=board&amp;team=SF&amp;source=since_yesterday"'))
   // Two card evidence disclosures + one steady disclosure, none open by default.
   assert.equal(countOccurrences(sinceHtml, '<details'), 3)
   assert.equal(countOccurrences(sinceHtml, '<summary'), 3)

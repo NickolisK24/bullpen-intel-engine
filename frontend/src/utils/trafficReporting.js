@@ -5,6 +5,11 @@ export const TRAFFIC_REPORTING_RANGES = Object.freeze(['7d', '30d', '90d', 'all'
 export const TRAFFIC_CONTEXT_DEFINITIONS = Object.freeze([
   'entry_source',
   'evidence_target_views',
+  'evidence_and_trust_use',
+  'reliever_finder_views',
+  'methodology_views',
+  'data_trust_views',
+  'since_yesterday_evidence_opens',
   'shared_link_landing_sessions',
   'evidence_depth',
   'comparison_pairs',

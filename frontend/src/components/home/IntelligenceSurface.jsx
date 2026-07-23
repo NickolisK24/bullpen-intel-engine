@@ -56,7 +56,7 @@ const SINCE_YESTERDAY_STATES = new Set([
 ])
 const SINCE_YESTERDAY_ALPHABETICAL_ORDERING = 'team_abbreviation_then_team_name'
 const SINCE_YESTERDAY_SOURCE = 'since_yesterday'
-const SINCE_YESTERDAY_TEAM_LINK_SOURCE = 'today'
+const SINCE_YESTERDAY_TEAM_LINK_SOURCE = SINCE_YESTERDAY_SOURCE
 const SINCE_YESTERDAY_EXPLAINER =
   'Comparing complete, adjacent daily views only. Movement is descriptive, not predictive.'
 const SINCE_YESTERDAY_UNAVAILABLE_COPY =

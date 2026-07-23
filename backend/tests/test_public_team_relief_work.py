@@ -1388,6 +1388,23 @@ def test_existing_public_routes_behavior_freeze(monkeypatch):
         'frontend/tests/dashboardRealignment.test.mjs',
         'frontend/tests/syncStatus.test.mjs',
     }
+    allowed_analytics_evidence_alignment_files = {
+        # feat/analytics-evidence-alignment: align the existing privacy-bounded,
+        # route-based traffic measurement with the evidence-first product. Adds the
+        # bounded since_yesterday entry source for trusted-change links, a
+        # consolidated "Evidence & Trust Use" reporting section (team read, recent
+        # bullpen work, pitcher lane, reliever detail, comparison read/evidence,
+        # reliever finder, methodology, data & trust views, since-yesterday opens,
+        # deeper-evidence sessions and depth), and current internal display names.
+        # Page views stay openings, not reading. No baseball intelligence,
+        # classification, evidence, freshness, route, or public claim changes.
+        'frontend/src/utils/evidenceLinks.js',
+        'frontend/src/components/home/IntelligenceSurface.jsx',
+        'frontend/src/components/admin/TrafficIntelligenceAdmin.jsx',
+        'frontend/src/utils/trafficReporting.js',
+        'frontend/tests/trafficMeasurement.test.mjs',
+        'frontend/tests/trafficIntelligenceAdmin.test.mjs',
+    }
     assert not [
         path for path in changed
         if path not in allowed_phase_a_audience_signup_files
@@ -1406,6 +1423,7 @@ def test_existing_public_routes_behavior_freeze(monkeypatch):
         if path not in allowed_reliever_finder_search_first_files
         if path not in allowed_methodology_public_first_files
         if path not in allowed_data_trust_reader_first_files
+        if path not in allowed_analytics_evidence_alignment_files
         if (
             path in blocked_files and path not in allowed_internal_admin_files
         )

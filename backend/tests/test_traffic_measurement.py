@@ -1,4 +1,5 @@
 import importlib.util
+import re
 from pathlib import Path
 from types import SimpleNamespace
 import uuid
@@ -13,6 +14,7 @@ from api.traffic import traffic_bp
 from models.traffic_internal_visitor import TrafficInternalVisitor
 from models.traffic_page_view import TrafficPageView
 from services.traffic_measurement import (
+    ENTRY_SOURCE_ALLOWLIST,
     classify_device,
     is_known_bot,
     normalize_entry_source,
@@ -179,11 +181,31 @@ def test_incompatible_bullpen_context_is_rejected(changes):
 
 
 def test_bounded_entry_source_and_evidence_normalizers():
-    for source in ('today', 'dashboard', 'landscape', 'stories', 'comparison', 'all_pitchers', 'pitcher_search', 'share', 'share_link', 'share_card'):
+    for source in ('today', 'dashboard', 'landscape', 'stories', 'comparison', 'all_pitchers', 'pitcher_search', 'share', 'share_link', 'share_card', 'since_yesterday'):
         assert normalize_entry_source(source.upper()) == source
     assert normalize_entry_source('private') is None
     assert normalize_evidence_target('TEAM_RELIEF_WORK') == 'team_relief_work'
     assert normalize_evidence_target('raw-hash') is None
+
+
+def test_frontend_and_backend_entry_source_allowlists_stay_aligned():
+    """The bounded entry-source vocabulary must match on both sides of the wire.
+
+    A value the client can attach to a canonical Bullpen URL but the server does
+    not accept (or the reverse) would silently drop navigation provenance, so the
+    frontend source list and the backend allowlist are pinned to each other.
+    """
+    evidence_links = (
+        Path(__file__).resolve().parents[2]
+        / 'frontend' / 'src' / 'utils' / 'evidenceLinks.js'
+    ).read_text(encoding='utf-8')
+    block = re.search(
+        r'BULLPEN_SOURCE_VALUES = Object\.freeze\(\[(.*?)\]\)', evidence_links, re.S,
+    )
+    assert block, 'BULLPEN_SOURCE_VALUES not found in evidenceLinks.js'
+    frontend_sources = set(re.findall(r"'([a-z_]+)'", block.group(1)))
+    assert frontend_sources == set(ENTRY_SOURCE_ALLOWLIST)
+    assert 'since_yesterday' in frontend_sources
 
 
 def test_unknown_entry_source_is_dropped_but_non_bullpen_context_is_rejected():

@@ -166,7 +166,7 @@ test('all pitchers keeps an optional team filter without evidence context', () =
 })
 
 test('bounded entry sources are accepted and unknown source or hash values are omitted', () => {
-  for (const source of ['today', 'dashboard', 'landscape', 'stories', 'comparison', 'all_pitchers', 'pitcher_search', 'share', 'share_link', 'share_card']) {
+  for (const source of ['today', 'dashboard', 'landscape', 'stories', 'comparison', 'all_pitchers', 'pitcher_search', 'share', 'share_link', 'share_card', 'since_yesterday']) {
     assert.equal(canonicalPage('/bullpen', `?view=board&team=BOS&source=${source}`).entry_source, source)
   }
   const page = canonicalPage('/bullpen', '?view=board&team=BOS&source=private', '#private-section')

@@ -301,6 +301,40 @@ def test_evidence_depth_uses_external_bullpen_sessions_as_denominator(reporting_
     }
 
 
+def test_evidence_and_trust_use_consolidates_evidence_and_trust_views(reporting_app):
+    add_view(
+        datetime(2026, 7, 10, 9, 0), 'reader-one', 'read-session',
+        surface='bullpen_board', view_mode='board', team_ref='BOS',
+        evidence_target='team_read', entry_source='since_yesterday',
+    )
+    add_view(
+        datetime(2026, 7, 10, 9, 1), 'reader-one', 'read-session',
+        surface='bullpen_board', view_mode='board', team_ref='BOS',
+        evidence_target='team_relief_work',
+    )
+    add_view(
+        datetime(2026, 7, 10, 9, 2), 'reader-two', 'finder-session',
+        surface='all_pitchers', view_mode='pitchers',
+    )
+    add_view(datetime(2026, 7, 10, 9, 3), 'reader-two', 'finder-session', surface='methodology')
+    add_view(datetime(2026, 7, 10, 9, 4), 'reader-two', 'finder-session', surface='data_trust')
+    db.session.commit()
+
+    use = build_traffic_summary('7d', now=NOW)['evidence_and_trust_use']
+    assert use['team_read_views'] == 1
+    assert use['recent_bullpen_work_views'] == 1
+    assert use['comparison_read_views'] == 0
+    assert use['comparison_evidence_views'] == 0
+    assert use['reliever_finder_views'] == 1
+    assert use['methodology_views'] == 1
+    assert use['data_trust_views'] == 1
+    assert use['since_yesterday_evidence_opens'] == 1
+    # Two external bullpen sessions (Team Board + Reliever Finder); one opened a
+    # deeper evidence destination (Recent Bullpen Work).
+    assert use['sessions_with_deeper_evidence'] == 1
+    assert use['evidence_depth_percentage'] == 50.0
+
+
 def test_completed_sharing_aggregates_methods_subjects_surfaces_and_evidence(reporting_app):
     add_view(datetime(2026, 7, 1, 12, 0), 'baseline', 'baseline-session')
     add_share(
@@ -583,6 +617,20 @@ def test_empty_state_response_and_invalid_range(reporting_app):
     assert report['evidence_depth'] == {
         'sessions_opening_deeper_evidence': 0,
         'percentage_of_bullpen_sessions_opening_deeper_evidence': None,
+    }
+    assert report['evidence_and_trust_use'] == {
+        'team_read_views': 0,
+        'recent_bullpen_work_views': 0,
+        'pitcher_lane_views': 0,
+        'reliever_detail_views': 0,
+        'comparison_read_views': 0,
+        'comparison_evidence_views': 0,
+        'reliever_finder_views': 0,
+        'methodology_views': 0,
+        'data_trust_views': 0,
+        'since_yesterday_evidence_opens': 0,
+        'sessions_with_deeper_evidence': 0,
+        'evidence_depth_percentage': None,
     }
     assert report['sharing'] == {
         'completed_share_actions': 0,

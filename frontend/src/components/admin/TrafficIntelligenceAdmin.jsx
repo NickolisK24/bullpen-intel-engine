@@ -26,6 +26,11 @@ const METRIC_LABELS = {
 const CONTEXT_DEFINITION_LABELS = {
   entry_source: 'Entry Source',
   evidence_target_views: 'Evidence-Target Views',
+  evidence_and_trust_use: 'Evidence & Trust Use',
+  reliever_finder_views: 'Reliever Finder Views',
+  methodology_views: 'Methodology Views',
+  data_trust_views: 'Data & Trust Views',
+  since_yesterday_evidence_opens: 'Since Yesterday Evidence Opens',
   shared_link_landing_sessions: 'Shared-Link Landing Sessions',
   evidence_depth: 'Evidence Depth',
   comparison_pairs: 'Comparison Pairs',
@@ -235,6 +240,7 @@ export function TrafficReport({ report }) {
         <RankedSection title="Most Visited Surfaces" rows={report.most_visited_surfaces} labelKey="surface" valueKey="page_views" />
         <RankedSection title="Top Referrer Domains" rows={report.top_referrers} labelKey="referrer_domain" valueKey="sessions" />
         <CampaignSection rows={report.campaigns || []} />
+        <EvidenceAndTrustUseSection data={report.evidence_and_trust_use || {}} />
         <BullpenSection data={report.bullpen_exploration || {}} />
         <EvidenceExplorationSection data={report.evidence_exploration || {}} />
         <RankedSection title="Top Team Evidence" rows={report.evidence_exploration?.team_contexts} labelKey="team_ref" valueKey="page_views" />
@@ -308,7 +314,7 @@ function BullpenSection({ data }) {
   return <SectionShell title="Bullpen Exploration"><dl className="space-y-2">{[
     ['Bullpen Board Views', data.bullpen_board_views],
     ['Compare Bullpens Views', data.compare_bullpens_views],
-    ['All Pitchers Views', data.all_pitchers_views],
+    ['Reliever Finder Views', data.all_pitchers_views],
     ['Pitcher Context Page Views', data.pitcher_context_page_views],
   ].map(([label, value]) => <div key={label} className="flex justify-between text-sm"><dt className="text-chalk500">{label}</dt><dd className="font-mono text-chalk200">{formatValue(value)}</dd></div>)}</dl><div className="mt-3"><RankedList rows={data.team_contexts || []} labelKey="team_ref" valueKey="page_views" /></div></SectionShell>
 }
@@ -322,6 +328,42 @@ function EvidenceExplorationSection({ data }) {
     ['Comparison Read Views', data.comparison_read_views],
     ['Comparison Evidence Views', data.comparison_evidence_views],
   ]} />
+}
+
+function EvidenceAndTrustUseSection({ data }) {
+  return (
+    <SectionShell title="Evidence & Trust Use">
+      <p className="text-xs leading-relaxed text-chalk500">
+        Canonical page views of evidence destinations and public trust pages. A view means a
+        destination was opened — it does not prove the visitor read, understood, or trusted every
+        item on it. These are counts, not rankings or scores.
+      </p>
+      <dl className="mt-3 space-y-2">
+        {[
+          ['Team Read Views', data.team_read_views],
+          ['Recent Bullpen Work Views', data.recent_bullpen_work_views],
+          ['Pitcher Lane Views', data.pitcher_lane_views],
+          ['Reliever Detail Views', data.reliever_detail_views],
+          ['Comparison Read Views', data.comparison_read_views],
+          ['Comparison Evidence Views', data.comparison_evidence_views],
+          ['Reliever Finder Views', data.reliever_finder_views],
+          ['Methodology Views', data.methodology_views],
+          ['Data & Trust Views', data.data_trust_views],
+          ['Since Yesterday Evidence Opens', data.since_yesterday_evidence_opens],
+          ['Sessions With Deeper Evidence', data.sessions_with_deeper_evidence],
+        ].map(([label, value]) => (
+          <div key={label} className="flex justify-between gap-3 text-sm">
+            <dt className="text-chalk500">{label}</dt>
+            <dd className="font-mono text-chalk200">{formatValue(value)}</dd>
+          </div>
+        ))}
+        <div className="flex justify-between gap-3 text-sm">
+          <dt className="text-chalk500">Evidence Depth</dt>
+          <dd className="font-mono text-chalk200">{formatPercentage(data.evidence_depth_percentage)}</dd>
+        </div>
+      </dl>
+    </SectionShell>
+  )
 }
 
 function EntrySourcesSection({ rows }) {
