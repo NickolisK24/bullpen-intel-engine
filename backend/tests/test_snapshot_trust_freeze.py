@@ -409,6 +409,20 @@ def test_frozen_legacy_what_changed_files_untouched():
         'frontend/tests/dashboardRealignment.test.mjs',
         'frontend/tests/syncStatus.test.mjs',
     }
+    allowed_analytics_evidence_alignment_files = {
+        # feat/analytics-evidence-alignment: align the existing privacy-bounded,
+        # route-based traffic measurement with the evidence-first product. Adds the
+        # bounded since_yesterday entry source, a consolidated "Evidence & Trust
+        # Use" reporting section, and current internal display names. Page views
+        # stay openings, not reading. No baseball intelligence, classification,
+        # evidence, freshness, route, or public claim changes.
+        'frontend/src/utils/evidenceLinks.js',
+        'frontend/src/components/home/IntelligenceSurface.jsx',
+        'frontend/src/components/admin/TrafficIntelligenceAdmin.jsx',
+        'frontend/src/utils/trafficReporting.js',
+        'frontend/tests/trafficMeasurement.test.mjs',
+        'frontend/tests/trafficIntelligenceAdmin.test.mjs',
+    }
     assert not sorted(
         path for path in changed
         if path.startswith('frontend/')
@@ -427,6 +441,7 @@ def test_frozen_legacy_what_changed_files_untouched():
         if path not in allowed_reliever_finder_search_first_files
         if path not in allowed_methodology_public_first_files
         if path not in allowed_data_trust_reader_first_files
+        if path not in allowed_analytics_evidence_alignment_files
     )
     assert not sorted(
         path for path in changed

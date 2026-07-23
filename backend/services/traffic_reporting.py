@@ -23,6 +23,8 @@ OWNED_REFERRER_DOMAINS = frozenset({
 RANGE_DAYS = {'7d': 7, '30d': 30, '90d': 90}
 RANGE_LABELS = {'7d': 'Last 7 days', '30d': 'Last 30 days', '90d': 'Last 90 days', 'all': 'All time'}
 SHARE_ENTRY_SOURCES = frozenset({'share', 'share_link', 'share_card'})
+SINCE_YESTERDAY_ENTRY_SOURCE = 'since_yesterday'
+BULLPEN_SURFACES = frozenset({'bullpen_board', 'compare_bullpens', 'all_pitchers'})
 DEEP_EVIDENCE_TARGETS = frozenset({
     'team_relief_work', 'pitcher_lanes', 'pitcher_detail', 'comparison_evidence',
 })
@@ -40,6 +42,11 @@ METRIC_DEFINITIONS = {
     'pages_per_session': 'Qualifying page views divided by qualifying sessions; unavailable when there are no sessions.',
     'entry_source': 'Bounded navigation context attached to a canonical Bullpen URL; it is separate from campaign attribution.',
     'evidence_target_views': 'Canonical exact-destination page views; opening a destination does not prove every item was read.',
+    'evidence_and_trust_use': 'Canonical page views of evidence destinations and public trust pages, read as one evidence-first group. A view means a destination was opened; it does not prove the visitor read, understood, or trusted every item on it. These are counts, not rankings or scores.',
+    'reliever_finder_views': 'Canonical page views of the Reliever Finder surface. The underlying view is stored as all_pitchers for historical continuity.',
+    'methodology_views': 'Canonical page views of the public Methodology page.',
+    'data_trust_views': 'Canonical page views of the public Data & Trust page.',
+    'since_yesterday_evidence_opens': 'Canonical Team Board views opened from a Since Yesterday trusted-change link (bounded entry source since_yesterday). It counts openings of the change evidence, not confirmation that any change was read.',
     'shared_link_landing_sessions': 'Qualifying sessions whose first page view begins from a BaseballOS share-oriented URL.',
     'evidence_depth': 'Qualifying Bullpen sessions that opened at least one deeper evidence destination.',
     'comparison_pairs': 'Descriptive canonical URL selections aggregated without left-right order; they are not game predictions.',
@@ -334,8 +341,7 @@ def _shared_link_landings(landing_views):
 
 def _evidence_depth(rows):
     bullpen_sessions = {
-        row.session_id for row in rows
-        if row.surface in {'bullpen_board', 'compare_bullpens', 'all_pitchers'}
+        row.session_id for row in rows if row.surface in BULLPEN_SURFACES
     }
     deeper_sessions = {
         row.session_id for row in rows if row.evidence_target in DEEP_EVIDENCE_TARGETS
@@ -345,6 +351,46 @@ def _evidence_depth(rows):
         'sessions_opening_deeper_evidence': count,
         'percentage_of_bullpen_sessions_opening_deeper_evidence': (
             round(count / len(bullpen_sessions) * 100, 2) if bullpen_sessions else None
+        ),
+    }
+
+
+def _evidence_and_trust_use(rows):
+    """Consolidated evidence-first reading of the same canonical page-view rows.
+
+    Every value is a canonical page view or an anonymous session count. A view
+    means an evidence destination or public trust page was opened; it does not
+    prove the visitor read, understood, or trusted every item on it. There are
+    no rankings or scores here — the exact-destination and surface counts are
+    the same page-view rows the other sections aggregate, grouped for the
+    evidence-first product answer.
+    """
+    surface_counts = Counter(row.surface for row in rows)
+    target_counts = Counter(row.evidence_target for row in rows if row.evidence_target)
+    since_yesterday_opens = sum(
+        1 for row in rows if row.entry_source == SINCE_YESTERDAY_ENTRY_SOURCE
+    )
+    bullpen_sessions = {
+        row.session_id for row in rows if row.surface in BULLPEN_SURFACES
+    }
+    deeper_sessions = {
+        row.session_id for row in rows if row.evidence_target in DEEP_EVIDENCE_TARGETS
+    }
+    deeper_count = len(deeper_sessions)
+    return {
+        'team_read_views': target_counts['team_read'],
+        'recent_bullpen_work_views': target_counts['team_relief_work'],
+        'pitcher_lane_views': target_counts['pitcher_lanes'],
+        'reliever_detail_views': target_counts['pitcher_detail'],
+        'comparison_read_views': target_counts['comparison_read'],
+        'comparison_evidence_views': target_counts['comparison_evidence'],
+        'reliever_finder_views': surface_counts['all_pitchers'],
+        'methodology_views': surface_counts['methodology'],
+        'data_trust_views': surface_counts['data_trust'],
+        'since_yesterday_evidence_opens': since_yesterday_opens,
+        'sessions_with_deeper_evidence': deeper_count,
+        'evidence_depth_percentage': (
+            round(deeper_count / len(bullpen_sessions) * 100, 2) if bullpen_sessions else None
         ),
     }
 
@@ -578,6 +624,7 @@ def build_traffic_summary(range_key='7d', *, now=None):
         'evidence_exploration': _evidence_exploration(rows),
         'shared_link_landings': _shared_link_landings(landing_views),
         'evidence_depth': _evidence_depth(rows),
+        'evidence_and_trust_use': _evidence_and_trust_use(rows),
         'sharing': _sharing(share_actions),
         'measurement_health': _measurement_health(start, end, rows),
     }

@@ -50,6 +50,11 @@ function reportFixture(overrides = {}) {
       pages_per_session: 'Page views divided by sessions.',
       entry_source: 'Bounded navigation context.',
       evidence_target_views: 'Opening does not prove every item was read.',
+      evidence_and_trust_use: 'Canonical evidence and trust page views, read as one group. A view is an opening, not proof of reading.',
+      reliever_finder_views: 'Canonical Reliever Finder page views (stored as all_pitchers).',
+      methodology_views: 'Canonical Methodology page views.',
+      data_trust_views: 'Canonical Data & Trust page views.',
+      since_yesterday_evidence_opens: 'Team Board views opened from a Since Yesterday link.',
       shared_link_landing_sessions: 'Sessions beginning from a share-oriented URL.',
       evidence_depth: 'Bullpen sessions opening deeper evidence.',
       comparison_pairs: 'Descriptive URL selections, not game predictions.',
@@ -114,6 +119,20 @@ function reportFixture(overrides = {}) {
     evidence_depth: {
       sessions_opening_deeper_evidence: 4,
       percentage_of_bullpen_sessions_opening_deeper_evidence: 40,
+    },
+    evidence_and_trust_use: {
+      team_read_views: 7,
+      recent_bullpen_work_views: 4,
+      pitcher_lane_views: 3,
+      reliever_detail_views: 2,
+      comparison_read_views: 5,
+      comparison_evidence_views: 1,
+      reliever_finder_views: 2,
+      methodology_views: 6,
+      data_trust_views: 3,
+      since_yesterday_evidence_opens: 8,
+      sessions_with_deeper_evidence: 4,
+      evidence_depth_percentage: 40,
     },
     sharing: {
       completed_share_actions: 9,
@@ -244,6 +263,33 @@ test('evidence context sections render bounded counts and precise labels', () =>
   for (const forbidden of ['People who read', 'Share conversions', 'Viral traffic', 'Engagement score']) {
     assert.equal(html.includes(forbidden), false)
   }
+})
+
+test('evidence and trust use consolidates the evidence-first read with honest labels', () => {
+  const html = render(React.createElement(TrafficReport, { report: reportFixture() }))
+  assert.ok(html.includes('Evidence &amp; Trust Use'))
+  for (const label of [
+    'Recent Bullpen Work Views', 'Pitcher Lane Views', 'Reliever Detail Views',
+    'Reliever Finder Views', 'Methodology Views', 'Data &amp; Trust Views',
+    'Since Yesterday Evidence Opens', 'Sessions With Deeper Evidence',
+  ]) assert.ok(html.includes(label), label)
+  // A view is an opening, never proof of reading, comprehension, or trust.
+  assert.ok(html.includes('does not prove the visitor read, understood, or trusted every'))
+  assert.ok(html.includes('counts, not rankings or scores'))
+  // No leaderboard, engagement, or virality framing anywhere in the section.
+  for (const forbidden of [/leaderboard/i, /engagement score/i, /most engaged/i, /viral/i]) {
+    assert.equal(forbidden.test(html), false, String(forbidden))
+  }
+})
+
+test('evidence and trust use stays zero-safe and unknown-honest when empty', () => {
+  const html = render(React.createElement(TrafficReport, {
+    report: reportFixture({ evidence_and_trust_use: {} }),
+  }))
+  assert.ok(html.includes('Evidence &amp; Trust Use'))
+  assert.ok(html.includes('Percentage unavailable'))
+  assert.equal(html.includes('NaN'), false)
+  assert.equal(html.includes('undefined'), false)
 })
 
 test('empty evidence sections remain compact and zero-safe', () => {

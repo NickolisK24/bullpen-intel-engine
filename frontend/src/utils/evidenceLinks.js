@@ -17,6 +17,7 @@ export const BULLPEN_SOURCE_VALUES = Object.freeze([
   'share',
   'share_link',
   'share_card',
+  'since_yesterday',
 ])
 
 export const EVIDENCE_SECTIONS = Object.freeze({
