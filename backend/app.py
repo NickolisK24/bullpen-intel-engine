@@ -144,6 +144,7 @@ def create_app(config_name=None):
         ShareArtifactEvidence,
         ShareArtifactRelation,
     )
+    from models.share_artifact_generation_audit import ShareArtifactGenerationAudit
 
     from api.bullpen import bullpen_bp
     from api.prospects import prospects_bp
@@ -162,6 +163,8 @@ def create_app(config_name=None):
     from api.slate_briefing import slate_briefing_bp
     from api.audience import audience_bp
     from api.traffic import traffic_bp
+    from api.share_artifacts_admin import share_artifacts_admin_bp
+    from api.share_cards import share_cards_bp
 
     app.register_blueprint(bullpen_bp, url_prefix='/api/bullpen')
     app.register_blueprint(prospects_bp, url_prefix='/api/prospects')
@@ -180,6 +183,10 @@ def create_app(config_name=None):
     app.register_blueprint(slate_briefing_bp, url_prefix='/api')
     app.register_blueprint(audience_bp, url_prefix='/api/audience')
     app.register_blueprint(traffic_bp, url_prefix='/api/traffic')
+    app.register_blueprint(
+        share_artifacts_admin_bp, url_prefix='/api/internal/share-artifacts',
+    )
+    app.register_blueprint(share_cards_bp, url_prefix='/api/share-cards')
 
     @app.route('/api/health')
     def health():

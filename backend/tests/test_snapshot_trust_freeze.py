@@ -428,10 +428,28 @@ def test_frozen_legacy_what_changed_files_untouched():
         # artifact domain migration. Backend domain only — no rendering, routes,
         # public runtime, or what-changed behavior changes.
         'backend/migrations/versions/c1a7f4e2b9d6_add_share_artifacts.py',
+        # feature/share-artifact-generation-cutover (Share Cards SC-03A): the
+        # governed generation audit migration and the internal admin generation
+        # endpoint. Backend orchestration/audit only — no public route or renderer.
+        'backend/migrations/versions/e2b8d5a3c9f1_add_share_artifact_generation_audits.py',
+        'backend/api/share_artifacts_admin.py',
+    }
+    allowed_share_artifact_cutover_files = {
+        # feature/share-artifact-generation-cutover (Share Cards SC-03A cutover):
+        # the active Share Card entry points now read the published, integrity-
+        # verified immutable Share Artifact via a governed backend read endpoint
+        # and a pure projection adapter, instead of composing card intelligence in
+        # the browser. No public availability/classification/vocabulary change: the
+        # endpoint serves only the already-governed compatibility projection.
+        'backend/api/share_cards.py',
+        'frontend/src/utils/shareCardArtifact.js',
+        'frontend/tests/shareCardArtifact.test.mjs',
+        'frontend/tests/shareCardCutover.test.mjs',
     }
     assert not sorted(
         path for path in changed
         if path.startswith('frontend/')
+        if path not in allowed_share_artifact_cutover_files
         if path not in allowed_phase_a_audience_signup_files
         if path not in allowed_bullpen_game_context_files
         if path not in allowed_pitcher_ledger_coverage_files

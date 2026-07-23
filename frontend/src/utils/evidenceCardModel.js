@@ -1,3 +1,22 @@
+/**
+ * DEPRECATED — REMOVE_LATER (Share Cards SC-03A cutover).
+ *
+ * This is the legacy CLIENT-SIDE Share Card composer. Its card composers
+ * (`buildTeamEvidenceCard`, `buildComparisonEvidenceCard`, and the `selectTeamStory`
+ * story selection they lean on) are no longer imported or called by any active
+ * Share Card entry point: the active surfaces now source card content from the
+ * canonical immutable Share Artifact via `utils/shareCardArtifact.js`.
+ *
+ * One pure view-only helper (`comparisonObservationCandidates`) is still
+ * referenced by the on-screen comparison table (`teamBullpenComparisonView.js`)
+ * for its featured-observation copy — that path never composed a shareable
+ * artifact and is not a competing source of truth for the Share Card. It is
+ * relocated out of this module when the comparison Team State artifact lands.
+ *
+ * The module is otherwise retained only because its pure functions still back
+ * unit tests; do not add new Share Card callers. It is removed once the
+ * SC-06/SC-07 renderer consumes the canonical payload directly.
+ */
 import {
   buildComparisonHref,
   buildTeamBoardHref,

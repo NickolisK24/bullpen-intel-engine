@@ -459,6 +459,12 @@ export const getTeamBullpenBoard = (teamId, params = {}) => {
 export const getTeamStory = (teamId, params = {}) => {
   return request(`/bullpen/teams/${teamId}/story${buildQuery(params)}`)
 }
+// Team State Share Card — canonical, published, immutable artifact-backed
+// compatibility projection (SC-03A cutover). Read-only; the endpoint serves only
+// integrity-verified published artifacts and never composes or mints.
+export const getTeamShareCard = (teamId, params = {}) => {
+  return request(`/share-cards/team-state/${encodeURIComponent(teamId)}${buildQuery(params)}`)
+}
 // What Changed Since Last Game — followed-team change summary.
 // Descriptive only (no ranking/selection/recommendation).
 export const getTeamChanges = (teamId) => request(`/bullpen/teams/${teamId}/changes`)

@@ -1,3 +1,14 @@
+/**
+ * DEPRECATED — REMOVE_LATER (Share Cards SC-03A cutover).
+ *
+ * Legacy client-side Share Card story selection. No active Share Card entry
+ * point imports or calls `selectTeamStory` / `selectComparisonStory` anymore —
+ * card content now comes from the canonical immutable Share Artifact. The pure
+ * layout constants (`TEAM_HEADLINE_LAYOUT`, `COMPARISON_SUPPORTING_LAYOUT`, …)
+ * are still consumed by the existing PNG renderer (`evidenceCardRenderer.js`),
+ * which now renders only canonical artifact-backed data. Otherwise retained
+ * only for the pure-function unit tests; do not add new story-selection callers.
+ */
 import { normalizeCardText, wrapCardText } from './evidenceCardText'
 
 export const TEAM_CARD_VERSION = 'team_story_v2'

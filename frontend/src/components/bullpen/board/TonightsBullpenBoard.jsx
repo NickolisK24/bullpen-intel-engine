@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useFetch } from '../../../hooks/useFetch'
 import { toOperatingStateReadModel } from '../../../adapters/operatingStateReadModel'
-import { getTeamBullpenBoard, getTeamGameContext, getTeamStory } from '../../../utils/api'
+import { getTeamBullpenBoard, getTeamGameContext, getTeamStory, getTeamShareCard } from '../../../utils/api'
 import { LoadingPane, ErrorState, EmptyState } from '../../UI'
 import BullpenOperatingStateCard from '../BullpenOperatingStateCard'
 import BullpenAvailabilityDistribution from './BullpenAvailabilityDistribution'
@@ -10,7 +10,7 @@ import TeamGameContextCard from './TeamGameContextCard'
 import StoryCard from './StoryCard'
 import TeamReliefWorkPanel from '../TeamReliefWorkPanel'
 import { buildTeamBoardHref, resolveTeamId } from '../../../utils/evidenceLinks'
-import { EVIDENCE_CARD_ORIGIN, buildTeamEvidenceCard } from '../../../utils/evidenceCardModel'
+import { EVIDENCE_CARD_ORIGIN, buildTeamShareCardFromArtifact } from '../../../utils/shareCardArtifact'
 import EvidenceShareMenu from '../../share/EvidenceShareMenu'
 import {
   BULLPEN_VIEW_MODE_ACTIVE,
@@ -78,6 +78,12 @@ export default function TonightsBullpenBoard({
     () => (selectedTeam == null ? Promise.resolve(null) : getTeamStory(selectedTeam)),
     [selectedTeam],
   )
+  // SC-03A cutover: the Share Card is sourced from the canonical, published,
+  // integrity-verified immutable artifact (never composed client-side).
+  const shareCard = useFetch(
+    () => (selectedTeam == null ? Promise.resolve(null) : getTeamShareCard(selectedTeam)),
+    [selectedTeam],
+  )
   const boardState = boardPayload !== undefined ? staticFetchState(boardPayload) : board
   const gameContextState = gameContextPayload !== undefined ? staticFetchState(gameContextPayload) : gameContext
   const storyState = storyPayload !== undefined ? staticFetchState(storyPayload) : story
@@ -90,7 +96,9 @@ export default function TonightsBullpenBoard({
     density: 'compact',
   })
   const normalizedRequestedSection = String(requestedSection || '').replace(/^#/, '')
-  const teamCard = buildTeamEvidenceCard(teamOperatingRead)
+  // Canonical artifact-backed card; null when no published artifact exists, which
+  // drives the share menu's controlled unavailable state (no legacy fallback).
+  const teamCard = buildTeamShareCardFromArtifact(shareCard.data)
   const teamLinkFallbackPath = buildTeamBoardHref(selectedTeamRecord, { section: normalizedRequestedSection })
   const teamDestinationUrl = teamCard?.destinationUrl
     || (teamLinkFallbackPath ? `${EVIDENCE_CARD_ORIGIN}${teamLinkFallbackPath}` : null)
