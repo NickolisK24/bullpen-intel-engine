@@ -141,6 +141,7 @@ def create_test_schema(app):
     import models.roster_status_snapshot  # noqa: F401
     import models.scheduled_game  # noqa: F401
     import models.share_artifact  # noqa: F401
+    import models.share_artifact_generation_audit  # noqa: F401
     import models.sync_failure  # noqa: F401
     import models.sync_run  # noqa: F401
     import models.sync_job  # noqa: F401
