@@ -52,9 +52,11 @@ def test_existing_active_roster_departure_is_repairable():
     scope = build_roster_repair_scope(_audit(finding))
     assert scope['status'] == 'ready'
     assert scope['repairable_findings'] == [finding]
+    assert scope['roster_status_findings'] == [finding]
+    assert scope['identity_findings'] == []
 
 
-def test_newly_discovered_player_blocks_entire_write():
+def test_newly_discovered_player_is_routed_to_identity_repair():
     recall = _finding(intraday_reconcile.CHANGE_RECALL)
     newly_discovered = _finding(
         intraday_reconcile.CHANGE_NEWLY_DISCOVERED_ACTIVE,
@@ -62,22 +64,33 @@ def test_newly_discovered_player_blocks_entire_write():
         mlb_player_id=777,
     )
     scope = build_roster_repair_scope(_audit(recall, newly_discovered))
-    assert scope['status'] == 'blocked'
-    assert scope['reason'] == 'unsupported_public_roster_findings'
-    assert scope['repairable_findings'] == [recall]
-    assert scope['unsupported_findings'] == [newly_discovered]
+    assert scope['status'] == 'ready'
+    assert scope['reason'] is None
+    assert scope['repairable_findings'] == [recall, newly_discovered]
+    assert scope['roster_status_findings'] == [recall]
+    assert scope['identity_findings'] == [newly_discovered]
+    assert scope['unsupported_findings'] == []
+    assert scope['affected_team_ids'] == [143]
+    assert scope['affected_pitcher_ids'] == [11]
+    assert scope['affected_pitcher_mlb_ids'] == [101, 777]
 
 
-def test_team_assignment_change_blocks_instead_of_guessing():
-    scope = build_roster_repair_scope(_audit(
-        _finding(
-            intraday_reconcile.CHANGE_TEAM_ASSIGNMENT_CHANGE,
-            stored_team_id=121,
-            observed_team_id=143,
-        )
-    ))
-    assert scope['status'] == 'blocked'
-    assert scope['affected_team_ids'] == []
+def test_team_assignment_change_is_routed_to_identity_repair():
+    finding = _finding(
+        intraday_reconcile.CHANGE_TEAM_ASSIGNMENT_CHANGE,
+        stored_team_id=121,
+        observed_team_id=143,
+    )
+    scope = build_roster_repair_scope(_audit(finding))
+    assert scope['status'] == 'ready'
+    assert scope['reason'] is None
+    assert scope['repairable_findings'] == [finding]
+    assert scope['roster_status_findings'] == []
+    assert scope['identity_findings'] == [finding]
+    assert scope['unsupported_findings'] == []
+    assert scope['affected_team_ids'] == [121, 143]
+    assert scope['affected_pitcher_ids'] == [11]
+    assert scope['affected_pitcher_mlb_ids'] == [101]
 
 
 def test_partial_roster_lane_blocks_all_writes():
