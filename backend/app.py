@@ -164,6 +164,7 @@ def create_app(config_name=None):
     from api.audience import audience_bp
     from api.traffic import traffic_bp
     from api.share_artifacts_admin import share_artifacts_admin_bp
+    from api.share_cards import share_cards_bp
 
     app.register_blueprint(bullpen_bp, url_prefix='/api/bullpen')
     app.register_blueprint(prospects_bp, url_prefix='/api/prospects')
@@ -185,6 +186,7 @@ def create_app(config_name=None):
     app.register_blueprint(
         share_artifacts_admin_bp, url_prefix='/api/internal/share-artifacts',
     )
+    app.register_blueprint(share_cards_bp, url_prefix='/api/share-cards')
 
     @app.route('/api/health')
     def health():

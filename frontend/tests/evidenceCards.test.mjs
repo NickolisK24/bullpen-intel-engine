@@ -669,7 +669,10 @@ test('share controls use the card-selected destination, target, and share text',
   const menu = readFileSync(new URL('../src/components/share/EvidenceShareMenu.jsx', import.meta.url), 'utf8')
   const comparisonView = readFileSync(new URL('../src/components/bullpen/board/BullpenComparisonView.jsx', import.meta.url), 'utf8')
 
-  assert.ok(board.includes('buildTeamEvidenceCard(teamOperatingRead)'))
+  // SC-03A cutover: the board sources the card from the canonical immutable
+  // artifact (buildTeamShareCardFromArtifact), never the legacy client composer.
+  assert.ok(board.includes('buildTeamShareCardFromArtifact(shareCard.data)'))
+  assert.equal(board.includes('buildTeamEvidenceCard'), false)
   assert.ok(board.includes('teamCard?.destinationUrl'))
   assert.ok(board.includes('teamCard?.evidenceTarget'))
   assert.ok(board.includes('teamCard?.shareText'))
@@ -681,7 +684,9 @@ test('share controls use the card-selected destination, target, and share text',
   assert.ok(menu.includes('destinationUrl: shareDestination'))
   assert.ok(menu.includes('shareText: nativeShareText'))
 
-  assert.ok(comparisonView.includes('buildComparisonEvidenceCard(view, { teamA, teamB })'))
+  // SC-03A cutover: comparison no longer composes a card client-side (no
+  // comparison Team State artifact exists yet -> controlled unavailable).
+  assert.equal(comparisonView.includes('buildComparisonEvidenceCard'), false)
   assert.ok(comparisonView.includes('cardModel?.shareText'))
   assert.ok(comparisonView.includes("evidence_target: 'comparison_evidence'"))
   assert.equal(comparisonView.includes("current bullpen workload comparison.'"), false)

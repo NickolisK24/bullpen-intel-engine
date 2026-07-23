@@ -560,3 +560,57 @@ def test_migration_round_trip_and_single_head():
         assert _table_exists(connection, 'share_artifact_generation_audits')
         module.downgrade()
         assert not _table_exists(connection, 'share_artifact_generation_audits')
+
+
+# ---------------------------------------------------------------------------
+# Transitional artifact-backed read endpoint (cutover)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def share_card_client(app):
+    from api.share_cards import share_cards_bp
+    app.register_blueprint(share_cards_bp, url_prefix='/api/share-cards')
+    return app.test_client()
+
+
+def _card_path(team_id=TEAM_ID):
+    return f'/api/share-cards/team-state/{team_id}'
+
+
+def test_share_card_endpoint_unavailable_without_artifact(share_card_client):
+    resp = share_card_client.get(_card_path())
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert body['available'] is False
+    assert body['reason'] == 'no_published_artifact'
+
+
+def test_share_card_endpoint_serves_published_artifact(share_card_client, monkeypatch):
+    _publish_one(monkeypatch)
+    resp = share_card_client.get(_card_path())
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert body['available'] is True
+    assert body['card']['source'] == COMPATIBILITY_SOURCE
+    assert body['card']['team']['team_id'] == TEAM_ID
+
+
+def test_share_card_endpoint_fails_closed_on_integrity_mismatch(share_card_client, monkeypatch):
+    artifact = _publish_one(monkeypatch)
+    db.session.execute(
+        sa.update(ShareArtifact).where(ShareArtifact.id == artifact.id).values(payload={'tampered': True})
+    )
+    db.session.commit()
+    resp = share_card_client.get(_card_path())
+    assert resp.status_code == 503
+    assert resp.get_json()['available'] is False
+
+
+def test_share_card_endpoint_does_not_serve_withdrawn(share_card_client, monkeypatch):
+    artifact = _publish_one(monkeypatch)
+    withdraw_share_artifact(artifact, reason='factual_error')
+    db.session.commit()
+    resp = share_card_client.get(_card_path())
+    assert resp.status_code == 200
+    assert resp.get_json()['available'] is False

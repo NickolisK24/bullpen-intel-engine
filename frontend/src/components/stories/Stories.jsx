@@ -18,7 +18,7 @@ import {
 } from './storiesPresentationView'
 import { completedGamesDataLine } from '../dashboard/syncStatusView'
 import EvidenceShareMenu from '../share/EvidenceShareMenu'
-import { EVIDENCE_CARD_ORIGIN } from '../../utils/evidenceCardModel'
+import { EVIDENCE_CARD_ORIGIN } from '../../utils/shareCardArtifact'
 import {
   DEFAULT_STORY_FILTER,
   STORY_FILTERS,

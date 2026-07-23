@@ -487,9 +487,22 @@ def test_phase0e_switches_and_legacy_public_files_not_modified():
         'backend/migrations/versions/e2b8d5a3c9f1_add_share_artifact_generation_audits.py',
         'backend/api/share_artifacts_admin.py',
     }
+    allowed_share_artifact_cutover_files = {
+        # feature/share-artifact-generation-cutover (Share Cards SC-03A cutover):
+        # the active Share Card entry points now read the published, integrity-
+        # verified immutable Share Artifact via a governed backend read endpoint
+        # and a pure projection adapter, instead of composing card intelligence in
+        # the browser. No public availability/classification/vocabulary change: the
+        # endpoint serves only the already-governed compatibility projection.
+        'backend/api/share_cards.py',
+        'frontend/src/utils/shareCardArtifact.js',
+        'frontend/tests/shareCardArtifact.test.mjs',
+        'frontend/tests/shareCardCutover.test.mjs',
+    }
     allowed_files = (
         allowed_public_freshness_display_files
         | allowed_share_artifacts_domain_files
+        | allowed_share_artifact_cutover_files
         | allowed_internal_admin_files
         | allowed_phase0f_public_recent_work_files
         | allowed_phase0g_public_team_relief_files

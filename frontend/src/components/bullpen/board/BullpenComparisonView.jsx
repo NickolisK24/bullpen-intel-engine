@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom'
 import { EmptyState } from '../../UI'
 import { buildComparisonHref, buildTeamBoardHref, normalizeTeamReference } from '../../../utils/evidenceLinks'
-import { EVIDENCE_CARD_ORIGIN, buildComparisonEvidenceCard } from '../../../utils/evidenceCardModel'
+import { EVIDENCE_CARD_ORIGIN } from '../../../utils/shareCardArtifact'
 import EvidenceShareMenu from '../../share/EvidenceShareMenu'
 import { getComparisonView } from './teamBullpenComparisonView'
 
@@ -109,7 +109,11 @@ export default function BullpenComparisonView({ payload }) {
   const teamARef = normalizeTeamReference(teamA)
   const teamBRef = normalizeTeamReference(teamB)
   const destinationPath = buildComparisonHref(teamARef, teamBRef, { section: 'comparison-evidence' })
-  const cardModel = buildComparisonEvidenceCard(view, { teamA, teamB })
+  // SC-03A cutover: comparison Team State artifacts are not yet part of the
+  // immutable Share Artifact architecture, so no canonical card is available.
+  // The share menu renders its controlled unavailable state (copy-exact-link
+  // stays available); we never compose a comparison card client-side.
+  const cardModel = null
   const destinationUrl = cardModel?.destinationUrl
     || (teamARef && teamBRef ? `${EVIDENCE_CARD_ORIGIN}${destinationPath}` : null)
   const comparisonShareText = cardModel?.shareText
