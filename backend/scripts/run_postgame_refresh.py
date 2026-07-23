@@ -56,6 +56,7 @@ def main(argv=None):
     from app import app
     from services import sync as sync_service
     from services import sync_metadata
+    from services.sync_publication_proof import build_candidate_publication_proof
 
     status = sync_service.run_postgame_refresh(
         app,
@@ -63,16 +64,29 @@ def main(argv=None):
         source=source,
         include_internal_enrichment=not args.public_only,
     )
+    changed_workload = (
+        int(status.get('new_logs_added') or 0)
+        + int(status.get('logs_corrected') or 0)
+    ) > 0
+    with app.app_context():
+        publication_proof = build_candidate_publication_proof(
+            status.get('dashboard_snapshot_id'),
+            candidate_required=changed_workload,
+        )
+
     summary = {
         'status': status.get('status'),
         'source': source,
         'schedule_date': status.get('schedule_date'),
         'public_only': args.public_only,
+        'changed_workload': changed_workload,
+        'publication_proof': publication_proof,
         'sync': status,
     }
     print(json.dumps(summary, sort_keys=True, default=str))
 
-    return 0 if status.get('status') in sync_metadata.SUCCESSFUL_STATUSES else 1
+    sync_succeeded = status.get('status') in sync_metadata.SUCCESSFUL_STATUSES
+    return 0 if sync_succeeded and publication_proof.get('verified') is True else 1
 
 
 if __name__ == '__main__':
