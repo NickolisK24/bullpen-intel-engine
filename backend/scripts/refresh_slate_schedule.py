@@ -16,7 +16,10 @@ os.environ['AUTO_SYNC'] = 'false'
 
 def _parse_args(argv=None):
     parser = argparse.ArgumentParser(
-        description='Refresh the BaseballOS rolling slate schedule authority.'
+        description=(
+            'Refresh the BaseballOS rolling slate schedule authority and rebuild '
+            'the Tonight public snapshot from the same schedule state.'
+        )
     )
     parser.add_argument('--reference-date', help='Eastern slate date, YYYY-MM-DD.')
     parser.add_argument('--source', default='morning_slate_schedule')
@@ -32,11 +35,14 @@ def main(argv=None):
     reference_date = date.fromisoformat(args.reference_date) if args.reference_date else None
 
     from app import app
-    from services.schedule_authority import ingest_rolling_window
+    from services.schedule_tonight_refresh import refresh_schedule_and_tonight
 
     try:
         with app.app_context():
-            result = ingest_rolling_window(reference_date, source=str(args.source)[:40])
+            result = refresh_schedule_and_tonight(
+                reference_date,
+                source=str(args.source)[:40],
+            )
     except Exception as exc:  # noqa: BLE001 - command must surface a nonzero failure
         print(json.dumps({'status': 'failed', 'error': str(exc)}, sort_keys=True))
         return 1
