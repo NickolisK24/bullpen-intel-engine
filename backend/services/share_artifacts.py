@@ -8,7 +8,9 @@ withdraw, and verify share artifacts. It orchestrates the models in
 model module are the fail-closed backstop beneath it.
 
 Scope reminder (SC-01): domain only. No rendering, no image bytes, no routes,
-no analytics event emission.
+no analytics event emission, and no Team State eligibility logic (that is SC-02).
+Callers supply the ``team_id``, the authorizing ``source_snapshot_id``, and the
+already-composed payload; this service persists them immutably.
 """
 
 from __future__ import annotations
@@ -42,6 +44,10 @@ from utils.time import utc_now_naive
 
 DEFAULT_SOURCE = 'share_cards:sc01'
 
+# The Team State V1 render contract identifier. Callers may override it, but V1
+# artifacts target this render version by default.
+DEFAULT_RENDER_VERSION = 'team-state-1.0.0'
+
 
 class ShareArtifactBuildError(ValueError):
     """Raised when a share-artifact build request violates the domain contract."""
@@ -69,7 +75,7 @@ class ShareArtifactAssetInput:
 
     asset_role: str
     media_type: str
-    render_version: Optional[int] = None
+    render_version: Optional[str] = None
     content_hash: Optional[str] = None
     storage_uri: Optional[str] = None
     width: Optional[int] = None
@@ -89,12 +95,14 @@ def _require_text(value, field_name):
     return value
 
 
-def _validate_render_version(render_version):
-    if not isinstance(render_version, int) or isinstance(render_version, bool):
-        raise ShareArtifactBuildError('render_version must be an integer')
-    if render_version < 1:
-        raise ShareArtifactBuildError('render_version must be >= 1')
-    return render_version
+def _require_int(value, field_name, *, allow_none=False):
+    if value is None:
+        if allow_none:
+            return None
+        raise ShareArtifactBuildError(f'{field_name} is required')
+    if not isinstance(value, int) or isinstance(value, bool):
+        raise ShareArtifactBuildError(f'{field_name} must be an integer')
+    return value
 
 
 def _coerce_evidence_inputs(evidence) -> tuple:
@@ -166,12 +174,15 @@ def _evidence_rows_as_dicts(rows) -> list:
 
 
 def _equivalence_kwargs_from_fields(
-    *, artifact_type, render_version, subject_type, subject_key,
-    product_date, payload, evidence_entries, trust_metadata, schema_version,
+    *, artifact_type, render_version, team_id, source_snapshot_id,
+    subject_type, subject_key, product_date, payload, evidence_entries,
+    trust_metadata, schema_version,
 ) -> dict:
     return {
         'artifact_type': artifact_type,
         'render_version': render_version,
+        'team_id': team_id,
+        'source_snapshot_id': source_snapshot_id,
         'subject_type': subject_type,
         'subject_key': subject_key,
         'product_date': product_date,
@@ -186,6 +197,8 @@ def _artifact_equivalence_kwargs(artifact: ShareArtifact) -> dict:
     return _equivalence_kwargs_from_fields(
         artifact_type=artifact.artifact_type,
         render_version=artifact.render_version,
+        team_id=artifact.team_id,
+        source_snapshot_id=artifact.source_snapshot_id,
         subject_type=artifact.subject_type,
         subject_key=artifact.subject_key,
         product_date=artifact.product_date,
@@ -199,15 +212,16 @@ def _artifact_equivalence_kwargs(artifact: ShareArtifact) -> dict:
 def _compute_integrity_hash_for(artifact: ShareArtifact, *, published_at=None) -> str:
     published = published_at if published_at is not None else artifact.published_at
     return compute_integrity_hash(
-        artifact_uid=artifact.artifact_uid,
+        public_id=artifact.public_id,
         published_at=published,
+        source_sync_run_id=artifact.source_sync_run_id,
         **_artifact_equivalence_kwargs(artifact),
     )
 
 
 def _asset_row_from_input(
     asset_input: ShareArtifactAssetInput,
-    default_render_version: int,
+    default_render_version: str,
     sort_index: int,
 ) -> ShareArtifactAsset:
     render_version = asset_input.render_version or default_render_version
@@ -259,10 +273,13 @@ def find_published_equivalent(equivalence_key: str, *, session=None) -> Optional
 def build_share_artifact_draft(
     *,
     artifact_type: str,
-    render_version: int,
-    subject_type: str,
-    subject_key: str,
+    team_id: int,
+    source_snapshot_id: int,
     payload: Mapping[str, Any],
+    render_version: str = DEFAULT_RENDER_VERSION,
+    source_sync_run_id: Optional[int] = None,
+    subject_type: Optional[str] = None,
+    subject_key: Optional[str] = None,
     product_date=None,
     evidence: Sequence = (),
     trust_metadata: Optional[Mapping[str, Any]] = None,
@@ -274,12 +291,19 @@ def build_share_artifact_draft(
     session = session or db.session
 
     _require_text(artifact_type, 'artifact_type')
-    _validate_render_version(render_version)
-    _require_text(subject_type, 'subject_type')
-    _require_text(subject_key, 'subject_key')
+    _require_text(render_version, 'render_version')
     _require_text(source, 'source')
+    team_id = _require_int(team_id, 'team_id')
+    source_snapshot_id = _require_int(source_snapshot_id, 'source_snapshot_id')
+    source_sync_run_id = _require_int(
+        source_sync_run_id, 'source_sync_run_id', allow_none=True,
+    )
     if not isinstance(payload, Mapping):
         raise ShareArtifactBuildError('payload must be a mapping')
+    if subject_type is not None:
+        _require_text(subject_type, 'subject_type')
+    if subject_key is not None:
+        _require_text(subject_key, 'subject_key')
 
     evidence_inputs = _coerce_evidence_inputs(evidence)
     asset_inputs = _coerce_asset_inputs(assets)
@@ -291,6 +315,8 @@ def build_share_artifact_draft(
         **_equivalence_kwargs_from_fields(
             artifact_type=artifact_type,
             render_version=render_version,
+            team_id=team_id,
+            source_snapshot_id=source_snapshot_id,
             subject_type=subject_type,
             subject_key=subject_key,
             product_date=product_date,
@@ -302,9 +328,12 @@ def build_share_artifact_draft(
     )
 
     artifact = ShareArtifact(
-        artifact_uid=uuid.uuid4().hex,
+        public_id=uuid.uuid4().hex,
         artifact_type=artifact_type,
         render_version=render_version,
+        team_id=team_id,
+        source_snapshot_id=source_snapshot_id,
+        source_sync_run_id=source_sync_run_id,
         subject_type=subject_type,
         subject_key=subject_key,
         product_date=product_date,
@@ -380,10 +409,13 @@ def publish_share_artifact(
 def publish_new_share_artifact(
     *,
     artifact_type: str,
-    render_version: int,
-    subject_type: str,
-    subject_key: str,
+    team_id: int,
+    source_snapshot_id: int,
     payload: Mapping[str, Any],
+    render_version: str = DEFAULT_RENDER_VERSION,
+    source_sync_run_id: Optional[int] = None,
+    subject_type: Optional[str] = None,
+    subject_key: Optional[str] = None,
     product_date=None,
     evidence: Sequence = (),
     trust_metadata: Optional[Mapping[str, Any]] = None,
@@ -402,11 +434,18 @@ def publish_new_share_artifact(
     session = session or db.session
 
     _require_text(artifact_type, 'artifact_type')
-    _validate_render_version(render_version)
-    _require_text(subject_type, 'subject_type')
-    _require_text(subject_key, 'subject_key')
+    _require_text(render_version, 'render_version')
+    team_id = _require_int(team_id, 'team_id')
+    source_snapshot_id = _require_int(source_snapshot_id, 'source_snapshot_id')
+    source_sync_run_id = _require_int(
+        source_sync_run_id, 'source_sync_run_id', allow_none=True,
+    )
     if not isinstance(payload, Mapping):
         raise ShareArtifactBuildError('payload must be a mapping')
+    if subject_type is not None:
+        _require_text(subject_type, 'subject_type')
+    if subject_key is not None:
+        _require_text(subject_key, 'subject_key')
 
     evidence_inputs = _coerce_evidence_inputs(evidence)
     evidence_dicts = _evidence_input_dicts(evidence_inputs)
@@ -414,6 +453,8 @@ def publish_new_share_artifact(
         **_equivalence_kwargs_from_fields(
             artifact_type=artifact_type,
             render_version=render_version,
+            team_id=team_id,
+            source_snapshot_id=source_snapshot_id,
             subject_type=subject_type,
             subject_key=subject_key,
             product_date=product_date,
@@ -430,10 +471,13 @@ def publish_new_share_artifact(
 
     draft = build_share_artifact_draft(
         artifact_type=artifact_type,
+        team_id=team_id,
+        source_snapshot_id=source_snapshot_id,
+        payload=payload,
         render_version=render_version,
+        source_sync_run_id=source_sync_run_id,
         subject_type=subject_type,
         subject_key=subject_key,
-        payload=payload,
         product_date=product_date,
         evidence=evidence_inputs,
         trust_metadata=trust_metadata,
@@ -583,12 +627,12 @@ def verify_share_artifact_integrity(artifact: ShareArtifact) -> bool:
         )
     if not artifact.integrity_hash:
         raise ShareArtifactIntegrityError(
-            f'share artifact {artifact.artifact_uid!r} is missing an integrity hash'
+            f'share artifact {artifact.public_id!r} is missing an integrity hash'
         )
 
     expected = _compute_integrity_hash_for(artifact)
     if expected != artifact.integrity_hash:
         raise ShareArtifactIntegrityError(
-            f'integrity mismatch for share artifact {artifact.artifact_uid!r}'
+            f'integrity mismatch for share artifact {artifact.public_id!r}'
         )
     return True

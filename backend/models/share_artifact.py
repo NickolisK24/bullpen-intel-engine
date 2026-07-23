@@ -7,12 +7,33 @@ into a card image / Open Graph surface. This module intentionally contains
 make it impossible for future code to treat a published card as mutable
 marketing copy.
 
-The domain guarantees, enforced here at the ORM layer:
+Canonical identity and authority fields:
 
-* A published artifact's substance — its payload, cited evidence, captured
-  timestamps, render version, and trust metadata — is frozen. After
-  publication only lifecycle transitions (``supersede`` / ``withdraw``) remain
-  legal.
+* ``public_id`` — the opaque, externally-referenceable public identifier for an
+  artifact (the canonical domain/API name; persisted on the ``public_id``
+  column).
+* ``team_id`` — the team the artifact is about (Team State V1 subject).
+* ``source_snapshot_id`` — the trusted, published snapshot that authorized
+  generation. Required on every artifact; captured as a durable reference so
+  the immutable card records exactly which trusted source produced it.
+* ``source_sync_run_id`` — an optional sync-run reference for traceability.
+
+Versioning uses semantic contract identifier strings:
+
+* ``schema_version`` — e.g. ``"1.0.0"`` (the normalized document contract).
+* ``render_version`` — e.g. ``"team-state-1.0.0"`` (the render contract the
+  payload targets).
+
+The generic ``subject_type`` / ``subject_key`` columns are retained only as
+additive, future extensibility; they never replace the explicit V1 ``team_id``
+and trusted-source authority fields.
+
+Domain guarantees, enforced here at the ORM layer:
+
+* A published artifact's substance — its identity, authority references,
+  payload, cited evidence, captured timestamps, render version, and trust
+  metadata — is frozen. After publication only lifecycle transitions
+  (``supersede`` / ``withdraw``) remain legal.
 * Illegal lifecycle transitions fail closed at flush time.
 * Assets (the eventual rendered representations) are append-only children that
   a later rendering phase attaches; SC-01 creates the table but renders
@@ -33,11 +54,11 @@ from utils.db import db
 from utils.time import utc_now_naive
 
 
-# Schema version for the normalized integrity/equivalence documents. Bumping it
-# deliberately invalidates the integrity hash and equivalence key of every
-# artifact minted under a prior structure, so it must change only when the
+# Semantic version of the normalized integrity/equivalence document contract.
+# Bumping it deliberately invalidates the integrity hash and equivalence key of
+# every artifact minted under a prior structure, so it must change only when the
 # normalized document shape changes.
-SHARE_ARTIFACT_SCHEMA_VERSION = 1
+SHARE_ARTIFACT_SCHEMA_VERSION = '1.0.0'
 
 
 # ---------------------------------------------------------------------------
@@ -77,9 +98,12 @@ LIFECYCLE_TRANSITIONS = {
 # ``withdrawn_at``, ``withdrawn_reason``, ``updated_at``) are intentionally
 # absent so the legal transitions can still be recorded.
 FROZEN_ARTIFACT_ATTRIBUTES = frozenset({
-    'artifact_uid',
+    'public_id',
     'artifact_type',
     'render_version',
+    'team_id',
+    'source_snapshot_id',
+    'source_sync_run_id',
     'subject_type',
     'subject_key',
     'product_date',
@@ -121,19 +145,15 @@ class ShareArtifact(db.Model):
     __tablename__ = 'share_artifacts'
 
     __table_args__ = (
-        db.UniqueConstraint('artifact_uid', name='uq_share_artifacts_artifact_uid'),
+        db.UniqueConstraint('public_id', name='uq_share_artifacts_public_id'),
         db.CheckConstraint(
             "lifecycle_state IN ('draft', 'published', 'superseded', 'withdrawn')",
             name='ck_share_artifacts_lifecycle_state',
         ),
-        db.CheckConstraint(
-            'render_version >= 1',
-            name='ck_share_artifacts_render_version',
-        ),
-        db.Index(
-            'ix_share_artifacts_type_subject',
-            'artifact_type', 'subject_type', 'subject_key',
-        ),
+        db.Index('ix_share_artifacts_team', 'team_id'),
+        db.Index('ix_share_artifacts_team_state', 'team_id', 'lifecycle_state'),
+        db.Index('ix_share_artifacts_source_snapshot', 'source_snapshot_id'),
+        db.Index('ix_share_artifacts_type_team', 'artifact_type', 'team_id'),
         db.Index(
             'ix_share_artifacts_equivalence_state',
             'equivalence_key', 'lifecycle_state',
@@ -144,16 +164,23 @@ class ShareArtifact(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
 
-    # Stable, externally-referenceable identity for this specific artifact.
-    artifact_uid = db.Column(db.String(36), nullable=False)
+    # Opaque, externally-referenceable public identity (public_id contract).
+    public_id = db.Column(db.String(64), nullable=False)
 
     # The kind of card and the render contract version its payload targets.
     artifact_type = db.Column(db.String(80), nullable=False)
-    render_version = db.Column(db.Integer, nullable=False)
+    render_version = db.Column(db.String(64), nullable=False)
 
-    # What the card is about.
-    subject_type = db.Column(db.String(40), nullable=False)
-    subject_key = db.Column(db.String(200), nullable=False)
+    # Explicit V1 subject + trusted-source authority.
+    team_id = db.Column(db.Integer, nullable=False)
+    source_snapshot_id = db.Column(db.Integer, nullable=False)
+    source_sync_run_id = db.Column(
+        db.Integer, db.ForeignKey('sync_runs.id'), nullable=True,
+    )
+
+    # Additive, future extensibility only — never a substitute for team_id.
+    subject_type = db.Column(db.String(40), nullable=True)
+    subject_key = db.Column(db.String(200), nullable=True)
     product_date = db.Column(db.Date, nullable=True)
 
     lifecycle_state = db.Column(
@@ -172,7 +199,7 @@ class ShareArtifact(db.Model):
 
     source = db.Column(db.String(120), nullable=False)
     schema_version = db.Column(
-        db.Integer, nullable=False, default=SHARE_ARTIFACT_SCHEMA_VERSION,
+        db.String(20), nullable=False, default=SHARE_ARTIFACT_SCHEMA_VERSION,
     )
 
     created_at = db.Column(db.DateTime, nullable=False, default=utc_now_naive)
@@ -231,9 +258,12 @@ class ShareArtifact(db.Model):
     def to_dict(self) -> dict:
         return {
             'id': self.id,
-            'artifact_uid': self.artifact_uid,
+            'public_id': self.public_id,
             'artifact_type': self.artifact_type,
             'render_version': self.render_version,
+            'team_id': self.team_id,
+            'source_snapshot_id': self.source_snapshot_id,
+            'source_sync_run_id': self.source_sync_run_id,
             'subject_type': self.subject_type,
             'subject_key': self.subject_key,
             'product_date': _iso(self.product_date),
@@ -323,10 +353,6 @@ class ShareArtifactAsset(db.Model):
             'share_artifact_id', 'asset_role', 'render_version',
             name='uq_share_artifact_assets_role_version',
         ),
-        db.CheckConstraint(
-            'render_version >= 1',
-            name='ck_share_artifact_assets_render_version',
-        ),
         db.Index('ix_share_artifact_assets_artifact', 'share_artifact_id'),
     )
 
@@ -338,7 +364,7 @@ class ShareArtifactAsset(db.Model):
     )
     asset_role = db.Column(db.String(60), nullable=False)
     media_type = db.Column(db.String(80), nullable=False)
-    render_version = db.Column(db.Integer, nullable=False)
+    render_version = db.Column(db.String(64), nullable=False)
     content_hash = db.Column(db.String(64), nullable=True)
     storage_uri = db.Column(db.String(500), nullable=True)
     width = db.Column(db.Integer, nullable=True)
@@ -463,7 +489,7 @@ def _share_artifact_before_update(mapper, connection, target):
         if new_state not in legal:
             raise ShareArtifactLifecycleError(
                 f'illegal share artifact transition {previous_state!r} -> '
-                f'{new_state!r} (artifact_uid={target.artifact_uid!r})'
+                f'{new_state!r} (public_id={target.public_id!r})'
             )
 
     # 2. Once frozen, no substantive column may change.
@@ -472,7 +498,7 @@ def _share_artifact_before_update(mapper, connection, target):
         if illegal:
             raise ShareArtifactImmutableError(
                 f'immutable field(s) {illegal} changed on {previous_state} '
-                f'share artifact (artifact_uid={target.artifact_uid!r})'
+                f'share artifact (public_id={target.public_id!r})'
             )
 
 
@@ -481,7 +507,7 @@ def _share_artifact_before_delete(mapper, connection, target):
     if target.lifecycle_state in FROZEN_LIFECYCLE_STATES:
         raise ShareArtifactImmutableError(
             f'{target.lifecycle_state} share artifact cannot be deleted '
-            f'(artifact_uid={target.artifact_uid!r})'
+            f'(public_id={target.public_id!r})'
         )
 
 

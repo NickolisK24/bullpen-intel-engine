@@ -3,6 +3,12 @@
 Creates the Share Cards SC-01 domain: share_artifacts and its evidence, asset,
 and relation child tables. Domain only — no rendering, routes, or analytics.
 
+The share_artifacts table carries the canonical identity and authority fields:
+the opaque public_id, the explicit team_id subject, the authorizing
+source_snapshot_id, an optional source_sync_run_id for traceability, and
+semantic version strings (schema_version / render_version). Generic
+subject_type/subject_key columns are retained only as additive extensibility.
+
 Revision ID: c1a7f4e2b9d6
 Revises: a1d8e4c6b2f0
 Create Date: 2026-07-23
@@ -22,11 +28,14 @@ def upgrade():
     op.create_table(
         'share_artifacts',
         sa.Column('id', sa.Integer(), nullable=False),
-        sa.Column('artifact_uid', sa.String(length=36), nullable=False),
+        sa.Column('public_id', sa.String(length=64), nullable=False),
         sa.Column('artifact_type', sa.String(length=80), nullable=False),
-        sa.Column('render_version', sa.Integer(), nullable=False),
-        sa.Column('subject_type', sa.String(length=40), nullable=False),
-        sa.Column('subject_key', sa.String(length=200), nullable=False),
+        sa.Column('render_version', sa.String(length=64), nullable=False),
+        sa.Column('team_id', sa.Integer(), nullable=False),
+        sa.Column('source_snapshot_id', sa.Integer(), nullable=False),
+        sa.Column('source_sync_run_id', sa.Integer(), nullable=True),
+        sa.Column('subject_type', sa.String(length=40), nullable=True),
+        sa.Column('subject_key', sa.String(length=200), nullable=True),
         sa.Column('product_date', sa.Date(), nullable=True),
         sa.Column('lifecycle_state', sa.String(length=20), nullable=False),
         sa.Column('payload', sa.JSON(), nullable=False),
@@ -34,7 +43,7 @@ def upgrade():
         sa.Column('equivalence_key', sa.String(length=64), nullable=False),
         sa.Column('integrity_hash', sa.String(length=64), nullable=True),
         sa.Column('source', sa.String(length=120), nullable=False),
-        sa.Column('schema_version', sa.Integer(), nullable=False),
+        sa.Column('schema_version', sa.String(length=20), nullable=False),
         sa.Column('created_at', sa.DateTime(), nullable=False),
         sa.Column('updated_at', sa.DateTime(), nullable=False),
         sa.Column('published_at', sa.DateTime(), nullable=True),
@@ -45,18 +54,20 @@ def upgrade():
             "lifecycle_state IN ('draft', 'published', 'superseded', 'withdrawn')",
             name='ck_share_artifacts_lifecycle_state',
         ),
-        sa.CheckConstraint(
-            'render_version >= 1',
-            name='ck_share_artifacts_render_version',
-        ),
+        sa.ForeignKeyConstraint(['source_sync_run_id'], ['sync_runs.id']),
         sa.PrimaryKeyConstraint('id'),
-        sa.UniqueConstraint('artifact_uid', name='uq_share_artifacts_artifact_uid'),
+        sa.UniqueConstraint('public_id', name='uq_share_artifacts_public_id'),
     )
     with op.batch_alter_table('share_artifacts', schema=None) as batch_op:
+        batch_op.create_index('ix_share_artifacts_team', ['team_id'], unique=False)
         batch_op.create_index(
-            'ix_share_artifacts_type_subject',
-            ['artifact_type', 'subject_type', 'subject_key'],
-            unique=False,
+            'ix_share_artifacts_team_state', ['team_id', 'lifecycle_state'], unique=False,
+        )
+        batch_op.create_index(
+            'ix_share_artifacts_source_snapshot', ['source_snapshot_id'], unique=False,
+        )
+        batch_op.create_index(
+            'ix_share_artifacts_type_team', ['artifact_type', 'team_id'], unique=False,
         )
         batch_op.create_index(
             'ix_share_artifacts_equivalence_state',
@@ -103,7 +114,7 @@ def upgrade():
         sa.Column('share_artifact_id', sa.Integer(), nullable=False),
         sa.Column('asset_role', sa.String(length=60), nullable=False),
         sa.Column('media_type', sa.String(length=80), nullable=False),
-        sa.Column('render_version', sa.Integer(), nullable=False),
+        sa.Column('render_version', sa.String(length=64), nullable=False),
         sa.Column('content_hash', sa.String(length=64), nullable=True),
         sa.Column('storage_uri', sa.String(length=500), nullable=True),
         sa.Column('width', sa.Integer(), nullable=True),
@@ -112,10 +123,6 @@ def upgrade():
         sa.Column('asset_metadata', sa.JSON(), nullable=True),
         sa.Column('sort_index', sa.Integer(), nullable=False),
         sa.Column('created_at', sa.DateTime(), nullable=False),
-        sa.CheckConstraint(
-            'render_version >= 1',
-            name='ck_share_artifact_assets_render_version',
-        ),
         sa.ForeignKeyConstraint(['share_artifact_id'], ['share_artifacts.id']),
         sa.PrimaryKeyConstraint('id'),
         sa.UniqueConstraint(
@@ -184,5 +191,8 @@ def downgrade():
         batch_op.drop_index('ix_share_artifacts_product_date')
         batch_op.drop_index('ix_share_artifacts_lifecycle_state')
         batch_op.drop_index('ix_share_artifacts_equivalence_state')
-        batch_op.drop_index('ix_share_artifacts_type_subject')
+        batch_op.drop_index('ix_share_artifacts_type_team')
+        batch_op.drop_index('ix_share_artifacts_source_snapshot')
+        batch_op.drop_index('ix_share_artifacts_team_state')
+        batch_op.drop_index('ix_share_artifacts_team')
     op.drop_table('share_artifacts')

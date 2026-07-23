@@ -115,20 +115,32 @@ def normalize_evidence_entries(entries: Sequence[Mapping]) -> list:
 def build_equivalence_document(
     *,
     artifact_type: str,
-    render_version: int,
-    subject_type: str,
-    subject_key: str,
+    render_version: str,
+    team_id,
+    source_snapshot_id,
+    subject_type,
+    subject_key,
     product_date,
     payload,
     evidence_entries: Sequence[Mapping],
     trust_metadata,
-    schema_version: int,
+    schema_version: str,
 ) -> dict:
-    """Assemble the canonical document that defines an artifact's equivalence."""
+    """Assemble the canonical document that defines an artifact's equivalence.
+
+    Covers identity, the explicit V1 authority fields (``team_id`` and the
+    authorizing ``source_snapshot_id``), the render contract, the card content,
+    cited evidence, and trust metadata. The authorizing snapshot is part of
+    identity: cards produced from different trusted snapshots are distinct
+    artifacts (linked by supersede), while a repeat generation from the same
+    snapshot with identical content deduplicates.
+    """
     return {
         'schema_version': schema_version,
         'artifact_type': artifact_type,
         'render_version': render_version,
+        'team_id': team_id,
+        'source_snapshot_id': source_snapshot_id,
         'subject_type': subject_type,
         'subject_key': subject_key,
         'product_date': to_utc_iso(product_date) if product_date is not None else None,
@@ -145,13 +157,23 @@ def compute_equivalence_key(**kwargs) -> str:
 
 def build_integrity_document(
     *,
-    artifact_uid: str,
+    public_id: str,
     published_at,
+    source_sync_run_id=None,
     **equivalence_kwargs,
 ) -> dict:
-    """The equivalence document plus per-instance identity and publish time."""
+    """The equivalence document plus per-instance identity, traceability, and
+    publish time.
+
+    Adds the opaque ``public_id``, the ``source_sync_run_id`` traceability
+    reference, and ``published_at`` so tampering with any of those is detected
+    at verification time. ``source_sync_run_id`` is intentionally *not* part of
+    the equivalence document — it records which run produced the artifact but
+    does not affect deduplication identity.
+    """
     document = build_equivalence_document(**equivalence_kwargs)
-    document['artifact_uid'] = artifact_uid
+    document['public_id'] = public_id
+    document['source_sync_run_id'] = source_sync_run_id
     document['published_at'] = (
         to_utc_iso(published_at) if published_at is not None else None
     )
@@ -160,14 +182,16 @@ def build_integrity_document(
 
 def compute_integrity_hash(
     *,
-    artifact_uid: str,
+    public_id: str,
     published_at,
+    source_sync_run_id=None,
     **equivalence_kwargs,
 ) -> str:
     """Deterministic integrity hash binding one published artifact instance."""
     document = build_integrity_document(
-        artifact_uid=artifact_uid,
+        public_id=public_id,
         published_at=published_at,
+        source_sync_run_id=source_sync_run_id,
         **equivalence_kwargs,
     )
     return _sha256(canonical_json(document))
