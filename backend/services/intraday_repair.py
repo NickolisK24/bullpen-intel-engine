@@ -1,12 +1,8 @@
 """Governed intraday repair for current active-bullpen membership.
 
-Phase 1 intraday reconciliation remains the detection authority. This module
-consumes that audit contract and authorizes only the narrow subset that can be
-repaired safely with existing production writers: roster-status changes for
-already tracked pitchers whose MLB organization assignment is unchanged.
-
-Unsupported identity, newly discovered player, and team-assignment findings are
-withheld explicitly; they never fall through to a guessed write.
+The mature intraday audit remains the detection authority. This writer accepts
+only findings that can be re-proven from MLB numeric identity under the public
+writer lock. Conflicting or unresolved evidence is always withheld.
 """
 
 from __future__ import annotations
@@ -20,7 +16,7 @@ from utils.db import db
 
 
 JOB_INTRADAY_REPAIR = 'intraday_repair'
-REPAIRABLE_CHANGE_TYPES = frozenset({
+ROSTER_STATUS_CHANGE_TYPES = frozenset({
     intraday_reconcile.CHANGE_RECALL,
     intraday_reconcile.CHANGE_IL_ACTIVATION,
     intraday_reconcile.CHANGE_REMOVED_FROM_ACTIVE_ROSTER,
@@ -31,64 +27,54 @@ REPAIRABLE_CHANGE_TYPES = frozenset({
     intraday_reconcile.CHANGE_ROSTER_DEACTIVATION,
     intraday_reconcile.CHANGE_ROSTER_STATUS_CHANGE,
 })
-UNSUPPORTED_CHANGE_TYPES = frozenset({
+IDENTITY_CHANGE_TYPES = frozenset({
     intraday_reconcile.CHANGE_TEAM_ASSIGNMENT_CHANGE,
     intraday_reconcile.CHANGE_NEWLY_DISCOVERED_ACTIVE,
+})
+UNSUPPORTED_CHANGE_TYPES = frozenset({
     intraday_reconcile.CHANGE_CONFLICTING_OFFICIAL_TEAM,
     intraday_reconcile.CHANGE_UNRESOLVED_SOURCE_IDENTITY,
 })
 
 
 def build_roster_repair_scope(audit: dict) -> dict:
-    """Translate a completed audit into a bounded write scope.
-
-    The selector fails closed whenever the roster lane was not fully verified or
-    contains a public-material finding that the current writer cannot safely own.
-    """
     lane = (audit.get('lanes') or {}).get(intraday_reconcile.LANE_ROSTER_ASSIGNMENT) or {}
     differences = list(lane.get('differences') or [])
-    verification = lane.get('verification_status')
-
     if audit.get('status') != intraday_reconcile.STATUS_SUCCESS:
         return _blocked_scope('audit_not_successful', differences)
-    if verification != intraday_reconcile.LANE_COMPLETE:
+    if lane.get('verification_status') != intraday_reconcile.LANE_COMPLETE:
         return _blocked_scope('roster_lane_not_complete', differences)
 
-    repairable = []
+    roster_findings = []
+    identity_findings = []
     unsupported = []
     for finding in differences:
         if finding.get('severity') not in (None, intraday_reconcile.SEVERITY_ACTIONABLE):
             unsupported.append(finding)
             continue
         change_type = finding.get('change_type')
-        stored_pitcher_id = finding.get('stored_pitcher_id')
-        if change_type in REPAIRABLE_CHANGE_TYPES and stored_pitcher_id is not None:
-            repairable.append(finding)
-        elif change_type in UNSUPPORTED_CHANGE_TYPES or stored_pitcher_id is None:
+        if change_type in ROSTER_STATUS_CHANGE_TYPES and finding.get('stored_pitcher_id') is not None:
+            roster_findings.append(finding)
+        elif change_type in IDENTITY_CHANGE_TYPES:
+            identity_findings.append(finding)
+        elif change_type in UNSUPPORTED_CHANGE_TYPES:
             unsupported.append(finding)
         elif finding.get('bullpen_population_effect') != intraday_reconcile.EFFECT_NONE:
             unsupported.append(finding)
 
-    if unsupported:
-        return {
-            'status': 'blocked',
-            'reason': 'unsupported_public_roster_findings',
-            'repairable_findings': repairable,
-            'unsupported_findings': unsupported,
-            'affected_team_ids': _affected_team_ids(repairable),
-            'affected_pitcher_ids': _stored_pitcher_ids(repairable),
-            'affected_pitcher_mlb_ids': _mlb_pitcher_ids(repairable),
-        }
-
-    return {
-        'status': 'ready' if repairable else 'no_change',
-        'reason': None,
+    repairable = roster_findings + identity_findings
+    payload = {
+        'status': 'blocked' if unsupported else ('ready' if repairable else 'no_change'),
+        'reason': 'unsupported_public_roster_findings' if unsupported else None,
         'repairable_findings': repairable,
-        'unsupported_findings': [],
+        'roster_status_findings': roster_findings,
+        'identity_findings': identity_findings,
+        'unsupported_findings': unsupported,
         'affected_team_ids': _affected_team_ids(repairable),
         'affected_pitcher_ids': _stored_pitcher_ids(repairable),
         'affected_pitcher_mlb_ids': _mlb_pitcher_ids(repairable),
     }
+    return payload
 
 
 def run_intraday_roster_repair(
@@ -97,6 +83,7 @@ def run_intraday_roster_repair(
     source=sync_metadata.SOURCE_GITHUB_ACTIONS,
     days_back=7,
     audit_runner=None,
+    identity_repair=None,
     roster_sync=None,
     recent_log_sync=None,
     fatigue_recalc=None,
@@ -105,19 +92,14 @@ def run_intraday_roster_repair(
     today_builder=None,
     publication_proof_builder=None,
 ):
-    """Detect and repair safe intraday roster deltas, then rebuild public reads.
-
-    Every source read used to select the repair happens through the mature audit
-    contract. The canonical write re-fetches authoritative roster evidence under
-    the public writer guard. A run cannot report success unless the dashboard
-    candidate is serving and both Today and Tonight rebuilds complete.
-    """
     from services import sync as sync_service
+    from services.intraday_identity_repair import apply_intraday_identity_findings
     from services.roster_status_sync import sync_roster_statuses
     from services.tonight_intelligence_snapshot import generate_tonight_snapshot_for_date
     from services.intelligence_surface_snapshot import generate_snapshot_for_date
 
     audit_runner = audit_runner or intraday_reconcile.run_intraday_audit
+    identity_repair = identity_repair or apply_intraday_identity_findings
     roster_sync = roster_sync or sync_roster_statuses
     recent_log_sync = recent_log_sync or sync_service.sync_recent_logs
     fatigue_recalc = fatigue_recalc or sync_service.recalculate_all_fatigue
@@ -134,6 +116,7 @@ def run_intraday_roster_repair(
         'started_at': started_at.isoformat(),
         'audit': None,
         'repair_scope': None,
+        'identity_repair': None,
         'roster_sync': None,
         'recent_logs': None,
         'fatigue_recalculated': None,
@@ -144,37 +127,32 @@ def run_intraday_roster_repair(
     }
 
     with app.app_context():
-        audit = audit_runner(
-            source=source,
-            lanes=[intraday_reconcile.LANE_ROSTER_ASSIGNMENT],
-        )
+        audit = audit_runner(source=source, lanes=[intraday_reconcile.LANE_ROSTER_ASSIGNMENT])
         result['audit'] = audit
         scope = build_roster_repair_scope(audit)
         result['repair_scope'] = scope
-
         if scope['status'] == 'no_change':
             result['status'] = sync_metadata.STATUS_SUCCESS
-            result['message'] = 'No safe intraday roster changes detected.'
+            result['message'] = 'No governed intraday roster changes detected.'
             return result
         if scope['status'] != 'ready':
-            result['message'] = (
-                'Intraday roster changes were detected but withheld because the '
-                'current writer cannot apply every finding safely.'
-            )
+            result['message'] = 'Intraday roster changes were withheld because not every finding was safe.'
             return result
 
         writer_guard = None
         sync_run_id = None
         try:
             writer_guard = sync_metadata.acquire_sync_writer_guard(
-                job_name=JOB_INTRADAY_REPAIR,
-                source=source,
-            )
+                job_name=JOB_INTRADAY_REPAIR, source=source)
             sync_run_id = sync_metadata.start_sync_run(
                 source=source,
                 started_at=started_at.replace(tzinfo=None),
                 job_name=JOB_INTRADAY_REPAIR,
             )
+
+            sync_metadata.set_sync_stage(sync_run_id, sync_metadata.STAGE_TEAM_ASSIGNMENTS)
+            identity_result = identity_repair(scope['identity_findings'])
+            result['identity_repair'] = identity_result
 
             sync_metadata.set_sync_stage(sync_run_id, sync_metadata.STAGE_ROSTER_STATUS)
             roster_result = roster_sync(
@@ -200,26 +178,22 @@ def run_intraday_roster_repair(
                 raise RuntimeError('Intraday recent-work refresh was incomplete.')
 
             sync_metadata.set_sync_stage(sync_run_id, sync_metadata.STAGE_FATIGUE_RECALCULATION)
-            result['fatigue_recalculated'] = fatigue_recalc(
-                reference_date=product_current_date()
-            )
+            result['fatigue_recalculated'] = fatigue_recalc(reference_date=product_current_date())
 
-            today = today_builder(
-                product_current_date(),
-                source=JOB_INTRADAY_REPAIR,
-            )
+            today = today_builder(product_current_date(), source=JOB_INTRADAY_REPAIR)
             result['today_snapshot'] = _surface_summary(today)
             if (today or {}).get('status') not in ('ok', 'empty', 'generated'):
                 raise RuntimeError('Today intelligence rebuild did not complete.')
 
-            tonight = tonight_builder(
-                product_current_date(),
-                source=JOB_INTRADAY_REPAIR,
-            )
+            tonight = tonight_builder(product_current_date(), source=JOB_INTRADAY_REPAIR)
             result['tonight_snapshot'] = _surface_summary(tonight)
             if (tonight or {}).get('status') not in ('ok', 'empty'):
                 raise RuntimeError('Tonight intelligence rebuild did not complete.')
 
+            identity_changes = (
+                int((identity_result or {}).get('created') or 0)
+                + int((identity_result or {}).get('reassigned') or 0)
+            )
             run, snapshot = complete_with_snapshot(
                 sync_run_id,
                 final_status=sync_metadata.STATUS_SUCCESS,
@@ -227,10 +201,11 @@ def run_intraday_roster_repair(
                     int(roster_result.get('pitchers_refreshed') or 0)
                     + int(log_result.get('new_logs_added') or 0)
                     + int(log_result.get('logs_corrected') or 0)
+                    + identity_changes
                 ),
                 records_failed=0,
                 new_logs_added=int(log_result.get('new_logs_added') or 0),
-                pitchers_updated=int(roster_result.get('pitchers_changed') or 0),
+                pitchers_updated=int(roster_result.get('pitchers_changed') or 0) + identity_changes,
                 errors=0,
                 api_calls_made=0,
                 retries_used=0,
@@ -241,23 +216,21 @@ def run_intraday_roster_repair(
             )
             result['dashboard_snapshot_id'] = getattr(snapshot, 'id', None)
             proof = publication_proof_builder(
-                result['dashboard_snapshot_id'],
-                candidate_required=True,
-            )
+                result['dashboard_snapshot_id'], candidate_required=True)
             result['publication_proof'] = proof
             if proof.get('verified') is not True:
                 raise RuntimeError('Intraday dashboard candidate is not serving.')
 
             result['status'] = sync_metadata.STATUS_SUCCESS
             result['sync_run_id'] = getattr(run, 'id', sync_run_id)
-            result['message'] = 'Intraday roster repair published successfully.'
+            result['message'] = 'Intraday roster and identity repair published successfully.'
             return result
         except sync_metadata.SyncWriterConflict as exc:
             db.session.rollback()
             result.update(exc.to_dict())
             result['job_name'] = JOB_INTRADAY_REPAIR
             return result
-        except Exception as exc:  # noqa: BLE001 - command must fail closed with metadata
+        except Exception as exc:  # noqa: BLE001
             db.session.rollback()
             result['error'] = str(exc)
             result['message'] = 'Intraday roster repair failed closed.'
@@ -283,6 +256,8 @@ def _blocked_scope(reason, findings):
         'status': 'blocked',
         'reason': reason,
         'repairable_findings': [],
+        'roster_status_findings': [],
+        'identity_findings': [],
         'unsupported_findings': list(findings or []),
         'affected_team_ids': [],
         'affected_pitcher_ids': [],
