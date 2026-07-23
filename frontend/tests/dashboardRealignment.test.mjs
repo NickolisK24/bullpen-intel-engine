@@ -244,7 +244,8 @@ test('Data & Trust page hosts trust detail without duplicate operational section
   const html = inRouter(React.createElement(DataTrust))
   assert.ok(htmlIncludes(html, 'Data &amp; Trust') || htmlIncludes(html, 'Data & Trust'))
   assert.ok(htmlIncludes(html, 'Freshness'))
-  assert.ok(htmlIncludes(html, 'Pitcher Workload Inventory'))
+  // The scored-pitcher inventory diagnostic was removed from the public page.
+  assert.equal(htmlIncludes(html, 'Pitcher Workload Inventory'), false)
   assert.equal(htmlIncludes(html, 'Secondary Exploratory ERA Study'), false)
   assert.equal(htmlIncludes(html, 'Digest Preferences'), false)
   assert.equal(htmlIncludes(html, 'Bullpen State + Team Readiness'), false)

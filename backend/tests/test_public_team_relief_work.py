@@ -1372,6 +1372,22 @@ def test_existing_public_routes_behavior_freeze(monkeypatch):
         'frontend/tests/methodologyDescore.test.mjs',
         'frontend/tests/pageHierarchyDedupe.test.mjs',
     }
+    allowed_data_trust_reader_first_files = {
+        # feat/data-trust-reader-first-rewrite: the Data & Trust page leads with the
+        # current public-data answer (served dashboard freshness authority), then
+        # explains freshness/coverage, then the retrospective next-day usage check.
+        # The usage-check formatting is made unknown-vs-zero honest (missing stays
+        # em dash, incomplete merged Unavailable fails closed), the scored-pitcher
+        # inventory diagnostic is removed, and Methodology/How to Read are linked.
+        # Presentation only: no availability/usage-check calculation, threshold,
+        # sync, snapshot, or API change.
+        'frontend/src/components/trust/DataTrust.jsx',
+        'frontend/src/components/trust/AvailabilityBacktestCard.jsx',
+        'frontend/tests/availabilityBacktest.test.mjs',
+        'frontend/tests/pageHierarchyDedupe.test.mjs',
+        'frontend/tests/dashboardRealignment.test.mjs',
+        'frontend/tests/syncStatus.test.mjs',
+    }
     assert not [
         path for path in changed
         if path not in allowed_phase_a_audience_signup_files
@@ -1389,6 +1405,7 @@ def test_existing_public_routes_behavior_freeze(monkeypatch):
         if path not in allowed_team_board_answer_hierarchy_files
         if path not in allowed_reliever_finder_search_first_files
         if path not in allowed_methodology_public_first_files
+        if path not in allowed_data_trust_reader_first_files
         if (
             path in blocked_files and path not in allowed_internal_admin_files
         )

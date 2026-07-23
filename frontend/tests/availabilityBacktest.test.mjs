@@ -93,20 +93,19 @@ test('renders stored usage-check values and honest framing', () => {
 
   assert.ok(text.includes('Usage Check'))
   assert.equal(text.includes('Operational Backtest'), false)
+  // The card's own title is fixed, reader-first framing — never the backend title.
+  assert.ok(text.includes('How the labels matched next-day usage'))
+  assert.equal(text.includes('Backtest'), false)
   assert.ok(text.includes('Computed Jun 15, 2026, 3:00 AM ET'))
   assert.ok(text.includes('Data through June 14, 2026'))
-  // Backend framing still says "Backtest"; the public layer rewrites it.
-  assert.ok(text.includes('Operational Availability usage check'))
-  assert.equal(text.includes('Backtest'), false)
   assert.ok(text.includes('43.2%'))
-  assert.ok(text.includes('n=12,345'))
+  assert.ok(text.includes('Sample: 12,345 pitcher-days'))
   // The Avoid and Unavailable tiers fold into one public Unavailable row: the
   // sample size sums (321 + 54 = 375) and the rate is recomputed from the
   // combined next-day appearances (14 / 375 → 3.7%).
-  assert.ok(text.includes('n=375'))
+  assert.ok(text.includes('Sample: 375 pitcher-days'))
   assert.ok(text.includes('3.7%'))
   assert.ok(text.includes('2025 secondary'))
-  assert.ok(text.includes('No-appearance tier flips: 1.8%'))
   assert.ok(text.includes('observed association'))
   assert.ok(text.includes('not a physiological proof or causal workload claim'))
   assert.equal(text.includes('Avoid'), false)
@@ -137,10 +136,10 @@ test('Defect 2: each window shows one Unavailable row, not a duplicate Avoid+Una
   // Avoid is an internal tier only; it must never surface as a public label.
   assert.equal(text.includes('Avoid'), false)
   // Sample sizes remain attached: merged n is the sum of the two folded tiers.
-  assert.ok(text.includes('n=375'))
+  assert.ok(text.includes('Sample: 375 pitcher-days'))
   assert.ok(text.includes('3.7%'))
   // The distinct upstream tiers (Available/On Watch/Limited) keep their sizes.
-  assert.ok(text.includes('n=12,345'))
+  assert.ok(text.includes('Sample: 12,345 pitcher-days'))
 })
 
 test('Defect 2: an unknown non-availability tier is not folded into Unavailable', () => {
@@ -169,7 +168,7 @@ test('Defect 2: an unknown non-availability tier is not folded into Unavailable'
   // Avoid + Unavailable merge to one Unavailable row (n = 30); the unrecognized
   // tier stays separate and is not counted as Unavailable.
   assert.equal(occurrences('Unavailable'), 1)
-  assert.ok(text.includes('n=30'))
+  assert.ok(text.includes('Sample: 30 pitcher-days'))
 })
 
 test('renders an honest empty state when no stored computation exists', () => {
@@ -190,14 +189,15 @@ test('backend framing that reads as prediction, betting, or internal tooling is 
     },
   }))
 
-  // Every unsafe framing string falls back to the card's fixed copy.
+  // Unsafe backend framing (claim/caveat) is withheld; the card's own fixed
+  // title and summary are authored copy, so no unsafe framing can reach them.
   assert.equal(text.includes('accuracy'), false)
   assert.equal(text.includes('predicts'), false)
   assert.equal(text.includes('forecast'), false)
   assert.equal(text.includes('bet accordingly'), false)
   assert.equal(text.includes('V2'), false)
-  assert.ok(text.includes('Availability Tier Usage Check'))
-  assert.ok(text.includes('Stored next-day usage results are not available yet.'))
+  assert.ok(text.includes('How the labels matched next-day usage'))
+  assert.ok(text.includes('look back at completed games'))
   assert.ok(text.includes('Descriptive context only'))
   // The observed rates themselves still render — only framing copy is guarded.
   assert.ok(text.includes('43.2%'))
@@ -207,6 +207,89 @@ test('safe backend framing passes the guard unchanged', () => {
   const text = visibleText(renderCard())
   assert.ok(text.includes('Unavailable was used less often than Available.'))
   assert.ok(text.includes('observed association'))
+})
+
+// ── Unknown-versus-zero honesty in the usage check ─────────────────────────
+
+function renderWindow(tiers) {
+  return visibleText(renderCard({
+    status: 'ok',
+    computed_at: '2026-06-15T07:00:00Z',
+    framing: {},
+    windows: [{ label: 'primary', is_primary: true, data_through: '2026-06-14', tiers }],
+  }))
+}
+const availableRow = (text) => {
+  const start = text.indexOf('Available')
+  return start > -1 ? text.slice(start, start + 90) : ''
+}
+
+test('a missing sample size renders as unknown, never as zero', () => {
+  const text = renderWindow([{ tier: 'Available', next_day_rate_pct: 40.0 }])
+  const row = availableRow(text)
+  assert.ok(row.includes('Sample: — pitcher-days'), row)
+  assert.equal(row.includes('Sample: 0 pitcher-days'), false)
+})
+
+test('an explicit zero sample size remains zero', () => {
+  const text = renderWindow([{ tier: 'Available', n: 0, next_day_appearances: 0, next_day_rate_pct: 0.0 }])
+  assert.ok(availableRow(text).includes('Sample: 0 pitcher-days'))
+})
+
+test('a missing next-day count with no rate renders the rate as unknown, not 0.0%', () => {
+  const text = renderWindow([{ tier: 'Available', n: 100 }])
+  const row = availableRow(text)
+  assert.ok(row.includes('—'), row)
+  assert.equal(row.includes('0.0%'), false)
+  assert.ok(row.includes('Sample: 100 pitcher-days'))
+})
+
+test('an explicit zero next-day rate remains 0.0%', () => {
+  const text = renderWindow([{ tier: 'Available', n: 54, next_day_appearances: 0, next_day_rate_pct: 0.0 }])
+  const row = availableRow(text)
+  assert.ok(row.includes('0.0%'))
+  assert.ok(row.includes('Sample: 54 pitcher-days'))
+})
+
+test('empty-string and null numeric fields are unknown, not zero', () => {
+  const text = renderWindow([{ tier: 'Available', n: '', next_day_appearances: null, next_day_rate_pct: '' }])
+  const row = availableRow(text)
+  assert.ok(row.includes('Sample: — pitcher-days'), row)
+  assert.equal(row.includes('Sample: 0 pitcher-days'), false)
+  assert.equal(row.includes('0.0%'), false)
+})
+
+test('an impossible rate (appearances above sample) fails closed instead of exceeding 100%', () => {
+  const text = renderWindow([{ tier: 'Available', n: 10, next_day_appearances: 20 }])
+  const row = availableRow(text)
+  assert.equal(/\b\d{3,}\.\d%/.test(row), false)
+  assert.ok(row.includes('—'), row)
+})
+
+test('incomplete merged Unavailable data is withheld, not shown as complete', () => {
+  // Avoid carries a full row, but the strict Unavailable tier is missing its
+  // sample size — the merged public Unavailable must not look complete.
+  const text = renderWindow([
+    { tier: 'Available', n: 100, next_day_appearances: 40, next_day_rate_pct: 40.0 },
+    { tier: 'Avoid', n: 20, next_day_appearances: 1, next_day_rate_pct: 5.0 },
+    { tier: 'Unavailable', next_day_rate_pct: 0.0 },
+  ])
+  const start = text.indexOf('Unavailable')
+  const row = text.slice(start, start + 90)
+  assert.ok(row.includes('Sample: — pitcher-days'), row)
+  assert.equal(/Sample: \d/.test(row), false)
+})
+
+test('complete merged Unavailable data reconciles to the summed sample and recomputed rate', () => {
+  const text = renderWindow([
+    { tier: 'Avoid', n: 300, next_day_appearances: 12, next_day_rate_pct: 4.0 },
+    { tier: 'Unavailable', n: 100, next_day_appearances: 8, next_day_rate_pct: 8.0 },
+  ])
+  const start = text.indexOf('Unavailable')
+  const row = text.slice(start, start + 90)
+  // n = 400, appearances = 20, rate = 20/400 = 5.0%.
+  assert.ok(row.includes('Sample: 400 pitcher-days'))
+  assert.ok(row.includes('5.0%'))
 })
 
 test('backtest display contains no audited-result literals', () => {

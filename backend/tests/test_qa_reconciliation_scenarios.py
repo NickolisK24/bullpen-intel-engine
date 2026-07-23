@@ -449,6 +449,19 @@ def test_phase0e_switches_and_legacy_public_files_not_modified():
         'frontend/tests/methodologyDescore.test.mjs',
         'frontend/tests/pageHierarchyDedupe.test.mjs',
     }
+    allowed_data_trust_reader_first_files = {
+        # feat/data-trust-reader-first-rewrite: the Data & Trust page leads with the
+        # current public-data answer, explains freshness/coverage, then the
+        # retrospective next-day usage check with unknown-vs-zero-honest formatting;
+        # the scored-pitcher inventory diagnostic is removed. Presentation only: no
+        # availability/usage-check calculation, threshold, sync, snapshot, or API change.
+        'frontend/src/components/trust/DataTrust.jsx',
+        'frontend/src/components/trust/AvailabilityBacktestCard.jsx',
+        'frontend/tests/availabilityBacktest.test.mjs',
+        'frontend/tests/pageHierarchyDedupe.test.mjs',
+        'frontend/tests/dashboardRealignment.test.mjs',
+        'frontend/tests/syncStatus.test.mjs',
+    }
     allowed_files = (
         allowed_public_freshness_display_files
         | allowed_internal_admin_files
@@ -468,6 +481,7 @@ def test_phase0e_switches_and_legacy_public_files_not_modified():
         | allowed_team_board_answer_hierarchy_files
         | allowed_reliever_finder_search_first_files
         | allowed_methodology_public_first_files
+        | allowed_data_trust_reader_first_files
     )
     forbidden_prefixes = (
         'backend/api/',

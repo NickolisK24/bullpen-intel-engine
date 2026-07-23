@@ -17,6 +17,15 @@ function asArray(value) {
   return Array.isArray(value) ? value : []
 }
 
+// Null-aware numeric parse: a missing, empty, or non-finite value is unknown
+// (null), never silently coerced to zero. Only a genuine finite number — including
+// an explicit 0 — survives. Every count and rate on this card flows through this.
+function toNumber(value) {
+  if (value == null || value === '') return null
+  const numeric = Number(value)
+  return Number.isFinite(numeric) ? numeric : null
+}
+
 // The backend keeps five internal availability tiers; the public vocabulary has
 // four states, with the Avoid tier folded into Unavailable
 // (getPublicAvailabilityStatus). Rendering the raw tiers produced two rows both
@@ -33,48 +42,60 @@ function mergeTiersByPublicStatus(tiers) {
     const publicStatus = getPublicAvailabilityStatus(tier.tier) || tier.tier
     let group = groups.get(publicStatus)
     if (!group) {
-      group = { tier: tier.tier, n: 0, next_day_appearances: 0 }
+      group = { tier: tier.tier, n: 0, appearances: 0, nKnown: true, appearancesKnown: true }
       groups.set(publicStatus, group)
       order.push(publicStatus)
     }
-    const n = Number(tier.n) || 0
-    let appearances = Number(tier.next_day_appearances)
-    if (!Number.isFinite(appearances)) {
-      // Older stored rows may omit the raw next-day count; reconstruct it from
-      // the stored rate so the merged percentage stays faithful to the data.
-      const rate = Number.isFinite(Number(tier.next_day_rate))
-        ? Number(tier.next_day_rate)
-        : (Number(tier.next_day_rate_pct) || 0) / 100
-      appearances = Math.round(rate * n)
+    const n = toNumber(tier.n)
+    if (n == null) group.nKnown = false
+    else group.n += n
+
+    let appearances = toNumber(tier.next_day_appearances)
+    if (appearances == null) {
+      // Older stored rows may omit the raw next-day count. Reconstruct it only
+      // when both a trustworthy stored rate and a known sample size are present,
+      // so the merged percentage stays faithful; otherwise it stays unknown.
+      const rate = toNumber(tier.next_day_rate)
+      const ratePct = toNumber(tier.next_day_rate_pct)
+      const effectiveRate = rate != null ? rate : (ratePct != null ? ratePct / 100 : null)
+      if (effectiveRate != null && n != null) {
+        appearances = Math.round(effectiveRate * n)
+      }
     }
-    group.n += n
-    group.next_day_appearances += appearances
+    if (appearances == null) group.appearancesKnown = false
+    else group.appearances += appearances
     // Keep the most-severe raw tier (Avoid then Unavailable arrive in tier order)
     // as the label/tone source, so the merged row reads and colors as Unavailable.
     group.tier = tier.tier
   }
   return order.map((publicStatus) => {
     const group = groups.get(publicStatus)
-    const rate = group.n > 0 ? group.next_day_appearances / group.n : 0
+    // Fail closed: if any folded source row is missing a required part, the
+    // merged sample size or rate stays unknown rather than looking complete.
+    const n = group.nKnown ? group.n : null
+    const appearances = group.nKnown && group.appearancesKnown ? group.appearances : null
+    const rate = n != null && appearances != null && n > 0 ? appearances / n : null
     return {
       tier: group.tier,
-      n: group.n,
-      next_day_appearances: group.next_day_appearances,
-      next_day_rate: rate,
-      next_day_rate_pct: Math.round(rate * 1000) / 10,
+      n,
+      next_day_appearances: appearances,
+      next_day_rate_pct: rate == null ? null : Math.round(rate * 1000) / 10,
     }
   })
 }
 
 function formatPct(value) {
-  const numeric = Number(value)
-  if (!Number.isFinite(numeric)) return '—'
+  const numeric = toNumber(value)
+  // Unknown stays unknown; an impossible percentage fails closed rather than
+  // rendering a misleading number. An explicit 0 remains 0.0%.
+  if (numeric == null || numeric < 0 || numeric > 100) return '—'
   return `${numeric.toFixed(1)}%`
 }
 
 function formatCount(value) {
-  const numeric = Number(value)
-  if (!Number.isFinite(numeric)) return '0'
+  const numeric = toNumber(value)
+  // A missing count is an em dash, never a fabricated zero; an explicit 0 stays 0.
+  if (numeric == null) return '—'
   return numeric.toLocaleString()
 }
 
@@ -127,16 +148,14 @@ function TierRateRow({ tier }) {
       <div className="font-mono text-[10px] uppercase tracking-widest opacity-80">
         {getAvailabilityStatusLabel(tier.tier)}
       </div>
-      <div className="mt-2 flex items-baseline justify-between gap-3">
-        <span className="font-display text-3xl tracking-wide">
-          {formatPct(tier.next_day_rate_pct)}
-        </span>
-        <span className="font-mono text-[11px] text-chalk400">
-          n={formatCount(tier.n)}
-        </span>
+      <div className="mt-2 font-display text-3xl tracking-wide">
+        {formatPct(tier.next_day_rate_pct)}
       </div>
       <div className="mt-1 text-[11px] leading-snug text-chalk500">
-        next-day relief appearance rate
+        pitched in relief the next day
+      </div>
+      <div className="mt-2 font-mono text-[11px] text-chalk400">
+        Sample: {formatCount(tier.n)} pitcher-days
       </div>
     </div>
   )
@@ -144,22 +163,15 @@ function TierRateRow({ tier }) {
 
 function WindowPanel({ window }) {
   const tiers = mergeTiersByPublicStatus(window.tiers)
-  const stability = window.stability || {}
 
   return (
-    <section className="rounded border border-dirt bg-field/45 p-4" aria-label={`${window.label} backtest`}>
-      <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <div className="font-mono text-xs uppercase tracking-widest text-chalk300">
-            {window.label}
-          </div>
-          <div className="mt-1 text-xs leading-relaxed text-chalk500">
-            Data through {formatDate(window.data_through || window.window_end)}
-          </div>
+    <section className="rounded border border-dirt bg-field/45 p-4" aria-label={`${window.label} usage check`}>
+      <div className="mb-3">
+        <div className="font-mono text-xs uppercase tracking-widest text-chalk300">
+          {window.label}
         </div>
-        <div className="font-mono text-[11px] text-chalk500">
-          No-appearance tier flips: {formatPct(stability.no_appearance_tier_flip_rate_pct)}
-          {' '}({formatCount(stability.no_appearance_tier_flips)} / {formatCount(stability.no_appearance_days)})
+        <div className="mt-1 text-xs leading-relaxed text-chalk500">
+          Data through {formatDate(window.data_through || window.window_end)}
         </div>
       </div>
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
@@ -191,10 +203,13 @@ export default function AvailabilityBacktestCard({
             Usage Check
           </div>
           <h2 className="mt-1 font-display text-2xl tracking-wider text-chalk100">
-            {publicFramingCopy(framing.title) || 'Availability Tier Usage Check'}
+            How the labels matched next-day usage
           </h2>
           <p className="mt-2 max-w-3xl text-sm leading-relaxed text-chalk400">
-            {publicFramingCopy(framing.summary) || 'Stored next-day usage results are not available yet.'}
+            After BaseballOS assigned each public workload label, how often did that
+            reliever make a relief appearance the next day? Each rate below is a
+            look back at completed games — descriptive context about what happened,
+            not a claim about future outings or about who a manager will use.
           </p>
         </div>
         <div className="rounded border border-dirt bg-field/60 px-3 py-2 font-mono text-[11px] text-chalk500">
