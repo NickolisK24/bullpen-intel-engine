@@ -182,8 +182,8 @@ jobs:
           SLATE_SCHEDULE_COMMAND_TIMEOUT: 5m
         run: |
           set -euo pipefail
-          if [ -z "${DATABASE_URL:-}" ] || [ -z "${SECRET_KEY:-}" ]; then
-            echo "::error::Missing DATABASE_URL or SECRET_KEY repository secret."
+          if [ -z "${DATABASE_URL:-}" ] || [ -z "${SECRET_KEY:-}" ] || [ -z "${ADMIN_API_TOKEN:-}" ]; then
+            echo "::error::Missing DATABASE_URL, SECRET_KEY, or BASEBALLOS_ADMIN_API_TOKEN repository secret."
             exit 1
           fi
           echo "Morning slate schedule refresh starting at $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
