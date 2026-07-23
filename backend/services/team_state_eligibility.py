@@ -57,6 +57,22 @@ TRUST_INSUFFICIENT = 'insufficient'
 TRUST_FAIL_CLOSED = 'fail_closed'
 
 
+# Precise reason codes. Authority / requested-date reasons distinguish a missing
+# team block, a missing team id, an invalid team id, a mismatched team id, and a
+# snapshot whose product date does not match the requested date. Minimum-content
+# reasons name the exact required public field that is missing or blank.
+REASON_TEAM_ID_NOT_RECOGNIZED = 'team_id_not_recognized'
+REASON_READINESS_EVIDENCE_MISSING = 'readiness_evidence_missing'
+REASON_READINESS_TEAM_MISSING = 'readiness_team_missing'
+REASON_READINESS_TEAM_ID_MISSING = 'readiness_team_id_missing'
+REASON_READINESS_TEAM_ID_INVALID = 'readiness_team_id_invalid'
+REASON_READINESS_TEAM_MISMATCH = 'readiness_team_mismatch'
+REASON_SNAPSHOT_PRODUCT_DATE_MISMATCH = 'snapshot_product_date_mismatch'
+REASON_TEAM_NAME_MISSING = 'team_name_missing'
+REASON_TEAM_ABBREVIATION_MISSING = 'team_abbreviation_missing'
+REASON_READINESS_SUMMARY_MISSING = 'readiness_summary_missing'
+
+
 # The readiness statuses a Team State V1 card may be published for. The
 # governed ``data_limited`` and ``refused`` statuses are deliberately excluded.
 SUPPORTED_TEAM_STATE_CODES = frozenset({
@@ -101,10 +117,56 @@ def _as_mapping(value) -> Optional[Mapping[str, Any]]:
 
 
 def _int_or_none(value):
+    if isinstance(value, bool):
+        return None
     try:
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+def _non_empty_text(value) -> bool:
+    """True only for a non-blank string (no synthesized fallbacks are allowed)."""
+    return isinstance(value, str) and bool(value.strip())
+
+
+def _check_readiness_team_authority(readiness: Mapping[str, Any], team_id: int, block) -> None:
+    """Fail closed unless the readiness payload carries a valid, matching team.
+
+    Refuses distinctly for a missing team block, a missing team id, an invalid
+    (non-integer) team id, and a mismatched team id.
+    """
+    team_block = _as_mapping(readiness.get('team'))
+    if team_block is None:
+        block(BLOCK_AUTHORITY_VALIDATION_FAILED, REASON_READINESS_TEAM_MISSING)
+        return
+    raw_team_id = team_block.get('team_id')
+    if raw_team_id is None:
+        block(BLOCK_AUTHORITY_VALIDATION_FAILED, REASON_READINESS_TEAM_ID_MISSING)
+        return
+    resolved = _int_or_none(raw_team_id)
+    if resolved is None:
+        block(BLOCK_AUTHORITY_VALIDATION_FAILED, REASON_READINESS_TEAM_ID_INVALID)
+    elif resolved != team_id:
+        block(BLOCK_AUTHORITY_VALIDATION_FAILED, REASON_READINESS_TEAM_MISMATCH)
+
+
+def _check_minimum_public_content(readiness: Mapping[str, Any], block) -> None:
+    """Fail closed unless the governed minimum public content is present.
+
+    A complete public Team State artifact requires a team name, a team
+    abbreviation, and a readiness summary. Missing or blank values are refused
+    with precise per-field reason codes; no fallback copy is synthesized.
+    """
+    team_block = _as_mapping(readiness.get('team')) or {}
+    if not _non_empty_text(team_block.get('team_name')):
+        block(BLOCK_INCOMPLETE_EVIDENCE, REASON_TEAM_NAME_MISSING)
+    if not _non_empty_text(team_block.get('team_abbreviation')):
+        block(BLOCK_INCOMPLETE_EVIDENCE, REASON_TEAM_ABBREVIATION_MISSING)
+
+    readiness_block = _as_mapping(readiness.get('readiness')) or {}
+    if not _non_empty_text(readiness_block.get('summary')):
+        block(BLOCK_INCOMPLETE_EVIDENCE, REASON_READINESS_SUMMARY_MISSING)
 
 
 def _classify_snapshot_reason(reason: str) -> str:
@@ -184,17 +246,15 @@ def evaluate_team_state_eligibility(
 
     # --- Authority validation -------------------------------------------------
     if not source.team_valid:
-        block(BLOCK_AUTHORITY_VALIDATION_FAILED, 'team_id_not_recognized')
+        block(BLOCK_AUTHORITY_VALIDATION_FAILED, REASON_TEAM_ID_NOT_RECOGNIZED)
 
     if readiness is None:
-        block(BLOCK_INCOMPLETE_EVIDENCE, 'readiness_evidence_missing')
+        block(BLOCK_INCOMPLETE_EVIDENCE, REASON_READINESS_EVIDENCE_MISSING)
     else:
         if team_operations_governance_errors(readiness):
             block(BLOCK_INSUFFICIENT_TRUST, 'readiness_governance_violation')
-        team_block = _as_mapping(readiness.get('team')) or {}
-        readiness_team_id = _int_or_none(team_block.get('team_id'))
-        if readiness_team_id is not None and readiness_team_id != source.team_id:
-            block(BLOCK_AUTHORITY_VALIDATION_FAILED, 'readiness_team_mismatch')
+        _check_readiness_team_authority(readiness, source.team_id, block)
+        _check_minimum_public_content(readiness, block)
 
     # --- Snapshot authority ---------------------------------------------------
     snapshot = source.snapshot
@@ -203,6 +263,10 @@ def evaluate_team_state_eligibility(
     elif not snapshot.is_trusted:
         reason = snapshot.unavailable_reason or 'snapshot_untrusted'
         block(_classify_snapshot_reason(reason), f'snapshot:{reason}')
+
+    # --- Requested product date must match the trusted snapshot ---------------
+    if source.requested_date_mismatch:
+        block(BLOCK_AUTHORITY_VALIDATION_FAILED, REASON_SNAPSHOT_PRODUCT_DATE_MISMATCH)
 
     # --- Freshness / completeness / trust from governed readiness enums -------
     if readiness is not None:

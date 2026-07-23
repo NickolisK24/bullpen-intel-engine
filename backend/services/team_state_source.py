@@ -78,6 +78,21 @@ class TeamStateSource:
     def data_through(self) -> Optional[date]:
         return self.snapshot.data_through
 
+    @property
+    def requested_date_mismatch(self) -> bool:
+        """True when a requested product date was supplied but does not match the
+        trusted snapshot's ``data_through``.
+
+        SC-02 V1 performs no historical snapshot lookup: it resolves the latest
+        published snapshot only. When a caller supplies a ``requested_date`` it
+        must equal that snapshot's ``data_through`` (a missing ``data_through``
+        never matches), otherwise the request is refused rather than silently
+        authorized against a different snapshot.
+        """
+        if self.requested_date is None:
+            return False
+        return self.snapshot.data_through != self.requested_date
+
 
 def _snapshot_authority(snapshot) -> TeamStateSnapshotAuthority:
     if snapshot is None:
