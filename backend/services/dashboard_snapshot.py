@@ -412,7 +412,43 @@ def publish_dashboard_snapshot(snapshot, *, commit=True):
         db.session.commit()
     else:
         db.session.flush()
+    # Generation belongs to publication (Share Cards SC-03B-02): once — and only
+    # once — a trusted snapshot has durably become the canonical published
+    # snapshot, attempt league-wide immutable Team State generation as the next
+    # step of the same lifecycle. It runs only on a committed success, never
+    # rolls back or unpublishes the snapshot, and never raises.
+    if commit and snapshot.is_published and snapshot.status == SNAPSHOT_STATUS_READY:
+        _maybe_generate_team_state_artifacts_after_publication(snapshot)
     return snapshot
+
+
+def _maybe_generate_team_state_artifacts_after_publication(snapshot):
+    """Fire post-publication Team State generation, gated by app config.
+
+    Automatic in the real app (``create_app`` enables it); off by default when the
+    flag is absent (e.g. bare-Flask unit tests) so publication tests are
+    unaffected. Never raises — a generation problem must never disturb the
+    already-committed, authoritative publication.
+    """
+    try:
+        from flask import current_app
+        if not current_app or not current_app.config.get(
+            'SHARE_ARTIFACT_AUTOGENERATION_ENABLED', False
+        ):
+            return
+    except Exception:
+        return
+    try:
+        from services.share_artifact_publication_hook import (
+            run_post_publication_generation,
+        )
+        run_post_publication_generation(snapshot)
+    except Exception:
+        logger.exception(
+            'Post-publication Team State generation hook failed non-fatally '
+            'snapshot_id=%s.',
+            getattr(snapshot, 'id', None),
+        )
 
 
 def mark_dashboard_snapshot_failed(

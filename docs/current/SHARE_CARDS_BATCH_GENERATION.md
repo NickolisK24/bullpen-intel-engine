@@ -190,7 +190,10 @@ POST /api/internal/share-artifacts/team-state/batch
 
 ## Deferred to later SC-03B branches
 
-- Scheduled / post-sync automatic invocation (cron, GitHub Actions).
+- ~~Post-publication automatic invocation~~ — done in SC-03B-02: a committed
+  trusted-snapshot publication now automatically invokes this batch service. See
+  `SHARE_CARDS_PUBLICATION_HOOK.md`.
+- Scheduled invocation (cron, GitHub Actions, queues) remains deferred.
 - Operator surfacing UI / read-only listing of recent artifacts + audit attempts
   (the `list_recent_team_state_artifacts` / `list_generation_audits` repository
   queries already exist to back it).
