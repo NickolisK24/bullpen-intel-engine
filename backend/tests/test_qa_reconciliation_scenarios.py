@@ -47,7 +47,7 @@ from utils.db import db
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 MIGRATIONS_DIR = REPO_ROOT / 'backend/migrations/versions'
-EXPECTED_ALEMBIC_HEAD = 'a1d8e4c6b2f0'
+EXPECTED_ALEMBIC_HEAD = 'c1a7f4e2b9d6'
 FORBIDDEN_HEADLINE_TERMS = (
     'headline',
     'read_label',
@@ -476,8 +476,15 @@ def test_phase0e_switches_and_legacy_public_files_not_modified():
         'frontend/tests/trafficMeasurement.test.mjs',
         'frontend/tests/trafficIntelligenceAdmin.test.mjs',
     }
+    allowed_share_artifacts_domain_files = {
+        # feature/share-artifacts-domain (Share Cards SC-01): the immutable share
+        # artifact domain. Backend domain + migration only — no rendering, routes,
+        # public runtime, or classification changes.
+        'backend/migrations/versions/c1a7f4e2b9d6_add_share_artifacts.py',
+    }
     allowed_files = (
         allowed_public_freshness_display_files
+        | allowed_share_artifacts_domain_files
         | allowed_internal_admin_files
         | allowed_phase0f_public_recent_work_files
         | allowed_phase0g_public_team_relief_files
