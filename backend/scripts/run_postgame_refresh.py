@@ -35,7 +35,24 @@ def _parse_args(argv=None):
         action='store_true',
         help='Exit after public postgame ingestion/snapshot publication.',
     )
-    return parser.parse_args(argv)
+    parser.add_argument(
+        '--retry-failed',
+        action='store_true',
+        help='Explicitly reset exhausted FAILED markers for --date before refreshing.',
+    )
+    parser.add_argument(
+        '--game-pk',
+        action='append',
+        type=int,
+        default=[],
+        help='Limit --retry-failed to one MLB gamePk. Repeat for multiple games.',
+    )
+    args = parser.parse_args(argv)
+    if args.retry_failed and not args.schedule_date:
+        parser.error('--retry-failed requires --date so recovery cannot reset an unbounded range')
+    if args.game_pk and not args.retry_failed:
+        parser.error('--game-pk requires --retry-failed')
+    return args
 
 
 def _parse_schedule_date(value):
@@ -56,7 +73,22 @@ def main(argv=None):
     from app import app
     from services import sync as sync_service
     from services import sync_metadata
+    from services.postgame_recovery import reset_failed_postgame_markers
     from services.sync_publication_proof import build_candidate_publication_proof
+
+    recovery = {
+        'status': 'not_requested',
+        'schedule_date': schedule_date.isoformat() if schedule_date else None,
+        'requested_game_pks': list(args.game_pk),
+        'markers_reset': 0,
+        'reset_game_pks': [],
+    }
+    if args.retry_failed:
+        with app.app_context():
+            recovery = reset_failed_postgame_markers(
+                schedule_date=schedule_date,
+                game_pks=args.game_pk,
+            )
 
     status = sync_service.run_postgame_refresh(
         app,
@@ -80,6 +112,7 @@ def main(argv=None):
         'schedule_date': status.get('schedule_date'),
         'public_only': args.public_only,
         'changed_workload': changed_workload,
+        'failed_marker_recovery': recovery,
         'publication_proof': publication_proof,
         'sync': status,
     }
