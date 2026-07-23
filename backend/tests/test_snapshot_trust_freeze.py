@@ -423,6 +423,12 @@ def test_frozen_legacy_what_changed_files_untouched():
         'frontend/tests/trafficMeasurement.test.mjs',
         'frontend/tests/trafficIntelligenceAdmin.test.mjs',
     }
+    allowed_share_artifacts_domain_files = {
+        # feature/share-artifacts-domain (Share Cards SC-01): the immutable share
+        # artifact domain migration. Backend domain only — no rendering, routes,
+        # public runtime, or what-changed behavior changes.
+        'backend/migrations/versions/c1a7f4e2b9d6_add_share_artifacts.py',
+    }
     assert not sorted(
         path for path in changed
         if path.startswith('frontend/')
@@ -450,6 +456,7 @@ def test_frozen_legacy_what_changed_files_untouched():
         if path not in allowed_pitcher_ledger_coverage_files
         if path not in allowed_trusted_traffic_files
         if path not in allowed_wp42_schedule_files
+        if path not in allowed_share_artifacts_domain_files
     )
 
 

@@ -1405,8 +1405,15 @@ def test_existing_public_routes_behavior_freeze(monkeypatch):
         'frontend/tests/trafficMeasurement.test.mjs',
         'frontend/tests/trafficIntelligenceAdmin.test.mjs',
     }
+    allowed_share_artifacts_domain_files = {
+        # feature/share-artifacts-domain (Share Cards SC-01): the immutable share
+        # artifact domain migration. Backend domain only — no rendering, routes,
+        # or public runtime changes.
+        'backend/migrations/versions/c1a7f4e2b9d6_add_share_artifacts.py',
+    }
     assert not [
         path for path in changed
+        if path not in allowed_share_artifacts_domain_files
         if path not in allowed_phase_a_audience_signup_files
         if path not in allowed_bullpen_game_context_files
         if path not in allowed_pitcher_ledger_coverage_files
