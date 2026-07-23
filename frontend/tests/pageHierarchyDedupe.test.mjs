@@ -159,24 +159,33 @@ test('Methodology links to Data & Trust and preserves its inbound anchors instea
   assert.equal(text.includes('CRITICAL n='), false)
 })
 
-test('Data & Trust owns the full availability backtest without duplicate page sections', () => {
+test('Data & Trust leads with the current answer and owns the usage check without duplicate sections', () => {
   const html = renderDataTrust()
   const text = visibleText(html)
 
+  // The current-data answer precedes the usage check.
+  const currentAnswer = text.indexOf('Is the public bullpen picture current?')
+  const usageCheck = text.indexOf('How the labels matched next-day usage')
+  assert.ok(currentAnswer > -1)
+  assert.ok(usageCheck > currentAnswer)
+
   assert.ok(text.includes('Usage Check'))
-  // Backend framing still says "Backtest"; the public layer rewrites it.
-  assert.ok(text.includes('Operational Availability usage check'))
+  // The card title is fixed reader-first framing, never the backend "Backtest".
   assert.equal(text.includes('Operational Backtest'), false)
-  assert.ok(text.includes('Public Trust'))
-  assert.ok(text.includes('Freshness / Update Schedule'))
+  assert.equal(text.includes('Backtest'), false)
+  assert.ok(text.includes('Freshness and coverage detail'))
   assert.ok(text.includes('BaseballOS updates after completed MLB games'))
-  assert.ok(htmlIncludes(html, 'href="/methodology#data-sources"'))
+  // Methodology and How to Read are linked rather than duplicated.
+  assert.ok(htmlIncludes(html, 'href="/methodology"'))
+  assert.ok(htmlIncludes(html, 'href="/how-to-read"'))
+  // The inbound freshness anchor is preserved.
   assert.ok(htmlIncludes(html, 'id="freshness-update-schedule"'))
+  // The workload inventory and its internal term are gone from the public page.
+  assert.equal(text.includes('Pitcher Workload Inventory'), false)
+  assert.equal(text.includes('scored_pitcher_inventory'), false)
   assert.equal(htmlIncludes(html, 'id="contact"'), false)
-  assert.equal(htmlIncludes(html, 'href="#contact"'), false)
   assert.equal(text.includes('Secondary Exploratory ERA Study'), false)
   assert.equal(text.includes('Digest Preferences'), false)
-  assert.equal(text.includes('Bullpen State + Team Readiness'), false)
 })
 
 test('off-lane and dead frontend surfaces are not present for remounting', () => {
