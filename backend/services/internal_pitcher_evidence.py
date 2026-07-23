@@ -20,6 +20,10 @@ from models.composed_read import (
 from models.evidence_contract import EvidenceObject
 from models.legacy_read_audit import LegacyReadDivergence
 from models.pitcher import Pitcher
+from services.evidence_authority import (
+    cited_evidence_objects,
+    resolve_current_pitcher_evidence,
+)
 from services.reliever_daily_read import READ_TYPE as RELIEVER_DAILY_READ_TYPE
 
 
@@ -213,48 +217,13 @@ def _current_reliever_daily_read(pitcher_id: int, ref: date) -> ComposedRead | N
 
 
 def _evidence_objects(pitcher_id: int, ref: date, *, read: ComposedRead | None) -> list[EvidenceObject]:
-    rows = (
-        EvidenceObject.query
-        .options(selectinload(EvidenceObject.citations))
-        .filter(EvidenceObject.subject_type == 'pitcher')
-        .filter(EvidenceObject.subject_id == str(pitcher_id))
-        .filter(EvidenceObject.product_date == ref)
-        .filter(EvidenceObject.posture == EvidenceObject.POSTURE_INTERNAL_ONLY)
-        .filter(EvidenceObject.recompute_status == EvidenceObject.RECOMPUTE_CURRENT)
-        .order_by(
-            asc(EvidenceObject.evidence_type),
-            asc(EvidenceObject.rule_id),
-            asc(EvidenceObject.id),
-        )
-        .all()
-    )
-    by_id = {row.id: row for row in rows}
-    for row in _cited_evidence_objects(read):
-        if row is not None:
-            by_id.setdefault(row.id, row)
-    return sorted(
-        by_id.values(),
-        key=lambda row: (
-            row.evidence_type or '',
-            row.rule_id or '',
-            row.id or 0,
-        ),
-    )
+    # Canonical governed authority (SC-03B-01): trusted current pitcher evidence
+    # for the exact pitcher + product date, merged with the read's cited evidence.
+    return resolve_current_pitcher_evidence(pitcher_id, ref, read=read)
 
 
 def _cited_evidence_objects(read: ComposedRead | None) -> list[EvidenceObject]:
-    if read is None:
-        return []
-    rows = []
-    seen = set()
-    for component in sorted(read.components or [], key=lambda row: row.component_name):
-        for citation in sorted(component.evidence_citations or [], key=lambda row: row.id or 0):
-            evidence = citation.evidence_object
-            if evidence is None or evidence.id in seen:
-                continue
-            rows.append(evidence)
-            seen.add(evidence.id)
-    return rows
+    return cited_evidence_objects(read)
 
 
 def _reconciliation_divergences(pitcher_id: int, ref: date) -> list[LegacyReadDivergence]:
