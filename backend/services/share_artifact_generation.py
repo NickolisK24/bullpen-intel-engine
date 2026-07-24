@@ -33,6 +33,7 @@ from services.share_artifacts import (
 )
 from services.team_state_eligibility import evaluate_team_state_eligibility
 from services.team_state_payload import (
+    TEAM_STATE_LATEST,
     TeamStatePayloadError,
     build_team_state_payload,
 )
@@ -340,8 +341,8 @@ def generate_team_state_artifact(
             failure_code=FAILURE_SOURCE_GATHER, actor=actor, request_source=request_source,
         )
 
-    # 3. Deterministic eligibility.
-    eligibility = evaluate_team_state_eligibility(source)
+    # 3. Deterministic eligibility (stamped with the version we will publish).
+    eligibility = evaluate_team_state_eligibility(source, payload_version=TEAM_STATE_LATEST)
 
     # 4. Refused -> durably audit the refusal, no publication.
     if not eligibility.eligible:
@@ -376,7 +377,7 @@ def generate_team_state_artifact(
     # 5. Eligible -> build canonical payload, publish (dedup), verify, audit;
     #    publication + audit commit atomically.
     try:
-        payload = build_team_state_payload(source)
+        payload = build_team_state_payload(source, version=TEAM_STATE_LATEST)
         kwargs = payload.to_share_artifact_kwargs()
         draft = build_share_artifact_draft(session=session, **kwargs)
         existing = find_published_equivalent(draft.equivalence_key, session=session)

@@ -39,6 +39,11 @@ from models.share_artifact import (
 )
 from services.share_artifact_repository import get_share_artifact_by_public_id
 from services.share_artifacts import verify_share_artifact_integrity
+from services.team_state_public_copy import build_evidence_receipts
+from services.team_state_public_vocabulary import (
+    is_publishable_state,
+    public_state_for,
+)
 from utils.db import db
 
 
@@ -158,26 +163,45 @@ def _team_route(team_id) -> Optional[str]:
     return TEAM_SURFACE_ROUTE
 
 
-def _evidence_items(team_state: Mapping[str, Any]) -> list:
-    """Ordered, frozen evidence receipts from the immutable document.
+def _public_state(team_state: Mapping[str, Any], public_copy: Mapping[str, Any]) -> Optional[dict]:
+    """Reader-facing public Team State (Fresh/Stretched/Vulnerable) for the view.
 
-    Reads only the stored governed constraint rows; it never composes evidence and
-    never trusts an artifact-provided URL as a navigation target.
+    Revised (v1.1.0) artifacts carry the stored public state. Legacy (v1.0.0)
+    artifacts have their internal status_code deterministically mapped at read
+    time via the single backend-owned public vocabulary — a version-aware display
+    of coded metadata that never mutates the stored document. Returns ``None`` if
+    the internal status has no public state (never fabricates one).
     """
-    constraints = team_state.get('constraints')
-    items = []
-    if isinstance(constraints, (list, tuple)):
-        for constraint in constraints:
-            constraint = _mapping(constraint)
-            items.append({
-                'evidence_id': constraint.get('constraint_id'),
-                'kind': constraint.get('category'),
-                'label': constraint.get('affected_area') or constraint.get('category'),
-                'detail': constraint.get('message'),
-                'severity': constraint.get('severity'),
-                'count': constraint.get('count'),
-            })
-    return items
+    stored = _mapping(public_copy.get('state'))
+    if stored.get('public_code') and stored.get('public_label'):
+        return {'public_code': stored['public_code'], 'public_label': stored['public_label']}
+    status_code = team_state.get('status_code')
+    if is_publishable_state(status_code):
+        return public_state_for(status_code)
+    return None
+
+
+def _evidence_items(team_state: Mapping[str, Any], public_copy: Mapping[str, Any]) -> list:
+    """Ordered, frozen, reader-facing evidence receipts from the immutable document.
+
+    Revised artifacts carry stored reader-facing receipts. Legacy artifacts get a
+    deterministic, version-aware reader-facing presentation of their coded
+    constraint rows (label + count) from the single backend-owned mapping — never
+    the raw internal enum and never the engine ``message``. Composes no new
+    evidence and trusts no artifact-provided URL as a navigation target.
+    """
+    stored = public_copy.get('evidence')
+    if isinstance(stored, (list, tuple)):
+        return [dict(_mapping(item)) for item in stored]
+    return build_evidence_receipts(team_state.get('constraints') or ())
+
+
+def _legacy_trust_line(confidence) -> str:
+    if confidence == 'high':
+        return 'Verified from the current active bullpen and completed recent appearances.'
+    if confidence == 'medium':
+        return 'Based on the current active bullpen and its completed recent appearances.'
+    return 'Based on the available current bullpen evidence.'
 
 
 def _public_view(artifact, session) -> dict:
@@ -186,6 +210,39 @@ def _public_view(artifact, session) -> dict:
     authority = _mapping(document.get('authority'))
     team_state = _mapping(document.get('team_state'))
     trust = _mapping(document.get('trust'))
+    public_copy = _mapping(document.get('public_copy'))
+    revised = bool(public_copy)
+
+    public_state = _public_state(team_state, public_copy)
+    public_label = public_state['public_label'] if public_state else None
+    team_name = team.get('team_name')
+
+    if revised:
+        copy = {
+            'headline': public_copy.get('headline'),
+            'why': public_copy.get('why'),
+            'summary': public_copy.get('why'),
+            'freshness_line': public_copy.get('freshness_line'),
+            'trust_line': public_copy.get('trust_line'),
+            'alt_text': public_copy.get('alt_text'),
+            'description': public_copy.get('description'),
+        }
+        limitations = [str(item) for item in (public_copy.get('limitations') or [])]
+    else:
+        # Legacy: preserve the original stored read verbatim (historical fidelity);
+        # only coded labels are mapped for reader-facing presentation.
+        original = team_state.get('summary')
+        headline = f'{team_name} bullpen — {public_label}' if (team_name and public_label) else team_name
+        copy = {
+            'headline': headline,
+            'why': original,
+            'summary': original,
+            'freshness_line': None,
+            'trust_line': _legacy_trust_line(trust.get('confidence')),
+            'alt_text': None,
+            'description': original,
+        }
+        limitations = [str(item) for item in (trust.get('limitations') or [])]
 
     view = {
         'public_id': artifact.public_id,
@@ -193,6 +250,7 @@ def _public_view(artifact, session) -> dict:
         'schema_version': artifact.schema_version,
         'render_version': artifact.render_version,
         'payload_version': document.get('payload_version'),
+        'revised': revised,
         'lifecycle_state': artifact.lifecycle_state,
         'is_historical': True,
         'generated_at': _iso(artifact.created_at),
@@ -200,7 +258,7 @@ def _public_view(artifact, session) -> dict:
         'product_date': _iso(artifact.product_date),
         'team': {
             'team_id': team.get('team_id'),
-            'team_name': team.get('team_name'),
+            'team_name': team_name,
             'team_abbreviation': team.get('team_abbreviation'),
         },
         'authority': {
@@ -210,8 +268,11 @@ def _public_view(artifact, session) -> dict:
             'published_at': authority.get('published_at'),
         },
         'team_state': {
+            # status_code is internal; it is exposed only as an opaque data hook,
+            # never rendered as reader-facing prose.
             'status_code': team_state.get('status_code'),
-            'status_label': team_state.get('status_label'),
+            'public_state': public_state['public_code'] if public_state else None,
+            'public_label': public_label,
             'summary': team_state.get('summary'),
             'contract_state': team_state.get('contract_state'),
         },
@@ -225,12 +286,9 @@ def _public_view(artifact, session) -> dict:
             'data_through': authority.get('data_through'),
             'published_at': _iso(artifact.published_at),
         },
-        'evidence': _evidence_items(team_state),
-        'limitations': [str(item) for item in (trust.get('limitations') or [])],
-        'copy': {
-            'headline': team_state.get('status_label'),
-            'summary': team_state.get('summary'),
-        },
+        'evidence': _evidence_items(team_state, public_copy),
+        'limitations': limitations,
+        'copy': copy,
         'routes': {
             'share_url': share_route(artifact.public_id),
             'team_url': _team_route(team.get('team_id') or artifact.team_id),

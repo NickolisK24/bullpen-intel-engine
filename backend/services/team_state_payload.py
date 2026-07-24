@@ -35,7 +35,21 @@ from services.team_state_eligibility import (
     TeamStateEligibilityResult,
     evaluate_team_state_eligibility,
 )
+from services.team_state_public_copy import build_public_copy
 from services.team_state_source import TeamStateSource
+
+
+# The revised canonical public-copy contract (SC-04B). It carries the same
+# governed intelligence as v1.0.0 plus a backend-owned, deterministic,
+# baseball-native ``public_copy`` block (public state, headline, why sentence,
+# reader-facing evidence, freshness/trust/limitation language, alt text,
+# platform-neutral description). Meaning-bearing copy lives in the payload, so it
+# automatically participates in the equivalence + integrity hashes. Legacy
+# v1.0.0 artifacts remain immutable and publicly readable under their own version.
+TEAM_STATE_V1_1 = 'team-state-1.1.0'
+
+# The version new artifacts are generated under. Legacy versions stay registered.
+TEAM_STATE_LATEST = TEAM_STATE_V1_1
 
 
 TEAM_STATE_ARTIFACT_TYPE = 'team_state'
@@ -335,6 +349,77 @@ team_state_payload_registry.register(TeamStatePayloadContract(
     version=TEAM_STATE_V1,
     builder=_build_team_state_document_v1,
     description='Team State Share Card canonical payload, contract v1.0.0.',
+))
+
+
+# ---------------------------------------------------------------------------
+# Version 1.1.0 contract — v1.0.0 + backend-owned canonical public copy (SC-04B)
+# ---------------------------------------------------------------------------
+
+
+def _build_team_state_document_v1_1(
+    source: TeamStateSource,
+    eligibility: TeamStateEligibilityResult,
+) -> dict:
+    """v1.0.0 governed document + a deterministic, backend-owned public-copy block.
+
+    The public copy is produced by the canonical copy authority from governed
+    facts only. It fails closed (no artifact) if the internal status has no public
+    Team State or if any public field carries banned internal language. No AI, no
+    external language service, no build-time timestamp — identical governed input
+    yields a byte-identical document.
+    """
+    built = _build_team_state_document_v1(source, eligibility)
+    document = built['document']
+
+    readiness = source.readiness if isinstance(source.readiness, Mapping) else {}
+    trust_metadata = (
+        readiness.get('trust_metadata')
+        if isinstance(readiness.get('trust_metadata'), Mapping) else {}
+    )
+    team_block = document.get('team') or {}
+    team_state = document.get('team_state') or {}
+    trust = document.get('trust') or {}
+    active_bullpen_coverage = trust_metadata.get('active_bullpen_coverage')
+
+    # The public copy is derived from the RAW governed constraints (which retain
+    # the governed ``count`` that the v1.0.0 document intentionally strips), in the
+    # same canonical constraint_id order the document uses. The reader-facing
+    # receipts are then frozen into public_copy.evidence.
+    raw_constraints = sorted(
+        (c for c in (readiness.get('constraints') or ()) if isinstance(c, Mapping)),
+        key=lambda c: str(c.get('constraint_id')),
+    )
+
+    public_copy = build_public_copy(
+        team_name=team_block.get('team_name'),
+        team_abbreviation=team_block.get('team_abbreviation'),
+        status_code=team_state.get('status_code'),
+        confidence=trust.get('confidence'),
+        constraints=raw_constraints,
+        limitations=trust.get('limitations') or (),
+        active_bullpen_coverage=active_bullpen_coverage,
+        product_date=(document.get('authority') or {}).get('data_through'),
+    )
+
+    document['payload_version'] = TEAM_STATE_V1_1
+    team_state['public_state'] = public_copy['state']
+    if isinstance(active_bullpen_coverage, Mapping):
+        trust['active_bullpen_coverage'] = dict(active_bullpen_coverage)
+    document['public_copy'] = public_copy
+
+    built['trust_metadata'] = dict(built['trust_metadata'])
+    built['trust_metadata']['payload_version'] = TEAM_STATE_V1_1
+    return built
+
+
+team_state_payload_registry.register(TeamStatePayloadContract(
+    version=TEAM_STATE_V1_1,
+    builder=_build_team_state_document_v1_1,
+    description=(
+        'Team State Share Card canonical payload, contract v1.1.0 — adds the '
+        'backend-owned deterministic public-copy block (SC-04B).'
+    ),
 ))
 
 
