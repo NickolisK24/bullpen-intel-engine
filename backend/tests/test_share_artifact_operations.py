@@ -503,13 +503,19 @@ def test_invalid_filters_fail_safely(admin_client, monkeypatch):
     assert bad_date.status_code == 400
 
 
-# 36 — no public route exposes operational data.
+# 36 — no public route exposes operational data (every route is on an
+# authenticated internal boundary: admin-token or the SC-03B-03B browser session).
 def test_no_public_operations_route(app):
     from app import create_app
     real_app = create_app('test')
     ops_routes = [str(r) for r in real_app.url_map.iter_rules() if 'operations' in str(r)
-                  and 'share-artifacts' in str(r)]
-    assert ops_routes and all(r.startswith('/api/internal/share-artifacts/') for r in ops_routes)
+                  and 'share-artifact' in str(r)]
+    assert ops_routes
+    assert all(
+        r.startswith('/api/internal/share-artifacts/')
+        or r.startswith('/api/internal-browser/share-artifacts/')
+        for r in ops_routes
+    )
 
 
 # 39 / 40 — the operations API is GET-only (no generation, no mutation).

@@ -15,20 +15,15 @@ from datetime import date
 
 from flask import Blueprint, jsonify, request
 
-from api.query_params import (
-    parse_enum_param,
-    parse_non_negative_int_param,
-    parse_positive_int_param,
-    query_param_error_response,
+from api.share_artifact_operations_api import (
+    build_artifacts_response,
+    build_audits_response,
+    build_overview_response,
 )
 from utils.auth import require_admin_token
 
 
 share_artifacts_admin_bp = Blueprint('share_artifacts_admin', __name__)
-
-# Bounded operations read sizes.
-_OPS_DEFAULT_LIMIT = 25
-_OPS_MAX_LIMIT = 100
 
 
 def _parse_team_id(raw):
@@ -185,83 +180,18 @@ def operations_overview():
     Invokes no generation and mutates nothing. Fails closed: an impossible
     accounting result surfaces as a sanitized 500 rather than a plausible summary.
     """
-    from services.share_artifact_operations import (
-        ShareArtifactOperationsError,
-        build_coverage_overview,
-    )
-    try:
-        overview = build_coverage_overview()
-    except ShareArtifactOperationsError:
-        return jsonify({'error': 'operations_accounting_error'}), 500
-    except Exception:
-        return jsonify({'error': 'internal_error'}), 503
-    return jsonify(overview), 200
+    return build_overview_response()
 
 
 @share_artifacts_admin_bp.route('/operations/artifacts', methods=['GET'])
 @require_admin_token
 def operations_artifacts():
     """Bounded, newest-first recent immutable artifacts (read-only projection)."""
-    limit, err = parse_positive_int_param(
-        request.args, 'limit', default=_OPS_DEFAULT_LIMIT, maximum=_OPS_MAX_LIMIT, clamp_max=True,
-    )
-    if err:
-        return query_param_error_response(err)
-    offset, err = parse_non_negative_int_param(request.args, 'offset', default=0)
-    if err:
-        return query_param_error_response(err)
-    team_id, err = parse_positive_int_param(request.args, 'team_id', default=None)
-    if err:
-        return query_param_error_response(err)
-
-    from services.share_artifact_operations import list_operational_artifacts
-    try:
-        payload = list_operational_artifacts(team_id=team_id, limit=limit, offset=offset)
-    except Exception:
-        return jsonify({'error': 'internal_error'}), 503
-    return jsonify(payload), 200
+    return build_artifacts_response(request.args)
 
 
 @share_artifacts_admin_bp.route('/operations/audits', methods=['GET'])
 @require_admin_token
 def operations_audits():
     """Bounded, newest-first recent generation audit attempts (read-only)."""
-    from models.share_artifact_generation_audit import ShareArtifactGenerationAudit
-
-    limit, err = parse_positive_int_param(
-        request.args, 'limit', default=_OPS_DEFAULT_LIMIT, maximum=_OPS_MAX_LIMIT, clamp_max=True,
-    )
-    if err:
-        return query_param_error_response(err)
-    offset, err = parse_non_negative_int_param(request.args, 'offset', default=0)
-    if err:
-        return query_param_error_response(err)
-    team_id, err = parse_positive_int_param(request.args, 'team_id', default=None)
-    if err:
-        return query_param_error_response(err)
-    source_snapshot_id, err = parse_positive_int_param(request.args, 'source_snapshot_id', default=None)
-    if err:
-        return query_param_error_response(err)
-    outcome, err = parse_enum_param(
-        request.args, 'outcome', ShareArtifactGenerationAudit.OUTCOMES, normalize=str.lower,
-    )
-    if err:
-        return query_param_error_response(err)
-    product_date, ok = _parse_requested_date(request.args.get('product_date'))
-    if not ok:
-        return jsonify({'error': 'invalid_product_date'}), 400
-
-    from services.share_artifact_operations import (
-        ShareArtifactOperationsError,
-        list_operational_audits,
-    )
-    try:
-        payload = list_operational_audits(
-            team_id=team_id, outcome=outcome, source_snapshot_id=source_snapshot_id,
-            product_date=product_date, limit=limit, offset=offset,
-        )
-    except ShareArtifactOperationsError as exc:
-        return jsonify({'error': str(exc)}), 400
-    except Exception:
-        return jsonify({'error': 'internal_error'}), 503
-    return jsonify(payload), 200
+    return build_audits_response(request.args)

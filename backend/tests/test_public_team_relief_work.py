@@ -1428,10 +1428,21 @@ def test_existing_public_routes_behavior_freeze(monkeypatch):
         'frontend/tests/shareCardArtifact.test.mjs',
         'frontend/tests/shareCardCutover.test.mjs',
     }
+    allowed_share_artifact_operations_files = {
+        # feature/share-artifact-operations + operator-ui (Share Cards SC-03B-03):
+        # a read-only internal operations/coverage/monitoring surface — a shared
+        # read model, an admin-token + browser-session (Bearer + email allowlist)
+        # read boundary, and an authenticated internal operator page. No public
+        # route, no generation, no mutation, no admin token in the browser.
+        'frontend/src/utils/shareArtifactOperations.js',
+        'frontend/src/components/admin/ShareArtifactOperations.jsx',
+        'frontend/tests/shareArtifactOperations.test.mjs',
+    }
     assert not [
         path for path in changed
         if path not in allowed_share_artifacts_domain_files
         if path not in allowed_share_artifact_cutover_files
+        if path not in allowed_share_artifact_operations_files
         if path not in allowed_phase_a_audience_signup_files
         if path not in allowed_bullpen_game_context_files
         if path not in allowed_pitcher_ledger_coverage_files

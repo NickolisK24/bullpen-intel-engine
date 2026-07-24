@@ -107,29 +107,74 @@ generation:
 
 There is no public equivalent of any of these routes.
 
-## Access-control boundary — and why there is no operator UI page in this branch
+## Two authorization boundaries, one read model
 
-The operations API is gated by the backend `ADMIN_API_TOKEN` (`X-Admin-Token`),
-the same gate as the SC-03A/SC-03B-01 generation routes. Operators use it
-server-side or via curl, exactly as the repository already documents for its other
-privileged endpoints (`frontend/src/utils/api.js` states the admin token is never
-placed in the browser bundle, and `frontend/tests/apiAdminToken.test.mjs`
-test-enforces that `api.js` never sends `X-Admin-Token`).
+The same operational read model is exposed through **two** authorization
+boundaries that share one service, one view-model, one set of validation and
+pagination rules, and one status vocabulary (via the shared response builders in
+`backend/api/share_artifact_operations_api.py`). Only the authorization differs:
 
-**Access-control gap (documented, not worked around):** the existing frontend
-cannot safely call an `X-Admin-Token` API — that is a deliberate, test-enforced
-invariant. The one existing admin page (`TrafficIntelligenceAdmin`) instead uses a
-different gate: a signed-in user's magic-link Bearer token plus a backend email
-allowlist (`resolve_current_user()` + a `*_INTERNAL_EMAILS` config). Building an
-operator UI page would therefore require either (a) putting the admin token in the
-browser — explicitly forbidden and test-blocked — or (b) standing up a new
-email-allowlist auth surface and config for share-artifact operations. Per this
-sprint's ACCESS CONTROL instruction ("STOP before inventing a new authentication
-design … implement only the safe backend read service/API portion"), the UI page
-is intentionally **not** built here. The safe, complete backend read service +
-admin API is delivered; the frontend page is deferred pending an explicit decision
-on which existing gate it should adopt (admin-token via a server-side proxy, or
-the email-allowlist pattern).
+- **Admin-token boundary (SC-03B-03A)** — `require_admin_token` / `X-Admin-Token`
+  on `/api/internal/share-artifacts/operations/*`. Backend/curl only; the admin
+  token is never placed in the browser bundle (test-enforced by
+  `frontend/tests/apiAdminToken.test.mjs`).
+- **Browser-session boundary (SC-03B-03B)** — the existing production-proven
+  browser-safe internal gate on `/api/internal-browser/share-artifacts/operations/*`
+  (`backend/api/share_artifact_operations_browser.py`): a signed-in user's
+  magic-link **Bearer** session (`resolve_current_user`) plus a founder/internal
+  **email allowlist** (`parse_internal_emails` + `normalize_email`), exactly as the
+  existing internal Traffic admin surface. **No admin token is ever required from,
+  or delivered to, the browser.** Unauthenticated → 401 (`authentication_required`);
+  a valid session not on the allowlist → 403 (`operations_forbidden`); both fail
+  closed, server-side. Authenticated responses are `Cache-Control: no-store, private`
+  so operational data is never publicly cached.
+
+The email allowlist reuses `TRAFFIC_INTERNAL_EMAILS` by default; a dedicated
+`SHARE_ARTIFACT_OPERATIONS_EMAILS` may override it without introducing a new
+authentication mechanism.
+
+## Internal operator page (SC-03B-03B)
+
+Route `/internal/share-artifacts/operations`
+(`frontend/src/components/admin/ShareArtifactOperations.jsx`), registered in
+`App.jsx` but **absent from public navigation** (`navigation.js` / `Sidebar` /
+`Footer`) and from analytics (`canonicalPage` only tracks `/bullpen`); it carries
+a `noindex,nofollow` robots meta and is never statically pre-rendered with
+privileged data. There is no sitemap in the repo to update.
+
+Access is gated client-side by `useAuthState()` (checking → unauthenticated →
+authorized) and enforced server-side by the browser boundary above; a 401 renders
+the sign-in state and a 403 the forbidden state — neither leaks previously fetched
+data. The page fetches only the browser-safe endpoints, attaching the user's Bearer
+session (`frontend/src/utils/shareArtifactOperations.js`) and **never** an admin token.
+
+Sections (read-only): a header (operational status, automatic-generation
+enabled/disabled, latest snapshot id, product date, snapshot publication time, last
+generation activity); a coverage summary (all counts); a per-canonical-team
+coverage table (deterministic order; generated/reused/refused/failed/missing shown
+as text, not color alone; reason/failure codes; integrity state); recent generation
+attempts; and recent artifacts (never the raw payload). Honest loading / complete /
+complete-with-refusals / degraded / incomplete / disabled / unavailable / empty /
+authorization-failure / API-failure states; no fabricated numbers; semantic tables
+with scoped headers, one page `h1`, and `<time>` timestamps.
+
+**Read-only:** the page contains no generate, regenerate, retry, publish, withdraw,
+supersede, repair, recalculate, delete, or configuration control, and issues only
+`GET` requests. Automatic-generation state is display-only. The admin
+batch-generation endpoint is never reachable from the page.
+
+## Deployment / configuration
+
+The browser boundary requires an authorized operator to sign in (magic link) and
+their email to be present in `TRAFFIC_INTERNAL_EMAILS` (or the dedicated
+`SHARE_ARTIFACT_OPERATIONS_EMAILS`). The admin-token boundary requires
+`ADMIN_API_TOKEN`. No new secret is delivered to the browser.
+
+## Status record
+
+- **SC-03B-03A — Operational Read Model and Admin API: COMPLETE.**
+- **SC-03B-03B — Authenticated Browser Operator UI: COMPLETE.**
+- SC-03B operational rollout is complete.
 
 ## Performance / query boundaries
 
@@ -148,7 +193,7 @@ pageable; no caching that could conceal current failures; no new infrastructure.
 
 ## Deferred
 
-- The internal operator **UI page** (pending the access-control decision above).
 - Alerting/notifications, scheduling/retries, and everything else already out of
   scope. This surface performs **detection and visibility only** — no alerting,
-  no retries, no public share pages, no social rendering, no Product Intelligence.
+  no retries, no public share pages, no social rendering, no Product Intelligence,
+  no artifact mutation.
