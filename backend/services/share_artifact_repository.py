@@ -138,12 +138,14 @@ def list_recent_team_state_artifacts(
     team_id: Optional[int] = None,
     include_non_published: bool = False,
     limit: int = 20,
+    offset: int = 0,
     session=None,
 ) -> list:
     """List recent Team State artifacts (metadata inspection, not consumption).
 
     Integrity is not verified per row here; callers that serve an artifact's
-    content must re-fetch it through a verifying getter above.
+    content must re-fetch it through a verifying getter above. ``offset`` supports
+    bounded pagination for internal operator reads.
     """
     session = session or db.session
     query = _team_state_query(session)
@@ -153,7 +155,32 @@ def list_recent_team_state_artifacts(
         query = query.filter(ShareArtifact.lifecycle_state == LIFECYCLE_PUBLISHED)
     return (
         query.order_by(ShareArtifact.created_at.desc(), ShareArtifact.id.desc())
+        .offset(max(0, offset))
         .limit(limit)
+        .all()
+    )
+
+
+def list_team_state_artifacts_for_snapshot(
+    source_snapshot_id: int,
+    *,
+    lifecycle_state: Optional[str] = LIFECYCLE_PUBLISHED,
+    session=None,
+) -> list:
+    """All Team State artifacts tied to one source snapshot authority.
+
+    Used by the operator coverage read to account each canonical team against the
+    selected snapshot (never a different snapshot/date). Defaults to published
+    artifacts; pass ``lifecycle_state=None`` for every lifecycle state.
+    """
+    session = session or db.session
+    query = _team_state_query(session).filter(
+        ShareArtifact.source_snapshot_id == source_snapshot_id
+    )
+    if lifecycle_state is not None:
+        query = query.filter(ShareArtifact.lifecycle_state == lifecycle_state)
+    return (
+        query.order_by(ShareArtifact.published_at.desc(), ShareArtifact.id.desc())
         .all()
     )
 
@@ -190,21 +217,56 @@ def list_generation_audits(
     *,
     team_id: Optional[int] = None,
     outcome: Optional[str] = None,
+    source_snapshot_id: Optional[int] = None,
+    product_date: Optional[date] = None,
     limit: int = 50,
+    offset: int = 0,
     session=None,
 ) -> list:
-    """List recent generation audit attempts, newest first."""
+    """List recent generation audit attempts, newest first.
+
+    Column-based operator filters (``team_id`` / ``outcome`` /
+    ``source_snapshot_id`` / ``product_date`` on the resolved date) and bounded
+    ``offset`` pagination. Reason-code filtering is intentionally not offered here
+    (reasons are stored as JSON, not an indexed column)."""
     session = session or db.session
     query = session.query(ShareArtifactGenerationAudit)
     if team_id is not None:
         query = query.filter(ShareArtifactGenerationAudit.team_id == team_id)
     if outcome is not None:
         query = query.filter(ShareArtifactGenerationAudit.outcome == outcome)
+    if source_snapshot_id is not None:
+        query = query.filter(
+            ShareArtifactGenerationAudit.source_snapshot_id == source_snapshot_id
+        )
+    if product_date is not None:
+        query = query.filter(
+            ShareArtifactGenerationAudit.resolved_product_date == product_date
+        )
     return (
         query.order_by(
             ShareArtifactGenerationAudit.created_at.desc(),
             ShareArtifactGenerationAudit.id.desc(),
         )
+        .offset(max(0, offset))
         .limit(limit)
+        .all()
+    )
+
+
+def audits_for_snapshot(source_snapshot_id: int, *, session=None) -> list:
+    """Every generation audit tied to one source snapshot authority, newest first.
+
+    Unbounded by snapshot (a snapshot has at most a few attempts per team) so the
+    coverage read can select each team's most-recent terminal attempt."""
+    session = session or db.session
+    return (
+        session.query(ShareArtifactGenerationAudit)
+        .filter(ShareArtifactGenerationAudit.source_snapshot_id == source_snapshot_id)
+        .order_by(
+            ShareArtifactGenerationAudit.team_id.asc(),
+            ShareArtifactGenerationAudit.created_at.desc(),
+            ShareArtifactGenerationAudit.id.desc(),
+        )
         .all()
     )
