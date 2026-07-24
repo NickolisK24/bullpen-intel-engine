@@ -73,7 +73,10 @@ def main(argv=None):
     from app import app
     from services import sync as sync_service
     from services import sync_metadata
-    from services.postgame_recovery import reset_failed_postgame_markers
+    from services.postgame_recovery import (
+        reset_failed_postgame_markers,
+        reset_fully_processed_markers_without_appearance_rows,
+    )
     from services.sync_publication_proof import build_candidate_publication_proof
 
     recovery = {
@@ -89,6 +92,12 @@ def main(argv=None):
                 schedule_date=schedule_date,
                 game_pks=args.game_pk,
             )
+
+    sweep_dates = [schedule_date] if schedule_date else sync_service.postgame_schedule_dates()
+    with app.app_context():
+        ledger_marker_recovery = reset_fully_processed_markers_without_appearance_rows(
+            schedule_dates=sweep_dates,
+        )
 
     status = sync_service.run_postgame_refresh(
         app,
@@ -113,6 +122,7 @@ def main(argv=None):
         'public_only': args.public_only,
         'changed_workload': changed_workload,
         'failed_marker_recovery': recovery,
+        'ledger_marker_recovery': ledger_marker_recovery,
         'publication_proof': publication_proof,
         'sync': status,
     }
