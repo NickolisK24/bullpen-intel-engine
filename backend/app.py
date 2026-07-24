@@ -91,6 +91,14 @@ def create_app(config_name=None):
     cfg = config[config_name]
     app.config.from_object(cfg)
     app.config['APP_ENV'] = config_name
+    # Share Cards SC-03B-02: immutable Team State generation runs automatically as
+    # the next step after a trusted snapshot is published. Enabled by default (an
+    # operational off-switch, not a scheduler); it is intentionally absent from
+    # bare-Flask unit apps so existing publication tests are unaffected.
+    app.config['SHARE_ARTIFACT_AUTOGENERATION_ENABLED'] = (
+        os.environ.get('SHARE_ARTIFACT_AUTOGENERATION', 'true').lower()
+        in ('1', 'true', 'yes')
+    )
     # Per-environment validation (production fails fast on unsafe config).
     cfg.init_app(app)
 
