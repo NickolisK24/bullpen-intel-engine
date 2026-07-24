@@ -13,6 +13,7 @@ from models.postgame_processed_game import PostgameProcessedGame
 from models.scheduled_game import ScheduledGame
 from models.sync_run import SyncRun
 from team_operations import team_operations_governance_errors
+from tests.roster_readiness_fixture import seed_roster_readiness_snapshots
 from utils.db import db
 
 
@@ -80,6 +81,7 @@ def add_scored_pitcher(
     raw_score=20.0,
     log_pitches=8,
     calculated_at=None,
+    roster_status='ACTIVE',
 ):
     pitcher = Pitcher(
         mlb_id=990000 + seed,
@@ -89,6 +91,10 @@ def add_scored_pitcher(
         team_abbreviation=team_abbreviation,
         throws=throwing_hand,
         active=True,
+        # SC-03B-07: team readiness trust now scopes to the canonical active bullpen,
+        # so an authoritative active-roster status is required for a non-degraded read.
+        roster_status=roster_status,
+        roster_status_source='mlb_stats_api:roster_sync:active',
     )
     db.session.add(pitcher)
     db.session.flush()
@@ -179,6 +185,10 @@ def seed_route_data():
     add_scored_pitcher('Alpha Arm', seed=1, throwing_hand='L')
     add_scored_pitcher('Bravo Arm', seed=2, throwing_hand='R')
     add_successful_sync_run()
+    # SC-03B-07: the canonical active-bullpen authority requires READY roster-status
+    # coverage; seed official-roster snapshots so the happy path is a governed,
+    # non-degraded read (production maintains these daily).
+    seed_roster_readiness_snapshots()
 
 
 def collect_keys(value):
