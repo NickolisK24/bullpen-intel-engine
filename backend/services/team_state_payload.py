@@ -298,6 +298,11 @@ def _build_team_state_document_v1(
             'governance_state': trust_metadata.get('governance_state'),
             'freshness_state': freshness.get('freshness_state'),
             'trust_state': eligibility.trust_state,
+            # SC-03B-07: preserve governed trust limitations (e.g. the bounded
+            # partial-active-bullpen-coverage note that keeps a medium read honest)
+            # on the immutable document, so a published medium artifact never presents
+            # a partial read as complete. Deterministic (no build-time content).
+            'limitations': list(trust_metadata.get('limitations') or []),
             'ranking_applied': False,
             'selection_made': False,
         },

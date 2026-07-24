@@ -127,6 +127,40 @@ daily roster sync maintains this coverage.
   diff-freeze/QA-reconciliation guards green (`backend/api/team_operations.py`
   allowlisted).
 
+## Real-resolver immutable-artifact proof (completion gate)
+
+`tests/test_active_bullpen_artifact_publication.py` drives the **full** generation
+flow with NO injected resolver and NO mocked eligibility/payload/generation — only
+the trusted-snapshot authority is monkeypatched (external daily-publication infra):
+
+- **High** (8/8 usable, plus an IL reliever and a starter on the team that do not
+  collapse the read) → `generate_team_state_artifact` publishes an immutable
+  artifact (published lifecycle, correct team/snapshot/product_date/version,
+  integrity verified, `generated` audit); a rerun reuses the same `public_id` with
+  no duplicate; the compatibility projection consumes it (`confidence=high`).
+- **Medium** (6/8 usable) → publishes with `confidence=medium`, a supported status,
+  and the structured partial-coverage limitation **preserved on the immutable
+  document**; rerun reuses; the compatibility projection keeps `confidence=medium`
+  (never converts to high).
+- **Low** (5/8 usable) → refused, no artifact, durable audit preserves the exact
+  reasons (`incomplete_evidence` / `insufficient_trust` / `unsupported_team_state`,
+  `data_state:incomplete` / `confidence:low` / `status_code_unsupported:data_limited`).
+- **Mixed real batch** (`generate_team_state_artifacts_batch` over high/medium/low)
+  → generated / generated / refused, accounting invariant holds, `missing=0`, two
+  published artifacts; rerun → reused / reused / refused, no duplicates.
+- **Role Authority**: active-roster relievers included; a confirmed starter and an
+  IL reliever excluded (neither counts toward nor collapses coverage); a team with
+  no authoritative active-roster status fails closed → refused.
+
+### Payload-builder completeness fix
+
+The real-resolver medium test revealed a concrete integration defect: the SC-02
+canonical document dropped the readiness `trust_metadata.limitations`, so a
+published medium artifact lost its partial-coverage limitation. Fixed narrowly in
+`services/team_state_payload.py` — the document's `trust.limitations` now preserves
+the governed limitations deterministically (no threshold, vocabulary, immutability,
+or dedup-semantics change; SC-02 gates unchanged).
+
 ## Production verification (required before relying on it)
 
 After deploy: confirm the deployed commit; let the next trusted snapshot publish (or
