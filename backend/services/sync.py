@@ -28,6 +28,7 @@ from models.sync_run import SyncRun
 from models.sync_failure import SyncFailure
 from services import dead_letter
 from services import pitcher_season_ledger_coverage
+from services import publication_criticality
 from services import schedule_authority, schedule_ingestion
 from services import sync_jobs
 from services import sync_metadata
@@ -2185,6 +2186,35 @@ def sync_recent_logs(
         time_budget_seconds = _daily_sync_ingestion_budget_seconds()
 
     pitchers        = Pitcher.query.filter_by(active=True).all()
+    # Publication-critical-first ordering (founder publication-critical contract):
+    # process current active-MLB-roster pitchers — a safe superset of the active
+    # bullpen, and the records required by the public trusted snapshot — before
+    # best-effort/historical corrections, so a runtime-budget shortfall can only
+    # DEFER best-effort work and can never starve publication-critical records.
+    # Criticality is read from each pitcher's already-synced canonical roster-status
+    # code (in-memory, zero extra queries — it must not add pre-ingestion cost that
+    # would worsen the very starvation this fixes). Unknown criticality is ordered
+    # with critical and fails closed.
+    _criticality_by_id = {
+        p.id: publication_criticality.criticality_for_roster_status(p.roster_status)
+        for p in pitchers
+    }
+    pitchers = sorted(
+        pitchers,
+        key=lambda p: (
+            1 if _criticality_by_id.get(p.id) == publication_criticality.CRITICALITY_BEST_EFFORT
+            else 0,
+            p.id or 0,
+        ),
+    )
+    _critical_total = sum(
+        1 for c in _criticality_by_id.values()
+        if c != publication_criticality.CRITICALITY_BEST_EFFORT
+    )
+    _best_effort_total = len(pitchers) - _critical_total
+    critical_budget_exhausted = 0
+    unknown_budget_exhausted = 0
+    best_effort_budget_exhausted = 0
     new_logs        = 0
     corrected_logs  = 0
     unchanged_logs  = 0
@@ -2247,14 +2277,36 @@ def sync_recent_logs(
             remaining = pitchers[index:]
             budget_exhausted_pitchers = len(remaining)
             records_failed += budget_exhausted_pitchers
+            # Classify the deferred remainder. Because publication-critical
+            # pitchers were ordered first, the tail is normally best-effort — but
+            # we classify explicitly and fail closed on unknown, so the
+            # publication gate can distinguish a best-effort-only shortfall from a
+            # publication-critical one.
+            critical_remaining_mlb_ids = []
+            for _p in remaining:
+                _crit = _criticality_by_id.get(_p.id)
+                if _crit == publication_criticality.CRITICALITY_PUBLICATION_CRITICAL:
+                    critical_budget_exhausted += 1
+                    if len(critical_remaining_mlb_ids) < 200:
+                        critical_remaining_mlb_ids.append(_p.mlb_id)
+                elif _crit == publication_criticality.CRITICALITY_UNKNOWN:
+                    unknown_budget_exhausted += 1
+                    if len(critical_remaining_mlb_ids) < 200:
+                        critical_remaining_mlb_ids.append(_p.mlb_id)
+                else:
+                    best_effort_budget_exhausted += 1
             logger.error(
                 'Daily gameLog ingestion exceeded its %.0fs budget after %s of '
-                '%s pitcher(s); dead-lettering the remaining %s and finishing '
+                '%s pitcher(s); dead-lettering the remaining %s '
+                '(publication_critical=%s unknown=%s best_effort=%s) and finishing '
                 'partial.',
                 time_budget_seconds,
                 index,
                 len(pitchers),
                 budget_exhausted_pitchers,
+                critical_budget_exhausted,
+                unknown_budget_exhausted,
+                best_effort_budget_exhausted,
             )
             dead_letter.record_failure(
                 DAILY_GAME_LOG_BUDGET_FAILURE_ENTITY_TYPE,
@@ -2266,7 +2318,11 @@ def sync_recent_logs(
                     'pitchers_total': len(pitchers),
                     'pitchers_processed': index,
                     'pitchers_remaining': budget_exhausted_pitchers,
+                    'publication_critical_remaining': critical_budget_exhausted,
+                    'unknown_criticality_remaining': unknown_budget_exhausted,
+                    'best_effort_remaining': best_effort_budget_exhausted,
                     'remaining_mlb_ids': [p.mlb_id for p in remaining[:200]],
+                    'publication_critical_remaining_mlb_ids': critical_remaining_mlb_ids,
                 },
                 sync_run_id=sync_run_id,
                 job_name=job_name,
@@ -2490,6 +2546,22 @@ def sync_recent_logs(
         'ledger_coverage_incomplete': ledger_coverage_incomplete,
         'lane_health':       lane_health,
         'budget_exhausted_pitchers': budget_exhausted_pitchers,
+        # Publication-critical accounting (founder publication-critical contract).
+        # Non-budget lane failures (unresolved finality, unsafe corrections,
+        # malformed records, dead lane) are treated as publication-critical
+        # (fail closed): the aggregate is exposed so the completeness result is
+        # assembled by the one canonical helper in _complete_sync_phase.
+        'publication_critical_total': _critical_total,
+        'best_effort_total': _best_effort_total,
+        'critical_budget_exhausted': critical_budget_exhausted,
+        'unknown_budget_exhausted': unknown_budget_exhausted,
+        'best_effort_budget_exhausted': best_effort_budget_exhausted,
+        'gamelog_non_budget_failed': max(records_failed - budget_exhausted_pitchers, 0),
+        # The criticality classifier reads each pitcher's synced roster-status code
+        # in-memory, so it is always available; individual unresolved roster codes
+        # are counted as unknown-criticality (which fails closed) rather than as an
+        # unavailable authority.
+        'criticality_authority_available': True,
         'time_budget_seconds': time_budget_seconds,
         'elapsed_seconds':   round(elapsed_seconds, 1),
         'fetch_seconds':     round(fetch_seconds, 1),
@@ -3642,6 +3714,7 @@ def complete_sync_run_with_snapshot(
     sync_run_id,
     *,
     final_status,
+    publication_critical_complete=None,
     completed_at=None,
     records_processed=0,
     records_failed=0,
@@ -3685,6 +3758,7 @@ def complete_sync_run_with_snapshot(
             publish=True,
             commit=False,
             raise_errors=True,
+            publication_critical_complete=publication_critical_complete,
         )
         if run is not None:
             run.stage = sync_metadata.STAGE_PUBLISHED
@@ -4553,10 +4627,45 @@ def run_daily_sync(
                     status['message'] = (
                         f'{records_failed} record(s) dead-lettered; see sync_failures.'
                     )
+                # Publication-critical completeness (founder publication-critical
+                # contract). Non-game-log lane failures are treated as
+                # publication-critical (fail closed). The overall SyncRun status may
+                # stay PARTIAL while the public candidate publishes — but ONLY when
+                # every publication-critical requirement is complete; a critical or
+                # unknown-criticality failure still withholds. The finality,
+                # appearance-ledger, freshness, and provenance gates are unchanged.
+                non_gamelog_records_failed = max(
+                    records_failed - pull.get('records_failed', 0), 0
+                )
+                publication_critical = (
+                    publication_criticality.build_publication_critical_result(
+                        critical_total=pull.get('publication_critical_total', 0),
+                        critical_completed=max(
+                            pull.get('publication_critical_total', 0)
+                            - pull.get('critical_budget_exhausted', 0)
+                            - pull.get('unknown_budget_exhausted', 0),
+                            0,
+                        ),
+                        critical_failed=pull.get('critical_budget_exhausted', 0),
+                        critical_unresolved=pull.get('gamelog_non_budget_failed', 0),
+                        unknown_criticality=pull.get('unknown_budget_exhausted', 0),
+                        best_effort_total=pull.get('best_effort_total', 0),
+                        best_effort_completed=max(
+                            pull.get('best_effort_total', 0)
+                            - pull.get('best_effort_budget_exhausted', 0),
+                            0,
+                        ),
+                        best_effort_deferred=pull.get('best_effort_budget_exhausted', 0),
+                        non_gamelog_critical_failed=non_gamelog_records_failed,
+                        authority_available=pull.get('criticality_authority_available', True),
+                    )
+                )
+                status['publication_critical'] = publication_critical
                 api_metrics = mlb_client.metrics.snapshot()
                 changed_log_count = pull['new_logs_added'] + logs_corrected
                 completed_run, snapshot = complete_sync_run_with_snapshot(
                     sync_run_id,
+                    publication_critical_complete=publication_critical['complete'],
                     final_status=final_status,
                     records_processed=changed_log_count,
                     records_failed=records_failed,

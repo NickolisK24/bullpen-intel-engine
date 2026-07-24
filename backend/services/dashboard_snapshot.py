@@ -134,7 +134,9 @@ def _refresh_stale_non_final_slate_games(data_through, *, commit=True):
     return result
 
 
-def _compute_payload_slate_coverage(payload, *, refresh_stale_finality=False, commit=True):
+def _compute_payload_slate_coverage(
+    payload, *, refresh_stale_finality=False, commit=True, publication_critical_complete=None
+):
     data_through = _data_through_from_payload(payload)
     if data_through is None:
         return slate_coverage.unknown_slate_coverage(None)
@@ -153,6 +155,7 @@ def _compute_payload_slate_coverage(payload, *, refresh_stale_finality=False, co
         return slate_coverage.compute_slate_coverage(
             data_through,
             sync_status=freshness.get('sync_status'),
+            publication_critical_complete=publication_critical_complete,
         )
     except Exception as exc:  # noqa: BLE001 - snapshot coverage must fail closed
         logger.warning(
@@ -163,7 +166,9 @@ def _compute_payload_slate_coverage(payload, *, refresh_stale_finality=False, co
         return slate_coverage.unknown_slate_coverage(data_through)
 
 
-def _payload_with_slate_coverage(payload, *, refresh_stale_finality=False, commit=True):
+def _payload_with_slate_coverage(
+    payload, *, refresh_stale_finality=False, commit=True, publication_critical_complete=None
+):
     if not isinstance(payload, Mapping):
         return payload
 
@@ -182,6 +187,7 @@ def _payload_with_slate_coverage(payload, *, refresh_stale_finality=False, commi
             result,
             refresh_stale_finality=refresh_stale_finality,
             commit=commit,
+            publication_critical_complete=publication_critical_complete,
         )
 
     result['freshness'] = slate_coverage.append_slate_coverage_to_freshness(
@@ -261,6 +267,7 @@ def store_dashboard_snapshot(
     snapshot_type=SNAPSHOT_TYPE_BULLPEN_DASHBOARD,
     publish=True,
     commit=True,
+    publication_critical_complete=None,
 ):
     serialize_started = perf_counter()
     logger.info(
@@ -273,6 +280,7 @@ def store_dashboard_snapshot(
         payload,
         refresh_stale_finality=publish,
         commit=commit,
+        publication_critical_complete=publication_critical_complete,
     ))
     logger.info(
         'Dashboard snapshot JSON serialization completed in %.2f ms source=%s.',
@@ -525,6 +533,7 @@ def build_dashboard_snapshot(
     publish=True,
     commit=True,
     raise_errors=False,
+    publication_critical_complete=None,
 ):
     try:
         payload_started = perf_counter()
@@ -547,6 +556,7 @@ def build_dashboard_snapshot(
             source=source,
             publish=publish,
             commit=commit,
+            publication_critical_complete=publication_critical_complete,
         )
     except Exception as exc:
         db.session.rollback()
@@ -567,6 +577,7 @@ def build_bullpen_dashboard_snapshot(
     publish=True,
     commit=True,
     raise_errors=False,
+    publication_critical_complete=None,
 ):
     from api.bullpen import build_bullpen_dashboard_payload
 
@@ -594,6 +605,7 @@ def build_bullpen_dashboard_snapshot(
         publish=publish,
         commit=commit,
         raise_errors=raise_errors,
+        publication_critical_complete=publication_critical_complete,
     )
 
 
