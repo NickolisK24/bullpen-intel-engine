@@ -61,6 +61,8 @@ def main(argv=None):
         publication_proof = build_candidate_publication_proof(
             status.get('dashboard_snapshot_id'),
             candidate_required=True,
+            publication_critical=status.get('publication_critical'),
+            sync_status=status.get('status'),
         )
 
     summary = {
@@ -68,6 +70,7 @@ def main(argv=None):
         'source': source,
         'days_back': args.days_back,
         'public_only': args.public_only,
+        'publication_critical': status.get('publication_critical'),
         'publication_proof': publication_proof,
         'sync': status,
     }

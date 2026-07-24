@@ -245,6 +245,15 @@ def test_frozen_legacy_what_changed_files_untouched():
         # and prediction/ranking/evidence boundaries are unchanged.
         'backend/services/what_changed_since_yesterday.py',
     }
+    allowed_daily_sync_publication_budget_files = {
+        # fix/daily-sync-publication-budget: the slate-coverage gate now consumes a
+        # publication-critical completeness result instead of the coarse
+        # sync_status!=partial rule. A partial run caused solely by best-effort
+        # maintenance may publish when every publication-critical requirement is
+        # complete; a publication-critical or unknown-criticality failure, and every
+        # existing game/marker/finality check, still withhold. No trust gate removed.
+        'backend/services/slate_coverage.py',
+    }
     allowed_phase0i_roster_readiness_files = {
         'frontend/src/adapters/operatingStateReadModel.js',
         'frontend/src/components/bullpen/board/BullpenBoardView.jsx',
@@ -341,7 +350,9 @@ def test_frozen_legacy_what_changed_files_untouched():
         'backend/migrations/versions/a1d8e4c6b2f0_extend_editorial_post_history.py',
     }
     assert not sorted(
-        (frozen_paths & changed) - allowed_public_what_changed_contract_files
+        (frozen_paths & changed)
+        - allowed_public_what_changed_contract_files
+        - allowed_daily_sync_publication_budget_files
     )
     allowed_public_trust_consistency_files = {
         # fix/public-trust-consistency: the Data & Trust availability usage check

@@ -458,11 +458,21 @@ def compute_slate_coverage(
     slate_date,
     *,
     sync_status=None,
+    publication_critical_complete=None,
     schedule_rows: Iterable[ScheduledGame] | None = None,
     postgame_markers: Iterable[PostgameProcessedGame] | None = None,
     schedule_material_available: bool | None = None,
     include_diagnostics: bool = False,
 ):
+    # Founder publication-critical contract: a coarse ``sync_status='partial'`` no
+    # longer forces slate incompleteness by itself. A partial run withholds ONLY
+    # when publication-critical work is NOT proven complete. When the daily sync
+    # proves every publication-critical requirement is complete
+    # (``publication_critical_complete is True``), a partial caused solely by
+    # best-effort/historical maintenance does not block — but the actual
+    # game/marker/finality checks below are UNCHANGED and still block a genuine
+    # current-slate gap. Default None ⇒ preserves the prior conservative behavior.
+    _partial_blocks = (sync_status == 'partial') and not bool(publication_critical_complete)
     ref = _as_date(slate_date)
     if ref is None:
         payload = unknown_slate_coverage(None)
@@ -481,7 +491,7 @@ def compute_slate_coverage(
 
     if not games:
         if schedule_material_available or _is_offseason_date(ref):
-            partial_sync = sync_status == 'partial'
+            partial_sync = _partial_blocks
             reason_codes = [REASON_NO_SCHEDULED_GAMES]
             if partial_sync:
                 reason_codes.extend([REASON_PARTIAL_SYNC, REASON_VALIDATIONS_FAILED])
@@ -605,7 +615,7 @@ def compute_slate_coverage(
         reason_codes.append(REASON_POSTGAME_MARKERS_FAILED)
     if non_final_included or unresolved_linkage:
         reason_codes.append(REASON_COMPLETENESS_UNKNOWN)
-    if sync_status == 'partial':
+    if _partial_blocks:
         reason_codes.append(REASON_PARTIAL_SYNC)
 
     validations_passed = not reason_codes
@@ -615,7 +625,7 @@ def compute_slate_coverage(
         reason_codes.append(REASON_VALIDATIONS_FAILED)
 
     reason_codes = _unique(reason_codes)
-    complete_enough = validations_passed and sync_status != 'partial'
+    complete_enough = validations_passed and not _partial_blocks
 
     payload = {
         'slate_date': ref.isoformat(),

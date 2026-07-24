@@ -24,12 +24,20 @@ def build_candidate_publication_proof(
     snapshot_loader: Callable | None = None,
     served_snapshot_loader: Callable | None = None,
     availability_reason: Callable | None = None,
+    publication_critical: dict | None = None,
+    sync_status: str | None = None,
 ) -> dict:
     """Return a JSON-safe proof that the current run's candidate is serving.
 
     ``candidate_required`` is true for the daily sync and for postgame refreshes
     that changed workload. A no-change postgame pass is allowed to produce no new
     candidate because continuing to serve the prior trusted snapshot is correct.
+
+    When supplied, ``publication_critical`` (the daily sync's publication-critical
+    completeness result) and ``sync_status`` are attached so the proof EXPLAINS why
+    publication was allowed or withheld — in particular, that an overall ``partial``
+    SyncRun may still publish a trusted candidate when every publication-critical
+    requirement is complete and only best-effort maintenance was deferred.
     """
     if snapshot_loader is None or served_snapshot_loader is None or availability_reason is None:
         from models.dashboard_snapshot import DashboardSnapshot
@@ -103,6 +111,10 @@ def build_candidate_publication_proof(
         ),
         'reason_codes': _dedupe(reason_codes),
     }
+    if publication_critical is not None:
+        proof['publication_critical'] = publication_critical
+    if sync_status is not None:
+        proof['sync_status'] = sync_status
     return proof
 
 
