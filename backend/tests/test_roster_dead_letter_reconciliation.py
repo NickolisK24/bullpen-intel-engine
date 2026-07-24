@@ -1,11 +1,12 @@
 """
 Evidence-backed reconciliation of roster dead letters.
 
-Public roster readiness fails closed on ANY unresolved roster dead letter
-(reason code ``dead_letters_unresolved``). These tests prove that a dead
+Public roster readiness fails closed on unresolved roster dead letters for the
+affected team and for league-wide surfaces. These tests prove that a dead
 letter is resolved only when newer authoritative official roster evidence
 conclusively supersedes the same entity's conflict — and that genuine or
-ambiguous conflicts keep failing closed with no null/zero substitution.
+ambiguous conflicts keep the affected scope fail-closed with no null/zero
+substitution.
 """
 
 from datetime import date, datetime
@@ -210,7 +211,7 @@ def test_unrelated_evidence_does_not_resolve_conflict(app):
         db.session.commit()
 
         row = db.session.get(SyncFailure, failure_id)
-        readiness = _readiness()
+        readiness = _readiness(team_id=114)
         withheld_authority = apply_public_roster_readiness(
             {'counts': {'bullpen_arms': 5, 'available_count': 3}},
             readiness,
@@ -354,7 +355,7 @@ def test_recurring_identity_failure_blocks_resolution(app):
     assert readiness['claims_available'] is False
 
 
-def test_remaining_genuine_conflict_keeps_league_gate_closed_for_clean_teams(app):
+def test_remaining_genuine_conflict_is_team_scoped_but_keeps_league_closed(app):
     with app.app_context():
         run = _sync_run()
         clean_pitcher = _pitcher(700001, team_id=113)
@@ -388,14 +389,27 @@ def test_remaining_genuine_conflict_keeps_league_gate_closed_for_clean_teams(app
         genuine_row = db.session.get(SyncFailure, genuine_id)
         team_113 = _readiness(team_id=113)
         team_114 = _readiness(team_id=114)
+        league = build_public_roster_readiness(
+            reference_date=SNAPSHOT_DAY,
+            scope='league',
+        )
 
     # Only the safely reconciled conflict resolves; the genuine one is kept.
     assert result['dead_letters_resolved']['conflict'] == 1
     assert resolved_row.resolved is True
     assert genuine_row.resolved is False
-    # The readiness gate is league-wide: a genuine unresolved conflict keeps
-    # claims withheld even for teams whose own conflicts were reconciled.
+
+    # Clean team pages stay usable even while the family remains degraded.
     assert team_113['coverage']['team_covered'] is True
-    assert team_113['claims_available'] is False
+    assert team_113['claims_available'] is True
+    assert team_113['readiness_state'] == 'ready'
+    assert team_113['league_readiness_state'] == 'degraded'
+    assert team_113['reason_codes'] == []
+    assert team_113['scope_evaluation']['isolated_from_league_degradation'] is True
+
+    # The affected team and every league-wide surface still fail closed.
     assert team_114['claims_available'] is False
-    assert 'dead_letters_unresolved' in team_113['reason_codes']
+    assert 'dead_letters_unresolved' in team_114['reason_codes']
+    assert league['claims_available'] is False
+    assert league['readiness_state'] == 'degraded'
+    assert 'dead_letters_unresolved' in league['reason_codes']
