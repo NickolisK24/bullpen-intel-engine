@@ -20,6 +20,7 @@ import TrafficIntelligenceAdmin from './components/admin/TrafficIntelligenceAdmi
 import { TRAFFIC_REPORTING_PATH } from './utils/trafficReporting'
 import ShareArtifactOperations from './components/admin/ShareArtifactOperations'
 import { SHARE_ARTIFACT_OPERATIONS_PATH } from './utils/shareArtifactOperations'
+import PublicShareArtifactPage from './components/share/PublicShareArtifactPage'
 
 export const APP_ROUTES = [
   { path: '/', Component: Home },
@@ -35,6 +36,7 @@ export const APP_ROUTES = [
   { path: '/auth/verify', Component: VerifySignIn },
   { path: TRAFFIC_REPORTING_PATH, Component: TrafficIntelligenceAdmin },
   { path: SHARE_ARTIFACT_OPERATIONS_PATH, Component: ShareArtifactOperations },
+  { path: '/share/:publicId', Component: PublicShareArtifactPage },
   { path: PRIVATE_POSTS_PATH, Component: PrivatePosts },
   { path: '*', redirectTo: '/' },
 ]

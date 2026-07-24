@@ -1438,11 +1438,24 @@ def test_existing_public_routes_behavior_freeze(monkeypatch):
         'frontend/src/components/admin/ShareArtifactOperations.jsx',
         'frontend/tests/shareArtifactOperations.test.mjs',
     }
+    allowed_public_share_artifact_page_files = {
+        # feat/public-share-artifact-page (Share Cards SC-04): the permanent public,
+        # read-only Share Artifact citation page at /share/:publicId, rendering an
+        # immutable historical artifact from a new public read API only. No live/
+        # current-state lookup, no internal/admin call, no generation, no deprecated
+        # generator, no new public claim/classification/vocabulary — it displays the
+        # already-frozen artifact.
+        'frontend/src/components/share/PublicShareArtifactPage.jsx',
+        'frontend/src/utils/publicShareArtifact.js',
+        'frontend/tests/publicShareArtifact.test.mjs',
+        'frontend/src/App.jsx',
+    }
     assert not [
         path for path in changed
         if path not in allowed_share_artifacts_domain_files
         if path not in allowed_share_artifact_cutover_files
         if path not in allowed_share_artifact_operations_files
+        if path not in allowed_public_share_artifact_page_files
         if path not in allowed_phase_a_audience_signup_files
         if path not in allowed_bullpen_game_context_files
         if path not in allowed_pitcher_ledger_coverage_files

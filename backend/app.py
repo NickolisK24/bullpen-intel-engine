@@ -174,6 +174,7 @@ def create_app(config_name=None):
     from api.share_artifacts_admin import share_artifacts_admin_bp
     from api.share_artifact_operations_browser import share_artifact_operations_browser_bp
     from api.share_cards import share_cards_bp
+    from api.share_artifacts_public import share_artifacts_public_bp
 
     app.register_blueprint(bullpen_bp, url_prefix='/api/bullpen')
     app.register_blueprint(prospects_bp, url_prefix='/api/prospects')
@@ -200,6 +201,7 @@ def create_app(config_name=None):
         url_prefix='/api/internal-browser/share-artifacts',
     )
     app.register_blueprint(share_cards_bp, url_prefix='/api/share-cards')
+    app.register_blueprint(share_artifacts_public_bp, url_prefix='/api/share-artifacts')
 
     @app.route('/api/health')
     def health():

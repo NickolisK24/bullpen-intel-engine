@@ -521,8 +521,20 @@ def test_phase0e_switches_and_legacy_public_files_not_modified():
         # or SC-02 eligibility change; the shared readiness source stays the only source.
         'backend/api/team_operations.py',
     }
+    allowed_public_share_artifact_page_files = {
+        # feat/public-share-artifact-page (Share Cards SC-04): the public, read-only
+        # Share Artifact API (GET /api/share-artifacts/<public_id>) and the permanent
+        # public citation page at /share/:publicId. Reads only published immutable
+        # artifacts via a new public boundary; no live/current-state lookup, no
+        # internal/admin reuse, no generation, no new public claim vocabulary.
+        'backend/api/share_artifacts_public.py',
+        'frontend/src/components/share/PublicShareArtifactPage.jsx',
+        'frontend/src/utils/publicShareArtifact.js',
+        'frontend/src/App.jsx',
+    }
     allowed_files = (
         allowed_public_freshness_display_files
+        | allowed_public_share_artifact_page_files
         | allowed_active_bullpen_readiness_files
         | allowed_share_artifacts_domain_files
         | allowed_share_artifact_cutover_files
