@@ -271,7 +271,12 @@ class TestV4TeamOperationsReadinessExplanationIntegration:
 
         payload = explanation_payload(readiness, scope='coverage_state')
 
-        assert readiness['readiness']['status_code'] == 'data_limited'
+        # Share Cards SC-03B-07: team trust (high here) is the canonical active-bullpen
+        # coverage authority, so the raw whole-active coverage_inventory 'partial' no
+        # longer forces data_limited — a sufficiently-trusted team with partial workload
+        # coverage is operationally_constrained (a supported state). The coverage_state
+        # explanation scope still surfaces the partial-coverage evidence + limitation.
+        assert readiness['readiness']['status_code'] == 'operationally_constrained'
         assert payload['scope'] == 'coverage_state'
         assert payload['state_explained'] == 'workload:partial;handedness:partial'
         assert 'COVERAGE_PARTIAL' in reason_codes(payload)

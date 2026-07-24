@@ -147,6 +147,8 @@ def get_team_operations_bullpen_readiness():
             records,
             sync_status=sync_status,
             generated_at=generated_at,
+            team_id=team_id,
+            reference_date=reference_date,
         ),
         freshness=_team_operations_freshness_metadata(
             records,
@@ -364,42 +366,164 @@ def _workload_category(record):
     return 'low'
 
 
-def _team_operations_trust_metadata(records, *, sync_status, generated_at):
+def _team_operations_trust_metadata(
+    records, *, sync_status, generated_at, team_id=None, reference_date=None
+):
+    """Team-level readiness trust from the canonical ACTIVE-BULLPEN coverage contract.
+
+    Share Cards SC-03B-07 (founder-approved): team confidence is derived from the
+    canonical current active bullpen only (active-roster relievers via the Roster
+    Authority + Role Authority), NOT the whole ``team_id`` pitcher set. An active
+    reliever who simply has not appeared in the active window — with the completed
+    appearance ledger current — is valid observed rest (usable), not stale source
+    data. Bounded partial coverage yields ``medium`` (with an explicit limitation);
+    only genuinely insufficient coverage / stale / conflicted source yields
+    ``low``; absence of active-bullpen authority fails closed to ``unknown``.
+    """
     records = tuple(records or ())
-    availability_payloads = [dict(record.get('availability') or {}) for record in records]
-    confidence_values = [payload.get('confidence') for payload in availability_payloads]
-    data_states = [payload.get('data_state') for payload in availability_payloads]
-    has_records = bool(records)
-    has_low_confidence = any(value in {'low', 'unknown'} for value in confidence_values)
-    has_non_fresh_data = any(value != 'fresh' for value in data_states)
+    if not records:
+        return _build_trust_metadata(
+            confidence='unknown',
+            data_state='missing',
+            confidence_reasons=['source_inputs_missing'],
+            sync_status=sync_status,
+            generated_at=generated_at,
+            has_records=False,
+        )
 
-    if not has_records:
-        confidence = 'unknown'
-        data_state = 'missing'
-        reasons = ['source_inputs_missing']
-    elif has_low_confidence or has_non_fresh_data:
-        confidence = 'low'
-        data_state = 'incomplete' if has_non_fresh_data else 'fresh'
-        reasons = ['limited_availability_evidence']
-    else:
-        confidence = 'high'
-        data_state = 'fresh'
-        reasons = ['current_availability_evidence']
+    assessment = _assess_active_bullpen_coverage(
+        records, sync_status=sync_status, team_id=team_id, reference_date=reference_date,
+    )
+    coverage_limitations = []
+    coverage_limitation = assessment.coverage_limitation()
+    if coverage_limitation is not None:
+        coverage_limitations.append(_partial_coverage_limitation_copy(coverage_limitation))
+    return _build_trust_metadata(
+        confidence=assessment.confidence,
+        data_state=assessment.data_state,
+        confidence_reasons=[assessment.reason_code],
+        sync_status=sync_status,
+        generated_at=generated_at,
+        has_records=True,
+        coverage_limitations=coverage_limitations,
+    )
 
+
+def _build_trust_metadata(
+    *, confidence, data_state, confidence_reasons, sync_status, generated_at,
+    has_records, coverage_limitations=(),
+):
     return {
         'confidence': confidence,
-        'confidence_reasons': reasons,
+        'confidence_reasons': list(confidence_reasons),
         'data_state': data_state,
         'source_evidence_state': 'represented' if has_records else 'missing',
         'governance_state': 'internal_uncertified',
         'generated_at': generated_at,
-        'limitations': _trust_limitations(sync_status, has_records=has_records),
+        'limitations': list(coverage_limitations)
+        + _trust_limitations(sync_status, has_records=has_records),
         'explanations': [],
         'refusal_reasons': [],
         'trust_validation_errors': [],
         'ranking_applied': False,
         'selection_made': False,
     }
+
+
+# Per-record data-quality vocabulary (from services.availability.classify_availability):
+# 'fresh' = a real recent appearance with complete logs; 'stale' = no appearance in the
+# active window; 'missing'/'incomplete' = absent/partial source data.
+_USABLE_FRESH_DATA_STATE = 'fresh'
+_RESTED_STALE_DATA_STATE = 'stale'
+
+
+def _assess_active_bullpen_coverage(records, *, sync_status, team_id, reference_date):
+    """Resolve active-bullpen membership + per-record usability, then classify.
+
+    Membership and rest come from canonical authorities (never re-derived here):
+    ``api.bullpen.build_team_roster_authority`` (active-roster relievers, roster-
+    readiness gated) and ``services.appearance_ledger.build_appearance_ledger``
+    (a league-complete window makes "no recent appearance" trustworthy rest).
+    """
+    from services.team_readiness_coverage import assess_team_coverage
+
+    ref = reference_date or _availability_reference_date(sync_status)
+    active_bullpen_ids, authority_complete = _active_bullpen_membership(team_id, ref)
+    ledger_complete = _appearance_ledger_complete(ref)
+
+    usable_ids = set()
+    for record in records:
+        pitcher = record.get('pitcher')
+        pitcher_id = getattr(pitcher, 'id', None)
+        if pitcher_id is None or pitcher_id not in active_bullpen_ids:
+            continue
+        data_state = (record.get('availability') or {}).get('data_state')
+        if data_state == _USABLE_FRESH_DATA_STATE:
+            usable_ids.add(pitcher_id)
+        elif data_state == _RESTED_STALE_DATA_STATE and ledger_complete:
+            # Ledger-confirmed rest: no recent appearance is a valid observed zero,
+            # not stale source data (DECISION 2).
+            usable_ids.add(pitcher_id)
+
+    active_count = len(active_bullpen_ids)
+    usable_count = len(usable_ids)
+    return assess_team_coverage(
+        authority_complete=authority_complete,
+        source_current=bool((sync_status.get('freshness') or {}).get('is_current') is True),
+        active_bullpen_count=active_count,
+        usable_record_count=usable_count,
+        unresolved_record_count=max(active_count - usable_count, 0),
+    )
+
+
+def _active_bullpen_membership(team_id, reference_date):
+    """Canonical active-bullpen (active-roster reliever) pitcher-id set for a team.
+
+    Reuses the Canonical Roster Authority (active roster + Role Authority) gated by
+    the public roster-readiness source. Returns ``(ids, authority_complete)``;
+    ``authority_complete`` is False (→ ``unknown``, fail closed) when there is no
+    team id, the roster source is not READY (evidence nulled), or no active-bullpen
+    arm can be identified. No second roster filter is introduced.
+    """
+    if team_id is None:
+        return set(), False
+    try:
+        from api.bullpen import build_team_roster_authority
+        authority = build_team_roster_authority(team_id, reference_date=reference_date)
+        arms = (authority.get('evidence') or {}).get('bullpen_arms') or []
+        ids = {arm.get('pitcher_id') for arm in arms if arm.get('pitcher_id') is not None}
+        return ids, bool(ids)
+    except Exception:
+        # Fail closed: an unreadable roster authority is treated as "no authority".
+        return set(), False
+
+
+def _appearance_ledger_complete(reference_date):
+    """Whether the completed-appearance ledger window is provably complete.
+
+    Only then can a pitcher's absence from the window be trusted as observed rest.
+    Fails closed (False) on any error, so unproven rest counts as unresolved.
+    """
+    try:
+        from services.appearance_ledger import build_appearance_ledger
+        return bool(build_appearance_ledger(end_date=reference_date).get('complete'))
+    except Exception:
+        return False
+
+
+def _partial_coverage_limitation_copy(limitation):
+    """Public, guard-safe copy for bounded partial active-bullpen coverage.
+
+    Honest and non-speculative: it states record counts only. It never implies a
+    pitcher is healthy/available, never names a pitcher, and never asserts intent.
+    """
+    active = limitation['active_bullpen_count']
+    usable = limitation['usable_record_count']
+    unresolved = limitation['unresolved_record_count']
+    return (
+        f'Current readiness reflects {usable} of {active} active bullpen pitchers; '
+        f'{unresolved} have incomplete current workload records.'
+    )
 
 
 def _trust_limitations(sync_status, *, has_records):

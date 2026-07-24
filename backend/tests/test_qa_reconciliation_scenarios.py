@@ -511,8 +511,19 @@ def test_phase0e_switches_and_legacy_public_files_not_modified():
         'frontend/src/components/admin/ShareArtifactOperations.jsx',
         'frontend/tests/shareArtifactOperations.test.mjs',
     }
+    allowed_active_bullpen_readiness_files = {
+        # feature/active-bullpen-readiness-trust (Share Cards SC-03B-07): the
+        # founder-approved upstream readiness-contract correction. Team-level trust
+        # confidence is now derived from the canonical current active bullpen
+        # (active-roster relievers via the Roster + Role authorities) with a
+        # bounded-partial-coverage medium tier and ledger-confirmed rest, instead of
+        # the whole-roster any()-collapse. No public route, classification vocabulary,
+        # or SC-02 eligibility change; the shared readiness source stays the only source.
+        'backend/api/team_operations.py',
+    }
     allowed_files = (
         allowed_public_freshness_display_files
+        | allowed_active_bullpen_readiness_files
         | allowed_share_artifacts_domain_files
         | allowed_share_artifact_cutover_files
         | allowed_share_artifact_operations_files

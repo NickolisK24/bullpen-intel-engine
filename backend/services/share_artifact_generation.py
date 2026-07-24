@@ -167,6 +167,7 @@ def resolve_team_readiness_payload(
         pitcher_records=tuple(_readiness_record(record) for record in records),
         trust_metadata=_team_operations_trust_metadata(
             records, sync_status=sync_status, generated_at=generated_at,
+            team_id=team_id, reference_date=reference_date,
         ),
         freshness=_team_operations_freshness_metadata(
             records, sync_status=sync_status, generated_at=generated_at,

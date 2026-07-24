@@ -457,11 +457,19 @@ def _readiness_status_code(
         return 'data_limited'
     if trust.confidence in {'low', 'unknown'} or trust.data_state != 'fresh':
         return 'data_limited'
-    if coverage_inventory['coverage_state'] in {'missing', 'unknown'}:
+    # Share Cards SC-03B-07: team trust is now the canonical active-bullpen coverage
+    # authority (high/medium = sufficient current coverage). The raw whole-active
+    # coverage_inventory/handedness gates below use a different (coarser Pitcher.active)
+    # scope, so they must NOT re-limit a team the trust authority already deemed
+    # sufficiently covered — otherwise bounded partial (medium) coverage could never
+    # reach a supported status. They still fail closed for a low/unknown team (handled
+    # above), and continue to refine the constrained/stressed nuance further down.
+    _trust_coverage_sufficient = trust.confidence in {'high', 'medium'}
+    if not _trust_coverage_sufficient and coverage_inventory['coverage_state'] in {'missing', 'unknown'}:
         return 'data_limited'
-    if coverage_inventory['coverage_state'] == 'partial':
+    if not _trust_coverage_sufficient and coverage_inventory['coverage_state'] == 'partial':
         return 'data_limited'
-    if handedness_coverage['coverage_state'] in {'missing', 'unknown'}:
+    if not _trust_coverage_sufficient and handedness_coverage['coverage_state'] in {'missing', 'unknown'}:
         return 'data_limited'
     if workload_pressure['elevated_count'] or availability_distribution[
         'unavailable'
