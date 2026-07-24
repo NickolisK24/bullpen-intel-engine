@@ -196,11 +196,18 @@ authoring cards:
 1. Confirm snapshot 205 is still the latest trusted published snapshot (source
    authority); if a newer trusted snapshot exists, backfill that one instead.
 2. Invoke the admin-token batch endpoint
-   (`POST /api/internal/share-artifacts/team-state/generate` on
-   `share_artifacts_admin_bp`, `X-Admin-Token`) against the authoritative snapshot.
-   The batch's own source-authority gate re-confirms the canonical snapshot;
-   idempotent reuse means re-runs report `reused`, create no duplicates, and never
-   double-audit.
+   (`POST /api/internal/share-artifacts/team-state/batch` on
+   `share_artifacts_admin_bp`, `X-Admin-Token`) with the authoritative
+   `source_snapshot_id` + `product_date` in the JSON body (an optional `team_ids`
+   subset is supported). This is the full-league batch route that delegates to the
+   SC-03B-01 `generate_team_state_artifacts_batch` service — not the single-team
+   `/team-state/generate` route. The batch's own source-authority gate re-confirms
+   the canonical snapshot (a globally invalid source is refused 409 before any team
+   is attempted); idempotent reuse means re-runs report `reused`, create no
+   duplicates, and never double-audit. This admin blueprint is registered only at
+   `/api/internal/share-artifacts` and is never reachable from the browser operator
+   page (which uses the separate read-only `/api/internal-browser/share-artifacts`
+   boundary).
 3. Verify on the operator surface: **Accounted = 30, Missing = 0** for that
    snapshot, integrity `verified`, status `complete` / `complete_with_refusals`.
 
