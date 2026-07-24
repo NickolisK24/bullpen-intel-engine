@@ -410,16 +410,36 @@ def publish_dashboard_snapshot(snapshot, *, commit=True):
     )
     if commit:
         db.session.commit()
+        # This function owns the commit, so complete the publication here.
+        run_post_commit_snapshot_publication(snapshot)
     else:
+        # The caller owns the commit (e.g. the daily-sync path). It must invoke
+        # run_post_commit_snapshot_publication after its own commit so generation
+        # still runs — the SC-03B-04 repair for the commit=False publication path.
         db.session.flush()
-    # Generation belongs to publication (Share Cards SC-03B-02): once — and only
-    # once — a trusted snapshot has durably become the canonical published
-    # snapshot, attempt league-wide immutable Team State generation as the next
-    # step of the same lifecycle. It runs only on a committed success, never
-    # rolls back or unpublishes the snapshot, and never raises.
-    if commit and snapshot.is_published and snapshot.status == SNAPSHOT_STATUS_READY:
-        _maybe_generate_team_state_artifacts_after_publication(snapshot)
     return snapshot
+
+
+def run_post_commit_snapshot_publication(snapshot):
+    """Canonical post-commit publication completion (Share Cards SC-03B-02/04).
+
+    Generation belongs to publication: once — and only once — a trusted snapshot
+    has DURABLY become the canonical published snapshot, attempt league-wide
+    immutable Team State generation as the next step of the same lifecycle. Call
+    this exactly once, AFTER the publication transaction has committed, from every
+    legitimate committed-publication path — whether ``publish_dashboard_snapshot``
+    owned the commit (``commit=True``) or the caller owns it (``commit=False``,
+    e.g. the daily-sync path ``sync.complete_sync_run_with_snapshot``).
+
+    Gated by lifecycle + config: a withheld/pending snapshot is a no-op. It never
+    rolls back or unpublishes the snapshot, and never raises — a generation problem
+    must never disturb the already-committed, authoritative publication.
+    """
+    if snapshot is None or not getattr(snapshot, 'is_published', False):
+        return
+    if getattr(snapshot, 'status', None) != SNAPSHOT_STATUS_READY:
+        return
+    _maybe_generate_team_state_artifacts_after_publication(snapshot)
 
 
 def _maybe_generate_team_state_artifacts_after_publication(snapshot):
@@ -427,17 +447,34 @@ def _maybe_generate_team_state_artifacts_after_publication(snapshot):
 
     Automatic in the real app (``create_app`` enables it); off by default when the
     flag is absent (e.g. bare-Flask unit tests) so publication tests are
-    unaffected. Never raises — a generation problem must never disturb the
-    already-committed, authoritative publication.
+    unaffected. Emits a structured hook decision (invoked vs skipped + reason) and
+    never raises — a generation problem must never disturb the already-committed,
+    authoritative publication.
     """
+    snapshot_id = getattr(snapshot, 'id', None)
+    product_date = getattr(snapshot, 'data_through', None)
     try:
         from flask import current_app
-        if not current_app or not current_app.config.get(
-            'SHARE_ARTIFACT_AUTOGENERATION_ENABLED', False
-        ):
-            return
+        enabled = bool(
+            current_app
+            and current_app.config.get('SHARE_ARTIFACT_AUTOGENERATION_ENABLED', False)
+        )
     except Exception:
+        enabled = False
+
+    if not enabled:
+        logger.info(
+            'Post-publication generation hook_skipped snapshot_id=%s product_date=%s '
+            'automatic_generation_enabled=%s reason=autogeneration_disabled.',
+            snapshot_id, product_date, enabled,
+        )
         return
+
+    logger.info(
+        'Post-publication generation hook_invoked snapshot_id=%s product_date=%s '
+        'automatic_generation_enabled=%s.',
+        snapshot_id, product_date, enabled,
+    )
     try:
         from services.share_artifact_publication_hook import (
             run_post_publication_generation,
@@ -447,7 +484,7 @@ def _maybe_generate_team_state_artifacts_after_publication(snapshot):
         logger.exception(
             'Post-publication Team State generation hook failed non-fatally '
             'snapshot_id=%s.',
-            getattr(snapshot, 'id', None),
+            snapshot_id,
         )
 
 

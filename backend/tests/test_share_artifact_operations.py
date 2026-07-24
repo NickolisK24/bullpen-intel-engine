@@ -291,6 +291,31 @@ def test_status_incomplete_on_missing(app, monkeypatch):
     assert build_coverage_overview()['status'] == STATUS_INCOMPLETE
 
 
+def test_zero_attempts_with_autogeneration_enabled_is_not_healthy(app, monkeypatch):
+    """Reproduces the SC-03B-04 production symptom exactly: automatic generation is
+    ENABLED, the trusted snapshot published, but zero generation attempts were made
+    for any team (accounted=0, all teams missing). The operator surface must NOT
+    call this healthy — it reports ``incomplete`` (not ``complete`` and not
+    ``disabled``), so the failure is visible rather than hidden behind an
+    enabled flag with no attempts."""
+    app.config['SHARE_ARTIFACT_AUTOGENERATION_ENABLED'] = True
+    _seed_teams(CANON_TEAMS)
+    _install_snapshot(monkeypatch)
+    # No _generate / _audit calls: every canonical team has zero terminal attempts.
+    overview = build_coverage_overview()
+
+    assert overview['autogeneration_enabled'] is True
+    assert overview['status'] == STATUS_INCOMPLETE
+    assert overview['status'] not in (STATUS_COMPLETE, STATUS_COMPLETE_WITH_REFUSALS,
+                                      STATUS_DISABLED)
+    assert overview['accounted_team_count'] == 0
+    assert overview['generated_team_count'] == 0
+    assert overview['reused_team_count'] == 0
+    assert overview['refused_team_count'] == 0
+    assert overview['failed_team_count'] == 0
+    assert overview['missing_team_count'] == len(CANON_TEAMS)
+
+
 # ---------------------------------------------------------------------------
 # Integrity (cases 19-23)
 # ---------------------------------------------------------------------------
