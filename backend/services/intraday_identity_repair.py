@@ -12,6 +12,7 @@ from utils.time import utc_now_naive
 PITCHER_CODES = frozenset({'1', 'Y'})
 PITCHER_ABBRS = frozenset({'P', 'TWP'})
 SOURCE = 'mlb_stats_api:intraday_identity_repair'
+NEWLY_DISCOVERED_ACTIVE = 'newly_discovered_active'
 
 
 class IntradayIdentityRepairError(RuntimeError):
@@ -21,9 +22,12 @@ class IntradayIdentityRepairError(RuntimeError):
 def apply_intraday_identity_findings(findings, *, client=None, timestamp=None):
     """Apply only identity findings re-proven from MLB numeric-id authority.
 
-    New players require a pitcher/two-way role and a currentTeam matching the
-    audited official team. Existing team changes require the same currentTeam
-    match. Names are display evidence only and are never used for matching.
+    New players require a pitcher/two-way role and use the audited active-roster
+    observation as their current-team bootstrap authority. The MLB people
+    endpoint is still used to prove numeric identity and role, but its
+    ``currentTeam`` field may lag the active roster during same-day moves.
+    Existing team changes continue to require a matching ``currentTeam``.
+    Names are display evidence only and are never used for matching.
     """
     client = client or mlb_client
     timestamp = timestamp or utc_now_naive()
@@ -42,17 +46,26 @@ def apply_intraday_identity_findings(findings, *, client=None, timestamp=None):
         info = client.get_player_info(mlb_id) or {}
         if _positive_int(info.get('id')) not in (None, mlb_id):
             raise IntradayIdentityRepairError(f'MLB identity mismatch for player {mlb_id}.')
+
+        pitcher = Pitcher.query.filter_by(mlb_id=mlb_id).one_or_none()
+        is_newly_discovered = (
+            pitcher is None
+            and finding.get('change_type') == NEWLY_DISCOVERED_ACTIVE
+        )
         current_team = info.get('currentTeam') or {}
-        if _positive_int(current_team.get('id')) != team_id:
+        if not is_newly_discovered and _positive_int(current_team.get('id')) != team_id:
             raise IntradayIdentityRepairError(
                 f'Current-team authority changed for player {mlb_id}; expected {team_id}.'
             )
 
-        pitcher = Pitcher.query.filter_by(mlb_id=mlb_id).one_or_none()
         if pitcher is None:
             if not _is_pitcher_or_two_way(info):
                 raise IntradayIdentityRepairError(
                     f'Player {mlb_id} is not proven as a pitcher or two-way player.'
+                )
+            if team_id not in teams:
+                raise IntradayIdentityRepairError(
+                    f'Audited team authority {team_id} is not an active MLB team.'
                 )
             name = str(info.get('fullName') or finding.get('source_player_name') or '').strip()
             if not name:

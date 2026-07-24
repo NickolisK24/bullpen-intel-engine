@@ -109,6 +109,7 @@ def test_conflicting_identity_remains_blocked():
 def test_new_pitcher_is_created_from_numeric_identity_and_current_team(app):
     client = FakeClient({777: _person(777, 143, name='Verified Reliever')})
     finding = {
+        'change_type': intraday_reconcile.CHANGE_NEWLY_DISCOVERED_ACTIVE,
         'mlb_player_id': 777,
         'observed_official_team_id': 143,
         'source_player_name': 'Display Only',
@@ -122,6 +123,24 @@ def test_new_pitcher_is_created_from_numeric_identity_and_current_team(app):
         assert pitcher.team_id == 143
         assert pitcher.team_abbreviation == 'PHI'
         assert pitcher.active is True
+
+
+def test_new_pitcher_uses_audited_roster_team_when_people_current_team_lags(app):
+    client = FakeClient({777: _person(777, 121, name='Verified Reliever')})
+    finding = {
+        'change_type': intraday_reconcile.CHANGE_NEWLY_DISCOVERED_ACTIVE,
+        'mlb_player_id': 777,
+        'stored_pitcher_id': None,
+        'observed_official_team_id': 143,
+        'source_player_name': 'Display Only',
+    }
+    with app.app_context():
+        result = apply_intraday_identity_findings([finding], client=client)
+        db.session.commit()
+        pitcher = Pitcher.query.filter_by(mlb_id=777).one()
+        assert result['created'] == 1
+        assert pitcher.team_id == 143
+        assert pitcher.team_abbreviation == 'PHI'
 
 
 def test_existing_pitcher_is_reassigned_only_when_current_team_agrees(app):
@@ -147,7 +166,11 @@ def test_non_pitcher_or_team_mismatch_fails_closed(app):
         non_pitcher = FakeClient({888: _person(888, 143, position='C')})
         with pytest.raises(IntradayIdentityRepairError):
             apply_intraday_identity_findings([
-                {'mlb_player_id': 888, 'observed_official_team_id': 143}
+                {
+                    'change_type': intraday_reconcile.CHANGE_NEWLY_DISCOVERED_ACTIVE,
+                    'mlb_player_id': 888,
+                    'observed_official_team_id': 143,
+                }
             ], client=non_pitcher)
 
         mismatch = FakeClient({999: _person(999, 121)})
