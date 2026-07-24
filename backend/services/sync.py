@@ -3690,6 +3690,11 @@ def complete_sync_run_with_snapshot(
             run.stage = sync_metadata.STAGE_PUBLISHED
             run.published_dashboard_snapshot_id = snapshot.id
         db.session.commit()
+        # SC-03B-04: this path publishes with commit=False and owns the commit, so
+        # the post-publication generation hook must be invoked here (once, after the
+        # publication has durably committed). Reuses the one canonical completion
+        # function; never raises, so a generation problem never affects the sync.
+        dashboard_snapshot_service.run_post_commit_snapshot_publication(snapshot)
         return run, snapshot
     except Exception as exc:
         db.session.rollback()

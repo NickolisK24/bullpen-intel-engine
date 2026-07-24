@@ -9,21 +9,36 @@ scheduling, a renderer, Product Intelligence, or the public Share API.
 ## Where generation now occurs
 
 ```
-store_dashboard_snapshot(publish=True, commit=True)
-  -> publish_dashboard_snapshot(snapshot)          (services/dashboard_snapshot.py)
-       ... success path: is_published=True, status=ready, db.session.commit()
+<any committed publication of a trusted snapshot>
+  -> db.session.commit()                            (the publication becomes durable)
+  -> run_post_commit_snapshot_publication(snapshot) (services/dashboard_snapshot.py)
+       ... gate: is_published=True, status=ready
        -> _maybe_generate_team_state_artifacts_after_publication(snapshot)   (config-gated)
             -> run_post_publication_generation(snapshot)   (services/share_artifact_publication_hook.py)
                  -> generate_team_state_artifacts_batch(...)   (SC-03B-01, unchanged)
                       -> generate_team_state_artifact(...) per team   (SC-03A, unchanged)
 ```
 
-The hook fires from exactly one place — the canonical publication function,
-`publish_dashboard_snapshot`, on its **committed success path only**
-(`is_published is True`, `status == 'ready'`, and `commit=True`). It never fires
-during validation, from a withheld/pending snapshot, from a `commit=False`
-(uncommitted) publish, from rendering, or from a page/browser/public request.
-There is no second generation pathway.
+Generation fires from exactly one implementation —
+`run_post_commit_snapshot_publication` — always **after** the publication
+transaction has durably committed, and only for a committed, published, ready
+snapshot. It never fires during validation, from a withheld/pending snapshot,
+from an uncommitted (flushed-but-not-committed) publish, from rendering, or from a
+page/browser/public request. There is no second generation pathway.
+
+Two legitimate committed-publication paths reach that single completion function:
+
+- **`publish_dashboard_snapshot(snapshot, commit=True)`** — when the publication
+  function owns the commit, it calls `run_post_commit_snapshot_publication`
+  immediately after its own `db.session.commit()`.
+- **`sync.complete_sync_run_with_snapshot`** (the daily-sync path) — it publishes
+  with `commit=False` and owns the commit itself, then calls
+  `run_post_commit_snapshot_publication` after that commit.
+
+The original SC-03B-02 wiring fired only on the `commit=True` branch. The canonical
+production path publishes with `commit=False`, so generation never ran in
+production — see `SHARE_CARDS_AUTOGENERATION_REPAIR.md` (SC-03B-04) for the root
+cause and repair.
 
 ## Why generation belongs after publication
 
