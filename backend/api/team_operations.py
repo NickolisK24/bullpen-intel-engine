@@ -406,14 +406,15 @@ def _team_operations_trust_metadata(
         generated_at=generated_at,
         has_records=True,
         coverage_limitations=coverage_limitations,
+        active_bullpen_coverage=coverage_limitation,
     )
 
 
 def _build_trust_metadata(
     *, confidence, data_state, confidence_reasons, sync_status, generated_at,
-    has_records, coverage_limitations=(),
+    has_records, coverage_limitations=(), active_bullpen_coverage=None,
 ):
-    return {
+    metadata = {
         'confidence': confidence,
         'confidence_reasons': list(confidence_reasons),
         'data_state': data_state,
@@ -428,6 +429,16 @@ def _build_trust_metadata(
         'ranking_applied': False,
         'selection_made': False,
     }
+    # SC-04B: carry the structured bounded-partial-coverage counts (never a pitcher
+    # identity) so the canonical public-copy authority can render the approved
+    # medium-confidence disclosure deterministically. Additive + non-breaking.
+    if active_bullpen_coverage is not None:
+        metadata['active_bullpen_coverage'] = {
+            'active_bullpen_count': active_bullpen_coverage['active_bullpen_count'],
+            'usable_record_count': active_bullpen_coverage['usable_record_count'],
+            'unresolved_record_count': active_bullpen_coverage['unresolved_record_count'],
+        }
+    return metadata
 
 
 # Per-record data-quality vocabulary (from services.availability.classify_availability):

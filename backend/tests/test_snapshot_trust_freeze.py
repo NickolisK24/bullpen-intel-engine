@@ -456,11 +456,25 @@ def test_frozen_legacy_what_changed_files_untouched():
         'frontend/src/components/admin/ShareArtifactOperations.jsx',
         'frontend/tests/shareArtifactOperations.test.mjs',
     }
+    allowed_public_share_artifact_page_files = {
+        # fix/share-artifact-public-presentation (Share Cards SC-04B): the public
+        # citation page is polished into the BaseballOS design system, renders the
+        # backend-owned canonical public copy (Fresh/Stretched/Vulnerable state,
+        # baseball-native why + reader-facing evidence), formats Eastern-Time dates
+        # via the shared formatter, and omits empty limitations. Presentation only:
+        # it still reads solely from the public Share Artifact API; no live/current
+        # lookup, no generation, no internal/admin call, no new public claim logic.
+        'frontend/src/components/share/PublicShareArtifactPage.jsx',
+        'frontend/src/utils/publicShareArtifact.js',
+        'frontend/tests/publicShareArtifact.test.mjs',
+        'frontend/src/App.jsx',
+    }
     assert not sorted(
         path for path in changed
         if path.startswith('frontend/')
         if path not in allowed_share_artifact_cutover_files
         if path not in allowed_share_artifact_operations_files
+        if path not in allowed_public_share_artifact_page_files
         if path not in allowed_phase_a_audience_signup_files
         if path not in allowed_bullpen_game_context_files
         if path not in allowed_pitcher_ledger_coverage_files

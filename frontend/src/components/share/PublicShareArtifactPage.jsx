@@ -1,10 +1,11 @@
-// Permanent public Share Artifact citation page (Share Cards SC-04) at
+// Permanent public Share Artifact citation page (Share Cards SC-04 / SC-04B) at
 // /share/:publicId. It renders a historical, immutable BaseballOS artifact read
-// ENTIRELY from the public Share Artifact API. It never recalculates or overwrites
-// the artifact, never fetches current/live team state, never calls internal/admin
-// endpoints, never invokes generation, and never imports a deprecated client-side
-// intelligence generator. Missing values are shown honestly — never filled with a
-// fabricated team, state, count, label, or timestamp.
+// ENTIRELY from the public Share Artifact API, styled in the BaseballOS design
+// system. It never recalculates, never fetches current/live team state, never
+// calls internal/admin endpoints, never invokes generation, and never imports a
+// deprecated client-side intelligence generator. All baseball meaning and public
+// copy come from the immutable artifact; this page only formats and arranges it.
+// Missing values are shown honestly — never a fabricated team/state/count/label.
 
 import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
@@ -13,23 +14,51 @@ import {
   fetchPublicShareArtifact,
   publicSharePath,
 } from '../../utils/publicShareArtifact'
+import { formatDateOnly, formatUtcDateTimeEt } from '../../utils/dateDisplay'
 
 const SITE = 'BaseballOS'
+
+// Reader-facing accent per public Team State (Fresh / Stretched / Vulnerable).
+// Literal class strings so the Tailwind compiler keeps them.
+const STATE_ACCENT = {
+  fresh: { border: 'border-pine/50', bg: 'bg-pine/10', dot: 'bg-pine' },
+  stretched: { border: 'border-warning/50', bg: 'bg-warning/10', dot: 'bg-warning' },
+  vulnerable: { border: 'border-danger/50', bg: 'bg-danger/10', dot: 'bg-danger' },
+}
+const NEUTRAL_ACCENT = { border: 'border-dirt', bg: 'bg-chalk/20', dot: 'bg-chalk500' }
+
+const SEVERITY_ACCENT = {
+  blocking: 'border-danger/40',
+  caution: 'border-warning/40',
+  informational: 'border-dirt',
+}
+
+function accentFor(publicState) {
+  return STATE_ACCENT[publicState] || NEUTRAL_ACCENT
+}
+
+function fmtDate(value) {
+  return formatDateOnly(value, { month: 'long' })
+}
+
+function fmtDateTime(value) {
+  return formatUtcDateTimeEt(value)
+}
 
 function useDocumentMetadata(state, artifact, publicId) {
   useEffect(() => {
     if (typeof document === 'undefined') return
     const indexable = state === SHARE_STATE.OK || state === SHARE_STATE.SUPERSEDED
     const team = artifact?.team?.team_name
-    const label = artifact?.team_state?.status_label
+    const label = artifact?.team_state?.public_label
     const title =
       indexable && team
         ? `${team} bullpen — ${label || 'Team State'} (${artifact?.product_date || ''}) · ${SITE}`
-        : `Shared BaseballOS artifact · ${SITE}`
+        : `Shared ${SITE} artifact · ${SITE}`
     document.title = title
-    setMeta('description', indexable ? (artifact?.copy?.summary || `A published ${SITE} bullpen intelligence snapshot.`) : `A ${SITE} shared artifact.`)
+    const description = artifact?.copy?.description || `A published ${SITE} bullpen intelligence snapshot.`
+    setMeta('description', indexable ? description : `A ${SITE} shared artifact.`)
     setLink('canonical', `${location.origin}${publicSharePath(publicId)}`)
-    // Withdrawn / not-found / error pages must not promote removed or absent claims.
     setMeta('robots', indexable ? 'index,follow' : 'noindex,nofollow')
   }, [state, artifact, publicId])
 }
@@ -72,7 +101,10 @@ export default function PublicShareArtifactPage() {
   useDocumentMetadata(result.state, result.artifact, publicId)
 
   return (
-    <section className="public-share-artifact" aria-live="polite">
+    <section
+      className="public-share-artifact mx-auto w-full max-w-3xl px-4 py-6 sm:px-6 sm:py-8 lg:py-10"
+      aria-live="polite"
+    >
       {renderState(result, publicId)}
     </section>
   )
@@ -99,30 +131,38 @@ function renderState(result, publicId) {
 }
 
 function LoadingState() {
-  // Stable skeleton matching the final hierarchy — no fake team/state/counts/times.
   return (
-    <div className="share-skeleton" role="status" aria-busy="true">
-      <p>Loading the shared BaseballOS artifact…</p>
+    <div className="share-skeleton card p-6" role="status" aria-busy="true">
+      <div className="motion-safe:animate-pulse space-y-3">
+        <div className="h-3 w-40 rounded bg-chalk/40" />
+        <div className="h-8 w-64 rounded bg-chalk/40" />
+        <div className="h-3 w-full rounded bg-chalk/30" />
+        <div className="h-3 w-5/6 rounded bg-chalk/30" />
+      </div>
+      <p className="sr-only">Loading the shared {SITE} artifact…</p>
     </div>
   )
 }
 
-function HistoricalLabel({ productDate, publishedAt }) {
+// A. Historical context bar — compact, clearly separate from the artifact.
+function HistoricalContextBar({ dataThrough, publishedAt }) {
+  const dataThroughText = fmtDate(dataThrough)
+  const publishedText = fmtDateTime(publishedAt)
   return (
-    <p className="share-historical-label">
-      Historical snapshot — this is a published {SITE} read
-      {productDate ? (
-        <>
-          {' '}for <time dateTime={productDate}>{productDate}</time>
-        </>
-      ) : null}
-      {publishedAt ? (
-        <>
-          , published <time dateTime={publishedAt}>{publishedAt}</time>
-        </>
-      ) : null}
-      . It is not a live current read.
-    </p>
+    <div className="mb-4 flex flex-col gap-1 rounded-lg border border-dirt bg-field/40 px-4 py-3 text-xs sm:flex-row sm:items-center sm:justify-between">
+      <span className="font-mono uppercase tracking-widest text-chalk500">
+        Published {SITE} snapshot
+      </span>
+      <span className="text-chalk400">
+        {dataThroughText ? (
+          <>Data through <time dateTime={dataThrough}>{dataThroughText}</time></>
+        ) : null}
+        {dataThroughText && publishedText ? <span aria-hidden="true"> · </span> : null}
+        {publishedText ? (
+          <>Published <time dateTime={publishedAt}>{publishedText}</time></>
+        ) : null}
+      </span>
+    </div>
   )
 }
 
@@ -131,107 +171,159 @@ export function ArtifactView({ artifact, superseded }) {
   const team = artifact.team || {}
   const teamState = artifact.team_state || {}
   const trust = artifact.trust || {}
+  const copy = artifact.copy || {}
   const routes = artifact.routes || {}
+  const freshness = artifact.freshness || {}
   const evidence = Array.isArray(artifact.evidence) ? artifact.evidence : []
   const limitations = Array.isArray(artifact.limitations) ? artifact.limitations : []
 
+  const teamName = team.team_name || 'This team'
+  const publicLabel = teamState.public_label || 'Team State'
+  const accent = accentFor(teamState.public_state)
+  const why = copy.why || teamState.summary
+  const dataThrough = freshness.data_through || artifact.product_date
+
   return (
-    <article className="share-artifact">
-      <h1>
-        {team.team_name || 'Team'} bullpen — {teamState.status_label || 'Team State'}
-      </h1>
-      <HistoricalLabel productDate={artifact.product_date} publishedAt={artifact.published_at} />
+    <article className="share-artifact space-y-5">
+      <HistoricalContextBar dataThrough={dataThrough} publishedAt={artifact.published_at} />
 
       {superseded && artifact.superseded ? (
-        <aside className="share-superseded-notice" role="note">
+        <aside className="rounded-lg border border-amber/40 bg-amber/10 px-4 py-3 text-sm text-chalk200" role="note">
           <p>
             This original artifact remains unchanged. A newer artifact has since
             superseded it.
           </p>
           {artifact.superseded.replacement_url ? (
-            <a href={artifact.superseded.replacement_url}>View the newer artifact</a>
+            <a
+              className="mt-1 inline-block font-medium text-amber underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber/70"
+              href={artifact.superseded.replacement_url}
+            >
+              View the newer artifact
+            </a>
           ) : null}
         </aside>
       ) : null}
 
-      {/* Artifact hero — rendered from the immutable projected view (presentation only). */}
-      <div className="share-hero" data-status-code={teamState.status_code || ''}>
-        <p className="share-hero-status">{teamState.status_label || 'Team State'}</p>
-        {teamState.summary ? <p className="share-hero-summary">{teamState.summary}</p> : null}
+      {/* B. Designed artifact hero — immutable projected fields only. */}
+      <div
+        className={`share-hero card overflow-hidden border ${accent.border}`}
+        data-public-state={teamState.public_state || ''}
+      >
+        <div className={`px-5 pb-5 pt-4 sm:px-6 ${accent.bg}`}>
+          <p className="font-mono text-[11px] uppercase tracking-widest text-chalk500">
+            {teamName} · Bullpen state
+          </p>
+          <h1 className="mt-1 flex items-center gap-2 font-display text-4xl leading-none tracking-wide text-chalk100 sm:text-5xl">
+            <span className={`inline-block h-3 w-3 shrink-0 rounded-full ${accent.dot}`} aria-hidden="true" />
+            <span className="min-w-0 break-words">{publicLabel}</span>
+          </h1>
+          {why ? <p className="mt-3 max-w-prose text-base leading-relaxed text-chalk200">{why}</p> : null}
+        </div>
+
+        <div className="border-t border-dirt px-5 py-3 text-xs text-chalk400 sm:px-6">
+          <span className="font-mono uppercase tracking-widest text-chalk500">{teamName}</span>
+          {team.team_abbreviation ? <span className="ml-2 text-chalk500">({team.team_abbreviation})</span> : null}
+        </div>
       </div>
 
-      <section aria-labelledby="share-original-read">
-        <h2 id="share-original-read">Original read</h2>
-        <dl>
-          <dt>Team</dt>
-          <dd>{team.team_name || '—'} ({team.team_abbreviation || '—'})</dd>
-          <dt>State</dt>
-          <dd>{teamState.status_label || '—'}</dd>
-          <dt>Explanation</dt>
-          <dd>{teamState.summary || '—'}</dd>
-          <dt>Generated</dt>
-          <dd>{artifact.generated_at ? <time dateTime={artifact.generated_at}>{artifact.generated_at}</time> : '—'}</dd>
-          <dt>Product date</dt>
-          <dd>{artifact.product_date ? <time dateTime={artifact.product_date}>{artifact.product_date}</time> : '—'}</dd>
-        </dl>
-      </section>
-
-      <section aria-labelledby="share-evidence">
-        <h2 id="share-evidence">Evidence</h2>
+      {/* D. Evidence receipts. */}
+      <section aria-labelledby="share-evidence" className="card p-5 sm:p-6">
+        <h2 id="share-evidence" className="section-title text-xl">Evidence behind the read</h2>
         {evidence.length ? (
-          <ul className="share-evidence-list">
+          <ul className="mt-3 space-y-2">
             {evidence.map((item, index) => (
-              <li key={item.evidence_id || index}>
-                <span className="share-evidence-label">{item.label || item.kind || 'Evidence'}</span>
-                {item.detail ? <span className="share-evidence-detail">: {item.detail}</span> : null}
-                {item.severity ? <span className="share-evidence-severity"> ({item.severity})</span> : null}
+              <li
+                key={item.evidence_id || index}
+                className={`rounded-lg border ${SEVERITY_ACCENT[item.severity] || 'border-dirt'} bg-field/40 px-4 py-3`}
+              >
+                <p className="font-mono text-[11px] uppercase tracking-widest text-chalk500">
+                  {item.label || 'Bullpen evidence'}
+                  {item.severity ? (
+                    <span className="ml-2 normal-case tracking-normal text-chalk600">· {item.severity}</span>
+                  ) : null}
+                </p>
+                {item.detail ? <p className="mt-1 text-sm leading-relaxed text-chalk200">{item.detail}</p> : null}
               </li>
             ))}
           </ul>
         ) : (
-          <p>No evidence receipts were recorded on this artifact.</p>
+          <p className="mt-3 text-sm text-chalk400">No evidence receipts were recorded on this artifact.</p>
         )}
       </section>
 
-      <section aria-labelledby="share-trust">
-        <h2 id="share-trust">Trust &amp; freshness</h2>
-        <dl>
-          <dt>Confidence</dt>
-          <dd>{trust.confidence || '—'}</dd>
-          <dt>Data state</dt>
-          <dd>{trust.data_state || '—'}</dd>
-          <dt>Freshness</dt>
-          <dd>{trust.freshness_state || '—'}</dd>
-          <dt>Data through</dt>
-          <dd>
-            {artifact.freshness?.data_through ? (
-              <time dateTime={artifact.freshness.data_through}>{artifact.freshness.data_through}</time>
-            ) : '—'}
-          </dd>
+      {/* E. Trust and freshness — reader-facing language. */}
+      <section aria-labelledby="share-trust" className="card p-5 sm:p-6">
+        <h2 id="share-trust" className="section-title text-xl">Trust &amp; freshness</h2>
+        {copy.trust_line ? <p className="mt-3 text-sm leading-relaxed text-chalk200">{copy.trust_line}</p> : null}
+        <dl className="mt-4 grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
+          <div>
+            <dt className="font-mono text-[11px] uppercase tracking-widest text-chalk500">Confidence</dt>
+            <dd className="mt-0.5 capitalize text-chalk200">{trust.confidence || '—'}</dd>
+          </div>
+          <div>
+            <dt className="font-mono text-[11px] uppercase tracking-widest text-chalk500">Data through</dt>
+            <dd className="mt-0.5 text-chalk200">
+              {fmtDate(dataThrough) ? <time dateTime={dataThrough}>{fmtDate(dataThrough)}</time> : '—'}
+            </dd>
+          </div>
+          <div>
+            <dt className="font-mono text-[11px] uppercase tracking-widest text-chalk500">Published</dt>
+            <dd className="mt-0.5 text-chalk200">
+              {fmtDateTime(artifact.published_at) ? (
+                <time dateTime={artifact.published_at}>{fmtDateTime(artifact.published_at)}</time>
+              ) : '—'}
+            </dd>
+          </div>
+          <div>
+            <dt className="font-mono text-[11px] uppercase tracking-widest text-chalk500">Generated</dt>
+            <dd className="mt-0.5 text-chalk200">
+              {fmtDateTime(artifact.generated_at) ? (
+                <time dateTime={artifact.generated_at}>{fmtDateTime(artifact.generated_at)}</time>
+              ) : '—'}
+            </dd>
+          </div>
         </dl>
       </section>
 
-      <section aria-labelledby="share-limitations">
-        <h2 id="share-limitations">Limitations</h2>
-        {limitations.length ? (
-          <ul className="share-limitations-list">
+      {/* F. Limitations — rendered only when a real limitation exists. */}
+      {limitations.length ? (
+        <section aria-labelledby="share-limitations" className="card p-5 sm:p-6">
+          <h2 id="share-limitations" className="section-title text-xl">Limitations</h2>
+          <ul className="mt-3 space-y-2">
             {limitations.map((text, index) => (
-              <li key={index}>{text}</li>
+              <li key={index} className="text-sm leading-relaxed text-chalk300">{text}</li>
             ))}
           </ul>
-        ) : (
-          <p>No limitations were recorded on this artifact.</p>
-        )}
-      </section>
+        </section>
+      ) : null}
 
-      <nav aria-label="Methodology and destinations" className="share-destinations">
-        <h2>Where to learn more</h2>
-        <ul>
-          {routes.methodology_url ? <li><a href={routes.methodology_url}>Methodology</a></li> : null}
-          {routes.data_trust_url ? <li><a href={routes.data_trust_url}>Data &amp; Trust</a></li> : null}
+      {/* G. Where to go next — historical page vs. live surface, clearly distinct. */}
+      <nav aria-label="Methodology and destinations" className="card p-5 sm:p-6">
+        <h2 className="section-title text-xl">Where to go next</h2>
+        <p className="mt-2 text-xs text-chalk500">
+          This artifact is historical. The bullpen surface below is current.
+        </p>
+        <ul className="mt-3 flex flex-col gap-2 text-sm">
+          {routes.methodology_url ? (
+            <li>
+              <a className="text-amber underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber/70" href={routes.methodology_url}>
+                View methodology
+              </a>
+            </li>
+          ) : null}
+          {routes.data_trust_url ? (
+            <li>
+              <a className="text-amber underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber/70" href={routes.data_trust_url}>
+                Review Data &amp; Trust
+              </a>
+            </li>
+          ) : null}
           {routes.team_url ? (
             <li>
-              <a href={routes.team_url}>Current live bullpen surface</a> (the live destination; this page is historical)
+              <a className="text-amber underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber/70" href={routes.team_url}>
+                Open the current bullpen surface
+              </a>{' '}
+              <span className="text-chalk500">— live, not this historical snapshot</span>
             </li>
           ) : null}
         </ul>
@@ -242,47 +334,55 @@ export function ArtifactView({ artifact, superseded }) {
 
 export function WithdrawnState({ artifact }) {
   return (
-    <div className="share-withdrawn" role="alert">
-      <h1>This shared artifact has been withdrawn</h1>
-      <p>
+    <div className="share-withdrawn card p-6" role="alert">
+      <h1 className="font-display text-3xl tracking-wide text-chalk100">This shared artifact has been withdrawn</h1>
+      <p className="mt-2 text-sm leading-relaxed text-chalk300">
         {SITE} has withdrawn this artifact
-        {artifact?.withdrawn_reason ? ` (${artifact.withdrawn_reason})` : ''}. The
-        original claim is no longer shown.
+        {artifact?.withdrawn_reason ? ` (${artifact.withdrawn_reason})` : ''}. The original claim is no longer shown.
       </p>
-      <a href="/">Return to {SITE}</a>
+      <a className="mt-4 inline-block text-amber underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber/70" href="/">
+        Return to {SITE}
+      </a>
     </div>
   )
 }
 
 export function NotFoundState() {
   return (
-    <div className="share-not-found" role="alert">
-      <h1>Shared artifact not found</h1>
-      <p>No published {SITE} artifact exists for this link.</p>
-      <a href="/">Return to {SITE}</a>
+    <div className="share-not-found card p-6" role="alert">
+      <h1 className="font-display text-3xl tracking-wide text-chalk100">Shared artifact not found</h1>
+      <p className="mt-2 text-sm leading-relaxed text-chalk300">No published {SITE} artifact exists for this link.</p>
+      <a className="mt-4 inline-block text-amber underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber/70" href="/">
+        Return to {SITE}
+      </a>
     </div>
   )
 }
 
 export function IntegrityErrorState() {
   return (
-    <div className="share-integrity-error" role="alert">
-      <h1>This shared artifact could not be verified</h1>
-      <p>
-        {SITE} could not verify the integrity of this artifact, so its content is
-        not shown. Please try again later.
+    <div className="share-integrity-error card p-6" role="alert">
+      <h1 className="font-display text-3xl tracking-wide text-chalk100">This shared artifact could not be verified</h1>
+      <p className="mt-2 text-sm leading-relaxed text-chalk300">
+        {SITE} could not verify the integrity of this artifact, so its content is not shown. Please try again later.
       </p>
-      <a href="/">Return to {SITE}</a>
+      <a className="mt-4 inline-block text-amber underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber/70" href="/">
+        Return to {SITE}
+      </a>
     </div>
   )
 }
 
 export function ApiErrorState({ publicId }) {
   return (
-    <div className="share-api-error" role="alert">
-      <h1>Temporarily unavailable</h1>
-      <p>This shared {SITE} artifact could not be loaded right now.</p>
-      {publicId ? <a href={publicSharePath(publicId)}>Retry</a> : null}
+    <div className="share-api-error card p-6" role="alert">
+      <h1 className="font-display text-3xl tracking-wide text-chalk100">Temporarily unavailable</h1>
+      <p className="mt-2 text-sm leading-relaxed text-chalk300">This shared {SITE} artifact could not be loaded right now.</p>
+      {publicId ? (
+        <a className="mt-4 inline-block text-amber underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber/70" href={publicSharePath(publicId)}>
+          Retry
+        </a>
+      ) : null}
     </div>
   )
 }

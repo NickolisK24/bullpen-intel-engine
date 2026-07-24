@@ -31,21 +31,41 @@ function render(element) {
   return renderToStaticMarkup(React.createElement(MemoryRouter, null, element))
 }
 
+// A revised (team-state-1.1.0) Arizona-shaped public view.
 function artifactFixture(overrides = {}) {
   return {
     public_id: 'abc123',
     lifecycle_state: 'published',
+    revised: true,
+    payload_version: 'team-state-1.1.0',
     is_historical: true,
-    generated_at: '2026-07-24T04:08:00',
-    published_at: '2026-07-24T04:08:00',
+    generated_at: '2026-07-24T16:40:00',
+    published_at: '2026-07-24T16:43:00',
     product_date: '2026-07-23',
-    team: { team_id: 147, team_name: 'Test Club', team_abbreviation: 'TST' },
-    team_state: { status_code: 'operationally_constrained', status_label: 'Operationally Constrained', summary: 'Two arms down.' },
-    trust: { confidence: 'medium', data_state: 'fresh', freshness_state: 'current' },
-    freshness: { data_through: '2026-07-23' },
-    evidence: [{ evidence_id: 'e1', kind: 'workload', label: 'Bullpen', detail: 'Heavy relief workload.', severity: 'caution' }],
-    limitations: ['Current readiness reflects 6 of 8 active bullpen pitchers; 2 have incomplete current workload records.'],
-    copy: { headline: 'Operationally Constrained', summary: 'Two arms down.' },
+    team: { team_id: 109, team_name: 'Arizona Diamondbacks', team_abbreviation: 'AZ' },
+    team_state: {
+      status_code: 'operationally_stressed',
+      public_state: 'vulnerable',
+      public_label: 'Vulnerable',
+      summary: 'Team-level bullpen readiness is stressed by current workload or availability constraints.',
+      contract_state: 'degraded',
+    },
+    trust: { confidence: 'high', data_state: 'fresh', freshness_state: 'current', trust_state: 'trusted' },
+    freshness: { data_through: '2026-07-23', published_at: '2026-07-24T16:43:00' },
+    evidence: [
+      { evidence_id: 'availability_constrained', kind: 'availability', label: 'Available bullpen options', detail: '2 relievers are limited or unavailable.', severity: 'caution', count: 2 },
+      { evidence_id: 'workload_elevated', kind: 'workload', label: 'Recent bullpen workload', detail: '3 relievers are carrying elevated recent workload.', severity: 'caution', count: 3 },
+    ],
+    limitations: [],
+    copy: {
+      headline: 'Arizona Diamondbacks bullpen — Vulnerable',
+      why: "Arizona Diamondbacks' bullpen is carrying a heavier recent workload, leaving fewer clean options available.",
+      summary: "Arizona Diamondbacks' bullpen is carrying a heavier recent workload, leaving fewer clean options available.",
+      freshness_line: 'Reflects the current active bullpen through July 23, 2026.',
+      trust_line: 'Verified from the current active bullpen and completed recent appearances.',
+      alt_text: 'Arizona Diamondbacks bullpen is Vulnerable.',
+      description: "Arizona Diamondbacks' bullpen is Vulnerable.",
+    },
     routes: { share_url: '/share/abc123', team_url: '/bullpen', methodology_url: '/methodology', data_trust_url: '/trust' },
     ...overrides,
   }
@@ -60,31 +80,70 @@ test('/share/:publicId route is registered', () => {
 
 // -- published render -----------------------------------------------------------
 
-test('published artifact renders historical read with all sections', () => {
+test('published artifact renders a designed historical read with public copy', () => {
   const html = render(React.createElement(ArtifactView, { artifact: artifactFixture(), superseded: false }))
-  assert.match(html, /Historical snapshot/)
-  assert.match(html, /not a live current read/)
-  assert.match(html, /Test Club/)
-  assert.match(html, /Operationally Constrained/)
-  assert.match(html, /Original read/)
-  assert.match(html, /Evidence/)
-  assert.match(html, /Heavy relief workload/)
+  // A. Historical context bar.
+  assert.match(html, /Published BaseballOS snapshot/)
+  assert.match(html, /Data through/)
+  assert.match(html, /July 23, 2026/)
+  // B. Hero — public state + why (once), team.
+  assert.match(html, /Arizona Diamondbacks/)
+  assert.match(html, /Vulnerable/)
+  assert.match(html, /carrying a heavier recent workload/)
+  // D. Evidence receipts — reader-facing labels + details.
+  assert.match(html, /Evidence behind the read/)
+  assert.match(html, /Recent bullpen workload/)
+  assert.match(html, /3 relievers are carrying elevated recent workload/)
+  // E. Trust & freshness — reader-facing.
   assert.match(html, /Trust &amp; freshness/)
-  assert.match(html, /Limitations/)
-  assert.match(html, /6 of 8 active bullpen pitchers/)
+  assert.match(html, /Verified from the current active bullpen/)
+  // G. Destinations — historical vs live distinct.
   assert.match(html, /Methodology/)
   assert.match(html, /Data &amp; Trust/)
-  assert.match(html, /Current live bullpen surface/)
-  assert.match(html, /the live destination; this page is historical/)
+  assert.match(html, /current bullpen surface/)
+  assert.match(html, /live, not this historical snapshot/)
   // Exactly one h1.
   assert.equal((html.match(/<h1/g) || []).length, 1)
-  // Timestamps use <time> with explicit datetime.
-  assert.match(html, /<time datetime="2026-07-23"/i)
 })
 
-test('medium limitation counts and copy render exactly as frozen', () => {
+test('no internal engine language or snake_case reaches the public page', () => {
   const html = render(React.createElement(ArtifactView, { artifact: artifactFixture(), superseded: false }))
-  assert.match(html, /6 of 8 active bullpen pitchers; 2 have incomplete current workload records/)
+  for (const banned of [
+    'Operationally Stressed', 'operationally_stressed', 'team-level bullpen readiness',
+    'constrained inventory', 'availability_distribution', 'coverage_inventory',
+    'workload_pressure', 'handedness_coverage', 'status_code',
+  ]) {
+    assert.ok(!html.includes(banned), `public page must not show ${banned}`)
+  }
+})
+
+test('timestamps render human-readable Eastern Time, never raw ISO text', () => {
+  const html = render(React.createElement(ArtifactView, { artifact: artifactFixture(), superseded: false }))
+  // Explicit ET, human-readable.
+  assert.match(html, /ET/)
+  // Semantic <time> retains the exact machine value.
+  assert.match(html, /<time datetime="2026-07-23"/i)
+  assert.match(html, /<time datetime="2026-07-24T16:43:00"/i)
+  // Raw ISO is never rendered as visible text (only inside datetime attributes).
+  assert.ok(!html.includes('>2026-07-24T16:43:00'), 'ISO must not be visible text')
+  assert.ok(!html.includes('>2026-07-24T16:40:00'), 'ISO must not be visible text')
+})
+
+test('empty limitations section is omitted entirely', () => {
+  const html = render(React.createElement(ArtifactView, { artifact: artifactFixture({ limitations: [] }), superseded: false }))
+  assert.ok(!/id="share-limitations"/.test(html))
+  assert.ok(!html.includes('No limitations were recorded'))
+})
+
+test('a real limitation renders exactly as frozen', () => {
+  const artifact = artifactFixture({
+    trust: { confidence: 'medium', data_state: 'fresh', freshness_state: 'current' },
+    limitations: ['This read covers 6 of 8 active bullpen pitchers. Two current workload records remain incomplete.'],
+  })
+  const html = render(React.createElement(ArtifactView, { artifact, superseded: false }))
+  assert.match(html, /id="share-limitations"/)
+  assert.match(html, /6 of 8 active bullpen pitchers/)
+  assert.match(html, /Two current workload records remain incomplete/)
 })
 
 test('superseded renders original plus replacement link, original content intact', () => {
@@ -93,18 +152,18 @@ test('superseded renders original plus replacement link, original content intact
     superseded: { replacement_public_id: 'new1', replacement_url: '/share/new1' },
   })
   const html = render(React.createElement(ArtifactView, { artifact, superseded: true }))
-  assert.match(html, /newer artifact has since\s+superseded it/)
+  assert.match(html, /superseded it/)
   assert.match(html, /href="\/share\/new1"/)
-  // Original claim still present.
-  assert.match(html, /Operationally Constrained/)
+  assert.match(html, /Vulnerable/)
 })
 
-test('missing values render as placeholders, never fabricated', () => {
-  const artifact = artifactFixture({ team: {}, team_state: {}, trust: {}, evidence: [], limitations: [] })
+test('missing values render as honest placeholders, never fabricated', () => {
+  const artifact = artifactFixture({ team: {}, team_state: {}, trust: {}, copy: {}, evidence: [], limitations: [] })
   const html = render(React.createElement(ArtifactView, { artifact, superseded: false }))
   assert.match(html, /No evidence receipts were recorded/)
-  assert.match(html, /No limitations were recorded/)
-  assert.doesNotMatch(html, /Unknown/)  // no invented "Unknown" copy
+  assert.ok(!html.includes('Unknown'))
+  // No fabricated public state — falls back to the neutral "Team State" label.
+  assert.match(html, /Team State/)
 })
 
 // -- error/lifecycle states -----------------------------------------------------
@@ -113,14 +172,14 @@ test('withdrawn renders without the original claim', () => {
   const html = render(React.createElement(WithdrawnState, { artifact: { withdrawn_reason: 'source correction' } }))
   assert.match(html, /withdrawn/i)
   assert.match(html, /source correction/)
-  assert.doesNotMatch(html, /Operationally/)
+  assert.doesNotMatch(html, /Vulnerable/)
 })
 
 test('not-found and integrity states render safely without artifact data', () => {
   assert.match(render(React.createElement(NotFoundState)), /not found/i)
   const integrity = render(React.createElement(IntegrityErrorState))
   assert.match(integrity, /could not be verified/i)
-  assert.doesNotMatch(integrity, /Operationally/)
+  assert.doesNotMatch(integrity, /Vulnerable/)
 })
 
 // -- fetch util contract --------------------------------------------------------
@@ -136,7 +195,6 @@ test('fetch util maps lifecycle HTTP contract to honest states', async () => {
   assert.equal((await fetchPublicShareArtifact('x', { fetchImpl: fakeFetch(404, {}) })).state, SHARE_STATE.NOT_FOUND)
   assert.equal((await fetchPublicShareArtifact('x', { fetchImpl: fakeFetch(503, {}) })).state, SHARE_STATE.INTEGRITY_ERROR)
   assert.equal((await fetchPublicShareArtifact('x', { fetchImpl: fakeFetch(500, {}) })).state, SHARE_STATE.API_ERROR)
-  // Network failure -> honest api_error, no stale fallback.
   const boom = async () => { throw new Error('network') }
   assert.equal((await fetchPublicShareArtifact('x', { fetchImpl: boom })).state, SHARE_STATE.API_ERROR)
 })
@@ -152,7 +210,6 @@ test('page and util never touch live/current/internal/admin/generation paths', (
   ]) {
     assert.ok(!combined.includes(forbidden), `must not reference ${forbidden}`)
   }
-  // Public util calls only the public share-artifacts endpoint, GET only.
   assert.match(UTIL_SRC, /share-artifacts\//)
   assert.match(UTIL_SRC, /method: 'GET'/)
 })

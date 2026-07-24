@@ -50,7 +50,10 @@ from services.share_card_compatibility import (
     build_share_card_compatibility_view,
     get_team_state_card,
 )
-from services.team_state_payload import TEAM_STATE_ARTIFACT_TYPE, TEAM_STATE_V1
+from services.team_state_payload import (
+    TEAM_STATE_ARTIFACT_TYPE,
+    TEAM_STATE_V1_1,
+)
 from tests.db_config import (
     configure_test_database,
     create_test_schema,
@@ -230,12 +233,12 @@ def test_exact_authority_fields_are_persisted(app, monkeypatch):
     assert artifact.team_id == TEAM_ID
     assert artifact.source_snapshot_id == SNAPSHOT_ID
     assert artifact.source_sync_run_id == sync_run_id
-    assert artifact.render_version == TEAM_STATE_V1
+    assert artifact.render_version == TEAM_STATE_V1_1
     assert artifact.artifact_type == TEAM_STATE_ARTIFACT_TYPE
     assert result.source_snapshot_id == SNAPSHOT_ID
     assert result.source_sync_run_id == sync_run_id
     assert result.product_date == date(2026, 7, 20)
-    assert result.payload_version == TEAM_STATE_V1
+    assert result.payload_version == TEAM_STATE_V1_1
 
 
 def test_canonical_payload_is_published_unchanged(app, monkeypatch):
@@ -246,7 +249,7 @@ def test_canonical_payload_is_published_unchanged(app, monkeypatch):
 
     # What the canonical builder would produce for this source.
     source = gather_team_state_source(TEAM_ID, readiness_payload=readiness)
-    expected_document = build_team_state_payload(source).document
+    expected_document = build_team_state_payload(source, version=TEAM_STATE_V1_1).document
 
     result = generate_team_state_artifact(TEAM_ID, readiness_resolver=_resolver(readiness))
     assert result.artifact.payload == expected_document
@@ -285,7 +288,7 @@ def test_published_attempt_is_audited(app, monkeypatch):
     assert audit.share_artifact_id == result.artifact.id
     assert audit.artifact_public_id == result.public_id
     assert audit.source_snapshot_id == SNAPSHOT_ID
-    assert audit.payload_version == TEAM_STATE_V1
+    assert audit.payload_version == TEAM_STATE_V1_1
     assert audit.resolved_product_date == date(2026, 7, 20)
 
 
@@ -358,7 +361,7 @@ def test_exact_team_date_query(app, monkeypatch):
 
 def test_version_query(app, monkeypatch):
     artifact = _publish_one(monkeypatch)
-    versioned = get_team_state_artifact_for_version(TEAM_ID, TEAM_STATE_V1)
+    versioned = get_team_state_artifact_for_version(TEAM_ID, TEAM_STATE_V1_1)
     assert versioned is not None and versioned.id == artifact.id
     assert get_team_state_artifact_for_version(TEAM_ID, 'team-state-9.9.9') is None
 
