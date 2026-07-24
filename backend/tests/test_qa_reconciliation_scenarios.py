@@ -499,10 +499,23 @@ def test_phase0e_switches_and_legacy_public_files_not_modified():
         'frontend/tests/shareCardArtifact.test.mjs',
         'frontend/tests/shareCardCutover.test.mjs',
     }
+    allowed_share_artifact_operations_files = {
+        # feature/share-artifact-operations + operator-ui (Share Cards SC-03B-03):
+        # a read-only internal operations/coverage/monitoring read model, a shared
+        # admin-token + browser-session (Bearer + email allowlist) read boundary,
+        # and an authenticated internal operator page. No public route, no
+        # generation, no mutation, no admin token in the browser.
+        'backend/api/share_artifact_operations_api.py',
+        'backend/api/share_artifact_operations_browser.py',
+        'frontend/src/utils/shareArtifactOperations.js',
+        'frontend/src/components/admin/ShareArtifactOperations.jsx',
+        'frontend/tests/shareArtifactOperations.test.mjs',
+    }
     allowed_files = (
         allowed_public_freshness_display_files
         | allowed_share_artifacts_domain_files
         | allowed_share_artifact_cutover_files
+        | allowed_share_artifact_operations_files
         | allowed_internal_admin_files
         | allowed_phase0f_public_recent_work_files
         | allowed_phase0g_public_team_relief_files

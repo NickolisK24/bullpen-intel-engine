@@ -18,6 +18,8 @@ import { cleanupLaunchPreferredTeamStorage } from './utils/preferredTeam'
 import TrafficRouteObserver from './components/TrafficRouteObserver'
 import TrafficIntelligenceAdmin from './components/admin/TrafficIntelligenceAdmin'
 import { TRAFFIC_REPORTING_PATH } from './utils/trafficReporting'
+import ShareArtifactOperations from './components/admin/ShareArtifactOperations'
+import { SHARE_ARTIFACT_OPERATIONS_PATH } from './utils/shareArtifactOperations'
 
 export const APP_ROUTES = [
   { path: '/', Component: Home },
@@ -32,6 +34,7 @@ export const APP_ROUTES = [
   { path: '/signin', Component: SignIn },
   { path: '/auth/verify', Component: VerifySignIn },
   { path: TRAFFIC_REPORTING_PATH, Component: TrafficIntelligenceAdmin },
+  { path: SHARE_ARTIFACT_OPERATIONS_PATH, Component: ShareArtifactOperations },
   { path: PRIVATE_POSTS_PATH, Component: PrivatePosts },
   { path: '*', redirectTo: '/' },
 ]
