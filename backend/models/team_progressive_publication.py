@@ -24,6 +24,7 @@ generation path. The league ``dashboard_snapshots`` table and its gates are
 unchanged.
 """
 
+from models.share_artifact import SUBJECT_TYPE_TEAM_PROGRESSIVE
 from utils.db import db
 from utils.time import utc_now_naive
 
@@ -33,8 +34,14 @@ class TeamProgressivePublication(db.Model):
 
     # Publication scope marker carried onto the artifact (subject_type) so the
     # operations read model and public provenance can distinguish a team-progressive
-    # event from a league-batch artifact.
-    SCOPE = 'team_progressive'
+    # event from a league-batch artifact durably — it is the SAME value the artifact
+    # stamps into its immutable identity contract, so the two can never drift.
+    SCOPE = SUBJECT_TYPE_TEAM_PROGRESSIVE
+
+    # request_source recorded on every progressive generation audit, so the
+    # league-scoped operations coverage read can exclude progressive attempts even
+    # if a checkpoint id numerically collides with a league snapshot id.
+    REQUEST_SOURCE = 'progressive_game_final'
 
     # Trigger types. Game-final is the primary progressive trigger; the checkpoint
     # is deliberately general so an approved team-scoped reconciliation event
@@ -48,6 +55,16 @@ class TeamProgressivePublication(db.Model):
         db.CheckConstraint(
             "status IN ('trusted', 'withheld')",
             name='ck_team_progressive_status',
+        ),
+        # Idempotency is DB-enforced, not merely query-enforced: a team's completed
+        # game at a given evidence revision maps to exactly one checkpoint. Two
+        # concurrent postgame runs racing to publish the same final game cannot both
+        # insert — the loser hits this constraint, rolls back its savepoint, and
+        # reuses the winner's checkpoint, so no duplicate checkpoint (and therefore
+        # no duplicate artifact) is ever minted.
+        db.UniqueConstraint(
+            'team_id', 'trigger_game_pk', 'evidence_revision',
+            name='uq_team_progressive_team_game_revision',
         ),
         db.Index('ix_team_progressive_team', 'team_id'),
         db.Index('ix_team_progressive_game', 'trigger_game_pk'),

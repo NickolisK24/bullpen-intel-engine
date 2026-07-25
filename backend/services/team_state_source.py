@@ -47,6 +47,14 @@ class TeamStateSnapshotAuthority:
     ``unavailable_reason`` is the verdict from
     ``dashboard_snapshot.snapshot_unavailable_reason``: ``None`` means the
     snapshot is trustworthy; any string is the reason it is not.
+
+    ``subject_type`` / ``subject_key`` carry the DURABLE source-authority
+    discriminator onto the generated artifact's immutable identity. A league
+    snapshot leaves both ``None`` (unchanged legacy/league identity); a team
+    progressive checkpoint stamps ``subject_type='team_progressive'`` and a
+    self-describing ``subject_key``, so the artifact records WHICH kind of trusted
+    source authorized it instead of leaving source type inferable only from the
+    (collision-prone) numeric ``snapshot_id``.
     """
 
     snapshot_id: Optional[int]
@@ -54,6 +62,8 @@ class TeamStateSnapshotAuthority:
     data_through: Optional[date]
     published_at: Optional[datetime]
     unavailable_reason: Optional[str]
+    subject_type: Optional[str] = None
+    subject_key: Optional[str] = None
 
     @property
     def is_present(self) -> bool:

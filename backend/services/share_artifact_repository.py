@@ -16,10 +16,13 @@ from __future__ import annotations
 from datetime import date
 from typing import Optional
 
+from sqlalchemy import or_
+
 from models.share_artifact import (
     FROZEN_LIFECYCLE_STATES,
     LIFECYCLE_PUBLISHED,
     ShareArtifact,
+    source_authority_type,
 )
 from models.share_artifact_generation_audit import ShareArtifactGenerationAudit
 from services.share_artifacts import verify_share_artifact_integrity
@@ -71,7 +74,17 @@ def get_latest_published_team_state_artifact(
     verify: bool = True,
     session=None,
 ) -> Optional[ShareArtifact]:
-    """The most recently published Team State artifact for a team, or ``None``."""
+    """The latest published Team State artifact for a team, or ``None``.
+
+    "Latest" follows baseball chronology first: the artifact with the newest
+    ``product_date`` (the day the intelligence describes) wins, so a progressive
+    artifact from a later game is never shadowed by an earlier-day artifact that
+    happened to publish later (e.g. a backfill). Within one product date — a
+    doubleheader's two games, or a same-day authoritative correction — the later
+    publication (``published_at`` then ``id``) is the deterministic tie-break, which
+    is exactly the chronological order the postgame lane publishes them in. Team
+    State artifacts always carry a ``product_date``, so no NULL ordering arises.
+    """
     session = session or db.session
     artifact = (
         _team_state_query(session)
@@ -79,7 +92,11 @@ def get_latest_published_team_state_artifact(
             ShareArtifact.team_id == team_id,
             ShareArtifact.lifecycle_state == LIFECYCLE_PUBLISHED,
         )
-        .order_by(ShareArtifact.published_at.desc(), ShareArtifact.id.desc())
+        .order_by(
+            ShareArtifact.product_date.desc(),
+            ShareArtifact.published_at.desc(),
+            ShareArtifact.id.desc(),
+        )
         .first()
     )
     return _verify_or_fail(artifact, verify)
@@ -165,6 +182,7 @@ def list_team_state_artifacts_for_snapshot(
     source_snapshot_id: int,
     *,
     lifecycle_state: Optional[str] = LIFECYCLE_PUBLISHED,
+    exclude_subject_type: Optional[str] = None,
     session=None,
 ) -> list:
     """All Team State artifacts tied to one source snapshot authority.
@@ -172,6 +190,12 @@ def list_team_state_artifacts_for_snapshot(
     Used by the operator coverage read to account each canonical team against the
     selected snapshot (never a different snapshot/date). Defaults to published
     artifacts; pass ``lifecycle_state=None`` for every lifecycle state.
+
+    ``exclude_subject_type`` excludes artifacts whose durable source-authority
+    discriminator matches it (rows with a NULL ``subject_type`` are always kept).
+    The league coverage read passes the team-progressive scope so a team-progressive
+    artifact whose checkpoint id numerically collides with the league snapshot id is
+    never miscounted as league coverage — the source TYPE, not the bare id, governs.
     """
     session = session or db.session
     query = _team_state_query(session).filter(
@@ -179,6 +203,13 @@ def list_team_state_artifacts_for_snapshot(
     )
     if lifecycle_state is not None:
         query = query.filter(ShareArtifact.lifecycle_state == lifecycle_state)
+    if exclude_subject_type is not None:
+        query = query.filter(
+            or_(
+                ShareArtifact.subject_type.is_(None),
+                ShareArtifact.subject_type != exclude_subject_type,
+            )
+        )
     return (
         query.order_by(ShareArtifact.published_at.desc(), ShareArtifact.id.desc())
         .all()
@@ -204,6 +235,7 @@ def inspect_share_artifact_lifecycle(public_id: str, *, session=None) -> Optiona
         'render_version': artifact.render_version,
         'schema_version': artifact.schema_version,
         'source_snapshot_id': artifact.source_snapshot_id,
+        'source_authority_type': source_authority_type(artifact),
         'source_sync_run_id': artifact.source_sync_run_id,
         'product_date': artifact.product_date.isoformat() if artifact.product_date else None,
         'integrity_hash': artifact.integrity_hash,
@@ -254,16 +286,35 @@ def list_generation_audits(
     )
 
 
-def audits_for_snapshot(source_snapshot_id: int, *, session=None) -> list:
+def audits_for_snapshot(
+    source_snapshot_id: int,
+    *,
+    exclude_request_source: Optional[str] = None,
+    session=None,
+) -> list:
     """Every generation audit tied to one source snapshot authority, newest first.
 
     Unbounded by snapshot (a snapshot has at most a few attempts per team) so the
-    coverage read can select each team's most-recent terminal attempt."""
+    coverage read can select each team's most-recent terminal attempt.
+
+    ``exclude_request_source`` drops attempts recorded under that request source
+    (audits with a NULL request source are always kept). The league coverage read
+    passes the progressive request source so a progressive attempt whose checkpoint
+    id numerically collides with the league snapshot id is never mistaken for a
+    league-batch attempt against that snapshot."""
     session = session or db.session
+    query = session.query(ShareArtifactGenerationAudit).filter(
+        ShareArtifactGenerationAudit.source_snapshot_id == source_snapshot_id
+    )
+    if exclude_request_source is not None:
+        query = query.filter(
+            or_(
+                ShareArtifactGenerationAudit.request_source.is_(None),
+                ShareArtifactGenerationAudit.request_source != exclude_request_source,
+            )
+        )
     return (
-        session.query(ShareArtifactGenerationAudit)
-        .filter(ShareArtifactGenerationAudit.source_snapshot_id == source_snapshot_id)
-        .order_by(
+        query.order_by(
             ShareArtifactGenerationAudit.team_id.asc(),
             ShareArtifactGenerationAudit.created_at.desc(),
             ShareArtifactGenerationAudit.id.desc(),

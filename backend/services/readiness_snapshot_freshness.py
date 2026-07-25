@@ -30,8 +30,17 @@ from services.availability import ACTIVE_WINDOW_DAYS
 from services.availability_reference_date import product_current_date
 
 
-# Non-sensitive reason codes surfaced on the anchored freshness read.
+# Non-sensitive reason codes surfaced on the anchored freshness read. The two
+# codes distinguish WHICH trusted source anchored a current read, so an operator
+# can tell a league serving-snapshot read from a team-progressive one without
+# inferring it from a numeric id.
 REASON_CURRENT_SERVING_SNAPSHOT = 'current_publication_critical_serving_snapshot'
+REASON_CURRENT_TEAM_PROGRESSIVE = 'current_trusted_team_progressive_source'
+
+# Durable source-authority discriminator carried on a team-progressive authority
+# object (``TeamStateSnapshotAuthority.subject_type``). Local literal to avoid a
+# models import in this pure freshness module.
+_TEAM_PROGRESSIVE_SUBJECT_TYPE = 'team_progressive'
 
 # Live freshness reason codes that describe a stale/absent workload window. When a
 # current serving snapshot supersedes the live recompute, these no longer describe
@@ -82,12 +91,19 @@ def serving_snapshot_freshness_authority(
         # The serving snapshot itself is older than the freshness window: it is
         # genuinely stale and must NOT be presented as current (fail closed).
         return None
+    is_team_progressive = (
+        getattr(snapshot, 'subject_type', None) == _TEAM_PROGRESSIVE_SUBJECT_TYPE
+    )
     return {
         'data_through': data_through,
         'availability_reference_date': data_through + timedelta(days=1),
         'reference_date': ref,
         'active_window_days': int(active_window_days),
-        'reason_code': REASON_CURRENT_SERVING_SNAPSHOT,
+        'reason_code': (
+            REASON_CURRENT_TEAM_PROGRESSIVE if is_team_progressive
+            else REASON_CURRENT_SERVING_SNAPSHOT
+        ),
+        'source_scope': _TEAM_PROGRESSIVE_SUBJECT_TYPE if is_team_progressive else 'league_snapshot',
     }
 
 
@@ -113,6 +129,10 @@ def anchor_sync_status_to_serving_snapshot(sync_status, authority) -> dict:
         reasons.append(authority['reason_code'])
     data_through_iso = authority['data_through'].isoformat()
     availability_ref_iso = authority['availability_reference_date'].isoformat()
+    if authority.get('source_scope') == _TEAM_PROGRESSIVE_SUBJECT_TYPE:
+        label = f'Current trusted team source through {data_through_iso}.'
+    else:
+        label = f'Current serving trusted snapshot through {data_through_iso}.'
     freshness.update({
         'is_current': True,
         'is_stale': False,
@@ -121,7 +141,7 @@ def anchor_sync_status_to_serving_snapshot(sync_status, authority) -> dict:
         'reference_date': authority['reference_date'].isoformat(),
         'active_window_days': authority['active_window_days'],
         'reason_codes': reasons,
-        'label': f'Current serving trusted snapshot through {data_through_iso}.',
+        'label': label,
         'stale_warning': None,
     })
     data = dict(anchored.get('data') or {})

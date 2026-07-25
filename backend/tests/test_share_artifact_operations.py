@@ -404,7 +404,8 @@ def test_recent_artifacts_newest_first_and_safe(app, monkeypatch):
         assert 'payload' not in row
         assert set(row).issubset({
             'public_id', 'artifact_type', 'team_id', 'team_name', 'team_abbreviation',
-            'product_date', 'source_snapshot_id', 'lifecycle_state', 'schema_version',
+            'product_date', 'source_snapshot_id', 'source_authority_type',
+            'lifecycle_state', 'schema_version',
             'render_version', 'integrity_state', 'created_at', 'published_at',
             'superseded_at', 'withdrawn_at',
         })

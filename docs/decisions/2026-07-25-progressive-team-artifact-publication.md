@@ -43,10 +43,27 @@ new immutable checkpoint and a new immutable artifact without rewriting the prio
 ## Chosen representation
 
 Founder-selected: a **minimal immutable checkpoint table** (rather than overloading a
-league snapshot id or reusing `subject_type`/`subject_key` alone). It gives clean,
-queryable, durable provenance for a trust-critical immutable publication. The migration
-is additive and independently reversible; existing league snapshots and artifacts stay
-valid; `dashboard_snapshots` and its gates are unchanged.
+league snapshot id). It gives clean, queryable, durable provenance for a trust-critical
+immutable publication. The migration is additive and independently reversible; existing
+league snapshots and artifacts stay valid; `dashboard_snapshots` and its gates are
+unchanged.
+
+### Durable source-authority discriminator on the artifact
+
+The checkpoint table supplies the artifact's non-null `source_snapshot_id`, but that
+column is a bare integer that shares one integer space with `dashboard_snapshots.id` —
+the two can collide. The trusted-source TYPE is therefore recorded DURABLY on the
+artifact itself, in the immutable `subject_type` field (already part of the equivalence
++ integrity contract): a progressive artifact stamps `subject_type='team_progressive'`
+plus a self-describing `subject_key`; a league artifact leaves `subject_type` NULL.
+`source_snapshot_id` is never used alone to determine source type, and an audit row is
+never the artifact's source identity. `source_authority_type` classifies an artifact
+from this durable field. Because it reuses an existing immutable identity field, the
+discriminator needs no additional migration and does not change any existing league or
+legacy artifact's identity. The checkpoint additionally gains a DB unique constraint on
+`(team_id, trigger_game_pk, evidence_revision)` so idempotency is enforced under a
+concurrent race, and `evidence_revision` is a sorted, correction-sensitive digest of
+the committed appearance ledger (row-order independent).
 
 ## Consequences
 

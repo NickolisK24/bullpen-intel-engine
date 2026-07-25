@@ -36,6 +36,23 @@ availability reference, source sync run, the fail-closed trust verdict
 `TeamStateSnapshotAuthority`-compatible surface so the existing single-team path
 consumes it unchanged.
 
+## Durable source-authority discriminator (no id-collision)
+
+`source_snapshot_id` alone is a bare integer, and a league `dashboard_snapshots.id`
+and a `team_progressive_publications.id` share one integer space — they can collide.
+The trusted-source TYPE must therefore be durable on the artifact itself, not inferred
+from that id. Every progressive artifact stamps `subject_type='team_progressive'`
+(and a self-describing `subject_key` = `team_progressive:{team_id}:{game_pk}:
+{evidence_revision}`); a league artifact leaves `subject_type` NULL. `subject_type`
+and `subject_key` are already part of the equivalence + integrity contract
+(`build_equivalence_document`) and are frozen at publish, so the discriminator is
+immutable, tamper-evident, and part of identity: a league artifact and a progressive
+artifact can never dedup-collide even at the same numeric `source_snapshot_id`, and
+`models/share_artifact.py::source_authority_type` reads the durable field (never the
+id) to classify an artifact. Legacy and league artifacts keep their exact prior
+identity (subject_type stays NULL), so no existing artifact is invalidated and no new
+migration is needed for the discriminator.
+
 ## Finality / ledger contract (fail closed)
 
 A checkpoint is `trusted` only when, for that team's triggering game: the game is
@@ -71,12 +88,27 @@ is unchanged; finality alone does not make a stale team current.
 
 ## Idempotency and corrections
 
-The checkpoint is keyed on `(team_id, trigger_game_pk, evidence_revision)`. Re-running
-the same final-game evidence reuses the same checkpoint id → the same artifact
-`equivalence_key` → dedup (no duplicate artifacts on reconciliation reruns). A genuine
-authoritative correction changes `evidence_revision` → a new immutable checkpoint → a
-new immutable artifact; the prior artifact is never rewritten. Doubleheader Game 1 and
-Game 2 have distinct `game_pk` values → distinct checkpoints → distinct artifacts.
+The checkpoint is keyed on `(team_id, trigger_game_pk, evidence_revision)`, and that
+key is enforced by a DB **unique constraint** (`uq_team_progressive_team_game_
+revision`), not merely by a find-first query: two concurrent postgame runs racing to
+publish the same final game cannot both insert — the loser trips the constraint inside
+its SAVEPOINT, rolls back just that savepoint, and reuses the winner's checkpoint, so
+no duplicate checkpoint (and therefore no duplicate artifact) is ever minted.
+
+`evidence_revision` is a fingerprint of the game's committed appearance ledger, hashed
+over the SORTED meaning-bearing pitching-line fields (pitcher, pitch count, recorded
+outs, per-row stat-correction counter). It is therefore row-order independent (the DB
+return order cannot change it) and correction sensitive (a genuine box-score
+correction changes it even when the number of appearances is unchanged — a bare row
+count would miss that). Re-running the same final-game evidence reuses the same
+checkpoint id → the same artifact `equivalence_key` → dedup (no duplicate artifacts on
+reconciliation reruns). A genuine authoritative correction changes `evidence_revision`
+→ a new immutable checkpoint → a new immutable artifact (its `subject_key` carries the
+new revision); the prior artifact is never rewritten. Doubleheader Game 1 and Game 2
+have distinct `game_pk` values → distinct checkpoints → distinct artifacts. The
+"latest team state" read orders by `product_date` first (baseball chronology), so a
+later game's artifact is never shadowed by an earlier-day artifact that published
+later; within one product date the later publication is the deterministic tie-break.
 
 ## Trigger
 
@@ -93,19 +125,28 @@ slate and already knows the newly-final game_pks.
 ## League reconciliation (backstop, unchanged)
 
 When the full slate later completes, the league snapshot publishes and the existing
-all-team batch runs. Because a progressive artifact's identity includes its checkpoint
-`source_snapshot_id`, a league-sourced artifact has a different identity and does not
-collide; progressive artifacts are never deleted, and the morning league run remains
-the backstop for missed events, corrections, and complete aligned league state.
+all-team batch runs. Because a progressive artifact carries the durable
+`subject_type='team_progressive'` discriminator (part of its equivalence identity), a
+league-sourced artifact has a different identity and does not collide — even if the
+checkpoint id and the league snapshot id happen to be the same integer. Progressive
+artifacts are never deleted, and the morning league run remains the backstop for
+missed events, corrections, and complete aligned league state.
 
 ## Operations / audit
 
-Every progressive attempt is recorded in the existing
-`share_artifact_generation_audits` (request_source `progressive_game_final`), and its
-`source_snapshot_id` joins to the checkpoint (scope `team_progressive`, trigger
-game_pk, evidence revision). The existing operations read model distinguishes a
-team-progressive event from a league batch by that source + request_source; no second
-operations dashboard is added.
+The operations read is observability only. A progressive artifact's DURABLE source
+type is its `subject_type` discriminator, read via `source_authority_type` — never
+inferred from `source_snapshot_id`, never from an audit row. The league-scoped
+coverage overview resolves the latest LEAGUE snapshot and, to stay collision-safe,
+excludes the team-progressive scope by that durable discriminator: published-artifact
+coverage excludes `subject_type='team_progressive'`, and the audit lane excludes
+`request_source='progressive_game_final'`. So a checkpoint id that numerically equals
+the league snapshot id can never inflate or corrupt league coverage. Every progressive
+attempt is still recorded in the existing `share_artifact_generation_audits`
+(request_source `progressive_game_final`) for traceability, and the operator
+artifact/lifecycle projections surface `source_authority_type` so a team-progressive
+event is visibly distinct from a league batch. No second operations dashboard is
+added.
 
 ## Out of scope / preserved
 

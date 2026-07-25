@@ -61,6 +61,36 @@ from utils.time import utc_now_naive
 SHARE_ARTIFACT_SCHEMA_VERSION = '1.0.0'
 
 
+# Durable source-authority discriminator carried on ``subject_type`` (an immutable
+# field that is part of the artifact's equivalence + integrity contract). The
+# TRUSTED SOURCE that authorized an artifact must be identifiable durably from the
+# artifact itself, never inferred from the bare numeric ``source_snapshot_id`` — a
+# league dashboard-snapshot id and a team-progressive checkpoint id share one
+# integer space and can collide. A team-progressive artifact stamps
+# ``subject_type = SUBJECT_TYPE_TEAM_PROGRESSIVE``; a league-snapshot artifact
+# leaves ``subject_type`` NULL (``SUBJECT_TYPE_LEAGUE_SNAPSHOT``), so legacy and
+# league artifacts keep their exact prior identity and never dedup-collide with a
+# progressive one.
+SUBJECT_TYPE_TEAM_PROGRESSIVE = 'team_progressive'
+SUBJECT_TYPE_LEAGUE_SNAPSHOT = None
+
+# Machine-readable source-authority type returned by ``source_authority_type``.
+SOURCE_AUTHORITY_TEAM_PROGRESSIVE = 'team_progressive'
+SOURCE_AUTHORITY_LEAGUE_SNAPSHOT = 'league_snapshot'
+
+
+def source_authority_type(artifact) -> str:
+    """Resolve an artifact's trusted-source TYPE from its durable identity field.
+
+    Reads the immutable ``subject_type`` discriminator (part of the equivalence +
+    integrity contract), never the bare ``source_snapshot_id`` integer. Any artifact
+    not stamped as team-progressive is a league-snapshot artifact.
+    """
+    if getattr(artifact, 'subject_type', None) == SUBJECT_TYPE_TEAM_PROGRESSIVE:
+        return SOURCE_AUTHORITY_TEAM_PROGRESSIVE
+    return SOURCE_AUTHORITY_LEAGUE_SNAPSHOT
+
+
 # ---------------------------------------------------------------------------
 # Lifecycle
 # ---------------------------------------------------------------------------

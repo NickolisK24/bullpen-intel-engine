@@ -443,6 +443,15 @@ def generate_team_state_artifact(
     try:
         payload = build_team_state_payload(source, version=TEAM_STATE_LATEST)
         kwargs = payload.to_share_artifact_kwargs()
+        # Stamp the DURABLE source-authority discriminator into the artifact's
+        # immutable identity. subject_type/subject_key are part of the equivalence +
+        # integrity contract, so a team-progressive artifact records that its trusted
+        # source is a team progressive checkpoint (not a league snapshot) and can
+        # never be confused with a league artifact even if their numeric
+        # source_snapshot_id values collide. League generation leaves both None, so
+        # legacy/league artifacts keep their exact prior identity and dedup behavior.
+        kwargs['subject_type'] = source.snapshot.subject_type
+        kwargs['subject_key'] = source.snapshot.subject_key
         draft = build_share_artifact_draft(session=session, **kwargs)
         existing = find_published_equivalent(draft.equivalence_key, session=session)
         artifact = publish_share_artifact(draft, dedup=True, session=session)

@@ -46,6 +46,13 @@ def upgrade():
             "status IN ('trusted', 'withheld')",
             name='ck_team_progressive_status',
         ),
+        # DB-enforced idempotency: one checkpoint per (team, triggering game,
+        # evidence revision). Prevents duplicate checkpoints (and duplicate
+        # artifacts) under a concurrent postgame race on the same final game.
+        sa.UniqueConstraint(
+            'team_id', 'trigger_game_pk', 'evidence_revision',
+            name='uq_team_progressive_team_game_revision',
+        ),
         sa.PrimaryKeyConstraint('id'),
     )
     with op.batch_alter_table('team_progressive_publications', schema=None) as batch_op:
@@ -63,4 +70,5 @@ def downgrade():
         batch_op.drop_index('ix_team_progressive_team_game')
         batch_op.drop_index('ix_team_progressive_game')
         batch_op.drop_index('ix_team_progressive_team')
+        batch_op.drop_constraint('uq_team_progressive_team_game_revision', type_='unique')
     op.drop_table('team_progressive_publications')
