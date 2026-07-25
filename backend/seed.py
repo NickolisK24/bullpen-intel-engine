@@ -16,6 +16,7 @@ from models.pitcher import Pitcher
 from models.game_log import GameLog
 from models.prospect import Prospect
 from models.fatigue_score import FatigueScore
+from services.appearance_team_authority import resolve_for_write
 from services.mlb_api import mlb_client
 from services.fatigue import calculate_fatigue
 from services.roster_status import STATUS_UNKNOWN, normalize_roster_status_value
@@ -179,6 +180,14 @@ def seed_game_logs():
                     parse_mlb_innings_to_outs(stat.get('inningsPitched', '0.0'))
                 )
 
+                # Team-at-appearance authority (Foundation 1): resolve the represented
+                # team from the official schedule ledger (the opponent-facing side),
+                # never the pitcher's current team. Unresolved seeds fail closed to a
+                # NULL/unresolved authority.
+                appearance_team = resolve_for_write(
+                    game_pk=game_pk, opponent_team_id=opponent.get('id'),
+                )
+
                 log = GameLog(
                     pitcher_id=pitcher.id,
                     mlb_game_pk=game_pk,
@@ -202,6 +211,7 @@ def seed_game_logs():
                     win=stat.get('wins', 0) > 0,
                     loss=stat.get('losses', 0) > 0,
                     save=stat.get('saves', 0) > 0,
+                    **appearance_team.to_write_fields(),
                 )
                 db.session.add(log)
                 seeded += 1

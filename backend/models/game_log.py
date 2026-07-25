@@ -59,7 +59,31 @@ class GameLog(db.Model):
         db.Index('ix_game_log_pitcher_date', 'pitcher_id', 'game_date'),
         db.Index('ix_game_log_game_pk',      'mlb_game_pk'),
         db.Index('ix_game_log_game_type',    'game_type'),
+        # Team-at-appearance authority (Foundation 1). Indexed for the future
+        # team-season bullpen aggregation that will replace the current-team join.
+        db.Index('ix_game_log_appearance_team_date', 'appearance_team_id', 'game_date'),
+        db.Index('ix_game_log_game_pk_appearance_team', 'mlb_game_pk', 'appearance_team_id'),
+        # Stored-state invariant (Foundation 1): the status vocabulary AND the
+        # status<->team_id combination are enforced at the database, not merely by
+        # writer discipline. A resolved appearance MUST carry a team id; an
+        # unresolved/conflict appearance and a legacy (NULL-status) row MUST carry
+        # none — so a conflict/unresolved row can never retain a silently-selected
+        # team, and a resolved row can never be team-less.
+        db.CheckConstraint(
+            "(appearance_team_status IS NULL AND appearance_team_id IS NULL) OR "
+            "(appearance_team_status = 'resolved' AND appearance_team_id IS NOT NULL) OR "
+            "(appearance_team_status IN ('unresolved', 'conflict') "
+            "AND appearance_team_id IS NULL)",
+            name='ck_game_logs_appearance_team_status',
+        ),
     )
+
+    # Team-at-appearance resolution status vocabulary (Foundation 1). A NULL status
+    # is a legacy row not yet backfilled (Step 2); unresolved/conflict fail closed
+    # for team-season aggregation and are never encoded as a fake team id.
+    APPEARANCE_TEAM_RESOLVED = 'resolved'
+    APPEARANCE_TEAM_UNRESOLVED = 'unresolved'
+    APPEARANCE_TEAM_CONFLICT = 'conflict'
 
     id = db.Column(db.Integer, primary_key=True)
     pitcher_id = db.Column(db.Integer, db.ForeignKey('pitchers.id'), nullable=False)
@@ -105,6 +129,22 @@ class GameLog(db.Model):
     last_stat_correction_at = db.Column(db.DateTime)
     last_stat_correction_source = db.Column(db.String(40))
     last_stat_correction_sync_run_id = db.Column(db.Integer)
+
+    # ── Team-at-appearance authority (Foundation 1) ───────────────────────────
+    # The MLB team the pitcher REPRESENTED in this game, resolved from official
+    # game-side evidence at ingestion (box-score pitching side; the schedule ledger
+    # opponent side when the box-score side is absent) — NEVER from the pitcher's
+    # mutable current Pitcher.team_id. team_id follows the project-wide plain-integer
+    # convention (there is no teams table); no FK, consistent with ScheduledGame.
+    # Nullable: legacy historical rows are intentionally left un-backfilled in this
+    # foundation (Step 2 backfills them). ``appearance_team_status`` fails closed:
+    # unresolved/conflict rows carry no attributed team and are excluded from future
+    # team-season aggregation. ``appearance_team_source`` records which official
+    # authority resolved it; ``appearance_team_reason`` is a governed reason code.
+    appearance_team_id = db.Column(db.Integer, nullable=True)
+    appearance_team_source = db.Column(db.String(60), nullable=True)
+    appearance_team_status = db.Column(db.String(20), nullable=True)
+    appearance_team_reason = db.Column(db.String(80), nullable=True)
 
     def to_dict(self):
         return {

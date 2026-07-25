@@ -454,6 +454,12 @@ def test_frozen_legacy_what_changed_files_untouched():
         # no public route, renderer, or what-changed behavior change.
         'backend/migrations/versions/b3d9f1a7c2e5_add_team_progressive_publications.py',
     }
+    allowed_team_at_appearance_files = {
+        # feat/team-at-appearance-authority (Bullpen Performance Context — Foundation 1):
+        # additive, nullable team-at-appearance columns on game_logs. Purely additive,
+        # reversible, no historical backfill, no reader migrated, no what-changed change.
+        'backend/migrations/versions/a4f1c7e9b3d2_add_game_log_appearance_team.py',
+    }
     allowed_share_artifact_cutover_files = {
         # feature/share-artifact-generation-cutover (Share Cards SC-03A cutover):
         # the active Share Card entry points now read the published, integrity-
@@ -525,6 +531,7 @@ def test_frozen_legacy_what_changed_files_untouched():
         if path not in allowed_wp42_schedule_files
         if path not in allowed_share_artifacts_domain_files
         if path not in allowed_progressive_team_publication_files
+        if path not in allowed_team_at_appearance_files
     )
 
 

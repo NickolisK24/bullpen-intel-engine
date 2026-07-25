@@ -26,6 +26,7 @@ from models.postgame_processed_game import PostgameProcessedGame
 from models.scheduled_game import ScheduledGame
 from models.sync_run import SyncRun
 from models.sync_failure import SyncFailure
+from services import appearance_team_authority
 from services import dead_letter
 from services import pitcher_season_ledger_coverage
 from services import publication_criticality
@@ -506,6 +507,7 @@ def _game_log_values_from_stats(
     opponent_abbreviation: str | None,
     games_started,
     include_leverage_index: bool = False,
+    appearance_team: appearance_team_authority.AppearanceTeamResolution | None = None,
 ) -> dict:
     innings_pitched_outs = validate_innings_outs(
         parse_mlb_innings_to_outs(stats.get('inningsPitched', '0.0'))
@@ -545,6 +547,12 @@ def _game_log_values_from_stats(
     }
     if include_leverage_index:
         values['leverage_index'] = _extract_leverage_index(stats)
+    if appearance_team is not None:
+        # Freeze the team-at-appearance authority onto the row at write time
+        # (Foundation 1). Resolved from official game-side evidence, never from the
+        # pitcher's mutable current team. An unresolved/conflict appearance is still
+        # stored, carrying a fail-closed status and no attributed team.
+        values = appearance_team_authority.apply_to_new_log(values, appearance_team)
     return values
 
 
@@ -658,6 +666,7 @@ def _upsert_game_log_from_authoritative_values(
     job_name='daily_sync',
     include_leverage_index=False,
     existing=_OPTIONAL_INPUT_NOT_PROVIDED,
+    appearance_team=None,
 ):
     if existing is _OPTIONAL_INPUT_NOT_PROVIDED:
         existing = GameLog.query.filter_by(
@@ -703,11 +712,30 @@ def _upsert_game_log_from_authoritative_values(
             setattr(existing, field, new_value)
             changed_fields.append(field)
 
+    # Team-at-appearance authority (Foundation 1) is reconciled OUTSIDE the generic
+    # stat-correction loop: a stat-only correction never erases team attribution, and
+    # an unchanged re-sweep never backfills a legacy row. It is only attributed on a
+    # genuine correction, and only re-attributed by an equal/higher-precedence
+    # official source through this governed path (never by roster sync).
+    appearance_reason = None
+    if appearance_team is not None:
+        appearance_reason = appearance_team_authority.reconcile_on_update(
+            existing, appearance_team, correction_applied=bool(changed_fields),
+        )
+
     if not changed_fields:
+        if appearance_reason is None:
+            return {
+                'status': 'unchanged',
+                'log': existing,
+                'changed_fields': [],
+            }
+        db.session.add(existing)
         return {
-            'status': 'unchanged',
+            'status': 'corrected',
             'log': existing,
             'changed_fields': [],
+            'appearance_team_reason': appearance_reason,
         }
 
     existing.stat_correction_count = (existing.stat_correction_count or 0) + 1
@@ -723,6 +751,7 @@ def _upsert_game_log_from_authoritative_values(
         'status': 'corrected',
         'log': existing,
         'changed_fields': changed_fields,
+        'appearance_team_reason': appearance_reason,
     }
 
 
@@ -1199,6 +1228,10 @@ def _ingest_boxscore_pitching_line(
 
     stats = line.get('stats') or {}
     opponent, opponent_abbreviation = _opponent_for_line(game, line, team_abbr_map)
+    # Team-at-appearance authority: the official box-score pitching side (already
+    # validated for game-side/line conflicts by _resolve_pitching_line_team) is the
+    # authoritative source; cross-check against the schedule ledger's opponent side.
+    appearance_team = _appearance_team_for_boxscore_line(game, line, game_pk)
     values = _game_log_values_from_stats(
         stats=stats,
         pitcher=pitcher,
@@ -1209,6 +1242,7 @@ def _ingest_boxscore_pitching_line(
         opponent_abbreviation=opponent_abbreviation,
         games_started=_line_games_started(line, pitcher_order),
         include_leverage_index=True,
+        appearance_team=appearance_team,
     )
     return _upsert_game_log_from_authoritative_values(
         pitcher=pitcher,
@@ -1219,6 +1253,26 @@ def _ingest_boxscore_pitching_line(
         sync_run_id=sync_run_id,
         job_name=job_name,
         include_leverage_index=True,
+        appearance_team=appearance_team,
+    )
+
+
+def _appearance_team_for_boxscore_line(game: dict, line: dict, game_pk):
+    """Resolve the team-at-appearance for a box-score pitching line (Foundation 1).
+
+    The box-score side is authoritative; the schedule ledger's opponent side is a
+    cross-check that fails closed to ``conflict`` on a definite disagreement. Returns
+    an ``unresolved`` resolution if the official side cannot be determined — never a
+    guess and never the pitcher's current team.
+    """
+    team, _team_error = _resolve_pitching_line_team(game, line)
+    boxscore_team_id = team['team_id'] if team else None
+    opposite_side = 'away' if line.get('side') == 'home' else 'home'
+    opponent_team_id = _positive_external_id(_game_team_id(game, opposite_side))
+    return appearance_team_authority.resolve_for_write(
+        boxscore_team_id=boxscore_team_id,
+        game_pk=game_pk,
+        opponent_team_id=opponent_team_id,
     )
 
 
@@ -2650,6 +2704,14 @@ def _ingest_game_log_split(
             return {'status': 'unresolved_finality', 'reason': 'unresolved_finality'}
 
     opponent = split.get('opponent', {})
+    # Team-at-appearance authority: the per-pitcher gameLog payload carries only the
+    # opponent, not the pitcher's own side, so resolve the represented team from the
+    # official schedule ledger (the side that faces this opponent). Never the
+    # pitcher's current team.
+    appearance_team = appearance_team_authority.resolve_for_write(
+        game_pk=game_pk,
+        opponent_team_id=opponent.get('id'),
+    )
     values = _game_log_values_from_stats(
         stats=stat,
         pitcher=pitcher,
@@ -2659,6 +2721,7 @@ def _ingest_game_log_split(
         opponent=opponent.get('name'),
         opponent_abbreviation=team_abbr_map.get(opponent.get('id')),
         games_started=parse_games_started(stat.get('gamesStarted')),
+        appearance_team=appearance_team,
     )
     row_key = (pitcher.id, _positive_external_id(game_pk))
     preloaded = (
@@ -2674,6 +2737,7 @@ def _ingest_game_log_split(
         source=correction_source,
         sync_run_id=sync_run_id,
         job_name=job_name,
+        appearance_team=appearance_team,
         # A map hit avoids the per-split SELECT; a miss keeps the real query
         # so a row stored under an out-of-window date is never double-inserted.
         **({'existing': preloaded} if preloaded is not None else {}),
