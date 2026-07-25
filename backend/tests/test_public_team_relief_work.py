@@ -1446,6 +1446,10 @@ def test_existing_public_routes_behavior_freeze(monkeypatch):
         # generator, no new public claim/classification/vocabulary — it displays the
         # already-frozen artifact.
         'frontend/src/components/share/PublicShareArtifactPage.jsx',
+        # SC-04B v1.2: the code-rendered Team State card + its test, rendered first for
+        # team-state-1.2.0 artifacts (older artifacts keep their existing components).
+        'frontend/src/components/share/TeamStateArtifactCard.jsx',
+        'frontend/tests/teamStateArtifactCard.test.mjs',
         'frontend/src/utils/publicShareArtifact.js',
         'frontend/tests/publicShareArtifact.test.mjs',
         'frontend/src/App.jsx',

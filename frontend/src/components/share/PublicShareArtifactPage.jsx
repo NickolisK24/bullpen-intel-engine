@@ -15,6 +15,7 @@ import {
   publicSharePath,
 } from '../../utils/publicShareArtifact'
 import { formatDateOnly, formatUtcDateTimeEt } from '../../utils/dateDisplay'
+import TeamStateArtifactCard from './TeamStateArtifactCard'
 
 const SITE = 'BaseballOS'
 
@@ -145,13 +146,18 @@ function LoadingState() {
 }
 
 // A. Historical context bar — compact, clearly separate from the artifact.
-function HistoricalContextBar({ dataThrough, publishedAt }) {
+// The scope label is backend-owned and derived from the artifact's DURABLE
+// source-authority discriminator (team-progressive vs league snapshot), never
+// inferred client-side. It falls back to the league label for older artifacts that
+// predate the scope projection.
+function HistoricalContextBar({ dataThrough, publishedAt, scope }) {
   const dataThroughText = fmtDate(dataThrough)
   const publishedText = fmtDateTime(publishedAt)
+  const scopeLabel = (scope && scope.display_label) || `Published ${SITE} Snapshot`
   return (
     <div className="mb-4 flex flex-col gap-1 rounded-lg border border-dirt bg-field/40 px-4 py-3 text-xs sm:flex-row sm:items-center sm:justify-between">
       <span className="font-mono uppercase tracking-widest text-chalk500">
-        Published {SITE} snapshot
+        {scopeLabel}
       </span>
       <span className="text-chalk400">
         {dataThroughText ? (
@@ -168,24 +174,21 @@ function HistoricalContextBar({ dataThrough, publishedAt }) {
 
 export function ArtifactView({ artifact, superseded }) {
   if (!artifact) return <ApiErrorState publicId={null} />
-  const team = artifact.team || {}
-  const teamState = artifact.team_state || {}
-  const trust = artifact.trust || {}
-  const copy = artifact.copy || {}
-  const routes = artifact.routes || {}
   const freshness = artifact.freshness || {}
-  const evidence = Array.isArray(artifact.evidence) ? artifact.evidence : []
-  const limitations = Array.isArray(artifact.limitations) ? artifact.limitations : []
-
-  const teamName = team.team_name || 'This team'
-  const publicLabel = teamState.public_label || 'Team State'
-  const accent = accentFor(teamState.public_state)
-  const why = copy.why || teamState.summary
   const dataThrough = freshness.data_through || artifact.product_date
+  const scope = artifact.publication_scope || null
+  // A team-state-1.2.0 artifact carries a backend-owned card block. When present we
+  // render the code-rendered card FIRST, then the historical/immutable explanation
+  // and destinations. Older artifacts keep their original stored components verbatim.
+  const card = artifact.card || null
 
   return (
     <article className="share-artifact space-y-5">
-      <HistoricalContextBar dataThrough={dataThrough} publishedAt={artifact.published_at} />
+      <HistoricalContextBar dataThrough={dataThrough} publishedAt={artifact.published_at} scope={scope} />
+
+      {scope && scope.historical_note ? (
+        <p className="text-xs leading-relaxed text-chalk500">{scope.historical_note}</p>
+      ) : null}
 
       {superseded && artifact.superseded ? (
         <aside className="rounded-lg border border-amber/40 bg-amber/10 px-4 py-3 text-sm text-chalk200" role="note">
@@ -204,6 +207,33 @@ export function ArtifactView({ artifact, superseded }) {
         </aside>
       ) : null}
 
+      {card ? <TeamStateArtifactCard card={card} /> : <LegacyArtifactBody artifact={artifact} />}
+
+      <ArtifactDestinations routes={artifact.routes || {}} />
+    </article>
+  )
+}
+
+// The original SC-04B stored components for legacy (1.0.0 / 1.1.0) artifacts —
+// hero, evidence receipts, trust & freshness, limitations — rendered verbatim from
+// the immutable projected fields so existing artifacts are unchanged.
+function LegacyArtifactBody({ artifact }) {
+  const team = artifact.team || {}
+  const teamState = artifact.team_state || {}
+  const trust = artifact.trust || {}
+  const copy = artifact.copy || {}
+  const freshness = artifact.freshness || {}
+  const evidence = Array.isArray(artifact.evidence) ? artifact.evidence : []
+  const limitations = Array.isArray(artifact.limitations) ? artifact.limitations : []
+
+  const teamName = team.team_name || 'This team'
+  const publicLabel = teamState.public_label || 'Team State'
+  const accent = accentFor(teamState.public_state)
+  const why = copy.why || teamState.summary
+  const dataThrough = freshness.data_through || artifact.product_date
+
+  return (
+    <>
       {/* B. Designed artifact hero — immutable projected fields only. */}
       <div
         className={`share-hero card overflow-hidden border ${accent.border}`}
@@ -296,39 +326,45 @@ export function ArtifactView({ artifact, superseded }) {
           </ul>
         </section>
       ) : null}
+    </>
+  )
+}
 
-      {/* G. Where to go next — historical page vs. live surface, clearly distinct. */}
-      <nav aria-label="Methodology and destinations" className="card p-5 sm:p-6">
-        <h2 className="section-title text-xl">Where to go next</h2>
-        <p className="mt-2 text-xs text-chalk500">
-          This artifact is historical. The bullpen surface below is current.
-        </p>
-        <ul className="mt-3 flex flex-col gap-2 text-sm">
-          {routes.methodology_url ? (
-            <li>
-              <a className="text-amber underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber/70" href={routes.methodology_url}>
-                View methodology
-              </a>
-            </li>
-          ) : null}
-          {routes.data_trust_url ? (
-            <li>
-              <a className="text-amber underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber/70" href={routes.data_trust_url}>
-                Review Data &amp; Trust
-              </a>
-            </li>
-          ) : null}
-          {routes.team_url ? (
-            <li>
-              <a className="text-amber underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber/70" href={routes.team_url}>
-                Open the current bullpen surface
-              </a>{' '}
-              <span className="text-chalk500">— live, not this historical snapshot</span>
-            </li>
-          ) : null}
-        </ul>
-      </nav>
-    </article>
+// G. Where to go next — historical page vs. live surface, clearly distinct. Shared
+// by every artifact version so the historical/live boundary and the methodology /
+// Data & Trust / current-bullpen destinations are always present.
+function ArtifactDestinations({ routes }) {
+  return (
+    <nav aria-label="Methodology and destinations" className="card p-5 sm:p-6">
+      <h2 className="section-title text-xl">Where to go next</h2>
+      <p className="mt-2 text-xs text-chalk500">
+        This artifact is historical. The bullpen surface below is current.
+      </p>
+      <ul className="mt-3 flex flex-col gap-2 text-sm">
+        {routes.methodology_url ? (
+          <li>
+            <a className="text-amber underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber/70" href={routes.methodology_url}>
+              View methodology
+            </a>
+          </li>
+        ) : null}
+        {routes.data_trust_url ? (
+          <li>
+            <a className="text-amber underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber/70" href={routes.data_trust_url}>
+              Review Data &amp; Trust
+            </a>
+          </li>
+        ) : null}
+        {routes.team_url ? (
+          <li>
+            <a className="text-amber underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber/70" href={routes.team_url}>
+              Open the current bullpen surface
+            </a>{' '}
+            <span className="text-chalk500">— live, not this historical snapshot</span>
+          </li>
+        ) : null}
+      </ul>
+    </nav>
   )
 }
 

@@ -485,6 +485,10 @@ def test_frozen_legacy_what_changed_files_untouched():
         # it still reads solely from the public Share Artifact API; no live/current
         # lookup, no generation, no internal/admin call, no new public claim logic.
         'frontend/src/components/share/PublicShareArtifactPage.jsx',
+        # SC-04B v1.2: the code-rendered Team State card + its test, rendered first for
+        # team-state-1.2.0 artifacts (older artifacts keep their existing components).
+        'frontend/src/components/share/TeamStateArtifactCard.jsx',
+        'frontend/tests/teamStateArtifactCard.test.mjs',
         'frontend/src/utils/publicShareArtifact.js',
         'frontend/tests/publicShareArtifact.test.mjs',
         'frontend/src/App.jsx',

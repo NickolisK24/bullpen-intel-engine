@@ -36,8 +36,10 @@ from models.share_artifact import (
     LIFECYCLE_SUPERSEDED,
     LIFECYCLE_WITHDRAWN,
     ShareArtifactRelation,
+    source_authority_type,
 )
 from services.share_artifact_repository import get_share_artifact_by_public_id
+from services.share_artifact_scope import scope_labels_for_authority
 from services.share_artifacts import verify_share_artifact_integrity
 from services.team_state_public_copy import build_evidence_receipts
 from services.team_state_public_vocabulary import (
@@ -74,6 +76,15 @@ _PUBLIC_ID_RE = re.compile(r'^[A-Za-z0-9._-]{1,64}$')
 METHODOLOGY_ROUTE = '/methodology'
 DATA_TRUST_ROUTE = '/trust'
 TEAM_SURFACE_ROUTE = '/bullpen'
+
+def _publication_scope(artifact) -> dict:
+    """Scope-aware public labels from the durable source-authority discriminator.
+
+    Backend-owned copy, resolved from the artifact's DURABLE source-authority
+    discriminator (subject_type) — never from the numeric source_snapshot_id — via
+    the single centralized scope authority also used by the immutable card payload.
+    """
+    return scope_labels_for_authority(source_authority_type(artifact))
 
 
 @dataclass(frozen=True)
@@ -250,6 +261,8 @@ def _public_view(artifact, session) -> dict:
         'schema_version': artifact.schema_version,
         'render_version': artifact.render_version,
         'payload_version': document.get('payload_version'),
+        # Scope-aware public identity from the DURABLE discriminator (never the id).
+        'publication_scope': _publication_scope(artifact),
         'revised': revised,
         'lifecycle_state': artifact.lifecycle_state,
         'is_historical': True,
@@ -296,9 +309,49 @@ def _public_view(artifact, session) -> dict:
             'data_trust_url': DATA_TRUST_ROUTE,
         },
     }
+    card = _card_view(artifact, document)
+    if card is not None:
+        view['card'] = card
+
     if artifact.lifecycle_state == LIFECYCLE_SUPERSEDED:
         view['superseded'] = _replacement_pointer(artifact, session)
     return view
+
+
+def _card_view(artifact, document: Mapping[str, Any]) -> Optional[dict]:
+    """Project the immutable v1.2 ``card`` block for the code-rendered card.
+
+    Reads only the frozen card block and a few artifact columns. It enriches the
+    frozen ``artifact_context`` (scope + data_through, all deterministic) with the
+    artifact's OWN ``generated_at`` / ``published_at`` from columns — those are not
+    frozen into the immutable payload (they are unknown at build time), so the read
+    supplies them. It composes no baseball meaning and mutates nothing.
+    """
+    card = document.get('card')
+    if not isinstance(card, Mapping):
+        return None
+
+    context = _mapping(card.get('artifact_context'))
+    artifact_context = {
+        'publication_scope': context.get('publication_scope'),
+        'publication_label': context.get('publication_label'),
+        'historical_note': context.get('historical_note'),
+        'data_through': context.get('data_through'),
+        # Not frozen in the immutable payload — supplied from the artifact columns.
+        'generated_at': _iso(artifact.created_at),
+        'published_at': _iso(artifact.published_at),
+    }
+
+    return {
+        'card_version': card.get('card_version'),
+        'artifact_context': artifact_context,
+        'team': dict(_mapping(card.get('team'))),
+        'state': dict(_mapping(card.get('state'))),
+        'readiness_summary': dict(_mapping(card.get('readiness_summary'))),
+        'reliever_evidence': [dict(_mapping(row)) for row in (card.get('reliever_evidence') or ())],
+        'trust': dict(_mapping(card.get('trust'))),
+        'limitations': [str(item) for item in (card.get('limitations') or ())],
+    }
 
 
 def _replacement_pointer(artifact, session) -> dict:

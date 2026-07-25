@@ -165,7 +165,11 @@ def _seed_rested_team():
     for seed in range(1, 9):
         _add_reliever(seed)
     _add_stale_sync_run()
-    seed_roster_readiness_snapshots()
+    # Seed roster readiness for the serving snapshot's slate too. A read produced from
+    # a trusted serving snapshot anchors its active-bullpen roster authority to the
+    # snapshot's data_through (the slate it published for), matching production where
+    # the roster snapshot aligns with that slate.
+    seed_roster_readiness_snapshots(snapshot_dates=[SNAPSHOT_DATA_THROUGH])
 
 
 # ---------------------------------------------------------------------------

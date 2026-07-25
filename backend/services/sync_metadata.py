@@ -26,6 +26,17 @@ STATUS_FAILED = 'failed'
 STATUS_NEVER = 'never'
 STATUS_METADATA_UNAVAILABLE = 'metadata_unavailable'
 
+# A TRANSIENT runtime limitation reflects a momentary process state (a sync in
+# progress) that recovers on the next completed sync. It is valid on the LIVE surface
+# but MUST NOT be frozen into an immutable public artifact (which would assert the
+# condition forever). It is classified by its freshness reason code so the artifact
+# generation path can drop it while durable evidence limitations pass through.
+SYNC_RUNNING_LIMITATION_TEXT = (
+    'A sync is currently running; data may reflect the previous completed sync.'
+)
+TRANSIENT_FRESHNESS_REASON_CODES = frozenset({'latest_sync_running'})
+TRANSIENT_LIMITATION_TEXTS = frozenset({SYNC_RUNNING_LIMITATION_TEXT})
+
 STAGE_STARTED = 'started'
 STAGE_TEAM_ASSIGNMENTS = 'team_assignments'
 STAGE_ROSTER_STATUS = 'roster_status'
@@ -929,7 +940,7 @@ def determine_freshness_state(
         limitations.append('The latest sync attempt failed; data may reflect an earlier successful sync.')
     if status == STATUS_RUNNING:
         reason_codes.append('latest_sync_running')
-        limitations.append('A sync is currently running; data may reflect the previous completed sync.')
+        limitations.append(SYNC_RUNNING_LIMITATION_TEXT)
 
     degradation = build_degradation_block(data_age_days)
     # Fail-closed: past the hard unavailable threshold the domain must not be

@@ -48,8 +48,20 @@ from services.team_state_source import TeamStateSource
 # v1.0.0 artifacts remain immutable and publicly readable under their own version.
 TEAM_STATE_V1_1 = 'team-state-1.1.0'
 
+# The card-baseline contract (SC-04B v1.2). It carries everything v1.1.0 carries
+# plus the code-rendered Team State card's two backend-owned data blocks — a
+# four-metric ``readiness_summary`` and a bounded, deterministically-ordered
+# ``reliever_evidence`` table — grouped under a single ``card`` block, alongside a
+# frozen ``artifact_context`` (scope-aware publication labels + data_through). It
+# adds NO performance metrics or league ranks (unsupported without a
+# team-at-appearance authority) and requires NO DB migration: ``payload`` /
+# ``trust_metadata`` are ``db.JSON`` and ``SHARE_ARTIFACT_SCHEMA_VERSION`` stays
+# ``1.0.0``. Legacy 1.0.0 / 1.1.0 artifacts remain immutable and readable under
+# their own versions.
+TEAM_STATE_V1_2 = 'team-state-1.2.0'
+
 # The version new artifacts are generated under. Legacy versions stay registered.
-TEAM_STATE_LATEST = TEAM_STATE_V1_1
+TEAM_STATE_LATEST = TEAM_STATE_V1_2
 
 
 TEAM_STATE_ARTIFACT_TYPE = 'team_state'
@@ -221,6 +233,20 @@ def _completeness_for(data_state) -> str:
     return _DATA_STATE_TO_COMPLETENESS.get(data_state, 'unknown')
 
 
+def _durable_limitations(limitations) -> list:
+    """Drop transient runtime limitations so only durable evidence caveats freeze.
+
+    A transient limitation (a sync momentarily running at generation time) recovers on
+    the next completed sync; freezing it into an immutable artifact would assert it
+    forever. Durable limitations (bounded partial coverage, stale source) pass through.
+    """
+    from services.sync_metadata import TRANSIENT_LIMITATION_TEXTS
+    return [
+        item for item in (limitations or [])
+        if item not in TRANSIENT_LIMITATION_TEXTS
+    ]
+
+
 def _evidence_inputs(source, readiness, status_code, summary, constraints) -> tuple:
     trust_metadata = readiness.get('trust_metadata') if isinstance(readiness, Mapping) else {}
     trust_metadata = trust_metadata if isinstance(trust_metadata, Mapping) else {}
@@ -312,11 +338,13 @@ def _build_team_state_document_v1(
             'governance_state': trust_metadata.get('governance_state'),
             'freshness_state': freshness.get('freshness_state'),
             'trust_state': eligibility.trust_state,
-            # SC-03B-07: preserve governed trust limitations (e.g. the bounded
-            # partial-active-bullpen-coverage note that keeps a medium read honest)
-            # on the immutable document, so a published medium artifact never presents
-            # a partial read as complete. Deterministic (no build-time content).
-            'limitations': list(trust_metadata.get('limitations') or []),
+            # SC-03B-07: preserve DURABLE governed trust limitations (e.g. the bounded
+            # partial-active-bullpen-coverage note that keeps a medium read honest) on
+            # the immutable document, so a published medium artifact never presents a
+            # partial read as complete. TRANSIENT runtime limitations (a sync in
+            # progress) are dropped here so a momentary process state is never frozen
+            # into an immutable public artifact. Deterministic (no build-time content).
+            'limitations': _durable_limitations(trust_metadata.get('limitations')),
             'ranking_applied': False,
             'selection_made': False,
         },
@@ -419,6 +447,114 @@ team_state_payload_registry.register(TeamStatePayloadContract(
     description=(
         'Team State Share Card canonical payload, contract v1.1.0 — adds the '
         'backend-owned deterministic public-copy block (SC-04B).'
+    ),
+))
+
+
+# ---------------------------------------------------------------------------
+# Version 1.2.0 contract — v1.1.0 + the code-rendered card's data blocks (SC-04B)
+# ---------------------------------------------------------------------------
+
+
+def _card_artifact_context(source, data_through_iso) -> dict:
+    """Frozen, deterministic publication-scope context for the card.
+
+    Scope labels come from the DURABLE source-authority discriminator
+    (``subject_type``) via the single centralized scope authority — never the
+    numeric ``source_snapshot_id`` — so a team-progressive artifact and a league
+    artifact each describe their own scope, frozen immutably. The artifact's OWN
+    ``generated_at`` / ``published_at`` are intentionally NOT frozen here (they are
+    unknown at build time and non-deterministic); the public read supplies them
+    from the artifact columns.
+    """
+    from services.share_artifact_scope import scope_labels_for_subject_type
+
+    scope = scope_labels_for_subject_type(getattr(source.snapshot, 'subject_type', None))
+    return {
+        'publication_scope': scope['publication_scope'],
+        'publication_label': scope['display_label'],
+        'historical_note': scope['historical_note'],
+        'data_through': data_through_iso,
+    }
+
+
+def _build_team_state_document_v1_2(
+    source: TeamStateSource,
+    eligibility: TeamStateEligibilityResult,
+) -> dict:
+    """v1.1.0 governed document + the code-rendered card's backend-owned data blocks.
+
+    Adds a single ``card`` block: a frozen ``artifact_context`` (scope + data_through),
+    the canonical ``team`` identity, the public ``state`` (public state + headline +
+    why, reused from the deterministic public copy), the four-metric
+    ``readiness_summary`` and bounded ``reliever_evidence`` from the card-metrics
+    authority, a reader-facing ``trust`` triplet, and durable ``limitations``. All
+    baseball meaning is backend-owned; nothing here is a performance metric or a
+    league rank. Deterministic: the same governed slate + data yields a
+    byte-identical document (no build-time clock).
+    """
+    from services.team_state_card_metrics import build_team_state_card_metrics
+
+    built = _build_team_state_document_v1_1(source, eligibility)
+    document = built['document']
+
+    public_copy = document.get('public_copy') if isinstance(document.get('public_copy'), Mapping) else {}
+    team_block = document.get('team') or {}
+    trust_block = document.get('trust') or {}
+    public_state = public_copy.get('state') if isinstance(public_copy.get('state'), Mapping) else {}
+
+    data_through = source.snapshot.data_through
+    data_through_iso = _iso(data_through)
+
+    if isinstance(data_through, date):
+        metrics = build_team_state_card_metrics(source.team_id, reference_date=data_through)
+    else:
+        # No slate to anchor to (eligibility should preclude this) — fail closed to
+        # empty card data rather than an unanchored computation.
+        metrics = {'readiness_summary': {}, 'reliever_evidence': [], 'evidence_window': {}}
+
+    card = {
+        'card_version': TEAM_STATE_V1_2,
+        'artifact_context': _card_artifact_context(source, data_through_iso),
+        'team': {
+            'team_id': team_block.get('team_id'),
+            'canonical_name': team_block.get('team_name'),
+            'abbreviation': team_block.get('team_abbreviation'),
+        },
+        'state': {
+            'public_state': public_state.get('public_code'),
+            'public_label': public_state.get('public_label'),
+            'headline': public_copy.get('headline'),
+            'why': public_copy.get('why'),
+        },
+        'readiness_summary': metrics.get('readiness_summary') or {},
+        'reliever_evidence': list(metrics.get('reliever_evidence') or ()),
+        'trust': {
+            'confidence': trust_block.get('confidence'),
+            'coverage_statement': public_copy.get('freshness_line'),
+            'source_statement': public_copy.get('trust_line'),
+        },
+        # Durable only: the public-copy limitations are already derived from the
+        # DURABLE governed trust limitations (transient runtime states dropped).
+        'limitations': [str(item) for item in (public_copy.get('limitations') or ())],
+        'evidence_window': metrics.get('evidence_window') or {},
+    }
+
+    document['payload_version'] = TEAM_STATE_V1_2
+    document['card'] = card
+
+    built['trust_metadata'] = dict(built['trust_metadata'])
+    built['trust_metadata']['payload_version'] = TEAM_STATE_V1_2
+    return built
+
+
+team_state_payload_registry.register(TeamStatePayloadContract(
+    version=TEAM_STATE_V1_2,
+    builder=_build_team_state_document_v1_2,
+    description=(
+        'Team State Share Card canonical payload, contract v1.2.0 — adds the '
+        'code-rendered card data blocks (readiness_summary + bounded reliever '
+        'evidence + scope-aware artifact_context), no performance metrics or ranks.'
     ),
 ))
 

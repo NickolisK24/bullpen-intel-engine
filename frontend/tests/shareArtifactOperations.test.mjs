@@ -254,6 +254,78 @@ test('loading state shows no fabricated numbers', () => {
   assert.equal(/>\s*0\s*</.test(html), false) // no placeholder zeros
 })
 
+// --- Progressive event section (v1.2) — a separate summary, never combined ---
+
+function progressiveEventFixture(overrides = {}) {
+  return {
+    has_event: true,
+    status: 'complete_with_refusals',
+    request_source: 'progressive_game_final',
+    trigger_game_pk: 823196,
+    official_game_date: '2026-07-23',
+    event_at: '2026-07-24T16:05:00Z',
+    checkpoint_ids: [275, 276],
+    team_count: 2,
+    attempted_team_count: 2,
+    generated_team_count: 1,
+    reused_team_count: 0,
+    refused_team_count: 1,
+    failed_team_count: 0,
+    missing_team_count: 0,
+    integrity_failure_count: 0,
+    integrity_error_count: 0,
+    teams: [
+      { team_id: 137, team_name: 'Giants', checkpoint_id: 275, state: 'generated', public_id: 'pubSF', reason_code: null, failure_code: null, integrity_state: 'verified', attempt_at: '2026-07-24T16:05:00Z' },
+      { team_id: 108, team_name: 'Angels', checkpoint_id: 276, state: 'refused', public_id: null, reason_code: 'insufficient_trust', failure_code: null, integrity_state: 'not_applicable', attempt_at: '2026-07-24T16:05:00Z' },
+    ],
+    ...overrides,
+  }
+}
+
+test('progressive event renders as a separate summary with its own counts and trigger game', () => {
+  const html = render(view({ overview: overviewFixture({ progressive_event: progressiveEventFixture() }) }))
+  assert.ok(html.includes('Latest Progressive Event'))
+  assert.ok(html.includes('Latest League Batch')) // the two summaries are distinct
+  assert.ok(html.includes('823196')) // trigger game
+  assert.ok(html.includes('275')) // checkpoint id
+  assert.ok(html.includes('Giants'))
+  assert.ok(html.includes('pubSF'))
+  assert.ok(html.includes('insufficient_trust'))
+})
+
+test('progressive counts are not combined with league counts', () => {
+  // League generated=1; progressive generated=1. They must both render, distinctly —
+  // there is no combined total anywhere.
+  const html = render(view({
+    overview: overviewFixture({
+      generated_team_count: 1,
+      progressive_event: progressiveEventFixture({ generated_team_count: 1 }),
+    }),
+  }))
+  const leagueIdx = html.indexOf('Latest League Batch')
+  const progressiveIdx = html.indexOf('Latest Progressive Event')
+  assert.ok(leagueIdx > -1 && progressiveIdx > leagueIdx)
+  // No "2" fabricated by summing league+progressive generated counts.
+  assert.equal(html.includes('data-progressive-event="present"'), true)
+})
+
+test('no progressive event renders a clean empty message', () => {
+  const html = render(view({
+    overview: overviewFixture({ progressive_event: { has_event: false, status: 'no_event', teams: [] } }),
+  }))
+  assert.ok(html.includes('No team-progressive publication event has occurred yet'))
+  assert.ok(html.includes('data-progressive-event="none"'))
+})
+
+test('progressive event shows even when the league snapshot is unavailable', () => {
+  const html = render(view({
+    overview: overviewFixture({ status: 'unavailable', reason: 'no_trusted_snapshot', teams: [], progressive_event: progressiveEventFixture() }),
+  }))
+  assert.ok(html.includes('No trusted published snapshot')) // league unavailable
+  assert.ok(html.includes('Latest Progressive Event')) // progressive still shown
+  assert.ok(html.includes('823196'))
+})
+
 test('the page is read-only: no mutation/generation controls', () => {
   for (const forbidden of ['Generate', 'Regenerate', 'Retry generation', 'Publish', 'Withdraw', 'Supersede', 'Delete', 'Repair', 'Recalculate']) {
     assert.equal(PAGE_SRC.includes(`>${forbidden}<`), false, `no ${forbidden} control`)

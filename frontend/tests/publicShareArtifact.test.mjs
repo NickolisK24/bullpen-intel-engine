@@ -82,8 +82,8 @@ test('/share/:publicId route is registered', () => {
 
 test('published artifact renders a designed historical read with public copy', () => {
   const html = render(React.createElement(ArtifactView, { artifact: artifactFixture(), superseded: false }))
-  // A. Historical context bar.
-  assert.match(html, /Published BaseballOS snapshot/)
+  // A. Historical context bar — league fallback label when no scope is present.
+  assert.match(html, /Published BaseballOS Snapshot/)
   assert.match(html, /Data through/)
   assert.match(html, /July 23, 2026/)
   // B. Hero — public state + why (once), team.
@@ -104,6 +104,44 @@ test('published artifact renders a designed historical read with public copy', (
   assert.match(html, /live, not this historical snapshot/)
   // Exactly one h1.
   assert.equal((html.match(/<h1/g) || []).length, 1)
+})
+
+test('a team-progressive artifact renders the scope-aware label and historical note', () => {
+  const scope = {
+    publication_scope: 'team_progressive',
+    display_label: 'Published Team Bullpen State',
+    context_label: "Updated after the team's completed game",
+    historical_note:
+      "This Team Bullpen State was published after the team's completed game and is preserved as a historical artifact.",
+  }
+  const html = render(
+    React.createElement(ArtifactView, {
+      artifact: artifactFixture({ publication_scope: scope }),
+      superseded: false,
+    }),
+  )
+  assert.match(html, /Published Team Bullpen State/)
+  assert.match(html, /published after the team&#x27;s completed game/)
+  // It must NOT claim to be a league snapshot.
+  assert.ok(!html.includes('Published BaseballOS Snapshot'))
+})
+
+test('a league-scope artifact renders the synchronized-snapshot label and note', () => {
+  const scope = {
+    publication_scope: 'league_snapshot',
+    display_label: 'Published BaseballOS Snapshot',
+    context_label: null,
+    historical_note:
+      'This Team Bullpen State comes from a synchronized BaseballOS league snapshot and is preserved as a historical artifact.',
+  }
+  const html = render(
+    React.createElement(ArtifactView, {
+      artifact: artifactFixture({ publication_scope: scope }),
+      superseded: false,
+    }),
+  )
+  assert.match(html, /Published BaseballOS Snapshot/)
+  assert.match(html, /synchronized BaseballOS league snapshot/)
 })
 
 test('no internal engine language or snake_case reaches the public page', () => {

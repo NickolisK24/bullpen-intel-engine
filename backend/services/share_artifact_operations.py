@@ -43,6 +43,7 @@ from services.share_artifact_batch_generation import (
 from services.share_artifact_integrity import ShareArtifactIntegrityError
 from services.share_artifact_repository import (
     audits_for_snapshot,
+    get_share_artifact_by_public_id,
     list_generation_audits,
     list_recent_team_state_artifacts,
     list_team_state_artifacts_for_snapshot,
@@ -50,6 +51,7 @@ from services.share_artifact_repository import (
 from services.share_artifacts import verify_share_artifact_integrity
 from services.team_directory import valid_team_directory
 from services.team_state_source import resolve_latest_trusted_snapshot
+from utils.db import db
 
 
 # Terminal coverage state for a canonical team against the selected snapshot.
@@ -310,6 +312,238 @@ def build_coverage_overview(*, session=None) -> dict:
         'artifact_count': len(artifacts),
         'teams': teams,
     }
+
+
+# ---------------------------------------------------------------------------
+# Workstream B2 — latest team-progressive publication event (SC-04B v1.2)
+# ---------------------------------------------------------------------------
+#
+# A progressive event is a DIFFERENT publication authority than the league batch:
+# one team's completed game publishes that team's artifact progressively, off its
+# own immutable checkpoint (never a league snapshot). This summary is deliberately
+# SEPARATE from ``build_coverage_overview`` — its counts describe the teams of one
+# trigger game and are NEVER combined with the all-or-nothing league batch counts.
+# Artifacts are scoped by the DURABLE ``subject_type`` discriminator; the
+# progressive ``request_source`` is used only as event/audit context, never as the
+# scope authority. A missing event returns cleanly (``has_event=False``), never an
+# error.
+
+
+PROGRESSIVE_STATUS_NONE = 'no_event'
+PROGRESSIVE_STATUS_COMPLETE = 'complete'
+PROGRESSIVE_STATUS_COMPLETE_WITH_REFUSALS = 'complete_with_refusals'
+PROGRESSIVE_STATUS_DEGRADED = 'degraded'
+PROGRESSIVE_STATUS_INCOMPLETE = 'incomplete'
+
+
+def _empty_progressive_event() -> dict:
+    return {
+        'has_event': False,
+        'status': PROGRESSIVE_STATUS_NONE,
+        'request_source': TeamProgressivePublication.REQUEST_SOURCE,
+        'trigger_game_pk': None,
+        'official_game_date': None,
+        'event_at': None,
+        'checkpoint_ids': [],
+        'team_count': 0,
+        'attempted_team_count': 0,
+        'generated_team_count': 0,
+        'reused_team_count': 0,
+        'refused_team_count': 0,
+        'failed_team_count': 0,
+        'missing_team_count': 0,
+        'integrity_failure_count': 0,
+        'integrity_error_count': 0,
+        'teams': [],
+    }
+
+
+def _latest_progressive_checkpoints(session):
+    """The latest progressive event's per-team checkpoints (newest trigger game).
+
+    The event is the most-recent trigger game; within it each team is represented by
+    its single newest checkpoint (a genuine evidence correction mints a new
+    checkpoint, so the newest is authoritative). Returns ``(trigger_game_pk,
+    [checkpoints...])`` or ``(None, [])`` when no progressive event exists.
+    """
+    latest = (
+        session.query(TeamProgressivePublication)
+        .order_by(
+            TeamProgressivePublication.created_at.desc(),
+            TeamProgressivePublication.id.desc(),
+        )
+        .first()
+    )
+    if latest is None:
+        return None, []
+
+    trigger_game_pk = latest.trigger_game_pk
+    query = session.query(TeamProgressivePublication)
+    if trigger_game_pk is None:
+        # A future non-game reconciliation checkpoint (null trigger game) — the event
+        # is exactly that one checkpoint, not a whole game's teams.
+        return trigger_game_pk, [latest]
+
+    rows = (
+        query.filter(TeamProgressivePublication.trigger_game_pk == trigger_game_pk)
+        .order_by(
+            TeamProgressivePublication.team_id.asc(),
+            TeamProgressivePublication.created_at.desc(),
+            TeamProgressivePublication.id.desc(),
+        )
+        .all()
+    )
+    newest_by_team = {}
+    for checkpoint in rows:
+        newest_by_team.setdefault(checkpoint.team_id, checkpoint)
+    return trigger_game_pk, [newest_by_team[tid] for tid in sorted(newest_by_team)]
+
+
+def _terminal_progressive_audit(checkpoint_id, session):
+    """The latest terminal progressive audit for one checkpoint id, or None.
+
+    Filters to the progressive request source so a league-batch audit that shares a
+    numeric source id can never be mistaken for this checkpoint's attempt — the
+    checkpoint id is the artifact's ``source_snapshot_id`` for a progressive artifact.
+    """
+    for audit in audits_for_snapshot(checkpoint_id, session=session):
+        if audit.request_source == TeamProgressivePublication.REQUEST_SOURCE:
+            return audit
+    return None
+
+
+def build_latest_progressive_event(*, session=None) -> dict:
+    """Deterministic summary of the LATEST team-progressive publication event.
+
+    Reports the trigger game, its date, the teams involved, their checkpoint ids,
+    per-team outcome (generated / reused / refused / failed / missing), public ids,
+    and integrity — all for ONE progressive event, never combined with the league
+    batch. Fails closed to an empty (``has_event=False``) result if no progressive
+    event exists.
+    """
+    session = session or db.session
+    trigger_game_pk, checkpoints = _latest_progressive_checkpoints(session)
+    if not checkpoints:
+        return _empty_progressive_event()
+
+    directory = valid_team_directory()
+    teams = []
+    counts = {
+        COVERAGE_GENERATED: 0, COVERAGE_REUSED: 0, COVERAGE_REFUSED: 0,
+        COVERAGE_FAILED: 0, COVERAGE_MISSING: 0,
+    }
+    integrity_failures = 0
+    integrity_errors = 0
+    event_at = None
+    official_game_date = None
+
+    for checkpoint in checkpoints:
+        if checkpoint.created_at is not None and (
+            event_at is None or checkpoint.created_at.isoformat() > event_at
+        ):
+            event_at = checkpoint.created_at.isoformat()
+        if checkpoint.official_game_date is not None:
+            official_game_date = _iso(checkpoint.official_game_date)
+
+        audit = _terminal_progressive_audit(checkpoint.id, session)
+        public_id = None
+        reason_code = None
+        failure_code = None
+        attempt_at = None
+        integrity_state = INTEGRITY_NOT_APPLICABLE
+
+        if audit is not None:
+            state = _AUDIT_OUTCOME_TO_COVERAGE.get(audit.outcome, COVERAGE_FAILED)
+            attempt_at = _iso(audit.created_at)
+            if state in (COVERAGE_GENERATED, COVERAGE_REUSED):
+                public_id = audit.artifact_public_id
+                artifact = (
+                    get_share_artifact_by_public_id(public_id, verify=False, session=session)
+                    if public_id else None
+                )
+                integrity_state = _integrity_state(artifact)
+            elif state == COVERAGE_REFUSED:
+                reason_code = _first(audit.blocking_conditions) or _first(audit.reasons)
+            elif state == COVERAGE_FAILED:
+                failure_code = audit.failure_code
+        else:
+            state = COVERAGE_MISSING
+
+        if integrity_state == INTEGRITY_MISMATCH:
+            integrity_failures += 1
+        elif integrity_state == INTEGRITY_ERROR:
+            integrity_errors += 1
+
+        if state not in counts:
+            raise ShareArtifactOperationsError(f'unexpected progressive state: {state!r}')
+        counts[state] += 1
+
+        entry = directory.get(checkpoint.team_id, {})
+        teams.append({
+            'team_id': checkpoint.team_id,
+            'team_name': entry.get('team_name'),
+            'team_abbreviation': entry.get('team_abbreviation'),
+            'checkpoint_id': checkpoint.id,
+            'checkpoint_status': checkpoint.status,
+            'checkpoint_trusted': bool(checkpoint.trusted),
+            'unavailable_reason': checkpoint.unavailable_reason,
+            'state': state,
+            'public_id': public_id,
+            'reason_code': reason_code,
+            'failure_code': failure_code,
+            'attempt_at': attempt_at,
+            'integrity_state': integrity_state,
+            'data_through': _iso(checkpoint.data_through),
+        })
+
+    generated = counts[COVERAGE_GENERATED]
+    reused = counts[COVERAGE_REUSED]
+    refused = counts[COVERAGE_REFUSED]
+    failed = counts[COVERAGE_FAILED]
+    missing = counts[COVERAGE_MISSING]
+    team_count = len(teams)
+    attempted = generated + reused + refused + failed
+
+    if team_count != attempted + missing:
+        raise ShareArtifactOperationsError(
+            'progressive invariant violated: team_count '
+            f'{team_count} != attempted {attempted} + missing {missing}'
+        )
+
+    status = _derive_progressive_status(
+        missing=missing, failed=failed,
+        integrity_failures=integrity_failures + integrity_errors, refused=refused,
+    )
+
+    return {
+        'has_event': True,
+        'status': status,
+        'request_source': TeamProgressivePublication.REQUEST_SOURCE,
+        'trigger_game_pk': trigger_game_pk,
+        'official_game_date': official_game_date,
+        'event_at': event_at,
+        'checkpoint_ids': [checkpoint.id for checkpoint in checkpoints],
+        'team_count': team_count,
+        'attempted_team_count': attempted,
+        'generated_team_count': generated,
+        'reused_team_count': reused,
+        'refused_team_count': refused,
+        'failed_team_count': failed,
+        'missing_team_count': missing,
+        'integrity_failure_count': integrity_failures,
+        'integrity_error_count': integrity_errors,
+        'teams': teams,
+    }
+
+
+def _derive_progressive_status(*, missing, failed, integrity_failures, refused) -> str:
+    if failed > 0 or integrity_failures > 0:
+        return PROGRESSIVE_STATUS_DEGRADED
+    if missing > 0:
+        return PROGRESSIVE_STATUS_INCOMPLETE
+    if refused > 0:
+        return PROGRESSIVE_STATUS_COMPLETE_WITH_REFUSALS
+    return PROGRESSIVE_STATUS_COMPLETE
 
 
 def _derive_status(*, enabled, missing, failed, integrity_failures, refused) -> str:
