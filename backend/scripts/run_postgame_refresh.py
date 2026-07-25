@@ -128,8 +128,27 @@ def main(argv=None):
     }
     print(json.dumps(summary, sort_keys=True, default=str))
 
+    # Postgame job success and LEAGUE snapshot publication are two separate results.
+    # A postgame refresh that ingested cleanly must not be marked failed merely because
+    # the league snapshot is (correctly) still pending during an active slate — the
+    # league snapshot stays all-or-nothing and only withholds because unrelated games
+    # remain non-final. The publication proof still honestly reports the candidate as
+    # unverified/pending; we only stop treating that EXPECTED active-slate pending as a
+    # workflow failure. Any GENUINE withholding (schedule gap, un-ingested final games,
+    # failed/incomplete markers, partial publication-critical work) is not classified
+    # as expected-pending and still exits non-zero. (The daily sync is unchanged: it
+    # continues to require a verified published trusted snapshot.)
+    from services.sync_publication_proof import (
+        LEAGUE_PUBLICATION_EXPECTED_PENDING_ACTIVE_SLATE,
+    )
+
     sync_succeeded = status.get('status') in sync_metadata.SUCCESSFUL_STATUSES
-    return 0 if sync_succeeded and publication_proof.get('verified') is True else 1
+    publication_ok = (
+        publication_proof.get('verified') is True
+        or publication_proof.get('league_publication_status')
+        == LEAGUE_PUBLICATION_EXPECTED_PENDING_ACTIVE_SLATE
+    )
+    return 0 if sync_succeeded and publication_ok else 1
 
 
 if __name__ == '__main__':

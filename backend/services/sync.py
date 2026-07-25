@@ -4168,20 +4168,11 @@ def run_postgame_refresh(
                         exc,
                     )
 
-            # Progressive per-team publication: each game that reached full completion
-            # this pass may publish its two teams' Team State artifacts independently,
-            # WITHOUT waiting for the whole league slate to be final. This reuses the
-            # canonical single-team generation path and is fully fail-closed and
-            # idempotent; a failure here must never break the postgame sync, and it
-            # never publishes or mutates the league dashboard snapshot.
-            progressive_result = _safe_run_progressive_team_publication(
-                sorted(progressive_final_game_pks),
-                sync_run_id=sync_run_id,
-                status=status,
-                run_logger=run_logger,
-            )
-            if progressive_result is not None:
-                status['progressive_team_publication'] = progressive_result
+            # Progressive per-team publication runs AFTER fatigue recalculation
+            # commits (see below), so each team's Team State is generated only once its
+            # required workload/readiness evidence for the completed game is current and
+            # committed. The newly-completed game_pks collected above are handed off to
+            # that later, post-readiness point.
 
             run_logger.info(
                 'Postgame ingestion complete for %s: processed=%s skipped=%s '
@@ -4223,6 +4214,26 @@ def run_postgame_refresh(
                 run_logger.info(
                     'Fatigue recalculation skipped: no postgame logs changed.'
                 )
+
+            # Progressive per-team publication: each game that reached full completion
+            # this pass may publish its two teams' Team State artifacts independently,
+            # WITHOUT waiting for the whole league slate to be final. It runs HERE —
+            # after fatigue recalculation has recalculated and COMMITTED the completed
+            # game's workload evidence — so the canonical Team Operations readiness the
+            # generation path reads is current and visible (fatigue rows updated,
+            # committed, in this session). It reuses the canonical single-team path and
+            # is fully fail-closed and idempotent; a failure here never breaks the
+            # postgame sync and never publishes or mutates the league dashboard
+            # snapshot. If fatigue recalculation itself raised, control never reaches
+            # here (the run fails closed) and no team is published on partial evidence.
+            progressive_result = _safe_run_progressive_team_publication(
+                sorted(progressive_final_game_pks),
+                sync_run_id=sync_run_id,
+                status=status,
+                run_logger=run_logger,
+            )
+            if progressive_result is not None:
+                status['progressive_team_publication'] = progressive_result
 
             if status['records_failed']:
                 status['status'] = (
