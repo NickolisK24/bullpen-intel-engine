@@ -64,6 +64,20 @@ def app():
             drop_test_schema(flask_app)
 
 
+def _persist_pitcher(mlb_id=990001, team_id=HOME_TEAM):
+    """Create and flush a real parent Pitcher for a production-shaped GameLog fixture.
+
+    game_logs.pitcher_id is a NOT-NULL foreign key to pitchers.id; a fixture must
+    reference a persisted parent (PostgreSQL enforces this even though local in-memory
+    SQLite does not). Callers use the returned ``pitcher.id`` — never an assumed key.
+    """
+    pitcher = Pitcher(mlb_id=mlb_id, full_name=f'Fixture {mlb_id}', team_id=team_id,
+                      active=True)
+    db.session.add(pitcher)
+    db.session.flush()
+    return pitcher
+
+
 def _seed_schedule(game_pk=GAME_PK, home=HOME_TEAM, away=AWAY_TEAM, game_date=GAME_DATE):
     db.session.add_all([
         ScheduledGame(team_id=home, game_pk=game_pk, game_date=game_date,
@@ -134,7 +148,8 @@ def test_appearance_team_columns_exist(app):
 
 
 def test_legacy_rows_may_remain_null(app):
-    log = GameLog(pitcher_id=1, mlb_game_pk=1, game_date=GAME_DATE,
+    p = _persist_pitcher()
+    log = GameLog(pitcher_id=p.id, mlb_game_pk=1, game_date=GAME_DATE,
                   innings_pitched=1.0, innings_pitched_outs=3)
     db.session.add(log); db.session.commit()
     assert log.appearance_team_id is None
@@ -142,7 +157,8 @@ def test_legacy_rows_may_remain_null(app):
 
 
 def test_status_check_constraint_rejects_bad_value(app):
-    db.session.add(GameLog(pitcher_id=1, mlb_game_pk=2, game_date=GAME_DATE,
+    p = _persist_pitcher()
+    db.session.add(GameLog(pitcher_id=p.id, mlb_game_pk=2, game_date=GAME_DATE,
                            innings_pitched=1.0, innings_pitched_outs=3,
                            appearance_team_status='bogus'))
     with pytest.raises(Exception):
@@ -440,7 +456,8 @@ def test_authoritative_team_correction_upgrades_via_governed_path(app):
 
 def test_lower_precedence_source_never_downgrades(app):
     # A boxscore-resolved row is not flipped by a later schedule resolution.
-    log = GameLog(pitcher_id=1, mlb_game_pk=1, game_date=GAME_DATE, innings_pitched=1.0,
+    p = _persist_pitcher()
+    log = GameLog(pitcher_id=p.id, mlb_game_pk=1, game_date=GAME_DATE, innings_pitched=1.0,
                   innings_pitched_outs=3, appearance_team_id=HOME_TEAM,
                   appearance_team_status=STATUS_RESOLVED, appearance_team_source=SOURCE_BOXSCORE,
                   appearance_team_reason=REASON_RESOLVED_BOXSCORE)
@@ -451,7 +468,8 @@ def test_lower_precedence_source_never_downgrades(app):
 
 
 def test_equal_precedence_disagreement_fails_closed_to_conflict(app):
-    log = GameLog(pitcher_id=1, mlb_game_pk=1, game_date=GAME_DATE, innings_pitched=1.0,
+    p = _persist_pitcher()
+    log = GameLog(pitcher_id=p.id, mlb_game_pk=1, game_date=GAME_DATE, innings_pitched=1.0,
                   innings_pitched_outs=3, appearance_team_id=HOME_TEAM,
                   appearance_team_status=STATUS_RESOLVED, appearance_team_source=SOURCE_SCHEDULE,
                   appearance_team_reason=REASON_RESOLVED_SCHEDULE)
@@ -477,37 +495,41 @@ def _insert(app_row):
 
 
 def test_check_rejects_resolved_without_team(app):
+    p = _persist_pitcher()
     with pytest.raises(Exception):
-        _insert(GameLog(pitcher_id=1, mlb_game_pk=10, game_date=GAME_DATE, innings_pitched=1.0,
+        _insert(GameLog(pitcher_id=p.id, mlb_game_pk=10, game_date=GAME_DATE, innings_pitched=1.0,
                         innings_pitched_outs=3, appearance_team_status=STATUS_RESOLVED))
     db.session.rollback()
 
 
 def test_check_rejects_conflict_with_team(app):
+    p = _persist_pitcher()
     with pytest.raises(Exception):
-        _insert(GameLog(pitcher_id=1, mlb_game_pk=11, game_date=GAME_DATE, innings_pitched=1.0,
+        _insert(GameLog(pitcher_id=p.id, mlb_game_pk=11, game_date=GAME_DATE, innings_pitched=1.0,
                         innings_pitched_outs=3, appearance_team_status=STATUS_CONFLICT,
                         appearance_team_id=HOME_TEAM))
     db.session.rollback()
 
 
 def test_check_rejects_unresolved_with_team(app):
+    p = _persist_pitcher()
     with pytest.raises(Exception):
-        _insert(GameLog(pitcher_id=1, mlb_game_pk=12, game_date=GAME_DATE, innings_pitched=1.0,
+        _insert(GameLog(pitcher_id=p.id, mlb_game_pk=12, game_date=GAME_DATE, innings_pitched=1.0,
                         innings_pitched_outs=3, appearance_team_status=STATUS_UNRESOLVED,
                         appearance_team_id=HOME_TEAM))
     db.session.rollback()
 
 
 def test_check_accepts_all_valid_combinations(app):
-    _insert(GameLog(pitcher_id=1, mlb_game_pk=13, game_date=GAME_DATE, innings_pitched=1.0,
+    p = _persist_pitcher()
+    _insert(GameLog(pitcher_id=p.id, mlb_game_pk=13, game_date=GAME_DATE, innings_pitched=1.0,
                     innings_pitched_outs=3))  # legacy NULL
-    _insert(GameLog(pitcher_id=1, mlb_game_pk=14, game_date=GAME_DATE, innings_pitched=1.0,
+    _insert(GameLog(pitcher_id=p.id, mlb_game_pk=14, game_date=GAME_DATE, innings_pitched=1.0,
                     innings_pitched_outs=3, appearance_team_status=STATUS_RESOLVED,
                     appearance_team_id=HOME_TEAM, appearance_team_source=SOURCE_BOXSCORE))
-    _insert(GameLog(pitcher_id=1, mlb_game_pk=15, game_date=GAME_DATE, innings_pitched=1.0,
+    _insert(GameLog(pitcher_id=p.id, mlb_game_pk=15, game_date=GAME_DATE, innings_pitched=1.0,
                     innings_pitched_outs=3, appearance_team_status=STATUS_UNRESOLVED))
-    _insert(GameLog(pitcher_id=1, mlb_game_pk=16, game_date=GAME_DATE, innings_pitched=1.0,
+    _insert(GameLog(pitcher_id=p.id, mlb_game_pk=16, game_date=GAME_DATE, innings_pitched=1.0,
                     innings_pitched_outs=3, appearance_team_status=STATUS_CONFLICT))
     assert GameLog.query.count() == 4
 
@@ -515,7 +537,8 @@ def test_check_accepts_all_valid_combinations(app):
 def test_unchanged_resweep_never_backfills_a_legacy_row(app):
     # A legacy NULL row hit by a resolved authority WITHOUT a stat correction stays NULL
     # (Step 2 owns backfill).
-    log = GameLog(pitcher_id=1, mlb_game_pk=1, game_date=GAME_DATE, innings_pitched=1.0,
+    p = _persist_pitcher()
+    log = GameLog(pitcher_id=p.id, mlb_game_pk=1, game_date=GAME_DATE, innings_pitched=1.0,
                   innings_pitched_outs=3)
     db.session.add(log); db.session.commit()
     resolved = ata.AppearanceTeamResolution(HOME_TEAM, STATUS_RESOLVED, SOURCE_SCHEDULE,
@@ -619,7 +642,8 @@ def test_doubleheader_preserves_game_identity_and_team(app):
 
 
 def test_read_accessor_returns_resolved_authority(app):
-    log = GameLog(pitcher_id=1, mlb_game_pk=1, game_date=GAME_DATE, innings_pitched=1.0,
+    p = _persist_pitcher()
+    log = GameLog(pitcher_id=p.id, mlb_game_pk=1, game_date=GAME_DATE, innings_pitched=1.0,
                   innings_pitched_outs=3, appearance_team_id=HOME_TEAM,
                   appearance_team_status=STATUS_RESOLVED, appearance_team_source=SOURCE_BOXSCORE)
     res = resolve_appearance_team(log)
@@ -627,10 +651,11 @@ def test_read_accessor_returns_resolved_authority(app):
 
 
 def test_read_accessor_returns_unresolved_and_conflict_explicitly(app):
-    legacy = GameLog(pitcher_id=1, mlb_game_pk=2, game_date=GAME_DATE, innings_pitched=1.0,
+    p = _persist_pitcher()
+    legacy = GameLog(pitcher_id=p.id, mlb_game_pk=2, game_date=GAME_DATE, innings_pitched=1.0,
                      innings_pitched_outs=3)
     assert resolve_appearance_team(legacy).status == STATUS_UNRESOLVED
-    conflict = GameLog(pitcher_id=1, mlb_game_pk=3, game_date=GAME_DATE, innings_pitched=1.0,
+    conflict = GameLog(pitcher_id=p.id, mlb_game_pk=3, game_date=GAME_DATE, innings_pitched=1.0,
                        innings_pitched_outs=3, appearance_team_status=STATUS_CONFLICT)
     r = resolve_appearance_team(conflict)
     assert r.status == STATUS_CONFLICT and r.team_id is None and not r.resolved
