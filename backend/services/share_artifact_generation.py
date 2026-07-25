@@ -20,6 +20,7 @@ rollback.
 
 from __future__ import annotations
 
+import inspect
 from dataclasses import dataclass
 from datetime import date
 from typing import Any, Mapping, Optional
@@ -119,6 +120,7 @@ def resolve_team_readiness_payload(
     *,
     requested_date: Optional[date] = None,
     session=None,
+    source_snapshot=None,
 ) -> Optional[Mapping[str, Any]]:
     """Resolve the governed Team Operations readiness payload for a team.
 
@@ -128,6 +130,16 @@ def resolve_team_readiness_payload(
     is duplicated here. Returns ``None`` when no current source inputs exist, so
     the eligibility engine refuses deterministically. Imports are deferred to
     avoid an import cycle with the api layer.
+
+    ``source_snapshot`` optionally pins the serving trusted daily snapshot this read
+    is produced from (the Share Artifact batch threads one shared validated
+    snapshot). When it is a published, serving, trusted snapshot whose
+    ``data_through`` is within the freshness window, the read's freshness is anchored
+    to that snapshot's authoritative ``data_through`` instead of a live, global
+    ``max(GameLog.game_date)`` recompute that can lag the snapshot. Fails closed: an
+    untrusted / stale / non-serving snapshot (or none) keeps the prior conservative
+    live freshness. Per-team coverage is untouched — a team whose own active-bullpen
+    inputs are insufficient still degrades through the unchanged coverage classifier.
     """
     from api.team_operations import (
         TEAM_OPERATIONS_DEFAULT_LIMIT,
@@ -145,10 +157,25 @@ def resolve_team_readiness_payload(
         classify_latest_fatigue_rows,
         latest_fatigue_rows,
     )
+    from services.readiness_snapshot_freshness import (
+        anchor_sync_status_to_serving_snapshot,
+        serving_snapshot_freshness_authority,
+    )
     from team_operations import assemble_bullpen_readiness
 
     sync_status = _sync_status_payload()
+    # The active-bullpen membership, availability classification, and appearance
+    # ledger stay anchored to the data-derived availability reference (what the
+    # pitchers' records actually describe). Only the freshness VERDICT is anchored to
+    # the serving trusted snapshot, so a current published snapshot is not reported
+    # stale merely because the live global game-log recompute (judged against the
+    # wall-clock product date) trails it. This is the exact reference-date mismatch
+    # that made every team stale. Fails closed to live freshness when no current
+    # serving-snapshot authority is available.
     reference_date = _availability_reference_date(sync_status)
+    snapshot_freshness = serving_snapshot_freshness_authority(source_snapshot)
+    if snapshot_freshness is not None:
+        sync_status = anchor_sync_status_to_serving_snapshot(sync_status, snapshot_freshness)
     rows = tuple(latest_fatigue_rows(team_id=team_id, limit=TEAM_OPERATIONS_DEFAULT_LIMIT))
     records = tuple(
         _filter_records_by_team_abbreviation(
@@ -295,6 +322,24 @@ def _fail_closed(
 # ---------------------------------------------------------------------------
 
 
+def _resolver_accepts_source_snapshot(resolver) -> bool:
+    """Whether ``resolver`` accepts a ``source_snapshot`` keyword.
+
+    Lets the production resolver receive the shared serving snapshot for freshness
+    anchoring while injected/legacy resolvers (test doubles) keep their existing
+    signature. Fails closed to False when the signature cannot be read.
+    """
+    try:
+        parameters = inspect.signature(resolver).parameters
+    except (TypeError, ValueError):
+        return False
+    if 'source_snapshot' in parameters:
+        return True
+    return any(
+        param.kind == inspect.Parameter.VAR_KEYWORD for param in parameters.values()
+    )
+
+
 def generate_team_state_artifact(
     team_id: int,
     *,
@@ -321,8 +366,14 @@ def generate_team_state_artifact(
     resolver = readiness_resolver or resolve_team_readiness_payload
 
     # 1. Resolve the governed readiness payload (operational error -> fail closed).
+    #    Thread the shared serving snapshot so the resolver can anchor the read's
+    #    freshness to the snapshot it is generated from. Passed only when the
+    #    resolver accepts it, so injected/legacy resolvers keep working unchanged.
+    resolver_kwargs = {'requested_date': requested_date, 'session': session}
+    if _resolver_accepts_source_snapshot(resolver):
+        resolver_kwargs['source_snapshot'] = snapshot
     try:
-        readiness = resolver(team_id, requested_date=requested_date, session=session)
+        readiness = resolver(team_id, **resolver_kwargs)
     except Exception:
         return _fail_closed(
             session, team_id=team_id, requested_date=requested_date,
