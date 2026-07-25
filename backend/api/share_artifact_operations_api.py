@@ -42,9 +42,17 @@ def build_overview_response():
     from services.share_artifact_operations import (
         ShareArtifactOperationsError,
         build_coverage_overview,
+        build_latest_progressive_event,
     )
     try:
-        return jsonify(build_coverage_overview()), 200
+        # Two SEPARATE summaries on one response (one dashboard, one auth boundary):
+        # the all-or-nothing LEAGUE batch coverage at the top level, and the LATEST
+        # PROGRESSIVE EVENT under its own key. Their counts are never combined — a
+        # progressive event is a different publication authority and is summarized on
+        # its own terms (and resolves even when no trusted league snapshot exists).
+        overview = build_coverage_overview()
+        overview['progressive_event'] = build_latest_progressive_event()
+        return jsonify(overview), 200
     except ShareArtifactOperationsError:
         return jsonify({'error': 'operations_accounting_error'}), 500
     except Exception:

@@ -529,6 +529,9 @@ def test_phase0e_switches_and_legacy_public_files_not_modified():
         # internal/admin reuse, no generation, no new public claim vocabulary.
         'backend/api/share_artifacts_public.py',
         'frontend/src/components/share/PublicShareArtifactPage.jsx',
+        # SC-04B v1.2: the code-rendered Team State card, rendered first on the public
+        # page for team-state-1.2.0 artifacts (older artifacts keep their components).
+        'frontend/src/components/share/TeamStateArtifactCard.jsx',
         'frontend/src/utils/publicShareArtifact.js',
         'frontend/src/App.jsx',
     }

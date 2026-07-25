@@ -1,8 +1,9 @@
 # Decision: Team State artifact v1.2 — semantic/trust correctness + card baseline scope
 
 - **Date:** 2026-07-25
-- **Status:** In progress (founder-directed). Semantic/trust correctness fixes implemented
-  and validated; performance-context card baseline scoped by the data-authority audit.
+- **Status:** Implemented (founder-directed). Semantic/trust correctness fixes AND the
+  approved card baseline (team-state-1.2.0, no performance metrics) implemented and
+  validated; performance-context + ranks remain deferred by the data-authority audit.
 - **Scope:** Public Team State Share Artifact semantics + the readiness trust contract's
   public copy + the LEAGUE readiness reference date. NOT an SC-02 change; no readiness
   threshold, public vocabulary, coverage-contract, or payload-envelope change.
@@ -72,13 +73,64 @@ project), and are deferred.
    for the snapshot's slate. It still fails closed unchanged when the slate has no roster
    snapshot; league all-or-nothing publication is preserved.
 
-## Deferred (next increment on this branch)
+## Card baseline — team-state-1.2.0 (implemented)
 
-The `team-state-1.2.0` contract (artifact_context + readiness_summary + bounded reliever
-evidence, no performance context), a code-rendered `TeamStateArtifactCard` component,
-and the operations league/progressive summary separation are the identified next
-increment (no migration required). The performance-context metrics + ranks remain
-blocked on the missing data authorities above.
+The approved card baseline WITHOUT performance metrics is now built on this branch. No
+DB migration was required (`payload`/`trust_metadata` are `db.JSON`;
+`SHARE_ARTIFACT_SCHEMA_VERSION` stays `1.0.0`; prior 1.0.0/1.1.0 artifacts are unchanged
+and integrity-valid).
+
+1. **`team-state-1.2.0` payload contract.** A new registry contract, built on v1.1.0,
+   adds a single backend-owned `card` block: a frozen `artifact_context` (scope +
+   `data_through`), the canonical `team` identity, the public `state` (public state +
+   headline + why, reused from the deterministic public copy), a four-metric
+   `readiness_summary`, a bounded `reliever_evidence` table, a reader-facing `trust`
+   triplet, and durable-only `limitations`. `TEAM_STATE_LATEST` now points to it; 1.0.0
+   and 1.1.0 stay registered. It carries NO performance metric and NO league rank — both
+   remain UNSUPPORTED per the audit above. The document is deterministic (no build-time
+   clock); an identical governed slate yields a byte-identical document, so a rerun
+   reuses and genuinely new evidence mints a new artifact.
+2. **Card-metrics authority (`services/team_state_card_metrics.py`).** Composes existing
+   canonical authorities only. CLEAN OPTIONS from the bullpen optionality authority
+   (`{clean_count} of {active_count}`); MULTI-USE ARMS = active arms appearing in ≥2 of
+   the last THREE COMPLETED TEAM GAMES (not three calendar days; off days never enter;
+   a doubleheader is two distinct `game_pk` window entries; the just-completed trigger
+   game is included); SHORT-REST ARMS on zero/one day rest, measured to the slate;
+   LEFT-HANDED OPTIONS = usable-option LHP of active-bullpen LHP (documented
+   denominator; unavailable/unresolved excluded). Reliever rows are bounded to six and
+   ordered by the governed selection order (more restrictive availability → more window
+   appearances → more recorded outs → more recent appearance → stable id/name). Every
+   row carries a CANONICAL availability label — never a card-only Normal/Stressed/Tired
+   label — and no recommendation language.
+3. **Public read + code-rendered card.** The public read projects the frozen `card`
+   block, enriching `artifact_context` with the artifact's own `generated_at` /
+   `published_at` from columns (not frozen). The React `TeamStateArtifactCard` renders
+   masthead header → hero → Bullpen at a Glance → Current Bullpen Evidence → trust strip
+   → footer, in the existing BaseballOS design tokens, with no fake progress bars,
+   gradients, generated logos, imagery, or mobile horizontal scroll. The public page
+   renders the card first for a 1.2.0 artifact and keeps the historical/immutable
+   explanation and destinations; older artifacts keep their existing components verbatim.
+4. **Operations league/progressive separation.** The operator surface now reports two
+   SEPARATE summaries on one dashboard and never combines their counts: the all-or-
+   nothing LEAGUE batch coverage, and a LATEST PROGRESSIVE EVENT (trigger game, date,
+   teams, checkpoint ids, attempted/generated/reused/refused/failed/missing, public ids,
+   integrity, timestamp). Artifacts are scoped by the DURABLE `subject_type`
+   discriminator; the progressive `request_source` is only event/audit context. A
+   missing progressive event returns cleanly.
+5. **Parity.** Equivalent progressive and league evidence on the SAME slate yield
+   equivalent readiness (state/why/readiness-summary/reliever rows) with DISTINCT
+   provenance, scope labels, and identities.
+
+The scope-label authority was centralized (`services/share_artifact_scope.py`) and is
+reused by both the public read and the immutable card payload, so a frozen artifact and
+its public read describe the same scope in the same words.
+
+## Still deferred
+
+The performance-context metrics + 30-team synchronized ranks remain blocked on the
+missing data authorities (a team-at-appearance authority + season aggregation + a
+synchronized 30-team rank service — a separate data-infra project). SC-05 remains
+blocked.
 
 ## Consequences
 
@@ -91,9 +143,19 @@ blocked on the missing data authorities above.
 
 ## References
 
-- `services/share_artifact_public.py` (scope-aware public projection)
-- `services/team_state_payload.py` + `services/sync_metadata.py` (transient-limitation filter)
+- `services/share_artifact_public.py` (scope-aware public projection + v1.2 card projection)
+- `services/share_artifact_scope.py` (centralized scope-label authority)
+- `services/team_state_card_metrics.py` (readiness_summary + bounded reliever_evidence)
+- `services/team_state_payload.py` (team-state-1.2.0 contract) + `services/sync_metadata.py`
+  (transient-limitation filter)
 - `services/team_state_public_copy.py` (trust/evidence reconciliation)
 - `services/share_artifact_generation.py` (symmetric league/progressive slate anchor)
-- `frontend/src/components/share/PublicShareArtifactPage.jsx` (scope-aware label + note)
-- Tests: `tests/test_team_state_card_semantics.py`, `frontend/tests/publicShareArtifact.test.mjs`
+- `services/share_artifact_operations.py` + `api/share_artifact_operations_api.py`
+  (league/progressive summary separation)
+- `frontend/src/components/share/TeamStateArtifactCard.jsx` (the code-rendered card)
+- `frontend/src/components/share/PublicShareArtifactPage.jsx` (v1.2 card-first + scope note)
+- `frontend/src/components/admin/ShareArtifactOperations.jsx` (two separate summaries)
+- Tests: `tests/test_team_state_card_v1_2.py`, `tests/test_team_state_card_semantics.py`,
+  `tests/test_share_artifact_operations_progressive.py`,
+  `frontend/tests/teamStateArtifactCard.test.mjs`,
+  `frontend/tests/publicShareArtifact.test.mjs`, `frontend/tests/shareArtifactOperations.test.mjs`

@@ -35,11 +35,11 @@ from models.share_artifact import (
     LIFECYCLE_PUBLISHED,
     LIFECYCLE_SUPERSEDED,
     LIFECYCLE_WITHDRAWN,
-    SOURCE_AUTHORITY_TEAM_PROGRESSIVE,
     ShareArtifactRelation,
     source_authority_type,
 )
 from services.share_artifact_repository import get_share_artifact_by_public_id
+from services.share_artifact_scope import scope_labels_for_authority
 from services.share_artifacts import verify_share_artifact_integrity
 from services.team_state_public_copy import build_evidence_receipts
 from services.team_state_public_vocabulary import (
@@ -77,35 +77,14 @@ METHODOLOGY_ROUTE = '/methodology'
 DATA_TRUST_ROUTE = '/trust'
 TEAM_SURFACE_ROUTE = '/bullpen'
 
-# Scope-aware public labels, derived from the artifact's DURABLE source-authority
-# discriminator (subject_type) — never from the numeric source_snapshot_id. A
-# team-progressive artifact is published after a single team's completed game; a
-# league artifact comes from a synchronized league snapshot. Backend-owned copy.
-_SCOPE_LABELS = {
-    SOURCE_AUTHORITY_TEAM_PROGRESSIVE: {
-        'publication_scope': SOURCE_AUTHORITY_TEAM_PROGRESSIVE,
-        'display_label': 'Published Team Bullpen State',
-        'context_label': "Updated after the team's completed game",
-        'historical_note': (
-            "This Team Bullpen State was published after the team's completed game "
-            'and is preserved as a historical artifact.'
-        ),
-    },
-    'league_snapshot': {
-        'publication_scope': 'league_snapshot',
-        'display_label': 'Published BaseballOS Snapshot',
-        'context_label': None,
-        'historical_note': (
-            'This Team Bullpen State comes from a synchronized BaseballOS league '
-            'snapshot and is preserved as a historical artifact.'
-        ),
-    },
-}
-
-
 def _publication_scope(artifact) -> dict:
-    """Scope-aware public labels from the durable source-authority discriminator."""
-    return dict(_SCOPE_LABELS[source_authority_type(artifact)])
+    """Scope-aware public labels from the durable source-authority discriminator.
+
+    Backend-owned copy, resolved from the artifact's DURABLE source-authority
+    discriminator (subject_type) — never from the numeric source_snapshot_id — via
+    the single centralized scope authority also used by the immutable card payload.
+    """
+    return scope_labels_for_authority(source_authority_type(artifact))
 
 
 @dataclass(frozen=True)
@@ -330,9 +309,49 @@ def _public_view(artifact, session) -> dict:
             'data_trust_url': DATA_TRUST_ROUTE,
         },
     }
+    card = _card_view(artifact, document)
+    if card is not None:
+        view['card'] = card
+
     if artifact.lifecycle_state == LIFECYCLE_SUPERSEDED:
         view['superseded'] = _replacement_pointer(artifact, session)
     return view
+
+
+def _card_view(artifact, document: Mapping[str, Any]) -> Optional[dict]:
+    """Project the immutable v1.2 ``card`` block for the code-rendered card.
+
+    Reads only the frozen card block and a few artifact columns. It enriches the
+    frozen ``artifact_context`` (scope + data_through, all deterministic) with the
+    artifact's OWN ``generated_at`` / ``published_at`` from columns — those are not
+    frozen into the immutable payload (they are unknown at build time), so the read
+    supplies them. It composes no baseball meaning and mutates nothing.
+    """
+    card = document.get('card')
+    if not isinstance(card, Mapping):
+        return None
+
+    context = _mapping(card.get('artifact_context'))
+    artifact_context = {
+        'publication_scope': context.get('publication_scope'),
+        'publication_label': context.get('publication_label'),
+        'historical_note': context.get('historical_note'),
+        'data_through': context.get('data_through'),
+        # Not frozen in the immutable payload — supplied from the artifact columns.
+        'generated_at': _iso(artifact.created_at),
+        'published_at': _iso(artifact.published_at),
+    }
+
+    return {
+        'card_version': card.get('card_version'),
+        'artifact_context': artifact_context,
+        'team': dict(_mapping(card.get('team'))),
+        'state': dict(_mapping(card.get('state'))),
+        'readiness_summary': dict(_mapping(card.get('readiness_summary'))),
+        'reliever_evidence': [dict(_mapping(row)) for row in (card.get('reliever_evidence') or ())],
+        'trust': dict(_mapping(card.get('trust'))),
+        'limitations': [str(item) for item in (card.get('limitations') or ())],
+    }
 
 
 def _replacement_pointer(artifact, session) -> dict:

@@ -179,6 +179,7 @@ export function ShareArtifactOperationsView({
               <TeamCoverageTable teams={data.teams || []} />
             </>
           )}
+          <ProgressiveEventSection event={data.progressive_event} />
           <RecentAuditsSection audits={audits} onPage={onAuditsPage} />
           <RecentArtifactsSection artifacts={artifacts} onPage={onArtifactsPage} />
         </>
@@ -224,13 +225,91 @@ function CoverageSummary({ data }) {
     ['Artifacts (snapshot)', data.artifact_count],
   ]
   return (
-    <section className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5" aria-label="Coverage summary">
-      {cells.map(([label, value]) => (
-        <article key={label} className="border border-dirt bg-dugout p-4">
-          <div className="font-mono text-[10px] uppercase tracking-widest text-chalk600">{label}</div>
-          <div className="mt-2 font-display text-3xl text-chalk100">{fmtValue(value)}</div>
-        </article>
-      ))}
+    <section className="mb-5" aria-label="Latest league batch">
+      <h2 className="mb-3 font-display text-lg tracking-wide text-chalk100">Latest League Batch</h2>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
+        {cells.map(([label, value]) => (
+          <article key={label} className="border border-dirt bg-dugout p-4">
+            <div className="font-mono text-[10px] uppercase tracking-widest text-chalk600">{label}</div>
+            <div className="mt-2 font-display text-3xl text-chalk100">{fmtValue(value)}</div>
+          </article>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+// The LATEST PROGRESSIVE EVENT — a separate publication authority from the league
+// batch above. Its counts describe the teams of ONE trigger game and are never
+// combined with the league batch counts. A missing event renders cleanly.
+function ProgressiveEventSection({ event }) {
+  if (!event) return null
+  const teams = event.teams || []
+  const cells = [
+    ['Teams', event.team_count],
+    ['Attempted', event.attempted_team_count],
+    ['Generated', event.generated_team_count],
+    ['Reused', event.reused_team_count],
+    ['Refused', event.refused_team_count],
+    ['Failed', event.failed_team_count],
+    ['Missing', event.missing_team_count],
+    ['Integrity failures', event.integrity_failure_count],
+  ]
+  return (
+    <section className="mb-5 border border-dirt bg-dugout p-4" aria-label="Latest progressive event" data-progressive-event={event.has_event ? 'present' : 'none'}>
+      <h2 className="mb-3 font-display text-lg tracking-wide text-chalk100">Latest Progressive Event</h2>
+      {!event.has_event ? (
+        <p className="text-sm text-chalk500">No team-progressive publication event has occurred yet.</p>
+      ) : (
+        <>
+          <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <Field label="Trigger game" value={fmtValue(event.trigger_game_pk)} />
+            <Field label="Game date" value={fmtValue(event.official_game_date)} />
+            <Field label="Checkpoints" value={fmtValue((event.checkpoint_ids || []).join(', '))} />
+            <Field label="Event at" value={<Timestamp value={event.event_at} />} />
+          </div>
+          <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4 xl:grid-cols-8">
+            {cells.map(([label, value]) => (
+              <article key={label} className="border border-dirt bg-field/40 p-3">
+                <div className="font-mono text-[10px] uppercase tracking-widest text-chalk600">{label}</div>
+                <div className="mt-2 font-display text-2xl text-chalk100">{fmtValue(value)}</div>
+              </article>
+            ))}
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <caption className="sr-only">Per-team outcome for the latest team-progressive publication event</caption>
+              <thead>
+                <tr className="font-mono text-[10px] uppercase tracking-widest text-chalk600">
+                  <th scope="col" className="py-2 pr-3">Team</th>
+                  <th scope="col" className="py-2 pr-3">Checkpoint</th>
+                  <th scope="col" className="py-2 pr-3">Outcome</th>
+                  <th scope="col" className="py-2 pr-3">Public ID</th>
+                  <th scope="col" className="py-2 pr-3">Reason / failure</th>
+                  <th scope="col" className="py-2 pr-3">Integrity</th>
+                  <th scope="col" className="py-2 pr-3">Attempted</th>
+                </tr>
+              </thead>
+              <tbody>
+                {teams.map(team => (
+                  <tr key={team.team_id} className="border-t border-dirt/60 text-chalk300" data-team-state={team.state}>
+                    <th scope="row" className="py-2 pr-3 font-normal text-chalk200">
+                      {team.team_name || team.team_abbreviation || `Team ${team.team_id}`}
+                      <span className="ml-1 text-chalk600">#{team.team_id}</span>
+                    </th>
+                    <td className="py-2 pr-3 font-mono text-xs">{fmtValue(team.checkpoint_id)}</td>
+                    <td className="py-2 pr-3">{coverageStateLabel(team.state)}</td>
+                    <td className="py-2 pr-3 font-mono text-xs">{team.public_id || '—'}</td>
+                    <td className="py-2 pr-3 font-mono text-xs">{team.reason_code || team.failure_code || '—'}</td>
+                    <td className="py-2 pr-3">{integrityStateLabel(team.integrity_state)}</td>
+                    <td className="py-2 pr-3"><Timestamp value={team.attempt_at} /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
     </section>
   )
 }

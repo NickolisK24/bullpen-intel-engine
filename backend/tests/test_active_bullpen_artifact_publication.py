@@ -43,7 +43,11 @@ from services.share_card_compatibility import (
     build_share_card_compatibility_view,
 )
 from services.share_artifacts import verify_share_artifact_integrity
-from services.team_state_payload import TEAM_STATE_ARTIFACT_TYPE, TEAM_STATE_V1_1
+from services.team_state_payload import (
+    TEAM_STATE_ARTIFACT_TYPE,
+    TEAM_STATE_LATEST,
+    TEAM_STATE_V1_1,
+)
 from tests.db_config import configure_test_database, create_test_schema, drop_test_schema
 from tests.roster_readiness_fixture import seed_roster_readiness_snapshots
 from utils.db import db
@@ -195,7 +199,7 @@ def test_fixture_a_high_confidence_publishes_verifies_reuses_projects(app, monke
     assert artifact.team_id == 31
     assert artifact.source_snapshot_id == SNAPSHOT_ID
     assert artifact.artifact_type == TEAM_STATE_ARTIFACT_TYPE
-    assert artifact.render_version == TEAM_STATE_V1_1
+    assert artifact.render_version == TEAM_STATE_LATEST
     doc = artifact.payload
     assert doc['team_state']['status_code'] in SUPPORTED
     assert doc['trust']['confidence'] == 'high'
