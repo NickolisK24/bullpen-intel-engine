@@ -16,6 +16,32 @@ PROOF_VERIFIED = 'verified'
 PROOF_NO_CANDIDATE_EXPECTED = 'no_candidate_expected'
 PROOF_FAILED = 'failed'
 
+# League-publication classification (postgame active-slate semantics). It NEVER
+# rewrites ``verified`` — a pending candidate stays honestly unverified — but tells a
+# runner whether the candidate is pending only because an otherwise-complete slate
+# still contains non-final games (expected during an active slate) or whether the
+# withholding is a genuine failure.
+LEAGUE_PUBLICATION_PUBLISHED = 'published'
+LEAGUE_PUBLICATION_EXPECTED_PENDING_ACTIVE_SLATE = 'expected_pending_active_slate'
+LEAGUE_PUBLICATION_FAILED = 'failed'
+
+# Slate-coverage reasons that mean "the slate simply still has non-final games" —
+# an expected active-slate pending, not a publication failure.
+_ACTIVE_SLATE_NON_FINAL_REASONS = frozenset({
+    'scheduled_games_not_final',
+    'suspended_games_not_final',
+})
+# Slate-coverage reasons that are ALWAYS a genuine withholding failure, never an
+# expected active-slate pending — a real gap in schedule/ingestion/markers/trust.
+_GENUINE_WITHHOLDING_REASONS = frozenset({
+    'schedule_missing',
+    'no_scheduled_games',
+    'final_games_not_fully_ingested',
+    'postgame_markers_incomplete',
+    'postgame_markers_failed',
+    'partial_sync',
+})
+
 
 def build_candidate_publication_proof(
     snapshot_id,
@@ -69,6 +95,7 @@ def build_candidate_publication_proof(
             'candidate_required': False,
             'candidate_snapshot_id': None,
             'served_snapshot_id': _snapshot_id(served_snapshot_loader()),
+            'league_publication_status': LEAGUE_PUBLICATION_PUBLISHED,
             'reason_codes': [],
         }
 
@@ -95,9 +122,13 @@ def build_candidate_publication_proof(
     elif _snapshot_id(served) != normalized_id:
         reason_codes.append('candidate_not_selected_for_serving')
 
+    verified = not reason_codes
     proof = {
-        'status': PROOF_VERIFIED if not reason_codes else PROOF_FAILED,
-        'verified': not reason_codes,
+        'status': PROOF_VERIFIED if verified else PROOF_FAILED,
+        'verified': verified,
+        'league_publication_status': _classify_league_publication_status(
+            verified=verified, candidate=candidate,
+        ),
         'candidate_required': bool(candidate_required),
         'candidate_snapshot_id': normalized_id,
         'served_snapshot_id': _snapshot_id(served),
@@ -122,11 +153,61 @@ def _failed_proof(*, snapshot_id, reason_codes) -> dict:
     return {
         'status': PROOF_FAILED,
         'verified': False,
+        'league_publication_status': LEAGUE_PUBLICATION_FAILED,
         'candidate_required': True,
         'candidate_snapshot_id': snapshot_id,
         'served_snapshot_id': None,
         'reason_codes': _dedupe(reason_codes),
     }
+
+
+def _classify_league_publication_status(*, verified, candidate) -> str:
+    """Classify WHY the league candidate did or did not publish.
+
+    ``published`` when the candidate verified as serving. Otherwise it inspects the
+    candidate's DETAILED slate-coverage object (never just the top-level reason
+    string): ``expected_pending_active_slate`` only when the schedule is known, every
+    final game is fully ingested (no failed/incomplete/missing markers), and the sole
+    reason the slate is incomplete is that non-final games remain; any genuine
+    schedule/ingestion/marker/trust gap is ``failed`` (fail closed)."""
+    if verified:
+        return LEAGUE_PUBLICATION_PUBLISHED
+    if _is_expected_active_slate_pending(_candidate_slate_coverage(candidate)):
+        return LEAGUE_PUBLICATION_EXPECTED_PENDING_ACTIVE_SLATE
+    return LEAGUE_PUBLICATION_FAILED
+
+
+def _candidate_slate_coverage(candidate):
+    payload = getattr(candidate, 'payload', None)
+    if not isinstance(payload, dict):
+        return None
+    freshness = payload.get('freshness')
+    if not isinstance(freshness, dict):
+        return None
+    coverage = freshness.get('slate_coverage')
+    return coverage if isinstance(coverage, dict) else None
+
+
+def _is_expected_active_slate_pending(coverage) -> bool:
+    if not coverage or coverage.get('coverage_known') is not True:
+        return False
+    reason_codes = set(coverage.get('reason_codes') or [])
+    # Any genuine withholding reason disqualifies expected-pending (fail closed).
+    if reason_codes & _GENUINE_WITHHOLDING_REASONS:
+        return False
+    # It must actually be pending because non-final games remain.
+    if not (reason_codes & _ACTIVE_SLATE_NON_FINAL_REASONS):
+        return False
+    # A known schedule with at least one scheduled game.
+    if int(coverage.get('games_scheduled') or 0) <= 0:
+        return False
+    # Every final game fully ingested; no failed/incomplete/missing postgame markers.
+    markers = coverage.get('marker_counts') or {}
+    if markers.get('failed') or markers.get('incomplete') or markers.get('missing'):
+        return False
+    if int(coverage.get('games_final') or 0) != int(coverage.get('games_fully_ingested') or 0):
+        return False
+    return True
 
 
 def _snapshot_id(snapshot):
