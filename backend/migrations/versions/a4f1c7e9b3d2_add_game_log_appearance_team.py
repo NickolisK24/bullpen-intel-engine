@@ -42,10 +42,16 @@ def upgrade():
             ['mlb_game_pk', 'appearance_team_id'],
             unique=False,
         )
+        # Stored-state invariant: valid status vocabulary AND a valid status<->team_id
+        # combination. A resolved row must carry a team id; an unresolved/conflict row
+        # and a legacy (NULL-status) row must carry none. Enforced at the database so a
+        # conflict can never retain a silently-selected team.
         batch_op.create_check_constraint(
             'ck_game_logs_appearance_team_status',
-            "appearance_team_status IS NULL OR "
-            "appearance_team_status IN ('resolved', 'unresolved', 'conflict')",
+            "(appearance_team_status IS NULL AND appearance_team_id IS NULL) OR "
+            "(appearance_team_status = 'resolved' AND appearance_team_id IS NOT NULL) OR "
+            "(appearance_team_status IN ('unresolved', 'conflict') "
+            "AND appearance_team_id IS NULL)",
         )
 
 

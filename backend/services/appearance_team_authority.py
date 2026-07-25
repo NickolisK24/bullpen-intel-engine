@@ -236,7 +236,10 @@ def reconcile_on_update(
     if new_prec < cur_prec:
         return None
 
-    # Equal precedence, different team -> fail closed, do not choose silently.
+    # Equal precedence, different team -> fail closed. A conflicted appearance carries
+    # NO silently-selected team id (the stored-state invariant): the prior team is
+    # cleared so no aggregation ever trusts it.
+    log.appearance_team_id = None
     log.appearance_team_status = STATUS_CONFLICT
     log.appearance_team_source = SOURCE_CONFLICT
     log.appearance_team_reason = REASON_CONFLICT

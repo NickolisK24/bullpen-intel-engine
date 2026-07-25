@@ -11,6 +11,7 @@ public payloads are unchanged, and that no reader is migrated in this step.
 
 import importlib.util
 from datetime import date, datetime, timedelta
+from pathlib import Path
 
 import pytest
 import sqlalchemy as sa
@@ -46,6 +47,7 @@ HOME_TEAM, AWAY_TEAM = 1, 2
 GAME_PK = 7001
 GAME_DATE = date(2026, 6, 20)
 MIGRATION_PATH = 'migrations/versions/a4f1c7e9b3d2_add_game_log_appearance_team.py'
+REPO_ROOT_FOR_DIFF = Path(__file__).resolve().parents[2]
 
 
 @pytest.fixture
@@ -453,11 +455,61 @@ def test_equal_precedence_disagreement_fails_closed_to_conflict(app):
                   innings_pitched_outs=3, appearance_team_id=HOME_TEAM,
                   appearance_team_status=STATUS_RESOLVED, appearance_team_source=SOURCE_SCHEDULE,
                   appearance_team_reason=REASON_RESOLVED_SCHEDULE)
+    db.session.add(log); db.session.commit()
     other_schedule = ata.AppearanceTeamResolution(
         AWAY_TEAM, STATUS_RESOLVED, SOURCE_SCHEDULE, REASON_RESOLVED_SCHEDULE)
     assert ata.reconcile_on_update(log, other_schedule, correction_applied=True) == REASON_CONFLICT
     assert log.appearance_team_status == STATUS_CONFLICT
-    assert log.appearance_team_id is None or log.appearance_team_status == STATUS_CONFLICT
+    # A conflicted row carries NO silently-selected team, and the stored state is
+    # valid (commits cleanly against the invariant CHECK).
+    assert log.appearance_team_id is None
+    db.session.commit()
+
+
+# ===========================================================================
+# Stored-state invariants — enforced at the database (required tests 1-2)
+# ===========================================================================
+
+
+def _insert(app_row):
+    db.session.add(app_row)
+    db.session.commit()
+
+
+def test_check_rejects_resolved_without_team(app):
+    with pytest.raises(Exception):
+        _insert(GameLog(pitcher_id=1, mlb_game_pk=10, game_date=GAME_DATE, innings_pitched=1.0,
+                        innings_pitched_outs=3, appearance_team_status=STATUS_RESOLVED))
+    db.session.rollback()
+
+
+def test_check_rejects_conflict_with_team(app):
+    with pytest.raises(Exception):
+        _insert(GameLog(pitcher_id=1, mlb_game_pk=11, game_date=GAME_DATE, innings_pitched=1.0,
+                        innings_pitched_outs=3, appearance_team_status=STATUS_CONFLICT,
+                        appearance_team_id=HOME_TEAM))
+    db.session.rollback()
+
+
+def test_check_rejects_unresolved_with_team(app):
+    with pytest.raises(Exception):
+        _insert(GameLog(pitcher_id=1, mlb_game_pk=12, game_date=GAME_DATE, innings_pitched=1.0,
+                        innings_pitched_outs=3, appearance_team_status=STATUS_UNRESOLVED,
+                        appearance_team_id=HOME_TEAM))
+    db.session.rollback()
+
+
+def test_check_accepts_all_valid_combinations(app):
+    _insert(GameLog(pitcher_id=1, mlb_game_pk=13, game_date=GAME_DATE, innings_pitched=1.0,
+                    innings_pitched_outs=3))  # legacy NULL
+    _insert(GameLog(pitcher_id=1, mlb_game_pk=14, game_date=GAME_DATE, innings_pitched=1.0,
+                    innings_pitched_outs=3, appearance_team_status=STATUS_RESOLVED,
+                    appearance_team_id=HOME_TEAM, appearance_team_source=SOURCE_BOXSCORE))
+    _insert(GameLog(pitcher_id=1, mlb_game_pk=15, game_date=GAME_DATE, innings_pitched=1.0,
+                    innings_pitched_outs=3, appearance_team_status=STATUS_UNRESOLVED))
+    _insert(GameLog(pitcher_id=1, mlb_game_pk=16, game_date=GAME_DATE, innings_pitched=1.0,
+                    innings_pitched_outs=3, appearance_team_status=STATUS_CONFLICT))
+    assert GameLog.query.count() == 4
 
 
 def test_unchanged_resweep_never_backfills_a_legacy_row(app):
@@ -665,3 +717,116 @@ def test_card_metrics_does_not_depend_on_new_authority():
     from services import team_state_card_metrics
     src = open(team_state_card_metrics.__file__).read()
     assert 'appearance_team' not in src
+
+
+# ===========================================================================
+# Appearance-grain decision: one pitcher/team per game_pk (required tests 14)
+# ===========================================================================
+
+
+def _manual_boxscore_line(player_id, side, team_id):
+    return {
+        'player_id': player_id, 'person_id': player_id, 'name': f'P{player_id}',
+        'side': side, 'team_id': team_id, 'team': f'{side} club',
+        'team_abbreviation': side[:3].upper(), 'position': 'P',
+        'position_code': '1', 'position_name': 'Pitcher',
+        # A complete authoritative pitching line (the correction path treats sparse
+        # sources as unsafe and skips them).
+        'stats': {'inningsPitched': '1.0', 'numberOfPitches': '14', 'strikes': '9',
+                  'hits': '0', 'runs': '0', 'earnedRuns': '0', 'baseOnBalls': '0',
+                  'strikeOuts': '2', 'homeRuns': '0'},
+    }
+
+
+def test_pathological_two_sided_ingest_fails_closed_to_conflict(app):
+    # DECISION: a pitcher represents exactly one team per game_pk. The MLB box score
+    # lists a person under one pitching side only, suspended/resumed games use
+    # DISTINCT game_pks, and the (pitcher_id, mlb_game_pk) unique key predates this
+    # work. If a pathological feed ever placed the same pitcher on BOTH sides of one
+    # game_pk, the authority must FAIL CLOSED (conflict), never silently overwrite.
+    _seed_schedule()
+    p = Pitcher(mlb_id=101, full_name='Both Sides', team_id=HOME_TEAM, active=True)
+    db.session.add(p); db.session.flush()
+    sync_service._ingest_boxscore_pitching_line(
+        p, _manual_boxscore_line(101, 'home', HOME_TEAM), _game(), game_date=GAME_DATE,
+        team_abbr_map={}, pitcher_order={'home': [101], 'away': []})
+    db.session.commit()
+    row = GameLog.query.filter_by(pitcher_id=p.id).one()
+    assert row.appearance_team_id == HOME_TEAM  # first side resolved
+    # The same pitcher, same game_pk, the OTHER side -> equal-precedence disagreement.
+    sync_service._ingest_boxscore_pitching_line(
+        p, _manual_boxscore_line(101, 'away', AWAY_TEAM), _game(), game_date=GAME_DATE,
+        team_abbr_map={}, pitcher_order={'home': [], 'away': [101]})
+    db.session.commit()
+    row = GameLog.query.filter_by(pitcher_id=p.id).one()
+    assert GameLog.query.filter_by(pitcher_id=p.id).count() == 1  # not duplicated
+    assert row.appearance_team_status == STATUS_CONFLICT  # failed closed
+    assert row.appearance_team_id is None  # no silently-selected team
+
+
+def test_scheduled_game_carries_distinct_resumed_game_pk_linkage():
+    # The mechanism that keeps a suspended game and its resumption as DISTINCT
+    # game_pks: ScheduledGame links them by resumed_from/to_game_pk rather than
+    # reusing one game_pk. This is why one (pitcher, game_pk) is one team-side
+    # appearance, and why the canonical authority does not need team in its identity.
+    cols = {c.name for c in ScheduledGame.__table__.columns}
+    assert {'resumed_from_game_pk', 'resumed_to_game_pk'} <= cols
+
+
+def test_suspended_resumed_distinct_game_pks_are_independent_rows(app):
+    # A suspended game and its resumption carry DISTINCT game_pks, so a pitcher who
+    # worked both portions produces two independent appearance rows, each attributed
+    # to its own game's side (never one conflated row).
+    _seed_schedule(game_pk=7001, home=HOME_TEAM, away=AWAY_TEAM)
+    _seed_schedule(game_pk=7002, home=AWAY_TEAM, away=HOME_TEAM,
+                   game_date=GAME_DATE + timedelta(days=1))
+    p = Pitcher(mlb_id=101, full_name='Resumed Arm', team_id=HOME_TEAM, active=True)
+    db.session.add(p); db.session.flush()
+    _ingest_boxscore(p, 101)  # game 7001, home side -> HOME_TEAM
+    sync_service._ingest_game_log_split(
+        p, _daily_split(game_pk=7002, opponent_id=HOME_TEAM), GAME_DATE - timedelta(days=5), {})
+    db.session.commit()
+    rows = {gl.mlb_game_pk: gl for gl in GameLog.query.filter_by(pitcher_id=p.id).all()}
+    assert set(rows) == {7001, 7002}
+    # Two independent, resolved rows — the grain is (pitcher, game_pk), never conflated.
+    assert rows[7001].appearance_team_id == HOME_TEAM   # home side of 7001
+    assert rows[7002].appearance_team_id == AWAY_TEAM   # faces HOME_TEAM in 7002 -> AWAY_TEAM
+    assert rows[7001].appearance_team_status == STATUS_RESOLVED
+    assert rows[7002].appearance_team_status == STATUS_RESOLVED
+
+
+# ===========================================================================
+# Team State v1.2 / public surface unchanged (required tests 17-18)
+# ===========================================================================
+
+
+def test_branch_touches_no_team_state_or_public_surface_files():
+    # Source proof: Foundation 1 changes no Team State, Share Artifact, public API,
+    # or frontend file, so v1.2 payloads and immutable artifacts are byte-unchanged.
+    import subprocess
+    repo_root = REPO_ROOT_FOR_DIFF
+    try:
+        out = subprocess.run(
+            ['git', 'diff', '--name-only', 'origin/main...HEAD'],
+            cwd=repo_root, capture_output=True, text=True, check=True,
+        ).stdout
+    except Exception:
+        pytest.skip('git diff against origin/main unavailable')
+    changed = [line.strip() for line in out.splitlines() if line.strip()]
+    if not changed:
+        pytest.skip('no diff resolved')
+    # Runtime surfaces only — guard/allowlist TEST updates (which change no product
+    # behavior) are expected and excluded.
+    non_test = [
+        path for path in changed
+        if not path.startswith(('backend/tests/', 'frontend/tests/'))
+    ]
+    forbidden_fragments = (
+        'team_state', 'share_artifact', 'frontend/', 'backend/api/',
+        'services/season_era', 'bullpen_context', 'public_team_relief_work',
+    )
+    offenders = [
+        path for path in non_test
+        if any(fragment in path for fragment in forbidden_fragments)
+    ]
+    assert offenders == [], f'Foundation 1 must not touch these runtime surfaces: {offenders}'

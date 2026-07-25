@@ -63,9 +63,17 @@ class GameLog(db.Model):
         # team-season bullpen aggregation that will replace the current-team join.
         db.Index('ix_game_log_appearance_team_date', 'appearance_team_id', 'game_date'),
         db.Index('ix_game_log_game_pk_appearance_team', 'mlb_game_pk', 'appearance_team_id'),
+        # Stored-state invariant (Foundation 1): the status vocabulary AND the
+        # status<->team_id combination are enforced at the database, not merely by
+        # writer discipline. A resolved appearance MUST carry a team id; an
+        # unresolved/conflict appearance and a legacy (NULL-status) row MUST carry
+        # none — so a conflict/unresolved row can never retain a silently-selected
+        # team, and a resolved row can never be team-less.
         db.CheckConstraint(
-            "appearance_team_status IS NULL OR "
-            "appearance_team_status IN ('resolved', 'unresolved', 'conflict')",
+            "(appearance_team_status IS NULL AND appearance_team_id IS NULL) OR "
+            "(appearance_team_status = 'resolved' AND appearance_team_id IS NOT NULL) OR "
+            "(appearance_team_status IN ('unresolved', 'conflict') "
+            "AND appearance_team_id IS NULL)",
             name='ck_game_logs_appearance_team_status',
         ),
     )
