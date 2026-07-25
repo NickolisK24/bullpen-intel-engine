@@ -316,6 +316,21 @@ def build_public_copy(
     public_label = state['public_label']
 
     constraints = tuple(constraints or ())
+    # Reconcile the public evidence with the confidence. A high/medium read means the
+    # canonical active-bullpen coverage authority already deemed the CURRENT active
+    # bullpen sufficiently covered, so the coarse whole-``Pitcher.active``
+    # coverage_inventory count must not surface as a public "N active bullpen records
+    # are missing current data" receipt that contradicts the "verified / based on the
+    # current active bullpen" trust line (production Giants/Angels defect). The precise
+    # bounded-coverage caveat for a medium read is carried separately by the canonical
+    # ``active_bullpen_coverage`` limitation below. A low/unknown read (refused by SC-02)
+    # keeps the coarse caveat. Scoped to the public copy authority only — the shared
+    # readiness constraint contract and other surfaces are unchanged.
+    if confidence in {'high', 'medium'}:
+        constraints = tuple(
+            c for c in constraints
+            if not (isinstance(c, Mapping) and c.get('affected_area') == 'coverage_inventory')
+        )
     families = frozenset(
         family for family in (_family_of(c) for c in constraints if isinstance(c, Mapping))
         if family is not None

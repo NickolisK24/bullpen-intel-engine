@@ -35,7 +35,9 @@ from models.share_artifact import (
     LIFECYCLE_PUBLISHED,
     LIFECYCLE_SUPERSEDED,
     LIFECYCLE_WITHDRAWN,
+    SOURCE_AUTHORITY_TEAM_PROGRESSIVE,
     ShareArtifactRelation,
+    source_authority_type,
 )
 from services.share_artifact_repository import get_share_artifact_by_public_id
 from services.share_artifacts import verify_share_artifact_integrity
@@ -74,6 +76,36 @@ _PUBLIC_ID_RE = re.compile(r'^[A-Za-z0-9._-]{1,64}$')
 METHODOLOGY_ROUTE = '/methodology'
 DATA_TRUST_ROUTE = '/trust'
 TEAM_SURFACE_ROUTE = '/bullpen'
+
+# Scope-aware public labels, derived from the artifact's DURABLE source-authority
+# discriminator (subject_type) — never from the numeric source_snapshot_id. A
+# team-progressive artifact is published after a single team's completed game; a
+# league artifact comes from a synchronized league snapshot. Backend-owned copy.
+_SCOPE_LABELS = {
+    SOURCE_AUTHORITY_TEAM_PROGRESSIVE: {
+        'publication_scope': SOURCE_AUTHORITY_TEAM_PROGRESSIVE,
+        'display_label': 'Published Team Bullpen State',
+        'context_label': "Updated after the team's completed game",
+        'historical_note': (
+            "This Team Bullpen State was published after the team's completed game "
+            'and is preserved as a historical artifact.'
+        ),
+    },
+    'league_snapshot': {
+        'publication_scope': 'league_snapshot',
+        'display_label': 'Published BaseballOS Snapshot',
+        'context_label': None,
+        'historical_note': (
+            'This Team Bullpen State comes from a synchronized BaseballOS league '
+            'snapshot and is preserved as a historical artifact.'
+        ),
+    },
+}
+
+
+def _publication_scope(artifact) -> dict:
+    """Scope-aware public labels from the durable source-authority discriminator."""
+    return dict(_SCOPE_LABELS[source_authority_type(artifact)])
 
 
 @dataclass(frozen=True)
@@ -250,6 +282,8 @@ def _public_view(artifact, session) -> dict:
         'schema_version': artifact.schema_version,
         'render_version': artifact.render_version,
         'payload_version': document.get('payload_version'),
+        # Scope-aware public identity from the DURABLE discriminator (never the id).
+        'publication_scope': _publication_scope(artifact),
         'revised': revised,
         'lifecycle_state': artifact.lifecycle_state,
         'is_historical': True,

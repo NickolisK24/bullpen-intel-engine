@@ -173,22 +173,27 @@ def resolve_team_readiness_payload(
     # that made every team stale. Fails closed to live freshness when no current
     # serving-snapshot authority is available.
     reference_date = _availability_reference_date(sync_status)
-    # Team-progressive reads are evaluated AS-OF the completed game's slate. The
-    # active-bullpen ROSTER AUTHORITY only resolves for the reference date its roster
-    # snapshot covers (the slate day). Once a game is final the GLOBAL availability
-    # reference date advances to the day AFTER it, so it points past the slate's
-    # roster snapshot and strands the read as authority-missing
-    # (data_state=missing / confidence=unknown / status_code=data_limited — the exact
-    # production run-471 refusal). Anchoring a team-progressive read to the
-    # checkpoint's slate keeps the active-bullpen authority resolvable for the exact
-    # slate the checkpoint attests to. It still fails closed unchanged when that slate
-    # genuinely has no roster snapshot. League/global reads are untouched.
+    snapshot_freshness = serving_snapshot_freshness_authority(source_snapshot)
+    # Anchor the active-bullpen ROSTER AUTHORITY reference date to the trusted source's
+    # slate (its data_through). The roster authority only resolves for the reference
+    # date its roster snapshot covers (the slate day). Once a slate is final the GLOBAL
+    # availability reference date advances to the day AFTER it, so it points past the
+    # slate's roster snapshot and strands the read as authority-missing
+    # (data_state=missing / confidence=unknown / status_code=data_limited — the run-471
+    # progressive refusal AND the run-476 all-30-team LEAGUE refusal). This applies
+    # symmetrically to BOTH trusted sources: a team-progressive checkpoint
+    # (subject_type='team_progressive') and a trusted/current league serving snapshot
+    # (freshness verdict present). It still fails closed unchanged when that slate
+    # genuinely has no roster snapshot. Non-anchored (no trusted source) reads keep the
+    # prior global reference date.
     from models.share_artifact import SUBJECT_TYPE_TEAM_PROGRESSIVE
-    if getattr(source_snapshot, 'subject_type', None) == SUBJECT_TYPE_TEAM_PROGRESSIVE:
+    is_team_progressive = (
+        getattr(source_snapshot, 'subject_type', None) == SUBJECT_TYPE_TEAM_PROGRESSIVE
+    )
+    if is_team_progressive or snapshot_freshness is not None:
         slate_reference = getattr(source_snapshot, 'data_through', None)
         if isinstance(slate_reference, date):
             reference_date = slate_reference
-    snapshot_freshness = serving_snapshot_freshness_authority(source_snapshot)
     if snapshot_freshness is not None:
         sync_status = anchor_sync_status_to_serving_snapshot(sync_status, snapshot_freshness)
     rows = tuple(latest_fatigue_rows(team_id=team_id, limit=TEAM_OPERATIONS_DEFAULT_LIMIT))

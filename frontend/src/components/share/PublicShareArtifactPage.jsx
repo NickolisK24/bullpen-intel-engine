@@ -145,13 +145,18 @@ function LoadingState() {
 }
 
 // A. Historical context bar — compact, clearly separate from the artifact.
-function HistoricalContextBar({ dataThrough, publishedAt }) {
+// The scope label is backend-owned and derived from the artifact's DURABLE
+// source-authority discriminator (team-progressive vs league snapshot), never
+// inferred client-side. It falls back to the league label for older artifacts that
+// predate the scope projection.
+function HistoricalContextBar({ dataThrough, publishedAt, scope }) {
   const dataThroughText = fmtDate(dataThrough)
   const publishedText = fmtDateTime(publishedAt)
+  const scopeLabel = (scope && scope.display_label) || `Published ${SITE} Snapshot`
   return (
     <div className="mb-4 flex flex-col gap-1 rounded-lg border border-dirt bg-field/40 px-4 py-3 text-xs sm:flex-row sm:items-center sm:justify-between">
       <span className="font-mono uppercase tracking-widest text-chalk500">
-        Published {SITE} snapshot
+        {scopeLabel}
       </span>
       <span className="text-chalk400">
         {dataThroughText ? (
@@ -182,10 +187,15 @@ export function ArtifactView({ artifact, superseded }) {
   const accent = accentFor(teamState.public_state)
   const why = copy.why || teamState.summary
   const dataThrough = freshness.data_through || artifact.product_date
+  const scope = artifact.publication_scope || null
 
   return (
     <article className="share-artifact space-y-5">
-      <HistoricalContextBar dataThrough={dataThrough} publishedAt={artifact.published_at} />
+      <HistoricalContextBar dataThrough={dataThrough} publishedAt={artifact.published_at} scope={scope} />
+
+      {scope && scope.historical_note ? (
+        <p className="text-xs leading-relaxed text-chalk500">{scope.historical_note}</p>
+      ) : null}
 
       {superseded && artifact.superseded ? (
         <aside className="rounded-lg border border-amber/40 bg-amber/10 px-4 py-3 text-sm text-chalk200" role="note">

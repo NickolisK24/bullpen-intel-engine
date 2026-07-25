@@ -221,6 +221,20 @@ def _completeness_for(data_state) -> str:
     return _DATA_STATE_TO_COMPLETENESS.get(data_state, 'unknown')
 
 
+def _durable_limitations(limitations) -> list:
+    """Drop transient runtime limitations so only durable evidence caveats freeze.
+
+    A transient limitation (a sync momentarily running at generation time) recovers on
+    the next completed sync; freezing it into an immutable artifact would assert it
+    forever. Durable limitations (bounded partial coverage, stale source) pass through.
+    """
+    from services.sync_metadata import TRANSIENT_LIMITATION_TEXTS
+    return [
+        item for item in (limitations or [])
+        if item not in TRANSIENT_LIMITATION_TEXTS
+    ]
+
+
 def _evidence_inputs(source, readiness, status_code, summary, constraints) -> tuple:
     trust_metadata = readiness.get('trust_metadata') if isinstance(readiness, Mapping) else {}
     trust_metadata = trust_metadata if isinstance(trust_metadata, Mapping) else {}
@@ -312,11 +326,13 @@ def _build_team_state_document_v1(
             'governance_state': trust_metadata.get('governance_state'),
             'freshness_state': freshness.get('freshness_state'),
             'trust_state': eligibility.trust_state,
-            # SC-03B-07: preserve governed trust limitations (e.g. the bounded
-            # partial-active-bullpen-coverage note that keeps a medium read honest)
-            # on the immutable document, so a published medium artifact never presents
-            # a partial read as complete. Deterministic (no build-time content).
-            'limitations': list(trust_metadata.get('limitations') or []),
+            # SC-03B-07: preserve DURABLE governed trust limitations (e.g. the bounded
+            # partial-active-bullpen-coverage note that keeps a medium read honest) on
+            # the immutable document, so a published medium artifact never presents a
+            # partial read as complete. TRANSIENT runtime limitations (a sync in
+            # progress) are dropped here so a momentary process state is never frozen
+            # into an immutable public artifact. Deterministic (no build-time content).
+            'limitations': _durable_limitations(trust_metadata.get('limitations')),
             'ranking_applied': False,
             'selection_made': False,
         },

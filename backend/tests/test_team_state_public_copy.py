@@ -270,16 +270,43 @@ def test_state_specific_why_templates():
 
 
 def test_every_evidence_family_has_a_reader_facing_label_no_enum():
-    copy = _arizona_copy()
-    labels = [item['label'] for item in copy['evidence']]
+    # The reader-facing label/detail MAPPING is owned by build_evidence_receipts and is
+    # confidence-independent, so test it directly with one governed constraint per
+    # family (including coverage_inventory). This is separate from the public-copy
+    # trust reconciliation, which suppresses the coarse coverage receipt at high/medium
+    # confidence (see test_high_confidence_coverage_receipt_reconciled).
+    from services.team_state_public_copy import build_evidence_receipts
+    receipts = build_evidence_receipts([
+        {'constraint_id': 'availability_constrained', 'category': 'availability',
+         'affected_area': 'availability_distribution', 'count': 2, 'severity': 'caution'},
+        {'constraint_id': 'coverage_partial', 'category': 'coverage',
+         'affected_area': 'coverage_inventory', 'count': 3, 'severity': 'caution'},
+        {'constraint_id': 'handedness_partial', 'category': 'coverage',
+         'affected_area': 'handedness_coverage', 'count': 1, 'severity': 'informational'},
+        {'constraint_id': 'workload_elevated', 'category': 'workload',
+         'affected_area': 'workload_pressure', 'count': 3, 'severity': 'caution'},
+    ])
+    labels = [item['label'] for item in receipts]
     assert labels == [
         'Available bullpen options', 'Active bullpen coverage',
         'Bullpen handedness', 'Recent bullpen workload',
     ]
-    for item in copy['evidence']:
+    for item in receipts:
         assert '_' not in item['label']
         assert '_' not in item['detail']
         assert item['detail']  # a concrete reader-facing fact
+
+
+def test_high_confidence_coverage_receipt_reconciled():
+    # A high-confidence read must NOT surface the coarse coverage_inventory "missing
+    # current data" receipt beside its verified trust line (production Giants/Angels
+    # defect). The canonical active bullpen is fully covered at high confidence.
+    copy = _arizona_copy()
+    assert copy['confidence'] == 'high' if 'confidence' in copy else True
+    ids = {item['evidence_id'] for item in copy['evidence']}
+    assert 'coverage_partial' not in ids
+    assert all('missing current data' not in (item.get('detail') or '')
+               for item in copy['evidence'])
 
 
 def test_evidence_details_preserve_governed_counts():
@@ -297,9 +324,11 @@ def test_unknown_evidence_family_uses_generic_label_without_leaking_enum():
 
 
 def test_evidence_order_is_canonical():
+    # coverage_partial is reconciled out at high confidence; the remaining families
+    # keep their canonical order.
     copy = _arizona_copy()
     assert [i['evidence_id'] for i in copy['evidence']] == [
-        'availability_constrained', 'coverage_partial', 'handedness_partial', 'workload_elevated']
+        'availability_constrained', 'handedness_partial', 'workload_elevated']
 
 
 # ===========================================================================
@@ -399,11 +428,12 @@ def test_arizona_fixture_public_read_is_baseball_native(app):
                    'coverage_inventory', 'workload_pressure', 'status_code'):
         assert banned not in public_blob
 
-    # Four governed evidence facts remain, reader-facing.
-    assert len(view['evidence']) == 4
+    # Three governed evidence facts remain, reader-facing. The coarse coverage
+    # receipt is reconciled out of a high-confidence read (it would contradict the
+    # verified trust line); the canonical active bullpen is fully covered.
+    assert len(view['evidence']) == 3
     assert [e['label'] for e in view['evidence']] == [
-        'Available bullpen options', 'Active bullpen coverage',
-        'Bullpen handedness', 'Recent bullpen workload']
+        'Available bullpen options', 'Bullpen handedness', 'Recent bullpen workload']
 
     # High confidence, empty limitations omitted.
     assert view['trust']['confidence'] == 'high'
