@@ -47,7 +47,7 @@ from utils.db import db
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 MIGRATIONS_DIR = REPO_ROOT / 'backend/migrations/versions'
-EXPECTED_ALEMBIC_HEAD = 'b3d9f1a7c2e5'
+EXPECTED_ALEMBIC_HEAD = 'a4f1c7e9b3d2'
 FORBIDDEN_HEADLINE_TERMS = (
     'headline',
     'read_label',
@@ -543,8 +543,15 @@ def test_phase0e_switches_and_legacy_public_files_not_modified():
         # is a new provenance table only, no public route and no SC-02/vocabulary change.
         'backend/migrations/versions/b3d9f1a7c2e5_add_team_progressive_publications.py',
     }
+    allowed_team_at_appearance_files = {
+        # feat/team-at-appearance-authority (Bullpen Performance Context — Foundation 1):
+        # additive, nullable team-at-appearance columns on game_logs. Purely additive,
+        # reversible, no historical backfill, no reader migrated, no public route.
+        'backend/migrations/versions/a4f1c7e9b3d2_add_game_log_appearance_team.py',
+    }
     allowed_files = (
         allowed_public_freshness_display_files
+        | allowed_team_at_appearance_files
         | allowed_progressive_team_publication_files
         | allowed_public_share_artifact_page_files
         | allowed_active_bullpen_readiness_files

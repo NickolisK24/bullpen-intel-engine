@@ -1461,12 +1461,19 @@ def test_existing_public_routes_behavior_freeze(monkeypatch):
         # change, and the league dashboard snapshot stays all-or-nothing.
         'backend/migrations/versions/b3d9f1a7c2e5_add_team_progressive_publications.py',
     }
+    allowed_team_at_appearance_files = {
+        # feat/team-at-appearance-authority (Bullpen Performance Context — Foundation 1):
+        # additive, nullable team-at-appearance columns on game_logs. Purely additive,
+        # reversible, no historical backfill, no reader migrated, no public route.
+        'backend/migrations/versions/a4f1c7e9b3d2_add_game_log_appearance_team.py',
+    }
     assert not [
         path for path in changed
         if path not in allowed_share_artifacts_domain_files
         if path not in allowed_share_artifact_cutover_files
         if path not in allowed_share_artifact_operations_files
         if path not in allowed_progressive_team_publication_files
+        if path not in allowed_team_at_appearance_files
         if path not in allowed_public_share_artifact_page_files
         if path not in allowed_phase_a_audience_signup_files
         if path not in allowed_bullpen_game_context_files
