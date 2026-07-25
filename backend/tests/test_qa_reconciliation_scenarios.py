@@ -47,7 +47,7 @@ from utils.db import db
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 MIGRATIONS_DIR = REPO_ROOT / 'backend/migrations/versions'
-EXPECTED_ALEMBIC_HEAD = 'e2b8d5a3c9f1'
+EXPECTED_ALEMBIC_HEAD = 'b3d9f1a7c2e5'
 FORBIDDEN_HEADLINE_TERMS = (
     'headline',
     'read_label',
@@ -532,8 +532,17 @@ def test_phase0e_switches_and_legacy_public_files_not_modified():
         'frontend/src/utils/publicShareArtifact.js',
         'frontend/src/App.jsx',
     }
+    allowed_progressive_team_publication_files = {
+        # fix/progressive-team-artifact-publication: the immutable team-scoped source
+        # authority checkpoint that lets an individual Team State artifact publish
+        # after that team's own completed game, without waiting for the whole league
+        # slate to be final. The league dashboard snapshot stays all-or-nothing; this
+        # is a new provenance table only, no public route and no SC-02/vocabulary change.
+        'backend/migrations/versions/b3d9f1a7c2e5_add_team_progressive_publications.py',
+    }
     allowed_files = (
         allowed_public_freshness_display_files
+        | allowed_progressive_team_publication_files
         | allowed_public_share_artifact_page_files
         | allowed_active_bullpen_readiness_files
         | allowed_share_artifacts_domain_files

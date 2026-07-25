@@ -30,8 +30,10 @@ from typing import Optional
 from models.share_artifact import (
     LIFECYCLE_DRAFT,
     LIFECYCLE_PUBLISHED,
+    source_authority_type,
 )
 from models.share_artifact_generation_audit import ShareArtifactGenerationAudit
+from models.team_progressive_publication import TeamProgressivePublication
 from services.share_artifact_batch_generation import (
     BATCH_OUTCOME_FAILED,
     BATCH_OUTCOME_GENERATED,
@@ -178,15 +180,24 @@ def build_coverage_overview(*, session=None) -> dict:
     directory = valid_team_directory()
     canonical_team_ids = sorted(directory.keys())
 
+    # This overview is LEAGUE-snapshot coverage. A team-progressive artifact/audit
+    # is a different publication authority; exclude that scope by its DURABLE
+    # discriminator (never by the bare numeric id) so a checkpoint id that happens to
+    # equal this league snapshot id can never inflate or corrupt league coverage.
     # Most-recent terminal audit per team for THIS snapshot (audits arrive already
     # ordered team asc, created_at desc, so the first per team is the latest).
     latest_audit_by_team = {}
-    for audit in audits_for_snapshot(source_snapshot_id, session=session):
+    for audit in audits_for_snapshot(
+        source_snapshot_id,
+        exclude_request_source=TeamProgressivePublication.REQUEST_SOURCE,
+        session=session,
+    ):
         latest_audit_by_team.setdefault(audit.team_id, audit)
 
     # Published artifacts tied to this same source snapshot authority.
     artifacts = list_team_state_artifacts_for_snapshot(
-        source_snapshot_id, lifecycle_state=LIFECYCLE_PUBLISHED, session=session,
+        source_snapshot_id, lifecycle_state=LIFECYCLE_PUBLISHED,
+        exclude_subject_type=TeamProgressivePublication.SCOPE, session=session,
     )
     artifact_by_team = {}
     for artifact in artifacts:
@@ -352,6 +363,9 @@ def _artifact_view(artifact, directory) -> dict:
         'team_abbreviation': entry.get('team_abbreviation'),
         'product_date': _iso(artifact.product_date),
         'source_snapshot_id': artifact.source_snapshot_id,
+        # Durable source-authority type (league_snapshot vs team_progressive), read
+        # from the artifact's immutable discriminator — never inferred from the id.
+        'source_authority_type': source_authority_type(artifact),
         'lifecycle_state': artifact.lifecycle_state,
         'schema_version': artifact.schema_version,
         'render_version': artifact.render_version,

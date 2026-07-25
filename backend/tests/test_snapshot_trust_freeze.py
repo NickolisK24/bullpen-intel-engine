@@ -445,6 +445,15 @@ def test_frozen_legacy_what_changed_files_untouched():
         'backend/migrations/versions/e2b8d5a3c9f1_add_share_artifact_generation_audits.py',
         'backend/api/share_artifacts_admin.py',
     }
+    allowed_progressive_team_publication_files = {
+        # fix/progressive-team-artifact-publication (Share Cards): the immutable
+        # team-scoped source-authority checkpoint migration. It lets an individual
+        # Team State artifact publish after that team's own completed game without
+        # waiting for the whole league slate. Backend domain only — additive,
+        # independently reversible; dashboard_snapshots and its gates are unchanged;
+        # no public route, renderer, or what-changed behavior change.
+        'backend/migrations/versions/b3d9f1a7c2e5_add_team_progressive_publications.py',
+    }
     allowed_share_artifact_cutover_files = {
         # feature/share-artifact-generation-cutover (Share Cards SC-03A cutover):
         # the active Share Card entry points now read the published, integrity-
@@ -511,6 +520,7 @@ def test_frozen_legacy_what_changed_files_untouched():
         if path not in allowed_trusted_traffic_files
         if path not in allowed_wp42_schedule_files
         if path not in allowed_share_artifacts_domain_files
+        if path not in allowed_progressive_team_publication_files
     )
 
 
