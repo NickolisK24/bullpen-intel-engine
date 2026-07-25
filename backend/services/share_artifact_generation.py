@@ -348,6 +348,7 @@ def generate_team_state_artifact(
     request_source: Optional[str] = None,
     readiness_resolver=None,
     snapshot=None,
+    source_authority=None,
     session=None,
 ) -> TeamStateGenerationResult:
     """Generate (or reuse, or refuse) a Team State Share Artifact for a team.
@@ -356,22 +357,33 @@ def generate_team_state_artifact(
     ``failed_closed``. Publication and its durable audit commit atomically;
     refusals and operational failures are also durably audited.
 
-    ``snapshot`` optionally pins the trusted source snapshot authority. When
+    ``snapshot`` optionally pins the trusted LEAGUE source snapshot authority. When
     omitted (the default and the single-team admin path), the latest published
     daily snapshot is resolved as before. A batch caller that has already
     resolved and validated one shared source snapshot passes it here so every
     team is generated against the identical authority instead of re-resolving it.
+
+    ``source_authority`` supplies a pre-built team-scoped ``TeamStateSnapshotAuthority``
+    directly — the seam used by progressive per-team publication, where the trusted
+    source is a team progressive checkpoint (its own final-game evidence verdict),
+    not a league snapshot. It takes precedence over ``snapshot`` for both the
+    freshness anchor and the eligibility source authority, so a completed game can
+    publish its two teams independently without any league snapshot. The entire
+    readiness / eligibility / payload / publish / dedup / integrity path below is
+    reused unchanged; only the trusted source object differs.
     """
     session = session or db.session
     resolver = readiness_resolver or resolve_team_readiness_payload
 
     # 1. Resolve the governed readiness payload (operational error -> fail closed).
-    #    Thread the shared serving snapshot so the resolver can anchor the read's
-    #    freshness to the snapshot it is generated from. Passed only when the
-    #    resolver accepts it, so injected/legacy resolvers keep working unchanged.
+    #    Thread the trusted source (team-scoped authority when progressive, else the
+    #    shared league serving snapshot) so the resolver anchors the read's freshness
+    #    to the source it is generated from. Passed only when the resolver accepts it,
+    #    so injected/legacy resolvers keep working unchanged.
+    freshness_source = source_authority if source_authority is not None else snapshot
     resolver_kwargs = {'requested_date': requested_date, 'session': session}
     if _resolver_accepts_source_snapshot(resolver):
-        resolver_kwargs['source_snapshot'] = snapshot
+        resolver_kwargs['source_snapshot'] = freshness_source
     try:
         readiness = resolver(team_id, **resolver_kwargs)
     except Exception:
@@ -380,10 +392,11 @@ def generate_team_state_artifact(
             failure_code=FAILURE_READINESS_RESOLUTION, actor=actor, request_source=request_source,
         )
 
-    # 2. Gather the governed source (snapshot authority + team + readiness).
+    # 2. Gather the governed source (snapshot/team-scoped authority + team + readiness).
     try:
         source = gather_team_state_source(
             team_id, readiness_payload=readiness, snapshot=snapshot,
+            source_authority=source_authority,
             requested_date=requested_date, session=session,
         )
     except Exception:

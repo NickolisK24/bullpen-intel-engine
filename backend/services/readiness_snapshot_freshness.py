@@ -134,6 +134,15 @@ def anchor_sync_status_to_serving_snapshot(sync_status, authority) -> dict:
 
 
 def _default_unavailable_reason(snapshot):
+    # A team-scoped source authority (progressive publication checkpoint /
+    # TeamStateSnapshotAuthority) carries its OWN fail-closed trust verdict computed
+    # from that team's final-game evidence; a league DashboardSnapshot uses the
+    # canonical league snapshot trust verdict. Duck-type so the same freshness anchor
+    # serves both without a second freshness engine.
+    if hasattr(snapshot, 'is_trusted') and hasattr(snapshot, 'unavailable_reason'):
+        if getattr(snapshot, 'is_trusted', False):
+            return None
+        return getattr(snapshot, 'unavailable_reason', None) or 'source_untrusted'
     from services.dashboard_snapshot import snapshot_unavailable_reason
 
     return snapshot_unavailable_reason(snapshot)

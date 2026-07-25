@@ -1450,11 +1450,19 @@ def test_existing_public_routes_behavior_freeze(monkeypatch):
         'frontend/tests/publicShareArtifact.test.mjs',
         'frontend/src/App.jsx',
     }
+    allowed_progressive_team_publication_files = {
+        # fix/progressive-team-artifact-publication: the immutable team-scoped source
+        # authority checkpoint migration for progressive per-team Team State
+        # publication. New provenance table only; no public route, no SC-02/vocabulary
+        # change, and the league dashboard snapshot stays all-or-nothing.
+        'backend/migrations/versions/b3d9f1a7c2e5_add_team_progressive_publications.py',
+    }
     assert not [
         path for path in changed
         if path not in allowed_share_artifacts_domain_files
         if path not in allowed_share_artifact_cutover_files
         if path not in allowed_share_artifact_operations_files
+        if path not in allowed_progressive_team_publication_files
         if path not in allowed_public_share_artifact_page_files
         if path not in allowed_phase_a_audience_signup_files
         if path not in allowed_bullpen_game_context_files

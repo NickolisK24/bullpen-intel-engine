@@ -146,6 +146,7 @@ def gather_team_state_source(
     *,
     readiness_payload: Optional[Mapping[str, Any]] = None,
     snapshot=None,
+    source_authority: Optional[TeamStateSnapshotAuthority] = None,
     requested_date: Optional[date] = None,
     session=None,
 ) -> TeamStateSource:
@@ -155,25 +156,35 @@ def gather_team_state_source(
     ``team_operations.bullpen_readiness.assemble_bullpen_readiness`` — SC-02
     consumes it, it does not assemble it. ``snapshot`` may be supplied for
     testing / explicit authorization; otherwise the latest published daily
-    snapshot is resolved and its trust verdict computed. This function never
-    raises for "not eligible": gaps are represented on the returned source and
-    the eligibility engine refuses deterministically.
+    snapshot is resolved and its trust verdict computed.
+
+    ``source_authority`` supplies a pre-built ``TeamStateSnapshotAuthority``
+    directly — the seam used by team-scoped progressive publication, where the
+    trusted source is a team progressive checkpoint (its own final-game evidence
+    verdict), not the league snapshot. When given it takes precedence over
+    ``snapshot`` and no league snapshot is resolved. This function never raises for
+    "not eligible": gaps are represented on the returned source and the eligibility
+    engine refuses deterministically.
     """
     session = session or db.session
 
     team_valid = _safe_is_valid_team_id(team_id)
 
-    if snapshot is None:
-        try:
-            snapshot = get_latest_dashboard_snapshot()
-        except Exception:
-            # Fail closed: an unreadable snapshot store is treated as missing.
-            snapshot = None
+    if source_authority is not None:
+        authority = source_authority
+    else:
+        if snapshot is None:
+            try:
+                snapshot = get_latest_dashboard_snapshot()
+            except Exception:
+                # Fail closed: an unreadable snapshot store is treated as missing.
+                snapshot = None
+        authority = _snapshot_authority(snapshot)
 
     return TeamStateSource(
         team_id=int(team_id),
         team_valid=team_valid,
-        snapshot=_snapshot_authority(snapshot),
+        snapshot=authority,
         readiness=readiness_payload,
         requested_date=requested_date,
     )

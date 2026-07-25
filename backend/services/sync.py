@@ -3793,6 +3793,62 @@ def complete_sync_run_with_snapshot(
         raise
 
 
+def _safe_run_progressive_team_publication(game_pks, *, sync_run_id, status, run_logger):
+    """Progressive per-team Team State publication for the games that fully completed
+    this postgame pass. Fail-soft: gated by the Share Artifact autogeneration flag and
+    fully exception-isolated so it can never break the postgame sync, and it never
+    touches the league dashboard snapshot. Returns a JSON-safe accounting or None.
+    """
+    if not game_pks:
+        return None
+    try:
+        from flask import current_app
+        if not current_app.config.get('SHARE_ARTIFACT_AUTOGENERATION_ENABLED', False):
+            run_logger.info(
+                'Progressive team publication skipped for %s completed game(s): '
+                'autogeneration disabled.',
+                len(game_pks),
+            )
+            return None
+    except Exception:
+        return None
+
+    from services.team_progressive_publication import publish_team_state_for_final_game
+
+    events = []
+    totals = {'games': 0, 'attempted': 0, 'accounted': 0, 'generated': 0,
+              'reused': 0, 'refused': 0, 'failed': 0}
+    for game_pk in game_pks:
+        try:
+            result = publish_team_state_for_final_game(
+                game_pk, sync_run_id=sync_run_id, actor='postgame_progressive',
+            )
+            db.session.commit()
+            events.append(result.to_dict())
+            totals['games'] += 1
+            totals['attempted'] += result.attempted
+            totals['accounted'] += result.accounted
+            totals['generated'] += result.generated
+            totals['reused'] += result.reused
+            totals['refused'] += result.refused
+            totals['failed'] += result.failed
+        except Exception as exc:  # noqa: BLE001 - progressive publication is fail-soft
+            try:
+                db.session.rollback()
+            except Exception:
+                pass
+            run_logger.warning(
+                'Progressive team publication failed for game_pk=%s: %s', game_pk, exc,
+            )
+    run_logger.info(
+        'Progressive team publication complete: games=%s attempted=%s generated=%s '
+        'reused=%s refused=%s failed=%s.',
+        totals['games'], totals['attempted'], totals['generated'],
+        totals['reused'], totals['refused'], totals['failed'],
+    )
+    return {'totals': totals, 'events': events}
+
+
 def run_postgame_refresh(
     app,
     schedule_date: date | None = None,
@@ -3949,6 +4005,10 @@ def run_postgame_refresh(
 
             pbp_foundation_attempted_game_pks = set()
             changed_slate_dates = set()
+            # Games that reached full box-score/ledger completion this pass. Each is a
+            # candidate for progressive per-team Team State publication (team-scoped;
+            # it does NOT wait for the whole league slate to be final).
+            progressive_final_game_pks = set()
             for game in unprocessed_games:
                 game_pk = _game_pk(game)
                 game_slate_date = slate_by_game_pk.get(game_pk, schedule_date)
@@ -3971,6 +4031,7 @@ def run_postgame_refresh(
                     )
                     if fully_processed:
                         status['games_processed'] += 1
+                        progressive_final_game_pks.add(game_pk)
                     else:
                         status['games_incomplete'] += 1
                         if result['processing_status'] == POSTGAME_MARKER_STATUS_FAILED:
@@ -4106,6 +4167,21 @@ def run_postgame_refresh(
                         game_pk,
                         exc,
                     )
+
+            # Progressive per-team publication: each game that reached full completion
+            # this pass may publish its two teams' Team State artifacts independently,
+            # WITHOUT waiting for the whole league slate to be final. This reuses the
+            # canonical single-team generation path and is fully fail-closed and
+            # idempotent; a failure here must never break the postgame sync, and it
+            # never publishes or mutates the league dashboard snapshot.
+            progressive_result = _safe_run_progressive_team_publication(
+                sorted(progressive_final_game_pks),
+                sync_run_id=sync_run_id,
+                status=status,
+                run_logger=run_logger,
+            )
+            if progressive_result is not None:
+                status['progressive_team_publication'] = progressive_result
 
             run_logger.info(
                 'Postgame ingestion complete for %s: processed=%s skipped=%s '
