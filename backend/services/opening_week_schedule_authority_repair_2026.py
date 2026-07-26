@@ -1,4 +1,4 @@
-"""Governed repair of the 2026 opening-week schedule-authority gap.
+"""Governed, resumable repair of the 2026 opening-week schedule-authority gap.
 
 Root cause (traced, not assumed): ``GameLog`` rows are populated per-pitcher from the
 MLB per-season gameLog feed, independent of the schedule ledger. The schedule/ledger
@@ -24,6 +24,24 @@ stop-at-first-failure, fail-closed refusals). ``CompletedGameContext`` is delibe
 NOT written here: the resolver does not read it, and schedule ingestion never generates
 it — it remains the separate existing postgame/backfill path.
 
+Retry safety (v2): apply commits one game per transaction and stops at the first
+failure, so a partial apply leaves earlier games committed. Rather than refuse any later
+retry, the planner classifies each target game against the freshly fetched official
+evidence into exactly one deterministic disposition:
+
+    missing            — no canonical schedule authority exists yet; plan the write.
+    already_satisfied  — the complete, correct two-sided ScheduledGame authority (plus a
+                         consistent sibling SlateGame) already exists; skip with no write.
+    conflict           — partial or contradictory existing authority (one side only,
+                         duplicate side, mismatched identity/date/type/finality/
+                         doubleheader, or a contradictory/absent sibling row). Fail closed;
+                         never silently overwrite.
+
+A retry therefore skips previously committed games as ``already_satisfied``, plans and
+writes only the remaining ``missing`` games, and fails closed on any ``conflict``. The
+completed ScheduledGame rows themselves are the durable progress ledger — no repair-state
+table, checkpoint, or marker is added.
+
 No migration; no performance metric; no Foundation 3.
 """
 
@@ -32,10 +50,11 @@ from __future__ import annotations
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from models.game_log import GameLog
 from models.scheduled_game import ScheduledGame
+from models.slate_game import SlateGame
 from services import appearance_team_backfill_2026 as backfill
 from services import schedule_ingestion
 from services.game_finality import classify_status
@@ -45,7 +64,9 @@ from utils.db import db
 
 CAPABILITY = 'opening_week_schedule_authority_repair_2026_v1'
 CONFIRMATION_PHRASE = 'RUN_2026_OPENING_WEEK_SCHEDULE_REPAIR'
-REPAIR_CONTRACT_VERSION = 'opening_week_schedule_authority_repair_2026.v1'
+# v2 — retry-safe disposition contract. The bump invalidates any v1 dry-run fingerprint
+# so an approval computed before this change cannot approve the new contract.
+REPAIR_CONTRACT_VERSION = 'opening_week_schedule_authority_repair_2026.v2'
 REPAIR_SOURCE = 'opening_week_schedule_repair_2026'
 EXPECTED_MIGRATION_HEAD = backfill.EXPECTED_MIGRATION_HEAD
 
@@ -59,6 +80,9 @@ EXPECTED_RESIDUAL_ROW_COUNT = 418
 # closed rather than being silently reconstructed.
 SUPPORTED_GAME_TYPES = ('R',)
 _FINAL_STATE = ScheduledGame.STATE_FINAL
+_SLATE_FINAL_STATE = SlateGame.STATE_COMPLETED
+# Canonical schedule authority is exactly two rows per game (one per team side).
+_CANONICAL_ROWS_PER_GAME = 2
 
 # The exact approved target set from the merged production residual audit
 # (result=pass, 418 rows / 47 games, all no_schedule_rows, 2026-03-25..29). Ordered by
@@ -86,6 +110,14 @@ TARGET_GAMES = (
 TARGET_GAME_PKS = frozenset(pk for _d, pk in TARGET_GAMES)
 _TARGET_DATE_BY_PK = {pk: d for d, pk in TARGET_GAMES}
 
+# Deterministic, mutually exclusive existing-authority dispositions.
+DISPOSITION_MISSING = 'missing'
+DISPOSITION_SATISFIED = 'already_satisfied'
+DISPOSITION_CONFLICT = 'conflict'
+# Single aggregate reason surfaced when any target game's EXISTING local authority is
+# partial/contradictory (the specific per-game code lives in the bounded preview).
+EXISTING_AUTHORITY_CONFLICT_REASON = 'existing_schedule_authority_conflict'
+
 RESULT_PASS = 'pass'
 RESULT_FAIL = 'fail'
 RESULT_REFUSED = 'refused'
@@ -97,6 +129,7 @@ _MAX_PREVIEW = 60
 
 @dataclass(frozen=True)
 class _GamePlan:
+    """Official-evidence plan for one target game (before existing-authority lookup)."""
     game_pk: int
     game_date: str
     game_type: Optional[str]
@@ -111,6 +144,33 @@ class _GamePlan:
     reason_code: str
 
 
+@dataclass(frozen=True)
+class _GameRecord:
+    """A target game's official plan joined with its existing-authority disposition."""
+    game_pk: int
+    game_date: str
+    game_type: Optional[str]
+    final_status_code: Optional[str]
+    status_state: str
+    home_team_id: Optional[int]
+    away_team_id: Optional[int]
+    doubleheader: Optional[str]
+    game_number: Optional[int]
+    planned_rows: tuple
+    context_action: str
+    reason_code: str
+    disposition: str
+    disposition_reason: str
+    existing_schedule_row_count: int
+    existing_slate_present: bool
+
+    @property
+    def planned_write_count(self) -> int:
+        # Only a ``missing`` game contributes canonical writes; a satisfied or conflicting
+        # game plans zero rows (satisfied is skipped; conflict fails the run closed).
+        return len(self.planned_rows) if self.disposition == DISPOSITION_MISSING else 0
+
+
 def _positive_int(value):
     try:
         parsed = int(value)
@@ -121,6 +181,14 @@ def _positive_int(value):
 
 def _norm_abbr(value):
     return str(value or '').strip().upper()
+
+
+def _norm_opt(value):
+    """Normalize an optional short string for equality (None/'' collapse to None)."""
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
 
 
 # ── Production preconditions (read-only) ──────────────────────────────────────
@@ -138,14 +206,27 @@ def _residual_snapshot(session):
     return by_game
 
 
-def _games_with_existing_schedule(session):
+def _existing_schedule_rows(session) -> Dict[int, List[ScheduledGame]]:
+    """All existing ScheduledGame rows for the target game_pks, grouped by game_pk."""
     rows = (
-        session.query(ScheduledGame.game_pk)
+        session.query(ScheduledGame)
         .filter(ScheduledGame.game_pk.in_(TARGET_GAME_PKS))
-        .distinct()
         .all()
     )
-    return {pk for (pk,) in rows}
+    by_game: Dict[int, List[ScheduledGame]] = defaultdict(list)
+    for row in rows:
+        by_game[row.game_pk].append(row)
+    return by_game
+
+
+def _existing_slate_games(session) -> Dict[int, SlateGame]:
+    """Existing sibling SlateGame rows for the target game_pks, keyed by game_pk."""
+    rows = (
+        session.query(SlateGame)
+        .filter(SlateGame.game_pk.in_(TARGET_GAME_PKS))
+        .all()
+    )
+    return {row.game_pk: row for row in rows}
 
 
 # ── Official MLB evidence (fetched once per date, cached) ─────────────────────
@@ -260,24 +341,144 @@ def _fail_plan(game_pk, approved_date, reason_code, *, status_state='') -> _Game
     )
 
 
+# ── Existing-authority classification (canonical equivalence) ─────────────────
+def _schedule_conflict_reason(plan: _GamePlan, existing_rows: List[ScheduledGame]) -> str:
+    """Return '' if the existing ScheduledGame rows are exactly what normal ingestion
+    would persist from ``plan``'s official evidence, else a specific conflict code.
+
+    Compares every authority-determining field written by ``_upsert_row``: side identity
+    and uniqueness, opponent, home/away orientation, official date, game type, finality,
+    and doubleheader/game-number metadata. Order-independent (rows are indexed by team_id).
+    """
+    if len(existing_rows) != _CANONICAL_ROWS_PER_GAME:
+        # One side only, or a duplicate/extra side row.
+        return 'existing_schedule_row_count'
+
+    by_team: Dict[int, ScheduledGame] = {}
+    for row in existing_rows:
+        if row.team_id in by_team:
+            return 'existing_schedule_duplicate_side'
+        by_team[row.team_id] = row
+
+    home_id, away_id = plan.home_team_id, plan.away_team_id
+    if set(by_team) != {home_id, away_id}:
+        return 'existing_schedule_team_mismatch'
+
+    approved_date = _TARGET_DATE_BY_PK[plan.game_pk]
+    expected = {home_id: ('home', away_id), away_id: ('away', home_id)}
+    for team_id, row in by_team.items():
+        exp_home_away, exp_opponent = expected[team_id]
+        if row.home_away != exp_home_away:
+            return 'existing_schedule_orientation_mismatch'
+        if row.opponent_team_id != exp_opponent:
+            return 'existing_schedule_opponent_mismatch'
+        if row.game_date != approved_date:
+            return 'existing_schedule_date_mismatch'
+        if row.game_type != plan.game_type:
+            return 'existing_schedule_game_type_mismatch'
+        if row.status_state != plan.status_state:
+            return 'existing_schedule_status_mismatch'
+        if _norm_opt(row.doubleheader) != _norm_opt(plan.doubleheader):
+            return 'existing_schedule_doubleheader_mismatch'
+        if row.game_number != plan.game_number:
+            return 'existing_schedule_game_number_mismatch'
+    return ''
+
+
+def _slate_conflict_reason(plan: _GamePlan, existing_slate: Optional[SlateGame]) -> str:
+    """Return '' if the sibling SlateGame the canonical ingester writes alongside is
+    present and consistent with ``plan``, else a specific conflict code.
+
+    ``ingest_games`` writes both ScheduledGame sides AND the SlateGame together, so a
+    complete ScheduledGame authority with an absent or contradictory SlateGame is a
+    partial/contradictory canonical state and fails closed.
+    """
+    if existing_slate is None:
+        return 'existing_slate_missing'
+    if existing_slate.home_team_id != plan.home_team_id:
+        return 'existing_slate_home_mismatch'
+    if existing_slate.away_team_id != plan.away_team_id:
+        return 'existing_slate_away_mismatch'
+    if existing_slate.game_number != plan.game_number:
+        return 'existing_slate_game_number_mismatch'
+    if _norm_opt(existing_slate.doubleheader_flag) != _norm_opt(plan.doubleheader):
+        return 'existing_slate_doubleheader_mismatch'
+    if existing_slate.normalized_state != _SLATE_FINAL_STATE:
+        return 'existing_slate_status_mismatch'
+    return ''
+
+
+def _classify_disposition(plan: _GamePlan, existing_rows: List[ScheduledGame],
+                          existing_slate: Optional[SlateGame]) -> Tuple[str, str]:
+    """Classify one target game's existing authority. Returns (disposition, reason_code).
+
+    Deterministic and mutually exclusive:
+      * official evidence unusable            → conflict (its own official reason)
+      * no ScheduledGame and no SlateGame     → missing
+      * complete, equivalent canonical rows   → already_satisfied
+      * anything partial or contradictory     → conflict (specific existing code)
+    """
+    if plan.reason_code:
+        # The official evidence itself can't prove a safe repair — fail closed.
+        return DISPOSITION_CONFLICT, plan.reason_code
+    if not existing_rows and existing_slate is None:
+        return DISPOSITION_MISSING, ''
+    reason = _schedule_conflict_reason(plan, existing_rows)
+    if reason:
+        return DISPOSITION_CONFLICT, reason
+    reason = _slate_conflict_reason(plan, existing_slate)
+    if reason:
+        return DISPOSITION_CONFLICT, reason
+    return DISPOSITION_SATISFIED, ''
+
+
+def _build_record(plan: _GamePlan, existing_rows: List[ScheduledGame],
+                  existing_slate: Optional[SlateGame]) -> _GameRecord:
+    disposition, reason = _classify_disposition(plan, existing_rows, existing_slate)
+    return _GameRecord(
+        game_pk=plan.game_pk,
+        game_date=plan.game_date,
+        game_type=plan.game_type,
+        final_status_code=plan.final_status_code,
+        status_state=plan.status_state,
+        home_team_id=plan.home_team_id,
+        away_team_id=plan.away_team_id,
+        doubleheader=plan.doubleheader,
+        game_number=plan.game_number,
+        planned_rows=plan.planned_rows,
+        context_action=plan.context_action,
+        reason_code=plan.reason_code,
+        disposition=disposition,
+        disposition_reason=reason,
+        existing_schedule_row_count=len(existing_rows),
+        existing_slate_present=existing_slate is not None,
+    )
+
+
 # ── Fingerprint ───────────────────────────────────────────────────────────────
-def _game_fingerprint_entry(plan: _GamePlan) -> dict:
+def _game_fingerprint_entry(record: _GameRecord) -> dict:
     return {
-        'game_pk': plan.game_pk,
-        'official_date': plan.game_date,
-        'game_type': plan.game_type,
-        'final_status_code': plan.final_status_code,
-        'status_state': plan.status_state,
-        'home_team_id': plan.home_team_id,
-        'away_team_id': plan.away_team_id,
-        'doubleheader': plan.doubleheader,
-        'game_number': plan.game_number,
-        'planned_rows': [dict(row) for row in plan.planned_rows],
-        'context_action': plan.context_action,
+        'game_pk': record.game_pk,
+        'official_date': record.game_date,
+        'game_type': record.game_type,
+        'final_status_code': record.final_status_code,
+        'status_state': record.status_state,
+        'home_team_id': record.home_team_id,
+        'away_team_id': record.away_team_id,
+        'doubleheader': record.doubleheader,
+        'game_number': record.game_number,
+        'planned_rows': [dict(row) for row in record.planned_rows],
+        'context_action': record.context_action,
+        'disposition': record.disposition,
+        'existing_authority': {
+            'schedule_row_count': record.existing_schedule_row_count,
+            'slate_present': record.existing_slate_present,
+        },
+        'planned_write_count': record.planned_write_count,
     }
 
 
-def _repair_fingerprint(*, plans, season, campaign_start, campaign_end,
+def _repair_fingerprint(*, records, season, campaign_start, campaign_end,
                         expected_game_count, expected_residual_row_count, migration_head):
     canonical = {
         'repair_contract_version': REPAIR_CONTRACT_VERSION,
@@ -289,7 +490,12 @@ def _repair_fingerprint(*, plans, season, campaign_start, campaign_end,
         'expected_residual_row_count': int(expected_residual_row_count),
         'target_game_pks': [pk for _d, pk in TARGET_GAMES],
         'migration_head': migration_head,
-        'games': [_game_fingerprint_entry(plan) for plan in plans],
+        'games_missing': sum(1 for r in records if r.disposition == DISPOSITION_MISSING),
+        'games_already_satisfied': sum(
+            1 for r in records if r.disposition == DISPOSITION_SATISFIED),
+        'games_conflicting': sum(1 for r in records if r.disposition == DISPOSITION_CONFLICT),
+        'total_planned_rows': sum(r.planned_write_count for r in records),
+        'games': [_game_fingerprint_entry(r) for r in records],
     }
     return backfill._sha256_json(canonical)
 
@@ -326,7 +532,7 @@ def run_repair(
     ingester=None,
     session=None,
 ) -> dict:
-    """Plan (dry run) or perform (apply) the opening-week schedule-authority repair."""
+    """Plan (dry run) or perform (apply) the resumable opening-week schedule repair."""
     session = session or db.session
     ingester = ingester or schedule_ingestion.ingest_games
     if campaign_end_date < campaign_start_date:
@@ -338,20 +544,32 @@ def run_repair(
     residual_by_game = _residual_snapshot(session)
     residual_games = set(residual_by_game)
     residual_rows = sum(len(v) for v in residual_by_game.values())
-    existing_schedule_games = _games_with_existing_schedule(session)
+
+    existing_schedule = _existing_schedule_rows(session)
+    existing_slate = _existing_slate_games(session)
+    any_existing_authority = bool(existing_schedule) or bool(existing_slate)
 
     official_by_pk, api_calls, fetch_failed = _fetch_official_games(client)
 
-    plans = [
-        _plan_game(pk, official_by_pk.get(pk, []), residual_by_game.get(pk, []))
+    records = [
+        _build_record(
+            _plan_game(pk, official_by_pk.get(pk, []), residual_by_game.get(pk, [])),
+            existing_schedule.get(pk, []),
+            existing_slate.get(pk),
+        )
         for _d, pk in TARGET_GAMES
     ]
 
     fingerprint = _repair_fingerprint(
-        plans=plans, season=season, campaign_start=campaign_start_date,
+        records=records, season=season, campaign_start=campaign_start_date,
         campaign_end=campaign_end_date, expected_game_count=expected_game_count,
         expected_residual_row_count=expected_residual_row_count, migration_head=migration_head,
     )
+
+    games_missing = sum(1 for r in records if r.disposition == DISPOSITION_MISSING)
+    games_satisfied = sum(1 for r in records if r.disposition == DISPOSITION_SATISFIED)
+    games_conflicting = sum(1 for r in records if r.disposition == DISPOSITION_CONFLICT)
+    schedule_rows_present = sum(r.existing_schedule_row_count for r in records)
 
     reasons = []
     if migration_head is not None and migration_head != [EXPECTED_MIGRATION_HEAD]:
@@ -364,26 +582,32 @@ def run_repair(
         reasons.append('residual_row_count_mismatch')
     if len(residual_games) != expected_game_count:
         reasons.append('residual_game_count_mismatch')
-    if existing_schedule_games:
-        reasons.append('target_game_already_has_schedule')
-    plan_reason_codes = sorted({p.reason_code for p in plans if p.reason_code})
-    reasons.extend(plan_reason_codes)
+    # Official-evidence problems keep their specific per-game codes.
+    reasons.extend(sorted({r.disposition_reason for r in records
+                           if r.disposition == DISPOSITION_CONFLICT and r.reason_code}))
+    # Existing local-authority conflicts (partial/contradictory rows) surface one aggregate
+    # code; the specific per-game code is in the bounded preview.
+    if any(r.disposition == DISPOSITION_CONFLICT and not r.reason_code for r in records):
+        reasons.append(EXISTING_AUTHORITY_CONFLICT_REASON)
 
     official = {
         'games_fetched': sum(1 for _d, pk in TARGET_GAMES if official_by_pk.get(pk)),
         'api_calls': api_calls,
-        'final_games': sum(1 for p in plans if p.status_state == _FINAL_STATE),
-        'non_final_games': sum(1 for p in plans if p.reason_code == 'non_final_game'),
-        'regular_season_games': sum(1 for p in plans if p.game_type in SUPPORTED_GAME_TYPES),
-        'unsupported_game_types': sum(1 for p in plans if p.reason_code == 'unsupported_game_type'),
-        'missing_home_team': sum(1 for p in plans if p.reason_code == 'missing_home_team'),
-        'missing_away_team': sum(1 for p in plans if p.reason_code == 'missing_away_team'),
-        'contradictory_games': sum(1 for p in plans if p.reason_code == 'contradictory_opponent_evidence'),
-        'duplicate_conflicting_games': sum(1 for p in plans if p.reason_code == 'duplicate_conflicting_source'),
-        'missing_evidence_games': sum(1 for p in plans if p.reason_code == 'official_evidence_missing'),
+        'final_games': sum(1 for r in records if r.status_state == _FINAL_STATE),
+        'non_final_games': sum(1 for r in records if r.reason_code == 'non_final_game'),
+        'regular_season_games': sum(1 for r in records if r.game_type in SUPPORTED_GAME_TYPES),
+        'unsupported_game_types': sum(1 for r in records if r.reason_code == 'unsupported_game_type'),
+        'missing_home_team': sum(1 for r in records if r.reason_code == 'missing_home_team'),
+        'missing_away_team': sum(1 for r in records if r.reason_code == 'missing_away_team'),
+        'contradictory_games': sum(1 for r in records if r.reason_code == 'contradictory_opponent_evidence'),
+        'duplicate_conflicting_games': sum(1 for r in records if r.reason_code == 'duplicate_conflicting_source'),
+        'missing_evidence_games': sum(1 for r in records if r.reason_code == 'official_evidence_missing'),
     }
-    clean_plans = [p for p in plans if not p.reason_code]
-    planned_schedule_rows = sum(len(p.planned_rows) for p in clean_plans)
+    planned_row_count = sum(r.planned_write_count for r in records)
+    schedule_rows_expected = _CANONICAL_ROWS_PER_GAME * len(TARGET_GAMES)
+    expected_rows_after_apply = (
+        _CANONICAL_ROWS_PER_GAME * games_satisfied + planned_row_count
+    )
 
     base = {
         'capability': CAPABILITY,
@@ -408,13 +632,23 @@ def run_repair(
             'residual_rows': residual_rows,
             'residual_games': len(residual_games),
             'invalid_stored_states': invalid_before,
-            'games_already_with_schedule': len(existing_schedule_games),
-            'games_with_conflicting_schedule': len(existing_schedule_games),
+            'games_already_satisfied': games_satisfied,
+            'games_conflicting': games_conflicting,
+        },
+        'existing_authority': {
+            'games_missing': games_missing,
+            'games_already_satisfied': games_satisfied,
+            'games_conflicting': games_conflicting,
+            'games_planned': games_missing,
+            'schedule_rows_already_present': schedule_rows_present,
+            'schedule_rows_expected': schedule_rows_expected,
+            'expected_schedule_rows_after_apply': expected_rows_after_apply,
+            'reconciles': (games_missing + games_satisfied + games_conflicting) == len(TARGET_GAMES),
         },
         'official_evidence': official,
         'planned_schedule_rows': {
-            'row_count': planned_schedule_rows,
-            'game_count': len(clean_plans),
+            'row_count': planned_row_count,
+            'game_count': games_missing,
         },
         'planned_completed_context': {
             'create_count': 0,
@@ -423,17 +657,17 @@ def run_repair(
         },
         'bounded_game_preview': [
             {
-                'game_pk': p.game_pk,
-                'game_date': p.game_date,
-                'game_type': p.game_type,
-                'final_status': p.status_state,
-                'home_team_id': p.home_team_id,
-                'away_team_id': p.away_team_id,
-                'planned_schedule_row_count': len(p.planned_rows),
-                'planned_context_action': p.context_action,
-                'safe_reason_code': p.reason_code or 'plannable',
+                'game_pk': r.game_pk,
+                'game_date': r.game_date,
+                'disposition': r.disposition,
+                'existing_schedule_row_count': r.existing_schedule_row_count,
+                'expected_schedule_row_count': _CANONICAL_ROWS_PER_GAME,
+                'planned_schedule_row_count': r.planned_write_count,
+                'official_home_team_id': r.home_team_id,
+                'official_away_team_id': r.away_team_id,
+                'safe_reason_code': r.disposition_reason or r.disposition,
             }
-            for p in plans[:_MAX_PREVIEW]
+            for r in records[:_MAX_PREVIEW]
         ],
         'fingerprint': fingerprint,
         'database_writes_performed': False,
@@ -451,13 +685,15 @@ def run_repair(
             payload.update(extra)
         return payload
 
-    # 1) Empty / already-repaired population, or a temporarily unavailable source.
-    if residual_rows == 0 and not existing_schedule_games:
+    # 1) No residual population remains (nothing to repair), or a temporarily
+    #    unavailable source — both inconclusive, never a hard failure.
+    if residual_rows == 0:
         return _finish(RESULT_INCONCLUSIVE, ['no_residual_population'], 'none')
     if fetch_failed:
         return _finish(RESULT_INCONCLUSIVE, ['official_source_unavailable'], 'retry_when_source_available')
 
-    # 2) Any refusal reason fails the run (dry run or apply) with no write.
+    # 2) Any refusal reason fails the run (dry run or apply) with no write. This includes
+    #    every existing-authority conflict, so apply can never reach a conflicting game.
     if reasons:
         return _finish(RESULT_FAIL, sorted(set(reasons)), 'resolve_blocking_conditions')
 
@@ -471,21 +707,36 @@ def run_repair(
             return _finish(RESULT_REFUSED, ['fingerprint_mismatch'], 'rerun_dry_run',
                            extra={'expected_fingerprint': expected_fingerprint})
 
-    # 4) Dry run: clean, no writes.
+    # 4) Dry run: clean. Either games remain to write, or the target authority is already
+    #    complete (a valid resumable no-op). Both are PASS/0.
     if not apply:
+        if games_missing == 0:
+            return _finish(RESULT_PASS, ['schedule_authority_already_complete'],
+                           'run_foundation_2_backfill_dry_run')
         return _finish(RESULT_PASS, ['schedule_authority_repair_ready'],
                        'run_apply_then_foundation_2_backfill')
 
-    # 5) Apply: per-game canonical ingest, per-game commit, stop at first failure.
-    writes = {'games_committed': 0, 'schedule_rows_written': 0, 'failed_game_count': 0}
+    # 5) Apply: for each target game in deterministic order, skip an already-satisfied
+    #    game (zero writes) and ingest+commit a missing game; stop at the first failure.
+    writes = {
+        'games_committed': 0,
+        'games_skipped_already_satisfied': 0,
+        'schedule_rows_written': 0,
+        'failed_game_count': 0,
+    }
     failed_games = []
-    for _d, pk in TARGET_GAMES:
+    for record in records:
+        if record.disposition == DISPOSITION_SATISFIED:
+            writes['games_skipped_already_satisfied'] += 1
+            continue
+        # Only ``missing`` games remain here (conflicts already failed the run in step 2).
         try:
-            created = _apply_game(pk, official_by_pk.get(pk, []), ingester, session)
+            created = _apply_game(record.game_pk, official_by_pk.get(record.game_pk, []),
+                                  ingester, session)
         except Exception as exc:  # noqa: BLE001 — isolate + stop on first failure
             session.rollback()
             writes['failed_game_count'] += 1
-            failed_games.append({'game_pk': pk, 'error_type': type(exc).__name__})
+            failed_games.append({'game_pk': record.game_pk, 'error_type': type(exc).__name__})
             break
         writes['games_committed'] += 1
         writes['schedule_rows_written'] += created
@@ -498,10 +749,17 @@ def run_repair(
         result, decision = RESULT_FAIL, ['game_apply_failure']
     else:
         result, decision = RESULT_PASS, ['schedule_authority_repaired']
+    apply_block = {
+        'games_skipped_already_satisfied': writes['games_skipped_already_satisfied'],
+        'games_committed': writes['games_committed'],
+        'games_failed': writes['failed_game_count'],
+        'schedule_rows_written': writes['schedule_rows_written'],
+    }
     return _finish(
         result, decision, 'run_foundation_2_backfill_dry_run',
         extra={'database_writes_performed': writes_performed, **writes,
-               'failed_games': failed_games, 'invalid_stored_states_after': invalid_after},
+               'apply': apply_block, 'failed_games': failed_games,
+               'invalid_stored_states_after': invalid_after},
     )
 
 

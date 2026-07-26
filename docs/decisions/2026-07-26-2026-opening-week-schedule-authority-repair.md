@@ -1,8 +1,8 @@
 # Decision: 2026 opening-week schedule-authority repair (Foundation 2 completion)
 
 - **Date:** 2026-07-26
-- **Status:** Implemented (repository work only). No production schedule repair, no
-  production backfill, no production write, no Foundation 3.
+- **Status:** Implemented (repository work only), retry-safe (contract v2). No production
+  schedule repair, no production backfill, no production write, no Foundation 3.
 - **Scope:** Restore the MISSING canonical `ScheduledGame` authority for exactly 47
   completed 2026 opening-week regular-season games so the existing Foundation 1/2
   resolver and backfill can attribute their 418 pitching appearances. No migration, no
@@ -89,20 +89,64 @@ remains the separate existing postgame/backfill path and is reported as
 Dry run is the default (zero writes; a SQL-capture test proves no INSERT/UPDATE/DELETE).
 Apply requires `apply=True`, the exact confirmation phrase
 `RUN_2026_OPENING_WEEK_SCHEDULE_REPAIR`, AND a matching `expected_fingerprint` — all checked
-before any write. The fingerprint binds the repair + resolver contract versions, season,
-campaign window, ordered target `game_pk` set, per-game official evidence (date, type, final
-status code, home/away ids, doubleheader/game number, planned schedule rows, context action),
+before any write. The fingerprint (contract v2) binds the repair + resolver contract
+versions, season, campaign window, ordered target `game_pk` set, per-game official evidence
+(date, type, final status code, home/away ids, doubleheader/game number, planned rows,
+context action), **each game's existing-authority disposition and normalized existing
+summary and planned write count**, the missing/already_satisfied/conflicting totals,
 expected residual/game counts, and the migration head — never timestamps or unstable
-ordering.
+ordering. The v2 bump means any v1 dry-run fingerprint can no longer approve an apply.
 
-## 9. Per-game transaction, idempotency, refusals
+## 9. Retry-safe existing-authority dispositions (canonical equivalence)
 
-Each game is ingested and committed in its own transaction; a per-game ingest error rolls
-back only that game and stops the run (stop-at-first-failure), so earlier games stay
-committed and later games are untouched. Re-running after apply finds existing schedule rows
-and refuses (`target_game_already_has_schedule`), so the operation is idempotent. The run
-fails closed on residual set/count mismatch, migration-head mismatch, invalid stored states,
-or any official-evidence problem.
+Apply commits ONE game per transaction and stops at the first failure, so a partial apply
+leaves earlier games committed. Rather than refuse every later retry, the planner classifies
+each of the 47 target games against the freshly fetched official evidence into exactly one
+deterministic, mutually exclusive disposition (totals always reconcile to 47):
+
+- **missing** — no canonical schedule authority exists (no `ScheduledGame` rows and no
+  sibling `SlateGame`). Plan the canonical two-sided write; write only in approved apply.
+- **already_satisfied** — the complete, correct authority already exists: exactly two
+  `ScheduledGame` sides keyed `(team_id, game_pk)`, each with the right opponent, home/away
+  orientation, official date, `game_type`, final `status_state`, and doubleheader/game-number
+  metadata, PLUS a consistent sibling `SlateGame` (home/away/game_number/doubleheader and a
+  `completed` state). Skip with zero writes; the game is still bound into the fingerprint and
+  report.
+- **conflict** — partial or contradictory authority: one side only, an extra/duplicate side,
+  any mismatched identity/opponent/orientation/date/type/finality/doubleheader field, or an
+  absent/contradictory sibling `SlateGame`. Fail closed; never silently overwrite. A game
+  whose official evidence is itself unusable is also a conflict, keeping its specific
+  official-evidence reason code.
+
+"already_satisfied" is NOT "some rows exist": `_schedule_conflict_reason` /
+`_slate_conflict_reason` compare every authority-determining field the canonical writer
+(`_upsert_row` + `upsert_slate_game`) persists, indexed by `team_id` so the result is
+independent of row order. Any field the schema does not store is not invented; no stored
+authority field is ignored.
+
+Each missing game is ingested and committed in its own transaction; a per-game ingest error
+rolls back only that game and stops the run (stop-at-first-failure), so earlier games stay
+committed and later games are untouched. A retry therefore skips previously committed games
+as `already_satisfied`, plans and writes only the remaining `missing` games, and fails closed
+on any `conflict`. A rerun after all 47 are complete is a valid PASS/0 no-op (zero writes).
+The completed `ScheduledGame` rows themselves are the durable progress ledger — no
+repair-state table, checkpoint, or marker is added. The run also fails closed on residual
+set/count mismatch, migration-head mismatch, invalid stored states, or any official-evidence
+problem.
+
+## 9a. Operator recovery after a partial apply
+
+1. Inspect the failed apply artifact (`games_committed`, `failed_games`, `apply` block).
+2. Correct the external/transient cause (source availability, connectivity) WITHOUT manually
+   editing target schedule rows.
+3. Run a new schedule-repair dry run.
+4. Confirm the committed games now classify `already_satisfied` and the remainder `missing`
+   (and `games_conflicting=0`).
+5. Approve the NEW fingerprint (it differs from the pre-partial one).
+6. Run apply with the new fingerprint — only the remaining `missing` games are written.
+7. Repeat until all 47 games are `already_satisfied`.
+8. Run the existing Foundation 2 backfill dry run → approve → apply.
+9. Run the residual audit and require `total_rows=0`.
 
 ## 10. Post-repair backfill sequence & residual-audit acceptance
 

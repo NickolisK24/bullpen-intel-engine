@@ -14,7 +14,6 @@ the residual audit reaches zero. The repair never writes GameLog appearance-team
 from collections import defaultdict
 from datetime import date
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 from flask import Flask
@@ -24,6 +23,7 @@ import models.prospect  # noqa: F401
 from models.game_log import GameLog
 from models.pitcher import Pitcher
 from models.scheduled_game import ScheduledGame
+from models.slate_game import SlateGame
 from services import appearance_team_authority as ata
 from services import appearance_team_backfill_2026 as f2backfill
 from services import appearance_team_residual_audit_2026 as residual_audit
@@ -204,15 +204,21 @@ def test_residual_game_set_mismatch_fails(app):
     assert 'residual_game_set_mismatch' in s['decision_reasons']
 
 
-def test_target_game_already_has_schedule_fails(app):
+def test_partial_one_sided_schedule_is_conflict(app):
+    # A single existing side (no away row) is partial canonical authority -> conflict, and
+    # the run fails closed rather than silently overwriting or refusing every retry.
     meta, client = _seed_full()
     gdate, pk = repair.TARGET_GAMES[0]
-    db.session.add(ScheduledGame(team_id=700, game_pk=pk, game_date=gdate,
+    db.session.add(ScheduledGame(team_id=700, game_pk=pk, game_date=gdate, game_type='R',
                                  status_state='final', home_away='home', opponent_team_id=701))
     db.session.commit()
     s = _run(client=client)
     assert s['result'] == repair.RESULT_FAIL
-    assert 'target_game_already_has_schedule' in s['decision_reasons']
+    assert repair.EXISTING_AUTHORITY_CONFLICT_REASON in s['decision_reasons']
+    assert s['existing_authority']['games_conflicting'] == 1
+    preview = {g['game_pk']: g for g in s['bounded_game_preview']}
+    assert preview[pk]['disposition'] == repair.DISPOSITION_CONFLICT
+    assert preview[pk]['safe_reason_code'] == 'existing_schedule_row_count'
 
 
 def test_empty_population_inconclusive(app):
@@ -358,10 +364,14 @@ def test_apply_is_idempotent(app):
     meta, client = _seed_full()
     _apply(client)
     before = db.session.query(ScheduledGame).count()
-    # A second run now sees existing schedule rows and refuses (precondition changed).
+    # A second dry run classifies every game as already_satisfied — a valid no-op that
+    # writes nothing, not a refusal.
     second = _run(client=client)
-    assert second['result'] == repair.RESULT_FAIL
-    assert 'target_game_already_has_schedule' in second['decision_reasons']
+    assert second['result'] == repair.RESULT_PASS
+    assert second['existing_authority']['games_already_satisfied'] == 47
+    assert second['existing_authority']['games_missing'] == 0
+    assert second['planned_schedule_rows'] == {'row_count': 0, 'game_count': 0}
+    assert second['database_writes_performed'] is False
     assert db.session.query(ScheduledGame).count() == before
 
 
@@ -409,19 +419,42 @@ def test_fingerprint_changes_when_official_payload_changes(app):
     assert _run(client=client)['fingerprint'] != base
 
 
-def test_fingerprint_independent_of_game_order():
-    plan_a = [SimpleNamespace(game_pk=1, game_date='2026-03-25', game_type='R',
-                              final_status_code='F', status_state='final', home_team_id=10,
-                              away_team_id=11, doubleheader='N', game_number=1,
-                              planned_rows=({'team_id': 10, 'opponent_team_id': 11, 'home_away': 'home'},),
-                              context_action='skipped_not_required', reason_code='')]
-    fp1 = repair._repair_fingerprint(plans=plan_a, season=2026, campaign_start=date(2026, 3, 25),
-                                     campaign_end=date(2026, 3, 29), expected_game_count=47,
-                                     expected_residual_row_count=418, migration_head=None)
-    fp2 = repair._repair_fingerprint(plans=plan_a, season=2026, campaign_start=date(2026, 3, 25),
-                                     campaign_end=date(2026, 3, 29), expected_game_count=47,
-                                     expected_residual_row_count=418, migration_head=None)
-    assert fp1 == fp2
+def _record(**overrides):
+    base = dict(game_pk=1, game_date='2026-03-25', game_type='R', final_status_code='F',
+                status_state='final', home_team_id=10, away_team_id=11, doubleheader='N',
+                game_number=1,
+                planned_rows=({'team_id': 10, 'opponent_team_id': 11, 'home_away': 'home'},
+                              {'team_id': 11, 'opponent_team_id': 10, 'home_away': 'away'}),
+                context_action='skipped_not_required', reason_code='',
+                disposition=repair.DISPOSITION_MISSING, disposition_reason='',
+                existing_schedule_row_count=0, existing_slate_present=False)
+    base.update(overrides)
+    return repair._GameRecord(**base)
+
+
+def _fp(records):
+    return repair._repair_fingerprint(records=records, season=2026,
+                                      campaign_start=date(2026, 3, 25),
+                                      campaign_end=date(2026, 3, 29), expected_game_count=47,
+                                      expected_residual_row_count=418, migration_head=None)
+
+
+def test_fingerprint_deterministic_for_same_records():
+    records = [_record()]
+    assert _fp(records) == _fp(records)
+
+
+def test_fingerprint_binds_disposition():
+    missing = [_record(disposition=repair.DISPOSITION_MISSING)]
+    satisfied = [_record(disposition=repair.DISPOSITION_SATISFIED,
+                         existing_schedule_row_count=2, existing_slate_present=True)]
+    assert _fp(missing) != _fp(satisfied)
+
+
+def test_fingerprint_ignores_existing_row_order():
+    # The per-game existing summary is a count + slate flag, so the order of the two
+    # ScheduledGame rows within a game cannot change the fingerprint.
+    assert _fp([_record(existing_schedule_row_count=2)]) == _fp([_record(existing_schedule_row_count=2)])
 
 
 def test_apply_without_confirmation_refused(app):
@@ -577,6 +610,293 @@ def test_downstream_backfill_write_controls_unchanged(app):
     assert refused['result'] == f2backfill.RESULT_REFUSED
 
 
+# ═══════════════ Retry-safe existing-authority dispositions ═════════════════
+def _partial_apply(client, *, fail_index):
+    """Apply, committing target games [0, fail_index) then failing on game fail_index.
+
+    Returns the FAILED apply result. Earlier games stay committed with full canonical
+    authority; the failed game and all later games are left untouched.
+    """
+    plan = _run(client=client)
+    fail_pk = repair.TARGET_GAMES[fail_index][1]
+    real = schedule_ingestion.ingest_games
+
+    def flaky(games, **kw):
+        if games and games[0].get('gamePk') == fail_pk:
+            return {'errors': 1, 'rows_created': 0}
+        return real(games, **kw)
+
+    return repair.run_repair(client=client, apply=True, confirmation=PHRASE,
+                             expected_fingerprint=plan['fingerprint'], ingester=flaky)
+
+
+def _home_row(pk):
+    return (db.session.query(ScheduledGame)
+            .filter(ScheduledGame.game_pk == pk, ScheduledGame.home_away == 'home').one())
+
+
+def _assert_single_conflict(client, pk, code):
+    s = _run(client=client)
+    assert s['result'] == repair.RESULT_FAIL
+    assert repair.EXISTING_AUTHORITY_CONFLICT_REASON in s['decision_reasons']
+    preview = {g['game_pk']: g for g in s['bounded_game_preview']}
+    assert preview[pk]['disposition'] == repair.DISPOSITION_CONFLICT
+    assert preview[pk]['safe_reason_code'] == code
+    assert s['existing_authority']['games_conflicting'] == 1
+    assert s['existing_authority']['games_already_satisfied'] == 46
+    assert s['database_writes_performed'] is False
+
+
+def test_fresh_population_is_all_missing(app):
+    meta, client = _seed_full()
+    s = _run(client=client)
+    ea = s['existing_authority']
+    assert ea['games_missing'] == 47
+    assert ea['games_already_satisfied'] == 0
+    assert ea['games_conflicting'] == 0
+    assert all(g['disposition'] == repair.DISPOSITION_MISSING for g in s['bounded_game_preview'])
+
+
+def test_full_apply_makes_all_already_satisfied(app):
+    meta, client = _seed_full()
+    _apply(client)
+    s = _run(client=client)
+    assert s['result'] == repair.RESULT_PASS
+    assert s['decision_reasons'] == ['schedule_authority_already_complete']
+    assert s['existing_authority']['games_already_satisfied'] == 47
+    assert all(g['disposition'] == repair.DISPOSITION_SATISFIED for g in s['bounded_game_preview'])
+
+
+def test_wrong_team_id_is_conflict(app):
+    meta, client = _seed_full()
+    _apply(client)
+    _pk = repair.TARGET_GAMES[0][1]
+    row = _home_row(_pk); row.team_id = 999; db.session.commit()
+    _assert_single_conflict(client, _pk, 'existing_schedule_team_mismatch')
+
+
+def test_wrong_opponent_id_is_conflict(app):
+    meta, client = _seed_full()
+    _apply(client)
+    _pk = repair.TARGET_GAMES[0][1]
+    row = _home_row(_pk); row.opponent_team_id = 888; db.session.commit()
+    _assert_single_conflict(client, _pk, 'existing_schedule_opponent_mismatch')
+
+
+def test_wrong_orientation_is_conflict(app):
+    meta, client = _seed_full()
+    _apply(client)
+    _pk = repair.TARGET_GAMES[0][1]
+    row = _home_row(_pk); row.home_away = 'away'; db.session.commit()
+    _assert_single_conflict(client, _pk, 'existing_schedule_orientation_mismatch')
+
+
+def test_wrong_game_date_is_conflict(app):
+    meta, client = _seed_full()
+    _apply(client)
+    _pk = repair.TARGET_GAMES[0][1]
+    row = _home_row(_pk); row.game_date = date(2026, 4, 1); db.session.commit()
+    _assert_single_conflict(client, _pk, 'existing_schedule_date_mismatch')
+
+
+def test_wrong_game_type_is_conflict(app):
+    meta, client = _seed_full()
+    _apply(client)
+    _pk = repair.TARGET_GAMES[0][1]
+    row = _home_row(_pk); row.game_type = 'S'; db.session.commit()
+    _assert_single_conflict(client, _pk, 'existing_schedule_game_type_mismatch')
+
+
+def test_wrong_finality_is_conflict(app):
+    meta, client = _seed_full()
+    _apply(client)
+    _pk = repair.TARGET_GAMES[0][1]
+    row = _home_row(_pk); row.status_state = 'scheduled'; db.session.commit()
+    _assert_single_conflict(client, _pk, 'existing_schedule_status_mismatch')
+
+
+def test_wrong_game_number_is_conflict(app):
+    meta, client = _seed_full()
+    _apply(client)
+    _pk = repair.TARGET_GAMES[0][1]
+    row = _home_row(_pk); row.game_number = 2; db.session.commit()
+    _assert_single_conflict(client, _pk, 'existing_schedule_game_number_mismatch')
+
+
+def test_extra_side_row_is_conflict(app):
+    meta, client = _seed_full()
+    _apply(client)
+    gdate, _pk = repair.TARGET_GAMES[0]
+    db.session.add(ScheduledGame(team_id=702, game_pk=_pk, game_date=gdate, game_type='R',
+                                 status_state='final', home_away='home', opponent_team_id=701))
+    db.session.commit()
+    _assert_single_conflict(client, _pk, 'existing_schedule_row_count')
+
+
+def test_duplicate_side_reason_is_deterministic():
+    # Two rows with the same team_id (a duplicate side) — DB-prevented in practice but the
+    # classifier still fails closed. Exercised directly to prove the branch is reachable.
+    gdate, pk = repair.TARGET_GAMES[0]
+    rec = _record(game_pk=pk, home_team_id=700, away_team_id=701)
+    dup = [ScheduledGame(team_id=700, game_pk=pk, game_date=gdate, game_type='R',
+                         status_state='final', home_away='home', opponent_team_id=701),
+           ScheduledGame(team_id=700, game_pk=pk, game_date=gdate, game_type='R',
+                         status_state='final', home_away='home', opponent_team_id=701)]
+    assert repair._schedule_conflict_reason(rec, dup) == 'existing_schedule_duplicate_side'
+
+
+def test_missing_sibling_slate_is_conflict(app):
+    meta, client = _seed_full()
+    _apply(client)
+    _pk = repair.TARGET_GAMES[0][1]
+    db.session.delete(db.session.get(SlateGame, _pk)); db.session.commit()
+    _assert_single_conflict(client, _pk, 'existing_slate_missing')
+
+
+def test_contradictory_sibling_slate_is_conflict(app):
+    meta, client = _seed_full()
+    _apply(client)
+    _pk = repair.TARGET_GAMES[0][1]
+    slate = db.session.get(SlateGame, _pk); slate.home_team_id = 999; db.session.commit()
+    _assert_single_conflict(client, _pk, 'existing_slate_home_mismatch')
+
+
+def test_every_target_game_has_exactly_one_disposition(app):
+    meta, client = _seed_full()
+    _partial_apply(client, fail_index=5)
+    s = _run(client=client)
+    dispositions = [g['disposition'] for g in s['bounded_game_preview']]
+    assert len(dispositions) == 47
+    assert set(dispositions) <= {repair.DISPOSITION_MISSING, repair.DISPOSITION_SATISFIED,
+                                 repair.DISPOSITION_CONFLICT}
+    ea = s['existing_authority']
+    assert ea['games_missing'] + ea['games_already_satisfied'] + ea['games_conflicting'] == 47
+    assert ea['reconciles'] is True
+
+
+def test_dry_run_mixed_state_plans_only_missing(app):
+    meta, client = _seed_full()
+    _partial_apply(client, fail_index=20)  # commits games 0..19, fails on 20
+    s = _run(client=client)
+    assert s['result'] == repair.RESULT_PASS
+    ea = s['existing_authority']
+    assert ea['games_already_satisfied'] == 20
+    assert ea['games_missing'] == 27
+    assert ea['games_conflicting'] == 0
+    assert ea['games_planned'] == 27
+    assert s['planned_schedule_rows'] == {'row_count': 54, 'game_count': 27}
+    assert s['database_writes_performed'] is False
+
+
+def test_conflict_blocks_apply_before_any_write(app):
+    meta, client = _seed_full()
+    _apply(client)
+    _pk = repair.TARGET_GAMES[0][1]
+    row = _home_row(_pk); row.status_state = 'scheduled'; db.session.commit()
+    before = db.session.query(ScheduledGame).count()
+    # Apply cannot proceed while any game is a conflict; it fails closed with no write.
+    plan_fp = _run(client=client)['fingerprint']
+    s = repair.run_repair(client=client, apply=True, confirmation=PHRASE,
+                          expected_fingerprint=plan_fp)
+    assert s['result'] == repair.RESULT_FAIL
+    assert repair.EXISTING_AUTHORITY_CONFLICT_REASON in s['decision_reasons']
+    assert s['database_writes_performed'] is False
+    assert db.session.query(ScheduledGame).count() == before
+
+
+# ═══════════════ Partial-failure fingerprint + resume ═══════════════════════
+def test_partial_progress_changes_fingerprint_and_refuses_stale(app):
+    meta, client = _seed_full()
+    original_fp = _run(client=client)['fingerprint']
+    _partial_apply(client, fail_index=10)  # commit games 0..9
+    resumed_fp = _run(client=client)['fingerprint']
+    assert resumed_fp != original_fp  # missing -> already_satisfied changes the plan
+    # Applying with the stale pre-partial fingerprint is refused before any write.
+    stale = repair.run_repair(client=client, apply=True, confirmation=PHRASE,
+                              expected_fingerprint=original_fp)
+    assert stale['result'] == repair.RESULT_REFUSED
+    assert stale['decision_reasons'] == ['fingerprint_mismatch']
+
+
+def test_resume_with_new_fingerprint_commits_only_remaining(app):
+    meta, client = _seed_full()
+    _partial_apply(client, fail_index=10)  # commit games 0..9
+    resumed = _run(client=client)
+    applied = repair.run_repair(client=client, apply=True, confirmation=PHRASE,
+                                expected_fingerprint=resumed['fingerprint'])
+    assert applied['result'] == repair.RESULT_PASS
+    assert applied['apply']['games_skipped_already_satisfied'] == 10
+    assert applied['apply']['games_committed'] == 37
+    assert applied['apply']['games_failed'] == 0
+    assert db.session.query(ScheduledGame).count() == 94
+
+
+def test_partial_failure_then_resume_reaches_full_authority(app):
+    meta, client = _seed_full()
+    first = _partial_apply(client, fail_index=21)
+    assert first['result'] == repair.RESULT_FAIL
+    assert first['games_committed'] == 21
+    assert first['failed_game_count'] == 1
+    committed_pk = repair.TARGET_GAMES[0][1]
+    failed_pk = repair.TARGET_GAMES[21][1]
+    assert db.session.query(ScheduledGame).filter(ScheduledGame.game_pk == committed_pk).count() == 2
+    assert db.session.query(ScheduledGame).filter(ScheduledGame.game_pk == failed_pk).count() == 0
+    # Second dry run classifies the committed games satisfied and the rest missing.
+    second = _run(client=client)
+    assert second['existing_authority']['games_already_satisfied'] == 21
+    assert second['existing_authority']['games_missing'] == 26
+    # Second apply skips the 21 satisfied and commits only the remaining 26.
+    applied = repair.run_repair(client=client, apply=True, confirmation=PHRASE,
+                                expected_fingerprint=second['fingerprint'])
+    assert applied['result'] == repair.RESULT_PASS
+    assert applied['apply']['games_skipped_already_satisfied'] == 21
+    assert applied['apply']['games_committed'] == 26
+    # Final rerun: all satisfied, zero writes, full canonical authority.
+    final = _run(client=client)
+    assert final['result'] == repair.RESULT_PASS
+    assert final['existing_authority']['games_already_satisfied'] == 47
+    assert final['database_writes_performed'] is False
+    assert db.session.query(ScheduledGame).count() == 94
+
+
+def test_existing_exact_rows_not_rewritten_on_resume(app):
+    meta, client = _seed_full()
+    _partial_apply(client, fail_index=10)
+    committed_pk = repair.TARGET_GAMES[0][1]
+    before = {r.id: r.updated_at
+              for r in db.session.query(ScheduledGame).filter(ScheduledGame.game_pk == committed_pk).all()}
+    resumed = _run(client=client)
+    repair.run_repair(client=client, apply=True, confirmation=PHRASE,
+                      expected_fingerprint=resumed['fingerprint'])
+    after = {r.id: r.updated_at
+             for r in db.session.query(ScheduledGame).filter(ScheduledGame.game_pk == committed_pk).all()}
+    # The already-satisfied game's rows are skipped, not re-upserted.
+    assert before == after
+
+
+def test_downstream_after_resume_reaches_zero_residual(app):
+    meta, client = _seed_full()
+    _partial_apply(client, fail_index=15)
+    resumed = _run(client=client)
+    repair.run_repair(client=client, apply=True, confirmation=PHRASE,
+                      expected_fingerprint=resumed['fingerprint'])
+    assert db.session.query(ScheduledGame).count() == 94
+    box = _FakeBoxscoreClient(meta)
+    plan = f2backfill.run_backfill(start_date=date(2026, 3, 1), end_date=date(2026, 3, 31),
+                                   batch_size=1000, client=box)
+    assert plan['proposed_resolved'] == 418
+    assert plan['proposed_unresolved'] == 0
+    assert plan['proposed_conflict'] == 0
+    applied = f2backfill.run_backfill(start_date=date(2026, 3, 1), end_date=date(2026, 3, 31),
+                                      batch_size=1000, client=box, apply=True,
+                                      confirmation=f2backfill.CONFIRMATION_PHRASE,
+                                      expected_fingerprint=plan['batch_fingerprint'])
+    assert applied['games_committed'] == 47
+    assert applied['coverage_after']['season_null_legacy'] == 0
+    audit = residual_audit.run_residual_audit()
+    assert audit['residual_population']['total_rows'] == 0
+
+
 # ═══════════════ CLI + workflow contract ════════════════════════════════════
 def test_cli_confirmation_and_helpers():
     import argparse
@@ -619,3 +939,18 @@ def test_workflow_has_schedule_repair_operations():
 def test_workflow_apply_requires_confirmation_and_fingerprint():
     source = WORKFLOW_PATH.read_text(encoding='utf-8')
     assert 'requires an approved dry-run fingerprint (repair_expected_fingerprint)' in source
+
+
+def test_workflow_summary_exposes_disposition_counts():
+    source = WORKFLOW_PATH.read_text(encoding='utf-8')
+    assert 'games_missing' in source
+    assert 'games_already_satisfied' in source
+    assert 'games_conflicting' in source
+    assert 'games_skipped_already_satisfied' in source
+
+
+def test_workflow_has_no_automatic_retry_or_extra_triggers():
+    source = WORKFLOW_PATH.read_text(encoding='utf-8')
+    # Resumability is operator-driven; no automatic retry loop or non-dispatch trigger.
+    for token in ('retry:', 'max-attempts', 'nick@', 'anthropic', 'claude'):
+        assert token.lower() not in source.lower()

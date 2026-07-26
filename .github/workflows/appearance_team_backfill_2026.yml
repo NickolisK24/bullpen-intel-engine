@@ -322,6 +322,7 @@ jobs:
           pre = payload.get('production_preconditions') or {}
           planned = payload.get('planned_schedule_rows') or {}
           official = payload.get('official_evidence') or {}
+          existing = payload.get('existing_authority') or {}
           lines = [
               '## 2026 Opening-Week Schedule-Authority Repair',
               '',
@@ -331,10 +332,14 @@ jobs:
               f"- Target games: `{(payload.get('target_games') or {}).get('count')}`",
               f"- Residual rows: `{pre.get('residual_rows')}`",
               f"- Residual games: `{pre.get('residual_games')}`",
-              f"- Games already with schedule: `{pre.get('games_already_with_schedule')}`",
+              f"- Games missing: `{existing.get('games_missing')}`",
+              f"- Games already satisfied: `{existing.get('games_already_satisfied')}`",
+              f"- Games conflicting: `{existing.get('games_conflicting')}`",
+              f"- Schedule rows already present: `{existing.get('schedule_rows_already_present')}`",
               f"- Final games (official): `{official.get('final_games')}`",
               f"- API calls: `{official.get('api_calls')}`",
               f"- Planned schedule rows: `{planned.get('row_count')}` over `{planned.get('game_count')}` games",
+              f"- Games skipped (already satisfied): `{(payload.get('apply') or {}).get('games_skipped_already_satisfied')}`",
               f"- Games committed: `{payload.get('games_committed')}`",
               f"- Schedule rows written: `{payload.get('schedule_rows_written')}`",
               f"- Failed game count: `{payload.get('failed_game_count')}`",
