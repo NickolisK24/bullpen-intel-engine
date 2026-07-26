@@ -10,13 +10,14 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: dry_run (plan only, zero writes) or apply (persist attributions)
+        description: dry_run / apply (backfill) or residual_audit (read-only classify)
         required: true
         default: dry_run
         type: choice
         options:
           - dry_run
           - apply
+          - residual_audit
       confirmation:
         description: Required for apply; must be exactly RUN_2026_APPEARANCE_TEAM_BACKFILL
         required: false
@@ -51,6 +52,16 @@ on:
         description: Optional approved batch fingerprint; apply is refused unless it matches
         required: false
         default: ''
+        type: string
+      campaign_start_date:
+        description: residual_audit only — campaign window start (YYYY-MM-DD)
+        required: true
+        default: '2026-01-01'
+        type: string
+      campaign_end_date:
+        description: residual_audit only — approved campaign cutoff (YYYY-MM-DD, not wall clock)
+        required: true
+        default: '2026-07-25'
         type: string
 
 concurrency:
@@ -94,6 +105,8 @@ jobs:
           BATCH_SIZE: ${{ inputs.batch_size }}
           AFTER_GAME_DATE: ${{ inputs.after_game_date }}
           AFTER_GAME_PK: ${{ inputs.after_game_pk }}
+          CAMPAIGN_START_DATE: ${{ inputs.campaign_start_date }}
+          CAMPAIGN_END_DATE: ${{ inputs.campaign_end_date }}
         run: |
           set -euo pipefail
           if [ "$MODE" = 'apply' ] && [ "$CONFIRMATION" != 'RUN_2026_APPEARANCE_TEAM_BACKFILL' ]; then
@@ -128,9 +141,20 @@ jobs:
           fi
           # both-or-neither cursor parts are enforced by the CLI (--after-game-date
           # / --after-game-pk), so no cross-check is needed here.
+          # residual_audit is read-only: no confirmation or fingerprint is required
+          # because no write is possible; only its campaign dates are validated.
+          if [ "$MODE" = 'residual_audit' ]; then
+            for value in "$CAMPAIGN_START_DATE" "$CAMPAIGN_END_DATE"; do
+              if [[ ! "$value" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+                echo "::error::campaign_start_date and campaign_end_date must use YYYY-MM-DD format."
+                exit 1
+              fi
+            done
+          fi
           echo "Backfill inputs validated for mode=$MODE."
 
       - name: Run 2026 appearance-team backfill
+        if: ${{ inputs.mode != 'residual_audit' }}
         working-directory: backend
         env:
           MODE: ${{ inputs.mode }}
@@ -200,12 +224,12 @@ jobs:
               f"- Result: `{payload.get('result')}`",
               f"- Games selected: `{payload.get('games_selected')}`",
               f"- Appearances targeted: `{payload.get('appearances_targeted')}`",
-              f"- Appearances resolved: `{payload.get('appearances_resolved')}`",
-              f"- Appearances unresolved: `{payload.get('appearances_unresolved')}`",
-              f"- Appearances conflict: `{payload.get('appearances_conflict')}`",
+              f"- Appearances resolved: `{payload.get('proposed_resolved')}`",
+              f"- Appearances unresolved: `{payload.get('proposed_unresolved')}`",
+              f"- Appearances conflict: `{payload.get('proposed_conflict')}`",
               f"- API calls: `{payload.get('api_calls')}`",
               f"- Games committed: `{payload.get('games_committed')}`",
-              f"- Games failed: `{payload.get('games_failed')}`",
+              f"- Games failed: `{payload.get('failed_game_count')}`",
               f"- Batch fingerprint: `{payload.get('batch_fingerprint')}`",
               f"- Next cursor: `{payload.get('next_cursor')}`",
               f"- Exhausted: `{payload.get('exhausted')}`",
@@ -223,10 +247,96 @@ jobs:
           exit "$run_exit_code"
 
       - name: Upload backfill report artifact
-        if: ${{ always() }}
+        if: ${{ always() && inputs.mode != 'residual_audit' }}
         uses: actions/upload-artifact@v4
         with:
           name: appearance-team-backfill-2026-${{ github.run_id }}
           path: ${{ runner.temp }}/appearance-team-backfill-2026/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Run 2026 residual appearance-team audit
+        if: ${{ inputs.mode == 'residual_audit' }}
+        working-directory: backend
+        env:
+          SEASON: '2026'
+          CAMPAIGN_START_DATE: ${{ inputs.campaign_start_date }}
+          CAMPAIGN_END_DATE: ${{ inputs.campaign_end_date }}
+          RESIDUAL_OUTPUT_DIR: ${{ runner.temp }}/appearance-team-residual-audit-2026
+        run: |
+          set -euo pipefail
+          mkdir -p "$RESIDUAL_OUTPUT_DIR"
+          report_json="$RESIDUAL_OUTPUT_DIR/appearance-team-residual-audit-2026.json"
+
+          echo "=== 2026 residual appearance-team audit starting (read-only) ==="
+          set +e
+          python scripts/run_2026_residual_audit.py \
+            --season "$SEASON" \
+            --campaign-start-date "$CAMPAIGN_START_DATE" \
+            --campaign-end-date "$CAMPAIGN_END_DATE" \
+            --compact \
+            --output "$report_json"
+          audit_exit_code=$?
+          set -e
+
+          python - "$report_json" "$audit_exit_code" "$GITHUB_STEP_SUMMARY" <<'PY'
+          import json
+          from pathlib import Path
+          import sys
+
+          report_path = Path(sys.argv[1])
+          audit_exit_code = int(sys.argv[2])
+          summary_path = Path(sys.argv[3])
+
+          try:
+              payload = json.loads(report_path.read_text(encoding='utf-8'))
+          except (OSError, json.JSONDecodeError) as exc:
+              summary_path.write_text(
+                  '## 2026 Residual Appearance-Team Audit\n\n'
+                  f'- Exit code: `{audit_exit_code}`\n'
+                  f'- Result: invalid JSON artifact (`{type(exc).__name__}`)\n',
+                  encoding='utf-8',
+              )
+              raise SystemExit('Residual audit did not produce a valid JSON artifact.')
+
+          population = payload.get('residual_population') or {}
+          coverage = payload.get('coverage') or {}
+          categories = payload.get('primary_categories') or {}
+          lines = [
+              '## 2026 Residual Appearance-Team Audit',
+              '',
+              f"- Exit code: `{audit_exit_code}`",
+              f"- Result: `{payload.get('result')}`",
+              f"- Mode: `{payload.get('mode')}`",
+              f"- Total residual rows: `{population.get('total_rows')}`",
+              f"- Distinct residual games: `{population.get('distinct_games')}`",
+              f"- Exact backfill-eligible rows: `{payload.get('exact_backfill_eligible_rows')}`",
+              f"- Unclassified rows: `{payload.get('unclassified_rows')}`",
+              f"- Category totals reconcile: `{payload.get('category_totals_reconcile')}`",
+              f"- Invalid stored states: `{coverage.get('invalid_stored_states')}`",
+              f"- 2026 legacy-NULL: `{coverage.get('season_null_legacy')}`",
+              f"- Foundation 2 status: `{payload.get('foundation_2_status')}`",
+              f"- Foundation 3 gate: `{payload.get('foundation_3_gate')}`",
+              f"- Database writes performed: `{payload.get('database_writes_performed')}`",
+              '',
+              '### Primary categories (row_count)',
+          ]
+          for name in sorted(categories):
+              lines.append(f"- `{name}`: `{categories[name].get('row_count')}`")
+          summary_path.write_text('\n'.join(lines) + '\n', encoding='utf-8')
+
+          if payload.get('database_writes_performed') is not False:
+              raise SystemExit('Residual audit must not perform database writes.')
+          PY
+
+          echo "=== 2026 residual audit result: exit $audit_exit_code ==="
+          exit "$audit_exit_code"
+
+      - name: Upload residual audit artifact
+        if: ${{ always() && inputs.mode == 'residual_audit' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: appearance-team-residual-audit-2026-${{ github.run_id }}
+          path: ${{ runner.temp }}/appearance-team-residual-audit-2026/
           if-no-files-found: error
           retention-days: 14
