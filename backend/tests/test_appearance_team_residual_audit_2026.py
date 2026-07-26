@@ -318,10 +318,25 @@ def test_result_inconclusive_unclassified():
     assert r == audit.RESULT_INCONCLUSIVE
 
 
-def test_result_inconclusive_empty():
-    r, _ = audit._classify_result(total_rows=0, exact_eligible=0, reconcile=True,
-                                  invalid=0, unclassified=0, migration_head=None)
-    assert r == audit.RESULT_INCONCLUSIVE
+def test_result_pass_empty_population():
+    r, reasons = audit._classify_result(total_rows=0, exact_eligible=0, reconcile=True,
+                                        invalid=0, unclassified=0, migration_head=None)
+    assert r == audit.RESULT_PASS
+    assert reasons == ['no_residual_rows']
+
+
+def test_result_empty_population_fail_precedence():
+    # Any critical FAIL condition overrides the clean-empty PASS.
+    for kwargs in (
+        dict(exact_eligible=1, reconcile=True, invalid=0, migration_head=None),
+        dict(exact_eligible=0, reconcile=False, invalid=0, migration_head=None),
+        dict(exact_eligible=0, reconcile=True, invalid=1, migration_head=None),
+        dict(exact_eligible=0, reconcile=True, invalid=0, migration_head=['deadbeef']),
+    ):
+        r, reasons = audit._classify_result(total_rows=0, unclassified=0, **kwargs)
+        assert r == audit.RESULT_FAIL
+        assert reasons  # a specific FAIL reason, never ['no_residual_rows']
+        assert reasons != ['no_residual_rows']
 
 
 def test_expected_migration_head_matches_backfill():
@@ -348,10 +363,51 @@ def test_clean_population_passes(app):
     assert s['foundation_2_status'] == 'production_complete'
 
 
-def test_empty_population_inconclusive(app):
+def test_empty_population_passes(app):
+    # A clean zero-row residual population is the successful terminal state.
     s = _run()
-    assert s['result'] == audit.RESULT_INCONCLUSIVE
-    assert s['exit_code'] == 2
+    assert s['result'] == audit.RESULT_PASS
+    assert s['exit_code'] == 0
+    assert s['decision_reasons'] == ['no_residual_rows']
+    assert s['foundation_2_status'] == 'production_complete'
+    assert s['foundation_3_gate'] == 'ready_for_review'
+    assert s['residual_population']['total_rows'] == 0
+    assert s['residual_population']['distinct_games'] == 0
+    assert s['exact_backfill_eligible_rows'] == 0
+    assert s['unclassified_rows'] == 0
+    assert s['category_totals_reconcile'] is True
+    assert s['coverage']['season_null_legacy'] in (0, None)
+    assert s['coverage']['invalid_stored_states'] == 0
+    assert all(c['row_count'] == 0 for c in s['primary_categories'].values())
+    assert s['bounded_row_samples'] == []
+    assert s['bounded_game_samples'] == []
+    assert s['samples_truncated'] is False
+    assert s['database_writes_performed'] is False
+
+
+def test_empty_population_pass_is_deterministic(app):
+    first, second = _run(), _run()
+    for key in ('result', 'exit_code', 'decision_reasons', 'foundation_2_status',
+                'foundation_3_gate'):
+        assert first[key] == second[key]
+    assert first['result'] == audit.RESULT_PASS
+
+
+def test_empty_population_is_read_only(app):
+    statements = []
+
+    def _capture(conn, cursor, statement, params, context, executemany):
+        statements.append(statement)
+
+    event.listen(db.engine, 'before_cursor_execute', _capture)
+    try:
+        s = _run()
+    finally:
+        event.remove(db.engine, 'before_cursor_execute', _capture)
+    writes = [st for st in statements
+              if st.strip().split()[0].upper() in ('INSERT', 'UPDATE', 'DELETE')]
+    assert writes == []
+    assert s['database_writes_performed'] is False
 
 
 def test_category_totals_reconcile(app):
@@ -567,6 +623,24 @@ def test_workflow_backfill_summary_uses_proposed_fields():
     # The stale keys that displayed None are gone.
     assert "payload.get('appearances_resolved')" not in source
     assert "payload.get('games_failed')" not in source
+
+
+def test_workflow_residual_summary_shows_result_status_gate():
+    # The residual-audit summary reads the real JSON fields, so a clean zero-row audit
+    # naturally displays PASS / production_complete / ready_for_review.
+    source = WORKFLOW_PATH.read_text(encoding='utf-8')
+    assert "payload.get('result')" in source
+    assert "payload.get('foundation_2_status')" in source
+    assert "payload.get('foundation_3_gate')" in source
+
+
+def test_workflow_residual_audit_has_no_exit_code_workaround():
+    # The workflow must not special-case exit code 2; it exits the CLI's own code so a
+    # PASS/0 audit goes green through the source result contract, not a workaround.
+    source = WORKFLOW_PATH.read_text(encoding='utf-8')
+    assert 'exit "$audit_exit_code"' in source
+    assert 'audit_exit_code" = "2"' not in source
+    assert 'audit_exit_code == 2' not in source
 
 
 def test_backfill_write_controls_unchanged(app):

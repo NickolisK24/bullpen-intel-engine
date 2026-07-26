@@ -99,10 +99,48 @@ raw payloads, or raw exception text.
 
 ## 11. Result and exit-code contract
 
-PASS/0 when all rows classified, totals reconcile, invalid_stored_states 0,
-exact_backfill_eligible_rows 0, unclassified 0. FAIL/1 when eligible rows remain, totals
-do not reconcile, an invalid stored state exists, or the migration head differs.
-INCONCLUSIVE/2 when some rows cannot be classified or no residual rows exist.
+Deterministic precedence: (1) critical FAIL, (2) clean empty-population PASS, (3) non-empty
+fully classified PASS, (4) genuine uncertainty INCONCLUSIVE.
+
+FAIL/1 when eligible rows remain, totals do not reconcile, an invalid stored state exists,
+or the migration head differs — these override empty-population success.
+
+PASS/0 in two shapes: a non-empty population where every row is classified, totals
+reconcile, invalid_stored_states 0, exact_backfill_eligible_rows 0, unclassified 0
+(`all_residual_rows_classified`); AND a **clean zero-row population**
+(`no_residual_rows`) — see §11a.
+
+INCONCLUSIVE/2 only for genuine uncertainty — residual rows exist but one or more cannot be
+safely classified (`unclassified_rows_remain`) or an explicitly documented evidence
+deficiency. INCONCLUSIVE is NOT used merely because the population is empty.
+
+## 11a. Clean zero-row population is the successful terminal state
+
+**Decision:** A zero-row residual appearance-team population is a successful terminal audit
+state when coverage, eligibility, reconciliation, migration, and read-only invariants are
+all clean.
+
+Previously an empty population returned INCONCLUSIVE/2, which — after the production schedule
+repair and appearance-team backfill drove the 2026 legacy-NULL population to zero — falsely
+kept Foundation 2 `inconclusive` and Foundation 3 `blocked`. That was logically wrong: an
+empty, all-clean population is exactly the goal state of Foundation 2.
+
+The corrected clean-empty acceptance conditions (all required) are:
+`residual_population.total_rows == 0`, `exact_backfill_eligible_rows == 0`,
+`unclassified_rows == 0`, `category_totals_reconcile is true`,
+`coverage.season_null_legacy == 0` (definitionally the same season legacy-NULL count as
+total_rows), `coverage.invalid_stored_states == 0`, and `database_writes_performed is false`.
+When they hold, the audit returns `result=pass`, `exit_code=0`,
+`decision_reasons=["no_residual_rows"]`, `foundation_2_status=production_complete`, and
+`foundation_3_gate=ready_for_review`. Any critical FAIL condition still takes precedence, so
+a malformed "empty" report can never be laundered into PASS. Genuine-uncertainty
+INCONCLUSIVE states (unclassified rows on a non-empty population, documented evidence
+deficiencies) are preserved unchanged. This is a result-contract correction only — no
+migration, no schedule repair, no backfill, no production data change, no Foundation 3
+implementation, no performance metric, no Team State or Share Card change; SC-05 remains out
+of scope. The audit stays fully read-only (`database_writes_performed=false`, SQL-capture
+proof retained), and the dispatch-only workflow goes green naturally via the CLI's PASS/0
+exit code with no exit-code workaround.
 
 ## 12. Production workflow instructions
 

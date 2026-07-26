@@ -596,7 +596,11 @@ def test_downstream_full_chain_reaches_zero_residual(app):
     audit = residual_audit.run_residual_audit()
     assert audit['residual_population']['total_rows'] == 0
     assert audit['coverage']['season_null_legacy'] == 0
-    assert audit['result'] == residual_audit.RESULT_INCONCLUSIVE  # empty population
+    # A clean zero-row residual population is the successful terminal state.
+    assert audit['result'] == residual_audit.RESULT_PASS
+    assert audit['decision_reasons'] == ['no_residual_rows']
+    assert audit['foundation_2_status'] == 'production_complete'
+    assert audit['foundation_3_gate'] == 'ready_for_review'
 
 
 def test_downstream_backfill_write_controls_unchanged(app):
