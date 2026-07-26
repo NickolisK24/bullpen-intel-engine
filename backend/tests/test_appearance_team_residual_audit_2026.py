@@ -143,6 +143,58 @@ def test_contradictory_finality_classifies(app):
     assert s['exact_backfill_eligible_rows'] == 0  # non_final_exists excludes it
 
 
+def test_final_plus_postponed_is_contradictory_finality(app):
+    # Final must not be shadowed by the generic postponed/suspended category.
+    p = _pitcher(90)
+    _sched(780, [(A, B, 'home', 'final'), (B, A, 'away', 'postponed')])
+    _log(p.id, 780)
+    s = _run()
+    assert _cat(s, audit.CAT_CONTRADICTORY_FINALITY) == 1
+    assert _cat(s, audit.CAT_POSTPONED_SUSPENDED) == 0
+
+
+def test_final_plus_suspended_is_contradictory_finality(app):
+    p = _pitcher(91)
+    _sched(781, [(A, B, 'home', 'suspended'), (B, A, 'away', 'final')])
+    _log(p.id, 781)
+    s = _run()
+    assert _cat(s, audit.CAT_CONTRADICTORY_FINALITY) == 1
+    assert _cat(s, audit.CAT_POSTPONED_SUSPENDED) == 0
+
+
+def test_contradictory_finality_counted_once_and_reconciles(app):
+    p = _pitcher(92)
+    _sched(782, [(A, B, 'home', 'final'), (B, A, 'away', 'postponed')])
+    _log(p.id, 782)
+    s = _run()
+    assert _cat(s, audit.CAT_CONTRADICTORY_FINALITY) == 1
+    assert sum(c['row_count'] for c in s['primary_categories'].values()) == 1
+    assert s['category_totals_reconcile'] is True
+
+
+def test_finality_classification_is_row_order_independent(app):
+    # final-then-postponed and postponed-then-final must classify identically.
+    p1, p2 = _pitcher(93), _pitcher(94)
+    _sched(783, [(A, B, 'home', 'final'), (B, A, 'away', 'postponed')])
+    _sched(784, [(A, B, 'home', 'postponed'), (B, A, 'away', 'final')])
+    _log(p1.id, 783)
+    _log(p2.id, 784)
+    s = _run()
+    assert _cat(s, audit.CAT_CONTRADICTORY_FINALITY) == 2
+    assert _cat(s, audit.CAT_POSTPONED_SUSPENDED) == 0
+
+
+def test_postponed_only_and_suspended_only_are_disqualifier_not_contradictory(app):
+    p1, p2 = _pitcher(95), _pitcher(96)
+    _sched(785, [(A, B, 'home', 'postponed'), (B, A, 'away', 'postponed')])
+    _sched(786, [(A, B, 'home', 'suspended'), (B, A, 'away', 'suspended')])
+    _log(p1.id, 785)
+    _log(p2.id, 786)
+    s = _run()
+    assert _cat(s, audit.CAT_POSTPONED_SUSPENDED) == 2
+    assert _cat(s, audit.CAT_CONTRADICTORY_FINALITY) == 0
+
+
 def test_incomplete_sides_classifies(app):
     p = _pitcher(7)
     _sched(706, [(A, B, 'home', 'final')])  # only one side
