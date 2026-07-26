@@ -558,12 +558,19 @@ def _classify_result(*, total_rows, exact_eligible, reconcile, invalid, unclassi
         reasons.append('invalid_stored_states')
     if migration_head is not None and migration_head != [EXPECTED_MIGRATION_HEAD]:
         reasons.append('migration_head_mismatch')
+    # Result precedence: (1) critical FAIL, (2) clean empty-population PASS,
+    # (3) non-empty fully classified PASS, (4) genuine uncertainty INCONCLUSIVE.
     if reasons:
         return RESULT_FAIL, reasons
+    # A clean zero-row residual population is the successful terminal state for
+    # Foundation 2: every critical invariant above is already satisfied (exact-eligible,
+    # reconciliation, invalid-state, migration-head), there is nothing left to classify,
+    # and an empty population cannot carry unclassified rows. season_null_legacy is the
+    # same season legacy-NULL count as total_rows, so it is necessarily 0 here.
+    if total_rows == 0:
+        return RESULT_PASS, ['no_residual_rows']
     if unclassified > 0:
         return RESULT_INCONCLUSIVE, ['unclassified_rows_remain']
-    if total_rows == 0:
-        return RESULT_INCONCLUSIVE, ['no_residual_rows']
     return RESULT_PASS, ['all_residual_rows_classified']
 
 
