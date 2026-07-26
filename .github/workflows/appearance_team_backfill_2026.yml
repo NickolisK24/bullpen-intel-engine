@@ -88,6 +88,7 @@ jobs:
         env:
           MODE: ${{ inputs.mode }}
           CONFIRMATION: ${{ inputs.confirmation }}
+          EXPECTED_FINGERPRINT: ${{ inputs.expected_fingerprint }}
           START_DATE: ${{ inputs.start_date }}
           END_DATE: ${{ inputs.end_date }}
           BATCH_SIZE: ${{ inputs.batch_size }}
@@ -97,6 +98,10 @@ jobs:
           set -euo pipefail
           if [ "$MODE" = 'apply' ] && [ "$CONFIRMATION" != 'RUN_2026_APPEARANCE_TEAM_BACKFILL' ]; then
             echo "::error::apply mode requires confirmation=RUN_2026_APPEARANCE_TEAM_BACKFILL."
+            exit 1
+          fi
+          if [ "$MODE" = 'apply' ] && [ -z "${EXPECTED_FINGERPRINT:-}" ]; then
+            echo "::error::apply mode requires an approved dry-run fingerprint (expected_fingerprint)."
             exit 1
           fi
           if [ -z "${DATABASE_URL:-}" ] || [ -z "${SECRET_KEY:-}" ]; then

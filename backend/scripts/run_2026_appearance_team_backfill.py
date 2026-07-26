@@ -7,16 +7,17 @@ current team assignment.
 
 DRY RUN IS THE DEFAULT: it writes nothing, prints a deterministic JSON plan, and
 reports the batch fingerprint. Writing requires ``--apply`` AND
-``--confirm RUN_2026_APPEARANCE_TEAM_BACKFILL``; an optional
-``--expected-fingerprint`` must match the computed plan or the run is refused before
-any write. The keyset cursor (``--after-game-date`` / ``--after-game-pk``, echoed back
-as ``next_cursor``) resumes a large sweep across runs.
+``--confirm RUN_2026_APPEARANCE_TEAM_BACKFILL`` AND a matching
+``--expected-fingerprint`` (mandatory for apply); a missing or mismatched fingerprint
+is refused before any write. The keyset cursor (``--after-game-date`` /
+``--after-game-pk``, echoed back as ``next_cursor``) resumes a large sweep across runs
+and never advances past a failed game.
 
-Exit codes:
-    0  completed         — dry run, or apply, with no per-game failures
-    1  refused           — apply gate not satisfied (phrase/fingerprint); nothing written
-    2  completed_with_failures / failed — a game failed, or an invalid stored state
-                            was detected (the latter must never happen)
+Exit codes (from the run result):
+    0  pass          — dry run with a clean plan, or an apply that committed cleanly
+    1  fail / refused — a game failed, an invalid stored state was found, or an apply
+                        gate (confirmation / approved fingerprint) was not satisfied
+    2  inconclusive  — no target rows remained, or all targets were already complete
 
 Only exception class names are reported; messages are discarded because database and
 network errors can carry connection details.
@@ -39,14 +40,10 @@ if str(BACKEND_DIR) not in sys.path:
 # Operator batch command, not a web worker: never start the in-process scheduler.
 os.environ['AUTO_SYNC'] = 'false'
 
-CAPABILITY = 'appearance_team_backfill_2026_v1'
+CAPABILITY = 'appearance_team_backfill_2026_v2'
 CONFIRMATION_PHRASE = 'RUN_2026_APPEARANCE_TEAM_BACKFILL'
-EXIT_BY_RESULT = {
-    'completed': 0,
-    'refused': 1,
-    'completed_with_failures': 2,
-    'failed': 2,
-}
+# Exit code for a hard failure to even run (crash before a result is produced).
+CRASH_EXIT_CODE = 1
 DEFAULT_BATCH_SIZE = 200
 MAX_BATCH_SIZE = 2000
 
@@ -132,7 +129,8 @@ def _validate_cursor(args):
 def _failure_payload(exc):
     return {
         'capability': CAPABILITY,
-        'result': 'failed',
+        'result': 'fail',
+        'exit_code': CRASH_EXIT_CODE,
         'database_writes_performed': False,
         # Messages can carry connection/network detail; report only the type.
         'error_type': type(exc).__name__,
@@ -173,7 +171,8 @@ def main(argv=None):
             f"error_type={payload.get('error_type')}",
             file=sys.stderr,
         )
-    return EXIT_BY_RESULT.get(payload.get('result'), 2)
+    # The service is the single source of truth for the exit code.
+    return int(payload.get('exit_code', CRASH_EXIT_CODE))
 
 
 if __name__ == '__main__':

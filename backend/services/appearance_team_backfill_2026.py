@@ -13,19 +13,26 @@ Contract (every rule below is enforced, not merely intended):
   ``unresolved``/``conflict`` is never overwritten (they are not even selected). The
   wall clock is never consulted — the window is the official game date.
 * Work is processed by DISTINCT ``mlb_game_pk`` (one box-score call per game at
-  most), each game in its own atomic transaction with a per-game commit (apply) or
-  per-game rollback (failure), so a single bad game can never corrupt a batch.
+  most), each game in its own atomic transaction with a per-game commit.
 * Resolution is LOCAL-EVIDENCE-FIRST. Tier 1 derives the appearance's opponent from
   local official evidence (``CompletedGameContext``) and resolves it through the
   Foundation 1 schedule authority — no network call. Only appearances Tier 1 cannot
   resolve trigger a single Tier 2 box-score fetch, parsed and resolved through the
-  exact Foundation 1 box-score seam. Neither tier ever consults the pitcher's
-  mutable current team assignment.
-* DRY RUN IS THE DEFAULT: zero writes, a deterministic JSON report, and a batch
-  fingerprint over the ordered work set. APPLY requires the exact confirmation phrase
-  and, optionally, a matching approved fingerprint — checked BEFORE any write.
-* The deterministic cursor is keyset ``(game_date ASC, game_pk ASC)`` — never OFFSET
-  — so a large sweep resumes across runs without re-doing or skipping work.
+  exact Foundation 1 box-score seam. Neither tier ever consults the pitcher's mutable
+  current team assignment.
+* THE PLAN IS COMPUTED READ-ONLY UP FRONT. Every run first resolves the whole batch
+  without writing and produces a deterministic plan + fingerprint. The fingerprint
+  binds not only the selected rows but the PROPOSED per-row transition (status, team,
+  source, reason) and the official evidence behind it — so if a box score or schedule
+  changes between review and apply, the fingerprint changes and apply refuses.
+* DRY RUN IS THE DEFAULT: zero writes. APPLY requires the exact confirmation phrase
+  AND a matching approved fingerprint (mandatory, not optional); both are checked
+  before any write, and a failure returns ``refused`` having mutated nothing.
+* FAILURES STOP THE CURSOR. The plan stops at the first game that cannot be resolved,
+  and the returned cursor never advances past uncommitted work — the failed game is
+  re-selected on the next run. Any failure classifies the run ``fail`` (exit 1); a
+  clean batch is ``pass`` (exit 0); an empty/already-complete batch is
+  ``inconclusive`` (exit 2).
 
 This module performs NO schema change, computes NO performance metric, and mutates
 only the four ``appearance_team_*`` columns of legacy rows it attributes.
@@ -35,9 +42,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from dataclasses import dataclass
 from datetime import date
-from typing import Optional
+from typing import List, Optional, Tuple
 
 import sqlalchemy as sa
 
@@ -53,11 +61,9 @@ from utils.db import db
 
 
 # ── Governance constants ──────────────────────────────────────────────────────
-# The one phrase that authorizes writes. The CLI and the workflow both require it.
 CONFIRMATION_PHRASE = 'RUN_2026_APPEARANCE_TEAM_BACKFILL'
+EXPECTED_MIGRATION_HEAD = 'a4f1c7e9b3d2'
 
-# The backfill campaign window defaults to the full 2026 calendar year so every 2026
-# game_date is covered; the caller may narrow it.
 DEFAULT_START_DATE = date(2026, 1, 1)
 DEFAULT_END_DATE = date(2026, 12, 31)
 
@@ -68,7 +74,7 @@ MAX_BATCH_SIZE = 2000
 # is pinned to. Both are folded into the batch fingerprint so an approved dry-run plan
 # is invalidated if either the backfill logic or the underlying resolver contract
 # moves — a stale fingerprint can never authorize a changed apply.
-BACKFILL_CONTRACT_VERSION = '2026_appearance_team_backfill.v1'
+BACKFILL_CONTRACT_VERSION = '2026_appearance_team_backfill.v2'
 RESOLVER_CONTRACT_VERSION = ':'.join((
     ata.SOURCE_BOXSCORE,
     ata.SOURCE_SCHEDULE,
@@ -77,29 +83,51 @@ RESOLVER_CONTRACT_VERSION = ':'.join((
     ata.STATUS_CONFLICT,
 ))
 
-# Non-final ledger states that disqualify a game from attribution (a game that was
-# postponed or suspended-unreplayed produced no completed appearance to attribute).
+# Non-final ledger states that disqualify a game (a postponed or suspended-unreplayed
+# game produced no completed appearance to attribute).
 _NON_FINAL_STATES = (ScheduledGame.STATE_POSTPONED, ScheduledGame.STATE_SUSPENDED)
 
-# Bound the failed-game detail list carried in the summary so a pathological run can
+# Bound the row/game detail lists carried in the summary so a pathological run can
 # never produce an unbounded artifact.
+_MAX_GAME_DETAIL = 200
+_MAX_ROW_DETAIL = 500
 _MAX_FAILED_GAME_DETAIL = 100
 
 
-# ── Result contract ───────────────────────────────────────────────────────────
-RESULT_COMPLETED = 'completed'
-RESULT_COMPLETED_WITH_FAILURES = 'completed_with_failures'
+# ── Result contract (exit codes) ──────────────────────────────────────────────
+RESULT_PASS = 'pass'
+RESULT_FAIL = 'fail'
 RESULT_REFUSED = 'refused'
-RESULT_FAILED = 'failed'
+RESULT_INCONCLUSIVE = 'inconclusive'
+EXIT_BY_RESULT = {
+    RESULT_PASS: 0,
+    RESULT_REFUSED: 1,
+    RESULT_FAIL: 1,
+    RESULT_INCONCLUSIVE: 2,
+}
 
 
 @dataclass(frozen=True)
-class _GamePlan:
-    """One distinct game selected for the batch (used for the fingerprint)."""
+class RowResolution:
+    """One targeted appearance's proposed transition."""
+
+    game_log_id: int
+    status: str
+    appearance_team_id: Optional[int]
+    source: Optional[str]
+    reason: Optional[str]
+
+
+@dataclass(frozen=True)
+class GamePlan:
+    """A fully-resolved game (read-only) with the evidence behind its transitions."""
 
     game_date: date
     game_pk: int
-    game_log_ids: tuple
+    rows: List[RowResolution]
+    boxscore_fetched: bool
+    schedule_authority: Tuple
+    evidence_digest: str
 
 
 def _clamp_batch_size(value) -> int:
@@ -116,6 +144,18 @@ def _normalize_name(value) -> str:
     return ' '.join(str(value or '').strip().lower().split())
 
 
+def _int_or_none(value) -> Optional[int]:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _sha256_json(payload) -> str:
+    serialized = json.dumps(payload, sort_keys=True, separators=(',', ':'), default=str)
+    return hashlib.sha256(serialized.encode('utf-8')).hexdigest()
+
+
 # ── Batch selection (deterministic keyset cursor + finality gate) ─────────────
 def _select_game_keys(
     *, start_date, end_date, after_game_date, after_game_pk, batch_size, session,
@@ -124,9 +164,9 @@ def _select_game_keys(
 
     Ordered ``(game_date ASC, game_pk ASC)`` and paginated by a keyset cursor (never
     OFFSET). A game qualifies only when the local ledger shows it FINAL and shows no
-    postponed/suspended row for the same game_pk — so a not-yet-final game is simply
-    never targeted (its rows stay NULL until it finalizes), which keeps the cursor
-    monotonic and the historical sweep resumable.
+    postponed/suspended row for the same game_pk — so a not-yet-final game is never
+    targeted (its rows stay NULL until it finalizes), which keeps the cursor monotonic
+    and the historical sweep resumable.
     """
     final_exists = (
         session.query(ScheduledGame.id)
@@ -179,7 +219,7 @@ def _target_rows_for_game(*, game_pk, start_date, end_date, session):
     )
 
 
-# ── Resolution (Tier 1 local, Tier 2 one box-score call) ──────────────────────
+# ── Resolution helpers (Tier 1 local, Tier 2 one box-score call) ──────────────
 def _pitcher_mlb_ids(pitcher_ids, *, session):
     """Map internal pitcher id -> MLB id. Never reads the pitcher's current team."""
     ids = {pid for pid in pitcher_ids if pid is not None}
@@ -202,9 +242,9 @@ def _local_opponent_team_id(opponent_name, pitcher_mlb_id, context_rows):
       2. Opponent name — the appearance's stored opponent names exactly one side's
          ``opponent_name``; that side's ``opponent_team_id`` is the opponent.
     Any ambiguity (no match, a tie, or missing context) returns None so the caller
-    falls through to the authoritative box-score tier. Because the derived id is only
-    a proposal that the Foundation 1 schedule authority then re-resolves and fails
-    closed on, an ambiguous local signal can never yield a wrong attribution.
+    falls through to the authoritative box-score tier. Because the derived id is only a
+    proposal that the Foundation 1 schedule authority then re-resolves and fails closed
+    on, an ambiguous local signal can never yield a wrong attribution.
     """
     if pitcher_mlb_id is not None:
         for row in context_rows:
@@ -245,12 +285,14 @@ def _unresolved_resolution() -> ata.AppearanceTeamResolution:
     )
 
 
-def _resolve_game(game_pk, target_rows, *, client, allow_api, session):
-    """Resolve every legacy-NULL appearance of one game. Returns (pairs, api_called).
+def _plan_game(game_pk, game_date, target_rows, *, client, allow_api, session):
+    """Resolve every legacy-NULL appearance of one game READ-ONLY into a GamePlan.
 
     Tier 1 (local, no network) resolves what local evidence unambiguously determines;
     Tier 2 makes a single box-score call for the remainder. Both reuse the Foundation
-    1 resolver/parser verbatim. Never consults the pitcher's current team.
+    1 resolver/parser verbatim. Never consults the pitcher's current team. Raises on an
+    evidence/processing failure (box-score fetch/parse/resolver error) so the caller
+    can stop the batch at that boundary.
     """
     context_rows = (
         session.query(CompletedGameContext)
@@ -258,6 +300,18 @@ def _resolve_game(game_pk, target_rows, *, client, allow_api, session):
         .all()
     )
     mlb_by_pitcher = _pitcher_mlb_ids((row.pitcher_id for row in target_rows), session=session)
+    schedule_rows = session.query(
+        ScheduledGame.team_id,
+        ScheduledGame.opponent_team_id,
+        ScheduledGame.home_away,
+    ).filter(ScheduledGame.game_pk == game_pk).all()
+    schedule_authority = tuple(sorted(
+        (
+            (_int_or_none(team_id), _int_or_none(opponent_team_id), home_away or '')
+            for team_id, opponent_team_id, home_away in schedule_rows
+        ),
+        key=lambda item: (item[0] is None, item[0] or 0, item[1] or 0, item[2]),
+    ))
 
     resolutions: dict = {}
     needs_boxscore = []
@@ -274,16 +328,18 @@ def _resolve_game(game_pk, target_rows, *, client, allow_api, session):
                 continue
         needs_boxscore.append(row)
 
-    api_called = False
+    boxscore_fetched = False
+    boxscore_sides = {}
     if needs_boxscore and allow_api:
         boxscore = client.get_game_boxscore(game_pk)
-        api_called = True
+        boxscore_fetched = True
         game = _game_from_boxscore(boxscore, game_pk)
         lines_by_mlb_id = {}
         for line in sync_service._extract_pitching_lines_from_boxscore(boxscore):
             key = line.get('person_id') or line.get('player_id')
-            if key is not None and key not in lines_by_mlb_id:
-                lines_by_mlb_id[key] = line
+            if key is not None:
+                boxscore_sides.setdefault(key, (line.get('side'), _int_or_none(line.get('team_id'))))
+                lines_by_mlb_id.setdefault(key, line)
         for row in needs_boxscore:
             line = lines_by_mlb_id.get(mlb_by_pitcher.get(row.pitcher_id))
             if line is None:
@@ -296,22 +352,131 @@ def _resolve_game(game_pk, target_rows, *, client, allow_api, session):
         for row in needs_boxscore:
             resolutions[row.id] = _unresolved_resolution()
 
-    return [(row, resolutions[row.id]) for row in target_rows], api_called
+    row_resolutions = []
+    for row in sorted(target_rows, key=lambda r: r.id):
+        res = resolutions[row.id]
+        row_resolutions.append(RowResolution(
+            game_log_id=row.id,
+            status=res.status,
+            appearance_team_id=res.team_id if res.resolved else None,
+            source=res.source,
+            reason=res.reason,
+        ))
+
+    evidence_digest = _sha256_json({
+        'schedule_authority': [list(item) for item in schedule_authority],
+        'boxscore_fetched': boxscore_fetched,
+        'boxscore_sides': sorted(
+            [key, side, team_id] for key, (side, team_id) in boxscore_sides.items()
+        ),
+    })
+    plan = GamePlan(
+        game_date=game_date,
+        game_pk=game_pk,
+        rows=row_resolutions,
+        boxscore_fetched=boxscore_fetched,
+        schedule_authority=schedule_authority,
+        evidence_digest=evidence_digest,
+    )
+    return plan
 
 
-def _apply_resolution(row, resolution) -> None:
-    """Freeze a resolution onto a legacy row, honoring the stored-state invariant.
+def _plan_batch(game_keys, *, start_date, end_date, client, allow_api, session):
+    """Resolve the batch READ-ONLY in cursor order, stopping at the first failure.
 
-    Only NULL-status rows reach here; the guard makes overwriting an explicit
-    ``unresolved``/``conflict`` impossible even under a concurrent attribution.
+    Returns (plan_games, boundary_failure, api_calls). ``plan_games`` is the
+    committable prefix; ``boundary_failure`` (if any) is the first game that could not
+    be resolved — everything at and after it is deliberately left for a later run so
+    the cursor never advances past uncommitted work.
     """
-    if row.appearance_team_status is not None:
-        return
-    fields = resolution.to_write_fields()
-    row.appearance_team_id = fields['appearance_team_id']
-    row.appearance_team_source = fields['appearance_team_source']
-    row.appearance_team_status = fields['appearance_team_status']
-    row.appearance_team_reason = fields['appearance_team_reason']
+    plan_games = []
+    boundary_failure = None
+    api_calls = 0
+    with session.no_autoflush:
+        for game_date, game_pk in game_keys:
+            target_rows = _target_rows_for_game(
+                game_pk=game_pk, start_date=start_date, end_date=end_date, session=session,
+            )
+            if not target_rows:
+                continue
+            try:
+                plan = _plan_game(
+                    game_pk, game_date, target_rows,
+                    client=client, allow_api=allow_api, session=session,
+                )
+            except Exception as exc:  # noqa: BLE001 — a game failure is a stop boundary
+                boundary_failure = {'game_pk': game_pk, 'error_type': type(exc).__name__}
+                break
+            if plan.boxscore_fetched:
+                api_calls += 1
+            plan_games.append(plan)
+    return plan_games, boundary_failure, api_calls
+
+
+def _plan_fingerprint(plan_games, *, start_date, end_date, after_game_date, after_game_pk):
+    """SHA-256 over the ordered resolution PLAN — targets AND proposed transitions.
+
+    Binds the resolver/backfill contract versions, the window, the cursor, and for
+    each game its evidence digest plus every targeted row's proposed status, team,
+    source, and reason. So a changed official attribution (a moved box-score side, a
+    changed schedule authority) alters the fingerprint even when the selected row IDs
+    are identical, and apply refuses until a fresh dry run is approved. Excludes
+    secrets, database URL, raw payloads, timestamps, and unstable ordering.
+    """
+    canonical = {
+        'backfill_contract_version': BACKFILL_CONTRACT_VERSION,
+        'resolver_contract_version': RESOLVER_CONTRACT_VERSION,
+        'start_date': start_date.isoformat(),
+        'end_date': end_date.isoformat(),
+        'after_game_date': after_game_date.isoformat() if after_game_date else None,
+        'after_game_pk': after_game_pk,
+        'games': [
+            {
+                'game_pk': plan.game_pk,
+                'game_date': plan.game_date.isoformat(),
+                'boxscore_fetched': plan.boxscore_fetched,
+                'schedule_authority': [list(item) for item in plan.schedule_authority],
+                'evidence_digest': plan.evidence_digest,
+                'rows': [
+                    {
+                        'game_log_id': row.game_log_id,
+                        'status': row.status,
+                        'appearance_team_id': row.appearance_team_id,
+                        'source': row.source,
+                        'reason': row.reason,
+                    }
+                    for row in plan.rows
+                ],
+            }
+            for plan in plan_games
+        ],
+    }
+    return _sha256_json(canonical)
+
+
+# ── Write (apply only) ────────────────────────────────────────────────────────
+def _apply_plan_game(plan, session):
+    """Freeze one game's planned transitions and commit atomically.
+
+    Each row is reloaded and revalidated immediately before write: a row that is no
+    longer legacy-NULL (a concurrent completion) or has been deleted is safely skipped
+    rather than overwritten. Only the four appearance_team_* fields change; statistics
+    and every other model are untouched. Returns (rows_written, rows_skipped).
+    """
+    written = 0
+    skipped = 0
+    for row_plan in plan.rows:
+        row = session.get(GameLog, row_plan.game_log_id)
+        if row is None or row.appearance_team_status is not None:
+            skipped += 1
+            continue
+        row.appearance_team_id = row_plan.appearance_team_id
+        row.appearance_team_source = row_plan.source
+        row.appearance_team_status = row_plan.status
+        row.appearance_team_reason = row_plan.reason
+        written += 1
+    session.commit()
+    return written, skipped
 
 
 # ── Audit helpers (read-only) ─────────────────────────────────────────────────
@@ -363,28 +528,14 @@ def _coverage_snapshot(session, *, season) -> dict:
     }
 
 
-# ── Fingerprint ───────────────────────────────────────────────────────────────
-def _batch_fingerprint(*, plans, start_date, end_date, after_game_date, after_game_pk):
-    canonical = {
-        'backfill_contract_version': BACKFILL_CONTRACT_VERSION,
-        'resolver_contract_version': RESOLVER_CONTRACT_VERSION,
-        'start_date': start_date.isoformat(),
-        'end_date': end_date.isoformat(),
-        'after_game_date': after_game_date.isoformat() if after_game_date else None,
-        'after_game_pk': after_game_pk,
-        'games': [
-            {
-                'game_date': plan.game_date.isoformat(),
-                'game_pk': plan.game_pk,
-                'game_log_ids': list(plan.game_log_ids),
-            }
-            for plan in plans
-        ],
-    }
-    serialized = json.dumps(
-        canonical, sort_keys=True, separators=(',', ':'), default=str,
-    )
-    return hashlib.sha256(serialized.encode('utf-8')).hexdigest()
+def _migration_head(session):
+    try:
+        rows = session.execute(
+            sa.text('SELECT version_num FROM alembic_version ORDER BY version_num')
+        )
+        return sorted(str(row[0]) for row in rows)
+    except Exception:  # noqa: BLE001 — schema without an alembic_version table (tests)
+        return None
 
 
 # ── Public entry point ────────────────────────────────────────────────────────
@@ -405,10 +556,9 @@ def run_backfill(
 ) -> dict:
     """Run one governed backfill batch and return a deterministic summary.
 
-    Dry run by default (zero writes). Apply requires ``apply=True`` AND the exact
-    confirmation phrase; if ``expected_fingerprint`` is supplied it must equal the
-    computed batch fingerprint. Both gates are checked BEFORE any write; a failed gate
-    returns a ``refused`` summary having mutated nothing.
+    Dry run by default (zero writes). Apply requires ``apply=True``, the exact
+    confirmation phrase, AND a matching ``expected_fingerprint`` (mandatory) — all
+    checked BEFORE any write. Failures stop the cursor at the last successful game.
     """
     session = session or db.session
     batch_size = _clamp_batch_size(batch_size)
@@ -417,7 +567,7 @@ def run_backfill(
 
     coverage_before = _coverage_snapshot(session, season=season)
 
-    # 1) Select the batch and build the fingerprint plan from lightweight keys.
+    # 1) Plan the whole batch READ-ONLY, stopping at the first failure.
     game_keys = _select_game_keys(
         start_date=start_date,
         end_date=end_date,
@@ -426,155 +576,198 @@ def run_backfill(
         batch_size=batch_size,
         session=session,
     )
-    plans = []
-    for game_date, game_pk in game_keys:
-        row_ids = [
-            row.id
-            for row in _target_rows_for_game(
-                game_pk=game_pk, start_date=start_date, end_date=end_date, session=session,
-            )
-        ]
-        if not row_ids:
-            continue
-        plans.append(_GamePlan(game_date, game_pk, tuple(sorted(row_ids))))
-
-    fingerprint = _batch_fingerprint(
-        plans=plans,
+    plan_games, boundary_failure, api_calls = _plan_batch(
+        game_keys,
+        start_date=start_date,
+        end_date=end_date,
+        client=client,
+        allow_api=allow_api,
+        session=session,
+    )
+    fingerprint = _plan_fingerprint(
+        plan_games,
         start_date=start_date,
         end_date=end_date,
         after_game_date=after_game_date,
         after_game_pk=after_game_pk,
     )
-    next_cursor = (
-        {
-            'after_game_date': plans[-1].game_date.isoformat(),
-            'after_game_pk': plans[-1].game_pk,
-        }
-        if plans
-        else None
+
+    proposed = {'resolved': 0, 'unresolved': 0, 'conflict': 0,
+                'via_schedule': 0, 'via_boxscore': 0}
+    non_resolved = []
+    for plan in plan_games:
+        for row in plan.rows:
+            if row.status == ata.STATUS_RESOLVED and row.appearance_team_id is not None:
+                proposed['resolved'] += 1
+                if row.source == ata.SOURCE_SCHEDULE:
+                    proposed['via_schedule'] += 1
+                elif row.source == ata.SOURCE_BOXSCORE:
+                    proposed['via_boxscore'] += 1
+            elif row.status == ata.STATUS_CONFLICT:
+                proposed['conflict'] += 1
+                if len(non_resolved) < _MAX_ROW_DETAIL:
+                    non_resolved.append({'game_log_id': row.game_log_id,
+                                         'game_pk': plan.game_pk, 'status': row.status})
+            else:
+                proposed['unresolved'] += 1
+                if len(non_resolved) < _MAX_ROW_DETAIL:
+                    non_resolved.append({'game_log_id': row.game_log_id,
+                                         'game_pk': plan.game_pk, 'status': row.status})
+
+    appearances_targeted = sum(len(plan.rows) for plan in plan_games)
+    counts_reconcile = appearances_targeted == (
+        proposed['resolved'] + proposed['unresolved'] + proposed['conflict']
     )
-    exhausted = len(game_keys) < batch_size
+    has_more = boundary_failure is not None or len(game_keys) >= batch_size
+    failed_games = []
+    if boundary_failure is not None:
+        failed_games.append({**boundary_failure, 'phase': 'resolve'})
+
+    inputs = {
+        'start_date': start_date.isoformat(),
+        'end_date': end_date.isoformat(),
+        'season': int(season),
+        'batch_size': batch_size,
+        'allow_api': bool(allow_api),
+        'after_game_date': after_game_date.isoformat() if after_game_date else None,
+        'after_game_pk': after_game_pk,
+    }
+    games_preview = [
+        {
+            'game_pk': plan.game_pk,
+            'game_date': plan.game_date.isoformat(),
+            'boxscore_fetched': plan.boxscore_fetched,
+            'rows': [
+                {'game_log_id': row.game_log_id, 'status': row.status,
+                 'appearance_team_id': row.appearance_team_id,
+                 'source': row.source, 'reason': row.reason}
+                for row in plan.rows
+            ],
+        }
+        for plan in plan_games[:_MAX_GAME_DETAIL]
+    ]
 
     base_summary = {
-        'capability': 'appearance_team_backfill_2026_v1',
+        'capability': 'appearance_team_backfill_2026_v2',
         'mode': 'apply' if apply else 'dry_run',
         'backfill_contract_version': BACKFILL_CONTRACT_VERSION,
         'resolver_contract_version': RESOLVER_CONTRACT_VERSION,
+        'migration_head': _migration_head(session),
+        'expected_migration_head': EXPECTED_MIGRATION_HEAD,
+        'git_sha': os.environ.get('GITHUB_SHA'),
+        'inputs': inputs,
         'season': int(season),
-        'window': {'start_date': start_date.isoformat(), 'end_date': end_date.isoformat()},
-        'cursor': {
-            'after_game_date': after_game_date.isoformat() if after_game_date else None,
-            'after_game_pk': after_game_pk,
-        },
-        'batch_size': batch_size,
-        'games_selected': len(plans),
-        'appearances_targeted': sum(len(plan.game_log_ids) for plan in plans),
         'batch_fingerprint': fingerprint,
-        'next_cursor': next_cursor,
-        'exhausted': exhausted,
-        'database_writes_performed': False,
+        'games_selected': len(game_keys),
+        'games_planned': len(plan_games),
+        'appearances_targeted': appearances_targeted,
+        'proposed_resolved': proposed['resolved'],
+        'proposed_unresolved': proposed['unresolved'],
+        'proposed_conflict': proposed['conflict'],
+        'resolved_via_schedule': proposed['via_schedule'],
+        'resolved_via_boxscore': proposed['via_boxscore'],
+        'api_calls': api_calls,
+        'counts_reconcile': counts_reconcile,
+        'games_preview': games_preview,
+        'games_preview_truncated': len(plan_games) > _MAX_GAME_DETAIL,
+        'non_resolved': non_resolved,
+        'non_resolved_truncated': (proposed['unresolved'] + proposed['conflict']) > len(non_resolved),
         'coverage_before': coverage_before,
+        'database_writes_performed': False,
     }
 
-    # 2) Apply gates — checked before any mutation.
-    if apply and confirmation != CONFIRMATION_PHRASE:
-        return {
+    def _finish(*, result, reasons, next_cursor, extra=None):
+        coverage_after = _coverage_snapshot(session, season=season)
+        summary = {
             **base_summary,
-            'result': RESULT_REFUSED,
-            'refused_reason': 'confirmation_phrase_required',
-            'coverage_after': coverage_before,
+            'result': result,
+            'exit_code': EXIT_BY_RESULT[result],
+            'decision_reasons': reasons,
+            'next_cursor': next_cursor,
+            'has_more': has_more,
+            'exhausted': not has_more,
+            'failed_games': failed_games[:_MAX_FAILED_GAME_DETAIL],
+            'failed_game_count': len(failed_games),
+            'coverage_after': coverage_after,
         }
-    if apply and expected_fingerprint is not None and expected_fingerprint != fingerprint:
-        return {
-            **base_summary,
-            'result': RESULT_REFUSED,
-            'refused_reason': 'fingerprint_mismatch',
-            'expected_fingerprint': expected_fingerprint,
-            'coverage_after': coverage_before,
-        }
+        if extra:
+            summary.update(extra)
+        return summary
 
-    # 3) Process each game in its own transaction.
-    counts = {
-        'games_processed': 0,
-        'games_committed': 0,
-        'games_failed': 0,
-        'api_calls': 0,
-        'appearances_resolved': 0,
-        'appearances_unresolved': 0,
-        'appearances_conflict': 0,
-        'resolved_via_schedule': 0,
-        'resolved_via_boxscore': 0,
-        'fetch_failures': 0,
+    input_cursor = {
+        'after_game_date': after_game_date.isoformat() if after_game_date else None,
+        'after_game_pk': after_game_pk,
     }
-    failed_games = []
-    for plan in plans:
-        target_rows = _target_rows_for_game(
-            game_pk=plan.game_pk, start_date=start_date, end_date=end_date, session=session,
-        )
-        if not target_rows:
-            continue
-        try:
-            pairs, api_called = _resolve_game(
-                plan.game_pk, target_rows, client=client, allow_api=allow_api, session=session,
-            )
-        except Exception as exc:  # noqa: BLE001 — a single game must not abort the batch
-            session.rollback()
-            counts['games_failed'] += 1
-            counts['fetch_failures'] += 1
-            if len(failed_games) < _MAX_FAILED_GAME_DETAIL:
-                failed_games.append(
-                    {'game_pk': plan.game_pk, 'error_type': type(exc).__name__}
-                )
-            continue
 
-        counts['games_processed'] += 1
-        if api_called:
-            counts['api_calls'] += 1
-        for row, resolution in pairs:
-            if resolution.status == ata.STATUS_RESOLVED and resolution.team_id is not None:
-                counts['appearances_resolved'] += 1
-                if resolution.source == ata.SOURCE_SCHEDULE:
-                    counts['resolved_via_schedule'] += 1
-                elif resolution.source == ata.SOURCE_BOXSCORE:
-                    counts['resolved_via_boxscore'] += 1
-            elif resolution.status == ata.STATUS_CONFLICT:
-                counts['appearances_conflict'] += 1
-            else:
-                counts['appearances_unresolved'] += 1
-            if apply:
-                _apply_resolution(row, resolution)
+    def _cursor_at(plan):
+        return {'after_game_date': plan.game_date.isoformat(), 'after_game_pk': plan.game_pk}
 
-        if apply:
+    # 2) Apply gates — MANDATORY, checked before any mutation.
+    if apply:
+        if confirmation != CONFIRMATION_PHRASE:
+            return _finish(result=RESULT_REFUSED,
+                           reasons=['confirmation_phrase_required'],
+                           next_cursor=input_cursor)
+        if not expected_fingerprint:
+            return _finish(result=RESULT_REFUSED,
+                           reasons=['approved_fingerprint_required'],
+                           next_cursor=input_cursor)
+        if expected_fingerprint != fingerprint:
+            return _finish(result=RESULT_REFUSED,
+                           reasons=['fingerprint_mismatch'],
+                           next_cursor=input_cursor,
+                           extra={'expected_fingerprint': expected_fingerprint})
+
+    # 3) Empty batch → inconclusive (nothing to do).
+    if not plan_games and boundary_failure is None:
+        return _finish(result=RESULT_INCONCLUSIVE, reasons=['no_target_rows'],
+                       next_cursor=input_cursor)
+
+    # 4) Write phase (apply only). Per-game commit; stop and fail on a commit error.
+    writes = {'games_committed': 0, 'rows_written': 0, 'rows_skipped_concurrent': 0}
+    commit_failure = None
+    last_committed = None
+    if apply:
+        for plan in plan_games:
             try:
-                session.commit()
-                counts['games_committed'] += 1
-            except Exception as exc:  # noqa: BLE001 — isolate a bad per-game commit
+                written, skipped = _apply_plan_game(plan, session)
+            except Exception as exc:  # noqa: BLE001 — isolate + stop on a commit error
                 session.rollback()
-                counts['games_failed'] += 1
-                counts['games_processed'] -= 1
-                if len(failed_games) < _MAX_FAILED_GAME_DETAIL:
-                    failed_games.append(
-                        {'game_pk': plan.game_pk, 'error_type': type(exc).__name__}
-                    )
-
-    if not apply:
-        session.rollback()
-
-    coverage_after = _coverage_snapshot(session, season=season)
-
-    if coverage_after['invalid_stored_states'] > 0:
-        result = RESULT_FAILED
-    elif counts['games_failed'] > 0 or counts['fetch_failures'] > 0:
-        result = RESULT_COMPLETED_WITH_FAILURES
+                commit_failure = {'game_pk': plan.game_pk, 'error_type': type(exc).__name__,
+                                  'phase': 'commit'}
+                failed_games.append(commit_failure)
+                break
+            writes['games_committed'] += 1
+            writes['rows_written'] += written
+            writes['rows_skipped_concurrent'] += skipped
+            last_committed = plan
     else:
-        result = RESULT_COMPLETED
+        session.rollback()  # belt-and-braces: dry run mutates nothing
 
-    return {
-        **base_summary,
-        'result': result,
-        'database_writes_performed': bool(apply and counts['games_committed'] > 0),
-        **counts,
-        'failed_games': failed_games,
-        'failed_game_count': len(failed_games),
-        'coverage_after': coverage_after,
-    }
+    # 5) Next cursor = last SUCCESSFULLY processed game (never past uncommitted work).
+    if apply:
+        last_ok = last_committed
+    else:
+        last_ok = plan_games[-1] if plan_games else None
+    next_cursor = _cursor_at(last_ok) if last_ok is not None else input_cursor
+
+    # 6) Classify.
+    invalid_after = _invalid_stored_state_count(session)
+    writes_performed = apply and writes['games_committed'] > 0
+    if invalid_after > 0:
+        result, reasons = RESULT_FAIL, ['invalid_stored_states']
+    elif commit_failure is not None:
+        result, reasons = RESULT_FAIL, ['game_commit_failure']
+    elif boundary_failure is not None:
+        result, reasons = RESULT_FAIL, ['game_resolution_failure']
+    elif apply and writes['rows_written'] == 0 and writes['rows_skipped_concurrent'] > 0:
+        result, reasons = RESULT_INCONCLUSIVE, ['all_targets_already_complete']
+    else:
+        result, reasons = RESULT_PASS, ['batch_committed' if apply else 'clean_plan']
+
+    return _finish(
+        result=result,
+        reasons=reasons,
+        next_cursor=next_cursor,
+        extra={'database_writes_performed': writes_performed, **writes},
+    )

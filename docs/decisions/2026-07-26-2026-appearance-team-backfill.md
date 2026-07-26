@@ -71,35 +71,49 @@ No second resolver or parser is defined. `Pitcher.team_id` is never read; the on
 per-pitcher column consulted is the immutable `Pitcher.mlb_id`, used solely to match a
 box-score line to its appearance.
 
-## 4. Determinism: keyset cursor + batch fingerprint
+## 4. Determinism: keyset cursor + plan-binding fingerprint
 
 Selection is ordered `(game_date ASC, game_pk ASC)` and paginated by a KEYSET cursor
 (`after_game_date`/`after_game_pk`), never OFFSET, so a large sweep resumes across
-runs without re-doing or skipping work; the run echoes `next_cursor` and `exhausted`.
-Each batch carries a SHA-256 `batch_fingerprint` over the ordered work set (backfill +
-resolver contract versions, window, cursor, and each game's `game_pk`/`game_date`/
-sorted `game_log_id`s). The fingerprint is stable across dry-run/apply on the same
-state, changes when the work set or cursor changes, and is invalidated if either
-contract version moves.
+runs without re-doing or skipping work; the run echoes `next_cursor`, `has_more`, and
+`exhausted`. Every run first resolves the whole batch READ-ONLY into a plan, then
+carries a SHA-256 `batch_fingerprint` over that plan — not only the ordered targets
+(backfill + resolver contract versions, window, cursor, each game's
+`game_pk`/`game_date`/`game_log_id`s) but the PROPOSED per-row transition (status,
+`appearance_team_id`, source, reason), each game's official evidence digest (schedule
+home/away authority and, when fetched, the box-score sides), and whether a box-score
+fetch was required. So a changed official attribution alters the fingerprint even when
+the selected row IDs are identical, and apply refuses until a fresh dry run is
+approved. Secrets, database URL, raw payloads, timestamps, and unstable ordering are
+never hashed.
 
-## 5. Governance: dry-run default, apply gates
+## 5. Governance: dry-run default, MANDATORY apply gates
 
-Dry run is the default: zero writes, a deterministic JSON report, and the fingerprint.
-Apply requires `apply=True` AND the exact confirmation phrase
-`RUN_2026_APPEARANCE_TEAM_BACKFILL`; an optional `expected_fingerprint` must equal the
-computed fingerprint. Both gates are checked BEFORE any mutation — a failed gate
-returns a `refused` summary having written nothing. The CLI
-(`scripts/run_2026_appearance_team_backfill.py`) and the `workflow_dispatch`-only
-workflow (`appearance_team_backfill_2026.yml`, concurrency-grouped, private artifact,
-no schedule/push trigger) both enforce the phrase.
+Dry run is the default: zero writes (the plan is computed read-only; a SQL-capture
+test proves no INSERT/UPDATE/DELETE is emitted), a deterministic JSON report, and the
+fingerprint the operator approves. Apply requires `apply=True`, the exact confirmation
+phrase `RUN_2026_APPEARANCE_TEAM_BACKFILL`, AND a matching `expected_fingerprint` —
+the approved fingerprint is MANDATORY, not optional. All gates are checked BEFORE any
+mutation; a missing/mismatched fingerprint or wrong phrase returns a `refused` summary
+(exit 1) having written nothing. The CLI (`scripts/run_2026_appearance_team_backfill.py`)
+and the `workflow_dispatch`-only workflow (`appearance_team_backfill_2026.yml`,
+concurrency-grouped, private artifact, no schedule/push trigger) both require the
+phrase and, for apply, an approved fingerprint.
 
-## 6. Per-game atomicity & idempotency
+## 6. Per-game atomicity, stop-at-failure, result classification
 
-Each game is resolved and (in apply) committed in its own transaction; a per-game
-failure (e.g., a box-score fetch error) rolls back only that game and is reported
-without aborting the batch. Because only NULL-status rows are targeted, a re-run after
-a successful apply selects nothing — the backfill is idempotent, and applying twice
-leaves attributions unchanged.
+Each game is applied and committed in its own transaction; a row is reloaded and
+revalidated (still legacy-NULL) immediately before write, so a concurrent completion
+is safely skipped rather than overwritten, and only the four `appearance_team_*`
+fields ever change. FAILURES STOP THE CURSOR: the read-only plan halts at the first
+game that cannot be resolved, and `next_cursor` never advances past uncommitted work,
+so the failed game is re-selected on the next run and later games are never
+permanently skipped. The overall result is strict: `pass` (exit 0) only when every
+processed game committed cleanly and invalid stored states are zero; `fail` (exit 1)
+for any game resolution/commit failure, invalid stored state, or unsatisfied apply
+gate; `inconclusive` (exit 2) when no target rows remain (or all were already
+completed by another process). Because only NULL-status rows are targeted, a re-run
+after a successful apply selects nothing — the backfill is idempotent.
 
 ## 7. Coverage audit & invariant
 

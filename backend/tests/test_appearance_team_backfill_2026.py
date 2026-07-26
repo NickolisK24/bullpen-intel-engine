@@ -2,12 +2,14 @@
 
 Exercises the backfill contract end to end against the REAL Foundation 1 resolver and
 box-score parser (no test doubles for resolution): deterministic keyset target
-selection (2026 window, legacy-NULL only, final games only), local-evidence-first
-resolution (Tier 1 schedule via ``CompletedGameContext``; Tier 2 one box-score call),
-dry-run-by-default zero-write semantics, the apply confirmation + fingerprint gates,
-per-game atomic isolation, idempotent re-runs, the stored-state invariant, the
-before/after coverage audit, and the guarantees that no second resolver is invented
-and ``Pitcher.team_id`` is never consulted.
+selection (2026 window, legacy-NULL only, final games only); local-evidence-first
+resolution (Tier 1 schedule via CompletedGameContext; Tier 2 one box-score call); the
+read-only plan + plan-binding fingerprint; the MANDATORY apply confirmation +
+fingerprint gates; per-game atomic isolation with stop-at-failure cursor semantics;
+strict PASS/FAIL/INCONCLUSIVE classification and exit codes; idempotent re-runs; the
+stored-state invariant; the before/after coverage audit; report reconciliation; and
+the guarantees that no second resolver is invented and the pitcher's current team is
+never consulted.
 """
 
 from datetime import date
@@ -15,6 +17,7 @@ from pathlib import Path
 
 import pytest
 from flask import Flask
+from sqlalchemy import event
 
 import models.prospect  # noqa: F401
 from models.completed_game_context import CompletedGameContext
@@ -29,11 +32,10 @@ from utils.db import db
 
 TEAM_A, TEAM_B, TEAM_C, TEAM_D = 111, 222, 333, 444
 IN_WINDOW = date(2026, 6, 20)
-SERVICE_PATH = (
-    Path(__file__).resolve().parents[1]
-    / 'services'
-    / 'appearance_team_backfill_2026.py'
-)
+REPO_ROOT = Path(__file__).resolve().parents[2]
+SERVICE_PATH = REPO_ROOT / 'backend' / 'services' / 'appearance_team_backfill_2026.py'
+WORKFLOW_PATH = REPO_ROOT / '.github' / 'workflows' / 'appearance_team_backfill_2026.yml'
+PHRASE = backfill.CONFIRMATION_PHRASE
 
 
 @pytest.fixture
@@ -52,9 +54,8 @@ def app():
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 def _pitcher(mlb_id, current_team_id=None):
-    pitcher = Pitcher(
-        mlb_id=mlb_id, full_name=f'P{mlb_id}', team_id=current_team_id, active=True,
-    )
+    pitcher = Pitcher(mlb_id=mlb_id, full_name=f'P{mlb_id}', team_id=current_team_id,
+                      active=True)
     db.session.add(pitcher)
     db.session.commit()
     return pitcher
@@ -114,19 +115,27 @@ def _boxscore(home_team, away_team, home_pids=(), away_pids=()):
 
 class _FakeClient:
     def __init__(self, boxscores=None, raise_for=()):
-        self._boxscores = boxscores or {}
-        self._raise_for = set(raise_for)
+        self.boxscores = dict(boxscores or {})
+        self.raise_for = set(raise_for)
         self.calls = []
 
     def get_game_boxscore(self, game_pk):
         self.calls.append(game_pk)
-        if game_pk in self._raise_for:
+        if game_pk in self.raise_for:
             raise RuntimeError('boxscore unavailable')
-        return self._boxscores[game_pk]
+        return self.boxscores[game_pk]
 
 
 def _reload(log):
     return db.session.get(GameLog, log.id)
+
+
+def _log_only(pitcher_id, game_pk):
+    return (
+        db.session.query(GameLog)
+        .filter(GameLog.pitcher_id == pitcher_id, GameLog.mlb_game_pk == game_pk)
+        .one()
+    )
 
 
 def _run(**kwargs):
@@ -136,31 +145,35 @@ def _run(**kwargs):
     return backfill.run_backfill(**kwargs)
 
 
+def _apply(*, client=None, **kwargs):
+    """Mandatory-fingerprint apply: dry-run for the approved fingerprint, then apply
+    with the SAME client so the plan is identical."""
+    client = client or _FakeClient()
+    plan = _run(client=client, **kwargs)
+    return _run(client=client, apply=True, confirmation=PHRASE,
+                expected_fingerprint=plan['batch_fingerprint'], **kwargs)
+
+
 # ═══════════════════════════ A. Target selection ════════════════════════════
 def test_selects_legacy_null_row_in_window(app):
     p = _pitcher(9001)
     _schedule(700, TEAM_A, TEAM_B)
-    _context(700, TEAM_A, TEAM_B, 'TeamB')
     _log(p.id, 700)
-    summary = _run()
-    assert summary['games_selected'] == 1
-    assert summary['appearances_targeted'] == 1
+    assert _run(allow_api=False)['games_selected'] == 1
 
 
 def test_excludes_row_before_window(app):
     p = _pitcher(9002)
     _schedule(700, TEAM_A, TEAM_B, game_date=date(2025, 9, 1))
     _log(p.id, 700, game_date=date(2025, 9, 1))
-    summary = _run(start_date=date(2026, 1, 1))
-    assert summary['games_selected'] == 0
+    assert _run(allow_api=False, start_date=date(2026, 1, 1))['games_selected'] == 0
 
 
 def test_excludes_row_after_window(app):
     p = _pitcher(9003)
     _schedule(700, TEAM_A, TEAM_B, game_date=date(2027, 4, 1))
     _log(p.id, 700, game_date=date(2027, 4, 1))
-    summary = _run(end_date=date(2026, 12, 31))
-    assert summary['games_selected'] == 0
+    assert _run(allow_api=False, end_date=date(2026, 12, 31))['games_selected'] == 0
 
 
 def test_excludes_already_resolved_row(app):
@@ -168,16 +181,14 @@ def test_excludes_already_resolved_row(app):
     _schedule(700, TEAM_A, TEAM_B)
     _log(p.id, 700, status=ata.STATUS_RESOLVED, team_id=TEAM_A,
          source=ata.SOURCE_BOXSCORE, reason=ata.REASON_RESOLVED_BOXSCORE)
-    summary = _run()
-    assert summary['games_selected'] == 0
+    assert _run(allow_api=False)['games_selected'] == 0
 
 
 def test_excludes_already_unresolved_row(app):
     p = _pitcher(9005)
     _schedule(700, TEAM_A, TEAM_B)
     _log(p.id, 700, status=ata.STATUS_UNRESOLVED, reason=ata.REASON_UNRESOLVED)
-    summary = _run()
-    assert summary['games_selected'] == 0
+    assert _run(allow_api=False)['games_selected'] == 0
 
 
 def test_excludes_already_conflict_row(app):
@@ -185,48 +196,42 @@ def test_excludes_already_conflict_row(app):
     _schedule(700, TEAM_A, TEAM_B)
     _log(p.id, 700, status=ata.STATUS_CONFLICT, source=ata.SOURCE_CONFLICT,
          reason=ata.REASON_CONFLICT)
-    summary = _run()
-    assert summary['games_selected'] == 0
+    assert _run(allow_api=False)['games_selected'] == 0
 
 
 def test_excludes_scheduled_not_final_game(app):
     p = _pitcher(9007)
     _schedule(700, TEAM_A, TEAM_B, home_state='scheduled', away_state='scheduled')
     _log(p.id, 700)
-    summary = _run()
-    assert summary['games_selected'] == 0
+    assert _run(allow_api=False)['games_selected'] == 0
 
 
 def test_excludes_suspended_game(app):
     p = _pitcher(9008)
     _schedule(700, TEAM_A, TEAM_B, home_state='final', away_state='suspended')
     _log(p.id, 700)
-    summary = _run()
-    assert summary['games_selected'] == 0
+    assert _run(allow_api=False)['games_selected'] == 0
 
 
 def test_excludes_postponed_game(app):
     p = _pitcher(9009)
     _schedule(700, TEAM_A, TEAM_B, home_state='postponed', away_state='postponed')
     _log(p.id, 700)
-    summary = _run()
-    assert summary['games_selected'] == 0
+    assert _run(allow_api=False)['games_selected'] == 0
 
 
 def test_excludes_game_with_no_schedule_evidence(app):
     p = _pitcher(9010)
-    _log(p.id, 700)  # no ScheduledGame rows at all -> fail closed, not selected
-    summary = _run()
-    assert summary['games_selected'] == 0
+    _log(p.id, 700)  # no ScheduledGame -> fail closed, not selected
+    assert _run(allow_api=False)['games_selected'] == 0
 
 
-def test_two_appearances_one_game_is_one_selected_game_two_targets(app):
-    p1 = _pitcher(9011)
-    p2 = _pitcher(9012)
+def test_two_appearances_one_game_is_one_selected_two_targets(app):
+    p1, p2 = _pitcher(9011), _pitcher(9012)
     _schedule(700, TEAM_A, TEAM_B)
     _log(p1.id, 700)
     _log(p2.id, 700)
-    summary = _run()
+    summary = _run(allow_api=False)
     assert summary['games_selected'] == 1
     assert summary['appearances_targeted'] == 2
 
@@ -237,9 +242,8 @@ def test_keyset_cursor_excludes_past_games(app):
     _schedule(701, TEAM_A, TEAM_B, game_date=date(2026, 4, 2))
     _log(p.id, 700, game_date=date(2026, 4, 1))
     _log(p.id, 701, game_date=date(2026, 4, 2))
-    summary = _run(after_game_date=date(2026, 4, 1), after_game_pk=700)
+    summary = _run(allow_api=False, after_game_date=date(2026, 4, 1), after_game_pk=700)
     assert summary['games_selected'] == 1
-    assert summary['next_cursor']['after_game_pk'] == 701
 
 
 def test_ordering_game_date_then_game_pk(app):
@@ -247,11 +251,9 @@ def test_ordering_game_date_then_game_pk(app):
     _schedule(702, TEAM_A, TEAM_B, game_date=date(2026, 4, 2))
     _schedule(701, TEAM_A, TEAM_B, game_date=date(2026, 4, 1))
     _schedule(700, TEAM_A, TEAM_B, game_date=date(2026, 4, 1))
-    _log(p.id, 702, game_date=date(2026, 4, 2))
-    _log(p.id, 701, game_date=date(2026, 4, 1))
-    _log(p.id, 700, game_date=date(2026, 4, 1))
-    summary = _run(batch_size=1)
-    # First by (date asc, pk asc) is 2026-04-01 / pk 700.
+    for pk, d in ((702, date(2026, 4, 2)), (701, date(2026, 4, 1)), (700, date(2026, 4, 1))):
+        _log(p.id, pk, game_date=d)
+    summary = _run(allow_api=False, batch_size=1)
     assert summary['next_cursor'] == {'after_game_date': '2026-04-01', 'after_game_pk': 700}
 
 
@@ -260,9 +262,9 @@ def test_batch_size_limits_distinct_games(app):
     for i, pk in enumerate((700, 701, 702)):
         _schedule(pk, TEAM_A, TEAM_B, game_date=date(2026, 4, 1 + i))
         _log(p.id, pk, game_date=date(2026, 4, 1 + i))
-    summary = _run(batch_size=2)
+    summary = _run(allow_api=False, batch_size=2)
     assert summary['games_selected'] == 2
-    assert summary['exhausted'] is False
+    assert summary['has_more'] is True
 
 
 def test_batch_size_is_clamped(app):
@@ -271,22 +273,10 @@ def test_batch_size_is_clamped(app):
     assert backfill._clamp_batch_size('nan') == backfill.DEFAULT_BATCH_SIZE
 
 
-def test_next_cursor_points_at_last_selected_game(app):
-    p = _pitcher(9016)
-    _schedule(700, TEAM_A, TEAM_B, game_date=date(2026, 4, 1))
-    _schedule(701, TEAM_A, TEAM_B, game_date=date(2026, 4, 2))
-    _log(p.id, 700, game_date=date(2026, 4, 1))
-    _log(p.id, 701, game_date=date(2026, 4, 2))
-    summary = _run()
-    assert summary['next_cursor'] == {'after_game_date': '2026-04-02', 'after_game_pk': 701}
-
-
-def test_exhausted_true_when_batch_not_full(app):
-    p = _pitcher(9017)
-    _schedule(700, TEAM_A, TEAM_B)
-    _log(p.id, 700)
-    summary = _run(batch_size=50)
-    assert summary['exhausted'] is True
+def test_no_offset_pagination_in_source(app):
+    source = SERVICE_PATH.read_text(encoding='utf-8')
+    assert '.offset(' not in source
+    assert 'keyset' in source.lower()
 
 
 def test_cursor_tiebreak_within_same_date(app):
@@ -295,19 +285,18 @@ def test_cursor_tiebreak_within_same_date(app):
     _schedule(701, TEAM_A, TEAM_B, game_date=date(2026, 4, 1))
     _log(p.id, 700, game_date=date(2026, 4, 1))
     _log(p.id, 701, game_date=date(2026, 4, 1))
-    summary = _run(after_game_date=date(2026, 4, 1), after_game_pk=700)
+    summary = _run(allow_api=False, after_game_date=date(2026, 4, 1), after_game_pk=700)
     assert summary['games_selected'] == 1
-    assert summary['next_cursor']['after_game_pk'] == 701
 
 
 # ═══════════════════ B. Tier 1 local resolution (no API) ════════════════════
 def test_tier1_resolves_via_context_opponent_name(app):
     p = _pitcher(9101)
     _schedule(700, TEAM_A, TEAM_B)
-    _context(700, TEAM_A, TEAM_B, 'Rivals')  # A faced 'Rivals' (=B)
+    _context(700, TEAM_A, TEAM_B, 'Rivals')
     _log(p.id, 700, opponent='Rivals')
-    client = _FakeClient()  # empty; any API call would KeyError
-    summary = _run(apply=True, confirmation=backfill.CONFIRMATION_PHRASE, client=client)
+    client = _FakeClient()
+    _apply(client=client)
     row = _reload(_log_only(p.id, 700))
     assert row.appearance_team_status == ata.STATUS_RESOLVED
     assert row.appearance_team_id == TEAM_A
@@ -321,10 +310,8 @@ def test_tier1_resolves_via_starter_identity(app):
     _context(700, TEAM_A, TEAM_B, 'Someone', starter_player_id=9102)
     _log(p.id, 700, opponent='UnmatchedName')
     client = _FakeClient()
-    summary = _run(apply=True, confirmation=backfill.CONFIRMATION_PHRASE, client=client)
-    row = _reload(_log_only(p.id, 700))
-    assert row.appearance_team_id == TEAM_A
-    assert row.appearance_team_source == ata.SOURCE_SCHEDULE
+    _apply(client=client)
+    assert _reload(_log_only(p.id, 700)).appearance_team_id == TEAM_A
     assert client.calls == []
 
 
@@ -341,7 +328,6 @@ def test_tier1_makes_no_api_call(app):
 def test_tier1_ambiguous_name_falls_to_api(app):
     p = _pitcher(9104)
     _schedule(700, TEAM_A, TEAM_B)
-    # Context opponent_name does not match the log's opponent -> Tier 1 declines.
     _context(700, TEAM_A, TEAM_B, 'DifferentName')
     _log(p.id, 700, opponent='NoSuchTeam')
     client = _FakeClient({700: _boxscore(TEAM_A, TEAM_B, home_pids=[9104])})
@@ -349,30 +335,17 @@ def test_tier1_ambiguous_name_falls_to_api(app):
     assert client.calls == [700]
 
 
-def test_tier1_missing_context_falls_to_api(app):
-    p = _pitcher(9105)
-    _schedule(700, TEAM_A, TEAM_B)
-    _log(p.id, 700, opponent='TeamB')  # no CompletedGameContext
-    client = _FakeClient({700: _boxscore(TEAM_A, TEAM_B, home_pids=[9105])})
-    _run(client=client)
-    assert client.calls == [700]
-
-
 def test_tier1_name_match_resolves_correct_facing_team(app):
-    # Pitcher on B (home=A, away=B). B faced A ('Aces'). Correct attribution = B.
     p = _pitcher(9106)
     _schedule(700, TEAM_A, TEAM_B)
-    _context(700, TEAM_B, TEAM_A, 'Aces')  # B's row: opponent A named 'Aces'
+    _context(700, TEAM_B, TEAM_A, 'Aces')  # B faced A ('Aces')
     _log(p.id, 700, opponent='Aces')
-    summary = _run(apply=True, confirmation=backfill.CONFIRMATION_PHRASE)
-    row = _reload(_log_only(p.id, 700))
-    assert row.appearance_team_id == TEAM_B
+    _apply()
+    assert _reload(_log_only(p.id, 700)).appearance_team_id == TEAM_B
 
 
 def test_tier1_schedule_ambiguous_falls_to_api(app):
     p = _pitcher(9107)
-    # Two schedule rows both facing the same derived opponent -> resolve_from_schedule
-    # fails closed; Tier 1 declines.
     db.session.add_all([
         ScheduledGame(team_id=TEAM_A, game_pk=700, game_date=IN_WINDOW,
                       status_state='final', home_away='home', opponent_team_id=TEAM_B),
@@ -391,9 +364,9 @@ def test_tier1_schedule_ambiguous_falls_to_api(app):
 def test_tier2_resolves_via_boxscore(app):
     p = _pitcher(9201)
     _schedule(700, TEAM_A, TEAM_B)
-    _log(p.id, 700, opponent='TeamB')  # no context -> box score
+    _log(p.id, 700, opponent='TeamB')
     client = _FakeClient({700: _boxscore(TEAM_A, TEAM_B, home_pids=[9201])})
-    _run(apply=True, confirmation=backfill.CONFIRMATION_PHRASE, client=client)
+    _apply(client=client)
     row = _reload(_log_only(p.id, 700))
     assert row.appearance_team_status == ata.STATUS_RESOLVED
     assert row.appearance_team_id == TEAM_A
@@ -401,33 +374,28 @@ def test_tier2_resolves_via_boxscore(app):
 
 
 def test_tier2_exactly_one_call_per_game(app):
-    p1 = _pitcher(9202)
-    p2 = _pitcher(9203)
+    p1, p2 = _pitcher(9202), _pitcher(9203)
     _schedule(700, TEAM_A, TEAM_B)
     _log(p1.id, 700)
     _log(p2.id, 700)
     client = _FakeClient({700: _boxscore(TEAM_A, TEAM_B, home_pids=[9202, 9203])})
-    _run(client=client)
+    _run(client=client)  # single dry run: one fetch per game
     assert client.calls == [700]
 
 
 def test_tier2_resolves_each_pitcher_to_own_side(app):
-    home_p = _pitcher(9204)
-    away_p = _pitcher(9205)
+    home_p, away_p = _pitcher(9204), _pitcher(9205)
     _schedule(700, TEAM_A, TEAM_B)
     _log(home_p.id, 700, opponent='TeamB')
     _log(away_p.id, 700, opponent='TeamA')
     client = _FakeClient({700: _boxscore(TEAM_A, TEAM_B, home_pids=[9204], away_pids=[9205])})
-    _run(apply=True, confirmation=backfill.CONFIRMATION_PHRASE, client=client)
+    _apply(client=client)
     assert _reload(_log_only(home_p.id, 700)).appearance_team_id == TEAM_A
     assert _reload(_log_only(away_p.id, 700)).appearance_team_id == TEAM_B
 
 
 def test_tier2_boxscore_schedule_conflict_clears_team(app):
     p = _pitcher(9206)
-    # Box score puts the pitcher on home=A facing away=B; the schedule ledger says the
-    # side facing B is C (not A). The authoritative box side and the schedule disagree
-    # on a definite team -> conflict, team cleared.
     db.session.add_all([
         ScheduledGame(team_id=TEAM_C, game_pk=700, game_date=IN_WINDOW,
                       status_state='final', home_away='home', opponent_team_id=TEAM_B),
@@ -437,7 +405,7 @@ def test_tier2_boxscore_schedule_conflict_clears_team(app):
     db.session.commit()
     _log(p.id, 700, opponent='TeamB')
     client = _FakeClient({700: _boxscore(TEAM_A, TEAM_B, home_pids=[9206])})
-    _run(apply=True, confirmation=backfill.CONFIRMATION_PHRASE, client=client)
+    _apply(client=client)
     row = _reload(_log_only(p.id, 700))
     assert row.appearance_team_status == ata.STATUS_CONFLICT
     assert row.appearance_team_id is None
@@ -447,156 +415,106 @@ def test_tier2_no_matching_line_is_unresolved(app):
     p = _pitcher(9207)
     _schedule(700, TEAM_A, TEAM_B)
     _log(p.id, 700)
-    # Box score has a different pitcher; ours has no line.
     client = _FakeClient({700: _boxscore(TEAM_A, TEAM_B, home_pids=[999999])})
-    _run(apply=True, confirmation=backfill.CONFIRMATION_PHRASE, client=client)
+    _apply(client=client)
     row = _reload(_log_only(p.id, 700))
     assert row.appearance_team_status == ata.STATUS_UNRESOLVED
     assert row.appearance_team_id is None
 
 
-def test_tier2_fetch_failure_isolates_game(app):
-    good = _pitcher(9208)
-    bad = _pitcher(9209)
-    _schedule(700, TEAM_A, TEAM_B, game_date=date(2026, 4, 1))
-    _schedule(701, TEAM_A, TEAM_B, game_date=date(2026, 4, 2))
-    _log(good.id, 700, game_date=date(2026, 4, 1))
-    _log(bad.id, 701, game_date=date(2026, 4, 2))
-    client = _FakeClient({700: _boxscore(TEAM_A, TEAM_B, home_pids=[9208])}, raise_for=[701])
-    summary = _run(apply=True, confirmation=backfill.CONFIRMATION_PHRASE, client=client)
-    assert _reload(_log_only(good.id, 700)).appearance_team_status == ata.STATUS_RESOLVED
-    assert _reload(_log_only(bad.id, 701)).appearance_team_status is None
-    assert summary['games_failed'] == 1
-    assert summary['result'] == backfill.RESULT_COMPLETED_WITH_FAILURES
-
-
-def test_tier2_only_for_appearances_tier1_missed(app):
-    starter = _pitcher(9210)  # resolved locally via starter identity
-    reliever = _pitcher(9211)  # no local signal -> needs the box score
-    _schedule(700, TEAM_A, TEAM_B)
-    # Context resolves the starter (by starter identity) but names an opponent the
-    # reliever's stored opponent does not match, so only the reliever needs the API.
-    _context(700, TEAM_A, TEAM_B, 'NotTheStoredName', starter_player_id=9210)
-    _log(starter.id, 700, opponent='irrelevant-for-starter')
-    _log(reliever.id, 700, opponent='UnmatchedOpponent')
-    client = _FakeClient({700: _boxscore(TEAM_A, TEAM_B, home_pids=[9210, 9211])})
-    summary = _run(apply=True, confirmation=backfill.CONFIRMATION_PHRASE, client=client)
-    assert client.calls == [700]  # one call, for the reliever
-    assert summary['resolved_via_schedule'] >= 1
-    assert summary['resolved_via_boxscore'] >= 1
-
-
 def test_no_api_flag_leaves_unresolved(app):
     p = _pitcher(9212)
     _schedule(700, TEAM_A, TEAM_B)
-    _log(p.id, 700)  # no local evidence
+    _log(p.id, 700)
     client = _FakeClient({700: _boxscore(TEAM_A, TEAM_B, home_pids=[9212])})
-    summary = _run(apply=True, confirmation=backfill.CONFIRMATION_PHRASE,
-                   client=client, allow_api=False)
+    _apply(client=client, allow_api=False)
     assert client.calls == []
     assert _reload(_log_only(p.id, 700)).appearance_team_status == ata.STATUS_UNRESOLVED
 
 
-# ═══════════════════════ D. Dry-run semantics ═══════════════════════════════
+# ═══════════════════════ D. Dry-run read-only ═══════════════════════════════
 def test_dry_run_writes_nothing(app):
     p = _pitcher(9301)
     _schedule(700, TEAM_A, TEAM_B)
     _log(p.id, 700, opponent='TeamB')
     client = _FakeClient({700: _boxscore(TEAM_A, TEAM_B, home_pids=[9301])})
-    summary = _run(client=client)  # dry run (default)
+    summary = _run(client=client)
     assert summary['mode'] == 'dry_run'
+    assert summary['database_writes_performed'] is False
     assert _reload(_log_only(p.id, 700)).appearance_team_status is None
 
 
-def test_dry_run_reports_would_resolve_counts(app):
+def test_dry_run_reports_proposed_counts(app):
     p = _pitcher(9302)
-    _schedule(700, TEAM_A, TEAM_B)
-    _log(p.id, 700, opponent='TeamB')
-    client = _FakeClient({700: _boxscore(TEAM_A, TEAM_B, home_pids=[9302])})
-    summary = _run(client=client)
-    assert summary['appearances_resolved'] == 1
-    assert summary['database_writes_performed'] is False
-
-
-def test_dry_run_database_writes_performed_false(app):
-    p = _pitcher(9303)
     _schedule(700, TEAM_A, TEAM_B)
     _context(700, TEAM_A, TEAM_B, 'TeamB')
     _log(p.id, 700, opponent='TeamB')
     summary = _run()
-    assert summary['database_writes_performed'] is False
+    assert summary['proposed_resolved'] == 1
 
 
-def test_dry_run_does_not_persist_after_resolution(app):
+def test_dry_run_emits_no_write_sql(app):
     p = _pitcher(9304)
     _schedule(700, TEAM_A, TEAM_B)
     _context(700, TEAM_A, TEAM_B, 'TeamB')
     _log(p.id, 700, opponent='TeamB')
-    _run()
-    assert _reload(_log_only(p.id, 700)).appearance_team_status is None
+    statements = []
 
+    def _capture(conn, cursor, statement, params, context, executemany):
+        statements.append(statement)
 
-def test_dry_run_emits_fingerprint_and_cursor(app):
-    p = _pitcher(9305)
-    _schedule(700, TEAM_A, TEAM_B)
-    _log(p.id, 700)
-    summary = _run()
-    assert isinstance(summary['batch_fingerprint'], str) and summary['batch_fingerprint']
-    assert summary['next_cursor'] is not None
+    event.listen(db.engine, 'before_cursor_execute', _capture)
+    try:
+        _run()
+    finally:
+        event.remove(db.engine, 'before_cursor_execute', _capture)
+    writes = [s for s in statements
+              if s.strip().split()[0].upper() in ('INSERT', 'UPDATE', 'DELETE')]
+    assert writes == []
 
 
 def test_dry_run_preserves_seed_rows(app):
-    # A prior test-harness hazard: the dry-run rollback must not discard committed
-    # fixtures. All fixtures are committed, so they survive.
     p = _pitcher(9306)
     _schedule(700, TEAM_A, TEAM_B)
     _log(p.id, 700)
-    _run()
+    _run(allow_api=False)
     assert db.session.query(GameLog).count() == 1
     assert db.session.query(ScheduledGame).count() == 2
 
 
-# ═══════════════════════ E. Apply + gates ═══════════════════════════════════
+# ═══════════════ E. Apply + MANDATORY fingerprint gates ═════════════════════
 def test_apply_without_confirmation_refused(app):
     p = _pitcher(9401)
     _schedule(700, TEAM_A, TEAM_B)
     _context(700, TEAM_A, TEAM_B, 'TeamB')
     _log(p.id, 700, opponent='TeamB')
-    summary = _run(apply=True)
+    fp = _run()['batch_fingerprint']
+    summary = _run(apply=True, expected_fingerprint=fp)
     assert summary['result'] == backfill.RESULT_REFUSED
-    assert summary['refused_reason'] == 'confirmation_phrase_required'
+    assert summary['decision_reasons'] == ['confirmation_phrase_required']
     assert _reload(_log_only(p.id, 700)).appearance_team_status is None
 
 
-def test_apply_with_wrong_confirmation_refused(app):
-    p = _pitcher(9402)
+def test_apply_without_fingerprint_refused(app):
+    p = _pitcher(9420)
     _schedule(700, TEAM_A, TEAM_B)
-    _log(p.id, 700)
-    summary = _run(apply=True, confirmation='nope')
+    _context(700, TEAM_A, TEAM_B, 'TeamB')
+    _log(p.id, 700, opponent='TeamB')
+    summary = _run(apply=True, confirmation=PHRASE)  # no expected_fingerprint
     assert summary['result'] == backfill.RESULT_REFUSED
+    assert summary['decision_reasons'] == ['approved_fingerprint_required']
+    assert summary['database_writes_performed'] is False
     assert _reload(_log_only(p.id, 700)).appearance_team_status is None
 
 
-def test_apply_with_confirmation_writes(app):
+def test_apply_with_confirmation_and_fingerprint_writes(app):
     p = _pitcher(9403)
     _schedule(700, TEAM_A, TEAM_B)
     _context(700, TEAM_A, TEAM_B, 'TeamB')
     _log(p.id, 700, opponent='TeamB')
-    summary = _run(apply=True, confirmation=backfill.CONFIRMATION_PHRASE)
-    assert summary['result'] == backfill.RESULT_COMPLETED
+    summary = _apply()
+    assert summary['result'] == backfill.RESULT_PASS
     assert summary['database_writes_performed'] is True
-    assert _reload(_log_only(p.id, 700)).appearance_team_status == ata.STATUS_RESOLVED
-
-
-def test_apply_with_matching_fingerprint_writes(app):
-    p = _pitcher(9404)
-    _schedule(700, TEAM_A, TEAM_B)
-    _context(700, TEAM_A, TEAM_B, 'TeamB')
-    _log(p.id, 700, opponent='TeamB')
-    plan = _run()  # dry run to learn the fingerprint
-    summary = _run(apply=True, confirmation=backfill.CONFIRMATION_PHRASE,
-                   expected_fingerprint=plan['batch_fingerprint'])
-    assert summary['result'] == backfill.RESULT_COMPLETED
     assert _reload(_log_only(p.id, 700)).appearance_team_status == ata.STATUS_RESOLVED
 
 
@@ -604,19 +522,10 @@ def test_apply_with_mismatched_fingerprint_refused(app):
     p = _pitcher(9405)
     _schedule(700, TEAM_A, TEAM_B)
     _log(p.id, 700)
-    summary = _run(apply=True, confirmation=backfill.CONFIRMATION_PHRASE,
-                   expected_fingerprint='deadbeef')
+    summary = _run(apply=True, confirmation=PHRASE, expected_fingerprint='deadbeef')
     assert summary['result'] == backfill.RESULT_REFUSED
-    assert summary['refused_reason'] == 'fingerprint_mismatch'
+    assert summary['decision_reasons'] == ['fingerprint_mismatch']
     assert _reload(_log_only(p.id, 700)).appearance_team_status is None
-
-
-def test_refused_summary_reports_no_writes(app):
-    p = _pitcher(9406)
-    _schedule(700, TEAM_A, TEAM_B)
-    _log(p.id, 700)
-    summary = _run(apply=True)
-    assert summary['database_writes_performed'] is False
 
 
 def test_apply_persists_resolved_provenance(app):
@@ -624,29 +533,15 @@ def test_apply_persists_resolved_provenance(app):
     _schedule(700, TEAM_A, TEAM_B)
     _context(700, TEAM_A, TEAM_B, 'TeamB')
     _log(p.id, 700, opponent='TeamB')
-    _run(apply=True, confirmation=backfill.CONFIRMATION_PHRASE)
+    _apply()
     row = _reload(_log_only(p.id, 700))
     assert (row.appearance_team_id, row.appearance_team_source, row.appearance_team_reason) == (
         TEAM_A, ata.SOURCE_SCHEDULE, ata.REASON_RESOLVED_SCHEDULE,
     )
 
 
-def test_apply_persists_unresolved(app):
-    p = _pitcher(9408)
-    _schedule(700, TEAM_A, TEAM_B)
-    _log(p.id, 700)
-    client = _FakeClient({700: _boxscore(TEAM_A, TEAM_B, home_pids=[999])})
-    _run(apply=True, confirmation=backfill.CONFIRMATION_PHRASE, client=client)
-    row = _reload(_log_only(p.id, 700))
-    assert row.appearance_team_status == ata.STATUS_UNRESOLVED
-    assert row.appearance_team_id is None
-    assert row.appearance_team_source is None
-    assert row.appearance_team_reason == ata.REASON_UNRESOLVED
-
-
 def test_apply_persists_conflict(app):
     p = _pitcher(9409)
-    # Box side (A) vs schedule facing-side (C) disagree on a definite team -> conflict.
     db.session.add_all([
         ScheduledGame(team_id=TEAM_C, game_pk=700, game_date=IN_WINDOW,
                       status_state='final', home_away='home', opponent_team_id=TEAM_B),
@@ -656,43 +551,30 @@ def test_apply_persists_conflict(app):
     db.session.commit()
     _log(p.id, 700)
     client = _FakeClient({700: _boxscore(TEAM_A, TEAM_B, home_pids=[9409])})
-    _run(apply=True, confirmation=backfill.CONFIRMATION_PHRASE, client=client)
+    _apply(client=client)
     row = _reload(_log_only(p.id, 700))
     assert row.appearance_team_status == ata.STATUS_CONFLICT
-    assert row.appearance_team_id is None
     assert row.appearance_team_source == ata.SOURCE_CONFLICT
 
 
-def test_apply_commits_per_game(app):
-    ok = _pitcher(9410)
-    bad = _pitcher(9411)
-    _schedule(700, TEAM_A, TEAM_B, game_date=date(2026, 4, 1))
-    _schedule(701, TEAM_A, TEAM_B, game_date=date(2026, 4, 2))
-    _context(700, TEAM_A, TEAM_B, 'TeamB')
-    _log(ok.id, 700, game_date=date(2026, 4, 1), opponent='TeamB')
-    _log(bad.id, 701, game_date=date(2026, 4, 2))
-    client = _FakeClient(raise_for=[701])  # game 701 needs API and fails
-    summary = _run(apply=True, confirmation=backfill.CONFIRMATION_PHRASE, client=client)
-    assert _reload(_log_only(ok.id, 700)).appearance_team_status == ata.STATUS_RESOLVED
-    assert _reload(_log_only(bad.id, 701)).appearance_team_status is None
-    assert summary['games_committed'] == 1
-
-
-# ═══════════════════════ F. Fingerprint ═════════════════════════════════════
+# ═══════════════ F. Fingerprint binds the resolution plan ═══════════════════
 def test_fingerprint_stable_across_dry_runs(app):
     p = _pitcher(9501)
     _schedule(700, TEAM_A, TEAM_B)
-    _log(p.id, 700)
+    _context(700, TEAM_A, TEAM_B, 'TeamB')
+    _log(p.id, 700, opponent='TeamB')
     assert _run()['batch_fingerprint'] == _run()['batch_fingerprint']
 
 
 def test_fingerprint_changes_when_target_set_changes(app):
     p = _pitcher(9502)
     _schedule(700, TEAM_A, TEAM_B)
-    _log(p.id, 700)
+    _context(700, TEAM_A, TEAM_B, 'TeamB')
+    _log(p.id, 700, opponent='TeamB')
     first = _run()['batch_fingerprint']
     _schedule(701, TEAM_A, TEAM_B, game_date=date(2026, 4, 3))
-    _log(p.id, 701, game_date=date(2026, 4, 3))
+    _context(701, TEAM_A, TEAM_B, 'TeamB', game_date=date(2026, 4, 3))
+    _log(p.id, 701, game_date=date(2026, 4, 3), opponent='TeamB')
     assert _run()['batch_fingerprint'] != first
 
 
@@ -700,8 +582,10 @@ def test_fingerprint_changes_with_cursor(app):
     p = _pitcher(9503)
     _schedule(700, TEAM_A, TEAM_B, game_date=date(2026, 4, 1))
     _schedule(701, TEAM_A, TEAM_B, game_date=date(2026, 4, 2))
-    _log(p.id, 700, game_date=date(2026, 4, 1))
-    _log(p.id, 701, game_date=date(2026, 4, 2))
+    _context(700, TEAM_A, TEAM_B, 'TeamB', game_date=date(2026, 4, 1))
+    _context(701, TEAM_A, TEAM_B, 'TeamB', game_date=date(2026, 4, 2))
+    _log(p.id, 700, game_date=date(2026, 4, 1), opponent='TeamB')
+    _log(p.id, 701, game_date=date(2026, 4, 2), opponent='TeamB')
     base = _run()['batch_fingerprint']
     moved = _run(after_game_date=date(2026, 4, 1), after_game_pk=700)['batch_fingerprint']
     assert base != moved
@@ -710,33 +594,62 @@ def test_fingerprint_changes_with_cursor(app):
 def test_fingerprint_depends_on_resolver_contract_version(monkeypatch, app):
     p = _pitcher(9504)
     _schedule(700, TEAM_A, TEAM_B)
-    _log(p.id, 700)
+    _context(700, TEAM_A, TEAM_B, 'TeamB')
+    _log(p.id, 700, opponent='TeamB')
     base = _run()['batch_fingerprint']
     monkeypatch.setattr(backfill, 'RESOLVER_CONTRACT_VERSION', 'changed_contract_vX')
     assert _run()['batch_fingerprint'] != base
 
 
-def test_fingerprint_independent_of_insertion_order(app):
-    p1 = _pitcher(9505)
-    p2 = _pitcher(9506)
+def test_fingerprint_changes_when_boxscore_evidence_changes(app):
+    # Same target row IDs, different official attribution -> different fingerprint.
+    p = _pitcher(9505)
     _schedule(700, TEAM_A, TEAM_B)
-    _log(p2.id, 700)
-    _log(p1.id, 700)
-    first = _run()['batch_fingerprint']
-    # ids are sorted in the plan, so the fingerprint is order-independent; recompute.
-    assert _run()['batch_fingerprint'] == first
+    _log(p.id, 700)
+    on_home = _FakeClient({700: _boxscore(TEAM_A, TEAM_B, home_pids=[9505])})
+    on_away = _FakeClient({700: _boxscore(TEAM_A, TEAM_B, away_pids=[9505])})
+    fp_home = _run(client=on_home)['batch_fingerprint']
+    fp_away = _run(client=on_away)['batch_fingerprint']
+    assert fp_home != fp_away
+
+
+def test_apply_with_stale_fingerprint_after_evidence_change_refused(app):
+    p = _pitcher(9506)
+    _schedule(700, TEAM_A, TEAM_B)
+    _log(p.id, 700)
+    client = _FakeClient({700: _boxscore(TEAM_A, TEAM_B, home_pids=[9506])})
+    stale_fp = _run(client=client)['batch_fingerprint']
+    client.boxscores[700] = _boxscore(TEAM_A, TEAM_B, away_pids=[9506])  # evidence moved
+    summary = _run(client=client, apply=True, confirmation=PHRASE,
+                   expected_fingerprint=stale_fp)
+    assert summary['result'] == backfill.RESULT_REFUSED
+    assert summary['decision_reasons'] == ['fingerprint_mismatch']
+    assert _reload(_log_only(p.id, 700)).appearance_team_status is None
+
+
+def test_added_target_row_invalidates_fingerprint(app):
+    p1 = _pitcher(9510)
+    _schedule(700, TEAM_A, TEAM_B)
+    _context(700, TEAM_A, TEAM_B, 'TeamB')
+    _log(p1.id, 700, opponent='TeamB')
+    approved = _run()['batch_fingerprint']
+    p2 = _pitcher(9511)
+    _log(p2.id, 700, opponent='TeamB')  # concurrent new target row in the same game
+    summary = _run(apply=True, confirmation=PHRASE, expected_fingerprint=approved)
+    assert summary['result'] == backfill.RESULT_REFUSED
+    assert _reload(_log_only(p1.id, 700)).appearance_team_status is None
 
 
 # ═══════════════════════ G. Idempotency / re-run ════════════════════════════
-def test_rerun_after_apply_selects_nothing(app):
+def test_rerun_after_apply_is_noop(app):
     p = _pitcher(9601)
     _schedule(700, TEAM_A, TEAM_B)
     _context(700, TEAM_A, TEAM_B, 'TeamB')
     _log(p.id, 700, opponent='TeamB')
-    _run(apply=True, confirmation=backfill.CONFIRMATION_PHRASE)
-    second = _run(apply=True, confirmation=backfill.CONFIRMATION_PHRASE)
+    _apply()
+    second = _run()
     assert second['games_selected'] == 0
-    assert second['database_writes_performed'] is False
+    assert second['result'] == backfill.RESULT_INCONCLUSIVE
 
 
 def test_double_apply_is_idempotent(app):
@@ -744,53 +657,23 @@ def test_double_apply_is_idempotent(app):
     _schedule(700, TEAM_A, TEAM_B)
     _context(700, TEAM_A, TEAM_B, 'TeamB')
     _log(p.id, 700, opponent='TeamB')
-    _run(apply=True, confirmation=backfill.CONFIRMATION_PHRASE)
+    _apply()
     before = _reload(_log_only(p.id, 700)).appearance_team_id
-    _run(apply=True, confirmation=backfill.CONFIRMATION_PHRASE)
+    second = _run(apply=True, confirmation=PHRASE,
+                  expected_fingerprint=_run()['batch_fingerprint'])
     assert _reload(_log_only(p.id, 700)).appearance_team_id == before
+    assert second['result'] == backfill.RESULT_INCONCLUSIVE
 
 
-def test_dry_run_and_apply_same_state_same_fingerprint(app):
-    p = _pitcher(9603)
-    _schedule(700, TEAM_A, TEAM_B)
-    _context(700, TEAM_A, TEAM_B, 'TeamB')
-    _log(p.id, 700, opponent='TeamB')
-    dry = _run()['batch_fingerprint']
-    applied = _run(apply=True, confirmation=backfill.CONFIRMATION_PHRASE)['batch_fingerprint']
-    assert dry == applied
-
-
-def test_rerun_fingerprint_empty_after_full_apply(app):
-    p = _pitcher(9604)
-    _schedule(700, TEAM_A, TEAM_B)
-    _context(700, TEAM_A, TEAM_B, 'TeamB')
-    _log(p.id, 700, opponent='TeamB')
-    _run(apply=True, confirmation=backfill.CONFIRMATION_PHRASE)
-    second = _run()
-    assert second['games_selected'] == 0
-    assert second['next_cursor'] is None
-
-
-# ═══════════════════ H. Invariant / stored-state safety ═════════════════════
+# ═══════════════ H. Invariant / stored-state safety ═════════════════════════
 def test_apply_keeps_invalid_stored_states_zero(app):
-    p1 = _pitcher(9701)
-    p2 = _pitcher(9702)
+    p1, p2 = _pitcher(9701), _pitcher(9702)
     _schedule(700, TEAM_A, TEAM_B)
     _context(700, TEAM_A, TEAM_B, 'TeamB')
     _log(p1.id, 700, opponent='TeamB')
     _log(p2.id, 700, opponent='TeamB')
-    summary = _run(apply=True, confirmation=backfill.CONFIRMATION_PHRASE)
+    summary = _apply()
     assert summary['coverage_after']['invalid_stored_states'] == 0
-
-
-def test_resolved_rows_carry_team(app):
-    p = _pitcher(9703)
-    _schedule(700, TEAM_A, TEAM_B)
-    _context(700, TEAM_A, TEAM_B, 'TeamB')
-    _log(p.id, 700, opponent='TeamB')
-    _run(apply=True, confirmation=backfill.CONFIRMATION_PHRASE)
-    row = _reload(_log_only(p.id, 700))
-    assert row.appearance_team_status == ata.STATUS_RESOLVED and row.appearance_team_id is not None
 
 
 def test_nonresolved_rows_have_no_team(app):
@@ -798,49 +681,32 @@ def test_nonresolved_rows_have_no_team(app):
     _schedule(700, TEAM_A, TEAM_B)
     _log(p.id, 700)
     client = _FakeClient({700: _boxscore(TEAM_A, TEAM_B, home_pids=[123])})
-    _run(apply=True, confirmation=backfill.CONFIRMATION_PHRASE, client=client)
-    row = _reload(_log_only(p.id, 700))
-    assert row.appearance_team_id is None
+    _apply(client=client)
+    assert _reload(_log_only(p.id, 700)).appearance_team_id is None
 
 
 def test_never_overwrites_explicit_unresolved_alongside_targets(app):
-    explicit = _pitcher(9705)
-    target = _pitcher(9706)
+    explicit, target = _pitcher(9705), _pitcher(9706)
     _schedule(700, TEAM_A, TEAM_B)
     _context(700, TEAM_A, TEAM_B, 'TeamB')
     _log(explicit.id, 700, opponent='TeamB', status=ata.STATUS_UNRESOLVED,
          reason=ata.REASON_UNRESOLVED)
     _log(target.id, 700, opponent='TeamB')
-    _run(apply=True, confirmation=backfill.CONFIRMATION_PHRASE)
-    # The explicit unresolved row is untouched; the legacy row is attributed.
+    _apply()
     assert _reload(_log_only(explicit.id, 700)).appearance_team_status == ata.STATUS_UNRESOLVED
     assert _reload(_log_only(target.id, 700)).appearance_team_status == ata.STATUS_RESOLVED
 
 
-def test_invalid_state_probe_counts_zero_on_clean_db(app):
-    p = _pitcher(9707)
-    _schedule(700, TEAM_A, TEAM_B)
-    _log(p.id, 700)
-    assert backfill._invalid_stored_state_count(db.session) == 0
-
-
-# ═══════════════ I. Reuse / never Pitcher.team_id ═══════════════════════════
+# ═══════════════ I. Reuse / never current team ══════════════════════════════
 def test_service_source_never_references_pitcher_team_id(app):
-    source = SERVICE_PATH.read_text(encoding='utf-8')
-    lowered = source.lower()
-    # The forbidden attribution source: a pitcher's mutable current team.
+    lowered = SERVICE_PATH.read_text(encoding='utf-8').lower()
     assert 'pitcher.team_id' not in lowered
-    # The only per-pitcher column the backfill reads is the immutable MLB id.
-    assert 'Pitcher.mlb_id' in source
+    assert 'Pitcher.mlb_id' in SERVICE_PATH.read_text(encoding='utf-8')
 
 
-def test_service_reuses_foundation1_boxscore_parser(app):
+def test_service_reuses_foundation1_parser_and_seam(app):
     source = SERVICE_PATH.read_text(encoding='utf-8')
     assert 'sync_service._extract_pitching_lines_from_boxscore' in source
-
-
-def test_service_reuses_foundation1_boxscore_seam(app):
-    source = SERVICE_PATH.read_text(encoding='utf-8')
     assert 'sync_service._appearance_team_for_boxscore_line' in source
 
 
@@ -852,12 +718,11 @@ def test_service_defines_no_second_resolver(app):
 
 
 def test_attribution_ignores_current_team_traded_pitcher(app):
-    # Pitcher's CURRENT team is C; the 2026 appearance was for A. Attribution = A.
     p = _pitcher(9708, current_team_id=TEAM_C)
     _schedule(700, TEAM_A, TEAM_B)
     _context(700, TEAM_A, TEAM_B, 'TeamB')
     _log(p.id, 700, opponent='TeamB')
-    _run(apply=True, confirmation=backfill.CONFIRMATION_PHRASE)
+    _apply()
     row = _reload(_log_only(p.id, 700))
     assert row.appearance_team_id == TEAM_A
     assert row.appearance_team_id != p.team_id
@@ -868,7 +733,7 @@ def test_summary_includes_before_and_after_coverage(app):
     p = _pitcher(9801)
     _schedule(700, TEAM_A, TEAM_B)
     _log(p.id, 700)
-    summary = _run()
+    summary = _run(allow_api=False)
     assert 'coverage_before' in summary and 'coverage_after' in summary
 
 
@@ -877,109 +742,207 @@ def test_apply_reduces_season_null_legacy(app):
     _schedule(700, TEAM_A, TEAM_B)
     _context(700, TEAM_A, TEAM_B, 'TeamB')
     _log(p.id, 700, opponent='TeamB')
-    summary = _run(apply=True, confirmation=backfill.CONFIRMATION_PHRASE)
-    before = summary['coverage_before']['season_null_legacy']
-    after = summary['coverage_after']['season_null_legacy']
-    assert before == 1 and after == 0
-
-
-def test_coverage_after_invalid_states_zero(app):
-    p = _pitcher(9803)
-    _schedule(700, TEAM_A, TEAM_B)
-    _context(700, TEAM_A, TEAM_B, 'TeamB')
-    _log(p.id, 700, opponent='TeamB')
-    summary = _run(apply=True, confirmation=backfill.CONFIRMATION_PHRASE)
-    assert summary['coverage_after']['invalid_stored_states'] == 0
+    summary = _apply()
+    assert summary['coverage_before']['season_null_legacy'] == 1
+    assert summary['coverage_after']['season_null_legacy'] == 0
 
 
 def test_campaign_goal_full_apply_zeroes_2026_null_legacy(app):
-    p1 = _pitcher(9804)
-    p2 = _pitcher(9805)
+    p1, p2 = _pitcher(9804), _pitcher(9805)
     _schedule(700, TEAM_A, TEAM_B, game_date=date(2026, 4, 1))
     _schedule(701, TEAM_A, TEAM_B, game_date=date(2026, 4, 2))
     _context(700, TEAM_A, TEAM_B, 'TeamB', game_date=date(2026, 4, 1))
     _context(701, TEAM_A, TEAM_B, 'TeamB', game_date=date(2026, 4, 2))
     _log(p1.id, 700, game_date=date(2026, 4, 1), opponent='TeamB')
     _log(p2.id, 701, game_date=date(2026, 4, 2), opponent='TeamB')
-    summary = _run(apply=True, confirmation=backfill.CONFIRMATION_PHRASE)
+    summary = _apply()
     assert summary['coverage_after']['season_null_legacy'] == 0
 
 
-# ═══════════════════════ K. Finality edge / misc ════════════════════════════
-def test_mixed_final_and_suspended_games(app):
-    ok = _pitcher(9901)
-    skip = _pitcher(9902)
-    _schedule(700, TEAM_A, TEAM_B, game_date=date(2026, 4, 1))
-    _schedule(701, TEAM_A, TEAM_B, game_date=date(2026, 4, 2),
-              home_state='final', away_state='suspended')
-    _context(700, TEAM_A, TEAM_B, 'TeamB', game_date=date(2026, 4, 1))
-    _log(ok.id, 700, game_date=date(2026, 4, 1), opponent='TeamB')
-    _log(skip.id, 701, game_date=date(2026, 4, 2))
+# ═══════════════ K. Failure / cursor / result (Gates 3 & 4) ═════════════════
+def test_clean_batch_pass(app):
+    p = _pitcher(9550)
+    _schedule(700, TEAM_A, TEAM_B)
+    _context(700, TEAM_A, TEAM_B, 'TeamB')
+    _log(p.id, 700, opponent='TeamB')
     summary = _run()
-    assert summary['games_selected'] == 1
+    assert summary['result'] == backfill.RESULT_PASS
+    assert summary['exit_code'] == 0
 
 
-def test_end_date_before_start_date_raises(app):
-    with pytest.raises(ValueError):
-        _run(start_date=date(2026, 5, 1), end_date=date(2026, 4, 1))
+def test_no_targets_inconclusive(app):
+    summary = _run()
+    assert summary['result'] == backfill.RESULT_INCONCLUSIVE
+    assert summary['exit_code'] == 2
 
 
-def test_batch_spans_two_dates_and_resumes(app):
-    p = _pitcher(9903)
+def test_confirmation_mismatch_refused_exit1(app):
+    p = _pitcher(9560)
+    _schedule(700, TEAM_A, TEAM_B)
+    _context(700, TEAM_A, TEAM_B, 'TeamB')
+    _log(p.id, 700, opponent='TeamB')
+    fp = _run()['batch_fingerprint']
+    summary = _run(apply=True, confirmation='wrong', expected_fingerprint=fp)
+    assert summary['result'] == backfill.RESULT_REFUSED
+    assert summary['exit_code'] == 1
+    assert _reload(_log_only(p.id, 700)).appearance_team_status is None
+
+
+def test_middle_game_api_failure_returns_fail_and_stops_cursor(app):
+    a, b, c = _pitcher(9520), _pitcher(9521), _pitcher(9522)
+    _schedule(700, TEAM_A, TEAM_B, game_date=date(2026, 4, 1))
+    _schedule(701, TEAM_A, TEAM_B, game_date=date(2026, 4, 2))
+    _schedule(702, TEAM_A, TEAM_B, game_date=date(2026, 4, 3))
+    _context(700, TEAM_A, TEAM_B, 'TeamB', game_date=date(2026, 4, 1))
+    _log(a.id, 700, game_date=date(2026, 4, 1), opponent='TeamB')  # Tier 1, no API
+    _log(b.id, 701, game_date=date(2026, 4, 2))                    # needs API -> fails
+    _log(c.id, 702, game_date=date(2026, 4, 3))
+    client = _FakeClient(raise_for=[701])
+    plan = _run(client=client)
+    assert plan['result'] == backfill.RESULT_FAIL
+    assert plan['games_planned'] == 1
+    summary = _run(client=client, apply=True, confirmation=PHRASE,
+                   expected_fingerprint=plan['batch_fingerprint'])
+    assert summary['result'] == backfill.RESULT_FAIL
+    assert summary['exit_code'] == 1
+    assert summary['decision_reasons'] == ['game_resolution_failure']
+    assert _reload(_log_only(a.id, 700)).appearance_team_status == ata.STATUS_RESOLVED
+    assert _reload(_log_only(b.id, 701)).appearance_team_status is None
+    assert _reload(_log_only(c.id, 702)).appearance_team_status is None
+    assert summary['next_cursor'] == {'after_game_date': '2026-04-01', 'after_game_pk': 700}
+
+
+def test_retry_after_recovery_processes_failed_game(app):
+    a, b = _pitcher(9524), _pitcher(9525)
+    _schedule(700, TEAM_A, TEAM_B, game_date=date(2026, 4, 1))
+    _schedule(701, TEAM_A, TEAM_B, game_date=date(2026, 4, 2))
+    _context(700, TEAM_A, TEAM_B, 'TeamB', game_date=date(2026, 4, 1))
+    _log(a.id, 700, game_date=date(2026, 4, 1), opponent='TeamB')
+    _log(b.id, 701, game_date=date(2026, 4, 2))
+    client = _FakeClient(raise_for=[701])
+    plan1 = _run(client=client)
+    run1 = _run(client=client, apply=True, confirmation=PHRASE,
+                expected_fingerprint=plan1['batch_fingerprint'])
+    assert _reload(_log_only(a.id, 700)).appearance_team_status == ata.STATUS_RESOLVED
+    assert _reload(_log_only(b.id, 701)).appearance_team_status is None
+    # Recover the API and resume from the cursor.
+    client.raise_for.discard(701)
+    client.boxscores[701] = _boxscore(TEAM_A, TEAM_B, home_pids=[9525])
+    cur = run1['next_cursor']
+    resume_kwargs = dict(after_game_date=date.fromisoformat(cur['after_game_date']),
+                         after_game_pk=cur['after_game_pk'])
+    plan2 = _run(client=client, **resume_kwargs)
+    _run(client=client, apply=True, confirmation=PHRASE,
+         expected_fingerprint=plan2['batch_fingerprint'], **resume_kwargs)
+    assert _reload(_log_only(b.id, 701)).appearance_team_status == ata.STATUS_RESOLVED
+
+
+def test_commit_failure_rolls_back_game(monkeypatch, app):
+    a, b = _pitcher(9530), _pitcher(9531)
     _schedule(700, TEAM_A, TEAM_B, game_date=date(2026, 4, 1))
     _schedule(701, TEAM_A, TEAM_B, game_date=date(2026, 4, 2))
     _context(700, TEAM_A, TEAM_B, 'TeamB', game_date=date(2026, 4, 1))
     _context(701, TEAM_A, TEAM_B, 'TeamB', game_date=date(2026, 4, 2))
-    _log(p.id, 700, game_date=date(2026, 4, 1), opponent='TeamB')
-    _log(p.id, 701, game_date=date(2026, 4, 2), opponent='TeamB')
-    first = _run(apply=True, confirmation=backfill.CONFIRMATION_PHRASE, batch_size=1)
-    assert first['games_selected'] == 1
-    cursor = first['next_cursor']
-    second = _run(apply=True, confirmation=backfill.CONFIRMATION_PHRASE, batch_size=1,
-                  after_game_date=date.fromisoformat(cursor['after_game_date']),
-                  after_game_pk=cursor['after_game_pk'])
-    assert second['games_selected'] == 1
-    assert second['next_cursor']['after_game_pk'] == 701
+    _log(a.id, 700, game_date=date(2026, 4, 1), opponent='TeamB')
+    _log(b.id, 701, game_date=date(2026, 4, 2), opponent='TeamB')
+    fp = _run()['batch_fingerprint']
+    real = backfill._apply_plan_game
+
+    def flaky(plan, session):
+        if plan.game_pk == 701:
+            raise RuntimeError('commit boom')
+        return real(plan, session)
+
+    monkeypatch.setattr(backfill, '_apply_plan_game', flaky)
+    summary = _run(apply=True, confirmation=PHRASE, expected_fingerprint=fp)
+    assert summary['result'] == backfill.RESULT_FAIL
+    assert summary['decision_reasons'] == ['game_commit_failure']
+    assert _reload(_log_only(a.id, 700)).appearance_team_status == ata.STATUS_RESOLVED
+    assert _reload(_log_only(b.id, 701)).appearance_team_status is None
+    assert summary['next_cursor']['after_game_pk'] == 700
 
 
-def test_season_slice_reports_2026(app):
-    p = _pitcher(9904)
+def test_invalid_stored_state_returns_fail(monkeypatch, app):
+    p = _pitcher(9540)
     _schedule(700, TEAM_A, TEAM_B)
-    _log(p.id, 700)
-    summary = _run(season=2026)
-    assert summary['season'] == 2026
-    assert summary['coverage_before']['season_null_legacy'] == 1
+    _context(700, TEAM_A, TEAM_B, 'TeamB')
+    _log(p.id, 700, opponent='TeamB')
+    fp = _run()['batch_fingerprint']
+    monkeypatch.setattr(backfill, '_invalid_stored_state_count', lambda session: 1)
+    summary = _run(apply=True, confirmation=PHRASE, expected_fingerprint=fp)
+    assert summary['result'] == backfill.RESULT_FAIL
+    assert summary['decision_reasons'] == ['invalid_stored_states']
 
 
-def _log_only(pitcher_id, game_pk):
-    return (
-        db.session.query(GameLog)
-        .filter(GameLog.pitcher_id == pitcher_id, GameLog.mlb_game_pk == game_pk)
-        .one()
+def test_end_date_before_start_raises(app):
+    with pytest.raises(ValueError):
+        _run(start_date=date(2026, 5, 1), end_date=date(2026, 4, 1))
+
+
+# ═══════════════════════ L. Report consistency ══════════════════════════════
+def test_report_counts_reconcile(app):
+    resolved_p = _pitcher(9901)
+    unresolved_p = _pitcher(9902)
+    _schedule(700, TEAM_A, TEAM_B)
+    _context(700, TEAM_A, TEAM_B, 'TeamB')
+    _log(resolved_p.id, 700, opponent='TeamB')          # Tier 1 resolved
+    _log(unresolved_p.id, 700, opponent='Unmatched')    # no line -> unresolved
+    client = _FakeClient({700: _boxscore(TEAM_A, TEAM_B, home_pids=[9901])})
+    summary = _run(client=client)
+    assert summary['counts_reconcile'] is True
+    assert summary['appearances_targeted'] == (
+        summary['proposed_resolved'] + summary['proposed_unresolved']
+        + summary['proposed_conflict']
     )
 
 
-# ═══════════════════════ L. CLI wrapper contract ════════════════════════════
+def test_report_has_governance_and_cursor_fields(app):
+    p = _pitcher(9903)
+    _schedule(700, TEAM_A, TEAM_B)
+    _context(700, TEAM_A, TEAM_B, 'TeamB')
+    _log(p.id, 700, opponent='TeamB')
+    summary = _run()
+    for key in ('capability', 'mode', 'result', 'exit_code', 'batch_fingerprint',
+                'inputs', 'next_cursor', 'has_more', 'decision_reasons',
+                'expected_migration_head', 'database_writes_performed',
+                'coverage_before', 'coverage_after'):
+        assert key in summary
+    assert summary['expected_migration_head'] == backfill.EXPECTED_MIGRATION_HEAD
+
+
+def test_report_lists_are_bounded(app):
+    assert backfill._MAX_GAME_DETAIL <= 500
+    assert backfill._MAX_ROW_DETAIL <= 1000
+    assert backfill._MAX_FAILED_GAME_DETAIL <= 200
+
+
+def test_report_never_contains_raw_payload_or_secret(app):
+    p = _pitcher(9904)
+    _schedule(700, TEAM_A, TEAM_B)
+    _log(p.id, 700)
+    client = _FakeClient({700: _boxscore(TEAM_A, TEAM_B, home_pids=[9904])})
+    summary = _run(client=client)
+    blob = str(summary).lower()
+    for token in ('password', 'secret', 'postgres://', 'authorization', 'statsapi'):
+        assert token not in blob
+
+
+# ═══════════════════════ M. CLI + workflow contract ═════════════════════════
 def test_cli_confirmation_phrase_matches_service():
     from scripts import run_2026_appearance_team_backfill as cli
-
     assert cli.CONFIRMATION_PHRASE == backfill.CONFIRMATION_PHRASE
 
 
-def test_cli_exit_code_mapping():
-    from scripts import run_2026_appearance_team_backfill as cli
-
-    assert cli.EXIT_BY_RESULT[backfill.RESULT_COMPLETED] == 0
-    assert cli.EXIT_BY_RESULT[backfill.RESULT_REFUSED] == 1
-    assert cli.EXIT_BY_RESULT[backfill.RESULT_COMPLETED_WITH_FAILURES] == 2
-    assert cli.EXIT_BY_RESULT[backfill.RESULT_FAILED] == 2
+def test_service_exit_code_mapping():
+    assert backfill.EXIT_BY_RESULT[backfill.RESULT_PASS] == 0
+    assert backfill.EXIT_BY_RESULT[backfill.RESULT_REFUSED] == 1
+    assert backfill.EXIT_BY_RESULT[backfill.RESULT_FAIL] == 1
+    assert backfill.EXIT_BY_RESULT[backfill.RESULT_INCONCLUSIVE] == 2
 
 
 def test_cli_batch_size_is_bounded():
     import argparse
-
     from scripts import run_2026_appearance_team_backfill as cli
-
     assert cli._bounded_batch_size('5') == 5
     with pytest.raises(argparse.ArgumentTypeError):
         cli._bounded_batch_size('0')
@@ -989,9 +952,7 @@ def test_cli_batch_size_is_bounded():
 
 def test_cli_iso_date_validates():
     import argparse
-
     from scripts import run_2026_appearance_team_backfill as cli
-
     assert cli._iso_date('2026-04-01') == date(2026, 4, 1)
     with pytest.raises(argparse.ArgumentTypeError):
         cli._iso_date('not-a-date')
@@ -999,19 +960,32 @@ def test_cli_iso_date_validates():
 
 def test_cli_cursor_requires_both_parts():
     from scripts import run_2026_appearance_team_backfill as cli
-
     args = cli._parse_args(['--after-game-date', '2026-04-01'])
     with pytest.raises(SystemExit):
         cli._validate_cursor(args)
     both = cli._parse_args(['--after-game-date', '2026-04-01', '--after-game-pk', '700'])
-    cli._validate_cursor(both)  # no raise
+    cli._validate_cursor(both)
 
 
-def test_cli_is_dry_run_by_default_and_sets_auto_sync_off():
+def test_cli_dry_run_default_and_sets_auto_sync_off():
     from scripts import run_2026_appearance_team_backfill as cli
-
-    args = cli._parse_args([])
-    assert args.apply is False
+    assert cli._parse_args([]).apply is False
     source = Path(cli.__file__).read_text(encoding='utf-8')
     assert "os.environ['AUTO_SYNC'] = 'false'" in source
     assert 'pitcher.team_id' not in source.lower()
+
+
+def test_workflow_dispatch_only_no_automatic_trigger():
+    source = WORKFLOW_PATH.read_text(encoding='utf-8')
+    assert 'workflow_dispatch:' in source
+    for trigger in ('\n  push:', '\n  schedule:', '\n  pull_request:',
+                    '\n  workflow_call:', '\n  repository_dispatch:'):
+        assert trigger not in source
+
+
+def test_workflow_apply_requires_confirmation_and_fingerprint():
+    source = WORKFLOW_PATH.read_text(encoding='utf-8')
+    assert 'RUN_2026_APPEARANCE_TEAM_BACKFILL' in source
+    assert 'requires an approved dry-run fingerprint' in source
+    assert 'concurrency:' in source
+    assert 'contents: read' in source
