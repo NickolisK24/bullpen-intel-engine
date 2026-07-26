@@ -879,6 +879,44 @@ def test_end_date_before_start_raises(app):
         _run(start_date=date(2026, 5, 1), end_date=date(2026, 4, 1))
 
 
+def test_migration_head_probe_never_poisons_session(app):
+    # Reproduces the originating PostgreSQL failure: the diagnostic probe queried a
+    # missing alembic_version table, which aborts the transaction on PostgreSQL; the
+    # probe must self-recover so a later query is not poisoned.
+    p = _pitcher(9599)
+    _schedule(700, TEAM_A, TEAM_B)
+    _log(p.id, 700)
+    head = backfill._migration_head(db.session)  # create_all schema: no alembic_version
+    assert head is None
+    # The session must still be usable for an ordinary read afterward.
+    assert db.session.query(GameLog).count() == 1
+
+
+def test_first_game_write_failure_leaves_session_usable(monkeypatch, app):
+    a, b = _pitcher(9532), _pitcher(9533)
+    _schedule(700, TEAM_A, TEAM_B, game_date=date(2026, 4, 1))
+    _schedule(701, TEAM_A, TEAM_B, game_date=date(2026, 4, 2))
+    _context(700, TEAM_A, TEAM_B, 'TeamB', game_date=date(2026, 4, 1))
+    _context(701, TEAM_A, TEAM_B, 'TeamB', game_date=date(2026, 4, 2))
+    _log(a.id, 700, game_date=date(2026, 4, 1), opponent='TeamB')
+    _log(b.id, 701, game_date=date(2026, 4, 2), opponent='TeamB')
+    fp = _run()['batch_fingerprint']
+    real = backfill._apply_plan_game
+
+    def flaky(plan, session):
+        if plan.game_pk == 700:
+            raise RuntimeError('write boom')
+        return real(plan, session)
+
+    monkeypatch.setattr(backfill, '_apply_plan_game', flaky)
+    summary = _run(apply=True, confirmation=PHRASE, expected_fingerprint=fp)
+    assert summary['result'] == backfill.RESULT_FAIL
+    # The session is usable immediately after the handled failure, and nothing wrote.
+    assert db.session.query(GameLog).count() == 2
+    assert _reload(_log_only(a.id, 700)).appearance_team_status is None
+    assert _reload(_log_only(b.id, 701)).appearance_team_status is None
+
+
 # ═══════════════════════ L. Report consistency ══════════════════════════════
 def test_report_counts_reconcile(app):
     resolved_p = _pitcher(9901)

@@ -529,12 +529,25 @@ def _coverage_snapshot(session, *, season) -> dict:
 
 
 def _migration_head(session):
+    """Best-effort current Alembic head(s) for the report.
+
+    This is a diagnostic probe, not part of the resolution/write flow. On a schema
+    without an ``alembic_version`` table (a ``create_all`` test schema) the read
+    fails; on PostgreSQL a failed statement ABORTS the surrounding transaction, so
+    the probe immediately rolls back to leave the session usable. The probe runs
+    before any coverage read or write, so clearing the (read-only) transaction here
+    is always safe and never poisons a later query.
+    """
     try:
         rows = session.execute(
             sa.text('SELECT version_num FROM alembic_version ORDER BY version_num')
-        )
+        ).fetchall()
         return sorted(str(row[0]) for row in rows)
-    except Exception:  # noqa: BLE001 — schema without an alembic_version table (tests)
+    except Exception:  # noqa: BLE001 — a diagnostic probe never fails the run
+        # A failed statement leaves a PostgreSQL transaction aborted; roll back so
+        # every subsequent query (coverage audit, selection, per-game write) runs on
+        # a clean transaction.
+        session.rollback()
         return None
 
 
@@ -565,6 +578,9 @@ def run_backfill(
     if end_date < start_date:
         raise ValueError('end_date must not be before start_date')
 
+    # Diagnostic probe FIRST (it self-recovers on failure) so every read/write below
+    # runs on a clean transaction.
+    migration_head = _migration_head(session)
     coverage_before = _coverage_snapshot(session, season=season)
 
     # 1) Plan the whole batch READ-ONLY, stopping at the first failure.
@@ -652,7 +668,7 @@ def run_backfill(
         'mode': 'apply' if apply else 'dry_run',
         'backfill_contract_version': BACKFILL_CONTRACT_VERSION,
         'resolver_contract_version': RESOLVER_CONTRACT_VERSION,
-        'migration_head': _migration_head(session),
+        'migration_head': migration_head,
         'expected_migration_head': EXPECTED_MIGRATION_HEAD,
         'git_sha': os.environ.get('GITHUB_SHA'),
         'inputs': inputs,
