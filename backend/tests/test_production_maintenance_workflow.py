@@ -28,6 +28,20 @@ def _audit_validator_source():
     return textwrap.dedent(source)
 
 
+def _appearance_team_audit_validator_source():
+    text = WORKFLOW.read_text(encoding='utf-8').replace('\r\n', '\n')
+    step = text.split(
+        '      - name: Run Foundation 1 appearance-team production audit\n',
+        1,
+    )[1]
+    marker = (
+        '          python - "$audit_json" "$audit_exit_code" '
+        '"$GITHUB_STEP_SUMMARY" <<\'PY\'\n'
+    )
+    source = step.split(marker, 1)[1].split('\n          PY\n', 1)[0]
+    return textwrap.dedent(source)
+
+
 def _run_validator(tmp_path, output, summary_kind):
     output_path = tmp_path / f'{summary_kind}.log'
     output_path.write_text(output, encoding='utf-8')
@@ -78,6 +92,93 @@ def _run_audit_validator(tmp_path, payload, exit_code=0, prefix=''):
             str(summary_path),
         ],
         input=_audit_validator_source(),
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+
+def _appearance_team_audit_payload(**overrides):
+    payload = {
+        'capability': 'appearance_team_production_audit_v1',
+        'coverage_capability': 'appearance_team_coverage_v1',
+        'status': 'complete',
+        'result': 'PASS',
+        'mode': 'read_only',
+        'database_writes_performed': False,
+        'migration': {
+            'expected_head': 'a4f1c7e9b3d2',
+            'current_heads': ['a4f1c7e9b3d2'],
+            'head_matches': True,
+        },
+        'coverage': {
+            'total_game_logs': 10,
+            'resolved': 3,
+            'unresolved': 1,
+            'conflict': 1,
+            'null_legacy': 5,
+            'current_team_mismatch': 1,
+            'by_source': {
+                'boxscore_side': 3,
+                'null_legacy': 7,
+            },
+            'by_season': {
+                '2025': {
+                    'resolved': 0,
+                    'unresolved': 0,
+                    'conflict': 0,
+                    'null_legacy': 4,
+                },
+                '2026': {
+                    'resolved': 3,
+                    'unresolved': 1,
+                    'conflict': 1,
+                    'null_legacy': 1,
+                },
+            },
+        },
+        'coverage_contract': {
+            'status_total': 10,
+            'source_total': 10,
+            'season_total': 10,
+            'totals_match': True,
+        },
+        'new_row_attribution': {
+            'since_utc': '2026-07-26T00:00:00Z',
+            'total': 1,
+            'resolved': 1,
+            'unresolved': 0,
+            'conflict': 0,
+            'null_legacy': 0,
+            'status_recorded': 1,
+        },
+        'invalid_states': {'total': 0, 'counts': {}},
+        'non_resolved': {
+            'total': 7,
+            'row_limit': 50,
+            'returned': 1,
+            'truncated': True,
+            'rows': [{'mlb_game_pk': 7001}],
+        },
+        'decision_reasons': ['post_cutover_rows_fully_resolved'],
+    }
+    payload.update(overrides)
+    return payload
+
+
+def _run_appearance_team_audit_validator(tmp_path, payload, exit_code=0):
+    output_path = tmp_path / 'appearance-team-production-audit.json'
+    summary_path = tmp_path / 'step-summary.md'
+    output_path.write_text(json.dumps(payload), encoding='utf-8')
+    return subprocess.run(
+        [
+            sys.executable,
+            '-',
+            str(output_path),
+            str(exit_code),
+            str(summary_path),
+        ],
+        input=_appearance_team_audit_validator_source(),
         text=True,
         capture_output=True,
         check=False,
@@ -278,3 +379,81 @@ def test_phase0h_audit_validator_rejects_truncated_or_missing_counts(tmp_path):
     assert result.returncode != 0
     assert 'recent_rows_truncated=True' in result.stderr
     assert 'trusted_pair_count=None' in result.stderr
+
+
+def test_workflow_has_read_only_appearance_team_production_audit_operation():
+    text = WORKFLOW.read_text(encoding='utf-8').replace('\r\n', '\n')
+
+    assert 'appearance_team_audit' in text
+    assert 'RUN_APPEARANCE_TEAM_PRODUCTION_AUDIT' in text
+    assert 'python scripts/run_appearance_team_coverage_audit.py \\' in text
+    assert '--new-row-since "$APPEARANCE_TEAM_SINCE"' in text
+    assert '--row-limit "$APPEARANCE_TEAM_ROW_LIMIT"' in text
+    assert '--output "$audit_json"' in text
+    assert 'appearance_team_production_audit_v1' in text
+    assert 'appearance_team_coverage_v1' in text
+    assert "expected_exit = {'PASS': 0, 'INCONCLUSIVE': 1, 'FAIL': 2}" in text
+    assert "payload.get('mode') != 'read_only'" in text
+    assert "payload.get('database_writes_performed') is not False" in text
+    assert "migration.get('expected_head') != 'a4f1c7e9b3d2'" in text
+    assert "new_rows.get('since_utc')" in text
+    assert "invalid_states.get('total')" in text
+    assert "non_resolved.get('row_limit')" in text
+    assert 'No backfill or reader migration was performed.' in text
+    assert 'appearance-team-production-audit-${{ github.run_id }}' in text
+    assert 'exit "$audit_exit_code"' in text
+    assert "if: ${{ inputs.operation == 'appearance_team_audit' }}" in text
+    assert (
+        "if: ${{ always() && inputs.operation == 'appearance_team_audit' }}"
+        in text
+    )
+
+
+def test_appearance_team_audit_validator_accepts_consistent_read_only_counts(
+    tmp_path,
+):
+    result = _run_appearance_team_audit_validator(
+        tmp_path,
+        _appearance_team_audit_payload(),
+    )
+
+    assert result.returncode == 0, result.stderr
+
+
+def test_appearance_team_audit_validator_rejects_failed_or_write_claim(
+    tmp_path,
+):
+    result = _run_appearance_team_audit_validator(
+        tmp_path,
+        _appearance_team_audit_payload(
+            status='failed',
+            result='FAIL',
+            database_writes_performed=True,
+            error_type='RuntimeError',
+        ),
+        exit_code=2,
+    )
+
+    assert result.returncode != 0
+    assert 'database_writes_performed=True' in result.stderr
+
+
+def test_appearance_team_audit_validator_rejects_exit_mismatch_and_unbounded_rows(
+    tmp_path,
+):
+    payload = _appearance_team_audit_payload(result='INCONCLUSIVE')
+    payload['non_resolved'] = {
+        **payload['non_resolved'],
+        'row_limit': 1,
+        'returned': 2,
+        'rows': [{'id': 1}, {'id': 2}],
+    }
+    result = _run_appearance_team_audit_validator(
+        tmp_path,
+        payload,
+        exit_code=0,
+    )
+
+    assert result.returncode != 0
+    assert 'audit_exit_code=0; expected=1' in result.stderr
+    assert 'non_resolved.rows exceeds row_limit' in result.stderr

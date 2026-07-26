@@ -11,8 +11,9 @@ on:
           - migrate
           - ledger_backfill
           - phase0h_snapshot_audit
+          - appearance_team_audit
       confirmation:
-        description: Type RUN_PRODUCTION_MAINTENANCE, or RUN_PHASE0H_PRODUCTION_AUDIT for phase0h_snapshot_audit
+        description: Type the operation-specific production confirmation phrase
         required: true
         type: string
       audit_window:
@@ -24,6 +25,16 @@ on:
         description: Phase 0H operator audit recent row limit; web route remains request-safe
         required: true
         default: '256'
+        type: string
+      appearance_team_since:
+        description: Foundation 1 production cutover timestamp (ISO-8601 with timezone)
+        required: false
+        default: ''
+        type: string
+      appearance_team_row_limit:
+        description: Maximum non-resolved appearance rows in the private audit artifact
+        required: true
+        default: '50'
         type: string
       season:
         description: Regular season year for ledger backfill
@@ -86,6 +97,8 @@ jobs:
           expected_confirmation='RUN_PRODUCTION_MAINTENANCE'
           if [ "$OPERATION" = 'phase0h_snapshot_audit' ]; then
             expected_confirmation='RUN_PHASE0H_PRODUCTION_AUDIT'
+          elif [ "$OPERATION" = 'appearance_team_audit' ]; then
+            expected_confirmation='RUN_APPEARANCE_TEAM_PRODUCTION_AUDIT'
           fi
           if [ "$CONFIRMATION" != "$expected_confirmation" ]; then
             echo "::error::Confirmation must be exactly $expected_confirmation for operation=$OPERATION."
@@ -144,6 +157,45 @@ jobs:
             exit 1
           fi
           echo "Phase 0H audit inputs validated."
+
+      - name: Validate Foundation 1 appearance-team audit inputs
+        if: ${{ inputs.operation == 'appearance_team_audit' }}
+        env:
+          APPEARANCE_TEAM_SINCE: ${{ inputs.appearance_team_since }}
+          APPEARANCE_TEAM_ROW_LIMIT: ${{ inputs.appearance_team_row_limit }}
+        run: |
+          set -euo pipefail
+          python - "$APPEARANCE_TEAM_SINCE" "$APPEARANCE_TEAM_ROW_LIMIT" <<'PY'
+          from datetime import datetime
+          import sys
+
+          cutover = sys.argv[1].strip()
+          row_limit = sys.argv[2].strip()
+          if not cutover:
+              raise SystemExit(
+                  'appearance_team_since is required for appearance_team_audit.'
+              )
+          candidate = cutover[:-1] + '+00:00' if cutover.endswith('Z') else cutover
+          try:
+              parsed = datetime.fromisoformat(candidate)
+          except ValueError:
+              raise SystemExit(
+                  'appearance_team_since must be a valid ISO-8601 timestamp.'
+              )
+          if parsed.tzinfo is None:
+              raise SystemExit(
+                  'appearance_team_since must include an explicit timezone.'
+              )
+          if not row_limit.isdigit():
+              raise SystemExit(
+                  'appearance_team_row_limit must contain only digits.'
+              )
+          if int(row_limit) < 1 or int(row_limit) > 100:
+              raise SystemExit(
+                  'appearance_team_row_limit must be between 1 and 100.'
+              )
+          PY
+          echo "Foundation 1 appearance-team audit inputs validated."
 
       - name: Run production migration
         if: ${{ inputs.operation == 'migrate' }}
@@ -429,5 +481,244 @@ jobs:
         with:
           name: phase0h-snapshot-audit-${{ github.run_id }}
           path: ${{ runner.temp }}/phase0h-snapshot-audit/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Run Foundation 1 appearance-team production audit
+        if: ${{ inputs.operation == 'appearance_team_audit' }}
+        working-directory: backend
+        env:
+          AUDIT_OUTPUT_DIR: ${{ runner.temp }}/appearance-team-production-audit
+          APPEARANCE_TEAM_SINCE: ${{ inputs.appearance_team_since }}
+          APPEARANCE_TEAM_ROW_LIMIT: ${{ inputs.appearance_team_row_limit }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$AUDIT_OUTPUT_DIR"
+          audit_json="$AUDIT_OUTPUT_DIR/appearance-team-production-audit.json"
+          audit_stdout="$RUNNER_TEMP/appearance-team-production-audit.stdout.log"
+          audit_stderr="$RUNNER_TEMP/appearance-team-production-audit.stderr.log"
+
+          echo "=== Foundation 1 appearance-team production audit starting ==="
+          set +e
+          python scripts/run_appearance_team_coverage_audit.py \
+            --new-row-since "$APPEARANCE_TEAM_SINCE" \
+            --row-limit "$APPEARANCE_TEAM_ROW_LIMIT" \
+            --compact \
+            --output "$audit_json" \
+            > "$audit_stdout" \
+            2> "$audit_stderr"
+          audit_exit_code=$?
+          set -e
+
+          python - "$audit_json" "$audit_exit_code" "$GITHUB_STEP_SUMMARY" <<'PY'
+          import json
+          from pathlib import Path
+          import sys
+
+          audit_path = Path(sys.argv[1])
+          audit_exit_code = int(sys.argv[2])
+          summary_path = Path(sys.argv[3])
+
+          try:
+              payload = json.loads(audit_path.read_text(encoding='utf-8'))
+          except (OSError, json.JSONDecodeError) as exc:
+              raise SystemExit(
+                  'Appearance-team production audit did not produce a valid '
+                  f'JSON artifact: {type(exc).__name__}'
+              )
+
+          expected_exit = {'PASS': 0, 'INCONCLUSIVE': 1, 'FAIL': 2}
+          result = payload.get('result')
+          errors = []
+          if payload.get('capability') != 'appearance_team_production_audit_v1':
+              errors.append(f"capability={payload.get('capability')!r}")
+          if payload.get('coverage_capability') != 'appearance_team_coverage_v1':
+              errors.append(
+                  f"coverage_capability={payload.get('coverage_capability')!r}"
+              )
+          if payload.get('status') not in ('complete', 'failed'):
+              errors.append(f"status={payload.get('status')!r}")
+          if result not in expected_exit:
+              errors.append(f'result={result!r}')
+          elif audit_exit_code != expected_exit[result]:
+              errors.append(
+                  f'audit_exit_code={audit_exit_code}; expected={expected_exit[result]}'
+              )
+          if payload.get('mode') != 'read_only':
+              errors.append(f"mode={payload.get('mode')!r}")
+          if payload.get('database_writes_performed') is not False:
+              errors.append(
+                  'database_writes_performed='
+                  f"{payload.get('database_writes_performed')!r}"
+              )
+
+          migration = payload.get('migration') or {}
+          coverage = payload.get('coverage') or {}
+          coverage_contract = payload.get('coverage_contract') or {}
+          new_rows = payload.get('new_row_attribution') or {}
+          invalid_states = payload.get('invalid_states') or {}
+          non_resolved = payload.get('non_resolved') or {}
+          decision_reasons = payload.get('decision_reasons')
+
+          if not isinstance(decision_reasons, list) or not decision_reasons:
+              errors.append(f'decision_reasons={decision_reasons!r}')
+          if payload.get('status') == 'failed':
+              if result != 'FAIL':
+                  errors.append('failed status must report result=FAIL')
+              if not isinstance(payload.get('error_type'), str):
+                  errors.append(f"error_type={payload.get('error_type')!r}")
+          else:
+              if migration.get('expected_head') != 'a4f1c7e9b3d2':
+                  errors.append(
+                      f"migration.expected_head={migration.get('expected_head')!r}"
+                  )
+              if not isinstance(migration.get('current_heads'), list):
+                  errors.append(
+                      f"migration.current_heads={migration.get('current_heads')!r}"
+                  )
+              if not isinstance(migration.get('head_matches'), bool):
+                  errors.append(
+                      f"migration.head_matches={migration.get('head_matches')!r}"
+                  )
+
+              # A migration-head mismatch is a complete, valid FAIL artifact even
+              # when the new columns cannot safely be queried.
+              if migration.get('head_matches') is True:
+                  count_fields = (
+                      'total_game_logs',
+                      'resolved',
+                      'unresolved',
+                      'conflict',
+                      'null_legacy',
+                      'current_team_mismatch',
+                  )
+                  for field in count_fields:
+                      value = coverage.get(field)
+                      if (
+                          not isinstance(value, int)
+                          or isinstance(value, bool)
+                          or value < 0
+                      ):
+                          errors.append(f'coverage.{field}={value!r}')
+                  if not isinstance(coverage.get('by_source'), dict):
+                      errors.append(
+                          f"coverage.by_source={coverage.get('by_source')!r}"
+                      )
+                  if not isinstance(coverage.get('by_season'), dict):
+                      errors.append(
+                          f"coverage.by_season={coverage.get('by_season')!r}"
+                      )
+                  if not isinstance(coverage_contract.get('totals_match'), bool):
+                      errors.append(
+                          'coverage_contract.totals_match='
+                          f"{coverage_contract.get('totals_match')!r}"
+                      )
+                  for field in (
+                      'total',
+                      'resolved',
+                      'unresolved',
+                      'conflict',
+                      'null_legacy',
+                      'status_recorded',
+                  ):
+                      value = new_rows.get(field)
+                      if (
+                          not isinstance(value, int)
+                          or isinstance(value, bool)
+                          or value < 0
+                      ):
+                          errors.append(f'new_row_attribution.{field}={value!r}')
+                  if not isinstance(new_rows.get('since_utc'), str):
+                      errors.append(
+                          f"new_row_attribution.since_utc={new_rows.get('since_utc')!r}"
+                      )
+                  if (
+                      not isinstance(invalid_states.get('total'), int)
+                      or isinstance(invalid_states.get('total'), bool)
+                      or invalid_states.get('total', -1) < 0
+                  ):
+                      errors.append(
+                          f"invalid_states.total={invalid_states.get('total')!r}"
+                      )
+                  if not isinstance(invalid_states.get('counts'), dict):
+                      errors.append(
+                          f"invalid_states.counts={invalid_states.get('counts')!r}"
+                      )
+                  for field in ('total', 'row_limit', 'returned'):
+                      value = non_resolved.get(field)
+                      if (
+                          not isinstance(value, int)
+                          or isinstance(value, bool)
+                          or value < 0
+                      ):
+                          errors.append(f'non_resolved.{field}={value!r}')
+                  if not isinstance(non_resolved.get('truncated'), bool):
+                      errors.append(
+                          f"non_resolved.truncated={non_resolved.get('truncated')!r}"
+                      )
+                  if not isinstance(non_resolved.get('rows'), list):
+                      errors.append(
+                          f"non_resolved.rows={non_resolved.get('rows')!r}"
+                      )
+                  elif len(non_resolved['rows']) > int(
+                      non_resolved.get('row_limit') or 0
+                  ):
+                      errors.append('non_resolved.rows exceeds row_limit')
+
+          lines = [
+              '## Foundation 1 Appearance-Team Production Audit',
+              '',
+              f'- Exit code: `{audit_exit_code}`',
+              f'- Result: `{result}`',
+              f"- Capability: `{payload.get('capability')}`",
+              f"- Mode: `{payload.get('mode')}`",
+              f"- Migration head(s): `{migration.get('current_heads')}`",
+              f"- Migration head matches: `{migration.get('head_matches')}`",
+              f"- Total game logs: `{coverage.get('total_game_logs')}`",
+              f"- Resolved: `{coverage.get('resolved')}`",
+              f"- Unresolved: `{coverage.get('unresolved')}`",
+              f"- Conflict: `{coverage.get('conflict')}`",
+              f"- Legacy NULL: `{coverage.get('null_legacy')}`",
+              f"- Coverage totals match: `{coverage_contract.get('totals_match')}`",
+              f"- New-row cutover: `{new_rows.get('since_utc')}`",
+              f"- New rows: `{new_rows.get('total')}`",
+              f"- New rows resolved: `{new_rows.get('resolved')}`",
+              f"- New rows unresolved: `{new_rows.get('unresolved')}`",
+              f"- New rows conflict: `{new_rows.get('conflict')}`",
+              f"- New rows missing status: `{new_rows.get('null_legacy')}`",
+              f"- Invalid stored states: `{invalid_states.get('total')}`",
+              f"- Non-resolved rows: `{non_resolved.get('total')}`",
+              f"- Non-resolved rows returned: `{non_resolved.get('returned')}`",
+              f"- Non-resolved rows truncated: `{non_resolved.get('truncated')}`",
+              f'- Decision reasons: `{decision_reasons}`',
+              '- Database writes performed: `false`',
+          ]
+          if errors:
+              lines.extend(('', '### Validation Errors'))
+              lines.extend(f'- `{error}`' for error in errors)
+          else:
+              lines.extend((
+                  '',
+                  'Read-only production coverage evidence captured. '
+                  'No backfill or reader migration was performed.',
+              ))
+          summary_path.write_text('\n'.join(lines) + '\n', encoding='utf-8')
+
+          if errors:
+              raise SystemExit(
+                  'Appearance-team production audit artifact failed contract '
+                  f'validation: {errors}'
+              )
+          PY
+
+          echo "=== Foundation 1 appearance-team production audit result: exit $audit_exit_code ==="
+          exit "$audit_exit_code"
+
+      - name: Upload Foundation 1 appearance-team audit artifact
+        if: ${{ always() && inputs.operation == 'appearance_team_audit' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: appearance-team-production-audit-${{ github.run_id }}
+          path: ${{ runner.temp }}/appearance-team-production-audit/
           if-no-files-found: error
           retention-days: 14
