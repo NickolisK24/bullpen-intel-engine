@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: dry_run / apply (backfill) or residual_audit (read-only classify)
+        description: backfill dry_run/apply, residual_audit, or schedule_repair_dry_run/apply
         required: true
         default: dry_run
         type: choice
@@ -18,8 +18,15 @@ on:
           - dry_run
           - apply
           - residual_audit
+          - schedule_repair_dry_run
+          - schedule_repair_apply
       confirmation:
-        description: Required for apply; must be exactly RUN_2026_APPEARANCE_TEAM_BACKFILL
+        description: apply=RUN_2026_APPEARANCE_TEAM_BACKFILL; schedule_repair_apply=RUN_2026_OPENING_WEEK_SCHEDULE_REPAIR
+        required: false
+        default: ''
+        type: string
+      repair_expected_fingerprint:
+        description: schedule_repair_apply only — the approved schedule-repair dry-run fingerprint
         required: false
         default: ''
         type: string
@@ -100,6 +107,7 @@ jobs:
           MODE: ${{ inputs.mode }}
           CONFIRMATION: ${{ inputs.confirmation }}
           EXPECTED_FINGERPRINT: ${{ inputs.expected_fingerprint }}
+          REPAIR_EXPECTED_FINGERPRINT: ${{ inputs.repair_expected_fingerprint }}
           START_DATE: ${{ inputs.start_date }}
           END_DATE: ${{ inputs.end_date }}
           BATCH_SIZE: ${{ inputs.batch_size }}
@@ -115,6 +123,14 @@ jobs:
           fi
           if [ "$MODE" = 'apply' ] && [ -z "${EXPECTED_FINGERPRINT:-}" ]; then
             echo "::error::apply mode requires an approved dry-run fingerprint (expected_fingerprint)."
+            exit 1
+          fi
+          if [ "$MODE" = 'schedule_repair_apply' ] && [ "$CONFIRMATION" != 'RUN_2026_OPENING_WEEK_SCHEDULE_REPAIR' ]; then
+            echo "::error::schedule_repair_apply requires confirmation=RUN_2026_OPENING_WEEK_SCHEDULE_REPAIR."
+            exit 1
+          fi
+          if [ "$MODE" = 'schedule_repair_apply' ] && [ -z "${REPAIR_EXPECTED_FINGERPRINT:-}" ]; then
+            echo "::error::schedule_repair_apply requires an approved dry-run fingerprint (repair_expected_fingerprint)."
             exit 1
           fi
           if [ -z "${DATABASE_URL:-}" ] || [ -z "${SECRET_KEY:-}" ]; then
@@ -154,7 +170,7 @@ jobs:
           echo "Backfill inputs validated for mode=$MODE."
 
       - name: Run 2026 appearance-team backfill
-        if: ${{ inputs.mode != 'residual_audit' }}
+        if: ${{ inputs.mode == 'dry_run' || inputs.mode == 'apply' }}
         working-directory: backend
         env:
           MODE: ${{ inputs.mode }}
@@ -247,11 +263,103 @@ jobs:
           exit "$run_exit_code"
 
       - name: Upload backfill report artifact
-        if: ${{ always() && inputs.mode != 'residual_audit' }}
+        if: ${{ always() && (inputs.mode == 'dry_run' || inputs.mode == 'apply') }}
         uses: actions/upload-artifact@v4
         with:
           name: appearance-team-backfill-2026-${{ github.run_id }}
           path: ${{ runner.temp }}/appearance-team-backfill-2026/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Run 2026 opening-week schedule-authority repair
+        if: ${{ inputs.mode == 'schedule_repair_dry_run' || inputs.mode == 'schedule_repair_apply' }}
+        working-directory: backend
+        env:
+          MODE: ${{ inputs.mode }}
+          CONFIRMATION: ${{ inputs.confirmation }}
+          REPAIR_EXPECTED_FINGERPRINT: ${{ inputs.repair_expected_fingerprint }}
+          REPAIR_OUTPUT_DIR: ${{ runner.temp }}/opening-week-schedule-repair-2026
+        run: |
+          set -euo pipefail
+          mkdir -p "$REPAIR_OUTPUT_DIR"
+          report_json="$REPAIR_OUTPUT_DIR/opening-week-schedule-repair-2026.json"
+
+          repair_command=(
+            python scripts/run_2026_opening_week_schedule_repair.py
+            --compact
+            --output "$report_json"
+          )
+          if [ "$MODE" = 'schedule_repair_apply' ]; then
+            repair_command+=(--apply --confirm "$CONFIRMATION" --expected-fingerprint "$REPAIR_EXPECTED_FINGERPRINT")
+          fi
+
+          echo "=== 2026 opening-week schedule-authority repair starting (mode=$MODE) ==="
+          set +e
+          "${repair_command[@]}"
+          repair_exit_code=$?
+          set -e
+
+          python - "$report_json" "$repair_exit_code" "$GITHUB_STEP_SUMMARY" <<'PY'
+          import json
+          from pathlib import Path
+          import sys
+
+          report_path = Path(sys.argv[1])
+          repair_exit_code = int(sys.argv[2])
+          summary_path = Path(sys.argv[3])
+
+          try:
+              payload = json.loads(report_path.read_text(encoding='utf-8'))
+          except (OSError, json.JSONDecodeError) as exc:
+              summary_path.write_text(
+                  '## 2026 Opening-Week Schedule-Authority Repair\n\n'
+                  f'- Exit code: `{repair_exit_code}`\n'
+                  f'- Result: invalid JSON artifact (`{type(exc).__name__}`)\n',
+                  encoding='utf-8',
+              )
+              raise SystemExit('Schedule repair did not produce a valid JSON artifact.')
+
+          pre = payload.get('production_preconditions') or {}
+          planned = payload.get('planned_schedule_rows') or {}
+          official = payload.get('official_evidence') or {}
+          existing = payload.get('existing_authority') or {}
+          lines = [
+              '## 2026 Opening-Week Schedule-Authority Repair',
+              '',
+              f"- Exit code: `{repair_exit_code}`",
+              f"- Result: `{payload.get('result')}`",
+              f"- Mode: `{payload.get('mode')}`",
+              f"- Target games: `{(payload.get('target_games') or {}).get('count')}`",
+              f"- Residual rows: `{pre.get('residual_rows')}`",
+              f"- Residual games: `{pre.get('residual_games')}`",
+              f"- Games missing: `{existing.get('games_missing')}`",
+              f"- Games already satisfied: `{existing.get('games_already_satisfied')}`",
+              f"- Games conflicting: `{existing.get('games_conflicting')}`",
+              f"- Schedule rows already present: `{existing.get('schedule_rows_already_present')}`",
+              f"- Final games (official): `{official.get('final_games')}`",
+              f"- API calls: `{official.get('api_calls')}`",
+              f"- Planned schedule rows: `{planned.get('row_count')}` over `{planned.get('game_count')}` games",
+              f"- Games skipped (already satisfied): `{(payload.get('apply') or {}).get('games_skipped_already_satisfied')}`",
+              f"- Games committed: `{payload.get('games_committed')}`",
+              f"- Schedule rows written: `{payload.get('schedule_rows_written')}`",
+              f"- Failed game count: `{payload.get('failed_game_count')}`",
+              f"- Fingerprint: `{payload.get('fingerprint')}`",
+              f"- Decision reasons: `{payload.get('decision_reasons')}`",
+              f"- Next step: `{payload.get('next_step')}`",
+              f"- Database writes performed: `{payload.get('database_writes_performed')}`",
+          ]
+          summary_path.write_text('\n'.join(lines) + '\n', encoding='utf-8')
+          PY
+
+          echo "=== 2026 opening-week schedule repair result: exit $repair_exit_code ==="
+          exit "$repair_exit_code"
+
+      - name: Upload schedule-repair artifact
+        if: ${{ always() && (inputs.mode == 'schedule_repair_dry_run' || inputs.mode == 'schedule_repair_apply') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: opening-week-schedule-repair-2026-${{ github.run_id }}
+          path: ${{ runner.temp }}/opening-week-schedule-repair-2026/
           if-no-files-found: error
           retention-days: 14
 
