@@ -43,6 +43,7 @@ from typing import Dict, List, Optional
 from models.pitcher import Pitcher
 from services import appearance_team_authority as ata
 from services import official_pitching_line_completeness_2026 as completeness
+from services import sync as sync_service
 from services.mlb_api import mlb_client
 from utils.db import db
 
@@ -100,6 +101,55 @@ BLOCK_OFFICIAL_STAT_ABSENT = 'official_stat_evidence_absent'
 BLOCK_OFFICIAL_TEAM_ABSENT = 'official_appearance_team_absent'
 BLOCK_DEPENDENCY_UNRESOLVED = 'identity_dependency_unresolved'
 BLOCK_DEPENDENCY_BLOCKED = 'identity_dependency_blocked'
+BLOCK_CORRECTION_SOURCE_INCOMPLETE = 'official_correction_source_incomplete'
+BLOCK_RAW_SOURCE_UNAVAILABLE = 'official_raw_pitching_line_unavailable'
+BLOCK_OPPONENT_EVIDENCE_ABSENT = 'official_opponent_evidence_absent'
+BLOCK_UPDATE_WOULD_NULL_LOCAL_VALUE = 'update_would_replace_local_value_with_null'
+
+# ── Official GameLog value authority (production ingestion contract) ──────────
+# Official pitching statistics are parsed by the SAME helpers daily ingestion uses, so the
+# planner cannot become a second interpretation of an official line. These are reused
+# unchanged rather than extracted, because extraction would move code on the live
+# ingestion path for no behavioural gain.
+CORRECTION_SOURCE_CONTRACT = 'services.sync._game_log_values_from_stats'
+REQUIRED_CORRECTION_STAT_KEYS = sync_service._REQUIRED_CORRECTION_STAT_KEYS
+OPTIONAL_BOOL_STAT_FIELDS = sync_service._OPTIONAL_BOOL_STAT_FIELDS
+OPTIONAL_INT_STAT_FIELDS = sync_service._OPTIONAL_INT_STAT_FIELDS
+
+# Identity and authority columns a repair may never move. game_date is excluded from the
+# correctable set even though ingestion may correct it: a defect line is keyed by its game,
+# so moving the date would silently retarget the row.
+UPDATE_FORBIDDEN_FIELDS = frozenset({
+    'pitcher_id', 'mlb_game_pk', 'game_date',
+    'appearance_team_id', 'appearance_team_source', 'appearance_team_status',
+    'appearance_team_reason',
+})
+
+# Raw official stat keys retained per defect line, before the completeness diagnostic
+# normalizes an official line to the seven mandatory comparison metrics.
+RETAINED_OFFICIAL_STAT_KEYS = (
+    'inningsPitched', 'numberOfPitches', 'strikes', 'hits', 'runs', 'earnedRuns',
+    'baseOnBalls', 'strikeOuts', 'homeRuns', 'battersFaced', 'balls', 'gamesFinished',
+    'inheritedRunners', 'inheritedRunnersScored', 'saveOpportunities', 'holds',
+    'blownSaves', 'wins', 'losses', 'saves',
+)
+
+# ── Correction metadata policy (DESCRIPTIVE — never executed here) ────────────
+# A future apply step must follow the governed correction-metadata contract already
+# implemented by ``sync._upsert_game_log_from_authoritative_values``. It is declared here so
+# review can approve it with the manifest; the planner performs none of it.
+CORRECTION_METADATA_POLICY = {
+    'correction_source': 'official_pitching_line_repair',
+    'stat_correction_count': 'incremented once per updated GameLog, never per changed field',
+    'last_stat_correction_at': 'set at apply time; excluded from the manifest fingerprint',
+    'last_stat_correction_source': 'recorded as the correction source identifier above',
+    'last_stat_correction_sync_run_id': 'supplied by the apply operation, not by the plan',
+    'dependent_evidence_invalidation': (
+        'workload, appearance-context, and inherited-traffic evidence are marked for '
+        'recomputation through the existing governed notification path '
+        '(sync._notify_workload_evidence_game_log_correction)'),
+    'executed_by_planner': False,
+}
 BLOCK_BASELINE_DRIFT = 'accepted_baseline_drift'
 BLOCK_SUBSET_SCOPE = 'diagnostic_subset_scope'
 
@@ -136,6 +186,27 @@ PLANNED_STAT_FIELDS = tuple(
 STAT_REASON_BY_FIELD = {
     attr: reason for attr, _key, reason in completeness.STAT_COMPARISONS
 }
+# Reason code for a workload/decision field the mandatory metric comparison never covers.
+WORKLOAD_FIELD_REASON = 'official_workload_field_mismatch'
+
+# The manifest fingerprint accepted by the first production planner run. That manifest
+# carried only the seven mandatory season metrics plus role and identity, so applying it
+# would have written permanently incomplete GameLog rows. It is pinned here so the enriched
+# manifest can prove it supersedes it.
+PRIOR_PRODUCTION_MANIFEST_FINGERPRINT = (
+    'dbbc063a0711e57b0dc2d858b7d1d291c568c4990ecff7c9ebf3d1b138cbb2d6')
+
+# Every field a safe insert must carry. Derived from the governed ingestion contract, not
+# from the model's nullable columns: these are the values an official line always supplies.
+REQUIRED_INSERT_FIELDS = (
+    'pitcher_id', 'mlb_game_pk', 'game_date', 'game_type',
+    'opponent', 'opponent_abbreviation', 'games_started',
+    'innings_pitched', 'innings_pitched_outs', 'strikes',
+    'hits_allowed', 'runs_allowed', 'earned_runs', 'walks', 'strikeouts',
+    'home_runs_allowed',
+    'appearance_team_id', 'appearance_team_source', 'appearance_team_status',
+    'appearance_team_reason',
+)
 
 # Mutable Pitcher fields a historical appearance can never populate. Listed on every identity
 # action so the omission is explicit evidence, not an oversight.
@@ -269,18 +340,31 @@ def _identity_action(mlb_person_id, evidence, dependent_action_ids) -> dict:
 
 
 # ── Line-level planning ───────────────────────────────────────────────────────
-def _official_source_evidence(line) -> dict:
-    """The normalized official evidence a line-level action is derived from."""
+def _official_source_evidence(line, *, raw_stats=None, sides=None) -> dict:
+    """The official evidence a line-level action is derived from.
+
+    Carries BOTH the normalized mandatory comparison metrics and the retained raw official
+    pitching-stat object, plus the official and opposing team sides, so the fingerprint
+    covers every value the action proposes.
+    """
+    opposing = (sides or {}).get('opposing_team') or {}
+    official_team = (sides or {}).get('official_team') or {}
     return {
         'mlb_game_pk': int(line.game_pk),
         'game_date': completeness._iso_or_none(line.game_date),
         'official_side': line.side,
         'official_team_id': int(line.team_id),
         'official_team_name': line.team_name,
+        'official_team_abbreviation': official_team.get('team_abbreviation'),
+        'opposing_team_id': opposing.get('team_id'),
+        'opposing_team_name': opposing.get('team_name'),
+        'opposing_team_abbreviation': opposing.get('team_abbreviation'),
         'official_mlb_person_id': int(line.pitcher_id),
         'official_name': line.pitcher_name,
         'official_role': line.role,
         'official_stats': dict(line.stats),
+        'official_raw_stats': _retained_raw_stats(raw_stats),
+        'official_raw_stats_available': raw_stats is not None,
     }
 
 
@@ -292,10 +376,15 @@ def _update_action_id(log_id, line) -> str:
     return f'gamelog:update:{int(log_id)}:{int(line.game_pk)}:{int(line.pitcher_id)}'
 
 
-def _proposed_insert_fields(line, local_pitcher_id):
-    """Derive every proposed GameLog field from official evidence. Nothing is invented."""
+def _proposed_insert_fields(line, local_pitcher_id, *, raw_stats, sides):
+    """Every proposed GameLog field, parsed by the production ingestion contract.
+
+    Nothing is invented and no required value is defaulted: an official line whose required
+    correction keys are incomplete blocks the action instead of filling zeros. Optional
+    fields appear only when their official source key is genuinely present, so an official
+    zero stays distinct from official absence.
+    """
     blocking: List[str] = []
-    stats = line.stats
     proposed: Dict[str, object] = {
         'pitcher_id': local_pitcher_id,
         'mlb_game_pk': int(line.game_pk),
@@ -307,29 +396,53 @@ def _proposed_insert_fields(line, local_pitcher_id):
         'appearance_team_reason': ata.REASON_RESOLVED_BOXSCORE,
         'games_started': 1 if line.role == ROLE_STARTER else 0,
     }
-    for attr, key in PLANNED_STAT_FIELDS:
-        value = stats.get(key)
-        if value is None:
-            # Absent official evidence is never read as zero.
-            blocking.append(BLOCK_OFFICIAL_STAT_ABSENT)
+    if raw_stats is None:
+        blocking.append(BLOCK_RAW_SOURCE_UNAVAILABLE)
+        return proposed, sorted(set(blocking))
+
+    safe, _reason, _missing = sync_service._correction_source_state(raw_stats)
+    if not safe:
+        # The governed authoritative-source contract is not satisfied. Nothing is proposed
+        # from an incomplete official line.
+        blocking.append(BLOCK_CORRECTION_SOURCE_INCOMPLETE)
+        return proposed, sorted(set(blocking))
+
+    values = _official_game_log_values(
+        raw_stats, line=line, local_pitcher_id=local_pitcher_id, sides=sides)
+    present_optional = _present_optional_fields(raw_stats)
+    optional_fields = {field for _key, field in OPTIONAL_BOOL_STAT_FIELDS}
+    optional_fields |= {field for field, _keys in OPTIONAL_INT_STAT_FIELDS}
+
+    for field, value in values.items():
+        if field in ('pitcher_id', 'mlb_game_pk', 'game_date', 'game_type', 'games_started'):
+            continue                       # already set from governed line authority above
+        if field in optional_fields and field not in present_optional:
+            continue                       # official evidence absent: never defaulted
+        if field == 'pitches_thrown' and value is None:
+            # numberOfPitches is genuinely absent from some official completed-game lines.
+            # It stays NULL and is reported through workload-field coverage.
             continue
-        proposed[attr] = int(value)
-    outs = stats.get('outs')
-    if outs is not None:
-        # innings_pitched is a stored redundant representation of the integer outs, held
-        # equal by a database CHECK constraint. It is derived, never independently sourced.
-        proposed['innings_pitched'] = int(outs) / 3.0
+        proposed[field] = value
+
+    opposing = (sides or {}).get('opposing_team') or {}
+    if not opposing.get('team_name'):
+        blocking.append(BLOCK_OPPONENT_EVIDENCE_ABSENT)
     if line.game_date is None:
         blocking.append(BLOCK_OFFICIAL_STAT_ABSENT)
+    for attr, key in PLANNED_STAT_FIELDS:
+        if line.stats.get(key) is None:
+            blocking.append(BLOCK_OFFICIAL_STAT_ABSENT)
     return proposed, sorted(set(blocking))
 
 
-def _insert_action(line, *, local_pitcher_id, identity_action_id) -> dict:
-    proposed, blocking = _proposed_insert_fields(line, local_pitcher_id)
+def _insert_action(line, *, local_pitcher_id, identity_action_id, raw_stats=None,
+                   sides=None) -> dict:
+    proposed, blocking = _proposed_insert_fields(
+        line, local_pitcher_id, raw_stats=raw_stats, sides=sides)
     dependencies = [identity_action_id] if identity_action_id else []
     if local_pitcher_id is None and not identity_action_id:
         blocking = sorted(set(blocking) | {BLOCK_DEPENDENCY_UNRESOLVED})
-    source_evidence = _official_source_evidence(line)
+    source_evidence = _official_source_evidence(line, raw_stats=raw_stats, sides=sides)
     return {
         'action_id': _insert_action_id(line),
         'action_type': ACTION_GAME_LOG_INSERT,
@@ -355,7 +468,7 @@ def _insert_action(line, *, local_pitcher_id, identity_action_id) -> dict:
     }
 
 
-def _update_action(line, local, detail) -> dict:
+def _update_action(line, local, detail, *, raw_stats=None, sides=None) -> dict:
     """One normalized update per defective stored row, however many fields differ."""
     log = local.log
     blocking: List[str] = []
@@ -392,8 +505,40 @@ def _update_action(line, local, detail) -> dict:
         changed_fields.append('innings_pitched')
         field_reason_codes['innings_pitched'] = completeness.REASON_OUTS_MISMATCH
 
+    # ── Workload and decision fields the ingestion contract also governs ──────
+    # The mandatory season metrics alone leave a repaired row incomplete. Every field
+    # ``sync._authoritative_correction_fields`` permits is compared here, so one action
+    # carries both the mandatory correction and the workload correction for the same row.
+    null_guarded_fields: List[str] = []
+    if raw_stats is None:
+        blocking.append(BLOCK_RAW_SOURCE_UNAVAILABLE)
+    else:
+        safe, _reason, _missing = sync_service._correction_source_state(raw_stats)
+        if not safe:
+            blocking.append(BLOCK_CORRECTION_SOURCE_INCOMPLETE)
+        else:
+            values = _official_game_log_values(
+                raw_stats, line=line, local_pitcher_id=local.pitcher_row_id, sides=sides)
+            correctable = sync_service._authoritative_correction_fields(
+                values, raw_stats, include_leverage_index=False)
+            for field in correctable:
+                if field in UPDATE_FORBIDDEN_FIELDS or field in proposed_values:
+                    continue
+                proposed_value = values.get(field)
+                current_value = getattr(log, field, None)
+                if current_value == proposed_value:
+                    continue
+                if proposed_value is None and current_value is not None:
+                    # A repair never erases a stored value with an absent official one.
+                    null_guarded_fields.append(field)
+                    continue
+                current_values[field] = current_value
+                proposed_values[field] = proposed_value
+                changed_fields.append(field)
+                field_reason_codes.setdefault(field, WORKLOAD_FIELD_REASON)
+
     changed_fields = sorted(set(changed_fields))
-    source_evidence = _official_source_evidence(line)
+    source_evidence = _official_source_evidence(line, raw_stats=raw_stats, sides=sides)
     comparison_evidence = {
         'local_game_log_id': int(log.id),
         'current_values': current_values,
@@ -401,6 +546,7 @@ def _update_action(line, local, detail) -> dict:
         'changed_fields': changed_fields,
         'reason_codes': sorted(set(detail['reason_codes'])),
         'official_source_evidence': source_evidence,
+        'null_guarded_fields': sorted(set(null_guarded_fields)),
     }
     return {
         'action_id': _update_action_id(log.id, line),
@@ -425,9 +571,100 @@ def _update_action(line, local, detail) -> dict:
         'official_source_evidence': source_evidence,
         'source_fingerprint': sha256_of(source_evidence),
         'comparison_fingerprint': sha256_of(comparison_evidence),
+        'null_guarded_fields': sorted(set(null_guarded_fields)),
         'safe_to_apply': not blocking and bool(changed_fields),
         'blocking_reasons': sorted(set(blocking)),
     }
+
+
+def _raw_official_evidence(boxscore, *, game_pk) -> tuple:
+    """Retain the RAW official pitching-stat object and both official team sides.
+
+    The completeness diagnostic normalizes an official line to the seven mandatory
+    comparison metrics; a complete GameLog repair needs everything else the official line
+    carries. The same governed extractor daily ingestion uses supplies the raw lines here,
+    so no second reading of the box score is introduced.
+
+    Returns ``(raw_by_key, sides_by_key)`` where ``raw_by_key`` maps
+    ``(game_pk, person_id, team_id)`` to the raw stats dict, and ``sides_by_key`` maps the
+    same key to that line's official side plus the OPPOSING side's team identity — so
+    opponent is derived from official game authority, never from a mutable player
+    assignment.
+    """
+    team_by_side = {}
+    for side_key in ('home', 'away'):
+        team = ((((boxscore or {}).get('teams') or {}).get(side_key) or {}).get('team')) or {}
+        team_by_side[side_key] = {
+            'team_id': completeness._pos_int(team.get('id')),
+            'team_name': team.get('name'),
+            'team_abbreviation': sync_service._team_abbreviation_from(team),
+        }
+
+    raw_by_key: Dict[tuple, dict] = {}
+    sides_by_key: Dict[tuple, dict] = {}
+    for raw in sync_service._extract_pitching_lines_from_boxscore(boxscore):
+        person_id = (completeness._pos_int(raw.get('person_id'))
+                     or completeness._pos_int(raw.get('player_id')))
+        team_id = completeness._pos_int(raw.get('team_id'))
+        side = raw.get('side')
+        if person_id is None or team_id is None or side not in ('home', 'away'):
+            continue
+        key = (int(game_pk), int(person_id), int(team_id))
+        raw_by_key[key] = raw.get('stats') or {}
+        opposing = team_by_side['away' if side == 'home' else 'home']
+        sides_by_key[key] = {
+            'official_side': side,
+            'official_team': team_by_side[side],
+            'opposing_team': opposing,
+        }
+    return raw_by_key, sides_by_key
+
+
+class _PitcherRef:
+    """Minimal stand-in supplying the only attribute the ingestion helper reads."""
+
+    __slots__ = ('id',)
+
+    def __init__(self, pitcher_id):
+        self.id = pitcher_id
+
+
+def _official_game_log_values(raw_stats, *, line, local_pitcher_id, sides):
+    """Every official GameLog value, parsed by the production ingestion contract."""
+    opposing = (sides or {}).get('opposing_team') or {}
+    return sync_service._game_log_values_from_stats(
+        stats=raw_stats,
+        pitcher=_PitcherRef(local_pitcher_id),
+        game_pk=int(line.game_pk),
+        game_date=line.game_date,
+        game_type=REGULAR_SEASON_GAME_TYPE,
+        opponent=opposing.get('team_name'),
+        opponent_abbreviation=opposing.get('team_abbreviation'),
+        games_started=1 if line.role == ROLE_STARTER else 0,
+        include_leverage_index=False,
+    )
+
+
+def _present_optional_fields(raw_stats) -> set:
+    """Optional model fields whose official source key is actually present.
+
+    Presence, not truthiness: this mirrors ``sync._authoritative_correction_fields`` exactly,
+    so an official zero is distinguished from official absence.
+    """
+    present = set()
+    for source_key, model_field in OPTIONAL_BOOL_STAT_FIELDS:
+        if source_key in (raw_stats or {}) and (raw_stats or {}).get(source_key) not in (None, ''):
+            present.add(model_field)
+    for model_field, source_keys in OPTIONAL_INT_STAT_FIELDS:
+        if sync_service._stat_key_present(raw_stats, source_keys):
+            present.add(model_field)
+    return present
+
+
+def _retained_raw_stats(raw_stats) -> dict:
+    """The retained raw official stat object: present keys only, absence preserved."""
+    stats = raw_stats or {}
+    return {key: stats[key] for key in RETAINED_OFFICIAL_STAT_KEYS if key in stats}
 
 
 def _propagate_dependency_safety(identity_actions, insert_actions) -> None:
@@ -566,6 +803,10 @@ def run_repair_plan(
                                          game_date=selected_games.get(pk))
         for pk in sorted(boxscores)
     }
+    # Raw official evidence retained BEFORE normalization, plus both official team sides.
+    raw_evidence: Dict[int, tuple] = {
+        pk: _raw_official_evidence(boxscores[pk], game_pk=pk) for pk in sorted(boxscores)
+    }
     all_official_ids = {
         pid for sides in sides_by_game.values() for side in sides for pid in side.identities
     }
@@ -605,6 +846,7 @@ def run_repair_plan(
 
     for pk in sorted(sides_by_game):
         sides = sides_by_game[pk]
+        raw_by_key, sides_by_key = raw_evidence.get(pk, ({}, {}))
         official_identities_in_game: set = set()
         for side in sides:
             official_identities_in_game |= side.identities
@@ -643,8 +885,11 @@ def run_repair_plan(
                     population.missing_lines_dependent_on_identity_creation += 1
                     observed_defect_line_keys.append(line_key)
                     identity_action_id = f'identity:create:{int(line.pitcher_id)}'
-                    action = _insert_action(line, local_pitcher_id=None,
-                                            identity_action_id=identity_action_id)
+                    action = _insert_action(
+                        line, local_pitcher_id=None,
+                        identity_action_id=identity_action_id,
+                        raw_stats=raw_by_key.get(line_key),
+                        sides=sides_by_key.get(line_key))
                     identity_dependents[line.pitcher_id].append(action['action_id'])
                     insert_actions.append(action)
                     continue
@@ -661,7 +906,9 @@ def run_repair_plan(
                     population.missing_lines_using_existing_identity += 1
                     observed_defect_line_keys.append(line_key)
                     insert_actions.append(_insert_action(
-                        line, local_pitcher_id=int(local_pitcher_id), identity_action_id=None))
+                        line, local_pitcher_id=int(local_pitcher_id), identity_action_id=None,
+                        raw_stats=raw_by_key.get(line_key),
+                        sides=sides_by_key.get(line_key)))
                     continue
 
                 observed_defect_line_keys.append(line_key)
@@ -691,7 +938,10 @@ def run_repair_plan(
                         'kind': 'local_row_targeted_twice',
                         'local_game_log_id': primary.log.id})
                 targeted_local_rows.add(primary.log.id)
-                update_actions.append(_update_action(line, primary, detail))
+                update_actions.append(_update_action(
+                    line, primary, detail,
+                    raw_stats=raw_by_key.get(line_key),
+                    sides=sides_by_key.get(line_key)))
 
         for local in local_by_game.get(pk, ()):
             if local.mlb_id is None:
@@ -740,7 +990,8 @@ def run_repair_plan(
         targeted_local_rows=targeted_local_rows,
         observed_official_line_keys=observed_official_line_keys,
         observed_defect_line_keys=observed_defect_line_keys,
-        planned_defect_line_keys=planned_defect_line_keys)
+        planned_defect_line_keys=planned_defect_line_keys,
+        manifest_fingerprint=manifest_fingerprint)
 
     result, plan_status, decision_reasons = _decide(
         population=population, plan_scope=plan_scope, evidence_gaps=evidence_gaps,
@@ -825,6 +1076,10 @@ def run_repair_plan(
             'current_role_updates': 0,
             'public_surface_changes': 0,
         },
+        'workload_field_coverage': _workload_field_coverage(
+            insert_actions, update_actions, manifest),
+        'correction_metadata_policy': dict(CORRECTION_METADATA_POLICY),
+        'prior_production_manifest_fingerprint': PRIOR_PRODUCTION_MANIFEST_FINGERPRINT,
         'repair_manifest_action_count': len(manifest),
         'repair_manifest': manifest,
         'repair_manifest_fingerprint': manifest_fingerprint,
@@ -841,6 +1096,96 @@ def run_repair_plan(
         'public_reader_gate': GATE_BLOCKED,
         'share_card_performance_gate': GATE_BLOCKED,
         'database_writes_performed': False,
+    }
+
+
+def _optional_fields_are_source_backed(action) -> bool:
+    """An optional field may appear only when its official source key was present."""
+    proposed = action.get('proposed_values') or {}
+    raw = ((action.get('official_source_evidence') or {}).get('official_raw_stats') or {})
+    if not raw:
+        return True                      # blocked action proposes no optional field
+    present = _present_optional_fields(raw)
+    optional_fields = {field for _key, field in OPTIONAL_BOOL_STAT_FIELDS}
+    optional_fields |= {field for field, _keys in OPTIONAL_INT_STAT_FIELDS}
+    return all(field in present for field in optional_fields if field in proposed)
+
+
+def _opponent_matches_official_side(action) -> bool:
+    """Opponent must come from the opposing official box-score side, never elsewhere."""
+    proposed = action.get('proposed_values') or {}
+    if 'opponent' not in proposed:
+        return True                      # blocked action proposes no opponent
+    evidence = action.get('official_source_evidence') or {}
+    return (proposed.get('opponent') == evidence.get('opposing_team_name')
+            and proposed.get('opponent_abbreviation')
+            == evidence.get('opposing_team_abbreviation'))
+
+
+def _workload_field_coverage(insert_actions, update_actions, manifest) -> dict:
+    """Deterministic coverage of the official workload evidence each action carries.
+
+    Absence is reported, never manufactured: an official line genuinely missing
+    ``numberOfPitches`` is counted here rather than silently receiving a value.
+    """
+    def _proposed(action):
+        return action.get('proposed_values') or {}
+
+    def _raw(action):
+        return ((action.get('official_source_evidence') or {}).get('official_raw_stats') or {})
+
+    inherited_fields = ('inherited_runners', 'inherited_runners_scored')
+    decision_fields = ('save_situation', 'hold', 'blown_save', 'win', 'loss', 'save')
+
+    inserts_with_pitch_count = sum(
+        1 for a in insert_actions if _proposed(a).get('pitches_thrown') is not None)
+    inserts_with_strikes = sum(
+        1 for a in insert_actions if 'strikes' in _proposed(a))
+    inserts_with_batters_faced = sum(
+        1 for a in insert_actions if 'batters_faced' in _proposed(a))
+    inserts_with_inherited = sum(
+        1 for a in insert_actions
+        if any(field in _proposed(a) for field in inherited_fields))
+    inserts_with_balls = sum(1 for a in insert_actions if 'balls' in _proposed(a))
+    inserts_with_games_finished = sum(
+        1 for a in insert_actions if 'games_finished' in _proposed(a))
+    inserts_with_decisions = sum(
+        1 for a in insert_actions
+        if any(field in _proposed(a) for field in decision_fields))
+    inserts_with_opponent = sum(
+        1 for a in insert_actions if _proposed(a).get('opponent') is not None)
+
+    def _updates_changing(fields):
+        return sum(1 for a in update_actions
+                   if set(a.get('changed_fields') or ()) & set(fields))
+
+    return {
+        'insert_actions_total': len(insert_actions),
+        'insert_actions_with_official_pitch_count': inserts_with_pitch_count,
+        'insert_actions_without_official_pitch_count':
+            len(insert_actions) - inserts_with_pitch_count,
+        'insert_actions_with_official_strikes': inserts_with_strikes,
+        'insert_actions_with_batters_faced': inserts_with_batters_faced,
+        'insert_actions_with_balls': inserts_with_balls,
+        'insert_actions_with_games_finished': inserts_with_games_finished,
+        'insert_actions_with_inherited_runner_evidence': inserts_with_inherited,
+        'insert_actions_with_decision_evidence': inserts_with_decisions,
+        'insert_actions_with_official_opponent': inserts_with_opponent,
+        'update_actions_total': len(update_actions),
+        'update_actions_correcting_pitch_count': _updates_changing(('pitches_thrown',)),
+        'update_actions_correcting_strikes': _updates_changing(('strikes',)),
+        'update_actions_correcting_batters_faced': _updates_changing(('batters_faced',)),
+        'update_actions_correcting_inherited_runner_fields':
+            _updates_changing(inherited_fields),
+        'update_actions_correcting_decision_fields': _updates_changing(decision_fields),
+        'update_actions_correcting_opponent':
+            _updates_changing(('opponent', 'opponent_abbreviation')),
+        'update_actions_with_null_guarded_fields': sum(
+            1 for a in update_actions if a.get('null_guarded_fields')),
+        'actions_blocked_by_incomplete_authoritative_source': sum(
+            1 for a in manifest
+            if {BLOCK_CORRECTION_SOURCE_INCOMPLETE, BLOCK_RAW_SOURCE_UNAVAILABLE}
+            & set(a.get('blocking_reasons') or ())),
     }
 
 
@@ -895,7 +1240,8 @@ def _blocking_counts(manifest) -> dict:
 def _reconciliations(*, population, observed, manifest, identity_actions, insert_actions,
                      update_actions, baseline_matches, duplicate_action_ids,
                      targeted_local_rows, observed_official_line_keys,
-                     observed_defect_line_keys, planned_defect_line_keys) -> dict:
+                     observed_defect_line_keys, planned_defect_line_keys,
+                     manifest_fingerprint) -> dict:
     defect_actions = len(insert_actions) + len(update_actions)
     identity_by_id = {a['action_id']: a for a in identity_actions}
     identity_dependency_ids = set(identity_by_id)
@@ -999,6 +1345,34 @@ def _reconciliations(*, population, observed, manifest, identity_actions, insert
             dependent_ids == insert_ids_with_dependency,
         'every_local_row_targeted_at_most_once':
             len(targeted_local_rows) == len(update_actions),
+        # ── Official GameLog evidence completeness ────────────────────────────
+        'every_safe_insert_contains_every_required_correction_field': all(
+            set(REQUIRED_INSERT_FIELDS) <= set(a.get('proposed_values') or {})
+            for a in insert_actions if a['safe_to_apply']),
+        'no_required_official_value_is_defaulted': all(
+            BLOCK_CORRECTION_SOURCE_INCOMPLETE in (a.get('blocking_reasons') or ())
+            or BLOCK_RAW_SOURCE_UNAVAILABLE in (a.get('blocking_reasons') or ())
+            or set(REQUIRED_INSERT_FIELDS) <= set(a.get('proposed_values') or {})
+            for a in insert_actions),
+        'optional_fields_planned_only_when_source_present': all(
+            _optional_fields_are_source_backed(a) for a in insert_actions),
+        'every_changed_field_has_current_and_proposed_values': all(
+            set(a.get('changed_fields') or ()) <= set(a.get('proposed_values') or {})
+            and set(a.get('changed_fields') or ()) <= set(a.get('current_values') or {})
+            for a in update_actions),
+        'no_update_replaces_a_local_value_with_null': all(
+            not any(a.get('proposed_values', {}).get(field) is None
+                    and (a.get('current_values') or {}).get(field) is not None
+                    for field in (a.get('changed_fields') or ()))
+            for a in update_actions),
+        'opponent_comes_from_the_official_game_side': all(
+            _opponent_matches_official_side(a) for a in insert_actions),
+        'source_fingerprints_cover_the_enriched_raw_evidence': all(
+            a.get('source_fingerprint') == sha256_of(a.get('official_source_evidence'))
+            and 'official_raw_stats' in (a.get('official_source_evidence') or {})
+            for a in insert_actions + update_actions),
+        'manifest_fingerprint_differs_from_prior_production_fingerprint':
+            manifest_fingerprint != PRIOR_PRODUCTION_MANIFEST_FINGERPRINT,
         'no_action_changes_appearance_team_id': not any(
             'appearance_team_id' in (a.get('changed_fields') or ())
             for a in update_actions),
