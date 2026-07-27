@@ -152,7 +152,7 @@ def _person(mlb_id, *, name=None, position='P', throws='R'):
 
 class _FakeMlbClient:
     def __init__(self, games=(), boxscores=None, people=None, raise_windows=(), raise_pks=(),
-                 raise_people=()):
+                 raise_people=(), registry_teams=(), raise_teams=False):
         self.games = list(games)
         self.boxscores = dict(boxscores or {})
         self.people = dict(people or {})
@@ -160,6 +160,9 @@ class _FakeMlbClient:
         self.raise_pks = set(raise_pks)
         self.raise_people = set(raise_people)
         self.person_calls = []
+        self.registry_teams = list(registry_teams)
+        self.raise_teams = raise_teams
+        self.team_registry_calls = 0
 
     def get_schedule(self, start_date=None, end_date=None, team_id=None):
         if start_date in self.raise_windows:
@@ -176,6 +179,12 @@ class _FakeMlbClient:
         if player_id in self.raise_people:
             raise RuntimeError('person unavailable')
         return self.people.get(player_id)
+
+    def get_all_teams(self, sport_id=1):
+        self.team_registry_calls += 1
+        if self.raise_teams:
+            raise RuntimeError('team registry unavailable')
+        return list(self.registry_teams)
 
 
 _HOME_LINES = [_pline(1, gs=1, outs=18, r=2, er=2, h=5, k=6),
@@ -1291,6 +1300,248 @@ def test_daily_sync_parsing_behaviour_is_unchanged():
         values, stats, include_leverage_index=False)
     assert 'save_situation' in fields and 'batters_faced' in fields
     assert 'balls' not in fields               # source key absent
+
+
+# ═══════════════ Complete official opponent evidence ═══════════════════════
+def _side_without(team_id, name, lines, *, abbreviation=None):
+    """An official side whose team object may omit the abbreviation."""
+    team = {'id': team_id, 'name': name}
+    if abbreviation is not None:
+        team['abbreviation'] = abbreviation
+    return {
+        'team': team,
+        'pitchers': [mlb_id for mlb_id, _stats in lines],
+        'players': {f'ID{mlb_id}': {'person': {'id': mlb_id, 'fullName': f'P{mlb_id}'},
+                                    'stats': {'pitching': stats}}
+                    for mlb_id, stats in lines},
+    }
+
+
+def _schedule_game(game_pk=GAME_PK, home=A, away=B, gdate=GDATE, *, home_team=None,
+                   away_team=None):
+    """A schedule game whose hydrated team objects can carry supplemental metadata."""
+    game = _official_game(game_pk, home, away, gdate)
+    game['teams'] = {
+        'home': {'team': home_team or {'id': home, 'name': f'Team{home}'}},
+        'away': {'team': away_team or {'id': away, 'name': f'Team{away}'}},
+    }
+    return game
+
+
+def test_complete_opposing_side_yields_non_null_name_and_abbreviation(app):
+    _seed_missing_line_3()
+    payload = planner.run_repair_plan(client=_missing_line_client())
+    insert = _action_for(payload, f'gamelog:insert:{GAME_PK}:3:{A}')
+    assert insert['proposed_values']['opponent'] == f'Team{B}'
+    assert insert['proposed_values']['opponent_abbreviation'] == f'T{B}'
+    opponent = insert['official_opponent_evidence']
+    assert opponent['opposing_team_id'] == B
+    assert opponent['opponent_name_source'] == planner.OPPONENT_SOURCE_BOXSCORE
+    assert opponent['opponent_abbreviation_source'] == planner.OPPONENT_SOURCE_BOXSCORE
+    assert opponent['blocking_reasons'] == []
+    assert insert['safe_to_apply'] is True
+    coverage = payload['workload_field_coverage']
+    assert coverage['insert_actions_with_official_opponent_name'] == 1
+    assert coverage['insert_actions_with_official_opponent_abbreviation'] == 1
+
+
+def test_schedule_metadata_supplements_a_missing_boxscore_abbreviation(app):
+    _seed_missing_line_3()
+    # The away box-score team object omits its abbreviation; the schedule supplies it for
+    # the SAME official team id.
+    boxscore = {'teams': {
+        'home': _side_without(A, f'Team{A}', _HOME_LINES, abbreviation=f'T{A}'),
+        'away': _side_without(B, f'Team{B}', _AWAY_LINES)}}
+    client = _FakeMlbClient(
+        games=[_schedule_game(away_team={'id': B, 'name': f'Team{B}',
+                                         'abbreviation': f'T{B}'})],
+        boxscores={GAME_PK: boxscore}, people=_ALL_PEOPLE)
+    payload = planner.run_repair_plan(client=client)
+    insert = _action_for(payload, f'gamelog:insert:{GAME_PK}:3:{A}')
+    opponent = insert['official_opponent_evidence']
+    assert insert['proposed_values']['opponent_abbreviation'] == f'T{B}'
+    assert opponent['opponent_abbreviation_source'] == planner.OPPONENT_SOURCE_SCHEDULE
+    assert opponent['opponent_name_source'] == planner.OPPONENT_SOURCE_BOXSCORE
+    assert opponent['opposing_team_id'] == B      # box score still fixed WHICH team
+    assert insert['safe_to_apply'] is True
+
+
+def test_team_registry_supplements_when_boxscore_and_schedule_both_lack_it(app):
+    _seed_missing_line_3()
+    boxscore = {'teams': {
+        'home': _side_without(A, f'Team{A}', _HOME_LINES, abbreviation=f'T{A}'),
+        'away': _side_without(B, f'Team{B}', _AWAY_LINES)}}
+    client = _FakeMlbClient(
+        games=[_schedule_game()], boxscores={GAME_PK: boxscore}, people=_ALL_PEOPLE,
+        registry_teams=[{'id': B, 'name': f'Team{B}', 'abbreviation': f'T{B}'}])
+    payload = planner.run_repair_plan(client=client)
+    insert = _action_for(payload, f'gamelog:insert:{GAME_PK}:3:{A}')
+    opponent = insert['official_opponent_evidence']
+    assert opponent['opponent_abbreviation_source'] == planner.OPPONENT_SOURCE_TEAM_REGISTRY
+    assert insert['proposed_values']['opponent_abbreviation'] == f'T{B}'
+    assert insert['safe_to_apply'] is True
+
+
+def test_missing_opponent_name_blocks_the_action(app):
+    _seed_missing_line_3()
+    boxscore = {'teams': {
+        'home': _side_without(A, f'Team{A}', _HOME_LINES, abbreviation=f'T{A}'),
+        'away': _side_without(B, None, _AWAY_LINES, abbreviation=f'T{B}')}}
+    client = _FakeMlbClient(
+        games=[_schedule_game(away_team={'id': B, 'abbreviation': f'T{B}'})],
+        boxscores={GAME_PK: boxscore}, people=_ALL_PEOPLE)
+    payload = planner.run_repair_plan(client=client)
+    insert = _action_for(payload, f'gamelog:insert:{GAME_PK}:3:{A}')
+    assert planner.BLOCK_OPPONENT_NAME_ABSENT in insert['blocking_reasons']
+    assert 'opponent' not in insert['proposed_values']     # never planned as null
+    assert insert['safe_to_apply'] is False
+    assert payload['result'] == planner.RESULT_INCONCLUSIVE
+    assert payload['repair_apply_gate'] == planner.GATE_BLOCKED
+    assert payload['workload_field_coverage'][
+        'actions_blocked_by_missing_opponent_name'] == 1
+
+
+def test_missing_opponent_abbreviation_blocks_the_action(app):
+    _seed_missing_line_3()
+    boxscore = {'teams': {
+        'home': _side_without(A, f'Team{A}', _HOME_LINES, abbreviation=f'T{A}'),
+        'away': _side_without(B, f'Team{B}', _AWAY_LINES)}}
+    client = _FakeMlbClient(                       # no schedule or registry supplement
+        games=[_schedule_game()], boxscores={GAME_PK: boxscore}, people=_ALL_PEOPLE)
+    payload = planner.run_repair_plan(client=client)
+    insert = _action_for(payload, f'gamelog:insert:{GAME_PK}:3:{A}')
+    assert planner.BLOCK_OPPONENT_ABBREVIATION_ABSENT in insert['blocking_reasons']
+    assert 'opponent_abbreviation' not in insert['proposed_values']
+    assert insert['safe_to_apply'] is False
+    assert payload['result'] == planner.RESULT_INCONCLUSIVE
+    assert payload['workload_field_coverage'][
+        'actions_blocked_by_missing_opponent_abbreviation'] == 1
+
+
+def test_none_equals_none_cannot_satisfy_opponent_reconciliation():
+    # Both proposed and evidence values absent: the old None == None check passed here.
+    action = {
+        'safe_to_apply': True,
+        'proposed_values': {'opponent': None, 'opponent_abbreviation': None},
+        'official_source_evidence': {'opposing_team_name': None,
+                                     'opposing_team_abbreviation': None},
+        'official_opponent_evidence': {'opposing_team_id': None,
+                                       'opponent_name_source': None,
+                                       'opponent_abbreviation_source': None},
+    }
+    assert planner._opponent_matches_official_side(action) is False
+    assert planner._safe_action_has_complete_opponent_evidence(action) is False
+
+
+def test_conflicting_supplemental_team_id_fails_closed():
+    sides = {'opposing_team': {'team_id': B, 'team_name': None, 'team_abbreviation': None}}
+    metadata = {'schedule': {B: {'team_id': C, 'team_name': 'Wrong',
+                                 'team_abbreviation': 'WRG'}}, 'registry': {}}
+    resolved = planner._resolve_opponent(sides, metadata)
+    assert planner.BLOCK_OPPONENT_IDENTITY_CONFLICT in resolved['blocking_reasons']
+    assert resolved['opponent_name'] is None
+    assert resolved['opponent_abbreviation'] is None
+
+
+def test_required_insert_fields_reject_a_present_but_null_value():
+    action = {'proposed_values': {field: 'x' for field in planner.REQUIRED_INSERT_FIELDS}}
+    assert planner._required_insert_values_present(action) is True
+    action['proposed_values']['opponent_abbreviation'] = None
+    assert planner._required_insert_values_present(action) is False
+    action['proposed_values']['opponent_abbreviation'] = '   '
+    assert planner._required_insert_values_present(action) is False
+
+
+def test_update_opponent_correction_is_source_backed_and_single_action(app):
+    _seed_matching_local()
+    db.session.query(GameLog).filter(GameLog.pitcher_id == _pitcher(2).id).update(
+        {'opponent': 'Stale Club', 'opponent_abbreviation': 'STL', 'strikeouts': 9},
+        synchronize_session=False)
+    db.session.commit()
+    payload = _plan()
+    updates = _actions(payload, planner.ACTION_GAME_LOG_UPDATE)
+    assert len(updates) == 1                       # opponent correction stays in one action
+    update = updates[0]
+    assert 'opponent' in update['changed_fields']
+    assert update['current_values']['opponent'] == 'Stale Club'
+    assert update['proposed_values']['opponent'] == f'Team{B}'
+    assert update['proposed_values']['opponent_abbreviation'] == f'T{B}'
+    assert update['official_opponent_evidence']['opposing_team_id'] == B
+    assert planner._opponent_matches_official_side(update) is True
+    assert payload['workload_field_coverage']['update_actions_correcting_opponent'] == 1
+
+
+def test_update_never_nulls_opponent_when_official_evidence_is_incomplete(app):
+    _seed_matching_local()
+    db.session.query(GameLog).filter(GameLog.pitcher_id == _pitcher(2).id).update(
+        {'opponent': 'Stored Club', 'opponent_abbreviation': 'STC', 'strikeouts': 9},
+        synchronize_session=False)
+    db.session.commit()
+    boxscore = {'teams': {
+        'home': _side_without(A, f'Team{A}', _HOME_LINES, abbreviation=f'T{A}'),
+        'away': _side_without(B, None, _AWAY_LINES)}}      # no name, no abbreviation
+    client = _FakeMlbClient(
+        games=[_schedule_game(away_team={'id': B})],
+        boxscores={GAME_PK: boxscore}, people=_ALL_PEOPLE)
+    payload = planner.run_repair_plan(client=client)
+    update = _actions(payload, planner.ACTION_GAME_LOG_UPDATE)[0]
+    assert 'opponent' not in update['changed_fields']
+    assert 'opponent_abbreviation' not in update['changed_fields']
+    assert 'opponent' in update['null_guarded_fields']
+    assert 'opponent_abbreviation' in update['null_guarded_fields']
+    assert payload['reconciliations'][
+        'no_update_replaces_a_local_value_with_null'] is True
+
+
+def test_opponent_reconciliation_covers_inserts_and_updates(app):
+    _seed_matching_local()
+    db.session.query(GameLog).filter(
+        GameLog.pitcher_id == _pitcher(3).id).delete(synchronize_session=False)   # insert
+    db.session.query(GameLog).filter(GameLog.pitcher_id == _pitcher(2).id).update(
+        {'opponent': 'Stale Club', 'strikeouts': 9}, synchronize_session=False)   # update
+    db.session.commit()
+    payload = _plan()
+    assert len(_actions(payload, planner.ACTION_GAME_LOG_INSERT)) == 1
+    assert len(_actions(payload, planner.ACTION_GAME_LOG_UPDATE)) == 1
+    recon = payload['reconciliations']
+    for name in ('opponent_comes_from_the_official_game_side',
+                 'every_safe_insertion_has_a_non_empty_opponent',
+                 'every_safe_insertion_has_a_non_empty_opponent_abbreviation',
+                 'opponent_values_resolve_from_one_opposing_official_team',
+                 'no_safe_action_has_missing_opponent_evidence',
+                 'every_proposed_opponent_field_is_non_null_and_source_backed'):
+        assert recon[name] is True, name
+
+
+def test_opponent_evidence_change_moves_the_manifest_fingerprint(app):
+    _seed_missing_line_3()
+    baseline = planner.run_repair_plan(client=_missing_line_client())
+    renamed = {'teams': {
+        'home': _side_without(A, f'Team{A}', _HOME_LINES, abbreviation=f'T{A}'),
+        'away': _side_without(B, 'Renamed Club', _AWAY_LINES, abbreviation='RNC')}}
+    payload = planner.run_repair_plan(client=_FakeMlbClient(
+        games=[_schedule_game()], boxscores={GAME_PK: renamed}, people=_ALL_PEOPLE))
+    assert payload['repair_manifest_fingerprint'] != baseline['repair_manifest_fingerprint']
+    insert = _action_for(payload, f'gamelog:insert:{GAME_PK}:3:{A}')
+    assert insert['proposed_values']['opponent'] == 'Renamed Club'
+    assert insert['source_fingerprint'] != _action_for(
+        baseline, f'gamelog:insert:{GAME_PK}:3:{A}')['source_fingerprint']
+
+
+def test_opponent_resolution_never_consults_a_current_team_source(app):
+    _seed_missing_line_3()
+    # A stale current-team assignment must not influence the resolved opponent.
+    db.session.query(Pitcher).filter(Pitcher.mlb_id == 3).update(
+        {'team_id': C, 'team_name': 'Current Club', 'team_abbreviation': 'CUR'},
+        synchronize_session=False)
+    db.session.commit()
+    payload = planner.run_repair_plan(client=_missing_line_client())
+    insert = _action_for(payload, f'gamelog:insert:{GAME_PK}:3:{A}')
+    assert insert['proposed_values']['opponent'] == f'Team{B}'
+    assert insert['proposed_values']['opponent_abbreviation'] == f'T{B}'
+    code = _code_without_prose(SERVICE_PATH)
+    for token in ('Pitcher.team_id', 'Pitcher.team_name', 'Pitcher.team_abbreviation'):
+        assert token not in code, token
 
 # ═══════════════ 31-32. Determinism ═════════════════════════════════════════
 def test_action_ids_are_deterministic_and_unique(app):
