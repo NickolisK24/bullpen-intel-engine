@@ -22,6 +22,13 @@ only as an out-of-band diagnostic comparison). Missing authority fails closed as
 ``unresolved``; two authoritative sources that disagree fail closed as
 ``conflict``. Neither is ever encoded as a fake team id.
 
+The per-pitcher gameLog feed may include an all-zero, zero-out listing for a final
+game even when the player never pitched. A NEW all-zero row therefore requires
+``boxscore_side`` authority. A schedule-only or unresolved all-zero listing fails
+closed before INSERT; the official postgame box-score lane remains the authority for
+legitimate 0.0-IP appearances. An existing official row may still be re-read by the
+daily lane without flapping or creating a duplicate.
+
 This module performs NO historical backfill. Legacy rows stay NULL until Step 2.
 """
 
@@ -52,6 +59,7 @@ REASON_RESOLVED_SCHEDULE = 'appearance_team_resolved_schedule'
 REASON_UNRESOLVED = 'appearance_team_unresolved'
 REASON_CONFLICT = 'appearance_team_source_conflict'
 REASON_CORRECTED = 'appearance_team_corrected'
+REASON_ZERO_OUT_UNVERIFIED = 'zero_out_appearance_requires_boxscore_line'
 
 # Higher rank = more authoritative. Used to decide governed corrections and to
 # guarantee non-flapping when two runs resolve the same appearance from different
@@ -65,6 +73,37 @@ _REASON_FOR_SOURCE = {
     SOURCE_BOXSCORE: REASON_RESOLVED_BOXSCORE,
     SOURCE_SCHEDULE: REASON_RESOLVED_SCHEDULE,
 }
+
+_ZERO_OUT_INTEGER_FIELDS = (
+    'innings_pitched_outs',
+    'pitches_thrown',
+    'strikes',
+    'hits_allowed',
+    'runs_allowed',
+    'earned_runs',
+    'walks',
+    'strikeouts',
+    'home_runs_allowed',
+    'batters_faced',
+    'balls',
+    'games_finished',
+    'inherited_runners',
+    'inherited_runners_scored',
+)
+_ZERO_OUT_BOOLEAN_FIELDS = (
+    'save_situation',
+    'hold',
+    'blown_save',
+    'win',
+    'loss',
+    'save',
+)
+
+
+class UnverifiedZeroOutAppearance(ValueError):
+    """A new zero-out listing lacks final official box-score pitching authority."""
+
+    reason_code = REASON_ZERO_OUT_UNVERIFIED
 
 
 def _precedence(source: Optional[str]) -> int:
@@ -169,16 +208,67 @@ def _positive_or_none(value) -> Optional[int]:
     return candidate if candidate > 0 else None
 
 
+def is_all_zero_game_log_values(values: dict) -> bool:
+    """Whether a complete normalized pitching line contains no pitching event.
+
+    Optional integer fields may be absent/NULL or zero. The core run-prevention
+    fields must be explicitly present so a partial fixture or malformed line cannot
+    accidentally enter this special contract.
+    """
+    values = values or {}
+    required = (
+        'innings_pitched_outs',
+        'strikes',
+        'hits_allowed',
+        'runs_allowed',
+        'earned_runs',
+        'walks',
+        'strikeouts',
+        'home_runs_allowed',
+    )
+    if any(field not in values for field in required):
+        return False
+    if values.get('games_started') not in (None, 0):
+        return False
+    if any(values.get(field) not in (None, 0) for field in _ZERO_OUT_INTEGER_FIELDS):
+        return False
+    if any(bool(values.get(field, False)) for field in _ZERO_OUT_BOOLEAN_FIELDS):
+        return False
+    return True
+
+
+def _existing_game_log(values: dict):
+    pitcher_id = _positive_or_none((values or {}).get('pitcher_id'))
+    game_pk = _positive_or_none((values or {}).get('mlb_game_pk'))
+    if pitcher_id is None or game_pk is None:
+        return None
+    return GameLog.query.filter_by(
+        pitcher_id=pitcher_id,
+        mlb_game_pk=game_pk,
+    ).first()
+
+
 def apply_to_new_log(values: dict, resolution: AppearanceTeamResolution) -> dict:
     """Fold a resolution's fields into a values dict for an INSERT.
 
     A resolved appearance stores its team + source; an unresolved/conflict appearance
     is still stored (the appearance is real) but carries a fail-closed status and no
     attributed team.
+
+    Exception: a NEW all-zero, zero-out listing is not yet proven to be an appearance.
+    Only an official box-score pitching line may create it. Schedule-only and
+    unresolved listings fail closed before INSERT. If an official row already exists,
+    the daily feed may re-read it because no new appearance can be invented.
     """
     if resolution is None:
         return values
     values = dict(values)
+    if (
+        resolution.source != SOURCE_BOXSCORE
+        and is_all_zero_game_log_values(values)
+        and _existing_game_log(values) is None
+    ):
+        raise UnverifiedZeroOutAppearance(REASON_ZERO_OUT_UNVERIFIED)
     values.update(resolution.to_write_fields())
     return values
 
