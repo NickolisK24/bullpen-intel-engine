@@ -185,6 +185,88 @@ around the block. Because `safe_to_apply` and `blocking_reasons` are both finger
 propagation moves the manifest fingerprint, so a reviewed fingerprint can never silently cover
 an unsafe dependency.
 
+## 11c. Why the first production fingerprint was not approved
+
+The first production planner run completed cleanly: manifest fingerprint
+`dbbc063a0711e57b0dc2d858b7d1d291c568c4990ecff7c9ebf3d1b138cbb2d6`, 71 identity actions,
+445 inserts, 159 updates, 675 total actions, every reconciliation true, zero blockers, zero
+writes. It was still not approved for apply, because of what its actions contained.
+
+Every planned insertion carried only the seven mandatory season-aggregation counting metrics
+plus role and identity. Those seven exist to validate a *bullpen aggregate*; they are not a
+complete pitching line. An insertion built from them alone would have created a `GameLog` row
+permanently missing `opponent`, `opponent_abbreviation`, `pitches_thrown`, `strikes`,
+`batters_faced`, `balls`, `games_finished`, `inherited_runners`,
+`inherited_runners_scored`, `save_situation`, `hold`, `blown_save`, `win`, `loss`, and
+`save` — and updates never evaluated those fields at all.
+
+Approving that fingerprint would have written 445 rows that satisfy the aggregation and fail
+everything else. The fingerprint is therefore superseded rather than advanced, and the
+planner now pins the old value so a run can prove it is no longer the manifest under review.
+
+## 11d. Why mandatory season metrics alone cannot complete a GameLog repair
+
+`GameLog` is not an aggregation input; it is the shared appearance ledger. Bullpen
+aggregation reads seven of its columns, but fatigue scoring, workload evidence, availability,
+inherited-traffic evidence, and appearance context read others. A row that is correct for one
+consumer and empty for the rest is not repaired — it is repaired *for one reader*.
+
+Pitch count is the clearest case. `pitches_thrown` is a primary fatigue input: recovery and
+availability read pitch counts per appearance, so 445 rows inserted with a NULL pitch count
+would be invisible to fatigue evidence for the whole 2026 season while looking complete to
+the aggregation that motivated the repair. `strikes`, `batters_faced`, and the
+inherited-runner pair carry the same problem for workload and inherited-traffic evidence.
+
+## 11e. Why the 604-line action population is unchanged
+
+This correction enriches the *contents* of the already governed actions. It does not widen the
+population: still 445 inserts, still 159 updates, still 604 defect-line actions, and still no
+action for any of the 12,697 exact mandatory-metric lines.
+
+A row that matches on all seven mandatory metrics is not promoted to a defect because a
+workload field also differs — the defect-line population remains defined by the completeness
+diagnostic's classification, and the defect keys still reconcile by set equality. What changes
+is that an update already required for a mandatory metric now also carries the workload
+corrections for that same row, in the same single action.
+
+## 11f. Why raw official evidence is retained before normalization
+
+The completeness diagnostic normalizes an official pitching line to the seven mandatory
+comparison metrics, which is correct for comparison and lossy for repair. The planner
+therefore retains the raw official stat object for every defect line, alongside the normalized
+metrics, and derives proposed values from the raw object using the production ingestion
+contract (`sync._game_log_values_from_stats`, `sync._correction_source_state`,
+`sync._authoritative_correction_fields`) rather than a second parser.
+
+Those helpers are reused unchanged rather than extracted: extraction would move code on the
+live daily-ingestion path for no behavioural gain, and a regression test pins their output so
+ingestion cannot drift silently.
+
+Required-key safety comes from the same contract. A line missing any of `inningsPitched`,
+`strikes`, `hits`, `runs`, `earnedRuns`, `baseOnBalls`, `strikeOuts`, or `homeRuns` proposes
+nothing, is marked unsafe, and makes the plan inconclusive. Optional fields appear only when
+their official source key is genuinely present, so an official zero stays distinct from
+official absence — and `numberOfPitches`, which official completed-game lines sometimes omit,
+stays NULL and is reported through `workload_field_coverage` instead of being manufactured.
+
+Opponent comes from the opposing official box-score side, never from a mutable player or
+current-team assignment.
+
+## 11g. How correction metadata and dependent evidence invalidation must work
+
+A future apply step must follow the correction-metadata contract already implemented by
+`sync._upsert_game_log_from_authoritative_values`: `stat_correction_count` increments once per
+updated row (never once per changed field), `last_stat_correction_source` records the repair
+source identifier, `last_stat_correction_sync_run_id` comes from the apply operation, and
+`last_stat_correction_at` is stamped at apply time — which is exactly why it is excluded from
+the manifest fingerprint, so a reviewed manifest does not change identity because time passed.
+
+Dependent evidence must be invalidated through the existing governed notification path
+(`sync._notify_workload_evidence_game_log_correction`), marking workload, appearance-context,
+and inherited-traffic evidence for recomputation. The planner declares this policy as data so
+review can approve it with the manifest, and executes none of it: no action proposes
+correction metadata, and no action proposes a generated timestamp.
+
 ## 12. Why the full manifest requires an exact reviewed fingerprint
 
 The manifest is fingerprinted with SHA-256 over its complete normalized serialization: UTF-8,
