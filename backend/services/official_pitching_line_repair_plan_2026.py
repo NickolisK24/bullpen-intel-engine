@@ -99,6 +99,7 @@ BLOCK_IDENTITY_MODEL_REQUIREMENT = 'identity_creation_blocked_by_model_requireme
 BLOCK_OFFICIAL_STAT_ABSENT = 'official_stat_evidence_absent'
 BLOCK_OFFICIAL_TEAM_ABSENT = 'official_appearance_team_absent'
 BLOCK_DEPENDENCY_UNRESOLVED = 'identity_dependency_unresolved'
+BLOCK_DEPENDENCY_BLOCKED = 'identity_dependency_blocked'
 BLOCK_BASELINE_DRIFT = 'accepted_baseline_drift'
 BLOCK_SUBSET_SCOPE = 'diagnostic_subset_scope'
 
@@ -429,6 +430,37 @@ def _update_action(line, local, detail) -> dict:
     }
 
 
+def _propagate_dependency_safety(identity_actions, insert_actions) -> None:
+    """Mark every insertion unsafe whose identity prerequisite is not itself safe.
+
+    An insertion that waits on a blocked identity cannot be applied — the row it would
+    create has no pitcher to reference. Existence of a dependency is not resolution of a
+    SAFE dependency, so safety is propagated explicitly here rather than assumed. The
+    insertion keeps its ``dependency_action_ids`` and stays in the manifest; only its
+    ``safe_to_apply`` and ``blocking_reasons`` change, and both feed the fingerprint.
+    """
+    by_id: Dict[str, List[dict]] = defaultdict(list)
+    for identity in identity_actions:
+        by_id[identity['action_id']].append(identity)
+
+    for action in insert_actions:
+        dependency_ids = action.get('dependency_action_ids') or []
+        if not dependency_ids:
+            continue
+        blocking = set(action.get('blocking_reasons') or ())
+        for dependency_id in dependency_ids:
+            candidates = by_id.get(dependency_id) or []
+            if len(candidates) != 1:
+                # Absent, or ambiguous: either way the dependency does not resolve.
+                blocking.add(BLOCK_DEPENDENCY_UNRESOLVED)
+                continue
+            dependency = candidates[0]
+            if not dependency['safe_to_apply'] or dependency['blocking_reasons']:
+                blocking.add(BLOCK_DEPENDENCY_BLOCKED)
+        action['blocking_reasons'] = sorted(blocking)
+        action['safe_to_apply'] = not blocking
+
+
 def _action_sort_key(action) -> tuple:
     """Dependency phase, then official person, game date, game_pk, local row, action id."""
     game_date = action.get('game_date')
@@ -563,7 +595,12 @@ def run_repair_plan(
     insert_actions: List[dict] = []
     update_actions: List[dict] = []
     identity_dependents: Dict[int, List[str]] = defaultdict(list)
-    targeted_official_lines: set = set()
+    # Typed line populations, keyed by the stable official line key
+    # (game_pk, official_mlb_person_id, appearance_team_id). Every compared line enters
+    # ``observed_official_line_keys``; only defect lines enter the defect populations, so an
+    # exact match can never satisfy a coverage reconciliation.
+    observed_official_line_keys: List[tuple] = []
+    observed_defect_line_keys: List[tuple] = []
     targeted_local_rows: set = set()
 
     for pk in sorted(sides_by_game):
@@ -592,17 +629,19 @@ def run_repair_plan(
                 else:
                     population.official_relief_lines += 1
 
-                line_key = (pk, line.pitcher_id, line.team_id)
-                if line_key in targeted_official_lines:
+                line_key = (int(pk), int(line.pitcher_id), int(line.team_id))
+                if line_key in set(observed_official_line_keys):
+                    # A duplicate official source line is a contradiction, never a plan.
                     population.contradictions.append({
-                        'kind': 'official_line_targeted_twice', 'game_pk': pk,
+                        'kind': 'duplicate_official_source_line', 'game_pk': pk,
                         'official_mlb_person_id': line.pitcher_id, 'team_id': line.team_id})
-                targeted_official_lines.add(line_key)
+                observed_official_line_keys.append(line_key)
 
                 local_pitcher_id = pitcher_rows.get(line.pitcher_id)
                 if local_pitcher_id is None:
                     population.missing_line_count += 1
                     population.missing_lines_dependent_on_identity_creation += 1
+                    observed_defect_line_keys.append(line_key)
                     identity_action_id = f'identity:create:{int(line.pitcher_id)}'
                     action = _insert_action(line, local_pitcher_id=None,
                                             identity_action_id=identity_action_id)
@@ -614,14 +653,18 @@ def run_repair_plan(
                 detail = completeness._compare_official_line(line, matches)
                 reasons = detail['reason_codes']
                 if reasons == [completeness.REASON_EXACT_MATCH]:
+                    # An exact match is not a defect and never enters a defect population.
                     population.exact_match_count += 1
                     continue
                 if completeness.REASON_OFFICIAL_LINE_MISSING in reasons:
                     population.missing_line_count += 1
                     population.missing_lines_using_existing_identity += 1
+                    observed_defect_line_keys.append(line_key)
                     insert_actions.append(_insert_action(
                         line, local_pitcher_id=int(local_pitcher_id), identity_action_id=None))
                     continue
+
+                observed_defect_line_keys.append(line_key)
 
                 population.defective_matched_line_count += 1
                 if completeness.REASON_LOCAL_DUPLICATE in reasons:
@@ -672,6 +715,15 @@ def run_repair_plan(
         identity_actions.append(_identity_action(
             mlb_person_id, evidence, identity_dependents[mlb_person_id]))
 
+    # Dependency SAFETY, not merely dependency existence: an insertion is only applicable
+    # when the identity it waits on is itself applicable.
+    _propagate_dependency_safety(identity_actions, insert_actions)
+
+    planned_defect_line_keys = [
+        (int(a['mlb_game_pk']), int(a['official_mlb_person_id']), int(a['official_team_id']))
+        for a in insert_actions + update_actions
+    ]
+
     manifest = sorted(identity_actions + insert_actions + update_actions,
                       key=_action_sort_key)
     duplicate_action_ids = _duplicate_action_ids(manifest)
@@ -686,7 +738,9 @@ def run_repair_plan(
         update_actions=update_actions, baseline_matches=baseline_matches,
         duplicate_action_ids=duplicate_action_ids,
         targeted_local_rows=targeted_local_rows,
-        targeted_official_lines=targeted_official_lines)
+        observed_official_line_keys=observed_official_line_keys,
+        observed_defect_line_keys=observed_defect_line_keys,
+        planned_defect_line_keys=planned_defect_line_keys)
 
     result, plan_status, decision_reasons = _decide(
         population=population, plan_scope=plan_scope, evidence_gaps=evidence_gaps,
@@ -840,15 +894,43 @@ def _blocking_counts(manifest) -> dict:
 
 def _reconciliations(*, population, observed, manifest, identity_actions, insert_actions,
                      update_actions, baseline_matches, duplicate_action_ids,
-                     targeted_local_rows, targeted_official_lines) -> dict:
+                     targeted_local_rows, observed_official_line_keys,
+                     observed_defect_line_keys, planned_defect_line_keys) -> dict:
     defect_actions = len(insert_actions) + len(update_actions)
-    identity_dependency_ids = {a['action_id'] for a in identity_actions}
+    identity_by_id = {a['action_id']: a for a in identity_actions}
+    identity_dependency_ids = set(identity_by_id)
     dependent_ids = {dep for a in identity_actions
                      for dep in a['dependent_game_log_action_ids']}
     insert_ids_with_dependency = {
         a['action_id'] for a in insert_actions if a['dependency_action_ids']}
     every_dependency_resolves = all(
         set(a['dependency_action_ids']) <= identity_dependency_ids for a in manifest)
+    dependency_reference_counts = [
+        sum(1 for identity in identity_actions if identity['action_id'] == dependency_id)
+        for a in manifest for dependency_id in (a.get('dependency_action_ids') or ())
+    ]
+
+    observed_defect_set = set(observed_defect_line_keys)
+    planned_defect_set = set(planned_defect_line_keys)
+    exact_match_keys = set(observed_official_line_keys) - observed_defect_set
+
+    def _dependency_actions(action):
+        return [identity_by_id[dep] for dep in (action.get('dependency_action_ids') or ())
+                if dep in identity_by_id]
+
+    safe_dependents_have_safe_dependencies = all(
+        all(dep['safe_to_apply'] and not dep['blocking_reasons']
+            for dep in _dependency_actions(a))
+        for a in insert_actions if a['safe_to_apply']
+    )
+    blocked_identities_block_dependents = all(
+        all(not action['safe_to_apply']
+            and BLOCK_DEPENDENCY_BLOCKED in (action.get('blocking_reasons') or ())
+            for action in insert_actions
+            if identity['action_id'] in (action.get('dependency_action_ids') or ()))
+        for identity in identity_actions
+        if not identity['safe_to_apply'] or identity['blocking_reasons']
+    )
     return {
         'official_lines_partition':
             population.official_lines_compared == (
@@ -879,11 +961,42 @@ def _reconciliations(*, population, observed, manifest, identity_actions, insert
         'identity_actions_reconcile_to_dependent_appearances':
             dependent_ids == insert_ids_with_dependency
             and len(dependent_ids) == population.missing_lines_dependent_on_identity_creation,
-        'every_dependency_references_one_identity_action': every_dependency_resolves,
-        'every_official_defect_line_maps_to_one_action':
-            len(targeted_official_lines) >= defect_actions
-            and len({a['action_id'] for a in insert_actions + update_actions})
-            == defect_actions,
+        'every_dependency_references_one_identity_action':
+            every_dependency_resolves
+            and all(count == 1 for count in dependency_reference_counts),
+        # ── Exact defect-line coverage ────────────────────────────────────────
+        # Typed populations keyed by (game_pk, official person id, appearance_team_id).
+        # An exact match never enters either defect population, so equality here is real
+        # coverage: not "at least as many lines as actions", but the same lines.
+        'observed_official_line_keys_unique':
+            len(observed_official_line_keys) == len(set(observed_official_line_keys)),
+        'observed_defect_line_keys_unique':
+            len(observed_defect_line_keys) == len(set(observed_defect_line_keys)),
+        'planned_defect_line_keys_unique':
+            len(planned_defect_line_keys) == len(set(planned_defect_line_keys)),
+        'observed_defect_keys_equal_planned_defect_keys':
+            observed_defect_set == planned_defect_set,
+        'observed_defect_key_count_equals_defect_lines':
+            len(observed_defect_line_keys) == (
+                population.missing_line_count + population.defective_matched_line_count),
+        'planned_defect_key_count_equals_line_actions':
+            len(planned_defect_line_keys) == defect_actions,
+        'every_defect_line_maps_to_exactly_one_action':
+            observed_defect_set == planned_defect_set
+            and len(observed_defect_line_keys) == len(observed_defect_set)
+            and len(planned_defect_line_keys) == len(planned_defect_set)
+            and len(planned_defect_line_keys) == defect_actions,
+        'no_exact_line_maps_to_a_repair_action':
+            not (exact_match_keys & planned_defect_set),
+        'defect_keys_are_a_subset_of_observed_official_lines':
+            observed_defect_set <= set(observed_official_line_keys),
+        # ── Dependency safety ─────────────────────────────────────────────────
+        'every_safe_dependent_insertion_has_a_safe_dependency':
+            safe_dependents_have_safe_dependencies,
+        'every_blocked_identity_blocks_its_dependent_insertions':
+            blocked_identities_block_dependents,
+        'identity_dependent_lists_reconcile_to_insertion_references':
+            dependent_ids == insert_ids_with_dependency,
         'every_local_row_targeted_at_most_once':
             len(targeted_local_rows) == len(update_actions),
         'no_action_changes_appearance_team_id': not any(

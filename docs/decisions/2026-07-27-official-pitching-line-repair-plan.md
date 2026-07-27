@@ -147,6 +147,44 @@ pitching-line repair is not the place to re-adjudicate it. No action changes
 `appearance_team_id` or its provenance, and a discovered mismatch is a hard fail rather than a
 planned correction.
 
+## 11a. Why defect-line coverage is proved by keys, not counts
+
+An earlier form of this plan recorded every compared official line in one set and reconciled
+`len(all_lines) >= action_count`. That proves almost nothing: with 13,301 official lines and
+604 actions the inequality holds even if an action is missing, or if an action targets a line
+that was never a defect.
+
+Coverage is therefore proved with three typed populations keyed by
+`(game_pk, official_mlb_person_id, appearance_team_id)`:
+
+- `observed_official_line_keys` — every compared official line;
+- `observed_defect_line_keys` — only missing lines and defective matched lines;
+- `planned_defect_line_keys` — derived only from insert and update actions.
+
+An exact match never enters either defect population. The governing reconciliation is set
+**equality** between observed and planned defect keys, plus uniqueness on both sides. That
+fails when an action is omitted, when an action targets a different line even though the
+counts still agree, and when a line is planned twice. A duplicate official source line is a
+contradiction and fails closed rather than being planned.
+
+## 11b. Why dependency existence is not dependency safety
+
+An insertion whose person has no `Pitcher` row carries a dependency on an identity action.
+Carrying that reference is not the same as the reference being applicable: an identity blocked
+by absent official position evidence still produces a dependency id, and an insertion that
+merely *had* a dependency could report `safe_to_apply: true` while the row it would create has
+no pitcher to reference.
+
+Safety is therefore propagated explicitly after identity actions are built. For every
+dependent insertion the dependency must exist exactly once, be `safe_to_apply`, and carry no
+blocking reasons; otherwise the insertion is marked unsafe with a typed
+`identity_dependency_blocked` reason (or `identity_dependency_unresolved` when the dependency
+is absent or ambiguous). The insertion keeps its dependency ids and stays in the manifest — it
+is a real defect that still needs repairing — and no local `Pitcher` id is invented to route
+around the block. Because `safe_to_apply` and `blocking_reasons` are both fingerprinted, the
+propagation moves the manifest fingerprint, so a reviewed fingerprint can never silently cover
+an unsafe dependency.
+
 ## 12. Why the full manifest requires an exact reviewed fingerprint
 
 The manifest is fingerprinted with SHA-256 over its complete normalized serialization: UTF-8,

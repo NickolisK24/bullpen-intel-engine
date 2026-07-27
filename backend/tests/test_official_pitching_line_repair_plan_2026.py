@@ -713,7 +713,258 @@ def test_no_local_row_or_official_line_is_targeted_twice(app):
                  if a['action_type'] != planner.ACTION_IDENTITY_CREATE]
     assert len(line_keys) == len(set(line_keys))
     assert payload['reconciliations']['every_local_row_targeted_at_most_once'] is True
-    assert payload['reconciliations']['every_official_defect_line_maps_to_one_action'] is True
+    assert payload['reconciliations']['every_defect_line_maps_to_exactly_one_action'] is True
+
+
+# ═══════════════ Exact defect-line coverage ════════════════════════════════
+def _defect_keys(payload):
+    return {(a['mlb_game_pk'], a['official_mlb_person_id'], a['official_team_id'])
+            for a in payload['repair_manifest']
+            if a['action_type'] != planner.ACTION_IDENTITY_CREATE}
+
+
+def _reconcile(manifest, *, population, insert_actions, update_actions,
+               observed_official_line_keys, observed_defect_line_keys,
+               planned_defect_line_keys):
+    """Call the reconciliation surface directly with a controlled population."""
+    return planner._reconciliations(
+        population=population, observed=population.as_dict(), manifest=manifest,
+        identity_actions=[], insert_actions=insert_actions, update_actions=update_actions,
+        baseline_matches=False, duplicate_action_ids=set(), targeted_local_rows=set(),
+        observed_official_line_keys=observed_official_line_keys,
+        observed_defect_line_keys=observed_defect_line_keys,
+        planned_defect_line_keys=planned_defect_line_keys)
+
+
+def test_exact_matches_never_enter_the_defect_key_population(app):
+    _seed_matching_local()                       # six lines, all exact
+    payload = _plan()
+    recon = payload['reconciliations']
+    assert payload['exact_match_count'] == 6
+    assert payload['defect_line_action_count'] == 0
+    assert _defect_keys(payload) == set()
+    assert recon['no_exact_line_maps_to_a_repair_action'] is True
+    assert recon['observed_defect_key_count_equals_defect_lines'] is True
+    assert recon['every_defect_line_maps_to_exactly_one_action'] is True
+
+
+def test_missing_and_defective_lines_enter_the_defect_population_exactly_once(app):
+    _seed_matching_local()
+    db.session.query(GameLog).filter(
+        GameLog.pitcher_id == _pitcher(3).id).delete(synchronize_session=False)   # missing
+    db.session.query(GameLog).filter(GameLog.pitcher_id == _pitcher(2).id).update(
+        {'strikeouts': 9}, synchronize_session=False)                             # defective
+    db.session.commit()
+    payload = _plan()
+    recon = payload['reconciliations']
+    assert payload['missing_line_count'] == 1
+    assert payload['defective_matched_line_count'] == 1
+    assert _defect_keys(payload) == {(GAME_PK, 2, A), (GAME_PK, 3, A)}
+    assert recon['observed_defect_line_keys_unique'] is True
+    assert recon['planned_defect_line_keys_unique'] is True
+    assert recon['observed_defect_keys_equal_planned_defect_keys'] is True
+    assert recon['defect_keys_are_a_subset_of_observed_official_lines'] is True
+
+
+def test_observed_defect_keys_equal_planned_defect_keys_on_the_clean_fixture(app):
+    _seed_matching_local()
+    db.session.query(GameLog).filter(
+        GameLog.pitcher_id == _pitcher(5).id).delete(synchronize_session=False)
+    db.session.query(GameLog).filter(GameLog.pitcher_id == _pitcher(1).id).update(
+        {'earned_runs': 7}, synchronize_session=False)
+    db.session.commit()
+    payload = _plan()
+    assert payload['reconciliations']['observed_defect_keys_equal_planned_defect_keys'] is True
+    assert payload['reconciliations']['every_defect_line_maps_to_exactly_one_action'] is True
+    assert _defect_keys(payload) == {(GAME_PK, 1, A), (GAME_PK, 5, B)}
+
+
+def test_omitting_one_defect_action_fails_reconciliation_despite_many_official_lines():
+    # 500 official lines, 2 defects observed, only 1 planned. The old >= check would pass.
+    population = planner._Population(
+        official_lines_compared=500, exact_match_count=498,
+        missing_line_count=1, defective_matched_line_count=1)
+    official_keys = [(9001, i, 100) for i in range(1, 501)]
+    observed = [(9001, 1, 100), (9001, 2, 100)]
+    planned = [(9001, 1, 100)]                                   # one action omitted
+    insert_actions = [{'action_id': 'gamelog:insert:9001:1:100', 'safe_to_apply': True,
+                       'dependency_action_ids': [], 'blocking_reasons': []}]
+    recon = _reconcile([], population=population, insert_actions=insert_actions,
+                       update_actions=[], observed_official_line_keys=official_keys,
+                       observed_defect_line_keys=observed, planned_defect_line_keys=planned)
+    assert recon['observed_defect_keys_equal_planned_defect_keys'] is False
+    assert recon['every_defect_line_maps_to_exactly_one_action'] is False
+
+
+def test_substituting_a_different_line_fails_even_when_action_counts_match():
+    # Same number of actions, wrong line: count-based checks pass, key equality must not.
+    population = planner._Population(
+        official_lines_compared=500, exact_match_count=498,
+        missing_line_count=1, defective_matched_line_count=1)
+    official_keys = [(9001, i, 100) for i in range(1, 501)]
+    observed = [(9001, 1, 100), (9001, 2, 100)]
+    planned = [(9001, 1, 100), (9001, 499, 100)]                 # wrong second line
+    actions = [{'action_id': f'gamelog:insert:9001:{pid}:100', 'safe_to_apply': True,
+                'dependency_action_ids': [], 'blocking_reasons': []}
+               for pid in (1, 499)]
+    recon = _reconcile([], population=population, insert_actions=actions,
+                       update_actions=[], observed_official_line_keys=official_keys,
+                       observed_defect_line_keys=observed, planned_defect_line_keys=planned)
+    assert recon['planned_defect_key_count_equals_line_actions'] is True   # counts agree
+    assert recon['observed_defect_keys_equal_planned_defect_keys'] is False
+    assert recon['every_defect_line_maps_to_exactly_one_action'] is False
+    assert recon['no_exact_line_maps_to_a_repair_action'] is False   # 499 was an exact match
+
+
+def test_duplicate_planned_defect_keys_fail_reconciliation():
+    population = planner._Population(
+        official_lines_compared=3, exact_match_count=1,
+        missing_line_count=1, defective_matched_line_count=1)
+    official_keys = [(9001, 1, 100), (9001, 2, 100), (9001, 3, 100)]
+    observed = [(9001, 1, 100), (9001, 2, 100)]
+    planned = [(9001, 1, 100), (9001, 1, 100)]                   # same line twice
+    actions = [{'action_id': 'a', 'safe_to_apply': True, 'dependency_action_ids': [],
+                'blocking_reasons': []},
+               {'action_id': 'b', 'safe_to_apply': True, 'dependency_action_ids': [],
+                'blocking_reasons': []}]
+    recon = _reconcile([], population=population, insert_actions=actions,
+                       update_actions=[], observed_official_line_keys=official_keys,
+                       observed_defect_line_keys=observed, planned_defect_line_keys=planned)
+    assert recon['planned_defect_line_keys_unique'] is False
+    assert recon['every_defect_line_maps_to_exactly_one_action'] is False
+
+
+def test_duplicate_official_source_line_is_a_contradiction(app, monkeypatch):
+    _seed_matching_local()
+    real_sides = completeness._official_sides
+
+    def _duplicated(boxscore, *, game_pk, game_date):
+        sides = real_sides(boxscore, game_pk=game_pk, game_date=game_date)
+        for side in sides:
+            if side.lines:
+                side.lines.append(side.lines[-1])       # same official line twice
+                side.enumerated_line_count += 1
+                break
+        return sides
+
+    monkeypatch.setattr(completeness, '_official_sides', _duplicated)
+    payload = _plan()
+    assert payload['result'] == planner.RESULT_FAIL
+    assert payload['plan_status'] == planner.PLAN_BLOCKED_CONTRADICTORY
+    assert 'duplicate_official_source_line' in payload['decision_reasons']
+
+
+# ═══════════════ Dependency safety ══════════════════════════════════════════
+def _blocked_identity_fixture():
+    """Two dependent appearances for one person whose official position is unavailable."""
+    _log(1, team=A, gs=1, outs=18, r=2, er=2, h=5, k=6)
+    _log(2, team=A, gs=0, outs=3, r=1, er=1, h=1, k=2)
+    _log(4, team=B, gs=1, outs=15, r=3, er=3, h=6, k=4)
+    _log(5, team=B, gs=0, outs=4, r=1, er=1, bb=1)
+    _log(6, team=B, gs=0, outs=2, r=0, er=0)
+    _log(1, 9002, team=A, gs=1, outs=18, r=2, er=2, h=5, k=6)
+    _log(2, 9002, team=A, gs=0, outs=3, r=1, er=1, h=1, k=2)
+    _log(4, 9002, team=B, gs=1, outs=15, r=3, er=3, h=6, k=4)
+    _log(5, 9002, team=B, gs=0, outs=4, r=1, er=1, bb=1)
+    _log(6, 9002, team=B, gs=0, outs=2, r=0, er=0)
+    return _FakeMlbClient(
+        games=[_official_game(), _official_game(9002, gdate=date(2026, 6, 11))],
+        boxscores={GAME_PK: _boxscore(_HOME_LINES, _AWAY_LINES),
+                   9002: _boxscore(_HOME_LINES, _AWAY_LINES)},
+        people=_ALL_PEOPLE)
+
+
+def test_blocked_identity_makes_every_dependent_insertion_unsafe(app):
+    client = _blocked_identity_fixture()
+    people = dict(_ALL_PEOPLE)
+    people[3] = _person(3, position=None)          # identity cannot be represented safely
+    client.people = people
+    payload = planner.run_repair_plan(client=client)
+
+    identity = _action_for(payload, 'identity:create:3')
+    assert identity['safe_to_apply'] is False
+    dependents = [a for a in _actions(payload, planner.ACTION_GAME_LOG_INSERT)
+                  if 'identity:create:3' in a['dependency_action_ids']]
+    assert len(dependents) == 2                    # both appearances
+    for action in dependents:
+        assert action['safe_to_apply'] is False
+        assert planner.BLOCK_DEPENDENCY_BLOCKED in action['blocking_reasons']
+        assert action['dependency_action_ids'] == ['identity:create:3']  # preserved
+        assert action['local_pitcher_id'] is None                        # never invented
+    assert payload['result'] == planner.RESULT_INCONCLUSIVE
+    assert payload['repair_apply_gate'] == planner.GATE_BLOCKED
+    recon = payload['reconciliations']
+    assert recon['every_blocked_identity_blocks_its_dependent_insertions'] is True
+    assert recon['every_safe_dependent_insertion_has_a_safe_dependency'] is True
+
+
+def test_blocked_dependent_insertion_reports_identity_dependency_blocked(app):
+    client = _blocked_identity_fixture()
+    client.raise_people = {3}                      # official identity evidence unavailable
+    payload = planner.run_repair_plan(client=client)
+    dependents = [a for a in _actions(payload, planner.ACTION_GAME_LOG_INSERT)
+                  if 'identity:create:3' in a['dependency_action_ids']]
+    assert dependents
+    for action in dependents:
+        assert planner.BLOCK_DEPENDENCY_BLOCKED in action['blocking_reasons']
+        assert action['safe_to_apply'] is False
+    assert planner.BLOCK_DEPENDENCY_BLOCKED in payload['blocking_counts_by_reason']
+    assert payload['result'] == planner.RESULT_INCONCLUSIVE
+
+
+def test_safe_identity_leaves_its_dependent_insertions_safe(app):
+    client = _blocked_identity_fixture()
+    payload = planner.run_repair_plan(client=client)   # person 3 has full official evidence
+    identity = _action_for(payload, 'identity:create:3')
+    assert identity['safe_to_apply'] is True
+    assert identity['blocking_reasons'] == []
+    dependents = [a for a in _actions(payload, planner.ACTION_GAME_LOG_INSERT)
+                  if 'identity:create:3' in a['dependency_action_ids']]
+    assert len(dependents) == 2
+    for action in dependents:
+        assert action['safe_to_apply'] is True
+        assert planner.BLOCK_DEPENDENCY_BLOCKED not in action['blocking_reasons']
+    recon = payload['reconciliations']
+    assert recon['every_safe_dependent_insertion_has_a_safe_dependency'] is True
+    assert recon['every_dependency_references_one_identity_action'] is True
+    assert recon['identity_dependent_lists_reconcile_to_insertion_references'] is True
+
+
+def test_dependency_safety_changes_the_manifest_fingerprint(app):
+    client = _blocked_identity_fixture()
+    safe_fingerprint = planner.run_repair_plan(client=client)['repair_manifest_fingerprint']
+    # Identical official pitching evidence; only the identity becomes unrepresentable, so
+    # the propagated safe_to_apply and blocking_reasons must move the fingerprint.
+    people = dict(_ALL_PEOPLE)
+    people[3] = _person(3, position=None)
+    client.people = people
+    blocked = planner.run_repair_plan(client=client)
+    assert blocked['repair_manifest_fingerprint'] != safe_fingerprint
+    assert any(planner.BLOCK_DEPENDENCY_BLOCKED in (a['blocking_reasons'] or ())
+               for a in blocked['repair_manifest'])
+
+
+def test_dependency_safety_propagation_is_pure():
+    identity = {'action_id': 'identity:create:7', 'action_type': planner.ACTION_IDENTITY_CREATE,
+                'safe_to_apply': False, 'blocking_reasons': ['official_position_evidence_absent']}
+    insert = {'action_id': 'gamelog:insert:1:7:100',
+              'action_type': planner.ACTION_GAME_LOG_INSERT,
+              'dependency_action_ids': ['identity:create:7'],
+              'safe_to_apply': True, 'blocking_reasons': []}
+    planner._propagate_dependency_safety([identity], [insert])
+    assert insert['safe_to_apply'] is False
+    assert insert['blocking_reasons'] == [planner.BLOCK_DEPENDENCY_BLOCKED]
+    assert insert['dependency_action_ids'] == ['identity:create:7']
+
+
+def test_missing_dependency_action_is_unresolved_not_silently_safe():
+    insert = {'action_id': 'gamelog:insert:1:7:100',
+              'action_type': planner.ACTION_GAME_LOG_INSERT,
+              'dependency_action_ids': ['identity:create:404'],
+              'safe_to_apply': True, 'blocking_reasons': []}
+    planner._propagate_dependency_safety([], [insert])
+    assert insert['safe_to_apply'] is False
+    assert planner.BLOCK_DEPENDENCY_UNRESOLVED in insert['blocking_reasons']
 
 
 # ═══════════════ 31-32. Determinism ═════════════════════════════════════════
