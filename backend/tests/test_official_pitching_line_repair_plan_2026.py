@@ -28,6 +28,9 @@ from utils.db import db
 
 
 A, B, C = 100, 200, 300
+# The opposing official side for each fixture team, mirrored onto local rows.
+_OPPONENT_NAME = {A: 'Team200', B: 'Team100', C: None}
+_OPPONENT_ABBR = {A: 'T200', B: 'T100', C: None}
 SEASON = 2026
 AS_OF = date(2026, 7, 25)
 GDATE = date(2026, 6, 10)
@@ -67,15 +70,23 @@ def _pitcher(mlb_id, *, current_team=None, name=None):
 
 
 def _log(mlb_id, game_pk=GAME_PK, *, team, gs=0, outs=3, r=0, er=0, h=0, bb=0, k=0, hr=0,
-         gdate=GDATE, game_type='R', pitcher_row=None):
+         gdate=GDATE, game_type='R', pitcher_row=None, strikes=None, opponent=None,
+         opponent_abbreviation=None, **extra):
+    """A local row mirroring the matching official line's governed workload evidence."""
     row = pitcher_row or _pitcher(mlb_id)
     log = GameLog(
         pitcher_id=row.id, mlb_game_pk=game_pk, game_date=gdate, game_type=game_type,
         games_started=gs, innings_pitched_outs=outs, innings_pitched=(outs / 3.0),
         runs_allowed=r, earned_runs=er, hits_allowed=h, walks=bb, strikeouts=k,
-        home_runs_allowed=hr, appearance_team_status=GameLog.APPEARANCE_TEAM_RESOLVED,
+        home_runs_allowed=hr,
+        strikes=outs * 2 if strikes is None else strikes,
+        opponent=_OPPONENT_NAME[team] if opponent is None else opponent,
+        opponent_abbreviation=(_OPPONENT_ABBR[team] if opponent_abbreviation is None
+                               else opponent_abbreviation),
+        appearance_team_status=GameLog.APPEARANCE_TEAM_RESOLVED,
         appearance_team_id=team, appearance_team_source='boxscore_side',
         appearance_team_reason='appearance_team_resolved_boxscore',
+        **extra,
     )
     db.session.add(log)
     db.session.commit()
@@ -87,9 +98,21 @@ def _ip(outs):
     return f'{outs // 3}.{outs % 3}'
 
 
-def _pline(mlb_id, *, gs, outs, r=0, er=0, h=0, bb=0, k=0, hr=0, drop=()):
+def _pline(mlb_id, *, gs, outs, r=0, er=0, h=0, bb=0, k=0, hr=0, drop=(),
+           strikes=None, pitches=None, extra=None):
+    """A complete official pitching line.
+
+    ``strikes`` is one of the required authoritative-correction keys, so it is always
+    present unless a test deliberately drops it. ``numberOfPitches`` is genuinely optional
+    in official completed-game lines and is only added when a test supplies it.
+    """
     stats = {'gamesStarted': gs, 'inningsPitched': _ip(outs), 'runs': r, 'earnedRuns': er,
-             'hits': h, 'baseOnBalls': bb, 'strikeOuts': k, 'homeRuns': hr}
+             'hits': h, 'baseOnBalls': bb, 'strikeOuts': k, 'homeRuns': hr,
+             'strikes': outs * 2 if strikes is None else strikes}
+    if pitches is not None:
+        stats['numberOfPitches'] = pitches
+    if extra:
+        stats.update(extra)
     for key in drop:
         stats.pop(key, None)
     return (mlb_id, stats)
@@ -97,7 +120,7 @@ def _pline(mlb_id, *, gs, outs, r=0, er=0, h=0, bb=0, k=0, hr=0, drop=()):
 
 def _side(team_id, name, lines):
     return {
-        'team': {'id': team_id, 'name': name},
+        'team': {'id': team_id, 'name': name, 'abbreviation': f'T{team_id}'},
         'pitchers': [mlb_id for mlb_id, _stats in lines],
         'players': {f'ID{mlb_id}': {'person': {'id': mlb_id, 'fullName': f'P{mlb_id}'},
                                     'stats': {'pitching': stats}}
@@ -568,9 +591,13 @@ def test_missing_official_stat_blocks_the_action_and_is_never_zero(app):
     payload = planner.run_repair_plan(client=_client(home_lines=home))
     insert = _action_for(payload, f'gamelog:insert:{GAME_PK}:3:{A}')
     assert 'home_runs_allowed' not in insert['proposed_values']   # never defaulted to 0
-    assert planner.BLOCK_OFFICIAL_STAT_ABSENT in insert['blocking_reasons']
+    # homeRuns is one of the governed required correction keys, so the authoritative
+    # source contract blocks the line before any value is proposed from it.
+    assert planner.BLOCK_CORRECTION_SOURCE_INCOMPLETE in insert['blocking_reasons']
     assert insert['safe_to_apply'] is False
     assert payload['result'] == planner.RESULT_INCONCLUSIVE
+    assert payload['workload_field_coverage'][
+        'actions_blocked_by_incomplete_authoritative_source'] >= 1
 
 
 def test_identity_evidence_unavailable_blocks_the_prerequisite(app):
@@ -733,7 +760,8 @@ def _reconcile(manifest, *, population, insert_actions, update_actions,
         baseline_matches=False, duplicate_action_ids=set(), targeted_local_rows=set(),
         observed_official_line_keys=observed_official_line_keys,
         observed_defect_line_keys=observed_defect_line_keys,
-        planned_defect_line_keys=planned_defect_line_keys)
+        planned_defect_line_keys=planned_defect_line_keys,
+        manifest_fingerprint='0' * 64)
 
 
 def test_exact_matches_never_enter_the_defect_key_population(app):
@@ -966,6 +994,303 @@ def test_missing_dependency_action_is_unresolved_not_silently_safe():
     assert insert['safe_to_apply'] is False
     assert planner.BLOCK_DEPENDENCY_UNRESOLVED in insert['blocking_reasons']
 
+
+
+# ═══════════════ Official GameLog evidence completeness ════════════════════
+_FULL_STATS = {'battersFaced': 12, 'balls': 14, 'gamesFinished': 1,
+               'inheritedRunners': 2, 'inheritedRunnersScored': 1,
+               'saveOpportunities': 1, 'holds': 0, 'blownSaves': 0,
+               'wins': 1, 'losses': 0, 'saves': 0}
+
+
+def _missing_line_client(*, pitches=None, extra=None, drop=(), strikes=None):
+    """Official evidence where person 3's line is missing locally."""
+    home = [_pline(1, gs=1, outs=18, r=2, er=2, h=5, k=6),
+            _pline(2, gs=0, outs=3, r=1, er=1, h=1, k=2),
+            _pline(3, gs=0, outs=3, r=0, er=0, k=1, pitches=pitches, extra=extra,
+                   drop=drop, strikes=strikes)]
+    return _client(home_lines=home)
+
+
+def _seed_missing_line_3():
+    _seed_matching_local()
+    db.session.query(GameLog).filter(
+        GameLog.pitcher_id == _pitcher(3).id).delete(synchronize_session=False)
+    db.session.commit()
+
+
+def test_pitch_count_is_planned_when_official_evidence_supplies_it(app):
+    _seed_missing_line_3()
+    payload = planner.run_repair_plan(client=_missing_line_client(pitches=41))
+    insert = _action_for(payload, f'gamelog:insert:{GAME_PK}:3:{A}')
+    assert insert['proposed_values']['pitches_thrown'] == 41
+    assert insert['official_source_evidence']['official_raw_stats']['numberOfPitches'] == 41
+    assert payload['workload_field_coverage'][
+        'insert_actions_with_official_pitch_count'] == 1
+    assert payload['workload_field_coverage'][
+        'insert_actions_without_official_pitch_count'] == 0
+
+
+def test_absent_pitch_count_stays_null_and_is_counted(app):
+    _seed_missing_line_3()
+    payload = planner.run_repair_plan(client=_missing_line_client())   # no numberOfPitches
+    insert = _action_for(payload, f'gamelog:insert:{GAME_PK}:3:{A}')
+    assert 'pitches_thrown' not in insert['proposed_values']    # never manufactured
+    assert 'numberOfPitches' not in insert['official_source_evidence']['official_raw_stats']
+    assert payload['workload_field_coverage'][
+        'insert_actions_without_official_pitch_count'] == 1
+    assert insert['safe_to_apply'] is True     # optional absence never blocks
+
+
+def test_strikes_are_required_and_never_defaulted(app):
+    _seed_missing_line_3()
+    payload = planner.run_repair_plan(client=_missing_line_client(drop=('strikes',)))
+    insert = _action_for(payload, f'gamelog:insert:{GAME_PK}:3:{A}')
+    assert 'strikes' not in insert['proposed_values']
+    assert planner.BLOCK_CORRECTION_SOURCE_INCOMPLETE in insert['blocking_reasons']
+    assert insert['safe_to_apply'] is False
+    assert payload['result'] == planner.RESULT_INCONCLUSIVE
+    assert payload['repair_apply_gate'] == planner.GATE_BLOCKED
+
+
+def test_strikes_are_planned_from_official_evidence(app):
+    _seed_missing_line_3()
+    payload = planner.run_repair_plan(client=_missing_line_client(strikes=27))
+    insert = _action_for(payload, f'gamelog:insert:{GAME_PK}:3:{A}')
+    assert insert['proposed_values']['strikes'] == 27
+    assert payload['workload_field_coverage']['insert_actions_with_official_strikes'] == 1
+
+
+def test_opponent_comes_from_the_opposing_official_side(app):
+    _seed_missing_line_3()
+    payload = planner.run_repair_plan(client=_missing_line_client())
+    insert = _action_for(payload, f'gamelog:insert:{GAME_PK}:3:{A}')
+    # Person 3 pitched for the HOME side (team A), so the opponent is the AWAY side.
+    assert insert['proposed_values']['opponent'] == f'Team{B}'
+    assert insert['proposed_values']['opponent_abbreviation'] == f'T{B}'
+    evidence = insert['official_source_evidence']
+    assert evidence['official_side'] == 'home'
+    assert evidence['opposing_team_id'] == B
+    assert payload['reconciliations']['opponent_comes_from_the_official_game_side'] is True
+    # Opponent never comes from a mutable player assignment.
+    assert 'Pitcher.team_abbreviation' not in _code_without_prose(SERVICE_PATH)
+
+
+def test_batters_faced_and_balls_appear_only_when_present(app):
+    _seed_missing_line_3()          # one ledger state, two official evidence variants
+    without = planner.run_repair_plan(client=_missing_line_client())
+    insert = _action_for(without, f'gamelog:insert:{GAME_PK}:3:{A}')
+    assert 'batters_faced' not in insert['proposed_values']
+    assert 'balls' not in insert['proposed_values']
+
+    with_evidence = planner.run_repair_plan(
+        client=_missing_line_client(extra={'battersFaced': 12, 'balls': 14}))
+    insert = _action_for(with_evidence, f'gamelog:insert:{GAME_PK}:3:{A}')
+    assert insert['proposed_values']['batters_faced'] == 12
+    assert insert['proposed_values']['balls'] == 14
+    assert with_evidence['workload_field_coverage'][
+        'insert_actions_with_batters_faced'] == 1
+
+
+def test_inherited_runner_fields_appear_only_when_present(app):
+    _seed_missing_line_3()
+    without = planner.run_repair_plan(client=_missing_line_client())
+    insert = _action_for(without, f'gamelog:insert:{GAME_PK}:3:{A}')
+    assert 'inherited_runners' not in insert['proposed_values']
+    assert 'inherited_runners_scored' not in insert['proposed_values']
+    assert without['workload_field_coverage'][
+        'insert_actions_with_inherited_runner_evidence'] == 0
+
+    with_evidence = planner.run_repair_plan(client=_missing_line_client(
+        extra={'inheritedRunners': 2, 'inheritedRunnersScored': 0}))
+    insert = _action_for(with_evidence, f'gamelog:insert:{GAME_PK}:3:{A}')
+    assert insert['proposed_values']['inherited_runners'] == 2
+    assert insert['proposed_values']['inherited_runners_scored'] == 0   # official zero kept
+    assert with_evidence['workload_field_coverage'][
+        'insert_actions_with_inherited_runner_evidence'] == 1
+
+
+def test_decision_and_save_fields_follow_the_ingestion_contract(app):
+    _seed_missing_line_3()
+    payload = planner.run_repair_plan(client=_missing_line_client(extra=dict(_FULL_STATS)))
+    insert = _action_for(payload, f'gamelog:insert:{GAME_PK}:3:{A}')
+    proposed = insert['proposed_values']
+    # Booleans follow sync._positive_stat: present-and-positive is True, present-and-zero
+    # is False, and the field only appears at all when the source key is present.
+    assert proposed['save_situation'] is True          # saveOpportunities 1
+    assert proposed['win'] is True                     # wins 1
+    assert proposed['hold'] is False                   # holds 0, officially present
+    assert proposed['blown_save'] is False
+    assert proposed['loss'] is False
+    assert proposed['save'] is False
+    assert proposed['games_finished'] == 1
+    assert payload['workload_field_coverage']['insert_actions_with_decision_evidence'] == 1
+
+
+def test_decision_fields_are_absent_when_the_source_omits_them(app):
+    _seed_missing_line_3()
+    payload = planner.run_repair_plan(client=_missing_line_client())
+    insert = _action_for(payload, f'gamelog:insert:{GAME_PK}:3:{A}')
+    for field in ('save_situation', 'hold', 'blown_save', 'win', 'loss', 'save'):
+        assert field not in insert['proposed_values'], field
+    assert payload['reconciliations'][
+        'optional_fields_planned_only_when_source_present'] is True
+
+
+def test_every_safe_insert_carries_every_required_correction_field(app):
+    _seed_missing_line_3()
+    payload = planner.run_repair_plan(client=_missing_line_client(pitches=41))
+    insert = _action_for(payload, f'gamelog:insert:{GAME_PK}:3:{A}')
+    assert set(planner.REQUIRED_INSERT_FIELDS) <= set(insert['proposed_values'])
+    recon = payload['reconciliations']
+    assert recon['every_safe_insert_contains_every_required_correction_field'] is True
+    assert recon['no_required_official_value_is_defaulted'] is True
+
+
+def test_update_gains_workload_corrections_without_becoming_a_second_action(app):
+    _seed_matching_local()
+    # One row is wrong on a mandatory metric AND on governed workload evidence.
+    db.session.query(GameLog).filter(GameLog.pitcher_id == _pitcher(2).id).update(
+        {'strikeouts': 9, 'strikes': 99}, synchronize_session=False)
+    db.session.commit()
+    payload = planner.run_repair_plan(client=_client(
+        home_lines=[_pline(1, gs=1, outs=18, r=2, er=2, h=5, k=6),
+                    _pline(2, gs=0, outs=3, r=1, er=1, h=1, k=2, pitches=18),
+                    _pline(3, gs=0, outs=3, r=0, er=0, k=1)]))
+    updates = _actions(payload, planner.ACTION_GAME_LOG_UPDATE)
+    assert len(updates) == 1                       # still exactly one action for the row
+    changed = updates[0]['changed_fields']
+    assert 'strikeouts' in changed                 # mandatory metric
+    assert 'strikes' in changed                    # workload field
+    assert 'pitches_thrown' in changed             # workload field newly available
+    assert updates[0]['current_values']['strikes'] == 99
+    assert updates[0]['proposed_values']['strikes'] == 6
+    assert updates[0]['proposed_values']['pitches_thrown'] == 18
+    assert payload['workload_field_coverage']['update_actions_correcting_strikes'] == 1
+    assert payload['workload_field_coverage']['update_actions_correcting_pitch_count'] == 1
+    assert payload['reconciliations'][
+        'every_changed_field_has_current_and_proposed_values'] is True
+
+
+def test_update_never_replaces_a_local_value_with_null(app):
+    _seed_matching_local()
+    # Local row carries a stored pitch count; the official line omits numberOfPitches.
+    db.session.query(GameLog).filter(GameLog.pitcher_id == _pitcher(2).id).update(
+        {'pitches_thrown': 37, 'strikeouts': 9}, synchronize_session=False)
+    db.session.commit()
+    payload = _plan()
+    update = _actions(payload, planner.ACTION_GAME_LOG_UPDATE)[0]
+    assert 'pitches_thrown' not in update['changed_fields']
+    assert 'pitches_thrown' in update['null_guarded_fields']
+    assert update['proposed_values'].get('pitches_thrown') is None
+    assert payload['reconciliations'][
+        'no_update_replaces_a_local_value_with_null'] is True
+    assert payload['workload_field_coverage'][
+        'update_actions_with_null_guarded_fields'] == 1
+
+
+def test_exact_mandatory_line_with_matching_workload_gains_no_action(app):
+    _seed_matching_local()          # local rows mirror official strikes and opponent
+    payload = _plan()
+    assert payload['defect_line_action_count'] == 0
+    assert payload['repair_manifest'] == []
+    assert payload['reconciliations']['no_exact_line_maps_to_a_repair_action'] is True
+
+
+def test_manifest_fingerprint_supersedes_the_prior_production_fingerprint(app):
+    _seed_missing_line_3()
+    payload = planner.run_repair_plan(client=_missing_line_client(pitches=41))
+    prior = 'dbbc063a0711e57b0dc2d858b7d1d291c568c4990ecff7c9ebf3d1b138cbb2d6'
+    assert planner.PRIOR_PRODUCTION_MANIFEST_FINGERPRINT == prior
+    assert payload['prior_production_manifest_fingerprint'] == prior
+    assert payload['repair_manifest_fingerprint'] != prior
+    assert payload['reconciliations'][
+        'manifest_fingerprint_differs_from_prior_production_fingerprint'] is True
+
+
+def test_raw_evidence_changes_the_source_fingerprint(app):
+    _seed_missing_line_3()          # one ledger state, two official evidence variants
+    without = planner.run_repair_plan(client=_missing_line_client())
+    with_pitches = planner.run_repair_plan(client=_missing_line_client(pitches=41))
+    a = _action_for(without, f'gamelog:insert:{GAME_PK}:3:{A}')
+    b = _action_for(with_pitches, f'gamelog:insert:{GAME_PK}:3:{A}')
+    assert a['source_fingerprint'] != b['source_fingerprint']
+    assert without['repair_manifest_fingerprint'] != with_pitches['repair_manifest_fingerprint']
+    assert with_pitches['reconciliations'][
+        'source_fingerprints_cover_the_enriched_raw_evidence'] is True
+
+
+def test_raw_official_stats_are_retained_before_normalization(app):
+    _seed_missing_line_3()
+    payload = planner.run_repair_plan(
+        client=_missing_line_client(pitches=41, extra=dict(_FULL_STATS)))
+    evidence = _action_for(
+        payload, f'gamelog:insert:{GAME_PK}:3:{A}')['official_source_evidence']
+    raw = evidence['official_raw_stats']
+    for key in ('inningsPitched', 'numberOfPitches', 'strikes', 'hits', 'runs', 'earnedRuns',
+                'baseOnBalls', 'strikeOuts', 'homeRuns', 'battersFaced', 'balls',
+                'gamesFinished', 'inheritedRunners', 'inheritedRunnersScored',
+                'saveOpportunities', 'holds', 'blownSaves', 'wins', 'losses', 'saves'):
+        assert key in raw, key
+    # The normalized mandatory metrics are retained alongside, not instead of, the raw line.
+    assert set(evidence['official_stats']) == {
+        'outs', 'runs', 'earned_runs', 'hits', 'walks', 'strikeouts', 'home_runs'}
+
+
+def test_correction_metadata_policy_is_descriptive_only(app):
+    _seed_missing_line_3()
+    payload = planner.run_repair_plan(client=_missing_line_client())
+    policy = payload['correction_metadata_policy']
+    assert policy['correction_source'] == 'official_pitching_line_repair'
+    assert policy['executed_by_planner'] is False
+    assert 'excluded from the manifest fingerprint' in policy['last_stat_correction_at']
+    assert 'sync._notify_workload_evidence_game_log_correction' in policy[
+        'dependent_evidence_invalidation']
+    # No action ever proposes correction metadata or a generated timestamp.
+    for action in payload['repair_manifest']:
+        proposed = action.get('proposed_values') or {}
+        for field in ('stat_correction_count', 'last_stat_correction_at',
+                      'last_stat_correction_source', 'last_stat_correction_sync_run_id',
+                      'created_at'):
+            assert field not in proposed, field
+
+
+def test_planner_reuses_the_production_ingestion_contract():
+    code = _code_without_prose(SERVICE_PATH)
+    for helper in ('sync_service._game_log_values_from_stats',
+                   'sync_service._correction_source_state',
+                   'sync_service._authoritative_correction_fields',
+                   'sync_service._extract_pitching_lines_from_boxscore'):
+        assert helper in code, helper
+    # The planner must not re-implement official stat parsing.
+    for reimplementation in ("stats.get('numberOfPitches')", "int(stats.get('strikes'",
+                             "def _int_stat"):
+        assert reimplementation not in code, reimplementation
+
+
+def test_daily_sync_parsing_behaviour_is_unchanged():
+    """The planner reuses the ingestion helpers; it must not have altered them."""
+    from services import sync as sync_module
+    stats = {'inningsPitched': '1.1', 'strikes': 12, 'hits': 1, 'runs': 0, 'earnedRuns': 0,
+             'baseOnBalls': 1, 'strikeOuts': 2, 'homeRuns': 0, 'numberOfPitches': 20,
+             'battersFaced': 5, 'saveOpportunities': 1}
+    values = sync_module._game_log_values_from_stats(
+        stats=stats, pitcher=planner._PitcherRef(7), game_pk=1, game_date=GDATE,
+        game_type='R', opponent='Opp', opponent_abbreviation='OPP', games_started=0)
+    assert values['innings_pitched_outs'] == 4
+    assert values['innings_pitched'] == pytest.approx(4 / 3.0)
+    assert values['pitches_thrown'] == 20
+    assert values['strikes'] == 12
+    assert values['batters_faced'] == 5
+    assert values['save_situation'] is True
+    assert values['balls'] is None
+    assert values['pitcher_id'] == 7
+    safe, reason, missing = sync_module._correction_source_state(stats)
+    assert (safe, reason, missing) == (True, None, [])
+    fields = sync_module._authoritative_correction_fields(
+        values, stats, include_leverage_index=False)
+    assert 'save_situation' in fields and 'batters_faced' in fields
+    assert 'balls' not in fields               # source key absent
 
 # ═══════════════ 31-32. Determinism ═════════════════════════════════════════
 def test_action_ids_are_deterministic_and_unique(app):
