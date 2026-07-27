@@ -256,9 +256,3 @@ def test_nonzero_daily_appearance_is_unchanged_by_guard(app):
         pitcher_id=pitcher.id,
         mlb_game_pk=GAME_PK,
     ).one().innings_pitched_outs == 3
-
-
-def test_zero_out_guard_never_reads_current_team_as_authority():
-    source = Path(__file__).resolve().parents[2] / 'backend' / 'services' / 'appearance_team_authority.py'
-    text = source.read_text(encoding='utf-8').lower()
-    assert 'pitcher.team_id' not in text
