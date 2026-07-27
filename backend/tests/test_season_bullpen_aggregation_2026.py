@@ -329,11 +329,13 @@ def test_only_regular_season_game_type(app):
 def test_non_final_game_excluded(app):
     _seed_one_game()
     _sched(9002, A, B, state='scheduled')
-    _log(9, 9002, team=A, gs=0, outs=9)  # game not final => excluded, not blocking
+    _log(9, 9002, team=A, gs=0, outs=9)  # game not final => game_not_final, not blocking
     s = _run()
     assert s['result'] == agg.RESULT_PASS
     assert _team(s, A)['workload']['bullpen_outs'] == 6
-    assert s['coverage']['excluded_by_reason'].get('schedule_authority_missing') == 1
+    assert s['coverage']['excluded_by_reason'].get('game_not_final') == 1
+    # A non-final game must never be counted as missing authority.
+    assert s['coverage']['schedule_authority_missing_rows'] == 0
 
 
 def test_postponed_game_excluded(app):
@@ -345,13 +347,21 @@ def test_postponed_game_excluded(app):
     assert _team(s, A)['workload']['bullpen_outs'] == 6
 
 
-def test_missing_schedule_authority_excluded(app):
+def test_missing_schedule_authority_blocks_pass(app):
+    # An in-scope GameLog row whose game_pk has NO ScheduledGame authority must prevent PASS.
     _seed_one_game()
-    # A GameLog row whose game_pk has no ScheduledGame rows at all.
     _log(9, 9999, team=A, gs=0, outs=9)
     s = _run()
-    assert s['result'] == agg.RESULT_PASS
-    assert s['coverage']['excluded_by_reason'].get('schedule_authority_missing') == 1
+    assert s['result'] == agg.RESULT_INCONCLUSIVE
+    assert s['exit_code'] == 2
+    assert 'schedule_authority_missing' in s['decision_reasons']
+    assert s['coverage']['schedule_authority_missing_rows'] == 1
+    assert s['coverage']['schedule_authority_missing_games'] == 1
+    assert s['foundation_3_status'] == 'aggregation_inconclusive'
+    assert s['public_reader_gate'] == 'blocked'
+    assert s['share_card_performance_gate'] == 'blocked'
+    # The row's stats are NOT zero-filled into any team total (A stays at its 6 clean outs).
+    assert _team(s, A)['workload']['bullpen_outs'] == 6
 
 
 def test_doubleheaders_stay_distinct(app):
@@ -371,7 +381,9 @@ def test_duplicate_appearance_detected():
     seen = {(1, 9001)}
     from types import SimpleNamespace
     log = SimpleNamespace(mlb_game_pk=9001, pitcher_id=1)
-    decision = agg._classify_row(log, {9001: agg._FinalGame(9001, frozenset({A, B}), GDATE)}, seen)
+    final_games = {9001: agg._FinalGame(9001, frozenset({A, B}), GDATE)}
+    sched_class = {9001: agg.SCHED_FINAL_R}
+    decision = agg._classify_row(log, final_games, sched_class, seen)
     assert decision.reason_code == 'duplicate_appearance'
     assert decision.blocking == 'fail'
 
@@ -535,29 +547,37 @@ def test_trust_complete_when_splits_match(app):
     assert _team(_run(), A)['trust']['status'] == agg.TRUST_COMPLETE
 
 
-def test_split_divergence_caps_trust_partial_not_fail(app):
+def test_split_divergence_does_not_govern_trust_or_result(app):
     _seed_one_game()
-    # Corrupt A's split so bullpen_outs disagree (simulating the current-team grouping defect).
+    # Corrupt A's split so its (current-team-grouped) outs disagree.
     row = db.session.query(TeamGamePitchingSplit).filter_by(team_id=A, mlb_game_pk=9001).one()
     row.bullpen_outs_recorded = 99
     db.session.commit()
     s = _run()
-    assert s['result'] == agg.RESULT_PASS  # divergence never globally fails the run
+    assert s['result'] == agg.RESULT_PASS
     ta = _team(s, A)
-    assert ta['trust']['status'] == agg.TRUST_PARTIAL
-    assert ta['reconciliation']['outs_match'] is False
-    assert 'split_outs_reconciliation_divergence' in ta['trust']['reason_codes']
+    # The split is a NON-GOVERNING diagnostic: trust stays complete, canonical outs still match.
+    assert ta['trust']['status'] == agg.TRUST_COMPLETE
+    assert ta['reconciliation']['canonical_outs_match'] is True
+    diag = ta['reconciliation']['current_team_split_diagnostic']
+    assert diag['support_status'] == 'unsupported'
+    assert diag['reason_code'] == 'current_team_leakage'
+    assert diag['observed_value'] == 99
+    assert s['foundation_3_status'] == 'aggregation_ready_for_validation'
+    assert s['public_reader_gate'] == 'blocked'
+    assert s['share_card_performance_gate'] == 'blocked'
 
 
-def test_split_absent_is_unavailable_not_mismatch(app):
+def test_missing_split_does_not_govern_trust(app):
     _seed_one_game()
     db.session.query(TeamGamePitchingSplit).delete()
     db.session.commit()
     s = _run()
     assert s['result'] == agg.RESULT_PASS
     ta = _team(s, A)
-    assert ta['reconciliation']['outs_match'] is None
-    assert ta['reconciliation']['team_game_split_bullpen_outs'] is None
+    assert ta['trust']['status'] == agg.TRUST_COMPLETE  # missing split never downgrades trust
+    assert ta['reconciliation']['current_team_split_diagnostic']['observed_value'] is None
+    assert ta['reconciliation']['current_team_split_diagnostic']['support_status'] == 'unsupported'
 
 
 # ═══════════════ Determinism (matrix — correction propagation) ══════════════
@@ -780,6 +800,152 @@ def test_official_mismatch_samples_bounded(app):
     assert len(s['bounded_mismatches']) <= 2
 
 
+# ═══════════════ Correction 1 — missing schedule authority ═════════════════
+def test_multiple_missing_rows_one_game_counts_one_game(app):
+    _seed_one_game()
+    _log(7, 9999, team=A, gs=0, outs=3)  # same missing-authority game, two rows
+    _log(8, 9999, team=A, gs=0, outs=3)
+    s = _run()
+    assert s['result'] == agg.RESULT_INCONCLUSIVE
+    assert s['coverage']['schedule_authority_missing_rows'] == 2
+    assert s['coverage']['schedule_authority_missing_games'] == 1
+
+
+def test_contradictory_schedule_authority_fails(app):
+    _seed_one_game()
+    # Two sides of game 9002 disagree on finality: one 'final', one 'scheduled'.
+    db.session.add_all([
+        ScheduledGame(team_id=A, game_pk=9002, game_date=GDATE, game_type='R',
+                      status_state='final', home_away='home', opponent_team_id=B),
+        ScheduledGame(team_id=B, game_pk=9002, game_date=GDATE, game_type='R',
+                      status_state='scheduled', home_away='away', opponent_team_id=A),
+    ])
+    db.session.commit()
+    _log(9, 9002, team=A, gs=0, outs=3)
+    s = _run()
+    assert s['result'] == agg.RESULT_FAIL
+    assert 'contradictory_game_authority' in s['decision_reasons']
+
+
+def test_out_of_scope_rows_do_not_create_false_missing_blocker(app):
+    _seed_one_game()
+    # A 2025 row (out of season) and an after-as_of row must not become missing-authority.
+    _sched(8000, A, B, gdate=date(2025, 6, 10))
+    _log(9, 8000, team=A, gs=0, outs=9, gdate=date(2025, 6, 10))
+    s = _run(season=2026, as_of_date=AS_OF)
+    assert s['result'] == agg.RESULT_PASS
+    assert s['coverage']['schedule_authority_missing_rows'] == 0
+
+
+# ═══════════════ Correction 2 — official starter identity ═══════════════════
+def _client_with_official_starter_lines(home_lines, away_lines, game_pk=9001):
+    return _FakeMlbClient(games=[_official_game(game_pk, A, B)],
+                          boxscores={game_pk: _boxscore(A, B, home_lines, away_lines)})
+
+
+def test_official_unique_starter_identified(app):
+    status, pid = agg._official_starter(_side(A, 'T', [_pline(1, gs=1, outs=18),
+                                                       _pline(2, gs=0, outs=3)]))
+    assert status == agg.STARTER_UNIQUE and pid == 1
+
+
+def test_official_zero_starter_is_inconclusive(app):
+    _seed_one_game()
+    # Home side has NO gamesStarted==1 line.
+    home_lines = [_pline(1, gs=0, outs=18, er=2), _pline(2, gs=0, outs=3, er=1),
+                  _pline(3, gs=0, outs=3, er=0)]
+    away_lines = [_pline(4, gs=1, outs=15, er=3), _pline(5, gs=0, outs=4, er=1),
+                  _pline(6, gs=0, outs=2, er=0)]
+    s = _run(include_official_validation=True,
+             client=_client_with_official_starter_lines(home_lines, away_lines))
+    assert s['result'] == agg.RESULT_INCONCLUSIVE
+    assert 'official_starter_identity_missing' in s['decision_reasons']
+    assert s['official_validation']['official_games_missing_unique_starter'] >= 1
+
+
+def test_official_multiple_starters_is_fail(app):
+    _seed_one_game()
+    # Home side has TWO gamesStarted==1 lines — contradictory official evidence.
+    home_lines = [_pline(1, gs=1, outs=9, er=2), _pline(2, gs=1, outs=9, er=1),
+                  _pline(3, gs=0, outs=3, er=0)]
+    away_lines = [_pline(4, gs=1, outs=15, er=3), _pline(5, gs=0, outs=4, er=1),
+                  _pline(6, gs=0, outs=2, er=0)]
+    s = _run(include_official_validation=True,
+             client=_client_with_official_starter_lines(home_lines, away_lines))
+    assert s['result'] == agg.RESULT_FAIL
+    assert 'official_starter_identity_contradictory' in s['decision_reasons']
+    assert s['official_validation']['official_games_with_multiple_starters'] >= 1
+
+
+def test_official_starter_ignores_array_order(app):
+    # Starter (gs=1) is NOT first in the pitchers array; it must still be identified.
+    lines = [_pline(2, gs=0, outs=3), _pline(1, gs=1, outs=18)]
+    status, pid = agg._official_starter(_side(A, 'T', lines))
+    assert status == agg.STARTER_UNIQUE and pid == 1
+
+
+def test_official_result_independent_of_pitcher_array_order(app):
+    _seed_one_game()
+    # Lines that exactly match the _seed_one_game fixture (so a match is expected).
+    home = [_pline(1, gs=1, outs=18, er=2), _pline(2, gs=0, outs=3, er=1, k=2, h=1),
+            _pline(3, gs=0, outs=3, er=0, k=1)]
+    away = [_pline(4, gs=1, outs=15, er=3), _pline(5, gs=0, outs=4, er=1, bb=1),
+            _pline(6, gs=0, outs=2, er=0)]
+    forward = _run(include_official_validation=True,
+                   client=_client_with_official_starter_lines(home, away))
+    reversed_client = _client_with_official_starter_lines(list(reversed(home)), list(reversed(away)))
+    backward = _run(include_official_validation=True, client=reversed_client)
+    assert forward['result'] == backward['result'] == agg.RESULT_PASS
+    assert (forward['official_validation']['teams_matched']
+            == backward['official_validation']['teams_matched'])
+
+
+def test_no_first_pitcher_fallback_in_source():
+    src = SERVICE_PATH.read_text(encoding='utf-8')
+    assert 'ordered[0]' not in src           # no first-pitcher fallback
+    assert 'pitchers[0]' not in src
+
+
+def test_official_home_and_away_starters_independent(app):
+    # Away side lacks a unique starter while the home side has one — evaluated independently.
+    home_lines = [_pline(1, gs=1, outs=18, er=2), _pline(2, gs=0, outs=3, er=1), _pline(3, gs=0, outs=3, er=0)]
+    away_lines = [_pline(4, gs=0, outs=15, er=3), _pline(5, gs=0, outs=4, er=1), _pline(6, gs=0, outs=2, er=0)]
+    _seed_one_game()
+    s = _run(include_official_validation=True,
+             client=_client_with_official_starter_lines(home_lines, away_lines))
+    # Away (B) lacks a unique starter => that team-game is incomplete => INCONCLUSIVE.
+    assert s['result'] == agg.RESULT_INCONCLUSIVE
+    assert s['official_validation']['official_games_missing_unique_starter'] == 1
+
+
+# ═══════════════ Correction 3 — canonical reconciliation ════════════════════
+def test_canonical_game_and_team_grain_reconcile(app):
+    _seed_one_game()
+    s = _run()
+    recon = s['reconciliations']
+    assert recon['canonical_game_grain_bullpen_outs'] == recon['canonical_team_grain_bullpen_outs']
+    assert recon['canonical_outs_match'] is True
+
+
+def test_split_cannot_satisfy_canonical_reconciliation(app):
+    # A canonical integrity failure (appearance attributed to a non-participating team) fails
+    # even if a current-team split "agrees" — the split cannot rescue canonical reconciliation.
+    _seed_one_game()
+    _split(C, 9001, bullpen_outs=3)  # a stray split for a team not in the game
+    _log(7, 9001, team=C, gs=0, outs=3)  # C did not play game 9001
+    s = _run()
+    assert s['result'] == agg.RESULT_FAIL
+    assert 'appearance_team_not_in_game' in s['decision_reasons']
+
+
+def test_share_card_gate_blocked_in_official_pass(app):
+    _seed_one_game()
+    s = _run(include_official_validation=True, client=_matching_official_client())
+    assert s['result'] == agg.RESULT_PASS
+    assert s['public_reader_gate'] == 'ready_for_review'
+    assert s['share_card_performance_gate'] == 'blocked'  # blocked even on official PASS
+
+
 # ═══════════════ CLI + workflow (matrix 91-100) ═════════════════════════════
 def test_cli_helpers_and_defaults():
     import argparse
@@ -827,6 +993,13 @@ def test_workflow_summary_uses_real_fields():
     for field in ("payload.get('result')", "payload.get('foundation_3_status')",
                   "payload.get('public_reader_gate')", "payload.get('share_card_performance_gate')",
                   "payload.get('database_writes_performed')"):
+        assert field in src
+
+
+def test_workflow_summary_exposes_corrected_fields():
+    src = WORKFLOW_PATH.read_text(encoding='utf-8')
+    for field in ('schedule_authority_missing_rows', 'canonical_outs_match',
+                  'official_games_missing_unique_starter', 'official_games_with_multiple_starters'):
         assert field in src
 
 

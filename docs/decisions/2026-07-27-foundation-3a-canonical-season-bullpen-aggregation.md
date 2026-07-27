@@ -1,8 +1,9 @@
 # Decision: Foundation 3A — canonical 2026 season bullpen aggregation + independent MLB validation
 
 - **Date:** 2026-07-27
-- **Status:** Implemented (repository work only). No production aggregation, no production
-  MLB validation, no production write, no public exposure, no Foundation 3B.
+- **Status:** Implemented (repository work only), trust-contract corrected (§26). No production
+  aggregation, no production MLB validation, no production write, no public exposure, no
+  Foundation 3B.
 - **Scope:** The single canonical backend authority for team-level season bullpen
   performance, plus an independent official-MLB validator. Read-only. Public exposure remains
   blocked until the validation matches every mandatory team and league total in production.
@@ -59,12 +60,28 @@ two teams that played the game; `innings_pitched_outs` a valid non-negative inte
 ## 6. Exact exclusion and refusal contract
 
 Rows never contribute (each with a deterministic reason code) when: `game_pk_missing`;
-`schedule_authority_missing` (no final-R schedule authority / non-final / postponed /
-suspended-without-final); `legacy_null_appearance`; `appearance_team_not_resolved`;
-`contradictory_game_authority`; `appearance_team_missing`; `appearance_team_not_in_game`;
-`innings_outs_invalid`; `starter_identity_unknown`; `starter_excluded`; `duplicate_appearance`.
-Nothing is zero-filled. Blocking rows drive FAIL (legacy/unresolved/conflict/not-in-game/
-invalid-outs/duplicate) or INCONCLUSIVE (starter identity unknown).
+`schedule_authority_missing` (NO ScheduledGame rows at all — Correction 1, blocking
+INCONCLUSIVE, see §5a); `contradictory_game_authority` (the game's ScheduledGame sides disagree
+on finality/type — FAIL); `game_not_final` (uniform non-final / postponed / suspended-without-
+final / non-R — a legitimately excluded game, deliberately DISTINCT from missing authority and
+non-blocking); `legacy_null_appearance`; `appearance_team_not_resolved`; `appearance_team_missing`;
+`appearance_team_not_in_game`; `innings_outs_invalid`; `starter_identity_unknown`;
+`starter_excluded`; `duplicate_appearance`. Nothing is zero-filled. Blocking rows drive FAIL
+(legacy/unresolved/conflict/not-in-game/invalid-outs/duplicate/contradictory-schedule) or
+INCONCLUSIVE (missing schedule authority; unknown starter identity).
+
+## 5a. Missing in-scope schedule authority is a blocking evidence gap (Correction 1)
+
+An "otherwise in-scope" appearance (requested season; `game_date` present and `<= as_of_date`;
+`game_pk` present) whose game_pk has NO canonical `ScheduledGame` authority does NOT silently
+drop: silent omission would make the season totals incomplete. It is INCONCLUSIVE/2 with
+`decision_reasons=['schedule_authority_missing']`, `foundation_3_status=aggregation_inconclusive`,
+`public_reader_gate=blocked`, `share_card_performance_gate=blocked`, and it is surfaced in
+coverage as `schedule_authority_missing_rows` / `schedule_authority_missing_games` (multiple
+rows of one game count one game). No local-only or official-validation PASS is possible while
+`schedule_authority_missing_rows > 0`. Contradictory schedule authority remains FAIL; a
+legitimately non-final/postponed game (`game_not_final`) is a non-blocking exclusion and can
+never be confused with missing authority.
 
 ## 7. Metric-support matrix
 
@@ -87,17 +104,24 @@ Pitching outs → `GameLog.innings_pitched_outs`. Counting stats → official `G
 → `game_finality.classify_status` + `ScheduledGame.STATE_FINAL`. Game type/date → canonical
 `ScheduledGame` + `GameLog` authority.
 
-## 9. Team-game bullpen-outs cross-check ownership
+## 9. Canonical reconciliation & the non-governing current-team split (Correction 3)
 
-`GameLog` appearance-team relief rows are the SOLE authoritative aggregation source.
+`GameLog` appearance-team relief rows are the SOLE authoritative aggregation source. The
+GOVERNING reconciliation is appearance-team-correct: relief outs summed at the GAME grain must
+equal relief outs summed at the TEAM grain (`canonical_game_grain_bullpen_outs` ==
+`canonical_team_grain_bullpen_outs`, exposed with `canonical_outs_match`); a mismatch — e.g. an
+appearance attributed to a team that did not play the game (`appearance_team_not_in_game`) — is
+a FAIL.
+
 `team_game_pitching_splits.bullpen_outs_recorded` is grouped by CURRENT `Pitcher.team_id`
-(a documented Foundation-0 limitation this aggregation supersedes — self-noted in
-`season_era.py` and the splits service), so it is a per-team DIAGNOSTIC cross-check, NOT a
-fail-closed global invariant: a divergence caps a team's trust at `partial`
-(`split_outs_reconciliation_divergence`) and is reported, but never globally FAILs the run.
-The reconciliation that gates PASS is the internal GameLog self-consistency (team totals sum
-to league totals; game-grain relief outs equal team-grain league outs; row accounting
-reconciles).
+(documented Foundation-0 leakage — self-noted in `season_era.py` and the splits service), so it
+is STRICTLY NON-GOVERNING: it can never mark a team `partial`/`unavailable`, never permit or
+prevent a local or official PASS, and never change `foundation_3_status`, `public_reader_gate`,
+or `share_card_performance_gate`. It is surfaced only as
+`reconciliation.current_team_split_diagnostic` (`support_status: unsupported`,
+`reason_code: current_team_leakage`, plus `observed_value`). A divergence or a missing split
+cannot alter canonical trust — traded-pitcher historical aggregation stays correct even when the
+current-team split disagrees.
 
 ## 10. Integer-outs requirement
 
@@ -116,20 +140,27 @@ ERA is `null` with `era_denominator_zero` — never `0.00`.
 Each team returns `team` (mlb_id/name/abbreviation), `scope`, `coverage`, `workload`,
 `performance` (+ exact ERA components), `optional_metrics` (support_status/value/reason_code),
 `trust` (complete/partial/unavailable + reason codes + contract versions), and
-`reconciliation` (game_log_bullpen_outs / team_game_split_bullpen_outs / outs_match). The
-report includes league reconciliation: `expected_team_count` (from canonical schedule
-authority, not assumed 30), teams returned/complete/partial/unavailable, league totals,
-`team_totals_reconcile`, `bullpen_outs_reconcile`, `duplicate_appearance_count`,
-`excluded_row_count`. Missing teams are never zero-filled.
+`reconciliation` (canonical_game_grain_bullpen_outs / canonical_team_grain_bullpen_outs /
+canonical_outs_match / current_team_split_diagnostic). The report includes league
+reconciliation: `expected_team_count` (from canonical schedule authority, not assumed 30),
+teams returned/complete/partial/unavailable, league totals, `team_totals_reconcile`,
+`bullpen_outs_reconcile`, `duplicate_appearance_count`, `excluded_row_count`. Missing teams are
+never zero-filled.
 
-## 14. Independent official validation path
+## 14. Independent official validation path & official starter identity (Correction 2)
 
 Official schedule (season start → as_of, month-chunked, cached) → final regular-season games
-only → each game's box score fetched once → official starter per side identified
-(`gamesStarted == 1`, else ordered `pitchers[0]`) and EXCLUDED → all other pitchers summed as
-relief per official side team id. This never reads the local GameLog aggregation and never
-uses current team membership. Uses the existing `mlb_client` retry/timeout patterns; raw MLB
-payloads are never logged.
+only → each game's box score fetched once → the official starter per side identified STRICTLY
+by exactly one `gamesStarted == 1` line and EXCLUDED → all other pitchers summed as relief per
+official side team id. Pitcher-array position is NEVER used: there is no `pitchers[0]` /
+appearance-order / innings / role / current-team fallback. Home and away starter evidence is
+evaluated INDEPENDENTLY, and a side's relief totals are accepted only after its unique starter
+is proven. A team-game with ZERO `gamesStarted == 1` lines yields INCONCLUSIVE
+(`official_starter_identity_missing`); MORE THAN ONE yields FAIL
+(`official_starter_identity_contradictory`); both are surfaced as
+`official_games_missing_unique_starter` / `official_games_with_multiple_starters`. This never
+reads the local GameLog aggregation and never uses current team membership; raw MLB payloads
+are never logged.
 
 ## 15. Exact mismatch policy
 
@@ -181,3 +212,31 @@ changes the next aggregation; no stale derived total is persisted.
 Foundation 3B (synchronized public reader, governed comparison context, Team State / Share
 Card integration) remains unstarted and blocked until the production local-only aggregation
 and official validation both pass and are reviewed. SC-05 remains out of scope.
+
+## 26. Result precedence (corrected trust contract)
+
+**Local precedence:** (1) critical FAIL — migration-head mismatch, invalid stored state,
+contradictory game authority, duplicate canonical appearance, historical-team leakage
+(`appearance_team_not_in_game`), canonical game-grain-vs-team-grain reconciliation failure, or
+a database-write attempt; (2) INCONCLUSIVE — missing schedule authority for in-scope rows,
+unknown starter identity, incomplete mandatory local evidence, or an unestablished team
+population; (3) PASS — all mandatory local evidence complete, all canonical reconciliations
+pass, no missing schedule authority, no invalid/unresolved/conflict/legacy row in scope,
+read-only invariant holds.
+
+**Official-validation precedence** (only on a local PASS): local FAIL stays FAIL; local
+INCONCLUSIVE stays INCONCLUSIVE; then (1) contradictory official evidence (multiple
+`gamesStarted == 1`) → FAIL; (2) missing official evidence — a fetch failure or a game lacking
+a unique official starter → INCONCLUSIVE (a later mismatch can never replace this evidence
+failure with a misleading verdict); (3) a mandatory metric mismatch on complete-evidence teams
+→ FAIL; (4) uncovered expected teams → INCONCLUSIVE; else PASS. The Share Card performance gate
+stays `blocked` in every mode.
+
+Required decision statements:
+
+- An in-scope appearance without canonical schedule authority prevents the season aggregation
+  from passing, because silent omission would make the resulting totals incomplete.
+- Official starter identity requires exactly one official `gamesStarted` marker; pitcher-array
+  ordering is not historical evidence.
+- Current-team-derived pitching splits are non-governing diagnostics and cannot approve, reject,
+  or downgrade appearance-team-correct season totals.

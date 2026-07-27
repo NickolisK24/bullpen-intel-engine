@@ -162,12 +162,21 @@ class _FinalGame:
     game_date: date
 
 
-def _final_regular_season_games(session, *, season, as_of_date) -> Dict[int, _FinalGame]:
-    """Every final regular-season game (both sides final 'R') on/before as_of in season.
+# Canonical schedule-authority classes for a game_pk in scope.
+SCHED_FINAL_R = 'final_r'          # all rows final AND 'R' — the only aggregatable class
+SCHED_NON_FINAL = 'non_final'      # uniform but not final-R (scheduled/postponed/suspended/non-R)
+SCHED_CONTRADICTORY = 'contradictory'  # the game's rows disagree on finality or type
+# A game_pk absent from the class map has NO ScheduledGame authority => missing (blocking).
 
-    Canonical schedule authority: a game_pk qualifies only when it has ScheduledGame rows
-    that are ALL status_state == final AND game_type == 'R'. Doubleheaders stay distinct by
-    game_pk. Postponed/suspended-without-final rows disqualify the game.
+
+def _schedule_authority(session, *, season, as_of_date):
+    """Classify every scope game_pk's canonical schedule authority.
+
+    Returns (final_games, sched_class). ``final_games`` maps a final regular-season game_pk to
+    its ``_FinalGame`` (both team ids). ``sched_class`` maps every game_pk that HAS ScheduledGame
+    rows to exactly one of final_r / non_final / contradictory. A game_pk with NO rows is absent
+    from ``sched_class`` — that absence is the MISSING-authority case, which blocks a PASS
+    (missing evidence is never a harmless exclusion). Doubleheaders stay distinct by game_pk.
     """
     season_start = date(season, 1, 1)
     rows = (
@@ -183,13 +192,22 @@ def _final_regular_season_games(session, *, season, as_of_date) -> Dict[int, _Fi
     for game_pk, team_id, status_state, game_type, game_date in rows:
         by_pk[game_pk].append((team_id, status_state, game_type, game_date))
     final_games: Dict[int, _FinalGame] = {}
+    sched_class: Dict[int, str] = {}
     for game_pk, sides in by_pk.items():
-        if not all(s[1] == _FINAL and s[2] == REGULAR_SEASON_GAME_TYPE for s in sides):
+        states = {s[1] for s in sides}
+        types = {s[2] for s in sides}
+        if len(states) > 1 or len(types) > 1:
+            # The two sides disagree on finality or game type — contradictory authority.
+            sched_class[game_pk] = SCHED_CONTRADICTORY
             continue
-        team_ids = frozenset(s[0] for s in sides if s[0] is not None)
-        game_date = min(s[3] for s in sides if s[3] is not None)
-        final_games[game_pk] = _FinalGame(game_pk, team_ids, game_date)
-    return final_games
+        if states == {_FINAL} and types == {REGULAR_SEASON_GAME_TYPE}:
+            team_ids = frozenset(s[0] for s in sides if s[0] is not None)
+            game_date = min(s[3] for s in sides if s[3] is not None)
+            final_games[game_pk] = _FinalGame(game_pk, team_ids, game_date)
+            sched_class[game_pk] = SCHED_FINAL_R
+        else:
+            sched_class[game_pk] = SCHED_NON_FINAL
+    return final_games, sched_class
 
 
 def _scope_rows(session, *, season, as_of_date):
@@ -227,7 +245,7 @@ class _RowDecision:
     blocking: str = ''        # '' | 'fail' | 'inconclusive'
 
 
-def _classify_row(log, final_games, seen_keys) -> _RowDecision:
+def _classify_row(log, final_games, sched_class, seen_keys) -> _RowDecision:
     """Classify one in-scope GameLog row deterministically."""
     game_pk = log.mlb_game_pk
     if game_pk is None:
@@ -240,13 +258,21 @@ def _classify_row(log, final_games, seen_keys) -> _RowDecision:
         return _RowDecision('excluded', 'duplicate_appearance', blocking='fail')
     seen_keys.add(key)
 
-    final_game = final_games.get(game_pk)
-    if final_game is None:
-        # Not a canonical final regular-season game (missing schedule authority or
-        # non-final). Its appearances never contribute; not blocking (legitimately unfinished
-        # or unrepresented in the schedule ledger).
-        return _RowDecision('excluded', 'schedule_authority_missing')
+    cls = sched_class.get(game_pk)
+    if cls is None:
+        # In scope but NO canonical ScheduledGame authority. A canonical season aggregation
+        # must never silently omit an in-scope appearance for want of schedule authority, so
+        # this is a BLOCKING evidence gap (inconclusive), not a harmless exclusion.
+        return _RowDecision('excluded', 'schedule_authority_missing', blocking='inconclusive')
+    if cls == SCHED_CONTRADICTORY:
+        return _RowDecision('excluded', 'contradictory_game_authority', blocking='fail')
+    if cls == SCHED_NON_FINAL:
+        # A legitimately non-final / postponed / suspended-without-final / non-R game. Its
+        # appearances never contribute, and this is deliberately distinct from missing
+        # authority so the two cannot be confused.
+        return _RowDecision('excluded', 'game_not_final')
 
+    final_game = final_games[game_pk]
     status = log.appearance_team_status
     if status is None:
         return _RowDecision('excluded', 'legacy_null_appearance', blocking='fail')
@@ -294,6 +320,7 @@ class _TeamAccumulator:
     batters_faced_missing: int = 0
     relievers: set = field(default_factory=set)
     relief_game_pks: set = field(default_factory=set)
+    game_outs: dict = field(default_factory=dict)
 
 
 def _accumulate_team(acc: _TeamAccumulator, log):
@@ -314,6 +341,7 @@ def _accumulate_team(acc: _TeamAccumulator, log):
         acc.batters_faced_sum += int(log.batters_faced)
     acc.relievers.add(log.pitcher_id)
     acc.relief_game_pks.add(log.mlb_game_pk)
+    acc.game_outs[log.mlb_game_pk] = acc.game_outs.get(log.mlb_game_pk, 0) + int(log.innings_pitched_outs)
 
 
 def _team_final_game_counts(final_games) -> Dict[int, set]:
@@ -332,41 +360,32 @@ def _build_team_result(acc: _TeamAccumulator, *, final_game_pks, splits, team_na
                        season, as_of_date):
     era = _era_components(acc.earned_runs, acc.bullpen_outs)
 
-    # Splits cross-check (DIAGNOSTIC, not fail-closed): team_game_pitching_splits groups by
-    # CURRENT Pitcher.team_id (a documented Foundation-0 limitation this aggregation
-    # supersedes), so a divergence caps trust at partial rather than failing the run.
-    split_outs = 0
-    splits_present = 0
-    splits_complete = 0
+    # Canonical (appearance-team-correct) reconciliation: the team's relief outs summed at the
+    # GAME grain must equal the same outs summed at the TEAM grain. This is the ONLY
+    # reconciliation that governs trust — it never leaks current-team data.
+    canonical_game_grain = sum(acc.game_outs.values())
+    canonical_team_grain = acc.bullpen_outs
+    canonical_outs_match = (canonical_game_grain == canonical_team_grain)
+
+    # team_game_pitching_splits.bullpen_outs_recorded is grouped by CURRENT Pitcher.team_id
+    # (documented Foundation-0 leakage), so it is a NON-GOVERNING diagnostic only: it never
+    # marks a team partial/unavailable, never gates a PASS, and never changes a gate. A
+    # divergence or a missing split cannot alter canonical trust.
+    split_observed = None
     for game_pk in sorted(acc.relief_game_pks):
         row = splits.get((acc.team_id, game_pk))
-        if row is None:
-            continue
-        splits_present += 1
-        if row.split_completeness_status == 'complete' and row.bullpen_outs_recorded is not None:
-            splits_complete += 1
-            split_outs += int(row.bullpen_outs_recorded)
-    if splits_complete == 0:
-        split_recorded = None
-        outs_match = None  # unavailable — never treated as a mismatch
-    else:
-        split_recorded = split_outs
-        outs_match = (splits_complete == len(acc.relief_game_pks) and split_outs == acc.bullpen_outs)
+        if row is not None and row.bullpen_outs_recorded is not None:
+            split_observed = (split_observed or 0) + int(row.bullpen_outs_recorded)
 
     reasons = []
-    trust = TRUST_COMPLETE
     if acc.relief_appearances == 0:
         trust = TRUST_UNAVAILABLE
         reasons.append('no_relief_appearances')
-    if outs_match is False:
+    elif not canonical_outs_match:
         trust = TRUST_PARTIAL
-        reasons.append('split_outs_reconciliation_divergence')
-    elif outs_match is None and trust == TRUST_COMPLETE and splits_present < len(acc.relief_game_pks):
-        # No complete split coverage to corroborate; expose components, cap at partial only
-        # when some split rows exist but are incomplete/contradictory.
-        if splits_present > 0:
-            trust = TRUST_PARTIAL
-            reasons.append('split_cross_check_incomplete')
+        reasons.append('canonical_outs_mismatch')
+    else:
+        trust = TRUST_COMPLETE
 
     batters_faced_metric = (
         _optional_metric('unsupported', None, 'batters_faced_incomplete')
@@ -423,9 +442,14 @@ def _build_team_result(acc: _TeamAccumulator, *, final_game_pks, splits, team_na
             'aggregation_contract_version': AGGREGATION_CONTRACT_VERSION,
         },
         'reconciliation': {
-            'game_log_bullpen_outs': acc.bullpen_outs,
-            'team_game_split_bullpen_outs': split_recorded,
-            'outs_match': outs_match,
+            'canonical_game_grain_bullpen_outs': canonical_game_grain,
+            'canonical_team_grain_bullpen_outs': canonical_team_grain,
+            'canonical_outs_match': canonical_outs_match,
+            'current_team_split_diagnostic': {
+                'support_status': 'unsupported',
+                'reason_code': 'current_team_leakage',
+                'observed_value': split_observed,
+            },
         },
     }
 
@@ -433,7 +457,7 @@ def _build_team_result(acc: _TeamAccumulator, *, final_game_pks, splits, team_na
 # ── Local aggregation ─────────────────────────────────────────────────────────
 def _aggregate_local(session, *, season, as_of_date, team_names=None):
     team_names = team_names or {}
-    final_games = _final_regular_season_games(session, season=season, as_of_date=as_of_date)
+    final_games, sched_class = _schedule_authority(session, season=season, as_of_date=as_of_date)
     scope = _scope_rows(session, season=season, as_of_date=as_of_date)
     splits = _splits_by_team_game(session, season=season, as_of_date=as_of_date)
 
@@ -454,11 +478,14 @@ def _aggregate_local(session, *, season, as_of_date, team_names=None):
         'legacy_null_rows': 0,
         'invalid_state_rows': 0,
         'missing_starter_identity_games': 0,
+        'schedule_authority_missing_rows': 0,
+        'schedule_authority_missing_games': 0,
     }
     missing_starter_games: set = set()
+    schedule_missing_games: set = set()
 
     for log in scope:
-        decision = _classify_row(log, final_games, seen_keys)
+        decision = _classify_row(log, final_games, sched_class, seen_keys)
         if decision.blocking == 'fail':
             fail_reasons.add(decision.reason_code)
         elif decision.blocking == 'inconclusive':
@@ -477,6 +504,9 @@ def _aggregate_local(session, *, season, as_of_date, team_names=None):
             counts['invalid_state_rows'] += 1
         if decision.reason_code == 'starter_identity_unknown':
             missing_starter_games.add(log.mlb_game_pk)
+        if decision.reason_code == 'schedule_authority_missing':
+            counts['schedule_authority_missing_rows'] += 1
+            schedule_missing_games.add(log.mlb_game_pk)
 
         if decision.disposition == 'included_relief':
             counts['included_relief_rows'] += 1
@@ -490,6 +520,7 @@ def _aggregate_local(session, *, season, as_of_date, team_names=None):
             excluded_by_reason[decision.reason_code] += 1
 
     counts['missing_starter_identity_games'] = len(missing_starter_games)
+    counts['schedule_authority_missing_games'] = len(schedule_missing_games)
 
     team_final_games = _team_final_game_counts(final_games)
     expected_team_ids = sorted(team_final_games)
@@ -544,24 +575,39 @@ def _int_box_stat(stats, key) -> int:
         return 0
 
 
-def _official_starter_pid(side) -> Optional[int]:
-    """The official starter's MLB id for one box-score side.
+STARTER_UNIQUE = 'unique'
+STARTER_MISSING = 'missing'
+STARTER_CONTRADICTORY = 'contradictory'
 
-    Authoritative: the pitcher whose pitching line carries gamesStarted == 1. Falls back to
-    the first entry of the ordered ``pitchers`` list (MLB convention) only when no line
-    marks the start.
+
+def _official_starter(side) -> Tuple[str, Optional[int]]:
+    """Identify one box-score side's official starter STRICTLY by gamesStarted == 1.
+
+    Returns (status, pid): 'unique' with the starter pid when EXACTLY one pitching line marks
+    the start; 'missing' when zero do; 'contradictory' when more than one does. Pitcher-array
+    position is NEVER used — order is not authoritative starter evidence, and there is no
+    first-pitcher / appearance-order / innings / role / current-team fallback.
     """
     players = (side or {}).get('players') or {}
     ordered = [pid for pid in ((side or {}).get('pitchers') or []) if pid is not None]
+    starters = []
     for pid in ordered:
         stats = ((players.get(f'ID{pid}') or {}).get('stats') or {}).get('pitching') or {}
         if games_started_state(stats.get('gamesStarted')) == START:
-            return int(pid)
-    return int(ordered[0]) if ordered else None
+            starters.append(int(pid))
+    if len(starters) == 1:
+        return STARTER_UNIQUE, starters[0]
+    if len(starters) == 0:
+        return STARTER_MISSING, None
+    return STARTER_CONTRADICTORY, None
 
 
 def _official_relief_for_side(side) -> Optional[dict]:
-    """Independently sum a side's RELIEF pitching from the official box score."""
+    """Independently sum a side's RELIEF pitching from the official box score.
+
+    Official starter evidence is evaluated BEFORE any relief total is accepted: a side without
+    a unique gamesStarted==1 starter yields no relief totals, only its starter_status.
+    """
     team = (side or {}).get('team') or {}
     team_id = team.get('id')
     if team_id is None:
@@ -570,13 +616,17 @@ def _official_relief_for_side(side) -> Optional[dict]:
     ordered = [pid for pid in ((side or {}).get('pitchers') or []) if pid is not None]
     if not ordered:
         return None
-    starter_pid = _official_starter_pid(side)
-    totals = {'team_id': int(team_id), 'team_name': team.get('name'),
-              'relief_appearances': 0, 'bullpen_outs': 0, 'runs_allowed': 0,
+    starter_status, starter_pid = _official_starter(side)
+    base = {'team_id': int(team_id), 'team_name': team.get('name'),
+            'starter_status': starter_status}
+    if starter_status != STARTER_UNIQUE:
+        # No trustworthy starter => no relief totals accepted for this team-game.
+        return base
+    totals = {**base, 'relief_appearances': 0, 'bullpen_outs': 0, 'runs_allowed': 0,
               'earned_runs': 0, 'hits_allowed': 0, 'walks': 0, 'strikeouts': 0,
               'home_runs_allowed': 0}
     for pid in ordered:
-        if starter_pid is not None and int(pid) == starter_pid:
+        if int(pid) == starter_pid:
             continue
         stats = ((players.get(f'ID{pid}') or {}).get('stats') or {}).get('pitching') or {}
         totals['relief_appearances'] += 1
@@ -603,6 +653,9 @@ def _official_validation(client, *, season, as_of_date, accumulators, expected_t
     games_selected = 0
     games_fetched = 0
     fetch_failed = False
+    games_missing_unique_starter = 0
+    games_with_multiple_starters = 0
+    incomplete_teams: set = set()
 
     # Official schedule, month-chunked so payloads stay bounded and cached per range.
     windows = _month_windows(date(season, 1, 1), as_of_date)
@@ -614,7 +667,9 @@ def _official_validation(client, *, season, as_of_date, accumulators, expected_t
             return {'enabled': True, 'fetch_failed': True, 'api_calls': api_calls,
                     'games_selected': games_selected, 'games_fetched': games_fetched,
                     'official': official, 'team_names': team_names, 'mismatches': [],
-                    'teams_matched': 0, 'teams_mismatched': 0, 'mandatory_mismatch': 0}
+                    'teams_matched': 0, 'teams_mismatched': 0, 'mandatory_mismatch': 0,
+                    'games_missing_unique_starter': games_missing_unique_starter,
+                    'games_with_multiple_starters': games_with_multiple_starters}
         api_calls += 1
         for game in fetched:
             game_pk = _pos_int((game or {}).get('gamePk'))
@@ -633,11 +688,21 @@ def _official_validation(client, *, season, as_of_date, accumulators, expected_t
             api_calls += 1
         games_fetched += 1
         boxscore = boxscore_cache[game_pk] or {}
+        # Home and away starter evidence is evaluated INDEPENDENTLY per side.
         for side_key in ('home', 'away'):
             relief = _official_relief_for_side((boxscore.get('teams') or {}).get(side_key))
             if relief is None:
                 continue
             tid = relief['team_id']
+            status = relief.get('starter_status')
+            if status == STARTER_CONTRADICTORY:
+                games_with_multiple_starters += 1
+                incomplete_teams.add(tid)
+                continue
+            if status == STARTER_MISSING:
+                games_missing_unique_starter += 1
+                incomplete_teams.add(tid)
+                continue
             bucket = official.setdefault(
                 tid, {'team_id': tid, 'team_name': None, 'relief_appearances': 0,
                       'bullpen_outs': 0, 'runs_allowed': 0, 'earned_runs': 0,
@@ -655,6 +720,10 @@ def _official_validation(client, *, season, as_of_date, accumulators, expected_t
     teams_mismatched = 0
     mandatory_mismatch = 0
     for tid in sorted(set(expected_team_ids) | set(accumulators) | set(official)):
+        if tid in incomplete_teams:
+            # Evidence for this team is incomplete (a game lacked a unique official starter);
+            # it can never be declared a mismatch — it drives INCONCLUSIVE, not FAIL.
+            continue
         acc = accumulators.get(tid) or _TeamAccumulator(tid)
         off = official.get(tid)
         local_vals = {
@@ -695,6 +764,9 @@ def _official_validation(client, *, season, as_of_date, accumulators, expected_t
         'teams_mismatched': teams_mismatched,
         'mandatory_mismatch': mandatory_mismatch,
         'mismatches': mismatches,
+        'games_missing_unique_starter': games_missing_unique_starter,
+        'games_with_multiple_starters': games_with_multiple_starters,
+        'incomplete_teams': sorted(incomplete_teams),
     }
 
 
@@ -783,7 +855,9 @@ def run_aggregation(
     validation = {'enabled': include_official_validation, 'games_selected': 0,
                   'games_fetched': 0, 'api_calls': 0, 'teams_validated': 0,
                   'teams_matched': 0, 'teams_mismatched': 0, 'mandatory_metric_mismatches': 0,
-                  'optional_metric_mismatches': 0, 'unavailable_evidence_count': 0}
+                  'optional_metric_mismatches': 0, 'unavailable_evidence_count': 0,
+                  'official_games_missing_unique_starter': 0,
+                  'official_games_with_multiple_starters': 0}
     bounded_mismatches = []
     team_names = {}
     result = local_result
@@ -796,21 +870,35 @@ def run_aggregation(
         team_names = raw['team_names']
         bounded_mismatches = raw['mismatches']
         covered = {tid for tid, off in raw['official'].items() if off['games'] > 0}
+        incomplete = set(raw.get('incomplete_teams') or [])
         uncovered = [tid for tid in expected_team_ids if tid not in covered]
+        multi_starter = raw['games_with_multiple_starters']
+        missing_starter = raw['games_missing_unique_starter']
         validation.update({
             'games_selected': raw['games_selected'], 'games_fetched': raw['games_fetched'],
             'api_calls': raw['api_calls'], 'teams_validated': len(covered),
             'teams_matched': raw['teams_matched'], 'teams_mismatched': raw['teams_mismatched'],
             'mandatory_metric_mismatches': raw['mandatory_mismatch'],
             'optional_metric_mismatches': 0,
-            'unavailable_evidence_count': len(uncovered) + (1 if raw['fetch_failed'] else 0),
+            'official_games_missing_unique_starter': missing_starter,
+            'official_games_with_multiple_starters': multi_starter,
+            'unavailable_evidence_count': (
+                len(uncovered) + len(incomplete) + (1 if raw['fetch_failed'] else 0)),
         })
-        # An unavailable official source can never be trusted enough to declare a mismatch,
-        # so a fetch failure is INCONCLUSIVE before any mismatch verdict. A genuine mismatch
-        # (evidence present, teams covered) is FAIL. Uncovered teams are INCONCLUSIVE.
-        if raw['fetch_failed']:
+        # Official precedence: (1) contradictory official evidence (multiple gamesStarted==1)
+        # is a hard FAIL; (2) incomplete evidence — a fetch failure or a game lacking a unique
+        # official starter — is INCONCLUSIVE and can never be replaced by a later mismatch
+        # verdict; (3) a genuine mandatory metric mismatch on complete-evidence teams is FAIL;
+        # (4) uncovered expected teams are INCONCLUSIVE; else PASS.
+        if multi_starter > 0:
+            result = RESULT_FAIL
+            decision_reasons = ['official_starter_identity_contradictory']
+        elif raw['fetch_failed']:
             result = RESULT_INCONCLUSIVE
             decision_reasons = ['official_evidence_unavailable']
+        elif missing_starter > 0:
+            result = RESULT_INCONCLUSIVE
+            decision_reasons = ['official_starter_identity_missing']
         elif raw['mandatory_mismatch'] > 0:
             result = RESULT_FAIL
             decision_reasons = ['official_mandatory_metric_mismatch']
@@ -877,12 +965,19 @@ def run_aggregation(
             'legacy_null_rows': counts['legacy_null_rows'],
             'invalid_state_rows': counts['invalid_state_rows'],
             'missing_starter_identity_games': counts['missing_starter_identity_games'],
+            'schedule_authority_missing_rows': counts['schedule_authority_missing_rows'],
+            'schedule_authority_missing_games': counts['schedule_authority_missing_games'],
+            'official_games_missing_unique_starter': validation['official_games_missing_unique_starter'],
+            'official_games_with_multiple_starters': validation['official_games_with_multiple_starters'],
             'outs_reconciliation_failures': 0 if game_totals_reconcile else 1,
             'excluded_by_reason': local['excluded_by_reason'],
         },
         'official_validation': validation,
         'bounded_mismatches': bounded_mismatches[:mismatch_detail_limit],
         'reconciliations': {
+            'canonical_game_grain_bullpen_outs': game_outs_total,
+            'canonical_team_grain_bullpen_outs': league_totals['bullpen_outs'],
+            'canonical_outs_match': game_totals_reconcile,
             'team_totals_reconcile': team_totals_reconcile,
             'league_totals_reconcile': team_totals_reconcile,
             'bullpen_outs_reconcile': game_totals_reconcile,

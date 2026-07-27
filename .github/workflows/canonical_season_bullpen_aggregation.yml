@@ -161,6 +161,7 @@ jobs:
           totals = local.get('league_totals') or {}
           recon = payload.get('reconciliations') or {}
           official = payload.get('official_validation') or {}
+          coverage = payload.get('coverage') or {}
           lines = [
               '## Canonical Season Bullpen Aggregation',
               '',
@@ -169,6 +170,7 @@ jobs:
               f"- Mode: `{payload.get('mode')}`",
               f"- Season: `{(payload.get('inputs') or {}).get('season')}`",
               f"- As-of date: `{(payload.get('inputs') or {}).get('as_of_date')}`",
+              f"- Decision reasons: `{payload.get('decision_reasons')}`",
               f"- Teams returned: `{local.get('team_count')}`",
               f"- Teams complete: `{local.get('teams_complete')}`",
               f"- Teams partial: `{local.get('teams_partial')}`",
@@ -176,11 +178,15 @@ jobs:
               f"- Relief appearances: `{totals.get('relief_appearances')}`",
               f"- Bullpen outs: `{totals.get('bullpen_outs')}`",
               f"- Earned runs: `{totals.get('earned_runs')}`",
+              f"- Schedule-authority-missing rows: `{coverage.get('schedule_authority_missing_rows')}`",
+              f"- Schedule-authority-missing games: `{coverage.get('schedule_authority_missing_games')}`",
+              f"- Canonical outs match: `{recon.get('canonical_outs_match')}`",
               f"- Team totals reconcile: `{recon.get('team_totals_reconcile')}`",
               f"- League totals reconcile: `{recon.get('league_totals_reconcile')}`",
-              f"- Bullpen-outs reconcile: `{recon.get('bullpen_outs_reconcile')}`",
               f"- Official games fetched: `{official.get('games_fetched')}`",
               f"- Official API calls: `{official.get('api_calls')}`",
+              f"- Official games missing unique starter: `{official.get('official_games_missing_unique_starter')}`",
+              f"- Official games with multiple starters: `{official.get('official_games_with_multiple_starters')}`",
               f"- Teams matched: `{official.get('teams_matched')}`",
               f"- Teams mismatched: `{official.get('teams_mismatched')}`",
               f"- Mandatory mismatch count: `{official.get('mandatory_metric_mismatches')}`",
