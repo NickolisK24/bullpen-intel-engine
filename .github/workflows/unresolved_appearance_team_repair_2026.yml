@@ -1,0 +1,185 @@
+name: 2026 Unresolved Appearance-Team Repair
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Dry-run first; apply requires approved fingerprint and confirmation
+        required: true
+        default: dry_run
+        type: choice
+        options:
+          - dry_run
+          - apply
+      game_log_id:
+        description: Exact GameLog primary key
+        required: true
+        default: '41040'
+        type: string
+      game_pk:
+        description: Expected MLB gamePk guard
+        required: true
+        default: '824262'
+        type: string
+      game_date:
+        description: Expected official game date guard (YYYY-MM-DD)
+        required: true
+        default: '2026-06-23'
+        type: string
+      confirmation:
+        description: Apply only — exact production confirmation phrase
+        required: false
+        default: ''
+        type: string
+      expected_fingerprint:
+        description: Apply only — exact approved dry-run fingerprint
+        required: false
+        default: ''
+        type: string
+
+concurrency:
+  group: unresolved-appearance-team-repair-2026
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      APP_ENV: production
+      AUTO_SYNC: 'false'
+      FLASK_APP: app.py
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      SECRET_KEY: ${{ secrets.SECRET_KEY }}
+      ADMIN_API_TOKEN: ${{ secrets.BASEBALLOS_ADMIN_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install backend dependencies
+        run: pip install -r backend/requirements.txt
+
+      - name: Validate guarded inputs
+        env:
+          MODE: ${{ inputs.mode }}
+          GAME_LOG_ID: ${{ inputs.game_log_id }}
+          GAME_PK: ${{ inputs.game_pk }}
+          GAME_DATE: ${{ inputs.game_date }}
+          CONFIRMATION: ${{ inputs.confirmation }}
+          EXPECTED_FINGERPRINT: ${{ inputs.expected_fingerprint }}
+        run: |
+          set -euo pipefail
+          if [ -z "${DATABASE_URL:-}" ] || [ -z "${SECRET_KEY:-}" ] || [ -z "${ADMIN_API_TOKEN:-}" ]; then
+            echo "::error::Missing required production repository secret."
+            exit 1
+          fi
+          if [ "$MODE" != 'dry_run' ] && [ "$MODE" != 'apply' ]; then
+            echo "::error::mode must be dry_run or apply."
+            exit 1
+          fi
+          if ! [[ "$GAME_LOG_ID" =~ ^[0-9]+$ ]] || ! [[ "$GAME_PK" =~ ^[0-9]+$ ]]; then
+            echo "::error::game_log_id and game_pk must contain only digits."
+            exit 1
+          fi
+          if ! [[ "$GAME_DATE" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+            echo "::error::game_date must be YYYY-MM-DD."
+            exit 1
+          fi
+          if [ "$MODE" = 'apply' ]; then
+            if [ "$CONFIRMATION" != 'RUN_UNRESOLVED_APPEARANCE_TEAM_REPAIR_2026' ]; then
+              echo "::error::Apply confirmation phrase is incorrect."
+              exit 1
+            fi
+            if ! [[ "$EXPECTED_FINGERPRINT" =~ ^[0-9a-f]{64}$ ]]; then
+              echo "::error::Apply requires a 64-character lowercase SHA-256 fingerprint."
+              exit 1
+            fi
+          fi
+          echo "Guarded unresolved appearance-team repair inputs validated."
+
+      - name: Run guarded repair
+        working-directory: backend
+        env:
+          MODE: ${{ inputs.mode }}
+          GAME_LOG_ID: ${{ inputs.game_log_id }}
+          GAME_PK: ${{ inputs.game_pk }}
+          GAME_DATE: ${{ inputs.game_date }}
+          CONFIRMATION: ${{ inputs.confirmation }}
+          EXPECTED_FINGERPRINT: ${{ inputs.expected_fingerprint }}
+          REPAIR_OUTPUT_DIR: ${{ runner.temp }}/unresolved-appearance-team-repair-2026
+        run: |
+          set -euo pipefail
+          mkdir -p "$REPAIR_OUTPUT_DIR"
+          report_json="$REPAIR_OUTPUT_DIR/unresolved-appearance-team-repair-2026.json"
+          apply_args=()
+          if [ "$MODE" = 'apply' ]; then
+            apply_args=(
+              --apply
+              --confirmation "$CONFIRMATION"
+              --expected-fingerprint "$EXPECTED_FINGERPRINT"
+            )
+          fi
+
+          set +e
+          python scripts/run_unresolved_appearance_team_repair_2026.py \
+            --game-log-id "$GAME_LOG_ID" \
+            --game-pk "$GAME_PK" \
+            --game-date "$GAME_DATE" \
+            "${apply_args[@]}" \
+            --compact \
+            --output "$report_json"
+          repair_exit_code=$?
+          set -e
+
+          python - "$report_json" "$repair_exit_code" "$GITHUB_STEP_SUMMARY" <<'PY'
+          import json
+          from pathlib import Path
+          import sys
+
+          path = Path(sys.argv[1])
+          exit_code = int(sys.argv[2])
+          summary_path = Path(sys.argv[3])
+          payload = json.loads(path.read_text(encoding='utf-8'))
+          plan = payload.get('plan') or {}
+          target = plan.get('target') or {}
+          official = plan.get('official_evidence') or {}
+          proposed = plan.get('proposed') or {}
+          lines = [
+              '## 2026 Unresolved Appearance-Team Repair',
+              '',
+              f"- Result: `{payload.get('result')}`",
+              f"- Exit code: `{exit_code}`",
+              f"- Mode: `{payload.get('mode')}`",
+              f"- Decision reasons: `{payload.get('decision_reasons')}`",
+              f"- GameLog id: `{target.get('game_log_id')}`",
+              f"- GamePk: `{target.get('game_pk')}`",
+              f"- Game date: `{target.get('game_date')}`",
+              f"- Pitcher MLB id: `{target.get('pitcher_mlb_id')}`",
+              f"- Official side: `{official.get('side')}`",
+              f"- Official represented team id: `{official.get('team_id')}`",
+              f"- Proposed source: `{proposed.get('appearance_team_source')}`",
+              f"- Fingerprint: `{plan.get('fingerprint')}`",
+              f"- Rows written: `{payload.get('rows_written', 0)}`",
+              f"- Database writes performed: `{payload.get('database_writes_performed')}`",
+          ]
+          summary_path.write_text('\n'.join(lines) + '\n', encoding='utf-8')
+          PY
+
+          exit "$repair_exit_code"
+
+      - name: Upload private repair artifact
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: unresolved-appearance-team-repair-2026-${{ github.run_id }}
+          path: ${{ runner.temp }}/unresolved-appearance-team-repair-2026/
+          if-no-files-found: error
+          retention-days: 14
