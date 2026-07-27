@@ -149,6 +149,7 @@ jobs:
           reconciliations = payload.get('reconciliations') or {}
           actions_by_type = payload.get('actions_by_type') or {}
           blocking = payload.get('blocking_counts_by_reason') or {}
+          coverage = payload.get('workload_field_coverage') or {}
           no_action = payload.get('no_action_confirmations') or {}
           preview = payload.get('bounded_preview') or []
           baseline = payload.get('baseline_comparison') or {}
@@ -185,6 +186,8 @@ jobs:
               f"`{payload.get('repair_manifest_action_count')}`",
               f"- Repair manifest fingerprint: "
               f"`{payload.get('repair_manifest_fingerprint')}`",
+              f"- Prior production fingerprint: "
+              f"`{payload.get('prior_production_manifest_fingerprint')}`",
               f"- Preview limit: `{payload.get('preview_limit')}` "
               f"(truncated: `{payload.get('preview_truncated')}`)",
               f"- Foundation 3B gate: `{payload.get('foundation_3b_gate')}`",
@@ -198,6 +201,8 @@ jobs:
           summary.extend(f"- `{name}`: `{count}`" for name, count in sorted(actions_by_type.items()))
           summary.extend(('', '### No-action confirmations'))
           summary.extend(f"- `{name}`: `{count}`" for name, count in sorted(no_action.items()))
+          summary.extend(('', '### Workload field coverage'))
+          summary.extend(f"- `{name}`: `{count}`" for name, count in sorted(coverage.items()))
           summary.extend(('', '### Blocking reasons'))
           summary.extend(f"- `{name}`: `{count}`" for name, count in sorted(blocking.items()))
           summary.extend(('', '### Baseline comparison'))
