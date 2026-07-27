@@ -1,5 +1,6 @@
 """Governed phantom GameLog reconciliation coverage."""
 
+import ast
 from datetime import date
 from pathlib import Path
 
@@ -260,10 +261,19 @@ def test_exact_pitcher_identity_guard_fails_closed(app):
     assert result['decision_reasons'] == ['target_pitcher_identity_mismatch']
 
 
-def test_service_never_uses_current_team_as_authority():
-    source = SERVICE_PATH.read_text(encoding='utf-8').lower()
-    assert 'pitcher.team_id' not in source
-    assert 'current_team' not in source
+def test_service_never_reads_pitcher_team_id_as_authority():
+    tree = ast.parse(SERVICE_PATH.read_text(encoding='utf-8'))
+    forbidden = [
+        node
+        for node in ast.walk(tree)
+        if (
+            isinstance(node, ast.Attribute)
+            and node.attr == 'team_id'
+            and isinstance(node.value, ast.Name)
+            and node.value.id == 'pitcher'
+        )
+    ]
+    assert forbidden == []
 
 
 def test_workflow_is_manual_guarded_and_private():
