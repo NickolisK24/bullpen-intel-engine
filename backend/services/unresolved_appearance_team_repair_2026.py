@@ -14,6 +14,8 @@ import hashlib
 import json
 from typing import Optional
 
+import sqlalchemy as sa
+
 from models.game_log import GameLog
 from models.pitcher import Pitcher
 from services import appearance_team_authority as ata
@@ -55,7 +57,7 @@ def _sha256_json(payload) -> str:
 def _migration_head(session):
     try:
         rows = session.execute(
-            db.text('SELECT version_num FROM alembic_version ORDER BY version_num')
+            sa.text('SELECT version_num FROM alembic_version ORDER BY version_num')
         ).fetchall()
         return sorted(str(row[0]) for row in rows)
     except Exception:  # diagnostic probe only
