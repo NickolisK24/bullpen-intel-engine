@@ -56,6 +56,7 @@ jobs:
       FLASK_APP: app.py
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       SECRET_KEY: ${{ secrets.SECRET_KEY }}
+      ADMIN_API_TOKEN: ${{ secrets.BASEBALLOS_ADMIN_API_TOKEN }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -83,8 +84,10 @@ jobs:
             echo "::error::mode must be local_only or official_validation."
             exit 1
           fi
-          if [ -z "${DATABASE_URL:-}" ] || [ -z "${SECRET_KEY:-}" ]; then
-            echo "::error::Missing DATABASE_URL or SECRET_KEY repository secret."
+          if [ -z "${DATABASE_URL:-}" ] || \
+             [ -z "${SECRET_KEY:-}" ] || \
+             [ -z "${ADMIN_API_TOKEN:-}" ]; then
+            echo "::error::Missing required production repository secret."
             exit 1
           fi
           if ! printf '%s' "$SEASON" | grep -Eq '^[0-9]{4}$'; then
