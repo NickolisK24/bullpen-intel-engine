@@ -51,6 +51,7 @@ jobs:
       FLASK_APP: app.py
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       SECRET_KEY: ${{ secrets.SECRET_KEY }}
+      ADMIN_API_TOKEN: ${{ secrets.BASEBALLOS_ADMIN_API_TOKEN }}
     steps:
       - uses: actions/checkout@v4
 
@@ -70,9 +71,12 @@ jobs:
           DETAIL_LIMIT: ${{ inputs.detail_limit }}
           TEAM_ID: ${{ inputs.team_id }}
           GAME_PK: ${{ inputs.game_pk }}
+          ADMIN_API_TOKEN: ${{ secrets.BASEBALLOS_ADMIN_API_TOKEN }}
         run: |
           set -euo pipefail
-          if [ -z "${DATABASE_URL:-}" ] || [ -z "${SECRET_KEY:-}" ]; then
+          if [ -z "${DATABASE_URL:-}" ] || \
+             [ -z "${SECRET_KEY:-}" ] || \
+             [ -z "${ADMIN_API_TOKEN:-}" ]; then
             echo "::error::Missing required production repository secret."
             exit 1
           fi

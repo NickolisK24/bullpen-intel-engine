@@ -866,6 +866,85 @@ def test_workflow_read_only_controls():
         assert token not in src
 
 
+def test_workflow_rejects_a_write_or_non_read_only_payload():
+    src = WORKFLOW_PATH.read_text(encoding='utf-8')
+    assert "if payload.get('database_writes_performed') is not False:" in src
+    assert "raise SystemExit('Diagnostic must not perform database writes.')" in src
+    assert "if payload.get('mode') != 'read_only':" in src
+    assert "raise SystemExit('Diagnostic must run in read_only mode.')" in src
+
+
+def _workflow_without_comments():
+    """Workflow source with comment lines removed, so prose cannot satisfy a guard."""
+    return '\n'.join(
+        line for line in WORKFLOW_PATH.read_text(encoding='utf-8').splitlines()
+        if not line.strip().startswith('#')
+    )
+
+
+def test_workflow_introduces_no_repair_or_automatic_execution():
+    src = _workflow_without_comments()
+    for token in ('--apply', '--repair', '--backfill', '--fix', 'backfill',
+                  'reconcile', 'autofix', 'cron:', 'schedule:'):
+        assert token not in src, token
+    # The only gate values the workflow reports are the blocked ones it reads back.
+    for gate in ("payload.get('foundation_3b_gate')", "payload.get('public_reader_gate')",
+                 "payload.get('share_card_performance_gate')"):
+        assert gate in src
+
+
+# ── Production bootstrap configuration ────────────────────────────────────────
+def _workflow_lines():
+    return WORKFLOW_PATH.read_text(encoding='utf-8').splitlines()
+
+
+def _validation_step_block():
+    """The body of the 'Validate diagnostic inputs' step."""
+    src = WORKFLOW_PATH.read_text(encoding='utf-8')
+    start = src.index('- name: Validate diagnostic inputs')
+    end = src.index('- name: Run read-only completeness diagnostic')
+    return src[start:end]
+
+
+def test_workflow_job_environment_sources_every_production_secret():
+    lines = _workflow_lines()
+    # Job-level env, six-space indented under jobs.diagnose.env.
+    for entry in ('      APP_ENV: production',
+                  "      AUTO_SYNC: 'false'",
+                  '      FLASK_APP: app.py',
+                  '      DATABASE_URL: ${{ secrets.DATABASE_URL }}',
+                  '      SECRET_KEY: ${{ secrets.SECRET_KEY }}',
+                  '      ADMIN_API_TOKEN: ${{ secrets.BASEBALLOS_ADMIN_API_TOKEN }}'):
+        assert entry in lines, entry
+
+
+def test_admin_api_token_is_available_to_the_validation_step():
+    block = _validation_step_block()
+    assert 'ADMIN_API_TOKEN: ${{ secrets.BASEBALLOS_ADMIN_API_TOKEN }}' in block
+
+
+def test_validation_requires_all_three_production_secrets():
+    block = _validation_step_block()
+    for guard in ('[ -z "${DATABASE_URL:-}" ]',
+                  '[ -z "${SECRET_KEY:-}" ]',
+                  '[ -z "${ADMIN_API_TOKEN:-}" ]'):
+        assert guard in block, guard
+    assert 'echo "::error::Missing required production repository secret."' in block
+
+
+def test_workflow_never_prints_a_secret_value_or_length():
+    src = WORKFLOW_PATH.read_text(encoding='utf-8')
+    for leak in ('${#ADMIN_API_TOKEN}', '${#SECRET_KEY}', '${#DATABASE_URL}',
+                 'echo "$ADMIN_API_TOKEN"', 'echo "$SECRET_KEY"', 'echo "$DATABASE_URL"',
+                 'echo $ADMIN_API_TOKEN', 'echo $SECRET_KEY', 'echo $DATABASE_URL'):
+        assert leak not in src, leak
+    for line in src.splitlines():
+        stripped = line.strip()
+        if stripped.startswith('echo'):
+            for name in ('ADMIN_API_TOKEN', 'SECRET_KEY', 'DATABASE_URL'):
+                assert name not in stripped, stripped
+
+
 def test_workflow_inputs_match_the_cli():
     src = WORKFLOW_PATH.read_text(encoding='utf-8')
     for name in ('season:', 'as_of_date:', 'detail_limit:', 'team_id:', 'game_pk:'):
