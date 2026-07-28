@@ -537,7 +537,15 @@ def mark_game_log_correction_for_entry_band_usage(
     sync_run_id=None,
     reason_code=REASON_GAME_LOG_CORRECTED,
     batch_size=100,
+    rule_ids=None,
+    session=None,
 ) -> dict:
+    """Mark one bounded batch of this family's dependent evidence for recompute.
+
+    ``rule_ids`` and ``session`` are optional passthroughs, defaulting to the previous
+    behaviour exactly: an unscoped batch on the ambient session. A caller needing family
+    scoping or transaction binding supplies them.
+    """
     if game_log is None or getattr(game_log, 'id', None) is None:
         return {'marked_count': 0, 'evidence_ids': []}
     return mark_dependent_evidence_for_recompute(
@@ -546,6 +554,8 @@ def mark_game_log_correction_for_entry_band_usage(
         reason_code=reason_code,
         batch_size=batch_size,
         sync_run_id=sync_run_id,
+        rule_ids=rule_ids,
+        session=session,
     )
 
 

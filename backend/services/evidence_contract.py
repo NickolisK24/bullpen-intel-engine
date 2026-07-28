@@ -251,6 +251,23 @@ def evidence_sync_run_ids(*, evidence_ids, session=None) -> dict:
     }
 
 
+def evidence_rule_ids(*, evidence_ids, session=None) -> dict:
+    """The ``rule_id`` of each named evidence object.
+
+    Used to report WHICH rules a residual population belongs to, so an unregistered direct
+    dependency can be named in an artifact rather than merely counted.
+    """
+    session = session or db.session
+    candidates = sorted({int(value) for value in (evidence_ids or ())})
+    if not candidates:
+        return {}
+    return {
+        row[0]: row[1] for row in
+        session.query(EvidenceObject.id, EvidenceObject.rule_id)
+        .filter(EvidenceObject.id.in_(candidates)).all()
+    }
+
+
 def mark_dependent_evidence_for_recompute(
     *,
     source_table: str,

@@ -1001,6 +1001,13 @@ def _apply_updates(session, update_actions, *, applied_at, operation_id) -> dict
             'all_required_families_completed': (marked or {}).get(
                 'all_required_families_completed'),
             'exhaustive': (marked or {}).get('exhaustive'),
+            'registered_families': list((marked or {}).get('registered_families') or ()),
+            'final_unscoped_current_dependency_count': (marked or {}).get(
+                'final_unscoped_current_dependency_count'),
+            'final_unscoped_residual_rule_ids': list(
+                (marked or {}).get('final_unscoped_residual_rule_ids') or ()),
+            'all_direct_game_log_dependencies_exhausted': (marked or {}).get(
+                'all_direct_game_log_dependencies_exhausted'),
             'failed_families': list((marked or {}).get('failed_families') or ()),
             'result_game_log_id': (marked or {}).get('game_log_id'),
             'result_sync_run_id': (marked or {}).get('sync_run_id'),
@@ -1022,7 +1029,12 @@ def _apply_updates(session, update_actions, *, applied_at, operation_id) -> dict
                 or invalidation_record['result_game_log_id'] != log_id
                 or invalidation_record['result_sync_run_id'] != operation_id
                 or invalidation_record['result_session_id']
-                != invalidation_record['repair_session_id']):
+                != invalidation_record['repair_session_id']
+                or invalidation_record['final_unscoped_current_dependency_count'] != 0
+                or invalidation_record['all_direct_game_log_dependencies_exhausted']
+                is not True
+                or sorted(invalidation_record['registered_families'])
+                != sorted(REQUIRED_EVIDENCE_FAMILIES)):
             raise _Abort(CONTRADICTION_DEPENDENT_EVIDENCE, result=RESULT_FAIL,
                          detail={'local_game_log_id': log_id,
                                  'invalidation': invalidation_record})
@@ -1254,6 +1266,41 @@ def _verify_before_commit(session, *, contract, identity_result, insert_result,
         'every_dependent_evidence_mutation_used_the_repair_transaction':
             all(item.get('result_session_id') == item.get('repair_session_id')
                 for item in invalidation_records),
+        # ── Registry coverage, per corrected row ─────────────────────────────
+        'every_direct_game_log_evidence_family_is_registered':
+            sorted(_registered_direct_families())
+            == sorted(REQUIRED_EVIDENCE_FAMILIES)
+            and all(sorted(item.get('registered_families') or ())
+                    == sorted(REQUIRED_EVIDENCE_FAMILIES)
+                    for item in invalidation_records),
+        'every_direct_game_log_evidence_family_was_attempted':
+            all(sorted(item.get('families') or {}) == sorted(REQUIRED_EVIDENCE_FAMILIES)
+                for item in invalidation_records),
+        'every_direct_game_log_evidence_family_completed':
+            all(family.get('status') == EVIDENCE_FAMILY_COMPLETED
+                for item in invalidation_records
+                for family in (item.get('families') or {}).values()),
+        'entry_band_usage_dependencies_are_exhausted':
+            all(((item.get('families') or {}).get(
+                sync_service.EVIDENCE_FAMILY_ENTRY_BAND_USAGE) or {}).get('exhaustive')
+                is True for item in invalidation_records),
+        'team_relief_composition_dependencies_are_exhausted':
+            all(((item.get('families') or {}).get(
+                sync_service.EVIDENCE_FAMILY_TEAM_RELIEF_COMPOSITION) or {}).get(
+                    'exhaustive') is True for item in invalidation_records),
+        'every_registered_family_has_zero_remaining_current_dependencies':
+            all(family.get('remaining_current_dependency_count') == 0
+                for item in invalidation_records
+                for family in (item.get('families') or {}).values()),
+        # The backstop, restated as a reconciliation: success is never inferred from the sum
+        # of the registered families alone.
+        'no_unregistered_current_game_log_dependency_remains':
+            all(item.get('all_direct_game_log_dependencies_exhausted') is True
+                and not (item.get('final_unscoped_residual_rule_ids') or ())
+                for item in invalidation_records),
+        'final_unscoped_game_log_dependency_count_is_zero':
+            all(item.get('final_unscoped_current_dependency_count') == 0
+                for item in invalidation_records),
     }
 
     # Independent re-verification of every marked evidence id, queried from the database
@@ -1328,6 +1375,11 @@ def _verify_before_commit(session, *, contract, identity_result, insert_result,
         raise _Abort(CONTRADICTION_VERIFICATION, result=RESULT_FAIL,
                      detail={'failed_verifications': failed})
     return {'checks': checks, 'failed': failed}
+
+
+def _registered_direct_families() -> list:
+    """The family names the governed registry currently resolves."""
+    return sorted(sync_service.direct_game_log_evidence_registry())
 
 
 def _family_rule_ids() -> dict:

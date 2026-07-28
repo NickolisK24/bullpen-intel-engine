@@ -1263,6 +1263,46 @@ translates to `dependent_evidence_invalidation_failed` — FAIL, full rollback o
 actions, no ledger row, no created identity, no inserted row, no updated field, no correction
 metadata, and no surviving evidence mutation.
 
+## 17k-iii-c. Why the governed family registry is five, and why a registry is not enough
+
+Exhausting the registered families is only as good as the registry.
+
+Five service modules define a `mark_game_log_correction_for_*` hook that cites
+`source_table='game_logs'`. Three were governed. `entry_band_usage_evidence` and
+`team_relief_composition_evidence` — both active Phase 0D families with their own rebuild
+stages — were not, so a repair could commit while their evidence still reported
+`recompute_status = current`. The governed vocabulary is now exactly:
+
+`workload` · `appearance_context` · `inherited_traffic` · `entry_band_usage` ·
+`team_relief_composition`
+
+None is optional during the repair. Both new markers gained the same optional `rule_ids` and
+`session` passthroughs the other three have, defaulting to the previous behaviour exactly:
+one bounded batch, ambient session, unscoped, two-key return.
+
+The five rule vocabularies are disjoint — 39 rule ids across five families, 39 unique — which
+is what makes a per-family residual a meaningful number rather than an arbitrary slice of a
+shared population.
+
+**A registry is a list someone maintains, so it cannot be the last word.** Two things guard
+it.
+
+First, a governed audit discovers the direct correction hooks from the source tree and
+requires the registry to correspond to them exactly. It fails when a hook exists but is
+unregistered, when an entry names a marker that is not callable, when an entry names a rule
+vocabulary that is absent or empty, when two entries share a family name or a marker, or when
+two vocabularies overlap. It is not a hard-coded count: a count agrees with itself and proves
+nothing.
+
+Second — and this is the part that survives a future change nobody remembers to audit — after
+all five families report zero, the repair runs one final **unscoped** residual query for
+`(game_logs, corrected id)` with `rule_ids=None`, on the repair session, and requires it to
+return nothing. If a sixth direct family is added without a registry entry, every per-family
+check will pass and this will not. The failure is reported as
+`unregistered_direct_game_log_dependent_evidence_family`, names the residual rule ids and
+evidence ids in the private artifact, and rolls the whole repair back. Success is never
+inferred from the sum of the registered families.
+
 ## 17k-iv. Why the correction count is verified as an exact delta
 
 The runtime reconciliation checked `stat_correction_count >= 1`. That is satisfied by a row

@@ -251,9 +251,8 @@ def seed_local():
 
 # ── Dependent-evidence fixtures ───────────────────────────────────────────────
 FAMILY_RULE_ID = {
-    sync_service.EVIDENCE_FAMILY_WORKLOAD: 'workload_days_of_rest',
-    sync_service.EVIDENCE_FAMILY_APPEARANCE_CONTEXT: 'appearance_entry_context',
-    sync_service.EVIDENCE_FAMILY_INHERITED_TRAFFIC: 'appearance_inherited_runners',
+    family: sync_service.direct_game_log_evidence_registry()[family]['rule_ids'][0]
+    for family in sync_service.REQUIRED_EVIDENCE_FAMILIES
 }
 
 
@@ -2456,22 +2455,28 @@ def test_ordinary_ingestion_processes_one_bounded_batch_per_family_only(app):
     # next sweep. The markers are unscoped in this path, so all three draw from the same
     # dependency set.
     seed_local()
+    families = len(sync_service.REQUIRED_EVIDENCE_FAMILIES)
+    batch = sync_service.EVIDENCE_BATCH_SIZE
+    objects = (families + 3) * batch          # more than one full unscoped sweep can drain
     seed_dependent_evidence(source_pk=BR_LOG_ID,
-                            family=sync_service.EVIDENCE_FAMILY_WORKLOAD, objects=500)
+                            family=sync_service.EVIDENCE_FAMILY_WORKLOAD, objects=objects)
     log = _reviewed_log()
 
     module = __import__('services.workload_recovery_evidence',
                         fromlist=['mark_game_log_correction_for_workload_recovery'])
     single = module.mark_game_log_correction_for_workload_recovery(log)
-    assert single['marked_count'] == sync_service.EVIDENCE_BATCH_SIZE
-    assert _current_count(BR_LOG_ID, sync_service.EVIDENCE_FAMILY_WORKLOAD) == 400
+    assert single['marked_count'] == batch
+    assert _current_count(BR_LOG_ID,
+                          sync_service.EVIDENCE_FAMILY_WORKLOAD) == objects - batch
 
     result = sync_service._notify_workload_evidence_game_log_correction(log)
     assert set(result) == {'marked_count', 'evidence_ids'}
-    assert result['marked_count'] == 3 * sync_service.EVIDENCE_BATCH_SIZE
+    # Exactly one bounded batch per registered family, and no loop.
+    assert result['marked_count'] == families * batch
     # Residual survives a successful, well-formed ordinary sweep. That is correct for
     # ingestion, which runs again; it is exactly why the repair cannot rely on it.
-    assert _current_count(BR_LOG_ID, sync_service.EVIDENCE_FAMILY_WORKLOAD) == 100
+    assert _current_count(BR_LOG_ID, sync_service.EVIDENCE_FAMILY_WORKLOAD) == (
+        objects - batch - families * batch)
 
     # The strict path, on the same population, drains it.
     assert _strict(log)['families'][
@@ -2522,25 +2527,30 @@ def test_citation_duplication_cannot_hide_residual_evidence(app):
     # each, a 100-citation batch yields only 20 unique objects — a fifth of the nominal batch
     # size — so a well-formed success can leave most of the population still `current`.
     seed_local()
+    families = len(sync_service.REQUIRED_EVIDENCE_FAMILIES)
+    per_batch = sync_service.EVIDENCE_BATCH_SIZE // 5    # 5 citations each
+    objects = (families + 3) * per_batch
     seed_dependent_evidence(source_pk=BR_LOG_ID,
                             family=sync_service.EVIDENCE_FAMILY_WORKLOAD,
-                            objects=100, citations_per_object=5)
+                            objects=objects, citations_per_object=5)
     log = _reviewed_log()
-    assert _current_count(BR_LOG_ID, sync_service.EVIDENCE_FAMILY_WORKLOAD) == 100
+    assert _current_count(BR_LOG_ID, sync_service.EVIDENCE_FAMILY_WORKLOAD) == objects
 
     module = __import__('services.workload_recovery_evidence',
                         fromlist=['mark_game_log_correction_for_workload_recovery'])
     single = module.mark_game_log_correction_for_workload_recovery(log)
-    assert single['marked_count'] == 20            # far fewer than the batch size
-    assert _current_count(BR_LOG_ID, sync_service.EVIDENCE_FAMILY_WORKLOAD) == 80
+    assert single['marked_count'] == per_batch     # a fifth of the nominal batch size
+    assert _current_count(BR_LOG_ID,
+                          sync_service.EVIDENCE_FAMILY_WORKLOAD) == objects - per_batch
 
     ordinary = sync_service._notify_workload_evidence_game_log_correction(log)
-    assert ordinary['marked_count'] == 60          # three bounded batches, still not all
-    assert _current_count(BR_LOG_ID, sync_service.EVIDENCE_FAMILY_WORKLOAD) == 20
+    assert ordinary['marked_count'] == families * per_batch      # still not all of it
+    remaining = objects - per_batch - families * per_batch
+    assert _current_count(BR_LOG_ID, sync_service.EVIDENCE_FAMILY_WORKLOAD) == remaining
 
     result = _strict(log)
     workload = result['families'][sync_service.EVIDENCE_FAMILY_WORKLOAD]
-    assert workload['marked_unique_count'] == 20   # the residual the batches left behind
+    assert workload['marked_unique_count'] == remaining  # what the batches left behind
     assert workload['remaining_current_dependency_count'] == 0
     assert workload['exhaustive'] is True
     assert _current_count(BR_LOG_ID, sync_service.EVIDENCE_FAMILY_WORKLOAD) == 0
@@ -2882,3 +2892,328 @@ def test_the_repair_marks_real_evidence_without_violating_any_constraint(approve
     row = db.session.query(GameLog).filter(GameLog.id == BR_LOG_ID).one()
     assert row.last_stat_correction_sync_run_id == payload['governed_operation_id']
     assert _current_count(BR_LOG_ID) == 0
+
+
+# ═══════════════ 26. The governed direct-dependency registry ════════════════
+DIRECT_HOOK_PATTERN = re.compile(r'^def (mark_game_log_correction_for_[a-z_]+)\(', re.M)
+SERVICES_DIR = REPO_ROOT / 'backend' / 'services'
+
+
+def _modules_with_direct_game_log_hooks():
+    """Every service module defining a GameLog correction hook that cites game_logs.
+
+    Discovered from the source tree, not from a remembered list. This is the whole point of
+    the audit: a registry that only agrees with itself proves nothing.
+    """
+    found = {}
+    for path in sorted(SERVICES_DIR.glob('*.py')):
+        text = path.read_text(encoding='utf-8')
+        for name in DIRECT_HOOK_PATTERN.findall(text):
+            body = text.split(f'def {name}(', 1)[1].split('\ndef ', 1)[0]
+            if "source_table='game_logs'" in body:
+                found.setdefault(f'services.{path.stem}', set()).add(name)
+    return found
+
+
+def test_the_governed_direct_family_vocabulary_is_exactly_five():
+    assert sync_service.REQUIRED_EVIDENCE_FAMILIES == (
+        'workload', 'appearance_context', 'inherited_traffic',
+        'entry_band_usage', 'team_relief_composition')
+    assert apply_service.REQUIRED_EVIDENCE_FAMILIES == (
+        sync_service.REQUIRED_EVIDENCE_FAMILIES)
+
+
+def test_every_direct_game_log_correction_hook_is_registered_exactly_once():
+    discovered = _modules_with_direct_game_log_hooks()
+    assert set(discovered) == {
+        'services.workload_recovery_evidence',
+        'services.appearance_context_evidence',
+        'services.inherited_traffic_evidence',
+        'services.entry_band_usage_evidence',
+        'services.team_relief_composition_evidence',
+    }, sorted(discovered)
+
+    registry = sync_service.direct_game_log_evidence_registry()
+    registered_modules = {item['module'] for item in registry.values()}
+    # A direct correction hook that exists but is unregistered fails here.
+    assert registered_modules == set(discovered), sorted(
+        set(discovered) ^ registered_modules)
+    for item in registry.values():
+        assert item['marker_name'] in discovered[item['module']]
+
+    entries = list(sync_service._EVIDENCE_MARKERS)
+    # One entry per family, per module, per marker — no duplicates in any dimension.
+    assert len({entry[0] for entry in entries}) == len(entries)
+    assert len({entry[2] for entry in entries}) == len(entries)
+    assert len({(entry[2], entry[3]) for entry in entries}) == len(entries)
+    assert sorted(registry) == sorted(sync_service.REQUIRED_EVIDENCE_FAMILIES)
+
+
+def test_every_registry_entry_resolves_a_callable_marker_and_a_rule_vocabulary():
+    registry = sync_service.direct_game_log_evidence_registry()
+    seen = {}
+    for family, item in registry.items():
+        assert item['marker_is_callable'] is True, family
+        assert item['rule_ids'], f'{family} has an empty rule vocabulary'
+        for rule_id in item['rule_ids']:
+            assert isinstance(rule_id, str) and rule_id
+            # Overlapping vocabularies would make per-family residuals meaningless.
+            assert rule_id not in seen, f'{rule_id} claimed by {seen.get(rule_id)} and {family}'
+            seen[rule_id] = family
+    assert len(seen) == sum(len(item['rule_ids']) for item in registry.values())
+
+
+@pytest.mark.parametrize('defect', [
+    'unregistered_hook', 'missing_marker', 'missing_rule_ids', 'duplicate_family',
+    'overlapping_rule_ids', 'empty_rule_ids',
+])
+def test_the_registry_audit_fails_on_each_governed_defect(monkeypatch, defect):
+    """The audit must actually be capable of failing, one defect at a time."""
+    entries = list(sync_service._EVIDENCE_MARKERS)
+
+    if defect == 'unregistered_hook':
+        monkeypatch.setattr(sync_service, '_EVIDENCE_MARKERS', tuple(entries[:-1]))
+        registry = sync_service.direct_game_log_evidence_registry()
+        discovered = _modules_with_direct_game_log_hooks()
+        assert {item['module'] for item in registry.values()} != set(discovered)
+        return
+
+    if defect == 'duplicate_family':
+        duplicated = tuple(entries + [(entries[0][0],) + entries[1][1:]])
+        monkeypatch.setattr(sync_service, '_EVIDENCE_MARKERS', duplicated)
+        names = [entry[0] for entry in sync_service._EVIDENCE_MARKERS]
+        assert len(set(names)) != len(names)
+        return
+
+    module_name, marker_name, rule_ids_name = entries[0][2], entries[0][3], entries[0][4]
+    module = __import__(module_name, fromlist=[marker_name, rule_ids_name])
+    if defect == 'missing_marker':
+        monkeypatch.delattr(module, marker_name)
+        assert sync_service.direct_game_log_evidence_registry()[
+            entries[0][0]]['marker_is_callable'] is False
+    elif defect == 'missing_rule_ids':
+        monkeypatch.delattr(module, rule_ids_name)
+        assert sync_service.direct_game_log_evidence_registry()[
+            entries[0][0]]['rule_ids'] == ()
+    elif defect == 'empty_rule_ids':
+        monkeypatch.setattr(module, rule_ids_name, ())
+        assert not sync_service.direct_game_log_evidence_registry()[
+            entries[0][0]]['rule_ids']
+    elif defect == 'overlapping_rule_ids':
+        other = __import__(entries[1][2], fromlist=[entries[1][4]])
+        monkeypatch.setattr(module, rule_ids_name,
+                            tuple(getattr(other, entries[1][4])))
+        registry = sync_service.direct_game_log_evidence_registry()
+        seen, overlap = set(), False
+        for item in registry.values():
+            for rule_id in item['rule_ids']:
+                if rule_id in seen:
+                    overlap = True
+                seen.add(rule_id)
+        assert overlap
+
+
+# ═══════════════ 27. The two newly governed families ════════════════════════
+@pytest.mark.parametrize('family', [
+    'entry_band_usage', 'team_relief_composition',
+])
+def test_the_newly_governed_family_dependencies_are_discovered_and_exhausted(app, family):
+    seed_local()
+    seed_dependent_evidence(source_pk=BR_LOG_ID, family=family, objects=250)
+    assert _current_count(BR_LOG_ID, family) == 250
+
+    result = _strict(_reviewed_log())
+    item = result['families'][family]
+    assert item['initial_current_dependency_count'] == 250
+    assert item['marked_unique_count'] == 250
+    assert item['batch_count'] == 3                 # 100 + 100 + 50
+    assert item['remaining_current_dependency_count'] == 0
+    assert item['exhaustive'] is True
+    assert _current_count(BR_LOG_ID, family) == 0
+    assert result['final_unscoped_current_dependency_count'] == 0
+    assert result['all_direct_game_log_dependencies_exhausted'] is True
+
+
+def test_a_mixed_fixture_of_all_five_families_reaches_zero_residual(app):
+    seed_local()
+    counts = {'workload': 130, 'appearance_context': 101, 'inherited_traffic': 45,
+              'entry_band_usage': 220, 'team_relief_composition': 7}
+    for family, objects in counts.items():
+        seed_dependent_evidence(source_pk=BR_LOG_ID, family=family, objects=objects)
+    assert _current_count(BR_LOG_ID) == sum(counts.values())
+
+    result = _strict(_reviewed_log())
+    for family, objects in counts.items():
+        item = result['families'][family]
+        assert item['initial_current_dependency_count'] == objects
+        assert item['marked_unique_count'] == objects
+        assert item['remaining_current_dependency_count'] == 0
+        assert item['exhaustive'] is True
+        assert _current_count(BR_LOG_ID, family) == 0
+    assert result['marked_count'] == sum(counts.values())
+    assert result['final_unscoped_current_dependency_count'] == 0
+    assert result['final_unscoped_residual_rule_ids'] == []
+    assert result['all_direct_game_log_dependencies_exhausted'] is True
+    assert _current_count(BR_LOG_ID) == 0
+
+
+# ═══════════════ 28. The unscoped backstop ══════════════════════════════════
+def _seed_unregistered_dependency(source_pk, rule_id='some_future_direct_rule'):
+    evidence = _evidence_object(rule_id, index=f'{source_pk}:unregistered')
+    db.session.add(evidence)
+    db.session.flush()
+    _cite(evidence, source_pk=source_pk)
+    db.session.commit()
+    return evidence.id
+
+
+def test_an_unregistered_direct_dependency_is_caught_by_the_unscoped_backstop(app):
+    # A sixth direct GameLog-dependent family added without a registry entry. Every
+    # registered family reports zero, and the repair must still refuse.
+    seed_local()
+    seed_dependent_evidence(source_pk=BR_LOG_ID, family='workload', objects=5)
+    orphan = _seed_unregistered_dependency(BR_LOG_ID)
+
+    with pytest.raises(sync_service.WorkloadEvidenceInvalidationError) as failure:
+        _strict(_reviewed_log())
+    sentinel = sync_service.UNREGISTERED_FAMILY_SENTINEL
+    assert failure.value.failed_families == [sentinel]
+    record = failure.value.families[sentinel]
+    assert record['reason'] == sync_service.EVIDENCE_FAILURE_UNREGISTERED_FAMILY
+    assert record['remaining_current_dependency_count'] == 1
+    assert record['residual_rule_ids'] == ['some_future_direct_rule']
+    assert orphan in record['evidence_ids']
+    # Every REGISTERED family did reach zero — the sum of the five was not enough.
+    for family in sync_service.REQUIRED_EVIDENCE_FAMILIES:
+        assert failure.value.families[family]['status'] == 'completed'
+        assert failure.value.families[family][
+            'remaining_current_dependency_count'] == 0
+
+
+def test_an_unregistered_direct_dependency_prevents_the_commit(approved):
+    seed_dependent_evidence(source_pk=BR_LOG_ID, family='workload', objects=5)
+    _seed_unregistered_dependency(BR_LOG_ID)
+    before = _counts()
+
+    payload = _apply(approved)
+    assert payload['result'] == apply_service.RESULT_FAIL
+    assert payload['decision_reasons'] == [
+        apply_service.CONTRADICTION_DEPENDENT_EVIDENCE]
+    assert payload['abort_detail']['failed_families'] == [
+        sync_service.UNREGISTERED_FAMILY_SENTINEL]
+    assert payload['database_writes_performed'] is False
+    assert _counts() == before
+    assert db.session.query(Ledger).count() == 0
+    assert db.session.query(Pitcher).filter(Pitcher.mlb_id == P_DEFERRED).count() == 0
+    assert db.session.query(GameLog).filter(
+        GameLog.id == BR_LOG_ID).one().stat_correction_count == 0
+    # Every evidence mutation rolls back too.
+    assert _current_count(BR_LOG_ID, 'workload') == 5
+
+
+@pytest.mark.parametrize('dropped', ['entry_band_usage', 'team_relief_composition'])
+def test_removing_a_family_from_the_registry_fails_closed(app, monkeypatch, dropped):
+    # With the family unregistered, its dependencies are never drained — and the unscoped
+    # backstop refuses the run rather than letting the shrunken registry declare success.
+    seed_local()
+    seed_dependent_evidence(source_pk=BR_LOG_ID, family=dropped, objects=3)
+    entries = tuple(e for e in sync_service._EVIDENCE_MARKERS if e[0] != dropped)
+    monkeypatch.setattr(sync_service, '_EVIDENCE_MARKERS', entries)
+    monkeypatch.setattr(sync_service, 'REQUIRED_EVIDENCE_FAMILIES',
+                        tuple(f for f in sync_service.REQUIRED_EVIDENCE_FAMILIES
+                              if f != dropped))
+    with pytest.raises(sync_service.WorkloadEvidenceInvalidationError) as failure:
+        _strict(_reviewed_log())
+    assert failure.value.failed_families == [sync_service.UNREGISTERED_FAMILY_SENTINEL]
+    assert _current_count(BR_LOG_ID, dropped) == 3
+
+
+@pytest.mark.parametrize('family', ['entry_band_usage', 'team_relief_composition'])
+def test_a_newly_governed_family_marker_exception_rolls_back_everything(
+        approved, monkeypatch, family):
+    registry = sync_service.direct_game_log_evidence_registry()[family]
+    seed_dependent_evidence(source_pk=BR_LOG_ID, family=family, objects=3)
+    before = _counts()
+    _break_marker(monkeypatch, registry['module'], registry['marker_name'],
+                  lambda *a, **k: (_ for _ in ()).throw(RuntimeError('evidence down')))
+
+    payload = _apply(approved)
+    assert payload['result'] == apply_service.RESULT_FAIL
+    assert payload['decision_reasons'] == [
+        apply_service.CONTRADICTION_DEPENDENT_EVIDENCE]
+    assert payload['abort_detail']['failed_families'] == [family]
+    assert payload['rollback_performed'] is True
+    assert _counts() == before
+    assert db.session.query(Ledger).count() == 0
+    assert db.session.query(Pitcher).filter(Pitcher.mlb_id == P_DEFERRED).count() == 0
+    assert db.session.query(GameLog).join(
+        Pitcher, GameLog.pitcher_id == Pitcher.id).filter(
+        Pitcher.mlb_id == P_DEFERRED).count() == 0
+    row = db.session.query(GameLog).filter(GameLog.id == BR_LOG_ID).one()
+    assert row.hits_allowed == 1 and row.stat_correction_count == 0
+    assert _current_count(BR_LOG_ID, family) == 3
+
+
+@pytest.mark.parametrize('family', ['entry_band_usage', 'team_relief_composition'])
+def test_a_later_batch_failure_in_a_newly_governed_family_rolls_back_everything(
+        approved, monkeypatch, family):
+    registry = sync_service.direct_game_log_evidence_registry()[family]
+    seed_dependent_evidence(source_pk=BR_LOG_ID, family=family, objects=250)
+    before = _counts()
+    module = __import__(registry['module'], fromlist=[registry['marker_name']])
+    real_marker = getattr(module, registry['marker_name'])
+    calls = []
+
+    def _fails_late(game_log, **kwargs):
+        calls.append(1)
+        if len(calls) == 1:
+            return real_marker(game_log, **kwargs)
+        raise RuntimeError('evidence down')
+
+    monkeypatch.setattr(module, registry['marker_name'], _fails_late)
+    payload = _apply(approved)
+    assert payload['result'] == apply_service.RESULT_FAIL
+    assert len(calls) == 2
+    assert payload['abort_detail']['failed_families'] == [family]
+    assert _counts() == before
+    assert db.session.query(Ledger).count() == 0
+    # No partial evidence invalidation survives: all 250 are still current.
+    assert _current_count(BR_LOG_ID, family) == 250
+
+
+def test_the_repair_reports_every_family_and_the_unscoped_backstop(approved):
+    counts = {'workload': 130, 'appearance_context': 20, 'inherited_traffic': 5,
+              'entry_band_usage': 101, 'team_relief_composition': 3}
+    for family, objects in counts.items():
+        seed_dependent_evidence(source_pk=BR_LOG_ID, family=family, objects=objects)
+
+    payload = _apply(approved)
+    assert payload['result'] == apply_service.RESULT_PASS, payload['decision_reasons']
+
+    record = [r for r in payload['dependent_evidence_invalidation_results']
+              if r['local_game_log_id'] == BR_LOG_ID][0]
+    assert sorted(record['families']) == sorted(sync_service.REQUIRED_EVIDENCE_FAMILIES)
+    for family, objects in counts.items():
+        item = record['families'][family]
+        assert item['initial_current_dependency_count'] == objects
+        assert item['marked_unique_count'] == objects
+        assert item['remaining_current_dependency_count'] == 0
+        assert item['exhaustive'] is True
+        assert item['batch_count'] >= 1
+    assert record['final_unscoped_current_dependency_count'] == 0
+    assert record['final_unscoped_residual_rule_ids'] == []
+    assert record['all_direct_game_log_dependencies_exhausted'] is True
+    assert sorted(record['registered_families']) == sorted(
+        sync_service.REQUIRED_EVIDENCE_FAMILIES)
+    assert _current_count(BR_LOG_ID) == 0
+
+    checks = payload['verification_results']
+    for name in ('every_direct_game_log_evidence_family_is_registered',
+                 'every_direct_game_log_evidence_family_was_attempted',
+                 'every_direct_game_log_evidence_family_completed',
+                 'entry_band_usage_dependencies_are_exhausted',
+                 'team_relief_composition_dependencies_are_exhausted',
+                 'every_registered_family_has_zero_remaining_current_dependencies',
+                 'no_unregistered_current_game_log_dependency_remains',
+                 'final_unscoped_game_log_dependency_count_is_zero'):
+        assert checks[name] is True, name

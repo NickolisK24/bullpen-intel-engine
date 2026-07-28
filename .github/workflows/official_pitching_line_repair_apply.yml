@@ -172,12 +172,25 @@ jobs:
                       'remaining_current_dependency_count') or 0
                   bucket['exhaustive'] = (
                       bucket['exhaustive'] and family.get('exhaustive') is True)
+          unscoped = sum(item.get('final_unscoped_current_dependency_count') or 0
+                         for item in invalidation)
+          residual_rules = sorted({rule for item in invalidation
+                                   for rule in (item.get(
+                                       'final_unscoped_residual_rule_ids') or [])})
+          all_exhausted = bool(invalidation) and all(
+              item.get('all_direct_game_log_dependencies_exhausted') is True
+              for item in invalidation)
           summary.extend(('', '### Dependent-evidence invalidation (bounded totals)'))
           summary.extend(
               f"- `{name}`: batches `{bucket['batches']}` initial "
               f"`{bucket['initial']}` marked `{bucket['marked']}` remaining "
               f"`{bucket['remaining']}` exhaustive `{bucket['exhaustive']}`"
               for name, bucket in sorted(totals.items()))
+          summary.append(
+              f"- final unscoped current dependencies: `{unscoped}` "
+              f"(residual rules `{residual_rules}`)")
+          summary.append(
+              f"- all direct GameLog dependencies exhausted: `{all_exhausted}`")
           summary.extend(('', '### Reviewed amendment line (825058:805299:109)'))
           summary.append(
               f"- GameLog `{before.get('local_game_log_id')}` field "

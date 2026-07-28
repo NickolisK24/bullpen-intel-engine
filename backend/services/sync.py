@@ -621,10 +621,18 @@ def _record_unsafe_correction_attempt(
 EVIDENCE_FAMILY_WORKLOAD = 'workload'
 EVIDENCE_FAMILY_APPEARANCE_CONTEXT = 'appearance_context'
 EVIDENCE_FAMILY_INHERITED_TRAFFIC = 'inherited_traffic'
+EVIDENCE_FAMILY_ENTRY_BAND_USAGE = 'entry_band_usage'
+EVIDENCE_FAMILY_TEAM_RELIEF_COMPOSITION = 'team_relief_composition'
+# Every evidence family that depends DIRECTLY on a corrected GameLog — that is, every module
+# defining a ``mark_game_log_correction_for_*`` hook that cites ``source_table='game_logs'``.
+# None of them is optional during the governed repair. A governed audit proves this tuple
+# corresponds to the actual correction hooks rather than to a remembered list.
 REQUIRED_EVIDENCE_FAMILIES = (
     EVIDENCE_FAMILY_WORKLOAD,
     EVIDENCE_FAMILY_APPEARANCE_CONTEXT,
     EVIDENCE_FAMILY_INHERITED_TRAFFIC,
+    EVIDENCE_FAMILY_ENTRY_BAND_USAGE,
+    EVIDENCE_FAMILY_TEAM_RELIEF_COMPOSITION,
 )
 
 EVIDENCE_FAMILY_COMPLETED = 'completed'
@@ -660,6 +668,20 @@ _EVIDENCE_MARKERS = (
         'mark_game_log_correction_for_inherited_traffic',
         'INHERITED_TRAFFIC_RULE_IDS',
     ),
+    (
+        EVIDENCE_FAMILY_ENTRY_BAND_USAGE,
+        'entry band usage',
+        'services.entry_band_usage_evidence',
+        'mark_game_log_correction_for_entry_band_usage',
+        'ENTRY_BAND_USAGE_RULE_IDS',
+    ),
+    (
+        EVIDENCE_FAMILY_TEAM_RELIEF_COMPOSITION,
+        'team relief composition',
+        'services.team_relief_composition_evidence',
+        'mark_game_log_correction_for_team_relief_composition',
+        'TEAM_RELIEF_COMPOSITION_RULE_IDS',
+    ),
 )
 
 # The source table every GameLog-correction marker cites.
@@ -679,6 +701,13 @@ EVIDENCE_FAILURE_DOUBLE_COUNTED = 'evidence_object_inconsistently_counted'
 EVIDENCE_FAILURE_OPERATION_ID = 'governed_operation_id_absent_or_misplaced'
 EVIDENCE_FAILURE_SAFETY_LIMIT = 'exhaustive_invalidation_exceeded_safety_limit'
 EVIDENCE_FAILURE_RESIDUAL_QUERY = 'residual_dependency_query_unavailable_or_contradictory'
+# The backstop. Every registered family reported zero, and yet CURRENT evidence still cites
+# this GameLog — which can only mean a direct dependency exists that the registry does not
+# know about. Named as a registry gap rather than as a family failure, because no registered
+# family failed.
+EVIDENCE_FAILURE_UNREGISTERED_FAMILY = (
+    'unregistered_direct_game_log_dependent_evidence_family')
+UNREGISTERED_FAMILY_SENTINEL = '__unregistered_direct_game_log_dependency__'
 
 
 class WorkloadEvidenceInvalidationError(Exception):
@@ -1015,6 +1044,52 @@ def _notify_strict_exhaustive(game_log, *, sync_run_id, game_log_id, session):
             'a required dependent-evidence family was not attempted',
             families=families, failed_families=sorted(missing), game_log_id=game_log_id)
 
+    # ── Final UNSCOPED direct-dependency backstop ────────────────────────────
+    # Every registered family reported zero. That is a statement about the families this
+    # registry knows about, and the registry is a list someone maintains. This query asks the
+    # database the question the registry cannot: does ANY current evidence still cite this
+    # corrected GameLog, under any rule id at all?
+    #
+    # Success is never inferred from the sum of the family results. A future sixth direct
+    # GameLog-dependent family added without a registry entry would pass every per-family
+    # check and be caught here.
+    try:
+        unscoped_ids = evidence_contract.current_dependent_evidence_ids(
+            source_table=EVIDENCE_SOURCE_TABLE, source_pk=game_log_id, rule_ids=None,
+            session=session)
+    except Exception as exc:  # noqa: BLE001 - an unreadable backstop is not a zero
+        raise WorkloadEvidenceInvalidationError(
+            'the final unscoped dependency query was unavailable',
+            families=families,
+            failed_families=[UNREGISTERED_FAMILY_SENTINEL],
+            game_log_id=game_log_id) from exc
+
+    if unscoped_ids:
+        residual_rule_ids = evidence_contract.evidence_rule_ids(
+            evidence_ids=unscoped_ids, session=session)
+        families[UNREGISTERED_FAMILY_SENTINEL] = {
+            'status': EVIDENCE_FAMILY_FAILED,
+            'reason': EVIDENCE_FAILURE_UNREGISTERED_FAMILY,
+            'error_type': None,
+            'family': UNREGISTERED_FAMILY_SENTINEL,
+            'source_table': EVIDENCE_SOURCE_TABLE,
+            'source_pk': str(game_log_id),
+            'batch_size': EVIDENCE_BATCH_SIZE,
+            'batch_count': 0,
+            'initial_current_dependency_count': len(unscoped_ids),
+            'marked_unique_count': 0,
+            'evidence_ids': sorted(unscoped_ids)[:100],
+            'residual_rule_ids': sorted({value for value in residual_rule_ids.values()
+                                         if value is not None}),
+            'remaining_current_dependency_count': len(unscoped_ids),
+            'exhaustive': False,
+            'sync_run_id': sync_run_id,
+        }
+        raise WorkloadEvidenceInvalidationError(
+            'current evidence still cites this GameLog under no registered family',
+            families=families, failed_families=[UNREGISTERED_FAMILY_SENTINEL],
+            game_log_id=game_log_id)
+
     return {
         'marked_count': sum(item['marked_unique_count'] for item in families.values()),
         'evidence_ids': sorted(
@@ -1023,11 +1098,39 @@ def _notify_strict_exhaustive(game_log, *, sync_run_id, game_log_id, session):
         'all_required_families_completed': True,
         'failed_families': [],
         'exhaustive': True,
+        'final_unscoped_current_dependency_count': 0,
+        'final_unscoped_residual_rule_ids': [],
+        'all_direct_game_log_dependencies_exhausted': True,
+        'registered_families': list(REQUIRED_EVIDENCE_FAMILIES),
         'game_log_id': game_log_id,
         'sync_run_id': sync_run_id,
         'session_id': id(session),
         'strict': True,
     }
+
+
+def direct_game_log_evidence_registry() -> dict:
+    """The governed registry, resolved: family -> module, marker name, rule ids.
+
+    Resolving it rather than describing it is the point — an entry naming a marker that does
+    not exist, or a rule vocabulary that is empty, is a registry defect and must be visible as
+    one rather than as a runtime surprise mid-repair.
+    """
+    resolved = {}
+    for family, label, module_name, function_name, rule_ids_name in _EVIDENCE_MARKERS:
+        module = __import__(module_name, fromlist=[function_name, rule_ids_name])
+        marker = getattr(module, function_name, None)
+        rule_ids = getattr(module, rule_ids_name, None)
+        resolved[family] = {
+            'family': family,
+            'label': label,
+            'module': module_name,
+            'marker_name': function_name,
+            'marker_is_callable': callable(marker),
+            'rule_ids_name': rule_ids_name,
+            'rule_ids': tuple(rule_ids or ()),
+        }
+    return resolved
 
 
 def _upsert_game_log_from_authoritative_values(
