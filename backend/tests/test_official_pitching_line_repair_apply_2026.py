@@ -1551,8 +1551,12 @@ def test_there_is_no_automatic_rollback_after_commit_and_no_retry():
     for banned in ('while true', 'for attempt', 'max_attempts', 'time.sleep', 'backoff'):
         assert banned not in text.lower()
     workflow = WORKFLOW_PATH.read_text(encoding='utf-8')
-    for banned in ('retry', 'max-attempts', 'continue-on-error: true'):
+    # No retry action, no attempt loop, no failure-swallowing step, and the apply command is
+    # invoked exactly once.
+    for banned in ('nick-fields/retry', 'max-attempts', 'retry-on', 'continue-on-error',
+                   'while true', 'for i in', 'sleep '):
         assert banned not in workflow.lower()
+    assert workflow.count('run_official_pitching_line_repair_apply_2026.py') == 1
 
 
 def test_the_post_commit_checks_are_the_three_governed_read_only_checks():
@@ -1723,12 +1727,15 @@ def test_the_apply_workflow_is_dispatch_only():
 
 def test_the_apply_workflow_takes_only_the_confirmation_input():
     text = WORKFLOW_PATH.read_text(encoding='utf-8')
-    assert 'confirm_apply:' in text
     assert 'APPLY-2026-PITCHING-LINE-REPAIR-3EE2EA06' in text
+    inputs_block = text.split('inputs:', 1)[1].split('concurrency:', 1)[0]
+    assert 'confirm_apply:' in inputs_block
     for banned in ('season:', 'as_of_date:', 'team_id:', 'game_pk:', 'plan_scope:',
                    'preview_limit:', 'fingerprint:', 'manifest_fingerprint:',
                    'action_count:', 'force:', 'override:'):
-        assert banned not in text
+        assert banned not in inputs_block
+    # Exactly one dispatch input exists.
+    assert len(re.findall(r'^      [a-z_]+:$', inputs_block, re.M)) == 1
 
 
 def test_the_apply_workflow_validates_confirmation_before_any_database_step():
@@ -1752,9 +1759,11 @@ def test_the_apply_workflow_uploads_a_private_thirty_day_artifact():
     text = WORKFLOW_PATH.read_text(encoding='utf-8')
     assert 'retention-days: 30' in text
     assert 'if-no-files-found: error' in text
-    # Private by default: no public publication step and no secret echo.
-    for banned in ('gh release', 'public', 'echo "$DATABASE_URL"', 'echo $DATABASE_URL',
-                   'env | ', 'printenv'):
+    # Private by default: artifacts are private unless published, and nothing here
+    # publishes one or echoes an environment value.
+    for banned in ('gh release', 'gh api', 'actions/github-script',
+                   'echo "$DATABASE_URL"', 'echo $DATABASE_URL', 'env | ', 'printenv',
+                   'echo "$SECRET_KEY"', 'set -x'):
         assert banned not in text
 
 
