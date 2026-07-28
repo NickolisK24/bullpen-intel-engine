@@ -481,13 +481,23 @@ def test_a_mismatch_that_no_longer_reproduces_is_not_a_finding(app):
 
 # ═══════════════ 12-14. Baseline, repair, and fingerprint safety ════════════
 def test_no_accepted_baseline_value_changes(app):
+    """The diagnostic never touches any baseline version, active or retained."""
     before = dict(planner.ACCEPTED_DEFECT_BASELINE)
+    before_v1 = dict(planner.ACCEPTED_DEFECT_BASELINE_V1)
+    before_v2 = dict(planner.ACCEPTED_DEFECT_BASELINE_V2)
     _seed()
     payload = _run()
     assert dict(planner.ACCEPTED_DEFECT_BASELINE) == before
-    assert before['exact_match_count'] == 12697          # not 12,696
-    assert before['defective_matched_line_count'] == 159  # not 160
-    assert before['defect_line_action_count'] == 604      # not 605
+    assert dict(planner.ACCEPTED_DEFECT_BASELINE_V1) == before_v1
+    assert dict(planner.ACCEPTED_DEFECT_BASELINE_V2) == before_v2
+    # V1 remains the originally accepted population, retained unchanged.
+    assert before_v1['exact_match_count'] == 12697
+    assert before_v1['defective_matched_line_count'] == 159
+    assert before_v1['defect_line_action_count'] == 604
+    # The active baseline is the reviewed amendment, and the diagnostic did not produce it.
+    assert before['exact_match_count'] == 12696
+    assert before['defective_matched_line_count'] == 160
+    assert before['defect_line_action_count'] == 605
     assert payload['accepted_defect_baseline_modified'] is False
     assert payload['reconciliations'][
         'no_accepted_baseline_value_is_read_or_changed'] is True

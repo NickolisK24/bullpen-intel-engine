@@ -167,16 +167,182 @@ CORRECTION_METADATA_POLICY = {
 BLOCK_BASELINE_DRIFT = 'accepted_baseline_drift'
 BLOCK_SUBSET_SCOPE = 'diagnostic_subset_scope'
 
-# ── Immutable accepted DEFECT baseline ────────────────────────────────────────
-# The accepted production defect population (merged completeness diagnostic, season 2026
-# through 2026-07-25). Pinned so a moved population fails closed instead of silently
-# replanning. Every value here is a property of OFFICIAL MLB evidence and of the stored
-# GameLog ledger, so none of it can change without the reviewed repair changing meaning.
+# ── Accepted DEFECT baseline, versioned ───────────────────────────────────────
+# The accepted production defect population. Pinned so a moved population fails closed
+# instead of silently replanning. Every value here is a property of OFFICIAL MLB evidence and
+# of the stored GameLog ledger, so none of it can change without the reviewed repair changing
+# meaning — and when one legitimately does change, it is AMENDED under review rather than
+# overwritten. V1 is retained forever as evidence of what was originally accepted.
 #
 # ``missing_lines_dependent_on_identity_creation`` is deliberately NOT here. See
 # IDENTITY_RESOLUTION_* below: it is a plan-time partition of the same 445 missing lines,
 # determined by what the local Pitcher table happens to contain right now.
-ACCEPTED_DEFECT_BASELINE = {
+
+# V1 — the population accepted from the merged completeness diagnostic (season 2026 through
+# 2026-07-25). IMMUTABLE. Reproduced independently by four retained production artifacts.
+# Never edited; superseded only by an explicit amendment record below.
+ACCEPTED_DEFECT_BASELINE_V1 = {
+    'official_games_selected': 1570,
+    'official_games_fetched': 1570,
+    'official_team_game_sides': 3140,
+    'official_pitching_lines': 13301,
+    'official_starter_lines': 3140,
+    'official_relief_lines': 10161,
+    'local_pitching_lines': 12856,
+    'local_starter_lines': 3110,
+    'local_relief_lines': 9746,
+    'exact_match_count': 12697,
+    'missing_line_count': 445,
+    'defective_matched_line_count': 159,
+    'defect_line_action_count': 604,
+    'role_corrections_planned': 2,
+    'appearance_team_mismatch_count': 0,
+    'extra_local_line_count': 0,
+    'duplicate_local_line_count': 0,
+    'local_pitcher_identity_missing_count': 0,
+    'official_evidence_unavailable_count': 0,
+}
+
+# The one reviewed line whose classification moved. Its stable key is
+# (game_pk, official MLB person id, appearance team id) — the same key the completeness
+# diagnostic and the repair planner use everywhere else.
+AMENDMENT_1_TRANSITION_KEY = {
+    'mlb_game_pk': 825058,
+    'official_mlb_person_id': 805299,
+    'appearance_team_id': 109,
+}
+AMENDMENT_1_STABLE_KEY = '825058:805299:109'
+
+# The retained production artifacts that independently reproduce each population. Recorded so
+# a reviewer can re-derive the amendment from evidence rather than from this file's say-so.
+AMENDMENT_1_SUPPORTING_ARTIFACTS = (
+    {'workflow': 'Official Pitching-Line Completeness Diagnostic (2026)',
+     'run_id': 30284218611, 'generated_at': '2026-07-27T16:20:04.642412Z',
+     'report_sha256': '56e768685ff59e0e8694aff7c37512c40ad4cd124ea84a64b01b2bf94199111b',
+     'population': 'prior'},
+    {'workflow': 'Official Pitching-Line Repair Plan (2026)',
+     'run_id': 30295617314, 'generated_at': '2026-07-27T18:51:16.974117Z',
+     'report_sha256': '50b823b055501921f204c6cebb80caccfd7be4b3f9e06668fc47c9eb872663c6',
+     'population': 'prior'},
+    {'workflow': 'Official Pitching-Line Repair Plan (2026)',
+     'run_id': 30315122495, 'generated_at': '2026-07-27T23:44:58.208999Z',
+     'report_sha256': '7528504b8afe05c663be892655297ba20d21ef4ffa6cc9e3485bb8eb3051bc65',
+     'population': 'prior'},
+    {'workflow': 'Official Pitching-Line Repair Plan (2026)',
+     'run_id': 30318846061, 'generated_at': '2026-07-28T00:57:38.449240Z',
+     'report_sha256': '2ec51b9950fc442db6946f9205e38b999e59cb4b6edd45ea0df8a90a3cbaeb02',
+     'population': 'prior'},
+    {'workflow': 'Official Pitching-Line Repair Plan (2026)',
+     'run_id': 30350475893, 'generated_at': '2026-07-28T10:22:18.985546Z',
+     'report_sha256': 'ce3719a24bc790693e16fa6bff90541d98e44c5d6f6da8a1abee9ac97a34ccfb',
+     'population': 'amended'},
+)
+
+# AMENDMENT 1 — V1 to V2.
+#
+# What this record asserts: the CURRENT defect population is accepted for planning, and
+# current official MLB box-score evidence is the authority for the proposed repair.
+#
+# What this record does NOT assert: that MLB changed its box score, or that the local GameLog
+# was mutated. The merged transition diagnostic searched every durable retained source and
+# recovered neither prior value, so the direction of the historical change is unknown and is
+# recorded as unknown. Accepting current state is not a finding about the past.
+DEFECT_BASELINE_AMENDMENT_1 = {
+    'amendment_id': 'defect_baseline_amendment_1_brandyn_garcia_hits_allowed',
+    'prior_version': 'v1',
+    'amended_version': 'v2',
+    'reviewed_transition_key': dict(AMENDMENT_1_TRANSITION_KEY),
+    'reviewed_transition_stable_key': AMENDMENT_1_STABLE_KEY,
+    'local_game_log_id': 43765,
+    'game_date': '2026-07-20',
+    'official_name': 'Brandyn Garcia',
+    'field': 'hits_allowed',
+    'official_stat_key': 'hits',
+    'current_official_value': 0,
+    'current_local_value': 1,
+    'reason_code': completeness.REASON_HITS_MISMATCH,
+    'prior_classification': 'exact_match',
+    'amended_classification': 'defective_matched_line',
+    'update_action_id': 'gamelog:update:43765:825058:805299',
+    'action_source_fingerprint': (
+        '5fc28e9d7def63ffbb75a1f8b099bfa40db3d416062fb08a80e7d69aed16dc9b'),
+    'changed_fields': ('exact_match_count', 'defective_matched_line_count',
+                       'defect_line_action_count'),
+    'prior_population': {'exact_match_count': 12697, 'defective_matched_line_count': 159,
+                         'defect_line_action_count': 604},
+    'amended_population': {'exact_match_count': 12696, 'defective_matched_line_count': 160,
+                           'defect_line_action_count': 605},
+    'field_deltas': {'exact_match_count': -1, 'defective_matched_line_count': 1,
+                     'defect_line_action_count': 1},
+    'current_official_authority': (
+        'the current official MLB box score for game 825058 is the authority for the '
+        'proposed repair of this line'),
+    'historical_transition_classification': 'historical_state_unprovable',
+    'confidence': 'not_provable_from_retained_evidence',
+    'transition_window': {
+        'after': '2026-07-28T00:57:38.449240Z',
+        'on_or_before': '2026-07-28T10:22:18.985546Z',
+        'basis': (
+            'the last retained artifact proving the prior population and the first retained '
+            'artifact proving the amended population'),
+    },
+    'supporting_artifacts': [dict(item) for item in AMENDMENT_1_SUPPORTING_ARTIFACTS],
+    'causation_claimed': False,
+    'official_source_change_claimed': False,
+    'local_game_log_change_claimed': False,
+    'prior_values_recovered': False,
+    'limitation': (
+        'no retained artifact stores exact-match line values and no store retains the raw '
+        'official response as fetched, so neither prior value is recoverable; the absence of '
+        'a repair action in a prior manifest proves only that the line was not a defect '
+        'then, never what its values were'),
+}
+
+# V2 — the ACTIVE planning baseline. Differs from V1 in exactly the three amended counts.
+ACCEPTED_DEFECT_BASELINE_V2 = dict(
+    ACCEPTED_DEFECT_BASELINE_V1,
+    **DEFECT_BASELINE_AMENDMENT_1['amended_population'])
+
+ACCEPTED_DEFECT_BASELINE_VERSIONS = {
+    'v1': ACCEPTED_DEFECT_BASELINE_V1,
+    'v2': ACCEPTED_DEFECT_BASELINE_V2,
+}
+DEFECT_BASELINE_AMENDMENTS = (DEFECT_BASELINE_AMENDMENT_1,)
+ACTIVE_ACCEPTED_DEFECT_BASELINE_VERSION = 'v2'
+PRIOR_ACCEPTED_DEFECT_BASELINE_VERSION = 'v1'
+
+# The active baseline every comparison uses. V1 stays reachable and unmodified.
+ACCEPTED_DEFECT_BASELINE = ACCEPTED_DEFECT_BASELINE_V2
+
+# What governs the proposed repair NOW, stated separately from what happened historically.
+# These are different questions and the planner answers only the first.
+CURRENT_AUTHORITY_BASIS = 'current_official_mlb_boxscore_evidence'
+HISTORICAL_CAUSATION_CLAIMED = False
+
+# Outcome vocabulary for the reviewed amendment line. ``not_applicable_to_subset`` is the
+# only status that may be reported without examining the line, and it is available only to a
+# scoped run — which can never become apply-review ready anyway.
+AMENDMENT_LINE_VALIDATED = 'validated'
+AMENDMENT_LINE_MISSING = 'missing_from_full_season_population'
+AMENDMENT_LINE_CONTRADICTORY = 'contradictory'
+AMENDMENT_LINE_NOT_APPLICABLE_TO_SUBSET = 'not_applicable_to_subset'
+# A full-season run that is not planning the accepted amended V2 population — because a
+# different baseline is active, or because the observed population already drifted from it —
+# is not governed by this amendment. Such a run is already inconclusive and can never be
+# apply-review ready, so nothing is bypassed. Named distinctly so it can never be confused
+# with a successful validation or with subset non-applicability.
+AMENDMENT_LINE_NOT_APPLICABLE_TO_UNAMENDED_BASELINE = 'not_applicable_to_unamended_baseline'
+AMENDMENT_LINE_STATUSES = (
+    AMENDMENT_LINE_VALIDATED, AMENDMENT_LINE_MISSING, AMENDMENT_LINE_CONTRADICTORY,
+    AMENDMENT_LINE_NOT_APPLICABLE_TO_SUBSET,
+    AMENDMENT_LINE_NOT_APPLICABLE_TO_UNAMENDED_BASELINE,
+)
+BLOCK_AMENDMENT_LINE_MISSING = 'reviewed_amendment_line_missing_from_full_season_population'
+
+# An independent literal copy of the accepted V1 population. A reconciliation compares
+# ACCEPTED_DEFECT_BASELINE_V1 against this, so editing V1 in place fails closed instead of
+# silently redefining what was originally accepted.
+_AMENDMENT_V1_REFERENCE = {
     'official_games_selected': 1570,
     'official_games_fetched': 1570,
     'official_team_game_sides': 3140,
@@ -1429,6 +1595,9 @@ def run_repair_plan(
         insert_actions, identity_actions, population)
     identity_transition = _identity_resolution_transition(identity_partition)
 
+    amendment_line_validation = _amendment_targets_observed_line(
+        observed_official_line_keys, update_actions, plan_scope, baseline_matches)
+
     reconciliations = _reconciliations(
         population=population, observed=observed, manifest=manifest,
         identity_actions=identity_actions, insert_actions=insert_actions,
@@ -1438,7 +1607,8 @@ def run_repair_plan(
         observed_official_line_keys=observed_official_line_keys,
         observed_defect_line_keys=observed_defect_line_keys,
         planned_defect_line_keys=planned_defect_line_keys,
-        manifest_fingerprint=manifest_fingerprint)
+        manifest_fingerprint=manifest_fingerprint, plan_scope=plan_scope,
+        amendment_target=amendment_line_validation)
 
     result, plan_status, decision_reasons = _decide(
         population=population, plan_scope=plan_scope, evidence_gaps=evidence_gaps,
@@ -1483,6 +1653,20 @@ def run_repair_plan(
         'plan_scope': plan_scope,
         # ── Immutable defect population ──────────────────────────────────────
         'accepted_defect_baseline': dict(ACCEPTED_DEFECT_BASELINE),
+        # ── Baseline lineage: V1 retained, V2 active ─────────────────────────
+        'accepted_defect_baseline_version': ACTIVE_ACCEPTED_DEFECT_BASELINE_VERSION,
+        'prior_accepted_defect_baseline_version': PRIOR_ACCEPTED_DEFECT_BASELINE_VERSION,
+        'accepted_defect_baseline_v1': dict(ACCEPTED_DEFECT_BASELINE_V1),
+        'accepted_defect_baseline_v2': dict(ACCEPTED_DEFECT_BASELINE_V2),
+        'defect_baseline_amendment': dict(DEFECT_BASELINE_AMENDMENT_1),
+        'defect_baseline_amendment_count': len(DEFECT_BASELINE_AMENDMENTS),
+        'defect_baseline_lineage': _defect_baseline_lineage(),
+        'defect_baseline_amendment_line_validation': amendment_line_validation,
+        # What governs the proposed repair NOW, kept separate from what happened.
+        'current_authority_basis': CURRENT_AUTHORITY_BASIS,
+        'historical_causation_claimed': HISTORICAL_CAUSATION_CLAIMED,
+        'historical_transition_classification':
+            DEFECT_BASELINE_AMENDMENT_1['historical_transition_classification'],
         'observed_population': observed,
         'defect_baseline_comparison': defect_baseline_comparison,
         'defect_baseline_matches_accepted_diagnostic': baseline_matches,
@@ -1775,6 +1959,163 @@ def _duplicate_action_ids(manifest) -> set:
     return duplicates
 
 
+def _defect_baseline_lineage() -> list:
+    """Every accepted baseline version in order, with the amendment that produced each.
+
+    V1 is not replaced by V2; both remain reachable and only one is active. A reviewer can
+    read the whole history here without consulting a prior commit.
+    """
+    lineage = [{
+        'version': 'v1',
+        'status': 'retained',
+        'active': ACTIVE_ACCEPTED_DEFECT_BASELINE_VERSION == 'v1',
+        'population': dict(ACCEPTED_DEFECT_BASELINE_V1),
+        'amendment_id': None,
+        'source': 'merged completeness diagnostic, season 2026 through 2026-07-25',
+    }]
+    for amendment in DEFECT_BASELINE_AMENDMENTS:
+        version = amendment['amended_version']
+        lineage.append({
+            'version': version,
+            'status': 'active' if version == ACTIVE_ACCEPTED_DEFECT_BASELINE_VERSION
+                      else 'retained',
+            'active': version == ACTIVE_ACCEPTED_DEFECT_BASELINE_VERSION,
+            'population': dict(ACCEPTED_DEFECT_BASELINE_VERSIONS[version]),
+            'amendment_id': amendment['amendment_id'],
+            'amended_from': amendment['prior_version'],
+            'reviewed_transition_stable_key': amendment['reviewed_transition_stable_key'],
+            'changed_fields': list(amendment['changed_fields']),
+            'field_deltas': dict(amendment['field_deltas']),
+            'historical_transition_classification':
+                amendment['historical_transition_classification'],
+            'causation_claimed': amendment['causation_claimed'],
+        })
+    return lineage
+
+
+def _amendment_targets_observed_line(observed_official_line_keys, update_actions,
+                                     plan_scope, baseline_matches) -> dict:
+    """Validate the reviewed amendment line, with applicability decided by SCOPE.
+
+    A full-season plan must PROVE the reviewed line still exists and still maps to the exact
+    reviewed update action. Deciding applicability from whether the line happens to be
+    present would fail open: a population could keep the same aggregate 12,696 / 445 / 160 /
+    605 counts while this line quietly became exact and an unrelated line became defective,
+    and every per-line check would pass vacuously. That would silently convert a one-line
+    reviewed amendment into approval of any population with matching totals.
+
+    A subset run is different: its scope may genuinely exclude game 825058, and a line
+    outside the scope was never examined. That is reported as ``not_applicable_to_subset``
+    rather than as a successful validation — and a subset can never be apply-review ready
+    regardless.
+    """
+    key = (int(AMENDMENT_1_TRANSITION_KEY['mlb_game_pk']),
+           int(AMENDMENT_1_TRANSITION_KEY['official_mlb_person_id']),
+           int(AMENDMENT_1_TRANSITION_KEY['appearance_team_id']))
+    occurrences = sum(1 for item in observed_official_line_keys if tuple(item) == key)
+    matching = [a for a in update_actions
+                if (int(a.get('mlb_game_pk') or 0),
+                    int(a.get('official_mlb_person_id') or 0),
+                    int(a.get('official_team_id') or 0)) == key]
+    # An action claiming the reviewed action id but keyed to a different line is a
+    # contradiction, not a match.
+    id_claimants = [a for a in update_actions
+                    if a.get('action_id') == DEFECT_BASELINE_AMENDMENT_1['update_action_id']]
+    action = matching[0] if len(matching) == 1 else None
+    proposed = (action or {}).get('proposed_values') or {}
+    current = (action or {}).get('current_values') or {}
+
+    # The amendment is part of V2's definition, so it governs exactly when V2 is the active
+    # acceptance. In production that is always true, which is why a full-season production
+    # plan can never bypass these checks by the line being absent.
+    # It governs a run that is actually planning that population: V2 active AND the observed
+    # population matching it. That is precisely the dangerous case — a run whose aggregate
+    # 12,696 / 445 / 160 / 605 still match while this line quietly vanished — so absence
+    # there is a failure. A run whose population already drifted is inconclusive regardless.
+    amendment_governs = (
+        ACCEPTED_DEFECT_BASELINE == ACCEPTED_DEFECT_BASELINE_V2 and bool(baseline_matches))
+    required_for_scope = plan_scope == PLAN_SCOPE_FULL and amendment_governs
+    present = occurrences > 0 or bool(matching) or bool(id_claimants)
+    validation = {
+        'required_for_scope': required_for_scope,
+        'scope': plan_scope,
+        'amendment_governs_this_population': amendment_governs,
+        'stable_key': AMENDMENT_1_STABLE_KEY,
+        'official_line_occurrences': occurrences,
+        'update_action_count': len(matching),
+        'action_id_claimant_count': len(id_claimants),
+        'action_id': (action or {}).get('action_id'),
+        'expected_action_id': DEFECT_BASELINE_AMENDMENT_1['update_action_id'],
+        'local_game_log_id': (action or {}).get('local_game_log_id'),
+        'official_mlb_person_id': (action or {}).get('official_mlb_person_id'),
+        'mlb_game_pk': (action or {}).get('mlb_game_pk'),
+        'official_team_id': (action or {}).get('official_team_id'),
+        'changed_fields': list((action or {}).get('changed_fields') or ()),
+        'current_value': current.get(DEFECT_BASELINE_AMENDMENT_1['field']),
+        'proposed_value': proposed.get(DEFECT_BASELINE_AMENDMENT_1['field']),
+        'reason_codes': list((action or {}).get('reason_codes') or ()),
+        'safe_to_apply': (action or {}).get('safe_to_apply'),
+        'blocking_reasons': list((action or {}).get('blocking_reasons') or ()),
+    }
+
+    checks = {
+        'line_occurs_exactly_once': occurrences == 1,
+        'exactly_one_update_action': len(matching) == 1,
+        'action_id_matches':
+            validation['action_id'] == DEFECT_BASELINE_AMENDMENT_1['update_action_id'],
+        'targets_reviewed_game_log':
+            validation['local_game_log_id'] == DEFECT_BASELINE_AMENDMENT_1[
+                'local_game_log_id'],
+        'changes_only_the_reviewed_field':
+            validation['changed_fields'] == [DEFECT_BASELINE_AMENDMENT_1['field']],
+        'current_value_matches':
+            validation['current_value'] == DEFECT_BASELINE_AMENDMENT_1['current_local_value'],
+        'proposed_value_matches':
+            validation['proposed_value'] == DEFECT_BASELINE_AMENDMENT_1[
+                'current_official_value'],
+        'reason_is_the_governed_hits_mismatch':
+            validation['reason_codes'] == [DEFECT_BASELINE_AMENDMENT_1['reason_code']],
+        'action_is_safe_and_unblocked':
+            validation['safe_to_apply'] is True and not validation['blocking_reasons'],
+        'action_key_matches_the_official_line':
+            (completeness._pos_int(validation['mlb_game_pk']),
+             completeness._pos_int(validation['official_mlb_person_id']),
+             completeness._pos_int(validation['official_team_id'])) == key,
+        'no_second_action_claims_the_key': len(matching) <= 1 and len(id_claimants) <= 1,
+    }
+    validation['checks'] = checks
+    validation['all_checks_pass'] = all(checks.values())
+
+    if present and validation['all_checks_pass']:
+        validation['status'] = AMENDMENT_LINE_VALIDATED
+    elif present:
+        # The line is here and does not match the reviewed amendment exactly.
+        validation['status'] = AMENDMENT_LINE_CONTRADICTORY
+    elif required_for_scope:
+        # Full-season, governed by the amendment, and the reviewed line is gone. Absence is
+        # a failure here, never a bypass.
+        validation['status'] = AMENDMENT_LINE_MISSING
+    elif plan_scope != PLAN_SCOPE_FULL:
+        validation['status'] = AMENDMENT_LINE_NOT_APPLICABLE_TO_SUBSET
+    else:
+        validation['status'] = AMENDMENT_LINE_NOT_APPLICABLE_TO_UNAMENDED_BASELINE
+    validation['validated'] = validation['status'] == AMENDMENT_LINE_VALIDATED
+    return validation
+
+
+def _amendment_check(validation, name) -> bool:
+    """One per-line amendment check, honouring subset non-applicability only.
+
+    In full-season scope every check must genuinely hold. A subset that genuinely excludes
+    the line reports the check as not applicable; a subset that CONTAINS the line must still
+    satisfy it exactly, so a scoped run cannot be used to launder a contradictory line.
+    """
+    if validation['status'] in (AMENDMENT_LINE_NOT_APPLICABLE_TO_SUBSET,
+                                AMENDMENT_LINE_NOT_APPLICABLE_TO_UNAMENDED_BASELINE):
+        return True
+    return bool(validation['checks'][name])
+
+
 def _compare_defect_baseline(observed, plan_scope):
     """Compare every IMMUTABLE defect count to the accepted production baseline.
 
@@ -1939,7 +2280,7 @@ def _reconciliations(*, population, observed, manifest, identity_actions, insert
                      update_actions, baseline_matches, duplicate_action_ids,
                      targeted_local_rows, observed_official_line_keys,
                      observed_defect_line_keys, planned_defect_line_keys,
-                     manifest_fingerprint) -> dict:
+                     manifest_fingerprint, plan_scope, amendment_target) -> dict:
     defect_actions = len(insert_actions) + len(update_actions)
     identity_by_id = {a['action_id']: a for a in identity_actions}
     identity_dependency_ids = set(identity_by_id)
@@ -1952,6 +2293,9 @@ def _reconciliations(*, population, observed, manifest, identity_actions, insert
     existing_identity_inserts = [
         a for a in insert_actions
         if not a.get('dependency_action_ids') and a.get('local_pitcher_id') is not None]
+    # amendment_target is computed once by the caller and validated here. Applicability is
+    # decided by SCOPE, never by whether the line happens to be present — see
+    # _amendment_targets_observed_line for why presence-based applicability fails open.
     dependent_ids = {dep for a in identity_actions
                      for dep in a['dependent_game_log_action_ids']}
     insert_ids_with_dependency = {
@@ -2087,6 +2431,90 @@ def _reconciliations(*, population, observed, manifest, identity_actions, insert
             for a in insert_actions),
         'no_insert_uses_an_external_id_as_a_local_pitcher_id': all(
             _no_external_id_as_local_pitcher_id(a) for a in insert_actions),
+        # ── Defect-baseline amendment lineage (V1 retained, V2 active) ───────
+        # A baseline that can be silently rewritten is not a baseline. These prove the
+        # amendment is exactly the one reviewed line and nothing more.
+        'accepted_defect_baseline_v1_is_retained_unchanged':
+            ACCEPTED_DEFECT_BASELINE_V1 == _AMENDMENT_V1_REFERENCE,
+        'accepted_defect_baseline_v2_differs_from_v1_in_exactly_three_fields':
+            {k for k in ACCEPTED_DEFECT_BASELINE_V1
+             if ACCEPTED_DEFECT_BASELINE_V1[k] != ACCEPTED_DEFECT_BASELINE_V2[k]}
+            == set(DEFECT_BASELINE_AMENDMENT_1['changed_fields']),
+        'amendment_deltas_are_minus_one_exact_plus_one_defective_plus_one_action':
+            {k: ACCEPTED_DEFECT_BASELINE_V2[k] - ACCEPTED_DEFECT_BASELINE_V1[k]
+             for k in DEFECT_BASELINE_AMENDMENT_1['changed_fields']}
+            == {'exact_match_count': -1, 'defective_matched_line_count': 1,
+                'defect_line_action_count': 1},
+        'every_non_amended_baseline_field_is_identical_between_v1_and_v2': all(
+            ACCEPTED_DEFECT_BASELINE_V1[k] == ACCEPTED_DEFECT_BASELINE_V2[k]
+            for k in ACCEPTED_DEFECT_BASELINE_V1
+            if k not in DEFECT_BASELINE_AMENDMENT_1['changed_fields']),
+        # Invariants, not restatements of the production constants. The production values
+        # are pinned by V2 itself and asserted directly in tests; a reconciliation that
+        # merely repeated them would be unusable at any other scale and would prove nothing
+        # a literal comparison does not already prove.
+        'amended_baseline_still_partitions_the_official_population':
+            (ACCEPTED_DEFECT_BASELINE_V2['exact_match_count']
+             + ACCEPTED_DEFECT_BASELINE_V2['missing_line_count']
+             + ACCEPTED_DEFECT_BASELINE_V2['defective_matched_line_count'])
+            == ACCEPTED_DEFECT_BASELINE_V2['official_pitching_lines'],
+        'amended_missing_plus_defective_equals_amended_defect_actions':
+            (ACCEPTED_DEFECT_BASELINE_V2['missing_line_count']
+             + ACCEPTED_DEFECT_BASELINE_V2['defective_matched_line_count'])
+            == ACCEPTED_DEFECT_BASELINE_V2['defect_line_action_count'],
+        'amendment_identifies_exactly_one_stable_official_line_key':
+            len(DEFECT_BASELINE_AMENDMENTS) == 1
+            and AMENDMENT_1_STABLE_KEY == '825058:805299:109'
+            and set(AMENDMENT_1_TRANSITION_KEY) == {
+                'mlb_game_pk', 'official_mlb_person_id', 'appearance_team_id'},
+        # ── The reviewed amendment line, required by SCOPE ───────────────────
+        # A full-season plan must PROVE the reviewed line. These cannot pass by the line
+        # being absent: absence in full-season scope is a failure, not a bypass. A subset
+        # that genuinely excludes the line reports not_applicable_to_subset and stays
+        # inconclusive; a subset that contains it must still validate it exactly.
+        'full_season_requires_the_reviewed_amendment_line':
+            (not amendment_target['required_for_scope'])
+            or amendment_target['status'] == AMENDMENT_LINE_VALIDATED,
+        'reviewed_amendment_line_occurs_exactly_once':
+            _amendment_check(amendment_target, 'line_occurs_exactly_once'),
+        'reviewed_amendment_line_maps_to_exactly_one_update_action':
+            _amendment_check(amendment_target, 'exactly_one_update_action'),
+        'reviewed_amendment_action_id_matches':
+            _amendment_check(amendment_target, 'action_id_matches'),
+        'reviewed_amendment_action_targets_game_log_43765':
+            _amendment_check(amendment_target, 'targets_reviewed_game_log'),
+        'reviewed_amendment_action_changes_only_hits_allowed':
+            _amendment_check(amendment_target, 'changes_only_the_reviewed_field'),
+        'reviewed_amendment_action_current_value_is_one':
+            _amendment_check(amendment_target, 'current_value_matches'),
+        'reviewed_amendment_action_proposed_value_is_zero':
+            _amendment_check(amendment_target, 'proposed_value_matches'),
+        'reviewed_amendment_action_reason_is_hits_mismatch':
+            _amendment_check(amendment_target, 'reason_is_the_governed_hits_mismatch'),
+        'reviewed_amendment_action_is_safe_and_unblocked':
+            _amendment_check(amendment_target, 'action_is_safe_and_unblocked'),
+        'reviewed_amendment_action_key_matches_the_official_line':
+            _amendment_check(amendment_target, 'action_key_matches_the_official_line'),
+        'no_second_action_claims_the_reviewed_amendment_key':
+            _amendment_check(amendment_target, 'no_second_action_claims_the_key'),
+        'amendment_line_status_is_from_the_governed_vocabulary':
+            amendment_target['status'] in AMENDMENT_LINE_STATUSES,
+        # The amendment accepts CURRENT state. It makes no finding about the past.
+        'historical_causation_is_explicitly_unproven':
+            DEFECT_BASELINE_AMENDMENT_1['historical_transition_classification']
+            == 'historical_state_unprovable'
+            and DEFECT_BASELINE_AMENDMENT_1['confidence']
+            == 'not_provable_from_retained_evidence'
+            and DEFECT_BASELINE_AMENDMENT_1['prior_values_recovered'] is False,
+        'no_official_source_change_is_claimed':
+            DEFECT_BASELINE_AMENDMENT_1['official_source_change_claimed'] is False
+            and DEFECT_BASELINE_AMENDMENT_1['causation_claimed'] is False,
+        'no_local_ledger_change_is_claimed':
+            DEFECT_BASELINE_AMENDMENT_1['local_game_log_change_claimed'] is False
+            and DEFECT_BASELINE_AMENDMENT_1['causation_claimed'] is False,
+        'current_official_evidence_is_the_repair_authority':
+            CURRENT_AUTHORITY_BASIS == 'current_official_mlb_boxscore_evidence'
+            and HISTORICAL_CAUSATION_CLAIMED is False,
         # ── Identity resolution partition (mutable, internally reconciled) ────
         # These replace equality with a historical identity snapshot. They are strictly
         # stronger: a snapshot only proves the count did not move, while these prove every
