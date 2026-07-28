@@ -102,6 +102,12 @@ BLOCK_OFFICIAL_STAT_ABSENT = 'official_stat_evidence_absent'
 BLOCK_OFFICIAL_TEAM_ABSENT = 'official_appearance_team_absent'
 BLOCK_DEPENDENCY_UNRESOLVED = 'identity_dependency_unresolved'
 BLOCK_DEPENDENCY_BLOCKED = 'identity_dependency_blocked'
+BLOCK_DEPENDENCY_AMBIGUOUS = 'identity_dependency_ambiguous'
+BLOCK_DEPENDENCY_IDENTITY_MISMATCH = 'identity_dependency_mlb_identity_mismatch'
+BLOCK_DEPENDENCY_NOT_RECIPROCAL = 'identity_dependency_not_reciprocal'
+BLOCK_PITCHER_REFERENCE_UNRESOLVABLE = 'local_pitcher_reference_unresolvable'
+BLOCK_PITCHER_REFERENCE_CONFLICT = 'local_pitcher_reference_conflict'
+BLOCK_PITCHER_REFERENCE_EXTERNAL_ID = 'external_mlb_id_used_as_local_pitcher_id'
 BLOCK_CORRECTION_SOURCE_INCOMPLETE = 'official_correction_source_incomplete'
 BLOCK_RAW_SOURCE_UNAVAILABLE = 'official_raw_pitching_line_unavailable'
 BLOCK_OPPONENT_NAME_ABSENT = 'official_opponent_name_absent'
@@ -204,10 +210,26 @@ WORKLOAD_FIELD_REASON = 'official_workload_field_mismatch'
 PRIOR_PRODUCTION_MANIFEST_FINGERPRINT = (
     'dbbc063a0711e57b0dc2d858b7d1d291c568c4990ecff7c9ebf3d1b138cbb2d6')
 
-# Every field a safe insert must carry. Derived from the governed ingestion contract, not
-# from the model's nullable columns: these are the values an official line always supplies.
-REQUIRED_INSERT_FIELDS = (
-    'pitcher_id', 'mlb_game_pk', 'game_date', 'game_type',
+# The manifest fingerprint produced by the enriched planner's first production run. That
+# run FAILED, because required-insert validation treated ``pitcher_id`` as an ordinary
+# immediately-available value and so rejected the 342 legitimately deferred insertions. It is
+# pinned as evidence of the failure under repair; it is NOT an approved fingerprint, and
+# approval still requires a newly generated production artifact whose result is pass.
+FAILED_PRODUCTION_MANIFEST_FINGERPRINT = (
+    '9b8ab677c83ec5b8efa5a4020593911dc4d6d73e3262a09c0703d1a5907b49b7')
+
+# Every ordinary GameLog VALUE a safe insert must carry. Derived from the governed ingestion
+# contract, not from the model's nullable columns: these are the values an official line
+# always supplies, and each must be present AND non-empty at plan time.
+#
+# ``pitcher_id`` is deliberately NOT in this tuple. It is not an official value at all — it is
+# a local foreign key into ``Pitcher``, and for an insertion whose identity does not yet exist
+# locally that primary key cannot exist until the identity prerequisite is applied. A
+# read-only planner cannot know a future autoincrement id, and inventing one (the official MLB
+# person id, zero, a negative, a temporary, or any placeholder) would write a wrong foreign
+# key. It is validated by the pitcher-reference contract below instead.
+REQUIRED_INSERT_VALUE_FIELDS = (
+    'mlb_game_pk', 'game_date', 'game_type',
     'opponent', 'opponent_abbreviation', 'games_started',
     'innings_pitched', 'innings_pitched_outs', 'strikes',
     'hits_allowed', 'runs_allowed', 'earned_runs', 'walks', 'strikeouts',
@@ -215,6 +237,34 @@ REQUIRED_INSERT_FIELDS = (
     'appearance_team_id', 'appearance_team_source', 'appearance_team_status',
     'appearance_team_reason',
 )
+
+# The deferred relationship field. Present as a key on every insertion; its VALUE is a local
+# primary key only when the identity already exists locally.
+PITCHER_REFERENCE_FIELD = 'pitcher_id'
+
+# Every field the applied row must end up carrying. Kept whole so the required set stays
+# reviewable in one place; the two halves are validated by two different contracts.
+REQUIRED_INSERT_FIELDS = (PITCHER_REFERENCE_FIELD,) + REQUIRED_INSERT_VALUE_FIELDS
+
+# The two — and only two — valid pitcher-reference states for a planned insertion.
+PITCHER_REFERENCE_EXISTING = 'existing_local_identity'
+PITCHER_REFERENCE_DEFERRED = 'deferred_identity_creation'
+PITCHER_REFERENCE_INVALID = 'invalid_pitcher_reference'
+
+# Descriptive: what a future apply step must do for a deferred reference. Not executed here.
+PITCHER_REFERENCE_RESOLUTION_POLICY = {
+    PITCHER_REFERENCE_EXISTING: (
+        'proposed_values.pitcher_id already holds the local Pitcher primary key resolved '
+        'from the official MLB person id; apply uses it unchanged'),
+    PITCHER_REFERENCE_DEFERRED: (
+        'proposed_values.pitcher_id is null by design; apply must create the identity '
+        'dependency first, read back the newly created local Pitcher primary key, and '
+        'inject that real primary key before constructing the GameLog row'),
+    'never_substituted': (
+        'the official MLB person id, zero, a negative number, a temporary number, a guessed '
+        'local id, and any placeholder are all forbidden as GameLog.pitcher_id'),
+    'executed_by_planner': False,
+}
 
 # Mutable Pitcher fields a historical appearance can never populate. Listed on every identity
 # action so the omission is explicit evidence, not an oversight.
@@ -457,13 +507,16 @@ def _proposed_insert_fields(line, local_pitcher_id, *, raw_stats, sides, opponen
 
 
 def _insert_action(line, *, local_pitcher_id, identity_action_id, raw_stats=None,
-                   sides=None, team_metadata=None) -> dict:
+                   sides=None, team_metadata=None, local_pitcher_mlb_id=None) -> dict:
     opponent = _resolve_opponent(sides, team_metadata)
     proposed, blocking = _proposed_insert_fields(
         line, local_pitcher_id, raw_stats=raw_stats, sides=sides, opponent=opponent)
     dependencies = [identity_action_id] if identity_action_id else []
     if local_pitcher_id is None and not identity_action_id:
-        blocking = sorted(set(blocking) | {BLOCK_DEPENDENCY_UNRESOLVED})
+        # Fail closed at construction time as well as during validation: an insertion with
+        # neither an existing local identity nor an identity prerequisite has no pitcher to
+        # reference and can never be applied.
+        blocking = sorted(set(blocking) | {BLOCK_PITCHER_REFERENCE_UNRESOLVABLE})
     source_evidence = _official_source_evidence(
         line, raw_stats=raw_stats, sides=sides, opponent=opponent)
     return {
@@ -479,6 +532,12 @@ def _insert_action(line, *, local_pitcher_id, identity_action_id, raw_stats=None
         'mlb_game_pk': int(line.game_pk),
         'game_date': completeness._iso_or_none(line.game_date),
         'local_pitcher_id': local_pitcher_id,
+        # The MLB person id the local Pitcher row was looked up BY. Recorded so the
+        # pitcher-reference contract can prove the local primary key belongs to this official
+        # identity rather than merely being some positive integer.
+        'local_pitcher_mlb_id': local_pitcher_mlb_id,
+        # Assigned by _validate_pitcher_references once identity actions exist.
+        'pitcher_reference_state': None,
         'local_game_log_id': None,
         'current_values': None,
         'proposed_values': proposed,
@@ -869,6 +928,149 @@ def _propagate_dependency_safety(identity_actions, insert_actions) -> None:
         action['safe_to_apply'] = not blocking
 
 
+def _classify_pitcher_reference(action, identity_actions_by_id) -> tuple:
+    """Classify one insertion's pitcher reference into its state plus any typed blockers.
+
+    An insertion references a pitcher in exactly one of two valid ways, and a planner that
+    treats them identically is wrong about one of them.
+
+    STATE A — existing local identity. The official person already has a ``Pitcher`` row, so
+    its local primary key is known now and is proposed directly.
+
+    STATE B — deferred identity creation. The official person has no local row yet. The local
+    primary key does not exist and cannot be known by a read-only planner: it is produced by
+    the database when the identity prerequisite is applied. ``pitcher_id`` is therefore null
+    BY DESIGN, and the real primary key must be resolved from the reviewed identity dependency
+    at apply time. Null here is a deferred reference, not a missing value.
+
+    Anything else is invalid and unsafe.
+    """
+    blocking: List[str] = []
+    proposed = action.get('proposed_values') or {}
+    proposed_id = proposed.get(PITCHER_REFERENCE_FIELD)
+    local_id = action.get('local_pitcher_id')
+    local_mlb_id = action.get('local_pitcher_mlb_id')
+    official_person_id = completeness._pos_int(action.get('official_mlb_person_id'))
+    dependencies = list(action.get('dependency_action_ids') or ())
+
+    def _is_external_id(value):
+        """A value that is the official MLB person id rather than a local primary key."""
+        return (official_person_id is not None
+                and completeness._pos_int(value) == official_person_id
+                and completeness._pos_int(local_mlb_id) != official_person_id)
+
+    if local_id is not None and dependencies:
+        # Both states at once is a contradiction: a row cannot simultaneously already have a
+        # local identity and be waiting for one to be created.
+        return PITCHER_REFERENCE_INVALID, [BLOCK_PITCHER_REFERENCE_CONFLICT]
+
+    if local_id is not None:
+        # ── STATE A ──────────────────────────────────────────────────────────
+        if completeness._pos_int(local_id) is None:
+            # Zero, negative, and non-integer placeholders are not local primary keys.
+            blocking.append(BLOCK_PITCHER_REFERENCE_UNRESOLVABLE)
+        if _is_external_id(local_id) or _is_external_id(proposed_id):
+            blocking.append(BLOCK_PITCHER_REFERENCE_EXTERNAL_ID)
+        if proposed_id != local_id:
+            blocking.append(BLOCK_PITCHER_REFERENCE_CONFLICT)
+        if official_person_id is None or completeness._pos_int(local_mlb_id) != official_person_id:
+            # The local row must belong to THIS official identity, not merely exist.
+            blocking.append(BLOCK_PITCHER_REFERENCE_CONFLICT)
+        state = PITCHER_REFERENCE_EXISTING if not blocking else PITCHER_REFERENCE_INVALID
+        return state, sorted(set(blocking))
+
+    if not dependencies:
+        # Neither an existing local identity nor a prerequisite: nothing to reference.
+        return PITCHER_REFERENCE_INVALID, [BLOCK_PITCHER_REFERENCE_UNRESOLVABLE]
+
+    # ── STATE B ──────────────────────────────────────────────────────────────
+    if len(dependencies) > 1:
+        blocking.append(BLOCK_DEPENDENCY_AMBIGUOUS)
+    if proposed_id is not None:
+        # The deferred primary key must stay null. Substituting the official MLB person id
+        # would write a foreign key pointing at an unrelated local row.
+        blocking.append(BLOCK_PITCHER_REFERENCE_EXTERNAL_ID if _is_external_id(proposed_id)
+                        else BLOCK_PITCHER_REFERENCE_CONFLICT)
+
+    for dependency_id in dependencies:
+        candidates = identity_actions_by_id.get(dependency_id) or []
+        if not candidates:
+            blocking.append(BLOCK_DEPENDENCY_UNRESOLVED)
+            continue
+        if len(candidates) > 1:
+            blocking.append(BLOCK_DEPENDENCY_AMBIGUOUS)
+            continue
+        dependency = candidates[0]
+        if not dependency.get('safe_to_apply') or dependency.get('blocking_reasons'):
+            blocking.append(BLOCK_DEPENDENCY_BLOCKED)
+        if completeness._pos_int(dependency.get('official_mlb_person_id')) != official_person_id:
+            blocking.append(BLOCK_DEPENDENCY_IDENTITY_MISMATCH)
+        if action['action_id'] not in (dependency.get('dependent_game_log_action_ids') or ()):
+            # The identity must name this insertion back, or apply cannot know which rows the
+            # newly created primary key belongs to.
+            blocking.append(BLOCK_DEPENDENCY_NOT_RECIPROCAL)
+
+    state = PITCHER_REFERENCE_DEFERRED if not blocking else PITCHER_REFERENCE_INVALID
+    return state, sorted(set(blocking))
+
+
+def _validate_pitcher_references(identity_actions, insert_actions) -> None:
+    """Record each insertion's pitcher-reference state and block every invalid one.
+
+    Runs after dependency-safety propagation, so a blocked identity has already marked its
+    dependents. This adds the reference contract itself: an insertion is safe only when its
+    pitcher reference resolves through one of the two valid states.
+    """
+    by_id: Dict[str, List[dict]] = defaultdict(list)
+    for identity in identity_actions:
+        by_id[identity['action_id']].append(identity)
+
+    for action in insert_actions:
+        state, blocking = _classify_pitcher_reference(action, by_id)
+        action['pitcher_reference_state'] = state
+        if blocking:
+            action['blocking_reasons'] = sorted(
+                set(action.get('blocking_reasons') or ()) | set(blocking))
+            action['safe_to_apply'] = False
+
+
+def _pitcher_reference_coverage(insert_actions) -> dict:
+    """Deterministic counts of how planned insertions reference their pitcher.
+
+    Every count is derived from the manifest actions themselves. Nothing here is asserted
+    from the accepted production population; tests compare these against it.
+
+    ``..._with_unresolved_dependency`` means "did not resolve to a usable dependency" and
+    therefore covers absent, ambiguous, blocked, and non-reciprocal dependencies alike. A
+    mismatched official identity is counted separately because it is a different defect: the
+    dependency resolved, to the wrong person.
+    """
+    def _state(action):
+        return action.get('pitcher_reference_state')
+
+    def _blocked_by(action, *reasons):
+        return bool(set(action.get('blocking_reasons') or ()) & set(reasons))
+
+    deferred = [a for a in insert_actions if a.get('dependency_action_ids')]
+    existing = [a for a in insert_actions
+                if not a.get('dependency_action_ids') and a.get('local_pitcher_id') is not None]
+    return {
+        'insert_actions_with_existing_local_pitcher_id': sum(
+            1 for a in existing if _state(a) == PITCHER_REFERENCE_EXISTING),
+        'insert_actions_with_deferred_identity_dependency': len(deferred),
+        'deferred_identity_inserts_with_safe_dependency': sum(
+            1 for a in deferred if _state(a) == PITCHER_REFERENCE_DEFERRED),
+        'deferred_identity_inserts_with_unresolved_dependency': sum(
+            1 for a in deferred if _blocked_by(
+                a, BLOCK_DEPENDENCY_UNRESOLVED, BLOCK_DEPENDENCY_AMBIGUOUS,
+                BLOCK_DEPENDENCY_BLOCKED, BLOCK_DEPENDENCY_NOT_RECIPROCAL)),
+        'deferred_identity_inserts_with_mismatched_identity': sum(
+            1 for a in deferred if _blocked_by(a, BLOCK_DEPENDENCY_IDENTITY_MISMATCH)),
+        'inserts_with_invalid_pitcher_reference': sum(
+            1 for a in insert_actions if _state(a) == PITCHER_REFERENCE_INVALID),
+    }
+
+
 def _action_sort_key(action) -> tuple:
     """Dependency phase, then official person, game date, game_pk, local row, action id."""
     game_date = action.get('game_date')
@@ -1084,6 +1286,7 @@ def run_repair_plan(
                     observed_defect_line_keys.append(line_key)
                     insert_actions.append(_insert_action(
                         line, local_pitcher_id=int(local_pitcher_id), identity_action_id=None,
+                        local_pitcher_mlb_id=int(line.pitcher_id),
                         raw_stats=raw_by_key.get(line_key),
                         sides=sides_by_key.get(line_key),
                         team_metadata=team_metadata))
@@ -1147,6 +1350,9 @@ def run_repair_plan(
     # Dependency SAFETY, not merely dependency existence: an insertion is only applicable
     # when the identity it waits on is itself applicable.
     _propagate_dependency_safety(identity_actions, insert_actions)
+    # Pitcher REFERENCE validity: an insertion must resolve its local foreign key through one
+    # of the two valid states — an existing local identity, or a safe deferred dependency.
+    _validate_pitcher_references(identity_actions, insert_actions)
 
     planned_defect_line_keys = [
         (int(a['mlb_game_pk']), int(a['official_mlb_person_id']), int(a['official_team_id']))
@@ -1257,8 +1463,12 @@ def run_repair_plan(
         },
         'workload_field_coverage': _workload_field_coverage(
             insert_actions, update_actions, manifest),
+        'pitcher_reference_coverage': _pitcher_reference_coverage(insert_actions),
+        'pitcher_reference_resolution_policy': dict(PITCHER_REFERENCE_RESOLUTION_POLICY),
         'correction_metadata_policy': dict(CORRECTION_METADATA_POLICY),
         'prior_production_manifest_fingerprint': PRIOR_PRODUCTION_MANIFEST_FINGERPRINT,
+        'failed_production_manifest_fingerprint': FAILED_PRODUCTION_MANIFEST_FINGERPRINT,
+        'failed_production_manifest_fingerprint_approved': False,
         'repair_manifest_action_count': len(manifest),
         'repair_manifest': manifest,
         'repair_manifest_fingerprint': manifest_fingerprint,
@@ -1279,13 +1489,18 @@ def run_repair_plan(
 
 
 def _required_insert_values_present(action) -> bool:
-    """Required insert fields must carry a real VALUE, not merely a present key.
+    """Required ordinary insert VALUES must be present and non-empty.
 
     ``opponent_abbreviation: None`` satisfies key presence and proves nothing, so required
     fields whose absence is meaningful are checked for a non-empty value.
+
+    The deferred relationship field is deliberately out of scope here. ``pitcher_id`` is a
+    local foreign key, not an official value: for an identity-dependent insertion it is null
+    by design and is validated by the pitcher-reference contract instead. Checking it here
+    would reject a correct plan for refusing to invent a primary key it cannot know.
     """
     proposed = action.get('proposed_values') or {}
-    for field in REQUIRED_INSERT_FIELDS:
+    for field in REQUIRED_INSERT_VALUE_FIELDS:
         if field not in proposed:
             return False
         value = proposed[field]
@@ -1294,6 +1509,31 @@ def _required_insert_values_present(action) -> bool:
         if isinstance(value, str) and not value.strip():
             return False
     return True
+
+
+def _pitcher_reference_is_resolvable(action, identity_actions_by_id) -> bool:
+    """One of the two valid pitcher-reference states, with no blockers of its own."""
+    state, blocking = _classify_pitcher_reference(action, identity_actions_by_id)
+    return not blocking and state in (PITCHER_REFERENCE_EXISTING, PITCHER_REFERENCE_DEFERRED)
+
+
+def _no_external_id_as_local_pitcher_id(action) -> bool:
+    """``GameLog.pitcher_id`` must be a local primary key or null — never an MLB person id.
+
+    Numeric coincidence is not a defence: the value is accepted only when it equals a
+    ``local_pitcher_id`` that was resolved from the local ``Pitcher`` table for THIS official
+    identity. An insertion with no local row may not carry a pitcher_id at all.
+    """
+    proposed = (action.get('proposed_values') or {}).get(PITCHER_REFERENCE_FIELD)
+    if proposed is None:
+        return True
+    local_id = action.get('local_pitcher_id')
+    if local_id is None or proposed != local_id:
+        return False
+    if completeness._pos_int(local_id) is None:
+        return False
+    return (completeness._pos_int(action.get('local_pitcher_mlb_id'))
+            == completeness._pos_int(action.get('official_mlb_person_id')))
 
 
 def _optional_fields_are_source_backed(action) -> bool:
@@ -1486,6 +1726,15 @@ def _reconciliations(*, population, observed, manifest, identity_actions, insert
     defect_actions = len(insert_actions) + len(update_actions)
     identity_by_id = {a['action_id']: a for a in identity_actions}
     identity_dependency_ids = set(identity_by_id)
+    identity_actions_by_id: Dict[str, List[dict]] = defaultdict(list)
+    for identity in identity_actions:
+        identity_actions_by_id[identity['action_id']].append(identity)
+    # The two pitcher-reference populations, partitioned by how the insertion reaches its
+    # local Pitcher row rather than by whether a value happens to be present.
+    deferred_identity_inserts = [a for a in insert_actions if a.get('dependency_action_ids')]
+    existing_identity_inserts = [
+        a for a in insert_actions
+        if not a.get('dependency_action_ids') and a.get('local_pitcher_id') is not None]
     dependent_ids = {dep for a in identity_actions
                      for dep in a['dependent_game_log_action_ids']}
     insert_ids_with_dependency = {
@@ -1586,8 +1835,43 @@ def _reconciliations(*, population, observed, manifest, identity_actions, insert
             dependent_ids == insert_ids_with_dependency,
         'every_local_row_targeted_at_most_once':
             len(targeted_local_rows) == len(update_actions),
+        # ── Pitcher reference: local foreign key vs official identity ─────────
+        # A local primary key cannot exist before the identity prerequisite that creates it
+        # is applied, so an identity-dependent insertion holds a null pitcher_id by design.
+        # Validity is proved by the relationship, never by a substituted value.
+        'every_safe_insert_has_a_resolvable_pitcher_reference': all(
+            _pitcher_reference_is_resolvable(a, identity_actions_by_id)
+            for a in insert_actions if a['safe_to_apply']),
+        'every_existing_identity_insert_uses_its_local_pitcher_id': all(
+            (a.get('proposed_values') or {}).get(PITCHER_REFERENCE_FIELD)
+            == a.get('local_pitcher_id')
+            and completeness._pos_int(a.get('local_pitcher_id')) is not None
+            and completeness._pos_int(a.get('local_pitcher_mlb_id'))
+            == completeness._pos_int(a.get('official_mlb_person_id'))
+            and not a.get('dependency_action_ids')
+            for a in existing_identity_inserts),
+        'every_deferred_identity_insert_has_null_pitcher_id': all(
+            (a.get('proposed_values') or {}).get(PITCHER_REFERENCE_FIELD) is None
+            and a.get('local_pitcher_id') is None
+            for a in deferred_identity_inserts),
+        'every_deferred_identity_insert_has_exactly_one_safe_matching_dependency': all(
+            len(a.get('dependency_action_ids') or ()) == 1
+            and len(identity_actions_by_id.get(
+                (a.get('dependency_action_ids') or (None,))[0]) or ()) == 1
+            and _dependency_actions(a)[0]['safe_to_apply']
+            and not _dependency_actions(a)[0]['blocking_reasons']
+            and completeness._pos_int(_dependency_actions(a)[0]['official_mlb_person_id'])
+            == completeness._pos_int(a.get('official_mlb_person_id'))
+            for a in deferred_identity_inserts if a['safe_to_apply']),
+        'every_identity_dependency_is_reciprocal': all(
+            all(a['action_id'] in (dep.get('dependent_game_log_action_ids') or ())
+                for dep in _dependency_actions(a))
+            and set(a.get('dependency_action_ids') or ()) <= identity_dependency_ids
+            for a in insert_actions),
+        'no_insert_uses_an_external_id_as_a_local_pitcher_id': all(
+            _no_external_id_as_local_pitcher_id(a) for a in insert_actions),
         # ── Official GameLog evidence completeness ────────────────────────────
-        'every_safe_insert_contains_every_required_correction_field': all(
+        'every_safe_insert_contains_every_required_non_fk_value': all(
             _required_insert_values_present(a)
             for a in insert_actions if a['safe_to_apply']),
         'no_required_official_value_is_defaulted': all(
