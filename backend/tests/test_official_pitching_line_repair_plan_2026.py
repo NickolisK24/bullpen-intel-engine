@@ -28,9 +28,20 @@ from utils.db import db
 
 
 A, B, C = 100, 200, 300
+# The real production identity transition under regression: Andrew Wantz, official MLB
+# person 681806, appearing for official team 139 in game 822975. Before a routine identity
+# synchronization he had no local Pitcher row and his insertion was identity-dependent;
+# afterwards he resolves to local Pitcher.id 804.
+WANTZ_MLB_ID = 681806
+WANTZ_GAME_PK = 822975
+WANTZ_TEAM = 139
+WANTZ_OPPONENT = 141
+WANTZ_LOCAL_PITCHER_ID = 804
 # The opposing official side for each fixture team, mirrored onto local rows.
-_OPPONENT_NAME = {A: 'Team200', B: 'Team100', C: None}
-_OPPONENT_ABBR = {A: 'T200', B: 'T100', C: None}
+_OPPONENT_NAME = {A: 'Team200', B: 'Team100', C: None,
+                  WANTZ_TEAM: f'Team{WANTZ_OPPONENT}', WANTZ_OPPONENT: f'Team{WANTZ_TEAM}'}
+_OPPONENT_ABBR = {A: 'T200', B: 'T100', C: None,
+                  WANTZ_TEAM: f'T{WANTZ_OPPONENT}', WANTZ_OPPONENT: f'T{WANTZ_TEAM}'}
 SEASON = 2026
 AS_OF = date(2026, 7, 25)
 GDATE = date(2026, 6, 10)
@@ -231,18 +242,18 @@ def _action_for(payload, action_id):
 
 
 def _pin_baseline(monkeypatch, payload_or_dict):
-    """Pin ACCEPTED_BASELINE to a small fixture's own observed population."""
+    """Pin ACCEPTED_DEFECT_BASELINE to a small fixture's own observed population."""
     observed = (payload_or_dict['observed_population']
                 if isinstance(payload_or_dict, dict) and 'observed_population' in payload_or_dict
                 else payload_or_dict)
-    pinned = {key: observed[key] for key in planner.ACCEPTED_BASELINE}
-    monkeypatch.setattr(planner, 'ACCEPTED_BASELINE', pinned)
+    pinned = {key: observed[key] for key in planner.ACCEPTED_DEFECT_BASELINE}
+    monkeypatch.setattr(planner, 'ACCEPTED_DEFECT_BASELINE', pinned)
     return pinned
 
 
 # ═══════════════ 1. Accepted production baseline ════════════════════════════
 def test_accepted_baseline_pins_the_production_population():
-    b = planner.ACCEPTED_BASELINE
+    b = planner.ACCEPTED_DEFECT_BASELINE
     assert b['official_games_selected'] == 1570
     assert b['official_games_fetched'] == 1570
     assert b['official_team_game_sides'] == 3140
@@ -256,17 +267,25 @@ def test_accepted_baseline_pins_the_production_population():
     assert b['missing_line_count'] == 445
     assert b['defective_matched_line_count'] == 159
     assert b['defect_line_action_count'] == 604
-    assert b['missing_lines_dependent_on_identity_creation'] == 342
     assert b['role_corrections_planned'] == 2
     for zero_key in ('appearance_team_mismatch_count', 'extra_local_line_count',
                      'duplicate_local_line_count', 'local_pitcher_identity_missing_count',
                      'official_evidence_unavailable_count'):
         assert b[zero_key] == 0
+    # The identity-resolution partition is NOT part of the immutable defect baseline: it is
+    # a fact about the local Pitcher table right now, not about official evidence.
+    assert 'missing_lines_dependent_on_identity_creation' not in b
+    assert 'missing_lines_using_existing_identity' not in b
+    assert 'unique_identities_requiring_creation' not in b
+    snapshot = planner.PRIOR_IDENTITY_RESOLUTION_SNAPSHOT
+    assert snapshot['missing_lines_dependent_on_identity_creation'] == 342
+    assert snapshot['missing_lines_using_existing_identity'] == 103
+    assert snapshot['unique_identities_requiring_creation'] == 71
 
 
 # ═══════════════ 2-3. Population partition + 604 defect actions ═════════════
 def test_accepted_baseline_partitions_exactly():
-    b = planner.ACCEPTED_BASELINE
+    b = planner.ACCEPTED_DEFECT_BASELINE
     # 13,301 = 12,697 + 445 + 159
     assert (b['exact_match_count'] + b['missing_line_count']
             + b['defective_matched_line_count']) == b['official_pitching_lines']
@@ -278,8 +297,12 @@ def test_accepted_baseline_partitions_exactly():
     # Sides are two per official game.
     assert b['official_team_game_sides'] == b['official_games_fetched'] * 2
     assert b['official_starter_lines'] == b['official_team_game_sides']
-    # The 342 identity-dependent appearances are a subset of the 445 missing lines.
-    assert b['missing_lines_dependent_on_identity_creation'] < b['missing_line_count']
+    # The identity-dependent appearances are a subset of the 445 missing lines — proved
+    # against the observational snapshot, never against the immutable baseline.
+    snapshot = planner.PRIOR_IDENTITY_RESOLUTION_SNAPSHOT
+    assert snapshot['missing_lines_dependent_on_identity_creation'] < b['missing_line_count']
+    assert (snapshot['missing_lines_dependent_on_identity_creation']
+            + snapshot['missing_lines_using_existing_identity']) == b['missing_line_count']
 
 
 def test_defect_line_action_count_equals_missing_plus_defective(app):
@@ -631,8 +654,8 @@ def test_baseline_drift_is_inconclusive_and_reports_each_difference(app):
     assert payload['plan_status'] == planner.PLAN_BLOCKED_BASELINE_DRIFT
     assert payload['repair_apply_gate'] == planner.GATE_BLOCKED
     assert planner.BLOCK_BASELINE_DRIFT in payload['decision_reasons']
-    comparison = payload['baseline_comparison']
-    assert set(comparison) == set(planner.ACCEPTED_BASELINE)
+    comparison = payload['defect_baseline_comparison']
+    assert set(comparison) == set(planner.ACCEPTED_DEFECT_BASELINE)
     entry = comparison['official_pitching_lines']
     assert entry['expected_value'] == 13301
     assert entry['observed_value'] == 6
@@ -1806,8 +1829,13 @@ def test_report_has_every_required_field(app):
     _seed_matching_local()
     payload = _plan()
     for key in ('capability', 'mode', 'result', 'exit_code', 'generated_at', 'git_sha',
-                'migration_head', 'season', 'as_of_date', 'accepted_baseline',
-                'observed_population', 'baseline_comparison',
+                'migration_head', 'season', 'as_of_date', 'accepted_defect_baseline',
+                'observed_population', 'defect_baseline_comparison',
+                'defect_baseline_matches_accepted_diagnostic',
+                'identity_resolution_snapshot', 'identity_resolution_partition',
+                'identity_resolution_transition_from_prior_snapshot',
+                'identity_resolution_partition_valid',
+                'prior_identity_resolution_snapshot',
                 'baseline_matches_accepted_diagnostic', 'official_games_selected',
                 'official_games_fetched', 'official_team_game_sides',
                 'official_pitching_lines', 'official_starter_lines', 'official_relief_lines',
@@ -2129,10 +2157,11 @@ def test_missing_required_official_stat_still_blocks_a_deferred_insert(app):
 
 # ── 19-23. The accepted production population ────────────────────────────────
 def test_accepted_population_partitions_into_deferred_and_existing_inserts():
-    b = planner.ACCEPTED_BASELINE
-    deferred = b['missing_lines_dependent_on_identity_creation']
-    existing = b['missing_line_count'] - deferred
-    assert deferred == 342           # derived, not asserted into the planner
+    b = planner.ACCEPTED_DEFECT_BASELINE
+    snapshot = planner.PRIOR_IDENTITY_RESOLUTION_SNAPSHOT
+    deferred = snapshot['missing_lines_dependent_on_identity_creation']
+    existing = snapshot['missing_lines_using_existing_identity']
+    assert deferred == 342           # observational only, never compared for equality
     assert existing == 103
     assert deferred + existing == b['missing_line_count'] == 445
 
@@ -2250,6 +2279,467 @@ def test_reference_validation_emits_no_write_sql(app):
     for statement in statements:
         head = statement.strip().split(None, 1)[0].upper() if statement.strip() else ''
         assert head not in ('INSERT', 'UPDATE', 'DELETE'), statement
+
+
+# ═════ Immutable defect baseline vs mutable identity resolution ═════════════
+# The 604-line defect population is a property of official MLB evidence and the stored
+# GameLog ledger: it cannot move without the reviewed repair changing meaning. How those
+# lines split between "the local Pitcher row already exists" and "an identity must be created
+# first" is a property of the local database RIGHT NOW, and ordinary identity synchronization
+# may legitimately move a line across that boundary between runs.
+
+def _wantz_lines():
+    """Official evidence for game 822975: Wantz relieves for team 139."""
+    home = [_pline(9001, gs=1, outs=18, r=2, er=2, h=5, k=6),
+            _pline(WANTZ_MLB_ID, gs=0, outs=3, r=0, er=0, k=1)]
+    away = [_pline(9003, gs=1, outs=15, r=3, er=3, h=6, k=4),
+            _pline(9004, gs=0, outs=6, r=1, er=1, bb=1)]
+    return home, away
+
+
+def _wantz_client():
+    home, away = _wantz_lines()
+    people = {i: _person(i) for i in (9001, 9003, 9004)}
+    people[WANTZ_MLB_ID] = _person(WANTZ_MLB_ID, name='Andrew Wantz')
+    return _FakeMlbClient(
+        games=[_official_game(WANTZ_GAME_PK, home=WANTZ_TEAM, away=WANTZ_OPPONENT)],
+        boxscores={WANTZ_GAME_PK: _boxscore(home, away,
+                                            home=WANTZ_TEAM, away=WANTZ_OPPONENT)},
+        people=people)
+
+
+def _seed_wantz_ledger(*, wantz_identity_exists):
+    """Every official line has a local GameLog except Wantz's, which is missing.
+
+    ``wantz_identity_exists`` selects the two production states: before the identity
+    synchronization (no local Pitcher row) and after it (local Pitcher.id 804).
+    """
+    _log(9001, WANTZ_GAME_PK, team=WANTZ_TEAM, gs=1, outs=18, r=2, er=2, h=5, k=6)
+    _log(9003, WANTZ_GAME_PK, team=WANTZ_OPPONENT, gs=1, outs=15, r=3, er=3, h=6, k=4)
+    _log(9004, WANTZ_GAME_PK, team=WANTZ_OPPONENT, gs=0, outs=6, r=1, er=1, bb=1)
+    if wantz_identity_exists:
+        # The identity synchronization created the row. Its local primary key is pinned to
+        # the production value so the fixture reproduces the real transition exactly.
+        row = Pitcher(id=WANTZ_LOCAL_PITCHER_ID, mlb_id=WANTZ_MLB_ID,
+                      full_name='Andrew Wantz', active=True)
+        db.session.add(row)
+        db.session.commit()
+
+
+_WANTZ_INSERT_ID = f'gamelog:insert:{WANTZ_GAME_PK}:{WANTZ_MLB_ID}:{WANTZ_TEAM}'
+_WANTZ_IDENTITY_ID = f'identity:create:{WANTZ_MLB_ID}'
+
+
+def _wantz_plan(*, wantz_identity_exists, monkeypatch=None):
+    _seed_wantz_ledger(wantz_identity_exists=wantz_identity_exists)
+    payload = planner.run_repair_plan(client=_wantz_client())
+    if monkeypatch is not None:
+        _pin_baseline(monkeypatch, payload)
+        payload = planner.run_repair_plan(client=_wantz_client())
+    return payload
+
+
+# ── 1-5. The immutable defect baseline still fails closed ────────────────────
+def test_immutable_defect_baseline_still_requires_exact_equality(app):
+    payload = _wantz_plan(wantz_identity_exists=False)
+    comparison = payload['defect_baseline_comparison']
+    assert set(comparison) == set(planner.ACCEPTED_DEFECT_BASELINE)
+    # The small fixture is nowhere near the production population, so it must drift.
+    assert payload['defect_baseline_matches_accepted_diagnostic'] is False
+    assert payload['baseline_matches_accepted_diagnostic'] is False
+    assert payload['result'] == planner.RESULT_INCONCLUSIVE
+    assert payload['plan_status'] == planner.PLAN_BLOCKED_BASELINE_DRIFT
+    assert planner.BLOCK_BASELINE_DRIFT in payload['decision_reasons']
+
+
+@pytest.mark.parametrize('field', [
+    'official_pitching_lines', 'missing_line_count', 'defective_matched_line_count',
+    'defect_line_action_count', 'exact_match_count', 'official_games_fetched',
+    'local_pitching_lines', 'role_corrections_planned', 'extra_local_line_count',
+    'duplicate_local_line_count', 'appearance_team_mismatch_count',
+    'local_pitcher_identity_missing_count', 'official_evidence_unavailable_count',
+])
+def test_any_immutable_defect_field_moving_is_baseline_drift(app, monkeypatch, field):
+    payload = _wantz_plan(wantz_identity_exists=True, monkeypatch=monkeypatch)
+    assert payload['defect_baseline_matches_accepted_diagnostic'] is True
+    # Move exactly one immutable value; the plan must refuse to call itself reviewable.
+    drifted = dict(planner.ACCEPTED_DEFECT_BASELINE)
+    drifted[field] = drifted[field] + 1
+    monkeypatch.setattr(planner, 'ACCEPTED_DEFECT_BASELINE', drifted)
+    payload = planner.run_repair_plan(client=_wantz_client())
+    assert payload['defect_baseline_matches_accepted_diagnostic'] is False
+    assert payload['result'] == planner.RESULT_INCONCLUSIVE
+    assert payload['plan_status'] == planner.PLAN_BLOCKED_BASELINE_DRIFT
+    assert payload['defect_baseline_comparison'][field]['matches'] is False
+
+
+def test_a_changed_defect_line_action_population_remains_blocked(app, monkeypatch):
+    payload = _wantz_plan(wantz_identity_exists=True, monkeypatch=monkeypatch)
+    assert payload['result'] == planner.RESULT_PASS
+    # A genuinely new defect line moves the 604-equivalent population and must block.
+    db.session.query(GameLog).filter(GameLog.pitcher_id == _pitcher(9003).id).update(
+        {'strikeouts': 99}, synchronize_session=False)
+    db.session.commit()
+    payload = planner.run_repair_plan(client=_wantz_client())
+    assert payload['defect_baseline_matches_accepted_diagnostic'] is False
+    assert payload['result'] == planner.RESULT_INCONCLUSIVE
+    assert payload['defect_baseline_comparison'][
+        'defect_line_action_count']['matches'] is False
+
+
+# ── 6-8. The safe deferred-to-existing transition ────────────────────────────
+def test_safe_identity_transition_does_not_cause_baseline_drift(app, monkeypatch):
+    """The exact production defect: a resolved identity must not read as drift."""
+    _seed_wantz_ledger(wantz_identity_exists=False)
+    _pin_baseline(monkeypatch, planner.run_repair_plan(client=_wantz_client()))
+    before = planner.run_repair_plan(client=_wantz_client())
+    assert before['defect_baseline_matches_accepted_diagnostic'] is True
+    assert before['result'] == planner.RESULT_PASS
+
+    # A routine identity synchronization creates the local row. Nothing official moved.
+    row = Pitcher(id=WANTZ_LOCAL_PITCHER_ID, mlb_id=WANTZ_MLB_ID,
+                  full_name='Andrew Wantz', active=True)
+    db.session.add(row)
+    db.session.commit()
+
+    after = planner.run_repair_plan(client=_wantz_client())
+    assert after['defect_baseline_matches_accepted_diagnostic'] is True   # NOT drift
+    assert after['result'] == planner.RESULT_PASS
+    assert after['plan_status'] == planner.PLAN_READY
+    assert planner.BLOCK_BASELINE_DRIFT not in after['decision_reasons']
+    # Same official evidence, same defect population.
+    for field in ('official_pitching_lines', 'missing_line_count',
+                  'defective_matched_line_count', 'defect_line_action_count'):
+        assert after[field] == before[field], field
+    # The manifest itself changed, so the fingerprint must move normally.
+    assert after['repair_manifest_fingerprint'] != before['repair_manifest_fingerprint']
+
+
+def test_andrew_wantz_transitions_from_identity_prerequisite_to_local_pitcher_804(app):
+    _seed_wantz_ledger(wantz_identity_exists=False)
+    before = planner.run_repair_plan(client=_wantz_client())
+    insert = _action_for(before, _WANTZ_INSERT_ID)
+    identity = _action_for(before, _WANTZ_IDENTITY_ID)
+    assert insert['pitcher_reference_state'] == planner.PITCHER_REFERENCE_DEFERRED
+    assert insert['proposed_values']['pitcher_id'] is None
+    assert insert['local_pitcher_id'] is None
+    assert insert['dependency_action_ids'] == [_WANTZ_IDENTITY_ID]
+    assert identity['official_mlb_person_id'] == WANTZ_MLB_ID
+    assert insert['action_id'] in identity['dependent_game_log_action_ids']
+
+    row = Pitcher(id=WANTZ_LOCAL_PITCHER_ID, mlb_id=WANTZ_MLB_ID,
+                  full_name='Andrew Wantz', active=True)
+    db.session.add(row)
+    db.session.commit()
+
+    after = planner.run_repair_plan(client=_wantz_client())
+    insert = _action_for(after, _WANTZ_INSERT_ID)
+    assert insert['pitcher_reference_state'] == planner.PITCHER_REFERENCE_EXISTING
+    assert insert['local_pitcher_id'] == WANTZ_LOCAL_PITCHER_ID          # 804
+    assert insert['proposed_values']['pitcher_id'] == WANTZ_LOCAL_PITCHER_ID
+    assert insert['local_pitcher_mlb_id'] == WANTZ_MLB_ID                # 681806
+    assert insert['dependency_action_ids'] == []
+    assert insert['local_identity_resolution'] == planner.IDENTITY_RESOLUTION_CONTRACT
+    assert insert['safe_to_apply'] is True
+    with pytest.raises(AssertionError):
+        _action_for(after, _WANTZ_IDENTITY_ID)      # the prerequisite is gone
+    assert planner._identity_transition_is_verified(insert) is True
+
+
+def test_transition_moves_342_103_71_to_341_104_70_without_touching_445_159_604():
+    """The production arithmetic, evaluated on the real numbers."""
+    partition = {
+        'missing_lines_dependent_on_identity_creation': 341,
+        'missing_lines_using_existing_identity': 104,
+        'unique_identities_requiring_creation': 70,
+    }
+    transition = planner._identity_resolution_transition(partition)
+    assert transition['prior_snapshot'] == {
+        'missing_lines_dependent_on_identity_creation': 342,
+        'missing_lines_using_existing_identity': 103,
+        'unique_identities_requiring_creation': 71,
+    }
+    assert transition['deltas'] == {
+        'missing_lines_dependent_on_identity_creation': -1,
+        'missing_lines_using_existing_identity': 1,
+        'unique_identities_requiring_creation': -1,
+    }
+    assert transition['transition_kind'] == planner.TRANSITION_ADVANCED
+    assert transition['net_identities_resolved_since_snapshot'] == 1
+    assert transition['snapshot_is_compared_for_equality'] is False
+    # The immutable population is untouched by any of it.
+    b = planner.ACCEPTED_DEFECT_BASELINE
+    assert (partition['missing_lines_dependent_on_identity_creation']
+            + partition['missing_lines_using_existing_identity']) == b['missing_line_count']
+    assert b['missing_line_count'] == 445
+    assert b['defective_matched_line_count'] == 159
+    assert b['defect_line_action_count'] == 604
+
+
+def test_replacing_342_with_341_would_have_been_the_wrong_fix():
+    """A second legitimate transition must not require another baseline edit."""
+    for deferred, existing, identities in ((341, 104, 70), (340, 105, 69), (300, 145, 60)):
+        transition = planner._identity_resolution_transition({
+            'missing_lines_dependent_on_identity_creation': deferred,
+            'missing_lines_using_existing_identity': existing,
+            'unique_identities_requiring_creation': identities,
+        })
+        assert transition['transition_kind'] == planner.TRANSITION_ADVANCED
+        assert deferred + existing == 445
+    # No identity count of any kind is pinned as immutable.
+    for key in ('missing_lines_dependent_on_identity_creation',
+                'missing_lines_using_existing_identity',
+                'unique_identities_requiring_creation'):
+        assert key not in planner.ACCEPTED_DEFECT_BASELINE
+
+
+# ── 9-12. The partition is derived and internally reconciled ─────────────────
+def test_identity_partition_counts_are_derived_not_hardcoded(app, monkeypatch):
+    payload = _wantz_plan(wantz_identity_exists=True, monkeypatch=monkeypatch)
+    partition = payload['identity_resolution_partition']
+    inserts = _actions(payload, planner.ACTION_GAME_LOG_INSERT)
+    deferred = [a for a in inserts if a['dependency_action_ids']]
+    existing = [a for a in inserts if not a['dependency_action_ids']]
+    assert partition['missing_lines_dependent_on_identity_creation'] == len(deferred) == 0
+    assert partition['missing_lines_using_existing_identity'] == len(existing) == 1
+    assert partition['unique_identities_requiring_creation'] == 0
+    assert partition['missing_line_count'] == payload['missing_line_count']
+    # Derived from THIS database, not from the production snapshot.
+    assert partition['missing_lines_using_existing_identity'] != planner. \
+        PRIOR_IDENTITY_RESOLUTION_SNAPSHOT['missing_lines_using_existing_identity']
+
+
+def test_existing_plus_deferred_insertions_equal_every_missing_line(app, monkeypatch):
+    payload = _wantz_plan(wantz_identity_exists=False, monkeypatch=monkeypatch)
+    partition = payload['identity_resolution_partition']
+    assert (partition['missing_lines_using_existing_identity']
+            + partition['missing_lines_dependent_on_identity_creation']
+            ) == payload['missing_line_count'] == payload['game_log_inserts_planned']
+    assert payload['reconciliations'][
+        'missing_lines_equal_existing_plus_deferred_identity_inserts'] is True
+    assert payload['reconciliations'][
+        'identity_partition_covers_every_missing_line_when_baseline_matches'] is True
+
+
+def test_identity_actions_reconcile_to_unique_deferred_official_identities(app, monkeypatch):
+    payload = _wantz_plan(wantz_identity_exists=False, monkeypatch=monkeypatch)
+    identities = _actions(payload, planner.ACTION_IDENTITY_CREATE)
+    deferred = [a for a in _actions(payload, planner.ACTION_GAME_LOG_INSERT)
+                if a['dependency_action_ids']]
+    assert {a['official_mlb_person_id'] for a in identities} == \
+        {a['official_mlb_person_id'] for a in deferred} == {WANTZ_MLB_ID}
+    assert len(identities) == 1
+    assert payload['reconciliations'][
+        'unique_identity_actions_reconcile_to_deferred_official_identities'] is True
+    assert payload['reconciliations'][
+        'no_identity_action_for_an_already_resolved_local_identity'] is True
+
+
+def test_existing_identity_requires_exact_mlb_id_equality_and_blocks_a_mismatch():
+    action = _reference_action(local_pitcher_mlb_id=WANTZ_MLB_ID,
+                               official_mlb_person_id=WANTZ_MLB_ID,
+                               local_identity_resolution=planner.IDENTITY_RESOLUTION_CONTRACT)
+    assert planner._identity_transition_is_verified(action) is True
+    mismatched = _reference_action(local_pitcher_mlb_id=WANTZ_MLB_ID + 1,
+                                   official_mlb_person_id=WANTZ_MLB_ID)
+    state, blocking = _classify(mismatched)
+    assert state == planner.PITCHER_REFERENCE_INVALID
+    assert planner.BLOCK_PITCHER_REFERENCE_CONFLICT in blocking
+    assert planner._identity_transition_is_verified(mismatched) is False
+
+
+def test_duplicate_local_identity_resolution_blocks(app):
+    """Two local Pitcher rows cannot both claim one official MLB identity."""
+    _seed_wantz_ledger(wantz_identity_exists=True)
+    with pytest.raises(Exception):
+        db.session.add(Pitcher(id=805, mlb_id=WANTZ_MLB_ID, full_name='Andrew Wantz',
+                               active=True))
+        db.session.commit()
+    db.session.rollback()
+    # Storage forbids it; the classifier independently refuses an ambiguous resolution.
+    state, blocking = _classify(_reference_action(
+        local_pitcher_id=None, local_pitcher_mlb_id=None,
+        proposed_values={'pitcher_id': None},
+        dependency_action_ids=['identity:create:7']),
+        identities=[_identity(7), _identity(7)])
+    assert state == planner.PITCHER_REFERENCE_INVALID
+    assert planner.BLOCK_DEPENDENCY_AMBIGUOUS in blocking
+
+
+# ── 15-16. Name and current team are never identity authority ────────────────
+def test_identity_resolution_never_uses_name_matching(app, monkeypatch):
+    payload = _wantz_plan(wantz_identity_exists=True, monkeypatch=monkeypatch)
+    insert = _action_for(payload, _WANTZ_INSERT_ID)
+    assert insert['local_identity_resolution'] == 'pitcher.mlb_id_exact_match'
+    assert payload['reconciliations'][
+        'no_local_identity_is_accepted_through_name_matching'] is True
+    assert 'full_name' in payload['identity_resolution_snapshot']['excluded_signals']
+    # A same-named local row with a different MLB id is NOT this identity.
+    other = Pitcher(mlb_id=WANTZ_MLB_ID + 5000, full_name='Andrew Wantz', active=True)
+    db.session.add(other)
+    db.session.commit()
+    payload = planner.run_repair_plan(client=_wantz_client())
+    insert = _action_for(payload, _WANTZ_INSERT_ID)
+    assert insert['local_pitcher_id'] == WANTZ_LOCAL_PITCHER_ID     # still 804, by id
+    assert insert['local_pitcher_mlb_id'] == WANTZ_MLB_ID
+    # The local identity lookup queries Pitcher.mlb_id only; no name column participates.
+    source = _code_without_prose(SERVICE_PATH)
+    lookup = source.split('pitcher_rows = {')[-1].split('local_lines =')[0]
+    assert 'Pitcher.mlb_id' in lookup
+    assert 'full_name' not in lookup
+    assert 'Pitcher.team_id' not in source
+
+
+def test_current_team_is_never_identity_authority(app, monkeypatch):
+    _seed_wantz_ledger(wantz_identity_exists=True)
+    # A current team assignment that contradicts the historical appearance team.
+    db.session.query(Pitcher).filter(Pitcher.mlb_id == WANTZ_MLB_ID).update(
+        {'team_id': WANTZ_OPPONENT}, synchronize_session=False)
+    db.session.commit()
+    payload = planner.run_repair_plan(client=_wantz_client())
+    _pin_baseline(monkeypatch, payload)
+    payload = planner.run_repair_plan(client=_wantz_client())
+    insert = _action_for(payload, _WANTZ_INSERT_ID)
+    # Historical appearance team stays the official box-score side, not the current team.
+    assert insert['proposed_values']['appearance_team_id'] == WANTZ_TEAM
+    assert insert['local_pitcher_id'] == WANTZ_LOCAL_PITCHER_ID
+    assert payload['reconciliations'][
+        'current_team_and_roster_are_irrelevant_to_identity_resolution'] is True
+    assert payload['result'] == planner.RESULT_PASS
+
+
+# ── 17-20. The reference contract is unchanged by the partition split ────────
+def test_deferred_insertion_still_requires_a_safe_reciprocal_dependency(app):
+    _seed_wantz_ledger(wantz_identity_exists=False)
+    client = _wantz_client()
+    client.people[WANTZ_MLB_ID] = _person(WANTZ_MLB_ID, name='Andrew Wantz', position=None)
+    payload = planner.run_repair_plan(client=client)
+    insert = _action_for(payload, _WANTZ_INSERT_ID)
+    assert insert['safe_to_apply'] is False
+    assert planner.BLOCK_DEPENDENCY_BLOCKED in insert['blocking_reasons']
+    assert insert['proposed_values']['pitcher_id'] is None
+    assert payload['identity_resolution_partition_valid'] is True   # partition still sound
+
+
+def test_existing_insertion_still_forbids_an_identity_dependency():
+    state, blocking = _classify(
+        _reference_action(local_pitcher_id=WANTZ_LOCAL_PITCHER_ID,
+                          local_pitcher_mlb_id=WANTZ_MLB_ID,
+                          official_mlb_person_id=WANTZ_MLB_ID,
+                          proposed_values={'pitcher_id': WANTZ_LOCAL_PITCHER_ID},
+                          dependency_action_ids=[_WANTZ_IDENTITY_ID]),
+        identities=[_identity(WANTZ_MLB_ID, action_id=_WANTZ_IDENTITY_ID)])
+    assert state == planner.PITCHER_REFERENCE_INVALID
+    assert blocking == [planner.BLOCK_PITCHER_REFERENCE_CONFLICT]
+
+
+def test_external_mlb_id_is_never_accepted_as_a_local_pitcher_id_after_transition(app,
+                                                                                  monkeypatch):
+    payload = _wantz_plan(wantz_identity_exists=True, monkeypatch=monkeypatch)
+    insert = _action_for(payload, _WANTZ_INSERT_ID)
+    assert insert['proposed_values']['pitcher_id'] != WANTZ_MLB_ID    # 804, never 681806
+    assert payload['reconciliations'][
+        'no_insert_uses_an_external_id_as_a_local_pitcher_id'] is True
+    substituted = _reference_action(
+        local_pitcher_id=None, local_pitcher_mlb_id=None,
+        official_mlb_person_id=WANTZ_MLB_ID,
+        proposed_values={'pitcher_id': WANTZ_MLB_ID},
+        dependency_action_ids=[_WANTZ_IDENTITY_ID])
+    state, blocking = _classify(
+        substituted, identities=[_identity(WANTZ_MLB_ID, action_id=_WANTZ_IDENTITY_ID,
+                                           dependents=(substituted['action_id'],))])
+    assert state == planner.PITCHER_REFERENCE_INVALID
+    assert planner.BLOCK_PITCHER_REFERENCE_EXTERNAL_ID in blocking
+
+
+@pytest.mark.parametrize('placeholder', [0, -1, -804])
+def test_placeholder_ids_remain_rejected_after_the_partition_split(placeholder):
+    state, blocking = _classify(_reference_action(
+        local_pitcher_id=placeholder, local_pitcher_mlb_id=WANTZ_MLB_ID,
+        official_mlb_person_id=WANTZ_MLB_ID,
+        proposed_values={'pitcher_id': placeholder}))
+    assert state == planner.PITCHER_REFERENCE_INVALID
+    assert planner.BLOCK_PITCHER_REFERENCE_UNRESOLVABLE in blocking
+
+
+# ── 21-23. Result semantics for the resolved production shape ────────────────
+def test_every_reconciliation_passes_for_the_resolved_identity_fixture(app, monkeypatch):
+    payload = _wantz_plan(wantz_identity_exists=True, monkeypatch=monkeypatch)
+    failed = [name for name, ok in payload['reconciliations'].items() if not ok]
+    assert failed == []
+    assert payload['identity_resolution_partition_valid'] is True
+    for name in planner.IDENTITY_PARTITION_RECONCILIATIONS:
+        assert payload['reconciliations'][name] is True, name
+
+
+def test_planner_result_is_pass_for_the_resolved_production_shape(app, monkeypatch):
+    payload = _wantz_plan(wantz_identity_exists=True, monkeypatch=monkeypatch)
+    assert payload['result'] == planner.RESULT_PASS
+    assert payload['exit_code'] == 0
+    assert payload['plan_status'] == planner.PLAN_READY
+    assert payload['defect_baseline_matches_accepted_diagnostic'] is True
+    assert payload['identity_resolution_partition_valid'] is True
+    assert payload['blocking_counts_by_reason'] == {}
+    assert payload['database_writes_performed'] is False
+
+
+def test_repair_apply_gate_is_never_open(app, monkeypatch):
+    payload = _wantz_plan(wantz_identity_exists=True, monkeypatch=monkeypatch)
+    assert payload['repair_apply_gate'] == planner.GATE_BLOCKED_PENDING_REVIEW
+    assert payload['repair_apply_gate'] != 'open'
+    # The current inconclusive production fingerprint is pinned, never approved.
+    assert payload['failed_production_manifest_fingerprint_approved'] is False
+    for gate in ('foundation_3b_gate', 'public_reader_gate',
+                 'share_card_performance_gate'):
+        assert payload[gate] == planner.GATE_BLOCKED
+
+
+# ── 24-28. Read-only guarantees survive the split ────────────────────────────
+def test_identity_partition_planning_writes_nothing(app):
+    _seed_wantz_ledger(wantz_identity_exists=True)
+    before = {(r.pitcher_id, r.mlb_game_pk): r.strikeouts
+              for r in db.session.query(GameLog).all()}
+    pitchers_before = db.session.query(Pitcher).count()
+    payload = planner.run_repair_plan(client=_wantz_client())
+    db.session.expire_all()
+    assert {(r.pitcher_id, r.mlb_game_pk): r.strikeouts
+            for r in db.session.query(GameLog).all()} == before
+    assert db.session.query(Pitcher).count() == pitchers_before
+    assert payload['database_writes_performed'] is False
+    assert payload['mode'] == 'read_only'
+
+
+def test_identity_partition_planning_emits_no_write_sql(app):
+    _seed_wantz_ledger(wantz_identity_exists=False)
+    statements = []
+
+    @event.listens_for(db.engine, 'before_cursor_execute')
+    def _capture(conn, cursor, statement, parameters, context, executemany):
+        statements.append(statement)
+
+    try:
+        planner.run_repair_plan(client=_wantz_client())
+    finally:
+        event.remove(db.engine, 'before_cursor_execute', _capture)
+
+    for statement in statements:
+        head = statement.strip().split(None, 1)[0].upper() if statement.strip() else ''
+        assert head not in ('INSERT', 'UPDATE', 'DELETE'), statement
+
+
+def test_workflow_remains_dispatch_only_and_read_only_after_the_split():
+    workflow = WORKFLOW_PATH.read_text(encoding='utf-8')
+    header = workflow.split('jobs:', 1)[0]
+    assert 'workflow_dispatch' in header
+    for trigger in ('schedule:', 'push:', 'pull_request:'):
+        assert trigger not in header, trigger
+    for token in ('apply', 'accept_fingerprint', 'fingerprint_acceptance'):
+        assert f'{token}:' not in header, token
+    assert 'retention-days: 14' in workflow
+    assert 'permissions:' in workflow and 'contents: read' in workflow
+    for mutation in ('db.session.commit', 'INSERT INTO', 'UPDATE ', 'DELETE FROM',
+                     'flask db upgrade'):
+        assert mutation not in workflow, mutation
 
 
 def test_no_apply_mode_exists_for_pitcher_reference_resolution():
@@ -2418,9 +2908,13 @@ def test_workflow_ships_full_manifest_and_bounded_summary():
 
 def test_decision_record_documents_the_governed_contract():
     text = DECISION_RECORD.read_text(encoding='utf-8')
-    for phrase in ('bounded', '445', '159', '604', '342', '103', 'fingerprint',
-                   'position player', 'delete', 'appearance-team', 'apply',
+    for phrase in ('bounded', '445', '159', '604', '342', '341', '103', '104', '71', '70',
+                   'fingerprint', 'position player', 'delete', 'appearance-team', 'apply',
                    'foreign key', 'primary key', 'deferred_identity_creation',
                    'existing_local_identity', 'pitcher_reference_coverage',
-                   '9b8ab677c83ec5b8efa5a4020593911dc4d6d73e3262a09c0703d1a5907b49b7'):
+                   'immutable', 'mutable', 'andrew wantz', '681806', '804', '822975',
+                   'prior_identity_resolution_snapshot',
+                   'snapshot_is_compared_for_equality',
+                   '9b8ab677c83ec5b8efa5a4020593911dc4d6d73e3262a09c0703d1a5907b49b7',
+                   'dd453cd63b1e4ccc14b5ff97c962635d6c5eda296a4e4ef63066105eeec225c6'):
         assert phrase in text.lower(), phrase

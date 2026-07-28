@@ -167,9 +167,16 @@ CORRECTION_METADATA_POLICY = {
 BLOCK_BASELINE_DRIFT = 'accepted_baseline_drift'
 BLOCK_SUBSET_SCOPE = 'diagnostic_subset_scope'
 
-# The accepted production population (merged completeness diagnostic, season 2026 through
-# 2026-07-25). Pinned so a moved population fails closed instead of silently replanning.
-ACCEPTED_BASELINE = {
+# ── Immutable accepted DEFECT baseline ────────────────────────────────────────
+# The accepted production defect population (merged completeness diagnostic, season 2026
+# through 2026-07-25). Pinned so a moved population fails closed instead of silently
+# replanning. Every value here is a property of OFFICIAL MLB evidence and of the stored
+# GameLog ledger, so none of it can change without the reviewed repair changing meaning.
+#
+# ``missing_lines_dependent_on_identity_creation`` is deliberately NOT here. See
+# IDENTITY_RESOLUTION_* below: it is a plan-time partition of the same 445 missing lines,
+# determined by what the local Pitcher table happens to contain right now.
+ACCEPTED_DEFECT_BASELINE = {
     'official_games_selected': 1570,
     'official_games_fetched': 1570,
     'official_team_game_sides': 3140,
@@ -183,7 +190,6 @@ ACCEPTED_BASELINE = {
     'missing_line_count': 445,
     'defective_matched_line_count': 159,
     'defect_line_action_count': 604,
-    'missing_lines_dependent_on_identity_creation': 342,
     'role_corrections_planned': 2,
     'appearance_team_mismatch_count': 0,
     'extra_local_line_count': 0,
@@ -191,6 +197,55 @@ ACCEPTED_BASELINE = {
     'local_pitcher_identity_missing_count': 0,
     'official_evidence_unavailable_count': 0,
 }
+
+# ── Mutable plan-time identity resolution ─────────────────────────────────────
+# How the 445 missing lines split between "the local Pitcher row already exists" and "an
+# identity must be created first" is NOT a property of official evidence. It is a fact about
+# the local database at the moment the plan runs, and ordinary identity or roster
+# synchronization may legitimately move a line from deferred to existing between runs.
+#
+# This snapshot is therefore OBSERVATIONAL ONLY. It is reported so a reviewer can see how
+# identity resolution has advanced since the accepted diagnostic, and it is never compared
+# for equality. Requiring it to match would make the planner fail every time the database
+# correctly learned an identity — which is exactly the defect this separation removes.
+PRIOR_IDENTITY_RESOLUTION_SNAPSHOT = {
+    'missing_lines_dependent_on_identity_creation': 342,
+    'missing_lines_using_existing_identity': 103,
+    'unique_identities_requiring_creation': 71,
+}
+
+# Local identities are resolved by exact official MLB id equality and by nothing else. Name
+# similarity, current team, current organization, and roster status are all irrelevant to a
+# historical appearance and are never consulted.
+IDENTITY_RESOLUTION_CONTRACT = 'pitcher.mlb_id_exact_match'
+IDENTITY_RESOLUTION_EXCLUDED_SIGNALS = (
+    'full_name', 'name_similarity', 'team_id', 'roster_status', 'active', 'organization',
+)
+
+# Classification of how the observed identity partition moved since the snapshot above.
+TRANSITION_NONE = 'identity_resolution_unchanged'
+TRANSITION_ADVANCED = 'identity_resolution_advanced'
+TRANSITION_REGRESSED = 'identity_resolution_regressed'
+TRANSITION_MIXED = 'identity_resolution_mixed'
+
+# The reconciliations that together prove the CURRENT identity partition is internally
+# valid. These replace snapshot equality as the gate on identity resolution.
+IDENTITY_PARTITION_RECONCILIATIONS = (
+    'missing_lines_equal_existing_plus_deferred_identity_inserts',
+    'identity_partition_covers_every_missing_line_when_baseline_matches',
+    'every_insertion_has_exactly_one_valid_pitcher_reference_state',
+    'unique_identity_actions_reconcile_to_deferred_official_identities',
+    'no_identity_action_for_an_already_resolved_local_identity',
+    'no_local_identity_is_accepted_through_name_matching',
+    'current_team_and_roster_are_irrelevant_to_identity_resolution',
+    'every_identity_transition_is_a_verified_local_primary_key',
+    'every_existing_identity_insert_uses_its_local_pitcher_id',
+    'every_deferred_identity_insert_has_null_pitcher_id',
+    'every_deferred_identity_insert_has_exactly_one_safe_matching_dependency',
+    'every_identity_dependency_is_reciprocal',
+    'no_insert_uses_an_external_id_as_a_local_pitcher_id',
+    'missing_lines_partition',
+)
 
 # GameLog stat fields planned from official evidence. (local attribute, official stat key)
 PLANNED_STAT_FIELDS = tuple(
@@ -536,6 +591,9 @@ def _insert_action(line, *, local_pitcher_id, identity_action_id, raw_stats=None
         # pitcher-reference contract can prove the local primary key belongs to this official
         # identity rather than merely being some positive integer.
         'local_pitcher_mlb_id': local_pitcher_mlb_id,
+        # How the local row was found. Exact official MLB id equality, never a name.
+        'local_identity_resolution': (
+            IDENTITY_RESOLUTION_CONTRACT if local_pitcher_id is not None else None),
         # Assigned by _validate_pitcher_references once identity actions exist.
         'pitcher_reference_state': None,
         'local_game_log_id': None,
@@ -1365,7 +1423,11 @@ def run_repair_plan(
     manifest_fingerprint = sha256_of(manifest)
 
     observed = population.as_dict()
-    baseline_comparison, baseline_matches = _compare_baseline(observed, plan_scope)
+    defect_baseline_comparison, baseline_matches = _compare_defect_baseline(
+        observed, plan_scope)
+    identity_partition = _identity_resolution_partition(
+        insert_actions, identity_actions, population)
+    identity_transition = _identity_resolution_transition(identity_partition)
 
     reconciliations = _reconciliations(
         population=population, observed=observed, manifest=manifest,
@@ -1419,10 +1481,23 @@ def run_repair_plan(
             'action_types': list(ACTION_TYPES),
         },
         'plan_scope': plan_scope,
-        'accepted_baseline': dict(ACCEPTED_BASELINE),
+        # ── Immutable defect population ──────────────────────────────────────
+        'accepted_defect_baseline': dict(ACCEPTED_DEFECT_BASELINE),
         'observed_population': observed,
-        'baseline_comparison': baseline_comparison,
+        'defect_baseline_comparison': defect_baseline_comparison,
+        'defect_baseline_matches_accepted_diagnostic': baseline_matches,
+        # Retained name, narrowed meaning: this reports the IMMUTABLE DEFECT population only.
+        # It has never implied, and must not imply, that mutable local identity availability
+        # matches a historical database snapshot.
         'baseline_matches_accepted_diagnostic': baseline_matches,
+        # ── Mutable identity resolution ──────────────────────────────────────
+        'identity_resolution_snapshot': _identity_resolution_snapshot(
+            insert_actions, identity_actions),
+        'identity_resolution_partition': identity_partition,
+        'identity_resolution_transition_from_prior_snapshot': identity_transition,
+        'identity_resolution_partition_valid': all(
+            reconciliations[name] for name in IDENTITY_PARTITION_RECONCILIATIONS),
+        'prior_identity_resolution_snapshot': dict(PRIOR_IDENTITY_RESOLUTION_SNAPSHOT),
         'official_games_selected': population.official_games_selected,
         'official_games_fetched': population.official_games_fetched,
         'official_team_game_sides': population.official_team_game_sides,
@@ -1515,6 +1590,27 @@ def _pitcher_reference_is_resolvable(action, identity_actions_by_id) -> bool:
     """One of the two valid pitcher-reference states, with no blockers of its own."""
     state, blocking = _classify_pitcher_reference(action, identity_actions_by_id)
     return not blocking and state in (PITCHER_REFERENCE_EXISTING, PITCHER_REFERENCE_DEFERRED)
+
+
+def _identity_transition_is_verified(action) -> bool:
+    """An insertion may use an existing local identity only on verified evidence.
+
+    This is the gate a deferred insertion must pass to become an existing-identity insertion:
+    the local row exists, its MLB id matches the official person exactly, its primary key is
+    positive, the identity-create dependency is gone, and the insertion proposes that verified
+    primary key. Nothing about the transition is inferred from a count moving.
+    """
+    local_id = completeness._pos_int(action.get('local_pitcher_id'))
+    official_id = completeness._pos_int(action.get('official_mlb_person_id'))
+    return (
+        local_id is not None
+        and official_id is not None
+        and completeness._pos_int(action.get('local_pitcher_mlb_id')) == official_id
+        and not (action.get('dependency_action_ids') or ())
+        and (action.get('proposed_values') or {}).get(PITCHER_REFERENCE_FIELD)
+        == action.get('local_pitcher_id')
+        and action.get('local_identity_resolution') == IDENTITY_RESOLUTION_CONTRACT
+    )
 
 
 def _no_external_id_as_local_pitcher_id(action) -> bool:
@@ -1679,11 +1775,16 @@ def _duplicate_action_ids(manifest) -> set:
     return duplicates
 
 
-def _compare_baseline(observed, plan_scope):
-    """Compare every governed count to the accepted production baseline."""
+def _compare_defect_baseline(observed, plan_scope):
+    """Compare every IMMUTABLE defect count to the accepted production baseline.
+
+    Only the governed defect population is compared here. The identity-resolution partition
+    is deliberately excluded: it is validated by internal reconciliation against the current
+    database, not by equality with a historical snapshot.
+    """
     comparison = {}
     matches = True
-    for key, expected in sorted(ACCEPTED_BASELINE.items()):
+    for key, expected in sorted(ACCEPTED_DEFECT_BASELINE.items()):
         actual = observed.get(key)
         difference = None if actual is None else actual - expected
         equal = actual == expected
@@ -1697,6 +1798,95 @@ def _compare_baseline(observed, plan_scope):
         # A scoped run is a diagnostic subset; it can never satisfy the full-season baseline.
         matches = False
     return comparison, matches
+
+
+def _identity_resolution_partition(insert_actions, identity_actions, population) -> dict:
+    """The current plan-time split of the missing lines by how each reaches its pitcher.
+
+    Every value is derived from the manifest and the live database. Nothing is asserted from
+    a historical snapshot, so a legitimately resolved identity moves counts here without
+    touching the immutable defect baseline.
+    """
+    deferred = [a for a in insert_actions if a.get('dependency_action_ids')]
+    existing = [a for a in insert_actions
+                if not a.get('dependency_action_ids')
+                and a.get('local_pitcher_id') is not None]
+    unresolved = [a for a in insert_actions
+                  if a not in deferred and a not in existing]
+    deferred_identities = {
+        completeness._pos_int(a.get('official_mlb_person_id')) for a in deferred}
+    return {
+        'missing_lines_using_existing_identity': len(existing),
+        'missing_lines_dependent_on_identity_creation': len(deferred),
+        'missing_lines_with_unresolvable_identity': len(unresolved),
+        'unique_identities_requiring_creation': len(identity_actions),
+        'unique_official_identities_behind_deferred_insertions': len(deferred_identities),
+        'missing_line_count': population.missing_line_count,
+        'identity_resolution_contract': IDENTITY_RESOLUTION_CONTRACT,
+    }
+
+
+def _identity_resolution_snapshot(insert_actions, identity_actions) -> dict:
+    """Per-identity evidence for how each deferred or existing insertion resolves."""
+    existing_identities = sorted({
+        completeness._pos_int(a.get('official_mlb_person_id'))
+        for a in insert_actions
+        if not a.get('dependency_action_ids') and a.get('local_pitcher_id') is not None})
+    deferred_identities = sorted({
+        completeness._pos_int(a.get('official_mlb_person_id'))
+        for a in insert_actions if a.get('dependency_action_ids')})
+    return {
+        'official_identities_resolved_locally': len(existing_identities),
+        'official_identities_requiring_creation': len(deferred_identities),
+        'identity_action_ids': sorted(a['action_id'] for a in identity_actions),
+        'resolution_authority': IDENTITY_RESOLUTION_CONTRACT,
+        'excluded_signals': list(IDENTITY_RESOLUTION_EXCLUDED_SIGNALS),
+    }
+
+
+def _identity_resolution_transition(partition) -> dict:
+    """How the observed identity partition moved since the accepted diagnostic snapshot.
+
+    Reported, never gating. A deferred insertion becoming an existing-identity insertion is a
+    normal consequence of identity synchronization, not evidence that the reviewed defect
+    population moved.
+    """
+    prior = PRIOR_IDENTITY_RESOLUTION_SNAPSHOT
+    deferred_delta = (partition['missing_lines_dependent_on_identity_creation']
+                      - prior['missing_lines_dependent_on_identity_creation'])
+    existing_delta = (partition['missing_lines_using_existing_identity']
+                      - prior['missing_lines_using_existing_identity'])
+    identity_delta = (partition['unique_identities_requiring_creation']
+                      - prior['unique_identities_requiring_creation'])
+
+    if deferred_delta == 0 and existing_delta == 0:
+        kind = TRANSITION_NONE
+    elif deferred_delta < 0 and existing_delta == -deferred_delta:
+        kind = TRANSITION_ADVANCED
+    elif deferred_delta > 0 and existing_delta == -deferred_delta:
+        kind = TRANSITION_REGRESSED
+    else:
+        kind = TRANSITION_MIXED
+    return {
+        'prior_snapshot': dict(prior),
+        'observed_partition': {
+            'missing_lines_dependent_on_identity_creation':
+                partition['missing_lines_dependent_on_identity_creation'],
+            'missing_lines_using_existing_identity':
+                partition['missing_lines_using_existing_identity'],
+            'unique_identities_requiring_creation':
+                partition['unique_identities_requiring_creation'],
+        },
+        'deltas': {
+            'missing_lines_dependent_on_identity_creation': deferred_delta,
+            'missing_lines_using_existing_identity': existing_delta,
+            'unique_identities_requiring_creation': identity_delta,
+        },
+        'transition_kind': kind,
+        'net_identities_resolved_since_snapshot': -deferred_delta,
+        'snapshot_is_observational_only': True,
+        'snapshot_is_compared_for_equality': False,
+    }
 
 
 def _actions_by_team(insert_actions, update_actions) -> dict:
@@ -1774,16 +1964,16 @@ def _reconciliations(*, population, observed, manifest, identity_actions, insert
                 + population.defective_matched_line_count),
         'official_lines_partition_matches_baseline':
             (not baseline_matches) or (
-                ACCEPTED_BASELINE['official_pitching_lines']
-                == ACCEPTED_BASELINE['exact_match_count']
-                + ACCEPTED_BASELINE['missing_line_count']
-                + ACCEPTED_BASELINE['defective_matched_line_count']),
+                ACCEPTED_DEFECT_BASELINE['official_pitching_lines']
+                == ACCEPTED_DEFECT_BASELINE['exact_match_count']
+                + ACCEPTED_DEFECT_BASELINE['missing_line_count']
+                + ACCEPTED_DEFECT_BASELINE['defective_matched_line_count']),
         'defect_line_action_count_equals_defect_lines':
             defect_actions == (
                 population.missing_line_count + population.defective_matched_line_count),
         'defect_line_action_count_matches_baseline':
             (not baseline_matches)
-            or defect_actions == ACCEPTED_BASELINE['defect_line_action_count'],
+            or defect_actions == ACCEPTED_DEFECT_BASELINE['defect_line_action_count'],
         'missing_lines_partition':
             population.missing_line_count == (
                 population.missing_lines_dependent_on_identity_creation
@@ -1870,6 +2060,48 @@ def _reconciliations(*, population, observed, manifest, identity_actions, insert
             for a in insert_actions),
         'no_insert_uses_an_external_id_as_a_local_pitcher_id': all(
             _no_external_id_as_local_pitcher_id(a) for a in insert_actions),
+        # ── Identity resolution partition (mutable, internally reconciled) ────
+        # These replace equality with a historical identity snapshot. They are strictly
+        # stronger: a snapshot only proves the count did not move, while these prove every
+        # insertion resolves its pitcher correctly against the CURRENT database.
+        'missing_lines_equal_existing_plus_deferred_identity_inserts':
+            len(insert_actions) == (
+                len(existing_identity_inserts) + len(deferred_identity_inserts))
+            and len(insert_actions) == population.missing_line_count,
+        'identity_partition_covers_every_missing_line_when_baseline_matches':
+            (not baseline_matches)
+            or (len(existing_identity_inserts) + len(deferred_identity_inserts)
+                == ACCEPTED_DEFECT_BASELINE['missing_line_count']),
+        'every_insertion_has_exactly_one_valid_pitcher_reference_state': all(
+            a.get('pitcher_reference_state') in (
+                PITCHER_REFERENCE_EXISTING, PITCHER_REFERENCE_DEFERRED)
+            for a in insert_actions if a['safe_to_apply']
+        ) and all(
+            (a in existing_identity_inserts) != (a in deferred_identity_inserts)
+            or a.get('pitcher_reference_state') == PITCHER_REFERENCE_INVALID
+            for a in insert_actions),
+        'unique_identity_actions_reconcile_to_deferred_official_identities':
+            {a['official_mlb_person_id'] for a in identity_actions}
+            == {a['official_mlb_person_id'] for a in deferred_identity_inserts}
+            and len(identity_actions) == len(
+                {a['official_mlb_person_id'] for a in identity_actions}),
+        'no_identity_action_for_an_already_resolved_local_identity':
+            not ({a['official_mlb_person_id'] for a in identity_actions}
+                 & {a['official_mlb_person_id'] for a in existing_identity_inserts}),
+        'no_local_identity_is_accepted_through_name_matching': all(
+            a.get('local_identity_resolution') == IDENTITY_RESOLUTION_CONTRACT
+            and completeness._pos_int(a.get('local_pitcher_mlb_id'))
+            == completeness._pos_int(a.get('official_mlb_person_id'))
+            for a in existing_identity_inserts),
+        'current_team_and_roster_are_irrelevant_to_identity_resolution': all(
+            not (set(a.get('proposed_values') or {}) & {
+                'team_id', 'team_name', 'team_abbreviation', 'active', 'roster_status'})
+            for a in insert_actions
+        ) and all(
+            signal not in (a.get('proposed_identity_fields') or {})
+            for a in identity_actions for signal in ('team_id', 'roster_status', 'active')),
+        'every_identity_transition_is_a_verified_local_primary_key': all(
+            _identity_transition_is_verified(a) for a in existing_identity_inserts),
         # ── Official GameLog evidence completeness ────────────────────────────
         'every_safe_insert_contains_every_required_non_fk_value': all(
             _required_insert_values_present(a)

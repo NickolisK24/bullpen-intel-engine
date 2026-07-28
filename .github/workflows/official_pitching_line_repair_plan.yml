@@ -153,7 +153,10 @@ jobs:
           pitcher_refs = payload.get('pitcher_reference_coverage') or {}
           no_action = payload.get('no_action_confirmations') or {}
           preview = payload.get('bounded_preview') or []
-          baseline = payload.get('baseline_comparison') or {}
+          baseline = payload.get('defect_baseline_comparison') or {}
+          partition = payload.get('identity_resolution_partition') or {}
+          transition = payload.get(
+              'identity_resolution_transition_from_prior_snapshot') or {}
 
           summary = [
               '## Official Pitching-Line Repair Plan (2026)',
@@ -165,8 +168,14 @@ jobs:
               f"- Plan scope: `{payload.get('plan_scope')}`",
               f"- Repair apply gate: `{payload.get('repair_apply_gate')}`",
               f"- Decision reasons: `{payload.get('decision_reasons')}`",
-              f"- Baseline matches accepted diagnostic: "
-              f"`{payload.get('baseline_matches_accepted_diagnostic')}`",
+              f"- Immutable defect baseline matches accepted diagnostic: "
+              f"`{payload.get('defect_baseline_matches_accepted_diagnostic')}`",
+              f"- Identity-resolution partition valid: "
+              f"`{payload.get('identity_resolution_partition_valid')}`",
+              f"- Identity-resolution transition: "
+              f"`{transition.get('transition_kind')}` "
+              f"(net identities resolved since snapshot: "
+              f"`{transition.get('net_identities_resolved_since_snapshot')}`)",
               f"- Official pitching lines: `{payload.get('official_pitching_lines')}`",
               f"- Exact matches: `{payload.get('exact_match_count')}`",
               f"- Missing lines: `{payload.get('missing_line_count')}`",
@@ -213,7 +222,14 @@ jobs:
               f"- `{name}`: `{count}`" for name, count in sorted(pitcher_refs.items()))
           summary.extend(('', '### Blocking reasons'))
           summary.extend(f"- `{name}`: `{count}`" for name, count in sorted(blocking.items()))
-          summary.extend(('', '### Baseline comparison'))
+          summary.extend(('', '### Identity resolution partition'))
+          summary.extend(
+              f"- `{name}`: `{value}`" for name, value in sorted(partition.items()))
+          summary.extend(('', '### Identity resolution transition (observational)'))
+          summary.extend(
+              f"- `{name}`: `{value}`"
+              for name, value in sorted((transition.get('deltas') or {}).items()))
+          summary.extend(('', '### Immutable defect baseline comparison'))
           summary.extend(
               f"- `{name}`: expected `{item.get('expected_value')}` observed "
               f"`{item.get('observed_value')}` difference `{item.get('difference')}`"
