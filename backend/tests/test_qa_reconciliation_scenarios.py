@@ -47,7 +47,7 @@ from utils.db import db
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 MIGRATIONS_DIR = REPO_ROOT / 'backend/migrations/versions'
-EXPECTED_ALEMBIC_HEAD = 'a4f1c7e9b3d2'
+EXPECTED_ALEMBIC_HEAD = 'c7b3e5a91d48'
 FORBIDDEN_HEADLINE_TERMS = (
     'headline',
     'read_label',
@@ -549,9 +549,18 @@ def test_phase0e_switches_and_legacy_public_files_not_modified():
         # reversible, no historical backfill, no reader migrated, no public route.
         'backend/migrations/versions/a4f1c7e9b3d2_add_game_log_appearance_team.py',
     }
+    allowed_repair_execution_ledger_files = {
+        # trust/apply-reviewed-pitching-line-repair (Foundation 3A): the durable execution
+        # ledger for the one reviewed, fingerprint-locked official pitching-line repair.
+        # A new internal table only — purely additive, reversible, no existing table
+        # touched, no reader migrated, and no public route.
+        'backend/migrations/versions/'
+        'c7b3e5a91d48_add_official_pitching_line_repair_executions.py',
+    }
     allowed_files = (
         allowed_public_freshness_display_files
         | allowed_team_at_appearance_files
+        | allowed_repair_execution_ledger_files
         | allowed_progressive_team_publication_files
         | allowed_public_share_artifact_page_files
         | allowed_active_bullpen_readiness_files

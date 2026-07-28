@@ -134,6 +134,7 @@ def create_test_schema(app):
     import models.fatigue_score  # noqa: F401
     import models.game_log  # noqa: F401
     import models.legacy_read_audit  # noqa: F401
+    import models.official_pitching_line_repair_execution  # noqa: F401
     import models.pitcher  # noqa: F401
     import models.pitcher_season_ledger_coverage  # noqa: F401
     import models.play_by_play_foundation  # noqa: F401

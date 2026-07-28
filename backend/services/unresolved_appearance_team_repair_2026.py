@@ -26,7 +26,7 @@ from utils.db import db
 
 CAPABILITY = 'unresolved_appearance_team_repair_2026_v1'
 CONTRACT_VERSION = 'unresolved_appearance_team_repair_2026.v1'
-EXPECTED_MIGRATION_HEAD = 'a4f1c7e9b3d2'
+EXPECTED_MIGRATION_HEAD = 'c7b3e5a91d48'
 CONFIRMATION_PHRASE = 'RUN_UNRESOLVED_APPEARANCE_TEAM_REPAIR_2026'
 
 RESULT_PASS = 'pass'

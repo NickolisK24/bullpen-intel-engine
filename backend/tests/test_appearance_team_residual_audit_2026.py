@@ -340,7 +340,7 @@ def test_result_empty_population_fail_precedence():
 
 
 def test_expected_migration_head_matches_backfill():
-    assert audit.EXPECTED_MIGRATION_HEAD == 'a4f1c7e9b3d2'
+    assert audit.EXPECTED_MIGRATION_HEAD == 'c7b3e5a91d48'
 
 
 # ═══════════════ Integrated result / reconciliation ═════════════════════════

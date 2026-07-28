@@ -568,7 +568,7 @@ jobs:
               if not isinstance(payload.get('error_type'), str):
                   errors.append(f"error_type={payload.get('error_type')!r}")
           else:
-              if migration.get('expected_head') != 'a4f1c7e9b3d2':
+              if migration.get('expected_head') != 'c7b3e5a91d48':
                   errors.append(
                       f"migration.expected_head={migration.get('expected_head')!r}"
                   )

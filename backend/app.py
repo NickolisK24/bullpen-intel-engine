@@ -154,6 +154,9 @@ def create_app(config_name=None):
     )
     from models.share_artifact_generation_audit import ShareArtifactGenerationAudit
     from models.team_progressive_publication import TeamProgressivePublication
+    from models.official_pitching_line_repair_execution import (
+        OfficialPitchingLineRepairExecution,
+    )
 
     from api.bullpen import bullpen_bp
     from api.prospects import prospects_bp
