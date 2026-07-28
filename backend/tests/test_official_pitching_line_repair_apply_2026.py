@@ -84,8 +84,15 @@ def app():
         # The apply path requires the governed ledger revision to be the migration head.
         # A create_all schema has no alembic_version table, so the fixture states the head
         # explicitly rather than letting the precondition pass on an absent value.
+        #
+        # alembic_version is not part of the model metadata, so drop_test_schema does not
+        # remove it. On a persistent test target (PostgreSQL) it would otherwise survive
+        # into every later test in the session and accumulate a second row per run, which
+        # reads as a multi-head schema and fails every migration-head guard in the suite.
+        # It is therefore created empty and dropped explicitly here.
+        db.session.execute(sa.text('DROP TABLE IF EXISTS alembic_version'))
         db.session.execute(sa.text(
-            'CREATE TABLE IF NOT EXISTS alembic_version (version_num VARCHAR(32) NOT NULL)'))
+            'CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL)'))
         db.session.execute(sa.text(
             'INSERT INTO alembic_version (version_num) VALUES (:v)'),
             {'v': LEDGER_REVISION})
@@ -93,6 +100,9 @@ def app():
         try:
             yield flask_app
         finally:
+            db.session.rollback()
+            db.session.execute(sa.text('DROP TABLE IF EXISTS alembic_version'))
+            db.session.commit()
             db.session.remove()
             drop_test_schema(flask_app)
 
@@ -395,7 +405,7 @@ def test_the_exact_approved_fingerprint_is_required(approved):
     payload = _apply(approved)
     assert payload['result'] == apply_service.RESULT_PASS, (
         payload['decision_reasons'], payload.get('abort_detail'),
-        payload['failed_preconditions'])
+        payload['failed_preconditions'], payload.get('error_type'))
     assert payload['regenerated_manifest_fingerprint'] == approved['manifest_fingerprint']
     assert payload['transaction_committed'] is True
     assert _counts() != before
@@ -1140,7 +1150,8 @@ def test_correction_metadata_is_populated_on_every_updated_row(approved):
     payload = _apply(approved)
     assert payload['result'] == apply_service.RESULT_PASS
     operation_id = payload['governed_operation_id']
-    assert operation_id == int(approved['manifest_fingerprint'][:8], 16)
+    assert operation_id == int(approved['manifest_fingerprint'][:8], 16) & 0x7FFFFFFF
+    assert 0 < operation_id <= 0x7FFFFFFF
     for record in payload['update_results']:
         row = db.session.query(GameLog).filter(
             GameLog.id == record['local_game_log_id']).one()

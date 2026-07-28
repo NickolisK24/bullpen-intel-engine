@@ -260,8 +260,14 @@ def _governed_operation_id(fingerprint: str) -> int:
     id — no sync run performs this repair, and borrowing one would attribute the correction to
     ingestion. Derived from the approved fingerprint so every corrected row points back to
     exactly one approved manifest, and recorded on the ledger row so the two join.
+
+    Masked to 31 bits because the column is a plain ``Integer``: a fingerprint whose leading
+    hex digit is 8 or above would otherwise exceed a signed 32-bit integer and be rejected by
+    PostgreSQL. The approved fingerprint begins ``3ee2ea06``, so the mask is the identity for
+    it; the mask exists so the derivation is total for any fingerprint rather than only for
+    this one.
     """
-    return int(str(fingerprint)[:8], 16)
+    return int(str(fingerprint)[:8], 16) & 0x7FFFFFFF
 
 
 def _canonical(value) -> str:
