@@ -213,6 +213,19 @@ CONTRADICTION_AMENDMENT = 'reviewed_amendment_line_does_not_match_the_approved_r
 CONTRADICTION_VERIFICATION = 'in_transaction_verification_failed'
 CONTRADICTION_PITCHER_MUTATED = 'an_existing_pitcher_row_was_mutated'
 CONTRADICTION_DELETE_ATTEMPTED = 'a_delete_was_attempted'
+CONTRADICTION_DEPENDENT_EVIDENCE = 'dependent_evidence_invalidation_failed'
+CONTRADICTION_CORRECTION_COUNT_DELTA = 'correction_count_delta_is_not_exactly_one'
+CONTRADICTION_APPROVAL_CONTRACT_DRIFT = 'approved_contract_fingerprint_disagrees_with_constant'
+
+# The post-commit outcome is part of the pass condition, not an optional epilogue. These are
+# reported as reconciliations so a reader can see WHICH of them held rather than only that
+# the run failed.
+POST_COMMIT_RECONCILIATIONS = (
+    'post_commit_verification_was_executed',
+    'every_governed_post_commit_check_is_present',
+    'every_governed_post_commit_check_passed',
+    'no_post_commit_check_was_skipped',
+)
 
 # Fields a repair may never write onto a created identity. A historical appearance proves
 # nothing about present-day team, roster, organization, or activity.
@@ -243,6 +256,14 @@ DOWNSTREAM_GATES = (
     'foundation_3b_gate', 'public_reader_gate', 'team_state_performance_gate',
     'share_card_performance_gate', 'sc_05_gate',
 )
+
+# Dependent-evidence invalidation runs in STRICT mode for this repair. Ordinary ingestion
+# keeps the default best-effort behaviour, which is right for a process that runs again
+# tomorrow; a one-time atomic repair has no tomorrow, so a family that did not complete rolls
+# the whole thing back rather than committing corrected rows beside stale evidence.
+EVIDENCE_INVALIDATION_STRICT = True
+REQUIRED_EVIDENCE_FAMILIES = sync_service.REQUIRED_EVIDENCE_FAMILIES
+EVIDENCE_FAMILY_COMPLETED = sync_service.EVIDENCE_FAMILY_COMPLETED
 
 # Read-only checks run after the commit, in the same operation, so a repair that leaves the
 # ledger inconsistent is visible immediately rather than at the next scheduled diagnostic.
@@ -386,11 +407,16 @@ def _check(results, name, *, passed, expected=None, observed=None) -> None:
     results[name] = {'passed': bool(passed), 'expected': expected, 'observed': observed}
 
 
-def evaluate_preconditions(plan, contract=None, *, migration_head=None) -> dict:
+def _evaluate_preconditions(plan, contract=None, *, migration_head=None) -> dict:
     """Every pre-write precondition, evaluated against the freshly regenerated plan.
 
     Returns a mapping of precondition name to ``{passed, expected, observed}``. The caller
     refuses to open a write transaction unless every entry passed. There is no override.
+
+    PRIVATE. It takes a contract because the entrypoint hands it the one it loaded from the
+    immutable constants, and for no other reason: a publicly callable evaluator accepting an
+    alternate contract would be a second, quieter approval surface even though it writes
+    nothing.
     """
     contract = contract or APPROVED_EXECUTION_CONTRACT
     results: Dict[str, dict] = {}
@@ -914,11 +940,14 @@ def _apply_updates(session, update_actions, *, applied_at, operation_id) -> dict
 
         before = {field: getattr(log, field, None) for field in sorted(current)}
         untouched_before = _row_snapshot(log, exclude=set(action.get('changed_fields') or ()))
+        # Captured BEFORE the mutation so the increment can be proven as an exact delta
+        # rather than as "the stored value is at least one".
+        prior_correction_count = int(log.stat_correction_count or 0)
         for field in sorted(action.get('changed_fields') or ()):
             setattr(log, field, proposed[field])
 
         # Governed correction metadata: one increment per corrected ROW, never per field.
-        log.stat_correction_count = (log.stat_correction_count or 0) + 1
+        log.stat_correction_count = prior_correction_count + 1
         log.last_stat_correction_at = applied_at
         log.last_stat_correction_source = CORRECTION_SOURCE
         log.last_stat_correction_sync_run_id = operation_id
@@ -928,14 +957,53 @@ def _apply_updates(session, update_actions, *, applied_at, operation_id) -> dict
         # Dependent evidence is invalidated through the EXISTING governed contract, so the
         # repair cannot become a second, divergent definition of what a correction
         # invalidates. No replacement evidence is fabricated here.
-        marked = sync_service._notify_workload_evidence_game_log_correction(
-            log, sync_run_id=operation_id)
-        invalidation.append({
+        #
+        # STRICT, unlike ordinary ingestion: a family that raised, was absent, returned a
+        # malformed result, or could not be flushed aborts the repair instead of logging a
+        # warning. A one-time atomic repair has no next run to fix it, so committing
+        # corrected rows beside stale workload, appearance-context, or inherited-traffic
+        # evidence would leave a defect nothing would ever notice.
+        try:
+            marked = sync_service._notify_workload_evidence_game_log_correction(
+                log, sync_run_id=operation_id, strict=EVIDENCE_INVALIDATION_STRICT)
+        except sync_service.WorkloadEvidenceInvalidationError as failure:
+            raise _Abort(CONTRADICTION_DEPENDENT_EVIDENCE, result=RESULT_FAIL,
+                         detail={'local_game_log_id': log_id,
+                                 'failed_families': list(failure.failed_families),
+                                 'families': failure.families}) from failure
+
+        families = (marked or {}).get('families') or {}
+        invalidation_record = {
             'local_game_log_id': log_id,
             'marked_count': int((marked or {}).get('marked_count') or 0),
             'evidence_id_count': len((marked or {}).get('evidence_ids') or ()),
-        })
+            'families': {
+                name: {'status': item.get('status'),
+                       'marked_count': item.get('marked_count'),
+                       'evidence_id_count': len(item.get('evidence_ids') or ())}
+                for name, item in sorted(families.items())
+            },
+            'all_required_families_completed': (marked or {}).get(
+                'all_required_families_completed'),
+            'failed_families': list((marked or {}).get('failed_families') or ()),
+            'result_game_log_id': (marked or {}).get('game_log_id'),
+            'result_sync_run_id': (marked or {}).get('sync_run_id'),
+        }
+        # Provenance, not just success: a result that completed for a DIFFERENT row, or
+        # without the governed operation id, does not invalidate THIS row's evidence.
+        if (sorted(families) != sorted(REQUIRED_EVIDENCE_FAMILIES)
+                or any(item.get('status') != EVIDENCE_FAMILY_COMPLETED
+                       for item in families.values())
+                or invalidation_record['failed_families']
+                or invalidation_record['all_required_families_completed'] is not True
+                or invalidation_record['result_game_log_id'] != log_id
+                or invalidation_record['result_sync_run_id'] != operation_id):
+            raise _Abort(CONTRADICTION_DEPENDENT_EVIDENCE, result=RESULT_FAIL,
+                         detail={'local_game_log_id': log_id,
+                                 'invalidation': invalidation_record})
+        invalidation.append(invalidation_record)
 
+        resulting_correction_count = int(log.stat_correction_count)
         records.append({
             'action_id': action['action_id'],
             'local_game_log_id': log_id,
@@ -944,7 +1012,10 @@ def _apply_updates(session, update_actions, *, applied_at, operation_id) -> dict
             'changed_fields': sorted(action.get('changed_fields') or ()),
             'before': before,
             'after': {field: getattr(log, field, None) for field in sorted(before)},
-            'stat_correction_count': int(log.stat_correction_count),
+            'prior_stat_correction_count': prior_correction_count,
+            'resulting_stat_correction_count': resulting_correction_count,
+            'correction_count_delta': resulting_correction_count - prior_correction_count,
+            'stat_correction_count': resulting_correction_count,
             'untouched_fields_unchanged': (
                 _row_snapshot(log, exclude=set(action.get('changed_fields') or ()))
                 == untouched_before),
@@ -1075,12 +1146,13 @@ def _amendment_verification(session, before, contract) -> dict:
 
 # ── In-transaction verification ───────────────────────────────────────────────
 def _verify_before_commit(session, *, contract, identity_result, insert_result,
-                          update_result, watch) -> dict:
+                          update_result, watch, operation_id) -> dict:
     """Read every written row back and prove it is what the reviewed manifest described."""
     counts = contract['action_counts']
     identity_records = identity_result['records']
     insert_records = insert_result['records']
     update_records = update_result['records']
+    invalidation_records = update_result['invalidation']
     created_ids = identity_result['created_local_pitcher_ids']
 
     checks: Dict[str, bool] = {
@@ -1105,8 +1177,34 @@ def _verify_before_commit(session, *, contract, identity_result, insert_result,
             not (set(watch.mutated_pitcher_fields) & FORBIDDEN_IDENTITY_FIELDS),
         'every_updated_row_left_untouched_fields_unchanged':
             all(r['untouched_fields_unchanged'] for r in update_records),
-        'every_updated_row_incremented_its_correction_count_once':
-            all(r['stat_correction_count'] >= 1 for r in update_records),
+        # An EXACT delta, not a floor. ``>= 1`` is satisfied by a row that was already
+        # corrected once and by a row this repair incremented twice, so it proves neither
+        # that the increment happened nor that it happened once.
+        'every_updated_row_incremented_its_correction_count_by_exactly_one':
+            all(r['correction_count_delta'] == 1
+                and r['resulting_stat_correction_count']
+                == r['prior_stat_correction_count'] + 1
+                for r in update_records),
+        'every_updated_row_recorded_its_prior_correction_count':
+            all(isinstance(r.get('prior_stat_correction_count'), int)
+                for r in update_records),
+        # Every required family completed, for the right row, under the governed operation
+        # id — for every corrected row, with no row silently skipped.
+        'every_updated_row_completed_all_dependent_evidence_families':
+            len(invalidation_records) == len(update_records)
+            and all(
+                sorted(item.get('families') or {}) == sorted(REQUIRED_EVIDENCE_FAMILIES)
+                and all(family.get('status') == EVIDENCE_FAMILY_COMPLETED
+                        for family in (item.get('families') or {}).values())
+                and item.get('all_required_families_completed') is True
+                and not (item.get('failed_families') or ())
+                for item in invalidation_records),
+        'every_dependent_evidence_result_belongs_to_its_own_row':
+            all(item.get('result_game_log_id') == item.get('local_game_log_id')
+                for item in invalidation_records),
+        'every_dependent_evidence_result_carries_the_governed_operation_id':
+            all(item.get('result_sync_run_id') == operation_id
+                for item in invalidation_records),
     }
 
     # Created identities: read back from the database, not from the objects we built.
@@ -1160,7 +1258,11 @@ def _verify_before_commit(session, *, contract, identity_result, insert_result,
                 checks['every_updated_field_matches_proposed_values'] = False
         if row.last_stat_correction_source != CORRECTION_SOURCE:
             checks['every_updated_row_carries_the_governed_correction_source'] = False
+        # The STORED value, read back from the database, must be exactly prior + 1.
+        if int(row.stat_correction_count or 0) != record['prior_stat_correction_count'] + 1:
+            checks['every_stored_correction_count_is_exactly_one_greater'] = False
     checks.setdefault('every_updated_row_carries_the_governed_correction_source', True)
+    checks.setdefault('every_stored_correction_count_is_exactly_one_greater', True)
 
     failed = sorted(name for name, value in checks.items() if not value)
     if failed:
@@ -1296,20 +1398,36 @@ def apply_reviewed_repair(
     apply_git_sha: Optional[str] = None,
     client=mlb_client,
     session=None,
-    contract: Optional[dict] = None,
-    approved_fingerprint: Optional[str] = None,
-    run_post_commit: bool = True,
 ) -> dict:
-    """Regenerate, gate on the exact approved fingerprint, then apply once, atomically."""
+    """Regenerate, gate on the exact approved fingerprint, then apply once, atomically.
+
+    EVERY governed value is read from the module's immutable production constants. The
+    signature carries no contract, no fingerprint, no season, date, scope, action count,
+    amendment, migration expectation, verification-skip flag, force, or override — only
+    wiring: two timestamps for the artifact, the official-evidence client, and the session.
+
+    This matters more than it looks. An earlier version accepted ``contract`` and
+    ``approved_fingerprint`` for test convenience. Neither was named force or override, and
+    both were exactly that: a caller could pass a freshly generated fingerprint together with
+    a contract whose counts, population, partition, amendment, and migration expectations all
+    matched it, and every precondition would pass against values nobody reviewed. An approval
+    that a caller can supply is not an approval. Tests monkeypatch the module constants
+    instead, which cannot be reached from a production call site.
+    """
     session = session or db.session
-    contract = dict(contract or APPROVED_EXECUTION_CONTRACT)
-    approved_fingerprint = approved_fingerprint or contract['manifest_fingerprint']
-    contract['manifest_fingerprint'] = approved_fingerprint
+    contract = dict(APPROVED_EXECUTION_CONTRACT)
+    approved_fingerprint = APPROVED_OFFICIAL_PITCHING_LINE_REPAIR_MANIFEST_FINGERPRINT_2026
     operation_id = _governed_operation_id(approved_fingerprint)
     started_at = utc_now_naive()
 
     payload = _base_payload(contract, approved_fingerprint, generated_at, apply_git_sha,
                             operation_id, started_at)
+
+    # The contract restates the fingerprint the constant already pins. They must agree, or
+    # the two halves of the approval have drifted apart and neither can be trusted.
+    if contract.get('manifest_fingerprint') != approved_fingerprint:
+        return _finalize_without_writes(
+            payload, CONTRADICTION_APPROVAL_CONTRACT_DRIFT, RESULT_FAIL)
 
     season = int(contract['season'])
     as_of_date = date.fromisoformat(contract['as_of_date'])
@@ -1326,7 +1444,7 @@ def apply_reviewed_repair(
     payload['migration_head'] = plan.get('migration_head')
     payload['artifact_input_checksum'] = _sha256_of(plan.get('repair_manifest'))
 
-    preconditions = evaluate_preconditions(
+    preconditions = _evaluate_preconditions(
         plan, contract, migration_head=plan.get('migration_head'))
     payload['precondition_results'] = preconditions
     failed = _failed_preconditions(preconditions)
@@ -1413,7 +1531,8 @@ def apply_reviewed_repair(
         session.flush()
         verification = _verify_before_commit(
             session, contract=contract, identity_result=identity_result,
-            insert_result=insert_result, update_result=update_result, watch=watch)
+            insert_result=insert_result, update_result=update_result, watch=watch,
+            operation_id=operation_id)
         mismatched = _verify_inserted_values(
             session, insert_actions, insert_result['records'])
         verification['checks']['every_inserted_field_matches_proposed_values'] = (
@@ -1498,28 +1617,64 @@ def apply_reviewed_repair(
     finally:
         watch.detach()
 
-    # ── 7. Post-commit verification. No rollback, no retry. ──────────────────
-    if run_post_commit:
+    # ── 7. Post-commit verification. Always. No rollback, no retry. ──────────
+    # There is no skip flag. A boolean that let the caller return pass without running these
+    # would make "applied and verified" a claim the run never checked.
+    post = None
+    try:
         post = run_post_commit_verification(
             season=season, as_of_date=as_of_date, generated_at=generated_at,
             client=client, session=session)
-        payload['post_commit_verification'] = post
-        payload['post_commit_diagnostic_results'] = post['checks'][POST_COMMIT_CHECKS[0]]
-        payload['post_commit_aggregation_results'] = {
-            name: post['checks'][name] for name in POST_COMMIT_CHECKS[1:]
-        }
-        if not post['passed']:
-            payload['result'] = RESULT_FAIL
-            payload['exit_code'] = EXIT_BY_RESULT[RESULT_FAIL]
-            payload['decision_reasons'] = ['post_commit_verification_failed']
-            payload['unresolved_issues'] = list(post['failed_checks'])
-            payload['failed_reconciliations'] = list(post['failed_checks'])
-            return payload
+    except Exception as exc:  # noqa: BLE001 — a check that could not run has not passed
+        payload['error_type'] = type(exc).__name__
+
+    reconciliations = _post_commit_reconciliations(post)
+    payload['post_commit_verification'] = post
+    payload['post_commit_reconciliations'] = reconciliations
+    checks = (post or {}).get('checks') or {}
+    payload['post_commit_diagnostic_results'] = checks.get(POST_COMMIT_CHECKS[0])
+    payload['post_commit_aggregation_results'] = {
+        name: checks.get(name) for name in POST_COMMIT_CHECKS[1:]
+    }
+
+    failed_reconciliations = sorted(
+        name for name, value in reconciliations.items() if not value)
+    if failed_reconciliations:
+        payload['result'] = RESULT_FAIL
+        payload['exit_code'] = EXIT_BY_RESULT[RESULT_FAIL]
+        payload['decision_reasons'] = ['post_commit_verification_failed']
+        payload['failed_reconciliations'] = failed_reconciliations
+        payload['unresolved_issues'] = sorted(
+            set(failed_reconciliations) | set((post or {}).get('failed_checks') or ())
+            | {name for name in POST_COMMIT_CHECKS if name not in checks})
+        return payload
 
     payload['result'] = RESULT_PASS
     payload['exit_code'] = EXIT_BY_RESULT[RESULT_PASS]
     payload['decision_reasons'] = ['approved_manifest_applied_and_verified']
     return payload
+
+
+def _post_commit_reconciliations(post) -> dict:
+    """Whether post-commit verification ran, covered every governed check, and passed.
+
+    Kept as four separate named reconciliations rather than one boolean so an artifact
+    distinguishes "did not run" from "ran but skipped a check" from "ran everything and one
+    failed". Every one of them must hold for the run to be pass.
+    """
+    checks = (post or {}).get('checks') or {}
+    present = [name for name in POST_COMMIT_CHECKS if name in checks]
+    return {
+        'post_commit_verification_was_executed': isinstance(post, dict) and bool(checks),
+        'every_governed_post_commit_check_is_present':
+            len(present) == len(POST_COMMIT_CHECKS),
+        'every_governed_post_commit_check_passed': bool(checks) and all(
+            (checks.get(name) or {}).get('passed') is True for name in POST_COMMIT_CHECKS),
+        'no_post_commit_check_was_skipped':
+            not ((post or {}).get('failed_checks') or ())
+            and len(present) == len(POST_COMMIT_CHECKS)
+            and (post or {}).get('passed') is True,
+    }
 
 
 def _base_payload(contract, approved_fingerprint, generated_at, apply_git_sha,
@@ -1574,6 +1729,8 @@ def _base_payload(contract, approved_fingerprint, generated_at, apply_git_sha,
         'rollback_performed': False,
         'database_writes_performed': False,
         'post_commit_verification': None,
+        'post_commit_reconciliations': {
+            name: False for name in POST_COMMIT_RECONCILIATIONS},
         'post_commit_diagnostic_results': None,
         'post_commit_aggregation_results': None,
         'failed_reconciliations': [],

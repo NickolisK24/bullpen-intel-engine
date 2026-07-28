@@ -29,6 +29,7 @@ from models.pitcher import Pitcher
 from services import official_pitching_line_completeness_2026 as completeness
 from services import official_pitching_line_repair_apply_2026 as apply_service
 from services import official_pitching_line_repair_plan_2026 as planner
+from services import sync as sync_service
 from tests.db_config import configure_test_database, create_test_schema, drop_test_schema
 from utils.db import db
 
@@ -326,11 +327,51 @@ def approved(monkeypatch, app):
     return _fixture_contract(plan)
 
 
-def _apply(contract, *, client=None, run_post_commit=False, **kwargs):
-    return apply_service.apply_reviewed_repair(
-        contract=contract, client=client or _FakeMlbClient(),
-        session=db.session, run_post_commit=run_post_commit,
-        generated_at='2026-07-28T12:00:00Z', **kwargs)
+_USE_DEFAULT_POST_COMMIT = object()
+
+
+def _passing_post_commit(**kwargs):  # noqa: ARG001 — deterministic fixture, ignores inputs
+    """A deterministic post-commit result in which all three governed checks pass.
+
+    The production entrypoint always runs post-commit verification and there is no skip
+    flag, so a fixture that only needs the mutation path substitutes this rather than
+    standing up 30 real teams of aggregation evidence.
+    """
+    return {
+        'checks': {name: {'passed': True, 'result': 'pass', 'exit_code': 0, 'checks': {}}
+                   for name in apply_service.POST_COMMIT_CHECKS},
+        'passed': True,
+        'failed_checks': [],
+    }
+
+
+def _apply(contract, *, client=None, post_commit=_USE_DEFAULT_POST_COMMIT):
+    """Run the immutable production entrypoint with fixture-scale governed constants.
+
+    A PRIVATE TEST HELPER. The production function accepts no contract and no fingerprint —
+    an approval a caller can supply is not an approval — so a fixture cannot inject one. It
+    patches the module constants for the duration of the call instead, which no production
+    call site can reach.
+
+    ``post_commit`` is a test seam for the verification FUNCTION, not a skip flag: the
+    default installs a deterministic passing fixture, an explicit callable installs that,
+    and ``None`` leaves whatever the test has already monkeypatched in place. Post-commit
+    verification runs in every one of these cases.
+    """
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(apply_service, 'APPROVED_EXECUTION_CONTRACT', dict(contract))
+        patch.setattr(
+            apply_service,
+            'APPROVED_OFFICIAL_PITCHING_LINE_REPAIR_MANIFEST_FINGERPRINT_2026',
+            contract['manifest_fingerprint'])
+        if post_commit is _USE_DEFAULT_POST_COMMIT:
+            patch.setattr(apply_service, 'run_post_commit_verification',
+                          _passing_post_commit)
+        elif post_commit is not None:
+            patch.setattr(apply_service, 'run_post_commit_verification', post_commit)
+        return apply_service.apply_reviewed_repair(
+            client=client or _FakeMlbClient(), session=db.session,
+            generated_at='2026-07-28T12:00:00Z')
 
 
 def _counts():
@@ -624,11 +665,10 @@ def test_every_governed_precondition_is_evaluated(approved):
 def test_the_service_offers_no_override_for_a_precondition_mismatch():
     import inspect
     signature = inspect.signature(apply_service.apply_reviewed_repair)
-    # Every parameter is a wiring seam (session, client, timestamps) or the governed
-    # contract itself. None of them can wave a failed precondition through.
+    # Wiring only: two artifact timestamps, the official-evidence client, the session.
+    # Nothing governed, and nothing that can wave a failed precondition through.
     assert set(signature.parameters) == {
-        'generated_at', 'apply_git_sha', 'client', 'session', 'contract',
-        'approved_fingerprint', 'run_post_commit'}
+        'generated_at', 'apply_git_sha', 'client', 'session'}
     text = SERVICE_PATH.read_text(encoding='utf-8')
     for banned in ('force=', 'force:', 'override=', 'override:', 'skip_precondition',
                    'ignore_mismatch', 'allow_mismatch', 'if force', 'if override'):
@@ -1163,20 +1203,21 @@ def test_correction_metadata_is_populated_on_every_updated_row(approved):
 
 def test_workload_evidence_invalidation_is_invoked_through_the_existing_contract(
         approved, monkeypatch):
-    from services import sync as sync_service
     calls = []
     real = sync_service._notify_workload_evidence_game_log_correction
 
-    def _spy(game_log, *, sync_run_id=None):
-        calls.append((game_log.id, sync_run_id))
-        return real(game_log, sync_run_id=sync_run_id)
+    def _spy(game_log, *, sync_run_id=None, strict=False):
+        calls.append((game_log.id, sync_run_id, strict))
+        return real(game_log, sync_run_id=sync_run_id, strict=strict)
 
     monkeypatch.setattr(sync_service, '_notify_workload_evidence_game_log_correction', _spy)
     payload = _apply(approved)
     assert payload['result'] == apply_service.RESULT_PASS
     updated_ids = sorted(r['local_game_log_id'] for r in payload['update_results'])
-    assert sorted(log_id for log_id, _run in calls) == updated_ids
-    assert {run for _log_id, run in calls} == {payload['governed_operation_id']}
+    assert sorted(log_id for log_id, _run, _strict in calls) == updated_ids
+    assert {run for _log_id, run, _strict in calls} == {payload['governed_operation_id']}
+    # The repair always invalidates strictly; ordinary ingestion does not.
+    assert {strict for _log_id, _run, strict in calls} == {True}
     assert len(payload['dependent_evidence_invalidation_results']) == len(updated_ids)
     # The repair never fabricates replacement evidence; it only requests invalidation.
     text = SERVICE_PATH.read_text(encoding='utf-8')
@@ -1485,7 +1526,12 @@ def test_every_in_transaction_verification_is_evaluated(approved):
         'every_inserted_field_matches_proposed_values',
         'every_updated_field_matches_proposed_values',
         'every_updated_row_left_untouched_fields_unchanged',
-        'every_updated_row_incremented_its_correction_count_once',
+        'every_updated_row_incremented_its_correction_count_by_exactly_one',
+        'every_updated_row_recorded_its_prior_correction_count',
+        'every_stored_correction_count_is_exactly_one_greater',
+        'every_updated_row_completed_all_dependent_evidence_families',
+        'every_dependent_evidence_result_belongs_to_its_own_row',
+        'every_dependent_evidence_result_carries_the_governed_operation_id',
         'every_updated_row_carries_the_governed_correction_source',
         'no_external_mlb_id_is_stored_as_a_local_pitcher_id',
         'no_duplicate_stable_game_log_key_exists', 'no_delete_occurred',
@@ -1512,19 +1558,28 @@ def test_a_ledger_count_disagreeing_with_the_applied_counts_rolls_back(approved,
 
 
 # ═══════════════ 14. Post-commit verification ═══════════════════════════════
-def test_a_post_commit_diagnostic_failure_fails_the_run_and_keeps_gates_blocked(
-        approved, monkeypatch):
-    monkeypatch.setattr(apply_service, 'run_post_commit_verification', lambda **kwargs: {
-        'checks': {name: {'passed': name != apply_service.POST_COMMIT_CHECKS[0],
-                          'result': 'fail', 'checks': {}}
-                   for name in apply_service.POST_COMMIT_CHECKS},
-        'passed': False,
-        'failed_checks': [apply_service.POST_COMMIT_CHECKS[0]],
-    })
-    payload = _apply(approved, run_post_commit=True)
+def test_a_post_commit_diagnostic_failure_fails_the_run_and_keeps_gates_blocked(approved):
+    def _one_failing(**kwargs):  # noqa: ARG001
+        return {
+            'checks': {name: {'passed': name != apply_service.POST_COMMIT_CHECKS[0],
+                              'result': 'fail', 'checks': {}}
+                       for name in apply_service.POST_COMMIT_CHECKS},
+            'passed': False,
+            'failed_checks': [apply_service.POST_COMMIT_CHECKS[0]],
+        }
+
+    payload = _apply(approved, post_commit=_one_failing)
     assert payload['result'] == apply_service.RESULT_FAIL
     assert payload['decision_reasons'] == ['post_commit_verification_failed']
-    assert payload['unresolved_issues'] == [apply_service.POST_COMMIT_CHECKS[0]]
+    # The failing check AND the reconciliations it broke are both reported: a reader can
+    # see the specific diagnostic that failed and that the run therefore did not verify.
+    assert apply_service.POST_COMMIT_CHECKS[0] in payload['unresolved_issues']
+    assert payload['failed_reconciliations'] == [
+        'every_governed_post_commit_check_passed', 'no_post_commit_check_was_skipped']
+    assert payload['post_commit_reconciliations'][
+        'post_commit_verification_was_executed'] is True
+    assert payload['post_commit_reconciliations'][
+        'every_governed_post_commit_check_is_present'] is True
     # The commit stands: there is no automatic rollback after commit, and no retry.
     assert payload['transaction_committed'] is True
     assert payload['database_writes_performed'] is True
@@ -1532,14 +1587,8 @@ def test_a_post_commit_diagnostic_failure_fails_the_run_and_keeps_gates_blocked(
         assert payload[gate] == 'blocked'
 
 
-def test_a_passing_post_commit_verification_still_leaves_every_gate_blocked(
-        approved, monkeypatch):
-    monkeypatch.setattr(apply_service, 'run_post_commit_verification', lambda **kwargs: {
-        'checks': {name: {'passed': True, 'result': 'pass', 'checks': {}}
-                   for name in apply_service.POST_COMMIT_CHECKS},
-        'passed': True, 'failed_checks': [],
-    })
-    payload = _apply(approved, run_post_commit=True)
+def test_a_passing_post_commit_verification_still_leaves_every_gate_blocked(approved):
+    payload = _apply(approved)
     assert payload['result'] == apply_service.RESULT_PASS
     for gate in apply_service.DOWNSTREAM_GATES:
         assert payload[gate] == 'blocked'
@@ -1555,7 +1604,7 @@ def test_there_is_no_automatic_rollback_after_commit_and_no_retry():
     # the single ``session.commit()`` contains none, so a failed post-commit check reports
     # and stops rather than silently undoing a committed repair.
     body = __import__('inspect').getsource(apply_service.apply_reviewed_repair)
-    after_commit = body.split('if run_post_commit:', 1)[1]
+    after_commit = body.split('post = run_post_commit_verification(', 1)[1]
     assert 'rollback' not in after_commit
     assert 'session.commit()' not in after_commit
     # No loop, no re-invocation, no backoff anywhere in the apply path.
@@ -1902,3 +1951,418 @@ def test_the_decision_record_documents_the_execution_contract():
         'c7b3e5a91d48',
     ):
         assert required in text, required
+
+
+# ═══════════════ 19. The production entrypoint is immutable ═════════════════
+def test_the_production_entrypoint_accepts_no_governed_parameter():
+    import inspect
+    parameters = inspect.signature(apply_service.apply_reviewed_repair).parameters
+    assert set(parameters) == {'generated_at', 'apply_git_sha', 'client', 'session'}
+    # Every one is keyword-only wiring, and none is governed.
+    assert all(p.kind is inspect.Parameter.KEYWORD_ONLY for p in parameters.values())
+    for banned in ('contract', 'approved_fingerprint', 'fingerprint',
+                   'manifest_fingerprint', 'action_counts', 'total_action_count',
+                   'season', 'as_of_date', 'date', 'team_id', 'game_pk', 'plan_scope',
+                   'scope', 'amendment', 'amendment_id', 'migration_head',
+                   'run_post_commit', 'skip_post_commit', 'skip_verification',
+                   'force', 'override', 'allow'):
+        assert banned not in parameters, banned
+
+
+def test_the_entrypoint_reads_the_governed_values_from_the_module_constants():
+    import inspect
+    body = inspect.getsource(apply_service.apply_reviewed_repair)
+    assert 'contract = dict(APPROVED_EXECUTION_CONTRACT)' in body
+    assert ('approved_fingerprint = '
+            'APPROVED_OFFICIAL_PITCHING_LINE_REPAIR_MANIFEST_FINGERPRINT_2026') in body
+    # Neither name is ever taken from a parameter or a default.
+    assert 'contract or ' not in body
+    assert 'approved_fingerprint or ' not in body
+
+
+def test_no_other_public_function_accepts_an_alternate_approval():
+    import inspect
+    for name, member in vars(apply_service).items():
+        if name.startswith('_') or not inspect.isfunction(member):
+            continue
+        if getattr(member, '__module__', None) != apply_service.__name__:
+            continue
+        parameters = set(inspect.signature(member).parameters)
+        for banned in ('contract', 'approved_fingerprint', 'manifest_fingerprint',
+                       'action_counts', 'plan_scope', 'amendment_id'):
+            assert banned not in parameters, f'{name} accepts {banned}'
+
+
+def test_a_caller_cannot_execute_a_different_fingerprint_by_passing_arguments(approved):
+    import inspect
+    parameters = inspect.signature(apply_service.apply_reviewed_repair).parameters
+    # There is no argument to pass. The only reachable lever is the module constant, which
+    # a production call site cannot touch.
+    assert 'approved_fingerprint' not in parameters
+    with pytest.raises(TypeError):
+        apply_service.apply_reviewed_repair(
+            approved_fingerprint='f' * 64, session=db.session, client=_FakeMlbClient())
+    with pytest.raises(TypeError):
+        apply_service.apply_reviewed_repair(
+            contract=dict(approved), session=db.session, client=_FakeMlbClient())
+    assert _counts()['ledger'] == 0
+
+
+def test_a_caller_cannot_execute_a_different_season_scope_count_or_amendment(approved):
+    for governed in ({'season': 2025}, {'as_of_date': '2026-08-01'},
+                     {'plan_scope': planner.PLAN_SCOPE_SUBSET}, {'team_id': 109},
+                     {'game_pk': 825058}, {'total_action_count': 999},
+                     {'amendment_id': 'something_else'}):
+        with pytest.raises(TypeError):
+            apply_service.apply_reviewed_repair(
+                session=db.session, client=_FakeMlbClient(), **governed)
+    assert _counts()['ledger'] == 0
+
+
+def test_a_contract_whose_fingerprint_disagrees_with_the_constant_aborts(approved):
+    # The two halves of the approval must agree. A contract restating a different
+    # fingerprint means one of them was edited alone.
+    drifted = dict(approved, manifest_fingerprint='a' * 64)
+    before = _counts()
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(apply_service, 'APPROVED_EXECUTION_CONTRACT', drifted)
+        patch.setattr(
+            apply_service,
+            'APPROVED_OFFICIAL_PITCHING_LINE_REPAIR_MANIFEST_FINGERPRINT_2026',
+            approved['manifest_fingerprint'])
+        payload = apply_service.apply_reviewed_repair(
+            session=db.session, client=_FakeMlbClient())
+    assert payload['result'] == apply_service.RESULT_FAIL
+    assert payload['decision_reasons'] == [
+        apply_service.CONTRADICTION_APPROVAL_CONTRACT_DRIFT]
+    assert payload['database_writes_performed'] is False
+    assert _counts() == before
+
+
+def test_the_cli_calls_the_immutable_production_entrypoint():
+    text = CLI_PATH.read_text(encoding='utf-8')
+    assert 'apply_service.apply_reviewed_repair(' in text
+    call = text.split('apply_service.apply_reviewed_repair(', 1)[1].split(')', 1)[0]
+    # Only wiring crosses the boundary.
+    assert 'generated_at=' in call
+    assert 'apply_git_sha=' in call
+    for banned in ('contract=', 'approved_fingerprint=', 'fingerprint=',
+                   'run_post_commit=', 'season=', 'as_of_date=', 'team_id=', 'game_pk='):
+        assert banned not in call, banned
+
+
+# ═══════════════ 20. Post-commit verification cannot be skipped ═════════════
+def test_post_commit_verification_always_runs_after_a_successful_commit(approved):
+    calls = []
+
+    def _observed(**kwargs):
+        calls.append(kwargs)
+        return _passing_post_commit()
+
+    payload = _apply(approved, post_commit=_observed)
+    assert payload['result'] == apply_service.RESULT_PASS
+    assert len(calls) == 1
+    assert calls[0]['season'] == approved['season']
+    assert payload['post_commit_reconciliations'] == {
+        name: True for name in apply_service.POST_COMMIT_RECONCILIATIONS}
+
+
+def test_pass_is_impossible_when_post_commit_verification_is_absent(approved):
+    payload = _apply(approved, post_commit=lambda **kwargs: None)
+    assert payload['result'] == apply_service.RESULT_FAIL
+    assert payload['decision_reasons'] == ['post_commit_verification_failed']
+    assert payload['post_commit_reconciliations'][
+        'post_commit_verification_was_executed'] is False
+    # The commit still stands — there is no automatic rollback after commit.
+    assert payload['transaction_committed'] is True
+    for gate in apply_service.DOWNSTREAM_GATES:
+        assert payload[gate] == 'blocked'
+
+
+def test_pass_is_impossible_when_post_commit_verification_raises(approved):
+    def _explodes(**kwargs):  # noqa: ARG001
+        raise RuntimeError('diagnostic unavailable')
+
+    payload = _apply(approved, post_commit=_explodes)
+    assert payload['result'] == apply_service.RESULT_FAIL
+    assert payload['error_type'] == 'RuntimeError'
+    assert payload['post_commit_reconciliations'][
+        'post_commit_verification_was_executed'] is False
+
+
+def test_pass_is_impossible_when_one_governed_post_commit_check_is_missing(approved):
+    def _incomplete(**kwargs):  # noqa: ARG001
+        names = apply_service.POST_COMMIT_CHECKS[:-1]
+        return {'checks': {n: {'passed': True, 'result': 'pass', 'checks': {}}
+                           for n in names},
+                'passed': True, 'failed_checks': []}
+
+    payload = _apply(approved, post_commit=_incomplete)
+    assert payload['result'] == apply_service.RESULT_FAIL
+    reconciliations = payload['post_commit_reconciliations']
+    assert reconciliations['post_commit_verification_was_executed'] is True
+    assert reconciliations['every_governed_post_commit_check_is_present'] is False
+    assert reconciliations['no_post_commit_check_was_skipped'] is False
+    assert apply_service.POST_COMMIT_CHECKS[-1] in payload['unresolved_issues']
+
+
+@pytest.mark.parametrize('failing_index', [0, 1, 2])
+def test_pass_is_impossible_when_one_governed_post_commit_check_fails(
+        approved, failing_index):
+    failing = apply_service.POST_COMMIT_CHECKS[failing_index]
+
+    def _one_failing(**kwargs):  # noqa: ARG001
+        return {'checks': {n: {'passed': n != failing, 'result': 'pass', 'checks': {}}
+                           for n in apply_service.POST_COMMIT_CHECKS},
+                'passed': False, 'failed_checks': [failing]}
+
+    payload = _apply(approved, post_commit=_one_failing)
+    assert payload['result'] == apply_service.RESULT_FAIL
+    assert payload['post_commit_reconciliations'][
+        'every_governed_post_commit_check_passed'] is False
+    assert failing in payload['unresolved_issues']
+    for gate in apply_service.DOWNSTREAM_GATES:
+        assert payload[gate] == 'blocked'
+
+
+def test_the_governed_post_commit_reconciliation_names_are_pinned():
+    assert apply_service.POST_COMMIT_RECONCILIATIONS == (
+        'post_commit_verification_was_executed',
+        'every_governed_post_commit_check_is_present',
+        'every_governed_post_commit_check_passed',
+        'no_post_commit_check_was_skipped',
+    )
+
+
+# ═══════════════ 21. Strict dependent-evidence invalidation ═════════════════
+def _marker_names():
+    return (('services.workload_recovery_evidence',
+             'mark_game_log_correction_for_workload_recovery',
+             sync_service.EVIDENCE_FAMILY_WORKLOAD),
+            ('services.appearance_context_evidence',
+             'mark_game_log_correction_for_appearance_context',
+             sync_service.EVIDENCE_FAMILY_APPEARANCE_CONTEXT),
+            ('services.inherited_traffic_evidence',
+             'mark_game_log_correction_for_inherited_traffic',
+             sync_service.EVIDENCE_FAMILY_INHERITED_TRAFFIC))
+
+
+def _break_marker(monkeypatch, module_name, function_name, behaviour):
+    module = __import__(module_name, fromlist=[function_name])
+    monkeypatch.setattr(module, function_name, behaviour)
+
+
+def test_ordinary_ingestion_keeps_best_effort_invalidation(app, monkeypatch):
+    # A daily sync must not stop ingesting official corrections because an evidence table
+    # is momentarily unhappy. The default is unchanged, and its return shape is unchanged.
+    _break_marker(monkeypatch, 'services.workload_recovery_evidence',
+                  'mark_game_log_correction_for_workload_recovery',
+                  lambda *a, **k: (_ for _ in ()).throw(RuntimeError('evidence down')))
+    seed_local()
+    log = db.session.query(GameLog).filter(GameLog.id == BR_LOG_ID).one()
+    result = sync_service._notify_workload_evidence_game_log_correction(log)
+    assert set(result) == {'marked_count', 'evidence_ids'}
+    assert result['marked_count'] == 0
+
+
+def test_strict_invalidation_reports_all_three_governed_families(app):
+    seed_local()
+    log = db.session.query(GameLog).filter(GameLog.id == BR_LOG_ID).one()
+    result = sync_service._notify_workload_evidence_game_log_correction(
+        log, sync_run_id=4242, strict=True)
+    assert sorted(result['families']) == sorted(sync_service.REQUIRED_EVIDENCE_FAMILIES)
+    assert all(item['status'] == 'completed' for item in result['families'].values())
+    assert result['all_required_families_completed'] is True
+    assert result['failed_families'] == []
+    assert result['game_log_id'] == BR_LOG_ID
+    assert result['sync_run_id'] == 4242
+
+
+def test_a_successful_zero_mark_result_is_accepted_not_treated_as_a_failure(app):
+    # A corrected line with no dependent evidence is ordinary. Zero marked rows is a
+    # completed invalidation, not an exception.
+    seed_local()
+    log = db.session.query(GameLog).filter(GameLog.id == BR_LOG_ID).one()
+    result = sync_service._notify_workload_evidence_game_log_correction(
+        log, sync_run_id=1, strict=True)
+    assert result['marked_count'] == 0
+    assert result['all_required_families_completed'] is True
+    for family in result['families'].values():
+        assert family['status'] == 'completed'
+        assert family['marked_count'] == 0
+
+
+@pytest.mark.parametrize('module_name,function_name,family', list(_marker_names()))
+def test_an_invalidation_exception_rolls_back_every_action(
+        approved, monkeypatch, module_name, function_name, family):
+    before = _counts()
+    before_hits = db.session.query(GameLog).filter(
+        GameLog.id == BR_LOG_ID).one().hits_allowed
+    _break_marker(monkeypatch, module_name, function_name,
+                  lambda *a, **k: (_ for _ in ()).throw(RuntimeError('evidence down')))
+
+    payload = _apply(approved)
+
+    assert payload['result'] == apply_service.RESULT_FAIL
+    assert payload['decision_reasons'] == [
+        apply_service.CONTRADICTION_DEPENDENT_EVIDENCE]
+    assert payload['abort_detail']['failed_families'] == [family]
+    assert payload['rollback_performed'] is True
+    assert payload['transaction_committed'] is False
+    assert payload['database_writes_performed'] is False
+    # Nothing partial survives: no ledger row, no identity, no GameLog, no metadata.
+    assert _counts() == before
+    assert db.session.query(Ledger).count() == 0
+    assert db.session.query(Pitcher).filter(Pitcher.mlb_id == P_DEFERRED).count() == 0
+    row = db.session.query(GameLog).filter(GameLog.id == BR_LOG_ID).one()
+    assert row.hits_allowed == before_hits
+    assert row.stat_correction_count == 0
+    assert row.last_stat_correction_source is None
+    assert row.last_stat_correction_at is None
+
+
+@pytest.mark.parametrize('malformed', [
+    'not a dict',
+    {'evidence_ids': []},
+    {'marked_count': 'three', 'evidence_ids': []},
+    {'marked_count': -1, 'evidence_ids': []},
+    {'marked_count': 1, 'evidence_ids': 'nope'},
+    None,
+])
+def test_a_malformed_marker_result_rolls_back_every_action(approved, monkeypatch,
+                                                           malformed):
+    before = _counts()
+    _break_marker(monkeypatch, 'services.appearance_context_evidence',
+                  'mark_game_log_correction_for_appearance_context',
+                  lambda *a, **k: malformed)
+    payload = _apply(approved)
+    assert payload['result'] == apply_service.RESULT_FAIL
+    assert payload['decision_reasons'] == [
+        apply_service.CONTRADICTION_DEPENDENT_EVIDENCE]
+    assert _counts() == before
+    assert db.session.query(Ledger).count() == 0
+
+
+def test_an_absent_required_marker_rolls_back_every_action(approved, monkeypatch):
+    before = _counts()
+    module = __import__('services.inherited_traffic_evidence',
+                        fromlist=['mark_game_log_correction_for_inherited_traffic'])
+    monkeypatch.delattr(module, 'mark_game_log_correction_for_inherited_traffic')
+    payload = _apply(approved)
+    assert payload['result'] == apply_service.RESULT_FAIL
+    assert payload['decision_reasons'] == [
+        apply_service.CONTRADICTION_DEPENDENT_EVIDENCE]
+    assert _counts() == before
+
+
+def test_an_invalidation_result_for_the_wrong_row_rolls_back(approved, monkeypatch):
+    # A family that completed for a DIFFERENT row has not invalidated this row's evidence.
+    real = sync_service._notify_workload_evidence_game_log_correction
+
+    def _misattributed(game_log, *, sync_run_id=None, strict=False):
+        result = real(game_log, sync_run_id=sync_run_id, strict=strict)
+        if isinstance(result, dict) and 'game_log_id' in result:
+            result = dict(result, game_log_id=(result['game_log_id'] or 0) + 1)
+        return result
+
+    monkeypatch.setattr(sync_service, '_notify_workload_evidence_game_log_correction',
+                        _misattributed)
+    before = _counts()
+    payload = _apply(approved)
+    assert payload['result'] == apply_service.RESULT_FAIL
+    assert payload['decision_reasons'] == [
+        apply_service.CONTRADICTION_DEPENDENT_EVIDENCE]
+    assert _counts() == before
+
+
+def test_every_updated_row_records_its_three_completed_families(approved):
+    payload = _apply(approved)
+    assert payload['result'] == apply_service.RESULT_PASS
+    records = payload['dependent_evidence_invalidation_results']
+    assert len(records) == len(payload['update_results'])
+    for record in records:
+        assert sorted(record['families']) == sorted(
+            sync_service.REQUIRED_EVIDENCE_FAMILIES)
+        assert all(item['status'] == 'completed' for item in record['families'].values())
+        assert record['all_required_families_completed'] is True
+        assert record['failed_families'] == []
+        assert record['result_game_log_id'] == record['local_game_log_id']
+        assert record['result_sync_run_id'] == payload['governed_operation_id']
+    checks = payload['verification_results']
+    assert checks['every_updated_row_completed_all_dependent_evidence_families'] is True
+    assert checks['every_dependent_evidence_result_belongs_to_its_own_row'] is True
+    assert checks[
+        'every_dependent_evidence_result_carries_the_governed_operation_id'] is True
+
+
+# ═══════════════ 22. Exact correction-count delta ═══════════════════════════
+def test_every_update_records_an_exact_correction_count_delta_of_one(approved):
+    payload = _apply(approved)
+    assert payload['result'] == apply_service.RESULT_PASS
+    assert payload['update_results']
+    for record in payload['update_results']:
+        assert record['prior_stat_correction_count'] == 0
+        assert record['resulting_stat_correction_count'] == 1
+        assert record['correction_count_delta'] == 1
+        stored = db.session.query(GameLog).filter(
+            GameLog.id == record['local_game_log_id']).one()
+        assert stored.stat_correction_count == (
+            record['prior_stat_correction_count'] + 1)
+    checks = payload['verification_results']
+    assert checks[
+        'every_updated_row_incremented_its_correction_count_by_exactly_one'] is True
+    assert checks['every_stored_correction_count_is_exactly_one_greater'] is True
+    assert checks['every_updated_row_recorded_its_prior_correction_count'] is True
+
+
+def test_a_nonzero_prior_correction_count_still_requires_a_delta_of_exactly_one(approved):
+    row = db.session.query(GameLog).filter(GameLog.id == BR_LOG_ID).one()
+    row.stat_correction_count = 4
+    db.session.add(row)
+    db.session.commit()
+    payload = _apply(approved)
+    assert payload['result'] == apply_service.RESULT_PASS
+    record = [r for r in payload['update_results']
+              if r['local_game_log_id'] == BR_LOG_ID][0]
+    assert record['prior_stat_correction_count'] == 4
+    assert record['resulting_stat_correction_count'] == 5
+    assert record['correction_count_delta'] == 1
+    assert db.session.query(GameLog).filter(
+        GameLog.id == BR_LOG_ID).one().stat_correction_count == 5
+
+
+def test_a_simulated_double_increment_fails_verification_and_rolls_back(approved,
+                                                                       monkeypatch):
+    real = apply_service._apply_updates
+    before = _counts()
+
+    def _double(session, update_actions, **kwargs):
+        result = real(session, update_actions, **kwargs)
+        for record in result['records']:
+            row = session.query(GameLog).filter(
+                GameLog.id == record['local_game_log_id']).one()
+            row.stat_correction_count = row.stat_correction_count + 1
+            session.add(row)
+        session.flush()
+        return result
+
+    monkeypatch.setattr(apply_service, '_apply_updates', _double)
+    payload = _apply(approved)
+    assert payload['result'] == apply_service.RESULT_FAIL
+    assert payload['decision_reasons'] == [apply_service.CONTRADICTION_VERIFICATION]
+    assert 'every_stored_correction_count_is_exactly_one_greater' in payload[
+        'abort_detail']['failed_verifications']
+    assert _counts() == before
+    assert db.session.query(GameLog).filter(
+        GameLog.id == BR_LOG_ID).one().stat_correction_count == 0
+
+
+# ═══════════════ 23. Governed constants are unchanged ═══════════════════════
+def test_the_governed_constants_are_unchanged():
+    assert (apply_service.APPROVED_OFFICIAL_PITCHING_LINE_REPAIR_MANIFEST_FINGERPRINT_2026
+            == '3ee2ea06492e8161bf7b278228d6f778e24048452366e3c2502ae42e0365216b')
+    assert apply_service.CONFIRMATION_PHRASE == 'APPLY-2026-PITCHING-LINE-REPAIR-3EE2EA06'
+    assert apply_service.APPROVED_EXECUTION_CONTRACT['manifest_fingerprint'] == (
+        apply_service.APPROVED_OFFICIAL_PITCHING_LINE_REPAIR_MANIFEST_FINGERPRINT_2026)
+    assert apply_service.APPROVED_EXECUTION_CONTRACT['total_action_count'] == 675
+    assert apply_service.EVIDENCE_INVALIDATION_STRICT is True

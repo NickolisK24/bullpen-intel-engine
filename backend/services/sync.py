@@ -614,45 +614,202 @@ def _record_unsafe_correction_attempt(
     )
 
 
+# ── Dependent-evidence invalidation families ─────────────────────────────────
+# The three evidence families a corrected GameLog invalidates. Named constants rather than
+# inline strings so a caller can require the exact set rather than trusting a count.
+EVIDENCE_FAMILY_WORKLOAD = 'workload'
+EVIDENCE_FAMILY_APPEARANCE_CONTEXT = 'appearance_context'
+EVIDENCE_FAMILY_INHERITED_TRAFFIC = 'inherited_traffic'
+REQUIRED_EVIDENCE_FAMILIES = (
+    EVIDENCE_FAMILY_WORKLOAD,
+    EVIDENCE_FAMILY_APPEARANCE_CONTEXT,
+    EVIDENCE_FAMILY_INHERITED_TRAFFIC,
+)
+
+EVIDENCE_FAMILY_COMPLETED = 'completed'
+EVIDENCE_FAMILY_FAILED = 'failed'
+
+# Typed failure reasons. "Zero rows matched" is NOT among them: a marker that ran correctly
+# and found nothing to invalidate has completed, and conflating that with an exception would
+# fail a repair for the entirely normal case of a corrected line with no dependent evidence.
+EVIDENCE_FAILURE_MARKER_RAISED = 'marker_raised'
+EVIDENCE_FAILURE_MARKER_ABSENT = 'required_marker_absent'
+EVIDENCE_FAILURE_RESULT_MALFORMED = 'marker_result_malformed'
+EVIDENCE_FAILURE_FLUSH_FAILED = 'evidence_flush_failed'
+
+_EVIDENCE_MARKERS = (
+    (
+        EVIDENCE_FAMILY_WORKLOAD,
+        'workload',
+        'services.workload_recovery_evidence',
+        'mark_game_log_correction_for_workload_recovery',
+    ),
+    (
+        EVIDENCE_FAMILY_APPEARANCE_CONTEXT,
+        'appearance',
+        'services.appearance_context_evidence',
+        'mark_game_log_correction_for_appearance_context',
+    ),
+    (
+        EVIDENCE_FAMILY_INHERITED_TRAFFIC,
+        'inherited traffic',
+        'services.inherited_traffic_evidence',
+        'mark_game_log_correction_for_inherited_traffic',
+    ),
+)
+
+
+class WorkloadEvidenceInvalidationError(Exception):
+    """A required dependent-evidence invalidation did not complete under strict mode.
+
+    Carries the per-family evidence gathered so far so a caller can report exactly which
+    family failed and why, without re-deriving it from a log line.
+    """
+
+    def __init__(self, message, *, families=None, failed_families=None, game_log_id=None):
+        super().__init__(message)
+        self.families = families or {}
+        self.failed_families = failed_families or []
+        self.game_log_id = game_log_id
+
+
+def _normalized_marker_result(result):
+    """Validate one marker's return value and normalize it, or raise on a malformed shape.
+
+    A marker that returns something other than a mapping carrying an integer ``marked_count``
+    and an iterable ``evidence_ids`` has not told us whether it did its job. Under strict mode
+    that is a failure, not a zero.
+    """
+    if not isinstance(result, dict):
+        raise ValueError('marker result is not a mapping')
+    if 'marked_count' not in result or 'evidence_ids' not in result:
+        raise ValueError('marker result is missing marked_count or evidence_ids')
+    raw_count = result.get('marked_count')
+    if isinstance(raw_count, bool) or not isinstance(raw_count, int):
+        raise ValueError('marked_count is not an integer')
+    if raw_count < 0:
+        raise ValueError('marked_count is negative')
+    evidence_ids = result.get('evidence_ids')
+    if evidence_ids is None:
+        evidence_ids = []
+    if isinstance(evidence_ids, (str, bytes)) or not isinstance(evidence_ids, (list, tuple)):
+        raise ValueError('evidence_ids is not a sequence')
+    return int(raw_count), list(evidence_ids)
+
+
 def _notify_workload_evidence_game_log_correction(
     game_log,
     *,
     sync_run_id=None,
+    strict=False,
 ):
+    """Mark every dependent-evidence family a corrected GameLog invalidates.
+
+    ``strict=False`` is the DEFAULT and is what ordinary ingestion uses: a marker failure is
+    logged and the sweep continues, because a daily sync must not stop ingesting official
+    corrections because an evidence table is momentarily unhappy. That trade is right for a
+    process that runs again tomorrow.
+
+    ``strict=True`` is for a one-time, atomic, reviewed repair, where it is wrong. There is no
+    tomorrow: if the repair commits corrected rows while their dependent workload,
+    appearance-context, or inherited-traffic evidence silently kept a stale value, nothing
+    will notice and nothing will retry. Under strict mode every required family must complete,
+    the pending evidence writes are flushed inside the caller's transaction, and any failure
+    raises ``WorkloadEvidenceInvalidationError`` so the caller can roll the whole repair back.
+
+    Completing with ``marked_count: 0`` is a SUCCESS in both modes. A corrected line with no
+    dependent evidence is ordinary; only a marker that raised, was absent, returned a
+    malformed result, or could not be flushed is a failure.
+    """
     marked_count = 0
     evidence_ids = []
-    markers = (
-        (
-            'workload',
-            'services.workload_recovery_evidence',
-            'mark_game_log_correction_for_workload_recovery',
-        ),
-        (
-            'appearance',
-            'services.appearance_context_evidence',
-            'mark_game_log_correction_for_appearance_context',
-        ),
-        (
-            'inherited traffic',
-            'services.inherited_traffic_evidence',
-            'mark_game_log_correction_for_inherited_traffic',
-        ),
-    )
-    for label, module_name, function_name in markers:
+    families = {}
+    failed_families = []
+    game_log_id = getattr(game_log, 'id', None)
+
+    for family, label, module_name, function_name in _EVIDENCE_MARKERS:
         try:
             module = __import__(module_name, fromlist=[function_name])
-            marker = getattr(module, function_name)
+            marker = getattr(module, function_name, None)
+            if marker is None or not callable(marker):
+                raise AttributeError(f'{module_name}.{function_name} is not available')
             result = marker(game_log, sync_run_id=sync_run_id)
-            marked_count += int(result.get('marked_count') or 0)
-            evidence_ids.extend(result.get('evidence_ids') or [])
-        except Exception as exc:  # noqa: BLE001 - correction marking must not block ingest
-            logger.warning(
-                'Could not mark %s evidence for game_log correction id=%s: %s',
-                label,
-                getattr(game_log, 'id', None),
-                exc,
-            )
-    return {'marked_count': marked_count, 'evidence_ids': evidence_ids}
+            family_count, family_ids = _normalized_marker_result(result)
+        except Exception as exc:  # noqa: BLE001 - classified below; never silently dropped
+            if isinstance(exc, AttributeError):
+                reason = EVIDENCE_FAILURE_MARKER_ABSENT
+            elif isinstance(exc, ValueError):
+                reason = EVIDENCE_FAILURE_RESULT_MALFORMED
+            else:
+                reason = EVIDENCE_FAILURE_MARKER_RAISED
+            families[family] = {
+                'status': EVIDENCE_FAMILY_FAILED,
+                'reason': reason,
+                'error_type': type(exc).__name__,
+                'marked_count': 0,
+                'evidence_ids': [],
+            }
+            failed_families.append(family)
+            if not strict:
+                logger.warning(
+                    'Could not mark %s evidence for game_log correction id=%s: %s',
+                    label,
+                    game_log_id,
+                    exc,
+                )
+            continue
+        marked_count += family_count
+        evidence_ids.extend(family_ids)
+        families[family] = {
+            'status': EVIDENCE_FAMILY_COMPLETED,
+            'reason': None,
+            'marked_count': family_count,
+            'evidence_ids': list(family_ids),
+        }
+
+    if not strict:
+        # Unchanged return shape for ordinary ingestion: existing callers read exactly these
+        # two keys, and adding to the contract they already depend on is not free.
+        return {'marked_count': marked_count, 'evidence_ids': evidence_ids}
+
+    if failed_families:
+        raise WorkloadEvidenceInvalidationError(
+            'required dependent-evidence invalidation did not complete',
+            families=families, failed_families=sorted(failed_families),
+            game_log_id=game_log_id)
+
+    missing = [family for family in REQUIRED_EVIDENCE_FAMILIES if family not in families]
+    if missing:
+        raise WorkloadEvidenceInvalidationError(
+            'a required dependent-evidence family was not attempted',
+            families=families, failed_families=sorted(missing), game_log_id=game_log_id)
+
+    try:
+        # Flush inside the caller's transaction so a rejected evidence write fails the repair
+        # here rather than surfacing at the caller's commit, where it would be attributed to
+        # something else entirely.
+        db.session.flush()
+    except Exception as exc:  # noqa: BLE001 - the flush is part of the invalidation contract
+        raise WorkloadEvidenceInvalidationError(
+            'dependent-evidence writes could not be flushed',
+            families=dict(
+                families,
+                **{family: dict(families[family], status=EVIDENCE_FAMILY_FAILED,
+                                reason=EVIDENCE_FAILURE_FLUSH_FAILED,
+                                error_type=type(exc).__name__)
+                   for family in families}),
+            failed_families=sorted(families), game_log_id=game_log_id) from exc
+
+    return {
+        'marked_count': marked_count,
+        'evidence_ids': evidence_ids,
+        'families': families,
+        'all_required_families_completed': True,
+        'failed_families': [],
+        'game_log_id': game_log_id,
+        'sync_run_id': sync_run_id,
+        'strict': True,
+    }
 
 
 def _upsert_game_log_from_authoritative_values(

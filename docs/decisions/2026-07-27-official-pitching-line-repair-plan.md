@@ -1106,6 +1106,108 @@ equal to the counts actually applied.
 The delete and pitcher-mutation guarantees are proven from observed session state via a
 `before_flush` listener, not asserted by reading the code.
 
+## 17k-i. Why the production entrypoint accepts no governed argument
+
+An earlier version of `apply_reviewed_repair` accepted `contract`, `approved_fingerprint`,
+and `run_post_commit`. None of them was named force or override, and all three were exactly
+that.
+
+A caller could pass a freshly generated fingerprint together with a contract whose action
+counts, defect population, identity partition, amendment record, and migration expectation
+all matched it. Every precondition would then compare the regenerated plan against values
+nobody had reviewed, and all of them would pass. `run_post_commit=False` was worse in a
+quieter way: the transaction committed and the function returned `result: pass` with
+`decision_reasons: ['approved_manifest_applied_and_verified']` without any of the three
+governed post-commit checks having run. The word "verified" was doing work the code had
+not done.
+
+The production signature is now wiring only:
+
+```python
+apply_reviewed_repair(*, generated_at=None, apply_git_sha=None, client=mlb_client,
+                      session=None) -> dict
+```
+
+Every governed value is loaded inside the function from `APPROVED_EXECUTION_CONTRACT` and
+`APPROVED_OFFICIAL_PITCHING_LINE_REPAIR_MANIFEST_FINGERPRINT_2026`. The two are cross-checked
+against each other before anything else happens — a contract restating a different fingerprint
+means one half of the approval was edited alone, and that aborts as
+`approved_contract_fingerprint_disagrees_with_constant`.
+
+`_evaluate_preconditions` was renamed private for the same reason. It writes nothing, but a
+publicly callable evaluator that accepts an alternate contract is a second, quieter approval
+surface, and there is no reason for one to exist.
+
+Tests reach the constants by monkeypatching the module, which no production call site can do.
+That is the honest place for the seam: an approval a caller can supply is not an approval.
+
+## 17k-ii. Why post-commit verification cannot be skipped
+
+The three governed checks now always run after a successful commit, and PASS requires four
+named reconciliations, reported individually so an artifact distinguishes "did not run" from
+"ran but skipped a check" from "ran everything and one failed":
+
+- `post_commit_verification_was_executed`
+- `every_governed_post_commit_check_is_present`
+- `every_governed_post_commit_check_passed`
+- `no_post_commit_check_was_skipped`
+
+A verification function that raises is not a pass either: the exception is caught, recorded as
+`error_type`, and the reconciliations fail closed. A committed repair whose post-commit checks
+fail stays FAIL with every downstream gate blocked, exactly as before — there is still no
+automatic rollback after commit and no retry.
+
+## 17k-iii. Why dependent-evidence invalidation is strict for the repair only
+
+`sync._notify_workload_evidence_game_log_correction` catches every marker exception and logs a
+warning. That is correct for daily ingestion: a sync must not stop ingesting official
+corrections because an evidence table is momentarily unhappy, and it runs again tomorrow.
+
+A one-time atomic repair has no tomorrow. If it commits 160 corrected rows while their
+workload, appearance-context, or inherited-traffic evidence silently keeps a stale value,
+nothing notices and nothing retries.
+
+The helper therefore gained a `strict` keyword that DEFAULTS TO FALSE. Ordinary ingestion is
+unchanged, down to its return shape — existing callers read exactly `marked_count` and
+`evidence_ids`, and adding to a contract they already depend on is not free. The repair passes
+`strict=True`, under which every required family must complete, the pending evidence writes are
+flushed inside the repair's own transaction, and any failure raises
+`WorkloadEvidenceInvalidationError` carrying the per-family evidence.
+
+The three required families are `workload`, `appearance_context`, and `inherited_traffic`.
+Strict mode distinguishes:
+
+- **completed** — the marker ran and returned a well-formed result. `marked_count: 0` is a
+  SUCCESS. A corrected line with no dependent evidence is ordinary, and equating "nothing to
+  invalidate" with "invalidation failed" would fail the repair for a normal case.
+- **failed** — `marker_raised`, `required_marker_absent`, `marker_result_malformed`, or
+  `evidence_flush_failed`. Malformed means the result was not a mapping, was missing
+  `marked_count` or `evidence_ids`, carried a non-integer or negative count, or carried a
+  non-sequence id list. A marker that returns an unreadable result has not told us whether it
+  did its job.
+
+Before commit, for every corrected row, the repair requires exactly the three governed
+families, every status `completed`, no failed family, the result's `game_log_id` equal to that
+row, and the result's `sync_run_id` equal to the governed operation id — a family that
+completed for a *different* row has not invalidated *this* row's evidence. Any failure aborts
+as `dependent_evidence_invalidation_failed`, rolls back all 675 actions, and leaves no ledger
+row, no created identity, no inserted GameLog, no updated field, and no correction metadata.
+
+No replacement evidence is fabricated. The repair only requests invalidation.
+
+## 17k-iv. Why the correction count is verified as an exact delta
+
+The runtime reconciliation checked `stat_correction_count >= 1`. That is satisfied by a row
+that was already corrected once and never touched by this repair, and equally by a row this
+repair incremented twice. It proved neither that the increment happened nor that it happened
+once.
+
+Each update now captures `prior_stat_correction_count` before the mutation and records
+`resulting_stat_correction_count` and `correction_count_delta` alongside it. Two
+reconciliations replace the floor: the recorded delta must be exactly 1 for every row, and the
+value read back FROM THE DATABASE before commit must equal `prior + 1`. A simulated double
+increment fails in-transaction verification and rolls the whole repair back.
+
 ## 17l. Post-commit verification, and why there is no automatic rollback or retry
 
 After a successful commit the same operation runs three read-only checks: the completeness
