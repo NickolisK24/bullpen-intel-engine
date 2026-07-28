@@ -394,6 +394,142 @@ passing run. Had the fix been purely semantic and the manifest byte-identical, t
 fingerprint still would not have inherited approval from a failed run — a fingerprint is
 approved by review of a passing artifact, never by resemblance to a prior one.
 
+## 11m. Why the 604-line defect population is immutable for this review
+
+The dependency-aware planner ran cleanly in production at `6a8e7f4`: 1,570/1,570 games,
+13,301 official lines, 12,697 exact matches, 445 inserts, 159 updates, 604 defect-line
+actions, zero blocking reasons, every reconciliation true, no database writes. It still
+returned `inconclusive` / `blocked_by_baseline_drift` on exactly one comparison:
+
+```
+missing_lines_dependent_on_identity_creation   expected 342   observed 341   difference -1
+```
+
+The defect population is what review approves. Each of the 604 lines is a claim about
+official MLB evidence and about what the stored `GameLog` ledger does or does not contain:
+which games were played, which pitchers appeared, which lines are absent locally, which
+stored rows disagree with official evidence. None of that can move without the reviewed
+repair meaning something different, so all of it stays pinned to exact equality —
+`official_pitching_lines`, `exact_match_count`, `missing_line_count`,
+`defective_matched_line_count`, `defect_line_action_count`, the game and side counts, the
+local line counts, `role_corrections_planned`, and every count that must remain zero.
+
+## 11n. Why local identity availability is mutable
+
+`missing_lines_dependent_on_identity_creation` is not in that category, and pinning it was a
+category error.
+
+It does not describe official evidence and it does not describe the defect. It describes the
+**local `Pitcher` table at the instant the plan runs** — a partition of the same 445 missing
+lines into "this official person already has a local row" and "this official person does
+not yet". The 445 is fixed; the boundary inside it is not.
+
+Identity rows are created by ordinary, governed, synchronized operation. Daily ingestion
+meets a pitcher for the first time and stores the identity. That is the system working, not
+drifting. Between two planner runs a local `Pitcher` row can legitimately appear for an
+official person who previously had none, and when it does the correct plan changes shape:
+one fewer identity prerequisite, one fewer deferred insertion, one more existing-identity
+insertion. The official line, its statistics, its role, its game, its appearance team, and
+its defect classification are all untouched.
+
+The concrete case: official MLB person **681806, Andrew Wantz**, appearing for official team
+139 in game 822975. Action `gamelog:insert:822975:681806:139` previously carried a
+`deferred_identity_creation` reference and depended on `identity:create:681806`. It now
+resolves through local `Pitcher.id 804` with `Pitcher.mlb_id 681806` and carries an
+`existing_local_identity` reference with no dependency at all. That is a correct plan
+responding to a correct database.
+
+The partition therefore moved from **342 deferred / 103 existing / 71 identity actions** to
+**341 deferred / 104 existing / 70 identity actions**, while **445 missing lines, 159
+defective rows, and 604 defect-line actions did not move at all**. One insertion changed how
+it reaches its pitcher. Nothing changed about which lines need repairing.
+
+**Appearances resolved is not identities resolved.** One official person may have many
+dependent missing insertions, so resolving a single identity can move many deferred
+appearances at once — 342 → 327 deferred alongside 71 → 70 identities is fifteen appearances
+resolved by *one* identity. The Wantz case is one identity with one appearance, so both
+numbers happen to be 1; that coincidence is not the contract.
+`net_identities_resolved_since_snapshot` is therefore derived only from
+`unique_identities_requiring_creation`, and
+`net_deferred_appearances_resolved_since_snapshot` only from
+`missing_lines_dependent_on_identity_creation`. Neither is computed from the other, and
+`counts_are_distinct` records which partition field each one reads.
+
+`transition_kind` accordingly does not require the identity delta to equal the appearance
+delta, because the appearances-per-identity ratio is arbitrary. It requires only a
+structurally valid direction: the appearance partition must balance (whatever leaves deferred
+arrives at existing), and the appearance and identity movements must not point in
+contradictory directions. `identity_resolution_advanced` needs a balanced partition with
+`deferred_delta <= 0`, `identity_delta <= 0`, and at least one strictly negative;
+`identity_resolution_regressed` is its mirror; anything contradictory or unbalanced is
+`identity_resolution_mixed`. All of it remains observational and gates nothing.
+
+## 11o. Why replacing 342 with 341 would have been the wrong fix
+
+Editing the expected value to 341 would have made the next run pass and left the structure
+exactly as wrong. The planner would still be asserting that a mutable property of the local
+database must equal a historical snapshot, and the very next legitimate identity resolution —
+one more pitcher learned, on any day, through normal ingestion — would fail the plan again
+for the same non-reason. The number would be chased forever and would never be right for
+longer than the interval between synchronizations.
+
+`missing_lines_dependent_on_identity_creation`, `missing_lines_using_existing_identity`,
+`unique_identities_requiring_creation`, and the pitcher-reference coverage counts are
+therefore removed from immutable equality entirely. They remain fully reported, and the
+accepted values (342 / 103 / 71) are retained in `PRIOR_IDENTITY_RESOLUTION_SNAPSHOT` as
+**observational** evidence only, so a reviewer can see how identity resolution has advanced.
+`identity_resolution_transition_from_prior_snapshot` classifies the movement and records
+`snapshot_is_compared_for_equality: false`. Nothing gates on it.
+
+## 11p. Why internal partition reconciliation is stronger than snapshot equality
+
+Removing a check would be a weakening if nothing replaced it. What replaces it is strictly
+stronger evidence.
+
+Snapshot equality proved one thing: a count had not moved since a past run. It could not
+detect an identity resolved to the wrong person, an identity action for a person who already
+has a local row, a deferred insertion whose dependency does not name it back, or a local
+primary key belonging to someone else — all of which preserve the count.
+
+The partition reconciliations verify the current state directly:
+`missing_lines_equal_existing_plus_deferred_identity_inserts`,
+`identity_partition_covers_every_missing_line_when_baseline_matches`,
+`every_insertion_has_exactly_one_valid_pitcher_reference_state`,
+`unique_identity_actions_reconcile_to_deferred_official_identities`,
+`no_identity_action_for_an_already_resolved_local_identity`,
+`no_local_identity_is_accepted_through_name_matching`,
+`current_team_and_roster_are_irrelevant_to_identity_resolution`, and
+`every_identity_transition_is_a_verified_local_primary_key`.
+
+A deferred insertion may become an existing-identity insertion only when the local row
+exists, its `mlb_id` equals the official person id exactly, its primary key is positive, the
+identity-create action is gone, the dependency is gone, and the insertion proposes that
+verified primary key. Identity is resolved by `pitcher.mlb_id` equality and by nothing else —
+never by name similarity, and never by current team, organization, or roster status, which
+are irrelevant to a historical appearance. Every conflicting, duplicate, ambiguous,
+mismatched, or unresolvable identity still blocks its action and the plan.
+
+So the planner still fails closed on anything that would change the repair, and no longer
+fails on the database correctly learning who someone is.
+
+## 11q. Why the current inconclusive fingerprint remains unapproved
+
+The `6a8e7f4` production run produced manifest fingerprint
+`dd453cd63b1e4ccc14b5ff97c962635d6c5eda296a4e4ef63066105eeec225c6` with `result:
+inconclusive`. It is not approved and cannot be.
+
+An inconclusive artifact is the planner declining to certify its own manifest. Approving a
+fingerprint it refused to stand behind would invert the gate: review would be attaching to a
+manifest whose own reconciliations reported it not reviewable. That the failure turned out to
+be a validation defect rather than a data problem does not retroactively make the artifact a
+passing one — it makes it an artifact that must be regenerated.
+
+If the corrected planner produces a byte-identical manifest, the fingerprint may legitimately
+be the same value. It still does not inherit approval from the inconclusive run. Approval
+requires a newly generated production artifact whose `result` is `pass`, with every
+reconciliation true, and that exact fingerprint reviewed again against that passing run. Any
+change to manifest content changes the fingerprint normally, as it must.
+
 ## 12. Why the full manifest requires an exact reviewed fingerprint
 
 The manifest is fingerprinted with SHA-256 over its complete normalized serialization: UTF-8,
