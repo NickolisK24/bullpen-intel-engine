@@ -2476,6 +2476,111 @@ def test_transition_moves_342_103_71_to_341_104_70_without_touching_445_159_604(
     assert b['defect_line_action_count'] == 604
 
 
+# ── Appearances resolved is not identities resolved ──────────────────────────
+# One official person may have many dependent missing insertions, so resolving a single
+# identity can move many deferred appearances at once. The two counts are reported from two
+# different partition fields and must never be derived from each other.
+
+def _transition(deferred, existing, identities):
+    return planner._identity_resolution_transition({
+        'missing_lines_dependent_on_identity_creation': deferred,
+        'missing_lines_using_existing_identity': existing,
+        'unique_identities_requiring_creation': identities,
+    })
+
+
+def test_wantz_transition_is_one_appearance_and_one_identity():
+    t = _transition(341, 104, 70)          # the real production transition
+    assert t['net_deferred_appearances_resolved_since_snapshot'] == 1
+    assert t['net_identities_resolved_since_snapshot'] == 1
+    assert t['transition_kind'] == planner.TRANSITION_ADVANCED
+
+
+def test_one_identity_with_fifteen_appearances_reports_one_identity():
+    """342 -> 327 deferred with 71 -> 70 identities is 15 appearances, ONE identity."""
+    t = _transition(327, 118, 70)
+    assert t['deltas']['missing_lines_dependent_on_identity_creation'] == -15
+    assert t['deltas']['unique_identities_requiring_creation'] == -1
+    assert t['net_deferred_appearances_resolved_since_snapshot'] == 15
+    assert t['net_identities_resolved_since_snapshot'] == 1     # never 15
+    assert t['transition_kind'] == planner.TRANSITION_ADVANCED
+    assert t['appearance_partition_balances'] is True
+
+
+def test_two_identities_with_fifteen_appearances_reports_two_identities():
+    t = _transition(327, 118, 69)
+    assert t['net_deferred_appearances_resolved_since_snapshot'] == 15
+    assert t['net_identities_resolved_since_snapshot'] == 2
+    assert t['transition_kind'] == planner.TRANSITION_ADVANCED
+
+
+def test_appearance_advance_with_identity_regression_is_mixed():
+    # Fewer deferred appearances but MORE identities to create: contradictory directions.
+    t = _transition(327, 118, 73)
+    assert t['deltas']['missing_lines_dependent_on_identity_creation'] == -15
+    assert t['deltas']['unique_identities_requiring_creation'] == 2
+    assert t['transition_kind'] == planner.TRANSITION_MIXED
+
+
+def test_an_unbalanced_appearance_partition_is_mixed():
+    # Whatever leaves deferred must arrive at existing; 445 cannot silently change here.
+    t = _transition(327, 103, 70)
+    assert t['appearance_partition_balances'] is False
+    assert t['transition_kind'] == planner.TRANSITION_MIXED
+
+
+def test_identity_regression_with_more_deferred_appearances_is_regressed():
+    t = _transition(357, 88, 74)
+    assert t['net_deferred_appearances_resolved_since_snapshot'] == -15
+    assert t['net_identities_resolved_since_snapshot'] == -3
+    assert t['transition_kind'] == planner.TRANSITION_REGRESSED
+
+
+def test_identity_counts_are_never_derived_from_appearance_deltas():
+    # Hold identities fixed and vary appearances: the identity count must not move.
+    for deferred, existing in ((341, 104), (327, 118), (300, 145), (200, 245)):
+        t = _transition(deferred, existing, 71)
+        assert t['net_identities_resolved_since_snapshot'] == 0
+        assert t['net_deferred_appearances_resolved_since_snapshot'] == 342 - deferred
+    # Hold appearances fixed and vary identities: the appearance count must not move.
+    for identities in (71, 70, 65, 40):
+        t = _transition(342, 103, identities)
+        assert t['net_deferred_appearances_resolved_since_snapshot'] == 0
+        assert t['net_identities_resolved_since_snapshot'] == 71 - identities
+    # Each reported count names the partition field it comes from.
+    sources = _transition(327, 118, 70)['counts_are_distinct']
+    assert sources['net_identities_resolved_since_snapshot'] == \
+        'unique_identities_requiring_creation'
+    assert sources['net_deferred_appearances_resolved_since_snapshot'] == \
+        'missing_lines_dependent_on_identity_creation'
+
+
+def test_nothing_moved_is_reported_as_unchanged():
+    t = _transition(342, 103, 71)
+    assert t['transition_kind'] == planner.TRANSITION_NONE
+    assert t['net_identities_resolved_since_snapshot'] == 0
+    assert t['net_deferred_appearances_resolved_since_snapshot'] == 0
+
+
+def test_the_transition_remains_observational_and_never_gates(app, monkeypatch):
+    payload = _wantz_plan(wantz_identity_exists=True, monkeypatch=monkeypatch)
+    transition = payload['identity_resolution_transition_from_prior_snapshot']
+    assert transition['snapshot_is_observational_only'] is True
+    assert transition['snapshot_is_compared_for_equality'] is False
+    # It reports a large drift against the production snapshot and the plan still passes,
+    # because only the immutable defect baseline and the current partition gate the result.
+    assert transition['transition_kind'] != planner.TRANSITION_NONE
+    assert payload['result'] == planner.RESULT_PASS
+    assert payload['defect_baseline_matches_accepted_diagnostic'] is True
+    assert payload['identity_resolution_partition_valid'] is True
+    # No transition field participates in the defect-baseline comparison.
+    for key in ('net_identities_resolved_since_snapshot',
+                'net_deferred_appearances_resolved_since_snapshot',
+                'transition_kind'):
+        assert key not in payload['defect_baseline_comparison']
+        assert key not in planner.ACCEPTED_DEFECT_BASELINE
+
+
 def test_replacing_342_with_341_would_have_been_the_wrong_fix():
     """A second legitimate transition must not require another baseline edit."""
     for deferred, existing, identities in ((341, 104, 70), (340, 105, 69), (300, 145, 60)):

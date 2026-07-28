@@ -444,6 +444,26 @@ The partition therefore moved from **342 deferred / 103 existing / 71 identity a
 defective rows, and 604 defect-line actions did not move at all**. One insertion changed how
 it reaches its pitcher. Nothing changed about which lines need repairing.
 
+**Appearances resolved is not identities resolved.** One official person may have many
+dependent missing insertions, so resolving a single identity can move many deferred
+appearances at once — 342 → 327 deferred alongside 71 → 70 identities is fifteen appearances
+resolved by *one* identity. The Wantz case is one identity with one appearance, so both
+numbers happen to be 1; that coincidence is not the contract.
+`net_identities_resolved_since_snapshot` is therefore derived only from
+`unique_identities_requiring_creation`, and
+`net_deferred_appearances_resolved_since_snapshot` only from
+`missing_lines_dependent_on_identity_creation`. Neither is computed from the other, and
+`counts_are_distinct` records which partition field each one reads.
+
+`transition_kind` accordingly does not require the identity delta to equal the appearance
+delta, because the appearances-per-identity ratio is arbitrary. It requires only a
+structurally valid direction: the appearance partition must balance (whatever leaves deferred
+arrives at existing), and the appearance and identity movements must not point in
+contradictory directions. `identity_resolution_advanced` needs a balanced partition with
+`deferred_delta <= 0`, `identity_delta <= 0`, and at least one strictly negative;
+`identity_resolution_regressed` is its mirror; anything contradictory or unbalanced is
+`identity_resolution_mixed`. All of it remains observational and gates nothing.
+
 ## 11o. Why replacing 342 with 341 would have been the wrong fix
 
 Editing the expected value to 341 would have made the next run pass and left the structure

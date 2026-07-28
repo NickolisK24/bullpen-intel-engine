@@ -1850,6 +1850,14 @@ def _identity_resolution_transition(partition) -> dict:
     Reported, never gating. A deferred insertion becoming an existing-identity insertion is a
     normal consequence of identity synchronization, not evidence that the reviewed defect
     population moved.
+
+    APPEARANCES AND IDENTITIES ARE COUNTED SEPARATELY. One official person may have many
+    dependent missing GameLog insertions, so resolving a single identity can move many
+    deferred appearances at once: 342 -> 327 deferred appearances alongside 71 -> 70 unique
+    identities is fifteen appearances resolved by ONE identity. Reporting fifteen identities
+    there would be wrong, so the identity count is derived only from
+    ``unique_identities_requiring_creation`` and the appearance count only from
+    ``missing_lines_dependent_on_identity_creation``.
     """
     prior = PRIOR_IDENTITY_RESOLUTION_SNAPSHOT
     deferred_delta = (partition['missing_lines_dependent_on_identity_creation']
@@ -1859,13 +1867,21 @@ def _identity_resolution_transition(partition) -> dict:
     identity_delta = (partition['unique_identities_requiring_creation']
                       - prior['unique_identities_requiring_creation'])
 
-    if deferred_delta == 0 and existing_delta == 0:
+    # The appearance partition must stay a partition: whatever leaves deferred arrives at
+    # existing. Identity movement is not required to match it one for one, because the
+    # appearances-per-identity ratio is arbitrary.
+    partition_is_consistent = existing_delta == -deferred_delta
+    if deferred_delta == 0 and existing_delta == 0 and identity_delta == 0:
         kind = TRANSITION_NONE
-    elif deferred_delta < 0 and existing_delta == -deferred_delta:
+    elif (partition_is_consistent and deferred_delta <= 0 and identity_delta <= 0
+            and (deferred_delta < 0 or identity_delta < 0)):
         kind = TRANSITION_ADVANCED
-    elif deferred_delta > 0 and existing_delta == -deferred_delta:
+    elif (partition_is_consistent and deferred_delta >= 0 and identity_delta >= 0
+            and (deferred_delta > 0 or identity_delta > 0)):
         kind = TRANSITION_REGRESSED
     else:
+        # The appearance partition and the unique-identity movement point in contradictory
+        # directions, or the appearance partition does not balance.
         kind = TRANSITION_MIXED
     return {
         'prior_snapshot': dict(prior),
@@ -1883,7 +1899,18 @@ def _identity_resolution_transition(partition) -> dict:
             'unique_identities_requiring_creation': identity_delta,
         },
         'transition_kind': kind,
-        'net_identities_resolved_since_snapshot': -deferred_delta,
+        # Unique official people who no longer need an identity created.
+        'net_identities_resolved_since_snapshot': -identity_delta,
+        # Missing GameLog insertions that no longer wait on an identity. One resolved
+        # identity may account for many of these.
+        'net_deferred_appearances_resolved_since_snapshot': -deferred_delta,
+        'appearance_partition_balances': partition_is_consistent,
+        'counts_are_distinct': {
+            'net_identities_resolved_since_snapshot':
+                'unique_identities_requiring_creation',
+            'net_deferred_appearances_resolved_since_snapshot':
+                'missing_lines_dependent_on_identity_creation',
+        },
         'snapshot_is_observational_only': True,
         'snapshot_is_compared_for_equality': False,
     }

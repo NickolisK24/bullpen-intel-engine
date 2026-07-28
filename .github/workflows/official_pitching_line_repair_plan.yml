@@ -173,9 +173,11 @@ jobs:
               f"- Identity-resolution partition valid: "
               f"`{payload.get('identity_resolution_partition_valid')}`",
               f"- Identity-resolution transition: "
-              f"`{transition.get('transition_kind')}` "
-              f"(net identities resolved since snapshot: "
-              f"`{transition.get('net_identities_resolved_since_snapshot')}`)",
+              f"`{transition.get('transition_kind')}`",
+              f"- Unique identities resolved since snapshot: "
+              f"`{transition.get('net_identities_resolved_since_snapshot')}`",
+              f"- Deferred appearances resolved since snapshot: "
+              f"`{transition.get('net_deferred_appearances_resolved_since_snapshot')}`",
               f"- Official pitching lines: `{payload.get('official_pitching_lines')}`",
               f"- Exact matches: `{payload.get('exact_match_count')}`",
               f"- Missing lines: `{payload.get('missing_line_count')}`",
