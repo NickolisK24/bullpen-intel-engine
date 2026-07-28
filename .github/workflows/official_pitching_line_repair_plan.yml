@@ -154,6 +154,7 @@ jobs:
           no_action = payload.get('no_action_confirmations') or {}
           preview = payload.get('bounded_preview') or []
           baseline = payload.get('defect_baseline_comparison') or {}
+          amendment = payload.get('defect_baseline_amendment') or {}
           partition = payload.get('identity_resolution_partition') or {}
           transition = payload.get(
               'identity_resolution_transition_from_prior_snapshot') or {}
@@ -168,7 +169,21 @@ jobs:
               f"- Plan scope: `{payload.get('plan_scope')}`",
               f"- Repair apply gate: `{payload.get('repair_apply_gate')}`",
               f"- Decision reasons: `{payload.get('decision_reasons')}`",
-              f"- Immutable defect baseline matches accepted diagnostic: "
+              f"- Active accepted defect baseline version: "
+              f"`{payload.get('accepted_defect_baseline_version')}` "
+              f"(prior: `{payload.get('prior_accepted_defect_baseline_version')}`)",
+              f"- Defect baseline amendments: "
+              f"`{payload.get('defect_baseline_amendment_count')}` "
+              f"(`{amendment.get('amendment_id')}`)",
+              f"- Reviewed transition key: "
+              f"`{amendment.get('reviewed_transition_stable_key')}`",
+              f"- Historical transition classification: "
+              f"`{payload.get('historical_transition_classification')}`",
+              f"- Historical causation claimed: "
+              f"`{payload.get('historical_causation_claimed')}`",
+              f"- Current authority basis: "
+              f"`{payload.get('current_authority_basis')}`",
+              f"- Defect baseline matches accepted diagnostic: "
               f"`{payload.get('defect_baseline_matches_accepted_diagnostic')}`",
               f"- Identity-resolution partition valid: "
               f"`{payload.get('identity_resolution_partition_valid')}`",

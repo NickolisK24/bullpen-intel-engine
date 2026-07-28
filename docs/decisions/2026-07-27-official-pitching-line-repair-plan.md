@@ -674,6 +674,115 @@ equality; name similarity, current team, organization, and roster status are nev
 for a historical appearance. Foundation 3B, the public reader, Team State performance, Share
 Card performance, and SC-05 all remain blocked, and `repair_apply_gate` stays `blocked`.
 
+## 14f. Baseline lineage: V1 retained, V2 active
+
+The accepted defect baseline is no longer a single constant that can be edited in place. It is
+a versioned lineage.
+
+**V1** is the population accepted from the merged completeness diagnostic and independently
+reproduced by four retained production artifacts: 13,301 official lines, 12,697 exact matches,
+445 missing lines, 159 defective matched lines, 604 defect-line actions, plus the eleven other
+governed counts. It is **retained unmodified, forever**. A reconciliation compares
+`ACCEPTED_DEFECT_BASELINE_V1` against an independent literal copy, so editing V1 in place
+fails closed rather than silently redefining what was originally accepted.
+
+**V2** is the active planning baseline. It is constructed *from* V1 plus the amendment record,
+not typed out separately, so it cannot drift from V1 in any field the amendment does not name.
+
+`ACCEPTED_DEFECT_BASELINE` points at V2. `ACTIVE_ACCEPTED_DEFECT_BASELINE_VERSION` is `v2`,
+`PRIOR_ACCEPTED_DEFECT_BASELINE_VERSION` is `v1`, and `defect_baseline_lineage` reports the
+whole history in every artifact so a reviewer never has to consult a prior commit.
+
+## 14g. Why exactly three counts changed
+
+`DEFECT_BASELINE_AMENDMENT_1` names three fields and three deltas:
+
+```
+exact_match_count             12,697 -> 12,696   (-1)
+defective_matched_line_count     159 -> 160      (+1)
+defect_line_action_count         604 -> 605      (+1)
+```
+
+Sixteen governed values are byte-identical between V1 and V2 — the official line count, the
+missing-line count, the role-correction count, the duplicate, extra, appearance-team-mismatch
+and evidence-availability counts, and every game/side/local total. One line changed
+classification from exact to defective; nothing appeared, disappeared, or moved teams. The
+amended population still partitions the same official evidence: 12,696 + 445 + 160 = 13,301,
+and 445 + 160 = 605.
+
+The line is official MLB person **805299, Brandyn Garcia**, relieving for official team **109**
+in game **825058** on 2026-07-20, stored locally as **GameLog 43765**, on field
+`hits_allowed` — official `hits` 0 against local 1, reason `hits_mismatch`, one update action
+`gamelog:update:43765:825058:805299`. Its stable key `825058:805299:109` is recorded in the
+amendment and reconciled against the observed population at plan time.
+
+## 14h. The bounded transition window, and why causation stays unprovable
+
+Five retained artifacts bound when the divergence became observable:
+
+```
+2026-07-27T16:20:04.642412Z  completeness 30284218611  line exact
+2026-07-27T18:51:16.974117Z  repair plan  30295617314  line exact
+2026-07-27T23:44:58.208999Z  repair plan  30315122495  line exact
+2026-07-28T00:57:38.449240Z  repair plan  30318846061  line exact
+2026-07-28T10:22:18.985546Z  repair plan  30350475893  line defective
+```
+
+The window is therefore after `2026-07-28T00:57:38.449240Z` and on or before
+`2026-07-28T10:22:18.985546Z`, with each report's SHA-256 recorded in the amendment.
+
+That bounds *when*. It does not establish *which side moved*, and nothing in this amendment
+claims to. The pre-transition artifacts record only that the line was exact — never the value
+it was exact **at**. Exactness at 1/1 and exactness at 0/0 are indistinguishable in every
+retained artifact, because the completeness report sorts findings ahead of exact matches and
+truncates to 100 details (all 100 were findings), and the repair manifest contains actions
+only. Absence of a repair action proves the line was not a defect then; it proves nothing about
+its values.
+
+So the amendment records `historical_transition_classification: historical_state_unprovable`,
+`confidence: not_provable_from_retained_evidence`, `causation_claimed: false`,
+`official_source_change_claimed: false`, and `local_game_log_change_claimed: false`. **This is
+not a claim that MLB changed its box score, and not a claim that the local ledger was
+mutated.** Both remain possible; neither is asserted.
+
+## 14i. Why current official authority is sufficient for current repair planning
+
+Two different questions are being answered by two different components, and conflating them
+is what a versioned amendment prevents.
+
+The **transition diagnostic** answers historical causation. Its verdict is unchanged and is not
+retroactively upgraded by this amendment: `historical_state_unprovable`, `inconclusive`. This
+branch does not weaken or remove it.
+
+The **planner amendment** answers what governs the repair now. For that, current official MLB
+box-score evidence is sufficient and is the stated authority (`current_authority_basis:
+current_official_mlb_boxscore_evidence`). The proposed write is `hits_allowed` 1 → 0 because
+the official box score currently reports 0. That would be the correct proposed value under
+either history: if MLB revised the line, the ledger is stale and should follow; if ingestion
+wrote a wrong value, the ledger is wrong and should be corrected. The remedy for *this line*
+is the same either way — which is precisely why accepting current state does not require
+resolving the past, and why doing so makes no claim about it.
+
+What the unresolved history still costs is scope. If the cause was an ingestion fault, other
+rows could carry the same fault, and that question stays open. The amendment covers one
+reviewed line and grants nothing beyond it: any further movement in any governed count is
+ordinary baseline drift and still fails closed.
+
+## 14j. Why the fingerprint remains unapproved and every gate stays blocked
+
+`3ee2ea06492e8161bf7b278228d6f778e24048452366e3c2502ae42e0365216b` came from an `inconclusive`
+run. The amended planner may reproduce that exact value if the normalized 675-action manifest
+is byte-identical, and it still inherits no approval — a fingerprint is approved by review of a
+**passing** artifact, never by resemblance to a prior one. It joins `9b8ab677…` and
+`dd453cd6…` as pinned and refused.
+
+Approval requires a newly generated production artifact with `result: pass`, every
+reconciliation true, and that exact fingerprint reviewed after that passing run. No
+fingerprint-acceptance input, fingerprint-approval constant, apply input, writer, or automatic
+dispatch was added. `repair_apply_gate` remains `blocked_pending_fingerprint_review` on a clean
+plan and is never `open`. Foundation 3B, the public reader, Team State performance, Share Card
+performance, and SC-05 all remain blocked.
+
 ## 15. Operation
 
 - Service: `backend/services/official_pitching_line_repair_plan_2026.py`
