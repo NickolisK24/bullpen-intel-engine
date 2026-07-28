@@ -569,6 +569,111 @@ in `official_validation` mode and require PASS; review the generated artifacts; 
 consider Foundation 3B reader work. The planner returns these steps as data and executes none
 of them.
 
+## 14a. The Brandyn Garcia exact-to-defective transition
+
+The repaired planner ran cleanly in production at `970664f` — 1,570/1,570 games, 13,301
+official lines, 445 missing lines, a valid 341/104/70 identity partition, every reconciliation
+true, no blocking reasons, no writes — and still returned `inconclusive` /
+`blocked_by_baseline_drift`. Three immutable defect counts moved by exactly one:
+
+```
+exact matches            12,697 -> 12,696
+defective matched lines     159 -> 160
+defect-line actions         604 -> 605
+```
+
+The whole of that movement is a single line. Official MLB person **805299, Brandyn Garcia**,
+relieving for official team **109** in game **825058** on 2026-07-20, stored locally as
+**GameLog 43765**. The manifest carries one additional update action,
+`gamelog:update:43765:825058:805299`, changing `hits_allowed` from 1 to 0 with reason
+`hits_mismatch`, `safe_to_apply: true`, and no blocking reasons.
+
+## 14b. Why the current mismatch does not prove historical causation
+
+The artifact proves exactly one thing: right now the local row says one hit and the current
+official box score says zero. That is a statement about two values at one moment. It is not a
+statement about which value moved.
+
+Two incompatible histories produce it identically:
+
+- **An official stat correction.** MLB reported one hit when the line was ingested, the local
+  row correctly recorded one hit, and MLB later revised the box score to zero. The ledger was
+  right when written and is now stale. The repair is legitimate and the accepted baseline
+  genuinely moved.
+- **A local ingestion mutation.** MLB reported zero hits all along and local ingestion wrote
+  one — a parsing fault, a mis-keyed line, a backfill, or a correction that changed the wrong
+  row. The ledger was never right, and the interesting question is what else that fault
+  touched.
+
+The remedies differ. The first is an ordinary re-sync of a corrected line. The second is a
+defect in the ingestion path that a single-row repair would paper over. Choosing between them
+by looking at today's values is guessing, and a repair approved on a guess is not a reviewed
+repair.
+
+## 14c. Which durable historical sources exist, and which do not
+
+`services/official_pitching_line_transition_diagnostic_2026.py` searches every local store
+that could establish a prior value, and reports each one whether or not it holds anything.
+
+Sources that exist and are checked: `game_logs` correction metadata
+(`stat_correction_count`, `last_stat_correction_at`, `last_stat_correction_source`,
+`last_stat_correction_sync_run_id`); `evidence_citations.cited_values`, the only store that
+can retain a prior field value; `evidence_objects` invalidation markers; `sync_runs`;
+`postgame_processed_games`; `sync_failures`; and retained repository artifacts.
+
+Sources that **do not exist**, reported as explicit limitations rather than silent gaps:
+
+- **Official response snapshots.** No table retains the raw box-score response as fetched at
+  ingestion time. A prior *official* value cannot be read back from local state at all.
+- **Workflow run artifacts.** The private artifacts from the accepted diagnostic run are not
+  reachable from application code or database state. They live in GitHub Actions under a
+  14-day retention window and must be inspected there.
+
+Two structural facts constrain what any local search can prove. `game_logs` has no
+`updated_at` column and no row-version history, so the governed correction metadata is the
+only durable record that a row was ever rewritten. And `stat_correction_count` increments once
+per corrected **row**, never per field, so even a recorded correction does not say that
+`hits_allowed` was the field that moved.
+
+The consequence is that the expected production answer is `historical_state_unprovable` with
+result `inconclusive`. The diagnostic classifies `official_source_changed` only when a durable
+prior *official* value is retained and differs, and `local_game_log_changed` only when a
+durable prior *local* value is retained and differs. **Absence of history is never reported as
+proof that MLB changed the box score** — that rule is enforced by the reconciliation
+`absence_of_history_is_not_reported_as_official_change`.
+
+## 14d. Why the accepted baseline must not be edited before the transition is explained
+
+Changing 12,697 / 159 / 604 to 12,696 / 160 / 605 would clear the drift and destroy the
+evidence in one move.
+
+The baseline exists so that the population under review cannot shift without someone noticing.
+It has now noticed something real. Editing the expected numbers to match the observation
+converts a detection into a rubber stamp: the planner would report a clean baseline while the
+question of whether the local ledger contains an ingestion fault stays permanently unasked. If
+the cause turns out to be a local mutation, the amended baseline would have accepted a
+corrupted row as the new normal.
+
+A baseline amendment may be considered only after the transition diagnostic runs in production
+and its result is reviewed. This branch changes no baseline value, and a test asserts that the
+diagnostic module never references `ACCEPTED_DEFECT_BASELINE` at all.
+
+## 14e. Why the current fingerprint remains unapproved and every gate stays blocked
+
+Manifest fingerprint `3ee2ea06492e8161bf7b278228d6f778e24048452366e3c2502ae42e0365216b` comes
+from an `inconclusive` run and is not approved, joining
+`9b8ab677c83ec5b8efa5a4020593911dc4d6d73e3262a09c0703d1a5907b49b7` and
+`dd453cd63b1e4ccc14b5ff97c962635d6c5eda296a4e4ef63066105eeec225c6`. All three are pinned in
+the diagnostic as known and refused, and none is wired to any apply path — because no apply
+path exists.
+
+The diagnostic is read-only in the same sense as the planner: no writer, no apply mode, no
+repair, no baseline amendment, no fingerprint approval, and `database_writes_performed: false`
+asserted by tests that capture emitted SQL. Identity is resolved by exact `pitcher.mlb_id`
+equality; name similarity, current team, organization, and roster status are never consulted
+for a historical appearance. Foundation 3B, the public reader, Team State performance, Share
+Card performance, and SC-05 all remain blocked, and `repair_apply_gate` stays `blocked`.
+
 ## 15. Operation
 
 - Service: `backend/services/official_pitching_line_repair_plan_2026.py`
