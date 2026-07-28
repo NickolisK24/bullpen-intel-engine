@@ -47,6 +47,7 @@ from models.official_pitching_line_repair_execution import (
 )
 from models.pitcher import Pitcher
 from services import official_pitching_line_completeness_2026 as completeness
+from services import evidence_contract
 from services import official_pitching_line_repair_plan_2026 as planner
 from services import season_bullpen_aggregation_2026 as aggregation
 from services import sync as sync_service
@@ -964,8 +965,13 @@ def _apply_updates(session, update_actions, *, applied_at, operation_id) -> dict
         # corrected rows beside stale workload, appearance-context, or inherited-traffic
         # evidence would leave a defect nothing would ever notice.
         try:
+            # The repair's own session, explicitly: every strict read, write, residual
+            # query, and flush must live in this transaction, so a rollback removes the
+            # evidence mutations with the GameLog mutations and no invalidation write can
+            # ever commit on its own.
             marked = sync_service._notify_workload_evidence_game_log_correction(
-                log, sync_run_id=operation_id, strict=EVIDENCE_INVALIDATION_STRICT)
+                log, sync_run_id=operation_id, strict=EVIDENCE_INVALIDATION_STRICT,
+                session=session)
         except sync_service.WorkloadEvidenceInvalidationError as failure:
             raise _Abort(CONTRADICTION_DEPENDENT_EVIDENCE, result=RESULT_FAIL,
                          detail={'local_game_log_id': log_id,
@@ -979,25 +985,44 @@ def _apply_updates(session, update_actions, *, applied_at, operation_id) -> dict
             'evidence_id_count': len((marked or {}).get('evidence_ids') or ()),
             'families': {
                 name: {'status': item.get('status'),
+                       'batch_size': item.get('batch_size'),
+                       'batch_count': item.get('batch_count'),
+                       'initial_current_dependency_count': item.get(
+                           'initial_current_dependency_count'),
+                       'marked_unique_count': item.get('marked_unique_count'),
+                       'remaining_current_dependency_count': item.get(
+                           'remaining_current_dependency_count'),
+                       'exhaustive': item.get('exhaustive'),
                        'marked_count': item.get('marked_count'),
+                       'evidence_ids': list(item.get('evidence_ids') or ()),
                        'evidence_id_count': len(item.get('evidence_ids') or ())}
                 for name, item in sorted(families.items())
             },
             'all_required_families_completed': (marked or {}).get(
                 'all_required_families_completed'),
+            'exhaustive': (marked or {}).get('exhaustive'),
             'failed_families': list((marked or {}).get('failed_families') or ()),
             'result_game_log_id': (marked or {}).get('game_log_id'),
             'result_sync_run_id': (marked or {}).get('sync_run_id'),
+            'result_session_id': (marked or {}).get('session_id'),
+            'repair_session_id': id(session),
         }
         # Provenance, not just success: a result that completed for a DIFFERENT row, or
         # without the governed operation id, does not invalidate THIS row's evidence.
         if (sorted(families) != sorted(REQUIRED_EVIDENCE_FAMILIES)
                 or any(item.get('status') != EVIDENCE_FAMILY_COMPLETED
                        for item in families.values())
+                or any(item.get('exhaustive') is not True
+                       for item in families.values())
+                or any(item.get('remaining_current_dependency_count') != 0
+                       for item in families.values())
                 or invalidation_record['failed_families']
                 or invalidation_record['all_required_families_completed'] is not True
+                or invalidation_record['exhaustive'] is not True
                 or invalidation_record['result_game_log_id'] != log_id
-                or invalidation_record['result_sync_run_id'] != operation_id):
+                or invalidation_record['result_sync_run_id'] != operation_id
+                or invalidation_record['result_session_id']
+                != invalidation_record['repair_session_id']):
             raise _Abort(CONTRADICTION_DEPENDENT_EVIDENCE, result=RESULT_FAIL,
                          detail={'local_game_log_id': log_id,
                                  'invalidation': invalidation_record})
@@ -1205,7 +1230,41 @@ def _verify_before_commit(session, *, contract, identity_result, insert_result,
         'every_dependent_evidence_result_carries_the_governed_operation_id':
             all(item.get('result_sync_run_id') == operation_id
                 for item in invalidation_records),
+        # Exhaustion, not merely a completed batch. One bounded marker call proves a batch
+        # ran; only a zero residual proves nothing dependent is still reading `current`.
+        'every_updated_row_exhausted_all_dependent_evidence_families':
+            len(invalidation_records) == len(update_records)
+            and all(item.get('exhaustive') is True for item in invalidation_records),
+        'every_dependent_evidence_family_reports_exhaustive_true':
+            all(family.get('exhaustive') is True
+                for item in invalidation_records
+                for family in (item.get('families') or {}).values()),
+        'every_dependent_evidence_family_has_zero_remaining_current_dependencies':
+            all(family.get('remaining_current_dependency_count') == 0
+                for item in invalidation_records
+                for family in (item.get('families') or {}).values()),
+        # A family with work to do must have run at least one batch; a family with none
+        # must have run zero. Either way the batch count and the initial population agree.
+        'every_dependent_evidence_batch_made_progress':
+            all((family.get('batch_count') or 0) >= 1
+                if (family.get('initial_current_dependency_count') or 0) > 0
+                else (family.get('batch_count') or 0) == 0
+                for item in invalidation_records
+                for family in (item.get('families') or {}).values()),
+        'every_dependent_evidence_mutation_used_the_repair_transaction':
+            all(item.get('result_session_id') == item.get('repair_session_id')
+                for item in invalidation_records),
     }
+
+    # Independent re-verification of every marked evidence id, queried from the database
+    # rather than restated from the strict result. The strict loop already refuses a foreign
+    # id, so this is a second proof from a second place, which is the point.
+    misattributed_source, misattributed_family = _reverify_evidence_provenance(
+        session, invalidation_records)
+    checks['every_dependent_evidence_id_matches_the_correct_source_row'] = (
+        not misattributed_source)
+    checks['every_dependent_evidence_id_matches_the_correct_family'] = (
+        not misattributed_family)
 
     # Created identities: read back from the database, not from the objects we built.
     for record in identity_records:
@@ -1269,6 +1328,39 @@ def _verify_before_commit(session, *, contract, identity_result, insert_result,
         raise _Abort(CONTRADICTION_VERIFICATION, result=RESULT_FAIL,
                      detail={'failed_verifications': failed})
     return {'checks': checks, 'failed': failed}
+
+
+def _family_rule_ids() -> dict:
+    """The authoritative rule-id set per governed evidence family.
+
+    Read from the same modules the per-family rebuild paths read, so family membership has
+    exactly one definition in the codebase.
+    """
+    resolved = {}
+    for family, _label, module_name, _function, rule_ids_name in (
+            sync_service._EVIDENCE_MARKERS):
+        module = __import__(module_name, fromlist=[rule_ids_name])
+        resolved[family] = tuple(getattr(module, rule_ids_name))
+    return resolved
+
+
+def _reverify_evidence_provenance(session, invalidation_records) -> tuple:
+    """Re-query every marked evidence id: right source row, right family."""
+    rule_ids_by_family = _family_rule_ids()
+    wrong_source, wrong_family = [], []
+    for record in invalidation_records:
+        source_pk = record.get('local_game_log_id')
+        for family, item in (record.get('families') or {}).items():
+            ids = list(item.get('evidence_ids') or ())
+            if not ids:
+                continue
+            split = evidence_contract.evidence_ids_for_source_and_family(
+                evidence_ids=ids, source_table=sync_service.EVIDENCE_SOURCE_TABLE,
+                source_pk=source_pk, rule_ids=rule_ids_by_family.get(family),
+                session=session)
+            wrong_source.extend(split['wrong_source'])
+            wrong_family.extend(split['wrong_family'])
+    return sorted(set(wrong_source)), sorted(set(wrong_family))
 
 
 def _verify_inserted_values(session, insert_actions, insert_records) -> List[str]:

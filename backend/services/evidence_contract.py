@@ -151,6 +151,106 @@ def build_evidence_object(
     return evidence
 
 
+def _current_dependent_evidence_query(session, *, source_table, source_pk, rule_ids=None):
+    """Every CURRENT evidence object citing one source row, optionally scoped to a family.
+
+    ``rule_ids`` is the authoritative family discriminator — the same rule-id sets the
+    per-family rebuild paths already use. Omitting it preserves the original unscoped
+    behaviour exactly.
+    """
+    query = (
+        session.query(EvidenceCitation)
+        .join(EvidenceObject, EvidenceCitation.evidence_object_id == EvidenceObject.id)
+        .filter(EvidenceCitation.source_table == source_table)
+        .filter(EvidenceCitation.source_pk == str(source_pk))
+        .filter(EvidenceObject.recompute_status == EvidenceObject.RECOMPUTE_CURRENT)
+    )
+    if rule_ids is not None:
+        query = query.filter(EvidenceObject.rule_id.in_(tuple(rule_ids)))
+    return query
+
+
+def current_dependent_evidence_ids(
+    *,
+    source_table: str,
+    source_pk: str | int,
+    rule_ids=None,
+    session=None,
+) -> list:
+    """The DISTINCT evidence-object ids still ``current`` for one source row and family.
+
+    This is the authoritative residual population. It is deliberately unbounded: a bounded
+    read cannot answer "is anything left", which is the only question a strict, exhaustive
+    invalidation actually needs answered.
+    """
+    session = session or db.session
+    rows = (
+        _current_dependent_evidence_query(
+            session, source_table=source_table, source_pk=source_pk, rule_ids=rule_ids)
+        .with_entities(EvidenceCitation.evidence_object_id)
+        .distinct()
+        .all()
+    )
+    return sorted({row[0] for row in rows})
+
+
+def evidence_ids_for_source_and_family(
+    *,
+    evidence_ids,
+    source_table: str,
+    source_pk: str | int,
+    rule_ids=None,
+    session=None,
+) -> dict:
+    """Split candidate evidence ids by whether they cite this source row and family.
+
+    Used to prove a marker returned nothing belonging to another source row or another
+    family — a claim that cannot be made from the marker's own return value.
+    """
+    session = session or db.session
+    candidates = sorted({int(value) for value in (evidence_ids or ())})
+    if not candidates:
+        return {'matching': [], 'wrong_source': [], 'wrong_family': []}
+
+    cited_here = {
+        row[0] for row in
+        session.query(EvidenceCitation.evidence_object_id)
+        .filter(EvidenceCitation.source_table == source_table)
+        .filter(EvidenceCitation.source_pk == str(source_pk))
+        .filter(EvidenceCitation.evidence_object_id.in_(candidates))
+        .distinct().all()
+    }
+    in_family = set(candidates)
+    if rule_ids is not None:
+        in_family = {
+            row[0] for row in
+            session.query(EvidenceObject.id)
+            .filter(EvidenceObject.id.in_(candidates))
+            .filter(EvidenceObject.rule_id.in_(tuple(rule_ids)))
+            .all()
+        }
+    return {
+        'matching': sorted(value for value in candidates
+                           if value in cited_here and value in in_family),
+        'wrong_source': sorted(value for value in candidates if value not in cited_here),
+        'wrong_family': sorted(value for value in candidates
+                               if value in cited_here and value not in in_family),
+    }
+
+
+def evidence_sync_run_ids(*, evidence_ids, session=None) -> dict:
+    """The stored ``sync_run_id`` of each named evidence object."""
+    session = session or db.session
+    candidates = sorted({int(value) for value in (evidence_ids or ())})
+    if not candidates:
+        return {}
+    return {
+        row[0]: row[1] for row in
+        session.query(EvidenceObject.id, EvidenceObject.sync_run_id)
+        .filter(EvidenceObject.id.in_(candidates)).all()
+    }
+
+
 def mark_dependent_evidence_for_recompute(
     *,
     source_table: str,
@@ -159,17 +259,27 @@ def mark_dependent_evidence_for_recompute(
     batch_size: int = 100,
     sync_run_id: int | None = None,
     correction_source: str = 'upstream_source_correction',
+    rule_ids=None,
+    session=None,
 ) -> dict:
-    """Mark dependent evidence rows for bounded recompute after source correction."""
+    """Mark dependent evidence rows for bounded recompute after source correction.
+
+    ONE BOUNDED BATCH. The citation query is limited BEFORE evidence-object ids are
+    deduplicated, so a single call can mark fewer than ``batch_size`` unique objects and can
+    leave residual current evidence behind. That is correct for ordinary ingestion, which
+    sweeps again; a caller that needs exhaustion must loop and re-read the residual itself.
+
+    ``rule_ids`` optionally scopes the batch to one evidence family. ``session`` optionally
+    binds the read and the write to a caller's transaction. Both default to the previous
+    behaviour exactly.
+    """
     if batch_size <= 0:
         raise EvidenceBuildError('batch_size must be positive')
+    session = session or db.session
     source_pk = str(source_pk)
     citation_rows = (
-        EvidenceCitation.query
-        .join(EvidenceObject)
-        .filter(EvidenceCitation.source_table == source_table)
-        .filter(EvidenceCitation.source_pk == source_pk)
-        .filter(EvidenceObject.recompute_status == EvidenceObject.RECOMPUTE_CURRENT)
+        _current_dependent_evidence_query(
+            session, source_table=source_table, source_pk=source_pk, rule_ids=rule_ids)
         .order_by(EvidenceCitation.id.asc())
         .limit(batch_size)
         .all()
@@ -185,7 +295,7 @@ def mark_dependent_evidence_for_recompute(
 
     now = utc_now_naive()
     rows = (
-        EvidenceObject.query
+        session.query(EvidenceObject)
         .filter(EvidenceObject.id.in_(evidence_ids))
         .order_by(EvidenceObject.id.asc())
         .all()
@@ -205,7 +315,7 @@ def mark_dependent_evidence_for_recompute(
         if sync_run_id is not None:
             row.sync_run_id = sync_run_id
         marked_ids.append(row.id)
-    db.session.flush()
+    session.flush()
     return {'marked_count': len(marked_ids), 'evidence_ids': marked_ids}
 
 

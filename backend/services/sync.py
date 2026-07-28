@@ -39,6 +39,7 @@ from services.completed_game_context_service import (
     extract_completed_game_contexts,
     upsert_completed_game_context,
 )
+from services import evidence_contract
 from services.fatigue import calculate_fatigue
 from services.game_finality import (
     FINAL_AND_USABLE,
@@ -643,20 +644,41 @@ _EVIDENCE_MARKERS = (
         'workload',
         'services.workload_recovery_evidence',
         'mark_game_log_correction_for_workload_recovery',
+        'WORKLOAD_RULE_IDS',
     ),
     (
         EVIDENCE_FAMILY_APPEARANCE_CONTEXT,
         'appearance',
         'services.appearance_context_evidence',
         'mark_game_log_correction_for_appearance_context',
+        'APPEARANCE_RULE_IDS',
     ),
     (
         EVIDENCE_FAMILY_INHERITED_TRAFFIC,
         'inherited traffic',
         'services.inherited_traffic_evidence',
         'mark_game_log_correction_for_inherited_traffic',
+        'INHERITED_TRAFFIC_RULE_IDS',
     ),
 )
+
+# The source table every GameLog-correction marker cites.
+EVIDENCE_SOURCE_TABLE = 'game_logs'
+# The bounded batch size the markers already default to; strict mode loops at the same size
+# rather than inventing a different one, so exhaustion is the only behavioural difference.
+EVIDENCE_BATCH_SIZE = 100
+# A deterministic ceiling on strict batches per family. Zero-progress detection already
+# catches a stuck marker; this catches a marker that makes one row of progress forever.
+STRICT_INVALIDATION_MAX_BATCHES = 1000
+
+EVIDENCE_FAILURE_RESIDUAL_REMAINS = 'residual_current_dependent_evidence_remains'
+EVIDENCE_FAILURE_NO_PROGRESS = 'batch_made_no_progress_while_residual_remained'
+EVIDENCE_FAILURE_WRONG_SOURCE = 'evidence_id_belongs_to_another_source_row'
+EVIDENCE_FAILURE_WRONG_FAMILY = 'evidence_id_belongs_to_another_family'
+EVIDENCE_FAILURE_DOUBLE_COUNTED = 'evidence_object_inconsistently_counted'
+EVIDENCE_FAILURE_OPERATION_ID = 'governed_operation_id_absent_or_different'
+EVIDENCE_FAILURE_SAFETY_LIMIT = 'exhaustive_invalidation_exceeded_safety_limit'
+EVIDENCE_FAILURE_RESIDUAL_QUERY = 'residual_dependency_query_unavailable_or_contradictory'
 
 
 class WorkloadEvidenceInvalidationError(Exception):
@@ -702,6 +724,7 @@ def _notify_workload_evidence_game_log_correction(
     *,
     sync_run_id=None,
     strict=False,
+    session=None,
 ):
     """Mark every dependent-evidence family a corrected GameLog invalidates.
 
@@ -721,13 +744,30 @@ def _notify_workload_evidence_game_log_correction(
     dependent evidence is ordinary; only a marker that raised, was absent, returned a
     malformed result, or could not be flushed is a failure.
     """
+    game_log_id = getattr(game_log, 'id', None)
+    if not strict:
+        return _notify_bounded_best_effort(game_log, sync_run_id=sync_run_id,
+                                           game_log_id=game_log_id)
+    return _notify_strict_exhaustive(game_log, sync_run_id=sync_run_id,
+                                     game_log_id=game_log_id, session=session)
+
+
+def _resolve_marker(module_name, function_name, rule_ids_name):
+    module = __import__(module_name, fromlist=[function_name, rule_ids_name])
+    marker = getattr(module, function_name, None)
+    if marker is None or not callable(marker):
+        raise AttributeError(f'{module_name}.{function_name} is not available')
+    rule_ids = getattr(module, rule_ids_name, None)
+    if not rule_ids:
+        raise AttributeError(f'{module_name}.{rule_ids_name} is not available')
+    return marker, tuple(rule_ids)
+
+
+def _notify_bounded_best_effort(game_log, *, sync_run_id, game_log_id):
+    """ONE bounded batch per family, warning and continuing on failure. Unchanged."""
     marked_count = 0
     evidence_ids = []
-    families = {}
-    failed_families = []
-    game_log_id = getattr(game_log, 'id', None)
-
-    for family, label, module_name, function_name in _EVIDENCE_MARKERS:
+    for _family, label, module_name, function_name, _rules in _EVIDENCE_MARKERS:
         try:
             module = __import__(module_name, fromlist=[function_name])
             marker = getattr(module, function_name, None)
@@ -735,48 +775,230 @@ def _notify_workload_evidence_game_log_correction(
                 raise AttributeError(f'{module_name}.{function_name} is not available')
             result = marker(game_log, sync_run_id=sync_run_id)
             family_count, family_ids = _normalized_marker_result(result)
-        except Exception as exc:  # noqa: BLE001 - classified below; never silently dropped
-            if isinstance(exc, AttributeError):
-                reason = EVIDENCE_FAILURE_MARKER_ABSENT
-            elif isinstance(exc, ValueError):
-                reason = EVIDENCE_FAILURE_RESULT_MALFORMED
-            else:
-                reason = EVIDENCE_FAILURE_MARKER_RAISED
-            families[family] = {
-                'status': EVIDENCE_FAMILY_FAILED,
-                'reason': reason,
-                'error_type': type(exc).__name__,
-                'marked_count': 0,
-                'evidence_ids': [],
-            }
-            failed_families.append(family)
-            if not strict:
-                logger.warning(
-                    'Could not mark %s evidence for game_log correction id=%s: %s',
-                    label,
-                    game_log_id,
-                    exc,
-                )
+        except Exception as exc:  # noqa: BLE001 - ingestion must not block on evidence
+            logger.warning(
+                'Could not mark %s evidence for game_log correction id=%s: %s',
+                label, game_log_id, exc,
+            )
             continue
         marked_count += family_count
         evidence_ids.extend(family_ids)
+    return {'marked_count': marked_count, 'evidence_ids': evidence_ids}
+
+
+def _family_failure(families, family, reason, *, error_type=None, **extra):
+    families[family] = dict(
+        {'status': EVIDENCE_FAMILY_FAILED, 'reason': reason, 'error_type': error_type,
+         'family': family, 'marked_unique_count': 0, 'evidence_ids': [],
+         'exhaustive': False},
+        **extra)
+    return families
+
+
+def _notify_strict_exhaustive(game_log, *, sync_run_id, game_log_id, session):
+    """Every family driven to ZERO residual current dependent evidence, or raise.
+
+    The bounded marker is the only thing that writes; this loops it and re-reads the
+    authoritative residual population between batches. One successful bounded batch proves
+    only that a batch completed — the citation query is limited BEFORE evidence ids are
+    deduplicated, so a row with more than ``batch_size`` citations can return fewer unique
+    objects than the limit and still leave current evidence behind. Committing a corrected
+    GameLog beside evidence that still reads ``current`` is exactly the defect this repair
+    exists to remove, so the residual is queried rather than inferred.
+    """
+    session = session or db.session
+    families = {}
+
+    if sync_run_id is None:
+        raise WorkloadEvidenceInvalidationError(
+            'strict dependent-evidence invalidation requires a governed operation id',
+            families={}, failed_families=sorted(REQUIRED_EVIDENCE_FAMILIES),
+            game_log_id=game_log_id)
+
+    for family, _label, module_name, function_name, rule_ids_name in _EVIDENCE_MARKERS:
+        # ``family`` is deliberately absent: _family_failure takes it positionally and
+        # would collide with a duplicate keyword.
+        base = {'source_table': EVIDENCE_SOURCE_TABLE,
+                'source_pk': str(game_log_id), 'batch_size': EVIDENCE_BATCH_SIZE,
+                'batch_count': 0, 'sync_run_id': sync_run_id,
+                'initial_current_dependency_count': 0,
+                'remaining_current_dependency_count': None}
+        try:
+            marker, rule_ids = _resolve_marker(module_name, function_name, rule_ids_name)
+        except AttributeError as exc:
+            _family_failure(families, family, EVIDENCE_FAILURE_MARKER_ABSENT,
+                            error_type=type(exc).__name__, **base)
+            raise WorkloadEvidenceInvalidationError(
+                'a required dependent-evidence marker is unavailable',
+                families=families, failed_families=[family],
+                game_log_id=game_log_id) from exc
+
+        def _residual():
+            return evidence_contract.current_dependent_evidence_ids(
+                source_table=EVIDENCE_SOURCE_TABLE, source_pk=game_log_id,
+                rule_ids=rule_ids, session=session)
+
+        try:
+            remaining_ids = _residual()
+        except Exception as exc:  # noqa: BLE001 - an unreadable residual is not a zero
+            _family_failure(families, family, EVIDENCE_FAILURE_RESIDUAL_QUERY,
+                            error_type=type(exc).__name__, **base)
+            raise WorkloadEvidenceInvalidationError(
+                'the residual dependency population could not be read',
+                families=families, failed_families=[family],
+                game_log_id=game_log_id) from exc
+
+        initial_count = len(remaining_ids)
+        marked_unique = []
+        marked_seen = set()
+        batch_count = 0
+
+        while remaining_ids:
+            if batch_count >= STRICT_INVALIDATION_MAX_BATCHES:
+                _family_failure(families, family, EVIDENCE_FAILURE_SAFETY_LIMIT,
+                                **dict(base, batch_count=batch_count,
+                                       initial_current_dependency_count=initial_count,
+                                       remaining_current_dependency_count=len(remaining_ids)))
+                raise WorkloadEvidenceInvalidationError(
+                    'exhaustive dependent-evidence invalidation exceeded its safety limit',
+                    families=families, failed_families=[family], game_log_id=game_log_id)
+
+            before_count = len(remaining_ids)
+            try:
+                result = marker(game_log, sync_run_id=sync_run_id,
+                                batch_size=EVIDENCE_BATCH_SIZE, rule_ids=rule_ids,
+                                session=session)
+                batch_count_marked, batch_ids = _normalized_marker_result(result)
+            except Exception as exc:  # noqa: BLE001 - classified, never silently dropped
+                reason = (EVIDENCE_FAILURE_RESULT_MALFORMED if isinstance(exc, ValueError)
+                          else EVIDENCE_FAILURE_MARKER_RAISED)
+                _family_failure(families, family, reason, error_type=type(exc).__name__,
+                                **dict(base, batch_count=batch_count,
+                                       initial_current_dependency_count=initial_count))
+                raise WorkloadEvidenceInvalidationError(
+                    'a dependent-evidence batch did not complete',
+                    families=families, failed_families=[family],
+                    game_log_id=game_log_id) from exc
+
+            # Provenance of every returned id, proven against the database rather than
+            # taken from the marker's own word.
+            split = evidence_contract.evidence_ids_for_source_and_family(
+                evidence_ids=batch_ids, source_table=EVIDENCE_SOURCE_TABLE,
+                source_pk=game_log_id, rule_ids=rule_ids, session=session)
+            if split['wrong_source'] or split['wrong_family']:
+                reason = (EVIDENCE_FAILURE_WRONG_SOURCE if split['wrong_source']
+                          else EVIDENCE_FAILURE_WRONG_FAMILY)
+                _family_failure(families, family, reason,
+                                **dict(base, batch_count=batch_count,
+                                       initial_current_dependency_count=initial_count,
+                                       wrong_source_ids=split['wrong_source'][:20],
+                                       wrong_family_ids=split['wrong_family'][:20]))
+                raise WorkloadEvidenceInvalidationError(
+                    'a dependent-evidence batch returned an id from another source or family',
+                    families=families, failed_families=[family], game_log_id=game_log_id)
+
+            repeated = [value for value in batch_ids if value in marked_seen]
+            if repeated or batch_count_marked != len(set(batch_ids)):
+                _family_failure(families, family, EVIDENCE_FAILURE_DOUBLE_COUNTED,
+                                **dict(base, batch_count=batch_count,
+                                       initial_current_dependency_count=initial_count,
+                                       repeated_ids=sorted(set(repeated))[:20]))
+                raise WorkloadEvidenceInvalidationError(
+                    'a dependent-evidence object was counted inconsistently',
+                    families=families, failed_families=[family], game_log_id=game_log_id)
+            for value in batch_ids:
+                marked_seen.add(value)
+                marked_unique.append(value)
+
+            try:
+                session.flush()
+            except Exception as exc:  # noqa: BLE001 - the flush is part of the contract
+                _family_failure(families, family, EVIDENCE_FAILURE_FLUSH_FAILED,
+                                error_type=type(exc).__name__,
+                                **dict(base, batch_count=batch_count,
+                                       initial_current_dependency_count=initial_count))
+                raise WorkloadEvidenceInvalidationError(
+                    'dependent-evidence writes could not be flushed',
+                    families=families, failed_families=[family],
+                    game_log_id=game_log_id) from exc
+
+            stored = evidence_contract.evidence_sync_run_ids(
+                evidence_ids=batch_ids, session=session)
+            if any(value != sync_run_id for value in stored.values()):
+                _family_failure(families, family, EVIDENCE_FAILURE_OPERATION_ID,
+                                **dict(base, batch_count=batch_count,
+                                       initial_current_dependency_count=initial_count))
+                raise WorkloadEvidenceInvalidationError(
+                    'a marked evidence object does not carry the governed operation id',
+                    families=families, failed_families=[family], game_log_id=game_log_id)
+
+            batch_count += 1
+            try:
+                remaining_ids = _residual()
+            except Exception as exc:  # noqa: BLE001
+                _family_failure(families, family, EVIDENCE_FAILURE_RESIDUAL_QUERY,
+                                error_type=type(exc).__name__,
+                                **dict(base, batch_count=batch_count,
+                                       initial_current_dependency_count=initial_count))
+                raise WorkloadEvidenceInvalidationError(
+                    'the residual dependency population could not be re-read',
+                    families=families, failed_families=[family],
+                    game_log_id=game_log_id) from exc
+
+            if len(remaining_ids) >= before_count:
+                _family_failure(families, family, EVIDENCE_FAILURE_NO_PROGRESS,
+                                **dict(base, batch_count=batch_count,
+                                       initial_current_dependency_count=initial_count,
+                                       remaining_current_dependency_count=len(remaining_ids)))
+                raise WorkloadEvidenceInvalidationError(
+                    'a dependent-evidence batch made no progress while residual remained',
+                    families=families, failed_families=[family], game_log_id=game_log_id)
+
+        # Final authoritative residual, re-read once more and cross-checked against itself.
+        try:
+            final_ids = _residual()
+            confirm_ids = _residual()
+        except Exception as exc:  # noqa: BLE001
+            _family_failure(families, family, EVIDENCE_FAILURE_RESIDUAL_QUERY,
+                            error_type=type(exc).__name__,
+                            **dict(base, batch_count=batch_count,
+                                   initial_current_dependency_count=initial_count))
+            raise WorkloadEvidenceInvalidationError(
+                'the final residual dependency query was unavailable',
+                families=families, failed_families=[family],
+                game_log_id=game_log_id) from exc
+        if final_ids != confirm_ids:
+            _family_failure(families, family, EVIDENCE_FAILURE_RESIDUAL_QUERY,
+                            **dict(base, batch_count=batch_count,
+                                   initial_current_dependency_count=initial_count))
+            raise WorkloadEvidenceInvalidationError(
+                'the final residual dependency query contradicted itself',
+                families=families, failed_families=[family], game_log_id=game_log_id)
+        if final_ids:
+            _family_failure(families, family, EVIDENCE_FAILURE_RESIDUAL_REMAINS,
+                            **dict(base, batch_count=batch_count,
+                                   initial_current_dependency_count=initial_count,
+                                   remaining_current_dependency_count=len(final_ids)))
+            raise WorkloadEvidenceInvalidationError(
+                'current dependent evidence remains after exhaustive invalidation',
+                families=families, failed_families=[family], game_log_id=game_log_id)
+
         families[family] = {
             'status': EVIDENCE_FAMILY_COMPLETED,
             'reason': None,
-            'marked_count': family_count,
-            'evidence_ids': list(family_ids),
+            'family': family,
+            'source_table': EVIDENCE_SOURCE_TABLE,
+            'source_pk': str(game_log_id),
+            'batch_size': EVIDENCE_BATCH_SIZE,
+            'batch_count': batch_count,
+            'initial_current_dependency_count': initial_count,
+            'marked_unique_count': len(marked_seen),
+            'marked_count': len(marked_seen),
+            'evidence_ids': sorted(marked_seen),
+            'remaining_current_dependency_count': 0,
+            'exhaustive': True,
+            'sync_run_id': sync_run_id,
         }
-
-    if not strict:
-        # Unchanged return shape for ordinary ingestion: existing callers read exactly these
-        # two keys, and adding to the contract they already depend on is not free.
-        return {'marked_count': marked_count, 'evidence_ids': evidence_ids}
-
-    if failed_families:
-        raise WorkloadEvidenceInvalidationError(
-            'required dependent-evidence invalidation did not complete',
-            families=families, failed_families=sorted(failed_families),
-            game_log_id=game_log_id)
 
     missing = [family for family in REQUIRED_EVIDENCE_FAMILIES if family not in families]
     if missing:
@@ -784,30 +1006,17 @@ def _notify_workload_evidence_game_log_correction(
             'a required dependent-evidence family was not attempted',
             families=families, failed_families=sorted(missing), game_log_id=game_log_id)
 
-    try:
-        # Flush inside the caller's transaction so a rejected evidence write fails the repair
-        # here rather than surfacing at the caller's commit, where it would be attributed to
-        # something else entirely.
-        db.session.flush()
-    except Exception as exc:  # noqa: BLE001 - the flush is part of the invalidation contract
-        raise WorkloadEvidenceInvalidationError(
-            'dependent-evidence writes could not be flushed',
-            families=dict(
-                families,
-                **{family: dict(families[family], status=EVIDENCE_FAMILY_FAILED,
-                                reason=EVIDENCE_FAILURE_FLUSH_FAILED,
-                                error_type=type(exc).__name__)
-                   for family in families}),
-            failed_families=sorted(families), game_log_id=game_log_id) from exc
-
     return {
-        'marked_count': marked_count,
-        'evidence_ids': evidence_ids,
+        'marked_count': sum(item['marked_unique_count'] for item in families.values()),
+        'evidence_ids': sorted(
+            value for item in families.values() for value in item['evidence_ids']),
         'families': families,
         'all_required_families_completed': True,
         'failed_families': [],
+        'exhaustive': True,
         'game_log_id': game_log_id,
         'sync_run_id': sync_run_id,
+        'session_id': id(session),
         'strict': True,
     }
 

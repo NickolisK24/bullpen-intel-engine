@@ -1195,6 +1195,64 @@ row, no created identity, no inserted GameLog, no updated field, and no correcti
 
 No replacement evidence is fabricated. The repair only requests invalidation.
 
+## 17k-iii-b. Why strict invalidation had to become EXHAUSTIVE, not merely exception-strict
+
+Making the markers raise instead of warn was necessary and not sufficient.
+
+`mark_dependent_evidence_for_recompute` is a BOUNDED primitive. It queries citation rows with
+`.limit(batch_size)` — default 100 — and only then deduplicates evidence-object ids. Two
+consequences follow, and both were live defects:
+
+1. A source row with more than `batch_size` citation rows leaves current dependent evidence
+   behind after one call, and the call returns a perfectly well-formed success.
+2. Because the limit is applied to CITATION rows and dedup happens afterwards, one batch can
+   mark far FEWER than `batch_size` unique objects. A row whose evidence is cited five times
+   each yields twenty unique objects per hundred-citation batch.
+
+So a completed, well-formed, exception-free strict response proved only that one bounded batch
+had run. A repair could commit 160 corrected GameLogs while their dependent evidence still
+read `recompute_status = current`, and nothing downstream would ever notice.
+
+Strict mode now loops. For every updated GameLog and every required family it reads the
+authoritative residual population, runs the bounded marker, flushes, re-reads the residual,
+and repeats until the residual is zero. The family is declared completed only when every
+marker call returned a valid result, every flush succeeded, every batch strictly reduced the
+residual, no returned id belonged to another source row or another family, no evidence object
+was counted twice, every marked object carries the governed operation id, and the final
+authoritative residual query — run twice and compared against itself — returns nothing.
+
+Family membership needed an authority. The three GameLog markers previously called the shared
+primitive with identical arguments, so "family" was three call sites over one dependency set
+and a per-family claim could not be made at all. `rule_ids` is now an optional scope on the
+primitive and on each marker, defaulting to `None` — the previous unscoped behaviour exactly —
+and strict mode passes each family's own rule-id set, the same sets the per-family rebuild
+paths already use. That is what makes "belongs to the requested family" a checkable claim
+rather than a wish.
+
+Ordinary ingestion is unchanged: one bounded call per family, warning and continuing on
+failure, returning exactly `{'marked_count', 'evidence_ids'}`, no loop. That is right for a
+process that runs again tomorrow, and turning it into a blocking exhaustive sweep would make
+a daily sync's runtime a function of one row's citation count.
+
+A zero-dependency family is a SUCCESS with `batch_count: 0`, `initial_current_dependency_count:
+0`, `marked_unique_count: 0`, `remaining_current_dependency_count: 0`, `exhaustive: true`. No
+work to do is not a failure to work.
+
+Transaction binding is explicit. `session` is threaded from `apply_reviewed_repair` through the
+strict contract into the primitive's reads, writes, residual queries, and flushes, and the
+result reports the session it used so a pre-commit reconciliation can require it to be the
+repair's own. The alternative — relying on the ambient scoped session — would be true today and
+silently untrue the first time anything runs on a second session.
+
+Safety limit: `STRICT_INVALIDATION_MAX_BATCHES` (1000) bounds the loop deterministically.
+Zero-progress detection already catches a stuck marker; the limit catches one that makes a
+single row of progress forever.
+
+Any of these failures raises `WorkloadEvidenceInvalidationError`, which the apply path
+translates to `dependent_evidence_invalidation_failed` — FAIL, full rollback of all 675
+actions, no ledger row, no created identity, no inserted row, no updated field, no correction
+metadata, and no surviving evidence mutation.
+
 ## 17k-iv. Why the correction count is verified as an exact delta
 
 The runtime reconciliation checked `stat_correction_count >= 1`. That is satisfied by a row

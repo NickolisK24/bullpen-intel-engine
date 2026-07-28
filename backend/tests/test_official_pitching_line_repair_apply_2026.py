@@ -25,6 +25,7 @@ from models.game_log import GameLog
 from models.official_pitching_line_repair_execution import (
     OfficialPitchingLineRepairExecution as Ledger,
 )
+from models.evidence_contract import EvidenceCitation, EvidenceObject
 from models.pitcher import Pitcher
 from services import official_pitching_line_completeness_2026 as completeness
 from services import official_pitching_line_repair_apply_2026 as apply_service
@@ -246,6 +247,64 @@ def seed_local():
          outs=18, r=1, er=1, h=4, k=5)
     _log(BR_STARTER_AWAY, game_pk=BR_GAME, team=BR_OPPONENT, opponent_team=BR_TEAM, gs=1,
          outs=21, r=2, er=2, h=7, k=8)
+
+
+# ── Dependent-evidence fixtures ───────────────────────────────────────────────
+FAMILY_RULE_ID = {
+    sync_service.EVIDENCE_FAMILY_WORKLOAD: 'workload_days_of_rest',
+    sync_service.EVIDENCE_FAMILY_APPEARANCE_CONTEXT: 'appearance_entry_context',
+    sync_service.EVIDENCE_FAMILY_INHERITED_TRAFFIC: 'appearance_inherited_runners',
+}
+
+
+def _evidence_object(rule_id, *, index, status=None):
+    return EvidenceObject(
+        evidence_key=f'{rule_id}:{index}', evidence_type='metric',
+        subject_type='pitcher', subject_id='1', subject_key=f'pitcher:1:{index}',
+        product_date=GDATE, claim_template_id=f'{rule_id}.v1',
+        rendered_claim='fixture', rule_id=rule_id, rule_version=1,
+        rule_definition_hash='0' * 64, typed_cited_inputs=[], computation_trace={},
+        completeness_state=EvidenceObject.COMPLETENESS_COMPLETE,
+        posture=EvidenceObject.POSTURE_INTERNAL_ONLY, source='fixture',
+        recompute_status=status or EvidenceObject.RECOMPUTE_CURRENT,
+    )
+
+
+def _cite(evidence, *, source_pk, citations=1):
+    for order in range(citations):
+        db.session.add(EvidenceCitation(
+            evidence_object_id=evidence.id, source_family='game_logs',
+            source_table='game_logs', source_pk=str(source_pk),
+            source_field_names=['hits_allowed'], citation_role='supporting_input',
+            cited_values={'order': order}, provenance={'fixture': True}))
+
+
+def seed_dependent_evidence(*, source_pk, family, objects=1, citations_per_object=1):
+    """Create ``objects`` CURRENT evidence rows for one family, each cited N times.
+
+    ``citations_per_object`` exists because the shared primitive limits CITATION rows before
+    deduplicating evidence ids: a row whose citations outnumber the batch size can return
+    far fewer unique objects than the limit, which is exactly the residual the exhaustive
+    loop has to drain.
+    """
+    rule_id = FAMILY_RULE_ID[family]
+    created = []
+    for index in range(objects):
+        evidence = _evidence_object(rule_id, index=f'{source_pk}:{family}:{index}')
+        db.session.add(evidence)
+        db.session.flush()
+        _cite(evidence, source_pk=source_pk, citations=citations_per_object)
+        created.append(evidence.id)
+    db.session.commit()
+    return created
+
+
+def _current_count(source_pk, family=None):
+    from services import evidence_contract
+    rule_ids = None if family is None else (FAMILY_RULE_ID[family],)
+    return len(evidence_contract.current_dependent_evidence_ids(
+        source_table='game_logs', source_pk=source_pk, rule_ids=rule_ids,
+        session=db.session))
 
 
 def _pin_planner_baseline(monkeypatch, plan):
@@ -1206,9 +1265,9 @@ def test_workload_evidence_invalidation_is_invoked_through_the_existing_contract
     calls = []
     real = sync_service._notify_workload_evidence_game_log_correction
 
-    def _spy(game_log, *, sync_run_id=None, strict=False):
+    def _spy(game_log, *, sync_run_id=None, strict=False, session=None):
         calls.append((game_log.id, sync_run_id, strict))
-        return real(game_log, sync_run_id=sync_run_id, strict=strict)
+        return real(game_log, sync_run_id=sync_run_id, strict=strict, session=session)
 
     monkeypatch.setattr(sync_service, '_notify_workload_evidence_game_log_correction', _spy)
     payload = _apply(approved)
@@ -1532,6 +1591,13 @@ def test_every_in_transaction_verification_is_evaluated(approved):
         'every_updated_row_completed_all_dependent_evidence_families',
         'every_dependent_evidence_result_belongs_to_its_own_row',
         'every_dependent_evidence_result_carries_the_governed_operation_id',
+        'every_updated_row_exhausted_all_dependent_evidence_families',
+        'every_dependent_evidence_family_reports_exhaustive_true',
+        'every_dependent_evidence_family_has_zero_remaining_current_dependencies',
+        'every_dependent_evidence_batch_made_progress',
+        'every_dependent_evidence_mutation_used_the_repair_transaction',
+        'every_dependent_evidence_id_matches_the_correct_source_row',
+        'every_dependent_evidence_id_matches_the_correct_family',
         'every_updated_row_carries_the_governed_correction_source',
         'no_external_mlb_id_is_stored_as_a_local_pitcher_id',
         'no_duplicate_stable_game_log_key_exists', 'no_delete_occurred',
@@ -2195,6 +2261,9 @@ def test_a_successful_zero_mark_result_is_accepted_not_treated_as_a_failure(app)
 @pytest.mark.parametrize('module_name,function_name,family', list(_marker_names()))
 def test_an_invalidation_exception_rolls_back_every_action(
         approved, monkeypatch, module_name, function_name, family):
+    # The family must actually have work to do, or an exhaustive loop never calls the
+    # marker at all and a broken marker proves nothing.
+    seed_dependent_evidence(source_pk=BR_LOG_ID, family=family, objects=3)
     before = _counts()
     before_hits = db.session.query(GameLog).filter(
         GameLog.id == BR_LOG_ID).one().hits_allowed
@@ -2231,6 +2300,9 @@ def test_an_invalidation_exception_rolls_back_every_action(
 ])
 def test_a_malformed_marker_result_rolls_back_every_action(approved, monkeypatch,
                                                            malformed):
+    seed_dependent_evidence(
+        source_pk=BR_LOG_ID,
+        family=sync_service.EVIDENCE_FAMILY_APPEARANCE_CONTEXT, objects=3)
     before = _counts()
     _break_marker(monkeypatch, 'services.appearance_context_evidence',
                   'mark_game_log_correction_for_appearance_context',
@@ -2244,7 +2316,7 @@ def test_a_malformed_marker_result_rolls_back_every_action(approved, monkeypatch
 
 
 def test_an_absent_required_marker_rolls_back_every_action(approved, monkeypatch):
-    before = _counts()
+    before = _counts()  # a missing marker fails before any dependency lookup
     module = __import__('services.inherited_traffic_evidence',
                         fromlist=['mark_game_log_correction_for_inherited_traffic'])
     monkeypatch.delattr(module, 'mark_game_log_correction_for_inherited_traffic')
@@ -2259,8 +2331,8 @@ def test_an_invalidation_result_for_the_wrong_row_rolls_back(approved, monkeypat
     # A family that completed for a DIFFERENT row has not invalidated this row's evidence.
     real = sync_service._notify_workload_evidence_game_log_correction
 
-    def _misattributed(game_log, *, sync_run_id=None, strict=False):
-        result = real(game_log, sync_run_id=sync_run_id, strict=strict)
+    def _misattributed(game_log, *, sync_run_id=None, strict=False, session=None):
+        result = real(game_log, sync_run_id=sync_run_id, strict=strict, session=session)
         if isinstance(result, dict) and 'game_log_id' in result:
             result = dict(result, game_log_id=(result['game_log_id'] or 0) + 1)
         return result
@@ -2366,3 +2438,413 @@ def test_the_governed_constants_are_unchanged():
         apply_service.APPROVED_OFFICIAL_PITCHING_LINE_REPAIR_MANIFEST_FINGERPRINT_2026)
     assert apply_service.APPROVED_EXECUTION_CONTRACT['total_action_count'] == 675
     assert apply_service.EVIDENCE_INVALIDATION_STRICT is True
+
+
+# ═══════════════ 24. Exhaustive strict invalidation ════════════════════════
+def _strict(log, *, sync_run_id=7777):
+    return sync_service._notify_workload_evidence_game_log_correction(
+        log, sync_run_id=sync_run_id, strict=True, session=db.session)
+
+
+def _reviewed_log():
+    return db.session.query(GameLog).filter(GameLog.id == BR_LOG_ID).one()
+
+
+def test_ordinary_ingestion_processes_one_bounded_batch_per_family_only(app):
+    # 400 objects, one citation each. Ordinary ingestion makes exactly ONE bounded call per
+    # family and never loops, so it marks at most 3 x batch_size and leaves the rest for the
+    # next sweep. The markers are unscoped in this path, so all three draw from the same
+    # dependency set.
+    seed_local()
+    seed_dependent_evidence(source_pk=BR_LOG_ID,
+                            family=sync_service.EVIDENCE_FAMILY_WORKLOAD, objects=500)
+    log = _reviewed_log()
+
+    module = __import__('services.workload_recovery_evidence',
+                        fromlist=['mark_game_log_correction_for_workload_recovery'])
+    single = module.mark_game_log_correction_for_workload_recovery(log)
+    assert single['marked_count'] == sync_service.EVIDENCE_BATCH_SIZE
+    assert _current_count(BR_LOG_ID, sync_service.EVIDENCE_FAMILY_WORKLOAD) == 400
+
+    result = sync_service._notify_workload_evidence_game_log_correction(log)
+    assert set(result) == {'marked_count', 'evidence_ids'}
+    assert result['marked_count'] == 3 * sync_service.EVIDENCE_BATCH_SIZE
+    # Residual survives a successful, well-formed ordinary sweep. That is correct for
+    # ingestion, which runs again; it is exactly why the repair cannot rely on it.
+    assert _current_count(BR_LOG_ID, sync_service.EVIDENCE_FAMILY_WORKLOAD) == 100
+
+    # The strict path, on the same population, drains it.
+    assert _strict(log)['families'][
+        sync_service.EVIDENCE_FAMILY_WORKLOAD]['remaining_current_dependency_count'] == 0
+    assert _current_count(BR_LOG_ID) == 0
+
+
+def test_strict_invalidation_accepts_a_family_with_zero_dependencies(app):
+    seed_local()
+    result = _strict(_reviewed_log())
+    for family, item in result['families'].items():
+        assert item['status'] == 'completed'
+        assert item['initial_current_dependency_count'] == 0
+        assert item['marked_unique_count'] == 0
+        assert item['remaining_current_dependency_count'] == 0
+        assert item['batch_count'] == 0
+        assert item['exhaustive'] is True
+        assert item['family'] == family
+        assert item['source_table'] == 'game_logs'
+        assert item['source_pk'] == str(BR_LOG_ID)
+        assert item['batch_size'] == sync_service.EVIDENCE_BATCH_SIZE
+        assert item['sync_run_id'] == 7777
+    assert result['exhaustive'] is True
+
+
+@pytest.mark.parametrize('objects,expected_batches', [(100, 1), (101, 2), (250, 3)])
+def test_strict_invalidation_exhausts_every_dependency(app, objects, expected_batches):
+    seed_local()
+    seed_dependent_evidence(source_pk=BR_LOG_ID,
+                            family=sync_service.EVIDENCE_FAMILY_WORKLOAD,
+                            objects=objects)
+    assert _current_count(BR_LOG_ID, sync_service.EVIDENCE_FAMILY_WORKLOAD) == objects
+
+    result = _strict(_reviewed_log())
+    workload = result['families'][sync_service.EVIDENCE_FAMILY_WORKLOAD]
+    assert workload['initial_current_dependency_count'] == objects
+    assert workload['marked_unique_count'] == objects
+    assert workload['batch_count'] == expected_batches
+    assert workload['remaining_current_dependency_count'] == 0
+    assert workload['exhaustive'] is True
+    assert len(set(workload['evidence_ids'])) == objects
+    assert _current_count(BR_LOG_ID, sync_service.EVIDENCE_FAMILY_WORKLOAD) == 0
+    assert _current_count(BR_LOG_ID) == 0
+
+
+def test_citation_duplication_cannot_hide_residual_evidence(app):
+    # The primitive limits CITATION rows BEFORE deduplicating evidence ids. With 5 citations
+    # each, a 100-citation batch yields only 20 unique objects — a fifth of the nominal batch
+    # size — so a well-formed success can leave most of the population still `current`.
+    seed_local()
+    seed_dependent_evidence(source_pk=BR_LOG_ID,
+                            family=sync_service.EVIDENCE_FAMILY_WORKLOAD,
+                            objects=100, citations_per_object=5)
+    log = _reviewed_log()
+    assert _current_count(BR_LOG_ID, sync_service.EVIDENCE_FAMILY_WORKLOAD) == 100
+
+    module = __import__('services.workload_recovery_evidence',
+                        fromlist=['mark_game_log_correction_for_workload_recovery'])
+    single = module.mark_game_log_correction_for_workload_recovery(log)
+    assert single['marked_count'] == 20            # far fewer than the batch size
+    assert _current_count(BR_LOG_ID, sync_service.EVIDENCE_FAMILY_WORKLOAD) == 80
+
+    ordinary = sync_service._notify_workload_evidence_game_log_correction(log)
+    assert ordinary['marked_count'] == 60          # three bounded batches, still not all
+    assert _current_count(BR_LOG_ID, sync_service.EVIDENCE_FAMILY_WORKLOAD) == 20
+
+    result = _strict(log)
+    workload = result['families'][sync_service.EVIDENCE_FAMILY_WORKLOAD]
+    assert workload['marked_unique_count'] == 20   # the residual the batches left behind
+    assert workload['remaining_current_dependency_count'] == 0
+    assert workload['exhaustive'] is True
+    assert _current_count(BR_LOG_ID, sync_service.EVIDENCE_FAMILY_WORKLOAD) == 0
+
+
+def test_every_family_is_exhausted_independently(app):
+    seed_local()
+    counts = {sync_service.EVIDENCE_FAMILY_WORKLOAD: 130,
+              sync_service.EVIDENCE_FAMILY_APPEARANCE_CONTEXT: 101,
+              sync_service.EVIDENCE_FAMILY_INHERITED_TRAFFIC: 45}
+    for family, objects in counts.items():
+        seed_dependent_evidence(source_pk=BR_LOG_ID, family=family, objects=objects)
+
+    result = _strict(_reviewed_log())
+    for family, objects in counts.items():
+        item = result['families'][family]
+        assert item['initial_current_dependency_count'] == objects
+        assert item['marked_unique_count'] == objects
+        assert item['remaining_current_dependency_count'] == 0
+        assert item['exhaustive'] is True
+        assert _current_count(BR_LOG_ID, family) == 0
+    assert _current_count(BR_LOG_ID) == 0
+    assert result['marked_count'] == sum(counts.values())
+
+
+def test_evidence_for_another_game_log_is_untouched(app):
+    seed_local()
+    seed_dependent_evidence(source_pk=BR_LOG_ID,
+                            family=sync_service.EVIDENCE_FAMILY_WORKLOAD, objects=120)
+    other = db.session.query(GameLog).filter(GameLog.id != BR_LOG_ID).first()
+    seed_dependent_evidence(source_pk=other.id,
+                            family=sync_service.EVIDENCE_FAMILY_WORKLOAD, objects=10)
+
+    _strict(_reviewed_log())
+    assert _current_count(BR_LOG_ID) == 0
+    # A different source row's dependencies are not this row's to invalidate.
+    assert _current_count(other.id, sync_service.EVIDENCE_FAMILY_WORKLOAD) == 10
+
+
+def test_a_batch_reporting_no_progress_with_residual_evidence_fails(app, monkeypatch):
+    seed_local()
+    seed_dependent_evidence(source_pk=BR_LOG_ID,
+                            family=sync_service.EVIDENCE_FAMILY_WORKLOAD, objects=150)
+    _break_marker(monkeypatch, 'services.workload_recovery_evidence',
+                  'mark_game_log_correction_for_workload_recovery',
+                  lambda *a, **k: {'marked_count': 0, 'evidence_ids': []})
+    with pytest.raises(sync_service.WorkloadEvidenceInvalidationError) as failure:
+        _strict(_reviewed_log())
+    families = failure.value.families
+    assert families[sync_service.EVIDENCE_FAMILY_WORKLOAD]['reason'] == (
+        sync_service.EVIDENCE_FAILURE_NO_PROGRESS)
+
+
+def test_a_marker_that_stops_short_leaves_residual_and_fails(app, monkeypatch):
+    # A marker that marks the first batch and then reports success without doing anything.
+    seed_local()
+    seed_dependent_evidence(source_pk=BR_LOG_ID,
+                            family=sync_service.EVIDENCE_FAMILY_WORKLOAD, objects=150)
+    real_marker = __import__(
+        'services.workload_recovery_evidence',
+        fromlist=['mark_game_log_correction_for_workload_recovery']
+    ).mark_game_log_correction_for_workload_recovery
+    calls = []
+
+    def _one_batch_then_idle(game_log, **kwargs):
+        calls.append(1)
+        if len(calls) == 1:
+            return real_marker(game_log, **kwargs)
+        return {'marked_count': 0, 'evidence_ids': []}
+
+    _break_marker(monkeypatch, 'services.workload_recovery_evidence',
+                  'mark_game_log_correction_for_workload_recovery', _one_batch_then_idle)
+    with pytest.raises(sync_service.WorkloadEvidenceInvalidationError):
+        _strict(_reviewed_log())
+    # Residual is still there — the failure is precisely that it was not drained.
+    assert _current_count(BR_LOG_ID, sync_service.EVIDENCE_FAMILY_WORKLOAD) == 50
+
+
+@pytest.mark.parametrize('behaviour,reason', [
+    ('malformed', 'marker_result_malformed'),
+    ('raises', 'marker_raised'),
+])
+def test_a_later_batch_failure_fails_the_family(app, monkeypatch, behaviour, reason):
+    seed_local()
+    seed_dependent_evidence(source_pk=BR_LOG_ID,
+                            family=sync_service.EVIDENCE_FAMILY_WORKLOAD, objects=250)
+    module = __import__('services.workload_recovery_evidence',
+                        fromlist=['mark_game_log_correction_for_workload_recovery'])
+    real_marker = module.mark_game_log_correction_for_workload_recovery
+    calls = []
+
+    def _fails_on_the_second_batch(game_log, **kwargs):
+        calls.append(1)
+        if len(calls) == 1:
+            return real_marker(game_log, **kwargs)
+        if behaviour == 'malformed':
+            return {'marked_count': 'many'}
+        raise RuntimeError('evidence down')
+
+    monkeypatch.setattr(module, 'mark_game_log_correction_for_workload_recovery',
+                        _fails_on_the_second_batch)
+    with pytest.raises(sync_service.WorkloadEvidenceInvalidationError) as failure:
+        _strict(_reviewed_log())
+    assert len(calls) == 2
+    assert failure.value.families[
+        sync_service.EVIDENCE_FAMILY_WORKLOAD]['reason'] == reason
+
+
+def test_a_flush_failure_in_a_later_batch_fails(app, monkeypatch):
+    seed_local()
+    seed_dependent_evidence(source_pk=BR_LOG_ID,
+                            family=sync_service.EVIDENCE_FAMILY_WORKLOAD, objects=250)
+    real_flush = db.session.flush
+    calls = []
+
+    def _flush(*args, **kwargs):
+        calls.append(1)
+        if len(calls) > 3:
+            raise RuntimeError('flush rejected')
+        return real_flush(*args, **kwargs)
+
+    monkeypatch.setattr(db.session, 'flush', _flush)
+    with pytest.raises(sync_service.WorkloadEvidenceInvalidationError) as failure:
+        _strict(_reviewed_log())
+    assert failure.value.families[sync_service.EVIDENCE_FAMILY_WORKLOAD]['reason'] == (
+        sync_service.EVIDENCE_FAILURE_FLUSH_FAILED)
+
+
+def test_the_deterministic_safety_limit_fails_closed(app, monkeypatch):
+    seed_local()
+    seed_dependent_evidence(source_pk=BR_LOG_ID,
+                            family=sync_service.EVIDENCE_FAMILY_WORKLOAD, objects=250)
+    monkeypatch.setattr(sync_service, 'STRICT_INVALIDATION_MAX_BATCHES', 1)
+    with pytest.raises(sync_service.WorkloadEvidenceInvalidationError) as failure:
+        _strict(_reviewed_log())
+    assert failure.value.families[sync_service.EVIDENCE_FAMILY_WORKLOAD]['reason'] == (
+        sync_service.EVIDENCE_FAILURE_SAFETY_LIMIT)
+
+
+def test_an_evidence_id_from_another_game_log_fails(app, monkeypatch):
+    seed_local()
+    seed_dependent_evidence(source_pk=BR_LOG_ID,
+                            family=sync_service.EVIDENCE_FAMILY_WORKLOAD, objects=5)
+    other = db.session.query(GameLog).filter(GameLog.id != BR_LOG_ID).first()
+    foreign = seed_dependent_evidence(
+        source_pk=other.id, family=sync_service.EVIDENCE_FAMILY_WORKLOAD, objects=1)
+    _break_marker(monkeypatch, 'services.workload_recovery_evidence',
+                  'mark_game_log_correction_for_workload_recovery',
+                  lambda *a, **k: {'marked_count': 1, 'evidence_ids': list(foreign)})
+    with pytest.raises(sync_service.WorkloadEvidenceInvalidationError) as failure:
+        _strict(_reviewed_log())
+    assert failure.value.families[sync_service.EVIDENCE_FAMILY_WORKLOAD]['reason'] == (
+        sync_service.EVIDENCE_FAILURE_WRONG_SOURCE)
+
+
+def test_an_evidence_id_from_another_family_fails(app, monkeypatch):
+    seed_local()
+    seed_dependent_evidence(source_pk=BR_LOG_ID,
+                            family=sync_service.EVIDENCE_FAMILY_WORKLOAD, objects=5)
+    other_family = seed_dependent_evidence(
+        source_pk=BR_LOG_ID,
+        family=sync_service.EVIDENCE_FAMILY_INHERITED_TRAFFIC, objects=1)
+    _break_marker(monkeypatch, 'services.workload_recovery_evidence',
+                  'mark_game_log_correction_for_workload_recovery',
+                  lambda *a, **k: {'marked_count': 1, 'evidence_ids': list(other_family)})
+    with pytest.raises(sync_service.WorkloadEvidenceInvalidationError) as failure:
+        _strict(_reviewed_log())
+    assert failure.value.families[sync_service.EVIDENCE_FAMILY_WORKLOAD]['reason'] == (
+        sync_service.EVIDENCE_FAILURE_WRONG_FAMILY)
+
+
+def test_strict_invalidation_requires_a_governed_operation_id(app):
+    seed_local()
+    with pytest.raises(sync_service.WorkloadEvidenceInvalidationError):
+        sync_service._notify_workload_evidence_game_log_correction(
+            _reviewed_log(), sync_run_id=None, strict=True, session=db.session)
+
+
+def test_strict_reads_and_writes_use_the_supplied_session(app):
+    seed_local()
+    seed_dependent_evidence(source_pk=BR_LOG_ID,
+                            family=sync_service.EVIDENCE_FAMILY_WORKLOAD, objects=120)
+    result = _strict(_reviewed_log())
+    assert result['session_id'] == id(db.session)
+    # The evidence mutations are pending in THIS transaction, not committed independently.
+    db.session.rollback()
+    assert _current_count(BR_LOG_ID, sync_service.EVIDENCE_FAMILY_WORKLOAD) == 120
+
+
+# ═══════════════ 25. Exhaustion inside the repair transaction ═══════════════
+def test_the_repair_exhausts_dependent_evidence_before_commit(approved):
+    counts = {sync_service.EVIDENCE_FAMILY_WORKLOAD: 130,
+              sync_service.EVIDENCE_FAMILY_APPEARANCE_CONTEXT: 101,
+              sync_service.EVIDENCE_FAMILY_INHERITED_TRAFFIC: 7}
+    for family, objects in counts.items():
+        seed_dependent_evidence(source_pk=BR_LOG_ID, family=family, objects=objects)
+
+    payload = _apply(approved)
+    assert payload['result'] == apply_service.RESULT_PASS
+
+    record = [r for r in payload['dependent_evidence_invalidation_results']
+              if r['local_game_log_id'] == BR_LOG_ID][0]
+    for family, objects in counts.items():
+        item = record['families'][family]
+        assert item['initial_current_dependency_count'] == objects
+        assert item['marked_unique_count'] == objects
+        assert item['remaining_current_dependency_count'] == 0
+        assert item['exhaustive'] is True
+        assert item['batch_count'] >= 1
+    assert record['exhaustive'] is True
+    assert record['result_session_id'] == record['repair_session_id']
+    assert _current_count(BR_LOG_ID) == 0
+
+    checks = payload['verification_results']
+    for name in ('every_updated_row_exhausted_all_dependent_evidence_families',
+                 'every_dependent_evidence_family_reports_exhaustive_true',
+                 'every_dependent_evidence_family_has_zero_remaining_current_dependencies',
+                 'every_dependent_evidence_batch_made_progress',
+                 'every_dependent_evidence_mutation_used_the_repair_transaction',
+                 'every_dependent_evidence_id_matches_the_correct_source_row',
+                 'every_dependent_evidence_id_matches_the_correct_family'):
+        assert checks[name] is True, name
+
+
+def test_residual_evidence_after_a_partial_batch_cannot_authorize_a_commit(approved,
+                                                                          monkeypatch):
+    # The exact defect: a single bounded batch returns a well-formed success while leaving
+    # dependent evidence `current`. It must not be enough to commit.
+    seed_dependent_evidence(source_pk=BR_LOG_ID,
+                            family=sync_service.EVIDENCE_FAMILY_WORKLOAD, objects=250)
+    before = _counts()
+    module = __import__('services.workload_recovery_evidence',
+                        fromlist=['mark_game_log_correction_for_workload_recovery'])
+    real_marker = module.mark_game_log_correction_for_workload_recovery
+    calls = []
+
+    def _one_batch_only(game_log, **kwargs):
+        calls.append(1)
+        if len(calls) == 1:
+            return real_marker(game_log, **kwargs)
+        return {'marked_count': 0, 'evidence_ids': []}
+
+    monkeypatch.setattr(module, 'mark_game_log_correction_for_workload_recovery',
+                        _one_batch_only)
+    payload = _apply(approved)
+    assert payload['result'] == apply_service.RESULT_FAIL
+    assert payload['decision_reasons'] == [
+        apply_service.CONTRADICTION_DEPENDENT_EVIDENCE]
+    assert payload['database_writes_performed'] is False
+    assert _counts() == before
+    assert db.session.query(Ledger).count() == 0
+    assert db.session.query(Pitcher).filter(Pitcher.mlb_id == P_DEFERRED).count() == 0
+    row = db.session.query(GameLog).filter(GameLog.id == BR_LOG_ID).one()
+    assert row.hits_allowed == 1
+    assert row.stat_correction_count == 0
+    # Every evidence mutation the partial batch made is rolled back with the repair.
+    assert _current_count(BR_LOG_ID, sync_service.EVIDENCE_FAMILY_WORKLOAD) == 250
+
+
+def test_an_exhaustion_failure_rolls_back_identities_inserts_updates_and_evidence(
+        approved, monkeypatch):
+    seed_dependent_evidence(source_pk=BR_LOG_ID,
+                            family=sync_service.EVIDENCE_FAMILY_APPEARANCE_CONTEXT,
+                            objects=150)
+    before = _counts()
+    module = __import__('services.appearance_context_evidence',
+                        fromlist=['mark_game_log_correction_for_appearance_context'])
+    real_marker = module.mark_game_log_correction_for_appearance_context
+    calls = []
+
+    def _fails_late(game_log, **kwargs):
+        calls.append(1)
+        if len(calls) == 1:
+            return real_marker(game_log, **kwargs)
+        raise RuntimeError('evidence down')
+
+    monkeypatch.setattr(module, 'mark_game_log_correction_for_appearance_context',
+                        _fails_late)
+    payload = _apply(approved)
+    assert payload['result'] == apply_service.RESULT_FAIL
+    assert payload['rollback_performed'] is True
+    assert _counts() == before
+    assert db.session.query(Ledger).count() == 0
+    assert db.session.query(Pitcher).filter(Pitcher.mlb_id == P_DEFERRED).count() == 0
+    assert db.session.query(GameLog).join(
+        Pitcher, GameLog.pitcher_id == Pitcher.id).filter(
+        Pitcher.mlb_id == P_DEFERRED).count() == 0
+    assert _current_count(
+        BR_LOG_ID, sync_service.EVIDENCE_FAMILY_APPEARANCE_CONTEXT) == 150
+
+
+def test_the_artifact_reports_bounded_per_family_totals(approved):
+    seed_dependent_evidence(source_pk=BR_LOG_ID,
+                            family=sync_service.EVIDENCE_FAMILY_WORKLOAD, objects=120)
+    payload = _apply(approved)
+    assert payload['result'] == apply_service.RESULT_PASS
+    record = [r for r in payload['dependent_evidence_invalidation_results']
+              if r['local_game_log_id'] == BR_LOG_ID][0]
+    workload = record['families'][sync_service.EVIDENCE_FAMILY_WORKLOAD]
+    for field in ('batch_size', 'batch_count', 'initial_current_dependency_count',
+                  'marked_unique_count', 'remaining_current_dependency_count',
+                  'exhaustive', 'evidence_ids', 'evidence_id_count'):
+        assert field in workload, field
+    assert workload['evidence_id_count'] == 120
+    # Evidence ids belong in the private artifact, never in the bounded step summary.
+    workflow = WORKFLOW_PATH.read_text(encoding='utf-8')
+    assert 'evidence_ids' not in workflow

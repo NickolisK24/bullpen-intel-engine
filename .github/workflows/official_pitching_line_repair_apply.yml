@@ -157,6 +157,27 @@ jobs:
               '### Actions applied',
           ]
           summary.extend(f"- `{name}`: `{count}`" for name, count in sorted(applied.items()))
+          invalidation = payload.get('dependent_evidence_invalidation_results') or []
+          totals = {}
+          for item in invalidation:
+              for name, family in (item.get('families') or {}).items():
+                  bucket = totals.setdefault(
+                      name, {'batches': 0, 'initial': 0, 'marked': 0, 'remaining': 0,
+                             'exhaustive': True})
+                  bucket['batches'] += family.get('batch_count') or 0
+                  bucket['initial'] += family.get(
+                      'initial_current_dependency_count') or 0
+                  bucket['marked'] += family.get('marked_unique_count') or 0
+                  bucket['remaining'] += family.get(
+                      'remaining_current_dependency_count') or 0
+                  bucket['exhaustive'] = (
+                      bucket['exhaustive'] and family.get('exhaustive') is True)
+          summary.extend(('', '### Dependent-evidence invalidation (bounded totals)'))
+          summary.extend(
+              f"- `{name}`: batches `{bucket['batches']}` initial "
+              f"`{bucket['initial']}` marked `{bucket['marked']}` remaining "
+              f"`{bucket['remaining']}` exhaustive `{bucket['exhaustive']}`"
+              for name, bucket in sorted(totals.items()))
           summary.extend(('', '### Reviewed amendment line (825058:805299:109)'))
           summary.append(
               f"- GameLog `{before.get('local_game_log_id')}` field "
