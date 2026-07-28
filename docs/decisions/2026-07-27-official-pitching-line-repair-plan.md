@@ -267,6 +267,133 @@ and inherited-traffic evidence for recomputation. The planner declares this poli
 review can approve it with the manifest, and executes none of it: no action proposes
 correction metadata, and no action proposes a generated timestamp.
 
+## 11h. Why a local foreign key cannot exist before its identity prerequisite is applied
+
+The enriched planner's first production run failed on two reconciliations —
+`every_safe_insert_contains_every_required_correction_field` and
+`no_required_official_value_is_defaulted` — with an otherwise clean artifact: 40 of 42
+reconciliations true, no blocking reasons, no database writes, and the accepted baseline
+matched. Artifact inspection showed exactly 342 safe insertions carrying
+`proposed_values.pitcher_id = null`, and those 342 were precisely the insertions dependent on
+identity creation. Every one had exactly one dependency, every dependency existed exactly once,
+was safe and unblocked, and carried the same official MLB person id as its insertion, with the
+identity reciprocally naming its dependent insertion. No other required field was missing.
+
+The null was correct and the validation was wrong.
+
+`GameLog.pitcher_id` is not an official value. Official evidence supplies innings, outs,
+strikes, hits, runs, opponent, and the rest; it never supplies a row id in this database.
+`pitcher_id` is a **local foreign key** into `Pitcher`, and for an official person with no
+local `Pitcher` row that primary key does not exist yet. It is created by the database when
+the identity prerequisite is applied. A read-only planner cannot know a future autoincrement
+value, and it must not guess one.
+
+`REQUIRED_INSERT_FIELDS` treated `pitcher_id` like any other immediately-available value:
+present as a key, non-null, non-empty. That test is right for an official value and wrong for
+a deferred relationship. Applying it to all 445 insertions rejected the 342 that were correct
+precisely *because* they refused to invent a primary key.
+
+## 11i. Official MLB identity is not a local primary key
+
+Two identifiers are involved and they are never interchangeable.
+
+`official_mlb_person_id` is MLB's stable external identifier for a person. It is authoritative
+evidence, it appears on every action, and it is what `Pitcher.mlb_id` stores.
+
+`Pitcher.id` is this database's own autoincrement primary key. It is meaningless outside this
+database and is what `GameLog.pitcher_id` references.
+
+Writing the MLB person id into `GameLog.pitcher_id` would produce a foreign key pointing at
+whichever unrelated local row happens to hold that primary key — silent, plausible-looking,
+and wrong in a way no count-based check would notice. Zero, a negative number, a temporary
+number, a guessed local id, and any other placeholder are forbidden for the same reason.
+
+Numeric coincidence is not a defence: a small local id can equal a small MLB id by accident.
+The planner therefore accepts a proposed `pitcher_id` only when it equals a `local_pitcher_id`
+that was resolved from the local `Pitcher` table **for this official identity** — recorded on
+the action as `local_pitcher_mlb_id`, which must equal `official_mlb_person_id`. That is what
+`no_insert_uses_an_external_id_as_a_local_pitcher_id` proves.
+
+## 11j. The two valid pitcher-reference states
+
+Every planned insertion resolves its pitcher in exactly one of two ways, recorded on the action
+as `pitcher_reference_state`. Anything else is `invalid_pitcher_reference` and unsafe.
+
+**State A — `existing_local_identity`.** The official person already has a local `Pitcher` row.
+Required: `local_pitcher_id` is a positive local primary key, `proposed_values.pitcher_id`
+equals it, that local row's MLB id equals the insertion's `official_mlb_person_id`, and no
+identity-create dependency is present.
+
+**State B — `deferred_identity_creation`.** The official person has no local row.  Required:
+`proposed_values.pitcher_id` is null, `local_pitcher_id` is null, exactly one
+`dependency_action_id` exists, it resolves to exactly one `identity_create_required` action,
+that action is `safe_to_apply` with no blocking reasons, its `official_mlb_person_id` equals
+the insertion's, and it reciprocally lists the insertion's action id. The insertion is safe
+only while every one of those conditions holds.
+
+A future apply step must, for State B, create the identity dependency first, read back the
+newly created local `Pitcher` primary key, and inject that real primary key before constructing
+the `GameLog` row. This branch is read-only and does not implement that resolution; the policy
+ships as data in `pitcher_reference_resolution_policy`.
+
+The fail-closed cases are typed, not silently recounted: neither a local id nor a dependency
+(`local_pitcher_reference_unresolvable`); both at once, a proposed id that differs from the
+local id, or a local row belonging to a different identity (`local_pitcher_reference_conflict`);
+more than one dependency or a duplicated dependency (`identity_dependency_ambiguous`); an
+absent dependency (`identity_dependency_unresolved`); a blocked dependency
+(`identity_dependency_blocked`); a dependency for a different person
+(`identity_dependency_mlb_identity_mismatch`); an identity that does not name the insertion back
+(`identity_dependency_not_reciprocal`); and an MLB person id substituted for the primary key
+(`external_mlb_id_used_as_local_pitcher_id`).
+
+## 11k. Why `pitcher_id: null` is intentional only for a safe deferred dependency
+
+A null foreign key is not self-justifying. It is legitimate only as the visible consequence of
+a reviewed, safe, matching, reciprocal identity dependency — which is why the required-value
+contract was **split** rather than simply relaxed.
+
+`REQUIRED_INSERT_VALUE_FIELDS` holds the 19 ordinary official values, each still required
+present and non-empty, checked by `every_safe_insert_contains_every_required_non_fk_value` and
+`no_required_official_value_is_defaulted`. `pitcher_id` moved out of that check and into the
+pitcher-reference contract, not out of validation altogether. Dropping it from the required set
+with nothing in its place would have accepted an insertion with no pitcher at all.
+
+`pitcher_reference_coverage` reports the derived shape of the population:
+`insert_actions_with_existing_local_pitcher_id`,
+`insert_actions_with_deferred_identity_dependency`,
+`deferred_identity_inserts_with_safe_dependency`,
+`deferred_identity_inserts_with_unresolved_dependency`,
+`deferred_identity_inserts_with_mismatched_identity`, and
+`inserts_with_invalid_pitcher_reference`. For the accepted production population these are 103,
+342, 342, 0, 0, and 0. Those numbers are derived from the manifest and compared in tests; none
+of them is hardcoded as a planner result.
+
+The 445 insert, 159 update, and 604 defect-line populations are unchanged. Reference validation
+decides whether an insertion is *safe*, never whether a line is a *defect*.
+
+## 11l. Why the failed production fingerprint is not approved
+
+The failed run's manifest fingerprint,
+`9b8ab677c83ec5b8efa5a4020593911dc4d6d73e3262a09c0703d1a5907b49b7`, is pinned in the planner as
+`FAILED_PRODUCTION_MANIFEST_FINGERPRINT` and reported with
+`failed_production_manifest_fingerprint_approved: false`.
+
+It is evidence of the failure under repair, not an approval. A `result: fail` artifact cannot
+confer approval on its manifest, however clean the rest of it looks: the run's own
+reconciliations declared the manifest not reviewable, and approval that ignores a failing
+reconciliation is not approval at all.
+
+This change also adds two evidence fields to every insertion — `local_pitcher_mlb_id` and
+`pitcher_reference_state` — so a reviewer can see from the action itself which of the two
+resolution paths applies and why a null foreign key is correct. Those fields are part of the
+manifest, so the fingerprint changes normally, as it must whenever manifest content changes.
+
+Either way, approval requires a **newly generated production artifact** whose `result` is
+`pass`, with every reconciliation true, and its exact fingerprint reviewed again after that
+passing run. Had the fix been purely semantic and the manifest byte-identical, the unchanged
+fingerprint still would not have inherited approval from a failed run — a fingerprint is
+approved by review of a passing artifact, never by resemblance to a prior one.
+
 ## 12. Why the full manifest requires an exact reviewed fingerprint
 
 The manifest is fingerprinted with SHA-256 over its complete normalized serialization: UTF-8,

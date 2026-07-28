@@ -1152,8 +1152,9 @@ def test_every_safe_insert_carries_every_required_correction_field(app):
     insert = _action_for(payload, f'gamelog:insert:{GAME_PK}:3:{A}')
     assert set(planner.REQUIRED_INSERT_FIELDS) <= set(insert['proposed_values'])
     recon = payload['reconciliations']
-    assert recon['every_safe_insert_contains_every_required_correction_field'] is True
+    assert recon['every_safe_insert_contains_every_required_non_fk_value'] is True
     assert recon['no_required_official_value_is_defaulted'] is True
+    assert recon['every_safe_insert_has_a_resolvable_pitcher_reference'] is True
 
 
 def test_update_gains_workload_corrections_without_becoming_a_second_action(app):
@@ -1818,6 +1819,9 @@ def test_report_has_every_required_field(app):
                 'existing_game_logs_requiring_updates', 'role_corrections_planned',
                 'stat_correction_rows_planned', 'actions_by_type', 'actions_by_team',
                 'blocking_counts_by_reason', 'no_action_confirmations',
+                'pitcher_reference_coverage', 'pitcher_reference_resolution_policy',
+                'failed_production_manifest_fingerprint',
+                'failed_production_manifest_fingerprint_approved',
                 'repair_manifest_action_count', 'repair_manifest',
                 'repair_manifest_fingerprint', 'bounded_preview', 'preview_limit',
                 'preview_truncated', 'verification_plan', 'plan_status',
@@ -1826,6 +1830,437 @@ def test_report_has_every_required_field(app):
         assert key in payload, key
     assert payload['mode'] == 'read_only'
     assert payload['database_writes_performed'] is False
+
+
+# ═══════════════ Pitcher reference: local FK vs official identity ═══════════
+# GameLog.pitcher_id is a LOCAL foreign key, not an official value. For an insertion whose
+# official person has no local Pitcher row yet, that primary key does not exist and cannot be
+# known by a read-only planner — it is produced when the identity prerequisite is applied. A
+# null there is a deferred reference, not a missing value, and must never be filled with the
+# official MLB person id or any other placeholder.
+
+def _seed_deferred_identity():
+    """Every official line has a local counterpart except person 3, who has no identity."""
+    _log(1, team=A, gs=1, outs=18, r=2, er=2, h=5, k=6)
+    _log(2, team=A, gs=0, outs=3, r=1, er=1, h=1, k=2)
+    _log(4, team=B, gs=1, outs=15, r=3, er=3, h=6, k=4)
+    _log(5, team=B, gs=0, outs=4, r=1, er=1, bb=1)
+    _log(6, team=B, gs=0, outs=2, r=0, er=0)
+
+
+def _deferred_insert(payload):
+    return _action_for(payload, f'gamelog:insert:{GAME_PK}:3:{A}')
+
+
+def _reference_action(**overrides):
+    """A minimal insert action for direct classification, defaulting to a valid State A."""
+    action = {
+        'action_id': 'gamelog:insert:9001:7:100',
+        'action_type': planner.ACTION_GAME_LOG_INSERT,
+        'official_mlb_person_id': 7,
+        'local_pitcher_id': 55,
+        'local_pitcher_mlb_id': 7,
+        'dependency_action_ids': [],
+        'proposed_values': {'pitcher_id': 55},
+        'safe_to_apply': True,
+        'blocking_reasons': [],
+    }
+    action.update(overrides)
+    return action
+
+
+def _identity(mlb_person_id=7, *, action_id=None, dependents=('gamelog:insert:9001:7:100',),
+              safe=True, blocking=()):
+    return {
+        'action_id': action_id or f'identity:create:{mlb_person_id}',
+        'action_type': planner.ACTION_IDENTITY_CREATE,
+        'official_mlb_person_id': mlb_person_id,
+        'dependent_game_log_action_ids': list(dependents),
+        'dependency_action_ids': [],
+        'safe_to_apply': safe,
+        'blocking_reasons': list(blocking),
+    }
+
+
+def _classify(action, identities=()):
+    by_id = {}
+    for identity in identities:
+        by_id.setdefault(identity['action_id'], []).append(identity)
+    return planner._classify_pitcher_reference(action, by_id)
+
+
+# ── 1-3. State A: existing local identity ────────────────────────────────────
+def test_existing_identity_insert_requires_a_positive_local_pitcher_id(app):
+    _seed_missing_line_3()
+    payload = planner.run_repair_plan(client=_missing_line_client())
+    insert = _deferred_insert(payload)
+    assert insert['pitcher_reference_state'] == planner.PITCHER_REFERENCE_EXISTING
+    assert insert['local_pitcher_id'] == _pitcher(3).id
+    assert insert['local_pitcher_id'] > 0
+    assert payload['reconciliations'][
+        'every_existing_identity_insert_uses_its_local_pitcher_id'] is True
+
+
+@pytest.mark.parametrize('placeholder', [0, -1, -9999])
+def test_placeholder_local_pitcher_ids_are_rejected(placeholder):
+    state, blocking = _classify(_reference_action(
+        local_pitcher_id=placeholder, proposed_values={'pitcher_id': placeholder}))
+    assert state == planner.PITCHER_REFERENCE_INVALID
+    assert planner.BLOCK_PITCHER_REFERENCE_UNRESOLVABLE in blocking
+
+
+def test_existing_identity_proposed_pitcher_id_equals_the_local_pitcher_id(app):
+    _seed_missing_line_3()
+    payload = planner.run_repair_plan(client=_missing_line_client())
+    insert = _deferred_insert(payload)
+    assert insert['proposed_values']['pitcher_id'] == insert['local_pitcher_id']
+    # A proposed value that drifts from the resolved local row is a conflict, not a variant.
+    state, blocking = _classify(_reference_action(proposed_values={'pitcher_id': 56}))
+    assert state == planner.PITCHER_REFERENCE_INVALID
+    assert planner.BLOCK_PITCHER_REFERENCE_CONFLICT in blocking
+
+
+def test_existing_identity_insert_carries_no_identity_dependency(app):
+    _seed_missing_line_3()
+    payload = planner.run_repair_plan(client=_missing_line_client())
+    insert = _deferred_insert(payload)
+    assert insert['dependency_action_ids'] == []
+    assert not _actions(payload, planner.ACTION_IDENTITY_CREATE)
+
+
+# ── 4-6. State B: deferred identity creation ─────────────────────────────────
+def test_deferred_insert_deliberately_keeps_pitcher_id_null(app):
+    _seed_deferred_identity()
+    payload = _plan()
+    insert = _deferred_insert(payload)
+    assert insert['pitcher_reference_state'] == planner.PITCHER_REFERENCE_DEFERRED
+    assert 'pitcher_id' in insert['proposed_values']       # the key is present by contract
+    assert insert['proposed_values']['pitcher_id'] is None  # the value is deferred by design
+    assert insert['local_pitcher_id'] is None
+    assert insert['safe_to_apply'] is True                  # null FK does not block
+    assert payload['reconciliations'][
+        'every_deferred_identity_insert_has_null_pitcher_id'] is True
+
+
+def test_deferred_insert_requires_exactly_one_identity_dependency(app):
+    _seed_deferred_identity()
+    payload = _plan()
+    insert = _deferred_insert(payload)
+    assert insert['dependency_action_ids'] == ['identity:create:3']
+    state, blocking = _classify(
+        _reference_action(local_pitcher_id=None, local_pitcher_mlb_id=None,
+                          proposed_values={'pitcher_id': None},
+                          dependency_action_ids=['identity:create:7', 'identity:create:8']),
+        identities=[_identity(7), _identity(8)])
+    assert state == planner.PITCHER_REFERENCE_INVALID
+    assert planner.BLOCK_DEPENDENCY_AMBIGUOUS in blocking
+
+
+def test_a_safe_matching_dependency_satisfies_the_pitcher_reference_contract(app):
+    _seed_deferred_identity()
+    payload = _plan()
+    identity = _action_for(payload, 'identity:create:3')
+    insert = _deferred_insert(payload)
+    assert identity['safe_to_apply'] is True
+    assert identity['blocking_reasons'] == []
+    assert identity['official_mlb_person_id'] == insert['official_mlb_person_id']
+    assert insert['action_id'] in identity['dependent_game_log_action_ids']
+    recon = payload['reconciliations']
+    assert recon['every_deferred_identity_insert_has_exactly_one_safe_matching_dependency'] \
+        is True
+    assert recon['every_safe_insert_has_a_resolvable_pitcher_reference'] is True
+
+
+# ── 7-12. Fail-closed pitcher-reference states ───────────────────────────────
+def test_missing_dependency_blocks_the_insertion():
+    state, blocking = _classify(_reference_action(
+        local_pitcher_id=None, local_pitcher_mlb_id=None,
+        proposed_values={'pitcher_id': None},
+        dependency_action_ids=['identity:create:7']), identities=[])
+    assert state == planner.PITCHER_REFERENCE_INVALID
+    assert planner.BLOCK_DEPENDENCY_UNRESOLVED in blocking
+
+
+def test_duplicate_dependency_blocks_the_insertion():
+    state, blocking = _classify(_reference_action(
+        local_pitcher_id=None, local_pitcher_mlb_id=None,
+        proposed_values={'pitcher_id': None},
+        dependency_action_ids=['identity:create:7']),
+        identities=[_identity(7), _identity(7)])
+    assert state == planner.PITCHER_REFERENCE_INVALID
+    assert planner.BLOCK_DEPENDENCY_AMBIGUOUS in blocking
+
+
+def test_blocked_dependency_blocks_the_insertion(app):
+    _seed_deferred_identity()
+    people = dict(_ALL_PEOPLE)
+    people[3] = _person(3, position=None)          # no official position evidence
+    payload = _plan(client=_client(people=people))
+    insert = _deferred_insert(payload)
+    assert insert['pitcher_reference_state'] == planner.PITCHER_REFERENCE_INVALID
+    assert planner.BLOCK_DEPENDENCY_BLOCKED in insert['blocking_reasons']
+    assert insert['safe_to_apply'] is False
+    assert insert['proposed_values']['pitcher_id'] is None    # still never invented
+    assert payload['pitcher_reference_coverage'][
+        'deferred_identity_inserts_with_unresolved_dependency'] == 1
+    assert payload['pitcher_reference_coverage'][
+        'deferred_identity_inserts_with_safe_dependency'] == 0
+
+
+def test_mlb_identity_mismatch_between_insert_and_dependency_blocks():
+    state, blocking = _classify(_reference_action(
+        local_pitcher_id=None, local_pitcher_mlb_id=None,
+        proposed_values={'pitcher_id': None},
+        dependency_action_ids=['identity:create:7']),
+        identities=[_identity(7, action_id='identity:create:7')
+                    | {'official_mlb_person_id': 99}])
+    assert state == planner.PITCHER_REFERENCE_INVALID
+    assert planner.BLOCK_DEPENDENCY_IDENTITY_MISMATCH in blocking
+
+
+def test_missing_reciprocal_dependent_reference_fails_reconciliation():
+    state, blocking = _classify(_reference_action(
+        local_pitcher_id=None, local_pitcher_mlb_id=None,
+        proposed_values={'pitcher_id': None},
+        dependency_action_ids=['identity:create:7']),
+        identities=[_identity(7, dependents=())])
+    assert state == planner.PITCHER_REFERENCE_INVALID
+    assert planner.BLOCK_DEPENDENCY_NOT_RECIPROCAL in blocking
+
+
+def test_an_insert_cannot_have_both_a_local_pitcher_id_and_a_dependency():
+    state, blocking = _classify(
+        _reference_action(dependency_action_ids=['identity:create:7']),
+        identities=[_identity(7)])
+    assert state == planner.PITCHER_REFERENCE_INVALID
+    assert blocking == [planner.BLOCK_PITCHER_REFERENCE_CONFLICT]
+
+
+# ── 13-14. No external id, no placeholder ────────────────────────────────────
+def test_mlb_person_id_is_never_written_into_game_log_pitcher_id(app):
+    _seed_deferred_identity()
+    payload = _plan()
+    for insert in _actions(payload, planner.ACTION_GAME_LOG_INSERT):
+        proposed = insert['proposed_values']['pitcher_id']
+        assert proposed != insert['official_mlb_person_id'] or (
+            insert['local_pitcher_id'] == proposed
+            and insert['local_pitcher_mlb_id'] == insert['official_mlb_person_id'])
+    assert payload['reconciliations'][
+        'no_insert_uses_an_external_id_as_a_local_pitcher_id'] is True
+
+    # Substituting the official person id for the deferred primary key is typed and fatal.
+    external = _reference_action(
+        local_pitcher_id=None, local_pitcher_mlb_id=None,
+        proposed_values={'pitcher_id': 7},                  # the official MLB person id
+        dependency_action_ids=['identity:create:7'])
+    state, blocking = _classify(external, identities=[_identity(7)])
+    assert state == planner.PITCHER_REFERENCE_INVALID
+    assert planner.BLOCK_PITCHER_REFERENCE_EXTERNAL_ID in blocking
+    assert planner._no_external_id_as_local_pitcher_id(external) is False
+
+
+def test_a_local_pitcher_row_must_belong_to_the_official_identity():
+    # A positive integer is not enough: the local row must have been resolved BY this
+    # official MLB person id.
+    action = _reference_action(local_pitcher_mlb_id=999)
+    state, blocking = _classify(action)
+    assert state == planner.PITCHER_REFERENCE_INVALID
+    assert planner.BLOCK_PITCHER_REFERENCE_CONFLICT in blocking
+    assert planner._no_external_id_as_local_pitcher_id(action) is False
+
+
+def test_an_insert_with_neither_identity_nor_dependency_is_unresolvable():
+    state, blocking = _classify(_reference_action(
+        local_pitcher_id=None, local_pitcher_mlb_id=None,
+        proposed_values={'pitcher_id': None}, dependency_action_ids=[]))
+    assert state == planner.PITCHER_REFERENCE_INVALID
+    assert blocking == [planner.BLOCK_PITCHER_REFERENCE_UNRESOLVABLE]
+
+
+# ── 15-18. Every other evidence requirement still holds ──────────────────────
+def test_all_other_required_game_log_fields_remain_mandatory(app):
+    _seed_deferred_identity()
+    payload = _plan()
+    insert = _deferred_insert(payload)
+    # pitcher_id is out of the VALUE contract; nothing else is.
+    assert 'pitcher_id' not in planner.REQUIRED_INSERT_VALUE_FIELDS
+    assert set(planner.REQUIRED_INSERT_VALUE_FIELDS) <= set(insert['proposed_values'])
+    for field in planner.REQUIRED_INSERT_VALUE_FIELDS:
+        assert insert['proposed_values'][field] is not None, field
+    assert planner._required_insert_values_present(insert) is True
+    for field in planner.REQUIRED_INSERT_VALUE_FIELDS:
+        stripped = dict(insert)
+        stripped['proposed_values'] = {k: v for k, v in insert['proposed_values'].items()
+                                       if k != field}
+        assert planner._required_insert_values_present(stripped) is False, field
+
+
+def test_missing_opponent_name_still_blocks_a_deferred_insert(app):
+    _seed_deferred_identity()
+    boxscore = _boxscore(_HOME_LINES, _AWAY_LINES)
+    boxscore['teams']['away']['team'].pop('name')
+    payload = _plan(client=_client(boxscores={GAME_PK: boxscore}))
+    insert = _deferred_insert(payload)
+    assert planner.BLOCK_OPPONENT_NAME_ABSENT in insert['blocking_reasons']
+    assert insert['safe_to_apply'] is False
+
+
+def test_missing_opponent_abbreviation_still_blocks_a_deferred_insert(app):
+    _seed_deferred_identity()
+    boxscore = _boxscore(_HOME_LINES, _AWAY_LINES)
+    boxscore['teams']['away']['team'].pop('abbreviation')
+    payload = _plan(client=_client(boxscores={GAME_PK: boxscore}))
+    insert = _deferred_insert(payload)
+    assert planner.BLOCK_OPPONENT_ABBREVIATION_ABSENT in insert['blocking_reasons']
+    assert insert['safe_to_apply'] is False
+
+
+def test_missing_required_official_stat_still_blocks_a_deferred_insert(app):
+    _seed_deferred_identity()
+    home = [_pline(1, gs=1, outs=18, r=2, er=2, h=5, k=6),
+            _pline(2, gs=0, outs=3, r=1, er=1, h=1, k=2),
+            _pline(3, gs=0, outs=3, r=0, er=0, k=1, drop=('strikes',))]
+    payload = _plan(client=_client(home_lines=home))
+    insert = _deferred_insert(payload)
+    assert planner.BLOCK_CORRECTION_SOURCE_INCOMPLETE in insert['blocking_reasons']
+    assert insert['safe_to_apply'] is False
+    assert payload['reconciliations']['no_required_official_value_is_defaulted'] is True
+
+
+# ── 19-23. The accepted production population ────────────────────────────────
+def test_accepted_population_partitions_into_deferred_and_existing_inserts():
+    b = planner.ACCEPTED_BASELINE
+    deferred = b['missing_lines_dependent_on_identity_creation']
+    existing = b['missing_line_count'] - deferred
+    assert deferred == 342           # derived, not asserted into the planner
+    assert existing == 103
+    assert deferred + existing == b['missing_line_count'] == 445
+
+
+def test_pitcher_reference_coverage_is_derived_from_the_manifest(app):
+    _seed_deferred_identity()
+    payload = _plan()
+    coverage = payload['pitcher_reference_coverage']
+    inserts = _actions(payload, planner.ACTION_GAME_LOG_INSERT)
+    deferred = [a for a in inserts if a['dependency_action_ids']]
+    existing = [a for a in inserts if not a['dependency_action_ids']]
+    assert coverage['insert_actions_with_deferred_identity_dependency'] == len(deferred)
+    assert coverage['insert_actions_with_existing_local_pitcher_id'] == len(existing)
+    assert coverage['deferred_identity_inserts_with_safe_dependency'] == len(deferred)
+    assert coverage['deferred_identity_inserts_with_unresolved_dependency'] == 0
+    assert coverage['deferred_identity_inserts_with_mismatched_identity'] == 0
+    assert coverage['inserts_with_invalid_pitcher_reference'] == 0
+    # The production shape: every missing line is one or the other, never both or neither.
+    assert (coverage['insert_actions_with_deferred_identity_dependency']
+            + coverage['insert_actions_with_existing_local_pitcher_id']) == len(inserts)
+
+
+def test_populations_and_identity_count_are_unchanged_by_reference_validation(app,
+                                                                              monkeypatch):
+    _seed_deferred_identity()
+    payload = _plan()
+    _pin_baseline(monkeypatch, payload)
+    payload = _plan()
+    assert payload['game_log_inserts_planned'] == payload['missing_line_count']
+    assert payload['existing_game_logs_requiring_updates'] == \
+        payload['defective_matched_line_count']
+    assert payload['defect_line_action_count'] == (
+        payload['missing_line_count'] + payload['defective_matched_line_count'])
+    assert payload['unique_identities_requiring_creation'] == 1     # one unique person
+    assert payload['reconciliations']['defect_line_action_count_equals_defect_lines'] is True
+    assert payload['reconciliations']['planned_inserts_equal_missing_lines'] is True
+    assert payload['reconciliations']['planned_updates_equal_defective_rows'] is True
+
+
+def test_every_reconciliation_passes_on_the_corrected_accepted_fixture(app, monkeypatch):
+    _seed_deferred_identity()
+    payload = _plan()
+    _pin_baseline(monkeypatch, payload)
+    payload = _plan()
+    failed = [name for name, ok in payload['reconciliations'].items() if not ok]
+    assert failed == []
+    assert payload['result'] == planner.RESULT_PASS
+    assert payload['plan_status'] == planner.PLAN_READY
+    # The exact reconciliations this change introduces.
+    for name in ('every_safe_insert_has_a_resolvable_pitcher_reference',
+                 'every_existing_identity_insert_uses_its_local_pitcher_id',
+                 'every_deferred_identity_insert_has_null_pitcher_id',
+                 'every_deferred_identity_insert_has_exactly_one_safe_matching_dependency',
+                 'every_identity_dependency_is_reciprocal',
+                 'no_insert_uses_an_external_id_as_a_local_pitcher_id',
+                 'every_safe_insert_contains_every_required_non_fk_value',
+                 'no_required_official_value_is_defaulted'):
+        assert payload['reconciliations'][name] is True, name
+    # The superseded name is gone, not merely renamed alongside the old one.
+    assert 'every_safe_insert_contains_every_required_correction_field' \
+        not in payload['reconciliations']
+
+
+def test_a_deferred_insert_no_longer_fails_the_required_value_contract(app):
+    """The production defect: a null deferred FK failed required-insert validation."""
+    _seed_deferred_identity()
+    payload = _plan()
+    insert = _deferred_insert(payload)
+    assert insert['proposed_values']['pitcher_id'] is None
+    assert planner._required_insert_values_present(insert) is True
+    assert payload['reconciliations'][
+        'every_safe_insert_contains_every_required_non_fk_value'] is True
+
+
+def test_failed_production_fingerprint_is_pinned_but_not_approved(app):
+    _seed_deferred_identity()
+    payload = _plan()
+    assert planner.FAILED_PRODUCTION_MANIFEST_FINGERPRINT == (
+        '9b8ab677c83ec5b8efa5a4020593911dc4d6d73e3262a09c0703d1a5907b49b7')
+    assert payload['failed_production_manifest_fingerprint'] == \
+        planner.FAILED_PRODUCTION_MANIFEST_FINGERPRINT
+    assert payload['failed_production_manifest_fingerprint_approved'] is False
+    assert payload['repair_apply_gate'] != 'open'
+
+
+# ── 24-28. Read-only guarantees still hold ───────────────────────────────────
+def test_reference_validation_writes_nothing(app):
+    _seed_deferred_identity()
+    before = {(row.pitcher_id, row.mlb_game_pk): row.strikeouts
+              for row in db.session.query(GameLog).all()}
+    pitchers_before = db.session.query(Pitcher).count()
+    payload = _plan()
+    db.session.expire_all()
+    after = {(row.pitcher_id, row.mlb_game_pk): row.strikeouts
+             for row in db.session.query(GameLog).all()}
+    assert after == before
+    assert db.session.query(Pitcher).count() == pitchers_before   # no identity was created
+    assert payload['database_writes_performed'] is False
+    assert payload['mode'] == 'read_only'
+
+
+def test_reference_validation_emits_no_write_sql(app):
+    _seed_deferred_identity()
+    statements = []
+
+    @event.listens_for(db.engine, 'before_cursor_execute')
+    def _capture(conn, cursor, statement, parameters, context, executemany):
+        statements.append(statement)
+
+    try:
+        _plan()
+    finally:
+        event.remove(db.engine, 'before_cursor_execute', _capture)
+
+    for statement in statements:
+        head = statement.strip().split(None, 1)[0].upper() if statement.strip() else ''
+        assert head not in ('INSERT', 'UPDATE', 'DELETE'), statement
+
+
+def test_no_apply_mode_exists_for_pitcher_reference_resolution():
+    source = SERVICE_PATH.read_text(encoding='utf-8')
+    assert planner.PITCHER_REFERENCE_RESOLUTION_POLICY['executed_by_planner'] is False
+    for token in ('def apply', 'apply_repair', 'apply_manifest', 'resolve_and_insert'):
+        assert token not in source, token
+    workflow = WORKFLOW_PATH.read_text(encoding='utf-8')
+    assert 'workflow_dispatch' in workflow
+    for token in ('apply', 'accept_fingerprint', 'fingerprint_acceptance'):
+        assert f'{token}:' not in workflow.split('jobs:', 1)[0], token
 
 
 def test_verification_plan_is_ordered_and_descriptive(app):
@@ -1983,6 +2418,9 @@ def test_workflow_ships_full_manifest_and_bounded_summary():
 
 def test_decision_record_documents_the_governed_contract():
     text = DECISION_RECORD.read_text(encoding='utf-8')
-    for phrase in ('bounded', '445', '159', '604', '342', 'fingerprint', 'position player',
-                   'delete', 'appearance-team', 'apply'):
+    for phrase in ('bounded', '445', '159', '604', '342', '103', 'fingerprint',
+                   'position player', 'delete', 'appearance-team', 'apply',
+                   'foreign key', 'primary key', 'deferred_identity_creation',
+                   'existing_local_identity', 'pitcher_reference_coverage',
+                   '9b8ab677c83ec5b8efa5a4020593911dc4d6d73e3262a09c0703d1a5907b49b7'):
         assert phrase in text.lower(), phrase
