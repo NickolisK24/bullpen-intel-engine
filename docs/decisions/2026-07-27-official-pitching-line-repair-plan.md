@@ -1156,9 +1156,18 @@ performant". Those need their own reviewed validation.
 
 Implementing the apply path is likewise not executing it. The workflow is dispatch-only, has
 no schedule, no push or pull-request trigger, and no automatic dispatch; the confirmation
-phrase `APPLY-2026-PITCHING-LINE-REPAIR-3EE2EA06` is required and is validated before
-dependencies are installed. It has not been dispatched, no apply execution has occurred, and
-production data is unchanged.
+phrase `APPLY-2026-PITCHING-LINE-REPAIR-3EE2EA06` is required, and validating it is the
+literal first step of the job — ahead of `actions/checkout`, so a wrong phrase terminates the
+job before the repository is fetched, before Python is set up, before dependencies are
+installed, and therefore before the application can bootstrap or open a database connection.
+The confirmation step needs no repository file, so there is nothing to gain from checking out
+first. The apply command repeats the check ahead of its own imports, and a positional test
+walks `jobs.apply.steps` and asserts the index ordering rather than comparing character
+offsets in the file — an offset comparison is satisfied by any step order at all, as long as
+the strings happen to appear in the right sequence in the text.
+
+It has not been dispatched, no apply execution has occurred, and production data is
+unchanged.
 
 ## 15. Operation
 

@@ -1749,14 +1749,113 @@ def test_the_apply_workflow_takes_only_the_confirmation_input():
     assert len(re.findall(r'^      [a-z_]+:$', inputs_block, re.M)) == 1
 
 
+def _apply_job_steps():
+    """The ordered step bodies of ``jobs.apply.steps``, parsed positionally.
+
+    Deliberately dependency-free: PyYAML is not in backend/requirements.txt, so a test that
+    imported it would pass here and fail in CI. The workflow's list structure is regular
+    enough to walk directly, and walking it is what makes the ordering claim a POSITION
+    comparison rather than a substring comparison — the previous version of this test
+    compared character offsets in the raw file, which is satisfied by any order at all as
+    long as the strings appear in the right sequence in the text.
+    """
+    lines = WORKFLOW_PATH.read_text(encoding='utf-8').splitlines()
+    start = None
+    for index, line in enumerate(lines):
+        if line.startswith('  apply:'):
+            start = index
+            break
+    assert start is not None, 'jobs.apply is missing'
+
+    steps_at = None
+    for index in range(start + 1, len(lines)):
+        if lines[index].startswith('    steps:'):
+            steps_at = index
+            break
+        if lines[index].strip() and not lines[index].startswith('    '):
+            break
+    assert steps_at is not None, 'jobs.apply.steps is missing'
+
+    steps, current = [], None
+    for line in lines[steps_at + 1:]:
+        if line.strip() and not line.startswith('    '):
+            break                                   # left the job block entirely
+        if line.startswith('      - '):
+            if current is not None:
+                steps.append('\n'.join(current))
+            current = [line]
+        elif current is not None:
+            current.append(line)
+    if current is not None:
+        steps.append('\n'.join(current))
+    assert steps, 'jobs.apply.steps is empty'
+    return steps
+
+
+def _step_index(steps, marker):
+    matches = [index for index, body in enumerate(steps) if marker in body]
+    assert len(matches) == 1, f'expected exactly one step matching {marker!r}, got {matches}'
+    return matches[0]
+
+
 def test_the_apply_workflow_validates_confirmation_before_any_database_step():
+    steps = _apply_job_steps()
+
+    confirm = _step_index(steps, 'name: Validate apply confirmation')
+    checkout = _step_index(steps, 'uses: actions/checkout')
+    setup_python = _step_index(steps, 'uses: actions/setup-python')
+    install = _step_index(steps, 'pip install -r backend/requirements.txt')
+    apply_command = _step_index(steps, 'run_official_pitching_line_repair_apply_2026.py')
+    upload = _step_index(steps, 'uses: actions/upload-artifact')
+
+    # Confirmation runs before anything that fetches code, installs a runtime, or could
+    # reach a database. The confirmation step needs no repository file, so it can and must
+    # run ahead of checkout.
+    assert confirm < checkout
+    assert confirm < setup_python
+    assert confirm < install
+    assert confirm < apply_command
+
+    # It is literally the first item under jobs.apply.steps, not merely early.
+    assert confirm == 0
+
+    # The governed order, end to end.
+    assert [confirm, checkout, setup_python, install, apply_command, upload] == [
+        0, 1, 2, 3, 4, 5]
+
+    # Nothing precedes confirmation, and if a step ever were inserted ahead of it, none of
+    # these could appear in it.
+    database_capable = ('actions/checkout', 'actions/setup-python', 'pip install',
+                        'python ', 'flask ', 'psql', 'alembic', '$DATABASE_URL',
+                        'DATABASE_URL: ')
+    for body in steps[:confirm]:
+        for token in database_capable:
+            assert token not in body, token
+
+    # The confirmation step also proves the production secrets are present, so a dispatch
+    # with a correct phrase and a missing secret stops at the same point.
+    assert 'Missing required production repository secret' in steps[confirm]
+    assert 'APPLY-2026-PITCHING-LINE-REPAIR-3EE2EA06' in steps[confirm]
+
+
+def test_the_apply_workflow_runs_checkout_and_the_apply_command_exactly_once():
+    steps = _apply_job_steps()
+    assert sum(1 for body in steps if 'uses: actions/checkout' in body) == 1
+    assert sum(1 for body in steps
+               if 'run_official_pitching_line_repair_apply_2026.py' in body) == 1
     text = WORKFLOW_PATH.read_text(encoding='utf-8')
-    confirm_index = text.index('Validate apply confirmation')
-    apply_index = text.index('run_official_pitching_line_repair_apply_2026.py')
-    assert confirm_index < apply_index
-    assert 'pip install -r backend/requirements.txt' in text
-    assert text.index('Validate apply confirmation') < text.index(
-        'Install backend dependencies')
+    assert text.count('actions/checkout') == 1
+    assert text.count('run_official_pitching_line_repair_apply_2026.py') == 1
+
+
+def test_the_apply_workflow_declares_no_scope_fingerprint_or_override_input():
+    text = WORKFLOW_PATH.read_text(encoding='utf-8')
+    inputs_block = text.split('inputs:', 1)[1].split('concurrency:', 1)[0]
+    for banned in ('fingerprint', 'manifest_fingerprint', 'override', 'force', 'season',
+                   'as_of_date', 'date', 'team_id', 'team', 'game_pk', 'game',
+                   'plan_scope', 'scope', 'action_count', 'preview_limit'):
+        assert banned not in inputs_block, banned
+    assert 'confirm_apply:' in inputs_block
 
 
 def test_the_apply_workflow_is_serialized_and_never_cancelled():

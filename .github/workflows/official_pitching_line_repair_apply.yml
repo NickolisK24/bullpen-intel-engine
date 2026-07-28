@@ -8,9 +8,11 @@ name: Official Pitching-Line Repair Apply (2026)
 #
 # It takes ONE input: a fixed confirmation phrase. There is deliberately no season, date,
 # team, game, scope, action-count, fingerprint, or override input — every governed value is
-# fixed in code, so a dispatch cannot select what runs, only whether it runs. A wrong
-# confirmation phrase fails before dependencies are installed and therefore before the
-# application can bootstrap or open a database connection.
+# fixed in code, so a dispatch cannot select what runs, only whether it runs. Validating it
+# is the literal first step of the job, ahead of checkout, so a wrong phrase terminates the
+# job before the repository is fetched, before Python is set up, before dependencies are
+# installed, and therefore before the application can bootstrap or open a database
+# connection. The apply command repeats the check ahead of its own imports.
 #
 # The apply command regenerates the read-only planner from live production state immediately
 # before opening the write transaction and refuses to proceed unless the regenerated
@@ -51,10 +53,10 @@ jobs:
       SECRET_KEY: ${{ secrets.SECRET_KEY }}
       ADMIN_API_TOKEN: ${{ secrets.BASEBALLOS_ADMIN_API_TOKEN }}
     steps:
-      - uses: actions/checkout@v4
-
-      # Confirmation is validated FIRST — before Python, before dependencies, before any
-      # step that could reach the database. A wrong phrase can never bootstrap the app.
+      # Literally the first step. Not merely early — ahead of checkout, ahead of Python,
+      # ahead of dependencies, ahead of anything that could reach a database. The
+      # confirmation needs no repository file, so nothing is fetched or installed on a
+      # dispatch that was never going to be allowed to run.
       - name: Validate apply confirmation
         env:
           CONFIRM_APPLY: ${{ inputs.confirm_apply }}
@@ -62,7 +64,7 @@ jobs:
           set -euo pipefail
           expected='APPLY-2026-PITCHING-LINE-REPAIR-3EE2EA06'
           if [ "$CONFIRM_APPLY" != "$expected" ]; then
-            echo "::error::Confirmation phrase mismatch. No bootstrap, no database access, no writes."
+            echo "::error::Confirmation phrase mismatch. No checkout, no bootstrap, no database access, no writes."
             exit 1
           fi
           if [ -z "${DATABASE_URL:-}" ] || \
@@ -72,6 +74,8 @@ jobs:
             exit 1
           fi
           echo "Apply confirmation validated. Governed values are fixed in code."
+
+      - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
         with:
