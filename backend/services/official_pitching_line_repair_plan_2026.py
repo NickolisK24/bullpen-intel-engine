@@ -319,6 +319,26 @@ ACCEPTED_DEFECT_BASELINE = ACCEPTED_DEFECT_BASELINE_V2
 CURRENT_AUTHORITY_BASIS = 'current_official_mlb_boxscore_evidence'
 HISTORICAL_CAUSATION_CLAIMED = False
 
+# Outcome vocabulary for the reviewed amendment line. ``not_applicable_to_subset`` is the
+# only status that may be reported without examining the line, and it is available only to a
+# scoped run — which can never become apply-review ready anyway.
+AMENDMENT_LINE_VALIDATED = 'validated'
+AMENDMENT_LINE_MISSING = 'missing_from_full_season_population'
+AMENDMENT_LINE_CONTRADICTORY = 'contradictory'
+AMENDMENT_LINE_NOT_APPLICABLE_TO_SUBSET = 'not_applicable_to_subset'
+# A full-season run that is not planning the accepted amended V2 population — because a
+# different baseline is active, or because the observed population already drifted from it —
+# is not governed by this amendment. Such a run is already inconclusive and can never be
+# apply-review ready, so nothing is bypassed. Named distinctly so it can never be confused
+# with a successful validation or with subset non-applicability.
+AMENDMENT_LINE_NOT_APPLICABLE_TO_UNAMENDED_BASELINE = 'not_applicable_to_unamended_baseline'
+AMENDMENT_LINE_STATUSES = (
+    AMENDMENT_LINE_VALIDATED, AMENDMENT_LINE_MISSING, AMENDMENT_LINE_CONTRADICTORY,
+    AMENDMENT_LINE_NOT_APPLICABLE_TO_SUBSET,
+    AMENDMENT_LINE_NOT_APPLICABLE_TO_UNAMENDED_BASELINE,
+)
+BLOCK_AMENDMENT_LINE_MISSING = 'reviewed_amendment_line_missing_from_full_season_population'
+
 # An independent literal copy of the accepted V1 population. A reconciliation compares
 # ACCEPTED_DEFECT_BASELINE_V1 against this, so editing V1 in place fails closed instead of
 # silently redefining what was originally accepted.
@@ -1575,6 +1595,9 @@ def run_repair_plan(
         insert_actions, identity_actions, population)
     identity_transition = _identity_resolution_transition(identity_partition)
 
+    amendment_line_validation = _amendment_targets_observed_line(
+        observed_official_line_keys, update_actions, plan_scope, baseline_matches)
+
     reconciliations = _reconciliations(
         population=population, observed=observed, manifest=manifest,
         identity_actions=identity_actions, insert_actions=insert_actions,
@@ -1584,7 +1607,8 @@ def run_repair_plan(
         observed_official_line_keys=observed_official_line_keys,
         observed_defect_line_keys=observed_defect_line_keys,
         planned_defect_line_keys=planned_defect_line_keys,
-        manifest_fingerprint=manifest_fingerprint)
+        manifest_fingerprint=manifest_fingerprint, plan_scope=plan_scope,
+        amendment_target=amendment_line_validation)
 
     result, plan_status, decision_reasons = _decide(
         population=population, plan_scope=plan_scope, evidence_gaps=evidence_gaps,
@@ -1637,6 +1661,7 @@ def run_repair_plan(
         'defect_baseline_amendment': dict(DEFECT_BASELINE_AMENDMENT_1),
         'defect_baseline_amendment_count': len(DEFECT_BASELINE_AMENDMENTS),
         'defect_baseline_lineage': _defect_baseline_lineage(),
+        'defect_baseline_amendment_line_validation': amendment_line_validation,
         # What governs the proposed repair NOW, kept separate from what happened.
         'current_authority_basis': CURRENT_AUTHORITY_BASIS,
         'historical_causation_claimed': HISTORICAL_CAUSATION_CLAIMED,
@@ -1968,8 +1993,22 @@ def _defect_baseline_lineage() -> list:
     return lineage
 
 
-def _amendment_targets_observed_line(observed_official_line_keys, update_actions) -> dict:
-    """Prove the amendment names one real line that maps to exactly one update action."""
+def _amendment_targets_observed_line(observed_official_line_keys, update_actions,
+                                     plan_scope, baseline_matches) -> dict:
+    """Validate the reviewed amendment line, with applicability decided by SCOPE.
+
+    A full-season plan must PROVE the reviewed line still exists and still maps to the exact
+    reviewed update action. Deciding applicability from whether the line happens to be
+    present would fail open: a population could keep the same aggregate 12,696 / 445 / 160 /
+    605 counts while this line quietly became exact and an unrelated line became defective,
+    and every per-line check would pass vacuously. That would silently convert a one-line
+    reviewed amendment into approval of any population with matching totals.
+
+    A subset run is different: its scope may genuinely exclude game 825058, and a line
+    outside the scope was never examined. That is reported as ``not_applicable_to_subset``
+    rather than as a successful validation — and a subset can never be apply-review ready
+    regardless.
+    """
     key = (int(AMENDMENT_1_TRANSITION_KEY['mlb_game_pk']),
            int(AMENDMENT_1_TRANSITION_KEY['official_mlb_person_id']),
            int(AMENDMENT_1_TRANSITION_KEY['appearance_team_id']))
@@ -1978,18 +2017,103 @@ def _amendment_targets_observed_line(observed_official_line_keys, update_actions
                 if (int(a.get('mlb_game_pk') or 0),
                     int(a.get('official_mlb_person_id') or 0),
                     int(a.get('official_team_id') or 0)) == key]
+    # An action claiming the reviewed action id but keyed to a different line is a
+    # contradiction, not a match.
+    id_claimants = [a for a in update_actions
+                    if a.get('action_id') == DEFECT_BASELINE_AMENDMENT_1['update_action_id']]
     action = matching[0] if len(matching) == 1 else None
-    return {
+    proposed = (action or {}).get('proposed_values') or {}
+    current = (action or {}).get('current_values') or {}
+
+    # The amendment is part of V2's definition, so it governs exactly when V2 is the active
+    # acceptance. In production that is always true, which is why a full-season production
+    # plan can never bypass these checks by the line being absent.
+    # It governs a run that is actually planning that population: V2 active AND the observed
+    # population matching it. That is precisely the dangerous case — a run whose aggregate
+    # 12,696 / 445 / 160 / 605 still match while this line quietly vanished — so absence
+    # there is a failure. A run whose population already drifted is inconclusive regardless.
+    amendment_governs = (
+        ACCEPTED_DEFECT_BASELINE == ACCEPTED_DEFECT_BASELINE_V2 and bool(baseline_matches))
+    required_for_scope = plan_scope == PLAN_SCOPE_FULL and amendment_governs
+    present = occurrences > 0 or bool(matching) or bool(id_claimants)
+    validation = {
+        'required_for_scope': required_for_scope,
+        'scope': plan_scope,
+        'amendment_governs_this_population': amendment_governs,
         'stable_key': AMENDMENT_1_STABLE_KEY,
         'official_line_occurrences': occurrences,
         'update_action_count': len(matching),
+        'action_id_claimant_count': len(id_claimants),
         'action_id': (action or {}).get('action_id'),
+        'expected_action_id': DEFECT_BASELINE_AMENDMENT_1['update_action_id'],
         'local_game_log_id': (action or {}).get('local_game_log_id'),
+        'official_mlb_person_id': (action or {}).get('official_mlb_person_id'),
+        'mlb_game_pk': (action or {}).get('mlb_game_pk'),
+        'official_team_id': (action or {}).get('official_team_id'),
         'changed_fields': list((action or {}).get('changed_fields') or ()),
-        'current_value': ((action or {}).get('current_values') or {}).get('hits_allowed'),
-        'proposed_value': ((action or {}).get('proposed_values') or {}).get('hits_allowed'),
+        'current_value': current.get(DEFECT_BASELINE_AMENDMENT_1['field']),
+        'proposed_value': proposed.get(DEFECT_BASELINE_AMENDMENT_1['field']),
         'reason_codes': list((action or {}).get('reason_codes') or ()),
+        'safe_to_apply': (action or {}).get('safe_to_apply'),
+        'blocking_reasons': list((action or {}).get('blocking_reasons') or ()),
     }
+
+    checks = {
+        'line_occurs_exactly_once': occurrences == 1,
+        'exactly_one_update_action': len(matching) == 1,
+        'action_id_matches':
+            validation['action_id'] == DEFECT_BASELINE_AMENDMENT_1['update_action_id'],
+        'targets_reviewed_game_log':
+            validation['local_game_log_id'] == DEFECT_BASELINE_AMENDMENT_1[
+                'local_game_log_id'],
+        'changes_only_the_reviewed_field':
+            validation['changed_fields'] == [DEFECT_BASELINE_AMENDMENT_1['field']],
+        'current_value_matches':
+            validation['current_value'] == DEFECT_BASELINE_AMENDMENT_1['current_local_value'],
+        'proposed_value_matches':
+            validation['proposed_value'] == DEFECT_BASELINE_AMENDMENT_1[
+                'current_official_value'],
+        'reason_is_the_governed_hits_mismatch':
+            validation['reason_codes'] == [DEFECT_BASELINE_AMENDMENT_1['reason_code']],
+        'action_is_safe_and_unblocked':
+            validation['safe_to_apply'] is True and not validation['blocking_reasons'],
+        'action_key_matches_the_official_line':
+            (completeness._pos_int(validation['mlb_game_pk']),
+             completeness._pos_int(validation['official_mlb_person_id']),
+             completeness._pos_int(validation['official_team_id'])) == key,
+        'no_second_action_claims_the_key': len(matching) <= 1 and len(id_claimants) <= 1,
+    }
+    validation['checks'] = checks
+    validation['all_checks_pass'] = all(checks.values())
+
+    if present and validation['all_checks_pass']:
+        validation['status'] = AMENDMENT_LINE_VALIDATED
+    elif present:
+        # The line is here and does not match the reviewed amendment exactly.
+        validation['status'] = AMENDMENT_LINE_CONTRADICTORY
+    elif required_for_scope:
+        # Full-season, governed by the amendment, and the reviewed line is gone. Absence is
+        # a failure here, never a bypass.
+        validation['status'] = AMENDMENT_LINE_MISSING
+    elif plan_scope != PLAN_SCOPE_FULL:
+        validation['status'] = AMENDMENT_LINE_NOT_APPLICABLE_TO_SUBSET
+    else:
+        validation['status'] = AMENDMENT_LINE_NOT_APPLICABLE_TO_UNAMENDED_BASELINE
+    validation['validated'] = validation['status'] == AMENDMENT_LINE_VALIDATED
+    return validation
+
+
+def _amendment_check(validation, name) -> bool:
+    """One per-line amendment check, honouring subset non-applicability only.
+
+    In full-season scope every check must genuinely hold. A subset that genuinely excludes
+    the line reports the check as not applicable; a subset that CONTAINS the line must still
+    satisfy it exactly, so a scoped run cannot be used to launder a contradictory line.
+    """
+    if validation['status'] in (AMENDMENT_LINE_NOT_APPLICABLE_TO_SUBSET,
+                                AMENDMENT_LINE_NOT_APPLICABLE_TO_UNAMENDED_BASELINE):
+        return True
+    return bool(validation['checks'][name])
 
 
 def _compare_defect_baseline(observed, plan_scope):
@@ -2156,7 +2280,7 @@ def _reconciliations(*, population, observed, manifest, identity_actions, insert
                      update_actions, baseline_matches, duplicate_action_ids,
                      targeted_local_rows, observed_official_line_keys,
                      observed_defect_line_keys, planned_defect_line_keys,
-                     manifest_fingerprint) -> dict:
+                     manifest_fingerprint, plan_scope, amendment_target) -> dict:
     defect_actions = len(insert_actions) + len(update_actions)
     identity_by_id = {a['action_id']: a for a in identity_actions}
     identity_dependency_ids = set(identity_by_id)
@@ -2169,14 +2293,9 @@ def _reconciliations(*, population, observed, manifest, identity_actions, insert
     existing_identity_inserts = [
         a for a in insert_actions
         if not a.get('dependency_action_ids') and a.get('local_pitcher_id') is not None]
-    amendment_target = _amendment_targets_observed_line(
-        observed_official_line_keys, update_actions)
-    # The per-line amendment reconciliations apply exactly when the reviewed official line is
-    # present in THIS run's official population. A run whose scope does not contain game
-    # 825058 cannot say anything about it, and silence there is not a finding. When the line
-    # IS present it must reconcile exactly, including failing on a duplicate. The V1/V2
-    # structural and lineage reconciliations always apply, in every run.
-    amendment_applicable = amendment_target['official_line_occurrences'] > 0
+    # amendment_target is computed once by the caller and validated here. Applicability is
+    # decided by SCOPE, never by whether the line happens to be present — see
+    # _amendment_targets_observed_line for why presence-based applicability fails open.
     dependent_ids = {dep for a in identity_actions
                      for dep in a['dependent_game_log_action_ids']}
     insert_ids_with_dependency = {
@@ -2330,39 +2449,56 @@ def _reconciliations(*, population, observed, manifest, identity_actions, insert
             ACCEPTED_DEFECT_BASELINE_V1[k] == ACCEPTED_DEFECT_BASELINE_V2[k]
             for k in ACCEPTED_DEFECT_BASELINE_V1
             if k not in DEFECT_BASELINE_AMENDMENT_1['changed_fields']),
+        # Invariants, not restatements of the production constants. The production values
+        # are pinned by V2 itself and asserted directly in tests; a reconciliation that
+        # merely repeated them would be unusable at any other scale and would prove nothing
+        # a literal comparison does not already prove.
         'amended_baseline_still_partitions_the_official_population':
             (ACCEPTED_DEFECT_BASELINE_V2['exact_match_count']
              + ACCEPTED_DEFECT_BASELINE_V2['missing_line_count']
              + ACCEPTED_DEFECT_BASELINE_V2['defective_matched_line_count'])
-            == ACCEPTED_DEFECT_BASELINE_V2['official_pitching_lines'] == 13301,
+            == ACCEPTED_DEFECT_BASELINE_V2['official_pitching_lines'],
         'amended_missing_plus_defective_equals_amended_defect_actions':
             (ACCEPTED_DEFECT_BASELINE_V2['missing_line_count']
              + ACCEPTED_DEFECT_BASELINE_V2['defective_matched_line_count'])
-            == ACCEPTED_DEFECT_BASELINE_V2['defect_line_action_count'] == 605,
+            == ACCEPTED_DEFECT_BASELINE_V2['defect_line_action_count'],
         'amendment_identifies_exactly_one_stable_official_line_key':
             len(DEFECT_BASELINE_AMENDMENTS) == 1
             and AMENDMENT_1_STABLE_KEY == '825058:805299:109'
             and set(AMENDMENT_1_TRANSITION_KEY) == {
                 'mlb_game_pk', 'official_mlb_person_id', 'appearance_team_id'},
-        'amended_line_occurs_exactly_once_in_the_observed_official_population':
-            (not amendment_applicable) or amendment_target['official_line_occurrences'] == 1,
-        'amended_line_maps_to_exactly_one_update_action':
-            (not amendment_applicable) or amendment_target['update_action_count'] == 1,
-        'amended_update_action_targets_the_reviewed_local_game_log':
-            (not amendment_applicable)
-            or amendment_target['local_game_log_id']
-            == DEFECT_BASELINE_AMENDMENT_1['local_game_log_id'],
-        'amended_update_action_changes_only_hits_allowed':
-            (not amendment_applicable)
-            or amendment_target['changed_fields'] == [DEFECT_BASELINE_AMENDMENT_1['field']],
-        'amended_line_current_official_value_is_zero':
-            (not amendment_applicable)
-            or amendment_target['proposed_value']
-            == DEFECT_BASELINE_AMENDMENT_1['current_official_value'] == 0,
-        'amended_line_current_local_value_is_one':
-            (not amendment_applicable)
-            or amendment_target['current_value']
-            == DEFECT_BASELINE_AMENDMENT_1['current_local_value'] == 1,
+        # ── The reviewed amendment line, required by SCOPE ───────────────────
+        # A full-season plan must PROVE the reviewed line. These cannot pass by the line
+        # being absent: absence in full-season scope is a failure, not a bypass. A subset
+        # that genuinely excludes the line reports not_applicable_to_subset and stays
+        # inconclusive; a subset that contains it must still validate it exactly.
+        'full_season_requires_the_reviewed_amendment_line':
+            (not amendment_target['required_for_scope'])
+            or amendment_target['status'] == AMENDMENT_LINE_VALIDATED,
+        'reviewed_amendment_line_occurs_exactly_once':
+            _amendment_check(amendment_target, 'line_occurs_exactly_once'),
+        'reviewed_amendment_line_maps_to_exactly_one_update_action':
+            _amendment_check(amendment_target, 'exactly_one_update_action'),
+        'reviewed_amendment_action_id_matches':
+            _amendment_check(amendment_target, 'action_id_matches'),
+        'reviewed_amendment_action_targets_game_log_43765':
+            _amendment_check(amendment_target, 'targets_reviewed_game_log'),
+        'reviewed_amendment_action_changes_only_hits_allowed':
+            _amendment_check(amendment_target, 'changes_only_the_reviewed_field'),
+        'reviewed_amendment_action_current_value_is_one':
+            _amendment_check(amendment_target, 'current_value_matches'),
+        'reviewed_amendment_action_proposed_value_is_zero':
+            _amendment_check(amendment_target, 'proposed_value_matches'),
+        'reviewed_amendment_action_reason_is_hits_mismatch':
+            _amendment_check(amendment_target, 'reason_is_the_governed_hits_mismatch'),
+        'reviewed_amendment_action_is_safe_and_unblocked':
+            _amendment_check(amendment_target, 'action_is_safe_and_unblocked'),
+        'reviewed_amendment_action_key_matches_the_official_line':
+            _amendment_check(amendment_target, 'action_key_matches_the_official_line'),
+        'no_second_action_claims_the_reviewed_amendment_key':
+            _amendment_check(amendment_target, 'no_second_action_claims_the_key'),
+        'amendment_line_status_is_from_the_governed_vocabulary':
+            amendment_target['status'] in AMENDMENT_LINE_STATUSES,
         # The amendment accepts CURRENT state. It makes no finding about the past.
         'historical_causation_is_explicitly_unproven':
             DEFECT_BASELINE_AMENDMENT_1['historical_transition_classification']

@@ -808,7 +808,10 @@ def _reconcile(manifest, *, population, insert_actions, update_actions,
         observed_official_line_keys=observed_official_line_keys,
         observed_defect_line_keys=observed_defect_line_keys,
         planned_defect_line_keys=planned_defect_line_keys,
-        manifest_fingerprint='0' * 64)
+        manifest_fingerprint='0' * 64, plan_scope=planner.PLAN_SCOPE_FULL,
+        amendment_target=planner._amendment_targets_observed_line(
+            observed_official_line_keys, update_actions, planner.PLAN_SCOPE_FULL,
+            baseline_matches=False))
 
 
 def test_exact_matches_never_enter_the_defect_key_population(app):
@@ -2808,6 +2811,251 @@ def _pin_active_v2(monkeypatch, payload):
     return pinned
 
 
+# ── Full-season scope must PROVE the reviewed line ──────────────────────────
+# Presence-based applicability would fail open: a population could keep the same aggregate
+# 12,696 / 445 / 160 / 605 while 825058:805299:109 quietly became exact and an unrelated line
+# became defective, and every per-line check would pass vacuously. These fixtures simulate
+# the real V1/V2 lineage at fixture scale so the production contract is genuinely exercised.
+
+def _pin_amended_lineage(monkeypatch, payload):
+    """Make this fixture's population BE the accepted amended V2 population.
+
+    V1 is derived by reversing the three amendment deltas, so the structural lineage
+    reconciliations stay meaningful rather than being disabled.
+    """
+    observed = payload['observed_population']
+    v2 = {k: observed[k] for k in planner.ACCEPTED_DEFECT_BASELINE}
+    v1 = dict(v2,
+              exact_match_count=v2['exact_match_count'] + 1,
+              defective_matched_line_count=v2['defective_matched_line_count'] - 1,
+              defect_line_action_count=v2['defect_line_action_count'] - 1)
+    monkeypatch.setattr(planner, '_AMENDMENT_V1_REFERENCE', dict(v1))
+    monkeypatch.setattr(planner, 'ACCEPTED_DEFECT_BASELINE_V1', v1)
+    monkeypatch.setattr(planner, 'ACCEPTED_DEFECT_BASELINE_V2', v2)
+    monkeypatch.setattr(planner, 'ACCEPTED_DEFECT_BASELINE', v2)
+    return v1, v2
+
+
+def _garcia_full_season(monkeypatch, *, local_hits=1, official_hits=0):
+    _seed_garcia_ledger(local_hits=local_hits)
+    first = planner.run_repair_plan(client=_garcia_client(official_hits=official_hits))
+    _pin_amended_lineage(monkeypatch, first)
+    return planner.run_repair_plan(client=_garcia_client(official_hits=official_hits))
+
+
+def test_full_season_fixture_with_the_reviewed_line_validates(app, monkeypatch):
+    payload = _garcia_full_season(monkeypatch)
+    validation = payload['defect_baseline_amendment_line_validation']
+    assert validation['required_for_scope'] is True
+    assert validation['scope'] == planner.PLAN_SCOPE_FULL
+    assert validation['status'] == planner.AMENDMENT_LINE_VALIDATED
+    assert validation['validated'] is True
+    assert validation['stable_key'] == '825058:805299:109'
+    assert validation['official_line_occurrences'] == 1
+    assert validation['update_action_count'] == 1
+    assert validation['action_id'] == 'gamelog:update:43765:825058:805299'
+    assert validation['local_game_log_id'] == 43765
+    assert validation['changed_fields'] == ['hits_allowed']
+    assert validation['current_value'] == 1
+    assert validation['proposed_value'] == 0
+    assert validation['reason_codes'] == ['hits_mismatch']
+    assert validation['safe_to_apply'] is True
+    assert validation['blocking_reasons'] == []
+    assert [n for n, ok in payload['reconciliations'].items() if not ok] == []
+    assert payload['result'] == planner.RESULT_PASS
+    assert payload['plan_status'] == planner.PLAN_READY
+    assert payload['repair_apply_gate'] == planner.GATE_BLOCKED_PENDING_REVIEW
+
+
+def test_full_season_fails_when_the_reviewed_line_is_absent(app, monkeypatch):
+    """The reviewer's failure scenario: aggregates intact, reviewed line gone."""
+    payload = _garcia_full_season(monkeypatch)
+    assert payload['result'] == planner.RESULT_PASS
+    # Make the reviewed line exact so it produces no action, and make an unrelated line
+    # defective so every aggregate count is unchanged.
+    db.session.query(GameLog).filter(GameLog.id == GARCIA_LOG_ID).update(
+        {'hits_allowed': 0}, synchronize_session=False)
+    db.session.query(GameLog).filter(
+        GameLog.pitcher_id == _pitcher(GARCIA_STARTER).id).update(
+        {'hits_allowed': 99}, synchronize_session=False)
+    db.session.commit()
+    payload = planner.run_repair_plan(client=_garcia_client())
+
+    # Aggregates still match: this is exactly the case that must not pass.
+    assert payload['defect_baseline_matches_accepted_diagnostic'] is True
+    validation = payload['defect_baseline_amendment_line_validation']
+    assert validation['required_for_scope'] is True
+    # The official line still exists; it simply no longer maps to the reviewed action.
+    assert validation['status'] == planner.AMENDMENT_LINE_CONTRADICTORY
+    assert validation['validated'] is False
+    assert validation['update_action_count'] == 0
+    recon = payload['reconciliations']
+    assert recon['full_season_requires_the_reviewed_amendment_line'] is False
+    assert recon['reviewed_amendment_line_maps_to_exactly_one_update_action'] is False
+    assert payload['result'] == planner.RESULT_FAIL
+    assert payload['repair_apply_gate'] != planner.GATE_BLOCKED_PENDING_REVIEW
+
+
+def test_full_season_fails_when_a_different_key_carries_the_amendment(app, monkeypatch):
+    """A reviewed key absent from the official population is missing, and fails."""
+    payload = _garcia_full_season(monkeypatch)
+    assert payload['result'] == planner.RESULT_PASS
+    # Same counts, different reviewed key — nothing in this population carries it.
+    monkeypatch.setattr(planner, 'AMENDMENT_1_TRANSITION_KEY',
+                        {'mlb_game_pk': 825059, 'official_mlb_person_id': 805299,
+                         'appearance_team_id': 109})
+    monkeypatch.setattr(planner, 'AMENDMENT_1_STABLE_KEY', '825059:805299:109')
+    payload = planner.run_repair_plan(client=_garcia_client())
+    validation = payload['defect_baseline_amendment_line_validation']
+    assert validation['required_for_scope'] is True
+    # No official line carries the new key, and no action maps to it — while an action still
+    # claims the reviewed action id under the OLD key. That is a contradiction, not silence.
+    assert validation['status'] == planner.AMENDMENT_LINE_CONTRADICTORY
+    assert validation['official_line_occurrences'] == 0
+    assert validation['update_action_count'] == 0
+    assert validation['action_id_claimant_count'] == 1
+    assert validation['checks']['action_key_matches_the_official_line'] is False
+    assert payload['reconciliations'][
+        'full_season_requires_the_reviewed_amendment_line'] is False
+    assert payload['result'] == planner.RESULT_FAIL
+
+
+def test_full_season_reports_missing_when_the_official_line_is_gone(app, monkeypatch):
+    """Direct validator check: no official occurrence at all is 'missing', never a bypass."""
+    v = _validate([], [])                       # full season, baseline matches
+    assert v['required_for_scope'] is True
+    assert v['status'] == planner.AMENDMENT_LINE_MISSING
+    assert v['validated'] is False
+    assert v['all_checks_pass'] is False
+
+
+# ── Per-check negatives, exercised directly on the validator ────────────────
+def _action(**overrides):
+    action = {
+        'action_id': 'gamelog:update:43765:825058:805299',
+        'action_type': planner.ACTION_GAME_LOG_UPDATE,
+        'local_game_log_id': 43765, 'mlb_game_pk': 825058,
+        'official_mlb_person_id': 805299, 'official_team_id': 109,
+        'changed_fields': ['hits_allowed'],
+        'current_values': {'hits_allowed': 1}, 'proposed_values': {'hits_allowed': 0},
+        'reason_codes': ['hits_mismatch'], 'safe_to_apply': True, 'blocking_reasons': [],
+    }
+    action.update(overrides)
+    return action
+
+
+_KEY = (825058, 805299, 109)
+
+
+def _validate(keys, actions, scope=None, baseline_matches=True):
+    return planner._amendment_targets_observed_line(
+        keys, actions, scope or planner.PLAN_SCOPE_FULL, baseline_matches)
+
+
+def test_validator_accepts_the_exact_reviewed_line():
+    v = _validate([_KEY], [_action()])
+    assert v['status'] == planner.AMENDMENT_LINE_VALIDATED
+    assert v['all_checks_pass'] is True
+
+
+@pytest.mark.parametrize('keys,actions,failing', [
+    ([], [_action()], 'line_occurs_exactly_once'),
+    ([_KEY, _KEY], [_action()], 'line_occurs_exactly_once'),
+    ([_KEY], [], 'exactly_one_update_action'),
+    ([_KEY], [_action(), _action(action_id='gamelog:update:43765:825058:805299:dup')],
+     'exactly_one_update_action'),
+    ([_KEY], [_action(action_id='gamelog:update:99999:825058:805299')], 'action_id_matches'),
+    ([_KEY], [_action(local_game_log_id=43766)], 'targets_reviewed_game_log'),
+    ([_KEY], [_action(changed_fields=['hits_allowed', 'runs_allowed'])],
+     'changes_only_the_reviewed_field'),
+    ([_KEY], [_action(current_values={'hits_allowed': 2})], 'current_value_matches'),
+    ([_KEY], [_action(proposed_values={'hits_allowed': 1})], 'proposed_value_matches'),
+    ([_KEY], [_action(reason_codes=['runs_mismatch'])],
+     'reason_is_the_governed_hits_mismatch'),
+    ([_KEY], [_action(reason_codes=[])], 'reason_is_the_governed_hits_mismatch'),
+    ([_KEY], [_action(reason_codes=['hits_mismatch', 'runs_mismatch'])],
+     'reason_is_the_governed_hits_mismatch'),
+    ([_KEY], [_action(safe_to_apply=False)], 'action_is_safe_and_unblocked'),
+    ([_KEY], [_action(blocking_reasons=['official_stat_evidence_absent'])],
+     'action_is_safe_and_unblocked'),
+])
+def test_each_amendment_check_fails_closed(keys, actions, failing):
+    v = _validate(keys, actions)
+    assert v['checks'][failing] is False, failing
+    assert v['all_checks_pass'] is False
+    assert v['status'] in (planner.AMENDMENT_LINE_MISSING,
+                           planner.AMENDMENT_LINE_CONTRADICTORY)
+    assert v['validated'] is False
+
+
+def test_a_second_action_claiming_the_reviewed_action_id_fails():
+    impostor = _action(mlb_game_pk=825059, official_mlb_person_id=805300)
+    v = _validate([_KEY], [_action(), impostor])
+    assert v['checks']['no_second_action_claims_the_key'] is False
+    assert v['status'] == planner.AMENDMENT_LINE_CONTRADICTORY
+
+
+def test_an_action_keyed_to_another_line_cannot_satisfy_the_amendment():
+    v = _validate([_KEY], [_action(mlb_game_pk=825059, official_team_id=110)])
+    assert v['checks']['exactly_one_update_action'] is False
+    assert v['status'] == planner.AMENDMENT_LINE_CONTRADICTORY
+
+
+# ── Subset semantics ────────────────────────────────────────────────────────
+def test_a_subset_excluding_the_target_is_not_applicable_and_never_validated():
+    v = _validate([], [], scope=planner.PLAN_SCOPE_SUBSET, baseline_matches=False)
+    assert v['status'] == planner.AMENDMENT_LINE_NOT_APPLICABLE_TO_SUBSET
+    assert v['required_for_scope'] is False
+    assert v['validated'] is False        # never implies successful validation
+
+
+def test_a_subset_containing_the_target_must_still_validate_it_exactly():
+    good = _validate([_KEY], [_action()], scope=planner.PLAN_SCOPE_SUBSET,
+                     baseline_matches=False)
+    assert good['status'] == planner.AMENDMENT_LINE_VALIDATED
+    bad = _validate([_KEY], [_action(current_values={'hits_allowed': 7})],
+                    scope=planner.PLAN_SCOPE_SUBSET, baseline_matches=False)
+    assert bad['status'] == planner.AMENDMENT_LINE_CONTRADICTORY
+    assert bad['validated'] is False
+
+
+def test_a_scoped_run_remains_inconclusive_and_gate_blocked(app, monkeypatch):
+    _seed_garcia_ledger(local_hits=1)
+    payload = planner.run_repair_plan(client=_garcia_client(), game_pk=GARCIA_GAME_PK)
+    assert payload['plan_scope'] == planner.PLAN_SCOPE_SUBSET
+    validation = payload['defect_baseline_amendment_line_validation']
+    assert validation['required_for_scope'] is False
+    assert validation['status'] == planner.AMENDMENT_LINE_VALIDATED   # present, so checked
+    assert payload['result'] == planner.RESULT_INCONCLUSIVE
+    assert payload['plan_status'] != planner.PLAN_READY
+    assert payload['repair_apply_gate'] == planner.GATE_BLOCKED_SUBSET
+
+
+def test_a_scoped_run_excluding_the_target_reports_not_applicable(app, monkeypatch):
+    _seed_wantz_ledger(wantz_identity_exists=True)
+    payload = planner.run_repair_plan(client=_wantz_client(), game_pk=WANTZ_GAME_PK)
+    assert payload['plan_scope'] == planner.PLAN_SCOPE_SUBSET
+    validation = payload['defect_baseline_amendment_line_validation']
+    assert validation['status'] == planner.AMENDMENT_LINE_NOT_APPLICABLE_TO_SUBSET
+    assert validation['validated'] is False
+    assert payload['result'] == planner.RESULT_INCONCLUSIVE
+    assert payload['repair_apply_gate'] == planner.GATE_BLOCKED_SUBSET
+
+
+def test_the_amendment_line_validation_is_reported_in_the_artifact(app, monkeypatch):
+    payload = _garcia_full_season(monkeypatch)
+    validation = payload['defect_baseline_amendment_line_validation']
+    for key in ('required_for_scope', 'scope', 'status', 'stable_key',
+                'official_line_occurrences', 'update_action_count', 'action_id',
+                'local_game_log_id', 'changed_fields', 'current_value', 'proposed_value',
+                'reason_codes', 'safe_to_apply', 'blocking_reasons', 'checks',
+                'all_checks_pass', 'validated', 'amendment_governs_this_population'):
+        assert key in validation, key
+    assert validation['status'] in planner.AMENDMENT_LINE_STATUSES
+    assert payload['reconciliations'][
+        'amendment_line_status_is_from_the_governed_vocabulary'] is True
+
+
 def test_the_amended_line_reconciles_end_to_end(app, monkeypatch):
     _seed_garcia_ledger(local_hits=1)
     _pin_active_v2(monkeypatch, planner.run_repair_plan(client=_garcia_client()))
@@ -2827,12 +3075,18 @@ def test_the_amended_line_reconciles_end_to_end(app, monkeypatch):
     assert update['blocking_reasons'] == []
 
     recon = payload['reconciliations']
-    for name in ('amended_line_occurs_exactly_once_in_the_observed_official_population',
-                 'amended_line_maps_to_exactly_one_update_action',
-                 'amended_update_action_targets_the_reviewed_local_game_log',
-                 'amended_update_action_changes_only_hits_allowed',
-                 'amended_line_current_official_value_is_zero',
-                 'amended_line_current_local_value_is_one'):
+    for name in ('reviewed_amendment_line_occurs_exactly_once',
+                 'reviewed_amendment_line_maps_to_exactly_one_update_action',
+                 'reviewed_amendment_action_id_matches',
+                 'reviewed_amendment_action_targets_game_log_43765',
+                 'reviewed_amendment_action_changes_only_hits_allowed',
+                 'reviewed_amendment_action_current_value_is_one',
+                 'reviewed_amendment_action_proposed_value_is_zero',
+                 'reviewed_amendment_action_reason_is_hits_mismatch',
+                 'reviewed_amendment_action_is_safe_and_unblocked',
+                 'reviewed_amendment_action_key_matches_the_official_line',
+                 'no_second_action_claims_the_reviewed_amendment_key',
+                 'full_season_requires_the_reviewed_amendment_line'):
         assert recon[name] is True, name
     assert [n for n, ok in recon.items() if not ok] == []
     assert payload['result'] == planner.RESULT_PASS
@@ -2859,7 +3113,10 @@ def test_a_different_current_local_value_fails_the_amendment(app, monkeypatch):
     payload = planner.run_repair_plan(client=_garcia_client())
     update = _action_for(payload, 'gamelog:update:43765:825058:805299')
     assert update['current_values']['hits_allowed'] == 2
-    assert payload['reconciliations']['amended_line_current_local_value_is_one'] is False
+    assert payload['reconciliations'][
+        'reviewed_amendment_action_current_value_is_one'] is False
+    assert payload['defect_baseline_amendment_line_validation']['status'] == \
+        planner.AMENDMENT_LINE_CONTRADICTORY
     assert payload['result'] == planner.RESULT_FAIL
 
 
@@ -3420,6 +3677,8 @@ def test_decision_record_documents_the_governed_contract():
                    'historical_state_unprovable', 'causation_claimed',
                    'current_official_mlb_boxscore_evidence',
                    '825058:805299:109',
+                   'not_applicable_to_subset', 'required_for_scope',
+                   'gamelog:update:43765:825058:805299',
                    '9b8ab677c83ec5b8efa5a4020593911dc4d6d73e3262a09c0703d1a5907b49b7',
                    'dd453cd63b1e4ccc14b5ff97c962635d6c5eda296a4e4ef63066105eeec225c6'):
         assert phrase in text.lower(), phrase

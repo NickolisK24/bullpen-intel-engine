@@ -155,6 +155,8 @@ jobs:
           preview = payload.get('bounded_preview') or []
           baseline = payload.get('defect_baseline_comparison') or {}
           amendment = payload.get('defect_baseline_amendment') or {}
+          amendment_line = payload.get(
+              'defect_baseline_amendment_line_validation') or {}
           partition = payload.get('identity_resolution_partition') or {}
           transition = payload.get(
               'identity_resolution_transition_from_prior_snapshot') or {}
@@ -177,6 +179,17 @@ jobs:
               f"(`{amendment.get('amendment_id')}`)",
               f"- Reviewed transition key: "
               f"`{amendment.get('reviewed_transition_stable_key')}`",
+              f"- Reviewed amendment line status: "
+              f"`{amendment_line.get('status')}` "
+              f"(required for scope: "
+              f"`{amendment_line.get('required_for_scope')}`)",
+              f"- Reviewed amendment line validated: "
+              f"`{amendment_line.get('validated')}` "
+              f"(official occurrences "
+              f"`{amendment_line.get('official_line_occurrences')}`, "
+              f"update actions "
+              f"`{amendment_line.get('update_action_count')}`, "
+              f"action `{amendment_line.get('action_id')}`)",
               f"- Historical transition classification: "
               f"`{payload.get('historical_transition_classification')}`",
               f"- Historical causation claimed: "

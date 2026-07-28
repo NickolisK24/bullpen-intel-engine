@@ -783,6 +783,64 @@ dispatch was added. `repair_apply_gate` remains `blocked_pending_fingerprint_rev
 plan and is never `open`. Foundation 3B, the public reader, Team State performance, Share Card
 performance, and SC-05 all remain blocked.
 
+## 14k. Why a full-season plan must prove the reviewed line, not merely fail to contradict it
+
+The first cut of the amendment decided whether to check the reviewed line by asking whether
+it was present:
+
+```
+amendment_applicable = official_line_occurrences > 0
+```
+
+with each per-line check written as `(not amendment_applicable) or condition`. That fails
+open. If the line vanished, `amendment_applicable` went false and all six checks passed
+vacuously.
+
+The consequence is not theoretical. A full-season population could keep every accepted
+aggregate — 12,696 exact, 445 missing, 160 defective, 605 defect-line actions — while
+`825058:805299:109` quietly became exact and some unrelated line became defective in its
+place. The counts reconcile, the baseline matches, and a presence-gated check never runs.
+A one-line reviewed amendment would have become a blanket approval of any population with
+the same totals.
+
+Applicability is therefore decided by **scope and governance**, never by presence. The
+amendment is part of V2's definition, so it governs a full-season run whose active
+acceptance is V2 *and* whose observed population matches it — which is exactly the dangerous
+case. In that situation `required_for_scope` is true and absence is a failure, not a bypass.
+A run whose population has already drifted is inconclusive on the baseline comparison
+regardless and can never be apply-review ready, so nothing is laundered through it.
+
+A full-season governed run must prove, unconditionally: the official key occurs exactly once;
+exactly one update action maps to it; the action id is `gamelog:update:43765:825058:805299`;
+it targets GameLog 43765; `changed_fields` is exactly `['hits_allowed']`; current is 1 and
+proposed is 0; `reason_codes` is exactly the governed `hits_mismatch`, so no unrelated reason
+can satisfy the amendment; the action is safe with no blocking reasons; its person, game, and
+appearance team match the stable key; and no second action claims the reviewed key or the
+reviewed action id.
+
+`defect_baseline_amendment_line_validation` reports the outcome as `validated`,
+`missing_from_full_season_population`, `contradictory`, `not_applicable_to_subset`, or
+`not_applicable_to_unamended_baseline`, alongside every observed value. Only `validated`
+means the line was actually checked and passed.
+
+Two of the earlier structural reconciliations restated the production literals 13,301 and
+605. Those now assert the invariant — the partition sums, and missing plus defective equals
+the action count — while the production values stay pinned by V2 itself and by a direct test.
+A reconciliation that merely repeats a constant proves nothing the constant does not already
+state, and is unusable at any other scale.
+
+## 14l. Why a scoped run may report non-applicability but can never be approved
+
+A subset run's scope may genuinely exclude game 825058, and a line outside the scope was
+never examined. Reporting that as a successful validation would be a lie; it is reported as
+`not_applicable_to_subset` with `validated: false`.
+
+A subset that *does* contain the line must still validate it exactly — a scoped run cannot be
+used to launder a contradictory line into an accepted state. And in every case a subset
+remains `result: inconclusive`, never reaches `plan_status: ready_for_apply_review`, and keeps
+`repair_apply_gate: blocked_subset_not_apply_eligible`. Non-applicability is a statement about
+what was examined, never a grant of approval.
+
 ## 15. Operation
 
 - Service: `backend/services/official_pitching_line_repair_plan_2026.py`
