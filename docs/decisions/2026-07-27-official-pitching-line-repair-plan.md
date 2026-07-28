@@ -1244,6 +1244,16 @@ result reports the session it used so a pre-commit reconciliation can require it
 repair's own. The alternative — relying on the ambient scoped session — would be true today and
 silently untrue the first time anything runs on a second session.
 
+The governed operation id is deliberately NOT forwarded into the marker's `sync_run_id`.
+`evidence_objects.sync_run_id` is a FOREIGN KEY into `sync_runs`, and the governed repair
+operation id is not a sync run — no sync run performs this repair. Writing it there violates
+the constraint on PostgreSQL and would have failed the production repair on its first marked
+row. SQLite does not enforce foreign keys, so this only surfaced once strict mode actually
+started marking rows, on the PostgreSQL job. The governed id stays where it belongs: on the
+corrected GameLog's `last_stat_correction_sync_run_id`, which is a plain integer with no
+foreign key, plus the strict result and the execution ledger. A strict check now fails closed
+if the id is ever found in that foreign-key column.
+
 Safety limit: `STRICT_INVALIDATION_MAX_BATCHES` (1000) bounds the loop deterministically.
 Zero-progress detection already catches a stuck marker; the limit catches one that makes a
 single row of progress forever.

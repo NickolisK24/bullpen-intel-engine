@@ -676,7 +676,7 @@ EVIDENCE_FAILURE_NO_PROGRESS = 'batch_made_no_progress_while_residual_remained'
 EVIDENCE_FAILURE_WRONG_SOURCE = 'evidence_id_belongs_to_another_source_row'
 EVIDENCE_FAILURE_WRONG_FAMILY = 'evidence_id_belongs_to_another_family'
 EVIDENCE_FAILURE_DOUBLE_COUNTED = 'evidence_object_inconsistently_counted'
-EVIDENCE_FAILURE_OPERATION_ID = 'governed_operation_id_absent_or_different'
+EVIDENCE_FAILURE_OPERATION_ID = 'governed_operation_id_absent_or_misplaced'
 EVIDENCE_FAILURE_SAFETY_LIMIT = 'exhaustive_invalidation_exceeded_safety_limit'
 EVIDENCE_FAILURE_RESIDUAL_QUERY = 'residual_dependency_query_unavailable_or_contradictory'
 
@@ -865,7 +865,15 @@ def _notify_strict_exhaustive(game_log, *, sync_run_id, game_log_id, session):
 
             before_count = len(remaining_ids)
             try:
-                result = marker(game_log, sync_run_id=sync_run_id,
+                # sync_run_id is deliberately NOT forwarded to the marker.
+                # ``evidence_objects.sync_run_id`` is a FOREIGN KEY into ``sync_runs``, and
+                # the governed repair operation id is deliberately not a sync run — no sync
+                # run performs this repair. Writing it there violates the constraint on
+                # PostgreSQL and would fail the repair on its first marked row. The governed
+                # id stays where it belongs: on the corrected GameLog's
+                # ``last_stat_correction_sync_run_id`` (a plain integer, no FK), in this
+                # result, and in the execution ledger.
+                result = marker(game_log, sync_run_id=None,
                                 batch_size=EVIDENCE_BATCH_SIZE, rule_ids=rule_ids,
                                 session=session)
                 batch_count_marked, batch_ids = _normalized_marker_result(result)
@@ -922,14 +930,15 @@ def _notify_strict_exhaustive(game_log, *, sync_run_id, game_log_id, session):
                     families=families, failed_families=[family],
                     game_log_id=game_log_id) from exc
 
+            # The governed operation id must not have leaked into the foreign-key column.
             stored = evidence_contract.evidence_sync_run_ids(
                 evidence_ids=batch_ids, session=session)
-            if any(value != sync_run_id for value in stored.values()):
+            if any(value == sync_run_id for value in stored.values()):
                 _family_failure(families, family, EVIDENCE_FAILURE_OPERATION_ID,
                                 **dict(base, batch_count=batch_count,
                                        initial_current_dependency_count=initial_count))
                 raise WorkloadEvidenceInvalidationError(
-                    'a marked evidence object does not carry the governed operation id',
+                    'the governed operation id was written into a sync-run foreign key',
                     families=families, failed_families=[family], game_log_id=game_log_id)
 
             batch_count += 1

@@ -2848,3 +2848,37 @@ def test_the_artifact_reports_bounded_per_family_totals(approved):
     # Evidence ids belong in the private artifact, never in the bounded step summary.
     workflow = WORKFLOW_PATH.read_text(encoding='utf-8')
     assert 'evidence_ids' not in workflow
+
+
+def test_the_governed_operation_id_is_never_written_into_the_sync_run_foreign_key(app):
+    # evidence_objects.sync_run_id is a FOREIGN KEY into sync_runs, and the governed repair
+    # operation id is deliberately not a sync run. Writing it there violates the constraint
+    # on PostgreSQL and fails the repair on its first marked row; SQLite does not enforce
+    # foreign keys, so this can only be caught deliberately.
+    from services import evidence_contract
+    seed_local()
+    marked = seed_dependent_evidence(
+        source_pk=BR_LOG_ID, family=sync_service.EVIDENCE_FAMILY_WORKLOAD, objects=3)
+    result = _strict(_reviewed_log(), sync_run_id=987654321)
+    assert result['sync_run_id'] == 987654321
+    stored = evidence_contract.evidence_sync_run_ids(
+        evidence_ids=marked, session=db.session)
+    assert set(stored.values()) == {None}
+    # The governed id lives on the corrected GameLog instead, where the column is a plain
+    # integer with no foreign key.
+    assert 'sync_run_id' in {c.name for c in EvidenceObject.__table__.columns}
+    assert [fk.target_fullname for c in EvidenceObject.__table__.columns
+            for fk in c.foreign_keys if c.name == 'sync_run_id'] == ['sync_runs.id']
+    assert not [fk for c in GameLog.__table__.columns
+                for fk in c.foreign_keys
+                if c.name == 'last_stat_correction_sync_run_id']
+
+
+def test_the_repair_marks_real_evidence_without_violating_any_constraint(approved):
+    seed_dependent_evidence(source_pk=BR_LOG_ID,
+                            family=sync_service.EVIDENCE_FAMILY_WORKLOAD, objects=120)
+    payload = _apply(approved)
+    assert payload['result'] == apply_service.RESULT_PASS, payload['decision_reasons']
+    row = db.session.query(GameLog).filter(GameLog.id == BR_LOG_ID).one()
+    assert row.last_stat_correction_sync_run_id == payload['governed_operation_id']
+    assert _current_count(BR_LOG_ID) == 0
