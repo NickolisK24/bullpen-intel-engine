@@ -3,10 +3,10 @@
 | Field | Value |
 |---|---|
 | Status | Canonical - current platform state, priority, sequence, decision, risk, and completion authority |
-| Version | 1.0 |
+| Version | 1.1 |
 | Effective date | July 29, 2026 |
 | Owner | Nickolis Kacludis |
-| Repository basis | `NickolisK24/bullpen-intel-engine` main at `c4a0b3e4e33d64c5cecea3151ff3c30df7e0c5fa` |
+| Repository basis | `NickolisK24/bullpen-intel-engine` main at `b5e88bba75f6648d38676b6b453b8a81aaa82976` |
 | Supersedes | Prior strategic operating manual, standalone current roadmap, phase proposals, and competing master roadmaps as execution authority |
 | Update rule | Update when priority changes, work merges, a phase exits, a material decision is made, a risk changes, or current-state assessment becomes false |
 | Review cadence | Weekly founder review; immediate update after a material production or product decision |
@@ -47,34 +47,121 @@ The central strategic problem is no longer whether BaseballOS can engineer a bul
 
 ## 3. Active Objective
 
-> **Make the official appearance record indisputable, then use it more fully.**
+> **Foundation 3B / Phase 1 - Evidence Completeness: use more of the trustworthy data BaseballOS already holds.**
 
-The immediate work closes the July 2026 official pitching-line/appearance-authority incident and verifies every downstream read, artifact, and evidence family affected by the repaired canonical record.
+Foundation 3A / Phase 0 - Canonical Trust Closeout is **complete**. The official appearance record is now indisputable and independently verified in production; see Section 3A. Evidence Completeness is the sole active objective.
+
+### First scoped work item
+
+> **Current Active-Pen ERA and Performance Context**
+
+**Implementation has not started.** Before anything reaches a public surface, the exact contract must be defined and recorded:
+
+- **active-group definition** - which arms count as the current pen on a given date, and how that group is derived from roster and appearance authority rather than assumed;
+- **sample contract** - the window, minimum sample, and what happens below it;
+- **date contract** - which baseball date the number represents and how it is stamped;
+- **evidence contract** - the named games and lines a reader can inspect behind the number;
+- **limitation contract** - what the number does not mean, stated only when material.
+
+Open decision **O-001** governs this item and is not yet resolved. Until it is, current-pen ERA is not published anywhere public.
 
 ### Definition of done
 
-- [ ] Read-only production closeout verification passes.
-- [ ] Official pitching-line local/official metrics reconcile for the governed scope.
-- [ ] Official starters resolve correctly for completed game sides.
-- [ ] Canonical recorded outs and derived decimal innings remain consistent.
-- [ ] Appearance team and historical ownership remain correct.
-- [ ] Downstream workload, availability, team state, evidence, story, and artifact dependencies are aligned.
-- [ ] Every Generate/Reuse/Refuse/Fail/Missing result is accounted for.
-- [ ] Regression tests cover the incident class.
-- [ ] Public snapshot/artifact gates remain blocked until proof is complete.
-- [ ] The correction, verification, and prevention rule are recorded.
+- [ ] Active-group, sample, date, evidence, and limitation contracts are defined and recorded.
+- [ ] O-001 is resolved by an explicit Decision Ledger entry.
+- [ ] Team and arm surfaces show the correct group, sample, date, evidence, and limits.
+- [ ] Every published performance number is inspectable back to official lines.
+- [ ] Regression coverage exists for the group, window, and below-sample behavior.
+- [ ] No public performance number ships before its contract is written.
 
-### Why this outranks product expansion
+### Why this is now the top priority
 
-A polished story built on a wrong starter or pitching line is a trust failure. Official event identity is the prerequisite for ERA, workload, availability, stories, share artifacts, and historical memory.
+The trust foundation is finished, so the binding constraint has changed. BaseballOS already holds trustworthy performance data that users cannot see; the gap is no longer correctness, it is completeness. This is the highest-value public evidence gap in Section 7.
+
+## 3A. Foundation 3A Closeout Evidence
+
+Foundation 3A / Phase 0 - Canonical Trust Closeout is complete and independently verified in production.
+
+| Field | Value |
+|---|---|
+| Production commit | `b5e88bba75f6648d38676b6b453b8a81aaa82976` |
+| Closeout capability | `official_pitching_line_repair_closeout_2026_v1` |
+| Result / exit code | `pass` / `0` |
+| Decision reason | `foundation_3a_repair_closeout_ready_for_review` |
+| Database writes performed | `false` |
+| Repair reapplied | `false` |
+| Failed checks | none |
+| Unresolved issues | none |
+
+Every governed check was **present, executed, passed, and not skipped** - four separate facts, each recorded separately:
+
+- `execution_ledger_proves_the_approved_repair`
+- `reviewed_amendment_row_matches_the_approved_result`
+- `official_pitching_line_completeness_2026`
+- `canonical_season_bullpen_aggregation_local_only`
+- `canonical_season_bullpen_aggregation_official_validation`
+
+### Original repair ledger
+
+Execution ledger id `1`, status `completed`, approved and regenerated fingerprint both
+`3ee2ea06492e8161bf7b278228d6f778e24048452366e3c2502ae42e0365216b`, 70 identity actions,
+445 insertions, 160 updates, 675 total, season 2026, as of 2026-07-25, accepted baseline `v2`,
+`committed_at` populated.
+
+### Final completeness
+
+Missing local lines 0, extra local lines 0, duplicate local lines 0, stat mismatches 0,
+role mismatches 0, appearance-team mismatches 0.
+
+### Final canonical local-only aggregation
+
+`pass`, exit code 0, 30 teams complete, 0 partial, 0 unavailable, every locally applicable
+reconciliation true. `all_mandatory_metrics_match` is explicitly **non-applicable** in
+local-only mode - local-only cannot evaluate an official-validation reconciliation, and it does
+not pretend to.
+
+### Final official validation
+
+`pass`, exit code 0, 30 teams complete, 30 matched, 0 mismatched, 0 mandatory metric mismatches,
+0 unavailable official evidence, 0 official games missing a unique starter, 0 official games
+with multiple starters, every applicable reconciliation true.
+
+### Reviewed amendment row
+
+GameLog `43765`, stable key `825058:805299:109`, `hits_allowed` 0, `stat_correction_count` 1,
+correction source `official_pitching_line_repair`, correction timestamp populated, governed
+operation id populated.
+
+## 3B. Matt Festa Targeted Apply - Terminal Status
+
+The dedicated one-action Matt Festa apply is **closed** and **must not be dispatched again**.
+
+- It was dispatched once.
+- It performed **zero writes**.
+- It opened **no transaction**.
+- It created **no execution-ledger row**.
+- The regenerated planner found **zero actions**.
+- The current population already had **zero stat mismatches**.
+
+Fingerprint `903766c4d71652d102410d924d1adf2479f21b07a6742e2ce407385a06ac8f2b` is **obsolete for
+the current production population**. The capability refused correctly: it is fingerprint-locked
+to a manifest that the current record no longer produces, which is the designed outcome when a
+reviewed correction is no longer needed.
+
+**Historical causation remains unprovable.** No claim is made that any particular sync, ingestion
+run, or process corrected the Matt Festa row. The retained evidence establishes what the current
+official record says, not how the local record came to agree with it.
+
+Any future recurrence requires **fresh diagnostic evidence and a new reviewed contract**. The
+existing workflow is not a retry mechanism and must not be treated as one.
 
 ## 4. Next Three Approved Moves
 
 After the active objective closes:
 
-1. **Evidence completeness on public team/arm surfaces** - expose more of the trustworthy data BaseballOS already holds, beginning with current active-pen performance and stronger named receipts.
-2. **Complete portable intelligence** - finish canonical image/metadata/action behavior so immutable intelligence can circulate without losing evidence or meaning.
-3. **Daily habit and consequence layer** - ship trusted change tracking and game-aware starter/bullpen context without forecasting outcomes.
+1. **Complete portable intelligence** - finish canonical image/metadata/action behavior so immutable intelligence can circulate without losing evidence or meaning.
+2. **Daily habit and consequence layer** - ship trusted change tracking and game-aware starter/bullpen context without forecasting outcomes.
+3. **Offseason intelligence depth** - add pitch, leverage, and organizational-depth domains in governed order.
 
 Sequence may change only through an explicit Decision Ledger entry.
 
@@ -151,9 +238,9 @@ Work top to bottom. A lower tier may proceed only when the higher tier is comple
 
 | Status | Work item | Why it matters | Definition of done |
 |---|---|---|---|
-| In progress | Official pitching-line repair closeout | Every workload/performance read depends on the canonical record | Read-only closeout passes; downstream evidence current |
-| In progress | Starter and relief classification authority | Prevents a reliever from being described as a starter or vice versa | Completed-game fixtures and production sample pass |
-| In progress | Appearance-team and historical ownership integrity | Trades/current assignments must not rewrite game history | Audit and regression tests pass |
+| Complete / maintain | Official pitching-line repair closeout | Every workload/performance read depends on the canonical record | Read-only closeout passes; downstream evidence current. Closed at `b5e88bb...`; see Section 3A |
+| Complete / maintain | Starter and relief classification authority | Prevents a reliever from being described as a starter or vice versa | Completed-game fixtures and production sample pass. Zero missing unique starters and zero multiple-starter contradictions in official validation |
+| Complete / maintain | Appearance-team and historical ownership integrity | Trades/current assignments must not rewrite game history | Audit and regression tests pass. Zero appearance-team mismatches at closeout |
 | Complete / maintain | Canonical integer-outs authority | Prevents decimal differences from becoming false baseball repair | Innings derived from outs; no false repair warnings |
 | Complete / maintain | Appearance-ledger publication gate | Blocks incomplete final games from publishing | Deep audit and workflow gate remain green |
 | Complete / maintain | Trusted snapshot and artifact integrity | Prevents unverified state from serving | Operation coverage and integrity checks pass |
@@ -165,7 +252,7 @@ No product expansion begins ahead of an unresolved canonical-record trust incide
 
 | Status | Work item | User problem | Definition of done |
 |---|---|---|---|
-| Next | Current active-pen ERA and core performance receipts | Users cannot judge results beside workload without leaving BaseballOS | Team/arm surfaces show correct active-group definition, sample, date, evidence, and limits |
+| **Active - not started** | **Current active-pen ERA and performance context** | Users cannot judge results beside workload without leaving BaseballOS | Active-group, sample, date, evidence, and limitation contracts defined and recorded before any public surfacing; O-001 resolved; team/arm surfaces show correct group, sample, date, evidence, and limits |
 | Next | Named-arm evidence expansion | Team labels can feel generic without who and which games | Every material team read names relevant arms and receipts |
 | Next | Starter-exposure context | Users need to understand how rotation length shifted innings | Official starter ranges appear as history, not forecast |
 | Next | Methodology alignment | Public pages and code vocabulary have outgrown older documents | One worked example and current labels/methods render canonically |
@@ -195,14 +282,16 @@ No product expansion begins ahead of an unresolved canonical-record trust incide
 
 ## 14. Phased Roadmap
 
-### Phase 0 - Canonical Trust Closeout
+### Phase 0 - Canonical Trust Closeout - COMPLETE
 
-**Window:** now through completion of the July 2026 data-authority incident.  
-**Exit:** BaseballOS can explain, field by field, why a recent official game appears exactly as it does in the Team Board, Pitcher Detail, performance metrics, stories, and artifacts.
+**Window:** closed July 29, 2026 at `b5e88bba75f6648d38676b6b453b8a81aaa82976`.  
+**Exit met:** BaseballOS can explain, field by field, why a recent official game appears exactly as it does in the Team Board, Pitcher Detail, performance metrics, stories, and artifacts. The independent read-only closeout passes with every governed check present, executed, and passed; local and official metrics reconcile exactly. Evidence in Section 3A.
 
-### Phase 1 - Evidence Completeness
+### Phase 1 - Evidence Completeness - ACTIVE
 
 **Purpose:** use more of the trustworthy baseball data already held.
+
+**First scoped item:** Current Active-Pen ERA and Performance Context. Implementation has not started; the active-group, sample, date, evidence, and limitation contract must be defined before public surfacing.
 
 Scope:
 
@@ -415,6 +504,9 @@ Predictions, betting/odds, game-outcome projections, injury prediction, fantasy 
 | D-015 | Prior to Jul 2026 | Manual proof precedes automation for newsletter/distribution workflows | Standing |
 | D-016 | Prior to Jul 2026 | Follow My Team waits for audience evidence | Standing |
 | D-017 | Jul 29, 2026 | Six living canonical documents replace recurring master documents | Adopted |
+| D-018 | Jul 29, 2026 | Foundation 3A / Phase 0 Canonical Trust Closeout is formally complete. The independent read-only closeout at `b5e88bb...` returned `pass` / exit 0 with every governed check present, executed, and passed, zero failed checks, zero unresolved issues, and no database writes. Local and official metrics reconcile exactly across all 30 teams. Foundation 3B / Phase 1 Evidence Completeness becomes the sole active objective, with Current Active-Pen ERA and Performance Context as the first scoped item | Adopted |
+| D-019 | Jul 29, 2026 | The dedicated Matt Festa one-action apply is closed and must never be dispatched again. It ran once, wrote nothing, opened no transaction, and created no ledger row, because the regenerated planner found zero actions against a population that already had zero stat mismatches. Fingerprint `903766c4...` is obsolete for the current production population. Historical causation remains unprovable; no sync or process is credited with the correction. Any recurrence requires fresh diagnostic evidence and a new reviewed contract | Permanent |
+| D-020 | Jul 29, 2026 | A one-action governed apply that refuses because its reviewed manifest no longer regenerates is a correct terminal outcome, not a failure to retry. Fingerprint-locked capabilities are never re-dispatched to "make them succeed" | Permanent |
 
 ## 22. Open Decisions
 
@@ -463,13 +555,18 @@ Append one row for every material completed item.
 |---|---|---|---|---|---|
 | Jul 29, 2026 | Phase 0 | Canonical innings authority hardened | PR #556 / `c4a0b3e4...` | Regression fixtures; no false repair from decimal representation | Decimal innings no longer operate independently of recorded outs |
 | Jul 29, 2026 | Phase 0 | Six-document canonical library established | `docs/canonical-operating-library` | Document render/QA and GitHub PR | Replaces competing master documents as authority |
+| Jul 29, 2026 | Phase 0 | Governed 675-action official pitching-line repair applied | PR #540 / execution ledger id 1 | Fingerprint `3ee2ea06...`; 70 identity / 445 insert / 160 update / 675 total; season 2026 as of 2026-07-25 | Atomic, fingerprint-locked, single completed execution |
+| Jul 29, 2026 | Phase 0 | Independent read-only closeout verification | PR #555 / `b5e88bb...` | `pass` / exit 0; all five governed checks present, executed, passed; zero writes | Verifier is separate from the apply it verifies |
+| Jul 29, 2026 | Phase 0 | Derived-innings planner semantics corrected | PR #556 | Integer outs are the sole workload authority; derived float never proposed alone | Removed a representation difference presented as a repair action |
+| Jul 29, 2026 | Phase 0 | Targeted Matt Festa apply capability built and dispatched once | PR #557 / `b5e88bb...` | Zero writes, no transaction, no ledger row, zero planned actions | Became unnecessary before dispatch; closed permanently, see D-019 |
+| Jul 29, 2026 | Phase 0 | **Foundation 3A / Phase 0 formally closed** | `operators/foundation-3a-closeout` | Section 3A closeout evidence at `b5e88bb...` | Phase 1 Evidence Completeness becomes the sole active objective |
 
 ## 25. Phase Exit Record
 
 | Phase | Status | Exit evidence required |
 |---|---|---|
-| Phase 0 - Canonical Trust Closeout | In progress | Production closeout, downstream reconciliation, regression proof |
-| Phase 1 - Evidence Completeness | Not started | Public evidence contracts complete and inspected |
+| Phase 0 - Canonical Trust Closeout | **Complete** (Jul 29, 2026 at `b5e88bb...`) | Met: independent read-only closeout `pass`/exit 0, every governed check present/executed/passed, exact local and official reconciliation across 30 teams, regression coverage merged. Evidence in Section 3A |
+| Phase 1 - Evidence Completeness | **Active** - first item not started | Public evidence contracts complete and inspected, beginning with the Current Active-Pen ERA and Performance Context contract |
 | Phase 2 - Portable Intelligence | Foundation complete; final distribution not started | Canonical renderer, actions, metadata, analytics, external smoke |
 | Phase 3 - Daily Habit | Not started | Trusted change/consequence loop and quiet-day behavior |
 | Phase 4 - Offseason Intelligence Depth | Not started | At least one major evidence advantage beyond workload/roster |
@@ -481,3 +578,4 @@ Append one row for every material completed item.
 | Version | Date | Author | Summary |
 |---|---|---|---|
 | 1.0 | July 29, 2026 | Nickolis Kacludis | Established the only canonical execution roadmap, current capability assessment, active objective, phased sequence, dependency map, success metrics, risks, backlog, founder operating rules, and consolidated Decision Ledger. |
+| 1.1 | July 29, 2026 | Nickolis Kacludis | Closed Foundation 3A / Phase 0 Canonical Trust Closeout and recorded its terminal production evidence; recorded the Matt Festa targeted apply as closed and non-retriable; opened Foundation 3B / Phase 1 Evidence Completeness as the sole active objective with Current Active-Pen ERA and Performance Context as the first scoped item; added decisions D-018 through D-020 and the Phase 0 completion-log entries. |
