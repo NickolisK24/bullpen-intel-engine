@@ -3660,3 +3660,330 @@ def test_no_workflow_dispatch_or_gate_opening_survives_the_type_exact_change():
         None, 'testsha', 'op', __import__('datetime').datetime(2026, 7, 29))
     for gate in apply_service.DOWNSTREAM_GATES:
         assert base[gate] == apply_service.GATE_BLOCKED
+
+
+# ═══════════════ 27. Exact PostgreSQL float readback ════════════════════════
+# The second production apply rolled back with 55 innings_pitched mismatches whose stored
+# readbacks were each the proposed value rendered to 15 significant decimal digits — the
+# signature of extra_float_digits <= 0. The stored bits were always correct; only the text
+# rendering lost them. These prove that behavior, prove the governed transaction-local
+# setting restores lossless readback, and prove the repair refuses to verify without it.
+
+# proposed outs -> the stored readback the production artifact recorded.
+PRODUCTION_FLOAT_READBACKS = {
+    14: '4.66666666666667',
+    11: '3.66666666666667',
+    10: '3.33333333333333',
+    2: '0.666666666666667',
+    1: '0.333333333333333',
+}
+PRODUCTION_MAX_ABS_DIFF = 3.552713678800501e-15
+
+
+def _skip_unless_postgres():
+    if db.session.get_bind().dialect.name != 'postgresql':
+        pytest.skip('float render precision is a PostgreSQL text-protocol behavior')
+
+
+def _seed_innings_rows(base_mlb_id, base_game_pk):
+    """One row per representative outs value, innings_pitched = outs / 3.0."""
+    ids = {}
+    for outs in PRODUCTION_FLOAT_READBACKS:
+        pitcher = _pitcher(base_mlb_id + outs)
+        log = GameLog(
+            pitcher_id=pitcher.id, mlb_game_pk=base_game_pk + outs, game_date=GDATE,
+            game_type='R', games_started=0, innings_pitched_outs=outs,
+            innings_pitched=(outs / 3.0), runs_allowed=0, earned_runs=0, hits_allowed=0,
+            walks=0, strikeouts=0, home_runs_allowed=0, strikes=outs * 2, opponent='T',
+            opponent_abbreviation='T',
+            appearance_team_status=GameLog.APPEARANCE_TEAM_RESOLVED,
+            appearance_team_id=100, appearance_team_source='boxscore_side',
+            appearance_team_reason='appearance_team_resolved_boxscore')
+        db.session.add(log)
+        db.session.commit()
+        ids[outs] = int(log.id)
+    return ids
+
+
+def _narrow_select(log_id, field='innings_pitched'):
+    """The verifier's own readback: a narrow column SELECT read as a mapping."""
+    columns = GameLog.__table__.c
+    return db.session.execute(
+        sa.select(columns[field]).where(columns['id'] == log_id)).mappings().one()[field]
+
+
+def _set_local_float_digits(value):
+    db.session.execute(sa.text(f'SET LOCAL extra_float_digits = {int(value)}'))
+    return db.session.execute(sa.text('SHOW extra_float_digits')).scalar()
+
+
+def test_extra_float_digits_zero_reproduces_the_production_readback_loss(app):
+    _skip_unless_postgres()
+    ids = _seed_innings_rows(940100, 975100)
+    assert _set_local_float_digits(0) == '0'
+
+    diffs = []
+    for outs, log_id in ids.items():
+        proposed = outs / 3.0
+        stored = _narrow_select(log_id)
+        # The exact string the production artifact recorded.
+        assert repr(stored) == PRODUCTION_FLOAT_READBACKS[outs], outs
+        assert type(stored) is float
+        # The type-exact comparison correctly reports it as a mismatch: the rendering is not
+        # the value. The comparison is right; the reading was lossy.
+        mismatch = apply_service._readback_field_mismatch(
+            action_id=f'A{outs}', local_game_log_id=log_id, official_mlb_person_id=1,
+            appearance_team_id=100, field='innings_pitched', planned_current_value=0.0,
+            manifest_value=proposed, after_value=proposed, stored_value=stored)
+        assert mismatch is not None, outs
+        assert mismatch['manifest_proposed_equals_update_record_after'] is True
+        assert mismatch['update_record_after_equals_stored_readback'] is False
+        assert mismatch['manifest_proposed_equals_stored_readback'] is False
+        assert mismatch['stored_value_type'] == 'float'
+        diffs.append(abs(proposed - stored))
+    assert max(diffs) == PRODUCTION_MAX_ABS_DIFF
+    db.session.rollback()
+
+
+def test_the_governed_float_setting_restores_lossless_readback(app):
+    _skip_unless_postgres()
+    ids = _seed_innings_rows(940200, 975200)
+
+    # Same rows, same transaction, NO rewrite between the two reads: this proves the stored
+    # bits were always exact and only the rendering differed.
+    assert _set_local_float_digits(0) == '0'
+    lossy = {outs: _narrow_select(log_id) for outs, log_id in ids.items()}
+    assert all(lossy[outs] != outs / 3.0 for outs in ids)
+
+    assert _set_local_float_digits(apply_service.EXACT_FLOAT_READBACK_VALUE) == '3'
+    for outs, log_id in ids.items():
+        proposed = outs / 3.0
+        stored = _narrow_select(log_id)
+        assert stored == proposed, outs
+        assert stored.hex() == proposed.hex(), outs
+        assert type(stored) is float
+        # Type-exact comparison now passes with no tolerance and no normalization.
+        assert apply_service._readback_field_mismatch(
+            action_id=f'A{outs}', local_game_log_id=log_id, official_mlb_person_id=1,
+            appearance_team_id=100, field='innings_pitched', planned_current_value=0.0,
+            manifest_value=proposed, after_value=proposed, stored_value=stored) is None
+    db.session.rollback()
+
+
+def test_extra_float_digits_one_is_sufficient_here_but_three_is_governed(app):
+    _skip_unless_postgres()
+    ids = _seed_innings_rows(940300, 975300)
+    # PostgreSQL 12+ selects shortest-precise output for any value >= 1, so 1 round-trips on
+    # this server. The repair still governs 3: it is the maximum supported value, it behaves
+    # identically wherever it is accepted, and it does not depend on the server being 12+.
+    assert _set_local_float_digits(1) == '1'
+    for outs, log_id in ids.items():
+        assert _narrow_select(log_id) == outs / 3.0, outs
+    assert apply_service.EXACT_FLOAT_READBACK_VALUE == 3
+    db.session.rollback()
+
+
+def test_the_float_readback_helper_reports_a_proven_governed_contract(app):
+    _skip_unless_postgres()
+    db.session.execute(sa.text('SET LOCAL extra_float_digits = 0'))
+    contract = apply_service._configure_exact_postgres_float_readback(db.session)
+    assert contract['dialect'] == 'postgresql'
+    assert contract['setting'] == 'extra_float_digits'
+    assert contract['observed_value_before'] == '0'
+    assert contract['governed_value_requested'] == 3
+    assert contract['observed_value_after'] == '3'
+    assert contract['transaction_local'] is True
+    assert contract['exact_float_readback_enabled'] is True
+    # Proven from the server, not assumed by the caller.
+    assert db.session.execute(sa.text('SHOW extra_float_digits')).scalar() == '3'
+    db.session.rollback()
+
+
+def test_the_governed_float_setting_does_not_outlive_its_transaction(app):
+    _skip_unless_postgres()
+    before = db.session.execute(sa.text('SHOW extra_float_digits')).scalar()
+    contract = apply_service._configure_exact_postgres_float_readback(db.session)
+    assert contract['exact_float_readback_enabled'] is True
+    assert db.session.execute(sa.text('SHOW extra_float_digits')).scalar() == '3'
+    # SET LOCAL is discarded with the transaction, so nothing durable changed.
+    db.session.rollback()
+    assert db.session.execute(sa.text('SHOW extra_float_digits')).scalar() == before
+    db.session.rollback()
+
+
+def test_a_non_postgres_dialect_needs_no_render_setting(app):
+    if db.session.get_bind().dialect.name == 'postgresql':
+        pytest.skip('covers the non-PostgreSQL branch')
+    contract = apply_service._configure_exact_postgres_float_readback(db.session)
+    assert contract['exact_float_readback_enabled'] is True
+    assert contract['dialect'] != 'postgresql'
+    assert contract['governed_value_requested'] is None
+    assert contract['transaction_local'] is False
+
+
+def test_a_float_readback_that_cannot_be_established_fails_and_rolls_back(approved,
+                                                                         monkeypatch):
+    before = _counts()
+    before_hits = db.session.query(GameLog).filter(
+        GameLog.id == BR_LOG_ID).one().hits_allowed
+    unproven = {
+        'dialect': 'postgresql', 'setting': 'extra_float_digits',
+        'observed_value_before': '0', 'governed_value_requested': 3,
+        'observed_value_after': '0', 'transaction_local': True,
+        'exact_float_readback_enabled': False,
+    }
+    monkeypatch.setattr(apply_service, '_configure_exact_postgres_float_readback',
+                        lambda session: dict(unproven))
+    payload = _apply(approved)
+
+    assert payload['result'] == apply_service.RESULT_FAIL
+    assert payload['decision_reasons'] == [apply_service.CONTRADICTION_FLOAT_READBACK]
+    # The setting evidence is preserved in the artifact before the rollback.
+    assert payload['float_readback_contract'] == unproven
+    assert payload['abort_detail']['float_readback_contract'] == unproven
+    # Nothing was written; everything rolled back.
+    assert payload['transaction_committed'] is False
+    assert payload['database_writes_performed'] is False
+    assert payload['rollback_performed'] is True
+    assert payload['execution_ledger_id'] is None
+    assert payload['action_counts_applied'] == {
+        planner.ACTION_IDENTITY_CREATE: 0, planner.ACTION_GAME_LOG_INSERT: 0,
+        planner.ACTION_GAME_LOG_UPDATE: 0}
+    assert db.session.query(Ledger).count() == 0
+    assert _counts() == before
+    assert db.session.query(GameLog).filter(
+        GameLog.id == BR_LOG_ID).one().hits_allowed == before_hits
+    for gate in apply_service.DOWNSTREAM_GATES:
+        assert payload[gate] == apply_service.GATE_BLOCKED
+
+
+def test_a_passing_run_records_the_established_float_readback_contract(approved):
+    payload = _apply(approved)
+    assert payload['result'] == apply_service.RESULT_PASS
+    contract = payload['float_readback_contract']
+    assert contract['exact_float_readback_enabled'] is True
+    assert contract['setting'] == 'extra_float_digits'
+    assert payload['verification_results'][
+        'exact_float_readback_is_established'] is True
+    assert payload['update_readback_mismatches'] == []
+    if db.session.get_bind().dialect.name == 'postgresql':
+        assert contract['dialect'] == 'postgresql'
+        assert contract['governed_value_requested'] == 3
+        assert contract['observed_value_after'] == '3'
+        assert contract['transaction_local'] is True
+
+
+def test_the_approved_run_passes_even_when_the_session_renders_floats_lossily(approved):
+    _skip_unless_postgres()
+    # Production's connection reports extra_float_digits = 0. Reproduce that as the SESSION
+    # default (which survives the repair's own rollback/BEGIN boundary) and prove the repair
+    # still verifies and passes, because it governs the setting inside its own transaction.
+    db.session.execute(sa.text('SET SESSION extra_float_digits = 0'))
+    db.session.commit()
+    assert db.session.execute(sa.text('SHOW extra_float_digits')).scalar() == '0'
+
+    payload = _apply(approved)
+    assert payload['result'] == apply_service.RESULT_PASS
+    assert payload['update_readback_mismatches'] == []
+    contract = payload['float_readback_contract']
+    assert contract['observed_value_before'] == '0'
+    assert contract['observed_value_after'] == '3'
+    assert contract['exact_float_readback_enabled'] is True
+    # The transaction-local setting ended with the repair's commit; the session default is
+    # untouched, so nothing durable was changed.
+    assert db.session.execute(sa.text('SHOW extra_float_digits')).scalar() == '0'
+    db.session.execute(sa.text('SET SESSION extra_float_digits = DEFAULT'))
+    db.session.commit()
+
+
+def test_the_float_setting_uses_no_durable_or_global_mechanism():
+    import ast as _ast
+    # Inspect the SQL the service actually EMITS, not the prose that documents it: every
+    # ``sa.text(...)`` argument in the module.
+    tree = _ast.parse(SERVICE_PATH.read_text(encoding='utf-8'))
+    emitted = [_ast.unparse(node).upper() for node in _ast.walk(tree)
+               if isinstance(node, _ast.Call) and isinstance(node.func, _ast.Attribute)
+               and node.func.attr == 'text']
+    joined = ' | '.join(emitted)
+    for forbidden in ('ALTER DATABASE', 'ALTER ROLE', 'ALTER SYSTEM', 'SET SESSION',
+                      'SET GLOBAL', 'SET PERSIST'):
+        assert forbidden not in joined, forbidden
+    # Transaction-local only, emitted exactly once, and only for the governed setting.
+    set_statements = [s for s in emitted if 'SET ' in s]
+    assert len(set_statements) == 1, set_statements
+    assert 'SET LOCAL' in set_statements[0]
+    assert 'EXACT_FLOAT_READBACK_SETTING' in set_statements[0]
+    assert apply_service.EXACT_FLOAT_READBACK_SETTING == 'extra_float_digits'
+    assert apply_service.EXACT_FLOAT_READBACK_VALUE == 3
+
+
+def test_the_float_setting_is_established_after_preconditions_and_before_readbacks():
+    import inspect
+    source = inspect.getsource(apply_service.apply_reviewed_repair)
+    order = [
+        'acquire_repair_advisory_lock(',        # mutation transaction opened
+        '_amendment_preconditions(',            # pre-write current-value comparison
+        '_apply_identities(',
+        '_apply_insertions(',
+        '_apply_updates(',
+        '_configure_exact_postgres_float_readback(',  # only now is render precision raised
+        '_verify_before_commit(',               # first authoritative readback
+        '_verify_inserted_values(',
+        '_amendment_verification(',
+        'session.commit()',
+    ]
+    positions = [source.index(marker) for marker in order]
+    assert positions == sorted(positions), list(zip(order, positions))
+    # The planner regenerates the approved fingerprint before the mutation transaction, so it
+    # never runs under a changed float rendering.
+    assert source.index('_configure_exact_postgres_float_readback(') > source.index(
+        'planner_result_is_pass')
+
+
+def test_the_float_readback_contract_is_reported_within_bounds_in_the_summary():
+    text = WORKFLOW_PATH.read_text(encoding='utf-8')
+    assert 'Exact float readback (transaction-local)' in text
+    assert "payload.get('float_readback_contract')" in text
+    region = text.split('Exact float readback (transaction-local)', 1)[1].split(
+        'Updated-row readback mismatches', 1)[0]
+    for field in ('observed_value_before', 'governed_value_requested',
+                  'observed_value_after', 'transaction_local',
+                  'exact_float_readback_enabled'):
+        assert field in region, field
+    # The bounded summary reports the setting evidence only — never a credential or a
+    # connection detail. (The job's own env block legitimately references the secrets; this
+    # asserts the SUMMARY does not print them.)
+    for forbidden in ('DATABASE_URL', 'SECRET_KEY', 'ADMIN_API_TOKEN', 'password',
+                      'dsn', 'connection_string'):
+        assert forbidden not in region, forbidden
+
+
+def test_post_commit_verification_remains_mandatory_and_render_independent():
+    import inspect
+    source = inspect.getsource(apply_service.apply_reviewed_repair)
+    # SET LOCAL ends with the single commit, so post-commit verification must not depend on
+    # it — and it still always runs, with no skip flag.
+    assert source.index('run_post_commit_verification(') > source.index('session.commit()')
+    post_commit_region = source[source.index('session.commit()'):]
+    assert '_configure_exact_postgres_float_readback(' not in post_commit_region
+    assert 'SET LOCAL' not in post_commit_region
+    assert set(apply_service.POST_COMMIT_RECONCILIATIONS) == {
+        'post_commit_verification_was_executed',
+        'every_governed_post_commit_check_is_present',
+        'every_governed_post_commit_check_passed',
+        'no_post_commit_check_was_skipped',
+    }
+
+
+def test_the_float_readback_fix_left_the_governed_constants_unchanged():
+    assert (apply_service.APPROVED_OFFICIAL_PITCHING_LINE_REPAIR_MANIFEST_FINGERPRINT_2026
+            == '3ee2ea06492e8161bf7b278228d6f778e24048452366e3c2502ae42e0365216b')
+    assert apply_service.CONFIRMATION_PHRASE == 'APPLY-2026-PITCHING-LINE-REPAIR-3EE2EA06'
+    assert apply_service.APPROVED_EXECUTION_CONTRACT['total_action_count'] == 675
+    # Equality semantics are untouched: still type-exact, still no tolerance.
+    import inspect
+    body = inspect.getsource(
+        apply_service._same_governed_value).split('"""', 2)[-1]
+    assert 'type(left) is type(right) and left == right' in body
+    for forbidden in ('abs(', '1e-6', 'round(', 'float(', 'int('):
+        assert forbidden not in body, forbidden

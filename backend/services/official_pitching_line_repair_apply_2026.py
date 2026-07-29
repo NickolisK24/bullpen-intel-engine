@@ -217,6 +217,20 @@ CONTRADICTION_DELETE_ATTEMPTED = 'a_delete_was_attempted'
 CONTRADICTION_DEPENDENT_EVIDENCE = 'dependent_evidence_invalidation_failed'
 CONTRADICTION_CORRECTION_COUNT_DELTA = 'correction_count_delta_is_not_exactly_one'
 CONTRADICTION_APPROVAL_CONTRACT_DRIFT = 'approved_contract_fingerprint_disagrees_with_constant'
+CONTRADICTION_FLOAT_READBACK = 'exact_float_readback_could_not_be_established'
+
+# ── Exact float readback ──────────────────────────────────────────────────────
+# PostgreSQL renders float8 as TEXT on the wire. With ``extra_float_digits <= 0`` that text is
+# rounded to 15 significant decimal digits, which does NOT round-trip every IEEE-754 double:
+# ``4.666666666666667`` is read back as ``4.66666666666667``. The stored bits are correct —
+# only the rendering loses them — so an authoritative readback taken under that setting
+# compares a full-precision proposed value against a truncated one and reports a mismatch that
+# does not exist in the database. A positive value selects shortest-precise output, which does
+# round-trip. 3 is requested rather than 1 because it is the maximum supported value and
+# behaves identically on every server version that accepts it, whereas 1 selects
+# shortest-precise output only from PostgreSQL 12 onward.
+EXACT_FLOAT_READBACK_SETTING = 'extra_float_digits'
+EXACT_FLOAT_READBACK_VALUE = 3
 
 # The post-commit outcome is part of the pass condition, not an optional epilogue. These are
 # reported as reconciliations so a reader can see WHICH of them held rather than only that
@@ -1236,8 +1250,70 @@ def _readback_field_mismatch(*, action_id, local_game_log_id, official_mlb_perso
     }
 
 
+def _configure_exact_postgres_float_readback(session) -> dict:
+    """Make this transaction's float8 readbacks lossless, and prove that it took effect.
+
+    On PostgreSQL this raises ``extra_float_digits`` to the governed value with ``SET LOCAL``,
+    reading the setting before and after so the artifact carries evidence rather than an
+    assumption. ``SET LOCAL`` is scoped to the surrounding transaction and is discarded with
+    the single commit or the rollback, so it changes nothing durable: no ``ALTER DATABASE``,
+    ``ALTER ROLE``, ``ALTER SYSTEM``, connection string, hosting-provider setting, or
+    committed session state is touched, and no other connection is affected.
+
+    This does not make different values compare as equal. It makes the database return the
+    exact double it stored, so a type-exact comparison is finally comparing the stored value
+    instead of a 15-significant-digit rendering of it. Equality semantics are untouched.
+
+    Returns the structured contract. When the setting cannot be applied or the observed value
+    afterwards is not the governed one, ``exact_float_readback_enabled`` is False and the
+    caller aborts the repair rather than verifying against renderings it cannot trust.
+    """
+    dialect = session.get_bind().dialect.name
+    contract = {
+        'dialect': dialect,
+        'setting': EXACT_FLOAT_READBACK_SETTING,
+        'observed_value_before': None,
+        'governed_value_requested': None,
+        'observed_value_after': None,
+        'transaction_local': False,
+        'exact_float_readback_enabled': False,
+    }
+    if dialect != 'postgresql':
+        # Other supported dialects hand back the stored IEEE-754 double directly; there is no
+        # text-rendering setting to govern, so exact readback holds with nothing applied.
+        contract['exact_float_readback_enabled'] = True
+        contract['reason'] = 'dialect_returns_exact_doubles_without_a_render_setting'
+        return contract
+
+    contract['governed_value_requested'] = EXACT_FLOAT_READBACK_VALUE
+    try:
+        contract['observed_value_before'] = session.execute(
+            sa.text(f'SHOW {EXACT_FLOAT_READBACK_SETTING}')).scalar()
+        # A literal, not a bind parameter: SET does not accept placeholders. The value is an
+        # int-coerced module constant, never caller input.
+        session.execute(sa.text(
+            f'SET LOCAL {EXACT_FLOAT_READBACK_SETTING} '
+            f'= {int(EXACT_FLOAT_READBACK_VALUE)}'))
+        observed_after = session.execute(
+            sa.text(f'SHOW {EXACT_FLOAT_READBACK_SETTING}')).scalar()
+    except Exception as exc:  # noqa: BLE001 — never leak a database message
+        contract['error_type'] = type(exc).__name__
+        return contract
+
+    contract['observed_value_after'] = observed_after
+    contract['transaction_local'] = True
+    try:
+        applied = int(str(observed_after).strip())
+    except (TypeError, ValueError):
+        applied = None
+    # Proven, not assumed: the run only proceeds when the server reports the governed value.
+    contract['exact_float_readback_enabled'] = applied == EXACT_FLOAT_READBACK_VALUE
+    return contract
+
+
 def _verify_before_commit(session, *, contract, identity_result, insert_result,
-                          update_result, update_actions, watch, operation_id) -> dict:
+                          update_result, update_actions, float_readback, watch,
+                          operation_id) -> dict:
     """Read every written row back and prove it is what the reviewed manifest described.
 
     Verification failures are RETURNED, never raised: the caller records the full result —
@@ -1254,6 +1330,10 @@ def _verify_before_commit(session, *, contract, identity_result, insert_result,
     created_ids = identity_result['created_local_pitcher_ids']
 
     checks: Dict[str, bool] = {
+        # Every readback below is only as trustworthy as the precision it is rendered at, so
+        # the established exact-float contract is itself a named verification.
+        'exact_float_readback_is_established':
+            (float_readback or {}).get('exact_float_readback_enabled') is True,
         'identity_actions_applied_exactly_once':
             len(identity_records) == counts[planner.ACTION_IDENTITY_CREATE]
             and len({r['action_id'] for r in identity_records}) == len(identity_records),
@@ -1794,10 +1874,27 @@ def apply_reviewed_repair(
 
         # ── 5. Read everything back before deciding to commit ────────────────
         session.flush()
+
+        # Exact float readback, established HERE and nowhere earlier. The planner regenerated
+        # the approved fingerprint, and every planned-current precondition above compared
+        # existing rows, under production's own connection behavior — exactly as when the
+        # manifest was approved. Raising the render precision before either of those would
+        # change the Python representation of already-stored values and could manufacture
+        # fingerprint or precondition drift that production does not have. It is needed only
+        # to read back the values THIS transaction just staged, so it is turned on after the
+        # last pre-write comparison and before the first authoritative readback.
+        float_readback = _configure_exact_postgres_float_readback(session)
+        payload['float_readback_contract'] = float_readback
+        if not float_readback['exact_float_readback_enabled']:
+            # Verifying against renderings that cannot be trusted is not verification.
+            raise _Abort(CONTRADICTION_FLOAT_READBACK, result=RESULT_FAIL,
+                         detail={'float_readback_contract': float_readback})
+
         verification = _verify_before_commit(
             session, contract=contract, identity_result=identity_result,
             insert_result=insert_result, update_result=update_result,
-            update_actions=update_actions, watch=watch, operation_id=operation_id)
+            update_actions=update_actions, float_readback=float_readback, watch=watch,
+            operation_id=operation_id)
         mismatched = _verify_inserted_values(
             session, insert_actions, insert_result['records'])
         verification['checks']['every_inserted_field_matches_proposed_values'] = (
@@ -2012,6 +2109,7 @@ def _base_payload(contract, approved_fingerprint, generated_at, apply_git_sha,
         'reviewed_amendment_before': None,
         'reviewed_amendment_after': None,
         'verification_results': {},
+        'float_readback_contract': {},
         'update_readback_mismatches': [],
         'staged_action_counts': {
             planner.ACTION_IDENTITY_CREATE: 0,

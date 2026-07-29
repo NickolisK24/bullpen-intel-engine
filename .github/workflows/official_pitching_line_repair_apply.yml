@@ -210,6 +210,22 @@ jobs:
           summary.extend(f"- `{name}`" for name in failed_ver)
           if not failed_ver:
               summary.append(f"- all `{len(verifications)}` passed")
+          summary.extend(('', '### Exact float readback (transaction-local)'))
+          float_contract = payload.get('float_readback_contract') or {}
+          summary.append(f"- Dialect: `{float_contract.get('dialect')}`")
+          summary.append(f"- Setting: `{float_contract.get('setting')}`")
+          summary.append(
+              f"- Value before: `{float_contract.get('observed_value_before')}`")
+          summary.append(
+              f"- Governed value requested: "
+              f"`{float_contract.get('governed_value_requested')}`")
+          summary.append(
+              f"- Value after: `{float_contract.get('observed_value_after')}`")
+          summary.append(
+              f"- Transaction-local: `{float_contract.get('transaction_local')}`")
+          summary.append(
+              f"- Exact float readback enabled: "
+              f"`{float_contract.get('exact_float_readback_enabled')}`")
           summary.extend(('', '### Updated-row readback mismatches (bounded)'))
           readback = payload.get('update_readback_mismatches') or []
           staged = payload.get('staged_action_counts') or {}
