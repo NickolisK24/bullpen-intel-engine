@@ -1182,9 +1182,70 @@ def _amendment_verification(session, before, contract) -> dict:
 
 
 # ── In-transaction verification ───────────────────────────────────────────────
+def _same_governed_value(left, right) -> bool:
+    """Two authorities agree only when the Python storage type AND the value are identical.
+
+    Plain ``==`` is not enough: Python treats ``True == 1`` and ``False == 0`` as true, so an
+    integer stored where the governed type is boolean — or the reverse — would compare equal
+    and hide a type disagreement. Requiring ``type(left) is type(right)`` first makes the
+    comparison type-exact. This is a STRENGTHENING, not a normalization: no value is coerced,
+    rounded, converted, or made null-equivalent; a bool is simply never accepted as an int,
+    an int never as a float, and ``None`` never as any other type.
+    """
+    return type(left) is type(right) and left == right
+
+
+def _readback_field_mismatch(*, action_id, local_game_log_id, official_mlb_person_id,
+                             appearance_team_id, field, planned_current_value,
+                             manifest_value, after_value, stored_value) -> Optional[dict]:
+    """Triangulate one changed field across its three authorities.
+
+    Returns ``None`` when the reviewed manifest proposed value, the value this run assigned
+    to the row, and the value the database stored are ALL equal in BOTH Python storage type
+    and value; otherwise returns a structured, JSON-safe mismatch item naming the exact row,
+    field, each value, and each Python type.
+
+    Equality is type-exact ``==`` via ``_same_governed_value`` and nothing else. There is no
+    float tolerance, no integer or boolean coercion, no string conversion, and no
+    null-equivalence, so a materially different stored value — an int ``1`` for a bool
+    ``True``, ``1.0`` for ``1``, ``None`` for a number, ``5`` for ``4`` — can never be
+    reported as a match. Keeping the comparison in one documented, deterministic function is
+    what lets its exactness be proven field by field in isolation.
+    """
+    manifest_eq_after = _same_governed_value(manifest_value, after_value)
+    after_eq_stored = _same_governed_value(after_value, stored_value)
+    manifest_eq_stored = _same_governed_value(manifest_value, stored_value)
+    if manifest_eq_after and after_eq_stored and manifest_eq_stored:
+        return None
+    return {
+        'action_id': action_id,
+        'local_game_log_id': local_game_log_id,
+        'official_mlb_person_id': official_mlb_person_id,
+        'appearance_team_id': appearance_team_id,
+        'field': field,
+        'planned_current_value': planned_current_value,
+        'manifest_proposed_value': manifest_value,
+        'update_record_after_value': after_value,
+        'stored_readback_value': stored_value,
+        'manifest_value_type': type(manifest_value).__name__,
+        'update_record_value_type': type(after_value).__name__,
+        'stored_value_type': type(stored_value).__name__,
+        'manifest_proposed_equals_update_record_after': manifest_eq_after,
+        'update_record_after_equals_stored_readback': after_eq_stored,
+        'manifest_proposed_equals_stored_readback': manifest_eq_stored,
+    }
+
+
 def _verify_before_commit(session, *, contract, identity_result, insert_result,
-                          update_result, watch, operation_id) -> dict:
-    """Read every written row back and prove it is what the reviewed manifest described."""
+                          update_result, update_actions, watch, operation_id) -> dict:
+    """Read every written row back and prove it is what the reviewed manifest described.
+
+    Verification failures are RETURNED, never raised: the caller records the full result —
+    every named check, the exact row-level update-readback mismatches, the mutation watch,
+    and the staged (not applied) counts — into the artifact BEFORE it decides to roll back,
+    so a rolled-back run still says precisely what disagreed rather than only that something
+    did. The one exception the caller re-raises with is built from ``failed``.
+    """
     counts = contract['action_counts']
     identity_records = identity_result['records']
     insert_records = insert_result['records']
@@ -1352,29 +1413,89 @@ def _verify_before_commit(session, *, contract, identity_result, insert_result,
         if len(occupants) != 1:
             checks['no_duplicate_stable_game_log_key_exists'] = False
 
+    # ── Updated rows: three independent authorities, read back over a forced round-trip ──
+    # The first production apply rolled back here — this check reported ``False`` and nothing
+    # else, so the artifact could not say which action, row, field, or value disagreed. That
+    # made the failure impossible to diagnose from retained evidence. This reads every changed
+    # field back and, on any disagreement, records the exact triangulation:
+    #
+    #   1. the reviewed manifest proposed value (from the original UPDATE action),
+    #   2. the value this run assigned to the row (the update record's ``after`` snapshot),
+    #   3. the value PostgreSQL actually stored, read with a narrow SELECT.
+    #
+    # The readback is a genuine database round-trip that BYPASSES the identity map: a plain
+    # ``session.query(GameLog).filter(id==...)`` returns the object already in the session and
+    # would hand back the value this run assigned, never the value the database stored, so it
+    # could never catch a divergence between them. A column SELECT reads the stored row.
+    #
+    # Equality is EXACT and field-specific. No float tolerance, integer/boolean coercion,
+    # string conversion, or null-equivalence is applied, so a materially different stored value
+    # can never be reported as a match. A field passes only when all three authorities agree.
+    update_action_by_id = {a['action_id']: a for a in (update_actions or ())}
+    readback_columns = GameLog.__table__.c
+    correction_readback_fields = ('stat_correction_count', 'last_stat_correction_source')
+    update_readback_mismatches: List[dict] = []
     checks['every_updated_field_matches_proposed_values'] = True
     for record in update_records:
-        row = session.query(GameLog).filter(
-            GameLog.id == record['local_game_log_id']).one_or_none()
-        if row is None:
+        action = update_action_by_id.get(record['action_id']) or {}
+        manifest_proposed = dict(action.get('proposed_values') or {})
+        manifest_current = dict(action.get('current_values') or {})
+        changed = list(record['changed_fields'])
+        wanted = sorted(set(changed) | set(correction_readback_fields))
+        stored_row = session.execute(
+            sa.select(*[readback_columns[name] for name in wanted])
+            .where(readback_columns['id'] == record['local_game_log_id'])
+        ).mappings().one_or_none()
+        if stored_row is None:
             checks['every_updated_field_matches_proposed_values'] = False
+            update_readback_mismatches.append({
+                'action_id': record['action_id'],
+                'local_game_log_id': record['local_game_log_id'],
+                'official_mlb_person_id': record.get('official_mlb_person_id'),
+                'appearance_team_id': record.get('appearance_team_id'),
+                'field': None,
+                'reason': 'row_absent_on_readback',
+            })
             continue
-        for field, value in record['after'].items():
-            if field in record['changed_fields'] and getattr(row, field, None) != value:
+        for field in changed:
+            mismatch = _readback_field_mismatch(
+                action_id=record['action_id'],
+                local_game_log_id=record['local_game_log_id'],
+                official_mlb_person_id=record.get('official_mlb_person_id'),
+                appearance_team_id=record.get('appearance_team_id'),
+                field=field,
+                planned_current_value=manifest_current.get(field),
+                manifest_value=manifest_proposed.get(field),
+                after_value=(record['after'] or {}).get(field),
+                stored_value=stored_row.get(field))
+            if mismatch is not None:
                 checks['every_updated_field_matches_proposed_values'] = False
-        if row.last_stat_correction_source != CORRECTION_SOURCE:
+                update_readback_mismatches.append(mismatch)
+        if stored_row.get('last_stat_correction_source') != CORRECTION_SOURCE:
             checks['every_updated_row_carries_the_governed_correction_source'] = False
         # The STORED value, read back from the database, must be exactly prior + 1.
-        if int(row.stat_correction_count or 0) != record['prior_stat_correction_count'] + 1:
+        if (int(stored_row.get('stat_correction_count') or 0)
+                != record['prior_stat_correction_count'] + 1):
             checks['every_stored_correction_count_is_exactly_one_greater'] = False
     checks.setdefault('every_updated_row_carries_the_governed_correction_source', True)
     checks.setdefault('every_stored_correction_count_is_exactly_one_greater', True)
 
     failed = sorted(name for name, value in checks.items() if not value)
-    if failed:
-        raise _Abort(CONTRADICTION_VERIFICATION, result=RESULT_FAIL,
-                     detail={'failed_verifications': failed})
-    return {'checks': checks, 'failed': failed}
+    return {
+        'checks': checks,
+        'failed': failed,
+        'update_readback_mismatches': update_readback_mismatches,
+        'staged_action_counts': {
+            planner.ACTION_IDENTITY_CREATE: len(identity_records),
+            planner.ACTION_GAME_LOG_INSERT: len(insert_records),
+            planner.ACTION_GAME_LOG_UPDATE: len(update_records),
+        },
+        'staged_dependent_evidence_totals': {
+            'rows_invalidated': len(invalidation_records),
+            'evidence_objects_marked': sum(
+                int(item.get('marked_count') or 0) for item in invalidation_records),
+        },
+    }
 
 
 def _registered_direct_families() -> list:
@@ -1675,19 +1796,42 @@ def apply_reviewed_repair(
         session.flush()
         verification = _verify_before_commit(
             session, contract=contract, identity_result=identity_result,
-            insert_result=insert_result, update_result=update_result, watch=watch,
-            operation_id=operation_id)
+            insert_result=insert_result, update_result=update_result,
+            update_actions=update_actions, watch=watch, operation_id=operation_id)
         mismatched = _verify_inserted_values(
             session, insert_actions, insert_result['records'])
         verification['checks']['every_inserted_field_matches_proposed_values'] = (
             not mismatched)
+
+        # Record the complete verification artifact into the payload BEFORE deciding whether
+        # to roll back. A failed verification aborts and reverts every mutation, but the
+        # artifact must still carry every named check, the exact row-level readback
+        # mismatches, the mutation watch, and the STAGED (never applied) counts, so a
+        # rolled-back run says precisely what disagreed. ``_finalize_without_writes``
+        # preserves fields already set here; the applied counts it forces to zero are a
+        # distinct, separately reported truth from these staged counts.
+        payload['verification_results'] = verification['checks']
+        payload['update_readback_mismatches'] = verification['update_readback_mismatches']
+        payload['mutation_watch'] = watch.as_dict()
+        payload['staged_action_counts'] = verification['staged_action_counts']
+        payload['staged_dependent_evidence_totals'] = (
+            verification['staged_dependent_evidence_totals'])
+
+        failed_verifications = list(verification['failed'])
         if mismatched:
+            failed_verifications.append('every_inserted_field_matches_proposed_values')
+        if failed_verifications:
             raise _Abort(CONTRADICTION_VERIFICATION, result=RESULT_FAIL,
-                         detail={'mismatched_inserted_fields': mismatched[:20]})
+                         detail={
+                             'failed_verifications': sorted(set(failed_verifications)),
+                             'update_readback_mismatch_count':
+                                 len(verification['update_readback_mismatches']),
+                             'update_readback_mismatches':
+                                 verification['update_readback_mismatches'][:50],
+                             'mismatched_inserted_fields': mismatched[:20],
+                         })
         payload['reviewed_amendment_after'] = _amendment_verification(
             session, amendment_before, contract)
-        payload['verification_results'] = verification['checks']
-        payload['mutation_watch'] = watch.as_dict()
 
         # ── 6. The durable execution record, then the single commit ──────────
         ledger = RepairExecution(
@@ -1868,6 +2012,13 @@ def _base_payload(contract, approved_fingerprint, generated_at, apply_git_sha,
         'reviewed_amendment_before': None,
         'reviewed_amendment_after': None,
         'verification_results': {},
+        'update_readback_mismatches': [],
+        'staged_action_counts': {
+            planner.ACTION_IDENTITY_CREATE: 0,
+            planner.ACTION_GAME_LOG_INSERT: 0,
+            planner.ACTION_GAME_LOG_UPDATE: 0,
+        },
+        'staged_dependent_evidence_totals': {},
         'mutation_watch': {},
         'transaction_committed': False,
         'rollback_performed': False,
