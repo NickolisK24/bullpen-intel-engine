@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | Status | Canonical - system architecture, security, deployment, operations, and runbook authority |
-| Version | 1.0 |
+| Version | 1.1 |
 | Effective date | July 29, 2026 |
 | Owner | Nickolis Kacludis |
 | Repository | `NickolisK24/bullpen-intel-engine` |
@@ -533,6 +533,29 @@ Operational dashboards explain the baseball/publication scope affected, not mere
 
 A repair is not closed until downstream public meaning is verified, not merely the database row.
 
+### Proven operating shape
+
+The July 2026 canonical-record incident closed through this shape, and it is now the standing
+pattern for governed repair:
+
+```text
+governed repair -> independent closeout -> normal downstream work
+```
+
+Three properties made it terminal:
+
+1. **The verifier is separate from the apply it verifies.** The closeout is a distinct read-only
+   capability that performs no writes and cannot reapply the repair. An apply that grades its own
+   homework proves nothing.
+2. **Exact current reconciliation is the terminal proof.** Not "the repair ran" and not "no errors
+   were raised" - the proof is that local and official records now agree exactly, with every
+   governed check present, executed, and passed. Those are four separate facts; a check that could
+   not run has not passed.
+3. **A no-longer-needed one-action apply is not retried.** When a targeted, fingerprint-locked
+   apply refuses because its reviewed manifest no longer regenerates, that is a correct terminal
+   outcome. The capability is closed, not re-dispatched. A recurrence requires fresh diagnostic
+   evidence and a new reviewed contract, never a repeat dispatch of an obsolete fingerprint.
+
 ## 24. Security and Privacy
 
 - least privilege for tokens and operators;
@@ -557,7 +580,6 @@ Runbooks may be more detailed and may change more frequently. They do not overri
 
 Prioritized architecture work should follow product need:
 
-- finish canonical appearance/starter repair hardening;
 - expand evidence payloads already held by the system;
 - finish current-performance contract;
 - add canonical server-side share rendering and metadata;
@@ -572,3 +594,4 @@ Prioritized architecture work should follow product need:
 | Version | Date | Author | Summary |
 |---|---|---|---|
 | 1.0 | July 29, 2026 | Nickolis Kacludis | Consolidated system architecture, domain boundaries, persistence, sync/publication order, team-progressive authority, immutable artifacts, APIs, security, deployment, testing, observability, and repair operations. |
+| 1.1 | July 29, 2026 | Nickolis Kacludis | Recorded the proven governed-repair operating shape after the July 2026 canonical-record closeout: an independent verifier separate from the apply, exact current reconciliation as terminal proof, and a no-longer-needed one-action apply closed rather than retried. Removed completed appearance/starter repair hardening from prioritized technical direction. |
