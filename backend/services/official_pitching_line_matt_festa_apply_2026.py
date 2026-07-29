@@ -104,6 +104,7 @@ ABORT_ORIGINAL_REPAIR = 'original_repair_record_does_not_match_its_approved_resu
 ABORT_TARGET_ROW = 'target_game_log_does_not_match_the_reviewed_state'
 ABORT_DEPENDENT_EVIDENCE = 'dependent_evidence_invalidation_failed'
 ABORT_FLOAT_READBACK = 'exact_float_readback_could_not_be_established'
+ABORT_PLANNER_SOURCE = 'runtime_planner_source_is_not_the_reviewed_planner_source'
 ABORT_VERIFICATION = 'in_transaction_verification_failed'
 
 # ── The immutable reviewed contract ───────────────────────────────────────────
@@ -113,15 +114,44 @@ IMMUTABLE_CONTRACT = {
     'capability': CAPABILITY,
     'approved_manifest_fingerprint': APPROVED_MATT_FESTA_MANIFEST_FINGERPRINT_2026,
     'planner_capability': planner.CAPABILITY,
-    'planner_git_sha': 'c4a0b3e4e33d64c5cecea3151ff3c30df7e0c5fa',
+    # The commit at which the reviewed targeted plan and its fingerprint were GENERATED.
+    # Not the commit that executes the apply, and not the runtime SHA the planner reports:
+    # once this capability merges, the deployed tree is necessarily a later commit.
+    'approved_planner_git_sha': 'c4a0b3e4e33d64c5cecea3151ff3c30df7e0c5fa',
+    # SHA-256 of the exact bytes of the planner module as they existed at that commit.
+    # This is what actually has to hold at runtime: the apply may live at a newer commit,
+    # but the planner IMPLEMENTATION that regenerates the manifest must be byte-identical
+    # to the one that was reviewed.
+    'approved_planner_source_sha256': (
+        '65fef8d3d104faf4186005e7602ac871c5eb61f11647690ef230629cfe92668d'),
+    'approved_planner_source_path':
+        'backend/services/official_pitching_line_repair_plan_2026.py',
     'season': 2026,
     'as_of_date': '2026-07-25',
     'team_id': 114,
     'game_pk': 822952,
+    # ── The complete reviewed plan envelope ──────────────────────────────────
+    # Not a subset: the whole shape the reviewed plan reported. Anything else is a
+    # different plan, whatever its manifest happens to fingerprint to.
+    'planner_mode': planner.MODE_READ_ONLY,
+    'planner_exit_code': 2,
     'plan_scope': planner.PLAN_SCOPE_SUBSET,
     'plan_status': planner.PLAN_BLOCKED_SUBSET,
     'planner_result': RESULT_INCONCLUSIVE,
+    'repair_apply_gate': planner.GATE_BLOCKED_SUBSET,
+    # EXACT equality, not membership: an extra reason is a different decision.
+    'decision_reasons': [planner.BLOCK_BASELINE_DRIFT],
     'expected_decision_reason': planner.BLOCK_BASELINE_DRIFT,
+    'planner_inputs': {
+        'season': 2026,
+        'as_of_date': '2026-07-25',
+        'game_type': planner.REGULAR_SEASON_GAME_TYPE,
+        'team_id': 114,
+        'game_pk': 822952,
+    },
+    'blocking_counts_by_reason': {},
+    'duplicate_action_ids': [],
+    'database_writes_performed': False,
     'migration_head': REPAIR_LEDGER_MIGRATION_REVISION,
     'amendment_id': 'post_repair_matt_festa_earned_runs_2026',
     'action_counts': {
@@ -393,6 +423,54 @@ def _stable_key(action) -> str:
             f":{action.get('official_team_id')}")
 
 
+# ── Gate 0: the runtime planner must BE the reviewed planner ─────────────────
+def planner_source_sha256() -> Optional[str]:
+    """SHA-256 of the exact bytes of the planner module that is actually loaded.
+
+    Read from the imported module's own file, so it hashes the implementation this process
+    will run rather than a path guessed from the repository layout. No Git command is used:
+    a shallow checkout, a detached HEAD, or a missing .git directory must not be able to
+    turn this proof into a silent pass.
+    """
+    path = getattr(planner, '__file__', None)
+    if not path:
+        return None
+    try:
+        with open(path, 'rb') as handle:
+            return hashlib.sha256(handle.read()).hexdigest()
+    except OSError:
+        return None
+
+
+def verify_planner_source() -> dict:
+    """Prove the loaded planner implementation is byte-identical to the reviewed one.
+
+    The apply capability necessarily lives at a LATER commit than the plan it applies — once
+    this module merges, the deployed tree can never again be the plan-generation commit. So
+    the runtime Git SHA is recorded, not required. What is required is that the planner
+    SOURCE has not changed: a full-length, constant-shaped comparison of two SHA-256 digests,
+    never a prefix match.
+    """
+    contract = IMMUTABLE_CONTRACT
+    approved = contract['approved_planner_source_sha256']
+    observed = planner_source_sha256()
+    matches = (isinstance(observed, str) and len(observed) == len(approved)
+               and observed == approved)
+    checks = {
+        'planner_source_was_readable': observed is not None,
+        'planner_source_matches_the_reviewed_source': matches,
+    }
+    return {
+        'approved_planner_git_sha': contract['approved_planner_git_sha'],
+        'approved_planner_source_path': contract['approved_planner_source_path'],
+        'approved_planner_source_sha256': approved,
+        'observed_planner_source_sha256': observed,
+        'planner_source_matches': matches,
+        'checks': checks,
+        'failed': sorted(name for name, value in checks.items() if not value),
+    }
+
+
 # ── Gate 1: the regenerated plan must be the reviewed plan ───────────────────
 def verify_regenerated_plan(plan) -> dict:
     """Byte-for-byte fingerprint equality plus every reviewed plan and action field."""
@@ -411,14 +489,32 @@ def verify_regenerated_plan(plan) -> dict:
             == contract['approved_manifest_fingerprint'],
         'planner_capability_matches': plan.get('capability') == contract[
             'planner_capability'],
+        'planner_mode_is_read_only': plan.get('mode') == contract['planner_mode'],
+        'planner_exit_code_is_the_reviewed_exit_code':
+            plan.get('exit_code') == contract['planner_exit_code'],
+        # The exact scope the plan was asked for, read back from what the planner itself
+        # reports it ran with, so a caller cannot claim one scope and regenerate another.
+        'planner_inputs_are_exactly_the_reviewed_inputs':
+            {name: (plan.get('inputs') or {}).get(name)
+             for name in contract['planner_inputs']} == contract['planner_inputs'],
         'plan_scope_is_the_reviewed_diagnostic_subset':
             plan.get('plan_scope') == contract['plan_scope'],
         'plan_status_is_not_apply_eligible':
             plan.get('plan_status') == contract['plan_status'],
         'planner_result_is_the_reviewed_result':
             plan.get('result') == contract['planner_result'],
-        'decision_reason_is_the_expected_subset_drift':
-            contract['expected_decision_reason'] in (plan.get('decision_reasons') or ()),
+        'generic_repair_apply_gate_is_still_blocked_for_a_subset':
+            plan.get('repair_apply_gate') == contract['repair_apply_gate'],
+        # EXACT equality, not membership. A plan that decided the reviewed thing AND
+        # something else did not decide the reviewed thing.
+        'decision_reasons_are_exactly_the_reviewed_reasons':
+            list(plan.get('decision_reasons') or ()) == contract['decision_reasons'],
+        'zero_blocking_reasons_anywhere_in_the_plan':
+            dict(plan.get('blocking_counts_by_reason') or {})
+            == contract['blocking_counts_by_reason'],
+        'no_duplicate_action_ids_reported_by_the_planner':
+            list(plan.get('duplicate_action_ids') or ()) == contract[
+                'duplicate_action_ids'],
         'migration_head_is_exactly_the_governed_repair_ledger_revision':
             list(plan.get('migration_head') or ()) == [contract['migration_head']],
         'exactly_one_action_planned': len(manifest) == 1,
@@ -490,10 +586,21 @@ def verify_regenerated_plan(plan) -> dict:
             name for name, value in action_checks.items() if not value),
         'observed': {
             'regenerated_manifest_fingerprint': plan.get('repair_manifest_fingerprint'),
+            'planner_capability': plan.get('capability'),
+            'planner_mode': plan.get('mode'),
+            'planner_exit_code': plan.get('exit_code'),
+            'planner_inputs': {name: (plan.get('inputs') or {}).get(name)
+                               for name in contract['planner_inputs']},
             'plan_scope': plan.get('plan_scope'),
             'plan_status': plan.get('plan_status'),
             'planner_result': plan.get('result'),
+            'repair_apply_gate': plan.get('repair_apply_gate'),
             'decision_reasons': list(plan.get('decision_reasons') or ()),
+            'blocking_counts_by_reason': dict(plan.get('blocking_counts_by_reason') or {}),
+            'duplicate_action_ids': list(plan.get('duplicate_action_ids') or ()),
+            'database_writes_performed': plan.get('database_writes_performed'),
+            'migration_head': list(plan.get('migration_head') or ()),
+            'regenerated_planner_git_sha': plan.get('git_sha'),
             'actions_by_type': dict(counts),
             'action_count': plan.get('repair_manifest_action_count'),
         },
@@ -675,6 +782,18 @@ def apply_matt_festa_earned_run_correction(
 
     payload = _base_payload(generated_at, apply_git_sha, operation_id, started_at)
 
+    # ── Gate 0: the runtime planner must BE the reviewed planner ─────────────
+    # Checked BEFORE regeneration, so a changed planner never even produces a manifest to
+    # be compared. The apply may run from a newer commit; the planner code may not differ.
+    source = verify_planner_source()
+    payload['planner_source_verification'] = source
+    payload['approved_planner_source_sha256'] = source['approved_planner_source_sha256']
+    payload['observed_planner_source_sha256'] = source['observed_planner_source_sha256']
+    payload['planner_source_matches'] = source['planner_source_matches']
+    if source['failed']:
+        return _finalize_without_writes(payload, ABORT_PLANNER_SOURCE, RESULT_INCONCLUSIVE,
+                                        detail={'failed': source['failed']})
+
     # ── Gate 1: regenerate the reviewed plan, read-only ──────────────────────
     plan = planner.run_repair_plan(
         season=season, as_of_date=as_of_date, preview_limit=100,
@@ -684,7 +803,11 @@ def apply_matt_festa_earned_run_correction(
     payload['regenerated_manifest_fingerprint'] = plan.get('repair_manifest_fingerprint')
     payload['planner_verification'] = plan_verification
     payload['regenerated_action'] = plan_verification['regenerated_action']
-    payload['planner_git_sha'] = plan.get('git_sha')
+    # Three DIFFERENT commits, kept as three different facts:
+    #   approved   — where the reviewed plan and its fingerprint were generated
+    #   regenerated— where the planner ran just now (necessarily later, once this merges)
+    #   apply      — the deployed commit executing this correction
+    payload['regenerated_planner_git_sha'] = plan.get('git_sha')
     payload['migration_head'] = plan.get('migration_head')
     if plan_verification['failed']:
         reason = (
@@ -811,7 +934,10 @@ def apply_matt_festa_earned_run_correction(
             capability=CAPABILITY,
             approved_manifest_fingerprint=contract['approved_manifest_fingerprint'],
             regenerated_manifest_fingerprint=plan.get('repair_manifest_fingerprint'),
-            planner_git_sha=plan.get('git_sha') or contract['planner_git_sha'],
+            # The commit where the APPROVED plan was generated. Never the runtime SHA:
+            # after this capability merges, the deployed tree is always a later commit,
+            # and writing that here would silently redefine what the column means.
+            planner_git_sha=contract['approved_planner_git_sha'],
             apply_git_sha=apply_git_sha,
             season=season,
             as_of_date=as_of_date,
@@ -831,6 +957,13 @@ def apply_matt_festa_earned_run_correction(
                 'advisory_lock': {key: lock[key] for key in ('contract', 'status')},
                 'corrected_game_log_id': contract['action']['local_game_log_id'],
                 'changed_fields': [APPROVED_MUTABLE_FIELD],
+                # The runtime SHA the fresh planner reported, retained here rather than in
+                # planner_git_sha so the durable column keeps its reviewed meaning.
+                'regenerated_planner_git_sha': plan.get('git_sha'),
+                'approved_planner_source_sha256': source[
+                    'approved_planner_source_sha256'],
+                'observed_planner_source_sha256': source[
+                    'observed_planner_source_sha256'],
             },
             precondition_summary={
                 'planner_checked': len(plan_verification['checks']), 'planner_failed': [],
@@ -1154,8 +1287,15 @@ def _base_payload(generated_at, apply_git_sha, operation_id, started_at) -> dict
         'exit_code': EXIT_BY_RESULT[RESULT_INCONCLUSIVE],
         'generated_at': generated_at,
         'started_at': started_at.isoformat(),
+        # Three separate provenance facts, never collapsed into one field.
         'apply_git_sha': apply_git_sha or completeness._git_sha(),
-        'planner_git_sha': None,
+        'approved_planner_git_sha': IMMUTABLE_CONTRACT['approved_planner_git_sha'],
+        'regenerated_planner_git_sha': None,
+        'approved_planner_source_sha256': IMMUTABLE_CONTRACT[
+            'approved_planner_source_sha256'],
+        'observed_planner_source_sha256': None,
+        'planner_source_matches': False,
+        'planner_source_verification': {},
         'migration_head': None,
         'contracts': {
             'apply_contract_version': APPLY_CONTRACT_VERSION,

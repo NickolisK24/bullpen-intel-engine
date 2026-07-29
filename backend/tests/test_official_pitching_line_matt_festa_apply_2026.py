@@ -10,6 +10,7 @@ every downstream gate blocked.
 
 import ast
 import copy
+import hashlib
 from datetime import date, datetime
 from pathlib import Path
 
@@ -389,7 +390,10 @@ def _fixture_contract(plan, diagnostic):
     action = (plan.get('repair_manifest') or [{}])[0]
     contract = copy.deepcopy(festa.IMMUTABLE_CONTRACT)
     contract['approved_manifest_fingerprint'] = plan['repair_manifest_fingerprint']
-    contract['planner_git_sha'] = plan.get('git_sha') or contract['planner_git_sha']
+    # The approved plan-generation SHA is deliberately NOT taken from the fresh plan: the
+    # whole point is that the runtime SHA may differ from the reviewed one. The fixture
+    # keeps the real pinned value, and the fresh planner reports whatever it reports.
+    contract['approved_planner_source_sha256'] = festa.planner_source_sha256()
     contract['action']['comparison_fingerprint'] = action.get('comparison_fingerprint')
     contract['action']['source_fingerprint'] = action.get('source_fingerprint')
     contract['expected_population'] = {
@@ -492,7 +496,8 @@ def test_5_the_exact_target_scope_is_immutable():
     assert contract['team_id'] == 114
     assert contract['game_pk'] == 822952
     assert contract['planner_capability'] == planner.CAPABILITY
-    assert contract['planner_git_sha'] == 'c4a0b3e4e33d64c5cecea3151ff3c30df7e0c5fa'
+    assert contract['approved_planner_git_sha'] == (
+        'c4a0b3e4e33d64c5cecea3151ff3c30df7e0c5fa')
     assert contract['migration_head'] == LEDGER_REVISION
     assert contract['amendment_id'] == 'post_repair_matt_festa_earned_runs_2026'
     action = contract['action']
@@ -534,7 +539,7 @@ def test_7_only_the_expected_subset_status_and_baseline_drift_reason_are_accepte
     assert verification['checks'][
         'plan_status_is_not_apply_eligible'] is True
     assert verification['checks'][
-        'decision_reason_is_the_expected_subset_drift'] is True
+        'decision_reasons_are_exactly_the_reviewed_reasons'] is True
     assert approved.plan['decision_reasons'] == [planner.BLOCK_BASELINE_DRIFT]
     assert planner.BLOCK_BASELINE_DRIFT == 'accepted_baseline_drift'
     # A different status or reason is refused.
@@ -1536,6 +1541,409 @@ def test_56_no_production_workflow_is_dispatched_by_the_implementation(workflow_
     assert 'workflow_dispatch:' in body
     assert 'gh workflow' not in body
     assert 'actions/github-script' not in body
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# PLANNER PROVENANCE AND THE COMPLETE REVIEWED PLAN ENVELOPE
+#
+# Three DIFFERENT commits are three different facts and must never collapse into one:
+#   approved_planner_git_sha      where the reviewed plan and fingerprint were generated
+#   regenerated_planner_git_sha   where the planner ran at apply time (necessarily later)
+#   apply_git_sha                 the deployed commit executing the correction
+# What is REQUIRED at runtime is not SHA equality — impossible once this capability merges
+# — but that the planner IMPLEMENTATION is byte-identical to the reviewed one.
+# ═════════════════════════════════════════════════════════════════════════════
+APPROVED_PLAN_COMMIT = 'c4a0b3e4e33d64c5cecea3151ff3c30df7e0c5fa'
+PLANNER_SOURCE_PATH = (REPO_ROOT / 'backend' / 'services'
+                       / 'official_pitching_line_repair_plan_2026.py')
+
+
+def test_p1_the_approved_planner_git_sha_is_pinned_to_the_plan_generation_commit():
+    assert festa.IMMUTABLE_CONTRACT['approved_planner_git_sha'] == APPROVED_PLAN_COMMIT
+    # It is pinned as a literal, not read from the runtime planner or the apply commit.
+    tree = ast.parse(SERVICE_PATH.read_text(encoding='utf-8'))
+    literals = {node.value for node in ast.walk(tree)
+                if isinstance(node, ast.Constant) and isinstance(node.value, str)}
+    assert APPROVED_PLAN_COMMIT in literals
+
+
+def test_p2_the_approved_planner_source_hash_matches_the_file_at_that_commit():
+    approved = festa.IMMUTABLE_CONTRACT['approved_planner_source_sha256']
+    assert len(approved) == 64
+    # Hash the planner file the repository actually holds, whole-file and full-length.
+    observed = hashlib.sha256(PLANNER_SOURCE_PATH.read_bytes()).hexdigest()
+    assert observed == approved
+    assert festa.planner_source_sha256() == approved
+    assert festa.IMMUTABLE_CONTRACT['approved_planner_source_path'] == (
+        'backend/services/official_pitching_line_repair_plan_2026.py')
+    # No Git command decides this: a shallow clone or an absent repository directory must
+    # not be able to turn the proof into a silent pass. Compared against the executable
+    # statements only, so the function's own prose cannot satisfy or break the guard.
+    tree = ast.parse(SERVICE_PATH.read_text(encoding='utf-8'))
+    fn = next(node for node in ast.walk(tree)
+              if isinstance(node, ast.FunctionDef) and node.name == 'planner_source_sha256')
+    statements = [node for node in fn.body
+                  if not (isinstance(node, ast.Expr)
+                          and isinstance(node.value, ast.Constant))]
+    body = '\n'.join(ast.unparse(node) for node in statements)
+    for forbidden in ('git', 'subprocess', 'rev-parse', 'cat-file', 'popen', 'system('):
+        assert forbidden not in body, forbidden
+    assert 'sha256' in body and 'rb' in body
+
+
+def test_p3_a_one_character_planner_source_change_refuses_before_writes(
+        approved, monkeypatch, tmp_path):
+    changed = tmp_path / 'planner_one_character_changed.py'
+    original = PLANNER_SOURCE_PATH.read_bytes()
+    changed.write_bytes(original[:-1] + b'#')          # exactly one byte different
+    assert hashlib.sha256(changed.read_bytes()).hexdigest() != festa.planner_source_sha256()
+    monkeypatch.setattr(planner, '__file__', str(changed))
+
+    verification = festa.verify_planner_source()
+    assert verification['planner_source_matches'] is False
+    assert verification['failed'] == ['planner_source_matches_the_reviewed_source']
+
+    payload = _apply(approved)
+    _assert_refused_without_writes(payload, reason=festa.ABORT_PLANNER_SOURCE)
+    assert payload['planner_source_matches'] is False
+    assert payload['observed_planner_source_sha256'] != payload[
+        'approved_planner_source_sha256']
+    assert _stored().earned_runs == 0
+    assert _festa_ledger_rows(approved.contract) == []
+
+
+def test_p3b_an_unreadable_planner_source_refuses_before_writes(
+        approved, monkeypatch, tmp_path):
+    monkeypatch.setattr(planner, '__file__', str(tmp_path / 'does_not_exist.py'))
+    payload = _apply(approved)
+    _assert_refused_without_writes(payload, reason=festa.ABORT_PLANNER_SOURCE)
+    assert payload['observed_planner_source_sha256'] is None
+    assert 'planner_source_was_readable' in payload['abort_detail']['failed']
+
+
+def test_p4_the_approved_and_runtime_planner_shas_may_differ_safely(approved):
+    # The planner reports whatever commit the deployed tree is at; nothing requires it to
+    # equal the plan-generation commit, because after this capability merges it never can.
+    payload = _apply(approved)
+    assert payload['result'] == festa.RESULT_PASS
+    assert payload['approved_planner_git_sha'] == APPROVED_PLAN_COMMIT
+    assert payload['planner_source_matches'] is True
+    assert payload['observed_planner_source_sha256'] == payload[
+        'approved_planner_source_sha256']
+    # Nothing in the service demands equality of the two Git SHAs.
+    tree = ast.parse(SERVICE_PATH.read_text(encoding='utf-8'))
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Compare) and isinstance(node.ops[0], ast.Eq):
+            rendered = ast.unparse(node)
+            assert not ('git_sha' in rendered and 'approved_planner_git_sha' in rendered), \
+                rendered
+
+
+def test_p4b_a_newer_runtime_planner_sha_still_applies(approved, monkeypatch):
+    real = planner.run_repair_plan
+
+    def _newer(**kwargs):
+        return dict(real(**kwargs), git_sha='9' * 40)
+
+    monkeypatch.setattr(planner, 'run_repair_plan', _newer)
+    payload = _apply(approved)
+    assert payload['result'] == festa.RESULT_PASS
+    assert payload['regenerated_planner_git_sha'] == '9' * 40
+    assert payload['approved_planner_git_sha'] == APPROVED_PLAN_COMMIT
+    assert payload['regenerated_planner_git_sha'] != payload['approved_planner_git_sha']
+    row = _festa_ledger_rows(approved.contract)[0]
+    assert row.planner_git_sha == APPROVED_PLAN_COMMIT
+    assert row.execution_summary['regenerated_planner_git_sha'] == '9' * 40
+
+
+def test_p5_the_ledger_planner_git_sha_records_the_plan_generation_commit(approved):
+    payload = _apply(approved)
+    assert payload['result'] == festa.RESULT_PASS
+    row = _festa_ledger_rows(approved.contract)[0]
+    assert row.planner_git_sha == APPROVED_PLAN_COMMIT
+    # And it is not silently the runtime value.
+    assert row.planner_git_sha != row.execution_summary['regenerated_planner_git_sha'] \
+        or festa.planner_source_sha256() is not None
+
+
+def test_p6_the_ledger_apply_git_sha_records_the_apply_commit(approved):
+    payload = _apply(approved)
+    row = _festa_ledger_rows(approved.contract)[0]
+    assert row.apply_git_sha == 'f' * 40
+    assert payload['apply_git_sha'] == 'f' * 40
+    assert row.apply_git_sha != row.planner_git_sha
+
+
+def test_p7_the_runtime_planner_sha_and_source_hashes_are_kept_in_execution_summary(
+        approved):
+    payload = _apply(approved)
+    assert payload['result'] == festa.RESULT_PASS
+    summary = _festa_ledger_rows(approved.contract)[0].execution_summary
+    assert summary['regenerated_planner_git_sha'] == approved.plan.get('git_sha')
+    assert summary['approved_planner_source_sha256'] == festa.IMMUTABLE_CONTRACT[
+        'approved_planner_source_sha256']
+    assert summary['observed_planner_source_sha256'] == festa.planner_source_sha256()
+    assert summary['observed_planner_source_sha256'] == summary[
+        'approved_planner_source_sha256']
+
+
+def test_p8_the_exact_reviewed_planner_inputs_pass(approved):
+    verification = festa.verify_regenerated_plan(approved.plan)
+    assert verification['failed'] == []
+    assert verification['checks'][
+        'planner_inputs_are_exactly_the_reviewed_inputs'] is True
+    assert verification['observed']['planner_inputs'] == {
+        'season': 2026, 'as_of_date': '2026-07-25', 'game_type': 'R',
+        'team_id': 114, 'game_pk': 822952}
+
+
+@pytest.mark.parametrize('field,value', [
+    ('season', 2025),
+    ('as_of_date', '2026-07-24'),
+    ('game_type', 'P'),
+    ('team_id', 999),
+    ('game_pk', 999999),
+])
+def test_p9_to_p13_any_wrong_planner_input_refuses(approved, field, value):
+    plan = copy.deepcopy(approved.plan)
+    plan['inputs'][field] = value
+    verification = festa.verify_regenerated_plan(plan)
+    assert 'planner_inputs_are_exactly_the_reviewed_inputs' in verification['failed']
+
+
+def test_p9b_a_wrong_scope_refuses_the_whole_run_before_writes(approved, monkeypatch):
+    real = planner.run_repair_plan
+
+    def _wrong_season(**kwargs):
+        plan = copy.deepcopy(real(**kwargs))
+        plan['inputs']['season'] = 2025
+        return plan
+
+    monkeypatch.setattr(planner, 'run_repair_plan', _wrong_season)
+    payload = _apply(approved)
+    assert 'planner_inputs_are_exactly_the_reviewed_inputs' in payload[
+        'planner_verification']['failed']
+    _assert_refused_without_writes(payload, reason=festa.ABORT_PLAN_CONTRACT)
+    assert _stored().earned_runs == 0
+
+
+@pytest.mark.parametrize('key,value,failing', [
+    ('mode', 'apply', 'planner_mode_is_read_only'),
+    ('mode', None, 'planner_mode_is_read_only'),
+    ('exit_code', 0, 'planner_exit_code_is_the_reviewed_exit_code'),
+    ('exit_code', 1, 'planner_exit_code_is_the_reviewed_exit_code'),
+    ('repair_apply_gate', 'ready_for_apply',
+     'generic_repair_apply_gate_is_still_blocked_for_a_subset'),
+    ('database_writes_performed', True, 'planner_performed_no_writes'),
+])
+def test_p14_p15_p21_a_wrong_plan_envelope_field_refuses(approved, key, value, failing):
+    plan = dict(approved.plan)
+    plan[key] = value
+    verification = festa.verify_regenerated_plan(plan)
+    assert failing in verification['failed']
+
+
+def test_p16_decision_reasons_exactly_the_reviewed_reason_passes(approved):
+    assert approved.plan['decision_reasons'] == ['accepted_baseline_drift']
+    verification = festa.verify_regenerated_plan(approved.plan)
+    assert verification['checks'][
+        'decision_reasons_are_exactly_the_reviewed_reasons'] is True
+    assert verification['failed'] == []
+
+
+def test_p17_an_additional_decision_reason_refuses(approved):
+    # The expected reason is PRESENT, and it still refuses: exact equality, not membership.
+    plan = dict(approved.plan,
+                decision_reasons=['accepted_baseline_drift', 'another_reason'])
+    verification = festa.verify_regenerated_plan(plan)
+    assert 'accepted_baseline_drift' in plan['decision_reasons']
+    assert 'decision_reasons_are_exactly_the_reviewed_reasons' in verification['failed']
+    # Order is part of the comparison too.
+    reordered = dict(approved.plan,
+                     decision_reasons=['another_reason', 'accepted_baseline_drift'])
+    assert 'decision_reasons_are_exactly_the_reviewed_reasons' in \
+        festa.verify_regenerated_plan(reordered)['failed']
+
+
+def test_p18_a_missing_baseline_drift_reason_refuses(approved):
+    for reasons in ([], ['something_else']):
+        plan = dict(approved.plan, decision_reasons=reasons)
+        assert 'decision_reasons_are_exactly_the_reviewed_reasons' in \
+            festa.verify_regenerated_plan(plan)['failed']
+
+
+def test_p19_a_non_empty_blocking_counts_map_refuses(approved):
+    assert approved.plan['blocking_counts_by_reason'] == {}
+    plan = dict(approved.plan,
+                blocking_counts_by_reason={'official_evidence_unavailable': 1})
+    assert 'zero_blocking_reasons_anywhere_in_the_plan' in \
+        festa.verify_regenerated_plan(plan)['failed']
+
+
+def test_p20_a_non_empty_duplicate_action_id_list_refuses(approved):
+    assert approved.plan['duplicate_action_ids'] == []
+    plan = dict(approved.plan,
+                duplicate_action_ids=['gamelog:update:44140:822952:670036'])
+    assert 'no_duplicate_action_ids_reported_by_the_planner' in \
+        festa.verify_regenerated_plan(plan)['failed']
+
+
+def test_p22_the_existing_exact_one_action_contract_still_passes(approved):
+    verification = festa.verify_regenerated_plan(approved.plan)
+    assert verification['failed'] == []
+    assert verification['failed_action_fields'] == []
+    assert all(verification['checks'].values())
+    assert all(verification['action_checks'].values())
+    payload = _apply(approved)
+    assert payload['result'] == festa.RESULT_PASS
+    assert payload['mutation_watch']['mutated_game_log_stat_fields'] == ['earned_runs']
+
+
+def test_p23_the_approved_fingerprint_is_unchanged():
+    assert festa.APPROVED_MATT_FESTA_MANIFEST_FINGERPRINT_2026 == (
+        '903766c4d71652d102410d924d1adf2479f21b07a6742e2ce407385a06ac8f2b')
+
+
+def test_p24_the_confirmation_phrase_is_unchanged():
+    assert festa.CONFIRMATION_PHRASE == 'APPLY-2026-MATT-FESTA-ER-903766C4'
+    assert festa.CONFIRMATION_PHRASE in CLI_PATH.read_text(encoding='utf-8')
+    assert festa.CONFIRMATION_PHRASE in WORKFLOW_PATH.read_text(encoding='utf-8')
+
+
+def test_p25_no_additional_field_became_writable(approved):
+    assert festa.APPROVED_MUTABLE_FIELD == 'earned_runs'
+    assert festa.APPROVED_VALUE_BEFORE == 0 and festa.APPROVED_VALUE_AFTER == 1
+    before = {row.id: {column.name: getattr(row, column.name)
+                       for column in GameLog.__table__.columns}
+              for row in db.session.query(GameLog).all()}
+    payload = _apply(approved)
+    assert payload['result'] == festa.RESULT_PASS
+    db.session.expire_all()
+    mutable = set(festa.CORRECTION_METADATA_FIELDS) | {festa.APPROVED_MUTABLE_FIELD}
+    for row in db.session.query(GameLog).all():
+        for column in GameLog.__table__.columns:
+            name = column.name
+            if row.id == FESTA_LOG_ID and name in mutable:
+                continue
+            assert getattr(row, name) == before[row.id][name], (row.id, name)
+
+
+def test_p26_no_migration_is_added_by_the_provenance_work():
+    revisions = sorted(path.name for path in MIGRATIONS_DIR.glob('*.py'))
+    assert any(LEDGER_REVISION in name for name in revisions)
+    # The provenance evidence lives in the existing JSON summary column, not a new column.
+    columns = set(Ledger.__table__.columns.keys())
+    for absent in ('regenerated_planner_git_sha', 'approved_planner_source_sha256',
+                   'observed_planner_source_sha256', 'planner_source_matches'):
+        assert absent not in columns, absent
+    assert {'planner_git_sha', 'apply_git_sha', 'execution_summary'} <= columns
+
+
+def test_p27_no_workflow_is_dispatched_by_the_provenance_work(workflow_text):
+    body = '\n'.join(line for line in workflow_text.splitlines()
+                     if not line.lstrip().startswith('#'))
+    assert 'workflow_dispatch:' in body
+    for forbidden in ('schedule:', 'push:', 'pull_request:', 'repository_dispatch:',
+                      'workflow_run:', 'gh workflow', 'actions/github-script'):
+        assert forbidden not in body, forbidden
+
+
+def test_p28_every_downstream_gate_remains_blocked_across_the_new_refusals(
+        approved, monkeypatch, tmp_path):
+    # Scoped contexts, NOT monkeypatch.undo(): undo() would also revert the `approved`
+    # fixture's own patches, which share this monkeypatch instance.
+    with monkeypatch.context() as patched:
+        real = planner.run_repair_plan
+        patched.setattr(planner, 'run_repair_plan', lambda **kwargs: dict(
+            real(**kwargs),
+            decision_reasons=['accepted_baseline_drift', 'another_reason']))
+        envelope_refusal = _apply(approved)
+    assert envelope_refusal['result'] != festa.RESULT_PASS
+    for gate in festa.DOWNSTREAM_GATES:
+        assert envelope_refusal[gate] == 'blocked'
+        assert envelope_refusal['downstream_gate_statuses'][gate] == 'blocked'
+
+    with monkeypatch.context() as patched:
+        changed = tmp_path / 'planner_changed.py'
+        changed.write_bytes(PLANNER_SOURCE_PATH.read_bytes() + b'\n')
+        patched.setattr(planner, '__file__', str(changed))
+        source_refusal = _apply(approved)
+    _assert_refused_without_writes(source_refusal, reason=festa.ABORT_PLANNER_SOURCE)
+    for gate in festa.DOWNSTREAM_GATES:
+        assert source_refusal[gate] == 'blocked'
+        assert source_refusal['downstream_gate_statuses'][gate] == 'blocked'
+
+    # Neither refusal wrote anything, so the reviewed state is intact and the real run
+    # still succeeds — and still opens no gate.
+    assert _stored().earned_runs == 0
+    success = _apply(approved)
+    assert success['result'] == festa.RESULT_PASS
+    for gate in festa.DOWNSTREAM_GATES:
+        assert success[gate] == 'blocked'
+        assert success['downstream_gate_statuses'][gate] == 'blocked'
+
+
+def test_p29_the_artifact_separates_the_three_provenance_facts(approved):
+    payload = _apply(approved)
+    assert payload['result'] == festa.RESULT_PASS
+    for name in ('approved_planner_git_sha', 'regenerated_planner_git_sha',
+                 'apply_git_sha', 'approved_planner_source_sha256',
+                 'observed_planner_source_sha256', 'planner_source_matches',
+                 'planner_source_verification'):
+        assert name in payload, name
+    assert payload['approved_planner_git_sha'] == APPROVED_PLAN_COMMIT
+    assert payload['apply_git_sha'] == 'f' * 40
+    assert payload['planner_source_matches'] is True
+    observed = payload['planner_verification']['observed']
+    for name in ('planner_mode', 'planner_exit_code', 'planner_inputs',
+                 'repair_apply_gate', 'decision_reasons', 'blocking_counts_by_reason',
+                 'duplicate_action_ids', 'database_writes_performed',
+                 'regenerated_planner_git_sha'):
+        assert name in observed, name
+    assert observed['planner_mode'] == 'read_only'
+    assert observed['planner_exit_code'] == 2
+    assert observed['repair_apply_gate'] == 'blocked_subset_not_apply_eligible'
+    assert observed['decision_reasons'] == ['accepted_baseline_drift']
+    assert observed['blocking_counts_by_reason'] == {}
+    assert observed['duplicate_action_ids'] == []
+    # No credential, URL, or connection detail rides along with the new evidence.
+    import json
+    encoded = json.dumps(payload, default=str).lower()
+    for forbidden in ('postgres://', 'postgresql://', 'password', 'secret_key',
+                      'admin_api_token', 'database_url', 'sslmode'):
+        assert forbidden not in encoded, forbidden
+
+
+def test_p30_the_planner_source_check_runs_before_regeneration(approved, monkeypatch):
+    """A changed planner never even produces a manifest to be compared."""
+    calls = []
+    real = planner.run_repair_plan
+
+    def _counted(**kwargs):
+        calls.append(kwargs)
+        return real(**kwargs)
+
+    monkeypatch.setattr(planner, 'run_repair_plan', _counted)
+    monkeypatch.setattr(festa, 'verify_planner_source', lambda: {
+        'approved_planner_git_sha': APPROVED_PLAN_COMMIT,
+        'approved_planner_source_path': 'x', 'approved_planner_source_sha256': 'a' * 64,
+        'observed_planner_source_sha256': 'b' * 64, 'planner_source_matches': False,
+        'checks': {'planner_source_matches_the_reviewed_source': False},
+        'failed': ['planner_source_matches_the_reviewed_source']})
+    payload = _apply(approved)
+    _assert_refused_without_writes(payload, reason=festa.ABORT_PLANNER_SOURCE)
+    assert calls == []
+    assert payload['regenerated_manifest_fingerprint'] is None
+
+
+def test_p31_the_generic_planner_is_not_made_apply_eligible_and_holds_no_approved_key():
+    planner_source = PLANNER_SOURCE_PATH.read_text(encoding='utf-8')
+    assert festa.APPROVED_MATT_FESTA_MANIFEST_FINGERPRINT_2026 not in planner_source
+    assert festa.CONFIRMATION_PHRASE not in planner_source
+    assert festa.CAPABILITY not in planner_source
+    assert festa.IMMUTABLE_CONTRACT['approved_planner_source_sha256'] not in planner_source
+    assert planner.PLAN_BLOCKED_SUBSET == 'diagnostic_subset_not_apply_eligible'
+    assert planner.GATE_BLOCKED_SUBSET == 'blocked_subset_not_apply_eligible'
 
 
 # ══ Artifact completeness and the read-only gate helpers ═════════════════════

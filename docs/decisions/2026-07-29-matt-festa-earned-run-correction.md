@@ -104,13 +104,61 @@ Neither confirmation phrase appears in the other's command or workflow, so neith
 started from the other's dispatch form. The advisory-lock contracts differ, so the keys differ
 and neither capability can be mistaken for the other's serialization guarantee.
 
+## 5a. Three commits are three different facts
+
+The execution ledger's `planner_git_sha` means *the commit where the approved plan was
+generated*; `apply_git_sha` means *the commit that executed the apply*. Those are different
+commits, and a third — the commit the planner happens to be running from at apply time — is
+different again.
+
+The apply capability necessarily lives at a **later** commit than the plan it applies: the
+moment this branch merges, the deployed tree can never again be `c4a0b3e4…`. So the runtime
+SHA is **recorded, not required**. Requiring equality would make the capability
+permanently unrunnable.
+
+| fact | value | where it goes |
+|---|---|---|
+| approved plan-generation commit | `c4a0b3e4e33d64c5cecea3151ff3c30df7e0c5fa` | ledger `planner_git_sha`, artifact `approved_planner_git_sha` |
+| runtime planner commit | whatever the deployed tree is | artifact `regenerated_planner_git_sha`, ledger `execution_summary.regenerated_planner_git_sha` |
+| apply commit | the workflow's `GITHUB_SHA` | ledger `apply_git_sha`, artifact `apply_git_sha` |
+
+What *is* required is that the planner **implementation** is unchanged. The contract pins the
+SHA-256 of the exact bytes of `backend/services/official_pitching_line_repair_plan_2026.py`
+as they existed at `c4a0b3e4…`:
+
+```
+65fef8d3d104faf4186005e7602ac871c5eb61f11647690ef230629cfe92668d
+```
+
+Immediately before regeneration — and therefore before a changed planner can even produce a
+manifest to compare — the loaded planner module's own file is hashed and compared at full
+length against that constant. Never a prefix. No Git command is involved: a shallow checkout,
+a detached HEAD, or an absent repository directory must not be able to turn the proof into a
+silent pass. Both hashes and the boolean go into the artifact and the ledger summary; a
+mismatch refuses before any write.
+
+The generic planner is untouched by this: it holds no approved fingerprint, no confirmation
+phrase, and no capability name, and it does not know it is being verified.
+
 ## 6. Gates before the first write
 
-1. **Regenerated plan.** The planner is rerun read-only at the pinned scope. The regenerated
-   fingerprint must equal the approved constant exactly; the scope, status, result, decision
-   reason, migration head, action counts, action-id uniqueness, every planner reconciliation,
-   and `database_writes_performed: false` must hold; and every reviewed field of the single
-   action — including both fingerprints — must match.
+0. **Runtime planner source.** The loaded planner must be byte-identical to the reviewed
+   planner, as described above. Checked before regeneration.
+1. **Regenerated plan.** The planner is rerun read-only at the pinned scope, and the whole
+   reviewed envelope must hold — not a subset of it:
+
+   - capability `official_pitching_line_repair_plan_2026_v1`, mode `read_only`,
+     result `inconclusive`, exit code `2`
+   - inputs exactly season 2026, as of 2026-07-25, game type `R`, team 114, game 822952
+   - scope `diagnostic_subset`, status `diagnostic_subset_not_apply_eligible`,
+     generic gate `blocked_subset_not_apply_eligible`
+   - `decision_reasons` **exactly** `['accepted_baseline_drift']` — equality, not
+     membership, so a plan that decided the reviewed thing *and something else* refuses
+   - `blocking_counts_by_reason` empty, `duplicate_action_ids` empty,
+     `database_writes_performed` false, migration head exactly `[c7b3e5a91d48]`
+   - the regenerated fingerprint equal to the approved constant, one update action, zero
+     identities, zero insertions, every planner reconciliation true, and every reviewed
+     field of the single action — including both the comparison and source fingerprints.
 2. **Current population.** The full-season completeness diagnostic must still report the
    reviewed single-defect population: 1,570 games selected and fetched, 13,301 official and
    13,301 local lines, 13,300 exact matches, one stat mismatch, and zero of everything else.
@@ -155,9 +203,14 @@ invalidation, no ledger row.
 
 ## 8. The ledger, reused
 
-No migration is added. The existing `OfficialPitchingLineRepairExecution` table records the new
-execution with a distinct capability, the new approved and regenerated fingerprints, planner
-and apply git SHAs, season 2026, as of 2026-07-25, accepted baseline version `v2`, amendment id
+No migration is added, and none is added for the provenance evidence either: the runtime
+planner SHA and the two source hashes live in the existing `execution_summary` JSON column,
+not in new columns.
+
+The existing `OfficialPitchingLineRepairExecution` table records the new
+execution with a distinct capability, the new approved and regenerated fingerprints, the
+approved plan-generation `planner_git_sha` and the deployed `apply_git_sha` kept as separate
+facts, season 2026, as of 2026-07-25, accepted baseline version `v2`, amendment id
 `post_repair_matt_festa_earned_runs_2026`, counts 0 / 0 / 1 / 1, status `completed`, populated
 `started_at` / `completed_at` / `committed_at`, and bounded precondition, execution, and
 verification summaries. Its numeric id is not assumed: the committed value is read back from

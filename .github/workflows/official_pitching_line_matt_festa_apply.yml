@@ -121,6 +121,8 @@ jobs:
           contract = payload.get('immutable_approved_contract') or {}
           action = contract.get('action') or {}
           planner_check = payload.get('planner_verification') or {}
+          plan_observed = planner_check.get('observed') or {}
+          source_check = payload.get('planner_source_verification') or {}
           population = payload.get('population_precondition') or {}
           original = payload.get('original_repair_precondition') or {}
           target = payload.get('target_row_precondition') or {}
@@ -150,8 +152,35 @@ jobs:
               f"- Fingerprints equal: "
               f"`{payload.get('approved_manifest_fingerprint') == payload.get('regenerated_manifest_fingerprint')}`",
               f"- Migration head: `{payload.get('migration_head')}`",
-              f"- Planner git SHA: `{payload.get('planner_git_sha')}`",
-              f"- Apply git SHA: `{payload.get('apply_git_sha')}`",
+              '',
+              '### Planner provenance (three separate commits)',
+              f"- Approved plan-generation SHA: "
+              f"`{payload.get('approved_planner_git_sha')}`",
+              f"- Regenerated (runtime) planner SHA: "
+              f"`{payload.get('regenerated_planner_git_sha')}`",
+              f"- Apply SHA: `{payload.get('apply_git_sha')}`",
+              f"- Approved planner source SHA-256: "
+              f"`{payload.get('approved_planner_source_sha256')}`",
+              f"- Observed planner source SHA-256: "
+              f"`{payload.get('observed_planner_source_sha256')}`",
+              f"- Planner source matches the reviewed source: "
+              f"`{payload.get('planner_source_matches')}`",
+              'The apply necessarily runs from a later commit than the plan it applies, so '
+              'the runtime SHA is recorded, not required. What is required is that the '
+              'planner source is byte-identical to the reviewed one.',
+              '',
+              '### Regenerated plan envelope',
+              f"- Planner mode: `{plan_observed.get('planner_mode')}`",
+              f"- Planner exit code: `{plan_observed.get('planner_exit_code')}`",
+              f"- Planner inputs: `{plan_observed.get('planner_inputs')}`",
+              f"- Generic repair-apply gate: "
+              f"`{plan_observed.get('repair_apply_gate')}`",
+              f"- Decision reasons: `{plan_observed.get('decision_reasons')}`",
+              f"- Blocking counts by reason: "
+              f"`{plan_observed.get('blocking_counts_by_reason')}`",
+              f"- Duplicate action ids: `{plan_observed.get('duplicate_action_ids')}`",
+              f"- Planner writes performed: "
+              f"`{plan_observed.get('database_writes_performed')}`",
               f"- Advisory lock: `{lock.get('status')}` (`{lock.get('contract')}`)",
               f"- Execution ledger id: `{payload.get('execution_ledger_id')}`",
               f"- Governed operation id: `{payload.get('governed_operation_id')}`",
@@ -200,6 +229,7 @@ jobs:
               '### Pre-write gates (failures only)',
           ]
           gate_groups = (
+              ('runtime planner source', source_check),
               ('regenerated plan', planner_check),
               ('current population', population),
               ('original repair intact', original),
