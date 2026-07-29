@@ -1,0 +1,341 @@
+name: Official Pitching-Line Matt Festa Apply (2026)
+
+# Dispatch-only, ONE-TIME, fingerprint-locked production correction.
+#
+# This workflow applies exactly one reviewed field change — GameLog 44140 earned_runs 0 -> 1,
+# Matt Festa, game 822952 — or it writes nothing at all. It is a separate capability from the
+# closed 675-action repair: a different manifest fingerprint, a different confirmation phrase,
+# a different advisory lock, a different entrypoint, and a different workflow. It never reruns
+# the original repair and never touches the original repair's ledger row.
+#
+# It takes ONE input: a fixed confirmation phrase. There is deliberately no season, date,
+# team, game, scope, field, value, action-count, fingerprint, or override input — every
+# governed value is fixed in code, so a dispatch cannot select what runs, only whether it
+# runs. Validating the phrase is the literal first step of the job, ahead of checkout, so a
+# wrong phrase terminates the job before the repository is fetched, before Python is set up,
+# before dependencies are installed, and therefore before the application can bootstrap or
+# open a database connection. The apply command repeats the check ahead of its own imports.
+#
+# The apply command regenerates the read-only planner from live production state immediately
+# before opening the write transaction and refuses to proceed unless the regenerated
+# fingerprint equals the approved constant exactly and every field of the single action equals
+# the reviewed contract exactly. The correction is invoked exactly once. There is no loop, no
+# retry, no automatic re-dispatch, and no automatic rollback after commit: a failed
+# post-commit verification is reported and preserved for separately reviewed diagnosis.
+#
+# A successful apply does NOT activate Foundation 3B, the public reader, Team State
+# performance, Share Card performance, or SC-05. Every one of those gates stays blocked.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_apply:
+        description: >-
+          Exact confirmation phrase required to apply the reviewed one-action correction.
+          Any other value refuses before bootstrap and writes nothing.
+        required: true
+        default: ''
+        type: string
+
+concurrency:
+  group: official-pitching-line-matt-festa-apply-2026
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      APP_ENV: production
+      AUTO_SYNC: 'false'
+      FLASK_APP: app.py
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      SECRET_KEY: ${{ secrets.SECRET_KEY }}
+      ADMIN_API_TOKEN: ${{ secrets.BASEBALLOS_ADMIN_API_TOKEN }}
+    steps:
+      # Literally the first step. Not merely early — ahead of checkout, ahead of Python,
+      # ahead of dependencies, ahead of anything that could reach a database. The
+      # confirmation needs no repository file, so nothing is fetched or installed on a
+      # dispatch that was never going to be allowed to run. Secrets are checked for presence
+      # only; no secret value is ever echoed, logged, or written to the summary.
+      - name: Validate apply confirmation
+        env:
+          CONFIRM_APPLY: ${{ inputs.confirm_apply }}
+        run: |
+          set -euo pipefail
+          expected='APPLY-2026-MATT-FESTA-ER-903766C4'
+          if [ "$CONFIRM_APPLY" != "$expected" ]; then
+            echo "::error::Confirmation phrase mismatch. No checkout, no bootstrap, no database access, no writes."
+            exit 1
+          fi
+          if [ -z "${DATABASE_URL:-}" ] || \
+             [ -z "${SECRET_KEY:-}" ] || \
+             [ -z "${ADMIN_API_TOKEN:-}" ]; then
+            echo "::error::Missing required production repository secret."
+            exit 1
+          fi
+          echo "Apply confirmation validated. Governed values are fixed in code."
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install backend dependencies
+        run: pip install -r backend/requirements.txt
+
+      - name: Apply the reviewed Matt Festa earned-run correction
+        working-directory: backend
+        env:
+          CONFIRM_APPLY: ${{ inputs.confirm_apply }}
+          APPLY_OUTPUT_DIR: ${{ runner.temp }}/official-pitching-line-matt-festa-apply-2026
+        run: |
+          set -euo pipefail
+          mkdir -p "$APPLY_OUTPUT_DIR"
+          report_json="$APPLY_OUTPUT_DIR/official-pitching-line-matt-festa-apply-2026.json"
+
+          set +e
+          python scripts/run_official_pitching_line_matt_festa_apply_2026.py \
+            --confirm-apply "$CONFIRM_APPLY" \
+            --compact \
+            --output "$report_json"
+          apply_exit_code=$?
+          set -e
+
+          python - "$report_json" "$apply_exit_code" "$GITHUB_STEP_SUMMARY" <<'PY'
+          import json
+          from pathlib import Path
+          import sys
+
+          path = Path(sys.argv[1])
+          exit_code = int(sys.argv[2])
+          summary_path = Path(sys.argv[3])
+          payload = json.loads(path.read_text(encoding='utf-8'))
+
+          contract = payload.get('immutable_approved_contract') or {}
+          action = contract.get('action') or {}
+          planner_check = payload.get('planner_verification') or {}
+          plan_observed = planner_check.get('observed') or {}
+          source_check = payload.get('planner_source_verification') or {}
+          population = payload.get('population_precondition') or {}
+          original = payload.get('original_repair_precondition') or {}
+          target = payload.get('target_row_precondition') or {}
+          verifications = payload.get('verification_results') or {}
+          lock = payload.get('advisory_lock') or {}
+          float_contract = payload.get('float_readback_contract') or {}
+          invalidation = payload.get('dependent_evidence_invalidation') or {}
+          watch = payload.get('mutation_watch') or {}
+          ledger = payload.get('execution_ledger_row') or {}
+          before = payload.get('target_row_before') or {}
+          after = payload.get('target_row_after') or {}
+          meta_before = payload.get('correction_metadata_before') or {}
+          meta_after = payload.get('correction_metadata_after') or {}
+          post = payload.get('post_commit_verification') or {}
+          gates = payload.get('downstream_gate_statuses') or {}
+
+          summary = [
+              '## Official Pitching-Line Matt Festa Apply (2026)',
+              '',
+              f"- Result: `{payload.get('result')}`",
+              f"- Exit code: `{exit_code}`",
+              f"- Mode: `{payload.get('mode')}`",
+              f"- Decision reasons: `{payload.get('decision_reasons')}`",
+              f"- Approved fingerprint: `{payload.get('approved_manifest_fingerprint')}`",
+              f"- Regenerated fingerprint: "
+              f"`{payload.get('regenerated_manifest_fingerprint')}`",
+              f"- Fingerprints equal: "
+              f"`{payload.get('approved_manifest_fingerprint') == payload.get('regenerated_manifest_fingerprint')}`",
+              f"- Migration head: `{payload.get('migration_head')}`",
+              '',
+              '### Planner provenance (three separate commits)',
+              f"- Approved plan-generation SHA: "
+              f"`{payload.get('approved_planner_git_sha')}`",
+              f"- Regenerated (runtime) planner SHA: "
+              f"`{payload.get('regenerated_planner_git_sha')}`",
+              f"- Apply SHA: `{payload.get('apply_git_sha')}`",
+              f"- Approved planner source SHA-256: "
+              f"`{payload.get('approved_planner_source_sha256')}`",
+              f"- Observed planner source SHA-256: "
+              f"`{payload.get('observed_planner_source_sha256')}`",
+              f"- Planner source matches the reviewed source: "
+              f"`{payload.get('planner_source_matches')}`",
+              'The apply necessarily runs from a later commit than the plan it applies, so '
+              'the runtime SHA is recorded, not required. What is required is that the '
+              'planner source is byte-identical to the reviewed one.',
+              '',
+              '### Regenerated plan envelope',
+              f"- Planner mode: `{plan_observed.get('planner_mode')}`",
+              f"- Planner exit code: `{plan_observed.get('planner_exit_code')}`",
+              f"- Planner inputs: `{plan_observed.get('planner_inputs')}`",
+              f"- Generic repair-apply gate: "
+              f"`{plan_observed.get('repair_apply_gate')}`",
+              f"- Decision reasons: `{plan_observed.get('decision_reasons')}`",
+              f"- Blocking counts by reason: "
+              f"`{plan_observed.get('blocking_counts_by_reason')}`",
+              f"- Duplicate action ids: `{plan_observed.get('duplicate_action_ids')}`",
+              f"- Planner writes performed: "
+              f"`{plan_observed.get('database_writes_performed')}`",
+              f"- Advisory lock: `{lock.get('status')}` (`{lock.get('contract')}`)",
+              f"- Execution ledger id: `{payload.get('execution_ledger_id')}`",
+              f"- Governed operation id: `{payload.get('governed_operation_id')}`",
+              f"- Transaction committed: `{payload.get('transaction_committed')}`",
+              f"- Rollback performed: `{payload.get('rollback_performed')}`",
+              f"- Database writes performed: "
+              f"`{payload.get('database_writes_performed')}`",
+              f"- Failed checks: `{payload.get('failed_checks')}`",
+              f"- Unresolved issues: `{payload.get('unresolved_issues')}`",
+              '',
+              '### The one reviewed action',
+              f"- Action id: `{action.get('action_id')}`",
+              f"- Stable key: `{action.get('stable_key')}`",
+              f"- Changed fields: `{action.get('changed_fields')}`",
+              f"- Approved change: `{action.get('current_values')}` -> "
+              f"`{action.get('proposed_values')}`",
+              f"- Reason codes: `{action.get('reason_codes')}`",
+              f"- Action counts: `{contract.get('action_counts')}`",
+              f"- Total actions: `{contract.get('total_action_count')}`",
+              '',
+              '### Applied row state (GameLog 44140)',
+              f"- earned_runs: `{before.get('earned_runs')}` -> "
+              f"`{after.get('earned_runs')}`",
+              f"- innings_pitched_outs: `{before.get('innings_pitched_outs')}` -> "
+              f"`{after.get('innings_pitched_outs')}`",
+              f"- runs_allowed: `{before.get('runs_allowed')}` -> "
+              f"`{after.get('runs_allowed')}`",
+              f"- hits_allowed: `{before.get('hits_allowed')}` -> "
+              f"`{after.get('hits_allowed')}`",
+              f"- Correction count: "
+              f"`{meta_before.get('stat_correction_count')}` -> "
+              f"`{meta_after.get('stat_correction_count')}`",
+              f"- Correction source: "
+              f"`{meta_after.get('last_stat_correction_source')}`",
+              '',
+              '### Ledger row',
+              f"- Capability: `{ledger.get('capability')}`",
+              f"- Status: `{ledger.get('status')}`",
+              f"- Amendment id: `{ledger.get('amendment_id')}`",
+              f"- Identity/insert/update/total: "
+              f"`{ledger.get('identity_action_count')}`/"
+              f"`{ledger.get('insert_action_count')}`/"
+              f"`{ledger.get('update_action_count')}`/"
+              f"`{ledger.get('total_action_count')}`",
+              '',
+              '### Pre-write gates (failures only)',
+          ]
+          gate_groups = (
+              ('runtime planner source', source_check),
+              ('regenerated plan', planner_check),
+              ('current population', population),
+              ('original repair intact', original),
+              ('target row', target),
+          )
+          for label, group in gate_groups:
+              failed = list(group.get('failed') or ())
+              checked = len(group.get('checks') or {})
+              if failed:
+                  summary.append(f"- {label}: failed `{failed}`")
+              else:
+                  summary.append(f"- {label}: all `{checked}` passed")
+          summary.append(
+              f"- regenerated action fields failing: "
+              f"`{planner_check.get('failed_action_fields')}`")
+          summary.append(f"- abort detail: `{payload.get('abort_detail')}`")
+
+          summary.extend(('', '### In-transaction verification (failures only)'))
+          failed_ver = [name for name, value in sorted(verifications.items()) if not value]
+          summary.extend(f"- `{name}`" for name in failed_ver)
+          if not failed_ver:
+              summary.append(f"- all `{len(verifications)}` passed")
+          summary.append(
+              f"- Deleted objects: `{watch.get('deleted_object_count')}` "
+              f"(`{watch.get('deleted_object_types')}`)")
+          summary.append(
+              f"- Mutated existing pitcher rows: "
+              f"`{watch.get('mutated_existing_pitcher_count')}`")
+
+          summary.extend(('', '### Exact float readback (transaction-local)'))
+          summary.append(f"- Dialect: `{float_contract.get('dialect')}`")
+          summary.append(f"- Setting: `{float_contract.get('setting')}`")
+          summary.append(
+              f"- Value before: `{float_contract.get('observed_value_before')}`")
+          summary.append(
+              f"- Governed value requested: "
+              f"`{float_contract.get('governed_value_requested')}`")
+          summary.append(
+              f"- Value after: `{float_contract.get('observed_value_after')}`")
+          summary.append(
+              f"- Transaction-local: `{float_contract.get('transaction_local')}`")
+          summary.append(
+              f"- Exact float readback enabled: "
+              f"`{float_contract.get('exact_float_readback_enabled')}`")
+
+          summary.extend(('', '### Dependent-evidence invalidation (bounded)'))
+          summary.append(f"- Rows invalidated: `{invalidation.get('rows_invalidated')}`")
+          summary.append(f"- Marked count: `{invalidation.get('marked_count')}`")
+          summary.append(
+              f"- Registered families: `{invalidation.get('registered_families')}`")
+          summary.extend(
+              f"- `{name}`: status `{family.get('status')}` exhaustive "
+              f"`{family.get('exhaustive')}` marked `{family.get('marked_count')}` "
+              f"remaining `{family.get('remaining_current_dependency_count')}`"
+              for name, family in sorted((invalidation.get('families') or {}).items()))
+          summary.append(
+              f"- Final unscoped current dependencies: "
+              f"`{invalidation.get('final_unscoped_current_dependency_count')}` "
+              f"(residual rules `{invalidation.get('final_unscoped_residual_rule_ids')}`)")
+          summary.append(f"- Failed invalidation checks: `{invalidation.get('failed')}`")
+
+          summary.extend(('', '### Post-commit verification'))
+          for name, item in sorted((post.get('checks') or {}).items()):
+              summary.append(
+                  f"- `{name}`: execution `{item.get('execution_state')}` passed "
+                  f"`{item.get('passed')}`")
+          summary.append(f"- Executed checks: `{post.get('executed_checks')}`")
+          summary.append(f"- Failed checks: `{post.get('failed_checks')}`")
+          summary.append(f"- Not executed checks: `{post.get('not_executed_checks')}`")
+
+          summary.extend(('', '### Downstream gates'))
+          summary.extend(f"- `{name}`: `{value}`" for name, value in sorted(gates.items()))
+          summary.append('')
+          summary.append(
+              'Foundation 3A is not closed and Foundation 3B is not activated by a '
+              'successful apply. Every downstream gate stays blocked until separately '
+              'reviewed post-apply validation opens it.')
+          summary.append(
+              'The complete execution artifact — the immutable contract, every gate, every '
+              'verification, and the full row readback — is in the private artifact and is '
+              'never truncated.')
+          summary_path.write_text('\n'.join(summary) + '\n', encoding='utf-8')
+
+          if payload.get('mode') != 'apply':
+              raise SystemExit('Apply command must report apply mode.')
+          if payload.get('capability') != (
+                  'official_pitching_line_matt_festa_apply_2026_v1'):
+              raise SystemExit('Apply command must report the Matt Festa capability.')
+          required_gates = ('foundation_3b_gate', 'public_reader_gate',
+                            'team_state_performance_gate', 'share_card_performance_gate',
+                            'sc_05_gate')
+          for gate in required_gates:
+              if gates.get(gate) != 'blocked':
+                  raise SystemExit(f'Downstream gate {gate} must remain blocked.')
+          for gate, status in (gates or {}).items():
+              if status != 'blocked':
+                  raise SystemExit(f'Downstream gate {gate} must remain blocked.')
+          PY
+
+          exit "$apply_exit_code"
+
+      - name: Upload private Matt Festa apply artifact
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: official-pitching-line-matt-festa-apply-2026-${{ github.run_id }}
+          path: ${{ runner.temp }}/official-pitching-line-matt-festa-apply-2026/
+          if-no-files-found: error
+          retention-days: 30
