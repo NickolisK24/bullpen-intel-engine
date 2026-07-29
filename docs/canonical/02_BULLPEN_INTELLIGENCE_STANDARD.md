@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | Status | Canonical - intelligence, data, evidence, methodology, and publication authority |
-| Version | 1.0 |
+| Version | 1.1 |
 | Effective date | July 29, 2026 |
 | Owner | Nickolis Kacludis |
 | Supersedes | Intelligence, metric, vocabulary, evidence, freshness, and trust rules spread across prior master documents |
@@ -217,6 +217,145 @@ Approved fields include 40-man relief depth outside the active roster, recent wo
 
 A future reinforcement read must distinguish observable roster eligibility from any claim that the club intends to make a move.
 
+## 7A. Current Active-Pen Performance Contract
+
+This is a **family contract**, not a metric. Every approved metric that describes how a team's current active bullpen has performed inherits it. Adding a metric under this family does not reopen the family contract. Changing the family contract does.
+
+Current Active-Pen ERA is the first planned metric under this family. It is not itself the contract, and it is not implemented or public.
+
+### Governing question
+
+> How have the pitchers who make up this team's active bullpen as of the represented baseball date performed in official completed games?
+
+The family does not answer how rested the bullpen is, whether an arm should pitch, what will happen next, whether the bullpen is good or bad, what a manager intends, or whether a pitcher is healthy.
+
+**State is not performance.** A bullpen may be Fresh with poor performance results. A bullpen may be Vulnerable with strong performance results. Neither combination is a contradiction, and no surface may present one as if it were.
+
+### Active-group contract
+
+Membership derives from the canonical current roster, team-assignment, and bullpen-membership authorities for the represented baseball date. A pitcher belongs to the group only when canonical authority resolves him as part of that team's current active bullpen for that date.
+
+The contract preserves:
+
+- current membership versus historical appearance ownership;
+- the official starter/reliever distinction;
+- off-active-roster separation;
+- explicit unknown and conflict states;
+- no current-team fallback for historical appearances.
+
+Current membership decides **who is in the group**. It never decides **which team owns an appearance**. Historical pitching lines remain assigned to the team side for which the pitcher appeared.
+
+The performance group and the Team State group must resolve from one **common canonical active-bullpen-membership authority** consumed by both domains. This Standard does not declare the two groups identical, because no single wired authority currently owns that membership for both: the public availability population composes bullpen eligibility, roster status, and role authority, while the intended canonical roster-context authority is still an unwired foundation. Until one owner is wired for both, a metric under this family must name the authority it consumed and its resolution date.
+
+### Window contract
+
+The default family window is:
+
+> All qualifying official completed relief appearances in the current MLB regular season, made for the represented team by pitchers who belong to that team's current active bullpen on the represented baseball date.
+
+Two separate questions must remain separate:
+
+| Question | Authority | Evaluated as of |
+|---|---|---|
+| Who is in the group? | Current roster / team-assignment / bullpen-membership authority | The represented baseball date |
+| Which appearances qualify? | Official completed pitching line + appearance-team authority | The game in which the appearance occurred |
+
+The window excludes:
+
+- appearances those pitchers made for another organization;
+- starts, which are never counted as relief performance;
+- postseason, spring-training, exhibition, suspended-unresolved, non-final, and unsupported game types, none of which may be included silently.
+
+A later metric may require an additional rolling window. It may not redefine the family's active-group authority.
+
+### Sample contract
+
+The family **fails closed** below a metric's approved minimum sample.
+
+The family owns the mechanism. Each metric registry entry owns its exact threshold and denominator. No generic threshold is established here, and none may be invented at implementation time: the only below-sample behavior currently authorized by canonical code is refusal at a zero denominator, which the canonical season aggregation reports as the governed reason `era_denominator_zero`.
+
+Below-sample behavior:
+
+- no numeric value is published;
+- no zero, prior, league, or estimated value is substituted;
+- the result is represented as a limited or unavailable performance read;
+- the exact machine refusal code belongs to the canonical code registry at implementation time.
+
+Public wording is subordinate to this contract and may not create a second vocabulary. `Limited Read` exists today as a governed **arm-read** label in the canonical public-label authority. It has never been authorized as a team-level performance label. Final public wording for a below-sample performance read is an implementation-time decision owned by the canonical public-label authority, not by a surface or a caption.
+
+### Date and freshness contract
+
+Every result carries:
+
+- represented baseball date;
+- data-through date or timestamp;
+- season;
+- metric method/version;
+- active-group authority date;
+- freshness/currentness state.
+
+The represented baseball date is never interchangeable with generation time, publication time, sync completion time, or browser request time. Roster membership and pitching-line evidence must align to one reproducible represented date.
+
+### Evidence contract
+
+Every published performance value must be inspectable back to official completed pitching lines. The reusable chain is:
+
+```text
+Metric summary
+-> Group and sample context
+-> Named pitchers
+-> Qualifying team-side relief appearances
+-> Official completed pitching lines
+-> Source and method authority
+```
+
+The chain must be able to supply active-group size, included pitcher identities, qualifying appearance count, canonical integer outs, innings derived from outs for display, metric-specific numerator and denominator, represented games and dates, excluded-line reason where material, source references, method version, and limitations.
+
+Not every compact surface renders the full chain. Every substantive value must provide a route or interaction that reaches it.
+
+### Evidence levels
+
+These are semantic inspection depths. They are not four pages, four components, or four database tables.
+
+| Level | Name | Content |
+|---|---|---|
+| 1 | Summary | The governed metric value and its currentness |
+| 2 | Context | Group size, sample, numerator, denominator, innings/outs, limitation |
+| 3 | Evidence | Named pitchers, games, dates, qualifying relief appearances |
+| 4 | Official record | Canonical official pitching lines and source authority |
+
+### Limitation contract
+
+The standard material limitation is:
+
+> Current Active-Pen Performance describes recorded results by today's active bullpen group over the approved window. It does not measure current rest, predict future performance, establish manager intent, or include private health and warm-up information.
+
+State it where it is material. Do not repeat a large defensive disclaimer on every small component.
+
+## 7B. Metric Families and the Metric Registry
+
+A **metric family** owns one baseball question and one common authority contract. **Individual metric definitions** inherit the family contract and are versioned separately. Public surfaces consume governed intelligence families; they do not create local interpretations of them.
+
+Current Active-Pen Performance is a governed metric family. Recording it here does not redesign the wider BaseballOS ontology.
+
+### Required metric registry fields
+
+Every metric entry under a family must define:
+
+stable metric key; public name; question answered; observed/derived classification; source fields; formula; numerator; denominator; unit; qualifying appearance rules; game-type rules; minimum sample; rounding and display behavior; evidence fields; freshness dependencies; refusal/suppression behavior; limitation; method version; effective date; change history; approved surfaces; deterministic fixtures.
+
+This extends the methodology-versioning requirements in Section 13; it does not replace them.
+
+### Registry
+
+| ID | Metric | Family | Status |
+|---|---|---|---|
+| M-001 | Current Active-Pen ERA | Current Active-Pen Performance | Contract pending implementation / not public |
+
+M-001's exact formula approval, minimum sample, and denominator are **not** established by this contract. Approving them is a separate work package. No other metric may be added to this registry as implemented, approved for public use, or production-ready.
+
+Candidate later entries — WHIP, K%, BB%, K-BB%, HR/9, inherited-runner outcomes, and FIP/xFIP/SIERA — remain candidates only. Each requires its own approved source, formula, sample, and publication contract before it becomes a registry entry.
+
 ## 8. Public Vocabulary
 
 Internal engine states may remain granular. They do not automatically become public language.
@@ -399,7 +538,9 @@ Before publication verify source authority, completeness, currentness, evidence 
 | Browser PNG renderer | Transitional |
 | Current-versus-shared comparison | Planned / gated |
 | Starter exposure / rotation load transfer | Partial |
-| Current-Pen ERA/performance context | Data exists; public contract incomplete |
+| Canonical season bullpen aggregation - team-side relief totals | Production - internal; official validation reconciled; no public reader |
+| Current Active-Pen Performance family contract | Established - see Section 7A; governs every later performance metric |
+| Current Active-Pen ERA (M-001) | Planned - contract pending implementation; not public; formula and minimum sample not yet approved |
 | Pitch-characteristic trends | Experimental / planned |
 | Leverage concentration | Partial / planned |
 | Organizational reinforcement depth | Partial / planned |
@@ -410,3 +551,4 @@ Before publication verify source authority, completeness, currentness, evidence 
 | Version | Date | Author | Summary |
 |---|---|---|---|
 | 1.0 | July 29, 2026 | Nickolis Kacludis | Consolidated source authority, data domains, vocabulary, evidence, freshness, suppression, trusted publication, immutability, correction, methodology versioning, public-copy rules, and current capability state. |
+| 1.1 | July 29, 2026 | Nickolis Kacludis | Expanded performance context into the reusable Current Active-Pen Performance family contract (Section 7A): active-group, window, sample, date/freshness, evidence, evidence-level, and limitation contracts. Added the metric-family and metric-registry model with M-001 Current Active-Pen ERA reserved as contract-pending and non-public (Section 7B). Corrected the capability registry to separate the production-internal season bullpen aggregation from the unimplemented public metric. State is not performance, canonical integer outs, and historical appearance-team ownership are preserved unchanged. |
