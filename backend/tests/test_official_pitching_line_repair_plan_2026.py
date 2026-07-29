@@ -16,6 +16,7 @@ from pathlib import Path
 
 import pytest
 from flask import Flask
+import sqlalchemy as sa
 from sqlalchemy import event
 
 import models.prospect  # noqa: F401
@@ -3682,3 +3683,337 @@ def test_decision_record_documents_the_governed_contract():
                    '9b8ab677c83ec5b8efa5a4020593911dc4d6d73e3262a09c0703d1a5907b49b7',
                    'dd453cd63b1e4ccc14b5ff97c962635d6c5eda296a4e4ef63066105eeec225c6'):
         assert phrase in text.lower(), phrase
+
+
+# ═══════════════ 26. innings_pitched is a derived companion, never an authority ═══════
+# The targeted Matt Festa plan correctly found an earned-run discrepancy and ALSO proposed
+# innings_pitched 1.66666666666667 -> 1.6666666666666667 for a row whose governed integer outs
+# already matched at five. That was PostgreSQL's 15-significant-digit float8 text rendering
+# compared against Python's derived binary float — a representation difference presented as a
+# workload correction. The semantic authority is innings_pitched_outs; the float is only its
+# model-compatible derived companion.
+
+# The real production line under repair.
+FESTA_GAME = 822952
+FESTA_PERSON = 670036
+FESTA_TEAM = 114
+FESTA_OPPONENT = 116
+FESTA_LOG_ID = 44140
+FESTA_OUTS = 5
+# What PostgreSQL returns for 5/3.0 when extra_float_digits <= 0, and what Python derives.
+PG_RENDERED_FIVE_THIRDS = 1.66666666666667
+PYTHON_DERIVED_FIVE_THIRDS = 5 / 3.0
+
+
+FESTA_HOME_STARTER = 670101
+FESTA_AWAY_STARTER = 670102
+
+
+def _festa_local(*, outs=FESTA_OUTS, er=0, innings_pitched=None):
+    """The stored Cleveland row: five outs, one run, two hits, zero earned runs.
+
+    Both official starters are seeded as exact matches so the only defect in the game is the
+    one under repair.
+    """
+    _log(FESTA_HOME_STARTER, game_pk=FESTA_GAME, team=FESTA_TEAM, gs=1, outs=18,
+         r=2, er=2, h=5, k=6, opponent=f'Team{FESTA_OPPONENT}',
+         opponent_abbreviation=f'T{FESTA_OPPONENT}')
+    _log(FESTA_AWAY_STARTER, game_pk=FESTA_GAME, team=FESTA_OPPONENT, gs=1, outs=21,
+         r=1, er=1, h=4, k=7, opponent=f'Team{FESTA_TEAM}',
+         opponent_abbreviation=f'T{FESTA_TEAM}')
+    pitcher = _pitcher(FESTA_PERSON, name='Matt Festa')
+    log = _log(FESTA_PERSON, game_pk=FESTA_GAME, team=FESTA_TEAM, gs=0, outs=outs,
+               r=1, er=er, h=2, bb=0, k=2, hr=0, pitcher_row=pitcher,
+               opponent=f'Team{FESTA_OPPONENT}',
+               opponent_abbreviation=f'T{FESTA_OPPONENT}')
+    if innings_pitched is not None:
+        # Store the value PostgreSQL would hand back, so the planner compares exactly what
+        # production compared.
+        db.session.query(GameLog).filter(GameLog.id == log.id).update(
+            {'innings_pitched': innings_pitched}, synchronize_session=False)
+        db.session.commit()
+    return log
+
+
+def _festa_client(*, official_outs=FESTA_OUTS, official_er=1):
+    """Official evidence: one unique starter per side plus the Cleveland relief line."""
+    home_lines = [
+        _pline(FESTA_HOME_STARTER, gs=1, outs=18, r=2, er=2, h=5, k=6),
+        _pline(FESTA_PERSON, gs=0, outs=official_outs, r=1, er=official_er, h=2,
+               bb=0, k=2, hr=0),
+    ]
+    away_lines = [_pline(FESTA_AWAY_STARTER, gs=1, outs=21, r=1, er=1, h=4, k=7)]
+    boxscore = _boxscore(home_lines, away_lines, home=FESTA_TEAM, away=FESTA_OPPONENT)
+    return _FakeMlbClient(
+        games=[_official_game(game_pk=FESTA_GAME, home=FESTA_TEAM, away=FESTA_OPPONENT)],
+        boxscores={FESTA_GAME: boxscore},
+        people={FESTA_PERSON: _person(FESTA_PERSON, name='Matt Festa'),
+                FESTA_HOME_STARTER: _person(FESTA_HOME_STARTER),
+                FESTA_AWAY_STARTER: _person(FESTA_AWAY_STARTER)})
+
+
+def _festa_plan(**kwargs):
+    kwargs.setdefault('client', _festa_client())
+    kwargs.setdefault('team_id', FESTA_TEAM)
+    kwargs.setdefault('game_pk', FESTA_GAME)
+    return planner.run_repair_plan(**kwargs)
+
+
+def _sole_update(payload):
+    updates = _actions(payload, planner.ACTION_GAME_LOG_UPDATE)
+    assert len(updates) == 1, updates
+    return updates[0]
+
+
+def test_matching_outs_produce_no_innings_pitched_action(app):
+    _festa_local()
+    update = _sole_update(_festa_plan())
+    assert 'innings_pitched' not in update['changed_fields']
+    assert 'innings_pitched' not in update['proposed_values']
+    assert 'innings_pitched' not in update['current_values']
+
+
+def test_a_lossy_stored_innings_float_produces_no_action_when_outs_match(app):
+    # Local 1.66666666666667 against the derived 1.6666666666666667, outs equal at five.
+    log = _festa_local(innings_pitched=PG_RENDERED_FIVE_THIRDS)
+    db.session.expire_all()
+    stored = db.session.query(GameLog).filter(GameLog.id == log.id).one()
+    assert stored.innings_pitched_outs == FESTA_OUTS
+    assert stored.innings_pitched == PG_RENDERED_FIVE_THIRDS
+    assert stored.innings_pitched != PYTHON_DERIVED_FIVE_THIRDS
+    update = _sole_update(_festa_plan())
+    assert 'innings_pitched' not in update['changed_fields']
+    assert planner.WORKLOAD_FIELD_REASON not in (
+        update.get('field_reason_codes') or {}).values()
+
+
+def test_the_derived_field_vocabulary_names_its_controlling_authority():
+    assert planner.DERIVED_FIELD_AUTHORITY == {'innings_pitched': 'innings_pitched_outs'}
+    assert planner.DERIVED_FIELDS == frozenset({'innings_pitched'})
+    # A semantic exclusion, not a numeric one: no tolerance, rounding, or approximate
+    # equality is introduced anywhere in the planner.
+    import ast as _ast
+    source = SERVICE_PATH.read_text(encoding='utf-8')
+    body = '\n'.join(line for line in source.splitlines()
+                     if not line.lstrip().startswith('#'))
+    tree = _ast.parse(source)
+    called = {node.func.id for node in _ast.walk(tree)
+              if isinstance(node, _ast.Call) and isinstance(node.func, _ast.Name)}
+    assert 'round' not in called
+    for forbidden in ('math.isclose', 'pytest.approx', '1e-6', '1e-9', 'abs('):
+        assert forbidden not in body, forbidden
+
+
+def test_an_outs_mismatch_still_proposes_both_outs_and_derived_innings(app):
+    # Local four outs against official five: a genuine workload difference.
+    _festa_local(outs=4)
+    update = _sole_update(_festa_plan())
+    assert update['proposed_values']['innings_pitched_outs'] == 5
+    assert update['proposed_values']['innings_pitched'] == PYTHON_DERIVED_FIVE_THIRDS
+    assert 'innings_pitched_outs' in update['changed_fields']
+    assert 'innings_pitched' in update['changed_fields']
+
+
+def test_both_outs_fields_carry_the_governed_outs_mismatch_reason(app):
+    _festa_local(outs=4)
+    update = _sole_update(_festa_plan())
+    reasons = update['field_reason_codes']
+    assert reasons['innings_pitched_outs'] == completeness.REASON_OUTS_MISMATCH
+    assert reasons['innings_pitched'] == completeness.REASON_OUTS_MISMATCH
+    # The derived companion never carries the independent workload-field reason.
+    assert reasons['innings_pitched'] != planner.WORKLOAD_FIELD_REASON
+
+
+def test_a_real_earned_runs_mismatch_is_still_planned(app):
+    _festa_local(er=0)
+    update = _sole_update(_festa_plan())
+    assert update['proposed_values']['earned_runs'] == 1
+    assert update['current_values']['earned_runs'] == 0
+    assert update['field_reason_codes']['earned_runs'] == (
+        completeness.REASON_EARNED_RUNS_MISMATCH)
+
+
+# ── The targeted Matt Festa fixture, end to end ──────────────────────────────
+def test_the_festa_fixture_changes_exactly_earned_runs(app):
+    _festa_local(innings_pitched=PG_RENDERED_FIVE_THIRDS)
+    update = _sole_update(_festa_plan())
+    assert update['changed_fields'] == ['earned_runs']
+
+
+def test_the_festa_fixture_proposes_zero_to_one(app):
+    _festa_local(innings_pitched=PG_RENDERED_FIVE_THIRDS)
+    update = _sole_update(_festa_plan())
+    assert update['current_values'] == {'earned_runs': 0}
+    assert update['proposed_values'] == {'earned_runs': 1}
+    assert update['reason_codes'] == [completeness.REASON_EARNED_RUNS_MISMATCH]
+    assert update['safe_to_apply'] is True
+    assert update['blocking_reasons'] == []
+
+
+def test_the_festa_fixture_plans_one_update_and_nothing_else(app):
+    _festa_local(innings_pitched=PG_RENDERED_FIVE_THIRDS)
+    payload = _festa_plan()
+    assert len(_actions(payload, planner.ACTION_GAME_LOG_UPDATE)) == 1
+    assert _actions(payload, planner.ACTION_IDENTITY_CREATE) == []
+    assert _actions(payload, planner.ACTION_GAME_LOG_INSERT) == []
+    assert payload['actions_by_type'][planner.ACTION_GAME_LOG_UPDATE] == 1
+    assert payload['actions_by_type'][planner.ACTION_IDENTITY_CREATE] == 0
+    assert payload['actions_by_type'][planner.ACTION_GAME_LOG_INSERT] == 0
+    assert payload['repair_manifest_action_count'] == 1
+
+
+def test_the_festa_fixture_plans_no_delete_and_no_authority_change(app):
+    _festa_local(innings_pitched=PG_RENDERED_FIVE_THIRDS)
+    payload = _festa_plan()
+    assert set(payload['actions_by_type']) == set(planner.ACTION_TYPES)
+    assert 'delete' not in ' '.join(planner.ACTION_TYPES).lower()
+    forbidden = {'appearance_team_id', 'appearance_team_source', 'appearance_team_status',
+                 'appearance_team_reason', 'pitcher_id', 'mlb_game_pk', 'game_date',
+                 'team_id', 'active', 'position', 'full_name'}
+    for action in payload['repair_manifest']:
+        assert not (set(action.get('proposed_values') or {}) & forbidden), action['action_id']
+        assert not (set(action.get('changed_fields') or ()) & forbidden), action['action_id']
+
+
+def test_the_festa_plan_writes_nothing(app):
+    _festa_local(innings_pitched=PG_RENDERED_FIVE_THIRDS)
+    statements = []
+
+    @event.listens_for(db.engine, 'before_cursor_execute')
+    def _capture(conn, cursor, statement, parameters, context, executemany):  # noqa: ARG001
+        statements.append(statement)
+
+    try:
+        payload = _festa_plan()
+    finally:
+        event.remove(db.engine, 'before_cursor_execute', _capture)
+
+    assert payload['database_writes_performed'] is False
+    lowered = ' '.join(statements).lower()
+    for forbidden in ('insert into', 'update ', 'delete from', 'truncate', 'drop table'):
+        assert forbidden not in lowered, forbidden
+
+
+def test_the_scoped_festa_plan_is_not_apply_eligible(app):
+    _festa_local(innings_pitched=PG_RENDERED_FIVE_THIRDS)
+    payload = _festa_plan()
+    assert payload['plan_scope'] == planner.PLAN_SCOPE_SUBSET
+    assert payload['plan_status'] == planner.PLAN_BLOCKED_SUBSET
+    assert payload['plan_status'] == 'diagnostic_subset_not_apply_eligible'
+    assert payload['result'] == planner.RESULT_INCONCLUSIVE
+
+
+def test_the_scoped_festa_fingerprint_is_not_an_approved_fingerprint(app):
+    from services import official_pitching_line_repair_apply_2026 as apply_service
+    _festa_local(innings_pitched=PG_RENDERED_FIVE_THIRDS)
+    payload = _festa_plan()
+    fingerprint = payload['repair_manifest_fingerprint']
+    assert fingerprint
+    # It is neither the approved production fingerprint nor any fingerprint the apply
+    # service will accept.
+    assert fingerprint != (
+        apply_service.APPROVED_OFFICIAL_PITCHING_LINE_REPAIR_MANIFEST_FINGERPRINT_2026)
+    assert fingerprint not in SERVICE_PATH.read_text(encoding='utf-8')
+    apply_text = (REPO_ROOT / 'backend' / 'services'
+                  / 'official_pitching_line_repair_apply_2026.py').read_text(encoding='utf-8')
+    assert fingerprint not in apply_text
+
+
+def test_the_original_approved_repair_contract_is_untouched():
+    from services import official_pitching_line_repair_apply_2026 as apply_service
+    assert (apply_service.APPROVED_OFFICIAL_PITCHING_LINE_REPAIR_MANIFEST_FINGERPRINT_2026
+            == '3ee2ea06492e8161bf7b278228d6f778e24048452366e3c2502ae42e0365216b')
+    assert apply_service.CONFIRMATION_PHRASE == 'APPLY-2026-PITCHING-LINE-REPAIR-3EE2EA06'
+    assert apply_service.APPROVED_EXECUTION_CONTRACT['total_action_count'] == 675
+    assert apply_service.APPROVED_EXECUTION_CONTRACT['action_counts'] == {
+        planner.ACTION_IDENTITY_CREATE: 70,
+        planner.ACTION_GAME_LOG_INSERT: 445,
+        planner.ACTION_GAME_LOG_UPDATE: 160,
+    }
+    assert apply_service.REPAIR_LEDGER_MIGRATION_REVISION == 'c7b3e5a91d48'
+
+
+def test_rerunning_the_original_apply_remains_forbidden():
+    apply_text = (REPO_ROOT / 'backend' / 'services'
+                  / 'official_pitching_line_repair_apply_2026.py').read_text(encoding='utf-8')
+    assert 'repair_already_completed_for_this_approved_fingerprint' in apply_text
+    assert 'uq_oplr_executions_approved_fingerprint' in (
+        REPO_ROOT / 'backend' / 'models'
+        / 'official_pitching_line_repair_execution.py').read_text(encoding='utf-8')
+    # Nothing in this task adds an apply path to the planner.
+    plan_text = SERVICE_PATH.read_text(encoding='utf-8')
+    assert 'apply_reviewed_repair' not in plan_text
+    assert 'session.commit()' not in plan_text
+
+
+def test_every_downstream_gate_stays_blocked_for_the_targeted_plan(app):
+    from services import official_pitching_line_repair_apply_2026 as apply_service
+    _festa_local(innings_pitched=PG_RENDERED_FIVE_THIRDS)
+    payload = _festa_plan()
+    # A scoped plan is gated as a diagnostic subset — never apply-eligible, never approved.
+    assert payload['repair_apply_gate'] == planner.GATE_BLOCKED_SUBSET
+    assert payload['repair_apply_gate'] != planner.GATE_BLOCKED_PENDING_REVIEW
+    assert apply_service.DOWNSTREAM_GATES == (
+        'foundation_3b_gate', 'public_reader_gate', 'team_state_performance_gate',
+        'share_card_performance_gate', 'sc_05_gate')
+    base = apply_service._base_payload(
+        dict(apply_service.APPROVED_EXECUTION_CONTRACT),
+        apply_service.APPROVED_OFFICIAL_PITCHING_LINE_REPAIR_MANIFEST_FINGERPRINT_2026,
+        None, 'testsha', 'op', __import__('datetime').datetime(2026, 7, 29))
+    for gate in apply_service.DOWNSTREAM_GATES:
+        assert base[gate] == apply_service.GATE_BLOCKED
+
+
+# ── PostgreSQL float rendering cannot influence the manifest ─────────────────
+def _skip_unless_postgres():
+    if db.session.get_bind().dialect.name != 'postgresql':
+        pytest.skip('float render precision is a PostgreSQL text-protocol behavior')
+
+
+def _plan_at_float_digits(value):
+    db.session.execute(sa.text(f'SET SESSION extra_float_digits = {int(value)}'))
+    db.session.commit()
+    assert db.session.execute(
+        sa.text('SHOW extra_float_digits')).scalar() == str(value)
+    return _festa_plan()
+
+
+def test_postgres_lossy_rendering_creates_no_derived_innings_action(app):
+    _skip_unless_postgres()
+    _festa_local()
+    try:
+        payload = _plan_at_float_digits(0)
+    finally:
+        db.session.execute(sa.text('SET SESSION extra_float_digits = DEFAULT'))
+        db.session.commit()
+    update = _sole_update(payload)
+    assert update['changed_fields'] == ['earned_runs']
+    assert 'innings_pitched' not in update['proposed_values']
+
+
+def test_postgres_exact_rendering_produces_the_same_manifest(app):
+    _skip_unless_postgres()
+    _festa_local()
+    try:
+        payload = _plan_at_float_digits(3)
+    finally:
+        db.session.execute(sa.text('SET SESSION extra_float_digits = DEFAULT'))
+        db.session.commit()
+    update = _sole_update(payload)
+    assert update['changed_fields'] == ['earned_runs']
+    assert 'innings_pitched' not in update['proposed_values']
+
+
+def test_the_manifest_fingerprint_is_independent_of_float_rendering(app):
+    _skip_unless_postgres()
+    _festa_local()
+    try:
+        lossy = _plan_at_float_digits(0)
+        exact = _plan_at_float_digits(3)
+    finally:
+        db.session.execute(sa.text('SET SESSION extra_float_digits = DEFAULT'))
+        db.session.commit()
+    # The governed outs match at five, so the rendering the database happens to use cannot
+    # change what the planner proposes — nor what it fingerprints.
+    assert lossy['repair_manifest_fingerprint'] == exact['repair_manifest_fingerprint']
+    assert lossy['repair_manifest'] == exact['repair_manifest']
