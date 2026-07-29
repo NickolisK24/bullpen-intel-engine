@@ -424,6 +424,29 @@ STAT_REASON_BY_FIELD = {
 # Reason code for a workload/decision field the mandatory metric comparison never covers.
 WORKLOAD_FIELD_REASON = 'official_workload_field_mismatch'
 
+# ── Derived companion fields ──────────────────────────────────────────────────
+# ``innings_pitched`` is NOT an independent official workload authority. The semantic
+# authority for workload is the integer ``innings_pitched_outs``; the float exists only as the
+# model-compatible derived companion (``outs / 3.0``), kept consistent so the stored-state
+# CHECK constraint still holds.
+#
+# Comparing it independently compares REPRESENTATIONS, not baseball. PostgreSQL renders float8
+# as text, and at ``extra_float_digits <= 0`` that text is rounded to 15 significant decimal
+# digits, so a stored five-out row reads back as ``1.66666666666667`` while the derived Python
+# value is ``1.6666666666666667``. The workload loop below read those as different and planned
+# an ``innings_pitched`` mutation for a row whose governed outs already matched at five — a
+# rendering artifact presented as a workload correction.
+#
+# The correction is SEMANTIC, not numeric. A derived field is planned only as a companion of
+# the authority that controls it, and only when that authority is itself being corrected. No
+# tolerance, no approximate equality, and no rounding of either value is introduced: the
+# comparison that produced the false action is not softened, it is removed, because it was
+# never a meaningful comparison to make.
+DERIVED_FIELD_AUTHORITY = {
+    'innings_pitched': 'innings_pitched_outs',
+}
+DERIVED_FIELDS = frozenset(DERIVED_FIELD_AUTHORITY)
+
 # The manifest fingerprint accepted by the first production planner run. That manifest
 # carried only the seven mandatory season metrics plus role and identity, so applying it
 # would have written permanently incomplete GameLog rows. It is pinned here so the enriched
@@ -843,6 +866,12 @@ def _update_action(line, local, detail, *, raw_stats=None, sides=None,
                 values, raw_stats, include_leverage_index=False)
             for field in correctable:
                 if field in UPDATE_FORBIDDEN_FIELDS or field in proposed_values:
+                    continue
+                if field in DERIVED_FIELDS:
+                    # A derived companion is planned ONLY alongside the authority that
+                    # controls it, which the block above already handled when that authority
+                    # changed. Reaching here means the controlling authority MATCHES, so any
+                    # difference is a float-rendering artifact and not a workload correction.
                     continue
                 proposed_value = values.get(field)
                 current_value = getattr(log, field, None)
