@@ -551,9 +551,10 @@ def test_migration_round_trip_and_single_head():
             revisions[rev.group(1)] = down.group(1).strip() if down else None
     referenced = {down for down in revisions.values() if down and down != 'None'}
     # The generation-audits migration is no longer the tip: the team-at-appearance
-    # authority migration (a4f1c7e9b3d2) chains onto the progressive checkpoint
-    # migration as the single head. Chain integrity (exactly one head) is guarded.
-    assert set(revisions) - referenced == {'a4f1c7e9b3d2'}
+    # authority migration chains onto the progressive checkpoint migration, and the
+    # governed repair-execution ledger (c7b3e5a91d48) chains onto that as the single
+    # head. Chain integrity (exactly one head) is guarded.
+    assert set(revisions) - referenced == {'c7b3e5a91d48'}
 
     engine = sa.create_engine('sqlite:///:memory:')
     metadata = sa.MetaData()

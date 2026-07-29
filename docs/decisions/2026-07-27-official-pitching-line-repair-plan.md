@@ -1,9 +1,10 @@
 # Decision: official pitching-line repair plan (2026)
 
 - **Date:** 2026-07-27
-- **Status:** Implemented (read-only planner). No apply mode, no write, no backfill, no
-  reconciliation, no deletion, no change to the completeness diagnostic, the canonical
-  aggregation, or any validation threshold.
+- **Status:** Implemented (read-only planner, plus the one-time fingerprint-locked apply
+  path in §17-§17n). No backfill, no reconciliation, no deletion, no change to the
+  completeness diagnostic, the canonical aggregation, or any validation threshold. The apply
+  workflow has not been dispatched and production data is unchanged.
 - **Scope:** A deterministic, production-capable but strictly read-only generator that turns
   the accepted completeness proof into a reviewable repair manifest.
 
@@ -841,12 +842,558 @@ remains `result: inconclusive`, never reaches `plan_status: ready_for_apply_revi
 `repair_apply_gate: blocked_subset_not_apply_eligible`. Non-applicability is a statement about
 what was examined, never a grant of approval.
 
+## 17. Why the fingerprint is now approved, and what "approved" means
+
+The read-only planner ran in production at merge commit
+`b0850719c7ab2c4e9ee232758cd57ba25030364b` with `season=2026`, `as_of_date=2026-07-25`,
+`game_type=R`, no team filter, no game filter, and full-season scope. That run returned
+`result: pass`, `exit_code: 0`, `plan_status: ready_for_apply_review`,
+`database_writes_performed: false`, every reconciliation true, empty
+`blocking_counts_by_reason`, and empty `duplicate_action_ids`. Its manifest fingerprint is
+
+```
+3ee2ea06492e8161bf7b278228d6f778e24048452366e3c2502ae42e0365216b
+```
+
+covering 675 actions: 70 identity creations, 445 GameLog insertions, 160 GameLog updates,
+605 of which are defect-line actions.
+
+Approval is **exact and one-time**. It is not a pattern, a prefix, an action-count range, an
+alternate fingerprint, a regenerated equivalent, or a semantically similar plan. It applies
+only to season 2026, as-of 2026-07-25, full-season scope, the V2 defect baseline, amendment
+`defect_baseline_amendment_1_brandyn_garcia_hits_allowed`, and that exact 675-action
+manifest. Any other fingerprint aborts before the first write.
+
+The constant lives in the apply service, not in the planner. A planner that knows which of
+its outputs is approved is no longer a plan generator; it is a plan generator with an opinion
+about its own authority. It is also a single narrowly named constant rather than a registry
+entry: a registry would be a reusable approval mechanism, and this approval is not reusable.
+A second repair requires a second review, not a second row.
+
+## 17a. Why the earlier inconclusive artifacts did not approve anything
+
+Three fingerprints exist in this lineage and only the third is approved.
+
+`dbbc063a0711e57b0dc2d858b7d1d291c568c4990ecff7c9ebf3d1b138cbb2d6` came from the first
+production planner run. That manifest carried only the seven mandatory season metrics plus
+role and identity, so applying it would have written permanently incomplete GameLog rows.
+
+`9b8ab677c83ec5b8efa5a4020593911dc4d6d73e3262a09c0703d1a5907b49b7` came from the enriched
+planner's first production run, which **failed**: required-insert validation treated
+`pitcher_id` as an ordinary immediately-available value and so rejected the 342 legitimately
+deferred insertions. A failed run is evidence of a defect, never an approval.
+
+Both are pinned in the planner as `prior_production_manifest_fingerprint` and
+`failed_production_manifest_fingerprint`, with
+`failed_production_manifest_fingerprint_approved: false`, so the record of what was *not*
+approved is as durable as the record of what was.
+
+## 17b. Why the planner is regenerated instead of replaying a stored manifest
+
+A stored manifest is a claim about a database that has since moved on. Replaying it would
+write values derived from a state that may no longer exist.
+
+The apply command therefore regenerates the planner from live production state immediately
+before opening the mutation transaction. Regeneration proves the same 675 actions are still
+the right 675 actions against the rows that exist right now; the fingerprint proves the
+regenerated plan is the *reviewed* plan rather than a fresh plan that merely resembles it.
+Neither property is sufficient alone.
+
+The gate requires all of: planner capability, `result: pass`, `exit_code: 0`,
+`mode: read_only`, `database_writes_performed: false`, `plan_scope: full_season`,
+`plan_status: ready_for_apply_review`, the approved inputs, active baseline version `v2` with
+prior `v1`, `defect_baseline_matches_accepted_diagnostic`,
+`identity_resolution_partition_valid`, every reconciliation true, empty blocking counts,
+empty duplicate action ids, 675 total actions split 70/445/160, 605 defect-line actions, the
+identity partition 341/104/70, the governed migration head, the reviewed amendment line
+`validated` and `required_for_scope`, the amendment action matching the approved record
+field for field, and finally exact fingerprint equality.
+
+There is **no operator override**. `apply_reviewed_repair` takes no force, override, or
+skip parameter, and the workflow exposes no input that could carry one. An override would
+convert an exact approval into a discretionary one, which is the whole thing this design
+exists to prevent.
+
+## 17c. Why the migration head contract had to change
+
+The apply path needs a durable execution ledger, and a ledger needs a table, and a table
+needs a migration. Adding one moves the Alembic head off `a4f1c7e9b3d2`.
+
+`EXPECTED_MIGRATION_HEAD` is not decorative: the completeness diagnostic and the canonical
+season aggregation audit both add `migration_head_mismatch` to their **fail** reasons when
+the observed head differs. Both are required post-commit verifications for this repair.
+Leaving the constant pinned to the prior revision would have made every post-commit check
+fail by construction, so the expected head moves forward to `c7b3e5a91d48` across the
+services, the coverage-audit script, the production-maintenance workflow, and the tests that
+pin it.
+
+The migration is purely additive — one new table, no existing table touched, no existing row
+modified, no backfill, independently reversible — so no diagnostic's reading of `game_logs`
+or `pitchers` changes. The apply gate additionally requires that
+`c7b3e5a91d48`'s declared `down_revision` is `a4f1c7e9b3d2`, which is what proves no
+*unreviewed* schema change landed between the approved plan and the apply.
+
+## 17d. Transaction boundaries
+
+One transaction covers every mutation. The planner's read-only queries run first, in whatever
+transaction was ambient; that transaction is explicitly ended before the advisory lock is
+taken, so the boundary is exact: everything from the lock to the single `session.commit()` is
+one transaction.
+
+Inside it, in this order and never interleaved:
+
+1. `identity_create_required` — 70 identities, flushed so each real local primary key exists
+2. `game_log_insert_required` — 445 rows
+3. `game_log_update_required` — 160 rows
+4. in-transaction read-back verification of everything written
+5. the durable execution-ledger row
+6. commit
+
+There is no intermediate commit anywhere. Any failure at any step rolls back all 675 actions,
+including the ledger row, so a rolled-back attempt leaves the database exactly as it was.
+
+## 17e. Advisory locking
+
+A dedicated PostgreSQL **transaction-level** advisory lock
+(`official_pitching_line_repair_2026.transaction_advisory_lock`) is acquired before any
+mutation precondition is read. Its key is derived deterministically from the contract name
+rather than being a magic number, so a reader can reproduce it.
+
+`pg_try_advisory_xact_lock` is used rather than `pg_advisory_lock`: it returns immediately.
+Waiting would let a second operator queue behind a repair that is about to change the very
+rows their run planned against. Unavailable means abort without writes, and the correct
+response is to regenerate the plan, not to wait.
+
+Transaction-level rather than session-level means the lock is released by the same commit or
+rollback that decides the repair. A crashed process can never strand it.
+
+The lock serializes this apply path against a second invocation of itself and against any
+future official pitching-line repair that adopts the same lock contract. On a dialect with no
+transaction-level advisory lock — the single-writer test target — the status is reported as
+`single_writer_dialect_no_advisory_lock` with `acquired: false`, so it can never be misread
+in an artifact as a real acquisition.
+
+## 17f. Identity dependency resolution
+
+An identity is resolved by exact `Pitcher.mlb_id` equality and by nothing else. Name
+similarity, current team, organization, roster status, and active status are all irrelevant
+to a historical appearance and are never consulted; the service contains no reference to
+`Pitcher.full_name`, `Pitcher.team_id`, or `Pitcher.roster_status`.
+
+Before creating any identity the apply path verifies no local `Pitcher` carries that
+`mlb_id`, that exactly one identity action exists for it, that the action's official person
+evidence still hashes to its recorded source fingerprint, that every dependent insertion is
+present in the manifest, and that every dependent insertion points reciprocally back at this
+action and carries the same official person id.
+
+Only `proposed_identity_fields` are written. The official primary position is preserved
+verbatim **including a non-pitcher position** — appearing in a pitching section does not
+reclassify a position player. `team_id`, `team_name`, `team_abbreviation`, the team-assignment
+fields, the roster fields, `age`, and `jersey_number` are never populated.
+
+`active` is written as an explicit SQL `NULL`. This required `sqlalchemy.null()` rather than
+Python `None`: assigning `None` to a column carrying a Python-side default leaves the
+attribute unset as far as the insert is concerned and the default fires anyway, so
+`Pitcher.active` would have been stored as `True` — asserting current activity that a
+historical appearance cannot prove. Every current-roster read filters `active == True`, so
+`NULL` keeps an unknown-activity historical identity out of all of them. The same hazard and
+the same fix apply to the optional `GameLog` booleans, where a default would have turned
+official *absence* into an official `False`.
+
+If an identity now exists because another process created it after planning, the repair
+aborts and rolls back. The reviewed action said "create"; silently converting it to "reuse"
+would apply a manifest nobody reviewed.
+
+For insertions, the deferred foreign key is resolved from the identity created earlier in the
+same transaction and injected only when constructing the row — the reviewed manifest itself is
+never mutated. An existing-identity insertion uses the local primary key the manifest carries,
+and that key is accepted only after the row it points at is row-locked and proven to carry the
+matching `mlb_id`. A numeric coincidence between a local primary key and an official MLB
+person id is not an identity and never satisfies the check.
+
+## 17g. Update preconditions
+
+Each of the 160 updates locks its exact `GameLog` by `local_game_log_id` with a row-level
+lock, then requires: exactly one row exists; its id matches; its `mlb_game_pk` matches; the
+joined `Pitcher.mlb_id` equals the official person id; `appearance_team_id` equals the
+approved official team; every field in `current_values` still holds the planned current
+value; every changed field appears in both value maps; no proposed value would replace a
+non-null stored value with null; the action's official source evidence still hashes to its
+recorded fingerprint; and the action is safe with no blocking reasons.
+
+Only `changed_fields` are written. Appearance-team authority is never rewritten by a repair,
+so a row attributed to a different official team is a contradiction to abort on rather than a
+field to correct.
+
+A changed stored value is **drift**, not a defect: it means something legitimately moved
+between planning and applying, so the result is inconclusive with nothing written. A wrong
+identity, a wrong appearance team, an ambiguous target, or a tampered source fingerprint is a
+**contradiction**, and the result is fail.
+
+## 17h. Correction metadata and dependent-evidence invalidation
+
+Every updated row gets `stat_correction_count` incremented **once per row, never per changed
+field**, `last_stat_correction_at` set to the apply timestamp,
+`last_stat_correction_source` set to `official_pitching_line_repair`, and
+`last_stat_correction_sync_run_id` set to a governed operation id derived deterministically
+from the approved fingerprint.
+
+That id is deliberately not a `SyncRun` id — no sync run performs this repair, and borrowing
+one would attribute the correction to ingestion. It is recorded on the ledger row so the two
+join.
+
+Dependent evidence is invalidated through the **existing** governed contract,
+`sync._notify_workload_evidence_game_log_correction`, which marks workload, appearance-context,
+and inherited-traffic evidence for recomputation. Calling the existing path rather than
+reimplementing it is the point: a repair that defined its own invalidation rules would become
+a second, divergent definition of what a correction invalidates. No replacement evidence is
+fabricated.
+
+## 17i. The reviewed Brandyn Garcia line, proven twice
+
+The pre-write gate checks the planner's own `defect_baseline_amendment_line_validation`
+object. Inside the transaction, under the lock, the apply path checks the **database
+directly**: GameLog 43765 exists, game 825058, `Pitcher.mlb_id` 805299, `appearance_team_id`
+109, `hits_allowed` currently 1, exactly one update action, `changed_fields` exactly
+`['hits_allowed']`, proposed exactly 0, reason exactly `hits_mismatch`, no blocker,
+`safe_to_apply` true.
+
+The duplication is deliberate. The first check reads a planner claim; the second reads the
+rows. One reviewed line is worth proving twice, from two different sources.
+
+After mutation and before commit it requires `hits_allowed == 0`, every unrelated field
+byte-identical to a snapshot taken before the write, `stat_correction_count` increased by
+exactly one, correction metadata populated, and dependent-evidence invalidation requested.
+Any failure rolls back all 675 actions.
+
+## 17j. The durable execution ledger
+
+`official_pitching_line_repair_executions` (migration `c7b3e5a91d48`) records one governed
+repair: capability, approved and regenerated fingerprints stored **separately** so a reviewer
+sees both rather than a single value asserting they agreed, planner and apply git SHAs,
+season, as-of date, baseline version, amendment id, status, the four action counts, the three
+timestamps, and three bounded JSON summaries.
+
+Three invariants are enforced at the database rather than by writer discipline:
+
+- `status` may only ever be `completed`. A repair that did not commit performs no writes, so
+  it has nothing to record here; a row asserting an execution that never happened would be
+  worse than no row. Failed and rolled-back attempts are evidenced by the private workflow
+  artifact instead.
+- `approved_manifest_fingerprint` is UNIQUE, so a second completed execution of the same
+  approved manifest is impossible even under concurrent dispatch. The apply path also checks
+  for an existing completed row immediately after taking the lock and aborts without writes.
+- the three action counts must sum to the recorded total, so a miscounted row cannot be
+  stored.
+
+The row is written inside the repair transaction and commits with it: either the ledger row
+and the mutated rows both exist, or neither does.
+
+## 17k. In-transaction verification
+
+Before the commit, every written row is read back **from the database** rather than trusted
+from the in-memory objects, and the run requires: the exact identity, insert, and update
+counts, each applied exactly once and summing to the approved total; every created identity
+holding a real local primary key, the right `mlb_id`, `active` null, and no team or roster
+field set; every inserted row matching its `proposed_values` field for field, with every
+deliberately-omitted optional field stored as `NULL`; every stable GameLog key occupied
+exactly once; no external MLB id stored as a local foreign key; every updated field matching
+its proposed value and every untouched field unchanged; every corrected row carrying the
+governed correction source; the reviewed amendment line verified; no delete of any kind; no
+existing `Pitcher` row mutated and no current-team or roster field changed; and ledger counts
+equal to the counts actually applied.
+
+The delete and pitcher-mutation guarantees are proven from observed session state via a
+`before_flush` listener, not asserted by reading the code.
+
+## 17k-i. Why the production entrypoint accepts no governed argument
+
+An earlier version of `apply_reviewed_repair` accepted `contract`, `approved_fingerprint`,
+and `run_post_commit`. None of them was named force or override, and all three were exactly
+that.
+
+A caller could pass a freshly generated fingerprint together with a contract whose action
+counts, defect population, identity partition, amendment record, and migration expectation
+all matched it. Every precondition would then compare the regenerated plan against values
+nobody had reviewed, and all of them would pass. `run_post_commit=False` was worse in a
+quieter way: the transaction committed and the function returned `result: pass` with
+`decision_reasons: ['approved_manifest_applied_and_verified']` without any of the three
+governed post-commit checks having run. The word "verified" was doing work the code had
+not done.
+
+The production signature is now wiring only:
+
+```python
+apply_reviewed_repair(*, generated_at=None, apply_git_sha=None, client=mlb_client,
+                      session=None) -> dict
+```
+
+Every governed value is loaded inside the function from `APPROVED_EXECUTION_CONTRACT` and
+`APPROVED_OFFICIAL_PITCHING_LINE_REPAIR_MANIFEST_FINGERPRINT_2026`. The two are cross-checked
+against each other before anything else happens — a contract restating a different fingerprint
+means one half of the approval was edited alone, and that aborts as
+`approved_contract_fingerprint_disagrees_with_constant`.
+
+`_evaluate_preconditions` was renamed private for the same reason. It writes nothing, but a
+publicly callable evaluator that accepts an alternate contract is a second, quieter approval
+surface, and there is no reason for one to exist.
+
+Tests reach the constants by monkeypatching the module, which no production call site can do.
+That is the honest place for the seam: an approval a caller can supply is not an approval.
+
+## 17k-ii. Why post-commit verification cannot be skipped
+
+The three governed checks now always run after a successful commit, and PASS requires four
+named reconciliations, reported individually so an artifact distinguishes "did not run" from
+"ran but skipped a check" from "ran everything and one failed":
+
+- `post_commit_verification_was_executed`
+- `every_governed_post_commit_check_is_present`
+- `every_governed_post_commit_check_passed`
+- `no_post_commit_check_was_skipped`
+
+A verification function that raises is not a pass either: the exception is caught, recorded as
+`error_type`, and the reconciliations fail closed. A committed repair whose post-commit checks
+fail stays FAIL with every downstream gate blocked, exactly as before — there is still no
+automatic rollback after commit and no retry.
+
+## 17k-iii. Why dependent-evidence invalidation is strict for the repair only
+
+`sync._notify_workload_evidence_game_log_correction` catches every marker exception and logs a
+warning. That is correct for daily ingestion: a sync must not stop ingesting official
+corrections because an evidence table is momentarily unhappy, and it runs again tomorrow.
+
+A one-time atomic repair has no tomorrow. If it commits 160 corrected rows while their
+workload, appearance-context, or inherited-traffic evidence silently keeps a stale value,
+nothing notices and nothing retries.
+
+The helper therefore gained a `strict` keyword that DEFAULTS TO FALSE. Ordinary ingestion is
+unchanged, down to its return shape — existing callers read exactly `marked_count` and
+`evidence_ids`, and adding to a contract they already depend on is not free. The repair passes
+`strict=True`, under which every required family must complete, the pending evidence writes are
+flushed inside the repair's own transaction, and any failure raises
+`WorkloadEvidenceInvalidationError` carrying the per-family evidence.
+
+The three required families are `workload`, `appearance_context`, and `inherited_traffic`.
+Strict mode distinguishes:
+
+- **completed** — the marker ran and returned a well-formed result. `marked_count: 0` is a
+  SUCCESS. A corrected line with no dependent evidence is ordinary, and equating "nothing to
+  invalidate" with "invalidation failed" would fail the repair for a normal case.
+- **failed** — `marker_raised`, `required_marker_absent`, `marker_result_malformed`, or
+  `evidence_flush_failed`. Malformed means the result was not a mapping, was missing
+  `marked_count` or `evidence_ids`, carried a non-integer or negative count, or carried a
+  non-sequence id list. A marker that returns an unreadable result has not told us whether it
+  did its job.
+
+Before commit, for every corrected row, the repair requires exactly the three governed
+families, every status `completed`, no failed family, the result's `game_log_id` equal to that
+row, and the result's `sync_run_id` equal to the governed operation id — a family that
+completed for a *different* row has not invalidated *this* row's evidence. Any failure aborts
+as `dependent_evidence_invalidation_failed`, rolls back all 675 actions, and leaves no ledger
+row, no created identity, no inserted GameLog, no updated field, and no correction metadata.
+
+No replacement evidence is fabricated. The repair only requests invalidation.
+
+## 17k-iii-b. Why strict invalidation had to become EXHAUSTIVE, not merely exception-strict
+
+Making the markers raise instead of warn was necessary and not sufficient.
+
+`mark_dependent_evidence_for_recompute` is a BOUNDED primitive. It queries citation rows with
+`.limit(batch_size)` — default 100 — and only then deduplicates evidence-object ids. Two
+consequences follow, and both were live defects:
+
+1. A source row with more than `batch_size` citation rows leaves current dependent evidence
+   behind after one call, and the call returns a perfectly well-formed success.
+2. Because the limit is applied to CITATION rows and dedup happens afterwards, one batch can
+   mark far FEWER than `batch_size` unique objects. A row whose evidence is cited five times
+   each yields twenty unique objects per hundred-citation batch.
+
+So a completed, well-formed, exception-free strict response proved only that one bounded batch
+had run. A repair could commit 160 corrected GameLogs while their dependent evidence still
+read `recompute_status = current`, and nothing downstream would ever notice.
+
+Strict mode now loops. For every updated GameLog and every required family it reads the
+authoritative residual population, runs the bounded marker, flushes, re-reads the residual,
+and repeats until the residual is zero. The family is declared completed only when every
+marker call returned a valid result, every flush succeeded, every batch strictly reduced the
+residual, no returned id belonged to another source row or another family, no evidence object
+was counted twice, every marked object carries the governed operation id, and the final
+authoritative residual query — run twice and compared against itself — returns nothing.
+
+Family membership needed an authority. The three GameLog markers previously called the shared
+primitive with identical arguments, so "family" was three call sites over one dependency set
+and a per-family claim could not be made at all. `rule_ids` is now an optional scope on the
+primitive and on each marker, defaulting to `None` — the previous unscoped behaviour exactly —
+and strict mode passes each family's own rule-id set, the same sets the per-family rebuild
+paths already use. That is what makes "belongs to the requested family" a checkable claim
+rather than a wish.
+
+Ordinary ingestion is unchanged: one bounded call per family, warning and continuing on
+failure, returning exactly `{'marked_count', 'evidence_ids'}`, no loop. That is right for a
+process that runs again tomorrow, and turning it into a blocking exhaustive sweep would make
+a daily sync's runtime a function of one row's citation count.
+
+A zero-dependency family is a SUCCESS with `batch_count: 0`, `initial_current_dependency_count:
+0`, `marked_unique_count: 0`, `remaining_current_dependency_count: 0`, `exhaustive: true`. No
+work to do is not a failure to work.
+
+Transaction binding is explicit. `session` is threaded from `apply_reviewed_repair` through the
+strict contract into the primitive's reads, writes, residual queries, and flushes, and the
+result reports the session it used so a pre-commit reconciliation can require it to be the
+repair's own. The alternative — relying on the ambient scoped session — would be true today and
+silently untrue the first time anything runs on a second session.
+
+The governed operation id is deliberately NOT forwarded into the marker's `sync_run_id`.
+`evidence_objects.sync_run_id` is a FOREIGN KEY into `sync_runs`, and the governed repair
+operation id is not a sync run — no sync run performs this repair. Writing it there violates
+the constraint on PostgreSQL and would have failed the production repair on its first marked
+row. SQLite does not enforce foreign keys, so this only surfaced once strict mode actually
+started marking rows, on the PostgreSQL job. The governed id stays where it belongs: on the
+corrected GameLog's `last_stat_correction_sync_run_id`, which is a plain integer with no
+foreign key, plus the strict result and the execution ledger. A strict check now fails closed
+if the id is ever found in that foreign-key column.
+
+Safety limit: `STRICT_INVALIDATION_MAX_BATCHES` (1000) bounds the loop deterministically.
+Zero-progress detection already catches a stuck marker; the limit catches one that makes a
+single row of progress forever.
+
+Any of these failures raises `WorkloadEvidenceInvalidationError`, which the apply path
+translates to `dependent_evidence_invalidation_failed` — FAIL, full rollback of all 675
+actions, no ledger row, no created identity, no inserted row, no updated field, no correction
+metadata, and no surviving evidence mutation.
+
+## 17k-iii-c. Why the governed family registry is five, and why a registry is not enough
+
+Exhausting the registered families is only as good as the registry.
+
+Five service modules define a `mark_game_log_correction_for_*` hook that cites
+`source_table='game_logs'`. Three were governed. `entry_band_usage_evidence` and
+`team_relief_composition_evidence` — both active Phase 0D families with their own rebuild
+stages — were not, so a repair could commit while their evidence still reported
+`recompute_status = current`. The governed vocabulary is now exactly:
+
+`workload` · `appearance_context` · `inherited_traffic` · `entry_band_usage` ·
+`team_relief_composition`
+
+None is optional during the repair. Both new markers gained the same optional `rule_ids` and
+`session` passthroughs the other three have, defaulting to the previous behaviour exactly:
+one bounded batch, ambient session, unscoped, two-key return.
+
+The five rule vocabularies are disjoint — 39 rule ids across five families, 39 unique — which
+is what makes a per-family residual a meaningful number rather than an arbitrary slice of a
+shared population.
+
+**A registry is a list someone maintains, so it cannot be the last word.** Two things guard
+it.
+
+First, a governed audit discovers the direct correction hooks from the source tree and
+requires the registry to correspond to them exactly. It fails when a hook exists but is
+unregistered, when an entry names a marker that is not callable, when an entry names a rule
+vocabulary that is absent or empty, when two entries share a family name or a marker, or when
+two vocabularies overlap. It is not a hard-coded count: a count agrees with itself and proves
+nothing.
+
+Second — and this is the part that survives a future change nobody remembers to audit — after
+all five families report zero, the repair runs one final **unscoped** residual query for
+`(game_logs, corrected id)` with `rule_ids=None`, on the repair session, and requires it to
+return nothing. If a sixth direct family is added without a registry entry, every per-family
+check will pass and this will not. The failure is reported as
+`unregistered_direct_game_log_dependent_evidence_family`, names the residual rule ids and
+evidence ids in the private artifact, and rolls the whole repair back. Success is never
+inferred from the sum of the registered families.
+
+## 17k-iv. Why the correction count is verified as an exact delta
+
+The runtime reconciliation checked `stat_correction_count >= 1`. That is satisfied by a row
+that was already corrected once and never touched by this repair, and equally by a row this
+repair incremented twice. It proved neither that the increment happened nor that it happened
+once.
+
+Each update now captures `prior_stat_correction_count` before the mutation and records
+`resulting_stat_correction_count` and `correction_count_delta` alongside it. Two
+reconciliations replace the floor: the recorded delta must be exactly 1 for every row, and the
+value read back FROM THE DATABASE before commit must equal `prior + 1`. A simulated double
+increment fails in-transaction verification and rolls the whole repair back.
+
+## 17l. Post-commit verification, and why there is no automatic rollback or retry
+
+After a successful commit the same operation runs three read-only checks: the completeness
+diagnostic (pass, zero missing, zero defective matched, zero extra, zero duplicate, zero
+appearance-team mismatches), the canonical season bullpen aggregation in `local_only` mode
+(pass, 30 complete teams, zero partial, zero unavailable, all reconciliations true), and the
+same audit in `official_validation` mode (pass, zero mandatory metric mismatches, all 30
+teams matched).
+
+If any fails the workflow reports failure and preserves the complete execution and
+verification artifact.
+
+There is **no automatic rollback after commit.** The commit is the point at which 675 reviewed
+actions became the ledger's truth. An automatic undo would be an unreviewed 675-action reverse
+mutation triggered by a diagnostic that has just told us something is not understood — the
+worst possible moment to write more. Diagnosis comes first, separately reviewed.
+
+There is **no automatic retry.** A retry is only ever correct when the failure is known to be
+transient, and none of these failures are: an unavailable lock means another repair is
+running, a fingerprint mismatch means the plan is not the reviewed plan, and a failed
+post-commit check means the ledger is not in the expected state. Retrying any of them would
+turn a clear refusal into a loop.
+
+## 17m. Result semantics
+
+`pass` requires all of: the exact approved fingerprint regenerated, every precondition
+passed, the transaction committed, all 675 actions applied exactly once, all in-transaction
+verification passed, and all post-commit diagnostics and aggregation validations passed.
+
+`inconclusive` means **nothing was written**: a mutable precondition changed, the approved
+fingerprint was not regenerated, the advisory lock was unavailable, or the repair was already
+completed.
+
+`fail` means a contradictory identity or row was found, a partial mutation was attempted, a
+rollback occurred after writes began, an in-transaction verification failed, a post-commit
+verification failed, or an unsupported mutation was requested.
+
+A failed or inconclusive result never opens a downstream gate.
+
+## 17n. Why Foundation 3B stays blocked, and why a dispatch is still required
+
+Foundation 3B, the public reader, Team State performance, Share Card performance, and SC-05
+all remain `blocked` after a successful apply, and the workflow fails if the artifact ever
+reports otherwise. A green repair is a *precondition* for opening those gates, never the act
+of opening one — the repair proves the pitching-line ledger matches official evidence, which
+is a different claim from "the downstream surfaces built on that ledger are correct and
+performant". Those need their own reviewed validation.
+
+Implementing the apply path is likewise not executing it. The workflow is dispatch-only, has
+no schedule, no push or pull-request trigger, and no automatic dispatch; the confirmation
+phrase `APPLY-2026-PITCHING-LINE-REPAIR-3EE2EA06` is required, and validating it is the
+literal first step of the job — ahead of `actions/checkout`, so a wrong phrase terminates the
+job before the repository is fetched, before Python is set up, before dependencies are
+installed, and therefore before the application can bootstrap or open a database connection.
+The confirmation step needs no repository file, so there is nothing to gain from checking out
+first. The apply command repeats the check ahead of its own imports, and a positional test
+walks `jobs.apply.steps` and asserts the index ordering rather than comparing character
+offsets in the file — an offset comparison is satisfied by any step order at all, as long as
+the strings happen to appear in the right sequence in the text.
+
+It has not been dispatched, no apply execution has occurred, and production data is
+unchanged.
+
 ## 15. Operation
 
-- Service: `backend/services/official_pitching_line_repair_plan_2026.py`
-- CLI: `backend/scripts/run_official_pitching_line_repair_plan_2026.py`
-- Workflow: `.github/workflows/official_pitching_line_repair_plan.yml` (dispatch-only)
-- Tests: `backend/tests/test_official_pitching_line_repair_plan_2026.py`
+- Planner service: `backend/services/official_pitching_line_repair_plan_2026.py`
+- Planner CLI: `backend/scripts/run_official_pitching_line_repair_plan_2026.py`
+- Planner workflow: `.github/workflows/official_pitching_line_repair_plan.yml`
+  (dispatch-only)
+- Planner tests: `backend/tests/test_official_pitching_line_repair_plan_2026.py`
+- Apply service: `backend/services/official_pitching_line_repair_apply_2026.py`
+- Apply CLI: `backend/scripts/run_official_pitching_line_repair_apply_2026.py`
+- Apply workflow: `.github/workflows/official_pitching_line_repair_apply.yml`
+  (dispatch-only, one confirmation input, not dispatched)
+- Execution ledger: `backend/models/official_pitching_line_repair_execution.py`,
+  migration `c7b3e5a91d48`
+- Apply tests: `backend/tests/test_official_pitching_line_repair_apply_2026.py`,
+  `backend/tests/test_official_pitching_line_repair_execution_ledger.py`
 
 Production plan: dispatch with `season=2026`, `as_of_date=2026-07-25`, `preview_limit=100`,
 `team_id` and `game_pk` blank. The full manifest ships in the private artifact and is never
@@ -854,5 +1401,8 @@ truncated; the step summary carries the bounded preview only.
 
 ## 16. Boundary held
 
-Read-only. Foundation 3B, the public reader, Team State performance, Share Card performance,
-and SC-05 all remain blocked.
+The planner is read-only. The apply path writes only under the exact approved fingerprint,
+performs no delete, no duplicate consolidation, no phantom-row deletion, no current-team or
+roster update, no appearance-team rewrite on an existing row, and no public-surface
+publication. Foundation 3B, the public reader, Team State performance, Share Card
+performance, and SC-05 all remain blocked.

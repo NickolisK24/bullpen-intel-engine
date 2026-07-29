@@ -39,7 +39,7 @@ os.environ['AUTO_SYNC'] = 'false'
 
 CAPABILITY = 'appearance_team_production_audit_v1'
 COVERAGE_CAPABILITY = 'appearance_team_coverage_v1'
-EXPECTED_MIGRATION_HEAD = 'a4f1c7e9b3d2'
+EXPECTED_MIGRATION_HEAD = 'c7b3e5a91d48'
 MODE = 'read_only'
 RESULT_PASS = 'PASS'
 RESULT_INCONCLUSIVE = 'INCONCLUSIVE'

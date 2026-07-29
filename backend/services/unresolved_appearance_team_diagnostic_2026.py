@@ -22,7 +22,7 @@ from utils.innings import parse_mlb_innings_to_outs
 
 
 CAPABILITY = 'unresolved_appearance_team_diagnostic_2026_v1'
-EXPECTED_MIGRATION_HEAD = 'a4f1c7e9b3d2'
+EXPECTED_MIGRATION_HEAD = 'c7b3e5a91d48'
 MAX_OFFICIAL_LINES = 20
 
 RESULT_PASS = 'pass'

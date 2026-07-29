@@ -460,6 +460,14 @@ def test_frozen_legacy_what_changed_files_untouched():
         # reversible, no historical backfill, no reader migrated, no what-changed change.
         'backend/migrations/versions/a4f1c7e9b3d2_add_game_log_appearance_team.py',
     }
+    allowed_repair_execution_ledger_files = {
+        # trust/apply-reviewed-pitching-line-repair (Foundation 3A): the durable execution
+        # ledger for the one reviewed, fingerprint-locked official pitching-line repair.
+        # A new internal table only — purely additive, reversible, no existing table
+        # touched, no reader migrated, no public route, no what-changed change.
+        'backend/migrations/versions/'
+        'c7b3e5a91d48_add_official_pitching_line_repair_executions.py',
+    }
     allowed_share_artifact_cutover_files = {
         # feature/share-artifact-generation-cutover (Share Cards SC-03A cutover):
         # the active Share Card entry points now read the published, integrity-
@@ -532,6 +540,7 @@ def test_frozen_legacy_what_changed_files_untouched():
         if path not in allowed_share_artifacts_domain_files
         if path not in allowed_progressive_team_publication_files
         if path not in allowed_team_at_appearance_files
+        if path not in allowed_repair_execution_ledger_files
     )
 
 

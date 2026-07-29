@@ -62,7 +62,7 @@ from utils.db import db
 
 # ── Governance constants ──────────────────────────────────────────────────────
 CONFIRMATION_PHRASE = 'RUN_2026_APPEARANCE_TEAM_BACKFILL'
-EXPECTED_MIGRATION_HEAD = 'a4f1c7e9b3d2'
+EXPECTED_MIGRATION_HEAD = 'c7b3e5a91d48'
 
 DEFAULT_START_DATE = date(2026, 1, 1)
 DEFAULT_END_DATE = date(2026, 12, 31)

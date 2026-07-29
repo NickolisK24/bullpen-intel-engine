@@ -1,0 +1,251 @@
+name: Official Pitching-Line Repair Apply (2026)
+
+# Dispatch-only, ONE-TIME, fingerprint-locked production repair.
+#
+# This is the only workflow in the repository that mutates production pitching-line data. It
+# applies exactly one reviewed 675-action manifest, identified by one exact SHA-256 manifest
+# fingerprint, or it writes nothing at all.
+#
+# It takes ONE input: a fixed confirmation phrase. There is deliberately no season, date,
+# team, game, scope, action-count, fingerprint, or override input — every governed value is
+# fixed in code, so a dispatch cannot select what runs, only whether it runs. Validating it
+# is the literal first step of the job, ahead of checkout, so a wrong phrase terminates the
+# job before the repository is fetched, before Python is set up, before dependencies are
+# installed, and therefore before the application can bootstrap or open a database
+# connection. The apply command repeats the check ahead of its own imports.
+#
+# The apply command regenerates the read-only planner from live production state immediately
+# before opening the write transaction and refuses to proceed unless the regenerated
+# fingerprint equals the approved constant exactly. There is no retry, no automatic
+# re-dispatch, and no automatic rollback after commit: a failed post-commit verification is
+# reported and preserved for separately reviewed diagnosis.
+#
+# A successful apply does NOT activate Foundation 3B, the public reader, Team State
+# performance, Share Card performance, or SC-05. Every one of those gates stays blocked.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_apply:
+        description: >-
+          Exact confirmation phrase required to apply the reviewed repair.
+          Any other value refuses before bootstrap and writes nothing.
+        required: true
+        default: ''
+        type: string
+
+concurrency:
+  group: official-pitching-line-repair-apply-2026
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      APP_ENV: production
+      AUTO_SYNC: 'false'
+      FLASK_APP: app.py
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      SECRET_KEY: ${{ secrets.SECRET_KEY }}
+      ADMIN_API_TOKEN: ${{ secrets.BASEBALLOS_ADMIN_API_TOKEN }}
+    steps:
+      # Literally the first step. Not merely early — ahead of checkout, ahead of Python,
+      # ahead of dependencies, ahead of anything that could reach a database. The
+      # confirmation needs no repository file, so nothing is fetched or installed on a
+      # dispatch that was never going to be allowed to run.
+      - name: Validate apply confirmation
+        env:
+          CONFIRM_APPLY: ${{ inputs.confirm_apply }}
+        run: |
+          set -euo pipefail
+          expected='APPLY-2026-PITCHING-LINE-REPAIR-3EE2EA06'
+          if [ "$CONFIRM_APPLY" != "$expected" ]; then
+            echo "::error::Confirmation phrase mismatch. No checkout, no bootstrap, no database access, no writes."
+            exit 1
+          fi
+          if [ -z "${DATABASE_URL:-}" ] || \
+             [ -z "${SECRET_KEY:-}" ] || \
+             [ -z "${ADMIN_API_TOKEN:-}" ]; then
+            echo "::error::Missing required production repository secret."
+            exit 1
+          fi
+          echo "Apply confirmation validated. Governed values are fixed in code."
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install backend dependencies
+        run: pip install -r backend/requirements.txt
+
+      - name: Apply the reviewed pitching-line repair
+        working-directory: backend
+        env:
+          CONFIRM_APPLY: ${{ inputs.confirm_apply }}
+          APPLY_OUTPUT_DIR: ${{ runner.temp }}/official-pitching-line-repair-apply-2026
+        run: |
+          set -euo pipefail
+          mkdir -p "$APPLY_OUTPUT_DIR"
+          report_json="$APPLY_OUTPUT_DIR/official-pitching-line-repair-apply-2026.json"
+
+          set +e
+          python scripts/run_official_pitching_line_repair_apply_2026.py \
+            --confirm-apply "$CONFIRM_APPLY" \
+            --compact \
+            --output "$report_json"
+          apply_exit_code=$?
+          set -e
+
+          python - "$report_json" "$apply_exit_code" "$GITHUB_STEP_SUMMARY" <<'PY'
+          import json
+          from pathlib import Path
+          import sys
+
+          path = Path(sys.argv[1])
+          exit_code = int(sys.argv[2])
+          summary_path = Path(sys.argv[3])
+          payload = json.loads(path.read_text(encoding='utf-8'))
+
+          preconditions = payload.get('precondition_results') or {}
+          verifications = payload.get('verification_results') or {}
+          applied = payload.get('action_counts_applied') or {}
+          lock = payload.get('advisory_lock') or {}
+          before = payload.get('reviewed_amendment_before') or {}
+          after = payload.get('reviewed_amendment_after') or {}
+          post = payload.get('post_commit_verification') or {}
+          gates = payload.get('downstream_gate_statuses') or {}
+          correction = payload.get('correction_metadata_results') or {}
+
+          summary = [
+              '## Official Pitching-Line Repair Apply (2026)',
+              '',
+              f"- Result: `{payload.get('result')}`",
+              f"- Exit code: `{exit_code}`",
+              f"- Mode: `{payload.get('mode')}`",
+              f"- Decision reasons: `{payload.get('decision_reasons')}`",
+              f"- Approved fingerprint: `{payload.get('approved_manifest_fingerprint')}`",
+              f"- Regenerated fingerprint: "
+              f"`{payload.get('regenerated_manifest_fingerprint')}`",
+              f"- Fingerprints equal: "
+              f"`{payload.get('approved_manifest_fingerprint') == payload.get('regenerated_manifest_fingerprint')}`",
+              f"- Artifact input checksum: `{payload.get('artifact_input_checksum')}`",
+              f"- Migration head: `{payload.get('migration_head')}`",
+              f"- Planner git SHA: `{payload.get('planner_git_sha')}`",
+              f"- Apply git SHA: `{payload.get('apply_git_sha')}`",
+              f"- Advisory lock: `{lock.get('status')}` "
+              f"(`{lock.get('contract')}`)",
+              f"- Execution ledger id: `{payload.get('execution_ledger_id')}`",
+              f"- Governed operation id: `{payload.get('governed_operation_id')}`",
+              f"- Transaction committed: `{payload.get('transaction_committed')}`",
+              f"- Rollback performed: `{payload.get('rollback_performed')}`",
+              f"- Database writes performed: "
+              f"`{payload.get('database_writes_performed')}`",
+              f"- Correction source: `{correction.get('correction_source')}`",
+              f"- Rows stamped with correction metadata: "
+              f"`{correction.get('rows_stamped')}`",
+              f"- Failed preconditions: `{payload.get('failed_preconditions')}`",
+              f"- Unresolved issues: `{payload.get('unresolved_issues')}`",
+              '',
+              '### Actions applied',
+          ]
+          summary.extend(f"- `{name}`: `{count}`" for name, count in sorted(applied.items()))
+          invalidation = payload.get('dependent_evidence_invalidation_results') or []
+          totals = {}
+          for item in invalidation:
+              for name, family in (item.get('families') or {}).items():
+                  bucket = totals.setdefault(
+                      name, {'batches': 0, 'initial': 0, 'marked': 0, 'remaining': 0,
+                             'exhaustive': True})
+                  bucket['batches'] += family.get('batch_count') or 0
+                  bucket['initial'] += family.get(
+                      'initial_current_dependency_count') or 0
+                  bucket['marked'] += family.get('marked_unique_count') or 0
+                  bucket['remaining'] += family.get(
+                      'remaining_current_dependency_count') or 0
+                  bucket['exhaustive'] = (
+                      bucket['exhaustive'] and family.get('exhaustive') is True)
+          unscoped = sum(item.get('final_unscoped_current_dependency_count') or 0
+                         for item in invalidation)
+          residual_rules = sorted({rule for item in invalidation
+                                   for rule in (item.get(
+                                       'final_unscoped_residual_rule_ids') or [])})
+          all_exhausted = bool(invalidation) and all(
+              item.get('all_direct_game_log_dependencies_exhausted') is True
+              for item in invalidation)
+          summary.extend(('', '### Dependent-evidence invalidation (bounded totals)'))
+          summary.extend(
+              f"- `{name}`: batches `{bucket['batches']}` initial "
+              f"`{bucket['initial']}` marked `{bucket['marked']}` remaining "
+              f"`{bucket['remaining']}` exhaustive `{bucket['exhaustive']}`"
+              for name, bucket in sorted(totals.items()))
+          summary.append(
+              f"- final unscoped current dependencies: `{unscoped}` "
+              f"(residual rules `{residual_rules}`)")
+          summary.append(
+              f"- all direct GameLog dependencies exhausted: `{all_exhausted}`")
+          summary.extend(('', '### Reviewed amendment line (825058:805299:109)'))
+          summary.append(
+              f"- GameLog `{before.get('local_game_log_id')}` field "
+              f"`{before.get('field')}`: `{before.get('value_before')}` -> "
+              f"`{after.get('value_after')}`")
+          summary.append(
+              f"- Correction count: `{after.get('stat_correction_count_before')}` -> "
+              f"`{after.get('stat_correction_count_after')}`")
+          summary.extend(('', '### Pre-write preconditions (failures only)'))
+          failed_pre = [name for name, item in sorted(preconditions.items())
+                        if not item.get('passed')]
+          summary.extend(f"- `{name}`" for name in failed_pre)
+          if not failed_pre:
+              summary.append(f"- all `{len(preconditions)}` passed")
+          summary.extend(('', '### In-transaction verification (failures only)'))
+          failed_ver = [name for name, value in sorted(verifications.items()) if not value]
+          summary.extend(f"- `{name}`" for name in failed_ver)
+          if not failed_ver:
+              summary.append(f"- all `{len(verifications)}` passed")
+          summary.extend(('', '### Post-commit verification'))
+          for name, item in sorted((post.get('checks') or {}).items()):
+              summary.append(
+                  f"- `{name}`: result `{item.get('result')}` passed "
+                  f"`{item.get('passed')}`")
+          summary.extend(('', '### Downstream gates'))
+          summary.extend(f"- `{name}`: `{value}`" for name, value in sorted(gates.items()))
+          summary.append('')
+          summary.append(
+              'Foundation 3B is not activated by a successful apply. Every downstream gate '
+              'stays blocked until separately reviewed post-apply validation opens it.')
+          summary.append(
+              'The complete execution artifact — every precondition, every applied action, '
+              'every verification — is in the private artifact and is never truncated.')
+          summary_path.write_text('\n'.join(summary) + '\n', encoding='utf-8')
+
+          if payload.get('mode') != 'apply':
+              raise SystemExit('Apply command must report apply mode.')
+          required_gates = ('foundation_3b_gate', 'public_reader_gate',
+                            'team_state_performance_gate', 'share_card_performance_gate',
+                            'sc_05_gate')
+          for gate in required_gates:
+              if gates.get(gate) != 'blocked':
+                  raise SystemExit(f'Downstream gate {gate} must remain blocked.')
+          for gate, status in (gates or {}).items():
+              if status != 'blocked':
+                  raise SystemExit(f'Downstream gate {gate} must remain blocked.')
+          PY
+
+          exit "$apply_exit_code"
+
+      - name: Upload private repair-apply artifact
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: official-pitching-line-repair-apply-2026-${{ github.run_id }}
+          path: ${{ runner.temp }}/official-pitching-line-repair-apply-2026/
+          if-no-files-found: error
+          retention-days: 30
