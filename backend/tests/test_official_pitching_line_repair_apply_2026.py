@@ -3217,3 +3217,320 @@ def test_the_repair_reports_every_family_and_the_unscoped_backstop(approved):
                  'no_unregistered_current_game_log_dependency_remains',
                  'final_unscoped_game_log_dependency_count_is_zero'):
         assert checks[name] is True, name
+
+
+# ═══════════════ 25. Update-readback diagnostic hardening ═══════════════════
+# The first production apply rolled back at ``every_updated_field_matches_proposed_values``
+# and the artifact recorded only that boolean — no action, row, field, or value — so the
+# failure was undiagnosable from retained evidence. These prove the hardened verifier reads
+# every changed field back over a forced database round-trip, triangulates it against the
+# reviewed manifest proposed value and the value this run assigned, reports the exact
+# mismatch with Python types, and preserves that artifact through the rollback — all without
+# introducing any tolerance or coercion that could hide a materially different stored value.
+def _readback(**overrides):
+    base = dict(
+        action_id='A1', local_game_log_id=101, official_mlb_person_id=805299,
+        appearance_team_id=109, field='hits_allowed', planned_current_value=4,
+        manifest_value=5, after_value=5, stored_value=5)
+    base.update(overrides)
+    return apply_service._readback_field_mismatch(**base)
+
+
+def test_readback_helper_returns_none_when_all_three_authorities_agree():
+    assert _readback(manifest_value=5, after_value=5, stored_value=5) is None
+    assert _readback(field='save', manifest_value=True, after_value=True,
+                     stored_value=True) is None
+    assert _readback(field='innings_pitched', manifest_value=6.0, after_value=6.0,
+                     stored_value=6.0) is None
+    assert _readback(field='opponent', manifest_value='TB', after_value='TB',
+                     stored_value='TB') is None
+
+
+def test_readback_helper_reports_exact_values_and_python_types():
+    item = _readback(manifest_value=5, after_value=5, stored_value=99)
+    assert item is not None
+    assert item['action_id'] == 'A1'
+    assert item['local_game_log_id'] == 101
+    assert item['official_mlb_person_id'] == 805299
+    assert item['appearance_team_id'] == 109
+    assert item['field'] == 'hits_allowed'
+    assert item['planned_current_value'] == 4
+    assert item['manifest_proposed_value'] == 5
+    assert item['update_record_after_value'] == 5
+    assert item['stored_readback_value'] == 99
+    assert item['manifest_value_type'] == 'int'
+    assert item['update_record_value_type'] == 'int'
+    assert item['stored_value_type'] == 'int'
+    assert item['manifest_proposed_equals_update_record_after'] is True
+    assert item['update_record_after_equals_stored_readback'] is False
+    assert item['manifest_proposed_equals_stored_readback'] is False
+
+
+def test_readback_helper_flags_a_materially_different_int():
+    item = _readback(manifest_value=4, after_value=4, stored_value=5)
+    assert item is not None and item['stored_readback_value'] == 5
+
+
+def test_readback_helper_flags_a_materially_different_bool():
+    item = _readback(field='save', manifest_value=True, after_value=True,
+                     stored_value=False)
+    assert item is not None
+    assert item['manifest_value_type'] == 'bool'
+    assert item['stored_value_type'] == 'bool'
+    assert item['update_record_after_equals_stored_readback'] is False
+
+
+def test_readback_helper_flags_a_materially_different_float():
+    item = _readback(field='innings_pitched', manifest_value=6.0, after_value=6.0,
+                     stored_value=5.333333333333333)
+    assert item is not None
+    assert item['manifest_value_type'] == 'float'
+    assert item['stored_value_type'] == 'float'
+    assert item['stored_readback_value'] == 5.333333333333333
+
+
+def test_readback_helper_flags_a_null_stored_value():
+    item = _readback(field='batters_faced', manifest_value=5, after_value=5,
+                     stored_value=None)
+    assert item is not None
+    assert item['stored_readback_value'] is None
+    assert item['stored_value_type'] == 'NoneType'
+    assert item['update_record_after_equals_stored_readback'] is False
+
+
+def test_readback_helper_applies_no_coercion_or_normalization():
+    # A string is never equal to the integer it spells; None is never equal to zero;
+    # a value one ULP off is not tolerated. Exact ``==`` only, exactly as the pre-hardening
+    # ``!=`` check compared — no new tolerance, no bool/int/str coercion, no null-equivalence.
+    assert _readback(manifest_value='5', after_value='5', stored_value=5) is not None
+    assert _readback(manifest_value=0, after_value=0, stored_value=None) is not None
+    assert _readback(field='innings_pitched', manifest_value=6.0, after_value=6.0,
+                     stored_value=6.0000001) is not None
+
+
+def _corrupt_stored_hits(monkeypatch, *, after_value, new_value):
+    """After the real update applies, rewrite the STORED hits of the row whose corrected
+    hits equal ``after_value`` directly in the database, leaving the identity-mapped object
+    untouched. The forced readback must then see ``new_value``; a plain identity-map query
+    could only ever see ``after_value``."""
+    real = apply_service._apply_updates
+    captured = {}
+
+    def _wrapped(session, update_actions, **kwargs):
+        result = real(session, update_actions, **kwargs)
+        for record in result['records']:
+            if (record['after'] or {}).get('hits_allowed') == after_value:
+                session.execute(
+                    sa.text('UPDATE game_logs SET hits_allowed = :v WHERE id = :id'),
+                    {'v': new_value, 'id': record['local_game_log_id']})
+                captured['local_game_log_id'] = record['local_game_log_id']
+                captured['after_value'] = after_value
+                break
+        return result
+
+    monkeypatch.setattr(apply_service, '_apply_updates', _wrapped)
+    return captured
+
+
+def test_a_diverged_stored_value_is_reported_from_the_database_not_the_identity_map(
+        approved, monkeypatch):
+    captured = _corrupt_stored_hits(monkeypatch, after_value=5, new_value=99)
+    payload = _apply(approved)
+
+    assert payload['result'] == apply_service.RESULT_FAIL
+    assert payload['verification_results'][
+        'every_updated_field_matches_proposed_values'] is False
+    mismatches = payload['update_readback_mismatches']
+    assert len(mismatches) == 1
+    item = mismatches[0]
+    assert item['local_game_log_id'] == captured['local_game_log_id']
+    assert item['field'] == 'hits_allowed'
+    # The stored readback is the value the database holds (99), never the value the run
+    # assigned and that still sits in the identity map (5). This is the whole defect.
+    assert item['stored_readback_value'] == 99
+    assert item['manifest_proposed_value'] == 5
+    assert item['update_record_after_value'] == 5
+    assert item['manifest_proposed_equals_update_record_after'] is True
+    assert item['update_record_after_equals_stored_readback'] is False
+
+
+def test_multiple_diverged_rows_are_reported_deterministically(approved, monkeypatch):
+    # Corrupt BOTH corrected rows (official hits 5 and 0). Every one is reported, ordered
+    # deterministically by (action_id, field) so two runs produce the identical artifact.
+    real = apply_service._apply_updates
+
+    def _wrapped(session, update_actions, **kwargs):
+        result = real(session, update_actions, **kwargs)
+        for record in result['records']:
+            session.execute(
+                sa.text('UPDATE game_logs SET hits_allowed = :v WHERE id = :id'),
+                {'v': 77, 'id': record['local_game_log_id']})
+        return result
+
+    monkeypatch.setattr(apply_service, '_apply_updates', _wrapped)
+    payload = _apply(approved)
+
+    assert payload['result'] == apply_service.RESULT_FAIL
+    mismatches = payload['update_readback_mismatches']
+    assert len(mismatches) == 2
+    assert all(m['stored_readback_value'] == 77 for m in mismatches)
+    ordered = sorted(mismatches, key=lambda m: (m['action_id'], m['field'] or ''))
+    assert mismatches == ordered
+    assert len({m['local_game_log_id'] for m in mismatches}) == 2
+
+
+def test_a_failed_update_readback_preserves_the_full_artifact_before_rollback(
+        approved, monkeypatch):
+    before = _counts()
+    before_hits = db.session.query(GameLog).filter(
+        GameLog.id == BR_LOG_ID).one().hits_allowed
+    _corrupt_stored_hits(monkeypatch, after_value=5, new_value=99)
+    payload = _apply(approved)
+
+    assert payload['result'] == apply_service.RESULT_FAIL
+    assert payload['decision_reasons'] == [apply_service.CONTRADICTION_VERIFICATION]
+
+    # The named checks survive the rollback: the artifact carries every verification and the
+    # exact row-level mismatch, not merely a single failed boolean.
+    checks = payload['verification_results']
+    assert checks, 'verification_results must be preserved on a rolled-back run'
+    assert checks['every_updated_field_matches_proposed_values'] is False
+    assert checks['identity_actions_applied_exactly_once'] is True
+    assert payload['update_readback_mismatches']
+    assert 'every_updated_field_matches_proposed_values' in payload[
+        'abort_detail']['failed_verifications']
+    assert payload['abort_detail']['update_readback_mismatch_count'] == 1
+
+    # The mutation watch and the STAGED counts survive too — distinct from the applied
+    # counts, which are zero because nothing committed.
+    assert payload['mutation_watch']['deleted_object_count'] == 0
+    staged = payload['staged_action_counts']
+    assert staged[apply_service.planner.ACTION_GAME_LOG_UPDATE] == 2
+    assert staged[apply_service.planner.ACTION_GAME_LOG_INSERT] >= 1
+    assert staged[apply_service.planner.ACTION_IDENTITY_CREATE] >= 1
+    applied = payload['action_counts_applied']
+    assert applied[apply_service.planner.ACTION_GAME_LOG_UPDATE] == 0
+    assert applied[apply_service.planner.ACTION_GAME_LOG_INSERT] == 0
+    assert applied[apply_service.planner.ACTION_IDENTITY_CREATE] == 0
+    assert payload['staged_dependent_evidence_totals']['rows_invalidated'] == 2
+
+    # Nothing was written and everything rolled back.
+    assert payload['transaction_committed'] is False
+    assert payload['database_writes_performed'] is False
+    assert payload['rollback_performed'] is True
+    assert payload['execution_ledger_id'] is None
+    assert db.session.query(Ledger).count() == 0
+    assert _counts() == before
+    assert db.session.query(GameLog).filter(
+        GameLog.id == BR_LOG_ID).one().hits_allowed == before_hits
+
+    # Every downstream gate stays blocked on a failed run.
+    for gate in apply_service.DOWNSTREAM_GATES:
+        assert payload[gate] == apply_service.GATE_BLOCKED
+
+
+def test_a_passing_run_reports_zero_readback_mismatches(approved):
+    payload = _apply(approved)
+    assert payload['result'] == apply_service.RESULT_PASS
+    assert payload['verification_results'][
+        'every_updated_field_matches_proposed_values'] is True
+    assert payload['update_readback_mismatches'] == []
+
+
+def test_innings_pitched_thirds_round_trip_exactly_through_the_readback(app):
+    # The reproduction finding, encoded: innings_pitched = int(outs)/3.0 — the only float in
+    # an update changed-set — round-trips through PostgreSQL ``double precision`` bit-for-bit
+    # over the verifier's own narrow SELECT, so the exact ``==`` comparison never spuriously
+    # fails on it. This is why no float tolerance was introduced.
+    if db.session.get_bind().dialect.name != 'postgresql':
+        pytest.skip('double-precision round-trip proof is PostgreSQL-specific')
+    columns = GameLog.__table__.c
+    for outs in (1, 2, 4, 5, 7, 8, 16, 17, 25, 26):
+        pitcher = _pitcher(950000 + outs)
+        log = GameLog(
+            pitcher_id=pitcher.id, mlb_game_pk=970000 + outs, game_date=GDATE,
+            game_type='R', games_started=0, innings_pitched_outs=outs,
+            innings_pitched=(int(outs) / 3.0), runs_allowed=0, earned_runs=0,
+            hits_allowed=0, walks=0, strikeouts=0, home_runs_allowed=0, strikes=outs * 2,
+            opponent='T', opponent_abbreviation='T',
+            appearance_team_status=GameLog.APPEARANCE_TEAM_RESOLVED,
+            appearance_team_id=100, appearance_team_source='boxscore_side',
+            appearance_team_reason='appearance_team_resolved_boxscore')
+        db.session.add(log)
+        db.session.commit()
+        assigned = int(outs) / 3.0
+        stored = db.session.execute(
+            sa.select(columns['innings_pitched'])
+            .where(columns['id'] == log.id)).scalar()
+        assert stored == assigned
+        assert stored.hex() == assigned.hex()
+        assert apply_service._readback_field_mismatch(
+            action_id='A', local_game_log_id=log.id, official_mlb_person_id=1,
+            appearance_team_id=100, field='innings_pitched', planned_current_value=0.0,
+            manifest_value=assigned, after_value=assigned, stored_value=stored) is None
+
+
+def test_the_approved_run_passes_the_update_readback_on_postgres(approved):
+    if db.session.get_bind().dialect.name != 'postgresql':
+        pytest.skip('exercised on PostgreSQL to match the production target')
+    payload = _apply(approved)
+    assert payload['result'] == apply_service.RESULT_PASS
+    assert payload['verification_results'][
+        'every_updated_field_matches_proposed_values'] is True
+    assert payload['update_readback_mismatches'] == []
+
+
+def test_the_update_readback_forces_a_database_round_trip_bypassing_the_identity_map():
+    import inspect
+    source = inspect.getsource(apply_service._verify_before_commit)
+    # The changed-field readback is a narrow column SELECT read as a mapping, and every field
+    # is triangulated through the documented helper — not a plain entity query that the
+    # identity map would answer with the object this run just wrote.
+    assert 'sa.select(' in source
+    assert '.mappings().one_or_none()' in source
+    assert '_readback_field_mismatch(' in source
+    # The pre-hardening identity-map anti-pattern for the update readback is gone.
+    assert 'for field, value in record[' not in source
+
+
+def test_the_update_readback_comparison_introduces_no_tolerance_or_coercion():
+    import inspect
+    source = inspect.getsource(apply_service._readback_field_mismatch)
+    # Drop the docstring, which describes in prose the coercions that are NOT applied, and
+    # guard the executable body against every tolerance/coercion call form. (The paren and
+    # numeric-literal forms cannot appear in the prose.)
+    body = source.split('"""', 2)[-1]
+    for forbidden in ('abs(', '1e-6', '0.000001', 'round(', 'float(', 'int(', 'str(',
+                      'lower(', 'strip('):
+        assert forbidden not in body, forbidden
+    # Equality is Python == and nothing else, computed once per authority pair.
+    assert 'manifest_value == after_value' in body
+    assert 'after_value == stored_value' in body
+    assert 'manifest_value == stored_value' in body
+
+
+def test_the_apply_workflow_summarizes_readback_mismatches_within_bounds():
+    text = WORKFLOW_PATH.read_text(encoding='utf-8')
+    assert 'Updated-row readback mismatches (bounded)' in text
+    assert "payload.get('update_readback_mismatches')" in text
+    assert 'Mismatched local game log ids' in text
+    assert 'Mismatched fields' in text
+    assert "payload.get('staged_action_counts')" in text
+    # The bounded summary names rows and fields only. Per-row stored values and Python types
+    # live in the private artifact and are never printed to the run summary.
+    summary_region = text.split('Updated-row readback mismatches (bounded)', 1)[1].split(
+        'Post-commit verification', 1)[0]
+    assert 'stored_readback_value' not in summary_region
+    assert 'manifest_proposed_value' not in summary_region
+    assert 'manifest_value_type' not in summary_region
+
+
+def test_the_diagnostic_hardening_left_the_fingerprint_and_confirmation_phrase_unchanged():
+    assert (apply_service.APPROVED_OFFICIAL_PITCHING_LINE_REPAIR_MANIFEST_FINGERPRINT_2026
+            == '3ee2ea06492e8161bf7b278228d6f778e24048452366e3c2502ae42e0365216b')
+    assert apply_service.CONFIRMATION_PHRASE == 'APPLY-2026-PITCHING-LINE-REPAIR-3EE2EA06'
+    service_text = SERVICE_PATH.read_text(encoding='utf-8')
+    assert '3ee2ea06492e8161bf7b278228d6f778e24048452366e3c2502ae42e0365216b' in service_text
+    assert 'APPLY-2026-PITCHING-LINE-REPAIR-3EE2EA06' in service_text
+    workflow_text = WORKFLOW_PATH.read_text(encoding='utf-8')
+    assert 'APPLY-2026-PITCHING-LINE-REPAIR-3EE2EA06' in workflow_text

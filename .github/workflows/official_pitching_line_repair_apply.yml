@@ -210,6 +210,21 @@ jobs:
           summary.extend(f"- `{name}`" for name in failed_ver)
           if not failed_ver:
               summary.append(f"- all `{len(verifications)}` passed")
+          summary.extend(('', '### Updated-row readback mismatches (bounded)'))
+          readback = payload.get('update_readback_mismatches') or []
+          staged = payload.get('staged_action_counts') or {}
+          mismatch_ids = sorted({m.get('local_game_log_id') for m in readback
+                                 if m.get('local_game_log_id') is not None})
+          mismatch_fields = sorted({m.get('field') for m in readback if m.get('field')})
+          staged_counts = {name: staged.get(name) for name in sorted(staged)}
+          summary.append(f"- Mismatched rows: `{len(mismatch_ids)}`")
+          summary.append(f"- Mismatched field readings: `{len(readback)}`")
+          summary.append(f"- Mismatched fields: `{mismatch_fields}`")
+          summary.append(f"- Mismatched local game log ids: `{mismatch_ids[:60]}`")
+          summary.append(f"- Staged (attempted) action counts: `{staged_counts}`")
+          summary.append(
+              'Row-level readback values and Python types are in the private artifact '
+              'only; this summary never prints them.')
           summary.extend(('', '### Post-commit verification'))
           for name, item in sorted((post.get('checks') or {}).items()):
               summary.append(
