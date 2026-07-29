@@ -395,11 +395,41 @@ def _passing_post_commit(**kwargs):  # noqa: ARG001 — deterministic fixture, i
     flag, so a fixture that only needs the mutation path substitutes this rather than
     standing up 30 real teams of aggregation evidence.
     """
+    return _post_commit_result({name: True for name in apply_service.POST_COMMIT_CHECKS})
+
+
+def _post_commit_result(passed_by_name, *, not_executed=()):
+    """Build a post-commit result the way ``run_post_commit_verification`` builds one.
+
+    Each named check carries its EXECUTION evidence separately from its outcome, so a
+    fixture can express "ran and failed" and "never ran" as the different facts they are.
+    """
+    checks = {}
+    for name, passed in passed_by_name.items():
+        if name in not_executed:
+            checks[name] = {
+                'executed': False, 'execution_state': apply_service.CHECK_NOT_EXECUTED,
+                'result': None, 'exit_code': None, 'checks': {}, 'passed': False,
+                'error_type': 'RuntimeError',
+            }
+            continue
+        checks[name] = {
+            'executed': True, 'execution_state': apply_service.CHECK_EXECUTED,
+            'result': 'pass' if passed else 'fail', 'exit_code': 0 if passed else 1,
+            'checks': {'result_is_pass': bool(passed)}, 'passed': bool(passed),
+        }
+    present = [name for name in apply_service.POST_COMMIT_CHECKS if name in checks]
+    executed = [name for name in present if checks[name]['executed'] is True]
     return {
-        'checks': {name: {'passed': True, 'result': 'pass', 'exit_code': 0, 'checks': {}}
-                   for name in apply_service.POST_COMMIT_CHECKS},
-        'passed': True,
-        'failed_checks': [],
+        'checks': checks,
+        'passed': bool(checks) and all(item['passed'] for item in checks.values()),
+        'failed_checks': sorted(name for name, item in checks.items()
+                                if not item['passed']),
+        'present_checks': present,
+        'executed_checks': executed,
+        'not_executed_checks': [name for name in apply_service.POST_COMMIT_CHECKS
+                                if name not in executed],
+        'all_checks_executed': len(executed) == len(apply_service.POST_COMMIT_CHECKS),
     }
 
 
@@ -1625,22 +1655,22 @@ def test_a_ledger_count_disagreeing_with_the_applied_counts_rolls_back(approved,
 # ═══════════════ 14. Post-commit verification ═══════════════════════════════
 def test_a_post_commit_diagnostic_failure_fails_the_run_and_keeps_gates_blocked(approved):
     def _one_failing(**kwargs):  # noqa: ARG001
-        return {
-            'checks': {name: {'passed': name != apply_service.POST_COMMIT_CHECKS[0],
-                              'result': 'fail', 'checks': {}}
-                       for name in apply_service.POST_COMMIT_CHECKS},
-            'passed': False,
-            'failed_checks': [apply_service.POST_COMMIT_CHECKS[0]],
-        }
+        return _post_commit_result(
+            {name: name != apply_service.POST_COMMIT_CHECKS[0]
+             for name in apply_service.POST_COMMIT_CHECKS})
 
     payload = _apply(approved, post_commit=_one_failing)
     assert payload['result'] == apply_service.RESULT_FAIL
     assert payload['decision_reasons'] == ['post_commit_verification_failed']
-    # The failing check AND the reconciliations it broke are both reported: a reader can
+    # The failing check AND the reconciliation it broke are both reported: a reader can
     # see the specific diagnostic that failed and that the run therefore did not verify.
     assert apply_service.POST_COMMIT_CHECKS[0] in payload['unresolved_issues']
+    # A check that RAN and FAILED is a failure, not a skip. Exactly one reconciliation
+    # breaks; reporting it as skipped too would claim the check never executed.
     assert payload['failed_reconciliations'] == [
-        'every_governed_post_commit_check_passed', 'no_post_commit_check_was_skipped']
+        'every_governed_post_commit_check_passed']
+    assert payload['post_commit_reconciliations'][
+        'no_post_commit_check_was_skipped'] is True
     assert payload['post_commit_reconciliations'][
         'post_commit_verification_was_executed'] is True
     assert payload['post_commit_reconciliations'][
@@ -1692,6 +1722,32 @@ def test_the_post_commit_checks_are_the_three_governed_read_only_checks():
     )
 
 
+def _clean_aggregation(**kwargs):
+    """A complete, passing aggregation payload for whichever mode is requested.
+
+    Mirrors the real service, including the reconciliation map's mode-dependent
+    ``all_mandatory_metrics_match`` — false in local-only BY DESIGN, because local-only
+    cannot evaluate an official-validation reconciliation.
+    """
+    official = kwargs['include_official_validation']
+    return {
+        'result': 'pass', 'exit_code': 0,
+        'mode': 'official_validation' if official else 'local_only',
+        'local_aggregation': {'teams_complete': 30, 'teams_partial': 0,
+                              'teams_unavailable': 0},
+        'official_validation': {
+            'teams_matched': 30, 'teams_mismatched': 0,
+            'mandatory_metric_mismatches': 0, 'unavailable_evidence_count': 0,
+            'official_games_missing_unique_starter': 0,
+            'official_games_with_multiple_starters': 0},
+        'reconciliations': {
+            'canonical_outs_match': True, 'team_totals_reconcile': True,
+            'league_totals_reconcile': True, 'bullpen_outs_reconcile': True,
+            'all_mandatory_metrics_match': bool(official),
+            'canonical_game_grain_bullpen_outs': 12},
+    }
+
+
 def test_post_commit_verification_reads_the_governed_thresholds(approved, monkeypatch):
     captured = {}
 
@@ -1702,17 +1758,7 @@ def test_post_commit_verification_reads_the_governed_thresholds(approved, monkey
                 'extra_local_line_count': 0, 'duplicate_local_line_count': 0,
                 'appearance_team_mismatch_count': 0}
 
-    def _aggregation(**kwargs):
-        official = kwargs['include_official_validation']
-        return {'result': 'pass', 'exit_code': 0,
-                'mode': 'official_validation' if official else 'local_only',
-                'local_aggregation': {'teams_complete': 30, 'teams_partial': 0,
-                                      'teams_unavailable': 0},
-                'official_validation': {'teams_matched': 30,
-                                        'mandatory_metric_mismatches': 0},
-                'reconciliations': {'canonical_outs_match': True,
-                                    'team_totals_reconcile': True,
-                                    'canonical_game_grain_bullpen_outs': 12}}
+    _aggregation = _clean_aggregation
 
     monkeypatch.setattr(completeness, 'run_diagnostic', _diagnostic)
     from services import season_bullpen_aggregation_2026 as agg
@@ -1747,15 +1793,12 @@ def test_any_nonzero_post_commit_defect_count_fails_verification(app, monkeypatc
     base[field] = value
     monkeypatch.setattr(completeness, 'run_diagnostic', lambda **kwargs: base)
     from services import season_bullpen_aggregation_2026 as agg
-    monkeypatch.setattr(agg, 'run_aggregation', lambda **kwargs: {
-        'result': 'pass', 'exit_code': 0, 'mode': 'x',
-        'local_aggregation': {'teams_complete': 30, 'teams_partial': 0,
-                              'teams_unavailable': 0},
-        'official_validation': {'teams_matched': 30, 'mandatory_metric_mismatches': 0},
-        'reconciliations': {'canonical_outs_match': True}})
+    monkeypatch.setattr(agg, 'run_aggregation', _clean_aggregation)
     result = apply_service.run_post_commit_verification(
         season=2026, as_of_date=AS_OF, session=db.session, client=_FakeMlbClient())
     assert result['passed'] is False
+    # Only the completeness diagnostic failed; both aggregation modes still pass under
+    # their own applicable reconciliation vocabulary.
     assert result['failed_checks'] == ['official_pitching_line_completeness_2026']
 
 
@@ -2157,10 +2200,8 @@ def test_pass_is_impossible_when_post_commit_verification_raises(approved):
 
 def test_pass_is_impossible_when_one_governed_post_commit_check_is_missing(approved):
     def _incomplete(**kwargs):  # noqa: ARG001
-        names = apply_service.POST_COMMIT_CHECKS[:-1]
-        return {'checks': {n: {'passed': True, 'result': 'pass', 'checks': {}}
-                           for n in names},
-                'passed': True, 'failed_checks': []}
+        return _post_commit_result(
+            {n: True for n in apply_service.POST_COMMIT_CHECKS[:-1]})
 
     payload = _apply(approved, post_commit=_incomplete)
     assert payload['result'] == apply_service.RESULT_FAIL
@@ -2177,9 +2218,8 @@ def test_pass_is_impossible_when_one_governed_post_commit_check_fails(
     failing = apply_service.POST_COMMIT_CHECKS[failing_index]
 
     def _one_failing(**kwargs):  # noqa: ARG001
-        return {'checks': {n: {'passed': n != failing, 'result': 'pass', 'checks': {}}
-                           for n in apply_service.POST_COMMIT_CHECKS},
-                'passed': False, 'failed_checks': [failing]}
+        return _post_commit_result(
+            {n: n != failing for n in apply_service.POST_COMMIT_CHECKS})
 
     payload = _apply(approved, post_commit=_one_failing)
     assert payload['result'] == apply_service.RESULT_FAIL

@@ -288,6 +288,46 @@ POST_COMMIT_CHECKS = (
     'canonical_season_bullpen_aggregation_official_validation',
 )
 
+# ── Mode-specific reconciliation vocabularies ─────────────────────────────────
+# The two audit modes the canonical aggregation runs in, named here so the reconciliation
+# vocabularies below can be keyed to them explicitly.
+AGGREGATION_MODE_LOCAL_ONLY = 'local_only'
+AGGREGATION_MODE_OFFICIAL_VALIDATION = 'official_validation'
+
+# The canonical aggregation returns ONE reconciliation map for both of its modes, and
+# ``all_mandatory_metrics_match`` is defined as ``include_official_validation and ...``. It is
+# therefore false BY DESIGN in local-only mode: it is an official-validation reconciliation
+# that local-only cannot evaluate, not a local reconciliation that failed. Requiring every
+# boolean in that map to be true — the same rule in both modes — turned that intentional
+# non-applicability into a false negative, which is exactly what failed the committed repair's
+# post-commit wrapper while every underlying check passed.
+#
+# The vocabularies are pinned EXACTLY per mode rather than expressed as a name pattern or a
+# rule that ignores false values, so a genuinely failing reconciliation can never be excused
+# by resembling a non-applicable one.
+LOCAL_ONLY_REQUIRED_RECONCILIATIONS = (
+    'bullpen_outs_reconcile',
+    'canonical_outs_match',
+    'league_totals_reconcile',
+    'team_totals_reconcile',
+)
+OFFICIAL_VALIDATION_REQUIRED_RECONCILIATIONS = (
+    'all_mandatory_metrics_match',
+    'bullpen_outs_reconcile',
+    'canonical_outs_match',
+    'league_totals_reconcile',
+    'team_totals_reconcile',
+)
+# Governed non-applicability, named one reconciliation at a time.
+LOCAL_ONLY_NON_APPLICABLE_RECONCILIATIONS = ('all_mandatory_metrics_match',)
+OFFICIAL_VALIDATION_NON_APPLICABLE_RECONCILIATIONS = ()
+RECONCILIATION_NOT_APPLICABLE_TO_LOCAL_ONLY = 'not_applicable_to_local_only'
+
+# Per-check execution state. "Ran and failed" and "never ran" are different facts and are
+# recorded as different facts; only the second is a skip.
+CHECK_EXECUTED = 'executed'
+CHECK_NOT_EXECUTED = 'not_executed'
+
 
 def _governed_operation_id(fingerprint: str) -> int:
     """A deterministic governed operation id for ONE approved manifest.
@@ -1647,92 +1687,205 @@ def _verify_inserted_values(session, insert_actions, insert_records) -> List[str
 
 
 # ── Post-commit verification ──────────────────────────────────────────────────
+def evaluate_mode_reconciliations(reconciliations, *, include_official_validation) -> dict:
+    """Judge an aggregation's boolean reconciliations with THIS mode's vocabulary.
+
+    The aggregation emits one reconciliation map for both modes, and some entries are only
+    meaningful in one of them. Judging every boolean the same way in both modes reports a
+    reconciliation the mode cannot evaluate as a reconciliation the mode failed.
+
+    Returns which required reconciliations are missing, which are false, which are governed
+    non-applicable (reported with their observed value, never rewritten to true), and any
+    unexpected false boolean that belongs to neither list — which fails, so this can never
+    become a rule that excuses false values in general.
+    """
+    required = (OFFICIAL_VALIDATION_REQUIRED_RECONCILIATIONS
+                if include_official_validation
+                else LOCAL_ONLY_REQUIRED_RECONCILIATIONS)
+    non_applicable = (OFFICIAL_VALIDATION_NON_APPLICABLE_RECONCILIATIONS
+                      if include_official_validation
+                      else LOCAL_ONLY_NON_APPLICABLE_RECONCILIATIONS)
+    booleans = {name: value for name, value in (reconciliations or {}).items()
+                if isinstance(value, bool)}
+
+    missing = sorted(name for name in required if name not in booleans)
+    failed = sorted(name for name in required
+                    if name in booleans and booleans[name] is not True)
+    # A false boolean that is neither required nor explicitly classified as non-applicable is
+    # an unknown failure, and it fails closed.
+    unexpected_false = sorted(
+        name for name, value in booleans.items()
+        if value is not True and name not in required and name not in non_applicable)
+
+    return {
+        'mode': (AGGREGATION_MODE_OFFICIAL_VALIDATION if include_official_validation
+                 else AGGREGATION_MODE_LOCAL_ONLY),
+        'required': list(required),
+        'applicable': {name: booleans.get(name) for name in required},
+        'non_applicable': {
+            name: {
+                'applicable': False,
+                'status': RECONCILIATION_NOT_APPLICABLE_TO_LOCAL_ONLY,
+                'observed_value': booleans.get(name),
+            }
+            for name in non_applicable
+        },
+        'missing': missing,
+        'failed': failed,
+        'unexpected_false': unexpected_false,
+        'satisfied': not (missing or failed or unexpected_false),
+    }
+
+
 def run_post_commit_verification(*, season, as_of_date, generated_at=None,
                                  client=mlb_client, session=None) -> dict:
     """The three read-only checks that must hold after a successful commit.
 
     These do not roll anything back and they do not retry. They decide whether the repair
     produced a consistent ledger, and their failure keeps every downstream gate blocked.
+
+    Each check records whether it EXECUTED separately from whether it PASSED. A check that ran
+    and failed is a failure, not a skip; only a check that never produced a structured result
+    is a skip. A check that raises is recorded as not executed instead of aborting the other
+    two, so the artifact says which checks were actually observed.
     """
     session = session or db.session
     results: Dict[str, dict] = {}
 
-    diagnostic = completeness.run_diagnostic(
-        season=season, as_of_date=as_of_date, detail_limit=0, generated_at=generated_at,
-        client=client, session=session)
-    diagnostic_checks = {
-        'result_is_pass': diagnostic.get('result') == completeness.RESULT_PASS,
-        'zero_missing_lines': diagnostic.get('missing_local_line_count') == 0,
-        'zero_defective_matched_lines': (
-            (diagnostic.get('stat_mismatch_count') or 0)
-            + (diagnostic.get('role_mismatch_count') or 0)) == 0,
-        'zero_extra_local_lines': diagnostic.get('extra_local_line_count') == 0,
-        'zero_duplicate_local_lines': diagnostic.get('duplicate_local_line_count') == 0,
-        'zero_appearance_team_mismatches': (
-            diagnostic.get('appearance_team_mismatch_count') == 0),
-    }
-    results[POST_COMMIT_CHECKS[0]] = {
-        'result': diagnostic.get('result'),
-        'exit_code': diagnostic.get('exit_code'),
-        'checks': diagnostic_checks,
-        'passed': all(diagnostic_checks.values()),
-        'observed': {
-            'missing_local_line_count': diagnostic.get('missing_local_line_count'),
-            'stat_mismatch_count': diagnostic.get('stat_mismatch_count'),
-            'role_mismatch_count': diagnostic.get('role_mismatch_count'),
-            'extra_local_line_count': diagnostic.get('extra_local_line_count'),
-            'duplicate_local_line_count': diagnostic.get('duplicate_local_line_count'),
-            'appearance_team_mismatch_count': diagnostic.get(
-                'appearance_team_mismatch_count'),
-        },
-    }
+    try:
+        diagnostic = completeness.run_diagnostic(
+            season=season, as_of_date=as_of_date, detail_limit=0,
+            generated_at=generated_at, client=client, session=session)
+    except Exception as exc:  # noqa: BLE001 — a check that could not run has not passed
+        results[POST_COMMIT_CHECKS[0]] = _not_executed_check(exc)
+        diagnostic = None
+
+    if diagnostic is not None:
+        diagnostic_checks = {
+            'result_is_pass': diagnostic.get('result') == completeness.RESULT_PASS,
+            'exit_code_is_zero': diagnostic.get('exit_code') == 0,
+            'zero_missing_lines': diagnostic.get('missing_local_line_count') == 0,
+            'zero_defective_matched_lines': (
+                (diagnostic.get('stat_mismatch_count') or 0)
+                + (diagnostic.get('role_mismatch_count') or 0)) == 0,
+            'zero_extra_local_lines': diagnostic.get('extra_local_line_count') == 0,
+            'zero_duplicate_local_lines': (
+                diagnostic.get('duplicate_local_line_count') == 0),
+            'zero_appearance_team_mismatches': (
+                diagnostic.get('appearance_team_mismatch_count') == 0),
+        }
+        results[POST_COMMIT_CHECKS[0]] = {
+            'executed': True,
+            'execution_state': CHECK_EXECUTED,
+            'result': diagnostic.get('result'),
+            'exit_code': diagnostic.get('exit_code'),
+            'checks': diagnostic_checks,
+            'passed': all(diagnostic_checks.values()),
+            'observed': {
+                'missing_local_line_count': diagnostic.get('missing_local_line_count'),
+                'stat_mismatch_count': diagnostic.get('stat_mismatch_count'),
+                'role_mismatch_count': diagnostic.get('role_mismatch_count'),
+                'extra_local_line_count': diagnostic.get('extra_local_line_count'),
+                'duplicate_local_line_count': diagnostic.get(
+                    'duplicate_local_line_count'),
+                'appearance_team_mismatch_count': diagnostic.get(
+                    'appearance_team_mismatch_count'),
+            },
+        }
 
     for index, official in ((1, False), (2, True)):
-        audit = aggregation.run_aggregation(
-            season=season, as_of_date=as_of_date, include_official_validation=official,
-            team_detail_limit=0, mismatch_detail_limit=0, generated_at=generated_at,
-            client=client, session=session)
+        try:
+            audit = aggregation.run_aggregation(
+                season=season, as_of_date=as_of_date,
+                include_official_validation=official, team_detail_limit=0,
+                mismatch_detail_limit=0, generated_at=generated_at, client=client,
+                session=session)
+        except Exception as exc:  # noqa: BLE001 — a check that could not run has not passed
+            results[POST_COMMIT_CHECKS[index]] = _not_executed_check(exc)
+            continue
         local = audit.get('local_aggregation') or {}
         validation = audit.get('official_validation') or {}
-        reconciliations = {name: value
-                           for name, value in (audit.get('reconciliations') or {}).items()
-                           if isinstance(value, bool)}
+        reconciliation_result = evaluate_mode_reconciliations(
+            audit.get('reconciliations') or {}, include_official_validation=official)
         checks = {
             'result_is_pass': audit.get('result') == aggregation.RESULT_PASS,
-            'all_reconciliations_true': bool(reconciliations) and all(
-                reconciliations.values()),
+            'exit_code_is_zero': audit.get('exit_code') == 0,
+            # Mode-specific: every reconciliation this mode CAN evaluate is present and true,
+            # and no unclassified boolean is false.
+            'every_applicable_reconciliation_is_present':
+                not reconciliation_result['missing'],
+            'every_applicable_reconciliation_is_true':
+                not reconciliation_result['failed'],
+            'no_unexpected_false_reconciliation':
+                not reconciliation_result['unexpected_false'],
+            'thirty_complete_teams': local.get('teams_complete') == 30,
+            'zero_partial_teams': local.get('teams_partial') == 0,
+            'zero_unavailable_teams': local.get('teams_unavailable') == 0,
         }
         if official:
+            checks['all_thirty_teams_matched'] = validation.get('teams_matched') == 30
+            checks['zero_teams_mismatched'] = validation.get('teams_mismatched') == 0
             checks['zero_mandatory_metric_mismatches'] = (
                 validation.get('mandatory_metric_mismatches') == 0)
-            checks['all_thirty_teams_matched'] = validation.get('teams_matched') == 30
-        else:
-            checks['thirty_complete_teams'] = local.get('teams_complete') == 30
-            checks['zero_partial_teams'] = local.get('teams_partial') == 0
-            checks['zero_unavailable_teams'] = local.get('teams_unavailable') == 0
+            checks['zero_unavailable_official_evidence'] = (
+                validation.get('unavailable_evidence_count') == 0)
+            checks['every_official_game_has_a_unique_starter'] = (
+                validation.get('official_games_missing_unique_starter') == 0
+                and validation.get('official_games_with_multiple_starters') == 0)
         results[POST_COMMIT_CHECKS[index]] = {
+            'executed': True,
+            'execution_state': CHECK_EXECUTED,
             'result': audit.get('result'),
             'exit_code': audit.get('exit_code'),
             'mode': audit.get('mode'),
             'checks': checks,
             'passed': all(checks.values()),
+            'reconciliations': reconciliation_result,
             'observed': {
                 'teams_complete': local.get('teams_complete'),
                 'teams_partial': local.get('teams_partial'),
                 'teams_unavailable': local.get('teams_unavailable'),
                 'teams_matched': validation.get('teams_matched'),
+                'teams_mismatched': validation.get('teams_mismatched'),
                 'mandatory_metric_mismatches': validation.get(
                     'mandatory_metric_mismatches'),
-                'failed_reconciliations': sorted(
-                    name for name, value in reconciliations.items() if not value),
+                'unavailable_evidence_count': validation.get('unavailable_evidence_count'),
+                'official_games_missing_unique_starter': validation.get(
+                    'official_games_missing_unique_starter'),
+                'official_games_with_multiple_starters': validation.get(
+                    'official_games_with_multiple_starters'),
+                'failed_reconciliations': reconciliation_result['failed'],
             },
         }
 
+    # Four separate facts, deliberately not collapsed: which checks are PRESENT, which
+    # EXECUTED, which PASSED, and which were SKIPPED. A check that ran and failed appears in
+    # failed_checks and never in not_executed_checks.
+    present = [name for name in POST_COMMIT_CHECKS if name in results]
+    executed = [name for name in present if results[name].get('executed') is True]
+    not_executed = [name for name in POST_COMMIT_CHECKS if name not in executed]
     return {
         'checks': results,
-        'passed': all(item['passed'] for item in results.values()),
+        'passed': bool(results) and all(item.get('passed') for item in results.values()),
         'failed_checks': sorted(name for name, item in results.items()
-                                if not item['passed']),
+                                if not item.get('passed')),
+        'present_checks': present,
+        'executed_checks': executed,
+        'not_executed_checks': not_executed,
+        'all_checks_executed': not not_executed,
+    }
+
+
+def _not_executed_check(exc) -> dict:
+    """A governed check that never produced a result. Not a failure verdict — an absence."""
+    return {
+        'executed': False,
+        'execution_state': CHECK_NOT_EXECUTED,
+        'result': None,
+        'exit_code': None,
+        'checks': {},
+        'passed': False,
+        'error_type': type(exc).__name__,
     }
 
 
@@ -2049,16 +2202,26 @@ def _post_commit_reconciliations(post) -> dict:
     """
     checks = (post or {}).get('checks') or {}
     present = [name for name in POST_COMMIT_CHECKS if name in checks]
+    executed = [name for name in present
+                if (checks.get(name) or {}).get('executed') is True]
     return {
         'post_commit_verification_was_executed': isinstance(post, dict) and bool(checks),
         'every_governed_post_commit_check_is_present':
             len(present) == len(POST_COMMIT_CHECKS),
         'every_governed_post_commit_check_passed': bool(checks) and all(
             (checks.get(name) or {}).get('passed') is True for name in POST_COMMIT_CHECKS),
+        # SKIPPED measures execution and presence, never outcome. A check that ran and
+        # FAILED is a failure — it is reported by the ``passed`` reconciliation above and
+        # must not also be reported here as though it never ran. Only a check that is
+        # absent, produced no structured result, or was prevented from running by an
+        # exception counts as skipped.
         'no_post_commit_check_was_skipped':
-            not ((post or {}).get('failed_checks') or ())
-            and len(present) == len(POST_COMMIT_CHECKS)
-            and (post or {}).get('passed') is True,
+            len(present) == len(POST_COMMIT_CHECKS)
+            and len(executed) == len(POST_COMMIT_CHECKS)
+            and not ((post or {}).get('not_executed_checks') or ())
+            and all(isinstance((checks.get(name) or {}).get('checks'), dict)
+                    and (checks.get(name) or {}).get('checks') != {}
+                    for name in POST_COMMIT_CHECKS),
     }
 
 

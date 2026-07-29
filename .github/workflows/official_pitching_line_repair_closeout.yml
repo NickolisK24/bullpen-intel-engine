@@ -1,0 +1,224 @@
+name: Official Pitching-Line Repair Closeout Verification (2026)
+
+# Dispatch-only, STRICTLY READ-ONLY closeout verification of the COMMITTED repair.
+#
+# The approved 675-action repair already committed, and the execution ledger holds exactly one
+# completed row for the approved fingerprint. This workflow does not repeat, reverse, or
+# modify any of those actions. It never invokes the apply entrypoint, the apply command, or
+# any mutation service; it runs no Alembic upgrade and performs no database write.
+#
+# It exists because the apply run's own post-commit wrapper returned a FALSE NEGATIVE. Every
+# underlying check passed, but the wrapper required every boolean reconciliation to be true in
+# BOTH aggregation modes, and `all_mandatory_metrics_match` is false by design in local-only
+# mode because it is an official-validation reconciliation local-only cannot evaluate. The
+# historical apply artifact is NOT rewritten — it records the decision that run actually made
+# — and this is a separate, later, read-only verification with its own artifact.
+#
+# It takes ONE input: a fixed confirmation phrase, deliberately DISTINCT from the apply
+# phrase, so a read-only closeout can never be confirmed with the phrase that authorises a
+# write. Validating it is the literal first step, ahead of checkout, so a wrong phrase
+# terminates the job before the repository is fetched and before anything can reach a
+# database. There is no retry and no automatic re-dispatch.
+#
+# A passing closeout makes Foundation 3A ELIGIBLE for a separate gate decision. It does NOT
+# activate Foundation 3B, the public reader, Team State performance, Share Card performance,
+# or SC-05. Every one of those gates stays blocked.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_closeout:
+        description: >-
+          Exact confirmation phrase required to run the read-only closeout verification.
+          Any other value refuses before bootstrap. This workflow never writes.
+        required: true
+        default: ''
+        type: string
+
+concurrency:
+  group: official-pitching-line-repair-closeout-2026
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  closeout:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      APP_ENV: production
+      AUTO_SYNC: 'false'
+      FLASK_APP: app.py
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      SECRET_KEY: ${{ secrets.SECRET_KEY }}
+      ADMIN_API_TOKEN: ${{ secrets.BASEBALLOS_ADMIN_API_TOKEN }}
+    steps:
+      # Literally the first step. Ahead of checkout, Python, and dependencies, so a dispatch
+      # that was never going to run fetches and installs nothing. Secrets are checked for
+      # PRESENCE only and are never printed.
+      - name: Validate closeout confirmation
+        env:
+          CONFIRM_CLOSEOUT: ${{ inputs.confirm_closeout }}
+        run: |
+          set -euo pipefail
+          expected='VERIFY-2026-PITCHING-LINE-REPAIR-CLOSEOUT'
+          if [ "$CONFIRM_CLOSEOUT" != "$expected" ]; then
+            echo "::error::Confirmation phrase mismatch. No checkout, no bootstrap, no database access."
+            exit 1
+          fi
+          if [ -z "${DATABASE_URL:-}" ] || \
+             [ -z "${SECRET_KEY:-}" ] || \
+             [ -z "${ADMIN_API_TOKEN:-}" ]; then
+            echo "::error::Missing required production repository secret."
+            exit 1
+          fi
+          echo "Closeout confirmation validated. Read-only: this workflow performs no writes."
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install backend dependencies
+        run: pip install -r backend/requirements.txt
+
+      - name: Verify the committed pitching-line repair (read-only)
+        working-directory: backend
+        env:
+          CONFIRM_CLOSEOUT: ${{ inputs.confirm_closeout }}
+          CLOSEOUT_OUTPUT_DIR: ${{ runner.temp }}/official-pitching-line-repair-closeout-2026
+        run: |
+          set -euo pipefail
+          mkdir -p "$CLOSEOUT_OUTPUT_DIR"
+          report_json="$CLOSEOUT_OUTPUT_DIR/official-pitching-line-repair-closeout-2026.json"
+
+          # Exactly one invocation. No loop, no retry, no re-dispatch.
+          set +e
+          python scripts/run_official_pitching_line_repair_closeout_2026.py \
+            --confirm-closeout "$CONFIRM_CLOSEOUT" \
+            --compact \
+            --output "$report_json"
+          closeout_exit_code=$?
+          set -e
+
+          python - "$report_json" "$closeout_exit_code" "$GITHUB_STEP_SUMMARY" <<'PY'
+          import json
+          from pathlib import Path
+          import sys
+
+          path = Path(sys.argv[1])
+          exit_code = int(sys.argv[2])
+          summary_path = Path(sys.argv[3])
+          payload = json.loads(path.read_text(encoding='utf-8'))
+
+          ledger = payload.get('execution_ledger_verification') or {}
+          ledger_observed = ledger.get('observed') or {}
+          amendment = payload.get('reviewed_amendment_verification') or {}
+          amendment_observed = amendment.get('observed') or {}
+          completeness = payload.get('completeness_verification') or {}
+          local_only = payload.get('local_only_aggregation_verification') or {}
+          official = payload.get('official_validation_aggregation_verification') or {}
+          states = payload.get('check_states') or {}
+          gates = payload.get('downstream_gate_statuses') or {}
+
+          summary = [
+              '## Official Pitching-Line Repair Closeout Verification (2026)',
+              '',
+              f"- Result: `{payload.get('result')}`",
+              f"- Exit code: `{exit_code}`",
+              f"- Mode: `{payload.get('mode')}`",
+              f"- Decision reasons: `{payload.get('decision_reasons')}`",
+              f"- Approved fingerprint: `{payload.get('approved_manifest_fingerprint')}`",
+              f"- Season / as-of: `{payload.get('season')}` / `{payload.get('as_of_date')}`",
+              f"- Migration head: `{payload.get('migration_head')}`",
+              f"- Closeout git SHA: `{payload.get('git_sha')}`",
+              f"- Database writes performed: `{payload.get('database_writes_performed')}`",
+              f"- Repair re-applied: `{payload.get('repair_reapplied')}`",
+              f"- Failed checks: `{payload.get('failed_checks')}`",
+              f"- Checks that did not execute: `{payload.get('not_executed_checks')}`",
+              f"- Unresolved issues: `{payload.get('unresolved_issues')}`",
+              '',
+              '### Execution ledger',
+              f"- Expected id: `{payload.get('expected_execution_ledger_id')}` "
+              f"observed id: `{ledger_observed.get('observed_execution_ledger_id')}`",
+              f"- Ledger rows: `{ledger_observed.get('ledger_row_count')}` "
+              f"completed: `{ledger_observed.get('completed_row_count')}`",
+              f"- Status: `{ledger_observed.get('status')}`",
+              f"- Actions: identities `{ledger_observed.get('identity_action_count')}` "
+              f"inserts `{ledger_observed.get('insert_action_count')}` "
+              f"updates `{ledger_observed.get('update_action_count')}` "
+              f"total `{ledger_observed.get('total_action_count')}`",
+              f"- Committed at: `{ledger_observed.get('committed_at')}`",
+              f"- Ledger proves the approved repair: `{ledger.get('passed')}`",
+              '',
+              '### Reviewed amendment line (825058:805299:109)',
+              f"- GameLog `{amendment_observed.get('local_game_log_id')}` "
+              f"hits_allowed `{amendment_observed.get('hits_allowed')}` "
+              f"correction count `{amendment_observed.get('stat_correction_count')}`",
+              f"- Correction source: "
+              f"`{amendment_observed.get('last_stat_correction_source')}`",
+              f"- Amendment row matches the approved result: `{amendment.get('passed')}`",
+              '',
+              '### Post-commit checks',
+              f"- Completeness: result `{completeness.get('result')}` "
+              f"passed `{completeness.get('passed')}`",
+              f"- Local-only aggregation: result `{local_only.get('result')}` "
+              f"passed `{local_only.get('passed')}`",
+              f"- Official validation: result `{official.get('result')}` "
+              f"passed `{official.get('passed')}`",
+              '',
+              '### Local-only reconciliations',
+              f"- Applicable: "
+              f"`{payload.get('local_only_applicable_reconciliations')}`",
+              f"- Not applicable to local-only: "
+              f"`{payload.get('local_only_non_applicable_reconciliations')}`",
+              '',
+              '### Official-validation reconciliations',
+              f"- Applicable: "
+              f"`{payload.get('official_validation_applicable_reconciliations')}`",
+              '',
+              '### Check states (present / executed / passed / skipped)',
+          ]
+          for name in (payload.get('contracts') or {}).get('closeout_checks') or []:
+              state = states.get(name) or {}
+              summary.append(
+                  f"- `{name}`: present `{state.get('present')}` "
+                  f"executed `{state.get('executed')}` passed `{state.get('passed')}` "
+                  f"skipped `{state.get('skipped')}`")
+          summary.extend(('', '### Downstream gates'))
+          summary.extend(f"- `{name}`: `{value}`" for name, value in sorted(gates.items()))
+          summary.append('')
+          summary.append(
+              'This verification is read-only. It did not repeat, reverse, or modify any of '
+              'the 675 committed repair actions, and the historical apply artifact is '
+              'unchanged.')
+          summary.append(
+              'A passing closeout makes Foundation 3A eligible for a separately reviewed '
+              'gate decision. Every downstream gate stays blocked.')
+          summary_path.write_text('\n'.join(summary) + '\n', encoding='utf-8')
+
+          if payload.get('mode') != 'closeout_verification':
+              raise SystemExit('Closeout artifact is not a closeout-verification artifact.')
+          if payload.get('database_writes_performed') is not False:
+              raise SystemExit('Closeout verification must never perform database writes.')
+          if payload.get('repair_reapplied') is not False:
+              raise SystemExit('Closeout verification must never re-apply the repair.')
+          if any(value != 'blocked' for value in (gates or {'x': 'blocked'}).values()):
+              raise SystemExit('Closeout verification must leave every downstream gate blocked.')
+          PY
+
+          echo "=== closeout verification result: exit $closeout_exit_code ==="
+          exit "$closeout_exit_code"
+
+      - name: Upload closeout artifact
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: official-pitching-line-repair-closeout-2026-${{ github.run_id }}
+          path: ${{ runner.temp }}/official-pitching-line-repair-closeout-2026/
+          if-no-files-found: error
+          retention-days: 30
