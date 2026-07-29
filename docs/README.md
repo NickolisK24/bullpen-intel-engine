@@ -1,139 +1,69 @@
 # BaseballOS Documentation
 
-This folder holds the documentation for BaseballOS. The root
-[`README.md`](../README.md) is the project front page; this folder contains the
-deeper product, methodology, governance, and historical records.
+This directory is organized around **six canonical living documents**. Start with the canonical library. Everything else is supporting implementation evidence, an operational runbook, a durable decision record, or history.
 
-Documentation is organized into a small set of purpose-driven folders so that
-active, authoritative material is easy to find and superseded material is
-preserved without cluttering the current view.
+## Start Here
 
-## Folder Guide
+[Open the BaseballOS Canonical Document Library](canonical/README.md)
 
-- **`current/`** — Active project state, roadmap, setup, and changelog. Start
-  here to understand where the project is today.
-- **`roadmap/`** — Canonical execution roadmaps for upcoming product phases.
-- **`product/`** — Product strategy, positioning, go-to-market, monetization,
-  and product/UX direction.
-- **`methodology/`** — How the engines work: availability and fatigue
-  classification, usage roles, roster/team source authority, sync data
-  pipeline, and the current recommendation-engine architecture and contracts.
-- **`governance/`** — Trust guardrails, fail-closed policy, certifications,
-  audits, boundary/review records, and the certification ledger.
-- **`archive/`** — Historical and superseded material organized by month
-  (`archive/YYYY-MM/`): old implementation and phase plans, milestone handoffs,
-  rollout and monitoring evidence, investigations, and remediations. Archive
-  documents are kept for history and are **not necessarily authoritative**.
+| Authority | Owns |
+|---|---|
+| [BaseballOS Constitution](canonical/01_BASEBALLOS_CONSTITUTION.md) | Mission, category, permanent guardrails, ontology, and long-term direction. |
+| [Bullpen Intelligence Standard](canonical/02_BULLPEN_INTELLIGENCE_STANDARD.md) | Source authority, data domains, evidence, vocabulary, freshness, suppression, publication, and correction rules. |
+| [Product Experience Standard](canonical/03_PRODUCT_EXPERIENCE_STANDARD.md) | Page missions, navigation, interaction hierarchy, mobile behavior, failure states, accessibility, and acceptance tests. |
+| [Platform Architecture & Operations Manual](canonical/04_PLATFORM_ARCHITECTURE_OPERATIONS.md) | System boundaries, persistence, sync and publication, APIs, security, deployment, monitoring, repair, and runbooks. |
+| [Product Roadmap & Decision Ledger](canonical/05_PRODUCT_ROADMAP_DECISION_LEDGER.md) | Active objective, priorities, phases, dependencies, risks, backlog, completion log, and durable decisions. |
+| [Editorial & Distribution Standard](canonical/06_EDITORIAL_DISTRIBUTION_STANDARD.md) | Voice, content pillars, public claim structure, share artifacts, platform-native publishing, cadence, corrections, and measurement. |
 
-## Recommended Starting Points
+## Authority Order
 
-- New to the project: [`current/PROJECT_STATE_2026_06.md`](current/PROJECT_STATE_2026_06.md)
-  then [`current/ROADMAP.md`](current/ROADMAP.md).
-- What each public page is becoming (read before any surface work):
-  [`product/product-vision-specification.md`](product/product-vision-specification.md).
-- Setting up locally: [`current/SETUP.md`](current/SETUP.md).
-- Understanding the intelligence model:
-  [`methodology/BULLPEN_AVAILABILITY_ENGINE_V1.md`](methodology/BULLPEN_AVAILABILITY_ENGINE_V1.md).
-- Governance and trust posture:
-  [`governance/CERTIFICATION_LEDGER.md`](governance/CERTIFICATION_LEDGER.md).
-- Story selection, user-facing language, and narrative governance:
-  [`product/BASEBALLOS_STORY_RULES.md`](product/BASEBALLOS_STORY_RULES.md),
-  [`product/BASEBALLOS_WRITING_RULES.md`](product/BASEBALLOS_WRITING_RULES.md),
-  and
-  [`governance/BASEBALLOS_NARRATIVE_GOVERNANCE.md`](governance/BASEBALLOS_NARRATIVE_GOVERNANCE.md).
+1. Constitution
+2. Bullpen Intelligence Standard
+3. Product Experience Standard
+4. Platform Architecture & Operations Manual
+5. Editorial & Distribution Standard
+6. Product Roadmap & Decision Ledger
+7. Active subsystem specifications
+8. Work packages and implementation notes
+9. Historical audits and archived roadmaps
 
-## Authoritative Docs
+The Roadmap controls sequence but cannot override a higher product, intelligence, experience, or architecture contract.
 
-These are the current primary references. Other documents — especially anything
-under `archive/` — provide history and context but do not override these.
+## Active Supporting Documentation
 
-| Area | Document |
-| --- | --- |
-| Canonical project state | [`current/PROJECT_STATE_2026_06.md`](current/PROJECT_STATE_2026_06.md) |
-| Roadmap | [`current/ROADMAP.md`](current/ROADMAP.md) |
-| V4 foundation integrity and bullpen evidence roadmap | [`roadmap/BaseballOS_V4_Daily_Bullpen_Platform.md`](roadmap/BaseballOS_V4_Daily_Bullpen_Platform.md) |
-| Product vision specification (page-level end-state vision) | [`product/product-vision-specification.md`](product/product-vision-specification.md) |
-| Setup and deployment | [`current/SETUP.md`](current/SETUP.md) |
-| Changelog | [`current/CHANGELOG.md`](current/CHANGELOG.md) |
-| Availability / fatigue engine | [`methodology/BULLPEN_AVAILABILITY_ENGINE_V1.md`](methodology/BULLPEN_AVAILABILITY_ENGINE_V1.md) |
-| Availability threshold tuning | [`methodology/AVAILABILITY_THRESHOLD_TUNING_PLAN.md`](methodology/AVAILABILITY_THRESHOLD_TUNING_PLAN.md) |
-| Pitcher usage roles | [`methodology/PITCHER_USAGE_ROLE_SEPARATION_V1.md`](methodology/PITCHER_USAGE_ROLE_SEPARATION_V1.md) |
-| Team-assignment authority | [`methodology/TEAM_ASSIGNMENT_AUTHORITY.md`](methodology/TEAM_ASSIGNMENT_AUTHORITY.md) |
-| Roster status sync | [`methodology/ROSTER_STATUS_SYNC_IMPLEMENTATION.md`](methodology/ROSTER_STATUS_SYNC_IMPLEMENTATION.md) |
-| Recommendation engine (V2) architecture | [`methodology/RECOMMENDATION_ENGINE_V2_ARCHITECTURE.md`](methodology/RECOMMENDATION_ENGINE_V2_ARCHITECTURE.md) |
-| Recommendation engine (V2) API contract | [`methodology/RECOMMENDATION_ENGINE_V2_API_CONTRACT.md`](methodology/RECOMMENDATION_ENGINE_V2_API_CONTRACT.md) |
-| Story rules | [`product/BASEBALLOS_STORY_RULES.md`](product/BASEBALLOS_STORY_RULES.md) |
-| Writing rules and narrative standards | [`product/BASEBALLOS_WRITING_RULES.md`](product/BASEBALLOS_WRITING_RULES.md) |
-| Narrative governance | [`governance/BASEBALLOS_NARRATIVE_GOVERNANCE.md`](governance/BASEBALLOS_NARRATIVE_GOVERNANCE.md) |
-| Certification ledger | [`governance/CERTIFICATION_LEDGER.md`](governance/CERTIFICATION_LEDGER.md) |
-| Governance boundaries | [`governance/RECOMMENDATION_ENGINE_V2_GOVERNANCE_BOUNDARIES.md`](governance/RECOMMENDATION_ENGINE_V2_GOVERNANCE_BOUNDARIES.md) |
-| Operational reviews summary | [`governance/OPERATIONAL_REVIEWS.md`](governance/OPERATIONAL_REVIEWS.md) |
-| Product audit | [`product/PRODUCT_AUDIT_JUNE_2026.md`](product/PRODUCT_AUDIT_JUNE_2026.md) |
+### Operations and Setup
 
-## Folder Contents
+- [`current/SETUP.md`](current/SETUP.md) - local development, configuration, tests, and deployment setup.
+- [`current/SYNC_PIPELINE.md`](current/SYNC_PIPELINE.md) - current public sync order, trust gates, and recovery procedure.
+- [`current/INTRADAY_RECONCILIATION.md`](current/INTRADAY_RECONCILIATION.md) - intraday reconciliation contract and rollout state.
+- [`current/SHARE_CARDS_OPERATIONS.md`](current/SHARE_CARDS_OPERATIONS.md) - internal artifact coverage and refusal monitoring.
+- [`current/SHARE_CARDS_CUTOVER.md`](current/SHARE_CARDS_CUTOVER.md) - immutable artifact generation/read cutover record.
+- [`current/PROGRESSIVE_TEAM_ARTIFACT_PUBLICATION.md`](current/PROGRESSIVE_TEAM_ARTIFACT_PUBLICATION.md) - team-scoped progressive publication authority.
+- [`current/SHARE_CARDS_PUBLIC_ARTIFACT_PAGE.md`](current/SHARE_CARDS_PUBLIC_ARTIFACT_PAGE.md) - public immutable share-page implementation contract.
 
-### current/
+These files support current operations or document active subsystem behavior. They do not replace the canonical library.
 
-- [`PROJECT_STATE_2026_06.md`](current/PROJECT_STATE_2026_06.md)
-- [`ROADMAP.md`](current/ROADMAP.md)
-- [`ROADMAP_2_0_PROPOSAL.md`](current/ROADMAP_2_0_PROPOSAL.md)
-- [`ROADMAP_2_0_PHASE1_IMPLEMENTATION_PLAN.md`](current/ROADMAP_2_0_PHASE1_IMPLEMENTATION_PLAN.md)
-- [`SETUP.md`](current/SETUP.md)
-- [`CHANGELOG.md`](current/CHANGELOG.md)
+### Decision Records
 
-### roadmap/
+`decisions/` preserves discrete, durable choices and their rationale. A decision record may clarify a decision but may not create a competing product constitution, vocabulary, or roadmap. Permanent decisions must also be reflected in the canonical document that owns them.
 
-- [`BaseballOS_V4_Daily_Bullpen_Platform.md`](roadmap/BaseballOS_V4_Daily_Bullpen_Platform.md)
+### Audits, Reports, Phase Records, and Archives
 
-### product/
+- `audits/` contains point-in-time verification and incident analysis.
+- `reports/`, phase folders, implementation records, and prior roadmap material preserve engineering evidence.
+- `archive/` retains historical documents.
 
-- [`product-vision-specification.md`](product/product-vision-specification.md)
-- [`BASEBALLOS_STORY_RULES.md`](product/BASEBALLOS_STORY_RULES.md)
-- [`BASEBALLOS_WRITING_RULES.md`](product/BASEBALLOS_WRITING_RULES.md)
-- [`PRODUCT_AUDIT_JUNE_2026.md`](product/PRODUCT_AUDIT_JUNE_2026.md)
-- [`COMPETITIVE_ANALYSIS_JUNE_2026.md`](product/COMPETITIVE_ANALYSIS_JUNE_2026.md)
-- [`MONETIZATION_AND_ADOPTION.md`](product/MONETIZATION_AND_ADOPTION.md)
-- [`STORYTELLING_SURFACES.md`](product/STORYTELLING_SURFACES.md)
-- [`USER_HABIT_LOOP_ANALYSIS.md`](product/USER_HABIT_LOOP_ANALYSIS.md)
+These records are intentionally preserved. They are not current authorities unless one of the six canonical documents links to a specific record as active supporting evidence.
 
-### methodology/
+## Documentation Rules
 
-- [`BULLPEN_AVAILABILITY_ENGINE_V1.md`](methodology/BULLPEN_AVAILABILITY_ENGINE_V1.md)
-- [`AVAILABILITY_THRESHOLD_TUNING_PLAN.md`](methodology/AVAILABILITY_THRESHOLD_TUNING_PLAN.md)
-- [`PITCHER_USAGE_ROLE_SEPARATION_V1.md`](methodology/PITCHER_USAGE_ROLE_SEPARATION_V1.md)
-- [`TEAM_ASSIGNMENT_AUTHORITY.md`](methodology/TEAM_ASSIGNMENT_AUTHORITY.md)
-- [`ROSTER_STATUS_SYNC_IMPLEMENTATION.md`](methodology/ROSTER_STATUS_SYNC_IMPLEMENTATION.md)
-- [`RECOMMENDATION_ENGINE_V2_STRATEGY.md`](methodology/RECOMMENDATION_ENGINE_V2_STRATEGY.md)
-- [`RECOMMENDATION_ENGINE_V2_ARCHITECTURE.md`](methodology/RECOMMENDATION_ENGINE_V2_ARCHITECTURE.md)
-- [`RECOMMENDATION_ENGINE_V2_API_CONTRACT.md`](methodology/RECOMMENDATION_ENGINE_V2_API_CONTRACT.md)
-- [`RECOMMENDATION_ENGINE_V2_FRONTEND_CONTRACT.md`](methodology/RECOMMENDATION_ENGINE_V2_FRONTEND_CONTRACT.md)
+- Do not create another master plan or source-of-truth document.
+- Update the canonical document that owns the permanent rule.
+- Use a subsystem specification only for a genuinely multi-stage, trust-sensitive subsystem.
+- Give every temporary document an owner, purpose, and retirement condition.
+- Preserve history; replace competing authorities with redirect notes rather than erasing the record.
+- Keep exact runtime mappings in canonical code and tests. Update documentation when the public contract changes.
 
-### governance/
+## Superseded Entry Points
 
-- [`BASEBALLOS_NARRATIVE_GOVERNANCE.md`](governance/BASEBALLOS_NARRATIVE_GOVERNANCE.md)
-- [`CERTIFICATION_LEDGER.md`](governance/CERTIFICATION_LEDGER.md)
-- [`OPERATIONAL_REVIEWS.md`](governance/OPERATIONAL_REVIEWS.md)
-- [`RECOMMENDATION_ENGINE_V2_GOVERNANCE_BOUNDARIES.md`](governance/RECOMMENDATION_ENGINE_V2_GOVERNANCE_BOUNDARIES.md)
-- [`RECOMMENDATION_ENGINE_V2_CERTIFICATION_REQUIREMENTS.md`](governance/RECOMMENDATION_ENGINE_V2_CERTIFICATION_REQUIREMENTS.md)
-- [`RECOMMENDATION_ENGINE_V2_FORMAL_CERTIFICATION.md`](governance/RECOMMENDATION_ENGINE_V2_FORMAL_CERTIFICATION.md)
-- [`BASEBALLOS_FULL_PROGRAM_AUDIT_2026_06.md`](governance/BASEBALLOS_FULL_PROGRAM_AUDIT_2026_06.md)
-- [`PHASE_1_AUDIT_REMEDIATION_REPORT_2026_06.md`](governance/PHASE_1_AUDIT_REMEDIATION_REPORT_2026_06.md)
-
-### archive/
-
-Historical and superseded material, organized by month. Current archive:
-[`archive/2026-06/`](archive/2026-06/) — Recommendation Engine V1 plans and
-certification, V2 implementation/phase records, V2.5 lifecycle and governance
-hardening phases, V3 Team Operations readiness phases, V4 evidence/explanation
-phases, V5 bullpen intelligence surface phases, operational review and
-monitoring evidence, dashboard/UX remediation passes, and feature
-investigations and bugfixes. These documents are retained for history and are
-not necessarily authoritative.
-
-## Documentation Boundary
-
-This documentation preserves governance, certification, rollout, operational,
-and monitoring evidence. It does not authorize backend changes, frontend
-changes, API contract changes, recommendation logic changes, ranking behavior,
-selection behavior, prediction behavior, or full production rollout beyond the
-explicit decisions in the linked records.
+The former standalone roadmap and product-vision files now redirect to the canonical Roadmap and Product Experience Standard. Their prior content remains available in Git history.
