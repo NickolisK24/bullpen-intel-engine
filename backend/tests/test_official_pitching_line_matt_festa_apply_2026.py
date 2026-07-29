@@ -14,8 +14,8 @@ from datetime import date, datetime
 from pathlib import Path
 
 import pytest
+import re
 import sqlalchemy as sa
-import yaml
 from flask import Flask
 
 import models.prospect  # noqa: F401
@@ -1079,9 +1079,7 @@ def test_37b_no_delete_operation_exists_in_the_service_script_or_workflow():
                 statement = ' '.join(ast.unparse(arg) for arg in node.args).lower()
                 for forbidden in ('delete', 'drop', 'truncate'):
                     assert forbidden not in statement, statement
-    steps = yaml.safe_load(WORKFLOW_PATH.read_text(encoding='utf-8'))[
-        'jobs']['apply']['steps']
-    shell = '\n'.join(str(step.get('run') or '') for step in steps).lower()
+    shell = _workflow_shell().lower()
     for forbidden in ('delete from', 'drop table', 'truncate table', 'rm -', 'unlink('):
         assert forbidden not in shell, forbidden
 
@@ -1342,9 +1340,67 @@ def test_48b_a_refused_run_also_keeps_every_gate_blocked(approved, monkeypatch):
 
 
 # ══ 49-53. The dispatch-only workflow ════════════════════════════════════════
-@pytest.fixture(scope='module')
-def workflow():
-    return yaml.safe_load(WORKFLOW_PATH.read_text(encoding='utf-8'))
+# Deliberately dependency-free: PyYAML is not in backend/requirements.txt, so a test that
+# imported it would pass locally and fail on collection in CI. The workflow's list structure
+# is regular enough to walk directly, and walking it is what makes the ordering claim a
+# POSITION comparison rather than a substring comparison.
+def _apply_job_steps():
+    """The ordered step bodies of ``jobs.apply.steps``, parsed positionally."""
+    lines = WORKFLOW_PATH.read_text(encoding='utf-8').splitlines()
+    start = next((index for index, line in enumerate(lines)
+                  if line.startswith('  apply:')), None)
+    assert start is not None, 'jobs.apply is missing'
+
+    steps_at = None
+    for index in range(start + 1, len(lines)):
+        if lines[index].startswith('    steps:'):
+            steps_at = index
+            break
+        if lines[index].strip() and not lines[index].startswith('    '):
+            break
+    assert steps_at is not None, 'jobs.apply.steps is missing'
+
+    steps, current = [], None
+    for line in lines[steps_at + 1:]:
+        if line.strip() and not line.startswith('    '):
+            break                                   # left the job block entirely
+        if line.startswith('      - '):
+            if current is not None:
+                steps.append('\n'.join(current))
+            current = [line]
+        elif current is not None:
+            current.append(line)
+    if current is not None:
+        steps.append('\n'.join(current))
+    assert steps, 'jobs.apply.steps is empty'
+    return steps
+
+
+def _step_index(steps, marker):
+    matches = [index for index, body in enumerate(steps) if marker in body]
+    assert len(matches) == 1, f'expected exactly one step matching {marker!r}, got {matches}'
+    return matches[0]
+
+
+def _workflow_shell():
+    """Every line of the workflow outside the embedded summary heredoc.
+
+    The heredoc is Python that writes human prose into the job summary; guarding against
+    shell loops means guarding the SHELL, not the sentences it prints.
+    """
+    shell, inside = [], False
+    for line in WORKFLOW_PATH.read_text(encoding='utf-8').splitlines():
+        if "<<'PY'" in line:
+            inside = True
+            continue
+        if inside:
+            if line.strip() == 'PY':
+                inside = False
+            continue
+        if line.lstrip().startswith('#'):
+            continue
+        shell.append(line)
+    return '\n'.join(shell)
 
 
 @pytest.fixture(scope='module')
@@ -1352,41 +1408,48 @@ def workflow_text():
     return WORKFLOW_PATH.read_text(encoding='utf-8')
 
 
-def test_49_the_workflow_is_dispatch_only(workflow):
-    triggers = workflow[True]
-    assert set(triggers) == {'workflow_dispatch'}
-    assert 'schedule' not in triggers
-    assert 'push' not in triggers
-    assert 'pull_request' not in triggers
+def test_49_the_workflow_is_dispatch_only(workflow_text):
+    assert 'workflow_dispatch:' in workflow_text
+    for banned in ('schedule:', 'on: push', 'push:', 'pull_request:',
+                   'repository_dispatch:', 'workflow_call:', 'workflow_run:'):
+        assert banned not in workflow_text, banned
     # The only operator input is the confirmation phrase.
-    inputs = triggers['workflow_dispatch']['inputs']
-    assert set(inputs) == {'confirm_apply'}
-    assert inputs['confirm_apply']['required'] is True
-    assert inputs['confirm_apply']['default'] == ''
-    assert workflow['concurrency'] == {
-        'group': 'official-pitching-line-matt-festa-apply-2026',
-        'cancel-in-progress': False}
-    assert workflow['concurrency']['group'] != yaml.safe_load(
-        ORIGINAL_WORKFLOW_PATH.read_text(encoding='utf-8'))['concurrency']['group']
-    assert workflow['permissions'] == {'contents': 'read'}
+    inputs_block = workflow_text.split('inputs:', 1)[1].split('concurrency:', 1)[0]
+    assert 'confirm_apply:' in inputs_block
+    assert 'required: true' in inputs_block
+    # Exactly one dispatch input is DECLARED. Compared against the declared key names, not
+    # the surrounding description prose, so a governed word appearing in an explanation is
+    # not mistaken for an input the workflow accepts.
+    declared = re.findall(r'^      ([a-z_]+):$', inputs_block, re.M)
+    assert declared == ['confirm_apply']
+    for banned in ('season', 'as_of_date', 'team_id', 'game_pk', 'plan_scope',
+                   'preview_limit', 'fingerprint', 'action_count', 'field', 'value',
+                   'force', 'override'):
+        assert banned not in declared, banned
+    assert 'group: official-pitching-line-matt-festa-apply-2026' in workflow_text
+    assert 'cancel-in-progress: false' in workflow_text
+    assert 'contents: read' in workflow_text
+    # A concurrency group of its own, so it never serializes against the closed repair.
+    original = ORIGINAL_WORKFLOW_PATH.read_text(encoding='utf-8')
+    assert 'group: official-pitching-line-matt-festa-apply-2026' not in original
 
 
-def test_50_the_workflow_validates_the_confirmation_before_checkout(workflow):
-    steps = workflow['jobs']['apply']['steps']
-    assert steps[0]['name'] == 'Validate apply confirmation'
-    assert 'uses' not in steps[0]
-    assert festa.CONFIRMATION_PHRASE in steps[0]['run']
-    checkout = next(index for index, step in enumerate(steps)
-                    if str(step.get('uses', '')).startswith('actions/checkout'))
-    assert checkout > 0
+def test_50_the_workflow_validates_the_confirmation_before_checkout(workflow_text):
+    steps = _apply_job_steps()
+    assert 'Validate apply confirmation' in steps[0]
+    assert 'uses:' not in steps[0]
+    assert festa.CONFIRMATION_PHRASE in steps[0]
+    checkout = _step_index(steps, 'actions/checkout')
+    python_setup = _step_index(steps, 'actions/setup-python')
+    install = _step_index(steps, 'pip install')
+    apply_step = _step_index(steps, 'run_official_pitching_line_matt_festa_apply_2026.py')
+    assert 0 < checkout < python_setup < install < apply_step
     # Secrets are presence-checked, never printed.
-    assert '-z "${DATABASE_URL:-}"' in steps[0]['run']
-    assert 'echo "$DATABASE_URL' not in steps[0]['run']
-    for step in steps:
-        body = str(step.get('run') or '')
-        for secret in ('DATABASE_URL', 'SECRET_KEY', 'ADMIN_API_TOKEN'):
-            assert f'echo ${secret}' not in body
-            assert f'echo "${secret}"' not in body
+    assert '-z "${DATABASE_URL:-}"' in steps[0]
+    for secret in ('DATABASE_URL', 'SECRET_KEY', 'ADMIN_API_TOKEN'):
+        assert f'echo ${secret}' not in workflow_text
+        assert f'echo "${secret}"' not in workflow_text
+        assert f'${{{{ secrets.{secret} }}}}' not in ' '.join(steps)
 
 
 def test_51_the_workflow_invokes_the_apply_exactly_once(workflow_text):
@@ -1398,56 +1461,29 @@ def test_51_the_workflow_invokes_the_apply_exactly_once(workflow_text):
     assert 'exit "$apply_exit_code"' in body
 
 
-def _workflow_shell(workflow):
-    """Every step's shell, with the embedded summary heredoc removed.
-
-    The heredoc is Python that writes human prose into the job summary; guarding against
-    shell loops means guarding the SHELL, not the sentences it prints.
-    """
-    shell = []
-    for step in workflow['jobs']['apply']['steps']:
-        inside = False
-        for line in str(step.get('run') or '').splitlines():
-            if "<<'PY'" in line:
-                inside = True
-                continue
-            if inside:
-                if line.strip() == 'PY':
-                    inside = False
-                continue
-            if line.lstrip().startswith('#'):
-                continue
-            shell.append(line)
-    return '\n'.join(shell).lower()
-
-
-def test_52_the_workflow_has_no_retry_loop_or_redispatch(workflow, workflow_text):
-    shell = _workflow_shell(workflow)
+def test_52_the_workflow_has_no_retry_loop_or_redispatch(workflow_text):
+    shell = _workflow_shell().lower()
     for forbidden in ('retry', 'until ', 'while ', 'for i in', 'for ((', 'sleep ',
-                      'gh workflow run', 'gh run rerun', 'curl '):
+                      'gh workflow run', 'gh run rerun', 'curl ', 'workflow_run',
+                      'repository_dispatch', 'nick-fields/retry', 'continue-on-error',
+                      'schedule:'):
         assert forbidden not in shell, forbidden
-    # And nothing in the workflow definition itself re-triggers or tolerates failure.
-    definition = yaml.safe_dump(workflow).lower()
-    for forbidden in ('workflow_run', 'repository_dispatch', 'nick-fields/retry',
-                      'continue-on-error'):
-        assert forbidden not in definition, forbidden
-    assert 'schedule' not in yaml.safe_dump(workflow[True]).lower()
 
 
-def test_53_the_workflow_uploads_one_private_complete_artifact(workflow):
-    steps = workflow['jobs']['apply']['steps']
-    uploads = [step for step in steps
-               if str(step.get('uses', '')).startswith('actions/upload-artifact')]
+def test_53_the_workflow_uploads_one_private_complete_artifact(workflow_text):
+    steps = _apply_job_steps()
+    uploads = [body for body in steps if 'actions/upload-artifact' in body]
     assert len(uploads) == 1
-    upload = uploads[0]['with']
-    assert upload['retention-days'] == 30
-    assert upload['if-no-files-found'] == 'error'
-    assert 'matt-festa' in upload['name']
-    assert uploads[0]['if'] == '${{ always() }}'
-    apply_step = next(step for step in steps
-                      if step.get('name', '').startswith('Apply the reviewed'))
-    assert '--output "$report_json"' in apply_step['run']
-    assert '--compact' in apply_step['run']
+    assert 'retention-days: 30' in uploads[0]
+    assert 'if-no-files-found: error' in uploads[0]
+    assert 'matt-festa' in uploads[0]
+    assert 'if: ${{ always() }}' in uploads[0]
+    apply_step = steps[_step_index(
+        steps, 'run_official_pitching_line_matt_festa_apply_2026.py')]
+    assert '--output "$report_json"' in apply_step
+    assert '--compact' in apply_step
+    # Artifacts are private unless published; nothing here publishes one.
+    assert 'public' not in uploads[0].lower()
 
 
 # ══ 54-56. No migration, no cross-execution, no dispatch ═════════════════════
