@@ -1182,25 +1182,39 @@ def _amendment_verification(session, before, contract) -> dict:
 
 
 # ── In-transaction verification ───────────────────────────────────────────────
+def _same_governed_value(left, right) -> bool:
+    """Two authorities agree only when the Python storage type AND the value are identical.
+
+    Plain ``==`` is not enough: Python treats ``True == 1`` and ``False == 0`` as true, so an
+    integer stored where the governed type is boolean — or the reverse — would compare equal
+    and hide a type disagreement. Requiring ``type(left) is type(right)`` first makes the
+    comparison type-exact. This is a STRENGTHENING, not a normalization: no value is coerced,
+    rounded, converted, or made null-equivalent; a bool is simply never accepted as an int,
+    an int never as a float, and ``None`` never as any other type.
+    """
+    return type(left) is type(right) and left == right
+
+
 def _readback_field_mismatch(*, action_id, local_game_log_id, official_mlb_person_id,
                              appearance_team_id, field, planned_current_value,
                              manifest_value, after_value, stored_value) -> Optional[dict]:
     """Triangulate one changed field across its three authorities.
 
     Returns ``None`` when the reviewed manifest proposed value, the value this run assigned
-    to the row, and the value the database stored are ALL equal; otherwise returns a
-    structured, JSON-safe mismatch item naming the exact row, field, each value, and each
-    Python type.
+    to the row, and the value the database stored are ALL equal in BOTH Python storage type
+    and value; otherwise returns a structured, JSON-safe mismatch item naming the exact row,
+    field, each value, and each Python type.
 
-    Equality is Python ``==`` and nothing else. There is no float tolerance, no integer or
-    boolean coercion, no string conversion, and no null-equivalence, so a materially
-    different stored value — an int for a bool, ``None`` for a number, ``5`` for ``4`` — can
-    never be reported as a match. Keeping the comparison in one documented, deterministic
-    function is what lets its exactness be proven field by field in isolation.
+    Equality is type-exact ``==`` via ``_same_governed_value`` and nothing else. There is no
+    float tolerance, no integer or boolean coercion, no string conversion, and no
+    null-equivalence, so a materially different stored value — an int ``1`` for a bool
+    ``True``, ``1.0`` for ``1``, ``None`` for a number, ``5`` for ``4`` — can never be
+    reported as a match. Keeping the comparison in one documented, deterministic function is
+    what lets its exactness be proven field by field in isolation.
     """
-    manifest_eq_after = manifest_value == after_value
-    after_eq_stored = after_value == stored_value
-    manifest_eq_stored = manifest_value == stored_value
+    manifest_eq_after = _same_governed_value(manifest_value, after_value)
+    after_eq_stored = _same_governed_value(after_value, stored_value)
+    manifest_eq_stored = _same_governed_value(manifest_value, stored_value)
     if manifest_eq_after and after_eq_stored and manifest_eq_stored:
         return None
     return {

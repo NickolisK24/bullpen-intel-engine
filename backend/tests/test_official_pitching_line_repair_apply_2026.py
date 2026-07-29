@@ -3495,18 +3495,25 @@ def test_the_update_readback_forces_a_database_round_trip_bypassing_the_identity
 
 def test_the_update_readback_comparison_introduces_no_tolerance_or_coercion():
     import inspect
-    source = inspect.getsource(apply_service._readback_field_mismatch)
-    # Drop the docstring, which describes in prose the coercions that are NOT applied, and
-    # guard the executable body against every tolerance/coercion call form. (The paren and
-    # numeric-literal forms cannot appear in the prose.)
-    body = source.split('"""', 2)[-1]
-    for forbidden in ('abs(', '1e-6', '0.000001', 'round(', 'float(', 'int(', 'str(',
-                      'lower(', 'strip('):
-        assert forbidden not in body, forbidden
-    # Equality is Python == and nothing else, computed once per authority pair.
-    assert 'manifest_value == after_value' in body
-    assert 'after_value == stored_value' in body
-    assert 'manifest_value == stored_value' in body
+    # Guard both the per-field triangulation and the type-exact equality primitive. Drop each
+    # docstring (it describes in prose the coercions that are NOT applied) and check the
+    # executable body against every tolerance/coercion call form. The paren and numeric-literal
+    # forms cannot appear in the prose.
+    for func in (apply_service._readback_field_mismatch, apply_service._same_governed_value):
+        body = inspect.getsource(func).split('"""', 2)[-1]
+        for forbidden in ('abs(', '1e-6', '0.000001', 'round(', 'float(', 'int(', 'str(',
+                          'bool(', 'lower(', 'strip('):
+            assert forbidden not in body, forbidden
+    # Each authority pair is compared through the type-exact primitive, nothing else.
+    mismatch_body = inspect.getsource(
+        apply_service._readback_field_mismatch).split('"""', 2)[-1]
+    assert '_same_governed_value(manifest_value, after_value)' in mismatch_body
+    assert '_same_governed_value(after_value, stored_value)' in mismatch_body
+    assert '_same_governed_value(manifest_value, stored_value)' in mismatch_body
+    # Type-exact means identical Python type AND equal value.
+    primitive_body = inspect.getsource(
+        apply_service._same_governed_value).split('"""', 2)[-1]
+    assert 'type(left) is type(right) and left == right' in primitive_body
 
 
 def test_the_apply_workflow_summarizes_readback_mismatches_within_bounds():
@@ -3534,3 +3541,122 @@ def test_the_diagnostic_hardening_left_the_fingerprint_and_confirmation_phrase_u
     assert 'APPLY-2026-PITCHING-LINE-REPAIR-3EE2EA06' in service_text
     workflow_text = WORKFLOW_PATH.read_text(encoding='utf-8')
     assert 'APPLY-2026-PITCHING-LINE-REPAIR-3EE2EA06' in workflow_text
+
+
+# ═══════════════ 26. Type-exact readback equality ══════════════════════════
+# Python treats True == 1 and False == 0 as true and 1 == 1.0 as true. The readback
+# comparison must not let that cross-type equivalence hide a governed storage-type
+# disagreement, so equality requires identical Python type AND equal value.
+def test_true_is_not_one_in_the_readback_comparison():
+    assert apply_service._same_governed_value(True, 1) is False
+    item = _readback(field='save', manifest_value=True, after_value=True, stored_value=1)
+    assert item is not None
+    assert item['update_record_value_type'] == 'bool'
+    assert item['stored_value_type'] == 'int'
+    assert item['update_record_after_equals_stored_readback'] is False
+
+
+def test_false_is_not_zero_in_the_readback_comparison():
+    assert apply_service._same_governed_value(False, 0) is False
+    item = _readback(field='save', manifest_value=False, after_value=False, stored_value=0)
+    assert item is not None
+    assert item['update_record_after_equals_stored_readback'] is False
+
+
+def test_one_int_is_not_one_float_in_the_readback_comparison():
+    assert apply_service._same_governed_value(1, 1.0) is False
+    item = _readback(field='innings_pitched', manifest_value=1, after_value=1,
+                     stored_value=1.0)
+    assert item is not None
+    assert item['update_record_value_type'] == 'int'
+    assert item['stored_value_type'] == 'float'
+
+
+def test_type_exact_matches_pass_for_each_governed_type():
+    assert _readback(field='save', manifest_value=True, after_value=True,
+                     stored_value=True) is None
+    assert _readback(manifest_value=7, after_value=7, stored_value=7) is None
+    assert _readback(field='innings_pitched', manifest_value=6.0, after_value=6.0,
+                     stored_value=6.0) is None
+    assert _readback(field='opponent', manifest_value='TB', after_value='TB',
+                     stored_value='TB') is None
+
+
+def test_none_matches_none_and_fails_against_any_other_type():
+    assert apply_service._same_governed_value(None, None) is True
+    assert _readback(field='batters_faced', manifest_value=None, after_value=None,
+                     stored_value=None) is None
+    item = _readback(field='batters_faced', manifest_value=None, after_value=None,
+                     stored_value=0)
+    assert item is not None
+    assert item['stored_value_type'] == 'int'
+    assert item['update_record_after_equals_stored_readback'] is False
+
+
+def test_a_type_exact_mismatch_still_reports_all_three_python_type_names():
+    item = _readback(field='save', manifest_value=True, after_value=1, stored_value=1)
+    assert item is not None
+    assert item['manifest_value_type'] == 'bool'
+    assert item['update_record_value_type'] == 'int'
+    assert item['stored_value_type'] == 'int'
+
+
+def _readback_stored_column(field, seed_overrides, *, mlb_id, game_pk):
+    """Seed one GameLog and read ``field`` back with the verifier's own narrow SELECT,
+    so the observed type is exactly what the in-transaction verifier would compare."""
+    pitcher = _pitcher(mlb_id)
+    kwargs = dict(
+        pitcher_id=pitcher.id, mlb_game_pk=game_pk, game_date=GDATE, game_type='R',
+        games_started=0, innings_pitched_outs=18, innings_pitched=6.0, runs_allowed=0,
+        earned_runs=0, hits_allowed=0, walks=0, strikeouts=0, home_runs_allowed=0,
+        strikes=36, opponent='T', opponent_abbreviation='T',
+        appearance_team_status=GameLog.APPEARANCE_TEAM_RESOLVED, appearance_team_id=100,
+        appearance_team_source='boxscore_side',
+        appearance_team_reason='appearance_team_resolved_boxscore')
+    kwargs.update(seed_overrides)  # overrides may set a field the defaults also list
+    log = GameLog(**kwargs)
+    db.session.add(log)
+    db.session.commit()
+    return db.session.execute(
+        sa.select(GameLog.__table__.c[field])
+        .where(GameLog.__table__.c['id'] == log.id)).scalar()
+
+
+def test_postgres_boolean_readback_is_python_bool(app):
+    if db.session.get_bind().dialect.name != 'postgresql':
+        pytest.skip('storage-type readback proof is PostgreSQL-specific')
+    value = _readback_stored_column('save', {'save': True}, mlb_id=961001, game_pk=972001)
+    assert value is True
+    assert type(value) is bool
+
+
+def test_postgres_integer_readback_is_python_int(app):
+    if db.session.get_bind().dialect.name != 'postgresql':
+        pytest.skip('storage-type readback proof is PostgreSQL-specific')
+    value = _readback_stored_column('hits_allowed', {'hits_allowed': 7},
+                                    mlb_id=961002, game_pk=972002)
+    assert value == 7
+    assert type(value) is int
+
+
+def test_postgres_double_precision_readback_is_python_float(app):
+    if db.session.get_bind().dialect.name != 'postgresql':
+        pytest.skip('storage-type readback proof is PostgreSQL-specific')
+    value = _readback_stored_column('leverage_index', {'leverage_index': 1.5},
+                                    mlb_id=961003, game_pk=972003)
+    assert value == 1.5
+    assert type(value) is float
+
+
+def test_no_workflow_dispatch_or_gate_opening_survives_the_type_exact_change():
+    # The type-exact readback strengthens a diagnostic; it must not touch the dispatch-only,
+    # confirmation-first workflow or ever open a downstream gate.
+    workflow_text = WORKFLOW_PATH.read_text(encoding='utf-8')
+    assert 'workflow_dispatch:' in workflow_text
+    assert 'APPLY-2026-PITCHING-LINE-REPAIR-3EE2EA06' in workflow_text
+    base = apply_service._base_payload(
+        dict(apply_service.APPROVED_EXECUTION_CONTRACT),
+        apply_service.APPROVED_OFFICIAL_PITCHING_LINE_REPAIR_MANIFEST_FINGERPRINT_2026,
+        None, 'testsha', 'op', __import__('datetime').datetime(2026, 7, 29))
+    for gate in apply_service.DOWNSTREAM_GATES:
+        assert base[gate] == apply_service.GATE_BLOCKED

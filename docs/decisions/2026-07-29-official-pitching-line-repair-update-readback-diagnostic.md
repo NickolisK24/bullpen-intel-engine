@@ -86,9 +86,13 @@ skipped check was introduced.
   helper `_readback_field_mismatch`: (1) the reviewed manifest proposed value (from the
   original UPDATE action), (2) the value this run assigned (the update record's `after`
   snapshot), (3) the value read back from the database. A field passes only when all three are
-  equal under exact Python `==`. On any disagreement a structured item records the action id,
-  row id, official person id, appearance-team id, field, planned-current value, all three
-  values, all three Python type names, and all three pairwise equality booleans.
+  equal in BOTH Python storage type and value — a type-exact `==` (`type(a) is type(b) and
+  a == b`, via `_same_governed_value`), because plain `==` treats `True == 1` and `1 == 1.0`
+  as true and would let a storage-type disagreement pass. This is a strengthening, not a
+  normalization: no value is coerced, rounded, converted, or made null-equivalent. On any
+  disagreement a structured item records the action id, row id, official person id,
+  appearance-team id, field, planned-current value, all three values, all three Python type
+  names, and all three (type-exact) pairwise equality booleans.
 - **Artifact preserved before rollback.** The verifier now *returns* its full result; the
   caller records `verification_results`, `update_readback_mismatches`, `mutation_watch`, the
   **staged** action counts, and the staged dependent-evidence totals into the payload *before*
