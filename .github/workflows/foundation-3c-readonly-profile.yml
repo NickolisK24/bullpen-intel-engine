@@ -170,6 +170,29 @@ jobs:
                   (out_dir / path).unlink()
               raise SystemExit(1)
 
+          # An import failure is reported by stage and target so the next
+          # repair is exact. No exception message or path is ever printed.
+          if report.get('reason') == 'import_failed':
+              lines = [
+                  '## Foundation 3C read-only ingestion profile',
+                  '',
+                  f"- Result: **{report.get('result')}** (exit {exit_code})",
+                  f"- Commit: `{os.environ.get('RUN_COMMIT', '')}`",
+                  '',
+                  '### Import failure',
+                  '',
+                  f"- Exception type: `{report.get('exception_type')}`",
+                  f"- Import stage: `{report.get('import_stage')}`",
+                  f"- Module: `{report.get('module_name')}`",
+                  f"- Missing symbol: `{report.get('missing_name')}`",
+                  f"- Import target: `{report.get('import_target')}`",
+                  f"- Sanitized: **{report.get('sanitized')}**",
+                  '',
+                  'No exception message, traceback, or filesystem path is reported.',
+              ]
+              summary_path.write_text('\n'.join(lines) + '\n')
+              raise SystemExit(0)
+
           universe = report.get('universe') or {}
           profile = report.get('profile') or {}
           accounting = universe.get('accounting') or {}

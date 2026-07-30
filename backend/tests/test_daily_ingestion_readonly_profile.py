@@ -8,6 +8,7 @@ refuse to run at all outside its read-only boundary.
 """
 
 import importlib.util
+import json
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -402,3 +403,221 @@ def test_the_guard_does_not_fail_before_the_probe_has_run():
     assert profile.read_only_guard(
         'postgresql_read_only_transaction', None,
         require_engine_read_only=True) is None
+
+
+# ── Import failure reporting ───────────────────────────────────────────────
+def test_a_missing_module_reports_its_name_and_stage():
+    with pytest.raises(profile.DiagnosticImportError) as caught:
+        with profile.importing(profile.STAGE_SERVICE_IMPORT, 'services.not_real'):
+            import services.not_real  # noqa: F401
+    payload = caught.value.to_payload()
+
+    assert payload['result'] == profile.RESULT_ERROR
+    assert payload['reason'] == 'import_failed'
+    assert payload['exception_type'] == 'ModuleNotFoundError'
+    assert payload['import_stage'] == profile.STAGE_SERVICE_IMPORT
+    assert payload['module_name'] == 'services.not_real'
+    assert payload['import_target'] == 'services.not_real'
+    assert payload['sanitized'] is True
+    assert 'Traceback' not in json.dumps(payload)
+
+
+def test_a_missing_symbol_reports_the_controlled_target():
+    """The production failure shape: the module exists, the symbol does not."""
+    with pytest.raises(profile.DiagnosticImportError) as caught:
+        with profile.importing(profile.STAGE_MODEL_IMPORT, 'models.pitcher',
+                               'NotARealSymbol'):
+            from models.pitcher import NotARealSymbol  # noqa: F401
+    payload = caught.value.to_payload()
+
+    assert payload['exception_type'] == 'ImportError'
+    assert payload['import_stage'] == profile.STAGE_MODEL_IMPORT
+    assert payload['module_name'] == 'models.pitcher'
+    # CPython 3.11 does not expose the missing symbol, so it comes from the
+    # call site — known, not reconstructed from a message.
+    assert payload['missing_name'] == 'NotARealSymbol'
+    assert payload['import_target'] == 'models.pitcher.NotARealSymbol'
+
+
+def test_unavailable_structured_fields_are_null_and_never_guessed():
+    class _Bare(ImportError):
+        pass
+
+    with pytest.raises(profile.DiagnosticImportError) as caught:
+        with profile.importing(profile.STAGE_PROFILER_IMPORT, None, None):
+            raise _Bare('something went wrong')
+    payload = caught.value.to_payload()
+
+    assert payload['module_name'] is None
+    assert payload['missing_name'] is None
+    assert payload['import_target'] is None
+    assert payload['sanitized'] is True
+    assert 'something went wrong' not in json.dumps(payload)
+
+
+def test_an_absolute_path_in_the_exception_never_reaches_any_output():
+    """CPython puts the module's absolute path in both exc.path and str(exc)."""
+    secret_path = '/opt/secret/place/services/mlb_api.py'
+
+    error = ImportError(
+        f"cannot import name 'X' from 'services.mlb_api' ({secret_path})")
+    error.name = 'services.mlb_api'
+    error.path = secret_path
+
+    with pytest.raises(profile.DiagnosticImportError) as caught:
+        with profile.importing(profile.STAGE_PROFILER_IMPORT,
+                               'services.mlb_api', 'X'):
+            raise error
+    payload = caught.value.to_payload()
+
+    rendered_json = json.dumps(payload)
+    rendered_markdown = profile._markdown(payload)
+    for surface in (rendered_json, rendered_markdown):
+        assert secret_path not in surface
+        assert '/opt/' not in surface
+        assert 'cannot import name' not in surface
+    assert payload['module_name'] == 'services.mlb_api'
+    assert payload['import_target'] == 'services.mlb_api.X'
+
+
+def test_credential_shaped_exception_content_never_reaches_any_output():
+    hostile = 'postgresql://user:hunter2@db.internal:5432/prod'
+    error = ImportError(f'failed while connecting to {hostile}')
+    error.name = hostile
+    error.path = hostile
+
+    with pytest.raises(profile.DiagnosticImportError) as caught:
+        with profile.importing(profile.STAGE_APPLICATION_IMPORT, 'app', 'create_app'):
+            raise error
+    payload = caught.value.to_payload()
+
+    rendered = json.dumps(payload) + profile._markdown(payload)
+    for forbidden in ('postgresql://', 'hunter2', 'db.internal', 'Authorization',
+                      'password'):
+        assert forbidden not in rendered
+    # The hostile exc.name failed the identifier guard, so the known target won.
+    assert payload['module_name'] == 'app'
+    assert payload['import_target'] == 'app.create_app'
+
+
+@pytest.mark.parametrize('value,expected', [
+    ('services.mlb_api', 'services.mlb_api'),
+    ('mlb_client', 'mlb_client'),
+    ('/abs/path/mod.py', None),
+    ('postgresql://u:p@h/db', None),
+    ('has space', None),
+    ('trailing.', None),
+    ('', None),
+    (None, None),
+    (123, None),
+    ('a' * 300, None),
+])
+def test_the_identifier_guard_admits_only_dotted_names(value, expected):
+    assert profile.safe_identifier(value) == expected
+
+
+def test_a_generic_exception_keeps_the_minimal_safe_shape():
+    payload = profile._fail('diagnostic_failed', 'OperationalError')
+    assert payload['result'] == profile.RESULT_ERROR
+    assert payload['reason'] == 'diagnostic_failed'
+    assert payload['detail'] == 'OperationalError'
+    # It does NOT gain the import fields.
+    assert 'import_stage' not in payload
+    assert 'sanitized' not in payload
+
+
+def test_the_import_failure_schema_is_deterministic():
+    with pytest.raises(profile.DiagnosticImportError) as caught:
+        with profile.importing(profile.STAGE_SERVICE_IMPORT, 'services.absent'):
+            import services.absent  # noqa: F401
+    first = caught.value.to_payload()
+    second = caught.value.to_payload()
+
+    assert first == second
+    assert set(first) == {
+        'capability', 'mode', 'schema_version', 'result', 'reason',
+        'exception_type', 'import_stage', 'module_name', 'missing_name',
+        'import_target', 'sanitized',
+    }
+
+
+def test_every_declared_import_stage_is_used_by_the_script():
+    source = SCRIPT_PATH.read_text(encoding='utf-8')
+    for stage in (profile.STAGE_BOOTSTRAP, profile.STAGE_APPLICATION_IMPORT,
+                  profile.STAGE_MODEL_IMPORT, profile.STAGE_SERVICE_IMPORT,
+                  profile.STAGE_PROFILER_IMPORT):
+        assert f"'{stage}'" in source or stage.upper() in source
+
+
+# ── The profile path itself resolves ───────────────────────────────────────
+def test_the_profiler_imports_the_real_shared_mlb_client():
+    """The production failure was here: a client name that does not exist.
+
+    --skip-profile never reaches this import, which is exactly why every local
+    run passed while production failed.
+    """
+    from services.mlb_api import mlb_client
+
+    assert hasattr(mlb_client, 'get_pitcher_game_logs')
+    source = SCRIPT_PATH.read_text(encoding='utf-8')
+    assert 'from services.mlb_api import mlb_client' in source
+    assert 'MLBStatsAPI' not in source
+
+
+def test_the_profile_path_runs_without_an_import_error(app, monkeypatch):
+    """Exercises profile_sample end to end with the network stubbed out."""
+    arm = _pitcher('Profiled Arm')
+    _relief(arm, appearances=4)
+    db.session.commit()
+
+    from services import mlb_api
+
+    calls = []
+
+    def _fake_logs(mlb_id, season=None):
+        calls.append((mlb_id, season))
+        return [{
+            'game': {'gamePk': 990001},
+            'date': (REFERENCE_DATE - timedelta(days=2)).isoformat(),
+            'stat': {'earnedRuns': 1},
+        }]
+
+    monkeypatch.setattr(mlb_api.mlb_client, 'get_pitcher_game_logs', _fake_logs)
+
+    sample = [{'pitcher_id': arm.id, 'mlb_id': arm.mlb_id,
+               'category': profile.CAT_ACTIVE_BULLPEN, 'criticality': 'publication_critical'}]
+    result = profile.profile_sample(
+        db.session, sample, reference_date=REFERENCE_DATE,
+        lookback_days=7, season=2026)
+
+    assert calls == [(arm.mlb_id, 2026)]
+    assert result['succeeded'] == 1
+    assert result['failed'] == 0
+    assert result['api_calls_by_endpoint_family'] == {'people_stats_gamelog': 1}
+    observation = result['observations'][0]
+    assert observation['error'] is None
+    assert observation['splits_returned'] == 1
+    assert observation['splits_in_window'] == 1
+    assert observation['relevant_ratio'] == 1.0
+
+
+def test_the_workflow_summary_reports_import_failures_safely():
+    workflow = (BACKEND_DIR.parent / '.github' / 'workflows'
+                / 'foundation-3c-readonly-profile.yml').read_text(encoding='utf-8')
+
+    # The safe fields are surfaced.
+    for field in ('exception_type', 'import_stage', 'module_name',
+                  'missing_name', 'import_target', 'sanitized'):
+        assert f"report.get('{field}')" in workflow, field
+
+    # The sanitization scan and the fail-closed gate survive.
+    assert 'Sanitization check failed' in workflow
+    assert 'X-Admin-Token' in workflow
+    assert 'workflow_dispatch' in workflow
+    assert 'contents: read' in workflow
+
+    # Nothing prints an exception message, traceback, or path. Checked as code
+    # patterns — the phrase "traceback" appears in an explanatory line.
+    for forbidden in ("report.get('detail')", 'str(exc)', 'format_exc',
+                      'print_exc', "report.get('path')"):
+        assert forbidden not in workflow, forbidden
