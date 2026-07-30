@@ -3,8 +3,8 @@
 | Field | Value |
 |---|---|
 | Status | Canonical - intelligence, data, evidence, methodology, and publication authority |
-| Version | 1.1 |
-| Effective date | July 29, 2026 |
+| Version | 1.2 |
+| Effective date | July 30, 2026 |
 | Owner | Nickolis Kacludis |
 | Supersedes | Intelligence, metric, vocabulary, evidence, freshness, and trust rules spread across prior master documents |
 | Update rule | Revise when a source authority, data domain, public term, method, evidence contract, freshness rule, suppression rule, or publication gate changes |
@@ -272,16 +272,22 @@ A later metric may require an additional rolling window. It may not redefine the
 
 The family **fails closed** below a metric's approved minimum sample.
 
-The family owns the mechanism. Each metric registry entry owns its exact threshold and denominator. No generic threshold is established here, and none may be invented at implementation time: the only below-sample behavior currently authorized by canonical code is refusal at a zero denominator, which the canonical season aggregation reports as the governed reason `era_denominator_zero`.
+The family owns the mechanism. Each metric registry entry owns its exact threshold, threshold unit, and denominator. No generic threshold is established here, and none may be invented at implementation time.
+
+A metric's minimum sample is stated in **its own denominator's unit**. A rate over innings is gated on recorded outs, never on appearance count: ten one-out appearances is ten outs, and an appearance-count gate would admit a sample the metric cannot support. The threshold, its unit, and its authority travel with the value.
+
+M-001's approved threshold is 108 recorded outs — 36.0 innings — under D-023. See Section 7C.
 
 Below-sample behavior:
 
 - no numeric value is published;
 - no zero, prior, league, or estimated value is substituted;
-- the result is represented as a limited or unavailable performance read;
+- the result is represented as a limited performance read using the approved public wording;
 - the exact machine refusal code belongs to the canonical code registry at implementation time.
 
-Public wording is subordinate to this contract and may not create a second vocabulary. `Limited Read` exists today as a governed **arm-read** label in the canonical public-label authority. It has never been authorized as a team-level performance label. Final public wording for a below-sample performance read is an implementation-time decision owned by the canonical public-label authority, not by a surface or a caption.
+A zero denominator is a **separate** refusal, evaluated before any sample check and reported as the governed reason `era_denominator_zero`. "This group has not pitched" and "this group has not pitched enough" are different facts, and a reader inspecting a refusal must be able to tell them apart.
+
+Public wording is subordinate to this contract and may not create a second vocabulary. `Limited Read` and `Unavailable` are governed **arm-read** labels in the canonical public-label authority and have never been authorized as team-level performance labels; `Monitor` is an internal availability state that stays internal. The approved public wording for a below-sample performance read is **Not Enough Innings Yet**, under D-026, and it is never rendered without the group's current count and the required count beside it.
 
 ### Date and freshness contract
 
@@ -324,6 +330,8 @@ These are semantic inspection depths. They are not four pages, four components, 
 | 3 | Evidence | Named pitchers, games, dates, qualifying relief appearances |
 | 4 | Official record | Canonical official pitching lines and source authority |
 
+The exact required fields at each level are filled per metric. M-001's filled contract is in Section 7C and is the template every later metric under this family fills. A metric may add fields at Levels 2 and 3. It may not add a level, rename a level, reorder the chain, or make a required field optional. **A value whose evidence cannot reach Level 4 is not publishable.**
+
 ### Limitation contract
 
 The standard material limitation is:
@@ -348,13 +356,120 @@ This extends the methodology-versioning requirements in Section 13; it does not 
 
 ### Registry
 
-| ID | Metric | Family | Status |
-|---|---|---|---|
-| M-001 | Current Active-Pen ERA | Current Active-Pen Performance | Contract pending implementation / not public |
+| ID | Registry name | Public name | Family | Status |
+|---|---|---|---|---|
+| M-001 | Current Active-Pen ERA | Active Bullpen ERA | Current Active-Pen Performance | Specified — see Section 7C; not implemented, not public |
 
-M-001's exact formula approval, minimum sample, and denominator are **not** established by this contract. Approving them is a separate work package. No other metric may be added to this registry as implemented, approved for public use, or production-ready.
+M-001's formula, denominator, minimum sample, precision, public name, below-sample wording, evidence contract, and membership rule **are** established, by D-023 through D-030. Section 7C records them. Wiring them is a separate implementation package, and the metric remains non-public until it passes the normal trust gates.
 
-Candidate later entries — WHIP, K%, BB%, K-BB%, HR/9, inherited-runner outcomes, and FIP/xFIP/SIERA — remain candidates only. Each requires its own approved source, formula, sample, and publication contract before it becomes a registry entry.
+No other metric may be added to this registry as implemented, approved for public use, or production-ready.
+
+Candidate later entries — WHIP, K%, BB%, K-BB%, HR/9, LOB%, inherited-runner outcomes, and FIP/xFIP/SIERA — remain candidates only. Each requires its own approved source, formula, sample, and publication contract before it becomes a registry entry. What each inherits automatically and what it must define for itself is fixed by D-030 and recorded immediately below.
+
+### What a metric inherits and what it defines
+
+A metric under an established family **inherits unchanged** and may not redefine: the governing question and scope; the active-group authority and its resolution date; the window contract and its exclusions; appearance-team authority with no current-team fallback; integer recorded outs as the innings authority; fail-closed publication with typed refusal codes; the prohibition on unknown-as-zero and the rule that one unusable qualifying row refuses the whole read; date and freshness stamps; the four evidence levels and their required fields; the family limitation; the rounding mechanics in Section 7C; the gate model, since no metric opens its own gate; and the canonical public home, since no surface recalculates.
+
+A metric **defines for itself**: its stable key and version; its public rendered name; the question it answers at Level 1; its formula, numerator, and denominator; the source fields it cannot be computed without; its displayed precision; its minimum sample value, unit, and authority; its denominator-zero refusal code; any metric-specific limitation; its approved surfaces; and its deterministic fixtures.
+
+A metric may be registered before its minimum sample is approved. It will compute and refuse to publish. Before it may publish it needs an approved formula, an approved minimum sample with its authority, an approved public name, and a declared precision.
+
+**Standing rule:** a metric whose required source domain is Experimental, Partial, or Deferred in the capability registry of Section 16 may not be registered until that domain reaches Production. Registering it earlier creates a governed metric that can never satisfy evidence Level 4.
+
+## 7C. M-001 Current Active-Pen ERA - Metric Specification
+
+Approved July 30, 2026 by D-023 through D-030. Public name **Active Bullpen ERA**. Registry name and stable identity unchanged.
+
+**M-001 is specified, not published.** `public_reader_gate`, `team_state_performance_gate`, and `share_card_performance_gate` remain blocked. This section opens no gate.
+
+### Formula and denominator authority
+
+| Field | Value |
+|---|---|
+| Formula | `earned_runs * 27 / recorded_outs` |
+| Numerator | total earned runs over the qualifying appearance set, multiplied by 27 |
+| Denominator | total **integer recorded outs** over the qualifying appearance set |
+| Unit | earned runs per nine innings |
+| Zero denominator | refuse with `era_denominator_zero`, before any sample check |
+
+Integer outs are the denominator because decimal MLB innings notation does not sum — `2.1` is seven outs, and adding the notation as decimals is arithmetically wrong — because float accumulation is not reproducible across recomputation or inside a frozen artifact, and because the Level 3 evidence must add up to the Level 2 denominator with no remainder. Decimal innings are derived for display and never participate in the calculation. This preserves D-008 unchanged.
+
+### Minimum sample
+
+| Field | Value |
+|---|---|
+| Threshold | **108 recorded outs (36.0 innings)** |
+| Unit | recorded outs |
+| Authority | D-023 |
+| Below threshold | publish no number; render the approved below-sample read |
+
+The threshold is derived, not chosen. One additional earned run moves the published value by exactly `27 / outs`; 108 outs is the smallest whole-out sample at which a single earned run cannot move the value by more than 0.25 — the smallest difference between two bullpens a baseball reader would treat as meaningful. The derivation depends only on the formula, so the threshold does not need revision when a season or a run environment changes.
+
+### Rounding and precision
+
+These mechanics are family-wide. Each metric declares only its own displayed precision.
+
+| Layer | Rule |
+|---|---|
+| Internal | exact integers only; no floating-point type participates at any stage |
+| Ratio | exact `Decimal` quotient of the two integers, never `float` division |
+| Rounding | `ROUND_HALF_UP`, applied exactly once, at the declared precision |
+| Stored | exact integer numerator, exact integer denominator, and the rounded value as a fixed-precision decimal string |
+| Displayed | the stored string verbatim, trailing zeros preserved; the frontend never rounds, re-rounds, truncates, or reformats |
+
+M-001's declared displayed precision is **two decimal places, always**.
+
+Half-up rather than round-half-to-even, because a reader must be able to reproduce the value by hand and because baseball has published ERA half-up for a century. Rounded once, because a value rounded at computation, again at storage, and again at display can differ from the exact value by more than the published increment.
+
+| Earned runs | Outs | Innings shown | Numerator | Exact quotient | Published |
+|---|---|---|---|---|---|
+| 31 | 289 | 96.1 | 837 | 2.896193... | **2.90** |
+| 12 | 108 | 36.0 | 324 | 3.0 | **3.00** |
+| 0 | 130 | 43.1 | 0 | 0.0 | **0.00** |
+| 1 | 216 | 72.0 | 27 | 0.125 | **0.13** |
+| 8 | 66 | 22.0 | 216 | 3.272727... | refused - below sample |
+| 4 | 0 | 0.0 | 108 | undefined | refused - `era_denominator_zero` |
+
+A real zero is published as `0.00`. A group that has allowed no earned runs over 43.1 innings has an observed, checkable value of zero, and it is never rendered as missing, as a dash, or as an unavailable read.
+
+### Below-sample public read
+
+> **Not Enough Innings Yet**
+
+Rendered only with its own numbers adjacent:
+
+> **Not Enough Innings Yet** - this group has thrown 22.0 relief innings for Cincinnati; 36.0 are required.
+
+The count and the requirement are mandatory. `Limited Read`, `Unavailable`, and `Monitor` are forbidden here: the first two are governed arm-read labels with established meanings about a single pitcher, and the third is an internal availability state carrying an implied instruction. The wording states insufficient evidence without implying poor performance, hidden data, or system failure.
+
+### Active-group membership with no qualifying usage
+
+A reliever resolved into the active bullpen who has no qualifying relief appearances for this team is **included in the group and contributes zero qualifying appearances**. His zero outs and zero earned runs enter no numerator and no denominator, because M-001 is a ratio over recorded work and not an average of per-pitcher rates.
+
+This is not unknown-as-zero. An unknown is a value that exists and is missing from the record; a no-usage member has an **observed** count of zero appearances for this team. Substituting a league rate, a prior-club rate, or a zero rate for him would be imputation and is prohibited.
+
+Every read therefore reports two counts - **group size** and **contributing arms**. Where they differ, Level 2 discloses the difference in one sentence. A difference is normal information, never an error state. Because the sample threshold is evaluated in outs, a group padded with non-contributing members cannot cross the sample gate on membership alone.
+
+His appearances for a prior organization stay with that organization. D-009 is unchanged.
+
+### Evidence contract
+
+| Level | Required for M-001 |
+|---|---|
+| 1 Summary | public name; the published value, or the below-sample read with its counts, or the typed refusal; represented baseball date; freshness state |
+| 2 Context | group size and contributing-arm count; qualifying appearance count; total recorded outs and derived display innings; exact numerator and exact denominator; minimum sample, its unit, and its authority; method version and effective date; the material limitation where it applies |
+| 3 Evidence | every group member named with his qualifying appearance count and outs, including members with zero; every qualifying appearance as a row carrying game identifier, game date, opponent, appearance-team identifier, recorded outs, and earned runs; the reason any line was excluded where material |
+| 4 Official record | the named source authority for each appearance; appearance-team authority status and source per row; schedule and finality authority per game; method version and effective date |
+
+Optional at any level: opponent branding, doubleheader game number, rest and usage context, and per-arm rate values. A per-arm rate publishes only against that arm's own approved sample.
+
+Prohibited at every level: league averages, prior-period values, projections, rankings, quality adjectives, and any value presented without its group and sample.
+
+### Limitation
+
+The family limitation applies unchanged. One metric-specific limitation is added while it holds:
+
+> Active-bullpen membership resolves from the governed bullpen population as of the represented date and is not yet guaranteed complete for a newly active arm with no usage-based role evidence.
 
 ## 8. Public Vocabulary
 
@@ -386,6 +501,8 @@ The public catalog is:
 
 Internal availability states such as Available, Monitor, Limited, Avoid, and Unavailable may remain calculation inputs. Transitional backend wording may not create a second public vocabulary. Canonical public keys and frontend catalog own the final rendered language.
 
+Arm-read labels describe **one pitcher**. None of them may be reused for a team-level performance metric, in either direction.
+
 ### Public role labels
 
 - Trusted Arm
@@ -406,6 +523,15 @@ Role and read are separate chips. A Trusted Arm can carry Limited Rest; a Covera
 - Trusted Arms
 
 Every named read requires a versioned method, public definition, evidence contract, and suppression rule. A read name is not advice.
+
+### Public performance vocabulary
+
+| Term | Meaning | Authority |
+|---|---|---|
+| Active Bullpen ERA | Public name of M-001; earned runs per nine innings over official completed relief work for this team by the arms in its active bullpen on the represented date | D-028 |
+| Not Enough Innings Yet | The approved below-sample read for a performance metric, always rendered with the group's current count and the required count | D-026 |
+
+This is the complete approved public performance vocabulary. No surface, caption, or post may paraphrase either term or invent a third.
 
 ## 9. Evidence Architecture
 
@@ -540,7 +666,8 @@ Before publication verify source authority, completeness, currentness, evidence 
 | Starter exposure / rotation load transfer | Partial |
 | Canonical season bullpen aggregation - team-side relief totals | Production - internal; official validation reconciled; no public reader |
 | Current Active-Pen Performance family contract | Established - see Section 7A; governs every later performance metric |
-| Current Active-Pen ERA (M-001) | Planned - contract pending implementation; not public; formula and minimum sample not yet approved |
+| Current Active-Pen Performance framework | Production-internal foundation - reusable group resolution, qualifying-appearance selection, sample evaluation, evidence assembly, and fail-closed publication; unwired, no public consumer |
+| Current Active-Pen ERA / Active Bullpen ERA (M-001) | Specified - see Section 7C; formula, denominator, minimum sample, precision, public name, below-sample wording, evidence contract, and membership rule approved; not implemented, not public, all gates blocked |
 | Pitch-characteristic trends | Experimental / planned |
 | Leverage concentration | Partial / planned |
 | Organizational reinforcement depth | Partial / planned |
@@ -552,3 +679,4 @@ Before publication verify source authority, completeness, currentness, evidence 
 |---|---|---|---|
 | 1.0 | July 29, 2026 | Nickolis Kacludis | Consolidated source authority, data domains, vocabulary, evidence, freshness, suppression, trusted publication, immutability, correction, methodology versioning, public-copy rules, and current capability state. |
 | 1.1 | July 29, 2026 | Nickolis Kacludis | Expanded performance context into the reusable Current Active-Pen Performance family contract (Section 7A): active-group, window, sample, date/freshness, evidence, evidence-level, and limitation contracts. Added the metric-family and metric-registry model with M-001 Current Active-Pen ERA reserved as contract-pending and non-public (Section 7B). Corrected the capability registry to separate the production-internal season bullpen aggregation from the unimplemented public metric. State is not performance, canonical integer outs, and historical appearance-team ownership are preserved unchanged. |
+| 1.2 | July 30, 2026 | Nickolis Kacludis | Specified M-001 in a new Section 7C: formula and denominator authority, the derived 108-out minimum sample stated in the denominator's own unit, family-wide rounding mechanics with worked examples, the approved below-sample read Not Enough Innings Yet, the no-usage call-up membership rule with its two group counts, and the filled four-level evidence contract. Added the inheritance split to Section 7B, the public performance vocabulary to Section 8, and corrected the capability registry. No gate is opened; M-001 remains unimplemented and non-public. |

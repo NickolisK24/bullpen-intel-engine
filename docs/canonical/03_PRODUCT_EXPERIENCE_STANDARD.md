@@ -3,8 +3,8 @@
 | Field | Value |
 |---|---|
 | Status | Canonical - public surface, navigation, interaction, accessibility, and end-state authority |
-| Version | 1.1 |
-| Effective date | July 29, 2026 |
+| Version | 1.2 |
+| Effective date | July 30, 2026 |
 | Owner | Nickolis Kacludis |
 | Supersedes | BaseballOS Product Vision Specification and overlapping surface descriptions in prior strategy documents |
 | Update rule | Revise when a page mission, navigation model, information hierarchy, primary user question, public route, failure behavior, or surface acceptance test changes |
@@ -343,7 +343,16 @@ Current state (Fresh / Stretched / Vulnerable)
 
 State and Why stay above performance. A performance value never becomes the page's headline answer and never replaces the state label.
 
-A performance component must show, at minimum, the value or its explicit unavailable read, the group size and sample, the represented baseball date, and a route to its evidence. Below its approved minimum sample it shows a limited or unavailable read with the reason — never a zero, a prior value, or a blank.
+A performance component must show, at minimum, the value or its explicit below-sample read, the group size and sample, the represented baseball date, and a route to its evidence. Below its approved minimum sample it shows the approved below-sample read with the reason — never a zero, a prior value, or a blank.
+
+For M-001, specified in Bullpen Intelligence Standard Section 7C, that resolves to:
+
+- **Public name:** Active Bullpen ERA. Never paraphrased, never abbreviated to "Bullpen ERA," never rewritten as a caption.
+- **Value:** two decimal places, always, rendered exactly as the backend supplies it. `0.00` is a real value and is rendered as a number, never as a dash or a missing state. The frontend never rounds, re-rounds, or reformats.
+- **Below sample:** **Not Enough Innings Yet**, with the group's current relief innings and the required innings beside it. A bare label is not permitted — Section 15 prohibits unexplained thresholds, and this is one.
+- **Group:** both the group size and the contributing-arm count. When they differ, the component says so in one sentence. A difference is normal information and is never styled as a warning, an error, or a degraded state.
+
+A performance component is never the page's headline answer and never replaces the state label, whatever its value.
 
 Drill-down expectation: the component satisfies Level 1 and Level 2 of the family's evidence levels in place, and provides one interaction that reaches Levels 3 and 4 — named pitchers, qualifying appearances, and the official pitching lines behind them. A compact rendering may show less; it may not become a naked number.
 
@@ -475,3 +484,4 @@ Retire or merge a surface when it no longer owns a unique question, another page
 |---|---|---|---|
 | 1.0 | July 29, 2026 | Nickolis Kacludis | Established the permanent page map, experience principles, surface missions, current/end-state boundaries, mobile/accessibility standards, failure behavior, and acceptance tests for BaseballOS. |
 | 1.1 | July 29, 2026 | Nickolis Kacludis | Established the Team Board as the canonical public home for current active-pen performance, with placement below State and Why, minimum component requirements, evidence drill-down expectations, and aligned inheritance rules for Pitcher Detail, Compare, Today, Dashboard, Stories, and Share Artifacts. The Team Board owns presentation, not computation. One question per page and one canonical home per fact are preserved. |
+| 1.2 | July 30, 2026 | Nickolis Kacludis | Recorded the approved M-001 presentation contract on the Team Board: the public name Active Bullpen ERA, fixed two-decimal rendering with a real zero shown as a number, the below-sample read Not Enough Innings Yet rendered only with its counts, and the required group-size and contributing-arm disclosure. The frontend renders and never recalculates or re-rounds. No gate is opened. |
