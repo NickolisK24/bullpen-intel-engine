@@ -7,17 +7,28 @@ and its own formula test.
 """
 
 from datetime import date
+from pathlib import Path
 
 import pytest
 from flask import Flask
 
 from models.game_log import GameLog
 from models.pitcher import Pitcher
+from models.scheduled_game import ScheduledGame
 from services import performance_intelligence as pi
 from services import performance_metrics
 from tests.db_config import configure_test_database, create_test_schema, drop_test_schema
 from utils.db import db
 
+
+BACKEND_DIR = Path(__file__).resolve().parents[1]
+
+
+class _Stub:
+    """Minimal row stand-in for validating a state the schema forecloses."""
+
+    def __init__(self, **fields):
+        self.__dict__.update(fields)
 
 TEAM_ID = 113
 OTHER_TEAM_ID = 158
@@ -58,13 +69,39 @@ def _pitcher(name, *, team_id=TEAM_ID, active=True):
 _next_pk = [910000]
 
 
+def _schedule(game_pk, game_date, *, team_id=TEAM_ID, opponent_id=OTHER_TEAM_ID,
+              status_state=ScheduledGame.STATE_FINAL, game_type='R'):
+    """Canonical schedule authority: one row per side, both must agree."""
+    for side in (team_id, opponent_id):
+        db.session.add(ScheduledGame(
+            team_id=side, game_pk=game_pk, game_date=game_date,
+            game_type=game_type, status_state=status_state,
+            status_code='F' if status_state == ScheduledGame.STATE_FINAL else 'S',
+        ))
+
+
 def _log(pitcher, *, outs=3, earned_runs=0, games_started=0,
          appearance_team_id=TEAM_ID, game_type='R', game_date=None,
-         appearance_team_status=GameLog.APPEARANCE_TEAM_RESOLVED):
+         appearance_team_status=GameLog.APPEARANCE_TEAM_RESOLVED,
+         schedule=True, schedule_status=ScheduledGame.STATE_FINAL,
+         schedule_game_type=None, opponent_id=None):
     _next_pk[0] += 1
+    when = game_date or date(2026, 7, 20)
+    owner = appearance_team_id if appearance_team_id is not None else TEAM_ID
+    if opponent_id is None:
+        # The two sides of a game must be different teams.
+        opponent_id = OTHER_TEAM_ID if owner != OTHER_TEAM_ID else TEAM_ID
+    if schedule:
+        _schedule(
+            _next_pk[0], when,
+            team_id=owner,
+            opponent_id=opponent_id,
+            status_state=schedule_status,
+            game_type=schedule_game_type or game_type,
+        )
     log = GameLog(
         pitcher_id=pitcher.id, mlb_game_pk=_next_pk[0],
-        game_date=game_date or date(2026, 7, 20), game_type=game_type,
+        game_date=when, game_type=game_type,
         opponent='Milwaukee Brewers', opponent_abbreviation='MIL',
         games_started=games_started, innings_pitched=outs / 3,
         innings_pitched_outs=outs, earned_runs=earned_runs, runs_allowed=earned_runs,
@@ -162,9 +199,10 @@ def test_starts_never_count(app):
     _log(arm, outs=3, earned_runs=1, games_started=0)    # relief
     db.session.commit()
 
-    logs = pi.qualifying_appearances(TEAM_ID, [arm.id], season=SEASON)
-    assert len(logs) == 1
-    assert pi.build_components(logs).outs == 3
+    selection = pi.qualifying_appearances(TEAM_ID, [arm.id], season=SEASON)
+    assert selection.is_valid
+    assert len(selection.rows) == 1
+    assert pi.build_components(selection.rows).outs == 3
 
 
 def test_appearances_for_another_organization_never_count(app):
@@ -173,9 +211,9 @@ def test_appearances_for_another_organization_never_count(app):
     _log(traded, outs=9, earned_runs=6, appearance_team_id=OTHER_TEAM_ID)
     db.session.commit()
 
-    components = pi.build_components(
-        pi.qualifying_appearances(TEAM_ID, [traded.id], season=SEASON)
-    )
+    selection = pi.qualifying_appearances(TEAM_ID, [traded.id], season=SEASON)
+    assert selection.is_valid
+    components = pi.build_components(selection.rows)
     # Only the appearances made FOR this team, even though he is on this
     # roster now and the prior-club line is his own.
     assert components.appearances == 1
@@ -202,14 +240,14 @@ def test_unresolved_appearance_authority_never_counts(app):
     _log(arm, outs=3, earned_runs=1, appearance_team_id=None,
          appearance_team_status=GameLog.APPEARANCE_TEAM_UNRESOLVED)
     db.session.commit()
-    assert pi.qualifying_appearances(TEAM_ID, [arm.id], season=SEASON) == []
+    assert pi.qualifying_appearances(TEAM_ID, [arm.id], season=SEASON).rows == ()
 
 
 def test_non_regular_season_never_counts(app):
     arm = _pitcher('Spring Arm')
     _log(arm, outs=3, earned_runs=1, game_type='S')
     db.session.commit()
-    assert pi.qualifying_appearances(TEAM_ID, [arm.id], season=SEASON) == []
+    assert pi.qualifying_appearances(TEAM_ID, [arm.id], season=SEASON).rows == ()
 
 
 def test_unknown_start_flag_never_counts(app):
@@ -217,7 +255,10 @@ def test_unknown_start_flag_never_counts(app):
     log = _log(arm, outs=3, earned_runs=1)
     log.games_started = None
     db.session.commit()
-    assert pi.qualifying_appearances(TEAM_ID, [arm.id], season=SEASON) == []
+    selection = pi.qualifying_appearances(TEAM_ID, [arm.id], season=SEASON)
+    # Cannot prove starter vs relief for a completed game: blocking, not silent.
+    assert selection.rows == ()
+    assert [i.reason for i in selection.blocking] == [pi.ROW_STARTER_IDENTITY_UNKNOWN]
 
 
 # ── Sample, refusal, publication ────────────────────────────────────────────
@@ -356,3 +397,246 @@ def test_integer_outs_are_the_denominator_authority(app):
     read = _read()
     assert read['exact_denominator'] == 9
     assert read['sample']['outs'] == 9
+
+
+# ── Unknowns stay unknown (gate correction 2) ───────────────────────────────
+def test_a_real_zero_is_accepted_as_a_real_zero(app):
+    arm = _pitcher('Scoreless Arm')
+    _log(arm, outs=27, earned_runs=0)
+    db.session.commit()
+
+    read = _read()
+    assert read['reason_code'] is None
+    assert read['exact_numerator'] == 0
+    assert read['value'] == '0.00'
+
+
+def test_missing_earned_runs_refuses_rather_than_counting_zero(app):
+    arm = _pitcher('Missing ER Arm')
+    log = _log(arm, outs=27, earned_runs=0)
+    db.session.commit()
+    # earned_runs defaults to 0 on INSERT, so a genuine NULL can only arrive
+    # via a later write. That is exactly the case the validator must catch.
+    log.earned_runs = None
+    db.session.commit()
+
+    read = _read()
+    assert read['value'] is None
+    assert read['reason_code'] == pi.REFUSAL_QUALIFYING_ROW_INVALID
+    issue = read['invalid_rows'][0]
+    assert issue['reason'] == pi.ROW_COMPONENT_MISSING
+    assert issue['field'] == 'earned_runs'
+
+
+def test_malformed_earned_runs_refuses(app):
+    arm = _pitcher('Malformed ER Arm')
+    log = _log(arm, outs=27, earned_runs=0)
+    db.session.commit()
+    log.earned_runs = 'not-a-number'
+    db.session.commit()
+
+    read = _read()
+    assert read['reason_code'] == pi.REFUSAL_QUALIFYING_ROW_INVALID
+    assert read['invalid_rows'][0]['reason'] == pi.ROW_COMPONENT_MALFORMED
+
+
+def test_null_outs_are_prevented_by_the_schema_and_by_the_validator(app):
+    """Persistence already guarantees this; the validator is defence in depth.
+
+    innings_pitched_outs is NOT NULL with a non-negative CHECK, so a NULL can
+    never be stored. The guarantee is asserted here rather than assumed, and
+    the validator is checked directly for the case the schema forecloses.
+    """
+    column = GameLog.__table__.columns['innings_pitched_outs']
+    assert column.nullable is False
+
+    arm = _pitcher('Null Outs Arm')
+    log = _log(arm, outs=27, earned_runs=2)
+    db.session.commit()
+    log.innings_pitched_outs = None
+    with pytest.raises(Exception):
+        db.session.commit()
+    db.session.rollback()
+
+    issue = pi._validate_required_components(
+        _Stub(innings_pitched_outs=None, earned_runs=0),
+        ('innings_pitched_outs', 'earned_runs'),
+        lambda reason, field=None: pi.RowIssue(1, 1, field, reason),
+    )
+    assert issue.reason == pi.ROW_COMPONENT_MISSING
+    assert issue.field == 'innings_pitched_outs'
+
+
+def test_malformed_outs_are_prevented_by_the_schema_and_by_the_validator(app):
+    """Outs are protected at three layers; the validator is the last of them.
+
+    NOT NULL, a non-negative CHECK, and ck_game_logs_innings_pitched_matches_outs
+    together make a malformed value unstorable. The database guarantee is
+    asserted, then the validator is checked directly for the same case.
+    """
+    checks = {c.name for c in GameLog.__table__.constraints if c.name}
+    assert 'ck_game_logs_innings_pitched_outs_nonnegative' in checks
+    assert 'ck_game_logs_innings_pitched_matches_outs' in checks
+
+    arm = _pitcher('Malformed Outs Arm')
+    log = _log(arm, outs=27, earned_runs=2)
+    db.session.commit()
+    log.innings_pitched_outs = 'x'
+    with pytest.raises(Exception):
+        db.session.commit()
+    db.session.rollback()
+
+    issue = pi._validate_required_components(
+        _Stub(innings_pitched_outs='x', earned_runs=0),
+        ('innings_pitched_outs', 'earned_runs'),
+        lambda reason, field=None: pi.RowIssue(1, 1, field, reason),
+    )
+    assert issue.reason == pi.ROW_COMPONENT_MALFORMED
+    assert issue.field == 'innings_pitched_outs'
+
+
+def test_one_invalid_row_refuses_the_whole_read(app):
+    arm = _pitcher('Mostly Good Arm')
+    _log(arm, outs=15, earned_runs=1)
+    _log(arm, outs=9, earned_runs=1)
+    bad = _log(arm, outs=3, earned_runs=0)
+    db.session.commit()
+    bad.earned_runs = None
+    db.session.commit()
+
+    read = _read()
+    # Not ignored, not zero-filled: the whole read refuses.
+    assert read['value'] is None
+    assert read['reason_code'] == pi.REFUSAL_QUALIFYING_ROW_INVALID
+    assert len(read['invalid_rows']) == 1
+
+
+def test_refusal_carries_bounded_identity_only(app):
+    arm = _pitcher('Bounded Arm')
+    log = _log(arm, outs=27, earned_runs=0)
+    db.session.commit()
+    log.earned_runs = None
+    db.session.commit()
+
+    issue = _read()['invalid_rows'][0]
+    # Enough to find the row again, and nothing more.
+    assert set(issue) == {'mlb_game_pk', 'pitcher_id', 'field', 'reason'}
+    assert issue['pitcher_id'] == arm.id
+    assert issue['mlb_game_pk'] is not None
+
+
+def test_required_int_accepts_zero_and_rejects_unknowns():
+    assert pi._required_int(0) == (True, 0)
+    assert pi._required_int(4) == (True, 4)
+    assert pi._required_int(None)[0] is False
+    assert pi._required_int('x')[0] is False
+    assert pi._required_int(True)[0] is False
+    assert pi._required_int(-1)[0] is False
+
+
+# ── Canonical completed-game authority (gate correction 3) ──────────────────
+def test_final_supported_regular_season_relief_qualifies(app):
+    arm = _pitcher('Final Game Arm')
+    _log(arm, outs=27, earned_runs=3)
+    db.session.commit()
+
+    selection = pi.qualifying_appearances(
+        TEAM_ID, [arm.id], season=SEASON,
+        required_components=('innings_pitched_outs', 'earned_runs'),
+    )
+    assert selection.is_valid
+    assert len(selection.rows) == 1
+
+
+def test_in_progress_game_does_not_qualify(app):
+    arm = _pitcher('In Progress Arm')
+    _log(arm, outs=3, earned_runs=1,
+         schedule_status=ScheduledGame.STATE_SCHEDULED)
+    db.session.commit()
+
+    selection = pi.qualifying_appearances(TEAM_ID, [arm.id], season=SEASON)
+    assert selection.rows == ()
+    # A harmless exclusion, never a blocking evidence gap.
+    assert selection.blocking == ()
+    assert [i.reason for i in selection.excluded] == [pi.ROW_GAME_NOT_FINAL]
+
+
+def test_postponed_game_does_not_qualify(app):
+    arm = _pitcher('Postponed Arm')
+    _log(arm, outs=3, earned_runs=1,
+         schedule_status=ScheduledGame.STATE_POSTPONED)
+    db.session.commit()
+
+    selection = pi.qualifying_appearances(TEAM_ID, [arm.id], season=SEASON)
+    assert selection.rows == ()
+    assert [i.reason for i in selection.excluded] == [pi.ROW_GAME_NOT_FINAL]
+
+
+def test_suspended_unresolved_game_does_not_qualify(app):
+    arm = _pitcher('Suspended Arm')
+    _log(arm, outs=3, earned_runs=1,
+         schedule_status=ScheduledGame.STATE_SUSPENDED)
+    db.session.commit()
+
+    selection = pi.qualifying_appearances(TEAM_ID, [arm.id], season=SEASON)
+    assert selection.rows == ()
+    assert [i.reason for i in selection.excluded] == [pi.ROW_GAME_NOT_FINAL]
+
+
+def test_unsupported_game_type_does_not_qualify(app):
+    arm = _pitcher('Spring Type Arm')
+    _log(arm, outs=3, earned_runs=1, game_type='S')
+    db.session.commit()
+    assert pi.qualifying_appearances(TEAM_ID, [arm.id], season=SEASON).rows == ()
+
+
+def test_unprovable_game_finality_blocks_rather_than_being_dropped(app):
+    arm = _pitcher('No Schedule Arm')
+    _log(arm, outs=3, earned_runs=1, schedule=False)
+    db.session.commit()
+
+    selection = pi.qualifying_appearances(TEAM_ID, [arm.id], season=SEASON)
+    assert selection.rows == ()
+    # Missing authority is BLOCKING, matching the canonical rule; a canonical
+    # read must not omit an in-scope appearance for want of authority.
+    assert [i.reason for i in selection.blocking] == [
+        pi.ROW_SCHEDULE_AUTHORITY_MISSING
+    ]
+    assert _read()['reason_code'] == pi.REFUSAL_QUALIFYING_ROW_INVALID
+
+
+def test_contradictory_game_authority_blocks(app):
+    arm = _pitcher('Contradictory Arm')
+    log = _log(arm, outs=3, earned_runs=1)
+    # The two sides disagree on finality.
+    row = ScheduledGame.query.filter_by(
+        game_pk=log.mlb_game_pk, team_id=OTHER_TEAM_ID).first()
+    row.status_state = ScheduledGame.STATE_SCHEDULED
+    db.session.commit()
+
+    selection = pi.qualifying_appearances(TEAM_ID, [arm.id], season=SEASON)
+    assert [i.reason for i in selection.blocking] == [
+        pi.ROW_CONTRADICTORY_GAME_AUTHORITY
+    ]
+
+
+def test_no_second_finality_classifier_is_defined(app):
+    """Finality must be proved through the canonical authority, not restated."""
+    source = (BACKEND_DIR / 'services/performance_intelligence.py').read_text()
+    assert 'schedule_authority._schedule_authority(' in source
+    for reimplementation in (
+        "status_state == 'final'", 'STATE_FINAL', 'FINAL_GAME_STATUS_CODES',
+        'classify_game_finality', 'ScheduledGame.query',
+    ):
+        assert reimplementation not in source, reimplementation
+
+
+# ── Governance boundaries hold after the corrections ───────────────────────
+def test_membership_completeness_limitation_is_disclosed(app):
+    arm = _pitcher('Disclosure Arm')
+    _log(arm, outs=27, earned_runs=4)
+    db.session.commit()
+
+    limitations = _read()['limitations']
+    assert any('not yet guaranteed complete' in text for text in limitations)
+    assert any('newly active arm' in text for text in limitations)

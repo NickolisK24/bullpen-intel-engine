@@ -73,7 +73,11 @@ CURRENT_ACTIVE_PEN_ERA = MetricDefinition(
         'official_completed_pitching_line',
         'appearance_team_authority',
         'governed_bullpen_population',
+        'canonical_completed_game_authority',
     ),
+    # ERA cannot be computed without these. A missing or malformed value in
+    # either refuses the read rather than becoming a zero.
+    required_row_components=('innings_pitched_outs', 'earned_runs'),
     minimum_sample=ERA_MINIMUM_SAMPLE,
     minimum_sample_authority=ERA_MINIMUM_SAMPLE_AUTHORITY,
 )
