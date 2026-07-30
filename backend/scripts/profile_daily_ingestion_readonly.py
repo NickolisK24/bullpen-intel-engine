@@ -40,9 +40,11 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 import time
 from collections import defaultdict
+from contextlib import contextmanager
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
@@ -65,6 +67,110 @@ RESULT_ERROR = 'ERROR'
 EXIT_OK = 0
 EXIT_RECONCILIATION = 1
 EXIT_ERROR = 2
+
+# ── Import stages ───────────────────────────────────────────────────────────
+# A stable name for WHERE an import was attempted. A production import failure
+# is otherwise indistinguishable from any other error, and the exception's own
+# message cannot be reported: on CPython it embeds the absolute filesystem path
+# of the module that failed.
+STAGE_BOOTSTRAP = 'bootstrap'
+STAGE_APPLICATION_IMPORT = 'application_import'
+STAGE_MODEL_IMPORT = 'model_import'
+STAGE_SERVICE_IMPORT = 'service_import'
+STAGE_PROFILER_IMPORT = 'profiler_import'
+STAGE_REPORT_RENDERING = 'report_rendering'
+
+REASON_IMPORT_FAILED = 'import_failed'
+
+# A safe identifier is a dotted Python name and nothing else. Anything that
+# fails this — a path, a message fragment, a URL — is dropped rather than
+# reported, so a hostile or unusual exception attribute cannot leak.
+_SAFE_IDENTIFIER = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$')
+
+
+def safe_identifier(value):
+    """Return ``value`` only when it is a plain dotted identifier, else None."""
+    if not isinstance(value, str):
+        return None
+    candidate = value.strip()
+    if not candidate or len(candidate) > 200:
+        return None
+    return candidate if _SAFE_IDENTIFIER.match(candidate) else None
+
+
+class DiagnosticImportError(Exception):
+    """An import failure reduced to fields that are safe to publish.
+
+    The originating exception is deliberately NOT retained. ``exc.path`` and
+    ``str(exc)`` both carry an absolute filesystem path, and neither may reach
+    an artifact.
+    """
+
+    def __init__(self, *, stage, target_module, target_symbol, exception_type,
+                 module_name, missing_name):
+        super().__init__(REASON_IMPORT_FAILED)
+        self.stage = stage
+        self.target_module = target_module
+        self.target_symbol = target_symbol
+        self.exception_type = exception_type
+        self.module_name = module_name
+        self.missing_name = missing_name
+
+    @property
+    def import_target(self):
+        """What the code path MEANT to import — known, never reconstructed."""
+        module = safe_identifier(self.target_module)
+        symbol = safe_identifier(self.target_symbol)
+        if module and symbol:
+            return f'{module}.{symbol}'
+        return module or symbol
+
+    def to_payload(self):
+        return {
+            'capability': CAPABILITY,
+            'mode': MODE,
+            'schema_version': SCHEMA_VERSION,
+            'result': RESULT_ERROR,
+            'reason': REASON_IMPORT_FAILED,
+            'exception_type': self.exception_type,
+            'import_stage': self.stage,
+            'module_name': self.module_name,
+            'missing_name': self.missing_name,
+            'import_target': self.import_target,
+            'sanitized': True,
+        }
+
+
+@contextmanager
+def importing(stage, target_module, target_symbol=None):
+    """Convert an import failure into a publishable, sanitized description.
+
+    The helper already knows the module and symbol it is attempting, so the
+    identity comes from the call site rather than from parsing an exception
+    message. ``exc.name`` is consulted only as a cross-check and only when it
+    passes the identifier guard; ``exc.path`` is never read.
+    """
+    try:
+        yield
+    except (ModuleNotFoundError, ImportError) as exc:
+        module_name = safe_identifier(getattr(exc, 'name', None))
+        if module_name is None:
+            module_name = safe_identifier(target_module)
+        # CPython 3.11 does not expose the missing symbol on the exception, so
+        # the only trustworthy source is what this call site asked for.
+        missing_name = (
+            safe_identifier(getattr(exc, 'name_from', None))
+            or safe_identifier(target_symbol)
+        )
+        raise DiagnosticImportError(
+            stage=stage,
+            target_module=target_module,
+            target_symbol=target_symbol,
+            exception_type=type(exc).__name__,
+            module_name=module_name,
+            missing_name=missing_name,
+        ) from None
+
 
 DEFAULT_SAMPLE_SIZE = 60
 MAX_IDS_PER_CATEGORY = 10
@@ -208,9 +314,10 @@ def select_sample(by_category, size):
 # ── Read-only enforcement ───────────────────────────────────────────────────
 def enforce_read_only(session):
     """Make the DATABASE reject writes. Returns the protection actually applied."""
-    from sqlalchemy import text
-
-    from utils.db import db
+    with importing(STAGE_BOOTSTRAP, 'sqlalchemy', 'text'):
+        from sqlalchemy import text
+    with importing(STAGE_APPLICATION_IMPORT, 'utils.db', 'db'):
+        from utils.db import db
 
     bind = session.get_bind() if hasattr(session, 'get_bind') else None
     dialect = getattr(getattr(bind, 'dialect', None), 'name', None)
@@ -246,7 +353,8 @@ def probe_write_refused(session):
     failure case where the boundary is absent — and if the write SUCCEEDS the
     caller must treat the run as unsafe and stop.
     """
-    from sqlalchemy import text
+    with importing(STAGE_BOOTSTRAP, 'sqlalchemy', 'text'):
+        from sqlalchemy import text
 
     try:
         session.execute(text(
@@ -261,7 +369,8 @@ def probe_write_refused(session):
 
 def table_fingerprints(session):
     """Row count and max(id) per watched table. Missing tables report None."""
-    from sqlalchemy import text
+    with importing(STAGE_BOOTSTRAP, 'sqlalchemy', 'text'):
+        from sqlalchemy import text
 
     fingerprints = {}
     for table in WRITE_WATCH_TABLES:
@@ -290,19 +399,28 @@ def fingerprint_drift(before, after):
 
 # ── Diagnostic A: universe classification ───────────────────────────────────
 def classify_universe(session, *, reference_date, lookback_days):
-    from models.game_log import GameLog
-    from models.pitcher import Pitcher
-    from services import bullpen_eligibility, publication_criticality, role_authority
-    from services.roster_authority import (
-        ROSTER_STATUS_CATEGORY_ACTIVE,
-        ROSTER_STATUS_CATEGORY_FORTY_MAN_NOT_ACTIVE,
-        ROSTER_STATUS_CATEGORY_INJURED_LIST,
-        ROSTER_STATUS_CATEGORY_NON_ROSTER_DEPTH,
-        ROSTER_STATUS_CATEGORY_OPTIONED_OR_MINORS,
-        ROSTER_STATUS_CATEGORY_RESTRICTED_OR_SPECIAL,
-        ROSTER_STATUS_CATEGORY_UNKNOWN,
-        roster_status_category_for_status,
-    )
+    with importing(STAGE_MODEL_IMPORT, 'models.game_log', 'GameLog'):
+        from models.game_log import GameLog
+    with importing(STAGE_MODEL_IMPORT, 'models.pitcher', 'Pitcher'):
+        from models.pitcher import Pitcher
+    with importing(STAGE_SERVICE_IMPORT, 'services.bullpen_eligibility'):
+        from services import bullpen_eligibility
+    with importing(STAGE_SERVICE_IMPORT, 'services.publication_criticality'):
+        from services import publication_criticality
+    with importing(STAGE_SERVICE_IMPORT, 'services.role_authority'):
+        from services import role_authority
+    with importing(STAGE_SERVICE_IMPORT, 'services.roster_authority',
+                   'roster_status_category_for_status'):
+        from services.roster_authority import (
+            ROSTER_STATUS_CATEGORY_ACTIVE,
+            ROSTER_STATUS_CATEGORY_FORTY_MAN_NOT_ACTIVE,
+            ROSTER_STATUS_CATEGORY_INJURED_LIST,
+            ROSTER_STATUS_CATEGORY_NON_ROSTER_DEPTH,
+            ROSTER_STATUS_CATEGORY_OPTIONED_OR_MINORS,
+            ROSTER_STATUS_CATEGORY_RESTRICTED_OR_SPECIAL,
+            ROSTER_STATUS_CATEGORY_UNKNOWN,
+            roster_status_category_for_status,
+        )
 
     timings = {}
     started = time.monotonic()
@@ -460,10 +578,14 @@ def classify_universe(session, *, reference_date, lookback_days):
 
 # ── Diagnostic B: bounded execution profile ─────────────────────────────────
 def profile_sample(session, sample, *, reference_date, lookback_days, season):
-    from models.game_log import GameLog
-    from services.mlb_api import MLBStatsAPI
+    with importing(STAGE_MODEL_IMPORT, 'models.game_log', 'GameLog'):
+        from models.game_log import GameLog
+    # The SAME shared client instance services/sync.py uses, so the profile
+    # measures the real production request path rather than a second one.
+    with importing(STAGE_PROFILER_IMPORT, 'services.mlb_api', 'mlb_client'):
+        from services.mlb_api import mlb_client
 
-    client = MLBStatsAPI()
+    client = mlb_client
     cutoff = reference_date - timedelta(days=lookback_days)
 
     started = time.monotonic()
@@ -615,6 +737,23 @@ def _fail(reason, detail=None):
 
 
 def _markdown(report):
+    if report.get('reason') == REASON_IMPORT_FAILED:
+        return '\n'.join([
+            '# Foundation 3C — daily ingestion read-only diagnostic',
+            '',
+            '## Import failure',
+            '',
+            f"- Result: **{report.get('result')}**",
+            f"- Exception type: `{report.get('exception_type')}`",
+            f"- Import stage: `{report.get('import_stage')}`",
+            f"- Module: `{report.get('module_name')}`",
+            f"- Missing symbol: `{report.get('missing_name')}`",
+            f"- Import target: `{report.get('import_target')}`",
+            f"- Sanitized: **{report.get('sanitized')}**",
+            '',
+            'No exception message, traceback, or filesystem path is reported.',
+        ]) + '\n'
+
     universe = report.get('universe') or {}
     profile = report.get('profile') or {}
     lines = [
@@ -673,8 +812,10 @@ def _markdown(report):
 
 
 def run(args):
-    from app import create_app
-    from utils.db import db
+    with importing(STAGE_APPLICATION_IMPORT, 'app', 'create_app'):
+        from app import create_app
+    with importing(STAGE_APPLICATION_IMPORT, 'utils.db', 'db'):
+        from utils.db import db
 
     app = create_app()
     with app.app_context():
@@ -777,6 +918,10 @@ def main(argv=None):
     else:
         try:
             report, exit_code = run(args)
+        except DiagnosticImportError as exc:
+            # An import failure names its stage and target so the next repair is
+            # exact. Nothing from the original exception is carried across.
+            report, exit_code = exc.to_payload(), EXIT_ERROR
         except Exception as exc:
             # Class name only — messages can carry connection strings.
             report, exit_code = _fail('diagnostic_failed', type(exc).__name__), EXIT_ERROR
@@ -786,7 +931,10 @@ def main(argv=None):
         Path(args.output).write_text(rendered)
     else:
         print(rendered)
-    if args.markdown_output and report.get('result') != RESULT_ERROR:
+    if args.markdown_output and (
+        report.get('result') != RESULT_ERROR
+        or report.get('reason') == REASON_IMPORT_FAILED
+    ):
         Path(args.markdown_output).write_text(_markdown(report))
     return exit_code
 
