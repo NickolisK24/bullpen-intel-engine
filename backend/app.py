@@ -176,6 +176,7 @@ def create_app(config_name=None):
     from api.audience import audience_bp
     from api.traffic import traffic_bp
     from api.share_artifacts_admin import share_artifacts_admin_bp
+    from api.performance_intelligence_admin import performance_intelligence_admin_bp
     from api.share_artifact_operations_browser import share_artifact_operations_browser_bp
     from api.share_cards import share_cards_bp
     from api.share_artifacts_public import share_artifacts_public_bp
@@ -203,6 +204,9 @@ def create_app(config_name=None):
     app.register_blueprint(
         share_artifact_operations_browser_bp,
         url_prefix='/api/internal-browser/share-artifacts',
+    )
+    app.register_blueprint(
+        performance_intelligence_admin_bp, url_prefix='/api/internal/performance',
     )
     app.register_blueprint(share_cards_bp, url_prefix='/api/share-cards')
     app.register_blueprint(share_artifacts_public_bp, url_prefix='/api/share-artifacts')
