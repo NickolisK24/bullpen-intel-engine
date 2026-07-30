@@ -428,16 +428,24 @@ def test_missing_earned_runs_refuses_rather_than_counting_zero(app):
     assert issue['field'] == 'earned_runs'
 
 
-def test_malformed_earned_runs_refuses(app):
-    arm = _pitcher('Malformed ER Arm')
-    log = _log(arm, outs=27, earned_runs=0)
-    db.session.commit()
-    log.earned_runs = 'not-a-number'
-    db.session.commit()
+def test_malformed_earned_runs_is_rejected_by_the_column_and_by_the_validator(app):
+    """earned_runs is an integer column; the validator is defence in depth.
 
-    read = _read()
-    assert read['reason_code'] == pi.REFUSAL_QUALIFYING_ROW_INVALID
-    assert read['invalid_rows'][0]['reason'] == pi.ROW_COMPONENT_MALFORMED
+    PostgreSQL rejects a non-integer earned_runs at the write, so the malformed
+    case cannot be produced through persistence there. The column guarantee is
+    asserted, then the validator is checked directly for the case the column
+    forecloses — the same shape used for outs above.
+    """
+    column = GameLog.__table__.columns['earned_runs']
+    assert isinstance(column.type, db.Integer)
+
+    issue = pi._validate_required_components(
+        _Stub(innings_pitched_outs=27, earned_runs='not-a-number'),
+        ('innings_pitched_outs', 'earned_runs'),
+        lambda reason, field=None: pi.RowIssue(1, 1, field, reason),
+    )
+    assert issue.reason == pi.ROW_COMPONENT_MALFORMED
+    assert issue.field == 'earned_runs'
 
 
 def test_null_outs_are_prevented_by_the_schema_and_by_the_validator(app):
