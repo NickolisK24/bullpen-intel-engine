@@ -80,7 +80,12 @@ function AppearanceRow({ appearance, rosterContextLimited = false }) {
   )
 }
 
+// A game-level note is a starter-dependent claim. It renders only when the
+// backend has affirmatively marked it reconciled against official starter
+// authority; the frontend never infers starter or reliever meaning itself.
 function GameContextNote({ game }) {
+  if (game?.reconciled !== true) return null
+  if (game?.starter_authority !== 'official_completed_game_starter') return null
   const label = textValue(game?.context_label)
   if (!label) return null
   const sentences = asArray(game?.context_sentences).filter((sentence) => textValue(sentence))
