@@ -10,6 +10,7 @@ from services.bullpen_eligibility_vocabulary import normalize_eligibility
 from services.pitcher_role import ROLE_WINDOW_DAYS
 from services.role_authority import (
     ROLE_AMBIGUOUS,
+    ROLE_NON_PITCHER,
     ROLE_RELIEVER,
     ROLE_STARTER,
     ROLE_UNKNOWN,
@@ -204,7 +205,10 @@ def population_diagnostic(
     name_of = {p.id: getattr(p, 'full_name', None) for p in pitcher_list}
 
     # Classify every roster-permitted pitcher so Starters/Unknowns are reported.
-    role_distribution = {ROLE_STARTER: 0, ROLE_RELIEVER: 0, ROLE_AMBIGUOUS: 0, ROLE_UNKNOWN: 0}
+    role_distribution = {
+        ROLE_STARTER: 0, ROLE_RELIEVER: 0, ROLE_AMBIGUOUS: 0,
+        ROLE_UNKNOWN: 0, ROLE_NON_PITCHER: 0,
+    }
     confidence_distribution = {'high': 0, 'medium': 0, 'low': 0, 'none': 0}
     records = []
     for pitcher in pitcher_list:
@@ -247,16 +251,31 @@ def population_diagnostic(
     }
 
 
-def eligible_bullpen_pitchers(team_id, include_stale=False, reference_date=None):
+def eligible_bullpen_pitcher_contexts_for_team(
+    team_id, include_stale=False, reference_date=None,
+):
+    """The team's eligible bullpen population WITH its resolution evidence.
+
+    Same population as ``eligible_bullpen_pitchers``; it simply does not discard
+    the roster-status and role payloads that explain why each arm belongs. A
+    consumer that must show its work reads this; one that only needs the arms
+    reads the helper below.
+    """
     pitchers = (
         Pitcher.query
         .filter(Pitcher.team_id == team_id, Pitcher.active == True)
         .order_by(Pitcher.full_name)
         .all()
     )
-    contexts = eligible_bullpen_pitcher_contexts(
+    return eligible_bullpen_pitcher_contexts(
         pitchers,
         include_stale=include_stale,
         reference_date=reference_date,
+    )
+
+
+def eligible_bullpen_pitchers(team_id, include_stale=False, reference_date=None):
+    contexts = eligible_bullpen_pitcher_contexts_for_team(
+        team_id, include_stale=include_stale, reference_date=reference_date,
     )
     return [context['pitcher'] for context in contexts]

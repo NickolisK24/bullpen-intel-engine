@@ -16,8 +16,10 @@ from flask import Flask
 from models.game_log import GameLog
 from models.pitcher import Pitcher
 from models.scheduled_game import ScheduledGame
+from services import bullpen_eligibility
 from services import performance_intelligence as pi
 from services import performance_metrics
+from services import role_authority
 from tests.db_config import configure_test_database, create_test_schema, drop_test_schema
 from utils.db import db
 
@@ -1259,3 +1261,376 @@ def test_a_refusal_never_substitutes_a_value(app):
     assert read['display_value'] == '3.27'
     assert read['publication']['reason'] == pi.REFUSAL_BELOW_MINIMUM_SAMPLE
     assert read['below_sample_read']['wording'] == 'Not Enough Innings Yet'
+
+
+# ── Position-player pitching never creates bullpen membership ───────────────
+def _position_player(name, *, position='SS', team_id=TEAM_ID, mlb_id=None):
+    """An active position player, stored like any other player row."""
+    if mlb_id is None:
+        _next_mlb_id[0] += 1
+        mlb_id = _next_mlb_id[0]
+    player = Pitcher(
+        mlb_id=mlb_id, full_name=name, team_id=team_id,
+        team_name='New York Yankees', team_abbreviation='NYY',
+        active=True, roster_status='Active', position=position,
+    )
+    db.session.add(player)
+    db.session.flush()
+    return player
+
+
+def test_a_shortstop_with_one_relief_appearance_is_not_a_bullpen_member(app):
+    reliever = _pitcher('Genuine Reliever')
+    _relief(reliever, outs_each=3, appearances=40, earned_runs=12)
+    infielder = _position_player('Mop-Up Infielder')
+    _relief(infielder, outs_each=3, appearances=1, end=date(2026, 7, 28))
+    db.session.commit()
+
+    group = _read()['group']
+    assert infielder.id not in group['pitcher_ids']
+    assert reliever.id in group['pitcher_ids']
+    assert group['active_group_size'] == 1
+
+
+def test_his_pitching_appearance_remains_in_the_historical_ledger(app):
+    reliever = _pitcher('Genuine Reliever')
+    _relief(reliever, outs_each=3, appearances=40, earned_runs=12)
+    infielder = _position_player('Mop-Up Infielder')
+    _relief(infielder, outs_each=3, appearances=1, earned_runs=1,
+            end=date(2026, 7, 28))
+    db.session.commit()
+    _read()
+
+    rows = GameLog.query.filter_by(pitcher_id=infielder.id).all()
+    assert len(rows) == 1
+    assert rows[0].innings_pitched_outs == 3
+    assert rows[0].earned_runs == 1
+    assert rows[0].appearance_team_id == TEAM_ID
+
+
+def test_his_outs_and_earned_runs_do_not_enter_the_metric(app):
+    reliever = _pitcher('Genuine Reliever')
+    _relief(reliever, outs_each=3, appearances=40, earned_runs=12)
+    infielder = _position_player('Mop-Up Infielder')
+    _relief(infielder, outs_each=3, appearances=1, earned_runs=9,
+            end=date(2026, 7, 28))
+    db.session.commit()
+
+    read = _read()
+    assert read['exact_denominator'] == 120           # not 123
+    assert read['exact_numerator'] == 12 * 27         # not 21 * 27
+    members = read['evidence']['evidence']['members']
+    assert all(m['pitcher_id'] != infielder.id for m in members)
+
+
+def test_the_production_yankees_contamination_is_corrected(app):
+    """110 ER over 1010 contaminated outs (2.94) vs 1007 clean outs (2.95).
+
+    Three of those outs were a position player's mop-up inning. The fixture
+    mirrors the production read that proved the defect.
+    """
+    # 1007 official relief outs across five bullpen arms, 110 earned runs.
+    arms = [_pitcher(f'Pen Arm {index}') for index in range(5)]
+    for index, arm in enumerate(arms):
+        _relief(arm, outs_each=3, appearances=67, earned_runs=22,
+                end=date(2026, 7, 29) - timedelta(days=index), step=1)
+    _relief(arms[0], outs_each=2, appearances=1, end=date(2026, 7, 30))
+
+    infielder = _position_player('Mop-Up Infielder')
+    _relief(infielder, outs_each=3, appearances=1, end=date(2026, 7, 28))
+    db.session.commit()
+
+    read = _read()
+    assert read['sample']['earned_runs'] == 110
+    assert read['exact_denominator'] == 1007
+    assert read['exact_numerator'] == 110 * 27
+
+    contaminated = pi._exact_ratio(110 * 27, 1010)
+    corrected = pi._exact_ratio(110 * 27, 1007)
+    assert contaminated == '2.94'
+    assert corrected == '2.95'
+    assert read['value'] == corrected
+
+
+def test_a_legitimate_reliever_with_one_appearance_stays_eligible(app):
+    arm = _pitcher('One Appearance Reliever')
+    _relief(arm, outs_each=3, appearances=1, earned_runs=1)
+    db.session.commit()
+
+    group = pi.resolve_active_group(TEAM_ID, reference_date=REFERENCE_DATE)
+    assert arm.id in group['pitcher_ids']
+
+
+def test_a_legitimate_multi_inning_reliever_stays_eligible(app):
+    arm = _pitcher('Long Reliever')
+    _relief(arm, outs_each=6, appearances=20, earned_runs=8)
+    db.session.commit()
+
+    group = pi.resolve_active_group(TEAM_ID, reference_date=REFERENCE_DATE)
+    assert arm.id in group['pitcher_ids']
+
+
+def test_a_bullpen_pitcher_who_previously_started_is_not_auto_excluded(app):
+    """Current bullpen membership is supported, so a past start does not remove him."""
+    arm = _pitcher('Converted Starter')
+    _log(arm, outs=15, earned_runs=4, games_started=1, game_date=date(2026, 4, 10))
+    _relief(arm, outs_each=3, appearances=20, earned_runs=6)
+    db.session.commit()
+
+    group = pi.resolve_active_group(TEAM_ID, reference_date=REFERENCE_DATE)
+    assert arm.id in group['pitcher_ids']
+
+
+def test_unknown_role_evidence_does_not_default_to_reliever(app):
+    arm = _pitcher('No Usage Pitcher')       # position P, zero logs
+    db.session.commit()
+
+    result = role_authority.classify_role(arm, [], reference_date=REFERENCE_DATE)
+    assert result['role'] == role_authority.ROLE_UNKNOWN
+    assert result['eligible'] is False
+
+
+def test_a_non_pitching_position_resolves_as_its_own_role_not_unknown(app):
+    infielder = _position_player('Any Infielder')
+    db.session.commit()
+
+    result = role_authority.classify_role(infielder, [], reference_date=REFERENCE_DATE)
+    assert result['role'] == role_authority.ROLE_NON_PITCHER
+    assert result['eligible'] is False
+    assert result['status'] == role_authority.STATUS_ROLE_NON_PITCHER
+
+
+@pytest.mark.parametrize('position', ['SS', '2B', '1B', '3B', 'C', 'LF', 'CF', 'RF', 'DH', 'OF', 'IF'])
+def test_no_non_pitching_position_can_enter_any_bullpen(app, position):
+    reliever = _pitcher('Genuine Reliever')
+    _relief(reliever, outs_each=3, appearances=40, earned_runs=12)
+    player = _position_player(f'{position} Player', position=position)
+    _relief(player, outs_each=3, appearances=3, end=date(2026, 7, 28))
+    db.session.commit()
+
+    assert player.id not in _read()['group']['pitcher_ids']
+
+
+@pytest.mark.parametrize('position', ['P', 'SP', 'RP', 'CL', 'LHP', 'RHP'])
+def test_every_pitching_position_remains_eligible(app, position):
+    arm = _pitcher('Pitcher', )
+    arm.position = position
+    _relief(arm, outs_each=3, appearances=20, earned_runs=5)
+    db.session.commit()
+
+    assert arm.id in _read()['group']['pitcher_ids']
+
+
+def test_no_player_specific_or_team_specific_exception_exists():
+    """The gate is positional. No name, id, or club may appear in it."""
+    sources = [
+        (BACKEND_DIR / 'services' / 'role_authority.py').read_text(encoding='utf-8'),
+        (BACKEND_DIR / 'services' / 'bullpen_population.py').read_text(encoding='utf-8'),
+        (BACKEND_DIR / 'services' / 'performance_intelligence.py').read_text(encoding='utf-8'),
+    ]
+    for source in sources:
+        for forbidden in ('Schuemann', '680474', 'Yankee', '147'):
+            assert forbidden not in source
+
+
+# ── Role evidence travels with every member ────────────────────────────────
+def test_every_member_carries_bounded_role_evidence(app):
+    arm = _pitcher('Evidence Arm')
+    _relief(arm, outs_each=3, appearances=36, earned_runs=12)
+    db.session.commit()
+
+    member = _read()['group']['members'][0]
+    evidence = member['role_evidence']
+    assert set(evidence) == {
+        'roster_status', 'roster_status_source', 'roster_status_is_authoritative',
+        'roster_position', 'bullpen_role', 'role_confidence',
+        'role_resolution_status', 'role_authority', 'role_evidence_date',
+    }
+    assert evidence['roster_position'] == 'P'
+    assert evidence['bullpen_role'] == role_authority.ROLE_RELIEVER
+    assert evidence['role_evidence_date'] == REFERENCE_DATE.isoformat()
+    assert evidence['role_authority']
+
+
+def test_role_evidence_exposes_no_raw_source_payload(app):
+    arm = _pitcher('Bounded Evidence Arm')
+    _relief(arm, outs_each=3, appearances=36, earned_runs=12)
+    db.session.commit()
+
+    evidence = _read()['group']['members'][0]['role_evidence']
+    for value in evidence.values():
+        assert not isinstance(value, (dict, list)), value
+
+
+# ── Freshness comes from the canonical authority ───────────────────────────
+def test_a_normal_read_carries_non_null_freshness(app):
+    arm = _pitcher('Freshness Arm')
+    _relief(arm, outs_each=3, appearances=36, earned_runs=12)
+    db.session.commit()
+
+    freshness = _read()['freshness']
+    assert freshness is not None
+    assert freshness['authority'] == 'durable_sync_metadata'
+    assert freshness['freshness_state']
+
+
+def test_freshness_keeps_the_date_concepts_distinct(app):
+    arm = _pitcher('Date Arm')
+    _relief(arm, outs_each=3, appearances=36, earned_runs=12)
+    db.session.commit()
+
+    read = _read()
+    freshness = read['freshness']
+    assert freshness['represented_date'] == REFERENCE_DATE.isoformat()
+    assert freshness['data_through_date'] != freshness['represented_date']
+    # Membership carries its own represented date, separate from both.
+    assert read['group']['reference_date'] == REFERENCE_DATE.isoformat()
+    assert 'request_timestamp' not in freshness
+
+
+def test_freshness_does_not_use_the_request_clock_as_a_data_authority(app):
+    arm = _pitcher('Clock Arm')
+    _relief(arm, outs_each=3, appearances=36, earned_runs=12)
+    db.session.commit()
+
+    freshness = _read()['freshness']
+    today = date.today().isoformat()
+    assert freshness['data_through_date'] != today
+    assert freshness['represented_date'] == REFERENCE_DATE.isoformat()
+    # Two reads separated in wall-clock time produce identical freshness.
+    assert _read()['freshness'] == freshness
+
+
+def test_unprovable_freshness_withholds_internal_readiness(app, monkeypatch):
+    arm = _pitcher('Unprovable Arm')
+    _relief(arm, outs_each=3, appearances=36, earned_runs=12)
+    db.session.commit()
+
+    def _unavailable(reference_date=None):
+        return {
+            'represented_date': reference_date.isoformat() if reference_date else None,
+            'data_through_date': None,
+            'freshness_state': 'metadata_unavailable',
+            'fail_closed': True,
+            'authority': 'durable_sync_metadata',
+            'provable': False,
+        }
+
+    monkeypatch.setattr(pi, 'resolve_freshness', _unavailable)
+    read = _read()
+    # The value still computes; it is simply not offered for review.
+    assert read['value'] == '3.00'
+    assert read['metric_readiness']['ready_for_internal_review'] is False
+    assert read['metric_readiness']['reason'] == pi.REFUSAL_FRESHNESS_UNPROVABLE
+    assert read['publication']['reason'] == pi.REFUSAL_FRESHNESS_UNPROVABLE
+    assert read['freshness'] is not None
+
+
+def test_stale_freshness_is_labeled_and_not_hidden(app, monkeypatch):
+    arm = _pitcher('Stale Arm')
+    _relief(arm, outs_each=3, appearances=36, earned_runs=12)
+    db.session.commit()
+
+    def _stale(reference_date=None):
+        return {
+            'represented_date': reference_date.isoformat() if reference_date else None,
+            'data_through_date': '2026-07-20',
+            'freshness_state': 'stale',
+            'is_stale': True,
+            'is_current': False,
+            'data_age_days': 10,
+            'degradation_state': 'stale',
+            'fail_closed': False,
+            'authority': 'durable_sync_metadata',
+            'provable': True,
+        }
+
+    monkeypatch.setattr(pi, 'resolve_freshness', _stale)
+    read = _read()
+    assert read['freshness']['freshness_state'] == 'stale'
+    assert read['freshness']['is_stale'] is True
+    # Stale but provable stays reviewable — labelled, not suppressed.
+    assert read['metric_readiness']['ready_for_internal_review'] is True
+
+
+def test_public_gates_stay_blocked_regardless_of_freshness(app, monkeypatch):
+    arm = _pitcher('Gate Freshness Arm')
+    _relief(arm, outs_each=3, appearances=36, earned_runs=12)
+    db.session.commit()
+
+    for state, provable in (('current', True), ('stale', True), ('metadata_unavailable', False)):
+        monkeypatch.setattr(pi, 'resolve_freshness', lambda reference_date=None,
+                            _s=state, _p=provable: {
+            'represented_date': None, 'data_through_date': None,
+            'freshness_state': _s, 'fail_closed': not _p,
+            'authority': 'durable_sync_metadata', 'provable': _p,
+        })
+        read = _read()
+        assert read['gates'] == {
+            'public_reader_gate': 'blocked',
+            'team_state_performance_gate': 'blocked',
+            'share_card_performance_gate': 'blocked',
+        }
+        assert read['publication']['publishable'] is False
+
+
+def test_an_injected_freshness_is_still_carried_through_untouched(app):
+    arm = _pitcher('Injected Arm')
+    _relief(arm, outs_each=3, appearances=36, earned_runs=12)
+    db.session.commit()
+
+    injected = {'data_through': '2026-07-29', 'state': 'current'}
+    read = pi.build_metric_read(
+        M001, TEAM_ID, season=SEASON, reference_date=REFERENCE_DATE,
+        freshness=injected,
+    )
+    assert read['freshness'] == injected
+
+
+# ── Cross-team population audit ────────────────────────────────────────────
+ALL_TEAM_IDS = [
+    108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121,
+    133, 134, 135, 136, 137, 138, 139, 140, 141, 142, 143, 144, 145, 146,
+    147, 158,
+]
+
+
+def test_no_active_group_member_across_any_team_has_a_non_pitching_role(app):
+    """Sweep every club: a resolved member must be a pitcher by roster position.
+
+    Each club gets a genuine reliever and a position player who pitched. The
+    audit asserts the population never admits the second, on any team, and
+    reports every offender rather than only the first.
+    """
+    planted = {}
+    for index, team_id in enumerate(ALL_TEAM_IDS):
+        arm = _pitcher(f'Reliever {team_id}', team_id=team_id)
+        _relief(arm, outs_each=3, appearances=40, earned_runs=10,
+                appearance_team_id=team_id,
+                end=date(2026, 7, 29) - timedelta(days=index % 3))
+        player = _position_player(f'Position Player {team_id}', team_id=team_id)
+        _relief(player, outs_each=3, appearances=2, appearance_team_id=team_id,
+                end=date(2026, 7, 28))
+        planted[team_id] = (arm.id, player.id)
+    db.session.commit()
+
+    offenders = []
+    audited = 0
+    for team_id in ALL_TEAM_IDS:
+        group = pi.resolve_active_group(team_id, reference_date=REFERENCE_DATE)
+        audited += 1
+        for member in group['members']:
+            position = (member['role_evidence']['roster_position'] or '').upper()
+            if position and position not in bullpen_eligibility.PITCHING_POSITIONS:
+                offenders.append({
+                    'team_id': team_id,
+                    'pitcher_id': member['pitcher_id'],
+                    'roster_position': position,
+                    'bullpen_role': member['role_evidence']['bullpen_role'],
+                })
+        arm_id, player_id = planted[team_id]
+        assert arm_id in group['pitcher_ids'], team_id
+        assert player_id not in group['pitcher_ids'], team_id
+
+    assert audited == 30
+    assert offenders == [], offenders
