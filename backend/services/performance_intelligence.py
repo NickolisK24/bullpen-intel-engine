@@ -82,12 +82,19 @@ ROW_IDENTITY_MISSING = 'required_identity_missing'
 ROW_GAME_NOT_FINAL = 'game_not_final'
 ROW_STARTER_EXCLUDED = 'starter_excluded'
 
-# Every gate this family touches stays blocked. D-021 opens none of them.
+# Every gate this family touches stays blocked. D-021 opens none of them, and
+# neither does satisfying an approved sample.
 BLOCKED_GATES = {
     'public_reader_gate': 'blocked',
     'team_state_performance_gate': 'blocked',
     'share_card_performance_gate': 'blocked',
 }
+
+# Metric readiness is NOT publication. A team may have enough evidence for the
+# founder to review a value while every public gate stays shut. These two
+# questions were deliberately given separate names rather than one ambiguous
+# ready_for_review, because conflating them is how a gate opens by accident.
+PUBLICATION_BLOCKED_BY_GATE = 'public_reader_gate_blocked'
 
 
 # ── Shared components every metric reads from ───────────────────────────────
@@ -118,6 +125,12 @@ class MetricDefinition:
     ``minimum_sample`` is ``None`` when no governed decision has approved a
     threshold. That is not a default of zero — it is an explicit absence, and
     the framework refuses to publish the metric while it holds.
+
+    A threshold is never a bare integer. When one is approved it arrives with
+    the measure it is counted in (``sample_measure``), the name of that unit
+    (``minimum_sample_unit``), and the decision that approved it
+    (``minimum_sample_authority``). Registration rejects a threshold missing
+    any of the three, so no metric can gate on an unexplained number.
     """
 
     metric_id: str
@@ -128,13 +141,27 @@ class MetricDefinition:
     denominator: Callable[[AppearanceComponents], int]
     formatter: Callable[[Optional[str]], Optional[str]]
     denominator_zero_reason: str
+    internal_name: Optional[str] = None
     evidence_requirements: tuple = ()
     # Per-row source fields this metric cannot be computed without. A missing
     # or malformed value in any of them refuses the read; it never becomes a
     # zero that quietly moves the published number.
     required_row_components: tuple = ()
     minimum_sample: Optional[int] = None
+    minimum_sample_unit: Optional[str] = None
     minimum_sample_authority: Optional[str] = None
+    # The metric's own sample measure over the shared components. ERA counts
+    # recorded outs; a metric over batters faced would count those instead.
+    # The engine calls this and never inspects a metric-specific field, so a
+    # future metric declares its measure without touching publication logic.
+    sample_measure: Optional[Callable[[AppearanceComponents], int]] = None
+    display_precision: int = 2
+    denominator_authority: Optional[str] = None
+    rounding_authority: Optional[str] = None
+    below_sample_language_authority: Optional[str] = None
+    below_sample_public_wording: Optional[str] = None
+    evidence_authority: Optional[str] = None
+    effective_date: Optional[str] = None
     family_id: str = FAMILY_ID
 
 
@@ -147,6 +174,22 @@ class MetricRegistry:
     def register(self, definition: MetricDefinition) -> MetricDefinition:
         if definition.metric_id in self._metrics:
             raise ValueError(f'Metric already registered: {definition.metric_id}')
+        if definition.minimum_sample is not None:
+            # An approved threshold must be explainable. A number without its
+            # measure, its unit, and its authority is exactly the unexplained
+            # threshold the Constitution prohibits.
+            if definition.sample_measure is None:
+                raise ValueError(
+                    f'{definition.metric_id}: minimum_sample requires sample_measure')
+            if not definition.minimum_sample_unit:
+                raise ValueError(
+                    f'{definition.metric_id}: minimum_sample requires minimum_sample_unit')
+            if not definition.minimum_sample_authority:
+                raise ValueError(
+                    f'{definition.metric_id}: minimum_sample requires minimum_sample_authority')
+            if definition.minimum_sample < 0:
+                raise ValueError(
+                    f'{definition.metric_id}: minimum_sample must not be negative')
         self._metrics[definition.metric_id] = definition
         return definition
 
@@ -366,6 +409,17 @@ def _start_relief_state(log):
         return UNKNOWN
 
 
+def innings_display(outs) -> str:
+    """Baseball innings notation from integer outs (D-008).
+
+    Display only. Decimal innings are never summed and never become a
+    denominator: ``2.1`` is seven outs, so adding the notation is arithmetically
+    wrong. This derives the notation from the authority at render time.
+    """
+    whole, remainder = divmod(int(outs), 3)
+    return f'{whole}.{remainder}'
+
+
 def build_components(logs) -> AppearanceComponents:
     """Totals over rows already proved usable by ``qualifying_appearances``."""
     rows = list(logs or [])
@@ -428,13 +482,18 @@ def build_metric_read(
 
     logs = selection.rows
     components = build_components(logs)
+    membership = _membership(group, logs)
     if components.appearances == 0:
         return _refusal(
             metric_id, team_id, REFUSAL_NO_QUALIFYING_APPEARANCES,
             season=season, group=group, definition=definition,
-            components=components, freshness=freshness,
+            components=components, freshness=freshness, membership=membership,
         )
 
+    # Pooled components only. The rate is sum(numerator) over sum(denominator)
+    # — never an average of per-pitcher or per-appearance rates, and never an
+    # average of already-rounded values. Those answer a different question and
+    # give a different number.
     numerator = definition.numerator(components)
     denominator = definition.denominator(components)
     value = None
@@ -442,15 +501,18 @@ def build_metric_read(
     if denominator <= 0:
         reason_code = definition.denominator_zero_reason
     else:
-        value = _exact_ratio(numerator, denominator)
+        value = _exact_ratio(numerator, denominator, definition.display_precision)
 
+    sample = _sample(definition, components)
     read = {
         'capability': CAPABILITY,
         'family_id': definition.family_id,
         'contract': CONTRACT_DECISION,
         'metric_id': definition.metric_id,
         'metric_name': definition.public_name,
+        'internal_name': definition.internal_name,
         'metric_version': definition.version,
+        'effective_date': definition.effective_date,
         'formula': definition.formula,
         'team_id': team_id,
         'season': season,
@@ -460,79 +522,220 @@ def build_metric_read(
         'reason_code': reason_code,
         'exact_numerator': numerator,
         'exact_denominator': denominator,
-        'group': group,
-        'sample': {
-            'appearances': components.appearances,
-            'pitchers': components.pitchers,
-            'outs': components.outs,
-            'minimum_sample': definition.minimum_sample,
-            'minimum_sample_authority': definition.minimum_sample_authority,
-        },
-        'evidence': _evidence(definition, group, components, logs),
+        'group': dict(group, **membership),
+        'sample': sample,
+        'below_sample_read': _below_sample_read(definition, sample),
+        'evidence': _evidence(definition, group, membership, components, logs),
         'freshness': freshness,
-        'limitations': _limitations(definition, components),
+        'limitations': _limitations(definition, components, membership),
         'gates': dict(BLOCKED_GATES),
     }
-    read['publication'] = _publication_decision(definition, read, components)
+    read['metric_readiness'] = _metric_readiness(read, sample)
+    read['publication'] = _publication_decision(definition, read, sample)
     return read
 
 
-def _exact_ratio(numerator, denominator):
-    """Exact decimal ratio at two places, matching the canonical convention."""
+def _exact_ratio(numerator, denominator, precision=2):
+    """Exact decimal ratio, rounded ROUND_HALF_UP exactly once (D-025).
+
+    Both inputs are integers, the quotient is a ``Decimal``, and the single
+    rounding happens here. No float participates, and the fixed-precision
+    string returned is what every surface renders — trailing zeros included.
+    """
     from decimal import Decimal, ROUND_HALF_UP
 
+    places = Decimal(1).scaleb(-int(precision))
     return str(
         (Decimal(int(numerator)) / Decimal(int(denominator)))
-        .quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+        .quantize(places, rounding=ROUND_HALF_UP)
     )
 
 
-def _evidence(definition, group, components, logs):
-    """Summary -> Context -> Evidence -> Official Record, built once.
+def _membership(group, logs):
+    """Split the active group into contributing and non-contributing arms.
 
-    Reusable verbatim by Team Board, Compare, Stories and Share Artifacts; none
-    of them recalculates, and a frozen artifact keeps what it published.
+    A member with no qualifying appearance for this team stays in the group and
+    contributes zero appearances, zero outs and zero earned runs (D-027). That
+    is an OBSERVED zero, not an imputed one: he has not pitched for this club.
+    He receives no rate of his own and moves neither numerator nor denominator.
+    """
+    per_pitcher = {}
+    for log in logs:
+        pitcher_id = getattr(log, 'pitcher_id', None)
+        entry = per_pitcher.setdefault(
+            pitcher_id, {'appearances': 0, 'outs': 0, 'earned_runs': 0})
+        entry['appearances'] += 1
+        entry['outs'] += _optional_int(getattr(log, 'innings_pitched_outs', None))
+        entry['earned_runs'] += _optional_int(getattr(log, 'earned_runs', None))
+
+    members = []
+    for member in group['members']:
+        totals = per_pitcher.get(member['pitcher_id'], {
+            'appearances': 0, 'outs': 0, 'earned_runs': 0})
+        members.append({
+            **member,
+            'qualifying_appearances': totals['appearances'],
+            'recorded_outs': totals['outs'],
+            'innings_display': innings_display(totals['outs']),
+            'earned_runs': totals['earned_runs'],
+            'contributing': totals['appearances'] > 0,
+        })
+
+    contributing = sum(1 for m in members if m['contributing'])
+    return {
+        'active_group_size': len(members),
+        'contributing_pitcher_count': contributing,
+        'noncontributing_active_pitcher_count': len(members) - contributing,
+        'members': members,
+    }
+
+
+def _sample(definition, components):
+    """The sample the metric is actually gated on, with its unit and authority."""
+    measured = (
+        int(definition.sample_measure(components))
+        if definition.sample_measure is not None else None
+    )
+    return {
+        'appearances': components.appearances,
+        'pitchers': components.pitchers,
+        'outs': components.outs,
+        'innings_display': innings_display(components.outs),
+        'earned_runs': components.earned_runs,
+        'measured_sample': measured,
+        'minimum_sample': definition.minimum_sample,
+        'minimum_sample_unit': definition.minimum_sample_unit,
+        'minimum_sample_authority': definition.minimum_sample_authority,
+        'meets_minimum_sample': (
+            None if definition.minimum_sample is None or measured is None
+            else measured >= definition.minimum_sample
+        ),
+    }
+
+
+def _below_sample_read(definition, sample):
+    """The approved reader wording, never rendered without its counts (D-026)."""
+    if sample['meets_minimum_sample'] is not False:
+        return None
+    return {
+        'wording': definition.below_sample_public_wording,
+        'authority': definition.below_sample_language_authority,
+        'current_innings': innings_display(sample['outs']),
+        'required_innings': innings_display(definition.minimum_sample),
+        'current_outs': sample['outs'],
+        'required_outs': definition.minimum_sample,
+        'unit': definition.minimum_sample_unit,
+    }
+
+
+def _metric_readiness(read, sample):
+    """Is there enough proved evidence for the founder to review a value?
+
+    Deliberately separate from publication. Readiness never opens a gate, and
+    a ready metric is still refused publicly.
+    """
+    ready = read['value'] is not None and sample['meets_minimum_sample'] is True
+    if ready:
+        reason = None
+    elif read['value'] is None:
+        reason = read['reason_code']
+    elif sample['meets_minimum_sample'] is None:
+        reason = REFUSAL_MINIMUM_SAMPLE_UNAPPROVED
+    else:
+        reason = REFUSAL_BELOW_MINIMUM_SAMPLE
+    return {'ready_for_internal_review': ready, 'reason': reason}
+
+
+def _evidence(definition, group, membership, components, logs):
+    """Summary -> Context -> Evidence -> Official Record, built once (D-029).
+
+    Reusable verbatim by every consumer; none of them recalculates, and a frozen
+    artifact keeps exactly what it published. A read that cannot reach the
+    official-record level is refused rather than published thin.
     """
     return {
         'summary': {
             'metric_id': definition.metric_id,
-            'metric_name': definition.public_name,
+            'public_name': definition.public_name,
+            'internal_name': definition.internal_name,
             'exact_numerator': definition.numerator(components),
             'exact_denominator': definition.denominator(components),
         },
         'context': {
-            'group_size': group['size'],
+            'active_group_size': membership['active_group_size'],
+            'contributing_pitcher_count': membership['contributing_pitcher_count'],
+            'noncontributing_active_pitcher_count':
+                membership['noncontributing_active_pitcher_count'],
+            'qualifying_appearances': components.appearances,
+            'recorded_outs': components.outs,
+            'innings_display': innings_display(components.outs),
+            'earned_runs': components.earned_runs,
+            'exact_numerator': definition.numerator(components),
+            'exact_denominator': definition.denominator(components),
+            'minimum_sample': definition.minimum_sample,
+            'minimum_sample_unit': definition.minimum_sample_unit,
+            'minimum_sample_authority': definition.minimum_sample_authority,
+            'method_version': definition.version,
+            'effective_date': definition.effective_date,
             'membership_authority': group['membership_authority'],
+            'membership_represented_date': group['reference_date'],
             'appearance_ownership_authority': 'game_log_appearance_team_id',
             'window': 'official completed relief appearances for this team',
             'excluded': ['starts', 'other_organization_appearances',
                          'unresolved_appearance_team', 'non_regular_season'],
         },
-        'evidence': [
-            {
-                'pitcher_id': getattr(log, 'pitcher_id', None),
-                'mlb_game_pk': getattr(log, 'mlb_game_pk', None),
-                'game_date': (
-                    log.game_date.isoformat()
-                    if getattr(log, 'game_date', None) else None
-                ),
-                'appearance_team_id': getattr(log, 'appearance_team_id', None),
-                'outs': _optional_int(getattr(log, 'innings_pitched_outs', 0)),
-                'earned_runs': _optional_int(getattr(log, 'earned_runs', 0)),
-            }
-            for log in logs
-        ],
+        'evidence': {
+            # Every active member, including the ones who have not pitched for
+            # this team. Their zeros are observed facts, not imputed values.
+            'members': [dict(m) for m in membership['members']],
+            'appearances': [
+                {
+                    'pitcher_id': getattr(log, 'pitcher_id', None),
+                    'mlb_game_pk': getattr(log, 'mlb_game_pk', None),
+                    'game_date': (
+                        log.game_date.isoformat()
+                        if getattr(log, 'game_date', None) else None
+                    ),
+                    'opponent': getattr(log, 'opponent', None),
+                    'opponent_abbreviation': getattr(log, 'opponent_abbreviation', None),
+                    'appearance_team_id': getattr(log, 'appearance_team_id', None),
+                    'outs': _optional_int(getattr(log, 'innings_pitched_outs', None)),
+                    'innings_display': innings_display(
+                        _optional_int(getattr(log, 'innings_pitched_outs', None))),
+                    'earned_runs': _optional_int(getattr(log, 'earned_runs', None)),
+                }
+                for log in logs
+            ],
+        },
         'official_record': {
             'source': 'official_completed_pitching_line',
+            'appearance_team_authority': 'game_log_appearance_team_id',
+            'appearance_team_authority_status': APPEARANCE_TEAM_RESOLVED,
+            'appearance_team_authority_sources': sorted({
+                getattr(log, 'appearance_team_source', None) or 'unknown'
+                for log in logs
+            }),
+            'schedule_authority': 'season_bullpen_aggregation_2026_schedule_authority',
+            'start_relief_authority': 'official_games_started',
+            'method_version': definition.version,
+            'effective_date': definition.effective_date,
             'appearance_count': components.appearances,
             'outs': components.outs,
             'earned_runs': components.earned_runs,
         },
         'requirements': list(definition.evidence_requirements),
+        'authorities': {
+            'contract': CONTRACT_DECISION,
+            'denominator': definition.denominator_authority,
+            'rounding': definition.rounding_authority,
+            'minimum_sample': definition.minimum_sample_authority,
+            'below_sample_language': definition.below_sample_language_authority,
+            'evidence': definition.evidence_authority,
+        },
     }
 
 
-def _limitations(definition, components):
+def _limitations(definition, components, membership=None):
     limitations = []
     if definition.minimum_sample is None:
         limitations.append(
@@ -543,6 +746,17 @@ def _limitations(definition, components):
         'Covers only appearances made for this team; a pitcher acquired '
         'mid-season keeps his prior club\'s appearances with that club.'
     )
+    if membership and membership['noncontributing_active_pitcher_count']:
+        # A factual disclosure, not a warning. The group is complete; some of
+        # its arms have simply not pitched for this club yet.
+        limitations.append(
+            '{contributing} of the {size} arms in this bullpen have pitched '
+            'for this team this season; the rest carry no qualifying '
+            'appearances and contribute nothing to the value.'.format(
+                contributing=membership['contributing_pitcher_count'],
+                size=membership['active_group_size'],
+            )
+        )
     limitations.append(
         'Active-bullpen membership comes from the governed bullpen population '
         'as of the represented date and is not yet guaranteed complete for a '
@@ -551,45 +765,62 @@ def _limitations(definition, components):
     return limitations
 
 
-def _publication_decision(definition, read, components):
-    """Fail closed. A computed value is not automatically a publishable one."""
+def _publication_decision(definition, read, sample):
+    """Fail closed. A computed value is not automatically a publishable one.
+
+    Nothing here opens a gate. Satisfying an approved sample makes a metric
+    internally reviewable; publishing it still requires a governed gate that is
+    explicitly open, and all three remain blocked.
+    """
     if read['value'] is None:
         return {'publishable': False, 'reason': read['reason_code']}
-    if definition.minimum_sample is None:
-        # The contract deliberately leaves M-001's minimum sample unapproved.
-        # Inventing one here would publish an unexplained number.
+    if sample['meets_minimum_sample'] is None:
+        # No governed decision has approved a threshold for this metric.
         return {'publishable': False, 'reason': REFUSAL_MINIMUM_SAMPLE_UNAPPROVED}
-    if components.appearances < definition.minimum_sample:
+    if sample['meets_minimum_sample'] is False:
         return {'publishable': False, 'reason': REFUSAL_BELOW_MINIMUM_SAMPLE}
-    return {'publishable': False, 'reason': 'public_reader_gate_blocked'}
+    return {'publishable': False, 'reason': PUBLICATION_BLOCKED_BY_GATE}
 
 
 def _refusal(metric_id, team_id, reason, *, season=None, group=None,
              definition=None, components=None, freshness=None,
-             invalid_rows=None):
+             invalid_rows=None, membership=None):
+    outs = components.outs if components else 0
     payload = {
         'capability': CAPABILITY,
         'family_id': FAMILY_ID,
         'contract': CONTRACT_DECISION,
         'metric_id': metric_id,
         'metric_name': definition.public_name if definition else None,
+        'internal_name': definition.internal_name if definition else None,
         'metric_version': definition.version if definition else None,
+        'effective_date': definition.effective_date if definition else None,
         'team_id': team_id,
         'season': season,
         'represented_date': (group or {}).get('reference_date'),
         'value': None,
         'display_value': None,
         'reason_code': reason,
-        'group': group,
+        'exact_numerator': None,
+        'exact_denominator': None,
+        'group': dict(group, **membership) if group and membership else group,
         'sample': {
             'appearances': components.appearances if components else 0,
             'pitchers': components.pitchers if components else 0,
-            'outs': components.outs if components else 0,
+            'outs': outs,
+            'innings_display': innings_display(outs),
+            'earned_runs': components.earned_runs if components else 0,
+            'minimum_sample': definition.minimum_sample if definition else None,
+            'minimum_sample_unit': definition.minimum_sample_unit if definition else None,
+            'minimum_sample_authority': (
+                definition.minimum_sample_authority if definition else None),
         },
+        'below_sample_read': None,
         'evidence': None,
         'freshness': freshness,
         'limitations': ['No supportable value; nothing is published.'],
         'gates': dict(BLOCKED_GATES),
+        'metric_readiness': {'ready_for_internal_review': False, 'reason': reason},
         'publication': {'publishable': False, 'reason': reason},
     }
     if invalid_rows:

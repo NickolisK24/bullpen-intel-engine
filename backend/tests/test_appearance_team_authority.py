@@ -875,10 +875,28 @@ def test_branch_touches_no_team_state_or_public_surface_files():
         'backend/services/public_team_relief_work.py',
         'frontend/src/components/bullpen/TeamReliefWorkPanel.jsx',
     )
+    # INTERNAL, NON-PUBLIC CONSUMERS.
+    #
+    # backend/api/ holds both public routes and authenticated internal ones, so
+    # the 'backend/api/' fragment above catches a route that reaches no reader.
+    # This file is the M-001 internal review read (D-023 to D-030): it requires
+    # the existing admin token, is read-only, serves one team and one
+    # represented date, renders on no public surface, and reports every
+    # publication gate as blocked. It writes nothing and is never snapshotted
+    # or frozen into an artifact, so Team State v1.2 payloads and immutable
+    # artifacts remain byte-unchanged.
+    #
+    # Exact paths only, never a directory exemption. This entry authorizes no
+    # public consumer, and adding one still requires changing the list above
+    # and its own approval.
+    APPROVED_INTERNAL_APPEARANCE_TEAM_CONSUMERS = (
+        'backend/api/performance_intelligence_admin.py',
+    )
     offenders = [
         path for path in non_test
         if any(fragment in path for fragment in forbidden_fragments)
         and path not in APPROVED_PUBLIC_APPEARANCE_TEAM_CONSUMERS
+        and path not in APPROVED_INTERNAL_APPEARANCE_TEAM_CONSUMERS
     ]
     assert offenders == [], f'Foundation 1 must not touch these runtime surfaces: {offenders}'
 

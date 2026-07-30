@@ -6,7 +6,8 @@ these tests live here once. A future metric should need only a registry test
 and its own formula test.
 """
 
-from datetime import date
+from datetime import date, timedelta
+from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 
 import pytest
@@ -124,7 +125,8 @@ def _read(team_id=TEAM_ID, metric_id=M001):
 def test_m001_is_registered_and_is_the_only_approved_metric():
     assert pi.registry.metric_ids() == [M001]
     definition = pi.registry.get(M001)
-    assert definition.public_name == 'Current Active-Pen ERA'
+    assert definition.public_name == 'Active Bullpen ERA'
+    assert definition.internal_name == 'Current Active-Pen ERA'
     assert definition.family_id == pi.FAMILY_ID
     assert definition.formula == 'earned_runs * 27 / recorded_outs'
 
@@ -289,36 +291,37 @@ def test_zero_denominator_refuses_without_fabricating(app):
     assert read['publication']['publishable'] is False
 
 
-def test_computed_value_is_still_not_publishable_without_an_approved_sample(app):
+def test_a_satisfied_sample_is_still_not_publishable(app):
+    """Meeting D-023 makes the metric reviewable. It does not open a gate."""
     arm = _pitcher('Sample Arm')
-    _log(arm, outs=27, earned_runs=4)
+    _log(arm, outs=108, earned_runs=12)
     db.session.commit()
 
     read = _read()
-    # The value computes exactly...
-    assert read['value'] == '4.00'
-    assert read['display_value'] == '4.00'
-    # ...and is still refused for publication, because no governed decision
-    # has approved a minimum sample for M-001.
-    assert read['sample']['minimum_sample'] is None
+    # The value computes exactly and the approved sample is satisfied...
+    assert read['value'] == '3.00'
+    assert read['display_value'] == '3.00'
+    assert read['sample']['minimum_sample'] == 108
+    assert read['sample']['meets_minimum_sample'] is True
+    assert read['metric_readiness']['ready_for_internal_review'] is True
+    # ...and it is still refused for publication, because the public gate is
+    # blocked. Readiness and publication are separate questions.
     assert read['publication']['publishable'] is False
-    assert read['publication']['reason'] == pi.REFUSAL_MINIMUM_SAMPLE_UNAPPROVED
+    assert read['publication']['reason'] == pi.PUBLICATION_BLOCKED_BY_GATE
 
 
-def test_below_an_approved_sample_refuses(app):
+def test_below_the_approved_sample_refuses(app):
     arm = _pitcher('Thin Sample Arm')
     _log(arm, outs=27, earned_runs=4)
     db.session.commit()
 
-    approved = pi.registry.get(M001)
-    object.__setattr__(approved, 'minimum_sample', 5)
-    try:
-        read = _read()
-        assert read['value'] == '4.00'
-        assert read['publication']['publishable'] is False
-        assert read['publication']['reason'] == pi.REFUSAL_BELOW_MINIMUM_SAMPLE
-    finally:
-        object.__setattr__(approved, 'minimum_sample', None)
+    read = _read()
+    # The value computes exactly and is deliberately not offered for review.
+    assert read['value'] == '4.00'
+    assert read['sample']['meets_minimum_sample'] is False
+    assert read['metric_readiness']['ready_for_internal_review'] is False
+    assert read['publication']['publishable'] is False
+    assert read['publication']['reason'] == pi.REFUSAL_BELOW_MINIMUM_SAMPLE
 
 
 def test_every_gate_stays_blocked(app):
@@ -350,8 +353,9 @@ def test_evidence_chains_summary_to_official_record(app):
         'game_log_appearance_team_id'
     )
     assert 'starts' in evidence['context']['excluded']
-    assert len(evidence['evidence']) == 2
-    assert all(row['appearance_team_id'] == TEAM_ID for row in evidence['evidence'])
+    rows = evidence['evidence']['appearances']
+    assert len(rows) == 2
+    assert all(row['appearance_team_id'] == TEAM_ID for row in rows)
     assert evidence['official_record']['outs'] == 27
     assert evidence['official_record']['earned_runs'] == 4
 
@@ -370,14 +374,17 @@ def test_freshness_is_carried_through_untouched(app):
     assert read['represented_date'] == REFERENCE_DATE.isoformat()
 
 
-def test_limitations_disclose_the_unapproved_sample_and_ownership(app):
+def test_limitations_disclose_appearance_ownership(app):
     arm = _pitcher('Limitation Arm')
     _log(arm, outs=27, earned_runs=4)
     db.session.commit()
 
     limitations = _read()['limitations']
-    assert any('minimum sample' in text for text in limitations)
+    # The unapproved-sample limitation is gone because D-023 approved one; the
+    # ownership limitation is permanent.
+    assert not any('No approved minimum sample' in text for text in limitations)
     assert any('made for this team' in text for text in limitations)
+    assert any('newly active arm' in text for text in limitations)
 
 
 def test_read_is_reproducible(app):
@@ -648,3 +655,607 @@ def test_membership_completeness_limitation_is_disclosed(app):
     limitations = _read()['limitations']
     assert any('not yet guaranteed complete' in text for text in limitations)
     assert any('newly active arm' in text for text in limitations)
+
+
+# ── Realistic relief work ───────────────────────────────────────────────────
+def _relief(arm, *, outs_each, appearances, earned_runs=0, end=date(2026, 7, 29),
+            appearance_team_id=TEAM_ID, step=2):
+    """Spread work across short outings so the governed population sees a
+    reliever rather than a starter, and so the freshness window is satisfied.
+
+    Earned runs land on the first appearance created; the totals are what the
+    pooled metric consumes either way.
+    """
+    created = []
+    for index in range(appearances):
+        created.append(_log(
+            arm,
+            outs=outs_each,
+            earned_runs=earned_runs if index == 0 else 0,
+            appearance_team_id=appearance_team_id,
+            game_date=end - timedelta(days=index * step),
+        ))
+    return created
+
+
+# ── Approved registry parameters (D-023 to D-028) ──────────────────────────
+def test_approved_minimum_sample_is_108_recorded_outs_under_d023():
+    d = pi.registry.get(M001)
+    assert d.minimum_sample == 108
+    assert d.minimum_sample_unit == 'recorded_outs'
+    assert d.minimum_sample_authority == 'D-023'
+    # 108 outs is exactly 36.0 innings, and is exactly the point at which one
+    # earned run moves the value by 0.25 and no more.
+    assert pi.innings_display(d.minimum_sample) == '36.0'
+    assert (27 * 1) / d.minimum_sample == 0.25
+
+
+def test_threshold_never_travels_as_a_bare_number():
+    """A registry entry cannot gate on an unexplained integer."""
+    base = dict(
+        metric_id='M-TEST', public_name='Test', version='0.0.1',
+        formula='x', numerator=lambda c: 1, denominator=lambda c: 1,
+        formatter=lambda v: v, denominator_zero_reason='zero',
+    )
+    registry = pi.MetricRegistry()
+    for missing in ('sample_measure', 'minimum_sample_unit', 'minimum_sample_authority'):
+        kwargs = dict(
+            base, minimum_sample=10, sample_measure=lambda c: c.outs,
+            minimum_sample_unit='recorded_outs', minimum_sample_authority='D-023',
+        )
+        kwargs[missing] = None
+        with pytest.raises(ValueError):
+            registry.register(pi.MetricDefinition(**kwargs))
+    registry.register(pi.MetricDefinition(
+        **base, minimum_sample=10, sample_measure=lambda c: c.outs,
+        minimum_sample_unit='recorded_outs', minimum_sample_authority='D-023',
+    ))
+    assert registry.metric_ids() == ['M-TEST']
+
+
+def test_a_metric_without_an_approved_sample_still_registers_and_refuses():
+    """The pre-approval state stays reachable for a future metric."""
+    registry = pi.MetricRegistry()
+    registry.register(pi.MetricDefinition(
+        metric_id='M-FUTURE', public_name='Future', version='0.0.1',
+        formula='x', numerator=lambda c: 1, denominator=lambda c: 1,
+        formatter=lambda v: v, denominator_zero_reason='zero',
+    ))
+    definition = registry.get('M-FUTURE')
+    assert definition.minimum_sample is None
+    sample = pi._sample(definition, pi.AppearanceComponents(appearances=1, outs=300))
+    assert sample['meets_minimum_sample'] is None
+    read = {'value': '1.00', 'reason_code': None}
+    assert pi._publication_decision(definition, read, sample)['reason'] == (
+        pi.REFUSAL_MINIMUM_SAMPLE_UNAPPROVED
+    )
+
+
+def test_a_future_metric_declares_its_own_sample_measure():
+    """No ERA-specific conditional lives in the family engine."""
+    registry = pi.MetricRegistry()
+    registry.register(pi.MetricDefinition(
+        metric_id='M-BF', public_name='Per-Batter Metric', version='0.0.1',
+        formula='x', numerator=lambda c: c.walks, denominator=lambda c: c.batters_faced,
+        formatter=lambda v: v, denominator_zero_reason='zero',
+        minimum_sample=50, sample_measure=lambda c: c.batters_faced,
+        minimum_sample_unit='batters_faced', minimum_sample_authority='D-030',
+    ))
+    definition = registry.get('M-BF')
+    components = pi.AppearanceComponents(outs=6, batters_faced=60)
+    sample = pi._sample(definition, components)
+    # Gated on its own declared measure, not on outs and not on appearances.
+    assert sample['measured_sample'] == 60
+    assert sample['minimum_sample_unit'] == 'batters_faced'
+    assert sample['meets_minimum_sample'] is True
+
+
+def test_approved_authorities_are_carried_on_the_definition():
+    d = pi.registry.get(M001)
+    assert d.denominator_authority == 'D-024'
+    assert d.rounding_authority == 'D-025'
+    assert d.below_sample_language_authority == 'D-026'
+    assert d.evidence_authority == 'D-029'
+    assert d.below_sample_public_wording == 'Not Enough Innings Yet'
+    assert d.display_precision == 2
+    assert d.effective_date == '2026-07-30'
+
+
+# ── Sample logic is counted in outs, never appearances (D-023) ─────────────
+def test_one_out_short_of_the_threshold_refuses(app):
+    arm = _pitcher('107 Arm')
+    _relief(arm, outs_each=3, appearances=35, earned_runs=10)   # 105 outs
+    _relief(arm, outs_each=2, appearances=1, end=date(2026, 7, 28))  # +2 = 107
+    db.session.commit()
+
+    read = _read()
+    assert read['sample']['outs'] == 107
+    assert read['sample']['measured_sample'] == 107
+    assert read['sample']['meets_minimum_sample'] is False
+    assert read['metric_readiness']['ready_for_internal_review'] is False
+    assert read['publication']['reason'] == pi.REFUSAL_BELOW_MINIMUM_SAMPLE
+
+
+def test_exactly_the_threshold_satisfies_the_sample(app):
+    arm = _pitcher('108 Arm')
+    _relief(arm, outs_each=3, appearances=36, earned_runs=10)   # 108 outs
+    db.session.commit()
+
+    read = _read()
+    assert read['sample']['outs'] == 108
+    assert read['sample']['meets_minimum_sample'] is True
+    assert read['metric_readiness']['ready_for_internal_review'] is True
+
+
+def test_one_out_past_the_threshold_satisfies_the_sample(app):
+    arm = _pitcher('109 Arm')
+    _relief(arm, outs_each=3, appearances=36, earned_runs=10)
+    _relief(arm, outs_each=1, appearances=1, end=date(2026, 7, 28))
+    db.session.commit()
+
+    read = _read()
+    assert read['sample']['outs'] == 109
+    assert read['sample']['meets_minimum_sample'] is True
+
+
+def test_many_appearances_with_too_few_outs_still_refuse(app):
+    """Forty one-out appearances is forty appearances and only forty outs."""
+    arm = _pitcher('One Out Specialist')
+    _relief(arm, outs_each=1, appearances=40, earned_runs=2)
+    db.session.commit()
+
+    read = _read()
+    assert read['sample']['appearances'] == 40
+    assert read['sample']['outs'] == 40
+    assert read['sample']['appearances'] > 0
+    assert read['sample']['meets_minimum_sample'] is False
+    assert read['publication']['reason'] == pi.REFUSAL_BELOW_MINIMUM_SAMPLE
+
+
+def test_fewer_appearances_with_enough_outs_satisfy_the_sample(app):
+    """Eighteen two-inning outings clear the gate forty one-out ones did not."""
+    arm = _pitcher('Long Relief Arm')
+    _relief(arm, outs_each=6, appearances=18, earned_runs=10)
+    db.session.commit()
+
+    read = _read()
+    assert read['sample']['appearances'] == 18
+    assert read['sample']['outs'] == 108
+    assert read['sample']['meets_minimum_sample'] is True
+
+
+def test_zero_outs_refuses_as_denominator_zero_before_the_sample_check(app):
+    arm = _pitcher('No Outs Arm')
+    _relief(arm, outs_each=0, appearances=6, earned_runs=2)
+    db.session.commit()
+
+    read = _read()
+    assert read['sample']['outs'] == 0
+    assert read['reason_code'] == 'era_denominator_zero'
+    assert read['publication']['reason'] == 'era_denominator_zero'
+    assert read['metric_readiness']['reason'] == 'era_denominator_zero'
+
+
+def test_appearance_count_is_evidence_and_never_the_gate(app):
+    """Fewer appearances than the threshold integer, and still enough sample."""
+    arm = _pitcher('Evidence Not Gate Arm')
+    _relief(arm, outs_each=6, appearances=18, earned_runs=4)
+    db.session.commit()
+
+    read = _read()
+    assert read['sample']['appearances'] == 18
+    assert read['sample']['appearances'] < read['sample']['minimum_sample']
+    assert read['sample']['meets_minimum_sample'] is True
+
+
+# ── Below-sample reader wording (D-026) ────────────────────────────────────
+def test_below_sample_read_carries_wording_and_both_counts(app):
+    arm = _pitcher('Below Sample Arm')
+    _relief(arm, outs_each=3, appearances=22, earned_runs=8)    # 66 outs
+    db.session.commit()
+
+    below = _read()['below_sample_read']
+    assert below['wording'] == 'Not Enough Innings Yet'
+    assert below['authority'] == 'D-026'
+    assert below['current_innings'] == '22.0'
+    assert below['required_innings'] == '36.0'
+    assert below['current_outs'] == 66
+    assert below['required_outs'] == 108
+    assert below['unit'] == 'recorded_outs'
+
+
+def test_no_below_sample_read_once_the_sample_is_satisfied(app):
+    arm = _pitcher('Satisfied Arm')
+    _relief(arm, outs_each=3, appearances=40, earned_runs=8)
+    db.session.commit()
+    assert _read()['below_sample_read'] is None
+
+
+def test_below_sample_never_borrows_an_arm_read_label(app):
+    arm = _pitcher('Vocabulary Arm')
+    _relief(arm, outs_each=3, appearances=10, earned_runs=2)
+    db.session.commit()
+
+    text = repr(_read())
+    for forbidden in ('Limited Read', 'Unavailable', 'Monitor'):
+        assert forbidden not in text
+
+
+# ── Arithmetic (D-025) ─────────────────────────────────────────────────────
+@pytest.mark.parametrize('earned_runs,outs,expected', [
+    (31, 289, '2.90'),
+    (12, 108, '3.00'),
+    (0, 130, '0.00'),
+    (1, 216, '0.13'),
+])
+def test_approved_arithmetic_examples(earned_runs, outs, expected):
+    assert pi._exact_ratio(earned_runs * 27, outs) == expected
+
+
+def test_half_up_not_bankers_rounding():
+    # 27/216 is exactly 0.125. Half-up gives 0.13; round-half-to-even gives
+    # 0.12, which no reader dividing by hand would arrive at.
+    assert pi._exact_ratio(27, 216) == '0.13'
+    assert round(27 / 216, 2) == 0.12
+
+
+def test_trailing_zeros_are_preserved_through_the_formatter():
+    definition = pi.registry.get(M001)
+    for value in ('0.00', '3.00', '2.90', '12.10'):
+        assert definition.formatter(value) == value
+
+
+def test_the_authoritative_value_is_never_a_float(app):
+    arm = _pitcher('String Value Arm')
+    _relief(arm, outs_each=3, appearances=36, earned_runs=12)
+    db.session.commit()
+
+    read = _read()
+    assert isinstance(read['value'], str)
+    assert isinstance(read['display_value'], str)
+    assert isinstance(read['exact_numerator'], int)
+    assert isinstance(read['exact_denominator'], int)
+    assert not isinstance(read['exact_numerator'], bool)
+
+
+def test_a_real_zero_is_a_value_and_not_a_refusal(app):
+    arm = _pitcher('Scoreless Long Arm')
+    _relief(arm, outs_each=3, appearances=40, earned_runs=0)
+    db.session.commit()
+
+    read = _read()
+    assert read['value'] == '0.00'
+    assert read['display_value'] == '0.00'
+    assert read['reason_code'] is None
+    assert read['below_sample_read'] is None
+    assert read['metric_readiness']['ready_for_internal_review'] is True
+
+
+def test_rounding_happens_once(app):
+    """Re-rounding the published string must be a no-op."""
+    arm = _pitcher('Single Rounding Arm')
+    _relief(arm, outs_each=3, appearances=96, earned_runs=31, step=1)   # 288 outs
+    _relief(arm, outs_each=1, appearances=1, end=date(2026, 7, 30))     # 289 outs
+    db.session.commit()
+
+    read = _read()
+    assert read['exact_numerator'] == 837
+    assert read['exact_denominator'] == 289
+    assert read['value'] == '2.90'
+    assert pi._exact_ratio(read['exact_numerator'], read['exact_denominator']) == '2.90'
+
+
+def test_precision_is_declared_by_the_metric_not_hardcoded():
+    assert pi._exact_ratio(1, 3, 2) == '0.33'
+    assert pi._exact_ratio(1, 3, 3) == '0.333'
+    assert pi._exact_ratio(1, 3, 0) == '0'
+
+
+# ── Pooled components only (D-024) ─────────────────────────────────────────
+def test_pooled_components_not_an_average_of_pitcher_rates(app):
+    """A one-out disaster must not weigh the same as ninety clean innings."""
+    workhorse = _pitcher('Workhorse')
+    _relief(workhorse, outs_each=3, appearances=90, earned_runs=30)   # 270 outs
+    blowup = _pitcher('One Bad Out')
+    _relief(blowup, outs_each=1, appearances=1, earned_runs=3)        # 1 out
+    db.session.commit()
+
+    read = _read()
+    # Pooled: (30 + 3) earned runs over (270 + 1) outs.
+    assert read['exact_numerator'] == 33 * 27
+    assert read['exact_denominator'] == 271
+    assert read['value'] == '3.29'
+
+    # Averaging the two pitchers' own rates gives a wildly different answer.
+    workhorse_rate = Decimal(pi._exact_ratio(30 * 27, 270))     # 3.00
+    blowup_rate = Decimal(pi._exact_ratio(3 * 27, 1))           # 81.00
+    average_of_rates = (workhorse_rate + blowup_rate) / 2
+    assert str(average_of_rates.quantize(Decimal('0.01'))) == '42.00'
+    assert read['value'] != '42.00'
+
+
+def test_pooled_components_not_an_average_of_appearance_rates(app):
+    arm = _pitcher('Uneven Arm')
+    _relief(arm, outs_each=6, appearances=5, earned_runs=0)      # 30 clean outs
+    _relief(arm, outs_each=3, appearances=1, earned_runs=3,
+            end=date(2026, 7, 27))                              # 3 outs, 3 ER
+    db.session.commit()
+
+    read = _read()
+    assert read['exact_numerator'] == 3 * 27
+    assert read['exact_denominator'] == 33
+    assert read['value'] == '2.45'
+    # Per-appearance rates are five 0.00 and one 27.00; their mean is 4.50.
+    per_appearance = [Decimal('0.00')] * 5 + [Decimal('27.00')]
+    mean = sum(per_appearance) / len(per_appearance)
+    assert str(mean.quantize(Decimal('0.01'))) == '4.50'
+    assert read['value'] != '4.50'
+
+
+def test_pooled_components_are_not_assembled_from_rounded_parts(app):
+    arm_a = _pitcher('Rounded A')
+    _relief(arm_a, outs_each=2, appearances=55, earned_runs=11)   # 110 outs
+    arm_b = _pitcher('Rounded B')
+    _relief(arm_b, outs_each=2, appearances=55, earned_runs=14,
+            end=date(2026, 7, 28))                               # 110 outs
+    db.session.commit()
+
+    read = _read()
+    # One division over the pooled integers, not a combination of two rates.
+    assert read['exact_numerator'] == 25 * 27
+    assert read['exact_denominator'] == 220
+    assert read['value'] == str(
+        (Decimal(25 * 27) / Decimal(220)).quantize(
+            Decimal('0.01'), rounding=ROUND_HALF_UP)
+    )
+
+
+# ── Active group and contributing arms (D-027) ─────────────────────────────
+def _group_with_a_noncontributing_member():
+    """A group member whose only relief work was for another organization."""
+    contributor = _pitcher('Contributor')
+    _relief(contributor, outs_each=3, appearances=36, earned_runs=12)   # 108 outs
+    acquired = _pitcher('Acquired No Usage')
+    _relief(acquired, outs_each=3, appearances=6, earned_runs=6,
+            appearance_team_id=OTHER_TEAM_ID, end=date(2026, 7, 28))
+    db.session.commit()
+    return contributor, acquired
+
+
+def test_no_usage_member_stays_in_the_group_and_contributes_nothing(app):
+    contributor, acquired = _group_with_a_noncontributing_member()
+
+    group = _read()['group']
+    assert acquired.id in group['pitcher_ids']
+    assert group['active_group_size'] == 2
+    assert group['contributing_pitcher_count'] == 1
+    assert group['noncontributing_active_pitcher_count'] == 1
+
+    member = next(m for m in group['members'] if m['pitcher_id'] == acquired.id)
+    assert member['qualifying_appearances'] == 0
+    assert member['recorded_outs'] == 0
+    assert member['earned_runs'] == 0
+    assert member['contributing'] is False
+    # He receives no rate of his own.
+    assert 'era' not in member and 'value' not in member
+
+
+def test_no_usage_member_moves_neither_numerator_nor_denominator(app):
+    _group_with_a_noncontributing_member()
+
+    read = _read()
+    assert read['exact_numerator'] == 12 * 27
+    assert read['exact_denominator'] == 108
+    assert read['value'] == '3.00'
+    # His prior-club earned runs stay with his prior club.
+    assert read['sample']['earned_runs'] == 12
+
+
+def test_no_usage_member_does_not_by_itself_refuse_the_read(app):
+    _group_with_a_noncontributing_member()
+
+    read = _read()
+    assert read['reason_code'] is None
+    assert read['metric_readiness']['ready_for_internal_review'] is True
+
+
+def test_group_and_contributing_difference_is_disclosed_factually(app):
+    _group_with_a_noncontributing_member()
+
+    limitations = _read()['limitations']
+    disclosure = [t for t in limitations if 'have pitched for this team' in t]
+    assert len(disclosure) == 1
+    assert '1 of the 2 arms' in disclosure[0]
+    # A factual disclosure, never a warning or a failure.
+    for alarm in ('warning', 'error', 'outage', 'missing data', 'failure', 'degraded'):
+        assert alarm not in disclosure[0].lower()
+
+
+def test_group_counts_reconcile(app):
+    _group_with_a_noncontributing_member()
+    group = _read()['group']
+    assert (
+        group['contributing_pitcher_count']
+        + group['noncontributing_active_pitcher_count']
+        == group['active_group_size']
+        == len(group['members'])
+    )
+
+
+# ── Evidence (D-029) ───────────────────────────────────────────────────────
+def test_all_four_evidence_levels_are_present(app):
+    _group_with_a_noncontributing_member()
+    evidence = _read()['evidence']
+
+    assert evidence['summary']['public_name'] == 'Active Bullpen ERA'
+    assert evidence['summary']['internal_name'] == 'Current Active-Pen ERA'
+
+    context = evidence['context']
+    for field_name in (
+        'active_group_size', 'contributing_pitcher_count',
+        'noncontributing_active_pitcher_count', 'qualifying_appearances',
+        'recorded_outs', 'innings_display', 'earned_runs', 'exact_numerator',
+        'exact_denominator', 'minimum_sample', 'minimum_sample_unit',
+        'minimum_sample_authority', 'method_version', 'effective_date',
+        'membership_authority', 'membership_represented_date',
+    ):
+        assert field_name in context, field_name
+
+    assert set(evidence['evidence']) == {'members', 'appearances'}
+    official = evidence['official_record']
+    for field_name in (
+        'source', 'appearance_team_authority', 'appearance_team_authority_status',
+        'appearance_team_authority_sources', 'schedule_authority',
+        'start_relief_authority', 'method_version', 'effective_date',
+    ):
+        assert field_name in official, field_name
+
+
+def test_evidence_members_reconcile_to_the_summary_totals(app):
+    _group_with_a_noncontributing_member()
+    read = _read()
+    members = read['evidence']['evidence']['members']
+
+    assert sum(m['recorded_outs'] for m in members) == read['exact_denominator']
+    assert sum(m['earned_runs'] for m in members) * 27 == read['exact_numerator']
+    assert sum(m['qualifying_appearances'] for m in members) == (
+        read['evidence']['context']['qualifying_appearances']
+    )
+
+
+def test_evidence_appearance_rows_reconcile_to_member_totals(app):
+    arm_a = _pitcher('Row A')
+    _relief(arm_a, outs_each=3, appearances=20, earned_runs=5)
+    arm_b = _pitcher('Row B')
+    _relief(arm_b, outs_each=3, appearances=10, earned_runs=1,
+            end=date(2026, 7, 28))
+    db.session.commit()
+
+    read = _read()
+    rows = read['evidence']['evidence']['appearances']
+    members = {m['pitcher_id']: m for m in read['evidence']['evidence']['members']}
+
+    for pitcher_id, member in members.items():
+        owned = [r for r in rows if r['pitcher_id'] == pitcher_id]
+        assert len(owned) == member['qualifying_appearances']
+        assert sum(r['outs'] for r in owned) == member['recorded_outs']
+        assert sum(r['earned_runs'] for r in owned) == member['earned_runs']
+
+
+def test_evidence_rows_carry_official_identity_not_raw_rows(app):
+    arm = _pitcher('Identity Arm')
+    _relief(arm, outs_each=3, appearances=36, earned_runs=3)
+    db.session.commit()
+
+    row = _read()['evidence']['evidence']['appearances'][0]
+    assert set(row) == {
+        'pitcher_id', 'mlb_game_pk', 'game_date', 'opponent',
+        'opponent_abbreviation', 'appearance_team_id', 'outs',
+        'innings_display', 'earned_runs',
+    }
+    # No stored internals leak.
+    assert 'id' not in row and 'pitches_thrown' not in row
+
+
+def test_incomplete_level_four_authority_refuses_the_read(app):
+    """A row whose schedule authority cannot be proved blocks the whole read."""
+    arm = _pitcher('No Schedule Arm')
+    _relief(arm, outs_each=3, appearances=36, earned_runs=3)
+    _log(arm, outs=3, earned_runs=0, schedule=False, game_date=date(2026, 7, 27))
+    db.session.commit()
+
+    read = _read()
+    assert read['value'] is None
+    assert read['reason_code'] == pi.REFUSAL_QUALIFYING_ROW_INVALID
+    assert read['evidence'] is None
+    assert read['invalid_rows'][0]['reason'] == pi.ROW_SCHEDULE_AUTHORITY_MISSING
+
+
+def test_exclusions_stay_bounded_reason_codes(app):
+    arm = _pitcher('Bounded Arm')
+    _relief(arm, outs_each=3, appearances=36, earned_runs=3)
+    _log(arm, outs=15, earned_runs=5, games_started=1, game_date=date(2026, 7, 27))
+    db.session.commit()
+
+    selection = pi.qualifying_appearances(
+        TEAM_ID, [arm.id], season=SEASON,
+        required_components=('innings_pitched_outs', 'earned_runs'),
+    )
+    assert selection.is_valid
+    assert selection.excluded
+    for issue in selection.excluded:
+        assert issue.reason in {pi.ROW_GAME_NOT_FINAL, pi.ROW_STARTER_EXCLUDED}
+        assert set(issue.to_dict()) == {'mlb_game_pk', 'pitcher_id', 'field', 'reason'}
+
+
+def test_evidence_ordering_is_deterministic(app):
+    arm = _pitcher('Ordered Arm')
+    _relief(arm, outs_each=3, appearances=36, earned_runs=4)
+    db.session.commit()
+
+    dates = [r['game_date'] for r in _read()['evidence']['evidence']['appearances']]
+    assert dates == sorted(dates)
+    assert _read() == _read()
+
+
+# ── Gates stay blocked (D-021, unchanged) ──────────────────────────────────
+def test_meeting_the_sample_opens_no_gate(app):
+    arm = _pitcher('Gate Safety Arm')
+    _relief(arm, outs_each=3, appearances=100, earned_runs=20)
+    db.session.commit()
+
+    read = _read()
+    assert read['metric_readiness']['ready_for_internal_review'] is True
+    assert read['gates'] == {
+        'public_reader_gate': 'blocked',
+        'team_state_performance_gate': 'blocked',
+        'share_card_performance_gate': 'blocked',
+    }
+    assert read['publication']['publishable'] is False
+    assert read['publication']['reason'] == pi.PUBLICATION_BLOCKED_BY_GATE
+
+
+def test_readiness_and_publication_are_different_questions(app):
+    arm = _pitcher('Distinct Arm')
+    _relief(arm, outs_each=3, appearances=100, earned_runs=20)
+    db.session.commit()
+
+    read = _read()
+    assert read['metric_readiness']['ready_for_internal_review'] is True
+    assert read['publication']['publishable'] is False
+    # The ambiguous generic value is deliberately not used in either place.
+    assert 'ready_for_review' not in repr(read['metric_readiness'])
+    assert 'ready_for_review' not in repr(read['publication'])
+
+
+# ── Refusals stay distinct ─────────────────────────────────────────────────
+def test_each_refusal_keeps_its_own_reason_code(app):
+    _pitcher('Nobody', team_id=OTHER_TEAM_ID)
+    db.session.commit()
+    assert _read()['reason_code'] == pi.REFUSAL_ACTIVE_GROUP_EMPTY
+    assert _read(metric_id='M-999')['reason_code'] == pi.REFUSAL_UNKNOWN_METRIC
+
+    # The distinct facts the contract requires to stay separable.
+    assert len({
+        pi.REFUSAL_UNKNOWN_METRIC,
+        pi.REFUSAL_ACTIVE_GROUP_EMPTY,
+        pi.REFUSAL_NO_QUALIFYING_APPEARANCES,
+        'era_denominator_zero',
+        pi.REFUSAL_BELOW_MINIMUM_SAMPLE,
+        pi.REFUSAL_QUALIFYING_ROW_INVALID,
+        pi.PUBLICATION_BLOCKED_BY_GATE,
+    }) == 7
+
+
+def test_a_refusal_never_substitutes_a_value(app):
+    arm = _pitcher('Refusal Arm')
+    _relief(arm, outs_each=3, appearances=22, earned_runs=8)   # 66 outs
+    db.session.commit()
+
+    read = _read()
+    assert read['publication']['publishable'] is False
+    # The value is computed internally; nothing is published, and no substitute
+    # of any kind appears in its place.
+    assert read['display_value'] == '3.27'
+    assert read['publication']['reason'] == pi.REFUSAL_BELOW_MINIMUM_SAMPLE
+    assert read['below_sample_read']['wording'] == 'Not Enough Innings Yet'

@@ -278,6 +278,13 @@ def test_phase0e_switches_and_legacy_public_files_not_modified():
     allowed_internal_admin_files = {
         'backend/api/system.py',
     }
+    # M-001 internal review (D-023 to D-030). One authenticated, read-only,
+    # internal route under /api/internal/. It adds no public route, changes no
+    # public payload, and opens no gate. Named explicitly rather than exempting
+    # backend/api/, so the guard still protects every other route.
+    allowed_m001_internal_review_files = {
+        'backend/api/performance_intelligence_admin.py',
+    }
     allowed_phase0f_public_recent_work_files = {
         'backend/api/recent_work.py',
     }
@@ -568,6 +575,7 @@ def test_phase0e_switches_and_legacy_public_files_not_modified():
         | allowed_share_artifact_cutover_files
         | allowed_share_artifact_operations_files
         | allowed_internal_admin_files
+        | allowed_m001_internal_review_files
         | allowed_phase0f_public_recent_work_files
         | allowed_phase0g_public_team_relief_files
         | allowed_phase_a_audience_signup_files
