@@ -77,6 +77,18 @@ EVIDENCE_INVALIDATION_STRICT = True
 REQUIRED_EVIDENCE_FAMILIES = repair_apply.REQUIRED_EVIDENCE_FAMILIES
 EVIDENCE_FAMILY_COMPLETED = repair_apply.EVIDENCE_FAMILY_COMPLETED
 REPAIR_LEDGER_MIGRATION_REVISION = repair_apply.REPAIR_LEDGER_MIGRATION_REVISION
+# The schema head THIS capability may observe, kept as its own fact rather than
+# reused from the ledger's revision. Until Foundation 3C the two coincided; the
+# game-driven ingestion work-state checkpoint (b9d4e17c3a80) then chained onto
+# the ledger revision. That migration is purely additive — one new table, and
+# none of the tables this repair reads or writes is touched — so the reviewed
+# schema is a strict subset of the observed one. "Which migration created the
+# ledger" and "which head may this repair run against" are different facts, and
+# conflating them made a purely additive migration look like an unreviewed
+# schema change. The guard keeps its full strength: an unexpected head still
+# refuses the repair, and the post-commit completeness check enforces the same
+# head through services/official_pitching_line_completeness_2026.
+GOVERNED_SCHEMA_HEAD = 'b9d4e17c3a80'
 
 GATE_BLOCKED = repair_apply.GATE_BLOCKED
 DOWNSTREAM_GATES = repair_apply.DOWNSTREAM_GATES
@@ -152,7 +164,7 @@ IMMUTABLE_CONTRACT = {
     'blocking_counts_by_reason': {},
     'duplicate_action_ids': [],
     'database_writes_performed': False,
-    'migration_head': REPAIR_LEDGER_MIGRATION_REVISION,
+    'migration_head': GOVERNED_SCHEMA_HEAD,
     'amendment_id': 'post_repair_matt_festa_earned_runs_2026',
     'action_counts': {
         planner.ACTION_IDENTITY_CREATE: 0,
