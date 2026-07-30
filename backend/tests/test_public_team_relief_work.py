@@ -1505,8 +1505,17 @@ def test_existing_public_routes_behavior_freeze(monkeypatch):
         'backend/migrations/versions/'
         'c7b3e5a91d48_add_official_pitching_line_repair_executions.py',
     }
+    allowed_game_ingestion_work_state_files = {
+        # operators/game-driven-daily-ingestion (Foundation 3C): the durable
+        # game-level ingestion checkpoint. A new internal table only — purely
+        # additive, reversible, no existing table touched, no existing row
+        # modified, no backfill, no reader migrated, and no public route.
+        'backend/migrations/versions/'
+        'b9d4e17c3a80_add_game_ingestion_work_items.py',
+    }
     assert not [
         path for path in changed
+        if path not in allowed_game_ingestion_work_state_files
         if path not in allowed_share_artifacts_domain_files
         if path not in allowed_share_artifact_cutover_files
         if path not in allowed_share_artifact_operations_files

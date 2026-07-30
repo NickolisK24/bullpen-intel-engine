@@ -47,7 +47,7 @@ from utils.db import db
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 MIGRATIONS_DIR = REPO_ROOT / 'backend/migrations/versions'
-EXPECTED_ALEMBIC_HEAD = 'c7b3e5a91d48'
+EXPECTED_ALEMBIC_HEAD = 'b9d4e17c3a80'
 FORBIDDEN_HEADLINE_TERMS = (
     'headline',
     'read_label',
@@ -564,7 +564,17 @@ def test_phase0e_switches_and_legacy_public_files_not_modified():
         'backend/migrations/versions/'
         'c7b3e5a91d48_add_official_pitching_line_repair_executions.py',
     }
+    allowed_game_ingestion_work_state_files = {
+        # operators/game-driven-daily-ingestion (Foundation 3C): the durable
+        # game-level ingestion checkpoint. A new internal table only — purely
+        # additive, reversible, no existing table touched, no existing row
+        # modified, no backfill, no reader migrated, and no public route.
+        'backend/migrations/versions/'
+        'b9d4e17c3a80_add_game_ingestion_work_items.py',
+    }
     allowed_files = (
+        allowed_game_ingestion_work_state_files
+        |
         allowed_public_freshness_display_files
         | allowed_team_at_appearance_files
         | allowed_repair_execution_ledger_files

@@ -1,9 +1,16 @@
 # BaseballOS Sync Pipeline — Execution Order and Trust Gates
 
-Last updated: 2026-07-11 (runtime governance and finality preflight).
+Last updated: 2026-07-30 (Foundation 3C game-driven daily appearance lane).
 Workflow: `.github/workflows/baseballos-sync.yml` · Incident background:
 `docs/audits/sync-reliability-audit-2026-07-08.md` and
 `docs/audits/appearance-ledger-restoration-2026-07-08.md`.
+
+**Daily appearance ingestion:
+[`GAME_DRIVEN_DAILY_INGESTION.md`](GAME_DRIVEN_DAILY_INGESTION.md)** — the
+canonical reference for the game-driven critical lane: work planner, game
+eligibility, appearance extraction, idempotent persistence, durable
+checkpoint/resume, correction horizon, publication completeness proof, failure
+semantics, operator repair, and the retirement status of the all-pitcher loop.
 
 ## The order, in one line
 
@@ -32,10 +39,20 @@ with a concrete `YYYY-MM-DD` slate date.
 1. **Sync (acquisition + derived state + snapshot build)**
    - daily: `run_daily_sync.py --days-back 7 --public-only` — team
      assignments, roster statuses, transactions, production schedule/finality
-     preflight for the gameLog window, the per-pitcher gameLog lane
-     (statusless splits resolved against `scheduled_games`; unresolvable
-     finality is dead-lettered, never silently skipped), fatigue, then the
-     snapshot build.
+     preflight for the gameLog window, the **game-driven appearance lane**
+     (Foundation 3C: newly final and corrected games, one box-score fetch per
+     game, durable per-game checkpoint — see
+     [`GAME_DRIVEN_DAILY_INGESTION.md`](GAME_DRIVEN_DAILY_INGESTION.md)), then
+     the per-pitcher gameLog lane (statusless splits resolved against
+     `scheduled_games`; unresolvable finality is dead-lettered, never silently
+     skipped), fatigue, then the snapshot build.
+
+     Once `GAME_DRIVEN_INGESTION_MODE=authoritative`, the game lane is the
+     publication-critical path and the per-pitcher loop runs after it as
+     governed best-effort repair — `best_effort_only=True` so it cannot
+     withhold the snapshot, and `skip_game_pks` so it never rewrites a game the
+     game lane already reconciled in the same run. Until then the mode is
+     `off` and behaviour is unchanged.
    - postgame: `run_postgame_refresh.py --public-only` — production
      schedule/finality preflight for stale non-final stored slates, then sweeps
      the primary slate plus the trailing lookback dates, ingests completed-game
@@ -232,14 +249,23 @@ value 300s). The gameLog ingestion budget is derived from the total remaining
 time after that reserve and capped by `DAILY_SYNC_INGESTION_BUDGET_SECONDS`
 (workflow value 720s).
 
-When the derived ingestion budget is exceeded, the stage stops cleanly: the
-remaining pitchers are dead-lettered in one `daily_game_log_budget` record
-(counts + mlb_ids), `records_failed` includes them, the run finishes **partial**
-with `lane_health=budget_exhausted`, and the next daily run (or the postgame
-lookback) retries them. This is fail-closed by construction — a truncated sweep
-is visible and counted, never absorbed — and the Python process keeps enough
-headroom to run fatigue, snapshot publish/withhold, durable metadata,
-writer-guard release, and cleanup before the 20-minute shell timeout.
+When the derived ingestion budget is exceeded, the **per-pitcher** stage stops
+cleanly: the remaining pitchers are dead-lettered in one
+`daily_game_log_budget` record (counts + mlb_ids), `records_failed` includes
+them, the run finishes **partial** with `lane_health=budget_exhausted`, and the
+next daily run (or the postgame lookback) retries them. This is fail-closed by
+construction — a truncated sweep is visible and counted, never absorbed — and
+the Python process keeps enough headroom to run fatigue, snapshot
+publish/withhold, durable metadata, writer-guard release, and cleanup before the
+20-minute shell timeout.
+
+The **game-driven** lane behaves differently on purpose: budget exhaustion there
+is not a terminal dead-letter condition but an incomplete, resumable run state.
+Remaining games are persisted as `planned` work items, the run is marked
+incomplete, publication is withheld if critical games remain, and the next run
+starts from that unresolved work instead of the beginning of the window. See
+[`GAME_DRIVEN_DAILY_INGESTION.md`](GAME_DRIVEN_DAILY_INGESTION.md). Budgets
+themselves are unchanged — nothing in Foundation 3C raises a timeout.
 
 Pitcher-season ledger coverage is not recomputed for every full-season target
 on every daily run. The daily hot path verifies only the accepted current-window
@@ -252,7 +278,10 @@ production maintenance workflow.
 - `python backend/scripts/appearance_ledger_audit.py [--end-date D --days N --deep --json]`
 - `python backend/scripts/sync_trace.py --player <mlb_id> --date <YYYY-MM-DD> [--game-pk PK] [--no-network]`
 - `python backend/scripts/run_postgame_refresh.py --date <YYYY-MM-DD> --source manual_backfill`
+- `python backend/scripts/game_driven_ingestion.py [--plan-only | --mode shadow|write] [--game-pk PK] [--max-games N] [--include-backfill]`
+  — Foundation 3C staged rollout and governed per-game repair.
 - Kill switch (operators only, logged): `APPEARANCE_LEDGER_GATE_ENABLED=false`
+- Game-driven lane mode (operators only): `GAME_DRIVEN_INGESTION_MODE=off|shadow|write|authoritative`
 
 ## Roster-readiness recovery notes (2026-07-13)
 

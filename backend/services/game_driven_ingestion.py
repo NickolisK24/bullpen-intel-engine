@@ -1,0 +1,802 @@
+"""Game-driven incremental appearance ingestion (Foundation 3C).
+
+The daily publication-critical lane, rebuilt around the correct unit of work.
+
+Old critical path (retired by this module):
+
+    every active pitcher  ->  one full-season gameLog request per pitcher
+                          ->  filter locally to a 7-day window
+                          ->  compare locally
+                          ->  restart from zero after interruption
+
+New critical path:
+
+    canonical schedule + finality authority
+                          ->  deterministic game work plan
+                          ->  fetch each planned game's box score ONCE
+                          ->  extract that game's pitcher appearances
+                          ->  reconcile canonical GameLog rows idempotently
+                          ->  durable per-game completion, transactionally
+                              aligned with the appearance writes
+                          ->  game-level publication completeness proof
+
+Production evidence that forced the change (read-only diagnostic, 2026-07-29):
+854 active pitchers were selected daily; 139 active starters and 13 active
+roster non-pitchers had zero relief appearances in the lookback; ~94% of every
+returned split was outside the governed window; 100% of the sampled requests
+were no-change work; and external request time was 99.8% of the measured cost.
+The waste was structural, not incidental — it came from the unit of work.
+
+Modes
+-----
+``off``            the lane does not run (deployed default; zero change)
+``shadow``         plan + fetch + extract + project, WRITES NOTHING
+``write``          plan + reconcile + checkpoint; publication authority unchanged
+``authoritative``  as ``write``, and the game-level completeness proof drives
+                   publication-critical completeness
+
+Rollout is staged deliberately: the mode advances only after each stage's
+production evidence passes. Nothing here flips publication authority on merge.
+"""
+
+from __future__ import annotations
+
+import logging
+import os
+import time
+from datetime import date
+
+from models.game_ingestion_work_item import GameIngestionWorkItem
+from models.game_log import GameLog
+from models.pitcher import Pitcher
+from services import dead_letter
+from services import game_appearance_extraction as extraction
+from services import game_ingestion_planner as planner
+from services.game_appearance_extraction import AppearanceExtractionError
+from utils.db import db
+from utils.time import utc_now_naive
+
+
+logger = logging.getLogger(__name__)
+
+MODE_OFF = 'off'
+MODE_SHADOW = 'shadow'
+MODE_WRITE = 'write'
+MODE_AUTHORITATIVE = 'authoritative'
+MODES = (MODE_OFF, MODE_SHADOW, MODE_WRITE, MODE_AUTHORITATIVE)
+
+MODE_ENV_VAR = 'GAME_DRIVEN_INGESTION_MODE'
+
+GAME_INGESTION_FAILURE_ENTITY_TYPE = 'game_driven_ingestion_game'
+
+RETRY_LIMIT = 3
+
+# ── Failure classes ─────────────────────────────────────────────────────────
+# Each declares, in ONE place, whether it is retryable, whether it is
+# publication-critical, whether it blocks checkpoint advancement, and whether it
+# blocks publication. Nothing is reduced to an opaque dead-letter count.
+ERROR_SCHEDULE_AUTHORITY_MISSING = 'schedule_authority_missing'
+ERROR_FINALITY_UNRESOLVED = 'finality_unresolved'
+ERROR_GAME_FETCH_FAILED = 'game_fetch_failed'
+ERROR_PAYLOAD_INVALID = 'payload_invalid'
+ERROR_STARTER_IDENTITY_UNRESOLVED = 'starter_identity_unresolved'
+ERROR_APPEARANCE_EXTRACTION_FAILED = 'appearance_extraction_failed'
+ERROR_PERSISTENCE_FAILED = 'persistence_failed'
+ERROR_RECONCILIATION_FAILED = 'reconciliation_failed'
+ERROR_CORRECTION_CONFLICT = 'correction_conflict'
+ERROR_BUDGET_EXHAUSTED = 'budget_exhausted'
+ERROR_UNEXPECTED = 'unexpected_error'
+
+FAILURE_SEMANTICS = {
+    ERROR_SCHEDULE_AUTHORITY_MISSING: {
+        'retryable': True, 'blocks_checkpoint': True, 'blocks_publication': True,
+    },
+    ERROR_FINALITY_UNRESOLVED: {
+        'retryable': True, 'blocks_checkpoint': True, 'blocks_publication': True,
+    },
+    ERROR_GAME_FETCH_FAILED: {
+        'retryable': True, 'blocks_checkpoint': True, 'blocks_publication': True,
+    },
+    ERROR_PAYLOAD_INVALID: {
+        'retryable': True, 'blocks_checkpoint': True, 'blocks_publication': True,
+    },
+    ERROR_STARTER_IDENTITY_UNRESOLVED: {
+        'retryable': True, 'blocks_checkpoint': True, 'blocks_publication': True,
+    },
+    ERROR_APPEARANCE_EXTRACTION_FAILED: {
+        'retryable': True, 'blocks_checkpoint': True, 'blocks_publication': True,
+    },
+    ERROR_PERSISTENCE_FAILED: {
+        'retryable': True, 'blocks_checkpoint': True, 'blocks_publication': True,
+    },
+    ERROR_RECONCILIATION_FAILED: {
+        'retryable': True, 'blocks_checkpoint': True, 'blocks_publication': True,
+    },
+    ERROR_CORRECTION_CONFLICT: {
+        'retryable': True, 'blocks_checkpoint': True, 'blocks_publication': True,
+    },
+    # Budget exhaustion is NOT a terminal dead-letter condition. It is an
+    # incomplete, resumable run state: the work item stays unresolved and the
+    # next run picks it up first.
+    ERROR_BUDGET_EXHAUSTED: {
+        'retryable': True, 'blocks_checkpoint': True, 'blocks_publication': True,
+    },
+    # Generic unexpected errors fail closed.
+    ERROR_UNEXPECTED: {
+        'retryable': True, 'blocks_checkpoint': True, 'blocks_publication': True,
+    },
+}
+
+
+def ingestion_mode() -> str:
+    raw = str(os.environ.get(MODE_ENV_VAR, MODE_OFF) or MODE_OFF).strip().lower()
+    return raw if raw in MODES else MODE_OFF
+
+
+def enabled() -> bool:
+    return ingestion_mode() != MODE_OFF
+
+
+def writes_enabled(mode: str | None = None) -> bool:
+    return (mode or ingestion_mode()) in (MODE_WRITE, MODE_AUTHORITATIVE)
+
+
+def publication_authoritative(mode: str | None = None) -> bool:
+    return (mode or ingestion_mode()) == MODE_AUTHORITATIVE
+
+
+def run_game_driven_ingestion(
+    reference_date: date,
+    *,
+    mode: str | None = None,
+    time_budget_seconds: float | None = None,
+    sync_run_id=None,
+    job_name: str | None = None,
+    explicit_game_pks=None,
+    include_backfill: bool = False,
+    max_games: int | None = None,
+    process_game=None,
+    fetch_boxscore=None,
+) -> dict:
+    """Run one game-driven ingestion pass and return its full run report.
+
+    ``process_game`` and ``fetch_boxscore`` exist so the lane can be exercised
+    without the network; production leaves them ``None`` and the canonical
+    ``services.sync`` implementations (and therefore the single canonical MLB
+    client) are used.
+    """
+    mode = (mode or ingestion_mode())
+    if mode not in MODES:
+        mode = MODE_OFF
+    started = time.monotonic()
+    report = _empty_report(reference_date, mode)
+    if mode == MODE_OFF:
+        report['status'] = 'disabled'
+        return report
+
+    planner_started = time.monotonic()
+    plan = planner.plan_game_work(
+        reference_date,
+        explicit_game_pks=explicit_game_pks,
+        include_backfill=include_backfill,
+    )
+    report['planner_seconds'] = round(time.monotonic() - planner_started, 3)
+    report['plan'] = {
+        key: value for key, value in plan.items() if key != 'items'
+    }
+    items = list(plan['items'])
+    if max_games is not None:
+        items = items[: max(int(max_games), 0)]
+    report['games_planned'] = len(items)
+    report['games_discovered'] = plan['games_discovered']
+    report['newly_final_count'] = plan['newly_final_count']
+    report['corrected_final_count'] = plan['corrected_final_count']
+    report['retry_count'] = plan['retry_count']
+    report['schedule_authority_missing'] = len(plan['schedule_authority_missing'])
+    report['finality_conflicts'] = len(plan['finality_conflicts'])
+
+    handlers = _resolve_handlers(process_game, fetch_boxscore)
+
+    for index, item in enumerate(items):
+        if _budget_exhausted(started, time_budget_seconds):
+            report['budget_stop_triggered'] = True
+            remaining = items[index:]
+            _record_budget_stop(
+                remaining,
+                mode=mode,
+                reference_date=reference_date,
+                sync_run_id=sync_run_id,
+                report=report,
+            )
+            break
+
+        outcome = _process_one_game(
+            item,
+            mode=mode,
+            handlers=handlers,
+            sync_run_id=sync_run_id,
+            job_name=job_name,
+            report=report,
+        )
+        report['games'].append(outcome)
+
+    if not writes_enabled(mode):
+        # Shadow mode reads only. Discard the read transaction explicitly so the
+        # lane cannot leave anything pending behind it.
+        db.session.rollback()
+
+    report['games_remaining'] = max(
+        report['games_planned'] - report['games_attempted'], 0
+    )
+    for key in (
+        'fetch_seconds', 'extraction_seconds', 'persistence_seconds',
+        'checkpoint_seconds',
+    ):
+        report[key] = round(report[key], 3)
+    report['elapsed_seconds'] = round(time.monotonic() - started, 3)
+    report['remaining_budget_seconds'] = (
+        None if time_budget_seconds is None
+        else round(max(time_budget_seconds - (time.monotonic() - started), 0.0), 3)
+    )
+    report['status'] = 'complete' if not report['budget_stop_triggered'] else 'incomplete'
+    return report
+
+
+# ── One game ────────────────────────────────────────────────────────────────
+
+
+def _process_one_game(item, *, mode, handlers, sync_run_id, job_name, report) -> dict:
+    game_started = time.monotonic()
+    report['games_attempted'] += 1
+    outcome = {
+        'game_pk': item.game_pk,
+        'represented_date': item.represented_date.isoformat()
+        if item.represented_date else None,
+        'candidate_reason': item.candidate_reason,
+        'criticality': item.criticality,
+        'attempt_number': (item.attempt_count or 0) + 1,
+        'status': None,
+        'source_revision': None,
+        'appearances_extracted': 0,
+        'relief_appearances': 0,
+        'inserted': 0,
+        'updated': 0,
+        'unchanged': 0,
+        'elapsed_seconds': 0.0,
+        'error_class': None,
+    }
+
+    work_item = None
+    try:
+        if writes_enabled(mode):
+            work_item = _claim_work_item(item, sync_run_id=sync_run_id)
+
+        fetch_started = time.monotonic()
+        game_payload, boxscore = handlers['fetch'](item)
+        report['fetch_seconds'] += time.monotonic() - fetch_started
+        report['games_fetched'] += 1
+
+        extract_started = time.monotonic()
+        appearances = handlers['extract'](item, game_payload, boxscore)
+        report['extraction_seconds'] += time.monotonic() - extract_started
+
+        if not appearances:
+            raise _IngestionFailure(
+                ERROR_APPEARANCE_EXTRACTION_FAILED,
+                'final game produced no pitching appearances',
+            )
+
+        revision = extraction.appearance_set_fingerprint(appearances)
+        outcome['source_revision'] = revision
+        outcome['appearances_extracted'] = len(appearances)
+        outcome['relief_appearances'] = extraction.relief_appearance_count(appearances)
+        report['rows_expected'] += len(appearances)
+
+        if not writes_enabled(mode):
+            projection = _project_reconciliation(item, appearances)
+            outcome.update(projection)
+            outcome['status'] = 'projected'
+            report['rows_inserted'] += projection['inserted']
+            report['rows_updated'] += projection['updated']
+            report['rows_unchanged'] += projection['unchanged']
+            report['games_completed'] += 1
+            return outcome
+
+        persist_started = time.monotonic()
+        persisted = handlers['persist'](
+            item, game_payload, boxscore, sync_run_id=sync_run_id
+        )
+        report['persistence_seconds'] += time.monotonic() - persist_started
+
+        reconciled = _verify_game_completeness(item, appearances)
+        outcome['inserted'] = persisted['inserted']
+        outcome['updated'] = persisted['updated']
+        outcome['unchanged'] = max(
+            len(appearances) - persisted['inserted'] - persisted['updated'], 0
+        )
+        if reconciled['reconciled'] != len(appearances):
+            raise _IngestionFailure(
+                ERROR_RECONCILIATION_FAILED,
+                'expected appearance rows did not all reconcile',
+            )
+        if persisted['unsafe']:
+            raise _IngestionFailure(
+                ERROR_CORRECTION_CONFLICT,
+                'a governed correction could not be applied safely',
+            )
+        if persisted['unresolved_pitchers']:
+            raise _IngestionFailure(
+                ERROR_STARTER_IDENTITY_UNRESOLVED,
+                'a pitching line could not be resolved to a pitcher',
+            )
+
+        checkpoint_started = time.monotonic()
+        correction_applied = (
+            work_item.source_revision is not None
+            and work_item.source_revision != revision
+        )
+        _complete_work_item(
+            work_item,
+            revision=revision,
+            rows_expected=len(appearances),
+            rows_reconciled=reconciled['reconciled'],
+            relief_rows=outcome['relief_appearances'],
+            correction_applied=correction_applied,
+            proof={
+                'appearance_rows': len(appearances),
+                'reconciled_rows': reconciled['reconciled'],
+                'relief_rows': outcome['relief_appearances'],
+                'starters': extraction.starter_identity(appearances),
+                'inserted': persisted['inserted'],
+                'updated': persisted['updated'],
+            },
+        )
+        db.session.commit()
+        report['checkpoint_seconds'] += time.monotonic() - checkpoint_started
+
+        report['rows_inserted'] += persisted['inserted']
+        report['rows_updated'] += persisted['updated']
+        report['rows_unchanged'] += outcome['unchanged']
+        report['games_completed'] += 1
+        if correction_applied:
+            report['corrections_applied'] += 1
+            outcome['status'] = 'completed_with_correction'
+        else:
+            outcome['status'] = GameIngestionWorkItem.STATUS_COMPLETED
+        return outcome
+
+    except Exception as exc:  # noqa: BLE001 - every failure is classified below
+        db.session.rollback()
+        error_class = _classify_error(exc)
+        outcome['error_class'] = error_class
+        outcome['status'] = _record_failure(
+            item,
+            error_class=error_class,
+            mode=mode,
+            sync_run_id=sync_run_id,
+            job_name=job_name,
+        )
+        report['games_failed'] += 1
+        report['failure_classes'][error_class] = (
+            report['failure_classes'].get(error_class, 0) + 1
+        )
+        if item.criticality != GameIngestionWorkItem.CRITICALITY_BEST_EFFORT:
+            report['critical_games_unresolved'] += 1
+        else:
+            report['best_effort_games_deferred'] += 1
+        # The exception text is never logged: it can carry paths and payload
+        # fragments. The safe class and the game id are enough to act on.
+        logger.warning(
+            'Game-driven ingestion failed for game_pk=%s class=%s attempt=%s',
+            item.game_pk, error_class, outcome['attempt_number'],
+        )
+        return outcome
+    finally:
+        outcome['elapsed_seconds'] = round(time.monotonic() - game_started, 3)
+
+
+# ── Work-item state machine ─────────────────────────────────────────────────
+
+
+def _claim_work_item(item, *, sync_run_id) -> GameIngestionWorkItem:
+    work_item = GameIngestionWorkItem.query.filter_by(
+        mlb_game_pk=item.game_pk
+    ).first()
+    now = utc_now_naive()
+    if work_item is None:
+        work_item = GameIngestionWorkItem(
+            mlb_game_pk=item.game_pk,
+            represented_date=item.represented_date,
+        )
+        db.session.add(work_item)
+
+    work_item.represented_date = item.represented_date
+    work_item.game_date = item.game_date
+    work_item.game_type = item.game_type
+    work_item.game_datetime = item.game_datetime
+    work_item.home_team_id = item.home_team_id
+    work_item.away_team_id = item.away_team_id
+    work_item.candidate_reason = item.candidate_reason
+    work_item.criticality = item.criticality
+    work_item.finality_state = item.finality_state
+    work_item.source_authority = item.source_authority
+    work_item.status = GameIngestionWorkItem.STATUS_IN_PROGRESS
+    work_item.attempt_count = (work_item.attempt_count or 0) + 1
+    work_item.first_attempted_at = work_item.first_attempted_at or now
+    work_item.last_attempted_at = now
+    work_item.error_class = None
+    work_item.sync_run_id = sync_run_id
+    db.session.flush()
+    return work_item
+
+
+def _complete_work_item(
+    work_item, *, revision, rows_expected, rows_reconciled, relief_rows,
+    correction_applied, proof,
+):
+    work_item.status = GameIngestionWorkItem.STATUS_COMPLETED
+    work_item.completed_at = utc_now_naive()
+    work_item.source_revision = revision
+    work_item.rows_expected = rows_expected
+    work_item.rows_reconciled = rows_reconciled
+    work_item.relief_rows_reconciled = relief_rows
+    work_item.error_class = None
+    if correction_applied:
+        work_item.correction_count = (work_item.correction_count or 0) + 1
+    work_item.completion_proof = proof
+    db.session.add(work_item)
+    db.session.flush()
+
+
+def _record_failure(item, *, error_class, mode, sync_run_id, job_name) -> str:
+    """Persist a failed attempt. Never marks a game complete."""
+    if not writes_enabled(mode):
+        return 'projection_failed'
+
+    semantics = FAILURE_SEMANTICS.get(error_class, FAILURE_SEMANTICS[ERROR_UNEXPECTED])
+    work_item = GameIngestionWorkItem.query.filter_by(
+        mlb_game_pk=item.game_pk
+    ).first()
+    now = utc_now_naive()
+    if work_item is None:
+        work_item = GameIngestionWorkItem(
+            mlb_game_pk=item.game_pk,
+            represented_date=item.represented_date,
+            game_date=item.game_date,
+            game_type=item.game_type,
+            home_team_id=item.home_team_id,
+            away_team_id=item.away_team_id,
+            game_datetime=item.game_datetime,
+            candidate_reason=item.candidate_reason,
+            criticality=item.criticality,
+            finality_state=item.finality_state,
+            source_authority=item.source_authority,
+            attempt_count=1,
+            first_attempted_at=now,
+        )
+        db.session.add(work_item)
+    else:
+        # The claiming flush was rolled back with the failed transaction, so the
+        # attempt is counted here — otherwise a repeatedly failing game would
+        # never reach the retry limit.
+        work_item.attempt_count = (work_item.attempt_count or 0) + 1
+        work_item.first_attempted_at = work_item.first_attempted_at or now
+
+    attempt_count = work_item.attempt_count or 1
+    retryable = semantics['retryable'] and (
+        error_class == ERROR_BUDGET_EXHAUSTED or attempt_count < RETRY_LIMIT
+    )
+    work_item.status = (
+        GameIngestionWorkItem.STATUS_RETRYABLE_FAILURE if retryable
+        else GameIngestionWorkItem.STATUS_TERMINAL_FAILURE
+    )
+    work_item.last_attempted_at = now
+    work_item.error_class = error_class
+    work_item.completed_at = None
+    work_item.sync_run_id = sync_run_id
+    db.session.add(work_item)
+    db.session.commit()
+
+    if not retryable:
+        dead_letter.record_failure(
+            GAME_INGESTION_FAILURE_ENTITY_TYPE,
+            f'game-driven ingestion retry limit reached: {error_class}',
+            entity_ref=item.game_pk,
+            payload={
+                'game_pk': item.game_pk,
+                'represented_date': (
+                    item.represented_date.isoformat() if item.represented_date else None
+                ),
+                'candidate_reason': item.candidate_reason,
+                'criticality': item.criticality,
+                'error_class': error_class,
+                'attempt_count': attempt_count,
+                'retry_limit': RETRY_LIMIT,
+            },
+            sync_run_id=sync_run_id,
+            job_name=job_name,
+        )
+        db.session.commit()
+    return work_item.status
+
+
+def _record_budget_stop(remaining, *, mode, reference_date, sync_run_id, report):
+    """Budget exhaustion leaves resumable state — it never dead-letters a tail."""
+    critical = 0
+    best_effort = 0
+    for item in remaining:
+        if item.criticality == GameIngestionWorkItem.CRITICALITY_BEST_EFFORT:
+            best_effort += 1
+        else:
+            critical += 1
+    report['critical_games_unresolved'] += critical
+    report['best_effort_games_deferred'] += best_effort
+    report['budget_stop'] = {
+        'reference_date': reference_date.isoformat(),
+        'games_remaining': len(remaining),
+        'critical_games_remaining': critical,
+        'best_effort_games_remaining': best_effort,
+    }
+
+    if not writes_enabled(mode):
+        return
+
+    existing = {
+        row.mlb_game_pk: row
+        for row in (
+            GameIngestionWorkItem.query
+            .filter(GameIngestionWorkItem.mlb_game_pk.in_(
+                [item.game_pk for item in remaining] or [-1]
+            ))
+            .all()
+        )
+    }
+    for item in remaining:
+        work_item = existing.get(item.game_pk)
+        if work_item is None:
+            work_item = GameIngestionWorkItem(
+                mlb_game_pk=item.game_pk,
+                represented_date=item.represented_date,
+                game_date=item.game_date,
+                game_type=item.game_type,
+                home_team_id=item.home_team_id,
+                away_team_id=item.away_team_id,
+                game_datetime=item.game_datetime,
+                candidate_reason=item.candidate_reason,
+                criticality=item.criticality,
+                finality_state=item.finality_state,
+                source_authority=item.source_authority,
+                attempt_count=0,
+            )
+            db.session.add(work_item)
+        elif work_item.status == GameIngestionWorkItem.STATUS_COMPLETED:
+            # A completed game is never demoted by a later run's budget stop.
+            continue
+        work_item.status = GameIngestionWorkItem.STATUS_PLANNED
+        work_item.criticality = item.criticality
+        work_item.candidate_reason = item.candidate_reason
+        work_item.error_class = ERROR_BUDGET_EXHAUSTED
+    db.session.commit()
+
+
+# ── Reconciliation ──────────────────────────────────────────────────────────
+
+
+def _verify_game_completeness(item, appearances) -> dict:
+    """Count the canonical GameLog rows that actually reconcile this game."""
+    stored = {
+        row.pitcher_id: row
+        for row in GameLog.query.filter(GameLog.mlb_game_pk == item.game_pk).all()
+    }
+    if not stored:
+        return {'reconciled': 0, 'expected': len(appearances)}
+    pitcher_ids = {
+        pitcher.mlb_id: pitcher.id
+        for pitcher in Pitcher.query.filter(
+            Pitcher.id.in_(list(stored) or [-1])
+        ).all()
+    }
+    reconciled = 0
+    for record in appearances:
+        local_id = pitcher_ids.get(record['pitcher_mlb_id'])
+        row = stored.get(local_id) if local_id else None
+        if row is None:
+            continue
+        if int(row.innings_pitched_outs or 0) != int(record['outs_recorded']):
+            continue
+        reconciled += 1
+    return {'reconciled': reconciled, 'expected': len(appearances)}
+
+
+def _project_reconciliation(item, appearances) -> dict:
+    """Shadow-mode projection: what WOULD be inserted / updated / unchanged."""
+    stored_rows = GameLog.query.filter(GameLog.mlb_game_pk == item.game_pk).all()
+    stored_by_local_id = {row.pitcher_id: row for row in stored_rows}
+    mlb_id_by_local_id = {
+        pitcher.id: pitcher.mlb_id
+        for pitcher in Pitcher.query.filter(
+            Pitcher.id.in_(list(stored_by_local_id) or [-1])
+        ).all()
+    }
+    stored_by_mlb_id = {
+        mlb_id_by_local_id.get(local_id): row
+        for local_id, row in stored_by_local_id.items()
+    }
+    inserted = updated = unchanged = 0
+    for record in appearances:
+        row = stored_by_mlb_id.get(record['pitcher_mlb_id'])
+        if row is None:
+            inserted += 1
+        elif _row_differs(row, record):
+            updated += 1
+        else:
+            unchanged += 1
+    return {
+        'inserted': inserted,
+        'updated': updated,
+        'unchanged': unchanged,
+        'orphan_stored_rows': max(len(stored_rows) - (updated + unchanged), 0),
+    }
+
+
+_PROJECTION_FIELDS = (
+    ('innings_pitched_outs', 'outs_recorded'),
+    ('earned_runs', 'earned_runs'),
+    ('runs_allowed', 'runs_allowed'),
+    ('hits_allowed', 'hits_allowed'),
+    ('walks', 'walks'),
+    ('strikeouts', 'strikeouts'),
+    ('home_runs_allowed', 'home_runs_allowed'),
+    ('games_started', 'games_started'),
+)
+
+
+def _row_differs(row, record) -> bool:
+    for column, key in _PROJECTION_FIELDS:
+        expected = record.get(key)
+        if expected is None:
+            continue
+        if int(getattr(row, column) or 0) != int(expected):
+            return True
+    return False
+
+
+# ── Handlers (canonical implementations, injectable for tests) ──────────────
+
+
+def _resolve_handlers(process_game, fetch_boxscore) -> dict:
+    if process_game is not None and fetch_boxscore is not None:
+        return {
+            'fetch': fetch_boxscore,
+            'extract': _default_extract,
+            'persist': process_game,
+        }
+
+    # Lazy import: services.sync imports many services, so importing it at
+    # module load would be circular. The canonical MLB client, the canonical
+    # box-score parser, and the canonical idempotent GameLog upsert all come
+    # from there — this module introduces none of its own.
+    from services import sync as sync_service
+
+    def _fetch(item):
+        game_payload = _game_payload(item)
+        boxscore = sync_service.mlb_client.get_game_boxscore(item.game_pk)
+        return game_payload, boxscore
+
+    def _persist(item, game_payload, boxscore, *, sync_run_id=None):
+        result = sync_service.process_completed_game_for_postgame_refresh(
+            game_payload,
+            schedule_date=item.game_date or item.represented_date,
+            sync_run_id=sync_run_id,
+            # This lane owns its own completion contract (the work item), so a
+            # game inside the correction horizon must be re-read even when the
+            # postgame marker already says fully processed. Every write below
+            # remains idempotent.
+            force=True,
+        )
+        return {
+            'inserted': result.get('logs_added', 0),
+            'updated': result.get('logs_corrected', 0),
+            'unsafe': result.get('correction_attempts_failed', 0),
+            'unresolved_pitchers': result.get('pitcher_resolution_failures', 0),
+        }
+
+    return {'fetch': _fetch, 'extract': _default_extract, 'persist': _persist}
+
+
+def _default_extract(item, game_payload, boxscore):
+    from services import sync as sync_service
+
+    lines = sync_service._extract_pitching_lines_from_boxscore(boxscore)
+    order = sync_service._pitcher_order_by_side(boxscore)
+    return extraction.extract_game_appearances(
+        game=game_payload,
+        pitching_lines=lines,
+        pitcher_order=order,
+        game_date=item.game_date or item.represented_date,
+    )
+
+
+def _game_payload(item) -> dict:
+    """The canonical game dict shape the existing postgame path already accepts."""
+    return {
+        'gamePk': item.game_pk,
+        'gameType': item.game_type or 'R',
+        'officialDate': (item.game_date or item.represented_date).isoformat(),
+        'status': {
+            'statusCode': 'F',
+            'detailedState': 'Final',
+            'abstractGameState': 'Final',
+        },
+        'teams': {
+            'home': {'team': {'id': item.home_team_id}},
+            'away': {'team': {'id': item.away_team_id}},
+        },
+        'source': planner.SOURCE_AUTHORITY_SCHEDULE_LEDGER,
+    }
+
+
+# ── Helpers ─────────────────────────────────────────────────────────────────
+
+
+class _IngestionFailure(Exception):
+    def __init__(self, error_class, message):
+        super().__init__(message)
+        self.error_class = error_class
+
+
+def _classify_error(exc) -> str:
+    error_class = getattr(exc, 'error_class', None)
+    if error_class in FAILURE_SEMANTICS:
+        return error_class
+    if isinstance(exc, AppearanceExtractionError):
+        return ERROR_APPEARANCE_EXTRACTION_FAILED
+    name = type(exc).__name__.lower()
+    if 'timeout' in name or 'connection' in name or 'http' in name or 'api' in name:
+        return ERROR_GAME_FETCH_FAILED
+    return ERROR_UNEXPECTED
+
+
+def _budget_exhausted(started, time_budget_seconds) -> bool:
+    if time_budget_seconds is None:
+        return False
+    return (time.monotonic() - started) >= float(time_budget_seconds)
+
+
+def _empty_report(reference_date, mode) -> dict:
+    return {
+        'status': 'planned',
+        'mode': mode,
+        'reference_date': reference_date.isoformat(),
+        'planner_seconds': 0.0,
+        'games_discovered': 0,
+        'games_planned': 0,
+        'games_attempted': 0,
+        'games_fetched': 0,
+        'games_completed': 0,
+        'games_failed': 0,
+        'games_remaining': 0,
+        'newly_final_count': 0,
+        'corrected_final_count': 0,
+        'retry_count': 0,
+        'critical_games_unresolved': 0,
+        'best_effort_games_deferred': 0,
+        'schedule_authority_missing': 0,
+        'finality_conflicts': 0,
+        'fetch_seconds': 0.0,
+        'extraction_seconds': 0.0,
+        'persistence_seconds': 0.0,
+        'checkpoint_seconds': 0.0,
+        'rows_expected': 0,
+        'rows_inserted': 0,
+        'rows_updated': 0,
+        'rows_unchanged': 0,
+        'corrections_applied': 0,
+        'budget_stop_triggered': False,
+        'budget_stop': None,
+        'failure_classes': {},
+        'games': [],
+        'plan': {},
+        'elapsed_seconds': 0.0,
+        'remaining_budget_seconds': None,
+    }

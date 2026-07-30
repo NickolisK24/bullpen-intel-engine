@@ -107,8 +107,8 @@ def _appearance_team_audit_payload(**overrides):
         'mode': 'read_only',
         'database_writes_performed': False,
         'migration': {
-            'expected_head': 'c7b3e5a91d48',
-            'current_heads': ['c7b3e5a91d48'],
+            'expected_head': 'b9d4e17c3a80',
+            'current_heads': ['b9d4e17c3a80'],
             'head_matches': True,
         },
         'coverage': {
@@ -395,7 +395,7 @@ def test_workflow_has_read_only_appearance_team_production_audit_operation():
     assert "expected_exit = {'PASS': 0, 'INCONCLUSIVE': 1, 'FAIL': 2}" in text
     assert "payload.get('mode') != 'read_only'" in text
     assert "payload.get('database_writes_performed') is not False" in text
-    assert "migration.get('expected_head') != 'c7b3e5a91d48'" in text
+    assert "migration.get('expected_head') != 'b9d4e17c3a80'" in text
     assert "new_rows.get('since_utc')" in text
     assert "invalid_states.get('total')" in text
     assert "non_resolved.get('row_limit')" in text

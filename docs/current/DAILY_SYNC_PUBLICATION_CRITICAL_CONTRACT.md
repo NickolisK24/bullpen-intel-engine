@@ -1,5 +1,13 @@
 # Daily Sync — Publication-Critical vs Best-Effort Trust Contract (SC-04B production unblock)
 
+> **Amended 2026-07-30 (Foundation 3C).** The separation below — publication-
+> critical vs best-effort, unknown fails closed, best-effort deferral never
+> withholds — is unchanged and still governs. What changed is **what counts as
+> publication-critical work**. See
+> [Foundation 3C amendment](#foundation-3c-amendment-2026-07-30--criticality-is-a-property-of-the-game)
+> at the end of this document, and
+> [`GAME_DRIVEN_DAILY_INGESTION.md`](GAME_DRIVEN_DAILY_INGESTION.md).
+
 ## Symptom (production)
 
 The daily public sync (GitHub Actions run `30124220074`, `SyncRun` 466, candidate
@@ -170,3 +178,80 @@ incident left it.
   fixes.
 - **SC-05 remains blocked** until a fresh trusted snapshot publishes under this contract
   and SC-04B is verified in production. SC-05 is not started.
+
+---
+
+## Foundation 3C amendment (2026-07-30) — criticality is a property of the game
+
+### What the original contract got right, and what it could not see
+
+Classifying game-log work by the pitcher's canonical roster code was the correct
+repair for the incident above: it separated "the current slate is incomplete"
+from "a best-effort maintenance lane didn't finish," and it unblocked SC-04B.
+That reasoning stands.
+
+What it could not see is that the *unit of work itself* was wrong. A read-only
+production diagnostic (reference date 2026-07-29) measured the daily lane:
+
+- 854 `Pitcher.active` rows selected, 419 classified publication-critical;
+- **139 of 139** active starters had zero relief appearances in the lookback;
+- **13** active-roster non-pitchers were selected and given a pitcher gameLog
+  request;
+- 24 of 36 mixed/unknown-role rows had no recent relief appearance;
+- 1,080 full-season splits returned across 60 sampled requests, 70 of them
+  inside the governed window (median relevant ratio 4.44%);
+- 60 of 60 sampled requests were no-change work;
+- 1.626952s of 1.629795s of measured time was the external request.
+
+Ordering that universe critical-first cannot fix it. The roster code answers
+"is this arm on the active roster?" when the question publication actually
+needs answered is "which governed games went final, and did their appearances
+reconcile?"
+
+### The corrected scope
+
+Publication criticality is now a property of the **game**:
+
+- a governed final game inside the represented-date horizon is
+  **publication-critical** — its appearances *are* the bullpen evidence the
+  public snapshot is built from;
+- a governed final game older than the horizon is **best-effort** backfill;
+- a game whose represented date cannot be established is **unknown** and fails
+  closed;
+- unresolved work that was critical stays critical when the window moves past
+  it; work that was best-effort to begin with stays best-effort.
+
+Because one box-score fetch yields the whole game, every appearance in a
+governed final game reconciles — including an IL, optioned, or
+forty-man-not-active arm that actually pitched. Roster movement no longer
+decides whether an appearance is ingested; game evidence does. Active starters
+and non-pitchers get no independent daily request at all.
+
+### What is retained
+
+`services/publication_criticality.py` is **not** deleted and its fail-closed
+completeness helper is reused unchanged.
+`criticality_for_roster_status` still orders the best-effort repair lane. Only
+its *scope of authority* changed: publication completeness is now driven by
+relevant game coverage, computed by
+`services/game_ingestion_completeness.py::build_game_ingestion_completeness`.
+
+The demoted full-season pitcher loop is called with `best_effort_only=True`, so
+its shortfall defers repair work and can never withhold the public snapshot, and
+with `skip_game_pks` — the explicit conflict-prevention mechanism — so it never
+rewrites a game the authoritative lane reconciled in the same run.
+
+### What is unchanged
+
+Every existing gate: finality, appearance ledger, freshness, provenance, slate
+coverage, and every current-slate game/marker check. Unknown criticality still
+fails closed. Non-game-log lane failures are still publication-critical. A
+trusted snapshot may still publish under an overall `partial` `SyncRun` only
+when every publication-critical requirement is complete. Snapshot 270 remains
+untouched.
+
+### Rollout
+
+`GAME_DRIVEN_INGESTION_MODE` defaults to `off`, so the contract above continues
+to operate exactly as written until the mode is advanced deliberately through
+`shadow` → `write` → `authoritative` on production evidence.
