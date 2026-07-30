@@ -506,14 +506,19 @@ def test_unresolved_appearance_team_is_excluded_and_disclosed(app):
     assert 'not counted here' in payload['unattributed_sentence']
 
 
-# ── 12. The production-shaped incident ──────────────────────────────────────
-def test_july_28_burns_ferguson_production_shape(app):
-    """The exact incident: two July 28 games merged under one date header.
+# ── 12a. Cross-club ownership leak (the systemic roster-join defect) ────────
+def test_foreign_club_game_never_enters_the_board(app):
+    """An appearance made for another club never joins this team's board.
 
-    The official Reds game was started by Chase Burns, who had since left the
-    active roster. A second game's pitching lines — owned by another club —
-    were pulled onto the Reds board by the old current-roster join, and its
-    starter narrative rendered beneath the Reds' own appearance rows.
+    This is the ownership half of the incident class: the old current-roster
+    join pulled a pitcher's prior-club outings onto his new team, and dropped
+    this team's own starter once he left the roster. The 30-day production
+    audit shows this condition is real league-wide — 26 appearances whose
+    owner differs from the current club, 44 team-games where a roster join
+    would misreport the relief set, 3 where it would misreport the starter.
+
+    Game ids here are illustrative of that class, not the July 28 Reds games;
+    those were both Reds-owned (see the doubleheader fixture below).
     """
     burns = _pitcher('Chase Burns', team_id=None)  # no longer on the roster
     burke = _pitcher('Brock Burke')
@@ -528,17 +533,17 @@ def test_july_28_burns_ferguson_production_shape(app):
     pagan = _pitcher('Emilio Pagan')
 
     # Official Reds game.
-    _log(burns, 800001, ANCHOR, games_started=1, outs=15, pitches=78)
+    _log(burns, 900001, ANCHOR, games_started=1, outs=15, pitches=78)
     for pitcher, pitches in ((burke, 8), (johnson, 12), (moll, 27), (petty, 10)):
-        _log(pitcher, 800001, ANCHOR, outs=3, pitches=pitches)
+        _log(pitcher, 900001, ANCHOR, outs=3, pitches=pitches)
 
     # A different club's game on the same date.
-    _log(ferguson, 800002, ANCHOR, games_started=1, outs=5, pitches=27,
+    _log(ferguson, 900002, ANCHOR, games_started=1, outs=5, pitches=27,
          appearance_team_id=OTHER_TEAM_ID)
     for pitcher, outs, pitches in (
         (franco, 11, 48), (garcia, 4, 18), (antone, 4, 25), (pagan, 3, 17),
     ):
-        _log(pitcher, 800002, ANCHOR, outs=outs, pitches=pitches,
+        _log(pitcher, 900002, ANCHOR, outs=outs, pitches=pitches,
              appearance_team_id=OTHER_TEAM_ID)
     db.session.commit()
 
@@ -549,7 +554,7 @@ def test_july_28_burns_ferguson_production_shape(app):
     assert group['relief_appearances'] == 4
     assert group['outs_total'] == 12
     assert group['pitches_total'] == 57
-    assert group['game_pks'] == [800001]
+    assert group['game_pks'] == [900001]
     assert _totals_reconcile(group)
     assert '8 relief appearances' not in group['sentence']
     assert '11.1 IP' not in group['sentence']
@@ -562,7 +567,7 @@ def test_july_28_burns_ferguson_production_shape(app):
 
     # The starter is the official starter, even though he left the roster.
     block = group['games'][0]
-    assert block['mlb_game_pk'] == 800001
+    assert block['mlb_game_pk'] == 900001
     assert block['starter']['pitcher_full_name'] == 'Chase Burns'
     assert block['starter']['outs'] == 15
     assert block['relief']['pitcher_ids'] == sorted(
@@ -597,12 +602,12 @@ def test_audit_command_finds_the_incident_and_never_writes(app, monkeypatch):
     ferguson = _pitcher('Caleb Ferguson')
     other_pen = _pitcher('Jose Franco')
 
-    _log(burns, 800001, ANCHOR, games_started=1, outs=15, pitches=78)
+    _log(burns, 824489, ANCHOR, games_started=1, outs=15, pitches=78)
     for pitcher in reds_pen:
-        _log(pitcher, 800001, ANCHOR, outs=3, pitches=10)
-    _log(ferguson, 800002, ANCHOR, games_started=1, outs=5, pitches=27,
+        _log(pitcher, 824489, ANCHOR, outs=3, pitches=10)
+    _log(ferguson, 824490, ANCHOR, games_started=1, outs=5, pitches=27,
          appearance_team_id=OTHER_TEAM_ID)
-    _log(other_pen, 800002, ANCHOR, outs=11, pitches=48,
+    _log(other_pen, 824490, ANCHOR, outs=11, pitches=48,
          appearance_team_id=OTHER_TEAM_ID)
     db.session.commit()
 
@@ -622,7 +627,7 @@ def test_audit_command_finds_the_incident_and_never_writes(app, monkeypatch):
     # Burns is the official starter but is absent from the roster-join cohort.
     starter_diff = findings['published_starter_differs_from_official']['listed']
     assert any(
-        entry['mlb_game_pk'] == 800001
+        entry['mlb_game_pk'] == 824489
         and entry['official_starter_name'] == 'Chase Burns'
         and entry['roster_join_starter_pitcher_ids'] == []
         for entry in starter_diff
@@ -630,7 +635,7 @@ def test_audit_command_finds_the_incident_and_never_writes(app, monkeypatch):
     # The Reds date cohort under the old join spanned two games.
     mixed = findings['date_summaries_combining_multiple_games']['listed']
     assert any(
-        entry['team_id'] == TEAM_ID and entry['mlb_game_pks'] == [800001, 800002]
+        entry['team_id'] == TEAM_ID and entry['mlb_game_pks'] == [824489, 824490]
         for entry in mixed
     )
     # Ferguson's appearance is owned by the other club, not his current one.
@@ -667,10 +672,10 @@ def test_api_response_cannot_contradict_the_official_starter(app):
     burns = _pitcher('Chase Burns', team_id=None)
     reds_pen = [_pitcher(n) for n in ('Brock Burke', 'Pierce Johnson', 'Sam Moll')]
     ferguson = _pitcher('Caleb Ferguson')
-    _log(burns, 800001, ANCHOR, games_started=1, outs=15, pitches=78)
+    _log(burns, 824489, ANCHOR, games_started=1, outs=15, pitches=78)
     for pitcher in reds_pen:
-        _log(pitcher, 800001, ANCHOR, outs=3, pitches=10)
-    _log(ferguson, 800002, ANCHOR, games_started=1, outs=5, pitches=27,
+        _log(pitcher, 824489, ANCHOR, outs=3, pitches=10)
+    _log(ferguson, 824490, ANCHOR, games_started=1, outs=5, pitches=27,
          appearance_team_id=OTHER_TEAM_ID)
     db.session.commit()
 
@@ -696,3 +701,109 @@ def test_api_response_cannot_contradict_the_official_starter(app):
             assert set(block['relief']['pitcher_ids']) <= shown_ids
             assert block['starter']['pitcher_id'] not in shown_ids
             assert block['appearance_team_id'] == TEAM_ID
+
+
+# ── 12b. The real July 28 production shape: a Reds doubleheader ─────────────
+def test_july_28_reds_doubleheader_production_shape(app):
+    """The incident exactly as the production audit found it.
+
+    The targeted audit for team 113 on 2026-07-28 reports
+    appearance_owner_differs_from_current_club = 0 and both
+    roster-join misreport counters = 0, with
+    date_summaries_combining_multiple_games = 1 over game_pks 824489 and
+    824490, 8 relief appearances and 34 outs.
+
+    So both games are Reds-owned: a doubleheader. No foreign club and no
+    dropped starter were involved. Caleb Ferguson genuinely started game
+    824490 — his first-start narrative was TRUE. The published defect was
+    purely structural: one date header combined both games' appearance rows,
+    and a game-scoped narrative rendered against that mixed evidence, so a
+    reader checked it against the other game's box score.
+
+    The fix must therefore keep the two games distinct at narrative level and
+    disclose the combined date, NOT suppress Ferguson.
+    """
+    burns = _pitcher('Chase Burns')
+    burke = _pitcher('Brock Burke')
+    johnson = _pitcher('Pierce Johnson')
+    moll = _pitcher('Sam Moll')
+    petty = _pitcher('Chase Petty')
+    ferguson = _pitcher('Caleb Ferguson')
+    franco = _pitcher('Jose Franco')
+    garcia = _pitcher('Julian Garcia')
+    antone = _pitcher('Tejay Antone')
+    pagan = _pitcher('Emilio Pagan')
+
+    # Game 1 of the doubleheader — 27 outs, Burns starts.
+    _log(burns, 824489, ANCHOR, games_started=1, outs=15, pitches=78)
+    for pitcher, pitches in ((burke, 8), (johnson, 12), (moll, 27), (petty, 10)):
+        _log(pitcher, 824489, ANCHOR, outs=3, pitches=pitches)
+
+    # Game 2 of the doubleheader — 27 outs, Ferguson starts. Reds-owned.
+    _log(ferguson, 824490, ANCHOR, games_started=1, outs=5, pitches=27)
+    for pitcher, outs, pitches in (
+        (franco, 11, 48), (garcia, 4, 18), (antone, 4, 25), (pagan, 3, 17),
+    ):
+        _log(pitcher, 824490, ANCHOR, outs=outs, pitches=pitches)
+    db.session.commit()
+
+    payload = _payload(TEAM_ID)
+    group = _group_for(payload, ANCHOR)
+
+    # The date total still reports all eight — they are all genuinely Reds
+    # relief appearances — but it now says it spans two games.
+    assert group['relief_appearances'] == 8
+    assert group['outs_total'] == 34
+    assert group['pitches_total'] == 165
+    assert group['game_pks'] == [824489, 824490]
+    assert group['game_count'] == 2
+    assert 'across 2 games' in group['sentence']
+    assert _totals_reconcile(group)
+
+    # Two narratives, one per game, never merged.
+    blocks = {b['mlb_game_pk']: b for b in group['games']}
+    assert sorted(blocks) == [824489, 824490]
+
+    g1, g2 = blocks[824489], blocks[824490]
+    assert g1['starter']['pitcher_full_name'] == 'Chase Burns'
+    assert g1['starter']['outs'] == 15
+    assert g1['relief']['outs'] == 12
+    assert g1['relief']['pitches'] == 57
+    assert g1['relief']['pitcher_ids'] == sorted(
+        p.id for p in (burke, johnson, moll, petty)
+    )
+
+    # Ferguson IS the official starter of game 824490. Suppressing him would
+    # be a different falsehood.
+    assert g2['starter']['pitcher_full_name'] == 'Caleb Ferguson'
+    assert g2['starter']['outs'] == 5
+    assert g2['relief']['outs'] == 22
+    assert g2['relief']['pitches'] == 108
+    assert g2['relief']['pitcher_ids'] == sorted(
+        p.id for p in (franco, garcia, antone, pagan)
+    )
+
+    # Neither game's narrative may borrow the other's rows.
+    assert set(g1['relief']['pitcher_ids']).isdisjoint(g2['relief']['pitcher_ids'])
+    for block in (g1, g2):
+        own_rows = [
+            r for r in group['appearances']
+            if r['mlb_game_pk'] == block['mlb_game_pk']
+        ]
+        assert block['relief']['pitcher_ids'] == sorted(
+            r['pitcher_id'] for r in own_rows
+        )
+        assert block['relief']['outs'] == sum(
+            r['innings_pitched_outs'] for r in own_rows
+        )
+        assert block['starter_authority'] == 'official_completed_game_starter'
+        assert block['reconciled'] is True
+        assert block['appearance_team_id'] == TEAM_ID
+
+    # The published combination that caused the incident cannot recur: no
+    # single narrative claims the whole date.
+    for block in (g1, g2):
+        for sentence in block['context_sentences']:
+            assert '34 outs' not in sentence
+            assert '11.1 IP' not in sentence
+            assert '165 pitches' not in sentence
