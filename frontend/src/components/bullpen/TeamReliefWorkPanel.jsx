@@ -103,6 +103,104 @@ function GameContextNote({ game }) {
   )
 }
 
+// Split a date's appearance rows into game-scoped sections so a game-level
+// narrative can never sit above another game's rows. Grouping uses the
+// mlb_game_pk the server stamps on every row and on every game block; the
+// frontend derives no baseball meaning of its own. Section order follows the
+// server's already-ordered games (official MLB game number, then game_pk), and
+// any game that has rows but no published narrative keeps its own section
+// rather than being folded into a sibling.
+function groupGameSections(group) {
+  const appearances = asArray(group?.appearances)
+  const blocks = asArray(group?.games)
+  const rowsByGame = new Map()
+  const order = []
+
+  for (const block of blocks) {
+    const pk = block?.mlb_game_pk
+    if (pk === undefined || pk === null || rowsByGame.has(pk)) continue
+    rowsByGame.set(pk, { key: String(pk), gamePk: pk, game: block, rows: [] })
+    order.push(pk)
+  }
+  // A row that carries no game id cannot be split out on its own when this
+  // date has exactly one published game — that would invent a second game.
+  // With two or more games it stays separate and is disclosed, never guessed
+  // into one of them.
+  const soleGamePk = order.length === 1 ? order[0] : null
+
+  for (const appearance of appearances) {
+    const rawPk = appearance?.mlb_game_pk
+    const pk = rawPk === undefined || rawPk === null ? soleGamePk : rawPk
+    const key = pk === undefined || pk === null ? '__ungrouped__' : pk
+    if (!rowsByGame.has(key)) {
+      rowsByGame.set(key, {
+        key: String(key),
+        gamePk: pk ?? null,
+        game: null,
+        rows: [],
+      })
+      order.push(key)
+    }
+    rowsByGame.get(key).rows.push(appearance)
+  }
+
+  return order
+    .map((key) => rowsByGame.get(key))
+    .filter((section) => section && (section.rows.length > 0 || section.game))
+}
+
+// Label authority, strongest first: MLB's own gameNumber from the schedule
+// ledger, then the official opponent. A position in the list is never promoted
+// into a "Game 1 / Game 2" claim, and the raw game_pk stays metadata.
+function gameSectionLabel(section) {
+  const number = section?.game?.game_number
+  if (Number.isInteger(number)) return `Game ${number}`
+  const opponent = textValue(section?.game?.opponent_abbreviation)
+    || textValue(section?.game?.opponent)
+  if (opponent) return `vs ${opponent}`
+  return 'Game'
+}
+
+function GameSection({ section, multiGame, rosterContextLimited }) {
+  const rows = asArray(section?.rows)
+  const hasNarrative = Boolean(section?.game)
+  // A game with rows but no published narrative says so plainly instead of
+  // silently inheriting the sibling game's meaning.
+  const disclosure = multiGame && !hasNarrative && rows.length > 0
+
+  return (
+    <div
+      className="border-t border-dirt/60"
+      data-testid="team-relief-game-section"
+      data-game-pk={section?.gamePk ?? undefined}
+    >
+      {multiGame && (
+        <div
+          className="bg-dugout/40 px-3 py-1.5 font-mono text-[10px] uppercase tracking-wider text-chalk500"
+          data-testid="team-relief-game-label"
+        >
+          {gameSectionLabel(section)}
+        </div>
+      )}
+      {hasNarrative && <GameContextNote game={section.game} />}
+      {disclosure && (
+        <Sentence>Game context for this game is unavailable.</Sentence>
+      )}
+      {rows.length > 0 && (
+        <ul className="divide-y divide-dirt/60 border-t border-dirt/60">
+          {rows.map((appearance, index) => (
+            <AppearanceRow
+              key={`${appearance?.pitcher_id || 'pitcher'}:${appearance?.mlb_game_pk || 'game'}:${index}`}
+              appearance={appearance}
+              rosterContextLimited={rosterContextLimited}
+            />
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
 function ReliefWorkByDate({ groups, absenceSentence, rosterContextLimited = false }) {
   const dateGroups = asArray(groups)
   const hasAbsence = Boolean(textValue(absenceSentence))
@@ -124,23 +222,14 @@ function ReliefWorkByDate({ groups, absenceSentence, rosterContextLimited = fals
           >
             <DateSummary>{group?.sentence}</DateSummary>
           </summary>
-          {asArray(group?.games).map((game, index) => (
-            <GameContextNote
-              key={`${game?.mlb_game_pk || 'game'}:${index}`}
-              game={game}
+          {groupGameSections(group).map((section, index) => (
+            <GameSection
+              key={`${section.key}:${index}`}
+              section={section}
+              multiGame={groupGameSections(group).length > 1}
+              rosterContextLimited={rosterContextLimited}
             />
           ))}
-          {asArray(group?.appearances).length > 0 && (
-            <ul className="divide-y divide-dirt/60 border-t border-dirt/60">
-              {asArray(group.appearances).map((appearance, index) => (
-                <AppearanceRow
-                  key={`${appearance?.pitcher_id || 'pitcher'}:${appearance?.game_date || 'date'}:${index}`}
-                  appearance={appearance}
-                  rosterContextLimited={rosterContextLimited}
-                />
-              ))}
-            </ul>
-          )}
         </details>
       ))}
     </Section>

@@ -892,3 +892,153 @@ test('the panel derives no starter or reliever meaning of its own', async () => 
   // The only starter reference is the server's authority gate.
   assert.ok(source.includes("game?.starter_authority !== 'official_completed_game_starter'"))
 })
+
+// ── Doubleheader: game-scoped blocks (July 28 2026 Reds production shape) ────
+const dhRow = (name, gamePk, outs, pitches) => ({
+  pitcher_id: `${name}-${gamePk}`,
+  pitcher_full_name: name,
+  mlb_game_pk: gamePk,
+  appearance_team_id: 113,
+  game_date: '2026-07-28',
+  innings_pitched_outs: outs,
+  pitches_thrown: pitches,
+  strikeouts: 0, walks: 0, hits_allowed: 0, runs_allowed: 0,
+  roster_status_sentence: 'On the active roster per MLB roster data.',
+})
+
+const dhBlock = (gamePk, gameNumber, starter, reliefIds, label) => ({
+  mlb_game_pk: gamePk,
+  game_number: gameNumber,
+  appearance_team_id: 113,
+  opponent_abbreviation: 'MIL',
+  starter_authority: 'official_completed_game_starter',
+  reconciled: true,
+  context_label: label,
+  starter: { pitcher_full_name: starter },
+  relief: { pitcher_ids: reliefIds },
+  context_sentences: [`${starter} narrative for game ${gamePk}.`],
+})
+
+const doubleheaderPayload = {
+  ...teamReliefWorkPayload,
+  relief_by_date: [{
+    game_date: '2026-07-28',
+    relief_appearances: 8,
+    outs_total: 34,
+    pitches_total: 165,
+    game_pks: [824489, 824490],
+    game_count: 2,
+    sentence: 'July 28 — 8 relief appearances across 2 games, 11.1 IP, 165 pitches.',
+    games: [
+      dhBlock(824489, 1, 'Chase Burns', [1, 2, 3, 4], null),
+      dhBlock(824490, 2, 'Caleb Ferguson', [5, 6, 7, 8], 'Extended bullpen coverage'),
+    ],
+    appearances: [
+      dhRow('Brock Burke', 824489, 3, 8),
+      dhRow('Chase Petty', 824489, 3, 10),
+      dhRow('Emilio Pagan', 824490, 3, 17),
+      dhRow('Jose Franco', 824490, 11, 48),
+      dhRow('Julian Garcia', 824490, 4, 18),
+      dhRow('Pierce Johnson', 824489, 3, 12),
+      dhRow('Sam Moll', 824489, 3, 27),
+      dhRow('Tejay Antone', 824490, 4, 25),
+    ],
+  }],
+}
+
+const sectionFor = (html, gamePk) => {
+  const parts = html.split('data-testid="team-relief-game-section"')
+  return parts.find((part) => part.includes(`data-game-pk="${gamePk}"`)) || ''
+}
+
+test('a two-game date renders two distinct game sections', () => {
+  const html = renderPanel({ payload: doubleheaderPayload })
+  const sections = html.match(/data-testid="team-relief-game-section"/g) || []
+  assert.equal(sections.length, 2)
+  assert.ok(htmlIncludes(html, 'Game 1'))
+  assert.ok(htmlIncludes(html, 'Game 2'))
+})
+
+test('Burns-game relievers appear only in game 824489', () => {
+  const html = renderPanel({ payload: doubleheaderPayload })
+  const burnsGame = sectionFor(html, 824489)
+  const fergusonGame = sectionFor(html, 824490)
+
+  for (const name of ['Brock Burke', 'Chase Petty', 'Pierce Johnson', 'Sam Moll']) {
+    assert.ok(htmlIncludes(burnsGame, name), `${name} in 824489`)
+    assert.equal(htmlIncludes(fergusonGame, name), false, `${name} not in 824490`)
+  }
+})
+
+test('Ferguson-game relievers appear only in game 824490', () => {
+  const html = renderPanel({ payload: doubleheaderPayload })
+  const burnsGame = sectionFor(html, 824489)
+  const fergusonGame = sectionFor(html, 824490)
+
+  for (const name of ['Emilio Pagan', 'Jose Franco', 'Julian Garcia', 'Tejay Antone']) {
+    assert.ok(htmlIncludes(fergusonGame, name), `${name} in 824490`)
+    assert.equal(htmlIncludes(burnsGame, name), false, `${name} not in 824489`)
+  }
+})
+
+test('the Ferguson narrative never governs game 824489 rows', () => {
+  const html = renderPanel({ payload: doubleheaderPayload })
+  const burnsGame = sectionFor(html, 824489)
+  assert.equal(htmlIncludes(burnsGame, 'Caleb Ferguson'), false)
+  assert.equal(htmlIncludes(burnsGame, 'Extended bullpen coverage'), false)
+  assert.ok(htmlIncludes(sectionFor(html, 824490), 'Caleb Ferguson'))
+})
+
+test('the across-2-games aggregate summary renders exactly once', () => {
+  const html = renderPanel({ payload: doubleheaderPayload })
+  // Once visibly, plus once in the details aria-label for screen readers.
+  const visible = html.replace(/aria-label="[^"]*"/g, '')
+  const matches = visible.match(/8 relief appearances across 2 games/g) || []
+  assert.equal(matches.length, 1)
+})
+
+test('a one-game date stays compact with no game label chrome', () => {
+  const html = renderPanel({ payload: teamReliefWorkPayload })
+  const labels = html.match(/data-testid="team-relief-game-label"/g) || []
+  assert.equal(labels.length, 0)
+  const sections = html.match(/data-testid="team-relief-game-section"/g) || []
+  assert.ok(sections.length >= 1)
+})
+
+test('a game with rows but no published narrative discloses instead of borrowing', () => {
+  const payload = {
+    ...doubleheaderPayload,
+    relief_by_date: [{
+      ...doubleheaderPayload.relief_by_date[0],
+      games: [dhBlock(824490, 2, 'Caleb Ferguson', [5, 6, 7, 8], 'Extended bullpen coverage')],
+    }],
+  }
+  const html = renderPanel({ payload })
+  const sections = html.match(/data-testid="team-relief-game-section"/g) || []
+  assert.equal(sections.length, 2)
+
+  const orphan = sectionFor(html, 824489)
+  assert.ok(htmlIncludes(orphan, 'Brock Burke'))
+  assert.ok(htmlIncludes(orphan, 'Game context for this game is unavailable.'))
+  assert.equal(htmlIncludes(orphan, 'Caleb Ferguson'), false)
+  assert.equal(htmlIncludes(orphan, 'Extended bullpen coverage'), false)
+})
+
+test('a missing game number falls back to opponent, never to list position', () => {
+  const payload = {
+    ...doubleheaderPayload,
+    relief_by_date: [{
+      ...doubleheaderPayload.relief_by_date[0],
+      games: [
+        { ...dhBlock(824489, null, 'Chase Burns', [1, 2, 3, 4], null) },
+        { ...dhBlock(824490, null, 'Caleb Ferguson', [5, 6, 7, 8], 'Extended bullpen coverage') },
+      ],
+    }],
+  }
+  const html = renderPanel({ payload })
+  assert.equal(htmlIncludes(html, 'Game 1'), false)
+  assert.equal(htmlIncludes(html, 'Game 2'), false)
+  assert.ok(htmlIncludes(html, 'vs MIL'))
+  const sections = html.match(/data-testid="team-relief-game-section"/g) || []
+  assert.equal(sections.length, 2)
+})
