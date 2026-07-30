@@ -850,8 +850,80 @@ def test_branch_touches_no_team_state_or_public_surface_files():
         'team_state', 'share_artifact', 'frontend/', 'backend/api/',
         'services/season_era', 'bullpen_context', 'public_team_relief_work',
     )
+    # THE FIRST APPROVED PUBLIC CONSUMERS OF CANONICAL APPEARANCE-TEAM AUTHORITY.
+    #
+    # These two files, and only these two, are approved to read
+    # GameLog.appearance_team_id (Foundation 1) on a public surface. Founder-
+    # approved 2026-07-30 for the July 28 official-starter alignment incident:
+    # the Team Board relief-work surface published a game narrative naming a
+    # pitcher who did not start that game, because it scoped appearances by the
+    # pitcher's current club instead of the official game side. Correcting it
+    # required a public consumer, which Foundation 1 deliberately shipped
+    # without. See docs/audits/official-starter-evidence-alignment-2026-07-28.md.
+    #
+    # The guard's purpose is intact: this payload is computed per request and is
+    # never snapshotted, stored on a story, or written into a share artifact, so
+    # Team State v1.2 payloads and immutable artifacts remain byte-unchanged.
+    #
+    # This is an exact-path allowlist, never a directory exemption. Adding any
+    # further public consumer REQUIRES an explicit change to this test and its
+    # own approval. Team State, Share Artifacts, season aggregation, backend/api,
+    # and every other public surface remain fully protected. Neither approved
+    # consumer may fall back to Pitcher.team_id for attribution — enforced by
+    # test_approved_public_consumers_use_appearance_team_authority_only below.
+    APPROVED_PUBLIC_APPEARANCE_TEAM_CONSUMERS = (
+        'backend/services/public_team_relief_work.py',
+        'frontend/src/components/bullpen/TeamReliefWorkPanel.jsx',
+    )
     offenders = [
         path for path in non_test
         if any(fragment in path for fragment in forbidden_fragments)
+        and path not in APPROVED_PUBLIC_APPEARANCE_TEAM_CONSUMERS
     ]
     assert offenders == [], f'Foundation 1 must not touch these runtime surfaces: {offenders}'
+
+
+def test_approved_public_consumers_use_appearance_team_authority_only():
+    """The two approved consumers must not reintroduce current-team fallback.
+
+    The incident was caused by attributing appearances with the pitcher's
+    mutable current club. The approved public consumer may reference
+    Pitcher.team_id only for the team's display name and for the out-of-band
+    diagnostic that discloses unattributed appearances — never to select which
+    appearances belong to a team's game.
+    """
+    service = (
+        REPO_ROOT_FOR_DIFF / 'backend/services/public_team_relief_work.py'
+    ).read_text(encoding='utf-8')
+
+    # The appearance cohort is scoped by official game side, resolved status only.
+    assert 'GameLog.appearance_team_id == team_id' in service
+    assert 'GameLog.appearance_team_status == APPEARANCE_TEAM_RESOLVED' in service
+
+    # Current team survives in exactly two sanctioned, non-attributing places:
+    # the team display lookup and the unattributed-appearance disclosure.
+    current_team_uses = service.count('Pitcher.team_id == team_id')
+    assert current_team_uses == 2, (
+        'Pitcher.team_id may only be used for the team display lookup and the '
+        f'unattributed disclosure; found {current_team_uses} uses.'
+    )
+    assert '_unattributed_appearance_count' in service
+
+    # No current-team fallback may guard or substitute for the official scope.
+    for fallback in (
+        'or Pitcher.team_id',
+        'Pitcher.team_id or',
+        'appearance_team_id or',
+        'or GameLog.appearance_team_id',
+    ):
+        assert fallback not in service, fallback
+
+    # The frontend consumer reads server-verified authority and infers nothing.
+    panel = (
+        REPO_ROOT_FOR_DIFF
+        / 'frontend/src/components/bullpen/TeamReliefWorkPanel.jsx'
+    ).read_text(encoding='utf-8')
+    assert "starter_authority !== 'official_completed_game_starter'" in panel
+    assert 'reconciled !== true' in panel
+    for inference in ('games_started', 'gamesStarted', 'team_id =='):
+        assert inference not in panel, inference

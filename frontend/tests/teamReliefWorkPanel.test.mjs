@@ -104,6 +104,8 @@ const teamReliefWorkPayload = {
       games: [
         {
           mlb_game_pk: 9601,
+          starter_authority: 'official_completed_game_starter',
+          reconciled: true,
           opponent: 'New York Yankees',
           opponent_abbreviation: 'NYY',
           game_shape: 'short_start',
@@ -176,6 +178,8 @@ const teamReliefWorkPayload = {
       games: [
         {
           mlb_game_pk: 9602,
+          starter_authority: 'official_completed_game_starter',
+          reconciled: true,
           opponent: 'New York Yankees',
           opponent_abbreviation: 'NYY',
           game_shape: 'normal_start',
@@ -807,4 +811,84 @@ test('team board mounts the panel between operating state and board lanes', asyn
   assert.ok(mountIndex < boardIndex)
   assert.ok(source.includes('teamId={selectedTeam}'))
   assert.equal(source.includes('teamId={detailPitcherId}'), false)
+})
+
+// ── Official-starter alignment guard (July 28 incident) ─────────────────────
+// The panel renders a game narrative only when the server has affirmatively
+// verified it against official starter authority. Meaning-bearing baseball
+// prose must never reach the page on an unverified block.
+const labeledGroup = teamReliefWorkPayload.relief_by_date[0]
+const labeledBlock = labeledGroup.games[0]
+
+const renderWithBlock = (overrides) => renderPanel({
+  payload: {
+    ...teamReliefWorkPayload,
+    relief_by_date: [
+      { ...labeledGroup, games: [{ ...labeledBlock, ...overrides }] },
+      teamReliefWorkPayload.relief_by_date[1],
+    ],
+  },
+})
+
+const assertNoNarrative = (html) => {
+  const matches = html.match(/data-testid="team-relief-game-context"/g) || []
+  assert.equal(matches.length, 0)
+  assert.equal(htmlIncludes(html, labeledBlock.context_label), false)
+  for (const sentence of labeledBlock.context_sentences) {
+    assert.equal(htmlIncludes(html, sentence), false, sentence)
+  }
+}
+
+test('game narrative is withheld when the server did not mark it reconciled', () => {
+  assertNoNarrative(renderWithBlock({ reconciled: false }))
+  assertNoNarrative(renderWithBlock({ reconciled: undefined }))
+})
+
+test('game narrative is withheld without official starter authority', () => {
+  assertNoNarrative(renderWithBlock({ starter_authority: undefined }))
+  assertNoNarrative(renderWithBlock({ starter_authority: 'inferred_from_first_row' }))
+})
+
+test('an unavailable date group renders no counts, innings, or pitch totals', () => {
+  const html = renderPanel({
+    payload: {
+      ...teamReliefWorkPayload,
+      relief_by_date: [
+        {
+          game_date: '2026-07-28',
+          unavailable: true,
+          sentence:
+            'July 28 — relief work is unavailable because the summary and '
+            + 'the appearance records do not reconcile.',
+          appearances: [],
+        },
+      ],
+    },
+  })
+
+  assert.ok(htmlIncludes(html, 'relief work is unavailable'))
+  const matches = html.match(/data-testid="team-relief-game-context"/g) || []
+  assert.equal(matches.length, 0)
+  for (const stale of ['8 relief appearances', '11.1 IP', '165 pitches', 'Caleb Ferguson']) {
+    assert.equal(htmlIncludes(html, stale), false, stale)
+  }
+})
+
+test('the panel derives no starter or reliever meaning of its own', async () => {
+  const source = await readFile(
+    new URL('../src/components/bullpen/TeamReliefWorkPanel.jsx', import.meta.url),
+    'utf8',
+  )
+
+  for (const inference of [
+    'games_started',
+    'gamesStarted',
+    'isStarter',
+    'starter =',
+    '.filter((p) => p.starter',
+  ]) {
+    assert.equal(source.includes(inference), false, inference)
+  }
+  // The only starter reference is the server's authority gate.
+  assert.ok(source.includes("game?.starter_authority !== 'official_completed_game_starter'"))
 })

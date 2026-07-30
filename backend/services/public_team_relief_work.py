@@ -1,19 +1,33 @@
 from datetime import date, timedelta
 
-from sqlalchemy import asc, desc
+from sqlalchemy import asc, desc, or_
 
 from models.game_log import GameLog
 from models.pitcher import Pitcher
+from models.scheduled_game import ScheduledGame
 from services import board_freshness
 from services import game_shape
 from services import pitcher_season_ledger_coverage
 from services import starter_assignment_context
+from utils.games_started import RELIEF, START, games_started_state
 
 
 CAPABILITY = 'public_team_relief_work'
 RECENT_GAME_DATES_MAX = 5
 LOOKBACK_DAYS = 30
 WINDOW_DAYS = (7, 14)
+
+# Every appearance on this board is owned by the team the pitcher REPRESENTED in
+# that game (GameLog.appearance_team_id, Foundation 1), never by the pitcher's
+# mutable current Pitcher.team_id. The current team is used only for the
+# out-of-band diagnostic disclosure below and for the team's display name.
+APPEARANCE_TEAM_RESOLVED = GameLog.APPEARANCE_TEAM_RESOLVED
+
+# A game-level narrative is a starter-dependent public claim, so it additionally
+# requires official final-game authority for this team side. Missing or
+# non-final schedule authority suppresses the narrative; the appearance rows
+# beneath it still render.
+STARTER_AUTHORITY_OFFICIAL = 'official_completed_game_starter'
 
 # Game-level context qualifier. Both bounds reuse the canonical game-shape
 # constants: a credited start of two innings or fewer (6 outs) followed by
@@ -77,12 +91,16 @@ def build_public_team_relief_work_payload(team_id):
         return payload
 
     start_date = anchor - timedelta(days=LOOKBACK_DAYS - 1)
+    # Scoped by official game-side ownership, not by who is on the roster today.
+    # This both keeps another club's game out of this board and keeps this
+    # club's own game complete when a pitcher has since left the organization.
     rows = (
         GameLog.query
         .join(Pitcher, Pitcher.id == GameLog.pitcher_id)
         .add_entity(Pitcher)
         .filter(
-            Pitcher.team_id == team_id,
+            GameLog.appearance_team_status == APPEARANCE_TEAM_RESOLVED,
+            GameLog.appearance_team_id == team_id,
             GameLog.game_date >= start_date,
             GameLog.game_date <= anchor,
         )
@@ -92,23 +110,41 @@ def build_public_team_relief_work_payload(team_id):
     relief_rows = [
         (log, pitcher)
         for log, pitcher in rows
-        if log.games_started == 0
+        if _start_relief_state(log) == RELIEF
     ]
     all_rows_by_date = {}
     for log, pitcher in rows:
         all_rows_by_date.setdefault(log.game_date, []).append((log, pitcher))
 
-    payload['relief_by_date'] = _relief_by_date(relief_rows, all_rows_by_date)
+    payload['relief_by_date'] = _relief_by_date(relief_rows, all_rows_by_date, team_id)
     if not relief_rows:
         payload['absence_sentence'] = (
             f'No relief appearances in the {LOOKBACK_DAYS} days through '
             f'{_month_day(anchor)}.'
+        )
+    unattributed = _unattributed_appearance_count(team_id, start_date, anchor)
+    if unattributed:
+        payload['unattributed_appearance_count'] = unattributed
+        payload['unattributed_sentence'] = (
+            f'Official team attribution is unavailable for {unattributed} '
+            f'{_appearance_word(unattributed)} by pitchers on this roster in the '
+            f'{LOOKBACK_DAYS} days through {_month_day(anchor)}; those '
+            f'{_appearance_word(unattributed)} are not counted here.'
         )
     payload['windows'] = {
         f'window_{window_days}': _window(rows, anchor, window_days)
         for window_days in WINDOW_DAYS
     }
     return payload
+
+
+def _start_relief_state(log):
+    """Official per-game start signal, never a season pattern or row order."""
+    try:
+        return games_started_state(getattr(log, 'games_started', None))
+    except Exception:
+        # A malformed flag never counts as a start or a relief outing.
+        return 'unknown'
 
 
 def _parse_data_through(value):
@@ -132,10 +168,33 @@ def _team_payload(pitcher, team_id):
 
 def _scope_sentence(pitcher):
     club = pitcher.team_abbreviation or pitcher.team_name or ''
-    return f'Covers pitchers currently on the {club} roster per MLB roster data.'
+    return f'Covers appearances made for {club} per official MLB game records.'
 
 
-def _relief_by_date(relief_rows, all_rows_by_date):
+def _unattributed_appearance_count(team_id, start_date, anchor):
+    """Out-of-band diagnostic only: never an attribution source.
+
+    Counts in-window appearances by pitchers currently on this roster whose
+    official game side is unresolved, so the board can disclose what it left
+    out instead of silently under-reporting.
+    """
+    return (
+        GameLog.query
+        .join(Pitcher, Pitcher.id == GameLog.pitcher_id)
+        .filter(
+            Pitcher.team_id == team_id,
+            GameLog.game_date >= start_date,
+            GameLog.game_date <= anchor,
+            or_(
+                GameLog.appearance_team_status.is_(None),
+                GameLog.appearance_team_status != APPEARANCE_TEAM_RESOLVED,
+            ),
+        )
+        .count()
+    )
+
+
+def _relief_by_date(relief_rows, all_rows_by_date, team_id):
     by_date = {}
     for log, pitcher in relief_rows:
         by_date.setdefault(log.game_date, []).append((log, pitcher))
@@ -147,26 +206,60 @@ def _relief_by_date(relief_rows, all_rows_by_date):
             key=lambda item: (item[1].full_name or '', item[0].id or 0),
         )
         group = _date_group(game_date, entries)
-        games = _game_context_blocks(all_rows_by_date.get(game_date) or [])
+        if not _group_totals_reconcile(group):
+            groups.append(_unavailable_group(game_date))
+            continue
+        games = [
+            block
+            for block in _game_context_blocks(
+                all_rows_by_date.get(game_date) or [], team_id
+            )
+            if _block_reconciles_with_appearances(block, group)
+        ]
         if games:
             group['games'] = games
         groups.append(group)
     return groups
 
 
-def _game_context_blocks(date_entries):
+def _game_context_blocks(date_entries, team_id):
     by_game = {}
     for log, pitcher in date_entries:
         if log.mlb_game_pk is None:
             continue
         by_game.setdefault(log.mlb_game_pk, []).append((log, pitcher))
 
+    final_game_pks = _final_game_pks(team_id, by_game.keys())
     blocks = []
     for game_pk in sorted(by_game):
+        if game_pk not in final_game_pks:
+            # No official final-game authority for this team side: a
+            # starter-dependent narrative cannot be published.
+            continue
         block = _game_context_block(game_pk, by_game[game_pk])
         if block is not None:
             blocks.append(block)
     return blocks
+
+
+def _final_game_pks(team_id, game_pks):
+    """Official final-game authority for this exact team side, per game_pk."""
+    wanted = sorted({pk for pk in game_pks if pk is not None})
+    if not wanted:
+        return set()
+    rows = (
+        ScheduledGame.query
+        .filter(
+            ScheduledGame.team_id == team_id,
+            ScheduledGame.game_pk.in_(wanted),
+        )
+        .all()
+    )
+    return {
+        row.game_pk
+        for row in rows
+        if row.status_state == ScheduledGame.STATE_FINAL
+    }
 
 
 def _game_context_block(game_pk, entries):
@@ -177,12 +270,20 @@ def _game_context_block(game_pk, entries):
         return None
 
     starters = [
-        (log, pitcher) for log, pitcher in entries if log.games_started == 1
+        (log, pitcher)
+        for log, pitcher in entries
+        if _start_relief_state(log) == START
     ]
     relief = [
-        (log, pitcher) for log, pitcher in entries if log.games_started == 0
+        (log, pitcher)
+        for log, pitcher in entries
+        if _start_relief_state(log) == RELIEF
     ]
     if len(starters) != 1 or not relief:
+        return None
+    if len(starters) + len(relief) != len(entries):
+        # An unclassified line means the official starter set is not provably
+        # complete for this team side.
         return None
 
     starter_log, starter_pitcher = starters[0]
@@ -255,10 +356,13 @@ def _game_context_block(game_pk, entries):
 
     block = {
         'mlb_game_pk': game_pk,
+        'appearance_team_id': starter_log.appearance_team_id,
         'opponent': starter_log.opponent,
         'opponent_abbreviation': starter_log.opponent_abbreviation,
         'game_shape': shape_payload['shape'],
         'context_label': label,
+        'starter_authority': STARTER_AUTHORITY_OFFICIAL,
+        'reconciled': True,
         'starter': {
             'pitcher_id': starter_pitcher.id,
             'pitcher_mlb_id': starter_pitcher.mlb_id,
@@ -272,6 +376,7 @@ def _game_context_block(game_pk, entries):
             'outs': relief_outs,
             'innings': _ip_text(relief_outs),
             'pitches': relief_pitches,
+            'pitcher_ids': sorted(pitcher.id for _log, pitcher in relief),
         },
         'total': {
             'pitcher_count': total_pitchers,
@@ -371,10 +476,17 @@ def _date_group(game_date, entries):
         if len(known_pitches) == relief_count
         else None
     )
+    game_pks = sorted({
+        log.mlb_game_pk for log, pitcher in entries if log.mlb_game_pk is not None
+    })
     sentence = (
-        f'{_month_day(game_date)} \u2014 {_relief_count_text(relief_count)}, '
-        f'{_ip_text(outs_total)} IP'
+        f'{_month_day(game_date)} \u2014 {_relief_count_text(relief_count)}'
     )
+    if len(game_pks) > 1:
+        # A date total that spans more than one game says so, so no game-level
+        # narrative beneath it can be mistaken for covering these totals.
+        sentence = f'{sentence} across {_game_count_text(len(game_pks))}'
+    sentence = f'{sentence}, {_ip_text(outs_total)} IP'
     if pitches_total is not None:
         sentence = f'{sentence}, {_pitch_count_text(pitches_total)}'
     return {
@@ -383,11 +495,87 @@ def _date_group(game_date, entries):
         'outs_total': outs_total,
         'pitches_total': pitches_total,
         'appearances_with_pitches': len(known_pitches),
+        'game_pks': game_pks,
+        'game_count': len(game_pks),
         'sentence': f'{sentence}.',
         'appearances': [
             _appearance_line(log, pitcher)
             for log, pitcher in entries
         ],
+    }
+
+
+def _group_totals_reconcile(group):
+    """Every published summary number must equal the rows shown beneath it."""
+    appearances = group.get('appearances') or []
+    if group.get('relief_appearances') != len(appearances):
+        return False
+    outs = [row.get('innings_pitched_outs') for row in appearances]
+    if any(value is None for value in outs):
+        return False
+    if group.get('outs_total') != sum(outs):
+        return False
+    known_pitches = [
+        row.get('pitches_thrown')
+        for row in appearances
+        if row.get('pitches_thrown') is not None
+    ]
+    if group.get('appearances_with_pitches') != len(known_pitches):
+        return False
+    expected_pitches = (
+        sum(known_pitches) if len(known_pitches) == len(appearances) else None
+    )
+    return group.get('pitches_total') == expected_pitches
+
+
+def _block_reconciles_with_appearances(block, group):
+    """A game narrative may only describe rows visible beneath it.
+
+    Its relief pitcher set must equal that game's shown appearance rows, and
+    its relief totals must equal those same rows.
+    """
+    game_pk = block.get('mlb_game_pk')
+    if game_pk is None or game_pk not in (group.get('game_pks') or []):
+        return False
+
+    shown = [
+        row for row in (group.get('appearances') or [])
+        if row.get('mlb_game_pk') == game_pk
+    ]
+    claimed_ids = list((block.get('relief') or {}).get('pitcher_ids') or [])
+    if sorted(row.get('pitcher_id') for row in shown) != sorted(claimed_ids):
+        return False
+    if (block.get('relief') or {}).get('pitcher_count') != len(shown):
+        return False
+    if block.get('starter', {}).get('pitcher_id') in claimed_ids:
+        return False
+
+    outs = [row.get('innings_pitched_outs') for row in shown]
+    if any(value is None for value in outs):
+        return False
+    if (block.get('relief') or {}).get('outs') != sum(outs):
+        return False
+    known_pitches = [
+        row.get('pitches_thrown')
+        for row in shown
+        if row.get('pitches_thrown') is not None
+    ]
+    expected_pitches = (
+        sum(known_pitches) if len(known_pitches) == len(shown) else None
+    )
+    return (block.get('relief') or {}).get('pitches') == expected_pitches
+
+
+def _unavailable_group(game_date):
+    """Honest unavailable state \u2014 never a partial or substituted baseball claim."""
+    return {
+        'game_date': game_date.isoformat(),
+        'unavailable': True,
+        'sentence': (
+            f'{_month_day(game_date)} \u2014 relief work is unavailable because '
+            f'the summary and the appearance records do not reconcile.'
+        ),
+        'appearances': [],
     }
 
 
@@ -397,6 +585,8 @@ def _appearance_line(log, pitcher):
         'pitcher_mlb_id': pitcher.mlb_id,
         'pitcher_full_name': pitcher.full_name,
         'roster_status_sentence': _roster_status_sentence(pitcher),
+        'mlb_game_pk': log.mlb_game_pk,
+        'appearance_team_id': log.appearance_team_id,
         'game_date': log.game_date.isoformat(),
         'opponent': log.opponent,
         'opponent_abbreviation': log.opponent_abbreviation,
@@ -456,12 +646,13 @@ def _window(rows, anchor, window_days):
     relief_rows = [
         (log, pitcher)
         for log, pitcher in window_rows
-        if log.games_started == 0
+        if _start_relief_state(log) == RELIEF
     ]
     relief_count = len(relief_rows)
     pitcher_count = len({pitcher.id for log, pitcher in relief_rows})
     unknown_count = sum(
-        1 for log, pitcher in window_rows if log.games_started is None
+        1 for log, pitcher in window_rows
+        if _start_relief_state(log) not in (START, RELIEF)
     )
     known_pitches = [
         log.pitches_thrown
@@ -534,6 +725,10 @@ def _relief_count_text(count):
 
 def _relief_appearance_word(count):
     return 'relief appearance' if count == 1 else 'relief appearances'
+
+
+def _game_count_text(count):
+    return f'{count} {"game" if count == 1 else "games"}'
 
 
 def _appearance_word(count):

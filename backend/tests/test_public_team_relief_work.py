@@ -132,7 +132,13 @@ def test_team_relief_work_anchor_from_public_freshness_and_exact_payload(client)
             _log(alpha.id, 9105, date(2026, 7, 2), games_started=1, outs=18, pitches=70),
             _log(beta.id, 9106, date(2026, 7, 1), games_started=None, pitches=15),
             _log(beta.id, 9107, date(2026, 6, 24), games_started=None, pitches=12),
-            _log(other.id, 9108, date(2026, 7, 3), pitches=99),
+            _log(
+                other.id,
+                9108,
+                date(2026, 7, 3),
+                pitches=99,
+                appearance_team_id=111,
+            ),
         ])
         db.session.commit()
         alpha_id = alpha.id
@@ -149,7 +155,7 @@ def test_team_relief_work_anchor_from_public_freshness_and_exact_payload(client)
         },
         'data_through': '2026-07-05',
         'freshness': _freshness_block(),
-        'scope_sentence': 'Covers pitchers currently on the TST roster per MLB roster data.',
+        'scope_sentence': 'Covers appearances made for TST per official MLB game records.',
         'relief_by_date': [
             {
                 'game_date': '2026-07-03',
@@ -157,13 +163,20 @@ def test_team_relief_work_anchor_from_public_freshness_and_exact_payload(client)
                 'outs_total': 11,
                 'pitches_total': 61,
                 'appearances_with_pitches': 2,
-                'sentence': 'July 3 \u2014 2 relief appearances, 3.2 IP, 61 pitches.',
+                'game_pks': [9101, 9102],
+                'game_count': 2,
+                'sentence': (
+                    'July 3 \u2014 2 relief appearances across 2 games, '
+                    '3.2 IP, 61 pitches.'
+                ),
                 'appearances': [
                     {
                         'pitcher_id': alpha_id,
                         'pitcher_mlb_id': 90001,
                         'pitcher_full_name': 'Alpha Reliever',
                         'roster_status_sentence': 'On the active roster per MLB roster data.',
+                        'mlb_game_pk': 9101,
+                        'appearance_team_id': TEAM_ID,
                         'game_date': '2026-07-03',
                         'opponent': 'Boston Red Sox',
                         'opponent_abbreviation': 'BOS',
@@ -190,6 +203,8 @@ def test_team_relief_work_anchor_from_public_freshness_and_exact_payload(client)
                         'pitcher_mlb_id': 90002,
                         'pitcher_full_name': 'Beta Reliever',
                         'roster_status_sentence': 'On the active roster per MLB roster data.',
+                        'mlb_game_pk': 9102,
+                        'appearance_team_id': TEAM_ID,
                         'game_date': '2026-07-03',
                         'opponent': 'New York Yankees',
                         'opponent_abbreviation': 'NYY',
@@ -216,6 +231,8 @@ def test_team_relief_work_anchor_from_public_freshness_and_exact_payload(client)
                 'outs_total': 3,
                 'pitches_total': 20,
                 'appearances_with_pitches': 1,
+                'game_pks': [9103],
+                'game_count': 1,
                 'sentence': 'June 29 \u2014 1 relief appearance, 1.0 IP, 20 pitches.',
                 'appearances': [
                     {
@@ -223,6 +240,8 @@ def test_team_relief_work_anchor_from_public_freshness_and_exact_payload(client)
                         'pitcher_mlb_id': 90001,
                         'pitcher_full_name': 'Alpha Reliever',
                         'roster_status_sentence': 'On the active roster per MLB roster data.',
+                        'mlb_game_pk': 9103,
+                        'appearance_team_id': TEAM_ID,
                         'game_date': '2026-06-29',
                         'opponent': 'New York Yankees',
                         'opponent_abbreviation': 'NYY',
@@ -249,6 +268,8 @@ def test_team_relief_work_anchor_from_public_freshness_and_exact_payload(client)
                 'outs_total': 3,
                 'pitches_total': None,
                 'appearances_with_pitches': 0,
+                'game_pks': [9104],
+                'game_count': 1,
                 'sentence': 'June 25 \u2014 1 relief appearance, 1.0 IP.',
                 'appearances': [
                     {
@@ -256,6 +277,8 @@ def test_team_relief_work_anchor_from_public_freshness_and_exact_payload(client)
                         'pitcher_mlb_id': 90002,
                         'pitcher_full_name': 'Beta Reliever',
                         'roster_status_sentence': 'On the active roster per MLB roster data.',
+                        'mlb_game_pk': 9104,
+                        'appearance_team_id': TEAM_ID,
                         'game_date': '2026-06-25',
                         'opponent': 'New York Yankees',
                         'opponent_abbreviation': 'NYY',
@@ -351,7 +374,7 @@ def test_team_relief_work_no_anchor_omits_anchored_sections(client, monkeypatch)
             'freshness_state': 'metadata_unavailable',
             'label': 'Public freshness metadata unavailable.',
         },
-        'scope_sentence': 'Covers pitchers currently on the TST roster per MLB roster data.',
+        'scope_sentence': 'Covers appearances made for TST per official MLB game records.',
         'relief_by_date': [],
     }
     assert 'windows' not in body
@@ -492,6 +515,7 @@ def test_team_relief_work_game_context_extended_bullpen_coverage(client):
         db.session.commit()
         starter_id = starter.id
         starter_pitcher_ids = {starter.id}
+        relief_pitcher_ids = [reliever.id for reliever in relievers]
 
     body = client.get(f'/api/bullpen/teams/{TEAM_ID}/relief-work').get_json()
     group = body['relief_by_date'][0]
@@ -506,10 +530,13 @@ def test_team_relief_work_game_context_extended_bullpen_coverage(client):
     assert group['games'] == [
         {
             'mlb_game_pk': 9601,
+            'appearance_team_id': TEAM_ID,
             'opponent': 'New York Yankees',
             'opponent_abbreviation': 'NYY',
             'game_shape': 'short_start',
             'context_label': 'Extended bullpen coverage',
+            'starter_authority': 'official_completed_game_starter',
+            'reconciled': True,
             'starter': {
                 'pitcher_id': starter_id,
                 'pitcher_mlb_id': 95001,
@@ -523,6 +550,7 @@ def test_team_relief_work_game_context_extended_bullpen_coverage(client):
                 'outs': 21,
                 'innings': '7.0',
                 'pitches': 107,
+                'pitcher_ids': sorted(relief_pitcher_ids),
             },
             'total': {
                 'pitcher_count': 7,
@@ -801,7 +829,6 @@ def test_team_relief_work_verified_blackburn_ledger_emits_assignment(
         db.session.add_all([starter, *relievers])
         db.session.flush()
         for game_pk, game_date, games_started in appearance_dates:
-            db.session.add(_final_game(game_pk, game_date))
             db.session.add(_log(
                 starter.id,
                 game_pk,
@@ -1093,7 +1120,7 @@ def test_team_relief_work_scope_sentence_present(client, monkeypatch):
     body = client.get(f'/api/bullpen/teams/{TEAM_ID}/relief-work').get_json()
 
     assert body['scope_sentence'] == (
-        'Covers pitchers currently on the TST roster per MLB roster data.'
+        'Covers appearances made for TST per official MLB game records.'
     )
 
 
@@ -1121,7 +1148,9 @@ def test_public_team_relief_work_import_guard_allows_only_public_sources():
         'sqlalchemy',
         'models.game_log',
         'models.pitcher',
+        'models.scheduled_game',
         'services',
+        'utils.games_started',
     }
     assert _import_modules(STARTER_ASSIGNMENT_PATH) == {
         'datetime',
@@ -1580,6 +1609,23 @@ def _pitcher(
     )
 
 
+def _final_game(team_id, game_pk, game_date):
+    """Register official final-game authority for one team side, once."""
+    seen = db.session.info.setdefault('_final_games', set())
+    key = (team_id, game_pk)
+    if key in seen:
+        return
+    seen.add(key)
+    db.session.add(ScheduledGame(
+        team_id=team_id,
+        game_pk=game_pk,
+        game_date=game_date,
+        game_type='R',
+        status_state=ScheduledGame.STATE_FINAL,
+        status_code='F',
+    ))
+
+
 def _log(
     pitcher_id,
     game_pk,
@@ -1599,7 +1645,12 @@ def _log(
     blown_save=False,
     win=False,
     loss=False,
+    appearance_team_id=TEAM_ID,
+    appearance_team_status=GameLog.APPEARANCE_TEAM_RESOLVED,
+    final_game=True,
 ):
+    if final_game and appearance_team_id is not None:
+        _final_game(appearance_team_id, game_pk, game_date)
     return GameLog(
         pitcher_id=pitcher_id,
         mlb_game_pk=game_pk,
@@ -1607,6 +1658,10 @@ def _log(
         opponent=opponent,
         opponent_abbreviation=opponent_abbreviation,
         games_started=games_started,
+        appearance_team_id=appearance_team_id,
+        appearance_team_status=appearance_team_status,
+        appearance_team_source='boxscore_side',
+        appearance_team_reason='appearance_team_resolved_boxscore',
         innings_pitched=outs / 3,
         innings_pitched_outs=outs,
         pitches_thrown=pitches,
@@ -1619,17 +1674,6 @@ def _log(
         blown_save=blown_save,
         win=win,
         loss=loss,
-    )
-
-
-def _final_game(game_pk, game_date):
-    return ScheduledGame(
-        team_id=TEAM_ID,
-        game_pk=game_pk,
-        game_date=game_date,
-        status_state=ScheduledGame.STATE_FINAL,
-        status_code='F',
-        game_type='R',
     )
 
 
