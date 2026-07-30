@@ -27,6 +27,11 @@ bullpen population helper, with added ``role`` / ``role_confidence`` fields.
 import os
 
 from services.availability_reference_date import product_current_date
+# THE canonical pitching-position vocabulary, already owned by the legacy
+# eligibility engine and reused by injury context. Reused here rather than
+# restated so the two population engines cannot disagree about who is a
+# pitcher at all.
+from services.bullpen_eligibility import PITCHING_POSITIONS
 from utils.innings import log_innings_decimal
 
 
@@ -35,6 +40,11 @@ ROLE_STARTER = 'Starter'
 ROLE_RELIEVER = 'Reliever'
 ROLE_AMBIGUOUS = 'Ambiguous'
 ROLE_UNKNOWN = 'Unknown'
+# A player whose authoritative roster position is not a pitching position. This
+# is deliberately NOT folded into Unknown: "he is definitively not a pitcher" is
+# resolved evidence, while Unknown means evidence is absent. Collapsing them
+# would hide the difference between a position player and an unclassified arm.
+ROLE_NON_PITCHER = 'NonPitcher'
 RELIEF_POSITIONS = {'RP', 'CL'}
 
 # ── Confidence levels ───────────────────────────────────────────────────────
@@ -48,6 +58,7 @@ STATUS_ROLE_RELIEVER = 'role_reliever'
 STATUS_ROLE_STARTER = 'role_starter'
 STATUS_ROLE_AMBIGUOUS = 'role_ambiguous'
 STATUS_ROLE_UNKNOWN = 'role_unknown'
+STATUS_ROLE_NON_PITCHER = 'role_non_pitcher'
 
 # ── Calibration defaults (tunable; deterministic) ───────────────────────────
 STARTER_SHARE = 0.80          # known-start share at/above → Starter
@@ -68,6 +79,10 @@ START_LEANING_AMBIGUOUS_LIMITATION = (
 )
 UNKNOWN_LIMITATION = (
     'Role not yet established from start data; withheld from default bullpen counts.'
+)
+NON_PITCHER_LIMITATION = (
+    'Roster position is not a pitching position; a mop-up or emergency pitching '
+    'appearance does not create bullpen membership.'
 )
 LIMITED_RELIEF_SAMPLE_LIMITATION = (
     'Bullpen role is inferred from a limited recent relief-length sample.'
@@ -146,6 +161,28 @@ def classify_role(pitcher, logs, reference_date=None):
     logs = list(logs or [])
     appearances = len(logs)
     pos = _position(pitcher)
+
+    # A position player is not a bullpen arm, however he pitched.
+    #
+    # Roster position outranks appearance evidence for the question "is this a
+    # pitcher at all". Without this gate a shortstop who threw a mop-up inning
+    # scores a 0/1 start share and reads as a Reliever, because every signal
+    # below this line assumes the subject is a pitcher and only asks WHICH KIND.
+    # The legacy engine has always applied this gate (STATUS_NON_PITCHER); role
+    # authority did not, and became the default population engine without it.
+    #
+    # His appearance stays historically true and stays owned by the appearance
+    # ledger. Only his CURRENT bullpen membership is refused. An absent or blank
+    # position is not disqualifying — matching the legacy engine, only a KNOWN
+    # non-pitching position resolves here.
+    if pos and pos not in PITCHING_POSITIONS:
+        return _result(
+            ROLE_NON_PITCHER, CONF_HIGH, STATUS_ROLE_NON_PITCHER, False,
+            f'Roster position {pos} is not a pitching position.',
+            [f'Roster position: {pos}.',
+             f'{appearances} recent appearance(s) on record.'],
+            limitations=[NON_PITCHER_LIMITATION],
+        )
 
     # No usable evidence at all → Unknown (evidence absent, not conflicting).
     if appearances == 0:

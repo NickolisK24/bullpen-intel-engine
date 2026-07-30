@@ -65,6 +65,7 @@ REFUSAL_NO_QUALIFYING_APPEARANCES = 'no_qualifying_appearances'
 REFUSAL_MINIMUM_SAMPLE_UNAPPROVED = 'minimum_sample_not_approved'
 REFUSAL_BELOW_MINIMUM_SAMPLE = 'below_minimum_sample'
 REFUSAL_QUALIFYING_ROW_INVALID = 'qualifying_row_invalid'
+REFUSAL_FRESHNESS_UNPROVABLE = 'freshness_authority_unprovable'
 
 # Row-level reason codes. The first four mirror the canonical dispositions in
 # season_bullpen_aggregation_2026._classify_row so the two cannot diverge; the
@@ -215,18 +216,19 @@ def resolve_active_group(team_id, *, reference_date=None):
     is the one place ``Pitcher.team_id`` legitimately participates, because
     the question asked is current membership — never appearance ownership.
     """
-    pitchers = bullpen_population.eligible_bullpen_pitchers(
+    contexts = bullpen_population.eligible_bullpen_pitcher_contexts_for_team(
         team_id,
         reference_date=reference_date,
     )
     members = [
         {
-            'pitcher_id': p.id,
-            'pitcher_mlb_id': getattr(p, 'mlb_id', None),
-            'pitcher_full_name': getattr(p, 'full_name', None),
+            'pitcher_id': context['pitcher'].id,
+            'pitcher_mlb_id': getattr(context['pitcher'], 'mlb_id', None),
+            'pitcher_full_name': getattr(context['pitcher'], 'full_name', None),
+            'role_evidence': _role_evidence(context, reference_date),
         }
-        for p in pitchers
-        if getattr(p, 'id', None) is not None
+        for context in contexts
+        if getattr(context.get('pitcher'), 'id', None) is not None
     ]
     return {
         'team_id': team_id,
@@ -235,6 +237,28 @@ def resolve_active_group(team_id, *, reference_date=None):
         'pitcher_ids': [m['pitcher_id'] for m in members],
         'members': members,
         'size': len(members),
+    }
+
+
+def _role_evidence(context, reference_date):
+    """Bounded proof of why one arm belongs in the group. Never a raw payload.
+
+    Enough to answer "why is he here?" without exposing the source records or
+    asking any surface to re-decide membership.
+    """
+    pitcher = context['pitcher']
+    eligibility = context.get('eligibility') or {}
+    roster_status = context.get('roster_status') or {}
+    return {
+        'roster_status': roster_status.get('status'),
+        'roster_status_source': roster_status.get('source'),
+        'roster_status_is_authoritative': roster_status.get('is_authoritative'),
+        'roster_position': getattr(pitcher, 'position', None),
+        'bullpen_role': eligibility.get('role'),
+        'role_confidence': eligibility.get('confidence'),
+        'role_resolution_status': eligibility.get('status'),
+        'role_authority': eligibility.get('authority') or eligibility.get('source'),
+        'role_evidence_date': reference_date.isoformat() if reference_date else None,
     }
 
 
@@ -409,6 +433,44 @@ def _start_relief_state(log):
         return UNKNOWN
 
 
+def resolve_freshness(reference_date=None):
+    """The canonical freshness block, reshaped for the M-001 contract.
+
+    Consumes ``board_freshness.sync_status_freshness_block`` — the same durable
+    sync metadata every public board trusts — rather than starting a second
+    freshness clock. The request clock is never a data authority; the only
+    timestamps here come from the sync record.
+
+    Five date concepts stay distinct and are never interchangeable:
+    the represented baseball date (asked for by the caller), the data-through
+    date (how far the official record reaches), the source sync timestamp (when
+    the data was last written), the membership represented date (carried on the
+    group), and the request timestamp (which is not returned at all).
+    """
+    from services import board_freshness
+
+    block = board_freshness.sync_status_freshness_block()
+    state = block.get('freshness_state')
+    provable = bool(state) and state != 'metadata_unavailable' and not block.get('fail_closed')
+    return {
+        'represented_date': reference_date.isoformat() if reference_date else None,
+        'data_through_date': block.get('data_through'),
+        'latest_workload_date': block.get('latest_workload_date'),
+        'source_sync_authority': block.get('sync_authority'),
+        'source_sync_status': block.get('sync_status'),
+        'last_successful_sync': block.get('last_successful_sync'),
+        'freshness_state': state,
+        'is_current': block.get('is_current'),
+        'is_stale': block.get('is_stale'),
+        'data_age_days': block.get('data_age_days'),
+        'degradation_state': block.get('degradation_state'),
+        'fail_closed': bool(block.get('fail_closed')),
+        'reason_codes': list(block.get('reason_codes') or []),
+        'authority': 'durable_sync_metadata',
+        'provable': provable,
+    }
+
+
 def innings_display(outs) -> str:
     """Baseball innings notation from integer outs (D-008).
 
@@ -457,6 +519,13 @@ def build_metric_read(
     definition = registry.get(metric_id)
     if definition is None:
         return _refusal(metric_id, team_id, REFUSAL_UNKNOWN_METRIC, season=season)
+
+    # Freshness is part of the contract, not decoration. A caller may inject one
+    # (fixtures, a frozen artifact replay); otherwise it comes from the canonical
+    # authority. It is resolved BEFORE the value so an unprovable freshness can
+    # withhold readiness rather than decorate a complete-looking read.
+    if freshness is None:
+        freshness = resolve_freshness(reference_date)
 
     group = resolve_active_group(team_id, reference_date=reference_date)
     if not group['pitcher_ids']:
@@ -628,15 +697,33 @@ def _below_sample_read(definition, sample):
     }
 
 
+def _freshness_is_provable(freshness):
+    """An injected freshness is trusted; a resolved one must prove itself."""
+    if not isinstance(freshness, dict):
+        return False
+    return freshness.get('provable', True) is not False
+
+
 def _metric_readiness(read, sample):
     """Is there enough proved evidence for the founder to review a value?
 
     Deliberately separate from publication. Readiness never opens a gate, and
     a ready metric is still refused publicly.
+
+    Unprovable freshness withholds readiness. A value whose currentness cannot
+    be established is not reviewable, and returning it beside a null or
+    fail-closed freshness would present an undated number as a current one.
     """
-    ready = read['value'] is not None and sample['meets_minimum_sample'] is True
+    fresh = _freshness_is_provable(read.get('freshness'))
+    ready = (
+        read['value'] is not None
+        and sample['meets_minimum_sample'] is True
+        and fresh
+    )
     if ready:
         reason = None
+    elif read['value'] is not None and sample['meets_minimum_sample'] is True and not fresh:
+        reason = REFUSAL_FRESHNESS_UNPROVABLE
     elif read['value'] is None:
         reason = read['reason_code']
     elif sample['meets_minimum_sample'] is None:
@@ -779,6 +866,8 @@ def _publication_decision(definition, read, sample):
         return {'publishable': False, 'reason': REFUSAL_MINIMUM_SAMPLE_UNAPPROVED}
     if sample['meets_minimum_sample'] is False:
         return {'publishable': False, 'reason': REFUSAL_BELOW_MINIMUM_SAMPLE}
+    if not _freshness_is_provable(read.get('freshness')):
+        return {'publishable': False, 'reason': REFUSAL_FRESHNESS_UNPROVABLE}
     return {'publishable': False, 'reason': PUBLICATION_BLOCKED_BY_GATE}
 
 

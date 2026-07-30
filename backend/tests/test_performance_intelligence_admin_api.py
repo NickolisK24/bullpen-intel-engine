@@ -301,3 +301,52 @@ def test_no_frontend_source_references_the_metric():
             and pattern in path.read_text(errors='ignore')
         ]
         assert hits == [], f'{pattern} reached the frontend: {hits}'
+
+
+# ── Freshness reaches the internal reader ──────────────────────────────────
+def test_internal_read_returns_the_complete_freshness_structure(app, client):
+    _reviewable_team()
+    read = client.get(
+        f'{ENDPOINT}?team_id={TEAM_ID}&represented_date={REPRESENTED_DATE}',
+        headers=_auth(),
+    ).get_json()['read']
+
+    freshness = read['freshness']
+    assert freshness is not None
+    for field in ('represented_date', 'data_through_date', 'source_sync_authority',
+                  'freshness_state', 'authority', 'provable'):
+        assert field in freshness, field
+    assert freshness['authority'] == 'durable_sync_metadata'
+    assert freshness['represented_date'] == REPRESENTED_DATE
+
+
+def test_internal_read_carries_role_evidence_for_every_member(app, client):
+    _reviewable_team()
+    group = client.get(
+        f'{ENDPOINT}?team_id={TEAM_ID}&represented_date={REPRESENTED_DATE}',
+        headers=_auth(),
+    ).get_json()['read']['group']
+
+    assert group['members']
+    for member in group['members']:
+        evidence = member['role_evidence']
+        assert evidence['roster_position'] == 'P'
+        assert evidence['bullpen_role']
+        assert evidence['role_resolution_status']
+        assert evidence['role_evidence_date'] == REPRESENTED_DATE
+
+
+def test_gates_stay_blocked_with_freshness_present(app, client):
+    _reviewable_team()
+    read = client.get(
+        f'{ENDPOINT}?team_id={TEAM_ID}&represented_date={REPRESENTED_DATE}',
+        headers=_auth(),
+    ).get_json()['read']
+
+    assert read['freshness'] is not None
+    assert read['gates'] == {
+        'public_reader_gate': 'blocked',
+        'team_state_performance_gate': 'blocked',
+        'share_card_performance_gate': 'blocked',
+    }
+    assert read['publication']['publishable'] is False
