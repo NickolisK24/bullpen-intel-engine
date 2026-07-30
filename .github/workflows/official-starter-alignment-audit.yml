@@ -8,8 +8,10 @@ name: Official Starter Alignment Audit
 #
 # Structure, secret usage, Python setup, and artifact conventions are copied
 # from .github/workflows/unresolved_appearance_team_diagnostic_2026.yml so this
-# introduces no second production-access architecture. It requests one fewer
-# secret than that workflow: the audit needs no admin API token.
+# introduces no second production-access architecture. It passes the same three
+# production secrets. ADMIN_API_TOKEN is required even though this audit never
+# calls a write endpoint: ProductionConfig.init_app refuses to build the app
+# without it, and importing app.py builds the app.
 #
 # Delete this workflow once the incident is closed. See
 # docs/audits/official-starter-evidence-alignment-2026-07-28.md.
@@ -34,6 +36,7 @@ jobs:
       FLASK_APP: app.py
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       SECRET_KEY: ${{ secrets.SECRET_KEY }}
+      ADMIN_API_TOKEN: ${{ secrets.BASEBALLOS_ADMIN_API_TOKEN }}
     steps:
       - uses: actions/checkout@v4
 
@@ -49,7 +52,8 @@ jobs:
       - name: Validate required secrets are present
         run: |
           set -euo pipefail
-          if [ -z "${DATABASE_URL:-}" ] || [ -z "${SECRET_KEY:-}" ]; then
+          if [ -z "${DATABASE_URL:-}" ] || [ -z "${SECRET_KEY:-}" ] \
+             || [ -z "${ADMIN_API_TOKEN:-}" ]; then
             echo "::error::Missing required production repository secret."
             exit 1
           fi
