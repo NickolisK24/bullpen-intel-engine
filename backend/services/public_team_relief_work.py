@@ -229,24 +229,44 @@ def _game_context_blocks(date_entries, team_id):
             continue
         by_game.setdefault(log.mlb_game_pk, []).append((log, pitcher))
 
-    final_game_pks = _final_game_pks(team_id, by_game.keys())
+    final_game_numbers = _final_game_numbers(team_id, by_game.keys())
     blocks = []
     for game_pk in sorted(by_game):
-        if game_pk not in final_game_pks:
+        if game_pk not in final_game_numbers:
             # No official final-game authority for this team side: a
             # starter-dependent narrative cannot be published.
             continue
         block = _game_context_block(game_pk, by_game[game_pk])
         if block is not None:
+            block['game_number'] = final_game_numbers[game_pk]
             blocks.append(block)
+    blocks.sort(key=_game_sort_key)
     return blocks
 
 
-def _final_game_pks(team_id, game_pks):
-    """Official final-game authority for this exact team side, per game_pk."""
+def _game_sort_key(entry):
+    """Deterministic official ordering: MLB game number, then game_pk.
+
+    A game whose number is unknown sorts after numbered games rather than
+    borrowing a position it cannot prove.
+    """
+    number = entry.get('game_number')
+    return (0, number, entry['mlb_game_pk']) if isinstance(number, int) else (
+        1, 0, entry['mlb_game_pk']
+    )
+
+
+def _final_game_numbers(team_id, game_pks):
+    """Official final-game authority and MLB game number for this team side.
+
+    Returns ``{game_pk: game_number_or_None}`` for the games this team side
+    officially completed. ``game_number`` is MLB's own ``gameNumber`` carried by
+    the schedule ledger, so a doubleheader's first and second game are told
+    apart by official authority rather than by list order.
+    """
     wanted = sorted({pk for pk in game_pks if pk is not None})
     if not wanted:
-        return set()
+        return {}
     rows = (
         ScheduledGame.query
         .filter(
@@ -256,7 +276,7 @@ def _final_game_pks(team_id, game_pks):
         .all()
     )
     return {
-        row.game_pk
+        row.game_pk: row.game_number
         for row in rows
         if row.status_state == ScheduledGame.STATE_FINAL
     }

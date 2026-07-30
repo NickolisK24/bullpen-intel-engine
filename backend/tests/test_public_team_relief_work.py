@@ -530,6 +530,7 @@ def test_team_relief_work_game_context_extended_bullpen_coverage(client):
     assert group['games'] == [
         {
             'mlb_game_pk': 9601,
+            'game_number': None,
             'appearance_team_id': TEAM_ID,
             'opponent': 'New York Yankees',
             'opponent_abbreviation': 'NYY',

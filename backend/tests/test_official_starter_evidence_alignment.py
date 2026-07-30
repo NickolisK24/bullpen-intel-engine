@@ -81,7 +81,7 @@ def _pitcher(name, *, team_id=TEAM_ID, team_abbreviation='CIN'):
     return pitcher
 
 
-def _final_game(team_id, game_pk, game_date, *, status_state=None):
+def _final_game(team_id, game_pk, game_date, *, status_state=None, game_number=None):
     seen = db.session.info.setdefault('_final_games', set())
     if (team_id, game_pk) in seen:
         return
@@ -91,6 +91,7 @@ def _final_game(team_id, game_pk, game_date, *, status_state=None):
         game_pk=game_pk,
         game_date=game_date,
         game_type='R',
+        game_number=game_number,
         status_state=status_state or ScheduledGame.STATE_FINAL,
         status_code='F' if status_state is None else 'I',
     ))
@@ -109,10 +110,12 @@ def _log(
     schedule_state=None,
     register_schedule=True,
     innings_pitched=None,
+    game_number=None,
 ):
     if register_schedule and appearance_team_id is not None:
         _final_game(
-            appearance_team_id, game_pk, game_date, status_state=schedule_state
+            appearance_team_id, game_pk, game_date,
+            status_state=schedule_state, game_number=game_number,
         )
     log = GameLog(
         pitcher_id=pitcher.id,
@@ -807,3 +810,85 @@ def test_july_28_reds_doubleheader_production_shape(app):
             assert '34 outs' not in sentence
             assert '11.1 IP' not in sentence
             assert '165 pitches' not in sentence
+
+
+# ── 12c. Doubleheader game identity and deterministic ordering ──────────────
+def test_doubleheader_blocks_carry_official_game_number_and_order(app):
+    """Game blocks are ordered and identified by MLB's own gameNumber.
+
+    The schedule ledger carries gameNumber for each side of a doubleheader, so
+    the first and second game are told apart by official authority rather than
+    by their position in a list.
+    """
+    burns = _pitcher('Chase Burns')
+    pen1 = [_pitcher(n) for n in ('Brock Burke', 'Pierce Johnson', 'Sam Moll', 'Chase Petty')]
+    ferguson = _pitcher('Caleb Ferguson')
+    pen2 = [_pitcher(n) for n in ('Jose Franco', 'Julian Garcia', 'Tejay Antone', 'Emilio Pagan')]
+
+    # Register game 2 first so list order alone would sort it wrongly.
+    _log(ferguson, 824490, ANCHOR, games_started=1, outs=5, pitches=27, game_number=2)
+    for pitcher, outs, pitches in zip(pen2, (11, 4, 4, 3), (48, 18, 25, 17)):
+        _log(pitcher, 824490, ANCHOR, outs=outs, pitches=pitches, game_number=2)
+    _log(burns, 824489, ANCHOR, games_started=1, outs=15, pitches=78, game_number=1)
+    for pitcher, pitches in zip(pen1, (8, 12, 27, 10)):
+        _log(pitcher, 824489, ANCHOR, outs=3, pitches=pitches, game_number=1)
+    db.session.commit()
+
+    group = _group_for(_payload(TEAM_ID), ANCHOR)
+    blocks = group['games']
+
+    assert [b['mlb_game_pk'] for b in blocks] == [824489, 824490]
+    assert [b['game_number'] for b in blocks] == [1, 2]
+    assert blocks[0]['starter']['pitcher_full_name'] == 'Chase Burns'
+    assert blocks[1]['starter']['pitcher_full_name'] == 'Caleb Ferguson'
+
+    # Each block's relief set is exactly its own game's shown rows.
+    for block in blocks:
+        own = [
+            r for r in group['appearances']
+            if r['mlb_game_pk'] == block['mlb_game_pk']
+        ]
+        assert block['relief']['pitcher_ids'] == sorted(r['pitcher_id'] for r in own)
+    assert set(blocks[0]['relief']['pitcher_ids']).isdisjoint(
+        blocks[1]['relief']['pitcher_ids']
+    )
+
+    # Date aggregate still equals the sum of the two games.
+    assert group['relief_appearances'] == 8
+    assert group['outs_total'] == 34
+    assert group['pitches_total'] == 165
+    assert 'across 2 games' in group['sentence']
+
+
+def test_unknown_game_number_still_orders_deterministically(app):
+    """A game with no official number sorts after numbered games, by game_pk."""
+    a_starter = _pitcher('Numbered Starter')
+    a_pen = _pitcher('Numbered Pen')
+    b_starter = _pitcher('Unnumbered Starter')
+    b_pen = _pitcher('Unnumbered Pen')
+
+    _log(b_starter, 700099, ANCHOR, games_started=1, outs=18, pitches=80)
+    _log(b_pen, 700099, ANCHOR, outs=9, pitches=30)
+    _log(a_starter, 700100, ANCHOR, games_started=1, outs=18, pitches=80, game_number=1)
+    _log(a_pen, 700100, ANCHOR, outs=9, pitches=30, game_number=1)
+    db.session.commit()
+
+    blocks = _group_for(_payload(TEAM_ID), ANCHOR)['games']
+    assert [b['game_number'] for b in blocks] == [1, None]
+    assert [b['mlb_game_pk'] for b in blocks] == [700100, 700099]
+
+
+def test_single_game_date_keeps_one_block_and_its_meaning(app):
+    starter = _pitcher('Solo Starter')
+    pen = [_pitcher(f'Solo Pen {n}') for n in ('A', 'B')]
+    _log(starter, 700200, ANCHOR, games_started=1, outs=18, pitches=88, game_number=1)
+    for pitcher, outs, pitches in zip(pen, (3, 6), (11, 22)):
+        _log(pitcher, 700200, ANCHOR, outs=outs, pitches=pitches, game_number=1)
+    db.session.commit()
+
+    group = _group_for(_payload(TEAM_ID), ANCHOR)
+    assert group['game_count'] == 1
+    assert 'across' not in group['sentence']
+    assert len(group['games']) == 1
+    assert group['games'][0]['game_number'] == 1
+    assert group['games'][0]['relief']['pitcher_ids'] == sorted(p.id for p in pen)
