@@ -3,8 +3,8 @@
 | Field | Value |
 |---|---|
 | Status | Canonical - system architecture, security, deployment, operations, and runbook authority |
-| Version | 1.2 |
-| Effective date | July 29, 2026 |
+| Version | 1.3 |
+| Effective date | July 30, 2026 |
 | Owner | Nickolis Kacludis |
 | Repository | `NickolisK24/bullpen-intel-engine` |
 | Production product | `baseballos.app` |
@@ -156,7 +156,13 @@ Rules:
 - **Historical appearance ownership is upstream.** The domain consumes the appearance-team authority; it never attributes an appearance from a pitcher's current team.
 - **Immutable artifacts freeze the read.** A published artifact stores the metric, group, sample, method version, represented date, evidence, and limitation as they were. It is never recomputed from live membership.
 
+- **Arithmetic is exact.** Every metric's numerator and denominator are integers. No floating-point type participates in a governed metric calculation at any stage. The ratio is an exact decimal quotient, rounded `ROUND_HALF_UP` exactly once at the metric's declared precision, and stored as a fixed-precision string alongside its exact integer numerator and denominator. A value rounded more than once is not reproducible and is not publishable.
+- **Sample thresholds are stated in the denominator's unit.** A rate over innings is gated on recorded outs, never on appearance count. The threshold, its unit, and its authority are carried with the value.
+- **Two refusals stay distinct.** A zero denominator is a mathematical refusal, evaluated before any sample check. A below-sample result is a governance refusal. They never share a code.
+
 The reusable metric registry is a governed definition set, not a new subsystem. Its required fields live in the Bullpen Intelligence Standard; concrete storage, services, routes, and caching are decided at implementation time against the existing repository, not specified here.
+
+The reusable framework exists in the repository as a production-internal foundation. It is unwired: no route, no payload, and no surface consumes it, and every publication gate it reports is blocked. M-001's approved parameters are specified in the Bullpen Intelligence Standard Section 7C and are not yet set in the metric registry entry. Setting them is an implementation package that carries its own review; approving a parameter does not wire it.
 
 ### Observation and story domain
 
@@ -611,3 +617,4 @@ Prioritized architecture work should follow product need:
 | 1.0 | July 29, 2026 | Nickolis Kacludis | Consolidated system architecture, domain boundaries, persistence, sync/publication order, team-progressive authority, immutable artifacts, APIs, security, deployment, testing, observability, and repair operations. |
 | 1.1 | July 29, 2026 | Nickolis Kacludis | Recorded the proven governed-repair operating shape after the July 2026 canonical-record closeout: an independent verifier separate from the apply, exact current reconciliation as terminal proof, and a no-longer-needed one-action apply closed rather than retried. Removed completed appearance/starter repair hardening from prioritized technical direction. |
 | 1.2 | July 29, 2026 | Nickolis Kacludis | Added the performance intelligence domain boundary establishing backend-owned canonical performance authority, no frontend recalculation, fail-closed publication below an approved sample, method-version and evidence ownership, upstream appearance-team attribution, immutable artifact freezing, and the metric registry as a governed definition set rather than a new subsystem. Updated prioritized technical direction now that the performance family contract is established. |
+| 1.3 | July 30, 2026 | Nickolis Kacludis | Added exact-arithmetic, sample-unit, and refusal-distinctness rules to the performance intelligence domain: integer numerators and denominators, no floating point, a single ROUND_HALF_UP at the declared precision, thresholds stated in the denominator's unit, and a mathematical zero-denominator refusal kept separate from a governance below-sample refusal. Recorded that the merged framework is an unwired production-internal foundation whose approved parameters are not yet set. |

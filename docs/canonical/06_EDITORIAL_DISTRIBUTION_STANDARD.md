@@ -3,8 +3,8 @@
 | Field | Value |
 |---|---|
 | Status | Canonical - public voice, content, share-artifact presentation, channel, outreach, and measurement authority |
-| Version | 1.1 |
-| Effective date | July 29, 2026 |
+| Version | 1.2 |
+| Effective date | July 30, 2026 |
 | Owner | Nickolis Kacludis |
 | Supersedes | BaseballOS Content Posting Standards and overlapping content/distribution sections of prior specifications |
 | Update rule | Revise when public voice, content pillars, channel rules, distribution context, visual artifact standard, correction policy, or sustainable cadence changes |
@@ -246,6 +246,7 @@ Do not keyword-stuff. Search is earned through useful answers, stable destinatio
 | Arm reads | Clean Option, Watch Arm, Limited Rest, Unavailable, Limited Read |
 | Public roles | Trusted Arm, Setup Arm, Coverage Arm, Middle Relief Arm, Limited Read |
 | Named bullpen reads | Bullpen Pressure, Recovery Window, Workload Concentration, Clean Options, Coverage Safety, Trusted Arms |
+| Performance | Active Bullpen ERA, Not Enough Innings Yet |
 | Technical | Python, Flask, PostgreSQL, React, TypeScript, data pipeline, source authority, automated testing, CI/CD, immutable artifact |
 
 Write for a person first.
@@ -269,7 +270,17 @@ Permitted: "Their current active pen has allowed 31 earned runs across 96.1 reli
 
 State is not performance, and copy may not blend them. A bullpen described as Stretched has not been described as bad, and a bullpen with strong recorded results has not been described as rested.
 
-Below an approved minimum sample there is no number to write about. Say the read is limited or unavailable and why. Do not fill the gap with a prior value, a league figure, or an adjective.
+Below an approved minimum sample there is no number to write about. Use the approved wording — **Not Enough Innings Yet** — with the group's current innings and the required innings beside it. Do not fill the gap with a prior value, a league figure, or an adjective, and do not substitute an arm-read label such as Limited Read or Unavailable, which mean something else about a single pitcher.
+
+The approved public performance terms are exactly **Active Bullpen ERA** and **Not Enough Innings Yet**. Copy uses them as written. It does not shorten Active Bullpen ERA to "bullpen ERA," which names a different number, and it does not invent a third term.
+
+Two worked lines, both publishable:
+
+> Cincinnati's Active Bullpen ERA is 2.90 — the eight arms in the pen as of July 30, over 96.1 relief innings for the Reds this season.
+
+> Not Enough Innings Yet for Cincinnati's Active Bullpen ERA: this group has thrown 22.0 relief innings for the Reds, and 36.0 are required before the number publishes.
+
+When the contributing-arm count is materially smaller than the group size, copy says so — "six of the eight have pitched for them this season" — rather than letting the group size imply a sample no one threw.
 
 Include the family limitation when it materially affects interpretation, in one sentence, near the claim - not as a recurring block of defensive language.
 
@@ -675,3 +686,4 @@ Go deeper
 |---|---|---|---|
 | 1.0 | July 29, 2026 | Nickolis Kacludis | Established the permanent editorial and distribution authority covering voice, pillars, evidence, freshness, platform-native standards, share artifacts, cadence, workflow, corrections, measurement, and reusable templates. |
 | 1.1 | July 29, 2026 | Nickolis Kacludis | Added performance language rules for metrics governed by the Current Active-Pen Performance Contract: descriptive copy only, group and sample and represented date and receipt adjacent to every material performance claim, no quality adjective or ranking verdict earned from a metric alone, no substitute value below an approved sample, and state kept separate from performance. Concise material limitations are preserved. |
+| 1.2 | July 30, 2026 | Nickolis Kacludis | Added the approved public performance terms Active Bullpen ERA and Not Enough Innings Yet to Established Public Language, with worked publishable lines, the prohibition on shortening the metric name or borrowing an arm-read label for a below-sample read, and the requirement to state a materially smaller contributing-arm count. |
