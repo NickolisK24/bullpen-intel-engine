@@ -3,10 +3,10 @@
 | Field | Value |
 |---|---|
 | Status | Canonical - current platform state, priority, sequence, decision, risk, and completion authority |
-| Version | 1.1 |
+| Version | 1.2 |
 | Effective date | July 29, 2026 |
 | Owner | Nickolis Kacludis |
-| Repository basis | `NickolisK24/bullpen-intel-engine` main at `b5e88bba75f6648d38676b6b453b8a81aaa82976` |
+| Repository basis | `NickolisK24/bullpen-intel-engine` main at `ec636f26153f97231372aba13c54161c643abfc7` |
 | Supersedes | Prior strategic operating manual, standalone current roadmap, phase proposals, and competing master roadmaps as execution authority |
 | Update rule | Update when priority changes, work merges, a phase exits, a material decision is made, a risk changes, or current-state assessment becomes false |
 | Review cadence | Weekly founder review; immediate update after a material production or product decision |
@@ -55,20 +55,22 @@ Foundation 3A / Phase 0 - Canonical Trust Closeout is **complete**. The official
 
 > **Current Active-Pen ERA and Performance Context**
 
-**Implementation has not started.** Before anything reaches a public surface, the exact contract must be defined and recorded:
+**The contract is established; implementation has not started.** The Current Active-Pen Performance Contract now governs the active-group, window, sample, date, evidence, and limitation requirements for this item and for every later approved performance metric. It lives in the Bullpen Intelligence Standard, Section 7A:
 
-- **active-group definition** - which arms count as the current pen on a given date, and how that group is derived from roster and appearance authority rather than assumed;
-- **sample contract** - the window, minimum sample, and what happens below it;
-- **date contract** - which baseball date the number represents and how it is stamped;
-- **evidence contract** - the named games and lines a reader can inspect behind the number;
-- **limitation contract** - what the number does not mean, stated only when material.
+- **active-group definition** - membership resolves from the canonical current roster, team-assignment, and bullpen-membership authorities for the represented baseball date; never assumed, and never a current-team fallback for a historical appearance;
+- **window contract** - qualifying official completed relief appearances in the current regular season, made for the represented team by that team's current active-bullpen pitchers; other-organization appearances and starts are excluded;
+- **sample contract** - the family fails closed below a metric's approved minimum sample; the mechanism is the family's, the exact threshold and denominator belong to each metric registry entry;
+- **date contract** - represented baseball date, data-through date, season, method version, active-group authority date, and freshness travel with every value;
+- **evidence contract** - every value is inspectable back to official completed pitching lines through named pitchers and qualifying appearances;
+- **limitation contract** - the family limitation is stated where material and not repeated as boilerplate.
 
-Open decision **O-001** governs this item and is not yet resolved. Until it is, current-pen ERA is not published anywhere public.
+Open decision **O-001** is **resolved** by D-021. What remains open is the first metric definition: **M-001 Current Active-Pen ERA** is reserved as contract-pending and is not published anywhere public. Its exact formula approval, minimum sample, and denominator are the next governed work package.
 
 ### Definition of done
 
-- [ ] Active-group, sample, date, evidence, and limitation contracts are defined and recorded.
-- [ ] O-001 is resolved by an explicit Decision Ledger entry.
+- [x] Active-group, sample, date, evidence, and limitation contracts are defined and recorded.
+- [x] O-001 is resolved by an explicit Decision Ledger entry.
+- [ ] M-001 Current Active-Pen ERA has an approved formula, minimum sample, and denominator.
 - [ ] Team and arm surfaces show the correct group, sample, date, evidence, and limits.
 - [ ] Every published performance number is inspectable back to official lines.
 - [ ] Regression coverage exists for the group, window, and below-sample behavior.
@@ -201,7 +203,7 @@ Sequence may change only through an explicit Decision Ledger entry.
 | Trusted snapshots | Production | Strong league authority with fail-closed publication gate |
 | Team-progressive publication | Production | Prevents unrelated late games from blocking complete teams |
 | Immutable Share Artifacts | Production foundation | Domain, generation, audit, and public history are real |
-| Current-Pen ERA/performance | Data exists; public use incomplete | Highest-value public evidence gap |
+| Current active-pen performance | Family contract established; no metric implemented or public | Contract closed the governance gap; the first metric definition is now the binding step |
 | Starter/rotation context | Partial | Source authority hardened; full consequence layer remains incomplete |
 | What Changed | Internal/comparability foundation | High retention value after current trust proof |
 | Leverage/concentration | Partial | Important differentiation; method/evidence still incomplete |
@@ -252,7 +254,7 @@ No product expansion begins ahead of an unresolved canonical-record trust incide
 
 | Status | Work item | User problem | Definition of done |
 |---|---|---|---|
-| **Active - not started** | **Current active-pen ERA and performance context** | Users cannot judge results beside workload without leaving BaseballOS | Active-group, sample, date, evidence, and limitation contracts defined and recorded before any public surfacing; O-001 resolved; team/arm surfaces show correct group, sample, date, evidence, and limits |
+| **Active - contract established, implementation not started** | **Current active-pen ERA and performance context** | Users cannot judge results beside workload without leaving BaseballOS | Contract recorded and O-001 resolved (done, D-021); M-001 formula, minimum sample, and denominator approved; then team/arm surfaces show the correct group, sample, date, evidence, and limits |
 | Next | Named-arm evidence expansion | Team labels can feel generic without who and which games | Every material team read names relevant arms and receipts |
 | Next | Starter-exposure context | Users need to understand how rotation length shifted innings | Official starter ranges appear as history, not forecast |
 | Next | Methodology alignment | Public pages and code vocabulary have outgrown older documents | One worked example and current labels/methods render canonically |
@@ -291,7 +293,7 @@ No product expansion begins ahead of an unresolved canonical-record trust incide
 
 **Purpose:** use more of the trustworthy baseball data already held.
 
-**First scoped item:** Current Active-Pen ERA and Performance Context. Implementation has not started; the active-group, sample, date, evidence, and limitation contract must be defined before public surfacing.
+**First scoped item:** Current Active-Pen ERA and Performance Context. The family contract is established (D-021); implementation has not started. The next step is the M-001 metric definition - formula, minimum sample, and denominator - before any public surfacing.
 
 Scope:
 
@@ -353,8 +355,9 @@ Official source identity/finality
 Key dependencies:
 
 ```text
-Current-Pen ERA
-  = official pitching lines + active-group definition + complete window
+Current Active-Pen ERA
+  = official pitching lines + canonical active-group authority
+  + approved family window + approved M-001 sample and denominator
 
 Starter exposure
   = unique official starters + completed-start history + current probable context
@@ -507,12 +510,14 @@ Predictions, betting/odds, game-outcome projections, injury prediction, fantasy 
 | D-018 | Jul 29, 2026 | Foundation 3A / Phase 0 Canonical Trust Closeout is formally complete. The independent read-only closeout at `b5e88bb...` returned `pass` / exit 0 with every governed check present, executed, and passed, zero failed checks, zero unresolved issues, and no database writes. Local and official metrics reconcile exactly across all 30 teams. Foundation 3B / Phase 1 Evidence Completeness becomes the sole active objective, with Current Active-Pen ERA and Performance Context as the first scoped item | Adopted |
 | D-019 | Jul 29, 2026 | The dedicated Matt Festa one-action apply is closed and must never be dispatched again. It ran once, wrote nothing, opened no transaction, and created no ledger row, because the regenerated planner found zero actions against a population that already had zero stat mismatches. Fingerprint `903766c4...` is obsolete for the current production population. Historical causation remains unprovable; no sync or process is credited with the correction. Any recurrence requires fresh diagnostic evidence and a new reviewed contract | Permanent |
 | D-020 | Jul 29, 2026 | A one-action governed apply that refuses because its reviewed manifest no longer regenerates is a correct terminal outcome, not a failure to retry. Fingerprint-locked capabilities are never re-dispatched to "make them succeed" | Permanent |
+| D-021 | Jul 29, 2026 | **O-001 is resolved.** BaseballOS establishes one reusable performance-intelligence family, the Current Active-Pen Performance Contract, for metrics describing how the pitchers currently comprising a team's active bullpen have performed in official completed games. The family owns the active-group authority, window, fail-closed sample mechanism, date and freshness stamps, evidence chain to official completed pitching lines, and material limitation. Membership resolves from the canonical current roster, team-assignment, and bullpen-membership authorities for the represented baseball date; historical appearances remain owned by the team side for which the pitcher appeared, with no current-team fallback. The window is qualifying official completed relief appearances in the current regular season made for the represented team, excluding other-organization appearances, starts, and unapproved game types. The Team Board is the canonical public home; every surface, including the Team Board, consumes the same backend-owned canonical performance authority. Current Active-Pen ERA is the first planned metric under this contract and is not itself the contract | Adopted |
+| D-022 | Jul 29, 2026 | A **metric family** and a **metric definition** are separate governed objects. A family owns one baseball question and one common authority contract; individually versioned metric registry entries inherit it and define their own key, formula, numerator, denominator, sample, evidence, refusal behavior, method version, approved surfaces, and fixtures. Adding an approved metric under an established family does not reopen the family decision. Public surfaces consume governed intelligence families and never create local interpretations of them. The registry reserves **M-001 Current Active-Pen ERA** with status contract pending implementation / not public; no other performance metric is approved, implemented, or public | Adopted |
 
 ## 22. Open Decisions
 
 | ID | Decision required | Gate | Current default |
 |---|---|---|---|
-| O-001 | Exact current-pen ERA group definition and public location | Official lines + active group + sample contract | Do not publish until defined |
+| O-001 | **Resolved Jul 29, 2026 by D-021** - current active-pen performance family contract and public ownership | Closed | Contract established; Team Board is the canonical public home; M-001 remains unimplemented and non-public |
 | O-002 | Current-versus-shared comparison contract | Trusted comparability and public UX | Historical page remains frozen only |
 | O-003 | Canonical server renderer technology/storage | Artifact contract + hosting cost/performance | Transitional browser renderer only |
 | O-004 | Public leverage calculation/table | Complete source and reproducible method | Legacy/partial claims remain bounded |
@@ -560,13 +565,14 @@ Append one row for every material completed item.
 | Jul 29, 2026 | Phase 0 | Derived-innings planner semantics corrected | PR #556 | Integer outs are the sole workload authority; derived float never proposed alone | Removed a representation difference presented as a repair action |
 | Jul 29, 2026 | Phase 0 | Targeted Matt Festa apply capability built and dispatched once | PR #557 / `b5e88bb...` | Zero writes, no transaction, no ledger row, zero planned actions | Became unnecessary before dispatch; closed permanently, see D-019 |
 | Jul 29, 2026 | Phase 0 | **Foundation 3A / Phase 0 formally closed** | `operators/foundation-3a-closeout` | Section 3A closeout evidence at `b5e88bb...` | Phase 1 Evidence Completeness becomes the sole active objective |
+| Jul 29, 2026 | Phase 1 | Current Active-Pen Performance Contract established; O-001 resolved | `team-fans/current-active-pen-performance-contract` | Documentation and governance only; no code, migration, workflow, production action, or public surface changed; all blocked gates remain blocked | Governance work package. D-021 and D-022 adopted; M-001 reserved as contract-pending and non-public |
 
 ## 25. Phase Exit Record
 
 | Phase | Status | Exit evidence required |
 |---|---|---|
 | Phase 0 - Canonical Trust Closeout | **Complete** (Jul 29, 2026 at `b5e88bb...`) | Met: independent read-only closeout `pass`/exit 0, every governed check present/executed/passed, exact local and official reconciliation across 30 teams, regression coverage merged. Evidence in Section 3A |
-| Phase 1 - Evidence Completeness | **Active** - first item not started | Public evidence contracts complete and inspected, beginning with the Current Active-Pen ERA and Performance Context contract |
+| Phase 1 - Evidence Completeness | **Active** - first item's contract established, implementation not started | Public evidence contracts complete and inspected. The Current Active-Pen Performance Contract is recorded (D-021); the M-001 metric definition and its implementation remain outstanding |
 | Phase 2 - Portable Intelligence | Foundation complete; final distribution not started | Canonical renderer, actions, metadata, analytics, external smoke |
 | Phase 3 - Daily Habit | Not started | Trusted change/consequence loop and quiet-day behavior |
 | Phase 4 - Offseason Intelligence Depth | Not started | At least one major evidence advantage beyond workload/roster |
@@ -579,3 +585,4 @@ Append one row for every material completed item.
 |---|---|---|---|
 | 1.0 | July 29, 2026 | Nickolis Kacludis | Established the only canonical execution roadmap, current capability assessment, active objective, phased sequence, dependency map, success metrics, risks, backlog, founder operating rules, and consolidated Decision Ledger. |
 | 1.1 | July 29, 2026 | Nickolis Kacludis | Closed Foundation 3A / Phase 0 Canonical Trust Closeout and recorded its terminal production evidence; recorded the Matt Festa targeted apply as closed and non-retriable; opened Foundation 3B / Phase 1 Evidence Completeness as the sole active objective with Current Active-Pen ERA and Performance Context as the first scoped item; added decisions D-018 through D-020 and the Phase 0 completion-log entries. |
+| 1.2 | July 29, 2026 | Nickolis Kacludis | Resolved O-001 with D-021, the Current Active-Pen Performance Contract, and recorded the metric-family / metric-registry distinction as D-022. Updated the active objective from contract unresolved to contract established with the M-001 metric definition next; Current Active-Pen ERA remains uncompleted, unimplemented, and non-public. Foundation 3B / Phase 1 remains the sole active objective and is not complete. Refreshed the repository basis to the verified baseline and logged this governance work only. |

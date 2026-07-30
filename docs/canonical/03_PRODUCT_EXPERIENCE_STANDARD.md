@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | Status | Canonical - public surface, navigation, interaction, accessibility, and end-state authority |
-| Version | 1.0 |
+| Version | 1.1 |
 | Effective date | July 29, 2026 |
 | Owner | Nickolis Kacludis |
 | Supersedes | BaseballOS Product Vision Specification and overlapping surface descriptions in prior strategy documents |
@@ -42,6 +42,7 @@ Every public page owns one primary user question. If two pages answer the same q
 | Daily lead | Today / The Slate |
 | Complete league state | Dashboard |
 | One team's current bullpen picture | Team Board |
+| One team's current active-pen performance | Team Board |
 | Two-team difference | Compare |
 | Find a reliever | Reliever Finder |
 | One arm's current workload | Pitcher Detail |
@@ -322,6 +323,39 @@ Required evidence includes recent relief work, appearance dates/opponents/outs o
 
 Role and read remain separate. The official starter is never inferred from first appearance order or role shape. Historical appearances remain assigned to the team represented at that game.
 
+### Current active-pen performance ownership
+
+The Team Board is the **canonical public home** for current active-pen performance: it owns the complete presentation and the evidence path. It is not the computational owner. Every surface, including the Team Board, consumes the same backend-owned canonical performance authority defined by the Current Active-Pen Performance Contract in the Bullpen Intelligence Standard.
+
+The Team Board's one question does not change. Performance is added evidence inside the existing question, never a second page mission and never a competing team score.
+
+Placement rule, within the page hierarchy that already exists:
+
+```text
+Current state (Fresh / Stretched / Vulnerable)
+-> Why sentence
+-> Named arms and recent relief work
+-> Current active-pen performance
+-> Roster, starter, and schedule context
+-> Freshness
+-> Material limitation
+```
+
+State and Why stay above performance. A performance value never becomes the page's headline answer and never replaces the state label.
+
+A performance component must show, at minimum, the value or its explicit unavailable read, the group size and sample, the represented baseball date, and a route to its evidence. Below its approved minimum sample it shows a limited or unavailable read with the reason — never a zero, a prior value, or a blank.
+
+Drill-down expectation: the component satisfies Level 1 and Level 2 of the family's evidence levels in place, and provides one interaction that reaches Levels 3 and 4 — named pitchers, qualifying appearances, and the official pitching lines behind them. A compact rendering may show less; it may not become a naked number.
+
+Aligned inheritance by other surfaces:
+
+- **Pitcher Detail** may show arm-specific performance evidence for one reliever.
+- **Compare** may show aligned team values only when product date, method version, freshness, and group contract are comparable on both sides. Otherwise it shows neither side.
+- **Today, Dashboard, Stories, and Share Artifacts** may inherit or link to an approved value.
+- No surface independently recalculates the metric or paraphrases its meaning.
+
+Historical Share Artifacts freeze the metric, group, method, sample, date, evidence, and limitation that existed at publication. They never recalculate from live membership.
+
 ## 15. Methodology and Limits - Tier 1 Trust Surface
 
 Methodology is Tier 1 because it makes every other surface credible.
@@ -440,3 +474,4 @@ Retire or merge a surface when it no longer owns a unique question, another page
 | Version | Date | Author | Summary |
 |---|---|---|---|
 | 1.0 | July 29, 2026 | Nickolis Kacludis | Established the permanent page map, experience principles, surface missions, current/end-state boundaries, mobile/accessibility standards, failure behavior, and acceptance tests for BaseballOS. |
+| 1.1 | July 29, 2026 | Nickolis Kacludis | Established the Team Board as the canonical public home for current active-pen performance, with placement below State and Why, minimum component requirements, evidence drill-down expectations, and aligned inheritance rules for Pitcher Detail, Compare, Today, Dashboard, Stories, and Share Artifacts. The Team Board owns presentation, not computation. One question per page and one canonical home per fact are preserved. |

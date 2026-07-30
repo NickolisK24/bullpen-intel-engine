@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | Status | Canonical - public voice, content, share-artifact presentation, channel, outreach, and measurement authority |
-| Version | 1.0 |
+| Version | 1.1 |
 | Effective date | July 29, 2026 |
 | Owner | Nickolis Kacludis |
 | Supersedes | BaseballOS Content Posting Standards and overlapping content/distribution sections of prior specifications |
@@ -92,6 +92,8 @@ Avoid vague corporate language that hides a solo-built product.
 | The system says | BaseballOS published X because Y evidence passed |
 | The bullpen edge | The observable difference between the two bullpen states |
 | Needs a day off | Has pitched in five of the last seven games |
+| An elite / dominant / terrible bullpen | State the metric, group, sample, and window and stop |
+| A trustworthy bullpen | Describe the recorded results and the arms who produced them |
 
 ## 7. Content Pillars
 
@@ -210,6 +212,8 @@ Avoid engagement bait.
 - No private injury claims.
 - No certainty about manager decisions or future usage.
 - No rankings, grades, or winner verdicts between bullpens.
+- No quality adjective earned from a performance metric alone.
+- No performance value published without its group, sample, and represented date.
 - No unexplained black-box numbers.
 - No unknown values converted to zero.
 - No stale, partial, fallback, or sample data presented as current.
@@ -245,6 +249,29 @@ Do not keyword-stuff. Search is earned through useful answers, stable destinatio
 | Technical | Python, Flask, PostgreSQL, React, TypeScript, data pipeline, source authority, automated testing, CI/CD, immutable artifact |
 
 Write for a person first.
+
+## 12A. Performance Language
+
+A performance metric governed by the Current Active-Pen Performance Contract describes recorded results by a named group over an approved window. Copy must stay descriptive.
+
+A material performance claim carries, adjacent to the number:
+
+- the group - whose results these are, and how many arms are in it;
+- the sample - the qualifying appearances or innings behind the value;
+- the represented date and window;
+- at least one inspectable receipt or the exact destination that reaches one.
+
+A performance value with no group and no sample beside it is not publishable, in a post, a caption, a card, a newsletter, or alt text.
+
+Prohibited on the basis of a performance metric alone: elite, dominant, terrible, trustworthy, untrustworthy, best, worst, collapsing, lights-out, and any grade, tier, or ranking verdict. A single-metric value never earns a quality judgment about a bullpen or a pitcher.
+
+Permitted: "Their current active pen has allowed 31 earned runs across 96.1 relief innings this season, across the eight arms in the group as of July 28." That is checkable. "Their bullpen has been elite" is not.
+
+State is not performance, and copy may not blend them. A bullpen described as Stretched has not been described as bad, and a bullpen with strong recorded results has not been described as rested.
+
+Below an approved minimum sample there is no number to write about. Say the read is limited or unavailable and why. Do not fill the gap with a prior value, a league figure, or an adjective.
+
+Include the family limitation when it materially affects interpretation, in one sentence, near the claim - not as a recurring block of defensive language.
 
 ## 13. Hashtags
 
@@ -647,3 +674,4 @@ Go deeper
 | Version | Date | Author | Summary |
 |---|---|---|---|
 | 1.0 | July 29, 2026 | Nickolis Kacludis | Established the permanent editorial and distribution authority covering voice, pillars, evidence, freshness, platform-native standards, share artifacts, cadence, workflow, corrections, measurement, and reusable templates. |
+| 1.1 | July 29, 2026 | Nickolis Kacludis | Added performance language rules for metrics governed by the Current Active-Pen Performance Contract: descriptive copy only, group and sample and represented date and receipt adjacent to every material performance claim, no quality adjective or ranking verdict earned from a metric alone, no substitute value below an approved sample, and state kept separate from performance. Concise material limitations are preserved. |

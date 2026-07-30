@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | Status | Canonical - system architecture, security, deployment, operations, and runbook authority |
-| Version | 1.1 |
+| Version | 1.2 |
 | Effective date | July 29, 2026 |
 | Owner | Nickolis Kacludis |
 | Repository | `NickolisK24/bullpen-intel-engine` |
@@ -142,6 +142,21 @@ It consumes canonical appearances and roster authority. It does not reinterpret 
 Owns team-level state, named bullpen reads, active-group composition, optionality/coverage/readiness evidence, and team explanation payloads.
 
 It composes existing arm and source authorities. It does not create a second roster or appearance truth.
+
+### Performance intelligence domain
+
+Owns every metric governed by the Current Active-Pen Performance Contract: active-group resolution for the represented date, qualifying-appearance selection, metric numerators and denominators, sample evaluation, refusal codes, evidence assembly, and method versions.
+
+Rules:
+
+- **Backend-owned.** The canonical performance authority computes the value. The frontend renders a governed contract and never recalculates, re-derives, re-rounds, or re-aggregates a performance value from raw fields.
+- **One owner, many consumers.** Every surface reads the same authority. A public home owns presentation, not computation.
+- **Fail-closed publication.** Below an approved minimum sample, or with an unresolved group, window, or appearance authority, the domain publishes no numeric value and returns a typed refusal. It never substitutes zero, a prior value, a league value, or an estimate.
+- **Method and evidence ownership.** The domain owns the method version bound to each value and the evidence chain back to official completed pitching lines. A value without its method version and evidence route is not publishable.
+- **Historical appearance ownership is upstream.** The domain consumes the appearance-team authority; it never attributes an appearance from a pitcher's current team.
+- **Immutable artifacts freeze the read.** A published artifact stores the metric, group, sample, method version, represented date, evidence, and limitation as they were. It is never recomputed from live membership.
+
+The reusable metric registry is a governed definition set, not a new subsystem. Its required fields live in the Bullpen Intelligence Standard; concrete storage, services, routes, and caching are decided at implementation time against the existing repository, not specified here.
 
 ### Observation and story domain
 
@@ -581,7 +596,7 @@ Runbooks may be more detailed and may change more frequently. They do not overri
 Prioritized architecture work should follow product need:
 
 - expand evidence payloads already held by the system;
-- finish current-performance contract;
+- define and implement the first metric under the established Current Active-Pen Performance Contract;
 - add canonical server-side share rendering and metadata;
 - complete What Changed comparability;
 - add pitch/leverage/rotation/depth domains in governed order;
@@ -595,3 +610,4 @@ Prioritized architecture work should follow product need:
 |---|---|---|---|
 | 1.0 | July 29, 2026 | Nickolis Kacludis | Consolidated system architecture, domain boundaries, persistence, sync/publication order, team-progressive authority, immutable artifacts, APIs, security, deployment, testing, observability, and repair operations. |
 | 1.1 | July 29, 2026 | Nickolis Kacludis | Recorded the proven governed-repair operating shape after the July 2026 canonical-record closeout: an independent verifier separate from the apply, exact current reconciliation as terminal proof, and a no-longer-needed one-action apply closed rather than retried. Removed completed appearance/starter repair hardening from prioritized technical direction. |
+| 1.2 | July 29, 2026 | Nickolis Kacludis | Added the performance intelligence domain boundary establishing backend-owned canonical performance authority, no frontend recalculation, fail-closed publication below an approved sample, method-version and evidence ownership, upstream appearance-team attribution, immutable artifact freezing, and the metric registry as a governed definition set rather than a new subsystem. Updated prioritized technical direction now that the performance family contract is established. |
