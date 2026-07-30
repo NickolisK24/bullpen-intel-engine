@@ -1821,20 +1821,48 @@ def _upsert_postgame_processed_marker(
     pitcher_resolution_failures: int,
     correction_attempts_failed: int,
     sync_run_id=None,
+    correction_recheck: bool = False,
 ) -> tuple[PostgameProcessedGame, bool]:
     attempted_at = utc_now_naive()
-    attempt_count = (existing_marker.attempt_count if existing_marker else 0) or 0
-    attempt_count += 1
+    previous_status = _marker_processing_status(existing_marker)
+    prior_attempts = (existing_marker.attempt_count if existing_marker else 0) or 0
+    # A governed correction re-check of an ALREADY fully-processed game is not a
+    # retry. Counting it would burn the retry budget a genuine future failure
+    # needs — after a week inside the correction horizon every game would sit at
+    # the retry limit and the next real incomplete read would go straight to
+    # `failed`.
+    already_complete_recheck = (
+        correction_recheck
+        and previous_status == POSTGAME_MARKER_STATUS_FULLY_PROCESSED
+    )
+    attempt_count = max(
+        prior_attempts if already_complete_recheck else prior_attempts + 1, 1
+    )
     incomplete_reason = _postgame_incomplete_reason(
         pitching_lines_seen=pitching_lines_seen,
         pitcher_resolution_failures=pitcher_resolution_failures,
         correction_attempts_failed=correction_attempts_failed,
     )
-    previous_status = _marker_processing_status(existing_marker)
     processing_status = _postgame_processing_status_for_attempt(
         incomplete_reason,
         attempt_count,
     )
+    if already_complete_recheck and incomplete_reason is not None:
+        # The game was already PROVEN complete from its official box score. A
+        # correction re-check that comes back degraded is evidence about the
+        # re-read, not evidence that the proven ledger is now wrong — so the
+        # marker the appearance-ledger publication gate reads is not demoted by
+        # a transient source blip. The caller that requested the re-check still
+        # fails its own work item closed on the same shortfall, so the trust
+        # signal is preserved in the lane that owns it.
+        incomplete_reason = existing_marker.incomplete_reason
+        processing_status = POSTGAME_MARKER_STATUS_FULLY_PROCESSED
+        pitching_lines_seen = existing_marker.pitching_lines_seen or 0
+        pitcher_resolution_failures = (
+            existing_marker.pitcher_resolution_failures or 0
+        )
+        correction_attempts_failed = existing_marker.correction_attempts_failed or 0
+        logs_added = existing_marker.logs_added or 0
 
     marker = existing_marker or PostgameProcessedGame(mlb_game_pk=_game_pk(game))
     marker.game_date = game_date
@@ -2041,6 +2069,7 @@ def process_completed_game_for_postgame_refresh(
         pitcher_resolution_failures=pitcher_resolution_failures,
         correction_attempts_failed=correction_attempts_failed,
         sync_run_id=sync_run_id,
+        correction_recheck=force,
     )
     db.session.flush()
 

@@ -390,3 +390,204 @@ def test_an_off_roster_pitcher_appearing_in_a_final_game_is_still_ingested(app):
         assert GameLog.query.filter_by(mlb_game_pk=930020).count() == 1
         item = GameIngestionWorkItem.query.filter_by(mlb_game_pk=930020).one()
         assert item.relief_rows_reconciled == 1
+
+
+# ── Correction re-check must not destabilise the postgame marker ────────────
+
+
+def _boxscore(pitcher_mlb_id, *, innings='1.0', earned_runs=0, degraded=False):
+    if degraded:
+        # The realistic transient shape: the box score answers, but carries no
+        # pitching section at all (`empty_pitching_data`).
+        return {
+            'teams': {
+                'home': {'team': {'id': 147, 'name': 'Home'}, 'pitchers': [],
+                         'players': {}},
+                'away': {'team': {'id': 111, 'name': 'Away'}, 'pitchers': [],
+                         'players': {}},
+            },
+        }
+    person = {'id': pitcher_mlb_id, 'fullName': f'Arm {pitcher_mlb_id}'}
+    return {
+        'teams': {
+            'home': {
+                'team': {'id': 147, 'name': 'Home', 'abbreviation': 'HOM'},
+                'pitchers': [pitcher_mlb_id],
+                'players': {
+                    f'ID{pitcher_mlb_id}': {
+                        'person': person,
+                        'position': {'abbreviation': 'P', 'code': '1', 'name': 'Pitcher'},
+                        'stats': {'pitching': {
+                            'inningsPitched': innings,
+                            'gamesStarted': 0,
+                            'earnedRuns': earned_runs,
+                            'runs': earned_runs,
+                            'hits': 1,
+                            'baseOnBalls': 0,
+                            'strikeOuts': 2,
+                            'homeRuns': 0,
+                            'strikes': 10,
+                            'battersFaced': 4,
+                            'numberOfPitches': 15,
+                        }},
+                    },
+                },
+            },
+            'away': {
+                'team': {'id': 111, 'name': 'Away', 'abbreviation': 'AWY'},
+                'pitchers': [],
+                'players': {},
+            },
+        },
+    }
+
+
+class _BoxscoreClient(_StubClient):
+    def __init__(self, boxscores):
+        super().__init__()
+        self.boxscores = boxscores
+        self.boxscore_calls = []
+
+    def get_game_boxscore(self, game_pk):
+        self.boxscore_calls.append(game_pk)
+        return self.boxscores[game_pk]
+
+
+def _final_game(game_pk):
+    return {
+        'gamePk': game_pk,
+        'gameType': 'R',
+        'officialDate': REFERENCE.isoformat(),
+        'status': {
+            'statusCode': 'F', 'detailedState': 'Final',
+            'abstractGameState': 'Final',
+        },
+        'teams': {
+            'home': {'team': {'id': 147, 'name': 'Home'}},
+            'away': {'team': {'id': 111, 'name': 'Away'}},
+        },
+    }
+
+
+def test_a_correction_recheck_does_not_burn_the_postgame_retry_budget(
+    app, monkeypatch,
+):
+    from models.postgame_processed_game import PostgameProcessedGame
+
+    with app.app_context():
+        _pitcher(7300)
+        db.session.commit()
+        game_pk = 930100
+        client = _BoxscoreClient({game_pk: _boxscore(7300)})
+        monkeypatch.setattr(sync_service, 'mlb_client', client)
+
+        sync_service.process_completed_game_for_postgame_refresh(
+            _final_game(game_pk), schedule_date=REFERENCE,
+        )
+        db.session.commit()
+        first = PostgameProcessedGame.query.filter_by(mlb_game_pk=game_pk).one()
+        assert first.processing_status == (
+            PostgameProcessedGame.STATUS_FULLY_PROCESSED
+        )
+        assert first.attempt_count == 1
+
+        # Seven daily correction re-checks inside the horizon.
+        for _ in range(7):
+            sync_service.process_completed_game_for_postgame_refresh(
+                _final_game(game_pk), schedule_date=REFERENCE, force=True,
+            )
+            db.session.commit()
+
+        marker = PostgameProcessedGame.query.filter_by(mlb_game_pk=game_pk).one()
+        assert marker.attempt_count == 1
+        assert marker.processing_status == (
+            PostgameProcessedGame.STATUS_FULLY_PROCESSED
+        )
+
+
+def test_a_degraded_recheck_never_demotes_a_proven_marker(app, monkeypatch):
+    from models.postgame_processed_game import PostgameProcessedGame
+
+    with app.app_context():
+        _pitcher(7310)
+        db.session.commit()
+        game_pk = 930101
+        client = _BoxscoreClient({game_pk: _boxscore(7310)})
+        monkeypatch.setattr(sync_service, 'mlb_client', client)
+
+        sync_service.process_completed_game_for_postgame_refresh(
+            _final_game(game_pk), schedule_date=REFERENCE,
+        )
+        db.session.commit()
+
+        # A transient degraded read during the correction re-check.
+        client.boxscores[game_pk] = _boxscore(7310, degraded=True)
+        result = sync_service.process_completed_game_for_postgame_refresh(
+            _final_game(game_pk), schedule_date=REFERENCE, force=True,
+        )
+        db.session.commit()
+
+        marker = PostgameProcessedGame.query.filter_by(mlb_game_pk=game_pk).one()
+        # The appearance-ledger publication gate reads this marker; a blip in a
+        # re-read must not turn a proven game into a ledger hole.
+        assert marker.processing_status == (
+            PostgameProcessedGame.STATUS_FULLY_PROCESSED
+        )
+        assert marker.processed_at is not None
+        assert result['retry_exhausted'] is False
+
+
+def test_a_first_read_that_is_degraded_still_fails_closed(app, monkeypatch):
+    from models.postgame_processed_game import PostgameProcessedGame
+
+    with app.app_context():
+        _pitcher(7320)
+        db.session.commit()
+        game_pk = 930102
+        monkeypatch.setattr(
+            sync_service, 'mlb_client',
+            _BoxscoreClient({game_pk: _boxscore(7320, degraded=True)}),
+        )
+
+        sync_service.process_completed_game_for_postgame_refresh(
+            _final_game(game_pk), schedule_date=REFERENCE, force=True,
+        )
+        db.session.commit()
+
+        marker = PostgameProcessedGame.query.filter_by(mlb_game_pk=game_pk).one()
+        assert marker.processing_status != (
+            PostgameProcessedGame.STATUS_FULLY_PROCESSED
+        )
+        assert marker.incomplete_reason is not None
+
+
+def test_force_lets_a_completed_game_be_reread_for_corrections(app, monkeypatch):
+    with app.app_context():
+        _pitcher(7330)
+        db.session.commit()
+        game_pk = 930103
+        client = _BoxscoreClient({game_pk: _boxscore(7330, earned_runs=1)})
+        monkeypatch.setattr(sync_service, 'mlb_client', client)
+
+        sync_service.process_completed_game_for_postgame_refresh(
+            _final_game(game_pk), schedule_date=REFERENCE,
+        )
+        db.session.commit()
+
+        # Without force the marker short-circuits and the correction is missed.
+        client.boxscores[game_pk] = _boxscore(7330, earned_runs=3)
+        skipped = sync_service.process_completed_game_for_postgame_refresh(
+            _final_game(game_pk), schedule_date=REFERENCE,
+        )
+        assert skipped['skipped'] is True
+        assert GameLog.query.filter_by(mlb_game_pk=game_pk).one().earned_runs == 1
+
+        forced = sync_service.process_completed_game_for_postgame_refresh(
+            _final_game(game_pk), schedule_date=REFERENCE, force=True,
+        )
+        db.session.commit()
+
+        assert forced['skipped'] is False
+        assert forced['logs_corrected'] == 1
+        assert GameLog.query.filter_by(mlb_game_pk=game_pk).count() == 1
+        assert GameLog.query.filter_by(mlb_game_pk=game_pk).one().earned_runs == 3
