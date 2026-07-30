@@ -1,0 +1,278 @@
+name: Official Starter Alignment Audit
+
+# TEMPORARY incident diagnostic for the July 28 2026 official-starter/evidence
+# alignment incident. Manual dispatch only — never on a schedule, push, or pull
+# request. It runs backend/scripts/run_official_starter_alignment_audit.py,
+# which opens one session, reads bounded aggregate and row-level diagnostics,
+# and never writes, commits, backfills, migrates, or starts the application.
+#
+# Structure, secret usage, Python setup, and artifact conventions are copied
+# from .github/workflows/unresolved_appearance_team_diagnostic_2026.yml so this
+# introduces no second production-access architecture. It requests one fewer
+# secret than that workflow: the audit needs no admin API token.
+#
+# Delete this workflow once the incident is closed. See
+# docs/audits/official-starter-evidence-alignment-2026-07-28.md.
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: official-starter-alignment-audit
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      APP_ENV: production
+      AUTO_SYNC: 'false'
+      FLASK_APP: app.py
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      SECRET_KEY: ${{ secrets.SECRET_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install backend dependencies
+        run: pip install -r backend/requirements.txt
+
+      - name: Validate required secrets are present
+        run: |
+          set -euo pipefail
+          if [ -z "${DATABASE_URL:-}" ] || [ -z "${SECRET_KEY:-}" ]; then
+            echo "::error::Missing required production repository secret."
+            exit 1
+          fi
+          echo "Required production secrets are present."
+
+      - name: Run read-only official-starter alignment audits
+        id: audits
+        working-directory: backend
+        env:
+          AUDIT_OUTPUT_DIR: ${{ runner.temp }}/official-starter-alignment-audit
+        run: |
+          set -euo pipefail
+          mkdir -p "$AUDIT_OUTPUT_DIR"
+          league_json="$AUDIT_OUTPUT_DIR/official-starter-alignment-audit.json"
+          reds_json="$AUDIT_OUTPUT_DIR/reds-official-starter-alignment-audit.json"
+
+          # Both audits always run. Exit 1 (AFFECTED) from the first must never
+          # skip the second or block artifact upload. Raw stdout is discarded so
+          # nothing unreviewed reaches the public log; the reviewed artifacts and
+          # the step summary are the record.
+          set +e
+          python scripts/run_official_starter_alignment_audit.py \
+            --through 2026-07-29 \
+            --days 30 \
+            --output "$league_json" > /dev/null
+          league_exit=$?
+
+          python scripts/run_official_starter_alignment_audit.py \
+            --through 2026-07-28 \
+            --days 1 \
+            --team-id 113 \
+            --output "$reds_json" > /dev/null
+          reds_exit=$?
+          set -e
+
+          echo "league_exit=$league_exit" >> "$GITHUB_OUTPUT"
+          echo "reds_exit=$reds_exit" >> "$GITHUB_OUTPUT"
+
+      - name: Sanitize outputs and build run summary
+        if: ${{ always() }}
+        env:
+          AUDIT_OUTPUT_DIR: ${{ runner.temp }}/official-starter-alignment-audit
+          LEAGUE_EXIT: ${{ steps.audits.outputs.league_exit }}
+          REDS_EXIT: ${{ steps.audits.outputs.reds_exit }}
+          RUN_COMMIT: ${{ github.sha }}
+          RUN_REF: ${{ github.ref }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_NUMBER: ${{ github.run_number }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          RUN_REPOSITORY: ${{ github.repository }}
+          RUN_WORKFLOW: ${{ github.workflow }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import os
+          from datetime import datetime, timezone
+          from pathlib import Path
+          from urllib.parse import urlparse
+
+          out_dir = Path(os.environ['AUDIT_OUTPUT_DIR'])
+          summary_path = Path(os.environ['GITHUB_STEP_SUMMARY'])
+
+          CLASSIFICATION = {0: 'CLEAN', 1: 'AFFECTED', 2: 'ERROR'}
+
+          def exit_of(name):
+              raw = os.environ.get(name) or ''
+              try:
+                  return int(raw)
+              except ValueError:
+                  return 2
+
+          audits = [
+              {
+                  'name': 'league_30d',
+                  'file': 'official-starter-alignment-audit.json',
+                  'scope': {'through': '2026-07-29', 'days': 30, 'team_id': None},
+                  'exit_code': exit_of('LEAGUE_EXIT'),
+              },
+              {
+                  'name': 'reds_july_28',
+                  'file': 'reds-official-starter-alignment-audit.json',
+                  'scope': {'through': '2026-07-28', 'days': 1, 'team_id': 113},
+                  'exit_code': exit_of('REDS_EXIT'),
+              },
+          ]
+          for audit in audits:
+              audit['classification'] = CLASSIFICATION.get(
+                  audit['exit_code'], 'ERROR'
+              )
+
+          # ── Fail-closed sanitization ────────────────────────────────────────
+          # Literal secret material is derived from the environment and matched
+          # against the outputs. It is never printed, logged, or written.
+          forbidden_literals = set()
+          database_url = os.environ.get('DATABASE_URL') or ''
+          secret_key = os.environ.get('SECRET_KEY') or ''
+          for value in (database_url, secret_key):
+              if value:
+                  forbidden_literals.add(value)
+          if database_url:
+              parsed = urlparse(database_url)
+              for part in (
+                  parsed.netloc, parsed.hostname, parsed.username,
+                  parsed.password, (parsed.path or '').lstrip('/'),
+              ):
+                  if part and len(str(part)) > 3:
+                      forbidden_literals.add(str(part))
+
+          forbidden_patterns = (
+              'DATABASE_URL', 'postgres://', 'postgresql://', 'sslmode=',
+              'dbname=', 'passwd', 'password', 'secret_key', 'access_token',
+              'Traceback (most recent call last)', 'File "/', 'psycopg',
+              'error_message', 'connection to server',
+          )
+
+          unsafe = []
+          for audit in audits:
+              path = out_dir / audit['file']
+              if not path.exists():
+                  audit['artifact'] = 'missing'
+                  continue
+              text = path.read_text(encoding='utf-8', errors='replace')
+              hits = [p for p in forbidden_patterns if p.lower() in text.lower()]
+              if any(literal in text for literal in forbidden_literals):
+                  hits.append('literal_secret_material')
+              if hits:
+                  # Do not upload an unsafe file. Remove it and fail closed.
+                  path.unlink()
+                  audit['artifact'] = 'withheld_unsafe'
+                  unsafe.append((audit['file'], sorted(set(hits))))
+              else:
+                  audit['artifact'] = 'clean'
+
+          run_summary = {
+              'capability': 'official_starter_alignment_audit_run_v1',
+              'mode': 'read_only',
+              'generated_at': datetime.now(timezone.utc).isoformat(),
+              'workflow_run': {
+                  'repository': os.environ.get('RUN_REPOSITORY'),
+                  'workflow': os.environ.get('RUN_WORKFLOW'),
+                  'run_id': os.environ.get('RUN_ID'),
+                  'run_number': os.environ.get('RUN_NUMBER'),
+                  'run_attempt': os.environ.get('RUN_ATTEMPT'),
+                  'ref': os.environ.get('RUN_REF'),
+              },
+              'commit': os.environ.get('RUN_COMMIT'),
+              'audits': audits,
+              'sanitization': {
+                  'checked': True,
+                  'unsafe_files_withheld': [name for name, _hits in unsafe],
+              },
+          }
+          (out_dir / 'audit-run-summary.json').write_text(
+              json.dumps(run_summary, indent=2, sort_keys=True) + '\n',
+              encoding='utf-8',
+          )
+
+          lines = [
+              '## Official Starter Alignment Audit (read-only)',
+              '',
+              f"- Commit: `{run_summary['commit']}`",
+              f"- Mode: `read_only`",
+          ]
+          for audit in audits:
+              lines.extend([
+                  '',
+                  f"### {audit['name']}",
+                  f"- Scope: `{audit['scope']}`",
+                  f"- Exit code: `{audit['exit_code']}`",
+                  f"- Classification: `{audit['classification']}`",
+                  f"- Artifact: `{audit['artifact']}`",
+              ])
+              path = out_dir / audit['file']
+              if audit['artifact'] != 'clean' or not path.exists():
+                  continue
+              payload = json.loads(path.read_text(encoding='utf-8'))
+              findings = payload.get('findings') or {}
+              scanned = payload.get('scanned') or {}
+              lines.append(f"- Scanned: `{scanned}`")
+              for key in sorted(findings):
+                  section = findings[key] or {}
+                  lines.append(
+                      f"- {key}: `{section.get('count')}`"
+                      f" (truncated: `{section.get('truncated')}`)"
+                  )
+          summary_path.write_text('\n'.join(lines) + '\n', encoding='utf-8')
+
+          if unsafe:
+              raise SystemExit(
+                  'Sensitive material detected in audit output; files withheld: '
+                  + ', '.join(name for name, _hits in unsafe)
+              )
+          PY
+
+      - name: Upload sanitized audit artifacts
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: official-starter-alignment-audit-${{ github.run_id }}
+          path: ${{ runner.temp }}/official-starter-alignment-audit/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Fail the run on audit ERROR
+        if: ${{ always() }}
+        env:
+          LEAGUE_EXIT: ${{ steps.audits.outputs.league_exit }}
+          REDS_EXIT: ${{ steps.audits.outputs.reds_exit }}
+        run: |
+          set -euo pipefail
+          # Exit 1 (AFFECTED) is a finding, not a workflow failure — artifacts are
+          # already uploaded above. Exit 2 (ERROR) means production could not be
+          # read, which must mark the run unsuccessful.
+          for name in LEAGUE_EXIT REDS_EXIT; do
+            value="${!name:-2}"
+            if [ "$value" = '2' ]; then
+              echo "::error::$name reported audit ERROR (exit 2)."
+              exit 1
+            fi
+            if [ "$value" != '0' ] && [ "$value" != '1' ]; then
+              echo "::error::$name reported an unexpected audit exit code."
+              exit 1
+            fi
+          done
+          echo "Both audits completed without ERROR."
