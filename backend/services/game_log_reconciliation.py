@@ -38,8 +38,8 @@ from services import appearance_team_authority
 # The plan shape and the parity guarantee are versioned separately: the shape
 # may gain fields without changing what parity means, and parity may tighten
 # without reshaping the plan.
-RECONCILIATION_PLAN_VERSION = '1'
-PARITY_CONTRACT_VERSION = '1'
+RECONCILIATION_PLAN_VERSION = '2'
+PARITY_CONTRACT_VERSION = '2'
 
 
 # ── Actions ─────────────────────────────────────────────────────────────────
@@ -125,6 +125,25 @@ PROVENANCE_FIELDS = (
     'last_stat_correction_source',
     'last_stat_correction_sync_run_id',
 )
+
+# ── Semantic authority vs derived companion (D-008) ─────────────────────────
+# Integer recorded outs are the permanent semantic innings authority; the
+# decimal companion is derived from them and is not an independent official
+# fact. It is stored for display and legacy compatibility, and it is written
+# ONLY when its authority changes.
+#
+# Production proved why this must be enforced in the comparison itself rather
+# than trusted to writer discipline: a stored float and a freshly derived float
+# can differ in representation while describing the same canonical outs, so
+# comparing the companion directly turned 323 non-changes into "official
+# statistical corrections" and left an already-written game replaying the same
+# non-correction forever.
+SEMANTIC_AUTHORITY_BY_COMPANION = {
+    'innings_pitched': 'innings_pitched_outs',
+}
+DERIVED_COMPANION_FIELDS = tuple(sorted(SEMANTIC_AUTHORITY_BY_COMPANION))
+
+INNINGS_SEMANTICS_VERSION = '2'
 
 # Fields whose change alters evidence a published bullpen read can consume.
 # Provenance columns describe HOW a row was corrected, not WHAT it says.
@@ -274,15 +293,21 @@ def plan_row(
         'local_pitcher_id': local_pitcher_id,
         'natural_key': natural_key,
         'changed_fields': [],
+        'semantic_changed_fields': [],
+        'applied_changed_fields': [],
+        'derived_companion_fields': [],
+        'derived_companion_differences_ignored': [],
         'field_changes': [],
         'changed_field_count': 0,
         'mutation_categories': [],
+        'innings_semantics_version': INNINGS_SEMANTICS_VERSION,
         'appearance_team_reason': None,
         'provenance_update': False,
         'affects_published_evidence': False,
         'is_statistical_correction': False,
         'is_provenance_only': False,
         'governed_and_safe': True,
+        'mutation_digest': '',
         'blocked_reason': None,
         'unresolved_reason': None,
         'pitcher_identity_action': pitcher_identity_action,
@@ -301,6 +326,16 @@ def plan_row(
                 identity_categories + [CATEGORY_STATISTICAL_CORRECTION]
             ),
             'affects_published_evidence': True,
+            # The official notation was parsed once into canonical outs when the
+            # values were built; the companion is stored derived from those outs
+            # and is never independently trusted.
+            'derived_companion_fields': [
+                companion for companion in DERIVED_COMPANION_FIELDS
+                if companion in values
+            ],
+            'mutation_digest': mutation_digest(
+                action=ACTION_INSERT, values=values, field_changes=(),
+            ),
         })
         return base
 
@@ -317,13 +352,23 @@ def plan_row(
         return base
 
     # ── Field-level reconciliation ──────────────────────────────────────────
+    # Semantic comparison only. A derived companion (D-008: decimal innings) is
+    # never compared against the stored value — its authority is, and the
+    # companion is re-derived from the authority when that authority moves.
     changed_fields = []
     field_changes = []
+    companion_differences = []
     for field in correctable_fields(
         values, stats, include_leverage_index=include_leverage_index,
     ):
         new_value = values[field]
         current = getattr(existing, field, None)
+        if field in SEMANTIC_AUTHORITY_BY_COMPANION:
+            # Recorded only so an operator can see that representation drift
+            # exists. It is NOT a change and never authorizes a correction.
+            if current != new_value:
+                companion_differences.append(field)
+            continue
         if current != new_value:
             changed_fields.append(field)
             field_changes.append({
@@ -361,6 +406,7 @@ def plan_row(
             'mutation_categories': _ordered(
                 identity_categories + [CATEGORY_UNCHANGED]
             ),
+            'derived_companion_differences_ignored': sorted(companion_differences),
         })
         return base
 
@@ -392,11 +438,30 @@ def plan_row(
     if is_provenance_only:
         categories = identity_categories + [CATEGORY_PROVENANCE_ONLY]
 
+    # A companion is APPLIED — never independently corrected — when its
+    # semantic authority is part of this update. It is re-derived from the
+    # governed values, not carried over from the stored row.
+    applied_companions = [
+        companion for companion, authority
+        in sorted(SEMANTIC_AUTHORITY_BY_COMPANION.items())
+        if authority in changed_fields and companion in values
+    ]
+
     base.update({
         'action': ACTION_UPDATE,
         'changed_fields': sorted(changed_fields),
+        'semantic_changed_fields': sorted(changed_fields),
+        'applied_changed_fields': sorted(changed_fields + applied_companions),
+        'derived_companion_fields': applied_companions,
+        'derived_companion_differences_ignored': sorted(
+            field for field in companion_differences
+            if field not in applied_companions
+        ),
         'field_changes': sorted(field_changes, key=lambda item: item['field']),
         'changed_field_count': len(changed_fields),
+        'mutation_digest': mutation_digest(
+            action=ACTION_UPDATE, values=values, field_changes=field_changes,
+        ),
         'mutation_categories': _ordered(categories),
         'appearance_team_reason': appearance_reason,
         'appearance_team_decision': appearance_decision,
@@ -411,12 +476,51 @@ def plan_row(
     return base
 
 
+# Local surrogate identity is excluded from the digest. A projection cannot
+# know the primary key a pitcher the writer would CREATE will receive, and the
+# appearance is identified by (pitcher_mlb_id, game_pk) in the fingerprint
+# tuple anyway — including the local id would make shadow and write differ for
+# a reason that carries no baseball meaning.
+_DIGEST_EXCLUDED_IDENTITY_FIELDS = frozenset({'pitcher_id'})
+
+
+def mutation_digest(*, action, values, field_changes) -> str:
+    """Digest of the VALUES a plan would write, not merely its shape.
+
+    Without this, an insert of one earned run and an insert of seven fingerprint
+    identically, and a reviewed plan would authorize a write of different
+    numbers. Derived companions and provenance columns are excluded: the
+    companion is a function of its authority (so including it would let float
+    representation move the fingerprint, which D-008 forbids), and provenance
+    is stamped by the act of correcting, not reviewed as evidence.
+    """
+    if action == ACTION_INSERT:
+        payload = sorted(
+            (field, _safe_value(value))
+            for field, value in (values or {}).items()
+            if field not in SEMANTIC_AUTHORITY_BY_COMPANION
+            and field not in PROVENANCE_FIELDS
+            and field not in _DIGEST_EXCLUDED_IDENTITY_FIELDS
+        )
+    elif action == ACTION_UPDATE:
+        payload = sorted(
+            (change['field'], change['after'])
+            for change in (field_changes or ())
+        )
+    else:
+        payload = []
+    encoded = json.dumps(payload, sort_keys=True, separators=(',', ':'), default=str)
+    return hashlib.sha256(encoded.encode('utf-8')).hexdigest()[:32]
+
+
 def plan_fingerprint(plans) -> str:
     """Deterministic fingerprint of a set of row plans.
 
-    Covers only the parity-relevant decision — action, natural key, changed
-    fields, categories — so an equal fingerprint means shadow and write reached
-    the same conclusion, and cosmetic plan additions do not look like drift.
+    Covers the parity-relevant decision — action, natural key, changed fields,
+    categories — AND the values that decision would write, so a reviewed
+    fingerprint authorizes one specific mutation rather than a shape. Cosmetic
+    plan additions do not look like drift, and a derived-companion
+    representation difference cannot move it.
     """
     payload = sorted(
         (
@@ -426,6 +530,7 @@ def plan_fingerprint(plans) -> str:
             tuple(plan.get('changed_fields') or ()),
             tuple(plan.get('mutation_categories') or ()),
             plan.get('blocked_reason') or '',
+            plan.get('mutation_digest') or '',
         )
         for plan in plans or ()
     )
@@ -443,6 +548,9 @@ def summarize(plans) -> dict:
     changed_field_counts: dict[str, int] = {}
     category_counts: dict[str, int] = {}
     statistical = authority = provenance_only = 0
+    canonical_outs_corrections = 0
+    companion_applied = 0
+    companion_ignored = 0
 
     for plan in plans:
         action = plan.get('action')
@@ -458,6 +566,17 @@ def summarize(plans) -> dict:
             authority += 1
         if plan.get('is_provenance_only'):
             provenance_only += 1
+        if any(
+            authority_field in (plan.get('semantic_changed_fields') or ())
+            for authority_field in SEMANTIC_AUTHORITY_BY_COMPANION.values()
+        ):
+            canonical_outs_corrections += 1
+        if plan.get('derived_companion_fields'):
+            companion_applied += 1
+        # Counted once per ROW, so a row that both drifted and changed for a
+        # real reason is never double-counted.
+        if plan.get('derived_companion_differences_ignored'):
+            companion_ignored += 1
 
     return {
         'rows_planned': len(plans),
@@ -470,6 +589,11 @@ def summarize(plans) -> dict:
         'statistical_corrections': statistical,
         'authority_reconciliations': authority,
         'provenance_only_updates': provenance_only,
+        'canonical_outs_corrections': canonical_outs_corrections,
+        'derived_companion_fields_applied': companion_applied,
+        'derived_companion_differences_ignored': companion_ignored,
+        'decimal_only_updates_suppressed': companion_ignored,
+        'innings_semantics_version': INNINGS_SEMANTICS_VERSION,
         'reconciliation_plan_version': RECONCILIATION_PLAN_VERSION,
         'parity_contract_version': PARITY_CONTRACT_VERSION,
         'reconciliation_plan_fingerprint': plan_fingerprint(plans),

@@ -68,6 +68,29 @@ MODES = (MODE_OFF, MODE_SHADOW, MODE_WRITE, MODE_AUTHORITATIVE)
 
 MODE_ENV_VAR = 'GAME_DRIVEN_INGESTION_MODE'
 
+# Run outcomes that stop before doing any work.
+STATUS_SCOPE_MISMATCH = 'scope_mismatch'
+STATUS_SCOPE_INVALID = 'scope_invalid'
+STATUS_PLAN_AUTHORIZATION_REQUIRED = 'plan_authorization_required'
+STATUS_PLAN_FINGERPRINT_MISMATCH = 'plan_fingerprint_mismatch'
+
+SCOPE_ERROR_UNEXPECTED_GAME = 'unexpected_game_in_plan'
+SCOPE_ERROR_MISSING_GAME = 'requested_game_not_plannable'
+SCOPE_ERROR_FINGERPRINT_REQUIRED = 'reviewed_plan_fingerprint_required'
+SCOPE_ERROR_FINGERPRINT_MISMATCH = 'reviewed_plan_fingerprint_mismatch'
+
+_SCOPE_REPORT_FIELDS = (
+    'execution_scope_mode',
+    'requested_game_pks',
+    'requested_game_count',
+    'duplicate_requested_count',
+    'planned_game_pks',
+    'planned_game_count',
+    'unexpected_planned_game_pks',
+    'missing_requested_game_pks',
+    'execution_scope_exact_match',
+)
+
 GAME_INGESTION_FAILURE_ENTITY_TYPE = 'game_driven_ingestion_game'
 
 RETRY_LIMIT = 3
@@ -154,6 +177,8 @@ def run_game_driven_ingestion(
     sync_run_id=None,
     job_name: str | None = None,
     explicit_game_pks=None,
+    only_game_pks=None,
+    expected_plan_fingerprint: str | None = None,
     include_backfill: bool = False,
     max_games: int | None = None,
     process_game=None,
@@ -176,12 +201,20 @@ def run_game_driven_ingestion(
         report['status'] = 'disabled'
         return report
 
+    exclusive = only_game_pks is not None
     planner_started = time.monotonic()
-    plan = planner.plan_game_work(
-        reference_date,
-        explicit_game_pks=explicit_game_pks,
-        include_backfill=include_backfill,
-    )
+    try:
+        plan = planner.plan_game_work(
+            reference_date,
+            explicit_game_pks=explicit_game_pks,
+            only_game_pks=only_game_pks,
+            include_backfill=include_backfill,
+        )
+    except ValueError as exc:
+        report['status'] = STATUS_SCOPE_INVALID
+        report['scope_error'] = type(exc).__name__
+        report['planner_seconds'] = round(time.monotonic() - planner_started, 3)
+        return report
     report['planner_seconds'] = round(time.monotonic() - planner_started, 3)
     report['plan'] = {
         key: value for key, value in plan.items() if key != 'items'
@@ -197,7 +230,72 @@ def run_game_driven_ingestion(
     report['schedule_authority_missing'] = len(plan['schedule_authority_missing'])
     report['finality_conflicts'] = len(plan['finality_conflicts'])
 
+    for field in _SCOPE_REPORT_FIELDS:
+        report[field] = plan[field]
+
+    # ── Exact-scope preflight ───────────────────────────────────────────────
+    # BEFORE any MLB request and before any write. Recomputed here from the
+    # items THIS RUN will actually execute rather than trusting the planner's
+    # own self-report: a guard that believes the component it guards cannot
+    # catch that component being wrong.
+    if exclusive:
+        executing = sorted({item.game_pk for item in items})
+        requested = set(plan['requested_game_pks'])
+        unexpected = sorted(set(executing) - requested)
+        missing = sorted(requested - set(executing))
+        report['planned_game_pks'] = executing
+        report['planned_game_count'] = len(executing)
+        report['unexpected_planned_game_pks'] = unexpected
+        report['missing_requested_game_pks'] = missing
+        report['execution_scope_exact_match'] = not unexpected and not missing
+
+        if unexpected or missing:
+            report['status'] = STATUS_SCOPE_MISMATCH
+            report['scope_error'] = (
+                SCOPE_ERROR_UNEXPECTED_GAME if unexpected
+                else SCOPE_ERROR_MISSING_GAME
+            )
+            report['planner_seconds'] = round(
+                time.monotonic() - planner_started, 3
+            )
+            report['plan'] = {
+                key: value for key, value in plan.items() if key != 'items'
+            }
+            return report
+
+    # An exclusive write must apply a plan a human reviewed. Without the
+    # reviewed fingerprint there is nothing to compare against, so it refuses
+    # before fetching rather than writing something unreviewed.
+    if exclusive and writes_enabled(mode) and not expected_plan_fingerprint:
+        report['status'] = STATUS_PLAN_AUTHORIZATION_REQUIRED
+        report['scope_error'] = SCOPE_ERROR_FINGERPRINT_REQUIRED
+        report['planner_seconds'] = round(time.monotonic() - planner_started, 3)
+        return report
+
     handlers = _resolve_handlers(process_game, fetch_boxscore, plan_game)
+
+    # ── Reviewed-plan authorization ─────────────────────────────────────────
+    # An exclusive write recomputes the plan from CURRENT database state and
+    # CURRENT official evidence, compares it to the fingerprint a human
+    # reviewed, and only then applies. A mismatch — whether the stored rows or
+    # the official line moved since review — refuses before the first mutation.
+    if exclusive and writes_enabled(mode):
+        authorization = _authorize_reviewed_plan(
+            items, handlers=handlers, report=report,
+            expected_plan_fingerprint=expected_plan_fingerprint,
+        )
+        if not authorization['authorized']:
+            report['status'] = STATUS_PLAN_FINGERPRINT_MISMATCH
+            report['scope_error'] = SCOPE_ERROR_FINGERPRINT_MISMATCH
+            report['expected_plan_fingerprint'] = expected_plan_fingerprint
+            report['observed_plan_fingerprint'] = authorization['observed']
+            report['planner_seconds'] = round(
+                time.monotonic() - planner_started, 3
+            )
+            db.session.rollback()
+            return report
+        report['expected_plan_fingerprint'] = expected_plan_fingerprint
+        report['authorized_plan_fingerprint'] = authorization['observed']
 
     for index, item in enumerate(items):
         if _budget_exhausted(started, time_budget_seconds):
@@ -622,6 +720,29 @@ def _verify_game_completeness(item, appearances) -> dict:
     return {'reconciled': reconciled, 'expected': len(appearances)}
 
 
+def _authorize_reviewed_plan(items, *, handlers, report, expected_plan_fingerprint):
+    """Recompute the row plan read-only and compare it to the reviewed one.
+
+    Runs the canonical planning path over every item — no writes — and
+    fingerprints the result. Returns whether the observed plan is exactly the
+    reviewed plan. Nothing is mutated either way; the caller refuses on a
+    mismatch before the first write.
+    """
+    rows = []
+    for item in items:
+        game_payload, boxscore = handlers['fetch'](item)
+        report['games_fetched'] += 1
+        projected = handlers['plan'](item, game_payload, boxscore)
+        rows.extend(_safe_row_entries(projected.get('plan') or ()))
+    db.session.rollback()
+
+    observed = reconciliation.plan_fingerprint(rows)
+    return {
+        'authorized': observed == expected_plan_fingerprint,
+        'observed': observed,
+    }
+
+
 def _apply_plan_outcome(outcome, report, result) -> None:
     """Fold one game's canonical reconciliation result into the run report.
 
@@ -693,6 +814,19 @@ def _safe_row_entries(plan) -> list[dict]:
             'is_provenance_only': bool(entry.get('is_provenance_only')),
             'governed_and_safe': bool(entry.get('governed_and_safe')),
             'blocked_reason': entry.get('blocked_reason'),
+            'mutation_digest': entry.get('mutation_digest'),
+            'semantic_changed_fields': list(
+                entry.get('semantic_changed_fields') or ()
+            ),
+            'applied_changed_fields': list(
+                entry.get('applied_changed_fields') or ()
+            ),
+            'derived_companion_fields': list(
+                entry.get('derived_companion_fields') or ()
+            ),
+            'derived_companion_differences_ignored': list(
+                entry.get('derived_companion_differences_ignored') or ()
+            ),
             'appearance_team_reason': entry.get('appearance_team_reason'),
             'pitcher_identity_action': entry.get('pitcher_identity_action'),
         }
@@ -726,12 +860,18 @@ def _resolve_handlers(process_game, fetch_boxscore, plan_game=None) -> dict:
         boxscore = sync_service.mlb_client.get_game_boxscore(item.game_pk)
         return game_payload, boxscore
 
+    handlers_map = {}
+
     def _reconcile(item, game_payload, boxscore, *, sync_run_id=None,
                    plan_only=False):
         result = sync_service.process_completed_game_for_postgame_refresh(
             game_payload,
             schedule_date=item.game_date or item.represented_date,
             sync_run_id=sync_run_id,
+            # Reuse the box score already fetched for this item so an authorized
+            # write applies the exact evidence its plan was computed from, and
+            # so a run makes one request per game rather than two.
+            boxscore=boxscore,
             # This lane owns its own completion contract (the work item), so a
             # game inside the correction horizon must be re-read even when the
             # postgame marker already says fully processed. Every write below
@@ -757,12 +897,12 @@ def _resolve_handlers(process_game, fetch_boxscore, plan_game=None) -> dict:
     def _plan(item, game_payload, boxscore):
         return _reconcile(item, game_payload, boxscore, plan_only=True)
 
-    return {
-        'fetch': _fetch,
-        'extract': _default_extract,
-        'persist': _persist,
-        'plan': _plan,
-    }
+    handlers_map['fetch'] = _fetch
+    handlers_map['persist'] = _persist
+    handlers_map['plan'] = _plan
+
+    handlers_map['extract'] = _default_extract
+    return handlers_map
 
 
 def _default_extract(item, game_payload, boxscore):

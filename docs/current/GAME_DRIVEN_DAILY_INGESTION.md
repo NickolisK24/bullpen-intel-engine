@@ -346,6 +346,111 @@ A regression fixture reproduces the production shape — 38 rows across five
 games, 14 of which differ only outside the retired comparator — and requires
 the projection to predict all 14 updates before any write.
 
+## Canonical innings semantics (D-008 enforcement)
+
+D-008 is a permanent data rule: **integer recorded outs are the semantic
+innings authority; decimal innings are derived.** Production validation found
+the reconciliation planner violating it.
+
+### What production showed
+
+Full-window shadow, reference date 2026-07-29:
+
+| | |
+|---|---|
+| games attempted / completed / failed | 109 / 109 / 0 |
+| rows expected | 946 |
+| rows inserted / updated / unchanged / blocked | 0 / 325 / 621 / 0 |
+| changed fields | `innings_pitched` 323, `earned_runs` 4, `hits_allowed` 4 |
+
+And on the five games a controlled write had **already reconciled** — 38 rows,
+14 updated, 24 unchanged in that write — a replay still projected **14 updates
+and 24 unchanged**, every one of the 14 carrying exactly one changed field:
+`innings_pitched`. No outs change, no earned runs, no hits, no authority, no
+role, no metadata, nothing blocked.
+
+A write that has been applied must replay to zero changes. This one never
+converged: repeating it would re-apply the same non-correction and increment
+`stat_correction_count` again, every time.
+
+### Root cause
+
+The planner's correctable-field vocabulary listed `innings_pitched` as an
+independently compared field. The comparison was `stored float != freshly
+derived float`. Those can differ in representation while describing the same
+canonical outs, so the planner classified representation drift as an
+`official_statistical_correction`, scheduled provenance, and applied the
+derived float — after which the next comparison could differ again.
+
+The stored companion is bounded: `ck_game_logs_innings_pitched_matches_outs`
+requires it within 1e-6 of `outs / 3.0`. So the only drift reachable is float
+representation — there is no population of materially wrong decimals this path
+was usefully "repairing".
+
+### The rule as implemented
+
+Innings is **one semantic field family**:
+
+| | field |
+|---|---|
+| semantic authority | `innings_pitched_outs` |
+| derived companion | `innings_pitched` |
+
+* **Insert** — official notation is parsed once into canonical outs; the
+  companion is derived from those outs. A source float is never trusted.
+* **Stored outs equal official outs** — any difference in the companion is
+  ignored entirely. Not an update, not a changed field, not a statistical
+  correction, no provenance stamp, no counter increment, no published-evidence
+  flag, no fingerprint change. The companion is not rewritten just to
+  normalize its representation.
+* **Stored outs differ from official outs** — one semantic correction on
+  `innings_pitched_outs`, the companion re-derived from the corrected outs,
+  both applied in one row update, one provenance event, and the replay is
+  unchanged.
+
+A plan therefore distinguishes:
+
+```
+semantic_changed_fields    what the official record says changed
+applied_changed_fields     what the writer actually writes
+derived_companion_fields   companions written because their authority moved
+derived_companion_differences_ignored
+                           representation drift that is NOT a change
+```
+
+`changed_fields` — the field the reports and the fingerprint use — is the
+**semantic** set. `innings_pitched` never appears in it.
+
+Legitimate corrections are untouched: earned runs, runs, hits, walks,
+strikeouts, home runs, pitches, strikes, batters faced, role signal,
+appearance-team authority, and game metadata all behave exactly as before. A
+row with equal outs but changed earned runs is still updated; a row with both
+changed produces one update and one provenance event.
+
+### Fingerprint semantics
+
+The reconciliation-plan fingerprint covers action, natural key, semantic
+changed fields, mutation categories, and a **mutation digest** of the values
+the plan would write. That last part matters: without it, an insert of one
+earned run and an insert of seven fingerprint identically, and a reviewed
+fingerprint would authorize a different mutation than the one reviewed.
+
+Excluded from the digest, deliberately: derived companions (so representation
+cannot move the fingerprint), provenance columns (stamped by the act of
+correcting, not reviewed as evidence), and the local `pitcher_id` surrogate (a
+projection cannot know the key a not-yet-created pitcher will receive).
+
+Nothing unstable — no timestamps, object ids, exception text, or runtime
+ordering — is in the fingerprint.
+
+### Innings accounting in the report
+
+`canonical_outs_corrections`, `derived_companion_fields_applied`,
+`derived_companion_differences_ignored`, `decimal_only_updates_suppressed`,
+and `innings_semantics_version`. Ignored differences are counted **once per
+row**, so a row that both drifted and changed for a real reason is never
+double-counted.
+
 ## Idempotent persistence
 
 The canonical natural key is unchanged: `(pitcher_id, mlb_game_pk)`, enforced by
@@ -559,6 +664,57 @@ Once the game lane is authoritative the daily sync calls it with:
 It runs after the critical lane, inside whatever ingestion budget remains, and
 never consumes the critical lane's reserve.
 
+## Execution scope: additive vs exclusive
+
+An operator asking for five specific games got all 109. `--game-pk` means
+"**also** plan these", not "plan **only** these" — it adds explicit repair
+games to the governed date window. That behaviour is retained and is now
+documented honestly, because other callers rely on it.
+
+`--only-game-pk` is the exclusive option. It means *exactly these games and no
+others*:
+
+* only the requested games are queried, so nothing else can enter the plan;
+* no other newly final game, no retry, no correction-horizon re-check, no
+  best-effort backlog, no unresolved work from outside the set;
+* a requested game is classified `explicit_repair`;
+* normal finality, schedule-authority, and safety rules still apply.
+
+### Exact-set preflight
+
+Before **any** MLB request and before any write, the run asserts
+`requested_unique_ids == planned_ids` — recomputed from the items the run will
+actually execute, not from the planner's own self-report, because a guard that
+believes the component it guards cannot catch that component being wrong.
+
+The report exposes `execution_scope_mode`, `requested_game_pks`,
+`requested_game_count`, `duplicate_requested_count`, `planned_game_pks`,
+`planned_game_count`, `unexpected_planned_game_pks`,
+`missing_requested_game_pks`, and `execution_scope_exact_match`.
+
+On mismatch the run exits nonzero with a typed safe reason and makes zero MLB
+requests, zero database writes, no work item, no postgame marker, no GameLog,
+no pitcher update, no dead letter, and marks no checkpoint attempted. A
+requested game that is not final, has no schedule authority, or has a finality
+conflict is never silently dropped — it fails the scope.
+
+Incompatible options are refused rather than reinterpreted: `--game-pk` with
+`--only-game-pk`, `--max-games` with `--only-game-pk`, `--include-backfill`
+with `--only-game-pk`, and an empty exclusive set.
+
+### Reviewed-fingerprint write authorization
+
+An exclusive write requires `--expected-plan-fingerprint`, the fingerprint a
+human reviewed from the shadow run. The write recomputes the plan from current
+database state and current official evidence, compares it to the reviewed
+value, and refuses **before the first mutation** on any difference — whether
+the stored rows or the official line moved since review. On exact match it
+applies that same plan, from the same fetched box score, so review and
+application cannot read different evidence.
+
+The refusal reports only the expected fingerprint, the observed fingerprint,
+the requested ids, and a safe reason.
+
 ## Controlled parity rollout
 
 Production remains **off** until parity validation passes. The next operator
@@ -591,16 +747,26 @@ mode is advanced deliberately, one stage at a time, on evidence.
 ## Operator repair procedure
 
 ```bash
-# Stage A — shadow plan. No MLB request, no write.
+# Shadow plan. No MLB request, no write.
 python scripts/game_driven_ingestion.py --plan-only
 
-# Stage B — shadow reconciliation. Fetches games, writes nothing.
+# Full-window shadow reconciliation. Fetches games, writes nothing.
 python scripts/game_driven_ingestion.py --mode shadow
 
-# Stage C — controlled write, bounded.
-python scripts/game_driven_ingestion.py --mode write --max-games 5
+# EXCLUSIVE shadow of exactly five games. Nothing else may enter the run.
+python scripts/game_driven_ingestion.py --mode shadow \
+    --only-game-pk 823518 --only-game-pk 824735 --only-game-pk 823761 \
+    --only-game-pk 824083 --only-game-pk 824327
 
-# Governed repair of specific games (planned as explicit_repair).
+# EXCLUSIVE write of exactly those games, authorized by the fingerprint a
+# human reviewed in the shadow run above.
+python scripts/game_driven_ingestion.py --mode write \
+    --only-game-pk 823518 --only-game-pk 824735 --only-game-pk 823761 \
+    --only-game-pk 824083 --only-game-pk 824327 \
+    --expected-plan-fingerprint <sha256 from the reviewed shadow run>
+
+# Governed repair ADDED to the normal window. This does NOT bound the run —
+# the whole governed window is planned as well.
 python scripts/game_driven_ingestion.py --mode write --game-pk 776543
 
 # Read-only forensics on games the lane already wrote.
