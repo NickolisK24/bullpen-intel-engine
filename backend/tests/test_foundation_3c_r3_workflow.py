@@ -1051,7 +1051,8 @@ def test_a_wrong_version_fails(field):
 
 def test_the_expected_versions_come_from_the_merged_modules():
     assert validator.EXPECTED_RECONCILIATION_PLAN_VERSION == '3'
-    assert validator.EXPECTED_PARITY_CONTRACT_VERSION == '3'
+    # Bumped when the identity half of the fingerprint was repaired.
+    assert validator.EXPECTED_PARITY_CONTRACT_VERSION == '4'
     assert validator.EXPECTED_INNINGS_SEMANTICS_VERSION == '2'
     assert validator.EXPECTED_COMPLETE_PLAN_VERSION == '1'
     assert validator.EXPECTED_IDENTITY_PLAN_VERSION == '1'

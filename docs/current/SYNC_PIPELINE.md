@@ -129,6 +129,14 @@ They differ in what a green run means:
 A green `review_required` is a statement about execution, not authorization,
 and so is a green R3.
 
+**Any R3 fingerprint approved before `parity_contract_version` reached `4` is
+stale.** The identity half of the complete fingerprint was collapsing to a
+constant on the reported row, so a reviewed fingerprint authorized any identity
+creation rather than the reviewed one. The contract version is hashed into the
+fingerprint, so a pre-repair value cannot be reproduced and a write authorized
+with it will be refused. R3 must be re-run to produce a fingerprint under the
+repaired contract before any write is authorized.
+
 All three are removed at Stage E once the rollout completes.
 
 ### Pitcher identity is not written by completed games (D-009)

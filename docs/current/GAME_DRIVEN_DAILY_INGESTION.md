@@ -1146,6 +1146,52 @@ Send the job summary, `r3-reviewed-authorization.md`, and the complete
 fingerprint for review. **R4 must not be created or run until that fingerprint
 is founder-approved.** `GAME_DRIVEN_INGESTION_MODE` stays `off` throughout.
 
+## The complete fingerprint covers pitcher identity by VALUE
+
+`--expected-plan-fingerprint` is the only thing standing between a reviewed plan
+and an applied write, so what it covers matters more than almost anything else
+in this lane.
+
+**Defect found while preparing R4.** The identity half of the fingerprint read a
+nested `pitcher_identity` key on the row. That key exists on the raw planner
+plan, but `_safe_row_entries` flattens it away — and `_safe_row_entries` is what
+produces both the report's `complete_reconciliation_fingerprint` and the rows
+`_authorize_reviewed_plan` compares. So the identity component collapsed to the
+same constant on every row:
+
+```
+identity component, row A: ('None', 'unchanged', '', '')
+identity component, row B: ('None', 'unchanged', '', '')
+```
+
+Creating pitcher 111 and creating pitcher 222 therefore fingerprinted
+identically. A reviewed fingerprint authorized *an* identity creation, not *the*
+reviewed one. A creation was still distinguishable from an unchanged row,
+because the identity mutation category leaks into `mutation_categories` — which
+is exactly why this survived R3: nothing in that sample created an identity, so
+nothing exercised the value half.
+
+**Repair.** `fingerprint_component` now reads the flattened
+`pitcher_identity_action`, `pitcher_identity_blocked_reason`, and
+`pitcher_identity_mutation_digest` fields, and `plan_row` mirrors them onto the
+row. The raw plan and the reported row now fingerprint identically by
+construction, so the guard compares the same identity the report published.
+
+Repairing it exposed a second defect: the canonical writer builds its plan
+without the identity half and patches it on afterwards, and that patch set only
+the action. The write's fingerprint was therefore missing the digest that
+shadow carried — a genuine shadow/write divergence, now fixed by patching every
+field the fingerprint reads.
+
+Suppressed historical differences remain excluded: they are refused evidence and
+must not move a fingerprint that authorizes mutations.
+
+**`parity_contract_version` moved `3` → `4`.** The contract version is hashed
+into the fingerprint, so every fingerprint reviewed under contract 3 is stale by
+construction and cannot be reproduced under contract 4. That is deliberate: a
+stale authorization must fail loudly rather than silently authorize a write
+whose identity half was never really reviewed.
+
 ## Controlled parity rollout
 
 Production remains **off** until parity validation passes. The next operator

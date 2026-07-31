@@ -342,18 +342,34 @@ def _digest(action, values) -> str:
     return hashlib.sha256(encoded.encode('utf-8')).hexdigest()[:32]
 
 
-def fingerprint_component(plan) -> tuple:
+# The identity fields the complete fingerprint commits to. `plan_row` mirrors
+# them onto the row and `safe_row_entry` emits the same names, so the raw plan
+# and the reported/authorized row fingerprint identically.
+FINGERPRINT_ROW_FIELDS = (
+    'pitcher_identity_action',
+    'pitcher_identity_blocked_reason',
+    'pitcher_identity_mutation_digest',
+)
+
+
+def fingerprint_component(row) -> tuple:
     """The identity contribution to the complete reconciliation fingerprint.
+
+    Reads the FLATTENED row fields rather than a nested plan. The nested plan
+    does not survive `_safe_row_entries`, and reading it there silently
+    collapsed every row to the same constant — so a reviewed fingerprint
+    authorized any identity creation, not the reviewed one. Reading the same
+    flattened names the report already carries makes the raw plan and the
+    authorized row agree by construction.
 
     Suppressed fields are deliberately excluded: they describe evidence that was
     REFUSED, so they must not move a fingerprint that authorizes mutations.
     """
-    plan = plan or {}
+    row = row or {}
     return (
-        str(plan.get('player_mlb_id')),
-        plan.get('action') or ACTION_UNCHANGED,
-        plan.get('blocked_reason') or '',
-        plan.get('mutation_digest') or '',
+        row.get('pitcher_identity_action') or ACTION_UNCHANGED,
+        row.get('pitcher_identity_blocked_reason') or '',
+        row.get('pitcher_identity_mutation_digest') or '',
     )
 
 

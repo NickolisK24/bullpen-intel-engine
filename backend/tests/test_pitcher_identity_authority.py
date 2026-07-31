@@ -944,3 +944,91 @@ def test_the_creation_provenance_reaches_postgres_intact(app, monkeypatch):
             'position_override_from_pitching_line'
         )
         assert len(created.roster_status_raw_description) <= 100
+
+
+# ═══════════════ The identity half of the write authorization ═══════════════
+#
+# The complete fingerprint is what `--expected-plan-fingerprint` compares, and
+# it is computed over the REPORTED row, not the raw planner plan. The identity
+# component previously read a nested key that `_safe_row_entries` does not
+# emit, so it collapsed to a constant: two different identity creations
+# fingerprinted identically and a reviewed fingerprint authorized either one.
+
+
+def _row_for(plan):
+    from services.game_driven_ingestion import _safe_row_entries
+
+    values = {'innings_pitched_outs': 3, 'mlb_game_pk': 1}
+    return _safe_row_entries([reconciliation.plan_row(
+        existing=None, values=values, stats={}, game_pk=1,
+        pitcher_mlb_id=99, identity_plan=plan,
+    )])
+
+
+def test_two_different_identity_creations_do_not_share_a_fingerprint():
+    """The exact hole: reviewing one creation must not authorize another."""
+    one = identity.plan_identity(
+        existing=None, player_mlb_id=111, line_name='Arm One',
+    )
+    two = identity.plan_identity(
+        existing=None, player_mlb_id=222, line_name='Arm Two',
+    )
+    assert one['mutation_digest'] != two['mutation_digest']
+    assert reconciliation.plan_fingerprint(_row_for(one)) != (
+        reconciliation.plan_fingerprint(_row_for(two))
+    )
+
+
+def test_the_reported_row_fingerprints_the_same_as_the_raw_plan():
+    """The write guard compares the reported row; they must not diverge."""
+    plan = identity.plan_identity(
+        existing=None, player_mlb_id=111, line_name='Arm One',
+    )
+    values = {'innings_pitched_outs': 3, 'mlb_game_pk': 1}
+    raw = reconciliation.plan_row(
+        existing=None, values=values, stats={}, game_pk=1,
+        pitcher_mlb_id=99, identity_plan=plan,
+    )
+    assert reconciliation.plan_fingerprint([raw]) == (
+        reconciliation.plan_fingerprint(_row_for(plan))
+    )
+
+
+def test_a_blocked_identity_moves_the_fingerprint():
+    clean = identity.plan_identity(
+        existing=None, player_mlb_id=111, line_name='Arm One',
+    )
+    blocked = identity.plan_identity(
+        existing=None, player_mlb_id=111, line_name=None,
+    )
+    assert blocked['action'] == identity.ACTION_BLOCKED
+    assert reconciliation.plan_fingerprint(_row_for(clean)) != (
+        reconciliation.plan_fingerprint(_row_for(blocked))
+    )
+
+
+def test_suppressed_evidence_still_does_not_move_the_fingerprint(app):
+    """Refused evidence must not move an authorization fingerprint."""
+    with app.app_context():
+        clean = _pitcher(5301, team_id=HOME_TEAM)
+        clean.roster_status = STATUS_ACTIVE
+        drifted = _pitcher(5302, team_id=AWAY_TEAM, active=False)
+        drifted.roster_status = STATUS_MINORS
+        db.session.flush()
+
+        plans = [
+            identity.plan_identity(
+                existing=row, player_mlb_id=5001, line_name='X',
+                appearance_team={'team_id': HOME_TEAM, 'team_name': 'Home Club'},
+            )
+            for row in (clean, drifted)
+        ]
+        assert plans[1]['suppressed_current_state_fields']
+        assert reconciliation.plan_fingerprint(_row_for(plans[0])) == (
+            reconciliation.plan_fingerprint(_row_for(plans[1]))
+        )
+
+
+def test_the_parity_contract_version_moved_with_the_algorithm():
+    """A fingerprint reviewed under the old contract is stale by construction."""
+    assert reconciliation.PARITY_CONTRACT_VERSION == '4'
