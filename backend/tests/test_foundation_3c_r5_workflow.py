@@ -1989,12 +1989,32 @@ def test_a_selected_game_that_is_already_completed_stops_before_the_shadow(
 
         before = inspector.collect_state()
         assert str(intruder) in before['selected_work_items']
-        with pytest.raises(validator.ValidationFailure) as caught:
-            validator.validate_before_state(
-                {**before, 'phase': 'before',
+        state = {**before, 'phase': 'before',
                  'read_only': {'write_probe_refused': True}}
-            )
-        assert 'have_no_work_item' in caught.value.invariant
+
+        # Completing an eleventh game moves completeness off 10/99, so that
+        # guard fires first. Either way the before-state fails and the shadow
+        # never runs, which is what the scenario requires.
+        with pytest.raises(validator.ValidationFailure) as caught:
+            validator.validate_before_state(state)
+        assert caught.value.invariant.startswith('before_state_')
+        assert 'completed_final_games' in caught.value.invariant
+
+        # Prove the work-item guard is not dead code: hold completeness at
+        # 10/99 and the prior work item alone must still stop the run.
+        held = {
+            **state,
+            'publication_completeness': {
+                **state['publication_completeness'],
+                'completed_final_games': 10,
+                'unresolved_final_games': 99,
+            },
+            'completed_work_item_set': list(COMPLETED),
+            'unresolved_set': list(APPROVED_SET),
+        }
+        with pytest.raises(validator.ValidationFailure) as second:
+            validator.validate_before_state(held)
+        assert 'have_no_work_item' in second.value.invariant
 
 
 def test_an_omitted_game_fails_exact_scope(app, monkeypatch):
@@ -2089,8 +2109,13 @@ def test_a_canonical_outs_correction_fails_r5(app, monkeypatch):
             .order_by(GameLog.pitcher_id)
             .all()[-1]
         )
-        row.innings_pitched_outs = 1
-        row.innings_pitched = 0.1
+        # A genuine semantic disagreement, not a representation one: six
+        # stored outs against a three-out official line. The decimal companion
+        # is kept consistent with the stored outs so the row remains valid
+        # under the D-008 check constraint - the point is that CANONICAL OUTS
+        # differ, which is a correction rather than a decimal difference.
+        row.innings_pitched_outs = 6
+        row.innings_pitched = 2.0
         db.session.commit()
 
         monkeypatch.setattr(
@@ -2099,9 +2124,11 @@ def test_a_canonical_outs_correction_fails_r5(app, monkeypatch):
         report = _run_shadow()
         db.session.rollback()
 
+        assert report['canonical_outs_corrections'] >= 1
         assert report['rows_updated'] >= 1
-        with pytest.raises(validator.ValidationFailure):
+        with pytest.raises(validator.ValidationFailure) as caught:
             validator.validate_shadow_report(report)
+        assert 'rows_updated' in caught.value.invariant
 
 
 def test_a_write_during_the_shadow_is_caught_by_the_state_hashes(
