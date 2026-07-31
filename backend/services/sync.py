@@ -1702,6 +1702,8 @@ def _unresolved_row_plan(*, game_pk, line, reason) -> dict:
             blocked_reason=reason,
         ),
         'pitcher_identity_action': pitcher_identity.ACTION_BLOCKED,
+        'pitcher_identity_blocked_reason': reason,
+        'pitcher_identity_mutation_digest': '',
         'source_authority': None,
     }
 
@@ -1786,8 +1788,19 @@ def _ingest_boxscore_pitching_line(
     )
     plan = result.get('plan')
     if plan is not None:
+        # Every field the complete fingerprint reads, not just the label.
+        # The writer builds its plan without the identity half and patches it on
+        # here, so anything omitted at this point is missing from the write's
+        # fingerprint while shadow carries it — which is precisely how a
+        # reviewed authorization and the applied write drift apart.
         plan['pitcher_identity'] = identity_plan or {}
         plan['pitcher_identity_action'] = (identity_plan or {}).get('action')
+        plan['pitcher_identity_blocked_reason'] = (
+            (identity_plan or {}).get('blocked_reason')
+        )
+        plan['pitcher_identity_mutation_digest'] = (
+            (identity_plan or {}).get('mutation_digest') or ''
+        )
         plan['complete_plan_version'] = (
             game_log_reconciliation.COMPLETE_PLAN_VERSION
         )

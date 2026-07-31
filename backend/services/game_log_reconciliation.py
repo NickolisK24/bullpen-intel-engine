@@ -43,7 +43,12 @@ from services import pitcher_identity_reconciliation as identity
 # identity decision, and the fingerprint commits to it, so a plan reviewed
 # under the old contract no longer describes every database effect.
 RECONCILIATION_PLAN_VERSION = '3'
-PARITY_CONTRACT_VERSION = '3'
+# Bumped from '3': the identity component of the fingerprint was collapsing to a
+# constant on the reported row, so a reviewed fingerprint authorized any
+# identity creation rather than the reviewed one. The algorithm changed, so
+# every fingerprint reviewed under contract 3 is stale by construction and must
+# not be mistaken for a valid authorization.
+PARITY_CONTRACT_VERSION = '4'
 
 # The complete plan is GameLog + pitcher identity + appearance-team authority
 # decided together and fingerprinted together. Versioned separately so the
@@ -321,7 +326,15 @@ def plan_row(
         'unresolved_reason': None,
         'complete_plan_version': COMPLETE_PLAN_VERSION,
         'pitcher_identity': identity_plan or {},
+        # Mirrored onto the row so the fingerprint reads the same names here and
+        # on the safe report row.
         'pitcher_identity_action': (identity_plan or {}).get('action'),
+        'pitcher_identity_blocked_reason': (
+            (identity_plan or {}).get('blocked_reason')
+        ),
+        'pitcher_identity_mutation_digest': (
+            (identity_plan or {}).get('mutation_digest') or ''
+        ),
         'source_authority': values.get('appearance_team_source'),
     }
 
@@ -546,9 +559,11 @@ def plan_fingerprint(plans) -> str:
             tuple(plan.get('mutation_categories') or ()),
             plan.get('blocked_reason') or '',
             plan.get('mutation_digest') or '',
-            # The identity decision and the values it would write. Without this
-            # a reviewed fingerprint authorized only the GameLog half of a run.
-            identity.fingerprint_component(plan.get('pitcher_identity')),
+            # The identity decision AND the values it would write. Read from
+            # the flattened row fields so the raw plan and the reported row —
+            # which is what the write guard actually compares — fingerprint
+            # identically.
+            identity.fingerprint_component(plan),
         )
         for plan in plans or ()
     )
