@@ -223,6 +223,129 @@ is ingested; game evidence does.
 changed is what it governs: publication completeness is now driven by relevant
 game coverage.
 
+## Shadow/write parity — why it is mandatory
+
+A projection that can disagree with the writer is worse than no projection: it
+authorizes a rollout stage on evidence that does not describe what will happen.
+
+That is not hypothetical. A controlled Stage C production run on 2026-07-29
+found it:
+
+| | shadow projected | write applied |
+|---|---|---|
+| games | 5 | 5 |
+| appearance rows | 38 | 38 |
+| inserts | 0 | 0 |
+| **updates** | **0** | **14** |
+| unchanged | 38 | 24 |
+
+Per game, the writer applied 4, 2, 4, 2, and 2 updates that shadow had reported
+as unchanged. The writes were transactionally clean and all 38 rows reconciled
+— the defect was in the *prediction*, not the write.
+
+**Root cause.** Shadow owned its own comparator: eight fields
+(`innings_pitched_outs`, `earned_runs`, `runs_allowed`, `hits_allowed`,
+`walks`, `strikeouts`, `home_runs_allowed`, `games_started`) drawn from the
+*extracted appearance* vocabulary. The canonical writer reconciles the far
+broader *governed record* built by `sync._game_log_values_from_stats`, and
+additionally reconciles team-at-appearance authority outside that field loop.
+Every field in the gap could produce a write the projection could not see:
+
+`game_date`, `game_type`, `innings_pitched`, `pitches_thrown`, `strikes`,
+`opponent`, `opponent_abbreviation`, `batters_faced`, `balls`,
+`games_finished`, `inherited_runners`, `inherited_runners_scored`,
+`save_situation`, `hold`, `blown_save`, `win`, `loss`, `save`,
+`leverage_index`, and the four `appearance_team_*` columns.
+
+Two further gaps compounded it: shadow skipped a field whenever the extracted
+record carried `None`, while the writer compares a computed value (a missing
+optional stat becomes `0`, so a stored `NULL` *is* a change); and shadow never
+evaluated correction safety at all, so an ungoverned correction projected as a
+safe update instead of a blocked one.
+
+## Canonical reconciliation plan
+
+Adding the missing fields to the projection would have preserved two
+authorities and let them drift again. There is now exactly one.
+
+```
+official game evidence
+        |
+        v
+canonical extracted appearances
+        |
+        v
+services/game_log_reconciliation.py::plan_row      <-- THE decision
+        |
+   +----+----+
+   |         |
+ shadow    write
+ reports   applies
+ the plan  the plan
+```
+
+`plan_row` is pure: it reads the stored row and the governed values and returns
+a deterministic, serializable plan. It performs no writes and mutates nothing.
+Applying a plan happens in exactly one place —
+`sync._upsert_game_log_from_authoritative_values`.
+
+Each plan entry carries `game_pk`, `pitcher_mlb_id`, `local_pitcher_id`, the
+natural key, the `action`, `changed_fields`, `field_changes` (safe
+before/after for governed baseball fields only), `mutation_categories`,
+`appearance_team_reason`, `blocked_reason`, `unresolved_reason`,
+`pitcher_identity_action`, and the source authority.
+
+**Actions:** `insert`, `update`, `unchanged`, `blocked`.
+
+### What can cause an update
+
+| Category | Fields |
+|---|---|
+| `official_statistical_correction` | `innings_pitched`, `innings_pitched_outs`, `pitches_thrown`, `strikes`, `hits_allowed`, `runs_allowed`, `earned_runs`, `walks`, `strikeouts`, `home_runs_allowed`, `batters_faced`, `balls`, `games_finished`, `inherited_runners`, `inherited_runners_scored`, `save_situation`, `hold`, `blown_save`, `win`, `loss`, `save`, `leverage_index` |
+| `role_or_starter_signal_reconciliation` | `games_started` |
+| `game_metadata_reconciliation` | `game_date`, `game_type`, `opponent`, `opponent_abbreviation` |
+| `appearance_team_authority_reconciliation` | `appearance_team_id`, `appearance_team_source`, `appearance_team_status`, `appearance_team_reason` |
+| `provenance_only_update` | `stat_correction_count`, `last_stat_correction_at`, `last_stat_correction_source`, `last_stat_correction_sync_run_id` |
+| `pitcher_identity_reconciliation` | a pitcher the writer would create, reactivate, or re-attribute |
+| `unchanged_row` | — |
+| `unsafe_or_blocked_mutation` | an ungoverned correction, or an unresolvable pitcher identity |
+
+A field that reaches the writer without a category is classified `blocked`, so
+a new governed column cannot silently become an unclassified mutation.
+
+The provenance stamp is applied only alongside a genuine field correction, so
+in the current writer a *provenance-only* update is unreachable and its count
+is legitimately zero. The category exists and is separable so such a mutation
+could never be misreported as an official statistical correction.
+
+### How shadow's read-only behaviour is proven
+
+Shadow does not write-and-roll-back. It calls the canonical writer's planning
+mode, `process_completed_game_for_postgame_refresh(plan_only=True)`, which is
+logically read-only *before* any transaction handling:
+
+* no GameLog is inserted or corrected;
+* no pitcher is created, reactivated, or re-attributed —
+  `resolve_pitcher_for_authoritative_line(plan_only=True)` runs the identical
+  guard chain and reports `would_create` / `would_reactivate` instead;
+* no postgame marker is upserted;
+* no failure is dead-lettered.
+
+A test asserts this with before/after content fingerprints across `game_logs`,
+`pitchers`, `game_ingestion_work_items`, `postgame_processed_games`, and
+`scheduled_games` — including correction counters, authority provenance, and
+timestamps.
+
+### The parity contract
+
+For a mixed fixture containing an insert, an update, an unchanged row, and a
+blocked row, a test generates the shadow plan, runs write from the identical
+initial state, and asserts exact equality of actions, natural keys, changed
+fields, mutation categories, the four action counts, and the plan fingerprint.
+A regression fixture reproduces the production shape — 38 rows across five
+games, 14 of which differ only outside the retired comparator — and requires
+the projection to predict all 14 updates before any write.
+
 ## Idempotent persistence
 
 The canonical natural key is unchanged: `(pitcher_id, mlb_game_pk)`, enforced by
@@ -391,10 +514,22 @@ limit because it is not a failure of the game.
 Run-level: `planner_seconds`, `games_discovered`, `newly_final_count`,
 `corrected_final_count`, `retry_count`, `games_fetched`, `fetch_seconds`,
 `extraction_seconds`, `persistence_seconds`, `checkpoint_seconds`,
-`rows_inserted`, `rows_updated`, `rows_unchanged`, `games_completed`,
-`games_remaining`, `critical_games_unresolved`, `best_effort_games_deferred`,
-`budget_stop_triggered`, `failure_classes`, plus the completeness proof's
-`publication_complete` and `decision_reasons`.
+`rows_expected`, `rows_inserted`, `rows_updated`, `rows_unchanged`,
+`rows_blocked`, `changed_fields_counts`, `mutation_category_counts`,
+`statistical_corrections`, `authority_reconciliations`,
+`provenance_only_updates`, `games_completed`, `games_remaining`,
+`critical_games_unresolved`, `best_effort_games_deferred`,
+`budget_stop_triggered`, `failure_classes`, `parity_contract_version`,
+`reconciliation_plan_version`, `reconciliation_plan_fingerprint`, plus the
+completeness proof's `publication_complete` and `decision_reasons`.
+
+Per game additionally: `blocked`, `changed_fields_counts`,
+`mutation_category_counts`, `statistical_corrections`,
+`authority_reconciliations`, `provenance_only_updates`,
+`reconciliation_plan_fingerprint`, and `rows` — one structured entry per
+appearance carrying its action, changed field names, categories, and safety
+decision. Output ordering is deterministic (by game, then pitcher), so a shadow
+report and a write report can be compared directly.
 
 Per game: `game_pk`, `represented_date`, `candidate_reason`, `criticality`,
 `attempt_number`, `status`, `source_revision`, `appearances_extracted`,
@@ -424,6 +559,21 @@ Once the game lane is authoritative the daily sync calls it with:
 It runs after the critical lane, inside whatever ingestion budget remains, and
 never consumes the critical lane's reserve.
 
+## Controlled parity rollout
+
+Production remains **off** until parity validation passes. The next operator
+sequence is:
+
+| Stage | What | Requirement |
+|---|---|---|
+| C1 | Shadow replay of the five already-written games | zero inserts, zero updates, all rows unchanged — proves the prior write left them reconciled |
+| C2 | Shadow of the next five unprocessed games | record projected inserts/updates/unchanged, changed fields, categories |
+| C3 | Controlled write of those same five | **exact** parity with C2: same actions, same changed fields, same category counts, same totals, zero unexpected mutations, zero failures |
+| C4 | Shadow replay of those five | zero inserts, zero updates, all unchanged |
+
+Only after all four pass may the remaining bootstrap window be considered.
+Authoritative mode is not part of this sequence.
+
 ## Rollout
 
 | Stage | `GAME_DRIVEN_INGESTION_MODE` | What it does | Publication authority |
@@ -452,6 +602,9 @@ python scripts/game_driven_ingestion.py --mode write --max-games 5
 
 # Governed repair of specific games (planned as explicit_repair).
 python scripts/game_driven_ingestion.py --mode write --game-pk 776543
+
+# Read-only forensics on games the lane already wrote.
+python scripts/inspect_game_ingestion_writes.py --game-pk 823518 --game-pk 824735
 
 # Historical backfill (best effort, never automatic).
 python scripts/game_driven_ingestion.py --mode write --include-backfill \

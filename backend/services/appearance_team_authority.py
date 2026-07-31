@@ -273,13 +273,18 @@ def apply_to_new_log(values: dict, resolution: AppearanceTeamResolution) -> dict
     return values
 
 
-def reconcile_on_update(
+def plan_update(
     log: GameLog,
     resolution: Optional[AppearanceTeamResolution],
     *,
     correction_applied: bool,
-) -> Optional[str]:
-    """Precedence-aware, non-flapping update of an existing appearance's team.
+) -> Optional[dict]:
+    """Decide the precedence-aware team reconciliation WITHOUT mutating.
+
+    Same rules as ``reconcile_on_update``, which now applies this decision
+    rather than making its own. Splitting the decision from the write is what
+    lets a read-only projection report exactly what the writer will do, instead
+    of maintaining a second copy of these rules that can drift.
 
     Rules (deterministic):
       * A legacy/unattributed row (NULL status) is attributed ONLY when the row is
@@ -289,11 +294,11 @@ def reconcile_on_update(
       * The same resolved team is idempotent; a strictly higher-precedence source
         may refresh the source label without a team change.
       * A different resolved team from a HIGHER-precedence source is a governed
-        authoritative correction (logged); from a LOWER-precedence source it is
-        ignored (no flap); at EQUAL precedence it fails closed as ``conflict``.
+        authoritative correction; from a LOWER-precedence source it is ignored
+        (no flap); at EQUAL precedence it fails closed as ``conflict``.
 
-    Returns a reason code when the row changed, else None. Never consults
-    Pitcher.team_id.
+    Returns ``{'reason': str, 'fields': {...}}`` when the row would change, else
+    None. Never consults Pitcher.team_id.
     """
     if resolution is None:
         return None
@@ -302,8 +307,10 @@ def reconcile_on_update(
 
     if stored_status is None:
         if correction_applied and resolution.resolved:
-            _write(log, resolution)
-            return resolution.reason
+            return {
+                'reason': resolution.reason,
+                'fields': dict(resolution.to_write_fields()),
+            }
         return None
 
     if not resolution.resolved:
@@ -318,22 +325,50 @@ def reconcile_on_update(
     cur_prec = _precedence(log.appearance_team_source)
 
     if new_prec > cur_prec:
-        log.appearance_team_id = resolution.team_id
-        log.appearance_team_source = resolution.source
-        log.appearance_team_status = STATUS_RESOLVED
-        log.appearance_team_reason = REASON_CORRECTED
-        return REASON_CORRECTED
+        return {
+            'reason': REASON_CORRECTED,
+            'fields': {
+                'appearance_team_id': resolution.team_id,
+                'appearance_team_source': resolution.source,
+                'appearance_team_status': STATUS_RESOLVED,
+                'appearance_team_reason': REASON_CORRECTED,
+            },
+        }
     if new_prec < cur_prec:
         return None
 
     # Equal precedence, different team -> fail closed. A conflicted appearance carries
     # NO silently-selected team id (the stored-state invariant): the prior team is
     # cleared so no aggregation ever trusts it.
-    log.appearance_team_id = None
-    log.appearance_team_status = STATUS_CONFLICT
-    log.appearance_team_source = SOURCE_CONFLICT
-    log.appearance_team_reason = REASON_CONFLICT
-    return REASON_CONFLICT
+    return {
+        'reason': REASON_CONFLICT,
+        'fields': {
+            'appearance_team_id': None,
+            'appearance_team_status': STATUS_CONFLICT,
+            'appearance_team_source': SOURCE_CONFLICT,
+            'appearance_team_reason': REASON_CONFLICT,
+        },
+    }
+
+
+def reconcile_on_update(
+    log: GameLog,
+    resolution: Optional[AppearanceTeamResolution],
+    *,
+    correction_applied: bool,
+) -> Optional[str]:
+    """Apply the decision ``plan_update`` made. Returns its reason code, or None.
+
+    The rules live in ``plan_update``; this function only writes them.
+    """
+    decision = plan_update(
+        log, resolution, correction_applied=correction_applied,
+    )
+    if decision is None:
+        return None
+    for field, value in decision['fields'].items():
+        setattr(log, field, value)
+    return decision['reason']
 
 
 def _write(log: GameLog, resolution: AppearanceTeamResolution) -> None:
