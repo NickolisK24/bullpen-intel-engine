@@ -1018,6 +1018,134 @@ would be written.
 Suppressed historical differences are reported separately and are never counted
 as mutations.
 
+## Post-D-009 production results
+
+Both gates were re-run after D-009 merged and both passed on the complete
+mutation contract — every database target, not just GameLog.
+
+**R1 — PASS**
+
+```
+Scope        requested 5, planned 5, exact match yes
+Rows         expected 38, inserted 0, updated 0, unchanged 38, blocked 0
+Innings      decimal-only differences ignored 14, outs corrections 0
+Mutations    GameLog 0, pitcher identity 0, appearance team 0, total 0
+Identity     reactivations 0, metadata updates 0, creations 0, blocked 0
+Suppressed   1 historical current-state difference
+Writes       none
+```
+
+**R2 — PASS**
+
+```
+Window       109 games planned, 109 completed, 0 failed
+Rows         expected 946, inserted 0, updated 0, unchanged 946, blocked 0
+Innings      decimal-only differences ignored 323, outs corrections 0
+Mutations    GameLog 0, pitcher identity 0, appearance team 0, total 0
+Identity     reactivations 0, metadata updates 0, creations 0, blocked 0
+Suppressed   57 historical current-state differences
+Writes       none
+```
+
+The 942 identity actions R2 previously carried are gone. The differences that
+produced them are still present and still visible — as 57 suppressed
+current-state differences, which are refused evidence rather than mutations.
+
+## R3 controlled-sample review from a phone
+
+R1 and R2 proved the whole population is clean. R3 asks the last question
+before a write is proposed: is *this specific five-game sample* still
+unresolved, still eligible, and provably clean — and what exact plan would a
+write have to match?
+
+**Workflow:** `.github/workflows/foundation-3c-r3-controlled-sample-shadow.yml`,
+displayed as **Foundation 3C R3 Controlled Sample Shadow**. Manual dispatch
+only — no schedule, no push, no pull-request trigger, no inputs.
+
+### The approved sample
+
+The first five unresolved games after the five completed by the first
+controlled write, in reviewed order:
+
+| Game | Appearance rows | Ignored decimal differences |
+|---|---|---|
+| 823110 | 6 | 2 |
+| 825055 | 8 | 4 |
+| 824004 | 9 | 2 |
+| 823438 | 10 | 6 |
+| 824408 | 10 | 4 |
+| **Total** | **43** | **18** |
+
+| | |
+|---|---|
+| scope | exclusive — `--only-game-pk` five times, nothing else |
+| reference date | 2026-07-29 |
+| mode | `shadow` |
+| permissions | `contents: read` only |
+| `GAME_DRIVEN_INGESTION_MODE` | `off` (defense in depth) |
+
+### How eligibility is actually proven
+
+Not by `candidate_reason`. Under exclusive scope the planner short-circuits
+every requested game to `explicit_repair` before it classifies state at all
+(`game_ingestion_planner._candidate_decision`, the `if explicit:` branch), so
+`newly_final` is unreachable for an R3 run and asserting it would fail every
+time while proving nothing.
+
+The load-bearing proof is the **attempt number**. The planner derives it from
+the stored work item, so attempt 1 means no work item exists — and no work item
+means no completed checkpoint, no prior failed attempt, and no correction
+re-check. A game already written by the first controlled write cannot report
+attempt 1.
+
+Alongside it R3 requires `retry_count == 0`, `corrected_final_count == 0`,
+publication-critical criticality, and the pinned July 29 bootstrap population:
+
+```
+expected final games 109, completed 5, unresolved 104,
+terminal failures 0, publication complete false
+```
+
+A legitimately changed population is reported as a failure, not reinterpreted.
+The sample was chosen against this exact state.
+
+### Two results only
+
+There is no `review_required` for R3. This sample is expected to be clean, and
+any projected mutation means it is not eligible for the controlled write.
+
+| Result | Job | Meaning |
+|---|---|---|
+| **PASS** | succeeds | zero mutations on every target; the package may be reviewed |
+| **FAILED** | fails | rollout stop; R4 must not be created |
+
+**PASS does not authorize a write.** It produces the reviewed complete
+reconciliation fingerprint that a later R4 would have to match, and nothing
+more. `write_approved` is structurally `false` — there is no code path that can
+set it true — and `r4_status` is always `blocked_pending_founder_review`.
+
+### Artifacts
+
+Uploaded as `foundation-3c-r3-controlled-sample-shadow`, retained 14 days,
+uploaded even when the run fails:
+
+| File | What |
+|---|---|
+| `r3-controlled-five-shadow.json` | the raw shadow report |
+| `r3-validation-summary.json` / `.md` | structured result and the job summary |
+| `r3-reviewed-authorization.json` / `.md` | the reviewed package, ordered by the approved sample |
+
+The authorization package carries the run-level complete fingerprint, a
+per-game fingerprint, each game's source revision, all five version constants,
+and the suppressed-difference counts. Every artifact is scanned for
+credential-shaped content before upload.
+
+### After the run
+
+Send the job summary, `r3-reviewed-authorization.md`, and the complete
+fingerprint for review. **R4 must not be created or run until that fingerprint
+is founder-approved.** `GAME_DRIVEN_INGESTION_MODE` stays `off` throughout.
+
 ## Controlled parity rollout
 
 Production remains **off** until parity validation passes. The next operator

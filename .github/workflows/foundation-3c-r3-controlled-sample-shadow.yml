@@ -1,0 +1,185 @@
+name: Foundation 3C R3 Controlled Sample Shadow
+
+# ONE operation, fully pinned: a read-only shadow reconciliation of exactly the
+# five games proposed as the next controlled write sample, at reference date
+# 2026-07-29.
+#
+# R1 proved the D-008 innings repair on the already-written five. R2 proved it
+# across the governed window and, after D-009, proved zero mutations on every
+# database target. R3 asks the last question before a write is even considered:
+# is this specific five-game sample still unresolved, still eligible, and
+# provably clean across GameLog, pitcher identity, and appearance-team
+# authority?
+#
+# It produces the reviewed complete reconciliation fingerprint that a later R4
+# write would have to match. It does NOT authorize that write. PASS means the
+# package may be reviewed; R4 stays blocked until a human approves the
+# fingerprint.
+#
+# Nothing here is an input. The games, the date, and the mode are hard-coded so
+# the run cannot be redirected to a different sample from a phone.
+#
+# It writes no baseball data. It relies on the merged Foundation 3C shadow
+# path, which is logically read-only before any transaction handling, and adds
+# no compensating write, cleanup, or write-and-roll-back of its own.
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: foundation-3c-r3-controlled-sample-shadow
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  r3-controlled-sample-shadow:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      APP_ENV: production
+      AUTO_SYNC: 'false'
+      # Defense in depth. The CLI is given --mode shadow explicitly; this
+      # additionally proves the run does not enable the automated lane.
+      GAME_DRIVEN_INGESTION_MODE: 'off'
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      SECRET_KEY: ${{ secrets.SECRET_KEY }}
+      ADMIN_API_TOKEN: ${{ secrets.BASEBALLOS_ADMIN_API_TOKEN }}
+      REPORT_PATH: artifacts/r3-controlled-five-shadow.json
+      SUMMARY_JSON_PATH: artifacts/r3-validation-summary.json
+      SUMMARY_MARKDOWN_PATH: artifacts/r3-validation-summary.md
+      AUTHORIZATION_JSON_PATH: artifacts/r3-reviewed-authorization.json
+      AUTHORIZATION_MARKDOWN_PATH: artifacts/r3-reviewed-authorization.md
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install backend dependencies
+        run: pip install -r backend/requirements.txt
+
+      - name: Validate required secrets are present
+        run: |
+          set -euo pipefail
+          if [ -z "${DATABASE_URL:-}" ] || [ -z "${SECRET_KEY:-}" ] \
+             || [ -z "${ADMIN_API_TOKEN:-}" ]; then
+            echo "::error::Missing required production repository secret."
+            exit 1
+          fi
+          echo "Required production secrets are present."
+
+      - name: Create the artifacts directory
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+
+      - name: Run the R3 controlled-sample shadow reconciliation
+        id: shadow
+        run: |
+          set -euo pipefail
+          # A nonzero exit must still reach validation, sanitization, the job
+          # summary, and artifact upload, so the code is captured rather than
+          # thrown.
+          set +e
+          python backend/scripts/game_driven_ingestion.py --mode shadow --reference-date 2026-07-29 --only-game-pk 823110 --only-game-pk 825055 --only-game-pk 824004 --only-game-pk 823438 --only-game-pk 824408 --output "$REPORT_PATH"
+          shadow_exit=$?
+          set -e
+          echo "shadow_exit=$shadow_exit" >> "$GITHUB_OUTPUT"
+
+      - name: Validate the R3 report
+        id: validate
+        if: ${{ always() }}
+        env:
+          REPOSITORY_SHA: ${{ github.sha }}
+          WORKFLOW_RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          set +e
+          python backend/scripts/validate_r3_shadow_report.py \
+            --report "$REPORT_PATH" \
+            --summary-json "$SUMMARY_JSON_PATH" \
+            --summary-markdown "$SUMMARY_MARKDOWN_PATH" \
+            --authorization-json "$AUTHORIZATION_JSON_PATH" \
+            --authorization-markdown "$AUTHORIZATION_MARKDOWN_PATH" \
+            --repository-sha "$REPOSITORY_SHA" \
+            --run-id "$WORKFLOW_RUN_ID"
+          validation_exit=$?
+          set -e
+          echo "validation_exit=$validation_exit" >> "$GITHUB_OUTPUT"
+
+      - name: Scan artifacts for credential-shaped content
+        id: scan
+        if: ${{ always() }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import re
+          from pathlib import Path
+
+          # Fail closed on anything credential-shaped reaching an artifact. The
+          # matched text is never printed — only the filename and the category.
+          forbidden = re.compile(
+              r'postgresql://|postgres://|password\s*=|Authorization\s*:'
+              r'|X-Admin-Token|ADMIN_API_TOKEN|SECRET_KEY|DATABASE_URL'
+              r'|BASEBALLOS_ADMIN_API_TOKEN'
+              r'|token\s*=|api[_-]?key\s*=|secret\s*=',
+              re.IGNORECASE,
+          )
+          leaked = []
+          for path in sorted(Path('artifacts').glob('*')):
+              if path.is_file() and forbidden.search(path.read_text(errors='ignore')):
+                  leaked.append(path.name)
+                  path.unlink()
+          if leaked:
+              print(f"::error::Sanitization check failed for: {', '.join(leaked)}")
+              raise SystemExit(1)
+          print('Artifact sanitization check passed.')
+          PY
+
+      - name: Write the job summary
+        if: ${{ always() }}
+        run: |
+          set -euo pipefail
+          if [ -f "$SUMMARY_MARKDOWN_PATH" ]; then
+            cat "$SUMMARY_MARKDOWN_PATH" >> "$GITHUB_STEP_SUMMARY"
+          else
+            {
+              echo '## FOUNDATION 3C R3 — FAILED'
+              echo
+              echo '- Failed invariant: `shadow_command_produced_no_report`'
+              echo '- Artifact: `r3-controlled-five-shadow.json`'
+              echo
+              echo 'This is a rollout stop. R4 is blocked.'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload the R3 artifacts
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: foundation-3c-r3-controlled-sample-shadow
+          path: artifacts/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Fail the job unless R3 passed
+        if: ${{ always() }}
+        env:
+          SHADOW_EXIT: ${{ steps.shadow.outputs.shadow_exit }}
+          VALIDATION_EXIT: ${{ steps.validate.outputs.validation_exit }}
+        run: |
+          set -euo pipefail
+          if [ "${SHADOW_EXIT:-2}" != "0" ]; then
+            echo "::error::R3 shadow reconciliation exited ${SHADOW_EXIT:-2}. R4 is blocked."
+            exit 1
+          fi
+          if [ "${VALIDATION_EXIT:-2}" != "0" ]; then
+            echo "::error::R3 validation failed; see the job summary. R4 is blocked."
+            exit 1
+          fi
+          echo "R3 passed. R4 remains blocked pending founder review of the fingerprint."

@@ -92,19 +92,20 @@ and static page publication from advancing on unproven data.
 
 ## Foundation 3C rollout workflows (manual, diagnostic, non-mutating)
 
-Two workflows exist for the staged Foundation 3C rollout:
+Three workflows exist for the staged Foundation 3C rollout:
 
 | File | Displayed name | Scope |
 |---|---|---|
 | `.github/workflows/foundation-3c-r1-shadow-validation.yml` | Foundation 3C R1 Shadow Validation | five hard-coded games |
 | `.github/workflows/foundation-3c-r2-full-window-shadow.yml` | Foundation 3C R2 Full-Window Shadow Review | the normal governed window |
+| `.github/workflows/foundation-3c-r3-controlled-sample-shadow.yml` | Foundation 3C R3 Controlled Sample Shadow | five hard-coded controlled-sample games |
 
-Both are **temporary manual rollout diagnostics**. Both are separate from the
-BaseballOS Bullpen Sync workflow and neither is part of the daily or postgame
-production schedule. Neither has a cron; neither can be triggered by a push or
-a pull request; neither accepts inputs. Their permissions are `contents: read`.
+All three are **temporary manual rollout diagnostics**. All are separate from
+the BaseballOS Bullpen Sync workflow and none is part of the daily or postgame
+production schedule. None has a cron; none can be triggered by a push or a pull
+request; none accepts inputs. Their permissions are `contents: read`.
 
-Neither writes baseball data, publishes or withholds a snapshot, touches the
+None writes baseball data, publishes or withholds a snapshot, touches the
 appearance-ledger gate, warms a cache, or deploys. Each runs one pinned
 read-only shadow reconciliation at a hard-coded reference date, validates the
 result against a fixed contract, and reports.
@@ -119,17 +120,26 @@ They differ in what a green run means:
   approved** and R3/R4 stay blocked until the update manifest is reviewed by a
   human. `failed` means a foundational invariant broke and the job fails.
 
-A green `review_required` is a statement about execution, not authorization.
+- **R3** has two, like R1. It uses exact exclusive scope over five
+  hard-coded games and passes only when every mutation target is at zero. Its
+  output is the reviewed **complete reconciliation fingerprint** a later R4
+  write would have to match — it neither authorizes nor executes R4, which
+  stays blocked until a human approves that fingerprint.
 
-Both are removed at Stage E once the rollout completes.
+A green `review_required` is a statement about execution, not authorization,
+and so is a green R3.
+
+All three are removed at Stage E once the rollout completes.
 
 ### Pitcher identity is not written by completed games (D-009)
 
-Production R1 and R2 both passed on **GameLog reconciliation only**. The R2
-report simultaneously carried 942 pitcher-identity actions — 940 metadata
+The FIRST production R1 and R2 passed on **GameLog reconciliation only**. The
+R2 report simultaneously carried 942 pitcher-identity actions — 940 metadata
 updates and 2 reactivations across 423 pitchers — attached to rows whose GameLog
 action was `unchanged`, none of which appeared in the manifest or the
-fingerprint.
+fingerprint. Both gates were re-run after D-009 merged and passed on the
+complete mutation contract, with those differences reported as 1 and 57
+suppressed current-state differences respectively.
 
 The completed-game path no longer writes `Pitcher` rows. An existing row is the
 identity anchor and is never modified: not reactivated, not reassigned, not
