@@ -7,6 +7,7 @@ which is exactly the class of drift this suite exists to prevent.
 """
 
 from datetime import date
+from pathlib import Path
 
 import pytest
 from flask import Flask
@@ -20,6 +21,7 @@ from models.game_log import GameLog
 from models.pitcher import Pitcher
 from services import game_driven_ingestion
 from services import game_log_reconciliation as reconciliation
+from services import pitcher_identity_reconciliation as pitcher_identity
 from services import sync as sync_service
 from tests.game_driven_fixtures import (
     AWAY_TEAM,
@@ -623,3 +625,110 @@ def test_a_completed_game_replays_without_mutating_baseball_data(
              row.earned_runs, row.strikeouts)
             for row in GameLog.query.order_by(GameLog.id).all()
         ] == stored
+
+
+# ── Permanent runtime boundary ───────────────────────────────────────────────
+# Relocated from the temporary Foundation 3C Stage E suite at E2, before that
+# suite was deleted. These assertions outlive the rollout: they guard the
+# production components a future cleanup could delete "because the bootstrap is
+# finished". The rollout is finished; the runtime is not.
+#
+# Deliberately NOT relocated: Stage E workflow filenames, artifact names, the
+# 109 July 2026 game identifiers, temporary scope digests, workflow step order,
+# artifact retention, and summary formatting. Those described a one-time
+# rollout, not production behaviour.
+
+PERMANENT_RUNTIME_FILES = (
+    'backend/scripts/game_driven_ingestion.py',
+    'backend/services/game_driven_ingestion.py',
+    'backend/services/game_ingestion_planner.py',
+    'backend/services/game_ingestion_completeness.py',
+    'backend/services/game_log_reconciliation.py',
+    'backend/services/pitcher_identity_reconciliation.py',
+    'backend/models/game_ingestion_work_item.py',
+)
+
+PERMANENT_REGRESSION_FILES = (
+    'backend/tests/test_canonical_innings_reconciliation.py',
+    'backend/tests/test_exclusive_game_scope.py',
+    'backend/tests/test_game_driven_ingestion.py',
+    'backend/tests/test_game_ingestion_completeness.py',
+    'backend/tests/test_pitcher_identity_authority.py',
+    'backend/tests/test_publication_criticality.py',
+    'backend/tests/test_shadow_write_reconciliation_parity.py',
+)
+
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
+@pytest.mark.parametrize('path', PERMANENT_RUNTIME_FILES)
+def test_a_permanent_runtime_component_is_present(path):
+    """Bootstrap completion is not a reason to delete production behaviour."""
+    assert (_REPO_ROOT / path).exists(), path
+
+
+@pytest.mark.parametrize('path', PERMANENT_REGRESSION_FILES)
+def test_a_permanent_regression_suite_is_present(path):
+    assert (_REPO_ROOT / path).exists(), path
+
+
+def test_the_unresolved_first_write_forensic_inspector_is_present():
+    """The first-write provenance investigation is still open.
+
+    Kept here rather than in a rollout suite precisely because the rollout
+    suites are gone: this tooling belongs to a separate, unfinished question.
+    """
+    assert (
+        _REPO_ROOT / 'backend' / 'scripts'
+        / 'inspect_first_write_pitcher_identity.py'
+    ).exists()
+
+
+def test_the_permanent_runtime_contract_is_still_exposed():
+    """Presence is not enough — the authority itself must still be there."""
+    assert reconciliation.RECONCILIATION_PLAN_VERSION == '3'
+    assert reconciliation.PARITY_CONTRACT_VERSION == '4'
+    assert reconciliation.INNINGS_SEMANTICS_VERSION == '2'
+    assert reconciliation.COMPLETE_PLAN_VERSION == '1'
+    assert pitcher_identity.IDENTITY_PLAN_VERSION == '1'
+
+    # The complete-plan fingerprint and its identity component.
+    assert callable(reconciliation.plan_fingerprint)
+    assert callable(pitcher_identity.fingerprint_component)
+
+    # The run entry point and the governed modes.
+    assert callable(game_driven_ingestion.run_game_driven_ingestion)
+    assert game_driven_ingestion.MODE_OFF == 'off'
+    assert game_driven_ingestion.MODE_SHADOW == 'shadow'
+    assert game_driven_ingestion.MODE_WRITE == 'write'
+    assert game_driven_ingestion.MODE_AUTHORITATIVE == 'authoritative'
+
+
+def test_the_identity_decision_participates_in_the_complete_fingerprint():
+    """Contract-4 coverage by value, asserted at the plan level.
+
+    Two identity decisions that differ only in the values they would write must
+    not share a fingerprint. This is the PR #576 repair, held here so it cannot
+    be lost with a rollout suite.
+    """
+    base = {
+        'game_pk': 970901, 'pitcher_mlb_id': 97090,
+        'action': reconciliation.ACTION_UNCHANGED,
+    }
+    one = dict(base, pitcher_identity_action='create_minimal_identity',
+               pitcher_identity_mutation_digest='digest-one')
+    two = dict(base, pitcher_identity_action='create_minimal_identity',
+               pitcher_identity_mutation_digest='digest-two')
+    assert reconciliation.plan_fingerprint([one]) != (
+        reconciliation.plan_fingerprint([two])
+    )
+
+
+def test_the_lane_default_is_off_without_any_environment_configuration(
+    monkeypatch,
+):
+    """Removing the rollout workflows cannot have enabled anything."""
+    monkeypatch.delenv(game_driven_ingestion.MODE_ENV_VAR, raising=False)
+    assert game_driven_ingestion.ingestion_mode() == 'off'
+    assert game_driven_ingestion.enabled() is False
+    assert game_driven_ingestion.writes_enabled() is False

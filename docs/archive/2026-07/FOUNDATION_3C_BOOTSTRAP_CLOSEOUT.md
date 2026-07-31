@@ -1,9 +1,9 @@
 # Foundation 3C Bootstrap Closeout
 
-- **Status:** R6 complete in production; Stage E1 verification **pending**
+- **Status:** **CLOSED.** Bootstrap complete; Stage E1 verified in production; all rollout workflows retired
 - **Owner:** Nickolis Kacludis
 - **Rollout window:** July 2026
-- **Pull requests:** #569 through #579
+- **Pull requests:** #569 through #580, plus the Stage E2 closure
 - **Canonical homes:** `docs/current/GAME_DRIVEN_DAILY_INGESTION.md` (operating
   contract), `docs/current/SYNC_PIPELINE.md` (pipeline), and
   `docs/canonical/05_PRODUCT_ROADMAP_DECISION_LEDGER.md` (decisions)
@@ -41,7 +41,8 @@ then used it, under review, to clear exactly those 109 games.
 | R4 | #577 | Controlled write of five games + immediate replay | **passed in production** |
 | R5 | #578 | Full remaining-window shadow authorization over 99 games | **passed in production** |
 | R6 | #579 | Full remaining-window write of 99 games + replay | **passed in production** |
-| E1 | this PR | Independent closeout verification; rollout workflow retirement | **verification pending** |
+| E1 | #580 | Independent closeout verification; R1–R6 workflow retirement | **passed in production** |
+| E2 | this PR | Stage E workflow and temporary support retired; rollout closed | repository closure only |
 
 ---
 
@@ -166,55 +167,137 @@ retried, never compensated, never deleted. R6 did not partially complete.
 
 ---
 
-## What Foundation 3C did NOT resolve
+## Stage E verification — PASS
 
-This bootstrap closeout makes no claim about BaseballOS data quality in general.
-The following remain open and are outside its scope:
+Stage E1 executed in production and independently verified the completed
+bootstrap. It wrote nothing.
 
-- **14 false GameLog provenance events.** Rows carry correction provenance for
-  changes that appear not to have happened. No before-images are reconstructible.
-  `backend/scripts/inspect_first_write_pitcher_identity.py` is retained for that
-  investigation and is deliberately **not** part of Stage E cleanup.
-- **First-write Pitcher forensics.** Possible historic Pitcher changes during
-  the first write remain unproven either way.
-- **1,389 pre-existing global dead letters** at R6 closeout.
-- **#561 / #562 deployment smokes** never ran.
+| | |
+|---|---|
+| result | **PASS** |
+| repository SHA | `bd7e610a368c2229943a459cef887a1fe94194ff` |
+| workflow run | `30673146173` (run 1, attempt 1, `workflow_dispatch`) |
+| dispatched | 2026-07-31T23:32:02Z |
+| completed | 2026-07-31T23:35:36Z |
+| artifact | `foundation-3c-stage-e-bootstrap-closeout` |
+
+### Verified bootstrap state
+
+```
+expected final games        109
+completed final games       109
+unresolved final games        0
+terminal failures             0
+correction-pending games      0
+publication complete       true
+reconciled appearance rows  946
+```
+
+### Full 109-game replay
+
+```
+requested / planned / completed in shadow    109 / 109 / 109
+failed games                                   0
+rows expected                                946
+rows unchanged                               946
+rows inserted / updated / blocked          0 / 0 / 0
+decimal-only differences ignored             323
+```
+
+### Mutations and integrity
+
+```
+GameLog / pitcher identity / appearance team / complete plan    0 / 0 / 0 / 0
+database drift                                               none
+work items changed                                             no
+checkpoints changed                                            no
+governed-game dead letters                                      0
+```
+
+**No baseball-data mutation occurred during Stage E1.**
+
+### Dead-letter accounting
+
+| | |
+|---|---:|
+| global count at R6 closeout | 1,389 |
+| global count observed at Stage E1 | 1,389 |
+| delta | 0 |
+| governed-bootstrap dead letters | **0** |
+
+The global figure belongs to unrelated workstreams. It is recorded, not
+resolved, and Stage E made no claim that the system is free of dead letters.
+
+### Final historical identities
+
+```
+parity contract version   4
+
+full-bootstrap fingerprint
+  9f0fe9839e5aef4149dd6f2761d038e600ca1ea9562830832f5f952324d3e2c6
+
+full-scope SHA-256
+  e8cde57b9fe1033077533f7bee0cc64fc5969aa7fa3fc64efdc672c26d08a804
+
+write approved            false
+future write authorized   false
+```
+
+**These are historical closeout identities and nothing more.** They record what
+the completed bootstrap looked like on 2026-07-31. They are not authorization,
+they cannot be supplied to authorize a future write, and no future write
+inherits approval from them. Any later write requires its own reviewed
+fingerprint produced by its own reviewed shadow.
+
+---
+
+## Rollout closure
+
+| | |
+|---|---|
+| R1–R6 workflows | retired during Stage E1 (PR #580) |
+| Stage E workflow | retired during Stage E2 |
+| Foundation 3C rollout workflows remaining | **none** |
+| temporary Stage E scripts and tests | removed during Stage E2 |
+| permanent runtime and regression coverage | intact |
+| `GAME_DRIVEN_INGESTION_MODE` | **off** |
+| authoritative mode | **unapproved** |
+
+**The Foundation 3C bootstrap rollout is closed.**
+
+The permanent architecture it built remains in production service: the planner,
+the reconciliation and identity authorities, canonical integer-outs semantics,
+contract-4 fingerprinting, exclusive scope, per-game transactional checkpoints,
+and fail-closed publication completeness. What was retired is the temporary
+machinery that performed a one-time backfill, not the machinery that runs.
+
+### What was deliberately kept
+
+- **`backend/scripts/profile_daily_ingestion_readonly.py`** and its test, as
+  `activation_operations_support`. The next controlled stage is automated
+  shadow activation, and this read-only profile is how that gets observed.
+- **`backend/scripts/inspect_first_write_pitcher_identity.py`**, as
+  `unresolved_forensic_support` for the open first-write provenance question.
+
+### Next stage
+
+**Automated game-driven ingestion shadow activation**, as a separately reviewed
+change with its own evidence and its own production observation. A completed
+bootstrap is a precondition for considering it, not an argument for it. No
+activation decision has been made.
+
+---
+
+## Still unresolved — outside this closeout
+
+This record closes the Foundation 3C bootstrap. It closes nothing else. The
+following remain open and separate:
+
+- **14 false GameLog provenance events** — rows carrying correction provenance
+  for changes that appear not to have happened, with no reconstructible
+  before-images.
+- **First-write Pitcher forensics** — possible historic Pitcher changes during
+  the first write, unproven either way.
+- **1,389 pre-existing global dead letters**, unchanged through R6 and Stage E1.
 - **Data & Trust `/api/bullpen/dashboard`** failure.
-
----
-
-## Rollout state at closeout
-
-- `GAME_DRIVEN_INGESTION_MODE` remains **off**. The bootstrap was performed by
-  explicit manual dispatch; the automated lane was never enabled.
-- **Authoritative mode remains unapproved.**
-- Enabling either is a **separate decision** on its own merits. A completed
-  bootstrap is a precondition, not an argument.
-
----
-
-## Stage E verification status
-
-**PENDING.**
-
-Stage E1 (this pull request) retires the temporary rollout workflows, adds one
-final read-only closeout workflow, and consolidates permanent regression
-coverage. The production verification itself has **not been executed** at the
-time of writing.
-
-Stage E has two parts because a GitHub Actions workflow cannot verify production
-after merge and also delete itself in the same already-merged commit.
-
-### Section reserved for the E2 update
-
-> **To be completed after the Stage E1 production closeout runs.**
->
-> Record here: the Stage E workflow run ID, the repository SHA, the result, the
-> verified 109/0 state, the 946 reconciled appearance rows, the full-bootstrap
-> replay totals, the final contract-4 full-bootstrap fingerprint, the full-scope
-> SHA-256, the observed global dead-letter count and its delta from 1,389, and
-> confirmation that the replay caused no database drift.
->
-> E2 then deletes the Stage E workflow and its temporary support files, removes
-> the remaining rollout-only scope helpers, and proves no temporary Foundation 3C
-> rollout workflow remains.
+- **#561 / #562 deployment smokes**, never run.
