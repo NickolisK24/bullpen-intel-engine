@@ -601,23 +601,7 @@ def test_the_profile_path_runs_without_an_import_error(app, monkeypatch):
     assert observation['relevant_ratio'] == 1.0
 
 
-def test_the_workflow_summary_reports_import_failures_safely():
-    workflow = (BACKEND_DIR.parent / '.github' / 'workflows'
-                / 'foundation-3c-readonly-profile.yml').read_text(encoding='utf-8')
-
-    # The safe fields are surfaced.
-    for field in ('exception_type', 'import_stage', 'module_name',
-                  'missing_name', 'import_target', 'sanitized'):
-        assert f"report.get('{field}')" in workflow, field
-
-    # The sanitization scan and the fail-closed gate survive.
-    assert 'Sanitization check failed' in workflow
-    assert 'X-Admin-Token' in workflow
-    assert 'workflow_dispatch' in workflow
-    assert 'contents: read' in workflow
-
-    # Nothing prints an exception message, traceback, or path. Checked as code
-    # patterns — the phrase "traceback" appears in an explanatory line.
-    for forbidden in ("report.get('detail')", 'str(exc)', 'format_exc',
-                      'print_exc', "report.get('path')"):
-        assert forbidden not in workflow, forbidden
+# The workflow-structure test that lived here was removed at Stage E1 with the
+# `foundation-3c-readonly-profile` workflow it asserted on. The profiling script
+# itself is retained and its behaviour is covered by the tests above; the
+# sanitization guarantees it checked are enforced in the script, not the YAML.
