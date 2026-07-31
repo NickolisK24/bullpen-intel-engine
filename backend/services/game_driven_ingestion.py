@@ -369,6 +369,12 @@ def run_game_driven_ingestion(
     report['reconciliation_plan_fingerprint'] = reconciliation.plan_fingerprint(
         [row for entry in report['games'] for row in (entry.get('rows') or ())]
     )
+    # The run-level identity a reviewer approves. Per-game fingerprints already
+    # reached the report; without this the complete plan could only be reviewed
+    # game by game, which is not what an R4 write authorization compares against.
+    report['complete_reconciliation_fingerprint'] = (
+        report['reconciliation_plan_fingerprint']
+    )
     report['elapsed_seconds'] = round(time.monotonic() - started, 3)
     report['remaining_budget_seconds'] = (
         None if time_budget_seconds is None
