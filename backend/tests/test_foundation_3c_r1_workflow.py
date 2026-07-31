@@ -11,7 +11,6 @@ import json
 from pathlib import Path
 
 import pytest
-import yaml
 
 from scripts import validate_r1_shadow_report as validator
 
@@ -30,6 +29,13 @@ def workflow_text():
 
 @pytest.fixture(scope='module')
 def workflow(workflow_text):
+    # PyYAML is a declared dependency in backend/requirements.txt. It is
+    # imported here rather than at module scope for two reasons: a missing
+    # parser must not abort collection of the whole suite, and it must not
+    # quietly skip these guards either. importorskip would turn a rollout gate
+    # into a green no-op, so an absent parser fails loudly instead.
+    import yaml
+
     return yaml.safe_load(workflow_text)
 
 
@@ -50,6 +56,66 @@ def run_commands(job):
             if stripped and not stripped.startswith('#'):
                 lines.append(stripped)
     return lines
+
+
+# ═══════════════ 0. Parser-independent guards ═══════════════════════════════
+#
+# The invariants below are the ones whose failure would be most costly: a
+# trigger that fires itself, a mode that writes, a scope that widens. They are
+# asserted against the raw file so they hold even if the structural guards
+# above cannot run at all.
+
+
+PINNED_INGESTION_COMMAND = (
+    'python backend/scripts/game_driven_ingestion.py '
+    '--mode shadow --reference-date 2026-07-29 '
+    '--only-game-pk 823518 --only-game-pk 824735 --only-game-pk 823761 '
+    '--only-game-pk 824083 --only-game-pk 824327 '
+    '--output "$REPORT_PATH"'
+)
+
+
+def test_the_pinned_command_appears_verbatim(workflow_text):
+    assert PINNED_INGESTION_COMMAND in workflow_text
+
+
+def test_the_pinned_command_is_the_only_ingestion_invocation(workflow_text):
+    assert workflow_text.count('game_driven_ingestion.py') == 1
+
+
+def test_the_only_trigger_line_is_workflow_dispatch(workflow_text):
+    triggers = workflow_text.split('\non:\n')[1].split('\nconcurrency:')[0]
+    assert triggers.strip() == 'workflow_dispatch:'
+
+
+@pytest.mark.parametrize('forbidden', [
+    'schedule:', 'cron:', 'pull_request:', 'workflow_call:',
+    'repository_dispatch:', 'inputs:',
+])
+def test_no_self_firing_or_editable_surface_exists_in_the_file(
+    workflow_text, forbidden,
+):
+    assert forbidden not in workflow_text
+
+
+def test_the_file_declares_read_only_permissions(workflow_text):
+    assert '\npermissions:\n  contents: read\n' in workflow_text
+    assert 'permissions: write-all' not in workflow_text
+
+
+@pytest.mark.parametrize('forbidden', [
+    '--mode write', '--mode authoritative', '--expected-plan-fingerprint',
+    '--max-games', '--include-backfill',
+])
+def test_no_write_or_widening_option_appears_in_the_file(
+    workflow_text, forbidden,
+):
+    assert forbidden not in workflow_text
+
+
+def test_the_automated_lane_is_off_in_the_file(workflow_text):
+    assert "GAME_DRIVEN_INGESTION_MODE: 'off'" in workflow_text
+    assert "AUTO_SYNC: 'false'" in workflow_text
 
 
 # ═══════════════ 1. Manual only ═════════════════════════════════════════════
