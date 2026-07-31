@@ -1,0 +1,247 @@
+name: Foundation 3C R4 Controlled Write and Replay
+
+# THE FIRST WORKFLOW IN THIS SEQUENCE THAT INTENTIONALLY WRITES.
+#
+# R1, R2, and R3 were read-only. R4 applies the five-game write R3 authorized,
+# and it may change ONE thing: governed ingestion control state. Five work items
+# complete, and publication completeness moves 5/104 -> 10/99. No GameLog row,
+# no Pitcher row, no appearance-team field, no correction provenance, and no
+# dead letter may change.
+#
+# Authorization is a single hard-coded contract-4 fingerprint, compared against
+# a freshly recomputed plan BEFORE the first mutation. The contract-3 value that
+# R3 originally produced is stale after PR #576 and appears nowhere executable.
+#
+# Single use. Preflight refuses if any selected game already carries a work
+# item, so a second dispatch stops before write.
+#
+# Concurrency joins `baseballos-sync`, the repository's existing production
+# write-serialization group, so R4 cannot race the scheduled daily/postgame sync
+# against the same tables. A dedicated group would have looked tidier and
+# protected nothing.
+#
+# NOTE ON ATOMICITY: the canonical writer commits PER GAME. Five-game atomicity
+# does not exist and is not claimed. Partial completion is a FAILED result that
+# stops the rollout for review — never a retry and never a compensation.
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: baseballos-sync
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  r4-controlled-write:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      APP_ENV: production
+      AUTO_SYNC: 'false'
+      # Exactly one command below runs the writer explicitly. This env var
+      # keeps the scheduled lane disabled throughout regardless.
+      GAME_DRIVEN_INGESTION_MODE: 'off'
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      SECRET_KEY: ${{ secrets.SECRET_KEY }}
+      ADMIN_API_TOKEN: ${{ secrets.BASEBALLOS_ADMIN_API_TOKEN }}
+      BEFORE_STATE_PATH: artifacts/r4-before-state.json
+      PREFLIGHT_PATH: artifacts/r4-preflight-shadow.json
+      WRITE_PATH: artifacts/r4-controlled-write.json
+      AFTER_STATE_PATH: artifacts/r4-after-state.json
+      REPLAY_PATH: artifacts/r4-postwrite-replay.json
+      SUMMARY_JSON_PATH: artifacts/r4-validation-summary.json
+      SUMMARY_MARKDOWN_PATH: artifacts/r4-validation-summary.md
+      CLOSEOUT_JSON_PATH: artifacts/r4-closeout.json
+      CLOSEOUT_MARKDOWN_PATH: artifacts/r4-closeout.md
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install backend dependencies
+        run: pip install -r backend/requirements.txt
+
+      - name: Validate required secrets are present
+        run: |
+          set -euo pipefail
+          if [ -z "${DATABASE_URL:-}" ] || [ -z "${SECRET_KEY:-}" ] \
+             || [ -z "${ADMIN_API_TOKEN:-}" ]; then
+            echo "::error::Missing required production repository secret."
+            exit 1
+          fi
+          echo "Required production secrets are present."
+
+      - name: Create the artifacts directory
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+
+      - name: Capture the before state
+        id: before
+        run: |
+          set -euo pipefail
+          set +e
+          python backend/scripts/inspect_r4_controlled_state.py --phase before --output "$BEFORE_STATE_PATH"
+          before_exit=$?
+          set -e
+          echo "before_exit=$before_exit" >> "$GITHUB_OUTPUT"
+
+      - name: Run the R4 preflight shadow
+        id: preflight
+        if: ${{ steps.before.outputs.before_exit == '0' }}
+        run: |
+          set -euo pipefail
+          set +e
+          python backend/scripts/game_driven_ingestion.py --mode shadow --reference-date 2026-07-29 --only-game-pk 823110 --only-game-pk 825055 --only-game-pk 824004 --only-game-pk 823438 --only-game-pk 824408 --output "$PREFLIGHT_PATH"
+          preflight_exit=$?
+          set -e
+          echo "preflight_exit=$preflight_exit" >> "$GITHUB_OUTPUT"
+
+      - name: Authorize the write against the approved contract-4 fingerprint
+        id: authorize
+        if: ${{ steps.preflight.outputs.preflight_exit == '0' }}
+        run: |
+          set -euo pipefail
+          set +e
+          python backend/scripts/validate_r4_controlled_write.py preflight \
+            --before-state "$BEFORE_STATE_PATH" \
+            --preflight "$PREFLIGHT_PATH"
+          authorize_exit=$?
+          set -e
+          echo "authorize_exit=$authorize_exit" >> "$GITHUB_OUTPUT"
+
+      # The only write in this workflow, and it runs only when the preflight
+      # validator authorized it.
+      - name: Run the R4 controlled write
+        id: write
+        if: ${{ steps.authorize.outputs.authorize_exit == '0' }}
+        run: |
+          set -euo pipefail
+          set +e
+          python backend/scripts/game_driven_ingestion.py --mode write --reference-date 2026-07-29 --only-game-pk 823110 --only-game-pk 825055 --only-game-pk 824004 --only-game-pk 823438 --only-game-pk 824408 --expected-plan-fingerprint 08bf16bc730ffe4c5c024c8e1dbc000d017a1a4956878f49a988fb22a1e4adda --output "$WRITE_PATH"
+          write_exit=$?
+          set -e
+          echo "write_exit=$write_exit" >> "$GITHUB_OUTPUT"
+
+      - name: Capture the after state
+        id: after
+        if: ${{ always() && steps.authorize.outputs.authorize_exit == '0' }}
+        run: |
+          set -euo pipefail
+          set +e
+          python backend/scripts/inspect_r4_controlled_state.py --phase after --output "$AFTER_STATE_PATH"
+          after_exit=$?
+          set -e
+          echo "after_exit=$after_exit" >> "$GITHUB_OUTPUT"
+
+      - name: Run the post-write shadow replay
+        id: replay
+        if: ${{ always() && steps.authorize.outputs.authorize_exit == '0' }}
+        run: |
+          set -euo pipefail
+          set +e
+          python backend/scripts/game_driven_ingestion.py --mode shadow --reference-date 2026-07-29 --only-game-pk 823110 --only-game-pk 825055 --only-game-pk 824004 --only-game-pk 823438 --only-game-pk 824408 --output "$REPLAY_PATH"
+          replay_exit=$?
+          set -e
+          echo "replay_exit=$replay_exit" >> "$GITHUB_OUTPUT"
+
+      - name: Validate the complete R4 closeout
+        id: closeout
+        if: ${{ always() }}
+        env:
+          REPOSITORY_SHA: ${{ github.sha }}
+          WORKFLOW_RUN_ID: ${{ github.run_id }}
+          WRITE_EXIT: ${{ steps.write.outputs.write_exit }}
+        run: |
+          set -euo pipefail
+          set +e
+          python backend/scripts/validate_r4_controlled_write.py closeout \
+            --before-state "$BEFORE_STATE_PATH" \
+            --preflight "$PREFLIGHT_PATH" \
+            --write "$WRITE_PATH" \
+            --after-state "$AFTER_STATE_PATH" \
+            --replay "$REPLAY_PATH" \
+            --write-exit "${WRITE_EXIT:-2}" \
+            --summary-json "$SUMMARY_JSON_PATH" \
+            --summary-markdown "$SUMMARY_MARKDOWN_PATH" \
+            --closeout-json "$CLOSEOUT_JSON_PATH" \
+            --closeout-markdown "$CLOSEOUT_MARKDOWN_PATH" \
+            --repository-sha "$REPOSITORY_SHA" \
+            --run-id "$WORKFLOW_RUN_ID"
+          closeout_exit=$?
+          set -e
+          echo "closeout_exit=$closeout_exit" >> "$GITHUB_OUTPUT"
+
+      - name: Scan artifacts for credential-shaped content
+        id: scan
+        if: ${{ always() }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import re
+          from pathlib import Path
+
+          # Fail closed on anything credential-shaped reaching an artifact. The
+          # matched text is never printed — only the filename and the category.
+          forbidden = re.compile(
+              r'postgresql://|postgres://|password\s*=|Authorization\s*:'
+              r'|X-Admin-Token|ADMIN_API_TOKEN|SECRET_KEY|DATABASE_URL'
+              r'|BASEBALLOS_ADMIN_API_TOKEN'
+              r'|token\s*=|api[_-]?key\s*=|secret\s*=',
+              re.IGNORECASE,
+          )
+          leaked = []
+          for path in sorted(Path('artifacts').glob('*')):
+              if path.is_file() and forbidden.search(path.read_text(errors='ignore')):
+                  leaked.append(path.name)
+                  path.unlink()
+          if leaked:
+              print(f"::error::Sanitization check failed for: {', '.join(leaked)}")
+              raise SystemExit(1)
+          print('Artifact sanitization check passed.')
+          PY
+
+      - name: Write the job summary
+        if: ${{ always() }}
+        run: |
+          set -euo pipefail
+          if [ -f "$SUMMARY_MARKDOWN_PATH" ]; then
+            cat "$SUMMARY_MARKDOWN_PATH" >> "$GITHUB_STEP_SUMMARY"
+          else
+            {
+              echo '## FOUNDATION 3C R4 — FAILED'
+              echo
+              echo '- Failed invariant: `closeout_validation_produced_no_summary`'
+              echo '- Artifact: `foundation-3c-r4-controlled-write-and-replay`'
+              echo
+              echo 'This is a rollout stop. Do not retry R4 or begin R5 without founder review.'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload the R4 artifacts
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: foundation-3c-r4-controlled-write-and-replay
+          path: artifacts/
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Fail the job unless R4 passed
+        if: ${{ always() }}
+        env:
+          CLOSEOUT_EXIT: ${{ steps.closeout.outputs.closeout_exit }}
+        run: |
+          set -euo pipefail
+          if [ "${CLOSEOUT_EXIT:-2}" != "0" ]; then
+            echo "::error::R4 failed; see the job summary. Rollout stops. Do not retry."
+            exit 1
+          fi
+          echo "R4 passed. Proceed to R5: one full shadow of the remaining 99 unresolved games."
