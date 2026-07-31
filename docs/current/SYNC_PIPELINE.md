@@ -92,7 +92,7 @@ and static page publication from advancing on unproven data.
 
 ## Foundation 3C rollout workflows (manual, diagnostic, non-mutating)
 
-Five workflows exist for the staged Foundation 3C rollout:
+Six workflows exist for the staged Foundation 3C rollout:
 
 | File | Displayed name | Scope |
 |---|---|---|
@@ -101,9 +101,10 @@ Five workflows exist for the staged Foundation 3C rollout:
 | `.github/workflows/foundation-3c-r3-controlled-sample-shadow.yml` | Foundation 3C R3 Controlled Sample Shadow | five hard-coded controlled-sample games |
 | `.github/workflows/foundation-3c-r4-controlled-write.yml` | Foundation 3C R4 Controlled Write and Replay | the same five games — **writes** |
 | `.github/workflows/foundation-3c-r5-remaining-window-shadow.yml` | Foundation 3C R5 Remaining Window Shadow Authorization | the exact 99 remaining unresolved games — read-only |
+| `.github/workflows/foundation-3c-r6-full-remaining-window-write.yml` | Foundation 3C R6 Full Remaining Window Write and Closeout | the same 99 games — **writes** |
 
-R1, R2, R3, and R5 are **temporary manual rollout diagnostics**. R4 is a
-temporary manual rollout **write**, described separately below. All are separate from
+R1, R2, R3, and R5 are **temporary manual rollout diagnostics**. R4 and R6 are
+temporary manual rollout **writes**, described separately below. All are separate from
 the BaseballOS Bullpen Sync workflow and none is part of the daily or postgame
 production schedule. None has a cron; none can be triggered by a push or a pull
 request; none accepts inputs. Their permissions are `contents: read`.
@@ -112,7 +113,8 @@ None writes baseball data, publishes or withholds a snapshot, touches the
 appearance-ledger gate, warms a cache, or deploys. R1, R2, R3, and R5 each run
 one pinned read-only shadow reconciliation at a hard-coded reference date,
 validate the result against a fixed contract, and report. R4 additionally
-applies one authorized write to governed work-item state — and only that.
+applies one authorized write to governed work-item state — and only that. R6
+does the same across the whole remaining window.
 
 They differ in what a green run means:
 
@@ -141,7 +143,7 @@ fingerprint, so a pre-repair value cannot be reproduced and a write authorized
 with it will be refused. R3 must be re-run to produce a fingerprint under the
 repaired contract before any write is authorized.
 
-All five are removed at Stage E once the rollout completes.
+All six are removed at Stage E once the rollout completes.
 
 ### R4 is the first workflow here that intentionally writes
 
@@ -201,7 +203,51 @@ It serializes on `baseballos-sync` like R4. R5 does not write, but its
 authorization is only meaningful if production held still while it was produced.
 
 A successful R5 leads directly to **R6: the full remaining-window write of the
-same 99 games.** No more small samples.
+same 99 games.** No more small samples. **R5 executed in production and
+passed**: 99 games projected, 865 rows unchanged, 291 ignored decimal-only
+differences, zero mutations on every target, zero database drift, and the
+contract-4 fingerprint `40659a40…9343` under scope digest `43b9333a…fd22`.
+
+### R6 completes the bootstrap write
+
+R6 is **temporary and manual-only**, and it is the **full remaining bootstrap
+write** — all 99 games in one authorized pass, not a batch.
+
+It uses **exact exclusive scope**, hard-coded and verified against the database
+rather than defined by it. A shell guard refuses before any database operation
+unless the array is exactly 99 unique numeric entries, contains none of the ten
+completed games, and hashes to the approved scope digest.
+
+It **requires the R5 contract-4 fingerprint** —
+`40659a4051226df40ef7cedbca7a6bc2689d5c2bfbdd4ccdb717fc6fc0c79343` — recomputed
+from current database state and current official evidence and compared before
+the first mutation. Three other 64-character values exist in this rollout's
+history and none may authorize it: the contract-3 R3 value, the contract-4 R4
+five-game value, and the scope-set digest. The digest especially — it proves
+*which games*, not *which plan*, and is the same shape as a fingerprint.
+
+It **writes governed work-item/checkpoint state only**: 99 work items created
+and completed, completeness 10/99 → 109/0, publication complete. No
+baseball-data row may change. Because it genuinely writes, the summary never
+claims "no database writes were performed" — it says only governed ingestion
+control state changed.
+
+It performs an **immediate full replay** of the same 99 games, which must return
+zero mutations and reproduce the approved fingerprint, followed by a final
+snapshot proving the replay itself caused no drift.
+
+It runs **no normal sync and no publication**, and it does not publish a new
+public snapshot itself. It serializes on `baseballos-sync` so it cannot race the
+scheduled daily/postgame sync, intraday repair, R4, R5, or another R6 dispatch.
+
+The writer commits per game, so partial completion is genuinely reachable and is
+a **FAILED** result that stops the rollout — never a retry, never a
+compensation, never a deleted checkpoint.
+
+**A successful R6 completes the bootstrap but does not enable automation.**
+Stage E separately removes the temporary workflows and decides rollout
+activation; `GAME_DRIVEN_INGESTION_MODE` stays `off` and authoritative mode
+stays unapproved until that decision is made on its own merits.
 
 ### Pitcher identity is not written by completed games (D-009)
 

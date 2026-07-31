@@ -1414,6 +1414,156 @@ R6, the full remaining-window write of the same 99 games. **No more small
 samples.** `GAME_DRIVEN_INGESTION_MODE` stays `off` and authoritative mode
 remains unapproved.
 
+## R5 production result — PASS
+
+R5 executed in production against the exact remaining 99-game scope and passed.
+It wrote nothing.
+
+| | |
+|---|---|
+| games requested / planned / completed | 99 / 99 / 99, 0 failed |
+| exact scope | yes |
+| appearance rows | 865 — inserted 0, updated 0, **unchanged 865**, blocked 0 |
+| GameLog / identity / appearance-team / complete-plan mutations | 0 / 0 / 0 / 0 |
+| identity reactivations, metadata updates, creations, blocked | 0 / 0 / 0 / 0 |
+| ignored decimal-only differences | 291 |
+| canonical-outs and `innings_pitched` semantic corrections | 0 |
+| suppressed historical current-state differences | **59** (observed) |
+| database drift | **none** |
+| work items created / checkpoints completed / dead letters | 0 / 0 / 0 |
+| completeness | 10 completed / 99 unresolved, publication incomplete |
+
+Approved contract-4 complete reconciliation fingerprint:
+
+```
+40659a4051226df40ef7cedbca7a6bc2689d5c2bfbdd4ccdb717fc6fc0c79343
+```
+
+Approved scope-set SHA-256:
+
+```
+43b9333ad228c60846f1cd24ae8518273dc1017aefc98e7b7930974c40bdfd22
+```
+
+The before and after snapshots were identical across all five hashed families —
+GameLog content, canonical outs, correction provenance, appearance-team
+authority, and Pitcher current state.
+
+**The 59 suppressed differences are review evidence, not a write expectation.**
+They may change if current roster or team state moved while every historical
+appearance stayed semantically identical. Such a change must not move the
+mutation plan or the approved fingerprint, so R6 records the observed count
+rather than requiring 59.
+
+## R6 full remaining-window write
+
+R6 is the write that **completes the Foundation 3C bootstrap**. It applies the
+plan R5 reviewed across all 99 remaining games and may change exactly one thing:
+governed ingestion control state.
+
+### The exact three-command sequence
+
+```
+# 1 preflight (shadow) — read-only, no fingerprint
+python backend/scripts/game_driven_ingestion.py --mode shadow \
+  --reference-date 2026-07-29 <99x --only-game-pk> \
+  --output artifacts/r6-preflight-shadow.json
+
+# 2 the write — the only one, gated on the preflight validator
+python backend/scripts/game_driven_ingestion.py --mode write \
+  --reference-date 2026-07-29 <99x --only-game-pk> \
+  --expected-plan-fingerprint 40659a4051226df40ef7cedbca7a6bc2689d5c2bfbdd4ccdb717fc6fc0c79343 \
+  --output artifacts/r6-full-write.json
+
+# 3 immediate replay (shadow) — read-only, no fingerprint
+python backend/scripts/game_driven_ingestion.py --mode shadow \
+  --reference-date 2026-07-29 <99x --only-game-pk> \
+  --output artifacts/r6-postwrite-replay.json
+```
+
+Exactly three ingestion invocations. Exactly one `--mode write`.
+
+### Single use
+
+The before-state requires 10 completed / 99 unresolved **and no work item on any
+selected game**. A successful R6 makes both false, so a second dispatch stops
+before the write. If R6 fails or partially completes, **do not dispatch it
+again** — send the artifacts for review.
+
+### Three values that must never authorize it
+
+| value | what it actually is |
+|---|---|
+| `2a06f7e5…c239` | the contract-3 R3 fingerprint — stale since PR #576 |
+| `08bf16bc…adda` | the contract-4 R4 **five-game** fingerprint — wrong scope |
+| `43b9333a…fd22` | the **scope-set digest** — proves which games, not which plan |
+
+The last one matters most: it is also 64 hex characters, so it looks like a
+fingerprint and is not one. All three are explicitly rejected by the validator
+and appear in no executable command.
+
+### Transaction boundary — stated honestly
+
+The canonical writer commits **once per game**. Ninety-nine-game atomicity does
+not exist and is not claimed. A failure at game 50 leaves 49 durable
+checkpoints. That is a **FAILED** result: R6 reports the exact completed and
+unresolved subsets, captures the after-write state, runs the replay read-only,
+captures the final state, and stops. **No retry, no compensation, no deleted
+checkpoints.** Production may legitimately be left between 10/99 and 109/0, and
+the closeout says so plainly.
+
+### What R6 may and may not change
+
+May change — governed ingestion control state only:
+
+| | before | after |
+|---|---:|---:|
+| selected work items | 0 | **99** |
+| total governed-window work items | 10 | **109** |
+| completed final games | 10 | **109** |
+| unresolved final games | 99 | **0** |
+| publication complete | false | **true** |
+| reconciled appearance rows | 81 | **946** |
+
+The 946 comes from the completeness object's own durable ledger — 38 rows from
+the original five, 43 from the R4 five, 865 from the R6 99. It is read from
+`critical_appearance_rows_reconciled`, a field that already exists; nothing is
+invented for the closeout.
+
+May not change — anything else. No GameLog insert or update, no canonical-outs
+correction, no statistical correction, no correction-provenance change, no
+Pitcher identity creation or mutation, no current roster/team mutation, no
+appearance-team mutation, no dead letter.
+
+### The wording that matters
+
+R6 writes 99 work items. The summary therefore **never says "no database writes
+were performed."** It says:
+
+> Only governed ingestion control state changed. No baseball-data rows changed.
+
+### Four snapshots
+
+`before` (production is still where R5 left it), `prewrite` (the preflight
+changed nothing), `after_write` (what the write actually did), and `final` (the
+replay changed nothing). Each sets the transaction read-only and requires a
+write probe to be refused before reading a row.
+
+### Immediate replay
+
+Mandatory whenever the write was authorized — including when the write exits
+nonzero or partially completes. A successful replay reports 99 games, 865
+unchanged rows, 291 ignored differences, zero mutations on every target, and
+**reproduces the approved fingerprint exactly**. Checkpoint state is excluded
+from the complete plan, so the write and the replay must produce the same plan
+identity.
+
+### After R6
+
+A successful R6 completes the 109-game bootstrap and permits **Stage E rollout
+closeout**. It does **not** enable the automated lane and does **not** approve
+authoritative mode — those remain separate decisions.
+
 ## Controlled parity rollout
 
 Production remains **off** until parity validation passes. The next operator
