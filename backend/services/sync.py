@@ -44,6 +44,7 @@ from services.completed_game_context_service import (
 from services import evidence_contract
 from services import game_driven_ingestion
 from services import game_log_reconciliation
+from services import pitcher_identity_reconciliation as pitcher_identity
 from services import game_ingestion_completeness
 from services.fatigue import calculate_fatigue
 from services.game_finality import (
@@ -1404,97 +1405,38 @@ def _official_assignment_blocks_postgame_current(pitcher, team):
     )
 
 
-def _apply_pitcher_authority_from_line(
-    pitcher,
-    line: dict,
-    team: dict,
-    timestamp,
-    *,
-    position_override=False,
-    apply: bool = True,
-):
-    """Reconcile a pitcher's authority fields from an official pitching line.
+def _appearance_team_context(team: dict) -> dict:
+    """Historical team-at-appearance context, for REPORTING only.
 
-    ``apply=False`` computes the identical decision and returns the identical
-    result WITHOUT touching the row, so a read-only projection reports exactly
-    what this function would do rather than maintaining a second copy of these
-    rules.
+    Handed to the identity planner so a plan can state that the appearance team
+    differs from the current assignment. It is never applied to the Pitcher row;
+    the historical team already lives on the GameLog appearance-team fields.
     """
-    before_active = bool(pitcher.active)
-    before_team = (pitcher.team_id, pitcher.team_name, pitcher.team_abbreviation)
-    before_roster = pitcher.roster_status
-
-    line_name = line.get('name')
-    name_change = bool(line_name and not pitcher.full_name)
-    if apply and name_change:
-        pitcher.full_name = line_name
-
-    desired = {
-        'position': pitcher.position or _pitching_line_record_position(line) or 'P',
-    }
-    assignment_blocked = _official_assignment_blocks_postgame_current(pitcher, team)
-    roster_blocked = _official_roster_cache_blocks_postgame_active(pitcher)
-
-    if not assignment_blocked:
-        desired.update({
-            'active': True,
-            'team_id': team['team_id'],
-            'team_name': team.get('team_name') or pitcher.team_name,
-            'team_abbreviation': team.get('team_abbreviation') or pitcher.team_abbreviation,
-            'team_assignment_status': POSTGAME_PITCHER_TEAM_ASSIGNMENT_STATUS,
-            'team_assignment_source': POSTGAME_PITCHER_RESOLUTION_SOURCE,
-        })
-
-    if not roster_blocked and getattr(pitcher, 'roster_status', None) != STATUS_ACTIVE:
-        desired.update({
-            'roster_status': STATUS_UNKNOWN,
-            'roster_status_source': POSTGAME_PITCHER_RESOLUTION_SOURCE,
-            'roster_status_raw_code': None,
-            'roster_status_raw_description': (
-                'Final-game pitching line; current roster status unverified; '
-                'position_override_from_pitching_line'
-                if position_override
-                else 'Final-game pitching line; current roster status unverified'
-            ),
-        })
-    changed = name_change
-    changed_fields = ['full_name'] if name_change else []
-    for attr, value in desired.items():
-        if getattr(pitcher, attr) != value:
-            if apply:
-                setattr(pitcher, attr, value)
-            changed = True
-            changed_fields.append(attr)
-
-    if apply:
-        if not assignment_blocked and (
-            changed or pitcher.team_assignment_updated_at is None
-        ):
-            pitcher.team_assignment_updated_at = timestamp
-        if (
-            'roster_status' in desired
-            and not roster_blocked
-            and (changed or pitcher.roster_status_updated_at is None)
-        ):
-            pitcher.roster_status_updated_at = timestamp
-        after_team = (
-            pitcher.team_id, pitcher.team_name, pitcher.team_abbreviation,
-        )
-        after_roster = pitcher.roster_status
-    else:
-        after_team = (
-            desired.get('team_id', pitcher.team_id),
-            desired.get('team_name', pitcher.team_name),
-            desired.get('team_abbreviation', pitcher.team_abbreviation),
-        )
-        after_roster = desired.get('roster_status', pitcher.roster_status)
-
+    team = team or {}
     return {
-        'reactivated': not before_active,
-        'team_changed': before_team != after_team,
-        'roster_changed': before_roster != after_roster,
-        'changed': changed,
-        'changed_fields': sorted(set(changed_fields)),
+        'team_id': team.get('team_id'),
+        'team_name': team.get('team_name'),
+        'team_abbreviation': team.get('team_abbreviation'),
+    }
+
+
+def _identity_resolution(plan, pitcher, *, position_override):
+    """Uniform resolution result carrying the canonical identity plan."""
+    action = plan.get('action')
+    return {
+        'status': {
+            pitcher_identity.ACTION_CREATE_MINIMAL_IDENTITY: 'would_create',
+            pitcher_identity.ACTION_BLOCKED: 'blocked',
+        }.get(action, 'resolved'),
+        'pitcher': pitcher,
+        'created': action == pitcher_identity.ACTION_CREATE_MINIMAL_IDENTITY,
+        # Retired: completed-game evidence can no longer reactivate anyone.
+        'reactivated': False,
+        'reason': plan.get('blocked_reason'),
+        'position_override_from_pitching_line': position_override,
+        'identity_action': action,
+        'identity_plan': plan,
+        'identity_changed_fields': list(plan.get('changed_fields') or ()),
     }
 
 
@@ -1508,16 +1450,20 @@ def resolve_pitcher_for_authoritative_line(
     plan_only: bool = False,
 ):
     """
-    Resolve or create a pitcher from a completed-game pitching line.
+    Resolve a pitcher from a completed-game pitching line under D-009.
 
-    The boxscore pitching line provides the authoritative player id, name, and
-    team side for Branch 04. If any of those identity anchors conflict or are
-    absent, the line is dead-lettered instead of being silently skipped.
+    The box-score pitching line is authority for WHO appeared. It is not
+    authority for anything about that person's CURRENT state, so an existing
+    Pitcher row is never modified here — not reactivated, not reassigned, not
+    renamed, not restatused. Historical/current differences are reported as
+    suppressed evidence by the canonical identity planner and refused.
 
-    ``plan_only`` runs the identical guard chain and reaches the identical
-    verdict while writing nothing: no pitcher is created, no authority field is
-    reconciled, and no failure is dead-lettered. It reports what WOULD happen
-    so a read-only projection and the writer can never classify the same line
+    A missing row may be created minimally, because a new appearance cannot be
+    persisted without one. That creation claims no current team, no active
+    status, and no official roster status.
+
+    ``plan_only`` reaches the identical verdict while writing nothing. Both
+    modes consume the SAME plan, so shadow and write cannot classify a line
     differently.
     """
     player_id = _positive_external_id(line.get('player_id'))
@@ -1525,10 +1471,10 @@ def resolve_pitcher_for_authoritative_line(
         return _pitcher_resolution_failure(
             line=line,
             game=game,
-            reason='missing_or_invalid_player_id',
+            reason=pitcher_identity.BLOCKED_MISSING_PLAYER_ID,
             sync_run_id=sync_run_id,
             job_name=job_name,
-        record=not plan_only,
+            record=not plan_only,
         )
 
     person_id = _positive_external_id(line.get('person_id'))
@@ -1536,10 +1482,10 @@ def resolve_pitcher_for_authoritative_line(
         return _pitcher_resolution_failure(
             line=line,
             game=game,
-            reason='conflicting_player_identity',
+            reason=pitcher_identity.BLOCKED_CONFLICTING_IDENTITY,
             sync_run_id=sync_run_id,
             job_name=job_name,
-        record=not plan_only,
+            record=not plan_only,
         )
 
     team, team_error = _resolve_pitching_line_team(game, line)
@@ -1550,7 +1496,7 @@ def resolve_pitcher_for_authoritative_line(
             reason=team_error,
             sync_run_id=sync_run_id,
             job_name=job_name,
-        record=not plan_only,
+            record=not plan_only,
         )
 
     line_position = _normalized_position(line.get('position'))
@@ -1567,10 +1513,10 @@ def resolve_pitcher_for_authoritative_line(
         return _pitcher_resolution_failure(
             line=line,
             game=game,
-            reason='non_pitcher_position',
+            reason=pitcher_identity.BLOCKED_NON_PITCHER_POSITION,
             sync_run_id=sync_run_id,
             job_name=job_name,
-        record=not plan_only,
+            record=not plan_only,
         )
 
     local_pitchers = local_pitchers if local_pitchers is not None else {}
@@ -1578,105 +1524,63 @@ def resolve_pitcher_for_authoritative_line(
     if pitcher is None:
         pitcher = Pitcher.query.filter_by(mlb_id=player_id).first()
 
-    timestamp = utc_now_naive()
-    if pitcher is None:
-        line_name = line.get('name')
-        if not line_name:
+    if pitcher is not None:
+        existing_position = _normalized_position(pitcher.position)
+        if (
+            existing_position is not None
+            and existing_position not in {'P', 'PITCHER'}
+            and not authoritative_pitching_line
+        ):
             return _pitcher_resolution_failure(
                 line=line,
                 game=game,
-                reason='missing_player_name',
+                reason=pitcher_identity.BLOCKED_LOCAL_RECORD_NOT_PITCHER,
                 sync_run_id=sync_run_id,
                 job_name=job_name,
-            record=not plan_only,
+                record=not plan_only,
             )
-        if plan_only:
-            # A pitcher with no local record cannot already own an appearance
-            # row, so this line's row plan is unambiguously an insert.
-            return {
-                'status': 'would_create',
-                'pitcher': None,
-                'created': True,
-                'reactivated': False,
-                'reason': None,
-                'position_override_from_pitching_line': position_override,
-                'identity_action': 'create',
-            }
-        pitcher = Pitcher(
-            mlb_id=player_id,
-            full_name=line_name,
-            position=_pitching_line_record_position(line) or 'P',
-        )
-        _apply_pitcher_authority_from_line(
-            pitcher,
-            line,
-            team,
-            timestamp,
-            position_override=position_override,
-        )
-        db.session.add(pitcher)
-        db.session.flush()
-        local_pitchers[player_id] = pitcher
-        return {
-            'status': 'created',
-            'pitcher': pitcher,
-            'created': True,
-            'reactivated': False,
-            'reason': None,
-            'position_override_from_pitching_line': position_override,
-            'identity_action': 'create',
-        }
 
-    existing_position = _normalized_position(pitcher.position)
-    if existing_position is not None and existing_position not in {'P', 'PITCHER'} and not authoritative_pitching_line:
+    plan = pitcher_identity.plan_identity(
+        existing=pitcher,
+        player_mlb_id=player_id,
+        line_name=line.get('name'),
+        line_position=_pitching_line_record_position(line),
+        appearance_team=_appearance_team_context(team),
+        position_override=position_override,
+    )
+
+    if plan['action'] == pitcher_identity.ACTION_BLOCKED:
         return _pitcher_resolution_failure(
             line=line,
             game=game,
-            reason='local_record_not_pitcher',
+            reason=plan['blocked_reason'],
             sync_run_id=sync_run_id,
             job_name=job_name,
-        record=not plan_only,
+            record=not plan_only,
         )
 
-    changes = _apply_pitcher_authority_from_line(
-        pitcher,
-        line,
-        team,
-        timestamp,
-        position_override=position_override,
-        apply=not plan_only,
-    )
-    identity_action = None
-    if changes['reactivated']:
-        identity_action = 'reactivate'
-    elif changes['changed']:
-        identity_action = 'update_metadata'
-    if plan_only:
-        return {
-            'status': 'would_reactivate' if changes['reactivated'] else 'resolved',
-            'pitcher': pitcher,
-            'created': False,
-            'reactivated': changes['reactivated'],
-            'reason': None,
-            'position_override_from_pitching_line': position_override,
-            'identity_action': identity_action,
-            'identity_changed_fields': changes.get('changed_fields') or [],
-        }
-    if changes['changed']:
+    if plan['action'] == pitcher_identity.ACTION_CREATE_MINIMAL_IDENTITY:
+        if plan_only:
+            # No local record means no stored appearance row, so the GameLog
+            # plan for this line is unambiguously an insert.
+            return _identity_resolution(
+                plan, None, position_override=position_override,
+            )
+        # Exactly the planned values and nothing else. Building the row from the
+        # plan rather than from the line is what keeps the applied write equal to
+        # the reviewed one.
+        pitcher = Pitcher(**plan['creation_values'])
         db.session.add(pitcher)
-    db.session.flush()
+        db.session.flush()
+        local_pitchers[player_id] = pitcher
+        return _identity_resolution(
+            plan, pitcher, position_override=position_override,
+        )
+
+    # Existing row: resolved, and untouched. Nothing is added to the session,
+    # so an unchanged appearance cannot hide a pitcher write.
     local_pitchers[player_id] = pitcher
-    status = 'reactivated' if changes['reactivated'] else 'resolved'
-    return {
-        'status': status,
-        'pitcher': pitcher,
-        'created': False,
-        'reactivated': changes['reactivated'],
-        'reason': None,
-        'position_override_from_pitching_line': position_override,
-        'identity_action': identity_action,
-        'identity_changed_fields': changes.get('changed_fields') or [],
-    }
+    return _identity_resolution(plan, pitcher, position_override=position_override)
 
 
 def _pitcher_order_by_side(boxscore: dict) -> dict[str, list[int]]:
@@ -1790,7 +1694,14 @@ def _unresolved_row_plan(*, game_pk, line, reason) -> dict:
         'governed_and_safe': False,
         'blocked_reason': 'pitcher_identity_unresolved',
         'unresolved_reason': reason,
-        'pitcher_identity_action': None,
+        'complete_plan_version': game_log_reconciliation.COMPLETE_PLAN_VERSION,
+        'pitcher_identity': pitcher_identity.plan_identity(
+            existing=None,
+            player_mlb_id=_positive_external_id(line.get('player_id')),
+            line_name=line.get('name'),
+            blocked_reason=reason,
+        ),
+        'pitcher_identity_action': pitcher_identity.ACTION_BLOCKED,
         'source_authority': None,
     }
 
@@ -1806,7 +1717,7 @@ def _ingest_boxscore_pitching_line(
     sync_run_id=None,
     job_name=sync_metadata.JOB_POSTGAME_REFRESH,
     plan_only: bool = False,
-    pitcher_identity_action=None,
+    identity_plan=None,
     pitcher_mlb_id=None,
 ) -> dict:
     game_pk = _game_pk(game)
@@ -1852,7 +1763,7 @@ def _ingest_boxscore_pitching_line(
                 else getattr(pitcher, 'mlb_id', None)
             ),
             local_pitcher_id=getattr(pitcher, 'id', None),
-            pitcher_identity_action=pitcher_identity_action,
+            identity_plan=identity_plan,
         )
         return {
             'status': _STATUS_BY_PLAN_ACTION[plan['action']],
@@ -1875,8 +1786,14 @@ def _ingest_boxscore_pitching_line(
     )
     plan = result.get('plan')
     if plan is not None:
-        plan['pitcher_identity_action'] = pitcher_identity_action
-        if plan.get('pitcher_identity_action') and (
+        plan['pitcher_identity'] = identity_plan or {}
+        plan['pitcher_identity_action'] = (identity_plan or {}).get('action')
+        plan['complete_plan_version'] = (
+            game_log_reconciliation.COMPLETE_PLAN_VERSION
+        )
+        # The category means "this run would write a Pitcher row", so it is
+        # attached only to a genuine identity mutation.
+        if pitcher_identity.is_mutation(identity_plan) and (
             game_log_reconciliation.CATEGORY_PITCHER_IDENTITY
             not in plan['mutation_categories']
         ):
@@ -2240,7 +2157,7 @@ def process_completed_game_for_postgame_refresh(
             sync_run_id=sync_run_id,
             job_name=sync_metadata.JOB_POSTGAME_REFRESH,
             plan_only=plan_only,
-            pitcher_identity_action=resolution.get('identity_action'),
+            identity_plan=resolution.get('identity_plan'),
             pitcher_mlb_id=_positive_external_id(line.get('player_id')),
         )
         plan = result.get('plan')

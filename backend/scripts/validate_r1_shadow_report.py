@@ -25,6 +25,13 @@ import sys
 from pathlib import Path
 
 
+BACKEND_ROOT = Path(__file__).resolve().parent.parent
+if str(BACKEND_ROOT) not in sys.path:
+    sys.path.insert(0, str(BACKEND_ROOT))
+
+from services import pitcher_identity_reconciliation as identity  # noqa: E402
+
+
 EXIT_PASS = 0
 EXIT_FAIL = 1
 EXIT_ERROR = 2
@@ -35,6 +42,13 @@ APPROVED_GAME_PKS = (823518, 824735, 823761, 824083, 824327)
 EXPECTED_APPEARANCE_ROWS = 38
 EXPECTED_IGNORED_COMPANION_DIFFERENCES = 14
 EXPECTED_INNINGS_SEMANTICS_VERSION = '2'
+
+# Every identity action that would write a Pitcher row, plus the two retired
+# completed-game write actions. R1 asserts zero of all of them: seeing a retired
+# action at all means unrepaired code produced the report.
+FORBIDDEN_IDENTITY_ACTIONS = tuple(sorted(
+    set(identity.MUTATING_ACTIONS) | set(identity.RETIRED_WRITE_ACTIONS)
+))
 
 # Fields whose presence in changed_fields_counts means the repair did not hold
 # or a genuine correction appeared that R1 is not authorized to apply.
@@ -133,6 +147,36 @@ def validate(report) -> dict:
         report.get('innings_semantics_version'),
     )
 
+    # ── Pitcher identity (D-009) ────────────────────────────────────────────
+    # The original R1 pass proved GameLog convergence only. These rows also
+    # carried identity actions that write mode would have applied, so R1 now
+    # requires complete database convergence, not just appearance convergence.
+    for counter in (
+        'pitcher_identity_mutations',
+        'pitcher_identity_creations',
+        'pitcher_identity_reactivations',
+        'pitcher_identity_metadata_updates',
+        'pitcher_identity_blocked',
+        'appearance_team_mutations',
+        'complete_mutation_count',
+    ):
+        _require(counter, 0, report.get(counter))
+    _require(
+        'pitcher_identity_changed_fields_counts', {},
+        dict(report.get('pitcher_identity_changed_fields_counts') or {}),
+    )
+    _require(
+        'pitcher_identity_unique_pitchers_affected', 0,
+        report.get('pitcher_identity_unique_pitchers_affected'),
+    )
+    identity_actions = dict(report.get('pitcher_identity_action_counts') or {})
+    for action in FORBIDDEN_IDENTITY_ACTIONS:
+        if identity_actions.get(action):
+            raise ValidationFailure(
+                f'pitcher_identity_action_counts_excludes_{action}', 0,
+                identity_actions[action],
+            )
+
     # ── Correction safety ───────────────────────────────────────────────────
     _require('statistical_corrections', 0, report.get('statistical_corrections'))
     _require('authority_reconciliations', 0, report.get('authority_reconciliations'))
@@ -156,6 +200,7 @@ def validate(report) -> dict:
 
     row_total = 0
     ignored_total = 0
+    suppressed_total = 0
     for game in games:
         label = game.get('game_pk')
         _require(f'game_{label}_status', 'projected', game.get('status'))
@@ -184,6 +229,37 @@ def validate(report) -> dict:
             _require(
                 f'row_{label}_{pitcher}_blocked_reason', None,
                 row.get('blocked_reason'),
+            )
+            action = row.get('pitcher_identity_action')
+            if action in FORBIDDEN_IDENTITY_ACTIONS:
+                raise ValidationFailure(
+                    f'row_{label}_{pitcher}_pitcher_identity_action',
+                    identity.ACTION_UNCHANGED, action,
+                )
+            _require(
+                f'row_{label}_{pitcher}_identity_changed_fields', [],
+                list(row.get('pitcher_identity_changed_fields') or []),
+            )
+            _require(
+                f'row_{label}_{pitcher}_identity_applied_fields', [],
+                list(row.get('pitcher_identity_applied_fields') or []),
+            )
+            _require(
+                f'row_{label}_{pitcher}_identity_mutation_digest', '',
+                row.get('pitcher_identity_mutation_digest') or '',
+            )
+            _require(
+                f'row_{label}_{pitcher}_identity_governed_and_safe', True,
+                bool(row.get('pitcher_identity_governed_and_safe', True)),
+            )
+            _require(
+                f'row_{label}_{pitcher}_identity_blocked_reason', None,
+                row.get('pitcher_identity_blocked_reason'),
+            )
+            # Suppressed historical differences are expected and allowed: they
+            # are refused evidence, not a mutation.
+            suppressed_total += len(
+                row.get('pitcher_identity_suppressed_fields') or []
             )
             ignored_total += len(
                 row.get('derived_companion_differences_ignored') or []
@@ -217,6 +293,22 @@ def validate(report) -> dict:
         ),
         'statistical_corrections': report.get('statistical_corrections'),
         'innings_semantics_version': report.get('innings_semantics_version'),
+        'pitcher_identity_mutations': report.get('pitcher_identity_mutations'),
+        'pitcher_identity_creations': report.get('pitcher_identity_creations'),
+        'pitcher_identity_reactivations': report.get(
+            'pitcher_identity_reactivations'
+        ),
+        'pitcher_identity_metadata_updates': report.get(
+            'pitcher_identity_metadata_updates'
+        ),
+        'pitcher_identity_blocked': report.get('pitcher_identity_blocked'),
+        'appearance_team_mutations': report.get('appearance_team_mutations'),
+        'complete_mutation_count': report.get('complete_mutation_count'),
+        'historical_current_state_changes_suppressed': report.get(
+            'historical_current_state_changes_suppressed'
+        ),
+        'suppressed_current_state_fields_observed': suppressed_total,
+        'database_writes': 'none',
         'failed_invariant': None,
     }
 
@@ -247,8 +339,23 @@ def _pass_markdown(summary) -> str:
         f"- Canonical outs corrections: {summary['canonical_outs_corrections']}",
         f"- Statistical corrections: {summary['statistical_corrections']}",
         '',
+        '### Mutations by target',
+        f"- GameLog: {summary['rows_inserted'] + summary['rows_updated']}",
+        f"- Pitcher identity: {summary['pitcher_identity_mutations']}",
+        f"- Appearance team: {summary['appearance_team_mutations']}",
+        f"- Total complete-plan mutations: {summary['complete_mutation_count']}",
+        '',
+        '### Pitcher identity detail',
+        f"- Reactivations: {summary['pitcher_identity_reactivations']}",
+        f"- Metadata updates: {summary['pitcher_identity_metadata_updates']}",
+        f"- Minimal identity creations: {summary['pitcher_identity_creations']}",
+        f"- Blocked identity entries: {summary['pitcher_identity_blocked']}",
+        '- Suppressed historical current-state differences: '
+        f"{summary['historical_current_state_changes_suppressed']}",
+        '',
         '### Result',
-        '- The original five-game write now replays to zero mutations.',
+        '- The original five-game write now replays to zero mutations across '
+        'every database target.',
         '- Foundation 3C may proceed to R2 review.',
         '- No database writes were performed.',
         '',

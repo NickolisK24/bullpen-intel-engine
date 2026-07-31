@@ -771,6 +771,13 @@ The five-game write that previously replayed as 14 "official corrections" now
 replays to zero mutations. The 14 differences are recognised as derived
 decimal-companion representation drift and ignored. D-008 holds in production.
 
+**This proved GameLog convergence only.** Those same rows also carried pitcher
+identity actions that write mode would have applied, and R1 did not count them.
+See [D-009](#d-009--completed-games-are-not-current-roster-authority). R1 now
+additionally requires zero pitcher-identity mutations, zero reactivations, zero
+metadata updates, zero identity creations, zero appearance-team mutations, and a
+`complete_mutation_count` of zero.
+
 The job summary states the result directly. The artifact contains the raw
 shadow report, a structured validation summary, and the same summary in
 Markdown, retained 14 days.
@@ -814,6 +821,7 @@ completed checkpoints and normal production activity moves what is planned, so
 the invariant R2 enforces is semantic rather than arithmetic:
 
 > no decimal-only difference may become a planned mutation
+> and no completed game may write current pitcher state
 
 ### Running it
 
@@ -829,7 +837,7 @@ the invariant R2 enforces is semantic rather than arithmetic:
 
 | Result | Job | Meaning |
 |---|---|---|
-| **PASS** | succeeds | the whole governed window already reconciles; zero inserts, zero updates, zero blocked |
+| **PASS** | succeeds | the whole governed window already reconciles; zero mutations of EVERY class — GameLog, pitcher identity, appearance team |
 | **REVIEW REQUIRED** | succeeds | the run was safe and one or more legitimate official corrections remain outstanding |
 | **FAILED** | fails | a foundational invariant broke — rollout stop |
 
@@ -845,7 +853,12 @@ fail closed: a projected insert, a blocked or unsafe row, an unknown changed
 field, row totals that do not reconcile against the per-row detail,
 `innings_pitched` appearing as a semantic change, a derived companion applied
 without its authority moving, a game failure, a budget stop, a finality
-conflict, or missing schedule authority.
+conflict, missing schedule authority — and, since D-009, **any** current-state
+pitcher mutation, any reactivation, any `update_metadata`, any blocked identity,
+any unknown identity field, or identity counters that disagree with the rows.
+
+The only identity action a human may be asked to review is a minimal identity
+creation. Everything else that would write is a stop.
 
 ### Artifacts
 
@@ -857,7 +870,7 @@ uploaded even when the run fails:
 | `r2-full-window-shadow.json` | the raw shadow report |
 | `r2-validation-summary.json` | structured result, counts, and failed invariant |
 | `r2-validation-summary.md` | the same summary as the job summary |
-| `r2-update-review.json` | one entry per projected update, ordered by game then pitcher |
+| `r2-update-review.json` | one entry per projected mutation of every class, ordered by target, game, then pitcher |
 | `r2-update-review.md` | the manifest as a readable table |
 
 The manifest is written even when it is empty, so a reviewer never has to
@@ -874,6 +887,136 @@ R2 look green.
 
 `GAME_DRIVEN_INGESTION_MODE` stays `off` throughout. R2 does not change it and
 does not enable the automated lane.
+
+## D-009 — completed games are not current-roster authority
+
+**Permanent rule.**
+
+```
+completed-game pitching line
+    = authority for APPEARANCE identity and HISTORICAL appearance context
+
+official current roster / assignment sources
+    = authority for CURRENT state
+```
+
+### What production R1 and R2 actually proved
+
+Both passed on **GameLog reconciliation**. Neither proved complete database
+convergence, because neither counted `Pitcher` mutations at all.
+
+The production R2 report reconciled 946 appearance rows to zero GameLog changes
+and reported PASS with an empty update manifest. The same report carried:
+
+```
+mutation_category_counts:
+    pitcher_identity_reconciliation: 942
+    unchanged_row:                   946
+```
+
+Independently verified from the artifact: 942 rows carried an identity action —
+940 `update_metadata` and 2 `reactivate` — across 423 unique pitchers, every one
+of them attached to a row whose GameLog action was `unchanged`. The two
+projected reactivations were game 823758 / pitcher 621121 and game 822706 /
+pitcher 640454. Write mode would have applied all 942.
+
+The five R1 games carried identity activity too. **R1 proved GameLog
+convergence; it did not prove complete database convergence.**
+
+### Root cause
+
+GameLog reconciliation was centralised into a pure planner. Pitcher resolution
+was not — it stayed a side-effecting path that mutated and flushed `Pitcher`
+rows before or alongside the GameLog work. The reconciliation fingerprint
+covered only the GameLog decision, the validators used GameLog actions as the
+mutation population, and the R2 manifest listed only rows whose GameLog action
+was `update`. So hundreds of planned Pitcher writes could coexist with
+`rows_updated: 0`, `changed_fields_counts: {}`, an empty manifest, and `pass`.
+
+That is two defects at once: shadow could not see what write would do, and
+historical evidence was acting as current-roster authority.
+
+### What a completed game may and may not establish
+
+| May establish | May not establish |
+|---|---|
+| the MLB person id on that appearance | current active status |
+| a name for an identity that does not exist locally | current roster status or its provenance |
+| that the person pitched in that game | current team assignment or its provenance |
+| historical team-at-appearance (on the GameLog fields) | current organization or assignment timestamps |
+| the official pitching line for that game | reactivation of an inactive row |
+
+### Existing row: never mutated
+
+An existing `Pitcher` is used as the identity anchor and left alone. Not
+reactivated, not reassigned, not renamed, not restatused, no refreshed
+timestamps. Differences between the historical appearance and the current row
+are recorded as **suppressed** evidence — visible, counted, reviewable, and
+refused.
+
+This is structural rather than source-dependent: the planner has no branch that
+can emit a current-state field as a changed field for an existing row, so no
+combination of sources or precedence flags can produce one. An unverified
+roster status is protected exactly as strongly as an official one.
+
+An inactive or differently assigned pitcher still owns their historical
+appearances. A suppressed current-state difference is **not** an unresolved
+identity and never blocks the appearance from reconciling.
+
+`update_metadata` and `reactivate` no longer exist as completed-game identity
+actions.
+
+### Missing row: minimal creation only
+
+A new appearance cannot be persisted without an identity, so one may be created
+— as a separate governed action that enters the reviewed fingerprint. It claims
+no current state:
+
+| Written | Left unset |
+|---|---|
+| `mlb_id` | `team_id`, `team_name`, `team_abbreviation` |
+| `full_name` (from the official line) | `team_assignment_status`, `team_assignment_source`, `team_assignment_updated_at` |
+| `position` (as the official line recorded it) | `roster_status_updated_at` |
+| `active = False` | |
+| `roster_status = UNKNOWN` with an appearance-identity source | |
+
+`active` is set explicitly to `False` because the column defaults to `True` —
+leaving it unset would make a three-week-old appearance silently assert that the
+player is on a roster today. `position` keeps what the official line recorded
+rather than being flattened to `P`, so a two-way player's `DH` record is not
+turned into a bullpen arm.
+
+Identity safety failures — missing or invalid person id, conflicting
+identifiers, invalid team side, a genuinely new identity with no name — still
+fail closed exactly as before.
+
+### One complete plan, one fingerprint
+
+Each appearance now carries a single plan combining pitcher identity, GameLog
+reconciliation, and appearance-team authority. Shadow and write consume the same
+plan, and the fingerprint commits to all of it.
+
+The fingerprint **changes** when any of these change: a GameLog
+insert/update/blocked decision, a semantic GameLog changed field, an applied
+companion caused by its authority, a minimal identity creation or its values, an
+appearance-team mutation, or a blocked identity decision.
+
+It does **not** change for ignored decimal representation drift, suppressed
+current-state differences, application-time timestamps, surrogate ids unavailable
+during shadow, or row order.
+
+`reconciliation_plan_version` and `parity_contract_version` are now `3`;
+`complete_plan_version` is `1`; `identity_plan_version` is `1`.
+
+### A run is only clean when every target is clean
+
+`complete_mutation_count` covers GameLog mutations, identity mutations, and
+blocked entries together. R1 and R2 both require it to be zero before the
+rollout proceeds — a run may not be described as "no mutations" while any target
+would be written.
+
+Suppressed historical differences are reported separately and are never counted
+as mutations.
 
 ## Controlled parity rollout
 

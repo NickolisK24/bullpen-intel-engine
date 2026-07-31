@@ -123,6 +123,32 @@ A green `review_required` is a statement about execution, not authorization.
 
 Both are removed at Stage E once the rollout completes.
 
+### Pitcher identity is not written by completed games (D-009)
+
+Production R1 and R2 both passed on **GameLog reconciliation only**. The R2
+report simultaneously carried 942 pitcher-identity actions — 940 metadata
+updates and 2 reactivations across 423 pitchers — attached to rows whose GameLog
+action was `unchanged`, none of which appeared in the manifest or the
+fingerprint.
+
+The completed-game path no longer writes `Pitcher` rows. An existing row is the
+identity anchor and is never modified: not reactivated, not reassigned, not
+renamed, not restatused. Historical/current differences are reported as
+suppressed evidence and refused. A missing row may be created minimally,
+claiming no current team, no active status, and no official roster status.
+
+This affects the **normal postgame refresh** as well as the game-driven lane —
+both call the same resolution path. A pitcher first seen in a completed game is
+now created inactive and unassigned, and roster synchronization claims them when
+it next runs. Roster and team assignment authority stays entirely with the
+official roster sources.
+
+R1 and R2 now require zero mutations across every database target — GameLog,
+pitcher identity, and appearance-team authority — before the rollout proceeds.
+
+Canonical reference:
+[`GAME_DRIVEN_DAILY_INGESTION.md`](GAME_DRIVEN_DAILY_INGESTION.md).
+
 Canonical reference:
 [`GAME_DRIVEN_DAILY_INGESTION.md`](GAME_DRIVEN_DAILY_INGESTION.md).
 

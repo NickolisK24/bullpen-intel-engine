@@ -29,6 +29,7 @@ from models.scheduled_game import ScheduledGame
 from services import appearance_team_authority
 from services import game_driven_ingestion
 from services import game_log_reconciliation as reconciliation
+from services import pitcher_identity_reconciliation as pitcher_identity
 from services import sync as sync_service
 from tests.game_driven_fixtures import (
     AWAY_TEAM,
@@ -546,7 +547,9 @@ def test_shadow_does_not_create_a_pitcher_it_would_have_created(app, monkeypatch
         plan, summary = _plan_game(940013)
 
         assert summary['rows_inserted'] == 1
-        assert plan[0]['pitcher_identity_action'] == 'create'
+        assert plan[0]['pitcher_identity_action'] == (
+            pitcher_identity.ACTION_CREATE_MINIMAL_IDENTITY
+        )
         assert reconciliation.CATEGORY_PITCHER_IDENTITY in (
             plan[0]['mutation_categories']
         )
