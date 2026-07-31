@@ -9,11 +9,14 @@ One entry point for the staged rollout and for governed operator repair.
     # Stage B — shadow reconciliation. Fetches games, writes nothing.
     python scripts/game_driven_ingestion.py --mode shadow
 
-    # Stage C — controlled write. Reconciles and checkpoints; publication
-    # authority is unchanged until GAME_DRIVEN_INGESTION_MODE=authoritative.
-    python scripts/game_driven_ingestion.py --mode write --max-games 5
+    # Exclusive shadow of exactly five games — nothing else may enter the run.
+    python scripts/game_driven_ingestion.py --mode shadow --only-game-pk 1 --only-game-pk 2
 
-    # Governed repair of specific games.
+    # Controlled write of exactly those games, authorized by the fingerprint a
+    # human reviewed in the shadow run above.
+    python scripts/game_driven_ingestion.py --mode write --only-game-pk 1 --only-game-pk 2 --expected-plan-fingerprint <sha256>
+
+    # Governed repair ADDED to the normal window (this does not bound the run).
     python scripts/game_driven_ingestion.py --mode write --game-pk 776543
 
 Output is a single JSON document on stdout (or ``--output``). It contains
@@ -71,14 +74,64 @@ def parse_args(argv=None):
     )
     parser.add_argument(
         '--game-pk', type=int, action='append', default=None,
-        help='Repeatable. Plan these games as explicit_repair.',
+        help=(
+            'Repeatable. ADDITIVE: plans the normal date window AND these '
+            'games. It does NOT bound the run — use --only-game-pk for that.'
+        ),
+    )
+    parser.add_argument(
+        '--only-game-pk', type=int, action='append', default=None,
+        help=(
+            'Repeatable. EXCLUSIVE: run exactly these games and no others. '
+            'The run fails before any MLB request if the planned set is not '
+            'exactly this set.'
+        ),
+    )
+    parser.add_argument(
+        '--expected-plan-fingerprint',
+        help=(
+            'The reconciliation-plan fingerprint a human reviewed in shadow. '
+            'Required for an exclusive write; the write refuses before any '
+            'mutation unless the recomputed plan matches it exactly.'
+        ),
     )
     parser.add_argument(
         '--include-backfill', action='store_true',
         help='Also plan governed final games older than the horizon (best effort).',
     )
     parser.add_argument('--output', help='Write the JSON report to this path.')
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    _validate_scope_arguments(parser, args)
+    return args
+
+
+def _validate_scope_arguments(parser, args) -> None:
+    """Reject argument combinations that would make a scope claim untrue.
+
+    Exclusive mode means "exactly these games". Anything that could widen or
+    narrow that set — the additive option, a cap, a backfill sweep — makes the
+    claim false, so it is refused rather than silently reinterpreted.
+    """
+    if args.only_game_pk is None:
+        if args.expected_plan_fingerprint:
+            parser.error(
+                '--expected-plan-fingerprint requires --only-game-pk'
+            )
+        return
+
+    if not args.only_game_pk:
+        parser.error('--only-game-pk requires at least one game id')
+    if args.game_pk:
+        parser.error('--game-pk and --only-game-pk are mutually exclusive')
+    if args.max_games is not None:
+        parser.error('--max-games cannot bound an exclusive game set')
+    if args.include_backfill:
+        parser.error('--include-backfill cannot widen an exclusive game set')
+    if args.mode == 'write' and not args.expected_plan_fingerprint:
+        parser.error(
+            'an exclusive write requires --expected-plan-fingerprint from a '
+            'reviewed shadow run'
+        )
 
 
 def resolve_reference_date(raw):
@@ -106,6 +159,7 @@ def run(args) -> tuple[int, dict]:
             plan = game_ingestion_planner.plan_game_work(
                 reference_date,
                 explicit_game_pks=args.game_pk,
+                only_game_pks=args.only_game_pk,
                 include_backfill=args.include_backfill,
             )
             report = {
@@ -124,6 +178,8 @@ def run(args) -> tuple[int, dict]:
             mode=args.mode,
             time_budget_seconds=args.time_budget_seconds,
             explicit_game_pks=args.game_pk,
+            only_game_pks=args.only_game_pk,
+            expected_plan_fingerprint=args.expected_plan_fingerprint,
             include_backfill=args.include_backfill,
             max_games=args.max_games,
         )

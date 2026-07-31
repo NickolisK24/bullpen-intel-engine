@@ -47,6 +47,15 @@ DEFAULT_CORRECTION_HORIZON_DAYS = 7
 
 SOURCE_AUTHORITY_SCHEDULE_LEDGER = 'scheduled_games'
 
+# ── Execution scope ─────────────────────────────────────────────────────────
+# WINDOW    the ordinary governed date window. ``explicit_game_pks`` ADDS games
+#           to it — it does not bound it.
+# EXCLUSIVE exactly the requested games and nothing else. Required for a
+#           controlled production write, because a write is only controlled if
+#           its scope is exact.
+SCOPE_WINDOW = 'window'
+SCOPE_EXCLUSIVE = 'exclusive'
+
 # Planner-level exclusion reasons (safe, non-sensitive, explicitly counted).
 EXCLUDED_NOT_FINAL = 'not_final'
 EXCLUDED_POSTPONED = 'postponed'
@@ -118,6 +127,7 @@ def plan_game_work(
     horizon_days: int | None = None,
     correction_days: int | None = None,
     explicit_game_pks=None,
+    only_game_pks=None,
     include_backfill: bool = False,
 ) -> dict:
     """Build the deterministic, ordered game work plan for ``reference_date``.
@@ -126,7 +136,25 @@ def plan_game_work(
     planner accounting the run report and the completeness proof both read.
     Every scheduled game inside the horizon is accounted for exactly once:
     either it is planned, or it carries an explicit exclusion reason.
+
+    Two scopes:
+
+    ``explicit_game_pks`` is ADDITIVE. The governed date window is planned as
+    usual and these games are added to it. This is the historical behaviour and
+    is retained.
+
+    ``only_game_pks`` is EXCLUSIVE. Exactly these games are considered and
+    nothing else — no other newly final game, no retry, no correction-horizon
+    re-check, no best-effort backlog, no unresolved work from outside the set.
+    Every requested game must plan successfully; a requested game that cannot
+    be planned makes the execution scope incomplete rather than being silently
+    dropped. The two are mutually exclusive.
     """
+    if only_game_pks is not None and explicit_game_pks:
+        raise ValueError(
+            'only_game_pks and explicit_game_pks are mutually exclusive'
+        )
+
     horizon_days = int(
         horizon_days if horizon_days is not None else ingestion_horizon_days()
     )
@@ -139,19 +167,37 @@ def plan_game_work(
         if pk is not None
     }
 
-    rows_by_game = _scheduled_rows_by_game(
-        window_start, reference_date, explicit_game_pks
-    )
+    exclusive = only_game_pks is not None
+    requested_raw = list(only_game_pks or ())
+    requested_game_pks = {
+        pk for pk in (_positive_int(value) for value in requested_raw)
+        if pk is not None
+    }
+    if exclusive and not requested_game_pks:
+        raise ValueError('only_game_pks requires at least one valid game id')
 
-    # Unresolved work of ANY age is always re-planned, even when it has aged out
-    # of the horizon. Without this a game interrupted mid-run could be skipped
-    # forever once the window moved past it.
-    for stale_pk in _unresolved_game_pks_outside(set(rows_by_game)):
-        rows_by_game.setdefault(stale_pk, _rows_for_game(stale_pk))
+    if exclusive:
+        # Consider ONLY the requested games. Nothing else is queried, so
+        # nothing else can enter the plan.
+        rows_by_game = {
+            game_pk: _rows_for_game(game_pk)
+            for game_pk in sorted(requested_game_pks)
+        }
+        work_items_by_game = _work_items_by_game(requested_game_pks)
+    else:
+        rows_by_game = _scheduled_rows_by_game(
+            window_start, reference_date, explicit_game_pks
+        )
 
-    work_items_by_game = _work_items_by_game(
-        set(rows_by_game) | explicit_game_pks
-    )
+        # Unresolved work of ANY age is always re-planned, even when it has aged
+        # out of the horizon. Without this a game interrupted mid-run could be
+        # skipped forever once the window moved past it.
+        for stale_pk in _unresolved_game_pks_outside(set(rows_by_game)):
+            rows_by_game.setdefault(stale_pk, _rows_for_game(stale_pk))
+
+        work_items_by_game = _work_items_by_game(
+            set(rows_by_game) | explicit_game_pks
+        )
 
     planned: list[GameWorkItem] = []
     excluded: dict[str, int] = {}
@@ -191,7 +237,8 @@ def plan_game_work(
             reference_date=reference_date,
             horizon_days=horizon_days,
             correction_days=correction_days,
-            explicit=game_pk in explicit_game_pks,
+            # In exclusive mode every requested game IS the explicit request.
+            explicit=exclusive or game_pk in explicit_game_pks,
             include_backfill=include_backfill,
         )
         if decision['reason'] is None:
@@ -221,9 +268,34 @@ def plan_game_work(
             criticality_counts.get(item.criticality, 0) + 1
         )
 
+    planned_game_pks = sorted(item.game_pk for item in planned)
+    duplicate_requested_count = max(
+        len([value for value in requested_raw if _positive_int(value) is not None])
+        - len(requested_game_pks),
+        0,
+    )
+    if exclusive:
+        unexpected = sorted(set(planned_game_pks) - requested_game_pks)
+        missing = sorted(requested_game_pks - set(planned_game_pks))
+        exact_match = not unexpected and not missing
+    else:
+        unexpected = []
+        missing = []
+        exact_match = True
+
     return {
         'reference_date': reference_date.isoformat(),
         'window_start': window_start.isoformat(),
+        # ── Execution scope ─────────────────────────────────────────────────
+        'execution_scope_mode': SCOPE_EXCLUSIVE if exclusive else SCOPE_WINDOW,
+        'requested_game_pks': sorted(requested_game_pks),
+        'requested_game_count': len(requested_game_pks),
+        'duplicate_requested_count': duplicate_requested_count,
+        'planned_game_pks': planned_game_pks,
+        'planned_game_count': len(planned_game_pks),
+        'unexpected_planned_game_pks': unexpected,
+        'missing_requested_game_pks': missing,
+        'execution_scope_exact_match': exact_match,
         'ingestion_horizon_days': horizon_days,
         'correction_horizon_days': correction_days,
         'items': planned,

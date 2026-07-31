@@ -1175,6 +1175,15 @@ def _upsert_game_log_from_authoritative_values(
         setattr(existing, field, values[field])
         stat_changed_fields.append(field)
 
+    # Derived companions (D-008: decimal innings) are APPLIED whenever their
+    # semantic authority moved, re-derived from the governed values. They are
+    # never independently corrected and never counted as changed evidence, but
+    # they must be written — the stored-state invariant requires the companion
+    # to agree with its authority, and the database enforces it.
+    for companion in plan.get('derived_companion_fields') or ():
+        if companion in values:
+            setattr(existing, companion, values[companion])
+
     appearance_reason = plan['appearance_team_reason']
     decision = plan.get('appearance_team_decision')
     if decision:
@@ -2068,6 +2077,7 @@ def process_completed_game_for_postgame_refresh(
     sync_run_id=None,
     force: bool = False,
     plan_only: bool = False,
+    boxscore=None,
 ) -> dict:
     """Fetch one final game once and reconcile its pitching lines idempotently.
 
@@ -2138,7 +2148,11 @@ def process_completed_game_for_postgame_refresh(
             ),
         }
 
-    boxscore = mlb_client.get_game_boxscore(game_pk)
+    # A caller that already fetched this game's official evidence may supply it,
+    # so a reviewed plan and its application read the SAME box score and one run
+    # makes one request per game.
+    if boxscore is None:
+        boxscore = mlb_client.get_game_boxscore(game_pk)
     finality = classify_game_finality(game, boxscore=boxscore, require_boxscore=True)
     pitching_lines = _extract_pitching_lines_from_boxscore(boxscore)
     pitcher_order = _pitcher_order_by_side(boxscore)

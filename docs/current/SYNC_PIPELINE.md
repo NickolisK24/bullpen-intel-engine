@@ -278,8 +278,14 @@ production maintenance workflow.
 - `python backend/scripts/appearance_ledger_audit.py [--end-date D --days N --deep --json]`
 - `python backend/scripts/sync_trace.py --player <mlb_id> --date <YYYY-MM-DD> [--game-pk PK] [--no-network]`
 - `python backend/scripts/run_postgame_refresh.py --date <YYYY-MM-DD> --source manual_backfill`
-- `python backend/scripts/game_driven_ingestion.py [--plan-only | --mode shadow|write] [--game-pk PK] [--max-games N] [--include-backfill]`
+- `python backend/scripts/game_driven_ingestion.py [--plan-only | --mode shadow|write] [--only-game-pk PK ...] [--expected-plan-fingerprint SHA] [--game-pk PK] [--max-games N] [--include-backfill]`
   — Foundation 3C staged rollout and governed per-game repair.
+  **`--only-game-pk` is exclusive** (exactly those games; fails before any MLB
+  request if the planned set differs) and is what a controlled production run
+  must use. **`--game-pk` is additive** — it plans the whole governed window
+  AND those games. An exclusive write also requires
+  `--expected-plan-fingerprint` from a reviewed shadow run. See
+  [`GAME_DRIVEN_DAILY_INGESTION.md`](GAME_DRIVEN_DAILY_INGESTION.md).
 - Kill switch (operators only, logged): `APPEARANCE_LEDGER_GATE_ENABLED=false`
 - Game-driven lane mode (operators only): `GAME_DRIVEN_INGESTION_MODE=off|shadow|write|authoritative`
 
