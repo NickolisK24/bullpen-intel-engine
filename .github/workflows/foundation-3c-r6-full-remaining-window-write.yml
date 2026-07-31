@@ -1,0 +1,464 @@
+name: Foundation 3C R6 Full Remaining Window Write and Closeout
+
+# THE WRITE THAT COMPLETES THE FOUNDATION 3C BOOTSTRAP.
+#
+# R5 reviewed the entire remaining 99-game window in shadow and produced the
+# contract-4 fingerprint below. R6 applies exactly that reviewed plan and may
+# change ONE thing: governed ingestion control state. Ninety-nine work items are
+# created and completed, completeness moves 10/99 -> 109/0, and publication
+# becomes complete. No GameLog row, no Pitcher row, no appearance-team field, no
+# correction provenance, and no dead letter may change.
+#
+# Authorization is a single hard-coded contract-4 fingerprint, recomputed from
+# current database state and current official evidence and compared BEFORE the
+# first mutation. Three other 64-character values exist in this rollout's
+# history — the contract-3 R3 value, the contract-4 R4 five-game value, and the
+# scope-set digest — and none of them appears in any executable command here.
+# The scope digest especially: it proves WHICH GAMES are in scope and is not a
+# reconciliation-plan fingerprint at all.
+#
+# SINGLE USE. The before-state requires 10 completed / 99 unresolved and no work
+# item on any selected game. After a successful run those conditions are false,
+# so a second dispatch stops before the write.
+#
+# NOTE ON ATOMICITY: the canonical writer commits PER GAME. Ninety-nine-game
+# atomicity does not exist and is not claimed. A failure at game 50 leaves 49
+# durable checkpoints. That is a FAILED result which reports the exact completed
+# and unresolved subsets and stops the rollout — never a retry, never a
+# compensation, never a deletion.
+#
+# Concurrency joins `baseballos-sync`, the repository's existing production
+# write-serialization group, so R6 cannot race the scheduled daily/postgame
+# sync, intraday repair, R4, R5, or another R6 dispatch against the same tables.
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: baseballos-sync
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  r6-full-remaining-window-write:
+    runs-on: ubuntu-latest
+    # Three 99-game ingestion passes plus four snapshots. A short timeout here
+    # would interrupt a correct production operation mid-write.
+    timeout-minutes: 60
+    env:
+      APP_ENV: production
+      AUTO_SYNC: 'false'
+      # Exactly one command below runs the writer explicitly. This keeps the
+      # scheduled lane disabled throughout regardless.
+      GAME_DRIVEN_INGESTION_MODE: 'off'
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      SECRET_KEY: ${{ secrets.SECRET_KEY }}
+      ADMIN_API_TOKEN: ${{ secrets.BASEBALLOS_ADMIN_API_TOKEN }}
+      REFERENCE_DATE: '2026-07-29'
+      APPROVED_SCOPE_DIGEST: '43b9333ad228c60846f1cd24ae8518273dc1017aefc98e7b7930974c40bdfd22'
+      BEFORE_STATE_PATH: artifacts/r6-before-state.json
+      PREFLIGHT_PATH: artifacts/r6-preflight-shadow.json
+      PREWRITE_STATE_PATH: artifacts/r6-prewrite-state.json
+      WRITE_PATH: artifacts/r6-full-write.json
+      AFTER_WRITE_STATE_PATH: artifacts/r6-after-write-state.json
+      REPLAY_PATH: artifacts/r6-postwrite-replay.json
+      FINAL_STATE_PATH: artifacts/r6-final-state.json
+      SUMMARY_JSON_PATH: artifacts/r6-validation-summary.json
+      SUMMARY_MARKDOWN_PATH: artifacts/r6-validation-summary.md
+      CLOSEOUT_JSON_PATH: artifacts/r6-closeout.json
+      CLOSEOUT_MARKDOWN_PATH: artifacts/r6-closeout.md
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install backend dependencies
+        run: pip install -r backend/requirements.txt
+
+      - name: Validate required secrets are present
+        run: |
+          set -euo pipefail
+          if [ -z "${DATABASE_URL:-}" ] || [ -z "${SECRET_KEY:-}" ] \
+             || [ -z "${ADMIN_API_TOKEN:-}" ]; then
+            echo "::error::Missing required production repository secret."
+            exit 1
+          fi
+          echo "Required production secrets are present."
+
+      - name: Create the artifacts directory
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+
+      # Everything below shares one scope definition, written once here and
+      # re-read by each step from the file this writes. A second literal copy
+      # of 99 identifiers is a second thing that can be wrong.
+      - name: Validate the hard-coded scope array and digest
+        run: |
+          set -euo pipefail
+
+          # The reviewed R6 scope, in canonical processing order. Literal
+          # values only — nothing here is derived at runtime, from an input,
+          # from the database, from an API, or from a previous artifact.
+          R6_GAME_PKS=(
+            823519
+            822784
+            824732
+            824896
+            822873
+            824166
+            824650
+            824893
+            824406
+            822785
+            823042
+            824247
+            823759
+            823352
+            824248
+            822707
+            823434
+            824812
+            822952
+            823601
+            823843
+            824733
+            824573
+            822872
+            823680
+            823031
+            823196
+            824244
+            822704
+            823197
+            823841
+            824734
+            823435
+            822948
+            823355
+            824811
+            823679
+            823758
+            824571
+            822869
+            823027
+            823600
+            822950
+            822706
+            823354
+            824730
+            824810
+            823599
+            823840
+            824246
+            823678
+            823755
+            824572
+            823028
+            822870
+            823194
+            823433
+            822868
+            823353
+            823839
+            824245
+            822705
+            823597
+            824570
+            823025
+            824001
+            824977
+            823195
+            824490
+            822949
+            823350
+            823838
+            824243
+            822703
+            824489
+            823676
+            824569
+            823026
+            824003
+            823275
+            824976
+            823193
+            823923
+            823837
+            823351
+            822702
+            823596
+            824242
+            823192
+            823273
+            822947
+            823598
+            824487
+            823677
+            824567
+            823022
+            824002
+            824973
+            823924
+          )
+
+          # The ten already-completed games. None may appear in scope.
+          COMPLETED_GAME_PKS=(
+            823518 824735 823761 824083 824327
+            823110 825055 824004 823438 824408
+          )
+
+          if [ "${#R6_GAME_PKS[@]}" -ne 99 ]; then
+            echo "::error::R6 scope must contain exactly 99 games."
+            exit 1
+          fi
+          unique_count=$(printf '%s\n' "${R6_GAME_PKS[@]}" | sort -u | wc -l)
+          if [ "$unique_count" -ne 99 ]; then
+            echo "::error::R6 scope contains duplicate game identifiers."
+            exit 1
+          fi
+          for game_pk in "${R6_GAME_PKS[@]}"; do
+            case "$game_pk" in
+              ''|*[!0-9]*)
+                echo "::error::R6 scope contains a non-numeric entry."
+                exit 1
+                ;;
+            esac
+          done
+          for completed in "${COMPLETED_GAME_PKS[@]}"; do
+            for game_pk in "${R6_GAME_PKS[@]}"; do
+              if [ "$completed" = "$game_pk" ]; then
+                echo "::error::R6 scope includes an already-completed game."
+                exit 1
+              fi
+            done
+          done
+
+          observed_digest=$(printf '%s\n' "${R6_GAME_PKS[@]}" \
+            | sort -n | paste -sd, - | tr -d '\n' | sha256sum | cut -d' ' -f1)
+          if [ "$observed_digest" != "$APPROVED_SCOPE_DIGEST" ]; then
+            echo "::error::R6 scope digest does not match the approved digest."
+            exit 1
+          fi
+
+          # Persist the reviewed argument list so every later step uses this
+          # one validated scope rather than restating it.
+          : > artifacts/r6-scope-args.txt
+          for game_pk in "${R6_GAME_PKS[@]}"; do
+            printf -- '--only-game-pk\n%s\n' "$game_pk" >> artifacts/r6-scope-args.txt
+          done
+          printf '%s\n' "${R6_GAME_PKS[@]}" > artifacts/r6-scope-order.txt
+          echo "R6 scope validated: 99 unique games, digest matches."
+
+      - name: Capture the before state
+        id: before
+        run: |
+          set -euo pipefail
+          set +e
+          python backend/scripts/inspect_r6_full_write_state.py --phase before --output "$BEFORE_STATE_PATH"
+          before_exit=$?
+          set -e
+          echo "before_exit=$before_exit" >> "$GITHUB_OUTPUT"
+
+      - name: Run the R6 preflight shadow
+        id: preflight
+        if: ${{ steps.before.outputs.before_exit == '0' }}
+        run: |
+          set -euo pipefail
+          mapfile -t scope_args < artifacts/r6-scope-args.txt
+          set +e
+          python backend/scripts/game_driven_ingestion.py \
+            --mode shadow \
+            --reference-date "$REFERENCE_DATE" \
+            "${scope_args[@]}" \
+            --output "$PREFLIGHT_PATH"
+          preflight_exit=$?
+          set -e
+          echo "preflight_exit=$preflight_exit" >> "$GITHUB_OUTPUT"
+
+      - name: Capture the prewrite state
+        id: prewrite
+        if: ${{ steps.preflight.outputs.preflight_exit == '0' }}
+        run: |
+          set -euo pipefail
+          set +e
+          python backend/scripts/inspect_r6_full_write_state.py --phase prewrite --output "$PREWRITE_STATE_PATH"
+          prewrite_exit=$?
+          set -e
+          echo "prewrite_exit=$prewrite_exit" >> "$GITHUB_OUTPUT"
+
+      - name: Authorize the write against the approved contract-4 fingerprint
+        id: authorize
+        if: ${{ steps.prewrite.outputs.prewrite_exit == '0' }}
+        run: |
+          set -euo pipefail
+          set +e
+          python backend/scripts/validate_r6_full_write.py preflight \
+            --before-state "$BEFORE_STATE_PATH" \
+            --preflight "$PREFLIGHT_PATH" \
+            --prewrite-state "$PREWRITE_STATE_PATH"
+          authorize_exit=$?
+          set -e
+          echo "authorize_exit=$authorize_exit" >> "$GITHUB_OUTPUT"
+
+      # The only write in this workflow, and it runs only when the preflight
+      # validator authorized it.
+      - name: Run the R6 full remaining-window write
+        id: write
+        if: ${{ steps.authorize.outputs.authorize_exit == '0' }}
+        run: |
+          set -euo pipefail
+          mapfile -t scope_args < artifacts/r6-scope-args.txt
+          set +e
+          python backend/scripts/game_driven_ingestion.py \
+            --mode write \
+            --reference-date "$REFERENCE_DATE" \
+            "${scope_args[@]}" \
+            --expected-plan-fingerprint 40659a4051226df40ef7cedbca7a6bc2689d5c2bfbdd4ccdb717fc6fc0c79343 \
+            --output "$WRITE_PATH"
+          write_exit=$?
+          set -e
+          echo "write_exit=$write_exit" >> "$GITHUB_OUTPUT"
+
+      - name: Capture the after-write state
+        id: after_write
+        if: ${{ always() && steps.authorize.outputs.authorize_exit == '0' }}
+        run: |
+          set -euo pipefail
+          set +e
+          python backend/scripts/inspect_r6_full_write_state.py --phase after_write --output "$AFTER_WRITE_STATE_PATH"
+          after_write_exit=$?
+          set -e
+          echo "after_write_exit=$after_write_exit" >> "$GITHUB_OUTPUT"
+
+      - name: Run the post-write shadow replay
+        id: replay
+        if: ${{ always() && steps.authorize.outputs.authorize_exit == '0' }}
+        run: |
+          set -euo pipefail
+          mapfile -t scope_args < artifacts/r6-scope-args.txt
+          set +e
+          python backend/scripts/game_driven_ingestion.py \
+            --mode shadow \
+            --reference-date "$REFERENCE_DATE" \
+            "${scope_args[@]}" \
+            --output "$REPLAY_PATH"
+          replay_exit=$?
+          set -e
+          echo "replay_exit=$replay_exit" >> "$GITHUB_OUTPUT"
+
+      - name: Capture the final state
+        id: final
+        if: ${{ always() && steps.authorize.outputs.authorize_exit == '0' }}
+        run: |
+          set -euo pipefail
+          set +e
+          python backend/scripts/inspect_r6_full_write_state.py --phase final --output "$FINAL_STATE_PATH"
+          final_exit=$?
+          set -e
+          echo "final_exit=$final_exit" >> "$GITHUB_OUTPUT"
+
+      - name: Validate the complete R6 closeout
+        id: closeout
+        if: ${{ always() }}
+        env:
+          REPOSITORY_SHA: ${{ github.sha }}
+          WORKFLOW_RUN_ID: ${{ github.run_id }}
+          WRITE_EXIT: ${{ steps.write.outputs.write_exit }}
+        run: |
+          set -euo pipefail
+          set +e
+          python backend/scripts/validate_r6_full_write.py closeout \
+            --before-state "$BEFORE_STATE_PATH" \
+            --preflight "$PREFLIGHT_PATH" \
+            --prewrite-state "$PREWRITE_STATE_PATH" \
+            --write "$WRITE_PATH" \
+            --after-write-state "$AFTER_WRITE_STATE_PATH" \
+            --replay "$REPLAY_PATH" \
+            --final-state "$FINAL_STATE_PATH" \
+            --write-exit "${WRITE_EXIT:-2}" \
+            --summary-json "$SUMMARY_JSON_PATH" \
+            --summary-markdown "$SUMMARY_MARKDOWN_PATH" \
+            --closeout-json "$CLOSEOUT_JSON_PATH" \
+            --closeout-markdown "$CLOSEOUT_MARKDOWN_PATH" \
+            --repository-sha "$REPOSITORY_SHA" \
+            --run-id "$WORKFLOW_RUN_ID"
+          closeout_exit=$?
+          set -e
+          echo "closeout_exit=$closeout_exit" >> "$GITHUB_OUTPUT"
+
+      - name: Scan artifacts for credential-shaped content
+        id: scan
+        if: ${{ always() }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import re
+          from pathlib import Path
+
+          # Fail closed on anything credential-shaped reaching an artifact. The
+          # matched text is never printed — only the filename and the category.
+          forbidden = re.compile(
+              r'postgresql://|postgres://|password\s*=|Authorization\s*:'
+              r'|X-Admin-Token|ADMIN_API_TOKEN|SECRET_KEY|DATABASE_URL'
+              r'|BASEBALLOS_ADMIN_API_TOKEN'
+              r'|token\s*=|api[_-]?key\s*=|secret\s*=',
+              re.IGNORECASE,
+          )
+          leaked = []
+          for path in sorted(Path('artifacts').glob('*')):
+              if path.is_file() and forbidden.search(path.read_text(errors='ignore')):
+                  leaked.append(path.name)
+                  path.unlink()
+          if leaked:
+              print(f"::error::Sanitization check failed for: {', '.join(leaked)}")
+              raise SystemExit(1)
+          print('Artifact sanitization check passed.')
+          PY
+
+      - name: Write the job summary
+        if: ${{ always() }}
+        run: |
+          set -euo pipefail
+          if [ -f "$SUMMARY_MARKDOWN_PATH" ]; then
+            cat "$SUMMARY_MARKDOWN_PATH" >> "$GITHUB_STEP_SUMMARY"
+          else
+            {
+              echo '## FOUNDATION 3C R6 — FAILED'
+              echo
+              echo '- Failed invariant: `closeout_validation_produced_no_summary`'
+              echo '- Artifact: `foundation-3c-r6-full-remaining-window-write`'
+              echo '- Automated lane: off'
+              echo '- Authoritative mode: unapproved'
+              echo
+              echo 'This is a rollout stop. Do not retry R6, remove workflows,'
+              echo 'or enable any lane without founder review.'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload the R6 artifacts
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: foundation-3c-r6-full-remaining-window-write
+          path: artifacts/
+          if-no-files-found: warn
+          retention-days: 90
+
+      - name: Fail the job unless R6 passed
+        if: ${{ always() }}
+        env:
+          CLOSEOUT_EXIT: ${{ steps.closeout.outputs.closeout_exit }}
+        run: |
+          set -euo pipefail
+          if [ "${CLOSEOUT_EXIT:-2}" != "0" ]; then
+            echo "::error::R6 failed; see the job summary. Rollout stops. Do not retry."
+            exit 1
+          fi
+          echo "R6 passed. The 109-game bootstrap is complete. Proceed to Stage E."
