@@ -90,19 +90,38 @@ Downstream jobs (`internal-enrichment`, `static-team-story-preview`) run only
 after `public-sync` succeeds, so a failed ledger verdict also stops enrichment
 and static page publication from advancing on unproven data.
 
-## Foundation 3C R1 validation workflow (manual, diagnostic, non-mutating)
+## Foundation 3C rollout workflows (manual, diagnostic, non-mutating)
 
-`.github/workflows/foundation-3c-r1-shadow-validation.yml` is **separate from
-the BaseballOS Bullpen Sync workflow** and is not part of the daily/postgame
-production schedule. It has no cron and cannot be triggered by a push or a
-pull request.
+Two workflows exist for the staged Foundation 3C rollout:
 
-It runs one pinned read-only shadow reconciliation of five hard-coded games at
-a hard-coded reference date, validates the result against a fixed contract, and
-fails the job if the contract does not hold. It is diagnostic and
-non-publishing: it never writes baseball data, never publishes or withholds a
-snapshot, never touches the appearance-ledger gate, never warms a cache, and
-never deploys. Its permissions are `contents: read`.
+| File | Displayed name | Scope |
+|---|---|---|
+| `.github/workflows/foundation-3c-r1-shadow-validation.yml` | Foundation 3C R1 Shadow Validation | five hard-coded games |
+| `.github/workflows/foundation-3c-r2-full-window-shadow.yml` | Foundation 3C R2 Full-Window Shadow Review | the normal governed window |
+
+Both are **temporary manual rollout diagnostics**. Both are separate from the
+BaseballOS Bullpen Sync workflow and neither is part of the daily or postgame
+production schedule. Neither has a cron; neither can be triggered by a push or
+a pull request; neither accepts inputs. Their permissions are `contents: read`.
+
+Neither writes baseball data, publishes or withholds a snapshot, touches the
+appearance-ledger gate, warms a cache, or deploys. Each runs one pinned
+read-only shadow reconciliation at a hard-coded reference date, validates the
+result against a fixed contract, and reports.
+
+They differ in what a green run means:
+
+- **R1** has two outcomes. It passes only when the five already-written games
+  replay to zero mutations; anything else fails the job.
+- **R2** has three. `pass` means the whole governed window already reconciles.
+  `review_required` means the run executed safely and legitimate official
+  corrections remain outstanding — the job succeeds, **but no write is
+  approved** and R3/R4 stay blocked until the update manifest is reviewed by a
+  human. `failed` means a foundational invariant broke and the job fails.
+
+A green `review_required` is a statement about execution, not authorization.
+
+Both are removed at Stage E once the rollout completes.
 
 Canonical reference:
 [`GAME_DRIVEN_DAILY_INGESTION.md`](GAME_DRIVEN_DAILY_INGESTION.md).
