@@ -516,3 +516,110 @@ def test_every_declared_failure_class_has_declared_semantics():
         }
         # Generic and specific failures alike fail closed.
         assert semantics['blocks_publication'] is True
+
+
+# ── Per-game transaction boundary ────────────────────────────────────────────
+# Extracted from the temporary Foundation 3C R4/R6 rollout suites at Stage E so
+# the guarantee outlives the workflows that first exercised it. The canonical
+# writer commits ONCE PER GAME. Multi-game atomicity does not exist, and a
+# governed run must never present a partial result as a whole one.
+
+
+def test_a_failure_partway_leaves_earlier_games_durably_committed(
+    app, monkeypatch, stub_client,
+):
+    """Game 3 fails; games 1 and 2 stay complete. This is by design.
+
+    A rollout that assumed all-or-nothing would try to "repair" the survivors.
+    They are correct, durable work and must be left alone.
+    """
+    with app.app_context():
+        games = (970101, 970102, 970103, 970104)
+        boxscores = {}
+        for index, game_pk in enumerate(games):
+            _schedule(game_pk)
+            boxscores.update(_one_reliever(game_pk, 9700 + index))
+        db.session.commit()
+        stub_client(boxscores)
+
+        real_process = game_driven_ingestion._process_one_game
+        calls = {'n': 0}
+
+        def failing(item, **kwargs):
+            calls['n'] += 1
+            if calls['n'] == 3:
+                raise RuntimeError('injected failure on the third game')
+            return real_process(item, **kwargs)
+
+        monkeypatch.setattr(game_driven_ingestion, '_process_one_game', failing)
+        with pytest.raises(RuntimeError):
+            _run()
+        db.session.rollback()
+
+        completed = {
+            item.mlb_game_pk for item in GameIngestionWorkItem.query.filter(
+                GameIngestionWorkItem.status
+                == GameIngestionWorkItem.STATUS_COMPLETED
+            ).all()
+        }
+        # Exactly the two games that committed before the failure.
+        assert len(completed) == 2
+        assert completed <= set(games)
+        # The failed game left no completed checkpoint behind.
+        assert games[2] not in completed
+
+
+def test_a_partial_run_never_reports_itself_as_complete(app, stub_client):
+    """games_completed must not silently equal games_attempted."""
+    with app.app_context():
+        games = (970201, 970202, 970203)
+        boxscores = {}
+        for index, game_pk in enumerate(games):
+            _schedule(game_pk)
+            boxscores.update(_one_reliever(game_pk, 9720 + index))
+        db.session.commit()
+        stub_client(boxscores, fail_games=(games[1],))
+
+        report = _run()
+
+        assert report['games_attempted'] == 3
+        assert report['games_completed'] == 2
+        assert report['games_failed'] == 1
+        assert report['games_completed'] != report['games_attempted']
+        assert report['failure_classes']
+        # The survivors are durable; the failure is visible rather than absorbed.
+        assert GameIngestionWorkItem.query.filter(
+            GameIngestionWorkItem.status
+            == GameIngestionWorkItem.STATUS_COMPLETED
+        ).count() == 2
+
+
+def test_a_completed_game_replays_without_mutating_baseball_data(
+    app, stub_client,
+):
+    """The bootstrap's core claim: replaying settled work changes nothing."""
+    with app.app_context():
+        game_pk = 970301
+        _schedule(game_pk)
+        db.session.commit()
+        stub_client(_one_reliever(game_pk, 97030))
+
+        _run()
+        stored = [
+            (row.mlb_game_pk, row.pitcher_id, row.innings_pitched_outs,
+             row.earned_runs, row.strikeouts)
+            for row in GameLog.query.order_by(GameLog.id).all()
+        ]
+
+        replay = _run(mode=game_driven_ingestion.MODE_SHADOW)
+        db.session.rollback()
+
+        assert replay['rows_inserted'] == 0
+        assert replay['rows_updated'] == 0
+        assert replay['rows_blocked'] == 0
+        assert replay['complete_mutation_count'] == 0
+        assert [
+            (row.mlb_game_pk, row.pitcher_id, row.innings_pitched_outs,
+             row.earned_runs, row.strikeouts)
+            for row in GameLog.query.order_by(GameLog.id).all()
+        ] == stored

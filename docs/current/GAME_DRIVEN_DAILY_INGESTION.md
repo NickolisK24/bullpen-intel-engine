@@ -715,883 +715,116 @@ application cannot read different evidence.
 The refusal reports only the expected fingerprint, the observed fingerprint,
 the requested ids, and a safe reason.
 
-## R1 validation from a phone
-
-Stage R1 replays the five games the first controlled write already reconciled.
-It is the gate that proves the canonical-innings repair holds in production,
-and it can be run with no computer.
-
-**Workflow:** `.github/workflows/foundation-3c-r1-shadow-validation.yml`,
-displayed as **Foundation 3C R1 Shadow Validation**. Manual dispatch only — no
-schedule, no push, no pull-request trigger.
-
-Everything is hard-coded, so there is nothing to type and nothing to
-misconfigure from a phone:
-
-| | |
-|---|---|
-| games | 823518, 824735, 823761, 824083, 824327 |
-| reference date | 2026-07-29 |
-| mode | `shadow` (exclusive scope via `--only-game-pk`) |
-| permissions | `contents: read` only |
-| `GAME_DRIVEN_INGESTION_MODE` | `off` (defense in depth) |
-
-It writes no baseball data. It runs the merged Foundation 3C shadow path,
-which is logically read-only before any transaction handling, and adds no
-compensating write, cleanup, or write-and-roll-back of its own. It does not
-call the daily or postgame sync, does not publish a snapshot, and does not
-deploy anything.
-
-### Running it
-
-1. Open the repository in the GitHub mobile app or a mobile browser.
-2. Open **Actions**.
-3. Select **Foundation 3C R1 Shadow Validation**.
-4. Tap **Run workflow**, choose `main` if a branch selector appears, and
-   confirm.
-5. Open the finished run and read the job summary.
-6. Download the `foundation-3c-r1-shadow-validation` artifact if you want the
-   full report.
-
-### Production result — PASS
-
-R1 ran against production and passed:
-
-```
-Scope        requested 5, planned 5, exact match yes
-Games        completed 5, failed 0
-Rows         expected 38, inserted 0, updated 0, unchanged 38, blocked 0
-Innings      decimal-only differences safely ignored 14
-             canonical outs corrections 0
-             statistical corrections 0
-Writes       none
-```
-
-The five-game write that previously replayed as 14 "official corrections" now
-replays to zero mutations. The 14 differences are recognised as derived
-decimal-companion representation drift and ignored. D-008 holds in production.
-
-**This proved GameLog convergence only.** Those same rows also carried pitcher
-identity actions that write mode would have applied, and R1 did not count them.
-See [D-009](#d-009--completed-games-are-not-current-roster-authority). R1 now
-additionally requires zero pitcher-identity mutations, zero reactivations, zero
-metadata updates, zero identity creations, zero appearance-team mutations, and a
-`complete_mutation_count` of zero.
-
-The job summary states the result directly. The artifact contains the raw
-shadow report, a structured validation summary, and the same summary in
-Markdown, retained 14 days.
-
-### Failure is a stop
-
-A failed validation fails the job. It is never downgraded to a warning
-annotation. The summary names the failed invariant with its expected and
-observed values, the requested and planned game ids, and nothing else — no
-payload, path, credential, or exception text. Artifacts are scanned for
-credential-shaped content before upload and the run fails if anything matches.
-
-**R2 must not begin until R1 passes.** `GAME_DRIVEN_INGESTION_MODE` stays
-`off` throughout; R1 does not change it and does not enable the automated
-lane.
-
-## R2 full-window review from a phone
-
-R1 proved the repair for five games. Stage R2 asks the harder question: does it
-hold across the **complete governed window**, and is anything still outstanding
-there safe enough for a human to review?
-
-**Workflow:** `.github/workflows/foundation-3c-r2-full-window-shadow.yml`,
-displayed as **Foundation 3C R2 Full-Window Shadow Review**. Manual dispatch
-only — no schedule, no push, no pull-request trigger, no inputs.
-
-| | |
-|---|---|
-| scope | the normal governed window — no `--only-game-pk`, no `--max-games` |
-| reference date | 2026-07-29 |
-| mode | `shadow` |
-| permissions | `contents: read` only |
-| `GAME_DRIVEN_INGESTION_MODE` | `off` (defense in depth) |
-
-It writes no baseball data, creates no checkpoint, publishes nothing, and
-deploys nothing. It runs the merged shadow path and adds no compensating write,
-cleanup, or write-and-roll-back of its own.
-
-The counts are deliberately **not** hard-coded. Five games already carry
-completed checkpoints and normal production activity moves what is planned, so
-the invariant R2 enforces is semantic rather than arithmetic:
-
-> no decimal-only difference may become a planned mutation
-> and no completed game may write current pitcher state
-
-### Running it
-
-1. Open the repository in the GitHub mobile app or a mobile browser.
-2. Open **Actions**.
-3. Select **Foundation 3C R2 Full-Window Shadow Review**.
-4. Tap **Run workflow**, keep `main`, and confirm.
-5. Open the finished run and read the job summary.
-6. Download `foundation-3c-r2-full-window-shadow-review` when the result is
-   REVIEW REQUIRED, and send the summary and update manifest for review.
-
-### Three results
-
-| Result | Job | Meaning |
-|---|---|---|
-| **PASS** | succeeds | the whole governed window already reconciles; zero mutations of EVERY class — GameLog, pitcher identity, appearance team |
-| **REVIEW REQUIRED** | succeeds | the run was safe and one or more legitimate official corrections remain outstanding |
-| **FAILED** | fails | a foundational invariant broke — rollout stop |
-
-**A green REVIEW REQUIRED run approves nothing.** It means evidence gathering
-succeeded, not that a write is authorized. Legitimate corrections are recorded
-for a human to read, never applied and never auto-approved, because a
-correction that is individually safe can still be wrong in aggregate — and the
-only party who can judge that is the person accountable for the published
-numbers. R3/R4 stay blocked until the update manifest is reviewed.
-
-A FAILED result is a rollout stop, never a warning. Among the conditions that
-fail closed: a projected insert, a blocked or unsafe row, an unknown changed
-field, row totals that do not reconcile against the per-row detail,
-`innings_pitched` appearing as a semantic change, a derived companion applied
-without its authority moving, a game failure, a budget stop, a finality
-conflict, missing schedule authority — and, since D-009, **any** current-state
-pitcher mutation, any reactivation, any `update_metadata`, any blocked identity,
-any unknown identity field, or identity counters that disagree with the rows.
-
-The only identity action a human may be asked to review is a minimal identity
-creation. Everything else that would write is a stop.
-
-### Artifacts
-
-Uploaded as `foundation-3c-r2-full-window-shadow-review`, retained 14 days,
-uploaded even when the run fails:
-
-| File | What |
-|---|---|
-| `r2-full-window-shadow.json` | the raw shadow report |
-| `r2-validation-summary.json` | structured result, counts, and failed invariant |
-| `r2-validation-summary.md` | the same summary as the job summary |
-| `r2-update-review.json` | one entry per projected mutation of every class, ordered by target, game, then pitcher |
-| `r2-update-review.md` | the manifest as a readable table |
-
-The manifest is written even when it is empty, so a reviewer never has to
-wonder whether it was withheld. Every artifact is scanned for
-credential-shaped content before upload; a match deletes the file and fails the
-job without printing what matched.
-
-**Publication completeness will read `false`, and that is correct.** R2 is
-shadow mode, so it creates no completion checkpoints and the games it reads
-stay uncheckpointed. The validator checks the completeness object for internal
-consistency and for the failures that would matter — terminal failure games,
-finality conflicts, missing schedule authority — and never rewrites it to make
-R2 look green.
-
-`GAME_DRIVEN_INGESTION_MODE` stays `off` throughout. R2 does not change it and
-does not enable the automated lane.
-
 ## D-009 — completed games are not current-roster authority
 
-**Permanent rule.**
+A completed game establishes what happened in that game. It never establishes
+who a pitcher is today, what team he is on, or whether he is active. Current
+roster and team state belong to the official roster authorities.
 
-```
-completed-game pitching line
-    = authority for APPEARANCE identity and HISTORICAL appearance context
+The identity planner therefore has exactly three outcomes for a pitching line:
 
-official current roster / assignment sources
-    = authority for CURRENT state
-```
-
-### What production R1 and R2 actually proved
-
-Both passed on **GameLog reconciliation**. Neither proved complete database
-convergence, because neither counted `Pitcher` mutations at all.
-
-The production R2 report reconciled 946 appearance rows to zero GameLog changes
-and reported PASS with an empty update manifest. The same report carried:
-
-```
-mutation_category_counts:
-    pitcher_identity_reconciliation: 942
-    unchanged_row:                   946
-```
-
-Independently verified from the artifact: 942 rows carried an identity action —
-940 `update_metadata` and 2 `reactivate` — across 423 unique pitchers, every one
-of them attached to a row whose GameLog action was `unchanged`. The two
-projected reactivations were game 823758 / pitcher 621121 and game 822706 /
-pitcher 640454. Write mode would have applied all 942.
-
-The five R1 games carried identity activity too. **R1 proved GameLog
-convergence; it did not prove complete database convergence.**
-
-### Root cause
-
-GameLog reconciliation was centralised into a pure planner. Pitcher resolution
-was not — it stayed a side-effecting path that mutated and flushed `Pitcher`
-rows before or alongside the GameLog work. The reconciliation fingerprint
-covered only the GameLog decision, the validators used GameLog actions as the
-mutation population, and the R2 manifest listed only rows whose GameLog action
-was `update`. So hundreds of planned Pitcher writes could coexist with
-`rows_updated: 0`, `changed_fields_counts: {}`, an empty manifest, and `pass`.
-
-That is two defects at once: shadow could not see what write would do, and
-historical evidence was acting as current-roster authority.
-
-### What a completed game may and may not establish
-
-| May establish | May not establish |
+| action | meaning |
 |---|---|
-| the MLB person id on that appearance | current active status |
-| a name for an identity that does not exist locally | current roster status or its provenance |
-| that the person pitched in that game | current team assignment or its provenance |
-| historical team-at-appearance (on the GameLog fields) | current organization or assignment timestamps |
-| the official pitching line for that game | reactivation of an inactive row |
+| `unchanged` | the pitcher exists; nothing about him is rewritten |
+| `create_minimal_identity` | no local pitcher exists; create the minimum needed to attribute the appearance |
+| `blocked` | the line cannot be attributed safely; refuse and say why |
 
-### Existing row: never mutated
+`update_metadata`, `reactivate`, and `create` are **retired write actions**. An
+existing Pitcher row is never mutated from a completed game.
 
-An existing `Pitcher` is used as the identity anchor and left alone. Not
-reactivated, not reassigned, not renamed, not restatused, no refreshed
-timestamps. Differences between the historical appearance and the current row
-are recorded as **suppressed** evidence — visible, counted, reviewable, and
-refused.
+A difference between what the game implies and what the roster says is
+**suppressed evidence**, not a mutation. It stays visible in the report, names
+only a protected current-state field, says out loud that it was refused, and
+never enters the mutation digest or the fingerprint.
 
-This is structural rather than source-dependent: the planner has no branch that
-can emit a current-state field as a changed field for an existing row, so no
-combination of sources or precedence flags can produce one. An unverified
-roster status is protected exactly as strongly as an official one.
+### Why this is structural rather than a source-precedence rule
 
-An inactive or differently assigned pitcher still owns their historical
-appearances. A suppressed current-state difference is **not** an unresolved
-identity and never blocks the appearance from reconciling.
+The original R1 and R2 gates passed on GameLog reconciliation while the same
+reports carried 942 pitcher-identity actions — 940 metadata updates and 2
+reactivations across 423 pitchers — attached to rows whose GameLog action was
+`unchanged`. None of them appeared in the manifest or the fingerprint. A
+precedence rule would have re-ranked those writes. Making the mutation
+structurally impossible removed them.
 
-`update_metadata` and `reactivate` no longer exist as completed-game identity
-actions.
+## One complete plan, one fingerprint
 
-### Missing row: minimal creation only
+A row plan is not clean because its GameLog half is clean. The complete plan
+covers GameLog, pitcher identity, and appearance-team authority together, and
+one fingerprint covers all three.
 
-A new appearance cannot be persisted without an identity, so one may be created
-— as a separate governed action that enters the reviewed fingerprint. It claims
-no current state:
+`parity_contract_version` is **4** and is hashed into the fingerprint, so a
+contract change invalidates every prior fingerprint by construction.
 
-| Written | Left unset |
+### The fingerprint covers identity BY VALUE
+
+Under contract 3 the identity half collapsed to a constant on the reported row:
+creating pitcher 111 and creating pitcher 222 fingerprinted identically, so a
+reviewed fingerprint authorized *any* identity creation rather than the reviewed
+one. Contract 4 fingerprints the identity decision **and the values it would
+write**. Repairing it immediately exposed a second defect — the writer patched
+only the identity action onto the row, so shadow and write fingerprints diverged
+— and both were fixed together.
+
+A run is clean only when **every** target is clean.
+
+## Bootstrap status — complete
+
+**The Foundation 3C bootstrap completed successfully.** All 109 governed final
+games are reconciled and checkpointed.
+
+| | |
 |---|---|
-| `mlb_id` | `team_id`, `team_name`, `team_abbreviation` |
-| `full_name` (from the official line) | `team_assignment_status`, `team_assignment_source`, `team_assignment_updated_at` |
-| `position` (as the official line recorded it) | `roster_status_updated_at` |
-| `active = False` | |
-| `roster_status = UNKNOWN` with an appearance-identity source | |
+| expected final games | **109** |
+| completed final games | **109** |
+| unresolved final games | **0** |
+| terminal failures | 0 |
+| correction pending | 0 |
+| publication complete | **yes** |
+| reconciled appearance rows | **946** |
 
-`active` is set explicitly to `False` because the column defaults to `True` —
-leaving it unset would make a three-week-old appearance silently assert that the
-player is on a roster today. `position` keeps what the official line recorded
-rather than being flattened to `P`, so a two-way player's `DH` record is not
-turned into a bullpen arm.
+The bootstrap was performed by explicit manual dispatch across six reviewed
+increments in July 2026. The full rollout history — every stage, its production
+evidence, the fingerprints, and the hash evidence — is preserved in
+`docs/archive/2026-07/FOUNDATION_3C_BOOTSTRAP_CLOSEOUT.md`. That record is
+historical; this document is the current operating contract.
 
-Identity safety failures — missing or invalid person id, conflicting
-identifiers, invalid team side, a genuinely new identity with no name — still
-fail closed exactly as before.
+**`GAME_DRIVEN_INGESTION_MODE` remains `off`.**
+**Automated activation is a separate decision.**
+**Authoritative mode remains unapproved.**
 
-### One complete plan, one fingerprint
+A completed bootstrap is a precondition for considering activation, not an
+argument for it. Enabling either lane requires its own reviewed change.
 
-Each appearance now carries a single plan combining pitcher identity, GameLog
-reconciliation, and appearance-team authority. Shadow and write consume the same
-plan, and the fingerprint commits to all of it.
+### What a completed bootstrap does and does not claim
 
-The fingerprint **changes** when any of these change: a GameLog
-insert/update/blocked decision, a semantic GameLog changed field, an applied
-companion caused by its authority, a minimal identity creation or its values, an
-appearance-team mutation, or a blocked identity decision.
+It claims that 109 governed final games are reconciled, checkpointed, and
+replayable with zero mutations, and that no baseball-data row changed while that
+happened.
 
-It does **not** change for ignored decimal representation drift, suppressed
-current-state differences, application-time timestamps, surrogate ids unavailable
-during shadow, or row order.
+It claims nothing about BaseballOS data quality in general. The 14 false GameLog
+provenance events, the first-write Pitcher forensics, and the pre-existing global
+dead letters recorded at closeout all remain open and separate.
 
-`reconciliation_plan_version` and `parity_contract_version` are now `3`;
-`complete_plan_version` is `1`; `identity_plan_version` is `1`.
+## Ingestion modes and the activation decision
 
-### A run is only clean when every target is clean
-
-`complete_mutation_count` covers GameLog mutations, identity mutations, and
-blocked entries together. R1 and R2 both require it to be zero before the
-rollout proceeds — a run may not be described as "no mutations" while any target
-would be written.
-
-Suppressed historical differences are reported separately and are never counted
-as mutations.
-
-## Post-D-009 production results
-
-Both gates were re-run after D-009 merged and both passed on the complete
-mutation contract — every database target, not just GameLog.
-
-**R1 — PASS**
-
-```
-Scope        requested 5, planned 5, exact match yes
-Rows         expected 38, inserted 0, updated 0, unchanged 38, blocked 0
-Innings      decimal-only differences ignored 14, outs corrections 0
-Mutations    GameLog 0, pitcher identity 0, appearance team 0, total 0
-Identity     reactivations 0, metadata updates 0, creations 0, blocked 0
-Suppressed   1 historical current-state difference
-Writes       none
-```
-
-**R2 — PASS**
-
-```
-Window       109 games planned, 109 completed, 0 failed
-Rows         expected 946, inserted 0, updated 0, unchanged 946, blocked 0
-Innings      decimal-only differences ignored 323, outs corrections 0
-Mutations    GameLog 0, pitcher identity 0, appearance team 0, total 0
-Identity     reactivations 0, metadata updates 0, creations 0, blocked 0
-Suppressed   57 historical current-state differences
-Writes       none
-```
-
-The 942 identity actions R2 previously carried are gone. The differences that
-produced them are still present and still visible — as 57 suppressed
-current-state differences, which are refused evidence rather than mutations.
-
-## R3 controlled-sample review from a phone
-
-R1 and R2 proved the whole population is clean. R3 asks the last question
-before a write is proposed: is *this specific five-game sample* still
-unresolved, still eligible, and provably clean — and what exact plan would a
-write have to match?
-
-**Workflow:** `.github/workflows/foundation-3c-r3-controlled-sample-shadow.yml`,
-displayed as **Foundation 3C R3 Controlled Sample Shadow**. Manual dispatch
-only — no schedule, no push, no pull-request trigger, no inputs.
-
-### The approved sample
-
-The first five unresolved games after the five completed by the first
-controlled write, in reviewed order:
-
-| Game | Appearance rows | Ignored decimal differences |
+| `GAME_DRIVEN_INGESTION_MODE` | What the lane does | Publication authority |
 |---|---|---|
-| 823110 | 6 | 2 |
-| 825055 | 8 | 4 |
-| 824004 | 9 | 2 |
-| 823438 | 10 | 6 |
-| 824408 | 10 | 4 |
-| **Total** | **43** | **18** |
-
-| | |
-|---|---|
-| scope | exclusive — `--only-game-pk` five times, nothing else |
-| reference date | 2026-07-29 |
-| mode | `shadow` |
-| permissions | `contents: read` only |
-| `GAME_DRIVEN_INGESTION_MODE` | `off` (defense in depth) |
-
-### How eligibility is actually proven
-
-Not by `candidate_reason`. Under exclusive scope the planner short-circuits
-every requested game to `explicit_repair` before it classifies state at all
-(`game_ingestion_planner._candidate_decision`, the `if explicit:` branch), so
-`newly_final` is unreachable for an R3 run and asserting it would fail every
-time while proving nothing.
-
-The load-bearing proof is the **attempt number**. The planner derives it from
-the stored work item, so attempt 1 means no work item exists — and no work item
-means no completed checkpoint, no prior failed attempt, and no correction
-re-check. A game already written by the first controlled write cannot report
-attempt 1.
-
-Alongside it R3 requires `retry_count == 0`, `corrected_final_count == 0`,
-publication-critical criticality, and the pinned July 29 bootstrap population:
-
-```
-expected final games 109, completed 5, unresolved 104,
-terminal failures 0, publication complete false
-```
-
-A legitimately changed population is reported as a failure, not reinterpreted.
-The sample was chosen against this exact state.
-
-### Two results only
-
-There is no `review_required` for R3. This sample is expected to be clean, and
-any projected mutation means it is not eligible for the controlled write.
-
-| Result | Job | Meaning |
-|---|---|---|
-| **PASS** | succeeds | zero mutations on every target; the package may be reviewed |
-| **FAILED** | fails | rollout stop; R4 must not be created |
-
-**PASS does not authorize a write.** It produces the reviewed complete
-reconciliation fingerprint that a later R4 would have to match, and nothing
-more. `write_approved` is structurally `false` — there is no code path that can
-set it true — and `r4_status` is always `blocked_pending_founder_review`.
-
-### Artifacts
-
-Uploaded as `foundation-3c-r3-controlled-sample-shadow`, retained 14 days,
-uploaded even when the run fails:
-
-| File | What |
-|---|---|
-| `r3-controlled-five-shadow.json` | the raw shadow report |
-| `r3-validation-summary.json` / `.md` | structured result and the job summary |
-| `r3-reviewed-authorization.json` / `.md` | the reviewed package, ordered by the approved sample |
-
-The authorization package carries the run-level complete fingerprint, a
-per-game fingerprint, each game's source revision, all five version constants,
-and the suppressed-difference counts. Every artifact is scanned for
-credential-shaped content before upload.
-
-### After the run
-
-Send the job summary, `r3-reviewed-authorization.md`, and the complete
-fingerprint for review. **R4 must not be created or run until that fingerprint
-is founder-approved.** `GAME_DRIVEN_INGESTION_MODE` stays `off` throughout.
-
-## The complete fingerprint covers pitcher identity by VALUE
-
-`--expected-plan-fingerprint` is the only thing standing between a reviewed plan
-and an applied write, so what it covers matters more than almost anything else
-in this lane.
-
-**Defect found while preparing R4.** The identity half of the fingerprint read a
-nested `pitcher_identity` key on the row. That key exists on the raw planner
-plan, but `_safe_row_entries` flattens it away — and `_safe_row_entries` is what
-produces both the report's `complete_reconciliation_fingerprint` and the rows
-`_authorize_reviewed_plan` compares. So the identity component collapsed to the
-same constant on every row:
-
-```
-identity component, row A: ('None', 'unchanged', '', '')
-identity component, row B: ('None', 'unchanged', '', '')
-```
-
-Creating pitcher 111 and creating pitcher 222 therefore fingerprinted
-identically. A reviewed fingerprint authorized *an* identity creation, not *the*
-reviewed one. A creation was still distinguishable from an unchanged row,
-because the identity mutation category leaks into `mutation_categories` — which
-is exactly why this survived R3: nothing in that sample created an identity, so
-nothing exercised the value half.
-
-**Repair.** `fingerprint_component` now reads the flattened
-`pitcher_identity_action`, `pitcher_identity_blocked_reason`, and
-`pitcher_identity_mutation_digest` fields, and `plan_row` mirrors them onto the
-row. The raw plan and the reported row now fingerprint identically by
-construction, so the guard compares the same identity the report published.
-
-Repairing it exposed a second defect: the canonical writer builds its plan
-without the identity half and patches it on afterwards, and that patch set only
-the action. The write's fingerprint was therefore missing the digest that
-shadow carried — a genuine shadow/write divergence, now fixed by patching every
-field the fingerprint reads.
-
-Suppressed historical differences remain excluded: they are refused evidence and
-must not move a fingerprint that authorizes mutations.
-
-**`parity_contract_version` moved `3` → `4`.** The contract version is hashed
-into the fingerprint, so every fingerprint reviewed under contract 3 is stale by
-construction and cannot be reproduced under contract 4. That is deliberate: a
-stale authorization must fail loudly rather than silently authorize a write
-whose identity half was never really reviewed.
-
-## R4 controlled write and immediate replay
-
-R1, R2, and R3 were read-only. **R4 is the first stage that writes.**
-
-### Contract-4 authorization
-
-R3 was re-run after the fingerprint repair and passed under parity contract 4:
-five games, 43 rows all unchanged, 18 decimal-only differences ignored, three
-suppressed historical current-state differences, zero mutations on every target.
-
-| | |
-|---|---|
-| approved games | 823110, 825055, 824004, 823438, 824408 |
-| reference date | 2026-07-29 |
-| parity contract | 4 |
-| approved fingerprint | `08bf16bc730ffe4c5c024c8e1dbc000d017a1a4956878f49a988fb22a1e4adda` |
-
-The contract-3 value `2a06f7e5…c239` is **stale and prohibited**. It appears in
-this repository only in documentation and in tests proving it is refused; it is
-in no executable command, default, or fallback.
-
-### What R4 may and may not change
-
-R4 may change **governed ingestion control state only**: five work items
-complete, and publication completeness moves 5/104 → 10/99.
-
-It may not touch a single baseball-data row. No GameLog insert or update, no
-Pitcher identity creation or mutation, no appearance-team change, no correction
-provenance, no dead letter. The before/after snapshots hash four independent
-families — GameLog content, correction provenance, appearance-team authority,
-and Pitcher current state — so the closeout can say *which* one moved rather
-than only that something did.
-
-### The sequence
-
-```
-before-state snapshot (read-only, write probe refused)
-        -> preflight shadow
-        -> authorize against the contract-4 fingerprint
-        -> ONE controlled write        <- the only write, gated on authorization
-        -> after-state snapshot
-        -> immediate shadow replay
-        -> closeout validation
-```
-
-Authorization is recomputed from current database state and compared **before
-the first mutation**. The write step is unreachable unless the preflight
-validator exits zero.
-
-### Single use
-
-Preflight refuses if any selected game already carries a work item. A second
-dispatch after a successful R4 therefore stops before write, because the write
-itself created those work items.
-
-### Transaction boundary — stated honestly
-
-**The canonical writer commits per game.** `_process_one_game` issues one
-`db.session.commit()` per game, so five-game atomicity does not exist and is not
-claimed. Partial completion is genuinely reachable and is a **FAILED** result:
-R4 records exactly which games completed, runs the replay read-only to expose
-the resulting state, and stops the rollout. No automatic retry, no compensation,
-no second write, no deleted checkpoints.
-
-### Immediate replay
-
-The replay may report a later attempt number — the write left completed work
-items behind, and that is the point. It may not report a mutation of any kind.
-
-Its fingerprint must reproduce the approved value exactly. That holds because
-`plan_fingerprint` reads the plan, never work-item or checkpoint state, which
-makes fingerprint equality a stronger convergence proof than a zero-mutation
-count alone.
-
-### Closeout
-
-`r4-closeout.json` / `.md` and `r4-validation-summary.json` / `.md`, uploaded
-with all five run reports under `foundation-3c-r4-controlled-write-and-replay`,
-retained 30 days because this is a production-write record.
-
-The summary never says "no database writes were performed" — R4 writes
-checkpoint state. It says **no baseball-data rows were changed**, which is the
-true and useful claim.
-
-### After R4
-
-A successful R4 leads directly to **R5: one full shadow of the remaining 99
-unresolved games.** Do not select another small sample.
-`GAME_DRIVEN_INGESTION_MODE` stays `off`; authoritative mode remains unapproved.
-
-## R4 production result — PASS
-
-R4 executed in production and passed. It changed exactly one thing: governed
-ingestion control state.
-
-| | |
-|---|---|
-| approved games | 823110, 825055, 824004, 823438, 824408 |
-| games completed / failed | 5 / 0 |
-| appearance rows | 43 — inserted 0, updated 0, unchanged 43, blocked 0 |
-| GameLog mutations | 0 |
-| pitcher identity mutations | 0 |
-| appearance-team mutations | 0 |
-| complete-plan mutations | 0 |
-| newly completed checkpoints | 5 |
-| completed final games | 5 → **10** |
-| unresolved final games | 104 → **99** |
-| unexpected games changed | 0 |
-| dead letters created | 0 |
-
-**No baseball data changed.** GameLog content, Pitcher current state,
-appearance-team authority, and correction provenance were all byte-identical
-across the write — proven by hashing each family independently before and
-after, with both snapshots taken inside a read-only transaction that required a
-write probe to be refused first.
-
-The immediate replay reported 43 rows unchanged, zero mutations across every
-target, 18 ignored decimal-only differences, and **reproduced the approved
-contract-4 fingerprint exactly**. Fingerprint equality is a stronger
-convergence proof than a zero-mutation count alone, because `plan_fingerprint`
-reads the plan and never checkpoint state.
-
-## R5 full remaining-window shadow
-
-R5 is the **final read-only gate** before a 99-game production write. It runs
-the entire remaining bootstrap window in one pass — no batches, no cap, no time
-budget, no subdivision — and produces the reviewed package R6 will be built
-from.
-
-### Exact scope
-
-The governed window is 109 games. Ten are complete and are **excluded**:
-
-```
-original controlled write   823518 824735 823761 824083 824327
-R4 controlled write         823110 825055 824004 823438 824408
-```
-
-The remaining 99 are R5's exact scope, in canonical processing order:
-
-```
-823519 822784 824732 824896 822873 824166 824650 824893 824406 822785
-823042 824247 823759 823352 824248 822707 823434 824812 822952 823601
-823843 824733 824573 822872 823680 823031 823196 824244 822704 823197
-823841 824734 823435 822948 823355 824811 823679 823758 824571 822869
-823027 823600 822950 822706 823354 824730 824810 823599 823840 824246
-823678 823755 824572 823028 822870 823194 823433 822868 823353 823839
-824245 822705 823597 824570 823025 824001 824977 823195 824490 822949
-823350 823838 824243 822703 824489 823676 824569 823026 824003 823275
-824976 823193 823923 823837 823351 822702 823596 824242 823192 823273
-822947 823598 824487 823677 824567 823022 824002 824973 823924
-```
-
-The union of the 99 and the 10 is exactly the 109-game window. The scope is
-hard-coded in the workflow and in `backend/scripts/r5_remaining_window_scope.py`;
-the production database is used to **verify** it, never to define it.
-
-### Expected shape, by arithmetic
-
-The full reviewed window carried 946 appearance rows and 323 ignored decimal-only
-differences. The first completed five accounted for 38 rows and 14 ignored; the
-R4 five for 43 and 18.
-
-```
-games   109 - 5  - 5  =  99
-rows    946 - 38 - 43 = 865
-ignored 323 - 14 - 18 = 291
-```
-
-These are requirements, not estimates. A mismatch is a rollout stop.
-
-### What R5 requires
-
-- 99 games planned and completed, 0 failed, no budget stop
-- 865 appearance rows: 0 inserted, 0 updated, **865 unchanged**, 0 blocked
-- zero mutations across GameLog, pitcher identity, and appearance-team authority
-- 291 decimal-only differences safely ignored; **zero** canonical-outs corrections
-- one parity-contract-4 complete reconciliation fingerprint over the exact
-  99-game plan, plus a valid per-game fingerprint for all 99
-- publication completeness unchanged at 10 completed / 99 unresolved
-- **zero database drift** — every hashed family identical before and after
-
-Suppressed historical current-state differences are expected D-009 evidence and
-are **not** mutations. Current roster and team state may legitimately have moved
-since R2 without changing what happened in a completed game. They stay visible,
-may name only an approved protected current-state field, and never enter the
-mutation digest or the fingerprint. The observed total is recorded rather than
-pinned.
-
-### Two results only
-
-`pass` or `failed`. There is no `review_required` tier: the remaining window is
-expected to be clean, and R6 must not be built from a non-PASS package.
-
-### Ordering is asserted
-
-R5 requires the run's game-processing order to equal the reviewed canonical
-order above. The planner's ordering is deterministic — retry rank, criticality,
-represented date, game start time, then game id — and every input is already
-fixed for a final game, so the sequence is stable across runs. If production
-ever produced a different order, R5 fails closed rather than authorizing a write
-against a list nobody reviewed in that form.
-
-### Artifacts
-
-`r5-before-state.json`, `r5-remaining-window-shadow.json`, `r5-after-state.json`,
-`r5-validation-summary.json` / `.md`, `r5-reviewed-authorization.json` / `.md`,
-and `r5-r6-command-manifest.json` / `.md`, uploaded as
-`foundation-3c-r5-remaining-window-shadow` and retained 30 days.
-
-The R6 command manifest is a **reviewed input package, not an executable**. It
-carries the 99 `--only-game-pk` arguments, the scope digest, the approved
-fingerprint candidate, and `write_approved: false` with
-`r6_status: blocked_pending_founder_review`.
-
-### After R5
-
-R6 remains **blocked pending founder review**. A successful R5 leads directly to
-R6, the full remaining-window write of the same 99 games. **No more small
-samples.** `GAME_DRIVEN_INGESTION_MODE` stays `off` and authoritative mode
-remains unapproved.
-
-## R5 production result — PASS
-
-R5 executed in production against the exact remaining 99-game scope and passed.
-It wrote nothing.
-
-| | |
-|---|---|
-| games requested / planned / completed | 99 / 99 / 99, 0 failed |
-| exact scope | yes |
-| appearance rows | 865 — inserted 0, updated 0, **unchanged 865**, blocked 0 |
-| GameLog / identity / appearance-team / complete-plan mutations | 0 / 0 / 0 / 0 |
-| identity reactivations, metadata updates, creations, blocked | 0 / 0 / 0 / 0 |
-| ignored decimal-only differences | 291 |
-| canonical-outs and `innings_pitched` semantic corrections | 0 |
-| suppressed historical current-state differences | **59** (observed) |
-| database drift | **none** |
-| work items created / checkpoints completed / dead letters | 0 / 0 / 0 |
-| completeness | 10 completed / 99 unresolved, publication incomplete |
-
-Approved contract-4 complete reconciliation fingerprint:
-
-```
-40659a4051226df40ef7cedbca7a6bc2689d5c2bfbdd4ccdb717fc6fc0c79343
-```
-
-Approved scope-set SHA-256:
-
-```
-43b9333ad228c60846f1cd24ae8518273dc1017aefc98e7b7930974c40bdfd22
-```
-
-The before and after snapshots were identical across all five hashed families —
-GameLog content, canonical outs, correction provenance, appearance-team
-authority, and Pitcher current state.
-
-**The 59 suppressed differences are review evidence, not a write expectation.**
-They may change if current roster or team state moved while every historical
-appearance stayed semantically identical. Such a change must not move the
-mutation plan or the approved fingerprint, so R6 records the observed count
-rather than requiring 59.
-
-## R6 full remaining-window write
-
-R6 is the write that **completes the Foundation 3C bootstrap**. It applies the
-plan R5 reviewed across all 99 remaining games and may change exactly one thing:
-governed ingestion control state.
-
-### The exact three-command sequence
-
-```
-# 1 preflight (shadow) — read-only, no fingerprint
-python backend/scripts/game_driven_ingestion.py --mode shadow \
-  --reference-date 2026-07-29 <99x --only-game-pk> \
-  --output artifacts/r6-preflight-shadow.json
-
-# 2 the write — the only one, gated on the preflight validator
-python backend/scripts/game_driven_ingestion.py --mode write \
-  --reference-date 2026-07-29 <99x --only-game-pk> \
-  --expected-plan-fingerprint 40659a4051226df40ef7cedbca7a6bc2689d5c2bfbdd4ccdb717fc6fc0c79343 \
-  --output artifacts/r6-full-write.json
-
-# 3 immediate replay (shadow) — read-only, no fingerprint
-python backend/scripts/game_driven_ingestion.py --mode shadow \
-  --reference-date 2026-07-29 <99x --only-game-pk> \
-  --output artifacts/r6-postwrite-replay.json
-```
-
-Exactly three ingestion invocations. Exactly one `--mode write`.
-
-### Single use
-
-The before-state requires 10 completed / 99 unresolved **and no work item on any
-selected game**. A successful R6 makes both false, so a second dispatch stops
-before the write. If R6 fails or partially completes, **do not dispatch it
-again** — send the artifacts for review.
-
-### Three values that must never authorize it
-
-| value | what it actually is |
-|---|---|
-| `2a06f7e5…c239` | the contract-3 R3 fingerprint — stale since PR #576 |
-| `08bf16bc…adda` | the contract-4 R4 **five-game** fingerprint — wrong scope |
-| `43b9333a…fd22` | the **scope-set digest** — proves which games, not which plan |
-
-The last one matters most: it is also 64 hex characters, so it looks like a
-fingerprint and is not one. All three are explicitly rejected by the validator
-and appear in no executable command.
-
-### Transaction boundary — stated honestly
-
-The canonical writer commits **once per game**. Ninety-nine-game atomicity does
-not exist and is not claimed. A failure at game 50 leaves 49 durable
-checkpoints. That is a **FAILED** result: R6 reports the exact completed and
-unresolved subsets, captures the after-write state, runs the replay read-only,
-captures the final state, and stops. **No retry, no compensation, no deleted
-checkpoints.** Production may legitimately be left between 10/99 and 109/0, and
-the closeout says so plainly.
-
-### What R6 may and may not change
-
-May change — governed ingestion control state only:
-
-| | before | after |
-|---|---:|---:|
-| selected work items | 0 | **99** |
-| total governed-window work items | 10 | **109** |
-| completed final games | 10 | **109** |
-| unresolved final games | 99 | **0** |
-| publication complete | false | **true** |
-| reconciled appearance rows | 81 | **946** |
-
-The 946 comes from the completeness object's own durable ledger — 38 rows from
-the original five, 43 from the R4 five, 865 from the R6 99. It is read from
-`critical_appearance_rows_reconciled`, a field that already exists; nothing is
-invented for the closeout.
-
-May not change — anything else. No GameLog insert or update, no canonical-outs
-correction, no statistical correction, no correction-provenance change, no
-Pitcher identity creation or mutation, no current roster/team mutation, no
-appearance-team mutation, no dead letter.
-
-### The wording that matters
-
-R6 writes 99 work items. The summary therefore **never says "no database writes
-were performed."** It says:
-
-> Only governed ingestion control state changed. No baseball-data rows changed.
-
-### Four snapshots
-
-`before` (production is still where R5 left it), `prewrite` (the preflight
-changed nothing), `after_write` (what the write actually did), and `final` (the
-replay changed nothing). Each sets the transaction read-only and requires a
-write probe to be refused before reading a row.
-
-### Immediate replay
-
-Mandatory whenever the write was authorized — including when the write exits
-nonzero or partially completes. A successful replay reports 99 games, 865
-unchanged rows, 291 ignored differences, zero mutations on every target, and
-**reproduces the approved fingerprint exactly**. Checkpoint state is excluded
-from the complete plan, so the write and the replay must produce the same plan
-identity.
-
-### After R6
-
-A successful R6 completes the 109-game bootstrap and permits **Stage E rollout
-closeout**. It does **not** enable the automated lane and does **not** approve
-authoritative mode — those remain separate decisions.
-
-## Controlled parity rollout
-
-Production remains **off** until parity validation passes. The next operator
-sequence is:
-
-| Stage | What | Requirement |
-|---|---|---|
-| C1 | Shadow replay of the five already-written games | zero inserts, zero updates, all rows unchanged — proves the prior write left them reconciled |
-| C2 | Shadow of the next five unprocessed games | record projected inserts/updates/unchanged, changed fields, categories |
-| C3 | Controlled write of those same five | **exact** parity with C2: same actions, same changed fields, same category counts, same totals, zero unexpected mutations, zero failures |
-| C4 | Shadow replay of those five | zero inserts, zero updates, all unchanged |
-
-Only after all four pass may the remaining bootstrap window be considered.
-Authoritative mode is not part of this sequence.
-
-## Rollout
-
-| Stage | `GAME_DRIVEN_INGESTION_MODE` | What it does | Publication authority |
-|---|---|---|---|
-| — | `off` (deployed default) | nothing | old pitcher loop |
-| A | `off` + operator `--plan-only` | plan only, no MLB request, no write | old pitcher loop |
-| B | `shadow` | plan, fetch, extract, project insert/update/no-op | old pitcher loop |
-| C | `write` | reconcile and checkpoint for real | old pitcher loop |
-| D | `authoritative` | as C, and the game-level proof drives publication | **game lane** |
-| E | cleanup | remove the temporary diagnostic workflow, retire obsolete critical-path dead-letter behaviour | game lane |
-
-The default is `off`, so merging this changes nothing in production until the
-mode is advanced deliberately, one stage at a time, on evidence.
+| `off` | nothing. **This is the current production value.** | old pitcher loop |
+| `shadow` | plan, fetch, extract, project insert/update/no-op; writes nothing | old pitcher loop |
+| `write` | reconcile and checkpoint for real | old pitcher loop |
+| `authoritative` | as `write`, and the game-level proof drives publication | **game lane** |
+
+`--plan-only` builds the work plan and stops: no MLB request, no write. It is
+available in any mode.
+
+**Production is `off` and stays `off` until a separate reviewed change moves
+it.** The bootstrap was completed by explicit manual dispatch, not by enabling
+the lane, and completing it granted no activation authority. Moving to `shadow`,
+`write`, or `authoritative` is its own decision with its own evidence.
+
+Authoritative mode is unapproved. It is the only mode that changes who decides
+whether a snapshot publishes, so it does not follow automatically from a
+successful write mode.
 
 ## Operator repair procedure
 

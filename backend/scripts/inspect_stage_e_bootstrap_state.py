@@ -1,23 +1,24 @@
 #!/usr/bin/env python
-"""Read-only production state snapshot for the Foundation 3C R5 shadow.
+"""Read-only production state snapshot for the Foundation 3C Stage E closeout.
 
-R5 claims two things: that production is still in the exact post-R4 state, and
-that running a 99-game shadow against it changes nothing at all. Both claims are
-worth only what they are measured against, so this tool takes the same
-deterministic snapshot before and after the shadow and the validator compares
-them field by field.
-
-It hashes content rather than dumping it. A hash is enough to prove nothing
-moved and it cannot leak a payload.
+Stage E makes one claim: the 109-game bootstrap is complete, and verifying it
+changes nothing. Both halves need measuring, so this takes the same
+deterministic snapshot before and after the full replay and the validator
+compares them.
 
 The transaction is set read-only and a write probe must be REFUSED before a
 single row is read. `session.bind` is None until the session has been used, so
-the engine is resolved explicitly — reading it lazily is exactly how a guard
-like this silently degrades into no protection at all.
+the engine is resolved explicitly — reading it lazily is how a guard like this
+silently degrades into no protection at all. There is no mutation fallback: if
+read-only cannot be proven, nothing is inspected.
 
-The scope is imported, never discovered. This tool verifies the hard-coded
-99-game set against the database; it never lets the database decide what the
-set is.
+DEAD LETTERS ARE COUNTED TWO WAYS ON PURPOSE. The governed count covers only the
+109 bootstrap games and must be zero. The global count covers the whole system,
+was already 1,389 at R6 closeout, and has nothing to do with Foundation 3C.
+Reporting one number would either hide a governed failure or falsely claim the
+system has no dead letters.
+
+TEMPORARY. Retained only until Stage E2 removes it with the Stage E workflow.
 
 Output carries only safe structured evidence: game ids, MLB ids, counts,
 statuses, and hashes. No credentials, connection strings, payloads, headers,
@@ -39,7 +40,7 @@ if str(BACKEND_ROOT) not in sys.path:
 if str(Path(__file__).resolve().parent) not in sys.path:
     sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-import r5_remaining_window_scope as scope  # noqa: E402
+import stage_e_bootstrap_scope as scope  # noqa: E402
 
 
 EXIT_OK = 0
@@ -47,10 +48,10 @@ EXIT_ERROR = 2
 
 PHASE_BEFORE = 'before'
 PHASE_AFTER = 'after'
+PHASES = (PHASE_BEFORE, PHASE_AFTER)
 
 REFERENCE_DATE = scope.REFERENCE_DATE
-SELECTED_GAME_PKS = scope.SORTED_SET
-COMPLETED_GAME_PKS = scope.COMPLETED_GAME_PKS
+GOVERNED_GAME_PKS = scope.SORTED_SET
 
 
 class ReadOnlyNotEnforced(RuntimeError):
@@ -99,9 +100,7 @@ def _iso(value):
     return value.isoformat() if value is not None else None
 
 
-def collect_state(
-    game_pks=SELECTED_GAME_PKS, completed_game_pks=COMPLETED_GAME_PKS,
-) -> dict:
+def collect_state(game_pks=GOVERNED_GAME_PKS) -> dict:
     """The deterministic evidence the before/after comparison rests on."""
     from datetime import date
 
@@ -109,12 +108,13 @@ def collect_state(
     from models.game_log import GameLog
     from models.pitcher import Pitcher
     from models.sync_failure import SyncFailure
-    from services import game_finality
+    from services import game_driven_ingestion
     from services import game_ingestion_completeness
     from services import game_ingestion_planner
+    from services import game_log_reconciliation as reconciliation
+    from services import pitcher_identity_reconciliation as identity
 
     game_pks = sorted(game_pks)
-    completed_game_pks = sorted(completed_game_pks)
     reference_date = date.fromisoformat(REFERENCE_DATE)
 
     logs = (
@@ -123,25 +123,30 @@ def collect_state(
         .order_by(GameLog.mlb_game_pk, GameLog.pitcher_id)
         .all()
     )
+    pitcher_by_id = {
+        row.id: row for row in Pitcher.query.filter(
+            Pitcher.id.in_(sorted({log.pitcher_id for log in logs}) or [-1])
+        ).all()
+    }
 
     # ── Baseball-data families, hashed independently ────────────────────────
-    # Five separate hashes so the validator can say WHICH family moved rather
-    # than only that something did. Canonical outs are split out from general
-    # GameLog content because outs are the semantic innings authority under
-    # D-008 and deserve their own failure.
     content_rows = [
         (
-            row.mlb_game_pk, row.pitcher_id, row.earned_runs, row.runs_allowed,
-            row.hits_allowed, row.walks, row.strikeouts, row.home_runs_allowed,
-            row.batters_faced, row.strikes, row.pitches_thrown,
-            row.games_started, row.opponent, row.opponent_abbreviation,
-            _iso(row.game_date), row.game_type,
+            row.mlb_game_pk,
+            getattr(pitcher_by_id.get(row.pitcher_id), 'mlb_id', None),
+            row.earned_runs, row.runs_allowed, row.hits_allowed, row.walks,
+            row.strikeouts, row.home_runs_allowed, row.batters_faced,
+            row.strikes, row.pitches_thrown, row.games_started, row.opponent,
+            row.opponent_abbreviation, _iso(row.game_date), row.game_type,
         )
         for row in logs
     ]
     canonical_outs_rows = [
-        (row.mlb_game_pk, row.pitcher_id, row.innings_pitched_outs,
-         row.innings_pitched)
+        (
+            row.mlb_game_pk,
+            getattr(pitcher_by_id.get(row.pitcher_id), 'mlb_id', None),
+            row.innings_pitched_outs, row.innings_pitched,
+        )
         for row in logs
     ]
     correction_rows = [
@@ -161,14 +166,7 @@ def collect_state(
         for row in logs
     ]
 
-    # ── Pitcher current state for exactly the arms in these games ───────────
-    pitcher_ids = sorted({row.pitcher_id for row in logs})
-    pitchers = (
-        Pitcher.query
-        .filter(Pitcher.id.in_(pitcher_ids or [-1]))
-        .order_by(Pitcher.id)
-        .all()
-    )
+    pitchers = sorted(pitcher_by_id.values(), key=lambda row: row.id)
     pitcher_rows = [
         (
             row.mlb_id, row.full_name, row.position, row.active, row.team_id,
@@ -182,34 +180,52 @@ def collect_state(
     ]
 
     # ── Governed control state ──────────────────────────────────────────────
-    # R5 is shadow: none of this may change. The selected games are expected to
-    # carry NO work item at all, which is what makes them unresolved.
-    selected_items = (
+    governed_items = (
         GameIngestionWorkItem.query
         .filter(GameIngestionWorkItem.mlb_game_pk.in_(game_pks))
-        .order_by(GameIngestionWorkItem.mlb_game_pk)
+        .order_by(GameIngestionWorkItem.mlb_game_pk, GameIngestionWorkItem.id)
         .all()
     )
-    selected_work_items = {
+    governed_work_items = {
         str(item.mlb_game_pk): {
             'status': item.status,
             'attempt_count': item.attempt_count or 0,
-            'candidate_reason': item.candidate_reason,
             'criticality': item.criticality,
             'error_class': item.error_class,
-            'correction_count': item.correction_count or 0,
+            'rows_expected': item.rows_expected,
+            'rows_reconciled': item.rows_reconciled,
             'completed': item.status == GameIngestionWorkItem.STATUS_COMPLETED,
         }
-        for item in selected_items
+        for item in governed_items
     }
+    # Counted from ROWS, not the keyed mapping: a duplicate work item for one
+    # game collapses to a single key and would otherwise be invisible.
+    duplicate_governed_game_pks = sorted({
+        item.mlb_game_pk for item in governed_items
+        if sum(1 for other in governed_items
+               if other.mlb_game_pk == item.mlb_game_pk) > 1
+    })
+    governed_completed_set = sorted({
+        item.mlb_game_pk for item in governed_items
+        if item.status == GameIngestionWorkItem.STATUS_COMPLETED
+    })
+    governed_unresolved_set = sorted({
+        item.mlb_game_pk for item in governed_items
+        if item.status in GameIngestionWorkItem.UNRESOLVED_STATUSES
+    })
+    governed_terminal_set = sorted({
+        item.mlb_game_pk for item in governed_items
+        if item.status == GameIngestionWorkItem.STATUS_TERMINAL_FAILURE
+    })
+    governed_work_item_rows = [
+        (item.mlb_game_pk, item.status, item.attempt_count or 0,
+         item.rows_expected, item.rows_reconciled)
+        for item in governed_items
+    ]
 
     all_items = GameIngestionWorkItem.query.order_by(
-        GameIngestionWorkItem.mlb_game_pk
+        GameIngestionWorkItem.mlb_game_pk, GameIngestionWorkItem.id
     ).all()
-    all_work_items = [
-        (item.mlb_game_pk, item.status, item.attempt_count or 0)
-        for item in all_items
-    ]
     completed_work_item_set = sorted({
         item.mlb_game_pk for item in all_items
         if item.status == GameIngestionWorkItem.STATUS_COMPLETED
@@ -220,13 +236,10 @@ def collect_state(
     })
 
     # ── Publication completeness, from one shared plan ──────────────────────
-    # The plan is built once and handed to the completeness builder so the
-    # unresolved set derived here and the counts reported there cannot disagree.
     plan = game_ingestion_planner.plan_game_work(reference_date)
     completeness = game_ingestion_completeness.build_game_ingestion_completeness(
         reference_date, plan=plan,
     )
-
     planned_items = list(plan.get('items') or [])
     critical_items = [
         item for item in planned_items
@@ -243,48 +256,17 @@ def collect_state(
     })
     unresolved_set = sorted(set(outstanding_critical) | set(unresolved_items))
 
-    # ── Per-game eligibility, as the planner currently sees it ──────────────
-    # The run report does not carry finality state or prior status, so these
-    # are proven here against the durable plan instead. A game that is not
-    # final, not publication-critical, or already carries a prior status is not
-    # eligible for R5 and must stop the run before the shadow starts.
-    planned_by_game = {item.game_pk: item for item in planned_items}
-    non_critical_selected = sorted(
-        game_pk for game_pk in game_pks
-        if (planned_by_game.get(game_pk) is not None
-            and planned_by_game[game_pk].criticality
-            == GameIngestionWorkItem.CRITICALITY_BEST_EFFORT)
-    )
-    unplanned_selected = sorted(
-        game_pk for game_pk in game_pks if game_pk not in planned_by_game
-    )
-    non_final_selected = sorted(
-        game_pk for game_pk in game_pks
-        if (planned_by_game.get(game_pk) is not None
-            and planned_by_game[game_pk].finality_state
-            != game_finality.FINAL_STATUS_STATE)
-    )
-    selected_with_prior_status = sorted(
-        game_pk for game_pk in game_pks
-        if (planned_by_game.get(game_pk) is not None
-            and planned_by_game[game_pk].prior_status is not None)
-    )
-    selected_with_prior_attempts = sorted(
-        game_pk for game_pk in game_pks
-        if (planned_by_game.get(game_pk) is not None
-            and int(planned_by_game[game_pk].attempt_count or 0) != 0)
-    )
-
-    dead_letters = SyncFailure.query.filter(
+    # ── Dead letters, counted two ways ──────────────────────────────────────
+    governed_dead_letters = SyncFailure.query.filter(
         SyncFailure.entity_ref.in_([str(pk) for pk in game_pks])
     ).count()
+    global_dead_letters = SyncFailure.query.count()
 
     return {
         'reference_date': REFERENCE_DATE,
-        'selected_game_pks': game_pks,
-        'selected_game_count': len(game_pks),
-        'selected_scope_digest': scope.scope_digest(game_pks),
-        'approved_completed_game_pks': completed_game_pks,
+        'governed_game_pks': game_pks,
+        'governed_game_count': len(game_pks),
+        'full_scope_digest': scope.scope_digest(game_pks),
 
         'game_log_row_count': len(logs),
         'game_log_content_hash': _hash(content_rows),
@@ -295,25 +277,36 @@ def collect_state(
         'pitcher_count': len(pitchers),
         'pitcher_mlb_ids': sorted(row.mlb_id for row in pitchers),
 
-        'selected_work_items': selected_work_items,
-        'selected_work_item_count': len(selected_work_items),
-        'all_work_items_hash': _hash(all_work_items),
-        'all_work_item_count': len(all_work_items),
+        'governed_work_items': governed_work_items,
+        'governed_work_item_count': len(governed_items),
+        'governed_work_items_hash': _hash(governed_work_item_rows),
+        'governed_completed_set': governed_completed_set,
+        'governed_unresolved_set': governed_unresolved_set,
+        'governed_terminal_set': governed_terminal_set,
+        'duplicate_governed_game_pks': duplicate_governed_game_pks,
         'completed_work_item_set': completed_work_item_set,
         'terminal_work_item_set': terminal_work_item_set,
         'unresolved_set': unresolved_set,
-        'non_critical_selected_game_pks': non_critical_selected,
-        'unplanned_selected_game_pks': unplanned_selected,
-        'non_final_selected_game_pks': non_final_selected,
-        'selected_game_pks_with_prior_status': selected_with_prior_status,
-        'selected_game_pks_with_prior_attempts': selected_with_prior_attempts,
 
-        'finality_conflicts': len(plan.get('finality_conflicts') or []),
-        'schedule_authority_missing': len(
-            plan.get('schedule_authority_missing') or []
+        'governed_dead_letter_count': governed_dead_letters,
+        'global_dead_letter_count': global_dead_letters,
+        'r6_global_dead_letter_count': scope.R6_GLOBAL_DEAD_LETTER_COUNT,
+        'global_dead_letter_delta': (
+            global_dead_letters - scope.R6_GLOBAL_DEAD_LETTER_COUNT
         ),
 
-        'dead_letter_count': dead_letters,
+        'version_constants': {
+            'reconciliation_plan_version':
+                reconciliation.RECONCILIATION_PLAN_VERSION,
+            'parity_contract_version': reconciliation.PARITY_CONTRACT_VERSION,
+            'innings_semantics_version':
+                reconciliation.INNINGS_SEMANTICS_VERSION,
+            'complete_plan_version': reconciliation.COMPLETE_PLAN_VERSION,
+            'identity_plan_version': identity.IDENTITY_PLAN_VERSION,
+        },
+        'automated_lane': game_driven_ingestion.ingestion_mode(),
+        'authoritative_mode': 'unapproved',
+
         'publication_completeness': {
             'expected_final_games': completeness.get('expected_final_games'),
             'completed_final_games': completeness.get('completed_final_games'),
@@ -335,7 +328,7 @@ def collect_state(
     }
 
 
-def inspect(phase, game_pks=SELECTED_GAME_PKS) -> dict:
+def inspect(phase, game_pks=GOVERNED_GAME_PKS) -> dict:
     """Prove the session is read-only, THEN read. Fails closed."""
     from utils.db import db
 
@@ -355,11 +348,9 @@ def build_app():
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(
-        description='Read-only Foundation 3C R5 production state snapshot.',
+        description='Read-only Foundation 3C Stage E bootstrap state snapshot.',
     )
-    parser.add_argument(
-        '--phase', required=True, choices=[PHASE_BEFORE, PHASE_AFTER],
-    )
+    parser.add_argument('--phase', required=True, choices=list(PHASES))
     parser.add_argument('--output', required=True)
     args = parser.parse_args(argv)
 
