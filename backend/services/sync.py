@@ -15,6 +15,7 @@ import signal
 import threading
 import time
 from pathlib import Path
+from typing import NamedTuple
 
 from sqlalchemy import desc
 
@@ -42,6 +43,7 @@ from services.completed_game_context_service import (
 )
 from services import evidence_contract
 from services import game_driven_ingestion
+from services import game_log_reconciliation
 from services import game_ingestion_completeness
 from services.fatigue import calculate_fatigue
 from services.game_finality import (
@@ -104,31 +106,13 @@ POSTGAME_MARKER_RETRY_LIMIT = 3
 _OPTIONAL_INPUT_NOT_PROVIDED = object()
 _FALSEY_ENV_VALUES = {'0', 'false', 'no', 'off', 'disabled'}
 
-_REQUIRED_CORRECTION_STAT_KEYS = (
-    'inningsPitched',
-    'strikes',
-    'hits',
-    'runs',
-    'earnedRuns',
-    'baseOnBalls',
-    'strikeOuts',
-    'homeRuns',
-)
-_OPTIONAL_BOOL_STAT_FIELDS = (
-    ('saveOpportunities', 'save_situation'),
-    ('holds', 'hold'),
-    ('blownSaves', 'blown_save'),
-    ('wins', 'win'),
-    ('losses', 'loss'),
-    ('saves', 'save'),
-)
-_OPTIONAL_INT_STAT_FIELDS = (
-    ('batters_faced', ('battersFaced', 'batters_faced')),
-    ('balls', ('balls',)),
-    ('games_finished', ('gamesFinished', 'games_finished')),
-    ('inherited_runners', ('inheritedRunners', 'inherited_runners')),
-    ('inherited_runners_scored', ('inheritedRunnersScored', 'inherited_runners_scored')),
-)
+# Correction safety and the correctable-field vocabulary are owned by the
+# canonical reconciliation planner so the writer and the read-only projection
+# cannot apply different rules. Re-exported under the historical private names
+# because governed repair tooling reads them from this module by name.
+_REQUIRED_CORRECTION_STAT_KEYS = game_log_reconciliation.REQUIRED_CORRECTION_STAT_KEYS
+_OPTIONAL_BOOL_STAT_FIELDS = game_log_reconciliation.OPTIONAL_BOOL_STAT_FIELDS
+_OPTIONAL_INT_STAT_FIELDS = game_log_reconciliation.OPTIONAL_INT_STAT_FIELDS
 
 # ── Status file (written by the daily scheduler) ─────────────────────────────
 _STATUS_DIR  = Path(__file__).resolve().parent.parent / 'logs'
@@ -478,15 +462,8 @@ def _positive_stat(stats: dict, key: str) -> bool:
 
 
 def _correction_source_state(stats: dict) -> tuple[bool, str | None, list[str]]:
-    if not stats:
-        return False, 'empty_source_line', []
-    missing = [
-        key for key in _REQUIRED_CORRECTION_STAT_KEYS
-        if key not in stats or stats.get(key) in (None, '')
-    ]
-    if missing:
-        return False, 'partial_source_line', missing
-    return True, None, []
+    """Whether an official line may authorize a correction (canonical rule)."""
+    return game_log_reconciliation.correction_source_state(stats)
 
 
 def _extract_leverage_index(stats: dict):
@@ -561,32 +538,10 @@ def _game_log_values_from_stats(
 
 
 def _authoritative_correction_fields(values: dict, stats: dict, *, include_leverage_index: bool) -> list[str]:
-    fields = [
-        'game_date',
-        'game_type',
-        'innings_pitched',
-        'innings_pitched_outs',
-        'pitches_thrown',
-        'strikes',
-        'hits_allowed',
-        'runs_allowed',
-        'earned_runs',
-        'walks',
-        'strikeouts',
-        'home_runs_allowed',
-    ]
-    for field in ('opponent', 'opponent_abbreviation', 'games_started'):
-        if values.get(field) is not None:
-            fields.append(field)
-    for source_key, model_field in _OPTIONAL_BOOL_STAT_FIELDS:
-        if source_key in (stats or {}) and (stats or {}).get(source_key) not in (None, ''):
-            fields.append(model_field)
-    for model_field, source_keys in _OPTIONAL_INT_STAT_FIELDS:
-        if _stat_key_present(stats, source_keys):
-            fields.append(model_field)
-    if include_leverage_index and values.get('leverage_index') is not None:
-        fields.append('leverage_index')
-    return fields
+    """The exact field set this writer may correct (canonical vocabulary)."""
+    return game_log_reconciliation.correctable_fields(
+        values, stats, include_leverage_index=include_leverage_index,
+    )
 
 
 def _record_unsafe_correction_attempt(
@@ -1154,22 +1109,37 @@ def _upsert_game_log_from_authoritative_values(
             pitcher_id=pitcher.id,
             mlb_game_pk=game_pk,
         ).first()
-    if existing is None:
+
+    # ONE authority decides what happens to this row. The writer applies that
+    # decision; the read-only projection reports it. Neither recalculates it,
+    # which is what let shadow and write disagree before.
+    plan = game_log_reconciliation.plan_row(
+        existing=existing,
+        values=values,
+        stats=stats,
+        include_leverage_index=include_leverage_index,
+        appearance_team=appearance_team,
+        game_pk=game_pk,
+        pitcher_mlb_id=getattr(pitcher, 'mlb_id', None),
+        local_pitcher_id=getattr(pitcher, 'id', None),
+    )
+
+    if plan['action'] == game_log_reconciliation.ACTION_INSERT:
         log = GameLog(**values)
         db.session.add(log)
         return {
             'status': 'inserted',
             'log': log,
             'changed_fields': [],
+            'plan': plan,
         }
 
-    safe, reason, missing = _correction_source_state(stats)
-    if not safe:
+    if plan['action'] == game_log_reconciliation.ACTION_BLOCKED:
         _record_unsafe_correction_attempt(
             pitcher=pitcher,
             game_pk=game_pk,
-            reason=reason,
-            missing_keys=missing,
+            reason=plan['blocked_reason'],
+            missing_keys=plan.get('blocked_missing_keys') or [],
             stats=stats,
             source=source,
             sync_run_id=sync_run_id,
@@ -1179,44 +1149,46 @@ def _upsert_game_log_from_authoritative_values(
             'status': 'unsafe',
             'log': existing,
             'changed_fields': [],
-            'reason': reason,
+            'reason': plan['blocked_reason'],
+            'plan': plan,
         }
 
-    changed_fields = []
-    for field in _authoritative_correction_fields(
-        values,
-        stats,
-        include_leverage_index=include_leverage_index,
-    ):
-        new_value = values[field]
-        if getattr(existing, field) != new_value:
-            setattr(existing, field, new_value)
-            changed_fields.append(field)
+    if plan['action'] == game_log_reconciliation.ACTION_UNCHANGED:
+        return {
+            'status': 'unchanged',
+            'log': existing,
+            'changed_fields': [],
+            'plan': plan,
+        }
 
-    # Team-at-appearance authority (Foundation 1) is reconciled OUTSIDE the generic
-    # stat-correction loop: a stat-only correction never erases team attribution, and
-    # an unchanged re-sweep never backfills a legacy row. It is only attributed on a
-    # genuine correction, and only re-attributed by an equal/higher-precedence
-    # official source through this governed path (never by roster sync).
-    appearance_reason = None
-    if appearance_team is not None:
-        appearance_reason = appearance_team_authority.reconcile_on_update(
-            existing, appearance_team, correction_applied=bool(changed_fields),
-        )
+    # Apply exactly the planned mutation, field by field. Team-at-appearance
+    # authority (Foundation 1) is part of the same plan but is a separate
+    # category: a stat-only correction never erases team attribution, and an
+    # unchanged re-sweep never backfills a legacy row.
+    stat_changed_fields = []
+    for change in plan['field_changes']:
+        field = change['field']
+        if change['category'] == (
+            game_log_reconciliation.CATEGORY_APPEARANCE_TEAM_AUTHORITY
+        ):
+            continue
+        setattr(existing, field, values[field])
+        stat_changed_fields.append(field)
 
-    if not changed_fields:
-        if appearance_reason is None:
-            return {
-                'status': 'unchanged',
-                'log': existing,
-                'changed_fields': [],
-            }
+    appearance_reason = plan['appearance_team_reason']
+    decision = plan.get('appearance_team_decision')
+    if decision:
+        for field, value in decision['fields'].items():
+            setattr(existing, field, value)
+
+    if not plan['provenance_update']:
         db.session.add(existing)
         return {
             'status': 'corrected',
             'log': existing,
             'changed_fields': [],
             'appearance_team_reason': appearance_reason,
+            'plan': plan,
         }
 
     existing.stat_correction_count = (existing.stat_correction_count or 0) + 1
@@ -1231,8 +1203,9 @@ def _upsert_game_log_from_authoritative_values(
     return {
         'status': 'corrected',
         'log': existing,
-        'changed_fields': changed_fields,
+        'changed_fields': stat_changed_fields,
         'appearance_team_reason': appearance_reason,
+        'plan': plan,
     }
 
 
@@ -1377,14 +1350,19 @@ def _pitcher_resolution_failure(
     reason,
     sync_run_id=None,
     job_name=sync_metadata.JOB_POSTGAME_REFRESH,
+    record: bool = True,
 ) -> dict:
-    _record_pitcher_resolution_failure(
-        line=line,
-        game=game,
-        reason=reason,
-        sync_run_id=sync_run_id,
-        job_name=job_name,
-    )
+    """The one unresolved-line verdict. ``record=False`` reaches the same
+    verdict without dead-lettering, so a read-only projection classifies a line
+    exactly as the writer would while writing nothing."""
+    if record:
+        _record_pitcher_resolution_failure(
+            line=line,
+            game=game,
+            reason=reason,
+            sync_run_id=sync_run_id,
+            job_name=job_name,
+        )
     return {
         'status': 'unresolved',
         'pitcher': None,
@@ -1424,13 +1402,22 @@ def _apply_pitcher_authority_from_line(
     timestamp,
     *,
     position_override=False,
+    apply: bool = True,
 ):
+    """Reconcile a pitcher's authority fields from an official pitching line.
+
+    ``apply=False`` computes the identical decision and returns the identical
+    result WITHOUT touching the row, so a read-only projection reports exactly
+    what this function would do rather than maintaining a second copy of these
+    rules.
+    """
     before_active = bool(pitcher.active)
     before_team = (pitcher.team_id, pitcher.team_name, pitcher.team_abbreviation)
     before_roster = pitcher.roster_status
 
     line_name = line.get('name')
-    if line_name and not pitcher.full_name:
+    name_change = bool(line_name and not pitcher.full_name)
+    if apply and name_change:
         pitcher.full_name = line_name
 
     desired = {
@@ -1461,30 +1448,44 @@ def _apply_pitcher_authority_from_line(
                 else 'Final-game pitching line; current roster status unverified'
             ),
         })
-    changed = False
+    changed = name_change
+    changed_fields = ['full_name'] if name_change else []
     for attr, value in desired.items():
         if getattr(pitcher, attr) != value:
-            setattr(pitcher, attr, value)
+            if apply:
+                setattr(pitcher, attr, value)
             changed = True
+            changed_fields.append(attr)
 
-    if not assignment_blocked and (changed or pitcher.team_assignment_updated_at is None):
-        pitcher.team_assignment_updated_at = timestamp
-    if (
-        'roster_status' in desired
-        and not roster_blocked
-        and (changed or pitcher.roster_status_updated_at is None)
-    ):
-        pitcher.roster_status_updated_at = timestamp
+    if apply:
+        if not assignment_blocked and (
+            changed or pitcher.team_assignment_updated_at is None
+        ):
+            pitcher.team_assignment_updated_at = timestamp
+        if (
+            'roster_status' in desired
+            and not roster_blocked
+            and (changed or pitcher.roster_status_updated_at is None)
+        ):
+            pitcher.roster_status_updated_at = timestamp
+        after_team = (
+            pitcher.team_id, pitcher.team_name, pitcher.team_abbreviation,
+        )
+        after_roster = pitcher.roster_status
+    else:
+        after_team = (
+            desired.get('team_id', pitcher.team_id),
+            desired.get('team_name', pitcher.team_name),
+            desired.get('team_abbreviation', pitcher.team_abbreviation),
+        )
+        after_roster = desired.get('roster_status', pitcher.roster_status)
 
     return {
         'reactivated': not before_active,
-        'team_changed': before_team != (
-            pitcher.team_id,
-            pitcher.team_name,
-            pitcher.team_abbreviation,
-        ),
-        'roster_changed': before_roster != pitcher.roster_status,
+        'team_changed': before_team != after_team,
+        'roster_changed': before_roster != after_roster,
         'changed': changed,
+        'changed_fields': sorted(set(changed_fields)),
     }
 
 
@@ -1495,6 +1496,7 @@ def resolve_pitcher_for_authoritative_line(
     local_pitchers=None,
     sync_run_id=None,
     job_name=sync_metadata.JOB_POSTGAME_REFRESH,
+    plan_only: bool = False,
 ):
     """
     Resolve or create a pitcher from a completed-game pitching line.
@@ -1502,6 +1504,12 @@ def resolve_pitcher_for_authoritative_line(
     The boxscore pitching line provides the authoritative player id, name, and
     team side for Branch 04. If any of those identity anchors conflict or are
     absent, the line is dead-lettered instead of being silently skipped.
+
+    ``plan_only`` runs the identical guard chain and reaches the identical
+    verdict while writing nothing: no pitcher is created, no authority field is
+    reconciled, and no failure is dead-lettered. It reports what WOULD happen
+    so a read-only projection and the writer can never classify the same line
+    differently.
     """
     player_id = _positive_external_id(line.get('player_id'))
     if player_id is None:
@@ -1511,6 +1519,7 @@ def resolve_pitcher_for_authoritative_line(
             reason='missing_or_invalid_player_id',
             sync_run_id=sync_run_id,
             job_name=job_name,
+        record=not plan_only,
         )
 
     person_id = _positive_external_id(line.get('person_id'))
@@ -1521,6 +1530,7 @@ def resolve_pitcher_for_authoritative_line(
             reason='conflicting_player_identity',
             sync_run_id=sync_run_id,
             job_name=job_name,
+        record=not plan_only,
         )
 
     team, team_error = _resolve_pitching_line_team(game, line)
@@ -1531,6 +1541,7 @@ def resolve_pitcher_for_authoritative_line(
             reason=team_error,
             sync_run_id=sync_run_id,
             job_name=job_name,
+        record=not plan_only,
         )
 
     line_position = _normalized_position(line.get('position'))
@@ -1550,6 +1561,7 @@ def resolve_pitcher_for_authoritative_line(
             reason='non_pitcher_position',
             sync_run_id=sync_run_id,
             job_name=job_name,
+        record=not plan_only,
         )
 
     local_pitchers = local_pitchers if local_pitchers is not None else {}
@@ -1567,7 +1579,20 @@ def resolve_pitcher_for_authoritative_line(
                 reason='missing_player_name',
                 sync_run_id=sync_run_id,
                 job_name=job_name,
+            record=not plan_only,
             )
+        if plan_only:
+            # A pitcher with no local record cannot already own an appearance
+            # row, so this line's row plan is unambiguously an insert.
+            return {
+                'status': 'would_create',
+                'pitcher': None,
+                'created': True,
+                'reactivated': False,
+                'reason': None,
+                'position_override_from_pitching_line': position_override,
+                'identity_action': 'create',
+            }
         pitcher = Pitcher(
             mlb_id=player_id,
             full_name=line_name,
@@ -1590,6 +1615,7 @@ def resolve_pitcher_for_authoritative_line(
             'reactivated': False,
             'reason': None,
             'position_override_from_pitching_line': position_override,
+            'identity_action': 'create',
         }
 
     existing_position = _normalized_position(pitcher.position)
@@ -1600,6 +1626,7 @@ def resolve_pitcher_for_authoritative_line(
             reason='local_record_not_pitcher',
             sync_run_id=sync_run_id,
             job_name=job_name,
+        record=not plan_only,
         )
 
     changes = _apply_pitcher_authority_from_line(
@@ -1608,7 +1635,24 @@ def resolve_pitcher_for_authoritative_line(
         team,
         timestamp,
         position_override=position_override,
+        apply=not plan_only,
     )
+    identity_action = None
+    if changes['reactivated']:
+        identity_action = 'reactivate'
+    elif changes['changed']:
+        identity_action = 'update_metadata'
+    if plan_only:
+        return {
+            'status': 'would_reactivate' if changes['reactivated'] else 'resolved',
+            'pitcher': pitcher,
+            'created': False,
+            'reactivated': changes['reactivated'],
+            'reason': None,
+            'position_override_from_pitching_line': position_override,
+            'identity_action': identity_action,
+            'identity_changed_fields': changes.get('changed_fields') or [],
+        }
     if changes['changed']:
         db.session.add(pitcher)
     db.session.flush()
@@ -1621,6 +1665,8 @@ def resolve_pitcher_for_authoritative_line(
         'reactivated': changes['reactivated'],
         'reason': None,
         'position_override_from_pitching_line': position_override,
+        'identity_action': identity_action,
+        'identity_changed_fields': changes.get('changed_fields') or [],
     }
 
 
@@ -1692,6 +1738,54 @@ def _opponent_for_line(game: dict, line: dict, team_abbr_map: dict) -> tuple[str
     return _game_team_name(game, opponent_side), team_abbr_map.get(opponent_id)
 
 
+class _PlannedPitcher(NamedTuple):
+    """Read-only stand-in for a pitcher the writer would create.
+
+    Planning must build the same governed values the writer would, but must not
+    create the row. Carrying ``id=None`` is what makes the plan an insert: no
+    stored appearance can be keyed to a pitcher that does not exist yet.
+    """
+
+    id: int | None
+    mlb_id: int | None
+    team_id: int | None
+    team_abbreviation: str | None
+
+
+def _unresolved_row_plan(*, game_pk, line, reason) -> dict:
+    """Plan entry for a pitching line whose pitcher identity is unresolved.
+
+    Reported identically by the writer and by the read-only projection, so an
+    unresolved line can never be classified one way in shadow and another in
+    write.
+    """
+    return {
+        'plan_version': game_log_reconciliation.RECONCILIATION_PLAN_VERSION,
+        'game_pk': game_pk,
+        'pitcher_mlb_id': _positive_external_id(line.get('player_id')),
+        'local_pitcher_id': None,
+        'natural_key': {'pitcher_id': None, 'mlb_game_pk': game_pk},
+        'action': game_log_reconciliation.ACTION_BLOCKED,
+        'changed_fields': [],
+        'field_changes': [],
+        'changed_field_count': 0,
+        'mutation_categories': [
+            game_log_reconciliation.CATEGORY_PITCHER_IDENTITY,
+            game_log_reconciliation.CATEGORY_BLOCKED,
+        ],
+        'appearance_team_reason': None,
+        'provenance_update': False,
+        'affects_published_evidence': False,
+        'is_statistical_correction': False,
+        'is_provenance_only': False,
+        'governed_and_safe': False,
+        'blocked_reason': 'pitcher_identity_unresolved',
+        'unresolved_reason': reason,
+        'pitcher_identity_action': None,
+        'source_authority': None,
+    }
+
+
 def _ingest_boxscore_pitching_line(
     pitcher,
     line: dict,
@@ -1702,6 +1796,9 @@ def _ingest_boxscore_pitching_line(
     pitcher_order: dict[str, list[int]],
     sync_run_id=None,
     job_name=sync_metadata.JOB_POSTGAME_REFRESH,
+    plan_only: bool = False,
+    pitcher_identity_action=None,
+    pitcher_mlb_id=None,
 ) -> dict:
     game_pk = _game_pk(game)
     if not game_pk:
@@ -1725,7 +1822,38 @@ def _ingest_boxscore_pitching_line(
         include_leverage_index=True,
         appearance_team=appearance_team,
     )
-    return _upsert_game_log_from_authoritative_values(
+    if plan_only:
+        # The identical decision, taken by the identical planner, with nothing
+        # written. A pitcher that does not exist locally owns no appearance row.
+        existing = (
+            GameLog.query.filter_by(
+                pitcher_id=pitcher.id, mlb_game_pk=game_pk,
+            ).first()
+            if pitcher is not None else None
+        )
+        plan = game_log_reconciliation.plan_row(
+            existing=existing,
+            values=values,
+            stats=stats,
+            include_leverage_index=True,
+            appearance_team=appearance_team,
+            game_pk=game_pk,
+            pitcher_mlb_id=(
+                pitcher_mlb_id if pitcher_mlb_id is not None
+                else getattr(pitcher, 'mlb_id', None)
+            ),
+            local_pitcher_id=getattr(pitcher, 'id', None),
+            pitcher_identity_action=pitcher_identity_action,
+        )
+        return {
+            'status': _STATUS_BY_PLAN_ACTION[plan['action']],
+            'log': existing,
+            'changed_fields': list(plan['changed_fields']),
+            'reason': plan['blocked_reason'],
+            'plan': plan,
+        }
+
+    result = _upsert_game_log_from_authoritative_values(
         pitcher=pitcher,
         game_pk=game_pk,
         values=values,
@@ -1736,6 +1864,29 @@ def _ingest_boxscore_pitching_line(
         include_leverage_index=True,
         appearance_team=appearance_team,
     )
+    plan = result.get('plan')
+    if plan is not None:
+        plan['pitcher_identity_action'] = pitcher_identity_action
+        if plan.get('pitcher_identity_action') and (
+            game_log_reconciliation.CATEGORY_PITCHER_IDENTITY
+            not in plan['mutation_categories']
+        ):
+            plan['mutation_categories'] = [
+                category for category in game_log_reconciliation.CATEGORIES
+                if category in set(
+                    plan['mutation_categories']
+                    + [game_log_reconciliation.CATEGORY_PITCHER_IDENTITY]
+                )
+            ]
+    return result
+
+
+_STATUS_BY_PLAN_ACTION = {
+    game_log_reconciliation.ACTION_INSERT: 'inserted',
+    game_log_reconciliation.ACTION_UPDATE: 'corrected',
+    game_log_reconciliation.ACTION_UNCHANGED: 'unchanged',
+    game_log_reconciliation.ACTION_BLOCKED: 'unsafe',
+}
 
 
 def _appearance_team_for_boxscore_line(game: dict, line: dict, game_pk):
@@ -1916,6 +2067,7 @@ def process_completed_game_for_postgame_refresh(
     schedule_date: date,
     sync_run_id=None,
     force: bool = False,
+    plan_only: bool = False,
 ) -> dict:
     """Fetch one final game once and reconcile its pitching lines idempotently.
 
@@ -1925,7 +2077,16 @@ def process_completed_game_for_postgame_refresh(
     correction horizon — can re-read a game whose official line may have been
     corrected. Every write below stays idempotent and governed: the same
     unique key, the same correction-safety checks, the same marker.
+
+    ``plan_only`` runs this same path and returns the canonical reconciliation
+    plan WITHOUT writing: no GameLog is inserted or corrected, no pitcher is
+    created or reconciled, no marker is upserted, no failure is dead-lettered.
+    It is the read-only projection's only entry point, so shadow and write are
+    the same code reaching the same verdict rather than two implementations
+    that can drift. ``plan_only`` implies ``force``: a projection reports what
+    would happen to the game it was asked about, never a marker short-circuit.
     """
+    force = force or plan_only
     game_pk = _game_pk(game)
     if not game_pk:
         return {
@@ -2020,6 +2181,7 @@ def process_completed_game_for_postgame_refresh(
             finality.reason,
         )
 
+    reconciliation_plan = []
     for line in pitching_lines:
         resolution = resolve_pitcher_for_authoritative_line(
             line,
@@ -2027,10 +2189,24 @@ def process_completed_game_for_postgame_refresh(
             local_pitchers=local_pitchers,
             sync_run_id=sync_run_id,
             job_name=sync_metadata.JOB_POSTGAME_REFRESH,
+            plan_only=plan_only,
         )
         pitcher = resolution['pitcher']
-        if pitcher is None:
+        if pitcher is None and resolution['status'] == 'would_create':
+            # Planning only: stand in for the pitcher the writer would create,
+            # so the row plan is built from the same governed values. It owns no
+            # local id, so it can own no existing appearance row.
+            pitcher = _PlannedPitcher(
+                id=None,
+                mlb_id=_positive_external_id(line.get('player_id')),
+                team_id=None,
+                team_abbreviation=None,
+            )
+        if pitcher is None and resolution['status'] != 'would_create':
             pitcher_resolution_failures += 1
+            reconciliation_plan.append(_unresolved_row_plan(
+                game_pk=game_pk, line=line, reason=resolution.get('reason'),
+            ))
             continue
         if resolution['created']:
             pitchers_created += 1
@@ -2038,7 +2214,7 @@ def process_completed_game_for_postgame_refresh(
             pitchers_reactivated += 1
         if resolution.get('position_override_from_pitching_line'):
             position_overrides_from_pitching_line += 1
-        if pitcher.team_id and pitcher.team_abbreviation:
+        if pitcher is not None and pitcher.team_id and pitcher.team_abbreviation:
             team_abbr_map[pitcher.team_id] = pitcher.team_abbreviation
         result = _ingest_boxscore_pitching_line(
             pitcher,
@@ -2049,15 +2225,56 @@ def process_completed_game_for_postgame_refresh(
             pitcher_order=pitcher_order,
             sync_run_id=sync_run_id,
             job_name=sync_metadata.JOB_POSTGAME_REFRESH,
+            plan_only=plan_only,
+            pitcher_identity_action=resolution.get('identity_action'),
+            pitcher_mlb_id=_positive_external_id(line.get('player_id')),
         )
+        plan = result.get('plan')
+        if plan is not None:
+            reconciliation_plan.append(plan)
         if result['status'] == 'inserted':
             logs_added += 1
-            touched_pitcher_ids.add(pitcher.id)
+            if pitcher is not None:
+                touched_pitcher_ids.add(pitcher.id)
         elif result['status'] == 'corrected':
             logs_corrected += 1
-            touched_pitcher_ids.add(pitcher.id)
+            if pitcher is not None:
+                touched_pitcher_ids.add(pitcher.id)
         elif result['status'] == 'unsafe':
             correction_attempts_failed += 1
+
+    if plan_only:
+        # Read-only: no marker, no flush, nothing added to the session.
+        return {
+            'game_pk': game_pk,
+            'logs_added': logs_added,
+            'logs_corrected': logs_corrected,
+            'correction_attempts_failed': correction_attempts_failed,
+            'pitcher_resolution_failures': pitcher_resolution_failures,
+            'pitchers_created': pitchers_created,
+            'pitchers_reactivated': pitchers_reactivated,
+            'position_overrides_from_pitching_line':
+                position_overrides_from_pitching_line,
+            'pitchers_touched': len(touched_pitcher_ids),
+            'pitching_lines_seen': len(pitching_lines),
+            'processing_status': None,
+            'incomplete_reason': _postgame_incomplete_reason(
+                pitching_lines_seen=len(pitching_lines),
+                pitcher_resolution_failures=pitcher_resolution_failures,
+                correction_attempts_failed=correction_attempts_failed,
+            ),
+            'attempt_count': (existing_marker.attempt_count or 0)
+                if existing_marker else 0,
+            'retry_exhausted': False,
+            'skipped': False,
+            'reason': None,
+            'plan_only': True,
+            'reconciliation_plan': reconciliation_plan,
+            'reconciliation_summary': game_log_reconciliation.summarize(
+                reconciliation_plan
+            ),
+            'boxscore': boxscore,
+        }
 
     marker, retry_exhausted = _upsert_postgame_processed_marker(
         existing_marker=existing_marker,
@@ -2090,6 +2307,11 @@ def process_completed_game_for_postgame_refresh(
         'retry_exhausted': retry_exhausted,
         'skipped': False,
         'reason': None,
+        'plan_only': False,
+        'reconciliation_plan': reconciliation_plan,
+        'reconciliation_summary': game_log_reconciliation.summarize(
+            reconciliation_plan
+        ),
         # Passed back so completed-game context can reuse the boxscore that was
         # already fetched, without a second API call. Not persisted.
         'boxscore': boxscore,

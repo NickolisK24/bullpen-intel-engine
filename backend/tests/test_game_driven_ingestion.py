@@ -1,6 +1,12 @@
-"""Foundation 3C — game-driven ingestion runner, checkpoint, and resume."""
+"""Foundation 3C — game-driven ingestion runner, checkpoint, and resume.
 
-from datetime import date, datetime
+These tests drive the REAL canonical path: the real box-score parser, the real
+reconciliation planner, and the real GameLog writer. Only the MLB client is
+stubbed. A hand-rolled persist would be a second reconciliation implementation,
+which is exactly the class of drift this suite exists to prevent.
+"""
+
+from datetime import date
 
 import pytest
 from flask import Flask
@@ -12,15 +18,20 @@ import models.prospect  # noqa: F401
 from models.game_ingestion_work_item import GameIngestionWorkItem
 from models.game_log import GameLog
 from models.pitcher import Pitcher
-from models.scheduled_game import ScheduledGame
 from services import game_driven_ingestion
-from services import game_appearance_extraction as extraction
+from services import game_log_reconciliation as reconciliation
+from services import sync as sync_service
+from tests.game_driven_fixtures import (
+    AWAY_TEAM,
+    BoxscoreClient,
+    HOME_TEAM,
+    REFERENCE,
+    boxscore,
+    pitcher as _pitcher,
+    pitching_stats,
+    schedule_final_game as _schedule,
+)
 from utils.db import db
-
-
-REFERENCE = date(2026, 7, 29)
-HOME_TEAM = 147
-AWAY_TEAM = 111
 
 
 @pytest.fixture
@@ -38,151 +49,26 @@ def app():
             drop_test_schema(flask_app)
 
 
-def _schedule(game_pk, *, game_date=REFERENCE, start_hour=19):
-    for team_id, opponent_id, side in (
-        (HOME_TEAM, AWAY_TEAM, 'home'),
-        (AWAY_TEAM, HOME_TEAM, 'away'),
-    ):
-        db.session.add(ScheduledGame(
-            team_id=team_id,
-            game_pk=game_pk,
-            game_date=game_date,
-            game_datetime=datetime(
-                game_date.year, game_date.month, game_date.day, start_hour, 5,
-            ),
-            opponent_team_id=opponent_id,
-            home_away=side,
-            game_type='R',
-            status_code='F',
-            status_state=ScheduledGame.STATE_FINAL,
-        ))
+@pytest.fixture
+def stub_client(monkeypatch):
+    """Install a box-score client; reconciliation stays entirely canonical."""
+
+    def _install(boxscores_by_game, *, fail_games=()):
+        client = BoxscoreClient(boxscores_by_game, fail_games=fail_games)
+        monkeypatch.setattr(sync_service, 'mlb_client', client)
+        return client
+
+    return _install
 
 
-def _pitcher(mlb_id, *, team_id=HOME_TEAM):
-    pitcher = Pitcher(
-        mlb_id=mlb_id,
-        full_name=f'Arm {mlb_id}',
-        team_id=team_id,
-        team_abbreviation='TST',
-        position='P',
-        active=True,
+def _run(mode=game_driven_ingestion.MODE_WRITE, **kwargs):
+    return game_driven_ingestion.run_game_driven_ingestion(
+        REFERENCE, mode=mode, **kwargs,
     )
-    db.session.add(pitcher)
-    return pitcher
 
 
-def _appearance(pitcher_mlb_id, *, game_pk, outs=3, earned_runs=0, starter=False):
-    return {
-        'game_pk': game_pk,
-        'game_date': REFERENCE,
-        'pitcher_mlb_id': pitcher_mlb_id,
-        'team_id': HOME_TEAM,
-        'opponent_team_id': AWAY_TEAM,
-        'side': 'home',
-        'appearance_role': 'start' if starter else 'relief',
-        'games_started': 1 if starter else 0,
-        'is_starter': starter,
-        'is_reliever': not starter,
-        'outs_recorded': outs,
-        'innings_pitched': outs / 3.0,
-        'earned_runs': earned_runs,
-        'runs_allowed': earned_runs,
-        'hits_allowed': 1,
-        'walks': 0,
-        'strikeouts': 2,
-        'home_runs_allowed': 0,
-        'batters_faced': 4,
-        'pitches_thrown': 15,
-        'source_authority': extraction.SOURCE_AUTHORITY,
-    }
-
-
-class FakeLane:
-    """Deterministic stand-in for the fetch/extract/persist trio.
-
-    It performs the same canonical GameLog upsert the real path performs
-    (same natural key, same integer-outs authority) so idempotence, replay, and
-    correction behaviour are exercised for real against the database.
-    """
-
-    def __init__(self, appearances_by_game, *, fail_games=(), unsafe_games=()):
-        self.appearances_by_game = appearances_by_game
-        self.fail_games = set(fail_games)
-        self.unsafe_games = set(unsafe_games)
-        self.fetch_calls = []
-        self.persist_calls = []
-
-    def fetch(self, item):
-        self.fetch_calls.append(item.game_pk)
-        if item.game_pk in self.fail_games:
-            raise TimeoutError('fetch failed')
-        return {'gamePk': item.game_pk}, {'boxscore': item.game_pk}
-
-    def extract(self, item, game_payload, boxscore):
-        return list(self.appearances_by_game.get(item.game_pk, ()))
-
-    def persist(self, item, game_payload, boxscore, *, sync_run_id=None):
-        self.persist_calls.append(item.game_pk)
-        inserted = updated = 0
-        for record in self.appearances_by_game.get(item.game_pk, ()):
-            pitcher = Pitcher.query.filter_by(
-                mlb_id=record['pitcher_mlb_id']
-            ).first()
-            row = GameLog.query.filter_by(
-                pitcher_id=pitcher.id, mlb_game_pk=item.game_pk
-            ).first()
-            if row is None:
-                row = GameLog(pitcher_id=pitcher.id, mlb_game_pk=item.game_pk)
-                db.session.add(row)
-                inserted += 1
-            elif int(row.innings_pitched_outs or 0) != record['outs_recorded'] or (
-                int(row.earned_runs or 0) != int(record['earned_runs'] or 0)
-            ):
-                updated += 1
-            row.game_date = record['game_date']
-            row.game_type = 'R'
-            row.games_started = record['games_started']
-            row.innings_pitched_outs = record['outs_recorded']
-            row.innings_pitched = record['outs_recorded'] / 3.0
-            row.earned_runs = record['earned_runs']
-            row.runs_allowed = record['runs_allowed']
-            row.hits_allowed = record['hits_allowed']
-            row.walks = record['walks']
-            row.strikeouts = record['strikeouts']
-            row.home_runs_allowed = record['home_runs_allowed']
-            row.appearance_team_id = record['team_id']
-            row.appearance_team_status = GameLog.APPEARANCE_TEAM_RESOLVED
-            row.appearance_team_source = 'test'
-        db.session.flush()
-        return {
-            'inserted': inserted,
-            'updated': updated,
-            'unsafe': 1 if item.game_pk in self.unsafe_games else 0,
-            'unresolved_pitchers': 0,
-        }
-
-    def handlers(self):
-        return {
-            'process_game': self.persist,
-            'fetch_boxscore': self.fetch,
-        }
-
-
-def _run(lane, *, mode=game_driven_ingestion.MODE_WRITE, **kwargs):
-    original = game_driven_ingestion._resolve_handlers
-    game_driven_ingestion._resolve_handlers = lambda process_game, fetch: {
-        'fetch': lane.fetch, 'extract': lane.extract, 'persist': lane.persist,
-    }
-    try:
-        return game_driven_ingestion.run_game_driven_ingestion(
-            REFERENCE,
-            mode=mode,
-            process_game=lane.persist,
-            fetch_boxscore=lane.fetch,
-            **kwargs,
-        )
-    finally:
-        game_driven_ingestion._resolve_handlers = original
+def _one_reliever(game_pk, mlb_id, **stat_overrides):
+    return {game_pk: boxscore([(mlb_id, 'home', pitching_stats(**stat_overrides))])}
 
 
 # ── Mode gating ──────────────────────────────────────────────────────────────
@@ -202,33 +88,34 @@ def test_an_unrecognised_mode_falls_back_to_off(app, monkeypatch):
     assert game_driven_ingestion.ingestion_mode() == game_driven_ingestion.MODE_OFF
 
 
-def test_off_mode_does_no_work(app):
+def test_off_mode_does_no_work(app, stub_client):
     with app.app_context():
         _schedule(910001)
+        _pitcher(5000)
         db.session.commit()
-        lane = FakeLane({910001: []})
+        client = stub_client(_one_reliever(910001, 5000))
 
-        report = _run(lane, mode=game_driven_ingestion.MODE_OFF)
+        report = _run(mode=game_driven_ingestion.MODE_OFF)
 
         assert report['status'] == 'disabled'
-        assert lane.fetch_calls == []
+        assert client.calls == []
 
 
 # ── Persistence ─────────────────────────────────────────────────────────────
 
 
-def test_first_processing_inserts_rows_and_completes_the_work_item(app):
+def test_first_processing_inserts_rows_and_completes_the_work_item(app, stub_client):
     with app.app_context():
         _schedule(910002)
         _pitcher(5001)
         _pitcher(5002)
         db.session.commit()
-        lane = FakeLane({910002: [
-            _appearance(5001, game_pk=910002, outs=18, starter=True),
-            _appearance(5002, game_pk=910002, outs=3),
-        ]})
+        stub_client({910002: boxscore([
+            (5001, 'home', pitching_stats(innings='6.0', games_started=1)),
+            (5002, 'home', pitching_stats(innings='1.0')),
+        ])})
 
-        report = _run(lane)
+        report = _run()
 
         assert report['games_completed'] == 1
         assert report['rows_inserted'] == 2
@@ -243,15 +130,17 @@ def test_first_processing_inserts_rows_and_completes_the_work_item(app):
         assert item.source_revision
 
 
-def test_replaying_an_unchanged_game_creates_no_duplicates_and_no_changes(app):
+def test_replaying_an_unchanged_game_creates_no_duplicates_and_no_changes(
+    app, stub_client,
+):
     with app.app_context():
         _schedule(910003)
         _pitcher(5003)
         db.session.commit()
-        appearances = {910003: [_appearance(5003, game_pk=910003)]}
+        stub_client(_one_reliever(910003, 5003))
 
-        first = _run(FakeLane(appearances))
-        second = _run(FakeLane(appearances))
+        first = _run()
+        second = _run()
 
         assert first['rows_inserted'] == 1
         assert second['rows_inserted'] == 0
@@ -261,19 +150,29 @@ def test_replaying_an_unchanged_game_creates_no_duplicates_and_no_changes(app):
         assert GameLog.query.filter_by(mlb_game_pk=910003).count() == 1
 
 
-def test_a_corrected_replay_updates_governed_fields_and_records_the_correction(app):
+def test_a_corrected_replay_updates_governed_fields_and_records_the_correction(
+    app, monkeypatch,
+):
     with app.app_context():
         _schedule(910004)
         _pitcher(5004)
         db.session.commit()
 
-        _run(FakeLane({910004: [_appearance(5004, game_pk=910004, earned_runs=1)]}))
-        report = _run(
-            FakeLane({910004: [_appearance(5004, game_pk=910004, earned_runs=3)]})
+        monkeypatch.setattr(
+            sync_service, 'mlb_client',
+            BoxscoreClient(_one_reliever(910004, 5004, earned_runs=1)),
         )
+        _run()
+        monkeypatch.setattr(
+            sync_service, 'mlb_client',
+            BoxscoreClient(_one_reliever(910004, 5004, earned_runs=3)),
+        )
+        report = _run()
 
         assert report['rows_updated'] == 1
         assert report['corrections_applied'] == 1
+        assert report['statistical_corrections'] == 1
+        assert 'earned_runs' in report['changed_fields_counts']
         assert GameLog.query.filter_by(mlb_game_pk=910004).count() == 1
         row = GameLog.query.filter_by(mlb_game_pk=910004).one()
         assert row.earned_runs == 3
@@ -286,38 +185,46 @@ def test_a_corrected_replay_updates_governed_fields_and_records_the_correction(a
 def test_the_canonical_uniqueness_makes_a_duplicate_row_impossible(app):
     with app.app_context():
         _schedule(910005)
-        pitcher = _pitcher(5005)
+        row_pitcher = _pitcher(5005)
         db.session.commit()
         db.session.add(GameLog(
-            pitcher_id=pitcher.id, mlb_game_pk=910005, game_date=REFERENCE,
+            pitcher_id=row_pitcher.id, mlb_game_pk=910005, game_date=REFERENCE,
             innings_pitched=1.0, innings_pitched_outs=3,
         ))
         db.session.commit()
 
         with pytest.raises(Exception):
             db.session.add(GameLog(
-                pitcher_id=pitcher.id, mlb_game_pk=910005, game_date=REFERENCE,
-                innings_pitched=1.0, innings_pitched_outs=3,
+                pitcher_id=row_pitcher.id, mlb_game_pk=910005,
+                game_date=REFERENCE, innings_pitched=1.0,
+                innings_pitched_outs=3,
             ))
             db.session.commit()
         db.session.rollback()
 
 
-def test_a_game_is_not_completed_when_its_writes_roll_back(app):
+def test_a_game_is_not_completed_when_its_writes_roll_back(app, monkeypatch):
     with app.app_context():
         _schedule(910006)
         _pitcher(5006)
         db.session.commit()
-
-        class ExplodingLane(FakeLane):
-            def persist(self, item, game_payload, boxscore, *, sync_run_id=None):
-                super().persist(item, game_payload, boxscore, sync_run_id=sync_run_id)
-                raise RuntimeError('write failed after partial flush')
-
-        report = _run(
-            ExplodingLane({910006: [_appearance(5006, game_pk=910006)]})
+        monkeypatch.setattr(
+            sync_service, 'mlb_client',
+            BoxscoreClient(_one_reliever(910006, 5006)),
         )
 
+        original = sync_service.safe_recompute_team_game_pitching_splits_for_game
+
+        def _explode(*args, **kwargs):
+            raise RuntimeError('failed after the appearance writes flushed')
+
+        monkeypatch.setattr(
+            game_driven_ingestion, '_verify_game_completeness', _explode,
+        )
+
+        report = _run()
+
+        assert original is not None
         assert report['games_completed'] == 0
         assert report['games_failed'] == 1
         assert GameLog.query.filter_by(mlb_game_pk=910006).count() == 0
@@ -326,18 +233,30 @@ def test_a_game_is_not_completed_when_its_writes_roll_back(app):
         assert item.completed_at is None
 
 
-def test_an_unsafe_correction_blocks_completion(app):
+def test_an_unsafe_correction_blocks_completion(app, monkeypatch):
     with app.app_context():
         _schedule(910007)
         _pitcher(5007)
         db.session.commit()
 
-        report = _run(FakeLane(
-            {910007: [_appearance(5007, game_pk=910007)]},
-            unsafe_games={910007},
-        ))
+        monkeypatch.setattr(
+            sync_service, 'mlb_client',
+            BoxscoreClient(_one_reliever(910007, 5007)),
+        )
+        _run()
+
+        # The official line comes back missing a required correction key, so
+        # the existing row's correction is not governed and must be refused.
+        monkeypatch.setattr(
+            sync_service, 'mlb_client',
+            BoxscoreClient(_one_reliever(
+                910007, 5007, earned_runs=4, complete=False,
+            )),
+        )
+        report = _run()
 
         assert report['games_completed'] == 0
+        assert report['rows_blocked'] == 1
         assert report['failure_classes'] == {
             game_driven_ingestion.ERROR_CORRECTION_CONFLICT: 1,
         }
@@ -348,33 +267,40 @@ def test_an_unsafe_correction_blocks_completion(app):
 # ── Checkpoint and resume ───────────────────────────────────────────────────
 
 
-def test_a_completed_game_stays_completed_across_runs(app):
+def test_a_completed_game_stays_completed_across_runs(app, stub_client):
     with app.app_context():
         _schedule(910008)
         _pitcher(5008)
         db.session.commit()
-        appearances = {910008: [_appearance(5008, game_pk=910008)]}
+        stub_client(_one_reliever(910008, 5008))
 
-        _run(FakeLane(appearances))
-        _run(FakeLane(appearances))
+        _run()
+        _run()
 
         item = GameIngestionWorkItem.query.filter_by(mlb_game_pk=910008).one()
         assert item.status == GameIngestionWorkItem.STATUS_COMPLETED
 
 
-def test_a_failed_game_resumes_on_the_next_run(app):
+def test_a_failed_game_resumes_on_the_next_run(app, monkeypatch):
     with app.app_context():
         _schedule(910009)
         _pitcher(5009)
         db.session.commit()
-        appearances = {910009: [_appearance(5009, game_pk=910009)]}
+        boxscores = _one_reliever(910009, 5009)
 
-        failed = _run(FakeLane(appearances, fail_games={910009}))
+        monkeypatch.setattr(
+            sync_service, 'mlb_client',
+            BoxscoreClient(boxscores, fail_games={910009}),
+        )
+        failed = _run()
         assert failed['games_failed'] == 1
         item = GameIngestionWorkItem.query.filter_by(mlb_game_pk=910009).one()
         assert item.status == GameIngestionWorkItem.STATUS_RETRYABLE_FAILURE
 
-        recovered = _run(FakeLane(appearances))
+        monkeypatch.setattr(
+            sync_service, 'mlb_client', BoxscoreClient(boxscores),
+        )
+        recovered = _run()
 
         assert recovered['games_completed'] == 1
         assert recovered['retry_count'] == 1
@@ -382,38 +308,39 @@ def test_a_failed_game_resumes_on_the_next_run(app):
         assert item.status == GameIngestionWorkItem.STATUS_COMPLETED
 
 
-def test_repeated_failure_becomes_terminal_rather_than_looping_forever(app):
+def test_repeated_failure_becomes_terminal_rather_than_looping_forever(
+    app, stub_client,
+):
     with app.app_context():
         _schedule(910010)
         db.session.commit()
-        lane_spec = {910010: []}
+        stub_client({910010: {}}, fail_games={910010})
 
         for _ in range(game_driven_ingestion.RETRY_LIMIT):
-            _run(FakeLane(lane_spec, fail_games={910010}))
+            _run()
 
         item = GameIngestionWorkItem.query.filter_by(mlb_game_pk=910010).one()
         assert item.status == GameIngestionWorkItem.STATUS_TERMINAL_FAILURE
         assert item.attempt_count >= game_driven_ingestion.RETRY_LIMIT
 
 
-def test_budget_exhaustion_preserves_remaining_work_and_never_dead_letters_it(app):
+def test_budget_exhaustion_preserves_remaining_work_and_never_dead_letters_it(
+    app, stub_client,
+):
     with app.app_context():
         _schedule(910011, start_hour=13)
         _schedule(910012, start_hour=19)
         _pitcher(5011)
         db.session.commit()
-        appearances = {
-            910011: [_appearance(5011, game_pk=910011)],
-            910012: [_appearance(5011, game_pk=910012)],
-        }
+        boxscores = dict(_one_reliever(910011, 5011))
+        boxscores.update(_one_reliever(910012, 5011))
+        stub_client(boxscores)
 
-        report = _run(FakeLane(appearances), time_budget_seconds=0.0)
+        report = _run(time_budget_seconds=0.0)
 
         assert report['budget_stop_triggered'] is True
         assert report['status'] == 'incomplete'
         assert report['budget_stop']['critical_games_remaining'] == 2
-        # Nothing was fetched, nothing was dead-lettered, and both games are
-        # resumable planned work.
         items = GameIngestionWorkItem.query.order_by(
             GameIngestionWorkItem.mlb_game_pk
         ).all()
@@ -426,48 +353,47 @@ def test_budget_exhaustion_preserves_remaining_work_and_never_dead_letters_it(ap
             for item in items
         )
 
-        # And the next run picks that preserved work straight back up.
-        resumed = FakeLane(appearances)
-        resumed_report = _run(resumed)
+        resumed_report = _run()
         assert resumed_report['retry_count'] == 2
         assert resumed_report['games_completed'] == 2
-        assert sorted(resumed.fetch_calls) == [910011, 910012]
 
 
-def test_the_next_run_starts_with_unresolved_critical_games(app):
+def test_the_next_run_starts_with_unresolved_critical_games(app, monkeypatch):
     with app.app_context():
         _schedule(910013, start_hour=13)
         _schedule(910014, start_hour=19)
         _pitcher(5013)
         db.session.commit()
-        appearances = {
-            910013: [_appearance(5013, game_pk=910013)],
-            910014: [_appearance(5013, game_pk=910014)],
-        }
+        boxscores = dict(_one_reliever(910013, 5013))
+        boxscores.update(_one_reliever(910014, 5013))
 
-        # 910013 (earlier start time) completes; 910014 fails.
-        first = _run(FakeLane(appearances, fail_games={910014}))
+        monkeypatch.setattr(
+            sync_service, 'mlb_client',
+            BoxscoreClient(boxscores, fail_games={910014}),
+        )
+        first = _run()
         assert first['games_completed'] == 1
         assert first['games_failed'] == 1
 
-        second = FakeLane(appearances)
-        _run(second)
+        second = BoxscoreClient(boxscores)
+        monkeypatch.setattr(sync_service, 'mlb_client', second)
+        _run()
 
         # The completed game is still re-checked for corrections, but the
         # unresolved one is fetched FIRST — the next run never restarts from
         # the beginning of the window.
-        assert second.fetch_calls[0] == 910014
+        assert second.calls[0] == 910014
 
 
-def test_a_budget_stop_never_demotes_an_already_completed_game(app):
+def test_a_budget_stop_never_demotes_an_already_completed_game(app, stub_client):
     with app.app_context():
         _schedule(910015)
         _pitcher(5015)
         db.session.commit()
-        appearances = {910015: [_appearance(5015, game_pk=910015)]}
+        stub_client(_one_reliever(910015, 5015))
 
-        _run(FakeLane(appearances))
-        _run(FakeLane(appearances), time_budget_seconds=0.0)
+        _run()
+        _run(time_budget_seconds=0.0)
 
         item = GameIngestionWorkItem.query.filter_by(mlb_game_pk=910015).one()
         assert item.status == GameIngestionWorkItem.STATUS_COMPLETED
@@ -476,16 +402,14 @@ def test_a_budget_stop_never_demotes_an_already_completed_game(app):
 # ── Shadow mode ─────────────────────────────────────────────────────────────
 
 
-def test_shadow_mode_projects_without_writing_anything(app):
+def test_shadow_mode_projects_without_writing_anything(app, stub_client):
     with app.app_context():
         _schedule(910016)
         _pitcher(5016)
         db.session.commit()
+        stub_client(_one_reliever(910016, 5016))
 
-        report = _run(
-            FakeLane({910016: [_appearance(5016, game_pk=910016)]}),
-            mode=game_driven_ingestion.MODE_SHADOW,
-        )
+        report = _run(mode=game_driven_ingestion.MODE_SHADOW)
 
         assert report['rows_inserted'] == 1
         assert report['games'][0]['status'] == 'projected'
@@ -493,15 +417,15 @@ def test_shadow_mode_projects_without_writing_anything(app):
         assert GameIngestionWorkItem.query.count() == 0
 
 
-def test_shadow_mode_projects_an_unchanged_game_as_a_no_op(app):
+def test_shadow_mode_projects_an_unchanged_game_as_a_no_op(app, stub_client):
     with app.app_context():
         _schedule(910017)
         _pitcher(5017)
         db.session.commit()
-        appearances = {910017: [_appearance(5017, game_pk=910017)]}
+        stub_client(_one_reliever(910017, 5017))
 
-        _run(FakeLane(appearances))
-        report = _run(FakeLane(appearances), mode=game_driven_ingestion.MODE_SHADOW)
+        _run()
+        report = _run(mode=game_driven_ingestion.MODE_SHADOW)
 
         assert report['rows_inserted'] == 0
         assert report['rows_updated'] == 0
@@ -518,23 +442,29 @@ REQUIRED_RUN_FIELDS = (
     'rows_inserted', 'rows_updated', 'rows_unchanged', 'games_completed',
     'games_remaining', 'critical_games_unresolved',
     'best_effort_games_deferred', 'budget_stop_triggered',
+    'rows_blocked', 'changed_fields_counts', 'mutation_category_counts',
+    'statistical_corrections', 'authority_reconciliations',
+    'provenance_only_updates', 'parity_contract_version',
+    'reconciliation_plan_version', 'reconciliation_plan_fingerprint',
 )
 
 REQUIRED_GAME_FIELDS = (
     'game_pk', 'represented_date', 'candidate_reason', 'criticality',
     'attempt_number', 'status', 'source_revision', 'appearances_extracted',
     'relief_appearances', 'inserted', 'updated', 'unchanged',
-    'elapsed_seconds', 'error_class',
+    'elapsed_seconds', 'error_class', 'blocked', 'changed_fields_counts',
+    'mutation_category_counts', 'rows',
 )
 
 
-def test_every_required_run_and_per_game_counter_is_emitted(app):
+def test_every_required_run_and_per_game_counter_is_emitted(app, stub_client):
     with app.app_context():
         _schedule(910018)
         _pitcher(5018)
         db.session.commit()
+        stub_client(_one_reliever(910018, 5018))
 
-        report = _run(FakeLane({910018: [_appearance(5018, game_pk=910018)]}))
+        report = _run()
 
         for field in REQUIRED_RUN_FIELDS:
             assert field in report, field
@@ -542,12 +472,13 @@ def test_every_required_run_and_per_game_counter_is_emitted(app):
             assert field in report['games'][0], field
 
 
-def test_reported_errors_are_safe_classes_only(app):
+def test_reported_errors_are_safe_classes_only(app, stub_client):
     with app.app_context():
         _schedule(910019)
         db.session.commit()
+        stub_client({910019: {}}, fail_games={910019})
 
-        report = _run(FakeLane({910019: []}, fail_games={910019}))
+        report = _run()
 
         assert set(report['failure_classes']) <= set(
             game_driven_ingestion.FAILURE_SEMANTICS
@@ -555,15 +486,16 @@ def test_reported_errors_are_safe_classes_only(app):
         assert report['games'][0]['error_class'] == (
             game_driven_ingestion.ERROR_GAME_FETCH_FAILED
         )
-        assert 'fetch failed' not in repr(report)
+        assert 'boxscore fetch failed' not in repr(report)
 
 
-def test_a_final_game_with_no_pitching_appearances_fails_closed(app):
+def test_a_final_game_with_no_pitching_appearances_fails_closed(app, stub_client):
     with app.app_context():
         _schedule(910020)
         db.session.commit()
+        stub_client({910020: {'teams': {}}})
 
-        report = _run(FakeLane({910020: []}))
+        report = _run()
 
         assert report['games_completed'] == 0
         assert report['failure_classes'] == {

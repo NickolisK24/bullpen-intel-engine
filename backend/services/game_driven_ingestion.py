@@ -52,6 +52,7 @@ from models.pitcher import Pitcher
 from services import dead_letter
 from services import game_appearance_extraction as extraction
 from services import game_ingestion_planner as planner
+from services import game_log_reconciliation as reconciliation
 from services.game_appearance_extraction import AppearanceExtractionError
 from utils.db import db
 from utils.time import utc_now_naive
@@ -157,6 +158,7 @@ def run_game_driven_ingestion(
     max_games: int | None = None,
     process_game=None,
     fetch_boxscore=None,
+    plan_game=None,
 ) -> dict:
     """Run one game-driven ingestion pass and return its full run report.
 
@@ -195,7 +197,7 @@ def run_game_driven_ingestion(
     report['schedule_authority_missing'] = len(plan['schedule_authority_missing'])
     report['finality_conflicts'] = len(plan['finality_conflicts'])
 
-    handlers = _resolve_handlers(process_game, fetch_boxscore)
+    handlers = _resolve_handlers(process_game, fetch_boxscore, plan_game)
 
     for index, item in enumerate(items):
         if _budget_exhausted(started, time_budget_seconds):
@@ -233,6 +235,15 @@ def run_game_driven_ingestion(
         'checkpoint_seconds',
     ):
         report[key] = round(report[key], 3)
+    report['changed_fields_counts'] = dict(
+        sorted(report['changed_fields_counts'].items())
+    )
+    report['mutation_category_counts'] = dict(
+        sorted(report['mutation_category_counts'].items())
+    )
+    report['reconciliation_plan_fingerprint'] = reconciliation.plan_fingerprint(
+        [row for entry in report['games'] for row in (entry.get('rows') or ())]
+    )
     report['elapsed_seconds'] = round(time.monotonic() - started, 3)
     report['remaining_budget_seconds'] = (
         None if time_budget_seconds is None
@@ -262,6 +273,14 @@ def _process_one_game(item, *, mode, handlers, sync_run_id, job_name, report) ->
         'inserted': 0,
         'updated': 0,
         'unchanged': 0,
+        'blocked': 0,
+        'changed_fields_counts': {},
+        'mutation_category_counts': {},
+        'statistical_corrections': 0,
+        'authority_reconciliations': 0,
+        'provenance_only_updates': 0,
+        'reconciliation_plan_fingerprint': None,
+        'rows': [],
         'elapsed_seconds': 0.0,
         'error_class': None,
     }
@@ -293,12 +312,14 @@ def _process_one_game(item, *, mode, handlers, sync_run_id, job_name, report) ->
         report['rows_expected'] += len(appearances)
 
         if not writes_enabled(mode):
-            projection = _project_reconciliation(item, appearances)
-            outcome.update(projection)
+            # Shadow asks the canonical planner, through the canonical writer's
+            # planning mode, what the writer would do. It is the same code
+            # reaching the same verdict — not a second comparator.
+            plan_started = time.monotonic()
+            projected = handlers['plan'](item, game_payload, boxscore)
+            report['persistence_seconds'] += time.monotonic() - plan_started
+            _apply_plan_outcome(outcome, report, projected)
             outcome['status'] = 'projected'
-            report['rows_inserted'] += projection['inserted']
-            report['rows_updated'] += projection['updated']
-            report['rows_unchanged'] += projection['unchanged']
             report['games_completed'] += 1
             return outcome
 
@@ -309,11 +330,7 @@ def _process_one_game(item, *, mode, handlers, sync_run_id, job_name, report) ->
         report['persistence_seconds'] += time.monotonic() - persist_started
 
         reconciled = _verify_game_completeness(item, appearances)
-        outcome['inserted'] = persisted['inserted']
-        outcome['updated'] = persisted['updated']
-        outcome['unchanged'] = max(
-            len(appearances) - persisted['inserted'] - persisted['updated'], 0
-        )
+        _apply_plan_outcome(outcome, report, persisted)
         if reconciled['reconciled'] != len(appearances):
             raise _IngestionFailure(
                 ERROR_RECONCILIATION_FAILED,
@@ -354,9 +371,6 @@ def _process_one_game(item, *, mode, handlers, sync_run_id, job_name, report) ->
         db.session.commit()
         report['checkpoint_seconds'] += time.monotonic() - checkpoint_started
 
-        report['rows_inserted'] += persisted['inserted']
-        report['rows_updated'] += persisted['updated']
-        report['rows_unchanged'] += outcome['unchanged']
         report['games_completed'] += 1
         if correction_applied:
             report['corrections_applied'] += 1
@@ -608,68 +622,97 @@ def _verify_game_completeness(item, appearances) -> dict:
     return {'reconciled': reconciled, 'expected': len(appearances)}
 
 
-def _project_reconciliation(item, appearances) -> dict:
-    """Shadow-mode projection: what WOULD be inserted / updated / unchanged."""
-    stored_rows = GameLog.query.filter(GameLog.mlb_game_pk == item.game_pk).all()
-    stored_by_local_id = {row.pitcher_id: row for row in stored_rows}
-    mlb_id_by_local_id = {
-        pitcher.id: pitcher.mlb_id
-        for pitcher in Pitcher.query.filter(
-            Pitcher.id.in_(list(stored_by_local_id) or [-1])
-        ).all()
-    }
-    stored_by_mlb_id = {
-        mlb_id_by_local_id.get(local_id): row
-        for local_id, row in stored_by_local_id.items()
-    }
-    inserted = updated = unchanged = 0
-    for record in appearances:
-        row = stored_by_mlb_id.get(record['pitcher_mlb_id'])
-        if row is None:
-            inserted += 1
-        elif _row_differs(row, record):
-            updated += 1
-        else:
-            unchanged += 1
-    return {
-        'inserted': inserted,
-        'updated': updated,
-        'unchanged': unchanged,
-        'orphan_stored_rows': max(len(stored_rows) - (updated + unchanged), 0),
-    }
+def _apply_plan_outcome(outcome, report, result) -> None:
+    """Fold one game's canonical reconciliation result into the run report.
+
+    Shadow and write pass through here identically, so a projected run and an
+    applied run are counted by the same code from the same plan shape.
+    """
+    summary = result.get('summary') or {}
+    outcome['inserted'] = int(summary.get('rows_inserted') or 0)
+    outcome['updated'] = int(summary.get('rows_updated') or 0)
+    outcome['unchanged'] = int(summary.get('rows_unchanged') or 0)
+    outcome['blocked'] = int(summary.get('rows_blocked') or 0)
+    outcome['changed_fields_counts'] = dict(
+        summary.get('changed_fields_counts') or {}
+    )
+    outcome['mutation_category_counts'] = dict(
+        summary.get('mutation_category_counts') or {}
+    )
+    outcome['statistical_corrections'] = int(
+        summary.get('statistical_corrections') or 0
+    )
+    outcome['authority_reconciliations'] = int(
+        summary.get('authority_reconciliations') or 0
+    )
+    outcome['provenance_only_updates'] = int(
+        summary.get('provenance_only_updates') or 0
+    )
+    outcome['reconciliation_plan_fingerprint'] = summary.get(
+        'reconciliation_plan_fingerprint'
+    )
+    outcome['rows'] = _safe_row_entries(result.get('plan') or ())
+
+    report['rows_inserted'] += outcome['inserted']
+    report['rows_updated'] += outcome['updated']
+    report['rows_unchanged'] += outcome['unchanged']
+    report['rows_blocked'] += outcome['blocked']
+    report['statistical_corrections'] += outcome['statistical_corrections']
+    report['authority_reconciliations'] += outcome['authority_reconciliations']
+    report['provenance_only_updates'] += outcome['provenance_only_updates']
+    for field, count in (outcome['changed_fields_counts'] or {}).items():
+        report['changed_fields_counts'][field] = (
+            report['changed_fields_counts'].get(field, 0) + count
+        )
+    for category, count in (outcome['mutation_category_counts'] or {}).items():
+        report['mutation_category_counts'][category] = (
+            report['mutation_category_counts'].get(category, 0) + count
+        )
 
 
-_PROJECTION_FIELDS = (
-    ('innings_pitched_outs', 'outs_recorded'),
-    ('earned_runs', 'earned_runs'),
-    ('runs_allowed', 'runs_allowed'),
-    ('hits_allowed', 'hits_allowed'),
-    ('walks', 'walks'),
-    ('strikeouts', 'strikeouts'),
-    ('home_runs_allowed', 'home_runs_allowed'),
-    ('games_started', 'games_started'),
-)
+def _safe_row_entries(plan) -> list[dict]:
+    """Per-row structured report. Governed baseball fields only.
 
-
-def _row_differs(row, record) -> bool:
-    for column, key in _PROJECTION_FIELDS:
-        expected = record.get(key)
-        if expected is None:
-            continue
-        if int(getattr(row, column) or 0) != int(expected):
-            return True
-    return False
+    Enough to compare a shadow run against a write run field by field, with no
+    raw payload, path, credential, or exception text anywhere in it.
+    """
+    rows = [
+        {
+            'game_pk': entry.get('game_pk'),
+            'pitcher_mlb_id': entry.get('pitcher_mlb_id'),
+            'action': entry.get('action'),
+            'changed_fields': list(entry.get('changed_fields') or ()),
+            'changed_field_count': entry.get('changed_field_count', 0),
+            'mutation_categories': list(entry.get('mutation_categories') or ()),
+            'is_statistical_correction': bool(
+                entry.get('is_statistical_correction')
+            ),
+            'affects_published_evidence': bool(
+                entry.get('affects_published_evidence')
+            ),
+            'is_provenance_only': bool(entry.get('is_provenance_only')),
+            'governed_and_safe': bool(entry.get('governed_and_safe')),
+            'blocked_reason': entry.get('blocked_reason'),
+            'appearance_team_reason': entry.get('appearance_team_reason'),
+            'pitcher_identity_action': entry.get('pitcher_identity_action'),
+        }
+        for entry in plan or ()
+    ]
+    # Deterministic output ordering, independent of payload order.
+    rows.sort(key=lambda row: (row['game_pk'] or 0, row['pitcher_mlb_id'] or 0))
+    return rows
 
 
 # ── Handlers (canonical implementations, injectable for tests) ──────────────
 
 
-def _resolve_handlers(process_game, fetch_boxscore) -> dict:
+def _resolve_handlers(process_game, fetch_boxscore, plan_game=None) -> dict:
     if process_game is not None and fetch_boxscore is not None:
         return {
             'fetch': fetch_boxscore,
             'extract': _default_extract,
             'persist': process_game,
+            'plan': plan_game if plan_game is not None else process_game,
         }
 
     # Lazy import: services.sync imports many services, so importing it at
@@ -683,7 +726,8 @@ def _resolve_handlers(process_game, fetch_boxscore) -> dict:
         boxscore = sync_service.mlb_client.get_game_boxscore(item.game_pk)
         return game_payload, boxscore
 
-    def _persist(item, game_payload, boxscore, *, sync_run_id=None):
+    def _reconcile(item, game_payload, boxscore, *, sync_run_id=None,
+                   plan_only=False):
         result = sync_service.process_completed_game_for_postgame_refresh(
             game_payload,
             schedule_date=item.game_date or item.represented_date,
@@ -693,15 +737,32 @@ def _resolve_handlers(process_game, fetch_boxscore) -> dict:
             # postgame marker already says fully processed. Every write below
             # remains idempotent.
             force=True,
+            plan_only=plan_only,
         )
         return {
             'inserted': result.get('logs_added', 0),
             'updated': result.get('logs_corrected', 0),
             'unsafe': result.get('correction_attempts_failed', 0),
             'unresolved_pitchers': result.get('pitcher_resolution_failures', 0),
+            'plan': result.get('reconciliation_plan') or [],
+            'summary': result.get('reconciliation_summary') or {},
         }
 
-    return {'fetch': _fetch, 'extract': _default_extract, 'persist': _persist}
+    def _persist(item, game_payload, boxscore, *, sync_run_id=None):
+        return _reconcile(
+            item, game_payload, boxscore, sync_run_id=sync_run_id,
+            plan_only=False,
+        )
+
+    def _plan(item, game_payload, boxscore):
+        return _reconcile(item, game_payload, boxscore, plan_only=True)
+
+    return {
+        'fetch': _fetch,
+        'extract': _default_extract,
+        'persist': _persist,
+        'plan': _plan,
+    }
 
 
 def _default_extract(item, game_payload, boxscore):
@@ -791,12 +852,20 @@ def _empty_report(reference_date, mode) -> dict:
         'rows_inserted': 0,
         'rows_updated': 0,
         'rows_unchanged': 0,
+        'rows_blocked': 0,
+        'changed_fields_counts': {},
+        'mutation_category_counts': {},
+        'statistical_corrections': 0,
+        'authority_reconciliations': 0,
+        'provenance_only_updates': 0,
         'corrections_applied': 0,
         'budget_stop_triggered': False,
         'budget_stop': None,
         'failure_classes': {},
         'games': [],
         'plan': {},
+        'parity_contract_version': reconciliation.PARITY_CONTRACT_VERSION,
+        'reconciliation_plan_version': reconciliation.RECONCILIATION_PLAN_VERSION,
         'elapsed_seconds': 0.0,
         'remaining_budget_seconds': None,
     }
