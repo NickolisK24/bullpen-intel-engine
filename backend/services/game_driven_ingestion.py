@@ -377,6 +377,9 @@ def _process_one_game(item, *, mode, handlers, sync_run_id, job_name, report) ->
         'statistical_corrections': 0,
         'authority_reconciliations': 0,
         'provenance_only_updates': 0,
+        'canonical_outs_corrections': 0,
+        'derived_companion_fields_applied': 0,
+        'derived_companion_differences_ignored': 0,
         'reconciliation_plan_fingerprint': None,
         'rows': [],
         'elapsed_seconds': 0.0,
@@ -769,6 +772,15 @@ def _apply_plan_outcome(outcome, report, result) -> None:
     outcome['provenance_only_updates'] = int(
         summary.get('provenance_only_updates') or 0
     )
+    outcome['canonical_outs_corrections'] = int(
+        summary.get('canonical_outs_corrections') or 0
+    )
+    outcome['derived_companion_fields_applied'] = int(
+        summary.get('derived_companion_fields_applied') or 0
+    )
+    outcome['derived_companion_differences_ignored'] = int(
+        summary.get('derived_companion_differences_ignored') or 0
+    )
     outcome['reconciliation_plan_fingerprint'] = summary.get(
         'reconciliation_plan_fingerprint'
     )
@@ -781,6 +793,18 @@ def _apply_plan_outcome(outcome, report, result) -> None:
     report['statistical_corrections'] += outcome['statistical_corrections']
     report['authority_reconciliations'] += outcome['authority_reconciliations']
     report['provenance_only_updates'] += outcome['provenance_only_updates']
+    report['canonical_outs_corrections'] += outcome['canonical_outs_corrections']
+    report['derived_companion_fields_applied'] += (
+        outcome['derived_companion_fields_applied']
+    )
+    report['derived_companion_differences_ignored'] += (
+        outcome['derived_companion_differences_ignored']
+    )
+    # Same number under the name that says what it PREVENTED. Kept as its own
+    # key so an operator reading a report can find it either way.
+    report['decimal_only_updates_suppressed'] = (
+        report['derived_companion_differences_ignored']
+    )
     for field, count in (outcome['changed_fields_counts'] or {}).items():
         report['changed_fields_counts'][field] = (
             report['changed_fields_counts'].get(field, 0) + count
@@ -998,6 +1022,11 @@ def _empty_report(reference_date, mode) -> dict:
         'statistical_corrections': 0,
         'authority_reconciliations': 0,
         'provenance_only_updates': 0,
+        'canonical_outs_corrections': 0,
+        'derived_companion_fields_applied': 0,
+        'derived_companion_differences_ignored': 0,
+        'decimal_only_updates_suppressed': 0,
+        'innings_semantics_version': reconciliation.INNINGS_SEMANTICS_VERSION,
         'corrections_applied': 0,
         'budget_stop_triggered': False,
         'budget_stop': None,

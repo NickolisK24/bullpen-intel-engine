@@ -715,6 +715,71 @@ application cannot read different evidence.
 The refusal reports only the expected fingerprint, the observed fingerprint,
 the requested ids, and a safe reason.
 
+## R1 validation from a phone
+
+Stage R1 replays the five games the first controlled write already reconciled.
+It is the gate that proves the canonical-innings repair holds in production,
+and it can be run with no computer.
+
+**Workflow:** `.github/workflows/foundation-3c-r1-shadow-validation.yml`,
+displayed as **Foundation 3C R1 Shadow Validation**. Manual dispatch only — no
+schedule, no push, no pull-request trigger.
+
+Everything is hard-coded, so there is nothing to type and nothing to
+misconfigure from a phone:
+
+| | |
+|---|---|
+| games | 823518, 824735, 823761, 824083, 824327 |
+| reference date | 2026-07-29 |
+| mode | `shadow` (exclusive scope via `--only-game-pk`) |
+| permissions | `contents: read` only |
+| `GAME_DRIVEN_INGESTION_MODE` | `off` (defense in depth) |
+
+It writes no baseball data. It runs the merged Foundation 3C shadow path,
+which is logically read-only before any transaction handling, and adds no
+compensating write, cleanup, or write-and-roll-back of its own. It does not
+call the daily or postgame sync, does not publish a snapshot, and does not
+deploy anything.
+
+### Running it
+
+1. Open the repository in the GitHub mobile app or a mobile browser.
+2. Open **Actions**.
+3. Select **Foundation 3C R1 Shadow Validation**.
+4. Tap **Run workflow**, choose `main` if a branch selector appears, and
+   confirm.
+5. Open the finished run and read the job summary.
+6. Download the `foundation-3c-r1-shadow-validation` artifact if you want the
+   full report.
+
+### Expected pass
+
+```
+Scope        requested 5, planned 5, exact match yes
+Games        completed 5, failed 0
+Rows         expected 38, inserted 0, updated 0, unchanged 38, blocked 0
+Innings      decimal-only differences safely ignored 14
+             canonical outs corrections 0
+             statistical corrections 0
+```
+
+The job summary states the result directly. The artifact contains the raw
+shadow report, a structured validation summary, and the same summary in
+Markdown, retained 14 days.
+
+### Failure is a stop
+
+A failed validation fails the job. It is never downgraded to a warning
+annotation. The summary names the failed invariant with its expected and
+observed values, the requested and planned game ids, and nothing else — no
+payload, path, credential, or exception text. Artifacts are scanned for
+credential-shaped content before upload and the run fails if anything matches.
+
+**R2 must not begin until R1 passes.** `GAME_DRIVEN_INGESTION_MODE` stays
+`off` throughout; R1 does not change it and does not enable the automated
+lane.
+
 ## Controlled parity rollout
 
 Production remains **off** until parity validation passes. The next operator

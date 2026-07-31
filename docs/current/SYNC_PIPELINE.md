@@ -90,6 +90,23 @@ Downstream jobs (`internal-enrichment`, `static-team-story-preview`) run only
 after `public-sync` succeeds, so a failed ledger verdict also stops enrichment
 and static page publication from advancing on unproven data.
 
+## Foundation 3C R1 validation workflow (manual, diagnostic, non-mutating)
+
+`.github/workflows/foundation-3c-r1-shadow-validation.yml` is **separate from
+the BaseballOS Bullpen Sync workflow** and is not part of the daily/postgame
+production schedule. It has no cron and cannot be triggered by a push or a
+pull request.
+
+It runs one pinned read-only shadow reconciliation of five hard-coded games at
+a hard-coded reference date, validates the result against a fixed contract, and
+fails the job if the contract does not hold. It is diagnostic and
+non-publishing: it never writes baseball data, never publishes or withholds a
+snapshot, never touches the appearance-ledger gate, never warms a cache, and
+never deploys. Its permissions are `contents: read`.
+
+Canonical reference:
+[`GAME_DRIVEN_DAILY_INGESTION.md`](GAME_DRIVEN_DAILY_INGESTION.md).
+
 ## Intraday reconciliation (audit-only, Phase 1)
 
 **Canonical reference: [`INTRADAY_RECONCILIATION.md`](INTRADAY_RECONCILIATION.md)**
