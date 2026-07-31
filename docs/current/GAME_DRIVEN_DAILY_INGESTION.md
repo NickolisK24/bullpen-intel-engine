@@ -1282,6 +1282,138 @@ A successful R4 leads directly to **R5: one full shadow of the remaining 99
 unresolved games.** Do not select another small sample.
 `GAME_DRIVEN_INGESTION_MODE` stays `off`; authoritative mode remains unapproved.
 
+## R4 production result — PASS
+
+R4 executed in production and passed. It changed exactly one thing: governed
+ingestion control state.
+
+| | |
+|---|---|
+| approved games | 823110, 825055, 824004, 823438, 824408 |
+| games completed / failed | 5 / 0 |
+| appearance rows | 43 — inserted 0, updated 0, unchanged 43, blocked 0 |
+| GameLog mutations | 0 |
+| pitcher identity mutations | 0 |
+| appearance-team mutations | 0 |
+| complete-plan mutations | 0 |
+| newly completed checkpoints | 5 |
+| completed final games | 5 → **10** |
+| unresolved final games | 104 → **99** |
+| unexpected games changed | 0 |
+| dead letters created | 0 |
+
+**No baseball data changed.** GameLog content, Pitcher current state,
+appearance-team authority, and correction provenance were all byte-identical
+across the write — proven by hashing each family independently before and
+after, with both snapshots taken inside a read-only transaction that required a
+write probe to be refused first.
+
+The immediate replay reported 43 rows unchanged, zero mutations across every
+target, 18 ignored decimal-only differences, and **reproduced the approved
+contract-4 fingerprint exactly**. Fingerprint equality is a stronger
+convergence proof than a zero-mutation count alone, because `plan_fingerprint`
+reads the plan and never checkpoint state.
+
+## R5 full remaining-window shadow
+
+R5 is the **final read-only gate** before a 99-game production write. It runs
+the entire remaining bootstrap window in one pass — no batches, no cap, no time
+budget, no subdivision — and produces the reviewed package R6 will be built
+from.
+
+### Exact scope
+
+The governed window is 109 games. Ten are complete and are **excluded**:
+
+```
+original controlled write   823518 824735 823761 824083 824327
+R4 controlled write         823110 825055 824004 823438 824408
+```
+
+The remaining 99 are R5's exact scope, in canonical processing order:
+
+```
+823519 822784 824732 824896 822873 824166 824650 824893 824406 822785
+823042 824247 823759 823352 824248 822707 823434 824812 822952 823601
+823843 824733 824573 822872 823680 823031 823196 824244 822704 823197
+823841 824734 823435 822948 823355 824811 823679 823758 824571 822869
+823027 823600 822950 822706 823354 824730 824810 823599 823840 824246
+823678 823755 824572 823028 822870 823194 823433 822868 823353 823839
+824245 822705 823597 824570 823025 824001 824977 823195 824490 822949
+823350 823838 824243 822703 824489 823676 824569 823026 824003 823275
+824976 823193 823923 823837 823351 822702 823596 824242 823192 823273
+822947 823598 824487 823677 824567 823022 824002 824973 823924
+```
+
+The union of the 99 and the 10 is exactly the 109-game window. The scope is
+hard-coded in the workflow and in `backend/scripts/r5_remaining_window_scope.py`;
+the production database is used to **verify** it, never to define it.
+
+### Expected shape, by arithmetic
+
+The full reviewed window carried 946 appearance rows and 323 ignored decimal-only
+differences. The first completed five accounted for 38 rows and 14 ignored; the
+R4 five for 43 and 18.
+
+```
+games   109 - 5  - 5  =  99
+rows    946 - 38 - 43 = 865
+ignored 323 - 14 - 18 = 291
+```
+
+These are requirements, not estimates. A mismatch is a rollout stop.
+
+### What R5 requires
+
+- 99 games planned and completed, 0 failed, no budget stop
+- 865 appearance rows: 0 inserted, 0 updated, **865 unchanged**, 0 blocked
+- zero mutations across GameLog, pitcher identity, and appearance-team authority
+- 291 decimal-only differences safely ignored; **zero** canonical-outs corrections
+- one parity-contract-4 complete reconciliation fingerprint over the exact
+  99-game plan, plus a valid per-game fingerprint for all 99
+- publication completeness unchanged at 10 completed / 99 unresolved
+- **zero database drift** — every hashed family identical before and after
+
+Suppressed historical current-state differences are expected D-009 evidence and
+are **not** mutations. Current roster and team state may legitimately have moved
+since R2 without changing what happened in a completed game. They stay visible,
+may name only an approved protected current-state field, and never enter the
+mutation digest or the fingerprint. The observed total is recorded rather than
+pinned.
+
+### Two results only
+
+`pass` or `failed`. There is no `review_required` tier: the remaining window is
+expected to be clean, and R6 must not be built from a non-PASS package.
+
+### Ordering is asserted
+
+R5 requires the run's game-processing order to equal the reviewed canonical
+order above. The planner's ordering is deterministic — retry rank, criticality,
+represented date, game start time, then game id — and every input is already
+fixed for a final game, so the sequence is stable across runs. If production
+ever produced a different order, R5 fails closed rather than authorizing a write
+against a list nobody reviewed in that form.
+
+### Artifacts
+
+`r5-before-state.json`, `r5-remaining-window-shadow.json`, `r5-after-state.json`,
+`r5-validation-summary.json` / `.md`, `r5-reviewed-authorization.json` / `.md`,
+and `r5-r6-command-manifest.json` / `.md`, uploaded as
+`foundation-3c-r5-remaining-window-shadow` and retained 30 days.
+
+The R6 command manifest is a **reviewed input package, not an executable**. It
+carries the 99 `--only-game-pk` arguments, the scope digest, the approved
+fingerprint candidate, and `write_approved: false` with
+`r6_status: blocked_pending_founder_review`.
+
+### After R5
+
+R6 remains **blocked pending founder review**. A successful R5 leads directly to
+R6, the full remaining-window write of the same 99 games. **No more small
+samples.** `GAME_DRIVEN_INGESTION_MODE` stays `off` and authoritative mode
+remains unapproved.
+
 ## Controlled parity rollout
 
 Production remains **off** until parity validation passes. The next operator
