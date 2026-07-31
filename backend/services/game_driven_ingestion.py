@@ -53,6 +53,7 @@ from services import dead_letter
 from services import game_appearance_extraction as extraction
 from services import game_ingestion_planner as planner
 from services import game_log_reconciliation as reconciliation
+from services import pitcher_identity_reconciliation as pitcher_identity
 from services.game_appearance_extraction import AppearanceExtractionError
 from utils.db import db
 from utils.time import utc_now_naive
@@ -90,6 +91,24 @@ _SCOPE_REPORT_FIELDS = (
     'missing_requested_game_pks',
     'execution_scope_exact_match',
 )
+
+# Counters folded identically from each game's canonical summary into the
+# run report. Every mutation target is represented, so a run cannot report
+# "no mutations" while one target is unaccounted for.
+_IDENTITY_COUNTER_FIELDS = (
+    'pitcher_identity_rows_examined',
+    'pitcher_identity_mutations',
+    'pitcher_identity_unchanged',
+    'pitcher_identity_creations',
+    'pitcher_identity_reactivations',
+    'pitcher_identity_metadata_updates',
+    'pitcher_identity_blocked',
+    'historical_current_state_changes_suppressed',
+    'appearance_team_mutations',
+    'complete_mutation_count',
+)
+
+_IDENTITY_MUTATING_ACTIONS = frozenset(pitcher_identity.MUTATING_ACTIONS)
 
 GAME_INGESTION_FAILURE_ENTITY_TYPE = 'game_driven_ingestion_game'
 
@@ -339,6 +358,14 @@ def run_game_driven_ingestion(
     report['mutation_category_counts'] = dict(
         sorted(report['mutation_category_counts'].items())
     )
+    for mapping in (
+        'pitcher_identity_action_counts',
+        'pitcher_identity_changed_fields_counts',
+        'suppressed_current_state_field_counts',
+    ):
+        report[mapping] = dict(sorted((report.get(mapping) or {}).items()))
+    # Working set, not report content.
+    report.pop('_identity_pitcher_ids', None)
     report['reconciliation_plan_fingerprint'] = reconciliation.plan_fingerprint(
         [row for entry in report['games'] for row in (entry.get('rows') or ())]
     )
@@ -380,7 +407,22 @@ def _process_one_game(item, *, mode, handlers, sync_run_id, job_name, report) ->
         'canonical_outs_corrections': 0,
         'derived_companion_fields_applied': 0,
         'derived_companion_differences_ignored': 0,
+        'pitcher_identity_rows_examined': 0,
+        'pitcher_identity_mutations': 0,
+        'pitcher_identity_unchanged': 0,
+        'pitcher_identity_creations': 0,
+        'pitcher_identity_reactivations': 0,
+        'pitcher_identity_metadata_updates': 0,
+        'pitcher_identity_blocked': 0,
+        'historical_current_state_changes_suppressed': 0,
+        'appearance_team_mutations': 0,
+        'complete_mutation_count': 0,
+        'pitcher_identity_action_counts': {},
+        'pitcher_identity_changed_fields_counts': {},
+        'suppressed_current_state_field_counts': {},
+        'pitcher_identity_unique_pitchers_affected': 0,
         'reconciliation_plan_fingerprint': None,
+        'complete_reconciliation_fingerprint': None,
         'rows': [],
         'elapsed_seconds': 0.0,
         'error_class': None,
@@ -784,6 +826,20 @@ def _apply_plan_outcome(outcome, report, result) -> None:
     outcome['reconciliation_plan_fingerprint'] = summary.get(
         'reconciliation_plan_fingerprint'
     )
+    outcome['complete_reconciliation_fingerprint'] = summary.get(
+        'complete_reconciliation_fingerprint'
+    )
+    for field in _IDENTITY_COUNTER_FIELDS:
+        outcome[field] = int(summary.get(field) or 0)
+    for mapping in (
+        'pitcher_identity_action_counts',
+        'pitcher_identity_changed_fields_counts',
+        'suppressed_current_state_field_counts',
+    ):
+        outcome[mapping] = dict(summary.get(mapping) or {})
+    outcome['pitcher_identity_unique_pitchers_affected'] = int(
+        summary.get('pitcher_identity_unique_pitchers_affected') or 0
+    )
     outcome['rows'] = _safe_row_entries(result.get('plan') or ())
 
     report['rows_inserted'] += outcome['inserted']
@@ -804,6 +860,26 @@ def _apply_plan_outcome(outcome, report, result) -> None:
     # key so an operator reading a report can find it either way.
     report['decimal_only_updates_suppressed'] = (
         report['derived_companion_differences_ignored']
+    )
+    for field in _IDENTITY_COUNTER_FIELDS:
+        report[field] = report.get(field, 0) + outcome[field]
+    for mapping in (
+        'pitcher_identity_action_counts',
+        'pitcher_identity_changed_fields_counts',
+        'suppressed_current_state_field_counts',
+    ):
+        target = report.setdefault(mapping, {})
+        for key, count in (outcome[mapping] or {}).items():
+            target[key] = target.get(key, 0) + count
+    # Counted across the run, not summed per game: one pitcher appearing in
+    # three games is one affected pitcher.
+    report.setdefault('_identity_pitcher_ids', set()).update(
+        row['pitcher_mlb_id'] for row in outcome['rows']
+        if row.get('pitcher_identity_action')
+        in _IDENTITY_MUTATING_ACTIONS and row.get('pitcher_mlb_id') is not None
+    )
+    report['pitcher_identity_unique_pitchers_affected'] = len(
+        report['_identity_pitcher_ids']
     )
     for field, count in (outcome['changed_fields_counts'] or {}).items():
         report['changed_fields_counts'][field] = (
@@ -852,7 +928,7 @@ def _safe_row_entries(plan) -> list[dict]:
                 entry.get('derived_companion_differences_ignored') or ()
             ),
             'appearance_team_reason': entry.get('appearance_team_reason'),
-            'pitcher_identity_action': entry.get('pitcher_identity_action'),
+            **pitcher_identity.safe_row_entry(entry.get('pitcher_identity')),
         }
         for entry in plan or ()
     ]
@@ -1026,6 +1102,22 @@ def _empty_report(reference_date, mode) -> dict:
         'derived_companion_fields_applied': 0,
         'derived_companion_differences_ignored': 0,
         'decimal_only_updates_suppressed': 0,
+        'pitcher_identity_rows_examined': 0,
+        'pitcher_identity_mutations': 0,
+        'pitcher_identity_unchanged': 0,
+        'pitcher_identity_creations': 0,
+        'pitcher_identity_reactivations': 0,
+        'pitcher_identity_metadata_updates': 0,
+        'pitcher_identity_blocked': 0,
+        'historical_current_state_changes_suppressed': 0,
+        'appearance_team_mutations': 0,
+        'complete_mutation_count': 0,
+        'pitcher_identity_unique_pitchers_affected': 0,
+        'pitcher_identity_action_counts': {},
+        'pitcher_identity_changed_fields_counts': {},
+        'suppressed_current_state_field_counts': {},
+        'identity_plan_version': pitcher_identity.IDENTITY_PLAN_VERSION,
+        'complete_plan_version': reconciliation.COMPLETE_PLAN_VERSION,
         'innings_semantics_version': reconciliation.INNINGS_SEMANTICS_VERSION,
         'corrections_applied': 0,
         'budget_stop_triggered': False,

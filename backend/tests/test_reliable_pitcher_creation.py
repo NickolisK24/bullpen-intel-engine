@@ -175,17 +175,20 @@ def test_unknown_postgame_pitcher_is_created_and_not_duplicated(app, monkeypatch
     assert second['logs_added'] == 0
     assert second['logs_corrected'] == 0
     assert pitcher_payload['full_name'] == 'New Reliever'
-    assert pitcher_payload['active'] is True
-    assert pitcher_payload['team_id'] == 1
-    assert pitcher_payload['team_abbreviation'] == 'HME'
-    assert pitcher_payload['team_assignment_status'] == 'ASSIGNED'
+    # D-009: a completed game creates the identity that owns the appearance and
+    # claims nothing about the player's CURRENT situation. Roster authority
+    # fills these in when it next runs.
+    assert pitcher_payload['active'] is False
+    assert pitcher_payload['team_id'] is None
+    assert pitcher_payload['team_abbreviation'] is None
+    assert pitcher_payload['team_assignment_status'] is None
     assert pitcher_payload['roster_status'] == STATUS_UNKNOWN
     assert len(logs) == 1
     assert pitcher_count == 1
     assert failure_count == 0
 
 
-def test_inactive_pitcher_is_reactivated_from_authoritative_final_line(app, monkeypatch):
+def test_inactive_pitcher_is_not_reactivated_by_a_historical_final_line(app, monkeypatch):
     with app.app_context():
         pitcher = Pitcher(
             mlb_id=404,
@@ -225,14 +228,17 @@ def test_inactive_pitcher_is_reactivated_from_authoritative_final_line(app, monk
         pitches_thrown = log.pitches_thrown
 
     assert result['pitchers_created'] == 0
-    assert result['pitchers_reactivated'] == 1
+    # D-009: a three-week-old appearance is not evidence about today. The
+    # appearance still reconciles; the roster row is left exactly as roster
+    # authority last set it.
+    assert result['pitchers_reactivated'] == 0
     assert result['logs_added'] == 1
-    assert pitcher_payload['active'] is True
-    assert pitcher_payload['team_id'] == 1
-    assert pitcher_payload['team_name'] == 'Home Club'
-    assert pitcher_payload['team_abbreviation'] == 'HME'
-    assert pitcher_payload['team_assignment_status'] == 'ASSIGNED'
-    assert pitcher_payload['roster_status'] == STATUS_UNKNOWN
+    assert pitcher_payload['active'] is False
+    assert pitcher_payload['team_id'] == 9
+    assert pitcher_payload['team_name'] == 'Old Club'
+    assert pitcher_payload['team_abbreviation'] == 'OLD'
+    assert pitcher_payload['team_assignment_status'] == 'NO_ORGANIZATION'
+    assert pitcher_payload['roster_status'] == STATUS_MINORS
     assert pitches_thrown == 14
 
 
@@ -371,7 +377,8 @@ def test_authoritative_two_way_pitching_line_ingests_without_bullpen_overclaim(
     assert pitcher_payload['roster_status'] == STATUS_UNKNOWN
     assert (
         pitcher_payload['roster_status_raw_description']
-        == 'Final-game pitching line; current roster status unverified; position_override_from_pitching_line'
+        == 'Identity created from a completed-game appearance; current roster '
+           'status unverified; position_override_from_pitching_line'
     )
     assert log_payload['games_started'] == 1
     assert log_payload['pitches_thrown'] == 87

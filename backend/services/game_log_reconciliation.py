@@ -33,13 +33,22 @@ import hashlib
 import json
 
 from services import appearance_team_authority
+from services import pitcher_identity_reconciliation as identity
 
 
 # The plan shape and the parity guarantee are versioned separately: the shape
 # may gain fields without changing what parity means, and parity may tighten
 # without reshaping the plan.
-RECONCILIATION_PLAN_VERSION = '2'
-PARITY_CONTRACT_VERSION = '2'
+# Bumped from '2' by the pitcher-identity repair: a row plan now carries the
+# identity decision, and the fingerprint commits to it, so a plan reviewed
+# under the old contract no longer describes every database effect.
+RECONCILIATION_PLAN_VERSION = '3'
+PARITY_CONTRACT_VERSION = '3'
+
+# The complete plan is GameLog + pitcher identity + appearance-team authority
+# decided together and fingerprinted together. Versioned separately so the
+# combination can tighten without reshaping either component.
+COMPLETE_PLAN_VERSION = '1'
 
 
 # ── Actions ─────────────────────────────────────────────────────────────────
@@ -274,7 +283,7 @@ def plan_row(
     game_pk=None,
     pitcher_mlb_id=None,
     local_pitcher_id=None,
-    pitcher_identity_action=None,
+    identity_plan=None,
 ) -> dict:
     """Decide what happens to one canonical appearance row.
 
@@ -310,12 +319,18 @@ def plan_row(
         'mutation_digest': '',
         'blocked_reason': None,
         'unresolved_reason': None,
-        'pitcher_identity_action': pitcher_identity_action,
+        'complete_plan_version': COMPLETE_PLAN_VERSION,
+        'pitcher_identity': identity_plan or {},
+        'pitcher_identity_action': (identity_plan or {}).get('action'),
         'source_authority': values.get('appearance_team_source'),
     }
 
+    # An identity decision earns its own mutation category ONLY when it would
+    # actually touch the database. Under D-009 an existing row always resolves
+    # to `unchanged`, so a suppressed historical difference no longer decorates
+    # 942 otherwise-unchanged rows with a category that implied a write.
     identity_categories = (
-        [CATEGORY_PITCHER_IDENTITY] if pitcher_identity_action else []
+        [CATEGORY_PITCHER_IDENTITY] if identity.is_mutation(identity_plan) else []
     )
 
     # ── Insert ──────────────────────────────────────────────────────────────
@@ -531,11 +546,14 @@ def plan_fingerprint(plans) -> str:
             tuple(plan.get('mutation_categories') or ()),
             plan.get('blocked_reason') or '',
             plan.get('mutation_digest') or '',
+            # The identity decision and the values it would write. Without this
+            # a reviewed fingerprint authorized only the GameLog half of a run.
+            identity.fingerprint_component(plan.get('pitcher_identity')),
         )
         for plan in plans or ()
     )
     encoded = json.dumps(
-        [PARITY_CONTRACT_VERSION, payload],
+        [PARITY_CONTRACT_VERSION, COMPLETE_PLAN_VERSION, payload],
         sort_keys=True, separators=(',', ':'), default=str,
     )
     return hashlib.sha256(encoded.encode('utf-8')).hexdigest()
@@ -578,6 +596,23 @@ def summarize(plans) -> dict:
         if plan.get('derived_companion_differences_ignored'):
             companion_ignored += 1
 
+    identity_summary = identity.summarize(
+        [plan.get('pitcher_identity') for plan in plans]
+    )
+    # A run is only "no mutations" when EVERY target is untouched. Counting the
+    # GameLog half alone is exactly how 942 planned identity writes reported as
+    # zero.
+    appearance_team_mutations = sum(
+        1 for plan in plans if plan.get('appearance_team_reason')
+    )
+    complete_mutation_count = (
+        counts[ACTION_INSERT]
+        + counts[ACTION_UPDATE]
+        + counts[ACTION_BLOCKED]
+        + identity_summary['pitcher_identity_mutations']
+        + identity_summary['pitcher_identity_blocked']
+    )
+
     return {
         'rows_planned': len(plans),
         'rows_inserted': counts[ACTION_INSERT],
@@ -596,7 +631,12 @@ def summarize(plans) -> dict:
         'innings_semantics_version': INNINGS_SEMANTICS_VERSION,
         'reconciliation_plan_version': RECONCILIATION_PLAN_VERSION,
         'parity_contract_version': PARITY_CONTRACT_VERSION,
+        'complete_plan_version': COMPLETE_PLAN_VERSION,
+        'appearance_team_mutations': appearance_team_mutations,
+        'complete_mutation_count': complete_mutation_count,
         'reconciliation_plan_fingerprint': plan_fingerprint(plans),
+        'complete_reconciliation_fingerprint': plan_fingerprint(plans),
+        **identity_summary,
     }
 
 

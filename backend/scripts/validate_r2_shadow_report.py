@@ -42,6 +42,7 @@ if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
 from services import game_log_reconciliation as reconciliation  # noqa: E402
+from services import pitcher_identity_reconciliation as identity  # noqa: E402
 
 
 EXIT_OK = 0
@@ -83,6 +84,30 @@ ACTION_UNCHANGED = reconciliation.ACTION_UNCHANGED
 ACTION_BLOCKED = reconciliation.ACTION_BLOCKED
 
 MAX_SUMMARY_UPDATE_EXAMPLES = 10
+
+# ── Pitcher identity (D-009) ────────────────────────────────────────────────
+# The retired completed-game write actions. Seeing any of them means the report
+# came from unrepaired code, which is a stop rather than something to review.
+RETIRED_IDENTITY_ACTIONS = frozenset(identity.RETIRED_WRITE_ACTIONS)
+KNOWN_IDENTITY_ACTIONS = frozenset(identity.ACTIONS)
+# The only identity action a human may be asked to review. Everything else that
+# would write is a rollout stop.
+REVIEWABLE_IDENTITY_ACTIONS = frozenset({
+    identity.ACTION_CREATE_MINIMAL_IDENTITY,
+})
+CURRENT_STATE_AUTHORITY_FIELDS = frozenset(
+    identity.CURRENT_STATE_AUTHORITY_FIELDS
+)
+ALLOWED_IDENTITY_CHANGED_FIELDS = frozenset(identity.MINIMAL_CREATION_FIELDS)
+
+MUTATION_TARGET_GAME_LOG = 'game_log'
+MUTATION_TARGET_IDENTITY = 'pitcher_identity'
+MUTATION_TARGET_APPEARANCE_TEAM = 'appearance_team'
+MUTATION_TARGET_ORDER = {
+    MUTATION_TARGET_APPEARANCE_TEAM: 0,
+    MUTATION_TARGET_GAME_LOG: 1,
+    MUTATION_TARGET_IDENTITY: 2,
+}
 
 
 class ValidationFailure(Exception):
@@ -234,6 +259,8 @@ def _validate_row(row, *, game_pk):
         )
     _require(f'row_{label}_game_pk_matches_game', game_pk, row.get('game_pk'))
 
+    identity_facts = _validate_row_identity(row, label=label)
+
     action = row.get('action')
     if action not in (ACTION_UPDATE, ACTION_UNCHANGED):
         # insert and blocked are both rollout stops; anything else is unknown.
@@ -299,7 +326,8 @@ def _validate_row(row, *, game_pk):
         # Ignored decimal drift on an unchanged row is exactly what the repair
         # is supposed to produce, so it is allowed and counted, not failed.
         return _row_facts(row, action=action, ignored=ignored,
-                          semantic=semantic, companions=companions)
+                          semantic=semantic, companions=companions,
+                          identity_facts=identity_facts)
 
     # ── action == update ────────────────────────────────────────────────────
     if not semantic:
@@ -360,11 +388,106 @@ def _validate_row(row, *, game_pk):
         )
 
     return _row_facts(row, action=action, ignored=ignored, semantic=semantic,
-                      companions=companions)
+                      companions=companions, identity_facts=identity_facts)
 
 
-def _row_facts(row, *, action, ignored, semantic, companions):
+def _validate_row_identity(row, *, label):
+    """D-009 for one appearance row.
+
+    A completed game may never plan a current-state write, so an identity
+    mutation is never excused by the GameLog action being `unchanged` — that
+    combination is exactly the hidden-mutation class this gate exists to catch.
+    """
+    action = row.get('pitcher_identity_action')
+    if action is None:
+        raise ValidationFailure(
+            f'row_{label}_reports_a_pitcher_identity_action',
+            'an identity action', None,
+        )
+    if action in RETIRED_IDENTITY_ACTIONS:
+        raise ValidationFailure(
+            f'row_{label}_pitcher_identity_action_is_retired',
+            f'not one of {sorted(RETIRED_IDENTITY_ACTIONS)}', action,
+        )
+    if action not in KNOWN_IDENTITY_ACTIONS:
+        raise ValidationFailure(
+            f'row_{label}_pitcher_identity_action_is_known',
+            sorted(KNOWN_IDENTITY_ACTIONS), action,
+        )
+    if action == identity.ACTION_BLOCKED:
+        raise ValidationFailure(
+            f'row_{label}_pitcher_identity_is_not_blocked',
+            identity.ACTION_UNCHANGED, action,
+        )
+
+    changed = list(row.get('pitcher_identity_changed_fields') or [])
+    applied = list(row.get('pitcher_identity_applied_fields') or [])
+    suppressed = list(row.get('pitcher_identity_suppressed_fields') or [])
+    is_creation = action == identity.ACTION_CREATE_MINIMAL_IDENTITY
+
+    for field in set(changed) | set(applied):
+        # A current-state field may appear only as part of a minimal creation,
+        # where it is a neutral, unverified starting value rather than a
+        # historical claim overwriting roster authority.
+        if field in CURRENT_STATE_AUTHORITY_FIELDS and not is_creation:
+            raise ValidationFailure(
+                f'row_{label}_identity_never_writes_current_state_{field}',
+                'absent', field,
+            )
+        if field not in ALLOWED_IDENTITY_CHANGED_FIELDS:
+            raise ValidationFailure(
+                f'row_{label}_identity_field_{field}_is_governed',
+                sorted(ALLOWED_IDENTITY_CHANGED_FIELDS), field,
+            )
+    for field in suppressed:
+        if field not in identity.KNOWN_IDENTITY_FIELDS:
+            raise ValidationFailure(
+                f'row_{label}_suppressed_identity_field_{field}_is_known',
+                'a known identity field', field,
+            )
+
+    _require_true(
+        f'row_{label}_identity_governed_and_safe',
+        row.get('pitcher_identity_governed_and_safe', True),
+    )
+    _require(
+        f'row_{label}_identity_blocked_reason', None,
+        row.get('pitcher_identity_blocked_reason'),
+    )
+
+    if is_creation:
+        if not changed:
+            raise ValidationFailure(
+                f'row_{label}_identity_creation_has_fields', '>= 1 field', [],
+            )
+        _require(f'row_{label}_identity_changed_fields_are_sorted',
+                 sorted(changed), changed)
+        if not row.get('pitcher_identity_mutation_digest'):
+            raise ValidationFailure(
+                f'row_{label}_identity_creation_has_a_digest',
+                'a reviewed-value digest', '',
+            )
+    else:
+        _require(f'row_{label}_identity_changed_fields', [], changed)
+        _require(f'row_{label}_identity_applied_fields', [], applied)
+        _require(
+            f'row_{label}_identity_mutation_digest', '',
+            row.get('pitcher_identity_mutation_digest') or '',
+        )
+
     return {
+        'action': action,
+        'is_mutation': action in REVIEWABLE_IDENTITY_ACTIONS,
+        'changed_fields': changed,
+        'applied_fields': applied,
+        'suppressed_fields': sorted(suppressed),
+        'suppressed_any': bool(suppressed),
+    }
+
+
+def _row_facts(row, *, action, ignored, semantic, companions, identity_facts):
+    return {
+        'identity': identity_facts,
         'action': action,
         'ignored_companion_differences': bool(ignored),
         'is_canonical_outs_correction': any(
@@ -395,8 +518,15 @@ def _validate_games(report, totals):
     counters = {
         'ignored_rows': 0, 'outs_corrections': 0, 'applied_companions': 0,
         'statistical': 0, 'authority': 0, 'provenance_only': 0,
+        'identity_rows': 0, 'identity_mutations': 0, 'identity_unchanged': 0,
+        'identity_suppressed_rows': 0,
     }
+    identity_action_counts: dict[str, int] = {}
+    identity_changed_field_counts: dict[str, int] = {}
+    suppressed_field_counts: dict[str, int] = {}
+    identity_pitchers: set = set()
     updated_rows = []
+    identity_rows = []
 
     for game in games:
         game_pk = game.get('game_pk')
@@ -464,6 +594,28 @@ def _validate_games(report, totals):
             if facts['action'] == ACTION_UPDATE:
                 updated_rows.append((game, row))
 
+            identity_facts = facts['identity']
+            counters['identity_rows'] += 1
+            identity_action_counts[identity_facts['action']] = (
+                identity_action_counts.get(identity_facts['action'], 0) + 1
+            )
+            for field in identity_facts['changed_fields']:
+                identity_changed_field_counts[field] = (
+                    identity_changed_field_counts.get(field, 0) + 1
+                )
+            for field in identity_facts['suppressed_fields']:
+                suppressed_field_counts[field] = (
+                    suppressed_field_counts.get(field, 0) + 1
+                )
+            if identity_facts['suppressed_any']:
+                counters['identity_suppressed_rows'] += 1
+            if identity_facts['is_mutation']:
+                counters['identity_mutations'] += 1
+                identity_pitchers.add(row.get('pitcher_mlb_id'))
+                identity_rows.append((game, row, identity_facts))
+            else:
+                counters['identity_unchanged'] += 1
+
         # Per-game aggregate counters must agree with the per-game row list.
         _require(f'game_{game_pk}_updated_matches_rows',
                  game_actions[ACTION_UPDATE], game.get('updated'))
@@ -510,6 +662,15 @@ def _validate_games(report, totals):
 
     return {
         'updated_rows': updated_rows,
+        'identity_rows': identity_rows,
+        'identity_action_counts': dict(sorted(identity_action_counts.items())),
+        'identity_changed_field_counts': dict(
+            sorted(identity_changed_field_counts.items())
+        ),
+        'suppressed_field_counts': dict(sorted(suppressed_field_counts.items())),
+        'identity_unique_pitchers': len(
+            {value for value in identity_pitchers if value is not None}
+        ),
         'updated_game_count': len({
             game.get('game_pk') for game, _row in updated_rows
         }),
@@ -571,6 +732,135 @@ def _validate_innings_counters(report, counters):
         'decimal_only_updates_suppressed': suppressed,
         'canonical_outs_corrections': outs,
         'derived_companion_fields_applied': applied,
+    }
+
+
+def _validate_identity_counters(report, games):
+    """Top-level identity accounting, recomputed from the rows.
+
+    Every one of these was absent before the repair, which is how 942 planned
+    Pitcher writes coexisted with `rows_updated: 0` and an empty manifest.
+    """
+    counters = games['counters']
+
+    examined = _require_nonneg_int(
+        'pitcher_identity_rows_examined',
+        report.get('pitcher_identity_rows_examined'),
+    )
+    mutations = _require_nonneg_int(
+        'pitcher_identity_mutations', report.get('pitcher_identity_mutations'),
+    )
+    creations = _require_nonneg_int(
+        'pitcher_identity_creations', report.get('pitcher_identity_creations'),
+    )
+    unchanged = _require_nonneg_int(
+        'pitcher_identity_unchanged', report.get('pitcher_identity_unchanged'),
+    )
+    suppressed = _require_nonneg_int(
+        'historical_current_state_changes_suppressed',
+        report.get('historical_current_state_changes_suppressed'),
+    )
+
+    # Retired write actions and blocked identities are rollout stops, never
+    # something to review.
+    _require('pitcher_identity_reactivations', 0,
+             report.get('pitcher_identity_reactivations'))
+    _require('pitcher_identity_metadata_updates', 0,
+             report.get('pitcher_identity_metadata_updates'))
+    _require('pitcher_identity_blocked', 0,
+             report.get('pitcher_identity_blocked'))
+
+    action_counts = dict(report.get('pitcher_identity_action_counts') or {})
+    for action in sorted(RETIRED_IDENTITY_ACTIONS):
+        if action_counts.get(action):
+            raise ValidationFailure(
+                f'pitcher_identity_action_counts_excludes_{action}', 0,
+                action_counts[action],
+            )
+    for action in action_counts:
+        if action not in KNOWN_IDENTITY_ACTIONS:
+            raise ValidationFailure(
+                'pitcher_identity_action_is_known',
+                sorted(KNOWN_IDENTITY_ACTIONS), action,
+            )
+
+    changed_counts = dict(
+        report.get('pitcher_identity_changed_fields_counts') or {}
+    )
+    for field in changed_counts:
+        if field in CURRENT_STATE_AUTHORITY_FIELDS and (
+            not action_counts.get(identity.ACTION_CREATE_MINIMAL_IDENTITY)
+        ):
+            raise ValidationFailure(
+                f'pitcher_identity_never_writes_current_state_{field}',
+                'absent', changed_counts[field],
+            )
+        if field not in ALLOWED_IDENTITY_CHANGED_FIELDS:
+            raise ValidationFailure(
+                f'pitcher_identity_changed_field_{field}_is_governed',
+                sorted(ALLOWED_IDENTITY_CHANGED_FIELDS), field,
+            )
+
+    # The rows are the authority; the counters must agree with them.
+    _require('pitcher_identity_rows_examined_matches_rows',
+             counters['identity_rows'], examined)
+    _require('pitcher_identity_mutations_matches_rows',
+             counters['identity_mutations'], mutations)
+    _require('pitcher_identity_unchanged_matches_rows',
+             counters['identity_unchanged'], unchanged)
+    _require('pitcher_identity_creations_matches_rows',
+             counters['identity_mutations'], creations)
+    _require('pitcher_identity_action_counts_match_rows',
+             games['identity_action_counts'], action_counts)
+    _require('pitcher_identity_changed_fields_counts_match_rows',
+             games['identity_changed_field_counts'], changed_counts)
+    _require('suppressed_current_state_field_counts_match_rows',
+             games['suppressed_field_counts'],
+             dict(report.get('suppressed_current_state_field_counts') or {}))
+    _require('historical_current_state_changes_suppressed_matches_rows',
+             counters['identity_suppressed_rows'], suppressed)
+    _require('pitcher_identity_unique_pitchers_affected_matches_rows',
+             games['identity_unique_pitchers'],
+             report.get('pitcher_identity_unique_pitchers_affected'))
+
+    return {
+        'pitcher_identity_rows_examined': examined,
+        'pitcher_identity_mutations': mutations,
+        'pitcher_identity_unchanged': unchanged,
+        'pitcher_identity_creations': creations,
+        'pitcher_identity_reactivations': 0,
+        'pitcher_identity_metadata_updates': 0,
+        'pitcher_identity_blocked': 0,
+        'pitcher_identity_action_counts': action_counts,
+        'pitcher_identity_changed_fields_counts': changed_counts,
+        'pitcher_identity_unique_pitchers_affected': games[
+            'identity_unique_pitchers'
+        ],
+        'historical_current_state_changes_suppressed': suppressed,
+        'suppressed_current_state_field_counts': games['suppressed_field_counts'],
+    }
+
+
+def _validate_complete_mutation_count(report, totals, identity_totals, games):
+    """One number covering every database target this run would touch."""
+    appearance_team_mutations = _require_nonneg_int(
+        'appearance_team_mutations', report.get('appearance_team_mutations'),
+    )
+    _require('appearance_team_mutations_matches_rows',
+             games['counters']['authority'], appearance_team_mutations)
+
+    expected = (
+        totals['rows_inserted'] + totals['rows_updated'] + totals['rows_blocked']
+        + identity_totals['pitcher_identity_mutations']
+        + identity_totals['pitcher_identity_blocked']
+    )
+    observed = _require_nonneg_int(
+        'complete_mutation_count', report.get('complete_mutation_count'),
+    )
+    _require('complete_mutation_count_matches_targets', expected, observed)
+    return {
+        'appearance_team_mutations': appearance_team_mutations,
+        'complete_mutation_count': observed,
     }
 
 
@@ -648,11 +938,22 @@ def _validate_publication_completeness(report):
 # ── Manifest ────────────────────────────────────────────────────────────────
 
 
-def build_manifest(report, updated_rows, aggregates) -> dict:
-    """One deterministic entry per projected update. Safe fields only."""
+def build_manifest(report, updated_rows, identity_rows, aggregates) -> dict:
+    """One deterministic entry per projected mutation, of EVERY class.
+
+    The pre-repair manifest listed GameLog updates only, so a run planning 942
+    Pitcher writes produced `updates: []`. Every entry now names its mutation
+    target, and the identity rows appear whether or not their GameLog action
+    changed.
+    """
     entries = []
     for game, row in updated_rows:
         entries.append({
+            'mutation_target': (
+                MUTATION_TARGET_APPEARANCE_TEAM
+                if row.get('appearance_team_reason')
+                else MUTATION_TARGET_GAME_LOG
+            ),
             'game_pk': game.get('game_pk'),
             'represented_date': game.get('represented_date'),
             'pitcher_mlb_id': row.get('pitcher_mlb_id'),
@@ -684,13 +985,65 @@ def build_manifest(report, updated_rows, aggregates) -> dict:
             'source_revision': game.get('source_revision'),
             'mutation_digest': row.get('mutation_digest'),
         })
+
+    for game, row, facts in identity_rows:
+        entries.append({
+            'mutation_target': MUTATION_TARGET_IDENTITY,
+            'game_pk': game.get('game_pk'),
+            'represented_date': game.get('represented_date'),
+            'pitcher_mlb_id': row.get('pitcher_mlb_id'),
+            'action': facts['action'],
+            'semantic_changed_fields': sorted(facts['changed_fields']),
+            'applied_changed_fields': sorted(facts['applied_fields']),
+            'derived_companion_fields': [],
+            'derived_companion_differences_ignored': [],
+            'suppressed_current_state_fields': facts['suppressed_fields'],
+            'mutation_categories': [
+                reconciliation.CATEGORY_PITCHER_IDENTITY,
+            ],
+            'changed_field_count': len(facts['changed_fields']),
+            'affects_published_evidence': True,
+            'governed_and_safe': bool(
+                row.get('pitcher_identity_governed_and_safe', True)
+            ),
+            'blocked_reason': row.get('pitcher_identity_blocked_reason'),
+            'is_statistical_correction': False,
+            'is_provenance_only': False,
+            'appearance_team_reason': None,
+            'source_revision': game.get('source_revision'),
+            'mutation_digest': row.get('pitcher_identity_mutation_digest'),
+        })
+
+    for entry in entries:
+        entry.setdefault('suppressed_current_state_fields', [])
     entries.sort(key=lambda entry: (
-        entry['game_pk'] or 0, entry['pitcher_mlb_id'] or 0,
+        MUTATION_TARGET_ORDER.get(entry['mutation_target'], 99),
+        entry['game_pk'] or 0,
+        entry['pitcher_mlb_id'] or 0,
     ))
 
     return {
         'reference_date': REFERENCE_DATE,
         'updated_row_count': len(entries),
+        'mutation_target_counts': {
+            target: sum(
+                1 for entry in entries if entry['mutation_target'] == target
+            )
+            for target in sorted(MUTATION_TARGET_ORDER)
+        },
+        'pitcher_identity_mutations': aggregates.get(
+            'pitcher_identity_mutations', 0
+        ),
+        'appearance_team_mutations': aggregates.get(
+            'appearance_team_mutations', 0
+        ),
+        'complete_mutation_count': aggregates.get('complete_mutation_count', 0),
+        'historical_current_state_changes_suppressed': aggregates.get(
+            'historical_current_state_changes_suppressed', 0
+        ),
+        'suppressed_current_state_field_counts': aggregates.get(
+            'suppressed_current_state_field_counts', {}
+        ),
         'updated_game_count': aggregates['updated_game_count'],
         'changed_fields_counts': aggregates['changed_fields_counts'],
         'mutation_category_counts': aggregates['mutation_category_counts'],
@@ -714,7 +1067,11 @@ def manifest_markdown(manifest) -> str:
         '# Foundation 3C R2 — update review manifest',
         '',
         f"- Reference date: {manifest['reference_date']}",
-        f"- Updated rows: {manifest['updated_row_count']}",
+        f"- Mutations: {manifest['updated_row_count']}",
+        f"- By target: {manifest.get('mutation_target_counts')}",
+        f"- Pitcher identity mutations: {manifest.get('pitcher_identity_mutations')}",
+        '- Suppressed historical current-state differences: '
+        f"{manifest.get('historical_current_state_changes_suppressed')}",
         f"- Updated games: {manifest['updated_game_count']}",
         f"- Canonical outs corrections: {manifest['canonical_outs_corrections']}",
         '- Decimal-only differences safely ignored: '
@@ -730,19 +1087,22 @@ def manifest_markdown(manifest) -> str:
             lines.append(f'- `{field}`: {count}')
         lines.append('')
     if not manifest['updates']:
-        lines.append('No updates were projected.')
+        lines.append('No mutations were projected to any database target.')
         lines.append('')
         return '\n'.join(lines)
 
     lines.append('## Updates')
     lines.append('')
-    lines.append('| Game | Date | Pitcher | Fields | Categories | Digest |')
-    lines.append('| --- | --- | --- | --- | --- | --- |')
+    lines.append(
+        '| Target | Game | Date | Pitcher | Fields | Categories | Digest |'
+    )
+    lines.append('| --- | --- | --- | --- | --- | --- | --- |')
     for entry in manifest['updates']:
         fields = ', '.join(f"`{field}`" for field in entry['semantic_changed_fields'])
         categories = ', '.join(entry['mutation_categories'])
         lines.append(
-            f"| {entry['game_pk']} | {entry['represented_date']} "
+            f"| {entry['mutation_target']} | {entry['game_pk']} "
+            f"| {entry['represented_date']} "
             f"| {entry['pitcher_mlb_id']} | {fields} | {categories} "
             f"| `{entry['mutation_digest']}` |"
         )
@@ -769,6 +1129,10 @@ def validate(report) -> dict:
     totals = _validate_row_accounting(report)
     games = _validate_games(report, totals)
     innings = _validate_innings_counters(report, games['counters'])
+    identity_totals = _validate_identity_counters(report, games)
+    complete = _validate_complete_mutation_count(
+        report, totals, identity_totals, games,
+    )
     completeness = _validate_publication_completeness(report)
 
     aggregates = {
@@ -783,12 +1147,22 @@ def validate(report) -> dict:
             'derived_companion_differences_ignored'
         ],
     }
-    manifest = build_manifest(report, games['updated_rows'], aggregates)
+    aggregates.update(identity_totals)
+    aggregates.update(complete)
+    manifest = build_manifest(
+        report, games['updated_rows'], games['identity_rows'], aggregates,
+    )
 
-    result = RESULT_PASS if totals['rows_updated'] == 0 else RESULT_REVIEW_REQUIRED
+    # PASS requires zero mutations of EVERY class. Judging on the GameLog half
+    # alone is what let 942 planned identity writes report as a clean window.
+    result = (
+        RESULT_PASS if complete['complete_mutation_count'] == 0
+        else RESULT_REVIEW_REQUIRED
+    )
     next_action = (
-        'The complete governed window projects no mutations. Foundation 3C may '
-        'proceed to selecting the next controlled sample.'
+        'The complete governed window projects no mutations to any database '
+        'target. Foundation 3C may proceed to selecting the next controlled '
+        'sample.'
         if result == RESULT_PASS else
         'R3/R4 remain blocked until Nickolis reviews the update manifest. No '
         'write is approved.'
@@ -831,6 +1205,13 @@ def validate(report) -> dict:
         'reconciliation_plan_version': report.get('reconciliation_plan_version'),
         'parity_contract_version': report.get('parity_contract_version'),
         'publication_completeness': completeness,
+        **identity_totals,
+        **complete,
+        'identity_plan_version': report.get('identity_plan_version'),
+        'complete_plan_version': report.get('complete_plan_version'),
+        'complete_reconciliation_fingerprint': report.get(
+            'complete_reconciliation_fingerprint'
+        ),
         'database_writes': 'none',
         'write_approved': False,
         'failed_invariant': None,
@@ -860,6 +1241,25 @@ def _counts_block(summary):
     ]
 
 
+def _mutation_block(summary):
+    return [
+        '### Mutations by target',
+        f"- GameLog: {summary['rows_inserted'] + summary['rows_updated']}",
+        f"- Pitcher identity: {summary['pitcher_identity_mutations']}",
+        f"- Appearance team: {summary['appearance_team_mutations']}",
+        f"- Total complete-plan mutations: {summary['complete_mutation_count']}",
+        '',
+        '### Pitcher identity detail',
+        f"- Reactivations: {summary['pitcher_identity_reactivations']}",
+        f"- Metadata updates: {summary['pitcher_identity_metadata_updates']}",
+        f"- Minimal identity creations: {summary['pitcher_identity_creations']}",
+        f"- Blocked identity entries: {summary['pitcher_identity_blocked']}",
+        '- Suppressed historical current-state differences: '
+        f"{summary['historical_current_state_changes_suppressed']}",
+        '',
+    ]
+
+
 def _innings_block(summary):
     return [
         '### Canonical innings',
@@ -875,10 +1275,15 @@ def _innings_block(summary):
 def pass_markdown(summary) -> str:
     lines = ['## FOUNDATION 3C R2 — PASS', '']
     lines += _counts_block(summary)
+    lines += _mutation_block(summary)
     lines += _innings_block(summary)
     lines += [
         '### Result',
-        '- The complete governed window projects no mutations.',
+        # Only reachable when every target is at zero — the validator refuses to
+        # classify PASS otherwise, so this sentence cannot appear over a
+        # pending Pitcher write.
+        '- The complete governed window projects no mutations to any database '
+        'target.',
         '- No database writes were performed.',
         '- Foundation 3C may proceed to selecting the next controlled sample.',
         '',
@@ -896,6 +1301,7 @@ def review_markdown(summary, manifest) -> str:
             lines.append(f'- `{field}`: {count}')
         lines.append('')
 
+    lines += _mutation_block(summary)
     lines += _innings_block(summary)
 
     updates = manifest['updates']
@@ -905,14 +1311,15 @@ def review_markdown(summary, manifest) -> str:
             f'### Updates ({len(shown)} of {len(updates)} shown)'
         )
         lines.append('')
-        lines.append('| Game | Pitcher | Fields |')
-        lines.append('| --- | --- | --- |')
+        lines.append('| Target | Game | Pitcher | Fields |')
+        lines.append('| --- | --- | --- | --- |')
         for entry in shown:
             fields = ', '.join(
                 f"`{field}`" for field in entry['semantic_changed_fields']
             )
             lines.append(
-                f"| {entry['game_pk']} | {entry['pitcher_mlb_id']} | {fields} |"
+                f"| {entry['mutation_target']} | {entry['game_pk']} "
+                f"| {entry['pitcher_mlb_id']} | {fields} |"
             )
         if len(updates) > len(shown):
             lines.append('')
@@ -951,6 +1358,8 @@ def failed_markdown(summary) -> str:
         f"- Rows updated: {summary.get('rows_updated')}",
         f"- Rows unchanged: {summary.get('rows_unchanged')}",
         f"- Rows blocked: {summary.get('rows_blocked')}",
+        f"- Pitcher identity mutations: {summary.get('pitcher_identity_mutations')}",
+        f"- Complete-plan mutations: {summary.get('complete_mutation_count')}",
         '',
         f"- Artifact: `{summary.get('artifact')}`",
         '',
@@ -976,6 +1385,8 @@ def _failure_summary(report, failure, artifact) -> dict:
         'rows_updated': report.get('rows_updated'),
         'rows_unchanged': report.get('rows_unchanged'),
         'rows_blocked': report.get('rows_blocked'),
+        'pitcher_identity_mutations': report.get('pitcher_identity_mutations'),
+        'complete_mutation_count': report.get('complete_mutation_count'),
         'database_writes': 'none',
         'write_approved': False,
         'artifact': artifact,
@@ -1049,6 +1460,12 @@ def main(argv=None) -> int:
             'reference_date': REFERENCE_DATE,
             'updated_row_count': 0,
             'updated_game_count': 0,
+            'mutation_target_counts': {},
+            'pitcher_identity_mutations': 0,
+            'appearance_team_mutations': 0,
+            'complete_mutation_count': 0,
+            'historical_current_state_changes_suppressed': 0,
+            'suppressed_current_state_field_counts': {},
             'changed_fields_counts': {},
             'mutation_category_counts': {},
             'canonical_outs_corrections': 0,

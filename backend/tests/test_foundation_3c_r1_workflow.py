@@ -365,6 +365,18 @@ def _passing_report():
                 'derived_companion_differences_ignored': (
                     ['innings_pitched'] if index < drifted_per_game[game_pk] else []
                 ),
+                'pitcher_identity_action': 'unchanged',
+                'pitcher_identity_changed_fields': [],
+                'pitcher_identity_applied_fields': [],
+                # Historical/current differences are expected here and are NOT
+                # mutations: this is exactly the population that used to become
+                # 940 metadata updates.
+                'pitcher_identity_suppressed_fields': (
+                    ['team_id'] if index % 2 == 0 else []
+                ),
+                'pitcher_identity_governed_and_safe': True,
+                'pitcher_identity_blocked_reason': None,
+                'pitcher_identity_mutation_digest': '',
             })
         games.append({
             'game_pk': game_pk,
@@ -407,6 +419,20 @@ def _passing_report():
         'authority_reconciliations': 0,
         'provenance_only_updates': 0,
         'changed_fields_counts': {},
+        'pitcher_identity_rows_examined': 38,
+        'pitcher_identity_mutations': 0,
+        'pitcher_identity_unchanged': 38,
+        'pitcher_identity_creations': 0,
+        'pitcher_identity_reactivations': 0,
+        'pitcher_identity_metadata_updates': 0,
+        'pitcher_identity_blocked': 0,
+        'pitcher_identity_action_counts': {'unchanged': 38},
+        'pitcher_identity_changed_fields_counts': {},
+        'pitcher_identity_unique_pitchers_affected': 0,
+        'historical_current_state_changes_suppressed': 21,
+        'suppressed_current_state_field_counts': {'team_id': 21},
+        'appearance_team_mutations': 0,
+        'complete_mutation_count': 0,
         'games': games,
     }
 
@@ -536,3 +562,93 @@ def test_no_summary_output_can_carry_a_credential(tmp_path):
         for pattern in ('postgres', 'password', 'authorization', 'token',
                         'secret_key'):
             assert pattern not in text
+
+
+# ═══════════════ Pitcher identity (D-009) ═══════════════════════════════════
+#
+# The original production R1 passed on GameLog convergence alone. Those same
+# rows carried identity actions write mode would have applied, so R1 now
+# requires complete database convergence.
+
+
+def test_the_repaired_production_shape_passes():
+    summary = validator.validate(_passing_report())
+    assert summary['result'] == 'PASS'
+    assert summary['pitcher_identity_mutations'] == 0
+    assert summary['complete_mutation_count'] == 0
+    # Suppressed historical differences are refused evidence, not mutations.
+    assert summary['historical_current_state_changes_suppressed'] == 21
+    assert summary['suppressed_current_state_fields_observed'] == 21
+
+
+@pytest.mark.parametrize('counter', [
+    'pitcher_identity_mutations',
+    'pitcher_identity_creations',
+    'pitcher_identity_reactivations',
+    'pitcher_identity_metadata_updates',
+    'pitcher_identity_blocked',
+    'appearance_team_mutations',
+    'complete_mutation_count',
+])
+def test_a_hidden_identity_mutation_fails_r1(counter):
+    """GameLog totals still pass; the run is not clean and R1 must say so."""
+    report = _passing_report()
+    report[counter] = 1
+    with pytest.raises(validator.ValidationFailure) as caught:
+        validator.validate(report)
+    assert caught.value.invariant == counter
+
+
+@pytest.mark.parametrize('action', ['reactivate', 'update_metadata', 'create',
+                                    'create_minimal_identity'])
+def test_a_row_carrying_an_identity_write_action_fails_r1(action):
+    report = _passing_report()
+    report['games'][0]['rows'][0]['pitcher_identity_action'] = action
+    with pytest.raises(validator.ValidationFailure) as caught:
+        validator.validate(report)
+    assert 'pitcher_identity_action' in caught.value.invariant
+
+
+def test_an_identity_changed_field_fails_r1():
+    report = _passing_report()
+    report['games'][0]['rows'][0]['pitcher_identity_changed_fields'] = ['active']
+    with pytest.raises(validator.ValidationFailure) as caught:
+        validator.validate(report)
+    assert 'identity_changed_fields' in caught.value.invariant
+
+
+def test_a_blocked_identity_fails_r1():
+    report = _passing_report()
+    report['games'][0]['rows'][0]['pitcher_identity_blocked_reason'] = (
+        'conflicting_player_identity'
+    )
+    with pytest.raises(validator.ValidationFailure) as caught:
+        validator.validate(report)
+    assert 'identity_blocked_reason' in caught.value.invariant
+
+
+def test_an_identity_action_count_fails_r1():
+    report = _passing_report()
+    report['pitcher_identity_action_counts'] = {'update_metadata': 940}
+    with pytest.raises(validator.ValidationFailure) as caught:
+        validator.validate(report)
+    assert 'update_metadata' in caught.value.invariant
+
+
+def test_the_job_summary_reports_every_mutation_target(tmp_path):
+    report = _passing_report()
+    path = tmp_path / 'r.json'
+    path.write_text(json.dumps(report))
+    assert validator.main([
+        '--report', str(path),
+        '--summary-json', str(tmp_path / 's.json'),
+        '--summary-markdown', str(tmp_path / 's.md'),
+    ]) == 0
+    markdown = (tmp_path / 's.md').read_text()
+    assert '### Mutations by target' in markdown
+    assert '- Pitcher identity: 0' in markdown
+    assert '- Reactivations: 0' in markdown
+    assert '- Metadata updates: 0' in markdown
+    assert '- Minimal identity creations: 0' in markdown
+    assert '- Blocked identity entries: 0' in markdown
+    assert 'Suppressed historical current-state differences: 21' in markdown
