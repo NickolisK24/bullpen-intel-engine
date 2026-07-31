@@ -896,3 +896,51 @@ def test_the_forensic_report_carries_no_credential_or_path(app):
         'SECRET_KEY', 'DATABASE_URL', 'Traceback', '/home/',
     ):
         assert forbidden not in encoded
+
+
+# ═══════════════ Schema fit ═════════════════════════════════════════════════
+
+
+@pytest.mark.parametrize('position_override', [False, True])
+def test_every_minimal_creation_value_fits_its_column(position_override):
+    """PostgreSQL refuses an over-length VARCHAR; SQLite accepts it silently.
+
+    A string that fits in the local test database and not in production is a
+    write that fails only where it matters, so the widths are asserted against
+    the model rather than trusted.
+    """
+    values = identity.minimal_identity_values(
+        player_mlb_id=1, line_name='A Reasonably Long Pitcher Name',
+        line_position='P', position_override=position_override,
+    )
+    columns = Pitcher.__table__.columns
+    for field, value in values.items():
+        if not isinstance(value, str):
+            continue
+        limit = getattr(columns[field].type, 'length', None)
+        assert limit is not None, field
+        assert len(value) <= limit, (field, len(value), limit)
+
+
+def test_the_creation_provenance_reaches_postgres_intact(app, monkeypatch):
+    """The exact insert that PostgreSQL rejected before this guard existed."""
+    with app.app_context():
+        _schedule(970200)
+        db.session.commit()
+        payload = boxscore([(8400, 'home', pitching_stats())])
+        player = payload['teams']['home']['players']['ID8400']
+        player['position'] = {
+            'code': 'O', 'name': 'Designated Hitter', 'abbreviation': 'DH',
+        }
+        player['person']['primaryPosition'] = player['position']
+        monkeypatch.setattr(
+            sync_service, 'mlb_client', BoxscoreClient({970200: payload}),
+        )
+
+        _write_game(970200)
+
+        created = Pitcher.query.filter_by(mlb_id=8400).one()
+        assert created.roster_status_raw_description.endswith(
+            'position_override_from_pitching_line'
+        )
+        assert len(created.roster_status_raw_description) <= 100

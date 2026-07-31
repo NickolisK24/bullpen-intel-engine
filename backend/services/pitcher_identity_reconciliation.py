@@ -133,10 +133,19 @@ BLOCKED_LOCAL_RECORD_NOT_PITCHER = 'local_record_not_pitcher'
 MINIMAL_IDENTITY_SOURCE = (
     'mlb_stats_api:completed_game_appearance_identity'
 )
+# Kept short deliberately: `roster_status_raw_description` is VARCHAR(100) and
+# this string is composed with the position-override suffix below. SQLite
+# accepts an over-length value silently; PostgreSQL refuses the insert, so the
+# combined length is asserted at import.
 MINIMAL_IDENTITY_ROSTER_DESCRIPTION = (
-    'Identity created from a completed-game appearance; current roster status '
-    'unverified'
+    'Completed-game appearance identity; roster status unverified'
 )
+POSITION_OVERRIDE_SUFFIX = '; position_override_from_pitching_line'
+
+ROSTER_DESCRIPTION_MAX_LENGTH = 100
+assert len(
+    MINIMAL_IDENTITY_ROSTER_DESCRIPTION + POSITION_OVERRIDE_SUFFIX
+) <= ROSTER_DESCRIPTION_MAX_LENGTH
 
 DEFAULT_PITCHER_POSITION = 'P'
 
@@ -264,7 +273,7 @@ def minimal_identity_values(
     position = (line_position or '').strip().upper() or DEFAULT_PITCHER_POSITION
     description = MINIMAL_IDENTITY_ROSTER_DESCRIPTION
     if position_override:
-        description = f'{description}; position_override_from_pitching_line'
+        description = f'{description}{POSITION_OVERRIDE_SUFFIX}'
     return {
         'mlb_id': player_mlb_id,
         'full_name': line_name,

@@ -377,8 +377,8 @@ def test_authoritative_two_way_pitching_line_ingests_without_bullpen_overclaim(
     assert pitcher_payload['roster_status'] == STATUS_UNKNOWN
     assert (
         pitcher_payload['roster_status_raw_description']
-        == 'Identity created from a completed-game appearance; current roster '
-           'status unverified; position_override_from_pitching_line'
+        == 'Completed-game appearance identity; roster status unverified; '
+           'position_override_from_pitching_line'
     )
     assert log_payload['games_started'] == 1
     assert log_payload['pitches_thrown'] == 87
