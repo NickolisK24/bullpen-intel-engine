@@ -753,7 +753,9 @@ deploy anything.
 6. Download the `foundation-3c-r1-shadow-validation` artifact if you want the
    full report.
 
-### Expected pass
+### Production result — PASS
+
+R1 ran against production and passed:
 
 ```
 Scope        requested 5, planned 5, exact match yes
@@ -762,7 +764,12 @@ Rows         expected 38, inserted 0, updated 0, unchanged 38, blocked 0
 Innings      decimal-only differences safely ignored 14
              canonical outs corrections 0
              statistical corrections 0
+Writes       none
 ```
+
+The five-game write that previously replayed as 14 "official corrections" now
+replays to zero mutations. The 14 differences are recognised as derived
+decimal-companion representation drift and ignored. D-008 holds in production.
 
 The job summary states the result directly. The artifact contains the raw
 shadow report, a structured validation summary, and the same summary in
@@ -779,6 +786,94 @@ credential-shaped content before upload and the run fails if anything matches.
 **R2 must not begin until R1 passes.** `GAME_DRIVEN_INGESTION_MODE` stays
 `off` throughout; R1 does not change it and does not enable the automated
 lane.
+
+## R2 full-window review from a phone
+
+R1 proved the repair for five games. Stage R2 asks the harder question: does it
+hold across the **complete governed window**, and is anything still outstanding
+there safe enough for a human to review?
+
+**Workflow:** `.github/workflows/foundation-3c-r2-full-window-shadow.yml`,
+displayed as **Foundation 3C R2 Full-Window Shadow Review**. Manual dispatch
+only — no schedule, no push, no pull-request trigger, no inputs.
+
+| | |
+|---|---|
+| scope | the normal governed window — no `--only-game-pk`, no `--max-games` |
+| reference date | 2026-07-29 |
+| mode | `shadow` |
+| permissions | `contents: read` only |
+| `GAME_DRIVEN_INGESTION_MODE` | `off` (defense in depth) |
+
+It writes no baseball data, creates no checkpoint, publishes nothing, and
+deploys nothing. It runs the merged shadow path and adds no compensating write,
+cleanup, or write-and-roll-back of its own.
+
+The counts are deliberately **not** hard-coded. Five games already carry
+completed checkpoints and normal production activity moves what is planned, so
+the invariant R2 enforces is semantic rather than arithmetic:
+
+> no decimal-only difference may become a planned mutation
+
+### Running it
+
+1. Open the repository in the GitHub mobile app or a mobile browser.
+2. Open **Actions**.
+3. Select **Foundation 3C R2 Full-Window Shadow Review**.
+4. Tap **Run workflow**, keep `main`, and confirm.
+5. Open the finished run and read the job summary.
+6. Download `foundation-3c-r2-full-window-shadow-review` when the result is
+   REVIEW REQUIRED, and send the summary and update manifest for review.
+
+### Three results
+
+| Result | Job | Meaning |
+|---|---|---|
+| **PASS** | succeeds | the whole governed window already reconciles; zero inserts, zero updates, zero blocked |
+| **REVIEW REQUIRED** | succeeds | the run was safe and one or more legitimate official corrections remain outstanding |
+| **FAILED** | fails | a foundational invariant broke — rollout stop |
+
+**A green REVIEW REQUIRED run approves nothing.** It means evidence gathering
+succeeded, not that a write is authorized. Legitimate corrections are recorded
+for a human to read, never applied and never auto-approved, because a
+correction that is individually safe can still be wrong in aggregate — and the
+only party who can judge that is the person accountable for the published
+numbers. R3/R4 stay blocked until the update manifest is reviewed.
+
+A FAILED result is a rollout stop, never a warning. Among the conditions that
+fail closed: a projected insert, a blocked or unsafe row, an unknown changed
+field, row totals that do not reconcile against the per-row detail,
+`innings_pitched` appearing as a semantic change, a derived companion applied
+without its authority moving, a game failure, a budget stop, a finality
+conflict, or missing schedule authority.
+
+### Artifacts
+
+Uploaded as `foundation-3c-r2-full-window-shadow-review`, retained 14 days,
+uploaded even when the run fails:
+
+| File | What |
+|---|---|
+| `r2-full-window-shadow.json` | the raw shadow report |
+| `r2-validation-summary.json` | structured result, counts, and failed invariant |
+| `r2-validation-summary.md` | the same summary as the job summary |
+| `r2-update-review.json` | one entry per projected update, ordered by game then pitcher |
+| `r2-update-review.md` | the manifest as a readable table |
+
+The manifest is written even when it is empty, so a reviewer never has to
+wonder whether it was withheld. Every artifact is scanned for
+credential-shaped content before upload; a match deletes the file and fails the
+job without printing what matched.
+
+**Publication completeness will read `false`, and that is correct.** R2 is
+shadow mode, so it creates no completion checkpoints and the games it reads
+stay uncheckpointed. The validator checks the completeness object for internal
+consistency and for the failures that would matter — terminal failure games,
+finality conflicts, missing schedule authority — and never rewrites it to make
+R2 look green.
+
+`GAME_DRIVEN_INGESTION_MODE` stays `off` throughout. R2 does not change it and
+does not enable the automated lane.
 
 ## Controlled parity rollout
 
