@@ -1192,6 +1192,96 @@ construction and cannot be reproduced under contract 4. That is deliberate: a
 stale authorization must fail loudly rather than silently authorize a write
 whose identity half was never really reviewed.
 
+## R4 controlled write and immediate replay
+
+R1, R2, and R3 were read-only. **R4 is the first stage that writes.**
+
+### Contract-4 authorization
+
+R3 was re-run after the fingerprint repair and passed under parity contract 4:
+five games, 43 rows all unchanged, 18 decimal-only differences ignored, three
+suppressed historical current-state differences, zero mutations on every target.
+
+| | |
+|---|---|
+| approved games | 823110, 825055, 824004, 823438, 824408 |
+| reference date | 2026-07-29 |
+| parity contract | 4 |
+| approved fingerprint | `08bf16bc730ffe4c5c024c8e1dbc000d017a1a4956878f49a988fb22a1e4adda` |
+
+The contract-3 value `2a06f7e5…c239` is **stale and prohibited**. It appears in
+this repository only in documentation and in tests proving it is refused; it is
+in no executable command, default, or fallback.
+
+### What R4 may and may not change
+
+R4 may change **governed ingestion control state only**: five work items
+complete, and publication completeness moves 5/104 → 10/99.
+
+It may not touch a single baseball-data row. No GameLog insert or update, no
+Pitcher identity creation or mutation, no appearance-team change, no correction
+provenance, no dead letter. The before/after snapshots hash four independent
+families — GameLog content, correction provenance, appearance-team authority,
+and Pitcher current state — so the closeout can say *which* one moved rather
+than only that something did.
+
+### The sequence
+
+```
+before-state snapshot (read-only, write probe refused)
+        -> preflight shadow
+        -> authorize against the contract-4 fingerprint
+        -> ONE controlled write        <- the only write, gated on authorization
+        -> after-state snapshot
+        -> immediate shadow replay
+        -> closeout validation
+```
+
+Authorization is recomputed from current database state and compared **before
+the first mutation**. The write step is unreachable unless the preflight
+validator exits zero.
+
+### Single use
+
+Preflight refuses if any selected game already carries a work item. A second
+dispatch after a successful R4 therefore stops before write, because the write
+itself created those work items.
+
+### Transaction boundary — stated honestly
+
+**The canonical writer commits per game.** `_process_one_game` issues one
+`db.session.commit()` per game, so five-game atomicity does not exist and is not
+claimed. Partial completion is genuinely reachable and is a **FAILED** result:
+R4 records exactly which games completed, runs the replay read-only to expose
+the resulting state, and stops the rollout. No automatic retry, no compensation,
+no second write, no deleted checkpoints.
+
+### Immediate replay
+
+The replay may report a later attempt number — the write left completed work
+items behind, and that is the point. It may not report a mutation of any kind.
+
+Its fingerprint must reproduce the approved value exactly. That holds because
+`plan_fingerprint` reads the plan, never work-item or checkpoint state, which
+makes fingerprint equality a stronger convergence proof than a zero-mutation
+count alone.
+
+### Closeout
+
+`r4-closeout.json` / `.md` and `r4-validation-summary.json` / `.md`, uploaded
+with all five run reports under `foundation-3c-r4-controlled-write-and-replay`,
+retained 30 days because this is a production-write record.
+
+The summary never says "no database writes were performed" — R4 writes
+checkpoint state. It says **no baseball-data rows were changed**, which is the
+true and useful claim.
+
+### After R4
+
+A successful R4 leads directly to **R5: one full shadow of the remaining 99
+unresolved games.** Do not select another small sample.
+`GAME_DRIVEN_INGESTION_MODE` stays `off`; authoritative mode remains unapproved.
+
 ## Controlled parity rollout
 
 Production remains **off** until parity validation passes. The next operator

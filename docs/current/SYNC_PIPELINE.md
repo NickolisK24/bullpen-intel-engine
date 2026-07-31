@@ -92,23 +92,26 @@ and static page publication from advancing on unproven data.
 
 ## Foundation 3C rollout workflows (manual, diagnostic, non-mutating)
 
-Three workflows exist for the staged Foundation 3C rollout:
+Four workflows exist for the staged Foundation 3C rollout:
 
 | File | Displayed name | Scope |
 |---|---|---|
 | `.github/workflows/foundation-3c-r1-shadow-validation.yml` | Foundation 3C R1 Shadow Validation | five hard-coded games |
 | `.github/workflows/foundation-3c-r2-full-window-shadow.yml` | Foundation 3C R2 Full-Window Shadow Review | the normal governed window |
 | `.github/workflows/foundation-3c-r3-controlled-sample-shadow.yml` | Foundation 3C R3 Controlled Sample Shadow | five hard-coded controlled-sample games |
+| `.github/workflows/foundation-3c-r4-controlled-write.yml` | Foundation 3C R4 Controlled Write and Replay | the same five games — **writes** |
 
-All three are **temporary manual rollout diagnostics**. All are separate from
+R1, R2, and R3 are **temporary manual rollout diagnostics**. R4 is a
+temporary manual rollout **write**, described separately below. All are separate from
 the BaseballOS Bullpen Sync workflow and none is part of the daily or postgame
 production schedule. None has a cron; none can be triggered by a push or a pull
 request; none accepts inputs. Their permissions are `contents: read`.
 
 None writes baseball data, publishes or withholds a snapshot, touches the
-appearance-ledger gate, warms a cache, or deploys. Each runs one pinned
-read-only shadow reconciliation at a hard-coded reference date, validates the
-result against a fixed contract, and reports.
+appearance-ledger gate, warms a cache, or deploys. R1, R2, and R3 each run one
+pinned read-only shadow reconciliation at a hard-coded reference date, validate
+the result against a fixed contract, and report. R4 additionally applies one
+authorized write to governed work-item state — and only that.
 
 They differ in what a green run means:
 
@@ -137,7 +140,30 @@ fingerprint, so a pre-repair value cannot be reproduced and a write authorized
 with it will be refused. R3 must be re-run to produce a fingerprint under the
 repaired contract before any write is authorized.
 
-All three are removed at Stage E once the rollout completes.
+All four are removed at Stage E once the rollout completes.
+
+### R4 is the first workflow here that intentionally writes
+
+R4 applies the five-game write R3 authorized. It may change **governed
+work-item/checkpoint state only** — five work items complete and publication
+completeness moves 5/104 → 10/99 — and may not change a single baseball-data
+row.
+
+It requires fingerprint contract version **4**; the stale contract-3
+authorization is refused and appears in no executable command. Authorization is
+recomputed and compared before the first mutation, and the write step is
+unreachable unless the preflight validator authorizes it.
+
+It runs no normal sync and no publication. It serializes on the `baseballos-sync`
+concurrency group so it cannot race the scheduled daily/postgame sync against
+the same tables. An immediate shadow replay is mandatory and must converge to
+zero mutations across every target.
+
+The canonical writer commits per game, so partial completion is possible and is
+treated as a failure that stops the rollout — never a retry.
+
+A successful R4 moves the rollout directly to a full remaining-window review of
+the 99 outstanding games.
 
 ### Pitcher identity is not written by completed games (D-009)
 
