@@ -20,6 +20,7 @@ from sqlalchemy import desc
 
 from utils.db import db
 from models.pitcher import Pitcher
+from models.game_ingestion_work_item import GameIngestionWorkItem
 from models.game_log import GameLog
 from models.play_by_play_foundation import PlayByPlayProcessedGame
 from models.postgame_processed_game import PostgameProcessedGame
@@ -40,6 +41,8 @@ from services.completed_game_context_service import (
     upsert_completed_game_context,
 )
 from services import evidence_contract
+from services import game_driven_ingestion
+from services import game_ingestion_completeness
 from services.fatigue import calculate_fatigue
 from services.game_finality import (
     FINAL_AND_USABLE,
@@ -1818,20 +1821,48 @@ def _upsert_postgame_processed_marker(
     pitcher_resolution_failures: int,
     correction_attempts_failed: int,
     sync_run_id=None,
+    correction_recheck: bool = False,
 ) -> tuple[PostgameProcessedGame, bool]:
     attempted_at = utc_now_naive()
-    attempt_count = (existing_marker.attempt_count if existing_marker else 0) or 0
-    attempt_count += 1
+    previous_status = _marker_processing_status(existing_marker)
+    prior_attempts = (existing_marker.attempt_count if existing_marker else 0) or 0
+    # A governed correction re-check of an ALREADY fully-processed game is not a
+    # retry. Counting it would burn the retry budget a genuine future failure
+    # needs — after a week inside the correction horizon every game would sit at
+    # the retry limit and the next real incomplete read would go straight to
+    # `failed`.
+    already_complete_recheck = (
+        correction_recheck
+        and previous_status == POSTGAME_MARKER_STATUS_FULLY_PROCESSED
+    )
+    attempt_count = max(
+        prior_attempts if already_complete_recheck else prior_attempts + 1, 1
+    )
     incomplete_reason = _postgame_incomplete_reason(
         pitching_lines_seen=pitching_lines_seen,
         pitcher_resolution_failures=pitcher_resolution_failures,
         correction_attempts_failed=correction_attempts_failed,
     )
-    previous_status = _marker_processing_status(existing_marker)
     processing_status = _postgame_processing_status_for_attempt(
         incomplete_reason,
         attempt_count,
     )
+    if already_complete_recheck and incomplete_reason is not None:
+        # The game was already PROVEN complete from its official box score. A
+        # correction re-check that comes back degraded is evidence about the
+        # re-read, not evidence that the proven ledger is now wrong — so the
+        # marker the appearance-ledger publication gate reads is not demoted by
+        # a transient source blip. The caller that requested the re-check still
+        # fails its own work item closed on the same shortfall, so the trust
+        # signal is preserved in the lane that owns it.
+        incomplete_reason = existing_marker.incomplete_reason
+        processing_status = POSTGAME_MARKER_STATUS_FULLY_PROCESSED
+        pitching_lines_seen = existing_marker.pitching_lines_seen or 0
+        pitcher_resolution_failures = (
+            existing_marker.pitcher_resolution_failures or 0
+        )
+        correction_attempts_failed = existing_marker.correction_attempts_failed or 0
+        logs_added = existing_marker.logs_added or 0
 
     marker = existing_marker or PostgameProcessedGame(mlb_game_pk=_game_pk(game))
     marker.game_date = game_date
@@ -1884,7 +1915,17 @@ def process_completed_game_for_postgame_refresh(
     *,
     schedule_date: date,
     sync_run_id=None,
+    force: bool = False,
 ) -> dict:
+    """Fetch one final game once and reconcile its pitching lines idempotently.
+
+    ``force`` bypasses ONLY the fully-processed / retry-limit short-circuit, so
+    a caller that owns its own completion contract — the Foundation 3C
+    game-driven lane, which re-examines recent final games inside a bounded
+    correction horizon — can re-read a game whose official line may have been
+    corrected. Every write below stays idempotent and governed: the same
+    unique key, the same correction-safety checks, the same marker.
+    """
     game_pk = _game_pk(game)
     if not game_pk:
         return {
@@ -1907,7 +1948,11 @@ def process_completed_game_for_postgame_refresh(
         }
 
     existing_marker = PostgameProcessedGame.query.filter_by(mlb_game_pk=game_pk).first()
-    if existing_marker is not None and not _postgame_marker_retryable(existing_marker):
+    if (
+        not force
+        and existing_marker is not None
+        and not _postgame_marker_retryable(existing_marker)
+    ):
         processing_status = _marker_processing_status(existing_marker)
         return {
             'game_pk': game_pk,
@@ -2024,6 +2069,7 @@ def process_completed_game_for_postgame_refresh(
         pitcher_resolution_failures=pitcher_resolution_failures,
         correction_attempts_failed=correction_attempts_failed,
         sync_run_id=sync_run_id,
+        correction_recheck=force,
     )
     db.session.flush()
 
@@ -2515,6 +2561,227 @@ def _sync_schedule_finality_preflight_enabled() -> bool:
     return os.environ.get('APP_ENV') == 'production'
 
 
+def _game_driven_lane_budget_share() -> float:
+    """Share of the ingestion budget the game-driven lane may consume.
+
+    While the lane is not yet publication-authoritative it must not starve the
+    loop that IS still authoritative, so it runs inside a bounded slice (25% by
+    default) — enough to gather Stage B/C production evidence, never enough to
+    endanger the current publication path. Once the lane is authoritative it is
+    the critical lane and may use the whole ingestion budget; whatever it does
+    not use falls through to the demoted best-effort loop.
+    """
+    raw = os.environ.get('GAME_DRIVEN_INGESTION_BUDGET_SHARE')
+    try:
+        share = float(str(raw).strip()) if raw not in (None, '') else 0.25
+    except (TypeError, ValueError):
+        share = 0.25
+    return min(max(share, 0.0), 1.0)
+
+
+def _game_driven_lane_time_budget(ingestion_budget_seconds, mode) -> float | None:
+    if ingestion_budget_seconds is None:
+        return None
+    if game_driven_ingestion.publication_authoritative(mode):
+        return float(ingestion_budget_seconds)
+    return float(ingestion_budget_seconds) * _game_driven_lane_budget_share()
+
+
+def _run_game_driven_ingestion_stage(
+    *,
+    reference_date: date,
+    runtime_budget: dict,
+    sync_run_id,
+    status: dict,
+    stage_timings: dict,
+    run_logger,
+) -> dict:
+    """Run the Foundation 3C game-driven appearance lane, if it is enabled.
+
+    Returns the lane result plus the ingestion budget that remains for the
+    (demoted) full-season pitcher loop. A failure inside the lane can never
+    abort the daily sync: it is caught, classified, and surfaced — and in
+    authoritative mode it fails the publication gate closed.
+    """
+    mode = game_driven_ingestion.ingestion_mode()
+    ingestion_budget = runtime_budget.get('ingestion_budget_seconds')
+    result = {
+        'mode': mode,
+        'report': None,
+        'completeness': None,
+        'authoritative': game_driven_ingestion.publication_authoritative(mode),
+        'remaining_ingestion_budget_seconds': ingestion_budget,
+        'completed_game_pks': (),
+        'error_class': None,
+    }
+    if mode == game_driven_ingestion.MODE_OFF:
+        status['game_driven_ingestion'] = {'status': 'disabled', 'mode': mode}
+        return result
+
+    lane_budget = _game_driven_lane_time_budget(ingestion_budget, mode)
+    stage_started = time.monotonic()
+    try:
+        report = game_driven_ingestion.run_game_driven_ingestion(
+            reference_date,
+            mode=mode,
+            time_budget_seconds=lane_budget,
+            sync_run_id=sync_run_id,
+            job_name=sync_metadata.JOB_DAILY_SYNC,
+        )
+    except Exception as exc:  # noqa: BLE001 - the daily sync must not die here
+        db.session.rollback()
+        error_class = type(exc).__name__
+        result['error_class'] = error_class
+        status['game_driven_ingestion'] = {
+            'status': 'failed',
+            'mode': mode,
+            'error_class': error_class,
+        }
+        # No exception text: it can carry paths and payload fragments.
+        run_logger.error(
+            'Game-driven ingestion lane failed (mode=%s, class=%s).',
+            mode, error_class,
+        )
+        stage_timings['game_driven_ingestion'] = round(
+            time.monotonic() - stage_started, 1
+        )
+        return result
+
+    elapsed = time.monotonic() - stage_started
+    stage_timings['game_driven_ingestion'] = round(elapsed, 1)
+    stage_timings['game_driven_fetch'] = report.get('fetch_seconds')
+    stage_timings['game_driven_extraction'] = report.get('extraction_seconds')
+    stage_timings['game_driven_persistence'] = report.get('persistence_seconds')
+    result['report'] = report
+    result['completed_game_pks'] = tuple(
+        entry['game_pk'] for entry in report.get('games') or []
+        if entry.get('status') in (
+            GameIngestionWorkItem.STATUS_COMPLETED, 'completed_with_correction',
+        )
+    )
+    if ingestion_budget is not None:
+        result['remaining_ingestion_budget_seconds'] = max(
+            float(ingestion_budget) - elapsed, 0.0
+        )
+
+    try:
+        completeness = game_ingestion_completeness.build_game_ingestion_completeness(
+            reference_date
+        )
+    except Exception as exc:  # noqa: BLE001 - proof failure must fail closed
+        db.session.rollback()
+        completeness = {
+            'represented_date': reference_date.isoformat(),
+            'publication_complete': False,
+            'decision_reasons': ['completeness_proof_unavailable'],
+            'error_class': type(exc).__name__,
+        }
+    result['completeness'] = completeness
+
+    status['game_driven_ingestion'] = {
+        'status': report.get('status'),
+        'mode': mode,
+        'games_planned': report.get('games_planned'),
+        'games_fetched': report.get('games_fetched'),
+        'games_completed': report.get('games_completed'),
+        'games_failed': report.get('games_failed'),
+        'games_remaining': report.get('games_remaining'),
+        'critical_games_remaining': report.get('critical_games_unresolved'),
+        'best_effort_games_deferred': report.get('best_effort_games_deferred'),
+        'newly_final_count': report.get('newly_final_count'),
+        'corrected_final_count': report.get('corrected_final_count'),
+        'retry_count': report.get('retry_count'),
+        'rows_inserted': report.get('rows_inserted'),
+        'rows_updated': report.get('rows_updated'),
+        'rows_unchanged': report.get('rows_unchanged'),
+        'corrections_applied': report.get('corrections_applied'),
+        'budget_stop_triggered': report.get('budget_stop_triggered'),
+        'failure_classes': report.get('failure_classes'),
+        'planner_seconds': report.get('planner_seconds'),
+        'fetch_seconds': report.get('fetch_seconds'),
+        'extraction_seconds': report.get('extraction_seconds'),
+        'persistence_seconds': report.get('persistence_seconds'),
+        'checkpoint_seconds': report.get('checkpoint_seconds'),
+        'elapsed_seconds': report.get('elapsed_seconds'),
+    }
+    status['game_ingestion_completeness'] = completeness
+    run_logger.info(
+        'Game-driven ingestion lane (mode=%s): planned=%s fetched=%s '
+        'completed=%s failed=%s remaining=%s critical_remaining=%s '
+        'inserted=%s updated=%s unchanged=%s corrections=%s '
+        'budget_stop=%s publication_complete=%s elapsed_s=%s.',
+        mode,
+        report.get('games_planned'),
+        report.get('games_fetched'),
+        report.get('games_completed'),
+        report.get('games_failed'),
+        report.get('games_remaining'),
+        report.get('critical_games_unresolved'),
+        report.get('rows_inserted'),
+        report.get('rows_updated'),
+        report.get('rows_unchanged'),
+        report.get('corrections_applied'),
+        report.get('budget_stop_triggered'),
+        completeness.get('publication_complete'),
+        report.get('elapsed_seconds'),
+    )
+    return result
+
+
+def _publication_critical_from_game_lane(
+    *, game_lane: dict, pull: dict, non_gamelog_critical_failed: int,
+) -> dict:
+    """Assemble publication-critical completeness from the game-level proof.
+
+    The canonical completeness helper is reused unchanged — this only changes
+    WHAT is counted as critical. Critical work is now governed GAMES; the
+    demoted pitcher loop contributes best-effort accounting only. Every
+    fail-closed rule (unknown fails closed, non-game-log lane failures are
+    critical, an unavailable authority is never ``complete``) is preserved.
+    """
+    report = game_lane.get('report') or {}
+    completeness = game_lane.get('completeness') or {}
+    authority_available = bool(game_lane.get('report')) and bool(completeness)
+
+    critical_total = int(completeness.get('expected_final_games') or 0)
+    critical_completed = int(completeness.get('completed_final_games') or 0)
+    critical_unresolved = int(completeness.get('unresolved_final_games') or 0)
+    critical_failed = int(completeness.get('terminal_failure_games') or 0)
+    unknown = (
+        int(completeness.get('finality_conflicts') or 0)
+        + int(completeness.get('schedule_authority_missing') or 0)
+    )
+
+    reason_codes = list(completeness.get('decision_reasons') or [])
+    if not completeness.get('publication_complete', False) and not (
+        critical_unresolved or critical_failed or unknown
+    ):
+        # The proof says withhold for a reason not expressible as a count
+        # (for example an appearance-row reconciliation shortfall). Fail closed
+        # by carrying it as unresolved critical work rather than losing it.
+        critical_unresolved = max(critical_unresolved, 1)
+
+    best_effort_total = int(pull.get('pitchers_total') or 0)
+    best_effort_deferred = (
+        int(pull.get('budget_exhausted_pitchers') or 0)
+        + int(report.get('best_effort_games_deferred') or 0)
+    )
+
+    return publication_criticality.build_publication_critical_result(
+        critical_total=critical_total,
+        critical_completed=critical_completed,
+        critical_failed=critical_failed,
+        critical_unresolved=critical_unresolved,
+        unknown_criticality=unknown,
+        best_effort_total=best_effort_total,
+        best_effort_completed=max(best_effort_total - best_effort_deferred, 0),
+        best_effort_deferred=best_effort_deferred,
+        non_gamelog_critical_failed=int(non_gamelog_critical_failed),
+        authority_available=authority_available,
+        reason_codes=reason_codes,
+    )
+
+
 def _daily_sync_runtime_budget(run_started_monotonic: float) -> dict:
     stage_budget = _daily_sync_ingestion_budget_seconds()
     total_budget = _daily_sync_total_budget_seconds()
@@ -2669,11 +2936,25 @@ def sync_recent_logs(
     sync_run_id=None,
     job_name=sync_metadata.JOB_DAILY_SYNC,
     time_budget_seconds=_OPTIONAL_INPUT_NOT_PROVIDED,
+    skip_game_pks=(),
+    best_effort_only=False,
 ):
     """
     Pull recent game logs from the MLB Stats API for every active pitcher,
     insert missing logs, and correct existing logs when MLB revises an
     authoritative stat line.
+
+    Foundation 3C status: this full-season-per-pitcher loop is NO LONGER the
+    daily publication-critical path once the game-driven lane is authoritative.
+    It is retained as the governed repair mechanism it always was good at —
+    historical backfill, off-roster arms, IL/optioned reconciliation, operator
+    replays — and the caller says so explicitly:
+
+    * ``best_effort_only`` reports every item as best-effort, so a shortfall in
+      this lane defers repair work and can never withhold the public snapshot;
+    * ``skip_game_pks`` is the explicit conflict-prevention mechanism: games the
+      authoritative game lane already reconciled in this run are not rewritten
+      here, so two writers never touch the same canonical rows.
 
     Partial-failure semantics: a single pitcher whose fetch fails, or a single
     malformed game-log record, is dead-lettered (recorded in sync_failures with
@@ -2727,10 +3008,23 @@ def sync_recent_logs(
     # code (in-memory, zero extra queries — it must not add pre-ingestion cost that
     # would worsen the very starvation this fixes). Unknown criticality is ordered
     # with critical and fails closed.
+    # The canonical roster-status criticality classifier is NOT deleted: it
+    # still orders this lane so its own repair work runs in a sensible order.
+    # What changed is what it MEANS. Once the game-driven lane is authoritative,
+    # publication completeness is driven by relevant game coverage, and every
+    # item here is best-effort regardless of roster code.
     _criticality_by_id = {
-        p.id: publication_criticality.criticality_for_roster_status(p.roster_status)
+        p.id: (
+            publication_criticality.CRITICALITY_BEST_EFFORT if best_effort_only
+            else publication_criticality.criticality_for_roster_status(p.roster_status)
+        )
         for p in pitchers
     }
+    skip_game_pks = {
+        pk for pk in (_positive_external_id(value) for value in (skip_game_pks or ()))
+        if pk is not None
+    }
+    splits_skipped_already_reconciled = 0
     pitchers = sorted(
         pitchers,
         key=lambda p: (
@@ -2909,6 +3203,15 @@ def sync_recent_logs(
                 skip_counts['missing_key'] += 1
                 continue
 
+            if _positive_external_id(game_pk) in skip_game_pks:
+                # Conflict prevention: the authoritative game lane already
+                # reconciled this game from its official box score in this same
+                # run. Rewriting it here would be a second writer on the same
+                # canonical rows.
+                splits_skipped_already_reconciled += 1
+                coverage_target_game_pks.add(_positive_external_id(game_pk))
+                continue
+
             # Process one record in isolation: a single poisoned record is
             # dead-lettered and skipped rather than aborting this pitcher or the
             # whole batch.
@@ -3007,6 +3310,9 @@ def sync_recent_logs(
         splits_seen
         - skip_counts['missing_key']
         - skip_counts['before_cutoff']
+        # A split the authoritative game lane already reconciled was never this
+        # lane's to ingest, so it must not make the canary read the lane as dead.
+        - splits_skipped_already_reconciled
     )
     ingested_splits = new_logs + corrected_logs + unchanged_logs
     dropped_at_finality = skip_counts['not_completed'] + unresolved_finality
@@ -3073,6 +3379,8 @@ def sync_recent_logs(
         'unresolved_finality': unresolved_finality,
         'splits_seen':       splits_seen,
         'splits_skipped':    dict(skip_counts),
+        'splits_skipped_already_reconciled': splits_skipped_already_reconciled,
+        'best_effort_only':  bool(best_effort_only),
         'ledger_coverage_records': ledger_coverage_records,
         'ledger_coverage_complete': ledger_coverage_complete,
         'ledger_coverage_incomplete': ledger_coverage_incomplete,
@@ -5146,12 +5454,33 @@ def run_daily_sync(
                 runtime_budget.get('remaining_total_seconds'),
                 runtime_budget.get('ingestion_budget_seconds'),
             )
+            # Foundation 3C: the publication-critical appearance lane is
+            # game-driven. It runs FIRST and, once authoritative, owns the
+            # critical budget; the full-season pitcher loop below is demoted to
+            # governed best-effort repair inside whatever budget remains.
+            game_lane = _run_game_driven_ingestion_stage(
+                reference_date=product_day.calendar_date,
+                runtime_budget=runtime_budget,
+                sync_run_id=sync_run_id,
+                status=status,
+                stage_timings=stage_timings,
+                run_logger=run_logger,
+            )
+            game_lane_authoritative = bool(game_lane['authoritative'])
+
             stage_started = time.monotonic()
             pull = sync_recent_logs(
                 days_back=days_back,
                 reference_date=product_day.calendar_date,
                 sync_run_id=sync_run_id,
-                time_budget_seconds=runtime_budget.get('ingestion_budget_seconds'),
+                time_budget_seconds=game_lane['remaining_ingestion_budget_seconds'],
+                # Explicit conflict prevention: never let the demoted loop
+                # re-write a game the authoritative lane already reconciled in
+                # this run. Two writers never touch the same canonical rows.
+                skip_game_pks=(
+                    game_lane['completed_game_pks'] if game_lane_authoritative else ()
+                ),
+                best_effort_only=game_lane_authoritative,
             )
             stage_timings['log_ingestion'] = round(time.monotonic() - stage_started, 1)
             stage_timings['log_ingestion_fetch'] = pull.get('fetch_seconds')
@@ -5266,29 +5595,45 @@ def run_daily_sync(
                 non_gamelog_records_failed = max(
                     records_failed - pull.get('records_failed', 0), 0
                 )
-                publication_critical = (
-                    publication_criticality.build_publication_critical_result(
-                        critical_total=pull.get('publication_critical_total', 0),
-                        critical_completed=max(
-                            pull.get('publication_critical_total', 0)
-                            - pull.get('critical_budget_exhausted', 0)
-                            - pull.get('unknown_budget_exhausted', 0),
-                            0,
-                        ),
-                        critical_failed=pull.get('critical_budget_exhausted', 0),
-                        critical_unresolved=pull.get('gamelog_non_budget_failed', 0),
-                        unknown_criticality=pull.get('unknown_budget_exhausted', 0),
-                        best_effort_total=pull.get('best_effort_total', 0),
-                        best_effort_completed=max(
-                            pull.get('best_effort_total', 0)
-                            - pull.get('best_effort_budget_exhausted', 0),
-                            0,
-                        ),
-                        best_effort_deferred=pull.get('best_effort_budget_exhausted', 0),
-                        non_gamelog_critical_failed=non_gamelog_records_failed,
-                        authority_available=pull.get('criticality_authority_available', True),
+                if game_lane_authoritative:
+                    # Foundation 3C: publication-critical completeness is
+                    # game-level. The demoted full-season pitcher loop
+                    # contributes ONLY best-effort accounting, so its shortfall
+                    # defers repair work instead of withholding the snapshot —
+                    # and the game-level proof withholds on its own terms.
+                    publication_critical = (
+                        _publication_critical_from_game_lane(
+                            game_lane=game_lane,
+                            pull=pull,
+                            non_gamelog_critical_failed=non_gamelog_records_failed,
+                        )
                     )
-                )
+                else:
+                    publication_critical = (
+                        publication_criticality.build_publication_critical_result(
+                            critical_total=pull.get('publication_critical_total', 0),
+                            critical_completed=max(
+                                pull.get('publication_critical_total', 0)
+                                - pull.get('critical_budget_exhausted', 0)
+                                - pull.get('unknown_budget_exhausted', 0),
+                                0,
+                            ),
+                            critical_failed=pull.get('critical_budget_exhausted', 0),
+                            critical_unresolved=pull.get('gamelog_non_budget_failed', 0),
+                            unknown_criticality=pull.get('unknown_budget_exhausted', 0),
+                            best_effort_total=pull.get('best_effort_total', 0),
+                            best_effort_completed=max(
+                                pull.get('best_effort_total', 0)
+                                - pull.get('best_effort_budget_exhausted', 0),
+                                0,
+                            ),
+                            best_effort_deferred=pull.get('best_effort_budget_exhausted', 0),
+                            non_gamelog_critical_failed=non_gamelog_records_failed,
+                            authority_available=pull.get(
+                                'criticality_authority_available', True
+                            ),
+                        )
+                    )
                 status['publication_critical'] = publication_critical
                 api_metrics = mlb_client.metrics.snapshot()
                 changed_log_count = pull['new_logs_added'] + logs_corrected

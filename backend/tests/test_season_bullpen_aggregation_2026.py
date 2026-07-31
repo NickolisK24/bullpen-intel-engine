@@ -1020,5 +1020,5 @@ def test_report_has_required_top_level_fields(app):
                 'decision_reasons', 'foundation_3_status', 'public_reader_gate',
                 'share_card_performance_gate', 'database_writes_performed'):
         assert key in s, key
-    assert s['expected_migration_head'] == 'c7b3e5a91d48'
+    assert s['expected_migration_head'] == 'b9d4e17c3a80'
     assert s['contracts']['aggregation_contract_version'] == agg.AGGREGATION_CONTRACT_VERSION

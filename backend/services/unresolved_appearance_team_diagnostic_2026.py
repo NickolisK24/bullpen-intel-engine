@@ -22,7 +22,12 @@ from utils.innings import parse_mlb_innings_to_outs
 
 
 CAPABILITY = 'unresolved_appearance_team_diagnostic_2026_v1'
-EXPECTED_MIGRATION_HEAD = 'c7b3e5a91d48'
+# Advanced by Foundation 3C (b9d4e17c3a80): the game-driven ingestion
+# work-state checkpoint is purely additive — one new table, no change to
+# game_logs, scheduled_games, or pitchers — so the schema this tool was
+# validated against is unchanged. The pin still refuses to run against an
+# unexpected head.
+EXPECTED_MIGRATION_HEAD = 'b9d4e17c3a80'
 MAX_OFFICIAL_LINES = 20
 
 RESULT_PASS = 'pass'

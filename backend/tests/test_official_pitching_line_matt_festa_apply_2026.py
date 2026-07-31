@@ -74,6 +74,11 @@ OTHER_HOME_STARTER, OTHER_AWAY_STARTER, OTHER_RELIEVER = 800011, 800012, 800013
 UNKNOWN_PERSON = 800021
 
 LEDGER_REVISION = 'c7b3e5a91d48'
+# The head the schema actually sits at. The ledger revision is no longer the tip:
+# the Foundation 3C game-driven ingestion work-state checkpoint chains onto it,
+# purely additively. The fixture seeds THIS so the repair and its post-commit
+# completeness check both see the schema production actually has.
+GOVERNED_SCHEMA_HEAD = 'b9d4e17c3a80'
 
 TEAM_NAMES = {FESTA_TEAM: 'Cleveland Guardians', FESTA_OPPONENT: 'Team116',
               BR_TEAM: 'Team109', BR_OPPONENT: 'Team110',
@@ -99,7 +104,7 @@ def app():
             'CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL)'))
         db.session.execute(sa.text(
             'INSERT INTO alembic_version (version_num) VALUES (:v)'),
-            {'v': LEDGER_REVISION})
+            {'v': GOVERNED_SCHEMA_HEAD})
         db.session.commit()
         try:
             yield flask_app
@@ -498,7 +503,7 @@ def test_5_the_exact_target_scope_is_immutable():
     assert contract['planner_capability'] == planner.CAPABILITY
     assert contract['approved_planner_git_sha'] == (
         'c4a0b3e4e33d64c5cecea3151ff3c30df7e0c5fa')
-    assert contract['migration_head'] == LEDGER_REVISION
+    assert contract['migration_head'] == GOVERNED_SCHEMA_HEAD
     assert contract['amendment_id'] == 'post_repair_matt_festa_earned_runs_2026'
     action = contract['action']
     assert action['action_id'] == 'gamelog:update:44140:822952:670036'

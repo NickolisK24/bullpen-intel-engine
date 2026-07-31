@@ -552,7 +552,7 @@ def test_report_has_required_fields(app):
                 'planned_completed_context', 'bounded_game_preview', 'fingerprint',
                 'decision_reasons', 'next_step', 'database_writes_performed'):
         assert key in s, key
-    assert s['expected_migration_head'] == 'c7b3e5a91d48'
+    assert s['expected_migration_head'] == 'b9d4e17c3a80'
     assert s['planned_completed_context'] == {'create_count': 0, 'refresh_count': 0,
                                               'skipped_count': 47}
 

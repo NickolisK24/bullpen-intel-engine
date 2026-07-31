@@ -62,7 +62,12 @@ from utils.db import db
 
 # ── Governance constants ──────────────────────────────────────────────────────
 CONFIRMATION_PHRASE = 'RUN_2026_APPEARANCE_TEAM_BACKFILL'
-EXPECTED_MIGRATION_HEAD = 'c7b3e5a91d48'
+# Advanced by Foundation 3C (b9d4e17c3a80): the game-driven ingestion
+# work-state checkpoint is purely additive — one new table, no change to
+# game_logs, scheduled_games, or pitchers — so the schema this tool was
+# validated against is unchanged. The pin still refuses to run against an
+# unexpected head.
+EXPECTED_MIGRATION_HEAD = 'b9d4e17c3a80'
 
 DEFAULT_START_DATE = date(2026, 1, 1)
 DEFAULT_END_DATE = date(2026, 12, 31)

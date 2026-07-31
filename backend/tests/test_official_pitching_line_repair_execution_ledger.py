@@ -23,6 +23,7 @@ from utils.db import db
 REPO_ROOT = Path(__file__).resolve().parents[2]
 MIGRATIONS_DIR = REPO_ROOT / 'backend' / 'migrations' / 'versions'
 LEDGER_REVISION = 'c7b3e5a91d48'
+CURRENT_ALEMBIC_HEAD = 'b9d4e17c3a80'
 PRIOR_REVISION = 'a4f1c7e9b3d2'
 MIGRATION_PATH = (MIGRATIONS_DIR
                   / f'{LEDGER_REVISION}_add_official_pitching_line_repair_executions.py')
@@ -168,7 +169,11 @@ def test_the_ledger_migration_chains_onto_the_prior_head_as_the_single_head():
         if down:
             downs.update(re.findall(r"'([^']+)'", down.group(1)))
     heads = [r for r in revisions if r not in downs]
-    assert heads == [LEDGER_REVISION]
+    # The ledger migration is no longer the tip — the game-driven ingestion
+    # work-state checkpoint chains onto it — but chain integrity (exactly one
+    # head, and this migration still chaining onto its prior revision) is what
+    # this guard exists for, and both still hold.
+    assert heads == [CURRENT_ALEMBIC_HEAD]
 
 
 def test_the_ledger_migration_is_additive_and_reversible():

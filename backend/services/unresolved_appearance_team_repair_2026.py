@@ -26,7 +26,12 @@ from utils.db import db
 
 CAPABILITY = 'unresolved_appearance_team_repair_2026_v1'
 CONTRACT_VERSION = 'unresolved_appearance_team_repair_2026.v1'
-EXPECTED_MIGRATION_HEAD = 'c7b3e5a91d48'
+# Advanced by Foundation 3C (b9d4e17c3a80): the game-driven ingestion
+# work-state checkpoint is purely additive — one new table, no change to
+# game_logs, scheduled_games, or pitchers — so the schema this tool was
+# validated against is unchanged. The pin still refuses to run against an
+# unexpected head.
+EXPECTED_MIGRATION_HEAD = 'b9d4e17c3a80'
 CONFIRMATION_PHRASE = 'RUN_UNRESOLVED_APPEARANCE_TEAM_REPAIR_2026'
 
 RESULT_PASS = 'pass'

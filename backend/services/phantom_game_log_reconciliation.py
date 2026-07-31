@@ -36,7 +36,12 @@ from utils.db import db
 
 CAPABILITY = 'phantom_game_log_reconciliation_v1'
 CONTRACT_VERSION = 'phantom_game_log_reconciliation.v1'
-EXPECTED_MIGRATION_HEAD = 'c7b3e5a91d48'
+# Advanced by Foundation 3C (b9d4e17c3a80): the game-driven ingestion
+# work-state checkpoint is purely additive — one new table, no change to
+# game_logs, scheduled_games, or pitchers — so the schema this tool was
+# validated against is unchanged. The pin still refuses to run against an
+# unexpected head.
+EXPECTED_MIGRATION_HEAD = 'b9d4e17c3a80'
 CONFIRMATION_PHRASE = 'RUN_PHANTOM_GAME_LOG_RECONCILIATION'
 
 RESULT_PASS = 'pass'

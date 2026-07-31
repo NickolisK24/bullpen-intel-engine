@@ -238,7 +238,7 @@ def test_fresh_schema_has_one_alembic_head():
         if down:
             downs.add(down.group(1))
     heads = [r for r in revs if r not in downs]
-    assert heads == ['c7b3e5a91d48']
+    assert heads == ['b9d4e17c3a80']
 
 
 # ===========================================================================

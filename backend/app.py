@@ -157,6 +157,7 @@ def create_app(config_name=None):
     from models.official_pitching_line_repair_execution import (
         OfficialPitchingLineRepairExecution,
     )
+    from models.game_ingestion_work_item import GameIngestionWorkItem
 
     from api.bullpen import bullpen_bp
     from api.prospects import prospects_bp
