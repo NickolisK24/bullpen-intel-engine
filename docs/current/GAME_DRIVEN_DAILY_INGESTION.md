@@ -853,6 +853,113 @@ Authoritative mode is unapproved. It is the only mode that changes who decides
 whether a snapshot publishes, so it does not follow automatically from a
 successful write mode.
 
+## Cycle integration points
+
+The lane is reached through **one service call per sync cycle**. It is never
+invoked as a second, parallel ingestion command, and `scripts/game_driven_ingestion.py`
+is an operator tool, not part of any automated cycle.
+
+| Cycle | Integration point | Writing modes | Ordering |
+|---|---|---|---|
+| daily sync | `services/sync.py::run_daily_sync` | supported | **before** the pitcher loop |
+| postgame refresh | `services/sync.py::run_postgame_refresh` | **refused** | **after** the postgame sweep |
+| morning schedule-only refresh | none | — | — |
+| Tonight refresh | none | — | — |
+| explicit backfill | **shares the postgame point** | **refused** | after the sweep |
+| intraday audit | none | — | — |
+
+> **Backfill shares the postgame entry point.** The workflow's explicit backfill
+> step runs `run_postgame_refresh.py --date`, which is the same function as the
+> scheduled postgame refresh. Adding the lane to that function therefore put it
+> on the backfill path too. This is inert while the lane is `off`, and writing
+> modes are refused on that cycle regardless — but **any activation must set
+> `GAME_DRIVEN_INGESTION_MODE: 'off'` explicitly on the backfill step**, because
+> backfill will not inherit `off` merely by being a different workflow step.
+> `test_explicit_backfill_shares_the_postgame_entry_point` pins this so the
+> requirement cannot be forgotten silently.
+
+### The postgame integration point
+
+Foundation 3C wired the lane into the daily sync only. The postgame refresh —
+the cycle that actually ingests completed games overnight, and therefore the
+cycle that produces most of the lane's candidates — had **no integration point
+at all**. It was added afterwards, off by default, as a prerequisite for any
+automated shadow activation: without it, a postgame shadow cycle would have
+produced an artifact describing a lane that never ran.
+
+Two properties make it safe there.
+
+**It runs after the legacy sweep, not before it.** The postgame sweep is that
+cycle's writer and it commits per game. A lane placed ahead of it would project
+every one of those rows as an insert the sweep is about to perform anyway —
+noise, not evidence, and a projection that could never satisfy a clean-cycle
+contract. Reading after the writer asks the question worth asking overnight:
+*given what the current path just wrote, what would the game-driven lane do?*
+The daily sync's ordering is deliberately the opposite, because there the game
+lane is the one that becomes authoritative and the pitcher loop is demoted
+behind it.
+
+**Writing modes are refused on the postgame cycle.** The daily sync can host a
+writing game lane because it has an explicit conflict-prevention mechanism —
+`skip_game_pks`, so the demoted pitcher loop never rewrites a game the lane just
+reconciled. The postgame sweep has no equivalent. Rather than allow two writers
+to reach the same canonical rows, `write` and `authoritative` are refused on
+that cycle, **before any MLB request and before any write**, with the reason
+`write_mode_unsupported_for_cycle`. A refused lane is also forced
+non-authoritative, so it can never take over a publication gate it never ran.
+Lifting that refusal requires building postgame conflict prevention first, in
+its own reviewed change.
+
+### Postgame lane budget
+
+The postgame refresh has never had a total-process runtime budget; its stages
+are bounded by the number of unprocessed completed games. The game-driven lane
+is different — it plans from the schedule ledger and can discover an arbitrarily
+large correction window — so it is given an explicit bounded slice,
+`POSTGAME_REFRESH_INGESTION_BUDGET_SECONDS` (default **600s**), further reduced
+by `GAME_DRIVEN_INGESTION_BUDGET_SHARE` while the lane is not authoritative.
+
+This is a safety bound, not a performance tuning knob. Reaching it is a clean,
+resumable, reported stop; running past the 20-minute postgame command timeout
+would kill the entire postgame refresh. The lane reports both its allocated
+budget and its remaining headroom so the right value can be chosen from observed
+production behaviour rather than guessed.
+
+### What the cycle reports
+
+Both cycles attach the lane result at `sync.game_driven_ingestion` in the sync
+status. It is one object, not a competing report, and it carries the identity
+(`mode`, `job_name`, `writes_enabled`, `publication_authoritative`), the plan
+and execution counts, **every mutation target**, the control-state counts, the
+five version constants, the run fingerprint, and the budget allocation and
+headroom.
+
+The fingerprint recorded there is **evidence identity only**. It has never been,
+and can never become, authorization for a write.
+
+Nothing in the reported object may carry credentials, connection strings,
+headers, raw payloads, filesystem paths, or exception text. Failures are
+reported by safe class name.
+
+### Failure isolation
+
+In `shadow` the lane is an observer, and a defect in an observer must not cost
+the production run its data. A shadow planning, fetch, extraction, or unexpected
+failure is caught, classified, and surfaced at `sync.game_driven_ingestion`, and
+it does **not**:
+
+* change the legacy sync status;
+* change `publication_critical`;
+* withhold a snapshot the current authority would publish;
+* create a `SyncFailure` or a game-driven dead letter;
+* create or update a `GameIngestionWorkItem`;
+* advance a checkpoint;
+* change the runner exit code.
+
+`publication_critical` is only computed from the game lane when the lane is
+**authoritative**. In `off`, `shadow`, and `write` the established authority is
+unchanged.
+
 ## Operator repair procedure
 
 ```bash

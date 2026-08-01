@@ -134,6 +134,43 @@ been made.**
 operations support for observing that shadow behave. It has no workflow and is
 run deliberately.
 
+### The postgame cycle now has an integration point
+
+Shadow activation was attempted and **halted at its baseline gate**: the
+game-driven lane had an integration point in `run_daily_sync` only. The postgame
+refresh — the cycle that ingests completed games overnight, and therefore the
+source of most of the lane's candidates — had none. Wiring `shadow` into the
+workflow in that state would have produced a postgame artifact describing a lane
+that never ran, which is worse than no evidence.
+
+That integration point now exists, in `services/sync.py::run_postgame_refresh`:
+
+* **one** game-driven service call per postgame cycle, the same call the daily
+  sync makes; no second ingestion command and no second comparator;
+* placed **after** the legacy postgame sweep, which commits per game, so the
+  projection reads the rows the current path just wrote instead of front-running
+  them;
+* `write` and `authoritative` are **refused** on this cycle, before any MLB
+  request and before any write, because the postgame sweep has no
+  `skip_game_pks` equivalent and therefore no way to prevent two writers from
+  reaching the same canonical rows;
+* bounded by `POSTGAME_REFRESH_INGESTION_BUDGET_SECONDS` (default 600s) so the
+  lane can never consume the 20-minute postgame command timeout;
+* a lane failure is contained: the postgame sync status, publication authority,
+  markers, and runner exit code are unaffected.
+
+One consequence is worth stating plainly: the workflow's **explicit backfill**
+step runs `run_postgame_refresh.py --date`, the same function, so it now shares
+the postgame integration point. That is inert while the lane is `off`, and
+writing modes are refused on that cycle in any case — but a future activation
+must set `GAME_DRIVEN_INGESTION_MODE: 'off'` explicitly on the backfill step
+rather than assume it inherits the default.
+
+**Nothing was activated.** `GAME_DRIVEN_INGESTION_MODE` is still `off`,
+`.github/workflows/baseballos-sync.yml` is unchanged, and no schedule, cadence,
+mode, or publication path moved. Automated shadow activation remains a separate
+reviewed pull request, and it now has both cycles to observe.
+
 ### Pitcher identity is not written by completed games (D-009)
 
 The FIRST production R1 and R2 passed on **GameLog reconciliation only**. The
