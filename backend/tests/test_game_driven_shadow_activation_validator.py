@@ -78,6 +78,8 @@ def _lane(**overrides):
         'persistence_seconds': 0.3,
         'elapsed_seconds': 2.0,
         'execution_effects': _effects(),
+        'execution_scope': _base_scope(),
+        'projected_differences': [],
         'games': [{
             'game_pk': 930001,
             'source_revision': 'rev-1',
@@ -88,6 +90,44 @@ def _lane(**overrides):
     }
     lane.update(overrides)
     return lane
+
+
+def _base_scope():
+    """A valid one-game exact scope, matching the base lane's single game."""
+    return {
+        'scope_source': validator.POSTGAME_SCOPE_SOURCE,
+        'cycle_game_count': 1,
+        'requested_game_pks': [930001],
+        'requested_game_count': 1,
+        'excluded_game_pks': [],
+        'excluded_reason_counts': {},
+        'execution_scope_mode': 'exclusive',
+        'planned_game_pks': [930001],
+        'planned_game_count': 1,
+        'missing_requested_game_pks': [],
+        'unexpected_planned_game_pks': [],
+        'execution_scope_exact_match': True,
+    }
+
+
+def _diffs(count):
+    """Safe diagnostics for ``count`` projected non-unchanged rows."""
+    return [
+        {
+            'game_pk': 930001,
+            'pitcher_mlb_id': 8000 + index,
+            'action': 'update',
+            'changed_fields': ['earned_runs'],
+            'difference_classifications': ['statistical_correction'],
+            'blocked_reason': None,
+            'pitcher_identity_action': 'unchanged',
+            'source_revision': 'rev-1',
+            'reconciliation_plan_fingerprint': 'b' * 64,
+            'target_state_digest': 'a' * 32,
+            'stored_state_digest': 'c' * 32,
+        }
+        for index in range(count)
+    ]
 
 
 def _effects(**overrides):
@@ -184,6 +224,12 @@ def test_a_clean_daily_no_work_cycle_passes():
         games_fetched=0, games_completed=0, newly_final_count=0,
         rows_expected=0, rows_unchanged=0, games=[],
         reconciliation_plan_fingerprint=None,
+        execution_scope={
+            **_base_scope(),
+            'cycle_game_count': 0, 'requested_game_pks': [],
+            'requested_game_count': 0, 'planned_game_pks': [],
+            'planned_game_count': 0, 'execution_scope_exact_match': None,
+        },
         realization=_realization(
             applicable=False, work_state='no_candidates', projected_rows=0,
             projected_unchanged=0, already_matching_rows=0,
@@ -205,6 +251,12 @@ def test_a_clean_postgame_no_work_cycle_passes():
         games_fetched=0, games_completed=0, newly_final_count=0,
         rows_expected=0, rows_unchanged=0, games=[],
         reconciliation_plan_fingerprint=None, realization=None,
+        execution_scope={
+            **_base_scope(),
+            'cycle_game_count': 0, 'requested_game_pks': [],
+            'requested_game_count': 0, 'planned_game_pks': [],
+            'planned_game_count': 0, 'execution_scope_exact_match': None,
+        },
     )
     assert _validate(_summary('postgame', lane=lane), 'postgame')['result'] == PASS
 
@@ -217,7 +269,7 @@ def test_a_daily_cycle_with_projected_inserts_and_updates_passes():
     lane = _lane(
         rows_expected=5, rows_inserted=3, rows_updated=1, rows_unchanged=1,
         statistical_corrections=1, canonical_outs_corrections=1,
-        complete_mutation_count=4,
+        complete_mutation_count=4, projected_differences=_diffs(4),
         realization=_realization(
             projected_rows=5, projected_inserts=3, projected_updates=1,
             projected_unchanged=1, realized_rows=4, realized_inserts=3,
@@ -244,6 +296,7 @@ def test_the_same_projection_fails_the_postgame_contract():
 def test_a_daily_projected_insert_is_not_reported_as_a_shadow_write():
     lane = _lane(
         rows_inserted=3, rows_expected=3, rows_unchanged=0,
+        projected_differences=_diffs(3),
         realization=_realization(
             projected_rows=3, projected_inserts=3, projected_unchanged=0,
             realized_rows=3, realized_inserts=3, already_matching_rows=0,
@@ -671,6 +724,7 @@ def test_a_safe_realized_minimal_identity_creation_passes():
         rows_inserted=1, rows_unchanged=1, rows_expected=2,
         pitcher_identity_creations=1, pitcher_identity_mutations=1,
         complete_mutation_count=2, realization=realization,
+        projected_differences=_diffs(1),
     )
     assert _validate(_summary('daily', lane=lane))['result'] == PASS
 
@@ -923,3 +977,358 @@ def test_both_pass_summaries_report_zero_actual_writes():
         assert 'Game-driven dead letters created: 0' in rendered
         assert 'Write approved: no' in rendered
         assert 'Future write authorized: no' in rendered
+
+
+# ── Postgame exact-cycle scope ──────────────────────────────────────────────
+# The first postgame cycle passed every check it had and still planned the
+# wrong 112 games, because nothing checked scope. These are those checks.
+
+
+def _scope(**overrides):
+    scope = {
+        'scope_source': validator.POSTGAME_SCOPE_SOURCE,
+        'cycle_game_count': 1,
+        'requested_game_pks': [930001],
+        'requested_game_count': 1,
+        'excluded_game_pks': [],
+        'excluded_reason_counts': {},
+        'slate_dates': ['2026-06-20'],
+        'execution_scope_mode': 'exclusive',
+        'planned_game_pks': [930001],
+        'planned_game_count': 1,
+        'missing_requested_game_pks': [],
+        'unexpected_planned_game_pks': [],
+        'execution_scope_exact_match': True,
+    }
+    scope.update(overrides)
+    return scope
+
+
+def _scoped_postgame(**lane_overrides):
+    base = dict(
+        job_name=sync_metadata.JOB_POSTGAME_REFRESH,
+        realization=None,
+        execution_scope=_scope(),
+    )
+    base.update(lane_overrides)
+    return _lane(**base)
+
+
+def test_a_clean_exact_scope_postgame_cycle_passes():
+    decision = _validate(
+        _summary('postgame', lane=_scoped_postgame()), 'postgame',
+    )
+    assert decision['result'] == PASS
+
+
+def test_a_clean_multi_game_exact_scope_cycle_passes():
+    scope = _scope(
+        cycle_game_count=3, requested_game_pks=[930001, 930002, 930003],
+        requested_game_count=3, planned_game_pks=[930001, 930002, 930003],
+        planned_game_count=3,
+    )
+    games = [
+        {'game_pk': pk, 'source_revision': f'r{pk}',
+         'reconciliation_plan_fingerprint': 'b' * 64}
+        for pk in (930001, 930002, 930003)
+    ]
+    lane = _scoped_postgame(
+        execution_scope=scope, games=games, games_planned=3,
+        games_attempted=3, games_fetched=3, games_completed=3,
+        rows_expected=6, rows_unchanged=6,
+    )
+    assert _validate(_summary('postgame', lane=lane), 'postgame')['result'] == PASS
+
+
+def test_a_missing_scope_section_fails():
+    decision = _validate(
+        _summary('postgame', lane=_scoped_postgame(execution_scope={})),
+        'postgame',
+    )
+    assert decision['result'] == FAILED
+    assert 'postgame_scope_missing' in _invariants(decision)
+
+
+def test_a_wrong_scope_source_fails():
+    decision = _validate(
+        _summary('postgame', lane=_scoped_postgame(
+            execution_scope=_scope(scope_source='seven_day_horizon'),
+        )),
+        'postgame',
+    )
+    assert decision['result'] == FAILED
+    assert 'postgame_scope_source' in _invariants(decision)
+
+
+def test_a_correction_horizon_fan_out_fails():
+    """The exact production failure, as a validator case."""
+    scope = _scope(
+        cycle_game_count=25, requested_game_pks=[930001],
+        requested_game_count=1, planned_game_count=112,
+        planned_game_pks=list(range(930001, 930113)),
+        unexpected_planned_game_pks=list(range(930002, 930113)),
+        execution_scope_exact_match=False,
+    )
+    lane = _scoped_postgame(
+        execution_scope=scope, games_planned=112, games_attempted=98,
+        games_fetched=98, games_completed=98, games_remaining=14,
+        budget_stop_triggered=True,
+    )
+    decision = _validate(_summary('postgame', lane=lane), 'postgame')
+    assert decision['result'] == FAILED
+    failed = _invariants(decision)
+    assert 'postgame_scope_fan_out' in failed
+    assert 'postgame_scope_unexpected_planned_game' in failed
+    assert 'postgame_scope_exact_match' in failed
+
+
+def test_a_missing_requested_game_fails():
+    decision = _validate(
+        _summary('postgame', lane=_scoped_postgame(
+            execution_scope=_scope(
+                missing_requested_game_pks=[930009],
+                execution_scope_exact_match=False,
+            ),
+        )),
+        'postgame',
+    )
+    assert decision['result'] == FAILED
+    assert 'postgame_scope_missing_requested_game' in _invariants(decision)
+
+
+def test_an_unexpected_planned_game_fails():
+    decision = _validate(
+        _summary('postgame', lane=_scoped_postgame(
+            execution_scope=_scope(
+                unexpected_planned_game_pks=[930099],
+                execution_scope_exact_match=False,
+            ),
+        )),
+        'postgame',
+    )
+    assert decision['result'] == FAILED
+    assert 'postgame_scope_unexpected_planned_game' in _invariants(decision)
+
+
+def test_exact_scope_match_false_fails():
+    decision = _validate(
+        _summary('postgame', lane=_scoped_postgame(
+            execution_scope=_scope(execution_scope_exact_match=False),
+        )),
+        'postgame',
+    )
+    assert decision['result'] == FAILED
+    assert 'postgame_scope_exact_match' in _invariants(decision)
+
+
+def test_a_duplicate_requested_game_fails():
+    decision = _validate(
+        _summary('postgame', lane=_scoped_postgame(
+            execution_scope=_scope(
+                requested_game_pks=[930001, 930001], requested_game_count=2,
+                cycle_game_count=2,
+            ),
+        )),
+        'postgame',
+    )
+    assert decision['result'] == FAILED
+    assert 'postgame_scope_duplicate_request' in _invariants(decision)
+
+
+def test_a_non_deterministic_scope_order_fails():
+    decision = _validate(
+        _summary('postgame', lane=_scoped_postgame(
+            execution_scope=_scope(
+                requested_game_pks=[930003, 930001], requested_game_count=2,
+                cycle_game_count=2, planned_game_count=2,
+            ),
+            games_planned=2, games_attempted=2, games_fetched=2,
+            games_completed=2,
+        )),
+        'postgame',
+    )
+    assert decision['result'] == FAILED
+    assert 'postgame_scope_not_deterministic' in _invariants(decision)
+
+
+def test_a_scope_count_mismatch_fails():
+    decision = _validate(
+        _summary('postgame', lane=_scoped_postgame(
+            execution_scope=_scope(requested_game_count=7),
+        )),
+        'postgame',
+    )
+    assert decision['result'] == FAILED
+    assert 'postgame_scope_count_mismatch' in _invariants(decision)
+
+
+def test_a_scope_larger_than_the_cycle_fails():
+    decision = _validate(
+        _summary('postgame', lane=_scoped_postgame(
+            execution_scope=_scope(
+                cycle_game_count=1, requested_game_pks=[930001, 930002],
+                requested_game_count=2, planned_game_count=2,
+            ),
+            games_planned=2, games_attempted=2, games_fetched=2,
+            games_completed=2,
+        )),
+        'postgame',
+    )
+    assert decision['result'] == FAILED
+    assert 'postgame_scope_exceeds_cycle' in _invariants(decision)
+
+
+def test_an_unaccounted_cycle_game_fails():
+    """Every cycle game is requested or excluded. Vanishing is not allowed."""
+    decision = _validate(
+        _summary('postgame', lane=_scoped_postgame(
+            execution_scope=_scope(cycle_game_count=5),
+        )),
+        'postgame',
+    )
+    assert decision['result'] == FAILED
+    assert 'postgame_scope_accounting' in _invariants(decision)
+
+
+def test_an_unnamed_exclusion_fails():
+    decision = _validate(
+        _summary('postgame', lane=_scoped_postgame(
+            execution_scope=_scope(
+                cycle_game_count=2,
+                excluded_game_pks=[{'game_pk': 930002}],
+            ),
+        )),
+        'postgame',
+    )
+    assert decision['result'] == FAILED
+    assert 'postgame_scope_unnamed_exclusion' in _invariants(decision)
+
+
+def test_named_exclusions_pass():
+    lane = _scoped_postgame(
+        execution_scope=_scope(
+            cycle_game_count=3,
+            excluded_game_pks=[
+                {'game_pk': 930002, 'reason': 'incomplete_after_writer'},
+                {'game_pk': 930003, 'reason': 'failed_marker'},
+            ],
+            excluded_reason_counts={
+                'incomplete_after_writer': 1, 'failed_marker': 1,
+            },
+        ),
+    )
+    assert _validate(_summary('postgame', lane=lane), 'postgame')['result'] == PASS
+
+
+def test_a_zero_candidate_postgame_cycle_passes_with_no_candidates():
+    scope = _scope(
+        cycle_game_count=0, requested_game_pks=[], requested_game_count=0,
+        planned_game_pks=[], planned_game_count=0,
+        execution_scope_exact_match=None,
+    )
+    lane = _scoped_postgame(
+        execution_scope=scope, games_discovered=0, games_planned=0,
+        games_attempted=0, games_fetched=0, games_completed=0,
+        newly_final_count=0, rows_expected=0, rows_unchanged=0, games=[],
+        reconciliation_plan_fingerprint=None,
+    )
+    decision = _validate(_summary('postgame', lane=lane), 'postgame')
+    assert decision['result'] == PASS
+    assert decision['work_state'] == validator.WORK_STATE_NO_CANDIDATES
+
+
+def test_the_scope_source_constant_is_imported_from_the_service():
+    from services import sync as sync_service
+
+    assert validator.POSTGAME_SCOPE_SOURCE is sync_service.POSTGAME_SCOPE_SOURCE
+
+
+# ── Safe diagnostics are required for any nonzero projection ────────────────
+
+
+def _difference(**overrides):
+    entry = {
+        'game_pk': 930001,
+        'pitcher_mlb_id': 8001,
+        'action': 'update',
+        'changed_fields': ['earned_runs'],
+        'difference_classifications': ['statistical_correction'],
+        'blocked_reason': None,
+        'pitcher_identity_action': 'unchanged',
+        'source_revision': 'rev-1',
+        'reconciliation_plan_fingerprint': 'b' * 64,
+        'target_state_digest': 'a' * 32,
+        'stored_state_digest': 'c' * 32,
+    }
+    entry.update(overrides)
+    return entry
+
+
+def test_a_nonzero_projection_without_diagnostics_fails():
+    """The first cycle reported one update and nothing about which row."""
+    lane = _scoped_postgame(rows_updated=1, rows_unchanged=1, rows_expected=2)
+    decision = _validate(_summary('postgame', lane=lane), 'postgame')
+    assert decision['result'] == FAILED
+    assert 'projected_difference_diagnostics_missing' in _invariants(decision)
+
+
+def test_incomplete_diagnostics_fail():
+    lane = _scoped_postgame(
+        rows_updated=2, rows_unchanged=0, rows_expected=2,
+        projected_differences=[_difference()],
+    )
+    decision = _validate(_summary('postgame', lane=lane), 'postgame')
+    assert decision['result'] == FAILED
+    assert 'projected_difference_diagnostics_incomplete' in _invariants(decision)
+
+
+@pytest.mark.parametrize('field', validator.DIFFERENCE_REQUIRED_FIELDS)
+def test_a_diagnostic_missing_a_required_field_fails(field):
+    entry = _difference()
+    entry.pop(field)
+    lane = _lane(
+        rows_updated=1, rows_unchanged=1, rows_expected=2,
+        projected_differences=[entry],
+        realization=_realization(
+            projected_updates=1, projected_unchanged=1, projected_rows=2,
+            realized_updates=1, realized_rows=1, already_matching_rows=1,
+        ),
+    )
+    decision = _validate(_summary('daily', lane=lane))
+    assert decision['result'] == FAILED
+    assert f'projected_difference_missing_field:{field}' in _invariants(decision)
+
+
+@pytest.mark.parametrize('field', validator.DIFFERENCE_FORBIDDEN_FIELDS)
+def test_a_diagnostic_carrying_raw_values_fails(field):
+    entry = _difference(**{field: 'anything at all'})
+    lane = _lane(
+        rows_updated=1, rows_unchanged=1, rows_expected=2,
+        projected_differences=[entry],
+        realization=_realization(
+            projected_updates=1, projected_unchanged=1, projected_rows=2,
+            realized_updates=1, realized_rows=1, already_matching_rows=1,
+        ),
+    )
+    decision = _validate(_summary('daily', lane=lane))
+    assert decision['result'] == FAILED
+    assert f'projected_difference_carries_values:{field}' in _invariants(decision)
+
+
+def test_a_clean_cycle_needs_no_diagnostics():
+    """Nothing projected, nothing to explain."""
+    assert _validate(
+        _summary('postgame', lane=_scoped_postgame()), 'postgame',
+    )['result'] == PASS
+
+
+def test_a_daily_projection_with_full_diagnostics_passes():
+    lane = _lane(
+        rows_updated=1, rows_unchanged=1, rows_expected=2,
+        projected_differences=[_difference()],
+        realization=_realization(
+            projected_updates=1, projected_unchanged=1, projected_rows=2,
+            realized_updates=1, realized_rows=1, already_matching_rows=1,
+        ),
+    )
+    assert _validate(_summary('daily', lane=lane))['result'] == PASS

@@ -242,9 +242,30 @@ pass, every excluded game carrying a named reason. Non-unchanged projected rows
 are now identified by game, pitcher, canonical field names, classification,
 source revision, and digests, with no values.
 
-**Reactivation is a separate reviewed decision.** Neither the budget cap nor the
-lane share was raised: a larger budget would have hidden the scope defect rather
-than fixed it.
+**Neither the budget cap nor the lane share was raised**: a larger budget would
+have hidden the scope defect rather than fixed it.
+
+### Both cycles are observing again
+
+Postgame shadow is reactivated on that exact-cycle scope. `daily` and `postgame`
+runner steps are both `'shadow'`; backfill remains `'off'`. Activation
+validation, credential scanning, job summary, artifact upload, and the final
+health gate cover both cycles again, still after the established production
+gates and still under `always()`.
+
+Postgame receives only the games its own refresh cycle governs and its writer
+finished — the seven-day correction horizon does not fan out into it, and daily
+retains that observation. The lane still runs after the postgame writer, still
+refuses writing modes on that cycle, and a clean cycle still requires zero
+projected mutations.
+
+Any nonzero projection now fails activation **and** must be attributable: the
+validator refuses a projection it cannot explain, requiring one safe diagnostic
+per non-unchanged row and rejecting any that carries raw values.
+
+Rollback is unchanged — set those step environments back to `'off'`, no database
+cleanup required. **Postgame observation restarts from this reactivation**, and
+automated write and authoritative modes both remain unapproved.
 
 ### Pitcher identity is not written by completed games (D-009)
 
