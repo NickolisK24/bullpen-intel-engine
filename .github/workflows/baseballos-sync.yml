@@ -211,17 +211,16 @@ jobs:
           SECRET_KEY: ${{ secrets.SECRET_KEY }}
           ADMIN_API_TOKEN: ${{ secrets.BASEBALLOS_ADMIN_API_TOKEN }}
           AUTO_SYNC: 'false'
-          # TEMPORARILY OFF. The first scheduled postgame shadow cycle failed
-          # safely: the lane planned the planner's full 7-day correction
-          # horizon (112 games) rather than this cycle's own completed games,
-          # exhausted its 150-second allocation after 98, and left 14 remaining.
-          # The established postgame sync succeeded, publication was verified,
-          # and shadow wrote nothing — but a cycle that fails on scope at
-          # 02:00, 04:00, and 06:00 every night is noise, not evidence.
+          # Automated game-driven shadow, reactivated on exact-cycle scope.
+          # The lane runs AFTER the existing completed-game writer over ONLY
+          # the games this refresh cycle governs and the writer finished — not
+          # the planner's rolling correction horizon, which is what exhausted
+          # the first cycle's allocation at 98 of 112 games. A clean cycle here
+          # projects nothing at all.
           #
-          # Off until the exact-cycle scope repair has its own reviewed
-          # reactivation. Daily shadow is unaffected and stays on.
-          GAME_DRIVEN_INGESTION_MODE: 'off'
+          # Writing modes are refused on this cycle regardless; shadow is the
+          # only mode it can observe in.
+          GAME_DRIVEN_INGESTION_MODE: 'shadow'
           POSTGAME_SYNC_SUMMARY_PATH: artifacts/game-driven-shadow/postgame-sync-summary.json
           POSTGAME_REFRESH_COMMAND_TIMEOUT: 20m
         run: |
@@ -502,10 +501,7 @@ jobs:
 
       - name: Validate game-driven shadow activation cycle
         id: activation-validate
-        # Daily only. Postgame shadow is temporarily off, and an intentionally
-        # disabled lane is not an activation failure — validating it would
-        # manufacture one at 02:00, 04:00, and 06:00 every night.
-        if: ${{ always() && ((github.event_name == 'workflow_dispatch' && inputs.mode == 'daily') || (github.event_name == 'schedule' && github.event.schedule == '0 10 * * *')) }}
+        if: ${{ always() && ((github.event_name == 'workflow_dispatch' && (inputs.mode == 'daily' || inputs.mode == 'postgame')) || (github.event_name == 'schedule' && (github.event.schedule == '0 10 * * *' || github.event.schedule == '0 2,4,6 * * *'))) }}
         env:
           ACTIVATION_DIR: artifacts/game-driven-shadow
           DAILY_RUNNER_EXIT: ${{ steps.daily-sync.outputs.runner_exit_code }}
@@ -546,10 +542,7 @@ jobs:
 
       - name: Scan activation artifacts for secrets
         id: activation-scan
-        # Daily only. Postgame shadow is temporarily off, and an intentionally
-        # disabled lane is not an activation failure — validating it would
-        # manufacture one at 02:00, 04:00, and 06:00 every night.
-        if: ${{ always() && ((github.event_name == 'workflow_dispatch' && inputs.mode == 'daily') || (github.event_name == 'schedule' && github.event.schedule == '0 10 * * *')) }}
+        if: ${{ always() && ((github.event_name == 'workflow_dispatch' && (inputs.mode == 'daily' || inputs.mode == 'postgame')) || (github.event_name == 'schedule' && (github.event.schedule == '0 10 * * *' || github.event.schedule == '0 2,4,6 * * *'))) }}
         env:
           ACTIVATION_DIR: artifacts/game-driven-shadow
         run: |
@@ -574,10 +567,7 @@ jobs:
           fi
 
       - name: Append activation summary
-        # Daily only. Postgame shadow is temporarily off, and an intentionally
-        # disabled lane is not an activation failure — validating it would
-        # manufacture one at 02:00, 04:00, and 06:00 every night.
-        if: ${{ always() && ((github.event_name == 'workflow_dispatch' && inputs.mode == 'daily') || (github.event_name == 'schedule' && github.event.schedule == '0 10 * * *')) }}
+        if: ${{ always() && ((github.event_name == 'workflow_dispatch' && (inputs.mode == 'daily' || inputs.mode == 'postgame')) || (github.event_name == 'schedule' && (github.event.schedule == '0 10 * * *' || github.event.schedule == '0 2,4,6 * * *'))) }}
         env:
           ACTIVATION_DIR: artifacts/game-driven-shadow
           CYCLE_KIND: ${{ steps.activation-validate.outputs.cycle_kind }}
@@ -600,10 +590,7 @@ jobs:
           fi
 
       - name: Upload game-driven shadow activation artifacts
-        # Daily only. Postgame shadow is temporarily off, and an intentionally
-        # disabled lane is not an activation failure — validating it would
-        # manufacture one at 02:00, 04:00, and 06:00 every night.
-        if: ${{ always() && ((github.event_name == 'workflow_dispatch' && inputs.mode == 'daily') || (github.event_name == 'schedule' && github.event.schedule == '0 10 * * *')) }}
+        if: ${{ always() && ((github.event_name == 'workflow_dispatch' && (inputs.mode == 'daily' || inputs.mode == 'postgame')) || (github.event_name == 'schedule' && (github.event.schedule == '0 10 * * *' || github.event.schedule == '0 2,4,6 * * *'))) }}
         uses: actions/upload-artifact@v4
         with:
           name: game-driven-shadow-${{ github.run_id }}
@@ -619,10 +606,7 @@ jobs:
       # activation verdict and leaves prior step outcomes to speak for
       # themselves.
       - name: Game-driven shadow activation health gate
-        # Daily only. Postgame shadow is temporarily off, and an intentionally
-        # disabled lane is not an activation failure — validating it would
-        # manufacture one at 02:00, 04:00, and 06:00 every night.
-        if: ${{ always() && ((github.event_name == 'workflow_dispatch' && inputs.mode == 'daily') || (github.event_name == 'schedule' && github.event.schedule == '0 10 * * *')) }}
+        if: ${{ always() && ((github.event_name == 'workflow_dispatch' && (inputs.mode == 'daily' || inputs.mode == 'postgame')) || (github.event_name == 'schedule' && (github.event.schedule == '0 10 * * *' || github.event.schedule == '0 2,4,6 * * *'))) }}
         env:
           ACTIVATION_DIR: artifacts/game-driven-shadow
         run: |

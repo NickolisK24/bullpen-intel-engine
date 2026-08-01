@@ -1243,16 +1243,33 @@ and the source revision, which distinguishes that from a writer omission.
 Guessing a repair here would risk mutating real baseball data to match a
 projection whose authority has not been established.
 
-### Postgame reactivation gate
+If the same class appears again, the artifact now identifies it: the validator
+**refuses to pass any nonzero projection that cannot be attributed**, requiring
+one safe diagnostic per projected non-unchanged row carrying `game_pk`,
+`pitcher_mlb_id`, `action`, `changed_fields`, `difference_classifications`,
+`source_revision`, the fingerprint, and both digests — and failing if any of
+them carries `before`, `after`, `field_changes`, or `values`.
 
-Postgame shadow is **off** until a separate reviewed change turns it back on,
-and only once exact-scope evidence is green: bounded cycle scope, no seven-day
-fan-out, every requested game accounted for, no unexpected planned game,
-completion inside the effective allocation, zero writes, zero control-state
-effects, zero postgame projection after the writer, and the 824488 class either
-repaired or safely diagnosed.
+### Postgame shadow reactivated on exact-cycle scope
 
-Daily shadow is unaffected and stays on.
+Postgame shadow is **on again**, running over the exact-cycle scope above. The
+reactivation gate was met: bounded cycle scope, no seven-day fan-out, every
+cycle game either requested or excluded with a named reason, no unexpected
+planned game, refusal before fetch on any scope mismatch, zero writes, zero
+control-state effects, and a zero-projection convergence contract.
+
+The validator now enforces the scope itself, not merely the projection:
+`scope_source`, deterministic and unique requested identifiers, the planner's
+`execution_scope_exact_match`, no missing requested game, no unexpected planned
+game, planned count never exceeding the request, requested count never exceeding
+the cycle, complete request-plus-exclusion accounting, and a named reason on
+every exclusion. A fan-out like the first cycle's now fails on
+`postgame_scope_fan_out` rather than only on the budget it exhausted.
+
+**Postgame observation restarts from this reactivation.** Cycles observed before
+it do not count toward the write-mode gate.
+
+Daily shadow was not disturbed and keeps its correction-horizon behaviour.
 
 ### Budget reporting
 

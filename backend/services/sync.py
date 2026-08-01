@@ -2947,7 +2947,29 @@ def _run_game_driven_ingestion_stage(
         'elapsed_seconds': report.get('elapsed_seconds'),
         'remaining_headroom_seconds': report.get('remaining_budget_seconds'),
         'remaining_budget_seconds': report.get('remaining_budget_seconds'),
-        'execution_scope': dict(scope_summary or {}),
+        # The cycle's own scope summary, and the planner's independent verdict
+        # on it. Both are needed: the first says what this cycle asked for, the
+        # second says what the planner actually produced from that request.
+        # A validator that only saw the request could not catch the planner
+        # returning something else.
+        'execution_scope': {
+            **dict(scope_summary or {}),
+            'execution_scope_mode': report.get('execution_scope_mode'),
+            'planner_requested_game_pks': report.get('requested_game_pks'),
+            'planner_requested_game_count': report.get('requested_game_count'),
+            'duplicate_requested_count': report.get('duplicate_requested_count'),
+            'planned_game_pks': report.get('planned_game_pks'),
+            'planned_game_count': report.get('planned_game_count'),
+            'missing_requested_game_pks': report.get(
+                'missing_requested_game_pks'
+            ),
+            'unexpected_planned_game_pks': report.get(
+                'unexpected_planned_game_pks'
+            ),
+            'execution_scope_exact_match': report.get(
+                'execution_scope_exact_match'
+            ),
+        },
         'games_discovered': report.get('games_discovered'),
         'games_planned': report.get('games_planned'),
         'games_attempted': report.get('games_attempted'),

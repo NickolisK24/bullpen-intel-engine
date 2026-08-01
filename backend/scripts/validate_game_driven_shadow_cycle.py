@@ -40,6 +40,7 @@ from services import game_log_reconciliation as reconciliation  # noqa: E402
 from services import game_driven_ingestion  # noqa: E402
 from services import pitcher_identity_reconciliation as pitcher_identity  # noqa: E402
 from services import sync_metadata  # noqa: E402
+from services.sync import POSTGAME_SCOPE_SOURCE  # noqa: E402
 from services.sync_publication_proof import (  # noqa: E402
     LEAGUE_PUBLICATION_EXPECTED_PENDING_ACTIVE_SLATE,
 )
@@ -313,6 +314,58 @@ def _validate_execution_effects(lane, failures):
 # ── Cycle-specific contracts ────────────────────────────────────────────────
 
 
+# Fields a projected difference must name, and fields it must never carry.
+DIFFERENCE_REQUIRED_FIELDS = (
+    'game_pk', 'pitcher_mlb_id', 'action', 'changed_fields',
+    'difference_classifications', 'source_revision',
+    'reconciliation_plan_fingerprint', 'target_state_digest',
+    'stored_state_digest',
+)
+DIFFERENCE_FORBIDDEN_FIELDS = ('before', 'after', 'field_changes', 'values')
+
+
+def _validate_difference_diagnostics(lane, failures):
+    """A nonzero projection must be explainable from the artifact alone.
+
+    The first postgame cycle reported one projected update and nothing about
+    which row, so nobody could investigate it. A projection that cannot be
+    attributed is not evidence, and failing quietly on it would repeat that.
+    """
+    projected_changes = (
+        _int(lane.get('rows_inserted'))
+        + _int(lane.get('rows_updated'))
+        + _int(lane.get('rows_blocked'))
+    )
+    differences = lane.get('projected_differences')
+    if projected_changes == 0:
+        return
+    if not isinstance(differences, list) or not differences:
+        _fail(
+            failures, 'projected_difference_diagnostics_missing',
+            expected=projected_changes, observed=0,
+        )
+        return
+    if len(differences) < projected_changes:
+        _fail(
+            failures, 'projected_difference_diagnostics_incomplete',
+            expected=projected_changes, observed=len(differences),
+        )
+    for entry in differences:
+        entry = entry or {}
+        for field in DIFFERENCE_REQUIRED_FIELDS:
+            if field not in entry:
+                _fail(
+                    failures, f'projected_difference_missing_field:{field}',
+                    observed=entry.get('game_pk'),
+                )
+        for field in DIFFERENCE_FORBIDDEN_FIELDS:
+            if field in entry:
+                _fail(
+                    failures, f'projected_difference_carries_values:{field}',
+                    observed=entry.get('game_pk'),
+                )
+
+
 def _validate_daily(lane, failures):
     # Projected inserts and updates are legitimate here. Blocked rows are not:
     # a blocked plan means the official line could not safely authorize a
@@ -357,7 +410,93 @@ def _validate_daily(lane, failures):
         )
 
 
+def _validate_postgame_scope(lane, failures):
+    """The exact-cycle scope contract.
+
+    The first postgame cycle failed because the lane planned the rolling
+    seven-day correction horizon instead of the games its own cycle governs.
+    These checks are what make that impossible to pass unnoticed.
+    """
+    scope = lane.get('execution_scope')
+    if not isinstance(scope, dict) or not scope:
+        _fail(failures, 'postgame_scope_missing')
+        return
+
+    if scope.get('scope_source') != POSTGAME_SCOPE_SOURCE:
+        _fail(
+            failures, 'postgame_scope_source',
+            expected=POSTGAME_SCOPE_SOURCE, observed=scope.get('scope_source'),
+        )
+
+    requested = list(scope.get('requested_game_pks') or ())
+    if len(set(requested)) != len(requested):
+        _fail(
+            failures, 'postgame_scope_duplicate_request',
+            observed=len(requested) - len(set(requested)),
+        )
+    if requested != sorted(requested):
+        _fail(failures, 'postgame_scope_not_deterministic')
+    if _int(scope.get('requested_game_count')) != len(requested):
+        _fail(
+            failures, 'postgame_scope_count_mismatch',
+            expected=len(requested),
+            observed=scope.get('requested_game_count'),
+        )
+
+    # The planner's own verdict on the request. Empty scope is exempt: the
+    # planner reports no exclusive-scope result when nothing was requested.
+    if requested:
+        if scope.get('execution_scope_exact_match') is not True:
+            _fail(
+                failures, 'postgame_scope_exact_match',
+                expected=True,
+                observed=scope.get('execution_scope_exact_match'),
+            )
+        missing = list(scope.get('missing_requested_game_pks') or ())
+        if missing:
+            _fail(
+                failures, 'postgame_scope_missing_requested_game',
+                observed=len(missing),
+            )
+        unexpected = list(scope.get('unexpected_planned_game_pks') or ())
+        if unexpected:
+            _fail(
+                failures, 'postgame_scope_unexpected_planned_game',
+                observed=len(unexpected),
+            )
+
+    # Fan-out: the planned set may never exceed what this cycle requested.
+    planned = _int(lane.get('games_planned'))
+    if planned > len(requested):
+        _fail(
+            failures, 'postgame_scope_fan_out',
+            expected=len(requested), observed=planned,
+        )
+    cycle_games = _int(scope.get('cycle_game_count'))
+    if cycle_games and len(requested) > cycle_games:
+        _fail(
+            failures, 'postgame_scope_exceeds_cycle',
+            expected=cycle_games, observed=len(requested),
+        )
+    # Every cycle game is either requested or excluded with a reason — a game
+    # that is neither has silently vanished from the accounting.
+    excluded = list(scope.get('excluded_game_pks') or ())
+    if cycle_games and len(requested) + len(excluded) != cycle_games:
+        _fail(
+            failures, 'postgame_scope_accounting',
+            expected=cycle_games, observed=len(requested) + len(excluded),
+        )
+    for entry in excluded:
+        if not (entry or {}).get('reason'):
+            _fail(
+                failures, 'postgame_scope_unnamed_exclusion',
+                observed=(entry or {}).get('game_pk'),
+            )
+
+
 def _validate_postgame(lane, failures):
+    _validate_postgame_scope(lane, failures)
+
     # The writer already ran. A clean cycle projects nothing.
     for field in ('rows_inserted', 'rows_updated', 'rows_blocked'):
         if _int(lane.get(field)) != 0:
@@ -427,6 +566,8 @@ def validate_cycle(summary, *, cycle_kind, runner_exit_code) -> dict:
     _validate_fingerprints(lane, games, planned, failures)
     _validate_runtime(lane, planned, failures)
     _validate_execution_effects(lane, failures)
+
+    _validate_difference_diagnostics(lane, failures)
 
     if cycle_kind == CYCLE_DAILY:
         _validate_daily(lane, failures)
