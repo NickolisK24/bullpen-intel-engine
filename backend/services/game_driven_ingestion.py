@@ -437,7 +437,13 @@ def _process_one_game(item, *, mode, handlers, sync_run_id, job_name, report) ->
     work_item = None
     try:
         if writes_enabled(mode):
+            existed = GameIngestionWorkItem.query.filter_by(
+                mlb_game_pk=item.game_pk
+            ).first() is not None
             work_item = _claim_work_item(item, sync_run_id=sync_run_id)
+            _record_effect(
+                report, 'work_items_updated' if existed else 'work_items_created',
+            )
 
         fetch_started = time.monotonic()
         game_payload, boxscore = handlers['fetch'](item)
@@ -477,6 +483,26 @@ def _process_one_game(item, *, mode, handlers, sync_run_id, job_name, report) ->
             item, game_payload, boxscore, sync_run_id=sync_run_id
         )
         report['persistence_seconds'] += time.monotonic() - persist_started
+        # Counted from what the writer reported writing, at the moment it wrote.
+        persisted_summary = persisted.get('summary') or {}
+        _record_effect(
+            report, 'game_log_rows_written',
+            int(persisted_summary.get('rows_inserted') or 0)
+            + int(persisted_summary.get('rows_updated') or 0),
+        )
+        _record_effect(
+            report, 'pitcher_rows_written',
+            int(persisted_summary.get('pitcher_identity_mutations') or 0),
+        )
+        _record_effect(
+            report, 'appearance_team_rows_written',
+            int(persisted_summary.get('appearance_team_mutations') or 0),
+        )
+        _record_effect(
+            report, 'correction_provenance_rows_written',
+            int(persisted_summary.get('provenance_only_updates') or 0)
+            + int(persisted_summary.get('statistical_corrections') or 0),
+        )
 
         reconciled = _verify_game_completeness(item, appearances)
         _apply_plan_outcome(outcome, report, persisted)
@@ -518,6 +544,9 @@ def _process_one_game(item, *, mode, handlers, sync_run_id, job_name, report) ->
             },
         )
         db.session.commit()
+        _record_effect(report, 'work_items_completed')
+        _record_effect(report, 'checkpoints_advanced')
+        _record_effect(report, 'commits_performed')
         report['checkpoint_seconds'] += time.monotonic() - checkpoint_started
 
         report['games_completed'] += 1
@@ -538,6 +567,7 @@ def _process_one_game(item, *, mode, handlers, sync_run_id, job_name, report) ->
             mode=mode,
             sync_run_id=sync_run_id,
             job_name=job_name,
+            report=report,
         )
         report['games_failed'] += 1
         report['failure_classes'][error_class] = (
@@ -611,7 +641,7 @@ def _complete_work_item(
     db.session.flush()
 
 
-def _record_failure(item, *, error_class, mode, sync_run_id, job_name) -> str:
+def _record_failure(item, *, error_class, mode, sync_run_id, job_name, report=None) -> str:
     """Persist a failed attempt. Never marks a game complete."""
     if not writes_enabled(mode):
         return 'projection_failed'
@@ -659,6 +689,8 @@ def _record_failure(item, *, error_class, mode, sync_run_id, job_name) -> str:
     work_item.sync_run_id = sync_run_id
     db.session.add(work_item)
     db.session.commit()
+    _record_effect(report or {}, 'work_items_updated')
+    _record_effect(report or {}, 'commits_performed')
 
     if not retryable:
         dead_letter.record_failure(
@@ -680,6 +712,8 @@ def _record_failure(item, *, error_class, mode, sync_run_id, job_name) -> str:
             job_name=job_name,
         )
         db.session.commit()
+        _record_effect(report or {}, 'dead_letters_created')
+        _record_effect(report or {}, 'commits_performed')
     return work_item.status
 
 
@@ -739,7 +773,9 @@ def _record_budget_stop(remaining, *, mode, reference_date, sync_run_id, report)
         work_item.criticality = item.criticality
         work_item.candidate_reason = item.candidate_reason
         work_item.error_class = ERROR_BUDGET_EXHAUSTED
+        _record_effect(report, 'work_items_updated')
     db.session.commit()
+    _record_effect(report, 'commits_performed')
 
 
 # ── Reconciliation ──────────────────────────────────────────────────────────
@@ -934,6 +970,11 @@ def _safe_row_entries(plan) -> list[dict]:
                 entry.get('derived_companion_differences_ignored') or ()
             ),
             'appearance_team_reason': entry.get('appearance_team_reason'),
+            # Target state, for the realization proof. Field NAMES are governed
+            # vocabulary and safe to report; the intended VALUES never leave the
+            # process — only their digest does.
+            'target_fields': list(entry.get('target_fields') or ()),
+            'target_state_digest': entry.get('target_state_digest'),
             **pitcher_identity.safe_row_entry(entry.get('pitcher_identity')),
         }
         for entry in plan or ()
@@ -1135,4 +1176,39 @@ def _empty_report(reference_date, mode) -> dict:
         'reconciliation_plan_version': reconciliation.RECONCILIATION_PLAN_VERSION,
         'elapsed_seconds': 0.0,
         'remaining_budget_seconds': None,
+        'execution_effects': _empty_execution_effects(mode),
     }
+
+
+# ── Actual execution effects ────────────────────────────────────────────────
+# Every counter here is incremented at the site where the effect actually
+# happens — a work item being claimed, a checkpoint being completed, a commit
+# being issued, a dead letter being recorded. None of them is derived from the
+# mode name, so "shadow wrote nothing" is a measurement rather than a
+# restatement of the configuration. In shadow those sites are unreachable, and
+# the same counters go non-zero in write mode, which is what makes the zero
+# meaningful.
+
+
+def _empty_execution_effects(mode) -> dict:
+    return {
+        'writes_enabled': writes_enabled(mode),
+        'publication_authoritative': publication_authoritative(mode),
+        'game_log_rows_written': 0,
+        'pitcher_rows_written': 0,
+        'appearance_team_rows_written': 0,
+        'correction_provenance_rows_written': 0,
+        'work_items_created': 0,
+        'work_items_updated': 0,
+        'work_items_completed': 0,
+        'checkpoints_advanced': 0,
+        'dead_letters_created': 0,
+        'commits_performed': 0,
+    }
+
+
+def _record_effect(report, field, amount=1) -> None:
+    effects = report.get('execution_effects')
+    if effects is None:
+        return
+    effects[field] = int(effects.get(field) or 0) + int(amount)

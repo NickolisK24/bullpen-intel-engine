@@ -295,7 +295,40 @@ def plan_row(
     Pure. Reads ``existing`` and returns a plan; changes nothing. The canonical
     writer applies this plan, and shadow reports it — so the two cannot reach
     different conclusions about the same row.
+
+    The plan also carries its own target state — which fields it intends to
+    determine, and a digest of the values it intends them to hold — so a
+    projection taken before a writer can later be checked against what that
+    writer actually stored, without re-planning and without a second fetch.
     """
+    plan = _plan_row_decision(
+        existing=existing,
+        values=values,
+        stats=stats,
+        include_leverage_index=include_leverage_index,
+        appearance_team=appearance_team,
+        game_pk=game_pk,
+        pitcher_mlb_id=pitcher_mlb_id,
+        local_pitcher_id=local_pitcher_id,
+        identity_plan=identity_plan,
+    )
+    plan['target_fields'] = target_fields(plan)
+    plan['target_state_digest'] = plan_target_state_digest(plan)
+    return plan
+
+
+def _plan_row_decision(
+    *,
+    existing,
+    values: dict,
+    stats: dict,
+    include_leverage_index: bool = False,
+    appearance_team=None,
+    game_pk=None,
+    pitcher_mlb_id=None,
+    local_pitcher_id=None,
+    identity_plan=None,
+) -> dict:
     natural_key = {
         'pitcher_id': local_pitcher_id,
         'mlb_game_pk': game_pk if game_pk is not None else values.get('mlb_game_pk'),
@@ -364,6 +397,10 @@ def plan_row(
             'mutation_digest': mutation_digest(
                 action=ACTION_INSERT, values=values, field_changes=(),
             ),
+            # The stored state this insert intends to produce. Same exclusion
+            # set as the digest above: no derived companion, no provenance, no
+            # local surrogate key.
+            'target_values': insert_target_values(values),
         })
         return base
 
@@ -539,6 +576,90 @@ def mutation_digest(*, action, values, field_changes) -> str:
         payload = []
     encoded = json.dumps(payload, sort_keys=True, separators=(',', ':'), default=str)
     return hashlib.sha256(encoded.encode('utf-8')).hexdigest()[:32]
+
+
+# ── Target state (realization proof support) ────────────────────────────────
+# A plan says what the stored row SHOULD hold once someone applies it. When a
+# projection runs before a writer, the only honest way to ask "did that writer
+# realize what was projected?" is to name the fields the plan targeted and
+# digest the values it intended them to hold — then digest the same fields read
+# back from the stored row afterwards and compare.
+#
+# Field NAMES are safe to report; values are not, so only the digest travels.
+# This is the same exclusion set the mutation digest uses: a derived companion
+# is a function of its authority (D-008), and provenance describes how a row was
+# corrected rather than what it says, so neither is part of the target.
+
+
+def target_fields(plan) -> list[str]:
+    """Governed fields whose stored value the plan intends to determine.
+
+    Empty for ``unchanged`` and ``blocked``: those plans intend no value, so
+    there is nothing a later writer could fail to realize.
+    """
+    action = (plan or {}).get('action')
+    if action == ACTION_INSERT:
+        values = (plan or {}).get('target_values') or {}
+        return sorted(values)
+    if action == ACTION_UPDATE:
+        return sorted(
+            change['field'] for change in ((plan or {}).get('field_changes') or ())
+        )
+    return []
+
+
+def target_state_digest(field_values) -> str:
+    """Digest of ``(field, value)`` pairs describing an intended stored state.
+
+    Deterministic and order-independent. Reused for both halves of a
+    realization comparison so a difference can only mean the values differ, not
+    that two encoders disagree.
+    """
+    payload = sorted(
+        (str(field), _safe_value(value)) for field, value in (field_values or ())
+    )
+    encoded = json.dumps(
+        payload, sort_keys=True, separators=(',', ':'), default=str,
+    )
+    return hashlib.sha256(encoded.encode('utf-8')).hexdigest()[:32]
+
+
+def plan_target_state_digest(plan) -> str:
+    """Digest of the state ``plan`` intends the stored row to hold."""
+    action = (plan or {}).get('action')
+    if action == ACTION_INSERT:
+        values = (plan or {}).get('target_values') or {}
+        return target_state_digest(values.items())
+    if action == ACTION_UPDATE:
+        return target_state_digest(
+            (change['field'], change['after'])
+            for change in ((plan or {}).get('field_changes') or ())
+        )
+    return target_state_digest(())
+
+
+def stored_state_digest(row, fields) -> str:
+    """Digest of ``fields`` as they are actually stored on ``row``.
+
+    Comparable with :func:`plan_target_state_digest` by construction: the same
+    encoder over the same field names.
+    """
+    if row is None:
+        return ''
+    return target_state_digest(
+        (field, getattr(row, field, None)) for field in fields or ()
+    )
+
+
+def insert_target_values(values) -> dict:
+    """The subset of insert values whose stored form the plan determines."""
+    return {
+        field: value
+        for field, value in (values or {}).items()
+        if field not in SEMANTIC_AUTHORITY_BY_COMPANION
+        and field not in PROVENANCE_FIELDS
+        and field not in _DIGEST_EXCLUDED_IDENTITY_FIELDS
+    }
 
 
 def plan_fingerprint(plans) -> str:

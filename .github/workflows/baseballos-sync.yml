@@ -99,6 +99,7 @@ jobs:
         run: pip install -r backend/requirements.txt
 
       - name: Run direct daily sync
+        id: daily-sync
         if: ${{ (github.event_name == 'workflow_dispatch' && inputs.mode == 'daily') || (github.event_name == 'schedule' && github.event.schedule == '0 10 * * *') }}
         env:
           APP_ENV: production
@@ -106,6 +107,13 @@ jobs:
           SECRET_KEY: ${{ secrets.SECRET_KEY }}
           ADMIN_API_TOKEN: ${{ secrets.BASEBALLOS_ADMIN_API_TOKEN }}
           AUTO_SYNC: 'false'
+          # Automated game-driven shadow. Observation only: the lane plans,
+          # fetches, extracts, and projects, and writes nothing. The current
+          # sync and publication path remains authoritative. Set here, on the
+          # step that runs the daily runner, and NOT at job scope — every other
+          # step in this job must keep the deployed default of off.
+          GAME_DRIVEN_INGESTION_MODE: 'shadow'
+          DAILY_SYNC_SUMMARY_PATH: artifacts/game-driven-shadow/daily-sync-summary.json
           DAILY_SYNC_COMMAND_TIMEOUT: 20m
           # Whole-command runtime governance. The Python process keeps the
           # daily sync inside this total budget and reserves enough time for
@@ -125,10 +133,14 @@ jobs:
             exit 1
           fi
           echo "Direct daily sync starting at $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          mkdir -p "$(dirname "$DAILY_SYNC_SUMMARY_PATH")"
           set +e
-          timeout --kill-after=30s "$DAILY_SYNC_COMMAND_TIMEOUT" python backend/scripts/run_daily_sync.py --days-back 7 --source github_actions --public-only
+          timeout --kill-after=30s "$DAILY_SYNC_COMMAND_TIMEOUT" python backend/scripts/run_daily_sync.py --days-back 7 --source github_actions --public-only --output "$DAILY_SYNC_SUMMARY_PATH"
           exit_code=$?
           set -e
+          # Recorded before this step can exit, so the activation validator can
+          # read the real runner outcome even when the step fails below.
+          echo "runner_exit_code=$exit_code" >> "$GITHUB_OUTPUT"
           if [ "$exit_code" -ne 0 ]; then
             if [ "$exit_code" -eq 124 ] || [ "$exit_code" -eq 137 ] || [ "$exit_code" -eq 143 ]; then
               echo "::error::Direct daily sync timed out after $DAILY_SYNC_COMMAND_TIMEOUT."
@@ -191,6 +203,7 @@ jobs:
           echo "Morning slate schedule refresh completed at $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
 
       - name: Run direct postgame refresh
+        id: postgame-refresh
         if: ${{ (github.event_name == 'workflow_dispatch' && inputs.mode == 'postgame') || (github.event_name == 'schedule' && github.event.schedule == '0 2,4,6 * * *') }}
         env:
           APP_ENV: production
@@ -198,6 +211,12 @@ jobs:
           SECRET_KEY: ${{ secrets.SECRET_KEY }}
           ADMIN_API_TOKEN: ${{ secrets.BASEBALLOS_ADMIN_API_TOKEN }}
           AUTO_SYNC: 'false'
+          # Automated game-driven shadow. Here the lane runs AFTER the existing
+          # completed-game writer, so a clean cycle projects nothing at all.
+          # Writing modes are refused on this cycle regardless; shadow is the
+          # only mode it can observe in.
+          GAME_DRIVEN_INGESTION_MODE: 'shadow'
+          POSTGAME_SYNC_SUMMARY_PATH: artifacts/game-driven-shadow/postgame-sync-summary.json
           POSTGAME_REFRESH_COMMAND_TIMEOUT: 20m
         run: |
           set -euo pipefail
@@ -206,10 +225,14 @@ jobs:
             exit 1
           fi
           echo "Direct postgame refresh starting at $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          mkdir -p "$(dirname "$POSTGAME_SYNC_SUMMARY_PATH")"
           set +e
-          timeout --kill-after=30s "$POSTGAME_REFRESH_COMMAND_TIMEOUT" python backend/scripts/run_postgame_refresh.py --source github_actions --public-only
+          timeout --kill-after=30s "$POSTGAME_REFRESH_COMMAND_TIMEOUT" python backend/scripts/run_postgame_refresh.py --source github_actions --public-only --output "$POSTGAME_SYNC_SUMMARY_PATH"
           exit_code=$?
           set -e
+          # Recorded before this step can exit, so the activation validator can
+          # read the real runner outcome even when the step fails below.
+          echo "runner_exit_code=$exit_code" >> "$GITHUB_OUTPUT"
           if [ "$exit_code" -ne 0 ]; then
             if [ "$exit_code" -eq 124 ] || [ "$exit_code" -eq 137 ] || [ "$exit_code" -eq 143 ]; then
               echo "::error::Direct postgame refresh timed out after $POSTGAME_REFRESH_COMMAND_TIMEOUT."
@@ -262,6 +285,13 @@ jobs:
           SECRET_KEY: ${{ secrets.SECRET_KEY }}
           ADMIN_API_TOKEN: ${{ secrets.BASEBALLOS_ADMIN_API_TOKEN }}
           AUTO_SYNC: 'false'
+          # MANDATORY, not decorative. Backfill invokes run_postgame_refresh.py
+          # — the same runner and the same service entry point the scheduled
+          # postgame cycle uses — so it would otherwise be a candidate for the
+          # lane. A historical replay is not an observation cycle and produces
+          # no activation evidence, so the lane stays off here explicitly
+          # rather than by assumed inheritance.
+          GAME_DRIVEN_INGESTION_MODE: 'off'
           BACKFILL_DATE: ${{ inputs.backfill_date }}
           BACKFILL_COMMAND_TIMEOUT: 20m
         run: |
@@ -452,6 +482,149 @@ jobs:
           cat "$dashboard_response" || true
           echo
           exit 1
+
+      # ── Game-driven shadow activation health ────────────────────────────
+      # Everything from here down is OBSERVATION. It runs after the established
+      # sync, publication, appearance-ledger, and dashboard gates have had
+      # their chance, and it never becomes a prerequisite for any of them. A
+      # shadow defect is an activation incident, not permission to withhold
+      # production data that is otherwise valid.
+      #
+      # Validator and scanner exit codes are captured rather than allowed to
+      # terminate the job, so the evidence is uploaded before anything fails.
+      # The final gate comes last, after the upload.
+
+      - name: Validate game-driven shadow activation cycle
+        id: activation-validate
+        if: ${{ always() && ((github.event_name == 'workflow_dispatch' && (inputs.mode == 'daily' || inputs.mode == 'postgame')) || (github.event_name == 'schedule' && (github.event.schedule == '0 10 * * *' || github.event.schedule == '0 2,4,6 * * *'))) }}
+        env:
+          ACTIVATION_DIR: artifacts/game-driven-shadow
+          DAILY_RUNNER_EXIT: ${{ steps.daily-sync.outputs.runner_exit_code }}
+          POSTGAME_RUNNER_EXIT: ${{ steps.postgame-refresh.outputs.runner_exit_code }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$ACTIVATION_DIR"
+          if [ -f "$ACTIVATION_DIR/daily-sync-summary.json" ]; then
+            cycle=daily
+            runner_exit="${DAILY_RUNNER_EXIT:-1}"
+          elif [ -f "$ACTIVATION_DIR/postgame-sync-summary.json" ]; then
+            cycle=postgame
+            runner_exit="${POSTGAME_RUNNER_EXIT:-1}"
+          else
+            # A missing summary is an activation failure, not a skip. The gate
+            # below reads this code; exiting 0 here keeps the scan, summary,
+            # and upload steps running so the failure is still recorded.
+            echo "::error title=Game-Driven Shadow::No cycle summary was produced. Activation evidence is missing, which is itself an activation failure."
+            echo "2" > "$ACTIVATION_DIR/activation-exit-code"
+            exit 0
+          fi
+          echo "cycle_kind=$cycle" >> "$GITHUB_OUTPUT"
+          set +e
+          python backend/scripts/validate_game_driven_shadow_cycle.py \
+            --sync-summary "$ACTIVATION_DIR/$cycle-sync-summary.json" \
+            --cycle-kind "$cycle" \
+            --runner-exit-code "$runner_exit" \
+            --summary-json "$ACTIVATION_DIR/$cycle-activation-summary.json" \
+            --summary-markdown "$ACTIVATION_DIR/$cycle-activation-summary.md"
+          validate_code=$?
+          set -e
+          echo "$validate_code" > "$ACTIVATION_DIR/activation-exit-code"
+          case "$validate_code" in
+            0) echo "::notice title=Game-Driven Shadow::$cycle cycle PASSED activation health." ;;
+            1) echo "::error title=Game-Driven Shadow::$cycle cycle FAILED activation health. See the uploaded artifact." ;;
+            *) echo "::error title=Game-Driven Shadow::Activation validator could not run (exit $validate_code)." ;;
+          esac
+
+      - name: Scan activation artifacts for secrets
+        id: activation-scan
+        if: ${{ always() && ((github.event_name == 'workflow_dispatch' && (inputs.mode == 'daily' || inputs.mode == 'postgame')) || (github.event_name == 'schedule' && (github.event.schedule == '0 10 * * *' || github.event.schedule == '0 2,4,6 * * *'))) }}
+        env:
+          ACTIVATION_DIR: artifacts/game-driven-shadow
+        run: |
+          set -euo pipefail
+          mkdir -p "$ACTIVATION_DIR"
+          # Runs BEFORE upload. An artifact that fails this scan is quarantined
+          # and never leaves the runner; only its filename and a safe category
+          # are reported, never the matched content.
+          unsafe=0
+          patterns='postgresql://|postgres://|password=|Authorization:|X-Admin-Token|ADMIN_API_TOKEN|SECRET_KEY|DATABASE_URL|BASEBALLOS_ADMIN_API_TOKEN|token=|api_key=|api-key=|secret=|Traceback \(most recent call last\)|/home/runner/work'
+          for file in "$ACTIVATION_DIR"/*.json "$ACTIVATION_DIR"/*.md; do
+            [ -e "$file" ] || continue
+            if grep -Eq "$patterns" "$file"; then
+              echo "::error title=Activation Artifact::$(basename "$file") matched a forbidden-content pattern and was quarantined. It was NOT uploaded."
+              rm -f "$file"
+              unsafe=1
+            fi
+          done
+          echo "$unsafe" > "$ACTIVATION_DIR/activation-scan-unsafe"
+          if [ "$unsafe" -eq 0 ]; then
+            echo "Activation artifacts passed the forbidden-content scan."
+          fi
+
+      - name: Append activation summary
+        if: ${{ always() && ((github.event_name == 'workflow_dispatch' && (inputs.mode == 'daily' || inputs.mode == 'postgame')) || (github.event_name == 'schedule' && (github.event.schedule == '0 10 * * *' || github.event.schedule == '0 2,4,6 * * *'))) }}
+        env:
+          ACTIVATION_DIR: artifacts/game-driven-shadow
+          CYCLE_KIND: ${{ steps.activation-validate.outputs.cycle_kind }}
+        run: |
+          set -euo pipefail
+          summary_file="$ACTIVATION_DIR/${CYCLE_KIND:-unknown}-activation-summary.md"
+          if [ -f "$summary_file" ]; then
+            cat "$summary_file" >> "$GITHUB_STEP_SUMMARY"
+          else
+            {
+              echo "## GAME-DRIVEN SHADOW ACTIVATION — EVIDENCE MISSING"
+              echo
+              echo "No activation summary was produced for this cycle."
+              echo
+              echo "Current publication authority remains unchanged."
+              echo "Automated write mode remains prohibited."
+              echo "Authoritative mode remains prohibited."
+              echo "Review the activation artifact before promotion or rollback."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload game-driven shadow activation artifacts
+        if: ${{ always() && ((github.event_name == 'workflow_dispatch' && (inputs.mode == 'daily' || inputs.mode == 'postgame')) || (github.event_name == 'schedule' && (github.event.schedule == '0 10 * * *' || github.event.schedule == '0 2,4,6 * * *'))) }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: game-driven-shadow-${{ github.run_id }}
+          path: |
+            artifacts/game-driven-shadow/*-sync-summary.json
+            artifacts/game-driven-shadow/*-activation-summary.json
+            artifacts/game-driven-shadow/*-activation-summary.md
+          retention-days: 30
+          if-no-files-found: warn
+
+      # Last, so the evidence above is already preserved. This may fail the run;
+      # it must never mask an earlier production failure, so it only reports the
+      # activation verdict and leaves prior step outcomes to speak for
+      # themselves.
+      - name: Game-driven shadow activation health gate
+        if: ${{ always() && ((github.event_name == 'workflow_dispatch' && (inputs.mode == 'daily' || inputs.mode == 'postgame')) || (github.event_name == 'schedule' && (github.event.schedule == '0 10 * * *' || github.event.schedule == '0 2,4,6 * * *'))) }}
+        env:
+          ACTIVATION_DIR: artifacts/game-driven-shadow
+        run: |
+          set -euo pipefail
+          code="$(cat "$ACTIVATION_DIR/activation-exit-code" 2>/dev/null || echo 2)"
+          unsafe="$(cat "$ACTIVATION_DIR/activation-scan-unsafe" 2>/dev/null || echo 1)"
+          if [ "$unsafe" != "0" ]; then
+            echo "::error title=Game-Driven Shadow::An activation artifact was quarantined for forbidden content. Failing the activation gate."
+            exit 1
+          fi
+          case "$code" in
+            0)
+              echo "Game-driven shadow activation health: PASS."
+              ;;
+            1)
+              echo "::error title=Game-Driven Shadow::Activation health FAILED. Automated write mode remains prohibited and authoritative mode remains prohibited. Review the activation artifact before promotion or rollback."
+              exit 1
+              ;;
+            *)
+              echo "::error title=Game-Driven Shadow::Activation health is UNPROVEN (validator exit $code). Treat this as a failure, not a pass."
+              exit 1
+              ;;
+          esac
 
   internal-enrichment:
     runs-on: ubuntu-latest

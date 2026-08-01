@@ -166,10 +166,51 @@ writing modes are refused on that cycle in any case — but a future activation
 must set `GAME_DRIVEN_INGESTION_MODE: 'off'` explicitly on the backfill step
 rather than assume it inherits the default.
 
-**Nothing was activated.** `GAME_DRIVEN_INGESTION_MODE` is still `off`,
-`.github/workflows/baseballos-sync.yml` is unchanged, and no schedule, cadence,
-mode, or publication path moved. Automated shadow activation remains a separate
-reviewed pull request, and it now has both cycles to observe.
+### Automated shadow is now active on the two production cycles
+
+`GAME_DRIVEN_INGESTION_MODE: 'shadow'` is set on the daily and postgame runner
+steps in `.github/workflows/baseballos-sync.yml`, and on **no other step**. The
+explicit backfill step sets `'off'` — mandatory, because backfill invokes the
+same postgame runner and would not inherit the default.
+
+Schedules, manual modes, permissions, concurrency, command timeouts, publication
+gates, the appearance-ledger audit, and dashboard verification are all unchanged.
+There is still exactly one game-driven service call site, reached once per
+eligible cycle; no second ingestion command exists.
+
+**The current sync and publication path remains authoritative.** Shadow writes
+nothing, changes no work item or checkpoint, creates no game-driven dead letter,
+and never touches `publication_critical`, which is computed from the game lane
+only in authoritative mode.
+
+**The two cycles prove different things**, because they observe different
+moments:
+
+* **daily** projects *before* the legacy pitcher writer, so projected inserts
+  and updates are normal. After that writer finishes, a read-only realization
+  proof checks whether it actually stored the projected canonical target state.
+  Projected actions are never reported as shadow database writes.
+* **postgame** projects *after* the existing completed-game writer, so a healthy
+  cycle projects nothing at all. Any nonzero projection means the postgame
+  writer left canonical work behind, and the cycle fails activation health.
+
+Activation validation runs **after** the established production gates, under
+`always()`. Its exit code is captured rather than allowed to end the job, the
+artifacts are scanned for credentials and quarantined if they match, the summary
+is appended, the artifacts upload, and only then does the final health gate run.
+A shadow defect can fail the Actions run but can never preempt or withhold
+production data the current authority would publish.
+
+Artifacts are retained for 30 days as `game-driven-shadow-<run-id>`. The sync
+summary comes from the runner's own `--output`, written atomically with sorted
+keys — never parsed out of a mixed log stream.
+
+**Rollback is a focused change back to `'off'` on those two steps.** No database
+cleanup is needed, because shadow performs no writes.
+
+Automated **write** mode and **authoritative** mode both remain **unapproved**,
+and each requires its own separate reviewed pull request. Production observation
+begins with the first scheduled cycle after merge.
 
 ### Pitcher identity is not written by completed games (D-009)
 

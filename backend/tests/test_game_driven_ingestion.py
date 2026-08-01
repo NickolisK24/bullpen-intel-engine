@@ -732,3 +732,67 @@ def test_the_lane_default_is_off_without_any_environment_configuration(
     assert game_driven_ingestion.ingestion_mode() == 'off'
     assert game_driven_ingestion.enabled() is False
     assert game_driven_ingestion.writes_enabled() is False
+
+
+# ── Actual execution effects, measured at the write sites ───────────────────
+# A zero in shadow only means something if the same counters move in write
+# mode. These two tests are a pair: neither is worth much alone.
+
+
+def test_write_mode_records_the_database_effects_it_actually_had(app, stub_client):
+    with app.app_context():
+        _schedule(910801)
+        _pitcher(8801)
+        stub_client(_one_reliever(910801, 8801))
+
+        report = _run(mode=game_driven_ingestion.MODE_WRITE)
+
+        effects = report['execution_effects']
+        assert effects['writes_enabled'] is True
+        assert effects['game_log_rows_written'] >= 1
+        assert effects['work_items_created'] == 1
+        assert effects['work_items_completed'] == 1
+        assert effects['checkpoints_advanced'] == 1
+        assert effects['commits_performed'] >= 1
+
+
+def test_shadow_mode_records_no_database_effect_for_the_same_work(app, stub_client):
+    with app.app_context():
+        _schedule(910802)
+        _pitcher(8802)
+        stub_client(_one_reliever(910802, 8802))
+
+        report = _run(mode=game_driven_ingestion.MODE_SHADOW)
+
+        # The lane genuinely planned and projected — otherwise the zeros below
+        # would hold vacuously.
+        assert report['games_planned'] == 1
+        assert report['games_completed'] == 1
+        assert report['rows_expected'] >= 1
+
+        effects = report['execution_effects']
+        assert effects['writes_enabled'] is False
+        assert effects['publication_authoritative'] is False
+        for field in (
+            'game_log_rows_written', 'pitcher_rows_written',
+            'appearance_team_rows_written', 'correction_provenance_rows_written',
+            'work_items_created', 'work_items_updated', 'work_items_completed',
+            'checkpoints_advanced', 'dead_letters_created', 'commits_performed',
+        ):
+            assert effects[field] == 0, f'shadow recorded a {field} effect'
+
+
+def test_a_shadow_projection_is_not_counted_as_a_write(app, stub_client):
+    """The projected/actual distinction, on one report."""
+    with app.app_context():
+        _schedule(910803)
+        _pitcher(8803)
+        stub_client(_one_reliever(910803, 8803))
+
+        report = _run(mode=game_driven_ingestion.MODE_SHADOW)
+
+        # It projects an insert...
+        assert report['rows_inserted'] >= 1
+        # ...and wrote nothing.
+        assert report['execution_effects']['game_log_rows_written'] == 0
+        assert GameLog.query.count() == 0

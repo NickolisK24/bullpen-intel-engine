@@ -960,6 +960,179 @@ it does **not**:
 **authoritative**. In `off`, `shadow`, and `write` the established authority is
 unchanged.
 
+## Automated shadow activation
+
+The lane runs automatically in `shadow` on the daily and postgame production
+cycles. It plans, fetches, extracts, and projects. **It writes nothing**, and
+the existing sync and publication path remains authoritative throughout.
+
+`GAME_DRIVEN_INGESTION_MODE: 'shadow'` is set on the two runner steps in
+`.github/workflows/baseballos-sync.yml` and nowhere else. It is a reviewed
+literal in the workflow source — there is no workflow input and no repository
+variable that could move it to a writing mode without a code review.
+
+| Cycle | Mode | Evidence |
+|---|---|---|
+| scheduled daily (`0 10 * * *`) | `shadow` | realization proof |
+| manual `mode=daily` | `shadow` | realization proof |
+| scheduled postgame (`0 2,4,6 * * *`) | `shadow` | convergence proof |
+| manual `mode=postgame` | `shadow` | convergence proof |
+| explicit backfill | **`off`** (explicit) | none |
+| morning schedule-only (`0 14 * * *`) | off | none |
+| Tonight refresh | off | none |
+| intraday audit | off | none |
+
+### The two cycles are not one rule
+
+This is the single most important thing to understand about the evidence.
+
+**Daily runs before its writer.** When newly final or corrected games exist the
+projection legitimately reports inserts, updates, appearance-team changes,
+minimal identity creations, and statistical corrections. Those are **projected
+reconciliation actions**, not database writes performed by shadow. A daily cycle
+that fails merely because the plan found work would fail on every day the lane
+is useful.
+
+**Postgame runs after its writer.** By then the canonical rows should already be
+correct, so a healthy postgame cycle projects **nothing at all**. A nonzero
+postgame projection means the postgame writer left canonical work behind, and
+that is an activation-health failure.
+
+A projected insert is never reported as a shadow database write. The two are
+counted separately and named differently, everywhere.
+
+### Daily realization proof
+
+After the legacy daily writer finishes, the cycle asks the only question that
+means anything about a projection taken beforehand: *did that writer actually
+put the canonical rows into the projected state?*
+
+Each plan row carries the fields it intends to determine (`target_fields`) and a
+digest of the values it intends them to hold (`target_state_digest`), both owned
+by `game_log_reconciliation`. After the writer, the stored row is read and the
+**same encoder** digests the **same field names**. Equal digests mean the writer
+realized the projected target.
+
+It does not call MLB, does not re-plan, does not re-run ingestion, and does not
+write. It consumes the plan the lane already produced.
+
+Only field names, governed identifiers, classifications, and digests are
+reported. The intended values never leave the process, so no raw row and no
+before/after value can travel in the proof.
+
+A daily cycle **fails** when a projected row is missing afterwards, the stored
+state differs from the projected target, a source revision changed against a
+recorded checkpoint, a duplicate canonical identity exists, the writer applied
+only part of the plan, an unsupported identity action was projected, or the
+proof could not be built at all. A missing proof and a passing proof never look
+alike.
+
+**Identity actions.** D-009 already reduced the vocabulary to `unchanged`,
+`create_minimal_identity`, and `blocked`. A clean daily projection may contain
+the first two. A `blocked` action, or anything outside that vocabulary, fails
+the cycle. A current-state mutation refusal is D-009 working correctly and is
+counted, not penalised.
+
+### Postgame convergence proof
+
+Zero projected inserts, zero updates, zero blocked rows, every expected row
+unchanged, and every mutation target zero — including minimal identity creation.
+Anything else fails, and it never triggers an automatic game-driven write.
+
+### Projected actions versus actual execution effects
+
+Every cycle reports both, separately:
+
+* **projected** — what the plan would do, counted from the plan;
+* **`execution_effects`** — what the lane actually did to the database, counted
+  at the write sites themselves: work items claimed, checkpoints completed,
+  commits issued, dead letters recorded, rows persisted.
+
+`execution_effects` is not derived from the mode name. Those counters live where
+the writes happen, so in shadow they are unreachable and stay zero — and the same
+counters go non-zero in write mode, which is what makes the zero meaningful.
+
+### Artifacts
+
+Per eligible cycle, retained 30 days as
+`game-driven-shadow-<run-id>`:
+
+```
+artifacts/game-driven-shadow/<cycle>-sync-summary.json
+artifacts/game-driven-shadow/<cycle>-activation-summary.json
+artifacts/game-driven-shadow/<cycle>-activation-summary.md
+```
+
+The sync summary is written by the runner itself through `--output`: the same
+object it prints, sorted keys, atomically replaced. Durable evidence is never
+produced by parsing a log stream that interleaves stdout with logging.
+
+Artifacts are scanned for credentials, connection strings, tracebacks, and
+runner paths **before** upload. A file that matches is deleted and never leaves
+the runner; only its filename and a safe category are reported.
+
+### Failure isolation and ordering
+
+A shadow defect is an activation incident, not permission to withhold valid
+production data. The workflow order is fixed:
+
+1. the eligible daily or postgame runner;
+2. the existing Tonight/schedule follow-up;
+3. the existing appearance-ledger audit;
+4. the existing publication and dashboard verification;
+5. the activation validator;
+6. the credential scan;
+7. the job-summary append;
+8. the artifact upload;
+9. the final activation-health gate.
+
+The validator is never a prerequisite for a publication step. Its exit code is
+captured rather than allowed to terminate the job, so the evidence is preserved
+before anything fails, and the gate runs last.
+
+### Rollback
+
+Change the two runner steps from `GAME_DRIVEN_INGESTION_MODE: 'shadow'` back to
+`'off'`, leave backfill off, and merge. **No database cleanup is required,
+because shadow performs no writes.** Disabling the whole workflow is an
+emergency lever for stopping production synchronization itself, not the normal
+way to roll back shadow.
+
+### Observation window
+
+Automated write mode may not be **proposed** until every one of these holds:
+
+* at least one clean scheduled daily PASS;
+* at least two clean scheduled postgame PASS cycles;
+* at least one clean cycle with `games_planned > 0`;
+* at least one daily cycle with projected work and complete realization parity,
+  unless no qualifying work occurred in the whole window;
+* at least 24 hours of elapsed production observation;
+* no activation-health failure, unresolved or divergent daily target, nonzero
+  postgame projection, shadow execution write, work-item or checkpoint change,
+  game-driven dead letter, schedule-authority gap, finality conflict, budget
+  stop, failed or remaining game, unexplained fingerprint instability, or
+  publication regression;
+* acceptable runtime headroom.
+
+Initial target is **48 hours** maximum when every gate is clean. Manual runs may
+supplement the evidence but never replace the scheduled-cycle requirements.
+
+### Promotion evidence package
+
+A future write-mode review requires: qualifying workflow run IDs, repository SHA
+per run, trigger classification, cycle kind, reference date, planned game set,
+candidate-reason counts, projected row actions, daily realization results,
+postgame convergence results, identity actions, correction actions, actual
+zero-write effects, source revisions, run and per-game fingerprints, runtime and
+budget headroom, sync status, publication proof, artifact names, elapsed
+observation time, and an explicit statement that no shadow write occurred.
+
+**That package is evidence, not authorization.** Every activation artifact
+records `write_approved: false` and `future_write_authorized: false`, on PASS
+and FAILED alike. No shadow fingerprint may be carried into a write command;
+a future write requires its own reviewed design.
+
 ## Operator repair procedure
 
 ```bash

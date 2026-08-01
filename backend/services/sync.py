@@ -43,6 +43,7 @@ from services.completed_game_context_service import (
 )
 from services import evidence_contract
 from services import game_driven_ingestion
+from services import game_driven_realization
 from services import game_log_reconciliation
 from services import pitcher_identity_reconciliation as pitcher_identity
 from services import game_ingestion_completeness
@@ -2991,6 +2992,37 @@ def _run_game_driven_ingestion_stage(
         'checkpoint_seconds': report.get('checkpoint_seconds'),
         'elapsed_seconds': report.get('elapsed_seconds'),
     }
+    # What the lane ACTUALLY did to the database, counted at the write sites
+    # themselves rather than derived from the mode name. Everything else in
+    # this object counts what the plan WOULD do; these are different numbers
+    # and must never be conflated. A projected insert is not a write.
+    status['game_driven_ingestion']['execution_effects'] = dict(
+        report.get('execution_effects') or {}
+    )
+    # Per-game evidence, in the canonical processing order the run used. Row
+    # detail stays out: the realization proof already summarizes it, and a
+    # durable artifact should carry the evidence a reviewer needs rather than
+    # every row the planner considered.
+    status['game_driven_ingestion']['games'] = [
+        {
+            'game_pk': entry.get('game_pk'),
+            'represented_date': entry.get('represented_date'),
+            'candidate_reason': entry.get('candidate_reason'),
+            'criticality': entry.get('criticality'),
+            'status': entry.get('status'),
+            'source_revision': entry.get('source_revision'),
+            'appearances_extracted': entry.get('appearances_extracted'),
+            'inserted': entry.get('inserted'),
+            'updated': entry.get('updated'),
+            'unchanged': entry.get('unchanged'),
+            'blocked': entry.get('blocked'),
+            'reconciliation_plan_fingerprint': entry.get(
+                'reconciliation_plan_fingerprint'
+            ),
+            'error_class': entry.get('error_class'),
+        }
+        for entry in report.get('games') or ()
+    ]
     status['game_ingestion_completeness'] = completeness
     run_logger.info(
         'Game-driven ingestion lane (mode=%s): planned=%s fetched=%s '
@@ -3013,6 +3045,70 @@ def _run_game_driven_ingestion_stage(
         report.get('elapsed_seconds'),
     )
     return result
+
+
+def _attach_daily_realization(*, game_lane, status, stage_timings, run_logger) -> None:
+    """Attach the daily realization proof, after the legacy writer has run.
+
+    Read-only and fail-closed. A proof that cannot be built is reported as
+    unavailable — which fails the activation gate — rather than being omitted,
+    because a missing proof and a passing proof must never look alike.
+
+    This never affects the daily sync's own outcome. It is activation evidence.
+    """
+    lane = status.get('game_driven_ingestion')
+    if not isinstance(lane, dict) or lane.get('status') in (None, 'disabled'):
+        return
+    if game_lane.get('report') is None:
+        lane['realization'] = {
+            'applicable': False,
+            'cycle_kind': game_driven_realization.CYCLE_DAILY,
+            'available': False,
+            'reason': 'no_game_driven_report',
+            'all_projected_targets_realized': False,
+        }
+        return
+
+    started = time.monotonic()
+    try:
+        realization = game_driven_realization.build_daily_realization(
+            game_lane['report']
+        )
+        realization['available'] = True
+    except Exception as exc:  # noqa: BLE001 - evidence must fail closed, not raise
+        db.session.rollback()
+        realization = {
+            'applicable': True,
+            'cycle_kind': game_driven_realization.CYCLE_DAILY,
+            'available': False,
+            'reason': 'realization_proof_unavailable',
+            'error_class': type(exc).__name__,
+            'all_projected_targets_realized': False,
+        }
+        # No exception text: it can carry paths and payload fragments.
+        run_logger.error(
+            'Daily game-driven realization proof unavailable (class=%s).',
+            type(exc).__name__,
+        )
+    stage_timings['game_driven_realization'] = round(
+        time.monotonic() - started, 3
+    )
+    lane['realization'] = realization
+    run_logger.info(
+        'Daily game-driven realization: applicable=%s projected_rows=%s '
+        'realized=%s already_matching=%s missing=%s divergent=%s duplicate=%s '
+        'unresolved=%s prohibited_identity=%s all_realized=%s.',
+        realization.get('applicable'),
+        realization.get('projected_rows'),
+        realization.get('realized_rows'),
+        realization.get('already_matching_rows'),
+        realization.get('missing_rows'),
+        realization.get('divergent_rows'),
+        realization.get('duplicate_rows'),
+        realization.get('unresolved_rows'),
+        realization.get('prohibited_identity_actions'),
+        realization.get('all_projected_targets_realized'),
+    )
 
 
 def _publication_critical_from_game_lane(
@@ -5836,6 +5932,22 @@ def run_daily_sync(
                 pull.get('process_seconds'),
                 pull.get('budget_exhausted_pitchers', 0),
             )
+            # ── Daily realization proof ─────────────────────────────────────
+            # The game-driven lane ran BEFORE this writer, so its projection
+            # legitimately contains inserts and updates. Those are projected
+            # reconciliation actions, never shadow writes. Now that the writer
+            # has finished, ask the only question that means anything here: did
+            # it actually put the canonical rows into the projected state?
+            #
+            # Read-only, no MLB call, no second planning pass — it consumes the
+            # plan the lane already produced.
+            _attach_daily_realization(
+                game_lane=game_lane,
+                status=status,
+                stage_timings=stage_timings,
+                run_logger=run_logger,
+            )
+
             records_failed = (
                 pull['records_failed']
                 + team_assignment_records_failed

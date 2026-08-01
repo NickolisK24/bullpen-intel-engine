@@ -1,5 +1,4 @@
 import argparse
-import json
 import logging
 import os
 import sys
@@ -47,6 +46,13 @@ def _parse_args(argv=None):
         default=[],
         help='Limit --retry-failed to one MLB gamePk. Repeat for multiple games.',
     )
+    parser.add_argument(
+        '--output',
+        help=(
+            'Optional path for a durable copy of the same JSON summary printed '
+            'to stdout. Written atomically with sorted keys.'
+        ),
+    )
     args = parser.parse_args(argv)
     if args.retry_failed and not args.schedule_date:
         parser.error('--retry-failed requires --date so recovery cannot reset an unbounded range')
@@ -78,6 +84,9 @@ def main(argv=None):
         reset_fully_processed_markers_without_appearance_rows,
     )
     from services.sync_publication_proof import build_candidate_publication_proof
+    from utils.summary_output import (
+        SummaryOutputError, serialize_summary, write_summary,
+    )
 
     recovery = {
         'status': 'not_requested',
@@ -126,7 +135,7 @@ def main(argv=None):
         'publication_proof': publication_proof,
         'sync': status,
     }
-    print(json.dumps(summary, sort_keys=True, default=str))
+    print(serialize_summary(summary))
 
     # Postgame job success and LEAGUE snapshot publication are two separate results.
     # A postgame refresh that ingested cleanly must not be marked failed merely because
@@ -148,7 +157,22 @@ def main(argv=None):
         or publication_proof.get('league_publication_status')
         == LEAGUE_PUBLICATION_EXPECTED_PENDING_ACTIVE_SLATE
     )
-    return 0 if sync_succeeded and publication_ok else 1
+    exit_code = 0 if sync_succeeded and publication_ok else 1
+
+    # Durable evidence is written BEFORE the exit code is returned, and a
+    # failure to write it is itself a failure: a missing artifact must never be
+    # indistinguishable from a clean run. Only the safe reason is reported --
+    # the underlying message can contain a filesystem path.
+    if args.output:
+        try:
+            write_summary(summary, args.output)
+        except SummaryOutputError as exc:
+            logging.getLogger(__name__).error(
+                'Postgame refresh summary output failed (reason=%s).', exc.reason,
+            )
+            return exit_code or 1
+
+    return exit_code
 
 
 if __name__ == '__main__':
