@@ -279,12 +279,42 @@ corrected by the lane reading that endpoint. Combined with the postgame writer
 never revisiting an already-complete game, a field can become permanently
 uncorrectable while every lane reports no difference.
 
-**No writer was changed.** Authority for the affected field is unproven without
-the live source payloads, and this work had no MLB or production access. The
-shadow failure stays active because it is reporting something real, a read-only
-audit tool now exists to resolve it, and every plan now names the fields its
-source could not evaluate. Fail-closed behaviour and the mode-off rollback are
-unchanged.
+**No writer was changed at the time.** Authority for the affected field was
+unproven without the live source payloads, so a read-only audit tool was
+delivered instead and every plan now names the fields its source could not
+evaluate. That audit has since been run — see the next section.
+
+### The affected field was `balls`, and the box score owns it (D-038)
+
+The production audit returned: box score `19/26/45` (19 + 26 = 45, coherent),
+player game-log split with **no `balls` key at all**, stored row `20/26/45`
+(20 + 26 = 46, incoherent) already carrying
+`last_stat_correction_source: daily_game_log`.
+
+The split never contradicted the box score; it had nothing to say. The stored
+value was **uncorrectable, not disputed** — the daily lane is the only lane that
+revisits an appearance inside the correction horizon, and it reads the split.
+
+The daily lane now consults a declared field-authority map
+(`services/gamelog_source_authority.py`): the split stays primary, and for an
+**explicitly approved** field it omits, the completed-game box score may supply
+it — validated (`balls + strikes == numberOfPitches`), never derived. The
+approved set is exactly `balls`.
+
+The enriched source flows through the same values builder, the same planner, and
+the same writer as every other field: no second comparator, no second writer, no
+direct assignment. A correction the fallback enabled records
+`completed_game_boxscore_fallback` rather than crediting the lane's own source,
+and every run reports the fallback counters whether or not anything was
+eligible.
+
+Shadow modes, the daily budget, and the mode-off rollback are unchanged, and no
+production correction was executed as part of the repair. Impact across the
+horizon is enumerated first, read-only, by
+`scripts/plan_boxscore_balls_fallback_impact.py`.
+
+Canonical reference:
+[`GAME_DRIVEN_DAILY_INGESTION.md`](GAME_DRIVEN_DAILY_INGESTION.md).
 
 ### Pitcher identity is not written by completed games (D-009)
 
@@ -513,6 +543,13 @@ production maintenance workflow.
   AND those games. An exclusive write also requires
   `--expected-plan-fingerprint` from a reviewed shadow run. See
   [`GAME_DRIVEN_DAILY_INGESTION.md`](GAME_DRIVEN_DAILY_INGESTION.md).
+- `python backend/scripts/inspect_gamelog_field_authority.py --game-pk PK --pitcher-mlb-id ID [--field balls] [--output PATH]`
+  — read-only authority audit for one governed field on one appearance.
+- `python backend/scripts/plan_boxscore_balls_fallback_impact.py [--days-back N] [--max-candidates N] [--skip-split-confirmation] [--output PATH]`
+  — read-only impact plan for the box-score fallback across the correction
+  horizon. Enumerates the affected set and reports any proposed change outside
+  the approved field. Performs zero writes; run it before any production
+  correction.
 - Kill switch (operators only, logged): `APPEARANCE_LEDGER_GATE_ENABLED=false`
 - Game-driven lane mode (operators only): `GAME_DRIVEN_INGESTION_MODE=off|shadow|write|authoritative`
 
