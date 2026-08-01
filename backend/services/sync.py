@@ -91,6 +91,15 @@ POSTGAME_DEFAULT_LOOKBACK_DAYS = 2
 DAILY_SYNC_DEFAULT_INGESTION_BUDGET_SECONDS = 720.0
 DAILY_SYNC_DEFAULT_TOTAL_BUDGET_SECONDS = 1080.0
 DAILY_SYNC_DEFAULT_FINAL_PHASE_RESERVE_SECONDS = 300.0
+
+# The postgame refresh has never had a runtime budget: its stages are bounded
+# by the number of unprocessed completed games, not by wall clock. The
+# game-driven lane is different — it plans from the schedule ledger and can
+# discover an arbitrarily large correction window — so it is given an explicit
+# bounded slice rather than being allowed to run against the postgame command
+# timeout. Reaching this budget is a clean, resumable, reported stop; running
+# past the command timeout would kill the whole postgame refresh.
+POSTGAME_REFRESH_DEFAULT_INGESTION_BUDGET_SECONDS = 600.0
 DAILY_GAME_LOG_BUDGET_FAILURE_ENTITY_TYPE = 'daily_game_log_budget'
 POSTGAME_SNAPSHOT_DEFAULT_TIMEOUT_SECONDS = 120.0
 DAILY_GAME_LOG_CORRECTION_SOURCE = 'daily_game_log'
@@ -2717,6 +2726,33 @@ def _daily_sync_final_phase_reserve_seconds() -> float:
     )
 
 
+def _postgame_refresh_ingestion_budget_seconds() -> float | None:
+    """Bounded soft budget for the postgame game-driven appearance lane."""
+    return _env_seconds(
+        'POSTGAME_REFRESH_INGESTION_BUDGET_SECONDS',
+        POSTGAME_REFRESH_DEFAULT_INGESTION_BUDGET_SECONDS,
+    )
+
+
+def _postgame_refresh_runtime_budget() -> dict:
+    """Runtime budget the postgame game-driven lane runs inside.
+
+    The postgame refresh has no total-process budget to divide, so this reports
+    the lane's own cap honestly rather than inventing a reserve it does not
+    have. The shape matches the daily budget so one lane implementation reads
+    both without a second code path.
+    """
+    ingestion_budget = _postgame_refresh_ingestion_budget_seconds()
+    return {
+        'total_budget_seconds': None,
+        'stage_budget_cap_seconds': ingestion_budget,
+        'final_phase_reserve_seconds': None,
+        'elapsed_before_ingestion_seconds': None,
+        'remaining_total_seconds': None,
+        'ingestion_budget_seconds': ingestion_budget,
+    }
+
+
 def _sync_schedule_finality_preflight_enabled() -> bool:
     raw = (
         os.environ.get('SYNC_SCHEDULE_FINALITY_PREFLIGHT')
@@ -2725,6 +2761,11 @@ def _sync_schedule_finality_preflight_enabled() -> bool:
     if raw is not None:
         return raw.strip().lower() not in _FALSEY_ENV_VALUES
     return os.environ.get('APP_ENV') == 'production'
+
+
+# Refusal reason for a writing mode requested on a cycle that has no
+# conflict-prevention mechanism against its own legacy writer.
+GAME_DRIVEN_WRITE_MODE_UNSUPPORTED = 'write_mode_unsupported_for_cycle'
 
 
 def _game_driven_lane_budget_share() -> float:
@@ -2761,13 +2802,22 @@ def _run_game_driven_ingestion_stage(
     status: dict,
     stage_timings: dict,
     run_logger,
+    job_name: str = sync_metadata.JOB_DAILY_SYNC,
+    write_modes_supported: bool = True,
 ) -> dict:
     """Run the Foundation 3C game-driven appearance lane, if it is enabled.
 
     Returns the lane result plus the ingestion budget that remains for the
     (demoted) full-season pitcher loop. A failure inside the lane can never
-    abort the daily sync: it is caught, classified, and surfaced — and in
+    abort the sync: it is caught, classified, and surfaced — and in
     authoritative mode it fails the publication gate closed.
+
+    ``write_modes_supported`` is the two-writer guard. A cycle may only run
+    this lane in a writing mode when that cycle also has an explicit
+    conflict-prevention mechanism against its own legacy writer. The daily sync
+    has one (``skip_game_pks``); the postgame refresh does not, so it passes
+    ``False`` and a writing mode is refused there rather than silently letting
+    two writers touch the same canonical rows.
     """
     mode = game_driven_ingestion.ingestion_mode()
     ingestion_budget = runtime_budget.get('ingestion_budget_seconds')
@@ -2779,9 +2829,31 @@ def _run_game_driven_ingestion_stage(
         'remaining_ingestion_budget_seconds': ingestion_budget,
         'completed_game_pks': (),
         'error_class': None,
+        'refused_reason': None,
     }
     if mode == game_driven_ingestion.MODE_OFF:
         status['game_driven_ingestion'] = {'status': 'disabled', 'mode': mode}
+        return result
+
+    if not write_modes_supported and game_driven_ingestion.writes_enabled(mode):
+        # Refuse BEFORE planning, so a writing mode reaches neither MLB nor the
+        # database on a cycle that cannot prevent writer conflict. The lane is
+        # forced non-authoritative here too: a refused lane must never be able
+        # to take over the publication gate it never ran.
+        result['authoritative'] = False
+        result['refused_reason'] = GAME_DRIVEN_WRITE_MODE_UNSUPPORTED
+        status['game_driven_ingestion'] = {
+            'status': 'refused',
+            'mode': mode,
+            'reason': GAME_DRIVEN_WRITE_MODE_UNSUPPORTED,
+            'job_name': job_name,
+        }
+        run_logger.error(
+            'Game-driven ingestion lane refused (mode=%s, job=%s, reason=%s): '
+            'this cycle has no conflict-prevention mechanism against its own '
+            'legacy writer, so a writing mode is not runnable here.',
+            mode, job_name, GAME_DRIVEN_WRITE_MODE_UNSUPPORTED,
+        )
         return result
 
     lane_budget = _game_driven_lane_time_budget(ingestion_budget, mode)
@@ -2792,15 +2864,16 @@ def _run_game_driven_ingestion_stage(
             mode=mode,
             time_budget_seconds=lane_budget,
             sync_run_id=sync_run_id,
-            job_name=sync_metadata.JOB_DAILY_SYNC,
+            job_name=job_name,
         )
-    except Exception as exc:  # noqa: BLE001 - the daily sync must not die here
+    except Exception as exc:  # noqa: BLE001 - the sync must not die here
         db.session.rollback()
         error_class = type(exc).__name__
         result['error_class'] = error_class
         status['game_driven_ingestion'] = {
             'status': 'failed',
             'mode': mode,
+            'job_name': job_name,
             'error_class': error_class,
         }
         # No exception text: it can carry paths and payload fragments.
@@ -2847,7 +2920,16 @@ def _run_game_driven_ingestion_stage(
     status['game_driven_ingestion'] = {
         'status': report.get('status'),
         'mode': mode,
+        'job_name': job_name,
+        'writes_enabled': game_driven_ingestion.writes_enabled(mode),
+        'publication_authoritative': game_driven_ingestion.publication_authoritative(
+            mode
+        ),
+        'allocated_budget_seconds': lane_budget,
+        'remaining_budget_seconds': report.get('remaining_budget_seconds'),
+        'games_discovered': report.get('games_discovered'),
         'games_planned': report.get('games_planned'),
+        'games_attempted': report.get('games_attempted'),
         'games_fetched': report.get('games_fetched'),
         'games_completed': report.get('games_completed'),
         'games_failed': report.get('games_failed'),
@@ -2857,12 +2939,51 @@ def _run_game_driven_ingestion_stage(
         'newly_final_count': report.get('newly_final_count'),
         'corrected_final_count': report.get('corrected_final_count'),
         'retry_count': report.get('retry_count'),
+        'schedule_authority_missing': report.get('schedule_authority_missing'),
+        'finality_conflicts': report.get('finality_conflicts'),
+        'rows_expected': report.get('rows_expected'),
         'rows_inserted': report.get('rows_inserted'),
         'rows_updated': report.get('rows_updated'),
         'rows_unchanged': report.get('rows_unchanged'),
+        'rows_blocked': report.get('rows_blocked'),
+        # Every mutation target, so the lane can never report "no mutations"
+        # while one target is unaccounted for.
+        'pitcher_identity_mutations': report.get('pitcher_identity_mutations'),
+        'pitcher_identity_creations': report.get('pitcher_identity_creations'),
+        'pitcher_identity_reactivations': report.get(
+            'pitcher_identity_reactivations'
+        ),
+        'pitcher_identity_metadata_updates': report.get(
+            'pitcher_identity_metadata_updates'
+        ),
+        'pitcher_identity_blocked': report.get('pitcher_identity_blocked'),
+        'appearance_team_mutations': report.get('appearance_team_mutations'),
+        'complete_mutation_count': report.get('complete_mutation_count'),
+        'canonical_outs_corrections': report.get('canonical_outs_corrections'),
+        'statistical_corrections': report.get('statistical_corrections'),
+        'provenance_only_updates': report.get('provenance_only_updates'),
+        'derived_companion_fields_applied': report.get(
+            'derived_companion_fields_applied'
+        ),
+        'derived_companion_differences_ignored': report.get(
+            'derived_companion_differences_ignored'
+        ),
         'corrections_applied': report.get('corrections_applied'),
         'budget_stop_triggered': report.get('budget_stop_triggered'),
         'failure_classes': report.get('failure_classes'),
+        # Evidence identity only. A fingerprint recorded here has never been,
+        # and can never become, authorization for a write.
+        'reconciliation_plan_fingerprint': report.get(
+            'reconciliation_plan_fingerprint'
+        ),
+        'complete_reconciliation_fingerprint': report.get(
+            'complete_reconciliation_fingerprint'
+        ),
+        'reconciliation_plan_version': report.get('reconciliation_plan_version'),
+        'parity_contract_version': report.get('parity_contract_version'),
+        'innings_semantics_version': report.get('innings_semantics_version'),
+        'complete_plan_version': report.get('complete_plan_version'),
+        'identity_plan_version': report.get('identity_plan_version'),
         'planner_seconds': report.get('planner_seconds'),
         'fetch_seconds': report.get('fetch_seconds'),
         'extraction_seconds': report.get('extraction_seconds'),
@@ -5204,6 +5325,46 @@ def run_postgame_refresh(
                 status['logs_corrected'],
                 status['pitchers_created'],
                 status['pitchers_reactivated'],
+            )
+
+            # ── Game-driven appearance lane ─────────────────────────────────
+            # The postgame cycle's single integration point: the same service
+            # call the daily sync makes, on the same canonical planner and
+            # writer, exactly once per cycle. It is not a second ingestion
+            # command and it is not a second comparator.
+            #
+            # It runs AFTER the legacy sweep, not before it. The sweep is this
+            # cycle's writer, and it commits per game; a lane placed ahead of
+            # it would project every one of those rows as an insert it is about
+            # to perform anyway, which is noise, not evidence. Reading after
+            # the writer asks the question worth asking overnight: given what
+            # the current path just wrote, what would the game-driven lane do?
+            # (The daily sync's ordering is different for a real reason — there
+            # the lane is the one that becomes authoritative and the pitcher
+            # loop is demoted behind it.)
+            #
+            # write_modes_supported=False is the two-writer guard. The postgame
+            # sweep has no skip_game_pks equivalent, so nothing could stop it
+            # and a writing game-driven lane from touching the same canonical
+            # rows. Until that mechanism exists a writing mode is refused here,
+            # before any MLB request and before any write.
+            postgame_runtime_budget = _postgame_refresh_runtime_budget()
+            status['runtime_budget'] = postgame_runtime_budget
+            game_lane = _run_game_driven_ingestion_stage(
+                reference_date=schedule_date,
+                runtime_budget=postgame_runtime_budget,
+                sync_run_id=sync_run_id,
+                status=status,
+                stage_timings=stage_timings,
+                run_logger=run_logger,
+                job_name=sync_metadata.JOB_POSTGAME_REFRESH,
+                write_modes_supported=False,
+            )
+            # Recorded, never consulted. The postgame publication gate is
+            # unchanged and stays with the established authority; this lane is
+            # observation only until its own reviewed activation.
+            status['game_driven_lane_authoritative'] = bool(
+                game_lane['authoritative']
             )
 
             changed_log_count = status['new_logs_added'] + status['logs_corrected']
