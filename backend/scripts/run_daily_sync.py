@@ -1,5 +1,4 @@
 import argparse
-import json
 import logging
 import os
 import sys
@@ -35,6 +34,13 @@ def _parse_args(argv=None):
         action='store_true',
         help='Exit after public dashboard/Data & Trust snapshot publication.',
     )
+    parser.add_argument(
+        '--output',
+        help=(
+            'Optional path for a durable copy of the same JSON summary printed '
+            'to stdout. Written atomically with sorted keys.'
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -50,6 +56,9 @@ def main(argv=None):
     from services import sync as sync_service
     from services import sync_metadata
     from services.sync_publication_proof import build_candidate_publication_proof
+    from utils.summary_output import (
+        SummaryOutputError, serialize_summary, write_summary,
+    )
 
     status = sync_service.run_daily_sync(
         app,
@@ -74,10 +83,27 @@ def main(argv=None):
         'publication_proof': publication_proof,
         'sync': status,
     }
-    print(json.dumps(summary, sort_keys=True, default=str))
+    print(serialize_summary(summary))
 
     sync_succeeded = status.get('status') in sync_metadata.SUCCESSFUL_STATUSES
-    return 0 if sync_succeeded and publication_proof.get('verified') is True else 1
+    exit_code = (
+        0 if sync_succeeded and publication_proof.get('verified') is True else 1
+    )
+
+    # Durable evidence is written BEFORE the exit code is returned, and a
+    # failure to write it is itself a failure: a missing artifact must never be
+    # indistinguishable from a clean run. Only the safe reason is reported --
+    # the underlying message can contain a filesystem path.
+    if args.output:
+        try:
+            write_summary(summary, args.output)
+        except SummaryOutputError as exc:
+            logging.getLogger(__name__).error(
+                'Daily sync summary output failed (reason=%s).', exc.reason,
+            )
+            return exit_code or 1
+
+    return exit_code
 
 
 if __name__ == '__main__':

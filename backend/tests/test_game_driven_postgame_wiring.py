@@ -853,23 +853,43 @@ def test_explicit_backfill_shares_the_postgame_entry_point(app, monkeypatch):
     assert status['game_driven_ingestion']['status'] == 'disabled'
 
 
-def test_the_workflow_still_has_no_game_driven_configuration():
-    """This change activates nothing. The production workflow is untouched."""
+def test_the_lane_is_configured_only_by_a_reviewed_workflow_literal():
+    """The reviewed workflow source is the activation authority.
+
+    This test originally asserted that no workflow configured the lane at all,
+    which was correct while nothing was activated. Automated shadow activation
+    made that statement false on purpose, so the guarantee it protected is
+    restated in the form that still holds and still matters: wherever the mode
+    appears, it is a reviewed literal, and it is never a writing mode. A
+    ``vars.*`` or ``inputs.*`` value here would move production without review.
+
+    Placement and per-step eligibility are owned by
+    ``test_game_driven_shadow_activation_workflow.py``.
+    """
     import pathlib
+    import re
 
     workflows = (
         pathlib.Path(__file__).resolve().parents[2] / '.github/workflows'
     )
+    configured = 0
     for path in sorted(workflows.glob('*.yml')):
         text = path.read_text(encoding='utf-8')
-        assert 'GAME_DRIVEN_INGESTION_MODE' not in text, (
-            f'{path.name} configures the game-driven lane; this change must '
-            f'not activate it'
-        )
         assert 'game_driven_ingestion.py' not in text, (
             f'{path.name} invokes the game-driven CLI as a second ingestion '
             f'command'
         )
+        for value in re.findall(r'GAME_DRIVEN_INGESTION_MODE:\s*(.+)', text):
+            configured += 1
+            assert value.strip() in ("'shadow'", "'off'"), (
+                f'{path.name} configures the lane with {value.strip()!r}; the '
+                f'mode must be a reviewed literal and never a writing mode'
+            )
+    assert configured > 0, (
+        'the lane is configured nowhere — if activation was reverted, revert '
+        'this expectation with it rather than leaving a test that proves '
+        'nothing'
+    )
 
 
 def test_the_stage_helper_is_the_single_call_site_in_the_sync_service():
