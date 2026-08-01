@@ -1289,10 +1289,13 @@ budget_stop_triggered                 observed
 **Neither the cap nor the share was raised.** Raising a budget to make a
 mis-scoped cycle finish would hide the defect instead of fixing it.
 
-## GameLog `balls` — field authority UNRESOLVED
+## GameLog `balls` — field authority RESOLVED (was: unresolved)
 
-A persistent canonical parity discrepancy was isolated precisely and is
-**deliberately not repaired**, because authority is not proven.
+A persistent canonical parity discrepancy was isolated precisely and left
+deliberately unrepaired while authority was unproven. The read-only audit below
+was then run against production and **resolved it**. The original analysis is
+kept intact because the repair rests on it; the resolution and the repair
+follow, under *Resolution* and *The repair*.
 
 ### Production evidence
 
@@ -1355,7 +1358,7 @@ Those require the two live source payloads and the stored row. **This work had
 no access to MLB and no access to production**, so the authority question is
 recorded as unresolved rather than guessed.
 
-### Decision: Outcome E — unresolved
+### Decision at the time: Outcome E — unresolved
 
 No writer changed. No correction vocabulary changed. `balls` was neither added
 to nor removed from the governed set. The shadow failure stays active, because
@@ -1390,12 +1393,184 @@ python scripts/inspect_gamelog_field_authority.py \
     --output artifacts/field-authority/balls-824488.json
 ```
 
-### Until then
+## Resolution — the box score is canonical for `balls`
 
-No automatic correction. No production write. `balls` remains
-evidence-only for this decision, daily and postgame shadow remain
-observation-only, and automated write and authoritative modes remain
-unapproved.
+The audit was run against production and returned the three values that settle
+it:
+
+| source | `balls` | `strikes` | pitches |
+|---|---|---|---|
+| completed-game box score | 19 | 26 | 45 |
+| player game-log split | *absent* | 26 | 45 |
+| stored row | 20 | 26 | 45 |
+
+19 + 26 = 45. The box score's own accounting is internally coherent. The stored
+row's is not: 20 + 26 = 46, against a stored pitch count of 45.
+
+The split did not **contradict** the box score. It had nothing to say — the key
+is not in the payload. Running both source shapes through the canonical planner
+confirmed it: the box-score shape planned `update` with `changed_fields:
+['balls']` and target 19; the split shape planned `unchanged` with
+`uncomparable_fields: ['balls']`. The audit performed zero writes, its write
+probe was refused, and the row fingerprint was identical before and after.
+
+**Outcome A — the completed-game box score is canonical for `balls`, and the
+correction-horizon writer cannot realize the field.** The stored value was
+uncorrectable, not disputed: the only lane that revisits an existing appearance
+within the horizon is the daily lane, and the daily lane reads the split.
+
+## The repair — `PLAYER_SPLIT_PRIMARY_WITH_BOXSCORE_FALLBACK`
+
+`backend/services/gamelog_source_authority.py` declares field authority in one
+place, and the daily lane consults it:
+
+1. A field the split supplies is reconciled from the split, exactly as before.
+   **Fallback never overrides evidence that exists.**
+2. A field the split omits or nulls is still reported through
+   `uncomparable_fields` — absence is never treated as agreement.
+3. For a field with an **explicitly approved** fallback rule, and only then, the
+   completed-game box score may supply it.
+
+The approved set has exactly one member: `balls`. Widening it is a governance
+decision requiring its own production audit, its own semantic rule, and its own
+validation — not merely the observation that the split omits a field.
+
+### What `balls` is allowed to come from
+
+| | |
+|---|---|
+| primary source | `player_game_log_split` |
+| fallback source | `completed_game_boxscore` |
+| required companions | `strikes`, `numberOfPitches` |
+| validation rule | `balls + strikes == numberOfPitches` |
+
+The rule **validates** the official triple; it never derives from it. A line
+carrying strikes and pitches but no `balls` supplies nothing — `45 − 26` would
+be inventing evidence the source did not state. A line whose accounting does
+not add up (the stored 20/26/45 shape) is refused rather than reconciled.
+
+### No second comparator, no second writer
+
+The fallback changes what the lane can **see**, not what it may **do**. An
+approved value is merged into a *copy* of the split's stats and then flows
+through the same `_game_log_values_from_stats` → `plan_row` →
+`_upsert_game_log_from_authoritative_values` path as every other field. There is
+no direct assignment to `row.balls` anywhere.
+
+Every safety rule upstream of the fallback stays upstream of it: a non-final
+game is skipped before any fetch; a partial source line is still blocked; the
+game-driven lane's `skip_game_pks` conflict prevention is unchanged.
+
+### Refusals are named, never silent
+
+`field_not_approved_for_fallback`, `split_supplies_field`, `game_not_final`,
+`boxscore_unavailable`, `no_boxscore_pitching_line`, `field_absent_in_boxscore`,
+`required_companion_absent`, `boxscore_values_inconsistent`,
+`source_revision_missing`, `pitcher_identity_ambiguous`.
+
+Two box-score lines claiming the same pitcher refuse rather than choose: if the
+recipient of the correction is not established, writing either would be a guess
+about whose appearance it is.
+
+### Cost
+
+One box-score read per **game** per run, cached and shared with the existing
+leverage-index backfill — a game already read for leverage index is never read
+again for the fallback. A row whose split already carries every approved field
+costs nothing. `BOXSCORE_FALLBACK_FETCH_CAP` bounds the worst case; reaching it
+is counted and reported, never absorbed. The daily ingestion budget is
+unchanged.
+
+### Provenance
+
+A correction whose value came from the fallback records
+`last_stat_correction_source = completed_game_boxscore_fallback`, not
+`daily_game_log` — recording the lane's own source would credit an endpoint that
+never carried the value. A correction the split itself drove keeps
+`daily_game_log`, even on a row where the fallback also supplied a value that
+turned out to agree.
+
+### Observability
+
+Every daily run reports the fallback, zeros included — an absent key would read
+as "not instrumented", which is a different claim from "nothing was eligible":
+
+`boxscore_fallback_eligible_rows`, `_fetches`, `_fetch_failures`,
+`_applied_rows`, `_corrected_rows`, `_inserted_rows`, `_unchanged_rows`,
+`_refused_rows`, `_fetch_cap_reached`, `_refusal_reasons`, `_records`,
+`_records_truncated`.
+
+Each record names game_pk, pitcher_mlb_id, the fields supplied, the difference
+classification, the source authority and version, the source revision, the plan
+fingerprint, the applied target-state digest, and the outcome. It carries no
+source payload.
+
+`uncomparable_fields` is unaffected: when the fallback refuses, the plan still
+says the split never looked at the field, so a refused fallback can never read
+as agreement.
+
+### Impact planning before any production correction
+
+`backend/scripts/plan_boxscore_balls_fallback_impact.py` enumerates the affected
+set across the correction horizon **before** a writer runs, in two narrowing
+stages: one box-score fetch per game to find rows the box score would actually
+move, then one game-log fetch per *candidate pitcher* to rebuild the appearance
+the way the daily lane would and run the real planner over it. It reports the
+plan the writer would make, including any `changed_fields` outside the approved
+set — which is what would block the repair as scoped.
+
+Read-only and provably so: a read-only transaction, a refused write probe, a
+horizon fingerprint before and after, and an explicit rollback. It reports what
+it could not confirm rather than quietly narrowing.
+
+```bash
+python scripts/plan_boxscore_balls_fallback_impact.py \
+    --days-back 7 --output artifacts/fallback-impact/balls-impact.json
+```
+
+Exit codes: `0` complete and in scope, `1` incomplete enumeration, `2` unsafe
+(the horizon moved, or the session was not read-only), `3` a proposed change
+touches a field outside the approved set.
+
+### Contract versions did not move — deliberately
+
+`reconciliation_plan_version` (3), `parity_contract_version` (4),
+`innings_semantics_version` (2), `complete_plan_version` (1), and
+`identity_plan_version` (1) are all unchanged, and there is no migration.
+
+The planner's decision for a given `(existing, values, stats)` is byte-for-byte
+what it was. What changed is what the daily lane *hands* the planner — a source
+shape that now carries one more key. Bumping a plan or parity version would
+invalidate every reviewed fingerprint on a contract that did not actually
+change, which is the opposite of what those versions are for.
+
+Field authority is versioned separately, on its own axis:
+`authority_contract = player_split_primary_with_boxscore_fallback`,
+`authority_version = 1`. Adding a field to the approved set moves that version
+and nothing else.
+
+### Effect on the daily realization proof
+
+The divergent row that kept the activation gate FAILED was `balls` on game
+`824488`: the game-driven lane projected it from the box score, and the daily
+writer could not realize it from the split. With the fallback in place the daily
+writer sees the same evidence the lane projected from, so the row is expected to
+converge and the gate is expected to return to PASS on its own — without the
+gate being loosened, and without the difference being suppressed.
+
+If it does **not** converge, that is a second, different finding and must be
+diagnosed as one. The gate stays exactly as strict as it was.
+
+### Scope of this repair
+
+Daily and postgame shadow modes are unchanged. No production correction was
+executed as part of this work. `GAME_DRIVEN_INGESTION_MODE` remains `shadow` for
+both cycles, backfill remains `off`, and automated write and authoritative modes
+remain unapproved.
+
+Before any production correction: run the impact planner, review its artifact,
+confirm `database writes performed: 0`, confirm the affected set is finite and
+fully enumerated, and confirm `every_change_is_approved_field_only` is true.
 
 ## Operator repair procedure
 

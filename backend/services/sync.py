@@ -45,6 +45,7 @@ from services import evidence_contract
 from services import game_driven_ingestion
 from services import game_driven_realization
 from services import game_log_reconciliation
+from services import gamelog_source_authority
 from services import pitcher_identity_reconciliation as pitcher_identity
 from services import game_ingestion_completeness
 from services.fatigue import calculate_fatigue
@@ -104,6 +105,12 @@ POSTGAME_REFRESH_DEFAULT_INGESTION_BUDGET_SECONDS = 600.0
 DAILY_GAME_LOG_BUDGET_FAILURE_ENTITY_TYPE = 'daily_game_log_budget'
 POSTGAME_SNAPSHOT_DEFAULT_TIMEOUT_SECONDS = 120.0
 DAILY_GAME_LOG_CORRECTION_SOURCE = 'daily_game_log'
+# Upper bound on box-score fetches the balls fallback may add to one run.
+# The natural bound is the number of distinct games in the correction horizon
+# (roughly a hundred over seven days), so this never binds in normal operation.
+# It exists so a pathological horizon cannot spend the ingestion budget on
+# fetches, and reaching it is counted and reported rather than absorbed.
+BOXSCORE_FALLBACK_FETCH_CAP = 400
 POSTGAME_BOXSCORE_CORRECTION_SOURCE = 'postgame_boxscore'
 POSTGAME_PITCHER_RESOLUTION_SOURCE = 'mlb_stats_api:postgame_boxscore_pitching_line'
 POSTGAME_PITCHING_LINE_AUTHORITY = 'completed_game_boxscore_pitching_section'
@@ -1114,6 +1121,8 @@ def _upsert_game_log_from_authoritative_values(
     include_leverage_index=False,
     existing=_OPTIONAL_INPUT_NOT_PROVIDED,
     appearance_team=None,
+    fallback_source=None,
+    fallback_fields=(),
 ):
     if existing is _OPTIONAL_INPUT_NOT_PROVIDED:
         existing = GameLog.query.filter_by(
@@ -1211,9 +1220,19 @@ def _upsert_game_log_from_authoritative_values(
             'plan': plan,
         }
 
+    # Provenance names the authority for the values that actually moved. When a
+    # correction was only possible because a fallback source supplied a field
+    # the lane's own source omits, recording the lane's source would credit an
+    # endpoint that never carried the value.
+    recorded_source = source
+    if fallback_source and any(
+        field in set(fallback_fields or ()) for field in stat_changed_fields
+    ):
+        recorded_source = fallback_source
+
     existing.stat_correction_count = (existing.stat_correction_count or 0) + 1
     existing.last_stat_correction_at = utc_now_naive()
-    existing.last_stat_correction_source = source
+    existing.last_stat_correction_source = recorded_source
     existing.last_stat_correction_sync_run_id = sync_run_id
     db.session.add(existing)
     _notify_workload_evidence_game_log_correction(
@@ -3614,8 +3633,12 @@ def sync_recent_logs(
     affected_game_pks = set()
     # One finality resolution per game_pk per run, shared across pitchers.
     finality_cache = {}
-    # One boxscore fetch per game_pk for leverage-index backfill, not per log.
+    # One boxscore fetch per game_pk, shared by the leverage-index backfill and
+    # the governed box-score fallback — never one fetch per log, and never two
+    # fetches for the same game because two features wanted it.
     pitching_lines_cache = {}
+    # Accounting for the fields the split cannot supply and the box score can.
+    fallback_ledger = gamelog_source_authority.FallbackLedger()
     # One SELECT for every current-season row, instead of one SELECT per split
     # per pitcher. The same prefetch feeds both upserts and ledger coverage.
     existing_rows = (
@@ -3786,6 +3809,7 @@ def sync_recent_logs(
                     pitching_lines_cache=pitching_lines_cache,
                     sync_run_id=sync_run_id,
                     job_name=job_name,
+                    fallback_ledger=fallback_ledger,
                 )
             except Exception as e:
                 logger.warning(
@@ -3970,10 +3994,121 @@ def sync_recent_logs(
         'season':            season,
         'reference_date':    reference_date.isoformat(),
         'cutoff':            cutoff.isoformat(),
+        # Always present, zeros included: an absent key would read as "the
+        # fallback is not instrumented", which is a different claim from
+        # "nothing was eligible".
+        **fallback_ledger.summary(),
     }
     if timezone_limitations:
         result['limitations'] = list(timezone_limitations)
     return result
+
+
+def _apply_boxscore_fallback(
+    *, pitcher, game_pk, stat, values, pitching_lines_cache, ledger,
+):
+    """Supply approved fields the split omits, from the completed-game box score.
+
+    Returns ``(stats, decision)``. The returned stats are the split's own stats
+    when nothing was applied — the same object, so the split stays reportable as
+    what the split actually said.
+
+    The fetch is the reason this function owns the cache: at most one box-score
+    read per game per run, shared with the leverage-index backfill, and only
+    when an approved field is genuinely uncomparable. A row whose split already
+    carries every approved field costs nothing.
+    """
+    empty = {'applied_fields': [], 'values': {}, 'refusals': {},
+             'source_revision': None}
+    if ledger is None:
+        return stat, empty
+
+    uncomparable = game_log_reconciliation.uncomparable_fields(values, stat)
+    candidates = gamelog_source_authority.approved_uncomparable_fields(uncomparable)
+    if not candidates:
+        return stat, empty
+
+    ledger.eligible_rows += 1
+    positive_game_pk = _positive_external_id(game_pk)
+    unavailable_reason = None
+    pitching_lines = []
+
+    if pitching_lines_cache is not None and game_pk in pitching_lines_cache:
+        pitching_lines = pitching_lines_cache[game_pk] or []
+    elif ledger.fetches >= BOXSCORE_FALLBACK_FETCH_CAP:
+        ledger.fetch_cap_reached += 1
+        unavailable_reason = gamelog_source_authority.REFUSED_BOXSCORE_UNAVAILABLE
+    else:
+        ledger.fetches += 1
+        try:
+            pitching_lines = mlb_client.get_game_pitching_lines(game_pk) or []
+        except Exception as e:
+            logger.warning(
+                'Boxscore fallback fetch failed for game_pk=%s: %s', game_pk, e,
+            )
+            ledger.fetch_failures += 1
+            unavailable_reason = (
+                gamelog_source_authority.REFUSED_BOXSCORE_UNAVAILABLE
+            )
+        else:
+            if pitching_lines_cache is not None:
+                pitching_lines_cache[game_pk] = pitching_lines
+
+    boxscore_stats = None
+    if unavailable_reason is None:
+        boxscore_stats, refusal = gamelog_source_authority.select_boxscore_line(
+            pitching_lines, pitcher.mlb_id,
+        )
+        if refusal is not None:
+            unavailable_reason = refusal
+
+    decision = gamelog_source_authority.resolve_fallback_values(
+        split_stats=stat,
+        boxscore_stats=boxscore_stats,
+        uncomparable=uncomparable,
+        game_pk=positive_game_pk,
+        pitcher_mlb_id=pitcher.mlb_id,
+        game_final=True,
+        unavailable_reason=unavailable_reason,
+    )
+    ledger.note_refusals(decision['refusals'])
+    if not decision['applied_fields']:
+        ledger.refused_rows += 1
+        return stat, decision
+
+    ledger.applied_rows += 1
+    return gamelog_source_authority.enriched_stats(stat, decision), decision
+
+
+def _record_boxscore_fallback_outcome(
+    *, ledger, fallback, result, game_pk, pitcher,
+):
+    """Name the authority behind a fallback-supplied value that was written."""
+    if ledger is None or not fallback['applied_fields']:
+        return
+    plan = result.get('plan') or {}
+    changed = set(plan.get('changed_fields') or ())
+    if result.get('status') == 'inserted':
+        # The new row carries the fallback value from the moment it exists;
+        # inserts report no changed fields, so this is not "already matching".
+        outcome = gamelog_source_authority.OUTCOME_INSERTED
+        ledger.inserted_rows += 1
+    elif changed & set(fallback['applied_fields']):
+        outcome = gamelog_source_authority.OUTCOME_CORRECTED
+        ledger.corrected_rows += 1
+    else:
+        outcome = gamelog_source_authority.OUTCOME_ALREADY_MATCHING
+        ledger.unchanged_rows += 1
+    ledger.record_application(
+        game_pk=_positive_external_id(game_pk),
+        pitcher_mlb_id=getattr(pitcher, 'mlb_id', None),
+        fields=fallback['applied_fields'],
+        classifications=plan.get('difference_classifications') or (),
+        source_revision=fallback['source_revision'],
+        plan_fingerprint=game_log_reconciliation.plan_fingerprint([plan]),
+        target_state_digest=plan.get('target_state_digest'),
+        outcome=outcome,
+    )
 
 
 def _ingest_game_log_split(
@@ -3988,6 +4123,7 @@ def _ingest_game_log_split(
     sync_run_id=None,
     job_name=sync_metadata.JOB_DAILY_SYNC,
     correction_source=DAILY_GAME_LOG_CORRECTION_SOURCE,
+    fallback_ledger=None,
 ):
     """
     Insert or correct a single game-log split for a pitcher.
@@ -4002,7 +4138,15 @@ def _ingest_game_log_split(
     dominant cost against a remote database); a miss still falls back to a
     real query before inserting, so correctness is unchanged.
     ``pitching_lines_cache`` dedupes the leverage-index boxscore fetch per
-    game_pk (one game produces many inserted lines).
+    game_pk (one game produces many inserted lines). The same cache serves the
+    box-score fallback below, so a game is fetched at most once per run for
+    both purposes.
+
+    ``fallback_ledger`` enables the governed box-score fallback: a field the
+    split does not carry at all (see ``gamelog_source_authority``) is supplied
+    from the completed-game box score, fed through the same canonical values
+    builder and the same planner, and written by the same writer. Omit it and
+    the split remains the only source, exactly as before.
     """
     game_info     = split.get('game', {})
     stat          = split.get('stat', {})
@@ -4069,6 +4213,32 @@ def _ingest_game_log_split(
         games_started=parse_games_started(stat.get('gamesStarted')),
         appearance_team=appearance_team,
     )
+    # Governed box-score fallback. The split is still primary: this only runs
+    # for fields the split does not carry at all, and only for fields with an
+    # explicitly approved fallback rule. The enriched stats then flow through
+    # the same values builder and the same planner — there is no second
+    # comparator and no direct assignment to the row.
+    stat, fallback = _apply_boxscore_fallback(
+        pitcher=pitcher,
+        game_pk=game_pk,
+        stat=stat,
+        values=values,
+        pitching_lines_cache=pitching_lines_cache,
+        ledger=fallback_ledger,
+    )
+    if fallback['applied_fields']:
+        values = _game_log_values_from_stats(
+            stats=stat,
+            pitcher=pitcher,
+            game_pk=game_pk,
+            game_date=game_date,
+            game_type=game_type,
+            opponent=opponent.get('name'),
+            opponent_abbreviation=team_abbr_map.get(opponent.get('id')),
+            games_started=parse_games_started(stat.get('gamesStarted')),
+            appearance_team=appearance_team,
+        )
+
     row_key = (pitcher.id, _positive_external_id(game_pk))
     preloaded = (
         existing_by_key.get(row_key)
@@ -4084,9 +4254,18 @@ def _ingest_game_log_split(
         sync_run_id=sync_run_id,
         job_name=job_name,
         appearance_team=appearance_team,
+        fallback_source=gamelog_source_authority.CORRECTION_SOURCE_BOXSCORE_FALLBACK,
+        fallback_fields=fallback['applied_fields'],
         # A map hit avoids the per-split SELECT; a miss keeps the real query
         # so a row stored under an out-of-window date is never double-inserted.
         **({'existing': preloaded} if preloaded is not None else {}),
+    )
+    _record_boxscore_fallback_outcome(
+        ledger=fallback_ledger,
+        fallback=fallback,
+        result=result,
+        game_pk=game_pk,
+        pitcher=pitcher,
     )
 
     # Backfill leverage index from the boxscore. A failed call or a missing LI
@@ -6155,6 +6334,24 @@ def run_daily_sync(
             status['splits_skipped'] = pull.get('splits_skipped', {})
             status['game_log_lane_health'] = pull.get('lane_health', 'unknown')
             status['budget_exhausted_pitchers'] = pull.get('budget_exhausted_pitchers', 0)
+            # Governed box-score fallback accounting. Surfaced on every run, so
+            # "the fallback wrote nothing today" and "the fallback is not
+            # reported" can never look the same in an artifact.
+            for _key, _zero in gamelog_source_authority.empty_summary().items():
+                status[_key] = pull.get(_key, _zero)
+            run_logger.info(
+                'Box-score fallback: eligible=%s applied=%s corrected=%s '
+                'inserted=%s already_matching=%s refused=%s fetches=%s '
+                'refusals=%s',
+                status['boxscore_fallback_eligible_rows'],
+                status['boxscore_fallback_applied_rows'],
+                status['boxscore_fallback_corrected_rows'],
+                status['boxscore_fallback_inserted_rows'],
+                status['boxscore_fallback_unchanged_rows'],
+                status['boxscore_fallback_refused_rows'],
+                status['boxscore_fallback_fetches'],
+                status['boxscore_fallback_refusal_reasons'],
+            )
             status['errors'] = (
                 pull['errors']
                 + roster['errors']
