@@ -90,48 +90,49 @@ Downstream jobs (`internal-enrichment`, `static-team-story-preview`) run only
 after `public-sync` succeeds, so a failed ledger verdict also stops enrichment
 and static page publication from advancing on unproven data.
 
-## Foundation 3C — bootstrap complete, rollout workflows retired
+## Foundation 3C — rollout closed
 
-**The Foundation 3C bootstrap is complete.** All **109** governed final games
-are reconciled and checkpointed, **946** appearance rows are reconciled, and
-publication completeness is satisfied for the governed window.
+**The Foundation 3C bootstrap is complete and closed at 109 completed / 0
+unresolved, with 946 appearance rows reconciled** and publication completeness
+satisfied for the governed window.
 
-The six temporary rollout workflows that performed it — R1 through R6 — have
-been **removed** and cannot be dispatched again. One temporary workflow remains:
+It was independently verified in production by a final read-only Stage E replay
+of all 109 games: 946 rows unchanged, 323 decimal-only differences safely
+ignored, zero mutations on every target, and zero database drift.
 
-| File | Displayed name | Purpose |
-|---|---|---|
-| `.github/workflows/foundation-3c-stage-e-bootstrap-closeout.yml` | Foundation 3C Stage E Bootstrap Closeout | one read-only verification of the completed 109-game bootstrap |
-
-Stage E is **temporary, manual-only, and read-only**. It runs one exclusive
-109-game shadow replay, proves production is at 109 completed / 0 unresolved
-with 946 reconciled rows, proves the replay itself caused no database drift, and
-records the final contract-4 full-bootstrap fingerprint. It has no write mode,
-no fingerprint argument, and authorizes nothing — it is a verification, not
-another gate.
-
-It serializes on `baseballos-sync` so it cannot run beside the scheduled
-daily/postgame sync or intraday repair.
-
-Stage E exists in two parts because a workflow cannot verify production after
-merge and also delete itself in the same already-merged commit. **E2** records
-the verification result in the historical closeout and then removes the Stage E
-workflow and its temporary support files.
-
-The complete rollout history is preserved in
+**Every Foundation 3C rollout workflow is retired.** R1 through R6 were removed
+at Stage E1; the Stage E verification workflow was removed at Stage E2. None can
+be dispatched, and no renamed, disabled, or archived copy remains under
+`.github/workflows`. Git history and the archived closeout record are the
+historical record:
 `docs/archive/2026-07/FOUNDATION_3C_BOOTSTRAP_CLOSEOUT.md`.
 
-### Stage E changes nothing about normal sync
+The permanent architecture the rollout built remains in production service — the
+planner, reconciliation and identity authorities, canonical integer-outs
+semantics, contract-4 fingerprinting, exclusive scope, per-game transactional
+checkpoints, and fail-closed publication completeness. What was retired is the
+temporary machinery that performed a one-time backfill, not the machinery that
+runs.
 
-Ordinary daily and postgame sync behaviour is unchanged by Stage E. No schedule,
-cadence, publication path, or mode was altered.
+### Normal synchronization is unchanged
+
+Ordinary daily and postgame sync behaviour was not altered by the rollout's
+closure. No schedule, cadence, publication path, or mode changed.
 
 ### Automation remains off
 
 `GAME_DRIVEN_INGESTION_MODE` remains **off** and authoritative mode remains
-**unapproved**. The bootstrap was completed by manual dispatch; completing it
-granted no activation authority. **Future activation requires a separate
-reviewed change** with its own evidence.
+**unapproved**. The bootstrap was completed by explicit manual dispatch;
+completing it granted no activation authority.
+
+**The next planned step is automated game-driven ingestion shadow.** It requires
+a separate reviewed pull request and a period of production observation before
+any further mode change is considered. **No authoritative cutover decision has
+been made.**
+
+`backend/scripts/profile_daily_ingestion_readonly.py` is retained as activation
+operations support for observing that shadow behave. It has no workflow and is
+run deliberately.
 
 ### Pitcher identity is not written by completed games (D-009)
 

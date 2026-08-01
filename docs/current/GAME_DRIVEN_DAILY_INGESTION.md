@@ -783,10 +783,21 @@ games are reconciled and checkpointed.
 | reconciled appearance rows | **946** |
 
 The bootstrap was performed by explicit manual dispatch across six reviewed
-increments in July 2026. The full rollout history — every stage, its production
-evidence, the fingerprints, and the hash evidence — is preserved in
+increments in July 2026, then **independently verified in production by a final
+read-only Stage E replay of all 109 games**: 946 rows unchanged, 323 decimal-only
+differences ignored, zero mutations on every target, and zero database drift.
+
+**The rollout is closed.** Every temporary Foundation 3C workflow — R1 through
+R6 and the Stage E verification — has been retired, and none can be dispatched.
+The full rollout history, its production evidence, the fingerprints, and the
+hash evidence are preserved in
 `docs/archive/2026-07/FOUNDATION_3C_BOOTSTRAP_CLOSEOUT.md`. That record is
 historical; this document is the current operating contract.
+
+The fingerprints in that archive are **historical closeout identities**. They
+record what the completed bootstrap looked like. They are not authorization and
+cannot be supplied to authorize a future write — any later write requires its
+own reviewed fingerprint from its own reviewed shadow.
 
 **`GAME_DRIVEN_INGESTION_MODE` remains `off`.**
 **Automated activation is a separate decision.**
@@ -794,6 +805,22 @@ historical; this document is the current operating contract.
 
 A completed bootstrap is a precondition for considering activation, not an
 argument for it. Enabling either lane requires its own reviewed change.
+
+### Next stage
+
+The next controlled step is **automated game-driven ingestion shadow
+activation**, handled by a separate reviewed change with its own evidence and
+its own production observation. Write and authoritative modes are **not
+approved** for automated operation.
+
+`backend/scripts/profile_daily_ingestion_readonly.py` is retained as activation
+operations support: a read-only profile for observing universe selection,
+runtime, scope, budget handling, and candidate classification while that
+activation is watched. It has no workflow and is run deliberately.
+
+Rollback and fail-closed behaviour remain permanent regardless of mode: an
+incomplete or unsafe run withholds publication rather than publishing partial
+evidence.
 
 ### What a completed bootstrap does and does not claim
 

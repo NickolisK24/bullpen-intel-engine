@@ -1,4 +1,17 @@
-"""Foundation 3C read-only diagnostic: daily pitcher universe + ingestion profile.
+"""Read-only ingestion diagnostic: daily pitcher universe + ingestion profile.
+
+RETAINED AS ACTIVATION OPERATIONS SUPPORT. This began as a Foundation 3C
+rollout diagnostic. That rollout is closed — the 109-game bootstrap is complete
+and every temporary rollout workflow is retired — but this script is not a
+rollout artifact. It observes NORMAL production ingestion behaviour: universe
+selection, runtime, scope, budget handling, and candidate classification.
+
+The next controlled stage is automated game-driven ingestion shadow activation,
+and this is the tool for watching that behave. Reconsider removing it only once
+automated write mode has proven stable in production.
+
+Its dispatchable workflow was removed at Stage E1; run it deliberately rather
+than on a schedule.
 
 Answers two questions with measurement rather than inference:
 
