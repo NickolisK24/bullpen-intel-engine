@@ -3059,6 +3059,11 @@ def _run_game_driven_ingestion_stage(
             'difference_classifications': list(
                 row.get('difference_classifications') or ()
             ),
+            # What this lane could not evaluate. A field named here was never
+            # compared, which is a different fact from being found equal — and
+            # it is the fact that explains a difference one lane sees and
+            # another never can.
+            'uncomparable_fields': list(row.get('uncomparable_fields') or ()),
             'blocked_reason': row.get('blocked_reason'),
             'pitcher_identity_action': row.get('pitcher_identity_action'),
             'source_revision': game.get('source_revision'),
