@@ -314,6 +314,8 @@ def plan_row(
     )
     plan['target_fields'] = target_fields(plan)
     plan['target_state_digest'] = plan_target_state_digest(plan)
+    plan['stored_state_digest'] = plan_stored_state_digest(plan)
+    plan['difference_classifications'] = difference_classifications(plan)
     return plan
 
 
@@ -622,6 +624,95 @@ def target_state_digest(field_values) -> str:
         payload, sort_keys=True, separators=(',', ':'), default=str,
     )
     return hashlib.sha256(encoded.encode('utf-8')).hexdigest()[:32]
+
+
+# Difference classification vocabulary for the safe diagnostic. Every value is
+# an existing repository classification; none is invented for reporting.
+DIFFERENCE_STATISTICAL = 'statistical_correction'
+DIFFERENCE_CANONICAL_OUTS = 'canonical_outs_correction'
+DIFFERENCE_APPEARANCE_TEAM = 'appearance_team_correction'
+DIFFERENCE_ROLE_SIGNAL = 'role_or_starter_signal_correction'
+DIFFERENCE_GAME_METADATA = 'game_metadata_correction'
+DIFFERENCE_PROVENANCE_ONLY = 'provenance_only'
+DIFFERENCE_DECIMAL_COMPANION = 'decimal_companion_difference'
+DIFFERENCE_IDENTITY_CREATION = 'identity_creation'
+DIFFERENCE_IDENTITY_BLOCKED = 'identity_blocked'
+DIFFERENCE_BLOCKED = 'blocked_mutation'
+DIFFERENCE_INSERT = 'missing_appearance_row'
+
+DIFFERENCE_CLASSIFICATIONS = (
+    DIFFERENCE_STATISTICAL,
+    DIFFERENCE_CANONICAL_OUTS,
+    DIFFERENCE_APPEARANCE_TEAM,
+    DIFFERENCE_ROLE_SIGNAL,
+    DIFFERENCE_GAME_METADATA,
+    DIFFERENCE_PROVENANCE_ONLY,
+    DIFFERENCE_DECIMAL_COMPANION,
+    DIFFERENCE_IDENTITY_CREATION,
+    DIFFERENCE_IDENTITY_BLOCKED,
+    DIFFERENCE_BLOCKED,
+    DIFFERENCE_INSERT,
+)
+
+# Deliberately NOT including CATEGORY_PROVENANCE_ONLY: that category is
+# attached whenever a correction stamps provenance, so mapping it directly
+# would label an ordinary statistical correction "provenance_only" and tell a
+# reviewer the opposite of what happened. The plan's own ``is_provenance_only``
+# is the honest signal and is read separately below.
+_CATEGORY_TO_DIFFERENCE = {
+    CATEGORY_STATISTICAL_CORRECTION: DIFFERENCE_STATISTICAL,
+    CATEGORY_APPEARANCE_TEAM_AUTHORITY: DIFFERENCE_APPEARANCE_TEAM,
+    CATEGORY_ROLE_SIGNAL: DIFFERENCE_ROLE_SIGNAL,
+    CATEGORY_GAME_METADATA: DIFFERENCE_GAME_METADATA,
+    CATEGORY_BLOCKED: DIFFERENCE_BLOCKED,
+}
+
+
+def difference_classifications(plan) -> list[str]:
+    """Name WHAT KIND of difference a plan found, in the closed vocabulary.
+
+    Derived entirely from the canonical plan's own categories and field sets —
+    there is no second comparator and no second opinion about what changed.
+    """
+    plan = plan or {}
+    found = set()
+    for category in plan.get('mutation_categories') or ():
+        mapped = _CATEGORY_TO_DIFFERENCE.get(category)
+        if mapped:
+            found.add(mapped)
+    semantic = set(plan.get('semantic_changed_fields') or ())
+    if semantic & set(SEMANTIC_AUTHORITY_BY_COMPANION.values()):
+        found.add(DIFFERENCE_CANONICAL_OUTS)
+    if plan.get('derived_companion_differences_ignored'):
+        found.add(DIFFERENCE_DECIMAL_COMPANION)
+    if plan.get('is_provenance_only'):
+        found.add(DIFFERENCE_PROVENANCE_ONLY)
+    identity_action = plan.get('pitcher_identity_action')
+    if identity_action == identity.ACTION_CREATE_MINIMAL_IDENTITY:
+        found.add(DIFFERENCE_IDENTITY_CREATION)
+    elif identity_action == identity.ACTION_BLOCKED:
+        found.add(DIFFERENCE_IDENTITY_BLOCKED)
+    if plan.get('action') == ACTION_INSERT:
+        found.add(DIFFERENCE_INSERT)
+    return [name for name in DIFFERENCE_CLASSIFICATIONS if name in found]
+
+
+def plan_stored_state_digest(plan) -> str:
+    """Digest of what the stored row held for the fields this plan targets.
+
+    Computed from the before-values the plan already carries, so it needs no
+    extra database read — and only the digest is ever reported, never the
+    values it was computed from. Paired with the target digest it says
+    "these differ" without saying how.
+    """
+    action = (plan or {}).get('action')
+    if action == ACTION_UPDATE:
+        return target_state_digest(
+            (change['field'], change['before'])
+            for change in ((plan or {}).get('field_changes') or ())
+        )
+    # An insert has no stored row; unchanged and blocked target nothing.
+    return target_state_digest(())
 
 
 def plan_target_state_digest(plan) -> str:

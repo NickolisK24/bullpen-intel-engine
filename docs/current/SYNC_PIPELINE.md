@@ -212,6 +212,40 @@ Automated **write** mode and **authoritative** mode both remain **unapproved**,
 and each requires its own separate reviewed pull request. Production observation
 begins with the first scheduled cycle after merge.
 
+### Postgame shadow is temporarily off
+
+The first automated postgame shadow cycle failed activation health on **scope**.
+The production path was unaffected: the postgame sync returned `success`, the
+runner exited `0`, publication was verified with snapshot `324`, and shadow
+performed zero writes on every counter. That is the isolation contract working
+exactly as designed — the activation gate failed and production did not.
+
+The lane planned 112 games and completed 98 before exhausting its 150-second
+allocation, leaving 14 remaining. It was reading the planner's rolling
+seven-day correction horizon instead of the games that postgame cycle actually
+governs.
+
+`GAME_DRIVEN_INGESTION_MODE` on the postgame runner step is now **`'off'`**.
+Daily remains `'shadow'`; backfill remains `'off'`. No schedule, cadence,
+manual mode, permission, concurrency group, command timeout, publication gate,
+ledger audit, or dashboard verification changed.
+
+While postgame is off, the activation validator, credential scan, summary,
+artifact upload, and health gate run for **daily cycles only** — validating an
+intentionally disabled lane would manufacture an activation failure at 02:00,
+04:00, and 06:00 every night. Daily activation artifacts are unaffected.
+
+The repair in place for reactivation: the postgame lane now takes **exclusive
+scope** over its own cycle's fully-written completed games, resolved after the
+writer from state the cycle already holds — no MLB request, no second planning
+pass, every excluded game carrying a named reason. Non-unchanged projected rows
+are now identified by game, pitcher, canonical field names, classification,
+source revision, and digests, with no values.
+
+**Reactivation is a separate reviewed decision.** Neither the budget cap nor the
+lane share was raised: a larger budget would have hidden the scope defect rather
+than fixed it.
+
 ### Pitcher identity is not written by completed games (D-009)
 
 The FIRST production R1 and R2 passed on **GameLog reconciliation only**. The
