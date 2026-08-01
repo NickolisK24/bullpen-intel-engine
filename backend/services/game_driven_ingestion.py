@@ -975,6 +975,10 @@ def _safe_row_entries(plan) -> list[dict]:
             # process — only their digest does.
             'target_fields': list(entry.get('target_fields') or ()),
             'target_state_digest': entry.get('target_state_digest'),
+            'stored_state_digest': entry.get('stored_state_digest'),
+            'difference_classifications': list(
+                entry.get('difference_classifications') or ()
+            ),
             **pitcher_identity.safe_row_entry(entry.get('pitcher_identity')),
         }
         for entry in plan or ()

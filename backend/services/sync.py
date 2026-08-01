@@ -2805,6 +2805,8 @@ def _run_game_driven_ingestion_stage(
     run_logger,
     job_name: str = sync_metadata.JOB_DAILY_SYNC,
     write_modes_supported: bool = True,
+    only_game_pks=None,
+    scope_summary: dict | None = None,
 ) -> dict:
     """Run the Foundation 3C game-driven appearance lane, if it is enabled.
 
@@ -2866,6 +2868,7 @@ def _run_game_driven_ingestion_stage(
             time_budget_seconds=lane_budget,
             sync_run_id=sync_run_id,
             job_name=job_name,
+            only_game_pks=only_game_pks,
         )
     except Exception as exc:  # noqa: BLE001 - the sync must not die here
         db.session.rollback()
@@ -2926,8 +2929,25 @@ def _run_game_driven_ingestion_stage(
         'publication_authoritative': game_driven_ingestion.publication_authoritative(
             mode
         ),
+        # The cap and the allocation are different numbers and were reported
+        # ambiguously on the first production cycle: a 600s cap with a 150s
+        # allocation read as "600 seconds available". Both are named now, with
+        # the share that relates them.
+        'configured_stage_cap_seconds': runtime_budget.get(
+            'stage_budget_cap_seconds'
+        ),
+        'lane_budget_share': (
+            1.0 if game_driven_ingestion.publication_authoritative(mode)
+            else _game_driven_lane_budget_share()
+        ),
+        'effective_allocated_budget_seconds': lane_budget,
+        # Retained under its original name so an existing reader does not
+        # break; it is the effective allocation, never the cap.
         'allocated_budget_seconds': lane_budget,
+        'elapsed_seconds': report.get('elapsed_seconds'),
+        'remaining_headroom_seconds': report.get('remaining_budget_seconds'),
         'remaining_budget_seconds': report.get('remaining_budget_seconds'),
+        'execution_scope': dict(scope_summary or {}),
         'games_discovered': report.get('games_discovered'),
         'games_planned': report.get('games_planned'),
         'games_attempted': report.get('games_attempted'),
@@ -2999,6 +3019,37 @@ def _run_game_driven_ingestion_stage(
     status['game_driven_ingestion']['execution_effects'] = dict(
         report.get('execution_effects') or {}
     )
+    # ── Safe difference diagnostics ─────────────────────────────────────────
+    # The first postgame cycle reported "1 projected statistical update" and
+    # nothing about WHICH row, so the discrepancy could not be investigated
+    # from the artifact at all. Every non-unchanged projected row is now named
+    # — by identifiers, canonical field names, classification, and digests.
+    #
+    # Field NAMES and digests only. The values behind them never appear, so a
+    # reviewer learns that a row differs and in what way without the artifact
+    # carrying baseball data or anything else it should not.
+    status['game_driven_ingestion']['projected_differences'] = [
+        {
+            'game_pk': row.get('game_pk'),
+            'pitcher_mlb_id': row.get('pitcher_mlb_id'),
+            'action': row.get('action'),
+            'changed_fields': list(row.get('changed_fields') or ()),
+            'difference_classifications': list(
+                row.get('difference_classifications') or ()
+            ),
+            'blocked_reason': row.get('blocked_reason'),
+            'pitcher_identity_action': row.get('pitcher_identity_action'),
+            'source_revision': game.get('source_revision'),
+            'reconciliation_plan_fingerprint': game.get(
+                'reconciliation_plan_fingerprint'
+            ),
+            'target_state_digest': row.get('target_state_digest'),
+            'stored_state_digest': row.get('stored_state_digest'),
+        }
+        for game in report.get('games') or ()
+        for row in (game.get('rows') or ())
+        if row.get('action') != game_log_reconciliation.ACTION_UNCHANGED
+    ]
     # Per-game evidence, in the canonical processing order the run used. Row
     # detail stays out: the realization proof already summarizes it, and a
     # durable artifact should carry the evidence a reviewer needs rather than
@@ -3045,6 +3096,105 @@ def _run_game_driven_ingestion_stage(
         report.get('elapsed_seconds'),
     )
     return result
+
+
+# ── Postgame exact-cycle scope ──────────────────────────────────────────────
+# The first automated postgame shadow cycle planned 112 games and completed 98
+# before exhausting its allocation. It was not slow: it was looking at the
+# wrong set. The lane was given a reference date and no scope, so the canonical
+# planner did what it is supposed to do for a DAILY cycle — sweep the whole
+# rolling correction horizon — while the postgame refresh had already resolved
+# the only set that cycle governs.
+#
+# The scope below is that set. It is derived from state the cycle already
+# holds, so it costs no MLB request and no second planning pass, and it is
+# handed to the lane through the exclusive-scope mechanism Foundation 3C
+# already built, which fails before any fetch if the plan is not the exact
+# requested set.
+
+POSTGAME_SCOPE_SOURCE = 'postgame_cycle_completed_games'
+
+# Why a governed game of this cycle is, or is not, eligible for post-writer
+# convergence verification. A game the writer has not finished cannot be
+# expected to project zero, and excluding it silently would be the same class
+# of defect as the fan-out this replaces.
+POSTGAME_SCOPE_INCLUDED = 'fully_processed_after_writer'
+POSTGAME_SCOPE_EXCLUDED_INCOMPLETE = 'incomplete_after_writer'
+POSTGAME_SCOPE_EXCLUDED_FAILED = 'failed_marker'
+POSTGAME_SCOPE_EXCLUDED_UNPROCESSED = 'no_processing_marker'
+
+
+def _postgame_game_driven_scope(completed_games, slate_by_game_pk) -> dict:
+    """Resolve the exact game set this postgame cycle may verify.
+
+    Read AFTER the cycle's writer has run, because eligibility depends on what
+    that writer actually finished. Deterministic and de-duplicated: the same
+    cycle state always yields the same ordered scope.
+    """
+    ordered_pks = []
+    seen = set()
+    for game in completed_games or ():
+        game_pk = _game_pk(game)
+        if game_pk is None or game_pk in seen:
+            continue
+        seen.add(game_pk)
+        ordered_pks.append(game_pk)
+
+    scope = {
+        'scope_source': POSTGAME_SCOPE_SOURCE,
+        'cycle_game_count': len(ordered_pks),
+        'requested_game_pks': [],
+        'requested_game_count': 0,
+        'excluded_game_pks': [],
+        'excluded_reason_counts': {},
+        'slate_dates': sorted({
+            slate.isoformat()
+            for slate in (slate_by_game_pk or {}).values()
+            if slate is not None
+        }),
+    }
+    if not ordered_pks:
+        return scope
+
+    markers = {
+        marker.mlb_game_pk: marker
+        for marker in (
+            PostgameProcessedGame.query
+            .filter(PostgameProcessedGame.mlb_game_pk.in_(ordered_pks))
+            .all()
+        )
+    }
+
+    requested = []
+    excluded = []
+    for game_pk in ordered_pks:
+        marker = markers.get(game_pk)
+        if marker is None:
+            reason = POSTGAME_SCOPE_EXCLUDED_UNPROCESSED
+        elif _marker_processing_status(marker) == POSTGAME_MARKER_STATUS_FULLY_PROCESSED:
+            reason = POSTGAME_SCOPE_INCLUDED
+        elif _postgame_marker_retryable(marker):
+            reason = POSTGAME_SCOPE_EXCLUDED_INCOMPLETE
+        else:
+            reason = POSTGAME_SCOPE_EXCLUDED_FAILED
+
+        if reason == POSTGAME_SCOPE_INCLUDED:
+            requested.append(game_pk)
+        else:
+            excluded.append({'game_pk': game_pk, 'reason': reason})
+            scope['excluded_reason_counts'][reason] = (
+                scope['excluded_reason_counts'].get(reason, 0) + 1
+            )
+
+    scope['requested_game_pks'] = sorted(requested)
+    scope['requested_game_count'] = len(requested)
+    scope['excluded_game_pks'] = sorted(
+        excluded, key=lambda entry: entry['game_pk']
+    )
+    scope['excluded_reason_counts'] = dict(
+        sorted(scope['excluded_reason_counts'].items())
+    )
+    return scope
 
 
 def _attach_daily_realization(*, game_lane, status, stage_timings, run_logger) -> None:
@@ -5446,6 +5596,16 @@ def run_postgame_refresh(
             # before any MLB request and before any write.
             postgame_runtime_budget = _postgame_refresh_runtime_budget()
             status['runtime_budget'] = postgame_runtime_budget
+            # Exactly this cycle's governed, fully-written games — not the
+            # planner's rolling correction horizon. Resolved from state the
+            # cycle already holds, so it costs no MLB request and no second
+            # planning pass, and handed over through the exclusive-scope
+            # mechanism that refuses before any fetch if the plan is not the
+            # exact requested set.
+            postgame_scope = _postgame_game_driven_scope(
+                completed_games, slate_by_game_pk,
+            )
+            status['game_driven_scope'] = postgame_scope
             game_lane = _run_game_driven_ingestion_stage(
                 reference_date=schedule_date,
                 runtime_budget=postgame_runtime_budget,
@@ -5455,6 +5615,8 @@ def run_postgame_refresh(
                 run_logger=run_logger,
                 job_name=sync_metadata.JOB_POSTGAME_REFRESH,
                 write_modes_supported=False,
+                only_game_pks=postgame_scope['requested_game_pks'],
+                scope_summary=postgame_scope,
             )
             # Recorded, never consulted. The postgame publication gate is
             # unchanged and stays with the established authority; this lane is

@@ -1133,6 +1133,145 @@ records `write_approved: false` and `future_write_authorized: false`, on PASS
 and FAILED alike. No shadow fingerprint may be carried into a write command;
 a future write requires its own reviewed design.
 
+## First postgame activation cycle — FAILED safely
+
+The first automated postgame shadow cycle failed activation health. Nothing
+about production was harmed by it.
+
+| | |
+|---|---|
+| cycle | postgame, schedule date 2026-07-31 |
+| activation result | **FAILED** |
+| runner exit code | 0 |
+| current sync status | **success** |
+| publication | **verified**, snapshot `324` |
+| actual shadow writes | **zero on every counter** |
+
+```
+games discovered / planned        112 / 112
+games attempted / completed        98 /  98
+games failed                        0
+games remaining                    14
+rows expected / unchanged         848 / 847
+projected inserts / updates / blocked   0 / 1 / 0
+budget stop triggered            true
+```
+
+### Why it failed: scope, not speed
+
+The lane was handed a reference date and no scope, so the canonical planner did
+exactly what it is built to do for a **daily** cycle and swept the whole rolling
+correction horizon — 112 games, of which 87 were *corrected final* from earlier
+dates. The postgame refresh had already resolved the only set that cycle
+governs, and the lane was not using it.
+
+98 games in 144 seconds of projection is not slow. It is the wrong 112 games.
+
+### The exact-cycle scope contract
+
+The postgame lane now runs with **exclusive scope** over the games that
+postgame cycle actually governs, resolved from state the cycle already holds:
+
+* the scope is the cycle's own completed games, de-duplicated and ordered;
+* it is resolved **after** the writer, because eligibility depends on what that
+  writer finished;
+* a game is in scope only when its postgame marker is **fully processed** —
+  a game the writer has not finished cannot be expected to project zero;
+* every excluded game carries a named reason: `incomplete_after_writer`,
+  `failed_marker`, or `no_processing_marker`;
+* it costs **no MLB request** and runs **no second planning pass**;
+* it reaches the lane through the exclusive-scope mechanism Foundation 3C
+  already built, which refuses before any fetch when the plan is not the exact
+  requested set.
+
+The report carries `scope_source`, `cycle_game_count`, `requested_game_pks`,
+`requested_game_count`, `excluded_game_pks` with reasons, `excluded_reason_counts`,
+and the cycle's slate dates, alongside the planner's own exact-scope fields.
+
+**Daily is unchanged** and keeps its rolling correction-horizon behaviour. The
+seven-day observation still happens — under daily, where it belongs.
+
+### Safe difference diagnostics
+
+The failed cycle reported "1 projected statistical update" and nothing about
+which row, so the discrepancy could not be investigated from the artifact at
+all. Every non-unchanged projected row is now named:
+
+```
+game_pk · pitcher_mlb_id · action · changed_fields
+difference_classifications · blocked_reason · pitcher_identity_action
+source_revision · reconciliation_plan_fingerprint
+target_state_digest · stored_state_digest
+```
+
+Classifications come from a closed vocabulary of existing repository
+classifications: `statistical_correction`, `canonical_outs_correction`,
+`appearance_team_correction`, `role_or_starter_signal_correction`,
+`game_metadata_correction`, `provenance_only`, `decimal_companion_difference`,
+`identity_creation`, `identity_blocked`, `blocked_mutation`,
+`missing_appearance_row`.
+
+They are derived from the canonical plan's own decision. There is no second
+comparator and no second opinion about what changed.
+
+**Field names and digests travel; the values behind them never do.** A reviewer
+learns that a row differs and in what way, without the artifact carrying
+baseball data, payloads, paths, credentials, or exception text.
+
+### Game 824488 — diagnosed to a class, not yet to a cause
+
+The one projected update was in game `824488`, `newly_final`, represented date
+2026-07-30, 9 appearances extracted, 8 unchanged, 1 updated.
+
+What the evidence proves: it was a **GameLog update on one appearance whose
+changed fields include a statistical field**. It was *not* a canonical-outs
+correction (`canonical_outs_corrections: 0`), not appearance-team, not identity,
+not provenance-only, and not decimal representation drift — every one of those
+counters was zero.
+
+What the evidence does **not** contain: the pitcher, the field, or the values.
+The artifact predates the diagnostic above.
+
+**No repair is included, because no cause is proven.** Both the postgame writer
+and the shadow projection reach the *same* canonical `plan_row`, so this is not
+a second-comparator defect. The leading unproven hypothesis is a genuine
+mid-cycle official revision: the writer fetched the box score, wrote, and the
+lane fetched it again moments later. A newly-final game is exactly where MLB
+revisions land. The next cycle's diagnostic will name the pitcher, the field,
+and the source revision, which distinguishes that from a writer omission.
+
+Guessing a repair here would risk mutating real baseball data to match a
+projection whose authority has not been established.
+
+### Postgame reactivation gate
+
+Postgame shadow is **off** until a separate reviewed change turns it back on,
+and only once exact-scope evidence is green: bounded cycle scope, no seven-day
+fan-out, every requested game accounted for, no unexpected planned game,
+completion inside the effective allocation, zero writes, zero control-state
+effects, zero postgame projection after the writer, and the 824488 class either
+repaired or safely diagnosed.
+
+Daily shadow is unaffected and stays on.
+
+### Budget reporting
+
+The first artifact showed a 600-second cap beside a 150-second allocation, which
+read as "600 seconds available". Both numbers, and the share relating them, are
+now named separately:
+
+```
+configured_stage_cap_seconds          600.0
+lane_budget_share                     0.25
+effective_allocated_budget_seconds    150.0
+elapsed_seconds                       observed
+remaining_headroom_seconds            observed
+budget_stop_triggered                 observed
+```
+
+**Neither the cap nor the share was raised.** Raising a budget to make a
+mis-scoped cycle finish would hide the defect instead of fixing it.
+
 ## Operator repair procedure
 
 ```bash

@@ -135,8 +135,15 @@ def test_the_daily_step_runs_in_shadow(public_sync):
     assert _mode(_step(public_sync, 'Run direct daily sync')) == 'shadow'
 
 
-def test_the_postgame_step_runs_in_shadow(public_sync):
-    assert _mode(_step(public_sync, 'Run direct postgame refresh')) == 'shadow'
+def test_the_postgame_step_is_temporarily_off(public_sync):
+    """Rolled back after the first cycle failed on scope, not on safety.
+
+    The established postgame sync succeeded and shadow wrote nothing, but a
+    lane that fails on scope at 02:00, 04:00, and 06:00 every night is noise.
+    It stays off until the exact-cycle scope repair is reactivated under its
+    own review.
+    """
+    assert _mode(_step(public_sync, 'Run direct postgame refresh')) == 'off'
 
 
 def test_manual_daily_uses_the_same_shadow_enabled_step(public_sync):
@@ -145,7 +152,7 @@ def test_manual_daily_uses_the_same_shadow_enabled_step(public_sync):
     assert f"github.event.schedule == '{DAILY_CRON}'" in condition
 
 
-def test_manual_postgame_uses_the_same_shadow_enabled_step(public_sync):
+def test_manual_postgame_uses_the_same_step(public_sync):
     condition = _step(public_sync, 'Run direct postgame refresh')['if']
     assert "inputs.mode == 'postgame'" in condition
     assert f"github.event.schedule == '{POSTGAME_CRON}'" in condition
@@ -162,9 +169,15 @@ def test_exactly_three_steps_configure_the_mode(public_sync):
     }
     assert configured == {
         'Run direct daily sync': 'shadow',
-        'Run direct postgame refresh': 'shadow',
+        'Run direct postgame refresh': 'off',
         'Run explicit backfill': 'off',
     }
+
+
+def test_daily_shadow_survived_the_postgame_rollback(public_sync):
+    """The rollback is postgame-only. Disabling daily too would be a
+    regression disguised as a fix."""
+    assert _mode(_step(public_sync, 'Run direct daily sync')) == 'shadow'
 
 
 def test_the_mode_is_never_set_at_job_scope(workflow):
@@ -384,12 +397,17 @@ def test_an_activation_step_runs_under_always(public_sync, name):
     'Upload game-driven shadow activation artifacts',
     'activation health gate',
 ])
-def test_an_activation_step_is_limited_to_eligible_cycles(public_sync, name):
+def test_an_activation_step_is_limited_to_the_daily_cycle(public_sync, name):
+    """An intentionally-off postgame lane must not be validated at all.
+
+    Running the validator against it would manufacture an activation failure
+    three times a night for a lane that was deliberately disabled.
+    """
     condition = str(_step(public_sync, name).get('if'))
     assert "inputs.mode == 'daily'" in condition
-    assert "inputs.mode == 'postgame'" in condition
     assert f"github.event.schedule == '{DAILY_CRON}'" in condition
-    assert f"github.event.schedule == '{POSTGAME_CRON}'" in condition
+    assert "inputs.mode == 'postgame'" not in condition
+    assert POSTGAME_CRON not in condition
     assert MORNING_CRON not in condition
     assert "inputs.mode == 'backfill'" not in condition
     assert "inputs.mode == 'intraday'" not in condition
