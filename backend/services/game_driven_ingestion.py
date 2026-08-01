@@ -979,6 +979,9 @@ def _safe_row_entries(plan) -> list[dict]:
             'difference_classifications': list(
                 entry.get('difference_classifications') or ()
             ),
+            # Fields this source shape could not compare at all. Absence here
+            # is not agreement — it is that the lane never looked.
+            'uncomparable_fields': list(entry.get('uncomparable_fields') or ()),
             **pitcher_identity.safe_row_entry(entry.get('pitcher_identity')),
         }
         for entry in plan or ()

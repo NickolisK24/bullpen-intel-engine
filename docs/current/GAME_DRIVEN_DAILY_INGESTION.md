@@ -1289,6 +1289,114 @@ budget_stop_triggered                 observed
 **Neither the cap nor the share was raised.** Raising a budget to make a
 mis-scoped cycle finish would hide the defect instead of fixing it.
 
+## GameLog `balls` — field authority UNRESOLVED
+
+A persistent canonical parity discrepancy was isolated precisely and is
+**deliberately not repaired**, because authority is not proven.
+
+### Production evidence
+
+| | |
+|---|---|
+| game | `824488` |
+| pitcher | `668716` |
+| field | `balls` |
+| projected action | update |
+| classification | `statistical_correction` |
+| source revision | `af7729c3f1b4…13549` (matched during realization) |
+| plan fingerprint | `74b6778103…921969` |
+| stored digest | `3ab06ef31018f9694a6faebac8d595c5` |
+| target digest | `939546c2f2c43a9db2a455613fac36ec` |
+
+It recurred across a postgame cycle and a daily cycle at the **same source
+revision and the same plan fingerprint**, which makes an incidental
+between-request MLB revision unlikely — but does not by itself establish
+authority.
+
+The daily cycle around it was healthy: sync `success`, runner exit `0`,
+publication verified at snapshot `326`, 97/97 games completed, 814 of 815 rows
+unchanged, and **zero shadow writes on every counter**. The daily legacy writer
+reported `logs_corrected: 0`. Realization reported 1 divergent and 1 unresolved
+row and `all_projected_targets_realized: false` — the activation gate did its
+job.
+
+### What the code proves
+
+There is exactly **one** canonical values builder
+(`sync._game_log_values_from_stats`) and **one** planner
+(`game_log_reconciliation.plan_row`). Both the box-score path and the player
+game-log-split path use both. There is no second comparator, and the difference
+is not a planner defect.
+
+The mechanism is **source-shape-dependent comparability**:
+
+> `correctable_fields` appends an optional statistic only when the source dict
+> carries its key **with a non-null, non-empty value** (`stat_key_present`).
+
+So a lane whose source omits `balls` — or sends it as `null` or `''` — never
+compares it and can never correct it. **It is not found equal. It is never
+looked at.** The stored value is preserved rather than clobbered, which is
+correct behaviour for an absent optional stat, and is exactly why the asymmetry
+was invisible.
+
+Compounding it: the postgame writer processes only games without a
+fully-processed marker, so it never revisits an already-complete row. Within the
+correction horizon the only lane that re-examines an existing appearance is the
+daily lane — and the daily lane reads the player game-log split.
+
+### What the code does not prove
+
+* whether the real player game-log split carries `balls` at all;
+* whether box-score `balls` and any split `balls` are the same statistic;
+* what the stored value is, or which source produced it;
+* whether box-score `balls` is authoritative for the GameLog contract.
+
+Those require the two live source payloads and the stored row. **This work had
+no access to MLB and no access to production**, so the authority question is
+recorded as unresolved rather than guessed.
+
+### Decision: Outcome E — unresolved
+
+No writer changed. No correction vocabulary changed. `balls` was neither added
+to nor removed from the governed set. The shadow failure stays active, because
+it is reporting something real.
+
+Silencing the difference would have made the lane green while leaving a
+canonical field permanently uncorrectable by the only writer that revisits it.
+Blessing it would have authorized a production write to real baseball data on a
+value whose authority is unestablished.
+
+### What was added instead
+
+**`uncomparable_fields`** on every canonical plan, and on every projected
+difference in the activation artifact. It names the governed optional fields a
+source shape could not evaluate — turning an invisible asymmetry into evidence.
+The next daily and postgame artifacts will state, per row, whether the other
+lane could even see the field.
+
+**`backend/scripts/inspect_gamelog_field_authority.py`** — a read-only audit
+that collects the three values that settle it: the box-score line, the game-log
+split, and the stored row, then runs both source shapes through the canonical
+planner. It opens a read-only transaction, proves a write is refused,
+fingerprints the row before and after, and rolls back. It reports exact values
+only for `balls`, `strikes`, and `pitches_thrown` — enough to interpret the
+statistic and nothing more.
+
+Run it against production to resolve the authority question:
+
+```bash
+python scripts/inspect_gamelog_field_authority.py \
+    --game-pk 824488 --pitcher-mlb-id 668716 --field balls \
+    --output artifacts/field-authority/balls-824488.json
+```
+
+### Until then
+
+No automatic correction. No production write. `balls` remains
+evidence-only for this decision, daily and postgame shadow remain
+observation-only, and automated write and authoritative modes remain
+unapproved.
+
 ## Operator repair procedure
 
 ```bash

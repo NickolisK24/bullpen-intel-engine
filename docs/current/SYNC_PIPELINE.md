@@ -267,6 +267,25 @@ Rollback is unchanged — set those step environments back to `'off'`, no databa
 cleanup required. **Postgame observation restarts from this reactivation**, and
 automated write and authoritative modes both remain unapproved.
 
+### Shadow found a real writer-parity defect
+
+The daily cycle at snapshot `326` succeeded and published normally — sync
+`success`, runner exit `0`, publication verified, 97/97 games, zero shadow
+writes — while the activation gate correctly FAILED on one divergent row.
+
+The finding: a governed optional statistic is compared **only when the source
+carries its key with a non-null value**, so a field one endpoint omits is never
+corrected by the lane reading that endpoint. Combined with the postgame writer
+never revisiting an already-complete game, a field can become permanently
+uncorrectable while every lane reports no difference.
+
+**No writer was changed.** Authority for the affected field is unproven without
+the live source payloads, and this work had no MLB or production access. The
+shadow failure stays active because it is reporting something real, a read-only
+audit tool now exists to resolve it, and every plan now names the fields its
+source could not evaluate. Fail-closed behaviour and the mode-off rollback are
+unchanged.
+
 ### Pitcher identity is not written by completed games (D-009)
 
 The FIRST production R1 and R2 passed on **GameLog reconciliation only**. The

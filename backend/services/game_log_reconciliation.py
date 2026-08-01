@@ -316,6 +316,7 @@ def plan_row(
     plan['target_state_digest'] = plan_target_state_digest(plan)
     plan['stored_state_digest'] = plan_stored_state_digest(plan)
     plan['difference_classifications'] = difference_classifications(plan)
+    plan['uncomparable_fields'] = uncomparable_fields(values, stats)
     return plan
 
 
@@ -591,6 +592,39 @@ def mutation_digest(*, action, values, field_changes) -> str:
 # This is the same exclusion set the mutation digest uses: a derived companion
 # is a function of its authority (D-008), and provenance describes how a row was
 # corrected rather than what it says, so neither is part of the target.
+
+
+# Governed fields whose comparability depends on the SOURCE SHAPE.
+# ``correctable_fields`` appends each of these only when the source stats dict
+# actually carries its key, so a source that omits one never compares it and
+# can never correct it. That is deliberate — an absent optional stat must not
+# be rewritten to a default — but it makes field ownership depend on which
+# endpoint produced the line, and nothing declared that dependency.
+#
+# Naming the fields a source could NOT compare is what turns an invisible
+# asymmetry into evidence: an artifact can then say "this lane never looked at
+# this field" instead of silently reporting no difference.
+SOURCE_OPTIONAL_FIELDS = tuple(
+    sorted(field for field, _keys in OPTIONAL_INT_STAT_FIELDS)
+    + sorted(field for _key, field in OPTIONAL_BOOL_STAT_FIELDS)
+)
+
+
+def uncomparable_fields(values: dict, stats: dict) -> list[str]:
+    """Governed optional fields this source shape could not compare.
+
+    A field here was not evaluated at all — not "found equal". The distinction
+    matters: two lanes reading the same appearance from different endpoints can
+    reach different conclusions about a field purely because one of them never
+    saw it.
+    """
+    comparable = set(
+        correctable_fields(values, stats, include_leverage_index=True)
+    )
+    return [
+        field for field in SOURCE_OPTIONAL_FIELDS
+        if field not in comparable and field in (values or {})
+    ]
 
 
 def target_fields(plan) -> list[str]:
