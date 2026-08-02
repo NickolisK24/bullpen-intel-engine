@@ -23,7 +23,10 @@ import threading
 from datetime import date, datetime
 from time import perf_counter
 
-from models.tonight_intelligence_snapshot import TonightIntelligenceSnapshot
+from models.tonight_intelligence_snapshot import (
+    TONIGHT_SNAPSHOT_SOURCE_MAX_LENGTH,
+    TonightIntelligenceSnapshot,
+)
 from services.availability_reference_date import product_current_date
 from services.snapshot_read_guard import read_snapshot_first
 from services.tonight_intelligence_service import serve_tonight
@@ -42,6 +45,85 @@ SERVED_FROM_LIVE_FAILED = 'live_build_failed'
 EMPTY_LIVE_BUILD_TIMEOUT = 'tonight_live_build_timeout'
 EMPTY_SNAPSHOT_BUILD_UNAVAILABLE = 'tonight_snapshot_build_unavailable'
 DEFAULT_LIVE_BUILD_TIMEOUT_SECONDS = 8.0
+
+# ── Snapshot provenance composition ───────────────────────────────────────────
+# A stored source names WHO refreshed the snapshot and WHY. Callers used to
+# compose the second half with ad hoc interpolation at the call site, so nothing
+# checked the result against the column that had to hold it. Production found
+# the gap the expensive way: the 14:00 UTC lane acquired its schedule
+# successfully and then failed on commit, every run, because
+# ``github_actions_morning:schedule_coherence`` is 41 characters and the column
+# was 40.
+#
+# One composer now owns the separator, the validation, and the failure. It runs
+# before any database work, so an oversized value is a clear application error
+# rather than a truncation error raised mid-transaction.
+SNAPSHOT_SOURCE_PURPOSE_SEPARATOR = ':'
+SNAPSHOT_SOURCE_TOO_LONG = 'tonight_snapshot_source_too_long'
+SNAPSHOT_SOURCE_EMPTY_BASE = 'tonight_snapshot_base_source_empty'
+SNAPSHOT_SOURCE_EMPTY_PURPOSE = 'tonight_snapshot_purpose_empty'
+
+
+class TonightSnapshotSourceError(ValueError):
+    """A snapshot source that cannot be stored as provenance.
+
+    Raised before persistence so the lane fails closed on a named application
+    condition instead of on a database truncation error, and so the value is
+    never silently shortened to fit. Carries only the field, the observed
+    length, and the limit — never the payload, the connection, or the value's
+    surrounding context.
+    """
+
+    field = 'source'
+
+    def __init__(self, reason, *, observed_length=None, max_length=None):
+        self.reason = reason
+        self.observed_length = observed_length
+        self.max_length = max_length
+        detail = (
+            f' (observed_length={observed_length}, max_length={max_length})'
+            if observed_length is not None else ''
+        )
+        super().__init__(
+            f'{reason}: tonight snapshot {self.field} is not storable{detail}'
+        )
+
+
+def compose_tonight_snapshot_source(base_source, purpose):
+    """Build a validated ``base:purpose`` snapshot provenance value.
+
+    Returns the complete composed value. Never truncates, abbreviates, or
+    hashes: provenance that has been shortened to fit no longer answers the
+    question it exists to answer, so an unstorable value raises instead.
+    """
+    base = _required_source_part(base_source, SNAPSHOT_SOURCE_EMPTY_BASE)
+    suffix = _required_source_part(purpose, SNAPSHOT_SOURCE_EMPTY_PURPOSE)
+    return validate_tonight_snapshot_source(
+        f'{base}{SNAPSHOT_SOURCE_PURPOSE_SEPARATOR}{suffix}'
+    )
+
+
+def validate_tonight_snapshot_source(source):
+    """Return ``source`` unchanged when it fits the governed column width.
+
+    Separate from the composer so an already-composed value — including one a
+    caller supplied whole — is held to the same contract on its way to the
+    writer.
+    """
+    value = _required_source_part(source, SNAPSHOT_SOURCE_EMPTY_BASE)
+    if len(value) > TONIGHT_SNAPSHOT_SOURCE_MAX_LENGTH:
+        raise TonightSnapshotSourceError(
+            SNAPSHOT_SOURCE_TOO_LONG,
+            observed_length=len(value),
+            max_length=TONIGHT_SNAPSHOT_SOURCE_MAX_LENGTH,
+        )
+    return value
+
+
+def _required_source_part(value, reason):
+    if not isinstance(value, str) or not value.strip():
+        raise TonightSnapshotSourceError(reason)
+    return value
 
 
 class TonightLiveBuildTimeout(TimeoutError):
@@ -188,6 +270,13 @@ def write_snapshot(response, *, source, version=TONIGHT_SNAPSHOT_VERSION,
     responses (status='empty', a real date) are cached too; error responses are
     not routed here, so they are never stored.
     """
+    # Before any row is touched. The production failure surfaced as a database
+    # truncation error raised by COMMIT, which named the column but not the
+    # lane, and left the caller to interpret a driver exception. Validating here
+    # means an unstorable provenance value fails as itself, and fails before the
+    # transaction has anything to roll back.
+    source = validate_tonight_snapshot_source(source)
+
     ref_date = _as_date((response or {}).get('reference_date'))
     if ref_date is None:
         return None

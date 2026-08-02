@@ -5,7 +5,16 @@ from __future__ import annotations
 from datetime import date, datetime
 
 from services import schedule_authority
-from services.tonight_intelligence_snapshot import generate_tonight_snapshot_for_date
+from services.tonight_intelligence_snapshot import (
+    compose_tonight_snapshot_source,
+    generate_tonight_snapshot_for_date,
+)
+
+
+# What this lane's Tonight rebuild is FOR, as stored provenance. The value is
+# composed through the one governed composer rather than interpolated here, so
+# the width contract is checked at the boundary instead of at COMMIT.
+TONIGHT_REFRESH_PURPOSE = 'schedule_coherence'
 
 
 def refresh_schedule_and_tonight(
@@ -36,7 +45,7 @@ def refresh_schedule_and_tonight(
 
     tonight = generate_tonight_snapshot_for_date(
         ref,
-        source=f'{source}:schedule_coherence',
+        source=compose_tonight_snapshot_source(source, TONIGHT_REFRESH_PURPOSE),
     )
     snapshot_ref = tonight.get('reference_date')
     snapshot_status = tonight.get('status')

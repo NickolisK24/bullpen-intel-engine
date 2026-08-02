@@ -39,9 +39,15 @@ def main(argv=None):
 
     try:
         with app.app_context():
+            # The source is passed whole. It used to be clipped to the old
+            # column width here, which silently rewrote provenance to fit and
+            # still could not prevent the failure — the lane composes a longer
+            # value downstream, so the clip shortened the truth without
+            # protecting anything. Oversized values now fail as a named
+            # application error at composition time.
             result = refresh_schedule_and_tonight(
                 reference_date,
-                source=str(args.source)[:40],
+                source=str(args.source),
             )
     except Exception as exc:  # noqa: BLE001 - command must surface a nonzero failure
         print(json.dumps({'status': 'failed', 'error': str(exc)}, sort_keys=True))

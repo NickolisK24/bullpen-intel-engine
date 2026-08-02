@@ -479,6 +479,121 @@ behavior is authorized.
   validates the artifact contract before upload. See
   [`INTRADAY_RECONCILIATION.md` §12](INTRADAY_RECONCILIATION.md).
 
+## The 14:00 UTC morning slate lane — PROD-001 root cause and repair
+
+The scheduled 14:00 UTC schedule/Tonight coherence lane failed on **every** run.
+It was not an MLB outage, a missing secret, a timeout, a finality failure, or
+anything in the shadow, appearance-ledger, or publication paths. Those all
+behaved correctly throughout; the appearance-ledger audit over the same period
+reported 127/127 completed games, 1,082/1,082 stored appearances, zero
+mismatches, and **publish eligible: YES**.
+
+The lane reached MLB successfully. `/schedule` returned **HTTP 200** and the
+schedule rows committed. It then died persisting the Tonight snapshot:
+
+```
+psycopg2.errors.StringDataRightTruncation:
+value too long for type character varying(40)
+
+UPDATE tonight_intelligence_snapshots
+SET response_json = ..., source = ..., generated_at = ..., updated_at = ...
+WHERE tonight_intelligence_snapshots.id = ...
+```
+
+The stored provenance the lane composes is
+`github_actions_morning:schedule_coherence` — **41 characters** against a
+**VARCHAR(40)** column. Deterministic, and therefore permanent until the schema
+and the composition agreed.
+
+**The defect was structural, not caused by one workflow input.** The service's
+own default source composes to `morning_slate_schedule:schedule_coherence`,
+also 41 characters, so every caller of this path was one character over.
+Shortening `github_actions_morning` would have moved the same failure one
+caller down rather than fixing it.
+
+### The repair is capacity, not truncation
+
+| | before | after |
+|---|---|---|
+| `tonight_intelligence_snapshots.source` | `VARCHAR(40)` | `VARCHAR(128)` |
+
+Migration `c7f1b408d93a` (down revision `b9d4e17c3a80`) widens the column. It
+reads no row, rewrites nothing, and leaves nullability, defaults, indexes, and
+every unrelated column untouched — widening a varchar is a catalog-only change
+on PostgreSQL. The **downgrade refuses** rather than corrupting: it counts rows
+longer than 40 first and fails with a clear message instead of silently
+truncating provenance.
+
+128 is sized from real composition, not guessed. It keeps the complete 41-
+character value, leaves bounded room for foreseeable `source:purpose`
+composition, and keeps the field finite and governed — an unbounded `TEXT`
+column would trade one silent failure for an unbounded one, and 41 or 42 would
+leave the next composed purpose to rediscover this incident.
+
+`TONIGHT_SNAPSHOT_SOURCE_MAX_LENGTH` in
+`backend/models/tonight_intelligence_snapshot.py` is the single owner of the
+width. The model column reads it, the validators read it, and a PostgreSQL test
+asserts the **live** column matches it, so schema and application cannot drift
+apart silently.
+
+### Validation happens before the transaction, not at COMMIT
+
+`compose_tonight_snapshot_source(base_source, purpose)` in
+`services/tonight_intelligence_snapshot.py` is now the one place a snapshot
+source is built. It requires both parts, joins them with the existing `:`
+separator, preserves both whole, and validates the result against the governed
+width. An oversized value raises `TonightSnapshotSourceError` with reason
+`tonight_snapshot_source_too_long`, the observed length, the maximum, and the
+affected field — **before any database work**, so the lane fails on a named
+application condition rather than on a driver truncation error raised
+mid-transaction. `write_snapshot` re-validates as defense in depth for callers
+that compose their own value.
+
+Nothing truncates, abbreviates, or hashes. Provenance that has been shortened
+to fit no longer answers the question the column exists to answer. The CLI's
+old `source[:40]` clip was removed for the same reason: it silently rewrote the
+truth and could not prevent the failure anyway, since the longer value is
+composed downstream.
+
+### The regression that was missing (CI-002)
+
+The lane's existing tests monkeypatched the snapshot writer, so every test
+passed while production failed on every run. A mocked writer cannot observe a
+column width.
+
+`backend/tests/test_schedule_tonight_refresh_postgres.py` now exercises the
+real model, the real writer, the real transaction, and a real commit against
+PostgreSQL, stubbing only the MLB schedule request. It seeds an existing row
+and drives the **UPDATE** production failed on — not just an insert — then
+reads the stored value back from PostgreSQL and asserts all 41 characters
+survived. It also narrows the live column back to `VARCHAR(40)` and proves the
+same real path raises `psycopg2.errors.StringDataRightTruncation` again.
+
+`backend/tests/test_tonight_snapshot_source_width_migration.py` proves the
+migration itself in isolated PostgreSQL schemas: the pre-revision shape rejects
+the 41-character value on both insert and update, the upgraded shape accepts
+it, existing short values survive unchanged, nullability and indexes are
+preserved, and the downgrade refuses when a row would be truncated.
+
+### What did not change
+
+Fail-closed behaviour is intact: a partial schedule ingestion still publishes
+no Tonight snapshot, a persistence failure still fails the lane, and a
+verification failure still fails the lane. The 14:00 UTC schedule, the source
+argument `github_actions_morning`, `SLATE_SCHEDULE_COMMAND_TIMEOUT`, workflow
+permissions, publication gates, the appearance-ledger audit, dashboard cache
+verification, and every shadow mode are untouched. The root cause was schema
+capacity, not runtime.
+
+### Still to prove
+
+**PROD-001 is not closed by this repair.** The migration reaches production
+only through the normal reviewed deployment process, and the lane is validated
+by the next governed 14:00 UTC run — not by a manual database edit and not by a
+new dispatch mode created for the occasion. Until a governed run stores
+`github_actions_morning:schedule_coherence` and verifies its readback, the
+production outcome is unproven.
+
 ## Reading a failure
 
 - **Workflow red on "Appearance ledger audit"** → the ledger has a hole; the
@@ -550,6 +665,10 @@ production maintenance workflow.
   horizon. Enumerates the affected set and reports any proposed change outside
   the approved field. Performs zero writes; run it before any production
   correction.
+- `python backend/scripts/refresh_slate_schedule.py --source <source> [--reference-date YYYY-MM-DD]`
+  — the 14:00 UTC schedule/Tonight coherence lane. The source is stored whole as
+  snapshot provenance; a value too long for the governed column fails as
+  `tonight_snapshot_source_too_long` before any write rather than being clipped.
 - Kill switch (operators only, logged): `APPEARANCE_LEDGER_GATE_ENABLED=false`
 - Game-driven lane mode (operators only): `GAME_DRIVEN_INGESTION_MODE=off|shadow|write|authoritative`
 
