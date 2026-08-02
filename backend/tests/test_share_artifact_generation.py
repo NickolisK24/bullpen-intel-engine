@@ -555,7 +555,9 @@ def test_migration_round_trip_and_single_head():
     # governed repair-execution ledger (c7b3e5a91d48) chains onto that, and the
     # game-driven ingestion work-state checkpoint (b9d4e17c3a80) chains onto that
     # as the single head. Chain integrity (exactly one head) is guarded.
-    assert set(revisions) - referenced == {'b9d4e17c3a80'}
+    from tests.test_phase0e_exit_docs import EXPECTED_ALEMBIC_HEAD
+
+    assert set(revisions) - referenced == {EXPECTED_ALEMBIC_HEAD}
 
     engine = sa.create_engine('sqlite:///:memory:')
     metadata = sa.MetaData()

@@ -8,7 +8,13 @@ from services.evidence_classification import validate_evidence_classifications
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-EXPECTED_ALEMBIC_HEAD = 'b9d4e17c3a80'
+# Moved from 'b9d4e17c3a80' by fix/tonight-snapshot-source-width (PROD-001):
+# revision c7f1b408d93a widens tonight_intelligence_snapshots.source from
+# VARCHAR(40) to VARCHAR(128) so the 14:00 UTC lane can store the complete
+# 41-character provenance it composes. The pin exists so a migration cannot
+# enter the tree unnoticed; moving it is the deliberate acknowledgement that
+# one was reviewed and added, and the head remains single.
+EXPECTED_ALEMBIC_HEAD = 'c7f1b408d93a'
 EXPECTED_CHANGED_PATHS = {
     'backend/tests/test_phase0e_exit_docs.py',
     'docs/phase0e/README.md',

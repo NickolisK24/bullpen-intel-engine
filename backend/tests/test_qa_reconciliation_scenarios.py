@@ -47,7 +47,12 @@ from utils.db import db
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 MIGRATIONS_DIR = REPO_ROOT / 'backend/migrations/versions'
-EXPECTED_ALEMBIC_HEAD = 'b9d4e17c3a80'
+# The one governed head, imported rather than re-stated: this pin used to be
+# a separate literal in each file that wanted it, so a single reviewed
+# migration broke eight assertions in eight places. Reading the shared
+# constant keeps the guard exactly as strict while making the next
+# reviewed migration a one-line change.
+from tests.test_phase0e_exit_docs import EXPECTED_ALEMBIC_HEAD
 FORBIDDEN_HEADLINE_TERMS = (
     'headline',
     'read_label',

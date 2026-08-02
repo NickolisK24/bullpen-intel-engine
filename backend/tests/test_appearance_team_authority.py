@@ -238,7 +238,9 @@ def test_fresh_schema_has_one_alembic_head():
         if down:
             downs.add(down.group(1))
     heads = [r for r in revs if r not in downs]
-    assert heads == ['b9d4e17c3a80']
+    from tests.test_phase0e_exit_docs import EXPECTED_ALEMBIC_HEAD
+
+    assert heads == [EXPECTED_ALEMBIC_HEAD]
 
 
 # ===========================================================================

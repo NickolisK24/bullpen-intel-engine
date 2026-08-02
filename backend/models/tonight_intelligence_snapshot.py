@@ -2,6 +2,23 @@ from utils.db import db
 from utils.time import utc_now_naive
 
 
+# The one governed width for Tonight snapshot provenance, owned here because the
+# column is the thing being bounded. Every validator and the model itself read
+# this constant; the Alembic revision that widened the column states the same
+# number in DDL, and a PostgreSQL test asserts the live column matches it, so
+# the two cannot drift silently.
+#
+# Sized from real composition, not guessed. The production value
+# ``github_actions_morning:schedule_coherence`` is 41 characters — one past the
+# original 40 — and the same lane's default source composes to 41 as well, so
+# the failure was structural rather than specific to one workflow input. 128
+# keeps the field finite and governed while leaving room for foreseeable
+# ``source:purpose`` composition; an unbounded TEXT column would trade one
+# silent failure for an unbounded one, and 41 or 42 would leave the next
+# composed purpose to rediscover this incident.
+TONIGHT_SNAPSHOT_SOURCE_MAX_LENGTH = 128
+
+
 class TonightIntelligenceSnapshot(db.Model):
     """Precomputed GET /api/bullpen/intelligence/tonight response for one slate.
 
@@ -46,7 +63,10 @@ class TonightIntelligenceSnapshot(db.Model):
     empty_reason = db.Column(db.String(60), nullable=True)
 
     # ── Provenance ─────────────────────────────────────────────────────────────
-    source = db.Column(db.String(40), nullable=False, default='on_demand')
+    source = db.Column(
+        db.String(TONIGHT_SNAPSHOT_SOURCE_MAX_LENGTH),
+        nullable=False, default='on_demand',
+    )
     generated_at = db.Column(db.DateTime, nullable=False, default=utc_now_naive)
     created_at = db.Column(db.DateTime, nullable=False, default=utc_now_naive)
     updated_at = db.Column(
