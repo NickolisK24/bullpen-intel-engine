@@ -468,6 +468,18 @@ def test_frozen_legacy_what_changed_files_untouched():
         'backend/migrations/versions/'
         'c7b3e5a91d48_add_official_pitching_line_repair_executions.py',
     }
+    allowed_tonight_snapshot_source_width_files = {
+        # fix/tonight-snapshot-source-width (PROD-001): the 14:00 UTC schedule/
+        # Tonight lane failed on every run because the provenance it composes,
+        # github_actions_morning:schedule_coherence, is 41 characters and
+        # tonight_intelligence_snapshots.source held 40. A type widening to
+        # VARCHAR(128) only — no row read, rewritten, or deleted, nullability,
+        # defaults, indexes, and every unrelated column untouched, and the
+        # downgrade refuses rather than truncating stored provenance. No reader
+        # migrated, no public route, no what-changed change.
+        'backend/migrations/versions/'
+        'c7f1b408d93a_widen_tonight_snapshot_source.py',
+    }
     allowed_share_artifact_cutover_files = {
         # feature/share-artifact-generation-cutover (Share Cards SC-03A cutover):
         # the active Share Card entry points now read the published, integrity-
@@ -541,6 +553,7 @@ def test_frozen_legacy_what_changed_files_untouched():
         if path not in allowed_progressive_team_publication_files
         if path not in allowed_team_at_appearance_files
         if path not in allowed_repair_execution_ledger_files
+        if path not in allowed_tonight_snapshot_source_width_files
     )
 
 
