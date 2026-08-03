@@ -492,6 +492,205 @@ Canonical reference:
 Canonical reference:
 [`GAME_DRIVEN_DAILY_INGESTION.md`](GAME_DRIVEN_DAILY_INGESTION.md).
 
+## Manual no-op write qualification (D-041)
+
+**Machinery only. It has not been run. Running it requires explicit operator
+approval, and a PASS authorizes nothing beyond itself.**
+
+Shadow qualification proved what the lane *would* do. It never proved the lane
+could *enter* its write-capable path, because every shadow proof was obtained
+with writes disabled. This qualification closes that one gap on a single
+completed game whose canonical rows already match, before any real correction is
+attempted.
+
+### The shell boundary
+
+No `${{ }}` expression appears inside any `run:` script. GitHub substitutes
+expressions into the script text **before** bash parses it, so an expression
+holding operator input would become shell code in a step carrying production
+credentials — and sanitising it in Python happens far too late. Every
+user-controlled value therefore crosses into the shell only through step-level
+`env:` (`INPUT_GAME_PK`, `INPUT_EXPECTED_HEAD_SHA`, `INPUT_CONFIRMATION`,
+`INPUT_OPERATOR_NOTE`) and is read only as a quoted shell variable. Tests
+execute the real preflight script with hostile notes — command substitution,
+backticks, semicolons, pipes, quotes, newlines, and variable references — and
+assert a canary file never appears.
+
+### Manual only, one game, exact confirmation
+
+Workflow: `.github/workflows/manual-game-driven-noop-qualification.yml`.
+Entry point: `backend/scripts/run_game_driven_noop_qualification.py`.
+Contract: `backend/services/noop_write_qualification.py`.
+
+The workflow has **only** `workflow_dispatch` — no schedule, no push, no pull
+request, no `workflow_run`, no repository dispatch, and no retry that could
+re-enter a write. Nothing in the scheduled pipeline can reach it.
+
+| input | rule |
+| :--- | :--- |
+| `game_pk` | required; exactly one positive integer — no list, comma, range, date, or wildcard |
+| `expected_head_sha` | required; full 40-character hex SHA, must equal the resolved `GITHUB_SHA` |
+| `confirmation` | required; must be exactly `QUALIFY_NOOP_GAME_<game_pk>` |
+| `operator_note` | optional; sanitized, recorded, and never able to affect authorization |
+
+It runs only from `refs/heads/main`, only for the repository owner, and only in
+`NickolisK24/bullpen-intel-engine`. It shares the `baseballos-sync` concurrency
+group with `cancel-in-progress: false`, so it can neither race another
+production writer nor be cancelled mid-transaction. Every gate is re-validated
+inside the script, which trusts none of them.
+
+### No second writer
+
+Both phases call the one canonical entry point, `run_game_driven_ingestion`:
+
+1. **`shadow`**, exclusive to the requested game. Reads only. Produces the
+   reconciliation-plan fingerprint and the per-row plan.
+2. **`write`**, exclusive to the same game, authorized by that fingerprint.
+
+The lane re-fetches, re-plans, and refuses before its first mutation if either
+the source revision or the plan moved. That drift check is the lane's own
+`_authorize_reviewed_plan` — it is not re-implemented here, because a second
+comparator is the exact drift this design exists to detect. The canonical
+planner, canonical writer, D-009 identity governance, realization validator, and
+the production writer guard are all reused unchanged.
+
+**The write phase is never entered on a plan that proposes work.** An insert,
+update, delete, block, canonical-outs correction, appearance-team mutation,
+identity creation, reactivation, metadata change, provenance write, checkpoint
+change, work-item change, dead-letter, or unrecognized action all refuse first.
+
+### What "no-op" means here, precisely
+
+Measured against the canonical lane, an exclusive write over an already-matching
+game produces:
+
+| counter | value | group |
+| :--- | ---: | :--- |
+| `game_log_rows_written` | 0 | baseball data |
+| `pitcher_rows_written` | 0 | baseball data |
+| `appearance_team_rows_written` | 0 | baseball data |
+| `correction_provenance_rows_written` | 0 | baseball data |
+| `dead_letters_created` | 0 | baseball data |
+| `work_items_updated` | 1 | lane ledger |
+| `work_items_completed` | 1 | lane ledger |
+| `checkpoints_advanced` | 1 | lane ledger |
+| `commits_performed` | 1 | lane ledger |
+
+PASS requires every **baseball-data** counter to be zero, strictly.
+
+The **lane ledger** counters are not zero and are not reported as zero.
+`_process_one_game` claims a work item before fetching and completes it after
+persisting whenever writes are enabled, independently of whether the plan
+mutates anything. Making them zero would require either bypassing the canonical
+writer or changing canonical completion and resume semantics to make a
+qualification easier — both cost more safety than they buy. The artifact states
+plainly that the transaction boundary was entered and the lane ledger advanced
+while no baseball row changed.
+
+Permitting the ledger to move is **not** permitting it to move arbitrarily. The
+delta above is the one MEASURED through the canonical PostgreSQL path, and PASS
+requires exactly it — exact integers, not `>= 1`.
+
+The qualification requires an **existing** durable work item for the requested
+game and refuses before the write phase if none exists: a first production
+qualification does not create lane state. It captures the item's complete
+governed lifecycle and checkpoint state before and after, enumerates every
+changed field, and refuses anything outside the measured set:
+
+| permitted to change | required to hold |
+| :--- | :--- |
+| `candidate_reason` (exclusive scope plans as `explicit_repair`) | `status`, `source_revision`, `rows_expected` |
+| `attempt_count` (+1 exactly) | `rows_reconciled`, `relief_rows_reconciled` |
+| `last_attempted_at`, `completed_at` | `correction_count`, `error_class` |
+| `completion_proof` (re-stamped with this run) | `first_attempted_at`, `created_at`, and every game identity field |
+| `updated_at` | |
+
+Every **unrelated** work item and checkpoint row is fingerprinted before and
+after while the writer guard is held; any movement refuses. The evidence carries
+`lane_bookkeeping_before`, `lane_bookkeeping_after`,
+`lane_bookkeeping_changed_fields`, `lane_bookkeeping_expected_delta`,
+`lane_bookkeeping_delta_match`, `unrelated_work_items_digest_before` / `_after`,
+`unrelated_checkpoints_digest_before` / `_after`, and
+`unrelated_bookkeeping_unchanged`. Missing bookkeeping evidence is UNPROVEN.
+
+This lane has no separate checkpoint table — `checkpoints_advanced` is recorded
+at the same site that completes the work item — so the work-item row carries
+both lifecycle and checkpoint state. They are reported as two named field
+groups rather than pretending a second table exists.
+
+### PASS, FAILED, UNPROVEN
+
+**PASS** additionally requires: exact one-game requested and planned scope;
+finality proven by the canonical planner; an available and unchanged source
+revision; an available and unchanged plan fingerprint; every planned row already
+matching; successful pre- and post-execution readback; identical before/after
+canonical state digests; a realization proof with zero divergent, missing,
+duplicate, and unresolved rows; and an evidence artifact built, scanned, and
+uploaded.
+
+The state digest covers the canonical governed field vocabulary but **excludes
+provenance fields and derived decimal companions** — under D-008 a
+representation difference in `innings_pitched` is never a baseball change, and
+digesting it would let one read as state movement. `innings_pitched_outs`, the
+integer authority, is included.
+
+Fingerprints and source revisions are proven **positively**, never inferred
+from the absence of a mismatch. Each phase must carry exactly one non-null
+source revision for exactly the requested game, and the two must be equal; the
+shadow and authorized plan fingerprints must both be present and equal. An
+absent authorized fingerprint or an absent write-phase revision is UNPROVEN, not
+a silent pass.
+
+The writer guard is reported from what happened, not from intent. The evidence
+document is built only **after** the release attempt, and carries
+`writer_guard_acquired`, `writer_guard_release_attempted`, and
+`writer_guard_released` separately. A failed or unattempted release is UNPROVEN;
+nothing hardcodes release success.
+
+**FAILED** is a definite observed violation. **UNPROVEN** is trustworthy
+evidence that could not be completed — a missing readback, an unavailable
+realization proof, absent effect counters, a missing fingerprint or source
+revision, or an artifact that could not be built, scanned, or uploaded. Both
+exit non-zero. UNPROVEN is never softened into PASS: absent evidence is the
+state most easily mistaken for success. FAILED outranks UNPROVEN.
+
+A fetch count of two is **not** a scope violation. An authorized exclusive write
+legitimately fetches the same single game twice — once to recompute the plan for
+the reviewed-fingerprint comparison, once to execute it. The contract asserts
+one *distinct* game, not one fetch operation.
+
+### Evidence
+
+`artifacts/manual-noop-write-qualification/` holds `qualification-summary.json`,
+`qualification-summary.md`, and `qualification-metadata.json`, uploaded as
+`game-driven-noop-qualification-<run id>` with 30-day retention. The artifact is
+scanned by the single shared forbidden-content scanner
+(`scan_forbidden_artifact_content.py`) **before** upload; an unsafe artifact is
+never published, and a failed scan or upload is UNPROVEN. Upload is ordered
+before the final gate, so a failing qualification still leaves reviewable
+evidence.
+
+Every document carries the explicit statement: *this qualification does not
+authorize scheduled writes, automated writes, authoritative publication,
+backfill, or future mutations.*
+
+### What this does not change
+
+Daily remains `shadow`. Postgame remains `shadow`. Backfill remains `off`.
+Publication authority is unchanged and the legacy sync writer remains
+production-authoritative. Automated write mode and authoritative mode both
+remain **unapproved**. No migration was added; the Alembic head remains
+`c7f1b408d93a`. A fingerprint is evidence of what a plan was, never a token
+permitting a later write.
+
+### Next stage
+
+After review and merge, a first qualification may be dispatched **only** with
+explicit operator approval, against one completed game, from `main`. A PASS
+proves the write-capable path can be entered safely on a no-op. Qualifying a
+genuine mutation is a separate, separately reviewed package.
+
+
 ## Intraday reconciliation (audit-only, Phase 1)
 
 **Canonical reference: [`INTRADAY_RECONCILIATION.md`](INTRADAY_RECONCILIATION.md)**
