@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 import subprocess
 
@@ -6,6 +6,7 @@ import pytest
 
 from models.dashboard_snapshot import DashboardSnapshot
 from services import dashboard_snapshot
+from services import sync_metadata
 from services.what_changed_since_yesterday import (
     REASON_COMPARISON_WITHHELD,
     REASON_CURRENT_SLATE_COVERAGE_MISSING,
@@ -132,8 +133,26 @@ def test_snapshot_trust_constants_frozen():
     assert REASON_VALIDATIONS_FAILED == 'validations_failed'
 
 
-def test_snapshot_trust_gates_behavior():
+def _freeze_today(monkeypatch, today):
+    """Pin the product current date these gates measure staleness against.
+
+    ``snapshot_unavailable_reason`` computes ``product_current_date() -
+    data_through`` and fails closed once that age reaches the unavailable
+    threshold. Every fixture below uses fixed calendar dates, so without a
+    frozen clock the gate being exercised changes as wall-clock time moves and
+    the test eventually asserts something it was never written to assert.
+    """
+    monkeypatch.setattr(dashboard_snapshot, 'product_current_date', lambda: today)
+
+
+def test_snapshot_trust_gates_behavior(monkeypatch):
     ref = date(2026, 7, 5)
+    # Without this the freshness gate returns first once the fixtures age past
+    # the unavailable threshold, and the mismatch assertion below silently stops
+    # testing the mismatch gate. It began failing on 2026-08-03 for exactly that
+    # reason: 2026-07-04 plus the 30-day threshold.
+    _freeze_today(monkeypatch, ref)
+
     trusted = _snapshot_row(ref)
     assert dashboard_snapshot.snapshot_unavailable_reason(trusted) is None
 
@@ -153,6 +172,54 @@ def test_snapshot_trust_gates_behavior():
     )
     assert dashboard_snapshot.snapshot_unavailable_reason(mismatch) == (
         'dashboard_snapshot_data_through_mismatch'
+    )
+
+
+def test_freshness_fail_closed_boundary_is_the_unavailable_threshold(monkeypatch):
+    """The boundary itself, pinned — and pinned against a controlled clock.
+
+    This is the gate that swallowed the mismatch assertion above. It is worth
+    owning directly rather than only as the thing another test has to avoid:
+    the day the threshold moves, this fails and names the new boundary instead
+    of some unrelated assertion changing meaning.
+
+    Both sides are asserted. A one-sided test would pass just as happily if the
+    gate fired a day early, or never fired at all.
+    """
+    stale_after, unavailable_after = sync_metadata.freshness_thresholds()
+    assert (stale_after, unavailable_after) == (14, 30)
+
+    ref = date(2026, 7, 5)
+    fresh = _snapshot_row(ref)
+
+    _freeze_today(monkeypatch, ref + timedelta(days=unavailable_after - 1))
+    assert dashboard_snapshot.snapshot_unavailable_reason(fresh) is None
+
+    _freeze_today(monkeypatch, ref + timedelta(days=unavailable_after))
+    assert dashboard_snapshot.snapshot_unavailable_reason(fresh) == (
+        'dashboard_snapshot_freshness_fail_closed'
+    )
+
+
+def test_freshness_fail_closed_outranks_the_more_specific_reasons(monkeypatch):
+    """Documents the ordering that made the original failure confusing.
+
+    A stale snapshot reports staleness even when a more specific defect is also
+    present. That is the current contract; this test records it so a future
+    change to gate precedence is a deliberate, visible decision rather than a
+    silent one.
+    """
+    ref = date(2026, 7, 5)
+    _, unavailable_after = sync_metadata.freshness_thresholds()
+    mismatch = _snapshot_row(
+        ref,
+        payload=_snapshot_payload(ref),
+        row_data_through=date(2026, 7, 4),
+    )
+
+    _freeze_today(monkeypatch, date(2026, 7, 4) + timedelta(days=unavailable_after))
+    assert dashboard_snapshot.snapshot_unavailable_reason(mismatch) == (
+        'dashboard_snapshot_freshness_fail_closed'
     )
 
 
