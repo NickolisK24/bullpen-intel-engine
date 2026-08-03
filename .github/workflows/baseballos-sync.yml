@@ -488,45 +488,128 @@ jobs:
           echo
           exit 1
 
-      # ── Game-driven shadow activation health ────────────────────────────
-      # Everything from here down is OBSERVATION. It runs after the established
-      # sync, publication, appearance-ledger, and dashboard gates have had
-      # their chance, and it never becomes a prerequisite for any of them. A
-      # shadow defect is an activation incident, not permission to withhold
-      # production data that is otherwise valid.
+      # ── Shadow activation handoff (transport only) ───────────────────────
+      # Everything about shadow ACTIVATION HEALTH now lives in the separate
+      # shadow-activation-health job below. What remains here is transport: the
+      # runner wrote its cycle summary to this filesystem, and jobs do not share
+      # one, so the evidence has to be staged and uploaded to cross over.
       #
-      # Validator and scanner exit codes are captured rather than allowed to
-      # terminate the job, so the evidence is uploaded before anything fails.
-      # The final gate comes last, after the upload.
+      # These two steps are deliberately non-blocking. Publication succeeded or
+      # failed on the steps above; a diagnostic handoff must never be able to
+      # turn a green publication red. A failed handoff instead becomes UNPROVEN
+      # activation health in the observer job, which fails there.
+      #
+      # The staging rule matters: nothing is uploaded from the directory the
+      # runner wrote to. The raw summary is scanned first and copied into an
+      # empty staging directory only if it passes, so a scanner bug produces an
+      # empty handoff rather than a leak.
 
-      - name: Validate game-driven shadow activation cycle
-        id: activation-validate
+      - name: Prepare game-driven shadow handoff
+        id: shadow-handoff-prepare
+        continue-on-error: true
         if: ${{ always() && ((github.event_name == 'workflow_dispatch' && (inputs.mode == 'daily' || inputs.mode == 'postgame')) || (github.event_name == 'schedule' && (github.event.schedule == '0 10 * * *' || github.event.schedule == '0 2,4,6 * * *'))) }}
         env:
           ACTIVATION_DIR: artifacts/game-driven-shadow
+          HANDOFF_DIR: artifacts/game-driven-shadow-handoff
           DAILY_RUNNER_EXIT: ${{ steps.daily-sync.outputs.runner_exit_code }}
           POSTGAME_RUNNER_EXIT: ${{ steps.postgame-refresh.outputs.runner_exit_code }}
         run: |
-          set -euo pipefail
+          set -uo pipefail
+          python backend/scripts/prepare_shadow_handoff.py \
+            --source-dir "$ACTIVATION_DIR" \
+            --staging-dir "$HANDOFF_DIR" \
+            --run-id "${GITHUB_RUN_ID}" \
+            --repository-sha "${GITHUB_SHA}" \
+            --daily-runner-exit "${DAILY_RUNNER_EXIT:-}" \
+            --postgame-runner-exit "${POSTGAME_RUNNER_EXIT:-}"
+          echo "Handoff preparation finished with exit $?. Publication-critical results for this run are unaffected."
+          exit 0
+
+      - name: Upload game-driven shadow handoff
+        continue-on-error: true
+        if: ${{ always() && ((github.event_name == 'workflow_dispatch' && (inputs.mode == 'daily' || inputs.mode == 'postgame')) || (github.event_name == 'schedule' && (github.event.schedule == '0 10 * * *' || github.event.schedule == '0 2,4,6 * * *'))) }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: game-driven-shadow-handoff-${{ github.run_id }}
+          path: artifacts/game-driven-shadow-handoff
+          retention-days: 7
+          if-no-files-found: warn
+
+  # ── Observer: game-driven shadow activation health ──────────────────────
+  # Separated from public-sync so one red signal cannot mean two different
+  # things. Before this split, a shadow-only defect failed the publication job
+  # and skipped internal-enrichment and static-team-story-preview even though
+  # the sync, snapshot publication, appearance-ledger proof, and dashboard
+  # verification they depend on had all succeeded.
+  #
+  # This job holds NO production credential and runs NO production command. It
+  # reads retained evidence and renders a verdict. It cannot change the
+  # publication-critical result of the run, and nothing downstream depends on
+  # it.
+  #
+  # It runs on always() rather than on public-sync succeeding: when a public
+  # failure happens after the runner wrote its summary, that evidence is still
+  # worth validating and preserving.
+  shadow-activation-health:
+    runs-on: ubuntu-latest
+    needs: public-sync
+    if: ${{ always() && ((github.event_name == 'workflow_dispatch' && (inputs.mode == 'daily' || inputs.mode == 'postgame')) || (github.event_name == 'schedule' && (github.event.schedule == '0 10 * * *' || github.event.schedule == '0 2,4,6 * * *'))) }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install backend dependencies
+        run: pip install -r backend/requirements.txt
+
+      # Capture rather than fail. A missing handoff is UNPROVEN activation
+      # health decided by the final gate, not a job that dies before it can say
+      # so.
+      - name: Download game-driven shadow handoff
+        id: handoff-download
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: game-driven-shadow-handoff-${{ github.run_id }}
+          path: artifacts/game-driven-shadow-handoff
+
+      - name: Validate game-driven shadow activation cycle
+        id: activation-validate
+        if: ${{ always() }}
+        env:
+          HANDOFF_DIR: artifacts/game-driven-shadow-handoff
+          ACTIVATION_DIR: artifacts/game-driven-shadow
+        run: |
+          set -uo pipefail
           mkdir -p "$ACTIVATION_DIR"
-          if [ -f "$ACTIVATION_DIR/daily-sync-summary.json" ]; then
-            cycle=daily
-            runner_exit="${DAILY_RUNNER_EXIT:-1}"
-          elif [ -f "$ACTIVATION_DIR/postgame-sync-summary.json" ]; then
-            cycle=postgame
-            runner_exit="${POSTGAME_RUNNER_EXIT:-1}"
-          else
-            # A missing summary is an activation failure, not a skip. The gate
-            # below reads this code; exiting 0 here keeps the scan, summary,
-            # and upload steps running so the failure is still recorded.
-            echo "::error title=Game-Driven Shadow::No cycle summary was produced. Activation evidence is missing, which is itself an activation failure."
+          metadata="$HANDOFF_DIR/handoff-metadata.json"
+          if [ ! -f "$metadata" ]; then
+            echo "::error title=Game-Driven Shadow::No handoff metadata was received. Activation evidence is missing, which is itself an activation failure."
             echo "2" > "$ACTIVATION_DIR/activation-exit-code"
             exit 0
           fi
+          cycle="$(python -c 'import json,sys; print(json.load(open(sys.argv[1])).get("cycle_kind") or "")' "$metadata")"
+          runner_exit="$(python -c 'import json,sys; v=json.load(open(sys.argv[1])).get("runner_exit_code"); print("" if v is None else v)' "$metadata")"
+          status="$(python -c 'import json,sys; print(json.load(open(sys.argv[1])).get("handoff_status") or "")' "$metadata")"
+          summary="$HANDOFF_DIR/$cycle-sync-summary.json"
+          if [ "$status" != "ready" ] || [ -z "$cycle" ] || [ -z "$runner_exit" ] || [ ! -f "$summary" ]; then
+            echo "::error title=Game-Driven Shadow::Handoff is not usable (status=${status:-unknown}, cycle=${cycle:-unknown}). Activation health is UNPROVEN."
+            echo "2" > "$ACTIVATION_DIR/activation-exit-code"
+            cp "$metadata" "$ACTIVATION_DIR/" 2>/dev/null || true
+            exit 0
+          fi
+          cp "$summary" "$ACTIVATION_DIR/" 2>/dev/null || true
+          cp "$metadata" "$ACTIVATION_DIR/" 2>/dev/null || true
           echo "cycle_kind=$cycle" >> "$GITHUB_OUTPUT"
           set +e
           python backend/scripts/validate_game_driven_shadow_cycle.py \
-            --sync-summary "$ACTIVATION_DIR/$cycle-sync-summary.json" \
+            --sync-summary "$summary" \
             --cycle-kind "$cycle" \
             --runner-exit-code "$runner_exit" \
             --summary-json "$ACTIVATION_DIR/$cycle-activation-summary.json" \
@@ -542,32 +625,29 @@ jobs:
 
       - name: Scan activation artifacts for secrets
         id: activation-scan
-        if: ${{ always() && ((github.event_name == 'workflow_dispatch' && (inputs.mode == 'daily' || inputs.mode == 'postgame')) || (github.event_name == 'schedule' && (github.event.schedule == '0 10 * * *' || github.event.schedule == '0 2,4,6 * * *'))) }}
+        if: ${{ always() }}
         env:
           ACTIVATION_DIR: artifacts/game-driven-shadow
         run: |
-          set -euo pipefail
+          set -uo pipefail
           mkdir -p "$ACTIVATION_DIR"
-          # Runs BEFORE upload. An artifact that fails this scan is quarantined
-          # and never leaves the runner; only its filename and a safe category
-          # are reported, never the matched content.
-          unsafe=0
-          patterns='postgresql://|postgres://|password=|Authorization:|X-Admin-Token|ADMIN_API_TOKEN|SECRET_KEY|DATABASE_URL|BASEBALLOS_ADMIN_API_TOKEN|token=|api_key=|api-key=|secret=|Traceback \(most recent call last\)|/home/runner/work'
-          for file in "$ACTIVATION_DIR"/*.json "$ACTIVATION_DIR"/*.md; do
-            [ -e "$file" ] || continue
-            if grep -Eq "$patterns" "$file"; then
-              echo "::error title=Activation Artifact::$(basename "$file") matched a forbidden-content pattern and was quarantined. It was NOT uploaded."
-              rm -f "$file"
-              unsafe=1
-            fi
-          done
-          echo "$unsafe" > "$ACTIVATION_DIR/activation-scan-unsafe"
-          if [ "$unsafe" -eq 0 ]; then
-            echo "Activation artifacts passed the forbidden-content scan."
+          # Runs BEFORE upload, through the same shared scanner the pre-handoff
+          # scan uses, so one pattern list governs both. An unsafe artifact is
+          # quarantined and never leaves the runner; only its filename and a
+          # category are reported, never the matched content.
+          set +e
+          python backend/scripts/scan_forbidden_artifact_content.py \
+            --directory "$ACTIVATION_DIR" --quarantine --label "Activation Artifact"
+          scan_code=$?
+          set -e
+          if [ "$scan_code" -eq 0 ]; then
+            echo "safe=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "safe=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Append activation summary
-        if: ${{ always() && ((github.event_name == 'workflow_dispatch' && (inputs.mode == 'daily' || inputs.mode == 'postgame')) || (github.event_name == 'schedule' && (github.event.schedule == '0 10 * * *' || github.event.schedule == '0 2,4,6 * * *'))) }}
+        if: ${{ always() }}
         env:
           ACTIVATION_DIR: artifacts/game-driven-shadow
           CYCLE_KIND: ${{ steps.activation-validate.outputs.cycle_kind }}
@@ -582,6 +662,9 @@ jobs:
               echo
               echo "No activation summary was produced for this cycle."
               echo
+              echo "This is an observer result only. It does not change this run's"
+              echo "publication-critical outcome."
+              echo
               echo "Current publication authority remains unchanged."
               echo "Automated write mode remains prohibited."
               echo "Authoritative mode remains prohibited."
@@ -590,7 +673,9 @@ jobs:
           fi
 
       - name: Upload game-driven shadow activation artifacts
-        if: ${{ always() && ((github.event_name == 'workflow_dispatch' && (inputs.mode == 'daily' || inputs.mode == 'postgame')) || (github.event_name == 'schedule' && (github.event.schedule == '0 10 * * *' || github.event.schedule == '0 2,4,6 * * *'))) }}
+        id: activation-upload
+        continue-on-error: true
+        if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
           name: game-driven-shadow-${{ github.run_id }}
@@ -598,41 +683,34 @@ jobs:
             artifacts/game-driven-shadow/*-sync-summary.json
             artifacts/game-driven-shadow/*-activation-summary.json
             artifacts/game-driven-shadow/*-activation-summary.md
+            artifacts/game-driven-shadow/handoff-metadata.json
           retention-days: 30
           if-no-files-found: warn
 
-      # Last, so the evidence above is already preserved. This may fail the run;
-      # it must never mask an earlier production failure, so it only reports the
-      # activation verdict and leaves prior step outcomes to speak for
-      # themselves.
+      # Last, so every piece of evidence above is already preserved. Ten
+      # conditions decide this; the helper evaluates them so the failure matrix
+      # is provable rather than merely intended.
       - name: Game-driven shadow activation health gate
-        if: ${{ always() && ((github.event_name == 'workflow_dispatch' && (inputs.mode == 'daily' || inputs.mode == 'postgame')) || (github.event_name == 'schedule' && (github.event.schedule == '0 10 * * *' || github.event.schedule == '0 2,4,6 * * *'))) }}
+        if: ${{ always() }}
         env:
+          HANDOFF_DIR: artifacts/game-driven-shadow-handoff
           ACTIVATION_DIR: artifacts/game-driven-shadow
+          DOWNLOAD_OUTCOME: ${{ steps.handoff-download.outcome }}
+          SCAN_SAFE: ${{ steps.activation-scan.outputs.safe }}
+          UPLOAD_OUTCOME: ${{ steps.activation-upload.outcome }}
         run: |
           set -euo pipefail
-          code="$(cat "$ACTIVATION_DIR/activation-exit-code" 2>/dev/null || echo 2)"
-          unsafe="$(cat "$ACTIVATION_DIR/activation-scan-unsafe" 2>/dev/null || echo 1)"
-          if [ "$unsafe" != "0" ]; then
-            echo "::error title=Game-Driven Shadow::An activation artifact was quarantined for forbidden content. Failing the activation gate."
-            exit 1
-          fi
-          case "$code" in
-            0)
-              echo "Game-driven shadow activation health: PASS."
-              ;;
-            1)
-              echo "::error title=Game-Driven Shadow::Activation health FAILED. Automated write mode remains prohibited and authoritative mode remains prohibited. Review the activation artifact before promotion or rollback."
-              exit 1
-              ;;
-            *)
-              echo "::error title=Game-Driven Shadow::Activation health is UNPROVEN (validator exit $code). Treat this as a failure, not a pass."
-              exit 1
-              ;;
-          esac
-
+          validator_code="$(cat "$ACTIVATION_DIR/activation-exit-code" 2>/dev/null || echo 2)"
+          python backend/scripts/evaluate_shadow_activation_gate.py \
+            --handoff-dir "$HANDOFF_DIR" \
+            --handoff-download-outcome "${DOWNLOAD_OUTCOME:-failure}" \
+            --validator-exit-code "$validator_code" \
+            --final-scan-safe "${SCAN_SAFE:-false}" \
+            --final-upload-outcome "${UPLOAD_OUTCOME:-failure}"
   internal-enrichment:
     runs-on: ubuntu-latest
+    # Depends on the PUBLICATION-critical job only, never on observer health.
+    # A failed shadow-activation-health job leaves this eligibility untouched.
     needs: public-sync
     if: ${{ needs.public-sync.result == 'success' }}
     continue-on-error: true
@@ -712,8 +790,12 @@ jobs:
 
   static-team-story-preview:
     runs-on: ubuntu-latest
+    # Depends on the PUBLICATION-critical job only, never on observer health.
+    # The success requirement is stated explicitly rather than left to the
+    # implicit needs behaviour, so the actual prerequisite is readable here and
+    # a shadow-only failure can never be mistaken for a reason to skip.
     needs: public-sync
-    if: ${{ (github.event_name == 'workflow_dispatch' && inputs.mode == 'daily') || (github.event_name == 'schedule' && github.event.schedule == '0 10 * * *') }}
+    if: ${{ needs.public-sync.result == 'success' && ((github.event_name == 'workflow_dispatch' && inputs.mode == 'daily') || (github.event_name == 'schedule' && github.event.schedule == '0 10 * * *')) }}
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4

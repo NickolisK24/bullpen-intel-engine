@@ -90,6 +90,151 @@ Downstream jobs (`internal-enrichment`, `static-team-story-preview`) run only
 after `public-sync` succeeds, so a failed ledger verdict also stops enrichment
 and static page publication from advancing on unproven data.
 
+Shadow **activation health** is no longer part of this job. It is evaluated in
+the separate `shadow-activation-health` job — see
+[OPS-001](#ops-001--publication-success-and-observer-health-are-separate-jobs)
+below — so a shadow-only defect can no longer make `public-sync` red or skip
+the downstream jobs.
+
+## OPS-001 — publication success and observer health are separate jobs
+
+### The former coupling
+
+`public-sync` used to end with the game-driven shadow activation validator and
+its health gate. That gate exits non-zero when shadow parity fails, when
+evidence is missing, when the validator cannot run, or when an artifact is
+unsafe — and because it lived inside `public-sync`, any of those turned the
+**publication** job red.
+
+A red `public-sync` therefore meant two entirely different things:
+
+1. trusted public synchronization or one of its proofs failed; or
+2. publication succeeded completely and an experimental observer failed.
+
+`internal-enrichment` and `static-team-story-preview` both depend on
+`public-sync`, so the second case skipped them too — even though the sync,
+snapshot publication, appearance-ledger proof, and dashboard cache verification
+they actually depend on had all succeeded. A shadow defect was withholding
+enrichment and static page publication from data that was fine.
+
+### The boundary
+
+| job | question it answers |
+|---|---|
+| `public-sync` | Did trusted public synchronization and every publication-critical proof succeed? |
+| `shadow-activation-health` | Did the game-driven shadow cycle pass its activation-health contract? |
+
+`public-sync` keeps every publication-critical responsibility: the daily and
+postgame runners, the 14:00 UTC morning slate refresh, both Tonight refreshes,
+explicit backfill, the appearance-ledger audit and its artifact, and dashboard
+cache verification. None of them is `continue-on-error`. No shadow verdict can
+exit non-zero inside it.
+
+`shadow-activation-health` runs `needs: public-sync` under an `always()`
+condition covering **only** the daily and postgame cycles — never the 14:00 UTC
+morning schedule, never backfill, never intraday. It runs even when
+`public-sync` failed, because a public failure after the runner wrote its
+summary still leaves real evidence worth validating and preserving.
+
+That job holds **no** production credential: no `DATABASE_URL`, `SECRET_KEY`,
+`ADMIN_API_TOKEN`, `BASEBALLOS_ADMIN_API_TOKEN`, or `BASEBALLOS_SYNC_URL`, and
+no `secrets.` reference at all. It invokes no production command, performs no
+baseball-data write, publishes nothing, and never sets
+`GAME_DRIVEN_INGESTION_MODE` — it validates retained evidence rather than
+running the lane.
+
+### The handoff artifact
+
+Jobs do not share a filesystem, so the cycle summary is transported explicitly
+as `game-driven-shadow-handoff-<run id>`, retained 7 days.
+
+The staging rule is the safety property: **nothing is uploaded from the
+directory the runner wrote to.** The raw summary is scanned first and copied
+into an empty staging directory only if it passes, so a bug in the scanner
+produces an empty handoff rather than a leaked production artifact.
+
+The handoff carries the applicable `daily-sync-summary.json` or
+`postgame-sync-summary.json` plus `handoff-metadata.json`:
+
+```
+schema_version  run_id  repository_sha  cycle_kind  runner_exit_code
+expected_summary_filename  summary_present  preupload_scan_safe  handoff_status
+```
+
+`handoff_status` is one of `ready`, `summary_missing`, `artifact_unsafe`,
+`invalid_metadata`, `preparation_error`. Metadata is written on every failure
+path — a handoff that says nothing and one that says "the summary was missing"
+would otherwise be indistinguishable, and only one is diagnosable. It carries
+no credential, URL, exception text, raw payload, or environment dump.
+
+Both handoff steps are `continue-on-error` **transport only**. A failed handoff
+cannot turn a green publication red; it becomes UNPROVEN activation health in
+the observer job instead.
+
+### Artifact safety
+
+One scanner (`backend/scripts/scan_forbidden_artifact_content.py`) and one
+pattern list govern both the pre-handoff scan and the final artifact scan. They
+were previously two shell greps with two copies of the same list — a list that
+can drift silently, since the second copy learns about a new secret shape only
+if someone remembers it exists.
+
+The scanner reports a filename and a category, never the matched content: the
+tool that catches a leak must not re-leak it. An unreadable file is unsafe, not
+skipped. Unsafe files are quarantined and never uploaded.
+
+### The final gate
+
+The final step of `shadow-activation-health` passes only when all ten hold:
+handoff downloaded, metadata present and valid, status `ready`, pre-upload scan
+safe, expected summary present, cycle kind daily or postgame, runner exit code a
+real integer, validator exit 0, final scan safe, and final upload succeeded.
+
+Verdict vocabulary is exactly three values:
+
+| verdict | meaning |
+|---|---|
+| `PASS` | every condition held |
+| `FAILED` | the validator ran and reported a real activation failure |
+| `UNPROVEN` | evidence was missing, unsafe, or unreadable |
+
+**UNPROVEN is never a skip, a warning, or a pass.** Absent evidence is the state
+most easily mistaken for success, so it is named and it fails. The failure
+message restates that automated write mode and authoritative mode both remain
+prohibited, that publication authority is unchanged, and that the run's
+publication-critical result is unaffected.
+
+### Outcome matrix
+
+| case | `public-sync` | `shadow-activation-health` | `internal-enrichment` | `static-team-story-preview` |
+|---|---|---|---|---|
+| A — both healthy | success | success | eligible | eligible |
+| B — public ok, shadow failed | **success** | failure | **still eligible** | **still eligible** |
+| C — public failed | failure | may still run to preserve evidence | skipped | skipped |
+| D — governed withholding | non-success with its explicit ledger/publication reason | independently evaluated when evidence exists | skipped | skipped |
+| E — shadow evidence missing/unsafe | decided only by publication-critical work | failure / UNPROVEN | based only on `public-sync` | based only on `public-sync` |
+
+In Case B the overall workflow may still show red, because the observer job is
+honestly red. That is intentional. What changed is that the `public-sync` job
+itself stays green and the publication-dependent jobs are not skipped.
+
+### What did not change
+
+The appearance-ledger audit and dashboard cache verification remain
+publication-critical and fail closed, with their commands, retries, exit-code
+semantics, and artifacts untouched. Schedules, manual modes, permissions,
+concurrency, timeouts, production commands, source values, and secrets are
+unchanged. Daily and postgame remain `shadow`, backfill remains `off`, and
+automated write and authoritative modes remain unapproved.
+
+### Still to prove
+
+The shadow-failure dependency behaviour is proven by deterministic CI tests, not
+by breaking production to obtain a screenshot. The normal path needs roughly a
+week of scheduled observation — one daily run, at least two postgame runs, and
+the next applicable enrichment and static preview runs — before the operational
+red-signal quality is considered fully proven.
+
 ## Foundation 3C — rollout closed
 
 **The Foundation 3C bootstrap is complete and closed at 109 completed / 0
@@ -669,6 +814,13 @@ production maintenance workflow.
   — the 14:00 UTC schedule/Tonight coherence lane. The source is stored whole as
   snapshot provenance; a value too long for the governed column fails as
   `tonight_snapshot_source_too_long` before any write rather than being clipped.
+- `python backend/scripts/scan_forbidden_artifact_content.py {FILES | --directory DIR} [--quarantine]`
+  — the one forbidden-content contract for activation artifacts. Reports a
+  filename and a category, never the matched content.
+- `python backend/scripts/prepare_shadow_handoff.py --source-dir DIR --staging-dir DIR`
+  — scans and stages the cycle summary for the observer job. Transport only.
+- `python backend/scripts/evaluate_shadow_activation_gate.py --handoff-dir DIR ...`
+  — the final activation verdict: `PASS`, `FAILED`, or `UNPROVEN`.
 - Kill switch (operators only, logged): `APPEARANCE_LEDGER_GATE_ENABLED=false`
 - Game-driven lane mode (operators only): `GAME_DRIVEN_INGESTION_MODE=off|shadow|write|authoritative`
 
