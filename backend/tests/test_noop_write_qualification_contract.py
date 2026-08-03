@@ -129,6 +129,60 @@ def realization(**overrides):
     return base
 
 
+WORK_ITEM_BEFORE = {
+    'id': 1, 'mlb_game_pk': GAME_PK, 'status': 'completed',
+    'attempt_count': 1, 'candidate_reason': 'newly_final',
+    'criticality': 'publication_critical', 'source_revision': 'rev-1',
+    'rows_expected': 1, 'rows_reconciled': 1, 'relief_rows_reconciled': 1,
+    'correction_count': 0, 'error_class': None, 'completion_proof': {'a': 1},
+    'first_attempted_at': 't0', 'last_attempted_at': 't0',
+    'completed_at': 't0', 'updated_at': 't0', 'created_at': 't0',
+    'sync_run_id': None, 'represented_date': 'd', 'game_date': 'd',
+    'game_type': 'R', 'home_team_id': 1, 'away_team_id': 2,
+    'game_datetime': 'dt', 'finality_state': 'final',
+    'source_authority': 'scheduled_games',
+}
+
+
+def work_item(**overrides):
+    row = dict(WORK_ITEM_BEFORE)
+    row.update(overrides)
+    return row
+
+
+def bookkeeping(target=None, *, available=True, target_present=True,
+                work_digest='wd-1', checkpoint_digest='cd-1'):
+    return {
+        'available': available,
+        'target': target if target is not None else work_item(),
+        'target_present': target_present,
+        'unrelated_count': 3,
+        'unrelated_work_items_digest': work_digest,
+        'unrelated_checkpoints_digest': checkpoint_digest,
+    }
+
+
+def bookkeeping_after(**overrides):
+    """The MEASURED post-write shape: exactly the six permitted fields move."""
+    target = work_item(
+        candidate_reason='explicit_repair',
+        attempt_count=2,
+        last_attempted_at='t1',
+        completed_at='t1',
+        completion_proof={'a': 2},
+        updated_at='t1',
+    )
+    result = bookkeeping(target)
+    result.update(overrides)
+    return result
+
+
+def guard(**overrides):
+    base = {'acquired': True, 'release_attempted': True, 'released': True}
+    base.update(overrides)
+    return base
+
+
 def assess(**overrides):
     kwargs = {
         'context': context(),
@@ -138,6 +192,9 @@ def assess(**overrides):
         'before_state': state(),
         'after_state': state(),
         'realization': realization(),
+        'bookkeeping_before': bookkeeping(),
+        'bookkeeping_after': bookkeeping_after(),
+        'writer_guard': guard(),
     }
     kwargs.update(overrides)
     return qualification.assess(**kwargs)
@@ -701,6 +758,7 @@ def test_the_digest_fields_come_from_the_canonical_vocabulary():
         assert (
             field in reconciliation.STATISTICAL_FIELDS
             or field in reconciliation.ROLE_SIGNAL_FIELDS
+            or field in reconciliation.GAME_METADATA_FIELDS
             or field in reconciliation.APPEARANCE_TEAM_FIELDS
         )
 
@@ -715,3 +773,337 @@ def test_the_digest_excludes_provenance_and_derived_companions():
 
 def test_innings_pitched_outs_is_in_the_compared_state():
     assert 'innings_pitched_outs' in qualification.STATE_DIGEST_FIELDS
+
+
+# ── Blocker 2: the lane ledger is GOVERNED, not merely reported ─────────────
+
+
+def test_the_target_work_item_must_already_exist():
+    decision = assess(bookkeeping_before=bookkeeping(target_present=False))
+    assert decision['result'] == qualification.RESULT_FAILED
+    assert qualification.FAILED_TARGET_WORK_ITEM_MISSING in (
+        decision['failed_reasons']
+    )
+
+
+def test_an_unexpected_work_item_creation_is_refused():
+    decision = assess(write_report=report(
+        execution_effects=effects(work_items_created=1)))
+    assert qualification.FAILED_UNEXPECTED_WORK_ITEM_CREATION in (
+        decision['failed_reasons']
+    )
+
+
+@pytest.mark.parametrize('field,value', [
+    ('work_items_created', 1),
+    ('work_items_updated', 0),
+    ('work_items_updated', 2),
+    ('work_items_completed', 0),
+    ('work_items_completed', 2),
+    ('checkpoints_advanced', 0),
+    ('checkpoints_advanced', 2),
+    ('commits_performed', 0),
+    ('commits_performed', 2),
+])
+def test_arbitrary_non_zero_bookkeeping_cannot_pass(field, value):
+    """The split permits the MEASURED ledger movement, not any movement."""
+    decision = assess(write_report=report(
+        execution_effects=effects(**{field: value})))
+    assert decision['result'] == qualification.RESULT_FAILED
+    assert decision['lane_bookkeeping']['lane_bookkeeping_delta_match'] is False
+
+
+def test_the_exact_measured_existing_item_delta_passes():
+    decision = assess()
+    assert decision['result'] == qualification.RESULT_PASS
+    assert decision['lane_bookkeeping']['lane_bookkeeping_delta_match'] is True
+
+
+def test_the_expected_delta_uses_exact_integers_not_ranges():
+    assert qualification.EXPECTED_LANE_BOOKKEEPING_DELTA == {
+        'work_items_created': 0,
+        'work_items_updated': 1,
+        'work_items_completed': 1,
+        'checkpoints_advanced': 1,
+        'commits_performed': 1,
+    }
+
+
+@pytest.mark.parametrize('field', [
+    'status', 'source_revision', 'rows_expected', 'rows_reconciled',
+    'relief_rows_reconciled', 'correction_count', 'error_class',
+    'first_attempted_at', 'created_at', 'mlb_game_pk', 'criticality',
+    'finality_state', 'source_authority', 'sync_run_id', 'game_type',
+])
+def test_any_unexpected_work_item_field_change_is_refused(field):
+    after = bookkeeping_after()
+    after['target'] = dict(after['target'])
+    after['target'][field] = 'MOVED'
+    decision = assess(bookkeeping_after=after)
+    assert decision['result'] == qualification.RESULT_FAILED
+    assert qualification.FAILED_UNEXPECTED_WORK_ITEM_FIELD_CHANGE in (
+        decision['failed_reasons']
+    )
+
+
+@pytest.mark.parametrize('field', sorted(
+    qualification.BOOKKEEPING_ALLOWED_CHANGED_FIELDS
+))
+def test_the_measured_permitted_fields_do_not_refuse(field):
+    assert field in qualification.BOOKKEEPING_ALLOWED_CHANGED_FIELDS
+    assert field not in qualification.BOOKKEEPING_REQUIRED_UNCHANGED_FIELDS
+
+
+def test_the_two_bookkeeping_field_groups_are_disjoint_and_complete():
+    allowed = set(qualification.BOOKKEEPING_ALLOWED_CHANGED_FIELDS)
+    unchanged = set(qualification.BOOKKEEPING_REQUIRED_UNCHANGED_FIELDS)
+    assert allowed & unchanged == set()
+    assert allowed | unchanged == set(qualification.WORK_ITEM_COLUMNS)
+
+
+def test_an_unrelated_work_item_change_is_refused():
+    decision = assess(bookkeeping_after=bookkeeping_after(
+        unrelated_work_items_digest='wd-CHANGED'))
+    assert decision['result'] == qualification.RESULT_FAILED
+    assert qualification.FAILED_UNRELATED_WORK_ITEM_CHANGED in (
+        decision['failed_reasons']
+    )
+
+
+def test_an_unrelated_checkpoint_change_is_refused():
+    decision = assess(bookkeeping_after=bookkeeping_after(
+        unrelated_checkpoints_digest='cd-CHANGED'))
+    assert decision['result'] == qualification.RESULT_FAILED
+    assert qualification.FAILED_UNRELATED_CHECKPOINT_CHANGED in (
+        decision['failed_reasons']
+    )
+
+
+def test_a_checkpoint_delta_mismatch_has_its_own_reason_code():
+    decision = assess(write_report=report(
+        execution_effects=effects(checkpoints_advanced=3)))
+    assert qualification.FAILED_CHECKPOINT_DELTA_MISMATCH in (
+        decision['failed_reasons']
+    )
+
+
+def test_a_commit_count_mismatch_has_its_own_reason_code():
+    decision = assess(write_report=report(
+        execution_effects=effects(commits_performed=4)))
+    assert qualification.FAILED_COMMIT_COUNT_MISMATCH in (
+        decision['failed_reasons']
+    )
+
+
+def test_a_work_item_left_not_completed_is_refused():
+    after = bookkeeping_after()
+    after['target'] = dict(after['target'], status='in_progress')
+    decision = assess(bookkeeping_after=after)
+    assert qualification.FAILED_WORK_ITEM_STATUS_UNEXPECTED in (
+        decision['failed_reasons']
+    )
+
+
+def test_an_attempt_count_delta_other_than_one_is_refused():
+    after = bookkeeping_after()
+    after['target'] = dict(after['target'], attempt_count=5)
+    decision = assess(bookkeeping_after=after)
+    assert qualification.FAILED_ATTEMPT_COUNT_DELTA_UNEXPECTED in (
+        decision['failed_reasons']
+    )
+
+
+@pytest.mark.parametrize('which', ['before', 'after'])
+def test_missing_bookkeeping_readback_is_unproven(which):
+    decision = assess(**{f'bookkeeping_{which}': None})
+    assert decision['result'] == qualification.RESULT_UNPROVEN
+    assert qualification.UNPROVEN_BOOKKEEPING_READBACK_UNAVAILABLE in (
+        decision['unproven_reasons']
+    )
+
+
+def test_the_bookkeeping_evidence_schema_is_complete():
+    evidence = assess()['lane_bookkeeping']
+    for key in (
+        'lane_bookkeeping_before', 'lane_bookkeeping_after',
+        'lane_bookkeeping_changed_fields', 'lane_bookkeeping_expected_delta',
+        'lane_bookkeeping_delta_match',
+        'unrelated_work_items_digest_before',
+        'unrelated_work_items_digest_after',
+        'unrelated_checkpoints_digest_before',
+        'unrelated_checkpoints_digest_after',
+        'unrelated_bookkeeping_unchanged',
+    ):
+        assert key in evidence, key
+
+
+def test_the_reported_before_state_never_carries_raw_proof_content():
+    state_view = qualification.safe_work_item_state(work_item())
+    # completion_proof is digested, not reproduced.
+    assert state_view['completion_proof'] != {'a': 1}
+    assert isinstance(state_view['completion_proof'], str)
+
+
+# ── Blocker 3: positive fingerprint proof ──────────────────────────────────
+
+
+def test_an_absent_authorized_fingerprint_is_unproven():
+    decision = assess(write_report=report(authorized_plan_fingerprint=None))
+    assert decision['result'] == qualification.RESULT_UNPROVEN
+    assert qualification.UNPROVEN_AUTHORIZED_FINGERPRINT_MISSING in (
+        decision['unproven_reasons']
+    )
+    assert decision['plan_fingerprint_match'] is False
+
+
+def test_a_missing_authorized_fingerprint_key_is_unproven():
+    write = report()
+    write.pop('authorized_plan_fingerprint')
+    decision = assess(write_report=write)
+    assert decision['result'] == qualification.RESULT_UNPROVEN
+    assert decision['plan_fingerprint_match'] is False
+
+
+def test_a_different_authorized_fingerprint_is_failed():
+    decision = assess(write_report=report(
+        authorized_plan_fingerprint='9' * 32))
+    assert decision['result'] == qualification.RESULT_FAILED
+    assert qualification.FAILED_PLAN_FINGERPRINT_MISMATCH in (
+        decision['failed_reasons']
+    )
+    assert decision['plan_fingerprint_match'] is False
+
+
+def test_pass_requires_fingerprint_match_true():
+    assert assess()['plan_fingerprint_match'] is True
+
+
+def test_fingerprint_match_is_never_inferred_from_a_status_code():
+    """Lane status 'complete' must not by itself imply a matched fingerprint."""
+    decision = assess(write_report=report(
+        status='complete', authorized_plan_fingerprint=None))
+    assert decision['plan_fingerprint_match'] is False
+    assert decision['result'] != qualification.RESULT_PASS
+
+
+# ── Blocker 4: positive write-phase source-revision proof ──────────────────
+
+
+def test_an_absent_write_phase_revision_list_is_unproven():
+    decision = assess(write_report=report(games=[]))
+    assert decision['result'] == qualification.RESULT_UNPROVEN
+    assert qualification.UNPROVEN_WRITE_SOURCE_REVISION_MISSING in (
+        decision['unproven_reasons']
+    )
+    assert decision['source_revision_match'] is False
+
+
+def test_a_null_write_phase_revision_is_unproven():
+    decision = assess(write_report=report(games=[
+        {'game_pk': GAME_PK, 'source_revision': None, 'rows': [row()]}]))
+    assert decision['result'] == qualification.RESULT_UNPROVEN
+    assert decision['source_revision_match'] is False
+
+
+def test_a_revision_for_the_wrong_game_is_failed():
+    decision = assess(write_report=report(games=[
+        {'game_pk': 999999, 'source_revision': 'rev-1', 'rows': [row()]}]))
+    assert decision['result'] == qualification.RESULT_FAILED
+    assert qualification.FAILED_SOURCE_REVISION_WRONG_GAME in (
+        decision['failed_reasons']
+    )
+
+
+def test_multiple_write_phase_revisions_are_unproven():
+    decision = assess(write_report=report(games=[
+        {'game_pk': GAME_PK, 'source_revision': 'rev-1', 'rows': [row()]},
+        {'game_pk': GAME_PK, 'source_revision': 'rev-1', 'rows': []}]))
+    assert decision['result'] == qualification.RESULT_UNPROVEN
+    assert decision['source_revision_match'] is False
+
+
+def test_a_changed_write_phase_revision_is_failed():
+    decision = assess(write_report=report(games=[
+        {'game_pk': GAME_PK, 'source_revision': 'rev-2', 'rows': [row()]}]))
+    assert decision['result'] == qualification.RESULT_FAILED
+    assert qualification.FAILED_SOURCE_REVISION_CHANGED in (
+        decision['failed_reasons']
+    )
+
+
+def test_source_revision_match_comes_only_from_positive_equality():
+    assert assess()['source_revision_match'] is True
+    # Absent evidence must not read as a match.
+    assert assess(write_report=report(games=[]))[
+        'source_revision_match'
+    ] is False
+
+
+def test_both_phase_revision_states_are_reported():
+    decision = assess()
+    assert decision['shadow_source_revision_state'] == 'present'
+    assert decision['write_source_revision_state'] == 'present'
+
+
+# ── Blocker 5: complete digest vocabulary ──────────────────────────────────
+
+
+@pytest.mark.parametrize('field', [
+    'game_date', 'game_type', 'opponent', 'opponent_abbreviation',
+])
+def test_governed_game_metadata_is_in_the_state_digest(field):
+    assert field in qualification.STATE_DIGEST_FIELDS
+
+
+def test_the_digest_vocabulary_is_built_from_canonical_constants_only():
+    expected = (
+        set(reconciliation.STATISTICAL_FIELDS)
+        | set(reconciliation.ROLE_SIGNAL_FIELDS)
+        | set(reconciliation.GAME_METADATA_FIELDS)
+        | set(reconciliation.APPEARANCE_TEAM_FIELDS)
+    ) - set(reconciliation.PROVENANCE_FIELDS) - set(
+        reconciliation.DERIVED_COMPANION_FIELDS
+    )
+    assert set(qualification.STATE_DIGEST_FIELDS) == expected
+
+
+# ── Blocker 6: writer-guard release is proven, not claimed ─────────────────
+
+
+def test_a_guard_that_was_never_acquired_is_unproven():
+    decision = assess(writer_guard=guard(
+        acquired=False, release_attempted=False, released=False))
+    assert decision['result'] == qualification.RESULT_UNPROVEN
+    assert qualification.UNPROVEN_WRITER_GUARD_UNAVAILABLE in (
+        decision['unproven_reasons']
+    )
+
+
+def test_a_release_that_was_never_attempted_is_unproven():
+    decision = assess(writer_guard=guard(
+        release_attempted=False, released=False))
+    assert decision['result'] == qualification.RESULT_UNPROVEN
+    assert qualification.UNPROVEN_WRITER_GUARD_RELEASE_UNPROVEN in (
+        decision['unproven_reasons']
+    )
+
+
+def test_a_failed_release_is_unproven():
+    decision = assess(writer_guard=guard(released=False))
+    assert decision['result'] == qualification.RESULT_UNPROVEN
+    assert qualification.UNPROVEN_WRITER_GUARD_RELEASE_UNPROVEN in (
+        decision['unproven_reasons']
+    )
+
+
+def test_a_successful_acquire_and_release_passes():
+    decision = assess(writer_guard=guard())
+    assert decision['result'] == qualification.RESULT_PASS
+    assert decision['writer_guard'] == {
+        'acquired': True, 'release_attempted': True, 'released': True,
+    }
+
+
+def test_the_guard_report_never_claims_more_than_happened():
+    decision = assess(writer_guard=guard(released=False))
+    assert decision['writer_guard']['released'] is False

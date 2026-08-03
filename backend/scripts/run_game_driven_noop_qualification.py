@@ -155,6 +155,14 @@ def run(args) -> dict:
     from services import sync_metadata
 
     with flask_app.app_context():
+        # Writer-guard state is tracked, never assumed. The evidence document
+        # is built only AFTER the release attempt, so the artifact can never
+        # claim a release that did not happen.
+        guard_state = {
+            'acquired': False,
+            'release_attempted': False,
+            'released': False,
+        }
         guard = None
         try:
             guard = sync_metadata.acquire_sync_writer_guard(
@@ -162,13 +170,19 @@ def run(args) -> dict:
                 source=sync_metadata.SOURCE_GITHUB_ACTIONS,
                 lock_scope=sync_metadata.LOCK_SCOPE_PUBLIC,
             )
+            guard_state['acquired'] = guard is not None
         except Exception:  # noqa: BLE001 - a contended lock is UNPROVEN
+            guard = None
+
+        if not guard_state['acquired']:
             return _refused(
                 context, game_pk=game_pk, note=note,
                 unproven=[qualification.UNPROVEN_WRITER_GUARD_UNAVAILABLE],
+                writer_guard=guard_state,
             )
 
-        guard_released = False
+        # Collected inside the guarded block, finalized outside it.
+        collected: dict = {'write_phase_entered': False}
         try:
             # ── SHADOW: exclusive, reads only ────────────────────────────────
             shadow_report = lane.run_game_driven_ingestion(
@@ -176,6 +190,7 @@ def run(args) -> dict:
                 mode=lane.MODE_SHADOW,
                 only_game_pks=[game_pk],
             )
+            collected['shadow_report'] = shadow_report
             shadow_governance = qualification.evaluate_plan_governance(
                 shadow_report
             )
@@ -211,25 +226,29 @@ def run(args) -> dict:
                     else qualification.FAILED_PLANNED_COUNT_NOT_ONE
                 )
 
-            if preflight_failed or preflight_unproven:
-                decision = qualification.decide({
-                    'failed_reasons': preflight_failed,
-                    'unproven_reasons': preflight_unproven,
-                })
-                return _document(
-                    identity=identity,
-                    decision=decision,
-                    shadow_report=shadow_report,
-                    write_report=None,
-                    before_state=None,
-                    after_state=None,
-                    realization=None,
-                    reference_date=reference_date,
-                    write_phase_entered=False,
+            # ── Lane bookkeeping BEFORE, read under the guard ────────────────
+            # A first production qualification requires an existing durable
+            # work item. Refusing here keeps the write phase unreached.
+            bookkeeping_before = qualification.read_lane_bookkeeping(game_pk)
+            collected['bookkeeping_before'] = bookkeeping_before
+            if bookkeeping_before is None:
+                preflight_unproven.append(
+                    qualification.UNPROVEN_BOOKKEEPING_READBACK_UNAVAILABLE
+                )
+            elif not bookkeeping_before.get('target_present'):
+                preflight_failed.append(
+                    qualification.FAILED_TARGET_WORK_ITEM_MISSING
                 )
 
+            if preflight_failed or preflight_unproven:
+                collected['preflight_failed'] = preflight_failed
+                collected['preflight_unproven'] = preflight_unproven
+                raise _PreflightRefusal()
+
             # ── Pre-execution canonical readback ─────────────────────────────
-            before_state = qualification.read_canonical_state(shadow_rows)
+            collected['before_state'] = qualification.read_canonical_state(
+                shadow_rows
+            )
 
             # ── WRITE: exclusive, authorized by the reviewed fingerprint ─────
             # The lane re-fetches, re-plans, and refuses before its first
@@ -241,55 +260,113 @@ def run(args) -> dict:
                 only_game_pks=[game_pk],
                 expected_plan_fingerprint=fingerprint,
             )
+            collected['write_report'] = write_report
+            collected['write_phase_entered'] = True
 
-            # ── Post-execution readback and realization ──────────────────────
-            after_state = qualification.read_canonical_state(
+            # ── Post-execution readback, bookkeeping, and realization ────────
+            collected['after_state'] = qualification.read_canonical_state(
                 qualification.plan_rows(write_report) or shadow_rows
             )
+            collected['bookkeeping_after'] = (
+                qualification.read_lane_bookkeeping(game_pk)
+            )
             try:
-                realization = realization_service.build_daily_realization(
-                    write_report
+                collected['realization'] = (
+                    realization_service.build_daily_realization(write_report)
                 )
             except Exception:  # noqa: BLE001 - absent proof is UNPROVEN
-                realization = None
-
-            decision = qualification.assess(
-                context=context,
-                game_pk=game_pk,
-                shadow_report=shadow_report,
-                write_report=write_report,
-                before_state=before_state,
-                after_state=after_state,
-                realization=realization,
-            )
-            return _document(
-                identity=identity,
-                decision=decision,
-                shadow_report=shadow_report,
-                write_report=write_report,
-                before_state=before_state,
-                after_state=after_state,
-                realization=realization,
-                reference_date=reference_date,
-                write_phase_entered=True,
-            )
+                collected['realization'] = None
+        except _PreflightRefusal:
+            pass
         except Exception:  # noqa: BLE001 - never leak exception text
-            return _refused(
-                context, game_pk=game_pk, note=note,
-                unproven=[qualification.UNPROVEN_LANE_ERROR],
-            )
+            collected['lane_error'] = True
         finally:
-            if guard is not None and not guard_released:
+            # Release BEFORE the document is built, and record what actually
+            # happened. Nothing below hardcodes success.
+            if guard is not None:
+                guard_state['release_attempted'] = True
                 try:
                     guard.release()
-                except Exception:  # noqa: BLE001
-                    pass
+                    guard_state['released'] = True
+                except Exception:  # noqa: BLE001 - a failed release is UNPROVEN
+                    guard_state['released'] = False
+
+    # ── Finalized outside the guarded block ─────────────────────────────────
+    if collected.get('lane_error'):
+        return _refused(
+            context, game_pk=game_pk, note=note,
+            unproven=[qualification.UNPROVEN_LANE_ERROR],
+            writer_guard=guard_state,
+        )
+
+    if 'preflight_failed' in collected:
+        decision = qualification.decide({
+            'failed_reasons': collected['preflight_failed'],
+            'unproven_reasons': (
+                list(collected['preflight_unproven'])
+                + _guard_reasons(guard_state)
+            ),
+        })
+        decision['writer_guard'] = dict(guard_state)
+        return _document(
+            identity=identity,
+            decision=decision,
+            shadow_report=collected.get('shadow_report'),
+            write_report=None,
+            before_state=None,
+            after_state=None,
+            realization=None,
+            reference_date=reference_date,
+            write_phase_entered=False,
+        )
+
+    decision = qualification.assess(
+        context=context,
+        game_pk=game_pk,
+        shadow_report=collected.get('shadow_report'),
+        write_report=collected.get('write_report'),
+        before_state=collected.get('before_state'),
+        after_state=collected.get('after_state'),
+        realization=collected.get('realization'),
+        bookkeeping_before=collected.get('bookkeeping_before'),
+        bookkeeping_after=collected.get('bookkeeping_after'),
+        writer_guard=guard_state,
+    )
+    return _document(
+        identity=identity,
+        decision=decision,
+        shadow_report=collected.get('shadow_report'),
+        write_report=collected.get('write_report'),
+        before_state=collected.get('before_state'),
+        after_state=collected.get('after_state'),
+        realization=collected.get('realization'),
+        reference_date=reference_date,
+        write_phase_entered=collected.get('write_phase_entered', False),
+    )
 
 
-def _refused(context, *, game_pk, note, failed=(), unproven=()) -> dict:
+class _PreflightRefusal(Exception):
+    """Internal control flow: refuse before the write phase is entered."""
+
+
+def _guard_reasons(guard_state) -> list[str]:
+    if not guard_state.get('acquired'):
+        return [qualification.UNPROVEN_WRITER_GUARD_UNAVAILABLE]
+    if not (
+        guard_state.get('release_attempted') and guard_state.get('released')
+    ):
+        return [qualification.UNPROVEN_WRITER_GUARD_RELEASE_UNPROVEN]
+    return []
+
+
+def _refused(context, *, game_pk, note, failed=(), unproven=(),
+             writer_guard=None) -> dict:
     decision = qualification.decide({
         'failed_reasons': list(failed),
         'unproven_reasons': list(unproven),
+    })
+    decision['writer_guard'] = dict(writer_guard or {
+        'acquired': False, 'release_attempted': False, 'released': False,
     })
     return _document(
         identity=_identity_block(context, game_pk=game_pk, note=note),
@@ -312,6 +389,8 @@ def _document(*, identity, decision, shadow_report, write_report, before_state,
     effects = decision.get('execution_effects') or (
         qualification.split_execution_effects(write_report)
     )
+    guard_state = decision.get('writer_guard') or {}
+    bookkeeping = decision.get('lane_bookkeeping') or {}
 
     return {
         'identity': identity,
@@ -395,6 +474,53 @@ def _document(*, identity, decision, shadow_report, write_report, before_state,
             'transaction_boundary_entered': effects.get(
                 'transaction_boundary_entered'
             ),
+            # Governed shape and scope of the ledger movement.
+            'lane_bookkeeping_before': bookkeeping.get(
+                'lane_bookkeeping_before'
+            ),
+            'lane_bookkeeping_after': bookkeeping.get('lane_bookkeeping_after'),
+            'lane_bookkeeping_changed_fields': bookkeeping.get(
+                'lane_bookkeeping_changed_fields'
+            ),
+            'lane_bookkeeping_unexpected_changed_fields': bookkeeping.get(
+                'lane_bookkeeping_unexpected_changed_fields'
+            ),
+            'lane_bookkeeping_allowed_changed_fields': bookkeeping.get(
+                'lane_bookkeeping_allowed_changed_fields'
+            ),
+            'lane_bookkeeping_expected_delta': bookkeeping.get(
+                'lane_bookkeeping_expected_delta'
+            ),
+            'lane_bookkeeping_observed_delta': bookkeeping.get(
+                'lane_bookkeeping_observed_delta'
+            ),
+            'lane_bookkeeping_delta_match': bookkeeping.get(
+                'lane_bookkeeping_delta_match'
+            ),
+            'target_work_item_present_before': bookkeeping.get(
+                'target_work_item_present_before'
+            ),
+            'target_work_item_present_after': bookkeeping.get(
+                'target_work_item_present_after'
+            ),
+            'unrelated_work_item_count': bookkeeping.get(
+                'unrelated_work_item_count'
+            ),
+            'unrelated_work_items_digest_before': bookkeeping.get(
+                'unrelated_work_items_digest_before'
+            ),
+            'unrelated_work_items_digest_after': bookkeeping.get(
+                'unrelated_work_items_digest_after'
+            ),
+            'unrelated_checkpoints_digest_before': bookkeeping.get(
+                'unrelated_checkpoints_digest_before'
+            ),
+            'unrelated_checkpoints_digest_after': bookkeeping.get(
+                'unrelated_checkpoints_digest_after'
+            ),
+            'unrelated_bookkeeping_unchanged': bookkeeping.get(
+                'unrelated_bookkeeping_unchanged'
+            ),
             'lane_bookkeeping_note': (
                 'The canonical lane claims and completes its own work item and '
                 'advances its checkpoint whenever writes are enabled, '
@@ -404,8 +530,13 @@ def _document(*, identity, decision, shadow_report, write_report, before_state,
                 'mutated.'
             ),
             'writer_guard': 'sync_metadata.acquire_sync_writer_guard',
-            'writer_guard_acquired': write_phase_entered,
-            'writer_guard_released': True,
+            # Measured, never assumed. The document is built only after the
+            # release attempt, so these three report what actually happened.
+            'writer_guard_acquired': bool(guard_state.get('acquired')),
+            'writer_guard_release_attempted': bool(
+                guard_state.get('release_attempted')
+            ),
+            'writer_guard_released': bool(guard_state.get('released')),
             'elapsed_seconds': write_report.get('elapsed_seconds'),
             'budget_stop_triggered': write_report.get('budget_stop_triggered'),
             'lane_status': write_report.get('status'),
@@ -534,11 +665,53 @@ def render_markdown(document) -> str:
         '',
         execution.get('lane_bookkeeping_note', ''),
         '',
-        '| counter | value |',
-        '| :--- | ---: |',
+        '| counter | value | expected |',
+        '| :--- | ---: | ---: |',
     ]
     for field in qualification.LANE_BOOKKEEPING_EFFECT_FIELDS:
-        lines.append(f'| `{field}` | {bookkeeping.get(field)} |')
+        lines.append(
+            f'| `{field}` | {bookkeeping.get(field)} | '
+            f'{(execution.get("lane_bookkeeping_expected_delta") or {}).get(field)} |'
+        )
+
+    lines += [
+        '',
+        '### Governed ledger delta',
+        '',
+        '| check | value |',
+        '| :--- | :--- |',
+        f"| target work item present before | "
+        f"{execution.get('target_work_item_present_before')} |",
+        f"| target work item present after | "
+        f"{execution.get('target_work_item_present_after')} |",
+        f"| changed fields | "
+        f"{execution.get('lane_bookkeeping_changed_fields')} |",
+        f"| unexpected changed fields | "
+        f"{execution.get('lane_bookkeeping_unexpected_changed_fields')} |",
+        f"| delta matches expected | "
+        f"{execution.get('lane_bookkeeping_delta_match')} |",
+        f"| unrelated work items | "
+        f"{execution.get('unrelated_work_item_count')} |",
+        f"| unrelated work-items digest before | "
+        f"`{execution.get('unrelated_work_items_digest_before')}` |",
+        f"| unrelated work-items digest after | "
+        f"`{execution.get('unrelated_work_items_digest_after')}` |",
+        f"| unrelated checkpoints digest before | "
+        f"`{execution.get('unrelated_checkpoints_digest_before')}` |",
+        f"| unrelated checkpoints digest after | "
+        f"`{execution.get('unrelated_checkpoints_digest_after')}` |",
+        f"| unrelated bookkeeping unchanged | "
+        f"{execution.get('unrelated_bookkeeping_unchanged')} |",
+        '',
+        '### Writer guard',
+        '',
+        '| check | value |',
+        '| :--- | :--- |',
+        f"| acquired | {execution.get('writer_guard_acquired')} |",
+        f"| release attempted | "
+        f"{execution.get('writer_guard_release_attempted')} |",
+        f"| released | {execution.get('writer_guard_released')} |",
+    ]
 
     post = document['post_execution']
     lines += [

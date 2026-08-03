@@ -75,36 +75,48 @@ jobs:
       && github.actor == github.repository_owner
 
     steps:
+      # SHELL BOUNDARY. No `${{ }}` expression may appear inside any `run:`
+      # script in this workflow. GitHub substitutes expressions into the script
+      # text BEFORE bash parses it, so a crafted input would become shell code
+      # in a step that holds production credentials. Sanitising in Python is
+      # far too late. Every user-controlled value therefore crosses into the
+      # shell only through `env:`, and is read only as a quoted variable.
       - name: Refuse an unauthorized invocation
         env:
-          GAME_PK: ${{ inputs.game_pk }}
-          EXPECTED_HEAD_SHA: ${{ inputs.expected_head_sha }}
-          CONFIRMATION: ${{ inputs.confirmation }}
+          INPUT_GAME_PK: ${{ inputs.game_pk }}
+          INPUT_EXPECTED_HEAD_SHA: ${{ inputs.expected_head_sha }}
+          INPUT_CONFIRMATION: ${{ inputs.confirmation }}
+          INPUT_OPERATOR_NOTE: ${{ inputs.operator_note }}
           RESOLVED_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
 
           # Exactly one positive integer. Anything with a separator, a range, a
           # date, or a wildcard is refused rather than reinterpreted.
-          if ! printf '%s' "$GAME_PK" | grep -Eq '^[1-9][0-9]*$'; then
+          if ! printf '%s' "$INPUT_GAME_PK" | grep -Eq '^[1-9][0-9]*$'; then
             echo "Refused: game_pk must be exactly one positive integer."
             exit 1
           fi
 
-          if ! printf '%s' "$EXPECTED_HEAD_SHA" | grep -Eq '^[0-9a-f]{40}$'; then
+          if ! printf '%s' "$INPUT_EXPECTED_HEAD_SHA" | grep -Eq '^[0-9a-f]{40}$'; then
             echo "Refused: expected_head_sha must be a full 40-character hex SHA."
             exit 1
           fi
 
-          if [ "$EXPECTED_HEAD_SHA" != "$RESOLVED_SHA" ]; then
+          if [ "$INPUT_EXPECTED_HEAD_SHA" != "$RESOLVED_SHA" ]; then
             echo "Refused: expected_head_sha does not match the resolved commit."
             exit 1
           fi
 
-          if [ "$CONFIRMATION" != "QUALIFY_NOOP_GAME_${GAME_PK}" ]; then
-            echo "Refused: confirmation must be exactly QUALIFY_NOOP_GAME_<game_pk>."
+          if [ "$INPUT_CONFIRMATION" != "QUALIFY_NOOP_GAME_${INPUT_GAME_PK}" ]; then
+            echo "Refused: confirmation must be exactly QUALIFY_NOOP_GAME_ plus the game id."
             exit 1
           fi
+
+          # The note is never interpreted. It is not evaluated, not expanded,
+          # and not used in any authorization decision — only length-reported.
+          printf 'Operator note supplied: %s characters.\n' \
+            "$(printf '%s' "$INPUT_OPERATOR_NOTE" | wc -c)"
 
           echo "Authorization preconditions satisfied."
 
@@ -143,15 +155,22 @@ jobs:
           GITHUB_RUN_ID: ${{ github.run_id }}
           GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
           GITHUB_WORKFLOW: ${{ github.workflow }}
+          # Same shell boundary as the precheck: user-controlled values reach
+          # the script as environment variables and are passed as quoted shell
+          # variables, never interpolated into the script text.
+          INPUT_GAME_PK: ${{ inputs.game_pk }}
+          INPUT_EXPECTED_HEAD_SHA: ${{ inputs.expected_head_sha }}
+          INPUT_CONFIRMATION: ${{ inputs.confirmation }}
+          INPUT_OPERATOR_NOTE: ${{ inputs.operator_note }}
         run: |
           set -uo pipefail
           cd backend
           exit_code=0
           python scripts/run_game_driven_noop_qualification.py \
-            --game-pk "${{ inputs.game_pk }}" \
-            --expected-head-sha "${{ inputs.expected_head_sha }}" \
-            --confirmation "${{ inputs.confirmation }}" \
-            --operator-note "${{ inputs.operator_note }}" \
+            --game-pk "$INPUT_GAME_PK" \
+            --expected-head-sha "$INPUT_EXPECTED_HEAD_SHA" \
+            --confirmation "$INPUT_CONFIRMATION" \
+            --operator-note "$INPUT_OPERATOR_NOTE" \
             --artifact-dir ../artifacts/manual-noop-write-qualification \
             || exit_code=$?
           echo "exit_code=$exit_code" >> "$GITHUB_OUTPUT"
@@ -255,20 +274,24 @@ jobs:
       # failing qualification still leaves reviewable evidence behind. A missing
       # scan or a failed upload is UNPROVEN, never PASS.
       - name: Final qualification gate
+        env:
+          SCAN_OUTCOME: ${{ steps.scan.outcome }}
+          UPLOAD_OUTCOME: ${{ steps.upload.outcome }}
+          QUALIFICATION_OUTCOME: ${{ steps.qualification.outcome }}
         run: |
           set -euo pipefail
 
-          if [ "${{ steps.scan.outcome }}" != "success" ]; then
+          if [ "$SCAN_OUTCOME" != "success" ]; then
             echo "UNPROVEN: the evidence artifact could not be proven safe."
             exit 1
           fi
 
-          if [ "${{ steps.upload.outcome }}" != "success" ]; then
+          if [ "$UPLOAD_OUTCOME" != "success" ]; then
             echo "UNPROVEN: the evidence artifact did not upload."
             exit 1
           fi
 
-          if [ "${{ steps.qualification.outcome }}" != "success" ]; then
+          if [ "$QUALIFICATION_OUTCOME" != "success" ]; then
             echo "The qualification did not return PASS. See the artifact."
             exit 1
           fi

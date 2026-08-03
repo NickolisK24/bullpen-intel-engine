@@ -503,6 +503,19 @@ with writes disabled. This qualification closes that one gap on a single
 completed game whose canonical rows already match, before any real correction is
 attempted.
 
+### The shell boundary
+
+No `${{ }}` expression appears inside any `run:` script. GitHub substitutes
+expressions into the script text **before** bash parses it, so an expression
+holding operator input would become shell code in a step carrying production
+credentials — and sanitising it in Python happens far too late. Every
+user-controlled value therefore crosses into the shell only through step-level
+`env:` (`INPUT_GAME_PK`, `INPUT_EXPECTED_HEAD_SHA`, `INPUT_CONFIRMATION`,
+`INPUT_OPERATOR_NOTE`) and is read only as a quoted shell variable. Tests
+execute the real preflight script with hostile notes — command substitution,
+backticks, semicolons, pipes, quotes, newlines, and variable references — and
+assert a canary file never appears.
+
 ### Manual only, one game, exact confirmation
 
 Workflow: `.github/workflows/manual-game-driven-noop-qualification.yml`.
@@ -574,6 +587,37 @@ qualification easier — both cost more safety than they buy. The artifact state
 plainly that the transaction boundary was entered and the lane ledger advanced
 while no baseball row changed.
 
+Permitting the ledger to move is **not** permitting it to move arbitrarily. The
+delta above is the one MEASURED through the canonical PostgreSQL path, and PASS
+requires exactly it — exact integers, not `>= 1`.
+
+The qualification requires an **existing** durable work item for the requested
+game and refuses before the write phase if none exists: a first production
+qualification does not create lane state. It captures the item's complete
+governed lifecycle and checkpoint state before and after, enumerates every
+changed field, and refuses anything outside the measured set:
+
+| permitted to change | required to hold |
+| :--- | :--- |
+| `candidate_reason` (exclusive scope plans as `explicit_repair`) | `status`, `source_revision`, `rows_expected` |
+| `attempt_count` (+1 exactly) | `rows_reconciled`, `relief_rows_reconciled` |
+| `last_attempted_at`, `completed_at` | `correction_count`, `error_class` |
+| `completion_proof` (re-stamped with this run) | `first_attempted_at`, `created_at`, and every game identity field |
+| `updated_at` | |
+
+Every **unrelated** work item and checkpoint row is fingerprinted before and
+after while the writer guard is held; any movement refuses. The evidence carries
+`lane_bookkeeping_before`, `lane_bookkeeping_after`,
+`lane_bookkeeping_changed_fields`, `lane_bookkeeping_expected_delta`,
+`lane_bookkeeping_delta_match`, `unrelated_work_items_digest_before` / `_after`,
+`unrelated_checkpoints_digest_before` / `_after`, and
+`unrelated_bookkeeping_unchanged`. Missing bookkeeping evidence is UNPROVEN.
+
+This lane has no separate checkpoint table — `checkpoints_advanced` is recorded
+at the same site that completes the work item — so the work-item row carries
+both lifecycle and checkpoint state. They are reported as two named field
+groups rather than pretending a second table exists.
+
 ### PASS, FAILED, UNPROVEN
 
 **PASS** additionally requires: exact one-game requested and planned scope;
@@ -589,6 +633,19 @@ provenance fields and derived decimal companions** — under D-008 a
 representation difference in `innings_pitched` is never a baseball change, and
 digesting it would let one read as state movement. `innings_pitched_outs`, the
 integer authority, is included.
+
+Fingerprints and source revisions are proven **positively**, never inferred
+from the absence of a mismatch. Each phase must carry exactly one non-null
+source revision for exactly the requested game, and the two must be equal; the
+shadow and authorized plan fingerprints must both be present and equal. An
+absent authorized fingerprint or an absent write-phase revision is UNPROVEN, not
+a silent pass.
+
+The writer guard is reported from what happened, not from intent. The evidence
+document is built only **after** the release attempt, and carries
+`writer_guard_acquired`, `writer_guard_release_attempted`, and
+`writer_guard_released` separately. A failed or unattempted release is UNPROVEN;
+nothing hardcodes release success.
 
 **FAILED** is a definite observed violation. **UNPROVEN** is trustworthy
 evidence that could not be completed — a missing readback, an unavailable

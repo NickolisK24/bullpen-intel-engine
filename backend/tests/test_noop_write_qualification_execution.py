@@ -14,6 +14,8 @@ an already-matching game writes ZERO baseball rows and still advances the lane's
 own completion ledger. Both halves are pinned.
 """
 
+from datetime import date
+
 import pytest
 from flask import Flask
 
@@ -135,6 +137,9 @@ def _seed(monkeypatch, *, extra_game=False, **stat_overrides):
     return boxscores
 
 
+GUARD_OK = {'acquired': True, 'release_attempted': True, 'released': True}
+
+
 def qualify(game_pk=GAME_PK, *, ctx=None):
     """Run the qualification's two-phase sequence through the canonical lane."""
     shadow = lane.run_game_driven_ingestion(
@@ -143,14 +148,17 @@ def qualify(game_pk=GAME_PK, *, ctx=None):
     rows = qualification.plan_rows(shadow)
     fingerprint = shadow.get('reconciliation_plan_fingerprint')
     before = qualification.read_canonical_state(rows)
+    bookkeeping_before = qualification.read_lane_bookkeeping(game_pk)
 
     write = lane.run_game_driven_ingestion(
         REFERENCE, mode=lane.MODE_WRITE, only_game_pks=[game_pk],
         expected_plan_fingerprint=fingerprint,
     )
+    db.session.expire_all()
     after = qualification.read_canonical_state(
         qualification.plan_rows(write) or rows
     )
+    bookkeeping_after = qualification.read_lane_bookkeeping(game_pk)
     proof = realization_service.build_daily_realization(write)
     decision = qualification.assess(
         context=ctx or context(game_pk),
@@ -160,10 +168,15 @@ def qualify(game_pk=GAME_PK, *, ctx=None):
         before_state=before,
         after_state=after,
         realization=proof,
+        bookkeeping_before=bookkeeping_before,
+        bookkeeping_after=bookkeeping_after,
+        writer_guard=dict(GUARD_OK),
     )
     return {
         'shadow': shadow, 'write': write, 'before': before, 'after': after,
         'realization': proof, 'decision': decision,
+        'bookkeeping_before': bookkeeping_before,
+        'bookkeeping_after': bookkeeping_after,
     }
 
 
@@ -518,3 +531,197 @@ def test_the_digest_moves_when_canonical_state_actually_moves(
 def test_a_readback_with_no_rows_is_unavailable_not_a_silent_match(app):
     with app.app_context():
         assert qualification.read_canonical_state([]) is None
+
+
+# ── Lane bookkeeping, measured against the real canonical lane ─────────────
+
+
+def test_the_measured_ledger_delta_is_exactly_the_encoded_expectation(
+    app, monkeypatch,
+):
+    """The encoded contract must match what the canonical lane actually does.
+
+    If the lane's completion semantics ever change, this fails loudly instead
+    of the qualification silently accepting new behaviour.
+    """
+    with app.app_context():
+        _seed(monkeypatch)
+        result = qualify()
+        observed = {
+            field: result['write']['execution_effects'][field]
+            for field in qualification.EXPECTED_LANE_BOOKKEEPING_DELTA
+        }
+        assert observed == qualification.EXPECTED_LANE_BOOKKEEPING_DELTA
+
+
+def test_only_the_measured_permitted_work_item_fields_move(app, monkeypatch):
+    with app.app_context():
+        _seed(monkeypatch)
+        result = qualify()
+        changed = set(
+            result['decision']['lane_bookkeeping'][
+                'lane_bookkeeping_changed_fields'
+            ]
+        )
+        assert changed
+        assert changed <= qualification.BOOKKEEPING_ALLOWED_CHANGED_FIELDS, (
+            changed - qualification.BOOKKEEPING_ALLOWED_CHANGED_FIELDS
+        )
+
+
+def test_the_checkpoint_evidence_fields_hold_across_a_noop_write(
+    app, monkeypatch,
+):
+    """status, source_revision and the row counts must not move on a no-op."""
+    with app.app_context():
+        _seed(monkeypatch)
+        result = qualify()
+        before = result['bookkeeping_before']['target']
+        after = result['bookkeeping_after']['target']
+        for field in (
+            'status', 'source_revision', 'rows_expected', 'rows_reconciled',
+            'relief_rows_reconciled', 'correction_count',
+        ):
+            assert before[field] == after[field], field
+
+
+def test_unrelated_work_items_and_checkpoints_are_untouched(app, monkeypatch):
+    with app.app_context():
+        _seed(monkeypatch, extra_game=True)
+        result = qualify()
+        evidence = result['decision']['lane_bookkeeping']
+        assert evidence['unrelated_work_item_count'] >= 1
+        assert evidence['unrelated_work_items_digest_before'] == (
+            evidence['unrelated_work_items_digest_after']
+        )
+        assert evidence['unrelated_checkpoints_digest_before'] == (
+            evidence['unrelated_checkpoints_digest_after']
+        )
+        assert evidence['unrelated_bookkeeping_unchanged'] is True
+
+
+def test_the_unrelated_digest_actually_moves_when_an_unrelated_item_moves(
+    app, monkeypatch,
+):
+    """Otherwise an unchanged digest would prove nothing."""
+    with app.app_context():
+        _seed(monkeypatch, extra_game=True)
+        before = qualification.read_lane_bookkeeping(GAME_PK)
+
+        other = GameIngestionWorkItem.query.filter_by(
+            mlb_game_pk=OTHER_GAME_PK
+        ).first()
+        other.attempt_count = (other.attempt_count or 0) + 1
+        db.session.commit()
+
+        after = qualification.read_lane_bookkeeping(GAME_PK)
+        assert after['unrelated_work_items_digest'] != (
+            before['unrelated_work_items_digest']
+        )
+
+
+def test_a_missing_target_work_item_refuses_before_the_write(
+    app, monkeypatch,
+):
+    """A first qualification does not create lane state."""
+    with app.app_context():
+        _seed(monkeypatch)
+        GameIngestionWorkItem.query.filter_by(mlb_game_pk=GAME_PK).delete()
+        db.session.commit()
+
+        bookkeeping = qualification.read_lane_bookkeeping(GAME_PK)
+        assert bookkeeping['target_present'] is False
+
+        decision = qualification.assess(
+            context=context(), game_pk=GAME_PK,
+            shadow_report=lane.run_game_driven_ingestion(
+                REFERENCE, mode=lane.MODE_SHADOW, only_game_pks=[GAME_PK]),
+            write_report={},
+            before_state=None, after_state=None, realization=None,
+            bookkeeping_before=bookkeeping, bookkeeping_after=None,
+            writer_guard=dict(GUARD_OK),
+        )
+        assert decision['result'] == qualification.RESULT_FAILED
+        assert qualification.FAILED_TARGET_WORK_ITEM_MISSING in (
+            decision['failed_reasons']
+        )
+
+
+def test_the_state_digest_moves_for_each_governed_metadata_field(
+    app, monkeypatch,
+):
+    """Blocker 5, proven against real rows rather than by reading constants."""
+    with app.app_context():
+        _seed(monkeypatch)
+        shadow = lane.run_game_driven_ingestion(
+            REFERENCE, mode=lane.MODE_SHADOW, only_game_pks=[GAME_PK],
+        )
+        rows = qualification.plan_rows(shadow)
+
+        for field, moved in (
+            ('game_date', date(2026, 5, 1)),
+            ('game_type', 'P'),
+            ('opponent', 'Somewhere Else'),
+            ('opponent_abbreviation', 'ZZZ'),
+        ):
+            baseline = qualification.read_canonical_state(rows)['digest']
+            stored = GameLog.query.filter_by(mlb_game_pk=GAME_PK).first()
+            original = getattr(stored, field)
+            setattr(stored, field, moved)
+            db.session.commit()
+            db.session.expire_all()
+
+            assert qualification.read_canonical_state(rows)['digest'] != (
+                baseline
+            ), f'{field} did not move the digest'
+
+            setattr(
+                GameLog.query.filter_by(mlb_game_pk=GAME_PK).first(),
+                field, original,
+            )
+            db.session.commit()
+            db.session.expire_all()
+
+
+def test_the_decimal_companion_cannot_diverge_and_is_not_digested(
+    app, monkeypatch,
+):
+    """D-008, enforced in two independent places.
+
+    The companion is excluded from the digest vocabulary, AND PostgreSQL
+    refuses to store a companion that disagrees with the integer authority
+    (``ck_game_logs_innings_pitched_matches_outs``). The storage constraint is
+    the stronger guarantee: the drift this exclusion guards against cannot even
+    be written.
+    """
+    from sqlalchemy.exc import IntegrityError
+
+    assert 'innings_pitched' not in qualification.STATE_DIGEST_FIELDS
+    assert 'innings_pitched_outs' in qualification.STATE_DIGEST_FIELDS
+
+    with app.app_context():
+        _seed(monkeypatch)
+        stored = GameLog.query.filter_by(mlb_game_pk=GAME_PK).first()
+        stored.innings_pitched = (stored.innings_pitched or 0) + 0.0001
+        with pytest.raises(IntegrityError):
+            db.session.commit()
+        db.session.rollback()
+
+
+def test_the_integer_outs_authority_does_move_the_digest(app, monkeypatch):
+    """The authority is digested; only its derived companion is excluded."""
+    with app.app_context():
+        _seed(monkeypatch)
+        shadow = lane.run_game_driven_ingestion(
+            REFERENCE, mode=lane.MODE_SHADOW, only_game_pks=[GAME_PK],
+        )
+        rows = qualification.plan_rows(shadow)
+        baseline = qualification.read_canonical_state(rows)['digest']
+
+        stored = GameLog.query.filter_by(mlb_game_pk=GAME_PK).first()
+        stored.innings_pitched_outs = (stored.innings_pitched_outs or 0) + 3
+        stored.innings_pitched = stored.innings_pitched_outs / 3.0
+        db.session.commit()
+        db.session.expire_all()
+
+        assert qualification.read_canonical_state(rows)['digest'] != baseline

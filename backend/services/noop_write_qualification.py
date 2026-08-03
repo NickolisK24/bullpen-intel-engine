@@ -69,6 +69,7 @@ from __future__ import annotations
 import hashlib
 import re
 
+from models.game_ingestion_work_item import GameIngestionWorkItem
 from models.game_log import GameLog
 from models.pitcher import Pitcher
 from services import game_driven_ingestion as lane
@@ -227,6 +228,7 @@ STATE_DIGEST_FIELDS = tuple(sorted(
     set(
         reconciliation.STATISTICAL_FIELDS
         + reconciliation.ROLE_SIGNAL_FIELDS
+        + reconciliation.GAME_METADATA_FIELDS
         + reconciliation.APPEARANCE_TEAM_FIELDS
     )
     - set(reconciliation.PROVENANCE_FIELDS)
@@ -236,6 +238,113 @@ STATE_DIGEST_FIELDS = tuple(sorted(
     # class of false positive the innings semantics contract exists to prevent.
     - set(reconciliation.DERIVED_COMPANION_FIELDS)
 ))
+
+
+# ── Lane bookkeeping governance ─────────────────────────────────────────────
+# The approved split permits the lane's own completion ledger to move. It does
+# NOT permit it to move arbitrarily. Everything below governs the exact shape
+# and scope of that movement.
+#
+# This lane has no separate checkpoint table: ``checkpoints_advanced`` is
+# recorded at the same site that completes the work item, so the work-item row
+# carries BOTH the lifecycle state and the checkpoint state. They are split
+# into two named field groups here so the evidence can report them distinctly
+# rather than pretending a second table exists.
+
+WORK_ITEM_COLUMNS = tuple(
+    column.name for column in GameIngestionWorkItem.__table__.columns
+)
+
+# Checkpoint state: what the lane durably asserts about the game's ingestion.
+BOOKKEEPING_CHECKPOINT_FIELDS = (
+    'status',
+    'completed_at',
+    'source_revision',
+    'rows_expected',
+    'rows_reconciled',
+    'relief_rows_reconciled',
+    'correction_count',
+    'completion_proof',
+)
+
+# Lifecycle state: how the lane got there.
+BOOKKEEPING_LIFECYCLE_FIELDS = (
+    'candidate_reason',
+    'criticality',
+    'attempt_count',
+    'first_attempted_at',
+    'last_attempted_at',
+    'error_class',
+    'sync_run_id',
+    'updated_at',
+)
+
+# MEASURED, not assumed. A no-op exclusive write over an EXISTING completed
+# work item was run through the canonical PostgreSQL-backed path; exactly these
+# six fields moved:
+#
+#   candidate_reason    prior reason -> explicit_repair (exclusive scope always
+#                       plans as an explicit repair; unchanged when the stored
+#                       reason was already explicit_repair, so this field is
+#                       permitted-to-change rather than required-to-change)
+#   attempt_count       +1
+#   last_attempted_at   new timestamp
+#   completed_at        new timestamp
+#   completion_proof    re-stamped with what THIS run did (inserted 1 -> 0)
+#   updated_at          onupdate timestamp
+#
+# Every other column held, including status, source_revision, rows_expected,
+# rows_reconciled, relief_rows_reconciled, correction_count, error_class,
+# first_attempted_at, and all game identity fields.
+BOOKKEEPING_ALLOWED_CHANGED_FIELDS = frozenset({
+    'candidate_reason',
+    'attempt_count',
+    'last_attempted_at',
+    'completed_at',
+    'completion_proof',
+    'updated_at',
+})
+
+BOOKKEEPING_REQUIRED_UNCHANGED_FIELDS = tuple(sorted(
+    set(WORK_ITEM_COLUMNS) - BOOKKEEPING_ALLOWED_CHANGED_FIELDS
+))
+
+# The exact canonical delta. Deliberately exact integers rather than ``>= 1``:
+# the measurement produced one deterministic outcome, so a range would permit
+# behaviour nobody has observed.
+EXPECTED_LANE_BOOKKEEPING_DELTA = {
+    'work_items_created': 0,
+    'work_items_updated': 1,
+    'work_items_completed': 1,
+    'checkpoints_advanced': 1,
+    'commits_performed': 1,
+}
+
+# The work item must already exist and must already be completed. A first
+# production qualification does not create lane state.
+REQUIRED_WORK_ITEM_STATUS_BEFORE = GameIngestionWorkItem.STATUS_COMPLETED
+REQUIRED_WORK_ITEM_STATUS_AFTER = GameIngestionWorkItem.STATUS_COMPLETED
+
+FAILED_TARGET_WORK_ITEM_MISSING = 'target_work_item_missing'
+FAILED_UNEXPECTED_WORK_ITEM_CREATION = 'unexpected_work_item_creation'
+FAILED_UNEXPECTED_BOOKKEEPING_COUNTER = 'unexpected_bookkeeping_counter'
+FAILED_UNEXPECTED_WORK_ITEM_FIELD_CHANGE = 'unexpected_work_item_field_change'
+FAILED_UNRELATED_WORK_ITEM_CHANGED = 'unrelated_work_item_changed'
+FAILED_UNRELATED_CHECKPOINT_CHANGED = 'unrelated_checkpoint_changed'
+FAILED_CHECKPOINT_DELTA_MISMATCH = 'checkpoint_delta_mismatch'
+FAILED_COMMIT_COUNT_MISMATCH = 'commit_count_mismatch'
+FAILED_WORK_ITEM_STATUS_UNEXPECTED = 'work_item_status_unexpected'
+FAILED_ATTEMPT_COUNT_DELTA_UNEXPECTED = 'attempt_count_delta_unexpected'
+UNPROVEN_BOOKKEEPING_READBACK_UNAVAILABLE = 'bookkeeping_readback_unavailable'
+
+# Fingerprint and source-revision positive proof.
+FAILED_PLAN_FINGERPRINT_MISMATCH = 'plan_fingerprint_mismatch'
+UNPROVEN_AUTHORIZED_FINGERPRINT_MISSING = 'authorized_plan_fingerprint_missing'
+FAILED_SOURCE_REVISION_WRONG_GAME = 'source_revision_for_wrong_game'
+UNPROVEN_WRITE_SOURCE_REVISION_MISSING = 'write_phase_source_revision_missing'
+
+# Writer guard proof.
+UNPROVEN_WRITER_GUARD_RELEASE_UNPROVEN = 'writer_guard_release_unproven'
 
 
 class QualificationInputError(ValueError):
@@ -448,6 +557,25 @@ def evaluate_scope(report, *, game_pk) -> dict:
     }
 
 
+def _single_revision(entries, game_pk) -> dict:
+    """Require exactly one non-null revision, for exactly the requested game.
+
+    States: ``present`` (proven), ``wrong_game`` (a definite violation),
+    ``missing`` / ``multiple`` / ``null`` (unproven).
+    """
+    entries = list(entries or ())
+    if not entries:
+        return {'state': 'missing', 'revision': None}
+    if len(entries) > 1:
+        return {'state': 'multiple', 'revision': None}
+    entry = entries[0]
+    if _as_int(entry.get('game_pk')) != int(game_pk):
+        return {'state': 'wrong_game', 'revision': None}
+    if not entry.get('source_revision'):
+        return {'state': 'null', 'revision': None}
+    return {'state': 'present', 'revision': entry['source_revision']}
+
+
 def source_revisions(report) -> list[dict]:
     return [
         {
@@ -516,6 +644,229 @@ def read_canonical_state(rows) -> dict | None:
         }
     except Exception:  # noqa: BLE001 - a failed read is UNPROVEN, never PASS
         return None
+
+
+def read_lane_bookkeeping(game_pk) -> dict | None:
+    """Read the target work item and fingerprint every unrelated one.
+
+    Returns ``None`` when the read cannot be completed — the caller turns that
+    into UNPROVEN rather than assuming nothing moved. A present result with
+    ``target`` of ``None`` means the work item genuinely does not exist, which
+    is a refusal rather than an unproven state.
+
+    The unrelated digests are computed while the writer guard is held, so
+    nothing else can be writing them between the two reads.
+    """
+    try:
+        target = None
+        unrelated_full = []
+        unrelated_checkpoint = []
+        for item in GameIngestionWorkItem.query.order_by(
+            GameIngestionWorkItem.mlb_game_pk
+        ).all():
+            row = {
+                column: getattr(item, column) for column in WORK_ITEM_COLUMNS
+            }
+            if item.mlb_game_pk == int(game_pk):
+                target = row
+                continue
+            unrelated_full.append((
+                item.mlb_game_pk,
+                tuple(f'{key}={row[key]!r}' for key in WORK_ITEM_COLUMNS),
+            ))
+            unrelated_checkpoint.append((
+                item.mlb_game_pk,
+                tuple(
+                    f'{key}={row[key]!r}'
+                    for key in BOOKKEEPING_CHECKPOINT_FIELDS
+                ),
+            ))
+
+        return {
+            'available': True,
+            'target': target,
+            'target_present': target is not None,
+            'unrelated_count': len(unrelated_full),
+            'unrelated_work_items_digest': _digest_pairs(unrelated_full),
+            'unrelated_checkpoints_digest': _digest_pairs(unrelated_checkpoint),
+        }
+    except Exception:  # noqa: BLE001 - a failed read is UNPROVEN, never PASS
+        return None
+
+
+def _digest_pairs(pairs) -> str:
+    encoded = '|'.join(
+        f'{game_pk}:' + ','.join(fields)
+        for game_pk, fields in sorted(pairs, key=lambda pair: pair[0])
+    )
+    return hashlib.sha256(encoded.encode('utf-8')).hexdigest()
+
+
+def safe_work_item_state(row) -> dict:
+    """Governed, reportable view of one work item.
+
+    Field NAMES and small governed scalars only. Timestamps are reported as
+    presence rather than value, and ``completion_proof`` as a digest, so the
+    evidence cannot carry payload fragments.
+    """
+    if not row:
+        return {}
+    state = {}
+    for key in WORK_ITEM_COLUMNS:
+        value = row.get(key)
+        if key in ('completion_proof',):
+            state[key] = (
+                hashlib.sha256(
+                    repr(value).encode('utf-8')
+                ).hexdigest()[:16] if value is not None else None
+            )
+        elif hasattr(value, 'isoformat'):
+            state[key] = 'present'
+        else:
+            state[key] = value
+    return state
+
+
+def changed_bookkeeping_fields(before, after) -> list[str]:
+    if not before or not after:
+        return []
+    return sorted(
+        key for key in WORK_ITEM_COLUMNS
+        if before.get(key) != after.get(key)
+    )
+
+
+def evaluate_lane_bookkeeping(before, after, effects) -> dict:
+    """Govern the exact shape and scope of the lane ledger movement.
+
+    Returns failed/unproven reason codes plus the reportable evidence. The
+    permitted movement is the one that was MEASURED through the canonical
+    PostgreSQL path; anything outside it refuses.
+    """
+    failed: list[str] = []
+    unproven: list[str] = []
+
+    if not before or not before.get('available'):
+        unproven.append(UNPROVEN_BOOKKEEPING_READBACK_UNAVAILABLE)
+    if not after or not after.get('available'):
+        unproven.append(UNPROVEN_BOOKKEEPING_READBACK_UNAVAILABLE)
+
+    before = before or {}
+    after = after or {}
+    target_before = before.get('target')
+    target_after = after.get('target')
+
+    if before.get('available') and not before.get('target_present'):
+        # A first production qualification requires an EXISTING durable item.
+        failed.append(FAILED_TARGET_WORK_ITEM_MISSING)
+
+    changed = changed_bookkeeping_fields(target_before, target_after)
+    unexpected_changed = sorted(
+        set(changed) - BOOKKEEPING_ALLOWED_CHANGED_FIELDS
+    )
+    if unexpected_changed:
+        failed.append(FAILED_UNEXPECTED_WORK_ITEM_FIELD_CHANGE)
+
+    if target_before and target_after:
+        if target_before.get('status') != REQUIRED_WORK_ITEM_STATUS_BEFORE:
+            failed.append(FAILED_WORK_ITEM_STATUS_UNEXPECTED)
+        if target_after.get('status') != REQUIRED_WORK_ITEM_STATUS_AFTER:
+            failed.append(FAILED_WORK_ITEM_STATUS_UNEXPECTED)
+        attempts_before = _as_int(target_before.get('attempt_count'))
+        attempts_after = _as_int(target_after.get('attempt_count'))
+        if attempts_after - attempts_before != 1:
+            failed.append(FAILED_ATTEMPT_COUNT_DELTA_UNEXPECTED)
+
+    # Unrelated state must be byte-identical across the write.
+    if before.get('available') and after.get('available'):
+        if before.get('unrelated_work_items_digest') != after.get(
+            'unrelated_work_items_digest'
+        ):
+            failed.append(FAILED_UNRELATED_WORK_ITEM_CHANGED)
+        if before.get('unrelated_checkpoints_digest') != after.get(
+            'unrelated_checkpoints_digest'
+        ):
+            failed.append(FAILED_UNRELATED_CHECKPOINT_CHANGED)
+
+    # The counters themselves must match the measured delta exactly.
+    #
+    # When the effect block is unavailable there is nothing to compare against.
+    # Comparing anyway would read every absent counter as 0 and manufacture a
+    # FAILED out of missing evidence — the caller already records that absence
+    # as UNPROVEN, which is the honest verdict.
+    effects = effects or {}
+    observed = dict(effects.get('lane_bookkeeping') or {})
+    if not effects.get('available'):
+        return _bookkeeping_result(
+            failed, unproven, before, after, target_before, target_after,
+            changed, unexpected_changed, observed, delta_match=None,
+        )
+
+    delta_match = True
+    for field, expected in EXPECTED_LANE_BOOKKEEPING_DELTA.items():
+        actual = _as_int(observed.get(field))
+        if actual == expected:
+            continue
+        delta_match = False
+        if field == 'work_items_created':
+            failed.append(FAILED_UNEXPECTED_WORK_ITEM_CREATION)
+        elif field == 'checkpoints_advanced':
+            failed.append(FAILED_CHECKPOINT_DELTA_MISMATCH)
+        elif field == 'commits_performed':
+            failed.append(FAILED_COMMIT_COUNT_MISMATCH)
+        else:
+            failed.append(FAILED_UNEXPECTED_BOOKKEEPING_COUNTER)
+
+    return _bookkeeping_result(
+        failed, unproven, before, after, target_before, target_after,
+        changed, unexpected_changed, observed, delta_match=delta_match,
+    )
+
+
+def _bookkeeping_result(failed, unproven, before, after, target_before,
+                        target_after, changed, unexpected_changed, observed,
+                        *, delta_match) -> dict:
+    return {
+        'failed_reasons': failed,
+        'unproven_reasons': unproven,
+        'lane_bookkeeping_before': safe_work_item_state(target_before),
+        'lane_bookkeeping_after': safe_work_item_state(target_after),
+        'lane_bookkeeping_changed_fields': changed,
+        'lane_bookkeeping_unexpected_changed_fields': unexpected_changed,
+        'lane_bookkeeping_allowed_changed_fields': sorted(
+            BOOKKEEPING_ALLOWED_CHANGED_FIELDS
+        ),
+        'lane_bookkeeping_required_unchanged_fields': list(
+            BOOKKEEPING_REQUIRED_UNCHANGED_FIELDS
+        ),
+        'lane_bookkeeping_expected_delta': dict(
+            sorted(EXPECTED_LANE_BOOKKEEPING_DELTA.items())
+        ),
+        'lane_bookkeeping_observed_delta': dict(sorted(observed.items())),
+        'lane_bookkeeping_delta_match': delta_match,
+        'target_work_item_present_before': bool(before.get('target_present')),
+        'target_work_item_present_after': bool(after.get('target_present')),
+        'unrelated_work_items_digest_before': before.get(
+            'unrelated_work_items_digest'
+        ),
+        'unrelated_work_items_digest_after': after.get(
+            'unrelated_work_items_digest'
+        ),
+        'unrelated_checkpoints_digest_before': before.get(
+            'unrelated_checkpoints_digest'
+        ),
+        'unrelated_checkpoints_digest_after': after.get(
+            'unrelated_checkpoints_digest'
+        ),
+        'unrelated_work_item_count': before.get('unrelated_count'),
+        'unrelated_bookkeeping_unchanged': bool(
+            before.get('available') and after.get('available')
+            and before.get('unrelated_work_items_digest')
+            == after.get('unrelated_work_items_digest')
+            and before.get('unrelated_checkpoints_digest')
+            == after.get('unrelated_checkpoints_digest')
+        ),
+    }
 
 
 def _digest_entries(entries) -> str:
@@ -612,7 +963,9 @@ def decide(evidence) -> dict:
 
 
 def assess(*, context, game_pk, shadow_report, write_report,
-           before_state, after_state, realization, artifact_scan=None) -> dict:
+           before_state, after_state, realization, artifact_scan=None,
+           bookkeeping_before=None, bookkeeping_after=None,
+           writer_guard=None) -> dict:
     """Apply the full no-op contract to the collected evidence.
 
     Pure: takes reports and readbacks, returns reason codes. Every condition in
@@ -684,24 +1037,51 @@ def assess(*, context, game_pk, shadow_report, write_report,
         ]:
             failed.append(FAILED_PLAN_PROPOSES_MUTATION)
 
-    # ── Fingerprints and source revisions ───────────────────────────────────
+    # ── Fingerprints: POSITIVE proof, never absence of a mismatch ───────────
+    # A missing authorized fingerprint used to pass silently because the lane
+    # status alone was consulted. PASS now requires the two fingerprints to be
+    # present AND equal, proven here rather than inferred from a status code.
     shadow_fingerprint = shadow_report.get('reconciliation_plan_fingerprint')
     authorized_fingerprint = write_report.get('authorized_plan_fingerprint')
+    fingerprint_match = False
     if not shadow_fingerprint:
         unproven.append(UNPROVEN_PLAN_FINGERPRINT_MISSING)
+    if not authorized_fingerprint:
+        unproven.append(UNPROVEN_AUTHORIZED_FINGERPRINT_MISSING)
+    if shadow_fingerprint and authorized_fingerprint:
+        if shadow_fingerprint == authorized_fingerprint:
+            fingerprint_match = True
+        else:
+            failed.append(FAILED_PLAN_FINGERPRINT_MISMATCH)
 
+    # ── Source revisions: POSITIVE proof for BOTH phases ────────────────────
+    # Each phase must carry exactly one revision, for exactly the requested
+    # game, non-null, and the two must be equal. An absent write-phase revision
+    # is unproven rather than silently "matched".
     shadow_revisions = source_revisions(shadow_report)
     write_revisions = source_revisions(write_report)
-    if not shadow_revisions or any(
-        entry['source_revision'] is None for entry in shadow_revisions
-    ):
+    source_revision_match = False
+
+    shadow_revision = _single_revision(shadow_revisions, game_pk)
+    write_revision = _single_revision(write_revisions, game_pk)
+
+    if shadow_revision['state'] == 'wrong_game':
+        failed.append(FAILED_SOURCE_REVISION_WRONG_GAME)
+    elif shadow_revision['state'] != 'present':
         unproven.append(UNPROVEN_SOURCE_REVISION_MISSING)
-    elif write_revisions:
-        before = {e['game_pk']: e['source_revision'] for e in shadow_revisions}
-        after = {e['game_pk']: e['source_revision'] for e in write_revisions}
-        if any(
-            after.get(game) != revision for game, revision in before.items()
-        ):
+
+    if write_revision['state'] == 'wrong_game':
+        failed.append(FAILED_SOURCE_REVISION_WRONG_GAME)
+    elif write_revision['state'] != 'present':
+        unproven.append(UNPROVEN_WRITE_SOURCE_REVISION_MISSING)
+
+    if (
+        shadow_revision['state'] == 'present'
+        and write_revision['state'] == 'present'
+    ):
+        if shadow_revision['revision'] == write_revision['revision']:
+            source_revision_match = True
+        else:
             failed.append(FAILED_SOURCE_REVISION_CHANGED)
 
     # ── Execution effects ───────────────────────────────────────────────────
@@ -742,6 +1122,23 @@ def assess(*, context, game_pk, shadow_report, write_report,
         if not realization.get('all_projected_targets_realized'):
             failed.append(FAILED_REALIZATION_UNRESOLVED)
 
+    # ── Lane bookkeeping: exact shape and scope ─────────────────────────────
+    bookkeeping = evaluate_lane_bookkeeping(
+        bookkeeping_before, bookkeeping_after, effects,
+    )
+    failed.extend(bookkeeping['failed_reasons'])
+    unproven.extend(bookkeeping['unproven_reasons'])
+
+    # ── Writer guard: released, and PROVEN released ─────────────────────────
+    guard = dict(writer_guard or {})
+    if guard:
+        if not guard.get('acquired'):
+            unproven.append(UNPROVEN_WRITER_GUARD_UNAVAILABLE)
+        elif not (
+            guard.get('release_attempted') and guard.get('released')
+        ):
+            unproven.append(UNPROVEN_WRITER_GUARD_RELEASE_UNPROVEN)
+
     # ── Artifact safety ─────────────────────────────────────────────────────
     if artifact_scan is not None:
         if not artifact_scan.get('available'):
@@ -760,16 +1157,23 @@ def assess(*, context, game_pk, shadow_report, write_report,
     decision['execution_effects'] = effects
     decision['shadow_plan_fingerprint'] = shadow_fingerprint
     decision['authorized_plan_fingerprint'] = authorized_fingerprint
-    decision['plan_fingerprint_match'] = bool(
-        shadow_fingerprint
-        and authorized_fingerprint
-        and shadow_fingerprint == authorized_fingerprint
-    )
+    # Positive proof only: True because equality was observed, never because a
+    # mismatch reason happened to be absent.
+    decision['plan_fingerprint_match'] = fingerprint_match
     decision['source_revisions_before'] = shadow_revisions
     decision['source_revisions_before_execution'] = write_revisions
-    decision['source_revision_match'] = (
-        FAILED_SOURCE_REVISION_CHANGED not in failed
-    )
+    decision['shadow_source_revision_state'] = shadow_revision['state']
+    decision['write_source_revision_state'] = write_revision['state']
+    decision['source_revision_match'] = source_revision_match
+    decision['lane_bookkeeping'] = {
+        key: value for key, value in bookkeeping.items()
+        if key not in ('failed_reasons', 'unproven_reasons')
+    }
+    decision['writer_guard'] = {
+        'acquired': bool(guard.get('acquired')),
+        'release_attempted': bool(guard.get('release_attempted')),
+        'released': bool(guard.get('released')),
+    }
     decision['before_state'] = before_state or {'available': False}
     decision['after_state'] = after_state or {'available': False}
     decision['state_digest_match'] = (
