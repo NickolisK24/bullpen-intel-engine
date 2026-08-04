@@ -603,7 +603,30 @@ the nine player mismatches; how each unresolved final game classifies; and why
 snapshot 344 stayed pending while 343 kept serving.
 
 One unanswered question makes the whole audit **UNPROVEN**. No question is ever
-answered by the absence of a failure.
+answered by the absence of a failure, and none is answered by recording that it
+could not be concluded.
+
+Questions 6, 7 and 8 carry explicit positive completion predicates, and the
+artifact reports which conditions were unmet.
+
+* **Q6** needs all nine players attributed exactly once, artifact ids matching
+  the incident ids, zero unproven classifications, positive evidence behind
+  every one of them, and — when the game is final — a box score that was
+  actually observed and whose pitching lines actually extracted. An unreadable
+  box score is not "no pitchers appeared"; it is not knowing who did.
+* **Q7** needs canonical membership that reconciles with no missing or extra
+  members, every member classified exactly once, zero unproven games, the
+  window evidence observed, official evidence behind every member whose
+  category rests on it, and no unrecovered required failure.
+* **Q8** asks five things, so having the incident and current blocks is not
+  having the answers. Eight subconditions must hold, two of which require the
+  sole-blocker result and the sixty-game contribution to be **boolean** rather
+  than `unproven`.
+
+For this incident that makes **UNPROVEN the expected production outcome**: the
+retained artifacts carry the unresolved count without its membership, so the
+exact blocker set cannot be established. That is the honest result, and it is
+preferable to a completed one claiming every required question was answered.
 
 ### Evidence addressed by exact run id and exact name
 
@@ -648,14 +671,22 @@ gate evidence names it.
 
 ### Stored schedule rows agree on more than a status
 
-Thirteen governed identity and finality fields are checked independently —
-unique team rows, reciprocal team and home/away identity, dates, status state
-and code, game type and number, doubleheader state, resumed-from/to linkage,
-and source — under one `full_row_governance_agreement` verdict. Two rows can
-agree a game is final while disagreeing about which teams played it, so
-`status_state` alone was far too narrow. Timestamps are deliberately excluded:
-rows written microseconds apart are a write-ordering artefact, not a baseball
-identity conflict.
+Fourteen governed identity and finality fields are checked independently —
+exact team-row pair, unique team rows, reciprocal team and home/away identity,
+dates, status state and code, game type and number, doubleheader state,
+resumed-from/to linkage, and source — under one
+`full_row_governance_agreement` verdict. Two rows can agree a game is final
+while disagreeing about which teams played it, so `status_state` alone was far
+too narrow.
+
+Full agreement requires **all three** of: the matrix was evaluated, the rows
+are an exact two-team reciprocal pair, and every governed check is exactly
+`True`. Deriving it from "no check returned `False`" would let a lone row or
+three unique rows report full agreement, because an unevaluable check returns
+`None` rather than `False` — and `None` is the absence of a reading, not
+agreement. Zero rows, one row, more than two rows, and duplicate team rows each
+classify explicitly. Timestamps stay excluded: rows written microseconds apart
+are a write-ordering artefact, not a baseball identity conflict.
 
 Correction provenance is **columnar** in this schema, not a table of its own —
 it lives on `game_logs`, `team_game_pitching_splits`,
@@ -678,9 +709,18 @@ absent from the window. The box score is requested **once**, and the safe
 pitcher-id set is projected from that same response — player attribution
 consumes what was already paid for rather than fetching again.
 
-Budget semantics distinguish two different facts. Spending an allowance exactly
-is a completed observation and is not a defect. Only a **required** call the
-budget refused leaves evidence missing, and only that produces **UNPROVEN**.
+Budget semantics distinguish three different facts. Spending an allowance
+exactly is a completed observation and is not a defect. A **required** call the
+budget refused leaves evidence missing. So does a required call that was
+reserved, dialled and **failed** — the budget cannot see that, because it only
+knows the reservation succeeded, so the gateway carries required
+attempted/succeeded/failed and optional-failed separately.
+
+Each call names the evidence it is bought to obtain, and any recovery must
+state **which** of that evidence a fallback actually restored. The exact-game
+fallback for game 822867 recovers that game's official status and nothing else,
+so a failed window call leaves every other game in the window unobserved and
+the audit UNPROVEN. A fallback cannot launder a gap it did not fill.
 
 ### Twelve primary classifications
 
