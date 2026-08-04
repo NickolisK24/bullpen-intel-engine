@@ -180,6 +180,15 @@ def _drive(app, monkeypatch, *, break_completeness=None):
         lambda source=None: guard,
     )
 
+    # The serving selection applies a trailing availability window against the
+    # product clock. Left on the real clock these assertions would pass today
+    # and start failing on a quiet Tuesday when the fixture dates age past the
+    # threshold, so the clock is pinned to the incident slate.
+    from services import dashboard_snapshot as snapshot_service
+    monkeypatch.setattr(
+        snapshot_service, 'product_current_date', lambda: SLATE,
+    )
+
     if break_completeness is not None:
         def _raise(game_pk, gateway):
             raise break_completeness
@@ -400,6 +409,118 @@ def test_the_remaining_evidence_areas_complete(app, monkeypatch):
     gate = document['snapshot_publication']
     # Incident facts and current facts stay in separate blocks.
     assert 'incident' in gate and 'current' in gate
+
+
+def _servable_payload(day):
+    """The minimum a snapshot needs to be judged servable.
+
+    Serving selection rejects a snapshot whose payload carries no slate
+    coverage, so an empty payload would make 343 look unavailable and the
+    "prior snapshot still serving" assertion vacuous.
+    """
+    return {
+        'freshness': {
+            'availability_reference_date': day.isoformat(),
+            'data_through': day.isoformat(),
+            'slate_coverage': {
+                'slate_date': day.isoformat(),
+                'validations_passed': True,
+                'complete_enough_to_publish': True,
+            },
+        },
+    }
+
+
+def _seed_snapshots():
+    """Snapshots 343 and 344 and sync run 596, as the incident named them."""
+    from datetime import datetime
+
+    from models.dashboard_snapshot import DashboardSnapshot
+    from models.sync_run import SyncRun
+    from services import dashboard_snapshot as snapshot_service
+
+    db.session.add(SyncRun(
+        id=audit.INCIDENT_SYNC_RUN_ID, job_name='daily_sync',
+        status='failed', stage='publication', source='github_actions',
+    ))
+    db.session.flush()
+    # 343 kept serving; 344 stayed pending and was never published.
+    served_day = SLATE - timedelta(days=1)
+    db.session.add(DashboardSnapshot(
+        id=audit.INCIDENT_SERVING_SNAPSHOT_ID,
+        snapshot_type=snapshot_service.SNAPSHOT_TYPE_BULLPEN_DASHBOARD,
+        sync_run_id=audit.INCIDENT_SYNC_RUN_ID,
+        status=snapshot_service.SNAPSHOT_STATUS_READY, is_published=True,
+        published_at=datetime(2026, 8, 3, 4, 0, 0),
+        data_through=served_day,
+        availability_reference_date=served_day,
+        payload=_servable_payload(served_day),
+        payload_version=snapshot_service.DASHBOARD_PAYLOAD_VERSION,
+    ))
+    db.session.add(DashboardSnapshot(
+        id=audit.INCIDENT_CANDIDATE_SNAPSHOT_ID,
+        snapshot_type=snapshot_service.SNAPSHOT_TYPE_BULLPEN_DASHBOARD,
+        sync_run_id=audit.INCIDENT_SYNC_RUN_ID,
+        status=snapshot_service.SNAPSHOT_STATUS_PENDING, is_published=False,
+        published_at=None, data_through=SLATE,
+        availability_reference_date=SLATE,
+        payload=_servable_payload(SLATE),
+        payload_version=snapshot_service.DASHBOARD_PAYLOAD_VERSION,
+    ))
+    db.session.commit()
+
+
+def test_the_snapshot_and_sync_run_evidence_resolves(app, monkeypatch):
+    """344, 343 and sync run 596 are each observed, not merely looked for."""
+    _seed()
+    _seed_snapshots()
+    document, _ = _drive(app, monkeypatch)
+
+    gate = document['snapshot_publication']
+    current = gate['current']
+    assert current['evidence_source'] == audit.SOURCE_CURRENT_DB
+    assert current['candidate_snapshot_currently_exists'] is True
+    assert current['candidate_still_pending'] is True
+    assert current['candidate_published_later'] is False
+    assert current['candidate_currently_published'] is False
+    assert current['candidate_snapshot'] is not None
+    assert current['prior_snapshot'] is not None
+    # Sync run 596 is read, not assumed.
+    assert current['sync_run'] is not None
+    assert current['sync_run']['id'] == audit.INCIDENT_SYNC_RUN_ID
+    # 343 is what production is still serving.
+    assert current['current_served_snapshot_id'] == (
+        audit.INCIDENT_SERVING_SNAPSHOT_ID
+    )
+    assert current['prior_snapshot_still_serving'] is True
+
+    # The incident block is derived from retained evidence and is unmoved by
+    # what the database says today.
+    incident = gate['incident']
+    assert incident['evidence_source'] == audit.SOURCE_INCIDENT
+    assert incident['incident_candidate_snapshot_id'] == (
+        audit.INCIDENT_CANDIDATE_SNAPSHOT_ID
+    )
+    assert incident['incident_served_snapshot_id'] == (
+        audit.INCIDENT_SERVING_SNAPSHOT_ID
+    )
+    assert incident['incident_withholding_was_fail_closed'] is True
+
+
+def test_player_attribution_completes_over_the_reported_mismatches(
+    app, monkeypatch,
+):
+    _seed()
+    document, _ = _drive(app, monkeypatch)
+
+    attribution = document['player_attribution']
+    assert attribution is not None
+    assert attribution['players']
+    # Every reported mismatch is individually accounted for, and every
+    # classification is one the audit declares.
+    assert len(attribution['players']) == len(audit.INCIDENT_PLAYER_MISMATCHES)
+    for player in attribution['players']:
+        assert player['classification'] in audit.PLAYER_CLASSIFICATIONS
 
 
 def test_the_read_only_proof_is_complete_on_a_clean_run(app, monkeypatch):
