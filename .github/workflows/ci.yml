@@ -67,7 +67,11 @@ jobs:
       run:
         working-directory: backend
     steps:
+      # Full history, matching the shards. Collection imports every backend test
+      # module, so this job must see the same repository shape the shards do.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -131,7 +135,15 @@ jobs:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/baseballos_ci_tests_${{ matrix.shard }}
       TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/baseballos_ci_tests_${{ matrix.shard }}
     steps:
+      # Full history, not the default shallow single-branch fetch. Several
+      # behaviour-freeze guards diff the branch against origin/main to prove a
+      # frozen public or legacy contract was not touched. Without that ref the
+      # diff command fails, the helper swallows the error, and the guard skips —
+      # a green suite that never ran its own trust check. fetch-depth: 0 fetches
+      # every head, so origin/main resolves on push and pull_request alike.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -193,17 +205,20 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
 
-      # The repository currently tracks a node_modules/ tree built on another
-      # platform, and npm has a known optional-dependency bug that surfaces as
-      # "Cannot find module @rollup/rollup-linux-x64-gnu". Removing the checked-in
-      # install and the lockfile, then running a fresh `npm install` on the Linux
-      # runner, regenerates the correct platform binaries reliably.
-      - name: Clean checked-in install artifacts
-        run: rm -rf node_modules package-lock.json
-
+      # Install exactly what the committed lockfile says, and nothing else. The
+      # lockfile is never deleted or regenerated here: CI that rewrites its own
+      # inputs cannot prove anything about the tree that ships.
       - name: Install frontend dependencies
-        run: npm install --no-audit --no-fund
+        run: npm ci --no-audit --no-fund
 
       - name: Run frontend tests
         run: npm test
+
+      # Unit tests exercise modules; they do not prove the production bundle
+      # compiles. A broken import, a bad asset reference, or a resolution failure
+      # passes every test and fails the build. Both are required.
+      - name: Build the production frontend bundle
+        run: npm run build

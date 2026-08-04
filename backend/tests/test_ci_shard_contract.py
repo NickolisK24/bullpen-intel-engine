@@ -1,10 +1,18 @@
-"""Contract for the sharded backend CI gate.
+"""Contract for the sharded backend CI gate and the confidence it depends on.
 
 The backend confidence gate is split across four concurrent CI jobs. That split is
 only safe while three things stay true: every collected test is owned by exactly
 one shard, no two shards share a PostgreSQL database, and no shard quietly turns
 on worker parallelism inside a single database. Those are the properties that were
 proven once by measurement; this file is what keeps them true.
+
+It also holds the two prerequisites a green suite can otherwise hide. Several
+behaviour-freeze guards diff the branch against ``origin/main``; under a shallow
+checkout that ref does not exist, the diff fails, the helper swallows the error,
+and the guard skips — passing without ever running. And frontend unit tests
+exercise modules, not the bundle, so a production build that no longer compiles
+can sit behind a green test job. Full checkout history and a required build step
+close both, and the assertions here keep them closed.
 
 Deliberately database-free. It reads the checked-in manifest, drives pytest
 collection through subprocesses, and parses `.github/workflows/ci.yml`.
@@ -33,6 +41,26 @@ SHARD_COUNT = 4
 SUPPORTED_SCHEMA_VERSIONS = (1,)
 SHARD_JOB_ID = 'backend-postgres-tests'
 ACCOUNTING_JOB_ID = 'backend-collection-accounting'
+FRONTEND_JOB_ID = 'frontend-tests'
+
+# Jobs that must check out full history. The shards run the behaviour-freeze
+# guards; accounting imports every backend test module during collection and has
+# to see the same repository shape the shards do.
+FULL_HISTORY_JOB_IDS = (SHARD_JOB_ID, ACCOUNTING_JOB_ID)
+
+# The behaviour-freeze guards that compare this branch against origin/main. Each
+# one protects a frozen public or legacy contract, and each one silently skips
+# when the comparison ref is missing. Named exactly so a rename is a visible
+# failure rather than an assertion that quietly stops checking anything.
+FREEZE_GUARD_NODE_IDS = (
+    'tests/test_appearance_team_authority.py::test_branch_touches_no_team_state_or_public_surface_files',
+    'tests/test_public_team_relief_work.py::test_existing_public_routes_behavior_freeze',
+    'tests/test_qa_reconciliation_scenarios.py::test_phase0e_switches_and_legacy_public_files_not_modified',
+    'tests/test_snapshot_trust_freeze.py::test_frozen_legacy_what_changed_files_untouched',
+)
+
+FRONTEND_LOCKFILE = 'frontend/package-lock.json'
+FRONTEND_MANIFEST = 'frontend/package.json'
 
 # Operational workflows this package must not touch. Listed explicitly so that
 # deleting or renaming one is a visible failure rather than a silent gap.
@@ -466,3 +494,266 @@ def test_the_phantom_guard_still_runs_its_focused_postgres_tests():
     commands = ' '.join(_run_blocks(job))
     assert 'tests/test_phantom_game_log_reconciliation.py' in commands
     assert 'tests/test_zero_out_game_log_ingestion_guard.py' in commands
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Full checkout history — the prerequisite the behaviour-freeze guards need
+# ══════════════════════════════════════════════════════════════════════════════
+@pytest.fixture(scope='module')
+def frontend_job(ci_workflow):
+    return ci_workflow['jobs'][FRONTEND_JOB_ID]
+
+
+def _checkout_steps(job):
+    return [
+        step for step in job.get('steps', [])
+        if 'actions/checkout' in str(step.get('uses', ''))
+    ]
+
+
+def _git_stdout(*args):
+    """Run a read-only git command from the repository root."""
+    return subprocess.run(
+        ['git', *args],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+    )
+
+
+@pytest.mark.parametrize('job_id', FULL_HISTORY_JOB_IDS)
+def test_backend_jobs_check_out_full_history(ci_workflow, job_id):
+    steps = _checkout_steps(ci_workflow['jobs'][job_id])
+    assert steps, f'{job_id} does not check out the repository'
+    for step in steps:
+        assert step['uses'].startswith('actions/checkout@v4'), (
+            f'{job_id} uses {step["uses"]!r}; the contract is pinned to checkout@v4'
+        )
+        options = step.get('with') or {}
+        assert options.get('fetch-depth') == 0, (
+            f'{job_id} checks out with fetch-depth {options.get("fetch-depth")!r}. '
+            'The behaviour-freeze guards diff against origin/main; without full '
+            'history that ref is missing, the diff fails, and the guards skip '
+            'instead of running.'
+        )
+
+
+@pytest.mark.parametrize('job_id', FULL_HISTORY_JOB_IDS)
+def test_no_backend_job_checks_out_shallow(ci_workflow, job_id):
+    """A shallow depth is worse than no setting: it looks deliberate."""
+    for step in _checkout_steps(ci_workflow['jobs'][job_id]):
+        depth = (step.get('with') or {}).get('fetch-depth')
+        assert depth != 1, f'{job_id} pins fetch-depth: 1, which hides origin/main'
+        assert not (isinstance(depth, int) and depth > 0), (
+            f'{job_id} pins a shallow fetch-depth ({depth!r}); only 0 gives origin/main'
+        )
+
+
+def test_every_job_that_runs_pytest_has_full_history(ci_workflow):
+    """Derived from the workflow itself, so a new backend job cannot slip through."""
+    shallow = []
+    for job_id, job in ci_workflow['jobs'].items():
+        runs_backend = any(
+            'pytest' in block or 'ci_shard.py' in block
+            for block in _run_blocks(job)
+        )
+        if not runs_backend:
+            continue
+        for step in _checkout_steps(job):
+            if (step.get('with') or {}).get('fetch-depth') != 0:
+                shallow.append(job_id)
+    assert shallow == [], (
+        f'these jobs run backend tests without full history: {shallow}'
+    )
+
+
+@pytest.mark.parametrize('node_id', FREEZE_GUARD_NODE_IDS)
+def test_each_behaviour_freeze_guard_is_still_collected(collection, node_id):
+    assert node_id in collection['full'], (
+        f'{node_id} is no longer collected. It protects a frozen public or legacy '
+        'contract; if it was renamed, update FREEZE_GUARD_NODE_IDS deliberately.'
+    )
+
+
+@pytest.mark.parametrize('node_id', FREEZE_GUARD_NODE_IDS)
+def test_each_behaviour_freeze_guard_still_compares_against_origin_main(node_id):
+    """The guards' prerequisite is real, so supplying history is not cosmetic."""
+    path = os.path.join(BACKEND_ROOT, node_id.split('::', 1)[0])
+    with open(path, encoding='utf-8') as handle:
+        source = handle.read()
+    assert 'origin/main' in source, (
+        f'{node_id} no longer diffs against origin/main; the full-history '
+        'requirement in ci.yml may no longer describe why it exists'
+    )
+
+
+def test_every_behaviour_freeze_guard_runs_in_a_full_history_job(manifest, ci_workflow):
+    """Whichever shard owns a guard, that shard checks out full history."""
+    owner = {}
+    for shard_id in range(1, SHARD_COUNT + 1):
+        for entry in manifest['shards'][str(shard_id)]['files']:
+            owner[entry['path']] = shard_id
+
+    shard_depth = (
+        (_checkout_steps(ci_workflow['jobs'][SHARD_JOB_ID])[0].get('with') or {})
+        .get('fetch-depth')
+    )
+    unowned = []
+    for node_id in FREEZE_GUARD_NODE_IDS:
+        path = node_id.split('::', 1)[0]
+        if path not in owner:
+            unowned.append(path)
+    assert unowned == [], f'freeze guards owned by no shard: {unowned}'
+    assert shard_depth == 0, (
+        'the shard job that runs the freeze guards does not check out full history'
+    )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Deterministic frontend installation and production build validation
+# ══════════════════════════════════════════════════════════════════════════════
+def test_the_frontend_job_installs_from_the_committed_lockfile(frontend_job):
+    commands = ' '.join(_run_blocks(frontend_job))
+    assert 'npm ci --no-audit --no-fund' in commands, (
+        'the frontend job must install exactly what the lockfile pins'
+    )
+
+
+def test_the_frontend_job_never_falls_back_to_npm_install(frontend_job):
+    for block in _run_blocks(frontend_job):
+        assert not re.search(r'(?:^|\s|;|&&|\|)npm\s+install(?:\s|$)', block), (
+            f'npm install resolves versions afresh and defeats the lockfile: {block!r}'
+        )
+
+
+def test_the_frontend_job_does_not_delete_the_lockfile(ci_workflow):
+    """CI that rewrites its own inputs cannot prove anything about what ships."""
+    offenders = []
+    for job_id, job in ci_workflow['jobs'].items():
+        for block in _run_blocks(job):
+            if re.search(r'\brm\b[^\n]*package-lock\.json', block):
+                offenders.append((job_id, block.strip()))
+    assert offenders == [], f'the workflow deletes the committed lockfile: {offenders}'
+
+
+def test_the_frontend_job_does_not_delete_node_modules_as_an_install_workaround(ci_workflow):
+    offenders = []
+    for job_id, job in ci_workflow['jobs'].items():
+        for block in _run_blocks(job):
+            if re.search(r'\brm\b[^\n]*node_modules', block):
+                offenders.append((job_id, block.strip()))
+    assert offenders == [], (
+        'deleting node_modules was a workaround for a tracked install tree that no '
+        f'longer exists; npm ci already starts from a clean tree: {offenders}'
+    )
+
+
+def test_the_frontend_job_caches_npm_against_the_lockfile(frontend_job):
+    setup = [
+        step for step in frontend_job['steps']
+        if 'actions/setup-node' in str(step.get('uses', ''))
+    ]
+    assert setup, 'the frontend job does not set up Node'
+    for step in setup:
+        assert step['uses'].startswith('actions/setup-node@v4')
+        options = step.get('with') or {}
+        assert options.get('cache') == 'npm', (
+            f'setup-node does not enable the npm cache: {options!r}'
+        )
+        assert options.get('cache-dependency-path') == FRONTEND_LOCKFILE, (
+            'the npm cache key must come from the committed lockfile, so a '
+            f'dependency change invalidates it: {options.get("cache-dependency-path")!r}'
+        )
+
+
+def test_the_frontend_job_runs_both_the_tests_and_the_production_build(frontend_job):
+    commands = _run_blocks(frontend_job)
+    assert any(re.search(r'\bnpm\s+test\b', block) for block in commands), (
+        'the frontend job no longer runs npm test'
+    )
+    assert any(re.search(r'\bnpm\s+run\s+build\b', block) for block in commands), (
+        'unit tests do not prove the production bundle compiles; npm run build is required'
+    )
+
+
+def test_the_frontend_build_runs_after_the_tests(frontend_job):
+    """Tests first: a failing unit test should be reported before a failing bundle."""
+    order = []
+    for index, block in enumerate(_run_blocks(frontend_job)):
+        if re.search(r'\bnpm\s+run\s+build\b', block):
+            order.append(('build', index))
+        elif re.search(r'\bnpm\s+test\b', block):
+            order.append(('test', index))
+    names = [name for name, _ in order]
+    assert names.index('test') < names.index('build'), (
+        f'npm run build must not precede npm test: {order}'
+    )
+
+
+def test_the_build_step_is_not_allowed_to_fail_softly(frontend_job):
+    for step in frontend_job['steps']:
+        if re.search(r'\bnpm\s+run\s+build\b', str(step.get('run', ''))):
+            assert step.get('continue-on-error') is not True, (
+                'a build that cannot fail the job proves nothing'
+            )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# The frontend dependency manifest is an input to CI, never an output
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# These assert repository content first and consult git only as a second,
+# stronger check. Content is what `npm ci` actually depends on, and it holds in
+# any checkout; git availability is an environment detail. Where git IS available
+# and disagrees, that is a failure — never a skip.
+def test_the_committed_lockfile_can_satisfy_npm_ci():
+    """npm ci refuses to run without a lockfile, and fails without the runner's binary."""
+    path = os.path.join(REPO_ROOT, FRONTEND_LOCKFILE)
+    assert os.path.isfile(path), (
+        f'{FRONTEND_LOCKFILE} is missing; npm ci has nothing authoritative to install from'
+    )
+    with open(path, encoding='utf-8') as handle:
+        lockfile = json.load(handle)
+    assert lockfile.get('lockfileVersion', 0) >= 3, (
+        f'unexpected lockfileVersion {lockfile.get("lockfileVersion")!r}'
+    )
+    packages = lockfile.get('packages') or {}
+    assert 'node_modules/@rollup/rollup-linux-x64-gnu' in packages, (
+        'the lockfile does not pin the Linux Rollup binary the runner needs. That '
+        'missing entry is what the old delete-the-lockfile workaround papered over; '
+        'npm ci depends on it being present.'
+    )
+
+    result = _git_stdout('ls-files', '--error-unmatch', FRONTEND_LOCKFILE)
+    if result.returncode != 0 and 'not a git repository' not in result.stderr.lower():
+        raise AssertionError(f'{FRONTEND_LOCKFILE} exists but is not tracked')
+
+
+def test_frontend_node_modules_stays_out_of_the_repository():
+    with open(os.path.join(REPO_ROOT, '.gitignore'), encoding='utf-8') as handle:
+        ignored = {line.strip() for line in handle}
+    assert {'node_modules/', 'frontend/node_modules/'} & ignored, (
+        '.gitignore no longer ignores the frontend install tree'
+    )
+
+    result = _git_stdout('ls-files', 'frontend/node_modules')
+    if result.returncode == 0:
+        tracked = [line for line in result.stdout.splitlines() if line.strip()]
+        assert tracked == [], (
+            f'{len(tracked)} file(s) under frontend/node_modules are tracked; a '
+            'committed install tree is what made the old delete-and-reinstall step '
+            'look necessary'
+        )
+
+
+def test_the_frontend_dependency_files_are_not_ci_outputs(ci_workflow):
+    """Nothing in CI may write package.json or package-lock.json."""
+    offenders = []
+    for job_id, job in ci_workflow['jobs'].items():
+        for block in _run_blocks(job):
+            for target in ('package-lock.json', 'package.json'):
+                if re.search(rf'>\s*{re.escape(target)}|\brm\b[^\n]*{re.escape(target)}', block):
+                    offenders.append((job_id, target))
+                if re.search(r'npm\s+(install|update|i)\b', block):
+                    offenders.append((job_id, 'npm install/update rewrites the lockfile'))
+    assert offenders == [], f'CI writes its own dependency inputs: {sorted(set(offenders))}'

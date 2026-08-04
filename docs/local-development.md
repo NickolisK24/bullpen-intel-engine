@@ -445,3 +445,70 @@ others. Use the durations that run reports, not local timings.
 
 Sharding is a CI topology change only. No test fixture, fixture scope, test file,
 migration, or production code path is altered by it.
+
+## Why CI Checks Out Full Git History
+
+Several behaviour-freeze guards prove that a frozen public route, a legacy read
+surface, or a Phase 0E switch was not touched. They do that by diffing the branch
+against `origin/main`:
+
+```text
+backend/tests/test_appearance_team_authority.py::test_branch_touches_no_team_state_or_public_surface_files
+backend/tests/test_public_team_relief_work.py::test_existing_public_routes_behavior_freeze
+backend/tests/test_qa_reconciliation_scenarios.py::test_phase0e_switches_and_legacy_public_files_not_modified
+backend/tests/test_snapshot_trust_freeze.py::test_frozen_legacy_what_changed_files_untouched
+```
+
+`actions/checkout@v4` fetches one branch at depth 1 by default. Under that
+checkout `origin/main` does not exist, the diff command fails, the helper returns
+an empty change set, and the guard skips — a green suite that never ran its own
+trust check. Every CI job that runs backend tests therefore checks out with
+`fetch-depth: 0`, which fetches every head and makes `origin/main` resolvable on
+push and pull-request runs alike.
+
+A guard may still skip when the branch genuinely has nothing to compare — a push
+to `main`, or a branch with no committed diff. That is a real empty comparison,
+not a missing one. What no longer happens is a guard skipping because the history
+was never fetched.
+
+To reproduce the guards locally, run them from a branch with commits and with
+`origin/main` fetched:
+
+```powershell
+git fetch origin main
+cd backend
+python -m pytest tests\test_appearance_team_authority.py::test_branch_touches_no_team_state_or_public_surface_files -v
+```
+
+## Reproducing Frontend CI Locally
+
+Frontend CI installs from the committed lockfile and never rewrites it. Run the
+same three steps CI runs, in the same order:
+
+```powershell
+cd frontend
+Remove-Item -Recurse -Force node_modules -ErrorAction SilentlyContinue
+npm ci --no-audit --no-fund
+npm test
+npm run build
+```
+
+`npm ci` installs exactly what `frontend/package-lock.json` pins, including the
+Linux Rollup binary the runner needs, and it fails rather than resolving new
+versions. Never use `npm install` to reproduce CI: it can rewrite the lockfile,
+which is the one file CI treats as authoritative input.
+
+`npm run build` is required and is not redundant with `npm test`. The unit tests
+exercise modules; they do not prove the production bundle compiles. A broken
+import, an unresolvable asset, or a bundling failure passes every test and still
+breaks the deployed site. A passing Vercel preview is not a substitute either —
+it runs after merge, on infrastructure outside this repository's control.
+
+`frontend/dist/` is build output and is ignored; delete it when you are done if
+you do not need it.
+
+### What this does not change
+
+This is CI confidence only. No frontend source, frontend test, dependency
+version, `package.json`, or `package-lock.json` is changed by it, and the
+four-shard backend topology is untouched.
