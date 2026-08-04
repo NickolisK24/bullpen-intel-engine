@@ -249,6 +249,10 @@ INCIDENT_SNAPSHOT_SERVED = {
     'data_through': '2026-08-02',
 }
 
+# The completeness proof's own reason code, used to ask whether the
+# unresolved-final-game signal actually reached the publication gate.
+REASON_UNRESOLVED_FINAL_GAMES_CODE = 'unresolved_final_games'
+
 INCIDENT_PUBLICATION_REASON_CODES = (
     'candidate_snapshot_not_ready',
     'candidate_snapshot_not_published',
@@ -302,6 +306,42 @@ INCIDENT_CANONICAL_MODULE_DIGESTS = {
     'services/schedule_ingestion.py':
         '351eaccc43d28b773bd213753a84f895082d547204893a7fe33ff337d476c9b2',
 }
+
+# This package deliberately modified ONE canonical module: it added a read-only
+# membership helper to the completeness service so the audit could classify the
+# exact games behind `unresolved_final_games` instead of inventing a second
+# definition. Recording it here keeps Question 3 honest — a module that differs
+# from the incident SHA because THIS package changed it is a different fact
+# from one that drifted in production, and the two must not be conflated.
+PACKAGE_MODIFIED_MODULES = {
+    'services/game_ingestion_completeness.py': {
+        'digest_after':
+            '981fa4ab059a4fefac7b23562bc82665a2d20ddcaaf477462afb4bed0cf643c1',
+        'change': 'added read-only unresolved_final_game_membership helper',
+        'behaviour_changed': False,
+    },
+}
+
+# ── Stored schedule row agreement (Question 2 / Blocker 5) ──────────────────
+# Governed identity and finality fields. Every one of these disagreeing across
+# the rows for a single game is a real conflict. `created_at`/`updated_at` are
+# deliberately absent: two rows written microseconds apart are not a baseball
+# identity conflict, and treating them as one would make the check meaningless.
+ROW_AGREEMENT_FIELDS = (
+    'unique_team_rows',
+    'reciprocal_team_identity',
+    'reciprocal_home_away_roles',
+    'game_date',
+    'original_product_date',
+    'status_state',
+    'status_code',
+    'game_type',
+    'game_number',
+    'doubleheader',
+    'resumed_from_game_pk',
+    'resumed_to_game_pk',
+    'source',
+)
 
 # ── Results ─────────────────────────────────────────────────────────────────
 RESULT_ROOT_CAUSE_IDENTIFIED = 'COMPLETE_ROOT_CAUSE_IDENTIFIED'
@@ -808,6 +848,7 @@ class SourceCallBudget:
         self._failed = {kind: 0 for kind in CALL_KINDS}
         self._retries = {kind: 0 for kind in CALL_KINDS}
         self._refused = {kind: 0 for kind in CALL_KINDS}
+        self._refused_required = {kind: 0 for kind in CALL_KINDS}
         self._latency_ms = 0.0
 
     @property
@@ -830,12 +871,20 @@ class SourceCallBudget:
         overall = max(self._total_limit - self.total_attempted, 0)
         return min(per_kind, overall)
 
-    def reserve(self, kind) -> bool:
-        """Reserve one call of ``kind``. False when the budget refuses it."""
+    def reserve(self, kind, *, required=True) -> bool:
+        """Reserve one call of ``kind``. False when the budget refuses it.
+
+        ``required`` marks a call the audit needs in order to answer a
+        question. Refusing one of those is what makes evidence incomplete;
+        refusing an optional opportunistic call is not, and neither is simply
+        having spent the last unit of an allowance on a call that succeeded.
+        """
         if kind not in CALL_KINDS:
             raise AuditInputError('unknown_source_call_kind')
         if self.remaining(kind) <= 0:
             self._refused[kind] += 1
+            if required:
+                self._refused_required[kind] += 1
             return False
         self._attempted[kind] += 1
         return True
@@ -873,8 +922,14 @@ class SourceCallBudget:
             'total_budget_remaining': max(
                 self._total_limit - self.total_attempted, 0
             ),
+            # Informational: an allowance fully and successfully spent is a
+            # correct run, not a defective one.
             'budget_exhausted': self.exhausted,
             'budget_refused_a_call': sum(self._refused.values()) > 0,
+            'calls_refused_required': dict(self._refused_required),
+            'total_refused_required': sum(self._refused_required.values()),
+            # Decision-relevant: evidence the audit needed and could not buy.
+            'required_call_refused': sum(self._refused_required.values()) > 0,
         }
 
 
@@ -957,6 +1012,8 @@ def canonical_module_drift(module_digests) -> dict:
     compared = {}
     changed = []
     unknown = []
+    package_changed = []
+    upstream_changed = []
     for path, expected in sorted(INCIDENT_CANONICAL_MODULE_DIGESTS.items()):
         current = observed.get(path)
         if not current:
@@ -968,19 +1025,32 @@ def canonical_module_drift(module_digests) -> dict:
             }
             continue
         same = current == expected
+        known = PACKAGE_MODIFIED_MODULES.get(path) or {}
+        by_package = bool(known) and current == known.get('digest_after')
         compared[path] = {
             'incident_digest': expected,
             'current_digest': current,
             'unchanged': same,
+            'changed_by_this_package': by_package,
+            'package_change': known.get('change') if by_package else None,
+            'behaviour_changed': (
+                known.get('behaviour_changed') if by_package else (not same)
+            ),
         }
         if not same:
             changed.append(path)
+            (package_changed if by_package else upstream_changed).append(path)
     return {
         'evidence_source': SOURCE_INFERENCE,
         'modules': compared,
         'changed_modules': sorted(changed),
+        # A module this package edited is a different fact from one that
+        # drifted in production. Only the latter can explain the incident.
+        'changed_by_this_package': sorted(package_changed),
+        'changed_upstream_since_incident': sorted(upstream_changed),
         'unknown_modules': sorted(unknown),
         'any_change_since_incident': bool(changed),
+        'any_upstream_change_since_incident': bool(upstream_changed),
         'comparable': not unknown,
     }
 
@@ -1691,7 +1761,9 @@ def decide(
         unproven.append(UNPROVEN_REQUIRED_ARTIFACT_UNREADABLE)
 
     # ── Source-call budget ───────────────────────────────────────────────
-    if budget.get('budget_exhausted') or budget.get('budget_refused_a_call'):
+    # Spending an allowance exactly is a completed observation, not a gap. Only
+    # a REQUIRED call the budget refused leaves evidence missing.
+    if budget.get('required_call_refused'):
         unproven.append(UNPROVEN_SOURCE_BUDGET_EXHAUSTED)
 
     # ── Questions ────────────────────────────────────────────────────────
