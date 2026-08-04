@@ -48,16 +48,28 @@ def app():
 class _Row:
     """A stored scheduled_games row, only the fields the classifier reads."""
 
-    def __init__(self, team_id, status_state):
+    def __init__(self, team_id, status_state, game_date=None,
+                 opponent_team_id=None, home_away=None, **overrides):
         self.team_id = team_id
         self.status_state = status_state
+        self.game_date = game_date or audit.INCIDENT_SLATE_DATE
+        self.opponent_team_id = opponent_team_id
+        self.home_away = home_away
+        for field in (
+            'status_code', 'game_type', 'game_number', 'doubleheader',
+            'resumed_from_game_pk', 'resumed_to_game_pk', 'source',
+            'original_game_date', 'original_product_date',
+        ):
+            setattr(self, field, overrides.get(field))
 
 
 class _WorkItem:
-    def __init__(self, status=None, rows_expected=None, error_class=None):
+    def __init__(self, status=None, rows_expected=None, error_class=None,
+                 represented_date=None):
         self.status = status
         self.rows_expected = rows_expected
         self.error_class = error_class
+        self.represented_date = represented_date or audit.INCIDENT_SLATE_DATE
         self.attempt_count = 0
 
 
@@ -678,9 +690,14 @@ def test_094_no_snapshot_state_transition_is_invoked():
 
 
 def test_095_the_gate_scope_is_reported():
-    assert 'gate_scope' in _runner_source()
-    docstring = runner.observe_snapshot_gate.__doc__ or ''
-    assert 'scope' in docstring.lower()
+    """Gate scope must be read from classified game dates, not from the mere
+    existence of a horizon setting."""
+    text = _runner_source()
+    assert 'gate_scope' in text
+    assert 'dates_outside_incident_slate' in text
+    # bool(horizon_days) is exactly the shortcut this requirement forbids.
+    assert "requires_games_outside_slate': bool(\n                horizon" not in text
+    assert 'classified_dates' in text
 
 
 def test_096_correct_withholding_can_produce_no_platform_defect_proven():

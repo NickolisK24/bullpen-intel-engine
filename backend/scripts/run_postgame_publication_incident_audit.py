@@ -1436,9 +1436,13 @@ def _incident_blocker_set(ledger_report) -> dict:
     not "yes, because the ledger only named one game".
     """
     report = ledger_report if isinstance(ledger_report, dict) else {}
+    # `or` would turn an OBSERVED empty blocker list into the incident default
+    # and report a sole blocker where there are none. Absent and empty are
+    # different observations and must stay that way.
+    observed = report.get('missing_game_pks')
     ledger_missing = set(
-        report.get('missing_game_pks')
-        or audit.INCIDENT_LEDGER['missing_game_pks']
+        observed if observed is not None
+        else audit.INCIDENT_LEDGER['missing_game_pks']
     )
     incident_unresolved = int(
         audit.INCIDENT_COMPLETENESS['unresolved_final_games']

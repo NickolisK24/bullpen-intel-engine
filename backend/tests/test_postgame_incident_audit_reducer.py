@@ -339,13 +339,40 @@ def test_125_the_existing_no_op_qualification_is_unchanged(relative):
     assert _digest(relative) == REVIEWED_DIGESTS[relative], relative
 
 
-def test_126_this_package_changes_no_canonical_module():
-    """Every authority the audit reads through is byte-identical to the tree it
-    was reviewed against. The service already pins these digests so Question 3
-    can answer "did behaviour change since the incident?" without git; the same
-    constants answer "did this package change an authority?" here."""
+def test_126_this_package_changes_only_the_approved_canonical_module():
+    """Exactly one authority was modified, deliberately and additively.
+
+    The completeness service gained a read-only membership helper so the audit
+    could classify the canonical unresolved set instead of inventing a second
+    definition. Every other authority stays byte-identical to the incident
+    tree, and the one exception must match the digest recorded for it — an
+    unrecorded edit to any canonical module still fails here."""
     for relative, expected in audit.INCIDENT_CANONICAL_MODULE_DIGESTS.items():
-        assert _digest(f'backend/{relative}') == expected, relative
+        current = _digest(f'backend/{relative}')
+        approved = audit.PACKAGE_MODIFIED_MODULES.get(relative)
+        if approved is None:
+            assert current == expected, relative
+        else:
+            assert current == approved['digest_after'], relative
+
+    assert set(audit.PACKAGE_MODIFIED_MODULES) == {
+        'services/game_ingestion_completeness.py'
+    }
+
+
+def test_126d_the_modified_module_is_reported_as_changed_by_this_package():
+    """Question 3 must not mistake this package's own edit for production
+    drift that could explain the incident."""
+    observed = {
+        relative: _digest(f'backend/{relative}')
+        for relative in audit.INCIDENT_CANONICAL_MODULE_DIGESTS
+    }
+    drift = audit.canonical_module_drift(observed)
+    assert drift['changed_by_this_package'] == [
+        'services/game_ingestion_completeness.py'
+    ]
+    assert drift['changed_upstream_since_incident'] == []
+    assert drift['any_upstream_change_since_incident'] is False
 
 
 def test_126b_no_migration_was_added():
