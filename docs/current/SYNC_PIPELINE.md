@@ -492,6 +492,178 @@ Canonical reference:
 Canonical reference:
 [`GAME_DRIVEN_DAILY_INGESTION.md`](GAME_DRIVEN_DAILY_INGESTION.md).
 
+## Postgame publication incident audit (D-043)
+
+### The contradiction
+
+Scheduled run **30873422601** (branch `main`, head
+`9f9f640799af973f0a39cdafb1db83fba473b10c`, cycle `postgame`, slate
+**2026-08-03**) failed while reporting facts that do not obviously belong
+together:
+
+* the game-driven shadow lane completed cleanly;
+* legacy postgame ingestion completed its baseball work;
+* publication proof still failed;
+* game **822867** was mapped `other` by the schedule finality authority while
+  the appearance ledger counted it as a completed game requiring appearance
+  rows;
+* dashboard snapshot **344** stayed pending while **343** kept serving;
+* the completeness report counted **60** unresolved final games.
+
+None of those statements is a diagnosis. Together they are a contradiction only
+because two different membership rules were being read as if they were one.
+
+### The two membership rules are not the same test
+
+`services.appearance_ledger` counts a game as an expected completed game when
+**any** stored `scheduled_games` row carries `status_state = final` inside the
+trailing window. `services.game_ingestion_planner` will only plan a game when
+**every** stored row for that game agrees on `final`; a game whose rows resolve
+to anything else is excluded, and `other` is where the finality authority puts
+cancelled, live/in-progress, abstract-final-without-final-status, and unknown
+status alike.
+
+A game can therefore sit inside ledger membership and outside planning scope at
+the same instant. When it does, the ledger reports a deficit that no lane is
+able to close, publication is withheld correctly and permanently, and every
+individual component reports success. That is the shape this audit exists to
+resolve — with evidence, not by argument.
+
+### What the audit is
+
+A manual-only, exact-scope, **read-only** diagnostic locked to that one
+incident. `.github/workflows/manual-postgame-publication-incident-audit.yml` is
+`workflow_dispatch` only, main-only, owner-only, bounded to 20 minutes, and
+shares the `baseballos-sync` concurrency lane with `cancel-in-progress: false`
+so it can never overlap a production writer. Its confirmation is exactly
+`AUDIT_POSTGAME_PUBLICATION_INCIDENT_30873422601`.
+
+Permissions are `contents: read` and `actions: read` — the second only so the
+incident run's own artifacts can be downloaded by run id. No scope is granted
+write.
+
+### It answers eight questions, individually
+
+1. the official MLB status of game 822867;
+2. the schedule state the database stores for it;
+3. why the finality preflight mapped it to `other`;
+4. why the appearance ledger counted it as a completed game requiring rows;
+5. the exact stored baseball state for the game;
+6. what individually explains each of the reported player appearance
+   mismatches;
+7. how each unresolved final game counted by the completeness report
+   classifies;
+8. why snapshot 344 stayed pending while 343 kept serving, and what sync run
+   596 recorded.
+
+Every question carries `answered`, its evidence, and — when it could not be
+answered — a named `unproven_reason`. One unanswered question makes the whole
+audit **UNPROVEN**. A question is never answered by the absence of a failure.
+
+### It owns nothing it diagnoses
+
+`services/postgame_publication_incident_audit.py` deliberately does not own
+schedule-finality mapping, appearance-ledger membership, game-ingestion
+completeness, snapshot publication rules, or reconciliation. It **calls**
+`game_finality`, `game_ingestion_planner`, `appearance_ledger`,
+`game_ingestion_completeness`, `dashboard_snapshot`, and
+`sync_publication_proof`, and records what they said. Where the audit
+reconstructs a set — the unresolved final games behind the count — it checks
+its own reconstruction against the authority's number and reports
+`reconciles_with_authority: false` rather than overriding it.
+
+### Evidence comes from the incident run itself
+
+Three artifacts are addressed by exact run id and exact name:
+
+| artifact | required | on absence |
+| :--- | :--- | :--- |
+| `game-driven-shadow-30873422601` | yes | UNPROVEN |
+| `appearance-ledger-audit-30873422601` | yes | UNPROVEN |
+| `game-driven-shadow-handoff-30873422601` | no | reported, verdict unchanged |
+
+The handoff artifact carries a 7-day retention, so its absence is legitimate —
+and is written into the evidence document rather than inferred away. A required
+artifact that is present but unparseable is UNPROVEN too: an empty successful
+reading and a failed reading must never look the same.
+
+### Read-only, proven three ways
+
+Unchanged from D-042 and reused rather than reimplemented: the acquire-only
+public sync advisory lock (it never touches `SyncRun` rows), a PostgreSQL
+`SET TRANSACTION READ ONLY` with a bounded `WHERE 1 = 0` write probe that must
+be **refused**, and before/after content fingerprints — full row content and
+timestamps, not row counts — across `scheduled_games`, `game_logs`, `pitchers`,
+`postgame_processed_games`, `game_ingestion_work_items`,
+`team_game_pitching_splits`, `completed_game_contexts`, `dashboard_snapshots`,
+`sync_runs`, and `sync_failures`.
+
+The audit issues exactly one SQL write statement — the proof itself — and zero
+durable writes. Those are different facts and are reported as different fields.
+
+### The upstream source is bounded
+
+At most 8 schedule calls, 10 exact-game calls, 10 box-score calls, and 20 in
+total. The budget is reserved **before** a call is issued, so it refuses rather
+than overspending, and a refusal is recorded. An exhausted or refusing budget
+makes the audit **UNPROVEN** — never a shortcut to a verdict.
+
+### Twelve named classifications, one primary
+
+`read_only_contract_violated`, `schedule_row_finality_conflict`,
+`stored_schedule_state_diverges_from_source`,
+`finality_authority_maps_game_out_of_planning_scope`,
+`ledger_membership_diverges_from_planner_membership`,
+`appearance_rows_missing_for_final_game`, `postgame_marker_missing`,
+`postgame_marker_incomplete`, `work_item_backlog_unresolved`,
+`snapshot_withheld_by_appearance_ledger_gate`,
+`snapshot_withheld_by_slate_coverage`,
+`publication_proof_candidate_not_serving`.
+
+The first five name a **platform defect** — something the platform did wrong.
+The remaining seven name correct **fail-closed** behaviour reacting to an
+upstream or baseball-data condition. Every classification belongs to exactly
+one group, and the two groups together cover the vocabulary exhaustively.
+
+### Results
+
+| result | exit | meaning |
+| :--- | ---: | :--- |
+| `COMPLETE_ROOT_CAUSE_IDENTIFIED` | 0 | all questions answered, at least one platform defect proven |
+| `COMPLETE_NO_PLATFORM_DEFECT_PROVEN` | 0 | all questions answered; every observed condition is correct fail-closed behaviour |
+| `COMPLETE_INCIDENT_NOT_REPRODUCIBLE` | 0 | all questions answered; no incident condition is present in current state |
+| `FAILED` | 1 | a contract violation was observed |
+| `UNPROVEN` | 2 | trustworthy evidence could not be completed |
+
+FAILED outranks UNPROVEN outranks every COMPLETE result. UNPROVEN is never
+softened, and an UNPROVEN run never reports a platform defect as proven.
+
+### The evidence survives, and the gate still fails
+
+`incident-audit-summary.json`, `incident-audit-summary.md`, and
+`incident-audit-metadata.json` are written to
+`artifacts/postgame-publication-incident-audit/`, scanned by the shared
+forbidden-content scanner, then uploaded with 30-day retention — all before the
+final gate runs. Evidence survival never converts FAILED or UNPROVEN into
+success: the gate reads the audit's own exit code and fails on 1 and on 2.
+
+There is no `continue-on-error` on the final gate.
+
+### What this does not authorize
+
+> This audit is read-only. It does not authorize backfill, repair,
+> schedule-status mutation, appearance-row creation, marker reset, snapshot
+> publication, automated writes, authoritative mode, or any future production
+> mutation.
+
+Naming a root cause is not repairing one. Nothing here reruns run
+30873422601, reruns the failed postgame sync, repairs game 822867, publishes or
+modifies snapshot 344 or 343, resets a marker, creates a work item, or widens
+the MLB source authority. No migration was added; the Alembic head remains
+`c7f1b408d93a`. Daily and postgame remain `shadow`, backfill remains off, the
+legacy writer remains production-authoritative, and automated write and
+authoritative modes remain unapproved.
+
 ## First qualification refusal, and the candidate audit (D-042)
 
 ### What run 30862655470 proved
