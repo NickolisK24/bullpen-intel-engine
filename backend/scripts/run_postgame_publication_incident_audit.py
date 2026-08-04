@@ -9,9 +9,10 @@
 
 Manual only, exact scope, read-only. Reconstructs the failed postgame
 publication cycle for slate 2026-08-03 and answers eight explicit questions
-about it from production evidence plus the run's own uploaded artifacts.
+about it from three independent evidence sources: the run's own retained
+artifacts, current production state, and the canonical MLB client.
 
-It calls the canonical authorities — schedule finality, the planner, the
+It CALLS the canonical authorities — schedule finality, the planner, the
 appearance ledger, game-ingestion completeness, the snapshot service, the
 publication proof — and never reimplements them. Identifying a root cause is
 information. It repairs nothing and authorizes nothing.
@@ -23,11 +24,13 @@ incident not reproducible), 1 FAILED, 2 UNPROVEN.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from time import perf_counter
 
 
 BACKEND_ROOT = Path(__file__).resolve().parent.parent
@@ -41,16 +44,22 @@ from services import noop_write_qualification as qualification  # noqa: E402
 SUMMARY_JSON = 'incident-audit-summary.json'
 SUMMARY_MARKDOWN = 'incident-audit-summary.md'
 METADATA_JSON = 'incident-audit-metadata.json'
+ARTIFACT_METADATA_FILENAME = 'artifact-metadata.json'
 
 REQUIRED_REPOSITORY = qualification.REQUIRED_REPOSITORY
 REQUIRED_REF = qualification.REQUIRED_REF
 REQUIRED_EVENT_NAME = qualification.REQUIRED_EVENT_NAME
 REQUIRED_ACTOR = qualification.REQUIRED_ACTOR
 
+# Canonical modules whose behaviour Question 3 compares against the incident.
+CANONICAL_MODULES = tuple(audit.INCIDENT_CANONICAL_MODULE_DIGESTS)
+
 
 class _AuditHalt(Exception):
     """Stop collecting; the verdict is decided from what was proven."""
 
+
+# ── Arguments and authorization ─────────────────────────────────────────────
 
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(
@@ -59,8 +68,7 @@ def parse_args(argv=None):
     parser.add_argument('--expected-head-sha', required=True)
     parser.add_argument('--confirmation', required=True)
     parser.add_argument(
-        '--evidence-dir',
-        default='incident-evidence',
+        '--evidence-dir', default='incident-evidence',
         help=(
             'Directory holding the downloaded incident artifacts, one '
             'subdirectory per artifact name.'
@@ -91,7 +99,7 @@ def event_context(args, environ=None) -> dict:
 
 
 def validate_authorization(context) -> list[str]:
-    """Every gate re-validated here; the workflow's gates are not trusted."""
+    """Every workflow gate re-validated here; the workflow is not trusted."""
     failures: list[str] = []
     if str(context.get('event_name') or '') != REQUIRED_EVENT_NAME:
         failures.append('event_not_workflow_dispatch')
@@ -120,12 +128,248 @@ def build_app():
     return app_module.create_app()
 
 
-# ── Observations ────────────────────────────────────────────────────────────
-# Every function here READS. None of them writes, commits, or mutates. Each
-# delegates classification to the canonical authority that owns it.
+def current_module_digests() -> dict:
+    """Digest the canonical modules as they exist in this checkout."""
+    digests = {}
+    for relative in CANONICAL_MODULES:
+        path = BACKEND_ROOT / relative
+        try:
+            digests[relative] = hashlib.sha256(path.read_bytes()).hexdigest()
+        except OSError:
+            digests[relative] = None
+    return digests
+
+
+def load_observed_artifact_metadata(evidence_dir) -> dict:
+    """Read the artifact metadata the workflow captured from the API."""
+    path = Path(evidence_dir) / ARTIFACT_METADATA_FILENAME
+    if not path.is_file():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+# ── Official MLB source evidence (Question 1) ───────────────────────────────
+
+def observe_official_status(game_pk, stored, budget) -> dict:
+    """Current official MLB record for the disputed game.
+
+    Bounded by the source-call budget. A refused call is reported as
+    unobserved — never as an absent status, and never as a non-final one.
+    """
+    from services import game_finality
+    from services.mlb_api import mlb_client
+
+    observation = {
+        'evidence_source': audit.SOURCE_OFFICIAL,
+        'game_found_in_source': False,
+        'dates_queried': [],
+        'normalized': {field: None for field in audit.OFFICIAL_STATUS_FIELDS},
+        'canonical_finality_state': None,
+        'canonical_finality_reason': None,
+        'canonical_status_state': None,
+        'official_classification': audit.OFFICIAL_CLASS_UNKNOWN,
+        'boxscore_observed': False,
+        'boxscore_usable': None,
+        'boxscore_reason': None,
+        'boxscore_pitching_line_count': None,
+        'source_calls_refused': False,
+        'source_error': False,
+        'relationship': {
+            'is_rescheduled': False, 'is_resumed': False,
+            'rescheduled_from_game_pk': None, 'resumed_from_game_pk': None,
+            'replacement_game_pk': None, 'resolved': False,
+        },
+    }
+
+    slate = audit.INCIDENT_SLATE_DATE.isoformat()
+    candidate_dates = [slate]
+    for row in (stored or {}).get('rows') or ():
+        value = row.get('game_date')
+        if value and value not in candidate_dates:
+            candidate_dates.append(value)
+
+    game = None
+    for index, day in enumerate(candidate_dates):
+        if game is not None:
+            break
+        kind = (
+            audit.CALL_KIND_SCHEDULE if index == 0
+            else audit.CALL_KIND_EXACT_GAME
+        )
+        observation['dates_queried'].append(day)
+        game = _fetch_game(mlb_client, budget, kind, day, game_pk, observation)
+
+    if game is None:
+        return observation
+
+    observation['game_found_in_source'] = True
+    observation['normalized'] = _normalize_official_game(game)
+
+    status = game.get('status') or {}
+    decision = game_finality.classify_status(status, game_pk=game_pk)
+    observation['canonical_finality_state'] = decision.state
+    observation['canonical_finality_reason'] = decision.reason
+    observation['canonical_status_state'] = (
+        game_finality.normalize_schedule_status_state(game)
+    )
+    observation['official_classification'] = _official_class(decision.state)
+    observation['relationship'] = _official_relationship(game)
+
+    # A box score is fetched only when the official record says the game is
+    # final: it is the positive proof that appearance rows should exist.
+    if decision.final_status and budget.reserve(audit.CALL_KIND_BOXSCORE):
+        started = perf_counter()
+        try:
+            boxscore = mlb_client.get_game_boxscore(game_pk)
+        except Exception:  # noqa: BLE001 - never leak the source message
+            budget.record_failure(
+                audit.CALL_KIND_BOXSCORE,
+                latency_ms=(perf_counter() - started) * 1000,
+            )
+            observation['source_error'] = True
+        else:
+            budget.record_success(
+                audit.CALL_KIND_BOXSCORE,
+                latency_ms=(perf_counter() - started) * 1000,
+            )
+            observation['boxscore_observed'] = boxscore is not None
+            usability = game_finality.classify_boxscore_usability(boxscore)
+            observation['boxscore_usable'] = usability.is_final_and_usable
+            observation['boxscore_reason'] = usability.reason
+            observation['boxscore_pitching_line_count'] = (
+                _pitching_line_count(boxscore)
+            )
+    elif decision.final_status:
+        observation['source_calls_refused'] = True
+    return observation
+
+
+def _fetch_game(client, budget, kind, day, game_pk, observation):
+    if not budget.reserve(kind):
+        observation['source_calls_refused'] = True
+        return None
+    started = perf_counter()
+    try:
+        games = client.get_schedule(start_date=day, end_date=day)
+    except Exception:  # noqa: BLE001 - never leak the source message
+        budget.record_failure(
+            kind, latency_ms=(perf_counter() - started) * 1000,
+        )
+        observation['source_error'] = True
+        return None
+    budget.record_success(kind, latency_ms=(perf_counter() - started) * 1000)
+    for game in games or ():
+        if _int(game.get('gamePk')) == int(game_pk):
+            return game
+    return None
+
+
+def _normalize_official_game(game) -> dict:
+    """Safe normalized fields only. The raw MLB payload is never reproduced."""
+    status = game.get('status') or {}
+    teams = game.get('teams') or {}
+    normalized = {
+        'game_pk': _int(game.get('gamePk')),
+        'official_date': _text(game.get('officialDate')),
+        'original_date': _text(
+            game.get('originalDate') or game.get('rescheduledFromDate')
+        ),
+        'resume_date': _text(
+            game.get('resumeDate') or game.get('resumedFromDate')
+        ),
+        'reschedule_date': _text(game.get('rescheduleDate')),
+        'game_type': _text(game.get('gameType')),
+        'doubleheader': _text(game.get('doubleHeader')),
+        'game_number': _int(game.get('gameNumber')),
+        'abstract_game_state': _text(status.get('abstractGameState')),
+        'detailed_state': _text(status.get('detailedState')),
+        'coded_game_state': _text(status.get('codedGameState')),
+        'status_code': _text(status.get('statusCode')),
+        'reason': _text(status.get('reason')),
+        'home_team_id': _int(
+            ((teams.get('home') or {}).get('team') or {}).get('id')
+        ),
+        'away_team_id': _int(
+            ((teams.get('away') or {}).get('team') or {}).get('id')
+        ),
+        'venue_id': _int((game.get('venue') or {}).get('id')),
+        'probable_classification': None,
+        'retrieved_at': datetime.now(timezone.utc).isoformat(),
+        'source_revision': None,
+    }
+    # The source revision is a digest of the NORMALIZED fields, so the artifact
+    # carries a stable identity for what was observed without carrying the
+    # payload it came from.
+    stable = {
+        key: value for key, value in normalized.items()
+        if key not in ('retrieved_at', 'source_revision')
+    }
+    normalized['source_revision'] = hashlib.sha256(
+        json.dumps(stable, sort_keys=True, default=str).encode('utf-8')
+    ).hexdigest()[:32]
+    return normalized
+
+
+def _official_class(state) -> str:
+    from services import game_finality
+
+    return {
+        game_finality.FINAL_AND_USABLE: audit.OFFICIAL_CLASS_FINAL,
+        game_finality.FINAL_PENDING_DATA: audit.OFFICIAL_CLASS_FINAL,
+        game_finality.POSTPONED: audit.OFFICIAL_CLASS_POSTPONED,
+        game_finality.SUSPENDED: audit.OFFICIAL_CLASS_SUSPENDED,
+        game_finality.CANCELLED: audit.OFFICIAL_CLASS_CANCELLED,
+        game_finality.NOT_FINAL: audit.OFFICIAL_CLASS_NON_FINAL,
+    }.get(state, audit.OFFICIAL_CLASS_UNKNOWN)
+
+
+def _official_relationship(game) -> dict:
+    rescheduled_from = _int(
+        (game.get('rescheduledFrom') or {}).get('gamePk')
+        if isinstance(game.get('rescheduledFrom'), dict)
+        else game.get('rescheduledFrom')
+    )
+    resumed_from = _int(
+        (game.get('resumedFrom') or {}).get('gamePk')
+        if isinstance(game.get('resumedFrom'), dict)
+        else game.get('resumedFrom')
+    )
+    replacement = _int(
+        (game.get('rescheduledTo') or {}).get('gamePk')
+        if isinstance(game.get('rescheduledTo'), dict)
+        else game.get('rescheduledTo')
+    )
+    return {
+        'is_rescheduled': (
+            rescheduled_from is not None or replacement is not None
+        ),
+        'is_resumed': resumed_from is not None,
+        'rescheduled_from_game_pk': rescheduled_from,
+        'resumed_from_game_pk': resumed_from,
+        'replacement_game_pk': replacement,
+        'resolved': True,
+    }
+
+
+def _pitching_line_count(boxscore) -> int | None:
+    if not isinstance(boxscore, dict):
+        return None
+    try:
+        from services.sync import _extract_pitching_lines_from_boxscore
+
+        return len(_extract_pitching_lines_from_boxscore(boxscore) or [])
+    except Exception:  # noqa: BLE001 - a countless box score is simply unknown
+        return None
+
+
+# ── Stored schedule evidence (Question 2) ───────────────────────────────────
 
 def observe_stored_schedule(game_pk) -> dict:
-    """Stored schedule rows for the incident game (Question 2)."""
+    """All production schedule rows for the game, plus the surrounding slate."""
     from models.scheduled_game import ScheduledGame
     from services import game_finality
 
@@ -138,138 +382,77 @@ def observe_stored_schedule(game_pk) -> dict:
     stored = [
         {
             'team_id': row.team_id,
+            'opponent_team_id': row.opponent_team_id,
+            'home_away': row.home_away,
             'game_date': _iso(row.game_date),
+            'game_datetime': _iso(row.game_datetime),
             'status_code': row.status_code,
             'status_state': row.status_state,
             'game_type': row.game_type,
+            'doubleheader': row.doubleheader,
+            'game_number': row.game_number,
+            'original_game_date': _iso(row.original_game_date),
             'original_product_date': _iso(row.original_product_date),
+            'resumed_game_date': _iso(row.resumed_game_date),
+            'resumed_product_date': _iso(row.resumed_product_date),
             'resumed_from_game_pk': row.resumed_from_game_pk,
             'resumed_to_game_pk': row.resumed_to_game_pk,
             'source': row.source,
+            'created_at': _iso(getattr(row, 'created_at', None)),
+            'updated_at': _iso(getattr(row, 'updated_at', None)),
         }
         for row in rows
     ]
     states = sorted({row.status_state for row in rows})
+    codes = sorted({row.status_code for row in rows if row.status_code})
+    team_ids = [row.team_id for row in rows]
+
+    slate_rows = (
+        ScheduledGame.query
+        .with_entities(ScheduledGame.game_pk, ScheduledGame.status_state)
+        .filter(ScheduledGame.game_date == audit.INCIDENT_SLATE_DATE)
+        .all()
+    )
+    slate: dict[int, set] = {}
+    for slate_game_pk, state in slate_rows:
+        slate.setdefault(slate_game_pk, set()).add(state)
+
     return {
+        'evidence_source': audit.SOURCE_CURRENT_DB,
         'row_count': len(rows),
         'rows': stored,
+        'team_ids': team_ids,
+        'duplicate_team_rows': len(team_ids) != len(set(team_ids)),
         'distinct_status_states': states,
+        'distinct_status_codes': codes,
         'rows_agree': len(states) <= 1,
+        'paired_row_disagreement': len(states) > 1,
         'stored_status_state': states[0] if len(states) == 1 else None,
         'counts_as_ledger_final': (
             game_finality.FINAL_STATUS_STATE in states
         ),
+        'all_rows_final': bool(states) and states == [
+            game_finality.FINAL_STATUS_STATE
+        ],
         'unresolved_resumed_linkage': (
             game_finality.scheduled_rows_have_unresolved_resumed_linkage(rows)
         ),
+        'linked_replacement_game_pks': sorted({
+            value for row in rows
+            for value in (row.resumed_from_game_pk, row.resumed_to_game_pk)
+            if value is not None
+        }),
+        'slate_game_count': len(slate),
+        'slate_status_states': {
+            str(key): sorted(value) for key, value in sorted(slate.items())
+        },
     }
 
 
-def observe_official_status(game_pk, stored, budget) -> dict:
-    """Live MLB status for the incident game (Questions 1 and 3).
-
-    Bounded by the source-call budget: a refused call is reported as
-    unobserved, never as an absent status.
-    """
-    from services import game_finality
-    from services.mlb_api import mlb_client
-
-    slate = audit.INCIDENT_SLATE_DATE.isoformat()
-    stored_dates = sorted({
-        row['game_date'] for row in stored.get('rows') or []
-        if row.get('game_date')
-    })
-
-    observation = {
-        'slate_date_queried': slate,
-        'exact_game_dates_queried': [],
-        'game_found_in_source': False,
-        'raw_status_code': None,
-        'raw_detailed_state': None,
-        'raw_abstract_state': None,
-        'finality_state': None,
-        'finality_reason': None,
-        'mapped_status_state': None,
-        'boxscore_observed': False,
-        'boxscore_usable': None,
-        'boxscore_reason': None,
-        'source_calls_refused': False,
-        'source_error': False,
-    }
-
-    game = _fetch_game_from_schedule(
-        mlb_client, budget, audit.CALL_KIND_SCHEDULE, slate, slate,
-        game_pk, observation,
-    )
-    for stored_date in stored_dates:
-        if game is not None or stored_date == slate:
-            continue
-        observation['exact_game_dates_queried'].append(stored_date)
-        game = _fetch_game_from_schedule(
-            mlb_client, budget, audit.CALL_KIND_EXACT_GAME,
-            stored_date, stored_date, game_pk, observation,
-        )
-
-    if game is None:
-        return observation
-
-    observation['game_found_in_source'] = True
-    status = game.get('status') or {}
-    observation['raw_status_code'] = _safe_text(status.get('statusCode'))
-    observation['raw_detailed_state'] = _safe_text(status.get('detailedState'))
-    observation['raw_abstract_state'] = _safe_text(
-        status.get('abstractGameState')
-    )
-
-    # The canonical authority decides. This audit only records what it said.
-    decision = game_finality.classify_status(status, game_pk=game_pk)
-    observation['finality_state'] = decision.state
-    observation['finality_reason'] = decision.reason
-    observation['mapped_status_state'] = (
-        game_finality.normalize_schedule_status_state(game)
-    )
-    observation['final_status'] = decision.final_status
-
-    if budget.reserve(audit.CALL_KIND_BOXSCORE):
-        try:
-            boxscore = mlb_client.get_game_boxscore(game_pk)
-        except Exception:  # noqa: BLE001 - never leak the source message
-            budget.record_error(audit.CALL_KIND_BOXSCORE)
-            observation['source_error'] = True
-        else:
-            observation['boxscore_observed'] = boxscore is not None
-            usability = game_finality.classify_boxscore_usability(boxscore)
-            observation['boxscore_usable'] = usability.is_final_and_usable
-            observation['boxscore_reason'] = usability.reason
-    else:
-        observation['source_calls_refused'] = True
-    return observation
-
-
-def _fetch_game_from_schedule(
-    client, budget, kind, start_date, end_date, game_pk, observation,
-):
-    if not budget.reserve(kind):
-        observation['source_calls_refused'] = True
-        return None
-    try:
-        games = client.get_schedule(start_date=start_date, end_date=end_date)
-    except Exception:  # noqa: BLE001 - never leak the source message
-        budget.record_error(kind)
-        observation['source_error'] = True
-        return None
-    for game in games or ():
-        try:
-            found = int(game.get('gamePk'))
-        except (TypeError, ValueError):
-            continue
-        if found == int(game_pk):
-            return game
-    return None
-
+# ── Stored baseball state (Question 5) ──────────────────────────────────────
 
 def observe_baseball_state(game_pk) -> dict:
-    """Exact stored baseball state for the incident game (Question 5)."""
+    """Every relevant table for the disputed game, read-only."""
     from sqlalchemy import func
 
     from models.completed_game_context import CompletedGameContext
@@ -278,102 +461,150 @@ def observe_baseball_state(game_pk) -> dict:
     from models.pitcher import Pitcher
     from models.play_by_play_foundation import GamePlayByPlayEvent
     from models.postgame_processed_game import PostgameProcessedGame
+    from models.sync_failure import SyncFailure
     from models.team_game_pitching_split import TeamGamePitchingSplit
     from utils.db import db
 
-    appearance_rows = (
+    appearance_rows = int(
         db.session.query(func.count(GameLog.id))
-        .filter(GameLog.mlb_game_pk == game_pk)
-        .scalar()
+        .filter(GameLog.mlb_game_pk == game_pk).scalar() or 0
     )
     pitcher_ids = sorted({
-        mlb_id
-        for (mlb_id,) in (
+        mlb_id for (mlb_id,) in (
             db.session.query(Pitcher.mlb_id)
             .join(GameLog, GameLog.pitcher_id == Pitcher.id)
-            .filter(GameLog.mlb_game_pk == game_pk)
-            .all()
-        )
-        if mlb_id is not None
+            .filter(GameLog.mlb_game_pk == game_pk).all()
+        ) if mlb_id is not None
     })
-    # D-008: recorded outs are the innings authority. The decimal companion is
-    # never inspected here, and a decimal display difference is never a repair.
+    # D-008: integer recorded outs are the innings authority. The decimal
+    # companion is derived and is never inspected as a baseball fact here.
     recorded_outs = (
         db.session.query(func.sum(GameLog.innings_pitched_outs))
-        .filter(GameLog.mlb_game_pk == game_pk)
-        .scalar()
+        .filter(GameLog.mlb_game_pk == game_pk).scalar()
+    )
+    corrections = int(
+        db.session.query(func.sum(GameLog.stat_correction_count))
+        .filter(GameLog.mlb_game_pk == game_pk).scalar() or 0
     )
 
     marker = (
         PostgameProcessedGame.query
-        .filter(PostgameProcessedGame.mlb_game_pk == game_pk)
-        .first()
+        .filter(PostgameProcessedGame.mlb_game_pk == game_pk).first()
     )
     work_item = (
         GameIngestionWorkItem.query
-        .filter(GameIngestionWorkItem.mlb_game_pk == game_pk)
-        .first()
+        .filter(GameIngestionWorkItem.mlb_game_pk == game_pk).first()
     )
-    team_splits = (
+    splits = int(
         db.session.query(func.count(TeamGamePitchingSplit.id))
-        .filter(TeamGamePitchingSplit.mlb_game_pk == game_pk)
-        .scalar()
+        .filter(TeamGamePitchingSplit.mlb_game_pk == game_pk).scalar() or 0
     )
-    contexts = (
+    contexts = int(
         db.session.query(func.count(CompletedGameContext.id))
-        .filter(CompletedGameContext.game_pk == game_pk)
-        .scalar()
+        .filter(CompletedGameContext.game_pk == game_pk).scalar() or 0
     )
-    play_events = (
+    events = int(
         db.session.query(func.count(GamePlayByPlayEvent.id))
-        .filter(GamePlayByPlayEvent.mlb_game_pk == game_pk)
-        .scalar()
+        .filter(GamePlayByPlayEvent.mlb_game_pk == game_pk).scalar() or 0
+    )
+    failures = (
+        SyncFailure.query
+        .filter(SyncFailure.entity_ref == str(game_pk)).all()
     )
 
     return {
-        'appearance_row_count': int(appearance_rows or 0),
-        'distinct_pitcher_mlb_ids': pitcher_ids,
-        'recorded_outs_total': (
-            int(recorded_outs) if recorded_outs is not None else None
-        ),
+        'evidence_source': audit.SOURCE_CURRENT_DB,
+        'game_logs': _table_state(appearance_rows, {
+            'distinct_pitcher_mlb_ids': pitcher_ids,
+            'recorded_outs_total': (
+                int(recorded_outs) if recorded_outs is not None else None
+            ),
+            'stat_correction_count_total': corrections,
+        }),
         'innings_semantics_note': (
             'innings_pitched_outs is the integer semantic authority; the '
             'decimal companion is derived and is never inspected as a '
-            'baseball fact here.'
+            'baseball fact here (D-008).'
         ),
-        'postgame_marker': None if marker is None else {
-            'processing_status': marker.processing_status,
-            'pitching_lines_seen': int(marker.pitching_lines_seen or 0),
-            'logs_added': int(marker.logs_added or 0),
-            'pitchers_touched': int(marker.pitchers_touched or 0),
-            'pitcher_resolution_failures': int(
-                marker.pitcher_resolution_failures or 0
+        'correction_provenance_note': (
+            'Correction provenance is columnar in this schema, not a separate '
+            'table: it lives on game_logs, team_game_pitching_splits, '
+            'game_play_by_play_events, and game_ingestion_work_items.'
+        ),
+        'postgame_processed_game': _table_state(
+            0 if marker is None else 1,
+            None if marker is None else {
+                'processing_status': marker.processing_status,
+                'pitching_lines_seen': int(marker.pitching_lines_seen or 0),
+                'logs_added': int(marker.logs_added or 0),
+                'pitchers_touched': int(marker.pitchers_touched or 0),
+                'pitcher_resolution_failures': int(
+                    marker.pitcher_resolution_failures or 0
+                ),
+                'correction_attempts_failed': int(
+                    marker.correction_attempts_failed or 0
+                ),
+                'attempt_count': int(marker.attempt_count or 0),
+                'incomplete_reason': marker.incomplete_reason,
+                'final_state': marker.final_state,
+                'game_date': _iso(marker.game_date),
+                'processed_at': _iso(marker.processed_at),
+                'failed_at': _iso(marker.failed_at),
+            },
+        ),
+        'game_ingestion_work_item': _table_state(
+            0 if work_item is None else 1,
+            None if work_item is None else {
+                'status': work_item.status,
+                'criticality': work_item.criticality,
+                'candidate_reason': work_item.candidate_reason,
+                'finality_state': work_item.finality_state,
+                'represented_date': _iso(work_item.represented_date),
+                'attempt_count': int(work_item.attempt_count or 0),
+                'rows_expected': work_item.rows_expected,
+                'rows_reconciled': int(work_item.rows_reconciled or 0),
+                'correction_count': int(work_item.correction_count or 0),
+                'error_class': work_item.error_class,
+                'source_authority': work_item.source_authority,
+                'source_revision_present': bool(work_item.source_revision),
+                'completed_at': _iso(work_item.completed_at),
+                # completion_proof is deliberately NOT copied: it is a raw
+                # proof document and the artifact must not carry it.
+                'completion_proof_present': (
+                    work_item.completion_proof is not None
+                ),
+            },
+        ),
+        'team_game_pitching_splits': _table_state(splits, None),
+        'completed_game_contexts': _table_state(contexts, None),
+        'game_play_by_play_events': _table_state(events, None),
+        'sync_failures': _table_state(len(failures), {
+            'unresolved': sum(
+                1 for row in failures if not getattr(row, 'resolved', False)
             ),
-            'attempt_count': int(marker.attempt_count or 0),
-            'incomplete_reason': marker.incomplete_reason,
-            'final_state': marker.final_state,
-            'game_date': _iso(marker.game_date),
-        },
-        'work_item': None if work_item is None else {
-            'status': work_item.status,
-            'criticality': work_item.criticality,
-            'candidate_reason': work_item.candidate_reason,
-            'finality_state': work_item.finality_state,
-            'represented_date': _iso(work_item.represented_date),
-            'attempt_count': int(work_item.attempt_count or 0),
-            'rows_expected': work_item.rows_expected,
-            'rows_reconciled': int(work_item.rows_reconciled or 0),
-            'error_class': work_item.error_class,
-            'source_revision_present': bool(work_item.source_revision),
-        },
-        'team_pitching_split_rows': int(team_splits or 0),
-        'completed_game_context_rows': int(contexts or 0),
-        'play_by_play_event_rows': int(play_events or 0),
+            'job_names': sorted({
+                row.job_name for row in failures if row.job_name
+            }),
+            # Raw `error` text is never copied: it can carry an exception body.
+            'error_text_copied': False,
+        }),
     }
 
 
-def observe_appearance_ledger(game_pk, stored_schedule=None) -> dict:
-    """The canonical appearance ledger for the incident slate (Question 4)."""
+def _table_state(row_count, detail) -> dict:
+    count = int(row_count or 0)
+    return {
+        'rows_exist': count > 0,
+        'row_count': count,
+        'content_state': 'present' if count else 'absent',
+        'detail': detail,
+    }
+
+
+# ── Appearance ledger (Question 4) ──────────────────────────────────────────
+
+def observe_appearance_ledger(game_pk, stored_schedule) -> dict:
+    """The canonical appearance ledger for the incident slate."""
     from services import appearance_ledger
 
     ledger = appearance_ledger.build_appearance_ledger(
@@ -384,7 +615,20 @@ def observe_appearance_ledger(game_pk, stored_schedule=None) -> dict:
     incomplete = {
         entry['game_pk'] for entry in ledger['incomplete_marker_games']
     }
+    dates = [
+        row.get('game_date')
+        for row in (stored_schedule or {}).get('rows') or ()
+        if row.get('game_date')
+    ]
+    within = (
+        any(
+            ledger['window_start'] <= value <= ledger['window_end']
+            for value in dates
+        ) if dates else None
+    )
+
     return {
+        'evidence_source': audit.SOURCE_CURRENT_DB,
         'gate_enabled': appearance_ledger.ledger_gate_enabled(),
         'window_start': ledger['window_start'],
         'window_end': ledger['window_end'],
@@ -399,58 +643,48 @@ def observe_appearance_ledger(game_pk, stored_schedule=None) -> dict:
         'count_deficit_game_count': len(deficits),
         'incomplete_marker_game_count': len(incomplete),
         'deficit_game_pks': sorted(missing | deficits | incomplete),
-        # Reported as the two separately derivable facts they are. Membership
-        # itself belongs to services.appearance_ledger and is not recomputed
-        # here: what this records is (a) that the ledger named the game in a
-        # deficit list, and (b) whether the game satisfies the two published
-        # membership conditions — a stored `final` row, inside the window.
-        'incident_game_in_deficit_set': game_pk in (
+        # Membership itself belongs to services.appearance_ledger. What is
+        # recorded here is the two separately derivable facts behind it.
+        'disputed_game_in_deficit_set': game_pk in (
             missing | deficits | incomplete
         ),
-        'incident_game_has_stored_final_row': bool(
+        'disputed_game_has_stored_final_row': bool(
             (stored_schedule or {}).get('counts_as_ledger_final')
         ),
-        'incident_game_within_window': _game_within_window(
-            stored_schedule, ledger['window_start'], ledger['window_end'],
-        ),
+        'disputed_game_within_window': within,
+        'membership_authority': 'services.appearance_ledger',
         'membership_rule': (
-            'services.appearance_ledger counts a game when a stored '
+            'A game is an expected completed game when ANY stored '
             'scheduled_games row carries status_state=final inside the '
-            'trailing window.'
+            'trailing window. The planner instead requires EVERY stored row '
+            'for the game to agree on final. The two are different tests.'
         ),
     }
 
 
-def _game_within_window(stored_schedule, window_start, window_end):
-    """True when any stored schedule row's date falls inside the window."""
-    dates = [
-        row.get('game_date') for row in (stored_schedule or {}).get('rows') or ()
-        if row.get('game_date')
-    ]
-    if not dates:
-        return None
-    return any(window_start <= value <= window_end for value in dates)
+# ── Completeness and unresolved-game classification (Question 7) ────────────
 
-
-def observe_completeness(game_pk) -> dict:
-    """Canonical planner + completeness proof (Questions 4 and 7)."""
-    from models.game_ingestion_work_item import GameIngestionWorkItem
+def observe_completeness(game_pk, budget) -> dict:
+    """Canonical planner + completeness proof, then per-game classification."""
     from services import game_ingestion_completeness, game_ingestion_planner
 
     plan = game_ingestion_planner.plan_game_work(audit.INCIDENT_SLATE_DATE)
-    completeness = game_ingestion_completeness.build_game_ingestion_completeness(
-        audit.INCIDENT_SLATE_DATE, plan=plan,
+    completeness = (
+        game_ingestion_completeness.build_game_ingestion_completeness(
+            audit.INCIDENT_SLATE_DATE, plan=plan,
+        )
     )
 
-    excluded_reason_for_game = None
+    excluded_reason = None
     for reason, game_pks in (plan.get('excluded_game_pks') or {}).items():
         if game_pk in set(game_pks or ()):
-            excluded_reason_for_game = reason
+            excluded_reason = reason
             break
 
-    attribution = _attribute_unresolved_games(plan, completeness)
+    classification = classify_unresolved_games(plan, completeness, budget)
 
     return {
+        'evidence_source': audit.SOURCE_CURRENT_DB,
         'plan': {
             'reference_date': plan['reference_date'],
             'window_start': plan['window_start'],
@@ -461,8 +695,8 @@ def observe_completeness(game_pk) -> dict:
             'schedule_authority_missing': list(
                 plan['schedule_authority_missing']
             ),
-            'incident_game_planned': game_pk in set(plan['planned_game_pks']),
-            'incident_game_exclusion_reason': excluded_reason_for_game,
+            'disputed_game_planned': game_pk in set(plan['planned_game_pks']),
+            'disputed_game_exclusion_reason': excluded_reason,
         },
         'completeness': {
             'represented_date': completeness['represented_date'],
@@ -472,7 +706,9 @@ def observe_completeness(game_pk) -> dict:
             'completed_final_games': completeness['completed_final_games'],
             'unresolved_final_games': completeness['unresolved_final_games'],
             'terminal_failure_games': completeness['terminal_failure_games'],
-            'correction_pending_games': completeness['correction_pending_games'],
+            'correction_pending_games': completeness[
+                'correction_pending_games'
+            ],
             'critical_appearance_rows_expected': completeness[
                 'critical_appearance_rows_expected'
             ],
@@ -482,32 +718,42 @@ def observe_completeness(game_pk) -> dict:
             'publication_complete': completeness['publication_complete'],
             'decision_reasons': list(completeness['decision_reasons']),
         },
-        'unresolved_attribution': attribution,
-        'work_item_status_vocabulary': list(
-            GameIngestionWorkItem.UNRESOLVED_STATUSES
+        'unresolved_classification': classification,
+        'completeness_authority': (
+            'services.game_ingestion_completeness.'
+            'build_game_ingestion_completeness'
         ),
     }
 
 
-def _attribute_unresolved_games(plan, completeness) -> dict:
-    """Classify each game the canonical completeness proof left unresolved.
+def classify_unresolved_games(plan, completeness, budget) -> dict:
+    """Classify every currently unresolved final game into one category.
 
-    The COUNT belongs to ``services.game_ingestion_completeness``. This only
-    attributes the games behind it, then checks its own reconstruction against
-    that authority's number. A reconstruction that does not match is reported
-    as not reconciled — it never overrides the authority.
+    The COUNT belongs to ``services.game_ingestion_completeness``. This
+    reconstructs the games behind it and then checks itself against that
+    authority's number; a reconstruction that does not match is reported as not
+    reconciled rather than overriding the authority.
+
+    The incident's own 60-game membership is NOT reproducible from the retained
+    artifacts (they carry the count, not the list), so this set is explicitly
+    labelled a CURRENT RECONSTRUCTION.
     """
+    from sqlalchemy import func
+
     from models.game_ingestion_work_item import GameIngestionWorkItem
+    from models.game_log import GameLog
+    from models.scheduled_game import ScheduledGame
+    from utils.db import db
 
     horizon = int(completeness['horizon_days'])
-    from datetime import timedelta
-
     window_start = audit.INCIDENT_SLATE_DATE - timedelta(days=horizon)
+
     work_items = (
         GameIngestionWorkItem.query
         .filter(GameIngestionWorkItem.represented_date >= window_start)
-        .filter(GameIngestionWorkItem.represented_date
-                <= audit.INCIDENT_SLATE_DATE)
+        .filter(
+            GameIngestionWorkItem.represented_date <= audit.INCIDENT_SLATE_DATE
+        )
         .all()
     )
     by_game = {item.mlb_game_pk: item for item in work_items}
@@ -515,7 +761,8 @@ def _attribute_unresolved_games(plan, completeness) -> dict:
     critical_planned = {
         item.game_pk for item in (plan.get('items') or [])
         if item.criticality != GameIngestionWorkItem.CRITICALITY_BEST_EFFORT
-        and item.candidate_reason != GameIngestionWorkItem.REASON_CORRECTED_FINAL
+        and item.candidate_reason
+        != GameIngestionWorkItem.REASON_CORRECTED_FINAL
     }
     unresolved_items = {
         item.mlb_game_pk for item in work_items
@@ -523,141 +770,351 @@ def _attribute_unresolved_games(plan, completeness) -> dict:
         and item.criticality != GameIngestionWorkItem.CRITICALITY_BEST_EFFORT
     }
     schedule_missing = set(plan.get('schedule_authority_missing') or ())
-
     game_pks = sorted(critical_planned | unresolved_items)
+
+    stored_rows: dict[int, list] = {}
+    if game_pks:
+        for row in (
+            ScheduledGame.query
+            .filter(ScheduledGame.game_pk.in_(game_pks)).all()
+        ):
+            stored_rows.setdefault(row.game_pk, []).append(row)
+
+    row_counts: dict[int, int] = {}
+    if game_pks:
+        for value, count in (
+            db.session.query(GameLog.mlb_game_pk, func.count(GameLog.id))
+            .filter(GameLog.mlb_game_pk.in_(game_pks))
+            .group_by(GameLog.mlb_game_pk).all()
+        ):
+            row_counts[value] = int(count or 0)
+
+    official = _official_states_for_window(
+        window_start, audit.INCIDENT_SLATE_DATE, set(game_pks), budget,
+    )
+
     classified: list[dict] = []
     counts: dict[str, int] = {}
-    for game_pk in game_pks:
-        item = by_game.get(game_pk)
-        if game_pk in schedule_missing:
-            bucket = audit.UNRESOLVED_SCHEDULE_AUTHORITY_MISSING
-        elif item is None:
-            bucket = audit.UNRESOLVED_PLANNED_NEVER_ATTEMPTED
-        elif (item.error_class or '') == 'correction_conflict':
-            bucket = audit.UNRESOLVED_CORRECTION_CONFLICT
-        elif item.status == GameIngestionWorkItem.STATUS_TERMINAL_FAILURE:
-            bucket = audit.UNRESOLVED_TERMINAL_FAILURE
-        elif item.status == GameIngestionWorkItem.STATUS_RETRYABLE_FAILURE:
-            bucket = audit.UNRESOLVED_RETRYABLE_FAILURE
-        elif item.status == GameIngestionWorkItem.STATUS_IN_PROGRESS:
-            bucket = audit.UNRESOLVED_IN_PROGRESS
-        elif item.status == GameIngestionWorkItem.STATUS_PLANNED:
-            bucket = audit.UNRESOLVED_PLANNED_NEVER_ATTEMPTED
-        else:
-            bucket = audit.UNRESOLVED_UNATTRIBUTED
-        counts[bucket] = counts.get(bucket, 0) + 1
-        classified.append({
-            'game_pk': game_pk,
-            'classification': bucket,
-            'work_item_status': None if item is None else item.status,
-            'attempt_count': None if item is None else int(
-                item.attempt_count or 0
-            ),
-            'error_class': None if item is None else item.error_class,
-        })
+    for value in game_pks:
+        entry = _classify_one_unresolved_game(
+            value,
+            work_item=by_game.get(value),
+            rows=stored_rows.get(value) or [],
+            stored_row_count=row_counts.get(value, 0),
+            official=official['by_game'].get(value),
+            schedule_missing=value in schedule_missing,
+        )
+        counts[entry['classification']] = counts.get(
+            entry['classification'], 0
+        ) + 1
+        classified.append(entry)
 
     authority_count = int(completeness['unresolved_final_games'])
+    by_category: dict[str, list[int]] = {}
+    for entry in classified:
+        by_category.setdefault(entry['classification'], []).append(
+            entry['game_pk']
+        )
+
+    scope_invalid = sum(
+        1 for entry in classified
+        if entry['classification'] in audit.UNRESOLVED_NON_DEFICIT_CATEGORIES
+    )
     return {
-        'attributed_game_count': len(classified),
+        'evidence_source': audit.SOURCE_INFERENCE,
+        'membership_provenance': audit.MEMBERSHIP_CURRENT_RECONSTRUCTION,
+        'membership_note': (
+            'The retained incident artifacts carry the unresolved COUNT, not '
+            'the membership list, so this set is a current reconstruction and '
+            'is not presented as immutable incident membership.'
+        ),
+        'incident_reported_count': (
+            audit.INCIDENT_COMPLETENESS['unresolved_final_games']
+        ),
+        'reconstructed_count': len(classified),
         'authority_unresolved_final_games': authority_count,
         'reconciles_with_authority': len(classified) == authority_count,
         'classification_counts': counts,
-        'unattributed_count': counts.get(audit.UNRESOLVED_UNATTRIBUTED, 0),
-        'games': classified[:audit.MAX_REPORTED_UNRESOLVED_GAMES],
-        'games_truncated': (
-            len(classified) > audit.MAX_REPORTED_UNRESOLVED_GAMES
-        ),
-        'incident_reported_count': (
-            audit.INCIDENT_REPORTED_UNRESOLVED_FINAL_GAMES
-        ),
+        'classified_total': sum(counts.values()),
+        'category_totals_match': sum(counts.values()) == len(classified),
+        'games_by_category': {
+            key: sorted(value)[:audit.MAX_REPORTED_GAMES_PER_CATEGORY]
+            for key, value in sorted(by_category.items())
+        },
+        'games': classified[:audit.MAX_REPORTED_GAMES_PER_CATEGORY],
+        'scope_valid_count': len(classified) - scope_invalid,
+        'scope_invalid_count': scope_invalid,
+        'unproven_count': counts.get(audit.UNRESOLVED_UNPROVEN, 0),
+        'source_evidence': official['status'],
+        'all_classified': len(classified) == sum(counts.values()),
     }
 
 
-def attribute_player_mismatches(ledger_report, ledger_observation) -> dict:
-    """Attribute every reported player mismatch individually (Question 6).
+def _official_states_for_window(start, end, game_pks, budget) -> dict:
+    """One schedule call per date, never one box score per game."""
+    from services import game_finality
+    from services.mlb_api import mlb_client
 
-    Each entry gets exactly one classification. A mismatch this audit cannot
-    place is ``unattributed`` — which leaves the question unanswered rather
-    than quietly reporting a clean attribution.
+    by_game: dict[int, dict] = {}
+    days = []
+    cursor = start
+    while cursor <= end:
+        days.append(cursor)
+        cursor += timedelta(days=1)
+
+    refused = False
+    errors = 0
+    for day in days:
+        if not budget.reserve(audit.CALL_KIND_SCHEDULE):
+            refused = True
+            break
+        started = perf_counter()
+        try:
+            games = mlb_client.get_schedule(
+                start_date=day.isoformat(), end_date=day.isoformat(),
+            )
+        except Exception:  # noqa: BLE001 - never leak the source message
+            budget.record_failure(
+                audit.CALL_KIND_SCHEDULE,
+                latency_ms=(perf_counter() - started) * 1000,
+            )
+            errors += 1
+            continue
+        budget.record_success(
+            audit.CALL_KIND_SCHEDULE,
+            latency_ms=(perf_counter() - started) * 1000,
+        )
+        for game in games or ():
+            value = _int(game.get('gamePk'))
+            if value is None or value not in game_pks:
+                continue
+            decision = game_finality.classify_status(
+                game.get('status') or {}, game_pk=value,
+            )
+            by_game[value] = {
+                'classification': _official_class(decision.state),
+                'finality_state': decision.state,
+                'reason': decision.reason,
+                'relationship': _official_relationship(game),
+                'doubleheader': _text(game.get('doubleHeader')),
+                'game_number': _int(game.get('gameNumber')),
+            }
+
+    return {
+        'by_game': by_game,
+        'status': {
+            'dates_queried': len(days),
+            'games_resolved': len(by_game),
+            'games_requested': len(game_pks),
+            'budget_refused': refused,
+            'source_errors': errors,
+        },
+    }
+
+
+def _classify_one_unresolved_game(
+    game_pk, *, work_item, rows, stored_row_count, official, schedule_missing,
+) -> dict:
+    """One deterministic category per game; first match wins."""
+    from models.game_ingestion_work_item import GameIngestionWorkItem
+    from services import game_finality
+
+    states = sorted({row.status_state for row in rows})
+    stored_final = game_finality.FINAL_STATUS_STATE in states
+    all_final = bool(states) and states == [game_finality.FINAL_STATUS_STATE]
+    official = official or {}
+    official_class = official.get('classification')
+    relationship = official.get('relationship') or {}
+    expected_rows = int(getattr(work_item, 'rows_expected', 0) or 0)
+
+    if schedule_missing or not rows:
+        category = audit.UNRESOLVED_SCHEDULE_AUTHORITY_MISSING
+    elif official_class == audit.OFFICIAL_CLASS_POSTPONED:
+        category = audit.UNRESOLVED_POSTPONED
+    elif official_class == audit.OFFICIAL_CLASS_SUSPENDED:
+        category = audit.UNRESOLVED_SUSPENDED
+    elif official_class == audit.OFFICIAL_CLASS_CANCELLED:
+        category = audit.UNRESOLVED_CANCELLED
+    elif relationship.get('is_rescheduled') or relationship.get('is_resumed'):
+        category = audit.UNRESOLVED_RESCHEDULED
+    elif len(rows) != len({row.team_id for row in rows}):
+        category = audit.UNRESOLVED_DOUBLEHEADER_IDENTITY
+    elif work_item is not None and work_item.status == (
+        GameIngestionWorkItem.STATUS_TERMINAL_FAILURE
+    ):
+        category = audit.UNRESOLVED_TERMINAL_FAILURE
+    elif work_item is not None and work_item.status in (
+        GameIngestionWorkItem.UNRESOLVED_STATUSES
+    ):
+        category = audit.UNRESOLVED_RETRYABLE
+    elif official_class is None:
+        category = audit.UNRESOLVED_UNPROVEN
+    elif official_class == audit.OFFICIAL_CLASS_UNKNOWN:
+        category = audit.UNRESOLVED_UNPROVEN
+    elif official_class != audit.OFFICIAL_CLASS_FINAL and stored_final:
+        category = audit.UNRESOLVED_STORED_FINAL_SOURCE_NON_FINAL
+    elif official_class == audit.OFFICIAL_CLASS_FINAL and not all_final:
+        category = audit.UNRESOLVED_SOURCE_FINAL_STORED_NON_FINAL
+    elif official_class == audit.OFFICIAL_CLASS_FINAL and stored_row_count == 0:
+        category = audit.UNRESOLVED_FINAL_MISSING_ROWS
+    elif (
+        official_class == audit.OFFICIAL_CLASS_FINAL
+        and work_item is None
+        and stored_row_count > 0
+    ):
+        # The lane has only ever run in shadow, so it has never created a
+        # durable work item. A fully represented final game with no work item
+        # is that condition, not a baseball deficit.
+        category = audit.UNRESOLVED_WORK_ITEM_ABSENT_SHADOW_ONLY
+    elif (
+        official_class == audit.OFFICIAL_CLASS_FINAL
+        and expected_rows
+        and 0 < stored_row_count < expected_rows
+    ):
+        category = audit.UNRESOLVED_FINAL_PARTIAL
+    elif official_class == audit.OFFICIAL_CLASS_FINAL and stored_row_count > 0:
+        category = audit.UNRESOLVED_FINAL_FULLY_REPRESENTED
+    else:
+        category = audit.UNRESOLVED_OTHER
+
+    return {
+        'game_pk': game_pk,
+        'classification': category,
+        'official_classification': official_class,
+        'stored_status_states': states,
+        'stored_appearance_rows': stored_row_count,
+        'rows_expected': expected_rows or None,
+        'work_item_status': getattr(work_item, 'status', None),
+        'work_item_present': work_item is not None,
+    }
+
+
+# ── Player mismatch attribution (Question 6) ────────────────────────────────
+
+def attribute_player_mismatches(ledger_report, ledger_observation, official):
+    """Attribute each of the nine reported mismatches individually.
+
+    A player is never attributed to game 822867 merely because the ledger
+    listed them in the same report. Attribution to the disputed game requires
+    POSITIVE evidence: the player must appear in that game's official box-score
+    pitching lines.
     """
+    from sqlalchemy import func
+
     from models.game_log import GameLog
     from models.pitcher import Pitcher
     from utils.db import db
 
     report = ledger_report if isinstance(ledger_report, dict) else {}
-    entries = list(report.get('player_mismatches') or [])
-    deficit_games = set(ledger_observation.get('deficit_game_pks') or ())
-    report_games = set(
-        (report.get('missing_game_pks') or [])
-        + (report.get('count_deficit_game_pks') or [])
-        + (report.get('incomplete_marker_game_pks') or [])
+    reported = list(report.get('player_mismatches') or [])
+    # The nine incident players are the authority for WHO must be attributed;
+    # the parsed artifact is cross-checked against them.
+    incident_players = [
+        dict(entry) for entry in audit.INCIDENT_PLAYER_MISMATCHES
+    ]
+    reported_ids = {
+        entry.get('player_id') for entry in reported
+        if entry.get('player_id') is not None
+    }
+
+    disputed_line_ids = set(
+        (official or {}).get('boxscore_pitcher_ids') or ()
     )
-    candidate_games = sorted(report_games or deficit_games)
+    disputed_official_class = (official or {}).get('official_classification')
 
     attributed: list[dict] = []
     counts: dict[str, int] = {}
-    for entry in entries:
-        player_id = entry.get('player_id')
-        pitcher = (
-            Pitcher.query.filter_by(mlb_id=player_id).first()
-            if player_id is not None else None
-        )
-        stored_games: list[int] = []
-        if pitcher is not None and candidate_games:
-            stored_games = sorted({
-                game_pk
-                for (game_pk,) in (
-                    db.session.query(GameLog.mlb_game_pk)
-                    .filter(GameLog.pitcher_id == pitcher.id)
-                    .filter(GameLog.mlb_game_pk.in_(candidate_games))
-                    .all()
-                )
-                if game_pk is not None
-            })
+    for entry in incident_players:
+        player_id = entry['player_id']
+        pitcher = Pitcher.query.filter_by(mlb_id=player_id).first()
+
+        latest_stored = None
+        stored_disputed_rows = 0
+        if pitcher is not None:
+            latest_stored = (
+                db.session.query(func.max(GameLog.game_date))
+                .filter(GameLog.pitcher_id == pitcher.id).scalar()
+            )
+            stored_disputed_rows = int(
+                db.session.query(func.count(GameLog.id))
+                .filter(GameLog.pitcher_id == pitcher.id)
+                .filter(GameLog.mlb_game_pk == audit.INCIDENT_GAME_PK)
+                .scalar() or 0
+            )
+
+        in_disputed_boxscore = player_id in disputed_line_ids
 
         if pitcher is None:
-            bucket = audit.MISMATCH_PITCHER_IDENTITY_UNTRACKED
-        elif stored_games:
-            bucket = audit.MISMATCH_APPEARANCE_ROW_NOW_PRESENT
-        elif not candidate_games:
-            bucket = audit.MISMATCH_GAME_NOT_IN_LEDGER_WINDOW
-        elif deficit_games:
-            bucket = audit.MISMATCH_NO_APPEARANCE_ROW
+            category = audit.PLAYER_CAUSED_BY_IDENTITY_PROBLEM
+        elif in_disputed_boxscore and stored_disputed_rows == 0:
+            category = audit.PLAYER_CAUSED_BY_DISPUTED_GAME
+        elif in_disputed_boxscore and stored_disputed_rows > 0:
+            # The row exists now, so the ledger's "missing" reading is a query
+            # or timing artefact rather than a baseball gap.
+            category = audit.PLAYER_CAUSED_BY_LEDGER_QUERY
+        elif disputed_official_class in (
+            audit.OFFICIAL_CLASS_POSTPONED, audit.OFFICIAL_CLASS_SUSPENDED,
+            audit.OFFICIAL_CLASS_CANCELLED,
+        ):
+            category = audit.PLAYER_CAUSED_BY_RESCHEDULE_RELATIONSHIP
+        elif not disputed_line_ids:
+            # Without the disputed game's official pitching lines there is no
+            # positive evidence either way. Unproven, never guessed.
+            category = audit.PLAYER_UNPROVEN
+        elif latest_stored is not None and entry['last_stored_appearance'] and (
+            _iso(latest_stored) != entry['last_stored_appearance']
+        ):
+            category = audit.PLAYER_CAUSED_BY_STALE_DATA
         else:
-            # The report named deficit games that the current ledger window no
-            # longer contains, so the mismatch is placed but no longer inside
-            # the gate's scope.
-            bucket = audit.MISMATCH_GAME_NOT_IN_LEDGER_WINDOW
-        counts[bucket] = counts.get(bucket, 0) + 1
+            category = audit.PLAYER_CAUSED_BY_ANOTHER_GAME
+
+        counts[category] = counts.get(category, 0) + 1
         attributed.append({
             'player_id': player_id,
-            'latest_stored_appearance': entry.get('latest_stored_appearance'),
+            'name': entry['name'],
+            'incident_last_stored_appearance': entry['last_stored_appearance'],
+            'current_latest_stored_appearance': _iso(latest_stored),
             'pitcher_tracked': pitcher is not None,
-            'classification': bucket,
-            'candidate_games_checked': len(candidate_games),
-            'games_with_stored_appearance': stored_games,
+            'in_disputed_game_official_lines': in_disputed_boxscore,
+            'stored_rows_for_disputed_game': stored_disputed_rows,
+            'expected_source_game_pk': (
+                audit.INCIDENT_GAME_PK if in_disputed_boxscore else None
+            ),
+            'attributable_to_disputed_game': (
+                category == audit.PLAYER_CAUSED_BY_DISPUTED_GAME
+            ),
+            'classification': category,
+            'reason_codes': [category],
         })
 
     return {
-        'reported_mismatch_count': len(entries),
-        'incident_reported_mismatch_count': (
-            audit.INCIDENT_REPORTED_PLAYER_MISMATCHES
+        'evidence_source': audit.SOURCE_INFERENCE,
+        'incident_reported_count': len(incident_players),
+        'artifact_reported_count': len(reported),
+        'artifact_ids_match_incident': (
+            reported_ids == set(audit.INCIDENT_PLAYER_IDS)
+            if reported_ids else None
         ),
         'attributed_count': len(attributed),
-        'unattributed_count': counts.get(audit.MISMATCH_UNATTRIBUTED, 0),
         'classification_counts': counts,
-        'candidate_games_checked': candidate_games,
-        'mismatches': attributed,
-        'all_attributed': (
-            bool(attributed)
-            and counts.get(audit.MISMATCH_UNATTRIBUTED, 0) == 0
+        'unproven_count': counts.get(audit.PLAYER_UNPROVEN, 0),
+        'attributed_to_disputed_game': counts.get(
+            audit.PLAYER_CAUSED_BY_DISPUTED_GAME, 0
         ),
-        'player_names_withheld': True,
+        'players': attributed,
+        'all_attributed_exactly_once': (
+            len(attributed) == len(audit.INCIDENT_PLAYER_IDS)
+            and len({entry['player_id'] for entry in attributed})
+            == len(audit.INCIDENT_PLAYER_IDS)
+        ),
+        'raw_boxscore_excluded': True,
     }
 
 
-def observe_snapshot_gate(sync_summary) -> dict:
-    """Snapshot 344 / 343 / sync run 596 (Question 8)."""
+# ── Snapshot publication gate (Question 8) ──────────────────────────────────
+
+def observe_snapshot_gate(sync_summary, completeness) -> dict:
+    """Snapshot 344, snapshot 343, sync run 596, and the gate's scope."""
     from models.dashboard_snapshot import DashboardSnapshot
     from models.sync_run import SyncRun
     from services import dashboard_snapshot as snapshot_service
@@ -678,10 +1135,27 @@ def observe_snapshot_gate(sync_summary) -> dict:
     )
     artifact_proof = artifact_proof if isinstance(artifact_proof, dict) else {}
 
+    coverage = _slate_coverage(candidate)
+    unresolved = (completeness or {}).get('unresolved_classification') or {}
+    scope_invalid = int(unresolved.get('scope_invalid_count') or 0)
+
     return {
+        'evidence_source': audit.SOURCE_CURRENT_DB,
         'candidate_snapshot': _snapshot_view(candidate, snapshot_service),
         'prior_snapshot': _snapshot_view(prior, snapshot_service),
+        'candidate_still_exists': candidate is not None,
+        'candidate_still_pending': (
+            None if candidate is None
+            else candidate.status != snapshot_service.SNAPSHOT_STATUS_READY
+        ),
+        'candidate_published_later': (
+            None if candidate is None
+            else bool(getattr(candidate, 'published_at', None))
+        ),
         'currently_served_snapshot_id': getattr(served, 'id', None),
+        'prior_still_serving': (
+            getattr(served, 'id', None) == audit.INCIDENT_SERVING_SNAPSHOT_ID
+        ),
         'sync_run': None if sync_run is None else {
             'id': sync_run.id,
             'job_name': getattr(sync_run, 'job_name', None),
@@ -691,24 +1165,77 @@ def observe_snapshot_gate(sync_summary) -> dict:
                 sync_run, 'published_dashboard_snapshot_id', None
             ),
         },
+        'slate_coverage': coverage,
         'publication_proof_from_incident_artifact': {
+            'evidence_source': audit.SOURCE_INCIDENT,
             'status': artifact_proof.get('status'),
             'verified': artifact_proof.get('verified'),
             'league_publication_status': artifact_proof.get(
                 'league_publication_status'
             ),
-            'candidate_required': artifact_proof.get('candidate_required'),
-            'candidate_snapshot_id': artifact_proof.get(
-                'candidate_snapshot_id'
-            ),
-            'served_snapshot_id': artifact_proof.get('served_snapshot_id'),
             'reason_codes': list(artifact_proof.get('reason_codes') or ()),
+        },
+        'gate_scope': {
+            'publication_horizon_days': (
+                (completeness or {}).get('completeness') or {}
+            ).get('horizon_days'),
+            'requires_games_outside_slate': bool(
+                ((completeness or {}).get('completeness') or {}).get(
+                    'horizon_days'
+                )
+            ),
+            'unresolved_games_outside_true_deficit': scope_invalid,
+            'disputed_game_is_sole_blocker': _sole_blocker(unresolved),
+            'sixty_game_signal_contributes': int(
+                unresolved.get('reconstructed_count') or 0
+            ) > 0,
         },
         'gate_owner': (
             'services.dashboard_snapshot.publish_dashboard_snapshot decides '
             'publication; services.sync_publication_proof decides whether the '
             "run's candidate is serving. Neither is reimplemented here."
         ),
+        'withholding_was_fail_closed': (
+            getattr(served, 'id', None) == audit.INCIDENT_SERVING_SNAPSHOT_ID
+            and candidate is not None
+            and candidate.status != snapshot_service.SNAPSHOT_STATUS_READY
+        ),
+    }
+
+
+def _sole_blocker(unresolved) -> bool | None:
+    counts = (unresolved or {}).get('classification_counts') or {}
+    if not counts:
+        return None
+    deficit = sum(
+        value for key, value in counts.items()
+        if key not in audit.UNRESOLVED_NON_DEFICIT_CATEGORIES
+    )
+    return deficit <= 1
+
+
+def _slate_coverage(snapshot) -> dict | None:
+    payload = getattr(snapshot, 'payload', None)
+    if not isinstance(payload, dict):
+        return None
+    freshness = payload.get('freshness')
+    if not isinstance(freshness, dict):
+        return None
+    coverage = freshness.get('slate_coverage')
+    if not isinstance(coverage, dict):
+        return None
+    return {
+        'slate_date': coverage.get('slate_date'),
+        'coverage_known': coverage.get('coverage_known'),
+        'games_scheduled': coverage.get('games_scheduled'),
+        'games_final': coverage.get('games_final'),
+        'games_fully_ingested': coverage.get('games_fully_ingested'),
+        'validations_passed': coverage.get('validations_passed'),
+        'complete_enough_to_publish': coverage.get(
+            'complete_enough_to_publish'
+        ),
+        'reason_codes': list(coverage.get('reason_codes') or ()),
+        'marker_counts': coverage.get('marker_counts'),
     }
 
 
@@ -721,6 +1248,9 @@ def _snapshot_view(snapshot, snapshot_service) -> dict | None:
         'is_published': bool(getattr(snapshot, 'is_published', False)),
         'published_at': _iso(getattr(snapshot, 'published_at', None)),
         'data_through': _iso(getattr(snapshot, 'data_through', None)),
+        'availability_reference_date': _iso(
+            getattr(snapshot, 'availability_reference_date', None)
+        ),
         'sync_run_id': getattr(snapshot, 'sync_run_id', None),
         'error_message': getattr(snapshot, 'error_message', None),
         'unavailable_reason': snapshot_service.snapshot_unavailable_reason(
@@ -739,123 +1269,459 @@ def observe_unresolved_sync_failures() -> dict:
     try:
         total = (
             db.session.query(func.count(SyncFailure.id))
-            .filter(SyncFailure.resolved.is_(False))
-            .scalar()
+            .filter(SyncFailure.resolved.is_(False)).scalar()
         )
     except Exception:  # noqa: BLE001 - an unobserved backlog is not zero
-        return {'observed': False, 'unresolved_sync_failures': None}
+        return {
+            'observed': False, 'unresolved_sync_failures': None,
+            'governed_backlog': audit.GOVERNED_DEAD_LETTER_BACKLOG,
+            'note': audit.DEAD_LETTER_BACKLOG_NOTE,
+            'dead_letters_created_by_this_audit': 0,
+        }
     return {
         'observed': True,
         'unresolved_sync_failures': int(total or 0),
-        'note': (
-            'Observed count at audit time. This audit never asserts the '
-            'dead-letter backlog is zero and resolves nothing.'
-        ),
+        'governed_backlog': audit.GOVERNED_DEAD_LETTER_BACKLOG,
+        'note': audit.DEAD_LETTER_BACKLOG_NOTE,
+        'dead_letters_created_by_this_audit': 0,
     }
+
+
+# ── Authority comparison ────────────────────────────────────────────────────
+
+def build_authority_comparison(observations) -> dict:
+    """Where the four authorities disagree, stated explicitly."""
+    official = observations.get('official_status') or {}
+    stored = observations.get('stored_schedule') or {}
+    ledger = observations.get('appearance_ledger') or {}
+    completeness = observations.get('completeness') or {}
+    plan = completeness.get('plan') or {}
+
+    official_class = official.get('official_classification')
+    mapped = official.get('canonical_status_state')
+    stored_state = stored.get('stored_status_state')
+    planner_planned = plan.get('disputed_game_planned')
+    ledger_counts = ledger.get('disputed_game_has_stored_final_row')
+
+    disagreements = []
+    if official.get('game_found_in_source') and mapped and stored_state and (
+        mapped != stored_state
+    ):
+        disagreements.append('current_mapping_differs_from_stored_state')
+    if ledger_counts and planner_planned is False:
+        disagreements.append('ledger_counts_game_planner_cannot_plan')
+    if official_class == audit.OFFICIAL_CLASS_FINAL and stored_state and (
+        stored_state != 'final'
+    ):
+        disagreements.append('official_final_but_stored_not_final')
+    if official_class in (
+        audit.OFFICIAL_CLASS_POSTPONED, audit.OFFICIAL_CLASS_SUSPENDED,
+        audit.OFFICIAL_CLASS_CANCELLED,
+    ) and ledger_counts:
+        disagreements.append('official_non_final_but_ledger_counts_completed')
+    if stored.get('paired_row_disagreement'):
+        disagreements.append('paired_schedule_rows_disagree')
+
+    return {
+        'evidence_source': audit.SOURCE_INFERENCE,
+        'official_source_classification': official_class,
+        'schedule_parser_classification': official.get(
+            'canonical_finality_state'
+        ),
+        'canonical_mapped_status_state': mapped,
+        'stored_schedule_classification': stored_state,
+        'stored_status_states': stored.get('distinct_status_states'),
+        'planner_classification': (
+            'planned' if planner_planned else 'excluded'
+        ),
+        'planner_exclusion_reason': plan.get(
+            'disputed_game_exclusion_reason'
+        ),
+        'appearance_ledger_classification': (
+            'counted_as_completed_game' if ledger_counts
+            else 'not_counted'
+        ),
+        'incident_preflight_status_state': (
+            audit.INCIDENT_PREFLIGHT_STATUS_STATES.get(audit.INCIDENT_GAME_PK)
+        ),
+        'exact_disagreements': disagreements,
+        'any_disagreement': bool(disagreements),
+    }
+
+
+# ── Findings ────────────────────────────────────────────────────────────────
+
+def build_findings(observations, comparison, module_drift) -> list[dict]:
+    """Positive-evidence findings. Nothing is concluded from an absence."""
+    official = observations.get('official_status') or {}
+    stored = observations.get('stored_schedule') or {}
+    ledger = observations.get('appearance_ledger') or {}
+    baseball = observations.get('baseball_state') or {}
+    completeness = observations.get('completeness') or {}
+    snapshot = observations.get('snapshot_gate') or {}
+    plan = completeness.get('plan') or {}
+    unresolved = completeness.get('unresolved_classification') or {}
+
+    official_class = official.get('official_classification')
+    observed = bool(official.get('game_found_in_source'))
+    stored_state = stored.get('stored_status_state')
+    rows = int(
+        ((baseball.get('game_logs') or {}).get('row_count')) or 0
+    )
+    findings: list[dict] = []
+
+    # 1. Paired/duplicate schedule rows disagree.
+    findings.append(_finding(
+        audit.CLASSIFICATION_STORED_SCHEDULE_ROW_CONFLICT,
+        proven=bool(
+            stored.get('paired_row_disagreement')
+            or stored.get('duplicate_team_rows')
+        ),
+        supporting=_present([
+            f"stored status states {stored.get('distinct_status_states')}"
+            if stored.get('paired_row_disagreement') else None,
+            'duplicate team rows for one game'
+            if stored.get('duplicate_team_rows') else None,
+        ]),
+        counter=_present([
+            'all stored rows agree on one status state'
+            if stored.get('rows_agree') else None,
+            f"row count {stored.get('row_count')}",
+        ]),
+        confidence=audit.CONFIDENCE_HIGH,
+        sources=[audit.SOURCE_CURRENT_DB],
+        persists=bool(stored.get('paired_row_disagreement')),
+    ))
+
+    # 2. Reschedule / suspension identity conflated.
+    relationship = official.get('relationship') or {}
+    findings.append(_finding(
+        audit.CLASSIFICATION_RESCHEDULE_OR_SUSPENSION_IDENTITY_DEFECT,
+        proven=bool(
+            observed
+            and (relationship.get('is_rescheduled')
+                 or relationship.get('is_resumed'))
+            and stored.get('linked_replacement_game_pks') == []
+        ),
+        supporting=_present([
+            'official record carries a reschedule/resume relationship'
+            if relationship.get('is_rescheduled')
+            or relationship.get('is_resumed') else None,
+            'stored schedule carries no linked replacement game'
+            if stored.get('linked_replacement_game_pks') == [] else None,
+        ]),
+        counter=_present([
+            f"stored linked games "
+            f"{stored.get('linked_replacement_game_pks')}"
+            if stored.get('linked_replacement_game_pks') else None,
+            'official record carries no reschedule or resume relationship'
+            if observed and not (relationship.get('is_rescheduled')
+                                 or relationship.get('is_resumed')) else None,
+            'official record not observed' if not observed else None,
+        ]),
+        confidence=audit.CONFIDENCE_MEDIUM,
+        sources=[audit.SOURCE_OFFICIAL, audit.SOURCE_CURRENT_DB],
+        persists=bool(
+            relationship.get('is_rescheduled')
+            or relationship.get('is_resumed')
+        ),
+    ))
+
+    # 3. Ledger counted a game the official source says is not final.
+    ledger_counts = bool(ledger.get('disputed_game_has_stored_final_row'))
+    non_final = official_class in (
+        audit.OFFICIAL_CLASS_POSTPONED, audit.OFFICIAL_CLASS_SUSPENDED,
+        audit.OFFICIAL_CLASS_CANCELLED, audit.OFFICIAL_CLASS_NON_FINAL,
+    )
+    findings.append(_finding(
+        audit.CLASSIFICATION_APPEARANCE_LEDGER_COMPLETION_AUTHORITY_DEFECT,
+        proven=bool(observed and non_final and ledger_counts),
+        supporting=_present([
+            f'official classification {official_class}' if non_final else None,
+            'a stored schedule row carries status_state=final, which is what '
+            'puts the game into ledger membership' if ledger_counts else None,
+        ]),
+        counter=_present([
+            f'official classification {official_class}'
+            if official_class == audit.OFFICIAL_CLASS_FINAL else None,
+            'no stored row carries final' if not ledger_counts else None,
+            'official record not observed' if not observed else None,
+        ]),
+        confidence=(
+            audit.CONFIDENCE_HIGH if observed else audit.CONFIDENCE_LOW
+        ),
+        sources=[audit.SOURCE_OFFICIAL, audit.SOURCE_CURRENT_DB],
+        persists=bool(non_final and ledger_counts),
+    ))
+
+    # 4. Official proves final, stored/planner authority did not follow.
+    mapping_drift = bool(
+        observed
+        and official_class == audit.OFFICIAL_CLASS_FINAL
+        and (stored_state != 'final'
+             or plan.get('disputed_game_planned') is False)
+    )
+    findings.append(_finding(
+        audit.CLASSIFICATION_SCHEDULE_FINALITY_MAPPING_DRIFT,
+        proven=mapping_drift,
+        supporting=_present([
+            'official source classifies the game final'
+            if official_class == audit.OFFICIAL_CLASS_FINAL else None,
+            f'stored schedule state is {stored_state!r}'
+            if stored_state != 'final' else None,
+            'the canonical planner could not plan the game'
+            if plan.get('disputed_game_planned') is False else None,
+        ]),
+        counter=_present([
+            f'canonical mapper currently returns '
+            f"{official.get('canonical_status_state')!r} for the observed "
+            f'official status',
+            'canonical modules are byte-identical to the incident SHA'
+            if module_drift and not module_drift.get(
+                'any_change_since_incident'
+            ) else None,
+            'official record not observed' if not observed else None,
+        ]),
+        confidence=(
+            audit.CONFIDENCE_HIGH if observed else audit.CONFIDENCE_LOW
+        ),
+        sources=[audit.SOURCE_OFFICIAL, audit.SOURCE_CURRENT_DB],
+        persists=mapping_drift,
+    ))
+
+    # 5. Rows exist but the ledger still reports the game absent.
+    query_defect = bool(
+        rows > 0 and ledger.get('disputed_game_in_deficit_set')
+    )
+    findings.append(_finding(
+        audit.CLASSIFICATION_APPEARANCE_LEDGER_QUERY_DEFECT,
+        proven=query_defect,
+        supporting=_present([
+            f'{rows} appearance row(s) exist for the game' if rows else None,
+            'the canonical ledger still names the game in a deficit list'
+            if ledger.get('disputed_game_in_deficit_set') else None,
+        ]),
+        counter=_present([
+            'no appearance rows exist for the game' if rows == 0 else None,
+            'the ledger does not name the game in any deficit list'
+            if not ledger.get('disputed_game_in_deficit_set') else None,
+        ]),
+        confidence=audit.CONFIDENCE_HIGH,
+        sources=[audit.SOURCE_CURRENT_DB],
+        persists=query_defect,
+    ))
+
+    # 6. Both authorities say final and the rows are genuinely missing.
+    ingestion_gap = bool(
+        observed
+        and official_class == audit.OFFICIAL_CLASS_FINAL
+        and stored.get('all_rows_final')
+        and rows == 0
+    )
+    findings.append(_finding(
+        audit.CLASSIFICATION_EXACT_GAME_INGESTION_GAP,
+        proven=ingestion_gap,
+        supporting=_present([
+            'official source classifies the game final'
+            if official_class == audit.OFFICIAL_CLASS_FINAL else None,
+            'every stored schedule row agrees on final'
+            if stored.get('all_rows_final') else None,
+            'zero appearance rows are stored' if rows == 0 else None,
+        ]),
+        counter=_present([
+            f'{rows} appearance row(s) already exist' if rows else None,
+            'stored rows do not all agree on final'
+            if not stored.get('all_rows_final') else None,
+        ]),
+        confidence=audit.CONFIDENCE_HIGH,
+        sources=[audit.SOURCE_OFFICIAL, audit.SOURCE_CURRENT_DB],
+        persists=ingestion_gap,
+        genuine_source_gap=ingestion_gap,
+    ))
+
+    # 7. The gate requires games outside valid postgame publication scope.
+    scope_invalid = int(unresolved.get('scope_invalid_count') or 0)
+    scope_defect = bool(
+        scope_invalid > 0
+        and unresolved.get('reconciles_with_authority') is True
+    )
+    findings.append(_finding(
+        audit.CLASSIFICATION_PUBLICATION_GATE_SCOPE_DEFECT,
+        proven=scope_defect,
+        supporting=_present([
+            f'{scope_invalid} unresolved game(s) fall into categories that '
+            f'are not a true final-game deficit' if scope_invalid else None,
+            'the reconstruction reconciles with the completeness authority'
+            if unresolved.get('reconciles_with_authority') else None,
+        ]),
+        counter=_present([
+            'every unresolved game is a genuine final-game deficit'
+            if scope_invalid == 0 else None,
+            'the reconstruction does not reconcile with the authority count'
+            if unresolved.get('reconciles_with_authority') is False else None,
+        ]),
+        confidence=audit.CONFIDENCE_MEDIUM,
+        sources=[audit.SOURCE_CURRENT_DB, audit.SOURCE_INFERENCE],
+        persists=scope_defect,
+    ))
+
+    # 8. Coverage complete yet the candidate stayed pending.
+    coverage = snapshot.get('slate_coverage') or {}
+    transition_defect = bool(
+        coverage.get('complete_enough_to_publish') is True
+        and coverage.get('validations_passed') is True
+        and snapshot.get('candidate_still_pending') is True
+    )
+    findings.append(_finding(
+        audit.CLASSIFICATION_SNAPSHOT_STATE_TRANSITION_DEFECT,
+        proven=transition_defect,
+        supporting=_present([
+            'slate coverage reports complete_enough_to_publish'
+            if coverage.get('complete_enough_to_publish') else None,
+            'the candidate snapshot is still not ready'
+            if snapshot.get('candidate_still_pending') else None,
+        ]),
+        counter=_present([
+            f"slate coverage reason codes {coverage.get('reason_codes')}"
+            if coverage.get('reason_codes') else None,
+            'slate coverage is not complete enough to publish'
+            if coverage.get('complete_enough_to_publish') is not True
+            else None,
+        ]),
+        confidence=audit.CONFIDENCE_MEDIUM,
+        sources=[audit.SOURCE_CURRENT_DB],
+        persists=transition_defect,
+    ))
+
+    return findings
+
+
+def _finding(classification, *, proven, supporting, counter, confidence,
+             sources, persists, genuine_source_gap=False) -> dict:
+    return {
+        'classification': classification,
+        'proven': bool(proven),
+        'confidence': confidence,
+        'supporting_evidence': list(supporting),
+        'counter_evidence': list(counter),
+        'evidence_sources': list(sources),
+        'current_condition_persists': bool(persists),
+        'genuine_source_gap': bool(genuine_source_gap),
+    }
+
+
+def _present(values) -> list[str]:
+    return [str(value) for value in values if value]
 
 
 # ── Questions ───────────────────────────────────────────────────────────────
 
-def build_questions(observations) -> list[dict]:
-    """Turn observations into eight explicit, individually answerable records."""
-    stored = observations.get('stored_schedule') or {}
+def build_questions(observations, comparison, module_drift) -> list[dict]:
     official = observations.get('official_status') or {}
+    stored = observations.get('stored_schedule') or {}
     baseball = observations.get('baseball_state') or {}
     ledger = observations.get('appearance_ledger') or {}
     completeness = observations.get('completeness') or {}
-    mismatches = observations.get('player_mismatches') or {}
+    players = observations.get('player_mismatches') or {}
     snapshot = observations.get('snapshot_gate') or {}
+    unresolved = completeness.get('unresolved_classification') or {}
 
-    questions: list[dict] = []
+    questions = []
 
+    observed = bool(official.get('game_found_in_source'))
     questions.append(_question(
-        audit.QUESTION_OFFICIAL_STATUS,
-        answered=bool(official.get('game_found_in_source')),
+        audit.QUESTION_OFFICIAL_STATUS, answered=observed,
         answer=(
-            f"MLB reports status_code={official.get('raw_status_code')!r}, "
-            f"detailed_state={official.get('raw_detailed_state')!r}; the "
-            f"canonical finality authority classifies it "
-            f"{official.get('finality_state')!r} "
-            f"(reason {official.get('finality_reason')!r})."
-            if official.get('game_found_in_source')
-            else 'The official record was not observed within the source-call '
-                 'budget, so the official status is unproven.'
+            f"MLB reports detailed_state "
+            f"{official['normalized'].get('detailed_state')!r}, status_code "
+            f"{official['normalized'].get('status_code')!r}; the canonical "
+            f"finality authority classifies it "
+            f"{official.get('canonical_finality_state')!r} "
+            f"({official.get('canonical_finality_reason')!r}), which this "
+            f"audit records as official classification "
+            f"{official.get('official_classification')!r}."
+            if observed else
+            'The official record was not observed within the source-call '
+            'budget, so the official status is unproven.'
         ),
         evidence={
-            'source': official,
+            'official': official,
             'authority': 'services.game_finality.classify_status',
         },
-        unproven_reason=(
-            None if official.get('game_found_in_source')
-            else 'official_record_not_observed'
-        ),
+        unproven_reason=None if observed else 'official_record_not_observed',
     ))
 
+    has_rows = int(stored.get('row_count') or 0) > 0
     questions.append(_question(
-        audit.QUESTION_STORED_SCHEDULE_STATE,
-        answered=int(stored.get('row_count') or 0) > 0,
+        audit.QUESTION_STORED_SCHEDULE_STATE, answered=has_rows,
         answer=(
             f"{stored.get('row_count')} stored schedule row(s) carry "
-            f"status_state(s) {stored.get('distinct_status_states')}; the rows "
-            f"{'agree' if stored.get('rows_agree') else 'DISAGREE'}."
+            f"status_state(s) {stored.get('distinct_status_states')} for "
+            f"team(s) {stored.get('team_ids')}; the rows "
+            f"{'agree' if stored.get('rows_agree') else 'DISAGREE'}. "
+            f"Linked replacement games: "
+            f"{stored.get('linked_replacement_game_pks')}."
+            if has_rows else
+            'No stored schedule rows exist for the game.'
         ),
         evidence={'stored_schedule': stored},
-        unproven_reason=(
-            None if int(stored.get('row_count') or 0) > 0
-            else 'no_stored_schedule_rows'
-        ),
+        unproven_reason=None if has_rows else 'no_stored_schedule_rows',
     ))
 
-    preflight_answered = official.get('mapped_status_state') is not None
+    mapped = official.get('canonical_status_state')
+    incident_state = audit.INCIDENT_PREFLIGHT_STATUS_STATES.get(
+        audit.INCIDENT_GAME_PK
+    )
     questions.append(_question(
-        audit.QUESTION_PREFLIGHT_PRODUCED_OTHER,
-        answered=preflight_answered,
+        audit.QUESTION_PREFLIGHT_PRODUCED_OTHER, answered=mapped is not None,
         answer=(
             f"The preflight stores whatever "
             f"game_finality.normalize_schedule_status_state returns. For the "
-            f"observed status that is "
-            f"{official.get('mapped_status_state')!r}, because "
-            f"classify_status resolved {official.get('finality_reason')!r}. "
-            f"'other' is the state the authority uses for cancelled, "
-            f"live/in-progress, abstract-final-without-final-status, and "
-            f"unknown status."
-            if preflight_answered
-            else 'The live status was not observed, so the mapping that '
-                 'produced "other" cannot be reproduced.'
+            f"currently observed official status that is {mapped!r}, because "
+            f"classify_status resolved "
+            f"{official.get('canonical_finality_reason')!r}. 'other' is the "
+            f"state the authority uses for cancelled, live/in-progress, "
+            f"abstract-final-without-final-status, and unknown status. "
+            f"Current result reproduces the incident's 'other': "
+            f"{mapped == incident_state}. Canonical modules changed since the "
+            f"incident SHA: {module_drift.get('any_change_since_incident')}."
+            if mapped is not None else
+            'The live official status was not observed, so the mapping that '
+            'produced "other" cannot be reproduced.'
         ),
         evidence={
-            'mapped_status_state': official.get('mapped_status_state'),
-            'finality_reason': official.get('finality_reason'),
-            'stored_status_states': stored.get('distinct_status_states'),
+            'canonical_mapped_status_state': mapped,
+            'incident_preflight_status_state': incident_state,
+            'reproduces_incident_result': mapped == incident_state,
+            'incident_reconstructible_from_artifacts': True,
+            'canonical_module_drift': module_drift,
             'authority': (
                 'services.game_finality.normalize_schedule_status_state'
             ),
         },
         unproven_reason=(
-            None if preflight_answered else 'live_status_not_observed'
+            None if mapped is not None else 'live_status_not_observed'
         ),
     ))
 
     ledger_answered = bool(ledger)
+    plan = completeness.get('plan') or {}
     questions.append(_question(
-        audit.QUESTION_LEDGER_COUNTED_COMPLETED,
-        answered=ledger_answered,
+        audit.QUESTION_LEDGER_COUNTED_COMPLETED, answered=ledger_answered,
         answer=(
-            'The appearance ledger counts a game from the STORED schedule '
-            'ledger: any scheduled_games row with status_state=final inside '
-            'the trailing window is an expected completed game. The planner '
-            'instead requires every row of the game to agree on final. Those '
-            'two membership rules are not the same test, so a game can be '
-            'inside ledger membership and outside planning scope at the same '
-            'time. Stored states observed for the incident game: '
-            f"{stored.get('distinct_status_states')}; ledger reasons: "
-            f"{ledger.get('reasons')}."
-            if ledger_answered
-            else 'The appearance ledger could not be computed.'
+            f"{ledger.get('membership_rule')} The disputed game "
+            f"{'has' if ledger.get('disputed_game_has_stored_final_row') else 'does not have'}"
+            f" a stored final row, and the canonical planner "
+            f"{'planned' if plan.get('disputed_game_planned') else 'excluded'}"
+            f" it (exclusion reason "
+            f"{plan.get('disputed_game_exclusion_reason')!r}). "
+            f"Ledger reasons: {ledger.get('reasons')}."
+            if ledger_answered else
+            'The appearance ledger could not be computed.'
         ),
         evidence={
             'appearance_ledger': ledger,
-            'planner': (completeness.get('plan') or {}),
+            'planner': plan,
             'authority': 'services.appearance_ledger.build_appearance_ledger',
         },
         unproven_reason=(
@@ -864,96 +1730,101 @@ def build_questions(observations) -> list[dict]:
     ))
 
     questions.append(_question(
-        audit.QUESTION_EXACT_BASEBALL_STATE,
-        answered=bool(baseball),
+        audit.QUESTION_EXACT_BASEBALL_STATE, answered=bool(baseball),
         answer=(
-            f"{baseball.get('appearance_row_count')} appearance row(s), "
-            f"{len(baseball.get('distinct_pitcher_mlb_ids') or ())} distinct "
-            f"pitcher identities, "
-            f"{baseball.get('team_pitching_split_rows')} team split row(s), "
-            f"{baseball.get('completed_game_context_rows')} completed-game "
-            f"context row(s), "
-            f"{baseball.get('play_by_play_event_rows')} play-by-play row(s); "
+            f"game_logs {(baseball.get('game_logs') or {}).get('row_count')}, "
             f"postgame marker "
-            f"{(baseball.get('postgame_marker') or {}).get('processing_status')}"
-            f", work item "
-            f"{(baseball.get('work_item') or {}).get('status')}."
+            f"{(baseball.get('postgame_processed_game') or {}).get('row_count')}, "
+            f"work item "
+            f"{(baseball.get('game_ingestion_work_item') or {}).get('row_count')}, "
+            f"team splits "
+            f"{(baseball.get('team_game_pitching_splits') or {}).get('row_count')}, "
+            f"completed-game contexts "
+            f"{(baseball.get('completed_game_contexts') or {}).get('row_count')}, "
+            f"play-by-play "
+            f"{(baseball.get('game_play_by_play_events') or {}).get('row_count')}, "
+            f"sync failures "
+            f"{(baseball.get('sync_failures') or {}).get('row_count')}."
             if baseball else 'Stored baseball state could not be read.'
         ),
         evidence={'baseball_state': baseball},
         unproven_reason=None if baseball else 'baseball_state_unavailable',
     ))
 
+    players_answered = bool(players.get('all_attributed_exactly_once'))
     questions.append(_question(
-        audit.QUESTION_PLAYER_MISMATCH_ATTRIBUTION,
-        answered=bool(mismatches.get('all_attributed')),
+        audit.QUESTION_PLAYER_MISMATCH_ATTRIBUTION, answered=players_answered,
         answer=(
-            f"{mismatches.get('attributed_count')} of "
-            f"{mismatches.get('reported_mismatch_count')} reported mismatches "
+            f"All {players.get('attributed_count')} reported mismatches "
             f"attributed individually: "
-            f"{mismatches.get('classification_counts')}."
-            if mismatches.get('all_attributed')
-            else 'At least one reported mismatch could not be attributed '
-                 'individually, so the attribution is incomplete.'
+            f"{players.get('classification_counts')}. Attributed to game "
+            f"{audit.INCIDENT_GAME_PK} on positive box-score evidence: "
+            f"{players.get('attributed_to_disputed_game')}."
+            if players_answered else
+            'The nine reported mismatches were not each attributed exactly '
+            'once, so the attribution is incomplete.'
         ),
-        evidence={'player_mismatches': mismatches},
+        evidence={'player_mismatches': players},
         unproven_reason=(
-            None if mismatches.get('all_attributed')
+            None if players_answered
             else 'player_mismatch_attribution_incomplete'
         ),
     ))
 
-    attribution = completeness.get('unresolved_attribution') or {}
+    unresolved_answered = bool(
+        unresolved.get('all_classified')
+        and unresolved.get('category_totals_match')
+    )
     questions.append(_question(
         audit.QUESTION_UNRESOLVED_GAME_CLASSIFICATION,
-        answered=bool(
-            attribution.get('reconciles_with_authority')
-            and attribution.get('unattributed_count') == 0
-        ),
+        answered=unresolved_answered,
         answer=(
-            f"{attribution.get('attributed_game_count')} unresolved final "
-            f"game(s) classified as "
-            f"{attribution.get('classification_counts')}, reconciling with "
-            f"the completeness authority's count of "
-            f"{attribution.get('authority_unresolved_final_games')}."
-            if attribution.get('reconciles_with_authority')
-            and attribution.get('unattributed_count') == 0
-            else 'The per-game reconstruction did not reconcile with the '
-                 "completeness authority's count, or left games "
-                 'unattributed, so the classification is incomplete.'
+            f"{unresolved.get('reconstructed_count')} unresolved final "
+            f"game(s) classified as {unresolved.get('classification_counts')} "
+            f"({unresolved.get('membership_provenance')}). The completeness "
+            f"authority counts "
+            f"{unresolved.get('authority_unresolved_final_games')}; the "
+            f"reconstruction reconciles: "
+            f"{unresolved.get('reconciles_with_authority')}. Incident "
+            f"reported {unresolved.get('incident_reported_count')}."
+            if unresolved_answered else
+            'The unresolved-game set could not be classified completely.'
         ),
         evidence={
-            'unresolved_attribution': attribution,
+            'unresolved_classification': unresolved,
             'completeness': completeness.get('completeness'),
-            'authority': (
-                'services.game_ingestion_completeness.'
-                'build_game_ingestion_completeness'
-            ),
+            'authority': completeness.get('completeness_authority'),
         },
         unproven_reason=(
-            None if attribution.get('reconciles_with_authority')
-            and attribution.get('unattributed_count') == 0
+            None if unresolved_answered
             else 'unresolved_game_classification_incomplete'
         ),
     ))
 
-    candidate = snapshot.get('candidate_snapshot')
+    snapshot_answered = bool(snapshot) and snapshot.get(
+        'candidate_snapshot'
+    ) is not None
+    candidate = snapshot.get('candidate_snapshot') or {}
     questions.append(_question(
-        audit.QUESTION_SNAPSHOT_GATE,
-        answered=bool(snapshot),
+        audit.QUESTION_SNAPSHOT_GATE, answered=snapshot_answered,
         answer=(
             f"Snapshot {audit.INCIDENT_CANDIDATE_SNAPSHOT_ID} is "
-            f"{(candidate or {}).get('status')} "
-            f"(published={(candidate or {}).get('is_published')}, "
-            f"reason={(candidate or {}).get('unavailable_reason')!r}); the "
-            f"snapshot currently selected for serving is "
-            f"{snapshot.get('currently_served_snapshot_id')}. The incident "
-            f"artifact's publication proof recorded "
-            f"{(snapshot.get('publication_proof_from_incident_artifact') or {}).get('reason_codes')}."
-            if snapshot else 'The snapshot gate state could not be read.'
+            f"{candidate.get('status')} (published="
+            f"{candidate.get('is_published')}, reason="
+            f"{candidate.get('unavailable_reason')!r}); the snapshot "
+            f"currently selected for serving is "
+            f"{snapshot.get('currently_served_snapshot_id')}. Withholding was "
+            f"fail-closed: {snapshot.get('withholding_was_fail_closed')}. "
+            f"Disputed game is the sole blocker: "
+            f"{(snapshot.get('gate_scope') or {}).get('disputed_game_is_sole_blocker')}."
+            if snapshot_answered else
+            'Snapshot gate evidence could not be read.'
         ),
         evidence={'snapshot_gate': snapshot},
-        unproven_reason=None if snapshot else 'snapshot_state_unavailable',
+        unproven_reason=(
+            None if snapshot_answered
+            else audit.UNPROVEN_SNAPSHOT_EVIDENCE_MISSING
+        ),
     ))
 
     return questions
@@ -970,107 +1841,29 @@ def _question(question_id, *, answered, answer, evidence, unproven_reason):
     }
 
 
-# ── Classification ──────────────────────────────────────────────────────────
-
-def classify(observations) -> list[str]:
-    """Name every condition the canonical authorities actually reported."""
-    stored = observations.get('stored_schedule') or {}
-    official = observations.get('official_status') or {}
-    baseball = observations.get('baseball_state') or {}
-    ledger = observations.get('appearance_ledger') or {}
-    completeness = observations.get('completeness') or {}
-    snapshot = observations.get('snapshot_gate') or {}
-
-    found: list[str] = []
-
-    if stored.get('row_count') and not stored.get('rows_agree'):
-        found.append(audit.CLASSIFICATION_SCHEDULE_ROW_FINALITY_CONFLICT)
-    if (completeness.get('plan') or {}).get('finality_conflicts'):
-        found.append(audit.CLASSIFICATION_SCHEDULE_ROW_FINALITY_CONFLICT)
-
-    mapped = official.get('mapped_status_state')
-    stored_state = stored.get('stored_status_state')
-    if (
-        official.get('game_found_in_source')
-        and mapped is not None
-        and stored_state is not None
-        and mapped != stored_state
-    ):
-        found.append(
-            audit.CLASSIFICATION_STORED_SCHEDULE_STATE_DIVERGES_FROM_SOURCE
-        )
-
-    # The defect the incident named: ledger membership counts the game while
-    # the planner cannot plan it, so no lane can ever close the deficit.
-    plan = completeness.get('plan') or {}
-    if stored.get('counts_as_ledger_final') and not plan.get(
-        'incident_game_planned'
-    ):
-        found.append(
-            audit.CLASSIFICATION_LEDGER_MEMBERSHIP_DIVERGES_FROM_PLANNER
-        )
-    if mapped == 'other' and stored.get('counts_as_ledger_final'):
-        found.append(
-            audit.CLASSIFICATION_FINALITY_AUTHORITY_MAPS_GAME_OUT_OF_SCOPE
-        )
-
-    marker = baseball.get('postgame_marker')
-    if stored.get('counts_as_ledger_final'):
-        if marker is None:
-            found.append(audit.CLASSIFICATION_POSTGAME_MARKER_MISSING)
-        elif marker.get('processing_status') != 'fully_processed':
-            found.append(audit.CLASSIFICATION_POSTGAME_MARKER_INCOMPLETE)
-        if int(baseball.get('appearance_row_count') or 0) == 0:
-            found.append(
-                audit.CLASSIFICATION_APPEARANCE_ROWS_MISSING_FOR_FINAL_GAME
-            )
-
-    attribution = completeness.get('unresolved_attribution') or {}
-    if int(attribution.get('authority_unresolved_final_games') or 0) > 0:
-        found.append(audit.CLASSIFICATION_WORK_ITEM_BACKLOG_UNRESOLVED)
-
-    candidate = snapshot.get('candidate_snapshot') or {}
-    reason = candidate.get('error_message') or candidate.get(
-        'unavailable_reason'
-    )
-    if reason and 'appearance_ledger' in str(reason):
-        found.append(
-            audit.CLASSIFICATION_SNAPSHOT_WITHHELD_BY_APPEARANCE_LEDGER_GATE
-        )
-    elif reason and 'slate_coverage' in str(reason):
-        found.append(audit.CLASSIFICATION_SNAPSHOT_WITHHELD_BY_SLATE_COVERAGE)
-
-    artifact_proof = snapshot.get(
-        'publication_proof_from_incident_artifact'
-    ) or {}
-    served = snapshot.get('currently_served_snapshot_id')
-    if artifact_proof.get('verified') is False or (
-        candidate and served is not None
-        and served != audit.INCIDENT_CANDIDATE_SNAPSHOT_ID
-    ):
-        found.append(
-            audit.CLASSIFICATION_PUBLICATION_PROOF_CANDIDATE_NOT_SERVING
-        )
-
-    return found
-
-
 # ── Orchestration ───────────────────────────────────────────────────────────
 
 def run(args) -> dict:
     context = event_context(args)
     note = qualification.sanitize_note(args.operator_note)
     budget = audit.SourceCallBudget()
+    module_drift = audit.canonical_module_drift(current_module_digests())
 
     failures = validate_authorization(context)
     if failures:
         return build_document(
             context=context, note=note, observations={}, questions=[],
-            read_only={}, artifact_ingestion={}, budget_state=budget.state(),
-            decision=_refuse(failed=failures),
+            comparison={}, module_drift=module_drift, read_only={},
+            artifact_ingestion={}, budget_state=budget.state(),
+            decision=_refuse(failed=(
+                [audit.FAILED_UNAUTHORIZED_INVOCATION] + failures
+            )),
         )
 
-    ingestion = audit.ingest_incident_artifacts(args.evidence_dir)
+    ingestion = audit.ingest_incident_artifacts(
+        args.evidence_dir,
+        observed_metadata=load_observed_artifact_metadata(args.evidence_dir),
+    )
     shadow = (ingestion.get('artifacts') or {}).get(audit.ARTIFACT_SHADOW) or {}
     ledger_artifact = (
         (ingestion.get('artifacts') or {}).get(audit.ARTIFACT_LEDGER_AUDIT)
@@ -1081,6 +1874,8 @@ def run(args) -> dict:
         run_id=audit.INCIDENT_RUN_ID,
         cycle=audit.INCIDENT_CYCLE,
         slate_date=audit.INCIDENT_SLATE_DATE,
+        game_pk=audit.INCIDENT_GAME_PK,
+        head_sha=audit.INCIDENT_HEAD_SHA,
     )
 
     flask_app = build_app()
@@ -1120,9 +1915,11 @@ def run(args) -> dict:
             collected['read_only_enabled'] = True
             collected['read_only_detail'] = read_only
 
-            before = audit.table_fingerprints(db.session)
-            collected['before_fingerprints'] = before
+            # BEFORE, phase one: every scope whose membership is already known
+            # is digested before any other work happens.
+            before = audit.scoped_fingerprints(db.session)
             if before is None:
+                collected['before_fingerprints'] = None
                 raise _AuditHalt()
 
             game_pk = audit.INCIDENT_GAME_PK
@@ -1134,20 +1931,51 @@ def run(args) -> dict:
             observations['appearance_ledger'] = observe_appearance_ledger(
                 game_pk, observations['stored_schedule'],
             )
-            observations['completeness'] = observe_completeness(game_pk)
+            observations['completeness'] = observe_completeness(game_pk, budget)
             observations['player_mismatches'] = attribute_player_mismatches(
                 ledger_artifact.get('ledger_report'),
                 observations['appearance_ledger'],
+                _official_with_lines(observations['official_status'], game_pk),
             )
             observations['snapshot_gate'] = observe_snapshot_gate(
-                shadow.get('sync_summary')
+                shadow.get('sync_summary'), observations['completeness'],
             )
             observations['dead_letter_backlog'] = (
                 observe_unresolved_sync_failures()
             )
 
-            collected['after_fingerprints'] = audit.table_fingerprints(
-                db.session
+            # BEFORE, phase two: the unresolved-game scope cannot be digested
+            # until the canonical completeness proof has told us which games
+            # are in it. It is digested the moment that set is known and
+            # re-digested at the end. The earlier scopes keep their original
+            # phase-one digest, so no span of this run is left unprotected by
+            # shifting the baseline. The unresolved games sit inside the
+            # ledger-window horizon anyway, so phase one already covers them;
+            # this scope adds precision, not first-time coverage.
+            unresolved_pks = [
+                entry['game_pk'] for entry in (
+                    (observations['completeness'] or {})
+                    .get('unresolved_classification', {})
+                    .get('games') or []
+                )
+            ]
+            if unresolved_pks:
+                unresolved_before = audit.scoped_fingerprints(
+                    db.session, unresolved_game_pks=unresolved_pks,
+                )
+                if unresolved_before is not None:
+                    before = {
+                        **before,
+                        audit.SCOPE_UNRESOLVED_GAMES: unresolved_before[
+                            audit.SCOPE_UNRESOLVED_GAMES
+                        ],
+                    }
+            collected['before_fingerprints'] = before
+            collected['scope_plan'] = audit.fingerprint_scope_plan(
+                unresolved_pks
+            )
+            collected['after_fingerprints'] = audit.scoped_fingerprints(
+                db.session, unresolved_game_pks=unresolved_pks,
             )
         except _AuditHalt:
             pass
@@ -1167,8 +1995,17 @@ def run(args) -> dict:
                     guard_state['guard_released'] = False
 
     read_only_proof = _read_only_proof(collected, guard_state)
-    questions = build_questions(observations) if observations else []
-    classifications = classify(observations) if observations else []
+    comparison = (
+        build_authority_comparison(observations) if observations else {}
+    )
+    findings = (
+        build_findings(observations, comparison, module_drift)
+        if observations else []
+    )
+    questions = (
+        build_questions(observations, comparison, module_drift)
+        if observations else []
+    )
 
     extra_unproven = []
     if collected.get('audit_error'):
@@ -1176,7 +2013,7 @@ def run(args) -> dict:
 
     decision = audit.decide(
         questions=questions,
-        classifications=classifications,
+        findings=findings,
         read_only_proof=read_only_proof,
         artifact_ingestion=ingestion,
         budget_state=budget.state(),
@@ -1186,10 +2023,32 @@ def run(args) -> dict:
 
     return build_document(
         context=context, note=note, observations=observations,
-        questions=questions, read_only=read_only_proof,
-        artifact_ingestion=ingestion, budget_state=budget.state(),
-        decision=decision,
+        questions=questions, comparison=comparison, module_drift=module_drift,
+        read_only=read_only_proof, artifact_ingestion=ingestion,
+        budget_state=budget.state(), decision=decision,
     )
+
+
+def _official_with_lines(official, game_pk) -> dict:
+    """Expose the disputed game's official pitching-line ids for attribution."""
+    from services.mlb_api import mlb_client
+
+    official = dict(official or {})
+    if not official.get('boxscore_observed'):
+        official['boxscore_pitcher_ids'] = []
+        return official
+    try:
+        from services.sync import _extract_pitching_lines_from_boxscore
+
+        boxscore = mlb_client.get_game_boxscore(game_pk)
+        lines = _extract_pitching_lines_from_boxscore(boxscore) or []
+        official['boxscore_pitcher_ids'] = sorted({
+            line.get('player_id') for line in lines
+            if line.get('player_id') is not None
+        })
+    except Exception:  # noqa: BLE001 - unknown lines are unproven, not empty
+        official['boxscore_pitcher_ids'] = []
+    return official
 
 
 def _read_only_proof(collected, guard_state) -> dict:
@@ -1205,11 +2064,13 @@ def _read_only_proof(collected, guard_state) -> dict:
         'transaction_read_only_enabled': bool(
             collected.get('read_only_enabled')
         ),
-        'fingerprint_tables': list(audit.FINGERPRINT_TABLES),
+        'fingerprint_scopes': list(audit.FINGERPRINT_SCOPE_NAMES),
+        'fingerprint_scope_plan': collected.get('scope_plan'),
+        'fingerprinted_tables': list(audit.FINGERPRINTED_TABLES),
         'before_fingerprints': before,
         'after_fingerprints': after,
-        'fingerprints_match': audit.fingerprints_match(before, after),
-        'changed_tables': audit.changed_tables(before, after),
+        'fingerprints_match': audit.fingerprint_scopes_match(before, after),
+        'changed_scopes': audit.changed_fingerprint_scopes(before, after),
         # One bounded, refused proof statement is attempted. Zero durable
         # writes are attempted. Different facts, different fields.
         **audit.probe_evidence(detail),
@@ -1221,10 +2082,7 @@ def _read_only_proof(collected, guard_state) -> dict:
 
 
 def _refuse(*, failed=(), unproven=()) -> dict:
-    result = (
-        audit.RESULT_FAILED if failed
-        else audit.RESULT_UNPROVEN
-    )
+    result = audit.RESULT_FAILED if failed else audit.RESULT_UNPROVEN
     return {
         'result': result,
         'exit_code': audit.EXIT_CODES[result],
@@ -1235,16 +2093,21 @@ def _refuse(*, failed=(), unproven=()) -> dict:
         'unanswered_question_ids': list(audit.QUESTION_IDS),
         'questions_answered': 0,
         'questions_total': len(audit.QUESTION_IDS),
-        'classifications': [],
-        'primary_classification': None,
-        'platform_defect_classifications': [],
-        'platform_defect_proven': False,
+        'primary_classification': audit.CLASSIFICATION_UNPROVEN,
+        'contributing_classifications': [],
+        'confidence': audit.CONFIDENCE_LOW,
+        'current_condition_persists': 'unproven',
+        'recommended_next_package': audit.NEXT_ADDITIONAL_EVIDENCE_REQUIRED,
+        'recommendation_informational_only': True,
+        'recommendation_note': audit.NEXT_PACKAGE_DISCLAIMER,
+        'findings': [],
         'non_authorization_statement': audit.NON_AUTHORIZATION_STATEMENT,
     }
 
 
-def build_document(*, context, note, observations, questions, read_only,
-                   artifact_ingestion, budget_state, decision) -> dict:
+def build_document(*, context, note, observations, questions, comparison,
+                   module_drift, read_only, artifact_ingestion, budget_state,
+                   decision) -> dict:
     proof = read_only or {}
     ingestion = artifact_ingestion or {}
     artifacts = ingestion.get('artifacts') or {}
@@ -1264,7 +2127,28 @@ def build_document(*, context, note, observations, questions, read_only,
             'event_name': context.get('event_name'),
             'executed_at': datetime.now(timezone.utc).isoformat(),
         },
-        'incident': audit.incident_identity(),
+        'incident_identity': {
+            **audit.incident_identity(),
+            'artifact_availability': {
+                name: {
+                    'required': entry.get('required'),
+                    'present': entry.get('present'),
+                    'readable': entry.get('readable'),
+                    'files': entry.get('files'),
+                    'parse_error': entry.get('parse_error'),
+                    'expected_artifact_id': entry.get('expected_artifact_id'),
+                    'expected_retention_days': entry.get(
+                        'expected_retention_days'
+                    ),
+                    'digest_status': entry.get('digest_status'),
+                    'digest_verified': entry.get('digest_verified'),
+                    'digest_mismatch': entry.get('digest_mismatch'),
+                }
+                for name, entry in artifacts.items()
+            },
+            'incident_validation': ingestion.get('incident_validation'),
+            'immutable_incident_facts': audit.immutable_incident_facts(),
+        },
         'request': {
             'confirmation_valid': 'confirmation_mismatch' not in (
                 decision['failed_reasons']
@@ -1275,39 +2159,42 @@ def build_document(*, context, note, observations, questions, read_only,
             ),
             'operator_note': note,
         },
-        'evidence_artifacts': {
-            'expectations': ingestion.get('expectations'),
-            'missing_required': ingestion.get('missing_required') or [],
-            'unreadable_required': ingestion.get('unreadable_required') or [],
-            'missing_optional': ingestion.get('missing_optional') or [],
-            'all_required_present': ingestion.get('all_required_present'),
-            'per_artifact': {
-                name: {
-                    'required': entry.get('required'),
-                    'present': entry.get('present'),
-                    'readable': entry.get('readable'),
-                    'files': entry.get('files'),
-                    'parse_error': entry.get('parse_error'),
-                }
-                for name, entry in artifacts.items()
-            },
-            'ledger_report': (
-                (artifacts.get(audit.ARTIFACT_LEDGER_AUDIT) or {})
-                .get('ledger_report')
-            ),
-        },
-        'source_call_budget': budget_state,
         'read_only_proof': proof,
-        'observations': observations,
+        'source_call_budget': budget_state,
+        'canonical_module_drift': module_drift,
+        'official_game_evidence': observations.get('official_status'),
+        'stored_game_evidence': {
+            'schedule': observations.get('stored_schedule'),
+            'baseball_state': observations.get('baseball_state'),
+        },
+        'authority_comparison': comparison,
+        'appearance_ledger_evidence': observations.get('appearance_ledger'),
+        'player_attribution': observations.get('player_mismatches'),
+        'unresolved_final_games': (
+            (observations.get('completeness') or {})
+            .get('unresolved_classification')
+        ),
+        'game_ingestion_completeness': (
+            (observations.get('completeness') or {}).get('completeness')
+        ),
+        'snapshot_publication': observations.get('snapshot_gate'),
+        'dead_letter_backlog': observations.get('dead_letter_backlog'),
         'questions': questions,
         'root_cause': {
-            'classifications': decision['classifications'],
+            'result': decision['result'],
             'primary_classification': decision['primary_classification'],
-            'platform_defect_classifications': decision[
-                'platform_defect_classifications'
+            'contributing_classifications': decision[
+                'contributing_classifications'
             ],
-            'platform_defect_proven': decision['platform_defect_proven'],
-            'classification_vocabulary': list(audit.CLASSIFICATION_PRECEDENCE),
+            'confidence': decision['confidence'],
+            'current_condition_persists': decision[
+                'current_condition_persists'
+            ],
+            'findings': decision['findings'],
+            'recommended_next_package': decision['recommended_next_package'],
+            'recommendation_informational_only': True,
+            'recommendation_note': decision['recommendation_note'],
+            'classification_vocabulary': list(audit.PRIMARY_CLASSIFICATIONS),
         },
         'verdict': {
             'result': decision['result'],
@@ -1323,14 +2210,42 @@ def build_document(*, context, note, observations, questions, read_only,
     }
 
 
+# ── Rendering ───────────────────────────────────────────────────────────────
+
+REQUIRED_MARKDOWN_SECTIONS = (
+    '# Postgame publication incident audit',
+    '## Incident identity',
+    '## Read-only proof',
+    '## Evidence artifacts',
+    '## MLB source-call budget',
+    '## Official game evidence',
+    '## Stored game evidence',
+    '## Authority comparison',
+    '## Player attribution',
+    '## Unresolved final games',
+    '## Snapshot publication',
+    '## Questions',
+    '## Root cause',
+)
+
+
 def render_markdown(document) -> str:
     identity = document['identity']
-    incident = document['incident']
+    incident = document['incident_identity']
     verdict = document['verdict']
     proof = document['read_only_proof']
     budget = document['source_call_budget']
-    evidence = document['evidence_artifacts']
-    root_cause = document['root_cause']
+    root = document['root_cause']
+    comparison = document.get('authority_comparison') or {}
+    players = document.get('player_attribution') or {}
+    unresolved = document.get('unresolved_final_games') or {}
+    snapshot = document.get('snapshot_publication') or {}
+    official = document.get('official_game_evidence') or {}
+    stored = (document.get('stored_game_evidence') or {}).get('schedule') or {}
+    baseball = (
+        (document.get('stored_game_evidence') or {}).get('baseball_state')
+        or {}
+    )
 
     lines = [
         '# Postgame publication incident audit',
@@ -1339,84 +2254,72 @@ def render_markdown(document) -> str:
         '',
         verdict['explanation'],
         '',
-        '## Incident',
+        '## Incident identity',
         '',
         '| field | value |',
         '| :--- | :--- |',
         f"| incident run | {incident['workflow_run_id']} |",
         f"| incident head | `{incident['head_sha']}` |",
-        f"| cycle | {incident['cycle']} |",
+        f"| cycle | {incident['cycle_kind']} |",
         f"| slate | {incident['slate_date']} |",
-        f"| game | {incident['game_pk']} |",
+        f"| disputed game | {incident['disputed_game_pk']} |",
         f"| candidate snapshot | {incident['candidate_snapshot_id']} |",
-        f"| serving snapshot | {incident['serving_snapshot_id']} |",
+        f"| served snapshot | {incident['served_snapshot_id']} |",
         f"| sync run | {incident['sync_run_id']} |",
-        '',
-        '## Audit identity',
-        '',
-        '| field | value |',
-        '| :--- | :--- |',
-        f"| audit type | `{identity['audit_type']}` |",
-        f"| schema version | {identity['schema_version']} |",
-        f"| run | {identity.get('workflow_run_id')} "
-        f"(attempt {identity.get('workflow_run_attempt')}) |",
-        f"| commit | `{identity.get('commit_sha')}` |",
-        f"| actor | {identity.get('actor')} |",
+        f"| audit commit | `{identity.get('commit_sha')}` |",
         f"| executed at | {identity.get('executed_at')} |",
+        '',
+        'Incident interpretation preserved from the run:',
+        '',
+        '| stage | outcome |',
+        '| :--- | :--- |',
+    ]
+    for stage, outcome in (
+        incident['immutable_incident_facts']['interpretation'].items()
+    ):
+        lines.append(f'| {stage} | {outcome} |')
+
+    lines += [
         '',
         '## Read-only proof',
         '',
         '| check | value |',
         '| :--- | :--- |',
-        f"| advisory guard acquired | {proof.get('advisory_guard_acquired')} |",
+        f"| advisory guard acquired | "
+        f"{proof.get('advisory_guard_acquired')} |",
         f"| release attempted | "
         f"{proof.get('advisory_guard_release_attempted')} |",
         f"| release confirmed | {proof.get('advisory_guard_released')} |",
         f"| transaction read-only | "
         f"{proof.get('transaction_read_only_enabled')} |",
-        f"| fingerprints match | {proof.get('fingerprints_match')} |",
-        f"| changed tables | {proof.get('changed_tables')} |",
-        '',
-        '### Write accounting',
-        '',
-        'The audit issues exactly one bounded proof statement, expected to be '
-        'refused and rolled back. It attempts zero durable writes. Those are '
-        'different facts and are reported as different rows.',
-        '',
-        '| field | value |',
-        '| :--- | :--- |',
-        f"| read-only probe attempted | "
-        f"{proof.get('read_only_probe_attempted')} |",
-        f"| read-only probe count | {proof.get('read_only_probe_count')} |",
-        f"| read-only probe statement class | "
-        f"`{proof.get('read_only_probe_statement_class')}` |",
-        f"| read-only probe bounded to zero rows | "
+        f"| probe attempted | {proof.get('read_only_probe_attempted')} |",
+        f"| probe count | {proof.get('read_only_probe_count')} |",
+        f"| probe class | `{proof.get('read_only_probe_statement_class')}` |",
+        f"| bounded to zero rows | "
         f"{proof.get('read_only_probe_bounded_to_zero_rows')} |",
-        f"| read-only probe refused | "
-        f"{proof.get('read_only_probe_refused')} |",
+        f"| probe refused | {proof.get('read_only_probe_refused')} |",
         f"| durable write attempts | {proof.get('durable_write_attempts')} |",
-        f"| durable rows created | {proof.get('durable_rows_created')} |",
-        f"| durable rows updated | {proof.get('durable_rows_updated')} |",
-        f"| durable rows deleted | {proof.get('durable_rows_deleted')} |",
-        f"| commits performed by audit | "
-        f"{proof.get('commits_performed_by_audit')} |",
+        f"| rows created/updated/deleted | "
+        f"{proof.get('durable_rows_created')}/"
+        f"{proof.get('durable_rows_updated')}/"
+        f"{proof.get('durable_rows_deleted')} |",
+        f"| commits performed | {proof.get('commits_performed_by_audit')} |",
+        f"| fingerprint scopes | {proof.get('fingerprint_scopes')} |",
+        f"| fingerprints match | {proof.get('fingerprints_match')} |",
+        f"| changed scopes | {proof.get('changed_scopes')} |",
         '',
         '## Evidence artifacts',
         '',
-        '| artifact | required | present | readable | parse error |',
+        '| artifact | required | present | digest | parse error |',
         '| :--- | :--- | :--- | :--- | :--- |',
     ]
-    for name, entry in sorted((evidence.get('per_artifact') or {}).items()):
+    for name, entry in sorted(
+        (incident.get('artifact_availability') or {}).items()
+    ):
         lines.append(
             f"| `{name}` | {entry.get('required')} | {entry.get('present')} "
-            f"| {entry.get('readable')} | {entry.get('parse_error')} |"
+            f"| {entry.get('digest_status')} | {entry.get('parse_error')} |"
         )
-    if evidence.get('missing_optional'):
-        lines += [
-            '',
-            'Optional artifacts absent (reported, not inferred away): '
-            f"{evidence['missing_optional']}.",
-        ]
 
     lines += [
         '',
@@ -1426,12 +2329,111 @@ def render_markdown(document) -> str:
         '| :--- | :--- |',
         f"| limits | {budget.get('limits')} |",
         f"| total limit | {budget.get('total_limit')} |",
-        f"| calls spent | {budget.get('calls_spent')} |",
-        f"| total spent | {budget.get('total_spent')} |",
-        f"| calls refused by budget | "
-        f"{budget.get('calls_refused_by_budget')} |",
-        f"| source errors | {budget.get('total_source_errors')} |",
-        f"| budget exhausted | {budget.get('budget_exhausted')} |",
+        f"| attempted | {budget.get('calls_attempted')} |",
+        f"| succeeded | {budget.get('calls_succeeded')} |",
+        f"| failed | {budget.get('calls_failed')} |",
+        f"| retries | {budget.get('total_retries')} |",
+        f"| refused by budget | {budget.get('calls_refused_by_budget')} |",
+        f"| total latency (ms) | {budget.get('total_source_latency_ms')} |",
+        f"| budget remaining | {budget.get('budget_remaining')} |",
+        f"| exhausted | {budget.get('budget_exhausted')} |",
+        '',
+        '## Official game evidence',
+        '',
+        '| field | value |',
+        '| :--- | :--- |',
+        f"| observed | {official.get('game_found_in_source')} |",
+        f"| official classification | "
+        f"{official.get('official_classification')} |",
+        f"| canonical finality state | "
+        f"{official.get('canonical_finality_state')} |",
+        f"| canonical status state | "
+        f"{official.get('canonical_status_state')} |",
+        f"| source revision | "
+        f"`{(official.get('normalized') or {}).get('source_revision')}` |",
+        f"| relationship | {official.get('relationship')} |",
+        '',
+        '## Stored game evidence',
+        '',
+        '| field | value |',
+        '| :--- | :--- |',
+        f"| schedule rows | {stored.get('row_count')} |",
+        f"| status states | {stored.get('distinct_status_states')} |",
+        f"| rows agree | {stored.get('rows_agree')} |",
+        f"| linked replacement games | "
+        f"{stored.get('linked_replacement_game_pks')} |",
+        f"| game_logs | "
+        f"{(baseball.get('game_logs') or {}).get('row_count')} |",
+        f"| postgame marker | "
+        f"{(baseball.get('postgame_processed_game') or {}).get('row_count')} |",
+        f"| work item | "
+        f"{(baseball.get('game_ingestion_work_item') or {}).get('row_count')} |",
+        '',
+        '## Authority comparison',
+        '',
+        '| authority | classification |',
+        '| :--- | :--- |',
+        f"| official source | "
+        f"{comparison.get('official_source_classification')} |",
+        f"| schedule parser | "
+        f"{comparison.get('schedule_parser_classification')} |",
+        f"| stored schedule | "
+        f"{comparison.get('stored_schedule_classification')} |",
+        f"| planner | {comparison.get('planner_classification')} |",
+        f"| appearance ledger | "
+        f"{comparison.get('appearance_ledger_classification')} |",
+        '',
+        f"Exact disagreements: {comparison.get('exact_disagreements')}",
+        '',
+        '## Player attribution',
+        '',
+        '| player | tracked | in disputed lines | classification |',
+        '| ---: | :--- | :--- | :--- |',
+    ]
+    for entry in players.get('players') or ():
+        lines.append(
+            f"| {entry.get('player_id')} | {entry.get('pitcher_tracked')} "
+            f"| {entry.get('in_disputed_game_official_lines')} "
+            f"| `{entry.get('classification')}` |"
+        )
+
+    lines += [
+        '',
+        '## Unresolved final games',
+        '',
+        f"- membership provenance: `{unresolved.get('membership_provenance')}`",
+        f"- incident reported count: "
+        f"{unresolved.get('incident_reported_count')}",
+        f"- reconstructed count: {unresolved.get('reconstructed_count')}",
+        f"- authority count: "
+        f"{unresolved.get('authority_unresolved_final_games')}",
+        f"- reconciles: {unresolved.get('reconciles_with_authority')}",
+        f"- scope valid / invalid: {unresolved.get('scope_valid_count')} / "
+        f"{unresolved.get('scope_invalid_count')}",
+        '',
+        '| category | count |',
+        '| :--- | ---: |',
+    ]
+    for key, value in sorted(
+        (unresolved.get('classification_counts') or {}).items()
+    ):
+        lines.append(f'| `{key}` | {value} |')
+
+    lines += [
+        '',
+        '## Snapshot publication',
+        '',
+        '| field | value |',
+        '| :--- | :--- |',
+        f"| candidate exists | {snapshot.get('candidate_still_exists')} |",
+        f"| candidate pending | {snapshot.get('candidate_still_pending')} |",
+        f"| published later | {snapshot.get('candidate_published_later')} |",
+        f"| currently served | "
+        f"{snapshot.get('currently_served_snapshot_id')} |",
+        f"| prior still serving | {snapshot.get('prior_still_serving')} |",
+        f"| withholding fail-closed | "
+        f"{snapshot.get('withholding_was_fail_closed')} |",
+        f"| gate scope | {snapshot.get('gate_scope')} |",
         '',
         '## Questions',
         '',
@@ -1444,37 +2446,43 @@ def render_markdown(document) -> str:
         )
     for question in document['questions']:
         lines += [
-            '',
-            f"### {question['question']}",
-            '',
-            question['answer'] or '',
+            '', f"### {question['question']}", '', question['answer'] or '',
         ]
         if question.get('unproven_reason'):
-            lines.append('')
-            lines.append(f"Unproven: `{question['unproven_reason']}`")
+            lines += ['', f"Unproven: `{question['unproven_reason']}`"]
 
     lines += [
         '',
         '## Root cause',
         '',
-        f"- primary: `{root_cause.get('primary_classification')}`",
-        f"- all classifications: {root_cause.get('classifications')}",
-        f"- platform defect classifications: "
-        f"{root_cause.get('platform_defect_classifications')}",
-        f"- platform defect proven: {root_cause.get('platform_defect_proven')}",
+        f"- primary: `{root.get('primary_classification')}`",
+        f"- contributing: {root.get('contributing_classifications')}",
+        f"- confidence: {root.get('confidence')}",
+        f"- current condition persists: "
+        f"{root.get('current_condition_persists')}",
+        f"- recommended next package: "
+        f"`{root.get('recommended_next_package')}`",
         '',
+        root.get('recommendation_note') or '',
+        '',
+        '| classification | proven | supporting | counter |',
+        '| :--- | :--- | ---: | ---: |',
     ]
+    for finding in root.get('findings') or ():
+        lines.append(
+            f"| `{finding.get('classification')}` | {finding.get('proven')} "
+            f"| {len(finding.get('supporting_evidence') or ())} "
+            f"| {len(finding.get('counter_evidence') or ())} |"
+        )
 
     if verdict['failed_reasons']:
-        lines += ['## Failed reasons', '']
+        lines += ['', '## Failed reasons', '']
         lines += [f'- `{reason}`' for reason in verdict['failed_reasons']]
-        lines.append('')
     if verdict['unproven_reasons']:
-        lines += ['## Unproven reasons', '']
+        lines += ['', '## Unproven reasons', '']
         lines += [f'- `{reason}`' for reason in verdict['unproven_reasons']]
-        lines.append('')
 
-    lines += ['---', '', verdict['non_authorization_statement'], '']
+    lines += ['', '---', '', verdict['non_authorization_statement'], '']
     return '\n'.join(lines)
 
 
@@ -1501,13 +2509,19 @@ def write_artifacts(document, artifact_dir) -> dict:
         'primary_classification': document['root_cause'][
             'primary_classification'
         ],
-        'platform_defect_proven': document['root_cause'][
-            'platform_defect_proven'
+        'contributing_classifications': document['root_cause'][
+            'contributing_classifications'
         ],
+        'confidence': document['root_cause']['confidence'],
+        'recommended_next_package': document['root_cause'][
+            'recommended_next_package'
+        ],
+        'recommendation_informational_only': True,
         'commit_sha': document['identity'].get('commit_sha'),
         'workflow_run_id': document['identity'].get('workflow_run_id'),
         'summary_filename': SUMMARY_JSON,
         'markdown_filename': SUMMARY_MARKDOWN,
+        'metadata_filename': METADATA_JSON,
         'non_authorization_statement': audit.NON_AUTHORIZATION_STATEMENT,
     }
     (target / METADATA_JSON).write_text(
@@ -1516,16 +2530,28 @@ def write_artifacts(document, artifact_dir) -> dict:
     return metadata
 
 
+# ── Small helpers ───────────────────────────────────────────────────────────
+
 def _iso(value):
     if value is None:
         return None
     return value.isoformat() if hasattr(value, 'isoformat') else str(value)
 
 
-def _safe_text(value, *, limit=60):
+def _text(value, *, limit=60):
     if value is None:
         return None
-    return str(value).strip()[:limit]
+    text = str(value).strip()
+    return text[:limit] if text else None
+
+
+def _int(value):
+    if isinstance(value, bool):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def main(argv=None) -> int:
@@ -1536,7 +2562,8 @@ def main(argv=None) -> int:
         document = build_document(
             context=event_context(args),
             note=qualification.sanitize_note(args.operator_note),
-            observations={}, questions=[], read_only={},
+            observations={}, questions=[], comparison={},
+            module_drift=audit.canonical_module_drift({}), read_only={},
             artifact_ingestion={},
             budget_state=audit.SourceCallBudget().state(),
             decision=_refuse(unproven=[audit.UNPROVEN_AUDIT_EXECUTION_ERROR]),
