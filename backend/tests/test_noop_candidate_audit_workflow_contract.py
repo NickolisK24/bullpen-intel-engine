@@ -542,8 +542,9 @@ def test_the_only_sql_mutation_verb_is_the_refused_probe(service_tree):
     assert probe.startswith('UPDATE game_logs SET')
     assert 'WHERE 1 = 0' in probe
     # The class label is reported so the artifact can name the probe without
-    # reproducing its SQL.
-    assert class_labels == ['UPDATE'], class_labels
+    # reproducing its SQL. It appears once where the probe runs and once in the
+    # expected-evidence contract; both are labels, neither is a statement.
+    assert class_labels and set(class_labels) == {'UPDATE'}, class_labels
 
 
 def test_the_audit_service_reaches_the_lane_in_shadow_only(service_tree):
@@ -622,3 +623,102 @@ def test_the_shadow_observer_remains_credential_free(sync_workflow):
 def test_the_scheduled_sync_never_invokes_the_audit(sync_workflow):
     assert 'candidate_audit' not in str(sync_workflow)
     assert 'candidate-audit' not in str(sync_workflow)
+
+
+# ── Summary count correction ────────────────────────────────────────────────
+# The summary row labelled "candidates evaluated" previously read
+# `candidates_selected`, so an early-stopped audit would display the selected
+# count as though every one had been evaluated.
+
+
+@pytest.fixture(scope='module')
+def summary_script(job):
+    return _step(job, 'Append the audit summary')['run']
+
+
+def test_the_summary_renders_a_selected_row_from_the_selected_field(
+    summary_script,
+):
+    assert (
+        '| candidates selected | {discovery.get(\'candidates_selected\')} |'
+        in summary_script
+    )
+
+
+def test_the_summary_renders_an_evaluated_row_from_the_evaluated_field(
+    summary_script,
+):
+    assert (
+        '| candidates evaluated | {discovery.get(\'candidates_evaluated\')} |'
+        in summary_script
+    )
+
+
+def test_neither_count_field_is_substituted_for_the_other(summary_script):
+    for line in summary_script.splitlines():
+        if '| candidates evaluated |' in line:
+            assert "get('candidates_evaluated')" in line
+            assert "get('candidates_selected')" not in line
+        if '| candidates selected |' in line:
+            assert "get('candidates_selected')" in line
+            assert "get('candidates_evaluated')" not in line
+
+
+def test_the_summary_also_reports_the_pool_size_and_configured_limit(
+    summary_script,
+):
+    assert "get('candidate_pool_size')" in summary_script
+    assert "get('configured_candidate_limit')" in summary_script
+
+
+def test_the_summary_displays_the_real_evaluated_count_after_early_stopping(
+    job, tmp_path,
+):
+    """Execute the real summary script against an early-stopped document."""
+    import json
+    import subprocess
+    import sys
+
+    document = {
+        'identity': {'commit_sha': 'a' * 40, 'workflow_run_id': '123'},
+        'verdict': {
+            'result': 'COMPLETE_ELIGIBLE_FOUND', 'failed_reasons': [],
+            'unproven_reasons': [], 'non_authorization_statement': 'x',
+        },
+        'read_only_proof': {
+            'transaction_read_only_enabled': True,
+            'read_only_probe_refused': True,
+            'fingerprints_match': True, 'changed_tables': [],
+        },
+        'discovery': {
+            'completed_work_items_found': 5,
+            'candidate_pool_size': 5,
+            'candidates_selected': 5,
+            'candidates_evaluated': 2,
+            'configured_candidate_limit': 20,
+            'bounded_stop_reason': 'eligible_target_reached',
+        },
+        'candidate_summary': {
+            'eligible_count': 2, 'ineligible_count': 0, 'unproven_count': 0,
+            'suggested_candidate_game_pk': 111, 'classification_counts': {},
+        },
+    }
+    target = tmp_path / 'artifacts/noop-qualification-candidate-audit'
+    target.mkdir(parents=True)
+    (target / 'candidate-audit-summary.json').write_text(json.dumps(document))
+
+    script = _step(job, 'Append the audit summary')['run']
+    # Drop the shell remainder of the heredoc opening line.
+    body = script.split("<<'PY'", 1)[1].split('\n', 1)[1].rsplit('PY', 1)[0]
+    path = tmp_path / 'summary.py'
+    path.write_text(body)
+
+    result = subprocess.run(
+        [sys.executable, str(path)], capture_output=True, text=True,
+        cwd=tmp_path,
+    )
+    assert result.returncode == 0, result.stderr
+    assert '| candidates selected | 5 |' in result.stdout
+    assert '| candidates evaluated | 2 |' in result.stdout
+    # The selected count must not appear on the evaluated row.
+    assert '| candidates evaluated | 5 |' not in result.stdout

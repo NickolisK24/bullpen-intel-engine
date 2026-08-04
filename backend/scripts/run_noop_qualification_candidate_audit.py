@@ -235,6 +235,10 @@ def run(args) -> dict:
             collected.get('after_fingerprints'),
         ),
         'fingerprint_tables': list(audit.FINGERPRINT_TABLES),
+        # Promoted to the top level so the verdict validates them directly.
+        # Left only inside the nested detail object they were evidence nobody
+        # checked.
+        **audit.probe_evidence(collected.get('read_only_detail')),
         **guard_state,
     }
 
@@ -488,11 +492,30 @@ def render_markdown(document) -> str:
         f"| release confirmed | {proof.get('advisory_guard_released')} |",
         f"| transaction read-only | "
         f"{proof.get('transaction_read_only_enabled')} |",
-        f"| write probe refused | {proof.get('write_probe_refused')} |",
         f"| fingerprints match | {proof.get('fingerprints_match')} |",
         f"| changed tables | {proof.get('changed_tables')} |",
-        f"| writes attempted by audit | "
-        f"{proof.get('writes_attempted_by_audit')} |",
+        '',
+        '### Write accounting',
+        '',
+        'The audit issues exactly one bounded proof statement, expected to be '
+        'refused and rolled back. It attempts zero durable writes. Those are '
+        'different facts and are reported as different rows.',
+        '',
+        '| field | value |',
+        '| :--- | :--- |',
+        f"| read-only probe attempted | "
+        f"{proof.get('read_only_probe_attempted')} |",
+        f"| read-only probe count | {proof.get('read_only_probe_count')} |",
+        f"| read-only probe statement class | "
+        f"`{proof.get('read_only_probe_statement_class')}` |",
+        f"| read-only probe bounded to zero rows | "
+        f"{proof.get('read_only_probe_bounded_to_zero_rows')} |",
+        f"| read-only probe refused | "
+        f"{proof.get('read_only_probe_refused')} |",
+        f"| durable write attempts | {proof.get('durable_write_attempts')} |",
+        f"| durable rows created | {proof.get('durable_rows_created')} |",
+        f"| durable rows updated | {proof.get('durable_rows_updated')} |",
+        f"| durable rows deleted | {proof.get('durable_rows_deleted')} |",
         f"| commits performed by audit | "
         f"{proof.get('commits_performed_by_audit')} |",
         '',

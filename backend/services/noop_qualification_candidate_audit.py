@@ -210,6 +210,105 @@ SHADOW_STATUS_CLASSIFICATIONS = {
 MAX_REASON_CODES = 8
 
 
+# ── Read-only probe contract ────────────────────────────────────────────────
+# The audit issues exactly ONE bounded SQL write statement: the proof that the
+# transaction is genuinely read-only. Reporting that as "zero SQL writes" would
+# be false, and leaving it unvalidated would make it evidence nobody checks.
+# These are the values a completed audit must positively demonstrate.
+EXPECTED_PROBE_EVIDENCE = {
+    'read_only_probe_attempted': True,
+    'read_only_probe_count': 1,
+    'read_only_probe_statement_class': 'UPDATE',
+    'read_only_probe_bounded_to_zero_rows': True,
+    'read_only_probe_refused': True,
+    'durable_write_attempts': 0,
+}
+
+PROBE_EVIDENCE_FIELDS = tuple(EXPECTED_PROBE_EVIDENCE)
+
+# UNPROVEN — the evidence is absent or incomplete.
+UNPROVEN_PROBE_EVIDENCE_MISSING = 'read_only_probe_evidence_missing'
+UNPROVEN_PROBE_NOT_ATTEMPTED = 'read_only_probe_not_attempted'
+UNPROVEN_PROBE_COUNT_UNKNOWN = 'read_only_probe_count_unknown'
+# FAILED — a definite violation was observed.
+FAILED_PROBE_COUNT_UNEXPECTED = 'read_only_probe_count_unexpected'
+FAILED_PROBE_STATEMENT_CLASS_UNEXPECTED = (
+    'read_only_probe_statement_class_unexpected'
+)
+FAILED_PROBE_NOT_BOUNDED = 'read_only_probe_not_bounded_to_zero_rows'
+FAILED_PROBE_ACCEPTED = 'read_only_probe_accepted_not_refused'
+FAILED_DURABLE_WRITE_ATTEMPTED = 'durable_write_attempted'
+
+
+def probe_evidence(detail) -> dict:
+    """Lift the probe fields out of the enforcement detail, unmodified.
+
+    Missing keys stay missing rather than defaulting to a passing value: an
+    absent field must read as unproven, never as proof.
+    """
+    detail = detail or {}
+    return {
+        field: detail[field]
+        for field in PROBE_EVIDENCE_FIELDS
+        if field in detail
+    }
+
+
+def evaluate_probe_evidence(proof) -> dict:
+    """Positively validate the read-only probe. Absence is never proof."""
+    proof = proof or {}
+    failed: list[str] = []
+    unproven: list[str] = []
+
+    missing = [
+        field for field in PROBE_EVIDENCE_FIELDS if field not in proof
+    ]
+    if missing:
+        unproven.append(UNPROVEN_PROBE_EVIDENCE_MISSING)
+        return {
+            'failed_reasons': failed,
+            'unproven_reasons': unproven,
+            'missing_fields': missing,
+            'probe_evidence_complete': False,
+            'probe_evidence_valid': False,
+        }
+
+    if proof.get('read_only_probe_attempted') is not True:
+        unproven.append(UNPROVEN_PROBE_NOT_ATTEMPTED)
+
+    count = proof.get('read_only_probe_count')
+    if not isinstance(count, int) or isinstance(count, bool):
+        unproven.append(UNPROVEN_PROBE_COUNT_UNKNOWN)
+    elif count != EXPECTED_PROBE_EVIDENCE['read_only_probe_count']:
+        # A definite, observed wrong count.
+        failed.append(FAILED_PROBE_COUNT_UNEXPECTED)
+
+    if proof.get('read_only_probe_statement_class') != (
+        EXPECTED_PROBE_EVIDENCE['read_only_probe_statement_class']
+    ):
+        failed.append(FAILED_PROBE_STATEMENT_CLASS_UNEXPECTED)
+
+    if proof.get('read_only_probe_bounded_to_zero_rows') is not True:
+        failed.append(FAILED_PROBE_NOT_BOUNDED)
+
+    if proof.get('read_only_probe_refused') is not True:
+        failed.append(FAILED_PROBE_ACCEPTED)
+
+    attempts = proof.get('durable_write_attempts')
+    if not isinstance(attempts, int) or isinstance(attempts, bool):
+        unproven.append(UNPROVEN_PROBE_EVIDENCE_MISSING)
+    elif attempts != 0:
+        failed.append(FAILED_DURABLE_WRITE_ATTEMPTED)
+
+    return {
+        'failed_reasons': failed,
+        'unproven_reasons': unproven,
+        'missing_fields': [],
+        'probe_evidence_complete': True,
+        'probe_evidence_valid': not failed and not unproven,
+    }
+
+
 class ReadOnlyNotEnforced(RuntimeError):
     """The session could not be proven read-only, so nothing is audited."""
 
@@ -755,6 +854,12 @@ def decide(*, candidates, read_only_proof, discovery_available=True) -> dict:
         unproven.append('writer_guard_unavailable')
     elif not (proof.get('guard_release_attempted') and proof.get('guard_released')):
         unproven.append('writer_guard_release_unproven')
+    # The probe is part of the verdict, not decoration. A COMPLETE result is
+    # unreachable unless every probe condition was positively demonstrated.
+    probe = evaluate_probe_evidence(proof)
+    failed.extend(probe['failed_reasons'])
+    unproven.extend(probe['unproven_reasons'])
+
     if not proof.get('before_fingerprints') or not proof.get(
         'after_fingerprints'
     ):
@@ -802,6 +907,9 @@ def decide(*, candidates, read_only_proof, discovery_available=True) -> dict:
             if c['primary_classification'] in UNPROVEN_CLASSIFICATIONS
         ]),
         'classification_counts': dict(sorted(counts.items())),
+        'probe_evidence_valid': probe['probe_evidence_valid'],
+        'probe_evidence_complete': probe['probe_evidence_complete'],
+        'probe_evidence_missing_fields': probe['missing_fields'],
         'ordered_eligible_game_pks': [c['game_pk'] for c in eligible],
         # First eligible candidate under the declared deterministic ordering.
         'suggested_candidate_game_pk': (

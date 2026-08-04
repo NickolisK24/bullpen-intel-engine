@@ -290,6 +290,11 @@ def test_every_declared_classification_appears_in_the_precedence():
             'STOP_REASON_TARGET_REACHED', 'STOP_REASON_CANDIDATE_LIMIT',
             'STOP_REASON_POOL_EXHAUSTED', 'PERMITTED_INGESTION_MODE',
             'SHADOW_STATUS_COMPLETE', 'SHADOW_STATUS_INCOMPLETE',
+            'UNPROVEN_PROBE_EVIDENCE_MISSING', 'UNPROVEN_PROBE_NOT_ATTEMPTED',
+            'UNPROVEN_PROBE_COUNT_UNKNOWN', 'FAILED_PROBE_COUNT_UNEXPECTED',
+            'FAILED_PROBE_STATEMENT_CLASS_UNEXPECTED',
+            'FAILED_PROBE_NOT_BOUNDED', 'FAILED_PROBE_ACCEPTED',
+            'FAILED_DURABLE_WRITE_ATTEMPTED',
         )
     }
     assert declared <= set(audit.CLASSIFICATION_PRECEDENCE)
@@ -351,6 +356,8 @@ def proof(**overrides):
         'before_fingerprints': {'game_logs': 'x'},
         'after_fingerprints': {'game_logs': 'x'},
         'fingerprints_match': True,
+        # A COMPLETE result now requires positively proven probe evidence.
+        **audit.EXPECTED_PROBE_EVIDENCE,
     }
     base.update(overrides)
     return base
@@ -719,3 +726,238 @@ def test_the_probe_is_never_reported_as_zero_sql_write_attempts():
 
     source = inspect.getsource(audit)
     assert 'writes_attempted_by_audit' not in source
+
+
+# ── Markdown evidence (defect 2) ───────────────────────────────────────────
+
+
+def _document(**overrides):
+    """A successful audit document, shaped as the script builds it."""
+    proof = {
+        'advisory_guard_acquired': True,
+        'advisory_guard_release_attempted': True,
+        'advisory_guard_released': True,
+        'transaction_read_only_enabled': True,
+        'fingerprints_match': True,
+        'changed_tables': [],
+        'fingerprint_tables': list(audit.FINGERPRINT_TABLES),
+        'read_only_probe_attempted': True,
+        'read_only_probe_count': 1,
+        'read_only_probe_statement_class': 'UPDATE',
+        'read_only_probe_bounded_to_zero_rows': True,
+        'read_only_probe_refused': True,
+        'durable_write_attempts': 0,
+        'durable_rows_created': 0,
+        'durable_rows_updated': 0,
+        'durable_rows_deleted': 0,
+        'commits_performed_by_audit': 0,
+    }
+    base = {
+        'identity': {
+            'audit_type': audit.AUDIT_TYPE, 'schema_version': '1',
+            'repository': 'NickolisK24/bullpen-intel-engine',
+            'workflow_run_id': '1', 'workflow_run_attempt': '1',
+            'commit_sha': 'a' * 40, 'ref': 'refs/heads/main',
+            'actor': 'NickolisK24', 'executed_at': '2026-08-04T00:00:00Z',
+        },
+        'request': {
+            'lookback_days': 30, 'candidate_limit': 20,
+            'eligible_target_count': 5,
+        },
+        'read_only_proof': proof,
+        'discovery': {
+            'completed_work_items_found': 3, 'duplicate_count': 0,
+            'candidates_selected': 3, 'candidates_evaluated': 2,
+            'deterministic_ordering': 'completed_at DESC',
+            'bounded_stop_reason': 'eligible_target_reached',
+        },
+        'candidate_summary': {
+            'eligible_count': 1, 'ineligible_count': 1, 'unproven_count': 0,
+            'ordered_eligible_game_pks': [111],
+            'suggested_candidate_game_pk': 111,
+            'suggestion_note': 'informational only',
+        },
+        'candidates': [],
+        'verdict': {
+            'result': audit.RESULT_ELIGIBLE_FOUND, 'exit_code': 0,
+            'failed_reasons': [], 'unproven_reasons': [],
+            'explanation': 'ok',
+            'non_authorization_statement': (
+                audit.NON_AUTHORIZATION_STATEMENT
+            ),
+        },
+    }
+    base.update(overrides)
+    return base
+
+
+def _render():
+    import scripts.run_noop_qualification_candidate_audit as script
+
+    return script.render_markdown(_document())
+
+
+def test_the_markdown_never_mentions_the_removed_field():
+    assert 'writes_attempted_by_audit' not in _render()
+    assert 'writes attempted by audit' not in _render()
+
+
+@pytest.mark.parametrize('label', [
+    'read-only probe attempted', 'read-only probe count',
+    'read-only probe statement class',
+    'read-only probe bounded to zero rows', 'read-only probe refused',
+    'durable write attempts', 'durable rows created', 'durable rows updated',
+    'durable rows deleted', 'commits performed by audit',
+])
+def test_the_markdown_renders_every_probe_field(label):
+    assert label in _render()
+
+
+def test_no_none_probe_value_appears_in_a_successful_document():
+    rendered = _render()
+    for line in rendered.splitlines():
+        if 'probe' in line.lower() or 'durable' in line.lower():
+            assert 'None' not in line, line
+
+
+def test_the_markdown_states_the_bounded_statement_and_zero_durable_writes():
+    rendered = _render()
+    assert 'exactly one bounded proof statement' in rendered
+    assert 'zero durable writes' in rendered
+    assert '| durable write attempts | 0 |' in rendered
+    assert '| read-only probe count | 1 |' in rendered
+    assert '| read-only probe refused | True |' in rendered
+
+
+def test_the_markdown_does_not_reproduce_the_probe_sql():
+    rendered = _render()
+    assert 'WHERE 1 = 0' not in rendered
+    assert 'stat_correction_count' not in rendered
+
+
+# ── Probe evidence is part of the verdict (defect 3) ───────────────────────
+
+
+def _proof(**overrides):
+    base = {
+        'read_only_enabled': True,
+        'guard_acquired': True,
+        'guard_release_attempted': True,
+        'guard_released': True,
+        'before_fingerprints': {'game_logs': 'x'},
+        'after_fingerprints': {'game_logs': 'x'},
+        'fingerprints_match': True,
+        **audit.EXPECTED_PROBE_EVIDENCE,
+    }
+    base.update(overrides)
+    return base
+
+
+def test_a_complete_audit_requires_the_full_probe_evidence():
+    decision = audit.decide(candidates=[], read_only_proof=_proof())
+    assert decision['result'] == audit.RESULT_NO_ELIGIBLE_CANDIDATE
+    assert decision['probe_evidence_valid'] is True
+    assert decision['probe_evidence_complete'] is True
+
+
+@pytest.mark.parametrize('field', audit.PROBE_EVIDENCE_FIELDS)
+def test_missing_probe_evidence_is_unproven(field):
+    proof = _proof()
+    proof.pop(field)
+    decision = audit.decide(candidates=[], read_only_proof=proof)
+    assert decision['result'] == audit.RESULT_UNPROVEN
+    assert audit.UNPROVEN_PROBE_EVIDENCE_MISSING in (
+        decision['unproven_reasons']
+    )
+    assert decision['probe_evidence_complete'] is False
+
+
+def test_a_probe_that_was_not_attempted_is_unproven():
+    decision = audit.decide(candidates=[], read_only_proof=_proof(
+        read_only_probe_attempted=False))
+    assert decision['result'] == audit.RESULT_UNPROVEN
+    assert audit.UNPROVEN_PROBE_NOT_ATTEMPTED in decision['unproven_reasons']
+
+
+@pytest.mark.parametrize('count', [0, 2, 5])
+def test_a_wrong_probe_count_is_failed(count):
+    decision = audit.decide(candidates=[], read_only_proof=_proof(
+        read_only_probe_count=count))
+    assert decision['result'] == audit.RESULT_FAILED
+    assert audit.FAILED_PROBE_COUNT_UNEXPECTED in decision['failed_reasons']
+
+
+@pytest.mark.parametrize('count', [None, 'one', 1.0])
+def test_an_unknown_probe_count_is_unproven(count):
+    decision = audit.decide(candidates=[], read_only_proof=_proof(
+        read_only_probe_count=count))
+    assert decision['result'] == audit.RESULT_UNPROVEN
+    assert audit.UNPROVEN_PROBE_COUNT_UNKNOWN in decision['unproven_reasons']
+
+
+@pytest.mark.parametrize('statement_class', ['DELETE', 'INSERT', 'SELECT', ''])
+def test_a_wrong_statement_class_is_failed(statement_class):
+    decision = audit.decide(candidates=[], read_only_proof=_proof(
+        read_only_probe_statement_class=statement_class))
+    assert decision['result'] == audit.RESULT_FAILED
+    assert audit.FAILED_PROBE_STATEMENT_CLASS_UNEXPECTED in (
+        decision['failed_reasons']
+    )
+
+
+def test_a_probe_not_bounded_to_zero_rows_is_failed():
+    decision = audit.decide(candidates=[], read_only_proof=_proof(
+        read_only_probe_bounded_to_zero_rows=False))
+    assert decision['result'] == audit.RESULT_FAILED
+    assert audit.FAILED_PROBE_NOT_BOUNDED in decision['failed_reasons']
+
+
+def test_a_probe_that_was_accepted_rather_than_refused_is_failed():
+    """If the write succeeded, the transaction was never read-only."""
+    decision = audit.decide(candidates=[], read_only_proof=_proof(
+        read_only_probe_refused=False))
+    assert decision['result'] == audit.RESULT_FAILED
+    assert audit.FAILED_PROBE_ACCEPTED in decision['failed_reasons']
+
+
+@pytest.mark.parametrize('attempts', [1, 3])
+def test_any_durable_write_attempt_is_failed(attempts):
+    decision = audit.decide(candidates=[], read_only_proof=_proof(
+        durable_write_attempts=attempts))
+    assert decision['result'] == audit.RESULT_FAILED
+    assert audit.FAILED_DURABLE_WRITE_ATTEMPTED in decision['failed_reasons']
+
+
+def test_no_complete_result_is_reachable_without_probe_proof():
+    """Neither COMPLETE result may be returned on unproven probe evidence."""
+    eligible = classify()
+    for broken in (
+        {'read_only_probe_attempted': False},
+        {'read_only_probe_refused': False},
+        {'read_only_probe_count': 7},
+        {'durable_write_attempts': 2},
+    ):
+        decision = audit.decide(
+            candidates=[eligible], read_only_proof=_proof(**broken),
+        )
+        assert decision['result'] not in (
+            audit.RESULT_ELIGIBLE_FOUND, audit.RESULT_NO_ELIGIBLE_CANDIDATE
+        ), broken
+
+
+def test_probe_evidence_is_lifted_without_defaulting_missing_fields():
+    """A missing field must stay missing, never default to a passing value."""
+    assert audit.probe_evidence({}) == {}
+    assert audit.probe_evidence(None) == {}
+    lifted = audit.probe_evidence({'read_only_probe_count': 1, 'other': 'x'})
+    assert lifted == {'read_only_probe_count': 1}
+
+
+def test_the_enforcement_detail_supplies_every_expected_probe_field():
+    """What enforce_read_only returns must satisfy the contract it is checked
+    against — otherwise a real successful run would report UNPROVEN."""
+    import inspect
+
+    source = inspect.getsource(audit.enforce_read_only)
+    for field in audit.PROBE_EVIDENCE_FIELDS:
+        assert f"'{field}'" in source, field
