@@ -183,7 +183,15 @@ def test_snapshot_audit_requires_admin_token(app, client):
     assert allowed.status_code == 200
 
 
-def test_snapshot_audit_quotes_stored_snapshot_trust_state(app, client):
+def test_snapshot_audit_quotes_stored_snapshot_trust_state(app, client, monkeypatch):
+    # This test's fixtures sit on fixed calendar dates but its subject —
+    # which snapshot is still valid to serve — is measured against
+    # product_current_date(). Left on the real clock it silently stopped
+    # testing trust-state quoting the day 2026-07-05 aged past the 30-day
+    # unavailable threshold, and began testing what day it is instead.
+    monkeypatch.setattr(
+        dashboard_snapshot, 'product_current_date', lambda: date(2026, 7, 6),
+    )
     with app.app_context():
         baseline = _snapshot(date(2026, 7, 4), generated_offset_minutes=1)
         current = _snapshot(
@@ -324,7 +332,15 @@ def test_snapshot_audit_empty_table_is_valid(client):
 def test_snapshot_audit_window_14_and_production_shaped_rows_are_bounded(
     app,
     client,
+    monkeypatch,
 ):
+    # Same hazard: the bounded-summary assertions describe a served snapshot,
+    # and whether one is served depends on its age against the real clock.
+    # Pinning the clock keeps the fixtures inside the freshness window so each
+    # assertion exercises the bound it names.
+    monkeypatch.setattr(
+        dashboard_snapshot, 'product_current_date', lambda: date(2026, 7, 6),
+    )
     with app.app_context():
         _snapshot(date(2026, 7, 4), generated_offset_minutes=1)
         current = _snapshot(
