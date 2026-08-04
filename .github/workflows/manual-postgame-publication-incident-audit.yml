@@ -1,0 +1,439 @@
+name: Manual Postgame Publication Incident Audit
+
+# Read-only diagnostic that reconstructs ONE failed postgame publication cycle:
+# workflow run 30873422601, branch main, head 9f9f640799af973f0a39cdafb1db83fba473b10c,
+# cycle postgame, slate 2026-08-03.
+#
+# That cycle produced a contradiction nobody could explain from the evidence it
+# left behind: the game-driven shadow lane completed cleanly, legacy postgame
+# ingestion completed its baseball work, and publication proof still failed.
+# Game 822867 was mapped `other` by the schedule finality authority while the
+# appearance ledger counted it as a completed game requiring appearance rows;
+# dashboard snapshot 344 stayed pending while 343 kept serving; and the
+# completeness report counted 60 unresolved final games.
+#
+# This audit answers eight explicit questions about that cycle from production
+# evidence plus the run's own uploaded artifacts. It is read-only three ways:
+# the acquire-only public sync advisory lock, a PostgreSQL read-only
+# transaction with a bounded write probe that must be REFUSED, and before/after
+# content fingerprints across every table the incident touches.
+#
+# It does not rerun run 30873422601, does not rerun the failed postgame sync,
+# does not repair game 822867, does not publish or modify any snapshot, and
+# does not reset any marker. Identifying a root cause is information; it
+# authorizes nothing.
+
+on:
+  workflow_dispatch:
+    inputs:
+      expected_head_sha:
+        description: >-
+          Full 40-character lowercase commit SHA this audit must run against.
+          Must equal the resolved GITHUB_SHA or the run refuses. This is the
+          commit the AUDIT runs at, not the incident commit — the incident head
+          is locked in code.
+        required: true
+        type: string
+      confirmation:
+        description: >-
+          Must be exactly AUDIT_POSTGAME_PUBLICATION_INCIDENT_30873422601.
+        required: true
+        type: string
+      operator_note:
+        description: >-
+          Optional note for the evidence artifact. Informational only: it can
+          never affect authorization or any verdict, and is sanitized before it
+          is recorded.
+        required: false
+        default: ''
+        type: string
+
+# Share the production sync writer lane so the audit can never overlap a
+# production writer. cancel-in-progress stays false.
+concurrency:
+  group: baseballos-sync
+  cancel-in-progress: false
+
+# contents: read to check out the reviewed commit.
+# actions:  read to DOWNLOAD the incident run's artifacts by run id.
+# Nothing here writes to contents, actions, packages, or any other scope.
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  incident-audit:
+    runs-on: ubuntu-latest
+    # Bounded by the source-call budget (20 upstream calls at most) plus two
+    # fingerprint passes and the canonical planner/ledger/completeness reads.
+    timeout-minutes: 20
+    if: >-
+      github.event_name == 'workflow_dispatch'
+      && github.repository == 'NickolisK24/bullpen-intel-engine'
+      && github.ref == 'refs/heads/main'
+      && github.actor == github.repository_owner
+
+    steps:
+      # SHELL BOUNDARY (established in PR #604). No `${{ }}` expression may
+      # appear inside any `run:` script: GitHub substitutes into the script text
+      # before bash parses it, so an expression holding operator input becomes
+      # shell code in a step carrying production credentials. Every input
+      # crosses through env: and is read only as a quoted variable.
+      - name: Refuse an unauthorized invocation
+        env:
+          INPUT_EXPECTED_HEAD_SHA: ${{ inputs.expected_head_sha }}
+          INPUT_CONFIRMATION: ${{ inputs.confirmation }}
+          INPUT_OPERATOR_NOTE: ${{ inputs.operator_note }}
+          RESOLVED_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          if ! printf '%s' "$INPUT_EXPECTED_HEAD_SHA" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "Refused: expected_head_sha must be 40 lowercase hex characters."
+            exit 1
+          fi
+
+          if [ "$INPUT_EXPECTED_HEAD_SHA" != "$RESOLVED_SHA" ]; then
+            echo "Refused: expected_head_sha does not match the resolved commit."
+            exit 1
+          fi
+
+          if [ "$INPUT_CONFIRMATION" != "AUDIT_POSTGAME_PUBLICATION_INCIDENT_30873422601" ]; then
+            echo "Refused: confirmation must be exactly AUDIT_POSTGAME_PUBLICATION_INCIDENT_30873422601."
+            exit 1
+          fi
+
+          # The note is never interpreted, expanded, or used in a decision.
+          printf 'Operator note supplied: %s characters.\n' \
+            "$(printf '%s' "$INPUT_OPERATOR_NOTE" | wc -c)"
+
+          echo "Authorization preconditions satisfied."
+          echo "Incident scope is locked in code: run 30873422601, postgame, 2026-08-03."
+
+      - name: Check out the reviewed commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install backend dependencies
+        run: pip install -r backend/requirements.txt
+
+      # ── Incident evidence, addressed by EXACT run id and EXACT name ───────
+      # Each download is non-blocking. A missing REQUIRED artifact must become
+      # an UNPROVEN verdict inside the evidence document — where a reader can
+      # see which artifact was absent — not a bare step failure that produces
+      # no document at all. The audit fails the job either way.
+      - name: Download the incident shadow activation artifact
+        id: download-shadow
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: game-driven-shadow-30873422601
+          path: incident-evidence/game-driven-shadow-30873422601
+          run-id: 30873422601
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download the incident appearance ledger audit artifact
+        id: download-ledger
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: appearance-ledger-audit-30873422601
+          path: incident-evidence/appearance-ledger-audit-30873422601
+          run-id: 30873422601
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      # Optional. The handoff artifact is diagnostic transport with a 7-day
+      # retention, so it can legitimately be gone. Its absence is REPORTED in
+      # the evidence document and changes no verdict.
+      - name: Download the incident shadow handoff artifact
+        id: download-handoff
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: game-driven-shadow-handoff-30873422601
+          path: incident-evidence/game-driven-shadow-handoff-30873422601
+          run-id: 30873422601
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Report incident evidence availability
+        if: ${{ always() }}
+        env:
+          SHADOW_OUTCOME: ${{ steps.download-shadow.outcome }}
+          LEDGER_OUTCOME: ${{ steps.download-ledger.outcome }}
+          HANDOFF_OUTCOME: ${{ steps.download-handoff.outcome }}
+        run: |
+          set -uo pipefail
+          echo "game-driven-shadow-30873422601 download: $SHADOW_OUTCOME"
+          echo "appearance-ledger-audit-30873422601 download: $LEDGER_OUTCOME"
+          echo "game-driven-shadow-handoff-30873422601 download: $HANDOFF_OUTCOME (optional)"
+          echo "Availability is recorded here and proven again inside the audit."
+
+      # Artifact IDs, sizes, expiry, and digests as GitHub reports them TODAY.
+      # Recorded so the audit can verify the incident's known digests rather
+      # than trusting a directory name. A digest GitHub no longer exposes is
+      # UNVERIFIED (honest); a digest that is present and different is FAILED.
+      # Non-blocking: unavailable metadata must not stop the evidence document
+      # from being produced.
+      - name: Record incident artifact metadata
+        id: artifact-metadata
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_API: ${{ github.api_url }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -uo pipefail
+          python - <<'PY'
+          import json
+          import os
+          import pathlib
+          import urllib.error
+          import urllib.request
+
+          RUN_ID = '30873422601'
+          WANTED = {
+              'game-driven-shadow-30873422601',
+              'game-driven-shadow-handoff-30873422601',
+              'appearance-ledger-audit-30873422601',
+          }
+          target = pathlib.Path('incident-evidence')
+          target.mkdir(parents=True, exist_ok=True)
+          out = target / 'artifact-metadata.json'
+
+          api = os.environ.get('GH_API', 'https://api.github.com')
+          repo = os.environ.get('GH_REPO', '')
+          token = os.environ.get('GH_TOKEN', '')
+          url = (
+              f'{api}/repos/{repo}/actions/runs/{RUN_ID}'
+              f'/artifacts?per_page=100'
+          )
+          request = urllib.request.Request(url, headers={
+              'Accept': 'application/vnd.github+json',
+              'Authorization': f'Bearer {token}',
+              'X-GitHub-Api-Version': '2022-11-28',
+          })
+          collected = {}
+          try:
+              with urllib.request.urlopen(request, timeout=30) as response:
+                  payload = json.load(response)
+          except (urllib.error.URLError, ValueError, OSError):
+              # Report the absence; never fail the audit on metadata alone.
+              print('Artifact metadata could not be retrieved; digests will '
+                    'be reported as not exposed.')
+              payload = {'artifacts': []}
+
+          for entry in payload.get('artifacts') or ():
+              name = entry.get('name')
+              if name in WANTED:
+                  collected[name] = {
+                      'artifact_id': entry.get('id'),
+                      'size_in_bytes': entry.get('size_in_bytes'),
+                      'expired': entry.get('expired'),
+                      'created_at': entry.get('created_at'),
+                      'expires_at': entry.get('expires_at'),
+                      'digest': entry.get('digest'),
+                  }
+
+          out.write_text(
+              json.dumps(collected, indent=2, sort_keys=True) + '\n',
+              encoding='utf-8',
+          )
+          for name in sorted(WANTED):
+              record = collected.get(name)
+              if record is None:
+                  print(f'{name}: metadata not returned by the API')
+              else:
+                  print(
+                      f"{name}: id={record.get('artifact_id')} "
+                      f"expired={record.get('expired')} "
+                      f"digest_present={bool(record.get('digest'))}"
+                  )
+          PY
+
+      - name: Run the read-only incident audit
+        id: audit
+        continue-on-error: true
+        env:
+          APP_ENV: production
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SECRET_KEY: ${{ secrets.SECRET_KEY }}
+          # ADMIN_API_TOKEN is required for APPLICATION STARTUP ONLY, proven by
+          # inspection rather than assumed:
+          #   config.py:96   APP_ENV != production refuses a non-local
+          #                  DATABASE_URL, so reaching production requires
+          #                  APP_ENV=production;
+          #   config.py:231  APP_ENV=production refuses to boot without
+          #                  ADMIN_API_TOKEN.
+          # Booting against the production database is therefore impossible
+          # without it. The audit itself never reads this value, makes no HTTP
+          # call, and invokes no admin endpoint.
+          ADMIN_API_TOKEN: ${{ secrets.BASEBALLOS_ADMIN_API_TOKEN }}
+          # No BASEBALLOS_SYNC_URL and no publication token: nothing here calls
+          # a sync endpoint, publishes a snapshot, or dispatches a workflow.
+          AUTO_SYNC: 'false'
+          # GAME_DRIVEN_INGESTION_MODE is deliberately NOT set. This audit runs
+          # no ingestion lane at all — it reads and classifies.
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_ACTOR: ${{ github.actor }}
+          GITHUB_REF: ${{ github.ref }}
+          GITHUB_SHA: ${{ github.sha }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
+          GITHUB_WORKFLOW: ${{ github.workflow }}
+          INPUT_EXPECTED_HEAD_SHA: ${{ inputs.expected_head_sha }}
+          INPUT_CONFIRMATION: ${{ inputs.confirmation }}
+          INPUT_OPERATOR_NOTE: ${{ inputs.operator_note }}
+        run: |
+          set -uo pipefail
+          cd backend
+          exit_code=0
+          python scripts/run_postgame_publication_incident_audit.py \
+            --expected-head-sha "$INPUT_EXPECTED_HEAD_SHA" \
+            --confirmation "$INPUT_CONFIRMATION" \
+            --operator-note "$INPUT_OPERATOR_NOTE" \
+            --evidence-dir ../incident-evidence \
+            --artifact-dir ../artifacts/postgame-publication-incident-audit \
+            || exit_code=$?
+          echo "exit_code=$exit_code" >> "$GITHUB_OUTPUT"
+          exit "$exit_code"
+
+      - name: Scan the evidence artifact
+        id: scan
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          exit_code=0
+          python backend/scripts/scan_forbidden_artifact_content.py \
+            --directory artifacts/postgame-publication-incident-audit \
+            || exit_code=$?
+          echo "exit_code=$exit_code" >> "$GITHUB_OUTPUT"
+          exit "$exit_code"
+
+      # Upload BEFORE the final gate so a FAILED or UNPROVEN diagnostic still
+      # leaves a reviewable artifact. The gate below still preserves FAILED and
+      # UNPROVEN — evidence survival never converts a bad result into success.
+      - name: Upload the evidence artifact
+        id: upload
+        continue-on-error: true
+        if: ${{ steps.scan.outcome == 'success' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: postgame-publication-incident-audit-${{ github.run_id }}
+          path: artifacts/postgame-publication-incident-audit
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Append the audit summary
+        if: ${{ always() }}
+        run: |
+          set -uo pipefail
+          python - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json
+          import pathlib
+
+          path = pathlib.Path(
+              'artifacts/postgame-publication-incident-audit/'
+              'incident-audit-summary.json'
+          )
+          print('## Postgame publication incident audit\n')
+          if not path.exists():
+              print('No evidence document was produced. Result: UNPROVEN.')
+              raise SystemExit(0)
+
+          doc = json.loads(path.read_text(encoding='utf-8'))
+          verdict = doc.get('verdict') or {}
+          proof = doc.get('read_only_proof') or {}
+          incident = doc.get('incident') or {}
+          evidence = doc.get('evidence_artifacts') or {}
+          budget = doc.get('source_call_budget') or {}
+          root_cause = doc.get('root_cause') or {}
+
+          print(f"**Result: {verdict.get('result')}**\n")
+          print('| field | value |')
+          print('| :--- | :--- |')
+          print(f"| incident run | {incident.get('workflow_run_id')} |")
+          print(f"| incident head | `{incident.get('head_sha')}` |")
+          print(f"| slate | {incident.get('slate_date')} |")
+          print(f"| audit commit | `{(doc.get('identity') or {}).get('commit_sha')}` |")
+          print(f"| read-only transaction | {proof.get('transaction_read_only_enabled')} |")
+          print(f"| write probe refused | {proof.get('read_only_probe_refused')} |")
+          print(f"| fingerprints match | {proof.get('fingerprints_match')} |")
+          print(f"| changed tables | {proof.get('changed_tables')} |")
+          print(f"| required artifacts present | {evidence.get('all_required_present')} |")
+          print(f"| missing required | {evidence.get('missing_required')} |")
+          print(f"| missing optional | {evidence.get('missing_optional')} |")
+          print(f"| source calls spent | {budget.get('total_spent')} / {budget.get('total_limit')} |")
+          print(f"| budget exhausted | {budget.get('budget_exhausted')} |")
+          print(f"| questions answered | {verdict.get('questions_answered')} / {verdict.get('questions_total')} |")
+          print(f"| primary classification | `{root_cause.get('primary_classification')}` |")
+          print(f"| platform defect proven | {root_cause.get('platform_defect_proven')} |")
+          print(f"| artifact | postgame-publication-incident-audit-"
+                f"{(doc.get('identity') or {}).get('workflow_run_id')} |")
+
+          questions = doc.get('questions') or []
+          if questions:
+              print('\n**Questions**\n')
+              print('| question | answered |')
+              print('| :--- | :--- |')
+              for question in questions:
+                  print(f"| {question.get('question')} | {question.get('answered')} |")
+
+          for reason in verdict.get('failed_reasons') or ():
+              print(f'\n- FAILED: `{reason}`')
+          for reason in verdict.get('unproven_reasons') or ():
+              print(f'\n- UNPROVEN: `{reason}`')
+
+          print(f"\n{verdict.get('non_authorization_statement')}")
+          PY
+
+      # Ordered after scan and upload so a failing diagnostic still leaves
+      # reviewable evidence. This gate never converts FAILED or UNPROVEN into
+      # success, and there is no continue-on-error on it.
+      - name: Final audit gate
+        env:
+          SCAN_OUTCOME: ${{ steps.scan.outcome }}
+          UPLOAD_OUTCOME: ${{ steps.upload.outcome }}
+          AUDIT_OUTCOME: ${{ steps.audit.outcome }}
+          AUDIT_EXIT_CODE: ${{ steps.audit.outputs.exit_code }}
+        run: |
+          set -euo pipefail
+
+          if [ "$SCAN_OUTCOME" != "success" ]; then
+            echo "UNPROVEN: the evidence artifact could not be proven safe."
+            exit 1
+          fi
+
+          if [ "$UPLOAD_OUTCOME" != "success" ]; then
+            echo "UNPROVEN: the evidence artifact did not upload."
+            exit 1
+          fi
+
+          if [ "${AUDIT_EXIT_CODE:-}" = "1" ]; then
+            echo "FAILED: a contract violation was observed. See the artifact."
+            exit 1
+          fi
+
+          if [ "${AUDIT_EXIT_CODE:-}" = "2" ]; then
+            echo "UNPROVEN: the incident could not be proven. See the artifact."
+            exit 1
+          fi
+
+          if [ "$AUDIT_OUTCOME" != "success" ]; then
+            echo "The audit did not complete. See the artifact."
+            exit 1
+          fi
+
+          echo "Incident audit completed read-only."
+          echo "This audit is read-only. It does not authorize backfill, repair,"
+          echo "schedule-status mutation, appearance-row creation, marker reset,"
+          echo "snapshot publication, automated writes, authoritative mode, or"
+          echo "any future production mutation."
