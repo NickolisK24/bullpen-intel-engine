@@ -729,6 +729,115 @@ UNRESOLVED_NON_DEFICIT_CATEGORIES = frozenset({
 })
 
 # Membership provenance for the unresolved set.
+# The status fields the canonical mapper actually consumes. Reproducing the
+# incident's mapping means having THESE values as they stood at incident time,
+# not today's equivalents.
+MAPPING_INPUT_FIELDS = (
+    'abstractGameState',
+    'codedGameState',
+    'detailedState',
+    'statusCode',
+    'reason',
+)
+
+MAPPING_INPUT_NOT_RECONSTRUCTED = 'incident_mapping_input_not_reconstructed'
+MAPPING_INPUT_RECONSTRUCTED = 'incident_mapping_input_reconstructed'
+
+
+def incident_mapping_input(shadow) -> dict:
+    """Recover the status payload the incident preflight mapped, if retained.
+
+    Question 3 asks why the incident produced ``other``. Observing what the
+    game maps to TODAY cannot answer that: today's official record is a
+    different input, and a mapping that no longer reproduces ``other`` is
+    evidence that the input changed, not an explanation of the original
+    result. The question is answerable only from the incident-time status
+    payload, and only if a retained artifact actually carries it.
+
+    The retained artifacts record the preflight's OUTPUT — the status_state it
+    stored — and not the status payload it read. So this normally reports that
+    the input was not reconstructed, which is the honest answer. It is written
+    to recover the input if a future artifact does carry it rather than to
+    hard-code the absence.
+    """
+    summary = (shadow or {}).get('sync_summary') or {}
+    candidates = (
+        summary.get('preflight_status_payloads')
+        or summary.get('schedule_status_payloads')
+        or {}
+    )
+    payload = None
+    if isinstance(candidates, dict):
+        for key in (INCIDENT_GAME_PK, str(INCIDENT_GAME_PK)):
+            entry = candidates.get(key)
+            if isinstance(entry, dict):
+                payload = entry
+                break
+
+    # The recovered payload is consumed here and never returned. Reporting it
+    # would put raw source content into the evidence document, which the
+    # artifact contract forbids; and the question does not need it. What a
+    # reader needs is whether the input was recovered, how completely, and
+    # what the canonical authority makes of it — the resulting status_state,
+    # which is a governed value the document already reports elsewhere.
+    if not payload:
+        return {
+            'evidence_source': SOURCE_INCIDENT,
+            'input_recovered': False,
+            'mapping_input_fields_expected': len(MAPPING_INPUT_FIELDS),
+            'mapping_input_fields_recovered': 0,
+            'remapped_status_state': None,
+            'reproduces_incident_state': None,
+            'reason': MAPPING_INPUT_NOT_RECONSTRUCTED,
+            'raw_source_content_withheld': True,
+            'note': (
+                'The retained incident artifacts record the status_state the '
+                'preflight STORED and not the status it READ. The mapping '
+                'input cannot be reconstructed from them, so the incident '
+                'mapping cannot be re-derived.'
+            ),
+        }
+
+    recovered = sum(1 for field in MAPPING_INPUT_FIELDS if payload.get(field))
+    try:
+        from services import game_finality
+
+        remapped = game_finality.normalize_schedule_status_state(payload)
+    except Exception:  # noqa: BLE001 - an unmappable input is unproven
+        remapped = None
+
+    incident_state = INCIDENT_PREFLIGHT_STATUS_STATES.get(INCIDENT_GAME_PK)
+    return {
+        'evidence_source': SOURCE_INCIDENT,
+        'input_recovered': bool(recovered) and remapped is not None,
+        'mapping_input_fields_expected': len(MAPPING_INPUT_FIELDS),
+        'mapping_input_fields_recovered': recovered,
+        'remapped_status_state': remapped,
+        'reproduces_incident_state': (
+            None if remapped is None else remapped == incident_state
+        ),
+        'reason': (
+            MAPPING_INPUT_RECONSTRUCTED if remapped is not None
+            else MAPPING_INPUT_NOT_RECONSTRUCTED
+        ),
+        'raw_source_content_withheld': True,
+        'note': (
+            'The incident-time status was recovered from a retained artifact '
+            'and re-mapped through the canonical authority. Only the mapped '
+            'result is reported; the source content itself is withheld.'
+        ),
+    }
+
+
+# Planner classification of the disputed game. Three-valued on purpose: a
+# planner whose plan was never observed has not excluded anything.
+PLANNER_CLASS_PLANNED = 'planned'
+PLANNER_CLASS_EXCLUDED = 'excluded'
+PLANNER_CLASS_UNPROVEN = 'unproven'
+PLANNER_CLASSIFICATIONS = (
+    PLANNER_CLASS_PLANNED, PLANNER_CLASS_EXCLUDED, PLANNER_CLASS_UNPROVEN,
+)
+
 MEMBERSHIP_INCIDENT_ARTIFACT = 'immutable_incident_membership'
 MEMBERSHIP_CURRENT_RECONSTRUCTION = 'current_reconstruction'
 
@@ -760,6 +869,135 @@ UNPROVEN_AUDIT_EXECUTION_ERROR = 'audit_execution_error'
 UNPROVEN_ARTIFACT_CONSTRUCTION_FAILED = 'artifact_construction_failed'
 UNPROVEN_ARTIFACT_UPLOAD_FAILED = 'evidence_artifact_upload_failed'
 UNPROVEN_SNAPSHOT_EVIDENCE_MISSING = 'snapshot_evidence_missing'
+
+# ── Execution stages ────────────────────────────────────────────────────────
+# The audit must be able to say WHERE it stopped without saying WHAT the
+# database contained. These are the only stage names it may report, and the
+# only error classes it may attribute a stop to. Both vocabularies are closed:
+# an unrecognised value is reported as the unclassified member, never as free
+# text. Nothing derived from an exception message, a SQL statement, a
+# connection string, or a row value may ever reach the artifact.
+
+STAGE_NOT_STARTED = 'not_started'
+STAGE_GUARD_ACQUIRED = 'advisory_guard_acquired'
+STAGE_READ_ONLY_ENFORCED = 'read_only_transaction_enforced'
+STAGE_BEFORE_FINGERPRINTS = 'before_fingerprints_phase_one'
+STAGE_SOURCE_WINDOW = 'official_source_window'
+STAGE_STORED_SCHEDULE = 'stored_schedule_observed'
+STAGE_OFFICIAL_STATUS = 'official_status_observed'
+STAGE_BASEBALL_STATE = 'baseball_state_observed'
+STAGE_APPEARANCE_LEDGER = 'appearance_ledger_observed'
+STAGE_COMPLETENESS = 'completeness_observed'
+STAGE_PLAYER_ATTRIBUTION = 'player_attribution_observed'
+STAGE_SNAPSHOT_GATE = 'snapshot_gate_observed'
+STAGE_DEAD_LETTER = 'dead_letter_backlog_observed'
+STAGE_UNRESOLVED_FINGERPRINTS = 'before_fingerprints_phase_two'
+STAGE_AFTER_FINGERPRINTS = 'after_fingerprints'
+STAGE_COMPLETE = 'all_stages_complete'
+
+EXECUTION_STAGES = (
+    STAGE_NOT_STARTED,
+    STAGE_GUARD_ACQUIRED,
+    STAGE_READ_ONLY_ENFORCED,
+    STAGE_BEFORE_FINGERPRINTS,
+    STAGE_SOURCE_WINDOW,
+    STAGE_STORED_SCHEDULE,
+    STAGE_OFFICIAL_STATUS,
+    STAGE_BASEBALL_STATE,
+    STAGE_APPEARANCE_LEDGER,
+    STAGE_COMPLETENESS,
+    STAGE_PLAYER_ATTRIBUTION,
+    STAGE_SNAPSHOT_GATE,
+    STAGE_DEAD_LETTER,
+    STAGE_UNRESOLVED_FINGERPRINTS,
+    STAGE_AFTER_FINGERPRINTS,
+    STAGE_COMPLETE,
+)
+
+# Bounded error classes. Each names a KIND of failure, never an instance of
+# one. 'audit_code_defect' is what the first production run would have
+# reported: a NameError inside the audit's own code, which is a defect in this
+# package and not a statement about production data.
+ERROR_CLASS_NONE = 'none'
+ERROR_CLASS_AUDIT_CODE_DEFECT = 'audit_code_defect'
+ERROR_CLASS_MISSING_ATTRIBUTE = 'expected_attribute_absent'
+ERROR_CLASS_UNEXPECTED_SHAPE = 'unexpected_evidence_shape'
+ERROR_CLASS_ARITHMETIC = 'arithmetic_or_conversion_error'
+ERROR_CLASS_DATABASE_READ = 'database_read_error'
+ERROR_CLASS_READ_ONLY_REFUSED = 'read_only_transaction_refused_statement'
+ERROR_CLASS_TIMEOUT = 'operation_timed_out'
+ERROR_CLASS_UNCLASSIFIED = 'unclassified_error'
+
+SAFE_ERROR_CLASSES = (
+    ERROR_CLASS_NONE,
+    ERROR_CLASS_AUDIT_CODE_DEFECT,
+    ERROR_CLASS_MISSING_ATTRIBUTE,
+    ERROR_CLASS_UNEXPECTED_SHAPE,
+    ERROR_CLASS_ARITHMETIC,
+    ERROR_CLASS_DATABASE_READ,
+    ERROR_CLASS_READ_ONLY_REFUSED,
+    ERROR_CLASS_TIMEOUT,
+    ERROR_CLASS_UNCLASSIFIED,
+)
+
+# Exception TYPE names only. The mapping is keyed on the class name so that no
+# instance data — which is where row values and SQL text live — is consulted.
+_ERROR_CLASS_BY_TYPE = {
+    'NameError': ERROR_CLASS_AUDIT_CODE_DEFECT,
+    'UnboundLocalError': ERROR_CLASS_AUDIT_CODE_DEFECT,
+    'ImportError': ERROR_CLASS_AUDIT_CODE_DEFECT,
+    'ModuleNotFoundError': ERROR_CLASS_AUDIT_CODE_DEFECT,
+    'IndentationError': ERROR_CLASS_AUDIT_CODE_DEFECT,
+    'SyntaxError': ERROR_CLASS_AUDIT_CODE_DEFECT,
+    'AttributeError': ERROR_CLASS_MISSING_ATTRIBUTE,
+    'KeyError': ERROR_CLASS_MISSING_ATTRIBUTE,
+    'IndexError': ERROR_CLASS_MISSING_ATTRIBUTE,
+    'TypeError': ERROR_CLASS_UNEXPECTED_SHAPE,
+    'ValueError': ERROR_CLASS_UNEXPECTED_SHAPE,
+    'StopIteration': ERROR_CLASS_UNEXPECTED_SHAPE,
+    'ZeroDivisionError': ERROR_CLASS_ARITHMETIC,
+    'ArithmeticError': ERROR_CLASS_ARITHMETIC,
+    'OverflowError': ERROR_CLASS_ARITHMETIC,
+    'DecimalException': ERROR_CLASS_ARITHMETIC,
+    'InvalidOperation': ERROR_CLASS_ARITHMETIC,
+    'ReadOnlySqlTransactionError': ERROR_CLASS_READ_ONLY_REFUSED,
+    'InternalError': ERROR_CLASS_DATABASE_READ,
+    'OperationalError': ERROR_CLASS_DATABASE_READ,
+    'ProgrammingError': ERROR_CLASS_DATABASE_READ,
+    'DataError': ERROR_CLASS_DATABASE_READ,
+    'IntegrityError': ERROR_CLASS_DATABASE_READ,
+    'DatabaseError': ERROR_CLASS_DATABASE_READ,
+    'InterfaceError': ERROR_CLASS_DATABASE_READ,
+    'DBAPIError': ERROR_CLASS_DATABASE_READ,
+    'SQLAlchemyError': ERROR_CLASS_DATABASE_READ,
+    'TimeoutError': ERROR_CLASS_TIMEOUT,
+    'ReadOnlyProbeViolation': ERROR_CLASS_READ_ONLY_REFUSED,
+}
+
+
+def classify_error(exc) -> str:
+    """Name the KIND of failure, using the exception TYPE and nothing else.
+
+    The exception instance is never rendered, formatted, or inspected for
+    content. Only ``type(exc).__name__`` and the names of its base classes are
+    read, so no message text, bound parameter, SQL statement, or row value can
+    escape into the evidence document. A read-only refusal is recognised
+    ahead of the generic database classes because it is the one database error
+    that would mean the audit had tried to write.
+    """
+    if exc is None:
+        return ERROR_CLASS_NONE
+    for klass in type(exc).__mro__:
+        name = getattr(klass, '__name__', '')
+        if name in _ERROR_CLASS_BY_TYPE:
+            return _ERROR_CLASS_BY_TYPE[name]
+    return ERROR_CLASS_UNCLASSIFIED
+
+
+def safe_stage(value) -> str:
+    """Admit a stage name only if it is in the closed vocabulary."""
+    return value if value in EXECUTION_STAGES else STAGE_NOT_STARTED
+
 
 EXPECTED_PROBE_EVIDENCE = {
     'read_only_probe_attempted': True,

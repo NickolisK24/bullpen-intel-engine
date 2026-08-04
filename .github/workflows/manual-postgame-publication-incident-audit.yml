@@ -356,6 +356,7 @@ jobs:
           evidence = doc.get('evidence_artifacts') or {}
           budget = doc.get('source_call_budget') or {}
           root_cause = doc.get('root_cause') or {}
+          execution = doc.get('execution') or {}
 
           print(f"**Result: {verdict.get('result')}**\n")
           print('| field | value |')
@@ -374,6 +375,10 @@ jobs:
           print(f"| source calls spent | {budget.get('total_spent')} / {budget.get('total_limit')} |")
           print(f"| budget exhausted | {budget.get('budget_exhausted')} |")
           print(f"| questions answered | {verdict.get('questions_answered')} / {verdict.get('questions_total')} |")
+          print(f"| last completed stage | `{execution.get('last_completed_stage')}` |")
+          print(f"| failed stage | `{execution.get('failed_stage')}` |")
+          print(f"| safe error class | `{execution.get('safe_error_class')}` |")
+          print(f"| execution complete | {execution.get('execution_complete')} |")
           print(f"| primary classification | `{root_cause.get('primary_classification')}` |")
           print(f"| platform defect proven | {root_cause.get('platform_defect_proven')} |")
           print(f"| artifact | postgame-publication-incident-audit-"

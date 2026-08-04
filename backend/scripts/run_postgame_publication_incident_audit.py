@@ -59,6 +59,141 @@ class _AuditHalt(Exception):
     """Stop collecting; the verdict is decided from what was proven."""
 
 
+class _StageFailure(Exception):
+    """A stage raised. The ledger holds the safe description of what and where.
+
+    Carrying no payload is deliberate: an exception that travels with detail
+    is an exception whose detail can be printed. Everything a reader is
+    allowed to know lives in the ledger, in a closed vocabulary.
+    """
+
+
+class _StageLedger:
+    """Where the run got to, in terms a reader may safely be told.
+
+    The first production run stopped inside completeness and reported only
+    ``audit_execution_error`` — true, unactionable, and indistinguishable from
+    a failure anywhere else in the run. This records the last stage that
+    finished, the stage that stopped, and a bounded class for why, and it
+    persists each observer's result the instant that observer returns so a
+    later exception cannot erase earlier proof.
+    """
+
+    def __init__(self):
+        self.last_completed = audit.STAGE_NOT_STARTED
+        self.failed_stage = None
+        self.error_class = audit.ERROR_CLASS_NONE
+        self.completed_stages: list[str] = []
+
+    def completed(self, stage):
+        stage = audit.safe_stage(stage)
+        if stage not in self.completed_stages:
+            self.completed_stages.append(stage)
+        # ``last_completed`` answers "how far did the run get before it
+        # stopped", so it freezes at the first failure. The closing
+        # fingerprint stages deliberately run AFTER a stop, to finish the
+        # read-only proof; letting them advance this would report a run that
+        # died in completeness as having got all the way to the end. They are
+        # still listed in ``completed_stages``, which is a record of what ran.
+        if self.failed_stage is None:
+            self.last_completed = stage
+
+    def failed(self, stage, exc):
+        # Only the exception's TYPE is consulted; the instance is dropped here
+        # and never stored, so there is nothing left to leak downstream.
+        if self.failed_stage is None:
+            self.failed_stage = audit.safe_stage(stage)
+            self.error_class = audit.classify_error(exc)
+
+    def stage(self, name, observations, key, produce):
+        """Run one observer, keep its result, then advance the stage.
+
+        The result is written before the stage is marked complete, so a crash
+        between the two can only under-report progress, never over-report it.
+        """
+        try:
+            value = produce()
+        except Exception as exc:  # noqa: BLE001 - never leak exception text
+            self.failed(name, exc)
+            raise _StageFailure() from None
+        if key is not None:
+            observations[key] = value
+        self.completed(name)
+        return value
+
+    def state(self) -> dict:
+        return {
+            'last_completed_stage': self.last_completed,
+            'failed_stage': self.failed_stage,
+            'safe_error_class': self.error_class,
+            'completed_stages': list(self.completed_stages),
+            'stages_total': len(audit.EXECUTION_STAGES),
+            'execution_complete': (
+                self.failed_stage is None
+                and self.last_completed == audit.STAGE_COMPLETE
+            ),
+            'error_observed': self.failed_stage is not None,
+            'error_detail_withheld': True,
+            'error_vocabulary': list(audit.SAFE_ERROR_CLASSES),
+        }
+
+
+def _close_fingerprints(collected, observations, ledger, db) -> None:
+    """Digest the unresolved scope, then close the read-only proof.
+
+    BEFORE, phase two: the unresolved-game scope cannot be digested until the
+    canonical completeness proof has told us which games are in it. It is
+    digested the moment that set is known and re-digested at the end. The
+    earlier scopes keep their original phase-one digest, so no span of this
+    run is left unprotected by a shifting baseline. The unresolved games sit
+    inside the ledger-window horizon anyway, so phase one already covers them;
+    this scope adds precision, not first-time coverage.
+
+    This runs even when an observer stopped the run. A partial audit still
+    owes the reader a complete answer to "did this change anything?", and the
+    phase-one baseline it needs has already been persisted.
+    """
+    before = collected.get('before_fingerprints')
+    unresolved_pks = [
+        entry['game_pk'] for entry in (
+            (observations.get('completeness') or {})
+            .get('unresolved_classification', {})
+            .get('games') or []
+        )
+    ]
+    if unresolved_pks:
+        try:
+            unresolved_before = audit.scoped_fingerprints(
+                db.session, unresolved_game_pks=unresolved_pks,
+            )
+        except Exception as exc:  # noqa: BLE001 - never leak exception text
+            ledger.failed(audit.STAGE_UNRESOLVED_FINGERPRINTS, exc)
+            unresolved_before = None
+        if unresolved_before is not None:
+            collected['before_fingerprints'] = {
+                **before,
+                audit.SCOPE_UNRESOLVED_GAMES: unresolved_before[
+                    audit.SCOPE_UNRESOLVED_GAMES
+                ],
+            }
+            ledger.completed(audit.STAGE_UNRESOLVED_FINGERPRINTS)
+    else:
+        ledger.completed(audit.STAGE_UNRESOLVED_FINGERPRINTS)
+
+    collected['scope_plan'] = audit.fingerprint_scope_plan(unresolved_pks)
+    try:
+        collected['after_fingerprints'] = audit.scoped_fingerprints(
+            db.session, unresolved_game_pks=unresolved_pks,
+        )
+    except Exception as exc:  # noqa: BLE001 - never leak exception text
+        ledger.failed(audit.STAGE_AFTER_FINGERPRINTS, exc)
+        collected['after_fingerprints'] = None
+        return
+    ledger.completed(audit.STAGE_AFTER_FINGERPRINTS)
+    if ledger.failed_stage is None:
+        ledger.completed(audit.STAGE_COMPLETE)
+
+
 # ── Arguments and authorization ─────────────────────────────────────────────
 
 def parse_args(argv=None):
@@ -1063,7 +1198,6 @@ def classify_unresolved_games(plan, completeness, gateway) -> dict:
     )
     game_pks = list(membership['game_pks'])
     authority_count = int(completeness['unresolved_final_games'])
-    window_start = _as_date(membership['window_start'])
 
     work_items = {
         item.mlb_game_pk: item
@@ -1731,8 +1865,21 @@ def build_authority_comparison(observations) -> dict:
     official_class = official.get('official_classification')
     mapped = official.get('canonical_status_state')
     stored_state = stored.get('stored_status_state')
-    planner_planned = plan.get('disputed_game_planned')
     ledger_counts = ledger.get('disputed_game_has_stored_final_row')
+
+    # A plan that was never observed is not a plan that excluded the game.
+    # The first production run stopped before completeness and still reported
+    # planner_classification 'excluded' with a null reason, which reads as a
+    # finding about the planner when it is only an absence of evidence about
+    # it. Absence is its own answer here, and it is UNPROVEN.
+    planner_observed = 'disputed_game_planned' in plan
+    planner_planned = plan.get('disputed_game_planned')
+    if not planner_observed or planner_planned is None:
+        planner_classification = audit.PLANNER_CLASS_UNPROVEN
+    elif planner_planned:
+        planner_classification = audit.PLANNER_CLASS_PLANNED
+    else:
+        planner_classification = audit.PLANNER_CLASS_EXCLUDED
 
     disagreements = []
     if official.get('game_found_in_source') and mapped and stored_state and (
@@ -1762,11 +1909,13 @@ def build_authority_comparison(observations) -> dict:
         'canonical_mapped_status_state': mapped,
         'stored_schedule_classification': stored_state,
         'stored_status_states': stored.get('distinct_status_states'),
-        'planner_classification': (
-            'planned' if planner_planned else 'excluded'
-        ),
-        'planner_exclusion_reason': plan.get(
-            'disputed_game_exclusion_reason'
+        'planner_classification': planner_classification,
+        'planner_evidence_observed': planner_observed,
+        # An exclusion reason is only meaningful once an exclusion is proven.
+        'planner_exclusion_reason': (
+            plan.get('disputed_game_exclusion_reason')
+            if planner_classification == audit.PLANNER_CLASS_EXCLUDED
+            else None
         ),
         'appearance_ledger_classification': (
             'counted_as_completed_game' if ledger_counts
@@ -2052,7 +2201,8 @@ def _present(values) -> list[str]:
 
 # ── Questions ───────────────────────────────────────────────────────────────
 
-def build_questions(observations, comparison, module_drift) -> list[dict]:
+def build_questions(observations, comparison, module_drift,
+                    incident_mapping=None) -> list[dict]:
     official = observations.get('official_status') or {}
     stored = observations.get('stored_schedule') or {}
     baseball = observations.get('baseball_state') or {}
@@ -2108,60 +2258,96 @@ def build_questions(observations, comparison, module_drift) -> list[dict]:
     incident_state = audit.INCIDENT_PREFLIGHT_STATUS_STATES.get(
         audit.INCIDENT_GAME_PK
     )
+    # Question 3 asks why the INCIDENT produced 'other'. Only the incident's
+    # own mapping input can answer that. Observing today's official record
+    # establishes what the game maps to NOW; when that differs from 'other'
+    # it shows the input has changed, which is the opposite of an explanation.
+    # The question is therefore answered only on a positive reconstruction of
+    # the incident-time mapping input, never on current non-reproduction.
+    reconstruction = incident_mapping or audit.incident_mapping_input(None)
+    input_recovered = bool(reconstruction.get('input_recovered'))
+    incident_reproduced = reconstruction.get('reproduces_incident_state')
+    q3_answered = bool(input_recovered and incident_reproduced)
+    current_reproduces = mapped is not None and mapped == incident_state
     questions.append(_question(
-        audit.QUESTION_PREFLIGHT_PRODUCED_OTHER, answered=mapped is not None,
+        audit.QUESTION_PREFLIGHT_PRODUCED_OTHER, answered=q3_answered,
         answer=(
-            f"The preflight stores whatever "
-            f"game_finality.normalize_schedule_status_state returns. For the "
-            f"currently observed official status that is {mapped!r}, because "
-            f"classify_status resolved "
-            f"{official.get('canonical_finality_reason')!r}. 'other' is the "
+            f"The incident-time status payload was recovered and re-mapped "
+            f"through game_finality.normalize_schedule_status_state, which "
+            f"returns {reconstruction.get('remapped_status_state')!r} and "
+            f"reproduces the incident's {incident_state!r}. 'other' is the "
             f"state the authority uses for cancelled, live/in-progress, "
             f"abstract-final-without-final-status, and unknown status. "
-            f"Current result reproduces the incident's 'other': "
-            f"{mapped == incident_state}. Canonical modules changed since the "
-            f"incident SHA: {module_drift.get('any_change_since_incident')}."
-            if mapped is not None else
-            'The live official status was not observed, so the mapping that '
-            'produced "other" cannot be reproduced.'
+            f"Canonical modules changed since the incident SHA: "
+            f"{module_drift.get('any_change_since_incident')}."
+            if q3_answered else
+            'The incident-time mapping input was not reconstructed, so why '
+            'the preflight produced "other" is unproven. The currently '
+            f"observed official status maps to {mapped!r}, which is a fact "
+            'about today and not about the incident: a current result that '
+            "does not reproduce 'other' shows the input changed, and does "
+            'not explain the original mapping.'
         ),
         evidence={
-            'canonical_mapped_status_state': mapped,
+            'incident_mapping_reconstruction': reconstruction,
+            'incident_mapping_input_recovered': input_recovered,
             'incident_preflight_status_state': incident_state,
-            'reproduces_incident_result': mapped == incident_state,
-            'incident_reconstructible_from_artifacts': True,
+            'incident_mapping_reproduced': incident_reproduced,
+            # Kept, clearly labelled, and explicitly NOT the answer.
+            'current_mapped_status_state': mapped,
+            'current_result_reproduces_incident': current_reproduces,
+            'current_observation_is_not_an_incident_explanation': True,
+            'incident_reconstructible_from_artifacts': input_recovered,
             'canonical_module_drift': module_drift,
             'authority': (
                 'services.game_finality.normalize_schedule_status_state'
             ),
         },
         unproven_reason=(
-            None if mapped is not None else 'live_status_not_observed'
+            None if q3_answered
+            else audit.MAPPING_INPUT_NOT_RECONSTRUCTED
         ),
     ))
 
-    ledger_answered = bool(ledger)
     plan = completeness.get('plan') or {}
+    # Question 4 contrasts the ledger against the planner, so it needs BOTH.
+    # A plan that was never observed cannot be reported as one that excluded
+    # the game: absent planner evidence is unproven, never 'excluded'.
+    planner_classification = comparison.get('planner_classification')
+    planner_observed = (
+        planner_classification is not None
+        and planner_classification != audit.PLANNER_CLASS_UNPROVEN
+    )
+    ledger_answered = bool(ledger) and planner_observed
     questions.append(_question(
         audit.QUESTION_LEDGER_COUNTED_COMPLETED, answered=ledger_answered,
         answer=(
             f"{ledger.get('membership_rule')} The disputed game "
             f"{'has' if ledger.get('disputed_game_has_stored_final_row') else 'does not have'}"
             f" a stored final row, and the canonical planner "
-            f"{'planned' if plan.get('disputed_game_planned') else 'excluded'}"
+            f"{planner_classification}"
             f" it (exclusion reason "
-            f"{plan.get('disputed_game_exclusion_reason')!r}). "
+            f"{comparison.get('planner_exclusion_reason')!r}). "
             f"Ledger reasons: {ledger.get('reasons')}."
             if ledger_answered else
             'The appearance ledger could not be computed.'
+            if not ledger else
+            'The canonical plan was not observed, so how the planner treated '
+            'the disputed game is unproven. An unobserved plan is not an '
+            'exclusion, and the ledger/planner contrast this question asks '
+            'for cannot be drawn from one side alone.'
         ),
         evidence={
             'appearance_ledger': ledger,
             'planner': plan,
+            'planner_classification': planner_classification,
+            'planner_evidence_observed': planner_observed,
             'authority': 'services.appearance_ledger.build_appearance_ledger',
         },
         unproven_reason=(
-            None if ledger_answered else 'appearance_ledger_unavailable'
+            None if ledger_answered
+            else 'appearance_ledger_unavailable' if not ledger
+            else 'planner_evidence_not_observed'
         ),
     ))
 
@@ -2449,6 +2635,7 @@ def run(args) -> dict:
 
     observations: dict = {}
     collected: dict = {}
+    ledger = _StageLedger()
     with flask_app.app_context():
         guard_state = {
             'guard_acquired': False,
@@ -2469,101 +2656,118 @@ def run(args) -> dict:
         try:
             if not guard_state['guard_acquired']:
                 raise _AuditHalt()
+            ledger.completed(audit.STAGE_GUARD_ACQUIRED)
 
             try:
                 read_only = audit.enforce_read_only(db.session)
             except audit.ReadOnlyProbeViolation as violation:
                 collected['read_only_enabled'] = False
                 collected['read_only_detail'] = violation.evidence
+                ledger.failed(audit.STAGE_READ_ONLY_ENFORCED, violation)
                 raise _AuditHalt()
             collected['read_only_enabled'] = True
             collected['read_only_detail'] = read_only
+            ledger.completed(audit.STAGE_READ_ONLY_ENFORCED)
 
             # BEFORE, phase one: every scope whose membership is already known
-            # is digested before any other work happens.
+            # is digested before any other work happens, and is PERSISTED the
+            # moment it exists. Holding it in a local until the end meant a
+            # single later exception discarded a baseline that had already been
+            # earned, and with it the only proof that this run changed nothing.
             before = audit.scoped_fingerprints(db.session)
+            collected['before_fingerprints'] = before
             if before is None:
-                collected['before_fingerprints'] = None
                 raise _AuditHalt()
+            ledger.completed(audit.STAGE_BEFORE_FINGERPRINTS)
 
             game_pk = audit.INCIDENT_GAME_PK
 
             # ONE schedule call covers the whole completeness horizon, and the
             # disputed game is normally inside it. Fetching per date would need
             # nine calls against an allowance of eight and refuse the last one.
-            horizon = int(
-                game_ingestion_planner.ingestion_horizon_days()
-            )
-            gateway.fetch_window(
-                audit.INCIDENT_SLATE_DATE - timedelta(days=horizon),
-                audit.INCIDENT_SLATE_DATE,
-            )
+            def _window():
+                horizon = int(game_ingestion_planner.ingestion_horizon_days())
+                gateway.fetch_window(
+                    audit.INCIDENT_SLATE_DATE - timedelta(days=horizon),
+                    audit.INCIDENT_SLATE_DATE,
+                )
+                return None
 
-            observations['stored_schedule'] = observe_stored_schedule(game_pk)
-            observations['official_status'] = observe_official_status(
-                game_pk, observations['stored_schedule'], gateway,
-                window_games=gateway.window_games,
+            # Each observer is run through the ledger, which writes the result
+            # into ``observations`` and advances the stage BEFORE the next one
+            # starts. Everything already observed therefore survives a later
+            # exception, and the artifact can say exactly where the run
+            # stopped without saying anything about what it read.
+            ledger.stage(
+                audit.STAGE_SOURCE_WINDOW, observations, None, _window,
             )
-            observations['baseball_state'] = observe_baseball_state(game_pk)
-            observations['appearance_ledger'] = observe_appearance_ledger(
-                game_pk, observations['stored_schedule'],
+            ledger.stage(
+                audit.STAGE_STORED_SCHEDULE, observations, 'stored_schedule',
+                lambda: observe_stored_schedule(game_pk),
             )
-            observations['completeness'] = observe_completeness(
-                game_pk, gateway,
+            ledger.stage(
+                audit.STAGE_OFFICIAL_STATUS, observations, 'official_status',
+                lambda: observe_official_status(
+                    game_pk, observations.get('stored_schedule'), gateway,
+                    window_games=gateway.window_games,
+                ),
+            )
+            ledger.stage(
+                audit.STAGE_BASEBALL_STATE, observations, 'baseball_state',
+                lambda: observe_baseball_state(game_pk),
+            )
+            ledger.stage(
+                audit.STAGE_APPEARANCE_LEDGER, observations,
+                'appearance_ledger',
+                lambda: observe_appearance_ledger(
+                    game_pk, observations.get('stored_schedule'),
+                ),
+            )
+            ledger.stage(
+                audit.STAGE_COMPLETENESS, observations, 'completeness',
+                lambda: observe_completeness(game_pk, gateway),
             )
             # Attribution consumes the pitcher ids already extracted from the
             # single box-score response; it never fetches again.
-            observations['player_mismatches'] = attribute_player_mismatches(
-                ledger_artifact.get('ledger_report'),
-                observations['appearance_ledger'],
-                observations['official_status'],
+            ledger.stage(
+                audit.STAGE_PLAYER_ATTRIBUTION, observations,
+                'player_mismatches',
+                lambda: attribute_player_mismatches(
+                    ledger_artifact.get('ledger_report'),
+                    observations.get('appearance_ledger'),
+                    observations.get('official_status'),
+                ),
             )
-            observations['snapshot_gate'] = observe_snapshot_gate(
-                shadow.get('sync_summary'), observations['completeness'],
-                ledger_report=ledger_artifact.get('ledger_report'),
+            ledger.stage(
+                audit.STAGE_SNAPSHOT_GATE, observations, 'snapshot_gate',
+                lambda: observe_snapshot_gate(
+                    shadow.get('sync_summary'),
+                    observations.get('completeness'),
+                    ledger_report=ledger_artifact.get('ledger_report'),
+                ),
             )
-            observations['dead_letter_backlog'] = (
-                observe_unresolved_sync_failures()
-            )
-
-            # BEFORE, phase two: the unresolved-game scope cannot be digested
-            # until the canonical completeness proof has told us which games
-            # are in it. It is digested the moment that set is known and
-            # re-digested at the end. The earlier scopes keep their original
-            # phase-one digest, so no span of this run is left unprotected by
-            # shifting the baseline. The unresolved games sit inside the
-            # ledger-window horizon anyway, so phase one already covers them;
-            # this scope adds precision, not first-time coverage.
-            unresolved_pks = [
-                entry['game_pk'] for entry in (
-                    (observations['completeness'] or {})
-                    .get('unresolved_classification', {})
-                    .get('games') or []
-                )
-            ]
-            if unresolved_pks:
-                unresolved_before = audit.scoped_fingerprints(
-                    db.session, unresolved_game_pks=unresolved_pks,
-                )
-                if unresolved_before is not None:
-                    before = {
-                        **before,
-                        audit.SCOPE_UNRESOLVED_GAMES: unresolved_before[
-                            audit.SCOPE_UNRESOLVED_GAMES
-                        ],
-                    }
-            collected['before_fingerprints'] = before
-            collected['scope_plan'] = audit.fingerprint_scope_plan(
-                unresolved_pks
-            )
-            collected['after_fingerprints'] = audit.scoped_fingerprints(
-                db.session, unresolved_game_pks=unresolved_pks,
+            ledger.stage(
+                audit.STAGE_DEAD_LETTER, observations, 'dead_letter_backlog',
+                observe_unresolved_sync_failures,
             )
         except _AuditHalt:
             pass
-        except Exception:  # noqa: BLE001 - never leak exception text
-            collected['audit_error'] = True
+        except _StageFailure:
+            # The stage ledger already recorded where and what class. The
+            # exception itself is deliberately never rendered.
+            pass
+        except Exception as exc:  # noqa: BLE001 - never leak exception text
+            ledger.failed(audit.STAGE_NOT_STARTED, exc)
         finally:
+            # Phase two and the closing digest run whether or not an observer
+            # stopped, so that a partial run still carries a complete
+            # read-only proof. They are only attempted once the baseline
+            # exists, and they can never stop the guard from being released.
+            try:
+                if collected.get('before_fingerprints') is not None:
+                    _close_fingerprints(collected, observations, ledger, db)
+            except Exception:  # noqa: BLE001 - never leak exception text
+                pass
             try:
                 db.session.rollback()
             except Exception:  # noqa: BLE001
@@ -2584,13 +2788,22 @@ def run(args) -> dict:
         build_findings(observations, comparison, module_drift)
         if observations else []
     )
+    # Reading a retained artifact costs no database access and no source call,
+    # so it is recovered outside the observation stages and survives any
+    # failure inside them.
+    incident_mapping = audit.incident_mapping_input(shadow)
     questions = (
-        build_questions(observations, comparison, module_drift)
+        build_questions(
+            observations, comparison, module_drift,
+            incident_mapping=incident_mapping,
+        )
         if observations else []
     )
 
+    execution = ledger.state()
+
     extra_unproven = []
-    if collected.get('audit_error'):
+    if execution['error_observed']:
         extra_unproven.append(audit.UNPROVEN_AUDIT_EXECUTION_ERROR)
 
     decision = audit.decide(
@@ -2610,7 +2823,8 @@ def run(args) -> dict:
         questions=questions, comparison=comparison, module_drift=module_drift,
         read_only=read_only_proof, artifact_ingestion=ingestion,
         budget_state={**budget.state(), **gateway.state()},
-        decision=decision,
+        decision=decision, execution=execution,
+        incident_mapping=incident_mapping,
     )
 
 
@@ -2671,11 +2885,15 @@ def _refuse(*, failed=(), unproven=()) -> dict:
 
 def build_document(*, context, note, observations, questions, comparison,
                    module_drift, read_only, artifact_ingestion, budget_state,
-                   decision) -> dict:
+                   decision, execution=None, incident_mapping=None) -> dict:
     proof = read_only or {}
     ingestion = artifact_ingestion or {}
     artifacts = ingestion.get('artifacts') or {}
     return {
+        'execution': execution or _StageLedger().state(),
+        'incident_mapping_reconstruction': (
+            incident_mapping or audit.incident_mapping_input(None)
+        ),
         'identity': {
             'schema_version': audit.SCHEMA_VERSION,
             'audit_type': audit.AUDIT_TYPE,

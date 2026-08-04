@@ -269,8 +269,13 @@ def test_065_current_non_reproduction_is_not_rewritten_as_incident_proof():
     }
     third = questions[audit.QUESTION_PREFLIGHT_PRODUCED_OTHER]
     assert third['evidence']['incident_preflight_status_state'] == 'other'
-    assert third['evidence']['canonical_mapped_status_state'] == 'final'
-    assert third['evidence']['reproduces_incident_result'] is False
+    assert third['evidence']['current_mapped_status_state'] == 'final'
+    assert third['evidence']['current_result_reproduces_incident'] is False
+    # And the current observation is never offered as the incident's answer.
+    assert third['answered'] is False
+    assert third['evidence'][
+        'current_observation_is_not_an_incident_explanation'
+    ] is True
 
 
 # ── 66-72 Appearance ledger ─────────────────────────────────────────────────
