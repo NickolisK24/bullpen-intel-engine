@@ -169,6 +169,13 @@ class SourceGateway:
         self._client = client
         self.refusals: list[dict] = []
         self.errors: list[dict] = []
+        # A required call that was reserved, dialled and FAILED is still
+        # missing evidence. The budget cannot see that — it only knows the
+        # reservation succeeded — so the gateway carries it.
+        self.required_attempted = 0
+        self.required_succeeded = 0
+        self.recoveries: list[dict] = []
+        self.missing_evidence: set = set()
         # The one horizon response, fetched once and reused by every consumer.
         self.window_games = None
         self.window_fetched = False
@@ -187,6 +194,8 @@ class SourceGateway:
                 'kind': kind, 'label': label, 'required': required,
             })
             return None
+        if required:
+            self.required_attempted += 1
         started = perf_counter()
         try:
             result = invoke()
@@ -194,12 +203,39 @@ class SourceGateway:
             self._budget.record_failure(
                 kind, latency_ms=(perf_counter() - started) * 1000,
             )
-            self.errors.append({'kind': kind, 'label': label})
+            self.errors.append({
+                'kind': kind, 'label': label, 'required': required,
+            })
             return None
         self._budget.record_success(
             kind, latency_ms=(perf_counter() - started) * 1000,
         )
+        if required:
+            self.required_succeeded += 1
         return result
+
+    def record_recovery(self, label, *, recovered_by, evidence):
+        """A governed fallback positively recovered a failed required call.
+
+        Recovery has to be claimed explicitly and say WHAT it recovered,
+        because a fallback usually restores only part of what the failed call
+        would have provided. A successful exact-game call for one game does
+        not recover schedule evidence for every other game in the window.
+        """
+        self.recoveries.append({
+            'failed_call': label,
+            'recovered_by': recovered_by,
+            'evidence_recovered': list(evidence),
+        })
+
+    def recovered_evidence(self) -> set:
+        return {
+            item for entry in self.recoveries
+            for item in entry['evidence_recovered']
+        }
+
+    def required_failures(self) -> list[dict]:
+        return [entry for entry in self.errors if entry.get('required')]
 
     def schedule_window(self, start, end, *, required=True):
         """One governed call for a whole date range, never one call per date."""
@@ -215,11 +251,25 @@ class SourceGateway:
         )
 
     def fetch_window(self, start, end):
-        """Fetch the horizon exactly once; later callers reuse the response."""
+        """Fetch the horizon exactly once; later callers reuse the response.
+
+        This one call buys official status for the disputed game AND for every
+        unresolved game in the window. If it fails, both are missing until
+        something positively recovers them.
+        """
         if not self.window_fetched:
             self.window_fetched = True
             self.window_games = self.schedule_window(start, end)
+            if self.window_games is None:
+                self.missing_evidence.update({
+                    audit.EVIDENCE_DISPUTED_GAME_OFFICIAL_STATUS,
+                    audit.EVIDENCE_UNRESOLVED_WINDOW_OFFICIAL_STATUS,
+                })
         return self.window_games
+
+    def outstanding_evidence(self) -> set:
+        """Required evidence still missing after any governed recovery."""
+        return self.missing_evidence - self.recovered_evidence()
 
     def exact_game_day(self, day, *, required=True):
         """A single date, used only when a game is absent from the window."""
@@ -238,12 +288,31 @@ class SourceGateway:
         )
 
     def state(self) -> dict:
+        required_failed = self.required_failures()
         return {
             'refusals': list(self.refusals),
             'source_errors': list(self.errors),
             'required_refusals': [
                 entry for entry in self.refusals if entry['required']
             ],
+            'required_calls_attempted': self.required_attempted,
+            'required_calls_succeeded': self.required_succeeded,
+            'required_calls_failed': len(required_failed),
+            'optional_calls_failed': len(self.errors) - len(required_failed),
+            'failed_required_labels': [
+                entry['label'] for entry in required_failed
+            ],
+            'recoveries': list(self.recoveries),
+            'recovered_evidence': sorted(self.recovered_evidence()),
+            # A reserved-and-dialled call that failed is missing evidence just
+            # as surely as one the budget refused.
+            'required_source_failure': bool(required_failed),
+            'missing_required_evidence': sorted(self.missing_evidence),
+            'outstanding_required_evidence': sorted(
+                self.outstanding_evidence()
+            ),
+            # Recovery is only recovery if something is actually restored.
+            'all_required_evidence_recovered': not self.outstanding_evidence(),
         }
 
 
@@ -278,6 +347,7 @@ def observe_official_status(game_pk, stored, gateway, *, window_games=None) -> d
         'boxscore_usable': None,
         'boxscore_reason': None,
         'boxscore_pitching_line_count': None,
+        'pitching_line_extraction_failed': False,
         # The safe projection of the box score. The raw payload is never kept.
         'boxscore_pitcher_ids': [],
         'raw_boxscore_retained': False,
@@ -308,6 +378,16 @@ def observe_official_status(game_pk, stored, gateway, *, window_games=None) -> d
                 break
             game = _find_game(games, game_pk)
             if game is not None:
+                # This recovers the disputed game's official status and
+                # nothing else. The other games in the window are still
+                # unobserved, so Question 7 stays unrecovered.
+                gateway.record_recovery(
+                    'schedule window',
+                    recovered_by=f'exact_game {day}',
+                    evidence=[
+                        audit.EVIDENCE_DISPUTED_GAME_OFFICIAL_STATUS,
+                    ],
+                )
                 break
 
     if game is None:
@@ -336,6 +416,7 @@ def observe_official_status(game_pk, stored, gateway, *, window_games=None) -> d
     observation['boxscore_requested'] = True
     boxscore = gateway.boxscore(game_pk)
     if boxscore is None:
+        gateway.missing_evidence.add(audit.EVIDENCE_DISPUTED_BOXSCORE)
         if gateway.refusals and gateway.refusals[-1]['kind'] == (
             audit.CALL_KIND_BOXSCORE
         ):
@@ -346,6 +427,11 @@ def observe_official_status(game_pk, stored, gateway, *, window_games=None) -> d
 
     usability = game_finality.classify_boxscore_usability(boxscore)
     lines = _pitching_lines(boxscore)
+    if lines is None:
+        # Extraction failed. That is not "no pitchers appeared"; it is not
+        # knowing who did, and it leaves attribution without its evidence.
+        observation['pitching_line_extraction_failed'] = True
+        gateway.missing_evidence.add(audit.EVIDENCE_DISPUTED_BOXSCORE)
     observation['boxscore_observed'] = True
     observation['boxscore_usable'] = usability.is_final_and_usable
     observation['boxscore_reason'] = usability.reason
@@ -562,47 +648,68 @@ def observe_stored_schedule(game_pk) -> dict:
 def _row_agreement(rows) -> dict:
     """Governed identity and finality agreement across a game's stored rows.
 
-    Schedule storage is one row per team, so "the rows agree" has to mean more
-    than one shared status. Each governed field is reported independently, and
-    `full_row_governance_agreement` is true only when every one of them holds.
+    Schedule storage is one row per team, so a complete governed reading needs
+    an EXACT reciprocal pair. Anything else cannot agree, whatever its fields
+    say: a lone row has nothing to be reciprocal with, and three rows for a
+    two-team game is an identity conflict on its face. Deriving agreement from
+    "no check returned False" would let both of those report full agreement,
+    because an unevaluable check returns None rather than False.
+
+    So full agreement requires all three of: the matrix was evaluated, the rows
+    are an exact two-team pair, and every governed check is exactly True.
 
     `created_at`/`updated_at` are deliberately excluded: two rows written
     microseconds apart are a write-ordering artefact, not a baseball identity
     conflict, and counting them would make every game look broken.
     """
-    checks: dict[str, bool | None] = {}
+    checks: dict[str, bool | None] = {
+        field: None for field in audit.ROW_AGREEMENT_FIELDS
+    }
+    team_ids = [row.team_id for row in rows or ()]
+    unique_teams = set(team_ids)
+
     if not rows:
         return {
             'evaluated': False,
             'row_count': 0,
-            'checks': {field: None for field in audit.ROW_AGREEMENT_FIELDS},
+            'unique_team_count': 0,
+            'checks': checks,
             'disagreeing_fields': [],
-            'full_row_governance_agreement': None,
+            'unevaluated_fields': sorted(checks),
+            'exact_team_row_pair': False,
+            'full_row_governance_agreement': False,
+            'pair_shape': audit.ROW_SHAPE_NO_ROWS,
+            'timestamps_excluded': ['created_at', 'updated_at'],
         }
 
-    team_ids = [row.team_id for row in rows]
-    checks['unique_team_rows'] = len(team_ids) == len(set(team_ids))
+    exact_pair = len(rows) == 2 and len(unique_teams) == 2
+    if len(rows) == 1:
+        shape = audit.ROW_SHAPE_INCOMPLETE_PAIR
+    elif len(rows) > 2:
+        shape = audit.ROW_SHAPE_TOO_MANY_ROWS
+    elif not exact_pair:
+        shape = audit.ROW_SHAPE_DUPLICATE_TEAM_ROWS
+    else:
+        shape = audit.ROW_SHAPE_EXACT_PAIR
 
-    # Each row should name the other's team as its opponent, and the pair
-    # should occupy opposite home/away roles.
-    if len(rows) == 2:
+    checks['exact_team_row_pair'] = exact_pair
+    checks['unique_team_rows'] = len(team_ids) == len(unique_teams)
+
+    if exact_pair:
         first, second = rows
         checks['reciprocal_team_identity'] = (
             first.opponent_team_id == second.team_id
             and second.opponent_team_id == first.team_id
         )
-        roles = {first.home_away, second.home_away}
+        roles = [first.home_away, second.home_away]
         checks['reciprocal_home_away_roles'] = (
-            roles == {'home', 'away'}
-            if None not in roles else None
+            None if None in roles else set(roles) == {'home', 'away'}
         )
-    else:
-        checks['reciprocal_team_identity'] = None
-        checks['reciprocal_home_away_roles'] = None
+    # Without an exact pair the reciprocal checks stay None, and None is not
+    # agreement — it is the absence of a reading.
 
     def shared(attribute):
-        values = {getattr(row, attribute, None) for row in rows}
-        return len(values) <= 1
+        return len({getattr(row, attribute, None) for row in rows}) <= 1
 
     for field in (
         'game_date', 'status_state', 'status_code', 'game_type',
@@ -617,15 +724,37 @@ def _row_agreement(rows) -> dict:
     disagreeing = sorted(
         field for field, value in checks.items() if value is False
     )
+    unevaluated = sorted(
+        field for field, value in checks.items() if value is None
+    )
     return {
         'evaluated': True,
         'row_count': len(rows),
-        'checks': {field: checks.get(field) for field in
-                   audit.ROW_AGREEMENT_FIELDS},
+        'unique_team_count': len(unique_teams),
+        'checks': checks,
         'disagreeing_fields': disagreeing,
-        'full_row_governance_agreement': not disagreeing,
+        'unevaluated_fields': unevaluated,
+        'exact_team_row_pair': exact_pair,
+        'full_row_governance_agreement': (
+            exact_pair
+            and not disagreeing
+            and not unevaluated
+        ),
+        'pair_shape': shape,
         'timestamps_excluded': ['created_at', 'updated_at'],
     }
+
+
+def classify_row_shape(agreement) -> str:
+    """What the stored rows mean when they are not a clean reciprocal pair."""
+    shape = (agreement or {}).get('pair_shape')
+    if shape == audit.ROW_SHAPE_NO_ROWS:
+        return audit.UNRESOLVED_SCHEDULE_AUTHORITY_MISSING
+    if shape in (
+        audit.ROW_SHAPE_TOO_MANY_ROWS, audit.ROW_SHAPE_DUPLICATE_TEAM_ROWS,
+    ):
+        return audit.UNRESOLVED_DOUBLEHEADER_IDENTITY
+    return audit.CLASSIFICATION_STORED_SCHEDULE_ROW_CONFLICT
 
 
 # ── Stored baseball state (Question 5) ──────────────────────────────────────
@@ -1041,6 +1170,20 @@ def classify_unresolved_games(plan, completeness, gateway) -> dict:
         'scope_valid_count': len(classified) - scope_invalid,
         'scope_invalid_count': scope_invalid,
         'unproven_count': counts.get(audit.UNRESOLVED_UNPROVEN, 0),
+        'members_missing_required_official_evidence': sorted(
+            entry['game_pk'] for entry in classified
+            if entry['category_depends_on_official_evidence']
+            and not entry['official_evidence_present']
+        ),
+        'every_member_classified_once': (
+            len({entry['game_pk'] for entry in classified})
+            == len(classified) == len(game_pks)
+        ),
+        'membership_available': True,
+        'window_evidence_observed': gateway.window_games is not None,
+        'outstanding_required_evidence': sorted(
+            gateway.outstanding_evidence()
+        ),
         'window_start': membership['window_start'],
         'source_evidence': {
             'window_response_present': gateway.window_games is not None,
@@ -1149,6 +1292,10 @@ def _classify_one_unresolved_game(
         'rows_expected': expected_rows or None,
         'work_item_status': getattr(work_item, 'status', None),
         'work_item_present': work_item is not None,
+        'official_evidence_present': bool(official),
+        'category_depends_on_official_evidence': (
+            category in audit.OFFICIAL_DEPENDENT_UNRESOLVED_CATEGORIES
+        ),
         'represented_date': _iso(getattr(work_item, 'represented_date', None))
         or (rows[0].game_date.isoformat() if rows and rows[0].game_date
             else None),
@@ -1235,7 +1382,16 @@ def attribute_player_mismatches(ledger_report, ledger_observation, official):
             category = audit.PLAYER_CAUSED_BY_ANOTHER_GAME
 
         counts[category] = counts.get(category, 0) + 1
+        # `caused_by_another_game` is only positive when the disputed game's
+        # lines were actually observed and this player was not in them.
+        # Without those lines it is a guess, and the classifier says unproven.
+        evidence_positive = (
+            category in audit.PLAYER_POSITIVE_EVIDENCE_CLASSIFICATIONS
+            and (category != audit.PLAYER_CAUSED_BY_ANOTHER_GAME
+                 or bool(disputed_line_ids))
+        )
         attributed.append({
+            'evidence_positive': evidence_positive,
             'player_id': player_id,
             'name': entry['name'],
             'incident_last_stored_appearance': entry['last_stored_appearance'],
@@ -1266,6 +1422,13 @@ def attribute_player_mismatches(ledger_report, ledger_observation, official):
         'unproven_count': counts.get(audit.PLAYER_UNPROVEN, 0),
         'attributed_to_disputed_game': counts.get(
             audit.PLAYER_CAUSED_BY_DISPUTED_GAME, 0
+        ),
+        'classifications_with_positive_evidence': sorted({
+            entry['classification'] for entry in attributed
+            if entry['evidence_positive']
+        }),
+        'every_classification_has_positive_evidence': all(
+            entry['evidence_positive'] for entry in attributed
         ),
         'players': attributed,
         'all_attributed_exactly_once': (
@@ -2024,7 +2187,40 @@ def build_questions(observations, comparison, module_drift) -> list[dict]:
         unproven_reason=None if baseball else 'baseball_state_unavailable',
     ))
 
-    players_answered = bool(players.get('all_attributed_exactly_once'))
+    # Q6 is answered only on positive evidence for every one of the nine. A
+    # failed box score, an unusable response, or failed line extraction leaves
+    # attribution without the thing it attributes FROM.
+    official_class = official.get('official_classification')
+    relationship = official.get('relationship') or {}
+    if official_class == audit.OFFICIAL_CLASS_FINAL:
+        source_evidence_ok = bool(
+            official.get('boxscore_observed')
+            and not official.get('pitching_line_extraction_failed')
+        )
+    elif official_class in (
+        audit.OFFICIAL_CLASS_POSTPONED, audit.OFFICIAL_CLASS_SUSPENDED,
+        audit.OFFICIAL_CLASS_CANCELLED,
+    ):
+        # A non-final classification needs the official relationship to be
+        # resolved, not merely absent.
+        source_evidence_ok = bool(relationship.get('resolved'))
+    else:
+        source_evidence_ok = False
+
+    player_conditions = {
+        'all_nine_attributed_exactly_once': bool(
+            players.get('all_attributed_exactly_once')
+        ),
+        'artifact_ids_match_incident': (
+            players.get('artifact_ids_match_incident') is True
+        ),
+        'zero_unproven_players': players.get('unproven_count') == 0,
+        'every_classification_has_positive_evidence': bool(
+            players.get('every_classification_has_positive_evidence')
+        ),
+        'required_source_evidence_observed': source_evidence_ok,
+    }
+    players_answered = all(player_conditions.values())
     questions.append(_question(
         audit.QUESTION_PLAYER_MISMATCH_ATTRIBUTION, answered=players_answered,
         answer=(
@@ -2037,21 +2233,50 @@ def build_questions(observations, comparison, module_drift) -> list[dict]:
             'The nine reported mismatches were not each attributed exactly '
             'once, so the attribution is incomplete.'
         ),
-        evidence={'player_mismatches': players},
+        evidence={
+            'player_mismatches': players,
+            'completion_conditions': player_conditions,
+            'unmet_conditions': sorted(
+                key for key, value in player_conditions.items() if not value
+            ),
+        },
         unproven_reason=(
             None if players_answered
-            else 'player_mismatch_attribution_incomplete'
+            else audit.UNPROVEN_PLAYER_EVIDENCE_INCOMPLETE
         ),
     ))
 
-    # Classifying a set the authority never claimed is not an answer, so
-    # reconciliation is part of what "answered" means here.
-    unresolved_answered = bool(
-        unresolved.get('all_classified')
-        and unresolved.get('category_totals_match')
-        and unresolved.get('reconciles_with_authority') is True
-        and not unresolved.get('missing_canonical_members')
-    )
+    # Classifying a set the authority never claimed is not an answer, and
+    # neither is classifying it without the evidence the categories rest on.
+    unresolved_conditions = {
+        'canonical_membership_available': bool(
+            unresolved.get('membership_available')
+        ),
+        'reconciles_with_authority': (
+            unresolved.get('reconciles_with_authority') is True
+        ),
+        'no_missing_canonical_members': not unresolved.get(
+            'missing_canonical_members'
+        ),
+        'no_extra_games': not unresolved.get('extra_games_beyond_authority'),
+        'category_totals_match': bool(
+            unresolved.get('category_totals_match')
+        ),
+        'every_member_classified_once': bool(
+            unresolved.get('every_member_classified_once')
+        ),
+        'zero_unproven_games': unresolved.get('unproven_count') == 0,
+        'official_window_evidence_observed': bool(
+            unresolved.get('window_evidence_observed')
+        ),
+        'official_evidence_for_every_dependent_member': not unresolved.get(
+            'members_missing_required_official_evidence'
+        ),
+        'no_unrecovered_required_source_failure': not unresolved.get(
+            'outstanding_required_evidence'
+        ),
+    }
+    unresolved_answered = all(unresolved_conditions.values())
     questions.append(_question(
         audit.QUESTION_UNRESOLVED_GAME_CLASSIFICATION,
         answered=unresolved_answered,
@@ -2071,21 +2296,56 @@ def build_questions(observations, comparison, module_drift) -> list[dict]:
             'unresolved_classification': unresolved,
             'completeness': completeness.get('completeness'),
             'authority': completeness.get('completeness_authority'),
+            'completion_conditions': unresolved_conditions,
+            'unmet_conditions': sorted(
+                key for key, value in unresolved_conditions.items()
+                if not value
+            ),
         },
         unproven_reason=(
             None if unresolved_answered
             else (
                 'unresolved_membership_does_not_reconcile_with_authority'
                 if unresolved.get('reconciles_with_authority') is False
-                else 'unresolved_game_classification_incomplete'
+                else audit.UNPROVEN_UNRESOLVED_EVIDENCE_INCOMPLETE
             )
         ),
     ))
 
     incident_block = snapshot.get('incident') or {}
     current_block = snapshot.get('current') or {}
-    snapshot_answered = bool(incident_block) and bool(current_block)
+    scope_block = snapshot.get('gate_scope') or {}
     candidate = current_block.get('candidate_snapshot') or {}
+
+    # Question 8 asks five things. Having the blocks is not having the
+    # answers: an explicit `unproven` value is a recorded absence of a
+    # conclusion, and labelling that "answered" is exactly the failure the
+    # whole result contract exists to prevent.
+    snapshot_conditions = {
+        'incident_candidate_state_known': bool(
+            incident_block.get('incident_candidate_status')
+        ),
+        'incident_served_snapshot_known': (
+            incident_block.get('incident_served_snapshot_id') is not None
+        ),
+        'incident_publication_proof_known': bool(
+            incident_block.get('incident_publication_reason_codes')
+        ),
+        'sync_run_known': current_block.get('sync_run') is not None,
+        'incident_withholding_judgment_known': isinstance(
+            incident_block.get('incident_withholding_was_fail_closed'), bool
+        ),
+        'sole_blocker_is_boolean': isinstance(
+            scope_block.get('disputed_game_is_sole_blocker'), bool
+        ),
+        'sixty_game_contribution_is_boolean': isinstance(
+            scope_block.get('sixty_game_signal_contributes'), bool
+        ),
+        'gate_scope_conclusion_known': isinstance(
+            scope_block.get('requires_games_outside_slate'), bool
+        ),
+    }
+    snapshot_answered = all(snapshot_conditions.values())
     questions.append(_question(
         audit.QUESTION_SNAPSHOT_GATE, answered=snapshot_answered,
         answer=(
@@ -2111,10 +2371,21 @@ def build_questions(observations, comparison, module_drift) -> list[dict]:
             if snapshot_answered else
             'Snapshot gate evidence could not be read.'
         ),
-        evidence={'snapshot_gate': snapshot},
+        evidence={
+            'snapshot_gate': snapshot,
+            'completion_conditions': snapshot_conditions,
+            'unmet_conditions': sorted(
+                key for key, value in snapshot_conditions.items()
+                if not value
+            ),
+        },
         unproven_reason=(
             None if snapshot_answered
-            else audit.UNPROVEN_SNAPSHOT_EVIDENCE_MISSING
+            else (
+                audit.UNPROVEN_SNAPSHOT_GATE_INCOMPLETE
+                if incident_block or current_block
+                else audit.UNPROVEN_SNAPSHOT_EVIDENCE_MISSING
+            )
         ),
     ))
 
@@ -2327,7 +2598,9 @@ def run(args) -> dict:
         findings=findings,
         read_only_proof=read_only_proof,
         artifact_ingestion=ingestion,
-        budget_state=budget.state(),
+        # The reducer needs the gateway's view too: the budget knows what was
+        # refused, only the gateway knows what was dialled and failed.
+        budget_state={**budget.state(), **gateway.state()},
         identity_failures=identity_failures,
         extra_unproven=extra_unproven,
     )

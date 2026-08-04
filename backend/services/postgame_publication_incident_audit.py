@@ -327,7 +327,15 @@ PACKAGE_MODIFIED_MODULES = {
 # the rows for a single game is a real conflict. `created_at`/`updated_at` are
 # deliberately absent: two rows written microseconds apart are not a baseball
 # identity conflict, and treating them as one would make the check meaningless.
+# What the stored rows are shaped like, before asking whether they agree.
+ROW_SHAPE_NO_ROWS = 'no_rows'
+ROW_SHAPE_INCOMPLETE_PAIR = 'incomplete_pair'
+ROW_SHAPE_EXACT_PAIR = 'exact_team_row_pair'
+ROW_SHAPE_DUPLICATE_TEAM_ROWS = 'duplicate_team_rows'
+ROW_SHAPE_TOO_MANY_ROWS = 'more_than_two_rows'
+
 ROW_AGREEMENT_FIELDS = (
+    'exact_team_row_pair',
     'unique_team_rows',
     'reciprocal_team_identity',
     'reciprocal_home_away_roles',
@@ -467,6 +475,29 @@ FINGERPRINTED_TABLES = (
     'sync_runs',
     'sync_failures',
 )
+
+# Named evidence a source call is bought to obtain. Recovery must say WHICH
+# of these a fallback restored, because a fallback usually restores only part
+# of what the failed call would have provided — a successful exact-game call
+# for one game recovers nothing about the other games in the window.
+EVIDENCE_DISPUTED_GAME_OFFICIAL_STATUS = 'disputed_game_official_status'
+EVIDENCE_UNRESOLVED_WINDOW_OFFICIAL_STATUS = (
+    'unresolved_window_official_status'
+)
+EVIDENCE_DISPUTED_BOXSCORE = 'disputed_game_boxscore'
+
+SOURCE_EVIDENCE_KINDS = (
+    EVIDENCE_DISPUTED_GAME_OFFICIAL_STATUS,
+    EVIDENCE_UNRESOLVED_WINDOW_OFFICIAL_STATUS,
+    EVIDENCE_DISPUTED_BOXSCORE,
+)
+
+UNPROVEN_REQUIRED_SOURCE_CALL_FAILED = 'required_source_call_failed'
+UNPROVEN_PLAYER_EVIDENCE_INCOMPLETE = 'player_attribution_evidence_incomplete'
+UNPROVEN_UNRESOLVED_EVIDENCE_INCOMPLETE = (
+    'unresolved_game_evidence_incomplete'
+)
+UNPROVEN_SNAPSHOT_GATE_INCOMPLETE = 'snapshot_gate_conclusion_incomplete'
 
 # ── MLB source-call budget ──────────────────────────────────────────────────
 CALL_KIND_SCHEDULE = 'schedule'
@@ -657,6 +688,32 @@ UNRESOLVED_CLASSIFICATIONS = (
 
 assert len(UNRESOLVED_CLASSIFICATIONS) == 19
 assert len(set(UNRESOLVED_CLASSIFICATIONS)) == 19
+
+# Categories whose verdict rests on the official record. A member landing in
+# one of these without official evidence was not established, it was assumed.
+OFFICIAL_DEPENDENT_UNRESOLVED_CATEGORIES = frozenset({
+    UNRESOLVED_FINAL_FULLY_REPRESENTED,
+    UNRESOLVED_FINAL_MISSING_ROWS,
+    UNRESOLVED_FINAL_PARTIAL,
+    UNRESOLVED_STORED_FINAL_SOURCE_NON_FINAL,
+    UNRESOLVED_SOURCE_FINAL_STORED_NON_FINAL,
+    UNRESOLVED_POSTPONED,
+    UNRESOLVED_SUSPENDED,
+    UNRESOLVED_CANCELLED,
+    UNRESOLVED_RESCHEDULED,
+    UNRESOLVED_WORK_ITEM_ABSENT_SHADOW_ONLY,
+})
+
+# Player classifications that rest on positive evidence rather than on the
+# absence of a contradiction.
+PLAYER_POSITIVE_EVIDENCE_CLASSIFICATIONS = frozenset({
+    PLAYER_CAUSED_BY_DISPUTED_GAME,
+    PLAYER_CAUSED_BY_LEDGER_QUERY,
+    PLAYER_CAUSED_BY_IDENTITY_PROBLEM,
+    PLAYER_CAUSED_BY_RESCHEDULE_RELATIONSHIP,
+    PLAYER_CAUSED_BY_STALE_DATA,
+    PLAYER_CAUSED_BY_ANOTHER_GAME,
+})
 
 # Categories that do NOT represent a genuine unpublished final-game deficit.
 # A postponed or cancelled game must never inflate the true deficit.
@@ -1765,6 +1822,15 @@ def decide(
     # a REQUIRED call the budget refused leaves evidence missing.
     if budget.get('required_call_refused'):
         unproven.append(UNPROVEN_SOURCE_BUDGET_EXHAUSTED)
+
+    # A required call that was reserved, dialled and FAILED is missing evidence
+    # too. The budget cannot see that — it only knows the reservation succeeded
+    # — so a failure is a gap unless a governed fallback positively recovered
+    # everything it was bought to obtain.
+    if budget.get('required_source_failure') and not budget.get(
+        'all_required_evidence_recovered', True
+    ):
+        unproven.append(UNPROVEN_REQUIRED_SOURCE_CALL_FAILED)
 
     # ── Questions ────────────────────────────────────────────────────────
     answered = {

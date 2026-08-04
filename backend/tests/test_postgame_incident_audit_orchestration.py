@@ -705,17 +705,51 @@ def _observations(**overrides):
             },
         },
         'snapshot_gate': {
-            'incident': {'incident_withholding_was_fail_closed': True},
+            'incident': {
+                'incident_candidate_status': 'pending',
+                'incident_served_snapshot_id': 343,
+                'incident_publication_reason_codes': list(
+                    audit.INCIDENT_PUBLICATION_REASON_CODES
+                ),
+                'incident_withholding_was_fail_closed': True,
+            },
             'current': {
                 'candidate_still_pending': True,
                 'candidate_snapshot': {'id': 344, 'status': 'pending'},
+                'sync_run': {'id': 596, 'status': 'success'},
                 'slate_coverage': {'complete_enough_to_publish': False,
                                    'validations_passed': True,
                                    'reason_codes': ['coverage_incomplete']},
             },
-            'gate_scope': {},
+            'gate_scope': {
+                'disputed_game_is_sole_blocker': False,
+                'sixty_game_signal_contributes': False,
+                'requires_games_outside_slate': False,
+                'publication_horizon_days': 7,
+            },
+        },
+        'player_mismatches': {
+            'all_attributed_exactly_once': True,
+            'artifact_ids_match_incident': True,
+            'unproven_count': 0,
+            'every_classification_has_positive_evidence': True,
+            'attributed_count': 9, 'classification_counts': {},
+            'attributed_to_disputed_game': 9, 'players': [],
         },
     }
+    base['completeness']['unresolved_classification'] = {
+        'membership_available': True, 'reconciles_with_authority': True,
+        'missing_canonical_members': [], 'extra_games_beyond_authority': 0,
+        'category_totals_match': True, 'every_member_classified_once': True,
+        'unproven_count': 0, 'window_evidence_observed': True,
+        'members_missing_required_official_evidence': [],
+        'outstanding_required_evidence': [], 'all_classified': True,
+        'scope_invalid_count': 0, 'classification_counts': {},
+        'reconstructed_count': 0, 'represented_dates': [],
+        'dates_outside_incident_slate': [],
+    }
+    base['official_status']['boxscore_observed'] = True
+    base['official_status']['pitching_line_extraction_failed'] = False
     for key, value in overrides.items():
         if isinstance(value, dict) and isinstance(base.get(key), dict):
             merged = dict(base[key])
@@ -758,3 +792,332 @@ def _decide(**overrides):
     }
     kwargs.update(overrides)
     return audit.decide(**kwargs)
+
+
+# ── Blocker 1: a required call that FAILS is missing evidence ──────────────
+
+def test_required_and_optional_failures_are_counted_separately():
+    client = CountingClient(games=[], fail={'schedule'})
+    budget = audit.SourceCallBudget()
+    gateway = _gateway(client, budget)
+    gateway.schedule_window(SLATE - timedelta(days=7), SLATE, required=True)
+    gateway.exact_game_day(SLATE, required=False)
+
+    # Production merges both views; the budget knows what was refused, the
+    # gateway knows what was dialled and failed.
+    state = {**budget.state(), **gateway.state()}
+    assert state['required_calls_attempted'] == 1
+    assert state['required_calls_succeeded'] == 0
+    assert state['required_calls_failed'] == 1
+    assert state['optional_calls_failed'] == 1
+    assert state['required_call_refused'] is False   # it was never refused
+    assert state['required_source_failure'] is True  # it was dialled and died
+
+
+def test_a_failed_window_is_not_recovered_by_the_disputed_game_fallback(app):
+    """The exact-game fallback restores ONE game, not the window."""
+    disputed = _game(GAME, SLATE.isoformat())
+
+    class WindowFailsClient(CountingClient):
+        def get_schedule(self, start_date=None, end_date=None, team_id=None):
+            self.schedule_calls.append((start_date, end_date))
+            if start_date != end_date:      # the window request
+                raise RuntimeError('upstream unavailable')
+            return [disputed] if start_date == SLATE.isoformat() else []
+
+    client = WindowFailsClient(boxscore=_boxscore([687239]))
+    budget = audit.SourceCallBudget()
+    gateway = _gateway(client, budget)
+    window = gateway.fetch_window(SLATE - timedelta(days=7), SLATE)
+    assert window is None
+
+    official = runner.observe_official_status(
+        GAME, {'rows': [{'game_date': SLATE.isoformat()}]}, gateway,
+        window_games=window,
+    )
+
+    # Question 1 can still be answered: the fallback found the disputed game.
+    assert official['game_found_in_source'] is True
+    # But the window evidence for every OTHER game is still missing.
+    state = gateway.state()
+    assert state['required_calls_failed'] == 1
+    assert state['recovered_evidence'] == [
+        audit.EVIDENCE_DISPUTED_GAME_OFFICIAL_STATUS
+    ]
+    assert state['outstanding_required_evidence'] == [
+        audit.EVIDENCE_UNRESOLVED_WINDOW_OFFICIAL_STATUS
+    ]
+    assert state['all_required_evidence_recovered'] is False
+
+    # So the overall audit is UNPROVEN even though Q1 answered.
+    decision = _decide(budget_state={**budget.state(), **state})
+    assert decision['result'] == audit.RESULT_UNPROVEN
+    assert audit.UNPROVEN_REQUIRED_SOURCE_CALL_FAILED in (
+        decision['unproven_reasons']
+    )
+
+
+def test_a_fallback_that_restores_everything_may_answer():
+    client = CountingClient(games=[], fail={'schedule'})
+    budget = audit.SourceCallBudget()
+    gateway = _gateway(client, budget)
+    gateway.fetch_window(SLATE - timedelta(days=7), SLATE)
+    gateway.record_recovery(
+        'schedule window', recovered_by='governed replay',
+        evidence=list(audit.SOURCE_EVIDENCE_KINDS),
+    )
+
+    state = gateway.state()
+    assert state['all_required_evidence_recovered'] is True
+    assert state['outstanding_required_evidence'] == []
+    assert _decide(budget_state={**budget.state(), **state})['result'] != (
+        audit.RESULT_UNPROVEN
+    )
+
+
+def test_a_failed_box_score_leaves_question_six_unanswered():
+    client = CountingClient(
+        games=[_game(GAME, SLATE.isoformat())], fail={'boxscore'},
+    )
+    gateway = _gateway(client)
+    window = gateway.fetch_window(SLATE - timedelta(days=7), SLATE)
+    official = runner.observe_official_status(
+        GAME, {'rows': []}, gateway, window_games=window,
+    )
+
+    assert official['boxscore_requested'] is True
+    assert official['boxscore_observed'] is False
+    assert audit.EVIDENCE_DISPUTED_BOXSCORE in gateway.missing_evidence
+
+    sixth = _question(_observations(official_status=official), 6)
+    assert sixth['answered'] is False
+    assert 'required_source_evidence_observed' in sixth['evidence'][
+        'unmet_conditions'
+    ]
+
+
+def test_failed_pitching_line_extraction_leaves_question_six_unanswered(
+    monkeypatch,
+):
+    """An unreadable box score is not "no pitchers appeared"."""
+    import services.sync as sync_service
+
+    def _explode(_boxscore_payload):
+        raise RuntimeError('unparseable')
+
+    monkeypatch.setattr(
+        sync_service, '_extract_pitching_lines_from_boxscore', _explode,
+        raising=False,
+    )
+    client = CountingClient(
+        games=[_game(GAME, SLATE.isoformat())], boxscore=_boxscore([687239]),
+    )
+    gateway = _gateway(client)
+    window = gateway.fetch_window(SLATE - timedelta(days=7), SLATE)
+    official = runner.observe_official_status(
+        GAME, {'rows': []}, gateway, window_games=window,
+    )
+
+    assert official['boxscore_observed'] is True
+    assert official['pitching_line_extraction_failed'] is True
+    sixth = _question(_observations(official_status=official), 6)
+    assert sixth['answered'] is False
+
+
+def test_one_unproven_player_leaves_question_six_unanswered():
+    observations = _observations()
+    observations['player_mismatches'] = {
+        'all_attributed_exactly_once': True,
+        'artifact_ids_match_incident': True,
+        'unproven_count': 1,
+        'every_classification_has_positive_evidence': False,
+        'attributed_count': 9, 'classification_counts': {},
+        'attributed_to_disputed_game': 0, 'players': [],
+    }
+    sixth = _question(observations, 6)
+    assert sixth['answered'] is False
+    assert 'zero_unproven_players' in sixth['evidence']['unmet_conditions']
+    assert _decide(questions=[sixth])['result'] == audit.RESULT_UNPROVEN
+
+
+def test_one_unproven_unresolved_game_leaves_question_seven_unanswered():
+    observations = _observations()
+    observations['completeness']['unresolved_classification'] = {
+        **_clean_unresolved(), 'unproven_count': 1,
+    }
+    seventh = _question(observations, 7)
+    assert seventh['answered'] is False
+    assert 'zero_unproven_games' in seventh['evidence']['unmet_conditions']
+
+
+def test_a_member_without_official_evidence_leaves_question_seven_unanswered():
+    observations = _observations()
+    observations['completeness']['unresolved_classification'] = {
+        **_clean_unresolved(),
+        'members_missing_required_official_evidence': [822867],
+    }
+    seventh = _question(observations, 7)
+    assert seventh['answered'] is False
+    assert 'official_evidence_for_every_dependent_member' in (
+        seventh['evidence']['unmet_conditions']
+    )
+
+
+def test_questions_six_and_seven_can_both_be_positively_answered():
+    """The predicates must be satisfiable, not permanently false."""
+    observations = _observations()
+    sixth = _question(observations, 6)
+    seventh = _question(observations, 7)
+    assert sixth['answered'] is True, sixth['evidence']['unmet_conditions']
+    assert seventh['answered'] is True, seventh['evidence']['unmet_conditions']
+
+
+# ── Blocker 2: Question 8 is not answered by recording "unproven" ──────────
+
+def test_an_unproven_sole_blocker_leaves_question_eight_unanswered():
+    observations = _observations()
+    observations['snapshot_gate']['gate_scope'] = {
+        **_clean_gate_scope(), 'disputed_game_is_sole_blocker': 'unproven',
+    }
+    eighth = _question(observations, 8)
+    assert eighth['answered'] is False
+    assert 'sole_blocker_is_boolean' in eighth['evidence']['unmet_conditions']
+    assert eighth['unproven_reason'] == (
+        audit.UNPROVEN_SNAPSHOT_GATE_INCOMPLETE
+    )
+
+
+def test_an_unproven_sixty_game_contribution_leaves_q8_unanswered():
+    observations = _observations()
+    observations['snapshot_gate']['gate_scope'] = {
+        **_clean_gate_scope(), 'sixty_game_signal_contributes': 'unproven',
+    }
+    eighth = _question(observations, 8)
+    assert eighth['answered'] is False
+    assert 'sixty_game_contribution_is_boolean' in (
+        eighth['evidence']['unmet_conditions']
+    )
+
+
+def test_question_eight_answers_when_both_are_positively_established():
+    observations = _observations()
+    eighth = _question(observations, 8)
+    assert eighth['answered'] is True, eighth['evidence']['unmet_conditions']
+
+
+def test_the_real_incident_shape_is_unproven_not_a_completed_result():
+    """With the retained artifacts carrying a count and not a membership, the
+    correct production outcome is UNPROVEN. That is preferable to a completed
+    result claiming every question was answered."""
+    observations = _observations()
+    observations['snapshot_gate']['gate_scope'] = {
+        **_clean_gate_scope(),
+        'disputed_game_is_sole_blocker': 'unproven',
+        'sixty_game_signal_contributes': 'unproven',
+    }
+    questions = runner.build_questions(
+        observations, runner.build_authority_comparison(observations),
+        audit.canonical_module_drift({}),
+    )
+    decision = _decide(questions=questions)
+    assert decision['result'] == audit.RESULT_UNPROVEN
+    assert audit.QUESTION_SNAPSHOT_GATE in decision['unanswered_question_ids']
+
+
+# ── Blocker 3: full agreement requires an exact reciprocal pair ────────────
+
+def test_zero_rows_report_evidence_unavailable():
+    agreement = runner._row_agreement([])
+    assert agreement['evaluated'] is False
+    assert agreement['exact_team_row_pair'] is False
+    assert agreement['full_row_governance_agreement'] is False
+    assert runner.classify_row_shape(agreement) == (
+        audit.UNRESOLVED_SCHEDULE_AUTHORITY_MISSING
+    )
+
+
+def test_a_single_row_is_never_full_agreement():
+    agreement = runner._row_agreement([_row(1, 2, 'home')])
+    assert agreement['exact_team_row_pair'] is False
+    assert agreement['full_row_governance_agreement'] is False
+    assert agreement['pair_shape'] == audit.ROW_SHAPE_INCOMPLETE_PAIR
+    assert runner.classify_row_shape(agreement) == (
+        audit.CLASSIFICATION_STORED_SCHEDULE_ROW_CONFLICT
+    )
+
+
+def test_three_unique_rows_are_never_full_agreement():
+    rows = [_row(1, 2, 'home'), _row(2, 1, 'away'), _row(3, 1, 'home')]
+    agreement = runner._row_agreement(rows)
+    assert agreement['exact_team_row_pair'] is False
+    assert agreement['full_row_governance_agreement'] is False
+    assert agreement['pair_shape'] == audit.ROW_SHAPE_TOO_MANY_ROWS
+    assert runner.classify_row_shape(agreement) == (
+        audit.UNRESOLVED_DOUBLEHEADER_IDENTITY
+    )
+
+
+def test_duplicate_team_rows_are_never_full_agreement():
+    agreement = runner._row_agreement([_row(1, 2, 'home'), _row(1, 2, 'away')])
+    assert agreement['exact_team_row_pair'] is False
+    assert agreement['full_row_governance_agreement'] is False
+    assert runner.classify_row_shape(agreement) == (
+        audit.UNRESOLVED_DOUBLEHEADER_IDENTITY
+    )
+
+
+def test_a_none_governed_check_cannot_yield_full_agreement():
+    """An unreadable home/away role is an absent reading, not agreement."""
+    rows = [_row(1, 2, None), _row(2, 1, None)]
+    agreement = runner._row_agreement(rows)
+    assert agreement['checks']['reciprocal_home_away_roles'] is None
+    assert 'reciprocal_home_away_roles' in agreement['unevaluated_fields']
+    assert agreement['disagreeing_fields'] == []   # nothing is False...
+    assert agreement['full_row_governance_agreement'] is False  # ...still not
+
+
+def test_an_exact_reciprocal_pair_is_the_only_full_agreement():
+    agreement = runner._row_agreement([_row(1, 2, 'home'), _row(2, 1, 'away')])
+    assert agreement['exact_team_row_pair'] is True
+    assert agreement['pair_shape'] == audit.ROW_SHAPE_EXACT_PAIR
+    assert agreement['unevaluated_fields'] == []
+    assert agreement['full_row_governance_agreement'] is True
+    assert all(
+        agreement['checks'][field] is True
+        for field in audit.ROW_AGREEMENT_FIELDS
+    )
+
+
+# ── Helpers for the predicates ─────────────────────────────────────────────
+
+def _clean_unresolved():
+    return {
+        'membership_available': True, 'reconciles_with_authority': True,
+        'missing_canonical_members': [], 'extra_games_beyond_authority': 0,
+        'category_totals_match': True, 'every_member_classified_once': True,
+        'unproven_count': 0, 'window_evidence_observed': True,
+        'members_missing_required_official_evidence': [],
+        'outstanding_required_evidence': [], 'all_classified': True,
+        'classification_counts': {}, 'reconstructed_count': 0,
+        'represented_dates': [], 'dates_outside_incident_slate': [],
+    }
+
+
+def _clean_gate_scope():
+    return {
+        'disputed_game_is_sole_blocker': False,
+        'sixty_game_signal_contributes': False,
+        'requires_games_outside_slate': False,
+        'publication_horizon_days': 7,
+    }
+
+
+def _question(observations, number):
+    questions = {
+        entry['question_id']: entry
+        for entry in runner.build_questions(
+            observations, runner.build_authority_comparison(observations),
+            audit.canonical_module_drift({}),
+        )
+    }
+    return questions[audit.QUESTION_IDS[number - 1]]
