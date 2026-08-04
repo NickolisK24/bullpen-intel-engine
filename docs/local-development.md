@@ -358,3 +358,90 @@ python -m pytest backend/tests/test_config_database.py backend/tests/test_test_d
 For docs-only changes, the targeted backend safety tests are usually enough.
 Run the full frontend tests or build when frontend code changes or when you need
 extra confidence before visual review.
+
+## Running CI Backend Shards Locally
+
+CI runs the backend suite as four concurrent jobs, each against its own
+PostgreSQL database. Ownership is not computed at run time: it is checked in at
+`backend/tests/ci_shard_manifest.json`, and `backend/scripts/ci_shard.py` reads
+it. Every backend test still runs before merge — the suite is partitioned, not
+reduced.
+
+### Verify the manifest
+
+This needs no PostgreSQL. It drives pytest collection against in-memory SQLite
+and proves the four shards cover every collected test exactly once, at file level
+and at pytest node-ID level.
+
+```powershell
+cd backend
+python scripts\ci_shard.py verify
+python scripts\ci_shard.py summary
+```
+
+### Print one shard's file list
+
+```powershell
+python scripts\ci_shard.py files --shard 1
+```
+
+### Run one shard against a disposable local database
+
+Give each shard its own database. Create them once, the same way the permanent
+local database was created, and keep `test` in every name so the disposable-target
+guard in `backend/tests/db_config.py` accepts them.
+
+```powershell
+cd backend
+$env:APP_ENV = 'test'
+$env:AUTO_SYNC = 'false'
+$env:DATABASE_URL = 'postgresql://baseballos_local:YOUR_LOCAL_PASSWORD@localhost:5432/baseballos_local_test_1'
+$env:TEST_DATABASE_URL = $env:DATABASE_URL
+python -m pytest (python scripts\ci_shard.py files --shard 1) -q -ra --tb=short
+```
+
+Repeat for shards 2, 3, and 4 against `baseballos_local_test_2`,
+`baseballos_local_test_3`, and `baseballos_local_test_4`.
+
+### Why each shard needs its own database
+
+Almost every backend test fixture builds the whole schema with `db.create_all()`
+and tears it down with `db.drop_all()`. Two test processes pointed at one database
+drop tables out from under each other, collide on unique constraints, and contend
+for the advisory locks the sync services take — those locks are database-global,
+not per-connection. Running shards against one shared database was measured and it
+fails loudly: uniqueness violations, undefined tables, duplicate tables, and
+deadlocks. Separate databases remove all of it.
+
+For the same reason, pytest worker parallelism inside a shard (`pytest -n`,
+`pytest-xdist`) is prohibited. A CI contract test enforces that no workflow
+command turns it on.
+
+### When the manifest must be rebalanced
+
+Adding a backend test file makes `verify` fail, and that is intended. A new file
+is assigned deliberately and the assignment is reviewed, rather than absorbed
+silently by whichever shard a hash happens to pick.
+
+To rebalance, record measured per-file seconds as a JSON object mapping
+`tests/test_x.py` to seconds, then regenerate and read the diff:
+
+```powershell
+cd backend
+python scripts\ci_shard.py generate --timings ..\shard_timings.json --baseline-commit <sha>
+python scripts\ci_shard.py verify
+python -m pytest tests\test_ci_shard_contract.py -q
+```
+
+Allocation is greedy longest-processing-time: longest file first, each file to
+the shard with the smallest running total, ties broken by path. The stored
+`measured_seconds` values are balancing inputs only — they never decide which
+tests run. CI never regenerates the manifest.
+
+Rebalance again when GitHub Actions shows one shard materially slower than the
+others. Use the durations that run reports, not local timings.
+
+### What this does not change
+
+Sharding is a CI topology change only. No test fixture, fixture scope, test file,
+migration, or production code path is altered by it.
