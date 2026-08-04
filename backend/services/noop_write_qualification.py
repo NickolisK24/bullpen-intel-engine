@@ -347,6 +347,57 @@ UNPROVEN_WRITE_SOURCE_REVISION_MISSING = 'write_phase_source_revision_missing'
 UNPROVEN_WRITER_GUARD_RELEASE_UNPROVEN = 'writer_guard_release_unproven'
 
 
+# ── Execution-state evidence ────────────────────────────────────────────────
+# Production run 30862655470 refused at the missing-work-item precondition,
+# before the planner ever ran, and the artifact still reported
+# ``finality_proven_by_planner: true`` — because that field was derived from
+# the ABSENCE of a "not plannable" failure rather than from positive planner
+# evidence. The refusal was correct; the evidence was not.
+#
+# These flags record what actually executed. Each is false until the step it
+# names has genuinely happened, so an early refusal cannot inherit a positive
+# claim from a step that never ran.
+
+def execution_state(*, work_item_precondition_checked=False,
+                    work_item_precondition_passed=False,
+                    planner_phase_entered=False,
+                    shadow_report=None, game_pk=None) -> dict:
+    """Report which phases actually executed, and what the planner proved.
+
+    ``finality_proven_by_planner`` is True ONLY when the planner ran and
+    positively planned exactly the requested game under finality authority. It
+    is None when the check never executed, and False when it executed and did
+    not prove finality. It is never inferred from a missing failure reason.
+    """
+    finality_check_executed = bool(
+        planner_phase_entered and shadow_report is not None
+    )
+    finality_proven = None
+    if finality_check_executed:
+        planned = [
+            _as_int(value)
+            for value in ((shadow_report or {}).get('planned_game_pks') or ())
+        ]
+        finality_proven = bool(
+            game_pk is not None and planned == [int(game_pk)]
+        )
+    return {
+        'work_item_precondition_checked': bool(work_item_precondition_checked),
+        'work_item_precondition_passed': bool(work_item_precondition_passed),
+        'planner_phase_entered': bool(planner_phase_entered),
+        'finality_check_executed': finality_check_executed,
+        'finality_proven_by_planner': finality_proven,
+    }
+
+
+def render_finality(state) -> str:
+    """Human-readable finality cell. Never renders ``True`` for a check that
+    did not run."""
+    if not (state or {}).get('finality_check_executed'):
+        return 'not executed'
+    return 'proven' if state.get('finality_proven_by_planner') else 'not proven'
+
+
 class QualificationInputError(ValueError):
     """A supplied operator input is not usable. Carries a safe reason code."""
 

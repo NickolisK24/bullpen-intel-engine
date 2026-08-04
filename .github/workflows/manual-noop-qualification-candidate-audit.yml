@@ -1,0 +1,328 @@
+name: Manual No-Op Qualification Candidate Audit
+
+# Read-only audit that identifies completed durable game-driven work items whose
+# current canonical shadow plans are fully unchanged, and are therefore eligible
+# targets for the Manual Game-Driven No-Op Write Qualification.
+#
+# Why it exists: production run 30862655470 dispatched the no-op qualification
+# for game 824488 and refused with `target_work_item_missing`. Every safety
+# property held — the write phase was never entered — but it proved that a
+# reconciling GameLog row is NOT the same fact as a completed durable
+# `game_ingestion_work_item`. Operator intuition cannot pick a candidate, so
+# this replaces guessing with production evidence.
+#
+# Read-only, three ways: the public sync advisory lock (acquire-only, it never
+# touches SyncRun rows), a PostgreSQL read-only transaction with a refused write
+# probe, and before/after content fingerprints across every table the shadow
+# path can reach.
+#
+# Finding zero eligible candidates is a COMPLETED audit, not a failure. Nothing
+# here creates a work item, dispatches the write qualification, or authorizes
+# any write.
+
+on:
+  workflow_dispatch:
+    inputs:
+      expected_head_sha:
+        description: >-
+          Full 40-character lowercase commit SHA this audit must run against.
+          Must equal the resolved GITHUB_SHA or the run refuses.
+        required: true
+        type: string
+      confirmation:
+        description: >-
+          Must be exactly AUDIT_NOOP_QUALIFICATION_CANDIDATES.
+        required: true
+        type: string
+      lookback_days:
+        description: 'Completion-date lookback window. 1-120.'
+        required: false
+        default: '30'
+        type: string
+      candidate_limit:
+        description: 'Maximum candidates evaluated. 1-50.'
+        required: false
+        default: '20'
+        type: string
+      eligible_target_count:
+        description: >-
+          Stop after this many eligible candidates. 1-10, and must not exceed
+          candidate_limit.
+        required: false
+        default: '5'
+        type: string
+      operator_note:
+        description: >-
+          Optional note for the evidence artifact. Informational only: it can
+          never affect authorization or eligibility, and is sanitized before it
+          is recorded.
+        required: false
+        default: ''
+        type: string
+
+# Share the production sync writer lane so the audit can never overlap a
+# production writer. cancel-in-progress stays false.
+concurrency:
+  group: baseballos-sync
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  candidate-audit:
+    runs-on: ubuntu-latest
+    # Bounded by the candidate cap: 50 candidates x one box-score fetch each,
+    # plus discovery and two fingerprint passes.
+    timeout-minutes: 20
+    if: >-
+      github.event_name == 'workflow_dispatch'
+      && github.repository == 'NickolisK24/bullpen-intel-engine'
+      && github.ref == 'refs/heads/main'
+      && github.actor == github.repository_owner
+
+    steps:
+      # SHELL BOUNDARY (established in PR #604). No `${{ }}` expression may
+      # appear inside any `run:` script: GitHub substitutes into the script text
+      # before bash parses it, so an expression holding operator input becomes
+      # shell code in a step carrying production credentials. Every input
+      # crosses through env: and is read only as a quoted variable.
+      - name: Refuse an unauthorized invocation
+        env:
+          INPUT_EXPECTED_HEAD_SHA: ${{ inputs.expected_head_sha }}
+          INPUT_CONFIRMATION: ${{ inputs.confirmation }}
+          INPUT_LOOKBACK_DAYS: ${{ inputs.lookback_days }}
+          INPUT_CANDIDATE_LIMIT: ${{ inputs.candidate_limit }}
+          INPUT_ELIGIBLE_TARGET_COUNT: ${{ inputs.eligible_target_count }}
+          INPUT_OPERATOR_NOTE: ${{ inputs.operator_note }}
+          RESOLVED_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          if ! printf '%s' "$INPUT_EXPECTED_HEAD_SHA" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "Refused: expected_head_sha must be 40 lowercase hex characters."
+            exit 1
+          fi
+
+          if [ "$INPUT_EXPECTED_HEAD_SHA" != "$RESOLVED_SHA" ]; then
+            echo "Refused: expected_head_sha does not match the resolved commit."
+            exit 1
+          fi
+
+          if [ "$INPUT_CONFIRMATION" != "AUDIT_NOOP_QUALIFICATION_CANDIDATES" ]; then
+            echo "Refused: confirmation must be exactly AUDIT_NOOP_QUALIFICATION_CANDIDATES."
+            exit 1
+          fi
+
+          bounded() {
+            printf '%s' "$1" | grep -Eq '^[0-9]+$' \
+              && [ "$1" -ge "$2" ] && [ "$1" -le "$3" ]
+          }
+
+          if ! bounded "$INPUT_LOOKBACK_DAYS" 1 120; then
+            echo "Refused: lookback_days must be an integer within 1-120."
+            exit 1
+          fi
+
+          if ! bounded "$INPUT_CANDIDATE_LIMIT" 1 50; then
+            echo "Refused: candidate_limit must be an integer within 1-50."
+            exit 1
+          fi
+
+          if ! bounded "$INPUT_ELIGIBLE_TARGET_COUNT" 1 10; then
+            echo "Refused: eligible_target_count must be an integer within 1-10."
+            exit 1
+          fi
+
+          if [ "$INPUT_ELIGIBLE_TARGET_COUNT" -gt "$INPUT_CANDIDATE_LIMIT" ]; then
+            echo "Refused: eligible_target_count cannot exceed candidate_limit."
+            exit 1
+          fi
+
+          # The note is never interpreted, expanded, or used in a decision.
+          printf 'Operator note supplied: %s characters.\n' \
+            "$(printf '%s' "$INPUT_OPERATOR_NOTE" | wc -c)"
+
+          echo "Authorization preconditions satisfied."
+
+      - name: Check out the reviewed commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install backend dependencies
+        run: pip install -r backend/requirements.txt
+
+      - name: Run the read-only candidate audit
+        id: audit
+        continue-on-error: true
+        env:
+          APP_ENV: production
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SECRET_KEY: ${{ secrets.SECRET_KEY }}
+          # ADMIN_API_TOKEN is required for APPLICATION STARTUP ONLY, and this
+          # was proven by inspection rather than assumed:
+          #   config.py:96   APP_ENV != production refuses a non-local
+          #                  DATABASE_URL, so reaching production requires
+          #                  APP_ENV=production;
+          #   config.py:231  APP_ENV=production refuses to boot without
+          #                  ADMIN_API_TOKEN.
+          # Booting against the production database is therefore impossible
+          # without it. The audit itself never reads this value, makes no HTTP
+          # call, and invokes no admin endpoint — it opens a read-only
+          # transaction and runs the canonical shadow lane. A read-only
+          # application bootstrap that does not demand a mutation token would
+          # remove this entirely and is recorded as a follow-up.
+          ADMIN_API_TOKEN: ${{ secrets.BASEBALLOS_ADMIN_API_TOKEN }}
+          # No BASEBALLOS_SYNC_URL and no publication token: nothing here calls
+          # a sync endpoint or publishes.
+          AUTO_SYNC: 'false'
+          # GAME_DRIVEN_INGESTION_MODE is deliberately NOT set. The audit passes
+          # the canonical shadow mode explicitly, per candidate, in code.
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_ACTOR: ${{ github.actor }}
+          GITHUB_REF: ${{ github.ref }}
+          GITHUB_SHA: ${{ github.sha }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
+          GITHUB_WORKFLOW: ${{ github.workflow }}
+          INPUT_EXPECTED_HEAD_SHA: ${{ inputs.expected_head_sha }}
+          INPUT_CONFIRMATION: ${{ inputs.confirmation }}
+          INPUT_LOOKBACK_DAYS: ${{ inputs.lookback_days }}
+          INPUT_CANDIDATE_LIMIT: ${{ inputs.candidate_limit }}
+          INPUT_ELIGIBLE_TARGET_COUNT: ${{ inputs.eligible_target_count }}
+          INPUT_OPERATOR_NOTE: ${{ inputs.operator_note }}
+        run: |
+          set -uo pipefail
+          cd backend
+          exit_code=0
+          python scripts/run_noop_qualification_candidate_audit.py \
+            --expected-head-sha "$INPUT_EXPECTED_HEAD_SHA" \
+            --confirmation "$INPUT_CONFIRMATION" \
+            --lookback-days "$INPUT_LOOKBACK_DAYS" \
+            --candidate-limit "$INPUT_CANDIDATE_LIMIT" \
+            --eligible-target-count "$INPUT_ELIGIBLE_TARGET_COUNT" \
+            --operator-note "$INPUT_OPERATOR_NOTE" \
+            --artifact-dir ../artifacts/noop-qualification-candidate-audit \
+            || exit_code=$?
+          echo "exit_code=$exit_code" >> "$GITHUB_OUTPUT"
+          exit "$exit_code"
+
+      - name: Scan the evidence artifact
+        id: scan
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          exit_code=0
+          python backend/scripts/scan_forbidden_artifact_content.py \
+            --directory artifacts/noop-qualification-candidate-audit \
+            || exit_code=$?
+          echo "exit_code=$exit_code" >> "$GITHUB_OUTPUT"
+          exit "$exit_code"
+
+      - name: Upload the evidence artifact
+        id: upload
+        continue-on-error: true
+        if: ${{ steps.scan.outcome == 'success' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: noop-qualification-candidate-audit-${{ github.run_id }}
+          path: artifacts/noop-qualification-candidate-audit
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Append the audit summary
+        if: ${{ always() }}
+        run: |
+          set -uo pipefail
+          python - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json
+          import pathlib
+
+          path = pathlib.Path(
+              'artifacts/noop-qualification-candidate-audit/'
+              'candidate-audit-summary.json'
+          )
+          print('## No-op qualification candidate audit\n')
+          if not path.exists():
+              print('No evidence document was produced. Result: UNPROVEN.')
+              raise SystemExit(0)
+
+          doc = json.loads(path.read_text(encoding='utf-8'))
+          verdict = doc.get('verdict') or {}
+          proof = doc.get('read_only_proof') or {}
+          discovery = doc.get('discovery') or {}
+          summary = doc.get('candidate_summary') or {}
+
+          print(f"**Result: {verdict.get('result')}**\n")
+          print('| field | value |')
+          print('| :--- | :--- |')
+          print(f"| commit | `{(doc.get('identity') or {}).get('commit_sha')}` |")
+          print(f"| read-only transaction | {proof.get('transaction_read_only_enabled')} |")
+          print(f"| write probe refused | {proof.get('write_probe_refused')} |")
+          print(f"| fingerprints match | {proof.get('fingerprints_match')} |")
+          print(f"| changed tables | {proof.get('changed_tables')} |")
+          print(f"| completed work items | {discovery.get('completed_work_items_found')} |")
+          print(f"| candidates evaluated | {discovery.get('candidates_selected')} |")
+          print(f"| stop reason | {discovery.get('bounded_stop_reason')} |")
+          print(f"| eligible | {summary.get('eligible_count')} |")
+          print(f"| ineligible | {summary.get('ineligible_count')} |")
+          print(f"| unproven | {summary.get('unproven_count')} |")
+          print(f"| suggested candidate | {summary.get('suggested_candidate_game_pk')} |")
+          print(f"| artifact | noop-qualification-candidate-audit-"
+                f"{(doc.get('identity') or {}).get('workflow_run_id')} |")
+
+          counts = summary.get('classification_counts') or {}
+          if counts:
+              print('\n**Classifications**\n')
+              print('| classification | count |')
+              print('| :--- | ---: |')
+              for key in sorted(counts):
+                  print(f'| `{key}` | {counts[key]} |')
+
+          for reason in verdict.get('failed_reasons') or ():
+              print(f'\n- FAILED: `{reason}`')
+          for reason in verdict.get('unproven_reasons') or ():
+              print(f'\n- UNPROVEN: `{reason}`')
+
+          print(f"\n{verdict.get('non_authorization_statement')}")
+          PY
+
+      # Ordered after scan and upload so a failing audit still leaves reviewable
+      # evidence. A completed audit that found nothing exits 0 and passes here;
+      # only FAILED, UNPROVEN, or missing evidence fails the job.
+      - name: Final audit gate
+        env:
+          SCAN_OUTCOME: ${{ steps.scan.outcome }}
+          UPLOAD_OUTCOME: ${{ steps.upload.outcome }}
+          AUDIT_OUTCOME: ${{ steps.audit.outcome }}
+        run: |
+          set -euo pipefail
+
+          if [ "$SCAN_OUTCOME" != "success" ]; then
+            echo "UNPROVEN: the evidence artifact could not be proven safe."
+            exit 1
+          fi
+
+          if [ "$UPLOAD_OUTCOME" != "success" ]; then
+            echo "UNPROVEN: the evidence artifact did not upload."
+            exit 1
+          fi
+
+          if [ "$AUDIT_OUTCOME" != "success" ]; then
+            echo "The audit did not complete. See the artifact."
+            exit 1
+          fi
+
+          echo "Candidate audit completed read-only."
+          echo "This does not authorize a no-op write dispatch, scheduled"
+          echo "writes, automated writes, authoritative publication, backfill,"
+          echo "or future mutations."

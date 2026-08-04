@@ -191,6 +191,7 @@ def run(args) -> dict:
                 only_game_pks=[game_pk],
             )
             collected['shadow_report'] = shadow_report
+            collected['planner_phase_entered'] = True
             shadow_governance = qualification.evaluate_plan_governance(
                 shadow_report
             )
@@ -231,6 +232,13 @@ def run(args) -> dict:
             # work item. Refusing here keeps the write phase unreached.
             bookkeeping_before = qualification.read_lane_bookkeeping(game_pk)
             collected['bookkeeping_before'] = bookkeeping_before
+            collected['work_item_precondition_checked'] = (
+                bookkeeping_before is not None
+            )
+            collected['work_item_precondition_passed'] = bool(
+                bookkeeping_before
+                and bookkeeping_before.get('target_present')
+            )
             if bookkeeping_before is None:
                 preflight_unproven.append(
                     qualification.UNPROVEN_BOOKKEEPING_READBACK_UNAVAILABLE
@@ -318,6 +326,7 @@ def run(args) -> dict:
             realization=None,
             reference_date=reference_date,
             write_phase_entered=False,
+            execution_state=_state_from(collected, game_pk),
         )
 
     decision = qualification.assess(
@@ -342,6 +351,21 @@ def run(args) -> dict:
         realization=collected.get('realization'),
         reference_date=reference_date,
         write_phase_entered=collected.get('write_phase_entered', False),
+        execution_state=_state_from(collected, game_pk),
+    )
+
+
+def _state_from(collected, game_pk) -> dict:
+    return qualification.execution_state(
+        work_item_precondition_checked=collected.get(
+            'work_item_precondition_checked', False
+        ),
+        work_item_precondition_passed=collected.get(
+            'work_item_precondition_passed', False
+        ),
+        planner_phase_entered=collected.get('planner_phase_entered', False),
+        shadow_report=collected.get('shadow_report'),
+        game_pk=game_pk,
     )
 
 
@@ -383,7 +407,8 @@ def _refused(context, *, game_pk, note, failed=(), unproven=(),
 
 def _document(*, identity, decision, shadow_report, write_report, before_state,
               after_state, realization, reference_date,
-              write_phase_entered) -> dict:
+              write_phase_entered, execution_state=None) -> dict:
+    state = execution_state or qualification.execution_state()
     shadow_report = shadow_report or {}
     write_report = write_report or {}
     effects = decision.get('execution_effects') or (
@@ -415,10 +440,17 @@ def _document(*, identity, decision, shadow_report, write_report, before_state,
         },
         'game_authority': {
             'source_authority_planner': 'game_ingestion_planner.plan_game_work',
-            'finality_proven_by_planner': (
-                qualification.FAILED_GAME_NOT_PLANNABLE
-                not in decision['failed_reasons']
-            ),
+            # What actually executed. Never derived from an absent failure.
+            'work_item_precondition_checked': state[
+                'work_item_precondition_checked'
+            ],
+            'work_item_precondition_passed': state[
+                'work_item_precondition_passed'
+            ],
+            'planner_phase_entered': state['planner_phase_entered'],
+            'finality_check_executed': state['finality_check_executed'],
+            'finality_proven_by_planner': state['finality_proven_by_planner'],
+            'finality_display': qualification.render_finality(state),
             'source_revisions_before_planning': decision.get(
                 'source_revisions_before'
             ) or [],
@@ -643,6 +675,8 @@ def render_markdown(document) -> str:
         f"| fetch operations | {scope.get('fetch_operations')} |",
         f"| games completed | {scope.get('games_completed')} |",
         f"| plan fingerprint match | {plan.get('plan_fingerprint_match')} |",
+        f"| finality | "
+        f"{document['game_authority'].get('finality_display')} |",
         f"| source revision match | "
         f"{document['game_authority'].get('source_revision_match')} |",
         f"| planned rows | {(plan.get('write_plan') or {}).get('planned_row_count')} |",
