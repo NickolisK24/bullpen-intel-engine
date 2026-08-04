@@ -559,6 +559,14 @@ terminal failures, publication not complete, reason `unresolved_final_games`.
 
 ### The mechanism the audit is built to test
 
+The unresolved-game membership comes from
+`game_ingestion_completeness.unresolved_final_game_membership`, the same
+function the published count is `len()` of. Every planned critical game is a
+different and larger set — `corrected_final` re-checks are complete at their
+last known revision — so classifying the planned total would inflate the
+answer. A reconstruction that does not reconcile with the authority leaves
+Question 7 unanswered rather than quietly answering about the wrong games.
+
 `services.appearance_ledger` counts a game as an expected completed game when
 **any** stored `scheduled_games` row carries `status_state = final` inside the
 trailing window. `services.game_ingestion_planner` plans a game only when
@@ -622,19 +630,57 @@ Six scopes: exact game 822867; slate 2026-08-03; ledger window 2026-07-25 ..
 2026-08-03; snapshots 343 and 344; sync run 596; and the unresolved-game set.
 Any changed scope is FAILED; an uncomputable required fingerprint is UNPROVEN.
 
+### Incident snapshot facts are not current snapshot facts
+
+Production has since recovered and serves a newer snapshot. That says nothing
+about whether withholding snapshot 344 during the incident was correct, so the
+incident verdict is derived from the **retained publication proof** and never
+from today's serving selection. Incident and current facts are reported as
+separate blocks. `candidate_still_pending` means the status is exactly
+`pending`; a failed or superseded snapshot is not called pending.
+
+`disputed_game_is_sole_blocker` demands positive evidence that the blocker set
+is exactly `{822867}`. Because the retained artifacts carry the unresolved
+COUNT and not its membership, the honest answer for this incident is
+**unproven** — not "yes, because the ledger named one game". Whether the
+60-game signal reached the snapshot gate is likewise unproven unless incident
+gate evidence names it.
+
+### Stored schedule rows agree on more than a status
+
+Thirteen governed identity and finality fields are checked independently —
+unique team rows, reciprocal team and home/away identity, dates, status state
+and code, game type and number, doubleheader state, resumed-from/to linkage,
+and source — under one `full_row_governance_agreement` verdict. Two rows can
+agree a game is final while disagreeing about which teams played it, so
+`status_state` alone was far too narrow. Timestamps are deliberately excluded:
+rows written microseconds apart are a write-ordering artefact, not a baseball
+identity conflict.
+
 Correction provenance is **columnar** in this schema, not a table of its own —
 it lives on `game_logs`, `team_game_pitching_splits`,
 `game_play_by_play_events`, and `game_ingestion_work_items` — so full-row
 digests of those tables already cover it.
 
-### The upstream source is bounded
+### The upstream source is bounded, and every call is bought once
 
 At most 8 schedule calls, 10 exact-game calls, 10 box-score calls, and 20 total.
-Every call is reserved BEFORE it is issued, so the budget refuses rather than
-overspends. Attempts, successes, failures, retries, refusals, latency, and
-remaining budget are all reported separately. Exhaustion is **UNPROVEN**, never
-a shortcut to a verdict. Schedule-level calls classify most unresolved games;
-box scores are fetched only for player attribution and exact missing-game proof.
+Every call goes through a single gateway that reserves budget BEFORE it dials
+and records success, failure and latency after, so what the artifact reports
+and what actually went over the wire are the same number by construction.
+
+The whole completeness horizon is fetched with **one** governed range call, not
+one call per date. Fetching per date would need nine calls against an allowance
+of eight and would refuse the last one on every single run. The disputed game
+is normally already inside that response, so answering Question 1 usually costs
+nothing extra; an exact-game call is spent only when the game is genuinely
+absent from the window. The box score is requested **once**, and the safe
+pitcher-id set is projected from that same response — player attribution
+consumes what was already paid for rather than fetching again.
+
+Budget semantics distinguish two different facts. Spending an allowance exactly
+is a completed observation and is not a defect. Only a **required** call the
+budget refused leaves evidence missing, and only that produces **UNPROVEN**.
 
 ### Twelve primary classifications
 
