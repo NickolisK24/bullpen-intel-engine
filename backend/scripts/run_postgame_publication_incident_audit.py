@@ -87,9 +87,16 @@ class _StageLedger:
 
     def completed(self, stage):
         stage = audit.safe_stage(stage)
-        self.last_completed = stage
         if stage not in self.completed_stages:
             self.completed_stages.append(stage)
+        # ``last_completed`` answers "how far did the run get before it
+        # stopped", so it freezes at the first failure. The closing
+        # fingerprint stages deliberately run AFTER a stop, to finish the
+        # read-only proof; letting them advance this would report a run that
+        # died in completeness as having got all the way to the end. They are
+        # still listed in ``completed_stages``, which is a record of what ran.
+        if self.failed_stage is None:
+            self.last_completed = stage
 
     def failed(self, stage, exc):
         # Only the exception's TYPE is consulted; the instance is dropped here
