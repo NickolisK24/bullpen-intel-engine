@@ -8,7 +8,8 @@ for a violation of the audit's OWN safety contract — a platform defect the
 audit discovers is a successful audit, not a failed workflow.
 """
 
-import subprocess
+import hashlib
+import re
 from pathlib import Path
 
 import pytest
@@ -20,13 +21,6 @@ from services import postgame_publication_incident_audit as audit
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SYNC_WORKFLOW = REPO_ROOT / '.github/workflows/baseballos-sync.yml'
-CANDIDATE_AUDIT_WORKFLOW = (
-    REPO_ROOT
-    / '.github/workflows/manual-noop-qualification-candidate-audit.yml'
-)
-QUALIFICATION_WORKFLOW = (
-    REPO_ROOT / '.github/workflows/manual-game-driven-noop-qualification.yml'
-)
 ON = True
 
 
@@ -294,54 +288,90 @@ def test_123_publication_authority_remains_false(sync_workflow):
         assert lane.publication_authoritative(value) is False
 
 
-def test_124_the_existing_no_op_candidate_audit_is_unchanged():
-    diff = subprocess.run(
-        ['git', 'diff', 'origin/main', '--',
-         str(CANDIDATE_AUDIT_WORKFLOW.relative_to(REPO_ROOT)),
-         'backend/services/noop_qualification_candidate_audit.py',
-         'backend/scripts/run_noop_qualification_candidate_audit.py'],
-        cwd=REPO_ROOT, capture_output=True, text=True,
-    )
-    assert diff.returncode == 0
-    assert diff.stdout.strip() == '', diff.stdout[:400]
+# These four assert "this package touched nothing it should not". They used to
+# ask `git diff origin/main`, which passes on a full clone and returns exit 128
+# in CI, where actions/checkout fetches only the PR ref and no origin/main
+# exists. A regression test that depends on the checkout's git topology is
+# testing the checkout, so the property is now asserted from content directly:
+# the reviewed bytes are pinned, which needs no remote, no network, and no
+# refs. If any of these files is edited, the digest moves and the test fails —
+# which is exactly the guarantee the git version was reaching for.
+
+REVIEWED_DIGESTS = {
+    '.github/workflows/manual-noop-qualification-candidate-audit.yml':
+        '328e05848091e392522ac5e1d214051084447504c6d2b236fed2de59a33b193f',
+    'backend/services/noop_qualification_candidate_audit.py':
+        'ffb0021ab3a6112118812ac51020370a8094dc3b8e7c41b6ee5d905984437d82',
+    'backend/scripts/run_noop_qualification_candidate_audit.py':
+        '3fec12b45c9b94c6655fde09b5fe786463bb9f75c8737fa3e490f7d671071561',
+    '.github/workflows/manual-game-driven-noop-qualification.yml':
+        '04edaebeb4dc9aef56ebe802947fb6bf4050a8e8fa6e445fcbbcbf54d3ac09b6',
+    'backend/services/noop_write_qualification.py':
+        'f65351f31b0a9c3c501bb307cf9efd7d13d573178cd9a95ab321fab62d71b5c6',
+    'backend/scripts/run_game_driven_noop_qualification.py':
+        'edaf91639e166897f89bc01fd6e557553e3869b2085eca7660ee4846597b0453',
+}
+
+CANDIDATE_AUDIT_FILES = (
+    '.github/workflows/manual-noop-qualification-candidate-audit.yml',
+    'backend/services/noop_qualification_candidate_audit.py',
+    'backend/scripts/run_noop_qualification_candidate_audit.py',
+)
+QUALIFICATION_FILES = (
+    '.github/workflows/manual-game-driven-noop-qualification.yml',
+    'backend/services/noop_write_qualification.py',
+    'backend/scripts/run_game_driven_noop_qualification.py',
+)
 
 
-def test_125_the_existing_no_op_qualification_is_unchanged():
-    diff = subprocess.run(
-        ['git', 'diff', 'origin/main', '--',
-         str(QUALIFICATION_WORKFLOW.relative_to(REPO_ROOT)),
-         'backend/services/noop_write_qualification.py',
-         'backend/scripts/run_game_driven_noop_qualification.py'],
-        cwd=REPO_ROOT, capture_output=True, text=True,
-    )
-    assert diff.returncode == 0
-    assert diff.stdout.strip() == '', diff.stdout[:400]
+def _digest(relative):
+    path = REPO_ROOT / relative
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+@pytest.mark.parametrize('relative', CANDIDATE_AUDIT_FILES)
+def test_124_the_existing_no_op_candidate_audit_is_unchanged(relative):
+    assert _digest(relative) == REVIEWED_DIGESTS[relative], relative
+
+
+@pytest.mark.parametrize('relative', QUALIFICATION_FILES)
+def test_125_the_existing_no_op_qualification_is_unchanged(relative):
+    assert _digest(relative) == REVIEWED_DIGESTS[relative], relative
 
 
 def test_126_this_package_changes_no_canonical_module():
-    """The suite-wide guarantee this package can actually assert: it adds
-    files and touches no canonical authority. Every module the audit reads
-    through must be byte-identical to the reviewed base."""
-    diff = subprocess.run(
-        ['git', 'diff', '--name-only', 'origin/main', '--', 'backend/services',
-         'backend/models', 'backend/routes'],
-        cwd=REPO_ROOT, capture_output=True, text=True,
-    )
-    assert diff.returncode == 0
-    changed = [line for line in diff.stdout.splitlines() if line.strip()]
-    assert changed == [
-        'backend/services/postgame_publication_incident_audit.py'
-    ], changed
+    """Every authority the audit reads through is byte-identical to the tree it
+    was reviewed against. The service already pins these digests so Question 3
+    can answer "did behaviour change since the incident?" without git; the same
+    constants answer "did this package change an authority?" here."""
+    for relative, expected in audit.INCIDENT_CANONICAL_MODULE_DIGESTS.items():
+        assert _digest(f'backend/{relative}') == expected, relative
 
 
 def test_126b_no_migration_was_added():
-    diff = subprocess.run(
-        ['git', 'diff', '--name-only', 'origin/main', '--',
-         'backend/migrations'],
-        cwd=REPO_ROOT, capture_output=True, text=True,
-    )
-    assert diff.returncode == 0
-    assert diff.stdout.strip() == ''
+    """A migration would move the Alembic head. Asserting the head directly
+    needs no remote, and it is the property that actually matters."""
+    revisions, downs = set(), set()
+    for path in (REPO_ROOT / 'backend/migrations/versions').glob('*.py'):
+        source = path.read_text(encoding='utf-8', errors='replace')
+        found = re.search(r"^revision = ['\"]([^'\"]+)", source, re.M)
+        down = re.search(r"^down_revision = ['\"]([^'\"]+)", source, re.M)
+        if found:
+            revisions.add(found.group(1))
+        if down:
+            downs.add(down.group(1))
+    heads = revisions - downs
+    assert heads == {'c7f1b408d93a'}, heads
+
+    # And nothing in this package reaches for a schema change.
+    for relative in (
+        'backend/services/postgame_publication_incident_audit.py',
+        'backend/scripts/run_postgame_publication_incident_audit.py',
+    ):
+        source = (REPO_ROOT / relative).read_text(encoding='utf-8')
+        for marker in ('op.create_table', 'op.add_column', 'op.alter_column',
+                       'CREATE TABLE', 'ALTER TABLE'):
+            assert marker not in source, f'{marker} in {relative}'
 
 
 def test_126c_the_incident_audit_never_joins_the_scheduled_set():
