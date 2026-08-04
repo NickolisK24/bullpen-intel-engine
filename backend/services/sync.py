@@ -2927,13 +2927,17 @@ def _run_game_driven_ingestion_stage(
         )
 
     try:
+        # The mode is passed explicitly: this lane has just RUN under `mode`,
+        # so re-reading the environment inside the proof could describe a
+        # different authority from the one that produced the evidence.
         completeness = game_ingestion_completeness.build_game_ingestion_completeness(
-            reference_date
+            reference_date, lane_mode=mode,
         )
     except Exception as exc:  # noqa: BLE001 - proof failure must fail closed
         db.session.rollback()
         completeness = {
             'represented_date': reference_date.isoformat(),
+            'lane_mode': mode,
             'publication_complete': False,
             'decision_reasons': ['completeness_proof_unavailable'],
             'error_class': type(exc).__name__,
@@ -3307,6 +3311,52 @@ def _attach_daily_realization(*, game_lane, status, stage_timings, run_logger) -
     )
 
 
+def _game_lane_publication_gate(completeness) -> dict:
+    """The blocker view of a completeness result, whatever shape it arrives in.
+
+    The canonical proof carries an explicit ``publication_gate``. Anything
+    else — an older producer, a truncated payload, the fail-closed stub built
+    when the proof itself raised — is read STRICTLY: every legacy count is
+    treated as blocking, which is the behaviour that existed before the
+    observation/blocker split. Degrading to the conservative reading means a
+    malformed result can only over-withhold, never under-withhold.
+    """
+    if isinstance(completeness, dict):
+        gate = completeness.get('publication_gate')
+        if isinstance(gate, dict) and 'complete' in gate:
+            return gate
+
+    completeness = completeness if isinstance(completeness, dict) else {}
+    return {
+        'authority_effect': (
+            game_ingestion_completeness.AUTHORITY_EFFECT_UNAVAILABLE
+            if not completeness
+            else game_ingestion_completeness.AUTHORITY_EFFECT_AUTHORITATIVE
+        ),
+        'complete': bool(completeness.get('publication_complete', False)),
+        'blocking_scope_game_count': int(
+            completeness.get('expected_final_games') or 0
+        ),
+        'blocking_completed_game_count': int(
+            completeness.get('completed_final_games') or 0
+        ),
+        'blocking_unresolved_game_count': int(
+            completeness.get('unresolved_final_games') or 0
+        ),
+        'blocking_terminal_failure_count': int(
+            completeness.get('terminal_failure_games') or 0
+        ),
+        'finality_conflict_count': int(
+            completeness.get('finality_conflicts') or 0
+        ),
+        'schedule_authority_missing_count': int(
+            completeness.get('schedule_authority_missing') or 0
+        ),
+        'reason_codes': list(completeness.get('decision_reasons') or []),
+        'schema': 'legacy_strict_fallback',
+    }
+
+
 def _publication_critical_from_game_lane(
     *, game_lane: dict, pull: dict, non_gamelog_critical_failed: int,
 ) -> dict:
@@ -3322,21 +3372,30 @@ def _publication_critical_from_game_lane(
     completeness = game_lane.get('completeness') or {}
     authority_available = bool(game_lane.get('report')) and bool(completeness)
 
-    critical_total = int(completeness.get('expected_final_games') or 0)
-    critical_completed = int(completeness.get('completed_final_games') or 0)
-    critical_unresolved = int(completeness.get('unresolved_final_games') or 0)
-    critical_failed = int(completeness.get('terminal_failure_games') or 0)
+    gate = _game_lane_publication_gate(completeness)
+
+    # ONLY the publication-blocker view reaches the publication-critical
+    # result. Shadow observation backlog, non-authoritative missing work
+    # items, and non-authoritative retryable or terminal work are telemetry
+    # about the lane's own rollout and are deliberately not folded in here —
+    # they remain visible on the game-driven status block.
+    critical_total = int(gate.get('blocking_scope_game_count') or 0)
+    critical_completed = int(gate.get('blocking_completed_game_count') or 0)
+    critical_unresolved = int(gate.get('blocking_unresolved_game_count') or 0)
+    critical_failed = int(gate.get('blocking_terminal_failure_count') or 0)
+    # Unknown required authority still fails closed in every mode.
     unknown = (
-        int(completeness.get('finality_conflicts') or 0)
-        + int(completeness.get('schedule_authority_missing') or 0)
+        int(gate.get('finality_conflict_count') or 0)
+        + int(gate.get('schedule_authority_missing_count') or 0)
     )
 
-    reason_codes = list(completeness.get('decision_reasons') or [])
-    if not completeness.get('publication_complete', False) and not (
+    reason_codes = list(gate.get('reason_codes') or [])
+    if not gate.get('complete', False) and not (
         critical_unresolved or critical_failed or unknown
     ):
         # The proof says withhold for a reason not expressible as a count
-        # (for example an appearance-row reconciliation shortfall). Fail closed
+        # (for example an appearance-row reconciliation shortfall, a material
+        # correction conflict, or an unavailable lane authority). Fail closed
         # by carrying it as unresolved critical work rather than losing it.
         critical_unresolved = max(critical_unresolved, 1)
 

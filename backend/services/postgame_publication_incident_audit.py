@@ -316,9 +316,19 @@ INCIDENT_CANONICAL_MODULE_DIGESTS = {
 PACKAGE_MODIFIED_MODULES = {
     'services/game_ingestion_completeness.py': {
         'digest_after':
-            '981fa4ab059a4fefac7b23562bc82665a2d20ddcaaf477462afb4bed0cf643c1',
-        'change': 'added read-only unresolved_final_game_membership helper',
-        'behaviour_changed': False,
+            'cd715a1b701f6aec9525c5565611bd2aa62fc3c72f5741bea2fc982b34d2b362',
+        'change': (
+            'added read-only unresolved_final_game_membership helper (D-043); '
+            'then separated observation completeness from publication-blocking '
+            'completeness so shadow work-item backlog no longer withholds '
+            'publication (D-044)'
+        ),
+        # D-044 DID change behaviour, and says so. `publication_complete` is
+        # now the publication-gate view rather than the observation view, so a
+        # reader comparing this audit's current-state findings against the
+        # incident must know the gate moved underneath them. Reporting False
+        # here would let a corrected gate look like an unchanged one.
+        'behaviour_changed': True,
     },
 }
 

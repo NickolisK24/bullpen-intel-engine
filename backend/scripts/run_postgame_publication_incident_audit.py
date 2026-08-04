@@ -1193,8 +1193,17 @@ def classify_unresolved_games(plan, completeness, gateway) -> dict:
     from services import game_ingestion_completeness
     from utils.db import db
 
+    # OBSERVATION membership: what the lane has not resolved. Since the
+    # publication gate was rescoped, this is no longer the same set as the
+    # games that can withhold the snapshot, so the blocker projection is read
+    # alongside it and the two are reported separately.
     membership = game_ingestion_completeness.unresolved_final_game_membership(
         audit.INCIDENT_SLATE_DATE, plan=plan,
+    )
+    blockers = (
+        game_ingestion_completeness.publication_blocking_game_membership(
+            audit.INCIDENT_SLATE_DATE, plan=plan,
+        )
     )
     game_pks = list(membership['game_pks'])
     authority_count = int(completeness['unresolved_final_games'])
@@ -1303,6 +1312,25 @@ def classify_unresolved_games(plan, completeness, gateway) -> dict:
         'dates_outside_incident_slate': outside_slate,
         'scope_valid_count': len(classified) - scope_invalid,
         'scope_invalid_count': scope_invalid,
+        # ── Which of these games can actually withhold publication ──────
+        # The gate no longer counts observation-only backlog, so a game may
+        # be observationally unresolved and reach the gate not at all. A
+        # scope defect is a statement about the GATE's scope, so it can only
+        # be drawn from the blocker membership.
+        'publication_blocker_membership': {
+            'game_pks': list(blockers['game_pks']),
+            'count': len(blockers['game_pks']),
+            'authority_effect': blockers['authority_effect'],
+            'publication_authoritative': blockers['publication_authoritative'],
+            'observation_only_count': len(
+                blockers['observation_only_game_pks']
+            ),
+        },
+        'scope_invalid_blocking_count': sum(
+            1 for entry in classified
+            if entry['classification'] in audit.UNRESOLVED_NON_DEFICIT_CATEGORIES
+            and entry['game_pk'] in set(blockers['game_pks'])
+        ),
         'unproven_count': counts.get(audit.UNRESOLVED_UNPROVEN, 0),
         'members_missing_required_official_evidence': sorted(
             entry['game_pk'] for entry in classified
@@ -2124,23 +2152,38 @@ def build_findings(observations, comparison, module_drift) -> list[dict]:
     ))
 
     # 7. The gate requires games outside valid postgame publication scope.
+    # This is a claim about what the GATE is scoped over, so it is drawn from
+    # the publication-blocker membership. A game that is observationally
+    # unresolved but never reaches the gate is backlog, not a scope defect —
+    # counting it as one would keep proving a defect after the gate that
+    # caused it had been corrected.
     scope_invalid = int(unresolved.get('scope_invalid_count') or 0)
+    blocker_scope = unresolved.get('publication_blocker_membership') or {}
+    scope_invalid_blocking = int(
+        unresolved.get('scope_invalid_blocking_count') or 0
+    )
     scope_defect = bool(
-        scope_invalid > 0
+        scope_invalid_blocking > 0
         and unresolved.get('reconciles_with_authority') is True
     )
     findings.append(_finding(
         audit.CLASSIFICATION_PUBLICATION_GATE_SCOPE_DEFECT,
         proven=scope_defect,
         supporting=_present([
-            f'{scope_invalid} unresolved game(s) fall into categories that '
-            f'are not a true final-game deficit' if scope_invalid else None,
+            f'{scope_invalid_blocking} game(s) that can withhold publication '
+            f'fall into categories that are not a true final-game deficit'
+            if scope_invalid_blocking else None,
             'the reconstruction reconciles with the completeness authority'
             if unresolved.get('reconciles_with_authority') else None,
         ]),
         counter=_present([
             'every unresolved game is a genuine final-game deficit'
             if scope_invalid == 0 else None,
+            f'{scope_invalid} game(s) are not a true final-game deficit but '
+            f'none of them reaches the publication gate under the lane\'s '
+            f'current authority '
+            f'({blocker_scope.get("authority_effect")})'
+            if scope_invalid and not scope_invalid_blocking else None,
             'the reconstruction does not reconcile with the authority count'
             if unresolved.get('reconciles_with_authority') is False else None,
         ]),

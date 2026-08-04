@@ -183,8 +183,10 @@ def run(args) -> tuple[int, dict]:
             include_backfill=args.include_backfill,
             max_games=args.max_games,
         )
+        # The mode this run actually executed under, not whatever the
+        # environment happens to say by the time the proof is built.
         completeness = game_ingestion_completeness.build_game_ingestion_completeness(
-            reference_date
+            reference_date, lane_mode=result.get('mode') or args.mode,
         )
         result['publication_completeness'] = completeness
         exit_code = (
