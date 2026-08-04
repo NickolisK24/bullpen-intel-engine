@@ -45,6 +45,7 @@ permission.
 from __future__ import annotations
 
 import hashlib
+import re
 from datetime import timedelta
 
 from sqlalchemy import text
@@ -85,6 +86,8 @@ NON_AUTHORIZATION_STATEMENT = (
 LOOKBACK_DAYS_DEFAULT, LOOKBACK_DAYS_MIN, LOOKBACK_DAYS_MAX = 30, 1, 120
 CANDIDATE_LIMIT_DEFAULT, CANDIDATE_LIMIT_MIN, CANDIDATE_LIMIT_MAX = 20, 1, 50
 ELIGIBLE_TARGET_DEFAULT, ELIGIBLE_TARGET_MIN, ELIGIBLE_TARGET_MAX = 5, 1, 10
+
+_DIGITS_ONLY = re.compile(r'\A[0-9]+\Z')
 
 STOP_REASON_TARGET_REACHED = 'eligible_target_reached'
 STOP_REASON_CANDIDATE_LIMIT = 'candidate_limit_reached'
@@ -128,6 +131,19 @@ SHADOW_BUDGET_STOP = 'shadow_budget_stop'
 SHADOW_EXECUTION_ERROR = 'shadow_execution_error'
 READ_ONLY_CONTRACT_VIOLATED = 'read_only_contract_violated'
 EVIDENCE_UNPROVEN = 'evidence_unproven'
+PLAN_UNKNOWN_ACTION = 'plan_contains_unknown_action'
+PLAN_PROHIBITED_ACTION = 'plan_contains_prohibited_action'
+PLAN_CHANGED_FIELDS_ON_UNCHANGED_ROW = 'changed_fields_on_unchanged_row'
+PLAN_UNCHANGED_COVERAGE_INCOMPLETE = 'unchanged_row_coverage_incomplete'
+PLAN_GOVERNANCE_FAILED = 'shared_plan_governance_failed'
+SHADOW_STATUS_NOT_COMPLETE = 'shadow_status_not_complete'
+
+# The canonical lane's successful-completion status. The lane can also return
+# 'planned', 'disabled', 'scope_invalid', 'scope_mismatch',
+# 'plan_authorization_required', 'plan_fingerprint_mismatch', and 'incomplete'
+# — none of which is a completed shadow pass.
+SHADOW_STATUS_COMPLETE = 'complete'
+SHADOW_STATUS_INCOMPLETE = 'incomplete'
 
 # Deterministic precedence, most severe first. A candidate may accumulate
 # several reason codes; exactly one of them becomes the primary classification,
@@ -139,6 +155,7 @@ CLASSIFICATION_PRECEDENCE = (
     SHADOW_EXECUTION_ERROR,
     EVIDENCE_UNPROVEN,
     SHADOW_BUDGET_STOP,
+    SHADOW_STATUS_NOT_COMPLETE,
     # 3. durable-work-item invalidity
     DUPLICATE_WORK_ITEM_IDENTITY,
     TARGET_WORK_ITEM_MISSING,
@@ -152,6 +169,11 @@ CLASSIFICATION_PRECEDENCE = (
     SCOPE_NOT_EXACT,
     PLANNED_ROW_COUNT_ZERO,
     # 5. mutation / identity failure
+    PLAN_UNKNOWN_ACTION,
+    PLAN_PROHIBITED_ACTION,
+    PLAN_GOVERNANCE_FAILED,
+    PLAN_CHANGED_FIELDS_ON_UNCHANGED_ROW,
+    PLAN_UNCHANGED_COVERAGE_INCOMPLETE,
     PLAN_PROPOSES_IDENTITY_MUTATION,
     PLAN_PROPOSES_INSERT,
     PLAN_PROPOSES_UPDATE,
@@ -171,6 +193,19 @@ CLASSIFICATION_PRECEDENCE = (
 UNPROVEN_CLASSIFICATIONS = frozenset({
     SHADOW_EXECUTION_ERROR, EVIDENCE_UNPROVEN, SHADOW_BUDGET_STOP,
 })
+
+# Lane statuses that map to a specific named refusal rather than a generic
+# error. Anything not listed and not SHADOW_STATUS_COMPLETE fails closed as
+# shadow_execution_error, so a future status cannot silently become eligible.
+SHADOW_STATUS_CLASSIFICATIONS = {
+    lane.STATUS_SCOPE_MISMATCH: SCOPE_NOT_EXACT,
+    lane.STATUS_SCOPE_INVALID: SCOPE_NOT_EXACT,
+    lane.STATUS_PLAN_AUTHORIZATION_REQUIRED: EVIDENCE_UNPROVEN,
+    lane.STATUS_PLAN_FINGERPRINT_MISMATCH: PLAN_FINGERPRINT_MISSING,
+    SHADOW_STATUS_INCOMPLETE: SHADOW_BUDGET_STOP,
+    'disabled': SHADOW_EXECUTION_ERROR,
+    'planned': SHADOW_STATUS_NOT_COMPLETE,
+}
 
 MAX_REASON_CODES = 8
 
@@ -192,7 +227,9 @@ def parse_bounded_int(raw, *, name, default, minimum, maximum) -> int:
     if raw is None or str(raw).strip() == '':
         return default
     text_value = str(raw).strip()
-    if not text_value.lstrip('+').isdigit():
+    # Digits only, and no leading plus — exactly what the workflow preflight
+    # accepts (`^[0-9]+$`). A parser looser than its own gate is a gap.
+    if not _DIGITS_ONLY.match(text_value):
         raise AuditInputError(f'{name}_not_an_integer')
     value = int(text_value)
     if value < minimum or value > maximum:
@@ -259,6 +296,17 @@ def enforce_read_only(session) -> dict:
     return {
         'dialect': dialect,
         'protection': 'postgresql_read_only_transaction',
+        # Reported honestly: the audit DOES issue one SQL write statement — the
+        # proof itself. Claiming zero SQL write attempts while executing this
+        # probe would be false. What is zero is DURABLE writes: the statement
+        # is bounded to zero rows, is expected to be refused, and is rolled
+        # back. The full statement text is never reproduced in the artifact.
+        'read_only_probe_attempted': True,
+        'read_only_probe_count': 1,
+        'read_only_probe_statement_class': 'UPDATE',
+        'read_only_probe_bounded_to_zero_rows': True,
+        'read_only_probe_refused': True,
+        'durable_write_attempts': 0,
         'write_probe_refused': True,
     }
 
@@ -403,6 +451,20 @@ def classify_candidate(*, game_pk, shadow_report, planner_executed,
     if report.get('budget_stop_triggered'):
         reasons.append(SHADOW_BUDGET_STOP)
 
+    # ── Canonical shadow status, required positively ────────────────────────
+    # Only the lane's exact successful-completion status may be eligible. Every
+    # other known status maps to a named refusal, and anything unrecognised —
+    # including a status a future change introduces — fails closed rather than
+    # being read as success because some rows happened to look unchanged.
+    shadow_status = report.get('status') if shadow_report else None
+    if planner_executed and shadow_report is not None:
+        if shadow_status != SHADOW_STATUS_COMPLETE:
+            reasons.append(SHADOW_STATUS_CLASSIFICATIONS.get(
+                shadow_status, SHADOW_EXECUTION_ERROR,
+            ))
+            if shadow_status not in SHADOW_STATUS_CLASSIFICATIONS:
+                reasons.append(SHADOW_STATUS_NOT_COMPLETE)
+
     # ── Durable work item ───────────────────────────────────────────────────
     if not work_item_before:
         reasons.append(TARGET_WORK_ITEM_MISSING)
@@ -441,9 +503,30 @@ def classify_candidate(*, game_pk, shadow_report, planner_executed,
         reasons.append(SCOPE_NOT_EXACT)
 
     # ── Plan governance, via the shared qualification helpers ───────────────
+    # The shared pass is authoritative. Checking only the individual counters
+    # would let an action this contract does not recognise, or an `unchanged`
+    # row carrying changed fields, fall through to eligible.
     governance = qualification.evaluate_plan_governance(report)
     if governance['planned_row_count'] == 0:
         reasons.append(PLANNED_ROW_COUNT_ZERO)
+    if governance['unknown_action_count']:
+        reasons.append(PLAN_UNKNOWN_ACTION)
+    if governance['prohibited_actions'] or governance[
+        'prohibited_action_counts'
+    ]:
+        reasons.append(PLAN_PROHIBITED_ACTION)
+    if 'changed_fields_on_unchanged_row' in governance[
+        'prohibited_action_counts'
+    ]:
+        reasons.append(PLAN_CHANGED_FIELDS_ON_UNCHANGED_ROW)
+    if governance['planned_row_count'] and (
+        governance['planned_unchanged_count'] != governance['planned_row_count']
+    ):
+        reasons.append(PLAN_UNCHANGED_COVERAGE_INCOMPLETE)
+    if governance['nonzero_mutation_counters']:
+        reasons.append(PLAN_GOVERNANCE_FAILED)
+    if not governance['all_rows_already_matching']:
+        reasons.append(PLAN_GOVERNANCE_FAILED)
 
     actions = governance['planned_action_counts']
     if actions.get(reconciliation.ACTION_INSERT):
@@ -500,6 +583,66 @@ def classify_candidate(*, game_pk, shadow_report, planner_executed,
     return _candidate_result(game_pk, reasons, report, work_item_before)
 
 
+def positive_eligibility(*, reasons, governance, scope, revisions, report,
+                         work_item_before, game_pk) -> dict:
+    """Every eligibility condition, asserted positively and reported."""
+    revision_ok = bool(
+        len(revisions) == 1
+        and revisions[0].get('source_revision')
+        and int(revisions[0].get('game_pk') or 0) == int(game_pk)
+    )
+    conditions = {
+        'no_reason_codes': not reasons,
+        'work_item_present': bool(work_item_before),
+        'work_item_completed': bool(
+            work_item_before
+            and work_item_before.get('status')
+            == GameIngestionWorkItem.STATUS_COMPLETED
+        ),
+        'represented_date_present': bool(
+            work_item_before and work_item_before.get('represented_date')
+        ),
+        'shadow_status_complete': (
+            (report or {}).get('status') == SHADOW_STATUS_COMPLETE
+        ),
+        'no_budget_stop': not (report or {}).get('budget_stop_triggered'),
+        'exact_scope': bool(scope['execution_scope_exact_match']),
+        'planned_is_exactly_target': bool(scope['planned_is_exactly_target']),
+        'requested_is_exactly_target': bool(
+            scope['requested_is_exactly_target']
+        ),
+        'no_duplicate_request': scope['duplicate_requested_count'] == 0,
+        'planned_rows_present': governance['planned_row_count'] > 0,
+        'all_rows_unchanged': (
+            governance['planned_row_count'] > 0
+            and governance['planned_unchanged_count']
+            == governance['planned_row_count']
+        ),
+        'no_unknown_actions': governance['unknown_action_count'] == 0,
+        'no_prohibited_actions': (
+            governance['prohibited_actions'] == 0
+            and not governance['prohibited_action_counts']
+        ),
+        'no_nonzero_mutation_counters': not governance[
+            'nonzero_mutation_counters'
+        ],
+        'governance_all_rows_already_matching': (
+            governance['all_rows_already_matching'] is True
+        ),
+        'exactly_one_valid_source_revision': revision_ok,
+        'plan_fingerprint_present': bool(
+            (report or {}).get('reconciliation_plan_fingerprint')
+        ),
+    }
+    return {
+        'conditions': dict(sorted(conditions.items())),
+        'unmet_conditions': sorted(
+            name for name, met in conditions.items() if not met
+        ),
+        'all_conditions_met': all(conditions.values()),
+    }
+
+
 def _candidate_result(game_pk, reasons, report, work_item_before) -> dict:
     governance = qualification.evaluate_plan_governance(report)
     scope = qualification.evaluate_scope(report, game_pk=game_pk)
@@ -510,7 +653,22 @@ def _candidate_result(game_pk, reasons, report, work_item_before) -> dict:
         if reason not in deduped:
             deduped.append(reason)
     primary = _primary_classification(deduped)
-    eligible = primary == ELIGIBLE
+
+    # Explicit POSITIVE predicate. `primary == ELIGIBLE` alone would mean
+    # "no recognised reason was appended", which is absence of failure — the
+    # exact inference this contract refuses everywhere else. Every condition
+    # below must be observed true.
+    positive = positive_eligibility(
+        reasons=deduped, governance=governance, scope=scope,
+        revisions=revisions, report=report,
+        work_item_before=work_item_before, game_pk=game_pk,
+    )
+    eligible = bool(primary == ELIGIBLE and positive['all_conditions_met'])
+    if primary == ELIGIBLE and not positive['all_conditions_met']:
+        # A condition failed without producing a reason code. Fail closed and
+        # say so rather than emitting an eligible verdict nobody can justify.
+        deduped.append(PLAN_GOVERNANCE_FAILED)
+        primary = PLAN_GOVERNANCE_FAILED
 
     return {
         'game_pk': int(game_pk),
@@ -541,6 +699,12 @@ def _candidate_result(game_pk, reasons, report, work_item_before) -> dict:
             (report or {}).get('reconciliation_plan_fingerprint')
         ),
         'budget_stop': bool((report or {}).get('budget_stop_triggered')),
+        'shadow_status': (report or {}).get('status'),
+        'shadow_status_is_complete': (
+            (report or {}).get('status') == SHADOW_STATUS_COMPLETE
+        ),
+        'eligibility_conditions': positive['conditions'],
+        'unmet_eligibility_conditions': positive['unmet_conditions'],
         'primary_classification': primary,
         'reason_codes': deduped[:MAX_REASON_CODES],
         'eligible': eligible,
@@ -649,6 +813,7 @@ def decide(*, candidates, read_only_proof, discovery_available=True) -> dict:
 
 
 def evaluate_candidates(*, candidates, reference_date, eligible_target_count,
+                        candidate_limit=None, candidate_pool_size=None,
                         session=None) -> dict:
     """Run the canonical one-game SHADOW lane for each candidate, in order.
 
@@ -660,6 +825,7 @@ def evaluate_candidates(*, candidates, reference_date, eligible_target_count,
     session = session if session is not None else db.session
     evaluated: list[dict] = []
     stop_reason = STOP_REASON_POOL_EXHAUSTED
+    eligible_stop_position = None
 
     for position, candidate in enumerate(candidates or (), start=1):
         game_pk = candidate['game_pk']
@@ -710,12 +876,38 @@ def evaluate_candidates(*, candidates, reference_date, eligible_target_count,
 
         if len([e for e in evaluated if e['eligible']]) >= eligible_target_count:
             stop_reason = STOP_REASON_TARGET_REACHED
+            eligible_stop_position = position
             break
     else:
-        if candidates:
+        # Every selected candidate was evaluated. Whether that is "the limit"
+        # or "the pool ran out" depends on the configured limit, NOT on the
+        # list being non-empty — reporting the limit for a 3-item pool with a
+        # limit of 20 would misdescribe why the audit stopped.
+        selected_count = len(candidates or ())
+        limit = candidate_limit
+        pool = (
+            candidate_pool_size if candidate_pool_size is not None
+            else selected_count
+        )
+        if limit is not None and (
+            selected_count >= int(limit) or pool > int(limit)
+        ):
             stop_reason = STOP_REASON_CANDIDATE_LIMIT
+        else:
+            stop_reason = STOP_REASON_POOL_EXHAUSTED
 
-    return {'candidates': evaluated, 'stop_reason': stop_reason}
+    return {
+        'candidates': evaluated,
+        'stop_reason': stop_reason,
+        'candidates_evaluated': len(evaluated),
+        'candidates_selected': len(candidates or ()),
+        'candidate_pool_size': (
+            candidate_pool_size if candidate_pool_size is not None
+            else len(candidates or ())
+        ),
+        'configured_candidate_limit': candidate_limit,
+        'eligible_stop_position': eligible_stop_position,
+    }
 
 
 def digest_for(values) -> str:

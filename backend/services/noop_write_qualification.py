@@ -361,6 +361,7 @@ UNPROVEN_WRITER_GUARD_RELEASE_UNPROVEN = 'writer_guard_release_unproven'
 def execution_state(*, work_item_precondition_checked=False,
                     work_item_precondition_passed=False,
                     planner_phase_entered=False,
+                    planner_returned=False, planner_raised=False,
                     shadow_report=None, game_pk=None) -> dict:
     """Report which phases actually executed, and what the planner proved.
 
@@ -385,6 +386,10 @@ def execution_state(*, work_item_precondition_checked=False,
         'work_item_precondition_checked': bool(work_item_precondition_checked),
         'work_item_precondition_passed': bool(work_item_precondition_passed),
         'planner_phase_entered': bool(planner_phase_entered),
+        # Entered-and-returned is not the same fact as entered-and-raised, and
+        # neither is the same as never entered.
+        'planner_returned': bool(planner_returned),
+        'planner_raised': bool(planner_raised),
         'finality_check_executed': finality_check_executed,
         'finality_proven_by_planner': finality_proven,
     }

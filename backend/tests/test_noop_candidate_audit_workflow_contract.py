@@ -526,14 +526,24 @@ def test_the_only_sql_mutation_verb_is_the_refused_probe(service_tree):
         and isinstance(node.value, str)
         and node.value not in docstrings
     ]
-    mutating = [
+    verb = re.compile(r'\b(INSERT|UPDATE|DELETE|TRUNCATE|DROP|ALTER)\b')
+    # A bare verb is the reported statement CLASS label, not a statement.
+    # Only strings that actually look like SQL count.
+    statements = [
         text for text in literals
-        if re.search(r'\b(INSERT|UPDATE|DELETE|TRUNCATE|DROP|ALTER)\b', text)
+        if verb.search(text) and len(text.split()) > 1
     ]
-    assert len(mutating) == 1, mutating
-    probe = mutating[0]
+    class_labels = [
+        text for text in literals
+        if verb.fullmatch(text.strip())
+    ]
+    assert len(statements) == 1, statements
+    probe = statements[0]
     assert probe.startswith('UPDATE game_logs SET')
     assert 'WHERE 1 = 0' in probe
+    # The class label is reported so the artifact can name the probe without
+    # reproducing its SQL.
+    assert class_labels == ['UPDATE'], class_labels
 
 
 def test_the_audit_service_reaches_the_lane_in_shadow_only(service_tree):

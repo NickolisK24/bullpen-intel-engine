@@ -540,7 +540,18 @@ limit, whichever comes first.
 
 Each candidate is then evaluated by the **canonical shadow lane** with exact
 one-game scope, using the same reference-date behaviour as the qualification
-itself. The audit owns no baseball decision: scope, finality, plan governance,
+itself. Eligibility requires the lane's exact successful-completion status
+(`complete`); every other status maps to a named refusal, and any status this
+contract does not recognise fails closed rather than being read as success
+because some rows happened to look unchanged.
+
+The audit reports `candidate_pool_size`, `candidates_selected`,
+`candidates_evaluated`, `eligible_stop_position`, and
+`configured_candidate_limit` separately — early stopping must not inflate the
+evaluated count — and the stop reason distinguishes
+`eligible_target_reached` from `candidate_limit_reached` and
+`candidate_pool_exhausted` using the configured limit, not merely a non-empty
+list. The audit owns no baseball decision: scope, finality, plan governance,
 source revisions and fingerprints all come from the canonical components and the
 shared qualification helpers.
 
@@ -553,7 +564,13 @@ every row is `unchanged`; zero inserts, updates, blocked rows, canonical-outs
 corrections, statistical corrections, authority reconciliations, appearance-team
 mutations and identity actions; exactly one non-null source revision for the
 requested game; and a plan fingerprint. **Nothing is eligible because a failure
-is absent.**
+is absent.** The shared plan-governance pass must itself declare the entire plan
+already matching — unknown action count zero, prohibited actions zero, unchanged
+row count equal to planned row count, no non-zero mutation counter, and
+`all_rows_already_matching` exactly true — and a final positive predicate must
+find every condition met. A candidate that reaches the end with no recognised
+reason code but an unmet condition fails closed as
+`shared_plan_governance_failed`.
 
 Each candidate receives exactly one primary classification under a declared
 precedence: read-only violation → execution error / unproven → durable-work-item
@@ -573,6 +590,24 @@ eligible.
    row counts — across every table the shadow path can reach: `game_logs`,
    `pitchers`, `game_ingestion_work_items`, `postgame_processed_games`,
    `scheduled_games`, and `sync_failures` (the dead-letter target).
+
+**The audit does not attempt zero SQL writes, and does not claim to.** It issues
+exactly one bounded write statement — the proof itself — and the evidence says so
+in its own fields rather than rounding it to zero:
+
+| field | expected |
+| :--- | :--- |
+| `read_only_probe_attempted` | true |
+| `read_only_probe_count` | 1 |
+| `read_only_probe_statement_class` | `UPDATE` |
+| `read_only_probe_bounded_to_zero_rows` | true |
+| `read_only_probe_refused` | true |
+| `durable_write_attempts` | 0 |
+| `durable_rows_created` / `_updated` / `_deleted` | 0 |
+| `commits_performed_by_audit` | 0 |
+
+The statement text is never reproduced in the artifact. PASS requires the probe
+to have been attempted exactly once and refused.
 
 Structural tests prove the service contains no session write API, never commits,
 reaches the lane in shadow only, and contains exactly one SQL mutation verb —
@@ -624,7 +659,21 @@ Execution state is now recorded explicitly:
 | `finality_proven_by_planner` | the planner positively planned that exact game |
 
 For an early refusal, finality is `null` and the summary renders **`not
-executed`** rather than `True`. Run `30862655470` has a regression fixture.
+executed`** rather than `True`.
+
+**The execution order was corrected to match that claim.** The qualification
+previously ran the shadow lane *before* reading the durable work item, so a
+refusal that was already decided still spent an MLB request and a full canonical
+planning pass — and the evidence recorded a planner phase the outcome never
+depended on. The work-item precondition is now read first, immediately after the
+writer guard, and a missing or unreadable item refuses **without calling
+`run_game_driven_ingestion` and without any MLB request**. `planner_phase_entered`
+is set immediately before the lane call, and entered-and-returned is recorded
+separately from entered-and-raised.
+
+Run `30862655470` has a regression test that drives the real `run()`
+orchestration — not a helper fixture — and asserts the lane and the MLB client
+are never called, while the writer guard is still acquired and released.
 
 ### If no candidate exists
 

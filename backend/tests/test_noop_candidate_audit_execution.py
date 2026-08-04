@@ -365,9 +365,10 @@ def test_evaluation_stops_at_the_eligible_target(app, monkeypatch):
         assert evaluated['stop_reason'] == audit.STOP_REASON_TARGET_REACHED
 
 
-def test_evaluating_the_whole_bounded_set_reports_the_limit_stop(
+def test_a_pool_smaller_than_the_limit_reports_pool_exhausted(
     app, monkeypatch,
 ):
+    """2 candidates under a limit of 20 did not hit the limit."""
     with app.app_context():
         _seed_games(monkeypatch, [(961001, 8001), (961002, 8002)])
         found = audit.discover_candidates(
@@ -377,9 +378,86 @@ def test_evaluating_the_whole_bounded_set_reports_the_limit_stop(
             candidates=found['candidates_selected'],
             reference_date=REFERENCE,
             eligible_target_count=10,
+            candidate_limit=20,
+            candidate_pool_size=found['candidate_pool_size'],
         )
         assert len(evaluated['candidates']) == 2
+        assert evaluated['stop_reason'] == audit.STOP_REASON_POOL_EXHAUSTED
+        assert evaluated['candidates_evaluated'] == 2
+        assert evaluated['candidates_selected'] == 2
+
+
+def test_a_pool_at_the_limit_reports_the_limit_stop(app, monkeypatch):
+    with app.app_context():
+        _seed_games(monkeypatch, [(961011, 8011), (961012, 8012)])
+        found = audit.discover_candidates(
+            reference_date=REFERENCE, lookback_days=30, candidate_limit=2,
+        )
+        evaluated = audit.evaluate_candidates(
+            candidates=found['candidates_selected'],
+            reference_date=REFERENCE,
+            eligible_target_count=10,
+            candidate_limit=2,
+            candidate_pool_size=found['candidate_pool_size'],
+        )
         assert evaluated['stop_reason'] == audit.STOP_REASON_CANDIDATE_LIMIT
+
+
+def test_a_pool_larger_than_the_limit_reports_the_limit_stop(
+    app, monkeypatch,
+):
+    with app.app_context():
+        _seed_games(
+            monkeypatch, [(961020 + n, 8020 + n) for n in range(4)],
+        )
+        found = audit.discover_candidates(
+            reference_date=REFERENCE, lookback_days=30, candidate_limit=2,
+        )
+        evaluated = audit.evaluate_candidates(
+            candidates=found['candidates_selected'],
+            reference_date=REFERENCE,
+            eligible_target_count=10,
+            candidate_limit=2,
+            candidate_pool_size=found['candidate_pool_size'],
+        )
+        assert found['candidate_pool_size'] == 4
+        assert evaluated['candidates_evaluated'] == 2
+        assert evaluated['stop_reason'] == audit.STOP_REASON_CANDIDATE_LIMIT
+
+
+def test_an_empty_pool_reports_pool_exhausted(app):
+    with app.app_context():
+        evaluated = audit.evaluate_candidates(
+            candidates=[], reference_date=REFERENCE,
+            eligible_target_count=5, candidate_limit=20,
+            candidate_pool_size=0,
+        )
+        assert evaluated['stop_reason'] == audit.STOP_REASON_POOL_EXHAUSTED
+        assert evaluated['candidates_evaluated'] == 0
+        assert evaluated['eligible_stop_position'] is None
+
+
+def test_early_stopping_does_not_inflate_candidates_evaluated(
+    app, monkeypatch,
+):
+    with app.app_context():
+        _seed_games(
+            monkeypatch, [(961030 + n, 8030 + n) for n in range(5)],
+        )
+        found = audit.discover_candidates(
+            reference_date=REFERENCE, lookback_days=30, candidate_limit=20,
+        )
+        evaluated = audit.evaluate_candidates(
+            candidates=found['candidates_selected'],
+            reference_date=REFERENCE,
+            eligible_target_count=2,
+            candidate_limit=20,
+            candidate_pool_size=found['candidate_pool_size'],
+        )
+        assert evaluated['candidates_selected'] == 5
+        assert evaluated['candidates_evaluated'] == 2
+        assert evaluated['eligible_stop_position'] == 2
+        assert evaluated['stop_reason'] == audit.STOP_REASON_TARGET_REACHED
 
 
 def test_ordering_position_is_recorded_for_every_candidate(app, monkeypatch):

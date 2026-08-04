@@ -289,6 +289,7 @@ def test_every_declared_classification_appears_in_the_precedence():
             'RESULT_NO_ELIGIBLE_CANDIDATE', 'RESULT_FAILED', 'RESULT_UNPROVEN',
             'STOP_REASON_TARGET_REACHED', 'STOP_REASON_CANDIDATE_LIMIT',
             'STOP_REASON_POOL_EXHAUSTED', 'PERMITTED_INGESTION_MODE',
+            'SHADOW_STATUS_COMPLETE', 'SHADOW_STATUS_INCOMPLETE',
         )
     }
     assert declared <= set(audit.CLASSIFICATION_PRECEDENCE)
@@ -555,3 +556,166 @@ def test_the_default_execution_state_claims_nothing():
     assert state['finality_check_executed'] is False
     assert state['finality_proven_by_planner'] is None
     assert qualification.render_finality(state) == 'not executed'
+
+
+# ── Blocker 1: the complete shared governance pass is required ─────────────
+
+
+def test_an_unknown_action_is_never_eligible():
+    result = classify(shadow_report=shadow_report(
+        rows=[row(action='teleport')]))
+    assert result['eligible'] is False
+    assert audit.PLAN_UNKNOWN_ACTION in result['reason_codes']
+
+
+def test_a_future_action_type_fails_closed():
+    """A type nobody has written yet must not read as unchanged."""
+    for future in ('merge', 'archive', 'supersede', 'rewrite', ''):
+        result = classify(shadow_report=shadow_report(
+            rows=[row(action=future)]))
+        assert result['eligible'] is False, future
+
+
+def test_an_unchanged_row_carrying_changed_fields_is_never_eligible():
+    result = classify(shadow_report=shadow_report(
+        rows=[row(changed_fields=['strikeouts'])]))
+    assert result['eligible'] is False
+    assert audit.PLAN_CHANGED_FIELDS_ON_UNCHANGED_ROW in (
+        result['reason_codes']
+    )
+
+
+def test_unchanged_coverage_below_planned_row_count_is_never_eligible():
+    result = classify(shadow_report=shadow_report(rows=[
+        row(), row(pitcher_mlb_id=4002, action=reconciliation.ACTION_UPDATE),
+    ]))
+    assert result['eligible'] is False
+    assert audit.PLAN_UNCHANGED_COVERAGE_INCOMPLETE in result['reason_codes']
+
+
+def test_prohibited_actions_above_zero_is_never_eligible():
+    result = classify(shadow_report=shadow_report(
+        rows=[row(pitcher_identity_action='create_minimal_identity')]))
+    governance = qualification.evaluate_plan_governance(
+        shadow_report(rows=[
+            row(pitcher_identity_action='create_minimal_identity')])
+    )
+    assert governance['prohibited_actions'] > 0
+    assert result['eligible'] is False
+    assert audit.PLAN_PROHIBITED_ACTION in result['reason_codes']
+
+
+def test_all_rows_already_matching_false_is_never_eligible():
+    report = shadow_report(rows=[row(action=reconciliation.ACTION_UPDATE)])
+    assert qualification.evaluate_plan_governance(report)[
+        'all_rows_already_matching'
+    ] is False
+    assert classify(shadow_report=report)['eligible'] is False
+
+
+def test_the_positive_predicate_lists_every_required_condition():
+    result = classify()
+    conditions = result['eligibility_conditions']
+    for required in (
+        'work_item_present', 'work_item_completed', 'represented_date_present',
+        'shadow_status_complete', 'no_budget_stop', 'exact_scope',
+        'planned_is_exactly_target', 'requested_is_exactly_target',
+        'no_duplicate_request', 'planned_rows_present', 'all_rows_unchanged',
+        'no_unknown_actions', 'no_prohibited_actions',
+        'no_nonzero_mutation_counters',
+        'governance_all_rows_already_matching',
+        'exactly_one_valid_source_revision', 'plan_fingerprint_present',
+    ):
+        assert required in conditions, required
+    assert all(conditions.values())
+    assert result['unmet_eligibility_conditions'] == []
+
+
+def test_eligibility_is_never_granted_from_absence_of_a_reason_code():
+    """Force the predicate to fail while no reason code fires."""
+    import services.noop_qualification_candidate_audit as service
+
+    original = service.positive_eligibility
+    try:
+        service.positive_eligibility = lambda **kwargs: {
+            'conditions': {'forced': False},
+            'unmet_conditions': ['forced'],
+            'all_conditions_met': False,
+        }
+        result = classify()
+        assert result['eligible'] is False
+        assert result['primary_classification'] == audit.PLAN_GOVERNANCE_FAILED
+    finally:
+        service.positive_eligibility = original
+
+
+# ── Blocker 2: the canonical successful status is required ─────────────────
+
+
+def test_the_canonical_successful_status_is_complete():
+    assert audit.SHADOW_STATUS_COMPLETE == 'complete'
+
+
+def test_a_complete_status_is_required_for_eligibility():
+    result = classify()
+    assert result['shadow_status'] == 'complete'
+    assert result['shadow_status_is_complete'] is True
+    assert result['eligible'] is True
+
+
+@pytest.mark.parametrize('status,expected', [
+    ('incomplete', audit.SHADOW_BUDGET_STOP),
+    ('scope_mismatch', audit.SCOPE_NOT_EXACT),
+    ('scope_invalid', audit.SCOPE_NOT_EXACT),
+    ('plan_authorization_required', audit.EVIDENCE_UNPROVEN),
+    ('plan_fingerprint_mismatch', audit.PLAN_FINGERPRINT_MISSING),
+    ('disabled', audit.SHADOW_EXECUTION_ERROR),
+    ('planned', audit.SHADOW_STATUS_NOT_COMPLETE),
+])
+def test_every_known_non_success_status_is_classified(status, expected):
+    result = classify(shadow_report=shadow_report(status=status))
+    assert result['eligible'] is False
+    assert expected in result['reason_codes']
+
+
+@pytest.mark.parametrize('status', [
+    'partial', 'future_status', 'degraded', 'retrying', '', None,
+])
+def test_an_unknown_or_missing_status_fails_closed(status):
+    result = classify(shadow_report=shadow_report(status=status))
+    assert result['eligible'] is False
+    assert audit.SHADOW_EXECUTION_ERROR in result['reason_codes']
+
+
+def test_unchanged_rows_do_not_rescue_a_non_success_status():
+    """Rows can look perfect while the run refused."""
+    result = classify(shadow_report=shadow_report(status='scope_mismatch'))
+    governance = qualification.evaluate_plan_governance(
+        shadow_report(status='scope_mismatch')
+    )
+    assert governance['all_rows_already_matching'] is True
+    assert result['eligible'] is False
+
+
+# ── Blocker 4: honest probe evidence ───────────────────────────────────────
+
+
+def test_the_probe_evidence_fields_are_declared():
+    """The audit issues one SQL write statement; it must say so."""
+    import inspect
+
+    source = inspect.getsource(audit.enforce_read_only)
+    for field in (
+        'read_only_probe_attempted', 'read_only_probe_count',
+        'read_only_probe_statement_class',
+        'read_only_probe_bounded_to_zero_rows', 'read_only_probe_refused',
+        'durable_write_attempts',
+    ):
+        assert field in source, field
+
+
+def test_the_probe_is_never_reported_as_zero_sql_write_attempts():
+    import inspect
+
+    source = inspect.getsource(audit)
+    assert 'writes_attempted_by_audit' not in source

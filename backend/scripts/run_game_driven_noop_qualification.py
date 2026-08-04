@@ -184,14 +184,57 @@ def run(args) -> dict:
         # Collected inside the guarded block, finalized outside it.
         collected: dict = {'write_phase_entered': False}
         try:
-            # ── SHADOW: exclusive, reads only ────────────────────────────────
-            shadow_report = lane.run_game_driven_ingestion(
-                reference_date,
-                mode=lane.MODE_SHADOW,
-                only_game_pks=[game_pk],
+            # ── WORK-ITEM PRECONDITION, BEFORE ANYTHING ELSE ─────────────────
+            # This must come first. A qualification for a game with no durable
+            # completed work item cannot succeed, so running the shadow lane
+            # first would spend an MLB request and a full canonical planning
+            # pass to reach a refusal that was already decided — and would make
+            # the evidence claim the planner ran when the outcome never
+            # depended on it. Production run 30862655470 refused exactly here.
+            bookkeeping_before = qualification.read_lane_bookkeeping(game_pk)
+            collected['bookkeeping_before'] = bookkeeping_before
+            collected['work_item_precondition_checked'] = (
+                bookkeeping_before is not None
             )
-            collected['shadow_report'] = shadow_report
+            collected['work_item_precondition_passed'] = bool(
+                bookkeeping_before
+                and bookkeeping_before.get('target_present')
+            )
+
+            if bookkeeping_before is None:
+                collected['preflight_failed'] = []
+                collected['preflight_unproven'] = [
+                    qualification.UNPROVEN_BOOKKEEPING_READBACK_UNAVAILABLE
+                ]
+                raise _PreflightRefusal()
+            if not collected['work_item_precondition_passed']:
+                collected['preflight_failed'] = [
+                    qualification.FAILED_TARGET_WORK_ITEM_MISSING
+                ]
+                collected['preflight_unproven'] = []
+                raise _PreflightRefusal()
+
+            # ── SHADOW: exclusive, reads only ────────────────────────────────
+            # Entered only after the precondition passed. The flag is set
+            # immediately before the call so it records an attempt, and the
+            # raised/returned distinction is recorded separately.
             collected['planner_phase_entered'] = True
+            try:
+                shadow_report = lane.run_game_driven_ingestion(
+                    reference_date,
+                    mode=lane.MODE_SHADOW,
+                    only_game_pks=[game_pk],
+                )
+                collected['planner_returned'] = True
+            except Exception:  # noqa: BLE001 - never leak exception text
+                collected['planner_raised'] = True
+                collected['preflight_failed'] = []
+                collected['preflight_unproven'] = [
+                    qualification.UNPROVEN_LANE_ERROR
+                ]
+                raise _PreflightRefusal()
+
+            collected['shadow_report'] = shadow_report
             shadow_governance = qualification.evaluate_plan_governance(
                 shadow_report
             )
@@ -199,8 +242,6 @@ def run(args) -> dict:
             fingerprint = shadow_report.get('reconciliation_plan_fingerprint')
 
             # ── Refuse BEFORE the writer if anything would mutate ────────────
-            # The write phase is never entered on a plan that proposes work.
-            # This is the single most important ordering property in the file.
             preflight_failed: list[str] = []
             preflight_unproven: list[str] = []
             if not shadow_rows:
@@ -225,27 +266,6 @@ def run(args) -> dict:
                     qualification.FAILED_GAME_NOT_PLANNABLE
                     if shadow_scope['planned_game_count'] == 0
                     else qualification.FAILED_PLANNED_COUNT_NOT_ONE
-                )
-
-            # ── Lane bookkeeping BEFORE, read under the guard ────────────────
-            # A first production qualification requires an existing durable
-            # work item. Refusing here keeps the write phase unreached.
-            bookkeeping_before = qualification.read_lane_bookkeeping(game_pk)
-            collected['bookkeeping_before'] = bookkeeping_before
-            collected['work_item_precondition_checked'] = (
-                bookkeeping_before is not None
-            )
-            collected['work_item_precondition_passed'] = bool(
-                bookkeeping_before
-                and bookkeeping_before.get('target_present')
-            )
-            if bookkeeping_before is None:
-                preflight_unproven.append(
-                    qualification.UNPROVEN_BOOKKEEPING_READBACK_UNAVAILABLE
-                )
-            elif not bookkeeping_before.get('target_present'):
-                preflight_failed.append(
-                    qualification.FAILED_TARGET_WORK_ITEM_MISSING
                 )
 
             if preflight_failed or preflight_unproven:
@@ -364,6 +384,8 @@ def _state_from(collected, game_pk) -> dict:
             'work_item_precondition_passed', False
         ),
         planner_phase_entered=collected.get('planner_phase_entered', False),
+        planner_returned=collected.get('planner_returned', False),
+        planner_raised=collected.get('planner_raised', False),
         shadow_report=collected.get('shadow_report'),
         game_pk=game_pk,
     )
@@ -448,6 +470,8 @@ def _document(*, identity, decision, shadow_report, write_report, before_state,
                 'work_item_precondition_passed'
             ],
             'planner_phase_entered': state['planner_phase_entered'],
+            'planner_returned': state['planner_returned'],
+            'planner_raised': state['planner_raised'],
             'finality_check_executed': state['finality_check_executed'],
             'finality_proven_by_planner': state['finality_proven_by_planner'],
             'finality_display': qualification.render_finality(state),

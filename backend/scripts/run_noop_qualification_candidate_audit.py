@@ -191,10 +191,13 @@ def run(args) -> dict:
                 candidates=discovery['candidates_selected'],
                 reference_date=reference_date,
                 eligible_target_count=bounds['eligible_target_count'],
+                candidate_limit=bounds['candidate_limit'],
+                candidate_pool_size=discovery['candidate_pool_size'],
                 session=db.session,
             )
             collected['candidates'] = evaluated['candidates']
             collected['stop_reason'] = evaluated['stop_reason']
+            collected['evaluation'] = evaluated
 
             collected['after_fingerprints'] = audit.table_fingerprints(
                 db.session
@@ -255,6 +258,7 @@ def run(args) -> dict:
         stop_reason=collected.get('stop_reason'),
         decision=decision,
         reference_date=reference_date,
+        evaluation=collected.get('evaluation'),
     )
 
 
@@ -285,7 +289,10 @@ def _refuse(*, failed=(), unproven=()) -> dict:
 
 
 def _document(*, context, note, bounds, discovery, candidates, read_only,
-              stop_reason, decision, reference_date=None) -> dict:
+              stop_reason, decision, reference_date=None,
+              evaluation=None) -> dict:
+    evaluation = evaluation or {}
+    detail = (read_only or {}).get('read_only_detail') or {}
     return {
         'identity': {
             'schema_version': audit.SCHEMA_VERSION,
@@ -328,6 +335,11 @@ def _document(*, context, note, bounds, discovery, candidates, read_only,
             'candidates_selected': len(discovery.get(
                 'candidates_selected'
             ) or []),
+            'candidates_evaluated': evaluation.get('candidates_evaluated'),
+            'eligible_stop_position': evaluation.get('eligible_stop_position'),
+            'configured_candidate_limit': evaluation.get(
+                'configured_candidate_limit'
+            ),
             'candidate_pool_size': discovery.get('candidate_pool_size'),
             'deterministic_ordering': discovery.get('ordering'),
             'window_start': discovery.get('window_start'),
@@ -349,15 +361,29 @@ def _document(*, context, note, bounds, discovery, candidates, read_only,
             'transaction_read_only_enabled': read_only.get(
                 'read_only_enabled'
             ),
-            'write_probe_refused': (read_only.get('read_only_detail') or {}).get(
-                'write_probe_refused'
-            ),
+            'write_probe_refused': detail.get('write_probe_refused'),
             'fingerprint_tables': read_only.get('fingerprint_tables'),
             'before_fingerprints': read_only.get('before_fingerprints'),
             'after_fingerprints': read_only.get('after_fingerprints'),
             'fingerprints_match': read_only.get('fingerprints_match'),
             'changed_tables': read_only.get('changed_tables'),
-            'writes_attempted_by_audit': 0,
+            # One bounded, refused proof statement is attempted. Zero durable
+            # writes are attempted. These are different facts and are reported
+            # as different fields.
+            'read_only_probe_attempted': detail.get(
+                'read_only_probe_attempted', False
+            ),
+            'read_only_probe_count': detail.get('read_only_probe_count', 0),
+            'read_only_probe_statement_class': detail.get(
+                'read_only_probe_statement_class'
+            ),
+            'read_only_probe_bounded_to_zero_rows': detail.get(
+                'read_only_probe_bounded_to_zero_rows', False
+            ),
+            'read_only_probe_refused': detail.get(
+                'read_only_probe_refused', False
+            ),
+            'durable_write_attempts': detail.get('durable_write_attempts', 0),
             'durable_rows_created': 0,
             'durable_rows_updated': 0,
             'durable_rows_deleted': 0,
@@ -481,7 +507,9 @@ def render_markdown(document) -> str:
         f"| completed work items found | "
         f"{discovery.get('completed_work_items_found')} |",
         f"| duplicates excluded | {discovery.get('duplicate_count')} |",
-        f"| candidates evaluated | {discovery.get('candidates_selected')} |",
+        f"| candidates selected | {discovery.get('candidates_selected')} |",
+        f"| candidates evaluated | {discovery.get('candidates_evaluated')} |",
+        f"| configured limit | {discovery.get('configured_candidate_limit')} |",
         f"| ordering | `{discovery.get('deterministic_ordering')}` |",
         f"| stop reason | {discovery.get('bounded_stop_reason')} |",
         '',
