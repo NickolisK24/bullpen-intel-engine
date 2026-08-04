@@ -176,6 +176,88 @@ jobs:
           echo "game-driven-shadow-handoff-30873422601 download: $HANDOFF_OUTCOME (optional)"
           echo "Availability is recorded here and proven again inside the audit."
 
+      # Artifact IDs, sizes, expiry, and digests as GitHub reports them TODAY.
+      # Recorded so the audit can verify the incident's known digests rather
+      # than trusting a directory name. A digest GitHub no longer exposes is
+      # UNVERIFIED (honest); a digest that is present and different is FAILED.
+      # Non-blocking: unavailable metadata must not stop the evidence document
+      # from being produced.
+      - name: Record incident artifact metadata
+        id: artifact-metadata
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_API: ${{ github.api_url }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -uo pipefail
+          python - <<'PY'
+          import json
+          import os
+          import pathlib
+          import urllib.error
+          import urllib.request
+
+          RUN_ID = '30873422601'
+          WANTED = {
+              'game-driven-shadow-30873422601',
+              'game-driven-shadow-handoff-30873422601',
+              'appearance-ledger-audit-30873422601',
+          }
+          target = pathlib.Path('incident-evidence')
+          target.mkdir(parents=True, exist_ok=True)
+          out = target / 'artifact-metadata.json'
+
+          api = os.environ.get('GH_API', 'https://api.github.com')
+          repo = os.environ.get('GH_REPO', '')
+          token = os.environ.get('GH_TOKEN', '')
+          url = (
+              f'{api}/repos/{repo}/actions/runs/{RUN_ID}'
+              f'/artifacts?per_page=100'
+          )
+          request = urllib.request.Request(url, headers={
+              'Accept': 'application/vnd.github+json',
+              'Authorization': f'Bearer {token}',
+              'X-GitHub-Api-Version': '2022-11-28',
+          })
+          collected = {}
+          try:
+              with urllib.request.urlopen(request, timeout=30) as response:
+                  payload = json.load(response)
+          except (urllib.error.URLError, ValueError, OSError):
+              # Report the absence; never fail the audit on metadata alone.
+              print('Artifact metadata could not be retrieved; digests will '
+                    'be reported as not exposed.')
+              payload = {'artifacts': []}
+
+          for entry in payload.get('artifacts') or ():
+              name = entry.get('name')
+              if name in WANTED:
+                  collected[name] = {
+                      'artifact_id': entry.get('id'),
+                      'size_in_bytes': entry.get('size_in_bytes'),
+                      'expired': entry.get('expired'),
+                      'created_at': entry.get('created_at'),
+                      'expires_at': entry.get('expires_at'),
+                      'digest': entry.get('digest'),
+                  }
+
+          out.write_text(
+              json.dumps(collected, indent=2, sort_keys=True) + '\n',
+              encoding='utf-8',
+          )
+          for name in sorted(WANTED):
+              record = collected.get(name)
+              if record is None:
+                  print(f'{name}: metadata not returned by the API')
+              else:
+                  print(
+                      f"{name}: id={record.get('artifact_id')} "
+                      f"expired={record.get('expired')} "
+                      f"digest_present={bool(record.get('digest'))}"
+                  )
+          PY
+
       - name: Run the read-only incident audit
         id: audit
         continue-on-error: true
