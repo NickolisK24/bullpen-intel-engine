@@ -238,8 +238,8 @@ jobs:
           print(f"| requested game | {identity.get('requested_game_pk')} |")
           print(f"| commit | `{identity.get('commit_sha')}` |")
           print(f"| exact scope match | {scope.get('execution_scope_exact_match')} |")
-          print(f"| finality proven | "
-                f"{(doc.get('game_authority') or {}).get('finality_proven_by_planner')} |")
+          print(f"| finality | "
+                f"{(doc.get('game_authority') or {}).get('finality_display')} |")
           print(f"| planned rows | {(plan.get('write_plan') or {}).get('planned_row_count')} |")
           print(f"| planned already matching | "
                 f"{(plan.get('write_plan') or {}).get('planned_unchanged_count')} |")

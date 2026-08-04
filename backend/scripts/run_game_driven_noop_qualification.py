@@ -153,6 +153,7 @@ def run(args) -> dict:
     from services import game_driven_ingestion as lane
     from services import game_driven_realization as realization_service
     from services import sync_metadata
+    from utils.db import db
 
     with flask_app.app_context():
         # Writer-guard state is tracked, never assumed. The evidence document
@@ -184,12 +185,71 @@ def run(args) -> dict:
         # Collected inside the guarded block, finalized outside it.
         collected: dict = {'write_phase_entered': False}
         try:
-            # ── SHADOW: exclusive, reads only ────────────────────────────────
-            shadow_report = lane.run_game_driven_ingestion(
-                reference_date,
-                mode=lane.MODE_SHADOW,
-                only_game_pks=[game_pk],
+            # ── WORK-ITEM PRECONDITION, BEFORE ANYTHING ELSE ─────────────────
+            # This must come first. A qualification for a game with no durable
+            # completed work item cannot succeed, so running the shadow lane
+            # first would spend an MLB request and a full canonical planning
+            # pass to reach a refusal that was already decided — and would make
+            # the evidence claim the planner ran when the outcome never
+            # depended on it. Production run 30862655470 refused exactly here.
+            bookkeeping_before = qualification.read_lane_bookkeeping(game_pk)
+            collected['bookkeeping_before'] = bookkeeping_before
+            collected['work_item_precondition_checked'] = (
+                bookkeeping_before is not None
             )
+            # Present is not the same fact as COMPLETED. The governing
+            # contract requires an existing COMPLETED durable item, so a row in
+            # any other state must not reach the shadow lane, an MLB request,
+            # plan generation, the write-capable path, or the lane ledger.
+            target_before = (bookkeeping_before or {}).get('target') or {}
+            collected['target_work_item_present'] = bool(
+                bookkeeping_before
+                and bookkeeping_before.get('target_present')
+            )
+            collected['target_work_item_status'] = target_before.get('status')
+            collected['work_item_precondition_passed'] = bool(
+                collected['target_work_item_present']
+                and target_before.get('status')
+                == qualification.REQUIRED_WORK_ITEM_STATUS_BEFORE
+            )
+
+            if bookkeeping_before is None:
+                collected['preflight_failed'] = []
+                collected['preflight_unproven'] = [
+                    qualification.UNPROVEN_BOOKKEEPING_READBACK_UNAVAILABLE
+                ]
+                raise _PreflightRefusal()
+            if not collected['work_item_precondition_passed']:
+                # A missing row and a present-but-unfinished row are different
+                # facts and get different reasons.
+                collected['preflight_failed'] = [
+                    qualification.FAILED_TARGET_WORK_ITEM_MISSING
+                    if not collected['target_work_item_present']
+                    else qualification.FAILED_TARGET_WORK_ITEM_NOT_COMPLETED
+                ]
+                collected['preflight_unproven'] = []
+                raise _PreflightRefusal()
+
+            # ── SHADOW: exclusive, reads only ────────────────────────────────
+            # Entered only after the precondition passed. The flag is set
+            # immediately before the call so it records an attempt, and the
+            # raised/returned distinction is recorded separately.
+            collected['planner_phase_entered'] = True
+            try:
+                shadow_report = lane.run_game_driven_ingestion(
+                    reference_date,
+                    mode=lane.MODE_SHADOW,
+                    only_game_pks=[game_pk],
+                )
+                collected['planner_returned'] = True
+            except Exception:  # noqa: BLE001 - never leak exception text
+                collected['planner_raised'] = True
+                collected['preflight_failed'] = []
+                collected['preflight_unproven'] = [
+                    qualification.UNPROVEN_LANE_ERROR
+                ]
+                raise _PreflightRefusal()
+
             collected['shadow_report'] = shadow_report
             shadow_governance = qualification.evaluate_plan_governance(
                 shadow_report
@@ -198,8 +258,6 @@ def run(args) -> dict:
             fingerprint = shadow_report.get('reconciliation_plan_fingerprint')
 
             # ── Refuse BEFORE the writer if anything would mutate ────────────
-            # The write phase is never entered on a plan that proposes work.
-            # This is the single most important ordering property in the file.
             preflight_failed: list[str] = []
             preflight_unproven: list[str] = []
             if not shadow_rows:
@@ -224,20 +282,6 @@ def run(args) -> dict:
                     qualification.FAILED_GAME_NOT_PLANNABLE
                     if shadow_scope['planned_game_count'] == 0
                     else qualification.FAILED_PLANNED_COUNT_NOT_ONE
-                )
-
-            # ── Lane bookkeeping BEFORE, read under the guard ────────────────
-            # A first production qualification requires an existing durable
-            # work item. Refusing here keeps the write phase unreached.
-            bookkeeping_before = qualification.read_lane_bookkeeping(game_pk)
-            collected['bookkeeping_before'] = bookkeeping_before
-            if bookkeeping_before is None:
-                preflight_unproven.append(
-                    qualification.UNPROVEN_BOOKKEEPING_READBACK_UNAVAILABLE
-                )
-            elif not bookkeeping_before.get('target_present'):
-                preflight_failed.append(
-                    qualification.FAILED_TARGET_WORK_ITEM_MISSING
                 )
 
             if preflight_failed or preflight_unproven:
@@ -281,6 +325,15 @@ def run(args) -> dict:
         except Exception:  # noqa: BLE001 - never leak exception text
             collected['lane_error'] = True
         finally:
+            # End the read transaction before releasing the guard. Every exit
+            # path reaches here, including the early refusals, and a refusal
+            # that leaves an open transaction keeps table locks held for as
+            # long as the session lives. The audit runner already does this;
+            # the qualification runner did not.
+            try:
+                db.session.rollback()
+            except Exception:  # noqa: BLE001
+                pass
             # Release BEFORE the document is built, and record what actually
             # happened. Nothing below hardcodes success.
             if guard is not None:
@@ -318,6 +371,7 @@ def run(args) -> dict:
             realization=None,
             reference_date=reference_date,
             write_phase_entered=False,
+            execution_state=_state_from(collected, game_pk),
         )
 
     decision = qualification.assess(
@@ -342,6 +396,23 @@ def run(args) -> dict:
         realization=collected.get('realization'),
         reference_date=reference_date,
         write_phase_entered=collected.get('write_phase_entered', False),
+        execution_state=_state_from(collected, game_pk),
+    )
+
+
+def _state_from(collected, game_pk) -> dict:
+    return qualification.execution_state(
+        work_item_precondition_checked=collected.get(
+            'work_item_precondition_checked', False
+        ),
+        work_item_precondition_passed=collected.get(
+            'work_item_precondition_passed', False
+        ),
+        planner_phase_entered=collected.get('planner_phase_entered', False),
+        planner_returned=collected.get('planner_returned', False),
+        planner_raised=collected.get('planner_raised', False),
+        shadow_report=collected.get('shadow_report'),
+        game_pk=game_pk,
     )
 
 
@@ -383,7 +454,8 @@ def _refused(context, *, game_pk, note, failed=(), unproven=(),
 
 def _document(*, identity, decision, shadow_report, write_report, before_state,
               after_state, realization, reference_date,
-              write_phase_entered) -> dict:
+              write_phase_entered, execution_state=None) -> dict:
+    state = execution_state or qualification.execution_state()
     shadow_report = shadow_report or {}
     write_report = write_report or {}
     effects = decision.get('execution_effects') or (
@@ -415,10 +487,19 @@ def _document(*, identity, decision, shadow_report, write_report, before_state,
         },
         'game_authority': {
             'source_authority_planner': 'game_ingestion_planner.plan_game_work',
-            'finality_proven_by_planner': (
-                qualification.FAILED_GAME_NOT_PLANNABLE
-                not in decision['failed_reasons']
-            ),
+            # What actually executed. Never derived from an absent failure.
+            'work_item_precondition_checked': state[
+                'work_item_precondition_checked'
+            ],
+            'work_item_precondition_passed': state[
+                'work_item_precondition_passed'
+            ],
+            'planner_phase_entered': state['planner_phase_entered'],
+            'planner_returned': state['planner_returned'],
+            'planner_raised': state['planner_raised'],
+            'finality_check_executed': state['finality_check_executed'],
+            'finality_proven_by_planner': state['finality_proven_by_planner'],
+            'finality_display': qualification.render_finality(state),
             'source_revisions_before_planning': decision.get(
                 'source_revisions_before'
             ) or [],
@@ -643,6 +724,8 @@ def render_markdown(document) -> str:
         f"| fetch operations | {scope.get('fetch_operations')} |",
         f"| games completed | {scope.get('games_completed')} |",
         f"| plan fingerprint match | {plan.get('plan_fingerprint_match')} |",
+        f"| finality | "
+        f"{document['game_authority'].get('finality_display')} |",
         f"| source revision match | "
         f"{document['game_authority'].get('source_revision_match')} |",
         f"| planned rows | {(plan.get('write_plan') or {}).get('planned_row_count')} |",
