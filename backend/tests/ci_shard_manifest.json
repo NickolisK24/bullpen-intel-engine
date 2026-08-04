@@ -1,0 +1,1407 @@
+{
+  "schema_version": 1,
+  "shard_count": 4,
+  "baseline_commit": "d746471abeda4e37c5024d67ede7a77fb4785048",
+  "baseline_date": "2026-08-04",
+  "generated_for": "CI Runtime and Confidence Pass Stage 1",
+  "assignment_strategy": "greedy longest-processing-time using measured per-file runtime, ties broken by relative path",
+  "timing_note": "measured_seconds values are balancing inputs only. They are not test-selection authority: the per-shard file lists decide what runs, and \"python scripts/ci_shard.py verify\" proves those lists cover live pytest collection exactly once.",
+  "shards": {
+    "1": {
+      "measured_seconds": 497.629,
+      "files": [
+        {
+          "path": "tests/test_availability_unavailable_experiment.py",
+          "measured_seconds": 0.002
+        },
+        {
+          "path": "tests/test_boxscore_fallback_writer_parity.py",
+          "measured_seconds": 10.904
+        },
+        {
+          "path": "tests/test_bullpen_comparison.py",
+          "measured_seconds": 2.625
+        },
+        {
+          "path": "tests/test_bullpen_dashboard.py",
+          "measured_seconds": 12.357
+        },
+        {
+          "path": "tests/test_bullpen_eligibility.py",
+          "measured_seconds": 0.001
+        },
+        {
+          "path": "tests/test_bullpen_intelligence_contracts.py",
+          "measured_seconds": 2.898
+        },
+        {
+          "path": "tests/test_canonical_innings_reconciliation.py",
+          "measured_seconds": 10.879
+        },
+        {
+          "path": "tests/test_completed_game_context_backfill.py",
+          "measured_seconds": 6.195
+        },
+        {
+          "path": "tests/test_completed_game_context_sync.py",
+          "measured_seconds": 14.934
+        },
+        {
+          "path": "tests/test_consequence_intelligence_review.py",
+          "measured_seconds": 0.004
+        },
+        {
+          "path": "tests/test_context_layers_audit.py",
+          "measured_seconds": 1.486
+        },
+        {
+          "path": "tests/test_durable_sync_write_integration.py",
+          "measured_seconds": 4.442
+        },
+        {
+          "path": "tests/test_eligibility_aware_story_context.py",
+          "measured_seconds": 0.001
+        },
+        {
+          "path": "tests/test_email_delivery.py",
+          "measured_seconds": 0.016
+        },
+        {
+          "path": "tests/test_entry_band_usage_evidence.py",
+          "measured_seconds": 9.832
+        },
+        {
+          "path": "tests/test_evidence_classification.py",
+          "measured_seconds": 1.125
+        },
+        {
+          "path": "tests/test_game_context.py",
+          "measured_seconds": 6.534
+        },
+        {
+          "path": "tests/test_game_driven_daily_sync_wiring.py",
+          "measured_seconds": 6.623
+        },
+        {
+          "path": "tests/test_game_driven_postgame_wiring.py",
+          "measured_seconds": 40.32
+        },
+        {
+          "path": "tests/test_game_driven_shadow_realization.py",
+          "measured_seconds": 17.733
+        },
+        {
+          "path": "tests/test_game_ingestion_completeness.py",
+          "measured_seconds": 7.027
+        },
+        {
+          "path": "tests/test_game_log_boxscore_migration.py",
+          "measured_seconds": 0.02
+        },
+        {
+          "path": "tests/test_intelligence_surface_service.py",
+          "measured_seconds": 0.009
+        },
+        {
+          "path": "tests/test_intraday_bootstrap.py",
+          "measured_seconds": 0.015
+        },
+        {
+          "path": "tests/test_intraday_identity_repair.py",
+          "measured_seconds": 2.081
+        },
+        {
+          "path": "tests/test_magic_link_auth.py",
+          "measured_seconds": 8.906
+        },
+        {
+          "path": "tests/test_noop_candidate_audit_contract.py",
+          "measured_seconds": 0.005
+        },
+        {
+          "path": "tests/test_noop_write_qualification_contract.py",
+          "measured_seconds": 0.033
+        },
+        {
+          "path": "tests/test_observation_api.py",
+          "measured_seconds": 0.052
+        },
+        {
+          "path": "tests/test_observation_builders.py",
+          "measured_seconds": 0.003
+        },
+        {
+          "path": "tests/test_official_pitching_line_repair_apply_2026.py",
+          "measured_seconds": 113.832
+        },
+        {
+          "path": "tests/test_official_pitching_line_repair_closeout_2026.py",
+          "measured_seconds": 12.51
+        },
+        {
+          "path": "tests/test_opening_week_schedule_authority_repair_2026.py",
+          "measured_seconds": 50.1
+        },
+        {
+          "path": "tests/test_pitcher_search.py",
+          "measured_seconds": 6.114
+        },
+        {
+          "path": "tests/test_postgame_marker_lifecycle.py",
+          "measured_seconds": 4.192
+        },
+        {
+          "path": "tests/test_postgame_progressive_readiness_order.py",
+          "measured_seconds": 3.291
+        },
+        {
+          "path": "tests/test_postgame_shadow_scope.py",
+          "measured_seconds": 26.378
+        },
+        {
+          "path": "tests/test_readiness_freshness_partial_sync.py",
+          "measured_seconds": 5.43
+        },
+        {
+          "path": "tests/test_recommendation_v2_domain_foundation.py",
+          "measured_seconds": 0.006
+        },
+        {
+          "path": "tests/test_recommendation_v2_inventory_visibility.py",
+          "measured_seconds": 0.195
+        },
+        {
+          "path": "tests/test_reliable_pitcher_creation.py",
+          "measured_seconds": 4.898
+        },
+        {
+          "path": "tests/test_roster_authority.py",
+          "measured_seconds": 0.001
+        },
+        {
+          "path": "tests/test_rotation_context.py",
+          "measured_seconds": 0.002
+        },
+        {
+          "path": "tests/test_schedule_authority.py",
+          "measured_seconds": 8.149
+        },
+        {
+          "path": "tests/test_schedule_context.py",
+          "measured_seconds": 0.944
+        },
+        {
+          "path": "tests/test_shadow_write_reconciliation_parity.py",
+          "measured_seconds": 19.25
+        },
+        {
+          "path": "tests/test_share_artifact_operations.py",
+          "measured_seconds": 23.204
+        },
+        {
+          "path": "tests/test_share_artifact_operations_progressive.py",
+          "measured_seconds": 4.67
+        },
+        {
+          "path": "tests/test_share_artifact_public.py",
+          "measured_seconds": 7.867
+        },
+        {
+          "path": "tests/test_share_artifact_publication_hook.py",
+          "measured_seconds": 5.613
+        },
+        {
+          "path": "tests/test_slate_editorial_ranker.py",
+          "measured_seconds": 0.671
+        },
+        {
+          "path": "tests/test_source_readiness.py",
+          "measured_seconds": 2.743
+        },
+        {
+          "path": "tests/test_statusless_split_finality.py",
+          "measured_seconds": 4.803
+        },
+        {
+          "path": "tests/test_story_api_v1.py",
+          "measured_seconds": 0.053
+        },
+        {
+          "path": "tests/test_story_blueprint_coherence_v1.py",
+          "measured_seconds": 0.107
+        },
+        {
+          "path": "tests/test_story_blueprint_v1.py",
+          "measured_seconds": 0.003
+        },
+        {
+          "path": "tests/test_story_editorial_regression_v1.py",
+          "measured_seconds": 0.466
+        },
+        {
+          "path": "tests/test_story_polish.py",
+          "measured_seconds": 0.006
+        },
+        {
+          "path": "tests/test_story_readability_c2e.py",
+          "measured_seconds": 0.009
+        },
+        {
+          "path": "tests/test_story_selection_trace_v1.py",
+          "measured_seconds": 0.376
+        },
+        {
+          "path": "tests/test_story_writer_v1.py",
+          "measured_seconds": 0.032
+        },
+        {
+          "path": "tests/test_sync_product_timezone.py",
+          "measured_seconds": 2.077
+        },
+        {
+          "path": "tests/test_team_daily_read.py",
+          "measured_seconds": 3.366
+        },
+        {
+          "path": "tests/test_team_readiness_coverage.py",
+          "measured_seconds": 0.002
+        },
+        {
+          "path": "tests/test_team_state_eligibility.py",
+          "measured_seconds": 3.594
+        },
+        {
+          "path": "tests/test_team_state_public_copy.py",
+          "measured_seconds": 5.189
+        },
+        {
+          "path": "tests/test_team_story_previews.py",
+          "measured_seconds": 0.014
+        },
+        {
+          "path": "tests/test_tonight_candidate_selection.py",
+          "measured_seconds": 1.204
+        },
+        {
+          "path": "tests/test_tonight_intelligence_endpoint.py",
+          "measured_seconds": 8.632
+        },
+        {
+          "path": "tests/test_tonight_snapshot_source_width_migration.py",
+          "measured_seconds": 0.304
+        },
+        {
+          "path": "tests/test_traffic_share_actions.py",
+          "measured_seconds": 0.224
+        },
+        {
+          "path": "tests/test_v4_team_operations_readiness_explanation_integration.py",
+          "measured_seconds": 0.046
+        }
+      ]
+    },
+    "2": {
+      "measured_seconds": 497.63,
+      "files": [
+        {
+          "path": "tests/test_appearance_ledger.py",
+          "measured_seconds": 5.277
+        },
+        {
+          "path": "tests/test_appearance_team_production_audit.py",
+          "measured_seconds": 0.965
+        },
+        {
+          "path": "tests/test_availability_snapshot_mode.py",
+          "measured_seconds": 6.042
+        },
+        {
+          "path": "tests/test_boxscore_fallback_impact_planner.py",
+          "measured_seconds": 7.734
+        },
+        {
+          "path": "tests/test_boxscore_fallback_integration.py",
+          "measured_seconds": 6.345
+        },
+        {
+          "path": "tests/test_bullpen_resource_health.py",
+          "measured_seconds": 0.001
+        },
+        {
+          "path": "tests/test_bullpen_trust_hierarchy.py",
+          "measured_seconds": 0.002
+        },
+        {
+          "path": "tests/test_coin_seeded_fixtures.py",
+          "measured_seconds": 0.02
+        },
+        {
+          "path": "tests/test_coin_story_corpus.py",
+          "measured_seconds": 0.417
+        },
+        {
+          "path": "tests/test_context_explanation_editorial_review.py",
+          "measured_seconds": 0.113
+        },
+        {
+          "path": "tests/test_cors_allowed_origins.py",
+          "measured_seconds": 0.122
+        },
+        {
+          "path": "tests/test_editorial_review_v1.py",
+          "measured_seconds": 0.006
+        },
+        {
+          "path": "tests/test_editorial_roster_authority_migration.py",
+          "measured_seconds": 0.006
+        },
+        {
+          "path": "tests/test_game_driven_shadow_activation_validator.py",
+          "measured_seconds": 0.047
+        },
+        {
+          "path": "tests/test_game_driven_shadow_activation_workflow.py",
+          "measured_seconds": 0.334
+        },
+        {
+          "path": "tests/test_game_ingestion_planner.py",
+          "measured_seconds": 10.325
+        },
+        {
+          "path": "tests/test_internal_pitcher_evidence.py",
+          "measured_seconds": 2.706
+        },
+        {
+          "path": "tests/test_internal_team_evidence.py",
+          "measured_seconds": 3.366
+        },
+        {
+          "path": "tests/test_intraday_completed_game_repair.py",
+          "measured_seconds": 0.001
+        },
+        {
+          "path": "tests/test_intraday_reconcile.py",
+          "measured_seconds": 108.869
+        },
+        {
+          "path": "tests/test_narrative_memory_diagnostic.py",
+          "measured_seconds": 3.01
+        },
+        {
+          "path": "tests/test_noop_candidate_audit_execution.py",
+          "measured_seconds": 19.703
+        },
+        {
+          "path": "tests/test_noop_candidate_audit_probe_violation.py",
+          "measured_seconds": 0.519
+        },
+        {
+          "path": "tests/test_official_pitching_line_matt_festa_apply_2026.py",
+          "measured_seconds": 58.84
+        },
+        {
+          "path": "tests/test_official_pitching_line_repair_execution_ledger.py",
+          "measured_seconds": 3.6
+        },
+        {
+          "path": "tests/test_official_pitching_line_transition_diagnostic_2026.py",
+          "measured_seconds": 18.506
+        },
+        {
+          "path": "tests/test_pipeline_resilience.py",
+          "measured_seconds": 6.132
+        },
+        {
+          "path": "tests/test_pitcher_identity_authority.py",
+          "measured_seconds": 12.474
+        },
+        {
+          "path": "tests/test_player_detail_availability_consistency.py",
+          "measured_seconds": 1.5
+        },
+        {
+          "path": "tests/test_postgame_incident_audit_artifacts.py",
+          "measured_seconds": 0.03
+        },
+        {
+          "path": "tests/test_postgame_incident_audit_runtime_recovery.py",
+          "measured_seconds": 8.43
+        },
+        {
+          "path": "tests/test_postgame_recovery.py",
+          "measured_seconds": 2.202
+        },
+        {
+          "path": "tests/test_pregame_story_evidence_contract.py",
+          "measured_seconds": 0.015
+        },
+        {
+          "path": "tests/test_private_posts_access.py",
+          "measured_seconds": 4.54
+        },
+        {
+          "path": "tests/test_production_maintenance_workflow.py",
+          "measured_seconds": 0.514
+        },
+        {
+          "path": "tests/test_recommendation_engine_integration.py",
+          "measured_seconds": 0.003
+        },
+        {
+          "path": "tests/test_recommendation_v2_api_contract.py",
+          "measured_seconds": 7.068
+        },
+        {
+          "path": "tests/test_recommendation_v2_refusal_fail_closed.py",
+          "measured_seconds": 0.289
+        },
+        {
+          "path": "tests/test_reliever_daily_read.py",
+          "measured_seconds": 3.316
+        },
+        {
+          "path": "tests/test_roster_dead_letter_reconciliation.py",
+          "measured_seconds": 4.08
+        },
+        {
+          "path": "tests/test_roster_depth_evidence.py",
+          "measured_seconds": 6.996
+        },
+        {
+          "path": "tests/test_roster_readiness_fixture.py",
+          "measured_seconds": 1.195
+        },
+        {
+          "path": "tests/test_roster_status_snapshots.py",
+          "measured_seconds": 4.601
+        },
+        {
+          "path": "tests/test_rotation_support_game_shape.py",
+          "measured_seconds": 0.001
+        },
+        {
+          "path": "tests/test_rotation_support_pressure.py",
+          "measured_seconds": 0.002
+        },
+        {
+          "path": "tests/test_rotation_support_split_window.py",
+          "measured_seconds": 2.502
+        },
+        {
+          "path": "tests/test_schedule_ingestion.py",
+          "measured_seconds": 14.866
+        },
+        {
+          "path": "tests/test_season_bullpen_aggregation_2026.py",
+          "measured_seconds": 34.513
+        },
+        {
+          "path": "tests/test_server_side_team_following.py",
+          "measured_seconds": 10.591
+        },
+        {
+          "path": "tests/test_shadow_backlog_publication_integration.py",
+          "measured_seconds": 4.854
+        },
+        {
+          "path": "tests/test_shadow_publication_completeness_scope.py",
+          "measured_seconds": 27.31
+        },
+        {
+          "path": "tests/test_share_artifact_batch_generation.py",
+          "measured_seconds": 11.742
+        },
+        {
+          "path": "tests/test_share_artifact_domain.py",
+          "measured_seconds": 23.684
+        },
+        {
+          "path": "tests/test_slate_coverage.py",
+          "measured_seconds": 8.857
+        },
+        {
+          "path": "tests/test_slate_coverage_diagnostics.py",
+          "measured_seconds": 1.921
+        },
+        {
+          "path": "tests/test_snapshot_trust_freeze.py",
+          "measured_seconds": 0.045
+        },
+        {
+          "path": "tests/test_starter_exposure_evidence.py",
+          "measured_seconds": 5.349
+        },
+        {
+          "path": "tests/test_story_composition.py",
+          "measured_seconds": 0.006
+        },
+        {
+          "path": "tests/test_story_evidence_body_variety_v1.py",
+          "measured_seconds": 0.079
+        },
+        {
+          "path": "tests/test_story_feed.py",
+          "measured_seconds": 0.018
+        },
+        {
+          "path": "tests/test_story_headline_c2d.py",
+          "measured_seconds": 0.003
+        },
+        {
+          "path": "tests/test_story_reasoning_engine_v1.py",
+          "measured_seconds": 0.013
+        },
+        {
+          "path": "tests/test_story_voice_cleanup_c2b.py",
+          "measured_seconds": 0.004
+        },
+        {
+          "path": "tests/test_story_writers.py",
+          "measured_seconds": 0.034
+        },
+        {
+          "path": "tests/test_team_assignment_sync.py",
+          "measured_seconds": 4.846
+        },
+        {
+          "path": "tests/test_team_operations_bullpen_readiness.py",
+          "measured_seconds": 0.012
+        },
+        {
+          "path": "tests/test_team_relief_composition_evidence.py",
+          "measured_seconds": 11.086
+        },
+        {
+          "path": "tests/test_team_scoped_public_roster_readiness.py",
+          "measured_seconds": 0.002
+        },
+        {
+          "path": "tests/test_tonight_intelligence_snapshot.py",
+          "measured_seconds": 8.131
+        },
+        {
+          "path": "tests/test_traffic_measurement.py",
+          "measured_seconds": 1.231
+        },
+        {
+          "path": "tests/test_unknown_safe_ingestion.py",
+          "measured_seconds": 5.661
+        },
+        {
+          "path": "tests/test_v4_explanations_deterministic_builder.py",
+          "measured_seconds": 0.006
+        }
+      ]
+    },
+    "3": {
+      "measured_seconds": 497.629,
+      "files": [
+        {
+          "path": "tests/test_active_bullpen_readiness_resolver.py",
+          "measured_seconds": 1.503
+        },
+        {
+          "path": "tests/test_appearance_context_evidence.py",
+          "measured_seconds": 6.516
+        },
+        {
+          "path": "tests/test_appearance_leverage.py",
+          "measured_seconds": 0.0
+        },
+        {
+          "path": "tests/test_appearance_team_residual_audit_2026.py",
+          "measured_seconds": 21.904
+        },
+        {
+          "path": "tests/test_auth.py",
+          "measured_seconds": 0.108
+        },
+        {
+          "path": "tests/test_availability.py",
+          "measured_seconds": 0.0
+        },
+        {
+          "path": "tests/test_availability_explanation_audit.py",
+          "measured_seconds": 0.0
+        },
+        {
+          "path": "tests/test_availability_explanations.py",
+          "measured_seconds": 0.0
+        },
+        {
+          "path": "tests/test_availability_reference_date.py",
+          "measured_seconds": 2.307
+        },
+        {
+          "path": "tests/test_availability_summary.py",
+          "measured_seconds": 0.0
+        },
+        {
+          "path": "tests/test_availability_threshold_audit.py",
+          "measured_seconds": 0.001
+        },
+        {
+          "path": "tests/test_availability_unavailable_boundary_review.py",
+          "measured_seconds": 0.0
+        },
+        {
+          "path": "tests/test_baseline_distribution.py",
+          "measured_seconds": 0.0
+        },
+        {
+          "path": "tests/test_baseline_engine.py",
+          "measured_seconds": 0.0
+        },
+        {
+          "path": "tests/test_boxscore_fallback_authority.py",
+          "measured_seconds": 0.0
+        },
+        {
+          "path": "tests/test_bullpen_board.py",
+          "measured_seconds": 17.053
+        },
+        {
+          "path": "tests/test_bullpen_concentration_context.py",
+          "measured_seconds": 0.001
+        },
+        {
+          "path": "tests/test_bullpen_coverage_safety.py",
+          "measured_seconds": 0.0
+        },
+        {
+          "path": "tests/test_bullpen_eligibility_vocabulary.py",
+          "measured_seconds": 0.0
+        },
+        {
+          "path": "tests/test_bullpen_environment.py",
+          "measured_seconds": 0.0
+        },
+        {
+          "path": "tests/test_bullpen_freshness.py",
+          "measured_seconds": 5.678
+        },
+        {
+          "path": "tests/test_bullpen_identity.py",
+          "measured_seconds": 0.0
+        },
+        {
+          "path": "tests/test_bullpen_identity_distribution_review.py",
+          "measured_seconds": 0.0
+        },
+        {
+          "path": "tests/test_bullpen_optionality_context.py",
+          "measured_seconds": 0.0
+        },
+        {
+          "path": "tests/test_bullpen_stability.py",
+          "measured_seconds": 0.0
+        },
+        {
+          "path": "tests/test_bullpen_stress.py",
+          "measured_seconds": 0.0
+        },
+        {
+          "path": "tests/test_canonical_season_bullpen_aggregation_workflow.py",
+          "measured_seconds": 0.0
+        },
+        {
+          "path": "tests/test_coin_story_inspection.py",
+          "measured_seconds": 0.47
+        },
+        {
+          "path": "tests/test_completed_game_context.py",
+          "measured_seconds": 0.874
+        },
+        {
+          "path": "tests/test_completed_game_context_payload_adapter.py",
+          "measured_seconds": 0.0
+        },
+        {
+          "path": "tests/test_consequence_intelligence.py",
+          "measured_seconds": 0.002
+        },
+        {
+          "path": "tests/test_daily_ingestion_readonly_profile.py",
+          "measured_seconds": 4.529
+        },
+        {
+          "path": "tests/test_daily_sync_publication_budget.py",
+          "measured_seconds": 1.841
+        },
+        {
+          "path": "tests/test_daily_sync_runtime.py",
+          "measured_seconds": 31.714
+        },
+        {
+          "path": "tests/test_editorial_voice_inventory_e2a.py",
+          "measured_seconds": 0.001
+        },
+        {
+          "path": "tests/test_eligibility_policy_team_metrics.py",
+          "measured_seconds": 0.0
+        },
+        {
+          "path": "tests/test_evidence_authority.py",
+          "measured_seconds": 4.769
+        },
+        {
+          "path": "tests/test_evidence_composition_service.py",
+          "measured_seconds": 0.0
+        },
+        {
+          "path": "tests/test_fatigue.py",
+          "measured_seconds": 0.012
+        },
+        {
+          "path": "tests/test_freshness_degradation.py",
+          "measured_seconds": 0.0
+        },
+        {
+          "path": "tests/test_freshness_deploy_correctness.py",
+          "measured_seconds": 5.016
+        },
+        {
+          "path": "tests/test_game_appearance_extraction.py",
+          "measured_seconds": 0.0
+        },
+        {
+          "path": "tests/test_game_finality.py",
+          "measured_seconds": 0.0
+        },
+        {
+          "path": "tests/test_game_log_constraint.py",
+          "measured_seconds": 3.352
+        },
+        {
+          "path": "tests/test_game_shape.py",
+          "measured_seconds": 0.0
+        },
+        {
+          "path": "tests/test_game_shape_workload_integration.py",
+          "measured_seconds": 0.0
+        },
+        {
+          "path": "tests/test_gamelog_field_authority.py",
+          "measured_seconds": 0.013
+        },
+        {
+          "path": "tests/test_inherited_traffic_evidence.py",
+          "measured_seconds": 5.477
+        },
+        {
+          "path": "tests/test_injury_context.py",
+          "measured_seconds": 0.0
+        },
+        {
+          "path": "tests/test_injury_il_context.py",
+          "measured_seconds": 0.0
+        },
+        {
+          "path": "tests/test_innings.py",
+          "measured_seconds": 0.0
+        },
+        {
+          "path": "tests/test_intelligence_surface_snapshot.py",
+          "measured_seconds": 10.37
+        },
+        {
+          "path": "tests/test_intraday_repair.py",
+          "measured_seconds": 0.0
+        },
+        {
+          "path": "tests/test_intraday_repair_workflow.py",
+          "measured_seconds": 0.0
+        },
+        {
+          "path": "tests/test_intraday_schedule_repair.py",
+          "measured_seconds": 0.0
+        },
+        {
+          "path": "tests/test_intraday_workflow.py",
+          "measured_seconds": 0.343
+        },
+        {
+          "path": "tests/test_legacy_read_reconciliation.py",
+          "measured_seconds": 3.06
+        },
+        {
+          "path": "tests/test_narrative_context_service.py",
+          "measured_seconds": 0.0
+        },
+        {
+          "path": "tests/test_narrative_feed_builder.py",
+          "measured_seconds": 0.578
+        },
+        {
+          "path": "tests/test_narrative_memory.py",
+          "measured_seconds": 1.056
+        },
+        {
+          "path": "tests/test_noop_candidate_audit_workflow_contract.py",
+          "measured_seconds": 0.401
+        },
+        {
+          "path": "tests/test_observation_contracts.py",
+          "measured_seconds": 0.008
+        },
+        {
+          "path": "tests/test_official_pitching_line_repair_plan_2026.py",
+          "measured_seconds": 108.253
+        },
+        {
+          "path": "tests/test_official_starter_evidence_alignment.py",
+          "measured_seconds": 18.978
+        },
+        {
+          "path": "tests/test_pbp_foundation.py",
+          "measured_seconds": 6.324
+        },
+        {
+          "path": "tests/test_performance_intelligence.py",
+          "measured_seconds": 60.417
+        },
+        {
+          "path": "tests/test_phantom_game_log_reconciliation.py",
+          "measured_seconds": 4.594
+        },
+        {
+          "path": "tests/test_phase0e_exit_docs.py",
+          "measured_seconds": 0.041
+        },
+        {
+          "path": "tests/test_pitcher_role.py",
+          "measured_seconds": 0.001
+        },
+        {
+          "path": "tests/test_pitcher_role_authority.py",
+          "measured_seconds": 0.0
+        },
+        {
+          "path": "tests/test_postgame_incident_audit_classification.py",
+          "measured_seconds": 3.809
+        },
+        {
+          "path": "tests/test_postgame_incident_audit_orchestration.py",
+          "measured_seconds": 3.427
+        },
+        {
+          "path": "tests/test_postgame_incident_audit_reducer.py",
+          "measured_seconds": 0.233
+        },
+        {
+          "path": "tests/test_postgame_incident_audit_workflow_contract.py",
+          "measured_seconds": 0.014
+        },
+        {
+          "path": "tests/test_postgame_ledger_marker_recovery.py",
+          "measured_seconds": 1.482
+        },
+        {
+          "path": "tests/test_postgame_lookback.py",
+          "measured_seconds": 3.676
+        },
+        {
+          "path": "tests/test_postgame_refresh.py",
+          "measured_seconds": 8.092
+        },
+        {
+          "path": "tests/test_provenance_framework.py",
+          "measured_seconds": 0.0
+        },
+        {
+          "path": "tests/test_public_team_relief_work.py",
+          "measured_seconds": 12.01
+        },
+        {
+          "path": "tests/test_publication_criticality.py",
+          "measured_seconds": 0.0
+        },
+        {
+          "path": "tests/test_qa_reconciliation_scenarios.py",
+          "measured_seconds": 2.74
+        },
+        {
+          "path": "tests/test_qa_team_read_scenarios.py",
+          "measured_seconds": 8.521
+        },
+        {
+          "path": "tests/test_readiness_snapshot_freshness.py",
+          "measured_seconds": 0.0
+        },
+        {
+          "path": "tests/test_recommendation_builder.py",
+          "measured_seconds": 0.0
+        },
+        {
+          "path": "tests/test_recommendation_categories.py",
+          "measured_seconds": 0.0
+        },
+        {
+          "path": "tests/test_recommendation_foundation.py",
+          "measured_seconds": 0.0
+        },
+        {
+          "path": "tests/test_recommendation_gates.py",
+          "measured_seconds": 0.0
+        },
+        {
+          "path": "tests/test_recommendation_v2_neutral_intelligence.py",
+          "measured_seconds": 0.196
+        },
+        {
+          "path": "tests/test_role_authority.py",
+          "measured_seconds": 0.0
+        },
+        {
+          "path": "tests/test_role_stability_context.py",
+          "measured_seconds": 0.0
+        },
+        {
+          "path": "tests/test_roster_authority_categories.py",
+          "measured_seconds": 0.003
+        },
+        {
+          "path": "tests/test_roster_authority_final_consolidation.py",
+          "measured_seconds": 0.0
+        },
+        {
+          "path": "tests/test_roster_divergence_batching.py",
+          "measured_seconds": 6.607
+        },
+        {
+          "path": "tests/test_roster_status.py",
+          "measured_seconds": 0.0
+        },
+        {
+          "path": "tests/test_roster_status_audit.py",
+          "measured_seconds": 0.0
+        },
+        {
+          "path": "tests/test_roster_status_sync.py",
+          "measured_seconds": 2.435
+        },
+        {
+          "path": "tests/test_rotation_game_shape_integration.py",
+          "measured_seconds": 0.0
+        },
+        {
+          "path": "tests/test_route_registration.py",
+          "measured_seconds": 0.025
+        },
+        {
+          "path": "tests/test_schedule_tonight_refresh.py",
+          "measured_seconds": 0.0
+        },
+        {
+          "path": "tests/test_season_era.py",
+          "measured_seconds": 0.0
+        },
+        {
+          "path": "tests/test_share_artifact_generation.py",
+          "measured_seconds": 15.02
+        },
+        {
+          "path": "tests/test_share_artifact_operations_browser.py",
+          "measured_seconds": 5.889
+        },
+        {
+          "path": "tests/test_slate_briefing.py",
+          "measured_seconds": 5.165
+        },
+        {
+          "path": "tests/test_story_audit_preview_v1.py",
+          "measured_seconds": 0.006
+        },
+        {
+          "path": "tests/test_story_feed_variety_v1.py",
+          "measured_seconds": 0.052
+        },
+        {
+          "path": "tests/test_story_intelligence_service_v1.py",
+          "measured_seconds": 0.058
+        },
+        {
+          "path": "tests/test_story_observation_engine.py",
+          "measured_seconds": 0.0
+        },
+        {
+          "path": "tests/test_story_orchestrator.py",
+          "measured_seconds": 0.002
+        },
+        {
+          "path": "tests/test_story_voice_library_v1.py",
+          "measured_seconds": 0.003
+        },
+        {
+          "path": "tests/test_story_writers_evidence.py",
+          "measured_seconds": 0.005
+        },
+        {
+          "path": "tests/test_swing_bulk_eligibility.py",
+          "measured_seconds": 0.0
+        },
+        {
+          "path": "tests/test_sync_concurrency_guard.py",
+          "measured_seconds": 11.299
+        },
+        {
+          "path": "tests/test_sync_publication_proof.py",
+          "measured_seconds": 0.0
+        },
+        {
+          "path": "tests/test_sync_status.py",
+          "measured_seconds": 10.464
+        },
+        {
+          "path": "tests/test_team_bullpen_shape.py",
+          "measured_seconds": 0.018
+        },
+        {
+          "path": "tests/test_team_changes.py",
+          "measured_seconds": 12.868
+        },
+        {
+          "path": "tests/test_team_game_pitching_splits.py",
+          "measured_seconds": 7.256
+        },
+        {
+          "path": "tests/test_team_operations_bullpen_readiness_api.py",
+          "measured_seconds": 8.869
+        },
+        {
+          "path": "tests/test_team_progressive_publication.py",
+          "measured_seconds": 7.648
+        },
+        {
+          "path": "tests/test_team_state_card_v1_2.py",
+          "measured_seconds": 32.102
+        },
+        {
+          "path": "tests/test_test_database_safety.py",
+          "measured_seconds": 0.006
+        },
+        {
+          "path": "tests/test_time_utils.py",
+          "measured_seconds": 0.0
+        },
+        {
+          "path": "tests/test_tonight_intelligence_service.py",
+          "measured_seconds": 0.039
+        },
+        {
+          "path": "tests/test_tonight_snapshot_source_contract.py",
+          "measured_seconds": 0.004
+        },
+        {
+          "path": "tests/test_v4_availability_explanation_integration.py",
+          "measured_seconds": 0.021
+        },
+        {
+          "path": "tests/test_workload_concentration.py",
+          "measured_seconds": 0.0
+        }
+      ]
+    },
+    "4": {
+      "measured_seconds": 497.63,
+      "files": [
+        {
+          "path": "tests/test_active_bullpen_artifact_publication.py",
+          "measured_seconds": 4.608
+        },
+        {
+          "path": "tests/test_api_query_params.py",
+          "measured_seconds": 7.464
+        },
+        {
+          "path": "tests/test_appearance_team_authority.py",
+          "measured_seconds": 65.045
+        },
+        {
+          "path": "tests/test_appearance_team_backfill_2026.py",
+          "measured_seconds": 42.071
+        },
+        {
+          "path": "tests/test_audience_signup.py",
+          "measured_seconds": 2.705
+        },
+        {
+          "path": "tests/test_authority_capacity_unification.py",
+          "measured_seconds": 0.001
+        },
+        {
+          "path": "tests/test_availability_backtest.py",
+          "measured_seconds": 1.453
+        },
+        {
+          "path": "tests/test_availability_post_adoption_readiness.py",
+          "measured_seconds": 0.003
+        },
+        {
+          "path": "tests/test_bullpen_board_context.py",
+          "measured_seconds": 0.001
+        },
+        {
+          "path": "tests/test_bullpen_capacity.py",
+          "measured_seconds": 0.004
+        },
+        {
+          "path": "tests/test_bullpen_context.py",
+          "measured_seconds": 10.688
+        },
+        {
+          "path": "tests/test_bullpen_role_change_detection.py",
+          "measured_seconds": 0.009
+        },
+        {
+          "path": "tests/test_ci_shard_contract.py",
+          "measured_seconds": 20.0
+        },
+        {
+          "path": "tests/test_composed_read_contract.py",
+          "measured_seconds": 5.731
+        },
+        {
+          "path": "tests/test_config_database.py",
+          "measured_seconds": 0.001
+        },
+        {
+          "path": "tests/test_dashboard_snapshot.py",
+          "measured_seconds": 31.966
+        },
+        {
+          "path": "tests/test_db_engine_lifecycle.py",
+          "measured_seconds": 62.311
+        },
+        {
+          "path": "tests/test_editorial_voice_contract_v1.py",
+          "measured_seconds": 0.022
+        },
+        {
+          "path": "tests/test_exclusive_game_scope.py",
+          "measured_seconds": 10.903
+        },
+        {
+          "path": "tests/test_fatigue_reference_authority.py",
+          "measured_seconds": 5.418
+        },
+        {
+          "path": "tests/test_four_beat_real_quality_audit.py",
+          "measured_seconds": 0.005
+        },
+        {
+          "path": "tests/test_game_driven_ingestion.py",
+          "measured_seconds": 13.39
+        },
+        {
+          "path": "tests/test_games_started.py",
+          "measured_seconds": 1.101
+        },
+        {
+          "path": "tests/test_identity_infrastructure.py",
+          "measured_seconds": 4.776
+        },
+        {
+          "path": "tests/test_intelligence_surface_endpoint.py",
+          "measured_seconds": 8.322
+        },
+        {
+          "path": "tests/test_internal_snapshot_audit.py",
+          "measured_seconds": 23.844
+        },
+        {
+          "path": "tests/test_mapper_registry_smoke.py",
+          "measured_seconds": 3.359
+        },
+        {
+          "path": "tests/test_mlb_api_client.py",
+          "measured_seconds": 0.014
+        },
+        {
+          "path": "tests/test_noop_qualification_missing_work_item_orchestration.py",
+          "measured_seconds": 12.432
+        },
+        {
+          "path": "tests/test_noop_qualification_workflow_contract.py",
+          "measured_seconds": 0.395
+        },
+        {
+          "path": "tests/test_noop_write_qualification_execution.py",
+          "measured_seconds": 18.839
+        },
+        {
+          "path": "tests/test_official_pitching_line_completeness_2026.py",
+          "measured_seconds": 27.519
+        },
+        {
+          "path": "tests/test_performance_intelligence_admin_api.py",
+          "measured_seconds": 13.209
+        },
+        {
+          "path": "tests/test_phase0c_foundation_invariants.py",
+          "measured_seconds": 0.006
+        },
+        {
+          "path": "tests/test_phase0d_evidence_contract.py",
+          "measured_seconds": 1.66
+        },
+        {
+          "path": "tests/test_pitcher_public_labels.py",
+          "measured_seconds": 0.001
+        },
+        {
+          "path": "tests/test_pitcher_season_ledger_coverage.py",
+          "measured_seconds": 4.546
+        },
+        {
+          "path": "tests/test_postgame_incident_audit_safety.py",
+          "measured_seconds": 6.36
+        },
+        {
+          "path": "tests/test_progressive_source_authority_identity.py",
+          "measured_seconds": 9.254
+        },
+        {
+          "path": "tests/test_public_recent_work.py",
+          "measured_seconds": 3.9
+        },
+        {
+          "path": "tests/test_qa_reliever_read_scenarios.py",
+          "measured_seconds": 4.936
+        },
+        {
+          "path": "tests/test_recommendation_api.py",
+          "measured_seconds": 0.468
+        },
+        {
+          "path": "tests/test_recommendation_v2_context_assembly.py",
+          "measured_seconds": 0.207
+        },
+        {
+          "path": "tests/test_recommendation_v2_team_bullpen_context.py",
+          "measured_seconds": 0.209
+        },
+        {
+          "path": "tests/test_recommendation_v2_trust_metadata_integration.py",
+          "measured_seconds": 0.317
+        },
+        {
+          "path": "tests/test_role_authority_population.py",
+          "measured_seconds": 0.02
+        },
+        {
+          "path": "tests/test_roster_authority_board_payload.py",
+          "measured_seconds": 8.287
+        },
+        {
+          "path": "tests/test_run_tonight_refresh.py",
+          "measured_seconds": 0.003
+        },
+        {
+          "path": "tests/test_schedule_tonight_refresh_postgres.py",
+          "measured_seconds": 5.902
+        },
+        {
+          "path": "tests/test_shadow_activation_handoff_contract.py",
+          "measured_seconds": 0.096
+        },
+        {
+          "path": "tests/test_share_artifact_autogeneration_repair.py",
+          "measured_seconds": 3.633
+        },
+        {
+          "path": "tests/test_snapshot_read_guard.py",
+          "measured_seconds": 2.307
+        },
+        {
+          "path": "tests/test_starter_assignment_context.py",
+          "measured_seconds": 0.009
+        },
+        {
+          "path": "tests/test_stat_correction_propagation.py",
+          "measured_seconds": 6.821
+        },
+        {
+          "path": "tests/test_story_construction_engine.py",
+          "measured_seconds": 0.002
+        },
+        {
+          "path": "tests/test_story_evidence_case_v1.py",
+          "measured_seconds": 0.014
+        },
+        {
+          "path": "tests/test_story_final_polish_v1.py",
+          "measured_seconds": 0.065
+        },
+        {
+          "path": "tests/test_story_identity.py",
+          "measured_seconds": 0.006
+        },
+        {
+          "path": "tests/test_story_narrative_structure_c2c.py",
+          "measured_seconds": 0.021
+        },
+        {
+          "path": "tests/test_sync_jobs.py",
+          "measured_seconds": 3.148
+        },
+        {
+          "path": "tests/test_sync_runner_summary_output.py",
+          "measured_seconds": 0.043
+        },
+        {
+          "path": "tests/test_team_state_card_semantics.py",
+          "measured_seconds": 0.832
+        },
+        {
+          "path": "tests/test_traffic_reporting.py",
+          "measured_seconds": 1.694
+        },
+        {
+          "path": "tests/test_transaction_ingestion.py",
+          "measured_seconds": 7.279
+        },
+        {
+          "path": "tests/test_unresolved_appearance_team_diagnostic_2026.py",
+          "measured_seconds": 2.414
+        },
+        {
+          "path": "tests/test_unresolved_appearance_team_repair_2026.py",
+          "measured_seconds": 3.377
+        },
+        {
+          "path": "tests/test_v4_explanation_api_routes.py",
+          "measured_seconds": 6.342
+        },
+        {
+          "path": "tests/test_v4_explanations_domain_foundation.py",
+          "measured_seconds": 0.003
+        },
+        {
+          "path": "tests/test_what_changed_since_yesterday.py",
+          "measured_seconds": 0.001
+        },
+        {
+          "path": "tests/test_what_changed_since_yesterday_copy.py",
+          "measured_seconds": 0.04
+        },
+        {
+          "path": "tests/test_what_changed_since_yesterday_public.py",
+          "measured_seconds": 0.637
+        },
+        {
+          "path": "tests/test_what_changed_since_yesterday_review.py",
+          "measured_seconds": 0.049
+        },
+        {
+          "path": "tests/test_workload_recovery_evidence.py",
+          "measured_seconds": 9.915
+        },
+        {
+          "path": "tests/test_zero_out_game_log_ingestion_guard.py",
+          "measured_seconds": 5.197
+        }
+      ]
+    }
+  }
+}
