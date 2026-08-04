@@ -564,29 +564,110 @@ and withholds publication.
 
 ## Publication completeness proof
 
-`services/game_ingestion_completeness.py::build_game_ingestion_completeness(D)`
-returns explicit proof fields:
+`services/game_ingestion_completeness.py::build_game_ingestion_completeness(D,
+lane_mode=...)` produces ONE canonical per-game classification
+(`classify_game_ingestion_scope`) and projects it into TWO explicitly separate
+views. Both come from the same classification, so they cannot drift into
+disagreeing about a game.
 
-`represented_date`, `expected_final_games`, `completed_final_games`,
-`unresolved_final_games`, `terminal_failure_games`, `correction_pending_games`,
-`corrected_games_reconciled`, `critical_appearance_rows_expected`,
-`critical_appearance_rows_reconciled`, `finality_conflicts`,
-`schedule_authority_missing`, `best_effort_games_planned`,
-`publication_complete`, `decision_reasons`.
+### Why the views are separate
 
-`publication_complete` is True only when every listed condition holds. Reason
-codes: `unresolved_final_games`, `critical_game_failure_unresolved`,
+A read-only production audit of current state found **105** expected final
+games, **42** with completed work items, and **63** counted as unresolved final
+games. All 63 carried official-final evidence, final stored schedule authority,
+and stored appearance rows, and **none** was a true baseball deficit. Their only
+defect was the absence of a durable `GameIngestionWorkItem` — which the lane
+does not create, because it runs in `shadow`.
+
+The daily sync was folding that number into `publication_critical_unresolved`.
+That is a publication-scope defect: **shadow OBSERVATION incompleteness
+represented as PUBLICATION-BLOCKING incompleteness.** The governing invariant
+is now:
+
+    observation backlog != publication blocker
+
+unless game-driven publication authority has been explicitly activated.
+
+### The two views
+
+`observation` — what the lane has and has not persisted for its own staged
+rollout: `expected_final_games`, `completed_work_item_games`,
+`unresolved_game_count`, `retryable_work_item_count`,
+`terminal_work_item_count`, `complete`, `reason_codes`.
+
+`publication_gate` — what may withhold the public snapshot under the lane's
+CURRENT authority: `authority_effect`, `complete`,
+`blocking_unresolved_game_count`, `blocking_terminal_failure_count`,
+`blocking_retryable_work_item_count`, `blocking_scope_game_count`,
+`blocking_completed_game_count`, `finality_conflict_count`,
+`schedule_authority_missing_count`, `correction_pending_count`,
+`appearance_rows_expected`, `appearance_rows_reconciled`,
+`observation_only_game_count`, `reason_codes`.
+
+`authority_effect` is a closed vocabulary: `observational_only`,
+`non_authoritative_write`, `authoritative`, `unavailable`.
+
+| Lane mode | `authority_effect` | Work-item evidence blocks? |
+|---|---|---|
+| `shadow` | `observational_only` | no |
+| `write` | `non_authoritative_write` | no |
+| `authoritative` | `authoritative` | **yes** |
+| `off` / unknown | `unavailable` | gate is never `complete` |
+
+**Work-item evidence — missing, retryable, or terminal — blocks only under
+`authoritative`.** Evidence about BASEBALL rather than about the lane's own
+bookkeeping blocks in EVERY mode: canonical finality conflicts, missing
+required schedule authority, an expected-versus-reconciled appearance-row
+shortfall, and a material correction conflict.
+
+### Fields
+
+Publication truth: `publication_complete` (= `publication_gate.complete`),
+`decision_reasons` (= `publication_gate.reason_codes`),
+`publication_blocking_unresolved_final_games`,
+`publication_blocking_terminal_failure_games`, plus `lane_mode` and
+`publication_authoritative`.
+
+Retained legacy fields are **OBSERVATIONAL**, kept under their original names so
+existing telemetry readers do not break, and listed in `observational_fields`:
+`expected_final_games`, `completed_final_games`, `unresolved_final_games`,
+`terminal_failure_games`. A reader that treats `unresolved_final_games` as a
+publication blocker is reading observation telemetry as authority — the
+`publication_blocking_*` fields are the gate.
+
+Mode-independent baseball evidence keeps its existing names:
+`correction_pending_games`, `corrected_games_reconciled`,
+`critical_appearance_rows_expected`, `critical_appearance_rows_reconciled`,
+`finality_conflicts`, `schedule_authority_missing`,
+`best_effort_games_planned`.
+
+Reason codes: `unresolved_final_games`, `critical_game_failure_unresolved`,
 `terminal_critical_game_failure`, `finality_conflict_unresolved`,
 `schedule_authority_missing`, `critical_appearance_rows_unreconciled`,
-`material_correction_pending`, or `game_ingestion_complete`.
+`material_correction_pending`, `game_ingestion_complete`,
+`game_lane_not_publication_authoritative`, `game_lane_authority_unavailable`,
+and the non-blocking `shadow_observation_unresolved_games`. The last two
+informational codes are appended to the gate only AFTER completeness has been
+decided, so a non-blocking observation signal can never turn into a withholding
+one.
+
+### Membership
+
+`unresolved_final_game_membership(D)` retains its **observation** meaning and
+reports `membership_view: 'observation'`.
+`publication_blocking_game_membership(D, lane_mode=...)` is the single blocker
+projection; it also reports `observation_only_game_pks`, so games withheld from
+the gate are named rather than silently dropped. Both are derived from
+`classify_game_ingestion_scope`.
 
 `critical_appearance_rows_reconciled` credits only rows that are **both** proven
 by the work item **and** still present in the appearance ledger, so a work item
 cannot claim completeness for rows that later disappeared.
 
-This is an additional, more precise input to the same publication-critical
+This remains an additional, more precise input to the same publication-critical
 contract — no existing gate (finality, appearance ledger, freshness,
-provenance, slate coverage) is weakened.
+provenance, slate coverage) is weakened. The 63 games remain observable and are
+not erased, repaired, backfilled, or reclassified as complete.
 
 ## Failure semantics
 

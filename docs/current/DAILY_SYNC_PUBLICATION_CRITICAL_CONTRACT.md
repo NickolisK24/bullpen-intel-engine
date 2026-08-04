@@ -90,6 +90,51 @@ registry, no second slate authority:
   items — and only when the classifier authority was available. Best-effort deferrals
   never block.
 
+### What the game lane may contribute (D-044)
+
+`services/sync.py::_publication_critical_from_game_lane` consumes **only** the
+`publication_gate` view of the game-ingestion completeness proof. It never folds in:
+
+- shadow observation backlog;
+- non-authoritative missing work items;
+- non-authoritative retryable work;
+- non-authoritative terminal work.
+
+It still folds in, fail-closed and in every lane mode:
+
+- canonical finality conflicts;
+- missing required schedule authority;
+- positive appearance-reconciliation failures;
+- material correction conflicts;
+- unknown required authority;
+- non-game-log publication-critical failures.
+
+The reason is a production-proven scope defect. The game-driven lane runs in
+`shadow` and by design creates no durable `GameIngestionWorkItem`. A read-only audit
+found 105 expected final games, 42 with completed work items, and 63 counted as
+unresolved — all 63 fully represented, none a baseball deficit, every one of them
+unresolved *only* because the lane has never been permitted to write its own
+bookkeeping. Folding that number into `publication_critical_unresolved` represented
+**shadow observation incompleteness as publication-blocking incompleteness**.
+
+Work-item evidence becomes publication-blocking only when
+`game_driven_ingestion.publication_authoritative(mode)` is true — that is, only under
+`authoritative`. Under `off` or an unrecognised mode the gate reports `unavailable`
+and is never `complete`.
+
+`critical_total` and `critical_completed` are taken from the gate's own scope
+(`blocking_scope_game_count` / `blocking_completed_game_count`), which is zero when
+the lane is not authoritative. This keeps the arithmetic honest: reporting
+`total=105, completed=42, unresolved=0` would imply 63 games vanished. The
+observation counts remain on the game-driven status block, in a separately named
+structure.
+
+A completeness result that arrives **without** the `publication_gate` schema — an
+older producer, a truncated payload, or the fail-closed stub built when the proof
+itself raised — is read under the strict legacy rules, where every legacy count is
+blocking. Degrading conservatively means a malformed result can only over-withhold,
+never under-withhold.
+
 ### Critical-first ingestion order (WS-B)
 
 `sync_recent_logs` sorts pitchers publication-critical/unknown first, best-effort last,

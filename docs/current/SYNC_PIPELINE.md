@@ -489,8 +489,62 @@ pitcher identity, and appearance-team authority — before the rollout proceeds.
 Canonical reference:
 [`GAME_DRIVEN_DAILY_INGESTION.md`](GAME_DRIVEN_DAILY_INGESTION.md).
 
+## Shadow observation backlog is not publication authority (D-044)
+
+A read-only production audit of current state found **105** expected final
+games, **42** with completed game-driven work items, and **63** counted as
+unresolved final games — every one of the 63 classified
+`completed_but_work_item_absent_because_lane_is_shadow_only`, with **zero** true
+baseball deficits among them. All 63 had official-final evidence, final stored
+schedule authority, and stored appearance rows. Their only defect was the
+absence of a durable `GameIngestionWorkItem`, which the game-driven lane does
+not create because it runs in `shadow`.
+
+`services.game_ingestion_completeness` counted every planned critical game
+without such a work item as unresolved, and
+`services.sync._publication_critical_from_game_lane` folded that number into
+`publication_critical_unresolved`. That is a publication-scope defect: **shadow
+OBSERVATION incompleteness represented as PUBLICATION-BLOCKING
+incompleteness.**
+
+The completeness proof now produces one canonical per-game classification
+(`classify_game_ingestion_scope`) and projects it into two named views:
+
+- **observation** — what the lane has and has not persisted for its own staged
+  rollout;
+- **publication_gate** — what may withhold the public snapshot under the lane's
+  CURRENT authority mode.
+
+The invariant is `observation backlog != publication blocker` unless
+game-driven publication authority has been explicitly activated.
+
+| Lane mode | `authority_effect` | Work-item evidence blocks? |
+|---|---|---|
+| `shadow` | `observational_only` | no |
+| `write` | `non_authoritative_write` | no |
+| `authoritative` | `authoritative` | **yes** |
+| `off` / unknown | `unavailable` | gate is never `complete` |
+
+Evidence about BASEBALL rather than about the lane's own bookkeeping blocks in
+**every** mode: canonical finality conflicts, missing required schedule
+authority, an expected-versus-reconciled appearance-row shortfall, and a
+material correction conflict. The canonical finality, appearance-ledger,
+freshness, provenance, roster, and serving-selection gates are untouched.
+
+The effective lane mode is passed explicitly into completeness construction by
+callers that already know it, so a status report cannot describe a different
+authority from the one that produced the evidence. A completeness result
+arriving without the new schema degrades to the strict legacy reading, so a
+malformed or missing proof can only over-withhold.
+
+**The 63 games remain observable.** They are not erased, repaired, backfilled,
+or reclassified as complete; `unresolved_final_games` still carries the
+observation count for telemetry, and the gate names the games it withheld via
+`observation_only_game_count`. Authority is not transferred, no mode changed,
+and no work item was created or mutated.
+
 Canonical reference:
-[`GAME_DRIVEN_DAILY_INGESTION.md`](GAME_DRIVEN_DAILY_INGESTION.md).
+[`DAILY_SYNC_PUBLICATION_CRITICAL_CONTRACT.md`](DAILY_SYNC_PUBLICATION_CRITICAL_CONTRACT.md).
 
 ## Postgame publication incident audit (D-043)
 
@@ -566,6 +620,15 @@ different and larger set — `corrected_final` re-checks are complete at their
 last known revision — so classifying the planned total would inflate the
 answer. A reconstruction that does not reconcile with the authority leaves
 Question 7 unanswered rather than quietly answering about the wrong games.
+
+> **Since D-044**, that membership is the **observation** view and is no longer
+> the set of games that can withhold publication. The audit reads the
+> publication-blocker projection alongside it and reports both, and it draws
+> `publication_gate_scope_defect` from the **blocker** membership only. A game
+> that is observationally unresolved but never reaches the gate is backlog, not
+> a scope defect — otherwise the audit would keep proving a defect after the
+> gate that caused it had been corrected. Historical incident-time conclusions
+> and immutable incident facts are unchanged.
 
 `services.appearance_ledger` counts a game as an expected completed game when
 **any** stored `scheduled_games` row carries `status_state = final` inside the

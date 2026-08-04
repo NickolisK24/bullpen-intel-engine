@@ -741,23 +741,62 @@ def test_096_correct_withholding_can_produce_no_platform_defect_proven():
     )
 
 
-def test_097_overbroad_scope_can_produce_publication_gate_scope_defect():
-    observations = _observations(completeness={
+def _scope_observations(**unresolved):
+    classification = {
+        'reconciles_with_authority': True, 'scope_invalid_count': 41,
+        'classification_counts': {audit.UNRESOLVED_POSTPONED: 41},
+        'reconstructed_count': 60,
+    }
+    classification.update(unresolved)
+    return _observations(completeness={
         'plan': {'disputed_game_planned': True,
                  'disputed_game_exclusion_reason': None,
                  'finality_conflicts': []},
         'completeness': {'horizon_days': 7},
-        'unresolved_classification': {
-            'reconciles_with_authority': True, 'scope_invalid_count': 41,
-            'classification_counts': {audit.UNRESOLVED_POSTPONED: 41},
-            'reconstructed_count': 60,
-        },
+        'unresolved_classification': classification,
     })
+
+
+def test_097_overbroad_scope_can_produce_publication_gate_scope_defect():
+    """Only when those games can actually withhold publication."""
+    observations = _scope_observations(
+        scope_invalid_blocking_count=41,
+        publication_blocker_membership={
+            'count': 60, 'authority_effect': 'authoritative',
+            'publication_authoritative': True, 'observation_only_count': 0,
+        },
+    )
     finding = _findings(observations)[
         audit.CLASSIFICATION_PUBLICATION_GATE_SCOPE_DEFECT
     ]
     assert finding['proven'] is True
     assert finding['supporting_evidence']
+
+
+def test_097b_observation_only_backlog_is_not_a_gate_scope_defect():
+    """The audit must stop proving the defect once the gate is corrected.
+
+    The same 41 non-deficit games, still observed and still reported — but
+    under a non-authoritative lane none of them reaches the publication gate,
+    so the gate is no longer scoped over them and the finding is not proven.
+    """
+    observations = _scope_observations(
+        scope_invalid_blocking_count=0,
+        publication_blocker_membership={
+            'count': 0, 'authority_effect': 'observational_only',
+            'publication_authoritative': False, 'observation_only_count': 60,
+        },
+    )
+    finding = _findings(observations)[
+        audit.CLASSIFICATION_PUBLICATION_GATE_SCOPE_DEFECT
+    ]
+    assert finding['proven'] is False
+    assert finding['persists'] is False
+    # The backlog is still reported, as the reason the finding is NOT proven.
+    assert any(
+        'none of them reaches the publication gate' in text
+        for text in finding['counter_evidence']
+    )
 
 
 def test_098_missing_snapshot_evidence_is_unproven():
