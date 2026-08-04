@@ -791,7 +791,7 @@ def test_097b_observation_only_backlog_is_not_a_gate_scope_defect():
         audit.CLASSIFICATION_PUBLICATION_GATE_SCOPE_DEFECT
     ]
     assert finding['proven'] is False
-    assert finding['persists'] is False
+    assert finding['current_condition_persists'] is False
     # The backlog is still reported, as the reason the finding is NOT proven.
     assert any(
         'none of them reaches the publication gate' in text
