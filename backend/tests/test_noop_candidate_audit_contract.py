@@ -961,3 +961,104 @@ def test_the_enforcement_detail_supplies_every_expected_probe_field():
     source = inspect.getsource(audit.enforce_read_only)
     for field in audit.PROBE_EVIDENCE_FIELDS:
         assert f"'{field}'" in source, field
+
+
+# ── Missing evidence must not mask a definite violation ────────────────────
+# evaluate_probe_evidence used to return early on any missing field, so a run
+# that was BOTH incompletely evidenced AND definitely in breach reported only
+# UNPROVEN. The breach is the more important fact.
+
+
+def _absent(field):
+    proof = _proof()
+    proof.pop(field)
+    return proof
+
+
+@pytest.mark.parametrize('missing,violation,expected_failed', [
+    ('read_only_probe_count', {'durable_write_attempts': 1},
+     audit.FAILED_DURABLE_WRITE_ATTEMPTED),
+    ('read_only_probe_attempted',
+     {'read_only_probe_statement_class': 'DELETE'},
+     audit.FAILED_PROBE_STATEMENT_CLASS_UNEXPECTED),
+    ('read_only_probe_bounded_to_zero_rows',
+     {'read_only_probe_refused': False}, audit.FAILED_PROBE_ACCEPTED),
+    ('read_only_probe_statement_class', {'read_only_probe_count': 2},
+     audit.FAILED_PROBE_COUNT_UNEXPECTED),
+])
+def test_a_missing_field_does_not_hide_a_present_violation(
+    missing, violation, expected_failed,
+):
+    proof = _absent(missing)
+    proof.update(violation)
+    decision = audit.decide(candidates=[], read_only_proof=proof)
+
+    assert decision['result'] == audit.RESULT_FAILED
+    assert expected_failed in decision['failed_reasons']
+    # The absence is still reported, it just does not outrank the violation.
+    assert audit.UNPROVEN_PROBE_EVIDENCE_MISSING in (
+        decision['unproven_reasons']
+    )
+    assert decision['probe_evidence_complete'] is False
+    assert missing in decision['probe_evidence_missing_fields']
+
+
+def test_multiple_missing_fields_and_multiple_violations_are_all_reported():
+    proof = _proof()
+    proof.pop('read_only_probe_attempted')
+    proof.pop('read_only_probe_count')
+    proof['read_only_probe_refused'] = False
+    proof['durable_write_attempts'] = 3
+
+    decision = audit.decide(candidates=[], read_only_proof=proof)
+    assert decision['result'] == audit.RESULT_FAILED
+    assert audit.FAILED_PROBE_ACCEPTED in decision['failed_reasons']
+    assert audit.FAILED_DURABLE_WRITE_ATTEMPTED in decision['failed_reasons']
+    assert sorted(decision['probe_evidence_missing_fields']) == [
+        'read_only_probe_attempted', 'read_only_probe_count',
+    ]
+
+
+@pytest.mark.parametrize('field', audit.PROBE_EVIDENCE_FIELDS)
+def test_a_missing_field_alone_is_unproven_not_failed(field):
+    """Absence never manufactures a failure for the field that is absent."""
+    decision = audit.decide(candidates=[], read_only_proof=_absent(field))
+    assert decision['result'] == audit.RESULT_UNPROVEN
+    assert decision['failed_reasons'] == []
+
+
+def test_failed_outranks_unproven_at_the_top_level():
+    proof = _absent('read_only_probe_count')
+    proof['read_only_probe_refused'] = False
+    decision = audit.decide(candidates=[], read_only_proof=proof)
+    assert decision['unproven_reasons']
+    assert decision['failed_reasons']
+    assert decision['result'] == audit.RESULT_FAILED
+
+
+def test_probe_evidence_valid_is_false_when_anything_is_missing_or_invalid():
+    assert audit.evaluate_probe_evidence(
+        _proof()
+    )['probe_evidence_valid'] is True
+    assert audit.evaluate_probe_evidence(
+        _absent('read_only_probe_count')
+    )['probe_evidence_valid'] is False
+    assert audit.evaluate_probe_evidence(
+        _proof(read_only_probe_refused=False)
+    )['probe_evidence_valid'] is False
+
+
+def test_every_present_field_is_still_validated_when_others_are_absent():
+    """The whole point: validation continues past the missing ones."""
+    proof = {
+        'read_only_probe_refused': False,
+        'durable_write_attempts': 4,
+        'read_only_probe_statement_class': 'DROP',
+    }
+    result = audit.evaluate_probe_evidence(proof)
+    assert audit.FAILED_PROBE_ACCEPTED in result['failed_reasons']
+    assert audit.FAILED_DURABLE_WRITE_ATTEMPTED in result['failed_reasons']
+    assert audit.FAILED_PROBE_STATEMENT_CLASS_UNEXPECTED in (
+        result['failed_reasons']
+    )
+    assert len(result['missing_fields']) == 3

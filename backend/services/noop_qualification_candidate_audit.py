@@ -265,52 +265,77 @@ def evaluate_probe_evidence(proof) -> dict:
     ]
     if missing:
         unproven.append(UNPROVEN_PROBE_EVIDENCE_MISSING)
-        return {
-            'failed_reasons': failed,
-            'unproven_reasons': unproven,
-            'missing_fields': missing,
-            'probe_evidence_complete': False,
-            'probe_evidence_valid': False,
-        }
 
-    if proof.get('read_only_probe_attempted') is not True:
+    # Deliberately NOT an early return. Absent evidence must not hide a
+    # violation that IS observable in the fields that are present: a run
+    # missing its probe count while reporting a durable write attempt is both
+    # incompletely evidenced AND definitely in breach, and the breach is the
+    # more important fact. Every check below therefore evaluates only when its
+    # own field is present, so absence never manufactures a failure either.
+    if 'read_only_probe_attempted' in proof and proof[
+        'read_only_probe_attempted'
+    ] is not True:
         unproven.append(UNPROVEN_PROBE_NOT_ATTEMPTED)
 
-    count = proof.get('read_only_probe_count')
-    if not isinstance(count, int) or isinstance(count, bool):
-        unproven.append(UNPROVEN_PROBE_COUNT_UNKNOWN)
-    elif count != EXPECTED_PROBE_EVIDENCE['read_only_probe_count']:
-        # A definite, observed wrong count.
-        failed.append(FAILED_PROBE_COUNT_UNEXPECTED)
+    if 'read_only_probe_count' in proof:
+        count = proof['read_only_probe_count']
+        if not isinstance(count, int) or isinstance(count, bool):
+            unproven.append(UNPROVEN_PROBE_COUNT_UNKNOWN)
+        elif count != EXPECTED_PROBE_EVIDENCE['read_only_probe_count']:
+            failed.append(FAILED_PROBE_COUNT_UNEXPECTED)
 
-    if proof.get('read_only_probe_statement_class') != (
-        EXPECTED_PROBE_EVIDENCE['read_only_probe_statement_class']
-    ):
+    if 'read_only_probe_statement_class' in proof and proof[
+        'read_only_probe_statement_class'
+    ] != EXPECTED_PROBE_EVIDENCE['read_only_probe_statement_class']:
         failed.append(FAILED_PROBE_STATEMENT_CLASS_UNEXPECTED)
 
-    if proof.get('read_only_probe_bounded_to_zero_rows') is not True:
+    if 'read_only_probe_bounded_to_zero_rows' in proof and proof[
+        'read_only_probe_bounded_to_zero_rows'
+    ] is not True:
         failed.append(FAILED_PROBE_NOT_BOUNDED)
 
-    if proof.get('read_only_probe_refused') is not True:
+    if 'read_only_probe_refused' in proof and proof[
+        'read_only_probe_refused'
+    ] is not True:
         failed.append(FAILED_PROBE_ACCEPTED)
 
-    attempts = proof.get('durable_write_attempts')
-    if not isinstance(attempts, int) or isinstance(attempts, bool):
-        unproven.append(UNPROVEN_PROBE_EVIDENCE_MISSING)
-    elif attempts != 0:
-        failed.append(FAILED_DURABLE_WRITE_ATTEMPTED)
+    if 'durable_write_attempts' in proof:
+        attempts = proof['durable_write_attempts']
+        if not isinstance(attempts, int) or isinstance(attempts, bool):
+            unproven.append(UNPROVEN_PROBE_COUNT_UNKNOWN)
+        elif attempts != 0:
+            failed.append(FAILED_DURABLE_WRITE_ATTEMPTED)
 
     return {
         'failed_reasons': failed,
         'unproven_reasons': unproven,
-        'missing_fields': [],
-        'probe_evidence_complete': True,
-        'probe_evidence_valid': not failed and not unproven,
+        'missing_fields': missing,
+        'probe_evidence_complete': not missing,
+        'probe_evidence_valid': not missing and not failed and not unproven,
     }
 
 
 class ReadOnlyNotEnforced(RuntimeError):
     """The session could not be proven read-only, so nothing is audited."""
+
+
+class ReadOnlyProbeViolation(ReadOnlyNotEnforced):
+    """The bounded probe was ACCEPTED — the transaction was never read-only.
+
+    This is the most serious thing the audit can observe about itself, and it
+    used to be the least visible: the raise unwound before any probe detail was
+    produced, the runner caught it generically, and a definite violation was
+    reported as a generic UNPROVEN execution error.
+
+    The evidence therefore travels ON the exception, already bounded and safe:
+    counters and a statement CLASS only, never SQL text and never exception
+    text. The runner preserves it so the verdict reducer can reach the definite
+    ``read_only_probe_accepted_not_refused`` failure.
+    """
+
+    def __init__(self, evidence):
+        super().__init__('read_only_probe_accepted')
+        self.evidence = dict(evidence)
 
 
 class AuditInputError(ValueError):
@@ -391,7 +416,19 @@ def enforce_read_only(session) -> dict:
         refused = True
 
     if not refused:
-        raise ReadOnlyNotEnforced('postgresql_read_only_transaction')
+        # The bounded statement was accepted. Report it as the definite
+        # violation it is, carrying the evidence rather than losing it.
+        raise ReadOnlyProbeViolation({
+            'dialect': dialect,
+            'protection': 'postgresql_read_only_transaction',
+            'read_only_probe_attempted': True,
+            'read_only_probe_count': 1,
+            'read_only_probe_statement_class': 'UPDATE',
+            'read_only_probe_bounded_to_zero_rows': True,
+            'read_only_probe_refused': False,
+            'durable_write_attempts': 0,
+            'write_probe_refused': False,
+        })
     return {
         'dialect': dialect,
         'protection': 'postgresql_read_only_transaction',

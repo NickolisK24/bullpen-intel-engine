@@ -153,6 +153,7 @@ def run(args) -> dict:
     from services import game_driven_ingestion as lane
     from services import game_driven_realization as realization_service
     from services import sync_metadata
+    from utils.db import db
 
     with flask_app.app_context():
         # Writer-guard state is tracked, never assumed. The evidence document
@@ -196,9 +197,20 @@ def run(args) -> dict:
             collected['work_item_precondition_checked'] = (
                 bookkeeping_before is not None
             )
-            collected['work_item_precondition_passed'] = bool(
+            # Present is not the same fact as COMPLETED. The governing
+            # contract requires an existing COMPLETED durable item, so a row in
+            # any other state must not reach the shadow lane, an MLB request,
+            # plan generation, the write-capable path, or the lane ledger.
+            target_before = (bookkeeping_before or {}).get('target') or {}
+            collected['target_work_item_present'] = bool(
                 bookkeeping_before
                 and bookkeeping_before.get('target_present')
+            )
+            collected['target_work_item_status'] = target_before.get('status')
+            collected['work_item_precondition_passed'] = bool(
+                collected['target_work_item_present']
+                and target_before.get('status')
+                == qualification.REQUIRED_WORK_ITEM_STATUS_BEFORE
             )
 
             if bookkeeping_before is None:
@@ -208,8 +220,12 @@ def run(args) -> dict:
                 ]
                 raise _PreflightRefusal()
             if not collected['work_item_precondition_passed']:
+                # A missing row and a present-but-unfinished row are different
+                # facts and get different reasons.
                 collected['preflight_failed'] = [
                     qualification.FAILED_TARGET_WORK_ITEM_MISSING
+                    if not collected['target_work_item_present']
+                    else qualification.FAILED_TARGET_WORK_ITEM_NOT_COMPLETED
                 ]
                 collected['preflight_unproven'] = []
                 raise _PreflightRefusal()
@@ -309,6 +325,15 @@ def run(args) -> dict:
         except Exception:  # noqa: BLE001 - never leak exception text
             collected['lane_error'] = True
         finally:
+            # End the read transaction before releasing the guard. Every exit
+            # path reaches here, including the early refusals, and a refusal
+            # that leaves an open transaction keeps table locks held for as
+            # long as the session lives. The audit runner already does this;
+            # the qualification runner did not.
+            try:
+                db.session.rollback()
+            except Exception:  # noqa: BLE001
+                pass
             # Release BEFORE the document is built, and record what actually
             # happened. Nothing below hardcodes success.
             if guard is not None:

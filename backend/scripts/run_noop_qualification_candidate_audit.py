@@ -171,7 +171,18 @@ def run(args) -> dict:
             if not guard_state['guard_acquired']:
                 raise _AuditHalt()
 
-            read_only = audit.enforce_read_only(db.session)
+            try:
+                read_only = audit.enforce_read_only(db.session)
+            except audit.ReadOnlyProbeViolation as violation:
+                # The bounded probe was ACCEPTED. Preserve its evidence and
+                # halt: the verdict reducer turns this into the definite
+                # read_only_probe_accepted_not_refused failure rather than a
+                # generic execution error. The transaction is rolled back and
+                # the guard released in the finally block below.
+                collected['read_only_enabled'] = False
+                collected['read_only_detail'] = violation.evidence
+                collected['probe_violation'] = True
+                raise _AuditHalt()
             collected['read_only_enabled'] = True
             collected['read_only_detail'] = read_only
 

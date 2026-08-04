@@ -326,6 +326,10 @@ REQUIRED_WORK_ITEM_STATUS_BEFORE = GameIngestionWorkItem.STATUS_COMPLETED
 REQUIRED_WORK_ITEM_STATUS_AFTER = GameIngestionWorkItem.STATUS_COMPLETED
 
 FAILED_TARGET_WORK_ITEM_MISSING = 'target_work_item_missing'
+# Present but not finished. Distinct from missing: the row exists, so
+# reporting it as absent would misdescribe the state an operator has to
+# act on.
+FAILED_TARGET_WORK_ITEM_NOT_COMPLETED = 'target_work_item_not_completed'
 FAILED_UNEXPECTED_WORK_ITEM_CREATION = 'unexpected_work_item_creation'
 FAILED_UNEXPECTED_BOOKKEEPING_COUNTER = 'unexpected_bookkeeping_counter'
 FAILED_UNEXPECTED_WORK_ITEM_FIELD_CHANGE = 'unexpected_work_item_field_change'

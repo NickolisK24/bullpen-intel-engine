@@ -42,7 +42,18 @@ def app():
         try:
             yield flask_app
         finally:
-            db.session.remove()
+            # This module commits durable rows and drives the runner's own
+            # nested app contexts, so the scoped session can still hold a
+            # transaction — and row locks — when teardown runs. drop_all needs
+            # ACCESS EXCLUSIVE on the same tables from a different connection,
+            # which deadlocks against it. Release the session's connection
+            # first, then drop.
+            for release in (db.session.rollback, db.session.close,
+                            db.session.remove):
+                try:
+                    release()
+                except Exception:  # noqa: BLE001 - teardown is best effort
+                    pass
             drop_test_schema(flask_app)
 
 
@@ -203,3 +214,142 @@ def test_planner_phase_entered_is_set_immediately_before_the_lane_call():
     between = source[flag_at:lane_at]
     # Nothing substantial may sit between the flag and the call.
     assert between.count('\n') <= 6, between
+
+
+# ── A present but NOT COMPLETED work item must also gate the lane ──────────
+# "Present" is not "completed". The governing contract requires an existing
+# COMPLETED durable item, so an unfinished row must not reach the shadow lane,
+# an MLB request, plan generation, the write path, or the lane ledger.
+
+
+def _seed_work_item(status, *, game_pk=GAME_PK):
+    from datetime import date as _date, datetime as _datetime
+
+    from models.game_ingestion_work_item import GameIngestionWorkItem
+
+    completed = status == GameIngestionWorkItem.STATUS_COMPLETED
+    item = GameIngestionWorkItem(
+        mlb_game_pk=game_pk,
+        represented_date=_date(2026, 7, 29),
+        candidate_reason=GameIngestionWorkItem.REASON_NEWLY_FINAL,
+        criticality=GameIngestionWorkItem.CRITICALITY_PUBLICATION_CRITICAL,
+        status=status,
+        attempt_count=1,
+        completed_at=_datetime(2026, 7, 29, 12) if completed else None,
+        rows_expected=1 if completed else None,
+        rows_reconciled=1 if completed else 0,
+    )
+    db.session.add(item)
+    db.session.commit()
+    # Release the connection this commit checked out. Without it a randomised
+    # test order can reach the next module's schema creation while this one's
+    # session still holds a transaction, and the failure surfaces as a
+    # confusing DuplicateTable during setup rather than here.
+    db.session.expire_all()
+    return item
+
+
+NON_COMPLETED_STATUSES = (
+    'planned', 'in_progress', 'retryable_failure', 'terminal_failure',
+    'superseded',
+)
+
+
+@pytest.mark.parametrize('status', NON_COMPLETED_STATUSES)
+def test_a_present_non_completed_item_never_reaches_the_lane(
+    spy, tmp_path, status, app,
+):
+    _seed_work_item(status)
+    document, calls = _run(tmp_path, spy)
+
+    assert calls['lane'] == 0, 'run_game_driven_ingestion was called'
+    assert calls['mlb'] == 0, 'an MLB request was made'
+
+    verdict = document['verdict']
+    assert verdict['result'] == qualification.RESULT_FAILED
+    assert verdict['failed_reasons'] == [
+        qualification.FAILED_TARGET_WORK_ITEM_NOT_COMPLETED
+    ]
+
+
+@pytest.mark.parametrize('status', NON_COMPLETED_STATUSES)
+def test_the_evidence_distinguishes_present_from_completed(
+    spy, tmp_path, status, app,
+):
+    _seed_work_item(status)
+    document, _ = _run(tmp_path, spy)
+    authority = document['game_authority']
+
+    assert authority['work_item_precondition_checked'] is True
+    assert authority['work_item_precondition_passed'] is False
+    assert authority['planner_phase_entered'] is False
+    assert authority['planner_returned'] is False
+    assert authority['planner_raised'] is False
+    assert authority['finality_check_executed'] is False
+    assert authority['finality_proven_by_planner'] is None
+    assert authority['finality_display'] == 'not executed'
+
+
+@pytest.mark.parametrize('status', NON_COMPLETED_STATUSES)
+def test_no_write_phase_and_the_guard_is_released(spy, tmp_path, status, app):
+    _seed_work_item(status)
+    document, calls = _run(tmp_path, spy)
+
+    assert document['execution']['write_phase_entered'] is False
+    assert document['execution']['writer_guard_acquired'] is True
+    assert document['execution']['writer_guard_release_attempted'] is True
+    assert document['execution']['writer_guard_released'] is True
+    assert calls['guard_released'] == 1
+
+
+def test_a_non_completed_item_is_not_reported_as_missing(spy, tmp_path, app):
+    """The row exists; calling it missing would misdescribe the state."""
+    _seed_work_item('in_progress')
+    document, _ = _run(tmp_path, spy)
+    assert qualification.FAILED_TARGET_WORK_ITEM_MISSING not in (
+        document['verdict']['failed_reasons']
+    )
+
+
+def test_a_completed_item_does_proceed_to_the_shadow_lane(
+    app, monkeypatch, production_context, tmp_path,
+):
+    """Otherwise the gate above would be vacuous."""
+    calls = {'lane': 0}
+
+    _seed_work_item('completed')
+
+    def _lane(*args, **kwargs):
+        calls['lane'] += 1
+        # Return a scope-mismatch report so the run stops right after shadow.
+        return {
+            'status': 'scope_mismatch', 'games': [], 'planned_game_pks': [],
+            'requested_game_pks': [GAME_PK],
+            'unexpected_planned_game_pks': [],
+            'missing_requested_game_pks': [GAME_PK],
+            'duplicate_requested_count': 0,
+            'execution_scope_exact_match': False,
+        }
+
+    monkeypatch.setattr(lane, 'run_game_driven_ingestion', _lane)
+    monkeypatch.setattr(runner, 'build_app', lambda: app)
+
+    class _Guard:
+        def release(self):
+            return None
+
+    from services import sync_metadata
+
+    monkeypatch.setattr(
+        sync_metadata, 'acquire_sync_writer_guard', lambda **kw: _Guard(),
+    )
+
+    args = _Args()
+    args.artifact_dir = str(tmp_path / 'artifacts')
+    document = runner.run(args)
+
+    assert calls['lane'] == 1, 'the completed item did not reach the lane'
+    authority = document['game_authority']
+    assert authority['work_item_precondition_passed'] is True
+    assert authority['planner_phase_entered'] is True
+    assert authority['planner_returned'] is True
