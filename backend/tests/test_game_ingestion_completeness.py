@@ -13,6 +13,7 @@ from models.game_ingestion_work_item import GameIngestionWorkItem
 from models.game_log import GameLog
 from models.pitcher import Pitcher
 from models.scheduled_game import ScheduledGame
+from services import game_driven_ingestion
 from services import game_ingestion_completeness as completeness
 from utils.db import db
 
@@ -94,8 +95,20 @@ def _appearance_rows(game_pk, count, *, start_mlb_id):
         ))
 
 
-def _proof():
-    return completeness.build_game_ingestion_completeness(REFERENCE)
+def _proof(lane_mode=game_driven_ingestion.MODE_AUTHORITATIVE):
+    """The proof under a mode that is stated rather than inherited.
+
+    These exercise WORK-ITEM completeness semantics — an unresolved item
+    withholds, a terminal item withholds — and those are authoritative-mode
+    semantics. They used to read the mode implicitly from the environment,
+    which meant they were really asserting whatever mode the test process
+    happened to be in. The mode is named here so each case says which
+    authority it is describing. The shadow and write cases live in
+    ``test_shadow_publication_completeness_scope.py``.
+    """
+    return completeness.build_game_ingestion_completeness(
+        REFERENCE, lane_mode=lane_mode,
+    )
 
 
 def test_complete_final_game_coverage_publishes(app):
