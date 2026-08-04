@@ -42,6 +42,62 @@ REASON_CORRECTION_PENDING = 'material_correction_pending'
 REASON_LANE_NOT_AUTHORITATIVE = 'game_lane_not_publication_authoritative'
 
 
+def unresolved_final_game_membership(
+    represented_date: date,
+    *,
+    horizon_days: int | None = None,
+    plan: dict | None = None,
+) -> dict:
+    """The exact games behind ``unresolved_final_games``, not just the count.
+
+    ``build_game_ingestion_completeness`` derives its count from this function,
+    so the membership and the number cannot drift apart. Read-only: it queries
+    and returns, and writes nothing.
+
+    A game is an unresolved final game when EITHER it is a planned critical
+    game that is not a ``corrected_final`` re-check — it should be resolved for
+    this represented date and is not — OR it carries a non-best-effort work
+    item still in an unresolved status inside the window. The two sets overlap,
+    so the answer is their union, which is why the count is smaller than the
+    planned-critical total.
+    """
+    horizon_days = int(
+        horizon_days if horizon_days is not None
+        else planner.ingestion_horizon_days()
+    )
+    window_start = represented_date - timedelta(days=horizon_days)
+    plan = plan if plan is not None else planner.plan_game_work(represented_date)
+
+    critical = [
+        entry for entry in (plan.get('items') or [])
+        if entry.criticality != GameIngestionWorkItem.CRITICALITY_BEST_EFFORT
+    ]
+    outstanding = [
+        entry for entry in critical
+        if entry.candidate_reason != GameIngestionWorkItem.REASON_CORRECTED_FINAL
+    ]
+    unresolved_work = [
+        entry for entry in _work_items_in_window(window_start, represented_date)
+        if entry.status in GameIngestionWorkItem.UNRESOLVED_STATUSES
+        and entry.criticality != GameIngestionWorkItem.CRITICALITY_BEST_EFFORT
+    ]
+
+    outstanding_pks = {entry.game_pk for entry in outstanding}
+    unresolved_pks = {entry.mlb_game_pk for entry in unresolved_work}
+
+    return {
+        'represented_date': represented_date.isoformat(),
+        'window_start': window_start.isoformat(),
+        'horizon_days': horizon_days,
+        'game_pks': sorted(outstanding_pks | unresolved_pks),
+        'outstanding_critical_game_pks': sorted(outstanding_pks),
+        'unresolved_work_item_game_pks': sorted(unresolved_pks),
+        'critical_planned_game_pks': sorted(
+            entry.game_pk for entry in critical
+        ),
+    }
+
+
 def build_game_ingestion_completeness(
     represented_date: date,
     *,
@@ -86,6 +142,13 @@ def build_game_ingestion_completeness(
         item for item in critical_items
         if item.candidate_reason != GameIngestionWorkItem.REASON_CORRECTED_FINAL
     ]
+
+    # One implementation owns which games are unresolved. The published count
+    # is len() of this membership, so a reader can enumerate exactly the games
+    # the number claims without re-deriving the predicate anywhere else.
+    unresolved_membership = unresolved_final_game_membership(
+        represented_date, horizon_days=horizon_days, plan=plan,
+    )
 
     expected_rows, reconciled_rows = _appearance_row_reconciliation(completed)
     corrections_reconciled = sum(int(item.correction_count or 0) for item in completed)
@@ -132,10 +195,7 @@ def build_game_ingestion_completeness(
         'horizon_days': horizon_days,
         'expected_final_games': expected_final_games,
         'completed_final_games': len(completed),
-        'unresolved_final_games': len(
-            {item.game_pk for item in outstanding_critical}
-            | {item.mlb_game_pk for item in unresolved}
-        ),
+        'unresolved_final_games': len(unresolved_membership['game_pks']),
         'correction_pending_games': len(correction_pending),
         'terminal_failure_games': len(terminal),
         'corrected_games_reconciled': corrections_reconciled,
