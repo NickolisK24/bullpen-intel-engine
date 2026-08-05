@@ -16,6 +16,9 @@ the kind of access production does not have.
 """
 
 import json
+import subprocess
+import sys
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -40,6 +43,7 @@ import models.sync_failure  # noqa: F401
 import models.team_game_pitching_split  # noqa: F401
 from models.game_ingestion_work_item import GameIngestionWorkItem
 from models.game_log import GameLog
+from scripts import run_game_source_revision_audit as audit_runner
 from scripts import run_game_source_revision_checkpoint_repair as runner
 from services import game_source_revision_audit as audit
 from services import game_source_revision_checkpoint_repair as repair
@@ -128,14 +132,31 @@ def _work_item():
     return GameIngestionWorkItem.query.filter_by(mlb_game_pk=GAME_PK).one()
 
 
-def _install(monkeypatch, app, *, current_revision, existing_revision):
-    """Point the package's two locked literals at this test's digests."""
+def _observed_plan_fingerprint():
+    """The plan fingerprint the seeded game actually produces.
+
+    Read through the SAME canonical path the package uses, so the literal the
+    tests pin is a real observation of this fixture rather than a number
+    copied from production into a test that could then never fail.
+    """
+    observed = audit_runner.observe_current_source(None)
+    db.session.rollback()
+    return (observed.get('plan') or {}).get('reconciliation_plan_fingerprint')
+
+
+def _install(monkeypatch, app, *, current_revision, existing_revision,
+             plan_fingerprint=None):
+    """Point the package's locked literals at this fixture's values."""
     monkeypatch.setattr(
         repair, 'INTENDED_SOURCE_REVISION', current_revision,
     )
     monkeypatch.setattr(
         repair, 'EXPECTED_EXISTING_SOURCE_REVISION', existing_revision,
     )
+    if plan_fingerprint is not None:
+        monkeypatch.setattr(
+            repair, 'EXPECTED_PLAN_FINGERPRINT', plan_fingerprint,
+        )
     monkeypatch.setattr(runner, 'build_app', lambda: app)
     for key, value in (
         ('GITHUB_EVENT_NAME', 'workflow_dispatch'),
@@ -177,6 +198,7 @@ def _prepare(monkeypatch, app, *, existing=OLD_REVISION, lines=None):
     _install(
         monkeypatch, app,
         current_revision=current, existing_revision=existing,
+        plan_fingerprint=_observed_plan_fingerprint(),
     )
     return current
 
@@ -488,7 +510,7 @@ def test_apply_refuses_when_the_existing_value_is_not_the_expected_one(
 
         document = _run('apply')
         assert document['verdict']['result'] == repair.RESULT_REFUSED
-        assert document['verdict']['exit_code'] == 3
+        assert document['verdict']['exit_code'] == 2
         assert repair.REFUSED_EXISTING_REVISION_UNEXPECTED in (
             document['verdict']['refusal_reasons']
         )
@@ -672,6 +694,88 @@ def test_apply_refuses_when_the_checkpoint_row_counts_disagree(
         _assert_untouched(*before)
 
 
+@postgres_only
+def test_apply_refuses_when_the_plan_fingerprint_changed(app, monkeypatch):
+    """Clean action counts do not rescue a plan whose fingerprint moved."""
+    with app.app_context():
+        _prepare(monkeypatch, app)
+        monkeypatch.setattr(repair, 'EXPECTED_PLAN_FINGERPRINT', 'f' * 64)
+        item = _work_item()
+        before = (item.source_revision, item.updated_at)
+
+        document = _run('apply')
+        assert document['verdict']['result'] == repair.RESULT_REFUSED
+        assert repair.REFUSED_PLAN_FINGERPRINT_CHANGED in (
+            document['verdict']['refusal_reasons']
+        )
+        # The canonical plan itself is still clean — only the fingerprint
+        # gate refused.
+        assert document['canonical_plan']['proposes_mutation'] is False
+        _assert_untouched(*before)
+
+
+@postgres_only
+def test_apply_refuses_when_the_game_no_longer_has_twelve_appearances(
+    app, monkeypatch,
+):
+    with app.app_context():
+        eleven = _lines()[:11]
+        _prepare(monkeypatch, app, lines=eleven)
+        item = _work_item()
+        before = (item.source_revision, item.updated_at)
+
+        document = _run('apply')
+        assert document['verdict']['result'] in (
+            repair.RESULT_REFUSED, repair.RESULT_UNPROVEN,
+        )
+        assert document['verdict']['mutation_performed'] is False
+        assert repair.REFUSED_APPEARANCE_COUNT_UNEXPECTED in (
+            document['verdict']['refusal_reasons']
+        )
+        _assert_untouched(*before)
+
+
+@postgres_only
+def test_apply_refuses_when_the_target_row_carries_an_error_class(
+    app, monkeypatch,
+):
+    with app.app_context():
+        _prepare(monkeypatch, app)
+        db.session.execute(text(
+            'UPDATE game_ingestion_work_items SET error_class = :cls '
+            'WHERE mlb_game_pk = :pk'
+        ), {'cls': 'appearance_extraction_failed', 'pk': GAME_PK})
+        db.session.commit()
+        db.session.expire_all()
+        item = _work_item()
+        before = (item.source_revision, item.updated_at)
+
+        document = _run('apply')
+        assert document['verdict']['result'] == repair.RESULT_REFUSED
+        assert repair.REFUSED_TARGET_ERROR_STATE in (
+            document['verdict']['refusal_reasons']
+        )
+        _assert_untouched(*before)
+
+
+@postgres_only
+def test_apply_records_the_pre_and_post_commit_verification(app, monkeypatch):
+    """The commit is conditioned on the in-transaction value."""
+    with app.app_context():
+        current = _prepare(monkeypatch, app)
+        document = _run('apply')
+        assert document['verdict']['result'] == repair.RESULT_APPLIED
+        ledger = document['mutation_ledger']
+        transaction = ledger['transaction_state']
+        assert transaction['in_transaction_value_is_intended'] is True
+        assert transaction['post_commit_transaction_read_only'] is True
+        assert ledger['post_commit_value_is_intended'] is True
+        assert ledger['post_commit_row_count'] == 1
+        assert ledger['commits_performed'] == 1
+        assert ledger['observed_value_after'] == current
+        assert ledger['mutation_timestamp']
+
+
 # ── Authorization ───────────────────────────────────────────────────────────
 
 @postgres_only
@@ -742,6 +846,82 @@ def test_an_unauthorized_context_refuses_before_any_observation(
         assert document['verdict']['mutation_performed'] is False
         assert document['read_only_proof'] == {}
         _assert_untouched(*before)
+
+
+SCANNER = Path(__file__).resolve().parents[1] / (
+    'scripts/scan_forbidden_artifact_content.py'
+)
+
+
+def _scan(directory):
+    return subprocess.run(
+        [sys.executable, str(SCANNER), '--directory', str(directory)],
+        capture_output=True, text=True, check=False,
+    )
+
+
+@postgres_only
+def test_real_verify_and_apply_artifacts_pass_the_repository_scanner(
+    app, monkeypatch, tmp_path,
+):
+    """The pre-upload gate, run against artifacts a real run produced.
+
+    Not a hand-built document: these come from the full runner, through the
+    real lane, the real planner, and the real reconciler, in both operations.
+    """
+    with app.app_context():
+        _prepare(monkeypatch, app)
+
+        verify_dir = tmp_path / 'verify'
+        code = runner.main([
+            '--operation', 'verify',
+            '--expected-main-sha', SHA,
+            '--confirmation', repair.CONFIRMATIONS['verify'],
+            '--artifact-dir', str(verify_dir),
+        ])
+        assert code == 0
+        assert _scan(verify_dir).returncode == 0
+
+        apply_dir = tmp_path / 'apply'
+        code = runner.main([
+            '--operation', 'apply',
+            '--expected-main-sha', SHA,
+            '--confirmation', repair.CONFIRMATIONS['apply'],
+            '--artifact-dir', str(apply_dir),
+        ])
+        assert code == 0
+        assert _scan(apply_dir).returncode == 0
+
+        for directory, expected in (
+            (verify_dir, repair.RESULT_VERIFIED_REQUIRED_AND_SAFE),
+            (apply_dir, repair.RESULT_APPLIED),
+        ):
+            payload = json.loads(
+                (directory / runner.SUMMARY_JSON).read_text(encoding='utf-8')
+            )
+            assert payload['verdict']['result'] == expected
+            assert sorted(path.name for path in directory.iterdir()) == (
+                sorted(runner.ARTIFACT_FILES)
+            )
+
+        # The verify artifact proposes; only the apply artifact executes.
+        verify_ledger = json.loads(
+            (verify_dir / runner.MUTATION_LEDGER_JSON).read_text(
+                encoding='utf-8'
+            )
+        )
+        apply_ledger = json.loads(
+            (apply_dir / runner.MUTATION_LEDGER_JSON).read_text(
+                encoding='utf-8'
+            )
+        )
+        assert verify_ledger['apply_attempted'] is False
+        assert verify_ledger['committed'] is None
+        assert verify_ledger['mutation_performed'] is False
+        assert apply_ledger['apply_attempted'] is True
+        assert apply_ledger['committed'] is True
+        assert apply_ledger['mutation_performed'] is True
+        assert apply_ledger['commits_performed'] == 1
 
 
 # ── Concurrency ─────────────────────────────────────────────────────────────

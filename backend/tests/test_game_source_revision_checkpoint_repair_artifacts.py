@@ -26,13 +26,7 @@ from scripts import run_game_source_revision_checkpoint_repair as runner
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 SCANNER = BACKEND_ROOT / 'scripts/scan_forbidden_artifact_content.py'
 
-EXPECTED_FILES = (
-    runner.SUMMARY_JSON,
-    runner.SUMMARY_MARKDOWN,
-    runner.PRECONDITIONS_JSON,
-    runner.MUTATION_LEDGER_JSON,
-    runner.COMPARISON_JSON,
-)
+EXPECTED_FILES = runner.ARTIFACT_FILES
 
 
 def _document(**overrides):
@@ -194,6 +188,57 @@ def test_the_preconditions_file_publishes_the_whole_requirement_model(
     )
 
 
+def test_the_artifact_filenames_are_the_reviewed_names(artifact_dir):
+    _write(_document(), artifact_dir)
+    assert sorted(path.name for path in artifact_dir.iterdir()) == sorted(
+        runner.ARTIFACT_FILES
+    )
+    for name in runner.ARTIFACT_FILES:
+        assert name.startswith('game-824487-source-revision-checkpoint-repair')
+
+
+def test_the_proof_file_carries_the_read_only_and_lock_evidence(artifact_dir):
+    _write(_document(), artifact_dir)
+    payload = json.loads(
+        (artifact_dir / runner.PROOF_JSON).read_text(encoding='utf-8')
+    )
+    for key in (
+        'read_only_proof', 'advisory_lock', 'source_call_report',
+        'prohibited_mutations', 'permitted_changed_columns',
+        'standing_production_state', 'non_authorization_statement',
+    ):
+        assert key in payload, key
+
+
+def test_the_fingerprint_file_carries_both_scopes(artifact_dir):
+    _write(_document(), artifact_dir)
+    payload = json.loads(
+        (artifact_dir / runner.FINGERPRINTS_JSON).read_text(encoding='utf-8')
+    )
+    assert 'fingerprints' in payload
+    assert 'scope_evaluation' in payload
+    assert payload['out_of_scope_table'] == repair.OUT_OF_SCOPE_TABLE
+
+
+def test_the_ledger_carries_every_governed_field(artifact_dir):
+    """§16: a ledger a reviewer can read without correlating other files."""
+    _write(_document(), artifact_dir)
+    ledger = json.loads(
+        (artifact_dir / runner.MUTATION_LEDGER_JSON).read_text(
+            encoding='utf-8'
+        )
+    )
+    for key in (
+        'operation', 'model', 'table', 'column', 'target_row_identity',
+        'game_pk', 'represented_date', 'observed_value_before',
+        'observed_value_after', 'proposed_value', 'affected_row_count',
+        'commits_performed', 'rollback_performed', 'mutation_status',
+        'mutation_timestamp', 'workflow_run_id', 'main_sha', 'actor',
+        'operator_note', 'advisory_lock_state', 'transaction_state',
+    ):
+        assert key in ledger, key
+
+
 def test_the_comparison_file_carries_its_rows_and_its_gates(artifact_dir):
     document = _document()
     rows = [{'pitcher_mlb_id': 1, 'field_name': 'strikeouts'}]
@@ -214,6 +259,13 @@ def test_the_markdown_summary_carries_every_required_section(artifact_dir):
     text = (artifact_dir / runner.SUMMARY_MARKDOWN).read_text(encoding='utf-8')
     for section in runner.REQUIRED_MARKDOWN_SECTIONS:
         assert section in text, section
+
+
+def test_the_markdown_numbers_its_fifteen_sections(artifact_dir):
+    _write(_document(), artifact_dir)
+    text = (artifact_dir / runner.SUMMARY_MARKDOWN).read_text(encoding='utf-8')
+    for index in range(1, 16):
+        assert f'## {index}. ' in text, index
 
 
 def test_the_markdown_discloses_the_updated_at_side_effect(artifact_dir):
@@ -338,7 +390,7 @@ def test_main_returns_the_verdicts_exit_code(monkeypatch, tmp_path):
         '--confirmation', repair.CONFIRMATIONS['apply'],
         '--artifact-dir', str(tmp_path / 'out'),
     ])
-    assert code == repair.EXIT_CODES[repair.RESULT_REFUSED] == 3
+    assert code == repair.EXIT_CODES[repair.RESULT_REFUSED] == 2
     assert (tmp_path / 'out' / runner.SUMMARY_JSON).is_file()
 
 

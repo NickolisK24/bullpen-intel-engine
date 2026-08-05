@@ -115,6 +115,15 @@ EXPECTED_EXISTING_SOURCE_REVISION = audit.PRIOR_SOURCE_REVISION
 # The value today's official source must reproduce before anything is written.
 INTENDED_SOURCE_REVISION = audit.LATER_SOURCE_REVISION
 
+# Two more reviewed literals the controlled audit positively established for
+# this game, checked here IN ADDITION to the live population expectation
+# (§6 of the package doc). The live check and the literal answer different
+# questions: the live one proves the checkpoint and storage still agree with
+# each other, the literal proves they still agree with what was reviewed.
+# Either failing refuses.
+EXPECTED_APPEARANCE_COUNT = audit.EXPECTED_APPEARANCE_COUNT
+EXPECTED_PLAN_FINGERPRINT = audit.EXPECTED_PLAN_FINGERPRINT
+
 # The permitted post-state column delta, declared in full. ``updated_at`` is an
 # automatic bookkeeping side effect of the model's ``onupdate``; it is named
 # here so it can be checked, not so it can be excused. Pinning it back to its
@@ -208,19 +217,28 @@ RESULTS = (
     RESULT_UNPROVEN,
 )
 
-# 0 the package did its job — including deciding, with evidence, to do nothing.
+# Three exit codes, and only three.
+#
+# 0 the repair is currently eligible, was applied, or was already applied.
 # 1 the package broke its OWN contract. Reserved for that and nothing else.
-# 2 required evidence could not be obtained, so no claim is made either way.
-# 3 preconditions were positively observed NOT to hold. Not an error: this is
-#   the refusal the scope demands, and it is separated from FAILED so a
-#   reviewer can tell "declined safely" from "misbehaved".
+# 2 the repair is not currently eligible to proceed — either because required
+#   evidence could not be obtained (UNPROVEN) or because a precondition was
+#   positively observed not to hold (REPAIR_REFUSED).
+#
+# A fourth code for refusal was considered and rejected. The governing rule is
+# "exit 0 only if the repair is currently eligible", and a refused run is not
+# eligible, so it must not be distinguishable from UNPROVEN by exit status —
+# an operator or a workflow gate reading only the exit code must treat both
+# identically, which is to say: do not proceed. The DISTINCTION between them is
+# preserved where it actually matters, in the result name and the reason codes
+# a reviewer reads in the artifact, and it is never flattened there.
 EXIT_CODES = {
     RESULT_VERIFIED_REQUIRED_AND_SAFE: 0,
     RESULT_NOT_REQUIRED: 0,
     RESULT_APPLIED: 0,
     RESULT_FAILED: 1,
     RESULT_UNPROVEN: 2,
-    RESULT_REFUSED: 3,
+    RESULT_REFUSED: 2,
 }
 
 SUCCESSFUL_RESULTS = frozenset({
@@ -352,6 +370,11 @@ REFUSED_CANONICAL_PLAN_PROPOSES_MUTATION = (
 )
 REFUSED_CONCURRENT_MODIFICATION = 'target_row_modified_concurrently'
 REFUSED_SCOPE_MOVED_BEFORE_APPLY = 'governed_scope_moved_before_apply'
+REFUSED_APPEARANCE_COUNT_UNEXPECTED = 'current_source_count_unexpected'
+REFUSED_PLAN_FINGERPRINT_CHANGED = 'reconciliation_plan_changed'
+REFUSED_TARGET_ERROR_STATE = 'target_status_unexpected_error_state'
+REFUSED_PROHIBITED_SCOPE_CHANGED = 'prohibited_scope_changed'
+REFUSED_POST_COMMIT_VERIFICATION_FAILED = 'post_commit_verification_failed'
 
 REFUSED_REASONS = (
     REFUSED_WORK_ITEM_MISSING,
@@ -371,6 +394,11 @@ REFUSED_REASONS = (
     REFUSED_CANONICAL_PLAN_PROPOSES_MUTATION,
     REFUSED_CONCURRENT_MODIFICATION,
     REFUSED_SCOPE_MOVED_BEFORE_APPLY,
+    REFUSED_APPEARANCE_COUNT_UNEXPECTED,
+    REFUSED_PLAN_FINGERPRINT_CHANGED,
+    REFUSED_TARGET_ERROR_STATE,
+    REFUSED_PROHIBITED_SCOPE_CHANGED,
+    REFUSED_POST_COMMIT_VERIFICATION_FAILED,
 )
 
 MAX_REASON_CODES = 12
@@ -405,6 +433,9 @@ PRE_CURRENT_REVISION = 'current_official_revision_is_the_intended_value'
 PRE_NO_GOVERNED_DIFFERENCE = 'no_governed_fingerprint_field_differs'
 PRE_DIFFERENCES_DISPLAY_ONLY = 'every_difference_is_derived_display_only'
 PRE_CANONICAL_PLAN_CLEAN = 'canonical_plan_proposes_no_mutation'
+PRE_PLAN_FINGERPRINT = 'reconciliation_plan_fingerprint_unchanged'
+PRE_APPEARANCE_COUNT = 'current_appearance_count_is_the_reviewed_count'
+PRE_ROW_NO_ERROR_STATE = 'target_row_carries_no_unresolved_error_state'
 PRE_SCOPE_FINGERPRINTS = 'governed_scope_fingerprints_observed'
 
 PRECONDITION_IDS = (
@@ -413,6 +444,7 @@ PRECONDITION_IDS = (
     PRE_ROW_GAME,
     PRE_ROW_REPRESENTED_DATE,
     PRE_ROW_STATUS,
+    PRE_ROW_NO_ERROR_STATE,
     PRE_EXISTING_REVISION,
     PRE_INTENDED_DIFFERS,
     PRE_POPULATION_VERIFIED,
@@ -423,6 +455,8 @@ PRECONDITION_IDS = (
     PRE_NO_GOVERNED_DIFFERENCE,
     PRE_DIFFERENCES_DISPLAY_ONLY,
     PRE_CANONICAL_PLAN_CLEAN,
+    PRE_PLAN_FINGERPRINT,
+    PRE_APPEARANCE_COUNT,
     PRE_SCOPE_FINGERPRINTS,
 )
 
@@ -445,6 +479,9 @@ PRECONDITION_REFUSAL_REASONS = {
     PRE_NO_GOVERNED_DIFFERENCE: REFUSED_GOVERNED_FIELD_DIFFERS,
     PRE_DIFFERENCES_DISPLAY_ONLY: REFUSED_NON_DISPLAY_DIFFERENCE,
     PRE_CANONICAL_PLAN_CLEAN: REFUSED_CANONICAL_PLAN_PROPOSES_MUTATION,
+    PRE_PLAN_FINGERPRINT: REFUSED_PLAN_FINGERPRINT_CHANGED,
+    PRE_APPEARANCE_COUNT: REFUSED_APPEARANCE_COUNT_UNEXPECTED,
+    PRE_ROW_NO_ERROR_STATE: REFUSED_TARGET_ERROR_STATE,
     PRE_SCOPE_FINGERPRINTS: REFUSED_SCOPE_MOVED_BEFORE_APPLY,
 }
 
@@ -467,6 +504,9 @@ PRECONDITION_UNPROVEN_REASONS = {
     PRE_NO_GOVERNED_DIFFERENCE: UNPROVEN_CURRENT_SOURCE_UNAVAILABLE,
     PRE_DIFFERENCES_DISPLAY_ONLY: UNPROVEN_CURRENT_SOURCE_UNAVAILABLE,
     PRE_CANONICAL_PLAN_CLEAN: UNPROVEN_CANONICAL_PLAN_UNAVAILABLE,
+    PRE_PLAN_FINGERPRINT: UNPROVEN_CANONICAL_PLAN_UNAVAILABLE,
+    PRE_APPEARANCE_COUNT: UNPROVEN_CURRENT_SOURCE_UNAVAILABLE,
+    PRE_ROW_NO_ERROR_STATE: UNPROVEN_DATABASE_EVIDENCE_UNAVAILABLE,
     PRE_SCOPE_FINGERPRINTS: UNPROVEN_FINGERPRINT_UNAVAILABLE,
 }
 
@@ -974,6 +1014,31 @@ def evaluate_preconditions(*, target, official, comparison, plan,
             ),
         ),
         precondition(
+            PRE_ROW_NO_ERROR_STATE,
+            requirement=(
+                'the row carries no unresolved error class and no attempt '
+                'left in flight'
+            ),
+            state=_state(
+                row_observed,
+                satisfied=(
+                    not (row or {}).get('error_class')
+                    and (row or {}).get('completed_at') is not None
+                ),
+            ),
+            expected='error_class absent, completed_at present',
+            observed={
+                'error_class': (row or {}).get('error_class'),
+                'completed_at': (row or {}).get('completed_at'),
+            } if row_observed else None,
+            note=(
+                'A completed row that still carries an error class, or that '
+                'never recorded a completion time, is a row whose own lane '
+                'did not finish cleanly. Its checkpoint is not this '
+                'package to advance.'
+            ),
+        ),
+        precondition(
             PRE_EXISTING_REVISION,
             requirement='existing source_revision is the expected old value',
             state=_state(
@@ -1146,6 +1211,59 @@ def evaluate_preconditions(*, target, official, comparison, plan,
                 'The strongest available statement that canonical storage is '
                 'already correct, made by the canonical authority itself '
                 'rather than by the comparison this package makes.'
+            ),
+        ),
+        precondition(
+            PRE_PLAN_FINGERPRINT,
+            requirement=(
+                'the per-game reconciliation-plan fingerprint still equals '
+                'the reviewed value'
+            ),
+            state=_state(
+                plan_available and bool(
+                    plan.get('reconciliation_plan_fingerprint')
+                ),
+                satisfied=(
+                    plan.get('reconciliation_plan_fingerprint')
+                    == EXPECTED_PLAN_FINGERPRINT
+                ),
+            ),
+            expected=EXPECTED_PLAN_FINGERPRINT,
+            observed=plan.get('reconciliation_plan_fingerprint'),
+            note=(
+                'Checked SEPARATELY from the action counts, and refusing on '
+                'its own. A plan can report zero inserts, zero updates, and '
+                'zero blocked rows while its fingerprint has moved, which '
+                'means the plan this repair was reviewed against is not the '
+                'plan the reconciler is producing today.'
+            ),
+        ),
+        precondition(
+            PRE_APPEARANCE_COUNT,
+            requirement=(
+                f'the observed appearance count is exactly '
+                f'{EXPECTED_APPEARANCE_COUNT}'
+            ),
+            state=_state(
+                bool(official.get('available')) and bool(database_observed),
+                satisfied=(
+                    official.get('appearance_count')
+                    == EXPECTED_APPEARANCE_COUNT
+                    and expectation.get('stored_appearance_count')
+                    == EXPECTED_APPEARANCE_COUNT
+                ),
+            ),
+            expected=EXPECTED_APPEARANCE_COUNT,
+            observed={
+                'official': official.get('appearance_count'),
+                'stored': expectation.get('stored_appearance_count'),
+            },
+            note=(
+                'The reviewed literal, checked IN ADDITION to the live '
+                'population expectation. The live check proves the '
+                'checkpoint and storage still agree with each other; this '
+                'one proves they still agree with what was reviewed. Either '
+                'failing refuses.'
             ),
         ),
         precondition(

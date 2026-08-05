@@ -22,7 +22,9 @@ OLD = repair.EXPECTED_EXISTING_SOURCE_REVISION
 NEW = repair.INTENDED_SOURCE_REVISION
 THIRD = 'c' * 64
 
-ARMS = [770001, 770002, 770003]
+# Twelve, because the package now also checks the reviewed literal
+# appearance count in addition to the live population expectation.
+ARMS = [770001 + offset for offset in range(12)]
 
 # A sentinel, not None: several of these tests need to pass an explicit None —
 # "the work item was never read", "the fingerprints were uncomputable" — and a
@@ -37,9 +39,11 @@ def _work_item(**overrides):
         'mlb_game_pk': repair.GAME_PK,
         'represented_date': repair.REPRESENTED_DATE.isoformat(),
         'status': 'completed',
+        'error_class': None,
+        'completed_at': '2026-07-30T04:00:00',
         'source_revision': OLD,
-        'rows_expected': 3,
-        'rows_reconciled': 3,
+        'rows_expected': 12,
+        'rows_reconciled': 12,
         'updated_at': '2026-07-30T04:00:00',
     }
     row.update(overrides)
@@ -136,6 +140,7 @@ def _plan(**overrides):
         'proposes_blocked': False,
         'all_unchanged': True,
         'proposes_mutation': False,
+        'reconciliation_plan_fingerprint': repair.EXPECTED_PLAN_FINGERPRINT,
     }
     payload.update(overrides)
     return payload
@@ -212,7 +217,7 @@ def test_a_checkpoint_that_was_never_read_supplies_no_population_size():
 
 def test_a_database_that_was_never_opened_supplies_no_population_size():
     expectation = repair.population_expectation(
-        work_item=_work_item(), stored_appearance_count=3,
+        work_item=_work_item(), stored_appearance_count=12,
         database_observed=False,
     )
     assert expectation['conclusion_usable'] is False
@@ -222,13 +227,13 @@ def test_a_database_that_was_never_opened_supplies_no_population_size():
     ({'rows_expected': None}, repair.POPULATION_ROWS_EXPECTED_MISSING),
     ({'rows_expected': 0, 'rows_reconciled': 0},
      repair.POPULATION_ROWS_EXPECTED_NOT_POSITIVE),
-    ({'rows_reconciled': 2}, repair.POPULATION_RECONCILED_DISAGREES),
+    ({'rows_reconciled': 11}, repair.POPULATION_RECONCILED_DISAGREES),
 ])
 def test_an_inconsistent_checkpoint_supplies_no_population_size(
     overrides, expected,
 ):
     expectation = repair.population_expectation(
-        work_item=_work_item(**overrides), stored_appearance_count=3,
+        work_item=_work_item(**overrides), stored_appearance_count=12,
     )
     assert expectation['expectation_state'] == expected
     assert expectation['conclusion_usable'] is False
@@ -236,7 +241,7 @@ def test_an_inconsistent_checkpoint_supplies_no_population_size(
 
 def test_storage_disagreeing_with_the_checkpoint_supplies_no_size():
     expectation = repair.population_expectation(
-        work_item=_work_item(), stored_appearance_count=2,
+        work_item=_work_item(), stored_appearance_count=11,
     )
     assert expectation['expectation_state'] == (
         repair.POPULATION_STORED_DISAGREES
@@ -306,11 +311,11 @@ def test_symmetric_truncation_is_refused_even_though_membership_matches():
     and membership, which is exactly what a symmetrically truncated pair
     satisfies, would have said yes.
     """
-    half = ARMS[:2]
+    half = ARMS[:6]
     result = _completeness(
         official=_official([_official_appearance(i) for i in half]),
         stored=_stored([_stored_appearance(i) for i in half]),
-        work_item=_work_item(rows_expected=3, rows_reconciled=3),
+        work_item=_work_item(),
     )
     assert result['membership_matches'] is True
     assert result['missing_from_storage'] == []
@@ -334,10 +339,10 @@ def test_a_contradicted_count_is_resolved_before_the_duplicate_gate():
     ]
     result = _completeness(
         official=_official(doubled),
-        work_item=_work_item(rows_expected=3, rows_reconciled=3),
+        work_item=_work_item(),
     )
-    assert result['observed_appearance_count'] == 4
-    assert result['expected_appearance_count'] == 3
+    assert result['observed_appearance_count'] == 13
+    assert result['expected_appearance_count'] == 12
     assert result['duplicate_official_identities'] == [ARMS[0]]
     assert result['completeness_state'] == repair.SOURCE_COUNT_CONTRADICTS
     assert result['conclusion_eligible'] is False
@@ -353,15 +358,15 @@ def test_an_unverified_population_size_blocks_before_membership_too():
 
 def test_a_pitcher_only_in_the_official_set_is_not_eligible():
     result = _completeness(
-        stored=_stored([_stored_appearance(i) for i in ARMS[:2]]),
-        work_item=_work_item(rows_expected=3, rows_reconciled=3),
+        stored=_stored([_stored_appearance(i) for i in ARMS[:11]]),
+        work_item=_work_item(),
     )
     assert result['conclusion_eligible'] is False
 
 
 def test_a_pitcher_only_in_storage_is_not_eligible():
     result = _completeness(
-        official=_official([_official_appearance(i) for i in ARMS[:2]]),
+        official=_official([_official_appearance(i) for i in ARMS[:11]]),
     )
     assert result['conclusion_eligible'] is False
 
@@ -373,10 +378,10 @@ def test_a_duplicated_official_identity_is_ambiguous_not_merely_incomplete():
     ]
     result = _completeness(
         official=_official(doubled),
-        work_item=_work_item(rows_expected=4, rows_reconciled=4),
+        work_item=_work_item(rows_expected=13, rows_reconciled=13),
         stored=_stored(
             [_stored_appearance(i) for i in ARMS],
-            stored_appearance_count=4,
+            stored_appearance_count=13,
         ),
     )
     assert result['completeness_state'] == repair.SOURCE_DUPLICATE_OFFICIAL
@@ -645,6 +650,70 @@ def test_a_canonical_plan_proposing_a_mutation_refuses():
     )
     assert repair.REFUSED_CANONICAL_PLAN_PROPOSES_MUTATION in (
         evaluation['refusal_reasons']
+    )
+
+
+def test_a_changed_plan_fingerprint_refuses_even_with_clean_action_counts():
+    """The fingerprint gate refuses on its own, independent of the counts."""
+    evaluation = _evaluate(plan=_plan(
+        reconciliation_plan_fingerprint='f' * 64,
+    ))
+    # The counts are still clean, and it still refuses.
+    assert _state_of(evaluation, repair.PRE_CANONICAL_PLAN_CLEAN) == (
+        repair.PRECONDITION_SATISFIED
+    )
+    assert _state_of(evaluation, repair.PRE_PLAN_FINGERPRINT) == (
+        repair.PRECONDITION_VIOLATED
+    )
+    assert repair.REFUSED_PLAN_FINGERPRINT_CHANGED in (
+        evaluation['refusal_reasons']
+    )
+    assert repair.decide(
+        operation='apply', preconditions=evaluation,
+    )['result'] == repair.RESULT_REFUSED
+
+
+def test_a_plan_with_no_fingerprint_is_unobserved_never_satisfied():
+    evaluation = _evaluate(plan=_plan(
+        reconciliation_plan_fingerprint=None,
+    ))
+    assert _state_of(evaluation, repair.PRE_PLAN_FINGERPRINT) == (
+        repair.PRECONDITION_NOT_OBSERVED
+    )
+
+
+@pytest.mark.parametrize('count', [11, 13])
+def test_an_appearance_count_other_than_the_reviewed_one_refuses(count):
+    arms = ARMS[:count] if count < len(ARMS) else ARMS + [900001]
+    assert len(arms) == count
+    official = _official([_official_appearance(i) for i in arms])
+    stored = _stored([_stored_appearance(i) for i in arms])
+    evaluation = _evaluate(
+        official=official, stored=stored,
+        work_item=_work_item(rows_expected=count, rows_reconciled=count),
+    )
+    assert _state_of(evaluation, repair.PRE_APPEARANCE_COUNT) == (
+        repair.PRECONDITION_VIOLATED
+    )
+    assert repair.REFUSED_APPEARANCE_COUNT_UNEXPECTED in (
+        evaluation['refusal_reasons']
+    )
+
+
+def test_an_error_class_on_the_target_row_refuses():
+    evaluation = _evaluate(work_item=_work_item(
+        error_class='appearance_extraction_failed',
+    ))
+    assert _state_of(evaluation, repair.PRE_ROW_NO_ERROR_STATE) == (
+        repair.PRECONDITION_VIOLATED
+    )
+    assert repair.REFUSED_TARGET_ERROR_STATE in evaluation['refusal_reasons']
+
+
+def test_a_completed_row_with_no_completion_time_refuses():
+    evaluation = _evaluate(work_item=_work_item(completed_at=None))
+    assert _state_of(evaluation, repair.PRE_ROW_NO_ERROR_STATE) == (
+        repair.PRECONDITION_VIOLATED
     )
 
 

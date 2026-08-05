@@ -1,64 +1,81 @@
 # Game 824487 source-revision checkpoint repair
 
-**Status: package implemented and validated locally. The repair has NOT been
-executed. No production database session has been opened by this package. No
-production row has been mutated. Nothing here is authorization to run it.**
-
-This document describes a reviewable repair package: what it may change, what
-it may never change, every precondition it re-observes before it changes
-anything, how it proves afterwards that it changed nothing else, and how to
-remove it when it is done.
-
-Running it is a separate decision. The merged source-revision audit authorizes
-no mutation — a recommendation is not approval — and this document does not
-convert one into the other.
+**Status: package implemented and validated. The repair has NOT been executed.
+No production database session has been opened by this package. No production
+row has been mutated. No workflow has been dispatched. Nothing here is
+authorization to run it.**
 
 ---
 
-## 1. The exact scope
+## 1. Incident summary
 
-One column, on one already-existing row.
+Game 824487 (represented date 2026-07-29) recorded two different source
+revisions across scheduled daily runs 30902544622 and 30999087370 while
+agreeing on everything else about it: 12 appearances both times, all 12
+classified unchanged both times, and an identical per-game
+reconciliation-plan fingerprint both times. The later run's shadow activation
+observer FAILED on `source_revision_match`.
 
-| | value |
+The durable consequence is narrow. The `GameIngestionWorkItem` for game 824487
+still stores the prior source revision while the current official source
+produces the later one. The checkpoint is stale relative to the source; every
+canonical row is unchanged.
+
+## 2. Audit evidence
+
+The controlled read-only audit (PR #613, merged as
+`cb4ec4ae4d78910bb44207df01e0c1aba93f5958`) ran as workflow run 31044299167 and
+produced artifact `game-824487-source-revision-audit-31044299167`
+(id 8945806046, digest
+`sha256:fe8949b410fdeb092cb744d1341d385b2e9c28fc0ce06d5cd61d1b42031df64a`).
+
+Verdict: `COMPLETE_SCOPE_AND_MATERIALITY_IDENTIFIED_FIELD_DELTA_UNAVAILABLE`,
+exit 0, with no failed and no unproven reasons.
+
+| dimension | value |
 | :--- | :--- |
-| game | 824487 |
-| represented date | 2026-07-29 |
-| table | `game_ingestion_work_items` |
-| identity column | `mlb_game_pk` |
-| target column | `source_revision` |
-| expected existing value | `90213dc8e42a9622e9c0dcaea80adb04507a4a5bfe054eaa9b98d2d138b804a0` |
-| intended new value | `a0fe2dbce8ad75ffc880e76996a6fec7bc90f86c296350898c009f97f241ecf4` |
-| rows the run may affect | exactly 1 |
-| permitted changed columns | `source_revision`, `updated_at` |
+| root condition | `official_appearance_set_changed` |
+| current materiality | `non_material_to_canonical_writer_target` |
+| current source completeness | `complete_and_comparable` |
+| persistence | `matches_later_revision` |
+| checkpoint state | `checkpoint_stale_relative_to_current_source` |
+| historical field identification | `not_retained` |
 
-Every one of these is a reviewed literal in code. None of them is an input,
-an argument, or an environment variable. A dispatch cannot select **what**
-runs — only **whether** it runs, and which of two operations it runs.
+The audit also positively established: current official appearance count 12,
+retained verified expectation 12, exact official/stored membership, no
+duplicate identities on either side, a canonical reconciliation plan of 12
+unchanged with zero inserts, updates, deletes, and blocked rows, and no
+semantic code drift in the source-revision path.
 
----
+The exact historical field transition could **not** be recovered, because
+neither retained artifact kept normalized row-level values for a game whose
+appearances were all unchanged. This package does not attempt to infer it.
 
-## 2. Why `updated_at` is in the permitted set
+**The audit is evidence, not standing authority.** Nothing in this package
+reads the audit's conclusion, and no audit output is a precondition. Every
+precondition is re-observed live at execution time. If the audit had never run,
+this package would behave identically.
 
-`GameIngestionWorkItem.updated_at` is declared
-`onupdate=utc_now_naive`, which fires on **any** UPDATE of the row. The single
-permitted change therefore moves two columns, not one.
+## 3. Why GameLog is not being repaired
 
-That is disclosed rather than hidden:
+The canonical reconciler, run against today's box score, proposes zero inserts,
+zero updates, and zero blocked rows for this game. Canonical storage is already
+correct. There is no canonical writer repair to perform, and this package
+refuses rather than becoming one.
 
-* the permitted changed-column set is exactly `{source_revision, updated_at}`;
-* `source_revision` is the **governed** change — the one decision under review;
-* `updated_at` is an **automatic bookkeeping side effect** of making it;
-* any third changed column is a contract violation and fails the run.
+The six official-versus-storage differences the audit found are confined to the
+derived `innings_pitched` display value — for example official
+`1.3333333333333333` against stored `1.33333333333333`. Integer recorded outs
+are the innings authority, and `innings_pitched` is deliberately **not** one of
+the 14 governed fingerprint fields, so those differences cannot move the digest
+and are classified `derived_display_only`.
 
-Pinning `updated_at` back to its old value was considered and rejected.
-Falsifying a bookkeeping timestamp to make a diff look smaller is worse than
-disclosing the timestamp. A package contract test asserts the model really
-declares `onupdate`, so if that ever stopped being true the disclosure would
-fail rather than quietly become wrong.
+**Rewriting stored values to eliminate a floating-point display difference
+would be a fabricated correction.** This package never does it. If any
+*governed* fingerprint field ever differs, the correct response is a data
+repair — which this package is not — so it refuses.
 
----
-
-## 3. Why this is a checkpoint repair and not a data repair
+## 4. Why only the checkpoint is stale
 
 `source_revision` is
 `game_appearance_extraction.appearance_set_fingerprint` — SHA-256 over the
@@ -70,14 +87,99 @@ association, and no public artifact. What it changes is what the daily lane
 believes it has already observed for this game.
 
 That is exactly why the repair is gated on the canonical appearance data being
-**already correct**. A checkpoint may only be advanced to describe evidence
-that has actually been observed and already agrees with storage. If the data
-were wrong, the correct response would be a data repair — and this package
-refuses rather than becoming one.
+already correct. A checkpoint may only be advanced to describe evidence that
+has actually been observed and already agrees with storage.
 
----
+## 5. Exact old and new revision
 
-## 4. The two operations
+| | value |
+| :--- | :--- |
+| expected existing value | `90213dc8e42a9622e9c0dcaea80adb04507a4a5bfe054eaa9b98d2d138b804a0` |
+| intended new value | `a0fe2dbce8ad75ffc880e76996a6fec7bc90f86c296350898c009f97f241ecf4` |
+
+Both are reviewed immutable literals in code. Neither is an input, an argument,
+or an environment variable. The intended value is never *assumed* from the
+literal either: it is recomputed from today's source through the canonical
+extractor and must reproduce the literal exactly, or the run refuses.
+
+Two further reviewed literals are checked the same way:
+
+| | value |
+| :--- | :--- |
+| expected appearance count | 12 |
+| expected plan fingerprint | `8cb7eacbc0e0a6da908ea759c836e585a2e690a99280cd8f274275fc7d1709ec` |
+
+## 6. Exact target model and field
+
+| | value |
+| :--- | :--- |
+| model | `GameIngestionWorkItem` |
+| table | `game_ingestion_work_items` |
+| identity column | `mlb_game_pk` (UNIQUE) |
+| target column | `source_revision` (`String(64)`, nullable) |
+| game | 824487 |
+| represented date | 2026-07-29 |
+| rows the run may affect | exactly 1 |
+| permitted changed columns | `source_revision`, `updated_at` |
+
+### Why `updated_at` is in the permitted set
+
+The model declares `updated_at` with `onupdate=utc_now_naive`, which fires on
+**any** UPDATE of the row. The single permitted change therefore moves two
+columns, not one. That is disclosed rather than hidden:
+
+* `source_revision` is the **governed** change — the one decision under review;
+* `updated_at` is an **automatic bookkeeping side effect** of making it;
+* any third changed column is a contract violation and fails the run.
+
+Pinning `updated_at` back to its old value was considered and rejected.
+Falsifying a bookkeeping timestamp to make a diff look smaller is worse than
+disclosing the timestamp. A package contract test asserts the model really
+declares `onupdate`, so if that ever stopped being true the disclosure would
+fail rather than quietly become wrong.
+
+## 7. Verify mode
+
+`verify` is read-only under every outcome. It acquires the shared public sync
+advisory lock, opens a PostgreSQL read-only transaction, proves that
+transaction read-only with a bounded refused write probe, observes every live
+precondition, builds the exact proposed one-field transition, compares
+before/after fingerprints, releases the lock and proves the release, writes its
+artifacts, and mutates nothing.
+
+Outcomes: `VERIFIED_REPAIR_REQUIRED_AND_SAFE` (exit 0),
+`REPAIR_NOT_REQUIRED` (exit 0), `REPAIR_REFUSED` (exit 2), `UNPROVEN`
+(exit 2), `FAILED` (exit 1).
+
+A verify run never reports a mutation, and its artifact says **proposed**,
+never executed.
+
+## 8. Apply mode
+
+`apply` repeats every verification step from scratch. It never consumes a
+cached verify result, and no verify artifact is read.
+
+Only after every precondition is satisfied does it open a writable transaction.
+It then takes the target row with `SELECT … FOR UPDATE NOWAIT` — never
+waiting — and re-validates every row-level precondition against the **locked**
+row, because the read-only observation and the write transaction are not the
+same instant.
+
+The commit is conditioned on the in-transaction post-state: the row read back
+inside the open transaction must already show the intended value, exactly one
+row must have been affected, exactly one write statement must have been issued,
+and the ORM scope guard must show zero creations, zero deletions, and exactly
+`['source_revision']`. Anything short of that is **rolled back** rather than
+committed and reported.
+
+After the commit, still holding the advisory lock, it opens a fresh transaction,
+sets it read-only, and re-reads the committed state to prove the new value, the
+row count, and the unchanged scopes.
+
+Outcomes: `REPAIR_APPLIED` (exit 0), `REPAIR_NOT_REQUIRED` (exit 0),
+`REPAIR_REFUSED` (exit 2), `UNPROVEN` (exit 2), `FAILED` (exit 1).
+
+## 9. Authorization contract
 
 ```
 Workflow: Manual Game 824487 Source Revision Checkpoint Repair
@@ -85,247 +187,274 @@ File:     .github/workflows/manual-game-824487-source-revision-checkpoint-repair
 Trigger:  workflow_dispatch ONLY
 ```
 
-| operation | what it does | writes |
-| :--- | :--- | :--- |
-| `verify` | Re-observes every precondition live and reports whether the change is currently required and currently safe. | never, under any outcome |
-| `apply` | Performs the one approved change — and only after re-observing every precondition again against a row it holds a lock on. | at most one row, one governed column |
+Inputs: `operation` (a closed choice of `verify` or `apply`, defaulting to
+`verify`), `expected_main_sha`, `confirmation`, `operator_note`.
 
-Required inputs:
+Confirmation phrases are **per operation**, matched against the selected
+operation only:
 
-* `operation` — a closed choice of exactly `verify` or `apply`, defaulting to
-  `verify`;
-* `expected_main_sha` — full 40-character lowercase SHA; must equal the
-  resolved `github.sha`;
-* `confirmation` — **per-operation**, matched against the selected operation
-  only:
-  * `VERIFY_GAME_824487_SOURCE_REVISION_CHECKPOINT`
-  * `APPLY_GAME_824487_SOURCE_REVISION_CHECKPOINT`
-* `operator_note` — optional, sanitized, informational, and incapable of
-  affecting authorization or any verdict.
+* `VERIFY_GAME_824487_SOURCE_REVISION_CHECKPOINT`
+* `APPLY_GAME_824487_SOURCE_REVISION_CHECKPOINT`
 
 A confirmation reviewed and typed for a verify run **cannot** start an apply
-run. That is checked twice: once in the workflow preflight before checkout,
-and again in the runner's own authorization.
+run. This is checked twice: once in the workflow preflight, before checkout,
+Python, or dependencies; and again in the runner's own authorization, before
+the Flask application is created or any database session is opened.
 
-The run refuses, before any database session is opened, when the repository is
-not `NickolisK24/bullpen-intel-engine`, the ref is not `refs/heads/main`, the
-actor is not the repository owner, the SHA does not match, the operation is not
-in the closed vocabulary, the confirmation does not match that operation
-exactly, or any required secret is absent.
+The run refuses when the repository is not `NickolisK24/bullpen-intel-engine`,
+the ref is not `refs/heads/main`, the actor is not the repository owner, the
+SHA is not a full 40-character lowercase hex string equal to the resolved
+`GITHUB_SHA`, the operation is not in the closed vocabulary, the confirmation
+does not match that operation exactly, or any required secret is absent.
 
-Permissions are `contents: read` and nothing else. No `actions: write`, no
+Permissions are `contents: read` and nothing else — no `actions: write`, no
 `contents: write`, no `pull-requests: write`, no `deployments: write`, no
-`id-token`. No existing deployment mechanism requires any of them, so none was
-added. `ADMIN_API_TOKEN` is present only because `config.py` refuses to boot
-under `APP_ENV=production` without it; this package never reads the value,
-makes no HTTP call to this service, and invokes no admin endpoint.
+`id-token`. No existing deployment mechanism requires any of them.
+`ADMIN_API_TOKEN` is present only because `config.py` refuses to boot under
+`APP_ENV=production` without it; this package never reads the value, makes no
+HTTP call to this service, and invokes no admin endpoint. There is no sync URL,
+no publication token, no writer endpoint, and no snapshot token.
 
 The workflow shares the `baseballos-sync` concurrency group with the production
-sync lane, with `cancel-in-progress: false` — so this run can never overlap a
+sync lane, with `cancel-in-progress: false` — so it can never overlap a
 production writer, and a repair halfway through its own transaction can never
 be cancelled by a later dispatch.
 
----
+## 10. Live preconditions
 
-## 5. The sixteen preconditions
-
-Every one is re-observed live at execution time. None is read from the audit's
-conclusion, from a retained artifact, or from a stored belief. **A conclusion
-is not a precondition.**
+Nineteen, all re-observed in the same execution. **A conclusion is not a
+precondition.**
 
 | precondition | requirement |
 | :--- | :--- |
-| `target_row_exists` | exactly one existing row for game 824487 |
-| `target_row_is_unique` | candidate row count is 1 |
+| `target_row_exists` | at least one existing row for game 824487 |
+| `target_row_is_unique` | no more than one candidate row |
 | `target_row_is_the_target_game` | `mlb_game_pk == 824487` |
 | `target_row_represented_date_matches` | `represented_date == 2026-07-29` |
 | `target_row_status_is_completed` | `status == 'completed'` |
+| `target_row_carries_no_unresolved_error_state` | `error_class` absent, `completed_at` present |
 | `existing_revision_is_the_expected_old_value` | the stored value is the expected old digest |
 | `intended_revision_differs_from_existing` | the intended value is not already stored |
-| `appearance_population_size_verified` | the population size is verified from live durable state |
+| `appearance_population_size_verified` | population size verified from live durable state |
 | `stored_appearance_count_matches_population` | stored canonical rows equal that size |
 | `current_official_source_observed` | today's box score was fetched and extracted |
 | `current_official_source_conclusion_eligible` | completeness is `complete_and_comparable` |
 | `current_official_revision_is_the_intended_value` | today's set fingerprints to the intended digest |
 | `no_governed_fingerprint_field_differs` | no governed field differs from storage |
 | `every_difference_is_derived_display_only` | every observed difference is `derived_display_only` |
-| `canonical_plan_proposes_no_mutation` | the canonical reconciler proposes no insert, update, or blocked row |
+| `canonical_plan_proposes_no_mutation` | zero inserts, updates, and blocked rows |
+| `reconciliation_plan_fingerprint_unchanged` | the plan fingerprint still equals the reviewed value |
+| `current_appearance_count_is_the_reviewed_count` | official and stored counts are both exactly 12 |
 | `governed_scope_fingerprints_observed` | per-table digests were computed |
 
 Each carries a **three-way state**, never a boolean:
 
 `satisfied` · `violated` · `not_observed`
 
-`violated` and `not_observed` are different facts and contribute **different**
-reason codes. "The stored value is some third digest" and "the database was
-never opened" both sound negative and mean completely different things. A
-package contract test asserts that no precondition's refusal reason and
-unproven reason are ever the same code.
+`violated` and `not_observed` contribute **different** reason codes. "The
+stored value is some third digest" and "the database was never opened" both
+sound negative and mean completely different things. A contract test asserts
+that no precondition's refusal reason and unproven reason are ever the same
+code.
 
-### Two preconditions that are easy to get backwards
+### Three that are easy to get backwards
 
 **`no_governed_fingerprint_field_differs` is not "the differing-row list is
-empty."** The merged audit observed six `innings_pitched` differences on this
-game and still classified current materiality as
-`non_material_to_canonical_writer_target`, because integer recorded outs are
-the innings authority and `innings_pitched` is deliberately **not** a
-fingerprint field. Requiring an empty differing-row list would make this repair
-refuse forever on a difference that cannot move the digest. The requirement is
-therefore two separate claims: no **governed** field differs, and every
-observed difference is **`derived_display_only`**.
+empty."** Requiring an empty list would make this repair refuse forever on the
+six `innings_pitched` display differences, which cannot move the digest. The
+requirement is two separate claims: no governed field differs, **and** every
+observed difference is `derived_display_only`.
+
+**The plan fingerprint refuses on its own.** A plan can report zero inserts,
+zero updates, and zero blocked rows while its fingerprint has moved — which
+would mean the plan this repair was reviewed against is not the plan the
+reconciler produces today. The fingerprint is therefore checked separately from
+the action counts, and either failing refuses.
 
 **`intended_revision_differs_from_existing` is the one violated precondition
 that is not a refusal.** A row already holding the intended value means there
-is nothing to do. That is `REPAIR_NOT_REQUIRED` with exit 0 — resolved ahead of
-`REPAIR_REFUSED` so an already-applied repair reads as done rather than as
-declined. It is still reported as a violated precondition rather than quietly
-reclassified.
+is nothing to do. That is `REPAIR_NOT_REQUIRED` at exit 0, resolved ahead of
+`REPAIR_REFUSED`. It is still reported as a violated precondition rather than
+quietly reclassified.
 
----
+### Where the population size comes from
 
-## 6. Where the population size comes from, and why not from the audit
+The merged audit establishes the appearance population size from the two
+retained shadow artifacts. **Those artifacts expire** (2026-11-03). A repair
+that may be dispatched later must not depend on evidence with an expiry date,
+so this package sources it from **live durable state**: the checkpoint's own
+`rows_expected`, `rows_reconciled`, and the count of canonical appearance rows
+actually stored. All three are re-observed and all three must agree.
 
-The merged audit establishes "how many appearances this game has" from the two
-retained shadow artifacts. **Those artifacts expire** — the current pair expires
-2026-11-03. A repair that may be dispatched later must not depend on evidence
-with an expiry date.
+The reviewed literal 12 is then checked **in addition**. The live check proves
+the checkpoint and storage still agree with each other; the literal proves they
+still agree with what was reviewed. Either failing refuses.
 
-This package therefore sources the expected population size from **live durable
-state**:
+## 11. Refusal conditions
 
-* the checkpoint's own `rows_expected`;
-* `rows_reconciled`, which must equal it;
-* the count of canonical appearance rows actually stored, which must equal both.
+Stable, safe reason codes. Exception text is never serialized — every caught
+error becomes a closed code.
 
-All three are re-observed at execution time, and all three must agree before
-the number is usable. The audit's locked `EXPECTED_APPEARANCE_COUNT` is
-deliberately **not** consulted: a constant is not an observation.
+**Refusal** — a precondition was positively observed not to hold:
+`target_work_item_missing`, `multiple_candidate_work_items`,
+`work_item_is_not_the_target_game`, `work_item_represented_date_mismatch`,
+`work_item_status_not_completed`, `target_status_unexpected_error_state`,
+`existing_source_revision_not_expected`,
+`checkpoint_already_at_intended_revision`,
+`appearance_population_expectation_unverified`,
+`stored_appearance_count_disagrees_with_checkpoint`,
+`current_official_source_not_conclusion_eligible`,
+`current_source_count_unexpected`,
+`current_official_revision_is_not_the_intended_revision`,
+`governed_fingerprint_field_differs`, `non_display_difference_present`,
+`canonical_plan_proposes_a_baseball_mutation`, `reconciliation_plan_changed`,
+`target_row_modified_concurrently`, `governed_scope_moved_before_apply`,
+`prohibited_scope_changed`, `post_commit_verification_failed`.
 
-The table's completion CHECK constraint already ties `rows_reconciled` to
-`rows_expected` for a completed row. It is checked here anyway — a guard that
-trusts a constraint it never checked is not a guard.
+**Unproven** — required evidence was never obtained:
+`public_sync_advisory_lock_unavailable`, `advisory_lock_release_unproven`,
+`read_only_transaction_unavailable`, `read_only_probe_evidence_missing`,
+`required_database_evidence_unavailable`,
+`current_official_source_unavailable`,
+`canonical_reconciliation_plan_unavailable`,
+`scoped_fingerprint_uncomputable`, `out_of_scope_fingerprint_uncomputable`,
+`target_row_not_lockable_without_waiting`, `repair_execution_error`,
+`mandatory_precondition_not_observed`, `apply_outcome_never_established`.
 
----
+**Failed** — this package violated its own contract:
+`event_not_workflow_dispatch`, `repository_not_authorized`,
+`actor_not_authorized`, `ref_not_main`, `expected_main_sha_malformed`,
+`expected_main_sha_mismatch`, `operation_not_in_closed_vocabulary`,
+`confirmation_does_not_match_operation`, `mutation_scope_exceeded`,
+`unexpected_row_created`, `unexpected_row_deleted`,
+`work_item_outside_target_mutated`, `affected_row_count_not_exactly_one`,
+`post_state_is_not_the_intended_revision`, `out_of_scope_table_changed`,
+`unpermitted_fingerprint_scope_changed`,
+`target_table_fingerprint_unchanged_after_apply`,
+`read_only_probe_accepted_not_refused`, `mutation_attempted_during_verify`,
+`advisory_lock_release_failed`, `advisory_lock_release_not_attempted`.
 
-## 7. The current-source completeness gate
+A contract test asserts the three families do not overlap and that no
+platform-shaped condition appears in the FAILED family.
 
-Every non-refusal outcome depends on a single flag,
-`conclusion_eligible`, which is true only for `complete_and_comparable`.
+## 12. Concurrency control
 
-| completeness state | conclusion eligible |
+Three layers.
+
+1. **Shared advisory lock.** The same identity every public sync writer takes
+   (`SYNC_WRITER_LOCK_KEY` under `LOCK_SCOPE_PUBLIC`), acquire-only: it never
+   creates, reclaims, or updates a `SyncRun` row. Contention stops the run
+   immediately — this package never waits and never queues. The full lifecycle
+   gates the verdict: acquired-and-never-provably-released is a contract
+   violation, and process termination is not release evidence.
+2. **Row lock.** `SELECT … FOR UPDATE NOWAIT` on the target row. A row this
+   package cannot lock without waiting is UNPROVEN, never forced.
+3. **Snapshot re-validation.** Every mapped column observed in the read-only
+   pass is compared against the locked row. Any difference at all —
+   not merely `source_revision` — is `target_row_modified_concurrently`, and
+   the transaction is rolled back. The approved change was reviewed against the
+   row as it was observed; a row that is no longer that row is refused.
+
+## 13. Mutation scope
+
+The only permitted production mutation is
+`game_ingestion_work_items.source_revision` on the one existing row for game
+824487, plus the automatic `updated_at` bookkeeping timestamp.
+
+Prohibited, and named explicitly in the artifact of every run: inserting a work
+item, creating a missing checkpoint, updating more than one work item, updating
+any other column, updating `GameLog`, `ScheduledGame`, or `SyncRun`, writing
+correction provenance, writing or clearing dead letters, generating or
+publishing a snapshot, changing serving or publication state, changing team or
+player intelligence, changing ingestion mode or publication authority,
+triggering a sync, backfill, or replay, rerunning a historical workflow,
+modifying source data, modifying a canonical appearance row, running a
+migration or schema change, and weakening a validator.
+
+Standing production state is unchanged: the daily and postgame game-driven
+lanes remain shadow, backfill remains off, automated writes remain prohibited,
+authoritative publication mode remains prohibited, and publication authority
+remains with the existing trusted path.
+
+**The global dead-letter backlog remains 1,389.** This package may report only
+that it created zero dead letters. It never reports the backlog as zero.
+
+## 14. Before/after proof
+
+Four independent controls on the apply, every one a positive observation rather
+than the absence of an error.
+
+1. **Full-column snapshot diff.** Every mapped column, read by SQLAlchemy
+   inspection rather than a hand-written list — a hand list silently stops
+   covering a column somebody adds later, and the whole scope proof rests on
+   this snapshot being complete. The observed delta must be exactly
+   `{source_revision, updated_at}`.
+2. **ORM mutation-scope guard.** A `before_flush` listener recording every
+   creation, deletion, and changed-attribute set. Zero creations, zero
+   deletions, exactly the target object, exactly `['source_revision']`.
+   (`updated_at` does not appear here: the `onupdate` default is applied by the
+   flush process *after* `before_flush` runs, which is why the snapshot diff —
+   not this guard — is the authoritative claim.)
+3. **Statement accounting.** An `after_cursor_execute` listener recording every
+   SQL write statement the connection actually issued. Exactly one UPDATE
+   naming the target table, row count exactly one, and no other write statement
+   of any kind. This proves what the **database** was told, which is stronger
+   than what the session intended: a raw statement issued from anywhere is
+   visible here even though no ORM object was made dirty. Statement **text** is
+   never retained — only a class, a row count, and one boolean.
+4. **Scope fingerprints.** Full governed row content and timestamps — not row
+   counts — across `scheduled_games`, `game_logs`, `game_ingestion_work_items`,
+   `postgame_processed_games`, `team_game_pitching_splits`,
+   `completed_game_contexts`, `game_play_by_play_events`, `sync_failures`, and
+   the local `Pitcher` identity rows. Exactly one `[scope, table]` pair may have
+   moved, and it must be
+   `[exact_game_824487, game_ingestion_work_items]`. A target table that did
+   **not** move is equally a violation — a repair that reported itself without
+   moving the row is not a repair. Plus an out-of-scope digest and row count
+   over every row of the target table that is *not* game 824487.
+
+Correction provenance and appearance-team authority are COLUMNAR in this
+schema, so full-row digests of `game_logs` and `game_ingestion_work_items`
+already cover them; there is no separate history table.
+
+During the read-only phase of either operation, **any** changed governed table
+is a contract violation on verify and a refusal on apply.
+
+## 15. Artifact schema
+
+`game-824487-source-revision-checkpoint-repair-<run id>`, retained 90 days:
+
+| file | contents |
 | :--- | :--- |
-| `complete_and_comparable` | **yes** |
-| `source_unavailable` | no |
-| `empty_official_set` | no |
-| `database_unavailable` | no |
-| `matrix_unproven` | no |
-| `population_expectation_unproven` | no |
-| `current_count_contradicts_population` | no |
-| `duplicate_official_identities` | no |
-| `duplicate_stored_identities` | no |
-| `duplicate_identities_both_sides` | no |
-| `official_only_members_present` | no |
-| `stored_only_members_present` | no |
-| `both_directions_mismatch` | no |
+| `game-824487-source-revision-checkpoint-repair.json` | the full evidence document |
+| `game-824487-source-revision-checkpoint-repair-summary.md` | the human-readable summary, in fifteen numbered sections |
+| `game-824487-source-revision-checkpoint-repair-proof.json` | read-only proof, advisory-lock lifecycle, source-call accounting, prohibited-mutation manifest |
+| `game-824487-source-revision-checkpoint-repair-preconditions.json` | the whole requirement model plus this run's evaluation |
+| `game-824487-source-revision-checkpoint-repair-fingerprints.json` | before/after scope digests and the scope evaluation |
+| `game-824487-source-revision-checkpoint-repair-mutation-ledger.json` | what was written, **or the explicit record that nothing was** |
+| `game-824487-source-revision-checkpoint-repair-field-comparison.json` | the field-level comparison and its gates |
 
-**Exact membership equality is necessary and not sufficient.** Two
-symmetrically truncated sets match each other while both remain incomplete: a
-payload carrying six of twelve appearances compared against storage holding
-exactly those same six produces matching membership and zero differing rows
-while the game still has twelve. The observed count is therefore compared
-against the live population expectation **before** membership is consulted.
+The mutation ledger always exists, and carries the run's own identity —
+operation, workflow run id, main SHA, actor, operator note, advisory-lock
+state, transaction state, commits performed, rollback performed, mutation
+status, mutation timestamp, target row identity, previous value, proposed
+value, observed value before and after, and affected row count — so a reader
+never has to correlate it against another file to know which run wrote it.
 
-This package is protected twice over against that case: the population
-expectation itself notices that storage no longer holds the number of
-appearances the checkpoint recorded, so a symmetrically truncated pair never
-reaches the membership test at all.
+A ledger that appeared only on success would make "no ledger" ambiguous between
+"did not run" and "ran and wrote nothing".
 
----
+The repository's established secret scanner runs BEFORE upload and gates it. A
+scanner failure means the artifact never leaves the runner and the final gate
+fails the workflow. Raw MLB payloads, database URLs, tokens, environment dumps,
+connection strings, stack traces, authorization headers, SQL statement text,
+and raw production table dumps are never written.
 
-## 8. Read-only guarantees during observation
+Upload happens **before** the final gate, so a refused, failed, or unproven run
+still leaves reviewable evidence. Evidence survival never converts a non-zero
+result into success.
 
-Every observation happens inside a proven read-only transaction — **including
-in apply mode**. The writable transaction is opened only after every
-precondition has already been satisfied, and it does exactly one thing.
-
-Three controls, all reused from the merged packages rather than reinvented:
-
-1. **Acquire-only public sync advisory lock.** The same lock identity the
-   daily, postgame, and backfill writers take. It never creates, reclaims, or
-   updates a `SyncRun`. Contention returns UNPROVEN immediately — this package
-   never waits and never queues. The full lifecycle gates the verdict: a lock
-   that was acquired and never provably released is a contract violation, and
-   process termination is not release evidence.
-2. **PostgreSQL read-only transaction with a bounded refused write probe.**
-   Exactly one SQL write statement is issued during observation: the proof
-   itself, bounded by `WHERE 1 = 0`, expected to be REFUSED, and rolled back
-   either way. A probe that is ACCEPTED is a contract violation.
-3. **Before/after scoped content fingerprints.** Full governed row content and
-   timestamps — not row counts — across every scope the game touches. During
-   the read phase, any changed table is a contract violation on a verify run
-   and a refusal on an apply run.
-
-### The source-call budget
-
-One bounded box-score call, through the merged audit's counting guard installed
-over the canonical MLB client. A duplicate or hidden call is caught rather than
-assumed away, and reported counts and actual counts are the same numbers by
-construction.
-
----
-
-## 9. How the apply proves it stayed in scope
-
-The apply transaction is guarded four independent ways, and every one of them
-is a positive observation rather than an absence of an error.
-
-1. **Row lock and re-validation.** The row is taken with
-   `SELECT ... FOR UPDATE NOWAIT` — never waiting — and every row-level
-   precondition is re-checked against the **locked** row. The read-only
-   observation and the write transaction are not the same instant; a checkpoint
-   that moved in between is a different row than the one that was approved, and
-   it is refused. Any column at all differing from the observed snapshot
-   triggers `target_row_modified_concurrently`.
-2. **Full-column snapshot diff.** Every mapped column is snapshotted before and
-   after, read by SQLAlchemy inspection rather than by a hand-written list — a
-   hand list silently stops covering a column somebody adds later, and the whole
-   scope proof rests on this snapshot being complete. The observed delta must be
-   exactly `{source_revision, updated_at}`.
-3. **ORM mutation-scope guard.** A `before_flush` listener records every
-   creation, deletion, and changed-attribute set. It must observe zero
-   creations, zero deletions, exactly the target object, and exactly
-   `['source_revision']`. (`updated_at` does not appear here: the model's
-   `onupdate` default is applied by the flush process *after* `before_flush`
-   runs, which is why the snapshot diff — not this guard — is the authoritative
-   claim.)
-4. **Statement accounting.** An `after_cursor_execute` listener records every
-   SQL write statement the connection actually issued. It must observe exactly
-   one UPDATE naming the target table, with a row count of exactly one, and no
-   other write statement of any kind. This proves what the **database** was
-   told, which is a stronger claim than what the session intended: a raw
-   statement issued from anywhere is visible here even though no ORM object was
-   made dirty. Statement **text** is never retained — only a class, a row count,
-   and one boolean.
-
-Plus two fingerprint proofs after the commit:
-
-* **In-scope**: exactly one `[scope, table]` pair may have moved, and it must be
-  `[exact_game_824487, game_ingestion_work_items]`. A target table that did
-  **not** move is equally a violation — a repair that reported itself without
-  moving the row is not a repair.
-* **Out-of-scope**: a full-content digest and row count of every row in
-  `game_ingestion_work_items` that is **not** game 824487, before and after.
-  Another game's checkpoint moving is a contract violation. This complement
-  proof covers the one table any statement in this package names; no statement
-  here names any other table.
-
-**A scope violation observed before the commit is rolled back, not committed
-and reported.** The guard checks run after the flush and before the commit, and
-that is the last point at which undoing is still possible, so it is taken.
-
----
-
-## 10. Result vocabulary and exit codes
+## 16. Result vocabulary
 
 | result | exit | meaning |
 | :--- | :--- | :--- |
@@ -333,238 +462,141 @@ that is the last point at which undoing is still possible, so it is taken.
 | `REPAIR_NOT_REQUIRED` | 0 | The checkpoint already holds the intended value. |
 | `REPAIR_APPLIED` | 0 | The one approved change was made and proven in scope. |
 | `FAILED` | 1 | This package violated its **own** safety contract. |
-| `UNPROVEN` | 2 | Required evidence could not be obtained. No claim is made. |
-| `REPAIR_REFUSED` | 3 | A precondition was positively observed not to hold. Nothing was written. |
+| `UNPROVEN` | 2 | Required evidence could not be obtained. |
+| `REPAIR_REFUSED` | 2 | A precondition was positively observed not to hold. |
 
-`REPAIR_REFUSED` has its own exit code on purpose. A refusal is a **correct
-outcome of a correctly-working package**, and collapsing it into `FAILED` would
-make failure meaningless while collapsing it into `UNPROVEN` would claim
-ignorance about something the run knew exactly.
+**Three exit codes, and only three.** Exit 0 means the repair is eligible,
+applied, or already applied. A refused run is not eligible, so it must not be
+distinguishable from UNPROVEN by exit status — anything reading only the exit
+code must treat both identically, which is to say: do not proceed. The
+distinction is preserved where it actually matters, in the result name and the
+reason codes a reviewer reads, and it is never flattened there.
 
-`FAILED` is reserved for violations of this package's own contract: a mutation
-outside the permitted set, an unexpected creation or deletion, an affected row
-count other than one, a post-state that is not the intended value, an
-out-of-scope table moving, an accepted write probe, a mutation during a verify
-run, a failed advisory-lock release, or a hidden source call. **A platform
-condition this package successfully discovered is never `FAILED`.** A package
-contract test asserts that no platform-shaped reason code appears in the FAILED
-family, and that the three reason families do not overlap.
+`FAILED` is reserved for violations of this package's own contract. **A
+platform condition this package successfully discovered is never `FAILED`.**
 
 ### The completion gate
 
 The verdict reducer re-derives its facts from the evaluated precondition
-objects rather than reading the summary booleans the evaluator also produces. A
+objects rather than from the summary booleans the evaluator also produces. A
 summary flag is a claim; the check list is the evidence, and the reducer that
 decides whether production may be written reads the evidence.
 
 An evaluation that does not positively cover **every** governed precondition
 id, with a recognised state on each, is `UNPROVEN` before any classification
 branch is reached. An empty, partial, malformed, or non-list evaluation can
-never reach a success result by having nothing to object with — and a forged
+never reach a success result by having nothing to object with, and a forged
 `all_satisfied: True` cannot override what the checks actually say.
 
 An apply that was attempted but whose commit outcome was never established is
 `UNPROVEN`, never applied: a commit nobody observed is not a commit.
 
----
-
-## 11. What this package never does
-
-No work-item insert, no checkpoint creation, no second work-item update, no
-other column on the work item, no `GameLog` insert or update, no
-`ScheduledGame` mutation, no `SyncRun` creation or update, no correction-
-provenance write, no dead-letter write or clear, no snapshot generation,
-publication, or selection, no serving-state change, no team-intelligence
-change, no player-intelligence change, no mode change, no authority change, no
-sync, backfill, or replay trigger, no rerun of a historical workflow, no source
-data modification, no canonical appearance-row modification, no public snapshot
-generation, no publication, no validator weakening, no migration, and no schema
-change.
-
-Standing production state is unchanged by this package: the daily and postgame
-game-driven lanes remain shadow, backfill remains off, automated writes remain
-prohibited, authoritative publication mode remains prohibited, and publication
-authority remains with the existing trusted path.
-
-**The global dead-letter backlog remains 1,389.** This package may report only
-that it created zero dead letters. It never reports the backlog as zero.
-
----
-
-## 12. Reusing the canonical authorities
-
-This package OBSERVES nothing on its own. The runner supplies observations
-produced by the **merged audit's own observation functions**, which call:
-
-* the canonical game-ingestion planner;
-* the single MLB client, behind the audit's counting guard;
-* the single box-score parser;
-* the canonical appearance extractor;
-* the canonical reconciliation planner.
-
-The judgement module reuses the audit's `matrix_row`, `validate_matrix`,
-`field_materiality`, `scoped_fingerprints`, `fingerprint_scope_plan`,
-`enforce_read_only`, `probe_evidence`, `evaluate_probe_evidence`, and the
-shared acquire-only public sync lock.
-
-There is **no** second sync pipeline, no second MLB client, no second parser,
-no second planner, and no second reconciler. A package contract test asserts
-that none of those symbols is defined here.
-
-What this package does own, and why: the precondition model, the live
-population expectation, the mutation-scope controls, and the verdict reducer.
-Those answer questions the audit does not ask.
-
----
-
-## 13. Evidence artifact
-
-`game-824487-checkpoint-repair-<run id>`, retained 90 days, containing:
-
-* `source-revision-checkpoint-repair.json` — the full evidence document;
-* `source-revision-checkpoint-repair-summary.md` — the human-readable summary;
-* `source-revision-checkpoint-repair-preconditions.json` — the whole
-  requirement model plus this run's evaluation, so a reader can check the
-  package's requirements against its results;
-* `source-revision-checkpoint-repair-mutation-ledger.json` — what was written,
-  **or the explicit record that nothing was**;
-* `source-revision-checkpoint-repair-field-comparison.json` — the field-level
-  comparison and its gates.
-
-The mutation ledger always exists. A ledger that appeared only on success would
-make "no ledger" ambiguous between "did not run" and "ran and wrote nothing".
-
-The repository's established secret scanner runs BEFORE upload and gates it. A
-scanner failure means the artifact never leaves the runner, and the final gate
-fails the workflow. Raw MLB payloads, database URLs, tokens, environment dumps,
-connection strings, stack traces, authorization headers, SQL statement text,
-and raw production table dumps are never written. Exception text is never
-serialized — every caught error becomes a closed reason code.
-
-Upload happens **before** the final gate, so a REFUSED, FAILED, or UNPROVEN run
-still leaves reviewable evidence. Evidence survival never converts a non-zero
-result into success.
-
----
-
-## 14. Test coverage
+## 17. Test coverage
 
 | file | owns |
 | :--- | :--- |
-| `test_game_source_revision_checkpoint_repair_contract.py` | the governed scope as reviewed literals, the permitted changed-column set against the real schema, the closed operation vocabulary, per-operation confirmations, exit-code separation, reason-family disjointness, the precondition mapping, the completion gate, reducer precedence, the advisory-lock lifecycle, the whole workflow contract, and package hygiene |
+| `test_game_source_revision_checkpoint_repair_contract.py` | the governed scope as reviewed literals, the permitted changed-column set against the real schema, the closed operation vocabulary, per-operation confirmations, the three-code exit contract, reason-family disjointness, the precondition mapping, the completion gate, reducer precedence, the advisory-lock lifecycle, the whole workflow contract, and package hygiene including adversarial scope scans |
 | `test_game_source_revision_checkpoint_repair_classification.py` | the live population expectation, the completeness gate and its ordering, the field comparison and its display-only distinction, every precondition transition, and the mutation-scope evaluator |
-| `test_game_source_revision_checkpoint_repair_execution.py` | real PostgreSQL: the real lane writing the checkpoint, verify writing nothing, apply changing exactly one column on one row, statement accounting, the neighbour checkpoint staying still, idempotence, every refusal, authorization, and concurrency |
-| `test_game_source_revision_checkpoint_repair_artifacts.py` | every file under every outcome, the always-present ledger, the required markdown sections, the `updated_at` disclosure, and the repository scanner run against a real artifact directory — including a planted credential that must fail it |
+| `test_game_source_revision_checkpoint_repair_execution.py` | real PostgreSQL: the real lane writing the checkpoint, verify writing nothing, apply changing exactly one column on one row, statement accounting, pre-commit and post-commit verification, the neighbour checkpoint staying still, idempotence, every refusal, authorization, and concurrency |
+| `test_game_source_revision_checkpoint_repair_artifacts.py` | every file under every outcome, the always-present ledger and its governed fields, the fifteen numbered markdown sections, the `updated_at` disclosure, and the repository scanner run against a real artifact directory — including a planted credential that must fail it |
 
 Two properties worth naming because they are easy to test badly:
 
-* **The two governed revisions are monkeypatched in tests, never
-  parameterized.** Production has no way to supply a different value: the
-  constants are reviewed literals with no input, no argument, and no
-  environment variable that can reach them. A test that needs different digests
-  reaches into the module, which is exactly the kind of access production does
-  not have.
+* **The governed literals are monkeypatched in tests, never parameterized.**
+  Production has no way to supply a different value: they are reviewed literals
+  with no input, no argument, and no environment variable that can reach them.
+  A test that needs different values reaches into the module, which is exactly
+  the kind of access production does not have. The plan fingerprint a test pins
+  is read through the same canonical path the package uses, so it is a real
+  observation of the fixture rather than a number copied from production into a
+  test that could then never fail.
 * **The scanner gate is exercised, not assumed.** A planted credential must
   make the scanner fail, or the pre-upload gate proves nothing.
 
----
+## 18. Rollout plan
 
-## 15. Running it
-
-Verify first. Always.
-
-1. Dispatch **Manual Game 824487 Source Revision Checkpoint Repair** from
-   `main`, with `operation = verify`, the current `main` SHA, and
+1. Independent code and evidence-integrity review.
+2. Merge only after approval.
+3. Dispatch `verify` from `main` with the current `main` SHA and
    `VERIFY_GAME_824487_SOURCE_REVISION_CHECKPOINT`.
-2. Read the artifact. A `VERIFIED_REPAIR_REQUIRED_AND_SAFE` result means every
-   precondition was satisfied at that moment. It is **evidence for** a
-   decision, not the decision.
-3. If — and only if — a human decides to proceed, dispatch again with
-   `operation = apply` and
-   `APPLY_GAME_824487_SOURCE_REVISION_CHECKPOINT`.
-4. Read the apply artifact's mutation ledger. Confirm
-   `observed_changed_columns` is exactly `["source_revision", "updated_at"]`,
-   `affected_row_count` is 1, and `unexpected_changed_fingerprint_tables` is
-   empty.
+4. Review the production verify artifact.
+5. If and only if verify returns `VERIFIED_REPAIR_REQUIRED_AND_SAFE` and the
+   evidence is accepted, separately authorize `apply`.
+6. Dispatch `apply` with `APPLY_GAME_824487_SOURCE_REVISION_CHECKPOINT`.
+7. Review the apply artifact.
+8. Confirm `observed_changed_columns` is exactly
+   `["source_revision", "updated_at"]`, `affected_row_count` is 1, and
+   `unexpected_changed_fingerprint_tables` is empty.
+9. Allow the next normal scheduled sync to run.
+10. Confirm game 824487 no longer creates a source-revision activation
+    mismatch.
+11. Confirm zero GameLog writes.
+12. Confirm zero new dead letters.
+13. Do not manually rerun historical workflows.
+14. Do not backfill.
+15. Do not publish a repair snapshot manually.
 
 A verify result does not expire into permission. The apply run re-observes
 everything from scratch and refuses on its own if anything moved in between.
 
----
-
-## 16. Reading each outcome
-
-| you see | it means | do |
-| :--- | :--- | :--- |
-| `VERIFIED_REPAIR_REQUIRED_AND_SAFE` | The change is currently required and currently safe. | Decide. Nothing was written. |
-| `REPAIR_NOT_REQUIRED` | The checkpoint already holds the intended value. | Nothing. The repair is complete. |
-| `REPAIR_APPLIED` | The change was made and proven in scope. | Read the ledger, then remove the package. |
-| `REPAIR_REFUSED` | A precondition was positively observed not to hold. | Read `refusal_reasons`. Nothing was written. Do not retry blindly. |
-| `UNPROVEN` | Required evidence could not be obtained. | Read `unproven_reasons`. Nothing was written. A contended lock or an unavailable source is normal and safe to re-run later. |
-| `FAILED` | This package broke its own contract. | Read `failed_reasons`. This says nothing about the platform. Treat the package as untrusted until the cause is understood. |
-
----
-
-## 17. Rollback
+## 19. Rollback and containment
 
 The only durable change an apply can make is one column on one row, and the old
-value is recorded in the mutation ledger's `old_value` field before the change
-is made.
+value is recorded in the mutation ledger's `observed_value_before` field before
+the change is made.
 
-There is no automated rollback in this package, deliberately: a rollback path
-is a second write path, and a second write path is a second thing to get wrong.
+There is no automated rollback in this package, deliberately: a rollback path is
+a second write path, and a second write path is a second thing to get wrong.
 Reverting is a manual, separately-approved single-row UPDATE using the recorded
-`old_value` — the same size of decision as the original, made the same way.
+old value — the same size of decision as the original, made the same way.
 
 Reverting a checkpoint marker is not a data restoration. Nothing about the
 canonical appearance rows changed, so nothing about them needs restoring.
 
----
+**A release failure after a successful commit cannot be rolled back**, and the
+package does not pretend otherwise: the final result is `FAILED`, and the
+mutation ledger still discloses the committed one-field change rather than
+hiding it behind the safety failure.
 
-## 18. Known limitations
+Containment if an apply goes wrong: the advisory lock is released in a
+`finally` block either way, the change is bounded to one column on one row, and
+every other governed scope is fingerprint-proven unchanged in the same
+artifact.
 
-* **The workflow has never been dispatched.** Every claim here about live
-  production behaviour is a claim about what the code does, validated against a
-  disposable local PostgreSQL database with the real lane, the real planner, the
-  real extractor, and the real reconciler — not an observation of production.
-* **The `verify` result does not bind the `apply` run.** Time passes between
-  them. That is why the apply re-observes everything and re-validates under a
-  row lock; it is also why a verify result must never be treated as standing
-  permission.
-* **The out-of-scope digest covers one table.** `game_ingestion_work_items` is
-  the only table any statement in this package names. Every other governed table
-  is covered by the in-scope fingerprints for this game. A whole-table digest of
-  every governed table's complement was considered and rejected on cost:
+## 20. Status boundary
+
+* **Implementation does not execute the production repair.** No production
+  workflow has been dispatched.
+* **No production database session was opened** during implementation.
+  Everything was validated against disposable local PostgreSQL databases with
+  the real ORM, the real lane, the real planner, the real extractor, and the
+  real reconciler.
+* **No production mutation occurred.**
+* **The verify/apply workflow remains manual** and undispatched.
+* **Separate independent review is required before any dispatch.**
+* **Verify mode must be dispatched before apply mode.**
+* **Apply mode needs separate explicit approval** after the verify evidence has
+  been reviewed.
+* No migration was added; the Alembic head is unchanged.
+
+### Known limitations
+
+* Every claim here about live production behaviour is a claim about what the
+  code does, not an observation of production.
+* The out-of-scope digest covers `game_ingestion_work_items`, the one table any
+  statement in this package names. Every other governed table is covered by the
+  in-scope fingerprints for this game. A whole-table digest of every governed
+  table's complement was considered and rejected on cost:
   `game_play_by_play_events` can be very large, and a proof expensive enough to
   time out is not a proof.
-* **One bounded box-score call, no retries.** An incomplete or unavailable
-  payload is a realistic outcome. The correct response is to reduce scope and
-  report UNPROVEN — not to add retries, a second source authority, or a wider
-  call budget.
-* **The retained audit artifacts are not consulted at all.** This is deliberate
-  (§6), and it means this package cannot corroborate anything against the
-  historical runs. It does not need to: it makes no historical claim.
+* One bounded box-score call, no retries. An incomplete or unavailable payload
+  is a realistic outcome; the correct response is to reduce scope and report
+  UNPROVEN, not to add retries, a second source authority, or a wider budget.
+* The retained audit artifacts are not consulted at all. This is deliberate,
+  and it means this package cannot corroborate anything against the historical
+  runs. It does not need to: it makes no historical claim.
 
----
-
-## 19. Relationship to the merged audit
-
-The audit (`docs/current/GAME_824487_SOURCE_REVISION_AUDIT.md`, merged in
-PR #613) is read-only and authorizes nothing. Its Question 12 is informational
-only and explicitly states that any future repair requires a separate
-exact-scope package and separate explicit approval.
-
-This is that separate package. It does **not** read the audit's conclusion, and
-it does not treat any audit output as a precondition. Everything it acts on, it
-re-observes. If the audit had never run, this package would behave identically.
-
-The two packages share observation code, the read-only controls, and the
-advisory-lock identity — deliberately, so there is one answer to each shared
-question rather than two.
-
----
-
-## 20. How to remove this package later
+### Removing this package
 
 It is additive and self-contained. Deleting these files removes it completely,
 and nothing in production imports any of them:

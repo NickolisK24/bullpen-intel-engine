@@ -199,17 +199,42 @@ def test_each_operation_carries_its_own_distinct_confirmation_phrase():
 
 # ── 4. Results and exit codes ───────────────────────────────────────────────
 
-def test_every_result_carries_an_exit_code_and_refused_is_its_own_code():
+def test_the_exit_code_contract_is_exactly_three_codes():
+    """Exit 0 only when the repair is eligible, applied, or already applied."""
     assert set(repair.EXIT_CODES) == set(repair.RESULTS)
     assert repair.EXIT_CODES[repair.RESULT_APPLIED] == 0
     assert repair.EXIT_CODES[repair.RESULT_NOT_REQUIRED] == 0
     assert repair.EXIT_CODES[repair.RESULT_VERIFIED_REQUIRED_AND_SAFE] == 0
     assert repair.EXIT_CODES[repair.RESULT_FAILED] == 1
     assert repair.EXIT_CODES[repair.RESULT_UNPROVEN] == 2
-    # A refusal is not a failure and not missing evidence. Collapsing it into
-    # either would make the other mean nothing.
-    assert repair.EXIT_CODES[repair.RESULT_REFUSED] == 3
-    assert len(set(repair.EXIT_CODES.values())) == 4
+    # A refused run is not eligible, so it must not be distinguishable from
+    # UNPROVEN by exit status: anything reading only the exit code must treat
+    # both identically, which is to say "do not proceed".
+    assert repair.EXIT_CODES[repair.RESULT_REFUSED] == 2
+    assert sorted(set(repair.EXIT_CODES.values())) == [0, 1, 2]
+
+
+def test_a_refusal_is_still_distinguishable_where_a_reviewer_reads_it():
+    """The exit code is flattened; the result name and reasons are not."""
+    checks = [
+        repair.precondition(
+            identifier, requirement='r',
+            state=(
+                repair.PRECONDITION_VIOLATED
+                if identifier == repair.PRE_CURRENT_REVISION
+                else repair.PRECONDITION_SATISFIED
+            ),
+        )
+        for identifier in repair.PRECONDITION_IDS
+    ]
+    refused = repair.decide(
+        operation='apply', preconditions={'preconditions': checks},
+    )
+    unproven = repair.decide(operation='apply')
+    assert refused['exit_code'] == unproven['exit_code'] == 2
+    assert refused['result'] != unproven['result']
+    assert refused['refusal_reasons'] and not refused['unproven_reasons']
+    assert unproven['unproven_reasons'] and not unproven['refusal_reasons']
 
 
 def test_failed_is_reserved_for_this_packages_own_contract_violations():
@@ -411,7 +436,7 @@ def test_any_other_violated_precondition_refuses(  # noqa: D103
         })
         decision = repair.decide(operation='apply', preconditions=evaluation)
         assert decision['result'] == repair.RESULT_REFUSED, identifier
-        assert decision['exit_code'] == 3
+        assert decision['exit_code'] == 2
         assert decision['mutation_performed'] is False
         assert repair.PRECONDITION_REFUSAL_REASONS[identifier] in (
             decision['refusal_reasons']
@@ -657,9 +682,15 @@ def test_the_final_gate_preserves_every_non_zero_result(steps):
     gate = _step(steps, 'final repair gate')
     assert 'continue-on-error' not in gate
     script = gate['run']
-    for code, label in (('1', 'FAILED'), ('2', 'UNPROVEN'), ('3', 'REFUSED')):
+    # Exactly the three codes the package can return, and no branch for a
+    # code it cannot.
+    for code in ('1', '2'):
         assert f'= "{code}"' in script
-        assert label in script
+    assert '= "3"' not in script
+    assert 'FAILED' in script
+    assert 'UNPROVEN' in script
+    assert 'REPAIR_REFUSED' in script
+    assert 'NOT ELIGIBLE' in script
 
 
 def test_the_final_gate_restates_what_the_run_did_not_do(steps):
@@ -725,6 +756,84 @@ def test_the_only_orm_write_is_the_single_governed_column():
     assert source.count('db.session.commit()') == 1
 
 
+def _called_names(path):
+    """Every callable name invoked in a module, from the AST.
+
+    Prose-immune on purpose. The package's own comments and documentation
+    name the things it must never do — "triggers no sync, backfill, or
+    replay" — and a scan that could not tell a prohibition from a call would
+    force that documentation out of the file.
+    """
+    import ast
+
+    names = set()
+    for node in ast.walk(ast.parse(path.read_text(encoding='utf-8'))):
+        if not isinstance(node, ast.Call):
+            continue
+        target = node.func
+        while isinstance(target, ast.Attribute):
+            names.add(target.attr)
+            target = target.value
+        if isinstance(target, ast.Name):
+            names.add(target.id)
+    return names
+
+
+def test_no_bulk_or_unguarded_update_call_exists_anywhere_in_the_package():
+    """The shape of the write, proven statically as well as at runtime."""
+    for path in (SERVICE_PATH, RUNNER_PATH):
+        called = _called_names(path)
+        # ``insert`` is deliberately absent from this list: it is the name
+        # of ``sys.path.insert``, and a scan that flagged that would have to
+        # be silenced rather than believed. The session-level writes are
+        # what matter, and they are all named here.
+        for forbidden in (
+            'update', 'bulk_update_mappings', 'bulk_save_objects',
+            'bulk_insert_mappings', 'execute_values', 'delete', 'add',
+            'add_all', 'merge', 'expunge',
+        ):
+            assert forbidden not in called, f'{path.name}: {forbidden}()'
+
+
+def test_no_workflow_dispatch_backfill_replay_or_publication_call_exists():
+    for path in (SERVICE_PATH, RUNNER_PATH):
+        called = _called_names(path)
+        for forbidden in (
+            'run_game_driven_ingestion', 'run_daily_sync', 'run_backfill',
+            'replay_game', 'publish_snapshot', 'generate_snapshot',
+            'select_snapshot', 'dispatch_workflow', 'post', 'urlopen',
+            'set_mode', 'set_authority', 'create_sync_run',
+            'acquire_sync_writer_guard',
+        ):
+            assert forbidden not in called, f'{path.name}: {forbidden}()'
+
+
+def test_the_only_lock_this_package_takes_is_the_acquire_only_read_lock():
+    runner_called = _called_names(RUNNER_PATH)
+    assert 'acquire_public_sync_read_lock' in runner_called
+    assert 'acquire_sync_writer_guard' not in runner_called
+
+
+def test_no_second_source_client_or_extra_call_budget_exists():
+    """One counting guard over the canonical client, and one budget."""
+    runner_source = RUNNER_PATH.read_text(encoding='utf-8')
+    assert runner_source.count('audit.CountedMLBClient(') == 1
+    assert runner_source.count('audit.SourceCallBudget()') == 1
+    for path in (SERVICE_PATH, RUNNER_PATH):
+        called = _called_names(path)
+        # No client is constructed here, and none is reached directly.
+        assert 'MLBClient' not in called
+        assert 'get_game_boxscore' not in called
+        assert 'get_schedule' not in called
+
+
+def test_the_single_row_lock_is_taken_without_waiting():
+    source = RUNNER_PATH.read_text(encoding='utf-8')
+    assert 'with_for_update(nowait=True)' in source
+    assert 'with_for_update()' not in source
+    assert 'skip_locked' not in source
+
+
 def test_the_package_reuses_the_canonical_authorities_rather_than_forking():
     source = SERVICE_PATH.read_text(encoding='utf-8')
     # The audit's own row builder, validator, and materiality classifier.
@@ -744,8 +853,58 @@ def test_the_package_reuses_the_canonical_authorities_rather_than_forking():
         assert forbidden not in runner_source
 
 
-def test_the_documentation_exists_and_states_the_non_authorization():
+DOC_SECTIONS = (
+    '## 1. Incident summary',
+    '## 2. Audit evidence',
+    '## 3. Why GameLog is not being repaired',
+    '## 4. Why only the checkpoint is stale',
+    '## 5. Exact old and new revision',
+    '## 6. Exact target model and field',
+    '## 7. Verify mode',
+    '## 8. Apply mode',
+    '## 9. Authorization contract',
+    '## 10. Live preconditions',
+    '## 11. Refusal conditions',
+    '## 12. Concurrency control',
+    '## 13. Mutation scope',
+    '## 14. Before/after proof',
+    '## 15. Artifact schema',
+    '## 16. Result vocabulary',
+    '## 17. Test coverage',
+    '## 18. Rollout plan',
+    '## 19. Rollback and containment',
+    '## 20. Status boundary',
+)
+
+
+def test_the_documentation_carries_every_required_section():
     text = DOC_PATH.read_text(encoding='utf-8')
-    assert 'authorizes nothing' in text.lower() or (
-        'not authorization' in text.lower()
-    )
+    for section in DOC_SECTIONS:
+        assert section in text, section
+
+
+def test_the_documentation_states_the_status_boundary():
+    # Whitespace-normalized: a claim about content must not depend on where
+    # markdown happened to wrap the line.
+    text = ' '.join(DOC_PATH.read_text(encoding='utf-8').split())
+    for claim in (
+        'The repair has NOT been executed',
+        'No production database session has been opened by this package',
+        'No production row has been mutated',
+        'No workflow has been dispatched',
+        'No production mutation occurred',
+        'Separate independent review is required before any dispatch',
+        'Verify mode must be dispatched before apply mode',
+        'no migration was added',
+    ):
+        assert claim.lower() in text.lower(), claim
+
+
+def test_the_documentation_publishes_every_governed_literal():
+    text = DOC_PATH.read_text(encoding='utf-8')
+    assert repair.EXPECTED_EXISTING_SOURCE_REVISION in text
+    assert repair.INTENDED_SOURCE_REVISION in text
+    assert repair.EXPECTED_PLAN_FINGERPRINT in text
+    assert str(repair.EXPECTED_APPEARANCE_COUNT) in text
+    for identifier in repair.PRECONDITION_IDS:
+        assert identifier in text, identifier

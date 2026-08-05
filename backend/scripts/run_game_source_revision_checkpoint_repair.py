@@ -37,6 +37,8 @@ import json
 import sys
 from pathlib import Path
 
+import sqlalchemy as sa
+
 
 BACKEND_ROOT = Path(__file__).resolve().parent.parent
 if str(BACKEND_ROOT) not in sys.path:
@@ -56,11 +58,20 @@ from scripts import (  # noqa: E402
 )
 
 
-SUMMARY_JSON = 'source-revision-checkpoint-repair.json'
-SUMMARY_MARKDOWN = 'source-revision-checkpoint-repair-summary.md'
-PRECONDITIONS_JSON = 'source-revision-checkpoint-repair-preconditions.json'
-MUTATION_LEDGER_JSON = 'source-revision-checkpoint-repair-mutation-ledger.json'
-COMPARISON_JSON = 'source-revision-checkpoint-repair-field-comparison.json'
+_STEM = 'game-824487-source-revision-checkpoint-repair'
+
+SUMMARY_JSON = f'{_STEM}.json'
+SUMMARY_MARKDOWN = f'{_STEM}-summary.md'
+PROOF_JSON = f'{_STEM}-proof.json'
+PRECONDITIONS_JSON = f'{_STEM}-preconditions.json'
+FINGERPRINTS_JSON = f'{_STEM}-fingerprints.json'
+MUTATION_LEDGER_JSON = f'{_STEM}-mutation-ledger.json'
+COMPARISON_JSON = f'{_STEM}-field-comparison.json'
+
+ARTIFACT_FILES = (
+    SUMMARY_JSON, SUMMARY_MARKDOWN, PROOF_JSON, PRECONDITIONS_JSON,
+    FINGERPRINTS_JSON, MUTATION_LEDGER_JSON, COMPARISON_JSON,
+)
 
 MAX_NOTE_LENGTH = 200
 
@@ -293,6 +304,20 @@ def apply_repair(*, target_row_id, observed_snapshot) -> dict:
             if statements.get('target_table_rowcount_observed') else None
         )
 
+        # The IN-TRANSACTION post-state, read back from the database inside
+        # the open transaction rather than from the in-memory object. The
+        # commit is conditioned on this: a transaction whose row does not
+        # already show the intended value, with everything else on it
+        # unchanged, is rolled back instead of committed.
+        pending = db.session.execute(sa.text(
+            'SELECT source_revision FROM game_ingestion_work_items '
+            'WHERE id = :row_id'
+        ), {'row_id': target_row_id}).scalar()
+        state['in_transaction_value'] = pending
+        state['in_transaction_value_is_intended'] = (
+            pending == repair.INTENDED_SOURCE_REVISION
+        )
+
         # A scope violation observed BEFORE the commit is rolled back rather
         # than committed and reported. This is the last point at which that is
         # still possible, so it is taken.
@@ -306,6 +331,7 @@ def apply_repair(*, target_row_id, observed_snapshot) -> dict:
             statements.get('exactly_one_target_update'),
             statements.get('no_other_write_statement'),
             state['affected_row_count'] == 1,
+            state['in_transaction_value_is_intended'],
         )):
             db.session.rollback()
             state['committed'] = False
@@ -316,6 +342,7 @@ def apply_repair(*, target_row_id, observed_snapshot) -> dict:
 
         db.session.commit()
         state['committed'] = True
+        state['commit_count'] = 1
     except Exception:  # noqa: BLE001 - never leak the database message
         try:
             db.session.rollback()
@@ -328,19 +355,37 @@ def apply_repair(*, target_row_id, observed_snapshot) -> dict:
         guard.detach()
         watch.detach()
 
-    # Read the committed state back from the database rather than trusting the
-    # in-memory object. ``updated_at`` is applied by the flush process, so the
-    # only honest source for the post-state is the row itself.
+    # Post-commit verification, in a FRESH transaction that is set read-only
+    # first. The committed state is read back from the database rather than
+    # from the in-memory object — ``updated_at`` is applied by the flush
+    # process, so the row itself is the only honest source — and the
+    # verification pass is prevented from writing anything by construction
+    # rather than by intent.
     db.session.expire_all()
+    try:
+        db.session.execute(sa.text('SET TRANSACTION READ ONLY'))
+        state['post_commit_transaction_read_only'] = True
+    except Exception:  # noqa: BLE001 - never leak the database message
+        state['post_commit_transaction_read_only'] = False
+
     final = GameIngestionWorkItem.query.filter(
         GameIngestionWorkItem.mlb_game_pk == repair.GAME_PK
     ).all()
     state['after_snapshot'] = (
         repair.row_snapshot(final[0]) if len(final) == 1 else {}
     )
+    state['post_commit_row_count'] = len(final)
+    state['post_commit_value_is_intended'] = (
+        (state['after_snapshot'] or {}).get(repair.TARGET_COLUMN)
+        == repair.INTENDED_SOURCE_REVISION
+    )
     if len(final) != 1:
         state['failed_reasons'].append(
             repair.FAILED_AFFECTED_ROW_COUNT_NOT_ONE
+        )
+    elif not state['post_commit_value_is_intended']:
+        state['failed_reasons'].append(
+            repair.FAILED_POST_STATE_NOT_INTENDED
         )
     return state
 
@@ -742,6 +787,8 @@ def build_document(*, context, note, operation, target, official, comparison,
                 repair.EXPECTED_EXISTING_SOURCE_REVISION
             ),
             'intended_source_revision': repair.INTENDED_SOURCE_REVISION,
+            'expected_appearance_count': repair.EXPECTED_APPEARANCE_COUNT,
+            'expected_plan_fingerprint': repair.EXPECTED_PLAN_FINGERPRINT,
             'permitted_changed_columns': sorted(
                 repair.PERMITTED_CHANGED_COLUMNS
             ),
@@ -778,7 +825,9 @@ def build_document(*, context, note, operation, target, official, comparison,
         'fingerprints': fingerprints or {},
         'mutation_ledger': build_mutation_ledger(
             apply_state=apply_state, mutation=mutation, target=target,
-            apply_gate_open=apply_gate_open,
+            apply_gate_open=apply_gate_open, operation=operation,
+            context=context, note=note, lock=lock, read_only=read_only,
+            decision=decision,
         ),
         'source_call_report': source_calls or {},
         'halt_stage': halt_stage,
@@ -792,20 +841,83 @@ def build_document(*, context, note, operation, target, official, comparison,
 
 
 def build_mutation_ledger(*, apply_state, mutation, target,
-                          apply_gate_open=None) -> dict:
+                          apply_gate_open=None, operation=None, context=None,
+                          note='', lock=None, read_only=None,
+                          decision=None) -> dict:
     """What was written, or the explicit record that nothing was.
 
     A ledger that exists only on success would make "no ledger" ambiguous
-    between "did not run" and "ran and wrote nothing". It always exists.
+    between "did not run" and "ran and wrote nothing". It always exists, and
+    it carries the run's own identity so a reader never has to correlate it
+    against another file to know which run wrote it.
     """
     apply_state = apply_state or {}
     mutation = mutation or {}
+    context = context or {}
+    lock = lock or {}
+    read_only = read_only or {}
+    decision = decision or {}
     return {
         'schema_version': repair.SCHEMA_VERSION,
+        'operation': operation,
         'game_pk': repair.GAME_PK,
+        'represented_date': repair.REPRESENTED_DATE.isoformat(),
+        'model': 'GameIngestionWorkItem',
         'table': repair.TARGET_TABLE,
         'column': repair.TARGET_COLUMN,
         'target_row_id': (target or {}).get('work_item_row_id'),
+        'target_row_identity': {
+            'id': (target or {}).get('work_item_row_id'),
+            repair.TARGET_IDENTITY_COLUMN: repair.GAME_PK,
+            'candidate_row_count': (target or {}).get('candidate_row_count'),
+            'candidate_row_ids': (target or {}).get('candidate_row_ids'),
+        },
+        # ── Run identity ───────────────────────────────────────────────────
+        'workflow_run_id': context.get('workflow_run_id'),
+        'workflow_run_attempt': context.get('workflow_run_attempt'),
+        'main_sha': context.get('commit_sha'),
+        'actor': context.get('actor'),
+        'operator_note': note,
+        # ── Transaction and lock state ─────────────────────────────────────
+        'advisory_lock_state': {
+            'acquired': lock.get('guard_acquired'),
+            'acquisition_reason': lock.get('acquisition_reason'),
+            'release_attempted': lock.get('guard_release_attempted'),
+            'released': lock.get('guard_released'),
+            'release_reason': lock.get('release_reason'),
+            'lifecycle_complete': lock.get('lifecycle_complete'),
+        },
+        'transaction_state': {
+            'observation_transaction_read_only': read_only.get(
+                'read_only_transaction_enabled'
+            ),
+            'write_probe_refused': read_only.get('read_only_probe_refused'),
+            'row_locked_for_update': apply_state.get('row_locked'),
+            'in_transaction_value_is_intended': apply_state.get(
+                'in_transaction_value_is_intended'
+            ),
+            'post_commit_transaction_read_only': apply_state.get(
+                'post_commit_transaction_read_only'
+            ),
+        },
+        'commits_performed': (
+            apply_state.get('commit_count')
+            if apply_state.get('committed') is True else 0
+        ),
+        'rollback_performed': bool(
+            apply_state.get('attempted')
+            and apply_state.get('committed') is not True
+        ) or apply_state.get('revalidated') is False,
+        'mutation_status': decision.get('result'),
+        'mutation_performed': decision.get('mutation_performed'),
+        'mutation_timestamp': (
+            (apply_state.get('after_snapshot') or {}).get('updated_at')
+            if apply_state.get('committed') is True else None
+        ),
+        'post_commit_value_is_intended': apply_state.get(
+            'post_commit_value_is_intended'
+        ),
+        'post_commit_row_count': apply_state.get('post_commit_row_count'),
         'apply_gate_open': apply_gate_open,
         'apply_attempted': bool(apply_state.get('attempted')),
         'row_locked_for_update': apply_state.get('row_locked'),
@@ -819,8 +931,16 @@ def build_mutation_ledger(*, apply_state, mutation, target,
         'new_value': (apply_state.get('after_snapshot') or {}).get(
             repair.TARGET_COLUMN
         ),
+        'proposed_value': repair.INTENDED_SOURCE_REVISION,
         'intended_value': repair.INTENDED_SOURCE_REVISION,
         'expected_old_value': repair.EXPECTED_EXISTING_SOURCE_REVISION,
+        'observed_value_before': (
+            apply_state.get('before_snapshot') or {}
+        ).get(repair.TARGET_COLUMN),
+        'observed_value_after': (
+            apply_state.get('after_snapshot') or {}
+        ).get(repair.TARGET_COLUMN),
+        'in_transaction_value': apply_state.get('in_transaction_value'),
         'before_snapshot': apply_state.get('before_snapshot'),
         'after_snapshot': apply_state.get('after_snapshot'),
         'guard_observations': apply_state.get('guard_observations'),
@@ -832,17 +952,30 @@ def build_mutation_ledger(*, apply_state, mutation, target,
     }
 
 
+# The fifteen sections a reviewer is entitled to find, in order. A contract
+# test asserts every one of them is present in every rendered summary.
 REQUIRED_MARKDOWN_SECTIONS = (
     '# Game 824487 source-revision checkpoint repair',
-    '## Result',
-    '## Exact scope',
-    '## Preconditions',
-    '## Current official source',
-    '## Read-only and locking proof',
-    '## Mutation ledger',
-    '## What this run did not do',
-    '## Authorization',
+    '## 1. Authorization',
+    '## 2. Operation mode',
+    '## 3. Target row',
+    '## 4. Current official source',
+    '## 5. Canonical storage',
+    '## 6. Reconciliation plan',
+    '## 7. Checkpoint transition',
+    '## 8. Preconditions',
+    '## 9. Mutation ledger',
+    '## 10. Before/after fingerprints',
+    '## 11. Advisory-lock lifecycle',
+    '## 12. Transaction proof',
+    '## 13. Prohibited-scope verification',
+    '## 14. Final result',
+    '## 15. Remaining limitations',
 )
+
+
+def _row(label, value):
+    return f'| {label} | {value} |'
 
 
 def render_markdown(document) -> str:
@@ -852,18 +985,235 @@ def render_markdown(document) -> str:
     preconditions = document.get('preconditions') or {}
     completeness = document.get('current_source_completeness') or {}
     source = document.get('current_source') or {}
+    comparison = document.get('field_comparison_summary') or {}
+    plan = document.get('canonical_plan') or {}
+    expectation = document.get('population_expectation') or {}
     proof = document.get('read_only_proof') or {}
     lock = document.get('advisory_lock') or {}
     ledger = document.get('mutation_ledger') or {}
     fingerprints = document.get('fingerprints') or {}
-    observed_changed = (ledger.get('scope_evaluation') or {}).get(
-        'observed_changed_columns'
-    )
+    target = document.get('target_row') or {}
+    evaluation = ledger.get('scope_evaluation') or {}
+    transaction = ledger.get('transaction_state') or {}
+
+    head = ['| field | value |', '| :--- | :--- |']
 
     lines = [
         '# Game 824487 source-revision checkpoint repair',
         '',
-        '## Result',
+        '## 1. Authorization',
+        '',
+        *head,
+        _row('event', identity.get('event_name')),
+        _row('repository', identity.get('repository')),
+        _row('actor', identity.get('actor')),
+        _row('ref', identity.get('ref')),
+        _row('commit', f"`{identity.get('commit_sha')}`"),
+        _row('workflow run', identity.get('workflow_run_id')),
+        _row('run attempt', identity.get('workflow_run_attempt')),
+        _row('operator note length', len(identity.get('operator_note') or '')),
+        '',
+        'The operator note is informational. It can never affect '
+        'authorization or any verdict, and it is sanitized before it is '
+        'recorded.',
+        '',
+        '## 2. Operation mode',
+        '',
+        f"Operation: `{identity.get('operation')}`.",
+        '',
+        'A `verify` run writes nothing under any outcome. An `apply` run '
+        're-observes every precondition from scratch and never consumes a '
+        'cached verification result. Each operation carries its own '
+        'confirmation phrase, so a confirmation reviewed for a verify run '
+        'cannot start an apply run.',
+        '',
+        '## 3. Target row',
+        '',
+        *head,
+        _row('candidate rows', target.get('candidate_row_count')),
+        _row('candidate ids', target.get('candidate_row_ids')),
+        _row('row id', target.get('work_item_row_id')),
+        _row('game', scope.get('game_pk')),
+        _row('represented date', scope.get('represented_date')),
+        _row('table', f"`{scope.get('target_table')}`"),
+        _row('column', f"`{scope.get('target_column')}`"),
+        _row('required status', scope.get('required_work_item_status')),
+        '',
+        '## 4. Current official source',
+        '',
+        *head,
+        _row('fetched', source.get('available')),
+        _row('unavailable reason', source.get('unavailable_reason')),
+        _row('appearances observed', source.get('appearance_count')),
+        _row('reviewed count', scope.get('expected_appearance_count')),
+        _row(
+            'current source revision',
+            f"`{source.get('current_source_revision')}`",
+        ),
+        _row('completeness state',
+             f"`{completeness.get('completeness_state')}`"),
+        _row('conclusion eligible', completeness.get('conclusion_eligible')),
+        '',
+        '## 5. Canonical storage',
+        '',
+        *head,
+        _row('stored appearances', expectation.get('stored_appearance_count')),
+        _row('checkpoint rows_expected', expectation.get('rows_expected')),
+        _row('checkpoint rows_reconciled',
+             expectation.get('rows_reconciled')),
+        _row('population expectation',
+             f"`{expectation.get('expectation_state')}`"),
+        _row('membership matches', comparison.get('membership_matches')),
+        _row('missing from storage', comparison.get('missing_from_storage')),
+        _row('extra in storage', comparison.get('extra_in_storage')),
+        _row('duplicate official',
+             comparison.get('duplicate_official_identities')),
+        _row('duplicate stored',
+             comparison.get('duplicate_stored_identities')),
+        '',
+        '## 6. Reconciliation plan',
+        '',
+        *head,
+        _row('available', plan.get('available')),
+        _row('rows', plan.get('row_count')),
+        _row('action counts', plan.get('action_counts')),
+        _row('proposes mutation', plan.get('proposes_mutation')),
+        _row('plan fingerprint',
+             f"`{plan.get('reconciliation_plan_fingerprint')}`"),
+        _row('reviewed fingerprint',
+             f"`{scope.get('expected_plan_fingerprint')}`"),
+        '',
+        'The plan fingerprint is checked separately from the action counts '
+        'and refuses on its own. A plan can report zero inserts, zero '
+        'updates, and zero blocked rows while its fingerprint has moved.',
+        '',
+        '## 7. Checkpoint transition',
+        '',
+        *head,
+        _row('expected old value',
+             f"`{scope.get('expected_existing_source_revision')}`"),
+        _row('intended new value',
+             f"`{scope.get('intended_source_revision')}`"),
+        _row('observed before', f"`{ledger.get('observed_value_before')}`"),
+        _row('observed after', f"`{ledger.get('observed_value_after')}`"),
+        _row('permitted changed columns',
+             f"`{scope.get('permitted_changed_columns')}`"),
+        '',
+        'The permitted changed-column set includes `updated_at` because the '
+        'model declares `onupdate=utc_now_naive`, which fires on any UPDATE '
+        'of the row. It is an automatic bookkeeping side effect of the one '
+        'permitted change, declared rather than hidden, and deliberately not '
+        'pinned back to its old value.',
+        '',
+        '## 8. Preconditions',
+        '',
+        '| precondition | state | expected | observed |',
+        '| :--- | :--- | :--- | :--- |',
+    ]
+    for check in preconditions.get('preconditions') or ():
+        lines.append(
+            f"| `{check.get('precondition_id')}` | {check.get('state')} "
+            f"| {check.get('expected')} | {check.get('observed')} |"
+        )
+    lines += [
+        '',
+        f"All satisfied: {preconditions.get('all_satisfied')}. "
+        f"Violated: `{preconditions.get('violated')}`. "
+        f"Not observed: `{preconditions.get('not_observed')}`.",
+        '',
+        '## 9. Mutation ledger',
+        '',
+        *head,
+        _row('apply gate open', ledger.get('apply_gate_open')),
+        _row('apply attempted', ledger.get('apply_attempted')),
+        _row('row locked FOR UPDATE', ledger.get('row_locked_for_update')),
+        _row('revalidated under lock', ledger.get('revalidated_under_lock')),
+        _row('revalidation reason', ledger.get('revalidation_reason')),
+        _row('affected rows', ledger.get('affected_row_count')),
+        _row('commits performed', ledger.get('commits_performed')),
+        _row('rollback performed', ledger.get('rollback_performed')),
+        _row('committed', ledger.get('committed')),
+        _row('mutation status', ledger.get('mutation_status')),
+        _row('mutation performed', ledger.get('mutation_performed')),
+        _row('mutation timestamp', ledger.get('mutation_timestamp')),
+        _row('changed columns',
+             f"`{evaluation.get('observed_changed_columns')}`"),
+        '',
+        '## 10. Before/after fingerprints',
+        '',
+        *head,
+        _row('scopes changed during read phase',
+             f"`{fingerprints.get('changed_during_read_phase')}`"),
+        _row('tables changed by apply',
+             f"`{evaluation.get('changed_fingerprint_tables')}`"),
+        _row('expected tables',
+             f"`{evaluation.get('expected_changed_fingerprint_tables')}`"),
+        _row('unexpected tables',
+             f"`{evaluation.get('unexpected_changed_fingerprint_tables')}`"),
+        _row('out-of-scope digest unchanged',
+             evaluation.get('out_of_scope_unchanged')),
+        '',
+        '## 11. Advisory-lock lifecycle',
+        '',
+        *head,
+        _row('acquire attempted', lock.get('acquire_attempted')),
+        _row('acquired', lock.get('guard_acquired')),
+        _row('acquisition reason', lock.get('acquisition_reason')),
+        _row('release attempted', lock.get('guard_release_attempted')),
+        _row('released', lock.get('guard_released')),
+        _row('release reason', lock.get('release_reason')),
+        _row('lifecycle complete', lock.get('lifecycle_complete')),
+        '',
+        'The lock is the same identity every public sync writer takes, and '
+        'it is acquire-only: it never creates, reclaims, or updates a '
+        'SyncRun row. Contention stops the run rather than queueing it.',
+        '',
+        '## 12. Transaction proof',
+        '',
+        *head,
+        _row('observation transaction read-only',
+             transaction.get('observation_transaction_read_only')),
+        _row('bounded write probe refused',
+             transaction.get('write_probe_refused')),
+        _row('target row locked FOR UPDATE',
+             transaction.get('row_locked_for_update')),
+        _row('in-transaction value is intended',
+             transaction.get('in_transaction_value_is_intended')),
+        _row('post-commit transaction read-only',
+             transaction.get('post_commit_transaction_read_only')),
+        _row('post-commit value is intended',
+             ledger.get('post_commit_value_is_intended')),
+        _row('post-commit row count', ledger.get('post_commit_row_count')),
+        '',
+        '## 13. Prohibited-scope verification',
+        '',
+        'This run performed none of the following:',
+        '',
+    ]
+    for prohibited in scope.get('prohibited_mutations') or ():
+        lines.append(f'- `{prohibited}`')
+    lines += [
+        '',
+        *head,
+        _row('objects created',
+             (ledger.get('guard_observations') or {}).get(
+                 'created_object_count')),
+        _row('objects deleted',
+             (ledger.get('guard_observations') or {}).get(
+                 'deleted_object_count')),
+        _row('write statements issued',
+             (ledger.get('statement_report') or {}).get(
+                 'write_statement_count')),
+        _row('other write statements',
+             (ledger.get('statement_report') or {}).get(
+                 'other_write_statement_count')),
+        _row('source calls issued',
+             (document.get('source_call_report') or {}).get(
+                 'total_calls_issued')),
+        '',
+        document.get('dead_letter_backlog_note') or '',
+        '',
+        '## 14. Final result',
         '',
         f"**{verdict.get('result')}** (exit {verdict.get('exit_code')}), "
         f"operation `{identity.get('operation')}`.",
@@ -880,95 +1230,25 @@ def render_markdown(document) -> str:
             lines.append(f'- {label}: `{reason}`')
     lines += [
         '',
-        '## Exact scope',
+        '## 15. Remaining limitations',
         '',
-        '| field | value |',
-        '| :--- | :--- |',
-        f"| game | {scope.get('game_pk')} |",
-        f"| represented date | {scope.get('represented_date')} |",
-        f"| table | `{scope.get('target_table')}` |",
-        f"| column | `{scope.get('target_column')}` |",
-        f'| expected old value | `'
-        f"{scope.get('expected_existing_source_revision')}` |",
-        f"| intended new value | `{scope.get('intended_source_revision')}` |",
-        f'| permitted changed columns | `'
-        f"{scope.get('permitted_changed_columns')}` |",
-        '',
-        'The permitted changed-column set includes `updated_at` because the '
-        'model declares `onupdate=utc_now_naive`, which fires on any UPDATE '
-        'of the row. It is an automatic bookkeeping side effect of the one '
-        'permitted change, declared rather than hidden, and deliberately not '
-        'pinned back to its old value.',
-        '',
-        '## Preconditions',
-        '',
-        '| precondition | state | expected | observed |',
-        '| :--- | :--- | :--- | :--- |',
-    ]
-    for check in preconditions.get('preconditions') or ():
-        lines.append(
-            f"| `{check.get('precondition_id')}` | {check.get('state')} "
-            f"| {check.get('expected')} | {check.get('observed')} |"
-        )
-    lines += [
-        '',
-        f"All satisfied: {preconditions.get('all_satisfied')}. "
-        f"Violated: `{preconditions.get('violated')}`. "
-        f"Not observed: `{preconditions.get('not_observed')}`.",
-        '',
-        '## Current official source',
-        '',
-        '| field | value |',
-        '| :--- | :--- |',
-        f"| fetched | {source.get('available')} |",
-        f"| appearances observed | {source.get('appearance_count')} |",
-        f'| expected population | '
-        f"{completeness.get('expected_appearance_count')} |",
-        f"| completeness state | `{completeness.get('completeness_state')}` |",
-        f"| conclusion eligible | {completeness.get('conclusion_eligible')} |",
-        f'| current source revision | `'
-        f"{source.get('current_source_revision')}` |",
-        '',
-        '## Read-only and locking proof',
-        '',
-        '| control | value |',
-        '| :--- | :--- |',
-        f'| read-only transaction | '
-        f"{proof.get('read_only_transaction_enabled')} |",
-        f"| write probe refused | {proof.get('read_only_probe_refused')} |",
-        f"| advisory lock acquired | {lock.get('guard_acquired')} |",
-        f"| advisory lock released | {lock.get('guard_released')} |",
-        f'| scopes changed during read phase | `'
-        f"{fingerprints.get('changed_during_read_phase')}` |",
-        '',
-        '## Mutation ledger',
-        '',
-        '| field | value |',
-        '| :--- | :--- |',
-        f"| apply gate open | {ledger.get('apply_gate_open')} |",
-        f"| apply attempted | {ledger.get('apply_attempted')} |",
-        f"| revalidated under lock | {ledger.get('revalidated_under_lock')} |",
-        f"| committed | {ledger.get('committed')} |",
-        f"| affected rows | {ledger.get('affected_row_count')} |",
-        f"| old value | `{ledger.get('old_value')}` |",
-        f"| new value | `{ledger.get('new_value')}` |",
-        f'| changed columns | `{observed_changed}` |',
-        '',
-        '## What this run did not do',
-        '',
-    ]
-    for prohibited in scope.get('prohibited_mutations') or ():
-        lines.append(f'- `{prohibited}`')
-    lines += [
-        '',
-        document.get('dead_letter_backlog_note') or '',
-        '',
-        '## Authorization',
+        '- A verify result is evidence for a human decision, not that '
+        'decision, and it does not expire into permission. An apply run '
+        're-observes everything from scratch.',
+        '- One bounded box-score call, no retries. An incomplete or '
+        'unavailable payload reduces scope and reports UNPROVEN rather than '
+        'widening the call budget.',
+        '- The out-of-scope digest covers `game_ingestion_work_items`, the '
+        'one table any statement in this package names. Every other governed '
+        'table is covered by the in-scope fingerprints for this game.',
+        '- No retained audit artifact is consulted. This package makes no '
+        'historical claim and cannot corroborate one.',
+        f"- Halt stage: `{document.get('halt_stage')}`.",
         '',
         document.get('non_authorization_statement') or '',
         '',
     ]
-    return '\n'.join(lines) + '\n'
+    return '\n'.join(str(line) for line in lines) + '\n'
 
 
 def write_artifacts(document, comparison_rows, artifact_dir) -> dict:
@@ -990,6 +1270,37 @@ def write_artifacts(document, comparison_rows, artifact_dir) -> dict:
                 repair.PRECONDITION_UNPROVEN_REASONS
             ),
             'evaluation': document.get('preconditions') or {},
+        },
+        PROOF_JSON: {
+            'schema_version': repair.SCHEMA_VERSION,
+            'game_pk': repair.GAME_PK,
+            'operation': (document.get('identity') or {}).get('operation'),
+            'read_only_proof': document.get('read_only_proof') or {},
+            'advisory_lock': document.get('advisory_lock') or {},
+            'source_call_report': document.get('source_call_report') or {},
+            'prohibited_mutations': list(repair.PROHIBITED_MUTATIONS),
+            'permitted_changed_columns': sorted(
+                repair.PERMITTED_CHANGED_COLUMNS
+            ),
+            'standing_production_state': document.get(
+                'standing_production_state'
+            ),
+            'dead_letter_backlog_note': document.get(
+                'dead_letter_backlog_note'
+            ),
+            'non_authorization_statement': document.get(
+                'non_authorization_statement'
+            ),
+        },
+        FINGERPRINTS_JSON: {
+            'schema_version': repair.SCHEMA_VERSION,
+            'game_pk': repair.GAME_PK,
+            'operation': (document.get('identity') or {}).get('operation'),
+            'fingerprints': document.get('fingerprints') or {},
+            'scope_evaluation': (
+                document.get('mutation_ledger') or {}
+            ).get('scope_evaluation') or {},
+            'out_of_scope_table': repair.OUT_OF_SCOPE_TABLE,
         },
         MUTATION_LEDGER_JSON: document.get('mutation_ledger') or {},
         COMPARISON_JSON: {
