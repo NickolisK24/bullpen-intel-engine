@@ -8,7 +8,7 @@
   "timing_note": "measured_seconds values are balancing inputs only. They are not test-selection authority: the per-shard file lists decide what runs, and \"python scripts/ci_shard.py verify\" proves those lists cover live pytest collection exactly once.",
   "shards": {
     "1": {
-      "measured_seconds": 499.109,
+      "measured_seconds": 501.571,
       "files": [
         {
           "path": "tests/test_availability_unavailable_experiment.py",
@@ -105,6 +105,18 @@
         {
           "path": "tests/test_game_source_revision_audit_classification.py",
           "measured_seconds": 0.66
+        },
+        {
+          "path": "tests/test_game_source_revision_checkpoint_repair_artifacts.py",
+          "measured_seconds": 0.848
+        },
+        {
+          "path": "tests/test_game_source_revision_checkpoint_repair_classification.py",
+          "measured_seconds": 0.789
+        },
+        {
+          "path": "tests/test_game_source_revision_checkpoint_repair_contract.py",
+          "measured_seconds": 0.825
         },
         {
           "path": "tests/test_intelligence_surface_service.py",
@@ -1123,7 +1135,7 @@
       ]
     },
     "4": {
-      "measured_seconds": 498.19,
+      "measured_seconds": 530.743,
       "files": [
         {
           "path": "tests/test_active_bullpen_artifact_publication.py",
@@ -1216,6 +1228,10 @@
         {
           "path": "tests/test_game_source_revision_audit_contract.py",
           "measured_seconds": 0.56
+        },
+        {
+          "path": "tests/test_game_source_revision_checkpoint_repair_execution.py",
+          "measured_seconds": 32.553
         },
         {
           "path": "tests/test_games_started.py",

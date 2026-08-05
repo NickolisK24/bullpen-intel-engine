@@ -1,0 +1,1043 @@
+#!/usr/bin/env python
+"""Exact-scope checkpoint repair for MLB game 824487's source revision.
+
+    python scripts/run_game_source_revision_checkpoint_repair.py \
+        --operation verify \
+        --expected-main-sha <40 hex> \
+        --confirmation VERIFY_GAME_824487_SOURCE_REVISION_CHECKPOINT \
+        --artifact-dir ../artifacts/game-824487-checkpoint-repair
+
+Two operations and no others:
+
+``verify``  Read-only. Re-observes every precondition live and reports whether
+            the single approved change is currently required and currently
+            safe. Writes nothing, ever, under any outcome.
+``apply``   Performs the ONE approved change — and only after re-observing
+            every precondition again against a row it holds a lock on.
+
+Both operations are manual-dispatch only, and each carries its own
+confirmation phrase, so a confirmation reviewed for a verify run cannot start
+an apply run.
+
+This runner OBSERVES; ``services.game_source_revision_checkpoint_repair``
+JUDGES. Every observation comes from the merged audit's own observation
+functions, which call the canonical planner, the canonical MLB client, the
+canonical box-score parser, the canonical appearance extractor, and the
+canonical reconciliation planner. Nothing here is a second pipeline.
+
+Exit codes: 0 verified / not required / applied, 1 FAILED (this package broke
+its own contract), 2 UNPROVEN (required evidence unavailable), 3 REFUSED (a
+precondition was positively observed not to hold — a correct, safe outcome).
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from pathlib import Path
+
+
+BACKEND_ROOT = Path(__file__).resolve().parent.parent
+if str(BACKEND_ROOT) not in sys.path:
+    sys.path.insert(0, str(BACKEND_ROOT))
+
+REPO_ROOT = BACKEND_ROOT.parent
+
+from services import game_source_revision_audit as audit  # noqa: E402
+from services import (  # noqa: E402
+    game_source_revision_checkpoint_repair as repair,
+)
+# The merged audit's observation functions, reused verbatim rather than
+# reimplemented. They are covered by the audit's own PostgreSQL suite, and a
+# second copy of them would be a second answer to the same question.
+from scripts import (  # noqa: E402
+    run_game_source_revision_audit as audit_runner,
+)
+
+
+SUMMARY_JSON = 'source-revision-checkpoint-repair.json'
+SUMMARY_MARKDOWN = 'source-revision-checkpoint-repair-summary.md'
+PRECONDITIONS_JSON = 'source-revision-checkpoint-repair-preconditions.json'
+MUTATION_LEDGER_JSON = 'source-revision-checkpoint-repair-mutation-ledger.json'
+COMPARISON_JSON = 'source-revision-checkpoint-repair-field-comparison.json'
+
+MAX_NOTE_LENGTH = 200
+
+
+class _Halt(Exception):
+    """Stop collecting. The verdict is decided from what was proven."""
+
+
+# ── Authorization ───────────────────────────────────────────────────────────
+
+def parse_args(argv=None):
+    parser = argparse.ArgumentParser(
+        description='Exact-scope source-revision checkpoint repair.',
+    )
+    parser.add_argument(
+        '--operation', required=True, choices=list(repair.OPERATIONS),
+    )
+    parser.add_argument('--expected-main-sha', required=True)
+    parser.add_argument('--confirmation', required=True)
+    parser.add_argument('--operator-note', default='')
+    parser.add_argument('--artifact-dir', required=True)
+    return parser.parse_args(argv)
+
+
+def sanitize_note(raw) -> str:
+    """Bounded, printable, never interpreted, never decision-relevant."""
+    text = str(raw or '')
+    safe = ''.join(
+        char for char in text if char.isprintable() and char not in '`$\\'
+    )
+    return safe[:MAX_NOTE_LENGTH]
+
+
+def event_context(args, environ=None) -> dict:
+    import os
+
+    environ = os.environ if environ is None else environ
+    return {
+        'event_name': environ.get('GITHUB_EVENT_NAME'),
+        'repository': environ.get('GITHUB_REPOSITORY'),
+        'actor': environ.get('GITHUB_ACTOR'),
+        'ref': environ.get('GITHUB_REF'),
+        'commit_sha': environ.get('GITHUB_SHA'),
+        'workflow_run_id': environ.get('GITHUB_RUN_ID'),
+        'workflow_run_attempt': environ.get('GITHUB_RUN_ATTEMPT'),
+        'workflow': environ.get('GITHUB_WORKFLOW'),
+        'operation': str(args.operation or ''),
+        'expected_main_sha': str(args.expected_main_sha or '').strip().lower(),
+        'confirmation_supplied': bool(args.confirmation),
+    }
+
+
+def validate_authorization(context, args) -> list[str]:
+    """Every precondition, checked positively. Absence is never approval."""
+    failures: list[str] = []
+    if context.get('event_name') != repair.REQUIRED_EVENT_NAME:
+        failures.append(repair.FAILED_EVENT_NOT_WORKFLOW_DISPATCH)
+    if context.get('repository') != repair.REQUIRED_REPOSITORY:
+        failures.append(repair.FAILED_REPOSITORY_NOT_AUTHORIZED)
+    if context.get('actor') != repair.REQUIRED_ACTOR:
+        failures.append(repair.FAILED_ACTOR_NOT_AUTHORIZED)
+    if context.get('ref') != repair.REQUIRED_REF:
+        failures.append(repair.FAILED_REF_NOT_MAIN)
+
+    expected = audit.normalize_sha(context.get('expected_main_sha'))
+    if expected is None:
+        failures.append(repair.FAILED_EXPECTED_SHA_MALFORMED)
+    else:
+        resolved = audit.normalize_sha(context.get('commit_sha'))
+        if resolved is None or resolved != expected:
+            failures.append(repair.FAILED_EXPECTED_SHA_MISMATCH)
+
+    operation = str(args.operation or '')
+    if operation not in repair.OPERATIONS:
+        failures.append(repair.FAILED_OPERATION_UNKNOWN)
+        # An unknown operation has no confirmation to compare against. Falling
+        # through to a default phrase would let a typo authorize something.
+        failures.append(repair.FAILED_CONFIRMATION_MISMATCH)
+        return failures
+
+    # The phrase is matched against THIS operation's phrase only. A verify
+    # confirmation can never satisfy an apply run.
+    if str(args.confirmation or '') != repair.CONFIRMATIONS[operation]:
+        failures.append(repair.FAILED_CONFIRMATION_MISMATCH)
+    return failures
+
+
+def build_app():
+    from app import create_app
+
+    return create_app()
+
+
+# ── Target-row observation ──────────────────────────────────────────────────
+
+def observe_target_row(session=None) -> dict:
+    """The single checkpoint row, counted before it is read.
+
+    Counting first matters: ``.first()`` on a two-row result silently picks
+    one, and "which one did it pick" is exactly the question a repair must
+    never have to ask.
+    """
+    from models.game_ingestion_work_item import GameIngestionWorkItem
+
+    rows = GameIngestionWorkItem.query.filter(
+        GameIngestionWorkItem.mlb_game_pk == repair.GAME_PK
+    ).order_by(GameIngestionWorkItem.id.asc()).all()
+
+    row = rows[0] if len(rows) == 1 else None
+    return {
+        'observed': True,
+        'candidate_row_count': len(rows),
+        'candidate_row_ids': [item.id for item in rows],
+        'work_item': repair.row_snapshot(row) if row is not None else None,
+        'work_item_row_id': getattr(row, 'id', None),
+    }
+
+
+# ── The apply transaction ───────────────────────────────────────────────────
+
+def apply_repair(*, target_row_id, observed_snapshot) -> dict:
+    """Perform the ONE approved change, inside its own writable transaction.
+
+    Called only after every precondition has already been satisfied against a
+    read-only observation. It re-checks the row-level preconditions AGAIN here,
+    against a row it holds a ``FOR UPDATE`` lock on, because the read-only
+    observation and this transaction are not the same instant and a checkpoint
+    that moved in between is a different row than the one that was approved.
+    """
+    from models.game_ingestion_work_item import GameIngestionWorkItem
+    from utils.db import db
+
+    state = {
+        'attempted': False,
+        'row_locked': False,
+        'lock_available': None,
+        'revalidated': None,
+        'revalidation_reason': None,
+        'committed': None,
+        'before_snapshot': None,
+        'after_snapshot': None,
+        'guard_observations': None,
+        'guard_checks': None,
+        'statements': None,
+        'affected_row_count': None,
+        'failed_reasons': [],
+        'unproven_reasons': [],
+        'refusal_reasons': [],
+    }
+
+    # A fresh transaction. The read-only one this run has been using is over.
+    db.session.rollback()
+
+    try:
+        locked_rows = GameIngestionWorkItem.query.filter(
+            GameIngestionWorkItem.mlb_game_pk == repair.GAME_PK
+        ).with_for_update(nowait=True).all()
+        state['lock_available'] = True
+    except Exception:  # noqa: BLE001 - never leak the database message
+        db.session.rollback()
+        state['lock_available'] = False
+        state['unproven_reasons'].append(
+            repair.UNPROVEN_TARGET_ROW_NOT_LOCKABLE
+        )
+        return state
+
+    if len(locked_rows) != 1:
+        db.session.rollback()
+        state['revalidated'] = False
+        state['revalidation_reason'] = (
+            repair.REFUSED_WORK_ITEM_MULTIPLE if locked_rows
+            else repair.REFUSED_WORK_ITEM_MISSING
+        )
+        state['refusal_reasons'].append(state['revalidation_reason'])
+        return state
+
+    row = locked_rows[0]
+    state['row_locked'] = True
+    before = repair.row_snapshot(row)
+    state['before_snapshot'] = before
+
+    # Re-validation against the LOCKED row. Every clause is a fact that could
+    # have changed since the read-only pass, and each has its own reason code.
+    if row.id != target_row_id:
+        reason = repair.REFUSED_CONCURRENT_MODIFICATION
+    elif before.get('mlb_game_pk') != repair.GAME_PK:
+        reason = repair.REFUSED_WRONG_GAME
+    elif before.get(repair.TARGET_COLUMN) == repair.INTENDED_SOURCE_REVISION:
+        reason = repair.REFUSED_ALREADY_AT_INTENDED_REVISION
+    elif before.get(repair.TARGET_COLUMN) != (
+        repair.EXPECTED_EXISTING_SOURCE_REVISION
+    ):
+        reason = repair.REFUSED_EXISTING_REVISION_UNEXPECTED
+    elif before.get('status') != repair.REQUIRED_WORK_ITEM_STATUS:
+        reason = repair.REFUSED_STATUS_NOT_COMPLETED
+    elif observed_snapshot and repair.changed_columns(
+        observed_snapshot, before,
+    ):
+        # Anything at all moved on this row between the read-only observation
+        # and this lock. The approved change was reviewed against the row as it
+        # was observed, so a row that is no longer that row is refused.
+        reason = repair.REFUSED_CONCURRENT_MODIFICATION
+    else:
+        reason = None
+
+    if reason is not None:
+        db.session.rollback()
+        state['revalidated'] = False
+        state['revalidation_reason'] = reason
+        state['refusal_reasons'].append(reason)
+        return state
+
+    state['revalidated'] = True
+    state['attempted'] = True
+
+    watch = repair.StatementWatch(db.engine).attach()
+    guard = repair.MutationScopeGuard(db.session).attach()
+    try:
+        # THE ONE PERMITTED MUTATION.
+        setattr(row, repair.TARGET_COLUMN, repair.INTENDED_SOURCE_REVISION)
+        db.session.flush()
+        state['guard_observations'] = guard.as_dict()
+        state['guard_checks'] = guard.checks(
+            target_row_id=target_row_id, expect_mutation=True,
+        )
+        statements = watch.as_dict()
+        state['statements'] = statements
+        state['affected_row_count'] = (
+            statements.get('target_table_affected_rows')
+            if statements.get('target_table_rowcount_observed') else None
+        )
+
+        # A scope violation observed BEFORE the commit is rolled back rather
+        # than committed and reported. This is the last point at which that is
+        # still possible, so it is taken.
+        checks = state['guard_checks'] or {}
+        if not all((
+            checks.get('no_object_was_created'),
+            checks.get('no_object_was_deleted'),
+            checks.get('exactly_the_expected_objects_mutated'),
+            checks.get('only_the_target_type_mutated'),
+            checks.get('only_governed_attributes_changed'),
+            statements.get('exactly_one_target_update'),
+            statements.get('no_other_write_statement'),
+            state['affected_row_count'] == 1,
+        )):
+            db.session.rollback()
+            state['committed'] = False
+            state['failed_reasons'].append(
+                repair.FAILED_MUTATION_SCOPE_EXCEEDED
+            )
+            return state
+
+        db.session.commit()
+        state['committed'] = True
+    except Exception:  # noqa: BLE001 - never leak the database message
+        try:
+            db.session.rollback()
+        except Exception:  # noqa: BLE001
+            pass
+        state['committed'] = False
+        state['unproven_reasons'].append(repair.UNPROVEN_APPLY_OUTCOME_UNKNOWN)
+        return state
+    finally:
+        guard.detach()
+        watch.detach()
+
+    # Read the committed state back from the database rather than trusting the
+    # in-memory object. ``updated_at`` is applied by the flush process, so the
+    # only honest source for the post-state is the row itself.
+    db.session.expire_all()
+    final = GameIngestionWorkItem.query.filter(
+        GameIngestionWorkItem.mlb_game_pk == repair.GAME_PK
+    ).all()
+    state['after_snapshot'] = (
+        repair.row_snapshot(final[0]) if len(final) == 1 else {}
+    )
+    if len(final) != 1:
+        state['failed_reasons'].append(
+            repair.FAILED_AFFECTED_ROW_COUNT_NOT_ONE
+        )
+    return state
+
+
+# ── Orchestration ───────────────────────────────────────────────────────────
+
+def run(args) -> dict:
+    context = event_context(args)
+    note = sanitize_note(args.operator_note)
+    operation = str(args.operation or '')
+
+    failed = validate_authorization(context, args)
+    if failed:
+        return build_document(
+            context=context, note=note, operation=operation, target={},
+            official={}, comparison={}, plan={}, expectation={},
+            completeness={}, preconditions={}, read_only={}, lock={},
+            fingerprints={}, mutation={}, apply_state={}, source_calls={},
+            decision=repair.decide(
+                operation=operation, failed_reasons=failed,
+            ),
+        )
+
+    failed_reasons: list[str] = []
+    unproven_reasons: list[str] = []
+    refusal_reasons: list[str] = []
+    collected: dict = {}
+
+    guard_state = {
+        'acquire_attempted': False,
+        'guard_acquired': False,
+        'acquisition_reason': None,
+        'guard_release_attempted': False,
+        # None means the outcome was never established. Not False, and
+        # certainly not True.
+        'guard_released': None,
+        'release_reason': None,
+        'rollback_attempted': False,
+        'rollback_succeeded': None,
+    }
+
+    budget = audit.SourceCallBudget()
+    guard_client = None
+
+    flask_app = build_app()
+    from services import sync as sync_service
+    from services import sync_metadata
+    from sqlalchemy import text
+    from utils.db import db
+
+    original_client = sync_service.mlb_client
+
+    with flask_app.app_context():
+        lock_guard = None
+        try:
+            # The SAME advisory-lock identity every public sync writer takes,
+            # acquire-only. Contention is UNPROVEN: this package never waits
+            # and never queues, so it can never overlap a production writer.
+            guard_state['acquire_attempted'] = True
+            lock_guard = sync_metadata.acquire_public_sync_read_lock(
+                source=sync_metadata.SOURCE_GITHUB_ACTIONS,
+            )
+            guard_state['guard_acquired'] = lock_guard is not None
+            guard_state['acquisition_reason'] = (
+                'acquired' if lock_guard is not None else 'not_returned'
+            )
+        except Exception:  # noqa: BLE001 - a contended lock is UNPROVEN
+            lock_guard = None
+            guard_state['acquisition_reason'] = 'lock_unavailable_or_contended'
+
+        try:
+            if not guard_state['guard_acquired']:
+                collected['halt_stage'] = 'advisory_lock'
+                raise _Halt()
+
+            # EVERY observation happens inside a proven read-only transaction,
+            # including in apply mode. The writable transaction is opened only
+            # after every precondition has already been satisfied, and it does
+            # exactly one thing.
+            try:
+                read_only = audit.enforce_read_only(db.session)
+            except audit.ReadOnlyProbeViolation as violation:
+                collected['read_only_enabled'] = False
+                collected['read_only_detail'] = violation.evidence
+                collected['halt_stage'] = 'read_only_probe'
+                raise _Halt()
+            except audit.ReadOnlyNotEnforced:
+                collected['read_only_enabled'] = False
+                collected['read_only_detail'] = {}
+                unproven_reasons.append(repair.UNPROVEN_READ_ONLY_UNAVAILABLE)
+                collected['halt_stage'] = 'read_only_transaction'
+                raise _Halt()
+            collected['read_only_enabled'] = True
+            collected['read_only_detail'] = read_only
+
+            stored = audit_runner.observe_stored_state()
+            target = observe_target_row()
+            collected['stored'] = stored
+            collected['target'] = target
+            collected['database_observed'] = True
+
+            identities = set(stored['stored_pitcher_mlb_ids'])
+            before = audit.scoped_fingerprints(
+                db.session, pitcher_mlb_ids=identities,
+            )
+            collected['before_fingerprints'] = before
+            collected['fingerprint_identities'] = sorted(identities)
+            if before is None:
+                unproven_reasons.append(
+                    repair.UNPROVEN_FINGERPRINT_UNAVAILABLE
+                )
+                collected['halt_stage'] = 'before_fingerprints'
+                raise _Halt()
+
+            out_of_scope_before = repair.out_of_scope_fingerprint(db.session)
+            collected['out_of_scope_before'] = out_of_scope_before
+            if out_of_scope_before is None:
+                unproven_reasons.append(
+                    repair.UNPROVEN_OUT_OF_SCOPE_FINGERPRINT_UNAVAILABLE
+                )
+
+            # One bounded box-score call, through the counting guard, so a
+            # duplicate or hidden call is caught rather than assumed away.
+            guard_client = audit.CountedMLBClient(original_client, budget)
+            sync_service.mlb_client = guard_client
+            official = audit_runner.observe_current_source(guard_client)
+            collected['official'] = official
+
+            # The canonical projection rolls the session back, which ends the
+            # read-only transaction. Re-assert it before reading again.
+            try:
+                db.session.rollback()
+                db.session.execute(text('SET TRANSACTION READ ONLY'))
+            except Exception:  # noqa: BLE001
+                unproven_reasons.append(repair.UNPROVEN_READ_ONLY_UNAVAILABLE)
+
+            # The AFTER pass covers exactly the scope the BEFORE pass covered.
+            collected['after_fingerprints'] = audit.scoped_fingerprints(
+                db.session, pitcher_mlb_ids=identities,
+            )
+            collected['out_of_scope_after_read'] = (
+                repair.out_of_scope_fingerprint(db.session)
+            )
+        except _Halt:
+            pass
+        except Exception:  # noqa: BLE001 - never leak exception text
+            collected['execution_error'] = True
+            collected.setdefault('halt_stage', 'observation_error')
+            unproven_reasons.append(repair.UNPROVEN_EXECUTION_ERROR)
+        finally:
+            sync_service.mlb_client = original_client
+
+        # ── Judgement, from what was actually observed ──────────────────────
+        stored = collected.get('stored') or {}
+        target = collected.get('target') or {}
+        official = collected.get('official') or {}
+        database_observed = bool(collected.get('database_observed'))
+
+        comparison = repair.build_comparison(official=official, stored=stored)
+        expectation = repair.population_expectation(
+            work_item=(target or {}).get('work_item'),
+            stored_appearance_count=stored.get('stored_appearance_count'),
+            database_observed=database_observed,
+        )
+        completeness = repair.source_completeness(
+            official=official,
+            comparison=comparison['summary'],
+            database_observed=database_observed,
+            expectation=expectation,
+        )
+        plan = official.get('plan') or {}
+        preconditions = repair.evaluate_preconditions(
+            target=target,
+            official=official,
+            comparison=comparison,
+            plan=plan,
+            expectation=expectation,
+            completeness=completeness,
+            database_observed=database_observed,
+            before_fingerprints=collected.get('before_fingerprints'),
+        )
+
+        read_changed_tables = repair.changed_fingerprint_tables(
+            collected.get('before_fingerprints'),
+            collected.get('after_fingerprints'),
+        )
+        # Everything up to this point was read-only and PROVEN read-only. A
+        # governed table that moved during it is either a contract violation by
+        # this package or a concurrent writer that the advisory lock was
+        # supposed to exclude. Either way it stops the run.
+        if read_changed_tables:
+            if operation == repair.OPERATION_VERIFY:
+                failed_reasons.append(
+                    repair.FAILED_MUTATION_ATTEMPTED_IN_VERIFY
+                )
+            else:
+                refusal_reasons.append(repair.REFUSED_SCOPE_MOVED_BEFORE_APPLY)
+        if collected.get('before_fingerprints') is not None and (
+            collected.get('after_fingerprints') is None
+        ):
+            unproven_reasons.append(repair.UNPROVEN_FINGERPRINT_UNAVAILABLE)
+
+        apply_state: dict = {}
+        mutation: dict = {}
+        # The apply gate, stated once and in full. Anything short of every
+        # precondition satisfied, on an apply operation, with no earlier
+        # problem of any kind, does not open a writable transaction at all.
+        # Coverage is re-derived by the same function the verdict reducer uses,
+        # so the gate that opens the transaction and the gate that judges the
+        # run are one contract rather than two.
+        coverage = repair.precondition_coverage(preconditions)
+        collected['precondition_coverage'] = coverage
+        may_apply = (
+            operation == repair.OPERATION_APPLY
+            and coverage['coverage_complete']
+            and not coverage['violated']
+            and not coverage['not_observed']
+            and not coverage['unknown_state_ids']
+            and not failed_reasons
+            and not unproven_reasons
+            and not refusal_reasons
+            and not read_changed_tables
+            and bool(collected.get('read_only_enabled'))
+            and guard_state['guard_acquired']
+        )
+        collected['apply_gate_open'] = bool(may_apply)
+
+        if may_apply:
+            try:
+                apply_state = apply_repair(
+                    target_row_id=target.get('work_item_row_id'),
+                    observed_snapshot=(target or {}).get('work_item'),
+                )
+            except Exception:  # noqa: BLE001 - never leak exception text
+                apply_state = {
+                    'attempted': True, 'committed': None,
+                    'unproven_reasons': [
+                        repair.UNPROVEN_APPLY_OUTCOME_UNKNOWN,
+                    ],
+                    'failed_reasons': [], 'refusal_reasons': [],
+                }
+            failed_reasons.extend(apply_state.get('failed_reasons') or ())
+            unproven_reasons.extend(apply_state.get('unproven_reasons') or ())
+            refusal_reasons.extend(apply_state.get('refusal_reasons') or ())
+
+            if apply_state.get('committed') is True:
+                after_fingerprints = audit.scoped_fingerprints(
+                    db.session,
+                    pitcher_mlb_ids=set(
+                        collected.get('fingerprint_identities') or ()
+                    ),
+                )
+                collected['post_apply_fingerprints'] = after_fingerprints
+                out_of_scope_after = repair.out_of_scope_fingerprint(
+                    db.session
+                )
+                collected['out_of_scope_after'] = out_of_scope_after
+                mutation = repair.evaluate_mutation(
+                    before_snapshot=apply_state.get('before_snapshot'),
+                    after_snapshot=apply_state.get('after_snapshot'),
+                    guard_checks=apply_state.get('guard_checks'),
+                    affected_row_count=apply_state.get('affected_row_count'),
+                    changed_tables=(
+                        repair.changed_fingerprint_tables(
+                            collected.get('before_fingerprints'),
+                            after_fingerprints,
+                        )
+                        if collected.get('before_fingerprints') is not None
+                        and after_fingerprints is not None else None
+                    ),
+                    out_of_scope_before=collected.get('out_of_scope_before'),
+                    out_of_scope_after=out_of_scope_after,
+                    statements=apply_state.get('statements'),
+                )
+
+        # ── Release, always, and record what actually happened ──────────────
+        guard_state['rollback_attempted'] = True
+        try:
+            db.session.rollback()
+            guard_state['rollback_succeeded'] = True
+        except Exception:  # noqa: BLE001 - never leak exception text
+            guard_state['rollback_succeeded'] = False
+        if lock_guard is not None:
+            guard_state['guard_release_attempted'] = True
+            try:
+                lock_guard.release()
+                guard_state['guard_released'] = True
+                guard_state['release_reason'] = 'released'
+            except Exception:  # noqa: BLE001 - never leak exception text
+                guard_state['guard_released'] = False
+                guard_state['release_reason'] = 'release_raised'
+
+    lock = repair.lock_lifecycle(guard_state)
+    failed_reasons.extend(lock['failed_reasons'])
+    unproven_reasons.extend(lock['unproven_reasons'])
+
+    probe_validation = audit.evaluate_probe_evidence(
+        audit.probe_evidence(collected.get('read_only_detail'))
+    )
+    if collected.get('read_only_enabled') is not None:
+        failed_reasons.extend(probe_validation['failed_reasons'])
+        if collected.get('read_only_enabled'):
+            unproven_reasons.extend(probe_validation['unproven_reasons'])
+
+    source_calls = (
+        guard_client.state() if guard_client is not None
+        else {
+            'calls': [], 'calls_by_kind': {}, 'total_calls_issued': 0,
+            'refusals': [], 'errors': [], 'unexpected_methods_refused': [],
+            'reported_equals_actual': True,
+            'duplicate_boxscore_requests': 0,
+            'hidden_call_detected': False,
+            'required_call_failed': False,
+            'budget': budget.state(),
+        }
+    )
+    if source_calls['hidden_call_detected'] or source_calls[
+        'duplicate_boxscore_requests'
+    ] or not source_calls['reported_equals_actual']:
+        failed_reasons.append(repair.FAILED_MUTATION_SCOPE_EXCEEDED)
+    if source_calls['budget'].get('required_call_refused'):
+        unproven_reasons.append(repair.UNPROVEN_CURRENT_SOURCE_UNAVAILABLE)
+
+    decision = repair.decide(
+        operation=operation,
+        preconditions=preconditions,
+        mutation=mutation,
+        failed_reasons=failed_reasons,
+        unproven_reasons=unproven_reasons,
+        refusal_reasons=refusal_reasons,
+        apply_attempted=bool(apply_state.get('attempted')),
+        apply_committed=apply_state.get('committed'),
+    )
+
+    return build_document(
+        context=context, note=note, operation=operation, target=target,
+        official=official, comparison=comparison, plan=plan,
+        expectation=expectation, completeness=completeness,
+        preconditions=preconditions,
+        read_only={
+            'read_only_transaction_enabled': collected.get(
+                'read_only_enabled'
+            ),
+            'probe_validation': probe_validation,
+            **(collected.get('read_only_detail') or {}),
+        },
+        lock=lock,
+        fingerprints={
+            'scope_plan': audit.fingerprint_scope_plan(
+                collected.get('fingerprint_identities') or ()
+            ),
+            'identities': collected.get('fingerprint_identities') or [],
+            'before': collected.get('before_fingerprints'),
+            'after_read_phase': collected.get('after_fingerprints'),
+            'after_apply': collected.get('post_apply_fingerprints'),
+            'changed_during_read_phase': read_changed_tables,
+            'out_of_scope_before': collected.get('out_of_scope_before'),
+            'out_of_scope_after_read': collected.get(
+                'out_of_scope_after_read'
+            ),
+            'out_of_scope_after_apply': collected.get('out_of_scope_after'),
+        },
+        mutation=mutation, apply_state=apply_state,
+        source_calls=source_calls, halt_stage=collected.get('halt_stage'),
+        apply_gate_open=collected.get('apply_gate_open'),
+        decision=decision,
+    )
+
+
+# ── Document ────────────────────────────────────────────────────────────────
+
+def build_document(*, context, note, operation, target, official, comparison,
+                   plan, expectation, completeness, preconditions, read_only,
+                   lock, fingerprints, mutation, apply_state, source_calls,
+                   decision, halt_stage=None, apply_gate_open=None) -> dict:
+    summary = (comparison or {}).get('summary') or {}
+    return {
+        'schema_version': repair.SCHEMA_VERSION,
+        'repair_type': repair.REPAIR_TYPE,
+        'identity': {
+            'operation': operation,
+            'event_name': context.get('event_name'),
+            'repository': context.get('repository'),
+            'actor': context.get('actor'),
+            'ref': context.get('ref'),
+            'commit_sha': context.get('commit_sha'),
+            'workflow': context.get('workflow'),
+            'workflow_run_id': context.get('workflow_run_id'),
+            'workflow_run_attempt': context.get('workflow_run_attempt'),
+            'operator_note': note,
+        },
+        'scope': {
+            'game_pk': repair.GAME_PK,
+            'represented_date': repair.REPRESENTED_DATE.isoformat(),
+            'target_table': repair.TARGET_TABLE,
+            'target_identity_column': repair.TARGET_IDENTITY_COLUMN,
+            'target_column': repair.TARGET_COLUMN,
+            'expected_existing_source_revision': (
+                repair.EXPECTED_EXISTING_SOURCE_REVISION
+            ),
+            'intended_source_revision': repair.INTENDED_SOURCE_REVISION,
+            'permitted_changed_columns': sorted(
+                repair.PERMITTED_CHANGED_COLUMNS
+            ),
+            'governed_changed_columns': sorted(
+                repair.GOVERNED_CHANGED_COLUMNS
+            ),
+            'automatic_bookkeeping_columns': sorted(
+                repair.AUTOMATIC_BOOKKEEPING_COLUMNS
+            ),
+            'required_work_item_status': repair.REQUIRED_WORK_ITEM_STATUS,
+            'prohibited_mutations': list(repair.PROHIBITED_MUTATIONS),
+        },
+        'source_revision_semantics': audit.source_revision_semantics(),
+        'target_row': target or {},
+        'population_expectation': expectation or {},
+        'current_source': {
+            'available': (official or {}).get('available'),
+            'unavailable_reason': (official or {}).get('unavailable_reason'),
+            'appearance_count': (official or {}).get('appearance_count'),
+            'current_source_revision': (official or {}).get(
+                'current_source_revision'
+            ),
+            'official_pitcher_mlb_ids': (official or {}).get(
+                'official_pitcher_mlb_ids'
+            ),
+            'planner_scope': (official or {}).get('planner_scope'),
+        },
+        'current_source_completeness': completeness or {},
+        'canonical_plan': plan or {},
+        'field_comparison_summary': summary,
+        'preconditions': preconditions or {},
+        'read_only_proof': read_only or {},
+        'advisory_lock': lock or {},
+        'fingerprints': fingerprints or {},
+        'mutation_ledger': build_mutation_ledger(
+            apply_state=apply_state, mutation=mutation, target=target,
+            apply_gate_open=apply_gate_open,
+        ),
+        'source_call_report': source_calls or {},
+        'halt_stage': halt_stage,
+        'verdict': decision,
+        'explanation': repair.explanation(decision),
+        'non_authorization_statement': repair.NON_AUTHORIZATION_STATEMENT,
+        'dead_letter_backlog_note': repair.DEAD_LETTER_BACKLOG_NOTE,
+        'standing_production_state': dict(repair.STANDING_PRODUCTION_STATE),
+        '_comparison_rows': (comparison or {}).get('rows') or [],
+    }
+
+
+def build_mutation_ledger(*, apply_state, mutation, target,
+                          apply_gate_open=None) -> dict:
+    """What was written, or the explicit record that nothing was.
+
+    A ledger that exists only on success would make "no ledger" ambiguous
+    between "did not run" and "ran and wrote nothing". It always exists.
+    """
+    apply_state = apply_state or {}
+    mutation = mutation or {}
+    return {
+        'schema_version': repair.SCHEMA_VERSION,
+        'game_pk': repair.GAME_PK,
+        'table': repair.TARGET_TABLE,
+        'column': repair.TARGET_COLUMN,
+        'target_row_id': (target or {}).get('work_item_row_id'),
+        'apply_gate_open': apply_gate_open,
+        'apply_attempted': bool(apply_state.get('attempted')),
+        'row_locked_for_update': apply_state.get('row_locked'),
+        'lock_available': apply_state.get('lock_available'),
+        'revalidated_under_lock': apply_state.get('revalidated'),
+        'revalidation_reason': apply_state.get('revalidation_reason'),
+        'committed': apply_state.get('committed'),
+        'old_value': (apply_state.get('before_snapshot') or {}).get(
+            repair.TARGET_COLUMN
+        ),
+        'new_value': (apply_state.get('after_snapshot') or {}).get(
+            repair.TARGET_COLUMN
+        ),
+        'intended_value': repair.INTENDED_SOURCE_REVISION,
+        'expected_old_value': repair.EXPECTED_EXISTING_SOURCE_REVISION,
+        'before_snapshot': apply_state.get('before_snapshot'),
+        'after_snapshot': apply_state.get('after_snapshot'),
+        'guard_observations': apply_state.get('guard_observations'),
+        'statement_report': apply_state.get('statements'),
+        'affected_row_count': apply_state.get('affected_row_count'),
+        'scope_evaluation': mutation,
+        'permitted_changed_columns': sorted(repair.PERMITTED_CHANGED_COLUMNS),
+        'prohibited_mutations': list(repair.PROHIBITED_MUTATIONS),
+    }
+
+
+REQUIRED_MARKDOWN_SECTIONS = (
+    '# Game 824487 source-revision checkpoint repair',
+    '## Result',
+    '## Exact scope',
+    '## Preconditions',
+    '## Current official source',
+    '## Read-only and locking proof',
+    '## Mutation ledger',
+    '## What this run did not do',
+    '## Authorization',
+)
+
+
+def render_markdown(document) -> str:
+    verdict = document.get('verdict') or {}
+    scope = document.get('scope') or {}
+    identity = document.get('identity') or {}
+    preconditions = document.get('preconditions') or {}
+    completeness = document.get('current_source_completeness') or {}
+    source = document.get('current_source') or {}
+    proof = document.get('read_only_proof') or {}
+    lock = document.get('advisory_lock') or {}
+    ledger = document.get('mutation_ledger') or {}
+    fingerprints = document.get('fingerprints') or {}
+    observed_changed = (ledger.get('scope_evaluation') or {}).get(
+        'observed_changed_columns'
+    )
+
+    lines = [
+        '# Game 824487 source-revision checkpoint repair',
+        '',
+        '## Result',
+        '',
+        f"**{verdict.get('result')}** (exit {verdict.get('exit_code')}), "
+        f"operation `{identity.get('operation')}`.",
+        '',
+        document.get('explanation') or '',
+        '',
+    ]
+    for label, key in (
+        ('FAILED', 'failed_reasons'),
+        ('UNPROVEN', 'unproven_reasons'),
+        ('REFUSED', 'refusal_reasons'),
+    ):
+        for reason in verdict.get(key) or ():
+            lines.append(f'- {label}: `{reason}`')
+    lines += [
+        '',
+        '## Exact scope',
+        '',
+        '| field | value |',
+        '| :--- | :--- |',
+        f"| game | {scope.get('game_pk')} |",
+        f"| represented date | {scope.get('represented_date')} |",
+        f"| table | `{scope.get('target_table')}` |",
+        f"| column | `{scope.get('target_column')}` |",
+        f'| expected old value | `'
+        f"{scope.get('expected_existing_source_revision')}` |",
+        f"| intended new value | `{scope.get('intended_source_revision')}` |",
+        f'| permitted changed columns | `'
+        f"{scope.get('permitted_changed_columns')}` |",
+        '',
+        'The permitted changed-column set includes `updated_at` because the '
+        'model declares `onupdate=utc_now_naive`, which fires on any UPDATE '
+        'of the row. It is an automatic bookkeeping side effect of the one '
+        'permitted change, declared rather than hidden, and deliberately not '
+        'pinned back to its old value.',
+        '',
+        '## Preconditions',
+        '',
+        '| precondition | state | expected | observed |',
+        '| :--- | :--- | :--- | :--- |',
+    ]
+    for check in preconditions.get('preconditions') or ():
+        lines.append(
+            f"| `{check.get('precondition_id')}` | {check.get('state')} "
+            f"| {check.get('expected')} | {check.get('observed')} |"
+        )
+    lines += [
+        '',
+        f"All satisfied: {preconditions.get('all_satisfied')}. "
+        f"Violated: `{preconditions.get('violated')}`. "
+        f"Not observed: `{preconditions.get('not_observed')}`.",
+        '',
+        '## Current official source',
+        '',
+        '| field | value |',
+        '| :--- | :--- |',
+        f"| fetched | {source.get('available')} |",
+        f"| appearances observed | {source.get('appearance_count')} |",
+        f'| expected population | '
+        f"{completeness.get('expected_appearance_count')} |",
+        f"| completeness state | `{completeness.get('completeness_state')}` |",
+        f"| conclusion eligible | {completeness.get('conclusion_eligible')} |",
+        f'| current source revision | `'
+        f"{source.get('current_source_revision')}` |",
+        '',
+        '## Read-only and locking proof',
+        '',
+        '| control | value |',
+        '| :--- | :--- |',
+        f'| read-only transaction | '
+        f"{proof.get('read_only_transaction_enabled')} |",
+        f"| write probe refused | {proof.get('read_only_probe_refused')} |",
+        f"| advisory lock acquired | {lock.get('guard_acquired')} |",
+        f"| advisory lock released | {lock.get('guard_released')} |",
+        f'| scopes changed during read phase | `'
+        f"{fingerprints.get('changed_during_read_phase')}` |",
+        '',
+        '## Mutation ledger',
+        '',
+        '| field | value |',
+        '| :--- | :--- |',
+        f"| apply gate open | {ledger.get('apply_gate_open')} |",
+        f"| apply attempted | {ledger.get('apply_attempted')} |",
+        f"| revalidated under lock | {ledger.get('revalidated_under_lock')} |",
+        f"| committed | {ledger.get('committed')} |",
+        f"| affected rows | {ledger.get('affected_row_count')} |",
+        f"| old value | `{ledger.get('old_value')}` |",
+        f"| new value | `{ledger.get('new_value')}` |",
+        f'| changed columns | `{observed_changed}` |',
+        '',
+        '## What this run did not do',
+        '',
+    ]
+    for prohibited in scope.get('prohibited_mutations') or ():
+        lines.append(f'- `{prohibited}`')
+    lines += [
+        '',
+        document.get('dead_letter_backlog_note') or '',
+        '',
+        '## Authorization',
+        '',
+        document.get('non_authorization_statement') or '',
+        '',
+    ]
+    return '\n'.join(lines) + '\n'
+
+
+def write_artifacts(document, comparison_rows, artifact_dir) -> dict:
+    directory = Path(artifact_dir)
+    directory.mkdir(parents=True, exist_ok=True)
+
+    written = {}
+    payloads = {
+        SUMMARY_JSON: document,
+        PRECONDITIONS_JSON: {
+            'schema_version': repair.SCHEMA_VERSION,
+            'game_pk': repair.GAME_PK,
+            'precondition_ids': list(repair.PRECONDITION_IDS),
+            'precondition_states': list(repair.PRECONDITION_STATES),
+            'refusal_reason_by_precondition': dict(
+                repair.PRECONDITION_REFUSAL_REASONS
+            ),
+            'unproven_reason_by_precondition': dict(
+                repair.PRECONDITION_UNPROVEN_REASONS
+            ),
+            'evaluation': document.get('preconditions') or {},
+        },
+        MUTATION_LEDGER_JSON: document.get('mutation_ledger') or {},
+        COMPARISON_JSON: {
+            'schema_version': repair.SCHEMA_VERSION,
+            'game_pk': repair.GAME_PK,
+            'summary': document.get('field_comparison_summary') or {},
+            'current_source_completeness': document.get(
+                'current_source_completeness'
+            ) or {},
+            'population_expectation': document.get(
+                'population_expectation'
+            ) or {},
+            'rows': list(comparison_rows or ()),
+        },
+    }
+    for name, payload in payloads.items():
+        path = directory / name
+        path.write_text(
+            json.dumps(payload, indent=2, sort_keys=True, default=str) + '\n',
+            encoding='utf-8',
+        )
+        written[name] = str(path)
+
+    markdown = directory / SUMMARY_MARKDOWN
+    markdown.write_text(render_markdown(document), encoding='utf-8')
+    written[SUMMARY_MARKDOWN] = str(markdown)
+    return written
+
+
+def main(argv=None) -> int:
+    args = parse_args(argv)
+    document = run(args)
+    comparison_rows = document.pop('_comparison_rows', None) or []
+    write_artifacts(document, comparison_rows, args.artifact_dir)
+    verdict = document.get('verdict') or {}
+    print(json.dumps({
+        'operation': verdict.get('operation'),
+        'result': verdict.get('result'),
+        'exit_code': verdict.get('exit_code'),
+        'failed_reasons': verdict.get('failed_reasons'),
+        'unproven_reasons': verdict.get('unproven_reasons'),
+        'refusal_reasons': verdict.get('refusal_reasons'),
+        'mutation_performed': verdict.get('mutation_performed'),
+    }, indent=2, sort_keys=True))
+    return int(verdict.get(
+        'exit_code', repair.EXIT_CODES[repair.RESULT_UNPROVEN]
+    ))
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())
