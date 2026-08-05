@@ -2,8 +2,8 @@
 
 **Status: audit package implemented and evidence-integrity corrected. The
 production audit has NOT been executed. No conclusion has been reached. No
-repair is authorized. Review verdict: HOLD pending a NEW independent
-evidence-integrity review of the second correction pass.**
+repair is authorized. Review verdict: HOLD pending an independent reviewer who
+did NOT author the correction.**
 
 Nothing in this document states a root cause, because the audit has not run in
 production yet. It describes what the package does, how to read what it will
@@ -37,8 +37,26 @@ hardening and documentation issues:
 * **A workflow comment** described the scan step as failing the workflow
   itself.
 
-All nine findings are repaired. The sections below describe the corrected
-behaviour rather than the original.
+A **final** independent review confirmed all nine of those were repaired and
+found one more completion path plus two hardening defects:
+
+* **Symmetric truncation could still exit 0.** When the official payload and
+  canonical storage were truncated *identically* — six of twelve appearances on
+  both sides — membership matched, every comparable row agreed, and the package
+  reported `current_target_exactly_matches_storage` with
+  `COMPLETE_NO_CURRENT_DEFECT`. It did so while holding positively verified
+  evidence from **both** retained artifacts that this game has twelve
+  appearances. The completeness model compared the two observed sides to each
+  other and never against the population size it had already proven.
+* **The completion gate could be skipped.** `decide()` used truthiness, so a
+  missing, empty, malformed, or non-mapping completeness object bypassed the
+  gate entirely.
+* **Duplicate stored identities were mislabelled.** They failed closed, but
+  borrowed the "possibly truncated payload" explanation, which is the wrong
+  account of a duplicated row.
+
+All twelve findings across three review rounds are repaired. The sections below
+describe the corrected behaviour rather than the original.
 
 ---
 
@@ -403,15 +421,31 @@ audit is broken" in another, it would mean nothing in either.
 All three exit-zero results are statements about game 824487 as it stands
 today, so every one of them is gated on a single flag —
 `current_source_completeness.conclusion_eligible` — which is true only when the
-box score was fetched, parsed, produced a **non-empty** appearance set, and
-that set's pitcher membership matches canonical storage **exactly in both
-directions**. The gate is applied in `decide()` before any classification
-branch, so no branch can route around it, and it contributes an explicit
-reason code rather than silently downgrading.
+box score was fetched, parsed, produced a **non-empty** appearance set carrying
+no duplicated identity, that set's **size equals the appearance count both
+retained runs positively verified**, and its pitcher membership matches
+canonical storage **exactly in both directions**. The gate is applied in
+`decide()` before any classification branch, so no branch can route around it,
+and it contributes an explicit reason code rather than silently downgrading.
+
+**Exact current official/stored membership equality is necessary but not
+sufficient.** Two symmetrically truncated sets match each other while both
+remain incomplete: a payload carrying six of twelve appearances compared
+against storage holding exactly those same six produces matching membership and
+zero differing rows while the game still has twelve. The observed count must
+therefore also match the common appearance count positively verified from both
+retained artifacts, and that check is resolved **before** membership is
+consulted.
 
 | completeness state | meaning | conclusion eligible |
 | :--- | :--- | :--- |
-| `complete_and_comparable` | Non-empty, membership matches exactly. | **yes** |
+| `complete_and_comparable` | Non-empty, no duplicated identity, size equals the verified retained count, membership matches exactly. | **yes** |
+| `current_count_contradicts_verified_expectation` | The observed count differs from the count both retained runs verified. One bounded call cannot distinguish an official correction from incomplete current evidence, so neither is asserted. | no |
+| `retained_count_expectation_unproven` | The appearance count this game should carry was not established from the retained runs. | no |
+| `retained_counts_inconsistent` | The two retained runs recorded different counts, so neither can serve as the expected population size. | no |
+| `duplicate_official_identities` | The observed payload repeats a pitcher. One pitcher has exactly one pitching line per game, so the set is ambiguous rather than merely incomplete. | no |
+| `duplicate_stored_identities` | Storage holds more than one row for the same pitcher. A stored-identity condition, **not** a truncated payload. | no |
+| `duplicate_identities_both_sides` | Both sides repeat an identity. | no |
 | `empty_official_set` | Fetched and parsed, zero pitching appearances. A final game has pitchers, so this is missing evidence — not an observation that the game had none. | no |
 | `official_only_members_present` | The official set carries a pitcher storage does not hold. Canonical storage may be incomplete: reported as **material**. | no |
 | `stored_only_members_present` | Storage holds a pitcher the observed official set does not. Either the payload was truncated or the stored row is extraneous; one bounded call cannot tell them apart, so neither is asserted. | no |
@@ -424,10 +458,28 @@ An empty `differing_rows` list proves only that the rows which were
 **comparable on both sides** carried no governed field difference. It says
 nothing about appearances that had no counterpart on one side and so were never
 comparable at all, and it can never on its own establish an exact match. The
-field matrix therefore reserves `complete_for_observed_evidence` for exactly
-matching membership and reports
-`comparable_rows_only_membership_incomplete` otherwise, so no reader can
-mistake "the observed rows agreed" for "the official set was complete".
+field matrix therefore keeps three different claims apart —
+`comparable_row_set_complete` (every observed row had a counterpart),
+`target_population_count_verified` (the retained runs established how many
+appearances this game has), and `target_population_count_matches` (the observed
+population is that size) — and reserves `complete_for_observed_evidence` for
+the case where all three hold. Otherwise it reports
+`comparable_rows_only_membership_incomplete`,
+`comparable_rows_only_target_population_unverified`, or
+`comparable_rows_only_target_population_incomplete`, so no reader can mistake
+"the observed rows agreed" for "the official set was complete".
+
+### The retained appearance expectation
+
+The expected population size is never a constant. `retained_appearance_expectation()`
+reads the appearance count out of each retained artifact's **own observation**
+and may supply a value only when both artifacts are identity-verified **and**
+content-verified, both counts are positively observed and verified, and the two
+agree. One artifact alone, a count inferred from `unchanged`, a malformed
+value, or the locked `EXPECTED_APPEARANCE_COUNT` establishes nothing. The
+locked constant still validates artifact content under the artifact contract;
+after that validation, the number the artifact actually carried is what the
+completeness model consumes.
 
 Because the audit spends exactly **one** bounded box-score call and never
 retries, an incomplete payload is a realistic outcome rather than a hypothetical
@@ -506,14 +558,16 @@ missing checkpoint, and an empty field matrix reports
 `not_generated_no_observed_evidence` rather than masquerading as a complete
 matrix that found no differences.
 
-A source that was **not fetched, failed parsing, yielded zero usable
-appearances, or failed exact membership completeness** cannot support a
-current-match conclusion. A successful fetch proves the transport worked; it
-never proves the payload described the whole game.
+A source cannot support a current-match conclusion when it is **unavailable,
+empty, membership-incomplete, duplicate-bearing, inconsistent with the common
+appearance count verified in the retained artifacts, or otherwise not
+conclusion-eligible**. A successful fetch proves the transport worked; it never
+proves the payload described the whole game, and two incomplete sets agreeing
+with one another prove nothing about either.
 
 Question 11 never collapses into a single label. It reports root condition,
-current materiality, persistence, historical field identification, and
-checkpoint state separately.
+current materiality, persistence, historical field identification, checkpoint
+state, and current source completeness separately.
 
 Question 12 is informational only. **The audit authorizes no mutation, a
 recommendation is not approval, and any future repair requires a separate

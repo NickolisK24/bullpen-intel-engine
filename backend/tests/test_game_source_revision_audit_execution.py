@@ -1674,6 +1674,29 @@ def test_an_unverified_artifact_makes_every_historical_cell_unproven(
 # a membership gap and then concluding anyway is the defect being fixed.
 # ══════════════════════════════════════════════════════════════════════════
 
+def _verified_expectation(count=audit.EXPECTED_APPEARANCE_COUNT):
+    """The appearance count BOTH retained runs positively verified.
+
+    Built from artifact observations rather than a constant, because the
+    completeness model consumes the observed retained value and never the
+    locked one.
+    """
+    def _entry():
+        return {
+            'identity_state': audit.STATE_VERIFIED,
+            'content_state': audit.STATE_VERIFIED,
+            'identity_verified': True, 'content_verified': True,
+            'observations': [{
+                'field': 'appearances_extracted', 'state': audit.OBS_VERIFIED,
+                'observed': count, 'evidence_path': 'p',
+                'source': audit.SOURCE_RETAINED_ARTIFACT,
+            }],
+        }
+    return audit.retained_appearance_expectation({
+        audit.RUN_PRIOR: _entry(), audit.RUN_LATER: _entry(),
+    })
+
+
 def _empty_boxscore():
     """HTTP 200, structurally valid, zero pitching lines."""
     return {'teams': {
@@ -1688,13 +1711,14 @@ def _observe(monkeypatch, payload):
     _client, guard = _install_guard(monkeypatch, payload)
     official = runner.observe_current_source(guard)
     stored = runner.observe_stored_state()
+    expectation = _verified_expectation()
     matrix = runner.build_field_matrix(
         official=official, stored=stored, plan=official.get('plan'),
-        artifacts=VERIFIED_ARTIFACTS,
+        artifacts=VERIFIED_ARTIFACTS, retained_expectation=expectation,
     )
     completeness = audit.current_source_completeness(
         official=official, matrix_summary=matrix['summary'],
-        database_observed=True,
+        database_observed=True, retained_expectation=expectation,
     )
     return seeded, official, matrix, completeness
 
@@ -1780,8 +1804,10 @@ def test_a_partial_official_set_cannot_reach_a_completed_result(
         # The overlapping rows genuinely agree — that is the whole trap.
         assert summary['differing_rows'] == []
         assert summary['official_missing_row_count'] > 0
+        # The population-size gate fires before membership: six observed
+        # appearances cannot be the game the retained runs verified at twelve.
         assert completeness['completeness_state'] == (
-            audit.SOURCE_STORED_ONLY_MEMBERS
+            audit.SOURCE_COUNT_CONTRADICTS
         )
         assert completeness['conclusion_eligible'] is False
 
@@ -1811,13 +1837,14 @@ def test_an_official_appearance_missing_from_storage_is_material(
         _client, guard = _install_guard(monkeypatch, payload)
         official = runner.observe_current_source(guard)
         stored = runner.observe_stored_state()
+        expectation = _verified_expectation()
         matrix = runner.build_field_matrix(
             official=official, stored=stored, plan=official.get('plan'),
-            artifacts=VERIFIED_ARTIFACTS,
+            artifacts=VERIFIED_ARTIFACTS, retained_expectation=expectation,
         )
         completeness = audit.current_source_completeness(
             official=official, matrix_summary=matrix['summary'],
-            database_observed=True,
+            database_observed=True, retained_expectation=expectation,
         )
         assert matrix['summary']['missing_from_storage'] == [HOME_ARMS[3]]
         assert matrix['summary']['stored_missing_row_count'] > 0
@@ -1864,13 +1891,14 @@ def test_a_stored_appearance_absent_from_the_official_set_is_unproven(
         _client, guard = _install_guard(monkeypatch, payload)
         official = runner.observe_current_source(guard)
         stored = runner.observe_stored_state()
+        expectation = _verified_expectation()
         matrix = runner.build_field_matrix(
             official=official, stored=stored, plan=official.get('plan'),
-            artifacts=VERIFIED_ARTIFACTS,
+            artifacts=VERIFIED_ARTIFACTS, retained_expectation=expectation,
         )
         completeness = audit.current_source_completeness(
             official=official, matrix_summary=matrix['summary'],
-            database_observed=True,
+            database_observed=True, retained_expectation=expectation,
         )
         assert 780099 in matrix['summary']['extra_in_storage']
         assert matrix['summary']['official_missing_row_count'] > 0
@@ -1912,13 +1940,14 @@ def test_membership_differing_in_both_directions_blocks_any_conclusion(
         _client, guard = _install_guard(monkeypatch, payload)
         official = runner.observe_current_source(guard)
         stored = runner.observe_stored_state()
+        expectation = _verified_expectation()
         matrix = runner.build_field_matrix(
             official=official, stored=stored, plan=official.get('plan'),
-            artifacts=VERIFIED_ARTIFACTS,
+            artifacts=VERIFIED_ARTIFACTS, retained_expectation=expectation,
         )
         completeness = audit.current_source_completeness(
             official=official, matrix_summary=matrix['summary'],
-            database_observed=True,
+            database_observed=True, retained_expectation=expectation,
         )
         assert completeness['completeness_state'] == (
             audit.SOURCE_BOTH_DIRECTIONS
@@ -1981,13 +2010,14 @@ def test_matching_membership_with_one_field_difference_stays_material(
         _client, guard = _install_guard(monkeypatch, payload)
         official = runner.observe_current_source(guard)
         stored = runner.observe_stored_state()
+        expectation = _verified_expectation()
         matrix = runner.build_field_matrix(
             official=official, stored=stored, plan=official.get('plan'),
-            artifacts=VERIFIED_ARTIFACTS,
+            artifacts=VERIFIED_ARTIFACTS, retained_expectation=expectation,
         )
         completeness = audit.current_source_completeness(
             official=official, matrix_summary=matrix['summary'],
-            database_observed=True,
+            database_observed=True, retained_expectation=expectation,
         )
         assert completeness['completeness_state'] == audit.SOURCE_COMPLETE
         assert matrix['summary']['differing_rows']
@@ -2011,13 +2041,14 @@ def test_an_empty_official_set_blocks_completion_even_with_empty_storage(
         _client, guard = _install_guard(monkeypatch, _empty_boxscore())
         official = runner.observe_current_source(guard)
         stored = runner.observe_stored_state()
+        expectation = _verified_expectation()
         matrix = runner.build_field_matrix(
             official=official, stored=stored, plan=official.get('plan'),
-            artifacts=VERIFIED_ARTIFACTS,
+            artifacts=VERIFIED_ARTIFACTS, retained_expectation=expectation,
         )
         completeness = audit.current_source_completeness(
             official=official, matrix_summary=matrix['summary'],
-            database_observed=True,
+            database_observed=True, retained_expectation=expectation,
         )
         assert completeness['completeness_state'] == audit.SOURCE_EMPTY
         assert completeness['conclusion_eligible'] is False
@@ -2080,18 +2111,20 @@ def test_question_six_distinguishes_every_membership_outcome(
         stored = runner.observe_stored_state()
         for payload, expected_state, answered in (
             (boxscore(_lines()), audit.SOURCE_COMPLETE, True),
-            (boxscore(_lines()[:6]), audit.SOURCE_STORED_ONLY_MEMBERS, False),
+            (boxscore(_lines()[:6]), audit.SOURCE_COUNT_CONTRADICTS, False),
             (_empty_boxscore(), audit.SOURCE_EMPTY, False),
         ):
             _client, guard = _install_guard(monkeypatch, payload)
             official = runner.observe_current_source(guard)
+            expectation = _verified_expectation()
             matrix = runner.build_field_matrix(
                 official=official, stored=stored,
                 plan=official.get('plan'), artifacts=VERIFIED_ARTIFACTS,
+                retained_expectation=expectation,
             )
             completeness = audit.current_source_completeness(
                 official=official, matrix_summary=matrix['summary'],
-                database_observed=True,
+                database_observed=True, retained_expectation=expectation,
             )
             assert completeness['completeness_state'] == expected_state
             questions = runner.build_questions(
@@ -2148,13 +2181,13 @@ def test_a_partial_source_run_exits_non_zero_and_says_why_in_both_artifacts(
     completeness = document['current_source_completeness']
     assert completeness['conclusion_eligible'] is False
     assert completeness['completeness_state'] == (
-        audit.SOURCE_STORED_ONLY_MEMBERS
+        audit.SOURCE_COUNT_CONTRADICTS
     )
-    assert completeness['extra_in_storage']
+    assert completeness['current_count_matches_retained_expectation'] is False
     assert completeness['limitations']
     assert document['verdict']['result'] not in audit.COMPLETE_RESULTS
     assert document['verdict']['current_source_conclusion_eligible'] is False
-    assert audit.UNPROVEN_CURRENT_SOURCE_INCOMPLETE in (
+    assert audit.UNPROVEN_CURRENT_COUNT_CONTRADICTS in (
         document['verdict']['unproven_reasons']
     )
     assert document['classification' if 'classification' in document
@@ -2165,5 +2198,345 @@ def test_a_partial_source_run_exits_non_zero_and_says_why_in_both_artifacts(
     ).read_text(encoding='utf-8')
     assert '## Current official set completeness' in markdown
     assert 'conclusion eligible: `False`' in markdown
-    assert audit.SOURCE_STORED_ONLY_MEMBERS in markdown
+    assert audit.SOURCE_COUNT_CONTRADICTS in markdown
     assert 'is not evidence that the official' in markdown
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# BLOCKER-F — symmetric truncation, through the REAL orchestration
+#
+# The scenario below previously returned exit 0 with
+# current_target_exactly_matches_storage: the official payload and canonical
+# storage were truncated identically, so membership matched and every
+# comparable row agreed. Two incomplete sets agreeing prove nothing about
+# either, and the retained runs positively verified twelve.
+# ══════════════════════════════════════════════════════════════════════════
+
+def _truncate_storage_to_home_side():
+    """Delete the six away-side GameLog rows, leaving storage with six."""
+    for mlb_id in AWAY_ARMS:
+        victim = Pitcher.query.filter_by(mlb_id=mlb_id).first()
+        GameLog.query.filter_by(
+            mlb_game_pk=GAME_PK, pitcher_id=victim.id,
+        ).delete()
+    db.session.commit()
+
+
+def _home_side_only_boxscore():
+    """A payload carrying only the six home-side pitching lines."""
+    payload = boxscore(_lines())
+    payload['teams']['away']['players'] = {}
+    payload['teams']['away']['pitchers'] = []
+    return payload
+
+
+@postgres_only
+def test_symmetric_truncation_cannot_reach_a_completed_result(
+    app, monkeypatch,
+):
+    """25. Six official versus the same six stored, retained expectation 12."""
+    with app.app_context():
+        _seed(monkeypatch)
+        _truncate_storage_to_home_side()
+        _client, guard = _install_guard(monkeypatch, _home_side_only_boxscore())
+        official = runner.observe_current_source(guard)
+        stored = runner.observe_stored_state()
+        expectation = _verified_expectation()
+        matrix = runner.build_field_matrix(
+            official=official, stored=stored, plan=official.get('plan'),
+            artifacts=VERIFIED_ARTIFACTS, retained_expectation=expectation)
+        completeness = audit.current_source_completeness(
+            official=official, matrix_summary=matrix['summary'],
+            database_observed=True, retained_expectation=expectation)
+
+        summary = matrix['summary']
+        # The trap: membership DOES match and nothing differs.
+        assert official['appearance_count'] == 6
+        assert len(summary['stored_pitcher_mlb_ids']) == 6
+        assert summary['membership_matches'] is True
+        assert summary['differing_rows'] == []
+        # And it is still not the game.
+        assert expectation['expected_current_count'] == 12
+        assert completeness['completeness_state'] == (
+            audit.SOURCE_COUNT_CONTRADICTS)
+        assert completeness['conclusion_eligible'] is False
+        assert summary['comparable_row_set_complete'] is True
+        assert summary['target_population_count_matches'] is False
+        assert summary['conclusion_eligible'] is False
+        assert summary['completeness'] != 'complete_for_observed_evidence'
+
+        classification, decision = _conclude(official, matrix, completeness)
+        assert classification['current_materiality'] != (
+            audit.MATERIALITY_EXACT_MATCH)
+        assert decision['result'] not in audit.COMPLETE_RESULTS
+        assert decision['exit_code'] != 0
+        assert audit.CONSEQUENCE_CONTINUED_OBSERVATION not in (
+            audit.operational_consequence(classification)[
+                'supported_by_evidence'])
+        db.session.rollback()
+
+
+@postgres_only
+def test_symmetric_eleven_of_twelve_cannot_complete(app, monkeypatch):
+    """26. One appearance short on BOTH sides."""
+    with app.app_context():
+        _seed(monkeypatch)
+        victim = Pitcher.query.filter_by(mlb_id=AWAY_ARMS[-1]).first()
+        GameLog.query.filter_by(
+            mlb_game_pk=GAME_PK, pitcher_id=victim.id).delete()
+        db.session.commit()
+        # _lines() yields (mlb_id, side, stats) tuples.
+        lines = [
+            entry for entry in _lines() if entry[0] != AWAY_ARMS[-1]
+        ]
+        _client, guard = _install_guard(monkeypatch, boxscore(lines))
+        official = runner.observe_current_source(guard)
+        stored = runner.observe_stored_state()
+        expectation = _verified_expectation()
+        matrix = runner.build_field_matrix(
+            official=official, stored=stored, plan=official.get('plan'),
+            artifacts=VERIFIED_ARTIFACTS, retained_expectation=expectation)
+        completeness = audit.current_source_completeness(
+            official=official, matrix_summary=matrix['summary'],
+            database_observed=True, retained_expectation=expectation)
+        assert official['appearance_count'] == 11
+        assert matrix['summary']['membership_matches'] is True
+        assert completeness['completeness_state'] == (
+            audit.SOURCE_COUNT_CONTRADICTS)
+        _classification, decision = _conclude(official, matrix, completeness)
+        assert decision['exit_code'] != 0
+        db.session.rollback()
+
+
+@postgres_only
+def test_the_verified_population_still_completes(app, monkeypatch):
+    """27. Control: twelve versus twelve with a verified expectation of 12."""
+    with app.app_context():
+        _seeded, official, matrix, completeness = _observe(
+            monkeypatch, boxscore(_lines()))
+        assert official['appearance_count'] == 12
+        assert completeness['completeness_state'] == audit.SOURCE_COMPLETE
+        assert completeness['conclusion_eligible'] is True
+        assert completeness['current_count_matches_retained_expectation'] is (
+            True)
+        assert matrix['summary']['completeness'] == (
+            'complete_for_observed_evidence')
+        assert matrix['summary']['conclusion_eligible'] is True
+        classification, _decision = _conclude(official, matrix, completeness)
+        assert classification['current_materiality'] == (
+            audit.MATERIALITY_EXACT_MATCH)
+        db.session.rollback()
+
+
+@postgres_only
+def test_disagreeing_retained_counts_keep_the_audit_unproven(
+    app, monkeypatch,
+):
+    """28. Current and storage agree; the retained runs do not agree."""
+    with app.app_context():
+        _seed(monkeypatch)
+        _client, guard = _install_guard(monkeypatch, boxscore(_lines()))
+        official = runner.observe_current_source(guard)
+        stored = runner.observe_stored_state()
+        expectation = _verified_expectation()
+        # Disagreeing retained counts, built the same way as the verified one.
+        disagreeing = audit.retained_appearance_expectation({
+            audit.RUN_PRIOR: {
+                'identity_state': audit.STATE_VERIFIED,
+                'content_state': audit.STATE_VERIFIED,
+                'identity_verified': True, 'content_verified': True,
+                'observations': [{
+                    'field': 'appearances_extracted',
+                    'state': audit.OBS_VERIFIED, 'observed': 12,
+                    'evidence_path': 'p',
+                    'source': audit.SOURCE_RETAINED_ARTIFACT}],
+            },
+            audit.RUN_LATER: {
+                'identity_state': audit.STATE_VERIFIED,
+                'content_state': audit.STATE_VERIFIED,
+                'identity_verified': True, 'content_verified': True,
+                'observations': [{
+                    'field': 'appearances_extracted',
+                    'state': audit.OBS_VERIFIED, 'observed': 11,
+                    'evidence_path': 'p',
+                    'source': audit.SOURCE_RETAINED_ARTIFACT}],
+            },
+        })
+        matrix = runner.build_field_matrix(
+            official=official, stored=stored, plan=official.get('plan'),
+            artifacts=VERIFIED_ARTIFACTS, retained_expectation=expectation)
+        completeness = audit.current_source_completeness(
+            official=official, matrix_summary=matrix['summary'],
+            database_observed=True, retained_expectation=disagreeing)
+        assert completeness['completeness_state'] == (
+            audit.SOURCE_EXPECTATION_INCONSISTENT)
+        _classification, decision = _conclude(official, matrix, completeness)
+        assert decision['exit_code'] != 0
+        db.session.rollback()
+
+
+@postgres_only
+def test_an_unavailable_retained_expectation_keeps_the_audit_unproven(
+    app, monkeypatch,
+):
+    """29. Current and storage agree; no retained expectation exists."""
+    with app.app_context():
+        _seed(monkeypatch)
+        _client, guard = _install_guard(monkeypatch, boxscore(_lines()))
+        official = runner.observe_current_source(guard)
+        stored = runner.observe_stored_state()
+        unavailable = audit.retained_appearance_expectation({})
+        matrix = runner.build_field_matrix(
+            official=official, stored=stored, plan=official.get('plan'),
+            artifacts=VERIFIED_ARTIFACTS, retained_expectation=unavailable)
+        completeness = audit.current_source_completeness(
+            official=official, matrix_summary=matrix['summary'],
+            database_observed=True, retained_expectation=unavailable)
+        assert completeness['completeness_state'] == (
+            audit.SOURCE_EXPECTATION_UNPROVEN)
+        assert matrix['summary']['completeness'] == (
+            'comparable_rows_only_target_population_unverified')
+        _classification, decision = _conclude(official, matrix, completeness)
+        assert decision['exit_code'] != 0
+        db.session.rollback()
+
+
+@postgres_only
+def test_a_count_contradiction_closes_every_dependent_question(
+    app, monkeypatch,
+):
+    """30. Q4, Q5, Q6, Q11 and Q12 under a count contradiction."""
+    with app.app_context():
+        _seed(monkeypatch)
+        _truncate_storage_to_home_side()
+        _client, guard = _install_guard(monkeypatch, _home_side_only_boxscore())
+        official = runner.observe_current_source(guard)
+        stored = runner.observe_stored_state()
+        expectation = _verified_expectation()
+        matrix = runner.build_field_matrix(
+            official=official, stored=stored, plan=official.get('plan'),
+            artifacts=VERIFIED_ARTIFACTS, retained_expectation=expectation)
+        completeness = audit.current_source_completeness(
+            official=official, matrix_summary=matrix['summary'],
+            database_observed=True, retained_expectation=expectation)
+        classification, _decision = _conclude(official, matrix, completeness)
+        questions = runner.build_questions(
+            artifacts={'runs': {}}, code_drift={}, official=official,
+            determinism=audit.fingerprint_determinism(official['appearances']),
+            matrix=matrix, checkpoint={}, stored=stored,
+            classification=classification, delta={}, causality_view={},
+            consequence={}, current_revision_state=audit.CURRENT_MATCHES_NEITHER,
+            database_observed=True, source_completeness=completeness)
+        by_id = {entry['question_id']: entry for entry in questions}
+        assert by_id['Q4']['fully_answered'] is False
+        assert by_id['Q6']['fully_answered'] is False
+        assert by_id['Q11']['fully_answered'] is False
+        # Q5 may still observe a stable digest, and must say the population
+        # it was tested over was count-inconsistent.
+        assert by_id['Q5']['answer'][
+            'tested_population_count_consistent'] is False
+        assert any('does not match the count verified'
+                   in text for text in by_id['Q5']['limitations'])
+        supported = audit.operational_consequence(
+            classification)['supported_by_evidence']
+        assert audit.CONSEQUENCE_CONTINUED_OBSERVATION not in supported
+        assert audit.CONSEQUENCE_COUNT_CONSISTENCY_REVIEW in supported
+        db.session.rollback()
+
+
+@postgres_only
+def test_a_duplicate_stored_identity_is_named_accurately(app, monkeypatch):
+    """31. The duplicate condition is not described as a truncated payload."""
+    with app.app_context():
+        _seed(monkeypatch)
+        _client, guard = _install_guard(monkeypatch, boxscore(_lines()))
+        official = runner.observe_current_source(guard)
+        stored = runner.observe_stored_state()
+        expectation = _verified_expectation()
+        matrix = runner.build_field_matrix(
+            official=official, stored=stored, plan=official.get('plan'),
+            artifacts=VERIFIED_ARTIFACTS, retained_expectation=expectation)
+        summary = dict(matrix['summary'],
+                       duplicate_stored_identities=[HOME_ARMS[0]])
+        completeness = audit.current_source_completeness(
+            official=official, matrix_summary=summary,
+            database_observed=True, retained_expectation=expectation)
+        assert completeness['completeness_state'] == (
+            audit.SOURCE_DUPLICATE_STORED)
+        assert completeness['conclusion_eligible'] is False
+        text = ' '.join(completeness['limitations']).lower()
+        assert 'not a truncated source payload' in text
+        _classification, decision = _conclude(
+            official, dict(matrix, summary=summary), completeness)
+        assert decision['exit_code'] != 0
+        db.session.rollback()
+
+
+@postgres_only
+def test_a_duplicate_official_identity_is_detected_from_the_payload(
+    app, monkeypatch,
+):
+    """32. A repeated pitching line is counted before the lookup collapses it."""
+    with app.app_context():
+        _seed(monkeypatch)
+        _client, guard = _install_guard(monkeypatch, boxscore(_lines()))
+        official = runner.observe_current_source(guard)
+        # Repeat one appearance, exactly as an ambiguous payload would.
+        official = dict(official)
+        official['appearances'] = list(official['appearances']) + [
+            dict(official['appearances'][0])]
+        stored = runner.observe_stored_state()
+        expectation = _verified_expectation()
+        matrix = runner.build_field_matrix(
+            official=official, stored=stored, plan=official.get('plan'),
+            artifacts=VERIFIED_ARTIFACTS, retained_expectation=expectation)
+        assert matrix['summary']['duplicate_official_identities']
+        assert matrix['summary']['membership_matches'] is False
+        db.session.rollback()
+
+
+@postgres_only
+def test_symmetric_truncation_end_to_end_through_run(
+    app, monkeypatch, tmp_path,
+):
+    """25 (full run). The exact scenario that previously returned exit 0."""
+    sha = _head_sha()
+    if not sha:
+        pytest.skip('repository history unavailable')
+    with app.app_context():
+        _seed(monkeypatch)
+        _truncate_storage_to_home_side()
+        monkeypatch.setattr(
+            sync_service, 'mlb_client',
+            _Counting({GAME_PK: _home_side_only_boxscore()}))
+    monkeypatch.setattr(runner, 'build_app', lambda: app)
+    _authorize(monkeypatch, sha)
+    artifacts = tmp_path / 'out'
+    exit_code = runner.main([
+        '--expected-main-sha', sha, '--confirmation', audit.CONFIRMATION,
+        '--operator-note', 'symmetric truncation regression',
+        '--evidence-dir', str(_write_evidence(tmp_path / 'e')),
+        '--artifact-dir', str(artifacts)])
+    assert exit_code != 0
+
+    document = json.loads(
+        (artifacts / 'source-revision-audit.json').read_text(encoding='utf-8'))
+    completeness = document['current_source_completeness']
+    expectation = document['retained_appearance_expectation']
+    assert expectation['expected_current_count'] == 12
+    assert expectation['conclusion_usable'] is True
+    assert completeness['extracted_appearance_count'] == 6
+    assert completeness['completeness_state'] == audit.SOURCE_COUNT_CONTRADICTS
+    assert completeness['current_count_matches_retained_expectation'] is False
+    assert completeness['conclusion_eligible'] is False
+    assert document['verdict']['result'] not in audit.COMPLETE_RESULTS
+    assert audit.UNPROVEN_CURRENT_COUNT_CONTRADICTS in (
+        document['verdict']['unproven_reasons'])
+
+    markdown = (
+        artifacts / 'source-revision-audit-summary.md'
+    ).read_text(encoding='utf-8')
+    assert 'yielded 6 appearances' in markdown
+    assert 'recorded 12' in markdown
+    assert 'Target population size' in markdown
+    assert 'necessary but NOT sufficient' in markdown

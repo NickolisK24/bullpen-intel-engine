@@ -308,6 +308,12 @@ UNPROVEN_REASONS = (
     UNPROVEN_CURRENT_SOURCE_EMPTY,
     UNPROVEN_CURRENT_SOURCE_INCOMPLETE,
     UNPROVEN_REGISTRY_EXPECTATION_MISSING,
+    # Declared here; defined with the retained-expectation model below, which
+    # needs the observation helpers that appear after this block.
+    'current_count_contradicts_retained_expectation',
+    'retained_appearance_expectation_unavailable',
+    'retained_appearance_counts_disagree',
+    'duplicate_appearance_identity',
     UNPROVEN_ARTIFACT_MISSING,
     UNPROVEN_QUESTION_UNANSWERED,
     UNPROVEN_ARTIFACT_IDENTITY_UNPROVEN,
@@ -458,10 +464,18 @@ CONSEQUENCE_CONTINUED_OBSERVATION = 'continued_scheduled_observation_only'
 CONSEQUENCE_SOURCE_COMPLETENESS_REVIEW = (
     'current_source_completeness_review_required'
 )
+# A population-size contradiction and a duplicated identity are distinct
+# read-only review requests, and neither is "nothing to do".
+CONSEQUENCE_COUNT_CONSISTENCY_REVIEW = (
+    'current_source_count_consistency_review_required'
+)
+CONSEQUENCE_IDENTITY_REVIEW = 'appearance_identity_review_required'
 CONSEQUENCE_NO_ACTION = 'no_action'
 
 CONSEQUENCES = (
     CONSEQUENCE_SOURCE_COMPLETENESS_REVIEW,
+    CONSEQUENCE_COUNT_CONSISTENCY_REVIEW,
+    CONSEQUENCE_IDENTITY_REVIEW,
     CONSEQUENCE_GAMELOG_REPAIR,
     CONSEQUENCE_EXACT_GAME_BACKFILL,
     CONSEQUENCE_WORK_ITEM_REVISION_UPDATE,
@@ -2975,6 +2989,148 @@ def validate_matrix(rows) -> dict:
     }
 
 
+# ── Retained appearance-count expectation ───────────────────────────────────
+# What the two retained runs POSITIVELY OBSERVED about how many appearances
+# this game has. This is the only thing that can tell the audit whether the set
+# it observed today is the whole game, and it is read out of the artifacts'
+# own observations — never out of RUN_EXPECTATIONS. The locked constant still
+# validates artifact content under the artifact contract; after that
+# validation, the number the artifact actually carried is what is consumed.
+
+EXPECTATION_VERIFIED = 'verified_common_count'
+EXPECTATION_PRIOR_ARTIFACT_UNPROVEN = 'prior_artifact_unproven'
+EXPECTATION_LATER_ARTIFACT_UNPROVEN = 'later_artifact_unproven'
+EXPECTATION_PRIOR_COUNT_UNOBSERVED = 'prior_count_unobserved'
+EXPECTATION_LATER_COUNT_UNOBSERVED = 'later_count_unobserved'
+EXPECTATION_COUNTS_DISAGREE = 'retained_counts_disagree'
+EXPECTATION_COUNT_MALFORMED = 'retained_count_malformed'
+EXPECTATION_UNAVAILABLE = 'retained_expectation_unavailable'
+
+EXPECTATION_STATES = (
+    EXPECTATION_VERIFIED,
+    EXPECTATION_PRIOR_ARTIFACT_UNPROVEN,
+    EXPECTATION_LATER_ARTIFACT_UNPROVEN,
+    EXPECTATION_PRIOR_COUNT_UNOBSERVED,
+    EXPECTATION_LATER_COUNT_UNOBSERVED,
+    EXPECTATION_COUNTS_DISAGREE,
+    EXPECTATION_COUNT_MALFORMED,
+    EXPECTATION_UNAVAILABLE,
+)
+
+UNPROVEN_RETAINED_EXPECTATION_UNAVAILABLE = (
+    'retained_appearance_expectation_unavailable'
+)
+UNPROVEN_RETAINED_COUNTS_DISAGREE = 'retained_appearance_counts_disagree'
+UNPROVEN_CURRENT_COUNT_CONTRADICTS = (
+    'current_count_contradicts_retained_expectation'
+)
+UNPROVEN_DUPLICATE_APPEARANCE_IDENTITY = 'duplicate_appearance_identity'
+
+_COUNT_FIELD = 'appearances_extracted'
+_COUNT_PATH = (
+    f'sync.game_driven_ingestion.games[game_pk={GAME_PK}].{_COUNT_FIELD}'
+)
+
+
+def _retained_count(entry) -> tuple:
+    """(count, observation_state, artifact_usable) for one retained run.
+
+    The count is the value the ARTIFACT carried, taken from its own
+    observation. Nothing here consults ``RUN_EXPECTATIONS``.
+    """
+    entry = entry or {}
+    artifact_usable = bool(
+        entry.get('identity_verified') and entry.get('content_verified')
+    )
+    observations = entry.get('observations') or ()
+    state = observation_state(observations, _COUNT_FIELD)
+    if state != OBS_VERIFIED:
+        return None, state, artifact_usable
+    value = observation_value(observations, _COUNT_FIELD)
+    if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+        return None, OBS_MALFORMED, artifact_usable
+    return value, state, artifact_usable
+
+
+def retained_appearance_expectation(runs) -> dict:
+    """The appearance count BOTH retained runs positively verified.
+
+    Only ``verified_common_count`` may supply ``expected_current_count``, and
+    it requires both artifacts identity-verified AND content-verified, both
+    counts positively observed and verified, and the two counts equal. One
+    artifact alone establishes nothing; a count inferred from ``unchanged``,
+    from a list length, or from the locked constant establishes nothing.
+    """
+    runs = runs or {}
+    prior_entry = runs.get(RUN_PRIOR) or {}
+    later_entry = runs.get(RUN_LATER) or {}
+
+    prior_count, prior_obs, prior_usable = _retained_count(prior_entry)
+    later_count, later_obs, later_usable = _retained_count(later_entry)
+
+    reasons: list[str] = []
+    if not prior_usable and not later_usable:
+        state = EXPECTATION_UNAVAILABLE
+    elif not prior_usable:
+        state = EXPECTATION_PRIOR_ARTIFACT_UNPROVEN
+    elif not later_usable:
+        state = EXPECTATION_LATER_ARTIFACT_UNPROVEN
+    elif prior_obs == OBS_MALFORMED or later_obs == OBS_MALFORMED:
+        state = EXPECTATION_COUNT_MALFORMED
+    elif prior_count is None:
+        state = EXPECTATION_PRIOR_COUNT_UNOBSERVED
+    elif later_count is None:
+        state = EXPECTATION_LATER_COUNT_UNOBSERVED
+    elif prior_count != later_count:
+        state = EXPECTATION_COUNTS_DISAGREE
+    else:
+        state = EXPECTATION_VERIFIED
+
+    usable = state == EXPECTATION_VERIFIED
+    if state == EXPECTATION_COUNTS_DISAGREE:
+        reasons.append(UNPROVEN_RETAINED_COUNTS_DISAGREE)
+    elif not usable:
+        reasons.append(UNPROVEN_RETAINED_EXPECTATION_UNAVAILABLE)
+
+    limitations = [] if usable else [
+        'The appearance count this game should carry could not be '
+        'established from the retained runs, so the audit cannot tell '
+        'whether the set it observed today is the whole game.'
+    ]
+    if state == EXPECTATION_COUNTS_DISAGREE:
+        limitations = [
+            'The two retained runs recorded different appearance counts for '
+            'this game, so neither can serve as the expected population size.'
+        ]
+
+    return {
+        'prior_identity_state': prior_entry.get('identity_state'),
+        'prior_content_state': prior_entry.get('content_state'),
+        'prior_count_observation_state': prior_obs,
+        'prior_count': prior_count,
+        'later_identity_state': later_entry.get('identity_state'),
+        'later_content_state': later_entry.get('content_state'),
+        'later_count_observation_state': later_obs,
+        'later_count': later_count,
+        'both_artifacts_verified': bool(prior_usable and later_usable),
+        'counts_agree': (
+            prior_count is not None and prior_count == later_count
+        ),
+        'expected_current_count': prior_count if usable else None,
+        'expectation_state': state,
+        'conclusion_usable': usable,
+        'reason_codes': reasons,
+        'limitations': limitations,
+        'evidence_sources': [SOURCE_RETAINED_ARTIFACT],
+        'evidence_paths': [_COUNT_PATH],
+        'note': (
+            'The expected population size is the count BOTH retained runs '
+            'positively observed and verified. It is never supplied by a '
+            'locked constant, by one artifact alone, or by any other field.'
+        ),
+    }
+
+
 # ── Current official set completeness ───────────────────────────────────────
 # One explicit state machine, not a scattering of booleans. A box-score call
 # that succeeded proves the transport worked; it proves nothing about whether
@@ -2992,6 +3148,17 @@ SOURCE_BOTH_DIRECTIONS = 'both_directions_mismatch'
 SOURCE_STATE_UNAVAILABLE = 'source_unavailable'
 SOURCE_DATABASE_UNAVAILABLE = 'database_unavailable'
 SOURCE_MATRIX_UNPROVEN = 'matrix_unproven'
+# Two symmetrically incomplete sets agreeing with one another prove nothing
+# about either. The observed population size must also match what the retained
+# runs verified this game to hold.
+SOURCE_COUNT_CONTRADICTS = 'current_count_contradicts_verified_expectation'
+SOURCE_EXPECTATION_UNPROVEN = 'retained_count_expectation_unproven'
+SOURCE_EXPECTATION_INCONSISTENT = 'retained_counts_inconsistent'
+# A duplicate identity is not a truncated payload and must not borrow that
+# explanation.
+SOURCE_DUPLICATE_OFFICIAL = 'duplicate_official_identities'
+SOURCE_DUPLICATE_STORED = 'duplicate_stored_identities'
+SOURCE_DUPLICATE_BOTH = 'duplicate_identities_both_sides'
 
 SOURCE_COMPLETENESS_STATES = (
     SOURCE_COMPLETE,
@@ -3002,7 +3169,18 @@ SOURCE_COMPLETENESS_STATES = (
     SOURCE_STATE_UNAVAILABLE,
     SOURCE_DATABASE_UNAVAILABLE,
     SOURCE_MATRIX_UNPROVEN,
+    SOURCE_COUNT_CONTRADICTS,
+    SOURCE_EXPECTATION_UNPROVEN,
+    SOURCE_EXPECTATION_INCONSISTENT,
+    SOURCE_DUPLICATE_OFFICIAL,
+    SOURCE_DUPLICATE_STORED,
+    SOURCE_DUPLICATE_BOTH,
 )
+
+COUNT_CONSISTENCY_VERIFIED = 'current_count_matches_retained_expectation'
+COUNT_CONSISTENCY_CONTRADICTED = 'current_count_differs_from_retained'
+COUNT_CONSISTENCY_UNPROVEN = 'retained_expectation_not_usable'
+COUNT_CONSISTENCY_NOT_APPLICABLE = 'current_count_not_observed'
 
 # Every state except this one closes the exit-zero path.
 CONCLUSION_ELIGIBLE_STATES = frozenset({SOURCE_COMPLETE})
@@ -3042,21 +3220,79 @@ _SOURCE_LIMITATIONS = {
         'The field matrix did not validate structurally, so its membership '
         'accounting cannot be relied upon.'
     ),
+    SOURCE_EXPECTATION_UNPROVEN: (
+        'The appearance count this game should carry was not established '
+        'from the retained runs, so the observed set cannot be shown to be '
+        'the whole game.'
+    ),
+    SOURCE_EXPECTATION_INCONSISTENT: (
+        'The two retained runs recorded different appearance counts, so '
+        'neither can serve as the expected population size.'
+    ),
+    SOURCE_DUPLICATE_OFFICIAL: (
+        'The observed official set carries the same pitcher more than once. '
+        'One pitcher has exactly one pitching line per game, so the payload '
+        'is ambiguous rather than merely incomplete. Deduplicating it to '
+        'prove completeness would be inventing evidence.'
+    ),
+    SOURCE_DUPLICATE_STORED: (
+        'Canonical storage holds more than one row for the same pitcher in '
+        'this game. That is a stored-identity condition, NOT a truncated '
+        'source payload, and it needs read-only identity review rather than '
+        'any inference about the official response.'
+    ),
+    SOURCE_DUPLICATE_BOTH: (
+        'Both the observed official set and canonical storage carry a '
+        'duplicated pitcher identity. Neither side is an unambiguous '
+        'appearance set, so no current comparison follows.'
+    ),
 }
 
 
+def _count_limitations(count_state, observed, expected) -> list[str]:
+    """The bounded statement for a count contradiction. Counts are dynamic.
+
+    Deliberately says what was observed and what was verified, and then stops.
+    It does NOT name a cause: one bounded source call cannot distinguish an
+    official correction from incomplete current evidence, and guessing between
+    them is the failure this gate exists to prevent.
+    """
+    if count_state == COUNT_CONSISTENCY_CONTRADICTED:
+        return [
+            f'The current official source yielded {observed} appearances, '
+            f'while both verified retained runs recorded {expected}. The '
+            'audit cannot determine from one bounded source call whether '
+            'this reflects an official correction or incomplete current '
+            'evidence. No current exact-match conclusion is permitted.'
+        ]
+    if count_state == COUNT_CONSISTENCY_UNPROVEN:
+        return [
+            'The appearance count this game should carry was not established '
+            'from the retained runs, so the observed set cannot be shown to '
+            'be the whole game.'
+        ]
+    return []
+
+
 def current_source_completeness(
-    *, official, matrix_summary, database_observed,
+    *, official, matrix_summary, database_observed, retained_expectation=None,
 ) -> dict:
     """Whether the observed official set may support a current conclusion.
 
     ``conclusion_eligible`` is the single gate every completed result depends
     on. It is true only when the source was fetched, parsed, produced a
-    non-empty appearance set, and that set's pitcher membership matches
-    canonical storage EXACTLY in both directions.
+    non-empty appearance set, that set carries no duplicated identity, its
+    SIZE equals the appearance count both retained runs positively verified,
+    and its pitcher membership matches canonical storage EXACTLY in both
+    directions.
+
+    Membership equality is necessary and NOT sufficient: two symmetrically
+    truncated sets agree with one another while both remain incomplete, which
+    is why the retained population size is consulted before membership.
     """
     official = official or {}
     matrix_summary = matrix_summary or {}
+    expectation = retained_expectation or {}
 
     # The empty-appearance guard marks the source unavailable AS EVIDENCE
     # while recording that the call itself succeeded. Both facts are true and
@@ -3080,6 +3316,26 @@ def current_source_completeness(
     stored_missing = matrix_summary.get('stored_missing_row_count') or 0
     membership_matches = bool(matrix_summary.get('membership_matches'))
 
+    duplicate_official = list(
+        matrix_summary.get('duplicate_official_identities') or ()
+    )
+    duplicate_stored = list(
+        matrix_summary.get('duplicate_stored_identities') or ()
+    )
+
+    # ── Count consistency, resolved from the retained expectation ───────────
+    expected_count = expectation.get('expected_current_count')
+    expectation_usable = bool(expectation.get('conclusion_usable'))
+    if not expectation_usable:
+        count_state = COUNT_CONSISTENCY_UNPROVEN
+    elif count <= 0:
+        count_state = COUNT_CONSISTENCY_NOT_APPLICABLE
+    elif count == expected_count:
+        count_state = COUNT_CONSISTENCY_VERIFIED
+    else:
+        count_state = COUNT_CONSISTENCY_CONTRADICTED
+    count_matches = count_state == COUNT_CONSISTENCY_VERIFIED
+
     reasons: list[str] = []
     if empty_extraction:
         state = SOURCE_EMPTY
@@ -3099,6 +3355,29 @@ def current_source_completeness(
     elif not matrix_summary.get('structurally_valid'):
         state = SOURCE_MATRIX_UNPROVEN
         reasons.append(UNPROVEN_EXECUTION_ERROR)
+    elif expectation.get('expectation_state') == EXPECTATION_COUNTS_DISAGREE:
+        state = SOURCE_EXPECTATION_INCONSISTENT
+        reasons.append(UNPROVEN_RETAINED_COUNTS_DISAGREE)
+    elif not expectation_usable:
+        # Without a verified population size the audit cannot tell a complete
+        # observation from a symmetrically truncated one.
+        state = SOURCE_EXPECTATION_UNPROVEN
+        reasons.append(UNPROVEN_RETAINED_EXPECTATION_UNAVAILABLE)
+    elif not count_matches:
+        # THE symmetric-truncation gate. Reached before membership on purpose:
+        # membership equality is exactly what a symmetrically truncated pair
+        # satisfies, so it must not be consulted first.
+        state = SOURCE_COUNT_CONTRADICTS
+        reasons.append(UNPROVEN_CURRENT_COUNT_CONTRADICTS)
+    elif duplicate_official and duplicate_stored:
+        state = SOURCE_DUPLICATE_BOTH
+        reasons.append(UNPROVEN_DUPLICATE_APPEARANCE_IDENTITY)
+    elif duplicate_official:
+        state = SOURCE_DUPLICATE_OFFICIAL
+        reasons.append(UNPROVEN_DUPLICATE_APPEARANCE_IDENTITY)
+    elif duplicate_stored:
+        state = SOURCE_DUPLICATE_STORED
+        reasons.append(UNPROVEN_DUPLICATE_APPEARANCE_IDENTITY)
     elif missing_from_storage and extra_in_storage:
         state = SOURCE_BOTH_DIRECTIONS
         reasons.append(UNPROVEN_CURRENT_SOURCE_INCOMPLETE)
@@ -3126,16 +3405,50 @@ def current_source_completeness(
         'extra_in_storage': extra_in_storage,
         'official_missing_row_count': official_missing,
         'stored_missing_row_count': stored_missing,
+        'duplicate_official_identities': duplicate_official,
+        'duplicate_stored_identities': duplicate_stored,
+        'duplicate_identity_count': (
+            len(duplicate_official) + len(duplicate_stored)
+        ),
+        'duplicate_identity_state': (
+            SOURCE_DUPLICATE_BOTH if duplicate_official and duplicate_stored
+            else SOURCE_DUPLICATE_OFFICIAL if duplicate_official
+            else SOURCE_DUPLICATE_STORED if duplicate_stored else None
+        ),
+        # ── Retained expectation and count consistency ─────────────────────
+        'retained_expectation_state': expectation.get('expectation_state'),
+        'retained_expected_appearance_count': expected_count,
+        'retained_prior_count': expectation.get('prior_count'),
+        'retained_later_count': expectation.get('later_count'),
+        'retained_counts_agree': bool(expectation.get('counts_agree')),
+        'current_count_matches_retained_expectation': count_matches,
+        'count_consistency_state': count_state,
+        'count_conclusion_eligible': count_matches,
+        'count_reason_codes': (
+            [] if count_matches else [
+                UNPROVEN_CURRENT_COUNT_CONTRADICTS
+                if count_state == COUNT_CONSISTENCY_CONTRADICTED
+                else UNPROVEN_RETAINED_EXPECTATION_UNAVAILABLE
+            ]
+        ),
+        'count_limitations': _count_limitations(
+            count_state, count, expected_count,
+        ),
         'completeness_state': state,
         'conclusion_eligible': state in CONCLUSION_ELIGIBLE_STATES,
         'reason_codes': reasons,
         'limitations': (
-            [] if state == SOURCE_COMPLETE else [_SOURCE_LIMITATIONS[state]]
+            _count_limitations(count_state, count, expected_count)
+            if state == SOURCE_COUNT_CONTRADICTS
+            else [] if state == SOURCE_COMPLETE
+            else [_SOURCE_LIMITATIONS[state]]
         ),
         'note': (
             'A successful fetch proves transport, not semantic completeness. '
-            'Only an exactly matching membership set supports a current '
-            'conclusion about game 824487.'
+            'Exact membership equality is necessary but NOT sufficient: two '
+            'symmetrically truncated sets match each other while both remain '
+            'incomplete. The observed count must also equal the appearance '
+            'count both retained runs positively verified.'
         ),
     }
 
@@ -3228,6 +3541,13 @@ def classify(
     elif completeness_state in (
         SOURCE_STORED_ONLY_MEMBERS, SOURCE_BOTH_DIRECTIONS,
         SOURCE_DATABASE_UNAVAILABLE, SOURCE_MATRIX_UNPROVEN,
+        # A count contradiction is NOT labelled a correction, a truncation, a
+        # storage defect, or a source defect. One bounded call cannot tell
+        # them apart, so the dimension stays unproven.
+        SOURCE_COUNT_CONTRADICTS, SOURCE_EXPECTATION_UNPROVEN,
+        SOURCE_EXPECTATION_INCONSISTENT,
+        SOURCE_DUPLICATE_OFFICIAL, SOURCE_DUPLICATE_STORED,
+        SOURCE_DUPLICATE_BOTH,
     ):
         # Either the payload was truncated or the stored row is extraneous.
         # One bounded source call cannot tell them apart, so neither is
@@ -3493,7 +3813,16 @@ def operational_consequence(classification) -> dict:
         supported.append(CONSEQUENCE_EXACT_GAME_BACKFILL)
     if field_id == FIELD_ID_NOT_RETAINED:
         supported.append(CONSEQUENCE_ARTIFACT_RETENTION_IMPROVEMENT)
-    if not membership_resolved:
+    if completeness == SOURCE_COUNT_CONTRADICTS:
+        supported.append(CONSEQUENCE_COUNT_CONSISTENCY_REVIEW)
+        supported.append(CONSEQUENCE_SOURCE_COMPLETENESS_REVIEW)
+    elif completeness in (
+        SOURCE_DUPLICATE_OFFICIAL, SOURCE_DUPLICATE_STORED,
+        SOURCE_DUPLICATE_BOTH,
+    ):
+        supported.append(CONSEQUENCE_IDENTITY_REVIEW)
+        supported.append(CONSEQUENCE_SOURCE_COMPLETENESS_REVIEW)
+    elif not membership_resolved:
         # Never "continued observation only" while the current membership
         # question is open — that reads as "storage and the source agreed."
         supported.append(CONSEQUENCE_SOURCE_COMPLETENESS_REVIEW)
@@ -3551,10 +3880,17 @@ def decide(
     # truncated, or whose membership did not match canonical storage exactly.
     # This runs BEFORE the classification branches so no branch can slip past
     # it, and it contributes a reason rather than silently downgrading.
-    if source_completeness and not source_completeness.get(
-        'conclusion_eligible'
-    ):
+    # No truthiness. An absent, empty, malformed, or non-mapping completeness
+    # object is an audit that never established eligibility, which is exactly
+    # the state that must not complete. Only the identity check passes.
+    if isinstance(source_completeness, dict):
+        eligible = source_completeness.get('conclusion_eligible') is True
         blocking = set(source_completeness.get('reason_codes') or ())
+    else:
+        eligible = False
+        blocking = set()
+        source_completeness = {}
+    if not eligible:
         if not blocking:
             blocking = {UNPROVEN_CURRENT_SOURCE_INCOMPLETE}
         unproven = sorted(set(unproven) | blocking)
@@ -3601,9 +3937,14 @@ def decide(
         'field_delta': dict(delta),
         'advisory_lock_lifecycle': dict(lock),
         'current_source_completeness': dict(source_completeness),
-        'current_source_conclusion_eligible': bool(
-            source_completeness.get('conclusion_eligible')
-        ) if source_completeness else None,
+        # Always an explicit boolean, never None: "nobody established this"
+        # and "this was established false" both close the exit-zero path, and
+        # a reader must not have to tell them apart to see that it is closed.
+        'current_source_conclusion_eligible': eligible,
+        # Preserved even when FAILED outranks, so an authorization failure
+        # never hides the fact that eligibility was also never established.
+        'current_source_blocking_reasons': sorted(blocking) if not eligible
+        else [],
         'unanswered_mandatory_questions': unanswered,
         'platform_defect_discovery_is_not_an_audit_failure': True,
         'non_authorization_statement': NON_AUTHORIZATION_STATEMENT,
@@ -3631,6 +3972,38 @@ def explanation(decision) -> str:
                 'no pitching appearances, so there is no current official '
                 'appearance set to compare. The source-revision question '
                 'remains open.'
+            )
+        if state == SOURCE_COUNT_CONTRADICTS:
+            observed = completeness.get('extracted_appearance_count')
+            expected = completeness.get(
+                'retained_expected_appearance_count'
+            )
+            return (
+                f'The current official source yielded {observed} '
+                f'appearances, while both verified retained runs recorded '
+                f'{expected}. One bounded current source observation cannot '
+                'distinguish an official correction from incomplete current '
+                'evidence, so no current conclusion follows and the '
+                'source-revision question remains open.'
+            )
+        if state in (
+            SOURCE_DUPLICATE_OFFICIAL, SOURCE_DUPLICATE_STORED,
+            SOURCE_DUPLICATE_BOTH,
+        ):
+            return (
+                'A pitcher identity appears more than once in the observed '
+                'appearance evidence. One pitcher has exactly one pitching '
+                'line per game, so the set is ambiguous rather than merely '
+                'incomplete, and the source-revision question remains open.'
+            )
+        if state in (
+            SOURCE_EXPECTATION_UNPROVEN, SOURCE_EXPECTATION_INCONSISTENT,
+        ):
+            return (
+                'The appearance count this game should carry could not be '
+                'established from the retained runs, so the audit cannot '
+                'tell whether the set it observed today is the whole game. '
+                'The source-revision question remains open.'
             )
         if state in (
             SOURCE_STORED_ONLY_MEMBERS, SOURCE_BOTH_DIRECTIONS,

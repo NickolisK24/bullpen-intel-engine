@@ -401,6 +401,48 @@ def test_the_gate_states_that_the_audit_authorizes_nothing(steps):
 
 # ── 99-105. Result and exit-code semantics ──────────────────────────────────
 
+# A retained expectation and a completeness verdict that are BOTH positively
+# established. Completed results now require the observed population size to
+# equal the count both retained runs verified, so a reducer test that means to
+# exercise a clean run has to supply that evidence rather than omit it.
+def _verified_expectation(prior=12, later=12):
+    def _entry(count):
+        return {
+            'identity_state': audit.STATE_VERIFIED,
+            'content_state': audit.STATE_VERIFIED,
+            'identity_verified': True, 'content_verified': True,
+            'observations': [{
+                'field': 'appearances_extracted', 'state': audit.OBS_VERIFIED,
+                'observed': count, 'evidence_path': 'p',
+                'source': audit.SOURCE_RETAINED_ARTIFACT,
+            }],
+        }
+    return audit.retained_appearance_expectation({
+        audit.RUN_PRIOR: _entry(prior), audit.RUN_LATER: _entry(later),
+    })
+
+
+def _eligible_completeness(count=12, official=None, stored=None):
+    ids = list(range(7001, 7001 + count))
+    official = ids if official is None else list(official)
+    stored = ids if stored is None else list(stored)
+    return audit.current_source_completeness(
+        official={'available': True, 'appearance_count': len(official)},
+        matrix_summary={
+            'structurally_valid': True,
+            'official_pitcher_mlb_ids': official,
+            'stored_pitcher_mlb_ids': stored,
+            'membership_matches': set(official) == set(stored),
+            'missing_from_storage': sorted(set(official) - set(stored)),
+            'extra_in_storage': sorted(set(stored) - set(official)),
+            'official_missing_row_count': len(set(stored) - set(official)),
+            'stored_missing_row_count': len(set(official) - set(stored)),
+        },
+        database_observed=True,
+        retained_expectation=_verified_expectation(),
+    )
+
+
 def _classification(**overrides):
     base = {
         'root_condition': audit.ROOT_OFFICIAL_SET_CHANGED,
@@ -415,6 +457,7 @@ def _classification(**overrides):
 
 def test_a_positive_root_cause_returns_complete_root_cause_identified():
     decision = audit.decide(
+        source_completeness=_eligible_completeness(),
         classification=_classification(),
         delta={'answer': audit.DELTA_IDENTIFIED},
     )
@@ -424,6 +467,7 @@ def test_a_positive_root_cause_returns_complete_root_cause_identified():
 
 def test_proven_limited_historical_evidence_returns_the_field_delta_result():
     decision = audit.decide(
+        source_completeness=_eligible_completeness(),
         classification=_classification(
             historical_field_identification=audit.FIELD_ID_NOT_RETAINED,
         ),
@@ -435,6 +479,7 @@ def test_proven_limited_historical_evidence_returns_the_field_delta_result():
 
 def test_narrowed_but_unidentified_evidence_also_completes_with_exit_zero():
     decision = audit.decide(
+        source_completeness=_eligible_completeness(),
         classification=_classification(
             historical_field_identification=audit.FIELD_ID_NARROWED,
         ),
@@ -446,6 +491,7 @@ def test_narrowed_but_unidentified_evidence_also_completes_with_exit_zero():
 
 def test_no_current_actionable_defect_returns_complete_no_current_defect():
     decision = audit.decide(
+        source_completeness=_eligible_completeness(),
         classification=_classification(
             current_materiality=audit.MATERIALITY_EXACT_MATCH,
         ),
@@ -465,6 +511,7 @@ def test_no_current_actionable_defect_returns_complete_no_current_defect():
 ])
 def test_a_safety_or_integrity_violation_returns_failed(reason):
     decision = audit.decide(
+        source_completeness=_eligible_completeness(),
         failed_reasons=[reason],
         classification=_classification(),
         delta={'answer': audit.DELTA_IDENTIFIED},
@@ -485,6 +532,7 @@ def test_a_safety_or_integrity_violation_returns_failed(reason):
 ])
 def test_missing_required_evidence_returns_unproven(reason):
     decision = audit.decide(
+        source_completeness=_eligible_completeness(),
         unproven_reasons=[reason],
         classification=_classification(),
         delta={'answer': audit.DELTA_IDENTIFIED},
@@ -496,6 +544,7 @@ def test_missing_required_evidence_returns_unproven(reason):
 
 def test_failed_outranks_unproven_when_both_are_present():
     decision = audit.decide(
+        source_completeness=_eligible_completeness(),
         failed_reasons=[audit.FAILED_SCOPED_FINGERPRINT_CHANGED],
         unproven_reasons=[audit.UNPROVEN_ARTIFACT_MISSING],
         classification=_classification(),
@@ -512,6 +561,7 @@ def test_discovering_a_platform_defect_alone_does_not_make_the_audit_fail():
     broken" in another.
     """
     decision = audit.decide(
+        source_completeness=_eligible_completeness(),
         classification=_classification(
             current_materiality=audit.MATERIALITY_MATERIAL,
             checkpoint_state=audit.CHECKPOINT_STALE,
@@ -529,6 +579,7 @@ def test_an_unproven_classification_dimension_cannot_complete():
         {'current_materiality': audit.MATERIALITY_UNPROVEN},
     ):
         decision = audit.decide(
+        source_completeness=_eligible_completeness(),
             classification=_classification(**overrides),
             delta={'answer': audit.DELTA_IDENTIFIED},
         )
@@ -563,7 +614,8 @@ def test_a_recommendation_never_grants_authorization():
 
 
 def test_every_decision_carries_the_non_authorization_statement():
-    decision = audit.decide(classification=_classification())
+    decision = audit.decide(
+        source_completeness=_eligible_completeness(),classification=_classification())
     assert 'authorizes no mutation' in decision['non_authorization_statement']
     assert decision['standing_production_state'] == {
         'daily_game_driven_lane': 'shadow',
@@ -577,7 +629,8 @@ def test_every_decision_carries_the_non_authorization_statement():
 
 def test_the_global_dead_letter_backlog_is_never_reported_as_zero():
     """The audit may report only that IT created none."""
-    decision = audit.decide(classification=_classification())
+    decision = audit.decide(
+        source_completeness=_eligible_completeness(),classification=_classification())
     assert audit.GOVERNED_DEAD_LETTER_BACKLOG == 1389
     note = decision['dead_letter_backlog_note']
     assert 'zero dead letters' in note
@@ -613,7 +666,8 @@ def test_a_never_acquired_lock_is_unproven():
         lifecycle['unproven_reasons']
     )
     assert lifecycle['failed_reasons'] == []
-    decision = audit.decide(classification=_classification(), lock=lifecycle)
+    decision = audit.decide(
+        source_completeness=_eligible_completeness(),classification=_classification(), lock=lifecycle)
     assert decision['result'] == audit.RESULT_UNPROVEN
     assert decision['exit_code'] == 2
 
@@ -623,6 +677,7 @@ def test_a_never_attempted_lock_is_unproven():
                       guard_release_attempted=False, guard_released=None)
     assert lifecycle['status'] == audit.LOCK_NOT_ATTEMPTED
     assert audit.decide(
+        source_completeness=_eligible_completeness(),
         classification=_classification(), lock=lifecycle,
     )['exit_code'] == 2
 
@@ -634,6 +689,7 @@ def test_an_acquired_and_released_lock_may_complete():
     assert lifecycle['failed_reasons'] == []
     assert lifecycle['unproven_reasons'] == []
     decision = audit.decide(
+        source_completeness=_eligible_completeness(),
         classification=_classification(),
         delta={'answer': audit.DELTA_IDENTIFIED}, lock=lifecycle,
     )
@@ -645,6 +701,7 @@ def test_a_release_that_raised_cannot_complete():
     assert lifecycle['status'] == audit.LOCK_RELEASE_FAILED
     assert audit.FAILED_LOCK_RELEASE_FAILED in lifecycle['failed_reasons']
     decision = audit.decide(
+        source_completeness=_eligible_completeness(),
         classification=_classification(),
         delta={'answer': audit.DELTA_IDENTIFIED}, lock=lifecycle,
     )
@@ -660,6 +717,7 @@ def test_a_release_never_attempted_after_acquisition_cannot_complete():
         lifecycle['failed_reasons']
     )
     assert audit.decide(
+        source_completeness=_eligible_completeness(),
         classification=_classification(), lock=lifecycle,
     )['exit_code'] == 1
 
@@ -672,6 +730,7 @@ def test_a_release_outcome_never_established_cannot_complete():
         lifecycle['unproven_reasons']
     )
     decision = audit.decide(
+        source_completeness=_eligible_completeness(),
         classification=_classification(),
         delta={'answer': audit.DELTA_IDENTIFIED}, lock=lifecycle,
     )
@@ -690,6 +749,7 @@ def test_context_termination_alone_does_not_prove_release():
 
 def test_an_earlier_source_failure_and_a_failed_release_both_report():
     decision = audit.decide(
+        source_completeness=_eligible_completeness(),
         failed_reasons=[audit.FAILED_HIDDEN_SOURCE_CALL],
         classification=_classification(),
         lock=_lock(guard_released=False),
@@ -700,6 +760,7 @@ def test_an_earlier_source_failure_and_a_failed_release_both_report():
 
 def test_an_earlier_artifact_gap_and_a_failed_release_both_report():
     decision = audit.decide(
+        source_completeness=_eligible_completeness(),
         unproven_reasons=[audit.UNPROVEN_ARTIFACT_MISSING],
         classification=_classification(),
         lock=_lock(guard_released=False),
@@ -734,6 +795,7 @@ def test_a_completed_result_requires_a_proven_release():
               guard_released=None),
     ):
         decision = audit.decide(
+        source_completeness=_eligible_completeness(),
             classification=_classification(),
             delta={'answer': audit.DELTA_IDENTIFIED}, lock=lifecycle,
         )
@@ -759,6 +821,7 @@ def _questions(**states):
 
 def test_all_mandatory_questions_answered_permits_completion():
     decision = audit.decide(
+        source_completeness=_eligible_completeness(),
         classification=_classification(),
         delta={'answer': audit.DELTA_IDENTIFIED},
         lock=_lock(), questions=_questions(),
@@ -770,6 +833,7 @@ def test_all_mandatory_questions_answered_permits_completion():
 @pytest.mark.parametrize('question_id', audit.MANDATORY_QUESTIONS)
 def test_one_unanswered_mandatory_question_closes_exit_zero(question_id):
     decision = audit.decide(
+        source_completeness=_eligible_completeness(),
         classification=_classification(),
         delta={'answer': audit.DELTA_IDENTIFIED},
         lock=_lock(), questions=_questions(**{question_id: False}),
@@ -786,6 +850,7 @@ def test_a_non_mandatory_unanswered_question_does_not_close_exit_zero():
         'fully_answered': False,
     }]
     decision = audit.decide(
+        source_completeness=_eligible_completeness(),
         classification=_classification(),
         delta={'answer': audit.DELTA_IDENTIFIED},
         lock=_lock(), questions=questions,
@@ -1052,6 +1117,7 @@ def _eligible_source():
             'official_missing_row_count': 0, 'stored_missing_row_count': 0,
         },
         database_observed=True,
+        retained_expectation=_verified_expectation(),
     )
 
 
@@ -1099,7 +1165,9 @@ def test_determinism_over_an_empty_set_is_unproven_not_deterministic():
 # ══════════════════════════════════════════════════════════════════════════
 
 def _source_completeness(*, available=True, count=12, official=(), stored=(),
-                  database_observed=True, structurally_valid=True):
+                  database_observed=True, structurally_valid=True,
+                  expectation=None, duplicates_official=(),
+                  duplicates_stored=()):
     official_ids = list(official) if official or stored else list(range(12))
     stored_ids = list(stored) if official or stored else list(range(12))
     return audit.current_source_completeness(
@@ -1119,8 +1187,16 @@ def _source_completeness(*, available=True, count=12, official=(), stored=(),
             'stored_missing_row_count': len(
                 set(official_ids) - set(stored_ids)
             ),
+            'duplicate_official_identities': list(duplicates_official),
+            'duplicate_stored_identities': list(duplicates_stored),
         },
         database_observed=database_observed,
+        # Membership states are only REACHED once the population size is
+        # established, so a membership test has to supply that evidence.
+        retained_expectation=(
+            _verified_expectation(count, count) if expectation is None
+            else expectation
+        ),
     )
 
 
@@ -1328,10 +1404,15 @@ def test_the_docs_do_not_claim_an_unfetched_source_is_the_only_non_match():
     """The old wording covered only the never-fetched case."""
     prose = _doc_prose()
     assert (
-        'not fetched, failed parsing, yielded zero usable appearances, or '
-        'failed exact membership completeness'
+        'unavailable, empty, membership-incomplete, duplicate-bearing, '
+        'inconsistent with the common appearance count verified in the '
+        'retained artifacts, or otherwise not conclusion-eligible'
     ) in prose
     assert 'an unfetched source is not a current match' not in prose
+    # Membership equality alone must never be presented as proof of a
+    # complete official set.
+    assert 'necessary but not sufficient' in prose
+    assert 'two symmetrically truncated sets match each other' in prose
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -1352,3 +1433,393 @@ def test_the_scan_outcome_really_is_enforced_by_the_final_gate(steps):
     gate = _step(steps, 'Final audit gate')
     assert 'continue-on-error' not in gate
     assert '$SCAN_OUTCOME' in str(gate['run'])
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# BLOCKER-F — symmetric truncation
+#
+# Two incomplete sets agreeing with one another prove nothing about either.
+# The observed population size must equal the appearance count BOTH retained
+# runs positively verified, and that count is read out of the artifacts' own
+# observations rather than out of any locked constant.
+# ══════════════════════════════════════════════════════════════════════════
+
+def _run_entry(count, *, identity=audit.STATE_VERIFIED,
+               content=audit.STATE_VERIFIED, state=audit.OBS_VERIFIED):
+    observations = []
+    if count is not _UNSET_COUNT:
+        observations.append({
+            'field': 'appearances_extracted', 'state': state,
+            'observed': count, 'evidence_path': 'p',
+            'source': audit.SOURCE_RETAINED_ARTIFACT,
+        })
+    return {
+        'identity_state': identity, 'content_state': content,
+        'identity_verified': identity == audit.STATE_VERIFIED,
+        'content_verified': content == audit.STATE_VERIFIED,
+        'observations': observations,
+    }
+
+
+_UNSET_COUNT = object()
+
+
+def _expectation(prior=12, later=12, **kw):
+    return audit.retained_appearance_expectation({
+        audit.RUN_PRIOR: _run_entry(prior, **kw),
+        audit.RUN_LATER: _run_entry(later, **kw),
+    })
+
+
+def test_two_verified_agreeing_counts_supply_the_expectation():
+    result = _expectation(12, 12)
+    assert result['expectation_state'] == audit.EXPECTATION_VERIFIED
+    assert result['expected_current_count'] == 12
+    assert result['conclusion_usable'] is True
+    assert result['counts_agree'] is True
+    assert result['both_artifacts_verified'] is True
+
+
+def test_disagreeing_retained_counts_supply_nothing():
+    result = _expectation(12, 11)
+    assert result['expectation_state'] == audit.EXPECTATION_COUNTS_DISAGREE
+    assert result['expected_current_count'] is None
+    assert result['conclusion_usable'] is False
+
+
+def test_an_absent_prior_count_makes_the_expectation_unusable():
+    result = audit.retained_appearance_expectation({
+        audit.RUN_PRIOR: _run_entry(_UNSET_COUNT),
+        audit.RUN_LATER: _run_entry(12),
+    })
+    assert result['expectation_state'] == (
+        audit.EXPECTATION_PRIOR_COUNT_UNOBSERVED
+    )
+    assert result['conclusion_usable'] is False
+
+
+def test_an_absent_later_count_makes_the_expectation_unusable():
+    result = audit.retained_appearance_expectation({
+        audit.RUN_PRIOR: _run_entry(12),
+        audit.RUN_LATER: _run_entry(_UNSET_COUNT),
+    })
+    assert result['expectation_state'] == (
+        audit.EXPECTATION_LATER_COUNT_UNOBSERVED
+    )
+    assert result['conclusion_usable'] is False
+
+
+def test_an_unproven_prior_identity_makes_the_expectation_unavailable():
+    result = audit.retained_appearance_expectation({
+        audit.RUN_PRIOR: _run_entry(12, identity=audit.STATE_UNPROVEN),
+        audit.RUN_LATER: _run_entry(12),
+    })
+    assert result['expectation_state'] == (
+        audit.EXPECTATION_PRIOR_ARTIFACT_UNPROVEN
+    )
+    assert result['conclusion_usable'] is False
+
+
+def test_unproven_later_content_makes_the_expectation_unavailable():
+    result = audit.retained_appearance_expectation({
+        audit.RUN_PRIOR: _run_entry(12),
+        audit.RUN_LATER: _run_entry(12, content=audit.STATE_UNPROVEN),
+    })
+    assert result['expectation_state'] == (
+        audit.EXPECTATION_LATER_ARTIFACT_UNPROVEN
+    )
+    assert result['conclusion_usable'] is False
+
+
+def test_a_malformed_retained_count_is_not_a_count():
+    result = _expectation('12', '12')
+    assert result['expectation_state'] == audit.EXPECTATION_COUNT_MALFORMED
+    assert result['expected_current_count'] is None
+    assert result['conclusion_usable'] is False
+
+
+def test_one_artifact_alone_cannot_establish_the_common_expectation():
+    result = audit.retained_appearance_expectation({
+        audit.RUN_PRIOR: _run_entry(12),
+    })
+    assert result['conclusion_usable'] is False
+    assert result['expected_current_count'] is None
+
+
+def test_a_count_observed_but_not_verified_cannot_supply_the_expectation():
+    """observed-but-uncompared is not verified, here as everywhere else."""
+    result = _expectation(12, 12, state=audit.OBS_OBSERVED)
+    assert result['conclusion_usable'] is False
+    assert result['expected_current_count'] is None
+
+
+def test_the_expectation_never_falls_back_to_the_locked_constant():
+    """Remove the observed counts; nothing may substitute EXPECTED_APPEARANCE_COUNT."""
+    result = audit.retained_appearance_expectation({
+        audit.RUN_PRIOR: _run_entry(_UNSET_COUNT),
+        audit.RUN_LATER: _run_entry(_UNSET_COUNT),
+    })
+    assert result['expected_current_count'] is None
+    assert result['expected_current_count'] != audit.EXPECTED_APPEARANCE_COUNT
+
+
+def test_the_expectation_tracks_the_artifact_not_run_expectations(monkeypatch):
+    """The value comes from the observation, so a changed constant cannot move it."""
+    monkeypatch.setitem(
+        audit.RUN_EXPECTATIONS[audit.RUN_PRIOR], 'source_revision', 'changed',
+    )
+    assert _expectation(9, 9)['expected_current_count'] == 9
+    assert _expectation(12, 12)['expected_current_count'] == 12
+
+
+def test_unchanged_alone_cannot_supply_the_retained_count():
+    """Only appearances_extracted counts; `unchanged` is a different fact."""
+    entry = {
+        'identity_state': audit.STATE_VERIFIED,
+        'content_state': audit.STATE_VERIFIED,
+        'identity_verified': True, 'content_verified': True,
+        'observations': [{
+            'field': 'unchanged', 'state': audit.OBS_VERIFIED, 'observed': 12,
+            'evidence_path': 'p', 'source': audit.SOURCE_RETAINED_ARTIFACT,
+        }],
+    }
+    result = audit.retained_appearance_expectation({
+        audit.RUN_PRIOR: entry, audit.RUN_LATER: entry,
+    })
+    assert result['conclusion_usable'] is False
+
+
+# ── Count consistency inside the completeness model ────────────────────────
+
+def test_symmetric_truncation_is_not_conclusion_eligible():
+    """THE blocker: six observed, six stored, retained expectation twelve."""
+    six = list(range(7001, 7007))
+    result = _source_completeness(count=6, official=six, stored=six,
+                                  expectation=_expectation(12, 12))
+    assert result['completeness_state'] == audit.SOURCE_COUNT_CONTRADICTS
+    assert result['conclusion_eligible'] is False
+    assert result['membership_matches'] is True
+    assert result['current_count_matches_retained_expectation'] is False
+    assert result['count_consistency_state'] == (
+        audit.COUNT_CONSISTENCY_CONTRADICTED
+    )
+    assert audit.UNPROVEN_CURRENT_COUNT_CONTRADICTS in result['reason_codes']
+
+
+@pytest.mark.parametrize('size', [1, 6, 11, 13, 24])
+def test_any_symmetric_population_other_than_the_verified_one_is_ineligible(
+    size,
+):
+    ids = list(range(7001, 7001 + size))
+    result = _source_completeness(count=size, official=ids, stored=ids,
+                                  expectation=_expectation(12, 12))
+    assert result['conclusion_eligible'] is False
+    assert result['completeness_state'] == audit.SOURCE_COUNT_CONTRADICTS
+
+
+def test_the_verified_population_size_remains_eligible():
+    ids = list(range(7001, 7013))
+    result = _source_completeness(count=12, official=ids, stored=ids,
+                                  expectation=_expectation(12, 12))
+    assert result['completeness_state'] == audit.SOURCE_COMPLETE
+    assert result['conclusion_eligible'] is True
+    assert result['current_count_matches_retained_expectation'] is True
+
+
+def test_disagreeing_retained_counts_block_eligibility():
+    ids = list(range(7001, 7013))
+    result = _source_completeness(count=12, official=ids, stored=ids,
+                                  expectation=_expectation(12, 11))
+    assert result['completeness_state'] == (
+        audit.SOURCE_EXPECTATION_INCONSISTENT
+    )
+    assert result['conclusion_eligible'] is False
+
+
+def test_an_unusable_retained_expectation_blocks_eligibility():
+    ids = list(range(7001, 7013))
+    result = _source_completeness(
+        count=12, official=ids, stored=ids,
+        expectation=audit.retained_appearance_expectation({}))
+    assert result['completeness_state'] == audit.SOURCE_EXPECTATION_UNPROVEN
+    assert result['conclusion_eligible'] is False
+
+
+def test_the_count_limitation_uses_the_actual_observed_and_expected_counts():
+    six = list(range(7001, 7007))
+    result = _source_completeness(count=6, official=six, stored=six,
+                                  expectation=_expectation(12, 12))
+    text = ' '.join(result['limitations'])
+    assert 'yielded 6 appearances' in text
+    assert 'recorded 12' in text
+    # Bounded: it must NOT name a cause.
+    lowered = text.lower()
+    assert 'truncat' not in lowered
+    assert 'correction' not in lowered or 'official correction' in lowered
+    assert 'storage defect' not in lowered
+
+
+# ── Duplicate identities (MEDIUM-H) ────────────────────────────────────────
+
+def test_a_duplicate_stored_identity_has_its_own_state_and_prose():
+    ids = list(range(7001, 7013))
+    result = _source_completeness(count=12, official=ids, stored=ids,
+                                  expectation=_expectation(12, 12),
+                                  duplicates_stored=[7001])
+    assert result['completeness_state'] == audit.SOURCE_DUPLICATE_STORED
+    assert result['conclusion_eligible'] is False
+    assert result['duplicate_stored_identities'] == [7001]
+    assert result['duplicate_identity_count'] == 1
+    text = ' '.join(result['limitations']).lower()
+    assert 'stored-identity condition' in text
+    assert 'truncated source payload' in text  # explicitly ruled OUT
+    assert 'not a truncated source payload' in text
+
+
+def test_a_duplicate_official_identity_has_its_own_state():
+    ids = list(range(7001, 7013))
+    result = _source_completeness(count=12, official=ids, stored=ids,
+                                  expectation=_expectation(12, 12),
+                                  duplicates_official=[7002])
+    assert result['completeness_state'] == audit.SOURCE_DUPLICATE_OFFICIAL
+    assert result['conclusion_eligible'] is False
+    assert result['duplicate_official_identities'] == [7002]
+
+
+def test_duplicates_on_both_sides_have_their_own_state():
+    ids = list(range(7001, 7013))
+    result = _source_completeness(count=12, official=ids, stored=ids,
+                                  expectation=_expectation(12, 12),
+                                  duplicates_official=[7002],
+                                  duplicates_stored=[7001])
+    assert result['completeness_state'] == audit.SOURCE_DUPLICATE_BOTH
+    assert result['conclusion_eligible'] is False
+    assert result['duplicate_identity_count'] == 2
+
+
+def test_duplicate_states_never_borrow_the_truncation_explanation():
+    ids = list(range(7001, 7013))
+    for kwargs in ({'duplicates_stored': [7001]},
+                   {'duplicates_official': [7002]},
+                   {'duplicates_official': [7002], 'duplicates_stored': [7001]}):
+        result = _source_completeness(count=12, official=ids, stored=ids,
+                                      expectation=_expectation(12, 12),
+                                      **kwargs)
+        text = ' '.join(result['limitations']).lower()
+        assert 'payload was truncated' not in text
+        assert 'extraneous' not in text
+
+
+# ── Reducer: nothing incomplete may complete ───────────────────────────────
+
+_INELIGIBLE_STATES = [
+    state for state in audit.SOURCE_COMPLETENESS_STATES
+    if state not in audit.CONCLUSION_ELIGIBLE_STATES
+]
+
+
+@pytest.mark.parametrize('state', _INELIGIBLE_STATES)
+def test_no_ineligible_state_reaches_any_completed_result(state):
+    """Brute force over every completed classification combination."""
+    for root in audit.ROOT_CONDITIONS:
+        for materiality in audit.CURRENT_MATERIALITIES:
+            for answer in (audit.DELTA_IDENTIFIED, audit.DELTA_NARROWED,
+                           audit.DELTA_NOT_RECOVERABLE, audit.DELTA_UNPROVEN):
+                decision = audit.decide(
+                    classification={
+                        'root_condition': root,
+                        'current_materiality': materiality,
+                        'current_source_completeness': state,
+                    },
+                    delta={'answer': answer}, lock=_gate_lock(),
+                    questions=_gate_questions(),
+                    source_completeness={
+                        'completeness_state': state,
+                        'conclusion_eligible': False,
+                        'reason_codes': [
+                            audit.UNPROVEN_CURRENT_COUNT_CONTRADICTS,
+                        ],
+                    })
+                assert decision['result'] not in audit.COMPLETE_RESULTS
+                assert decision['exit_code'] != 0
+
+
+@pytest.mark.parametrize('supplied', [
+    None, {}, {'completeness_state': 'x'}, {'conclusion_eligible': 1},
+    {'conclusion_eligible': 'yes'}, 'not-a-mapping', 42, [],
+])
+def test_a_missing_or_malformed_completeness_object_cannot_exit_zero(supplied):
+    """MEDIUM-G. No truthiness: only ``is True`` satisfies the gate."""
+    decision = audit.decide(
+        classification={
+            'root_condition': audit.ROOT_OFFICIAL_SET_CHANGED,
+            'current_materiality': audit.MATERIALITY_EXACT_MATCH,
+        },
+        delta={'answer': audit.DELTA_IDENTIFIED}, lock=_gate_lock(),
+        questions=_gate_questions(), source_completeness=supplied)
+    assert decision['result'] == audit.RESULT_UNPROVEN
+    assert decision['exit_code'] == 2
+    assert decision['current_source_conclusion_eligible'] is False
+
+
+def test_an_authorization_failure_survives_a_missing_completeness_object():
+    """FAILED still outranks, and BOTH facts stay visible."""
+    decision = audit.decide(
+        failed_reasons=[audit.FAILED_EXPECTED_SHA_MISMATCH],
+    )
+    assert decision['result'] == audit.RESULT_FAILED
+    assert decision['exit_code'] == 1
+    assert audit.FAILED_EXPECTED_SHA_MISMATCH in decision['failed_reasons']
+    assert decision['current_source_conclusion_eligible'] is False
+    assert decision['current_source_blocking_reasons']
+
+
+def test_determinism_over_a_count_inconsistent_set_cannot_complete():
+    six = list(range(7001, 7007))
+    completeness = _source_completeness(count=6, official=six, stored=six,
+                                        expectation=_expectation(12, 12))
+    decision = audit.decide(
+        classification={
+            'root_condition': audit.ROOT_OFFICIAL_SET_CHANGED,
+            'current_materiality': audit.MATERIALITY_EXACT_MATCH,
+            'current_source_completeness': (
+                completeness['completeness_state']
+            ),
+        },
+        delta={'answer': audit.DELTA_IDENTIFIED}, lock=_gate_lock(),
+        questions=_gate_questions(), source_completeness=completeness)
+    assert decision['result'] == audit.RESULT_UNPROVEN
+    assert decision['exit_code'] == 2
+
+
+def test_the_new_consequences_are_in_the_declared_vocabulary():
+    assert audit.CONSEQUENCE_COUNT_CONSISTENCY_REVIEW in audit.CONSEQUENCES
+    assert audit.CONSEQUENCE_IDENTITY_REVIEW in audit.CONSEQUENCES
+
+
+def test_a_count_contradiction_never_recommends_continued_observation():
+    supported = audit.operational_consequence({
+        'current_materiality': audit.MATERIALITY_UNPROVEN,
+        'current_source_completeness': audit.SOURCE_COUNT_CONTRADICTS,
+    })['supported_by_evidence']
+    assert audit.CONSEQUENCE_CONTINUED_OBSERVATION not in supported
+    assert audit.CONSEQUENCE_COUNT_CONSISTENCY_REVIEW in supported
+
+
+def test_a_duplicate_identity_recommends_identity_review():
+    supported = audit.operational_consequence({
+        'current_materiality': audit.MATERIALITY_UNPROVEN,
+        'current_source_completeness': audit.SOURCE_DUPLICATE_STORED,
+    })['supported_by_evidence']
+    assert audit.CONSEQUENCE_CONTINUED_OBSERVATION not in supported
+    assert audit.CONSEQUENCE_IDENTITY_REVIEW in supported
+
+
+def test_the_new_reason_codes_are_declared():
+    for reason in (
+        audit.UNPROVEN_CURRENT_COUNT_CONTRADICTS,
+        audit.UNPROVEN_RETAINED_EXPECTATION_UNAVAILABLE,
+        audit.UNPROVEN_RETAINED_COUNTS_DISAGREE,
+        audit.UNPROVEN_DUPLICATE_APPEARANCE_IDENTITY,
+    ):
+        assert reason in audit.UNPROVEN_REASONS

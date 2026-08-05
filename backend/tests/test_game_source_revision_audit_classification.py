@@ -423,6 +423,30 @@ def test_absent_invariant_counters_make_causality_unproven():
 
 # ── Independent classification dimensions (Q11) ─────────────────────────────
 
+def _verified_expectation(count=audit.EXPECTED_APPEARANCE_COUNT):
+    """A retained expectation BOTH runs positively verified at ``count``.
+
+    Built from artifact observations, never from a constant: exact-match
+    materiality now requires the observed population size to equal what the
+    retained runs verified, so a classification test that means to exercise a
+    complete observation has to supply that evidence.
+    """
+    def _entry():
+        return {
+            'identity_state': audit.STATE_VERIFIED,
+            'content_state': audit.STATE_VERIFIED,
+            'identity_verified': True, 'content_verified': True,
+            'observations': [{
+                'field': 'appearances_extracted', 'state': audit.OBS_VERIFIED,
+                'observed': count, 'evidence_path': 'p',
+                'source': audit.SOURCE_RETAINED_ARTIFACT,
+            }],
+        }
+    return audit.retained_appearance_expectation({
+        audit.RUN_PRIOR: _entry(), audit.RUN_LATER: _entry(),
+    })
+
+
 # A matrix whose MEMBERSHIP is exactly matched. Tests that vary field-level
 # differences inherit this so they keep exercising the field-difference path
 # rather than tripping the membership gate, and tests that care about
@@ -492,6 +516,11 @@ def _classify(**overrides):
         },
         matrix_summary=kwargs['matrix_summary'],
         database_observed=True,
+        retained_expectation=_verified_expectation(
+            len((kwargs['matrix_summary'] or {}).get(
+                'official_pitcher_mlb_ids') or ()) or
+            audit.EXPECTED_APPEARANCE_COUNT
+        ),
     ))
     return audit.classify(**kwargs)
 
@@ -690,6 +719,9 @@ def _membership(*, official, stored, count=None, available=True,
             ),
         },
         matrix_summary=matrix_summary, database_observed=database_observed,
+        retained_expectation=_verified_expectation(
+            len(official_ids) or audit.EXPECTED_APPEARANCE_COUNT
+        ),
     )
     return matrix_summary, completeness
 

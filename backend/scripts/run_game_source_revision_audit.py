@@ -641,14 +641,27 @@ def summarize_plan(projected) -> dict:
 
 # ── Field-level evidence matrix (Question 6 / Section 11) ───────────────────
 
-def build_field_matrix(*, official, stored, plan, artifacts) -> dict:
+def build_field_matrix(*, official, stored, plan, artifacts,
+                       retained_expectation=None) -> dict:
     """One row per pitcher per governed field, with explicit evidence status."""
     from services import game_appearance_extraction as extraction
 
+    official_appearances = list((official or {}).get('appearances') or ())
     official_records = {
-        record['pitcher_mlb_id']: record
-        for record in (official or {}).get('appearances') or ()
+        record['pitcher_mlb_id']: record for record in official_appearances
     }
+    # One pitcher has exactly one pitching line per game. Building the lookup
+    # above collapses a repeat silently, so the repeat is counted BEFORE the
+    # collapse — deduplicating and then calling the set complete would be
+    # inventing evidence.
+    _official_seen: dict = {}
+    for record in official_appearances:
+        key = record.get('pitcher_mlb_id')
+        _official_seen[key] = _official_seen.get(key, 0) + 1
+    duplicate_official_identities = sorted(
+        key for key, seen in _official_seen.items()
+        if seen > 1 and key is not None
+    )
     stored_records = {
         entry['pitcher_mlb_id']: entry
         for entry in (stored or {}).get('stored_appearances') or ()
@@ -782,12 +795,24 @@ def build_field_matrix(*, official, stored, plan, artifacts) -> dict:
         summary['completeness'] = 'partial_stored_evidence_only'
     elif not stored_records:
         summary['completeness'] = 'partial_official_evidence_only'
-    elif membership_matches:
-        summary['completeness'] = 'complete_for_observed_evidence'
-    else:
+    elif not membership_matches:
         summary['completeness'] = (
             'comparable_rows_only_membership_incomplete'
         )
+    elif not (retained_expectation or {}).get('conclusion_usable'):
+        summary['completeness'] = (
+            'comparable_rows_only_target_population_unverified'
+        )
+    elif len(official_records) != (
+        (retained_expectation or {}).get('expected_current_count')
+    ):
+        # Membership matched, and the observed population is still not the
+        # game. This is the symmetric-truncation wording: never "complete".
+        summary['completeness'] = (
+            'comparable_rows_only_target_population_incomplete'
+        )
+    else:
+        summary['completeness'] = 'complete_for_observed_evidence'
     summary['official_pitcher_mlb_ids'] = sorted(official_records)
     summary['stored_pitcher_mlb_ids'] = sorted(stored_records)
     summary['missing_from_storage'] = sorted(
@@ -799,6 +824,7 @@ def build_field_matrix(*, official, stored, plan, artifacts) -> dict:
     summary['duplicate_stored_identities'] = list(
         (stored or {}).get('duplicate_stored_pitchers') or ()
     )
+    summary['duplicate_official_identities'] = duplicate_official_identities
     summary['historical_delta'] = (artifacts or {}).get('historical_delta') or {}
     summary['prior_value_evidence_statuses'] = sorted({
         row['prior_value_evidence_status'] for row in rows
@@ -816,6 +842,29 @@ def build_field_matrix(*, official, stored, plan, artifacts) -> dict:
         not summary['missing_from_storage']
         and not summary['extra_in_storage']
         and not summary['duplicate_stored_identities']
+        and not duplicate_official_identities
+    )
+    # Three DIFFERENT claims, never merged into one word. Comparing every row
+    # that had a counterpart says nothing about whether the observed rows were
+    # the whole game, and neither says anything about eligibility.
+    summary['comparable_row_set_complete'] = bool(
+        official_records and summary['membership_matches']
+    )
+    summary['target_population_count_verified'] = bool(
+        (retained_expectation or {}).get('conclusion_usable')
+    )
+    summary['target_population_count_matches'] = bool(
+        summary['target_population_count_verified']
+        and len(official_records) == (
+            (retained_expectation or {}).get('expected_current_count')
+        )
+    )
+    summary['retained_expected_appearance_count'] = (
+        (retained_expectation or {}).get('expected_current_count')
+    )
+    summary['conclusion_eligible'] = bool(
+        summary['comparable_row_set_complete']
+        and summary['target_population_count_matches']
     )
     differing = summary.get('differing_rows') or []
     summary['any_canonical_outs_difference'] = any(
@@ -884,6 +933,11 @@ def build_questions(*, artifacts, code_drift, official, determinism, matrix,
     completeness = source_completeness or {}
     conclusion_eligible = bool(completeness.get('conclusion_eligible'))
     completeness_state = completeness.get('completeness_state')
+    count_state = completeness.get('count_consistency_state')
+    count_consistent = bool(
+        completeness.get('current_count_matches_retained_expectation')
+    )
+    count_limitations = list(completeness.get('count_limitations') or ())
     source_empty = bool(
         (official or {}).get('extraction_yielded_no_appearances')
         or completeness_state == audit.SOURCE_EMPTY
@@ -1080,6 +1134,11 @@ def build_questions(*, artifacts, code_drift, official, determinism, matrix,
                 ),
                 'completeness_state': completeness_state,
                 'conclusion_eligible': conclusion_eligible,
+                'retained_expected_appearance_count': completeness.get(
+                    'retained_expected_appearance_count'
+                ),
+                'count_consistency_state': count_state,
+                'current_count_matches_retained_expectation': count_consistent,
                 'starters': (official or {}).get('starters'),
                 'unavailable_reason': (official or {}).get(
                     'unavailable_reason'
@@ -1089,12 +1148,15 @@ def build_questions(*, artifacts, code_drift, official, determinism, matrix,
             required_inputs=[
                 'current_official_boxscore',
                 'non_empty_official_appearance_set',
+                'count_matching_retained_verified_expectation',
                 'official_membership_matching_storage',
             ],
             observed_inputs=(
                 (['current_official_boxscore'] if source_available else [])
                 + ([] if source_empty or not source_available
                    else ['non_empty_official_appearance_set'])
+                + (['count_matching_retained_verified_expectation']
+                   if count_consistent else [])
                 + (['official_membership_matching_storage']
                    if conclusion_eligible else [])
             ),
@@ -1102,6 +1164,8 @@ def build_questions(*, artifacts, code_drift, official, determinism, matrix,
                 ([] if source_available else ['current_official_boxscore'])
                 + (['non_empty_official_appearance_set']
                    if source_empty or not source_available else [])
+                + ([] if count_consistent
+                   else ['count_matching_retained_verified_expectation'])
                 + ([] if conclusion_eligible
                    else ['official_membership_matching_storage'])
             ),
@@ -1113,7 +1177,13 @@ def build_questions(*, artifacts, code_drift, official, determinism, matrix,
                     else (
                         audit.UNPROVEN_CURRENT_SOURCE_UNAVAILABLE
                         if not source_available
-                        else audit.UNPROVEN_CURRENT_SOURCE_INCOMPLETE
+                        else (
+                            audit.UNPROVEN_CURRENT_COUNT_CONTRADICTS
+                            if count_state == (
+                                audit.COUNT_CONSISTENCY_CONTRADICTED
+                            )
+                            else audit.UNPROVEN_CURRENT_SOURCE_INCOMPLETE
+                        )
                     )
                 )
             ),
@@ -1151,11 +1221,21 @@ def build_questions(*, artifacts, code_drift, official, determinism, matrix,
                     'permutation_fingerprints'
                 ),
                 'additional_source_requests': 0,
+                # Determinism is a property of the CONSTRUCTOR. It can be true
+                # over a population that is not the whole game, and saying so
+                # is the point: it must never read as evidence the set was
+                # complete.
+                'tested_population_count': determinism.get('appearance_count'),
+                'tested_population_count_consistent': count_consistent,
+                'count_consistency_state': count_state,
                 'note': (
                     'Determinism is established only over a NON-EMPTY '
                     'observed appearance set. An empty set recomputes to the '
                     'same digest trivially and proves nothing about the '
-                    'fingerprint constructor.'
+                    'fingerprint constructor. A deterministic fingerprint '
+                    'over a count-inconsistent population says the '
+                    'constructor is stable, NOT that the population was the '
+                    'whole game, and it never restores completion.'
                 ),
             },
             evidence=[audit.EVIDENCE_SOURCE_OFFICIAL],
@@ -1169,10 +1249,17 @@ def build_questions(*, artifacts, code_drift, official, determinism, matrix,
                 else ['non_empty_current_official_appearance_set']
             ),
             limitations=(
-                [] if (determinism.get('appearance_count') or 0) > 0 else [
+                ([] if (determinism.get('appearance_count') or 0) > 0 else [
                     'No non-empty appearance set was observed, so fingerprint '
                     'determinism was never tested.'
-                ]
+                ])
+                + ([] if count_consistent or not (
+                    determinism.get('appearance_count') or 0
+                ) else [
+                    'Determinism was tested over a population whose size does '
+                    'not match the count verified in the retained runs. It '
+                    'does not establish that the observed set was complete.'
+                ])
             ),
             unproven_reason=(
                 None if determinism.get('deterministic_in_process') is not None
@@ -1205,6 +1292,28 @@ def build_questions(*, artifacts, code_drift, official, determinism, matrix,
                 'membership_state': completeness_state,
                 'membership_matches': matrix_summary.get('membership_matches'),
                 'conclusion_eligible': conclusion_eligible,
+                'count_consistency_state': count_state,
+                'retained_expected_appearance_count': completeness.get(
+                    'retained_expected_appearance_count'
+                ),
+                'observed_appearance_count': completeness.get(
+                    'extracted_appearance_count'
+                ),
+                'duplicate_official_identities': matrix_summary.get(
+                    'duplicate_official_identities'
+                ),
+                'duplicate_stored_identities': matrix_summary.get(
+                    'duplicate_stored_identities'
+                ),
+                'comparable_row_set_complete': matrix_summary.get(
+                    'comparable_row_set_complete'
+                ),
+                'target_population_count_verified': matrix_summary.get(
+                    'target_population_count_verified'
+                ),
+                'target_population_count_matches': matrix_summary.get(
+                    'target_population_count_matches'
+                ),
                 'official_missing_row_count': matrix_summary.get(
                     'official_missing_row_count'
                 ),
@@ -1252,17 +1361,22 @@ def build_questions(*, artifacts, code_drift, official, determinism, matrix,
             ],
             required_inputs=[
                 'current_official_source', 'stored_canonical_state',
+                'verified_target_population_count',
                 'exact_official_membership',
             ],
             observed_inputs=(
                 (['current_official_source'] if source_available else [])
                 + (['stored_canonical_state'] if database_observed else [])
+                + (['verified_target_population_count'] if count_consistent
+                   else [])
                 + (['exact_official_membership'] if conclusion_eligible
                    else [])
             ),
             missing_inputs=(
                 ([] if source_available else ['current_official_source'])
                 + ([] if database_observed else ['stored_canonical_state'])
+                + ([] if count_consistent
+                   else ['verified_target_population_count'])
                 + ([] if conclusion_eligible
                    else ['exact_official_membership'])
             ),
@@ -1795,9 +1909,15 @@ def run(args) -> dict:
     )
 
     checkpoint = observe_checkpoint(stored, current_revision)
+    # What the two retained runs positively verified this game to hold. Read
+    # from their own observations, before anything consults today's source.
+    retained_expectation = audit.retained_appearance_expectation(
+        (artifacts or {}).get('runs') or {}
+    )
     matrix = build_field_matrix(
         official=official, stored=stored,
         plan=official.get('plan'), artifacts=artifacts,
+        retained_expectation=retained_expectation,
     )
     # Resolved BEFORE classification: whether the observed official set may
     # support any current conclusion at all is a precondition of the
@@ -1806,6 +1926,7 @@ def run(args) -> dict:
         official=official,
         matrix_summary=matrix['summary'],
         database_observed=bool(collected.get('database_observed')),
+        retained_expectation=retained_expectation,
     )
     classification = audit.classify(
         artifacts=artifacts,
@@ -1913,6 +2034,7 @@ def run(args) -> dict:
         halt_stage=collected.get('halt_stage'),
         database_observed=bool(collected.get('database_observed')),
         source_completeness=source_completeness,
+        retained_expectation=retained_expectation,
     )
     # Carried beside the document rather than inside it: the matrix is its own
     # artifact file, and duplicating every row into the summary would double
@@ -1940,14 +2062,20 @@ def build_document(*, context, note, artifacts, code_drift, official,
                    source_calls, decision, questions,
                    causality_view=None, consequence=None,
                    current_revision_state=None, halt_stage=None,
-                   database_observed=False, source_completeness=None) -> dict:
+                   database_observed=False, source_completeness=None,
+                   retained_expectation=None) -> dict:
     # A run that halted before it could look at the source still has to say
     # something true about the source, and "unavailable, not conclusion
     # eligible" is that truth.
+    if not retained_expectation:
+        retained_expectation = audit.retained_appearance_expectation(
+            (artifacts or {}).get('runs') or {}
+        )
     if not source_completeness:
         source_completeness = audit.current_source_completeness(
             official=official or {}, matrix_summary={},
             database_observed=bool(database_observed),
+            retained_expectation=retained_expectation,
         )
     return {
         'schema_version': audit.SCHEMA_VERSION,
@@ -1981,6 +2109,10 @@ def build_document(*, context, note, artifacts, code_drift, official,
         # scattering of booleans. Carries no raw payload: counts, identity
         # lists, a state, an eligibility flag, and reason codes only.
         'current_source_completeness': source_completeness or {},
+        # What the retained runs positively verified this game to hold, kept
+        # as its own section so a reader can see the expectation and the
+        # observation separately rather than only their comparison.
+        'retained_appearance_expectation': retained_expectation or {},
         # Where execution stopped, if it did. Downstream absences are read
         # against this rather than mistaken for observations.
         'halt_stage': halt_stage,
@@ -2032,6 +2164,7 @@ def render_markdown(document) -> str:
     semantics = document.get('source_revision_semantics') or {}
     determinism = document.get('fingerprint_determinism') or {}
     completeness = document.get('current_source_completeness') or {}
+    expectation = document.get('retained_appearance_expectation') or {}
 
     lines = ['# Game 824487 source-revision audit', '']
     lines += ['## Result', '']
@@ -2175,8 +2308,50 @@ def render_markdown(document) -> str:
     lines.append(
         f"- reason codes: `{completeness.get('reason_codes')}`"
     )
+    lines.append('')
+    lines.append('**Target population size**')
+    lines.append('')
+    lines.append(
+        '- appearance count verified by BOTH retained runs: '
+        f"`{expectation.get('expected_current_count')}` "
+        f"(prior `{expectation.get('prior_count')}`, "
+        f"later `{expectation.get('later_count')}`)"
+    )
+    lines.append(
+        f"- retained expectation state: `{expectation.get('expectation_state')}`"
+    )
+    lines.append(
+        f"- retained expectation usable: `{expectation.get('conclusion_usable')}`"
+    )
+    lines.append(
+        '- appearances observed today: '
+        f"{completeness.get('extracted_appearance_count')}"
+    )
+    lines.append(
+        '- **count matches the retained verified expectation: '
+        f"`{completeness.get('current_count_matches_retained_expectation')}`**"
+    )
+    lines.append(
+        f"- count consistency state: `{completeness.get('count_consistency_state')}`"
+    )
+    lines.append(
+        '- duplicate official identities: '
+        f"{completeness.get('duplicate_official_identities')}"
+    )
+    lines.append(
+        '- duplicate stored identities: '
+        f"{completeness.get('duplicate_stored_identities')}"
+    )
+    lines.append('')
     for limitation in completeness.get('limitations') or ():
         lines.append(f'- limitation: {limitation}')
+    for limitation in expectation.get('limitations') or ():
+        lines.append(f'- limitation: {limitation}')
+    lines.append(
+        '- Exact official/stored membership equality is necessary but NOT '
+        'sufficient: two symmetrically truncated sets match each other while '
+        'both remain incomplete.'
+    )
     lines.append(
         '- An empty `differing rows` list below covers only the rows that '
         'were comparable on both sides. It is not evidence that the official '
@@ -2275,6 +2450,9 @@ def write_artifacts(document, matrix_rows, artifact_dir) -> dict:
             'summary': document.get('field_matrix_summary') or {},
             'current_source_completeness': document.get(
                 'current_source_completeness'
+            ) or {},
+            'retained_appearance_expectation': document.get(
+                'retained_appearance_expectation'
             ) or {},
             'rows': list(matrix_rows or ()),
         },
