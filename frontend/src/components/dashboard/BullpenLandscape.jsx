@@ -29,11 +29,29 @@ function Storylines({ storylines }) {
 
 // One landscape team row. When a deep link is available it becomes a lightweight
 // clickable link into that team's bullpen board — informational, not a button.
+// The canonical Team State chip. It shows only a backend-supplied Fresh /
+// Stretched / Vulnerable label; a fail-closed read shows no chip at all rather
+// than a fourth state. The label is text, so it reads without color.
+function TeamStateChip({ teamState }) {
+  if (!teamState?.available) return null
+  return (
+    <span
+      className="shrink-0 rounded border px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-widest"
+      style={{ borderColor: teamState.tone.borderColor, color: teamState.tone.color }}
+    >
+      {teamState.publicLabel}
+    </span>
+  )
+}
+
 function EntryRow({ entry, column }) {
   const content = (
     <>
-      <span className="truncate font-medium text-chalk200 group-hover:text-amber group-hover:underline" title={entry.teamName || entry.label}>
-        {entry.label}
+      <span className="flex min-w-0 items-baseline gap-1.5">
+        <span className="truncate font-medium text-chalk200 group-hover:text-amber group-hover:underline" title={entry.teamName || entry.label}>
+          {entry.label}
+        </span>
+        <TeamStateChip teamState={entry.teamState} />
       </span>
       <span className="flex shrink-0 items-baseline gap-1 font-mono text-xs" style={{ color: column.tone.color }}>
         {entry[column.metric]} <span className="text-chalk600">{column.suffix}</span>

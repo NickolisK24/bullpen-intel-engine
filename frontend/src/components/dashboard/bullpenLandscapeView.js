@@ -1,5 +1,6 @@
 import { fmtDataDate } from './syncStatusView'
 import { buildTeamBoardHref } from '../../utils/evidenceLinks'
+import { readPublicTeamState } from '../../adapters/publicTeamState'
 
 // Neutral tones per callout column — describing situations, never "good/bad".
 const COLUMN_TONE = {
@@ -61,6 +62,9 @@ function mapEntries(list) {
     pctAvailable: Number(entry?.pct_available) || 0,
     pctRestricted: Number(entry?.pct_restricted) || 0,
     healthLabel: entry?.health_label || null,
+    // Backend-owned canonical Team State, validated and failed closed. The lane a
+    // team sits in is league orientation and is never read as its Team State.
+    teamState: readPublicTeamState(entry?.team_state),
   }))
 }
 

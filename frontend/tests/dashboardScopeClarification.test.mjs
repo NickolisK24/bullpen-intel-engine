@@ -74,7 +74,7 @@ test('bullpen state is clearly league-wide, not a single team', () => {
   assert.ok(htmlIncludes(html, 'data-density="full"'))
   assert.ok(htmlIncludes(html, 'League-Wide'))
   assert.ok(htmlIncludes(html, 'Current Bullpen State'))
-  assert.ok(htmlIncludes(html, 'Stable Overall'))
+  assert.equal(htmlIncludes(html, 'Stable Overall'), false)
   assert.ok(htmlIncludes(html, 'Open Bullpen Board'))
   assert.equal(htmlIncludes(html, 'Open Team Bullpen Board'), false)
 })

@@ -5,7 +5,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { MemoryRouter } from 'react-router-dom'
 import { createServer } from 'vite'
 
-import { makeBoard } from './fixtures/bullpenBoardFixtures.mjs'
+import { makeBoard, publicTeamState } from './fixtures/bullpenBoardFixtures.mjs'
 
 const server = await createServer({
   root: process.cwd(),
@@ -213,8 +213,14 @@ test('renders the current bullpen state in baseball-facing language', () => {
   assert.ok(htmlIncludes(html, 'data-density="full"'))
   assert.ok(htmlIncludes(html, 'League-Wide'))
   assert.ok(htmlIncludes(html, 'Current Bullpen State'))
-  assert.ok(htmlIncludes(html, 'Stable Overall'))
-  assert.ok(htmlIncludes(html, 'Most bullpen-eligible arms remain usable, with limited league-wide pressure.'))
+  // League scope carries no Team State. The retired pseudo-state and its summary
+  // must not reappear, and no canonical label may be shown for a league read.
+  assert.equal(htmlIncludes(html, 'Stable Overall'), false)
+  assert.equal(htmlIncludes(html, 'Most bullpen-eligible arms remain usable, with limited league-wide pressure.'), false)
+  assert.ok(htmlIncludes(html, 'A current Team State read is not available for this bullpen.'))
+  for (const label of ['Fresh', 'Stretched', 'Vulnerable']) {
+    assert.equal(htmlIncludes(html, `Current Bullpen State: ${label}`), false)
+  }
   assert.ok(htmlIncludes(html, 'Primary Concern'))
   assert.ok(htmlIncludes(html, 'Not every arm is cleanly available'))
   assert.equal(htmlIncludes(html, 'clean board'), false)
@@ -245,7 +251,7 @@ test('renders a fixed operating-state read model without raw context props', () 
 
   assert.ok(htmlIncludes(html, 'data-density="full"'))
   assert.ok(htmlIncludes(html, 'League-Wide'))
-  assert.ok(htmlIncludes(html, 'Stable Overall'))
+  assert.equal(htmlIncludes(html, 'Stable Overall'), false)
   assert.ok(htmlIncludes(html, 'Freshness: Current'))
   assert.ok(htmlIncludes(html, 'href="/bullpen?view=board"'))
 })
@@ -271,7 +277,10 @@ test('omits concern rows when count fields are missing', () => {
   })
 
   assert.ok(htmlIncludes(html, 'Current Bullpen State'))
-  assert.ok(htmlIncludes(html, 'Stable'))
+  // A raw context carries no backend Team State block, so the card fails closed
+  // instead of translating the internal bullpen-health value into a label.
+  assert.ok(htmlIncludes(html, 'A current Team State read is not available for this bullpen.'))
+  assert.equal(htmlIncludes(html, 'Stable'), false)
   assert.ok(!htmlIncludes(html, 'Primary Concern'))
   assert.ok(!htmlIncludes(html, 'Secondary Concern'))
 })
@@ -306,8 +315,11 @@ test('renders league-wide Thin summary without implied baseline language', () =>
   assert.ok(htmlIncludes(html, 'Scope'))
   assert.ok(htmlIncludes(html, 'League-Wide'))
   assert.ok(htmlIncludes(html, 'Current Bullpen State'))
-  assert.ok(htmlIncludes(html, 'Thin'))
-  assert.ok(htmlIncludes(html, 'Fewer bullpen-eligible arms are cleanly available right now.'))
+  // The retired frontend state dictionary is gone: a restricted league read no
+  // longer becomes "Thin", and no canonical label is shown at league scope.
+  assert.equal(htmlIncludes(html, 'Thin'), false)
+  assert.equal(htmlIncludes(html, 'Fewer bullpen-eligible arms are cleanly available right now.'), false)
+  assert.ok(htmlIncludes(html, 'A current Team State read is not available for this bullpen.'))
   assert.ok(htmlIncludes(html, 'Not every arm is cleanly available'))
   assert.equal(htmlIncludes(html, 'The bullpen has fewer cleanly available arms than usual.'), false)
 
@@ -366,7 +378,8 @@ test('renders a team operating card from a team-board fixture', () => {
   assert.equal(htmlIncludes(html, 'Scope'), false)
   assert.equal(htmlIncludes(html, 'League-Wide'), false)
   assert.ok(htmlIncludes(html, 'Current Bullpen State'))
-  assert.ok(htmlIncludes(html, 'Stable'))
+  assert.ok(htmlIncludes(html, 'Current Bullpen State: Fresh'))
+  assert.equal(htmlIncludes(html, 'Stable'), false)
   assert.ok(htmlIncludes(html, 'Why BaseballOS Sees This'))
   assert.ok(htmlIncludes(html, 'Evidence'))
   assert.ok(htmlIncludes(html, 'Freshness'))
@@ -385,8 +398,9 @@ test('renders compact team operating card density with the core read intact', ()
   assert.ok(htmlIncludes(html, 'data-density="compact"'))
   assert.ok(htmlIncludes(html, 'Team'))
   assert.ok(htmlIncludes(html, 'New York Mets'))
-  assert.ok(htmlIncludes(html, 'Current Bullpen State: Stable'))
-  assert.ok(htmlIncludes(html, 'The current bullpen read shows enough usable coverage without a clear pressure flag.'))
+  assert.ok(htmlIncludes(html, 'Current Bullpen State: Fresh'))
+  // Frontend-authored state copy is retired; the backend why line carries the read.
+  assert.equal(htmlIncludes(html, 'The current bullpen read shows enough usable coverage without a clear pressure flag.'), false)
   assert.ok(htmlIncludes(html, 'Primary Concern'))
   assert.ok(htmlIncludes(html, 'Active workload is usable'))
   assert.ok(htmlIncludes(html, 'Secondary Concern'))
@@ -831,15 +845,35 @@ test('deduplicates league-wide workload limitation copy', () => {
   assert.equal((html.match(/Availability classifications are workload-based only/g) || []).length, 1)
 })
 
-test('view model exposes only supported operating state labels', () => {
-  const view = getBullpenOperatingStateView({
-    context: contextFor({
-      Available: [{ pitcher_id: 1, name: 'A1', availability_status: 'Available' }],
-      Avoid: Array.from({ length: 3 }, (_, i) => ({ pitcher_id: i + 20, name: `X${i}`, availability_status: 'Avoid' })),
-    }),
-    freshness: currentFreshness,
+test('view model exposes only backend-supplied canonical Team State labels', () => {
+  const restrictedContext = contextFor({
+    Available: [{ pitcher_id: 1, name: 'A1', availability_status: 'Available' }],
+    Avoid: Array.from({ length: 3 }, (_, i) => ({ pitcher_id: i + 20, name: `X${i}`, availability_status: 'Avoid' })),
   })
 
-  assert.equal(view.stateLabel, 'Stretched')
-  assert.equal(view.primaryConcern.label, 'Clean Options are tight')
+  // Without a backend Team State block the view has no state at all, however
+  // restricted the counts are.
+  const withoutState = getBullpenOperatingStateView({
+    context: restrictedContext,
+    freshness: currentFreshness,
+  })
+  assert.equal(withoutState.stateLabel, null)
+  // Concern copy now describes the published counts only — it is not keyed off
+  // any internal bullpen-health value.
+  assert.equal(withoutState.primaryConcern.label, 'Not every arm is cleanly available')
+
+  // With one, the exact backend label is rendered verbatim.
+  const board = makeBoard({
+    cardsByStatus: {
+      Available: [{ pitcher_id: 1, name: 'A1', availability_status: 'Available' }],
+      Avoid: Array.from({ length: 3 }, (_, i) => ({ pitcher_id: i + 20, name: `X${i}`, availability_status: 'Avoid' })),
+    },
+    freshness: currentFreshness,
+    teamState: publicTeamState('vulnerable'),
+  })
+  const withState = getBullpenOperatingStateView({
+    readModel: toOperatingStateReadModel(board, { scope: 'team', team: board.team }),
+  })
+  assert.equal(withState.stateLabel, 'Vulnerable')
+  assert.equal(withState.publicState, 'vulnerable')
 })

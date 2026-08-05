@@ -58,7 +58,9 @@ const TEAM_RECEIPT_PRIORITY = new Map([
 ])
 const STATE_SUPPORT_FAMILIES = ['availability', 'clean_options']
 const WHY_WORKLOAD_FAMILIES = ['workload_concentration', 'recent_work_volume', 'repeated_appearances']
-const PUBLIC_TEAM_STATES = /^(?:stable|usable|worth watching|monitor|thin|stretched|stressed|recovering)$/i
+// The exact canonical public Team State set. This validates a backend-supplied
+// label; it does not map any internal value into one.
+const PUBLIC_TEAM_STATES = /^(?:fresh|stretched|vulnerable)$/i
 const TEAM_EVIDENCE_CTA_LABELS = Object.freeze({
   [EVIDENCE_SECTIONS.PITCHER_LANES]: 'SEE THE PITCHER AVAILABILITY EVIDENCE',
   [EVIDENCE_SECTIONS.TEAM_RELIEF_WORK]: 'SEE THE RECENT RELIEF WORK EVIDENCE',
@@ -286,9 +288,17 @@ export function buildTeamEvidenceCard(readModel) {
   const teamName = cleanText(readModel?.teamName || readModel?.teamLabel, 48)
   const teamAbbreviation = normalizeTeamReference(readModel?.teamAbbreviation)
   const stateLabel = cleanText(readModel?.stateLabel, 28)
-  const summary = [readModel?.stateSummary, readModel?.stateDetail]
-    .map(value => fitSafeCardText(value, { maxWidth: 548, maxLines: 3, fontSize: 23 }))
-    .find(Boolean) || null
+  // Backend-authored copy only. The retired frontend state dictionary used to
+  // supply `stateSummary`; with Team State backend-owned, the card falls back to
+  // the backend why sentence rather than composing its own state copy. Supplied
+  // state copy that fails the safety check still fails the card closed — the
+  // fallback only applies when no state copy was supplied at all.
+  const suppliedStateCopy = [readModel?.stateSummary, readModel?.stateDetail]
+    .find(value => typeof value === 'string' && value.trim())
+  const summary = fitSafeCardText(
+    suppliedStateCopy || readModel?.why,
+    { maxWidth: 548, maxLines: 3, fontSize: 23 },
+  ) || null
   const concentrationSummary = normalizeCardText(readModel?.workloadConcentration?.summary)
   const dataThrough = validDate(readModel?.freshness?.dataThrough || readModel?.freshness?.data_through)
   const freshnessUnsafe = (

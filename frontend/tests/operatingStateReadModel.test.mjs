@@ -165,7 +165,7 @@ function assertNoUndefined(value) {
   }
 }
 
-test('league payload returns baseball-facing state label and tone', () => {
+test('league payload carries no Team State and never invents a league state', () => {
   const board = makeBoard({
     cardsByStatus: {
       Available: Array.from({ length: 8 }, (_, i) => ({ pitcher_id: i + 1, name: `A${i}`, availability_status: 'Available' })),
@@ -177,9 +177,12 @@ test('league payload returns baseball-facing state label and tone', () => {
   const model = modelFor(board, { scope: 'league' })
 
   assert.equal(model.scope, 'league')
-  assert.equal(model.stateLabel, 'Stable Overall')
-  assert.equal(model.stateSummary, 'Most bullpen-eligible arms remain usable, with limited league-wide pressure.')
-  assert.equal(model.stateTone.dot, '#10b981')
+  // A league-wide read has no Team State. The retired "Stable Overall" pseudo-state
+  // must never come back, and the league payload's board fixture state is ignored.
+  assert.equal(model.stateLabel, null)
+  assert.equal(model.stateSummary, null)
+  assert.equal(model.stateTone.dot, '#94a3b8')
+  assert.equal(JSON.stringify(model).includes('Stable Overall'), false)
   assertNoForbiddenLanguage(model)
 })
 
@@ -193,7 +196,7 @@ test('team payload returns team identity and team scope', () => {
   assert.equal(model.teamAbbreviation, 'NYM')
 })
 
-test('stable league read preserves league-safe wording', () => {
+test('league read preserves league-safe wording without a Team State', () => {
   const model = modelFor(makeBoard({
     cardsByStatus: {
       Available: Array.from({ length: 5 }, (_, i) => ({ pitcher_id: i + 1, name: `A${i}`, availability_status: 'Available' })),
@@ -201,15 +204,16 @@ test('stable league read preserves league-safe wording', () => {
     freshness: currentFreshness,
   }), { scope: 'league' })
 
-  assert.equal(model.stateLabel, 'Stable Overall')
+  assert.equal(model.stateLabel, null)
   assert.equal(model.scopeLabel, 'Scope')
 })
 
-test('team manageable read stays team-safe and does not imply no injuries', () => {
+test('team read renders the backend Team State and does not imply no injuries', () => {
   const model = modelFor(teamOperatingBoard(), { scope: 'team' })
   const json = JSON.stringify(model)
 
-  assert.equal(model.stateLabel, 'Stable')
+  assert.equal(model.stateLabel, 'Fresh')
+  assert.equal(model.publicState, 'fresh')
   assert.equal(model.primaryConcern.label, 'Active workload is usable')
   assert.equal(model.secondaryConcern.label, 'Roster pressure remains part of the story')
   assert.equal(/nobody is hurt|no injuries/i.test(json), false)
