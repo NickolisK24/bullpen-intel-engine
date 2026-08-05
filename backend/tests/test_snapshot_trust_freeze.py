@@ -586,9 +586,41 @@ def test_frozen_legacy_what_changed_files_untouched():
         'frontend/tests/publicShareArtifact.test.mjs',
         'frontend/src/App.jsx',
     }
+    allowed_canonical_team_state_files = {
+    # ux-001 / #590 (team-fans/canonical-team-state-language): the live reader
+    # surfaces are migrated onto the backend-owned canonical Team State contract.
+    # The backend vocabulary authority gains one projection from governed Team
+    # Operations readiness; board, comparison, and dashboard payloads carry the
+    # resulting `team_state` block; and the frontend adapter is reduced to
+    # validating and rendering it, with its competing state dictionary removed.
+    # Reader-facing wording only: no derivation, threshold, readiness status
+    # code, publication gate, snapshot-selection rule, writer, migration, or
+    # Share Artifact behavior changed, and persisted snapshots are not rewritten.
+    # Founder-approved by D-003 and D-004; exact paths only, never a directory
+    # exemption.
+        'backend/api/bullpen.py',
+        'backend/services/bullpen_comparison.py',
+        'backend/services/team_state_public_vocabulary.py',
+        'frontend/src/adapters/operatingStateReadModel.js',
+        'frontend/src/adapters/publicTeamState.js',
+        'frontend/src/components/bullpen/BullpenOperatingStateCard.jsx',
+        'frontend/src/components/bullpen/board/BullpenComparisonView.jsx',
+        'frontend/src/components/bullpen/board/teamBullpenComparisonView.js',
+        'frontend/src/components/dashboard/BullpenLandscape.jsx',
+        'frontend/src/components/dashboard/bullpenLandscapeView.js',
+        'frontend/src/utils/evidenceCardModel.js',
+        'frontend/src/utils/evidenceCardStory.js',
+        # The two migrated frontend guard tests that no earlier workstream
+        # allowlisted. Test-only: they assert the new canonical behavior and
+        # change no product code.
+        'frontend/tests/dashboardScopeClarification.test.mjs',
+        'frontend/tests/tonightsBullpenBoardContext.test.mjs',
+    }
+
     assert not sorted(
         path for path in changed
         if path.startswith('frontend/')
+        if path not in allowed_canonical_team_state_files
         if path not in allowed_share_artifact_cutover_files
         if path not in allowed_share_artifact_operations_files
         if path not in allowed_public_share_artifact_page_files

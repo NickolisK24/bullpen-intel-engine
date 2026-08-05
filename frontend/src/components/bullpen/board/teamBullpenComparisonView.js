@@ -2,6 +2,7 @@ import { formatConfidence, getAvailabilityBadgeView, getAvailabilityStatusLabel 
 import { fmtDataDate, fmtSyncDate } from '../../dashboard/syncStatusView'
 import { getDataProvenance } from './tonightsBullpenBoardView'
 import { comparisonObservationCandidates } from '../../../utils/evidenceCardModel'
+import { readPublicTeamState } from '../../../adapters/publicTeamState'
 
 // Snapshot rows shown in the side-by-side table, in the board's reading order.
 // Counts are descriptive only — no scores, ranks, or grades.
@@ -125,5 +126,10 @@ export function getComparisonView(payload) {
     limitations: Array.isArray(comparison.limitations) ? comparison.limitations.map(displayPublicCopy) : [],
     freshnessA: freshnessRow(comparison.freshness?.team_a),
     freshnessB: freshnessRow(comparison.freshness?.team_b),
+    // Each side carries the same backend-owned Team State contract its own team
+    // board carries. Nothing is combined, ranked, or inferred across the two: a
+    // side whose state is fail-closed stays fail-closed on its own.
+    teamStateA: readPublicTeamState(comparison.teams?.team_a?.team_state),
+    teamStateB: readPublicTeamState(comparison.teams?.team_b?.team_state),
   }
 }

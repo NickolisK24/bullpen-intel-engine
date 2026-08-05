@@ -3,6 +3,7 @@ import {
   getAvailabilityBadgeView,
   getAvailabilityStatusLabel,
 } from '../components/bullpen/availabilityView'
+import { NO_TEAM_STATE_TONE, readPublicTeamState } from './publicTeamState'
 
 const SNAPSHOT_ROWS = [
   { status: 'Available', label: 'Available', keys: ['available'], rawStatuses: ['Available'] },
@@ -11,74 +12,12 @@ const SNAPSHOT_ROWS = [
   { status: 'Unavailable', label: 'Unavailable', keys: ['avoid', 'unavailable'], rawStatuses: ['Avoid', 'Unavailable'] },
 ]
 
-const HEALTH_TONE = {
-  manageable: { borderColor: '#10b98155', backgroundColor: '#10b98112', color: '#6ee7b7', dot: '#10b981' },
-  monitoring: { borderColor: '#eab30855', backgroundColor: '#eab30812', color: '#fde047', dot: '#eab308' },
-  elevated: { borderColor: '#f9731655', backgroundColor: '#f9731612', color: '#fdba74', dot: '#f97316' },
-  constrained: { borderColor: '#ef444455', backgroundColor: '#ef444412', color: '#fca5a5', dot: '#ef4444' },
-  no_data: { borderColor: 'rgba(148,163,184,0.32)', backgroundColor: 'rgba(148,163,184,0.09)', color: '#cbd5e1', dot: '#94a3b8' },
-}
-
-const STATE_META = {
-  manageable: {
-    label: 'Stable',
-    summary: 'The current bullpen read shows enough usable coverage without a clear pressure flag.',
-    leagueLabel: 'Stable Overall',
-    leagueSummary: 'Most bullpen-eligible arms remain usable, with limited league-wide pressure.',
-    tone: HEALTH_TONE.manageable,
-  },
-  stable: {
-    label: 'Stable',
-    summary: 'The current bullpen read shows enough usable coverage without a clear pressure flag.',
-    leagueLabel: 'Stable Overall',
-    leagueSummary: 'Most bullpen-eligible arms remain usable, with limited league-wide pressure.',
-    tone: HEALTH_TONE.manageable,
-  },
-  usable: {
-    label: 'Usable',
-    summary: 'The bullpen still has playable coverage, with some context worth checking before first pitch.',
-    tone: HEALTH_TONE.manageable,
-  },
-  monitoring: {
-    label: 'Worth Watching',
-    summary: 'The current read has enough yellow flags to keep this bullpen on the board.',
-    tone: HEALTH_TONE.monitoring,
-  },
-  worth_watching: {
-    label: 'Worth Watching',
-    summary: 'The current read has enough yellow flags to keep this bullpen on the board.',
-    tone: HEALTH_TONE.monitoring,
-  },
-  elevated: {
-    label: 'Thin',
-    summary: 'Cleanly available arms are limited right now.',
-    leagueSummary: 'Fewer bullpen-eligible arms are cleanly available right now.',
-    tone: HEALTH_TONE.elevated,
-  },
-  thin: {
-    label: 'Thin',
-    summary: 'Cleanly available arms are limited right now.',
-    leagueSummary: 'Fewer bullpen-eligible arms are cleanly available right now.',
-    tone: HEALTH_TONE.elevated,
-  },
-  constrained: {
-    label: 'Stretched',
-    summary: 'Clean Options are limited in the current bullpen read.',
-    tone: HEALTH_TONE.constrained,
-  },
-  stressed: {
-    label: 'Stressed',
-    summary: 'The current read shows a bullpen carrying meaningful availability pressure.',
-    tone: HEALTH_TONE.constrained,
-  },
-  recovering: {
-    label: 'Recovering',
-    summary: 'The bullpen is moving back toward a cleaner read, but the latest context still matters.',
-    tone: { borderColor: '#38bdf855', backgroundColor: '#38bdf812', color: '#bae6fd', dot: '#38bdf8' },
-  },
-}
-
-const DEFAULT_TONE = { borderColor: '#94a3b855', backgroundColor: '#94a3b812', color: '#cbd5e1', dot: '#94a3b8' }
+// Team State is backend-owned (UX-001). This adapter no longer holds a state
+// dictionary: it does not translate an internal readiness or bullpen-health
+// value into reader wording, does not infer a state from counts, stress, team
+// shape, freshness, or `context.health`, and has no fallback label. It renders
+// the canonical `team_state` block the payload carries, or nothing.
+const DEFAULT_TONE = NO_TEAM_STATE_TONE
 const LEAGUE_SCOPE_LIMITATION = 'This is a league-wide read, not a team-specific diagnosis. Availability classifications are workload-based only and do not include manager intent, bullpen phone activity, or private medical availability.'
 const TEAM_SCOPE_LIMITATION = 'BaseballOS does not know manager intent, bullpen phone activity, private medical availability, unreported injuries, or final game-day availability decisions.'
 const ROTATION_SUPPORT_MIN_ANALYZED_GAMES = 3
@@ -410,26 +349,23 @@ function safeConcern(concern) {
   return { label, body }
 }
 
-function getWorkloadConcern(context, stateKey) {
+// Concern copy describes the published availability counts and nothing else. It
+// is not a Team State and is deliberately not keyed off any internal readiness
+// or bullpen-health value.
+function getWorkloadConcern(context) {
   const counts = getCounts(context)
   if (!counts.total || !counts.hasRows) return null
 
-  if (stateKey === 'constrained' || counts.available === 0) {
+  if (counts.available === 0) {
     return buildConcern(
       'Clean Options are tight',
       `${counts.available} of ${counts.total} ${pluralRelievers(counts.total)} are classified Available.`,
     )
   }
-  if (stateKey === 'elevated' || counts.narrowed > 0) {
+  if (counts.narrowed > 0) {
     return buildConcern(
       'Not every arm is cleanly available',
       `${counts.narrowed} of ${counts.total} ${pluralRelievers(counts.total)} are Limited or Unavailable.`,
-    )
-  }
-  if (stateKey === 'monitoring') {
-    return buildConcern(
-      'Several arms are worth watching',
-      `${counts.monitor} of ${counts.total} ${pluralRelievers(counts.total)} are in the On Watch lane.`,
     )
   }
   return buildConcern(
@@ -717,7 +653,6 @@ function resolveTeam(payload, team) {
 }
 
 function normalizeContextView(context) {
-  const state = normalizeStateKey(context?.state || context?.health?.state || 'no_data')
   const metrics = context?.metrics || {}
   const rows = publicSnapshotRows(context?.snapshot, metrics)
   const total = typeof metrics.total === 'number'
@@ -727,9 +662,10 @@ function normalizeContextView(context) {
       : rows.reduce((sum, row) => sum + (Number(row.count) || 0), 0)
   const confidence = context?.confidence || 'high'
 
+  // `state` is intentionally absent: `context.health.state` is an internal,
+  // count-derived bullpen-health value and is never the public Team State.
   return {
     hasContext: context?.hasContext !== false && Boolean(context),
-    state,
     label: safeText(context?.label || context?.health?.label) || null,
     reasons: safeTextList(Array.isArray(context?.reasons) ? context.reasons : Array.isArray(context?.health?.reasons) ? context.health.reasons : []),
     confidence,
@@ -743,7 +679,6 @@ function normalizeContextView(context) {
       pctRestricted: typeof metrics.pctRestricted === 'number' ? metrics.pctRestricted : typeof metrics.pct_restricted === 'number' ? metrics.pct_restricted : 0,
     },
     snapshot: rows,
-    tone: context?.tone || HEALTH_TONE[state] || HEALTH_TONE.no_data,
   }
 }
 
@@ -751,15 +686,13 @@ export function getBoardContextView(board) {
   const context = board?.context || {}
   const metrics = context.metrics || {}
   const health = context.health || {}
-  const state = health.state || 'no_data'
-  const tone = HEALTH_TONE[state] || HEALTH_TONE.no_data
   const confidence = context.confidence || 'high'
 
   const snapshot = publicSnapshotRows([], metrics)
 
+  // No `state` and no state-keyed tone: `context.health.state` stays internal.
   return {
     hasContext: Boolean(board?.context),
-    state,
     label: safeText(health.label) || null,
     reasons: safeTextList(health.reasons),
     confidence,
@@ -773,7 +706,6 @@ export function getBoardContextView(board) {
       pctRestricted: typeof metrics.pct_restricted === 'number' ? metrics.pct_restricted : 0,
     },
     snapshot,
-    tone,
   }
 }
 
@@ -791,7 +723,7 @@ function resolveCta(cta) {
   return href ? { href, label } : null
 }
 
-function buildUnavailableReadModel({ scope, teamInfo, freshness, cta, density }) {
+function buildUnavailableReadModel({ scope, teamInfo, freshness, cta, density, teamState }) {
   const teamName = scope === 'team'
     ? teamInfo.teamName || teamInfo.teamAbbreviation || 'Selected Team'
     : 'League-Wide'
@@ -804,6 +736,7 @@ function buildUnavailableReadModel({ scope, teamInfo, freshness, cta, density })
     teamLabel: teamName,
     stateLabel: null,
     stateSummary: null,
+    stateUnavailableMessage: teamState?.unavailableMessage || null,
     stateTone: DEFAULT_TONE,
     tone: DEFAULT_TONE,
     isUnavailable: true,
@@ -832,17 +765,29 @@ export function toOperatingStateReadModel(payload, { scope = 'league', team = nu
   const freshness = buildFreshnessModel(payload?.freshness)
   const resolvedCta = resolveCta(cta)
   const context = resolveContext(payload)
-  const stateKey = normalizeStateKey(context.state)
-  const stateMeta = STATE_META[stateKey] || null
-  const isUnavailable = !context.hasContext || stateKey === 'no_data' || !stateMeta
+  // The one source of Team State: the backend-owned `team_state` block. There is
+  // no local fallback — an absent, unsupported, or fail-closed block leaves this
+  // read model with no state label at all.
+  //
+  // Team State is defined per team, so a league-scope read never resolves one
+  // even if a team-shaped block reaches this adapter. That is what retired the
+  // league pseudo-state ("Stable Overall"); it is a refusal, not a derivation.
+  const rawTeamState = payload?.team_state
+  const teamState = normalizeScope(scope) === 'team'
+    ? readPublicTeamState(rawTeamState)
+    : readPublicTeamState({
+      ...(rawTeamState && typeof rawTeamState === 'object' ? rawTeamState : {}),
+      available: false,
+    })
 
-  if (isUnavailable) {
+  if (!context.hasContext) {
     return buildUnavailableReadModel({
       scope: resolvedScope,
       teamInfo,
       freshness,
       cta: resolvedCta,
       density,
+      teamState,
     })
   }
 
@@ -850,14 +795,16 @@ export function toOperatingStateReadModel(payload, { scope = 'league', team = nu
   const teamName = isLeague
     ? 'League-Wide'
     : teamInfo.teamName || teamInfo.teamAbbreviation || 'Selected Team'
-  const stateLabel = isLeague && stateMeta.leagueLabel ? stateMeta.leagueLabel : stateMeta.label
-  const stateSummary = isLeague && stateMeta.leagueSummary ? stateMeta.leagueSummary : stateMeta.summary
+  // Rendered verbatim from the backend, or null. The adapter never title-cases an
+  // internal enum, never substitutes a league-wide label, and never repairs a
+  // missing one.
+  const stateLabel = teamState.publicLabel
   const rosterPressure = resolvedScope === 'team' ? buildRosterPressure(payload?.roster_authority) : null
   const starterSupportPressure = resolvedScope === 'team'
     ? buildStarterSupportPressure(payload?.rotation_support_pressure, freshness)
     : null
   const teamContextReads = buildTeamContextReads(payload, resolvedScope)
-  const primaryConcern = safeConcern(getWorkloadConcern(context, stateKey))
+  const primaryConcern = safeConcern(getWorkloadConcern(context))
   const secondaryConcern = resolvedScope === 'team'
     ? safeConcern(rosterPressure?.concern)
     : safeConcern(getLeagueSecondaryConcern(context))
@@ -879,10 +826,9 @@ export function toOperatingStateReadModel(payload, { scope = 'league', team = nu
     ...safeTextList(payload?.limitations),
   ])
   const why = safeText(context.label) || 'BaseballOS is reading the current bullpen mix from available workload context.'
-  const stateTone = {
-    ...(stateMeta.tone || DEFAULT_TONE),
-    ...(context.tone || {}),
-  }
+  // Tone is decoration keyed only by the canonical public state the backend
+  // supplied, and neutral whenever there is no Team State to show.
+  const stateTone = teamState.tone
 
   return {
     scope: resolvedScope,
@@ -892,8 +838,12 @@ export function toOperatingStateReadModel(payload, { scope = 'league', team = nu
     teamAbbreviation: teamInfo.teamAbbreviation,
     teamLabel: teamName,
     stateLabel,
-    stateSummary,
-    stateDetail: stateSummary,
+    publicState: teamState.publicState,
+    // State copy is backend-owned. Without a backend-authored state sentence the
+    // card shows the canonical label and the backend why line beneath it.
+    stateSummary: null,
+    stateDetail: null,
+    stateUnavailableMessage: teamState.unavailableMessage,
     stateTone,
     tone: stateTone,
     isUnavailable: false,

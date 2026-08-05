@@ -28,18 +28,21 @@ const view = await server.ssrLoadModule(
   '/src/components/bullpen/board/tonightsBullpenBoardView.js',
 )
 
-test('getBoardContextView maps state, metrics, and degraded confidence', () => {
-  const manageable = view.getBoardContextView(makeBoard({
+test('getBoardContextView maps metrics and degraded confidence without exposing internal state', () => {
+  const contextView = view.getBoardContextView(makeBoard({
     cardsByStatus: { Available: [{ pitcher_id: 1, name: 'A', availability_status: 'Available' }] },
   }))
-  assert.equal(manageable.state, 'manageable')
-  assert.equal(manageable.metrics.total, 1)
-  assert.equal(manageable.isDegraded, false)
-  assert.equal(manageable.snapshot.length, 4)
+  // The internal, count-derived context.health.state is deliberately not carried
+  // into the view model: it is not the public Team State and nothing may key on it.
+  assert.equal(contextView.state, undefined)
+  assert.equal(contextView.tone, undefined)
+  assert.equal(contextView.metrics.total, 1)
+  assert.equal(contextView.isDegraded, false)
+  assert.equal(contextView.snapshot.length, 4)
 
   const stale = view.getBoardContextView(staleBoard)
   assert.equal(stale.isDegraded, true)
-  assert.equal(stale.state, 'constrained')
+  assert.equal(stale.state, undefined)
 
   assert.equal(view.getBoardContextView({}).hasContext, false)
 })

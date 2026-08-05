@@ -827,6 +827,25 @@ def test_suspended_resumed_distinct_game_pks_are_independent_rows(app):
 # ===========================================================================
 
 
+# The exact runtime files carrying the canonical Team State reconciliation
+# (UX-001 / #590). Shared by the path guard below and by the test that proves
+# none of them reads appearance-team authority.
+CANONICAL_TEAM_STATE_FILES = (
+    'backend/api/bullpen.py',
+    'backend/services/bullpen_comparison.py',
+    'backend/services/team_state_public_vocabulary.py',
+    'frontend/src/adapters/operatingStateReadModel.js',
+    'frontend/src/adapters/publicTeamState.js',
+    'frontend/src/components/bullpen/BullpenOperatingStateCard.jsx',
+    'frontend/src/components/bullpen/board/BullpenComparisonView.jsx',
+    'frontend/src/components/bullpen/board/teamBullpenComparisonView.js',
+    'frontend/src/components/dashboard/BullpenLandscape.jsx',
+    'frontend/src/components/dashboard/bullpenLandscapeView.js',
+    'frontend/src/utils/evidenceCardModel.js',
+    'frontend/src/utils/evidenceCardStory.js',
+)
+
+
 def test_branch_touches_no_team_state_or_public_surface_files():
     # Source proof: Foundation 1 changes no Team State, Share Artifact, public API,
     # or frontend file, so v1.2 payloads and immutable artifacts are byte-unchanged.
@@ -894,13 +913,65 @@ def test_branch_touches_no_team_state_or_public_surface_files():
     APPROVED_INTERNAL_APPEARANCE_TEAM_CONSUMERS = (
         'backend/api/performance_intelligence_admin.py',
     )
+    # CANONICAL TEAM STATE RECONCILIATION (UX-001 / #590), founder-approved by
+    # D-003 and D-004.
+    #
+    # These files carry the deliberate migration of the live reader surfaces onto
+    # the backend-owned public Team State contract: the vocabulary authority gains
+    # one projection from governed Team Operations readiness, the board /
+    # comparison / dashboard payloads carry the resulting block, and the frontend
+    # adapter is reduced to validating and rendering it.
+    #
+    # This guard exists so appearance-team work cannot incidentally alter Team
+    # State v1.2 payloads or immutable artifacts. That purpose is intact and is
+    # now actively enforced rather than merely exempted: none of these files may
+    # read appearance-team authority at all, which
+    # test_canonical_team_state_files_read_no_appearance_team_authority proves
+    # directly. Share Artifact generation, eligibility, and the immutable
+    # lifecycle are untouched, so published artifacts stay byte-unchanged.
+    #
+    # Exact paths only, never a directory exemption. Every other public surface
+    # remains fully protected, and adding a path here still requires its own
+    # approval.
+    APPROVED_CANONICAL_TEAM_STATE_FILES = CANONICAL_TEAM_STATE_FILES
     offenders = [
         path for path in non_test
         if any(fragment in path for fragment in forbidden_fragments)
         and path not in APPROVED_PUBLIC_APPEARANCE_TEAM_CONSUMERS
         and path not in APPROVED_INTERNAL_APPEARANCE_TEAM_CONSUMERS
+        and path not in APPROVED_CANONICAL_TEAM_STATE_FILES
     ]
     assert offenders == [], f'Foundation 1 must not touch these runtime surfaces: {offenders}'
+
+
+def test_canonical_team_state_files_read_no_appearance_team_authority():
+    """The UX-001 allowlist is an exemption from the path guard, not from its purpose.
+
+    The guard above protects Team State and public surfaces from incidental
+    appearance-team change. The canonical Team State reconciliation is allowed to
+    touch those paths, so this proves the thing the guard actually cares about:
+    not one of those files reads ``GameLog.appearance_team_id`` or the
+    appearance-team status, in either language. A future edit that reaches for
+    appearance-team authority from a Team State file fails here.
+    """
+    offenders = []
+    for relative in CANONICAL_TEAM_STATE_FILES:
+        path = REPO_ROOT_FOR_DIFF / relative
+        if not path.exists():
+            continue
+        source = path.read_text(encoding='utf-8')
+        for token in (
+            'appearance_team_id',
+            'appearance_team_status',
+            'appearanceTeamId',
+            'appearanceTeamStatus',
+        ):
+            if token in source:
+                offenders.append(f'{relative}: {token}')
+    assert offenders == [], (
+        'canonical Team State files must not read appearance-team authority: '
+        f'{offenders}'
+    )
 
 
 def test_approved_public_consumers_use_appearance_team_authority_only():

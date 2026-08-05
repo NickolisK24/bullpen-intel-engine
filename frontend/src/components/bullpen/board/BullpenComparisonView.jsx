@@ -32,6 +32,34 @@ function FreshnessChip({ label, freshness }) {
   )
 }
 
+// One side's canonical Team State. Descriptive only: each side is read on its
+// own, and a side without a supported state shows the governed non-state message
+// rather than a placeholder state or a partial winner.
+function TeamStateChip({ label, teamState }) {
+  return (
+    <div
+      className="rounded border px-3 py-2"
+      style={{ borderColor: teamState.tone.borderColor, backgroundColor: teamState.tone.backgroundColor }}
+    >
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="font-mono text-xs text-chalk300">{label}</span>
+        {teamState.available && (
+          <span
+            className="inline-flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-widest"
+            style={{ color: teamState.tone.color }}
+          >
+            <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: teamState.tone.dot }} aria-hidden="true" />
+            Team State: {teamState.publicLabel}
+          </span>
+        )}
+      </div>
+      {!teamState.available && (
+        <p className="mt-1 text-xs leading-relaxed text-chalk500">{teamState.unavailableMessage}</p>
+      )}
+    </div>
+  )
+}
+
 function SnapshotTable({ view }) {
   return (
     <div className="card overflow-hidden">
@@ -139,6 +167,16 @@ export default function BullpenComparisonView({ payload }) {
           }}
         />
       </div>
+      {/* 1. Team State for each side, from the same backend authority the team
+          boards use. No winner, edge, lean, advantage, grade, score, or rank. */}
+      <section aria-label="Team State comparison">
+        <h3 className="mb-2 font-mono text-xs uppercase tracking-widest text-chalk400">Team State</h3>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <TeamStateChip label={view.labelA} teamState={view.teamStateA} />
+          <TeamStateChip label={view.labelB} teamState={view.teamStateB} />
+        </div>
+      </section>
+
       {/* 2. Freshness information */}
       <section aria-label="Comparison freshness">
         <h3 className="mb-2 font-mono text-xs uppercase tracking-widest text-chalk400">Freshness</h3>

@@ -89,6 +89,188 @@ def public_state_for(status_code) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Live public Team State projection (UX-001).
+#
+# Every reader-facing surface that shows a team's Team State — Team Board,
+# Compare, and the Dashboard's team entries — carries the block built here. It
+# is the ONE projection of a governed Team Operations readiness payload into the
+# public dictionary above, so no route handler, serializer, board builder, or
+# frontend adapter needs to know the internal-to-public map.
+#
+# The projection never manufactures a state. Refused, data-limited, unknown,
+# and missing readiness produce a label-less block carrying a governed non-state
+# message, which is what a surface renders instead of a Team State.
+# ---------------------------------------------------------------------------
+
+PUBLIC_TEAM_STATE_CONTRACT = 'team_state_public_v1'
+
+# The exact canonical public sets. A fourth public Team State cannot appear
+# without changing PUBLIC_STATE_LABELS above, which the contract tests pin.
+PUBLIC_STATE_CODES = frozenset(PUBLIC_STATE_LABELS)
+PUBLIC_TEAM_STATE_LABEL_SET = frozenset(PUBLIC_STATE_LABELS.values())
+
+# Governed non-state outcomes. None of these is a Team State, and none of them
+# is ever given a label.
+TEAM_STATE_AVAILABLE = 'available'
+TEAM_STATE_DATA_LIMITED = 'data_limited'
+TEAM_STATE_REFUSED = 'refused'
+TEAM_STATE_UNSUPPORTED = 'unsupported_internal_state'
+TEAM_STATE_READINESS_UNAVAILABLE = 'readiness_unavailable'
+TEAM_STATE_NOT_TEAM_SCOPED = 'not_team_scoped'
+
+# Reader-facing non-state messages. Deliberately plain: they say a Team State is
+# not available and why in ordinary language, and they never read like a state.
+TEAM_STATE_UNAVAILABLE_MESSAGES = {
+    TEAM_STATE_DATA_LIMITED: (
+        'A current Team State read is not available for this bullpen because the '
+        'latest public workload and roster evidence is incomplete.'
+    ),
+    TEAM_STATE_REFUSED: (
+        'A current Team State read is not available for this bullpen because the '
+        'latest evidence did not meet the freshness and trust bar.'
+    ),
+    TEAM_STATE_UNSUPPORTED: (
+        'A current Team State read is not available for this bullpen.'
+    ),
+    TEAM_STATE_READINESS_UNAVAILABLE: (
+        'A current Team State read is not available for this bullpen because no '
+        'current bullpen evidence could be assembled.'
+    ),
+    TEAM_STATE_NOT_TEAM_SCOPED: (
+        'Team State is a team-level read. Open a team bullpen board for its '
+        'current Team State.'
+    ),
+}
+
+
+def _team_state_block(
+    *,
+    outcome: str,
+    public_code: Optional[str] = None,
+    public_label: Optional[str] = None,
+    data_through=None,
+    reason_code: Optional[str] = None,
+) -> dict:
+    return {
+        'contract': PUBLIC_TEAM_STATE_CONTRACT,
+        'available': outcome == TEAM_STATE_AVAILABLE,
+        'public_state': public_code,
+        'public_label': public_label,
+        'outcome': outcome,
+        'unavailable_message': (
+            None
+            if outcome == TEAM_STATE_AVAILABLE
+            else TEAM_STATE_UNAVAILABLE_MESSAGES[outcome]
+        ),
+        'reason_code': reason_code,
+        'data_through': data_through,
+    }
+
+
+def team_state_unavailable(outcome: str, *, data_through=None, reason_code=None) -> dict:
+    """Return a governed, label-less Team State block for a non-state outcome."""
+    if outcome == TEAM_STATE_AVAILABLE:
+        raise ValueError('team_state_unavailable cannot build an available Team State')
+    if outcome not in TEAM_STATE_UNAVAILABLE_MESSAGES:
+        raise ValueError(f'unknown Team State non-state outcome {outcome!r}')
+    return _team_state_block(
+        outcome=outcome,
+        data_through=data_through,
+        reason_code=reason_code,
+    )
+
+
+def team_state_not_team_scoped() -> dict:
+    """Team State block for a surface whose scope is not a single team.
+
+    A league-wide read has no Team State: Team State is defined per team. This
+    keeps a league surface from inventing a league-shaped pseudo-state.
+    """
+    return team_state_unavailable(TEAM_STATE_NOT_TEAM_SCOPED)
+
+
+def _readiness_status_code(readiness: Mapping) -> Optional[str]:
+    block = readiness.get('readiness')
+    if isinstance(block, Mapping) and block.get('status_code'):
+        return block.get('status_code')
+    return readiness.get('status_code') or None
+
+
+def _readiness_data_through(readiness: Mapping):
+    freshness = readiness.get('freshness')
+    if not isinstance(freshness, Mapping):
+        return None
+    return freshness.get('data_through') or freshness.get('latest_workload_date')
+
+
+def _readiness_refusal_reason(readiness: Mapping) -> Optional[str]:
+    refusal = readiness.get('refusal')
+    if isinstance(refusal, Mapping):
+        return refusal.get('reason') or refusal.get('refusal_id')
+    return None
+
+
+def _readiness_is_refused(readiness: Mapping) -> bool:
+    if readiness.get('contract_state') == 'refused':
+        return True
+    refusal = readiness.get('refusal')
+    return isinstance(refusal, Mapping) and refusal.get('refused') is True
+
+
+def public_team_state(readiness) -> dict:
+    """Project a governed Team Operations readiness payload into public fields.
+
+    Supported internal states receive the canonical ``public_state`` /
+    ``public_label`` through :func:`public_state_for`. Everything else — refused,
+    ``data_limited``, an unknown or missing status code, or a readiness payload
+    that could not be assembled at all — fails closed to a governed non-state
+    block. Derivation thresholds, readiness status codes, publication gates, and
+    Share Artifact eligibility are untouched: this only reads what readiness
+    already decided.
+    """
+    if not isinstance(readiness, Mapping):
+        return team_state_unavailable(TEAM_STATE_READINESS_UNAVAILABLE)
+
+    data_through = _readiness_data_through(readiness)
+
+    if _readiness_is_refused(readiness):
+        return team_state_unavailable(
+            TEAM_STATE_REFUSED,
+            data_through=data_through,
+            reason_code=_readiness_refusal_reason(readiness),
+        )
+
+    status_code = _readiness_status_code(readiness)
+    if not status_code:
+        return team_state_unavailable(
+            TEAM_STATE_READINESS_UNAVAILABLE,
+            data_through=data_through,
+        )
+
+    if not is_publishable_state(status_code):
+        outcome = (
+            TEAM_STATE_DATA_LIMITED
+            if status_code == 'data_limited'
+            else TEAM_STATE_REFUSED
+            if status_code == 'refused'
+            else TEAM_STATE_UNSUPPORTED
+        )
+        return team_state_unavailable(
+            outcome,
+            data_through=data_through,
+            reason_code=status_code if outcome != TEAM_STATE_UNSUPPORTED else None,
+        )
+
+    state = public_state_for(status_code)
+    return _team_state_block(
+        outcome=TEAM_STATE_AVAILABLE,
+        public_code=state['public_code'],
+        public_label=state['public_label'],
+        data_through=data_through,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Evidence display-label map (Workstream E). Keyed on the internal constraint
 # identity (``affected_area`` first, ``category`` fallback). The internal enum
 # never reaches the reader; an unknown family uses one reviewed generic label.

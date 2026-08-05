@@ -101,6 +101,13 @@ copies.
 - **Stretched**: the bullpen is thin on rested arms after recent work.
 - **Vulnerable**: little late-inning margin remains if the game runs long.
 
+There is no fourth Team State. `backend/services/team_state_public_vocabulary.py`
+owns the mapping from internal readiness to these three public labels and
+projects the `team_state` block that board, comparison, and dashboard payloads
+carry. `frontend/src/adapters/publicTeamState.js` only validates that block and
+picks a visual tone; it defines no mapping of its own, and a read with no
+supported Team State shows a governed non-state message rather than a label.
+
 ## Data Freshness And Trust Posture
 
 BaseballOS is built to be checkable. Product surfaces separate the baseball

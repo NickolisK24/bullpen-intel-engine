@@ -451,6 +451,29 @@ class TestCompareEndpoint:
         assert compare_card['public_role_read']['key'] == 'limited_read'
         assert compare_card['public_role_read']['headline'] == 'Limited Read'
 
+    def test_compare_carries_the_same_canonical_team_state_contract_for_both_sides(self, client):
+        """Both sides expose the board's backend-owned Team State, unmerged."""
+        with client.application.app_context():
+            _seed_pitcher('A One', team_id=1, mlb_id=1)
+            _seed_pitcher('B One', team_id=2, mlb_id=3)
+
+        body = client.get('/api/bullpen/teams/compare?team_a=1&team_b=2').get_json()
+        teams = body['comparison']['teams']
+
+        for side, board_key in (('team_a', 'team_a'), ('team_b', 'team_b')):
+            team_state = teams[side]['team_state']
+            # Identical contract on both sides, and identical to the board's own.
+            assert team_state == body[board_key]['team_state']
+            assert team_state['contract'] == 'team_state_public_v1'
+            assert team_state['public_label'] in {'Fresh', 'Stretched', 'Vulnerable', None}
+            if not team_state['available']:
+                assert team_state['public_label'] is None
+
+        # No comparison-specific state, winner, or edge is derived from the two.
+        assert 'team_state' not in body['comparison']['summary']
+        assert body['comparison']['ranking_applied'] is False
+        assert body['comparison']['selection_made'] is False
+
     def test_missing_team_param_is_a_400(self, client):
         assert client.get('/api/bullpen/teams/compare?team_a=1').status_code == 400
 

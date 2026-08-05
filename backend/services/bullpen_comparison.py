@@ -392,8 +392,21 @@ def build_team_comparison(board_a, board_b, generated_at=None):
         'ranking_applied': False,
         'selection_made': False,
         'teams': {
-            'team_a': {'label': label_a, 'team': (board_a or {}).get('team')},
-            'team_b': {'label': label_b, 'team': (board_b or {}).get('team')},
+            # ``team_state`` is passed through from each board exactly as the
+            # backend public-vocabulary authority built it. The comparison never
+            # re-derives, merges, or ranks Team State: a side whose Team State is
+            # a governed non-state stays a governed non-state here, and two
+            # supported sides are shown side by side with no winner or edge.
+            'team_a': {
+                'label': label_a,
+                'team': (board_a or {}).get('team'),
+                'team_state': (board_a or {}).get('team_state'),
+            },
+            'team_b': {
+                'label': label_b,
+                'team': (board_b or {}).get('team'),
+                'team_state': (board_b or {}).get('team_state'),
+            },
         },
         'snapshot': {
             'team_a': metrics_a,

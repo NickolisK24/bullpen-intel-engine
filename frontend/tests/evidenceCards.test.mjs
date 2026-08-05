@@ -9,6 +9,7 @@ import {
   similarComparison,
   staleComparison,
 } from './fixtures/bullpenComparisonFixtures.mjs'
+import { publicTeamState } from './fixtures/bullpenBoardFixtures.mjs'
 
 const server = await createServer({
   root: process.cwd(),
@@ -34,7 +35,7 @@ function teamRead(overrides = {}) {
   return {
     teamName: 'Test Club',
     teamAbbreviation: 'TST',
-    stateLabel: 'Monitor',
+    stateLabel: 'Stretched',
     stateSummary: 'Recent work is concentrated among a small part of the bullpen.',
     why: 'Three relievers have appeared on consecutive days.',
     workloadConcentration: {
@@ -53,7 +54,7 @@ function teamRead(overrides = {}) {
 
 function constrainedRead(overrides = {}) {
   return teamRead({
-    stateLabel: 'Stretched',
+    stateLabel: 'Vulnerable',
     stateSummary: 'Clean Options are limited in the current bullpen read.',
     workloadConcentration: null,
     primaryConcern: { label: 'Clean Options are tight', body: '4 of 8 relievers are classified Available.' },
@@ -153,7 +154,7 @@ test('Yankees positive read leads with an availability-depth headline supported 
   const model = cards.buildTeamEvidenceCard(teamRead({
     teamName: 'New York Yankees',
     teamAbbreviation: 'NYY',
-    stateLabel: 'Stable',
+    stateLabel: 'Fresh',
     stateSummary: 'The current bullpen read shows enough usable coverage without a clear pressure flag.',
     why: 'Recent work is spread across the active relief group.',
     workloadConcentration: {
@@ -181,7 +182,7 @@ test('Yankees positive read leads with an availability-depth headline supported 
   ])
   assert.equal(model.destinationUrl, 'https://baseballos.app/bullpen?view=board&team=NYY#pitcher-lanes')
   assert.equal(model.evidenceTarget, 'pitcher_lanes')
-  assert.equal(cards.classifyTeamReceiptRole(model.receipts[0], teamRead({ stateLabel: 'Stable' })), 'primary_state')
+  assert.equal(cards.classifyTeamReceiptRole(model.receipts[0], teamRead({ stateLabel: 'Fresh' })), 'primary_state')
   assert.equal(model.receipts.filter(item => cards.classifyTeamReceiptFamily(item) === 'availability').length, 1)
   assert.equal(model.receipts.filter(item => cards.classifyTeamReceiptFamily(item) === 'workload_concentration').length, 1)
   assert.equal(model.receipts.filter(item => cards.classifyTeamReceiptFamily(item) === 'roster_context').length, 1)
@@ -191,6 +192,7 @@ test('Yankees positive read leads with an availability-depth headline supported 
 test('production-shaped Yankees read keeps Team Board claims and card receipts aligned', () => {
   const payload = {
     hasContext: true,
+    team_state: publicTeamState('fresh', { dataThrough: '2026-07-14' }),
     state: 'stable',
     label: 'Recent work is spread across the active relief group.',
     reasons: ['Recent relief work was spread across 9 active relievers.'],
@@ -242,7 +244,9 @@ test('production-shaped Yankees read keeps Team Board claims and card receipts a
   // This production payload carries heavy short-start pressure (3 of 5), so the
   // corrected starter-support path now leads with the exact short-start count.
   assert.equal(model.stateLabel, readModel.stateLabel)
-  assert.equal(model.summary, readModel.stateSummary)
+  // With frontend state copy retired, the card's summary is the backend why line.
+  assert.equal(readModel.stateSummary, null)
+  assert.equal(model.summary, readModel.why)
   assert.equal(model.storyAngle, 'starter_support')
   assert.equal(model.headline, '3 OF 5 RECENT NEW YORK YANKEES STARTS ENDED BEFORE FIVE INNINGS')
   assert.equal(model.receipts[0], '3 of 5 analyzed starts ended before five innings.')
@@ -261,7 +265,7 @@ test('Yankees limited-support card omits the supporting line and keeps headline 
   const model = cards.buildTeamEvidenceCard(teamRead({
     teamName: 'New York Yankees',
     teamAbbreviation: 'NYY',
-    stateLabel: 'Stable',
+    stateLabel: 'Fresh',
     stateSummary: 'The current bullpen read shows enough usable coverage without a clear pressure flag.',
     why: 'Recent work is spread across the active relief group.',
     workloadConcentration: null,
@@ -287,7 +291,7 @@ test('Yankees limited-support card omits the supporting line and keeps headline 
 
 test('context-only Team card fails closed instead of publishing unrelated receipts', () => {
   const model = cards.buildTeamEvidenceCard(teamRead({
-    stateLabel: 'Stable',
+    stateLabel: 'Fresh',
     why: 'Recent work is spread across the active relief group.',
     workloadConcentration: null,
     primaryConcern: null,
@@ -301,7 +305,7 @@ test('context-only Team card fails closed instead of publishing unrelated receip
 
 test('starter and roster context never displace or precede direct Team-card support', () => {
   const starterOnlyContext = cards.buildTeamEvidenceCard(teamRead({
-    stateLabel: 'Stable',
+    stateLabel: 'Fresh',
     workloadConcentration: null,
     primaryConcern: null,
     evidence: [
@@ -339,7 +343,7 @@ test('constrained availability reads produce a specific availability-constraint 
 
 test('neutral counts never become alarmist "only" copy and generic summaries never become headlines', () => {
   const positive = cards.buildTeamEvidenceCard(teamRead({
-    stateLabel: 'Stable',
+    stateLabel: 'Fresh',
     stateSummary: 'The current bullpen read shows enough usable coverage without a clear pressure flag.',
     workloadConcentration: null,
     primaryConcern: null,
@@ -352,7 +356,7 @@ test('neutral counts never become alarmist "only" copy and generic summaries nev
   assert.notEqual(positive.headline, positive.summary.toUpperCase().replace(/\.$/, ''))
 
   const summaryOnly = cards.buildTeamEvidenceCard(teamRead({
-    stateLabel: 'Monitor',
+    stateLabel: 'Stretched',
     workloadConcentration: null,
     primaryConcern: null,
     evidence: ['8 of 8 relievers are classified Available.'],
@@ -401,7 +405,7 @@ test('every team story angle maps to a canonical evidence section', () => {
 test('team alt text carries the headline, state, receipt count, freshness, and limitation', () => {
   const model = cards.buildTeamEvidenceCard(teamRead())
   assert.match(model.altText, /Two Test Club relievers have appeared on consecutive days\./)
-  assert.match(model.altText, /state: Monitor/)
+  assert.match(model.altText, /state: Stretched/)
   assert.match(model.altText, /3 receipts shown/)
   assert.match(model.altText, /July 14, 2026/)
   assert.match(model.altText, /does not predict usage/)
@@ -536,7 +540,7 @@ test('team SVG leads with the story headline and demotes the state to a compact 
   const model = cards.buildTeamEvidenceCard(teamRead())
   const svg = renderer.renderEvidenceCardSvg(model)
   const headlineIndex = svg.indexOf('TWO TEST CLUB RELIEVERS')
-  const badgeIndex = svg.indexOf('BASEBALLOS STATE · MONITOR')
+  const badgeIndex = svg.indexOf('BASEBALLOS STATE · STRETCHED')
   assert.equal(headlineIndex > -1, true)
   assert.equal(badgeIndex > -1, true)
   assert.equal(headlineIndex < badgeIndex, true)
@@ -732,6 +736,7 @@ test('distinct receipt subtypes survive candidate normalization instead of colla
 test('a Worth Watching read produces a specific On Watch headline supported by its receipt', () => {
   const payload = {
     hasContext: true,
+    team_state: publicTeamState('stretched', { dataThrough: '2026-07-14' }),
     state: 'monitoring',
     label: 'Enough yellow flags to keep this bullpen on the board.',
     reasons: [],
@@ -745,7 +750,7 @@ test('a Worth Watching read produces a specific On Watch headline supported by i
     freshness: { data_through: '2026-07-14', is_current: true, sync_status: 'success' },
   }
   const readModel = operatingState.toOperatingStateReadModel(payload, { scope: 'team' })
-  assert.equal(readModel.stateLabel, 'Worth Watching')
+  assert.equal(readModel.stateLabel, 'Stretched')
   const model = cards.buildTeamEvidenceCard(readModel)
 
   assert.equal(model.storyAngle, 'availability_watch')
@@ -761,6 +766,7 @@ test('a Worth Watching read produces a specific On Watch headline supported by i
 test('a production starter-support read leads with the exact short-start count and keeps the summary as support', () => {
   const payload = {
     hasContext: true,
+    team_state: publicTeamState('fresh', { dataThrough: '2026-07-14' }),
     state: 'stable',
     label: 'Short starts have leaned on the bullpen.',
     reasons: [],
@@ -798,6 +804,7 @@ test('a production starter-support read leads with the exact short-start count a
 function rosterPayload(counts, overrides = {}) {
   return {
     hasContext: true,
+    team_state: publicTeamState('stretched', { dataThrough: '2026-07-14' }),
     state: 'recovering',
     label: 'The bullpen is working back toward a cleaner read.',
     reasons: [],

@@ -487,6 +487,8 @@ The canonical public Team State vocabulary is exactly:
 
 `data_limited`, refused, stale, incomplete, and unknown are fail-closed outcomes, not a fourth Team State.
 
+**Implementation ownership.** `backend/services/team_state_public_vocabulary.py` is the sole semantic owner of the internal-to-public mapping and of the projection from a governed Team Operations readiness result into the reader-facing `public_state` and `public_label` fields. Every live reader surface carries that backend-authored block; no route handler, serializer, board builder, comparison builder, frontend adapter, component, or static-preview script holds a second mapping. A fail-closed outcome carries no public state and no label, only a governed non-state message. Team State is a team-level read, so a league-wide surface carries the non-state block rather than a league-shaped pseudo-state.
+
 ### Public arm read labels
 
 The public catalog is:

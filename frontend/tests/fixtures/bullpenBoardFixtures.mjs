@@ -346,7 +346,37 @@ export function deriveRosterAuthority(cards, { referenceDate = null } = {}) {
   }
 }
 
-export function makeBoard({ team, cardsByStatus = {}, freshness, limitations = [], context, stress, rosterAuthority } = {}) {
+// Backend-owned canonical public Team State block, exactly as
+// backend/services/team_state_public_vocabulary.py builds it. Fixtures never
+// derive it from the board's counts or from context.health.
+export function publicTeamState(publicState = 'fresh', { dataThrough = '2026-06-04' } = {}) {
+  const labels = { fresh: 'Fresh', stretched: 'Stretched', vulnerable: 'Vulnerable' }
+  return {
+    contract: 'team_state_public_v1',
+    available: true,
+    public_state: publicState,
+    public_label: labels[publicState],
+    outcome: 'available',
+    unavailable_message: null,
+    reason_code: null,
+    data_through: dataThrough,
+  }
+}
+
+export function failClosedTeamState(outcome = 'data_limited', message = 'A current Team State read is not available for this bullpen because the latest public workload and roster evidence is incomplete.') {
+  return {
+    contract: 'team_state_public_v1',
+    available: false,
+    public_state: null,
+    public_label: null,
+    outcome,
+    unavailable_message: message,
+    reason_code: outcome,
+    data_through: null,
+  }
+}
+
+export function makeBoard({ team, cardsByStatus = {}, freshness, limitations = [], context, stress, rosterAuthority, teamState } = {}) {
   const groups = buildGroups(cardsByStatus)
   const totalPitchers = groups.reduce((sum, g) => sum + g.count, 0)
   const allCards = groups.flatMap(group => group.pitchers)
@@ -367,6 +397,7 @@ export function makeBoard({ team, cardsByStatus = {}, freshness, limitations = [
     ranking_applied: false,
     selection_made: false,
     group_order: BOARD_GROUP_ORDER,
+    team_state: teamState === undefined ? publicTeamState() : teamState,
     context: resolvedContext,
     stress: stress || stressFromContext(resolvedContext),
     groups,

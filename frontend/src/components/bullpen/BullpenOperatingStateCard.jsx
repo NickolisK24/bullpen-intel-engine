@@ -122,7 +122,8 @@ export function getBullpenOperatingStateView({
   return {
     ...model,
     scopeLabel: scopeLabel || model.scopeLabel,
-    stateDetail: model.stateDetail || model.stateSummary,
+    // Backend-authored state copy only; there is no local substitute.
+    stateDetail: model.stateDetail || model.stateSummary || null,
     tone: model.tone || model.stateTone,
     cta,
     ctaHref: cta?.href || model.ctaHref || null,
@@ -212,7 +213,7 @@ export default function BullpenOperatingStateCard({
             <OperatingStateRow
               label="Current Bullpen State"
               title={view.stateLabel}
-              body={view.stateDetail}
+              body={view.stateLabel ? view.stateDetail : view.stateUnavailableMessage}
             />
             {view.primaryConcern && (
               <OperatingStateRow
@@ -366,12 +367,12 @@ function CompactBullpenOperatingStateCard({
       ) : (
         <>
           <div className="mt-2 text-xs leading-snug text-chalk400">
-            {view.stateDetail && (
+            {(view.stateLabel ? view.stateDetail : view.stateUnavailableMessage) && (
               <p>
                 <span className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
                   Current Bullpen State:
                 </span>{' '}
-                {view.stateDetail}
+                {view.stateLabel ? view.stateDetail : view.stateUnavailableMessage}
               </p>
             )}
           </div>

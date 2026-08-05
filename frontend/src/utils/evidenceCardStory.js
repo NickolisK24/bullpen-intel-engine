@@ -49,10 +49,13 @@ export const TEAM_SUPPORTING_LAYOUT = Object.freeze({ maxWidth: 548, maxLines: 2
 export const COMPARISON_HEADLINE_LAYOUT = Object.freeze({ maxWidth: 1088, maxLines: 2, fontSize: 30 })
 export const COMPARISON_SUPPORTING_LAYOUT = Object.freeze({ maxWidth: 328, maxLines: 5, fontSize: 20 })
 
-const CONSTRAINED_TEAM_STATES = /^(?:thin|stretched|stressed)$/i
-const POSITIVE_TEAM_STATES = /^(?:stable|usable)$/i
-const WATCH_TEAM_STATES = /^(?:worth watching|monitor)$/i
-const ROSTER_STORY_STATES = /^(?:thin|stretched|stressed|recovering)$/i
+// Story-shape selection keyed on the canonical public Team State set only. These
+// gate which already-authored receipt sentence a card leads with; they are not a
+// Team State dictionary and never produce a label.
+const CONSTRAINED_TEAM_STATES = /^vulnerable$/i
+const POSITIVE_TEAM_STATES = /^fresh$/i
+const WATCH_TEAM_STATES = /^stretched$/i
+const ROSTER_STORY_STATES = /^(?:stretched|vulnerable)$/i
 const COUNT_LED_RELIEVER_RECEIPT = /^(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve) relievers?\b/i
 const AVAILABILITY_COUNTS = /^(\d+) of (\d+) (?:active )?relievers? are classified Available\.$/i
 const ON_WATCH_COUNTS = /^(\d+) of (\d+) relievers? are in (?:the )?On Watch (?:group|lane)\.$/i
