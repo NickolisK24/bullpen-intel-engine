@@ -1184,13 +1184,19 @@ def run(args) -> dict:
                 official.get('appearances')
             )
 
-            after_identities = identities | set(
-                official.get('official_pitcher_mlb_ids') or ()
-            )
+            # The AFTER pass must cover exactly the scope the BEFORE pass
+            # covered. Widening it with identities discovered from the official
+            # response mid-run would compare two different scopes and could
+            # report a difference that is only a difference in what was looked
+            # at. Official identities absent from storage are a membership
+            # finding, and the field matrix is where they are reported.
             collected['after_fingerprints'] = audit.scoped_fingerprints(
                 db.session, pitcher_mlb_ids=identities,
             )
-            collected['fingerprint_identities'] = sorted(after_identities)
+            collected['fingerprint_identities'] = sorted(identities)
+            collected['official_identities_outside_scope'] = sorted(
+                set(official.get('official_pitcher_mlb_ids') or ()) - identities
+            )
         except _AuditHalt:
             pass
         except Exception:  # noqa: BLE001 - never leak exception text
@@ -1325,6 +1331,9 @@ def run(args) -> dict:
         'rollback_in_finally': True,
         'fingerprint_scope_plan': audit.fingerprint_scope_plan(
             collected.get('fingerprint_identities') or ()
+        ),
+        'official_identities_outside_fingerprint_scope': collected.get(
+            'official_identities_outside_scope', []
         ),
         'before_fingerprints': collected.get('before_fingerprints'),
         'after_fingerprints': collected.get('after_fingerprints'),
