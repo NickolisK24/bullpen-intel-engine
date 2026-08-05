@@ -1270,3 +1270,55 @@ def test_a_missing_required_artifact_makes_the_whole_run_unproven(
     assert verdict['result'] == audit.RESULT_UNPROVEN
     assert audit.UNPROVEN_ARTIFACT_MISSING in verdict['unproven_reasons']
     assert verdict['exit_code'] == 2
+
+
+@postgres_only
+def test_an_earlier_stop_never_hides_that_the_source_was_not_observed(
+    app, monkeypatch, tmp_path,
+):
+    """Two independent gaps must both be named.
+
+    A contended lock or a missing artifact explains WHY the current official
+    revision was never observed; it is not a substitute for saying it was not
+    observed. A summary carrying only the first reason would leave a reader
+    believing the source had been checked.
+    """
+    sha = _head_sha()
+    if not sha:
+        pytest.skip('repository history unavailable')
+
+    with app.app_context():
+        payload = _seed(monkeypatch)
+        monkeypatch.setattr(
+            sync_service, 'mlb_client', _Counting({GAME_PK: payload}),
+        )
+
+    monkeypatch.setattr(runner, 'build_app', lambda: app)
+    monkeypatch.setattr(
+        runner, 'observe_current_source',
+        lambda _guard: {
+            'available': False, 'unavailable_reason': 'source_call_refused',
+            'appearances': [], 'plan': None,
+        },
+    )
+    _authorize(monkeypatch, sha)
+
+    evidence = tmp_path / 'evidence'
+    from tests.test_game_source_revision_audit_artifacts import write_artifact
+
+    write_artifact(evidence, audit.RUN_LATER)
+    document = runner.run(_Args(
+        evidence_dir=evidence, artifact_dir=tmp_path / 'out', sha=sha,
+    ))
+    verdict = document['verdict']
+    assert verdict['result'] == audit.RESULT_UNPROVEN
+    assert audit.UNPROVEN_ARTIFACT_MISSING in verdict['unproven_reasons']
+    assert audit.UNPROVEN_CURRENT_SOURCE_UNAVAILABLE in (
+        verdict['unproven_reasons']
+    )
+    assert document['current_revision_state'] == (
+        audit.CURRENT_SOURCE_UNAVAILABLE
+    )
+    assert verdict['classification']['current_materiality'] == (
+        audit.MATERIALITY_SOURCE_UNAVAILABLE
+    )

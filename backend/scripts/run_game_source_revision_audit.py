@@ -1267,7 +1267,12 @@ def run(args) -> dict:
         failed_reasons.append(audit.FAILED_FINGERPRINT_NONDETERMINISTIC)
 
     source_available = bool(official.get('available'))
-    if not source_available and not unproven_reasons:
+    if not source_available:
+        # Recorded unconditionally. An earlier stop — a contended lock, a
+        # missing artifact — is why the source was never observed, not a
+        # substitute for saying it was not observed. A summary that named only
+        # the first reason would leave a reader believing the current official
+        # revision had been checked.
         unproven_reasons.append(audit.UNPROVEN_CURRENT_SOURCE_UNAVAILABLE)
 
     current_revision = official.get('current_source_revision')
