@@ -309,7 +309,8 @@ error becomes a closed code.
 `governed_fingerprint_field_differs`, `non_display_difference_present`,
 `canonical_plan_proposes_a_baseball_mutation`, `reconciliation_plan_changed`,
 `target_row_modified_concurrently`, `governed_scope_moved_before_apply`,
-`prohibited_scope_changed`, `post_commit_verification_failed`.
+`prohibited_scope_changed`, `post_commit_verification_failed`,
+`mutation_row_count_zero`.
 
 **Unproven** — required evidence was never obtained:
 `public_sync_advisory_lock_unavailable`, `advisory_lock_release_unproven`,
@@ -332,10 +333,34 @@ error becomes a closed code.
 `unpermitted_fingerprint_scope_changed`,
 `target_table_fingerprint_unchanged_after_apply`,
 `read_only_probe_accepted_not_refused`, `mutation_attempted_during_verify`,
-`advisory_lock_release_failed`, `advisory_lock_release_not_attempted`.
+`advisory_lock_release_failed`, `advisory_lock_release_not_attempted`,
+`mutation_row_count_multiple`, `artifact_generation_failed`.
 
 A contract test asserts the three families do not overlap and that no
 platform-shaped condition appears in the FAILED family.
+
+**Zero and more-than-one affected rows are different outcomes.** Zero rows
+under an exclusive lock this transaction just re-validated against is read as
+"the row moved" — a concurrency refusal, and never a claim that the repair was
+already applied without a fresh read establishing it. More than one row is
+structurally impossible under a UNIQUE constraint and a primary-key predicate,
+and is still guarded, as a contract violation.
+
+**A run whose evidence could not be written is not a successful run.** An
+artifact-generation failure returns `FAILED` with a closed reason code rather
+than an uncaught traceback, whatever the verdict said.
+
+### Traceability to the governing specification
+
+The repair specification names a minimum set of conditions that must carry a
+stable, safe reason code. This package's own codes are more specific in several
+places — `current_official_revision_is_not_the_intended_revision` says more
+than `current_source_revision_unexpected` — so rather than rename them down to
+the specification's granularity, the mapping is published in
+`SPECIFIED_REASON_CODES` and travels in the preconditions artifact alongside
+the full reason vocabulary. A contract test asserts every listed condition maps
+to a code that really exists, so the map cannot rot into a list of names for
+conditions nobody detects.
 
 ## 12. Concurrency control
 

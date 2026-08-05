@@ -260,6 +260,67 @@ def test_the_three_reason_families_do_not_overlap():
             assert not left & right
 
 
+def test_every_specified_condition_maps_to_a_code_this_package_emits():
+    """Traceability to the governing specification, checked not claimed."""
+    for condition, code in repair.SPECIFIED_REASON_CODES.items():
+        assert code in repair.ALL_REASON_CODES, condition
+
+
+def test_the_specification_map_covers_every_named_condition():
+    for condition in (
+        'unauthorized_invocation', 'expected_main_sha_mismatch',
+        'target_work_item_missing', 'target_work_item_ambiguous',
+        'target_status_unexpected', 'target_checkpoint_missing',
+        'target_checkpoint_malformed', 'target_checkpoint_unexpected',
+        'repair_already_applied', 'current_source_unavailable',
+        'current_source_empty', 'current_source_count_unexpected',
+        'current_source_revision_unexpected', 'official_membership_mismatch',
+        'duplicate_official_identity', 'duplicate_stored_identity',
+        'stored_appearance_count_unexpected', 'reconciliation_plan_changed',
+        'reconciliation_proposes_insert', 'reconciliation_proposes_update',
+        'reconciliation_proposes_delete', 'reconciliation_has_blocked_rows',
+        'governed_field_difference_detected', 'advisory_lock_unavailable',
+        'advisory_lock_release_failed', 'transaction_read_only_proof_failed',
+        'mutation_row_count_zero', 'mutation_row_count_multiple',
+        'concurrent_precondition_change', 'prohibited_scope_changed',
+        'post_commit_verification_failed', 'artifact_generation_failed',
+    ):
+        assert condition in repair.SPECIFIED_REASON_CODES, condition
+
+
+def test_zero_and_multiple_affected_rows_are_different_outcomes():
+    """Zero is a concurrency refusal; more than one is a contract violation."""
+    assert repair.REFUSED_MUTATION_ROW_COUNT_ZERO in repair.REFUSED_REASONS
+    assert repair.FAILED_MUTATION_ROW_COUNT_MULTIPLE in repair.FAILED_REASONS
+    assert repair.REFUSED_MUTATION_ROW_COUNT_ZERO != (
+        repair.FAILED_MUTATION_ROW_COUNT_MULTIPLE
+    )
+
+
+def test_an_artifact_that_cannot_be_written_is_a_contract_violation(
+    monkeypatch, tmp_path,
+):
+    """A run whose evidence could not be written is not a successful run."""
+    from scripts import run_game_source_revision_checkpoint_repair as runner
+
+    monkeypatch.setattr(
+        runner, 'run',
+        lambda args: {'verdict': repair.decide(operation='verify')},
+    )
+
+    def _explode(*args, **kwargs):
+        raise OSError('disk full')
+
+    monkeypatch.setattr(runner, 'write_artifacts', _explode)
+    code = runner.main([
+        '--operation', 'verify',
+        '--expected-main-sha', 'f' * 40,
+        '--confirmation', repair.CONFIRMATIONS['verify'],
+        '--artifact-dir', str(tmp_path / 'out'),
+    ])
+    assert code == repair.EXIT_CODES[repair.RESULT_FAILED] == 1
+
+
 # ── 5. Precondition model ───────────────────────────────────────────────────
 
 def test_every_precondition_id_maps_to_both_a_refusal_and_an_unproven_reason():

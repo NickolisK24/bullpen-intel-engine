@@ -322,6 +322,27 @@ def apply_repair(*, target_row_id, observed_snapshot) -> dict:
         # than committed and reported. This is the last point at which that is
         # still possible, so it is taken.
         checks = state['guard_checks'] or {}
+        affected = state['affected_row_count']
+        if affected == 0:
+            # Zero rows under an exclusive lock this transaction just
+            # re-validated against. The safe reading is that the row moved,
+            # and a refusal never claims the repair was already applied
+            # without a fresh read establishing it.
+            db.session.rollback()
+            state['committed'] = False
+            state['refusal_reasons'].append(
+                repair.REFUSED_MUTATION_ROW_COUNT_ZERO
+            )
+            return state
+        if isinstance(affected, int) and affected > 1:
+            # Structurally impossible under a UNIQUE constraint and a
+            # primary-key predicate, and still guarded.
+            db.session.rollback()
+            state['committed'] = False
+            state['failed_reasons'].append(
+                repair.FAILED_MUTATION_ROW_COUNT_MULTIPLE
+            )
+            return state
         if not all((
             checks.get('no_object_was_created'),
             checks.get('no_object_was_deleted'),
@@ -330,7 +351,7 @@ def apply_repair(*, target_row_id, observed_snapshot) -> dict:
             checks.get('only_governed_attributes_changed'),
             statements.get('exactly_one_target_update'),
             statements.get('no_other_write_statement'),
-            state['affected_row_count'] == 1,
+            affected == 1,
             state['in_transaction_value_is_intended'],
         )):
             db.session.rollback()
@@ -386,6 +407,9 @@ def apply_repair(*, target_row_id, observed_snapshot) -> dict:
     elif not state['post_commit_value_is_intended']:
         state['failed_reasons'].append(
             repair.FAILED_POST_STATE_NOT_INTENDED
+        )
+        state['refusal_reasons'].append(
+            repair.REFUSED_POST_COMMIT_VERIFICATION_FAILED
         )
     return state
 
@@ -1269,6 +1293,12 @@ def write_artifacts(document, comparison_rows, artifact_dir) -> dict:
             'unproven_reason_by_precondition': dict(
                 repair.PRECONDITION_UNPROVEN_REASONS
             ),
+            'specified_condition_to_reason_code': dict(
+                repair.SPECIFIED_REASON_CODES
+            ),
+            'failed_reasons': list(repair.FAILED_REASONS),
+            'unproven_reasons': list(repair.UNPROVEN_REASONS),
+            'refusal_reasons': list(repair.REFUSED_REASONS),
             'evaluation': document.get('preconditions') or {},
         },
         PROOF_JSON: {
@@ -1334,7 +1364,23 @@ def main(argv=None) -> int:
     args = parse_args(argv)
     document = run(args)
     comparison_rows = document.pop('_comparison_rows', None) or []
-    write_artifacts(document, comparison_rows, args.artifact_dir)
+    try:
+        write_artifacts(document, comparison_rows, args.artifact_dir)
+    except Exception:  # noqa: BLE001 - never leak the filesystem message
+        # A run whose evidence could not be written is not a successful run,
+        # whatever its verdict said. Reported as a contract violation with a
+        # closed reason code rather than as an uncaught traceback.
+        verdict = document.get('verdict') or {}
+        print(json.dumps({
+            'operation': verdict.get('operation'),
+            'result': repair.RESULT_FAILED,
+            'exit_code': repair.EXIT_CODES[repair.RESULT_FAILED],
+            'failed_reasons': [repair.FAILED_ARTIFACT_GENERATION_FAILED],
+            'unproven_reasons': [],
+            'refusal_reasons': [],
+            'mutation_performed': verdict.get('mutation_performed'),
+        }, indent=2, sort_keys=True))
+        return repair.EXIT_CODES[repair.RESULT_FAILED]
     verdict = document.get('verdict') or {}
     print(json.dumps({
         'operation': verdict.get('operation'),

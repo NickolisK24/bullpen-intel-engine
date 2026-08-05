@@ -186,6 +186,14 @@ def test_the_preconditions_file_publishes_the_whole_requirement_model(
     assert set(payload['unproven_reason_by_precondition']) == set(
         repair.PRECONDITION_IDS
     )
+    # The whole reason vocabulary and the specification map travel with it,
+    # so a reviewer can check a listed condition without reading the source.
+    assert payload['specified_condition_to_reason_code'] == dict(
+        repair.SPECIFIED_REASON_CODES
+    )
+    assert set(payload['failed_reasons']) == set(repair.FAILED_REASONS)
+    assert set(payload['unproven_reasons']) == set(repair.UNPROVEN_REASONS)
+    assert set(payload['refusal_reasons']) == set(repair.REFUSED_REASONS)
 
 
 def test_the_artifact_filenames_are_the_reviewed_names(artifact_dir):

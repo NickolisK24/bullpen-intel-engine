@@ -266,6 +266,8 @@ FAILED_UNEXPECTED_ROW_CREATED = 'unexpected_row_created'
 FAILED_UNEXPECTED_ROW_DELETED = 'unexpected_row_deleted'
 FAILED_OTHER_WORK_ITEM_MUTATED = 'work_item_outside_target_mutated'
 FAILED_AFFECTED_ROW_COUNT_NOT_ONE = 'affected_row_count_not_exactly_one'
+FAILED_MUTATION_ROW_COUNT_MULTIPLE = 'mutation_row_count_multiple'
+FAILED_ARTIFACT_GENERATION_FAILED = 'artifact_generation_failed'
 FAILED_POST_STATE_NOT_INTENDED = 'post_state_is_not_the_intended_revision'
 FAILED_OUT_OF_SCOPE_TABLE_CHANGED = 'out_of_scope_table_changed'
 FAILED_UNPERMITTED_SCOPE_CHANGED = 'unpermitted_fingerprint_scope_changed'
@@ -291,6 +293,8 @@ FAILED_REASONS = (
     FAILED_UNEXPECTED_ROW_DELETED,
     FAILED_OTHER_WORK_ITEM_MUTATED,
     FAILED_AFFECTED_ROW_COUNT_NOT_ONE,
+    FAILED_MUTATION_ROW_COUNT_MULTIPLE,
+    FAILED_ARTIFACT_GENERATION_FAILED,
     FAILED_POST_STATE_NOT_INTENDED,
     FAILED_OUT_OF_SCOPE_TABLE_CHANGED,
     FAILED_UNPERMITTED_SCOPE_CHANGED,
@@ -375,6 +379,11 @@ REFUSED_PLAN_FINGERPRINT_CHANGED = 'reconciliation_plan_changed'
 REFUSED_TARGET_ERROR_STATE = 'target_status_unexpected_error_state'
 REFUSED_PROHIBITED_SCOPE_CHANGED = 'prohibited_scope_changed'
 REFUSED_POST_COMMIT_VERIFICATION_FAILED = 'post_commit_verification_failed'
+# Zero affected rows under an exclusive row lock we just re-validated against.
+# Classified as a concurrency refusal rather than a contract violation: the
+# safe reading is that the row moved, and a refusal never claims the repair was
+# already applied without a fresh read establishing it.
+REFUSED_MUTATION_ROW_COUNT_ZERO = 'mutation_row_count_zero'
 
 REFUSED_REASONS = (
     REFUSED_WORK_ITEM_MISSING,
@@ -399,7 +408,64 @@ REFUSED_REASONS = (
     REFUSED_TARGET_ERROR_STATE,
     REFUSED_PROHIBITED_SCOPE_CHANGED,
     REFUSED_POST_COMMIT_VERIFICATION_FAILED,
+    REFUSED_MUTATION_ROW_COUNT_ZERO,
 )
+
+# ── Traceability to the governing specification ─────────────────────────────
+# The repair specification names a minimum set of conditions that must carry a
+# stable, safe reason code. This package's own codes are more specific in
+# several places — "current_official_revision_is_not_the_intended_revision"
+# says more than "current_source_revision_unexpected" — so rather than rename
+# them down to the specification's granularity, the mapping is published.
+#
+# A reviewer working from the specification can look up any listed condition
+# and find the code this package actually emits for it. A contract test asserts
+# every listed condition maps to a code that really exists, so the map cannot
+# rot into a list of names for conditions nobody detects.
+SPECIFIED_REASON_CODES = {
+    'unauthorized_invocation': FAILED_REPOSITORY_NOT_AUTHORIZED,
+    'expected_main_sha_mismatch': FAILED_EXPECTED_SHA_MISMATCH,
+    'target_work_item_missing': REFUSED_WORK_ITEM_MISSING,
+    'target_work_item_ambiguous': REFUSED_WORK_ITEM_MULTIPLE,
+    'target_status_unexpected': REFUSED_STATUS_NOT_COMPLETED,
+    'target_checkpoint_missing': REFUSED_EXISTING_REVISION_ABSENT,
+    'target_checkpoint_malformed': REFUSED_EXISTING_REVISION_UNEXPECTED,
+    'target_checkpoint_unexpected': REFUSED_EXISTING_REVISION_UNEXPECTED,
+    'repair_already_applied': REFUSED_ALREADY_AT_INTENDED_REVISION,
+    'current_source_unavailable': UNPROVEN_CURRENT_SOURCE_UNAVAILABLE,
+    'current_source_empty': UNPROVEN_CURRENT_SOURCE_UNAVAILABLE,
+    'current_source_count_unexpected': REFUSED_APPEARANCE_COUNT_UNEXPECTED,
+    'current_source_revision_unexpected':
+        REFUSED_CURRENT_REVISION_NOT_INTENDED,
+    'official_membership_mismatch': REFUSED_SOURCE_NOT_CONCLUSION_ELIGIBLE,
+    'duplicate_official_identity': REFUSED_SOURCE_NOT_CONCLUSION_ELIGIBLE,
+    'duplicate_stored_identity': REFUSED_SOURCE_NOT_CONCLUSION_ELIGIBLE,
+    'stored_appearance_count_unexpected': REFUSED_STORED_COUNT_DISAGREES,
+    'reconciliation_plan_changed': REFUSED_PLAN_FINGERPRINT_CHANGED,
+    'reconciliation_proposes_insert':
+        REFUSED_CANONICAL_PLAN_PROPOSES_MUTATION,
+    'reconciliation_proposes_update':
+        REFUSED_CANONICAL_PLAN_PROPOSES_MUTATION,
+    'reconciliation_proposes_delete':
+        REFUSED_CANONICAL_PLAN_PROPOSES_MUTATION,
+    'reconciliation_has_blocked_rows':
+        REFUSED_CANONICAL_PLAN_PROPOSES_MUTATION,
+    'governed_field_difference_detected': REFUSED_GOVERNED_FIELD_DIFFERS,
+    'advisory_lock_unavailable': UNPROVEN_ADVISORY_LOCK_UNAVAILABLE,
+    'advisory_lock_release_failed': FAILED_LOCK_RELEASE_FAILED,
+    'transaction_read_only_proof_failed': UNPROVEN_READ_ONLY_UNAVAILABLE,
+    'mutation_row_count_zero': REFUSED_MUTATION_ROW_COUNT_ZERO,
+    'mutation_row_count_multiple': FAILED_MUTATION_ROW_COUNT_MULTIPLE,
+    'concurrent_precondition_change': REFUSED_CONCURRENT_MODIFICATION,
+    'prohibited_scope_changed': REFUSED_PROHIBITED_SCOPE_CHANGED,
+    'post_commit_verification_failed': REFUSED_POST_COMMIT_VERIFICATION_FAILED,
+    'artifact_generation_failed': FAILED_ARTIFACT_GENERATION_FAILED,
+}
+
+ALL_REASON_CODES = frozenset(
+    FAILED_REASONS + UNPROVEN_REASONS + REFUSED_REASONS
+)
+
 
 MAX_REASON_CODES = 12
 
