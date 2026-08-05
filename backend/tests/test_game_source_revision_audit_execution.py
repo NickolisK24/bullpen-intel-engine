@@ -11,6 +11,7 @@ in for behind the audit's own counting guard, so a duplicate fetch or a hidden
 call is caught here rather than assumed away.
 """
 
+import json
 from datetime import date, timedelta
 
 import pytest
@@ -550,11 +551,7 @@ def test_all_twelve_current_official_pitchers_match_storage(app, monkeypatch):
 
         matrix = runner.build_field_matrix(
             official=official, stored=stored, plan=official['plan'],
-            artifacts={
-                'all_required_present': True,
-                'prior_row_level_values_retained': False,
-                'later_row_level_values_retained': False,
-            },
+            artifacts=VERIFIED_ARTIFACTS,
         )
         summary = matrix['summary']
         assert summary['structurally_valid'] is True
@@ -588,7 +585,7 @@ def test_a_missing_stored_appearance_is_detected(app, monkeypatch):
         official = runner.observe_current_source(guard)
         summary = runner.build_field_matrix(
             official=official, stored=stored, plan=official['plan'],
-            artifacts={'all_required_present': True},
+            artifacts=VERIFIED_ARTIFACTS,
         )['summary']
         assert summary['missing_from_storage'] == [HOME_ARMS[3]]
         assert summary['membership_matches'] is False
@@ -613,7 +610,7 @@ def test_an_extra_stored_appearance_is_detected(app, monkeypatch):
         official = runner.observe_current_source(guard)
         summary = runner.build_field_matrix(
             official=official, stored=stored, plan=official['plan'],
-            artifacts={'all_required_present': True},
+            artifacts=VERIFIED_ARTIFACTS,
         )['summary']
         assert 780099 in summary['extra_in_storage']
         assert summary['membership_matches'] is False
@@ -638,7 +635,7 @@ def test_a_canonical_outs_difference_is_reported_as_material(
         official = runner.observe_current_source(guard)
         result = runner.build_field_matrix(
             official=official, stored=stored, plan=official['plan'],
-            artifacts={'all_required_present': True},
+            artifacts=VERIFIED_ARTIFACTS,
         )
         summary = result['summary']
         assert summary['any_canonical_outs_difference'] is True
@@ -678,7 +675,7 @@ def test_a_decimal_only_innings_difference_is_not_a_correction(
         official = runner.observe_current_source(guard)
         summary = runner.build_field_matrix(
             official=official, stored=stored, plan=official['plan'],
-            artifacts={'all_required_present': True},
+            artifacts=VERIFIED_ARTIFACTS,
         )['summary']
         assert summary['any_canonical_outs_difference'] is False
         for entry in summary['differing_rows']:
@@ -703,7 +700,7 @@ def test_a_role_difference_is_detected(app, monkeypatch):
         official = runner.observe_current_source(guard)
         summary = runner.build_field_matrix(
             official=official, stored=stored, plan=official['plan'],
-            artifacts={'all_required_present': True},
+            artifacts=VERIFIED_ARTIFACTS,
         )['summary']
         assert summary['any_role_difference'] is True
 
@@ -724,7 +721,7 @@ def test_a_team_authority_difference_is_detected(app, monkeypatch):
         official = runner.observe_current_source(guard)
         summary = runner.build_field_matrix(
             official=official, stored=stored, plan=official['plan'],
-            artifacts={'all_required_present': True},
+            artifacts=VERIFIED_ARTIFACTS,
         )['summary']
         assert summary['any_appearance_team_difference'] is True
 
@@ -745,7 +742,7 @@ def test_a_statistical_difference_is_detected(app, monkeypatch):
         official = runner.observe_current_source(guard)
         summary = runner.build_field_matrix(
             official=official, stored=stored, plan=official['plan'],
-            artifacts={'all_required_present': True},
+            artifacts=VERIFIED_ARTIFACTS,
         )['summary']
         assert summary['any_statistical_difference'] is True
         assert official['plan']['proposes_update'] is True
@@ -777,11 +774,7 @@ def test_every_matrix_row_carries_an_evidence_status(app, monkeypatch):
         official = runner.observe_current_source(guard)
         result = runner.build_field_matrix(
             official=official, stored=stored, plan=official['plan'],
-            artifacts={
-                'all_required_present': True,
-                'prior_row_level_values_retained': False,
-                'later_row_level_values_retained': False,
-            },
+            artifacts=VERIFIED_ARTIFACTS,
         )
         assert result['summary']['every_historical_cell_carries_a_status'] is (
             True
@@ -808,7 +801,7 @@ def test_writer_target_participation_comes_from_the_canonical_plan(
         official = runner.observe_current_source(guard)
         result = runner.build_field_matrix(
             official=official, stored=stored, plan=official['plan'],
-            artifacts={'all_required_present': True},
+            artifacts=VERIFIED_ARTIFACTS,
         )
         participation = {
             row['participates_in_writer_target'] for row in result['rows']
@@ -980,10 +973,7 @@ def test_absent_correction_provenance_never_becomes_no_change(
         official = runner.observe_current_source(guard)
         result = runner.build_field_matrix(
             official=official, stored=stored, plan=official['plan'],
-            artifacts={
-                'all_required_present': True,
-                'prior_row_level_values_retained': False,
-            },
+            artifacts=VERIFIED_ARTIFACTS,
         )
         # No provenance means the HISTORICAL question stays unanswered; it does
         # not mean the historical value was the same.
@@ -1060,12 +1050,49 @@ def test_an_aged_out_game_is_still_plannable_as_an_explicit_request(
 # reducer, and the artifact writer — because a package assembled only from
 # individually-correct pieces can still be wired wrong.
 
-def _write_evidence(root):
-    from tests.test_game_source_revision_audit_artifacts import write_artifact
+def _write_evidence(root, *, workflow=True, metadata=True):
+    """Lay out the evidence directory exactly as the workflow does.
 
+    That includes the two GitHub metadata sidecars: artifact metadata (digest
+    and artifact id) and workflow-run metadata (the branch). Omitting them is
+    a supported case and is exercised separately — it must produce UNPROVEN,
+    never a silent match.
+    """
+    import json as _json
+
+    from tests.test_game_source_revision_audit_artifacts import (
+        write_artifact, workflow_metadata,
+    )
+
+    root.mkdir(parents=True, exist_ok=True)
     for run_key in audit.RUN_KEYS:
         write_artifact(root, run_key)
+    if workflow:
+        (root / 'workflow-run-metadata.json').write_text(
+            _json.dumps(workflow_metadata()), encoding='utf-8',
+        )
+    if metadata:
+        (root / 'artifact-metadata.json').write_text(_json.dumps({
+            audit.RUN_EXPECTATIONS[run_key]['artifact_name']: {
+                'artifact_id': audit.RUN_EXPECTATIONS[run_key]['artifact_id'],
+                'digest': audit.RUN_EXPECTATIONS[run_key]['digest'],
+                'expired': False,
+            }
+            for run_key in audit.RUN_KEYS
+        }), encoding='utf-8')
     return root
+
+
+VERIFIED_ARTIFACTS = {
+    'all_required_present': True,
+    'identity_all_verified': True,
+    'content_all_verified': True,
+    'prior_row_level_values_retained': False,
+    'later_row_level_values_retained': False,
+    'unassociable_historical_candidates': 0,
+    'historical_delta': {'delta_identified': False, 'identified_fields': []},
+    'runs': {},
+}
 
 
 class _Args:
@@ -1322,3 +1349,316 @@ def test_an_earlier_stop_never_hides_that_the_source_was_not_observed(
     assert verdict['classification']['current_materiality'] == (
         audit.MATERIALITY_SOURCE_UNAVAILABLE
     )
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# Early-stop evidence semantics — a skipped stage never answers a question
+# ══════════════════════════════════════════════════════════════════════════
+
+def _q(document, question_id):
+    for entry in document['questions']:
+        if entry['question_id'] == question_id:
+            return entry
+    raise AssertionError(f'no {question_id}')
+
+
+@postgres_only
+def test_a_full_run_records_that_the_database_was_actually_observed(
+    app, monkeypatch, tmp_path,
+):
+    sha = _head_sha()
+    if not sha:
+        pytest.skip('repository history unavailable')
+    with app.app_context():
+        payload = _seed(monkeypatch)
+        monkeypatch.setattr(
+            sync_service, 'mlb_client', _Counting({GAME_PK: payload}),
+        )
+    monkeypatch.setattr(runner, 'build_app', lambda: app)
+    _authorize(monkeypatch, sha)
+    document = runner.run(_Args(
+        evidence_dir=_write_evidence(tmp_path / 'e'),
+        artifact_dir=tmp_path / 'o', sha=sha,
+    ))
+
+    # Q8 answered NEGATIVELY from a real query, which is a real answer.
+    assert _q(document, 'Q8')['state'] == audit.ANSWER_OBSERVED_NO
+    assert _q(document, 'Q8')['answer']['database_observed'] is True
+    assert _q(document, 'Q7')['state'] == audit.ANSWER_OBSERVED_YES
+    assert _q(document, 'Q10')['state'] == audit.ANSWER_OBSERVED_YES
+    assert document['verdict']['unanswered_mandatory_questions'] == []
+    assert document['read_only_proof']['advisory_lock_status'] == (
+        audit.LOCK_RELEASED
+    )
+    assert document['read_only_proof']['advisory_guard_release_proven'] is True
+
+
+@postgres_only
+def test_an_unacquirable_lock_answers_no_downstream_question(
+    app, monkeypatch, tmp_path,
+):
+    """The classic early stop. Nothing after it may look answered."""
+    sha = _head_sha()
+    if not sha:
+        pytest.skip('repository history unavailable')
+    from services import sync_metadata
+
+    with app.app_context():
+        _seed(monkeypatch)
+
+    def _refuse(**_kwargs):
+        raise sync_metadata.SyncWriterConflict(
+            reason='lock_unavailable', job_name=None, source='manual',
+            active_run=None,
+        )
+
+    monkeypatch.setattr(
+        sync_metadata, 'acquire_public_sync_read_lock', _refuse,
+    )
+    monkeypatch.setattr(runner, 'build_app', lambda: app)
+    _authorize(monkeypatch, sha)
+    document = runner.run(_Args(
+        evidence_dir=_write_evidence(tmp_path / 'e'),
+        artifact_dir=tmp_path / 'o', sha=sha,
+    ))
+
+    verdict = document['verdict']
+    assert verdict['result'] == audit.RESULT_UNPROVEN
+    assert verdict['exit_code'] == 2
+    assert audit.UNPROVEN_ADVISORY_LOCK_UNAVAILABLE in (
+        verdict['unproven_reasons']
+    )
+    assert document['read_only_proof']['advisory_lock_status'] == (
+        audit.LOCK_NOT_ACQUIRED
+    )
+
+    # The database was NEVER observed. Q7 and Q8 must say so rather than
+    # reporting an absence they never looked for.
+    assert _q(document, 'Q7')['state'] == audit.ANSWER_NOT_OBSERVED
+    assert _q(document, 'Q8')['state'] == audit.ANSWER_NOT_OBSERVED
+    assert _q(document, 'Q8')['answer']['database_observed'] is False
+    assert _q(document, 'Q8')['answer']['correction_provenance_present'] is None
+    assert _q(document, 'Q8')['limitations']
+    assert _q(document, 'Q7')['limitations']
+
+    # A checkpoint nobody read is not a missing checkpoint.
+    assert document['checkpoint']['exists'] is False
+    assert _q(document, 'Q7')['fully_answered'] is False
+
+    # The current source was never fetched, so Q4 cannot be a match.
+    assert document['current_revision_state'] == (
+        audit.CURRENT_SOURCE_UNAVAILABLE
+    )
+    assert _q(document, 'Q4')['state'] == audit.ANSWER_UNAVAILABLE
+    assert verdict['classification']['current_materiality'] == (
+        audit.MATERIALITY_SOURCE_UNAVAILABLE
+    )
+
+    # No empty-but-complete matrix.
+    assert document['field_matrix_summary']['row_count'] == 0
+    assert document['field_matrix_summary']['differing_rows'] == []
+    assert _q(document, 'Q6')['state'] == audit.ANSWER_NOT_OBSERVED
+    assert document['halt_stage'] == 'advisory_lock'
+
+
+@postgres_only
+def test_an_early_stop_marks_the_halt_stage_on_unanswered_questions(
+    app, monkeypatch, tmp_path,
+):
+    sha = _head_sha()
+    if not sha:
+        pytest.skip('repository history unavailable')
+    from services import sync_metadata
+
+    with app.app_context():
+        _seed(monkeypatch)
+    monkeypatch.setattr(
+        sync_metadata, 'acquire_public_sync_read_lock',
+        lambda **_kw: (_ for _ in ()).throw(RuntimeError('contended')),
+    )
+    monkeypatch.setattr(runner, 'build_app', lambda: app)
+    _authorize(monkeypatch, sha)
+    document = runner.run(_Args(
+        evidence_dir=_write_evidence(tmp_path / 'e'),
+        artifact_dir=tmp_path / 'o', sha=sha,
+    ))
+    unanswered = [
+        entry for entry in document['questions']
+        if not entry['fully_answered']
+    ]
+    assert unanswered
+    for entry in unanswered:
+        assert any(
+            'execution halted at stage' in note
+            for note in entry['limitations']
+        )
+
+
+@postgres_only
+def test_absent_workflow_metadata_prevents_a_completed_result(
+    app, monkeypatch, tmp_path,
+):
+    """No branch evidence means unproven identity, all the way to the verdict."""
+    sha = _head_sha()
+    if not sha:
+        pytest.skip('repository history unavailable')
+    with app.app_context():
+        payload = _seed(monkeypatch)
+        monkeypatch.setattr(
+            sync_service, 'mlb_client', _Counting({GAME_PK: payload}),
+        )
+    monkeypatch.setattr(runner, 'build_app', lambda: app)
+    _authorize(monkeypatch, sha)
+    document = runner.run(_Args(
+        evidence_dir=_write_evidence(tmp_path / 'e', workflow=False),
+        artifact_dir=tmp_path / 'o', sha=sha,
+    ))
+    verdict = document['verdict']
+    assert verdict['result'] == audit.RESULT_UNPROVEN
+    assert audit.UNPROVEN_WORKFLOW_METADATA_UNAVAILABLE in (
+        verdict['unproven_reasons']
+    )
+    assert audit.UNPROVEN_ARTIFACT_IDENTITY_UNPROVEN in (
+        verdict['unproven_reasons']
+    )
+    assert _q(document, 'Q1')['state'] == audit.ANSWER_UNPROVEN
+    assert _q(document, 'Q2')['state'] == audit.ANSWER_UNPROVEN
+
+
+@postgres_only
+def test_a_failed_lock_release_prevents_exit_zero_end_to_end(
+    app, monkeypatch, tmp_path,
+):
+    sha = _head_sha()
+    if not sha:
+        pytest.skip('repository history unavailable')
+    from services import sync_metadata
+
+    with app.app_context():
+        payload = _seed(monkeypatch)
+        monkeypatch.setattr(
+            sync_service, 'mlb_client', _Counting({GAME_PK: payload}),
+        )
+
+    real = sync_metadata.acquire_public_sync_read_lock
+
+    class _BadRelease:
+        def __init__(self, guard):
+            self._guard = guard
+
+        def release(self):
+            try:
+                self._guard.release()
+            finally:
+                raise RuntimeError('release failed')
+
+    monkeypatch.setattr(
+        sync_metadata, 'acquire_public_sync_read_lock',
+        lambda **kw: _BadRelease(real(**kw)),
+    )
+    monkeypatch.setattr(runner, 'build_app', lambda: app)
+    _authorize(monkeypatch, sha)
+    document = runner.run(_Args(
+        evidence_dir=_write_evidence(tmp_path / 'e'),
+        artifact_dir=tmp_path / 'o', sha=sha,
+    ))
+    verdict = document['verdict']
+    assert verdict['result'] == audit.RESULT_FAILED
+    assert verdict['exit_code'] == 1
+    assert audit.FAILED_LOCK_RELEASE_FAILED in verdict['failed_reasons']
+    proof = document['read_only_proof']
+    assert proof['advisory_lock_status'] == audit.LOCK_RELEASE_FAILED
+    assert proof['advisory_guard_release_proven'] is False
+    # Rollback still ran, and no exception text escaped.
+    assert proof['rollback_attempted'] is True
+    rendered = json.dumps(document, default=str)
+    assert 'Traceback' not in rendered
+    assert 'release failed' not in rendered
+
+
+@postgres_only
+def test_the_lock_lifecycle_appears_in_both_rendered_artifacts(
+    app, monkeypatch, tmp_path,
+):
+    sha = _head_sha()
+    if not sha:
+        pytest.skip('repository history unavailable')
+    with app.app_context():
+        payload = _seed(monkeypatch)
+        monkeypatch.setattr(
+            sync_service, 'mlb_client', _Counting({GAME_PK: payload}),
+        )
+    monkeypatch.setattr(runner, 'build_app', lambda: app)
+    _authorize(monkeypatch, sha)
+    artifacts = tmp_path / 'o'
+    document = runner.run(_Args(
+        evidence_dir=_write_evidence(tmp_path / 'e'),
+        artifact_dir=artifacts, sha=sha,
+    ))
+    runner.write_artifacts(document, document.pop('_matrix_rows'), artifacts)
+
+    proof = json.loads(
+        (artifacts / runner.READ_ONLY_PROOF_JSON).read_text(encoding='utf-8')
+    )
+    lifecycle = proof['read_only_proof']['advisory_lock_lifecycle']
+    assert lifecycle['status'] == audit.LOCK_RELEASED
+    assert lifecycle['release_proven'] is True
+    markdown = (artifacts / runner.SUMMARY_MARKDOWN).read_text(
+        encoding='utf-8'
+    )
+    assert 'advisory_lock_status' in markdown
+    assert 'advisory_guard_release_proven' in markdown
+
+
+@postgres_only
+def test_the_matrix_reports_its_own_completeness(app, monkeypatch, tmp_path):
+    sha = _head_sha()
+    if not sha:
+        pytest.skip('repository history unavailable')
+    with app.app_context():
+        payload = _seed(monkeypatch)
+        monkeypatch.setattr(
+            sync_service, 'mlb_client', _Counting({GAME_PK: payload}),
+        )
+    monkeypatch.setattr(runner, 'build_app', lambda: app)
+    _authorize(monkeypatch, sha)
+    document = runner.run(_Args(
+        evidence_dir=_write_evidence(tmp_path / 'e'),
+        artifact_dir=tmp_path / 'o', sha=sha,
+    ))
+    summary = document['field_matrix_summary']
+    assert summary['completeness'] == 'complete_for_observed_evidence'
+    assert summary['row_count'] > 0
+
+
+@postgres_only
+def test_an_unverified_artifact_makes_every_historical_cell_unproven(
+    app, monkeypatch, tmp_path,
+):
+    """Not-retained is a claim about the artifact. It needs a proven artifact."""
+    with app.app_context():
+        payload = _seed(monkeypatch)
+        stored = runner.observe_stored_state()
+        _client, guard = _install_guard(monkeypatch, payload)
+        official = runner.observe_current_source(guard)
+        result = runner.build_field_matrix(
+            official=official, stored=stored, plan=official['plan'],
+            artifacts={
+                'all_required_present': True,
+                'identity_all_verified': False,
+                'content_all_verified': False,
+                'runs': {},
+                'historical_delta': {'delta_identified': False},
+            },
+        )
+        assert result['rows']
+        for row in result['rows']:
+            assert row['prior_value_evidence_status'] == (
+                audit.EVIDENCE_UNPROVEN
+            )
+            assert row['later_value_evidence_status'] == (
+                audit.EVIDENCE_UNPROVEN
+            )
+            assert row['prior_value_evidence_source'] == (
+                audit.EVIDENCE_SOURCE_NONE
+            )

@@ -48,6 +48,7 @@ FIELD_MATRIX_JSON = 'source-revision-field-matrix.json'
 CODE_DRIFT_JSON = 'source-revision-code-drift.json'
 READ_ONLY_PROOF_JSON = 'source-revision-read-only-proof.json'
 ARTIFACT_METADATA_FILENAME = 'artifact-metadata.json'
+WORKFLOW_METADATA_FILENAME = 'workflow-run-metadata.json'
 
 REVISION_PRIOR = 'prior_run_sha'
 REVISION_LATER = 'failed_run_sha'
@@ -135,6 +136,25 @@ def build_app():
 
 def load_observed_artifact_metadata(evidence_dir) -> dict:
     path = Path(evidence_dir) / ARTIFACT_METADATA_FILENAME
+    if not path.is_file():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def load_workflow_run_metadata(evidence_dir) -> dict:
+    """GitHub's own record of each historical run, keyed by run id.
+
+    The branch a run executed on is NOT in either retained artifact — the
+    handoff metadata schema carries run id, head SHA, cycle, runner exit code,
+    and three booleans, and nothing else. It therefore comes from GitHub
+    workflow-run metadata (read-only, ``actions: read``) or it is reported
+    unverified. It is never filled in from what the audit expected it to be.
+    """
+    path = Path(evidence_dir) / WORKFLOW_METADATA_FILENAME
     if not path.is_file():
         return {}
     try:
@@ -624,27 +644,46 @@ def build_field_matrix(*, official, stored, plan, artifacts) -> dict:
         for entry in (stored or {}).get('correction_provenance') or ()
     }
 
-    # Historical evidence status is decided ONCE, from what the artifacts
-    # actually retained, and then applied to every historical cell. It is never
-    # inferred per field from a failed lookup.
-    prior_status = (
-        audit.EVIDENCE_PROVEN
-        if (artifacts or {}).get('prior_row_level_values_retained')
-        else (
-            audit.EVIDENCE_NOT_RETAINED
-            if (artifacts or {}).get('all_required_present')
-            else audit.EVIDENCE_UNPROVEN
-        )
+    # Historical evidence is resolved PER COORDINATE from the extractor, which
+    # requires positive association with run, game, pitcher, and governed
+    # field. A blanket status applied to every cell would say the same thing
+    # about a value that was retained and a value that never existed.
+    runs = (artifacts or {}).get('runs') or {}
+    prior_extract = (runs.get(audit.RUN_PRIOR) or {}).get('historical_values')
+    later_extract = (runs.get(audit.RUN_LATER) or {}).get('historical_values')
+    artifacts_usable = bool(
+        (artifacts or {}).get('all_required_present')
+        and (artifacts or {}).get('identity_all_verified')
+        and (artifacts or {}).get('content_all_verified')
     )
-    later_status = (
-        audit.EVIDENCE_PROVEN
-        if (artifacts or {}).get('later_row_level_values_retained')
-        else (
-            audit.EVIDENCE_NOT_RETAINED
-            if (artifacts or {}).get('all_required_present')
-            else audit.EVIDENCE_UNPROVEN
+
+    def _historical(extract, pitcher_mlb_id, field_name):
+        """(value, source, status) for one retained coordinate.
+
+        A retained ``null`` keeps its value AND a proven status. An absent
+        value keeps ``None`` with a status that says why — the two are never
+        the same cell.
+        """
+        if not artifacts_usable:
+            # The artifacts were not proven to be the right artifacts saying
+            # the right things. Their silence establishes nothing.
+            return None, audit.EVIDENCE_SOURCE_NONE, audit.EVIDENCE_UNPROVEN
+        record = audit.historical_value_for(
+            extract, pitcher_mlb_id, field_name,
         )
-    )
+        status = {
+            audit.HISTORICAL_PROVEN: audit.EVIDENCE_PROVEN,
+            audit.HISTORICAL_PROVEN_NULL: audit.EVIDENCE_PROVEN,
+            audit.HISTORICAL_INCONSISTENT: audit.EVIDENCE_INCONSISTENT,
+            audit.HISTORICAL_UNPROVEN: audit.EVIDENCE_UNPROVEN,
+            audit.HISTORICAL_NOT_RETAINED: audit.EVIDENCE_NOT_RETAINED,
+        }.get(record['status'], audit.EVIDENCE_UNPROVEN)
+        source = (
+            audit.EVIDENCE_SOURCE_RUN_ARTIFACT
+            if status == audit.EVIDENCE_PROVEN
+            else audit.EVIDENCE_SOURCE_NONE
+        )
+        return record['value'], source, status
 
     fields = list(extraction.FINGERPRINT_FIELDS) + [
         field for field in audit.WRITER_GOVERNED_FIELDS
@@ -666,6 +705,12 @@ def build_field_matrix(*, official, stored, plan, artifacts) -> dict:
                 and official_key in official_record
                 and field in stored_record
             )
+            prior_value, prior_source, prior_status = _historical(
+                prior_extract, pitcher_mlb_id, field,
+            )
+            later_value, later_source, later_status = _historical(
+                later_extract, pitcher_mlb_id, field,
+            )
             rows.append(audit.matrix_row(
                 pitcher_mlb_id=pitcher_mlb_id,
                 side=side,
@@ -681,10 +726,11 @@ def build_field_matrix(*, official, stored, plan, artifacts) -> dict:
                     None if pitcher_targets is None
                     else field in pitcher_targets
                 ),
-                prior_value=None,
-                prior_value_evidence_source=audit.EVIDENCE_SOURCE_NONE,
+                prior_value=prior_value,
+                prior_value_evidence_source=prior_source,
                 prior_value_evidence_status=prior_status,
-                later_run_value=None,
+                later_run_value=later_value,
+                later_value_evidence_source=later_source,
                 later_value_evidence_status=later_status,
                 correction_provenance_available=(
                     pitcher_mlb_id in provenance_pitchers
@@ -697,6 +743,19 @@ def build_field_matrix(*, official, stored, plan, artifacts) -> dict:
             ))
 
     summary = audit.validate_matrix(rows)
+    # An empty matrix from a run that never observed the source or the
+    # database is NOT a complete matrix that found nothing. It is a matrix
+    # that was never built, and it says so.
+    if not official_records and not stored_records:
+        summary['completeness'] = (
+            'not_generated_no_observed_evidence'
+        )
+    elif not official_records:
+        summary['completeness'] = 'partial_stored_evidence_only'
+    elif not stored_records:
+        summary['completeness'] = 'partial_official_evidence_only'
+    else:
+        summary['completeness'] = 'complete_for_observed_evidence'
     summary['official_pitcher_mlb_ids'] = sorted(official_records)
     summary['stored_pitcher_mlb_ids'] = sorted(stored_records)
     summary['missing_from_storage'] = sorted(
@@ -708,11 +767,19 @@ def build_field_matrix(*, official, stored, plan, artifacts) -> dict:
     summary['duplicate_stored_identities'] = list(
         (stored or {}).get('duplicate_stored_pitchers') or ()
     )
-    summary['prior_value_evidence_status'] = prior_status
-    summary['later_value_evidence_status'] = later_status
-    # Positive historical proof would have to come from a durable record that
-    # names a field AND its previous value. A correction COUNT is not that.
-    summary['proven_historical_fields'] = []
+    summary['historical_delta'] = (artifacts or {}).get('historical_delta') or {}
+    summary['prior_value_evidence_statuses'] = sorted({
+        row['prior_value_evidence_status'] for row in rows
+    })
+    summary['later_value_evidence_statuses'] = sorted({
+        row['later_value_evidence_status'] for row in rows
+    })
+    # Positive historical proof requires a durable record naming a field AND
+    # its previous value. A correction COUNT, a timestamp, a digest, or a
+    # row-shaped object is not that, and none of them reach this list.
+    summary['proven_historical_fields'] = sorted(
+        summary['historical_delta'].get('identified_fields') or ()
+    )
     summary['membership_matches'] = (
         not summary['missing_from_storage']
         and not summary['extra_in_storage']
@@ -743,26 +810,71 @@ def build_field_matrix(*, official, stored, plan, artifacts) -> dict:
 
 # ── Questions ───────────────────────────────────────────────────────────────
 
-def _question(question_id, *, question, answered, answer, evidence,
-              unproven_reason=None) -> dict:
+def _question(question_id, *, question, state, answer, evidence,
+              required_inputs=(), observed_inputs=(), missing_inputs=(),
+              limitations=(), unproven_reason=None) -> dict:
+    """One question, with the shape of its own evidence made explicit.
+
+    ``state`` carries what was actually established. ``fully_answered`` is
+    derived from it rather than passed in, so a caller cannot declare a
+    question answered while reporting a state that says otherwise.
+    """
+    fully = state in audit.ANSWERED_STATES
     return {
         'question_id': question_id,
         'question': question,
-        'answered': bool(answered),
+        'state': state,
+        'fully_answered': fully,
+        # Retained for readers and summaries that already consume this key.
+        'answered': fully,
+        'mandatory_for_completion': question_id in audit.MANDATORY_QUESTIONS,
         'answer': answer,
-        'evidence': evidence,
+        'evidence': list(evidence or ()),
+        'required_inputs': list(required_inputs or ()),
+        'observed_inputs': list(observed_inputs or ()),
+        'missing_inputs': list(missing_inputs or ()),
+        'limitations': list(limitations or ()),
         'unproven_reason': unproven_reason,
     }
 
 
 def build_questions(*, artifacts, code_drift, official, determinism, matrix,
                     checkpoint, stored, classification, delta, causality_view,
-                    consequence, current_revision_state) -> list[dict]:
+                    consequence, current_revision_state, database_observed,
+                    halt_stage=None) -> list[dict]:
+    """Twelve questions, each reporting only what was positively observed."""
     runs = (artifacts or {}).get('runs') or {}
     prior = runs.get(audit.RUN_PRIOR) or {}
     later = runs.get(audit.RUN_LATER) or {}
     matrix_summary = (matrix or {}).get('summary') or {}
     plan = (official or {}).get('plan') or {}
+    source_available = bool((official or {}).get('available'))
+
+    artifact_inputs = ['prior_run_artifact', 'later_run_artifact']
+    artifact_observed = [
+        name for name, entry in (
+            ('prior_run_artifact', prior), ('later_run_artifact', later),
+        ) if entry.get('identity_verified') and entry.get('content_verified')
+    ]
+    artifact_missing = [
+        name for name in artifact_inputs if name not in artifact_observed
+    ]
+    # Q1 and Q2 answer from VERIFIED identity AND VERIFIED content. Required
+    # files merely existing is not evidence about what they say.
+    if artifact_missing:
+        artifact_state = audit.ANSWER_UNPROVEN
+        artifact_reason = (
+            audit.UNPROVEN_ARTIFACT_MISSING
+            if (artifacts or {}).get('missing_artifacts')
+            else (
+                audit.UNPROVEN_ARTIFACT_IDENTITY_UNPROVEN
+                if (artifacts or {}).get('identity_unproven')
+                else audit.UNPROVEN_ARTIFACT_CONTENT_UNPROVEN
+            )
+        )
+    else:
+        artifact_state = audit.ANSWER_OBSERVED_YES
+        artifact_reason = None
 
     questions = [
         _question(
@@ -770,7 +882,15 @@ def build_questions(*, artifacts, code_drift, official, determinism, matrix,
                 'Did the retained run artifacts prove the prior and later '
                 'source revisions for game 824487?'
             ),
-            answered=bool(artifacts.get('all_required_present')),
+            state=(
+                artifact_state
+                if artifact_state != audit.ANSWER_OBSERVED_YES
+                else (
+                    audit.ANSWER_OBSERVED_YES
+                    if artifacts.get('revision_change_proven')
+                    else audit.ANSWER_OBSERVED_NO
+                )
+            ),
             answer={
                 'revision_change_proven': artifacts.get(
                     'revision_change_proven'
@@ -779,19 +899,31 @@ def build_questions(*, artifacts, code_drift, official, determinism, matrix,
                 'later_observed': later.get('observed_source_revision'),
                 'prior_expected': audit.PRIOR_SOURCE_REVISION,
                 'later_expected': audit.LATER_SOURCE_REVISION,
+                'prior_identity_state': prior.get('identity_state'),
+                'prior_content_state': prior.get('content_state'),
+                'later_identity_state': later.get('identity_state'),
+                'later_content_state': later.get('content_state'),
             },
             evidence=[audit.EVIDENCE_SOURCE_RUN_ARTIFACT],
-            unproven_reason=(
-                None if artifacts.get('all_required_present')
-                else audit.UNPROVEN_ARTIFACT_MISSING
-            ),
+            required_inputs=artifact_inputs,
+            observed_inputs=artifact_observed,
+            missing_inputs=artifact_missing,
+            unproven_reason=artifact_reason,
         ),
         _question(
             'Q2', question=(
                 'Did both runs retain the same per-game reconciliation-plan '
                 'fingerprint, 12 appearances, and 12 unchanged rows?'
             ),
-            answered=bool(artifacts.get('all_required_present')),
+            state=(
+                artifact_state
+                if artifact_state != audit.ANSWER_OBSERVED_YES
+                else (
+                    audit.ANSWER_OBSERVED_YES
+                    if artifacts.get('plan_fingerprint_stable')
+                    else audit.ANSWER_OBSERVED_NO
+                )
+            ),
             answer={
                 'plan_fingerprint_stable': artifacts.get(
                     'plan_fingerprint_stable'
@@ -811,18 +943,22 @@ def build_questions(*, artifacts, code_drift, official, determinism, matrix,
                 ),
                 'prior_unchanged': prior.get('observed_unchanged'),
                 'later_unchanged': later.get('observed_unchanged'),
+                'later_lane_accounting': later.get('lane_accounting'),
+                'later_lane_accounting_state': later.get(
+                    'lane_accounting_state'
+                ),
                 'no_canonical_writer_action_either_run': all(
-                    (entry.get('observed_inserted') or 0) == 0
-                    and (entry.get('observed_updated') or 0) == 0
-                    and (entry.get('observed_blocked') or 0) == 0
+                    entry.get('observed_inserted') == 0
+                    and entry.get('observed_updated') == 0
+                    and entry.get('observed_blocked') == 0
                     for entry in (prior, later)
                 ),
             },
             evidence=[audit.EVIDENCE_SOURCE_RUN_ARTIFACT],
-            unproven_reason=(
-                None if artifacts.get('all_required_present')
-                else audit.UNPROVEN_ARTIFACT_MISSING
-            ),
+            required_inputs=artifact_inputs,
+            observed_inputs=artifact_observed,
+            missing_inputs=artifact_missing,
+            unproven_reason=artifact_reason,
         ),
         _question(
             'Q3', question=(
@@ -832,7 +968,16 @@ def build_questions(*, artifacts, code_drift, official, determinism, matrix,
                 'source-revision comparison change between the two run SHAs '
                 'and the audit SHA?'
             ),
-            answered=bool(code_drift.get('comparison_complete')),
+            state=(
+                audit.ANSWER_OBSERVED_YES
+                if code_drift.get('comparison_complete')
+                and code_drift.get('semantic_drift_detected')
+                else (
+                    audit.ANSWER_OBSERVED_NO
+                    if code_drift.get('comparison_complete')
+                    else audit.ANSWER_UNPROVEN
+                )
+            ),
             answer={
                 'semantic_drift_detected': code_drift.get(
                     'semantic_drift_detected'
@@ -855,6 +1000,13 @@ def build_questions(*, artifacts, code_drift, official, determinism, matrix,
                 'incomparable_targets': code_drift.get('incomparable_targets'),
             },
             evidence=['repository_history_symbol_comparison'],
+            required_inputs=['both_historical_shas', 'audit_sha'],
+            observed_inputs=sorted(
+                label for label, ok in (
+                    code_drift.get('revisions_reachable') or {}
+                ).items() if ok
+            ),
+            missing_inputs=list(code_drift.get('unreachable_revisions') or ()),
             unproven_reason=(
                 None if code_drift.get('comparison_complete')
                 else audit.UNPROVEN_CODE_COMPARISON_INCOMPLETE
@@ -865,8 +1017,9 @@ def build_questions(*, artifacts, code_drift, official, determinism, matrix,
                 'Does the current official appearance set produce the prior '
                 'revision, the later revision, or neither?'
             ),
-            answered=current_revision_state not in (
-                audit.CURRENT_SOURCE_UNAVAILABLE, audit.CURRENT_UNPROVEN,
+            state=(
+                audit.ANSWER_OBSERVED_YES if source_available
+                else audit.ANSWER_UNAVAILABLE
             ),
             answer={
                 'state': current_revision_state,
@@ -875,12 +1028,21 @@ def build_questions(*, artifacts, code_drift, official, determinism, matrix,
                 ),
                 'appearance_count': (official or {}).get('appearance_count'),
                 'starters': (official or {}).get('starters'),
+                'unavailable_reason': (official or {}).get(
+                    'unavailable_reason'
+                ),
             },
             evidence=[audit.EVIDENCE_SOURCE_OFFICIAL],
+            required_inputs=['current_official_boxscore'],
+            observed_inputs=(
+                ['current_official_boxscore'] if source_available else []
+            ),
+            missing_inputs=(
+                [] if source_available else ['current_official_boxscore']
+            ),
             unproven_reason=(
-                audit.UNPROVEN_CURRENT_SOURCE_UNAVAILABLE
-                if current_revision_state == audit.CURRENT_SOURCE_UNAVAILABLE
-                else None
+                None if source_available
+                else audit.UNPROVEN_CURRENT_SOURCE_UNAVAILABLE
             ),
         ),
         _question(
@@ -888,7 +1050,15 @@ def build_questions(*, artifacts, code_drift, official, determinism, matrix,
                 'Is the fingerprint deterministic over identical normalized '
                 'content and deterministic input permutations?'
             ),
-            answered=determinism.get('deterministic_in_process') is not None,
+            state=(
+                audit.ANSWER_OBSERVED_YES
+                if determinism.get('deterministic_in_process') is True
+                else (
+                    audit.ANSWER_OBSERVED_NO
+                    if determinism.get('deterministic_in_process') is False
+                    else audit.ANSWER_NOT_OBSERVED
+                )
+            ),
             answer={
                 'deterministic_in_process': determinism.get(
                     'deterministic_in_process'
@@ -903,6 +1073,13 @@ def build_questions(*, artifacts, code_drift, official, determinism, matrix,
                 'additional_source_requests': 0,
             },
             evidence=[audit.EVIDENCE_SOURCE_OFFICIAL],
+            required_inputs=['current_official_appearance_set'],
+            observed_inputs=(
+                ['current_official_appearance_set'] if source_available else []
+            ),
+            missing_inputs=(
+                [] if source_available else ['current_official_appearance_set']
+            ),
             unproven_reason=(
                 None if determinism.get('deterministic_in_process') is not None
                 else audit.UNPROVEN_CURRENT_SOURCE_UNAVAILABLE
@@ -914,8 +1091,14 @@ def build_questions(*, artifacts, code_drift, official, determinism, matrix,
                 'normalized appearance match the stored canonical GameLog and '
                 'appearance-team authority?'
             ),
-            answered=bool(matrix_summary.get('structurally_valid')),
+            state=(
+                audit.ANSWER_OBSERVED_YES
+                if source_available and database_observed
+                and matrix_summary.get('structurally_valid')
+                else audit.ANSWER_NOT_OBSERVED
+            ),
             answer={
+                'matrix_completeness': matrix_summary.get('completeness'),
                 'official_pitcher_mlb_ids': matrix_summary.get(
                     'official_pitcher_mlb_ids'
                 ),
@@ -954,8 +1137,17 @@ def build_questions(*, artifacts, code_drift, official, determinism, matrix,
                 audit.EVIDENCE_SOURCE_OFFICIAL,
                 audit.EVIDENCE_SOURCE_CURRENT_DATABASE,
             ],
+            required_inputs=['current_official_source', 'stored_canonical_state'],
+            observed_inputs=(
+                (['current_official_source'] if source_available else [])
+                + (['stored_canonical_state'] if database_observed else [])
+            ),
+            missing_inputs=(
+                ([] if source_available else ['current_official_source'])
+                + ([] if database_observed else ['stored_canonical_state'])
+            ),
             unproven_reason=(
-                None if matrix_summary.get('structurally_valid')
+                None if source_available and database_observed
                 else audit.UNPROVEN_DATABASE_EVIDENCE_UNAVAILABLE
             ),
         ),
@@ -964,11 +1156,24 @@ def build_questions(*, artifacts, code_drift, official, determinism, matrix,
                 'What does the durable GameIngestionWorkItem for game 824487 '
                 'record, and which revision does it hold?'
             ),
-            answered=checkpoint.get('exists') is not None,
+            state=(
+                audit.ANSWER_OBSERVED_YES if database_observed
+                else audit.ANSWER_NOT_OBSERVED
+            ),
             answer=dict(checkpoint),
             evidence=[audit.EVIDENCE_SOURCE_CURRENT_DATABASE],
+            required_inputs=['work_item_read'],
+            observed_inputs=['work_item_read'] if database_observed else [],
+            missing_inputs=[] if database_observed else ['work_item_read'],
+            limitations=(
+                [] if database_observed else [
+                    'The database was never observed, so the absence of a '
+                    'checkpoint here is not evidence that no checkpoint '
+                    'exists.'
+                ]
+            ),
             unproven_reason=(
-                None if checkpoint.get('exists') is not None
+                None if database_observed
                 else audit.UNPROVEN_DATABASE_EVIDENCE_UNAVAILABLE
             ),
         ),
@@ -978,19 +1183,30 @@ def build_questions(*, artifacts, code_drift, official, determinism, matrix,
                 'exact-game evidence prove a previous value, a new value, '
                 'when it changed, and which governed field changed?'
             ),
-            answered=True,
+            state=(
+                audit.ANSWER_NOT_OBSERVED if not database_observed
+                else (
+                    audit.ANSWER_OBSERVED_INSUFFICIENT
+                    if (stored or {}).get('correction_provenance_present')
+                    else audit.ANSWER_OBSERVED_NO
+                )
+            ),
             answer={
-                'correction_provenance_present': (stored or {}).get(
-                    'correction_provenance_present'
-                ),
-                'correction_provenance': (stored or {}).get(
-                    'correction_provenance'
-                ),
-                'proves_previous_value': False,
-                'proves_new_value': False,
-                'proves_changed_field': False,
-                'proves_change_timestamp': bool(
+                'database_observed': database_observed,
+                'correction_provenance_present': (
                     (stored or {}).get('correction_provenance_present')
+                    if database_observed else None
+                ),
+                'correction_provenance': (
+                    (stored or {}).get('correction_provenance')
+                    if database_observed else None
+                ),
+                'proves_previous_value': False if database_observed else None,
+                'proves_new_value': False if database_observed else None,
+                'proves_changed_field': False if database_observed else None,
+                'proves_change_timestamp': (
+                    bool((stored or {}).get('correction_provenance_present'))
+                    if database_observed else None
                 ),
                 'note': (
                     'Correction provenance in this schema is columnar and '
@@ -1001,37 +1217,96 @@ def build_questions(*, artifacts, code_drift, official, determinism, matrix,
                     'treated as one.'
                 ),
             },
-            evidence=[audit.EVIDENCE_SOURCE_CORRECTION_PROVENANCE],
+            evidence=(
+                [audit.EVIDENCE_SOURCE_CORRECTION_PROVENANCE]
+                if database_observed else []
+            ),
+            required_inputs=['correction_provenance_read'],
+            observed_inputs=(
+                ['correction_provenance_read'] if database_observed else []
+            ),
+            missing_inputs=(
+                [] if database_observed else ['correction_provenance_read']
+            ),
+            limitations=(
+                [] if database_observed else [
+                    'The database was never observed. "No provenance found" '
+                    'was not established; nothing was looked at.'
+                ]
+            ),
+            unproven_reason=(
+                None if database_observed
+                else audit.UNPROVEN_DATABASE_EVIDENCE_UNAVAILABLE
+            ),
         ),
         _question(
             'Q9', question=(
                 'Can the exact field or fields responsible for the two source '
                 'revisions be identified?'
             ),
-            answered=True,
+            state=(
+                audit.ANSWER_OBSERVED_YES
+                if delta.get('answer') == audit.DELTA_IDENTIFIED
+                else (
+                    audit.ANSWER_UNPROVEN
+                    if delta.get('answer') == audit.DELTA_UNPROVEN
+                    else audit.ANSWER_OBSERVED_INSUFFICIENT
+                )
+            ),
             answer=dict(delta),
             evidence=[
                 audit.EVIDENCE_SOURCE_RUN_ARTIFACT,
                 audit.EVIDENCE_SOURCE_CORRECTION_PROVENANCE,
             ],
+            required_inputs=[
+                'exact_retained_prior_values', 'exact_retained_later_values',
+            ],
+            observed_inputs=sorted(
+                name for name, present in (
+                    ('exact_retained_prior_values',
+                     artifacts.get('prior_row_level_values_retained')),
+                    ('exact_retained_later_values',
+                     artifacts.get('later_row_level_values_retained')),
+                ) if present
+            ),
+            missing_inputs=sorted(
+                name for name, present in (
+                    ('exact_retained_prior_values',
+                     artifacts.get('prior_row_level_values_retained')),
+                    ('exact_retained_later_values',
+                     artifacts.get('later_row_level_values_retained')),
+                ) if not present
+            ),
         ),
         _question(
             'Q10', question=(
                 'Were the two failed activation invariants two independent '
                 'conditions or one causal chain?'
             ),
-            answered=causality_view.get('answer') not in (
-                audit.CAUSALITY_UNPROVEN, audit.CAUSALITY_UNPROVEN_CODE_DRIFT,
+            state=(
+                audit.ANSWER_OBSERVED_YES
+                if causality_view.get('fully_answered')
+                else audit.ANSWER_UNPROVEN
             ),
             answer=dict(causality_view),
             evidence=[
                 audit.EVIDENCE_SOURCE_RUN_ARTIFACT,
                 'repository_history_symbol_comparison',
             ],
+            required_inputs=list(audit.Q10_FIELDS),
+            observed_inputs=list(causality_view.get('observed_fields') or ()),
+            missing_inputs=list(causality_view.get('missing_fields') or ()),
+            limitations=list(
+                causality_view.get('missing_evidence_paths') or ()
+            ),
             unproven_reason=(
-                audit.UNPROVEN_CODE_COMPARISON_INCOMPLETE
-                if causality_view.get('answer')
-                == audit.CAUSALITY_UNPROVEN_CODE_DRIFT else None
+                None if causality_view.get('fully_answered')
+                else (
+                    audit.UNPROVEN_CODE_COMPARISON_INCOMPLETE
+                    if causality_view.get('answer')
+                    == audit.CAUSALITY_UNPROVEN_CODE_DRIFT
+                    else audit.UNPROVEN_ACTIVATION_EVIDENCE_MISSING
+                )
             ),
         ),
         _question(
@@ -1039,25 +1314,80 @@ def build_questions(*, artifacts, code_drift, official, determinism, matrix,
                 'How does the mismatch classify along each independent '
                 'dimension?'
             ),
-            answered=True,
+            state=(
+                audit.ANSWER_OBSERVED_YES
+                if not _unproven_dimensions(classification)
+                else audit.ANSWER_UNPROVEN
+            ),
             answer=dict(classification),
             evidence=[
                 audit.EVIDENCE_SOURCE_RUN_ARTIFACT,
                 audit.EVIDENCE_SOURCE_CURRENT_DATABASE,
                 audit.EVIDENCE_SOURCE_OFFICIAL,
             ],
+            required_inputs=sorted(classification or ()),
+            observed_inputs=sorted(
+                key for key in (classification or {})
+                if key not in _unproven_dimensions(classification)
+            ),
+            missing_inputs=_unproven_dimensions(classification),
         ),
         _question(
             'Q12', question=(
                 'What operational consequence does the evidence support? '
                 '(informational only)'
             ),
-            answered=True,
+            state=(
+                audit.ANSWER_OBSERVED_YES
+                if not _unproven_dimensions(classification)
+                else audit.ANSWER_UNPROVEN
+            ),
             answer=dict(consequence),
             evidence=['derived_from_this_audit'],
+            required_inputs=['current_materiality', 'checkpoint_state',
+                             'historical_field_identification'],
+            observed_inputs=sorted(
+                key for key in (
+                    'current_materiality', 'checkpoint_state',
+                    'historical_field_identification',
+                ) if key not in _unproven_dimensions(classification)
+            ),
+            missing_inputs=[
+                key for key in _unproven_dimensions(classification)
+                if key in (
+                    'current_materiality', 'checkpoint_state',
+                    'historical_field_identification',
+                )
+            ],
         ),
     ]
+    if halt_stage:
+        for entry in questions:
+            entry.setdefault('limitations', [])
+            if not entry['fully_answered']:
+                entry['limitations'].append(
+                    f'execution halted at stage: {halt_stage}'
+                )
     return questions
+
+
+_UNPROVEN_DIMENSION_VALUES = frozenset({
+    audit.ROOT_UNPROVEN,
+    audit.MATERIALITY_UNPROVEN,
+    audit.MATERIALITY_SOURCE_UNAVAILABLE,
+    audit.PERSISTENCE_UNPROVEN,
+    audit.PERSISTENCE_UNAVAILABLE,
+    audit.FIELD_ID_UNPROVEN,
+    audit.CHECKPOINT_UNPROVEN,
+})
+
+
+def _unproven_dimensions(classification) -> list[str]:
+    """Dimensions whose value says the audit could not establish them."""
+    return sorted(
+        key for key, value in (classification or {}).items()
+        if value in _UNPROVEN_DIMENSION_VALUES
+    )
 
 
 # ── Orchestration ───────────────────────────────────────────────────────────
@@ -1080,16 +1410,32 @@ def run(args) -> dict:
     unproven_reasons: list[str] = []
 
     # ── Retained artifacts, verified BEFORE any database work ───────────────
+    workflow_metadata = load_workflow_run_metadata(args.evidence_dir)
     artifacts = audit.ingest_run_artifacts(
         args.evidence_dir,
         observed_metadata=load_observed_artifact_metadata(args.evidence_dir),
+        workflow_metadata=workflow_metadata,
     )
     if artifacts['missing_artifacts']:
         unproven_reasons.append(audit.UNPROVEN_ARTIFACT_MISSING)
     if artifacts['artifacts_missing_required_files']:
         unproven_reasons.append(audit.UNPROVEN_ARTIFACT_FILE_MISSING)
-    if artifacts['identity_mismatches']:
+    # A definite contradiction is FAILED; an unobserved mandatory field is a
+    # gap and is UNPROVEN. Collapsing them would make a missing fact look like
+    # a wrong one, or — far worse — a wrong one look like a missing one.
+    if artifacts['identity_failures'] or artifacts['content_failures']:
         failed_reasons.append(audit.FAILED_ARTIFACT_IDENTITY_MISMATCH)
+    if artifacts['identity_unproven']:
+        unproven_reasons.append(audit.UNPROVEN_ARTIFACT_IDENTITY_UNPROVEN)
+    if artifacts['content_unproven']:
+        unproven_reasons.append(audit.UNPROVEN_ARTIFACT_CONTENT_UNPROVEN)
+    if not any(
+        entry.get('workflow_metadata_available')
+        for entry in artifacts['runs'].values()
+    ):
+        unproven_reasons.append(
+            audit.UNPROVEN_WORKFLOW_METADATA_UNAVAILABLE
+        )
     if artifacts['digest_mismatches']:
         failed_reasons.append(audit.FAILED_ARTIFACT_DIGEST_MISMATCH)
     if artifacts['wrong_game']:
@@ -1106,9 +1452,16 @@ def run(args) -> dict:
     guard_client = None
     collected: dict = {}
     guard_state = {
+        'acquire_attempted': False,
         'guard_acquired': False,
+        'acquisition_reason': None,
         'guard_release_attempted': False,
-        'guard_released': False,
+        # None means "the outcome was never established". It is not False,
+        # and it is certainly not True.
+        'guard_released': None,
+        'release_reason': None,
+        'rollback_attempted': False,
+        'rollback_succeeded': None,
     }
 
     flask_app = build_app()
@@ -1125,18 +1478,24 @@ def run(args) -> dict:
             # Acquire-only: takes the PUBLIC sync writer advisory lock and
             # never creates, reclaims, or updates a SyncRun row. Contention is
             # UNPROVEN — this audit never waits and never queues.
+            guard_state['acquire_attempted'] = True
             guard = sync_metadata.acquire_public_sync_read_lock(
                 source=sync_metadata.SOURCE_GITHUB_ACTIONS,
             )
             guard_state['guard_acquired'] = guard is not None
+            guard_state['acquisition_reason'] = (
+                'acquired' if guard is not None else 'not_returned'
+            )
         except Exception:  # noqa: BLE001 - a contended lock is UNPROVEN
             guard = None
+            # A safe, closed reason code. Never the exception text.
+            guard_state['acquisition_reason'] = 'lock_unavailable_or_contended'
 
         try:
             if not guard_state['guard_acquired']:
-                unproven_reasons.append(
-                    audit.UNPROVEN_ADVISORY_LOCK_UNAVAILABLE
-                )
+                # The lock lifecycle reducer owns this reason so acquisition
+                # and release are judged by one contract, not two.
+                collected['halt_stage'] = 'advisory_lock'
                 raise _AuditHalt()
 
             try:
@@ -1144,17 +1503,22 @@ def run(args) -> dict:
             except audit.ReadOnlyProbeViolation as violation:
                 collected['read_only_enabled'] = False
                 collected['read_only_detail'] = violation.evidence
+                collected['halt_stage'] = 'read_only_probe'
                 raise _AuditHalt()
             except audit.ReadOnlyNotEnforced:
                 collected['read_only_enabled'] = False
                 collected['read_only_detail'] = {}
                 unproven_reasons.append(audit.UNPROVEN_READ_ONLY_UNAVAILABLE)
+                collected['halt_stage'] = 'read_only_transaction'
                 raise _AuditHalt()
             collected['read_only_enabled'] = True
             collected['read_only_detail'] = read_only
 
             stored = observe_stored_state()
             collected['stored'] = stored
+            # The database was actually queried. Downstream questions may now
+            # distinguish "observed nothing" from "never looked".
+            collected['database_observed'] = True
 
             identities = set(stored['stored_pitcher_mlb_ids'])
             before = audit.scoped_fingerprints(
@@ -1163,6 +1527,7 @@ def run(args) -> dict:
             collected['before_fingerprints'] = before
             if before is None:
                 unproven_reasons.append(audit.UNPROVEN_FINGERPRINT_UNAVAILABLE)
+                collected['halt_stage'] = 'before_fingerprints'
                 raise _AuditHalt()
 
             # The counted guard is the ONLY route to the wire from here on.
@@ -1201,20 +1566,30 @@ def run(args) -> dict:
             pass
         except Exception:  # noqa: BLE001 - never leak exception text
             collected['audit_error'] = True
+            collected.setdefault('halt_stage', 'audit_execution_error')
             unproven_reasons.append(audit.UNPROVEN_EXECUTION_ERROR)
         finally:
             sync_service.mlb_client = original_client
+            # Rollback ALWAYS runs first, and its outcome is recorded rather
+            # than swallowed.
+            guard_state['rollback_attempted'] = True
             try:
                 db.session.rollback()
-            except Exception:  # noqa: BLE001
-                pass
+                guard_state['rollback_succeeded'] = True
+            except Exception:  # noqa: BLE001 - never leak exception text
+                guard_state['rollback_succeeded'] = False
+            # Release is attempted even when an earlier stage failed, and a
+            # failed release is preserved rather than hidden behind that
+            # earlier failure.
             if guard is not None:
                 guard_state['guard_release_attempted'] = True
                 try:
                     guard.release()
                     guard_state['guard_released'] = True
-                except Exception:  # noqa: BLE001
+                    guard_state['release_reason'] = 'released'
+                except Exception:  # noqa: BLE001 - never leak exception text
                     guard_state['guard_released'] = False
+                    guard_state['release_reason'] = 'release_raised'
 
     stored = collected.get('stored') or {}
     official = collected.get('official') or {}
@@ -1309,31 +1684,47 @@ def run(args) -> dict:
         ),
     )
     consequence = audit.operational_consequence(classification)
+    if not causality_view.get('fully_answered'):
+        unproven_reasons.append(
+            audit.UNPROVEN_ACTIVATION_EVIDENCE_MISSING
+        )
 
-    decision = audit.decide(
-        failed_reasons=failed_reasons,
-        unproven_reasons=unproven_reasons,
-        classification=classification,
-        delta=delta,
-    )
+    lock = audit.lock_lifecycle(guard_state)
     questions = build_questions(
         artifacts=artifacts, code_drift=code_drift, official=official,
         determinism=determinism, matrix=matrix, checkpoint=checkpoint,
         stored=stored, classification=classification, delta=delta,
         causality_view=causality_view, consequence=consequence,
         current_revision_state=current_revision_state,
+        database_observed=bool(collected.get('database_observed')),
+        halt_stage=collected.get('halt_stage'),
+    )
+    # The reducer sees the lock lifecycle and the question states directly, so
+    # an unproven release or an unanswered mandatory question closes the
+    # exit-zero path instead of living only in a report nobody gates on.
+    decision = audit.decide(
+        failed_reasons=failed_reasons,
+        unproven_reasons=unproven_reasons,
+        classification=classification,
+        delta=delta,
+        lock=lock,
+        questions=questions,
     )
 
     read_only = {
-        'advisory_guard_acquired': guard_state['guard_acquired'],
-        'advisory_guard_release_attempted': guard_state[
-            'guard_release_attempted'
-        ],
-        'advisory_guard_released': guard_state['guard_released'],
+        'advisory_lock_lifecycle': lock,
+        'advisory_guard_acquire_attempted': lock['acquire_attempted'],
+        'advisory_guard_acquired': lock['guard_acquired'],
+        'advisory_guard_release_required': lock['release_required'],
+        'advisory_guard_release_attempted': lock['guard_release_attempted'],
+        'advisory_guard_released': lock['guard_released'],
+        'advisory_guard_release_proven': lock['release_proven'],
+        'advisory_lock_status': lock['status'],
+        'rollback_attempted': lock['rollback_attempted'],
+        'rollback_succeeded': lock['rollback_succeeded'],
         'transaction_read_only_enabled': bool(
             collected.get('read_only_enabled')
         ),
-        'rollback_in_finally': True,
         'fingerprint_scope_plan': audit.fingerprint_scope_plan(
             collected.get('fingerprint_identities') or ()
         ),
@@ -1367,6 +1758,8 @@ def run(args) -> dict:
         decision=decision, questions=questions,
         causality_view=causality_view, consequence=consequence,
         current_revision_state=current_revision_state,
+        halt_stage=collected.get('halt_stage'),
+        database_observed=bool(collected.get('database_observed')),
     )
     # Carried beside the document rather than inside it: the matrix is its own
     # artifact file, and duplicating every row into the summary would double
@@ -1376,20 +1769,15 @@ def run(args) -> dict:
 
 
 def later_activation_view(artifacts) -> dict:
-    """The failed run's own activation invariants, as retained."""
+    """The failed run's own activation invariants, POSITIVELY OBSERVED.
+
+    Every value is parsed out of the retained activation summary at a named
+    evidence path. No locked expectation supplies a value here, and artifact
+    presence proves nothing: a counter nobody read is not zero, it is
+    unobserved, and Question 10 must say so.
+    """
     runs = (artifacts or {}).get('runs') or {}
-    later = runs.get(audit.RUN_LATER) or {}
-    return {
-        'source_revision_match': audit.RUN_EXPECTATIONS[
-            audit.RUN_LATER
-        ]['source_revision_match'],
-        'all_projected_targets_realized': audit.RUN_EXPECTATIONS[
-            audit.RUN_LATER
-        ]['all_projected_targets_realized'],
-        'unresolved_rows': 0 if later.get('present') else None,
-        'prohibited_identity_actions': 0 if later.get('present') else None,
-        'artifact_present': bool(later.get('present')),
-    }
+    return audit.activation_evidence(runs.get(audit.RUN_LATER))
 
 
 # ── Document ────────────────────────────────────────────────────────────────
@@ -1398,7 +1786,8 @@ def build_document(*, context, note, artifacts, code_drift, official,
                    determinism, matrix, stored, checkpoint, read_only,
                    source_calls, decision, questions,
                    causality_view=None, consequence=None,
-                   current_revision_state=None) -> dict:
+                   current_revision_state=None, halt_stage=None,
+                   database_observed=False) -> dict:
     return {
         'schema_version': audit.SCHEMA_VERSION,
         'audit_type': audit.AUDIT_TYPE,
@@ -1426,6 +1815,11 @@ def build_document(*, context, note, artifacts, code_drift, official,
             if key != 'appearances'
         },
         'current_revision_state': current_revision_state,
+        # Where execution stopped, if it did. Downstream absences are read
+        # against this rather than mistaken for observations.
+        'halt_stage': halt_stage,
+        'database_observed': bool(database_observed),
+        'mandatory_field_registry': audit.mandatory_field_registry(),
         'fingerprint_determinism': determinism,
         'stored_state': stored,
         'checkpoint': checkpoint,
@@ -1589,7 +1983,10 @@ def render_markdown(document) -> str:
     lines += ['## Read-only proof', '']
     lines += ['| control | value |', '| :--- | :--- |']
     for key in (
-        'advisory_guard_acquired', 'advisory_guard_released',
+        'advisory_guard_acquire_attempted', 'advisory_guard_acquired',
+        'advisory_guard_release_required', 'advisory_guard_release_attempted',
+        'advisory_guard_released', 'advisory_guard_release_proven',
+        'advisory_lock_status', 'rollback_attempted', 'rollback_succeeded',
         'transaction_read_only_enabled', 'read_only_probe_refused',
         'fingerprint_scopes_match', 'changed_fingerprint_scopes',
         'rows_added', 'rows_updated', 'rows_deleted', 'commits',

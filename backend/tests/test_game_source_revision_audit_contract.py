@@ -10,6 +10,7 @@ and the property that keeps FAILED reserved for a violation of the audit's own
 contract rather than for a platform defect it successfully discovered.
 """
 
+import json
 import re
 from pathlib import Path
 
@@ -582,3 +583,324 @@ def test_the_global_dead_letter_backlog_is_never_reported_as_zero():
     assert 'zero dead letters' in note
     assert '1389' in note
     assert 'is not changed' in note
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# BLOCKER 3 — the advisory-lock lifecycle must reach the verdict
+# ══════════════════════════════════════════════════════════════════════════
+
+def _lock(**overrides):
+    state = {
+        'acquire_attempted': True,
+        'guard_acquired': True,
+        'acquisition_reason': 'acquired',
+        'guard_release_attempted': True,
+        'guard_released': True,
+        'release_reason': 'released',
+        'rollback_attempted': True,
+        'rollback_succeeded': True,
+    }
+    state.update(overrides)
+    return audit.lock_lifecycle(state)
+
+
+def test_a_never_acquired_lock_is_unproven():
+    lifecycle = _lock(guard_acquired=False, guard_release_attempted=False,
+                      guard_released=None)
+    assert lifecycle['status'] == audit.LOCK_NOT_ACQUIRED
+    assert lifecycle['release_proven'] is False
+    assert audit.UNPROVEN_ADVISORY_LOCK_UNAVAILABLE in (
+        lifecycle['unproven_reasons']
+    )
+    assert lifecycle['failed_reasons'] == []
+    decision = audit.decide(classification=_classification(), lock=lifecycle)
+    assert decision['result'] == audit.RESULT_UNPROVEN
+    assert decision['exit_code'] == 2
+
+
+def test_a_never_attempted_lock_is_unproven():
+    lifecycle = _lock(acquire_attempted=False, guard_acquired=False,
+                      guard_release_attempted=False, guard_released=None)
+    assert lifecycle['status'] == audit.LOCK_NOT_ATTEMPTED
+    assert audit.decide(
+        classification=_classification(), lock=lifecycle,
+    )['exit_code'] == 2
+
+
+def test_an_acquired_and_released_lock_may_complete():
+    lifecycle = _lock()
+    assert lifecycle['status'] == audit.LOCK_RELEASED
+    assert lifecycle['release_proven'] is True
+    assert lifecycle['failed_reasons'] == []
+    assert lifecycle['unproven_reasons'] == []
+    decision = audit.decide(
+        classification=_classification(),
+        delta={'answer': audit.DELTA_IDENTIFIED}, lock=lifecycle,
+    )
+    assert decision['exit_code'] == 0
+
+
+def test_a_release_that_raised_cannot_complete():
+    lifecycle = _lock(guard_released=False, release_reason='release_raised')
+    assert lifecycle['status'] == audit.LOCK_RELEASE_FAILED
+    assert audit.FAILED_LOCK_RELEASE_FAILED in lifecycle['failed_reasons']
+    decision = audit.decide(
+        classification=_classification(),
+        delta={'answer': audit.DELTA_IDENTIFIED}, lock=lifecycle,
+    )
+    assert decision['result'] == audit.RESULT_FAILED
+    assert decision['exit_code'] == 1
+    assert audit.FAILED_LOCK_RELEASE_FAILED in decision['failed_reasons']
+
+
+def test_a_release_never_attempted_after_acquisition_cannot_complete():
+    lifecycle = _lock(guard_release_attempted=False, guard_released=None)
+    assert lifecycle['status'] == audit.LOCK_RELEASE_NOT_ATTEMPTED
+    assert audit.FAILED_LOCK_RELEASE_NOT_ATTEMPTED in (
+        lifecycle['failed_reasons']
+    )
+    assert audit.decide(
+        classification=_classification(), lock=lifecycle,
+    )['exit_code'] == 1
+
+
+def test_a_release_outcome_never_established_cannot_complete():
+    """Attempted, but nobody proved it came back."""
+    lifecycle = _lock(guard_released=None, release_reason=None)
+    assert lifecycle['status'] == audit.LOCK_RELEASE_UNKNOWN
+    assert audit.UNPROVEN_LOCK_RELEASE_UNKNOWN in (
+        lifecycle['unproven_reasons']
+    )
+    decision = audit.decide(
+        classification=_classification(),
+        delta={'answer': audit.DELTA_IDENTIFIED}, lock=lifecycle,
+    )
+    assert decision['exit_code'] == 2
+
+
+def test_context_termination_alone_does_not_prove_release():
+    """The default is 'unknown', not 'released'."""
+    lifecycle = audit.lock_lifecycle({
+        'acquire_attempted': True, 'guard_acquired': True,
+        'guard_release_attempted': True,
+    })
+    assert lifecycle['guard_released'] is None
+    assert lifecycle['release_proven'] is False
+
+
+def test_an_earlier_source_failure_and_a_failed_release_both_report():
+    decision = audit.decide(
+        failed_reasons=[audit.FAILED_HIDDEN_SOURCE_CALL],
+        classification=_classification(),
+        lock=_lock(guard_released=False),
+    )
+    assert audit.FAILED_HIDDEN_SOURCE_CALL in decision['failed_reasons']
+    assert audit.FAILED_LOCK_RELEASE_FAILED in decision['failed_reasons']
+
+
+def test_an_earlier_artifact_gap_and_a_failed_release_both_report():
+    decision = audit.decide(
+        unproven_reasons=[audit.UNPROVEN_ARTIFACT_MISSING],
+        classification=_classification(),
+        lock=_lock(guard_released=False),
+    )
+    assert decision['result'] == audit.RESULT_FAILED
+    assert audit.FAILED_LOCK_RELEASE_FAILED in decision['failed_reasons']
+
+
+def test_the_lifecycle_records_rollback_alongside_release():
+    lifecycle = _lock(guard_released=False, rollback_succeeded=True)
+    assert lifecycle['rollback_attempted'] is True
+    assert lifecycle['rollback_succeeded'] is True
+    assert lifecycle['release_proven'] is False
+
+
+def test_the_lifecycle_carries_no_exception_text():
+    lifecycle = _lock(
+        guard_released=False, release_reason='release_raised',
+        acquisition_reason='lock_unavailable_or_contended',
+    )
+    rendered = json.dumps(lifecycle)
+    for forbidden in ('Traceback', 'File "', 'psycopg2', '/home/', 'Error('):
+        assert forbidden not in rendered
+
+
+def test_a_completed_result_requires_a_proven_release():
+    for lifecycle in (
+        _lock(guard_released=False),
+        _lock(guard_released=None),
+        _lock(guard_release_attempted=False, guard_released=None),
+        _lock(guard_acquired=False, guard_release_attempted=False,
+              guard_released=None),
+    ):
+        decision = audit.decide(
+            classification=_classification(),
+            delta={'answer': audit.DELTA_IDENTIFIED}, lock=lifecycle,
+        )
+        assert decision['exit_code'] != 0
+        assert decision['result'] not in audit.COMPLETE_RESULTS
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# Question gating — an unanswered mandatory question closes exit zero
+# ══════════════════════════════════════════════════════════════════════════
+
+def _questions(**states):
+    """Every mandatory question answered unless overridden."""
+    return [
+        {
+            'question_id': qid,
+            'mandatory_for_completion': True,
+            'fully_answered': states.get(qid, True),
+        }
+        for qid in audit.MANDATORY_QUESTIONS
+    ]
+
+
+def test_all_mandatory_questions_answered_permits_completion():
+    decision = audit.decide(
+        classification=_classification(),
+        delta={'answer': audit.DELTA_IDENTIFIED},
+        lock=_lock(), questions=_questions(),
+    )
+    assert decision['exit_code'] == 0
+    assert decision['unanswered_mandatory_questions'] == []
+
+
+@pytest.mark.parametrize('question_id', audit.MANDATORY_QUESTIONS)
+def test_one_unanswered_mandatory_question_closes_exit_zero(question_id):
+    decision = audit.decide(
+        classification=_classification(),
+        delta={'answer': audit.DELTA_IDENTIFIED},
+        lock=_lock(), questions=_questions(**{question_id: False}),
+    )
+    assert decision['result'] == audit.RESULT_UNPROVEN
+    assert decision['exit_code'] == 2
+    assert question_id in decision['unanswered_mandatory_questions']
+    assert audit.UNPROVEN_QUESTION_UNANSWERED in decision['unproven_reasons']
+
+
+def test_a_non_mandatory_unanswered_question_does_not_close_exit_zero():
+    questions = _questions() + [{
+        'question_id': 'Q3', 'mandatory_for_completion': False,
+        'fully_answered': False,
+    }]
+    decision = audit.decide(
+        classification=_classification(),
+        delta={'answer': audit.DELTA_IDENTIFIED},
+        lock=_lock(), questions=questions,
+    )
+    assert decision['exit_code'] == 0
+
+
+def test_the_answer_state_vocabulary_is_closed_and_distinguishing():
+    assert audit.ANSWER_OBSERVED_NO in audit.ANSWERED_STATES
+    assert audit.ANSWER_OBSERVED_INSUFFICIENT in audit.ANSWERED_STATES
+    # "nobody looked" is NOT an answer, however negative it sounds.
+    assert audit.ANSWER_NOT_OBSERVED not in audit.ANSWERED_STATES
+    assert audit.ANSWER_UNAVAILABLE not in audit.ANSWERED_STATES
+    assert audit.ANSWER_UNPROVEN not in audit.ANSWERED_STATES
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# Static regression — no expected value may become an observed value
+# ══════════════════════════════════════════════════════════════════════════
+
+AUDIT_SOURCES = (
+    REPO_ROOT / 'backend/services/game_source_revision_audit.py',
+    REPO_ROOT / 'backend/scripts/run_game_source_revision_audit.py',
+)
+
+
+def test_no_audit_source_falls_back_from_observed_to_expected():
+    """The Blocker 1 and Blocker 2 defect shape, banned by static scan.
+
+    ``observed = artifact.get(x) or spec[...]`` and its relatives turn a
+    missing fact into a matching one. Nothing in the package may express that
+    shape against a locked expectation.
+    """
+    banned = (
+        re.compile(r"\.get\([^)]*\)\s+or\s+spec\["),
+        re.compile(r"\.get\([^)]*\)\s+or\s+RUN_EXPECTATIONS"),
+        re.compile(r"\.get\([^)]*\)\s+or\s+expected"),
+        re.compile(r"\.get\([^)]*,\s*expected\)"),
+        re.compile(r"\.get\([^)]*,\s*spec\["),
+        re.compile(r"or\s+EXPECTED_[A-Z_]+"),
+        re.compile(r"\.get\([^)]*\)\s+or\s+LATER_LANE_EXPECTATIONS"),
+    )
+    for path in AUDIT_SOURCES:
+        text = path.read_text(encoding='utf-8')
+        for pattern in banned:
+            assert not pattern.search(text), (
+                f'{path.name} contains an expected-value fallback: '
+                f'{pattern.pattern}'
+            )
+
+
+def test_the_audit_never_reads_an_expectation_inside_the_activation_view():
+    """Question 10's input must come only from parsed observations."""
+    runner_source = (
+        REPO_ROOT / 'backend/scripts/run_game_source_revision_audit.py'
+    ).read_text(encoding='utf-8')
+    body = runner_source.split('def later_activation_view', 1)[1].split(
+        '\ndef ', 1
+    )[0]
+    assert 'RUN_EXPECTATIONS' not in body
+    assert "if later.get('present')" not in body
+    assert 'activation_evidence' in body
+
+
+def test_no_audit_source_serializes_exception_text():
+    for path in AUDIT_SOURCES:
+        text = path.read_text(encoding='utf-8')
+        for banned in ('traceback.format_exc', 'repr(exc)', 'str(exc)'):
+            assert banned not in text, f'{path.name} may leak exception text'
+
+
+def test_no_audit_source_carries_prohibited_attribution():
+    terms = (
+        'claude', 'anthropic', 'chatgpt', 'openai', 'ai-generated',
+        'generated by', 'generated-by', 'co-authored-by', 'assisted-by',
+        'copilot',
+    )
+    paths = list(AUDIT_SOURCES) + [
+        WORKFLOW_PATH,
+        REPO_ROOT / 'docs/current/GAME_824487_SOURCE_REVISION_AUDIT.md',
+    ]
+    for path in paths:
+        lowered = path.read_text(encoding='utf-8').lower()
+        for term in terms:
+            assert term not in lowered, f'{path.name} carries "{term}"'
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# Workflow contract additions for workflow-run metadata retrieval
+# ══════════════════════════════════════════════════════════════════════════
+
+def test_the_workflow_records_historical_workflow_run_metadata(steps):
+    step = _step(steps, 'Record historical workflow-run metadata')
+    assert step['continue-on-error'] is True
+    body = str(step['run'])
+    assert '/actions/runs/' in body
+    assert 'head_branch' in body
+    assert 'workflow-run-metadata.json' in body
+
+
+def test_workflow_metadata_retrieval_is_read_only(steps, workflow):
+    assert workflow['permissions'] == {'contents': 'read', 'actions': 'read'}
+    body = str(_step(steps, 'Record historical workflow-run metadata')['run'])
+    for forbidden in ("method='POST'", 'method="POST"', 'DELETE', 'PATCH'):
+        assert forbidden not in body
+
+
+def test_workflow_metadata_is_recorded_before_the_audit_runs(steps):
+    assert _index(steps, 'Record historical workflow-run metadata') < _index(
+        steps, 'Run the read-only source-revision audit',
+    )
+
+
+def test_workflow_metadata_covers_exactly_the_two_locked_runs(steps):
+    body = str(_step(steps, 'Record historical workflow-run metadata')['run'])
+    assert audit.PRIOR_RUN_ID in body
+    assert audit.LATER_RUN_ID in body
+    assert body.count("RUN_IDS = ('") == 1

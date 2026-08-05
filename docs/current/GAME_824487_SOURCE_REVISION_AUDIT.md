@@ -1,11 +1,22 @@
 # Game 824487 source-revision audit
 
-**Status: audit package implemented. The production audit has NOT been executed.
-No conclusion has been reached. No repair is authorized.**
+**Status: audit package implemented and evidence-integrity corrected. The
+production audit has NOT been executed. No conclusion has been reached. No
+repair is authorized. Review verdict: HOLD pending independent
+evidence-integrity review.**
 
 Nothing in this document states a root cause, because the audit has not run in
 production yet. It describes what the package does, how to read what it will
 produce, and how to remove it afterwards.
+
+An evidence-integrity review found four ways the package could reach a
+completed conclusion from evidence it had not positively observed: Question 10
+read its activation values from locked expectations and from artifact presence;
+artifact identity fell back to the expected branch because no retained document
+carries one; a failed advisory-lock release never reached the verdict; and
+historical field identification could fire from a row-shaped structure rather
+than from exact values. All four are repaired, and the sections below describe
+the corrected behaviour rather than the original.
 
 ---
 
@@ -112,32 +123,106 @@ is retained only for rows whose projected action is **not** `unchanged`. A game
 whose 12 appearances were all unchanged therefore retains no per-appearance
 values at all in either run.
 
-The audit does not assume this — it scans both documents for any structure
-pairing a pitcher identity with a governed field VALUE and reports what it
-found. If nothing is found, that absence is itself a material finding, recorded
-as `not_retained`.
+The audit does not assume this. It runs a real extractor that requires a
+candidate to positively associate **all four coordinates at once** — exact run
+id, exact game 824487, exact pitcher MLB id, exact governed field — before any
+value counts. Ordering, display names, roster membership, and co-occurrence
+prove nothing and are not consulted. For these two artifacts the extractor
+correctly returns nothing, and that absence is recorded as `not_retained`.
+
+Historical states are distinct and never collapsed: `proven`, `proven_null`,
+`absent`, `not_retained`, `unproven`, `inconsistent`, `identity_missing`,
+`wrong_game`. A value the extractor can see but cannot safely associate is
+`unproven` — **not** `not_retained`, because something value-shaped was there.
+
+A field delta is `identified` only when two exact retained values for the SAME
+run/game/pitcher/field actually differ. Artifact presence, a row-shaped object,
+a list of field names, a digest, a correction count, and a timestamp identify
+nothing, and none of them can reach that classification.
 
 ---
 
 ## Artifact requirements
 
-Both artifacts are downloaded by exact repository, exact run id, exact artifact
-id, and exact name, BEFORE any database advisory lock is acquired. Each is then
-verified from INSIDE its documents — never from a directory name:
+Both artifacts are **downloaded by exact repository, exact run id, and exact
+artifact name**, BEFORE any database advisory lock is acquired. The artifact
+**id** and **digest** are then verified against GitHub artifact metadata, and
+the **branch** against GitHub workflow-run metadata. Downloading and verifying
+are different steps with different sources, and this document does not blur
+them.
 
-* internal run id and head SHA (`handoff-metadata.json`);
-* cycle kind and runner exit code (`*-activation-summary.json`);
-* configured mode, `writes_enabled: false`, `publication_authoritative: false`,
-  game 824487 membership, source revision, plan fingerprint, 12 appearances,
-  12 unchanged, and zero insert/update/block (`*-sync-summary.json`).
+### Where each mandatory fact comes from
+
+Facts are not all "inside the documents". Three sources exist, and each fact
+names exactly one:
+
+| source | facts |
+| :--- | :--- |
+| `handoff-metadata.json` | run id, head SHA, cycle kind, handoff status |
+| `*-activation-summary.json` | activation result, runner exit code, configured mode, `writes_enabled`, `publication_authoritative`, the whole `realization` block, and the later run's 94/94/778 accounting |
+| `*-sync-summary.json` | game 824487 membership, source revision, plan fingerprint, appearances, unchanged, insert/update/block |
+| GitHub artifact metadata | artifact id, digest |
+| GitHub workflow-run metadata | **branch** (and a corroborating head SHA) |
+
+**The branch is in neither retained document.** The handoff metadata schema
+(`scripts/prepare_shadow_handoff.build_metadata`) carries a schema version, run
+id, repository SHA, cycle kind, runner exit code, an expected filename, and
+three booleans — no branch and no ref. It is therefore read from GitHub
+workflow-run metadata (read-only, covered by the existing `actions: read`
+permission) or it is reported **unverified**. It is never filled in from what
+the audit expected it to be.
+
+A single registry — `MANDATORY_FIELDS` — declares, for every mandatory fact:
+the document, the exact evidence path, the expected type, the expected value or
+validator, which conclusions it gates (identity / content / Question 10),
+whether it applies to the later run only, and what its absence means. That
+registry is emitted into the evidence artifact so a reader can check the
+audit's requirements against its results.
+
+### Three separate verdicts
+
+Identity, digest, and content answer three different questions and are reported
+separately. They can legitimately disagree — a correctly-identified artifact
+whose digest GitHub no longer exposes is a real and common state.
+
+| verdict | verified when | failed when | unproven when |
+| :--- | :--- | :--- | :--- |
+| identity | every mandatory identity field positively observed AND matched | any observed identity field contradicts its expectation, or the artifact id is exposed and differs | any mandatory identity field was not observed, or a required file is missing |
+| digest | GitHub exposed it and it matches | GitHub exposed it and it differs | GitHub did not expose it |
+| content | every mandatory content field positively observed AND matched | any observed content field contradicts | any mandatory content field was not observed |
+
+A field that was never observed is **never** listed among the verified fields.
 
 | observation | outcome |
 | :--- | :--- |
 | required artifact missing | UNPROVEN |
 | required file missing inside an artifact | UNPROVEN |
-| metadata mismatch (run id, head, cycle, branch, mode, counts) | FAILED |
-| digest exposed by GitHub and different from the expected digest | FAILED |
+| mandatory field not observed | UNPROVEN |
+| observed field contradicts its expectation | FAILED |
+| digest exposed by GitHub and different | FAILED |
 | digest no longer exposed by the API | UNVERIFIED, reported honestly |
+| later-run lane accounting off by one | FAILED |
+
+### The later run's 94/94/778 accounting is compared, not reported
+
+`games_planned`, `games_fetched`, `games_completed`, `games_failed`,
+`rows_expected`, `rows_unchanged`, `rows_inserted`, `rows_updated`, and
+`rows_blocked` are each read at a named path in the activation summary and
+compared exactly. A difference of one is visible and blocks a verified content
+verdict.
+
+### Observation states
+
+Every fact carries a state, and the states are deliberately finer than
+present/absent:
+
+`verified` · `observed` · `mismatch` · `absent` · `container_absent` ·
+`container_malformed` · `malformed` · `source_unavailable`
+
+A retained `null` is `observed`. A missing key is `absent`. A missing parent
+object is `container_absent`. A parent that is not a mapping is
+`container_malformed`. None of these collapse into a bare `None` that could
+later read as agreement.
 
 ---
 
@@ -179,6 +264,23 @@ than reinvented:
    daily, postgame, and backfill writers take. It never creates, reclaims, or
    updates a `SyncRun`. Contention returns UNPROVEN immediately — the audit
    never waits and never queues.
+
+   The full lifecycle is recorded and **gates the verdict**: acquire attempted,
+   acquired, acquisition reason, release required, release attempted, release
+   proven, release reason, rollback attempted, rollback result. A completed
+   result requires the guard to have been acquired AND positively released.
+
+   | lifecycle | outcome |
+   | :--- | :--- |
+   | never attempted / not acquired | UNPROVEN — the audit observed nothing |
+   | acquired, released | eligible to complete |
+   | acquired, release raised | **FAILED** — the audit breached its own safety contract |
+   | acquired, release never attempted | **FAILED** |
+   | acquired, release outcome never established | UNPROVEN |
+
+   Process or context termination is **not** release evidence. A failed release
+   is preserved alongside any earlier failure rather than hidden behind it, and
+   rollback still runs in `finally` either way.
 2. **PostgreSQL read-only transaction with a bounded refused write probe.** The
    audit issues exactly one SQL write statement: the proof itself, bounded by
    `WHERE 1 = 0`, expected to be REFUSED, and rolled back either way. A probe
@@ -273,6 +375,49 @@ state, (7) durable checkpoint evidence, (8) correction and historical evidence,
 (11) materiality across five independent dimensions, (12) operational
 consequence.
 
+Every question reports an **answer state**, not a boolean, plus its required
+inputs, the inputs actually observed, the inputs missing, its evidence sources,
+and its limitations:
+
+`observed_yes` · `observed_no` · `observed_but_insufficient` ·
+`not_observed` · `unavailable` · `unproven`
+
+Only the first three count as an answer. "The database said there is no
+provenance" and "the database was never opened" both sound negative and are
+completely different facts.
+
+* **Q1 / Q2** require **verified identity AND verified content** on both
+  artifacts. Required files merely existing is not evidence about what they
+  say.
+* **Q4** is `unavailable` when the current official source was not fetched. A
+  source that was never read is never a match.
+* **Q7 / Q8** are `not_observed` when the database was never opened. Q8 is
+  `observed_but_insufficient` when correction provenance exists but records
+  only counts, timestamps, a source label, and a sync run id — never a field
+  name, an old value, or a new value.
+* **Q10** consumes only positively parsed activation values —
+  `source_revision_match`, `safe_digest_match`,
+  `all_projected_targets_realized`, `unresolved_rows`,
+  `prohibited_identity_actions` — each at a named path in
+  `realization.*`. A counter nobody read is not zero, and artifact presence
+  proves none of them. The single causal-chain conclusion requires every one of
+  them observed, with no competing deficit.
+* **Q11 / Q12** are `unproven` whenever any required classification dimension
+  is unavailable. A compound conclusion is not complete because some of its
+  dimensions were.
+
+Eight questions (Q1, Q2, Q4, Q6, Q7, Q10, Q11, Q12) are mandatory for
+completion. Any one of them unanswered closes the exit-zero path.
+
+### Early stops
+
+When execution halts, the halt stage is recorded and every unanswered question
+carries it as a limitation. Downstream absences are read against that stage
+rather than mistaken for observations: a checkpoint nobody read is not a
+missing checkpoint, an unfetched source is not a current match, and an empty
+field matrix reports `not_generated_no_observed_evidence` rather than
+masquerading as a complete matrix that found no differences.
+
 Question 11 never collapses into a single label. It reports root condition,
 current materiality, persistence, historical field identification, and
 checkpoint state separately.
@@ -308,10 +453,16 @@ canonical plan), the current official and current stored values, the historical
 values, and — always — an explicit evidence status drawn from `proven`,
 `absent`, `not_retained`, `inconsistent`, `unproven`.
 
-A historical value that was never retained is reported as `null` **with** a
-status of `not_retained`. `null` is a legitimate baseball value, so the status,
-not the value, is what distinguishes "absent from the source" from "never
-recorded anywhere".
+Historical values are resolved **per coordinate** by the extractor, not by one
+blanket status stamped on every cell. A retained `null` keeps its value AND a
+`proven` status; a value that was never retained is `null` with
+`not_retained`; a value seen but not safely associable is `null` with
+`unproven`. `null` is a legitimate baseball value, so the status — not the
+value — is what distinguishes them.
+
+When the artifacts themselves are not verified, every historical cell is
+`unproven`: "not retained" is a claim about a document, and it requires a
+document proven to be the right one.
 
 Integer recorded outs are the innings authority. A decimal innings display
 difference is classified `derived_display_only` and is never called a baseball

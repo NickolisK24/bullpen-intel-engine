@@ -331,31 +331,49 @@ def test_equal_values_are_never_material():
 
 # ── 95-98. Causality ────────────────────────────────────────────────────────
 
+def _activation(**overrides):
+    """A fully-observed activation evidence view, as the parser produces it."""
+    view = {
+        'unresolved_rows': 0,
+        'prohibited_identity_actions': 0,
+        'source_revision_match': False,
+        'safe_digest_match': True,
+        'all_projected_targets_realized': False,
+        'observed_fields': list(audit.Q10_FIELDS),
+        'missing_fields': [],
+        'missing_evidence_paths': [],
+        'mismatched_fields': [],
+        'all_required_observed': True,
+        'state': audit.STATE_VERIFIED,
+        'artifact_present': True,
+    }
+    view.update(overrides)
+    if 'missing_fields' in overrides:
+        view['all_required_observed'] = not overrides['missing_fields']
+        view['observed_fields'] = [
+            field for field in audit.Q10_FIELDS
+            if field not in overrides['missing_fields']
+        ]
+    return view
+
+
 def test_one_source_revision_mismatch_causes_both_observer_invariants():
     result = audit.causality(
         realization_symbol_state=audit.DRIFT_EQUAL,
-        later_activation={
-            'unresolved_rows': 0,
-            'prohibited_identity_actions': 0,
-            'source_revision_match': False,
-            'all_projected_targets_realized': False,
-        },
+        later_activation=_activation(),
         drift=False,
     )
     assert result['answer'] == audit.CAUSALITY_SINGLE_CHAIN
+    assert result['fully_answered'] is True
     assert result['realization_definition_verified_at_failed_run_sha'] is True
     assert 'source_revision_match' in result['invariant_definition']
+    assert result['expectations_supplied_no_value'] is True
 
 
 def test_an_independent_unresolved_row_failure_is_distinguished():
     result = audit.causality(
         realization_symbol_state=audit.DRIFT_EQUAL,
-        later_activation={
-            'unresolved_rows': 2,
-            'prohibited_identity_actions': 0,
-            'source_revision_match': False,
-            'all_projected_targets_realized': False,
-        },
+        later_activation=_activation(unresolved_rows=2),
         drift=False,
     )
     assert result['answer'] == audit.CAUSALITY_INDEPENDENT_UNRESOLVED
@@ -364,12 +382,7 @@ def test_an_independent_unresolved_row_failure_is_distinguished():
 def test_an_independent_prohibited_identity_failure_is_distinguished():
     result = audit.causality(
         realization_symbol_state=audit.DRIFT_EQUAL,
-        later_activation={
-            'unresolved_rows': 0,
-            'prohibited_identity_actions': 1,
-            'source_revision_match': False,
-            'all_projected_targets_realized': False,
-        },
+        later_activation=_activation(prohibited_identity_actions=1),
         drift=False,
     )
     assert result['answer'] == audit.CAUSALITY_INDEPENDENT_IDENTITY
@@ -378,12 +391,7 @@ def test_an_independent_prohibited_identity_failure_is_distinguished():
 def test_realization_code_drift_prevents_an_unsupported_causality_claim():
     result = audit.causality(
         realization_symbol_state=audit.DRIFT_CHANGED,
-        later_activation={
-            'unresolved_rows': 0,
-            'prohibited_identity_actions': 0,
-            'source_revision_match': False,
-            'all_projected_targets_realized': False,
-        },
+        later_activation=_activation(),
         drift=True,
     )
     assert result['answer'] == audit.CAUSALITY_UNPROVEN_CODE_DRIFT
@@ -393,9 +401,7 @@ def test_realization_code_drift_prevents_an_unsupported_causality_claim():
 def test_an_unreadable_failed_run_sha_makes_causality_unproven():
     result = audit.causality(
         realization_symbol_state=audit.DRIFT_UNAVAILABLE,
-        later_activation={
-            'unresolved_rows': 0, 'prohibited_identity_actions': 0,
-        },
+        later_activation=_activation(),
         drift=False,
     )
     assert result['answer'] == audit.CAUSALITY_UNPROVEN
@@ -404,9 +410,12 @@ def test_an_unreadable_failed_run_sha_makes_causality_unproven():
 def test_absent_invariant_counters_make_causality_unproven():
     result = audit.causality(
         realization_symbol_state=audit.DRIFT_EQUAL,
-        later_activation={
-            'unresolved_rows': None, 'prohibited_identity_actions': None,
-        },
+        later_activation=_activation(
+            unresolved_rows=None, prohibited_identity_actions=None,
+            missing_fields=[
+                'unresolved_rows', 'prohibited_identity_actions',
+            ],
+        ),
         drift=False,
     )
     assert result['answer'] == audit.CAUSALITY_UNPROVEN
@@ -418,8 +427,12 @@ def _classify(**overrides):
     kwargs = {
         'artifacts': {
             'all_required_present': True,
+            'identity_all_verified': True,
+            'content_all_verified': True,
             'revision_change_proven': True,
             'prior_row_level_values_retained': False,
+            'unassociable_historical_candidates': 0,
+            'historical_delta': {'delta_identified': False},
         },
         'code_drift': {
             'comparison_complete': True,
@@ -590,8 +603,12 @@ def test_a_canonical_outs_difference_makes_the_mismatch_material():
 def test_an_unproven_artifact_set_cannot_prove_a_root_condition():
     result = _classify(artifacts={
         'all_required_present': False,
+        'identity_all_verified': False,
+        'content_all_verified': False,
         'revision_change_proven': False,
         'prior_row_level_values_retained': False,
+        'unassociable_historical_candidates': 0,
+        'historical_delta': {'delta_identified': False},
     })
     assert result['root_condition'] == audit.ROOT_UNPROVEN
     assert result['historical_field_identification'] == audit.FIELD_ID_UNPROVEN

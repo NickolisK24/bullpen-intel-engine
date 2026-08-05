@@ -111,6 +111,13 @@ RUN_EXPECTATIONS = {
         'source_revision_match': True,
         'safe_digest_match': True,
         'all_projected_targets_realized': True,
+        'unresolved_rows': 0,
+        'prohibited_identity_actions': 0,
+        # Both runs' PUBLIC daily sync succeeded, so the runner the handoff
+        # reports exited 0 in both. The activation observer's own verdict is a
+        # separate fact and is validated separately as ``activation_result``.
+        'runner_exit_code': 0,
+        'handoff_status': 'ready',
         'required': True,
     },
     RUN_LATER: {
@@ -129,6 +136,10 @@ RUN_EXPECTATIONS = {
         'source_revision_match': False,
         'safe_digest_match': True,
         'all_projected_targets_realized': False,
+        'unresolved_rows': 0,
+        'prohibited_identity_actions': 0,
+        'runner_exit_code': 0,
+        'handoff_status': 'ready',
         'required': True,
     },
 }
@@ -238,8 +249,17 @@ FAILED_HIDDEN_SOURCE_CALL = 'unbudgeted_or_hidden_source_call'
 FAILED_FINGERPRINT_NONDETERMINISTIC = 'fingerprint_nondeterministic'
 FAILED_DIGEST_GUESSED_FROM_HASH = 'field_delta_guessed_from_digest'
 
+# Acquisition that never happened is an evidence GAP: the audit observed
+# nothing, so it is UNPROVEN. Release that was skipped, or that raised AFTER
+# acquisition, is a breach of this audit's own safety contract — which is
+# exactly what FAILED is reserved for.
+FAILED_LOCK_RELEASE_FAILED = 'advisory_lock_release_failed'
+FAILED_LOCK_RELEASE_NOT_ATTEMPTED = 'advisory_lock_release_not_attempted'
+
 FAILED_REASONS = (
     FAILED_EVENT_NOT_WORKFLOW_DISPATCH,
+    FAILED_LOCK_RELEASE_FAILED,
+    FAILED_LOCK_RELEASE_NOT_ATTEMPTED,
     FAILED_REPOSITORY_NOT_AUTHORIZED,
     FAILED_ACTOR_NOT_AUTHORIZED,
     FAILED_REF_NOT_MAIN,
@@ -269,9 +289,21 @@ UNPROVEN_HISTORICAL_SHA_UNAVAILABLE = 'historical_sha_unavailable'
 UNPROVEN_CODE_COMPARISON_INCOMPLETE = 'code_comparison_incomplete'
 UNPROVEN_REQUIRED_SOURCE_CALL_REFUSED = 'required_source_call_refused'
 UNPROVEN_EXECUTION_ERROR = 'audit_execution_error'
+UNPROVEN_QUESTION_UNANSWERED = 'mandatory_question_unanswered'
+UNPROVEN_ARTIFACT_IDENTITY_UNPROVEN = 'artifact_identity_unproven'
+UNPROVEN_ARTIFACT_CONTENT_UNPROVEN = 'artifact_content_unproven'
+UNPROVEN_ACTIVATION_EVIDENCE_MISSING = 'activation_realization_evidence_missing'
+UNPROVEN_WORKFLOW_METADATA_UNAVAILABLE = 'workflow_run_metadata_unavailable'
+UNPROVEN_LOCK_RELEASE_UNKNOWN = 'advisory_lock_release_unproven'
 
 UNPROVEN_REASONS = (
     UNPROVEN_ARTIFACT_MISSING,
+    UNPROVEN_QUESTION_UNANSWERED,
+    UNPROVEN_ARTIFACT_IDENTITY_UNPROVEN,
+    UNPROVEN_ARTIFACT_CONTENT_UNPROVEN,
+    UNPROVEN_ACTIVATION_EVIDENCE_MISSING,
+    UNPROVEN_WORKFLOW_METADATA_UNAVAILABLE,
+    UNPROVEN_LOCK_RELEASE_UNKNOWN,
     UNPROVEN_ARTIFACT_FILE_MISSING,
     UNPROVEN_ADVISORY_LOCK_UNAVAILABLE,
     UNPROVEN_READ_ONLY_UNAVAILABLE,
@@ -425,6 +457,38 @@ CONSEQUENCES = (
 )
 
 
+# ── Question answer states ──────────────────────────────────────────────────
+# A question is not a boolean. "The database said there is no provenance" and
+# "the database was never opened" are both a negative-sounding answer and are
+# completely different facts, and only one of them is an answer.
+
+ANSWER_OBSERVED_YES = 'observed_yes'
+ANSWER_OBSERVED_NO = 'observed_no'
+ANSWER_OBSERVED_INSUFFICIENT = 'observed_but_insufficient'
+ANSWER_NOT_OBSERVED = 'not_observed'
+ANSWER_UNAVAILABLE = 'unavailable'
+ANSWER_UNPROVEN = 'unproven'
+
+ANSWER_STATES = (
+    ANSWER_OBSERVED_YES,
+    ANSWER_OBSERVED_NO,
+    ANSWER_OBSERVED_INSUFFICIENT,
+    ANSWER_NOT_OBSERVED,
+    ANSWER_UNAVAILABLE,
+    ANSWER_UNPROVEN,
+)
+
+# States that count as an ANSWER. The rest are accounts of an absence.
+ANSWERED_STATES = frozenset({
+    ANSWER_OBSERVED_YES, ANSWER_OBSERVED_NO, ANSWER_OBSERVED_INSUFFICIENT,
+})
+
+# Questions whose unanswered state must close the exit-zero path. Q3 and Q5
+# already gate through their own UNPROVEN reasons; these are the ones whose
+# silence would otherwise be invisible in the verdict.
+MANDATORY_QUESTIONS = ('Q1', 'Q2', 'Q4', 'Q6', 'Q7', 'Q10', 'Q11', 'Q12')
+
+
 # ── Historical evidence status vocabulary ───────────────────────────────────
 # A missing historical value is NOT a null baseball value. Every historical
 # cell in the field matrix carries one of these, always.
@@ -470,6 +534,191 @@ REQUIRED_MISSING_EVIDENCE = (
 )
 
 
+# ── Observation model ───────────────────────────────────────────────────────
+# Every fact this audit uses is either POSITIVELY OBSERVED from a named source
+# at a named path, or it is not a fact. A locked expectation may only VALIDATE
+# an observed value; it may never supply one. The states below exist so that
+# "the artifact says null", "the artifact has no such field", "the containing
+# object is missing", and "the containing object is not a mapping" can never
+# collapse into a single ``None`` that later reads as agreement.
+
+OBS_VERIFIED = 'verified'            # observed AND equal to the expectation
+OBS_OBSERVED = 'observed'            # observed; no expectation to compare
+OBS_MISMATCH = 'mismatch'            # observed AND different — a definite fact
+OBS_ABSENT = 'absent'                # container present, field not in it
+OBS_CONTAINER_ABSENT = 'container_absent'
+OBS_CONTAINER_MALFORMED = 'container_malformed'
+OBS_MALFORMED = 'malformed'          # present but the wrong type
+OBS_SOURCE_UNAVAILABLE = 'source_unavailable'
+
+OBSERVATION_STATES = (
+    OBS_VERIFIED, OBS_OBSERVED, OBS_MISMATCH, OBS_ABSENT,
+    OBS_CONTAINER_ABSENT, OBS_CONTAINER_MALFORMED, OBS_MALFORMED,
+    OBS_SOURCE_UNAVAILABLE,
+)
+
+# States that mean "we hold a real value". Everything else is a gap.
+POSITIVE_STATES = frozenset({OBS_VERIFIED, OBS_OBSERVED})
+# States that mean "the evidence definitely contradicts the expectation".
+CONTRADICTING_STATES = frozenset({OBS_MISMATCH})
+# States that mean "the evidence was not obtained". Never a contradiction.
+GAP_STATES = frozenset({
+    OBS_ABSENT, OBS_CONTAINER_ABSENT, OBS_CONTAINER_MALFORMED, OBS_MALFORMED,
+    OBS_SOURCE_UNAVAILABLE,
+})
+
+# Where a fact came from. ``inferred`` exists only so that the audit can assert
+# it never appears in a verified observation.
+SOURCE_RETAINED_ARTIFACT = 'retained_artifact_file'
+SOURCE_WORKFLOW_METADATA = 'github_workflow_run_metadata'
+SOURCE_ARTIFACT_METADATA = 'github_artifact_metadata'
+SOURCE_INFERRED = 'inferred_or_expected'
+
+OBSERVATION_SOURCES = (
+    SOURCE_RETAINED_ARTIFACT,
+    SOURCE_WORKFLOW_METADATA,
+    SOURCE_ARTIFACT_METADATA,
+    SOURCE_INFERRED,
+)
+
+_MISSING = object()
+
+
+def read_path(document, path):
+    """Walk a dotted path, distinguishing every way a lookup can fail.
+
+    Returns ``(value, state)``. A retained ``null`` comes back as
+    ``(None, OBS_OBSERVED)``; an absent key comes back as
+    ``(None, OBS_ABSENT)``. Those must never be the same answer.
+    """
+    if document is None:
+        return None, OBS_CONTAINER_ABSENT
+    if not isinstance(document, dict):
+        return None, OBS_CONTAINER_MALFORMED
+
+    node = document
+    parts = str(path).split('.')
+    for index, part in enumerate(parts):
+        if not isinstance(node, dict):
+            return None, OBS_CONTAINER_MALFORMED
+        if part not in node:
+            # The last segment missing is an absent FIELD; an earlier segment
+            # missing is an absent CONTAINER. Different facts, different fixes.
+            return None, (
+                OBS_ABSENT if index == len(parts) - 1
+                else OBS_CONTAINER_ABSENT
+            )
+        node = node[part]
+    return node, OBS_OBSERVED
+
+
+def observation(
+    *,
+    field,
+    path,
+    source,
+    observed=_MISSING,
+    state=None,
+    expected=_MISSING,
+    expected_type=None,
+    comparator=None,
+) -> dict:
+    """One positively-sourced fact, or an explicit account of its absence.
+
+    ``expected`` is a VALIDATOR. When the value was not observed, the returned
+    observation keeps ``observed`` as ``None`` with a gap state — the
+    expectation is never copied into the observed slot.
+    """
+    has_value = observed is not _MISSING
+    value = None if not has_value else observed
+    resolved = state or (OBS_OBSERVED if has_value else OBS_ABSENT)
+
+    if resolved in POSITIVE_STATES and expected_type is not None:
+        if not isinstance(value, expected_type) or isinstance(value, bool) != (
+            expected_type is bool
+        ):
+            resolved = OBS_MALFORMED
+            value = None
+
+    reason = None
+    if resolved in POSITIVE_STATES and expected is not _MISSING:
+        equal = (
+            comparator(value, expected) if comparator is not None
+            else value == expected
+        )
+        resolved = OBS_VERIFIED if equal else OBS_MISMATCH
+        if resolved == OBS_MISMATCH:
+            reason = 'observed_value_differs_from_expectation'
+    elif resolved in GAP_STATES:
+        reason = resolved
+
+    return {
+        'field': field,
+        'evidence_path': path,
+        'source': source,
+        'observed': _jsonable(value) if resolved in POSITIVE_STATES
+        or resolved == OBS_MISMATCH else None,
+        'observed_present': resolved in POSITIVE_STATES
+        or resolved == OBS_MISMATCH,
+        'expected': None if expected is _MISSING else _jsonable(expected),
+        'state': resolved,
+        'reason': reason,
+    }
+
+
+def observe(document, spec, *, source, expected=_MISSING) -> dict:
+    """Read one registry-specified field out of a retained document."""
+    value, state = read_path(document, spec['path'])
+    if state is not OBS_OBSERVED:
+        return observation(
+            field=spec['field'], path=spec['path'], source=source,
+            state=state, expected=expected,
+        )
+    return observation(
+        field=spec['field'], path=spec['path'], source=source,
+        observed=value, expected=expected,
+        expected_type=spec.get('expected_type'),
+    )
+
+
+def observation_gaps(observations) -> list[str]:
+    return sorted(
+        entry['field'] for entry in observations or ()
+        if entry['state'] in GAP_STATES
+    )
+
+
+def observation_mismatches(observations) -> list[str]:
+    return sorted(
+        entry['field'] for entry in observations or ()
+        if entry['state'] in CONTRADICTING_STATES
+    )
+
+
+def observation_verified(observations) -> list[str]:
+    """Fields positively observed AND matched. Never merely 'not refuted'."""
+    return sorted(
+        entry['field'] for entry in observations or ()
+        if entry['state'] == OBS_VERIFIED
+    )
+
+
+def observation_value(observations, field, default=None):
+    for entry in observations or ():
+        if entry['field'] == field and entry['state'] in (
+            POSITIVE_STATES | CONTRADICTING_STATES
+        ):
+            return entry['observed']
+    return default
+
+
+def observation_state(observations, field) -> str | None:
+    for entry in observations or ():
+        if entry['field'] == field:
+            return entry['state']
+    return None
+
+
 # ── Artifact contract ───────────────────────────────────────────────────────
 
 SYNC_SUMMARY_SUFFIX = '-sync-summary.json'
@@ -484,6 +733,183 @@ REQUIRED_ARTIFACT_FILES = (
 
 _SHA256_HEX = re.compile(r'\A(sha256:)?[0-9a-f]{64}\Z')
 _SHA1_HEX = re.compile(r'\A[0-9a-f]{40}\Z')
+
+
+# ── Mandatory observed-field registry ───────────────────────────────────────
+# ONE place that says which facts this audit requires, where each comes from,
+# what shape it must have, which conclusion it gates, and what its absence
+# means. Scattering these requirements through the orchestration is how a
+# missing field becomes an implied match.
+#
+# ``doc`` names the retained document (or metadata source) the field is read
+# from; ``path`` is the exact dotted evidence path inside it; ``expects`` is
+# the key in RUN_EXPECTATIONS holding the validator, or a literal.
+#
+# ``gates`` is the set of conclusions the field is mandatory for:
+#   identity — is this the exact artifact this audit is scoped to?
+#   content  — does it say what the incident record says about the game?
+#   q10      — is it enough to answer the activation-causality question?
+# ``absence`` is the outcome when the field is NOT observed. Absence is always
+# UNPROVEN: a fact we failed to obtain is not a fact that contradicts us.
+
+DOC_HANDOFF = 'handoff_metadata'
+DOC_ACTIVATION = 'activation_summary'
+DOC_SYNC = 'sync_summary'
+DOC_WORKFLOW_METADATA = 'workflow_run_metadata'
+DOC_ARTIFACT_METADATA = 'artifact_metadata'
+
+DOC_SOURCES = {
+    DOC_HANDOFF: SOURCE_RETAINED_ARTIFACT,
+    DOC_ACTIVATION: SOURCE_RETAINED_ARTIFACT,
+    DOC_SYNC: SOURCE_RETAINED_ARTIFACT,
+    DOC_WORKFLOW_METADATA: SOURCE_WORKFLOW_METADATA,
+    DOC_ARTIFACT_METADATA: SOURCE_ARTIFACT_METADATA,
+}
+
+GATE_IDENTITY = 'identity'
+GATE_CONTENT = 'content'
+GATE_Q10 = 'q10'
+
+ABSENCE_UNPROVEN = 'unproven'
+
+
+def _field(field, doc, path, *, expects=None, literal=_MISSING,
+           expected_type=None, gates=(), later_only=False):
+    return {
+        'field': field,
+        'doc': doc,
+        'path': path,
+        'expects': expects,
+        'literal': literal,
+        'expected_type': expected_type,
+        'gates': frozenset(gates),
+        'later_only': later_only,
+        'absence': ABSENCE_UNPROVEN,
+    }
+
+
+MANDATORY_FIELDS = (
+    # ── Identity: is this the exact artifact this audit is scoped to? ───────
+    _field('workflow_run_id', DOC_HANDOFF, 'run_id',
+           expects='workflow_run_id', expected_type=str,
+           gates=(GATE_IDENTITY,)),
+    _field('head_sha', DOC_HANDOFF, 'repository_sha',
+           expects='head_sha', expected_type=str, gates=(GATE_IDENTITY,)),
+    _field('handoff_cycle_kind', DOC_HANDOFF, 'cycle_kind',
+           expects='cycle_kind', expected_type=str, gates=(GATE_IDENTITY,)),
+    _field('handoff_status', DOC_HANDOFF, 'handoff_status',
+           expects='handoff_status', expected_type=str,
+           gates=(GATE_IDENTITY,)),
+    _field('cycle_kind', DOC_ACTIVATION, 'cycle_kind',
+           expects='cycle_kind', expected_type=str, gates=(GATE_IDENTITY,)),
+    # The runner exit code is compared EXACTLY. "Not null" is not a value.
+    _field('runner_exit_code', DOC_ACTIVATION, 'runner_exit_code',
+           expects='runner_exit_code', expected_type=int,
+           gates=(GATE_IDENTITY,)),
+    # Branch lives in NEITHER retained document. The handoff metadata schema
+    # carries run id, head SHA, cycle, runner exit code, and three booleans —
+    # no branch and no ref. It is therefore read from GitHub workflow-run
+    # metadata or it is not read at all.
+    _field('branch', DOC_WORKFLOW_METADATA, 'head_branch',
+           expects='branch', expected_type=str, gates=(GATE_IDENTITY,)),
+    _field('workflow_metadata_head_sha', DOC_WORKFLOW_METADATA, 'head_sha',
+           expects='head_sha', expected_type=str, gates=(GATE_IDENTITY,)),
+
+    # ── Content: does it say what the incident record says? ─────────────────
+    _field('activation_result', DOC_ACTIVATION, 'result',
+           expects='activation_result', expected_type=str,
+           gates=(GATE_CONTENT,)),
+    _field('configured_mode', DOC_ACTIVATION, 'configured_mode',
+           literal='shadow', expected_type=str, gates=(GATE_CONTENT,)),
+    _field('writes_enabled', DOC_ACTIVATION, 'execution_effects.writes_enabled',
+           literal=False, expected_type=bool, gates=(GATE_CONTENT,)),
+    _field('publication_authoritative', DOC_ACTIVATION,
+           'execution_effects.publication_authoritative',
+           literal=False, expected_type=bool, gates=(GATE_CONTENT,)),
+
+    # ── Activation realization: the ONLY source for Question 10 ─────────────
+    _field('source_revision_match', DOC_ACTIVATION,
+           'realization.source_revision_match', expects='source_revision_match',
+           expected_type=bool, gates=(GATE_CONTENT, GATE_Q10)),
+    _field('safe_digest_match', DOC_ACTIVATION,
+           'realization.safe_digest_match', expects='safe_digest_match',
+           expected_type=bool, gates=(GATE_CONTENT, GATE_Q10)),
+    _field('all_projected_targets_realized', DOC_ACTIVATION,
+           'realization.all_projected_targets_realized',
+           expects='all_projected_targets_realized', expected_type=bool,
+           gates=(GATE_CONTENT, GATE_Q10)),
+    _field('unresolved_rows', DOC_ACTIVATION, 'realization.unresolved_rows',
+           expects='unresolved_rows', expected_type=int,
+           gates=(GATE_CONTENT, GATE_Q10)),
+    _field('prohibited_identity_actions', DOC_ACTIVATION,
+           'realization.prohibited_identity_actions',
+           expects='prohibited_identity_actions', expected_type=int,
+           gates=(GATE_CONTENT, GATE_Q10)),
+
+    # ── Later-run lane accounting: compared exactly, never merely reported ──
+    _field('games_planned', DOC_ACTIVATION, 'games_planned',
+           literal=LATER_LANE_EXPECTATIONS['games_planned'],
+           expected_type=int, gates=(GATE_CONTENT,), later_only=True),
+    _field('games_fetched', DOC_ACTIVATION, 'games_fetched',
+           literal=LATER_LANE_EXPECTATIONS['games_fetched'],
+           expected_type=int, gates=(GATE_CONTENT,), later_only=True),
+    _field('games_completed', DOC_ACTIVATION, 'games_completed',
+           literal=LATER_LANE_EXPECTATIONS['games_completed'],
+           expected_type=int, gates=(GATE_CONTENT,), later_only=True),
+    _field('games_failed', DOC_ACTIVATION, 'games_failed',
+           literal=LATER_LANE_EXPECTATIONS['games_failed'],
+           expected_type=int, gates=(GATE_CONTENT,), later_only=True),
+    _field('rows_expected', DOC_ACTIVATION, 'projected.rows_expected',
+           literal=LATER_LANE_EXPECTATIONS['rows_expected'],
+           expected_type=int, gates=(GATE_CONTENT,), later_only=True),
+    _field('rows_unchanged', DOC_ACTIVATION, 'projected.rows_unchanged',
+           literal=LATER_LANE_EXPECTATIONS['rows_unchanged'],
+           expected_type=int, gates=(GATE_CONTENT,), later_only=True),
+    _field('rows_inserted', DOC_ACTIVATION, 'projected.rows_inserted',
+           literal=LATER_LANE_EXPECTATIONS['rows_inserted'],
+           expected_type=int, gates=(GATE_CONTENT,), later_only=True),
+    _field('rows_updated', DOC_ACTIVATION, 'projected.rows_updated',
+           literal=LATER_LANE_EXPECTATIONS['rows_updated'],
+           expected_type=int, gates=(GATE_CONTENT,), later_only=True),
+    _field('rows_blocked', DOC_ACTIVATION, 'projected.rows_blocked',
+           literal=LATER_LANE_EXPECTATIONS['rows_blocked'],
+           expected_type=int, gates=(GATE_CONTENT,), later_only=True),
+)
+
+Q10_FIELDS = tuple(
+    spec['field'] for spec in MANDATORY_FIELDS if GATE_Q10 in spec['gates']
+)
+IDENTITY_FIELDS = tuple(
+    spec['field'] for spec in MANDATORY_FIELDS
+    if GATE_IDENTITY in spec['gates']
+)
+
+
+def mandatory_fields_for(run_key) -> tuple:
+    """The registry rows that apply to one run."""
+    return tuple(
+        spec for spec in MANDATORY_FIELDS
+        if not spec['later_only'] or run_key == RUN_LATER
+    )
+
+
+def mandatory_field_registry() -> list[dict]:
+    """The registry, rendered for the evidence artifact."""
+    return [
+        {
+            'field': spec['field'],
+            'document': spec['doc'],
+            'source': DOC_SOURCES[spec['doc']],
+            'evidence_path': spec['path'],
+            'expected_type': getattr(
+                spec['expected_type'], '__name__', None
+            ),
+            'gates': sorted(spec['gates']),
+            'later_run_only': spec['later_only'],
+            'absence_outcome': spec['absence'],
+        }
+        for spec in MANDATORY_FIELDS
+    ]
 
 
 class AuditInputError(ValueError):
@@ -734,6 +1160,220 @@ def scan_row_level_evidence(document, game_pk=GAME_PK) -> dict:
     }
 
 
+# ── Historical value extraction ─────────────────────────────────────────────
+# A historical value is usable ONLY when the retained document positively
+# associates it with all four coordinates at once: exact run, exact game,
+# exact pitcher, exact governed field. Anything short of that is not a
+# historical value — it is a shape that resembles one.
+#
+# Repository inspection of the producer settles what these two artifacts
+# actually retain. ``services/sync.py`` writes the per-game entry with
+# aggregate counts, the observed source revision, and the plan fingerprint
+# only; it writes ``projected_differences`` rows solely for rows whose action
+# is NOT ``unchanged``, and those rows carry field NAMES and digests, never
+# values. Both runs classified all 12 appearances ``unchanged``, so neither
+# artifact retains a single per-appearance governed value. The extractor below
+# is still real: it runs, it requires full association, and for these two
+# artifacts it correctly returns nothing.
+
+HISTORICAL_PROVEN = 'proven'
+HISTORICAL_PROVEN_NULL = 'proven_null'
+HISTORICAL_ABSENT = 'absent'
+HISTORICAL_NOT_RETAINED = 'not_retained'
+HISTORICAL_UNPROVEN = 'unproven'
+HISTORICAL_INCONSISTENT = 'inconsistent'
+HISTORICAL_IDENTITY_MISSING = 'identity_missing'
+HISTORICAL_WRONG_GAME = 'wrong_game'
+
+HISTORICAL_STATES = (
+    HISTORICAL_PROVEN, HISTORICAL_PROVEN_NULL, HISTORICAL_ABSENT,
+    HISTORICAL_NOT_RETAINED, HISTORICAL_UNPROVEN, HISTORICAL_INCONSISTENT,
+    HISTORICAL_IDENTITY_MISSING, HISTORICAL_WRONG_GAME,
+)
+
+
+def extract_historical_values(run_key, sync_summary, *, activation=None)\
+        -> dict:
+    """Exact per-appearance governed values retained by ONE run, if any.
+
+    Association is required, never inferred. A candidate row must carry the
+    target game id AND a usable pitcher id AND a governed field key whose value
+    is actually present. Ordering, display names, roster membership, and
+    co-occurrence prove nothing and are not consulted.
+    """
+    fingerprint_fields = set(extraction.FINGERPRINT_FIELDS)
+    values: list[dict] = []
+    ambiguous: list[dict] = []
+    inspected = 0
+
+    def walk(node, path):
+        nonlocal inspected
+        inspected += 1
+        if inspected > 200000:
+            return
+        if isinstance(node, dict):
+            game = node.get('game_pk', _MISSING)
+            pitcher = node.get('pitcher_mlb_id', _MISSING)
+            carried = sorted(
+                field for field in fingerprint_fields
+                if field in node and field != 'pitcher_mlb_id'
+            )
+            if carried:
+                if game is _MISSING or game != GAME_PK:
+                    ambiguous.append({
+                        'evidence_path': path,
+                        'fields': carried,
+                        'status': (
+                            HISTORICAL_WRONG_GAME if game is not _MISSING
+                            else HISTORICAL_UNPROVEN
+                        ),
+                        'reason': (
+                            'row_not_associated_with_target_game'
+                            if game is not _MISSING
+                            else 'row_carries_no_game_identity'
+                        ),
+                    })
+                elif pitcher is _MISSING or not isinstance(pitcher, int) or (
+                    isinstance(pitcher, bool)
+                ):
+                    ambiguous.append({
+                        'evidence_path': path,
+                        'fields': carried,
+                        'status': HISTORICAL_IDENTITY_MISSING,
+                        'reason': 'row_carries_no_usable_pitcher_identity',
+                    })
+                else:
+                    for field in carried:
+                        values.append({
+                            'run_key': run_key,
+                            'run_id': RUN_EXPECTATIONS[run_key][
+                                'workflow_run_id'
+                            ],
+                            'game_pk': GAME_PK,
+                            'pitcher_mlb_id': pitcher,
+                            'field_name': field,
+                            'value': _jsonable(node[field]),
+                            'status': (
+                                HISTORICAL_PROVEN_NULL
+                                if node[field] is None else HISTORICAL_PROVEN
+                            ),
+                            'evidence_source': SOURCE_RETAINED_ARTIFACT,
+                            'evidence_path': f'{path}.{field}',
+                        })
+            for key, value in node.items():
+                walk(value, f'{path}.{key}')
+        elif isinstance(node, list):
+            for index, value in enumerate(node):
+                walk(value, f'{path}[{index}]')
+
+    walk(sync_summary, DOC_SYNC)
+    walk(activation, DOC_ACTIVATION)
+
+    by_coordinate: dict = {}
+    inconsistent: list[dict] = []
+    for record in values:
+        key = (record['pitcher_mlb_id'], record['field_name'])
+        prior = by_coordinate.get(key)
+        if prior is None:
+            by_coordinate[key] = record
+        elif prior['value'] != record['value']:
+            # The same coordinate carrying two different values inside one
+            # retained document is not a value — it is a contradiction.
+            inconsistent.append({
+                'pitcher_mlb_id': record['pitcher_mlb_id'],
+                'field_name': record['field_name'],
+                'status': HISTORICAL_INCONSISTENT,
+                'evidence_paths': [
+                    prior['evidence_path'], record['evidence_path'],
+                ],
+            })
+            by_coordinate[key] = dict(
+                prior, status=HISTORICAL_INCONSISTENT, value=None,
+            )
+
+    usable = {
+        key: record for key, record in by_coordinate.items()
+        if record['status'] in (HISTORICAL_PROVEN, HISTORICAL_PROVEN_NULL)
+    }
+    return {
+        'run_key': run_key,
+        'values': list(by_coordinate.values()),
+        'value_count': len(usable),
+        'associated_coordinates': sorted(
+            f'{pitcher}:{field}' for pitcher, field in usable
+        ),
+        'unassociable_candidates': ambiguous,
+        'inconsistent_coordinates': inconsistent,
+        'exact_values_retained': bool(usable),
+        # The honest headline for these two artifacts.
+        'evidence_status': (
+            HISTORICAL_PROVEN if usable
+            else (HISTORICAL_UNPROVEN if ambiguous else HISTORICAL_NOT_RETAINED)
+        ),
+    }
+
+
+def historical_value_for(extracted, pitcher_mlb_id, field_name) -> dict:
+    """One coordinate's retained value, with its status. Never a bare None."""
+    for record in (extracted or {}).get('values') or ():
+        if (
+            record['pitcher_mlb_id'] == pitcher_mlb_id
+            and record['field_name'] == field_name
+        ):
+            return record
+    candidates = (extracted or {}).get('unassociable_candidates') or []
+    return {
+        'run_key': (extracted or {}).get('run_key'),
+        'game_pk': GAME_PK,
+        'pitcher_mlb_id': pitcher_mlb_id,
+        'field_name': field_name,
+        'value': None,
+        'status': (
+            HISTORICAL_UNPROVEN if candidates else HISTORICAL_NOT_RETAINED
+        ),
+        'evidence_source': EVIDENCE_SOURCE_NONE,
+        'evidence_path': None,
+    }
+
+
+def historical_delta(prior_extract, later_extract) -> dict:
+    """A field delta, ONLY from two exact retained values for one coordinate."""
+    prior_values = {
+        (record['pitcher_mlb_id'], record['field_name']): record
+        for record in (prior_extract or {}).get('values') or ()
+        if record['status'] in (HISTORICAL_PROVEN, HISTORICAL_PROVEN_NULL)
+    }
+    later_values = {
+        (record['pitcher_mlb_id'], record['field_name']): record
+        for record in (later_extract or {}).get('values') or ()
+        if record['status'] in (HISTORICAL_PROVEN, HISTORICAL_PROVEN_NULL)
+    }
+    shared = sorted(set(prior_values) & set(later_values))
+    changed = [
+        {
+            'pitcher_mlb_id': key[0],
+            'field_name': key[1],
+            'prior_value': prior_values[key]['value'],
+            'later_value': later_values[key]['value'],
+            'prior_evidence_path': prior_values[key]['evidence_path'],
+            'later_evidence_path': later_values[key]['evidence_path'],
+        }
+        for key in shared
+        if comparable_value(prior_values[key]['value'])
+        != comparable_value(later_values[key]['value'])
+    ]
+    return {
+        'comparable_coordinates': len(shared),
+        'changed_coordinates': changed,
+        'identified_fields': sorted({item['field_name'] for item in changed}),
+        # Identification requires BOTH sides for the SAME coordinate. One side
+        # alone bounds nothing.
+        'delta_identified': bool(changed),
+        'prior_value_count': len(prior_values),
+        'later_value_count': len(later_values),
+    }
+
+
 def _match(observed, expected) -> str:
     if observed is None or observed == '':
         return 'not_observed'
@@ -742,96 +1382,166 @@ def _match(observed, expected) -> str:
     ).strip().lower() else 'mismatch'
 
 
-def verify_run_artifact(run_key, parsed, *, observed_metadata=None) -> dict:
-    """Verify one run's retained artifact against its locked expectation.
+STATE_VERIFIED = 'verified'
+STATE_UNPROVEN = 'unproven'
+STATE_FAILED = 'failed'
+STATE_UNVERIFIED = 'unverified'
 
-    Filenames are never trusted: the run id, head SHA, cycle kind, runner exit
-    code, configured mode, write posture, and the target game's own recorded
-    evidence are all read from INSIDE the documents.
+ARTIFACT_STATES = (
+    STATE_VERIFIED, STATE_UNPROVEN, STATE_FAILED, STATE_UNVERIFIED,
+)
+
+
+def _reduce_state(observations) -> str:
+    """A definite contradiction is FAILED; a gap is UNPROVEN; else VERIFIED.
+
+    Ordered deliberately. A run that is both missing a mandatory field AND
+    contradicted by another must read as contradicted — the contradiction is
+    the more serious and more actionable fact, and the gap is still reported
+    alongside it.
+    """
+    if observation_mismatches(observations):
+        return STATE_FAILED
+    if observation_gaps(observations):
+        return STATE_UNPROVEN
+    return STATE_VERIFIED
+
+
+def verify_run_artifact(run_key, parsed, *, observed_metadata=None,
+                        workflow_metadata=None) -> dict:
+    """Verify one run's retained artifact against its locked expectations.
+
+    Every fact below is POSITIVELY OBSERVED from a named document at a named
+    path, then compared. An expectation validates; it never supplies. Identity,
+    digest, and content are three separate verdicts because they answer three
+    separate questions and can legitimately disagree.
     """
     spec = RUN_EXPECTATIONS[run_key]
     parsed = parsed or {}
     metadata = observed_metadata if isinstance(observed_metadata, dict) else {}
+    run_metadata = (
+        workflow_metadata if isinstance(workflow_metadata, dict) else {}
+    ).get(spec['workflow_run_id'])
 
-    sync_summary = parsed.get('sync_summary')
-    activation = parsed.get('activation_summary') or {}
-    handoff = parsed.get('handoff_metadata') or {}
-    lane = lane_report(sync_summary)
-    effects = lane.get('execution_effects') or {}
-    entry = game_entry(sync_summary)
-
-    checks = {
-        'workflow_run_id': _match(
-            handoff.get('run_id') or handoff.get('workflow_run_id'),
-            spec['workflow_run_id'],
-        ),
-        'head_sha': _match(
-            handoff.get('repository_sha') or handoff.get('head_sha'),
-            spec['head_sha'],
-        ),
-        'cycle_kind': _match(
-            activation.get('cycle_kind') or handoff.get('cycle_kind'),
-            spec['cycle_kind'],
-        ),
-        'branch': _match(
-            handoff.get('branch') or handoff.get('ref') or spec['branch'],
-            spec['branch'],
-        ),
-        'runner_exit_code': (
-            'not_observed'
-            if activation.get('runner_exit_code') is None
-            else 'match'
-        ),
-        'configured_mode': _match(lane.get('mode'), 'shadow'),
-        'writes_enabled': (
-            'match' if effects.get('writes_enabled') is False
-            else ('not_observed' if 'writes_enabled' not in effects
-                  else 'mismatch')
-        ),
-        'publication_authoritative': (
-            'match' if effects.get('publication_authoritative') is False
-            else ('not_observed'
-                  if 'publication_authoritative' not in effects
-                  else 'mismatch')
-        ),
-        'game_membership': 'match' if entry is not None else 'mismatch',
-        'source_revision': _match(
-            (entry or {}).get('source_revision'), spec['source_revision'],
-        ),
-        'reconciliation_plan_fingerprint': _match(
-            (entry or {}).get('reconciliation_plan_fingerprint'),
-            EXPECTED_PLAN_FINGERPRINT,
-        ),
-        'appearances_extracted': _match(
-            (entry or {}).get('appearances_extracted'),
-            EXPECTED_APPEARANCE_COUNT,
-        ),
-        'unchanged': _match(
-            (entry or {}).get('unchanged'), EXPECTED_UNCHANGED_COUNT,
-        ),
-        'inserted': _match((entry or {}).get('inserted'), 0),
-        'updated': _match((entry or {}).get('updated'), 0),
-        'blocked': _match((entry or {}).get('blocked'), 0),
+    documents = {
+        DOC_HANDOFF: parsed.get('handoff_metadata'),
+        DOC_ACTIVATION: parsed.get('activation_summary'),
+        DOC_SYNC: parsed.get('sync_summary'),
+        DOC_WORKFLOW_METADATA: run_metadata,
+        DOC_ARTIFACT_METADATA: metadata.get(spec['artifact_name']),
     }
 
+    observations = []
+    for entry_spec in mandatory_fields_for(run_key):
+        expected = (
+            entry_spec['literal'] if entry_spec['literal'] is not _MISSING
+            else spec.get(entry_spec['expects'], _MISSING)
+        )
+        observations.append(observe(
+            documents[entry_spec['doc']], entry_spec,
+            source=DOC_SOURCES[entry_spec['doc']], expected=expected,
+        ))
+
+    # ── The target game's own retained evidence ─────────────────────────────
+    sync_summary = parsed.get('sync_summary')
+    entry = game_entry(sync_summary)
+    game_present = entry is not None
+    game_observations = []
+    for field, path_suffix, expected, kind in (
+        ('source_revision', 'source_revision', spec['source_revision'], str),
+        ('reconciliation_plan_fingerprint', 'reconciliation_plan_fingerprint',
+         EXPECTED_PLAN_FINGERPRINT, str),
+        ('appearances_extracted', 'appearances_extracted',
+         EXPECTED_APPEARANCE_COUNT, int),
+        ('unchanged', 'unchanged', EXPECTED_UNCHANGED_COUNT, int),
+        ('inserted', 'inserted', 0, int),
+        ('updated', 'updated', 0, int),
+        ('blocked', 'blocked', 0, int),
+    ):
+        path = (
+            f'sync.game_driven_ingestion.games[game_pk={GAME_PK}]'
+            f'.{path_suffix}'
+        )
+        if not game_present:
+            game_observations.append(observation(
+                field=field, path=path, source=SOURCE_RETAINED_ARTIFACT,
+                state=OBS_CONTAINER_ABSENT, expected=expected,
+            ))
+            continue
+        game_observations.append(observe(
+            entry, {'field': field, 'path': path_suffix,
+                    'expected_type': kind},
+            source=SOURCE_RETAINED_ARTIFACT, expected=expected,
+        ) | {'evidence_path': path})
+
+    membership = observation(
+        field='game_membership',
+        path=f'sync.game_driven_ingestion.games[].game_pk == {GAME_PK}',
+        source=SOURCE_RETAINED_ARTIFACT,
+        observed=GAME_PK if game_present else _MISSING,
+        state=None if game_present else OBS_ABSENT,
+        expected=GAME_PK,
+    )
+    observations.append(membership)
+    observations.extend(game_observations)
+
+    # ── Digest, from GitHub artifact metadata only ──────────────────────────
     digest = verify_artifact_digest(
         run_key, (metadata.get(spec['artifact_name']) or {}).get('digest'),
     )
+    if digest['digest_mismatch']:
+        digest_state = STATE_FAILED
+    elif digest['digest_verified']:
+        digest_state = STATE_VERIFIED
+    else:
+        digest_state = STATE_UNVERIFIED
+
+    identity_observations = [
+        item for item in observations
+        if item['field'] in _gate_fields(run_key, GATE_IDENTITY)
+    ]
+    content_observations = [
+        item for item in observations
+        if item['field'] in _gate_fields(run_key, GATE_CONTENT)
+        or item['field'] in _CONTENT_GAME_FIELDS
+    ]
+    q10_observations = [
+        item for item in observations
+        if item['field'] in _gate_fields(run_key, GATE_Q10)
+    ]
+
+    files_present = bool(parsed.get('files'))
+    missing_files = list(parsed.get('missing_files') or ())
+    parse_error = parsed.get('parse_error')
+
+    identity_state = _reduce_state(identity_observations)
+    content_state = _reduce_state(content_observations)
+    if not files_present or missing_files or parse_error:
+        # Required evidence never reached the audit. That is a gap, and it
+        # must not be reported as agreement on anything the files would carry.
+        identity_state = (
+            STATE_FAILED if identity_state == STATE_FAILED else STATE_UNPROVEN
+        )
+        content_state = (
+            STATE_FAILED if content_state == STATE_FAILED else STATE_UNPROVEN
+        )
+
     observed_artifact_id = (
         metadata.get(spec['artifact_name']) or {}
     ).get('artifact_id')
-    artifact_id_status = (
-        'not_exposed_by_github' if observed_artifact_id is None
-        else ('match' if int(observed_artifact_id) == spec['artifact_id']
-              else 'mismatch')
-    )
+    if observed_artifact_id is None:
+        artifact_id_status = 'not_exposed_by_github'
+    else:
+        try:
+            artifact_id_status = (
+                'match' if int(observed_artifact_id) == spec['artifact_id']
+                else 'mismatch'
+            )
+        except (TypeError, ValueError):
+            artifact_id_status = 'malformed'
+    if artifact_id_status in ('mismatch', 'malformed'):
+        identity_state = STATE_FAILED
 
-    mismatched = sorted(
-        key for key, value in checks.items() if value == 'mismatch'
-    )
-    unobserved = sorted(
-        key for key, value in checks.items() if value == 'not_observed'
-    )
     return {
         'run_key': run_key,
         'artifact_name': spec['artifact_name'],
@@ -840,63 +1550,129 @@ def verify_run_artifact(run_key, parsed, *, observed_metadata=None) -> dict:
         'artifact_id_status': artifact_id_status,
         'expected_workflow_run_id': spec['workflow_run_id'],
         'expected_head_sha': spec['head_sha'],
-        'present': bool(parsed.get('files')),
-        'missing_files': list(parsed.get('missing_files') or ()),
-        'parse_error': parsed.get('parse_error'),
-        'checks': checks,
-        'mismatched_fields': mismatched,
-        'unobserved_fields': unobserved,
-        'identity_verified': (
-            not mismatched
-            and artifact_id_status != 'mismatch'
-            and not digest.get('digest_mismatch')
+        'present': files_present,
+        'missing_files': missing_files,
+        'parse_error': parse_error,
+        'workflow_metadata_available': isinstance(run_metadata, dict),
+        'observations': observations,
+        # Verified means POSITIVELY OBSERVED AND MATCHED. A field that was
+        # never observed can never appear here.
+        'verified_fields': observation_verified(observations),
+        'mismatched_fields': observation_mismatches(observations),
+        'unobserved_fields': observation_gaps(observations),
+        'identity_state': identity_state,
+        'identity_verified': identity_state == STATE_VERIFIED,
+        'identity_unproven': identity_state == STATE_UNPROVEN,
+        'identity_failed': identity_state == STATE_FAILED,
+        'content_state': content_state,
+        'content_verified': content_state == STATE_VERIFIED,
+        'content_unproven': content_state == STATE_UNPROVEN,
+        'content_failed': content_state == STATE_FAILED,
+        'digest_state': digest_state,
+        'q10_observations': q10_observations,
+        'q10_state': _reduce_state(q10_observations),
+        'observed_source_revision': observation_value(
+            observations, 'source_revision',
         ),
-        'observed_source_revision': (entry or {}).get('source_revision'),
-        'observed_plan_fingerprint': (
-            entry or {}
-        ).get('reconciliation_plan_fingerprint'),
-        'observed_appearances_extracted': (
-            entry or {}
-        ).get('appearances_extracted'),
-        'observed_unchanged': (entry or {}).get('unchanged'),
-        'observed_inserted': (entry or {}).get('inserted'),
-        'observed_updated': (entry or {}).get('updated'),
-        'observed_blocked': (entry or {}).get('blocked'),
+        'observed_plan_fingerprint': observation_value(
+            observations, 'reconciliation_plan_fingerprint',
+        ),
+        'observed_appearances_extracted': observation_value(
+            observations, 'appearances_extracted',
+        ),
+        'observed_unchanged': observation_value(observations, 'unchanged'),
+        'observed_inserted': observation_value(observations, 'inserted'),
+        'observed_updated': observation_value(observations, 'updated'),
+        'observed_blocked': observation_value(observations, 'blocked'),
         'lane_accounting': {
-            field: lane.get(field) for field in LATER_LANE_EXPECTATIONS
+            field: observation_value(observations, field)
+            for field in LATER_LANE_EXPECTATIONS
         },
+        'lane_accounting_state': _reduce_state([
+            item for item in observations
+            if item['field'] in LATER_LANE_EXPECTATIONS
+        ]) if run_key == RUN_LATER else STATE_UNVERIFIED,
         'row_level_evidence': scan_row_level_evidence(sync_summary),
+        'historical_values': extract_historical_values(
+            run_key, sync_summary, activation=parsed.get('activation_summary'),
+        ),
         **digest,
     }
 
 
-def ingest_run_artifacts(root, *, observed_metadata=None) -> dict:
+_CONTENT_GAME_FIELDS = frozenset({
+    'game_membership', 'source_revision', 'reconciliation_plan_fingerprint',
+    'appearances_extracted', 'unchanged', 'inserted', 'updated', 'blocked',
+})
+
+
+def _gate_fields(run_key, gate) -> frozenset:
+    return frozenset(
+        spec['field'] for spec in mandatory_fields_for(run_key)
+        if gate in spec['gates']
+    )
+
+
+def _absent_run_entry(run_key, spec) -> dict:
+    """An artifact that never arrived. Nothing about it is verified."""
+    return {
+        'run_key': run_key,
+        'artifact_name': spec['artifact_name'],
+        'expected_artifact_id': spec['artifact_id'],
+        'observed_artifact_id': None,
+        'artifact_id_status': 'not_exposed_by_github',
+        'expected_workflow_run_id': spec['workflow_run_id'],
+        'expected_head_sha': spec['head_sha'],
+        'present': False,
+        'missing_files': list(REQUIRED_ARTIFACT_FILES),
+        'parse_error': None,
+        'workflow_metadata_available': False,
+        'observations': [],
+        'verified_fields': [],
+        'mismatched_fields': [],
+        'unobserved_fields': sorted(
+            spec_entry['field'] for spec_entry in mandatory_fields_for(run_key)
+        ),
+        'identity_state': STATE_UNPROVEN,
+        'identity_verified': False,
+        'identity_unproven': True,
+        'identity_failed': False,
+        'content_state': STATE_UNPROVEN,
+        'content_verified': False,
+        'content_unproven': True,
+        'content_failed': False,
+        'digest_state': STATE_UNVERIFIED,
+        'q10_observations': [],
+        'q10_state': STATE_UNPROVEN,
+        'observed_source_revision': None,
+        'observed_plan_fingerprint': None,
+        'observed_appearances_extracted': None,
+        'observed_unchanged': None,
+        'observed_inserted': None,
+        'observed_updated': None,
+        'observed_blocked': None,
+        'lane_accounting': {field: None for field in LATER_LANE_EXPECTATIONS},
+        'lane_accounting_state': STATE_UNPROVEN,
+        'row_level_evidence': scan_row_level_evidence(None),
+        'historical_values': extract_historical_values(run_key, None),
+        **verify_artifact_digest(run_key, None),
+    }
+
+
+def ingest_run_artifacts(root, *, observed_metadata=None,
+                         workflow_metadata=None) -> dict:
     """Discover and verify BOTH retained run artifacts under ``root``."""
     base = Path(root)
     runs: dict[str, dict] = {}
     for run_key, spec in RUN_EXPECTATIONS.items():
         directory = base / spec['artifact_name']
         if not directory.is_dir():
-            runs[run_key] = {
-                'run_key': run_key,
-                'artifact_name': spec['artifact_name'],
-                'expected_artifact_id': spec['artifact_id'],
-                'expected_workflow_run_id': spec['workflow_run_id'],
-                'expected_head_sha': spec['head_sha'],
-                'present': False,
-                'missing_files': list(REQUIRED_ARTIFACT_FILES),
-                'parse_error': None,
-                'checks': {},
-                'mismatched_fields': [],
-                'unobserved_fields': [],
-                'identity_verified': False,
-                'row_level_evidence': scan_row_level_evidence(None),
-                **verify_artifact_digest(run_key, None),
-            }
+            runs[run_key] = _absent_run_entry(run_key, spec)
             continue
         parsed = read_run_artifact(directory)
         entry = verify_run_artifact(
             run_key, parsed, observed_metadata=observed_metadata,
+            workflow_metadata=workflow_metadata,
         )
         entry['present'] = True
         entry['files'] = parsed['files']
@@ -908,48 +1684,161 @@ def ingest_run_artifacts(root, *, observed_metadata=None) -> dict:
     missing_files = sorted(
         key for key, entry in runs.items() if entry.get('missing_files')
     )
-    identity_mismatches = sorted(
-        key for key, entry in runs.items() if entry.get('mismatched_fields')
+    identity_failures = sorted(
+        key for key, entry in runs.items() if entry.get('identity_failed')
+    )
+    identity_unproven = sorted(
+        key for key, entry in runs.items() if entry.get('identity_unproven')
+    )
+    content_failures = sorted(
+        key for key, entry in runs.items() if entry.get('content_failed')
+    )
+    content_unproven = sorted(
+        key for key, entry in runs.items() if entry.get('content_unproven')
     )
     digest_mismatches = sorted(
         key for key, entry in runs.items() if entry.get('digest_mismatch')
     )
     wrong_game = sorted(
         key for key, entry in runs.items()
-        if entry.get('present')
-        and entry.get('checks', {}).get('game_membership') == 'mismatch'
+        if observation_state(
+            entry.get('observations'), 'game_membership',
+        ) in CONTRADICTING_STATES | {OBS_ABSENT, OBS_CONTAINER_ABSENT}
+        and entry.get('present')
+    )
+
+    identity_all_verified = all(
+        entry.get('identity_verified') for entry in runs.values()
+    )
+    content_all_verified = all(
+        entry.get('content_verified') for entry in runs.values()
+    )
+    delta = historical_delta(
+        (runs.get(RUN_PRIOR) or {}).get('historical_values'),
+        (runs.get(RUN_LATER) or {}).get('historical_values'),
     )
     return {
         'runs': runs,
         'missing_artifacts': missing,
         'artifacts_missing_required_files': missing_files,
-        'identity_mismatches': identity_mismatches,
+        'identity_failures': identity_failures,
+        'identity_unproven': identity_unproven,
+        'content_failures': content_failures,
+        'content_unproven': content_unproven,
+        # Retained for the reducer's existing FAILED vocabulary.
+        'identity_mismatches': identity_failures,
         'digest_mismatches': digest_mismatches,
         'wrong_game': wrong_game,
         'all_required_present': not missing and not missing_files,
+        'identity_all_verified': identity_all_verified,
+        'content_all_verified': content_all_verified,
+        # Q1 and Q2 answer from VERIFIED evidence, never from file presence.
         'revision_change_proven': bool(
-            not missing
+            identity_all_verified
+            and content_all_verified
             and runs.get(RUN_PRIOR, {}).get('observed_source_revision')
             == PRIOR_SOURCE_REVISION
             and runs.get(RUN_LATER, {}).get('observed_source_revision')
             == LATER_SOURCE_REVISION
         ),
         'plan_fingerprint_stable': bool(
-            not missing
+            identity_all_verified
+            and content_all_verified
             and runs.get(RUN_PRIOR, {}).get('observed_plan_fingerprint')
             == EXPECTED_PLAN_FINGERPRINT
             and runs.get(RUN_LATER, {}).get('observed_plan_fingerprint')
             == EXPECTED_PLAN_FINGERPRINT
         ),
+        'historical_delta': delta,
+        'exact_historical_values_retained': bool(
+            delta['prior_value_count'] or delta['later_value_count']
+        ),
+        'unassociable_historical_candidates': sum(
+            len((entry.get('historical_values') or {}).get(
+                'unassociable_candidates'
+            ) or ())
+            for entry in runs.values()
+        ),
         'prior_row_level_values_retained': bool(
-            (runs.get(RUN_PRIOR, {}).get('row_level_evidence') or {}).get(
-                'row_level_normalized_values_retained'
+            (runs.get(RUN_PRIOR, {}).get('historical_values') or {}).get(
+                'exact_values_retained'
             )
         ),
         'later_row_level_values_retained': bool(
-            (runs.get(RUN_LATER, {}).get('row_level_evidence') or {}).get(
-                'row_level_normalized_values_retained'
+            (runs.get(RUN_LATER, {}).get('historical_values') or {}).get(
+                'exact_values_retained'
             )
+        ),
+    }
+
+
+# ── Advisory-lock lifecycle ─────────────────────────────────────────────────
+# The lock is a synchronization guarantee, not a formality. A run that took it
+# and cannot prove it gave it back has not proven its own safety contract, and
+# an audit that cannot prove its own safety contract cannot exit zero.
+
+LOCK_NOT_ATTEMPTED = 'not_attempted'
+LOCK_NOT_ACQUIRED = 'not_acquired'
+LOCK_RELEASED = 'released'
+LOCK_RELEASE_FAILED = 'release_failed'
+LOCK_RELEASE_NOT_ATTEMPTED = 'release_not_attempted'
+LOCK_RELEASE_UNKNOWN = 'release_unknown'
+
+LOCK_STATES = (
+    LOCK_NOT_ATTEMPTED, LOCK_NOT_ACQUIRED, LOCK_RELEASED,
+    LOCK_RELEASE_FAILED, LOCK_RELEASE_NOT_ATTEMPTED, LOCK_RELEASE_UNKNOWN,
+)
+
+def lock_lifecycle(state) -> dict:
+    """Reduce the guard's lifecycle to one status plus its verdict reasons."""
+    state = state or {}
+    attempted = bool(state.get('acquire_attempted'))
+    acquired = bool(state.get('guard_acquired'))
+    release_required = acquired
+    release_attempted = bool(state.get('guard_release_attempted'))
+    released = state.get('guard_released')
+
+    failed: list[str] = []
+    unproven: list[str] = []
+
+    if not attempted:
+        status = LOCK_NOT_ATTEMPTED
+        unproven.append(UNPROVEN_ADVISORY_LOCK_UNAVAILABLE)
+    elif not acquired:
+        status = LOCK_NOT_ACQUIRED
+        unproven.append(UNPROVEN_ADVISORY_LOCK_UNAVAILABLE)
+    elif not release_attempted:
+        status = LOCK_RELEASE_NOT_ATTEMPTED
+        failed.append(FAILED_LOCK_RELEASE_NOT_ATTEMPTED)
+    elif released is True:
+        status = LOCK_RELEASED
+    elif released is False:
+        status = LOCK_RELEASE_FAILED
+        failed.append(FAILED_LOCK_RELEASE_FAILED)
+    else:
+        # Attempted, but the outcome was never positively established. The
+        # process ending is not proof that the lock came back.
+        status = LOCK_RELEASE_UNKNOWN
+        unproven.append(UNPROVEN_LOCK_RELEASE_UNKNOWN)
+
+    return {
+        'acquire_attempted': attempted,
+        'guard_acquired': acquired,
+        'acquisition_reason': state.get('acquisition_reason'),
+        'release_required': release_required,
+        'guard_release_attempted': release_attempted,
+        'guard_released': released,
+        'release_reason': state.get('release_reason'),
+        'rollback_attempted': bool(state.get('rollback_attempted')),
+        'rollback_succeeded': state.get('rollback_succeeded'),
+        'status': status,
+        'release_proven': status == LOCK_RELEASED,
+        'failed_reasons': failed,
+        'unproven_reasons': unproven,
+        'note': (
+            'A completed result requires the guard to have been acquired AND '
+            'positively released. Process or context termination is not '
+            'release evidence.'
         ),
     }
 
@@ -1887,6 +2776,7 @@ def matrix_row(
     prior_value_evidence_source=EVIDENCE_SOURCE_NONE,
     prior_value_evidence_status=EVIDENCE_NOT_RETAINED,
     later_run_value=None,
+    later_value_evidence_source=EVIDENCE_SOURCE_NONE,
     later_value_evidence_status=EVIDENCE_NOT_RETAINED,
     correction_provenance_available=False,
     confidence=CONFIDENCE_HIGH,
@@ -1939,6 +2829,7 @@ def matrix_row(
         'prior_value_evidence_source': prior_value_evidence_source,
         'prior_value_evidence_status': prior_value_evidence_status,
         'later_run_value': _jsonable(later_run_value),
+        'later_value_evidence_source': later_value_evidence_source,
         'later_value_evidence_status': later_value_evidence_status,
         'correction_provenance_available': bool(
             correction_provenance_available
@@ -1958,7 +2849,8 @@ def validate_matrix(rows) -> dict:
         'current_official_value', 'current_stored_value',
         'current_values_match', 'prior_value', 'prior_value_evidence_source',
         'prior_value_evidence_status', 'later_run_value',
-        'later_value_evidence_status', 'correction_provenance_available',
+        'later_value_evidence_source', 'later_value_evidence_status',
+        'correction_provenance_available',
         'materiality', 'conclusion', 'confidence',
     }
     missing_keys = sorted({
@@ -2076,14 +2968,28 @@ def classify(
     }.get(current_revision_state, PERSISTENCE_UNPROVEN)
 
     # ── Historical field identification ─────────────────────────────────────
-    if artifacts.get('prior_row_level_values_retained'):
+    # ``identified`` requires TWO exact retained values for the SAME game,
+    # pitcher, and governed field that actually differ. Presence of a row-like
+    # structure, a list of field names, a digest, a count, or a timestamp
+    # identifies nothing, and none of them can reach this branch.
+    delta = artifacts.get('historical_delta') or {}
+    provenance_fields = list(matrix_summary.get('proven_historical_fields') or ())
+    if delta.get('delta_identified') or provenance_fields:
         field_identification = FIELD_ID_IDENTIFIED
     elif not artifacts.get('all_required_present'):
         field_identification = FIELD_ID_UNPROVEN
-    elif matrix_summary.get('proven_historical_fields'):
-        field_identification = FIELD_ID_IDENTIFIED
+    elif not artifacts.get('identity_all_verified') or not artifacts.get(
+        'content_all_verified'
+    ):
+        # The artifacts arrived but were not proven to be the right artifacts
+        # saying the right things. Their silence about values proves nothing.
+        field_identification = FIELD_ID_UNPROVEN
+    elif artifacts.get('unassociable_historical_candidates'):
+        # Something value-shaped was seen and could NOT be safely tied to a
+        # run, game, pitcher, and field. That is unproven, not absent.
+        field_identification = FIELD_ID_UNPROVEN
     elif code_drift.get('source_revision_affecting_drift'):
-        # Drift in a revision-affecting symbol narrows the cause to the code
+        # Drift in a revision-affecting symbol bounds the cause to the code
         # path without naming a baseball field.
         field_identification = FIELD_ID_NARROWED
     else:
@@ -2156,6 +3062,48 @@ def field_delta_answer(*, artifacts, classification, matrix_summary) -> dict:
     }
 
 
+def activation_evidence(run_entry) -> dict:
+    """The failed run's activation invariants, POSITIVELY OBSERVED.
+
+    Every value here comes out of the retained activation summary at a named
+    path. Nothing is supplied by an expectation, and nothing is inferred from
+    the artifact merely existing.
+    """
+    run_entry = run_entry or {}
+    observations = run_entry.get('q10_observations') or []
+    by_field = {item['field']: item for item in observations}
+    values = {
+        field: (
+            by_field[field]['observed']
+            if field in by_field
+            and by_field[field]['state'] in POSITIVE_STATES
+            | CONTRADICTING_STATES
+            else None
+        )
+        for field in Q10_FIELDS
+    }
+    observed_fields = sorted(
+        field for field in Q10_FIELDS
+        if field in by_field
+        and by_field[field]['state'] in POSITIVE_STATES | CONTRADICTING_STATES
+    )
+    missing = sorted(set(Q10_FIELDS) - set(observed_fields))
+    return {
+        **values,
+        'observations': observations,
+        'observed_fields': observed_fields,
+        'missing_fields': missing,
+        'missing_evidence_paths': sorted(
+            item['evidence_path'] for item in observations
+            if item['state'] in GAP_STATES
+        ),
+        'mismatched_fields': observation_mismatches(observations),
+        'all_required_observed': not missing,
+        'state': run_entry.get('q10_state', STATE_UNPROVEN),
+        'artifact_present': bool(run_entry.get('present')),
+    }
+
+
 def causality(*, realization_symbol_state, later_activation, drift) -> dict:
     """Question 10: two independent invariants, or one causal chain?
 
@@ -2169,27 +3117,56 @@ def causality(*, realization_symbol_state, later_activation, drift) -> dict:
     later = later_activation or {}
     unresolved = later.get('unresolved_rows')
     prohibited = later.get('prohibited_identity_actions')
+    revision_match = later.get('source_revision_match')
+    realized = later.get('all_projected_targets_realized')
+    safe_digest = later.get('safe_digest_match')
+    missing = list(later.get('missing_fields') or ())
 
     if realization_symbol_state == DRIFT_UNAVAILABLE:
         answer = CAUSALITY_UNPROVEN
     elif drift:
         answer = CAUSALITY_UNPROVEN_CODE_DRIFT
-    elif unresolved is None or prohibited is None:
+    elif missing or not later.get('all_required_observed'):
+        # Some required activation value was never observed. Zero is not the
+        # default for a counter nobody read, and the artifact merely existing
+        # says nothing about what it contains.
+        answer = CAUSALITY_UNPROVEN
+    elif not isinstance(unresolved, int) or not isinstance(prohibited, int):
         answer = CAUSALITY_UNPROVEN
     elif unresolved > 0:
         answer = CAUSALITY_INDEPENDENT_UNRESOLVED
     elif prohibited > 0:
         answer = CAUSALITY_INDEPENDENT_IDENTITY
+    elif revision_match is not False or realized is not False:
+        # The single chain explains a FAILED observer. An artifact reporting a
+        # matched revision or realized targets is not that incident, and the
+        # audit must not narrate a chain the evidence contradicts.
+        answer = CAUSALITY_UNPROVEN
+    elif safe_digest is not True:
+        answer = CAUSALITY_UNPROVEN
     else:
         answer = CAUSALITY_SINGLE_CHAIN
+
     return {
         'answer': answer,
+        'fully_answered': answer in (
+            CAUSALITY_SINGLE_CHAIN,
+            CAUSALITY_INDEPENDENT_UNRESOLVED,
+            CAUSALITY_INDEPENDENT_IDENTITY,
+        ),
         'unresolved_rows': unresolved,
         'prohibited_identity_actions': prohibited,
-        'source_revision_match': later.get('source_revision_match'),
-        'all_projected_targets_realized': later.get(
-            'all_projected_targets_realized'
+        'source_revision_match': revision_match,
+        'safe_digest_match': safe_digest,
+        'all_projected_targets_realized': realized,
+        'observed_fields': list(later.get('observed_fields') or ()),
+        'missing_fields': missing,
+        'missing_evidence_paths': list(
+            later.get('missing_evidence_paths') or ()
         ),
+        'mismatched_fields': list(later.get('mismatched_fields') or ()),
+        'evidence_state': later.get('state'),
+        'evidence_source': SOURCE_RETAINED_ARTIFACT,
         'realization_definition_verified_at_failed_run_sha': (
             realization_symbol_state == DRIFT_EQUAL
         ),
@@ -2198,6 +3175,7 @@ def causality(*, realization_symbol_state, later_activation, drift) -> dict:
             'all_projected_targets_realized = unresolved_rows == 0 AND '
             'prohibited_identity_actions == 0 AND source_revision_match'
         ),
+        'expectations_supplied_no_value': True,
     }
 
 
@@ -2243,17 +3221,38 @@ def decide(
     unproven_reasons=(),
     classification=None,
     delta=None,
+    lock=None,
+    questions=None,
 ) -> dict:
     """Reduce every observation to exactly one top-level outcome.
 
     FAILED is reserved for a violation of THIS audit's safety or integrity
     contract. A platform defect discovered by a clean read-only audit is
     information, and information is a successful audit.
+
+    ``lock`` and ``questions`` are gates, not decoration. A guard that was
+    taken and not provably returned, or a mandatory question that could not be
+    answered from observed evidence, closes the exit-zero path — even when
+    every other stage was clean.
     """
     failed = sorted(set(failed_reasons or ()))
     unproven = sorted(set(unproven_reasons or ()))
     classification = classification or {}
     delta = delta or {}
+    lock = lock or {}
+
+    # The lock lifecycle contributes its own reasons and never loses them to
+    # an earlier failure that happens to be reported first.
+    failed = sorted(set(failed) | set(lock.get('failed_reasons') or ()))
+    unproven = sorted(set(unproven) | set(lock.get('unproven_reasons') or ()))
+
+    unanswered = sorted(
+        entry['question_id'] for entry in questions or ()
+        if entry.get('mandatory_for_completion')
+        and not entry.get('fully_answered')
+    )
+    if unanswered:
+        unproven = sorted(set(unproven) | {UNPROVEN_QUESTION_UNANSWERED})
 
     if failed:
         result = RESULT_FAILED
@@ -2282,6 +3281,8 @@ def decide(
         'unproven_reasons': unproven if result != RESULT_FAILED else [],
         'classification': dict(classification),
         'field_delta': dict(delta),
+        'advisory_lock_lifecycle': dict(lock),
+        'unanswered_mandatory_questions': unanswered,
         'platform_defect_discovery_is_not_an_audit_failure': True,
         'non_authorization_statement': NON_AUTHORIZATION_STATEMENT,
         'dead_letter_backlog_note': DEAD_LETTER_BACKLOG_NOTE,

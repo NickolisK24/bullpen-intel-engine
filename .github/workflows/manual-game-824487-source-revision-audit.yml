@@ -281,6 +281,83 @@ jobs:
                   )
           PY
 
+      # The branch each historical run executed on is NOT in either retained
+      # artifact: the handoff metadata schema carries run id, head SHA, cycle,
+      # runner exit code, and three booleans, and nothing else. GitHub's own
+      # workflow-run record is the only place it exists. Read-only, covered by
+      # the existing actions: read permission, and non-blocking — unavailable
+      # metadata makes branch UNVERIFIED inside the document, never a match.
+      - name: Record historical workflow-run metadata
+        id: workflow-metadata
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_API: ${{ github.api_url }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -uo pipefail
+          python - <<'PY'
+          import json
+          import os
+          import pathlib
+          import urllib.error
+          import urllib.request
+
+          RUN_IDS = ('30902544622', '30999087370')
+          target = pathlib.Path('source-revision-evidence')
+          target.mkdir(parents=True, exist_ok=True)
+          out = target / 'workflow-run-metadata.json'
+
+          api = os.environ.get('GH_API', 'https://api.github.com')
+          repo = os.environ.get('GH_REPO', '')
+          token = os.environ.get('GH_TOKEN', '')
+          collected = {}
+
+          for run_id in RUN_IDS:
+              url = f'{api}/repos/{repo}/actions/runs/{run_id}'
+              request = urllib.request.Request(url, headers={
+                  'Accept': 'application/vnd.github+json',
+                  'Authorization': f'Bearer {token}',
+                  'X-GitHub-Api-Version': '2022-11-28',
+              })
+              try:
+                  with urllib.request.urlopen(request, timeout=30) as response:
+                      payload = json.load(response)
+              except (urllib.error.URLError, ValueError, OSError):
+                  print(
+                      f'Workflow-run metadata for {run_id} could not be '
+                      'retrieved; its branch will be reported unverified.'
+                  )
+                  continue
+              # Only the governed identity fields cross into the evidence
+              # directory. No logs, no environment, no URLs, no actor tokens.
+              collected[run_id] = {
+                  'run_id': str(payload.get('id') or ''),
+                  'head_branch': payload.get('head_branch'),
+                  'head_sha': payload.get('head_sha'),
+                  'event': payload.get('event'),
+                  'status': payload.get('status'),
+                  'conclusion': payload.get('conclusion'),
+                  'run_attempt': payload.get('run_attempt'),
+                  'workflow_path': payload.get('path'),
+              }
+
+          out.write_text(
+              json.dumps(collected, indent=2, sort_keys=True) + '\n',
+              encoding='utf-8',
+          )
+          for run_id in RUN_IDS:
+              record = collected.get(run_id)
+              if record is None:
+                  print(f'{run_id}: workflow-run metadata not returned')
+              else:
+                  print(
+                      f"{run_id}: branch={record.get('head_branch')} "
+                      f"head={record.get('head_sha')} "
+                      f"conclusion={record.get('conclusion')}"
+                  )
+          PY
+
       - name: Run the read-only source-revision audit
         id: audit
         continue-on-error: true
