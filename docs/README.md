@@ -15,6 +15,19 @@ This directory is organized around **six canonical living documents**. Start wit
 | [Product Roadmap & Decision Ledger](canonical/05_PRODUCT_ROADMAP_DECISION_LEDGER.md) | Active objective, priorities, phases, dependencies, risks, backlog, completion log, and durable decisions. |
 | [Editorial & Distribution Standard](canonical/06_EDITORIAL_DISTRIBUTION_STANDARD.md) | Voice, content pillars, public claim structure, share artifacts, platform-native publishing, cadence, corrections, and measurement. |
 
+## Current Execution Snapshot
+
+As of the August 4–5, 2026 nightly closeout:
+
+- PROD-001 (#592) and CI-001 (#599) are complete.
+- OPS-001 (#593) is implemented and remains open for its required scheduled observation window.
+- UX-001 (#590) is merged through PR #611 and remains open for production proof of one Fresh, one Stretched, and one Vulnerable team with matching payload and rendered text.
+- #591 remains the backend-owned Why-copy package.
+- #594 remains the routed/static team metadata and freshness package.
+- Daily and postgame game-driven ingestion remain shadow; backfill remains off; automated write and publication authority have not transferred.
+
+The [current changelog](current/CHANGELOG.md) records the completed implementation and production-evidence state. GitHub issues remain the exact acceptance-checklist and closure evidence for open audit findings.
+
 ## Authority Order
 
 1. Constitution
@@ -40,6 +53,7 @@ The Roadmap controls sequence but cannot override a higher product, intelligence
 - [`current/SHARE_CARDS_CUTOVER.md`](current/SHARE_CARDS_CUTOVER.md) - immutable artifact generation/read cutover record.
 - [`current/PROGRESSIVE_TEAM_ARTIFACT_PUBLICATION.md`](current/PROGRESSIVE_TEAM_ARTIFACT_PUBLICATION.md) - team-scoped progressive publication authority.
 - [`current/SHARE_CARDS_PUBLIC_ARTIFACT_PAGE.md`](current/SHARE_CARDS_PUBLIC_ARTIFACT_PAGE.md) - public immutable share-page implementation contract.
+- [`current/CHANGELOG.md`](current/CHANGELOG.md) - major product, governance, rollout, CI, and operational milestones.
 
 These files support current operations or document active subsystem behavior. They do not replace the canonical library.
 

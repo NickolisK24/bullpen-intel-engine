@@ -4,6 +4,67 @@ This changelog summarizes major product, governance, rollout, and operational
 milestones. It does not replace the detailed evidence records linked from
 [docs/README.md](../README.md).
 
+## August 2026 - Authority, CI, And Public Vocabulary Closeout
+
+- Completed PROD-001 (#592) after PR #588 and scheduled production run
+  `30921186222` proved the full
+  `github_actions_morning:schedule_coherence` provenance value persists and
+  reads back correctly. The 14:00 UTC lane completed, Tonight verification
+  passed, the appearance ledger reconciled 120 of 120 completed games and
+  1,029 of 1,029 appearances with zero mismatches, and the dashboard snapshot
+  cache verified successfully.
+- Separated trusted `public-sync` success from experimental shadow activation
+  health through PR #602. Issue #593 is implemented, but remains open until its
+  required scheduled observation window proves the separated signals remain
+  useful in normal production operation.
+- Corrected D-044 publication scope so shadow-only missing work items remain an
+  observation backlog rather than a baseball publication blocker. Genuine
+  finality, schedule-authority, appearance-row, and material-correction deficits
+  remain fail-closed. Daily and postgame remain shadow, backfill remains off,
+  and production write/publication authority has not transferred.
+- Partitioned the complete backend PostgreSQL confidence gate into four
+  deterministic isolated shards through PR #609, with checked-in ownership and
+  collection accounting proving every backend test is assigned exactly once.
+- Completed CI-001 (#599) through PR #610. Frontend CI now installs from the
+  committed lockfile with `npm ci`, keeps the lockfile unchanged, runs the full
+  frontend test suite, and requires the production Vite build. Trust-critical
+  behavior-freeze tests now receive full Git history so they execute instead of
+  silently skipping when `origin/main` is unavailable.
+- Merged UX-001 (#590) through PR #611 at merge commit
+  `8a528efec1affcdaf98fa1e87f9090d105db4248`. Dashboard, Team Board, Compare,
+  and named Dashboard landscape entries now consume the backend-owned Team State
+  contract for exactly Fresh, Stretched, and Vulnerable. The frontend validates
+  and renders the supplied contract rather than deriving a competing state from
+  counts, lanes, or `context.health`.
+- Kept #590 open after merge because production still must prove one Fresh, one
+  Stretched, and one Vulnerable team with matching backend payload, rendered
+  frontend text, data-through context, and screenshots. Fail-closed outcomes
+  remain label-less governed non-states.
+- Preserved the issue boundaries: #591 still owns frontend rewriting or dropping
+  backend-authored Why copy, and #594 still owns routed/static team-page
+  ownership, metadata, and freshness. PR #611 does not complete either issue.
+- Closed the obsolete simulation-output README issue #5 as not planned because
+  BaseballOS is a bullpen-intelligence product, not the former simulation
+  direction described by that issue.
+
+## July 2026 - Canonical Trust And Ingestion Foundation
+
+- Established the six-document canonical library covering Constitution,
+  Bullpen Intelligence, Product Experience, Architecture and Operations,
+  Product Roadmap and Decision Ledger, and Editorial and Distribution.
+- Closed Foundation 3A / Phase 0 after independent production proof of official
+  pitching-line completeness, unique starter authority, recorded-outs
+  authority, appearance-team history, and exact 30-team reconciliation.
+- Established the Current Active-Pen Performance family and fully specified
+  M-001 Active Bullpen ERA, including the 108-recorded-out sample gate, exact
+  integer-outs formula, two-decimal half-up rendering, below-sample wording,
+  group membership, contributing-arm counts, and four evidence levels. Public
+  implementation remains paused behind higher-priority trust and product
+  correctness work.
+- Completed the Foundation 3C governed ingestion bootstrap and rollout closeout,
+  reconciling 109 governed final games and 946 appearance rows without granting
+  automated write or publication authority.
+
 ## June 2026 - Bullpen Trust And Data Quality Cleanup
 
 - Fixed default bullpen roster composition so clear starters are excluded from
