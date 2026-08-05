@@ -169,6 +169,8 @@ The public vocabulary is defined by the Bullpen Intelligence Standard and canoni
 - Stretched
 - Vulnerable
 
+Dashboard, Today where Team State appears, Team Board, and Compare all consume the same backend-authored public Team State fields. Presentation may render the supplied label, choose layout and density, and attach a non-semantic tone keyed by the supplied canonical state. Presentation may not derive a Team State, reinterpret an internal availability or readiness value, infer one from counts, lanes, stress, or freshness, or substitute a fallback label. A surface with no supported Team State shows a governed non-state message; it never shows Unknown, Neutral, or any other fourth state.
+
 ### Arm read
 
 - Clean Option

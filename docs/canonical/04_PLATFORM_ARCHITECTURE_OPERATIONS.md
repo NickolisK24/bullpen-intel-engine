@@ -143,6 +143,8 @@ Owns team-level state, named bullpen reads, active-group composition, optionalit
 
 It composes existing arm and source authorities. It does not create a second roster or appearance truth.
 
+**Public Team State authority.** The public Team State a reader sees is projected from the governed Team Operations readiness result by one owner, `services/team_state_public_vocabulary`. Live board, comparison, and dashboard payloads carry that projection as a purpose-built `team_state` block; they never derive it from board group counts, the count-derived `context.health` state, landscape lane membership, availability percentages, or stress summaries, and they never hold a second copy of the mapping. Readiness derivation, thresholds, and status codes are unchanged by the projection — it only reads what readiness already decided. An outcome with no public Team State keeps its refusal or limitation metadata and receives a governed non-state message rather than a label.
+
 ### Performance intelligence domain
 
 Owns every metric governed by the Current Active-Pen Performance Contract: active-group resolution for the represented date, qualifying-appearance selection, metric numerators and denominators, sample evaluation, refusal codes, evidence assembly, and method versions.
