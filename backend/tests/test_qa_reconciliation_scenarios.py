@@ -577,6 +577,32 @@ def test_phase0e_switches_and_legacy_public_files_not_modified():
         'backend/migrations/versions/'
         'b9d4e17c3a80_add_game_ingestion_work_items.py',
     }
+    allowed_canonical_team_state_files = {
+    # ux-001 / #590 (team-fans/canonical-team-state-language): the live reader
+    # surfaces are migrated onto the backend-owned canonical Team State contract.
+    # The backend vocabulary authority gains one projection from governed Team
+    # Operations readiness; board, comparison, and dashboard payloads carry the
+    # resulting `team_state` block; and the frontend adapter is reduced to
+    # validating and rendering it, with its competing state dictionary removed.
+    # Reader-facing wording only: no derivation, threshold, readiness status
+    # code, publication gate, snapshot-selection rule, writer, migration, or
+    # Share Artifact behavior changed, and persisted snapshots are not rewritten.
+    # Founder-approved by D-003 and D-004; exact paths only, never a directory
+    # exemption.
+        'backend/api/bullpen.py',
+        'backend/services/bullpen_comparison.py',
+        'backend/services/team_state_public_vocabulary.py',
+        'frontend/src/adapters/operatingStateReadModel.js',
+        'frontend/src/adapters/publicTeamState.js',
+        'frontend/src/components/bullpen/BullpenOperatingStateCard.jsx',
+        'frontend/src/components/bullpen/board/BullpenComparisonView.jsx',
+        'frontend/src/components/bullpen/board/teamBullpenComparisonView.js',
+        'frontend/src/components/dashboard/BullpenLandscape.jsx',
+        'frontend/src/components/dashboard/bullpenLandscapeView.js',
+        'frontend/src/utils/evidenceCardModel.js',
+        'frontend/src/utils/evidenceCardStory.js',
+    }
+
     allowed_files = (
         allowed_game_ingestion_work_state_files
         |
@@ -609,6 +635,7 @@ def test_phase0e_switches_and_legacy_public_files_not_modified():
         | allowed_methodology_public_first_files
         | allowed_data_trust_reader_first_files
         | allowed_analytics_evidence_alignment_files
+        | allowed_canonical_team_state_files
     )
     forbidden_prefixes = (
         'backend/api/',
