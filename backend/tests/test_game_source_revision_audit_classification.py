@@ -7,8 +7,8 @@ into a confident story about a baseball field. These tests own the properties
 that stop it: the fingerprint is proven deterministic rather than assumed, a
 field inside the governed list moves the revision while a field outside it does
 not, a digest is never mapped back to a field, a historical value that was
-never retained is never presented as a null baseball value, and the five
-classification dimensions stay five dimensions.
+never retained is never presented as a null baseball value, and the six
+classification dimensions stay six independent dimensions.
 """
 
 import json
@@ -423,7 +423,28 @@ def test_absent_invariant_counters_make_causality_unproven():
 
 # ── Independent classification dimensions (Q11) ─────────────────────────────
 
+# A matrix whose MEMBERSHIP is exactly matched. Tests that vary field-level
+# differences inherit this so they keep exercising the field-difference path
+# rather than tripping the membership gate, and tests that care about
+# membership override these keys explicitly.
+_MATRIX_BASE = {
+    'structurally_valid': True,
+    'differing_rows': [],
+    'membership_matches': True,
+    'missing_from_storage': [],
+    'extra_in_storage': [],
+    'official_missing_row_count': 0,
+    'stored_missing_row_count': 0,
+    'official_pitcher_mlb_ids': list(range(7001, 7013)),
+    'stored_pitcher_mlb_ids': list(range(7001, 7013)),
+}
+
+
 def _classify(**overrides):
+    if 'matrix_summary' in overrides:
+        overrides['matrix_summary'] = dict(
+            _MATRIX_BASE, **(overrides['matrix_summary'] or {})
+        )
     kwargs = {
         'artifacts': {
             'all_required_present': True,
@@ -439,9 +460,12 @@ def _classify(**overrides):
             'source_revision_affecting_drift': [],
             'semantic_drift_targets': [],
         },
-        'determinism': {'deterministic_in_process': True},
+        'determinism': {
+            'deterministic_in_process': True,
+            'appearance_count': audit.EXPECTED_APPEARANCE_COUNT,
+        },
         'current_revision_state': audit.CURRENT_MATCHES_LATER,
-        'matrix_summary': {'structurally_valid': True, 'differing_rows': []},
+        'matrix_summary': dict(_MATRIX_BASE),
         'plan_observation': {
             'action_counts': {'unchanged': 12}, 'proposes_mutation': False,
         },
@@ -453,15 +477,35 @@ def _classify(**overrides):
         'source_available': True,
     }
     kwargs.update(overrides)
+    # Exact-match materiality now REQUIRES a positively resolved current-set
+    # completeness verdict. Callers that do not supply one get the fail-closed
+    # default, so this helper derives the real one from whatever matrix
+    # summary the individual test set up rather than asserting eligibility.
+    kwargs.setdefault('source_completeness', audit.current_source_completeness(
+        official={
+            'available': kwargs['source_available'],
+            'appearance_count': len(
+                (kwargs['matrix_summary'] or {}).get(
+                    'official_pitcher_mlb_ids'
+                ) or ()
+            ),
+        },
+        matrix_summary=kwargs['matrix_summary'],
+        database_observed=True,
+    ))
     return audit.classify(**kwargs)
 
 
-def test_the_five_dimensions_are_reported_separately():
+def test_the_six_dimensions_are_reported_separately():
     result = _classify()
     assert set(result) == {
         'root_condition', 'current_materiality', 'persistence',
         'historical_field_identification', 'checkpoint_state',
+        'current_source_completeness',
     }
+    assert result['current_source_completeness'] in (
+        audit.SOURCE_COMPLETENESS_STATES
+    )
     assert result['root_condition'] in audit.ROOT_CONDITIONS
     assert result['current_materiality'] in audit.CURRENT_MATERIALITIES
     assert result['persistence'] in audit.PERSISTENCE_STATES
@@ -612,3 +656,178 @@ def test_an_unproven_artifact_set_cannot_prove_a_root_condition():
     })
     assert result['root_condition'] == audit.ROOT_UNPROVEN
     assert result['historical_field_identification'] == audit.FIELD_ID_UNPROVEN
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# BLOCKER-A — exact-match materiality requires exact membership
+#
+# An empty ``differing_rows`` list is a statement about the rows that were
+# COMPARABLE. On its own it can never establish that the current official
+# target matches storage.
+# ══════════════════════════════════════════════════════════════════════════
+
+def _membership(*, official, stored, count=None, available=True,
+                database_observed=True, structurally_valid=True):
+    official_ids, stored_ids = list(official), list(stored)
+    matrix_summary = {
+        'structurally_valid': structurally_valid,
+        'differing_rows': [],
+        'official_pitcher_mlb_ids': official_ids,
+        'stored_pitcher_mlb_ids': stored_ids,
+        'membership_matches': set(official_ids) == set(stored_ids),
+        'missing_from_storage': sorted(set(official_ids) - set(stored_ids)),
+        'extra_in_storage': sorted(set(stored_ids) - set(official_ids)),
+        'official_missing_row_count': len(
+            set(stored_ids) - set(official_ids)
+        ),
+        'stored_missing_row_count': len(set(official_ids) - set(stored_ids)),
+    }
+    completeness = audit.current_source_completeness(
+        official={
+            'available': available,
+            'appearance_count': (
+                len(official_ids) if count is None else count
+            ),
+        },
+        matrix_summary=matrix_summary, database_observed=database_observed,
+    )
+    return matrix_summary, completeness
+
+
+def _classify_membership(**kwargs):
+    matrix_summary, completeness = _membership(**kwargs)
+    return _classify(
+        matrix_summary=matrix_summary, source_completeness=completeness,
+        source_available=kwargs.get('available', True),
+    )
+
+
+ALL_TWELVE = list(range(7001, 7013))
+
+
+def test_exact_membership_with_no_field_difference_is_an_exact_match():
+    result = _classify_membership(official=ALL_TWELVE, stored=ALL_TWELVE)
+    assert result['current_materiality'] == audit.MATERIALITY_EXACT_MATCH
+    assert result['current_source_completeness'] == audit.SOURCE_COMPLETE
+
+
+def test_an_empty_official_set_is_unproven_not_an_exact_match():
+    result = _classify_membership(official=[], stored=ALL_TWELVE, count=0)
+    assert result['current_materiality'] == audit.MATERIALITY_UNPROVEN
+    assert result['current_source_completeness'] == audit.SOURCE_EMPTY
+
+
+def test_a_partial_official_set_is_unproven_not_an_exact_match():
+    result = _classify_membership(official=ALL_TWELVE[:6], stored=ALL_TWELVE)
+    assert result['current_materiality'] == audit.MATERIALITY_UNPROVEN
+    assert result['current_source_completeness'] == (
+        audit.SOURCE_STORED_ONLY_MEMBERS
+    )
+
+
+def test_an_official_pitcher_missing_from_storage_is_material():
+    result = _classify_membership(
+        official=ALL_TWELVE, stored=ALL_TWELVE[:-1],
+    )
+    assert result['current_materiality'] == audit.MATERIALITY_MATERIAL
+    assert result['current_source_completeness'] == (
+        audit.SOURCE_OFFICIAL_ONLY_MEMBERS
+    )
+
+
+def test_membership_differing_in_both_directions_is_unproven():
+    result = _classify_membership(
+        official=ALL_TWELVE, stored=ALL_TWELVE[1:] + [7099],
+    )
+    assert result['current_materiality'] == audit.MATERIALITY_UNPROVEN
+    assert result['current_source_completeness'] == (
+        audit.SOURCE_BOTH_DIRECTIONS
+    )
+
+
+def test_no_membership_deficit_can_ever_reach_exact_match():
+    """The whole point: differing_rows == [] is not proof of set equality."""
+    for official, stored, count in (
+        ([], ALL_TWELVE, 0),
+        (ALL_TWELVE[:6], ALL_TWELVE, None),
+        (ALL_TWELVE, ALL_TWELVE[:-1], None),
+        (ALL_TWELVE, ALL_TWELVE[1:] + [7099], None),
+        ([], [], 0),
+    ):
+        result = _classify_membership(
+            official=official, stored=stored, count=count,
+        )
+        assert result['current_materiality'] != (
+            audit.MATERIALITY_EXACT_MATCH
+        ), f'{official!r} vs {stored!r} reached exact match'
+
+
+def test_an_unobserved_database_cannot_reach_exact_match():
+    result = _classify_membership(
+        official=ALL_TWELVE, stored=ALL_TWELVE, database_observed=False,
+    )
+    assert result['current_materiality'] == audit.MATERIALITY_UNPROVEN
+
+
+def test_a_classifier_given_no_completeness_verdict_fails_closed():
+    """Callers that never resolved completeness get UNPROVEN, not a match."""
+    result = _classify(source_completeness=None)
+    assert result['current_materiality'] != audit.MATERIALITY_EXACT_MATCH
+
+
+# ── HIGH-B — determinism is structurally load-bearing ───────────────────────
+
+def test_unobserved_determinism_makes_the_root_condition_unproven():
+    result = _classify(determinism={'deterministic_in_process': None})
+    assert result['root_condition'] == audit.ROOT_UNPROVEN
+
+
+def test_nondeterminism_still_reports_the_fingerprint_root_condition():
+    result = _classify(determinism={
+        'deterministic_in_process': False, 'appearance_count': 12,
+    })
+    assert result['root_condition'] == audit.ROOT_FINGERPRINT_NONDETERMINISM
+
+
+def test_unobserved_determinism_cannot_reach_exact_match():
+    matrix_summary, completeness = _membership(
+        official=ALL_TWELVE, stored=ALL_TWELVE,
+    )
+    result = _classify(
+        matrix_summary=matrix_summary, source_completeness=completeness,
+        determinism={'deterministic_in_process': None},
+    )
+    assert result['current_materiality'] != audit.MATERIALITY_EXACT_MATCH
+
+
+# ── Q12 must not read as agreement while membership is open ────────────────
+
+def test_an_unresolved_membership_never_recommends_continued_observation():
+    for official, stored, count in (
+        ([], ALL_TWELVE, 0),
+        (ALL_TWELVE[:6], ALL_TWELVE, None),
+        (ALL_TWELVE, ALL_TWELVE[:-1], None),
+    ):
+        classification = _classify_membership(
+            official=official, stored=stored, count=count,
+        )
+        supported = audit.operational_consequence(
+            classification,
+        )['supported_by_evidence']
+        assert audit.CONSEQUENCE_CONTINUED_OBSERVATION not in supported
+        assert audit.CONSEQUENCE_SOURCE_COMPLETENESS_REVIEW in supported
+
+
+def test_a_resolved_exact_match_still_recommends_continued_observation():
+    classification = _classify_membership(
+        official=ALL_TWELVE, stored=ALL_TWELVE,
+    )
+    supported = audit.operational_consequence(
+        classification,
+    )['supported_by_evidence']
+    assert audit.CONSEQUENCE_CONTINUED_OBSERVATION in supported
+    assert audit.CONSEQUENCE_SOURCE_COMPLETENESS_REVIEW not in supported
+
+
+def test_the_new_consequence_is_in_the_declared_vocabulary():
+    assert audit.CONSEQUENCE_SOURCE_COMPLETENESS_REVIEW in audit.CONSEQUENCES

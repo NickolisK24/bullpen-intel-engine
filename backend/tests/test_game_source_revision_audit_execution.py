@@ -1662,3 +1662,508 @@ def test_an_unverified_artifact_makes_every_historical_cell_unproven(
             assert row['prior_value_evidence_source'] == (
                 audit.EVIDENCE_SOURCE_NONE
             )
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# BLOCKER-A — a fetched-but-incomplete official set can never conclude
+#
+# These drive the REAL orchestration: the canonical planner, the canonical
+# box-score parser, the canonical extractor, the canonical reconciliation
+# plan, real PostgreSQL, the real field matrix, the real classifier and the
+# real reducer. They assert the FINAL RESULT and EXIT CODE, because detecting
+# a membership gap and then concluding anyway is the defect being fixed.
+# ══════════════════════════════════════════════════════════════════════════
+
+def _empty_boxscore():
+    """HTTP 200, structurally valid, zero pitching lines."""
+    return {'teams': {
+        'home': {'team': {'id': HOME_TEAM}, 'players': {}, 'pitchers': []},
+        'away': {'team': {'id': AWAY_TEAM}, 'players': {}, 'pitchers': []},
+    }}
+
+
+def _observe(monkeypatch, payload):
+    """Seed the canonical game, then observe ``payload`` as today's source."""
+    seeded = _seed(monkeypatch)
+    _client, guard = _install_guard(monkeypatch, payload)
+    official = runner.observe_current_source(guard)
+    stored = runner.observe_stored_state()
+    matrix = runner.build_field_matrix(
+        official=official, stored=stored, plan=official.get('plan'),
+        artifacts=VERIFIED_ARTIFACTS,
+    )
+    completeness = audit.current_source_completeness(
+        official=official, matrix_summary=matrix['summary'],
+        database_observed=True,
+    )
+    return seeded, official, matrix, completeness
+
+
+def _conclude(official, matrix, completeness, *, delta_answer=None):
+    classification = audit.classify(
+        artifacts={'revision_change_proven': True, 'historical_delta': {}},
+        code_drift={
+            'comparison_complete': True,
+            'source_revision_affecting_drift': False,
+        },
+        determinism=audit.fingerprint_determinism(official['appearances']),
+        current_revision_state=audit.CURRENT_MATCHES_NEITHER,
+        matrix_summary=matrix['summary'],
+        plan_observation=official.get('plan') or {},
+        checkpoint={'exists': True, 'matches_any_observed_revision': True},
+        source_available=bool(official['available']),
+        source_completeness=completeness,
+    )
+    decision = audit.decide(
+        classification=classification,
+        delta={'answer': delta_answer or audit.DELTA_IDENTIFIED},
+        lock=audit.lock_lifecycle({
+            'acquire_attempted': True, 'guard_acquired': True,
+            'guard_release_attempted': True, 'guard_released': True,
+        }),
+        questions=[
+            {'question_id': question_id, 'mandatory_for_completion': True,
+             'fully_answered': True}
+            for question_id in audit.MANDATORY_QUESTIONS
+        ],
+        source_completeness=completeness,
+    )
+    return classification, decision
+
+
+@postgres_only
+def test_a_fetched_but_empty_box_score_is_not_current_evidence(
+    app, monkeypatch,
+):
+    """1. Fetched, parseable, zero appearances — the canonical lane's guard."""
+    with app.app_context():
+        _seeded, official, matrix, completeness = _observe(
+            monkeypatch, _empty_boxscore(),
+        )
+        # The source stage fails closed rather than reporting an empty set as
+        # today's official evidence.
+        assert official['available'] is False
+        assert official['extraction_yielded_no_appearances'] is True
+        assert official['unavailable_reason'] == (
+            audit.UNPROVEN_CURRENT_SOURCE_EMPTY
+        )
+        assert official['appearance_count'] == 0
+
+        assert completeness['completeness_state'] == audit.SOURCE_EMPTY
+        assert completeness['conclusion_eligible'] is False
+        assert completeness['non_empty'] is False
+        assert completeness['limitations']
+
+        classification, decision = _conclude(official, matrix, completeness)
+        assert classification['current_materiality'] != (
+            audit.MATERIALITY_EXACT_MATCH
+        )
+        assert decision['result'] not in audit.COMPLETE_RESULTS
+        assert decision['exit_code'] != 0
+        db.session.rollback()
+
+
+@postgres_only
+def test_a_partial_official_set_cannot_reach_a_completed_result(
+    app, monkeypatch,
+):
+    """2. Six official appearances against twelve stored ones."""
+    with app.app_context():
+        _seeded, official, matrix, completeness = _observe(
+            monkeypatch, boxscore(_lines()[:6]),
+        )
+        summary = matrix['summary']
+        assert official['available'] is True
+        assert official['appearance_count'] == 6
+        assert summary['membership_matches'] is False
+        assert len(summary['extra_in_storage']) == 6
+        # The overlapping rows genuinely agree — that is the whole trap.
+        assert summary['differing_rows'] == []
+        assert summary['official_missing_row_count'] > 0
+        assert completeness['completeness_state'] == (
+            audit.SOURCE_STORED_ONLY_MEMBERS
+        )
+        assert completeness['conclusion_eligible'] is False
+
+        classification, decision = _conclude(official, matrix, completeness)
+        assert classification['current_materiality'] != (
+            audit.MATERIALITY_EXACT_MATCH
+        )
+        assert decision['result'] == audit.RESULT_UNPROVEN
+        assert decision['exit_code'] == 2
+        db.session.rollback()
+
+
+@postgres_only
+def test_an_official_appearance_missing_from_storage_is_material(
+    app, monkeypatch,
+):
+    """3. Official carries a pitcher storage does not hold."""
+    with app.app_context():
+        _seed(monkeypatch)
+        victim = Pitcher.query.filter_by(mlb_id=HOME_ARMS[3]).first()
+        GameLog.query.filter_by(
+            mlb_game_pk=GAME_PK, pitcher_id=victim.id,
+        ).delete()
+        db.session.commit()
+
+        payload = boxscore(_lines())
+        _client, guard = _install_guard(monkeypatch, payload)
+        official = runner.observe_current_source(guard)
+        stored = runner.observe_stored_state()
+        matrix = runner.build_field_matrix(
+            official=official, stored=stored, plan=official.get('plan'),
+            artifacts=VERIFIED_ARTIFACTS,
+        )
+        completeness = audit.current_source_completeness(
+            official=official, matrix_summary=matrix['summary'],
+            database_observed=True,
+        )
+        assert matrix['summary']['missing_from_storage'] == [HOME_ARMS[3]]
+        assert matrix['summary']['stored_missing_row_count'] > 0
+        assert completeness['completeness_state'] == (
+            audit.SOURCE_OFFICIAL_ONLY_MEMBERS
+        )
+        assert completeness['conclusion_eligible'] is False
+
+        classification, decision = _conclude(official, matrix, completeness)
+        # Storage may be missing a canonical row: reported as material.
+        assert classification['current_materiality'] != (
+            audit.MATERIALITY_EXACT_MATCH
+        )
+        consequence = audit.operational_consequence(classification)
+        assert audit.CONSEQUENCE_CONTINUED_OBSERVATION not in (
+            consequence['supported_by_evidence']
+        )
+        assert audit.CONSEQUENCE_SOURCE_COMPLETENESS_REVIEW in (
+            consequence['supported_by_evidence']
+        )
+        assert decision['result'] != audit.RESULT_NO_CURRENT_DEFECT
+        assert decision['result'] not in audit.COMPLETE_RESULTS
+        db.session.rollback()
+
+
+@postgres_only
+def test_a_stored_appearance_absent_from_the_official_set_is_unproven(
+    app, monkeypatch,
+):
+    """4. Direction unresolved — one bounded call cannot say which side."""
+    with app.app_context():
+        _seed(monkeypatch)
+        intruder = _pitcher(780099, team_id=HOME_TEAM)
+        db.session.flush()
+        db.session.add(GameLog(
+            pitcher_id=intruder.id, mlb_game_pk=GAME_PK, game_date=REFERENCE,
+            innings_pitched=1.0, innings_pitched_outs=3, games_started=0,
+            appearance_team_id=HOME_TEAM, appearance_team_status='resolved',
+            appearance_team_source='test',
+        ))
+        db.session.commit()
+
+        payload = boxscore(_lines())
+        _client, guard = _install_guard(monkeypatch, payload)
+        official = runner.observe_current_source(guard)
+        stored = runner.observe_stored_state()
+        matrix = runner.build_field_matrix(
+            official=official, stored=stored, plan=official.get('plan'),
+            artifacts=VERIFIED_ARTIFACTS,
+        )
+        completeness = audit.current_source_completeness(
+            official=official, matrix_summary=matrix['summary'],
+            database_observed=True,
+        )
+        assert 780099 in matrix['summary']['extra_in_storage']
+        assert matrix['summary']['official_missing_row_count'] > 0
+        assert completeness['completeness_state'] == (
+            audit.SOURCE_STORED_ONLY_MEMBERS
+        )
+
+        classification, decision = _conclude(official, matrix, completeness)
+        assert classification['current_materiality'] == (
+            audit.MATERIALITY_UNPROVEN
+        )
+        assert decision['result'] == audit.RESULT_UNPROVEN
+        assert decision['exit_code'] == 2
+        db.session.rollback()
+
+
+@postgres_only
+def test_membership_differing_in_both_directions_blocks_any_conclusion(
+    app, monkeypatch,
+):
+    """5. Storage misses one official pitcher AND holds one it does not."""
+    with app.app_context():
+        _seed(monkeypatch)
+        victim = Pitcher.query.filter_by(mlb_id=HOME_ARMS[3]).first()
+        GameLog.query.filter_by(
+            mlb_game_pk=GAME_PK, pitcher_id=victim.id,
+        ).delete()
+        intruder = _pitcher(780099, team_id=HOME_TEAM)
+        db.session.flush()
+        db.session.add(GameLog(
+            pitcher_id=intruder.id, mlb_game_pk=GAME_PK, game_date=REFERENCE,
+            innings_pitched=1.0, innings_pitched_outs=3, games_started=0,
+            appearance_team_id=HOME_TEAM, appearance_team_status='resolved',
+            appearance_team_source='test',
+        ))
+        db.session.commit()
+
+        payload = boxscore(_lines())
+        _client, guard = _install_guard(monkeypatch, payload)
+        official = runner.observe_current_source(guard)
+        stored = runner.observe_stored_state()
+        matrix = runner.build_field_matrix(
+            official=official, stored=stored, plan=official.get('plan'),
+            artifacts=VERIFIED_ARTIFACTS,
+        )
+        completeness = audit.current_source_completeness(
+            official=official, matrix_summary=matrix['summary'],
+            database_observed=True,
+        )
+        assert completeness['completeness_state'] == (
+            audit.SOURCE_BOTH_DIRECTIONS
+        )
+        assert completeness['conclusion_eligible'] is False
+        _classification, decision = _conclude(official, matrix, completeness)
+        assert decision['exit_code'] != 0
+        db.session.rollback()
+
+
+@postgres_only
+def test_matching_membership_and_values_remains_exact_match_eligible(
+    app, monkeypatch,
+):
+    """6. The control: nothing about the clean path regressed."""
+    with app.app_context():
+        _seeded, official, matrix, completeness = _observe(
+            monkeypatch, boxscore(_lines()),
+        )
+        assert official['available'] is True
+        assert official['appearance_count'] == (
+            audit.EXPECTED_APPEARANCE_COUNT
+        )
+        assert matrix['summary']['membership_matches'] is True
+        assert matrix['summary']['completeness'] == (
+            'complete_for_observed_evidence'
+        )
+        assert completeness['completeness_state'] == audit.SOURCE_COMPLETE
+        assert completeness['conclusion_eligible'] is True
+
+        classification, _decision = _conclude(official, matrix, completeness)
+        assert classification['current_materiality'] == (
+            audit.MATERIALITY_EXACT_MATCH
+        )
+        assert audit.CONSEQUENCE_CONTINUED_OBSERVATION in (
+            audit.operational_consequence(classification)[
+                'supported_by_evidence'
+            ]
+        )
+        db.session.rollback()
+
+
+@postgres_only
+def test_matching_membership_with_one_field_difference_stays_material(
+    app, monkeypatch,
+):
+    """7. Field-difference behaviour is unchanged by the membership gate."""
+    with app.app_context():
+        _seed(monkeypatch)
+        victim = Pitcher.query.filter_by(mlb_id=AWAY_ARMS[2]).first()
+        log = GameLog.query.filter_by(
+            mlb_game_pk=GAME_PK, pitcher_id=victim.id,
+        ).first()
+        log.innings_pitched_outs = log.innings_pitched_outs + 1
+        # The canonical check constraint keeps the two columns consistent.
+        log.innings_pitched = log.innings_pitched_outs / 3.0
+        db.session.commit()
+
+        payload = boxscore(_lines())
+        _client, guard = _install_guard(monkeypatch, payload)
+        official = runner.observe_current_source(guard)
+        stored = runner.observe_stored_state()
+        matrix = runner.build_field_matrix(
+            official=official, stored=stored, plan=official.get('plan'),
+            artifacts=VERIFIED_ARTIFACTS,
+        )
+        completeness = audit.current_source_completeness(
+            official=official, matrix_summary=matrix['summary'],
+            database_observed=True,
+        )
+        assert completeness['completeness_state'] == audit.SOURCE_COMPLETE
+        assert matrix['summary']['differing_rows']
+        classification, _decision = _conclude(official, matrix, completeness)
+        assert classification['current_materiality'] == (
+            audit.MATERIALITY_MATERIAL
+        )
+        db.session.rollback()
+
+
+@postgres_only
+def test_an_empty_official_set_blocks_completion_even_with_empty_storage(
+    app, monkeypatch,
+):
+    """8. Zero versus zero is never a valid match for a final MLB game."""
+    with app.app_context():
+        _seed(monkeypatch)
+        GameLog.query.filter_by(mlb_game_pk=GAME_PK).delete()
+        db.session.commit()
+
+        _client, guard = _install_guard(monkeypatch, _empty_boxscore())
+        official = runner.observe_current_source(guard)
+        stored = runner.observe_stored_state()
+        matrix = runner.build_field_matrix(
+            official=official, stored=stored, plan=official.get('plan'),
+            artifacts=VERIFIED_ARTIFACTS,
+        )
+        completeness = audit.current_source_completeness(
+            official=official, matrix_summary=matrix['summary'],
+            database_observed=True,
+        )
+        assert completeness['completeness_state'] == audit.SOURCE_EMPTY
+        assert completeness['conclusion_eligible'] is False
+        _classification, decision = _conclude(official, matrix, completeness)
+        assert decision['exit_code'] != 0
+        db.session.rollback()
+
+
+@postgres_only
+def test_a_payload_with_no_usable_pitching_lines_behaves_as_an_empty_set(
+    app, monkeypatch,
+):
+    """9. Players present, pitching stats absent — the parser yields none."""
+    with app.app_context():
+        _seed(monkeypatch)
+        payload = {'teams': {
+            'home': {
+                'team': {'id': HOME_TEAM},
+                'players': {'ID1': {'person': {'id': 1}, 'stats': {}}},
+                'pitchers': [],
+            },
+            'away': {
+                'team': {'id': AWAY_TEAM},
+                'players': {'ID2': {'person': {'id': 2}, 'stats': {}}},
+                'pitchers': [],
+            },
+        }}
+        _client, guard = _install_guard(monkeypatch, payload)
+        official = runner.observe_current_source(guard)
+        assert official['available'] is False
+        assert official['extraction_yielded_no_appearances'] is True
+        assert official['unavailable_reason'] == (
+            audit.UNPROVEN_CURRENT_SOURCE_EMPTY
+        )
+        db.session.rollback()
+
+
+@postgres_only
+def test_a_partial_matrix_is_never_worded_as_complete(app, monkeypatch):
+    """10. Completeness wording cannot imply a complete official set."""
+    with app.app_context():
+        _seeded, _official, matrix, completeness = _observe(
+            monkeypatch, boxscore(_lines()[:6]),
+        )
+        assert matrix['summary']['completeness'] == (
+            'comparable_rows_only_membership_incomplete'
+        )
+        assert completeness['conclusion_eligible'] is False
+        db.session.rollback()
+
+
+@postgres_only
+def test_question_six_distinguishes_every_membership_outcome(
+    app, monkeypatch,
+):
+    """11. Q6 separates exact membership from each incomplete direction."""
+    with app.app_context():
+        # Seed ONCE; only the observed payload varies between cases.
+        _seed(monkeypatch)
+        stored = runner.observe_stored_state()
+        for payload, expected_state, answered in (
+            (boxscore(_lines()), audit.SOURCE_COMPLETE, True),
+            (boxscore(_lines()[:6]), audit.SOURCE_STORED_ONLY_MEMBERS, False),
+            (_empty_boxscore(), audit.SOURCE_EMPTY, False),
+        ):
+            _client, guard = _install_guard(monkeypatch, payload)
+            official = runner.observe_current_source(guard)
+            matrix = runner.build_field_matrix(
+                official=official, stored=stored,
+                plan=official.get('plan'), artifacts=VERIFIED_ARTIFACTS,
+            )
+            completeness = audit.current_source_completeness(
+                official=official, matrix_summary=matrix['summary'],
+                database_observed=True,
+            )
+            assert completeness['completeness_state'] == expected_state
+            questions = runner.build_questions(
+                artifacts={'runs': {}}, code_drift={},
+                official=official,
+                determinism=audit.fingerprint_determinism(
+                    official['appearances'],
+                ),
+                matrix=matrix, checkpoint={}, stored={},
+                classification={}, delta={}, causality_view={},
+                consequence={},
+                current_revision_state=audit.CURRENT_MATCHES_NEITHER,
+                database_observed=True, source_completeness=completeness,
+            )
+            by_id = {entry['question_id']: entry for entry in questions}
+            assert by_id['Q6']['fully_answered'] is answered
+            assert by_id['Q6']['answer']['membership_state'] == expected_state
+            assert by_id['Q4']['fully_answered'] is answered
+            # Q5 is mandatory and is never answered from an empty set.
+            assert by_id['Q5']['mandatory_for_completion'] is True
+            if expected_state == audit.SOURCE_EMPTY:
+                assert by_id['Q5']['fully_answered'] is False
+        db.session.rollback()
+
+
+@postgres_only
+def test_a_partial_source_run_exits_non_zero_and_says_why_in_both_artifacts(
+    app, monkeypatch, tmp_path,
+):
+    """12. Full run() through PostgreSQL: JSON and Markdown both carry it."""
+    sha = _head_sha()
+    if not sha:
+        pytest.skip('repository history unavailable')
+    with app.app_context():
+        _seed(monkeypatch)
+        monkeypatch.setattr(
+            sync_service, 'mlb_client',
+            _Counting({GAME_PK: boxscore(_lines()[:6])}),
+        )
+    monkeypatch.setattr(runner, 'build_app', lambda: app)
+    _authorize(monkeypatch, sha)
+    artifacts = tmp_path / 'out'
+    exit_code = runner.main([
+        '--expected-main-sha', sha, '--confirmation', audit.CONFIRMATION,
+        '--operator-note', 'partial source regression',
+        '--evidence-dir', str(_write_evidence(tmp_path / 'e')),
+        '--artifact-dir', str(artifacts),
+    ])
+    assert exit_code != 0
+
+    document = json.loads(
+        (artifacts / 'source-revision-audit.json').read_text(encoding='utf-8'),
+    )
+    completeness = document['current_source_completeness']
+    assert completeness['conclusion_eligible'] is False
+    assert completeness['completeness_state'] == (
+        audit.SOURCE_STORED_ONLY_MEMBERS
+    )
+    assert completeness['extra_in_storage']
+    assert completeness['limitations']
+    assert document['verdict']['result'] not in audit.COMPLETE_RESULTS
+    assert document['verdict']['current_source_conclusion_eligible'] is False
+    assert audit.UNPROVEN_CURRENT_SOURCE_INCOMPLETE in (
+        document['verdict']['unproven_reasons']
+    )
+    assert document['classification' if 'classification' in document
+                    else 'verdict']
+
+    markdown = (
+        artifacts / 'source-revision-audit-summary.md'
+    ).read_text(encoding='utf-8')
+    assert '## Current official set completeness' in markdown
+    assert 'conclusion eligible: `False`' in markdown
+    assert audit.SOURCE_STORED_ONLY_MEMBERS in markdown
+    assert 'is not evidence that the official' in markdown

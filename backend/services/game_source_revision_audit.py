@@ -295,8 +295,19 @@ UNPROVEN_ARTIFACT_CONTENT_UNPROVEN = 'artifact_content_unproven'
 UNPROVEN_ACTIVATION_EVIDENCE_MISSING = 'activation_realization_evidence_missing'
 UNPROVEN_WORKFLOW_METADATA_UNAVAILABLE = 'workflow_run_metadata_unavailable'
 UNPROVEN_LOCK_RELEASE_UNKNOWN = 'advisory_lock_release_unproven'
+# A box score that returned HTTP 200 and parsed cleanly can still carry no
+# usable pitching lines. The canonical lane treats that as an ingestion
+# failure; the audit treats it as evidence it does not have.
+UNPROVEN_CURRENT_SOURCE_EMPTY = 'current_official_appearance_set_empty'
+UNPROVEN_CURRENT_SOURCE_INCOMPLETE = (
+    'current_official_membership_incomplete'
+)
+UNPROVEN_REGISTRY_EXPECTATION_MISSING = 'mandatory_field_expectation_missing'
 
 UNPROVEN_REASONS = (
+    UNPROVEN_CURRENT_SOURCE_EMPTY,
+    UNPROVEN_CURRENT_SOURCE_INCOMPLETE,
+    UNPROVEN_REGISTRY_EXPECTATION_MISSING,
     UNPROVEN_ARTIFACT_MISSING,
     UNPROVEN_QUESTION_UNANSWERED,
     UNPROVEN_ARTIFACT_IDENTITY_UNPROVEN,
@@ -441,9 +452,16 @@ CONSEQUENCE_ARTIFACT_RETENTION_IMPROVEMENT = 'artifact_retention_improvement'
 CONSEQUENCE_NOOP_QUALIFICATION_DELAY = 'no_op_qualification_delay'
 CONSEQUENCE_NOOP_CANDIDATE_AUDIT_DELAY = 'no_op_candidate_audit_delay'
 CONSEQUENCE_CONTINUED_OBSERVATION = 'continued_scheduled_observation_only'
+# A membership discrepancy the one bounded source call could not resolve is
+# not "nothing to do" and it is not an approved repair either. It is a bounded
+# read-only evidence limitation that a human has to look at.
+CONSEQUENCE_SOURCE_COMPLETENESS_REVIEW = (
+    'current_source_completeness_review_required'
+)
 CONSEQUENCE_NO_ACTION = 'no_action'
 
 CONSEQUENCES = (
+    CONSEQUENCE_SOURCE_COMPLETENESS_REVIEW,
     CONSEQUENCE_GAMELOG_REPAIR,
     CONSEQUENCE_EXACT_GAME_BACKFILL,
     CONSEQUENCE_WORK_ITEM_REVISION_UPDATE,
@@ -483,10 +501,16 @@ ANSWERED_STATES = frozenset({
     ANSWER_OBSERVED_YES, ANSWER_OBSERVED_NO, ANSWER_OBSERVED_INSUFFICIENT,
 })
 
-# Questions whose unanswered state must close the exit-zero path. Q3 and Q5
-# already gate through their own UNPROVEN reasons; these are the ones whose
-# silence would otherwise be invisible in the verdict.
-MANDATORY_QUESTIONS = ('Q1', 'Q2', 'Q4', 'Q6', 'Q7', 'Q10', 'Q11', 'Q12')
+# Questions whose unanswered state must close the exit-zero path.
+#
+# Q5 is mandatory: this audit's entire subject is a fingerprint discrepancy,
+# so a conclusion that the current target is fine cannot rest on a fingerprint
+# nobody proved was deterministic. Q3 stays outside the set because an
+# incomplete code comparison already forces ROOT_UNPROVEN structurally, which
+# reaches the same verdict through classify() rather than through this gate.
+MANDATORY_QUESTIONS = (
+    'Q1', 'Q2', 'Q4', 'Q5', 'Q6', 'Q7', 'Q10', 'Q11', 'Q12',
+)
 
 
 # ── Historical evidence status vocabulary ───────────────────────────────────
@@ -883,6 +907,30 @@ IDENTITY_FIELDS = tuple(
     spec['field'] for spec in MANDATORY_FIELDS
     if GATE_IDENTITY in spec['gates']
 )
+
+
+def registry_expectation_defects() -> list[dict]:
+    """Registry rows whose validator cannot be resolved for a run.
+
+    A mandatory field is only mandatory if something actually validates it. A
+    row that names an ``expects`` key no ``RUN_EXPECTATIONS`` entry carries
+    would be observed and never compared — which the hardened state reducer
+    now refuses to call verified, but which should never reach production in
+    the first place. The package contract tests assert this list is empty.
+    """
+    defects = []
+    for run_key, spec in RUN_EXPECTATIONS.items():
+        for entry in mandatory_fields_for(run_key):
+            if entry['literal'] is not _MISSING:
+                continue
+            if entry['expects'] is None or entry['expects'] not in spec:
+                defects.append({
+                    'run_key': run_key,
+                    'field': entry['field'],
+                    'expects': entry['expects'],
+                    'reason': UNPROVEN_REGISTRY_EXPECTATION_MISSING,
+                })
+    return defects
 
 
 def mandatory_fields_for(run_key) -> tuple:
@@ -1393,16 +1441,29 @@ ARTIFACT_STATES = (
 
 
 def _reduce_state(observations) -> str:
-    """A definite contradiction is FAILED; a gap is UNPROVEN; else VERIFIED.
+    """A definite contradiction is FAILED; anything short of proof is UNPROVEN.
 
     Ordered deliberately. A run that is both missing a mandatory field AND
     contradicted by another must read as contradicted — the contradiction is
     the more serious and more actionable fact, and the gap is still reported
     alongside it.
+
+    VERIFIED is a positive claim and is earned, never defaulted into. It
+    requires at least one observation and requires EVERY observation to have
+    been compared against something and matched. A gate that observed nothing
+    observed nothing; a value that was read but never compared was never
+    verified. Neither is agreement, and neither may reduce to VERIFIED — which
+    is also why ``verified_fields`` can never be empty while the state reads
+    verified.
     """
+    observations = list(observations or ())
     if observation_mismatches(observations):
         return STATE_FAILED
     if observation_gaps(observations):
+        return STATE_UNPROVEN
+    if not observations:
+        return STATE_UNPROVEN
+    if len(observation_verified(observations)) != len(observations):
         return STATE_UNPROVEN
     return STATE_VERIFIED
 
@@ -2882,6 +2943,200 @@ def validate_matrix(rows) -> dict:
             }
             for row in rows if row.get('conclusion') == CONCLUSION_DIFFERS
         ],
+        # An absent row on either side is not a row that agreed. These two
+        # counts are conclusion-blocking, not diagnostics: an empty
+        # ``differing_rows`` proves only that the COMPARABLE rows carried no
+        # governed difference, and says nothing about the rows that were
+        # never comparable because one side had no appearance at all.
+        'official_missing_rows': [
+            {
+                'pitcher_mlb_id': row['pitcher_mlb_id'],
+                'field_name': row['field_name'],
+            }
+            for row in rows
+            if row.get('conclusion') == CONCLUSION_OFFICIAL_MISSING
+        ],
+        'stored_missing_rows': [
+            {
+                'pitcher_mlb_id': row['pitcher_mlb_id'],
+                'field_name': row['field_name'],
+            }
+            for row in rows
+            if row.get('conclusion') == CONCLUSION_STORAGE_MISSING
+        ],
+        'official_missing_row_count': sum(
+            1 for row in rows
+            if row.get('conclusion') == CONCLUSION_OFFICIAL_MISSING
+        ),
+        'stored_missing_row_count': sum(
+            1 for row in rows
+            if row.get('conclusion') == CONCLUSION_STORAGE_MISSING
+        ),
+    }
+
+
+# ── Current official set completeness ───────────────────────────────────────
+# One explicit state machine, not a scattering of booleans. A box-score call
+# that succeeded proves the transport worked; it proves nothing about whether
+# the payload described the whole game. The canonical lane refuses to ingest a
+# final game that produced no pitching appearances
+# (``game_driven_ingestion`` raises ``ERROR_APPEARANCE_EXTRACTION_FAILED``),
+# and this audit refuses to CONCLUDE from anything less than an appearance set
+# whose membership exactly matches what canonical storage holds.
+
+SOURCE_COMPLETE = 'complete_and_comparable'
+SOURCE_EMPTY = 'empty_official_set'
+SOURCE_OFFICIAL_ONLY_MEMBERS = 'official_only_members_present'
+SOURCE_STORED_ONLY_MEMBERS = 'stored_only_members_present'
+SOURCE_BOTH_DIRECTIONS = 'both_directions_mismatch'
+SOURCE_STATE_UNAVAILABLE = 'source_unavailable'
+SOURCE_DATABASE_UNAVAILABLE = 'database_unavailable'
+SOURCE_MATRIX_UNPROVEN = 'matrix_unproven'
+
+SOURCE_COMPLETENESS_STATES = (
+    SOURCE_COMPLETE,
+    SOURCE_EMPTY,
+    SOURCE_OFFICIAL_ONLY_MEMBERS,
+    SOURCE_STORED_ONLY_MEMBERS,
+    SOURCE_BOTH_DIRECTIONS,
+    SOURCE_STATE_UNAVAILABLE,
+    SOURCE_DATABASE_UNAVAILABLE,
+    SOURCE_MATRIX_UNPROVEN,
+)
+
+# Every state except this one closes the exit-zero path.
+CONCLUSION_ELIGIBLE_STATES = frozenset({SOURCE_COMPLETE})
+
+_SOURCE_LIMITATIONS = {
+    SOURCE_EMPTY: (
+        'The box score was fetched and parsed but produced no pitching '
+        'appearances. A final MLB game has pitchers, so this is missing '
+        'evidence rather than an observation that the game had none. The '
+        'audit spends one bounded box-score call and does not retry, so it '
+        'cannot distinguish a truncated payload from an upstream defect.'
+    ),
+    SOURCE_OFFICIAL_ONLY_MEMBERS: (
+        'The observed official set contains at least one pitcher canonical '
+        'storage does not hold. Storage may be incomplete. The audit reports '
+        'this as material and does not repair it.'
+    ),
+    SOURCE_STORED_ONLY_MEMBERS: (
+        'Canonical storage holds at least one pitcher the observed official '
+        'set does not contain. With one bounded source call and no '
+        'corroborating authority the audit cannot tell whether the payload '
+        'was truncated or the stored row is extraneous, so it resolves '
+        'neither direction.'
+    ),
+    SOURCE_BOTH_DIRECTIONS: (
+        'Membership differs in both directions at once. Neither side is '
+        'established as the complete set, so no current comparison follows.'
+    ),
+    SOURCE_STATE_UNAVAILABLE: (
+        'The current official source was never observed.'
+    ),
+    SOURCE_DATABASE_UNAVAILABLE: (
+        'The canonical database was never observed, so official membership '
+        'had nothing to be compared against.'
+    ),
+    SOURCE_MATRIX_UNPROVEN: (
+        'The field matrix did not validate structurally, so its membership '
+        'accounting cannot be relied upon.'
+    ),
+}
+
+
+def current_source_completeness(
+    *, official, matrix_summary, database_observed,
+) -> dict:
+    """Whether the observed official set may support a current conclusion.
+
+    ``conclusion_eligible`` is the single gate every completed result depends
+    on. It is true only when the source was fetched, parsed, produced a
+    non-empty appearance set, and that set's pitcher membership matches
+    canonical storage EXACTLY in both directions.
+    """
+    official = official or {}
+    matrix_summary = matrix_summary or {}
+
+    # The empty-appearance guard marks the source unavailable AS EVIDENCE
+    # while recording that the call itself succeeded. Both facts are true and
+    # they mean different things: the transport worked, the payload did not
+    # describe a game. ``empty_official_set`` is the more specific and more
+    # actionable state, so it is resolved before plain unavailability.
+    empty_extraction = bool(
+        official.get('extraction_yielded_no_appearances')
+    )
+    fetched = bool(official.get('available')) or empty_extraction
+    count = official.get('appearance_count')
+    count = count if isinstance(count, int) and not isinstance(count, bool) \
+        else 0
+    official_ids = list(matrix_summary.get('official_pitcher_mlb_ids') or ())
+    stored_ids = list(matrix_summary.get('stored_pitcher_mlb_ids') or ())
+    missing_from_storage = list(
+        matrix_summary.get('missing_from_storage') or ()
+    )
+    extra_in_storage = list(matrix_summary.get('extra_in_storage') or ())
+    official_missing = matrix_summary.get('official_missing_row_count') or 0
+    stored_missing = matrix_summary.get('stored_missing_row_count') or 0
+    membership_matches = bool(matrix_summary.get('membership_matches'))
+
+    reasons: list[str] = []
+    if empty_extraction:
+        state = SOURCE_EMPTY
+        reasons.append(UNPROVEN_CURRENT_SOURCE_EMPTY)
+    elif not fetched:
+        state = SOURCE_STATE_UNAVAILABLE
+        reasons.append(UNPROVEN_CURRENT_SOURCE_UNAVAILABLE)
+    elif count <= 0:
+        # Ordered before the database check on purpose: an empty set is
+        # missing evidence no matter what storage holds, and "zero official
+        # versus zero stored" is never a valid match for a final game.
+        state = SOURCE_EMPTY
+        reasons.append(UNPROVEN_CURRENT_SOURCE_EMPTY)
+    elif not database_observed:
+        state = SOURCE_DATABASE_UNAVAILABLE
+        reasons.append(UNPROVEN_DATABASE_EVIDENCE_UNAVAILABLE)
+    elif not matrix_summary.get('structurally_valid'):
+        state = SOURCE_MATRIX_UNPROVEN
+        reasons.append(UNPROVEN_EXECUTION_ERROR)
+    elif missing_from_storage and extra_in_storage:
+        state = SOURCE_BOTH_DIRECTIONS
+        reasons.append(UNPROVEN_CURRENT_SOURCE_INCOMPLETE)
+    elif missing_from_storage or stored_missing:
+        state = SOURCE_OFFICIAL_ONLY_MEMBERS
+        reasons.append(UNPROVEN_CURRENT_SOURCE_INCOMPLETE)
+    elif extra_in_storage or official_missing or not membership_matches:
+        state = SOURCE_STORED_ONLY_MEMBERS
+        reasons.append(UNPROVEN_CURRENT_SOURCE_INCOMPLETE)
+    else:
+        state = SOURCE_COMPLETE
+
+    return {
+        'source_fetch_succeeded': fetched,
+        'parse_succeeded': fetched,
+        'extraction_yielded_no_appearances': empty_extraction,
+        'unavailable_reason': official.get('unavailable_reason'),
+        'extracted_appearance_count': count,
+        'non_empty': fetched and count > 0,
+        'database_observed': bool(database_observed),
+        'official_pitcher_ids': official_ids,
+        'stored_pitcher_ids': stored_ids,
+        'membership_matches': membership_matches,
+        'missing_from_storage': missing_from_storage,
+        'extra_in_storage': extra_in_storage,
+        'official_missing_row_count': official_missing,
+        'stored_missing_row_count': stored_missing,
+        'completeness_state': state,
+        'conclusion_eligible': state in CONCLUSION_ELIGIBLE_STATES,
+        'reason_codes': reasons,
+        'limitations': (
+            [] if state == SOURCE_COMPLETE else [_SOURCE_LIMITATIONS[state]]
+        ),
+        'note': (
+            'A successful fetch proves transport, not semantic completeness. '
+            'Only an exactly matching membership set supports a current '
+            'conclusion about game 824487.'
+        ),
     }
 
 
@@ -2897,18 +3152,30 @@ def classify(
     plan_observation,
     checkpoint,
     source_available,
+    source_completeness=None,
 ) -> dict:
-    """Five independent dimensions. Never collapsed into one vague label."""
+    """Six independent dimensions. Never collapsed into one vague label."""
     artifacts = artifacts or {}
     code_drift = code_drift or {}
     determinism = determinism or {}
     matrix_summary = matrix_summary or {}
     plan_observation = plan_observation or {}
     checkpoint = checkpoint or {}
+    source_completeness = source_completeness or {}
+    completeness_state = source_completeness.get('completeness_state')
+    conclusion_eligible = bool(
+        source_completeness.get('conclusion_eligible')
+    )
+    determinism_proven = determinism.get('deterministic_in_process') is True
 
     # ── Root condition ──────────────────────────────────────────────────────
     if determinism.get('deterministic_in_process') is False:
         root = ROOT_FINGERPRINT_NONDETERMINISM
+    elif source_available and not determinism_proven:
+        # The fingerprint is this audit's only instrument. A source that was
+        # observed but whose fingerprint was never proven deterministic
+        # cannot support a root-condition claim in either direction.
+        root = ROOT_UNPROVEN
     elif not artifacts.get('revision_change_proven'):
         root = ROOT_UNPROVEN
     elif code_drift.get('source_revision_affecting_drift'):
@@ -2938,11 +3205,33 @@ def classify(
         root = ROOT_ARTIFACT_CHECKPOINT_INCONSISTENCY
 
     # ── Current materiality ─────────────────────────────────────────────────
+    # Membership is checked BEFORE field values. An empty ``differing_rows``
+    # list proves only that the rows which were comparable carried no governed
+    # difference; it says nothing about appearances that had no counterpart on
+    # one side and so were never comparable at all. Exact match is the
+    # strongest claim this audit can make about the present and it is reached
+    # only from complete, deterministic, exactly-matching membership.
     if not source_available:
         materiality = MATERIALITY_SOURCE_UNAVAILABLE
     elif not matrix_summary.get('structurally_valid'):
         materiality = MATERIALITY_UNPROVEN
     elif plan_observation.get('action_counts') is None:
+        materiality = MATERIALITY_UNPROVEN
+    elif completeness_state == SOURCE_EMPTY:
+        # Nothing usable was observed. This is an evidence gap, not a finding.
+        materiality = MATERIALITY_UNPROVEN
+    elif completeness_state == SOURCE_OFFICIAL_ONLY_MEMBERS:
+        # The official source carries a pitcher storage does not hold.
+        # Canonical storage may be missing a row: material, and reported as
+        # such, though the top-level verdict still fails closed below.
+        materiality = MATERIALITY_MATERIAL
+    elif completeness_state in (
+        SOURCE_STORED_ONLY_MEMBERS, SOURCE_BOTH_DIRECTIONS,
+        SOURCE_DATABASE_UNAVAILABLE, SOURCE_MATRIX_UNPROVEN,
+    ):
+        # Either the payload was truncated or the stored row is extraneous.
+        # One bounded source call cannot tell them apart, so neither is
+        # asserted.
         materiality = MATERIALITY_UNPROVEN
     elif plan_observation.get('proposes_mutation') is True:
         materiality = MATERIALITY_MATERIAL
@@ -2955,6 +3244,8 @@ def classify(
             if material_kinds <= {MATERIALITY_DISPLAY_ONLY}
             else MATERIALITY_MATERIAL
         )
+    elif not conclusion_eligible or not determinism_proven:
+        materiality = MATERIALITY_UNPROVEN
     else:
         materiality = MATERIALITY_EXACT_MATCH
 
@@ -3017,6 +3308,11 @@ def classify(
         'persistence': persistence,
         'historical_field_identification': field_identification,
         'checkpoint_state': checkpoint_state,
+        # A sixth named dimension rather than a hidden precondition, so a
+        # reader can see WHY a current comparison did or did not follow.
+        'current_source_completeness': (
+            completeness_state or SOURCE_STATE_UNAVAILABLE
+        ),
     }
 
 
@@ -3185,6 +3481,8 @@ def operational_consequence(classification) -> dict:
     materiality = classification.get('current_materiality')
     checkpoint_state = classification.get('checkpoint_state')
     field_id = classification.get('historical_field_identification')
+    completeness = classification.get('current_source_completeness')
+    membership_resolved = completeness == SOURCE_COMPLETE
 
     supported: list[str] = []
     if materiality == MATERIALITY_MATERIAL:
@@ -3195,7 +3493,11 @@ def operational_consequence(classification) -> dict:
         supported.append(CONSEQUENCE_EXACT_GAME_BACKFILL)
     if field_id == FIELD_ID_NOT_RETAINED:
         supported.append(CONSEQUENCE_ARTIFACT_RETENTION_IMPROVEMENT)
-    if materiality in (MATERIALITY_EXACT_MATCH, MATERIALITY_NON_MATERIAL):
+    if not membership_resolved:
+        # Never "continued observation only" while the current membership
+        # question is open — that reads as "storage and the source agreed."
+        supported.append(CONSEQUENCE_SOURCE_COMPLETENESS_REVIEW)
+    elif materiality in (MATERIALITY_EXACT_MATCH, MATERIALITY_NON_MATERIAL):
         supported.append(CONSEQUENCE_CONTINUED_OBSERVATION)
     if not supported:
         supported.append(CONSEQUENCE_NO_ACTION)
@@ -3223,6 +3525,7 @@ def decide(
     delta=None,
     lock=None,
     questions=None,
+    source_completeness=None,
 ) -> dict:
     """Reduce every observation to exactly one top-level outcome.
 
@@ -3240,6 +3543,21 @@ def decide(
     classification = classification or {}
     delta = delta or {}
     lock = lock or {}
+    source_completeness = source_completeness or {}
+
+    # The current-source completeness gate. Every completed result — all three
+    # of them — is a statement about game 824487 as it stands today, and none
+    # of them may be reached from an official appearance set that was empty,
+    # truncated, or whose membership did not match canonical storage exactly.
+    # This runs BEFORE the classification branches so no branch can slip past
+    # it, and it contributes a reason rather than silently downgrading.
+    if source_completeness and not source_completeness.get(
+        'conclusion_eligible'
+    ):
+        blocking = set(source_completeness.get('reason_codes') or ())
+        if not blocking:
+            blocking = {UNPROVEN_CURRENT_SOURCE_INCOMPLETE}
+        unproven = sorted(set(unproven) | blocking)
 
     # The lock lifecycle contributes its own reasons and never loses them to
     # an earlier failure that happens to be reported first.
@@ -3282,6 +3600,10 @@ def decide(
         'classification': dict(classification),
         'field_delta': dict(delta),
         'advisory_lock_lifecycle': dict(lock),
+        'current_source_completeness': dict(source_completeness),
+        'current_source_conclusion_eligible': bool(
+            source_completeness.get('conclusion_eligible')
+        ) if source_completeness else None,
         'unanswered_mandatory_questions': unanswered,
         'platform_defect_discovery_is_not_an_audit_failure': True,
         'non_authorization_statement': NON_AUTHORIZATION_STATEMENT,
@@ -3299,6 +3621,27 @@ def explanation(decision) -> str:
             'conclusion about game 824487 may be drawn from this run.'
         )
     if result == RESULT_UNPROVEN:
+        completeness = (decision or {}).get(
+            'current_source_completeness'
+        ) or {}
+        state = completeness.get('completeness_state')
+        if state == SOURCE_EMPTY:
+            return (
+                'The current box score was fetched and parsed but produced '
+                'no pitching appearances, so there is no current official '
+                'appearance set to compare. The source-revision question '
+                'remains open.'
+            )
+        if state in (
+            SOURCE_STORED_ONLY_MEMBERS, SOURCE_BOTH_DIRECTIONS,
+        ):
+            return (
+                'The observed official appearance set and canonical storage '
+                'do not hold the same pitchers, and one bounded source call '
+                'cannot establish which side is incomplete. No current '
+                'comparison follows and the source-revision question '
+                'remains open.'
+            )
         return (
             'Required evidence could not be obtained or validated. The '
             'source-revision question remains open.'

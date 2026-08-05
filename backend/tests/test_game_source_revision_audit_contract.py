@@ -904,3 +904,451 @@ def test_workflow_metadata_covers_exactly_the_two_locked_runs(steps):
     assert audit.PRIOR_RUN_ID in body
     assert audit.LATER_RUN_ID in body
     assert body.count("RUN_IDS = ('") == 1
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# MEDIUM-C — the state reducer must never default into VERIFIED
+#
+# VERIFIED is a positive claim. A gate that observed nothing observed nothing,
+# and a value that was read but never compared against anything was never
+# verified. Neither may reduce to agreement, and neither may leave a state
+# reading verified while ``verified_fields`` is empty.
+# ══════════════════════════════════════════════════════════════════════════
+
+def _verified_observation(field='observed_field', value=7):
+    return audit.observation(
+        field=field, path=field, source=audit.SOURCE_RETAINED_ARTIFACT,
+        observed=value, expected=value,
+    )
+
+
+def _unvalidated_observation(field='unvalidated_field', value=7):
+    """Read from the document, compared against nothing."""
+    return audit.observation(
+        field=field, path=field, source=audit.SOURCE_RETAINED_ARTIFACT,
+        observed=value,
+    )
+
+
+def _absent_observation(field='absent_field'):
+    return audit.observation(
+        field=field, path=field, source=audit.SOURCE_RETAINED_ARTIFACT,
+    )
+
+
+def _mismatched_observation(field='mismatched_field'):
+    return audit.observation(
+        field=field, path=field, source=audit.SOURCE_RETAINED_ARTIFACT,
+        observed=1, expected=2,
+    )
+
+
+def test_an_empty_observation_set_reduces_to_unproven():
+    assert audit._reduce_state([]) == audit.STATE_UNPROVEN
+    assert audit._reduce_state(None) == audit.STATE_UNPROVEN
+
+
+def test_only_unvalidated_observations_reduce_to_unproven():
+    observation = _unvalidated_observation()
+    assert observation['state'] == audit.OBS_OBSERVED
+    assert audit._reduce_state([observation]) == audit.STATE_UNPROVEN
+
+
+def test_a_single_verified_observation_reduces_to_verified():
+    assert audit._reduce_state(
+        [_verified_observation()],
+    ) == audit.STATE_VERIFIED
+
+
+def test_verified_plus_mismatch_reduces_to_failed():
+    assert audit._reduce_state([
+        _verified_observation(), _mismatched_observation(),
+    ]) == audit.STATE_FAILED
+
+
+def test_verified_plus_absent_reduces_to_unproven():
+    assert audit._reduce_state([
+        _verified_observation(), _absent_observation(),
+    ]) == audit.STATE_UNPROVEN
+
+
+def test_verified_plus_unvalidated_reduces_to_unproven():
+    assert audit._reduce_state([
+        _verified_observation(), _unvalidated_observation(),
+    ]) == audit.STATE_UNPROVEN
+
+
+def test_a_mismatch_still_outranks_an_unvalidated_value():
+    assert audit._reduce_state([
+        _unvalidated_observation(), _mismatched_observation(),
+    ]) == audit.STATE_FAILED
+
+
+def test_every_mandatory_registry_row_resolves_its_validator():
+    """A field nothing validates is not a mandatory field."""
+    assert audit.registry_expectation_defects() == []
+
+
+def test_a_registry_row_with_an_unresolvable_expectation_cannot_verify(
+    monkeypatch,
+):
+    """The reducer refuses even if a defective row ever reaches production."""
+    broken = audit.observation(
+        field='runner_exit_code', path='runner_exit_code',
+        source=audit.SOURCE_RETAINED_ARTIFACT, observed=0,
+    )
+    assert broken['state'] == audit.OBS_OBSERVED
+    assert audit._reduce_state([broken]) == audit.STATE_UNPROVEN
+    assert audit.observation_verified([broken]) == []
+
+
+def test_a_verified_state_can_never_have_empty_verified_fields():
+    """identity and content verified both imply a non-empty verified list."""
+    ingested = audit.ingest_run_artifacts('/nonexistent-evidence-root')
+    for run_key in audit.RUN_KEYS:
+        entry = ingested['runs'][run_key]
+        for state_key, verified_key in (
+            ('identity_state', 'verified_fields'),
+            ('content_state', 'verified_fields'),
+        ):
+            if entry[state_key] == audit.STATE_VERIFIED:
+                assert entry[verified_key], (
+                    f'{run_key}.{state_key} verified with nothing verified'
+                )
+
+
+def test_state_and_verified_fields_cannot_contradict_each_other():
+    """Verified requires that EVERY observation was compared and matched."""
+    observations = [_verified_observation('a'), _verified_observation('b')]
+    assert audit._reduce_state(observations) == audit.STATE_VERIFIED
+    assert len(audit.observation_verified(observations)) == len(observations)
+
+    observations.append(_unvalidated_observation('c'))
+    assert audit._reduce_state(observations) == audit.STATE_UNPROVEN
+    assert len(audit.observation_verified(observations)) != len(observations)
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# HIGH-B — fingerprint determinism is mandatory
+# ══════════════════════════════════════════════════════════════════════════
+
+def test_question_five_is_mandatory_for_completion():
+    assert 'Q5' in audit.MANDATORY_QUESTIONS
+
+
+def _gate_lock():
+    return audit.lock_lifecycle({
+        'acquire_attempted': True, 'guard_acquired': True,
+        'guard_release_attempted': True, 'guard_released': True,
+    })
+
+
+def _eligible_source():
+    return audit.current_source_completeness(
+        official={'available': True, 'appearance_count': 12},
+        matrix_summary={
+            'structurally_valid': True, 'membership_matches': True,
+            'missing_from_storage': [], 'extra_in_storage': [],
+            'official_missing_row_count': 0, 'stored_missing_row_count': 0,
+        },
+        database_observed=True,
+    )
+
+
+def _gate_questions(unanswered=()):
+    return [
+        {
+            'question_id': question_id,
+            'mandatory_for_completion': (
+                question_id in audit.MANDATORY_QUESTIONS
+            ),
+            'fully_answered': question_id not in unanswered,
+        }
+        for question_id in (
+            'Q1', 'Q2', 'Q3', 'Q4', 'Q5', 'Q6',
+            'Q7', 'Q8', 'Q9', 'Q10', 'Q11', 'Q12',
+        )
+    ]
+
+
+def test_question_five_alone_unanswered_prevents_exit_zero():
+    decision = audit.decide(
+        classification={
+            'root_condition': audit.ROOT_OFFICIAL_SET_CHANGED,
+            'current_materiality': audit.MATERIALITY_EXACT_MATCH,
+            'current_source_completeness': audit.SOURCE_COMPLETE,
+        },
+        delta={}, lock=_gate_lock(),
+        questions=_gate_questions(unanswered={'Q5'}),
+        source_completeness=_eligible_source(),
+    )
+    assert decision['unanswered_mandatory_questions'] == ['Q5']
+    assert decision['result'] == audit.RESULT_UNPROVEN
+    assert decision['exit_code'] == 2
+
+
+def test_determinism_over_an_empty_set_is_unproven_not_deterministic():
+    result = audit.fingerprint_determinism([])
+    assert result['deterministic_in_process'] is None
+    assert result['evidence_status'] == audit.EVIDENCE_UNPROVEN
+    assert result['appearance_count'] == 0
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# BLOCKER-A — current official set completeness gates every completed result
+# ══════════════════════════════════════════════════════════════════════════
+
+def _source_completeness(*, available=True, count=12, official=(), stored=(),
+                  database_observed=True, structurally_valid=True):
+    official_ids = list(official) if official or stored else list(range(12))
+    stored_ids = list(stored) if official or stored else list(range(12))
+    return audit.current_source_completeness(
+        official={'available': available, 'appearance_count': count},
+        matrix_summary={
+            'structurally_valid': structurally_valid,
+            'official_pitcher_mlb_ids': official_ids,
+            'stored_pitcher_mlb_ids': stored_ids,
+            'membership_matches': set(official_ids) == set(stored_ids),
+            'missing_from_storage': sorted(
+                set(official_ids) - set(stored_ids)
+            ),
+            'extra_in_storage': sorted(set(stored_ids) - set(official_ids)),
+            'official_missing_row_count': len(
+                set(stored_ids) - set(official_ids)
+            ),
+            'stored_missing_row_count': len(
+                set(official_ids) - set(stored_ids)
+            ),
+        },
+        database_observed=database_observed,
+    )
+
+
+def test_an_exactly_matching_membership_set_is_conclusion_eligible():
+    result = _source_completeness()
+    assert result['completeness_state'] == audit.SOURCE_COMPLETE
+    assert result['conclusion_eligible'] is True
+    assert result['limitations'] == []
+    assert result['reason_codes'] == []
+
+
+def test_an_empty_official_set_is_never_conclusion_eligible():
+    result = _source_completeness(count=0, official=[], stored=list(range(12)))
+    assert result['completeness_state'] == audit.SOURCE_EMPTY
+    assert result['conclusion_eligible'] is False
+    assert audit.UNPROVEN_CURRENT_SOURCE_EMPTY in result['reason_codes']
+
+
+def test_an_empty_official_set_stays_ineligible_when_storage_is_also_empty():
+    """Zero versus zero is never a valid match for a FINAL MLB game."""
+    result = _source_completeness(count=0, official=[], stored=[])
+    assert result['completeness_state'] == audit.SOURCE_EMPTY
+    assert result['conclusion_eligible'] is False
+
+
+def test_an_official_only_member_is_reported_in_its_own_direction():
+    result = _source_completeness(
+        count=13, official=list(range(13)), stored=list(range(12)),
+    )
+    assert result['completeness_state'] == audit.SOURCE_OFFICIAL_ONLY_MEMBERS
+    assert result['conclusion_eligible'] is False
+    assert result['missing_from_storage'] == [12]
+
+
+def test_a_stored_only_member_is_reported_in_its_own_direction():
+    result = _source_completeness(
+        count=6, official=list(range(6)), stored=list(range(12)),
+    )
+    assert result['completeness_state'] == audit.SOURCE_STORED_ONLY_MEMBERS
+    assert result['conclusion_eligible'] is False
+    assert result['extra_in_storage'] == list(range(6, 12))
+
+
+def test_membership_differing_in_both_directions_is_its_own_state():
+    result = _source_completeness(
+        count=12, official=list(range(12)), stored=list(range(1, 13)),
+    )
+    assert result['completeness_state'] == audit.SOURCE_BOTH_DIRECTIONS
+    assert result['conclusion_eligible'] is False
+
+
+def test_an_unfetched_source_is_source_unavailable_not_empty():
+    result = _source_completeness(available=False, count=0)
+    assert result['completeness_state'] == audit.SOURCE_STATE_UNAVAILABLE
+    assert result['conclusion_eligible'] is False
+
+
+def test_an_unobserved_database_leaves_membership_unresolved():
+    result = _source_completeness(database_observed=False)
+    assert result['completeness_state'] == audit.SOURCE_DATABASE_UNAVAILABLE
+    assert result['conclusion_eligible'] is False
+
+
+def test_an_invalid_matrix_leaves_membership_unresolved():
+    result = _source_completeness(structurally_valid=False)
+    assert result['completeness_state'] == audit.SOURCE_MATRIX_UNPROVEN
+    assert result['conclusion_eligible'] is False
+
+
+def test_exactly_one_completeness_state_is_conclusion_eligible():
+    eligible = [
+        state for state in audit.SOURCE_COMPLETENESS_STATES
+        if state in audit.CONCLUSION_ELIGIBLE_STATES
+    ]
+    assert eligible == [audit.SOURCE_COMPLETE]
+
+
+@pytest.mark.parametrize('state', [
+    state for state in audit.SOURCE_COMPLETENESS_STATES
+    if state not in audit.CONCLUSION_ELIGIBLE_STATES
+])
+def test_no_completed_result_survives_an_ineligible_source(state):
+    """Every exit-zero name is gated, not just the no-defect one."""
+    for materiality, delta_answer in (
+        (audit.MATERIALITY_EXACT_MATCH, audit.DELTA_IDENTIFIED),
+        (audit.MATERIALITY_MATERIAL, audit.DELTA_IDENTIFIED),
+        (audit.MATERIALITY_MATERIAL, audit.DELTA_NOT_RECOVERABLE),
+    ):
+        decision = audit.decide(
+            classification={
+                'root_condition': audit.ROOT_OFFICIAL_SET_CHANGED,
+                'current_materiality': materiality,
+                'current_source_completeness': state,
+            },
+            delta={'answer': delta_answer}, lock=_gate_lock(),
+            questions=_gate_questions(),
+            source_completeness={
+                'completeness_state': state, 'conclusion_eligible': False,
+                'reason_codes': [audit.UNPROVEN_CURRENT_SOURCE_INCOMPLETE],
+            },
+        )
+        assert decision['result'] not in audit.COMPLETE_RESULTS
+        assert decision['exit_code'] == 2
+
+
+def test_a_conclusion_eligible_source_still_permits_completion():
+    decision = audit.decide(
+        classification={
+            'root_condition': audit.ROOT_OFFICIAL_SET_CHANGED,
+            'current_materiality': audit.MATERIALITY_EXACT_MATCH,
+            'current_source_completeness': audit.SOURCE_COMPLETE,
+        },
+        delta={'answer': audit.DELTA_IDENTIFIED}, lock=_gate_lock(),
+        questions=_gate_questions(), source_completeness=_eligible_source(),
+    )
+    assert decision['result'] in audit.COMPLETE_RESULTS
+    assert decision['exit_code'] == 0
+    assert decision['current_source_conclusion_eligible'] is True
+
+
+def test_the_completeness_gate_reason_reaches_the_verdict():
+    decision = audit.decide(
+        classification={
+            'root_condition': audit.ROOT_OFFICIAL_SET_CHANGED,
+            'current_materiality': audit.MATERIALITY_UNPROVEN,
+            'current_source_completeness': audit.SOURCE_EMPTY,
+        },
+        delta={}, lock=_gate_lock(), questions=_gate_questions(),
+        source_completeness=_source_completeness(
+            count=0, official=[], stored=list(range(12)),
+        ),
+    )
+    assert audit.UNPROVEN_CURRENT_SOURCE_EMPTY in decision['unproven_reasons']
+    assert decision['exit_code'] == 2
+
+
+def test_the_completeness_reason_codes_are_declared_unproven_reasons():
+    for reason in (
+        audit.UNPROVEN_CURRENT_SOURCE_EMPTY,
+        audit.UNPROVEN_CURRENT_SOURCE_INCOMPLETE,
+        audit.UNPROVEN_REGISTRY_EXPECTATION_MISSING,
+    ):
+        assert reason in audit.UNPROVEN_REASONS
+
+
+def test_the_completeness_object_carries_no_raw_payload():
+    """Counts, ids, a state, a flag and reasons — never a box score."""
+    result = _source_completeness()
+    serialized = json.dumps(result, sort_keys=True, default=str).lower()
+    for banned in ('boxscore', 'teams', 'players', 'traceback', 'password'):
+        assert banned not in serialized
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# MEDIUM-D — documented registry scope must match the implementation
+# ══════════════════════════════════════════════════════════════════════════
+
+DOC_PATH = REPO_ROOT / 'docs/current/GAME_824487_SOURCE_REVISION_AUDIT.md'
+
+
+def test_the_registry_row_count_the_docs_claim_is_the_real_one():
+    assert len(audit.MANDATORY_FIELDS) == 26
+    assert f'{len(audit.MANDATORY_FIELDS)} rows' in DOC_PATH.read_text(
+        encoding='utf-8',
+    )
+
+
+def test_the_registry_covers_only_handoff_activation_and_workflow_metadata():
+    """Artifact id, digest and the sync-summary game facts live elsewhere."""
+    documents = {spec['doc'] for spec in audit.MANDATORY_FIELDS}
+    assert documents == {
+        audit.DOC_HANDOFF, audit.DOC_ACTIVATION, audit.DOC_WORKFLOW_METADATA,
+    }
+    fields = {spec['field'] for spec in audit.MANDATORY_FIELDS}
+    assert 'artifact_id' not in fields
+    assert 'digest' not in fields
+    assert 'source_revision' not in fields
+
+
+def test_the_game_scoped_sync_facts_are_enforced_outside_the_registry():
+    """Separately enforced, but still enforced — and still content-gating."""
+    assert audit._CONTENT_GAME_FIELDS == frozenset({
+        'game_membership', 'source_revision', 'reconciliation_plan_fingerprint',
+        'appearances_extracted', 'unchanged', 'inserted', 'updated', 'blocked',
+    })
+
+
+def _doc_prose():
+    """The doc with line wrapping normalised away.
+
+    These assertions are about what the document CLAIMS, so they must survive
+    a reflow that changes nothing about the claim.
+    """
+    return ' '.join(DOC_PATH.read_text(encoding='utf-8').split()).lower()
+
+
+def test_the_docs_describe_artifact_id_absence_accurately():
+    prose = _doc_prose()
+    assert 'not_exposed_by_github' in prose
+    assert 'does not on its own make identity unproven' in prose
+    assert 'exposed and differs, or is malformed, **fails** identity' in prose
+
+
+def test_the_docs_do_not_claim_an_unfetched_source_is_the_only_non_match():
+    """The old wording covered only the never-fetched case."""
+    prose = _doc_prose()
+    assert (
+        'not fetched, failed parsing, yielded zero usable appearances, or '
+        'failed exact membership completeness'
+    ) in prose
+    assert 'an unfetched source is not a current match' not in prose
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# LOW-E — the workflow comment must describe the real control flow
+# ══════════════════════════════════════════════════════════════════════════
+
+def test_the_scan_step_comment_matches_its_actual_failure_behaviour():
+    text = WORKFLOW_PATH.read_text(encoding='utf-8')
+    assert 'A scanner failure fails the workflow' not in text
+    assert 'the final audit gate fails the workflow unless' in text
+
+
+def test_the_scan_outcome_really_is_enforced_by_the_final_gate(steps):
+    scan = _step(steps, 'Scan the evidence artifact')
+    assert scan['continue-on-error'] is True
+    upload = _step(steps, 'Upload the evidence artifact')
+    assert "steps.scan.outcome == 'success'" in str(upload['if'])
+    gate = _step(steps, 'Final audit gate')
+    assert 'continue-on-error' not in gate
+    assert '$SCAN_OUTCOME' in str(gate['run'])

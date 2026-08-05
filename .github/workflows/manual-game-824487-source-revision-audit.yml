@@ -408,8 +408,11 @@ jobs:
           echo "exit_code=$exit_code" >> "$GITHUB_OUTPUT"
           exit "$exit_code"
 
-      # The repository's established scanner, run BEFORE upload. A scanner
-      # failure fails the workflow and the artifact never leaves the runner.
+      # The repository's established scanner, run BEFORE upload. This step
+      # records its outcome rather than failing the job itself: the upload
+      # below is conditioned on that outcome, so an unsafe artifact never
+      # leaves the runner, and the final audit gate fails the workflow unless
+      # the scan succeeded.
       - name: Scan the evidence artifact
         id: scan
         continue-on-error: true

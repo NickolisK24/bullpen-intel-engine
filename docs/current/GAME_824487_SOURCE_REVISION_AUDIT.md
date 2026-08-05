@@ -2,21 +2,43 @@
 
 **Status: audit package implemented and evidence-integrity corrected. The
 production audit has NOT been executed. No conclusion has been reached. No
-repair is authorized. Review verdict: HOLD pending independent
-evidence-integrity review.**
+repair is authorized. Review verdict: HOLD pending a NEW independent
+evidence-integrity review of the second correction pass.**
 
 Nothing in this document states a root cause, because the audit has not run in
 production yet. It describes what the package does, how to read what it will
 produce, and how to remove it afterwards.
 
-An evidence-integrity review found four ways the package could reach a
+A first evidence-integrity review found four ways the package could reach a
 completed conclusion from evidence it had not positively observed: Question 10
 read its activation values from locked expectations and from artifact presence;
 artifact identity fell back to the expected branch because no retained document
 carries one; a failed advisory-lock release never reached the verdict; and
 historical field identification could fire from a row-shaped structure rather
-than from exact values. All four are repaired, and the sections below describe
-the corrected behaviour rather than the original.
+than from exact values.
+
+An **independent** review of that correction confirmed all four were repaired
+and found a fifth path, plus a completion-gate defect and three smaller
+hardening and documentation issues:
+
+* **A fetched-but-incomplete official source could still exit 0.** A box score
+  that returned HTTP 200 and parsed cleanly but yielded zero — or only some —
+  pitching appearances was treated as current official evidence. Because
+  `differing_rows` only ever counted rows that were comparable on both sides,
+  an empty official set and a six-of-twelve set both produced
+  `current_target_exactly_matches_storage`. Membership deficits were computed
+  and reported but gated nothing.
+* **Fingerprint determinism was not load-bearing.** `Q5` was not mandatory and
+  the classifier reacted only to a *proven-false* determinism result, so a run
+  that never established determinism at all could still complete.
+* **The state reducer defaulted into VERIFIED** for an empty observation set
+  and for values that were read but never compared.
+* **The registry's documented scope** was wider than its 26 rows.
+* **A workflow comment** described the scan step as failing the workflow
+  itself.
+
+All nine findings are repaired. The sections below describe the corrected
+behaviour rather than the original.
 
 ---
 
@@ -156,13 +178,13 @@ them.
 Facts are not all "inside the documents". Three sources exist, and each fact
 names exactly one:
 
-| source | facts |
-| :--- | :--- |
-| `handoff-metadata.json` | run id, head SHA, cycle kind, handoff status |
-| `*-activation-summary.json` | activation result, runner exit code, configured mode, `writes_enabled`, `publication_authoritative`, the whole `realization` block, and the later run's 94/94/778 accounting |
-| `*-sync-summary.json` | game 824487 membership, source revision, plan fingerprint, appearances, unchanged, insert/update/block |
-| GitHub artifact metadata | artifact id, digest |
-| GitHub workflow-run metadata | **branch** (and a corroborating head SHA) |
+| source | facts | enforced by |
+| :--- | :--- | :--- |
+| `handoff-metadata.json` | run id, head SHA, cycle kind, handoff status | `MANDATORY_FIELDS` |
+| `*-activation-summary.json` | activation result, runner exit code, configured mode, `writes_enabled`, `publication_authoritative`, the whole `realization` block, and the later run's 94/94/778 accounting | `MANDATORY_FIELDS` |
+| GitHub workflow-run metadata | **branch** (and a corroborating head SHA) | `MANDATORY_FIELDS` |
+| `*-sync-summary.json` | game 824487 membership, source revision, plan fingerprint, appearances, unchanged, insert/update/block | `_CONTENT_GAME_FIELDS`, separately |
+| GitHub artifact metadata | artifact id, digest | their own comparisons |
 
 **The branch is in neither retained document.** The handoff metadata schema
 (`scripts/prepare_shadow_handoff.build_metadata`) carries a schema version, run
@@ -172,12 +194,34 @@ workflow-run metadata (read-only, covered by the existing `actions: read`
 permission) or it is reported **unverified**. It is never filled in from what
 the audit expected it to be.
 
-A single registry — `MANDATORY_FIELDS` — declares, for every mandatory fact:
-the document, the exact evidence path, the expected type, the expected value or
-validator, which conclusions it gates (identity / content / Question 10),
-whether it applies to the later run only, and what its absence means. That
-registry is emitted into the evidence artifact so a reader can check the
-audit's requirements against its results.
+`MANDATORY_FIELDS` — **26 rows**, 8 identity and 18 content — declares, for
+each of the facts it governs: the document, the exact evidence path, the
+expected type, the expected value or validator, which conclusions it gates
+(identity / content / Question 10), whether it applies to the later run only,
+and what its absence means. It is emitted into the evidence artifact so a
+reader can check the audit's requirements against its results.
+
+Its scope is exactly the retained handoff metadata, the retained activation
+summary, and GitHub workflow-run metadata. Two mandatory groups are enforced
+**outside** it, and this document does not present them as registry rows:
+
+* **The game-scoped sync-summary facts** — game 824487 membership, source
+  revision, plan fingerprint, appearances, unchanged, and insert/update/block —
+  are observed and compared by their own contract (`_CONTENT_GAME_FIELDS`) and
+  folded into the **content** verdict. A difference of one in any of them
+  blocks verified content exactly as a registry row would.
+* **Artifact id and digest** are compared against GitHub artifact metadata as
+  their own checks. Under the current contract an artifact id that is exposed
+  and differs, or is malformed, **fails** identity; an artifact id GitHub does
+  **not** expose is reported as `not_exposed_by_github` and does not on its own
+  make identity unproven. The digest is its own third verdict and is reported
+  `unverified` when GitHub no longer exposes it — never as a match.
+
+Every mandatory registry row must resolve a validator. A row naming an
+expectation no run carries would be observed and never compared, so
+`registry_expectation_defects()` reports any such row, a package contract test
+asserts the list is empty, and the state reducer refuses to call an
+uncompared value verified even if one ever slipped through.
 
 ### Three separate verdicts
 
@@ -354,6 +398,42 @@ a secret-scan failure, or a workflow safety violation.
 audit.** If the exit code meant "the platform is broken" in one run and "the
 audit is broken" in another, it would mean nothing in either.
 
+### The current-source completeness gate
+
+All three exit-zero results are statements about game 824487 as it stands
+today, so every one of them is gated on a single flag —
+`current_source_completeness.conclusion_eligible` — which is true only when the
+box score was fetched, parsed, produced a **non-empty** appearance set, and
+that set's pitcher membership matches canonical storage **exactly in both
+directions**. The gate is applied in `decide()` before any classification
+branch, so no branch can route around it, and it contributes an explicit
+reason code rather than silently downgrading.
+
+| completeness state | meaning | conclusion eligible |
+| :--- | :--- | :--- |
+| `complete_and_comparable` | Non-empty, membership matches exactly. | **yes** |
+| `empty_official_set` | Fetched and parsed, zero pitching appearances. A final game has pitchers, so this is missing evidence — not an observation that the game had none. | no |
+| `official_only_members_present` | The official set carries a pitcher storage does not hold. Canonical storage may be incomplete: reported as **material**. | no |
+| `stored_only_members_present` | Storage holds a pitcher the observed official set does not. Either the payload was truncated or the stored row is extraneous; one bounded call cannot tell them apart, so neither is asserted. | no |
+| `both_directions_mismatch` | Membership differs both ways at once. Neither side is established as complete. | no |
+| `source_unavailable` | The source was never observed. | no |
+| `database_unavailable` | Storage was never observed, so membership had nothing to compare against. | no |
+| `matrix_unproven` | The matrix did not validate structurally. | no |
+
+An empty `differing_rows` list proves only that the rows which were
+**comparable on both sides** carried no governed field difference. It says
+nothing about appearances that had no counterpart on one side and so were never
+comparable at all, and it can never on its own establish an exact match. The
+field matrix therefore reserves `complete_for_observed_evidence` for exactly
+matching membership and reports
+`comparable_rows_only_membership_incomplete` otherwise, so no reader can
+mistake "the observed rows agreed" for "the official set was complete".
+
+Because the audit spends exactly **one** bounded box-score call and never
+retries, an incomplete payload is a realistic outcome rather than a hypothetical
+one. The correct response is to reduce scope and report UNPROVEN — not to add
+retries, a second source authority, or a wider call budget.
+
 ### Reading an evidence-limit conclusion
 
 `COMPLETE_SCOPE_AND_MATERIALITY_IDENTIFIED_FIELD_DELTA_UNAVAILABLE` is a
@@ -406,17 +486,30 @@ completely different facts.
   is unavailable. A compound conclusion is not complete because some of its
   dimensions were.
 
-Eight questions (Q1, Q2, Q4, Q6, Q7, Q10, Q11, Q12) are mandatory for
+Nine questions (Q1, Q2, Q4, **Q5**, Q6, Q7, Q10, Q11, Q12) are mandatory for
 completion. Any one of them unanswered closes the exit-zero path.
+
+Q5 is mandatory because the fingerprint is this audit's only instrument: a
+conclusion that game 824487 is currently fine may not rest on a digest nobody
+proved was reproducible. Q5 is answered only from a **non-empty** observed
+appearance set — recomputing the digest of an empty set agrees with itself
+trivially and establishes nothing. Q3 stays outside the mandatory set because
+an incomplete code comparison already forces `ROOT_UNPROVEN` structurally and
+reaches the same verdict through classification.
 
 ### Early stops
 
 When execution halts, the halt stage is recorded and every unanswered question
 carries it as a limitation. Downstream absences are read against that stage
 rather than mistaken for observations: a checkpoint nobody read is not a
-missing checkpoint, an unfetched source is not a current match, and an empty
-field matrix reports `not_generated_no_observed_evidence` rather than
-masquerading as a complete matrix that found no differences.
+missing checkpoint, and an empty field matrix reports
+`not_generated_no_observed_evidence` rather than masquerading as a complete
+matrix that found no differences.
+
+A source that was **not fetched, failed parsing, yielded zero usable
+appearances, or failed exact membership completeness** cannot support a
+current-match conclusion. A successful fetch proves the transport worked; it
+never proves the payload described the whole game.
 
 Question 11 never collapses into a single label. It reports root condition,
 current materiality, persistence, historical field identification, and

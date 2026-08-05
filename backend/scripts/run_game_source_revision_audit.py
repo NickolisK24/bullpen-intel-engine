@@ -461,6 +461,7 @@ def observe_current_source(guard) -> dict:
         'plan_source': None,
         'appearances': [],
         'appearance_count': 0,
+        'extraction_yielded_no_appearances': False,
         'current_source_revision': None,
         'starters': None,
         'plan': None,
@@ -522,6 +523,21 @@ def observe_current_source(guard) -> dict:
         )
     except Exception:  # noqa: BLE001 - a payload that cannot extract is unproven
         result['unavailable_reason'] = 'appearance_extraction_failed'
+        return result
+
+    if not appearances:
+        # The same semantic contract the canonical lane enforces: a FINAL game
+        # that produced no pitching appearances is a failed extraction, not a
+        # game without pitchers. ``game_driven_ingestion`` raises
+        # ``ERROR_APPEARANCE_EXTRACTION_FAILED`` here; the audit mutates
+        # nothing, so it records the same fact as missing evidence and refuses
+        # to treat the response as current official evidence. A 200 proves the
+        # transport worked, never that the payload described the whole game.
+        result['unavailable_reason'] = (
+            audit.UNPROVEN_CURRENT_SOURCE_EMPTY
+        )
+        result['appearance_count'] = 0
+        result['extraction_yielded_no_appearances'] = True
         return result
 
     result['available'] = True
@@ -746,6 +762,18 @@ def build_field_matrix(*, official, stored, plan, artifacts) -> dict:
     # An empty matrix from a run that never observed the source or the
     # database is NOT a complete matrix that found nothing. It is a matrix
     # that was never built, and it says so.
+    #
+    # Nor is a matrix built from overlapping rows a COMPLETE matrix. Six
+    # official appearances compared against twelve stored ones produce six
+    # internally comparable rows and six that were never comparable at all,
+    # and the wording must never let a reader read the first as the second.
+    # ``complete_for_observed_evidence`` is therefore reserved for exactly
+    # matching membership, and every other populated case says
+    # ``comparable_rows_only_membership_incomplete``.
+    membership_matches = (
+        bool(official_records)
+        and set(official_records) == set(stored_records)
+    )
     if not official_records and not stored_records:
         summary['completeness'] = (
             'not_generated_no_observed_evidence'
@@ -754,8 +782,12 @@ def build_field_matrix(*, official, stored, plan, artifacts) -> dict:
         summary['completeness'] = 'partial_stored_evidence_only'
     elif not stored_records:
         summary['completeness'] = 'partial_official_evidence_only'
-    else:
+    elif membership_matches:
         summary['completeness'] = 'complete_for_observed_evidence'
+    else:
+        summary['completeness'] = (
+            'comparable_rows_only_membership_incomplete'
+        )
     summary['official_pitcher_mlb_ids'] = sorted(official_records)
     summary['stored_pitcher_mlb_ids'] = sorted(stored_records)
     summary['missing_from_storage'] = sorted(
@@ -841,7 +873,7 @@ def _question(question_id, *, question, state, answer, evidence,
 def build_questions(*, artifacts, code_drift, official, determinism, matrix,
                     checkpoint, stored, classification, delta, causality_view,
                     consequence, current_revision_state, database_observed,
-                    halt_stage=None) -> list[dict]:
+                    source_completeness=None, halt_stage=None) -> list[dict]:
     """Twelve questions, each reporting only what was positively observed."""
     runs = (artifacts or {}).get('runs') or {}
     prior = runs.get(audit.RUN_PRIOR) or {}
@@ -849,6 +881,13 @@ def build_questions(*, artifacts, code_drift, official, determinism, matrix,
     matrix_summary = (matrix or {}).get('summary') or {}
     plan = (official or {}).get('plan') or {}
     source_available = bool((official or {}).get('available'))
+    completeness = source_completeness or {}
+    conclusion_eligible = bool(completeness.get('conclusion_eligible'))
+    completeness_state = completeness.get('completeness_state')
+    source_empty = bool(
+        (official or {}).get('extraction_yielded_no_appearances')
+        or completeness_state == audit.SOURCE_EMPTY
+    )
 
     artifact_inputs = ['prior_run_artifact', 'later_run_artifact']
     artifact_observed = [
@@ -1017,9 +1056,17 @@ def build_questions(*, artifacts, code_drift, official, determinism, matrix,
                 'Does the current official appearance set produce the prior '
                 'revision, the later revision, or neither?'
             ),
+            # Fetched is not answered. A response that arrived, parsed, and
+            # then yielded nothing usable is UNAVAILABLE current evidence; a
+            # response whose membership does not match storage is UNPROVEN.
+            # Only an exactly-matching, non-empty set answers this question.
             state=(
-                audit.ANSWER_OBSERVED_YES if source_available
-                else audit.ANSWER_UNAVAILABLE
+                audit.ANSWER_UNAVAILABLE
+                if not source_available or source_empty
+                else (
+                    audit.ANSWER_OBSERVED_YES if conclusion_eligible
+                    else audit.ANSWER_UNPROVEN
+                )
             ),
             answer={
                 'state': current_revision_state,
@@ -1027,22 +1074,48 @@ def build_questions(*, artifacts, code_drift, official, determinism, matrix,
                     'current_source_revision'
                 ),
                 'appearance_count': (official or {}).get('appearance_count'),
+                'expected_appearance_count': audit.EXPECTED_APPEARANCE_COUNT,
+                'extraction_yielded_no_appearances': bool(
+                    (official or {}).get('extraction_yielded_no_appearances')
+                ),
+                'completeness_state': completeness_state,
+                'conclusion_eligible': conclusion_eligible,
                 'starters': (official or {}).get('starters'),
                 'unavailable_reason': (official or {}).get(
                     'unavailable_reason'
                 ),
             },
             evidence=[audit.EVIDENCE_SOURCE_OFFICIAL],
-            required_inputs=['current_official_boxscore'],
+            required_inputs=[
+                'current_official_boxscore',
+                'non_empty_official_appearance_set',
+                'official_membership_matching_storage',
+            ],
             observed_inputs=(
-                ['current_official_boxscore'] if source_available else []
+                (['current_official_boxscore'] if source_available else [])
+                + ([] if source_empty or not source_available
+                   else ['non_empty_official_appearance_set'])
+                + (['official_membership_matching_storage']
+                   if conclusion_eligible else [])
             ),
             missing_inputs=(
-                [] if source_available else ['current_official_boxscore']
+                ([] if source_available else ['current_official_boxscore'])
+                + (['non_empty_official_appearance_set']
+                   if source_empty or not source_available else [])
+                + ([] if conclusion_eligible
+                   else ['official_membership_matching_storage'])
             ),
+            limitations=list(completeness.get('limitations') or ()),
             unproven_reason=(
-                None if source_available
-                else audit.UNPROVEN_CURRENT_SOURCE_UNAVAILABLE
+                None if conclusion_eligible
+                else (
+                    audit.UNPROVEN_CURRENT_SOURCE_EMPTY if source_empty
+                    else (
+                        audit.UNPROVEN_CURRENT_SOURCE_UNAVAILABLE
+                        if not source_available
+                        else audit.UNPROVEN_CURRENT_SOURCE_INCOMPLETE
+                    )
+                )
             ),
         ),
         _question(
@@ -1050,12 +1123,17 @@ def build_questions(*, artifacts, code_drift, official, determinism, matrix,
                 'Is the fingerprint deterministic over identical normalized '
                 'content and deterministic input permutations?'
             ),
+            # MANDATORY. The fingerprint is this audit's only instrument, so a
+            # conclusion about game 824487 may never rest on a digest nobody
+            # proved was reproducible. Determinism over an EMPTY set proves
+            # nothing either: hashing nothing twice always agrees.
             state=(
-                audit.ANSWER_OBSERVED_YES
-                if determinism.get('deterministic_in_process') is True
+                audit.ANSWER_OBSERVED_NO
+                if determinism.get('deterministic_in_process') is False
                 else (
-                    audit.ANSWER_OBSERVED_NO
-                    if determinism.get('deterministic_in_process') is False
+                    audit.ANSWER_OBSERVED_YES
+                    if determinism.get('deterministic_in_process') is True
+                    and (determinism.get('appearance_count') or 0) > 0
                     else audit.ANSWER_NOT_OBSERVED
                 )
             ),
@@ -1063,6 +1141,8 @@ def build_questions(*, artifacts, code_drift, official, determinism, matrix,
                 'deterministic_in_process': determinism.get(
                     'deterministic_in_process'
                 ),
+                'appearance_count': determinism.get('appearance_count'),
+                'evidence_status': determinism.get('evidence_status'),
                 'repeated_fingerprints': determinism.get(
                     'repeated_fingerprints'
                 ),
@@ -1071,18 +1151,36 @@ def build_questions(*, artifacts, code_drift, official, determinism, matrix,
                     'permutation_fingerprints'
                 ),
                 'additional_source_requests': 0,
+                'note': (
+                    'Determinism is established only over a NON-EMPTY '
+                    'observed appearance set. An empty set recomputes to the '
+                    'same digest trivially and proves nothing about the '
+                    'fingerprint constructor.'
+                ),
             },
             evidence=[audit.EVIDENCE_SOURCE_OFFICIAL],
-            required_inputs=['current_official_appearance_set'],
+            required_inputs=['non_empty_current_official_appearance_set'],
             observed_inputs=(
-                ['current_official_appearance_set'] if source_available else []
+                ['non_empty_current_official_appearance_set']
+                if (determinism.get('appearance_count') or 0) > 0 else []
             ),
             missing_inputs=(
-                [] if source_available else ['current_official_appearance_set']
+                [] if (determinism.get('appearance_count') or 0) > 0
+                else ['non_empty_current_official_appearance_set']
+            ),
+            limitations=(
+                [] if (determinism.get('appearance_count') or 0) > 0 else [
+                    'No non-empty appearance set was observed, so fingerprint '
+                    'determinism was never tested.'
+                ]
             ),
             unproven_reason=(
                 None if determinism.get('deterministic_in_process') is not None
-                else audit.UNPROVEN_CURRENT_SOURCE_UNAVAILABLE
+                and (determinism.get('appearance_count') or 0) > 0
+                else (
+                    audit.UNPROVEN_CURRENT_SOURCE_EMPTY if source_empty
+                    else audit.UNPROVEN_CURRENT_SOURCE_UNAVAILABLE
+                )
             ),
         ),
         _question(
@@ -1091,14 +1189,29 @@ def build_questions(*, artifacts, code_drift, official, determinism, matrix,
                 'normalized appearance match the stored canonical GameLog and '
                 'appearance-team authority?'
             ),
+            # A matrix that merely holds overlapping rows is not an answer to
+            # "does each official pitcher match storage" — it is an answer
+            # about the pitchers that appeared on both sides. Membership
+            # completeness is required before this question is answered.
             state=(
                 audit.ANSWER_OBSERVED_YES
                 if source_available and database_observed
                 and matrix_summary.get('structurally_valid')
+                and conclusion_eligible
                 else audit.ANSWER_NOT_OBSERVED
             ),
             answer={
                 'matrix_completeness': matrix_summary.get('completeness'),
+                'membership_state': completeness_state,
+                'membership_matches': matrix_summary.get('membership_matches'),
+                'conclusion_eligible': conclusion_eligible,
+                'official_missing_row_count': matrix_summary.get(
+                    'official_missing_row_count'
+                ),
+                'stored_missing_row_count': matrix_summary.get(
+                    'stored_missing_row_count'
+                ),
+                'differing_rows_only_covers_comparable_rows': True,
                 'official_pitcher_mlb_ids': matrix_summary.get(
                     'official_pitcher_mlb_ids'
                 ),
@@ -1137,18 +1250,38 @@ def build_questions(*, artifacts, code_drift, official, determinism, matrix,
                 audit.EVIDENCE_SOURCE_OFFICIAL,
                 audit.EVIDENCE_SOURCE_CURRENT_DATABASE,
             ],
-            required_inputs=['current_official_source', 'stored_canonical_state'],
+            required_inputs=[
+                'current_official_source', 'stored_canonical_state',
+                'exact_official_membership',
+            ],
             observed_inputs=(
                 (['current_official_source'] if source_available else [])
                 + (['stored_canonical_state'] if database_observed else [])
+                + (['exact_official_membership'] if conclusion_eligible
+                   else [])
             ),
             missing_inputs=(
                 ([] if source_available else ['current_official_source'])
                 + ([] if database_observed else ['stored_canonical_state'])
+                + ([] if conclusion_eligible
+                   else ['exact_official_membership'])
             ),
+            limitations=list(completeness.get('limitations') or ()),
             unproven_reason=(
                 None if source_available and database_observed
-                else audit.UNPROVEN_DATABASE_EVIDENCE_UNAVAILABLE
+                and conclusion_eligible
+                else (
+                    audit.UNPROVEN_DATABASE_EVIDENCE_UNAVAILABLE
+                    if not database_observed
+                    else (
+                        audit.UNPROVEN_CURRENT_SOURCE_EMPTY if source_empty
+                        else (
+                            audit.UNPROVEN_CURRENT_SOURCE_UNAVAILABLE
+                            if not source_available
+                            else audit.UNPROVEN_CURRENT_SOURCE_INCOMPLETE
+                        )
+                    )
+                )
             ),
         ),
         _question(
@@ -1379,7 +1512,13 @@ _UNPROVEN_DIMENSION_VALUES = frozenset({
     audit.PERSISTENCE_UNAVAILABLE,
     audit.FIELD_ID_UNPROVEN,
     audit.CHECKPOINT_UNPROVEN,
-})
+    # Every completeness state except an exact membership match leaves the
+    # current-comparison dimension unresolved, which makes the compound
+    # questions Q11 and Q12 unanswerable rather than merely caveated.
+} | (
+    set(audit.SOURCE_COMPLETENESS_STATES)
+    - set(audit.CONCLUSION_ELIGIBLE_STATES)
+))
 
 
 def _unproven_dimensions(classification) -> list[str]:
@@ -1660,6 +1799,14 @@ def run(args) -> dict:
         official=official, stored=stored,
         plan=official.get('plan'), artifacts=artifacts,
     )
+    # Resolved BEFORE classification: whether the observed official set may
+    # support any current conclusion at all is a precondition of the
+    # comparison, not a footnote on it.
+    source_completeness = audit.current_source_completeness(
+        official=official,
+        matrix_summary=matrix['summary'],
+        database_observed=bool(collected.get('database_observed')),
+    )
     classification = audit.classify(
         artifacts=artifacts,
         code_drift=code_drift,
@@ -1669,6 +1816,7 @@ def run(args) -> dict:
         plan_observation=official.get('plan') or {},
         checkpoint=checkpoint,
         source_available=source_available,
+        source_completeness=source_completeness,
     )
     delta = audit.field_delta_answer(
         artifacts=artifacts, classification=classification,
@@ -1697,11 +1845,14 @@ def run(args) -> dict:
         causality_view=causality_view, consequence=consequence,
         current_revision_state=current_revision_state,
         database_observed=bool(collected.get('database_observed')),
+        source_completeness=source_completeness,
         halt_stage=collected.get('halt_stage'),
     )
-    # The reducer sees the lock lifecycle and the question states directly, so
-    # an unproven release or an unanswered mandatory question closes the
-    # exit-zero path instead of living only in a report nobody gates on.
+    # The reducer sees the lock lifecycle, the question states, and the
+    # current-source completeness gate directly, so an unproven release, an
+    # unanswered mandatory question, or an incomplete official appearance set
+    # closes the exit-zero path instead of living only in a report nobody
+    # gates on.
     decision = audit.decide(
         failed_reasons=failed_reasons,
         unproven_reasons=unproven_reasons,
@@ -1709,6 +1860,7 @@ def run(args) -> dict:
         delta=delta,
         lock=lock,
         questions=questions,
+        source_completeness=source_completeness,
     )
 
     read_only = {
@@ -1760,6 +1912,7 @@ def run(args) -> dict:
         current_revision_state=current_revision_state,
         halt_stage=collected.get('halt_stage'),
         database_observed=bool(collected.get('database_observed')),
+        source_completeness=source_completeness,
     )
     # Carried beside the document rather than inside it: the matrix is its own
     # artifact file, and duplicating every row into the summary would double
@@ -1787,7 +1940,15 @@ def build_document(*, context, note, artifacts, code_drift, official,
                    source_calls, decision, questions,
                    causality_view=None, consequence=None,
                    current_revision_state=None, halt_stage=None,
-                   database_observed=False) -> dict:
+                   database_observed=False, source_completeness=None) -> dict:
+    # A run that halted before it could look at the source still has to say
+    # something true about the source, and "unavailable, not conclusion
+    # eligible" is that truth.
+    if not source_completeness:
+        source_completeness = audit.current_source_completeness(
+            official=official or {}, matrix_summary={},
+            database_observed=bool(database_observed),
+        )
     return {
         'schema_version': audit.SCHEMA_VERSION,
         'audit_type': audit.AUDIT_TYPE,
@@ -1815,6 +1976,11 @@ def build_document(*, context, note, artifacts, code_drift, official,
             if key != 'appearances'
         },
         'current_revision_state': current_revision_state,
+        # Whether the observed official set may support any current
+        # conclusion, stated in one place rather than inferred from a
+        # scattering of booleans. Carries no raw payload: counts, identity
+        # lists, a state, an eligibility flag, and reason codes only.
+        'current_source_completeness': source_completeness or {},
         # Where execution stopped, if it did. Downstream absences are read
         # against this rather than mistaken for observations.
         'halt_stage': halt_stage,
@@ -1844,6 +2010,7 @@ REQUIRED_MARKDOWN_SECTIONS = (
     '## Retained artifact verification',
     '## Code-path drift',
     '## Current official source',
+    '## Current official set completeness',
     '## Field matrix',
     '## Read-only proof',
     '## Source-call accounting',
@@ -1864,6 +2031,7 @@ def render_markdown(document) -> str:
     calls = document.get('source_call_report') or {}
     semantics = document.get('source_revision_semantics') or {}
     determinism = document.get('fingerprint_determinism') or {}
+    completeness = document.get('current_source_completeness') or {}
 
     lines = ['# Game 824487 source-revision audit', '']
     lines += ['## Result', '']
@@ -1952,7 +2120,17 @@ def render_markdown(document) -> str:
     lines.append('')
 
     lines += ['## Current official source', '']
-    lines.append(f"- available: `{official.get('available')}`")
+    lines.append(f"- fetched: `{completeness.get('source_fetch_succeeded')}`")
+    lines.append(f"- available as evidence: `{official.get('available')}`")
+    lines.append(
+        f"- unavailable reason: `{official.get('unavailable_reason')}`"
+    )
+    lines.append(
+        '- extracted appearances: '
+        f"{completeness.get('extracted_appearance_count')} "
+        f"(expected {(incident or {}).get('expected_appearance_count')})"
+    )
+    lines.append(f"- non-empty: `{completeness.get('non_empty')}`")
     lines.append(
         f"- current source revision: `{official.get('current_source_revision')}`"
     )
@@ -1965,6 +2143,47 @@ def render_markdown(document) -> str:
     )
     lines.append('')
 
+    # A fetch that succeeded is not a set that was complete. These two facts
+    # are rendered separately and adjacently so no reader can merge them.
+    lines += ['## Current official set completeness', '']
+    lines.append(
+        f"- completeness state: `{completeness.get('completeness_state')}`"
+    )
+    lines.append(
+        '- **conclusion eligible: '
+        f"`{completeness.get('conclusion_eligible')}`**"
+    )
+    lines.append(
+        f"- membership matches storage: `{completeness.get('membership_matches')}`"
+    )
+    lines.append(
+        '- official pitchers missing from storage: '
+        f"{len(completeness.get('missing_from_storage') or ())}"
+    )
+    lines.append(
+        '- stored pitchers absent from the observed official set: '
+        f"{len(completeness.get('extra_in_storage') or ())}"
+    )
+    lines.append(
+        '- matrix rows with no official appearance: '
+        f"{completeness.get('official_missing_row_count')}"
+    )
+    lines.append(
+        '- matrix rows with no stored appearance: '
+        f"{completeness.get('stored_missing_row_count')}"
+    )
+    lines.append(
+        f"- reason codes: `{completeness.get('reason_codes')}`"
+    )
+    for limitation in completeness.get('limitations') or ():
+        lines.append(f'- limitation: {limitation}')
+    lines.append(
+        '- An empty `differing rows` list below covers only the rows that '
+        'were comparable on both sides. It is not evidence that the official '
+        'appearance set was complete.'
+    )
+    lines.append('')
+
     lines += ['## Field matrix', '']
     lines.append(f"- rows: {matrix.get('row_count')}")
     lines.append(
@@ -1973,7 +2192,20 @@ def render_markdown(document) -> str:
     lines.append(
         f"- stored pitchers: {len(matrix.get('stored_pitcher_mlb_ids') or ())}"
     )
-    lines.append(f"- differing rows: {len(matrix.get('differing_rows') or ())}")
+    lines.append(f"- completeness: `{matrix.get('completeness')}`")
+    lines.append(f"- membership matches: `{matrix.get('membership_matches')}`")
+    lines.append(
+        '- differing rows (comparable rows only): '
+        f"{len(matrix.get('differing_rows') or ())}"
+    )
+    lines.append(
+        '- rows with no official appearance: '
+        f"{matrix.get('official_missing_row_count')}"
+    )
+    lines.append(
+        '- rows with no stored appearance: '
+        f"{matrix.get('stored_missing_row_count')}"
+    )
     lines.append(
         '- every historical cell carries an evidence status: '
         f"`{matrix.get('every_historical_cell_carries_a_status')}`"
@@ -2041,6 +2273,9 @@ def write_artifacts(document, matrix_rows, artifact_dir) -> dict:
                 document['source_revision_semantics']['fingerprint_fields']
             ),
             'summary': document.get('field_matrix_summary') or {},
+            'current_source_completeness': document.get(
+                'current_source_completeness'
+            ) or {},
             'rows': list(matrix_rows or ()),
         },
         CODE_DRIFT_JSON: document.get('code_drift') or {},
