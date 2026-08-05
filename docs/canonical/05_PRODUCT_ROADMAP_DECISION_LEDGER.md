@@ -461,6 +461,7 @@ Predictions, betting or odds products, game-outcome projections, injury predicti
 | D-044 | Aug 4, 2026 | Shadow observation backlog and publication blockers are separate views; missing work-item proof blocks only in authoritative mode | Adopted |
 | D-045 | Aug 4, 2026 | Backend CI is partitioned across four deterministic, file-balanced shards with separate PostgreSQL databases and exact collection accounting | Adopted |
 | D-046 | Aug 4, 2026 | Trust-critical CI receives full Git history; frontend CI uses the committed lockfile and requires tests plus the production build | Adopted |
+| D-047 | Aug 5, 2026 | The game 824487 source-revision mismatch is investigated by a manual exact-scope read-only audit that will not guess a field delta from a SHA-256 digest | Adopted; production audit not yet executed |
 
 ## 17. Open Decisions
 
@@ -529,6 +530,7 @@ Branch names identify the user or operator who notices the work. Never work dire
 | Aug 4, 2026 | CI | CI-001 closure (#599) | PR #610 / `ebe2db4...` / run `30957543371` | `npm ci`, 864 frontend tests, required production build, mutation-tested contract |
 | Aug 5, 2026 | Phase 1B | UX-001 canonical Team State implementation (#590) | PR #611 / `8a528ef...` | 7,315 backend tests, 864 frontend tests, build success, docs updated; production triad evidence pending |
 | Aug 5, 2026 | Governance cleanup | Obsolete simulation README issue #5 closed | Issue #5 | Closed as not planned; no longer matches bullpen-intelligence product identity |
+| Aug 5, 2026 | Phase 1A | Game 824487 source-revision audit package | Branch `audit/game-824487-source-revision` | Pending read-only investigation: package implemented, production audit NOT executed, no conclusion reached, no repair authorized |
 
 ## 20. Phase Exit Record
 

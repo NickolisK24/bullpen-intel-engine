@@ -46,6 +46,14 @@ milestones. It does not replace the detailed evidence records linked from
 - Closed the obsolete simulation-output README issue #5 as not planned because
   BaseballOS is a bullpen-intelligence product, not the former simulation
   direction described by that issue.
+- Added a manual, exact-scope, read-only audit package for the game 824487
+  source-revision mismatch observed between scheduled daily runs `30902544622`
+  and `30999087370` (D-047). This is a PENDING read-only investigation: the
+  package is implemented, the production audit has not been executed, no
+  conclusion has been reached, and no repair is authorized. Daily and postgame
+  remain shadow, backfill remains off, writes and authoritative publication
+  remain prohibited, and the governed dead-letter backlog is unchanged. See
+  [GAME_824487_SOURCE_REVISION_AUDIT.md](GAME_824487_SOURCE_REVISION_AUDIT.md).
 
 ## July 2026 - Canonical Trust And Ingestion Foundation
 
