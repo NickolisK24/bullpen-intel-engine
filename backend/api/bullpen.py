@@ -119,6 +119,12 @@ from services.public_roster_readiness import (
 from services.roster_status_audit import with_recent_inactive_roster_audit
 from services.baseline_distribution import build_baseline_payload
 from services.season_era import build_season_era_payload
+from services.team_state_public_vocabulary import (
+    TEAM_STATE_READINESS_UNAVAILABLE,
+    public_team_state,
+    team_state_not_team_scoped,
+    team_state_unavailable,
+)
 from services.workload_concentration import (
     WORKLOAD_CONCENTRATION_BASELINE_FAMILY,
     build_workload_concentration_baselines,
@@ -1614,6 +1620,34 @@ def build_team_roster_authority(team_id, reference_date=None):
     return apply_public_roster_readiness(authority, readiness)
 
 
+def canonical_team_state(team_id):
+    """Backend-owned canonical public Team State for one team.
+
+    Reuses the governed Team Operations readiness pipeline — the same resolver
+    the Share Artifact path already runs — and projects it through the single
+    public-vocabulary authority in ``services.team_state_public_vocabulary``.
+    Team State is never derived here from board group counts, ``context.health``,
+    landscape lane membership, or availability percentages.
+
+    Fails closed: any resolver error yields a governed non-state block rather
+    than an absent field or an invented state, so a reader surface always has
+    something honest to render.
+    """
+    # Deferred: the generation service reaches back into the api layer for the
+    # production readiness recipe, so importing it at module scope would cycle.
+    from services.share_artifact_generation import resolve_team_readiness_payload
+
+    try:
+        readiness = resolve_team_readiness_payload(team_id)
+    except Exception:
+        current_app.logger.exception(
+            'Canonical Team State readiness resolution failed for team_id=%s.',
+            team_id,
+        )
+        return team_state_unavailable(TEAM_STATE_READINESS_UNAVAILABLE)
+    return public_team_state(readiness)
+
+
 def _build_team_board(team_id, include_stale=False, freshness=None, reference_date=None):
     """
     Build a Tonight's Bullpen Board payload for one team.
@@ -1740,7 +1774,7 @@ def _build_team_board(team_id, include_stale=False, freshness=None, reference_da
         raw_roster_authority,
         roster_readiness,
     )
-    return build_board_payload(
+    payload = build_board_payload(
         team=team_info,
         records=records,
         freshness=freshness,
@@ -1752,6 +1786,14 @@ def _build_team_board(team_id, include_stale=False, freshness=None, reference_da
         bullpen_stability=bullpen_stability,
         bullpen_environment=bullpen_environment,
     )
+    # The board's public Team State comes from governed Team Operations
+    # readiness, not from the count-derived ``context.health`` state that lives
+    # alongside it. ``context`` stays exactly as it was: it still carries the
+    # backing counts, the why sentence, and the limitations this surface shows.
+    payload['team_state'] = canonical_team_state(
+        team_info.get('team_id') if isinstance(team_info, dict) else team_id
+    )
+    return payload
 
 
 @bullpen_bp.route('/teams/<int:team_id>/board', methods=['GET'])
@@ -2494,6 +2536,53 @@ def _dashboard_availability_summary_for_roster_readiness(summary, readiness):
     return result
 
 
+LANDSCAPE_TEAM_LANES = (
+    'constrained_bullpens',
+    'available_bullpens',
+    'monitoring_concentration',
+)
+
+
+def _with_landscape_team_states(landscape, team_state_for_team):
+    """Attach the canonical public Team State to each named landscape team.
+
+    The landscape lanes are league orientation, not Team State — the lane a team
+    appears in stays exactly what it was. This only gives each *named* team the
+    backend-owned Team State block so the Dashboard can show a team's canonical
+    state next to its name instead of the reader having to infer one from the
+    lane.
+
+    Bounded by construction: the lanes name at most ``top_n`` teams each, and a
+    team named in more than one lane is resolved once.
+    """
+    if not isinstance(landscape, dict):
+        return landscape
+
+    resolved = {}
+    enriched = dict(landscape)
+    for lane in LANDSCAPE_TEAM_LANES:
+        entries = enriched.get(lane)
+        if not isinstance(entries, list):
+            continue
+        lane_entries = []
+        for entry in entries:
+            if not isinstance(entry, dict):
+                lane_entries.append(entry)
+                continue
+            team_id = entry.get('team_id')
+            if team_id is None:
+                lane_entries.append({
+                    **entry,
+                    'team_state': team_state_unavailable(TEAM_STATE_READINESS_UNAVAILABLE),
+                })
+                continue
+            if team_id not in resolved:
+                resolved[team_id] = team_state_for_team(team_id)
+            lane_entries.append({**entry, 'team_state': resolved[team_id]})
+        enriched[lane] = lane_entries
+    return enriched
+
+
 def build_bullpen_dashboard_payload(*, use_published_freshness=False):
     """
     League-wide bullpen overview for the landing dashboard.
@@ -2544,10 +2633,13 @@ def build_bullpen_dashboard_payload(*, use_published_freshness=False):
 
     # Tonight's Bullpen Landscape — league orientation, reusing the records we
     # already classified above (no extra availability pass).
-    landscape = build_landscape(
-        records=availability_records,
-        reference_date=reference_date,
-        freshness=freshness,
+    landscape = _with_landscape_team_states(
+        build_landscape(
+            records=availability_records,
+            reference_date=reference_date,
+            freshness=freshness,
+        ),
+        canonical_team_state,
     )
     roster_readiness = build_public_roster_readiness(
         reference_date=reference_date,
@@ -2637,6 +2729,12 @@ def build_bullpen_dashboard_payload(*, use_published_freshness=False):
         'ranking_applied': False,
         'selection_made': False,
         'scope': CURRENT_AVAILABILITY_SCOPE,
+        # The Dashboard's headline read is league-wide, and Team State is
+        # defined per team. Rather than invent a league-shaped pseudo-state
+        # (the retired "Stable Overall"), the league surface carries the
+        # governed not-team-scoped block and points the reader at a team board.
+        # Per-team canonical Team State rides on the landscape team entries.
+        'team_state': team_state_not_team_scoped(),
         'context': context,
         'roles': {
             'order': list(PUBLIC_ROLE_COMPOSITION_KEYS),
@@ -2728,8 +2826,43 @@ def build_bullpen_dashboard_payload(*, use_published_freshness=False):
     return payload
 
 
+def _with_dashboard_team_state_compatibility(payload):
+    """Give a served Dashboard payload an explicit Team State block.
+
+    A snapshot persisted before the canonical Team State contract existed has no
+    ``team_state`` on the payload or on its landscape team entries. Those
+    snapshots carry no governed readiness result to project, so the serving
+    boundary fills the gap with the backend-owned fail-closed block instead of
+    leaving the field absent. Team State is never back-derived here from
+    ``context.health``, lane membership, or counts, and persisted snapshot rows
+    are not rewritten — this is a read-time projection only.
+    """
+    if not isinstance(payload, dict):
+        return payload
+
+    result = dict(payload)
+    if not isinstance(result.get('team_state'), dict):
+        result['team_state'] = team_state_not_team_scoped()
+
+    landscape = result.get('landscape')
+    if isinstance(landscape, dict) and not _landscape_carries_team_state(landscape):
+        result['landscape'] = _with_landscape_team_states(
+            landscape,
+            lambda _team_id: team_state_unavailable(TEAM_STATE_READINESS_UNAVAILABLE),
+        )
+    return result
+
+
+def _landscape_carries_team_state(landscape):
+    for lane in LANDSCAPE_TEAM_LANES:
+        for entry in landscape.get(lane) or ():
+            if isinstance(entry, dict) and not isinstance(entry.get('team_state'), dict):
+                return False
+    return True
+
+
 def _dashboard_payload_with_snapshot_metadata(payload, served_from, snapshot=None):
-    result = dict(payload or {})
+    result = _with_dashboard_team_state_compatibility(dict(payload or {}))
     if snapshot is not None:
         freshness = dict(result.get('freshness') or {})
         overlay = _published_snapshot_overlay(snapshot)
@@ -2802,6 +2935,9 @@ def _dashboard_snapshot_unavailable_payload(reason, *, snapshot=None):
         'ranking_applied': False,
         'selection_made': False,
         'scope': CURRENT_AVAILABILITY_SCOPE,
+        # No servable snapshot means no governed Team State to publish. The
+        # block stays explicitly label-less rather than absent.
+        'team_state': team_state_unavailable(TEAM_STATE_READINESS_UNAVAILABLE),
         'context': {},
         'roles': {
             'order': list(PUBLIC_ROLE_COMPOSITION_KEYS),
@@ -3033,7 +3169,13 @@ def get_bullpen_landscape():
     if snapshot is not None and isinstance(snapshot.payload, dict):
         landscape = (snapshot.payload or {}).get('landscape')
         if isinstance(landscape, dict):
-            return jsonify(landscape)
+            if _landscape_carries_team_state(landscape):
+                return jsonify(landscape)
+            # Pre-contract snapshot: fail closed rather than leave the field absent.
+            return jsonify(_with_landscape_team_states(
+                landscape,
+                lambda _team_id: team_state_unavailable(TEAM_STATE_READINESS_UNAVAILABLE),
+            ))
 
     freshness = _board_freshness_block()
     reference_date = _public_availability_reference_date(freshness)
@@ -3041,10 +3183,13 @@ def get_bullpen_landscape():
         availability_latest_fatigue_rows(),
         reference_date=reference_date,
     )
-    return jsonify(build_landscape(
-        records=records,
-        reference_date=reference_date,
-        freshness=freshness,
+    return jsonify(_with_landscape_team_states(
+        build_landscape(
+            records=records,
+            reference_date=reference_date,
+            freshness=freshness,
+        ),
+        canonical_team_state,
     ))
 
 

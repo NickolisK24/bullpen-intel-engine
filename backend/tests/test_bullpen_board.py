@@ -1017,6 +1017,70 @@ class TestBoardEndpoint:
         assert pressure['status'] == 'limited_read'
         assert ROTATION_LIMITED_SAMPLE_LIMITATION in pressure['limitations']
 
+    def test_team_board_exposes_the_canonical_public_team_state_contract(self, client):
+        """The board's Team State comes from the backend public-vocabulary authority.
+
+        The board keeps its count-derived ``context.health`` block for the counts
+        and the why sentence, but that internal state is never the public Team
+        State — the ``team_state`` block is, and it only ever carries a canonical
+        label or no label at all.
+        """
+        with client.application.app_context():
+            _seed_pitcher(
+                'Canonical State Arm',
+                team_id=178,
+                team_abbr='CTS',
+                mlb_id=17801,
+                innings=[1.0],
+                days_ago=[3],
+            )
+
+        body = client.get('/api/bullpen/teams/178/board').get_json()
+        team_state = body['team_state']
+
+        assert team_state['contract'] == 'team_state_public_v1'
+        assert set(team_state) >= {
+            'available', 'public_state', 'public_label', 'outcome', 'unavailable_message',
+        }
+        # Whatever the governed readiness resolved to, the label is canonical or absent.
+        assert team_state['public_label'] in {'Fresh', 'Stretched', 'Vulnerable', None}
+        assert team_state['public_state'] in {'fresh', 'stretched', 'vulnerable', None}
+        if team_state['available']:
+            assert team_state['public_label'] is not None
+            assert team_state['unavailable_message'] is None
+        else:
+            # Fail-closed reads publish no state and say so in non-state language.
+            assert team_state['public_label'] is None
+            assert team_state['public_state'] is None
+            assert 'not available' in team_state['unavailable_message']
+
+        # The internal, count-derived bullpen-health state is still present and
+        # still internal — it never leaks into the public Team State fields.
+        internal_state = body['context']['health']['state']
+        assert internal_state not in {'Fresh', 'Stretched', 'Vulnerable'}
+        assert team_state['public_label'] != internal_state
+        # Arm reads, roles, and named reads stay separate from Team State.
+        assert 'groups' in body and 'roster_authority' in body
+
+    def test_team_board_team_state_never_uses_a_retired_label(self, client):
+        with client.application.app_context():
+            _seed_pitcher(
+                'Retired Label Arm',
+                team_id=179,
+                team_abbr='RLB',
+                mlb_id=17901,
+                innings=[1.0],
+                days_ago=[2],
+            )
+
+        team_state = client.get('/api/bullpen/teams/179/board').get_json()['team_state']
+
+        for retired in (
+            'Stable', 'Stable Overall', 'Usable', 'Worth Watching',
+            'Thin', 'Stressed', 'Recovering', 'Manageable', 'Unknown',
+        ):
+            assert team_state['public_label'] != retired
+
     def test_team_board_exposes_bullpen_stability(self, client):
         with client.application.app_context():
             _seed_pitcher(

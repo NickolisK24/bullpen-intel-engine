@@ -166,6 +166,79 @@ class TestDashboardEndpoint:
         assert body['role_change_detection']['ranking_applied'] is False
         assert body['role_change_detection']['selection_made'] is False
 
+    def test_dashboard_publishes_no_league_wide_pseudo_team_state(self, client):
+        """Team State is a team-level read, so the league surface has none.
+
+        The retired frontend league label ("Stable Overall") had no canonical
+        authority behind it. The league payload now carries the governed
+        not-team-scoped block instead.
+        """
+        body = client.get('/api/bullpen/dashboard').get_json()
+        team_state = body['team_state']
+
+        assert team_state['contract'] == 'team_state_public_v1'
+        assert team_state['available'] is False
+        assert team_state['public_state'] is None
+        assert team_state['public_label'] is None
+        assert team_state['outcome'] == 'not_team_scoped'
+        assert 'team-level read' in team_state['unavailable_message']
+
+    def test_dashboard_landscape_teams_carry_canonical_team_state(self, client):
+        with client.application.app_context():
+            _seed_pitcher('L One', team_id=1, mlb_id=901)
+            _seed_pitcher('L Two', team_id=1, mlb_id=902)
+            _seed_pitcher('L Three', team_id=2, mlb_id=903)
+
+        landscape = client.get('/api/bullpen/dashboard').get_json()['landscape']
+
+        lanes = (
+            'constrained_bullpens',
+            'available_bullpens',
+            'monitoring_concentration',
+        )
+        seen = 0
+        for lane in lanes:
+            for entry in landscape[lane]:
+                seen += 1
+                team_state = entry['team_state']
+                assert team_state['contract'] == 'team_state_public_v1'
+                assert team_state['public_label'] in {
+                    'Fresh', 'Stretched', 'Vulnerable', None,
+                }
+                # The lane a team sits in is league orientation, never its state.
+                if not team_state['available']:
+                    assert team_state['public_state'] is None
+        assert seen > 0
+
+    def test_a_pre_contract_snapshot_fails_closed_instead_of_deriving_state(self, client):
+        """An older persisted payload gets the fail-closed block at serving time.
+
+        Nothing is back-derived from context.health, the lanes, or the counts,
+        and the persisted row itself is never rewritten.
+        """
+        from api.bullpen import _with_dashboard_team_state_compatibility
+
+        legacy = {
+            'capability': 'bullpen_dashboard',
+            'context': {'health': {'state': 'manageable', 'label': 'x'}},
+            'landscape': {
+                'constrained_bullpens': [{'team_id': 7, 'team_name': 'Legacy Club'}],
+                'available_bullpens': [],
+                'monitoring_concentration': [],
+            },
+        }
+        served = _with_dashboard_team_state_compatibility(legacy)
+
+        assert served['team_state']['available'] is False
+        assert served['team_state']['public_label'] is None
+        entry = served['landscape']['constrained_bullpens'][0]
+        assert entry['team_state']['available'] is False
+        assert entry['team_state']['public_label'] is None
+        assert entry['team_state']['outcome'] == 'readiness_unavailable'
+        # The stored payload is untouched.
+        assert 'team_state' not in legacy
+        assert 'team_state' not in legacy['landscape']['constrained_bullpens'][0]
+
     def test_aggregates_context_and_roles_across_teams(self, client):
         with client.application.app_context():
             _seed_pitcher('A One', team_id=1, mlb_id=1)
