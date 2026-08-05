@@ -461,7 +461,34 @@ def test_failed_outranks_everything_including_a_committed_apply():
         apply_attempted=True, apply_committed=True,
     )
     assert decision['result'] == repair.RESULT_FAILED
-    assert decision['mutation_performed'] is False
+    # The verdict is FAILED, and the commit still happened. Reporting
+    # mutation_performed False here would under-report a durable production
+    # change in the most safety-critical field of the verdict.
+    assert decision['mutation_performed'] is True
+    assert decision['apply_committed'] is True
+
+
+def test_mutation_performed_reports_the_commit_not_the_verdict():
+    for reasons, expected in (
+        ({'failed_reasons': [repair.FAILED_MUTATION_SCOPE_EXCEEDED]},
+         repair.RESULT_FAILED),
+        ({'unproven_reasons': [repair.UNPROVEN_READ_ONLY_UNAVAILABLE]},
+         repair.RESULT_UNPROVEN),
+    ):
+        decision = repair.decide(
+            operation='apply', preconditions=_satisfied_evaluation(),
+            apply_attempted=True, apply_committed=True, **reasons,
+        )
+        assert decision['result'] == expected
+        assert decision['mutation_performed'] is True
+
+    # No commit means no mutation, whatever else happened.
+    for committed in (None, False):
+        decision = repair.decide(
+            operation='apply', preconditions=_satisfied_evaluation(),
+            apply_attempted=True, apply_committed=committed,
+        )
+        assert decision['mutation_performed'] is False
 
 
 def test_unproven_outranks_refused_and_success():
@@ -473,18 +500,91 @@ def test_unproven_outranks_refused_and_success():
     assert decision['result'] == repair.RESULT_UNPROVEN
 
 
-def test_already_at_the_intended_revision_is_not_required_not_refused():
-    evaluation = _satisfied_evaluation({
-        repair.PRE_INTENDED_DIFFERS: repair.PRECONDITION_VIOLATED,
-    })
+def _already_applied(extra=None):
+    """The precondition shape a row already at the intended value produces.
+
+    PRE_EXISTING_REVISION is violated too, and unavoidably so: the two
+    governed revisions differ by contract, so a row holding the intended value
+    cannot also hold the expected old value.
+    """
+    states = {
+        identifier: repair.PRECONDITION_VIOLATED
+        for identifier in repair.ALREADY_APPLIED_TOLERATED_VIOLATIONS
+    }
+    if extra:
+        states[extra] = repair.PRECONDITION_VIOLATED
+    return _satisfied_evaluation(states)
+
+
+def test_the_tolerated_already_applied_violations_are_exactly_two():
+    assert repair.ALREADY_APPLIED_TOLERATED_VIOLATIONS == {
+        repair.PRE_INTENDED_DIFFERS, repair.PRE_EXISTING_REVISION,
+    }
+
+
+def test_a_clean_already_applied_state_is_not_required_not_refused():
+    evaluation = _already_applied()
+    assert repair.precondition_coverage(evaluation)[
+        'already_applied_is_clean'
+    ] is True
     for operation in repair.OPERATIONS:
         decision = repair.decide(operation=operation, preconditions=evaluation)
         assert decision['result'] == repair.RESULT_NOT_REQUIRED
         assert decision['exit_code'] == 0
         assert decision['mutation_performed'] is False
-        assert repair.REFUSED_ALREADY_AT_INTENDED_REVISION not in (
+        # A clean no-op carries no refusal reasons at all.
+        assert decision['refusal_reasons'] == []
+
+
+@pytest.mark.parametrize('extra', [
+    identifier for identifier in repair.PRECONDITION_IDS
+    if identifier not in (
+        repair.PRE_INTENDED_DIFFERS, repair.PRE_EXISTING_REVISION,
+    )
+])
+def test_already_applied_never_masks_another_violated_precondition(extra):
+    """Exit 0 must never be reachable while the surrounding state is wrong."""
+    evaluation = _already_applied(extra)
+    coverage = repair.precondition_coverage(evaluation)
+    assert coverage['already_at_intended_revision'] is True
+    assert coverage['already_applied_is_clean'] is False
+    assert coverage['blocking_violations'] == [extra]
+
+    for operation in repair.OPERATIONS:
+        decision = repair.decide(operation=operation, preconditions=evaluation)
+        assert decision['result'] == repair.RESULT_REFUSED, extra
+        assert decision['exit_code'] == 2
+        assert decision['mutation_performed'] is False
+        assert repair.PRECONDITION_REFUSAL_REASONS[extra] in (
             decision['refusal_reasons']
         )
+
+
+def test_already_applied_with_an_unobserved_precondition_is_unproven():
+    """A no-op is not clean when part of the state was never read."""
+    states = {
+        identifier: repair.PRECONDITION_VIOLATED
+        for identifier in repair.ALREADY_APPLIED_TOLERATED_VIOLATIONS
+    }
+    states[repair.PRE_CANONICAL_PLAN_CLEAN] = repair.PRECONDITION_NOT_OBSERVED
+    evaluation = _satisfied_evaluation(states)
+    assert repair.precondition_coverage(evaluation)[
+        'already_applied_is_clean'
+    ] is False
+    decision = repair.decide(operation='apply', preconditions=evaluation)
+    assert decision['result'] == repair.RESULT_UNPROVEN
+
+
+def test_a_failed_or_unproven_reason_defeats_a_clean_already_applied_state():
+    evaluation = _already_applied()
+    assert repair.decide(
+        operation='apply', preconditions=evaluation,
+        failed_reasons=[repair.FAILED_MUTATION_SCOPE_EXCEEDED],
+    )['result'] == repair.RESULT_FAILED
+    assert repair.decide(
+        operation='apply', preconditions=evaluation,
+        unproven_reasons=[repair.UNPROVEN_READ_ONLY_UNAVAILABLE],
+    )['result'] == repair.RESULT_UNPROVEN
 
 
 def test_any_other_violated_precondition_refuses(  # noqa: D103
@@ -502,6 +602,28 @@ def test_any_other_violated_precondition_refuses(  # noqa: D103
         assert repair.PRECONDITION_REFUSAL_REASONS[identifier] in (
             decision['refusal_reasons']
         )
+
+
+def test_an_unexpected_third_revision_still_refuses_on_its_own():
+    """Tolerance is regime-scoped, and this is the primary refusal case.
+
+    PRE_EXISTING_REVISION is forgiven only when the row is already at the
+    intended value. When it is not, the same violation means the checkpoint
+    holds some third unexpected value, and it must stay blocking.
+    """
+    evaluation = _satisfied_evaluation({
+        repair.PRE_EXISTING_REVISION: repair.PRECONDITION_VIOLATED,
+    })
+    coverage = repair.precondition_coverage(evaluation)
+    assert coverage['already_at_intended_revision'] is False
+    assert coverage['tolerated_violations'] == []
+    assert coverage['blocking_violations'] == [repair.PRE_EXISTING_REVISION]
+
+    decision = repair.decide(operation='apply', preconditions=evaluation)
+    assert decision['result'] == repair.RESULT_REFUSED
+    assert repair.REFUSED_EXISTING_REVISION_UNEXPECTED in (
+        decision['refusal_reasons']
+    )
 
 
 def test_any_unobserved_precondition_is_unproven_never_refused():

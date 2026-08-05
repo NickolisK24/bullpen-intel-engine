@@ -487,6 +487,107 @@ def test_a_verify_run_after_an_apply_reports_not_required(app, monkeypatch):
         assert document['verdict']['result'] == repair.RESULT_NOT_REQUIRED
 
 
+@postgres_only
+def test_an_already_applied_row_with_a_blocking_violation_refuses(
+    app, monkeypatch,
+):
+    """Exit 0 is not reachable while the surrounding state is wrong.
+
+    Orchestrated end to end: the checkpoint really holds the intended value,
+    and one other live precondition really fails.
+    """
+    with app.app_context():
+        current = _prepare(monkeypatch, app)
+        # Put the row at the intended value AND break the surrounding state.
+        db.session.execute(text(
+            'UPDATE game_ingestion_work_items SET source_revision = :rev, '
+            'error_class = :cls WHERE mlb_game_pk = :pk'
+        ), {'rev': current, 'cls': 'appearance_extraction_failed',
+            'pk': GAME_PK})
+        db.session.commit()
+        db.session.expire_all()
+        item = _work_item()
+        before = (item.source_revision, item.updated_at)
+
+        document = _run('apply')
+        verdict = document['verdict']
+        assert verdict['result'] == repair.RESULT_REFUSED, verdict
+        assert verdict['exit_code'] == 2
+        assert verdict['mutation_performed'] is False
+        assert repair.REFUSED_TARGET_ERROR_STATE in verdict['refusal_reasons']
+        coverage = verdict['precondition_coverage']
+        assert coverage['already_at_intended_revision'] is True
+        assert coverage['already_applied_is_clean'] is False
+        _assert_untouched(*before)
+
+
+@postgres_only
+def test_an_already_applied_row_with_clean_state_is_not_required(
+    app, monkeypatch,
+):
+    with app.app_context():
+        current = _prepare(monkeypatch, app)
+        db.session.execute(text(
+            'UPDATE game_ingestion_work_items SET source_revision = :rev '
+            'WHERE mlb_game_pk = :pk'
+        ), {'rev': current, 'pk': GAME_PK})
+        db.session.commit()
+        db.session.expire_all()
+        item = _work_item()
+        before = (item.source_revision, item.updated_at)
+
+        document = _run('apply')
+        verdict = document['verdict']
+        assert verdict['result'] == repair.RESULT_NOT_REQUIRED, verdict
+        assert verdict['exit_code'] == 0
+        assert verdict['refusal_reasons'] == []
+        assert verdict['precondition_coverage'][
+            'already_applied_is_clean'
+        ] is True
+        _assert_untouched(*before)
+
+
+@postgres_only
+def test_a_failed_post_commit_read_only_setup_prevents_repair_applied(
+    app, monkeypatch,
+):
+    """The commit lands and cannot be taken back; the success verdict does not.
+
+    The package claims its post-commit verification cannot write by
+    construction. When that could not be established, the claim is unproven,
+    so the run must not report REPAIR_APPLIED — while the ledger still
+    discloses the committed change in full.
+    """
+    with app.app_context():
+        current = _prepare(monkeypatch, app)
+        monkeypatch.setattr(
+            runner, 'set_post_commit_read_only', lambda session: False,
+        )
+
+        document = _run('apply')
+        verdict = document['verdict']
+        assert verdict['result'] == repair.RESULT_UNPROVEN, verdict
+        assert verdict['exit_code'] == 2
+        assert repair.UNPROVEN_READ_ONLY_UNAVAILABLE in (
+            verdict['unproven_reasons']
+        )
+
+        # The mutation is NOT hidden behind the safety failure.
+        assert verdict['mutation_performed'] is True
+        ledger = document['mutation_ledger']
+        assert ledger['committed'] is True
+        assert ledger['commits_performed'] == 1
+        assert ledger['observed_value_before'] == OLD_REVISION
+        assert ledger['observed_value_after'] == current
+        assert ledger['transaction_state'][
+            'post_commit_transaction_read_only'
+        ] is False
+
+        # And the database really did change, exactly as the ledger says.
+        db.session.expire_all()
+        assert _work_item().source_revision == current
+
+
 # ── Refusals: every one of them writes nothing ──────────────────────────────
 
 def _assert_untouched(before_revision, before_updated_at):

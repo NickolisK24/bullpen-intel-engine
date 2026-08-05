@@ -504,6 +504,19 @@ PRE_APPEARANCE_COUNT = 'current_appearance_count_is_the_reviewed_count'
 PRE_ROW_NO_ERROR_STATE = 'target_row_carries_no_unresolved_error_state'
 PRE_SCOPE_FINGERPRINTS = 'governed_scope_fingerprints_observed'
 
+# The violations that are INTRINSIC to a row already holding the intended
+# value, and therefore the only ones a clean REPAIR_NOT_REQUIRED may carry.
+#
+# PRE_INTENDED_DIFFERS is the obvious one. PRE_EXISTING_REVISION is the
+# unavoidable companion: the two governed revisions differ by contract, so a
+# row holding the intended value necessarily does NOT hold the expected old
+# value. Requiring PRE_INTENDED_DIFFERS to be the *sole* violation would make
+# REPAIR_NOT_REQUIRED unreachable rather than strict.
+#
+# Every other violated precondition describes the surrounding state, and a
+# surrounding state that is wrong must not be reported as a clean no-op.
+ALREADY_APPLIED_TOLERATED_VIOLATIONS = frozenset()  # populated below
+
 PRECONDITION_IDS = (
     PRE_ROW_EXISTS,
     PRE_ROW_UNIQUE,
@@ -525,6 +538,15 @@ PRECONDITION_IDS = (
     PRE_APPEARANCE_COUNT,
     PRE_SCOPE_FINGERPRINTS,
 )
+
+ALREADY_APPLIED_TOLERATED_VIOLATIONS = frozenset({
+    PRE_INTENDED_DIFFERS,
+    PRE_EXISTING_REVISION,
+})
+
+# The refusal codes those two contribute, stripped ONLY on the clean
+# already-applied path so a genuine refusal never loses its reasons.
+ALREADY_APPLIED_INTRINSIC_REASONS = frozenset()  # populated below
 
 # Which reason a violated precondition contributes. A precondition with no
 # mapped reason code could refuse without saying why, so a contract test
@@ -575,6 +597,12 @@ PRECONDITION_UNPROVEN_REASONS = {
     PRE_ROW_NO_ERROR_STATE: UNPROVEN_DATABASE_EVIDENCE_UNAVAILABLE,
     PRE_SCOPE_FINGERPRINTS: UNPROVEN_FINGERPRINT_UNAVAILABLE,
 }
+
+
+ALREADY_APPLIED_INTRINSIC_REASONS = frozenset(
+    PRECONDITION_REFUSAL_REASONS[identifier]
+    for identifier in ALREADY_APPLIED_TOLERATED_VIOLATIONS
+)
 
 
 def precondition(identifier, *, requirement, state, observed=None,
@@ -1863,6 +1891,18 @@ def precondition_coverage(preconditions) -> dict:
         if check.get('state') not in PRECONDITION_STATES
     })
 
+    # Tolerance is REGIME-SCOPED. PRE_EXISTING_REVISION is forgiven only when
+    # the row is already at the intended value, where its violation is an
+    # arithmetic consequence rather than a finding. When the row is NOT at the
+    # intended value, the same violation means the checkpoint holds some third
+    # unexpected value — the primary thing this package refuses on — and it
+    # must stay blocking.
+    already_at_intended = PRE_INTENDED_DIFFERS in violated
+    tolerated = (
+        ALREADY_APPLIED_TOLERATED_VIOLATIONS if already_at_intended
+        else frozenset()
+    )
+
     return {
         'evaluated_count': len(checks),
         'covered_ids': sorted(
@@ -1877,11 +1917,30 @@ def precondition_coverage(preconditions) -> dict:
         'unknown_state_ids': unknown_state,
         # PRE_INTENDED_DIFFERS is the ONE violated precondition that means
         # "nothing left to do" rather than "something is wrong".
-        'already_at_intended_revision': PRE_INTENDED_DIFFERS in violated,
+        'already_at_intended_revision': already_at_intended,
         'blocking_violations': [
             identifier for identifier in violated
-            if identifier != PRE_INTENDED_DIFFERS
+            if identifier not in tolerated
         ],
+        'tolerated_violations': [
+            identifier for identifier in violated if identifier in tolerated
+        ],
+        # A clean no-op requires the row to be at the intended value AND the
+        # surrounding state to be entirely intact. "The checkpoint already says
+        # what we wanted" is not a safe conclusion when the evidence around it
+        # is contradictory: reporting exit 0 there would announce success on a
+        # state nobody verified.
+        'already_applied_is_clean': (
+            already_at_intended
+            and covered == expected
+            and not duplicate
+            and not unknown_state
+            and not not_observed
+            and not [
+                identifier for identifier in violated
+                if identifier not in tolerated
+            ]
+        ),
     }
 
 
@@ -1940,12 +1999,15 @@ def decide(*, operation, preconditions=None, mutation=None,
         if reason and reason not in refused:
             refused.append(reason)
 
-    already_applied = coverage['already_at_intended_revision']
-    # The one precondition whose violation is not a refusal.
-    refused = [
-        reason for reason in refused
-        if reason != REFUSED_ALREADY_AT_INTENDED_REVISION
-    ]
+    # A clean no-op strips the two intrinsic refusal reasons, because on that
+    # path they are not refusals at all. A DIRTY already-applied state keeps
+    # every reason it earned and is reported as the refusal it is.
+    already_applied = coverage['already_applied_is_clean']
+    if already_applied:
+        refused = [
+            reason for reason in refused
+            if reason not in ALREADY_APPLIED_INTRINSIC_REASONS
+        ]
 
     if operation not in OPERATIONS:
         failed.append(FAILED_OPERATION_UNKNOWN)
@@ -1980,7 +2042,11 @@ def decide(*, operation, preconditions=None, mutation=None,
         'failed_reasons': failed[:MAX_REASON_CODES],
         'unproven_reasons': unproven[:MAX_REASON_CODES],
         'refusal_reasons': refused[:MAX_REASON_CODES],
-        'mutation_performed': result == RESULT_APPLIED,
+        # What DURABLY HAPPENED, not whether the run succeeded. A commit that
+        # landed and then failed a safety check is still a commit, and the
+        # most safety-critical field in the verdict must never under-report
+        # it. RESULT_APPLIED is the separate claim that the run also passed.
+        'mutation_performed': apply_committed is True,
         'apply_attempted': bool(apply_attempted),
         'apply_committed': apply_committed,
         'precondition_coverage': coverage,

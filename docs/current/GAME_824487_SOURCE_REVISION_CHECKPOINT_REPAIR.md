@@ -272,10 +272,26 @@ reconciler produces today. The fingerprint is therefore checked separately from
 the action counts, and either failing refuses.
 
 **`intended_revision_differs_from_existing` is the one violated precondition
-that is not a refusal.** A row already holding the intended value means there
-is nothing to do. That is `REPAIR_NOT_REQUIRED` at exit 0, resolved ahead of
-`REPAIR_REFUSED`. It is still reported as a violated precondition rather than
-quietly reclassified.
+that is not a refusal — but only when nothing else is wrong.** A row already
+holding the intended value means there is nothing to do. That is
+`REPAIR_NOT_REQUIRED` at exit 0, resolved ahead of `REPAIR_REFUSED`. It is
+still reported as a violated precondition rather than quietly reclassified.
+
+A clean no-op tolerates exactly two violations, and they are the two that are
+arithmetically forced by the row already holding the intended value:
+`intended_revision_differs_from_existing`, and
+`existing_revision_is_the_expected_old_value` — the two governed revisions
+differ by contract, so a row holding the intended value cannot also hold the
+expected old value. **Any other violated precondition, any not-observed
+precondition, and any failed or unproven reason makes the result
+`REPAIR_REFUSED` or worse.** "The checkpoint already says what we wanted" is
+not a safe conclusion when the evidence around it is contradictory, and exit 0
+would announce success on a state nobody verified.
+
+That tolerance is **regime-scoped**. When the row is *not* at the intended
+value, a violated `existing_revision_is_the_expected_old_value` means the
+checkpoint holds some third unexpected value — the primary thing this package
+refuses on — and it stays blocking.
 
 ### Where the population size comes from
 
@@ -515,6 +531,14 @@ never reach a success result by having nothing to object with, and a forged
 
 An apply that was attempted but whose commit outcome was never established is
 `UNPROVEN`, never applied: a commit nobody observed is not a commit.
+
+Failing to establish the post-commit read-only transaction is `UNPROVEN` — the
+same code the pre-observation path uses for the same condition. The mutation
+may already be committed and cannot be taken back; what is withheld is the
+success verdict, not the evidence. `mutation_performed` reports what **durably
+happened**, not whether the run succeeded, so a commit that landed and then
+failed a safety check is still reported as a mutation. The ledger keeps
+`committed`, `commits_performed`, and the observed before/after values in full.
 
 ## 17. Test coverage
 

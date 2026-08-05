@@ -576,12 +576,53 @@ def test_an_absent_existing_revision_refuses_rather_than_filling_a_blank():
     )
 
 
-def test_a_row_already_at_the_intended_value_is_reported_separately():
+def test_a_row_already_at_the_intended_value_is_a_clean_no_op():
+    """Built from a real observed row, not a hand-made precondition set."""
     evaluation = _evaluate(work_item=_work_item(source_revision=NEW))
-    assert evaluation['already_at_intended_revision'] is True
     coverage = repair.precondition_coverage(evaluation)
     assert coverage['already_at_intended_revision'] is True
-    assert coverage['blocking_violations'] == [repair.PRE_EXISTING_REVISION]
+    # Both intrinsic violations, and nothing else.
+    assert sorted(coverage['tolerated_violations']) == sorted(
+        repair.ALREADY_APPLIED_TOLERATED_VIOLATIONS
+    )
+    assert coverage['blocking_violations'] == []
+    assert coverage['already_applied_is_clean'] is True
+
+    decision = repair.decide(operation='apply', preconditions=evaluation)
+    assert decision['result'] == repair.RESULT_NOT_REQUIRED
+    assert decision['exit_code'] == 0
+    assert decision['refusal_reasons'] == []
+    assert decision['mutation_performed'] is False
+
+
+def test_a_row_at_the_intended_value_with_bad_surrounding_state_refuses():
+    """Exit 0 must not be reachable while the surrounding evidence is wrong."""
+    evaluation = _evaluate(work_item=_work_item(
+        source_revision=NEW, status='planned',
+    ))
+    coverage = repair.precondition_coverage(evaluation)
+    assert coverage['already_at_intended_revision'] is True
+    assert coverage['already_applied_is_clean'] is False
+    assert repair.PRE_ROW_STATUS in coverage['blocking_violations']
+
+    decision = repair.decide(operation='apply', preconditions=evaluation)
+    assert decision['result'] == repair.RESULT_REFUSED
+    assert decision['exit_code'] == 2
+    assert repair.REFUSED_STATUS_NOT_COMPLETED in decision['refusal_reasons']
+
+
+def test_a_row_at_the_intended_value_with_a_changed_plan_refuses():
+    evaluation = _evaluate(
+        work_item=_work_item(source_revision=NEW),
+        plan=_plan(reconciliation_plan_fingerprint='f' * 64),
+    )
+    coverage = repair.precondition_coverage(evaluation)
+    assert coverage['already_applied_is_clean'] is False
+    decision = repair.decide(operation='apply', preconditions=evaluation)
+    assert decision['result'] == repair.RESULT_REFUSED
+    assert repair.REFUSED_PLAN_FINGERPRINT_CHANGED in (
+        decision['refusal_reasons']
+    )
 
 
 def test_a_status_that_is_not_completed_refuses():

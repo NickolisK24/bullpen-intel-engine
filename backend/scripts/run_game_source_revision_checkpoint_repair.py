@@ -25,9 +25,13 @@ functions, which call the canonical planner, the canonical MLB client, the
 canonical box-score parser, the canonical appearance extractor, and the
 canonical reconciliation planner. Nothing here is a second pipeline.
 
-Exit codes: 0 verified / not required / applied, 1 FAILED (this package broke
-its own contract), 2 UNPROVEN (required evidence unavailable), 3 REFUSED (a
-precondition was positively observed not to hold — a correct, safe outcome).
+Exit codes, three and only three: 0 verified / not required / applied,
+1 FAILED (this package broke its own contract), 2 NOT ELIGIBLE — either
+UNPROVEN (required evidence unavailable) or REPAIR_REFUSED (a precondition was
+positively observed not to hold, which is a correct and safe outcome). A
+refused run is not eligible to proceed, so anything reading only the exit code
+must treat it exactly as it treats UNPROVEN; the distinction is preserved in
+the result name and the reason codes.
 """
 
 from __future__ import annotations
@@ -191,6 +195,20 @@ def observe_target_row(session=None) -> dict:
 
 
 # ── The apply transaction ───────────────────────────────────────────────────
+
+def set_post_commit_read_only(session) -> bool:
+    """Set the post-commit verification transaction read-only.
+
+    Extracted so the failure path is reachable in a test. A verification pass
+    that cannot be proven read-only is not a verification pass this package is
+    entitled to rely on, and the caller turns a False here into UNPROVEN.
+    """
+    try:
+        session.execute(sa.text('SET TRANSACTION READ ONLY'))
+        return True
+    except Exception:  # noqa: BLE001 - never leak the database message
+        return False
+
 
 def apply_repair(*, target_row_id, observed_snapshot) -> dict:
     """Perform the ONE approved change, inside its own writable transaction.
@@ -383,11 +401,16 @@ def apply_repair(*, target_row_id, observed_snapshot) -> dict:
     # verification pass is prevented from writing anything by construction
     # rather than by intent.
     db.session.expire_all()
-    try:
-        db.session.execute(sa.text('SET TRANSACTION READ ONLY'))
-        state['post_commit_transaction_read_only'] = True
-    except Exception:  # noqa: BLE001 - never leak the database message
-        state['post_commit_transaction_read_only'] = False
+    established = set_post_commit_read_only(db.session)
+    state['post_commit_transaction_read_only'] = established
+    if not established:
+        # The package claims its post-commit verification cannot write by
+        # construction. If that could not be established, the claim is
+        # unproven and the run must not report REPAIR_APPLIED — even though
+        # the mutation is already committed and cannot be taken back. The
+        # ledger below still discloses the committed change in full; what is
+        # withheld is the success verdict, not the evidence.
+        state['unproven_reasons'].append(repair.UNPROVEN_READ_ONLY_UNAVAILABLE)
 
     final = GameIngestionWorkItem.query.filter(
         GameIngestionWorkItem.mlb_game_pk == repair.GAME_PK
