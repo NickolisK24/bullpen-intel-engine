@@ -75,7 +75,7 @@ Verified from retained run evidence. Every safety property held.
 | Candidate 362 not published | Run `31103076829` — `snapshot_id=362 status=pending published=False`; served `id=360` | **Safe** |
 | Snapshot 360 still selected and served | `31099639901` job log 12:27:22: `Dashboard snapshot verification passed: id=360 data_through=2026-08-05 generated_at=2026-08-06T11:45:33.037127` | **Safe** |
 | Three candidates withheld in total | 359, 361, 362 — every incomplete run failed closed without exception | **Safe** |
-| Appearance ledger complete | Step 11 "Appearance ledger audit (publish eligibility)" — `success` in both failed runs | **Safe** |
+| Appearance ledger complete | Step 11 "Appearance ledger audit (publish eligibility)" — `success` in all three failed runs | **Safe** |
 | No corrupted candidate promoted | Publication proof failed closed; `run_daily_sync.py:88-90` returns non-zero unless `publication_proof.verified is True` | **Safe** |
 | Publication failed closed | Same | **Safe** |
 | Shadow zero-write | `GAME_DRIVEN_INGESTION_MODE: 'shadow'` set at step scope only (workflow line 114); shadow health failed *independently* in its own job | **Safe** |
@@ -91,7 +91,7 @@ Serving snapshot 360 is safe, but safe is not current. These are distinct and mu
 | **Dashboard** | Serving snapshot 360, data through Aug 5 | **Safe but frozen.** Every failed run leaves the Dashboard one day further behind. It is honest — `data_through` is visible — but it is stale. |
 | **Team Board** | Live reads compute against current DB rows | **Degraded.** GameLog ingestion completed only 120/861 and 129/861 pitchers. Live per-team readiness reads whatever rows exist, so a team whose arms were dead-lettered reads against incomplete recent work. This is the most concerning surface. |
 | **Compare** | Consumes two Team Board contracts | **Degraded, and asymmetrically.** One side may have been ingested and the other dead-lettered, producing a side-by-side of unequal freshness. |
-| **Tonight** | "Refresh schedule and warm Tonight" (step 6) **skipped** in both failed runs — it lacks `if: always()` | **Stale.** Tonight did not refresh at all on either failed run. |
+| **Tonight** | "Refresh schedule and warm Tonight" (step 6) **skipped** in all three failed runs — it lacks `if: always()` | **Stale.** Tonight did not refresh at all on any failed run; it ran only on the one success (114 s). |
 | **Roster freshness** | Roster stage ran to completion before the failure | **Current.** |
 | **Fatigue freshness** | Fatigue runs in the final phase, after ingestion | **Computed, but over an incomplete GameLog.** Fatigue is fresh with respect to stale inputs. |
 | **Scheduled slate** | Slate refresh ran before the failure | **Current.** |
@@ -563,7 +563,7 @@ gamelog_worst = pool − shadow_alloc            # shadow consumes its full allo
 | 628.5 s (max observed) | 1171.5 | **1171.5 s** | 292.875 s | **878.625 s** |
 | 612.2 s (min observed) | 1187.8 | **1187.8 s** | 296.950 s | **890.850 s** |
 
-**The effective combined pool is approximately 1171.5–1187.8 seconds, not 1500.** The 1500 s cap **does not bind and is not reachable under any observed upstream timing** — it would require `elapsed_before_ingestion ≤ 300 s`, and the fastest run ever observed (the warm one) was 361.0 s. Its role is to **let the full observed remainder through** and to stand as a **safety ceiling above the currently derived pool**. It is emphatically *not* the time GameLog receives.
+**The effective combined pool is approximately 1171.5–1187.8 seconds, not 1500.** The 1500 s cap **does not bind and is not reachable under any observed upstream timing** — it would require `elapsed_before_ingestion ≤ 300 s`, and the fastest upstream in this incident set (the warm run) was 361.0 s. Its role is to **let the full observed remainder through** and to stand as a **safety ceiling above the currently derived pool**. It is emphatically *not* the time GameLog receives.
 
 #### Why this is provisional, and where it is marginal
 
