@@ -48,12 +48,33 @@ milestones. It does not replace the detailed evidence records linked from
   direction described by that issue.
 - Added a manual, exact-scope, read-only audit package for the game 824487
   source-revision mismatch observed between scheduled daily runs `30902544622`
-  and `30999087370` (D-047). This is a PENDING read-only investigation: the
-  package is implemented, the production audit has not been executed, no
-  conclusion has been reached, and no repair is authorized. Daily and postgame
-  remain shadow, backfill remains off, writes and authoritative publication
-  remain prohibited, and the governed dead-letter backlog is unchanged. See
+  and `30999087370` (D-047). The production audit was executed on August 5, 2026
+  as run `31044299167`, returning
+  `COMPLETE_SCOPE_AND_MATERIALITY_IDENTIFIED_FIELD_DELTA_UNAVAILABLE` at exit 0
+  with no failed and no unproven reasons: root condition
+  `official_appearance_set_changed`, current materiality
+  `non_material_to_canonical_writer_target`, checkpoint state
+  `checkpoint_stale_relative_to_current_source`. The audit identified the
+  condition and authorized no repair of its own. See
   [GAME_824487_SOURCE_REVISION_AUDIT.md](GAME_824487_SOURCE_REVISION_AUDIT.md).
+- Corrected and terminally closed the game 824487 source-revision checkpoint
+  through PR #615 at merge commit
+  `b29b1f0e41fffb0a58db9d276a506ae6613dfcce`, then retired the single-purpose
+  capability (D-048). Three production runs completed the operation: verify run
+  `31065643787` returned `VERIFIED_REPAIR_REQUIRED_AND_SAFE` with no mutation;
+  apply run `31065894573` returned `REPAIR_APPLIED`, moving
+  `game_ingestion_work_items` row `id = 103` (`mlb_game_pk = 824487`) from
+  source revision `90213dc8…d138b804a0` to `a0fe2dbc…f97f241ecf4` — exactly one
+  row, exactly one governed column plus the automatic `updated_at` bookkeeping
+  timestamp; and run `31066123772`, whose **selected operation was `apply`**,
+  returned `REPAIR_NOT_REQUIRED` at exit 0 with the apply gate closed, zero
+  commits, and zero durable write attempts, because the already-applied safety
+  gate resolved it before the writable path opened. No GameLog row changed, no
+  other work item changed, no migration was added, and no mode or authority
+  moved. The workflow, runner, service, tests, implementation document, and CI
+  shard registrations are removed; the workflow must not be dispatched again.
+  Daily and postgame remain shadow, backfill remains off, the legacy writer
+  remains authoritative, and writes and publication authority remain unapproved.
 
 ## July 2026 - Canonical Trust And Ingestion Foundation
 
