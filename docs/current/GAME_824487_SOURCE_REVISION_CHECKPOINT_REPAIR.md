@@ -174,7 +174,9 @@ committed and reported.
 
 After the commit, still holding the advisory lock, it opens a fresh transaction,
 sets it read-only, and re-reads the committed state to prove the new value, the
-row count, and the unchanged scopes.
+row count, and the unchanged scopes. That post-commit proof is required, not
+best-effort: if the fresh transaction cannot be established read-only, the run
+is `FAILED` at exit 1 and no governed read is attempted in it. See section 16.
 
 Outcomes: `REPAIR_APPLIED` (exit 0), `REPAIR_NOT_REQUIRED` (exit 0),
 `REPAIR_REFUSED` (exit 2), `UNPROVEN` (exit 2), `FAILED` (exit 1).
@@ -350,7 +352,8 @@ error becomes a closed code.
 `target_table_fingerprint_unchanged_after_apply`,
 `read_only_probe_accepted_not_refused`, `mutation_attempted_during_verify`,
 `advisory_lock_release_failed`, `advisory_lock_release_not_attempted`,
-`mutation_row_count_multiple`, `artifact_generation_failed`.
+`mutation_row_count_multiple`, `artifact_generation_failed`,
+`post_commit_read_only_proof_failed`, `post_commit_verification_incomplete`.
 
 A contract test asserts the three families do not overlap and that no
 platform-shaped condition appears in the FAILED family.
@@ -532,13 +535,40 @@ never reach a success result by having nothing to object with, and a forged
 An apply that was attempted but whose commit outcome was never established is
 `UNPROVEN`, never applied: a commit nobody observed is not a commit.
 
-Failing to establish the post-commit read-only transaction is `UNPROVEN` — the
-same code the pre-observation path uses for the same condition. The mutation
-may already be committed and cannot be taken back; what is withheld is the
-success verdict, not the evidence. `mutation_performed` reports what **durably
-happened**, not whether the run succeeded, so a commit that landed and then
-failed a safety check is still reported as a mutation. The ledger keeps
-`committed`, `commits_performed`, and the observed before/after values in full.
+Failing to establish the post-commit read-only transaction is `FAILED`
+(exit 1), under its own code `post_commit_read_only_proof_failed`, and
+deliberately **not** the code the pre-observation path uses. The two look alike
+and are not alike. Before any mutation, an unavailable read-only transaction is
+missing evidence and rollback is still available. After `COMMIT` has returned,
+rollback is gone, the production row has already moved, and the only thing the
+package can still do is prove what it did — so failing there is the package
+breaking a safety property it explicitly promises, at the one moment it cannot
+make good on it. An artifact reader has to be able to tell those apart.
+
+On that failure the package stops immediately. It issues **no** governed read
+in the failed transaction: a PostgreSQL statement error leaves the transaction
+aborted, so the next query would raise, and a query that cannot run is not
+evidence. It clears the failed verification transaction with a rollback and
+records that rollback as exactly what it is — cleanup of the verification
+transaction, never a reversal of the repair, which had already committed before
+that transaction existed. `rollback_performed` stays `false`.
+
+Everything durable survives the verdict: `committed: true`,
+`commits_performed: 1`, `affected_row_count: 1`, `mutation_performed: true`,
+the before value, and the in-transaction value. `observed_value_after` stays
+absent, because no governed post-commit read happened and the intended literal
+is not a substitute for an observation.
+
+`mutation_performed` reports what **durably happened**, not whether the run
+succeeded, so a commit that landed and then failed a safety check is still
+reported as a mutation. Nothing downstream may downgrade a known commit to
+`apply_outcome_never_established`: that code describes the case where no commit
+outcome was ever established, and only that case. The reducer enforces the same
+rule structurally — `REPAIR_APPLIED` requires every post-commit lifecycle flag
+(`post_commit_verification_attempted`, `post_commit_read_only_attempted`,
+`post_commit_transaction_read_only`, `post_commit_verification_completed`) to
+be positively `True`, re-derived from the lifecycle itself rather than from the
+reason codes an observation layer remembered to pass in.
 
 ## 17. Test coverage
 
@@ -546,7 +576,7 @@ failed a safety check is still reported as a mutation. The ledger keeps
 | :--- | :--- |
 | `test_game_source_revision_checkpoint_repair_contract.py` | the governed scope as reviewed literals, the permitted changed-column set against the real schema, the closed operation vocabulary, per-operation confirmations, the three-code exit contract, reason-family disjointness, the precondition mapping, the completion gate, reducer precedence, the advisory-lock lifecycle, the whole workflow contract, and package hygiene including adversarial scope scans |
 | `test_game_source_revision_checkpoint_repair_classification.py` | the live population expectation, the completeness gate and its ordering, the field comparison and its display-only distinction, every precondition transition, and the mutation-scope evaluator |
-| `test_game_source_revision_checkpoint_repair_execution.py` | real PostgreSQL: the real lane writing the checkpoint, verify writing nothing, apply changing exactly one column on one row, statement accounting, pre-commit and post-commit verification, the neighbour checkpoint staying still, idempotence, every refusal, authorization, and concurrency |
+| `test_game_source_revision_checkpoint_repair_execution.py` | real PostgreSQL: the real lane writing the checkpoint, verify writing nothing, apply changing exactly one column on one row, statement accounting, pre-commit and post-commit verification, a real `SET TRANSACTION READ ONLY` statement failure after a real commit, the neighbour checkpoint staying still, idempotence, every refusal, authorization, and concurrency |
 | `test_game_source_revision_checkpoint_repair_artifacts.py` | every file under every outcome, the always-present ledger and its governed fields, the fifteen numbered markdown sections, the `updated_at` disclosure, and the repository scanner run against a real artifact directory — including a planted credential that must fail it |
 
 Two properties worth naming because they are easy to test badly:

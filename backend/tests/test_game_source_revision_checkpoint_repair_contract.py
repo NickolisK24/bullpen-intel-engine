@@ -390,6 +390,15 @@ def _satisfied_evaluation(overrides=None):
     return {'preconditions': checks}
 
 
+def _proven_post_commit(overrides=None):
+    """A post-commit lifecycle where every step was positively established."""
+    lifecycle = {
+        field: True for field, _ in repair.POST_COMMIT_PROOF_SEQUENCE
+    }
+    lifecycle.update(overrides or {})
+    return lifecycle
+
+
 def test_an_empty_evaluation_can_never_reach_a_success_result():
     for operation in repair.OPERATIONS:
         decision = repair.decide(operation=operation)
@@ -477,7 +486,8 @@ def test_mutation_performed_reports_the_commit_not_the_verdict():
     ):
         decision = repair.decide(
             operation='apply', preconditions=_satisfied_evaluation(),
-            apply_attempted=True, apply_committed=True, **reasons,
+            apply_attempted=True, apply_committed=True,
+            post_commit=_proven_post_commit(), **reasons,
         )
         assert decision['result'] == expected
         assert decision['mutation_performed'] is True
@@ -663,6 +673,7 @@ def test_a_committed_apply_with_a_clean_evaluation_reports_applied():
     decision = repair.decide(
         operation='apply', preconditions=_satisfied_evaluation(),
         apply_attempted=True, apply_committed=True,
+        post_commit=_proven_post_commit(),
     )
     assert decision['result'] == repair.RESULT_APPLIED
     assert decision['exit_code'] == 0
@@ -691,6 +702,187 @@ def test_the_dead_letter_backlog_is_never_reported_as_zero():
     assert '1,389' in decision['dead_letter_backlog_note'] or (
         '1389' in decision['dead_letter_backlog_note']
     )
+
+
+# ── 7b. The post-commit proof gate ──────────────────────────────────────────
+#
+# Once COMMIT returns, rollback is no longer available as a remedy. Everything
+# this package can still do is evidential, so failing to produce that evidence
+# is the package breaking its own contract — not merely lacking evidence about
+# someone else's. These tests own that distinction and the gate enforcing it.
+
+def _committed_apply(post_commit, **kwargs):
+    return repair.decide(
+        operation='apply', preconditions=_satisfied_evaluation(),
+        apply_attempted=True, apply_committed=True,
+        post_commit=post_commit, **kwargs,
+    )
+
+
+def test_the_dedicated_post_commit_reason_is_failed_not_unproven():
+    assert repair.FAILED_POST_COMMIT_READ_ONLY_PROOF in repair.FAILED_REASONS
+    assert repair.FAILED_POST_COMMIT_READ_ONLY_PROOF not in (
+        repair.UNPROVEN_REASONS
+    )
+    assert repair.FAILED_POST_COMMIT_READ_ONLY_PROOF == (
+        'post_commit_read_only_proof_failed'
+    )
+    # It is its own code precisely so an artifact reader can tell a
+    # post-commit contract failure from ordinary pre-mutation evidence gaps.
+    assert repair.FAILED_POST_COMMIT_READ_ONLY_PROOF not in {
+        repair.UNPROVEN_READ_ONLY_UNAVAILABLE,
+        repair.UNPROVEN_CURRENT_SOURCE_UNAVAILABLE,
+        repair.UNPROVEN_APPLY_OUTCOME_UNKNOWN,
+    }
+
+
+def test_a_proven_post_commit_lifecycle_leaves_repair_applied_reachable():
+    decision = _committed_apply(_proven_post_commit())
+    assert decision['result'] == repair.RESULT_APPLIED
+    assert decision['exit_code'] == 0
+    assert not decision['failed_reasons']
+
+
+def test_post_commit_read_only_false_after_commit_is_failed_at_exit_one():
+    decision = _committed_apply(_proven_post_commit({
+        'post_commit_transaction_read_only': False,
+        'post_commit_read_only_reason': 'read_only_setup_failed',
+        'post_commit_verification_completed': False,
+    }))
+    assert decision['result'] == repair.RESULT_FAILED
+    assert decision['exit_code'] == 1
+    assert repair.FAILED_POST_COMMIT_READ_ONLY_PROOF in (
+        decision['failed_reasons']
+    )
+    # The commit is a durable fact and survives the verdict intact.
+    assert decision['apply_committed'] is True
+    assert decision['mutation_performed'] is True
+    assert repair.UNPROVEN_APPLY_OUTCOME_UNKNOWN not in (
+        decision['unproven_reasons']
+    )
+
+
+def test_post_commit_read_only_never_attempted_after_commit_is_failed():
+    decision = _committed_apply(_proven_post_commit({
+        'post_commit_read_only_attempted': False,
+    }))
+    assert decision['result'] == repair.RESULT_FAILED
+    assert repair.FAILED_POST_COMMIT_VERIFICATION_INCOMPLETE in (
+        decision['failed_reasons']
+    )
+
+
+def test_post_commit_verification_never_attempted_after_commit_is_failed():
+    decision = _committed_apply(_proven_post_commit({
+        'post_commit_verification_attempted': False,
+    }))
+    assert decision['result'] == repair.RESULT_FAILED
+    assert decision['exit_code'] == 1
+
+
+def test_post_commit_read_only_left_none_after_commit_is_failed():
+    """Unset is not permission. None never satisfies the gate."""
+    decision = _committed_apply(_proven_post_commit({
+        'post_commit_transaction_read_only': None,
+    }))
+    assert decision['result'] == repair.RESULT_FAILED
+    assert repair.FAILED_POST_COMMIT_READ_ONLY_PROOF in (
+        decision['failed_reasons']
+    )
+
+
+def test_post_commit_verification_not_completed_after_commit_is_failed():
+    for value in (False, None):
+        decision = _committed_apply(_proven_post_commit({
+            'post_commit_verification_completed': value,
+        }))
+        assert decision['result'] == repair.RESULT_FAILED
+        assert repair.FAILED_POST_COMMIT_VERIFICATION_INCOMPLETE in (
+            decision['failed_reasons']
+        )
+
+
+def test_a_committed_apply_with_no_post_commit_evidence_at_all_is_failed():
+    """Silence is the condition the gate exists to catch, not an exemption."""
+    for absent in (None, {}):
+        decision = _committed_apply(absent)
+        assert decision['result'] == repair.RESULT_FAILED
+        assert decision['exit_code'] == 1
+        assert decision['mutation_performed'] is True
+
+
+def test_every_post_commit_lifecycle_flag_is_individually_load_bearing():
+    for field, _ in repair.POST_COMMIT_PROOF_SEQUENCE:
+        decision = _committed_apply(_proven_post_commit({field: False}))
+        assert decision['result'] == repair.RESULT_FAILED, field
+        assert decision['exit_code'] == 1, field
+        assert decision['apply_committed'] is True, field
+
+
+def test_post_commit_proof_failure_preserves_a_failed_lock_release_reason():
+    decision = _committed_apply(
+        _proven_post_commit({'post_commit_transaction_read_only': False}),
+        failed_reasons=[repair.FAILED_LOCK_RELEASE_FAILED],
+    )
+    assert decision['result'] == repair.RESULT_FAILED
+    assert repair.FAILED_LOCK_RELEASE_FAILED in decision['failed_reasons']
+    assert repair.FAILED_POST_COMMIT_READ_ONLY_PROOF in (
+        decision['failed_reasons']
+    )
+
+
+def test_post_commit_proof_failure_composes_with_another_scope_failure():
+    decision = _committed_apply(
+        _proven_post_commit({
+            'post_commit_transaction_read_only': False,
+            'post_commit_verification_completed': False,
+        }),
+        failed_reasons=[repair.FAILED_MUTATION_SCOPE_EXCEEDED],
+    )
+    assert decision['result'] == repair.RESULT_FAILED
+    for reason in (
+        repair.FAILED_MUTATION_SCOPE_EXCEEDED,
+        repair.FAILED_POST_COMMIT_READ_ONLY_PROOF,
+    ):
+        assert reason in decision['failed_reasons']
+    assert decision['mutation_performed'] is True
+
+
+def test_repair_applied_is_unreachable_without_the_full_lifecycle():
+    """Exhaustive over the gate's own inputs, so no combination sneaks past."""
+    import itertools
+
+    fields = [field for field, _ in repair.POST_COMMIT_PROOF_SEQUENCE]
+    for combination in itertools.product((True, False, None), repeat=len(
+        fields
+    )):
+        lifecycle = dict(zip(fields, combination))
+        decision = _committed_apply(lifecycle)
+        if all(value is True for value in combination):
+            assert decision['result'] == repair.RESULT_APPLIED, lifecycle
+        else:
+            assert decision['result'] == repair.RESULT_FAILED, lifecycle
+            assert decision['exit_code'] == 1, lifecycle
+
+
+def test_the_post_commit_gate_does_not_touch_uncommitted_or_verify_runs():
+    """The gate is about protecting a landed commit, and nothing else."""
+    verify = repair.decide(
+        operation='verify', preconditions=_satisfied_evaluation(),
+    )
+    assert verify['result'] == repair.RESULT_VERIFIED_REQUIRED_AND_SAFE
+
+    for committed in (None, False):
+        decision = repair.decide(
+            operation='apply', preconditions=_satisfied_evaluation(),
+            apply_attempted=True, apply_committed=committed,
+        )
+        assert repair.FAILED_POST_COMMIT_READ_ONLY_PROOF not in (
+            decision['failed_reasons']
+        )
+        assert repair.FAILED_POST_COMMIT_VERIFICATION_INCOMPLETE not in (
+            decision['failed_reasons']
+        )
 
 
 # ── 8. Advisory-lock lifecycle ──────────────────────────────────────────────

@@ -268,6 +268,15 @@ FAILED_OTHER_WORK_ITEM_MUTATED = 'work_item_outside_target_mutated'
 FAILED_AFFECTED_ROW_COUNT_NOT_ONE = 'affected_row_count_not_exactly_one'
 FAILED_MUTATION_ROW_COUNT_MULTIPLE = 'mutation_row_count_multiple'
 FAILED_ARTIFACT_GENERATION_FAILED = 'artifact_generation_failed'
+# Dedicated to the post-commit path, and deliberately NOT reusable for the
+# pre-observation one. Failing to establish read-only BEFORE any mutation is
+# missing evidence; failing to establish it AFTER a durable commit is this
+# package breaking a safety property it explicitly promises, at the one moment
+# rollback cannot help. The artifact must be able to tell those apart.
+FAILED_POST_COMMIT_READ_ONLY_PROOF = 'post_commit_read_only_proof_failed'
+FAILED_POST_COMMIT_VERIFICATION_INCOMPLETE = (
+    'post_commit_verification_incomplete'
+)
 FAILED_POST_STATE_NOT_INTENDED = 'post_state_is_not_the_intended_revision'
 FAILED_OUT_OF_SCOPE_TABLE_CHANGED = 'out_of_scope_table_changed'
 FAILED_UNPERMITTED_SCOPE_CHANGED = 'unpermitted_fingerprint_scope_changed'
@@ -295,6 +304,8 @@ FAILED_REASONS = (
     FAILED_AFFECTED_ROW_COUNT_NOT_ONE,
     FAILED_MUTATION_ROW_COUNT_MULTIPLE,
     FAILED_ARTIFACT_GENERATION_FAILED,
+    FAILED_POST_COMMIT_READ_ONLY_PROOF,
+    FAILED_POST_COMMIT_VERIFICATION_INCOMPLETE,
     FAILED_POST_STATE_NOT_INTENDED,
     FAILED_OUT_OF_SCOPE_TABLE_CHANGED,
     FAILED_UNPERMITTED_SCOPE_CHANGED,
@@ -458,7 +469,10 @@ SPECIFIED_REASON_CODES = {
     'mutation_row_count_multiple': FAILED_MUTATION_ROW_COUNT_MULTIPLE,
     'concurrent_precondition_change': REFUSED_CONCURRENT_MODIFICATION,
     'prohibited_scope_changed': REFUSED_PROHIBITED_SCOPE_CHANGED,
-    'post_commit_verification_failed': REFUSED_POST_COMMIT_VERIFICATION_FAILED,
+    'post_commit_verification_failed':
+        REFUSED_POST_COMMIT_VERIFICATION_FAILED,
+    'post_commit_read_only_proof_failed':
+        FAILED_POST_COMMIT_READ_ONLY_PROOF,
     'artifact_generation_failed': FAILED_ARTIFACT_GENERATION_FAILED,
 }
 
@@ -1944,9 +1958,41 @@ def precondition_coverage(preconditions) -> dict:
     }
 
 
+#: The post-commit lifecycle fields the reducer re-derives from, in the order
+#: they must occur. A run that skipped a step cannot have proven the one after
+#: it, so the FIRST unmet expectation is the one reported.
+POST_COMMIT_PROOF_SEQUENCE = (
+    ('post_commit_verification_attempted',
+     FAILED_POST_COMMIT_VERIFICATION_INCOMPLETE),
+    ('post_commit_read_only_attempted',
+     FAILED_POST_COMMIT_VERIFICATION_INCOMPLETE),
+    ('post_commit_transaction_read_only',
+     FAILED_POST_COMMIT_READ_ONLY_PROOF),
+    ('post_commit_verification_completed',
+     FAILED_POST_COMMIT_VERIFICATION_INCOMPLETE),
+)
+
+
+def post_commit_proof_failures(post_commit) -> list[str]:
+    """Why a landed commit may not be claimed as a completed repair.
+
+    Re-derived from the lifecycle fields themselves rather than from whatever
+    reason codes the caller remembered to pass in, so a caller that establishes
+    nothing and reports nothing still cannot reach REPAIR_APPLIED. Absent or
+    empty input is not neutral here — it is the absence of the proof, which is
+    exactly the condition this gate exists to catch.
+    """
+    post_commit = post_commit or {}
+    for field, reason in POST_COMMIT_PROOF_SEQUENCE:
+        if post_commit.get(field) is not True:
+            return [reason]
+    return []
+
+
 def decide(*, operation, preconditions=None, mutation=None,
            failed_reasons=(), unproven_reasons=(), refusal_reasons=(),
-           apply_attempted=False, apply_committed=None) -> dict:
+           apply_attempted=False, apply_committed=None,
+           post_commit=None) -> dict:
     """One reducer for both operations.
 
     The completion gate comes first and is structural: an evaluation that does
@@ -1967,6 +2013,12 @@ def decide(*, operation, preconditions=None, mutation=None,
 
     An apply that was attempted but whose commit outcome was never established
     is UNPROVEN, never applied: a commit nobody observed is not a commit.
+
+    A commit that DID land but whose post-commit proof did not complete is
+    FAILED, never applied, and never downgraded to "outcome unknown". Once
+    COMMIT returns, rollback is gone and the production row has moved, so
+    failing the proof there is this package breaking its own guarantee rather
+    than lacking evidence about someone else's.
     """
     preconditions = preconditions or {}
     mutation = mutation or {}
@@ -2015,6 +2067,15 @@ def decide(*, operation, preconditions=None, mutation=None,
     if apply_attempted and apply_committed is not True and not failed:
         if apply_committed is None:
             unproven.append(UNPROVEN_APPLY_OUTCOME_UNKNOWN)
+
+    # A commit that landed still has to have been PROVEN to have landed
+    # correctly. This gate re-derives that from the lifecycle rather than
+    # trusting the reason codes handed in, so an observation layer that
+    # silently skipped the proof cannot produce a success verdict.
+    if operation == OPERATION_APPLY and apply_committed is True:
+        for reason in post_commit_proof_failures(post_commit):
+            if reason not in failed:
+                failed.append(reason)
 
     if failed:
         result = RESULT_FAILED

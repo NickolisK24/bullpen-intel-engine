@@ -23,7 +23,7 @@ from types import SimpleNamespace
 
 import pytest
 from flask import Flask
-from sqlalchemy import text
+from sqlalchemy import event, text
 
 from tests.db_config import (
     configure_test_database,
@@ -69,6 +69,10 @@ ALL_ARMS = HOME_ARMS + AWAY_ARMS
 
 OLD_REVISION = 'b' * 64
 SHA = 'f' * 40
+
+RUNNER_PATH = Path(__file__).resolve().parents[1] / (
+    'scripts/run_game_source_revision_checkpoint_repair.py'
+)
 
 
 postgres_only = pytest.mark.skipif(
@@ -548,15 +552,16 @@ def test_an_already_applied_row_with_clean_state_is_not_required(
 
 
 @postgres_only
-def test_a_failed_post_commit_read_only_setup_prevents_repair_applied(
+def test_a_failed_post_commit_read_only_setup_is_a_contract_failure(
     app, monkeypatch,
 ):
     """The commit lands and cannot be taken back; the success verdict does not.
 
     The package claims its post-commit verification cannot write by
-    construction. When that could not be established, the claim is unproven,
-    so the run must not report REPAIR_APPLIED — while the ledger still
-    discloses the committed change in full.
+    construction. Once COMMIT has returned, failing to establish that is not
+    an ordinary evidence gap — rollback is gone, so it is this package
+    breaking a promise at the one moment it cannot make good on it. FAILED,
+    exit 1, with the committed change disclosed in full.
     """
     with app.app_context():
         current = _prepare(monkeypatch, app)
@@ -566,22 +571,40 @@ def test_a_failed_post_commit_read_only_setup_prevents_repair_applied(
 
         document = _run('apply')
         verdict = document['verdict']
-        assert verdict['result'] == repair.RESULT_UNPROVEN, verdict
-        assert verdict['exit_code'] == 2
-        assert repair.UNPROVEN_READ_ONLY_UNAVAILABLE in (
+        assert verdict['result'] == repair.RESULT_FAILED, verdict
+        assert verdict['exit_code'] == 1
+        assert repair.FAILED_POST_COMMIT_READ_ONLY_PROOF in (
+            verdict['failed_reasons']
+        )
+        assert repair.UNPROVEN_APPLY_OUTCOME_UNKNOWN not in (
             verdict['unproven_reasons']
         )
 
         # The mutation is NOT hidden behind the safety failure.
         assert verdict['mutation_performed'] is True
+        assert verdict['apply_committed'] is True
         ledger = document['mutation_ledger']
         assert ledger['committed'] is True
         assert ledger['commits_performed'] == 1
+        assert ledger['affected_row_count'] == 1
         assert ledger['observed_value_before'] == OLD_REVISION
-        assert ledger['observed_value_after'] == current
+        assert ledger['in_transaction_value'] == current
+        assert ledger['post_commit_read_only_attempted'] is True
+        assert ledger['post_commit_verification_attempted'] is True
+        assert ledger['post_commit_verification_completed'] is False
+        assert ledger['post_commit_read_only_reason'] == (
+            'read_only_setup_failed'
+        )
         assert ledger['transaction_state'][
             'post_commit_transaction_read_only'
         ] is False
+        # No governed post-commit read happened, so there is no observed
+        # after value — and the intended literal is not a substitute for one.
+        assert ledger['observed_value_after'] is None
+        assert ledger['after_snapshot'] is None
+        # A cleanup rollback of the verification transaction is not, and is
+        # never reported as, a rollback of the committed repair.
+        assert ledger['rollback_performed'] is False
 
         # And the database really did change, exactly as the ledger says.
         db.session.expire_all()
@@ -993,9 +1016,22 @@ def test_real_verify_and_apply_artifacts_pass_the_repository_scanner(
         assert code == 0
         assert _scan(apply_dir).returncode == 0
 
+        # The third governed outcome: the repair is already in place, which
+        # produces its own artifact and must clear the same gate.
+        already_dir = tmp_path / 'already-applied'
+        code = runner.main([
+            '--operation', 'apply',
+            '--expected-main-sha', SHA,
+            '--confirmation', repair.CONFIRMATIONS['apply'],
+            '--artifact-dir', str(already_dir),
+        ])
+        assert code == 0
+        assert _scan(already_dir).returncode == 0
+
         for directory, expected in (
             (verify_dir, repair.RESULT_VERIFIED_REQUIRED_AND_SAFE),
             (apply_dir, repair.RESULT_APPLIED),
+            (already_dir, repair.RESULT_NOT_REQUIRED),
         ):
             payload = json.loads(
                 (directory / runner.SUMMARY_JSON).read_text(encoding='utf-8')
@@ -1064,12 +1100,15 @@ def test_a_row_that_moved_between_observation_and_lock_is_refused(
         current = _prepare(monkeypatch, app)
         real_apply = runner.apply_repair
 
-        def _moving_apply(*, target_row_id, observed_snapshot):
+        def _moving_apply(*, target_row_id, observed_snapshot, state=None):
             # Simulate a concurrent writer landing between the two phases by
-            # presenting a snapshot the locked row no longer matches.
+            # presenting a snapshot the locked row no longer matches. The
+            # caller's state object is forwarded, not replaced: it is what the
+            # runner still holds if anything escapes.
             stale = dict(observed_snapshot or {}, correction_count=99)
             return real_apply(
                 target_row_id=target_row_id, observed_snapshot=stale,
+                state=state,
             )
 
         monkeypatch.setattr(runner, 'apply_repair', _moving_apply)
@@ -1197,3 +1236,409 @@ def test_the_statement_watch_flags_a_second_table_being_written(
         report = watch.as_dict()
         assert report['no_other_write_statement'] is False
         assert report['other_write_statement_classes'] == ['UPDATE']
+
+
+# ── Post-commit proof failure, from a real statement error ──────────────────
+#
+# The dangerous window is the one after COMMIT returns. Rollback is gone, the
+# production row has already moved, and everything the package can still do is
+# evidential. These tests hold that window against a REAL PostgreSQL statement
+# failure rather than a stubbed return value, because the thing that makes the
+# window dangerous — an aborted transaction that poisons the next read — only
+# exists when the statement genuinely fails inside the database.
+
+def _break_post_commit_read_only(engine):
+    """Fail the real SET TRANSACTION READ ONLY, and only that one.
+
+    Armed only once the target UPDATE has been seen, so it cannot catch the
+    identical statement the read-only OBSERVATION phase issues much earlier.
+    The injected failure is a real server-side error, which is the point: it
+    leaves the transaction aborted exactly as a genuine failure would, so the
+    next ORM read in that transaction would raise.
+    """
+    state = {'update_seen': False, 'fired': False}
+
+    @event.listens_for(engine, 'before_cursor_execute')
+    def _fail(conn, cursor, statement, parameters, context, executemany):
+        upper = statement.strip().upper()
+        if upper.startswith('UPDATE GAME_INGESTION_WORK_ITEMS'):
+            state['update_seen'] = True
+            return
+        if state['update_seen'] and not state['fired'] and (
+            upper.startswith('SET TRANSACTION READ ONLY')
+        ):
+            state['fired'] = True
+            cursor.execute('SELECT 1 / 0')
+
+    state['detach'] = lambda: event.remove(
+        engine, 'before_cursor_execute', _fail
+    )
+    return state
+
+
+def _persisted_revision_from_a_fresh_connection(engine):
+    """Read the row outside every session this run touched."""
+    with engine.connect() as connection:
+        rows = connection.execute(text(
+            'SELECT source_revision FROM game_ingestion_work_items '
+            'WHERE mlb_game_pk = :pk'
+        ), {'pk': GAME_PK}).fetchall()
+    return [row[0] for row in rows]
+
+
+@postgres_only
+def test_a_real_read_only_statement_failure_after_commit_is_failed(
+    app, monkeypatch,
+):
+    """The whole finding, end to end, against a genuine statement error."""
+    with app.app_context():
+        current = _prepare(monkeypatch, app)
+
+        neighbour = GameIngestionWorkItem(
+            mlb_game_pk=999002, represented_date=REFERENCE,
+            game_date=REFERENCE, status=GameIngestionWorkItem.STATUS_PLANNED,
+            candidate_reason=GameIngestionWorkItem.REASON_NEWLY_FINAL,
+            criticality=GameIngestionWorkItem.CRITICALITY_PUBLICATION_CRITICAL,
+            source_revision=OLD_REVISION,
+        )
+        db.session.add(neighbour)
+        db.session.commit()
+        neighbour_id = neighbour.id
+        neighbour_before = (neighbour.source_revision, neighbour.updated_at)
+
+        game_logs_before = {
+            row.id: (
+                row.strikeouts, row.earned_runs, row.innings_pitched_outs,
+                row.appearance_team_id, row.stat_correction_count,
+                row.last_stat_correction_at,
+            )
+            for row in GameLog.query.filter_by(mlb_game_pk=GAME_PK).all()
+        }
+        assert game_logs_before, 'the seed must have written appearances'
+
+        injection = _break_post_commit_read_only(db.engine)
+        try:
+            document = _run('apply')
+        finally:
+            injection['detach']()
+
+        assert injection['fired'], (
+            'the test proves nothing unless the real statement failed'
+        )
+
+        # 1-3. The row really changed, exactly one of them, to the intended
+        # value — read back from a connection this run never used.
+        db.session.remove()
+        persisted = _persisted_revision_from_a_fresh_connection(db.engine)
+        assert persisted == [current]
+
+        # 4. No GameLog row moved.
+        db.session.expire_all()
+        assert {
+            row.id: (
+                row.strikeouts, row.earned_runs, row.innings_pitched_outs,
+                row.appearance_team_id, row.stat_correction_count,
+                row.last_stat_correction_at,
+            )
+            for row in GameLog.query.filter_by(mlb_game_pk=GAME_PK).all()
+        } == game_logs_before
+
+        # 5. No other work item moved.
+        other = db.session.get(GameIngestionWorkItem, neighbour_id)
+        assert (other.source_revision, other.updated_at) == neighbour_before
+
+        # 6-9. The verdict.
+        verdict = document['verdict']
+        assert verdict['result'] == repair.RESULT_FAILED, verdict
+        assert verdict['exit_code'] == 1
+        assert verdict['mutation_performed'] is True
+        assert verdict['apply_committed'] is True
+        assert repair.FAILED_POST_COMMIT_READ_ONLY_PROOF in (
+            verdict['failed_reasons']
+        )
+        # 16-17. The durable commit was never downgraded to "unknown".
+        assert repair.UNPROVEN_APPLY_OUTCOME_UNKNOWN not in (
+            verdict['unproven_reasons']
+        )
+        assert verdict['apply_committed'] is not None
+
+        # 10-14. The ledger.
+        ledger = document['mutation_ledger']
+        assert ledger['committed'] is True
+        assert ledger['commits_performed'] == 1
+        assert ledger['affected_row_count'] == 1
+        assert ledger['post_commit_verification_attempted'] is True
+        assert ledger['post_commit_read_only_attempted'] is True
+        assert ledger['post_commit_transaction_read_only'] is False
+        assert ledger['post_commit_read_only_reason'] == (
+            'read_only_setup_failed'
+        )
+        assert ledger['post_commit_verification_completed'] is False
+        assert ledger['post_commit_row_count'] is None
+        assert ledger['post_commit_value_is_intended'] is None
+        # 18. Nothing claims the committed repair was undone.
+        assert ledger['rollback_performed'] is False
+        # The after value was never observed, so it is absent rather than
+        # back-filled from the intended literal.
+        assert ledger['observed_value_after'] is None
+        assert ledger['in_transaction_value'] == current
+        assert ledger['observed_value_before'] == OLD_REVISION
+
+        # 20. No database exception text anywhere in the document.
+        serialized = json.dumps(document, default=str)
+        for leak in (
+            'Traceback', 'psycopg2', 'InFailedSqlTransaction',
+            'division by zero', 'SELECT 1 / 0', 'SET TRANSACTION READ ONLY',
+        ):
+            assert leak not in serialized, leak
+
+
+@postgres_only
+def test_the_real_failure_artifacts_are_honest_and_pass_the_scanner(
+    app, monkeypatch, tmp_path,
+):
+    """§16: the committed-but-proof-failed artifact, generated and scanned."""
+    with app.app_context():
+        current = _prepare(monkeypatch, app)
+        artifact_dir = tmp_path / 'proof-failed'
+
+        injection = _break_post_commit_read_only(db.engine)
+        try:
+            code = runner.main([
+                '--operation', 'apply',
+                '--expected-main-sha', SHA,
+                '--confirmation', repair.CONFIRMATIONS['apply'],
+                '--artifact-dir', str(artifact_dir),
+            ])
+        finally:
+            injection['detach']()
+
+        assert injection['fired']
+        assert code == 1
+
+        # 19. The repository's own pre-upload gate.
+        scan = _scan(artifact_dir)
+        assert scan.returncode == 0, scan.stdout + scan.stderr
+
+        document = json.loads(
+            (artifact_dir / runner.SUMMARY_JSON).read_text(encoding='utf-8')
+        )
+        ledger = json.loads(
+            (artifact_dir / runner.MUTATION_LEDGER_JSON).read_text(
+                encoding='utf-8'
+            )
+        )
+        markdown = (artifact_dir / runner.SUMMARY_MARKDOWN).read_text(
+            encoding='utf-8'
+        )
+
+        assert document['verdict']['result'] == 'FAILED'
+        assert document['verdict']['exit_code'] == 1
+        assert document['verdict']['mutation_performed'] is True
+        assert ledger['committed'] is True
+        assert ledger['commits_performed'] == 1
+        assert ledger['affected_row_count'] == 1
+        assert ledger['post_commit_transaction_read_only'] is False
+        assert ledger['post_commit_verification_completed'] is False
+        assert ledger['observed_value_after'] is None
+        assert repair.FAILED_POST_COMMIT_READ_ONLY_PROOF in (
+            document['verdict']['failed_reasons']
+        )
+
+        # The Markdown must say the three things in words, not just booleans.
+        assert '**FAILED** (exit 1)' in markdown
+        assert 'The repair COMMITTED.' in markdown
+        assert 'Nothing was rolled back' in markdown
+        assert repair.FAILED_POST_COMMIT_READ_ONLY_PROOF in markdown
+
+        # And must not say any of the things that are untrue or unsafe.
+        for forbidden in (
+            'apply_outcome_unknown', 'Traceback', 'psycopg2',
+            'division by zero', 'SET TRANSACTION READ ONLY',
+            'REPAIR_APPLIED', 'password', 'postgresql://',
+        ):
+            assert forbidden not in markdown, forbidden
+            assert forbidden not in json.dumps(document), forbidden
+
+        # The durable value is still there after all of it.
+        db.session.remove()
+        assert _persisted_revision_from_a_fresh_connection(db.engine) == [
+            current
+        ]
+
+
+# ── The outer fallback may never erase a known commit ───────────────────────
+
+@postgres_only
+def test_an_exception_before_any_commit_may_still_report_outcome_unknown(
+    app, monkeypatch,
+):
+    """The fallback is correct exactly where the outcome is genuinely open."""
+    with app.app_context():
+        item_before = None
+        _prepare(monkeypatch, app)
+
+        def _explode(*, target_row_id, observed_snapshot, state=None):
+            raise RuntimeError('before anything was decided')
+
+        monkeypatch.setattr(runner, 'apply_repair', _explode)
+        item_before = _work_item().source_revision
+
+        document = _run('apply')
+        verdict = document['verdict']
+        assert verdict['result'] == repair.RESULT_UNPROVEN
+        assert repair.UNPROVEN_APPLY_OUTCOME_UNKNOWN in (
+            verdict['unproven_reasons']
+        )
+        assert verdict['mutation_performed'] is False
+        assert document['mutation_ledger']['committed'] is None
+        db.session.expire_all()
+        assert _work_item().source_revision == item_before
+
+
+@postgres_only
+def test_an_exception_after_commit_cannot_erase_the_committed_state(
+    app, monkeypatch,
+):
+    """The BLOCKER itself: an escape after COMMIT keeps the durable facts."""
+    with app.app_context():
+        current = _prepare(monkeypatch, app)
+
+        def _explode(session):
+            raise RuntimeError('post-commit path fell over')
+
+        monkeypatch.setattr(runner, 'set_post_commit_read_only', _explode)
+
+        document = _run('apply')
+        verdict = document['verdict']
+        assert verdict['result'] == repair.RESULT_FAILED, verdict
+        assert verdict['exit_code'] == 1
+        # The commit is not downgraded to "unknown" by an exception that
+        # happened strictly after it.
+        assert verdict['apply_committed'] is True
+        assert verdict['mutation_performed'] is True
+        assert repair.UNPROVEN_APPLY_OUTCOME_UNKNOWN not in (
+            verdict['unproven_reasons']
+        )
+        assert repair.FAILED_POST_COMMIT_VERIFICATION_INCOMPLETE in (
+            verdict['failed_reasons']
+        )
+        ledger = document['mutation_ledger']
+        assert ledger['committed'] is True
+        assert ledger['commits_performed'] == 1
+        assert ledger['post_commit_verification_completed'] is False
+
+        db.session.remove()
+        assert _persisted_revision_from_a_fresh_connection(db.engine) == [
+            current
+        ]
+
+
+@postgres_only
+def test_the_real_post_commit_failure_never_reaches_the_outer_fallback(
+    app, monkeypatch,
+):
+    """Containment, not just recovery: apply_repair returns rather than raises.
+
+    Hardening the fallback is the safety net. The design requirement is that
+    the net is never needed, so this asserts the call itself completes.
+    """
+    with app.app_context():
+        _prepare(monkeypatch, app)
+        escaped = {}
+        real_apply = runner.apply_repair
+
+        def _watching_apply(*, target_row_id, observed_snapshot, state=None):
+            try:
+                return real_apply(
+                    target_row_id=target_row_id,
+                    observed_snapshot=observed_snapshot, state=state,
+                )
+            except BaseException as error:  # noqa: BLE001 - test observation
+                escaped['type'] = type(error).__name__
+                raise
+
+        monkeypatch.setattr(runner, 'apply_repair', _watching_apply)
+
+        injection = _break_post_commit_read_only(db.engine)
+        try:
+            document = _run('apply')
+        finally:
+            injection['detach']()
+
+        assert injection['fired']
+        assert not escaped, escaped
+        assert document['verdict']['result'] == repair.RESULT_FAILED
+
+
+def test_no_committed_state_can_be_replaced_by_the_generic_fallback():
+    """Structural: the fallback's unknown branch is guarded by the commit."""
+    import ast
+
+    source = RUNNER_PATH.read_text(encoding='utf-8')
+    tree = ast.parse(source)
+
+    def _mentions_unknown(node):
+        return 'UNPROVEN_APPLY_OUTCOME_UNKNOWN' in ast.dump(node)
+
+    handlers = [
+        node for node in ast.walk(tree)
+        if isinstance(node, ast.ExceptHandler) and _mentions_unknown(node)
+    ]
+    assert handlers, 'the exception paths that can say "unknown" must exist'
+
+    # Every place the runner can say "outcome unknown" must first have
+    # established that no commit outcome is known. An unconditional append
+    # anywhere on an exception path is the defect this test exists to stop.
+    for handler in handlers:
+        guards = [
+            node for node in ast.walk(handler)
+            if isinstance(node, ast.If)
+            and 'committed' in ast.dump(node.test)
+            and _mentions_unknown(node)
+        ]
+        assert guards, (
+            'apply_outcome_unknown must be reachable only after checking '
+            'whether a commit outcome was established'
+        )
+        # Nothing outside those guarded branches may say it.
+        outside = ast.dump(handler)
+        for guard in guards:
+            outside = outside.replace(ast.dump(guard), '')
+        assert 'UNPROVEN_APPLY_OUTCOME_UNKNOWN' not in outside
+
+
+def test_the_apply_state_is_owned_by_the_caller_not_a_module_global():
+    """No module-global side channel; the runner holds its own object."""
+    import ast
+
+    source = RUNNER_PATH.read_text(encoding='utf-8')
+    tree = ast.parse(source)
+
+    module_assignments = {
+        target.id
+        for node in tree.body if isinstance(node, ast.Assign)
+        for target in node.targets if isinstance(target, ast.Name)
+    }
+    assert 'apply_state' not in module_assignments
+
+    globals_declared = [
+        node for node in ast.walk(tree) if isinstance(node, ast.Global)
+    ]
+    assert not globals_declared, [n.names for n in globals_declared]
+
+    # Every post-commit lifecycle field is initialised before the apply path
+    # can return, so a caller holding the state after an escape sees the
+    # complete shape rather than absent keys.
+    state = runner.new_apply_state()
+    for field in (
+        'post_commit_verification_attempted',
+        'post_commit_read_only_attempted',
+        'post_commit_transaction_read_only',
+        'post_commit_read_only_reason',
+        'post_commit_verification_completed',
+        'post_commit_row_count',
+        'post_commit_value_is_intended',
+    ):
+        assert field in state, field
+        assert state[field] is None or state[field] is False, field

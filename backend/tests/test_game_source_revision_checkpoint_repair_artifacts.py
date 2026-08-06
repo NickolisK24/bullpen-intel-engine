@@ -356,6 +356,170 @@ def test_the_operator_note_reaches_the_document_but_no_verdict(artifact_dir):
     assert 'operator_note' not in json.dumps(payload['verdict'])
 
 
+# ── The committed-but-proof-failed artifact ─────────────────────────────────
+#
+# The one outcome where an artifact could actively mislead: the production row
+# HAS moved, and the run reports FAILED. A reader who takes FAILED to mean
+# "nothing happened" would draw the opposite of the truth, so the artifact has
+# to carry the durable facts louder than the verdict.
+
+def _proof_failed_apply_state():
+    """The state apply_repair returns after a post-commit read-only failure."""
+    state = runner.new_apply_state()
+    state.update({
+        'attempted': True,
+        'row_locked': True,
+        'lock_available': True,
+        'revalidated': True,
+        'committed': True,
+        'commit_attempted': True,
+        'commit_count': 1,
+        'affected_row_count': 1,
+        'before_snapshot': {
+            repair.TARGET_COLUMN: repair.EXPECTED_EXISTING_SOURCE_REVISION,
+        },
+        'in_transaction_value': repair.INTENDED_SOURCE_REVISION,
+        'in_transaction_value_is_intended': True,
+        'post_commit_verification_attempted': True,
+        'post_commit_read_only_attempted': True,
+        'post_commit_transaction_read_only': False,
+        'post_commit_read_only_reason': 'read_only_setup_failed',
+        'post_commit_verification_completed': False,
+        'post_commit_verification_transaction_rollback_succeeded': True,
+        'failed_reasons': [repair.FAILED_POST_COMMIT_READ_ONLY_PROOF],
+    })
+    return state
+
+
+def _proof_failed_document():
+    state = _proof_failed_apply_state()
+    return _document(
+        operation='apply',
+        apply_state=state,
+        preconditions=_evaluation(),
+        decision=repair.decide(
+            operation='apply', preconditions=_evaluation(),
+            apply_attempted=True, apply_committed=True,
+            failed_reasons=state['failed_reasons'], post_commit=state,
+        ),
+    )
+
+
+def test_the_proof_failed_verdict_is_failed_at_exit_one(artifact_dir):
+    document = _proof_failed_document()
+    verdict = document['verdict']
+    assert verdict['result'] == repair.RESULT_FAILED
+    assert verdict['exit_code'] == 1
+    assert verdict['mutation_performed'] is True
+    assert verdict['apply_committed'] is True
+    assert repair.FAILED_POST_COMMIT_READ_ONLY_PROOF in (
+        verdict['failed_reasons']
+    )
+
+
+def test_the_proof_failed_ledger_keeps_every_durable_fact(artifact_dir):
+    _write(_proof_failed_document(), artifact_dir)
+    ledger = json.loads(
+        (artifact_dir / runner.MUTATION_LEDGER_JSON).read_text(
+            encoding='utf-8'
+        )
+    )
+    assert ledger['committed'] is True
+    assert ledger['commits_performed'] == 1
+    assert ledger['affected_row_count'] == 1
+    assert ledger['mutation_performed'] is True
+    assert ledger['mutation_status'] == repair.RESULT_FAILED
+    assert ledger['post_commit_verification_attempted'] is True
+    assert ledger['post_commit_read_only_attempted'] is True
+    assert ledger['post_commit_transaction_read_only'] is False
+    assert ledger['post_commit_read_only_reason'] == 'read_only_setup_failed'
+    assert ledger['post_commit_verification_completed'] is False
+    assert ledger['observed_value_before'] == (
+        repair.EXPECTED_EXISTING_SOURCE_REVISION
+    )
+    assert ledger['intended_value'] == repair.INTENDED_SOURCE_REVISION
+    assert ledger['in_transaction_value'] == repair.INTENDED_SOURCE_REVISION
+    # Not observed, therefore absent — never back-filled from the intended
+    # literal, which would turn an assumption into a reported observation.
+    assert ledger['observed_value_after'] is None
+    assert ledger['post_commit_row_count'] is None
+    assert ledger['post_commit_value_is_intended'] is None
+    # The cleanup rollback cleared the verification transaction. It is
+    # recorded as exactly that, and never as reversing the repair.
+    assert ledger['rollback_performed'] is False
+    assert ledger['transaction_state'][
+        'post_commit_verification_transaction_rollback_succeeded'
+    ] is True
+
+
+def test_the_proof_failed_markdown_says_it_in_words(artifact_dir):
+    _write(_proof_failed_document(), artifact_dir)
+    markdown = (artifact_dir / runner.SUMMARY_MARKDOWN).read_text(
+        encoding='utf-8'
+    )
+    assert '**FAILED** (exit 1)' in markdown
+    assert 'The repair COMMITTED.' in markdown
+    assert 'durable' in markdown
+    assert 'Nothing was rolled back' in markdown
+    assert f'- FAILED: `{repair.FAILED_POST_COMMIT_READ_ONLY_PROOF}`' in (
+        markdown
+    )
+    for absent in (
+        'apply_outcome_unknown', 'REPAIR_APPLIED', 'Traceback', 'psycopg2',
+    ):
+        assert absent not in markdown, absent
+
+
+def test_a_proven_post_commit_lifecycle_gets_no_such_narrative(artifact_dir):
+    """The warning appears only where it is true."""
+    state = _proof_failed_apply_state()
+    state.update({
+        'post_commit_transaction_read_only': True,
+        'post_commit_read_only_reason': 'established',
+        'post_commit_verification_completed': True,
+        'post_commit_row_count': 1,
+        'post_commit_value_is_intended': True,
+        'after_snapshot': {
+            repair.TARGET_COLUMN: repair.INTENDED_SOURCE_REVISION,
+        },
+        'failed_reasons': [],
+    })
+    document = _document(
+        operation='apply', apply_state=state, preconditions=_evaluation(),
+        decision=repair.decide(
+            operation='apply', preconditions=_evaluation(),
+            apply_attempted=True, apply_committed=True, post_commit=state,
+        ),
+    )
+    assert document['verdict']['result'] == repair.RESULT_APPLIED
+    _write(document, artifact_dir)
+    markdown = (artifact_dir / runner.SUMMARY_MARKDOWN).read_text(
+        encoding='utf-8'
+    )
+    assert 'The repair COMMITTED.' not in markdown
+
+
+def test_the_scanner_passes_on_the_proof_failed_artifact(artifact_dir):
+    _write(_proof_failed_document(), artifact_dir)
+    result = subprocess.run(
+        [sys.executable, str(SCANNER), '--directory', str(artifact_dir)],
+        capture_output=True, text=True, check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+    blob = '\n'.join(
+        path.read_text(encoding='utf-8') for path in artifact_dir.iterdir()
+    )
+    for forbidden in (
+        'Traceback', 'psycopg2', 'InFailedSqlTransaction',
+        'SET TRANSACTION READ ONLY', 'postgresql://', 'password',
+        'apply_outcome_unknown',
+    ):
+        assert forbidden not in blob, forbidden
+    assert '"committed": null' not in blob
+    assert '"mutation_performed": false' not in blob
+
+
 # ── The repository's own scanner ────────────────────────────────────────────
 
 def test_the_repository_scanner_passes_on_a_real_artifact_directory(

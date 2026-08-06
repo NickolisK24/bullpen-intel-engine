@@ -210,7 +210,46 @@ def set_post_commit_read_only(session) -> bool:
         return False
 
 
-def apply_repair(*, target_row_id, observed_snapshot) -> dict:
+def new_apply_state() -> dict:
+    """The apply lifecycle, fully initialised before anything can return.
+
+    Owned by the CALLER and passed in, so an exception escaping anywhere
+    leaves the caller holding the same object with whatever was truthfully
+    established — rather than a generic replacement that erases it.
+    """
+    return {
+        'attempted': False,
+        'row_locked': False,
+        'lock_available': None,
+        'revalidated': None,
+        'revalidation_reason': None,
+        'committed': None,
+        'commit_attempted': False,
+        'commit_count': 0,
+        'before_snapshot': None,
+        'after_snapshot': None,
+        'in_transaction_value': None,
+        'in_transaction_value_is_intended': None,
+        'guard_observations': None,
+        'guard_checks': None,
+        'statements': None,
+        'affected_row_count': None,
+        # ── Post-commit lifecycle, explicit and initialised up front ───────
+        'post_commit_verification_attempted': False,
+        'post_commit_read_only_attempted': False,
+        'post_commit_transaction_read_only': None,
+        'post_commit_read_only_reason': None,
+        'post_commit_verification_completed': False,
+        'post_commit_verification_transaction_rollback_succeeded': None,
+        'post_commit_row_count': None,
+        'post_commit_value_is_intended': None,
+        'failed_reasons': [],
+        'unproven_reasons': [],
+        'refusal_reasons': [],
+    }
+
+
+def apply_repair(*, target_row_id, observed_snapshot, state=None) -> dict:
     """Perform the ONE approved change, inside its own writable transaction.
 
     Called only after every precondition has already been satisfied against a
@@ -222,23 +261,7 @@ def apply_repair(*, target_row_id, observed_snapshot) -> dict:
     from models.game_ingestion_work_item import GameIngestionWorkItem
     from utils.db import db
 
-    state = {
-        'attempted': False,
-        'row_locked': False,
-        'lock_available': None,
-        'revalidated': None,
-        'revalidation_reason': None,
-        'committed': None,
-        'before_snapshot': None,
-        'after_snapshot': None,
-        'guard_observations': None,
-        'guard_checks': None,
-        'statements': None,
-        'affected_row_count': None,
-        'failed_reasons': [],
-        'unproven_reasons': [],
-        'refusal_reasons': [],
-    }
+    state = new_apply_state() if state is None else state
 
     # A fresh transaction. The read-only one this run has been using is over.
     db.session.rollback()
@@ -379,6 +402,7 @@ def apply_repair(*, target_row_id, observed_snapshot) -> dict:
             )
             return state
 
+        state['commit_attempted'] = True
         db.session.commit()
         state['committed'] = True
         state['commit_count'] = 1
@@ -387,43 +411,92 @@ def apply_repair(*, target_row_id, observed_snapshot) -> dict:
             db.session.rollback()
         except Exception:  # noqa: BLE001
             pass
-        state['committed'] = False
-        state['unproven_reasons'].append(repair.UNPROVEN_APPLY_OUTCOME_UNKNOWN)
+        if state.get('committed') is not True:
+            # A COMMIT that was reached but did not return leaves the outcome
+            # genuinely open — the server may have applied it. One that was
+            # never reached leaves it definitively not done. Only the first
+            # is "unknown", and only an unknown outcome may say so.
+            state['committed'] = (
+                None if state.get('commit_attempted') else False
+            )
+            state['unproven_reasons'].append(
+                repair.UNPROVEN_APPLY_OUTCOME_UNKNOWN
+            )
         return state
     finally:
         guard.detach()
         watch.detach()
 
-    # Post-commit verification, in a FRESH transaction that is set read-only
-    # first. The committed state is read back from the database rather than
-    # from the in-memory object — ``updated_at`` is applied by the flush
-    # process, so the row itself is the only honest source — and the
-    # verification pass is prevented from writing anything by construction
-    # rather than by intent.
-    db.session.expire_all()
-    established = set_post_commit_read_only(db.session)
-    state['post_commit_transaction_read_only'] = established
-    if not established:
-        # The package claims its post-commit verification cannot write by
-        # construction. If that could not be established, the claim is
-        # unproven and the run must not report REPAIR_APPLIED — even though
-        # the mutation is already committed and cannot be taken back. The
-        # ledger below still discloses the committed change in full; what is
-        # withheld is the success verdict, not the evidence.
-        state['unproven_reasons'].append(repair.UNPROVEN_READ_ONLY_UNAVAILABLE)
+    # ── Post-commit verification ────────────────────────────────────────────
+    # The commit has landed and cannot be taken back. From here on, EVERY
+    # failure is contained: nothing may escape this function and reach a
+    # generic handler that would replace a known durable commit with "outcome
+    # unknown". The committed facts recorded above are preserved on every
+    # path out.
+    state['post_commit_verification_attempted'] = True
+    state['post_commit_read_only_attempted'] = True
 
-    final = GameIngestionWorkItem.query.filter(
-        GameIngestionWorkItem.mlb_game_pk == repair.GAME_PK
-    ).all()
-    state['after_snapshot'] = (
-        repair.row_snapshot(final[0]) if len(final) == 1 else {}
-    )
-    state['post_commit_row_count'] = len(final)
-    state['post_commit_value_is_intended'] = (
-        (state['after_snapshot'] or {}).get(repair.TARGET_COLUMN)
-        == repair.INTENDED_SOURCE_REVISION
-    )
-    if len(final) != 1:
+    if not set_post_commit_read_only(db.session):
+        # A failed statement leaves the PostgreSQL transaction ABORTED, so the
+        # governed read below would raise rather than answer. It is not
+        # attempted. The transaction is cleared so the session is usable
+        # again — that rollback discards the failed VERIFICATION transaction
+        # and does NOT and cannot reverse the committed repair.
+        state['post_commit_transaction_read_only'] = False
+        state['post_commit_read_only_reason'] = 'read_only_setup_failed'
+        state['failed_reasons'].append(
+            repair.FAILED_POST_COMMIT_READ_ONLY_PROOF
+        )
+        try:
+            db.session.rollback()
+            state[
+                'post_commit_verification_transaction_rollback_succeeded'
+            ] = True
+        except Exception:  # noqa: BLE001 - never leak the database message
+            state[
+                'post_commit_verification_transaction_rollback_succeeded'
+            ] = False
+        state['post_commit_verification_completed'] = False
+        # after_snapshot stays None: no governed post-commit read happened,
+        # and the intended literal must never be passed off as an observation.
+        return state
+
+    state['post_commit_transaction_read_only'] = True
+    state['post_commit_read_only_reason'] = 'established'
+
+    try:
+        db.session.expire_all()
+        final = GameIngestionWorkItem.query.filter(
+            GameIngestionWorkItem.mlb_game_pk == repair.GAME_PK
+        ).all()
+        state['after_snapshot'] = (
+            repair.row_snapshot(final[0]) if len(final) == 1 else {}
+        )
+        state['post_commit_row_count'] = len(final)
+        state['post_commit_value_is_intended'] = (
+            (state['after_snapshot'] or {}).get(repair.TARGET_COLUMN)
+            == repair.INTENDED_SOURCE_REVISION
+        )
+        state['post_commit_verification_completed'] = True
+    except Exception:  # noqa: BLE001 - never leak the database message
+        # The read-only transaction was established and the governed read
+        # still failed. Contained here for the same reason as above.
+        state['post_commit_verification_completed'] = False
+        state['failed_reasons'].append(
+            repair.FAILED_POST_COMMIT_VERIFICATION_INCOMPLETE
+        )
+        try:
+            db.session.rollback()
+            state[
+                'post_commit_verification_transaction_rollback_succeeded'
+            ] = True
+        except Exception:  # noqa: BLE001
+            state[
+                'post_commit_verification_transaction_rollback_succeeded'
+            ] = False
+        return state
+
+    if state['post_commit_row_count'] != 1:
         state['failed_reasons'].append(
             repair.FAILED_AFFECTED_ROW_COUNT_NOT_ONE
         )
@@ -661,19 +734,36 @@ def run(args) -> dict:
         collected['apply_gate_open'] = bool(may_apply)
 
         if may_apply:
+            # The state object is created HERE and handed in, so an
+            # exception escaping apply_repair leaves this frame holding the
+            # same object with whatever was truthfully established. The old
+            # shape built a replacement dict in the handler, which erased a
+            # known durable commit by construction.
+            apply_state = new_apply_state()
             try:
-                apply_state = apply_repair(
+                apply_repair(
                     target_row_id=target.get('work_item_row_id'),
                     observed_snapshot=(target or {}).get('work_item'),
+                    state=apply_state,
                 )
             except Exception:  # noqa: BLE001 - never leak exception text
-                apply_state = {
-                    'attempted': True, 'committed': None,
-                    'unproven_reasons': [
-                        repair.UNPROVEN_APPLY_OUTCOME_UNKNOWN,
-                    ],
-                    'failed_reasons': [], 'refusal_reasons': [],
-                }
+                apply_state['attempted'] = True
+                if apply_state.get('committed') is True:
+                    # A commit that already landed is a durable fact. It is
+                    # never downgraded to "outcome unknown", and the failure
+                    # is reported as this package's own contract violation.
+                    incomplete = (
+                        repair.FAILED_POST_COMMIT_VERIFICATION_INCOMPLETE
+                    )
+                    if incomplete not in apply_state['failed_reasons']:
+                        apply_state['failed_reasons'].append(incomplete)
+                    apply_state['post_commit_verification_completed'] = False
+                else:
+                    # No commit outcome was ever established, which is the
+                    # ONLY situation this reason may describe.
+                    apply_state['unproven_reasons'].append(
+                        repair.UNPROVEN_APPLY_OUTCOME_UNKNOWN
+                    )
             failed_reasons.extend(apply_state.get('failed_reasons') or ())
             unproven_reasons.extend(apply_state.get('unproven_reasons') or ())
             refusal_reasons.extend(apply_state.get('refusal_reasons') or ())
@@ -765,6 +855,7 @@ def run(args) -> dict:
         refusal_reasons=refusal_reasons,
         apply_attempted=bool(apply_state.get('attempted')),
         apply_committed=apply_state.get('committed'),
+        post_commit=apply_state,
     )
 
     return build_document(
@@ -946,6 +1037,18 @@ def build_mutation_ledger(*, apply_state, mutation, target,
             'post_commit_transaction_read_only': apply_state.get(
                 'post_commit_transaction_read_only'
             ),
+            'post_commit_read_only_reason': apply_state.get(
+                'post_commit_read_only_reason'
+            ),
+            # A cleanup rollback of the POST-COMMIT verification transaction.
+            # It is not, and must never be read as, a rollback of the repair:
+            # the repair's own COMMIT already returned before this transaction
+            # existed. `rollback_performed` below stays False for that reason.
+            'post_commit_verification_transaction_rollback_succeeded': (
+                apply_state.get(
+                    'post_commit_verification_transaction_rollback_succeeded'
+                )
+            ),
         },
         'commits_performed': (
             apply_state.get('commit_count')
@@ -960,6 +1063,30 @@ def build_mutation_ledger(*, apply_state, mutation, target,
         'mutation_timestamp': (
             (apply_state.get('after_snapshot') or {}).get('updated_at')
             if apply_state.get('committed') is True else None
+        ),
+        # ── Post-commit verification lifecycle ─────────────────────────────
+        # Reported as a lifecycle, not a single boolean, because "the proof
+        # did not happen" and "the proof happened and disagreed" are different
+        # facts and a reader must not have to guess which one occurred.
+        'post_commit_verification_attempted': apply_state.get(
+            'post_commit_verification_attempted'
+        ),
+        'post_commit_read_only_attempted': apply_state.get(
+            'post_commit_read_only_attempted'
+        ),
+        'post_commit_transaction_read_only': apply_state.get(
+            'post_commit_transaction_read_only'
+        ),
+        'post_commit_read_only_reason': apply_state.get(
+            'post_commit_read_only_reason'
+        ),
+        'post_commit_verification_completed': apply_state.get(
+            'post_commit_verification_completed'
+        ),
+        'post_commit_verification_transaction_rollback_succeeded': (
+            apply_state.get(
+                'post_commit_verification_transaction_rollback_succeeded'
+            )
         ),
         'post_commit_value_is_intended': apply_state.get(
             'post_commit_value_is_intended'
@@ -1023,6 +1150,41 @@ REQUIRED_MARKDOWN_SECTIONS = (
 
 def _row(label, value):
     return f'| {label} | {value} |'
+
+
+def _post_commit_proof_narrative(ledger) -> list[str]:
+    """Say in words what the post-commit row means, when it is unusual.
+
+    The dangerous reading of a committed-but-unproven run is "the write did
+    not stick". A reader skimming a table of booleans can land there. So the
+    one case where that misreading is possible gets stated outright: the row
+    was changed, the change is durable, and what failed was this package's
+    own proof obligation afterwards.
+    """
+    if ledger.get('committed') is not True:
+        return []
+    if ledger.get('post_commit_verification_completed') is True:
+        return []
+    if ledger.get('post_commit_transaction_read_only') is True:
+        what_failed = (
+            'the fresh transaction was proven read-only, and the governed '
+            're-read of the row did not complete inside it'
+        )
+    else:
+        what_failed = (
+            'it could not establish a read-only transaction to re-read the '
+            'row in, so it did not re-read it'
+        )
+    return [
+        '> The repair COMMITTED. The row was updated and that update is '
+        f'durable. What failed afterwards is this package\'s own post-commit '
+        f'proof obligation: {what_failed}. Nothing was rolled back — the '
+        'commit had already returned before that verification transaction '
+        'existed. The run is FAILED because the package did not keep a '
+        'guarantee it makes, not because the database is in an unknown '
+        'state. The next verify run observes the durable value directly.',
+        '',
+    ]
 
 
 def render_markdown(document) -> str:
@@ -1226,12 +1388,26 @@ def render_markdown(document) -> str:
              transaction.get('row_locked_for_update')),
         _row('in-transaction value is intended',
              transaction.get('in_transaction_value_is_intended')),
+        _row('post-commit verification attempted',
+             ledger.get('post_commit_verification_attempted')),
+        _row('post-commit read-only attempted',
+             ledger.get('post_commit_read_only_attempted')),
         _row('post-commit transaction read-only',
              transaction.get('post_commit_transaction_read_only')),
+        _row('post-commit read-only reason',
+             ledger.get('post_commit_read_only_reason')),
+        _row('post-commit verification completed',
+             ledger.get('post_commit_verification_completed')),
+        _row('post-commit verification transaction rolled back',
+             ledger.get(
+                 'post_commit_verification_transaction_rollback_succeeded')),
         _row('post-commit value is intended',
              ledger.get('post_commit_value_is_intended')),
         _row('post-commit row count', ledger.get('post_commit_row_count')),
         '',
+        *_post_commit_proof_narrative(ledger),
+    ]
+    lines += [
         '## 13. Prohibited-scope verification',
         '',
         'This run performed none of the following:',
