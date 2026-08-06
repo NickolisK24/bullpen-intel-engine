@@ -1255,17 +1255,24 @@ def _break_post_commit_read_only(engine):
     The injected failure is a real server-side error, which is the point: it
     leaves the transaction aborted exactly as a genuine failure would, so the
     next ORM read in that transaction would raise.
+
+    Every statement attempted AFTER the failure is recorded, normalised, so a
+    test can assert on what the package did next rather than on what it says
+    it does.
     """
-    state = {'update_seen': False, 'fired': False}
+    state = {'update_seen': False, 'fired': False, 'after': []}
 
     @event.listens_for(engine, 'before_cursor_execute')
     def _fail(conn, cursor, statement, parameters, context, executemany):
-        upper = statement.strip().upper()
+        upper = ' '.join(statement.strip().upper().split())
+        if state['fired']:
+            state['after'].append(upper)
+            return
         if upper.startswith('UPDATE GAME_INGESTION_WORK_ITEMS'):
             state['update_seen'] = True
             return
-        if state['update_seen'] and not state['fired'] and (
-            upper.startswith('SET TRANSACTION READ ONLY')
+        if state['update_seen'] and upper.startswith(
+            'SET TRANSACTION READ ONLY'
         ):
             state['fired'] = True
             cursor.execute('SELECT 1 / 0')
@@ -1274,6 +1281,48 @@ def _break_post_commit_read_only(engine):
         engine, 'before_cursor_execute', _fail
     )
     return state
+
+
+#: Everything the package is still allowed to do once the proof has failed:
+#: clear the poisoned transaction and hand back the advisory lock. Nothing
+#: that reads governed state appears here, and that is the whole point.
+PERMITTED_AFTER_PROOF_FAILURE = (
+    'ROLLBACK', 'COMMIT', 'BEGIN', 'SELECT PG_ADVISORY_UNLOCK',
+)
+
+#: Governed tables. A SELECT touching any of these after the proof failed is
+#: the defect, whichever helper issued it.
+GOVERNED_TABLES = (
+    'GAME_INGESTION_WORK_ITEMS', 'GAME_LOGS', 'SCHEDULED_GAMES',
+    'POSTGAME_PROCESSED_GAMES', 'TEAM_GAME_PITCHING_SPLITS',
+    'COMPLETED_GAME_CONTEXTS', 'GAME_PLAY_BY_PLAY_EVENTS', 'SYNC_FAILURES',
+    'PITCHERS', 'SYNC_RUNS', 'FATIGUE_SCORES', 'PROSPECTS',
+)
+
+
+def _count_calls(monkeypatch, armed):
+    """Count the three post-apply helpers, split by before/after the failure.
+
+    Counting only the total would not distinguish "never called" from "called
+    in the legitimate read phase", so both windows are recorded.
+    """
+    totals = {'scoped': 0, 'out_of_scope': 0, 'evaluate': 0}
+    after = {'scoped': 0, 'out_of_scope': 0, 'evaluate': 0}
+    for key, module, name in (
+        ('scoped', audit, 'scoped_fingerprints'),
+        ('out_of_scope', repair, 'out_of_scope_fingerprint'),
+        ('evaluate', repair, 'evaluate_mutation'),
+    ):
+        real = getattr(module, name)
+
+        def counting(*args, _key=key, _real=real, **kwargs):
+            totals[_key] += 1
+            if armed():
+                after[_key] += 1
+            return _real(*args, **kwargs)
+
+        monkeypatch.setattr(module, name, counting)
+    return totals, after
 
 
 def _persisted_revision_from_a_fresh_connection(engine):
@@ -1642,3 +1691,368 @@ def test_the_apply_state_is_owned_by_the_caller_not_a_module_global():
     ):
         assert field in state, field
         assert state[field] is None or state[field] is False, field
+
+
+# ── After a failed proof, the package stops reading. Globally. ──────────────
+#
+# Stopping the target-row re-read was only half of it. The runner then went on
+# to collect the post-apply scoped fingerprints and the out-of-scope digest —
+# ten governed SELECTs — inside the very transaction it had just failed to
+# prove read-only, and fed the result to evaluate_mutation(), which does not
+# degrade when its inputs are missing: it reported every column as changed and
+# manufactured two false accusations about a row that had moved exactly as
+# approved. These tests hold the boundary at the whole run, not one function.
+
+def _governed_reads(statements):
+    """Statements that read governed state, excluding permitted cleanup."""
+    offenders = []
+    for statement in statements:
+        if statement.startswith(PERMITTED_AFTER_PROOF_FAILURE):
+            continue
+        if any(table in statement for table in GOVERNED_TABLES):
+            offenders.append(statement)
+        elif statement.startswith('SELECT') or statement.startswith('SET '):
+            offenders.append(statement)
+    return offenders
+
+
+@postgres_only
+def test_no_governed_read_occurs_after_the_post_commit_proof_fails(
+    app, monkeypatch,
+):
+    """Two independent controls: the wire, and the call sites."""
+    with app.app_context():
+        current = _prepare(monkeypatch, app)
+
+        neighbour = GameIngestionWorkItem(
+            mlb_game_pk=999003, represented_date=REFERENCE,
+            game_date=REFERENCE, status=GameIngestionWorkItem.STATUS_PLANNED,
+            candidate_reason=GameIngestionWorkItem.REASON_NEWLY_FINAL,
+            criticality=GameIngestionWorkItem.CRITICALITY_PUBLICATION_CRITICAL,
+            source_revision=OLD_REVISION,
+        )
+        db.session.add(neighbour)
+        db.session.commit()
+        neighbour_id = neighbour.id
+        neighbour_before = (neighbour.source_revision, neighbour.updated_at)
+
+        game_logs_before = {
+            row.id: (
+                row.strikeouts, row.earned_runs, row.innings_pitched_outs,
+                row.stat_correction_count, row.last_stat_correction_at,
+            )
+            for row in GameLog.query.filter_by(mlb_game_pk=GAME_PK).all()
+        }
+        assert game_logs_before
+
+        injection = _break_post_commit_read_only(db.engine)
+        totals, after_calls = _count_calls(
+            monkeypatch, lambda: injection['fired'],
+        )
+        try:
+            document = _run('apply')
+        finally:
+            injection['detach']()
+
+        assert injection['fired'], (
+            'the test proves nothing unless the real statement failed'
+        )
+
+        # ── Control 1: the wire ────────────────────────────────────────────
+        offenders = _governed_reads(injection['after'])
+        assert offenders == [], offenders
+        blob = ' || '.join(injection['after'])
+        for table in GOVERNED_TABLES:
+            assert table not in blob, table
+        assert 'MD5(' not in blob, 'a fingerprint digest was computed'
+        assert 'SET TRANSACTION READ ONLY' not in blob, (
+            'no second read-only attempt may be made'
+        )
+        # Cleanup and lock release are the only things left, and the lock
+        # release must still have happened.
+        assert any('PG_ADVISORY_UNLOCK' in s for s in injection['after'])
+
+        # ── Control 2: the call sites ──────────────────────────────────────
+        # The read-phase calls are legitimate and still happen; nothing runs
+        # after the failure.
+        assert after_calls == {'scoped': 0, 'out_of_scope': 0, 'evaluate': 0}
+        assert totals['scoped'] == 2, totals
+        assert totals['out_of_scope'] == 2, totals
+        assert totals['evaluate'] == 0, totals
+
+        # ── The verdict is unchanged by the correction ─────────────────────
+        verdict = document['verdict']
+        assert verdict['result'] == repair.RESULT_FAILED, verdict
+        assert verdict['exit_code'] == 1
+        assert verdict['mutation_performed'] is True
+        assert verdict['apply_committed'] is True
+        assert repair.FAILED_POST_COMMIT_READ_ONLY_PROOF in (
+            verdict['failed_reasons']
+        )
+
+        # ── Nothing is fabricated in place of the skipped evidence ─────────
+        ledger = document['mutation_ledger']
+        assert ledger['post_commit_proof_complete'] is False
+        assert ledger['post_apply_scope_evaluation_completed'] is False
+        assert ledger['post_apply_observation_skip_reason'] == (
+            'post_commit_proof_incomplete'
+        )
+        evaluation = ledger['scope_evaluation']
+        for field in (
+            'observed_changed_columns', 'changed_fingerprint_tables',
+            'unexpected_changed_fingerprint_tables', 'out_of_scope_unchanged',
+            'mutation_within_scope', 'post_state_is_intended_revision',
+        ):
+            assert evaluation[field] is None, field
+        assert evaluation['failed_reasons'] == []
+        assert evaluation['changed_fingerprint_tables_observed'] is False
+        assert evaluation['out_of_scope_fingerprint_observed'] is False
+        # The pre-commit facts survive, because those WERE observed.
+        assert evaluation['affected_row_count'] == 1
+        assert evaluation['in_transaction_value_is_intended'] is True
+
+        fingerprints = document['fingerprints']
+        assert fingerprints['post_commit_proof_complete'] is False
+        assert fingerprints[
+            'post_apply_fingerprint_collection_attempted'
+        ] is False
+        assert fingerprints['post_apply_fingerprints_observed'] is False
+        assert fingerprints[
+            'post_apply_out_of_scope_fingerprint_observed'
+        ] is False
+        assert fingerprints['post_apply_observation_skip_reason'] == (
+            'post_commit_proof_incomplete'
+        )
+        assert fingerprints['after_apply'] is None
+        assert fingerprints['out_of_scope_after_apply'] is None
+        # The two accusations the old code manufactured must be absent.
+        reasons = ' '.join(verdict['failed_reasons'])
+        assert repair.FAILED_MUTATION_SCOPE_EXCEEDED not in reasons
+        assert repair.FAILED_POST_STATE_NOT_INTENDED not in reasons
+
+        # ── And production is exactly where the ledger says ────────────────
+        db.session.remove()
+        assert _persisted_revision_from_a_fresh_connection(db.engine) == [
+            current
+        ]
+        db.session.expire_all()
+        assert {
+            row.id: (
+                row.strikeouts, row.earned_runs, row.innings_pitched_outs,
+                row.stat_correction_count, row.last_stat_correction_at,
+            )
+            for row in GameLog.query.filter_by(mlb_game_pk=GAME_PK).all()
+        } == game_logs_before
+        other = db.session.get(GameIngestionWorkItem, neighbour_id)
+        assert (other.source_revision, other.updated_at) == neighbour_before
+
+        serialized = json.dumps(document, default=str)
+        for leak in (
+            'Traceback', 'psycopg2', 'InFailedSqlTransaction',
+            'division by zero', 'SELECT 1 / 0',
+        ):
+            assert leak not in serialized, leak
+
+
+@postgres_only
+def test_a_proven_proof_still_collects_the_full_post_apply_evidence(
+    app, monkeypatch,
+):
+    """The control. The correction must not have disarmed the success path."""
+    with app.app_context():
+        _prepare(monkeypatch, app)
+        totals, _ = _count_calls(monkeypatch, lambda: False)
+
+        document = _run('apply')
+
+        assert document['verdict']['result'] == repair.RESULT_APPLIED
+        assert document['verdict']['exit_code'] == 0
+        # Read phase (2) plus the post-apply pass (1).
+        assert totals['scoped'] == 3, totals
+        assert totals['out_of_scope'] == 3, totals
+        assert totals['evaluate'] == 1, totals
+
+        fingerprints = document['fingerprints']
+        assert fingerprints['post_commit_proof_complete'] is True
+        assert fingerprints[
+            'post_apply_fingerprint_collection_attempted'
+        ] is True
+        assert fingerprints['post_apply_fingerprints_observed'] is True
+        assert fingerprints[
+            'post_apply_out_of_scope_fingerprint_observed'
+        ] is True
+        assert fingerprints['post_apply_observation_skip_reason'] is None
+        assert fingerprints['after_apply'] is not None
+        assert fingerprints['out_of_scope_after_apply'] is not None
+
+        evaluation = document['mutation_ledger']['scope_evaluation']
+        assert evaluation['mutation_within_scope'] is True
+        assert evaluation['observed_changed_columns'] == [
+            'source_revision', 'updated_at',
+        ]
+        assert evaluation['changed_fingerprint_tables'] == [
+            [audit.SCOPE_EXACT_GAME, repair.TARGET_TABLE]
+        ]
+        assert evaluation['unexpected_changed_fingerprint_tables'] == []
+        assert evaluation['out_of_scope_unchanged'] is True
+        ledger = document['mutation_ledger']
+        assert ledger['post_commit_proof_complete'] is True
+        assert ledger['post_apply_scope_evaluation_completed'] is True
+        assert ledger['post_apply_observation_skip_reason'] is None
+
+
+def _apply_state_stub(**overrides):
+    """A state a broken apply_repair might hand back."""
+    state = runner.new_apply_state()
+    state.update({
+        'attempted': True, 'row_locked': True, 'lock_available': True,
+        'revalidated': True, 'committed': True, 'commit_attempted': True,
+        'commit_count': 1, 'affected_row_count': 1,
+        'in_transaction_value_is_intended': True,
+        'post_commit_verification_attempted': True,
+        'post_commit_read_only_attempted': True,
+        'post_commit_transaction_read_only': True,
+        'post_commit_read_only_reason': 'established',
+        'post_commit_verification_completed': True,
+        'post_commit_row_count': 1,
+        'post_commit_value_is_intended': True,
+    })
+    state.update(overrides)
+    return state
+
+
+def _run_with_apply_state(monkeypatch, state):
+    """Run an apply whose apply_repair returns exactly this state."""
+    def _install_stub(*, target_row_id, observed_snapshot, state=None):
+        assert state is not None
+        state.update(stub_state)
+        return state
+
+    stub_state = state
+    monkeypatch.setattr(runner, 'apply_repair', _install_stub)
+    totals, _ = _count_calls(monkeypatch, lambda: False)
+    document = _run('apply')
+    return document, totals
+
+
+@postgres_only
+@pytest.mark.parametrize('broken,label', [
+    ({'post_commit_transaction_read_only': False,
+      'post_commit_read_only_reason': 'read_only_setup_failed',
+      'post_commit_verification_completed': False,
+      'post_commit_row_count': None,
+      'post_commit_value_is_intended': None,
+      'failed_reasons': ['post_commit_read_only_proof_failed']},
+     'read_only_setup_failed'),
+    ({'post_commit_verification_completed': False,
+      'post_commit_row_count': None,
+      'post_commit_value_is_intended': None,
+      'failed_reasons': ['post_commit_verification_incomplete']},
+     'governed_re_read_failed'),
+    ({'post_commit_verification_completed': False},
+     'verification_not_completed'),
+    ({'post_commit_verification_attempted': False,
+      'post_commit_read_only_attempted': False,
+      'post_commit_transaction_read_only': None,
+      'post_commit_verification_completed': False,
+      'post_commit_row_count': None,
+      'post_commit_value_is_intended': None},
+     'lifecycle_never_ran'),
+    ({'post_commit_row_count': 2}, 'row_count_not_one'),
+    ({'post_commit_value_is_intended': False}, 'value_not_intended'),
+])
+def test_an_incomplete_proof_never_triggers_post_apply_observation(
+    app, monkeypatch, broken, label,
+):
+    """A forged committed:true cannot buy its way past the gate."""
+    with app.app_context():
+        _prepare(monkeypatch, app)
+        document, totals = _run_with_apply_state(
+            monkeypatch, _apply_state_stub(**broken),
+        )
+
+        assert totals['scoped'] == 2, (label, totals)
+        assert totals['out_of_scope'] == 2, (label, totals)
+        assert totals['evaluate'] == 0, (label, totals)
+
+        verdict = document['verdict']
+        assert verdict['result'] == repair.RESULT_FAILED, (label, verdict)
+        assert verdict['exit_code'] == 1, label
+        assert verdict['mutation_performed'] is True, label
+
+        fingerprints = document['fingerprints']
+        assert fingerprints['post_commit_proof_complete'] is False, label
+        assert fingerprints[
+            'post_apply_fingerprint_collection_attempted'
+        ] is False, label
+        assert fingerprints['after_apply'] is None, label
+        assert fingerprints['out_of_scope_after_apply'] is None, label
+
+        evaluation = document['mutation_ledger']['scope_evaluation']
+        assert evaluation['mutation_within_scope'] is None, label
+        assert evaluation['out_of_scope_unchanged'] is None, label
+        assert evaluation['changed_fingerprint_tables'] is None, label
+
+
+@postgres_only
+def test_a_committed_state_with_no_lifecycle_at_all_reads_nothing(
+    app, monkeypatch,
+):
+    """The degenerate case: a commit marker and nothing else."""
+    with app.app_context():
+        _prepare(monkeypatch, app)
+        bare = runner.new_apply_state()
+        bare.update({
+            'attempted': True, 'committed': True, 'commit_count': 1,
+            'affected_row_count': 1,
+        })
+        document, totals = _run_with_apply_state(monkeypatch, bare)
+
+        assert totals['evaluate'] == 0
+        assert totals['scoped'] == 2
+        assert totals['out_of_scope'] == 2
+        assert document['verdict']['result'] == repair.RESULT_FAILED
+        assert document['verdict']['exit_code'] == 1
+        assert document['fingerprints']['after_apply'] is None
+
+
+def test_the_outer_post_apply_reads_are_gated_by_the_shared_predicate():
+    """Structural: no `committed is True` gate on its own guards a read."""
+    import ast
+
+    source = RUNNER_PATH.read_text(encoding='utf-8')
+    tree = ast.parse(source)
+
+    calls = [
+        node for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr in {
+            'scoped_fingerprints', 'out_of_scope_fingerprint',
+            'evaluate_mutation',
+        }
+    ]
+    assert len(calls) >= 4, 'the read phase and post-apply phase both exist'
+
+    # The predicate must be consulted, and consulted from the service, so the
+    # runner cannot grow its own private copy of the contract.
+    predicate_calls = [
+        node for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == 'post_commit_proof_complete'
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id == 'repair'
+    ]
+    assert predicate_calls, 'the runner must use the service predicate'
+
+    # And the runner must not define its own.
+    # And the runner must not define its own. (A Markdown renderer that
+    # merely NAMES the proof is not a second predicate; a function that
+    # decides completeness is.)
+    local = [
+        node for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef)
+        and 'post_commit_proof_complete' in node.name
+    ]
+    assert local == [], [node.name for node in local]

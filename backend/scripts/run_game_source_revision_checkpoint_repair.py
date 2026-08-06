@@ -201,7 +201,12 @@ def set_post_commit_read_only(session) -> bool:
 
     Extracted so the failure path is reachable in a test. A verification pass
     that cannot be proven read-only is not a verification pass this package is
-    entitled to rely on, and the caller turns a False here into UNPROVEN.
+    entitled to rely on.
+
+    A post-commit read-only setup failure is a package CONTRACT failure. The
+    durable commit remains disclosed in full, all governed post-commit
+    observation stops — the target-row re-read, the scoped fingerprints, and
+    the out-of-scope digest alike — and the run returns FAILED at exit 1.
     """
     try:
         session.execute(sa.text('SET TRANSACTION READ ONLY'))
@@ -768,7 +773,20 @@ def run(args) -> dict:
             unproven_reasons.extend(apply_state.get('unproven_reasons') or ())
             refusal_reasons.extend(apply_state.get('refusal_reasons') or ())
 
-            if apply_state.get('committed') is True:
+            # THE gate on every governed read that happens after COMMIT. The
+            # old condition was `committed is True` alone, which let the whole
+            # post-apply fingerprint phase run inside a transaction the
+            # package had just failed to prove read-only — the exact thing it
+            # promises never to do. Worse, evaluate_mutation() called with the
+            # missing after-snapshot did not degrade: it reported every column
+            # as changed and manufactured two false accusations about a row
+            # that had in fact moved exactly as approved.
+            committed = apply_state.get('committed') is True
+            post_commit_proven = repair.post_commit_proof_complete(apply_state)
+            collected['post_commit_proof_complete'] = post_commit_proven
+
+            if committed and post_commit_proven:
+                collected['post_apply_observation_attempted'] = True
                 after_fingerprints = audit.scoped_fingerprints(
                     db.session,
                     pitcher_mlb_ids=set(
@@ -796,6 +814,20 @@ def run(args) -> dict:
                     out_of_scope_before=collected.get('out_of_scope_before'),
                     out_of_scope_after=out_of_scope_after,
                     statements=apply_state.get('statements'),
+                )
+            elif committed:
+                # The commit is durable and stays fully disclosed. NOTHING is
+                # read: no scoped fingerprints, no out-of-scope digest, no
+                # target-row query. Opening another unproven transaction to
+                # salvage the evidence would be the same violation twice. A
+                # later verify run is the mechanism for observing durable
+                # state, and the artifact says so.
+                collected['post_apply_observation_attempted'] = False
+                mutation = (
+                    repair
+                    .committed_mutation_evidence_without_post_commit_proof(
+                        apply_state
+                    )
                 )
 
         # ── Release, always, and record what actually happened ──────────────
@@ -885,6 +917,25 @@ def run(args) -> dict:
                 'out_of_scope_after_read'
             ),
             'out_of_scope_after_apply': collected.get('out_of_scope_after'),
+            # Stated positively, so a null `after_apply` is never read as
+            # "computed and empty". Absent evidence and observed-nothing are
+            # different facts and the artifact must not blur them.
+            'post_commit_proof_complete': collected.get(
+                'post_commit_proof_complete'
+            ),
+            'post_apply_fingerprint_collection_attempted': collected.get(
+                'post_apply_observation_attempted'
+            ),
+            'post_apply_fingerprints_observed': (
+                collected.get('post_apply_fingerprints') is not None
+            ),
+            'post_apply_out_of_scope_fingerprint_observed': (
+                collected.get('out_of_scope_after') is not None
+            ),
+            'post_apply_observation_skip_reason': (
+                None if collected.get('post_apply_observation_attempted')
+                is not False else repair.POST_COMMIT_OBSERVATION_SKIPPED
+            ),
         },
         mutation=mutation, apply_state=apply_state,
         source_calls=source_calls, halt_stage=collected.get('halt_stage'),
@@ -1092,6 +1143,19 @@ def build_mutation_ledger(*, apply_state, mutation, target,
             'post_commit_value_is_intended'
         ),
         'post_commit_row_count': apply_state.get('post_commit_row_count'),
+        # The single authoritative predicate, recomputed here from the same
+        # state the runner gated its reads on, so the artifact discloses the
+        # decision rather than leaving a reader to infer it from six booleans.
+        'post_commit_proof_complete': repair.post_commit_proof_complete(
+            apply_state
+        ),
+        'post_apply_scope_evaluation_completed': (
+            mutation.get('post_apply_scope_evaluation_completed', True)
+            if mutation else None
+        ),
+        'post_apply_observation_skip_reason': mutation.get(
+            'post_apply_observation_skip_reason'
+        ) if mutation else None,
         'apply_gate_open': apply_gate_open,
         'apply_attempted': bool(apply_state.get('attempted')),
         'row_locked_for_update': apply_state.get('row_locked'),
@@ -1150,6 +1214,31 @@ REQUIRED_MARKDOWN_SECTIONS = (
 
 def _row(label, value):
     return f'| {label} | {value} |'
+
+
+def _post_apply_observation_narrative(fingerprints) -> list[str]:
+    """Why the post-apply rows are blank, when they are.
+
+    A blank fingerprint table invites the reader to fill it in with the
+    friendliest available assumption — that nothing moved. It is stated
+    instead that nothing was LOOKED AT, and why, and what to do about it.
+    """
+    if fingerprints.get('post_apply_fingerprint_collection_attempted') is not (
+        False
+    ):
+        return []
+    return [
+        '> The post-apply fingerprints and the out-of-scope digest were '
+        'deliberately **not collected**. The required post-commit read-only '
+        'proof did not complete, and this package does not observe governed '
+        'state from a transaction it could not prove read-only — collecting '
+        'them anyway would be the same violation the proof exists to '
+        'prevent. Blank here means UNOBSERVED, not unchanged: no in-scope or '
+        'out-of-scope claim is made in either direction. Run `verify` to '
+        'establish the current durable state before taking any further '
+        'action.',
+        '',
+    ]
 
 
 def _post_commit_proof_narrative(ledger) -> list[str]:
@@ -1361,7 +1450,18 @@ def render_markdown(document) -> str:
              f"`{evaluation.get('unexpected_changed_fingerprint_tables')}`"),
         _row('out-of-scope digest unchanged',
              evaluation.get('out_of_scope_unchanged')),
+        _row('post-apply collection attempted',
+             fingerprints.get(
+                 'post_apply_fingerprint_collection_attempted')),
+        _row('post-apply fingerprints observed',
+             fingerprints.get('post_apply_fingerprints_observed')),
+        _row('post-apply out-of-scope digest observed',
+             fingerprints.get(
+                 'post_apply_out_of_scope_fingerprint_observed')),
+        _row('post-apply skip reason',
+             fingerprints.get('post_apply_observation_skip_reason')),
         '',
+        *_post_apply_observation_narrative(fingerprints),
         '## 11. Advisory-lock lifecycle',
         '',
         *head,

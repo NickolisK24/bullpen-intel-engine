@@ -1973,6 +1973,110 @@ POST_COMMIT_PROOF_SEQUENCE = (
 )
 
 
+#: What the post-commit proof must additionally have OBSERVED, on top of the
+#: lifecycle in POST_COMMIT_PROOF_SEQUENCE, before the run may keep reading.
+POST_COMMIT_PROOF_OBSERVATIONS = (
+    ('post_commit_row_count', 1),
+    ('post_commit_value_is_intended', True),
+)
+
+#: The one reason a governed post-commit observation is ever skipped.
+POST_COMMIT_OBSERVATION_SKIPPED = 'post_commit_proof_incomplete'
+
+
+def post_commit_proof_complete(state) -> bool:
+    """THE gate on every governed database read that happens after COMMIT.
+
+    One predicate, used by the reducer to decide what the run may CLAIM and by
+    the runner to decide what it may READ. Two predicates that drifted apart
+    would be worse than none: the artifact would describe a contract the code
+    no longer follows.
+
+    Everything after this returns False happens in a transaction nobody proved
+    read-only, against a row nobody re-read. A digest taken there is not weak
+    evidence — it is an assertion about production made from an environment
+    the package promised it would never observe from.
+    """
+    if not isinstance(state, dict):
+        return False
+    if state.get('committed') is not True:
+        return False
+    return not post_commit_proof_failures(state)
+
+
+def committed_mutation_evidence_without_post_commit_proof(state) -> dict:
+    """The scope record for a durable commit whose proof did not complete.
+
+    Deliberately shaped like ``evaluate_mutation`` so a reader parses one
+    schema, and deliberately NOT produced by it: that function judges the
+    apply from an after-snapshot and two fingerprint pairs, none of which
+    exist here. Called with what is missing, it does not degrade — it invents.
+    Diffing the before-snapshot against nothing reports every column as
+    changed, which then manufactures `mutation_scope_exceeded` and
+    `post_state_is_not_the_intended_revision`: two false accusations about a
+    production row that in fact moved exactly as approved.
+
+    So this reports the pre-commit facts that WERE observed, marks everything
+    that depends on the missing post-commit reads as unobserved, and makes no
+    scope claim in either direction. It performs no database access.
+    """
+    state = state or {}
+    guard_checks = state.get('guard_checks') or {}
+    statements = state.get('statements') or {}
+    return {
+        # ── Observed BEFORE the commit, and still true ─────────────────────
+        'affected_row_count': state.get('affected_row_count'),
+        'affected_exactly_one_row': state.get('affected_row_count') == 1,
+        'in_transaction_value_is_intended': state.get(
+            'in_transaction_value_is_intended'
+        ),
+        'guard_checks': guard_checks,
+        'statement_report': dict(statements),
+        'permitted_changed_columns': sorted(PERMITTED_CHANGED_COLUMNS),
+        # ── Required post-commit reads that were never performed ───────────
+        # None, never [] or False: an empty changed-table list means "the
+        # digests were computed and nothing moved", which is a different and
+        # much stronger claim than "the digests were never computed".
+        'observed_changed_columns': None,
+        'governed_changed_columns': None,
+        'automatic_bookkeeping_changed_columns': None,
+        'unpermitted_changed_columns': None,
+        'changed_columns_are_exactly_permitted': None,
+        'post_state_is_intended_revision': None,
+        'changed_fingerprint_tables_observed': False,
+        'changed_fingerprint_tables': None,
+        'expected_changed_fingerprint_tables': [
+            [audit.SCOPE_EXACT_GAME, TARGET_TABLE]
+        ],
+        'unexpected_changed_fingerprint_tables': None,
+        'out_of_scope_fingerprint_observed': False,
+        'out_of_scope_unchanged': None,
+        # ── The claim itself, withheld rather than guessed ─────────────────
+        'mutation_within_scope': None,
+        'post_apply_scope_evaluation_completed': False,
+        'post_apply_observation_skip_reason': POST_COMMIT_OBSERVATION_SKIPPED,
+        'failed_reasons': [],
+        'unproven_reasons': [],
+        'evidence_limitation': (
+            'The repair committed and that change is durable. The required '
+            'post-commit read-only proof did not complete, so no governed '
+            'post-apply observation was performed: the scoped fingerprints, '
+            'the out-of-scope digest, and the after-state of the target row '
+            'were deliberately not read. The final scope could not be '
+            're-observed in the required read-only environment, so no '
+            'in-scope or out-of-scope claim is made here in either '
+            'direction. The run is FAILED. A subsequent verify run is the '
+            'mechanism for establishing the current durable state.'
+        ),
+        'updated_at_disclosure': (
+            'updated_at moves on any UPDATE of this row because the model '
+            'declares onupdate=utc_now_naive. Whether it moved on this run '
+            'was not re-observed, because the post-commit proof did not '
+            'complete.'
+        ),
+    }
+
+
 def post_commit_proof_failures(post_commit) -> list[str]:
     """Why a landed commit may not be claimed as a completed repair.
 
@@ -1981,11 +2085,24 @@ def post_commit_proof_failures(post_commit) -> list[str]:
     nothing and reports nothing still cannot reach REPAIR_APPLIED. Absent or
     empty input is not neutral here — it is the absence of the proof, which is
     exactly the condition this gate exists to catch.
+
+    The lifecycle says the proof RAN; the observations say what it SAW. Both
+    are required, and they are checked in that order because a proof that
+    never ran has no observations to disagree about. This is the single
+    definition ``post_commit_proof_complete`` is built on, so the gate on what
+    the run may CLAIM and the gate on what it may READ cannot drift apart.
     """
     post_commit = post_commit or {}
     for field, reason in POST_COMMIT_PROOF_SEQUENCE:
         if post_commit.get(field) is not True:
             return [reason]
+    for field, expected in POST_COMMIT_PROOF_OBSERVATIONS:
+        observed = post_commit.get(field)
+        # Type-strict, because Python says True == 1. A row count of ``True``
+        # is not a row count, and the one place that distinction could hide is
+        # the gate that decides whether the run may keep reading.
+        if type(observed) is not type(expected) or observed != expected:
+            return [FAILED_POST_COMMIT_VERIFICATION_INCOMPLETE]
     return []
 
 

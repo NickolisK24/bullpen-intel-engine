@@ -499,6 +499,189 @@ def test_a_proven_post_commit_lifecycle_gets_no_such_narrative(artifact_dir):
     assert 'The repair COMMITTED.' not in markdown
 
 
+def _skipped_observation_document():
+    """The document a committed-but-proof-failed run now produces."""
+    state = _proof_failed_apply_state()
+    return _document(
+        operation='apply',
+        apply_state=state,
+        preconditions=_evaluation(),
+        mutation=(
+            repair.committed_mutation_evidence_without_post_commit_proof(
+                state
+            )
+        ),
+        fingerprints={
+            'before': {'exact_game_824487': {}},
+            'after_apply': None,
+            'out_of_scope_before': {'rows': 1},
+            'out_of_scope_after_apply': None,
+            'post_commit_proof_complete': False,
+            'post_apply_fingerprint_collection_attempted': False,
+            'post_apply_fingerprints_observed': False,
+            'post_apply_out_of_scope_fingerprint_observed': False,
+            'post_apply_observation_skip_reason': (
+                repair.POST_COMMIT_OBSERVATION_SKIPPED
+            ),
+        },
+        decision=repair.decide(
+            operation='apply', preconditions=_evaluation(),
+            apply_attempted=True, apply_committed=True,
+            failed_reasons=state['failed_reasons'], post_commit=state,
+        ),
+    )
+
+
+def test_the_failure_artifact_marks_the_skipped_observation_explicitly(
+    artifact_dir,
+):
+    _write(_skipped_observation_document(), artifact_dir)
+    document = json.loads(
+        (artifact_dir / runner.SUMMARY_JSON).read_text(encoding='utf-8')
+    )
+    fingerprints = document['fingerprints']
+    assert fingerprints['post_commit_proof_complete'] is False
+    assert fingerprints[
+        'post_apply_fingerprint_collection_attempted'
+    ] is False
+    assert fingerprints['post_apply_fingerprints_observed'] is False
+    assert fingerprints[
+        'post_apply_out_of_scope_fingerprint_observed'
+    ] is False
+    assert fingerprints['post_apply_observation_skip_reason'] == (
+        'post_commit_proof_incomplete'
+    )
+
+    ledger = json.loads(
+        (artifact_dir / runner.MUTATION_LEDGER_JSON).read_text(
+            encoding='utf-8'
+        )
+    )
+    assert ledger['post_commit_proof_complete'] is False
+    assert ledger['post_apply_scope_evaluation_completed'] is False
+    assert ledger['post_apply_observation_skip_reason'] == (
+        'post_commit_proof_incomplete'
+    )
+
+
+def test_the_failure_artifact_fabricates_no_post_apply_evidence(artifact_dir):
+    """Unobserved must never be serialized as observed-and-clean."""
+    _write(_skipped_observation_document(), artifact_dir)
+    ledger = json.loads(
+        (artifact_dir / runner.MUTATION_LEDGER_JSON).read_text(
+            encoding='utf-8'
+        )
+    )
+    evaluation = ledger['scope_evaluation']
+    for field in (
+        'changed_fingerprint_tables',
+        'unexpected_changed_fingerprint_tables',
+        'out_of_scope_unchanged',
+        'mutation_within_scope',
+        'observed_changed_columns',
+        'post_state_is_intended_revision',
+    ):
+        assert evaluation[field] is None, field
+    assert evaluation['changed_fingerprint_tables_observed'] is False
+    assert evaluation['out_of_scope_fingerprint_observed'] is False
+    assert evaluation['failed_reasons'] == []
+
+    blob = '\n'.join(
+        path.read_text(encoding='utf-8') for path in artifact_dir.iterdir()
+    )
+    # The specific false shapes: an empty changed-table list read as "nothing
+    # moved", and the two accusations the real evaluator invents from a
+    # missing after-snapshot.
+    assert '"changed_fingerprint_tables": []' not in blob
+    assert '"out_of_scope_unchanged": true' not in blob
+    assert '"mutation_within_scope": true' not in blob
+    # Scoped to what the run CLAIMS, not to the published reason vocabulary,
+    # which legitimately lists every code the package can ever emit.
+    document = json.loads(
+        (artifact_dir / runner.SUMMARY_JSON).read_text(encoding='utf-8')
+    )
+    emitted = json.dumps(document['verdict']) + json.dumps(evaluation)
+    assert repair.FAILED_MUTATION_SCOPE_EXCEEDED not in emitted
+    assert repair.FAILED_POST_STATE_NOT_INTENDED not in emitted
+    assert repair.FAILED_POST_COMMIT_READ_ONLY_PROOF in emitted
+    assert ledger['after_snapshot'] is None
+    assert ledger['observed_value_after'] is None
+
+
+def test_the_failure_markdown_says_the_reads_were_skipped_and_why(
+    artifact_dir,
+):
+    _write(_skipped_observation_document(), artifact_dir)
+    markdown = (artifact_dir / runner.SUMMARY_MARKDOWN).read_text(
+        encoding='utf-8'
+    )
+    assert '**FAILED** (exit 1)' in markdown
+    assert 'The repair COMMITTED.' in markdown
+    assert 'Nothing was rolled back' in markdown
+    assert 'deliberately **not collected**' in markdown
+    assert 'UNOBSERVED, not unchanged' in markdown
+    assert 'Run `verify`' in markdown
+    assert 'post_commit_proof_incomplete' in markdown
+
+
+def test_the_clean_apply_markdown_still_states_the_full_post_apply_proof(
+    artifact_dir,
+):
+    """The control: the skip narrative must not become boilerplate."""
+    state = _proof_failed_apply_state()
+    state.update({
+        'post_commit_transaction_read_only': True,
+        'post_commit_read_only_reason': 'established',
+        'post_commit_verification_completed': True,
+        'post_commit_row_count': 1,
+        'post_commit_value_is_intended': True,
+        'after_snapshot': {
+            repair.TARGET_COLUMN: repair.INTENDED_SOURCE_REVISION,
+        },
+        'failed_reasons': [],
+    })
+    document = _document(
+        operation='apply', apply_state=state, preconditions=_evaluation(),
+        fingerprints={
+            'after_apply': {'exact_game_824487': {}},
+            'out_of_scope_after_apply': {'rows': 1},
+            'post_commit_proof_complete': True,
+            'post_apply_fingerprint_collection_attempted': True,
+            'post_apply_fingerprints_observed': True,
+            'post_apply_out_of_scope_fingerprint_observed': True,
+            'post_apply_observation_skip_reason': None,
+        },
+        mutation={
+            'changed_fingerprint_tables': [['exact_game_824487', 'x']],
+            'out_of_scope_unchanged': True,
+            'mutation_within_scope': True,
+        },
+        decision=repair.decide(
+            operation='apply', preconditions=_evaluation(),
+            apply_attempted=True, apply_committed=True, post_commit=state,
+        ),
+    )
+    assert document['verdict']['result'] == repair.RESULT_APPLIED
+    _write(document, artifact_dir)
+    markdown = (artifact_dir / runner.SUMMARY_MARKDOWN).read_text(
+        encoding='utf-8'
+    )
+    assert 'deliberately **not collected**' not in markdown
+    assert 'The repair COMMITTED.' not in markdown
+    assert '| post-apply fingerprints observed | True |' in markdown
+    assert '| out-of-scope digest unchanged | True |' in markdown
+    assert '| post-apply skip reason | None |' in markdown
+
+
+def test_the_scanner_passes_on_the_skipped_observation_artifact(artifact_dir):
+    _write(_skipped_observation_document(), artifact_dir)
+    result = subprocess.run(
+        [sys.executable, str(SCANNER), '--directory', str(artifact_dir)],
+        capture_output=True, text=True, check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
 def test_the_scanner_passes_on_the_proof_failed_artifact(artifact_dir):
     _write(_proof_failed_document(), artifact_dir)
     result = subprocess.run(

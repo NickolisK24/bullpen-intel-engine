@@ -390,11 +390,18 @@ def _satisfied_evaluation(overrides=None):
     return {'preconditions': checks}
 
 
+#: Every field the authoritative proof predicate reads, paired with the value
+#: that satisfies it. The lifecycle says the proof RAN; the observations say
+#: what it SAW. Both are required.
+PROVEN_POST_COMMIT = {
+    **{field: True for field, _ in repair.POST_COMMIT_PROOF_SEQUENCE},
+    **dict(repair.POST_COMMIT_PROOF_OBSERVATIONS),
+}
+
+
 def _proven_post_commit(overrides=None):
-    """A post-commit lifecycle where every step was positively established."""
-    lifecycle = {
-        field: True for field, _ in repair.POST_COMMIT_PROOF_SEQUENCE
-    }
+    """A post-commit proof where every step ran and every read agreed."""
+    lifecycle = dict(PROVEN_POST_COMMIT, committed=True)
     lifecycle.update(overrides or {})
     return lifecycle
 
@@ -812,7 +819,7 @@ def test_a_committed_apply_with_no_post_commit_evidence_at_all_is_failed():
 
 
 def test_every_post_commit_lifecycle_flag_is_individually_load_bearing():
-    for field, _ in repair.POST_COMMIT_PROOF_SEQUENCE:
+    for field in PROVEN_POST_COMMIT:
         decision = _committed_apply(_proven_post_commit({field: False}))
         assert decision['result'] == repair.RESULT_FAILED, field
         assert decision['exit_code'] == 1, field
@@ -849,20 +856,31 @@ def test_post_commit_proof_failure_composes_with_another_scope_failure():
 
 
 def test_repair_applied_is_unreachable_without_the_full_lifecycle():
-    """Exhaustive over the gate's own inputs, so no combination sneaks past."""
+    """Exhaustive over the gate's own inputs, so no combination sneaks past.
+
+    Every field, every wrong value — including the two that are not booleans,
+    where "unset" and "the wrong number" both have to fail.
+    """
     import itertools
 
-    fields = [field for field, _ in repair.POST_COMMIT_PROOF_SEQUENCE]
-    for combination in itertools.product((True, False, None), repeat=len(
-        fields
-    )):
+    wrong = {True: False, 1: 0}
+    choices = [
+        (satisfying, wrong[satisfying], None)
+        for satisfying in PROVEN_POST_COMMIT.values()
+    ]
+    fields = list(PROVEN_POST_COMMIT)
+    for combination in itertools.product(*choices):
         lifecycle = dict(zip(fields, combination))
         decision = _committed_apply(lifecycle)
-        if all(value is True for value in combination):
+        satisfied = all(
+            lifecycle[field] == PROVEN_POST_COMMIT[field] for field in fields
+        )
+        if satisfied:
             assert decision['result'] == repair.RESULT_APPLIED, lifecycle
         else:
             assert decision['result'] == repair.RESULT_FAILED, lifecycle
             assert decision['exit_code'] == 1, lifecycle
+            assert decision['mutation_performed'] is True, lifecycle
 
 
 def test_the_post_commit_gate_does_not_touch_uncommitted_or_verify_runs():
@@ -883,6 +901,200 @@ def test_the_post_commit_gate_does_not_touch_uncommitted_or_verify_runs():
         assert repair.FAILED_POST_COMMIT_VERIFICATION_INCOMPLETE not in (
             decision['failed_reasons']
         )
+
+
+# ── 7c. The authoritative post-commit proof predicate ───────────────────────
+#
+# ONE predicate decides both what the run may CLAIM and what it may READ. Two
+# predicates that drifted apart would be worse than none: the artifact would
+# describe a contract the code had stopped following.
+
+def test_the_predicate_is_true_only_for_a_fully_proven_proof():
+    assert repair.post_commit_proof_complete(_proven_post_commit()) is True
+    for field in PROVEN_POST_COMMIT:
+        for wrong in (False, None, 0, 'yes'):
+            state = _proven_post_commit({field: wrong})
+            assert repair.post_commit_proof_complete(state) is False, (
+                field, wrong,
+            )
+
+
+def test_the_predicate_does_not_accept_true_as_a_row_count():
+    """Python says True == 1. The gate must not."""
+    state = _proven_post_commit({'post_commit_row_count': True})
+    assert repair.post_commit_proof_complete(state) is False
+    assert _committed_apply(state)['result'] == repair.RESULT_FAILED
+    # And the mirror: an int where a boolean is required.
+    state = _proven_post_commit({'post_commit_value_is_intended': 1})
+    assert repair.post_commit_proof_complete(state) is False
+    assert _committed_apply(state)['result'] == repair.RESULT_FAILED
+
+
+def test_the_predicate_requires_the_commit_itself():
+    for committed in (None, False, 'true'):
+        state = _proven_post_commit({'committed': committed})
+        assert repair.post_commit_proof_complete(state) is False
+
+
+def test_the_predicate_treats_absence_and_nonsense_as_unproven():
+    for state in (None, {}, [], 'proven', 0, object()):
+        assert repair.post_commit_proof_complete(state) is False
+
+
+def test_the_predicate_requires_the_observations_not_just_the_lifecycle():
+    """Running the proof is not the same as the proof agreeing."""
+    lifecycle_only = {
+        'committed': True,
+        **{field: True for field, _ in repair.POST_COMMIT_PROOF_SEQUENCE},
+    }
+    assert repair.post_commit_proof_complete(lifecycle_only) is False
+
+    for field, expected in repair.POST_COMMIT_PROOF_OBSERVATIONS:
+        assert PROVEN_POST_COMMIT[field] == expected
+    assert dict(repair.POST_COMMIT_PROOF_OBSERVATIONS) == {
+        'post_commit_row_count': 1,
+        'post_commit_value_is_intended': True,
+    }
+
+
+def test_the_predicate_and_the_reducer_share_one_definition():
+    """No second, slightly-different copy of the contract anywhere."""
+    assert repair.post_commit_proof_complete(_proven_post_commit()) is True
+    assert not repair.post_commit_proof_failures(_proven_post_commit())
+    for field in PROVEN_POST_COMMIT:
+        if field == 'committed':
+            continue
+        state = _proven_post_commit({field: False})
+        assert repair.post_commit_proof_complete(state) is False
+        assert repair.post_commit_proof_failures(state), field
+        # And the reducer reaches the same verdict from the same input.
+        assert _committed_apply(state)['result'] == repair.RESULT_FAILED
+
+
+# ── 7d. Bounded evidence when the proof did not complete ────────────────────
+
+def _bounded_evidence(**overrides):
+    state = {
+        'affected_row_count': 1,
+        'in_transaction_value_is_intended': True,
+        'guard_checks': {'no_object_was_created': True},
+        'statements': {'exactly_one_target_update': True},
+        'before_snapshot': {repair.TARGET_COLUMN: 'old'},
+        'after_snapshot': None,
+    }
+    state.update(overrides)
+    return repair.committed_mutation_evidence_without_post_commit_proof(state)
+
+
+def test_the_bounded_evidence_keeps_what_was_observed_before_the_commit():
+    evidence = _bounded_evidence()
+    assert evidence['affected_row_count'] == 1
+    assert evidence['affected_exactly_one_row'] is True
+    assert evidence['in_transaction_value_is_intended'] is True
+    assert evidence['guard_checks'] == {'no_object_was_created': True}
+    assert evidence['statement_report'] == {'exactly_one_target_update': True}
+
+
+def test_the_bounded_evidence_claims_nothing_it_did_not_observe():
+    evidence = _bounded_evidence()
+    # None, never [] or False: "computed and empty" is a far stronger claim
+    # than "never computed", and only one of them is true here.
+    for field in (
+        'observed_changed_columns',
+        'governed_changed_columns',
+        'unpermitted_changed_columns',
+        'changed_columns_are_exactly_permitted',
+        'post_state_is_intended_revision',
+        'changed_fingerprint_tables',
+        'unexpected_changed_fingerprint_tables',
+        'out_of_scope_unchanged',
+        'mutation_within_scope',
+    ):
+        assert evidence[field] is None, field
+    assert evidence['changed_fingerprint_tables_observed'] is False
+    assert evidence['out_of_scope_fingerprint_observed'] is False
+    assert evidence['post_apply_scope_evaluation_completed'] is False
+    assert evidence['post_apply_observation_skip_reason'] == (
+        repair.POST_COMMIT_OBSERVATION_SKIPPED
+    )
+    assert evidence['post_apply_observation_skip_reason'] == (
+        'post_commit_proof_incomplete'
+    )
+
+
+def test_the_bounded_evidence_contributes_no_reason_codes_of_its_own():
+    """It reports what is missing; it does not accuse."""
+    evidence = _bounded_evidence()
+    assert evidence['failed_reasons'] == []
+    assert evidence['unproven_reasons'] == []
+    # Specifically not the two that the real evaluator manufactures when it is
+    # handed a missing after-snapshot.
+    blob = str(evidence)
+    assert repair.FAILED_MUTATION_SCOPE_EXCEEDED not in blob
+    assert repair.FAILED_POST_STATE_NOT_INTENDED not in blob
+
+
+def test_the_bounded_evidence_names_verify_as_the_recovery_path():
+    evidence = _bounded_evidence()
+    limitation = evidence['evidence_limitation']
+    assert 'durable' in limitation
+    assert 'verify' in limitation
+    assert 'FAILED' in limitation
+
+
+def test_the_real_evaluator_would_have_invented_what_the_bounded_one_omits():
+    """The reason the bounded helper exists, pinned as an executable fact.
+
+    evaluate_mutation() does not degrade when its post-commit inputs are
+    missing — it diffs the before-snapshot against nothing, reports every
+    column as changed, and manufactures two accusations about a row that
+    moved exactly as approved. That is why the failure path must not call it.
+    """
+    invented = repair.evaluate_mutation(
+        before_snapshot={'id': 1, repair.TARGET_COLUMN: 'old', 'x': 2},
+        after_snapshot=None,
+        guard_checks={},
+        affected_row_count=1,
+        changed_tables=None,
+        out_of_scope_before=None,
+        out_of_scope_after=None,
+    )
+    assert invented['observed_changed_columns']
+    assert repair.FAILED_MUTATION_SCOPE_EXCEEDED in invented['failed_reasons']
+    assert repair.FAILED_POST_STATE_NOT_INTENDED in invented['failed_reasons']
+
+    honest = _bounded_evidence()
+    assert honest['observed_changed_columns'] is None
+    assert honest['failed_reasons'] == []
+
+
+def test_the_bounded_evidence_helper_touches_no_database():
+    """A pure serialization helper, asserted structurally."""
+    import ast
+
+    source = SERVICE_PATH.read_text(encoding='utf-8')
+    tree = ast.parse(source)
+    function = next(
+        node for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef)
+        and node.name == (
+            'committed_mutation_evidence_without_post_commit_proof'
+        )
+    )
+    # Structural, not a substring scan: the function's own name and docstring
+    # legitimately contain "commit", so what is checked is the code.
+    forbidden_attributes = {
+        'query', 'execute', 'connect', 'commit', 'rollback', 'flush',
+        'scalar', 'first', 'all', 'one', 'add', 'delete', 'merge',
+        'scoped_fingerprints', 'out_of_scope_fingerprint',
+    }
+    forbidden_names = {'db', 'session', 'engine'}
+    for node in ast.walk(function):
+        if isinstance(node, ast.Attribute):
+            assert node.attr not in forbidden_attributes, node.attr
+        if isinstance(node, ast.Name):
+            assert node.id not in forbidden_names, node.id
+        assert not isinstance(node, (ast.Import, ast.ImportFrom))
 
 
 # ── 8. Advisory-lock lifecycle ──────────────────────────────────────────────

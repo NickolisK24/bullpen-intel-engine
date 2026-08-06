@@ -176,7 +176,9 @@ After the commit, still holding the advisory lock, it opens a fresh transaction,
 sets it read-only, and re-reads the committed state to prove the new value, the
 row count, and the unchanged scopes. That post-commit proof is required, not
 best-effort: if the fresh transaction cannot be established read-only, the run
-is `FAILED` at exit 1 and no governed read is attempted in it. See section 16.
+is `FAILED` at exit 1 and the run performs **no** further governed database
+observation at all — not the target-row re-read, and not the post-apply
+fingerprints either. See section 16.
 
 Outcomes: `REPAIR_APPLIED` (exit 0), `REPAIR_NOT_REQUIRED` (exit 0),
 `REPAIR_REFUSED` (exit 2), `UNPROVEN` (exit 2), `FAILED` (exit 1).
@@ -545,13 +547,56 @@ package can still do is prove what it did — so failing there is the package
 breaking a safety property it explicitly promises, at the one moment it cannot
 make good on it. An artifact reader has to be able to tell those apart.
 
-On that failure the package stops immediately. It issues **no** governed read
-in the failed transaction: a PostgreSQL statement error leaves the transaction
-aborted, so the next query would raise, and a query that cannot run is not
-evidence. It clears the failed verification transaction with a rollback and
-records that rollback as exactly what it is — cleanup of the verification
-transaction, never a reversal of the repair, which had already committed before
-that transaction existed. `rollback_performed` stays `false`.
+On that failure the package stops immediately, and it stops **globally**. It
+issues no governed read in the failed transaction: a PostgreSQL statement error
+leaves the transaction aborted, so the next query would raise, and a query that
+cannot run is not evidence. It clears the failed verification transaction with a
+rollback and records that rollback as exactly what it is — cleanup of the
+verification transaction, never a reversal of the repair, which had already
+committed before that transaction existed. `rollback_performed` stays `false`.
+
+"Globally" is the load-bearing word. Stopping only the target-row re-read is
+not enough: the post-apply phase that follows — the scoped fingerprints and the
+out-of-scope digest — is also governed observation, and running it would put ten
+`SELECT`s through a transaction the package had just failed to prove read-only,
+which is precisely the thing the proof exists to forbid. One predicate,
+`post_commit_proof_complete()`, gates every governed read after `COMMIT` and
+also gates what the run may claim, so the two can never drift apart:
+
+    committed and post_commit_proof_complete(state)
+        -> collect the post-apply fingerprints, evaluate the mutation scope
+    committed
+        -> read nothing further; report what was already observed
+
+The predicate requires the commit, all four lifecycle steps, and both
+observations (`post_commit_row_count == 1`,
+`post_commit_value_is_intended is True`). Absence, `None`, and any wrong value
+all fail it.
+
+On the stopped path the artifact says so in its own fields rather than leaving
+a reader to infer it from blanks: `post_commit_proof_complete: false`,
+`post_apply_fingerprint_collection_attempted: false`,
+`post_apply_fingerprints_observed: false`,
+`post_apply_out_of_scope_fingerprint_observed: false`,
+`post_apply_scope_evaluation_completed: false`, and
+`post_apply_observation_skip_reason: post_commit_proof_incomplete`.
+
+The scope record is produced by
+`committed_mutation_evidence_without_post_commit_proof()`, a pure serialization
+helper that touches no database. `evaluate_mutation()` is deliberately **not**
+called: handed a missing after-snapshot it does not degrade, it invents. It
+diffs the before-snapshot against nothing, reports every column as changed, and
+manufactures `mutation_scope_exceeded` and
+`post_state_is_not_the_intended_revision` — two false accusations about a row
+that in fact moved exactly as approved. The bounded helper keeps the pre-commit
+facts that were genuinely observed (one affected row, the in-transaction value,
+the guard checks, the statement accounting) and reports every field that
+depended on the missing reads as `None`. Not `[]`, and not `false`: an empty
+changed-table list means the digests were computed and nothing moved, which is
+a far stronger claim than never having computed them. No in-scope or
+out-of-scope claim is made in either direction, and the helper contributes no
+reason codes of its own. A subsequent `verify` run is the mechanism for
+establishing current durable state, and the summary says so.
 
 Everything durable survives the verdict: `committed: true`,
 `commits_performed: 1`, `affected_row_count: 1`, `mutation_performed: true`,
@@ -576,7 +621,7 @@ reason codes an observation layer remembered to pass in.
 | :--- | :--- |
 | `test_game_source_revision_checkpoint_repair_contract.py` | the governed scope as reviewed literals, the permitted changed-column set against the real schema, the closed operation vocabulary, per-operation confirmations, the three-code exit contract, reason-family disjointness, the precondition mapping, the completion gate, reducer precedence, the advisory-lock lifecycle, the whole workflow contract, and package hygiene including adversarial scope scans |
 | `test_game_source_revision_checkpoint_repair_classification.py` | the live population expectation, the completeness gate and its ordering, the field comparison and its display-only distinction, every precondition transition, and the mutation-scope evaluator |
-| `test_game_source_revision_checkpoint_repair_execution.py` | real PostgreSQL: the real lane writing the checkpoint, verify writing nothing, apply changing exactly one column on one row, statement accounting, pre-commit and post-commit verification, a real `SET TRANSACTION READ ONLY` statement failure after a real commit, the neighbour checkpoint staying still, idempotence, every refusal, authorization, and concurrency |
+| `test_game_source_revision_checkpoint_repair_execution.py` | real PostgreSQL: the real lane writing the checkpoint, verify writing nothing, apply changing exactly one column on one row, statement accounting, pre-commit and post-commit verification, a real `SET TRANSACTION READ ONLY` statement failure after a real commit with both a wire-level statement log and helper call counters proving no governed read follows it, the neighbour checkpoint staying still, idempotence, every refusal, authorization, and concurrency |
 | `test_game_source_revision_checkpoint_repair_artifacts.py` | every file under every outcome, the always-present ledger and its governed fields, the fifteen numbered markdown sections, the `updated_at` disclosure, and the repository scanner run against a real artifact directory — including a planted credential that must fail it |
 
 Two properties worth naming because they are easy to test badly:
