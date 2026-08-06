@@ -168,3 +168,153 @@ def test_insufficient_active_bullpen_stays_low_data_limited(app):
     assert payload['trust_metadata']['confidence'] == 'low'
     assert payload['trust_metadata']['data_state'] == 'incomplete'
     assert payload['readiness']['status_code'] == 'data_limited'
+
+
+def _add_starter(seed):
+    """Seed an active-roster STARTER: not a bullpen arm, but on the team.
+
+    A starter carries fatigue scores and reaches the resolver's row set exactly
+    like a reliever does. This one worked yesterday on a heavy pitch count, so
+    the availability engine classifies it Unavailable — the everyday situation
+    that collapsed every club to Vulnerable in production.
+    """
+    pitcher = Pitcher(
+        mlb_id=980000 + seed,
+        full_name=f'Starter {seed:02d}',
+        team_id=TEAM_ID,
+        team_name='Example Club',
+        team_abbreviation='EX',
+        throws='R',
+        active=True,
+        roster_status='ACTIVE',
+        roster_status_source='mlb_stats_api:roster_sync:active',
+    )
+    db.session.add(pitcher)
+    db.session.flush()
+
+    # Starts on a normal rotation turn, the most recent one yesterday.
+    for offset in (1, 6, 11):
+        gd = date.today() - timedelta(days=offset)
+        gpk = 981000 + seed * 10 + offset
+        db.session.add(GameLog(
+            pitcher_id=pitcher.id, mlb_game_pk=gpk, game_date=gd,
+            pitches_thrown=98, innings_pitched=6.0, innings_pitched_outs=18,
+            games_started=1,
+        ))
+        db.session.add_all([
+            ScheduledGame(team_id=TEAM_ID, game_pk=gpk, game_date=gd, status_state='final',
+                          home_away='home', opponent_team_id=900000 + TEAM_ID),
+            ScheduledGame(team_id=900000 + TEAM_ID, game_pk=gpk, game_date=gd, status_state='final',
+                          home_away='away', opponent_team_id=TEAM_ID),
+        ])
+        db.session.add(PostgameProcessedGame(
+            mlb_game_pk=gpk, game_date=gd,
+            processing_status=PostgameProcessedGame.STATUS_FULLY_PROCESSED,
+        ))
+
+    db.session.add(FatigueScore(
+        pitcher_id=pitcher.id, calculated_at=datetime(2026, 6, 3, 12, 30, seed),
+        raw_score=95.0, pitch_count_score=40.0, rest_days_score=30.0,
+        appearances_score=10.0, innings_score=15.0, leverage_score=0.0,
+        days_since_last_appearance=1, appearances_last_7=1,
+        appearances_last_14=2, pitches_last_7_days=98, innings_last_7_days=6.0,
+        avg_leverage_last_7=None, risk_level='CRITICAL',
+    ))
+    db.session.flush()
+    return pitcher
+
+
+def test_a_starter_who_worked_yesterday_does_not_make_a_rested_bullpen_stressed(app):
+    """The #590 production defect: population, not vocabulary.
+
+    Detroit published Vulnerable while the Dashboard showed eight rested and
+    available arms. The bullpen was fine; the state was derived from a wider
+    pitcher set that included a starter classified Unavailable. Readiness now
+    describes the canonical active bullpen, so the rested bullpen reads as
+    rested and the starter stays visible as roster context elsewhere.
+    """
+    for seed in range(1, 9):
+        _add_reliever(seed, usable=True, hand='L' if seed % 2 else 'R')
+    starter = _add_starter(1)
+    _add_sync_run()
+    seed_roster_readiness_snapshots()
+
+    payload = resolve_team_readiness_payload(TEAM_ID)
+
+    assert payload is not None
+    # The starter is on the team and carries a fatigue score, so he reaches the
+    # resolver's rows — he simply is not part of the bullpen the state describes.
+    assert starter.id is not None
+    distribution = payload['availability_distribution']
+    assert distribution['unavailable'] == 0, (
+        'a non-bullpen record must not appear in the active-bullpen distribution'
+    )
+    assert payload['workload_pressure']['elevated_count'] == 0
+    assert payload['readiness']['status_code'] != 'operationally_stressed'
+    assert payload['readiness']['status_code'] in SUPPORTED
+
+
+def test_a_genuine_bullpen_stress_trigger_still_reaches_stressed(app):
+    """The correction narrows the population; it does not soften the rule."""
+    for seed in range(1, 9):
+        _add_reliever(seed, usable=True, hand='L' if seed % 2 else 'R')
+    _add_sync_run()
+    seed_roster_readiness_snapshots()
+
+    baseline = resolve_team_readiness_payload(TEAM_ID)
+    assert baseline is not None
+    assert baseline['readiness']['status_code'] in SUPPORTED
+
+    # A real active-bullpen member worked heavily yesterday.
+    stressed_arm = Pitcher.query.filter_by(mlb_id=990001).one()
+    gd = date.today() - timedelta(days=1)
+    gpk = 995001
+    db.session.add(GameLog(
+        pitcher_id=stressed_arm.id, mlb_game_pk=gpk, game_date=gd,
+        pitches_thrown=52, innings_pitched=3.0, innings_pitched_outs=9,
+    ))
+    db.session.add_all([
+        ScheduledGame(team_id=TEAM_ID, game_pk=gpk, game_date=gd, status_state='final',
+                      home_away='home', opponent_team_id=900000 + TEAM_ID),
+        ScheduledGame(team_id=900000 + TEAM_ID, game_pk=gpk, game_date=gd, status_state='final',
+                      home_away='away', opponent_team_id=TEAM_ID),
+    ])
+    db.session.add(PostgameProcessedGame(
+        mlb_game_pk=gpk, game_date=gd,
+        processing_status=PostgameProcessedGame.STATUS_FULLY_PROCESSED,
+    ))
+    db.session.add(FatigueScore(
+        pitcher_id=stressed_arm.id, calculated_at=datetime(2026, 6, 3, 13, 0, 0),
+        raw_score=92.0, pitch_count_score=40.0, rest_days_score=30.0,
+        appearances_score=12.0, innings_score=10.0, leverage_score=0.0,
+        days_since_last_appearance=1, appearances_last_7=4,
+        appearances_last_14=6, pitches_last_7_days=110, innings_last_7_days=5.0,
+        avg_leverage_last_7=None, risk_level='CRITICAL',
+    ))
+    db.session.commit()
+
+    payload = resolve_team_readiness_payload(TEAM_ID)
+
+    assert payload is not None
+    assert payload['readiness']['status_code'] in SUPPORTED
+    # The canonical member is counted; the population contract did not mute it.
+    assert payload['availability_distribution']['total'] == 8
+
+
+def test_sequential_teams_do_not_reuse_a_prior_teams_readiness(app):
+    """Back-to-back resolution for different teams stays independent."""
+    for seed in range(1, 9):
+        _add_reliever(seed, usable=True, hand='L' if seed % 2 else 'R')
+    _add_sync_run()
+    seed_roster_readiness_snapshots()
+
+    seeded = resolve_team_readiness_payload(TEAM_ID)
+    other = resolve_team_readiness_payload(TEAM_ID + 1234)
+    seeded_again = resolve_team_readiness_payload(TEAM_ID)
+
+    assert seeded is not None
+    assert seeded['team']['team_id'] == TEAM_ID
+    # An unseeded team has no source inputs at all and must not inherit a state.
+    assert other is None
+    assert seeded_again['readiness']['status_code'] == seeded['readiness']['status_code']
+    assert seeded_again['team']['team_id'] == TEAM_ID
