@@ -49,7 +49,9 @@ The central problem is no longer whether BaseballOS can build trustworthy baseba
 
 | Area | Current state | Meaning |
 |---|---|---|
-| Repository main | `8a528efec1affcdaf98fa1e87f9090d105db4248` | PR #611 merged August 5, 2026 |
+| Repository main | `b29b1f0e41fffb0a58db9d276a506ae6613dfcce` | PR #615 merged August 6, 2026; includes the game 824487 checkpoint repair package and its terminal production evidence |
+| Game 824487 source-revision checkpoint | Terminally closed | Verified, applied, and independently re-observed as already applied; the single-purpose repair capability is retired by the pending cleanup PR |
+| Game 824487 repair capability | Retirement pending merge | Branch `cleanup/retire-game-824487-checkpoint-repair`; until that PR merges, the workflow still exists on main and must not be dispatched |
 | Game-driven daily lane | Shadow | Observation only; no automated baseball-data writes |
 | Game-driven postgame lane | Shadow | Exact-cycle observation after the legacy postgame writer |
 | Backfill lane | Off | No automatic game-driven backfill authority |
@@ -461,7 +463,8 @@ Predictions, betting or odds products, game-outcome projections, injury predicti
 | D-044 | Aug 4, 2026 | Shadow observation backlog and publication blockers are separate views; missing work-item proof blocks only in authoritative mode | Adopted |
 | D-045 | Aug 4, 2026 | Backend CI is partitioned across four deterministic, file-balanced shards with separate PostgreSQL databases and exact collection accounting | Adopted |
 | D-046 | Aug 4, 2026 | Trust-critical CI receives full Git history; frontend CI uses the committed lockfile and requires tests plus the production build | Adopted |
-| D-047 | Aug 5, 2026 | The game 824487 source-revision mismatch is investigated by a manual exact-scope read-only audit that will not guess a field delta from a SHA-256 digest | Adopted; production audit not yet executed |
+| D-047 | Aug 5, 2026 | The game 824487 source-revision mismatch is investigated by a manual exact-scope read-only audit that will not guess a field delta from a SHA-256 digest | Adopted; production audit executed August 5, 2026 as run `31044299167` |
+| D-048 | Aug 6, 2026 | Game 824487's source-revision checkpoint was corrected through the reviewed one-row workflow, terminally re-observed as already applied with zero additional writes, and the single-purpose repair capability is retired. The workflow must not be dispatched again. This grants no broader game-driven write or publication authority | Permanent |
 
 ## 17. Open Decisions
 
@@ -530,7 +533,8 @@ Branch names identify the user or operator who notices the work. Never work dire
 | Aug 4, 2026 | CI | CI-001 closure (#599) | PR #610 / `ebe2db4...` / run `30957543371` | `npm ci`, 864 frontend tests, required production build, mutation-tested contract |
 | Aug 5, 2026 | Phase 1B | UX-001 canonical Team State implementation (#590) | PR #611 / `8a528ef...` | 7,315 backend tests, 864 frontend tests, build success, docs updated; production triad evidence pending |
 | Aug 5, 2026 | Governance cleanup | Obsolete simulation README issue #5 closed | Issue #5 | Closed as not planned; no longer matches bullpen-intelligence product identity |
-| Aug 5, 2026 | Phase 1A | Game 824487 source-revision audit package | Branch `audit/game-824487-source-revision` | Pending read-only investigation: package implemented, production audit NOT executed, no conclusion reached, no repair authorized |
+| Aug 5, 2026 | Phase 1A | Game 824487 source-revision audit package | PR #613 / `cb4ec4a...` / run `31044299167` | Read-only audit executed: verdict `COMPLETE_SCOPE_AND_MATERIALITY_IDENTIFIED_FIELD_DELTA_UNAVAILABLE`, exit 0, no failed or unproven reasons; root condition `official_appearance_set_changed`; checkpoint stale relative to current source; no repair authorized by the audit itself |
+| Aug 6, 2026 | Phase 1A | Game 824487 source-revision checkpoint repair and retirement | PR #615 / merge `b29b1f0e41fffb0a58db9d276a506ae6613dfcce` / runs `31065643787`, `31065894573`, `31066123772` | Terminally complete. Verify run `31065643787` returned `VERIFIED_REPAIR_REQUIRED_AND_SAFE`, exit 0, mutation performed false (artifact `8953731050`, `sha256:e6fdd499867eaab3e13a364ac700daf6502257f4a344a86dcfb8d6cc8795ee3c`). Apply run `31065894573` returned `REPAIR_APPLIED`, exit 0, mutation performed true (artifact `8953812423`, `sha256:fa0f8c1caa9d44aed478aa6ff137beb1335bb73ef580752730c205844f5cc50e`): `game_ingestion_work_items` row `id = 103`, `mlb_game_pk = 824487`, `source_revision` moved from `90213dc8e42a9622e9c0dcaea80adb04507a4a5bfe054eaa9b98d2d138b804a0` to `a0fe2dbce8ad75ffc880e76996a6fec7bc90f86c296350898c009f97f241ecf4`, exactly one row affected, one target-table UPDATE issued, `source_revision` and the automatic `updated_at` the only changed columns, post-commit verification in a positively proven read-only transaction. Run `31066123772` **selected operation `apply`** and returned `REPAIR_NOT_REQUIRED`, exit 0, apply gate open false, apply attempted false, commits performed 0, zero durable write attempts (artifact `8953882289`, `sha256:860ca09c65c9d74372b93d54f8e9cf2d042caf3391da7875a303568901a4cf6e`) — the already-applied safety gate resolved it before the writable path opened. Zero GameLog changes; no other work item, governed scope, or out-of-scope digest moved. No migration, no mode change, no authority transfer. Temporary package retired by the cleanup PR |
 
 ## 20. Phase Exit Record
 
@@ -552,9 +556,12 @@ This current-state edition consolidates:
 
 - the repository's prior canonical Roadmap and detailed Decision Ledger through D-046;
 - the August 4, 2026 current-state Roadmap DOCX;
-- repository main `8a528efec1affcdaf98fa1e87f9090d105db4248`;
-- merged pull requests through #611;
+- repository main `b29b1f0e41fffb0a58db9d276a506ae6613dfcce`, plus the pending
+  `cleanup/retire-game-824487-checkpoint-repair` retirement branch, which is not merged;
+- merged pull requests through #615;
 - scheduled production evidence through run `30921186222`;
+- manual game 824487 production evidence: audit run `31044299167` and checkpoint-repair runs
+  `31065643787`, `31065894573`, and `31066123772`, with their retained artifacts;
 - GitHub issue status for #5 and #589–#601;
 - the August 2 Full Platform Audit;
 - the current Constitution, Bullpen Intelligence Standard, Product Experience Standard, Architecture and Operations Manual, and Editorial and Distribution Standard.
@@ -567,3 +574,4 @@ The archived predecessor file preserves the verbose rationale and evidence langu
 |---|---|---|---|
 | 1.0–2.9 | Jul 29–Aug 4, 2026 | Nickolis Kacludis | Established the canonical execution roadmap and appended detailed decisions through D-046. The full verbose predecessor is preserved in the August 2026 archive and Git history. |
 | 3.0 | Aug 5, 2026 | Nickolis Kacludis | Reconciled current state through PR #611 and main `8a528ef`; recorded #592 and #599 complete, #593 observation pending, #590 merged with production triad evidence pending, the current authority modes, next approved work, updated phases, priorities, risks, backlog, open decisions, completion log, and phase exits. Preserved the detailed predecessor ledger in the archive without changing any durable decision. |
+| 3.1 | Aug 6, 2026 | Nickolis Kacludis | Recorded the terminal game 824487 source-revision checkpoint closeout: corrected the repository basis to main `b29b1f0` and PR #615, corrected D-047's status and the audit completion row to reflect that read-only audit run `31044299167` was executed, added D-048 retiring the single-purpose repair capability and prohibiting any further dispatch, and logged all three production runs with their artifact identities and digests. No prior decision was changed or removed, no authority moved, no roadmap order changed, and no Phase 1A gate was closed. |
