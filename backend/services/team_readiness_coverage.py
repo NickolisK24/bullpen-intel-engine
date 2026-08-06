@@ -201,3 +201,59 @@ def _low(active, usable, unresolved, reason_code, data_state) -> TeamCoverageAss
         coverage_numerator=usable * MEDIUM_COVERAGE_DENOMINATOR,
         coverage_denominator=active * MEDIUM_COVERAGE_DENOMINATOR,
     )
+
+
+# ---------------------------------------------------------------------------
+# Active-bullpen population resolution (UX-001 production correction).
+#
+# The coverage math above already judges a team against its canonical current
+# active bullpen. The readiness DISTRIBUTIONS that decide the internal status
+# must be built from that same population, or a team can be judged trustworthy
+# on one population and stressed on another. Resolving membership lives here so
+# both consumers share one recipe and one resolution per team.
+# ---------------------------------------------------------------------------
+
+
+def resolve_active_bullpen_membership(team_id, reference_date):
+    """Return ``(member_pitcher_ids, authority_complete)`` for a team.
+
+    Reuses the Canonical Roster Authority (active roster + Role Authority, gated
+    by the public roster-readiness source). No second roster filter is
+    introduced here. Fails closed — an absent team id, an unreadable authority,
+    or an authority that identifies no active-bullpen arm all return an empty
+    set with ``authority_complete`` False, which the trust classifier turns into
+    ``unknown`` rather than a silently downgraded state.
+    """
+    if team_id is None:
+        return frozenset(), False
+    try:
+        # Deferred: the roster authority lives in the api layer, which imports
+        # this module's siblings.
+        from api.bullpen import build_team_roster_authority
+
+        authority = build_team_roster_authority(team_id, reference_date=reference_date)
+        arms = (authority.get('evidence') or {}).get('bullpen_arms') or []
+        ids = frozenset(
+            arm.get('pitcher_id') for arm in arms if arm.get('pitcher_id') is not None
+        )
+        return ids, bool(ids)
+    except Exception:
+        return frozenset(), False
+
+
+def select_active_bullpen_records(records, member_ids):
+    """Keep only the classified records belonging to the canonical active bullpen.
+
+    Everything else on the team — starters, injured-list arms, off-active
+    organizational depth, and any other pitcher carrying a fatigue score — is
+    excluded from the readiness distributions. Those records are not discarded
+    from the product: the Team Board still shows them as roster and off-active
+    context. They simply do not decide the current active bullpen's Team State.
+    """
+    member_ids = member_ids or frozenset()
+    selected = []
+    for record in records or ():
+        pitcher_id = getattr(record.get('pitcher'), 'id', None)
+        if pitcher_id is not None and pitcher_id in member_ids:
+            selected.append(record)
+    return tuple(selected)

@@ -1123,7 +1123,7 @@
       ]
     },
     "4": {
-      "measured_seconds": 498.19,
+      "measured_seconds": 498.39,
       "files": [
         {
           "path": "tests/test_active_bullpen_artifact_publication.py",
@@ -1376,6 +1376,10 @@
         {
           "path": "tests/test_team_state_card_semantics.py",
           "measured_seconds": 0.832
+        },
+        {
+          "path": "tests/test_team_state_population_contract.py",
+          "measured_seconds": 0.2
         },
         {
           "path": "tests/test_traffic_reporting.py",
