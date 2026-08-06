@@ -832,6 +832,13 @@ def test_suspended_resumed_distinct_game_pks_are_independent_rows(app):
 # none of them reads appearance-team authority.
 CANONICAL_TEAM_STATE_FILES = (
     'backend/api/bullpen.py',
+    # UX-001 production correction (#590): Team State is derived from the
+    # canonical active bullpen rather than every pitcher flagged active. The
+    # readiness resolver and the internal Team Operations route select that
+    # population; the coverage domain owns the one membership recipe.
+    'backend/api/team_operations.py',
+    'backend/services/share_artifact_generation.py',
+    'backend/services/team_readiness_coverage.py',
     'backend/services/bullpen_comparison.py',
     'backend/services/team_state_public_vocabulary.py',
     'frontend/src/adapters/operatingStateReadModel.js',
