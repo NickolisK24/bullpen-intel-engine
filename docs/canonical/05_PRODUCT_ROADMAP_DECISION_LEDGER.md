@@ -3,11 +3,11 @@
 | Field | Value |
 |---|---|
 | Status | Canonical - current platform state, priority, sequence, decision, risk, and completion authority |
-| Version | 3.2 |
+| Version | 3.3 |
 | Effective date | August 6, 2026 |
 | Owner | Nickolis Kacludis |
-| Repository basis | `NickolisK24/bullpen-intel-engine` main at `5be94b7c0640e763308a50bab93298638368f150`, with the Version 3.2 documentation closeout recorded through PR #618 |
-| Decision basis | Decision Ledger through D-049 |
+| Repository basis | `NickolisK24/bullpen-intel-engine` main at `bcfae8ad2a617d8ae93610a762932aa2432bb3da` |
+| Decision basis | Decision Ledger through D-050 |
 | Supersedes | Prior current-state wording through August 6, 2026 while preserving all durable decisions and evidence |
 | Detailed predecessor archive | `docs/archive/2026-08/PRODUCT_ROADMAP_DECISION_LEDGER_PRE_V3.md` |
 | Update rule | Update after a priority change, material merge, phase exit, production incident, authority decision, risk change, or false current-state statement |
@@ -43,13 +43,17 @@ The platform currently provides:
 - a four-shard PostgreSQL CI confidence gate plus lockfile-faithful frontend test/build validation;
 - canonical Team State delivery to live reader surfaces, proven in corrected production.
 
-The central problem is no longer whether BaseballOS can build trustworthy baseball infrastructure. The current problem is completing the remaining sync and authority evidence closeout, removing the remaining public-contract contradictions, and then making the platform's existing intelligence more visible and portable.
+The central problem is no longer whether BaseballOS can build trustworthy baseball infrastructure. **The immediate problem is that the daily sync cannot reliably complete.** PR #619 proved a critical runtime-budget incident on August 6, 2026: publication-critical GameLog ingestion is starved by unconditional upstream work and repeatedly fails closed, freezing Dashboard freshness and degrading live Team Board and Compare reads. Restoring reliable daily completion precedes the remaining evidence closeout, the remaining public-contract contradictions, and the visibility and portability work.
+
+Fail-closed publication behaved correctly throughout that incident, and that distinction matters: the platform was **safe but frozen**, which is not the same as healthy and must never be reported as if it were.
 
 ## 3. Current Repository and Authority State
 
 | Area | Current state | Meaning |
 |---|---|---|
-| Repository main | `5be94b7c0640e763308a50bab93298638368f150` | PR #617 merged August 6, 2026 at `d5ddb5fd56651203edf75de40d7f3f0d2630fa4b`, followed by generated team story preview pages; includes PR #615's game 824487 repair evidence and PR #616's retirement of that capability |
+| Repository main | `bcfae8ad2a617d8ae93610a762932aa2432bb3da` | PR #619 merged August 6, 2026, recording the daily-sync runtime-budget incident investigation; includes PR #617's Team State population correction, PR #615's game 824487 repair evidence, and PR #616's retirement of that capability |
+| OPS-002 daily-sync runtime budget | **Active critical incident** | PR #619 proved root cause: five upstream stages consume 612-628s, the combined ingestion pool that remains is 151-168s, the shadow observer takes its share, and the legacy GameLog writer receives 112-125s for work whose corrected cold upper bound is 767-895s. Fail-closed publication worked correctly throughout; snapshot `360` remained the trusted served snapshot and candidates `359`, `361`, `362` were withheld. Mitigation implemented, **production proof pending** |
+| Daily-sync runtime headroom | Mitigation implemented, unproven | 2200s internal budget, 40m shell timeout, 60m job timeout, 1500s combined-pool cap, 300s final reserve unchanged. Conservative legacy GameLog floor 953.625s against a 950s requirement. Temporary headroom; the permanent work-reduction correction is not implemented |
 | Game 824487 source-revision checkpoint | Terminally closed | Verified, applied, and independently re-observed as already applied |
 | Game 824487 repair capability | Retired | PR #616 merged August 6, 2026; the single-purpose repair workflow no longer exists on main and must never be reintroduced or dispatched (D-048) |
 | Game-driven daily lane | Shadow | Observation only; no automated baseball-data writes |
@@ -60,25 +64,39 @@ The central problem is no longer whether BaseballOS can build trustworthy baseba
 | Game-driven publication authority | Unapproved | Publication authority has not transferred |
 | D-044 blocker scope | Implemented | Shadow bookkeeping backlog is observational; real baseball deficits remain fail-closed |
 | PROD-001 (#592) | Complete | Scheduled production run proved full Tonight provenance persistence and readback |
-| OPS-001 (#593) | Implemented; observation pending | Job separation exists; required scheduled observation window remains open |
+| OPS-001 (#593) | Implemented; observation **paused by OPS-002**, issue open and unchanged | Job separation exists and behaved correctly during the OPS-002 incident - shadow failed independently while the ledger and cache proofs passed inside `public-sync`. The scheduled observation window is paused because failed runs skip `internal-enrichment` and `static-team-story-preview`, polluting the very evidence it needs. Reviewed for extension after OPS-002 production proof |
 | UX-001 (#590) | **Complete** | Closed August 6, 2026. PR #611 established backend-owned Team State with frontend passthrough; PR #617 corrected the readiness population to the canonical active bullpen after production proved a population mismatch. Corrected production run `31097712768` published and served snapshot `360` through August 5, and Team Board, Dashboard, and Compare rendered naturally occurring `Stretched` and `Vulnerable` plus a governed fail-closed case. No team naturally qualified as Fresh; closed under the D-049 natural-observability exception without manufacturing evidence |
 | CI-001 (#599) | Complete | Frontend CI uses the lockfile and requires tests plus the production build |
 
 ## 4. Active Objective
 
-> **Production evidence closeout**
+> **Critical daily-sync reliability restoration - OPS-002**
 
-Track B closed on August 6, 2026. The remaining objective is Track A: the scheduled sync and authority evidence for #593 and the governed no-op-candidate decision. It is blocked by production time rather than by missing implementation.
+PR #619 proved on August 6, 2026 that the full daily sync cannot reliably complete from a cold-equivalent state. Three of four runs dead-lettered publication-critical GameLog work; the one that succeeded behaved as a warm second pass 30 minutes after a failure. **Manual retry has become load-bearing recovery behaviour, and that is not an acceptable operating model.**
 
-### Track A - Sync and authority evidence
+This displaces the evidence closeout because the evidence itself is being corrupted: every failed `public-sync` skips `internal-enrichment` and `static-team-story-preview`, which pollutes exactly the scheduled observation #593 is waiting on. Waiting longer would accumulate unusable evidence.
 
-1. Continue scheduled daily and postgame observation after D-044 and PR #602.
-2. Prove `public-sync` and `shadow-activation-health` remain separately meaningful across the required observation window.
-3. Confirm genuine finality, schedule-authority, appearance-row, and material-correction deficits still withhold publication.
-4. Complete the bounded read-only no-op candidate path or record the explicit no-candidate decision.
+### Track A - OPS-002 mitigation and production proof
+
+1. Merge the reviewed mitigation: 2200-second internal budget, 40-minute shell timeout, 60-minute `public-sync` job timeout, 1500-second combined ingestion cap, 300-second final reserve unchanged.
+2. Report the five runtime quantities separately - configured cap, combined pool, shadow allocation, shadow elapsed, legacy GameLog remainder.
+3. Execute one **separately authorized** controlled manual daily recovery run.
+4. Prove three consecutive scheduled daily runs with zero budget exhaustion and zero publication-critical failures.
 5. Keep daily/postgame shadow, backfill off, legacy writer authoritative, and automated write/authoritative modes unapproved.
 
-### Track B - Canonical Team State production proof - COMPLETE
+This is **temporary headroom, not the permanent correction**. The durable fix is work reduction - candidate prefiltering, incremental roster sync, incremental transaction sync - and it remains separate follow-up work after production proof.
+
+### Track B - #593 scheduled observation - PAUSED, NOT CLOSED
+
+**#593 remains open, unchanged, and unweakened.** Its shadow/public-sync separation behaved correctly throughout the incident: shadow failed independently in its own job while the appearance-ledger and dashboard-cache proofs passed inside `public-sync`. OPS-002 is the opposite defect - `public-sync` failing on its own merits - and must not absorb it.
+
+The pause is about evidence quality, not about #593 being wrong. After OPS-002 production proof, the founder reviews whether #593's scheduled observation window requires extension to replace the runs this incident polluted.
+
+### Track C - Canonical Team State production proof - COMPLETE
+
+Closed August 6, 2026 with issue #590 (detail retained below).
+
+#### Track C detail
 
 Closed August 6, 2026 with issue #590. PR #611 established backend-owned Team State delivery; PR #617 corrected the readiness population to the canonical active bullpen after production exposed a population mismatch that collapsed supported teams toward `Vulnerable`. Corrected production run `31097712768` published and served snapshot `360` through August 5, and Team Board, Dashboard, and Compare rendered naturally occurring `Stretched` and `Vulnerable` alongside a governed fail-closed case with no invented fourth Team State.
 
@@ -86,34 +104,43 @@ No team naturally qualified as Fresh after all 30 clubs played on August 5. Unde
 
 ### Exit evidence
 
+- One controlled manual daily recovery run completes with `budget_exhausted_pitchers == 0` and `publication_critical_failed == 0`, and its candidate is published, selected, and served.
+- Three consecutive **scheduled** daily runs then satisfy the same criteria. The manual recovery does not substitute for them.
+- All five runtime quantities are present and internally consistent in the durable summary.
+- Appearance-ledger and dashboard-cache proofs pass; shadow remains zero-write.
 - Scheduled runs prove publication success or failure independently from shadow-observer health.
 - The observation backlog may remain incomplete without becoming a publication blocker in shadow mode.
 - Real baseball deficits remain blocking in every mode.
 - No closeout audit mutates GameLog, work-item, checkpoint, snapshot, marker, or dead-letter rows.
-- #593 closes only after its remaining scheduled-observation requirement is satisfied.
+- #593 closes only after its remaining scheduled-observation requirement is satisfied, reviewed after OPS-002 proof.
 
 ## 5. Nightly Operating State
 
-At the August 6 closeout, no additional implementation package should begin. The current work is cleanly merged and waiting on external evidence.
+The August 6 stopping posture no longer holds. A proven critical production incident replaced it: OPS-002 is an active implementation package, and it is the only one.
 
-Stopping is intentional:
+The rest of the stop still stands, for the same reasons as before:
 
+- #595, #591, #594, and #600 remain deferred behind OPS-002 and the #593 evidence checkpoint.
 - #591 overlaps the same reader adapters that #590 just stabilised and deserves its own clean evidence.
 - #594 consumes the same Team State and freshness path in static/routed previews.
 - #600 touches the same `/bullpen` surfaces and should follow the public-contract packages.
 - Sync authority must not be inferred from green tests or from a short observation window.
+- **Merging the OPS-002 mitigation is not production proof.** The incident stays open until the controlled recovery and three scheduled runs succeed.
 
 ## 6. Next Approved Work
 
-After the current evidence checkpoint is reviewed, work proceeds in this order unless a Decision Ledger entry changes it:
+Work proceeds in this order unless a Decision Ledger entry changes it:
 
-1. **#595 - Public raw fatigue-score containment.** Remove or protect unauthenticated composite scores, component scores, risk tiers, and internal identifiers. This is the next independent trust package because it does not require changing Team State presentation or sync authority.
-2. **#591 - Backend-owned Why copy.** Remove frontend regex rewriting, filtering, fallback invention, or silent dropping of governed public explanation text.
-3. **#594 - Routed/static team metadata and freshness.** Give the 30 team preview routes a canonical owner, canonical vocabulary, named evidence, and data-through context.
-4. **#600 - `/bullpen` H1 and accessibility structure.** Complete the semantic page contract.
-5. **Portable Intelligence.** Canonical raster renderer, artifact-specific Open Graph/X metadata, share actions, and evidence-inspection funnel.
-6. **Resume M-001 Active Bullpen ERA.** Finish registry parameters, group/contributor evidence, Team Board delivery, and full trust gates.
-7. **Daily Habit and Consequence.** Public What Changed, team movement, Today lead authority, game-aware slate, and quiet-day behavior.
+1. **OPS-002 (#620) - Daily-sync runtime-budget exhaustion.** Immediate mitigation and production proof: one controlled manual recovery, then three consecutive clean scheduled runs. Nothing below starts until this is proven, because a daily sync that cannot complete makes every other package's production evidence unreliable.
+2. **Review and resume #593 scheduled evidence.** Determine whether the observation window needs extension to replace runs the incident polluted.
+3. **#595 - Public raw fatigue-score containment.** Remove or protect unauthenticated composite scores, component scores, risk tiers, and internal identifiers. Deferred behind OPS-002 and the #593 checkpoint.
+4. **#591 - Backend-owned Why copy.** Remove frontend regex rewriting, filtering, fallback invention, or silent dropping of governed public explanation text.
+5. **#594 - Routed/static team metadata and freshness.** Give the 30 team preview routes a canonical owner, canonical vocabulary, named evidence, and data-through context.
+6. **#600 - `/bullpen` H1 and accessibility structure.** Complete the semantic page contract.
+7. **Permanent daily-sync work reduction.** GameLog candidate prefiltering, incremental roster synchronization, and incremental transaction synchronization - the durable correction the OPS-002 mitigation only buys time for. Sequenced by founder review once OPS-002 is proven.
+8. **Portable Intelligence.** Canonical raster renderer, artifact-specific Open Graph/X metadata, share actions, and evidence-inspection funnel.
+9. **Resume M-001 Active Bullpen ERA.** Finish registry parameters, group/contributor evidence, Team Board delivery, and full trust gates.
+10. **Daily Habit and Consequence.** Public What Changed, team movement, Today lead authority, game-aware slate, and quiet-day behavior.
 
 ## 7. Current Capability Assessment
 
@@ -336,6 +363,10 @@ Official source identity and finality
 | R-18 | Routed team previews drift without a canonical owner | High | O-005, #594, canonical copy and freshness |
 | R-19 | Frontend rewrites backend-owned meaning | Critical | #591 and backend public-copy contract |
 | R-20 | Generated commits bypass repository CI | High | #598 generated-content publication correction |
+| R-21 | A cold-equivalent daily sync cannot complete inside its runtime budget | Critical | OPS-002 mitigation: 2200s internal budget with a 953.625s conservative legacy GameLog floor, and five-quantity runtime reporting so the binding constraint is visible. Unproven until one controlled recovery and three consecutive clean scheduled runs |
+| R-22 | Manual retry is load-bearing recovery behaviour | Critical | Nobody designed retry as a control and it is not reliable - the warm second pass is not reproducible from a cold start. OPS-002 exists to remove the need for it. No automatic retry was added, because retrying the whole daily command would double the work the incident is about |
+| R-23 | Live Team Board and Compare degrade silently after partial ingestion | High | Dead-lettered pitchers leave live reads computing against incomplete rows, and live reads do not consult the dead-letter ledger. Fail-closed publication protects the Dashboard snapshot but not live reads. Mitigated indirectly by completing ingestion; a durable surfaced-limitation control remains unbuilt |
+| R-24 | Raising the ceiling masks the inefficiency it accommodates | High | D-050 records the mitigation as explicitly temporary. ~470-480s per run of unconditional roster and transaction work remains, and the ceiling will need raising again as the pitcher population grows if the permanent work-reduction correction does not land |
 
 ## 13. Stop Conditions
 
@@ -458,6 +489,7 @@ Predictions, betting or odds products, game-outcome projections, injury predicti
 | D-047 | Aug 5, 2026 | The game 824487 source-revision mismatch is investigated by a manual exact-scope read-only audit that will not guess a field delta from a SHA-256 digest | Adopted; production audit executed August 5, 2026 as run `31044299167` |
 | D-048 | Aug 6, 2026 | Game 824487's source-revision checkpoint was corrected through the reviewed one-row workflow, terminally re-observed as already applied with zero additional writes, and the single-purpose repair capability is retired. The workflow must not be dispatched again. This grants no broader game-driven write or publication authority | Permanent |
 | D-049 | Aug 6, 2026 | UX-001 closes after corrected production proved backend-owned `Stretched` and `Vulnerable` states across Team Board, Dashboard, and Compare plus a governed fail-closed case. A naturally qualifying Fresh team was not present after all 30 clubs played; Fresh evidence must never be manufactured. The exact three-state mapping remains contract-pinned, and a future natural Fresh capture is supplemental unless it reveals a real defect. This decision changes no sync, write, backfill, writer, or publication authority | Permanent |
+| D-050 | Aug 6, 2026 | OPS-002 temporarily supersedes the #593 observation window and #595 implementation because the full daily sync cannot reliably complete from a cold-equivalent state. The immediate mitigation raises the daily internal budget to 2200 seconds, the shell timeout to 40 minutes, the public-sync job timeout to 60 minutes, and the combined ingestion cap to 1500 seconds while preserving the 300-second final reserve. The runtime summary must distinguish the configured cap, combined pool, shadow allocation, shadow elapsed, and legacy GameLog remainder. This is temporary headroom, not the permanent correction, and grants no write, backfill, writer, mode, or publication authority. OPS-002 remains open until one controlled recovery and three consecutive scheduled daily runs prove zero budget exhaustion and zero publication-critical failures | Operational until permanent work-reduction proof supersedes it |
 
 ## 17. Open Decisions
 
@@ -551,9 +583,11 @@ This current-state edition consolidates:
 
 - the repository's prior canonical Roadmap and detailed Decision Ledger through D-046;
 - the August 4, 2026 current-state Roadmap DOCX;
-- repository main `5be94b7c0640e763308a50bab93298638368f150`, with the Version 3.2 documentation
-  closeout recorded through PR #618;
-- merged pull requests through #617;
+- repository main `bcfae8ad2a617d8ae93610a762932aa2432bb3da`;
+- merged pull requests through #619;
+- the merged daily-sync runtime-budget incident investigation,
+  `docs/audits/DAILY_SYNC_RUNTIME_BUDGET_EXHAUSTION_2026-08-06.md`, and its four-run evidence
+  from runs `31095686315`, `31097712768`, `31099639901`, and `31103076829`;
 - scheduled production evidence through run `30921186222`, and manual production recovery
   evidence from run `31097712768` with published snapshot `360`;
 - manual game 824487 production evidence: audit run `31044299167` and checkpoint-repair runs
@@ -571,4 +605,5 @@ The archived predecessor file preserves the verbose rationale and evidence langu
 | 1.0–2.9 | Jul 29–Aug 4, 2026 | Nickolis Kacludis | Established the canonical execution roadmap and appended detailed decisions through D-046. The full verbose predecessor is preserved in the August 2026 archive and Git history. |
 | 3.0 | Aug 5, 2026 | Nickolis Kacludis | Reconciled current state through PR #611 and main `8a528ef`; recorded #592 and #599 complete, #593 observation pending, #590 merged with production triad evidence pending, the current authority modes, next approved work, updated phases, priorities, risks, backlog, open decisions, completion log, and phase exits. Preserved the detailed predecessor ledger in the archive without changing any durable decision. |
 | 3.1 | Aug 6, 2026 | Nickolis Kacludis | Recorded the terminal game 824487 source-revision checkpoint closeout: corrected the repository basis to main `b29b1f0` and PR #615, corrected D-047's status and the audit completion row to reflect that read-only audit run `31044299167` was executed, added D-048 retiring the single-purpose repair capability and prohibiting any further dispatch, and logged all three production runs with their artifact identities and digests. No prior decision was changed or removed, no authority moved, no roadmap order changed, and no Phase 1A gate was closed. |
+| 3.3 | Aug 6, 2026 | Nickolis Kacludis | Recorded the OPS-002 daily-sync runtime-budget incident and its immediate mitigation. PR #619 merged the investigation proving that five upstream stages consume 612-628s before the combined ingestion pool is calculated, the shadow observer then consumes part of that pool, and the legacy GameLog writer received 112-125s against a corrected cold-equivalent upper bound of 767-895s; three of four August 6 runs dead-lettered publication-critical work and the one success behaved as a warm second pass. Added D-050 recording the temporary mitigation: 2200-second internal budget, 40-minute shell timeout, 60-minute public-sync job timeout, 1500-second combined ingestion cap, and an unchanged 300-second final reserve, giving a 953.625-second conservative legacy GameLog floor against a 950-second requirement, plus mandatory separate reporting of the configured cap, combined pool, shadow allocation, shadow elapsed, and legacy GameLog remainder. Made OPS-002 the active objective and recorded risks R-21 through R-24. Paused the #593 scheduled observation window without closing, weakening, or absorbing it - its shadow/public-sync separation behaved correctly throughout the incident - and deferred #595 behind OPS-002 and the #593 evidence checkpoint. Explicitly preserved every mode and authority: daily and postgame lanes remain shadow, backfill remains off, the legacy writer remains authoritative, and automated write and game-driven publication authority remain unapproved. No durable decision was changed or removed; D-003, D-004, D-044, D-048, and D-049 are untouched. This edition claims no production proof: the mitigation is implemented and unproven until one controlled recovery and three consecutive clean scheduled daily runs succeed. |
 | 3.2 | Aug 6, 2026 | Nickolis Kacludis | Recorded the UX-001 production closeout: issue #590 is complete through PR #611 and PR #617 with corrected-production evidence from run `31097712768` and snapshot `360`, and Track B of the active objective is closed. Added D-049 recording the founder-approved Fresh natural-observability exception — no naturally qualifying Fresh team existed after all 30 clubs played August 5, and Fresh evidence is never manufactured. Corrected the repository basis from `b29b1f0` to current main `5be94b7`, recorded PR #616 as merged and the game 824487 repair capability as retired rather than pending, and updated the surface, capability, priority, phase, risk, and backlog wording that still described #590 as pending. Preserved Track A: #593 scheduled observation and the governed no-op-candidate decision remain the active objective, daily and postgame lanes remain shadow, backfill remains off, the legacy writer remains authoritative, and automated write and game-driven publication authority remain unapproved. No durable decision was changed or removed; D-003 and D-004 are untouched. |

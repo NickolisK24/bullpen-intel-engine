@@ -17,14 +17,14 @@ This directory is organized around **six canonical living documents**. Start wit
 
 ## Current Execution Snapshot
 
-As of the August 6, 2026 closeout:
+As of the August 6, 2026 state:
 
+- **OPS-002 (#620) is the active critical objective.** PR #619 merged the investigation proving that the full daily sync cannot reliably complete from a cold-equivalent state: five upstream stages consume 612–628s, the combined ingestion pool that remains is 151–168s, the shadow observer takes its share, and the legacy GameLog writer received 112–125s against a corrected cold requirement of 767–895s. Fail-closed publication worked correctly and snapshot `360` stayed served, but **safe-but-frozen is not healthy**. The mitigation raises the daily budget to 2200s, the shell timeout to 40m, the job timeout to 60m, and the combined ingestion cap to 1500s with the 300s final reserve unchanged. **It is implemented and pending production proof** — one controlled recovery plus three consecutive clean scheduled runs.
+- OPS-001 (#593) remains **open and unchanged**, temporarily paused. Its shadow/public-sync separation behaved correctly during the incident; its scheduled observation window is paused only because failed runs skip the downstream jobs that produce its evidence. It is reviewed for extension after OPS-002 proof.
 - UX-001 (#590) is complete. PR #611 established backend-owned Team State; PR #617 corrected the readiness population to the canonical active bullpen. Corrected production run `31097712768` served snapshot `360` through August 5 and showed `Stretched`, `Vulnerable`, and a governed fail-closed case. No team naturally qualified as Fresh after all 30 clubs played, so Fresh closed under the D-049 natural-observability exception rather than being manufactured.
 - PROD-001 (#592) and CI-001 (#599) are complete.
-- OPS-001 (#593) is implemented and remains open for its required scheduled observation window. It is the active evidence objective.
-- #591 remains the separate backend-owned Why-copy package.
-- #594 remains the separate routed/static team metadata and freshness package.
-- Daily and postgame game-driven ingestion remain shadow; backfill remains off; automated write and publication authority have not transferred.
+- #595, #591, #594, and #600 are deferred behind OPS-002 and the #593 evidence checkpoint.
+- **No mode or authority changed.** Daily and postgame game-driven ingestion remain shadow; backfill remains off; the legacy writer remains authoritative; automated write and publication authority have not transferred.
 
 The [current changelog](current/CHANGELOG.md) records the completed implementation and production-evidence state. GitHub issues remain the exact acceptance-checklist and closure evidence for open audit findings.
 

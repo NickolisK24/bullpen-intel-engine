@@ -2852,6 +2852,11 @@ def _run_game_driven_ingestion_stage(
         'completed_game_pks': (),
         'error_class': None,
         'refused_reason': None,
+        # OPS-002: the lane's own consumption, reported separately from its
+        # allocation. A lane that never ran consumed nothing; a lane that ran
+        # consumed its measured wall clock even if it then raised.
+        'lane_allocated_budget_seconds': 0.0,
+        'lane_elapsed_seconds': 0.0,
     }
     if mode == game_driven_ingestion.MODE_OFF:
         status['game_driven_ingestion'] = {'status': 'disabled', 'mode': mode}
@@ -2879,6 +2884,7 @@ def _run_game_driven_ingestion_stage(
         return result
 
     lane_budget = _game_driven_lane_time_budget(ingestion_budget, mode)
+    result['lane_allocated_budget_seconds'] = lane_budget
     stage_started = time.monotonic()
     try:
         report = game_driven_ingestion.run_game_driven_ingestion(
@@ -2890,26 +2896,42 @@ def _run_game_driven_ingestion_stage(
             only_game_pks=only_game_pks,
         )
     except Exception as exc:  # noqa: BLE001 - the sync must not die here
+        # OPS-002: a lane that raises has still spent wall clock, and that time
+        # is gone from the shared ingestion pool. Charging it here stops the
+        # legacy GameLog writer from being told it has time the run no longer
+        # has. Measure BEFORE the rollback so recovery work is not counted as
+        # lane time.
+        failed_elapsed = max(time.monotonic() - stage_started, 0.0)
         db.session.rollback()
         error_class = type(exc).__name__
         result['error_class'] = error_class
+        result['lane_elapsed_seconds'] = failed_elapsed
+        if ingestion_budget is not None:
+            result['remaining_ingestion_budget_seconds'] = max(
+                float(ingestion_budget) - failed_elapsed, 0.0
+            )
         status['game_driven_ingestion'] = {
             'status': 'failed',
             'mode': mode,
             'job_name': job_name,
             'error_class': error_class,
+            'allocated_budget_seconds': lane_budget,
+            'elapsed_seconds': round(failed_elapsed, 3),
         }
-        # No exception text: it can carry paths and payload fragments.
+        # No exception text: it can carry paths and payload fragments. The
+        # failure stays fail-soft: it is recorded and charged, and it does not
+        # abort public-sync or by itself fail publication. A genuine GameLog
+        # deficit remains publication-blocking exactly as before.
         run_logger.error(
-            'Game-driven ingestion lane failed (mode=%s, class=%s).',
-            mode, error_class,
+            'Game-driven ingestion lane failed (mode=%s, class=%s) after %.3fs; '
+            'that time is charged against the shared ingestion pool.',
+            mode, error_class, failed_elapsed,
         )
-        stage_timings['game_driven_ingestion'] = round(
-            time.monotonic() - stage_started, 1
-        )
+        stage_timings['game_driven_ingestion'] = round(failed_elapsed, 1)
         return result
 
-    elapsed = time.monotonic() - stage_started
+    elapsed = max(time.monotonic() - stage_started, 0.0)
+    result['lane_elapsed_seconds'] = elapsed
     stage_timings['game_driven_ingestion'] = round(elapsed, 1)
     stage_timings['game_driven_fetch'] = report.get('fetch_seconds')
     stage_timings['game_driven_extraction'] = report.get('extraction_seconds')
@@ -3458,6 +3480,54 @@ def _daily_sync_runtime_budget(run_started_monotonic: float) -> dict:
         'ingestion_budget_seconds': (
             round(ingestion_budget, 1) if ingestion_budget is not None else None
         ),
+    }
+
+
+def _daily_ingestion_budget_breakdown(runtime_budget: dict, game_lane: dict) -> dict:
+    """The five distinct runtime quantities, reported separately (OPS-002).
+
+    The August 6 incident was misread for a full revision because one field,
+    ``ingestion_budget_seconds``, was doing the work of three different
+    numbers. It is a COMBINED pool shared by the game-driven lane and the
+    legacy GameLog writer — never a GameLog-only allowance — and the number
+    that actually decides whether publication-critical work completes (the pool
+    minus what the lane really consumed) appeared nowhere at top level.
+
+    Every existing field is preserved untouched; this is additive evidence.
+    """
+    pool = runtime_budget.get('ingestion_budget_seconds')
+    allocation = game_lane.get('lane_allocated_budget_seconds')
+    elapsed = game_lane.get('lane_elapsed_seconds')
+    remaining = game_lane.get('remaining_ingestion_budget_seconds')
+
+    def _seconds(value):
+        # Fail closed to null rather than guessing: an unmeasurable quantity
+        # must read as unavailable, never as a confident zero.
+        if value is None:
+            return None
+        try:
+            return round(float(value), 3)
+        except (TypeError, ValueError):
+            return None
+
+    return {
+        # Configured stage ceiling. Not necessarily reachable, and never a
+        # promise of time to any one lane.
+        'configured_ingestion_cap_seconds': _seconds(
+            runtime_budget.get('stage_budget_cap_seconds')
+        ),
+        # The result of _daily_sync_runtime_budget, computed BEFORE the lane
+        # runs. Compatibility-equivalent to ingestion_budget_seconds.
+        'combined_ingestion_pool_seconds': _seconds(pool),
+        # The lane's configured share of the pool: 25% in shadow, 0 when the
+        # lane is off or refused, the whole pool only under a separately
+        # approved authoritative mode.
+        'shadow_lane_configured_allocation_seconds': _seconds(allocation),
+        # What the lane actually consumed, including a lane that raised.
+        'shadow_lane_actual_elapsed_seconds': _seconds(elapsed),
+        # Pool minus actual lane elapsed: the exact value handed to
+        # sync_recent_logs, never negative.
+        'legacy_gamelog_budget_seconds': _seconds(remaining),
     }
 
 
@@ -6317,6 +6387,28 @@ def run_daily_sync(
                 run_logger=run_logger,
             )
             game_lane_authoritative = bool(game_lane['authoritative'])
+
+            # OPS-002: name the five quantities separately, immediately before
+            # the legacy writer starts. The last one is what actually decides
+            # whether publication-critical work can complete, and it had no
+            # operator-facing field until now.
+            ingestion_budget_breakdown = _daily_ingestion_budget_breakdown(
+                runtime_budget, game_lane,
+            )
+            status['ingestion_budget_breakdown'] = ingestion_budget_breakdown
+            run_logger.info(
+                'Daily ingestion budget breakdown: configured_cap=%s '
+                'combined_pool=%s shadow_mode=%s shadow_allocation=%s '
+                'shadow_elapsed=%s legacy_gamelog_budget=%s.',
+                ingestion_budget_breakdown['configured_ingestion_cap_seconds'],
+                ingestion_budget_breakdown['combined_ingestion_pool_seconds'],
+                game_lane.get('mode'),
+                ingestion_budget_breakdown[
+                    'shadow_lane_configured_allocation_seconds'
+                ],
+                ingestion_budget_breakdown['shadow_lane_actual_elapsed_seconds'],
+                ingestion_budget_breakdown['legacy_gamelog_budget_seconds'],
+            )
 
             stage_started = time.monotonic()
             pull = sync_recent_logs(

@@ -387,8 +387,11 @@ pass, every excluded game carrying a named reason. Non-unchanged projected rows
 are now identified by game, pitcher, canonical field names, classification,
 source revision, and digests, with no values.
 
-**Neither the budget cap nor the lane share was raised**: a larger budget would
-have hidden the scope defect rather than fixed it.
+**Neither the budget cap nor the lane share was raised by that repair**: a
+larger budget would have hidden the scope defect rather than fixed it. (The
+daily budget values were later raised by the separate OPS-002 mitigation, for a
+different reason — see "Runtime budgets and profiling". The lane share is still
+25 %.)
 
 ### Both cycles are observing again
 
@@ -453,8 +456,10 @@ direct assignment. A correction the fallback enabled records
 and every run reports the fallback counters whether or not anything was
 eligible.
 
-Shadow modes, the daily budget, and the mode-off rollback are unchanged, and no
-production correction was executed as part of the repair. Impact across the
+Shadow modes, the daily budget, and the mode-off rollback were unchanged by that
+repair, and no production correction was executed as part of it. (For the
+current daily budget values see "Runtime budgets and profiling"; shadow modes
+and the mode-off rollback remain as described here.) Impact across the
 horizon is enumerated first, read-only, by
 `scripts/plan_boxscore_balls_fallback_impact.py`.
 
@@ -1501,14 +1506,95 @@ grouped by endpoint template (`Daily sync stage timings (s): ... API calls:
 `api_calls_by_endpoint`, `elapsed_seconds` / `fetch_seconds` /
 `process_seconds` for the gameLog stage, and `budget_exhausted_pitchers`.
 
-The daily command runs under a **whole-process soft budget**
-(`DAILY_SYNC_TOTAL_BUDGET_SECONDS`, workflow value 1080s) with explicit reserve
-for required final phases (`DAILY_SYNC_FINAL_PHASE_RESERVE_SECONDS`, workflow
-value 300s). The gameLog ingestion budget is derived from the total remaining
-time after that reserve and capped by `DAILY_SYNC_INGESTION_BUDGET_SECONDS`
-(workflow value 720s).
+### The ingestion pool is SHARED, and three numbers are not one number
 
-When the derived ingestion budget is exceeded, the **per-pitcher** stage stops
+This is the distinction the OPS-002 incident turned on, and getting it wrong is
+what made the first reading of that incident wrong:
+
+```
+combined_ingestion_pool = min(configured_cap, max(total_budget − elapsed_before_ingestion, 0) − final_reserve)
+shadow_lane_allocation  = combined_ingestion_pool × 0.25      # shadow mode
+legacy_gamelog_budget   = combined_ingestion_pool − shadow_lane_ACTUAL_elapsed
+```
+
+- `elapsed_before_ingestion` covers the **five upstream stages** — team
+  assignments, roster statuses, transactions, schedule-finality preflight, slate
+  refresh. It does **not** include the game-driven lane, which runs *after* the
+  pool is computed and is a **consumer** of it.
+- `ingestion_budget_seconds` is the **combined pool**, shared by the
+  game-driven lane and the legacy gameLog writer. **It is not a gameLog-only
+  allowance**, and reading it as one overstates the publication-critical budget
+  by roughly a quarter.
+- The lane is allocated 25 % of the pool but **returns what it does not use**:
+  its *actual* elapsed time, not its allocation, is subtracted. A lane that
+  raises is still charged for the wall clock it spent.
+- `legacy_gamelog_budget_seconds` is the number that actually decides whether
+  publication-critical work completes. It is never negative.
+
+The daily sync reports all five separately in `status.ingestion_budget_breakdown`
+and in one log line immediately before the legacy writer starts:
+
+```
+Daily ingestion budget breakdown: configured_cap=… combined_pool=… shadow_mode=…
+shadow_allocation=… shadow_elapsed=… legacy_gamelog_budget=…
+```
+
+### Configured values (OPS-002 mitigation)
+
+| Setting | Value | Role |
+|---|---|---|
+| `DAILY_SYNC_TOTAL_BUDGET_SECONDS` | **2200** | Whole-process soft budget |
+| `DAILY_SYNC_FINAL_PHASE_RESERVE_SECONDS` | **300** (unchanged) | Reserve for fatigue, snapshot publish/withhold, metadata, writer-guard release, cleanup |
+| `DAILY_SYNC_INGESTION_BUDGET_SECONDS` | **1500** | **Safety ceiling on the combined pool**, not a promised allocation |
+| `DAILY_SYNC_COMMAND_TIMEOUT` | **40m** (2400s) | Last-resort shell kill, 200s above the internal budget |
+| `public-sync` `timeout-minutes` | **60** (3600s) | Covers the shell timeout plus Tonight, ledger audit, uploads, cleanup |
+
+The 1500s cap **does not bind under any observed upstream timing** — it would
+need `elapsed_before_ingestion ≤ 400s`, and the fastest upstream ever observed
+was the warm run's 361.0s while cold runs are 612–628s. It sits deliberately
+*above* the derived pool: a cap below the pool would re-create the invisible
+binding constraint OPS-002 is about.
+
+Worst case at the maximum observed upstream:
+
+```
+pool          = min(1500, 2200 − 628.5 − 300) = 1271.5 s
+shadow_alloc  = 1271.5 × 0.25                 =  317.875 s
+gamelog_floor = 1271.5 − 317.875              =  953.625 s   ≥ 950 s   PASS
+```
+
+**This is temporary headroom, not the permanent correction.** Roughly 470–480s
+per run of unconditional roster and transaction work remains, and the ceiling
+will need raising again as the pitcher population grows unless that work is
+reduced.
+
+### Rollback
+
+Four workflow configuration values; no database or schema rollback, and the
+budget-observability fields are backward-compatible and may stay:
+
+| Value | Mitigated | Rollback |
+|---|---|---|
+| `DAILY_SYNC_TOTAL_BUDGET_SECONDS` | 2200 | 1080 |
+| `DAILY_SYNC_COMMAND_TIMEOUT` | 40m | 20m |
+| `DAILY_SYNC_INGESTION_BUDGET_SECONDS` | 1500 | 720 |
+| `public-sync.timeout-minutes` | 60 | 40 |
+
+`DAILY_SYNC_FINAL_PHASE_RESERVE_SECONDS` stays 300 and is not part of rollback.
+The job `timeout-minutes` is workflow configuration, not an environment variable.
+
+### Production exit criteria
+
+The mitigation is **unproven until production says so**. Merging it is not
+proof. It requires one separately authorized controlled manual daily recovery
+run, and then **three consecutive scheduled daily runs**, each with
+`budget_exhausted_pitchers == 0`, `publication_critical_failed == 0`, a
+candidate published/selected/served, passing appearance-ledger and
+dashboard-cache proofs, and shadow still zero-write.
+
+### Behaviour when the budget is still exceeded — unchanged
+
+When the derived gameLog budget is exceeded, the **per-pitcher** stage stops
 cleanly: the remaining pitchers are dead-lettered in one
 `daily_game_log_budget` record (counts + mlb_ids), `records_failed` includes
 them, the run finishes **partial** with `lane_health=budget_exhausted`, and the
@@ -1516,7 +1602,8 @@ next daily run (or the postgame lookback) retries them. This is fail-closed by
 construction — a truncated sweep is visible and counted, never absorbed — and
 the Python process keeps enough headroom to run fatigue, snapshot
 publish/withhold, durable metadata, writer-guard release, and cleanup before the
-20-minute shell timeout.
+shell timeout. OPS-002 changed none of that: no retry, no continuation, no
+weakening of the publication gate.
 
 The **game-driven** lane behaves differently on purpose: budget exhaustion there
 is not a terminal dead-letter condition but an incomplete, resumable run state.

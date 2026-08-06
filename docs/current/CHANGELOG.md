@@ -4,6 +4,72 @@ This changelog summarizes major product, governance, rollout, and operational
 milestones. It does not replace the detailed evidence records linked from
 [docs/README.md](../README.md).
 
+## August 2026 - Daily Sync Runtime-Budget Incident (OPS-002)
+
+- Merged the daily-sync runtime-budget incident investigation through PR #619.
+  Four full daily syncs on August 6 were examined from their original job logs.
+  Three dead-lettered publication-critical GameLog work — 746, 741, and 732
+  pitchers of 861 — and the one that succeeded behaved as a warm second pass 30
+  minutes after a failure. Corrected root cause: five upstream stages consume
+  612–628 seconds before the combined ingestion pool is calculated, the pool
+  that remains is 151–168 seconds, the game-driven shadow observer consumes part
+  of it, and the legacy GameLog writer received **112.7–124.6 seconds** for work
+  whose corrected cold-equivalent upper bound is **767–895 seconds**. Roster
+  statuses and transactions alone are ~77 % of the cold upstream block, and
+  roster work is duplicated across two stages at 240 endpoint calls per run.
+- Recorded that fail-closed publication behaved **correctly** throughout.
+  Candidates `359`, `361`, and `362` were withheld; snapshot `358` and then
+  `360` remained the trusted served snapshot. The platform was safe but frozen,
+  and the changelog states that distinction rather than reporting it as healthy:
+  Dashboard freshness froze, Team Board and Compare live reads degraded against
+  incomplete rows, and Tonight did not refresh on any failed run.
+- Implemented the bounded OPS-002 immediate mitigation (#620). The daily
+  internal budget rises 1080 → 2200 seconds, the shell timeout 20m → 40m, the
+  `public-sync` job timeout 40 → 60 minutes, and the combined ingestion cap
+  720 → 1500 seconds. **The 300-second final-phase reserve is unchanged** — the
+  final phase genuinely needs it. At the maximum observed upstream this yields a
+  combined pool of 1271.5 seconds and a conservative legacy GameLog floor of
+  **953.625 seconds** against a 950-second requirement. The 1500-second cap is a
+  safety ceiling above the derived pool, not a promised GameLog allocation, and
+  it does not bind under any observed upstream timing.
+- Added an explicit five-quantity runtime reporting contract, because one field
+  had been carrying three meanings and that ambiguity produced a materially
+  wrong first reading of the incident. The daily status, the durable
+  `daily-sync-summary.json`, and one log line emitted immediately before the
+  legacy writer now report the configured cap, the combined pool, the shadow
+  lane's configured allocation, its **actual** elapsed time, and the resulting
+  legacy GameLog remainder as five distinct values. Every pre-existing budget
+  field is retained unchanged.
+- Corrected the shadow lane's exception-path accounting. A lane that raised
+  previously returned the untouched pool, so the legacy writer could be told it
+  had time the run had already spent. Its measured wall clock is now charged.
+  The failure remains fail-soft: it does not abort `public-sync`, does not by
+  itself fail publication, writes nothing, advances no checkpoint, and changes
+  no authority.
+- Added focused runtime tests for the mitigation formula, the 950-second floor,
+  five-quantity separation, unused-time return, the lane-off path, the exception
+  path, and the non-negative guarantee; and replaced the pinned 20m/40-minute
+  workflow invariants with OPS-002 invariants that additionally prove no cron,
+  mode, concurrency, permission, postgame-timeout, backfill, advisory-step, or
+  retry change rode along.
+- **No cron, manual mode, concurrency, permission, migration, schema,
+  publication-gate, mode, or authority change.** No retry and no continuation
+  mechanism was introduced. Daily and postgame lanes remain shadow, backfill
+  remains off, and the legacy writer remains authoritative.
+- **Production proof is pending.** Merging the mitigation is not proof. OPS-002
+  (#620) remains open until one separately authorized controlled manual recovery
+  run and then three consecutive scheduled daily runs each complete with zero
+  budget exhaustion, zero publication-critical failures, a published, selected,
+  and served candidate, passing appearance-ledger and dashboard-cache proofs,
+  and shadow still zero-write. The permanent work-reduction correction —
+  candidate prefiltering, incremental roster sync, incremental transaction
+  sync — is deliberately **not** implemented and remains separate follow-up
+  work; this mitigation masks the inefficiency rather than removing it.
+- Paused the #593 scheduled observation window without closing, weakening, or
+  absorbing it. Its separation behaved correctly during the incident; the pause
+  exists because failed runs skip `internal-enrichment` and
+  `static-team-story-preview`, polluting the evidence it needs.
+
 ## August 2026 - Authority, CI, And Public Vocabulary Closeout
 
 - Completed PROD-001 (#592) after PR #588 and scheduled production run

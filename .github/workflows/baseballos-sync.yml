@@ -82,9 +82,12 @@ jobs:
     if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.mode == 'intraday') }}
     # Public freshness lane only: acquisition, public derived state, snapshot
     # publication, Tonight warm, appearance ledger audit, and dashboard cache
-    # verification. 40 minutes gives headroom for the worst case of the step
-    # timeouts below (20m sync + 10m tonight + 5m audit).
-    timeout-minutes: 40
+    # verification. 60 minutes covers the worst case of the step timeouts below
+    # (40m sync + 10m tonight + 5m audit) plus uploads and cleanup. OPS-002
+    # raised this from 40 with the daily command timeout; it must stay strictly
+    # greater than that shell timeout so the shell kill is what fires first and
+    # the job still gets to run its always() ledger and cache proofs.
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
 
@@ -114,18 +117,46 @@ jobs:
           # step in this job must keep the deployed default of off.
           GAME_DRIVEN_INGESTION_MODE: 'shadow'
           DAILY_SYNC_SUMMARY_PATH: artifacts/game-driven-shadow/daily-sync-summary.json
-          DAILY_SYNC_COMMAND_TIMEOUT: 20m
+          # OPS-002 last-resort kill. 40m = 2400s sits 200s above the 2200s
+          # internal budget, so the Python process always reaches its own
+          # governed shutdown first and this never becomes normal control flow.
+          DAILY_SYNC_COMMAND_TIMEOUT: 40m
           # Whole-command runtime governance. The Python process keeps the
           # daily sync inside this total budget and reserves enough time for
           # fatigue, snapshot publish/withhold, metadata, writer-guard release,
-          # and cleanup. The 20m shell timeout is a last-resort kill, not normal
-          # control flow.
-          DAILY_SYNC_TOTAL_BUDGET_SECONDS: '1080'
+          # and cleanup.
+          #
+          # OPS-002 temporary mitigation, 1080 -> 2200. The August 6 incident
+          # measured five upstream stages consuming 612-628s before the
+          # ingestion pool is calculated at all, leaving a combined pool of
+          # 151-168s; the shadow observer then took its share and the legacy
+          # GameLog writer received 112-125s for work whose corrected
+          # cold-equivalent upper bound is 767-895s. This is headroom, not the
+          # permanent correction: the durable fix is reducing the upstream work
+          # and the 861-pitcher enumeration, tracked separately.
+          DAILY_SYNC_TOTAL_BUDGET_SECONDS: '2200'
+          # UNCHANGED at 300s. The final phase (fatigue, snapshot assembly and
+          # publish/withhold, metadata, writer-guard release, cleanup) genuinely
+          # needs it: the successful August 6 recovery spent 189.7s in its
+          # snapshot phase alone. Reducing this would be the wrong lever and
+          # would endanger finalisation.
           DAILY_SYNC_FINAL_PHASE_RESERVE_SECONDS: '300'
-          # Maximum soft budget for the gameLog ingestion stage. The actual
-          # budget is the smaller of this cap and the total remaining runtime
-          # after final-phase reserve.
-          DAILY_SYNC_INGESTION_BUDGET_SECONDS: '720'
+          # Safety ceiling on the COMBINED ingestion pool, not a promised
+          # allocation to any one lane. The pool is the smaller of this cap and
+          # the runtime remaining after the final-phase reserve, so under the
+          # observed upstream range the derived pool (~1171-1272s) is what
+          # actually binds and this cap does not. It sits above that derived
+          # pool deliberately: a cap below the pool would silently re-create
+          # the invisible constraint OPS-002 is about.
+          #
+          # The pool is then SHARED. The game-driven shadow observer runs first
+          # and is allocated 25% of it, and its ACTUAL elapsed time (not its
+          # allocation) is subtracted before the legacy GameLog writer starts.
+          # Worst case at the maximum observed upstream of 628.5s:
+          #   pool  = min(1500, 2200 - 628.5 - 300) = 1271.5s
+          #   shadow allocation                     =  317.875s
+          #   legacy GameLog floor                  =  953.625s  (>= 950s floor)
+          DAILY_SYNC_INGESTION_BUDGET_SECONDS: '1500'
         run: |
           set -euo pipefail
           if [ -z "${DATABASE_URL:-}" ] || [ -z "${SECRET_KEY:-}" ] || [ -z "${ADMIN_API_TOKEN:-}" ]; then
