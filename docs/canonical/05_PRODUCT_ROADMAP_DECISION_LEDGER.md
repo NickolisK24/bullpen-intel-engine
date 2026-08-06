@@ -6,7 +6,7 @@
 | Version | 3.2 |
 | Effective date | August 6, 2026 |
 | Owner | Nickolis Kacludis |
-| Repository basis | `NickolisK24/bullpen-intel-engine` main at `5be94b7c0640e763308a50bab93298638368f150`, plus this pending documentation pull request |
+| Repository basis | `NickolisK24/bullpen-intel-engine` main at `5be94b7c0640e763308a50bab93298638368f150`, with the Version 3.2 documentation closeout recorded through PR #618 |
 | Decision basis | Decision Ledger through D-049 |
 | Supersedes | Prior current-state wording through August 6, 2026 while preserving all durable decisions and evidence |
 | Detailed predecessor archive | `docs/archive/2026-08/PRODUCT_ROADMAP_DECISION_LEDGER_PRE_V3.md` |
@@ -551,8 +551,8 @@ This current-state edition consolidates:
 
 - the repository's prior canonical Roadmap and detailed Decision Ledger through D-046;
 - the August 4, 2026 current-state Roadmap DOCX;
-- repository main `5be94b7c0640e763308a50bab93298638368f150`, plus this pending documentation
-  pull request;
+- repository main `5be94b7c0640e763308a50bab93298638368f150`, with the Version 3.2 documentation
+  closeout recorded through PR #618;
 - merged pull requests through #617;
 - scheduled production evidence through run `30921186222`, and manual production recovery
   evidence from run `31097712768` with published snapshot `360`;
