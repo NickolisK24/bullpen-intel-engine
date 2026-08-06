@@ -106,29 +106,31 @@ Their historical language is part of the record.
 If an archived rule still matters, the current canonical document should state
 that rule independently.
 
-## 7. Known Location Exceptions
+### June project-state snapshot
 
-A few documents predate the six-document cutover and live in locations that can
-mislead readers.
+`PROJECT_STATE_2026_06.md` previously lived under `docs/current/`, where its
+location could make a June snapshot look like current platform authority. The
+August 6 reconciliation moved the exact historical blob to:
 
-### `docs/current/PROJECT_STATE_2026_06.md`
+`docs/archive/2026-06/PROJECT_STATE_2026_06.md`
 
-This is a June 2026 project-state snapshot. It is **historical**, despite the
-`current/` path. It must not be used to determine current product scope,
-terminology, roadmap priority, production architecture, or active surfaces.
+No historical content was rewritten during the move. Current product scope,
+terminology, roadmap priority, architecture, and active surfaces come from the
+canonical library and current runbooks instead.
 
-The canonical Roadmap and this documentation hub supersede it for current
-state. It is retained because it contains substantial development history.
+## 7. Older Top-Level Documentation
 
-### Older top-level `docs/*.md` files
+Several `docs/*.md` files predate the canonical-library cutover. Examples
+include weighting foundations, reconciliation audits, role-authority plans, and
+bullpen-shape investigations.
 
-Files such as weighting foundations, reconciliation audits, role-authority
-plans, and bullpen-shape investigations were created before the canonical
-library cutover. They remain useful evidence. Their top-level placement does
-not make them active authorities.
+They remain useful evidence. Their top-level placement does not make them active
+authorities.
 
-Future cleanup may move these into a dated archive in bounded batches, but
-moving them is organizational cleanup rather than product work.
+Future cleanup may move these into dated archive folders in bounded batches,
+but moving them is organizational cleanup rather than product work. Do not
+mass-edit their historical terminology merely to make repository search results
+look current.
 
 ## 8. Retired Game 824487 Repair Material
 
