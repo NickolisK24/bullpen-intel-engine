@@ -3,12 +3,12 @@
 | Field | Value |
 |---|---|
 | Status | Canonical - current platform state, priority, sequence, decision, risk, and completion authority |
-| Version | 3.0 |
-| Effective date | August 5, 2026 |
+| Version | 3.1 |
+| Effective date | August 6, 2026 |
 | Owner | Nickolis Kacludis |
-| Repository basis | `NickolisK24/bullpen-intel-engine` main at `8a528efec1affcdaf98fa1e87f9090d105db4248` |
-| Decision basis | Decision Ledger through D-046 |
-| Supersedes | Prior current-state wording through August 4, 2026 while preserving all durable decisions and evidence |
+| Repository basis | `NickolisK24/bullpen-intel-engine` main at `b29b1f0e41fffb0a58db9d276a506ae6613dfcce` |
+| Decision basis | Decision Ledger through D-048 |
+| Supersedes | Prior current-state wording through August 5, 2026 while preserving all durable decisions and evidence |
 | Detailed predecessor archive | `docs/archive/2026-08/PRODUCT_ROADMAP_DECISION_LEDGER_PRE_V3.md` |
 | Update rule | Update after a priority change, material merge, phase exit, production incident, authority decision, risk change, or false current-state statement |
 | Review cadence | Weekly founder review; immediate update after a material production or product decision |
