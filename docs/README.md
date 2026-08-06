@@ -17,13 +17,13 @@ This directory is organized around **six canonical living documents**. Start wit
 
 ## Current Execution Snapshot
 
-As of the August 4–5, 2026 nightly closeout:
+As of the August 6, 2026 closeout:
 
+- UX-001 (#590) is complete. PR #611 established backend-owned Team State; PR #617 corrected the readiness population to the canonical active bullpen. Corrected production run `31097712768` served snapshot `360` through August 5 and showed `Stretched`, `Vulnerable`, and a governed fail-closed case. No team naturally qualified as Fresh after all 30 clubs played, so Fresh closed under the D-049 natural-observability exception rather than being manufactured.
 - PROD-001 (#592) and CI-001 (#599) are complete.
-- OPS-001 (#593) is implemented and remains open for its required scheduled observation window.
-- UX-001 (#590) is merged through PR #611 and remains open for production proof of one Fresh, one Stretched, and one Vulnerable team with matching payload and rendered text.
-- #591 remains the backend-owned Why-copy package.
-- #594 remains the routed/static team metadata and freshness package.
+- OPS-001 (#593) is implemented and remains open for its required scheduled observation window. It is the active evidence objective.
+- #591 remains the separate backend-owned Why-copy package.
+- #594 remains the separate routed/static team metadata and freshness package.
 - Daily and postgame game-driven ingestion remain shadow; backfill remains off; automated write and publication authority have not transferred.
 
 The [current changelog](current/CHANGELOG.md) records the completed implementation and production-evidence state. GitHub issues remain the exact acceptance-checklist and closure evidence for open audit findings.
