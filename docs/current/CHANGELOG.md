@@ -36,10 +36,9 @@ milestones. It does not replace the detailed evidence records linked from
   contract for exactly Fresh, Stretched, and Vulnerable. The frontend validates
   and renders the supplied contract rather than deriving a competing state from
   counts, lanes, or `context.health`.
-- Kept #590 open after merge because production still must prove one Fresh, one
-  Stretched, and one Vulnerable team with matching backend payload, rendered
-  frontend text, data-through context, and screenshots. Fail-closed outcomes
-  remain label-less governed non-states.
+- Kept #590 open after that merge pending production proof. Production then
+  exposed a further defect and the issue was closed only after the correction
+  below; this line records the state at PR #611, not the terminal status.
 - Preserved the issue boundaries: #591 still owns frontend rewriting or dropping
   backend-authored Why copy, and #594 still owns routed/static team-page
   ownership, metadata, and freshness. PR #611 does not complete either issue.
@@ -72,9 +71,38 @@ milestones. It does not replace the detailed evidence records linked from
   gate resolved it before the writable path opened. No GameLog row changed, no
   other work item changed, no migration was added, and no mode or authority
   moved. The workflow, runner, service, tests, implementation document, and CI
-  shard registrations are removed; the workflow must not be dispatched again.
+  shard registrations were removed by PR #616, merged August 6, 2026; the
+  capability is retired and the workflow must not be dispatched again.
   Daily and postgame remain shadow, backfill remains off, the legacy writer
   remains authoritative, and writes and publication authority remain unapproved.
+- **Closed UX-001 (#590) on August 6, 2026.** Production validation after PR
+  #611 showed every supported team collapsing to `Vulnerable` across materially
+  different Dashboard lanes — Detroit read `Vulnerable` while showing eight
+  rested and available arms. The vocabulary contract was correct; the
+  population was not. Readiness distributions were built from every pitcher
+  carrying a fatigue row and flagged active, including starters and
+  injured-list arms, while the trust metadata authorizing the same read used
+  the canonical current active bullpen, so a single arm outside the bullpen
+  forced the whole club stressed. PR #617, merged at
+  `d5ddb5fd56651203edf75de40d7f3f0d2630fa4b`, resolves active-bullpen
+  membership once and uses it for both the distributions and the coverage
+  check. Corrected production run `31097712768` published, selected, and served
+  snapshot `360` with data through August 5, 2026: publication-critical work
+  418 / 418, best-effort 443 / 443, appearance ledger 124 / 124 completed games
+  and 1,049 / 1,049 appearances with zero mismatches, and dashboard cache
+  verification passed. Team Board showed Los Angeles Dodgers and Houston Astros
+  `Stretched`, New York Mets `Vulnerable`, and Colorado Rockies rendering the
+  governed unavailable presentation with no invented fourth Team State; Compare
+  showed Atlanta Braves `Stretched` beside New York Mets `Vulnerable`, both
+  `Published View Current` through August 5. No team naturally qualified as
+  Fresh after all 30 clubs played that day, so under D-049 no current Fresh
+  screenshot exists and none was manufactured — the automated contracts remain
+  the proof that `operationally_stable` maps to `Fresh` and that the public set
+  contains exactly three labels. A future natural Fresh capture is supplemental
+  evidence. The daily lane stayed shadow with zero writes, commits, checkpoint
+  advances, or publication authority, and no threshold, formula, mapping,
+  schema, mode, writer, or publication authority changed. #591, #593, and #594
+  retain their independent acceptance criteria.
 
 ## July 2026 - Canonical Trust And Ingestion Foundation
 
