@@ -151,6 +151,7 @@ def resolve_team_readiness_payload(
         _team_operations_freshness_metadata,
         _team_operations_trust_metadata,
         _team_payload_from_records,
+        resolve_readiness_population,
     )
     from services.availability_snapshot import (
         CURRENT_AVAILABILITY_MODE,
@@ -210,12 +211,22 @@ def resolve_team_readiness_payload(
         return None
 
     generated_at = _generated_at(rows)
+    # Team State describes the canonical current active bullpen. Starters,
+    # injured-list arms, and off-active organizational depth carry fatigue
+    # scores too, and before this correction a single one of them classified
+    # Unavailable forced the whole team to operationally_stressed. They remain
+    # visible as roster and off-active context on the Team Board; they simply do
+    # not decide the active bullpen's state. Membership is resolved once and
+    # shared with the trust classifier so the roster authority runs once.
+    readiness_records, membership = resolve_readiness_population(
+        records, team_id=team_id, reference_date=reference_date,
+    )
     return assemble_bullpen_readiness(
         team=_team_payload_from_records(records, team_id=team_id),
-        pitcher_records=tuple(_readiness_record(record) for record in records),
+        pitcher_records=tuple(_readiness_record(record) for record in readiness_records),
         trust_metadata=_team_operations_trust_metadata(
             records, sync_status=sync_status, generated_at=generated_at,
-            team_id=team_id, reference_date=reference_date,
+            team_id=team_id, reference_date=reference_date, membership=membership,
         ),
         freshness=_team_operations_freshness_metadata(
             records, sync_status=sync_status, generated_at=generated_at,

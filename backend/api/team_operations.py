@@ -17,6 +17,10 @@ from services.availability_snapshot import (
     classify_latest_fatigue_rows,
     latest_fatigue_rows,
 )
+from services.team_readiness_coverage import (
+    resolve_active_bullpen_membership,
+    select_active_bullpen_records,
+)
 from team_operations import (
     assemble_bullpen_readiness,
 )
@@ -136,19 +140,26 @@ def get_team_operations_bullpen_readiness():
         )
         return jsonify(_route_payload(payload)), 503
 
+    # Team State describes the canonical current active bullpen, so the
+    # distributions are built from exactly that population. Team identity,
+    # freshness, and coverage still read the full team record set.
+    readiness_records, membership = resolve_readiness_population(
+        records, team_id=team_id, reference_date=reference_date,
+    )
     payload = assemble_bullpen_readiness(
         team=_team_payload_from_records(
             records,
             team_id=team_id,
             team_abbreviation=team_abbreviation,
         ),
-        pitcher_records=tuple(_readiness_record(record) for record in records),
+        pitcher_records=tuple(_readiness_record(record) for record in readiness_records),
         trust_metadata=_team_operations_trust_metadata(
             records,
             sync_status=sync_status,
             generated_at=generated_at,
             team_id=team_id,
             reference_date=reference_date,
+            membership=membership,
         ),
         freshness=_team_operations_freshness_metadata(
             records,
@@ -366,8 +377,28 @@ def _workload_category(record):
     return 'low'
 
 
+def resolve_readiness_population(records, *, team_id, reference_date):
+    """Resolve the canonical active-bullpen population for a readiness read.
+
+    Returns ``(readiness_records, membership)``. ``readiness_records`` are the
+    records whose Team State the read describes — the canonical current active
+    bullpen and nothing else. ``membership`` is the resolved
+    ``(ids, authority_complete)`` pair, returned so the caller can hand it to the
+    trust classifier instead of resolving the roster authority a second time.
+
+    This is the population contract: the records that DERIVE Team State are the
+    same records whose coverage AUTHORIZES the read. When the authority is
+    incomplete the membership is empty and trust fails closed to ``unknown``,
+    which the status resolver turns into ``data_limited`` before any
+    distribution is consulted.
+    """
+    membership = resolve_active_bullpen_membership(team_id, reference_date)
+    return select_active_bullpen_records(records, membership[0]), membership
+
+
 def _team_operations_trust_metadata(
-    records, *, sync_status, generated_at, team_id=None, reference_date=None
+    records, *, sync_status, generated_at, team_id=None, reference_date=None,
+    membership=None,
 ):
     """Team-level readiness trust from the canonical ACTIVE-BULLPEN coverage contract.
 
@@ -393,6 +424,7 @@ def _team_operations_trust_metadata(
 
     assessment = _assess_active_bullpen_coverage(
         records, sync_status=sync_status, team_id=team_id, reference_date=reference_date,
+        membership=membership,
     )
     coverage_limitations = []
     coverage_limitation = assessment.coverage_limitation()
@@ -448,7 +480,9 @@ _USABLE_FRESH_DATA_STATE = 'fresh'
 _RESTED_STALE_DATA_STATE = 'stale'
 
 
-def _assess_active_bullpen_coverage(records, *, sync_status, team_id, reference_date):
+def _assess_active_bullpen_coverage(
+    records, *, sync_status, team_id, reference_date, membership=None,
+):
     """Resolve active-bullpen membership + per-record usability, then classify.
 
     Membership and rest come from canonical authorities (never re-derived here):
@@ -459,7 +493,11 @@ def _assess_active_bullpen_coverage(records, *, sync_status, team_id, reference_
     from services.team_readiness_coverage import assess_team_coverage
 
     ref = reference_date or _availability_reference_date(sync_status)
-    active_bullpen_ids, authority_complete = _active_bullpen_membership(team_id, ref)
+    # Reuse a membership the caller already resolved; the roster authority is a
+    # real query and must not be run twice for one team.
+    active_bullpen_ids, authority_complete = (
+        membership if membership is not None else _active_bullpen_membership(team_id, ref)
+    )
     ledger_complete = _appearance_ledger_complete(ref)
 
     usable_ids = set()
@@ -488,25 +526,12 @@ def _assess_active_bullpen_coverage(records, *, sync_status, team_id, reference_
 
 
 def _active_bullpen_membership(team_id, reference_date):
-    """Canonical active-bullpen (active-roster reliever) pitcher-id set for a team.
+    """Canonical active-bullpen pitcher-id set for a team.
 
-    Reuses the Canonical Roster Authority (active roster + Role Authority) gated by
-    the public roster-readiness source. Returns ``(ids, authority_complete)``;
-    ``authority_complete`` is False (→ ``unknown``, fail closed) when there is no
-    team id, the roster source is not READY (evidence nulled), or no active-bullpen
-    arm can be identified. No second roster filter is introduced.
+    Thin delegate to the readiness-coverage domain, which owns the one recipe
+    shared by the trust classifier and the readiness population.
     """
-    if team_id is None:
-        return set(), False
-    try:
-        from api.bullpen import build_team_roster_authority
-        authority = build_team_roster_authority(team_id, reference_date=reference_date)
-        arms = (authority.get('evidence') or {}).get('bullpen_arms') or []
-        ids = {arm.get('pitcher_id') for arm in arms if arm.get('pitcher_id') is not None}
-        return ids, bool(ids)
-    except Exception:
-        # Fail closed: an unreadable roster authority is treated as "no authority".
-        return set(), False
+    return resolve_active_bullpen_membership(team_id, reference_date)
 
 
 def _appearance_ledger_complete(reference_date):
