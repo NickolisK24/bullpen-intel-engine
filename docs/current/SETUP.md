@@ -1,454 +1,298 @@
-# 🛠️ BaseballOS — Setup Guide
+# BaseballOS Setup Guide
 
-Follow this start to finish and you'll have the full app running locally. Every
-command below has been verified against the current repository.
+**Status:** Current operational setup guide  
+**Owner:** Nickolis Kacludis  
+**Reviewed:** August 6, 2026
 
-> BaseballOS is a baseball analytics platform whose flagship, fully-implemented
-> module is the **Bullpen Intelligence Engine**. The Prospect Pipeline is an
-> early prototype (sample data); the Methodology page documents how every number
-> is computed. See the README for full positioning.
+This guide gets the current BaseballOS application running locally. It is a
+procedure, not a product or architecture authority. Durable rules live in the
+[canonical library](../canonical/README.md); exact dependency and environment
+variable values live in the repository manifests and `.env.example` files.
 
----
+BaseballOS is a public MLB **bullpen intelligence** platform. It is not a general
+baseball analytics suite, and the old Prospect Pipeline prototype is not part of
+the current public product direction.
 
 ## Prerequisites
 
-| Tool | Version | Check |
-|------|---------|-------|
-| Python | 3.10+ | `python --version` |
-| Node.js | 18+ | `node --version` |
-| PostgreSQL | 14+ | `psql --version` |
-| pip | latest | `pip --version` |
-| npm | 9+ | `npm --version` |
+- Python 3.10+
+- Node.js 18+
+- npm 9+
+- PostgreSQL 14+
+- Git
 
-PostgreSQL must be installed and running. The app is written for PostgreSQL
-(it uses a `postgresql://` connection string and Postgres-oriented queries).
+PostgreSQL is the production database authority and should also be used for
+meaningful local/integration validation. SQLite-only behavior is not sufficient
+proof for production semantics.
 
----
+## 1. Create a Local Database
 
-## Step 1 — Create the database
+Example:
 
 ```bash
-# Open a psql shell as the postgres user, then:
 psql -U postgres
 CREATE DATABASE baseballos;
 \q
 ```
 
-Note the username, password, host, port, and database name — you'll put them in
-`DATABASE_URL` in the next step.
+Use your own local username/password/host/port as appropriate.
 
----
-
-## Step 2 — Backend setup
+## 2. Backend Setup
 
 ```bash
 cd backend
-
-# 1) Create and activate a virtual environment (recommended)
 python -m venv venv
-source venv/bin/activate          # macOS / Linux
-# venv\Scripts\activate           # Windows (PowerShell/cmd)
-
-# 2) Install dependencies
+source venv/bin/activate          # macOS/Linux
+# venv\Scripts\activate          # Windows
 pip install -r requirements.txt
-
-# 3) Create your .env from the template, then edit DATABASE_URL
 cp .env.example .env
-# Open .env and set DATABASE_URL to match the database you created, e.g.:
-#   DATABASE_URL=postgresql://postgres:yourpassword@localhost:5432/baseballos
-# DATABASE_URL is required. Local development refuses non-local database hosts.
+```
 
-# 4) Apply the existing database migrations
-#    (Do NOT run `flask db init` — the migrations/ folder already exists.)
+Set at minimum:
+
+```dotenv
+APP_ENV=development
+FLASK_APP=app.py
+DATABASE_URL=postgresql://postgres:yourpassword@localhost:5432/baseballos
+```
+
+Then apply migrations:
+
+```bash
 flask db upgrade
+```
 
-# 5) Seed data from the MLB Stats API (rosters, game logs, fatigue scores,
-#    plus a small set of sample prospects). This makes live network calls and
-#    can take a few minutes.
+Do **not** run `flask db init`. The repository already owns Alembic migration
+history under `backend/migrations/`.
+
+Optional live seed:
+
+```bash
 python seed.py
+```
 
-# 6) Start the backend
+`seed.py` makes live MLB source calls. It is useful for local exploration but is
+not required for normal automated tests.
+
+Start the backend:
+
+```bash
 flask run
-# Backend runs at http://localhost:5000
 ```
 
-Why `flask db upgrade` (and not `flask db init` / `flask db migrate`)?
-The repository already ships Alembic migrations under `backend/migrations/`.
-`flask db upgrade` applies them to your database. `flask db init` would try to
-re-create the migrations folder and fail, and `flask db migrate` is only for
-generating *new* migrations after you change a model — not part of first-time
-setup.
+Default local backend: `http://localhost:5000`.
 
-> `FLASK_APP=app.py` is set in `.env`, so the `flask` CLI finds the app
-> automatically. If you skipped the `.env` step, export it manually:
-> `export FLASK_APP=app.py`.
+## 3. Frontend Setup
 
----
-
-## Step 3 — Frontend setup
+In another terminal:
 
 ```bash
-# In a NEW terminal tab
 cd frontend
-
-# Install dependencies
 npm install
-
-# Start the dev server (proxies /api to http://127.0.0.1:5000 — see vite.config.js)
 npm run dev
-# Frontend runs at http://localhost:5173
 ```
 
-For local development you do **not** need a frontend `.env`: the Vite dev server
-proxies API calls to the backend on port 5000. Only set `VITE_API_BASE_URL`
-(see `frontend/.env.example`) when the backend is hosted somewhere else.
+Default local frontend: `http://localhost:5173`.
 
-To produce a production build:
+The Vite development server proxies API requests to the local Flask backend. Set
+`VITE_API_BASE_URL` only when the backend is hosted somewhere else.
+
+Production build:
 
 ```bash
-npm run build       # outputs static assets to frontend/dist/
-npm run preview     # optional: preview the production build locally
+npm run build
+npm run preview
 ```
 
----
+## 4. What You Should See
 
-## Step 4 — Open the app
+The current public product centers on bullpen intelligence:
 
-Navigate to **http://localhost:5173**. You should see the BaseballOS dashboard.
-If you ran `python seed.py`, the bullpen views will be populated; otherwise the
-dashboard renders with empty states until data is synced.
+- Today
+- Dashboard
+- Team Board
+- Compare
+- Reliever Finder
+- Pitcher Detail
+- Stories
+- Methodology
+- Data & Trust
+- immutable Share Artifact pages
 
-### Bullpen data, roster status, and freshness in local development
+Public Team State is exactly:
 
-The default Bullpen Board shows active bullpen-relevant arms. Clear starters are
-excluded from default bullpen planning, and unavailable pitchers are separated
-from bullpen arms when the board is configured to show them. Unavailable
-pitchers should carry the roster reason, such as IL, minors, optioned, DFA,
-non-roster, 40-man-only, released/no-organization, or unknown ownership when
-applicable.
+- `Fresh`
+- `Stretched`
+- `Vulnerable`
 
-Roster status is separate from workload freshness. Local seed data can be a
-valid historical snapshot while still falling outside the active workload
-freshness window. In that case BaseballOS can honestly show tracked pitchers
-and game logs while current workload signals are stale or limited. Use **Show
-stale workload pitchers** for the workload list or **Show unavailable pitchers**
-on Tonight's Bullpen Board to inspect non-default context. If the dashboard
-itself shows no game logs, the database is empty and needs to be seeded or
-synced.
+Public arm reads are exactly:
 
-The dashboard trust strip separates sync metadata from baseball data coverage:
+- `Clean Option`
+- `Watch Arm`
+- `Limited Rest`
+- `Unavailable`
+- `Limited Read`
 
-- **Data Status** describes whether the visible data state is healthy, limited,
-  or stale.
-- **Synced** is based on explicit sync metadata from durable `sync_runs`
-  records when available.
-- **Data Through** is based on the latest game-log/workload date represented in
-  the database.
-- **Refresh Coverage** reports how many pitchers were refreshed by the latest
-  sync when that count is available.
+Internal availability values such as Available / Monitor / Limited / Avoid /
+Unavailable are calculation detail and must not be treated as a second public
+vocabulary.
 
-Seeded local snapshots may have game logs and fatigue rows without a durable
-sync run. In that case BaseballOS should show the data-through date and clearly
-state that sync metadata is unavailable rather than implying the database is
-empty.
+## 5. Local Data and Freshness
 
-The normal sync sequence is:
+A local database may contain valid historical records without representing a
+current trusted MLB picture.
 
-```text
-team assignment sync
--> roster status sync
--> game log/workload sync
--> fatigue and availability calculation
--> trust/freshness reporting
-```
+Keep these concepts separate:
 
-Team assignment runs first so stale ownership is corrected or cleared
-fail-closed before roster status and bullpen planning views are assembled.
+- **Data Through** — latest baseball date represented by the relevant evidence.
+- **Sync/update time** — when BaseballOS last wrote or refreshed data.
+- **Current trusted read** — a read whose required source/freshness/coverage gates pass.
+- **Historical data** — valid past evidence that must not be presented as current.
 
----
+Missing information is never replaced with zero or a plausible value.
 
-## Step 5 — Run the tests
+Historical appearance ownership remains attached to the team side for which the
+pitcher appeared in that game. Current organization/roster membership is a
+separate fact.
 
-The backend test suite covers fatigue scoring, availability classification,
-freshness behavior, sync metadata, admin protections, audit tooling, and data
-integrity checks.
+Team State is derived from the canonical current active bullpen population. A
+starter or off-active arm may remain visible as context but must not determine
+Fresh / Stretched / Vulnerable.
+
+## 6. Environment Variables
+
+The exact registries are:
+
+- `backend/.env.example`
+- `frontend/.env.example`
+
+Stable backend categories include:
+
+| Variable / category | Purpose |
+|---|---|
+| `APP_ENV` | Development/test/production behavior. |
+| `DATABASE_URL` | PostgreSQL connection; required. |
+| `FLASK_APP` | Local Flask CLI entry point. |
+| `SECRET_KEY` | Session/signing secret; non-default required in production. |
+| `MLB_API_BASE` | Optional MLB source base override. |
+| `ADMIN_API_TOKEN` | Protected backend/workflow operations; required in production where configured by the app. Never send to the browser. |
+| `CORS_ORIGINS` | Additional approved browser origins. |
+| email-provider variables | Magic-link/audience messaging where enabled. |
+| internal-email allowlists | Browser-safe internal authorization. |
+| sync budget/lookback variables | Bounded source/runtime operation. |
+
+Stable frontend categories include:
+
+| Variable | Purpose |
+|---|---|
+| `VITE_API_BASE_URL` | Hosted backend origin. |
+| `VITE_SENTRY_DSN` | Optional browser monitoring. |
+| `VITE_APP_ENV` | Monitoring environment label. |
+| `VITE_RELEASE_SHA` | Release identifier. |
+
+There is no frontend admin-token variable. A production admin secret must never
+be embedded in built JavaScript.
+
+## 7. Tests
+
+Backend:
 
 ```bash
-cd backend
-python -m pytest
-# Expected: all tests pass
+python -m pytest backend/tests
 ```
 
-These tests do **not** require MLB Stats API access. Database-facing tests use
-test-local setup and small fixtures rather than production data.
-
----
-
-## Environment Variables
-
-All backend variables live in `backend/.env` (template: `backend/.env.example`).
-The one optional frontend variable lives in `frontend/.env`
-(template: `frontend/.env.example`).
-
-| Variable | Where | Required? | Default | Purpose / Example |
-|----------|-------|-----------|---------|-------------------|
-| `APP_ENV` | backend | No | `development` | Selects the config: `development` (debug on, explicit local DB required), `test` (test DB only), or `production` (debug off, fails fast on unsafe config). |
-| `DATABASE_URL` | backend | **Yes** | (none) | PostgreSQL connection string. Local development must point at a local database, for example `postgresql://postgres:pw@localhost:5432/baseballos`. Hosted URLs are accepted only with `APP_ENV=production`. |
-| `FLASK_APP` | backend | Recommended | (none) | Entry point for the `flask` CLI. Set to `app.py`. |
-| `SECRET_KEY` | backend | Recommended (required in production) | `dev-secret-key` | Flask secret. Fine to leave default locally; with `APP_ENV=production` the app refuses to start on the dev default. |
-| `MLB_API_BASE` | backend | No | `https://statsapi.mlb.com/api/v1` | MLB Stats API base URL. The default is correct for everyone. |
-| `AUTO_SYNC` | backend | No | off | `1`/`true`/`yes` enables the in-process daily sync scheduler (06:00 ET). Leave off for dev/tests. |
-| `CORS_ORIGINS` | backend | No | (none) | Extra comma-separated allowed origins, added to the built-in localhost + Vercel demo origins. |
-| `ADMIN_API_TOKEN` | backend | No (required in production) | (none) | Token gating admin endpoints (`POST /api/bullpen/sync`, `POST /api/bullpen/fatigue/recalculate`, `GET /api/bullpen/fatigue/snapshot`) via the `X-Admin-Token` header. Unset locally -> those routes are allowed in development (with a warning). |
-| `EMAIL_PROVIDER` / `EMAIL_API_KEY` / `EMAIL_FROM` | backend | No | `resend` / unset / unset | Optional transactional email config. Audience signups persist when provider config is missing; the welcome email is skipped safely. |
-| `VITE_API_BASE_URL` | frontend | No | (uses dev proxy) | Backend origin for the frontend to call (no trailing `/api`). Only needed when the backend is hosted separately. |
-| `VITE_SENTRY_DSN` | frontend | No | unset | Optional Sentry browser DSN for production/staging runtime error monitoring. Missing config is a safe no-op. |
-| `VITE_APP_ENV` | frontend | No | Vite mode | Optional frontend environment label for error monitoring. Monitoring sends only for `production`, `staging`, or `preview`. |
-| `VITE_RELEASE_SHA` | frontend | No | unset | Optional release identifier attached to captured frontend errors. |
-
-There is no frontend admin token. The protected admin endpoints below are
-triggered server-side or with curl, never from the browser, so the admin
-secret can never reach the public JS bundle.
-
-### Protected admin endpoints
-
-These endpoints mutate data, trigger expensive MLB pulls, or expose
-validation-only historical workload data and are gated by `ADMIN_API_TOKEN`:
-
-- `POST /api/bullpen/sync`
-- `POST /api/bullpen/fatigue/recalculate`
-- `GET /api/bullpen/fatigue/snapshot`
-
-The snapshot endpoint is admin/dev validation only. It returns
-`mode: latest_workload_snapshot`, `is_current_availability: false`, and a
-historical warning; public UI must use current-mode endpoints such as
-`GET /api/bullpen/fatigue` and `GET /api/bullpen/stats/overview`.
-
-All other read-only `GET`s stay public. Behavior:
-
-- **Token unset (development):** the protected routes are allowed (a warning is
-  logged) so local work isn't painful.
-- **Token set:** requests must include a matching `X-Admin-Token` header, or they
-  get `401 Unauthorized`.
-- **`APP_ENV=production`:** `ADMIN_API_TOKEN` is **required** — the app fails fast
-  at startup if it's missing, so production can't silently expose these routes.
-
-Call a protected endpoint manually:
+Frontend:
 
 ```bash
-curl -X POST http://localhost:5000/api/bullpen/sync \
-  -H "Content-Type: application/json" \
-  -H "X-Admin-Token: your-token-here" \
-  -d '{"days_back": 7}'
+cd frontend
+npm test
+npm run build
 ```
 
-> Note: config is selected by `APP_ENV` (`development` by default, or `production`).
-> `development` enables debug but still requires an explicit local `DATABASE_URL`;
-> `production` disables debug and fails fast if `SECRET_KEY` (non-default),
-> `DATABASE_URL`, or `ADMIN_API_TOKEN` aren't set.
-> See "Deployment notes" below.
+Normal automated tests should not require live MLB access; controlled fixtures
+should represent source behavior.
 
----
+CI uses PostgreSQL-backed backend confidence shards and lockfile-faithful
+frontend installation/build validation. Trust-critical CI receives the Git
+history it needs for behavior-freeze checks.
 
-## Troubleshooting
+A green suite does not replace production smoke, live-source verification, or a
+scheduled observation window when those are explicit acceptance criteria.
 
-**`flask db upgrade` fails to connect / "could not connect to server"**
-→ PostgreSQL isn't running, or `DATABASE_URL` is wrong. Confirm Postgres is up
-(`psql -U postgres -l`) and that the user/password/host/port/dbname in your
-`.env` match the database you created in Step 1.
+## 8. Database Migrations
 
-**"relation does not exist" from Flask**
-→ Migrations haven't been applied. Run `flask db upgrade` (from `backend/`,
-with your venv active and `.env` present).
+Every model/schema change requires an Alembic migration and a safe production
+upgrade path.
 
-**`flask: command not found` or "Could not locate a Flask application"**
-→ Your virtualenv isn't active (`source venv/bin/activate`), or `FLASK_APP`
-isn't set. Ensure `.env` contains `FLASK_APP=app.py`, or `export FLASK_APP=app.py`.
+Before merging schema work, prove:
 
-**No data showing in the dashboard**
-→ The database is empty. Run `python seed.py` to pull initial data from the MLB
-Stats API. (Seeding makes live network calls and can take a few minutes.)
+- upgrade from current production head;
+- PostgreSQL semantics;
+- constraints and foreign-key behavior;
+- deployment ordering;
+- rollback/downgrade behavior or explicit irreversible rationale;
+- documentation update when the domain contract changes.
 
-**Dashboard has pitchers/logs, but the Bullpen page has no current pitchers**
-→ Data exists, but every pitcher may be outside the active 14-day freshness
-window for the current calendar date. Enable **Show stale workload pitchers** to view
-the stale workload snapshot, or run a fresh sync if you expect current-season
-data.
+Do not create production tables ad hoc from application startup.
 
-**CORS error in the browser console**
-→ Make sure the backend is running on port 5000 and you're using the Vite dev
-server (`npm run dev`) so `/api` is proxied. If the frontend is hosted
-elsewhere, add its origin to `CORS_ORIGINS` in the backend `.env`.
+## 9. Production Architecture Boundary
 
-**Frontend can't reach the API in a production build**
-→ A built frontend doesn't use the dev proxy. Set `VITE_API_BASE_URL` to the
-backend origin (e.g. `https://your-backend.example.com`) and rebuild.
+Current operating posture:
 
-**"Port already in use"**
-→ `flask run --port 5001` (and update the proxy target in `vite.config.js` if
-you change it), or stop whatever is using the port.
+- legacy daily/postgame sync remains authoritative for baseball-data mutation;
+- game-driven daily and postgame lanes are **shadow** observers;
+- backfill is off by default and only runs through explicit governed dispatch;
+- automated game-driven write mode is unapproved;
+- game-driven publication-authority transfer is unapproved.
 
-**Scheduler confusion / no automatic syncs**
-→ The daily scheduler only runs when `AUTO_SYNC=true`. With it unset/false you
-must trigger syncs manually. This is intentional so tests and migrations don't
-kick off background jobs.
+Do not infer authority from the existence of a workflow, service, test, or
+manual qualification tool.
 
----
+The game `824487` single-purpose source-revision checkpoint repair has been
+completed and retired. Its former mutation path must not be treated as a general
+repair tool or reintroduced for convenience.
 
-## Deployment notes
+## 10. Sync and Production Operations
 
-This section documents current expectations only — BaseballOS is **not** yet
-configured for one-command production deployment.
+For current sync order, publication gates, shadow/public verdict separation,
+runtime-budget behavior, and recovery rules, use:
 
-- **Frontend:** `npm run build` produces static assets in `frontend/dist/`,
-  suitable for a static host (Vercel, Netlify). Set `VITE_API_BASE_URL` to the
-  deployed backend origin before building.
-- **Backend:** a standard Flask app. `gunicorn` is already in `requirements.txt`
-  (e.g. `gunicorn app:app`). For a hosted environment set `APP_ENV=production`,
-  `SECRET_KEY` (a strong unique value), `DATABASE_URL` (a hosted PostgreSQL
-  instance), and `ADMIN_API_TOKEN` (gates the write endpoints); the app fails
-  fast at startup if any of those production requirements aren't met. Database
-  migrations are applied automatically before the server starts when the Render
-  start command runs `backend/scripts/render_start.sh` (see "Render start
-  command" below); that script fails closed if `flask db upgrade` fails, so the
-  app never serves traffic against an un-migrated database.
-- **Health check:** `GET /api/health` returns `{ status, environment, debug }`,
-  so you can confirm a deploy is actually running `production` (debug `false`).
-- **Scheduler:** `AUTO_SYNC=true` starts an in-process APScheduler job (06:00
-  ET) — fine for local/dev convenience, but **not** reliable for hosted
-  production: it only fires if the web process is alive and un-restarted at the
-  scheduled time, which a free Render instance (it spins down when idle) can't
-  guarantee. For hosted use, prefer an **external scheduler** that POSTs the
-  protected sync endpoint — see "Automated daily sync (production)" below.
-- **Config / debug:** `APP_ENV=production` loads `ProductionConfig` (debug off);
-  unset/`development` keeps debug on for local work. This branch wires that
-  switch and the production safety checks, but full deployment (host setup,
-  managed Postgres, a production scheduler) is still future work.
+- [`SYNC_PIPELINE.md`](SYNC_PIPELINE.md)
+- [`DAILY_SYNC_PUBLICATION_CRITICAL_CONTRACT.md`](DAILY_SYNC_PUBLICATION_CRITICAL_CONTRACT.md)
+- the canonical [Architecture & Operations Manual](../canonical/04_PLATFORM_ARCHITECTURE_OPERATIONS.md)
+- the canonical [Roadmap & Decision Ledger](../canonical/05_PRODUCT_ROADMAP_DECISION_LEDGER.md)
 
-### Render start command (apply migrations before startup)
+Do not run a production mutation merely to make a screenshot or local demo look
+current.
 
-The deployed backend can reference schema added by Alembic migrations — for
-example `game_logs.games_started`. If the production database has not run those
-migrations, every request that touches the new column fails with a Postgres
-`UndefinedColumn` error (HTTP 500). To prevent that, the Render service applies
-migrations *before* the web server starts, using a startup script that fails
-closed: if `flask db upgrade` fails, the server never starts and the migration
-error is visible in the Render logs.
+## 11. Troubleshooting
 
-Set the Render service **Start Command** to:
+### PostgreSQL connection failure
+
+Confirm PostgreSQL is running and that `DATABASE_URL` points at the intended
+local database.
+
+### Missing relations
+
+Run:
 
 ```bash
-bash backend/scripts/render_start.sh
+flask db upgrade
 ```
 
-If the Render service **Root Directory** is set to `backend`, use
-`bash scripts/render_start.sh` instead.
+Do not initialize a second migration history.
 
-With no arguments the script applies migrations and then starts the documented
-production server — `gunicorn app:app` bound to Render's `$PORT`. If the service
-needs a specific gunicorn invocation (extra `--workers`, `--timeout`, etc.),
-pass it as arguments and it is run verbatim after migrations succeed:
+### Empty public surfaces
 
-```bash
-bash backend/scripts/render_start.sh gunicorn app:app --bind 0.0.0.0:$PORT --workers 2
-```
+If you have not seeded or synced data, empty/quiet states are expected. Do not
+interpret an empty local database as a product defect.
 
-This repository has no `Procfile` or `render.yaml`, so the exact gunicorn flags
-currently configured in the Render dashboard are not tracked in version control.
-The `gunicorn app:app` default matches the command documented in these notes;
-confirm it against the service's current Start Command, or pass the exact
-command as arguments as shown above. The script only runs when it is set as the
-start command, so local development and tests are unaffected.
+### Stale or limited reads
 
-### Render production configuration checklist
+Check the represented baseball date and source coverage. A technically recent
+process timestamp does not make stale baseball evidence current.
 
-For the hosted backend on Render, the service environment must include:
+### Production operation question
 
-| Variable | Required production expectation |
-| --- | --- |
-| `APP_ENV` | `production` |
-| `SECRET_KEY` | Strong, unique, non-default secret |
-| `DATABASE_URL` | Hosted PostgreSQL connection string |
-| `ADMIN_API_TOKEN` | Non-empty token for protected operational endpoints |
-
-After any Render environment change, redeploy or restart the backend and verify:
-
-```text
-GET https://baseballos-api.onrender.com/api/health
-status: ok
-environment: production
-debug: false
-```
-
-If deployed health reports `environment: development` or `debug: true`, the
-deployment must not be treated as production-safe rollout evidence.
-
-### Automated daily sync (production)
-
-In hosted production (frontend on Vercel, backend on Render), don't rely on the
-in-process APScheduler. Use an external scheduler that POSTs the protected sync
-endpoint once a day. The endpoint is idempotent (it skips duplicates and the DB
-enforces game-log uniqueness), so re-runs are safe.
-
-**Recommended: GitHub Actions** (no dependency on the Render web process being
-awake first, and free on public repos). A ready-to-use workflow ships at
-`.github/workflows/baseballos-sync.yml`. To enable it:
-
-1. In the GitHub repo: **Settings → Secrets and variables → Actions → New repository secret**, add:
-   - `BASEBALLOS_SYNC_URL` — e.g. `https://baseballos-api.onrender.com/api/bullpen/sync`
-   - `BASEBALLOS_ADMIN_API_TOKEN` — the **same** value as the backend's `ADMIN_API_TOKEN`
-2. The workflow runs daily at **10:00 UTC** (≈ 6 AM ET during daylight time —
-   most of the MLB season; ≈ 5 AM ET during standard time). Cron is always UTC
-   and doesn't observe DST, so the ET clock time shifts by an hour seasonally —
-   that's fine for a daily refresh.
-3. Trigger a manual run anytime from the **Actions** tab ("Run workflow"). The
-   job fails loudly (non-zero exit) on any non-2xx response, and calls out
-   401/403 as a token mismatch.
-
-**Manual / equivalent curl** (what the scheduler effectively runs):
-
-```bash
-curl -X POST https://baseballos-api.onrender.com/api/bullpen/sync \
-  -H "Content-Type: application/json" \
-  -H "X-Admin-Token: $ADMIN_API_TOKEN" \
-  -d '{"days_back": 7}'
-```
-
-**Alternative: Render Cron Job.** Render can run the same `curl` on a schedule,
-but a Cron Job is a separate paid service on most plans — GitHub Actions is
-simpler and free for this use, so it's the recommended path.
-
-**UptimeRobot is not a sync.** UptimeRobot (or similar) hitting `HEAD/GET
-/api/health` only keeps/wakes the Render instance — it does **not** run a sync.
-It's complementary: keep your health monitor, and add the GitHub Actions
-workflow for the actual daily sync. (If your UptimeRobot plan supports POST with
-custom headers it *could* call `/api/bullpen/sync` directly, but the Actions
-workflow is cleaner and easier to audit.)
-
-**Expected dashboard behavior after a successful run:** the sync writes
-durable metadata to the `sync_runs` table, while keeping the legacy status file
-as a fallback. The dashboard trust strip should show separate sync and data
-coverage fields:
-
-```text
-Data Status: Healthy
-Synced: <last successful sync date>
-Data Through: <latest baseball data date>
-Refresh Coverage: <pitchers refreshed>
-```
-
-If game logs exist but durable sync metadata is unavailable, the dashboard
-should show that limitation explicitly instead of presenting the database as
-empty:
-
-```text
-Data Status: Limited
-Sync metadata: Unavailable
-Data Through: <latest baseball data date>
-```
-
-If the latest run fails, the dashboard should preserve the data-through date and
-show the failed sync state separately.
-
-The protected endpoint stays protected throughout — the scheduler authenticates
-with `X-Admin-Token`; there is no anonymous sync and no public sync button.
+Stop and read the relevant current runbook before dispatching anything. If the
+procedure is not explicitly documented and bounded, do not improvise a write.
