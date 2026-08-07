@@ -22,9 +22,9 @@ import { TrustFact } from './TrustStrip'
 export default function EditionHeader({
   eyebrow,
   editionLabel,
+  shortEditionLabel,
   title,
   standfirst,
-  boundary,
   facts = [],
   actions,
   children,
@@ -32,12 +32,17 @@ export default function EditionHeader({
   const visibleFacts = (Array.isArray(facts) ? facts : []).filter(fact => fact?.value)
 
   return (
-    <header className="bos-edition bos-depth pb-10 pt-9 sm:pb-14 sm:pt-12 lg:pb-16 lg:pt-14">
+    <header className="bos-edition bos-depth pb-4 pt-9 sm:pb-6 sm:pt-12 lg:pb-8 lg:pt-14">
       <div className="flex flex-wrap items-baseline justify-between gap-x-8 gap-y-2">
         <p className="bos-eyebrow">{eyebrow}</p>
+        {/* The full masthead strapline is a desktop object. On a phone the
+            eyebrow above already carries the edition identity, so only the
+            cadence survives — the long line crowded the gutter and added a
+            second competing label to the opening screen. */}
         {editionLabel && (
-          <p className="bos-meta min-w-0 uppercase tracking-[0.06em] text-brass/80 sm:tracking-[0.12em]">
-            {editionLabel}
+          <p className="bos-meta min-w-0 uppercase tracking-[0.12em] text-brass/80">
+            <span className="hidden sm:inline">{editionLabel}</span>
+            <span className="sm:hidden">{shortEditionLabel || editionLabel}</span>
           </p>
         )}
       </div>
@@ -48,9 +53,9 @@ export default function EditionHeader({
           desktop reads as a briefing masthead rather than an oversized hero
           that consumes the first screen. Below lg they stack in reading order:
           answer first, then the context that qualifies it. */}
-      <div className="mt-9 grid grid-cols-1 gap-x-14 gap-y-9 lg:mt-12 lg:grid-cols-[minmax(0,1.65fr)_minmax(13rem,0.75fr)]">
+      <div className="mt-9 grid grid-cols-1 gap-x-16 gap-y-9 lg:mt-11 lg:grid-cols-[minmax(0,1.5fr)_minmax(12rem,0.6fr)]">
         <div className="min-w-0">
-          <h1 className="bos-hero max-w-[17ch]">
+          <h1 className="bos-hero max-w-[19ch]">
             {title}
           </h1>
 
@@ -83,14 +88,6 @@ export default function EditionHeader({
           </dl>
         )}
       </div>
-
-      {/* The boundary statement stays on the page but sits below the brief as
-          an ambient line rather than competing with the lead statement. */}
-      {boundary && (
-        <p className="bos-support mt-9 max-w-measure text-chalk500 lg:mt-11">
-          {boundary}
-        </p>
-      )}
 
       {children}
     </header>

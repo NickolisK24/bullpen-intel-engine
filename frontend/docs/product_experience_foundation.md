@@ -89,6 +89,7 @@ ranking, or an explanation, and none rewrites backend-owned copy.
 | `EvidenceList` / `EvidenceRow` / `NamedArmReceipt` | Evidence receipts and named-arm evidence | the contract that supplied the row |
 | `TrustStrip` / `TrustFact` | Ambient freshness and trust stamps | governed freshness block |
 | `ConceptCard` / `ConceptGlossary` | BaseballOS vocabulary | `utils/bullpenConcepts.js` |
+| `ConceptGlyph` | Abstract concept marks for the vocabulary | none — fixed geometry, decorative |
 | `IntelNotice` / `IntelSkeleton` | Designed quiet, limited, unavailable, and loading states | caller-supplied governed copy |
 
 Rules the primitives enforce:
@@ -99,14 +100,35 @@ Rules the primitives enforce:
 - state is always readable as text with a screen-reader `Team State:` prefix —
   colour is decoration;
 - a trust fact with no value renders nothing rather than a placeholder;
-- a concept card never carries a value, tier, or percentage.
+- a concept card never carries a value, tier, or percentage;
+- a concept glyph is fixed geometry with no numeric input, is `aria-hidden`, and
+  is hand-authored inline SVG — no icon library, no bundle weight beyond the
+  markup. It cannot become a gauge, meter, ring, or rating, and the concept name
+  always carries the meaning as text.
 
 ## Layer C — application shell
 
-- `App.jsx` adds a skip link into `<main id="main-content">`.
-- `Sidebar.jsx` keeps every route, label, and active-state rule; the wordmark now
-  returns to Today, the active destination is a blue rail plus `aria-current`
-  (never colour alone), and spacing/typography use the token scale.
+The public shell is a **horizontal masthead**, not a left rail. A rail made the
+product read as an internal analytics tool; a masthead reads as a publication
+and gives the reading column the full page.
+
+- `App.jsx` adds a skip link into `<main id="main-content">` and carries no
+  content offset — nothing is inset for a side column.
+- `components/Sidebar.jsx` (historical path; the component is the masthead)
+  renders one low-profile bar: wordmark left, primary destinations centre, the
+  ambient data-through stamp right, and a menu toggle below `lg`.
+- The masthead is **not sticky**. Today is a finite daily edition read top to
+  bottom, and a persistent bar would take vertical space on every scroll.
+- `MASTHEAD_NAV` in `utils/navigation.js` selects the six destinations the
+  desktop bar shows: Today, League Board, Team Bullpens, Stories, Methodology,
+  Data & Trust. `masthead: false` on Compare and Reliever Finder, and
+  `masthead: true` on Methodology and Data & Trust, are presentation flags only
+  — no route is removed, and every destination is in the mobile menu sheet.
+- Active destination: a thin blue underline plus `aria-current="page"`. Never a
+  filled tab, never a pill, never colour alone.
+- Below `lg`: a compact header plus a menu sheet holding every destination and
+  the freshness card. Escape, route-change, and select-to-close all still close
+  it.
 - Navigation stays visually quiet — content is the product.
 
 ## Layer D — Today
@@ -126,10 +148,23 @@ Rendered order in `IntelligenceSurfaceView`:
 Sections 2–5 keep the order and the data contracts they already had. Sections
 1 and 6–8 are presentation over existing governed values.
 
-Tonight's cards show the answer first — club, headline, schedule context, the
-watching sentence, the watch point, and the usage notes — and move the
-supporting rows the backend also authored behind one native `<details>`.
-Freshness and limitations are never placed behind that disclosure.
+Tonight's cards show the answer first — club, headline, the watching sentence,
+the watch point, and the evidence cues — and move the schedule sentence, Why It
+Matters, Key Note, and Starter Length behind one native `<details>`. Freshness
+and limitations are never placed behind that disclosure.
+
+What Changed is composed as an intelligence change log: inline summary counts,
+an underline filter row and a compact search in one quiet tool row, then
+hairline-opened entries carrying club, backend-authored direction, the supplied
+previous → current delta with its label rendered verbatim, the supported reason,
+worked-yesterday receipts, and the evidence disclosure. No container.
+
+The vocabulary section leads with the three canonical Team State words as a
+plain definition list, then six concept features, each with its own abstract
+mark, a large title, one definition, and a route deeper.
+
+The descriptive-only boundary statement lives in the Data & Trust brief as fine
+print, not in the opening reading path.
 
 League lane labels live in `components/dashboard/bullpenLandscapeView.js` and
 are deliberately free of superlative framing. They describe the situation a

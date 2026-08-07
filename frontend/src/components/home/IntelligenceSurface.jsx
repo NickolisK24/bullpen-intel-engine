@@ -1254,7 +1254,7 @@ function AudienceSignupForm() {
 // ── Daily Intelligence Brief ────────────────────────────────────────────────
 //
 // The signature BaseballOS object and the page's dominant editorial region: an
-// edition masthead, the lead statement, the boundary, and the governed temporal
+// edition masthead, the lead statement, and the governed temporal
 // context that makes everything below it checkable.
 //
 // Every fact in the rail comes from application state that was already served
@@ -1294,9 +1294,9 @@ function DailyIntelligenceBrief({ freshness, slateDate, teamsEvaluated }) {
     <EditionHeader
       eyebrow="Today's Intelligence Brief"
       editionLabel="MLB BULLPEN INTELLIGENCE — UPDATED DAILY"
+      shortEditionLabel="Updated daily"
       title="See which bullpens are fresh, stretched, or vulnerable tonight — and why."
       standfirst="BaseballOS reads public MLB usage, rest, and roster context after every completed game, then explains how each bullpen is set up tonight — with the date and the evidence each read rests on."
-      boundary="Descriptive only — we show what we see and what we can't. No picks, no predictions."
       facts={briefFacts({ freshness, slateDate, teamsEvaluated })}
       actions={
         <>
@@ -1360,12 +1360,13 @@ function TonightEmptyState({ isError, emptyReason, onRetry }) {
 }
 
 function TonightCard({ card }) {
-  // The first read is the answer: club, headline, schedule context, the
-  // watching sentence, and the watch point. The supporting rows the backend
-  // also authored stay on the page but move behind one native disclosure, so a
-  // phone reader is not handed a miniature intelligence report before the
-  // useful point. Freshness and limitations are never hidden.
+  // The first read is the answer and nothing else: club, headline, the one
+  // supported summary, the watch point, and the strongest evidence cues. The
+  // schedule sentence and the remaining backend-authored rows move behind one
+  // native disclosure, because a phone reader wants the useful point before a
+  // report. Freshness and limitations are never placed behind it.
   const deeperRows = [
+    ["Tonight's schedule", card.teamContext],
     ['Why It Matters Tonight', card.whyItMatters],
     ['Key Note', card.keyNote],
     ['Starter Length', card.starterDependency],
@@ -1379,12 +1380,7 @@ function TonightCard({ card }) {
       <h3 className="bos-card-title mt-3 break-words">
         {card.headline}
       </h3>
-      {card.teamContext && (
-        <p className="bos-support mt-2 text-chalk500">
-          {card.teamContext}
-        </p>
-      )}
-      <p className="bos-evidence mt-4">
+      <p className="bos-evidence mt-3">
         {card.summary}
       </p>
       {card.watchPoint && (
@@ -1394,7 +1390,7 @@ function TonightCard({ card }) {
         </div>
       )}
       {card.evidence.length > 0 && (
-        <EvidenceList items={card.evidence} label="Usage Notes" className="mt-5" />
+        <EvidenceList items={card.evidence} label="Recent evidence" className="mt-5" />
       )}
       {deeperRows.length > 0 && (
         <details className="group mt-5 border-t border-line pt-4">
@@ -1406,9 +1402,7 @@ function TonightCard({ card }) {
           <div className="space-y-4 pb-1 pt-3">
             {deeperRows.map(([label, body]) => (
               <div key={label}>
-                <h4 className="bos-micro">
-                  {label}
-                </h4>
+                <h4 className="bos-micro">{label}</h4>
                 <p className="bos-evidence mt-1.5 text-chalk400">
                   {body}
                 </p>
@@ -1454,45 +1448,42 @@ function SinceYesterdayPrimaryDelta({ delta }) {
   if (!delta) return null
   const net = sinceYesterdayNetLabel(delta.netDelta)
   return (
-    <div className="mt-3">
-      <p className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
-        {delta.label}
-      </p>
-      <p className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-1">
-        <span className="text-3xl font-semibold leading-none tracking-[-0.025em] text-chalk100">
-          <span className="sr-only">Yesterday </span>{delta.previous}
+    // One evidence line rather than a display statistic: the backend-supplied
+    // previous and current values, the label they belong to, and a signed net
+    // only when the backend actually provided one.
+    <p className="mt-4 flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
+      <span className="text-2xl font-semibold leading-none tracking-[-0.025em] text-chalk100">
+        <span className="sr-only">Yesterday </span>{delta.previous}
+      </span>
+      <span aria-hidden="true" className="text-lg leading-none text-chalk600">
+        &#8594;
+      </span>
+      <span className="text-2xl font-semibold leading-none tracking-[-0.025em] text-signal">
+        <span className="sr-only">today </span>{delta.current}
+      </span>
+      <span className="bos-evidence ml-1 text-chalk400">{delta.label}</span>
+      {net && (
+        <span className="bos-value text-xs text-chalk500">
+          <span className="sr-only">net change </span>{net}
         </span>
-        <span aria-hidden="true" className="text-2xl leading-none text-chalk500">
-          →
-        </span>
-        <span className="text-3xl font-semibold leading-none tracking-[-0.025em] text-signal">
-          <span className="sr-only">today </span>{delta.current}
-        </span>
-        {net && (
-          <span className="font-mono text-xs uppercase tracking-wider text-chalk300">
-            <span className="sr-only">net change </span>{net}
-          </span>
-        )}
-      </p>
-    </div>
+      )}
+    </p>
   )
 }
 
 function SinceYesterdayWorkload({ rows }) {
   if (!rows || rows.length === 0) return null
   return (
-    <div className="mt-3">
-      <p className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
+    <div className="mt-4">
+      <p className="bos-micro">
         Worked yesterday
       </p>
-      <ul className="mt-1 space-y-1">
+      <ul className="mt-1.5 space-y-1">
         {rows.map(row => (
-          <li
-            key={row.key}
-            className="flex flex-wrap items-baseline justify-between gap-2 text-sm text-chalk300"
-          >
-            <span>{row.name}</span>
-            <span className="font-mono text-xs uppercase tracking-wider text-chalk500">
+          <li key={row.key} className="bos-evidence flex flex-wrap items-baseline gap-x-2">
+            <span className="text-chalk200">{row.name}</span>
+            <span aria-hidden="true" className="text-chalk600">&middot;</span>
+            <span className="bos-value text-xs">
               {row.pitches} {row.pitches === 1 ? 'pitch' : 'pitches'}
             </span>
           </li>
@@ -1551,29 +1542,30 @@ function SinceYesterdayEvidence({ item }) {
 function SinceYesterdayCard({ item }) {
   const explanation = item.summary || item.headline
   return (
-    <article className="bos-panel flex flex-col p-5">
-      <div className="flex items-start justify-between gap-3">
+    // A log entry rather than a card: opened by a hairline, led by the club and
+    // the backend-authored direction of change, then the delta, then the
+    // supported reason. Nothing here infers a transition or a previous state.
+    <article className="flex flex-col border-t border-line pt-6">
+      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
         <h3 className="bos-kicker">
           {item.teamName}
         </h3>
         {item.movementLabel && (
-          <span className="shrink-0 rounded-edge border border-line-strong px-2 py-0.5 text-[0.6875rem] font-medium uppercase tracking-[0.08em] text-chalk400">
+          <span className="text-sm font-medium text-chalk400">
             {item.movementLabel}
           </span>
         )}
       </div>
       <SinceYesterdayPrimaryDelta delta={item.primaryDelta} />
       {explanation && (
-        <p className="mt-3 text-sm leading-relaxed text-chalk300">{explanation}</p>
+        <p className="bos-evidence mt-3 max-w-measure">{explanation}</p>
       )}
       <SinceYesterdayWorkload rows={item.workloadAdded} />
       {item.context && (
-        <p className="mt-3 text-sm leading-relaxed text-chalk500">
-          <span className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
-            Why it matters{' '}
-          </span>
-          {item.context}
-        </p>
+        <div className="mt-4">
+          <p className="bos-micro">Why it matters</p>
+          <p className="bos-evidence mt-1.5 max-w-measure text-chalk400">{item.context}</p>
+        </div>
       )}
       <SinceYesterdayEvidence item={item} />
       {item.href && (
@@ -1621,7 +1613,7 @@ function SinceYesterdayTabs({ tabs, activeKey, onActivate }) {
       role="tablist"
       aria-label="Movement categories"
       aria-orientation="horizontal"
-      className="mb-4 flex flex-wrap gap-2"
+      className="-mx-3 flex flex-wrap items-center"
       onKeyDown={handleKeyDown}
     >
       {tabs.map(tab => {
@@ -1641,17 +1633,17 @@ function SinceYesterdayTabs({ tabs, activeKey, onActivate }) {
               else tabRefs.current.delete(tab.key)
             }}
             onClick={() => onActivate(tab.key)}
-            className={`inline-flex min-h-11 items-center gap-2 rounded-control border px-3.5 py-2 text-sm font-medium transition-colors focus:outline-none ${
+            className={`relative inline-flex min-h-11 items-center gap-2 px-3 py-2 text-sm font-medium transition-colors focus:outline-none ${
               selected
-                ? 'border-signal/60 bg-signal-well text-chalk100'
-                : 'border-line bg-panel-2 text-chalk300 hover:border-line-strong hover:text-chalk100'
+                ? 'text-chalk100 after:absolute after:inset-x-3 after:bottom-1.5 after:h-[1.5px] after:rounded-sm after:bg-signal'
+                : 'text-chalk500 hover:text-chalk200'
             }`}
           >
             <span>{tab.shortLabel}</span>
             <span
               aria-hidden="true"
-              className={`bos-value text-xs ${
-                selected ? 'text-signal' : 'text-chalk500'
+              className={`bos-value text-[0.6875rem] ${
+                selected ? 'text-signal' : 'text-chalk600'
               }`}
             >
               {tab.count}
@@ -1674,22 +1666,23 @@ function SinceYesterdayLeagueSummary({ summary }) {
   const showSteady = typeof summary.steadyCount === 'number' && summary.steadyCount > 0
   if (rows.length === 0 && !showSteady) return null
   return (
-    <div className="mb-7 border-t border-line pt-5">
+    // Editorial context, not a metric row: the counts read inline inside a
+    // sentence-shaped list so the section opens as a change log rather than as
+    // a set of KPI tiles.
+    <div className="mb-8">
       <h3 className="bos-micro">
         Across MLB since yesterday
       </h3>
-      <ul className="mt-2 flex flex-wrap gap-x-6 gap-y-2">
+      <ul className="mt-3 flex flex-wrap items-baseline gap-x-7 gap-y-2">
         {rows.map(([key, count, label]) => (
-          <li key={key} className="text-sm text-chalk300">
-            <span className="text-xl font-semibold tracking-[-0.02em] text-chalk100">{count}</span>{' '}
+          <li key={key} className="bos-evidence text-chalk300">
+            <span className="bos-value mr-1.5 text-base">{count}</span>
             {label}
           </li>
         ))}
         {showSteady && (
-          <li className="text-sm text-chalk300">
-            <span className="text-xl font-semibold tracking-[-0.02em] text-chalk100">
-              {summary.steadyCount}
-            </span>{' '}
+          <li className="bos-evidence text-chalk300">
+            <span className="bos-value mr-1.5 text-base">{summary.steadyCount}</span>
             remained steady
           </li>
         )}
@@ -1722,11 +1715,8 @@ function SinceYesterdaySteadyDisclosure({ summary }) {
 
 function SinceYesterdayTeamSearch({ query, onChange, onReset }) {
   return (
-    <div className="mb-4 flex flex-wrap items-center gap-2">
-      <label
-        htmlFor={SINCE_YESTERDAY_TEAM_SEARCH_ID}
-        className="bos-support text-chalk500"
-      >
+    <div className="flex flex-wrap items-center gap-2">
+      <label htmlFor={SINCE_YESTERDAY_TEAM_SEARCH_ID} className="sr-only">
         Find a team
       </label>
       <input
@@ -1734,15 +1724,15 @@ function SinceYesterdayTeamSearch({ query, onChange, onReset }) {
         type="search"
         value={query}
         onChange={event => onChange(event.target.value)}
-        placeholder="Team name or abbreviation"
+        placeholder="Find a team"
         autoComplete="off"
-        className="min-h-11 w-full max-w-sm flex-1 rounded-control border border-line bg-panel-2 px-3 py-2 text-sm text-chalk100 placeholder:text-chalk500 focus:border-signal/60 focus:outline-none"
+        className="min-h-11 w-full max-w-[15rem] border-b border-line bg-transparent px-1 py-2 text-sm text-chalk200 placeholder:text-chalk600 transition-colors focus:border-signal/70 focus:outline-none"
       />
       {query && (
         <button
           type="button"
           onClick={onReset}
-          className="bos-action bos-action--quiet"
+          className="min-h-11 px-2 text-sm font-medium text-chalk500 transition-colors hover:text-chalk100 focus:outline-none"
         >
           Reset
         </button>
@@ -1784,12 +1774,12 @@ function SinceYesterdayBriefing({ view }) {
         className="focus:outline-none"
       >
         {clarity && (
-          <p className="mb-3 font-mono text-[11px] leading-relaxed text-chalk500">
+          <p className="mb-7 mt-4 font-mono text-[11px] leading-relaxed text-chalk500">
             {clarity}
           </p>
         )}
         {hasMatches ? (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-x-14 gap-y-9 sm:grid-cols-2">
             {visibleItems.map(item => (
               <SinceYesterdayCard key={item.key} item={item} />
             ))}
@@ -2181,15 +2171,12 @@ function Explore() {
 // language and routes to where the language is used. No concept carries a live
 // value here, because no approved public value exists for one.
 const VOCABULARY_CONCEPTS = [
-  { ...CONCEPT_DEFINITIONS.pressure, to: '/methodology' },
-  { ...CONCEPT_DEFINITIONS.recovery, to: '/methodology' },
-  { ...CONCEPT_DEFINITIONS.concentration, to: '/methodology' },
-  { ...CONCEPT_DEFINITIONS.cleanOptions, to: '/how-to-read' },
-]
-
-const SUPPORTING_VOCABULARY = [
-  SUPPORTING_CONCEPT_DEFINITIONS.coverageSafety,
-  SUPPORTING_CONCEPT_DEFINITIONS.trustedArms,
+  { ...CONCEPT_DEFINITIONS.pressure, glyph: 'pressure', to: '/methodology' },
+  { ...CONCEPT_DEFINITIONS.recovery, glyph: 'recovery', to: '/methodology' },
+  { ...CONCEPT_DEFINITIONS.concentration, glyph: 'concentration', to: '/methodology' },
+  { ...CONCEPT_DEFINITIONS.cleanOptions, glyph: 'cleanOptions', to: '/how-to-read' },
+  { ...SUPPORTING_CONCEPT_DEFINITIONS.coverageSafety, glyph: 'coverageSafety', to: '/how-to-read' },
+  { ...SUPPORTING_CONCEPT_DEFINITIONS.trustedArms, glyph: 'trustedArms', to: '/how-to-read' },
 ]
 
 function IntelligenceVocabulary() {
@@ -2205,22 +2192,25 @@ function IntelligenceVocabulary() {
         </Link>
       }
     >
-      <div className="mb-11">
+      {/* The canonical Team State words come first and stay visually distinct
+          from the concept features below: these three are the public state
+          vocabulary, not descriptive concepts. */}
+      <div className="mb-14 border-t border-line pt-7">
         <p className="bos-micro">The three team reads</p>
-        <ConceptGlossary terms={TEAM_STATE_DEFINITIONS} className="mt-5" />
+        <ConceptGlossary terms={TEAM_STATE_DEFINITIONS} className="mt-6 lg:grid-cols-3" />
       </div>
-      <div className="grid grid-cols-1 gap-x-12 gap-y-8 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-x-14 gap-y-11 sm:grid-cols-2 xl:grid-cols-3">
         {VOCABULARY_CONCEPTS.map(concept => (
           <ConceptCard
             key={concept.name}
             name={concept.name}
             definition={concept.definition}
+            glyph={concept.glyph}
             to={concept.to}
             linkLabel="How this is built"
           />
         ))}
       </div>
-      <ConceptGlossary terms={SUPPORTING_VOCABULARY} className="mt-11" />
     </SectionShell>
   )
 }
@@ -2278,7 +2268,10 @@ function DataTrustBrief({ freshness, slateDate }) {
           </p>
         </div>
       )}
-      <p className="bos-support mt-8 max-w-measure text-chalk500">
+      <p className="bos-meta mt-8 max-w-measure normal-case">
+        Descriptive only — we show what we see and what we can't. No picks, no predictions.
+      </p>
+      <p className="bos-support mt-3 max-w-measure text-chalk500">
         Definitions and worked examples live on{' '}
         <Link to="/methodology" className="text-signal underline underline-offset-4 transition-colors hover:text-chalk100">
           Methodology
@@ -2303,12 +2296,12 @@ function ProductPositioning() {
     >
       {/* Deliberately unframed: a product statement earns its weight from type
           and space, not from a container. */}
-      <div className="bos-depth py-4 sm:py-8">
+      <div className="bos-depth py-6 sm:py-12 lg:py-16">
         <p className="bos-eyebrow bos-eyebrow--brass">What BaseballOS is for</p>
-        <h2 id="what-baseballos-is-for-title" className="bos-lead-headline mt-6 max-w-[18ch]">
+        <h2 id="what-baseballos-is-for-title" className="bos-statement mt-7 max-w-[16ch]">
           Baseball has more public bullpen data than ever.
         </h2>
-        <div className="mt-9 grid max-w-4xl grid-cols-1 gap-x-14 gap-y-5 lg:grid-cols-2">
+        <div className="mt-12 grid max-w-5xl grid-cols-1 gap-x-16 gap-y-7 lg:grid-cols-2">
           <p className="bos-body text-chalk300">
             Understanding it should not mean opening five sites and assembling the
             story yourself — box scores in one place, rest days in another, roster
@@ -2320,7 +2313,8 @@ function ProductPositioning() {
             it rests on, and how current the picture is.
           </p>
         </div>
-        <div className="mt-12 border-t border-line pt-8">
+        {/* The signup is a secondary interaction and is composed to stay one. */}
+        <div className="mt-14 max-w-xl border-t border-line pt-8">
           <AudienceSignupForm />
         </div>
       </div>

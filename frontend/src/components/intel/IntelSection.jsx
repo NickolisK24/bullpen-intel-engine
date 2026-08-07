@@ -27,7 +27,7 @@ export function SectionHeading({
           {title}
         </h2>
         {subtitle && (
-          <p className="bos-support mt-3 max-w-measure">
+          <p className={`bos-support mt-3 ${action ? 'max-w-[52ch]' : 'max-w-measure'}`}>
             {subtitle}
           </p>
         )}

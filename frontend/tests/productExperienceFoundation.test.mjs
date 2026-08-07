@@ -32,6 +32,8 @@ const { IntelligenceSurfaceView } = await server.ssrLoadModule('/src/components/
 const {
   ConceptCard,
   ConceptGlossary,
+  ConceptGlyph,
+  CONCEPT_GLYPH_KEYS,
   EditionHeader,
   EvidenceList,
   IntelNotice,
@@ -256,6 +258,45 @@ const freshness = {
   last_successful_sync: '2026-08-06T10:04:00Z',
   is_current: true,
   sync_status: 'success',
+}
+
+const changedDashboard = {
+  freshness: {
+    data_through: '2026-08-05',
+    last_successful_sync: '2026-08-06T10:04:00Z',
+    is_current: true,
+    sync_status: 'success',
+  },
+  what_changed_since_yesterday: {
+    capability: 'what_changed_since_yesterday_public_v1',
+    state: 'changes_detected',
+    comparison: {
+      comparison_available: true,
+      previous_data_through: '2026-08-04',
+      current_data_through: '2026-08-05',
+    },
+    ordering_basis: 'team_abbreviation_then_team_name',
+    item_count: 1,
+    summary: {
+      meaningful_change_count: 1,
+      more_breathing_room_count: 1,
+      tighter_today_count: 0,
+      structure_changed_count: 0,
+      other_meaningful_change_count: 0,
+      counts_complete: true,
+    },
+    items: [{
+      key: 'NYM', team_id: 121, team_name: 'New York Mets', team_abbreviation: 'NYM',
+      movement_lane: 'more_breathing_room', movement_label: 'More breathing room',
+      primary_delta: { label: 'Rested relievers', previous: 3, current: 5, net_delta: 2 },
+      public_headline: 'Mets bullpen has more breathing room today.',
+      public_summary: 'New York has more usable late-inning margin than yesterday.',
+      public_context: 'That creates more ways through a close game tonight.',
+      yesterday_rested_count: 3,
+      today_rested_count: 5,
+      workload_added: [{ name: 'Reed Garrett', pitches: 21 }],
+    }],
+  },
 }
 
 const landscape = {
@@ -522,6 +563,120 @@ test('Team State stays readable without colour and without the mono face', () =>
   assert.ok(htmlIncludes(html, 'Team State: '))
   assert.ok(htmlIncludes(html, 'Fresh'))
   assert.equal(htmlIncludes(html, 'font-mono'), false)
+})
+
+// ── Third-pass art-direction contracts ──────────────────────────────────────
+
+test('the concept glyphs are decorative marks that cannot carry a value', () => {
+  const glyphSource = readFileSync(new URL('../src/components/intel/ConceptGlyph.jsx', import.meta.url), 'utf8')
+  const code = glyphSource.replace(/^\s*\/\/.*$/gm, '')
+
+  // Fixed geometry only. The component takes a concept name and a class, never
+  // a number, so no glyph can become a gauge, meter, ring, or rating.
+  assert.match(code, /function ConceptGlyph\(\{ name, className = '' \}\)/)
+  // No path, radius, angle, or opacity is interpolated from anything.
+  assert.equal(/(d|r|cx|cy|strokeOpacity|opacity)=\{/.test(code), false, 'geometry is never computed')
+  assert.equal(/<text|textContent/.test(code), false, 'a glyph never renders text')
+  // Hand-authored inline SVG — no icon library import.
+  assert.equal(/^import .*(icon|lucide|heroicon|feather)/im.test(code), false)
+
+  const html = render(React.createElement(ConceptCard, {
+    name: 'Recovery Window',
+    definition: 'How much clean rest the bullpen has available.',
+    glyph: 'recovery',
+    to: '/methodology',
+  }))
+  assert.ok(htmlIncludes(html, '<svg'))
+  assert.ok(htmlIncludes(html, 'aria-hidden="true"'))
+  assert.ok(htmlIncludes(html, 'focusable="false"'))
+  // The name still carries the meaning as text.
+  assert.ok(htmlIncludes(html, 'Recovery Window'))
+  // And the card still holds no digit of any kind.
+  assert.equal(/\d/.test(visibleText(html)), false, visibleText(html))
+})
+
+test('an unknown glyph name renders nothing rather than a placeholder mark', () => {
+  assert.equal(render(React.createElement(ConceptGlyph, { name: 'not-a-concept' })), '')
+  assert.equal(render(React.createElement(ConceptGlyph, {})), '')
+  // Every named concept the vocabulary uses has a mark.
+  for (const key of ['pressure', 'recovery', 'concentration', 'cleanOptions', 'coverageSafety', 'trustedArms']) {
+    assert.ok(CONCEPT_GLYPH_KEYS.includes(key), key)
+  }
+})
+
+test('the canonical Team State words stay text and stay out of the concept features', () => {
+  const html = render(React.createElement(IntelligenceSurfaceView, {
+    dashboard: { freshness },
+    landscape,
+    teams,
+  }))
+  const vocabulary = html.slice(html.indexOf('id="vocabulary"'), html.indexOf('id="data-and-trust"'))
+
+  // The three reads are present as plain text definitions...
+  for (const label of ['Fresh', 'Stretched', 'Vulnerable']) {
+    assert.ok(htmlIncludes(vocabulary, `>${label}<`), label)
+  }
+  // ...and the state list itself is never dressed as a concept feature.
+  const stateList = render(React.createElement(ConceptGlossary, {
+    terms: [
+      { name: 'Fresh', definition: 'The bullpen comes in mostly rested, with room to maneuver late.' },
+      { name: 'Stretched', definition: 'The bullpen is thin on rested arms after recent work.' },
+      { name: 'Vulnerable', definition: 'Little late-inning margin remains if the game runs long.' },
+    ],
+  }))
+  assert.equal(htmlIncludes(stateList, '<svg'), false, 'state words carry no glyph')
+  assert.ok(htmlIncludes(stateList, '<dl'), 'the three reads stay a definition list')
+})
+
+test('the descriptive-only boundary sits in the trust context, not the lead region', () => {
+  const html = render(React.createElement(IntelligenceSurfaceView, {
+    dashboard: { freshness },
+    landscape,
+    teams,
+  }))
+  const boundary = 'Descriptive only'
+  const brief = html.slice(0, html.indexOf('id="bullpen-picture"'))
+  const trust = html.slice(html.indexOf('id="data-and-trust"'))
+
+  // The governance statement stays on the page...
+  assert.ok(htmlIncludes(html, boundary))
+  // ...but not inside the opening reading path.
+  assert.equal(htmlIncludes(brief, boundary), false)
+  assert.ok(htmlIncludes(trust, boundary))
+})
+
+test('What Changed keeps its controls, evidence, and comparison contract', () => {
+  const html = render(React.createElement(IntelligenceSurfaceView, {
+    dashboard: changedDashboard,
+    landscape,
+    teams,
+  }))
+  const changed = html.slice(html.indexOf('SINCE YESTERDAY'), html.indexOf('id="tonight"'))
+
+  // Controls survive the visual quietening, including roving keyboard wiring.
+  assert.ok(htmlIncludes(changed, 'role="tablist"'))
+  assert.ok(htmlIncludes(changed, 'role="tabpanel"'))
+  assert.ok(htmlIncludes(changed, 'aria-selected="true"'))
+  assert.ok(htmlIncludes(changed, 'tabindex="-1"'))
+  assert.ok(htmlIncludes(changed, 'type="search"'))
+  assert.ok(htmlIncludes(changed, 'Find a team'))
+
+  // The comparison contract is still stated, and both dates still render.
+  assert.ok(htmlIncludes(changed, 'Previous view'))
+  assert.ok(htmlIncludes(changed, 'Current view'))
+
+  // Backend-authored change copy renders verbatim, and the delta keeps its
+  // supplied label rather than a frontend recasing of it.
+  assert.ok(htmlIncludes(changed, 'New York has more usable late-inning margin than yesterday.'))
+  assert.ok(htmlIncludes(changed, 'Rested relievers'))
+  assert.ok(htmlIncludes(changed, 'Reed Garrett'))
+  assert.ok(htmlIncludes(changed, 'View evidence'))
+
+  // Nothing infers a transition: only supplied previous/current values appear.
+  const text = visibleText(changed)
+  for (const banned of ['likely', 'expected', 'projected', 'trending', 'because of tomorrow']) {
+    assert.equal(new RegExp(escapeRegExp(banned), 'i').test(text), false, banned)
+  }
 })
 
 test('the Today edition exposes one landmark-labelled section per region', () => {
