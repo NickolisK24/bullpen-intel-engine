@@ -10,7 +10,7 @@ produces ``medium`` + a supported status with an explicit limitation, and a
 genuinely insufficient bullpen stays ``low`` / ``data_limited``.
 """
 
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 
 import pytest
 from flask import Flask
@@ -21,6 +21,7 @@ from models.pitcher import Pitcher
 from models.postgame_processed_game import PostgameProcessedGame
 from models.scheduled_game import ScheduledGame
 from models.sync_run import SyncRun
+from services.availability_reference_date import product_current_date
 from services.share_artifact_generation import resolve_team_readiness_payload
 from tests.db_config import configure_test_database, create_test_schema, drop_test_schema
 from tests.roster_readiness_fixture import seed_roster_readiness_snapshots
@@ -28,6 +29,34 @@ from utils.db import db
 
 
 TEAM_ID = 7
+
+
+def _product_today():
+    """The one calendar authority this module seeds against.
+
+    Every seeded appearance date must come from here, never from
+    ``date.today()``. The resolver derives its availability reference date from
+    stored workload coverage (latest workload date + 1) and judges roster
+    snapshot coverage on the BaseballOS product calendar day
+    (``America/New_York``), which is also what ``seed_roster_readiness_snapshots``
+    uses. Seeding appearances against the host UTC day instead left the fixture
+    describing two different "todays" during the 00:00-04:00 UTC window, when
+    the UTC and Eastern calendar dates differ:
+
+        appearances seeded on the UTC day   -> newest workload one day later
+        snapshots seeded on the product day -> newest coverage one day earlier
+
+    The stress case then pushed the availability reference date one day past
+    the newest seeded roster snapshot, the active-bullpen population resolved
+    to zero, and the payload correctly failed closed to ``data_limited``. That
+    was the fixture contradicting itself, not the trust model misbehaving.
+
+    A single moving product date is used rather than a frozen constant because
+    these tests assert ``data_state == 'fresh'``: staleness is judged against
+    the current product day, so a hard-coded past date would make the seeded
+    coverage genuinely stale and change what the tests exercise.
+    """
+    return product_current_date()
 
 
 @pytest.fixture
@@ -68,7 +97,7 @@ def _add_reliever(seed, *, usable=True, hand='R'):
 
     # Two prior, complete relief appearances so Role Authority classifies a reliever.
     for offset in (2, 4):
-        gd = date.today() - timedelta(days=offset)
+        gd = _product_today() - timedelta(days=offset)
         gpk = 991000 + seed * 10 + offset
         db.session.add(GameLog(
             pitcher_id=pitcher.id, mlb_game_pk=gpk, game_date=gd,
@@ -89,7 +118,7 @@ def _add_reliever(seed, *, usable=True, hand='R'):
         # Latest appearance carries incomplete source data (null pitch count) ->
         # data_state 'incomplete' -> unresolved, while still a real appearance
         # (innings recorded) so the pitcher stays a classified bullpen arm.
-        gd = date.today() - timedelta(days=1)
+        gd = _product_today() - timedelta(days=1)
         gpk = 991000 + seed * 10 + 1
         db.session.add(GameLog(
             pitcher_id=pitcher.id, mlb_game_pk=gpk, game_date=gd,
@@ -121,8 +150,8 @@ def _add_reliever(seed, *, usable=True, hand='R'):
 def _add_sync_run():
     db.session.add(SyncRun(
         started_at=datetime(2026, 6, 3, 7, 30, 0), completed_at=datetime(2026, 6, 3, 7, 44, 27),
-        status='success', source='scheduled', latest_game_date=date.today(),
-        latest_workload_date=date.today(), latest_fatigue_calculated_at=datetime(2026, 6, 3, 7, 44, 27),
+        status='success', source='scheduled', latest_game_date=_product_today(),
+        latest_workload_date=_product_today(), latest_fatigue_calculated_at=datetime(2026, 6, 3, 7, 44, 27),
         records_processed=12, new_logs_added=6, pitchers_updated=2, errors=0,
         created_at=datetime(2026, 6, 3, 7, 30, 0),
     ))
@@ -194,7 +223,7 @@ def _add_starter(seed):
 
     # Starts on a normal rotation turn, the most recent one yesterday.
     for offset in (1, 6, 11):
-        gd = date.today() - timedelta(days=offset)
+        gd = _product_today() - timedelta(days=offset)
         gpk = 981000 + seed * 10 + offset
         db.session.add(GameLog(
             pitcher_id=pitcher.id, mlb_game_pk=gpk, game_date=gd,
@@ -267,7 +296,7 @@ def test_a_genuine_bullpen_stress_trigger_still_reaches_stressed(app):
 
     # A real active-bullpen member worked heavily yesterday.
     stressed_arm = Pitcher.query.filter_by(mlb_id=990001).one()
-    gd = date.today() - timedelta(days=1)
+    gd = _product_today() - timedelta(days=1)
     gpk = 995001
     db.session.add(GameLog(
         pitcher_id=stressed_arm.id, mlb_game_pk=gpk, game_date=gd,
