@@ -512,9 +512,13 @@ dead-lettered merely because the budget was reached.
 
 ## Execution budget
 
-Existing production budgets are unchanged (`DAILY_SYNC_TOTAL_BUDGET_SECONDS`
-1080, ingestion cap 720, `FINAL_PHASE_RESERVE` 300). Nothing here raises a
-timeout.
+Nothing in this lane raises a timeout. The production budget values are owned by
+the workflow and documented in
+[`SYNC_PIPELINE.md`](SYNC_PIPELINE.md#runtime-budgets-and-profiling); the
+OPS-002 mitigation set them to `DAILY_SYNC_TOTAL_BUDGET_SECONDS` 2200, combined
+ingestion cap 1500, and `FINAL_PHASE_RESERVE` 300. **That mitigation did not
+promote this lane**: it remains shadow, zero-write, and non-authoritative, and
+its share of the pool is still 25 %.
 
 At the budget threshold the lane stops intake, finishes or rolls back the
 current game transaction, persists the remaining work as resumable `planned`
@@ -524,12 +528,39 @@ publication.
 **Budget exhaustion is not a terminal dead-letter condition. It is an
 incomplete, resumable run state.**
 
-Budget split while the lane is not yet publication-authoritative: it runs inside
-a bounded share of the ingestion budget (`GAME_DRIVEN_INGESTION_BUDGET_SHARE`,
-default 0.25) so Stage B/C production evidence can be gathered without
-endangering the loop that is still authoritative. Once authoritative it *is* the
-critical lane and may use the whole ingestion budget; whatever it does not use
-falls through to the demoted best-effort loop.
+### The pool is shared, and the lane is charged for what it actually uses
+
+The `ingestion_budget_seconds` this lane is measured against is a **combined
+pool**, not a lane allowance and not a gameLog allowance:
+
+```
+combined_ingestion_pool = min(configured_cap, max(total_budget − elapsed_before_ingestion, 0) − final_reserve)
+shadow_lane_allocation  = combined_ingestion_pool × 0.25
+legacy_gamelog_budget   = combined_ingestion_pool − shadow_lane_ACTUAL_elapsed
+```
+
+- The pool is computed **before** this lane runs, so the lane is a *consumer*
+  of it and never part of `elapsed_before_ingestion`.
+- While not publication-authoritative the lane runs inside a bounded share
+  (`GAME_DRIVEN_INGESTION_BUDGET_SHARE`, default **0.25**) so Stage B/C
+  production evidence can be gathered without endangering the loop that is
+  still authoritative.
+- **Unused time is returned.** What is subtracted before the legacy writer
+  starts is the lane's *actual* elapsed time, not its allocation. On August 6,
+  run `31097712768` was allocated 104.75s, used 56.263s, and handed back
+  48.487s.
+- **A lane that raises is still charged.** Its measured wall clock is
+  subtracted too, because that time is genuinely gone from the run. The failure
+  stays fail-soft — it does not abort `public-sync` and does not by itself fail
+  publication — but it can no longer tell the legacy writer it has time the run
+  does not have.
+- The **1500s cap is a ceiling, not an allocation.** Under observed upstream
+  timings it does not bind at all; the derived pool is what binds.
+
+Once authoritative this lane *is* the critical lane and may use the whole
+ingestion pool; whatever it does not use falls through to the demoted
+best-effort loop. **That authority has not transferred and is not part of the
+OPS-002 mitigation.**
 
 ## Correction detection
 

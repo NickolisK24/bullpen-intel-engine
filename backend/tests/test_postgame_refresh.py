@@ -667,11 +667,16 @@ def test_intelligence_surface_snapshot_timeout_is_logged_and_fail_soft(
     ), messages
 
 
-def test_postgame_sync_workflow_job_timeout_is_40_minutes():
+def test_postgame_sync_workflow_job_timeout_covers_the_worst_case_steps():
     """Static guard: the sync job timeout must give the postgame path enough
     headroom for the homepage rebuild (regression lock for the 15m
-    cancellation) plus the appearance ledger audit step — worst case is
-    20m sync + 10m tonight warm + 5m ledger audit."""
+    cancellation) plus the appearance ledger audit step.
+
+    OPS-002 moved the worst case from 20m sync + 10m tonight + 5m ledger to
+    40m sync + 10m tonight + 5m ledger, so the job timeout moved 40 -> 60 with
+    it. The regression this guard exists for is unchanged: the job must never
+    be able to expire while the daily shell timeout is still running, because
+    that would take the always() ledger and cache proofs down with it."""
     from pathlib import Path
 
     workflow = Path(__file__).resolve().parents[2] / '.github/workflows/baseballos-sync.yml'
@@ -686,7 +691,7 @@ def test_postgame_sync_workflow_job_timeout_is_40_minutes():
         sync_lines.append(line)
     sync_block = '\n'.join(sync_lines)
 
-    assert '    timeout-minutes: 40' in sync_block
+    assert '    timeout-minutes: 60' in sync_block
     assert "    - cron: '0 10 * * *'" in text
     assert "    - cron: '0 14 * * *'" in text
     assert "    - cron: '0 2,4,6 * * *'" in text
@@ -747,10 +752,13 @@ def test_sync_workflow_direct_sync_steps_have_command_timeouts():
     daily_block = text.split(daily_step, 1)[1].split('\n      - name:', 1)[0]
     postgame_block = text.split(postgame_step, 1)[1].split('\n      - name:', 1)[0]
 
-    assert 'DAILY_SYNC_COMMAND_TIMEOUT: 20m' in daily_block
-    assert "DAILY_SYNC_TOTAL_BUDGET_SECONDS: '1080'" in daily_block
+    # OPS-002 mitigation values. The daily budget was raised because the
+    # publication-critical GameLog writer was receiving 112-125s of a shared
+    # pool for work needing 767-895s; the postgame timeout below is unchanged.
+    assert 'DAILY_SYNC_COMMAND_TIMEOUT: 40m' in daily_block
+    assert "DAILY_SYNC_TOTAL_BUDGET_SECONDS: '2200'" in daily_block
     assert "DAILY_SYNC_FINAL_PHASE_RESERVE_SECONDS: '300'" in daily_block
-    assert "DAILY_SYNC_INGESTION_BUDGET_SECONDS: '720'" in daily_block
+    assert "DAILY_SYNC_INGESTION_BUDGET_SECONDS: '1500'" in daily_block
     assert 'Direct daily sync starting at' in daily_block
     assert 'Direct daily sync completed at' in daily_block
     assert (
