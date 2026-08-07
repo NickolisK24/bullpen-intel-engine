@@ -889,7 +889,7 @@ function SectionFreshnessRow({
   const sample = isSampleFreshness(freshness)
   if (!dataThrough && !lastSync && !stale && !freshness) return null
   return (
-    <div className={`mb-3 flex flex-wrap items-center gap-2 ${className}`}>
+    <div className={`mb-6 flex flex-wrap items-center gap-x-5 gap-y-2 ${className}`}>
       <FreshnessBadge
         state={stale ? 'stale' : 'current'}
         freshness={freshness}
@@ -898,7 +898,7 @@ function SectionFreshnessRow({
       <DataThroughStamp date={dataThrough} label={dataThroughLabel} />
       <LastSyncLabel value={lastSync} />
       {sample && (
-        <span className="font-mono text-[11px] uppercase tracking-widest text-chalk500">
+        <span className="font-mono text-[11px] tracking-[0.02em] text-chalk500">
           Not live MLB data.
         </span>
       )}
@@ -922,7 +922,7 @@ function TonightFreshnessRow({
     : null
   if (!slateDate && !dataThrough && !lastSync && !generatedAt && !stale && !freshness) return null
   return (
-    <div className="mb-3 flex flex-wrap items-center gap-2">
+    <div className="mb-6 flex flex-wrap items-center gap-x-5 gap-y-2">
       <SlateDateStamp date={slateDate} />
       {(dataThrough || lastSync || stale || freshness) && (
         <FreshnessBadge
@@ -935,7 +935,7 @@ function TonightFreshnessRow({
       <LastSyncLabel value={generatedAt} label="Tonight watch generated" />
       <LastSyncLabel value={lastSync} />
       {sample && (
-        <span className="font-mono text-[11px] uppercase tracking-widest text-chalk500">
+        <span className="font-mono text-[11px] tracking-[0.02em] text-chalk500">
           Not live MLB data.
         </span>
       )}
@@ -1176,7 +1176,7 @@ export function AudienceSignupFormView({
     >
       <label
         htmlFor="audience-signup-email"
-        className="mb-2 block font-mono text-[11px] uppercase tracking-[0.18em] text-chalk300"
+        className="mb-3 block text-[0.9375rem] font-medium text-chalk200"
       >
         Get BaseballOS bullpen notes in your inbox.
       </label>
@@ -1205,7 +1205,7 @@ export function AudienceSignupFormView({
       </div>
       <p
         id="audience-signup-message"
-        className={`mt-2 text-xs leading-relaxed ${messageTone}`}
+        className={`mt-3 text-[0.8125rem] leading-relaxed ${messageTone}`}
         role={isInvalid || isError ? 'alert' : 'status'}
         aria-live="polite"
       >
@@ -1295,7 +1295,7 @@ function DailyIntelligenceBrief({ freshness, slateDate, teamsEvaluated }) {
       eyebrow="Today's Intelligence Brief"
       editionLabel="MLB BULLPEN INTELLIGENCE — UPDATED DAILY"
       title="See which bullpens are fresh, stretched, or vulnerable tonight — and why."
-      standfirst="BaseballOS reads public MLB usage and workload after every game, so you can tell which pens are gassed and which are loaded — with the data date and confidence always shown."
+      standfirst="BaseballOS reads public MLB usage, rest, and roster context after every completed game, then explains how each bullpen is set up tonight — with the date and the evidence each read rests on."
       boundary="Descriptive only — we show what we see and what we can't. No picks, no predictions."
       facts={briefFacts({ freshness, slateDate, teamsEvaluated })}
       actions={
@@ -1314,7 +1314,7 @@ function DailyIntelligenceBrief({ freshness, slateDate, teamsEvaluated }) {
 
 function TonightLoadingState() {
   return (
-    <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+    <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
       <IntelSkeleton label="Reading tonight's bullpen context..." lines={3} />
       <IntelSkeleton label="Reading tonight's bullpen context..." lines={3} className="hidden md:block" />
       <IntelSkeleton label="Reading tonight's bullpen context..." lines={3} className="hidden xl:block" />
@@ -1360,48 +1360,65 @@ function TonightEmptyState({ isError, emptyReason, onRetry }) {
 }
 
 function TonightCard({ card }) {
-  const storyRows = [
+  // The first read is the answer: club, headline, schedule context, the
+  // watching sentence, and the watch point. The supporting rows the backend
+  // also authored stay on the page but move behind one native disclosure, so a
+  // phone reader is not handed a miniature intelligence report before the
+  // useful point. Freshness and limitations are never hidden.
+  const deeperRows = [
     ['Why It Matters Tonight', card.whyItMatters],
     ['Key Note', card.keyNote],
     ['Starter Length', card.starterDependency],
-    ['Watch Point', card.watchPoint],
   ].filter(([, body]) => Boolean(body))
 
   return (
-    <article className="bos-panel flex min-w-0 flex-col p-4 sm:p-5">
-      <div className="font-mono text-[11px] uppercase tracking-[0.18em] text-brass">
+    <article className="bos-panel flex min-w-0 flex-col p-5 sm:p-6">
+      <div className="bos-kicker">
         {card.teamName}
       </div>
       <h3 className="bos-card-title mt-3 break-words">
         {card.headline}
       </h3>
       {card.teamContext && (
-        <p className="bos-meta mt-2 normal-case">
+        <p className="bos-support mt-2 text-chalk500">
           {card.teamContext}
         </p>
       )}
-      <p className="bos-evidence mt-3 text-chalk300">
+      <p className="bos-evidence mt-4">
         {card.summary}
       </p>
-      {storyRows.length > 0 && (
-        <div className="mt-4 space-y-3 border-t border-line pt-4">
-          {storyRows.map(([label, body]) => (
-            <div key={label}>
-              <h4 className="bos-micro">
-                {label}
-              </h4>
-              <p className="bos-evidence mt-1 text-chalk400">
-                {body}
-              </p>
-            </div>
-          ))}
+      {card.watchPoint && (
+        <div className="mt-5">
+          <h4 className="bos-micro">Watch Point</h4>
+          <p className="bos-evidence mt-1.5 text-chalk400">{card.watchPoint}</p>
         </div>
       )}
       {card.evidence.length > 0 && (
-        <EvidenceList items={card.evidence} label="Usage Notes" className="mt-4 border-t border-line pt-4" />
+        <EvidenceList items={card.evidence} label="Usage Notes" className="mt-5" />
+      )}
+      {deeperRows.length > 0 && (
+        <details className="group mt-5 border-t border-line pt-4">
+          <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 text-sm font-medium text-signal transition-colors hover:text-chalk100 focus:outline-none">
+            <span className="group-open:hidden">More on this read</span>
+            <span className="hidden group-open:inline">Less on this read</span>
+            <span aria-hidden="true" className="text-xs opacity-70 group-open:rotate-180">&#9662;</span>
+          </summary>
+          <div className="space-y-4 pb-1 pt-3">
+            {deeperRows.map(([label, body]) => (
+              <div key={label}>
+                <h4 className="bos-micro">
+                  {label}
+                </h4>
+                <p className="bos-evidence mt-1.5 text-chalk400">
+                  {body}
+                </p>
+              </div>
+            ))}
+          </div>
+        </details>
       )}
       {card.limitations.length > 0 && (
-        <div className="mt-4 border-t border-line pt-3">
+        <div className="mt-5 border-t border-line pt-4">
           <h4 className="bos-micro">
             Limitations
           </h4>
@@ -1417,10 +1434,11 @@ function TonightCard({ card }) {
       {card.href && (
         <Link
           to={card.href}
-          className="bos-action bos-action--quiet mt-auto w-fit pt-2.5"
+          className="bos-link mt-auto w-fit pt-5"
           aria-label={`Open the bullpen board for ${card.teamName}`}
         >
           View Team Bullpen State
+          <span aria-hidden="true">&#8594;</span>
         </Link>
       )}
     </article>
@@ -1441,13 +1459,13 @@ function SinceYesterdayPrimaryDelta({ delta }) {
         {delta.label}
       </p>
       <p className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-1">
-        <span className="font-display text-3xl leading-none tracking-wide text-chalk100">
+        <span className="text-3xl font-semibold leading-none tracking-[-0.025em] text-chalk100">
           <span className="sr-only">Yesterday </span>{delta.previous}
         </span>
-        <span aria-hidden="true" className="font-display text-2xl leading-none text-chalk500">
+        <span aria-hidden="true" className="text-2xl leading-none text-chalk500">
           →
         </span>
-        <span className="font-display text-3xl leading-none tracking-wide text-signal">
+        <span className="text-3xl font-semibold leading-none tracking-[-0.025em] text-signal">
           <span className="sr-only">today </span>{delta.current}
         </span>
         {net && (
@@ -1503,12 +1521,13 @@ function SinceYesterdayEvidence({ item }) {
   const rows = item.publicEvidence
   if (!showRested && rows.length === 0) return null
   return (
-    <details className="group mt-3 rounded-panel border border-line bg-panel-2">
-      <summary className="flex min-h-10 cursor-pointer list-none items-center gap-2 px-3 py-2 font-mono text-[11px] uppercase tracking-[0.18em] text-chalk400 transition-colors hover:text-signal focus:outline-none">
+    <details className="group mt-4 border-t border-line pt-1">
+      <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 text-sm font-medium text-signal transition-colors hover:text-chalk100 focus:outline-none">
         <span className="group-open:hidden">View evidence</span>
         <span className="hidden group-open:inline">Hide evidence</span>
+        <span aria-hidden="true" className="text-xs opacity-70 group-open:rotate-180">&#9662;</span>
       </summary>
-      <dl className="space-y-2 border-t border-line px-3 py-3">
+      <dl className="space-y-2 pb-2">
         {showRested && (
           <SinceYesterdayEvidenceRow
             label="Rested relievers"
@@ -1532,13 +1551,13 @@ function SinceYesterdayEvidence({ item }) {
 function SinceYesterdayCard({ item }) {
   const explanation = item.summary || item.headline
   return (
-    <article className="bos-panel flex flex-col p-4">
+    <article className="bos-panel flex flex-col p-5">
       <div className="flex items-start justify-between gap-3">
-        <h3 className="font-mono text-[11px] uppercase tracking-widest text-chalk500">
+        <h3 className="bos-kicker">
           {item.teamName}
         </h3>
         {item.movementLabel && (
-          <span className="shrink-0 rounded-edge border border-line-strong bg-panel-2 px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.14em] text-chalk300">
+          <span className="shrink-0 rounded-edge border border-line-strong px-2 py-0.5 text-[0.6875rem] font-medium uppercase tracking-[0.08em] text-chalk400">
             {item.movementLabel}
           </span>
         )}
@@ -1561,10 +1580,11 @@ function SinceYesterdayCard({ item }) {
         <div className="mt-4">
           <Link
             to={item.href}
-            className="bos-action bos-action--primary"
+            className="bos-link"
             aria-label={`Open the bullpen board for ${item.teamName}`}
           >
             Open bullpen board
+            <span aria-hidden="true">&#8594;</span>
           </Link>
         </div>
       )}
@@ -1621,7 +1641,7 @@ function SinceYesterdayTabs({ tabs, activeKey, onActivate }) {
               else tabRefs.current.delete(tab.key)
             }}
             onClick={() => onActivate(tab.key)}
-            className={`inline-flex min-h-11 items-center gap-2 rounded-control border px-3 py-2 font-mono text-xs uppercase tracking-[0.14em] transition-colors focus:outline-none ${
+            className={`inline-flex min-h-11 items-center gap-2 rounded-control border px-3.5 py-2 text-sm font-medium transition-colors focus:outline-none ${
               selected
                 ? 'border-signal/60 bg-signal-well text-chalk100'
                 : 'border-line bg-panel-2 text-chalk300 hover:border-line-strong hover:text-chalk100'
@@ -1630,7 +1650,7 @@ function SinceYesterdayTabs({ tabs, activeKey, onActivate }) {
             <span>{tab.shortLabel}</span>
             <span
               aria-hidden="true"
-              className={`font-display text-sm leading-none tracking-wide ${
+              className={`bos-value text-xs ${
                 selected ? 'text-signal' : 'text-chalk500'
               }`}
             >
@@ -1654,20 +1674,20 @@ function SinceYesterdayLeagueSummary({ summary }) {
   const showSteady = typeof summary.steadyCount === 'number' && summary.steadyCount > 0
   if (rows.length === 0 && !showSteady) return null
   return (
-    <div className="mb-5 rounded-panel border border-line bg-panel p-4 sm:p-5">
+    <div className="mb-7 border-t border-line pt-5">
       <h3 className="bos-micro">
         Across MLB since yesterday
       </h3>
       <ul className="mt-2 flex flex-wrap gap-x-6 gap-y-2">
         {rows.map(([key, count, label]) => (
           <li key={key} className="text-sm text-chalk300">
-            <span className="font-display text-xl tracking-wide text-chalk100">{count}</span>{' '}
+            <span className="text-xl font-semibold tracking-[-0.02em] text-chalk100">{count}</span>{' '}
             {label}
           </li>
         ))}
         {showSteady && (
           <li className="text-sm text-chalk300">
-            <span className="font-display text-xl tracking-wide text-chalk100">
+            <span className="text-xl font-semibold tracking-[-0.02em] text-chalk100">
               {summary.steadyCount}
             </span>{' '}
             remained steady
@@ -1684,13 +1704,13 @@ function SinceYesterdaySteadyDisclosure({ summary }) {
   }
   const teams = summary.steadyTeams || []
   return (
-    <details className="group mt-5 rounded-panel border border-line bg-panel">
-      <summary className="min-h-11 cursor-pointer list-none px-4 py-3 text-sm text-chalk300 transition-colors hover:bg-panel-2 focus:outline-none">
+    <details className="group mt-7 border-t border-line">
+      <summary className="min-h-11 cursor-pointer list-none py-4 text-sm text-chalk300 transition-colors hover:text-chalk100 focus:outline-none">
         {summary.steadyCount} {summary.steadyCount === 1 ? 'team' : 'teams'} had no meaningful
         bullpen movement in this comparison.
       </summary>
       {teams.length > 0 && (
-        <ul className="flex flex-wrap gap-x-4 gap-y-1 border-t border-line px-4 py-3 text-sm text-chalk500">
+        <ul className="flex flex-wrap gap-x-5 gap-y-1 border-t border-line py-3 text-sm text-chalk500">
           {teams.map(team => (
             <li key={team.teamId ?? team.teamAbbr ?? team.teamName}>{team.teamName}</li>
           ))}
@@ -1705,7 +1725,7 @@ function SinceYesterdayTeamSearch({ query, onChange, onReset }) {
     <div className="mb-4 flex flex-wrap items-center gap-2">
       <label
         htmlFor={SINCE_YESTERDAY_TEAM_SEARCH_ID}
-        className="bos-micro"
+        className="bos-support text-chalk500"
       >
         Find a team
       </label>
@@ -1769,13 +1789,13 @@ function SinceYesterdayBriefing({ view }) {
           </p>
         )}
         {hasMatches ? (
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             {visibleItems.map(item => (
               <SinceYesterdayCard key={item.key} item={item} />
             ))}
           </div>
         ) : (
-          <div className="rounded-panel border border-line bg-panel p-4" role="status">
+          <div className="border-t border-line pt-5" role="status">
             <p className="text-sm leading-relaxed text-chalk300">
               No published movement in this tab matches “{trimmedQuery}”. That does not mean those
               teams were steady — reset to see every team with movement here.
@@ -1800,7 +1820,7 @@ function SinceYesterdayQuiet({ view }) {
   return (
     <>
       <SinceYesterdayLeagueSummary summary={view.summary} />
-      <div className="rounded-panel border border-line bg-panel p-4 sm:p-6" role="status">
+      <div className="border-t border-line pt-6" role="status">
         <p className="bos-body max-w-measure text-chalk300">{view.quietCopy}</p>
       </div>
       <SinceYesterdaySteadyDisclosure summary={view.summary} />
@@ -1821,7 +1841,7 @@ function SinceYesterdaySection({ dashboard, teams }) {
       subtitle={SINCE_YESTERDAY_EXPLAINER}
     >
       {(view.previousDate || view.currentDate) && (
-        <div className="mb-3 flex flex-wrap items-center gap-2">
+        <div className="mb-6 flex flex-wrap items-center gap-x-5 gap-y-2">
           <DataThroughStamp date={view.previousDate} label="Previous view" />
           <DataThroughStamp date={view.currentDate} label="Current view" />
         </div>
@@ -1831,7 +1851,7 @@ function SinceYesterdaySection({ dashboard, teams }) {
       ) : view.state === 'no_meaningful_changes' ? (
         <SinceYesterdayQuiet view={view} />
       ) : (
-        <div className="rounded-panel border border-line bg-panel p-4 sm:p-6" role="status">
+        <div className="border-t border-line pt-6" role="status">
           <p className="bos-body max-w-measure text-chalk300">
             {view.unavailableCopy}
           </p>
@@ -1922,7 +1942,7 @@ function TonightSection({
           ))}
         </div>
         {sectionLimitations.length > 0 && (
-          <div className="mt-4 rounded-panel border border-line bg-panel p-4">
+          <div className="mt-8 border-t border-line pt-5">
             <h3 className="bos-micro">
               Limitations
             </h3>
@@ -1987,9 +2007,8 @@ function BullpenPicture({
   return (
     <SectionShell
       id="bullpen-picture"
-      eyebrow="Today's Bullpen Picture"
       title="Today's Bullpen Picture"
-      subtitle="A quick look at which bullpens look rested and available, stretched, or on watch."
+      subtitle="Where each bullpen sits across the league right now, and which clubs are worth opening first."
     >
       {loading && !landscape ? (
         <IntelSkeleton label="Loading bullpen picture..." lines={2} />
@@ -2021,69 +2040,71 @@ function BullpenPicture({
           {/* League overview: one backend-supplied standout per lane, with the
               canonical Team State when the landscape carried one. Today never
               re-sorts a lane, never ranks inside one, and never derives a state
-              — the Dashboard owns the full league board and Today points there. */}
-          <p className="bos-meta mb-4 normal-case">
+              — the Dashboard owns the full league board and Today points there.
+
+              Composed as an editorial list rather than three bordered modules:
+              a lane label, the club, its state, and the count that supports it,
+              separated by a hairline and space. */}
+          <p className="bos-meta mb-7 normal-case">
             {picture.teamsEvaluated} tracked teams
             {picture.gamesLabel ? ` \u00b7 ${picture.gamesLabel}` : ''}
           </p>
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+          <div className="grid grid-cols-1 gap-x-14 gap-y-10 md:grid-cols-3">
             {picture.columns.map(column => (
-              <div key={column.title} className="bos-panel flex min-w-0 flex-col p-4 sm:p-5">
-                <h3 className="bos-micro">
+              <div key={column.title} className="flex min-w-0 flex-col border-t border-line pt-5">
+                <h3 className="text-[0.9375rem] font-semibold tracking-[-0.01em] text-chalk200">
                   {column.title}
                 </h3>
                 {column.subtitle && (
-                  <p className="bos-meta mt-1 normal-case">{column.subtitle}</p>
+                  <p className="bos-support mt-1 text-chalk500">{column.subtitle}</p>
                 )}
                 {column.lead ? (
-                  <div className="mt-4 flex flex-1 flex-col">
+                  <div className="mt-6 flex flex-1 flex-col">
                     {/* Identity first, then the canonical state the backend
                         supplied for that club, then the count that supports it.
                         The count is evidence under the read, never the read. */}
                     {column.lead.teamHref ? (
                       <Link
                         to={column.lead.teamHref}
-                        className="group inline-flex min-h-10 min-w-0 items-baseline gap-2"
+                        className="group inline-flex min-h-11 min-w-0 items-baseline gap-2"
                         aria-label={`Open the bullpen board for ${column.lead.teamName || column.lead.label}`}
                       >
                         <span className="bos-card-title min-w-0 break-words transition-colors group-hover:text-signal">
                           {column.lead.teamName || column.lead.label}
                         </span>
-                        <span aria-hidden="true" className="shrink-0 text-signal">&#8594;</span>
+                        <span aria-hidden="true" className="shrink-0 text-signal opacity-70 transition-opacity group-hover:opacity-100">&#8594;</span>
                       </Link>
                     ) : (
                       // Fail closed: without a resolvable team identifier there is no
                       // exact Team Board to open, so the standout stays a plain read
                       // instead of a link that promises a team page it cannot deliver.
-                      <p className="bos-card-title min-h-10 break-words">
+                      <p className="bos-card-title min-h-11 break-words">
                         {column.lead.teamName || column.lead.label}
                       </p>
                     )}
                     {column.lead.teamState?.hasContract && (
-                      <TeamStateChip teamState={column.lead.teamState} className="mt-3 self-start" />
+                      <TeamStateChip teamState={column.lead.teamState} className="mt-2.5 self-start" />
                     )}
-                    <p className="bos-evidence mt-3">
-                      <span className="font-mono tabular-nums text-chalk100">
-                        {column.lead[column.metric]}
-                      </span>{' '}
+                    <p className="bos-support mt-2.5 text-chalk300">
+                      <span className="bos-value">{column.lead[column.metric]}</span>{' '}
                       {column.suffix}
                     </p>
                     {column.moreCount > 0 && (
-                      <p className="bos-meta mt-auto pt-3 normal-case">
+                      <p className="bos-meta mt-auto pt-4 normal-case">
                         +{column.moreCount} more on the league board
                       </p>
                     )}
                   </div>
                 ) : (
-                  <p className="bos-support mt-4">
+                  <p className="bos-support mt-6">
                     {column.emptyCopy}
                   </p>
                 )}
               </div>
             ))}
           </div>
-          <div className="mt-5">
-            <Link to="/dashboard" className="bos-action bos-action--primary">
+          <div className="mt-10">
+            <Link to="/dashboard" className="bos-action bos-action--quiet">
               View full league board
             </Link>
           </div>
@@ -2099,25 +2120,22 @@ function BullpenPicture({
 function ExploreBaseballOS() {
   return (
     <section id="explore-baseballos" aria-labelledby="explore-baseballos-title" className="bos-section">
-      <div className="mb-5">
-        <p className="bos-eyebrow">
-          Explore BaseballOS
-        </p>
-        <h2 id="explore-baseballos-title" className="bos-section-title mt-2">
+      <div className="mb-7 md:mb-9">
+        <h2 id="explore-baseballos-title" className="bos-section-title">
           Where do you want to go next?
         </h2>
       </div>
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-x-12 gap-y-8 sm:grid-cols-2 lg:grid-cols-4">
         {FIRST_USE_ACTIONS.map(action => (
           <Link
             key={action.title}
             to={action.to}
-            className="bos-panel bos-panel--interactive min-w-0 p-4 focus:outline-none"
+            className="group min-w-0 border-t border-line pt-5 focus:outline-none"
           >
-            <h3 className="font-display text-lg tracking-[0.02em] text-chalk100">
+            <h3 className="bos-card-title transition-colors group-hover:text-signal">
               {action.title}
             </h3>
-            <p className="bos-meta mt-1.5 normal-case">
+            <p className="bos-support mt-2">
               {action.body}
             </p>
           </Link>
@@ -2136,17 +2154,17 @@ function Explore() {
       subtitle="Get to know BaseballOS, then dig into every bullpen."
       className="pb-4"
     >
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-x-12 gap-y-8 sm:grid-cols-2 lg:grid-cols-4">
         {EXPLORE_LINKS.map(link => (
           <Link
             key={link.title}
             to={link.to}
-            className="bos-panel bos-panel--interactive min-w-0 p-4 focus:outline-none"
+            className="group min-w-0 border-t border-line pt-5 focus:outline-none"
           >
-            <h3 className="font-display text-xl tracking-[0.02em] text-chalk100">
+            <h3 className="bos-card-title transition-colors group-hover:text-signal">
               {link.title}
             </h3>
-            <p className="bos-meta mt-1.5 normal-case">
+            <p className="bos-support mt-2">
               {link.body}
             </p>
           </Link>
@@ -2187,11 +2205,11 @@ function IntelligenceVocabulary() {
         </Link>
       }
     >
-      <div className="mb-6">
+      <div className="mb-11">
         <p className="bos-micro">The three team reads</p>
-        <ConceptGlossary terms={TEAM_STATE_DEFINITIONS} className="mt-3" />
+        <ConceptGlossary terms={TEAM_STATE_DEFINITIONS} className="mt-5" />
       </div>
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-x-12 gap-y-8 sm:grid-cols-2 lg:grid-cols-4">
         {VOCABULARY_CONCEPTS.map(concept => (
           <ConceptCard
             key={concept.name}
@@ -2202,7 +2220,7 @@ function IntelligenceVocabulary() {
           />
         ))}
       </div>
-      <ConceptGlossary terms={SUPPORTING_VOCABULARY} className="mt-6" />
+      <ConceptGlossary terms={SUPPORTING_VOCABULARY} className="mt-11" />
     </SectionShell>
   )
 }
@@ -2235,7 +2253,7 @@ function DataTrustBrief({ freshness, slateDate }) {
       }
     >
       {hasAnyFact ? (
-        <dl className="grid grid-cols-1 gap-x-8 gap-y-5 rounded-panel border border-line bg-panel p-4 sm:grid-cols-3 sm:p-6">
+        <dl className="grid grid-cols-1 gap-x-14 gap-y-7 border-t border-line pt-7 sm:grid-cols-3">
           <TrustFact
             label="Bullpen data through"
             value={dataThrough}
@@ -2253,16 +2271,16 @@ function DataTrustBrief({ freshness, slateDate }) {
           />
         </dl>
       ) : (
-        <div className="rounded-panel border border-line bg-panel p-4 sm:p-6" role="status">
+        <div className="border-t border-line pt-7" role="status">
           <p className="bos-body max-w-measure text-chalk300">
             No current freshness detail is available for this view right now.
             Data &amp; Trust carries the full coverage and validation picture.
           </p>
         </div>
       )}
-      <p className="bos-meta mt-4 max-w-measure normal-case">
+      <p className="bos-support mt-8 max-w-measure text-chalk500">
         Definitions and worked examples live on{' '}
-        <Link to="/methodology" className="text-signal underline underline-offset-4 hover:text-chalk100">
+        <Link to="/methodology" className="text-signal underline underline-offset-4 transition-colors hover:text-chalk100">
           Methodology
         </Link>
         .
@@ -2283,12 +2301,14 @@ function ProductPositioning() {
       aria-labelledby="what-baseballos-is-for-title"
       className="bos-section"
     >
-      <div className="rounded-panel border border-line bg-panel px-4 py-8 sm:px-8 sm:py-10 lg:px-12 lg:py-12">
+      {/* Deliberately unframed: a product statement earns its weight from type
+          and space, not from a container. */}
+      <div className="bos-depth py-4 sm:py-8">
         <p className="bos-eyebrow bos-eyebrow--brass">What BaseballOS is for</p>
-        <h2 id="what-baseballos-is-for-title" className="bos-lead-headline mt-4 max-w-[20ch]">
+        <h2 id="what-baseballos-is-for-title" className="bos-lead-headline mt-6 max-w-[18ch]">
           Baseball has more public bullpen data than ever.
         </h2>
-        <div className="mt-6 grid max-w-5xl grid-cols-1 gap-x-10 gap-y-4 lg:grid-cols-2">
+        <div className="mt-9 grid max-w-4xl grid-cols-1 gap-x-14 gap-y-5 lg:grid-cols-2">
           <p className="bos-body text-chalk300">
             Understanding it should not mean opening five sites and assembling the
             story yourself — box scores in one place, rest days in another, roster
@@ -2300,7 +2320,7 @@ function ProductPositioning() {
             it rests on, and how current the picture is.
           </p>
         </div>
-        <div className="mt-8 border-t border-line pt-8">
+        <div className="mt-12 border-t border-line pt-8">
           <AudienceSignupForm />
         </div>
       </div>
@@ -2327,7 +2347,7 @@ export function IntelligenceSurfaceView({
   const teamsEvaluated = numberValue(landscape?.teams_evaluated)
 
   return (
-    <div className="bos-page bos-page--reading pb-14 pt-5 sm:pt-7">
+    <div className="bos-page bos-page--reading pb-20 sm:pb-24">
       <DailyIntelligenceBrief
         freshness={pageFreshness}
         slateDate={slateDate}

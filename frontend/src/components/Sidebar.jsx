@@ -37,7 +37,7 @@ export function sidebarFreshness(syncStatus, loading, error, freshnessAuthority)
 function SidebarFreshnessItem({ label, value }) {
   return (
     <div>
-      <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-chalk600">
+      <div className="text-[0.75rem] leading-snug text-chalk500">
         {label}
       </div>
       <div className="mt-1 font-mono text-[11px] leading-tight text-chalk200">
@@ -50,7 +50,7 @@ function SidebarFreshnessItem({ label, value }) {
 export function SidebarDataFreshnessCard({ freshness }) {
   return (
     <div className="rounded-panel border border-line bg-panel-2 p-3">
-      <div className="mb-3 font-mono text-[10px] uppercase tracking-[0.18em] text-signal">
+      <div className="mb-3 text-[0.6875rem] font-medium uppercase tracking-[0.09em] text-signal">
         Data Freshness
       </div>
       <div className="space-y-3">
@@ -71,7 +71,6 @@ function NavDestination({ item, location, onNavigate }) {
       aria-current={active ? 'page' : undefined}
       className={`nav-item ${active ? 'active' : ''}`}
     >
-      <span className="text-base w-5 text-center" aria-hidden="true">{item.icon}</span>
       <span>{item.label}</span>
     </Link>
   )
@@ -132,7 +131,7 @@ export default function Sidebar() {
             <span className="block truncate font-display text-2xl leading-none tracking-[0.16em] text-chalk100">
               BaseballOS
             </span>
-            <span className="mt-1 block font-mono text-[10px] uppercase tracking-[0.2em] text-chalk600">
+            <span className="mt-1 block text-[0.6875rem] font-medium uppercase tracking-[0.11em] text-chalk600">
               Bullpen Intelligence
             </span>
           </span>
@@ -165,7 +164,7 @@ export default function Sidebar() {
         </div>
 
         <div className="mt-6 border-t border-line pt-4">
-          <div className="px-4 pb-2 font-mono text-[10px] uppercase tracking-[0.2em] text-chalk600">
+          <div className="px-4 pb-2 text-[0.6875rem] font-medium uppercase tracking-[0.09em] text-chalk600">
             Learn &amp; Trust
           </div>
           <div className="space-y-0.5">

@@ -670,7 +670,7 @@ test('homepage sections introduce the bullpen picture before Tonight watch', () 
 test('a bullpen picture standout builds an exact team board link from its stable identifier', () => {
   const view = getBullpenPictureView(landscape)
   const availableColumn = view.columns.find(column => column.metric === 'available')
-  // San Francisco is the standout in "Most Available"; its lead resolves to the
+  // San Francisco is the standout in "Room to Maneuver"; its lead resolves to the
   // exact team board via the stable abbreviation, carrying landscape provenance.
   assert.equal(
     availableColumn.lead.teamHref,
@@ -982,7 +982,7 @@ test('Intelligence Surface renders a populated StoryPackage without raw JSON fie
 
   assert.ok(htmlIncludes(html, 'MLB BULLPEN INTELLIGENCE — UPDATED DAILY'))
   assert.ok(htmlIncludes(html, 'See which bullpens are fresh, stretched, or vulnerable tonight — and why.'))
-  assert.ok(htmlIncludes(html, 'BaseballOS reads public MLB usage and workload after every game, so you can tell which pens are gassed and which are loaded — with the data date and confidence always shown.'))
+  assert.ok(htmlIncludes(html, 'BaseballOS reads public MLB usage, rest, and roster context after every completed game, then explains how each bullpen is set up tonight — with the date and the evidence each read rests on.'))
   assert.equal(htmlIncludes(html, 'see the evidence behind each read'), false)
   assert.ok(htmlIncludes(html, 'Descriptive only — we show what we see and what we can&#x27;t. No picks, no predictions.'))
   assert.equal(htmlIncludes(html, 'Upcoming Games'), false)
@@ -1595,7 +1595,7 @@ test('Tonight error shows a graceful error state when fallback also fails', () =
   assert.equal(htmlIncludes(html, 'Giants bullpen let a four-run lead get away'), false)
   assert.ok(htmlIncludes(html, 'Tonight&#x27;s bullpen reads are temporarily unavailable.'))
   assert.ok(htmlIncludes(html, 'The rest of Today can still be used.'))
-  assert.ok(htmlIncludes(html, 'Most Available'))
+  assert.ok(htmlIncludes(html, 'Room to Maneuver'))
 })
 
 test('Tonight empty state renders when neither Tonight nor fallback observations are available', () => {
@@ -1624,7 +1624,7 @@ test('fallback dashboard failure does not prevent Today sections rendering', () 
   assert.equal(htmlIncludes(html, 'Giants bullpen let a four-run lead get away'), false)
   assert.equal(htmlIncludes(html, 'The Giants reached the seventh with a cushion'), false)
   assert.ok(htmlIncludes(html, 'No standout bullpen watch point tonight.'))
-  assert.ok(htmlIncludes(html, 'Most Available'))
+  assert.ok(htmlIncludes(html, 'Room to Maneuver'))
 })
 
 test('Bullpen Picture failure does not prevent Today page rendering', () => {
@@ -1648,13 +1648,13 @@ test('Bullpen Picture renders existing landscape lanes and handles missing data'
   const picture = getBullpenPictureView(landscape)
   assert.equal(picture.hasLandscape, true)
   assert.deepEqual(picture.columns.map(column => column.title), [
-    'Most Available',
+    'Room to Maneuver',
     'On Watch',
-    'Most Stretched',
+    'Limited Late-Inning Margin',
   ])
-  assert.equal(picture.columns.find(column => column.title === 'Most Stretched')?.entries[0]?.restricted, 4)
+  assert.equal(picture.columns.find(column => column.title === 'Limited Late-Inning Margin')?.entries[0]?.restricted, 4)
   // Teaser view-model: one standout team per lane plus an overflow count.
-  assert.equal(picture.columns.find(column => column.title === 'Most Stretched')?.lead?.restricted, 4)
+  assert.equal(picture.columns.find(column => column.title === 'Limited Late-Inning Margin')?.lead?.restricted, 4)
   assert.equal(picture.columns.every(column => column.moreCount === 0), true)
 
   const crowdedPicture = getBullpenPictureView({
@@ -1664,7 +1664,7 @@ test('Bullpen Picture renders existing landscape lanes and handles missing data'
       { team_id: 121, team_name: 'New York Mets', team_abbreviation: 'NYM', total_relievers: 8, available: 5, monitor: 2, restricted: 1 },
     ],
   })
-  const availableLane = crowdedPicture.columns.find(column => column.title === 'Most Available')
+  const availableLane = crowdedPicture.columns.find(column => column.title === 'Room to Maneuver')
   assert.equal(availableLane?.lead?.teamAbbrev, 'SF')
   assert.equal(availableLane?.moreCount, 1)
 
@@ -1677,10 +1677,10 @@ test('Bullpen Picture renders existing landscape lanes and handles missing data'
   }))
 
   assert.ok(htmlIncludes(html, 'Today&#x27;s Bullpen Picture'))
-  assert.ok(htmlIncludes(html, 'A quick look at which bullpens look rested and available, stretched, or on watch.'))
+  assert.ok(htmlIncludes(html, 'Where each bullpen sits across the league right now, and which clubs are worth opening first.'))
   assert.ok(htmlIncludes(html, 'Published view through Jun 25'))
-  assert.ok(htmlIncludes(html, 'Most Available'))
-  assert.ok(htmlIncludes(html, 'Most Stretched'))
+  assert.ok(htmlIncludes(html, 'Room to Maneuver'))
+  assert.ok(htmlIncludes(html, 'Limited Late-Inning Margin'))
   assert.ok(htmlIncludes(html, 'On Watch'))
   assert.ok(htmlIncludes(html, 'SF'))
   assert.ok(htmlIncludes(html, 'MIL'))

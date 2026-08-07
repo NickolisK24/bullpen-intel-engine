@@ -39,7 +39,7 @@ const internalShareTitleLabels = [
   'Thinning Trust Lane',
 ]
 const publicProductRoutes = ['/', '/dashboard', '/bullpen', '/stories', '/methodology', '/trust']
-const safeHeroDescription = 'BaseballOS reads public MLB usage and workload after every game, so you can tell which pens are gassed and which are loaded — with the data date and confidence always shown.'
+const safeHeroDescription = 'BaseballOS reads public MLB usage, rest, and roster context after every completed game, then explains how each bullpen is set up tonight — with the date and the evidence each read rests on.'
 const blockedEvidenceCopyPatterns = [
   /see the evidence behind/i,
   /evidence behind (?:each|every) read/i,

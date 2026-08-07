@@ -336,8 +336,8 @@ test('the league overview renders backend Team State and fails closed without on
   // A team whose backend block says "unavailable" gets the governed non-state.
   assert.ok(htmlIncludes(overview, 'No current state'))
   // A team with no Team State block at all gets no state chip invented for it.
-  // (The lane heading "Most Stretched" is league orientation, not a Team State,
-  // so only the canonical state labels are checked here.)
+  // (The lane heading "Limited Late-Inning Margin" is league orientation, not a
+  // Team State, so only the canonical state labels are checked here.)
   assert.equal(htmlIncludes(overview, 'Vulnerable'), false)
   assert.equal(htmlIncludes(overview, 'Team State: Stretched'), false)
   // Full team names, never a bare abbreviation as the only identity.
@@ -397,6 +397,131 @@ test('the new surfaces never rewrite, filter, or invent backend-owned copy', () 
   // The Today surface adds no new copy-rewriting rules on top of the two the
   // backend-owned-copy package (#591) already owns.
   assert.equal((surfaceSource.match(/_COPY_PATTERN\s*=/g) || []).length, 2)
+})
+
+// ── Visual refinement contracts ─────────────────────────────────────────────
+//
+// These pin the design decisions that carry the most product risk if they drift
+// back. They deliberately assert behaviour and vocabulary rather than freezing
+// class names, so ordinary CSS work stays cheap.
+
+test('editorial levels use the interface face; only metadata keeps the mono face', () => {
+  const level = name => {
+    const start = indexCss.indexOf(`${name} {`)
+    return start < 0 ? '' : indexCss.slice(start, indexCss.indexOf('}', start))
+  }
+  // Reading content is never condensed and never monospaced.
+  for (const name of ['.bos-hero', '.bos-lead-headline', '.bos-section-title', '.bos-card-title']) {
+    assert.ok(level(name).includes('font-body'), `${name} uses the interface face`)
+    assert.equal(level(name).includes('font-display'), false, `${name} is not condensed`)
+    assert.equal(level(name).includes('font-mono'), false, `${name} is not monospaced`)
+  }
+  // The condensed face survives only as a named accent.
+  assert.ok(level('.bos-kicker').includes('font-display'))
+  // Precision values keep the mono face.
+  for (const name of ['.bos-meta', '.bos-value']) {
+    assert.ok(level(name).includes('font-mono'), name)
+  }
+  // Buttons are application controls, not console controls.
+  assert.equal(level('.bos-action').includes('font-mono'), false)
+  assert.equal(level('.bos-action').includes('uppercase'), false)
+})
+
+test('background depth is decorative only and cannot intercept interaction', () => {
+  const start = indexCss.indexOf('.bos-depth::before,')
+  assert.ok(start > -1, 'the depth layer exists')
+  const block = indexCss.slice(start, start + 400)
+  assert.ok(block.includes('pointer-events: none'))
+  assert.ok(block.includes('z-index: -1'))
+  // Depth is drawn, never animated.
+  assert.equal(/\.bos-depth[^{]*\{[^}]*animation/.test(indexCss), false)
+})
+
+test('Today never uses superlative or extreme lane framing', () => {
+  const html = render(React.createElement(IntelligenceSurfaceView, {
+    dashboard: { freshness },
+    landscape,
+    tonight: { status: 'ok', reference_date: '2026-08-06', cards: [] },
+    teams,
+  }))
+  const text = visibleText(html)
+
+  for (const banned of [
+    'Most Available', 'Most Stretched', 'most available', 'most stretched',
+    'fewest', 'strongest', 'weakest', 'best bullpen', 'worst bullpen',
+    'top bullpen', 'bottom bullpen', 'league leader',
+  ]) {
+    assert.equal(
+      new RegExp(escapeRegExp(banned), 'i').test(text),
+      false,
+      banned,
+    )
+  }
+  // The lanes still read as descriptive league orientation.
+  assert.ok(text.includes('Room to Maneuver'))
+  assert.ok(text.includes('On Watch'))
+  assert.ok(text.includes('Limited Late-Inning Margin'))
+})
+
+test('a supported Today payload always shows its data-through date', () => {
+  const html = render(React.createElement(IntelligenceSurfaceView, {
+    dashboard: { freshness },
+    landscape,
+    tonight: { status: 'ok', reference_date: '2026-08-06', cards: [] },
+    teams,
+  }))
+  assert.ok(htmlIncludes(html, 'Bullpen data through'))
+  assert.ok(htmlIncludes(html, 'Aug 5, 2026'))
+})
+
+test('Tonight keeps the answer, evidence, freshness, and limitations outside any disclosure', () => {
+  const card = {
+    key: 'CHC', team_id: 112, team_name: 'Chicago Cubs', team_abbreviation: 'CHC',
+    pregame_story: {
+      headline: 'Narrow bullpen margin before first pitch',
+      team_context: 'Schedule context sentence.',
+      watching: 'The supported summary sentence.',
+      why_it_matters: 'The deeper why sentence.',
+      key_note: 'The deeper key note sentence.',
+      watch_point: 'The watch point sentence.',
+    },
+    evidence: ['One arm is on watch after recent work'],
+    limitations: ['Schedule context can change before lineup lock.'],
+  }
+  const html = render(React.createElement(IntelligenceSurfaceView, {
+    dashboard: { freshness },
+    tonight: { status: 'ok', reference_date: '2026-08-06', cards: [card] },
+    teams: [{ team_id: 112, team_name: 'Chicago Cubs', team_abbreviation: 'CHC' }],
+  }))
+
+  const beforeDisclosure = html.slice(0, html.indexOf('<details'))
+  // The answer, its evidence, and the watch point are immediate.
+  for (const immediate of [
+    'Narrow bullpen margin before first pitch',
+    'The supported summary sentence.',
+    'The watch point sentence.',
+    'One arm is on watch after recent work',
+  ]) {
+    assert.ok(htmlIncludes(beforeDisclosure, immediate), immediate)
+  }
+  // Supporting rows move behind one native, keyboard-operable disclosure.
+  assert.ok(htmlIncludes(html, '<summary'))
+  assert.ok(htmlIncludes(html, 'The deeper why sentence.'))
+  assert.ok(htmlIncludes(html, 'The deeper key note sentence.'))
+  // A limitation that could change interpretation is never hidden.
+  const afterDisclosure = html.slice(html.indexOf('</details>'))
+  assert.ok(htmlIncludes(afterDisclosure, 'Schedule context can change before lineup lock.'))
+  // Freshness is never hidden either.
+  assert.ok(htmlIncludes(html, 'Published view through'))
+})
+
+test('Team State stays readable without colour and without the mono face', () => {
+  const state = readPublicTeamState({ available: true, public_state: 'fresh', public_label: 'Fresh' })
+  const html = render(React.createElement(TeamStateChip, { teamState: state }))
+  // The label is real text with a screen-reader prefix, not a colour or an icon.
+  assert.ok(htmlIncludes(html, 'Team State: '))
+  assert.ok(htmlIncludes(html, 'Fresh'))
+  assert.equal(htmlIncludes(html, 'font-mono'), false)
 })
 
 test('the Today edition exposes one landmark-labelled section per region', () => {
