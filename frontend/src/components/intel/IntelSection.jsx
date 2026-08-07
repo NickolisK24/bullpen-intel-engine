@@ -16,7 +16,10 @@ export function SectionHeading({
   className = '',
 }) {
   return (
-    <div className={`mb-7 flex flex-col gap-4 md:mb-9 md:flex-row md:items-end md:justify-between ${className}`}>
+    // The action aligns with the title's baseline rather than dropping to the
+    // bottom of a multi-line heading block, so it reads as part of the heading
+    // instead of stranded beside the end of the subtitle.
+    <div className={`mb-7 flex flex-col gap-4 md:mb-9 md:flex-row md:items-start md:justify-between md:gap-x-12 ${className}`}>
       <div className="min-w-0">
         {eyebrow && (
           <p className={`bos-eyebrow ${tone === 'brass' ? 'bos-eyebrow--brass' : ''}`}>
@@ -32,7 +35,7 @@ export function SectionHeading({
           </p>
         )}
       </div>
-      {action && <div className="shrink-0 md:pb-1">{action}</div>}
+      {action && <div className="shrink-0 md:mt-1">{action}</div>}
     </div>
   )
 }

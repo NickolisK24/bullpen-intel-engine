@@ -21,8 +21,8 @@ export function ConceptCard({ name, definition, glyph, to, linkLabel = 'Where th
   if (!name || !definition) return null
   return (
     // Open cell rather than a card: a top hairline, generous space, and type.
-    <div className="flex min-w-0 flex-col border-t border-line pt-6">
-      {glyph && <ConceptGlyph name={glyph} className="mb-6 text-signal/80" />}
+    <div className="flex min-w-0 flex-col border-t border-line pt-5 sm:pt-6">
+      {glyph && <ConceptGlyph name={glyph} className="mb-4 text-signal/80 sm:mb-6" />}
       <h3 className="bos-concept-title">{name}</h3>
       <p className="bos-support mt-3 flex-1">{definition}</p>
       {to && (

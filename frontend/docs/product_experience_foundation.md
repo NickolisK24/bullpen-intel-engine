@@ -148,14 +148,21 @@ Rendered order in `IntelligenceSurfaceView`:
 Sections 2–5 keep the order and the data contracts they already had. Sections
 1 and 6–8 are presentation over existing governed values.
 
-Tonight's cards show the answer first — club, headline, the watching sentence,
-the watch point, and the evidence cues — and move the schedule sentence, Why It
-Matters, Key Note, and Starter Length behind one native `<details>`. Freshness
-and limitations are never placed behind that disclosure.
+Tonight's collapsed card is the answer only — club, headline, the supported
+summary, and the watch point. Everything inspectable sits behind **one** native
+`<details>`: the exact supplied evidence rows, verbatim and in order, then the
+schedule sentence, Why It Matters, Key Note, and Starter Length. There is no
+nested disclosure.
+
+The disclosure label names the supplied evidence count ("View evidence and
+context (2)"). That count is the length of the served evidence array and nothing
+else — no evidence is summarized, ranked, or paraphrased, and with no evidence
+the label falls back to "More on this read" rather than inventing a count.
+Limitations, freshness, and the Team Board path always stay outside it.
 
 What Changed is composed as an intelligence change log: inline summary counts,
-an underline filter row and a compact search in one quiet tool row, then
-hairline-opened entries carrying club, backend-authored direction, the supplied
+then one low-emphasis tool row holding plain-text filters (a hairline under the
+active one) and a borderless team search, then hairline-opened entries carrying club, backend-authored direction, the supplied
 previous → current delta with its label rendered verbatim, the supported reason,
 worked-yesterday receipts, and the evidence disclosure. No container.
 
@@ -166,6 +173,11 @@ mark, a large title, one definition, and a route deeper.
 The descriptive-only boundary statement lives in the Data & Trust brief as fine
 print, not in the opening reading path.
 
+Section actions ("Read every term", "Open Data & Trust") are text links aligned
+to the section title's baseline at the reading-column edge. A bordered button
+flush against that edge read as unanchored; a link sits there naturally and
+matches every other inspection path on the page.
+
 League lane labels live in `components/dashboard/bullpenLandscapeView.js` and
 are deliberately free of superlative framing. They describe the situation a
 backend-supplied list represents; they are not a classification, and canonical
@@ -173,6 +185,29 @@ Team State is never derived from the lane a club sits in.
 
 Today's data contracts are unchanged: `getTonightIntelligence`,
 `getBullpenLandscape`, `getBullpenDashboard`, `getTeams`.
+
+## Design freeze
+
+Every Today region below is frozen: it is the public visual reference for the
+rest of BaseballOS and should not be re-opened without a specific user-facing
+defect.
+
+| Region | Status |
+|---|---|
+| Daily Intelligence Brief | FROZEN |
+| League Picture | FROZEN |
+| What Changed | FROZEN |
+| Tonight's Bullpen Watch | FROZEN |
+| BaseballOS Vocabulary | FROZEN |
+| Data & Trust | FROZEN |
+| Product Positioning | FROZEN |
+| Today's Lead | KNOWN FUTURE DEPENDENCY — #591, then founder authority |
+
+The remaining public surfaces (Dashboard, Bullpens, Compare, Reliever Finder,
+Stories, How to Read, Methodology, Data & Trust, About) still use the older
+amber / Bebas register inside their content. They inherit the masthead and the
+shared UI primitives only. Migrating them is the next visual-system package, not
+a Today refinement.
 
 ## Deliberate non-goals
 
