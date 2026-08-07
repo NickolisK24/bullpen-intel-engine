@@ -22,16 +22,12 @@ export function TeamStateChip({ teamState, className = '' }) {
   if (!available) {
     return (
       <span
-        className={`inline-flex min-h-7 items-center gap-2 rounded-edge border px-2.5 py-1 font-mono text-[11px] uppercase tracking-[0.16em] ${className}`}
-        style={{
-          borderColor: tone.borderColor,
-          backgroundColor: tone.backgroundColor,
-          color: tone.color,
-        }}
+        className={`inline-flex items-center gap-2 text-[0.9375rem] font-semibold tracking-[-0.01em] ${className}`}
+        style={{ color: tone.color }}
       >
         <span
           aria-hidden="true"
-          className="h-1.5 w-1.5 shrink-0 rounded-full"
+          className="h-2 w-2 shrink-0 rounded-full"
           style={{ backgroundColor: tone.dot }}
         />
         <span>No current state</span>
@@ -41,16 +37,12 @@ export function TeamStateChip({ teamState, className = '' }) {
 
   return (
     <span
-      className={`inline-flex min-h-7 items-center gap-2 rounded-edge border px-2.5 py-1 font-mono text-[11px] uppercase tracking-[0.16em] ${className}`}
-      style={{
-        borderColor: tone.borderColor,
-        backgroundColor: tone.backgroundColor,
-        color: tone.color,
-      }}
+      className={`inline-flex items-center gap-2 text-[0.9375rem] font-semibold tracking-[-0.01em] ${className}`}
+      style={{ color: tone.color }}
     >
       <span
         aria-hidden="true"
-        className="h-1.5 w-1.5 shrink-0 rounded-full"
+        className="h-2 w-2 shrink-0 rounded-full"
         style={{ backgroundColor: tone.dot }}
       />
       <span className="sr-only">Team State: </span>

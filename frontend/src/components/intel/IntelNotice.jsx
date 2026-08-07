@@ -47,7 +47,7 @@ export default function IntelNotice({
       aria-live="polite"
     >
       {eyebrow && (
-        <p className={`font-mono text-[11px] uppercase tracking-[0.22em] ${styles.eyebrow}`}>
+        <p className={`text-xs font-medium uppercase tracking-[0.09em] ${styles.eyebrow}`}>
           {eyebrow}
         </p>
       )}
@@ -72,7 +72,7 @@ export function IntelSkeleton({ label, lines = 3, className = '' }) {
       role="status"
       aria-live="polite"
     >
-      <p className="bos-micro">{label}</p>
+      <p className="bos-support text-chalk500">{label}</p>
       <div className="mt-5 space-y-3" aria-hidden="true">
         <div className="h-6 w-3/4 animate-pulse rounded-edge bg-panel-2" />
         {Array.from({ length: Math.max(0, lines) }).map((unused, index) => (

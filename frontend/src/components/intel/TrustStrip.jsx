@@ -41,11 +41,11 @@ export function TrustFact({ label, value, detail }) {
   if (!value) return null
   return (
     <div className="min-w-0">
-      <dt className="bos-micro">{label}</dt>
-      <dd className="mt-1.5 min-w-0 break-words font-mono text-[13px] leading-snug text-chalk100">
+      <dt className="text-[0.8125rem] leading-snug text-chalk500">{label}</dt>
+      <dd className="bos-value mt-1.5 min-w-0 break-words">
         {value}
       </dd>
-      {detail && <p className="bos-meta mt-1 normal-case">{detail}</p>}
+      {detail && <p className="mt-1.5 text-[0.8125rem] leading-snug text-chalk500">{detail}</p>}
     </div>
   )
 }

@@ -16,18 +16,18 @@ export function SectionHeading({
   className = '',
 }) {
   return (
-    <div className={`mb-5 flex flex-col gap-3 md:flex-row md:items-end md:justify-between ${className}`}>
+    <div className={`mb-7 flex flex-col gap-4 md:mb-9 md:flex-row md:items-end md:justify-between ${className}`}>
       <div className="min-w-0">
         {eyebrow && (
           <p className={`bos-eyebrow ${tone === 'brass' ? 'bos-eyebrow--brass' : ''}`}>
             {eyebrow}
           </p>
         )}
-        <h2 id={id} className="bos-section-title mt-2">
+        <h2 id={id} className={`bos-section-title ${eyebrow ? 'mt-2.5' : ''}`}>
           {title}
         </h2>
         {subtitle && (
-          <p className="bos-support mt-2 max-w-measure">
+          <p className="bos-support mt-3 max-w-measure">
             {subtitle}
           </p>
         )}

@@ -136,7 +136,7 @@ export function FreshnessBadge({
 
   return (
     <span
-      className={`inline-flex min-h-7 items-center rounded-edge border px-2.5 py-1 font-mono text-[11px] uppercase tracking-[0.16em] ${tone} ${className}`}
+      className={`inline-flex min-h-7 items-center rounded-edge border px-2.5 py-1 text-[11px] font-medium uppercase tracking-[0.06em] ${tone} ${className}`}
     >
       {display}
     </span>
@@ -152,7 +152,7 @@ export function DataThroughStamp({
   const formatted = formatFreshnessDate(date, { includeYear })
   if (!formatted) return null
   return (
-    <span className={`inline-flex min-h-7 items-center rounded-edge border border-line bg-panel-2 px-2.5 py-1 font-mono text-[11px] uppercase tracking-[0.16em] text-chalk400 ${className}`}>
+    <span className={`inline-flex min-h-7 items-center font-mono text-[11px] tracking-[0.02em] text-chalk400 ${className}`}>
       {label} {formatted}
     </span>
   )
@@ -167,7 +167,7 @@ export function SlateDateStamp({
   const formatted = formatFreshnessDate(date, { includeYear })
   if (!formatted) return null
   return (
-    <span className={`inline-flex min-h-7 items-center rounded-edge border border-line bg-panel-2 px-2.5 py-1 font-mono text-[11px] uppercase tracking-[0.16em] text-chalk400 ${className}`}>
+    <span className={`inline-flex min-h-7 items-center font-mono text-[11px] tracking-[0.02em] text-chalk400 ${className}`}>
       {label}: {formatted}
     </span>
   )
@@ -182,7 +182,7 @@ export function LastSyncLabel({
   const formatted = formatUtcDateTimeEt(value, { includeDate })
   if (!formatted) return null
   return (
-    <span className={`inline-flex min-h-7 items-center rounded-edge border border-line bg-panel-2 px-2.5 py-1 font-mono text-[11px] uppercase tracking-[0.16em] text-chalk500 ${className}`}>
+    <span className={`inline-flex min-h-7 items-center font-mono text-[11px] tracking-[0.02em] text-chalk500 ${className}`}>
       {label} {formatted}
     </span>
   )
