@@ -20,6 +20,22 @@ import {
 } from '../UI'
 import { formatFreshnessDate } from '../UI/Freshness'
 import {
+  ConceptCard,
+  ConceptGlossary,
+  EditionHeader,
+  EvidenceList,
+  IntelSection,
+  IntelSkeleton,
+  TeamStateChip,
+  TrustFact,
+} from '../intel'
+import {
+  CONCEPT_DEFINITIONS,
+  SUPPORTING_CONCEPT_DEFINITIONS,
+  TEAM_STATE_DEFINITIONS,
+} from '../../utils/bullpenConcepts'
+import { formatUtcDateTimeEt } from '../../utils/dateDisplay'
+import {
   BULLPEN_LANDSCAPE_COLUMNS,
   getLandscapeView,
 } from '../dashboard/bullpenLandscapeView'
@@ -1086,6 +1102,7 @@ export function getBullpenPictureView(landscape) {
   const specs = BULLPEN_LANDSCAPE_COLUMNS.map(column => ({
     sourceKey: column.key,
     title: column.title,
+    subtitle: column.subtitle,
     metric: column.metric,
     suffix: column.suffix,
     emptyCopy: BULLPEN_PICTURE_EMPTY_COPY[column.key],
@@ -1110,26 +1127,20 @@ export function getBullpenPictureView(landscape) {
   }
 }
 
-function SectionShell({ id, title, eyebrow, subtitle, children, className = '' }) {
+// Today's sections all use the shared section-heading system, so each region
+// reads as an authored part of one edition rather than as another card.
+function SectionShell({ id, title, eyebrow, subtitle, action, children, className = '' }) {
   return (
-    <section id={id} aria-labelledby={`${id}-title`} className={`mb-10 ${className}`}>
-      <div className="mb-3 border-t border-dirt pt-4">
-        {eyebrow && (
-          <div className="mb-1 font-mono text-[10px] uppercase tracking-widest text-amber/75">
-            {eyebrow}
-          </div>
-        )}
-        <h2 id={`${id}-title`} className="font-display text-2xl tracking-wide text-chalk100 sm:text-3xl">
-          {title}
-        </h2>
-        {subtitle && (
-          <p className="mt-1 max-w-3xl text-sm leading-relaxed text-chalk500">
-            {subtitle}
-          </p>
-        )}
-      </div>
+    <IntelSection
+      id={id}
+      eyebrow={eyebrow}
+      title={title}
+      subtitle={subtitle}
+      action={action}
+      className={className}
+    >
       {children}
-    </section>
+    </IntelSection>
   )
 }
 
@@ -1154,7 +1165,7 @@ export function AudienceSignupFormView({
   const messageTone = isInvalid || isError
     ? 'text-red-300'
     : isSuccess
-      ? 'text-amber'
+      ? 'text-signal'
       : 'text-chalk500'
 
   return (
@@ -1165,7 +1176,7 @@ export function AudienceSignupFormView({
     >
       <label
         htmlFor="audience-signup-email"
-        className="mb-2 block text-xs font-semibold uppercase tracking-widest text-chalk300"
+        className="mb-2 block font-mono text-[11px] uppercase tracking-[0.18em] text-chalk300"
       >
         Get BaseballOS bullpen notes in your inbox.
       </label>
@@ -1182,12 +1193,12 @@ export function AudienceSignupFormView({
           aria-invalid={isInvalid ? 'true' : 'false'}
           aria-describedby="audience-signup-message"
           disabled={isLoading}
-          className="min-h-11 flex-1 rounded border border-dirt bg-black/20 px-3 py-2 text-sm text-chalk100 placeholder:text-chalk500 transition-colors focus:border-amber/60 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/50 disabled:cursor-wait disabled:opacity-70"
+          className="min-h-11 flex-1 rounded-control border border-line bg-panel-2 px-3 py-2 text-sm text-chalk100 placeholder:text-chalk500 transition-colors focus:border-signal/60 focus:outline-none disabled:cursor-wait disabled:opacity-70"
         />
         <button
           type="submit"
           disabled={isLoading}
-          className="inline-flex min-h-11 items-center justify-center rounded border border-amber/40 bg-amber/10 px-4 py-2 font-mono text-xs uppercase tracking-widest text-amber transition-colors hover:border-amber/70 hover:bg-amber/15 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/60 disabled:cursor-wait disabled:border-dirt disabled:bg-field/50 disabled:text-chalk500 sm:w-auto"
+          className="bos-action bos-action--primary disabled:cursor-wait disabled:border-line disabled:bg-panel-2 disabled:text-chalk500 sm:w-auto"
         >
           {isLoading ? 'Joining...' : 'Get bullpen notes'}
         </button>
@@ -1240,51 +1251,73 @@ function AudienceSignupForm() {
   )
 }
 
-function SeesHeader() {
+// ── Daily Intelligence Brief ────────────────────────────────────────────────
+//
+// The signature BaseballOS object and the page's dominant editorial region: an
+// edition masthead, the lead statement, the boundary, and the governed temporal
+// context that makes everything below it checkable.
+//
+// Every fact in the rail comes from application state that was already served
+// with the page. Nothing is hardcoded, defaulted, or assumed: a fact with no
+// current value is omitted, so on a degraded day the brief gets shorter rather
+// than less honest. It never claims coverage, verification, or currency that the
+// governed freshness block did not supply.
+function briefFacts({ freshness, slateDate, teamsEvaluated }) {
+  const dataThrough = formatFreshnessDate(freshnessDataThrough(freshness), { includeYear: true })
+  const lastSync = formatUtcDateTimeEt(
+    firstTextValue(freshness?.last_successful_sync, freshness?.lastSuccessfulSync),
+    { includeDate: false },
+  )
+  const slate = formatFreshnessDate(slateDate, { includeYear: true })
+  const trackedTeams = Number.isFinite(teamsEvaluated) && teamsEvaluated > 0
+    ? String(teamsEvaluated)
+    : null
 
+  // Currency is stated only from the governed freshness contract, and only when
+  // that contract exists. No freshness block means no claim either way.
+  let publishedView = null
+  if (freshness && typeof freshness === 'object' && !isSampleFreshness(freshness)) {
+    publishedView = freshnessIsCurrent(freshness) ? 'Current' : 'Not current'
+  }
+
+  return [
+    { label: 'Bullpen data through', value: dataThrough },
+    { label: 'Last updated', value: lastSync },
+    { label: 'Published view', value: publishedView },
+    { label: 'Tonight slate', value: slate },
+    { label: 'Teams tracked', value: trackedTeams },
+  ]
+}
+
+function DailyIntelligenceBrief({ freshness, slateDate, teamsEvaluated }) {
   return (
-    <header className="mb-7 max-w-4xl pt-2 sm:pt-4">
-      <div className="font-mono text-[10px] uppercase tracking-[0.28em] text-amber/75">
-        MLB BULLPEN INTELLIGENCE — UPDATED DAILY
-      </div>
-      <h1 className="mt-3 font-display text-5xl leading-none tracking-wide text-chalk100 sm:text-6xl lg:text-7xl">
-        See which bullpens are fresh, stretched, or vulnerable tonight — and why.
-      </h1>
-      <p className="mt-4 max-w-3xl text-base leading-relaxed text-chalk300 sm:text-lg">
-        BaseballOS reads public MLB usage and workload after every game, so you can tell which pens are gassed and which are loaded — with the data date and confidence always shown.
-      </p>
-      <p className="mt-3 max-w-2xl text-sm leading-relaxed text-chalk500">
-        Descriptive only — we show what we see and what we can't. No picks, no predictions.
-      </p>
-      <div className="mt-5 grid max-w-4xl gap-4 lg:grid-cols-[auto_minmax(20rem,1fr)] lg:items-start">
-        <a
-          href="#bullpen-picture"
-          className="inline-flex min-h-11 w-full items-center justify-center rounded border border-amber/40 bg-amber/10 px-4 py-3 font-mono text-xs uppercase tracking-widest text-amber transition-colors hover:border-amber/70 hover:bg-amber/15 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/60 lg:w-auto"
-        >
-          Explore today's bullpen picture
-        </a>
-        <AudienceSignupForm />
-      </div>
-    </header>
+    <EditionHeader
+      eyebrow="Today's Intelligence Brief"
+      editionLabel="MLB BULLPEN INTELLIGENCE — UPDATED DAILY"
+      title="See which bullpens are fresh, stretched, or vulnerable tonight — and why."
+      standfirst="BaseballOS reads public MLB usage and workload after every game, so you can tell which pens are gassed and which are loaded — with the data date and confidence always shown."
+      boundary="Descriptive only — we show what we see and what we can't. No picks, no predictions."
+      facts={briefFacts({ freshness, slateDate, teamsEvaluated })}
+      actions={
+        <>
+          <a href="#bullpen-picture" className="bos-action bos-action--primary w-full sm:w-auto">
+            Explore today's bullpen picture
+          </a>
+          <Link to="/dashboard" className="bos-action bos-action--quiet w-full sm:w-auto">
+            View the league board
+          </Link>
+        </>
+      }
+    />
   )
 }
 
 function TonightLoadingState() {
   return (
-    <div className="min-h-40 border border-amber/20 bg-dugout p-4 sm:p-5" role="status" aria-live="polite">
-      <p className="font-mono text-xs uppercase tracking-widest text-chalk500">
-        Reading tonight's bullpen context...
-      </p>
-      <div className="mt-5 grid grid-cols-1 gap-3 md:grid-cols-3" aria-hidden="true">
-        {[0, 1, 2].map(index => (
-          <div key={index} className="border border-dirt/80 bg-field/40 p-4">
-            <div className="h-3 w-20 animate-pulse bg-dirt" />
-            <div className="mt-4 h-4 w-4/5 animate-pulse bg-dirt" />
-            <div className="mt-3 h-3 w-full animate-pulse bg-dirt" />
-            <div className="mt-2 h-3 w-2/3 animate-pulse bg-dirt" />
-          </div>
-        ))}
-      </div>
+    <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+      <IntelSkeleton label="Reading tonight's bullpen context..." lines={3} />
+      <IntelSkeleton label="Reading tonight's bullpen context..." lines={3} className="hidden md:block" />
+      <IntelSkeleton label="Reading tonight's bullpen context..." lines={3} className="hidden xl:block" />
     </div>
   )
 }
@@ -1294,11 +1327,11 @@ function TonightEmptyState({ isError, emptyReason, onRetry }) {
     // Verified from stored schedule evidence: zero MLB games on this slate.
     // A deliberate league-off-day pause, not an analysis that found nothing.
     return (
-      <div className="border border-dirt bg-dugout p-4 sm:p-5" role="status">
-        <h3 className="font-display text-2xl leading-tight tracking-wide text-chalk100">
+      <div className="rounded-panel border border-line bg-panel p-4 sm:p-6" role="status">
+        <h3 className="bos-card-title">
           {TONIGHT_OFF_DAY_TITLE}
         </h3>
-        <p className="mt-2 max-w-prose text-sm leading-relaxed text-chalk400">
+        <p className="bos-support mt-2 max-w-measure">
           {TONIGHT_OFF_DAY_BODY}
         </p>
       </div>
@@ -1335,29 +1368,29 @@ function TonightCard({ card }) {
   ].filter(([, body]) => Boolean(body))
 
   return (
-    <article className="flex min-w-0 flex-col border border-dirt bg-dugout p-4 sm:p-5">
-      <div className="font-mono text-[10px] uppercase tracking-widest text-amber/75">
+    <article className="bos-panel flex min-w-0 flex-col p-4 sm:p-5">
+      <div className="font-mono text-[11px] uppercase tracking-[0.18em] text-brass">
         {card.teamName}
       </div>
-      <h3 className="mt-3 break-words font-display text-2xl leading-tight tracking-wide text-chalk100">
+      <h3 className="bos-card-title mt-3 break-words">
         {card.headline}
       </h3>
       {card.teamContext && (
-        <p className="mt-2 text-xs leading-relaxed text-chalk500">
+        <p className="bos-meta mt-2 normal-case">
           {card.teamContext}
         </p>
       )}
-      <p className="mt-3 text-sm leading-relaxed text-chalk400">
+      <p className="bos-evidence mt-3 text-chalk300">
         {card.summary}
       </p>
       {storyRows.length > 0 && (
-        <div className="mt-4 space-y-3">
+        <div className="mt-4 space-y-3 border-t border-line pt-4">
           {storyRows.map(([label, body]) => (
             <div key={label}>
-              <h4 className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
+              <h4 className="bos-micro">
                 {label}
               </h4>
-              <p className="mt-1 text-xs leading-relaxed text-chalk400">
+              <p className="bos-evidence mt-1 text-chalk400">
                 {body}
               </p>
             </div>
@@ -1365,28 +1398,16 @@ function TonightCard({ card }) {
         </div>
       )}
       {card.evidence.length > 0 && (
-        <div className="mt-4">
-          <h4 className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
-            Usage Notes
-          </h4>
-          <ul className="mt-2 space-y-2">
-            {card.evidence.map(item => (
-              <li key={item} className="flex gap-2 text-xs leading-relaxed text-chalk400">
-                <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-amber/70" aria-hidden="true" />
-                <span>{item}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
+        <EvidenceList items={card.evidence} label="Usage Notes" className="mt-4 border-t border-line pt-4" />
       )}
       {card.limitations.length > 0 && (
-        <div className="mt-4 border-t border-dirt/80 pt-3">
-          <h4 className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
+        <div className="mt-4 border-t border-line pt-3">
+          <h4 className="bos-micro">
             Limitations
           </h4>
           <ul className="mt-2 space-y-1">
             {card.limitations.map(item => (
-              <li key={item} className="text-xs leading-relaxed text-chalk500">
+              <li key={item} className="bos-meta normal-case">
                 {item}
               </li>
             ))}
@@ -1396,7 +1417,7 @@ function TonightCard({ card }) {
       {card.href && (
         <Link
           to={card.href}
-          className="mt-5 inline-flex min-h-10 w-fit items-center rounded border border-dirt bg-field/60 px-3 py-2 font-mono text-[11px] uppercase tracking-wider text-chalk300 transition-colors hover:border-amber/40 hover:text-amber"
+          className="bos-action bos-action--quiet mt-auto w-fit pt-2.5"
           aria-label={`Open the bullpen board for ${card.teamName}`}
         >
           View Team Bullpen State
@@ -1426,7 +1447,7 @@ function SinceYesterdayPrimaryDelta({ delta }) {
         <span aria-hidden="true" className="font-display text-2xl leading-none text-chalk500">
           →
         </span>
-        <span className="font-display text-3xl leading-none tracking-wide text-amber">
+        <span className="font-display text-3xl leading-none tracking-wide text-signal">
           <span className="sr-only">today </span>{delta.current}
         </span>
         {net && (
@@ -1482,12 +1503,12 @@ function SinceYesterdayEvidence({ item }) {
   const rows = item.publicEvidence
   if (!showRested && rows.length === 0) return null
   return (
-    <details className="group mt-3 border border-dirt/75 bg-field/45">
-      <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 font-mono text-[10px] uppercase tracking-widest text-chalk500 transition-colors hover:text-amber focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/60">
+    <details className="group mt-3 rounded-panel border border-line bg-panel-2">
+      <summary className="flex min-h-10 cursor-pointer list-none items-center gap-2 px-3 py-2 font-mono text-[11px] uppercase tracking-[0.18em] text-chalk400 transition-colors hover:text-signal focus:outline-none">
         <span className="group-open:hidden">View evidence</span>
         <span className="hidden group-open:inline">Hide evidence</span>
       </summary>
-      <dl className="space-y-2 border-t border-dirt/75 px-3 py-3">
+      <dl className="space-y-2 border-t border-line px-3 py-3">
         {showRested && (
           <SinceYesterdayEvidenceRow
             label="Rested relievers"
@@ -1511,13 +1532,13 @@ function SinceYesterdayEvidence({ item }) {
 function SinceYesterdayCard({ item }) {
   const explanation = item.summary || item.headline
   return (
-    <article className="flex flex-col border border-dirt bg-dugout p-4">
+    <article className="bos-panel flex flex-col p-4">
       <div className="flex items-start justify-between gap-3">
         <h3 className="font-mono text-[11px] uppercase tracking-widest text-chalk500">
           {item.teamName}
         </h3>
         {item.movementLabel && (
-          <span className="shrink-0 border border-dirt/75 bg-field/60 px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-chalk300">
+          <span className="shrink-0 rounded-edge border border-line-strong bg-panel-2 px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.14em] text-chalk300">
             {item.movementLabel}
           </span>
         )}
@@ -1540,7 +1561,7 @@ function SinceYesterdayCard({ item }) {
         <div className="mt-4">
           <Link
             to={item.href}
-            className="inline-flex min-h-10 items-center rounded border border-amber/40 bg-amber/10 px-4 py-2 font-mono text-xs uppercase tracking-wider text-amber transition-colors hover:bg-amber/20"
+            className="bos-action bos-action--primary"
             aria-label={`Open the bullpen board for ${item.teamName}`}
           >
             Open bullpen board
@@ -1600,17 +1621,17 @@ function SinceYesterdayTabs({ tabs, activeKey, onActivate }) {
               else tabRefs.current.delete(tab.key)
             }}
             onClick={() => onActivate(tab.key)}
-            className={`inline-flex min-h-10 items-center gap-2 border px-3 py-2 font-mono text-xs uppercase tracking-wider transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/40 ${
+            className={`inline-flex min-h-11 items-center gap-2 rounded-control border px-3 py-2 font-mono text-xs uppercase tracking-[0.14em] transition-colors focus:outline-none ${
               selected
-                ? 'border-amber bg-amber/10 text-amber'
-                : 'border-dirt bg-field/60 text-chalk300 hover:text-amber'
+                ? 'border-signal/60 bg-signal-well text-chalk100'
+                : 'border-line bg-panel-2 text-chalk300 hover:border-line-strong hover:text-chalk100'
             }`}
           >
             <span>{tab.shortLabel}</span>
             <span
               aria-hidden="true"
               className={`font-display text-sm leading-none tracking-wide ${
-                selected ? 'text-amber' : 'text-chalk500'
+                selected ? 'text-signal' : 'text-chalk500'
               }`}
             >
               {tab.count}
@@ -1633,8 +1654,8 @@ function SinceYesterdayLeagueSummary({ summary }) {
   const showSteady = typeof summary.steadyCount === 'number' && summary.steadyCount > 0
   if (rows.length === 0 && !showSteady) return null
   return (
-    <div className="mb-4 border border-dirt bg-dugout p-4">
-      <h3 className="font-mono text-[11px] uppercase tracking-widest text-chalk500">
+    <div className="mb-5 rounded-panel border border-line bg-panel p-4 sm:p-5">
+      <h3 className="bos-micro">
         Across MLB since yesterday
       </h3>
       <ul className="mt-2 flex flex-wrap gap-x-6 gap-y-2">
@@ -1663,13 +1684,13 @@ function SinceYesterdaySteadyDisclosure({ summary }) {
   }
   const teams = summary.steadyTeams || []
   return (
-    <details className="group mt-4 border border-dirt bg-dugout">
-      <summary className="cursor-pointer list-none px-4 py-3 text-sm text-chalk300 transition-colors hover:bg-amber/5 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/60">
+    <details className="group mt-5 rounded-panel border border-line bg-panel">
+      <summary className="min-h-11 cursor-pointer list-none px-4 py-3 text-sm text-chalk300 transition-colors hover:bg-panel-2 focus:outline-none">
         {summary.steadyCount} {summary.steadyCount === 1 ? 'team' : 'teams'} had no meaningful
         bullpen movement in this comparison.
       </summary>
       {teams.length > 0 && (
-        <ul className="flex flex-wrap gap-x-4 gap-y-1 border-t border-dirt px-4 py-3 text-sm text-chalk500">
+        <ul className="flex flex-wrap gap-x-4 gap-y-1 border-t border-line px-4 py-3 text-sm text-chalk500">
           {teams.map(team => (
             <li key={team.teamId ?? team.teamAbbr ?? team.teamName}>{team.teamName}</li>
           ))}
@@ -1684,7 +1705,7 @@ function SinceYesterdayTeamSearch({ query, onChange, onReset }) {
     <div className="mb-4 flex flex-wrap items-center gap-2">
       <label
         htmlFor={SINCE_YESTERDAY_TEAM_SEARCH_ID}
-        className="font-mono text-[10px] uppercase tracking-widest text-chalk500"
+        className="bos-micro"
       >
         Find a team
       </label>
@@ -1695,13 +1716,13 @@ function SinceYesterdayTeamSearch({ query, onChange, onReset }) {
         onChange={event => onChange(event.target.value)}
         placeholder="Team name or abbreviation"
         autoComplete="off"
-        className="min-h-10 flex-1 border border-dirt bg-field/60 px-3 py-2 text-sm text-chalk100 placeholder:text-chalk500 focus:border-amber/60 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/40"
+        className="min-h-11 w-full max-w-sm flex-1 rounded-control border border-line bg-panel-2 px-3 py-2 text-sm text-chalk100 placeholder:text-chalk500 focus:border-signal/60 focus:outline-none"
       />
       {query && (
         <button
           type="button"
           onClick={onReset}
-          className="min-h-10 border border-dirt bg-field/60 px-3 py-2 font-mono text-xs uppercase tracking-wider text-chalk300 transition-colors hover:text-amber focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/40"
+          className="bos-action bos-action--quiet"
         >
           Reset
         </button>
@@ -1754,7 +1775,7 @@ function SinceYesterdayBriefing({ view }) {
             ))}
           </div>
         ) : (
-          <div className="border border-dirt bg-dugout p-4" role="status">
+          <div className="rounded-panel border border-line bg-panel p-4" role="status">
             <p className="text-sm leading-relaxed text-chalk300">
               No published movement in this tab matches “{trimmedQuery}”. That does not mean those
               teams were steady — reset to see every team with movement here.
@@ -1762,7 +1783,7 @@ function SinceYesterdayBriefing({ view }) {
             <button
               type="button"
               onClick={() => setQuery('')}
-              className="mt-3 inline-flex min-h-10 items-center border border-dirt bg-field/60 px-3 py-2 font-mono text-xs uppercase tracking-wider text-chalk300 transition-colors hover:text-amber focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/40"
+              className="bos-action bos-action--quiet mt-3"
             >
               Reset search
             </button>
@@ -1779,8 +1800,8 @@ function SinceYesterdayQuiet({ view }) {
   return (
     <>
       <SinceYesterdayLeagueSummary summary={view.summary} />
-      <div className="border border-dirt bg-dugout p-4" role="status">
-        <p className="text-sm leading-relaxed text-chalk300">{view.quietCopy}</p>
+      <div className="rounded-panel border border-line bg-panel p-4 sm:p-6" role="status">
+        <p className="bos-body max-w-measure text-chalk300">{view.quietCopy}</p>
       </div>
       <SinceYesterdaySteadyDisclosure summary={view.summary} />
     </>
@@ -1810,8 +1831,8 @@ function SinceYesterdaySection({ dashboard, teams }) {
       ) : view.state === 'no_meaningful_changes' ? (
         <SinceYesterdayQuiet view={view} />
       ) : (
-        <div className="border border-dirt bg-dugout p-4" role="status">
-          <p className="text-sm leading-relaxed text-chalk300">
+        <div className="rounded-panel border border-line bg-panel p-4 sm:p-6" role="status">
+          <p className="bos-body max-w-measure text-chalk300">
             {view.unavailableCopy}
           </p>
         </div>
@@ -1901,8 +1922,8 @@ function TonightSection({
           ))}
         </div>
         {sectionLimitations.length > 0 && (
-          <div className="mt-3 border border-dirt bg-dugout p-4">
-            <h3 className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
+          <div className="mt-4 rounded-panel border border-line bg-panel p-4">
+            <h3 className="bos-micro">
               Limitations
             </h3>
             <ul className="mt-2 space-y-1">
@@ -1971,11 +1992,7 @@ function BullpenPicture({
       subtitle="A quick look at which bullpens look rested and available, stretched, or on watch."
     >
       {loading && !landscape ? (
-        <div className="border border-dirt bg-dugout p-4" role="status" aria-live="polite">
-          <p className="font-mono text-xs uppercase tracking-widest text-chalk500">
-            Loading bullpen picture...
-          </p>
-        </div>
+        <IntelSkeleton label="Loading bullpen picture..." lines={2} />
       ) : error && !landscape ? (
         <UnavailableDataState
           title="No current bullpen read available."
@@ -2001,75 +2018,74 @@ function BullpenPicture({
             stale={staleWithError}
             freshness={rowFreshness}
           />
-          {/* Teaser strip: one standout team per lane. The Dashboard owns the
-              full league landscape — Today only points there. */}
-          <div className="border border-dirt bg-dugout p-4">
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-              <p className="font-mono text-[11px] uppercase tracking-widest text-chalk500">
-                {picture.teamsEvaluated} tracked teams
-              </p>
-              {picture.gamesLabel && (
-                <p className="font-mono text-[11px] leading-relaxed text-chalk600">
-                  {picture.gamesLabel}
-                </p>
-              )}
-            </div>
-            <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
-              {picture.columns.map(column => (
-                <div key={column.title} className="min-w-0 border border-dirt/75 bg-field/45 p-3">
-                  <h3 className="font-mono text-[10px] uppercase tracking-widest text-chalk400">
-                    {column.title}
-                  </h3>
-                  {column.lead ? (
-                    <>
-                      {column.lead.teamHref ? (
-                        <Link
-                          to={column.lead.teamHref}
-                          className="group mt-2 flex min-w-0 items-baseline justify-between gap-2 rounded px-1 py-1 transition-colors hover:bg-amber/5"
-                          aria-label={`Open the bullpen board for ${column.lead.teamName || column.lead.label}`}
-                        >
-                          <span className="truncate text-sm text-chalk200 group-hover:text-amber">
-                            {column.lead.label}
-                          </span>
-                          <span className="shrink-0 font-mono text-xs leading-snug text-chalk400">
-                            {column.lead[column.metric]} <span className="text-chalk600">{column.suffix}</span>
-                          </span>
-                        </Link>
-                      ) : (
-                        // Fail closed: without a resolvable team identifier there is no
-                        // exact Team Board to open, so the standout stays a plain read
-                        // instead of a link that promises a team page it cannot deliver.
-                        <div className="mt-2 flex min-w-0 items-baseline justify-between gap-2 px-1 py-1">
-                          <span className="truncate text-sm text-chalk200">
-                            {column.lead.label}
-                          </span>
-                          <span className="shrink-0 font-mono text-xs leading-snug text-chalk400">
-                            {column.lead[column.metric]} <span className="text-chalk600">{column.suffix}</span>
-                          </span>
-                        </div>
-                      )}
-                      {column.moreCount > 0 && (
-                        <p className="mt-1 px-1 font-mono text-[11px] text-chalk600">
-                          +{column.moreCount} more on the league board
-                        </p>
-                      )}
-                    </>
-                  ) : (
-                    <p className="mt-3 text-xs text-chalk600">
-                      {column.emptyCopy}
+          {/* League overview: one backend-supplied standout per lane, with the
+              canonical Team State when the landscape carried one. Today never
+              re-sorts a lane, never ranks inside one, and never derives a state
+              — the Dashboard owns the full league board and Today points there. */}
+          <p className="bos-meta mb-4 normal-case">
+            {picture.teamsEvaluated} tracked teams
+            {picture.gamesLabel ? ` \u00b7 ${picture.gamesLabel}` : ''}
+          </p>
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+            {picture.columns.map(column => (
+              <div key={column.title} className="bos-panel flex min-w-0 flex-col p-4 sm:p-5">
+                <h3 className="bos-micro">
+                  {column.title}
+                </h3>
+                {column.subtitle && (
+                  <p className="bos-meta mt-1 normal-case">{column.subtitle}</p>
+                )}
+                {column.lead ? (
+                  <div className="mt-4 flex flex-1 flex-col">
+                    {/* Identity first, then the canonical state the backend
+                        supplied for that club, then the count that supports it.
+                        The count is evidence under the read, never the read. */}
+                    {column.lead.teamHref ? (
+                      <Link
+                        to={column.lead.teamHref}
+                        className="group inline-flex min-h-10 min-w-0 items-baseline gap-2"
+                        aria-label={`Open the bullpen board for ${column.lead.teamName || column.lead.label}`}
+                      >
+                        <span className="bos-card-title min-w-0 break-words transition-colors group-hover:text-signal">
+                          {column.lead.teamName || column.lead.label}
+                        </span>
+                        <span aria-hidden="true" className="shrink-0 text-signal">&#8594;</span>
+                      </Link>
+                    ) : (
+                      // Fail closed: without a resolvable team identifier there is no
+                      // exact Team Board to open, so the standout stays a plain read
+                      // instead of a link that promises a team page it cannot deliver.
+                      <p className="bos-card-title min-h-10 break-words">
+                        {column.lead.teamName || column.lead.label}
+                      </p>
+                    )}
+                    {column.lead.teamState?.hasContract && (
+                      <TeamStateChip teamState={column.lead.teamState} className="mt-3 self-start" />
+                    )}
+                    <p className="bos-evidence mt-3">
+                      <span className="font-mono tabular-nums text-chalk100">
+                        {column.lead[column.metric]}
+                      </span>{' '}
+                      {column.suffix}
                     </p>
-                  )}
-                </div>
-              ))}
-            </div>
-            <div className="mt-4 flex justify-start">
-              <Link
-                to="/dashboard"
-                className="inline-flex min-h-10 items-center rounded border border-amber/40 bg-amber/10 px-4 py-2 font-mono text-xs uppercase tracking-wider text-amber transition-colors hover:bg-amber/20"
-              >
-                View full league board
-              </Link>
-            </div>
+                    {column.moreCount > 0 && (
+                      <p className="bos-meta mt-auto pt-3 normal-case">
+                        +{column.moreCount} more on the league board
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  <p className="bos-support mt-4">
+                    {column.emptyCopy}
+                  </p>
+                )}
+              </div>
+            ))}
+          </div>
+          <div className="mt-5">
+            <Link to="/dashboard" className="bos-action bos-action--primary">
+              View full league board
+            </Link>
           </div>
         </>
       )}
@@ -2082,12 +2098,12 @@ function BullpenPicture({
 // product, and stays short so it never reads as a marketing landing page.
 function ExploreBaseballOS() {
   return (
-    <section id="explore-baseballos" aria-labelledby="explore-baseballos-title" className="mb-10">
-      <div className="mb-3 border-t border-dirt pt-4">
-        <div className="mb-1 font-mono text-[10px] uppercase tracking-widest text-amber/75">
+    <section id="explore-baseballos" aria-labelledby="explore-baseballos-title" className="bos-section">
+      <div className="mb-5">
+        <p className="bos-eyebrow">
           Explore BaseballOS
-        </div>
-        <h2 id="explore-baseballos-title" className="font-display text-2xl tracking-wide text-chalk100">
+        </p>
+        <h2 id="explore-baseballos-title" className="bos-section-title mt-2">
           Where do you want to go next?
         </h2>
       </div>
@@ -2096,12 +2112,12 @@ function ExploreBaseballOS() {
           <Link
             key={action.title}
             to={action.to}
-            className="min-w-0 rounded border border-dirt bg-dugout p-4 transition-colors hover:border-amber/40 hover:bg-amber/5 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/60"
+            className="bos-panel bos-panel--interactive min-w-0 p-4 focus:outline-none"
           >
-            <h3 className="font-display text-lg tracking-wide text-chalk100">
+            <h3 className="font-display text-lg tracking-[0.02em] text-chalk100">
               {action.title}
             </h3>
-            <p className="mt-1 text-xs leading-relaxed text-chalk500">
+            <p className="bos-meta mt-1.5 normal-case">
               {action.body}
             </p>
           </Link>
@@ -2118,25 +2134,177 @@ function Explore() {
       eyebrow="Learn & Explore"
       title="Learn & Explore BaseballOS"
       subtitle="Get to know BaseballOS, then dig into every bullpen."
-      className="mb-6"
+      className="pb-4"
     >
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {EXPLORE_LINKS.map(link => (
           <Link
             key={link.title}
             to={link.to}
-            className="min-w-0 border border-dirt bg-dugout p-4 transition-colors hover:border-amber/35 hover:bg-amber/5"
+            className="bos-panel bos-panel--interactive min-w-0 p-4 focus:outline-none"
           >
-            <h3 className="font-display text-xl tracking-wide text-chalk100">
+            <h3 className="font-display text-xl tracking-[0.02em] text-chalk100">
               {link.title}
             </h3>
-            <p className="mt-1 text-xs leading-relaxed text-chalk500">
+            <p className="bos-meta mt-1.5 normal-case">
               {link.body}
             </p>
           </Link>
         ))}
       </div>
     </SectionShell>
+  )
+}
+
+// ── BaseballOS intelligence vocabulary ──────────────────────────────────────
+//
+// Data authority: `utils/bullpenConcepts.js`, the shared public dictionary.
+// These are descriptive concepts, not measurements: the section teaches the
+// language and routes to where the language is used. No concept carries a live
+// value here, because no approved public value exists for one.
+const VOCABULARY_CONCEPTS = [
+  { ...CONCEPT_DEFINITIONS.pressure, to: '/methodology' },
+  { ...CONCEPT_DEFINITIONS.recovery, to: '/methodology' },
+  { ...CONCEPT_DEFINITIONS.concentration, to: '/methodology' },
+  { ...CONCEPT_DEFINITIONS.cleanOptions, to: '/how-to-read' },
+]
+
+const SUPPORTING_VOCABULARY = [
+  SUPPORTING_CONCEPT_DEFINITIONS.coverageSafety,
+  SUPPORTING_CONCEPT_DEFINITIONS.trustedArms,
+]
+
+function IntelligenceVocabulary() {
+  return (
+    <SectionShell
+      id="vocabulary"
+      eyebrow="The BaseballOS Vocabulary"
+      title="How BaseballOS describes a bullpen"
+      subtitle="A handful of words carry most of the meaning on this site. Each one describes what a bullpen looks like right now — none of them compares one club against another."
+      action={
+        <Link to="/how-to-read" className="bos-action bos-action--quiet">
+          Read every term
+        </Link>
+      }
+    >
+      <div className="mb-6">
+        <p className="bos-micro">The three team reads</p>
+        <ConceptGlossary terms={TEAM_STATE_DEFINITIONS} className="mt-3" />
+      </div>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {VOCABULARY_CONCEPTS.map(concept => (
+          <ConceptCard
+            key={concept.name}
+            name={concept.name}
+            definition={concept.definition}
+            to={concept.to}
+            linkLabel="How this is built"
+          />
+        ))}
+      </div>
+      <ConceptGlossary terms={SUPPORTING_VOCABULARY} className="mt-6" />
+    </SectionShell>
+  )
+}
+
+// ── Data & Trust ────────────────────────────────────────────────────────────
+//
+// Data authority: the governed freshness block served with the page. Every
+// value below is rendered only if the application supplied it; nothing is
+// derived, defaulted, or asserted on the product's behalf. This is a pointer to
+// the Data & Trust surface, not a second copy of it.
+function DataTrustBrief({ freshness, slateDate }) {
+  const dataThrough = formatFreshnessDate(freshnessDataThrough(freshness), { includeYear: true })
+  const lastSync = formatUtcDateTimeEt(
+    firstTextValue(freshness?.last_successful_sync, freshness?.lastSuccessfulSync),
+    { includeDate: true },
+  )
+  const slate = formatFreshnessDate(slateDate, { includeYear: true })
+  const hasAnyFact = Boolean(dataThrough || lastSync || slate)
+
+  return (
+    <SectionShell
+      id="data-and-trust"
+      eyebrow="Data & Trust"
+      title="How current this read is"
+      subtitle="BaseballOS shows the date it is reading from and when it last updated, on every page. If a read cannot be supported, it is withheld rather than filled in."
+      action={
+        <Link to="/trust" className="bos-action bos-action--quiet">
+          Open Data &amp; Trust
+        </Link>
+      }
+    >
+      {hasAnyFact ? (
+        <dl className="grid grid-cols-1 gap-x-8 gap-y-5 rounded-panel border border-line bg-panel p-4 sm:grid-cols-3 sm:p-6">
+          <TrustFact
+            label="Bullpen data through"
+            value={dataThrough}
+            detail="The latest completed MLB date included in this read."
+          />
+          <TrustFact
+            label="Last updated"
+            value={lastSync}
+            detail="When BaseballOS last wrote new baseball data."
+          />
+          <TrustFact
+            label="Tonight slate"
+            value={slate}
+            detail="The scheduled date the pregame reads describe."
+          />
+        </dl>
+      ) : (
+        <div className="rounded-panel border border-line bg-panel p-4 sm:p-6" role="status">
+          <p className="bos-body max-w-measure text-chalk300">
+            No current freshness detail is available for this view right now.
+            Data &amp; Trust carries the full coverage and validation picture.
+          </p>
+        </div>
+      )}
+      <p className="bos-meta mt-4 max-w-measure normal-case">
+        Definitions and worked examples live on{' '}
+        <Link to="/methodology" className="text-signal underline underline-offset-4 hover:text-chalk100">
+          Methodology
+        </Link>
+        .
+      </p>
+    </SectionShell>
+  )
+}
+
+// ── Product positioning ─────────────────────────────────────────────────────
+//
+// A restrained statement of what the product is for, kept as a composed
+// editorial block rather than footer boilerplate. It makes no claim about data,
+// coverage, or accuracy — those belong to the trust surfaces.
+function ProductPositioning() {
+  return (
+    <section
+      id="what-baseballos-is-for"
+      aria-labelledby="what-baseballos-is-for-title"
+      className="bos-section"
+    >
+      <div className="rounded-panel border border-line bg-panel px-4 py-8 sm:px-8 sm:py-10 lg:px-12 lg:py-12">
+        <p className="bos-eyebrow bos-eyebrow--brass">What BaseballOS is for</p>
+        <h2 id="what-baseballos-is-for-title" className="bos-lead-headline mt-4 max-w-[20ch]">
+          Baseball has more public bullpen data than ever.
+        </h2>
+        <div className="mt-6 grid max-w-5xl grid-cols-1 gap-x-10 gap-y-4 lg:grid-cols-2">
+          <p className="bos-body text-chalk300">
+            Understanding it should not mean opening five sites and assembling the
+            story yourself — box scores in one place, rest days in another, roster
+            moves somewhere else.
+          </p>
+          <p className="bos-body text-chalk300">
+            BaseballOS turns workload, roster context, and recent usage into one
+            clear read you can check: what the bullpen looks like, why, which arms
+            it rests on, and how current the picture is.
+          </p>
+        </div>
+        <div className="mt-8 border-t border-line pt-8">
+          <AudienceSignupForm />
+        </div>
+      </div>
+    </section>
   )
 }
 
@@ -2155,10 +2323,16 @@ export function IntelligenceSurfaceView({
   teams = [],
 }) {
   const pageFreshness = dashboardFreshness(dashboard)
+  const slateDate = textValue(tonight?.reference_date)
+  const teamsEvaluated = numberValue(landscape?.teams_evaluated)
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-5 sm:px-6 lg:px-8">
-      <SeesHeader />
+    <div className="bos-page bos-page--reading pb-14 pt-5 sm:pt-7">
+      <DailyIntelligenceBrief
+        freshness={pageFreshness}
+        slateDate={slateDate}
+        teamsEvaluated={teamsEvaluated}
+      />
       <BullpenPicture
         landscape={landscape}
         loading={landscapeLoading}
@@ -2178,6 +2352,9 @@ export function IntelligenceSurfaceView({
         onRetry={onRetryTonight}
         dashboard={dashboard}
       />
+      <IntelligenceVocabulary />
+      <DataTrustBrief freshness={pageFreshness} slateDate={slateDate} />
+      <ProductPositioning />
       <Explore />
     </div>
   )
