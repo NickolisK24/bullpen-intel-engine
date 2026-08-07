@@ -150,24 +150,42 @@ test('mobile menu wires close-on-select, close-on-route-change, escape, and a cl
   assert.ok(sidebarSource.includes("event.key === 'Escape'"))
 })
 
-// ── First-use entry path on Today ──────────────────────────────────────────
+// ── Where Today hands off to the rest of the product ───────────────────────
 
-test('the first-use entry area offers the four primary actions with existing routes', () => {
-  const html = renderAt(React.createElement(IntelligenceSurfaceView, {}))
-  // ("Today's" has an apostrophe React escapes to &#x27;, so match the rest.)
-  for (const title of ['Bullpen Read', 'Find a Team', 'Compare Two Bullpens', 'Find a Reliever']) {
-    assert.ok(htmlIncludes(html, title), `missing action: ${title}`)
+test('every working view stays reachable once Today stops restating navigation', () => {
+  const todayHtml = renderAt(React.createElement(IntelligenceSurfaceView, {}))
+  const shellHtml = renderAt(React.createElement(Sidebar, {}))
+
+  // Today no longer carries a navigation grid of its own, so the shell has to
+  // be complete on its own. Every primary and supporting destination is in the
+  // masthead or its menu sheet.
+  for (const item of [...PRIMARY_NAV, ...SUPPORTING_NAV]) {
+    assert.ok(htmlIncludes(shellHtml, `href="${item.to}"`), `shell is missing ${item.to}`)
   }
-  assert.ok(htmlIncludes(html, 'href="/bullpen?view=compare"'))
-  assert.ok(htmlIncludes(html, 'href="/bullpen?view=pitchers"'))
-  assert.ok(htmlIncludes(html, 'href="/bullpen"'))
+
+  // The two query-view surfaces the desktop masthead deliberately hides are
+  // still one click from the bottom of Today.
+  assert.ok(htmlIncludes(todayHtml, 'href="/bullpen?view=compare"'))
+  assert.ok(htmlIncludes(todayHtml, 'href="/bullpen?view=pitchers"'))
 })
 
-test('the entry area sits after the daily read and does not replace it', () => {
-  const html = renderAt(React.createElement(IntelligenceSurfaceView, {}))
+test('Today keeps its reading path unbroken by a navigation block', () => {
+  const html = renderAt(React.createElement(IntelligenceSurfaceView, {
+    dashboard: {
+      what_changed_since_yesterday: {
+        state: 'no_meaningful_changes',
+        comparison: { comparison_available: true },
+      },
+    },
+  }))
   const dailyRead = html.indexOf('id="bullpen-picture"')
-  const entryArea = html.indexOf('id="explore-baseballos"')
+  const changed = html.indexOf('id="since-yesterday"')
+  const continueRow = html.indexOf('id="continue-exploring"')
+
   assert.ok(dailyRead > -1, 'primary daily read is still rendered')
-  assert.ok(entryArea > -1, 'first-use entry area is rendered')
-  assert.ok(dailyRead < entryArea, 'entry area follows the daily read')
+  assert.ok(changed > dailyRead, 'what changed follows the daily read directly')
+  // The only navigation on Today comes after every read, never between two.
+  assert.ok(continueRow > changed, 'the continue row is last')
+  assert.equal(htmlIncludes(html, 'id="explore-baseballos"'), false)
+  assert.equal(htmlIncludes(html, 'id="explore"'), false)
 })

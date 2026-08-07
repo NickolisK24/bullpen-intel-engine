@@ -649,13 +649,19 @@ test('homepage sections introduce the bullpen picture before Tonight watch', () 
     teams,
   }))
 
+  // The whole edition, in order. Today reads brief → league picture → what
+  // changed → tonight → vocabulary → trust → positioning, and nothing is
+  // allowed to interrupt that sequence with a navigation block.
   const orderedSections = [
     'See which bullpens are fresh, stretched, or vulnerable tonight — and why.',
     'Today&#x27;s Bullpen Picture',
     'SINCE YESTERDAY',
     'What changed across MLB bullpens',
     'Tonight&#x27;s Bullpen Watch',
-    'Learn &amp; Explore BaseballOS',
+    'The BaseballOS Vocabulary',
+    'How BaseballOS describes a bullpen',
+    'How current this read is',
+    'What BaseballOS is for',
   ]
   let previousIndex = -1
   for (const section of orderedSections) {
@@ -663,6 +669,28 @@ test('homepage sections introduce the bullpen picture before Tonight watch', () 
     assert.ok(index > previousIndex, section)
     previousIndex = index
   }
+})
+
+test('Today moves straight from the league picture into what changed', () => {
+  const html = render(React.createElement(IntelligenceSurfaceView, {
+    intelligence: intelligenceOk,
+    tonight: tonightOk,
+    dashboard: dashboardWithSinceYesterdayChanges,
+    landscape,
+    teams,
+  }))
+
+  // The early navigation block that used to sit between the league picture and
+  // what changed is gone from Today entirely — not hidden, not emptied.
+  assert.equal(htmlIncludes(html, 'id="explore-baseballos"'), false)
+  assert.equal(htmlIncludes(html, 'Where do you want to go next?'), false)
+
+  // What changed is the very next region after the league picture: nothing is
+  // allowed to open a landmark between the two.
+  const sectionIds = [...html.matchAll(/<section id="([^"]+)"/g)].map(match => match[1])
+  const pictureIndex = sectionIds.indexOf('bullpen-picture')
+  assert.ok(pictureIndex > -1, 'the league picture is rendered')
+  assert.equal(sectionIds[pictureIndex + 1], 'since-yesterday')
 })
 
 // ── Bullpen picture teaser: exact team links, honest fail-closed ─────────────
@@ -1378,7 +1406,7 @@ test('Tonight live build timeout reason renders unavailable state without fallba
     landscape,
     teams,
   }))
-  const tonightHtml = sectionSlice(html, 'Tonight&#x27;s Bullpen Watch', 'Learn &amp; Explore BaseballOS')
+  const tonightHtml = sectionSlice(html, 'Tonight&#x27;s Bullpen Watch', 'The BaseballOS Vocabulary')
 
   assert.ok(htmlIncludes(html, 'Tonight&#x27;s bullpen reads are temporarily unavailable.'))
   assert.ok(htmlIncludes(html, 'The rest of Today can still be used.'))
@@ -1430,7 +1458,7 @@ test('live publishable dashboard freshness keeps Today current while Tonight is 
     landscape: liveLandscape,
     teams,
   }))
-  const tonightHtml = sectionSlice(html, 'Tonight&#x27;s Bullpen Watch', 'Learn &amp; Explore BaseballOS')
+  const tonightHtml = sectionSlice(html, 'Tonight&#x27;s Bullpen Watch', 'The BaseballOS Vocabulary')
 
   assert.ok(htmlIncludes(html, 'Published view current'))
   assert.ok(htmlIncludes(html, 'Published view through Jul 5'))
@@ -1524,7 +1552,7 @@ test('Tonight fail-closed payload scopes stale chip to the slate when published 
     landscape,
     teams,
   }))
-  const tonightHtml = sectionSlice(html, 'Tonight&#x27;s Bullpen Watch', 'Learn &amp; Explore BaseballOS')
+  const tonightHtml = sectionSlice(html, 'Tonight&#x27;s Bullpen Watch', 'The BaseballOS Vocabulary')
 
   assert.ok(htmlIncludes(tonightHtml, 'Tonight slate unavailable'))
   assert.ok(htmlIncludes(tonightHtml, 'Published view through Jun 25'))
@@ -1556,7 +1584,7 @@ test('Tonight unavailable keeps generic stale copy when published bullpen view i
     landscape,
     teams,
   }))
-  const tonightHtml = sectionSlice(html, 'Tonight&#x27;s Bullpen Watch', 'Learn &amp; Explore BaseballOS')
+  const tonightHtml = sectionSlice(html, 'Tonight&#x27;s Bullpen Watch', 'The BaseballOS Vocabulary')
 
   assert.ok(htmlIncludes(tonightHtml, 'Refresh delayed'))
   assert.equal(htmlIncludes(tonightHtml, 'Tonight slate unavailable'), false)
@@ -1712,7 +1740,7 @@ test('Bullpen Picture renders existing landscape lanes and handles missing data'
   assert.ok(htmlIncludes(emptyHtml, 'No league bullpen picture is available for the current view.'))
 })
 
-test('Explore links render to existing routes', () => {
+test('Today ends with one compact continue row, not a second navigation page', () => {
   const html = render(React.createElement(IntelligenceSurfaceView, {
     intelligence: intelligenceOk,
     dashboard,
@@ -1720,51 +1748,33 @@ test('Explore links render to existing routes', () => {
     teams,
   }))
 
-  assert.ok(htmlIncludes(html, 'Learn &amp; Explore'))
-  assert.ok(htmlIncludes(html, 'Learn &amp; Explore BaseballOS'))
-  assert.ok(htmlIncludes(html, 'Get to know BaseballOS, then dig into every bullpen.'))
+  // The four-up bottom navigation grid is gone. The footer owns global
+  // navigation, so Today does not restate About / How to Read / Methodology /
+  // Data & Trust as a section of its own.
+  assert.equal(htmlIncludes(html, 'id="explore"'), false)
+  assert.equal(htmlIncludes(html, 'Learn &amp; Explore BaseballOS'), false)
+  assert.equal(htmlIncludes(html, 'Get to know BaseballOS, then dig into every bullpen.'), false)
+  assert.equal(htmlIncludes(html, 'Why BaseballOS exists, in a minute.'), false)
+  assert.equal(htmlIncludes(html, 'Learn every term in one line each.'), false)
+  assert.equal(htmlIncludes(html, 'See how each read is built.'), false)
+  assert.equal(htmlIncludes(html, 'Check freshness and how we know.'), false)
+  assert.equal(htmlIncludes(html, 'href="/about"'), false)
 
-  for (const href of [
-    'href="/about"',
-    'href="/how-to-read"',
-    'href="/methodology"',
-    'href="/trust"',
-  ]) {
-    assert.ok(htmlIncludes(html, href), href)
-  }
-
-  assert.ok(htmlIncludes(html, 'About BaseballOS'))
-  assert.ok(htmlIncludes(html, 'Why BaseballOS exists, in a minute.'))
-  assert.ok(htmlIncludes(html, 'How to Read BaseballOS'))
-  assert.ok(htmlIncludes(html, 'Learn every term in one line each.'))
-  assert.ok(htmlIncludes(html, 'See how each read is built.'))
-  assert.ok(htmlIncludes(html, 'Check freshness and how we know.'))
-
-  const exploreHtml = sectionSlice(html, 'Learn &amp; Explore BaseballOS')
-  const orderedTitles = [
-    'About BaseballOS',
-    'How to Read BaseballOS',
-    'Methodology',
-    'Data &amp; Trust',
-  ]
-  let previousIndex = -1
-  for (const title of orderedTitles) {
-    const index = exploreHtml.indexOf(title)
-    assert.ok(index > previousIndex, title)
-    previousIndex = index
-  }
-  for (const removedTitle of ['Dashboard', 'Bullpen', 'Stories']) {
-    assert.equal(htmlIncludes(exploreHtml, removedTitle), false, removedTitle)
-  }
-  // The Learn & Explore (supporting) section links only to the trust/explainer
-  // pages — the primary bullpen links live in the separate first-use entry area.
-  assert.equal(htmlIncludes(exploreHtml, 'href="/dashboard"'), false)
-  assert.equal(htmlIncludes(exploreHtml, 'href="/bullpen"'), false)
-  assert.equal(htmlIncludes(exploreHtml, 'href="/stories"'), false)
-
-  // The first-use entry area does link to the primary bullpen surfaces.
+  // What remains is one labelled row carrying only the two working views that
+  // neither the masthead nor the footer exposes.
+  assert.ok(htmlIncludes(html, 'id="continue-exploring"'))
+  assert.ok(htmlIncludes(html, 'aria-label="Other bullpen views"'))
+  assert.ok(htmlIncludes(html, 'Compare two bullpens'))
+  assert.ok(htmlIncludes(html, 'Find a reliever'))
   assert.ok(htmlIncludes(html, 'href="/bullpen?view=compare"'))
   assert.ok(htmlIncludes(html, 'href="/bullpen?view=pitchers"'))
+
+  const continueHtml = sectionSlice(html, 'id="continue-exploring"')
+  assert.equal(countOccurrences(continueHtml, '<a '), 2)
+  // It is the last thing on the page, after the product statement.
+  assert.ok(html.indexOf('id="what-baseballos-is-for"') < html.indexOf('id="continue-exploring"'))
+  // And it never becomes a section: no heading, no eyebrow, no subtitle.
+  assert.equal(/<h[1-3]/.test(continueHtml), false)
 })
 
 test('Today visible text avoids internal platform terms', () => {

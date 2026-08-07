@@ -137,16 +137,33 @@ Rendered order in `IntelligenceSurfaceView`:
 
 1. Daily Intelligence Brief (`EditionHeader`) — the single `<h1>`
 2. Today's Bullpen Picture — league overview (`#bullpen-picture`)
-3. Where do you want to go next? (`#explore-baseballos`)
-4. What changed across MLB bullpens (`#since-yesterday`)
-5. Tonight's Bullpen Watch (`#tonight`)
-6. How BaseballOS describes a bullpen (`#vocabulary`)
-7. How current this read is (`#data-and-trust`)
-8. What BaseballOS is for (`#what-baseballos-is-for`)
-9. Learn & Explore BaseballOS (`#explore`)
+3. What changed across MLB bullpens (`#since-yesterday`)
+4. Tonight's Bullpen Watch (`#tonight`)
+5. How BaseballOS describes a bullpen (`#vocabulary`)
+6. How current this read is (`#data-and-trust`)
+7. What BaseballOS is for (`#what-baseballos-is-for`)
+8. Other views (`#continue-exploring`) — a `<nav>`, not a section
 
-Sections 2–5 keep the order and the data contracts they already had. Sections
-1 and 6–8 are presentation over existing governed values.
+Those are the six landmark sections plus the brief and the closing row.
+`tests/productExperienceFoundation.test.mjs` pins the list as a closed set, so
+a seventh region cannot appear without a deliberate contract change. `#since-
+yesterday` is the one region that withholds itself when the dashboard supplies
+no comparison; every other section always renders.
+
+Sections 2–4 keep the order and the data contracts they already had. The rest
+are presentation over existing governed values.
+
+Today used to carry two navigation blocks: a four-up "Where do you want to go
+next?" grid between the league picture and what changed, and a four-up "Learn &
+Explore BaseballOS" grid at the bottom. Both are removed. The first interrupted
+the reading path at its strongest point — the reader had just been told what
+the league looks like and was immediately asked to leave. The second duplicated
+the footer. The masthead owns Today, League Board, Team Bullpens, Stories,
+Methodology, and Data & Trust; the footer owns About, How to Read, Methodology,
+and Data & Trust. Compare and Reliever Finder are the only working views
+neither carries, so they are the whole of `#continue-exploring`: one labelled
+`<nav>` with two text links, below the product statement, with no heading and
+no grid.
 
 Tonight's collapsed card is the answer only — club, headline, the supported
 summary, and the watch point. Everything inspectable sits behind **one** native
@@ -167,13 +184,23 @@ previous → current delta with its label rendered verbatim, the supported reaso
 worked-yesterday receipts, and the evidence disclosure. No container.
 
 The vocabulary section leads with the three canonical Team State words as a
-plain definition list, then six concept features, each with its own abstract
-mark, a large title, one definition, and a route deeper.
+plain definition list, then **three** concept features — Bullpen Pressure,
+Recovery Window, Clean Options — each with its own abstract mark, a large
+title, one definition, and a route deeper.
+
+Three, not six. Workload Concentration, Coverage Safety, and Trusted Arms are
+still canonical BaseballOS vocabulary: their definitions in
+`utils/bullpenConcepts.js`, their glyphs, and `ConceptCard` are untouched, and
+How to Read still teaches all six. They are simply not what a reader needs
+mid-edition. Three concepts is the smallest set that explains a bullpen read —
+how loaded the pen is, how it recovers, and what is usable tonight — and the
+section carries exactly one path to the rest: "Explore all BaseballOS terms →"
+to `/how-to-read`.
 
 The descriptive-only boundary statement lives in the Data & Trust brief as fine
 print, not in the opening reading path.
 
-Section actions ("Read every term", "Open Data & Trust") are text links aligned
+Section actions ("Explore all BaseballOS terms", "Open Data & Trust") are text links aligned
 to the section title's baseline at the reading-column edge. A bordered button
 flush against that edge read as unanchored; a link sits there naturally and
 matches every other inspection path on the page.
@@ -190,7 +217,8 @@ Today's data contracts are unchanged: `getTonightIntelligence`,
 
 Every Today region below is frozen: it is the public visual reference for the
 rest of BaseballOS and should not be re-opened without a specific user-facing
-defect.
+defect. The information-architecture closeout changed *what appears and in what
+order*, not how any surviving region looks; the visual system is unchanged.
 
 | Region | Status |
 |---|---|
@@ -198,10 +226,15 @@ defect.
 | League Picture | FROZEN |
 | What Changed | FROZEN |
 | Tonight's Bullpen Watch | FROZEN |
-| BaseballOS Vocabulary | FROZEN |
+| BaseballOS Vocabulary | FROZEN — three concepts on Today, six in the system |
 | Data & Trust | FROZEN |
 | Product Positioning | FROZEN |
+| Other views (`#continue-exploring`) | FROZEN — two links, never a section |
 | Today's Lead | KNOWN FUTURE DEPENDENCY — #591, then founder authority |
+
+The Today Lead insertion point is unchanged by this pass: it sits between the
+Daily Intelligence Brief and the League Picture, and removing the navigation
+block that used to follow the League Picture does not move it.
 
 The remaining public surfaces (Dashboard, Bullpens, Compare, Reliever Finder,
 Stories, How to Read, Methodology, Data & Trust, About) still use the older

@@ -48,6 +48,7 @@ const { readPublicTeamState } = await server.ssrLoadModule('/src/adapters/public
 const render = (el) => renderToStaticMarkup(React.createElement(MemoryRouter, null, el))
 const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const htmlIncludes = (html, text) => new RegExp(escapeRegExp(text)).test(html)
+const countOccurrences = (html, text) => (html.match(new RegExp(escapeRegExp(text), 'g')) || []).length
 const visibleText = (html) => html
   .replace(/<style[\s\S]*?<\/style>/gi, ' ')
   .replace(/<[^>]+>/g, ' ')
@@ -369,7 +370,7 @@ test('the league overview renders backend Team State and fails closed without on
   // page (which defines all three states) cannot satisfy these assertions.
   const overview = html.slice(
     html.indexOf('id="bullpen-picture"'),
-    html.indexOf('id="explore-baseballos"'),
+    html.indexOf('id="tonight"'),
   )
 
   // Supplied canonical state renders with its canonical label.
@@ -396,18 +397,92 @@ test('Today keeps its authored section order across the whole edition', () => {
 
   const ordered = [
     'id="bullpen-picture"',
-    'id="explore-baseballos"',
     'id="tonight"',
     'id="vocabulary"',
     'id="data-and-trust"',
     'id="what-baseballos-is-for"',
-    'id="explore"',
+    'id="continue-exploring"',
   ]
   let previous = -1
   for (const marker of ordered) {
     const index = html.indexOf(marker)
     assert.ok(index > previous, marker)
     previous = index
+  }
+
+  // Today's landmark sections are a closed, ordered set. "What changed" is the
+  // one region that legitimately withholds itself when the dashboard supplies
+  // no comparison, so the rendered ids must be a prefix-preserving subsequence
+  // of the authored order — never a superset, and never reshuffled. This is
+  // what stops a navigation block being reinserted between two reads.
+  const AUTHORED_ORDER = [
+    'bullpen-picture',
+    'since-yesterday',
+    'tonight',
+    'vocabulary',
+    'data-and-trust',
+    'what-baseballos-is-for',
+  ]
+  const sectionIds = [...html.matchAll(/<section id="([^"]+)"/g)].map(match => match[1])
+  assert.deepEqual(
+    sectionIds,
+    AUTHORED_ORDER.filter(id => sectionIds.includes(id)),
+    `unexpected Today sections: ${sectionIds.join(', ')}`,
+  )
+  // Every region that is not conditionally withheld is present.
+  for (const id of AUTHORED_ORDER.filter(candidate => candidate !== 'since-yesterday')) {
+    assert.ok(sectionIds.includes(id), id)
+  }
+})
+
+test('the Today vocabulary teaches three concepts and routes to the full set', () => {
+  const html = render(React.createElement(IntelligenceSurfaceView, {
+    dashboard: { freshness },
+    landscape,
+    teams,
+  }))
+  const vocabulary = html.slice(html.indexOf('id="vocabulary"'), html.indexOf('id="data-and-trust"'))
+
+  // Exactly three concept features: how loaded the pen is, how it recovers,
+  // and what is usable tonight.
+  for (const name of ['Bullpen Pressure', 'Recovery Window', 'Clean Options']) {
+    assert.ok(htmlIncludes(vocabulary, name), name)
+  }
+  // The remaining three are still canonical vocabulary — they are simply not
+  // taught mid-edition. How to Read still owns the complete dictionary.
+  for (const name of ['Workload Concentration', 'Coverage Safety', 'Trusted Arms']) {
+    assert.equal(htmlIncludes(vocabulary, name), false, name)
+  }
+  // Three cards, three marks — not three names inside six cards.
+  assert.equal(countOccurrences(vocabulary, 'bos-concept-title'), 3)
+  assert.equal(countOccurrences(vocabulary, '<svg'), 3)
+
+  // The three canonical Team State words are untouched by the trim.
+  for (const label of ['Fresh', 'Stretched', 'Vulnerable']) {
+    assert.ok(htmlIncludes(vocabulary, `>${label}<`), label)
+  }
+
+  // Exactly one path to everything that was removed.
+  assert.ok(htmlIncludes(vocabulary, 'Explore all BaseballOS terms'))
+  assert.ok(htmlIncludes(vocabulary, 'href="/how-to-read"'))
+})
+
+test('the full six-concept dictionary survives the Today trim', async () => {
+  const { CONCEPT_DEFINITIONS: full, SUPPORTING_CONCEPT_DEFINITIONS: supporting } =
+    await server.ssrLoadModule('/src/utils/bullpenConcepts.js')
+
+  // Removing three concepts from Today removed nothing from the product: the
+  // definitions, the glyph keys, and the card component are all still there.
+  for (const key of ['pressure', 'recovery', 'concentration', 'cleanOptions']) {
+    assert.ok(full[key]?.name, key)
+    assert.ok(full[key]?.definition, key)
+  }
+  for (const key of ['coverageSafety', 'trustedArms']) {
+    assert.ok(supporting[key]?.name, key)
+    assert.ok(supporting[key]?.definition, key)
+  }
+  for (const key of ['concentration', 'coverageSafety', 'trustedArms']) {
+    assert.ok(CONCEPT_GLYPH_KEYS.includes(key), key)
   }
 })
 
@@ -761,16 +836,27 @@ test('What Changed keeps its controls, evidence, and comparison contract', () =>
 
 test('the Today edition exposes one landmark-labelled section per region', () => {
   const html = render(React.createElement(IntelligenceSurfaceView, {
-    dashboard: { freshness },
+    dashboard: {
+      freshness,
+      what_changed_since_yesterday: {
+        state: 'no_meaningful_changes',
+        comparison: { comparison_available: true },
+      },
+    },
     landscape,
     teams,
   }))
   const sections = html.match(/<section[^>]*aria-labelledby="([^"]+)"/g) || []
-  assert.ok(sections.length >= 6, `expected labelled sections, saw ${sections.length}`)
+  // Six regions, each labelled by its own heading. Not "at least six": a
+  // seventh landmark section on Today means a region was added back.
+  assert.equal(sections.length, 6, `expected six labelled sections, saw ${sections.length}`)
   for (const section of sections) {
     const id = /aria-labelledby="([^"]+)"/.exec(section)[1]
     assert.ok(html.includes(`id="${id}"`), `${id} target exists`)
   }
   // Every section heading is an H2 under the single page H1.
   assert.equal((html.match(/<h1/g) || []).length, 1)
+  // The one remaining navigation group on Today is a <nav> with its own label,
+  // not a seventh section competing with the reads.
+  assert.equal((html.match(/<nav[^>]*aria-label="Other bullpen views"/g) || []).length, 1)
 })

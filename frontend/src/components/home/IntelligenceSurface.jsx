@@ -31,7 +31,6 @@ import {
 } from '../intel'
 import {
   CONCEPT_DEFINITIONS,
-  SUPPORTING_CONCEPT_DEFINITIONS,
   TEAM_STATE_DEFINITIONS,
 } from '../../utils/bullpenConcepts'
 import { formatUtcDateTimeEt } from '../../utils/dateDisplay'
@@ -187,54 +186,19 @@ export async function submitAudienceSignup({
   }
 }
 
-// Compact first-use entry path: the four primary product surfaces a new
-// visitor most often wants, using the existing bullpen routes and query views.
-// It sits after the daily read, never replacing it, so returning visitors still
-// reach today's answer first.
-const FIRST_USE_ACTIONS = [
-  {
-    title: "See Today's Bullpen Read",
-    body: 'Fresh, stretched, and vulnerable pens tonight.',
-    to: '/',
-  },
-  {
-    title: 'Find a Team',
-    body: 'Open any team bullpen board.',
-    to: '/bullpen',
-  },
-  {
-    title: 'Compare Two Bullpens',
-    body: 'Put two pens side by side.',
-    to: '/bullpen?view=compare',
-  },
-  {
-    title: 'Find a Reliever',
-    body: 'Search a reliever and scan workload.',
-    to: '/bullpen?view=pitchers',
-  },
-]
-
-const EXPLORE_LINKS = [
-  {
-    title: 'About BaseballOS',
-    body: 'Why BaseballOS exists, in a minute.',
-    to: '/about',
-  },
-  {
-    title: 'How to Read BaseballOS',
-    body: 'Learn every term in one line each.',
-    to: '/how-to-read',
-  },
-  {
-    title: 'Methodology',
-    body: 'See how each read is built.',
-    to: '/methodology',
-  },
-  {
-    title: 'Data & Trust',
-    body: 'Check freshness and how we know.',
-    to: '/trust',
-  },
+// The only two working views the masthead and the footer do not already carry.
+//
+// Today used to hold two full navigation blocks — a four-up "where do you want
+// to go next?" grid between the league picture and what changed, and a four-up
+// "learn & explore" grid at the bottom. Both duplicated navigation the shell
+// already owns, and the first one interrupted the reading path at its
+// strongest point. The masthead carries Today, League Board, Team Bullpens,
+// Stories, Methodology, and Data & Trust; the footer carries About, How to
+// Read, Methodology, and Data & Trust. Compare and Reliever Finder are the
+// residue, so they are the whole of what Today still needs to expose.
+const CONTINUE_LINKS = [
+  { label: 'Compare two bullpens', to: '/bullpen?view=compare' },
+  { label: 'Find a reliever', to: '/bullpen?view=pitchers' },
 ]
 
 function textValue(value) {
@@ -2120,63 +2084,27 @@ function BullpenPicture({
   )
 }
 
-// Compact primary-action row placed right after the daily read. It helps a
-// first-time visitor reach the strongest surfaces without hunting through the
-// product, and stays short so it never reads as a marketing landing page.
-function ExploreBaseballOS() {
+// One quiet line at the very bottom of the edition, below the product
+// statement and immediately above the footer. It is deliberately not a section
+// heading, not a grid, and not a card: the edition has ended, and this is the
+// last thing on the page rather than a second destination page.
+function ContinueExploring() {
   return (
-    <section id="explore-baseballos" aria-labelledby="explore-baseballos-title" className="bos-section">
-      <div className="mb-7 md:mb-9">
-        <h2 id="explore-baseballos-title" className="bos-section-title">
-          Where do you want to go next?
-        </h2>
-      </div>
-      <div className="grid grid-cols-1 gap-x-12 gap-y-6 sm:grid-cols-2 sm:gap-y-8 lg:grid-cols-4">
-        {FIRST_USE_ACTIONS.map(action => (
-          <Link
-            key={action.title}
-            to={action.to}
-            className="group min-w-0 border-t border-line pt-5 focus:outline-none"
-          >
-            <h3 className="bos-card-title transition-colors group-hover:text-signal">
-              {action.title}
-            </h3>
-            <p className="bos-support mt-2">
-              {action.body}
-            </p>
-          </Link>
-        ))}
-      </div>
-    </section>
-  )
-}
-
-function Explore() {
-  return (
-    <SectionShell
-      id="explore"
-      eyebrow="Learn & Explore"
-      title="Learn & Explore BaseballOS"
-      subtitle="Get to know BaseballOS, then dig into every bullpen."
-      className="pb-4"
+    <nav
+      id="continue-exploring"
+      aria-label="Other bullpen views"
+      className="mt-14 flex flex-col gap-x-8 gap-y-3 border-t border-line pt-6 sm:mt-20 sm:flex-row sm:items-baseline sm:gap-x-10"
     >
-      <div className="grid grid-cols-1 gap-x-12 gap-y-6 sm:grid-cols-2 sm:gap-y-8 lg:grid-cols-4">
-        {EXPLORE_LINKS.map(link => (
-          <Link
-            key={link.title}
-            to={link.to}
-            className="group min-w-0 border-t border-line pt-5 focus:outline-none"
-          >
-            <h3 className="bos-card-title transition-colors group-hover:text-signal">
-              {link.title}
-            </h3>
-            <p className="bos-support mt-2">
-              {link.body}
-            </p>
+      <p className="bos-micro shrink-0">Other views</p>
+      <div className="flex flex-col gap-x-10 gap-y-3 sm:flex-row sm:flex-wrap">
+        {CONTINUE_LINKS.map(link => (
+          <Link key={link.to} to={link.to} className="bos-link w-fit">
+            {link.label}
+            <span aria-hidden="true">&#8594;</span>
           </Link>
         ))}
       </div>
-    </SectionShell>
+    </nav>
   )
 }
 
@@ -2186,13 +2114,17 @@ function Explore() {
 // These are descriptive concepts, not measurements: the section teaches the
 // language and routes to where the language is used. No concept carries a live
 // value here, because no approved public value exists for one.
+//
+// Today teaches three, not six. Workload Concentration, Coverage Safety, and
+// Trusted Arms are still canonical BaseballOS vocabulary — their definitions,
+// cards, and glyphs are untouched, and How to Read still teaches all six. They
+// are simply not what a reader needs on the way through a daily edition. Three
+// concepts is the smallest set that explains a bullpen read: how loaded the pen
+// is, how it recovers, and what is actually usable tonight.
 const VOCABULARY_CONCEPTS = [
   { ...CONCEPT_DEFINITIONS.pressure, glyph: 'pressure', to: '/methodology' },
   { ...CONCEPT_DEFINITIONS.recovery, glyph: 'recovery', to: '/methodology' },
-  { ...CONCEPT_DEFINITIONS.concentration, glyph: 'concentration', to: '/methodology' },
   { ...CONCEPT_DEFINITIONS.cleanOptions, glyph: 'cleanOptions', to: '/how-to-read' },
-  { ...SUPPORTING_CONCEPT_DEFINITIONS.coverageSafety, glyph: 'coverageSafety', to: '/how-to-read' },
-  { ...SUPPORTING_CONCEPT_DEFINITIONS.trustedArms, glyph: 'trustedArms', to: '/how-to-read' },
 ]
 
 function IntelligenceVocabulary() {
@@ -2204,7 +2136,7 @@ function IntelligenceVocabulary() {
       subtitle="A handful of words carry most of the meaning on this site. Each one describes what a bullpen looks like right now — none of them compares one club against another."
       action={
         <Link to="/how-to-read" className="bos-link">
-          Read every term
+          Explore all BaseballOS terms
           <span aria-hidden="true">&#8594;</span>
         </Link>
       }
@@ -2216,7 +2148,9 @@ function IntelligenceVocabulary() {
         <p className="bos-micro">The three team reads</p>
         <ConceptGlossary terms={TEAM_STATE_DEFINITIONS} className="mt-5 sm:mt-6 lg:grid-cols-3" />
       </div>
-      <div className="grid grid-cols-1 gap-x-14 gap-y-8 sm:grid-cols-2 sm:gap-y-11 xl:grid-cols-3">
+      {/* Three across from md up: with exactly three concepts a two-column
+          grid would strand the third on its own row. */}
+      <div className="grid grid-cols-1 gap-x-10 gap-y-8 sm:gap-y-11 md:grid-cols-3 lg:gap-x-14">
         {VOCABULARY_CONCEPTS.map(concept => (
           <ConceptCard
             key={concept.name}
@@ -2373,7 +2307,6 @@ export function IntelligenceSurfaceView({
         onRetry={onRetryLandscape}
         freshness={pageFreshness}
       />
-      <ExploreBaseballOS />
       <SinceYesterdaySection dashboard={dashboard} teams={teams} />
       <TonightSection
         tonight={tonight}
@@ -2387,7 +2320,7 @@ export function IntelligenceSurfaceView({
       <IntelligenceVocabulary />
       <DataTrustBrief freshness={pageFreshness} slateDate={slateDate} />
       <ProductPositioning />
-      <Explore />
+      <ContinueExploring />
     </div>
   )
 }
