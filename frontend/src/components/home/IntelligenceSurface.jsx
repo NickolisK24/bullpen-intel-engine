@@ -922,7 +922,7 @@ function TonightFreshnessRow({
     : null
   if (!slateDate && !dataThrough && !lastSync && !generatedAt && !stale && !freshness) return null
   return (
-    <div className="mb-6 flex flex-wrap items-center gap-x-5 gap-y-2">
+    <div className="mb-6 flex flex-wrap items-center gap-x-5 gap-y-1">
       <SlateDateStamp date={slateDate} />
       {(dataThrough || lastSync || stale || freshness) && (
         <FreshnessBadge
@@ -1360,17 +1360,31 @@ function TonightEmptyState({ isError, emptyReason, onRetry }) {
 }
 
 function TonightCard({ card }) {
-  // The first read is the answer and nothing else: club, headline, the one
-  // supported summary, the watch point, and the strongest evidence cues. The
-  // schedule sentence and the remaining backend-authored rows move behind one
-  // native disclosure, because a phone reader wants the useful point before a
-  // report. Freshness and limitations are never placed behind it.
+  // The collapsed read is the answer and nothing else: club, headline, the one
+  // supported summary, and the watch point. Everything inspectable — the exact
+  // supplied evidence rows plus the remaining backend-authored context — sits
+  // behind a single disclosure, so a phone reader decides whether to inspect
+  // before reading a report.
+  //
+  // One disclosure, not two. The affordance names the count so the reader knows
+  // what is behind it; the count is the length of the supplied evidence array
+  // and nothing else. No evidence is summarized, ranked, or paraphrased — the
+  // rows inside are the backend's, verbatim.
   const deeperRows = [
     ["Tonight's schedule", card.teamContext],
     ['Why It Matters Tonight', card.whyItMatters],
     ['Key Note', card.keyNote],
     ['Starter Length', card.starterDependency],
   ].filter(([, body]) => Boolean(body))
+
+  const evidenceCount = card.evidence.length
+  const hasDisclosure = evidenceCount > 0 || deeperRows.length > 0
+  const closedLabel = evidenceCount > 0
+    ? `View evidence and context (${evidenceCount})`
+    : 'More on this read'
+  const openLabel = evidenceCount > 0
+    ? 'Hide evidence and context'
+    : 'Less on this read'
 
   return (
     <article className="bos-panel flex min-w-0 flex-col p-5 sm:p-6">
@@ -1389,17 +1403,17 @@ function TonightCard({ card }) {
           <p className="bos-evidence mt-1.5 text-chalk400">{card.watchPoint}</p>
         </div>
       )}
-      {card.evidence.length > 0 && (
-        <EvidenceList items={card.evidence} label="Recent evidence" className="mt-5" />
-      )}
-      {deeperRows.length > 0 && (
+      {hasDisclosure && (
         <details className="group mt-5 border-t border-line pt-4">
           <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 text-sm font-medium text-signal transition-colors hover:text-chalk100 focus:outline-none">
-            <span className="group-open:hidden">More on this read</span>
-            <span className="hidden group-open:inline">Less on this read</span>
+            <span className="group-open:hidden">{closedLabel}</span>
+            <span className="hidden group-open:inline">{openLabel}</span>
             <span aria-hidden="true" className="text-xs opacity-70 group-open:rotate-180">&#9662;</span>
           </summary>
           <div className="space-y-4 pb-1 pt-3">
+            {evidenceCount > 0 && (
+              <EvidenceList items={card.evidence} label="Recent evidence" />
+            )}
             {deeperRows.map(([label, body]) => (
               <div key={label}>
                 <h4 className="bos-micro">{label}</h4>
@@ -1613,7 +1627,7 @@ function SinceYesterdayTabs({ tabs, activeKey, onActivate }) {
       role="tablist"
       aria-label="Movement categories"
       aria-orientation="horizontal"
-      className="-mx-3 flex flex-wrap items-center"
+      className="-mx-2.5 flex flex-wrap items-center"
       onKeyDown={handleKeyDown}
     >
       {tabs.map(tab => {
@@ -1633,18 +1647,16 @@ function SinceYesterdayTabs({ tabs, activeKey, onActivate }) {
               else tabRefs.current.delete(tab.key)
             }}
             onClick={() => onActivate(tab.key)}
-            className={`relative inline-flex min-h-11 items-center gap-2 px-3 py-2 text-sm font-medium transition-colors focus:outline-none ${
+            className={`relative inline-flex min-h-11 items-center gap-1.5 px-2.5 py-2 text-sm transition-colors focus:outline-none ${
               selected
-                ? 'text-chalk100 after:absolute after:inset-x-3 after:bottom-1.5 after:h-[1.5px] after:rounded-sm after:bg-signal'
+                ? 'font-medium text-chalk100 after:absolute after:inset-x-2.5 after:bottom-2 after:h-px after:bg-signal'
                 : 'text-chalk500 hover:text-chalk200'
             }`}
           >
             <span>{tab.shortLabel}</span>
             <span
               aria-hidden="true"
-              className={`bos-value text-[0.6875rem] ${
-                selected ? 'text-signal' : 'text-chalk600'
-              }`}
+              className="bos-value text-[0.6875rem] text-chalk600"
             >
               {tab.count}
             </span>
@@ -1726,7 +1738,7 @@ function SinceYesterdayTeamSearch({ query, onChange, onReset }) {
         onChange={event => onChange(event.target.value)}
         placeholder="Find a team"
         autoComplete="off"
-        className="min-h-11 w-full max-w-[15rem] border-b border-line bg-transparent px-1 py-2 text-sm text-chalk200 placeholder:text-chalk600 transition-colors focus:border-signal/70 focus:outline-none"
+        className="min-h-11 w-full max-w-[13rem] border-b border-line/70 bg-transparent px-1 py-2 text-sm text-chalk300 placeholder:text-chalk600 transition-colors hover:border-line-strong focus:border-signal/70 focus:outline-none"
       />
       {query && (
         <button
@@ -1760,12 +1772,16 @@ function SinceYesterdayBriefing({ view }) {
   return (
     <>
       <SinceYesterdayLeagueSummary summary={view.summary} />
-      <SinceYesterdayTabs tabs={tabs} activeKey={effectiveKey} onActivate={setActiveKey} />
-      <SinceYesterdayTeamSearch
-        query={query}
-        onChange={setQuery}
-        onReset={() => setQuery('')}
-      />
+      {/* Controls stay a single quiet tool row so they never compete with the
+          change entries below them. */}
+      <div className="flex flex-col gap-1 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:gap-x-8">
+        <SinceYesterdayTabs tabs={tabs} activeKey={effectiveKey} onActivate={setActiveKey} />
+        <SinceYesterdayTeamSearch
+          query={query}
+          onChange={setQuery}
+          onReset={() => setQuery('')}
+        />
+      </div>
       <div
         role="tabpanel"
         id={sinceYesterdayPanelId(effectiveKey)}
@@ -1774,12 +1790,12 @@ function SinceYesterdayBriefing({ view }) {
         className="focus:outline-none"
       >
         {clarity && (
-          <p className="mb-7 mt-4 font-mono text-[11px] leading-relaxed text-chalk500">
+          <p className="mb-6 mt-5 font-mono text-[11px] leading-relaxed text-chalk500">
             {clarity}
           </p>
         )}
         {hasMatches ? (
-          <div className="grid grid-cols-1 gap-x-14 gap-y-9 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-x-14 gap-y-7 sm:grid-cols-2 sm:gap-y-9">
             {visibleItems.map(item => (
               <SinceYesterdayCard key={item.key} item={item} />
             ))}
@@ -2115,7 +2131,7 @@ function ExploreBaseballOS() {
           Where do you want to go next?
         </h2>
       </div>
-      <div className="grid grid-cols-1 gap-x-12 gap-y-8 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-x-12 gap-y-6 sm:grid-cols-2 sm:gap-y-8 lg:grid-cols-4">
         {FIRST_USE_ACTIONS.map(action => (
           <Link
             key={action.title}
@@ -2144,7 +2160,7 @@ function Explore() {
       subtitle="Get to know BaseballOS, then dig into every bullpen."
       className="pb-4"
     >
-      <div className="grid grid-cols-1 gap-x-12 gap-y-8 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-x-12 gap-y-6 sm:grid-cols-2 sm:gap-y-8 lg:grid-cols-4">
         {EXPLORE_LINKS.map(link => (
           <Link
             key={link.title}
@@ -2187,19 +2203,20 @@ function IntelligenceVocabulary() {
       title="How BaseballOS describes a bullpen"
       subtitle="A handful of words carry most of the meaning on this site. Each one describes what a bullpen looks like right now — none of them compares one club against another."
       action={
-        <Link to="/how-to-read" className="bos-action bos-action--quiet">
+        <Link to="/how-to-read" className="bos-link">
           Read every term
+          <span aria-hidden="true">&#8594;</span>
         </Link>
       }
     >
       {/* The canonical Team State words come first and stay visually distinct
           from the concept features below: these three are the public state
           vocabulary, not descriptive concepts. */}
-      <div className="mb-14 border-t border-line pt-7">
+      <div className="mb-10 border-t border-line pt-6 sm:mb-14 sm:pt-7">
         <p className="bos-micro">The three team reads</p>
-        <ConceptGlossary terms={TEAM_STATE_DEFINITIONS} className="mt-6 lg:grid-cols-3" />
+        <ConceptGlossary terms={TEAM_STATE_DEFINITIONS} className="mt-5 sm:mt-6 lg:grid-cols-3" />
       </div>
-      <div className="grid grid-cols-1 gap-x-14 gap-y-11 sm:grid-cols-2 xl:grid-cols-3">
+      <div className="grid grid-cols-1 gap-x-14 gap-y-8 sm:grid-cols-2 sm:gap-y-11 xl:grid-cols-3">
         {VOCABULARY_CONCEPTS.map(concept => (
           <ConceptCard
             key={concept.name}
@@ -2237,13 +2254,14 @@ function DataTrustBrief({ freshness, slateDate }) {
       title="How current this read is"
       subtitle="BaseballOS shows the date it is reading from and when it last updated, on every page. If a read cannot be supported, it is withheld rather than filled in."
       action={
-        <Link to="/trust" className="bos-action bos-action--quiet">
+        <Link to="/trust" className="bos-link">
           Open Data &amp; Trust
+          <span aria-hidden="true">&#8594;</span>
         </Link>
       }
     >
       {hasAnyFact ? (
-        <dl className="grid grid-cols-1 gap-x-14 gap-y-7 border-t border-line pt-7 sm:grid-cols-3">
+        <dl className="grid grid-cols-1 gap-x-14 gap-y-6 border-t border-line pt-6 sm:grid-cols-3 sm:gap-y-7 sm:pt-7">
           <TrustFact
             label="Bullpen data through"
             value={dataThrough}
@@ -2301,7 +2319,7 @@ function ProductPositioning() {
         <h2 id="what-baseballos-is-for-title" className="bos-statement mt-7 max-w-[16ch]">
           Baseball has more public bullpen data than ever.
         </h2>
-        <div className="mt-12 grid max-w-5xl grid-cols-1 gap-x-16 gap-y-7 lg:grid-cols-2">
+        <div className="mt-9 grid max-w-5xl grid-cols-1 gap-x-16 gap-y-6 sm:mt-12 sm:gap-y-7 lg:grid-cols-2">
           <p className="bos-body text-chalk300">
             Understanding it should not mean opening five sites and assembling the
             story yourself — box scores in one place, rest days in another, roster
@@ -2314,7 +2332,7 @@ function ProductPositioning() {
           </p>
         </div>
         {/* The signup is a secondary interaction and is composed to stay one. */}
-        <div className="mt-14 max-w-xl border-t border-line pt-8">
+        <div className="mt-10 max-w-xl border-t border-line pt-7 sm:mt-14 sm:pt-8">
           <AudienceSignupForm />
         </div>
       </div>

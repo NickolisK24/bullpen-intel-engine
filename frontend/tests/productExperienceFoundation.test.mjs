@@ -515,45 +515,125 @@ test('a supported Today payload always shows its data-through date', () => {
   assert.ok(htmlIncludes(html, 'Aug 5, 2026'))
 })
 
-test('Tonight keeps the answer, evidence, freshness, and limitations outside any disclosure', () => {
-  const card = {
-    key: 'CHC', team_id: 112, team_name: 'Chicago Cubs', team_abbreviation: 'CHC',
-    pregame_story: {
-      headline: 'Narrow bullpen margin before first pitch',
-      team_context: 'Schedule context sentence.',
-      watching: 'The supported summary sentence.',
-      why_it_matters: 'The deeper why sentence.',
-      key_note: 'The deeper key note sentence.',
-      watch_point: 'The watch point sentence.',
-    },
-    evidence: ['One arm is on watch after recent work'],
-    limitations: ['Schedule context can change before lineup lock.'],
-  }
-  const html = render(React.createElement(IntelligenceSurfaceView, {
-    dashboard: { freshness },
-    tonight: { status: 'ok', reference_date: '2026-08-06', cards: [card] },
-    teams: [{ team_id: 112, team_name: 'Chicago Cubs', team_abbreviation: 'CHC' }],
-  }))
+// The collapsed Tonight read is the answer only. Everything inspectable sits
+// behind one disclosure whose label names the supplied evidence count; the
+// exact rows are inside, verbatim. Limitations, freshness, and the Team Board
+// path never move behind it.
+const tonightCard = {
+  key: 'CHC', team_id: 112, team_name: 'Chicago Cubs', team_abbreviation: 'CHC',
+  pregame_story: {
+    headline: 'Narrow bullpen margin before first pitch',
+    team_context: 'Schedule context sentence.',
+    watching: 'The supported summary sentence.',
+    why_it_matters: 'The deeper why sentence.',
+    key_note: 'The deeper key note sentence.',
+    watch_point: 'The watch point sentence.',
+  },
+  evidence: ['One arm is on watch after recent work', 'A long stretch before the next off day'],
+  limitations: ['Schedule context can change before lineup lock.'],
+}
+const tonightTeams = [{ team_id: 112, team_name: 'Chicago Cubs', team_abbreviation: 'CHC' }]
 
-  const beforeDisclosure = html.slice(0, html.indexOf('<details'))
-  // The answer, its evidence, and the watch point are immediate.
+const renderTonight = (card) => render(React.createElement(IntelligenceSurfaceView, {
+  dashboard: { freshness },
+  tonight: { status: 'ok', reference_date: '2026-08-06', cards: [card] },
+  teams: tonightTeams,
+}))
+
+test('the collapsed Tonight read is the answer, and inspection sits behind one disclosure', () => {
+  const html = renderTonight(tonightCard)
+  const collapsed = html.slice(0, html.indexOf('<details'))
+
+  // Club, headline, the supported summary, and the watch point are immediate.
   for (const immediate of [
+    'Chicago Cubs',
     'Narrow bullpen margin before first pitch',
     'The supported summary sentence.',
+    'Watch Point',
     'The watch point sentence.',
-    'One arm is on watch after recent work',
   ]) {
-    assert.ok(htmlIncludes(beforeDisclosure, immediate), immediate)
+    assert.ok(htmlIncludes(collapsed, immediate), immediate)
   }
-  // Supporting rows move behind one native, keyboard-operable disclosure.
-  assert.ok(htmlIncludes(html, '<summary'))
-  assert.ok(htmlIncludes(html, 'The deeper why sentence.'))
-  assert.ok(htmlIncludes(html, 'The deeper key note sentence.'))
-  // A limitation that could change interpretation is never hidden.
+
+  // Evidence rows and supporting context are not in the collapsed read.
+  for (const deferred of [
+    'One arm is on watch after recent work',
+    'A long stretch before the next off day',
+    'Schedule context sentence.',
+    'The deeper why sentence.',
+    'The deeper key note sentence.',
+  ]) {
+    assert.equal(htmlIncludes(collapsed, deferred), false, deferred)
+  }
+
+  // Exactly one disclosure per card — no nested details.
+  assert.equal((html.match(/<details/g) || []).length, 1)
+  assert.equal(/<details[\s\S]*<details/.test(html), false, 'no nested disclosure')
+})
+
+test('the Tonight disclosure label reports only the supplied evidence count', () => {
+  // Two supplied rows -> a count of two. The label is derived from the array
+  // length alone; nothing is read out of the row contents.
+  const two = renderTonight(tonightCard)
+  assert.ok(htmlIncludes(two, 'View evidence and context (2)'))
+  assert.ok(htmlIncludes(two, 'Hide evidence and context'))
+
+  // One supplied row -> a count of one.
+  const one = renderTonight({ ...tonightCard, evidence: ['One arm is on watch after recent work'] })
+  assert.ok(htmlIncludes(one, 'View evidence and context (1)'))
+  assert.equal(htmlIncludes(one, '(2)'), false)
+
+  // No evidence at all -> no count is invented, and the disclosure still opens
+  // the remaining backend-authored context.
+  const none = renderTonight({ ...tonightCard, evidence: [] })
+  assert.equal(/View evidence and context \(\d/.test(none), false)
+  assert.ok(htmlIncludes(none, 'More on this read'))
+
+  // Nothing to inspect at all -> no disclosure rather than an empty one.
+  const bare = renderTonight({
+    ...tonightCard,
+    evidence: [],
+    pregame_story: {
+      headline: 'Narrow bullpen margin before first pitch',
+      watching: 'The supported summary sentence.',
+      watch_point: 'The watch point sentence.',
+    },
+  })
+  assert.equal(htmlIncludes(bare, '<details'), false)
+  assert.ok(htmlIncludes(bare, 'The watch point sentence.'))
+})
+
+test('Tonight never summarizes, ranks, or paraphrases the evidence it defers', () => {
+  const html = renderTonight(tonightCard)
+
+  // The exact supplied rows survive inside the disclosure, verbatim and in the
+  // order they were served.
+  const disclosure = html.slice(html.indexOf('<details'), html.indexOf('</details>'))
+  const first = disclosure.indexOf('One arm is on watch after recent work')
+  const second = disclosure.indexOf('A long stretch before the next off day')
+  assert.ok(first > -1 && second > first, 'supplied rows render in order')
+
+  // The count affordance is the only thing derived from the array, and no
+  // ranking or quality language is attached to it.
+  const text = visibleText(html)
+  for (const banned of ['strongest', 'weakest', 'most important', 'key evidence', 'top', 'best', 'worst']) {
+    assert.equal(new RegExp(`\\b${escapeRegExp(banned)}\\b`, 'i').test(text), false, banned)
+  }
+})
+
+test('Tonight keeps limitations, freshness, and the Team Board path outside the disclosure', () => {
+  const html = renderTonight(tonightCard)
   const afterDisclosure = html.slice(html.indexOf('</details>'))
+
+  // A limitation that could change interpretation is never deferred.
   assert.ok(htmlIncludes(afterDisclosure, 'Schedule context can change before lineup lock.'))
-  // Freshness is never hidden either.
-  assert.ok(htmlIncludes(html, 'Published view through'))
+  // The inspection path stays visible.
+  assert.ok(htmlIncludes(afterDisclosure, 'View Team Bullpen State'))
+  assert.ok(htmlIncludes(afterDisclosure, 'Open the bullpen board for Chicago Cubs'))
+  // Freshness sits above the grid, outside every card.
+  const beforeCards = html.slice(0, html.indexOf('<details'))
+  assert.ok(htmlIncludes(beforeCards, 'Published view through'))
+  assert.ok(htmlIncludes(beforeCards, 'Tonight slate'))
 })
 
 test('Team State stays readable without colour and without the mono face', () => {
