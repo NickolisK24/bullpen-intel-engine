@@ -14,4 +14,5 @@ export {
 } from './EvidenceReceipt'
 export { default as TrustStrip, TrustFact } from './TrustStrip'
 export { default as ConceptCard, ConceptGlossary } from './ConceptCard'
+export { default as ConceptGlyph, CONCEPT_GLYPH_KEYS } from './ConceptGlyph'
 export { default as IntelNotice, IntelSkeleton } from './IntelNotice'

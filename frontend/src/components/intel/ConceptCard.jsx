@@ -11,16 +11,22 @@
 
 import { Link } from 'react-router-dom'
 
-export function ConceptCard({ name, definition, to, linkLabel = 'Where this shows up' }) {
+import ConceptGlyph from './ConceptGlyph'
+
+// A named BaseballOS concept: an abstract mark, a large title, one concise
+// explanation, and a route to where the term is used. The mark gives the
+// vocabulary a recognizable identity; it is decorative and aria-hidden, and it
+// can never carry a value because the glyph geometry is fixed.
+export function ConceptCard({ name, definition, glyph, to, linkLabel = 'Where this shows up' }) {
   if (!name || !definition) return null
   return (
-    // No container: a concept is a definition, and a definition reads better as
-    // type and space than as another rounded rectangle.
-    <div className="flex min-w-0 flex-col border-t border-line pt-5">
-      <h3 className="bos-card-title">{name}</h3>
-      <p className="bos-support mt-2.5 flex-1">{definition}</p>
+    // Open cell rather than a card: a top hairline, generous space, and type.
+    <div className="flex min-w-0 flex-col border-t border-line pt-6">
+      {glyph && <ConceptGlyph name={glyph} className="mb-6 text-signal/80" />}
+      <h3 className="bos-concept-title">{name}</h3>
+      <p className="bos-support mt-3 flex-1">{definition}</p>
       {to && (
-        <Link to={to} className="bos-link mt-3 w-fit">
+        <Link to={to} className="bos-link mt-4 w-fit">
           {linkLabel}
           <span aria-hidden="true">&#8594;</span>
         </Link>
@@ -34,13 +40,13 @@ export function ConceptGlossary({ terms = [], className = '' }) {
   const rows = (Array.isArray(terms) ? terms : []).filter(term => term?.name && term?.definition)
   if (rows.length === 0) return null
   return (
-    <dl className={`grid grid-cols-1 gap-x-12 gap-y-5 sm:grid-cols-2 ${className}`}>
+    <dl className={`grid grid-cols-1 gap-x-14 gap-y-6 sm:grid-cols-2 ${className}`}>
       {rows.map(term => (
         <div key={term.name} className="min-w-0">
-          <dt className="text-[0.9375rem] font-semibold tracking-[-0.01em] text-brass">
+          <dt className="text-[1.0625rem] font-semibold tracking-[-0.014em] text-brass">
             {term.name}
           </dt>
-          <dd className="bos-support mt-1">{term.definition}</dd>
+          <dd className="bos-support mt-1.5">{term.definition}</dd>
         </div>
       ))}
     </dl>
