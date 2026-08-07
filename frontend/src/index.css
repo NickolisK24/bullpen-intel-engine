@@ -13,6 +13,49 @@
     --pine:     #2d6a4f;
     --warning:  #d97706;
     --danger:   #dc2626;
+
+    /* ── BaseballOS product experience tokens ─────────────────────────────
+       Surfaces, borders, and accents for the intelligence surfaces. These
+       mirror the Tailwind token names one-for-one so a component can reach
+       for either without the two systems drifting. */
+    --bos-ink:            #070a0d;
+    --bos-panel:          #0f1319;
+    --bos-panel-2:        #151a21;
+    --bos-line:           #1e2530;
+    --bos-line-strong:    #2c3644;
+    --bos-signal:         #8fb8e8;
+    --bos-signal-deep:    #7aa9e0;
+    --bos-signal-well:    #122234;
+    --bos-brass:          #d8bd7e;
+    --bos-brass-deep:     #c9a961;
+    --bos-focus:          #9ecbff;
+    --bos-text:           #f0f4f8;
+    --bos-text-2:         #c3cedb;
+    --bos-text-muted:     #93a3b5;
+
+    /* Spacing scale. Steps 1-4 carry dense metadata and evidence rows; 5-8
+       carry cards, section padding, and page rhythm. */
+    --bos-space-1: 0.25rem;
+    --bos-space-2: 0.5rem;
+    --bos-space-3: 0.75rem;
+    --bos-space-4: 1rem;
+    --bos-space-5: 1.5rem;
+    --bos-space-6: 2rem;
+    --bos-space-7: 2.5rem;
+    --bos-space-8: 3.5rem;
+
+    /* Restrained radii — panels stay close to rectilinear. */
+    --bos-radius-edge:    2px;
+    --bos-radius-panel:   4px;
+    --bos-radius-control: 6px;
+
+    /* Shadows stay near-invisible; borders carry the structure. */
+    --bos-shadow-panel:   0 1px 0 rgba(255, 255, 255, 0.02), 0 18px 40px -34px rgba(0, 0, 0, 0.95);
+    --bos-shadow-edition: 0 1px 0 rgba(255, 255, 255, 0.03), 0 30px 70px -50px rgba(0, 0, 0, 1);
+
+    /* Motion is only ever used to soften a state change. */
+    --bos-motion-fast: 120ms;
+    --bos-motion:      180ms;
   }
 
   * { box-sizing: border-box; }
@@ -34,13 +77,28 @@
   button:focus-visible,
   a:focus-visible,
   input:focus-visible,
+  summary:focus-visible,
   [tabindex]:focus-visible {
-    outline: 2px solid rgba(245, 166, 35, 0.8);
+    outline: 2px solid var(--bos-focus);
     outline-offset: 2px;
   }
 
   tr[tabindex]:focus-visible {
     outline-offset: -2px;
+  }
+
+  /* Motion is decorative here: entry animations, hover lifts, and pulses all
+     collapse to an instant state change when the reader asks for less motion.
+     Nothing in the product depends on an animation to convey meaning. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.001ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.001ms !important;
+      scroll-behavior: auto !important;
+    }
   }
 
   /* Custom scrollbar */
@@ -58,6 +116,179 @@
   .app-shell {
     display: flex;
     min-height: 100vh;
+  }
+
+  /* ══ BaseballOS product experience primitives ═══════════════════════════
+     A small, shared vocabulary for the intelligence surfaces: page frame,
+     typographic levels, hairline structure, and the signature edition object.
+     These classes exist so a section can be composed from layout and type
+     rather than from another rounded rectangle. */
+
+  /* Keyboard-first entry into the page content, ahead of the navigation. */
+  .bos-skip-link {
+    position: absolute;
+    left: var(--bos-space-4);
+    top: var(--bos-space-4);
+    z-index: 50;
+    transform: translateY(-200%);
+    transition: transform var(--bos-motion) ease;
+    @apply rounded-control border border-signal/50 bg-panel px-4 py-2 font-mono text-xs uppercase tracking-widest text-signal;
+  }
+  .bos-skip-link:focus {
+    transform: translateY(0);
+  }
+
+  /* Page frame. One gutter and one measure for every intelligence surface, so
+     the reading column stays the same width from Today to Data & Trust. */
+  .bos-page {
+    @apply mx-auto w-full px-4 sm:px-6 lg:px-8;
+    max-width: 84rem;
+  }
+  .bos-page--reading {
+    max-width: 76rem;
+  }
+
+  /* Section rhythm. Sections are separated by space and a hairline, not by
+     nesting each one inside its own card. */
+  .bos-section {
+    padding-top: var(--bos-space-7);
+  }
+  .bos-section + .bos-section {
+    border-top: 1px solid var(--bos-line);
+  }
+  @media (min-width: 768px) {
+    .bos-section {
+      padding-top: var(--bos-space-8);
+    }
+  }
+
+  /* ── Typographic levels ── */
+  .bos-eyebrow {
+    @apply font-mono uppercase text-signal;
+    font-size: 0.6875rem;
+    letter-spacing: 0.26em;
+    line-height: 1.4;
+  }
+  .bos-eyebrow--brass {
+    @apply text-brass;
+  }
+  .bos-hero {
+    @apply font-display text-chalk100;
+    font-size: clamp(2.375rem, 7vw, 3.75rem);
+    line-height: 0.97;
+    letter-spacing: 0.015em;
+  }
+  .bos-lead-headline {
+    @apply font-display text-chalk100;
+    font-size: clamp(1.875rem, 5.4vw, 3.25rem);
+    line-height: 1.02;
+    letter-spacing: 0.012em;
+  }
+  .bos-section-title {
+    @apply font-display text-chalk100;
+    font-size: clamp(1.5rem, 3.2vw, 2.125rem);
+    line-height: 1.08;
+    letter-spacing: 0.02em;
+  }
+  .bos-card-title {
+    @apply font-display text-chalk100;
+    font-size: clamp(1.125rem, 2.2vw, 1.5rem);
+    line-height: 1.12;
+    letter-spacing: 0.02em;
+  }
+  .bos-body {
+    @apply text-chalk200;
+    font-size: 1rem;
+    line-height: 1.65;
+  }
+  .bos-support {
+    @apply text-chalk400;
+    font-size: 0.9375rem;
+    line-height: 1.6;
+  }
+  .bos-evidence {
+    @apply text-chalk300;
+    font-size: 0.875rem;
+    line-height: 1.55;
+  }
+  .bos-meta {
+    @apply font-mono text-chalk500;
+    font-size: 0.75rem;
+    line-height: 1.5;
+  }
+  .bos-micro {
+    @apply font-mono uppercase text-chalk500;
+    font-size: 0.6875rem;
+    letter-spacing: 0.18em;
+    line-height: 1.45;
+  }
+
+  /* ── Structure ── */
+  .bos-panel {
+    @apply border border-line bg-panel;
+    border-radius: var(--bos-radius-panel);
+  }
+  .bos-panel--inset {
+    @apply border-line bg-panel-2;
+  }
+  .bos-panel--interactive {
+    transition: border-color var(--bos-motion) ease, background-color var(--bos-motion) ease;
+  }
+  .bos-panel--interactive:hover {
+    @apply border-line-strong bg-panel-2;
+  }
+  .bos-rule {
+    @apply border-0 border-t border-line;
+  }
+
+  /* The signature Today edition object: a hairline frame with a single blue
+     rule along the top edge and a very quiet vertical gradient. */
+  .bos-edition {
+    position: relative;
+    border: 1px solid var(--bos-line);
+    border-radius: var(--bos-radius-panel);
+    background-image: linear-gradient(180deg, rgba(143, 184, 232, 0.05) 0%, rgba(7, 10, 13, 0) 55%);
+    background-color: var(--bos-panel);
+    box-shadow: var(--bos-shadow-edition);
+  }
+  .bos-edition::before {
+    content: '';
+    position: absolute;
+    inset: -1px -1px auto -1px;
+    height: 2px;
+    border-radius: var(--bos-radius-panel) var(--bos-radius-panel) 0 0;
+    background-image: linear-gradient(90deg, var(--bos-signal) 0%, var(--bos-brass) 46%, rgba(216, 189, 126, 0) 100%);
+  }
+  /* Repeating tick rule used as the edition's masthead separator. */
+  .bos-edition-rule {
+    height: 1px;
+    background-image: repeating-linear-gradient(
+      90deg,
+      var(--bos-line-strong) 0px,
+      var(--bos-line-strong) 3px,
+      transparent 3px,
+      transparent 8px
+    );
+  }
+
+  /* ── Controls ── */
+  .bos-action {
+    @apply inline-flex min-h-11 items-center justify-center gap-2 border px-4 py-2.5 font-mono uppercase transition-colors;
+    border-radius: var(--bos-radius-control);
+    font-size: 0.75rem;
+    letter-spacing: 0.14em;
+  }
+  .bos-action--primary {
+    @apply border-signal/45 bg-signal-well text-signal;
+  }
+  .bos-action--primary:hover {
+    @apply border-signal/80 text-chalk100;
+  }
+  .bos-action--quiet {
+    @apply border-line bg-panel-2 text-chalk300;
+  }
+  .bos-action--quiet:hover {
+    @apply border-line-strong text-chalk100;
   }
 
   /* ── Card ── */
@@ -241,12 +472,20 @@
     @apply h-1.5 bg-dirt rounded-full overflow-hidden;
   }
 
-  /* ── Nav item ── */
+  /* ── Nav item ──
+     Navigation is deliberately quiet: the active destination is marked with a
+     blue rail and a brighter label rather than a filled, high-contrast pill,
+     so the reading column stays the loudest thing on screen. The rail is
+     paired with aria-current, so the state never depends on color alone. */
   .nav-item {
-    @apply flex items-center gap-3 px-4 py-2.5 rounded-lg text-chalk400 hover:text-chalk200 hover:bg-chalk/50 transition-all duration-150 text-sm font-medium cursor-pointer;
+    @apply flex min-h-11 items-center gap-3 border-l-2 border-transparent px-4 py-2.5 text-sm font-medium text-chalk400 transition-colors duration-150 cursor-pointer;
+    border-radius: 0 var(--bos-radius-panel) var(--bos-radius-panel) 0;
+  }
+  .nav-item:hover {
+    @apply bg-panel-2 text-chalk200;
   }
   .nav-item.active {
-    @apply text-amber bg-amber/10 border border-amber/20;
+    @apply border-l-signal bg-signal-well text-chalk100;
   }
 
   /* ── Section title ── */

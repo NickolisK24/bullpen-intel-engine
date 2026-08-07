@@ -42,3 +42,23 @@ test('muted chalk text tokens meet WCAG AA on dark surfaces', () => {
     }
   }
 })
+
+// The product experience surfaces (ink / panel / panel-2) carry the same muted
+// text tokens plus the blue and gold accents. Accents are used for real labels,
+// not decoration, so they are held to the same AA threshold as body text.
+test('product experience text and accent tokens meet WCAG AA on every panel surface', () => {
+  const colors = tailwindConfig.theme.extend.colors
+  const surfaces = [colors.ink, colors.panel, colors['panel-2']]
+  const foregrounds = [
+    'chalk100', 'chalk200', 'chalk300', 'chalk400', 'chalk500', 'chalk600',
+    'signal', 'signal-deep', 'brass', 'brass-deep', 'focus',
+  ]
+  for (const token of foregrounds) {
+    for (const surface of surfaces) {
+      assert.ok(
+        contrastRatio(colors[token], surface) >= 4.5,
+        `${token} should pass AA on ${surface}`,
+      )
+    }
+  }
+})

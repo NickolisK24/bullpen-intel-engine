@@ -4,6 +4,23 @@ export default {
   theme: {
     extend: {
       colors: {
+        // ── Product experience tokens ──────────────────────────────────────
+        // The BaseballOS surface palette: a deep charcoal/navy foundation, a
+        // restrained blue used for interaction and structure, and a muted gold
+        // reserved for editorial marks. Every value below is validated against
+        // the muted text tokens in tests/accessibilityContrast.test.mjs.
+        ink:            '#070a0d',   // Page ground, deeper than a panel
+        panel:          '#0f1319',   // Primary panel surface
+        'panel-2':      '#151a21',   // Inset / secondary panel surface
+        line:           '#1e2530',   // Subtle hairline border
+        'line-strong':  '#2c3644',   // Emphasized border
+        signal:         '#8fb8e8',   // BaseballOS blue — labels, links, marks
+        'signal-deep':  '#7aa9e0',   // Blue interaction / hover state
+        'signal-well':  '#122234',   // Blue-tinted well behind a blue mark
+        brass:          '#d8bd7e',   // Muted gold — editorial accent
+        'brass-deep':   '#c9a961',   // Muted gold, pressed/secondary
+        focus:          '#9ecbff',   // Focus ring
+
         // Core palette
         field:   '#0a0c0f',   // Near-black background
         dugout:  '#111418',   // Card/panel background
@@ -29,6 +46,37 @@ export default {
         display: ['"Bebas Neue"', 'sans-serif'],
         mono:    ['"JetBrains Mono"', 'monospace'],
         body:    ['"DM Sans"', 'sans-serif'],
+      },
+      // Deliberate rhythm steps for dense metadata, evidence rows, and the
+      // section spacing the Today edition uses. Named rather than numeric so a
+      // section's spacing intent survives refactors.
+      spacing: {
+        'gutter':      '1rem',
+        'gutter-md':   '1.5rem',
+        'gutter-lg':   '2rem',
+        'rhythm-tight': '0.75rem',
+        'rhythm':       '1.25rem',
+        'rhythm-loose': '2.5rem',
+        'section':      '3.5rem',
+      },
+      borderRadius: {
+        // Restrained: panels stay rectilinear, only controls soften slightly.
+        edge: '2px',
+        panel: '4px',
+        control: '6px',
+      },
+      boxShadow: {
+        // Borders do the structural work; shadows only lift the signature
+        // edition object off the page ground.
+        panel: '0 1px 0 rgba(255,255,255,0.02), 0 18px 40px -34px rgba(0,0,0,0.95)',
+        edition: '0 1px 0 rgba(255,255,255,0.03), 0 30px 70px -50px rgba(0,0,0,1)',
+      },
+      screens: {
+        xs: '390px',
+      },
+      maxWidth: {
+        measure: '68ch',
+        lead: '24ch',
       },
       backgroundImage: {
         'grid-lines': `linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px),
