@@ -37,7 +37,7 @@ export function sidebarFreshness(syncStatus, loading, error, freshnessAuthority)
 function SidebarFreshnessItem({ label, value }) {
   return (
     <div>
-      <div className="font-mono text-[9px] uppercase tracking-widest text-chalk600">
+      <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-chalk600">
         {label}
       </div>
       <div className="mt-1 font-mono text-[11px] leading-tight text-chalk200">
@@ -49,8 +49,8 @@ function SidebarFreshnessItem({ label, value }) {
 
 export function SidebarDataFreshnessCard({ freshness }) {
   return (
-    <div className="rounded-lg border border-dirt/80 bg-field/45 p-3">
-      <div className="mb-3 font-mono text-[9px] uppercase tracking-widest text-amber/80">
+    <div className="rounded-panel border border-line bg-panel-2 p-3">
+      <div className="mb-3 font-mono text-[10px] uppercase tracking-[0.18em] text-signal">
         Data Freshness
       </div>
       <div className="space-y-3">
@@ -111,16 +111,32 @@ export default function Sidebar() {
   const closeMenu = () => setOpen(false)
 
   return (
-    <aside className="w-full bg-dugout border-b border-dirt lg:fixed lg:inset-y-0 lg:left-0 lg:z-30 lg:w-56 lg:border-b-0 lg:border-r flex flex-col lg:h-screen lg:overflow-y-auto">
-      {/* Header row: logo + (mobile) hamburger */}
-      <div className="flex items-center justify-between px-5 py-4 lg:py-6 lg:border-b lg:border-dirt">
-        <div className="flex items-center gap-2.5 min-w-0">
-          <span className="text-2xl">⚾</span>
-          <div className="min-w-0">
-            <div className="font-display text-2xl tracking-widest text-chalk100 leading-none truncate">BaseballOS</div>
-            <div className="text-chalk600 text-[10px] font-mono uppercase tracking-widest mt-0.5">Bullpen Intelligence</div>
-          </div>
-        </div>
+    <aside className="w-full bg-panel border-b border-line lg:fixed lg:inset-y-0 lg:left-0 lg:z-30 lg:w-56 lg:border-b-0 lg:border-r flex flex-col lg:h-screen lg:overflow-y-auto">
+      {/* Masthead: the wordmark returns to Today; the hamburger is mobile-only.
+          The header stays quiet — content is the product, not the chrome. */}
+      <div className="flex items-center justify-between px-5 py-4 lg:border-b lg:border-line lg:py-6">
+        <Link
+          to="/"
+          onClick={closeMenu}
+          aria-current={location.pathname === '/' ? 'page' : undefined}
+          className="flex min-w-0 items-center gap-2.5 rounded-panel focus:outline-none"
+          aria-label="BaseballOS home"
+        >
+          <span
+            aria-hidden="true"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-panel border border-signal/35 bg-signal-well font-mono text-[13px] font-semibold tracking-tight text-signal"
+          >
+            OS
+          </span>
+          <span className="min-w-0">
+            <span className="block truncate font-display text-2xl leading-none tracking-[0.16em] text-chalk100">
+              BaseballOS
+            </span>
+            <span className="mt-1 block font-mono text-[10px] uppercase tracking-[0.2em] text-chalk600">
+              Bullpen Intelligence
+            </span>
+          </span>
+        </Link>
 
         <button
           type="button"
@@ -128,7 +144,7 @@ export default function Sidebar() {
           aria-label={open ? 'Close navigation menu' : 'Open navigation menu'}
           aria-expanded={open}
           aria-controls={PRIMARY_NAVIGATION_ID}
-          className="lg:hidden shrink-0 ml-3 h-11 w-11 flex items-center justify-center rounded-lg border border-dirt text-chalk200 hover:bg-chalk/50 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/60"
+          className="lg:hidden shrink-0 ml-3 h-11 w-11 flex items-center justify-center rounded-control border border-line text-chalk200 transition-colors hover:border-line-strong hover:bg-panel-2 focus:outline-none"
         >
           <span className="text-lg leading-none" aria-hidden="true">{open ? '✕' : '☰'}</span>
         </button>
@@ -140,19 +156,19 @@ export default function Sidebar() {
       <nav
         id={PRIMARY_NAVIGATION_ID}
         aria-label="Primary"
-        className={`${open ? 'flex' : 'hidden'} lg:flex flex-1 flex-col px-3 pb-4 pt-1 lg:py-5`}
+        className={`${open ? 'flex' : 'hidden'} lg:flex flex-1 flex-col px-2 pb-4 pt-1 lg:py-6`}
       >
-        <div className="space-y-1">
+        <div className="space-y-0.5">
           {PRIMARY_NAV.map((item) => (
             <NavDestination key={item.key} item={item} location={location} onNavigate={closeMenu} />
           ))}
         </div>
 
-        <div className="mt-4 border-t border-dirt pt-3">
-          <div className="px-4 pb-1 font-mono text-[9px] uppercase tracking-widest text-chalk600">
+        <div className="mt-6 border-t border-line pt-4">
+          <div className="px-4 pb-2 font-mono text-[10px] uppercase tracking-[0.2em] text-chalk600">
             Learn &amp; Trust
           </div>
-          <div className="space-y-1">
+          <div className="space-y-0.5">
             {SUPPORTING_NAV.map((item) => (
               <NavDestination key={item.key} item={item} location={location} onNavigate={closeMenu} />
             ))}
@@ -161,7 +177,7 @@ export default function Sidebar() {
       </nav>
 
       {/* Footer — follows the nav's mobile visibility, always shown on lg+ */}
-      <div className={`${open ? 'block' : 'hidden'} lg:block mt-auto px-4 py-4 border-t border-dirt`}>
+      <div className={`${open ? 'block' : 'hidden'} lg:block mt-auto px-4 py-4 border-t border-line`}>
         <div className="space-y-3">
           <SidebarDataFreshnessCard freshness={freshness} />
         </div>

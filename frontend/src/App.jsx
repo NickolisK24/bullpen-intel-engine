@@ -64,8 +64,13 @@ export default function App() {
     <BrowserRouter>
       <TrafficRouteObserver />
       <div className="app-shell bg-noise flex-col lg:flex-row">
+        {/* Keyboard readers reach the page answer without walking the whole
+            navigation first. Visible only while focused. */}
+        <a href="#main-content" className="bos-skip-link">
+          Skip to content
+        </a>
         <Sidebar />
-        <main className="flex-1 min-w-0 lg:ml-56">
+        <main id="main-content" tabIndex={-1} className="flex-1 min-w-0 focus:outline-none lg:ml-56">
           <AppRoutes />
           <Footer />
         </main>
