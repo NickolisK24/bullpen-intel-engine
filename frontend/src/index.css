@@ -132,7 +132,7 @@
     z-index: 50;
     transform: translateY(-200%);
     transition: transform var(--bos-motion) ease;
-    @apply rounded-control border border-signal/50 bg-panel px-4 py-2 font-mono text-xs uppercase tracking-widest text-signal;
+    @apply rounded-control border border-signal/50 bg-panel px-4 py-2.5 text-sm font-medium text-signal;
   }
   .bos-skip-link:focus {
     transform: translateY(0);
@@ -141,91 +141,125 @@
   /* Page frame. One gutter and one measure for every intelligence surface, so
      the reading column stays the same width from Today to Data & Trust. */
   .bos-page {
-    @apply mx-auto w-full px-4 sm:px-6 lg:px-8;
+    @apply mx-auto w-full px-5 sm:px-8 lg:px-12;
     max-width: 84rem;
   }
   .bos-page--reading {
-    max-width: 76rem;
+    max-width: 78rem;
   }
 
-  /* Section rhythm. Sections are separated by space and a hairline, not by
-     nesting each one inside its own card. */
+  /* Section rhythm. Sections are separated by space and a single hairline, not
+     by nesting each one inside its own card. Whitespace carries the hierarchy;
+     the rule is only there to mark the seam. */
   .bos-section {
-    padding-top: var(--bos-space-7);
+    padding-top: 3rem;
+    padding-bottom: 0.5rem;
   }
   .bos-section + .bos-section {
     border-top: 1px solid var(--bos-line);
   }
   @media (min-width: 768px) {
     .bos-section {
-      padding-top: var(--bos-space-8);
+      padding-top: 4.5rem;
+      padding-bottom: 1rem;
+    }
+  }
+  @media (min-width: 1280px) {
+    .bos-section {
+      padding-top: 5.5rem;
     }
   }
 
-  /* ── Typographic levels ── */
+  /* ── Typographic levels ──
+     Editorial voice first. Reading content — headlines, explanations, buttons,
+     navigation — uses the interface sans at natural width. The condensed face
+     is an accent, and the mono face is reserved for values that benefit from
+     precision: dates, times, counts, provenance, and evidence labels. */
   .bos-eyebrow {
-    @apply font-mono uppercase text-signal;
-    font-size: 0.6875rem;
-    letter-spacing: 0.26em;
+    @apply font-body font-medium uppercase text-signal;
+    font-size: 0.75rem;
+    letter-spacing: 0.1em;
     line-height: 1.4;
   }
   .bos-eyebrow--brass {
     @apply text-brass;
   }
+  /* Strategic condensed accent: short kickers and compact team-name treatments
+     only. Never a page statement, a button, or a paragraph. */
+  .bos-kicker {
+    @apply font-display uppercase text-brass;
+    font-size: 1rem;
+    letter-spacing: 0.12em;
+    line-height: 1.2;
+  }
   .bos-hero {
-    @apply font-display text-chalk100;
-    font-size: clamp(2.375rem, 7vw, 3.75rem);
-    line-height: 0.97;
-    letter-spacing: 0.015em;
+    @apply font-body font-semibold text-chalk100;
+    font-size: clamp(2.125rem, 5.4vw, 3.5rem);
+    line-height: 1.06;
+    letter-spacing: -0.022em;
   }
   .bos-lead-headline {
-    @apply font-display text-chalk100;
-    font-size: clamp(1.875rem, 5.4vw, 3.25rem);
-    line-height: 1.02;
-    letter-spacing: 0.012em;
+    @apply font-body font-semibold text-chalk100;
+    font-size: clamp(1.875rem, 4.4vw, 3rem);
+    line-height: 1.1;
+    letter-spacing: -0.02em;
   }
   .bos-section-title {
-    @apply font-display text-chalk100;
-    font-size: clamp(1.5rem, 3.2vw, 2.125rem);
-    line-height: 1.08;
-    letter-spacing: 0.02em;
+    @apply font-body font-semibold text-chalk100;
+    font-size: clamp(1.375rem, 2.4vw, 1.875rem);
+    line-height: 1.18;
+    letter-spacing: -0.016em;
   }
   .bos-card-title {
-    @apply font-display text-chalk100;
-    font-size: clamp(1.125rem, 2.2vw, 1.5rem);
-    line-height: 1.12;
-    letter-spacing: 0.02em;
+    @apply font-body font-semibold text-chalk100;
+    font-size: clamp(1.0625rem, 1.5vw, 1.25rem);
+    line-height: 1.3;
+    letter-spacing: -0.012em;
   }
   .bos-body {
     @apply text-chalk200;
-    font-size: 1rem;
-    line-height: 1.65;
+    font-size: 1.0625rem;
+    line-height: 1.7;
   }
   .bos-support {
     @apply text-chalk400;
     font-size: 0.9375rem;
-    line-height: 1.6;
+    line-height: 1.65;
   }
   .bos-evidence {
     @apply text-chalk300;
-    font-size: 0.875rem;
-    line-height: 1.55;
+    font-size: 0.9375rem;
+    line-height: 1.6;
   }
+  /* Metadata keeps the mono face — precision is the point here. */
   .bos-meta {
     @apply font-mono text-chalk500;
     font-size: 0.75rem;
-    line-height: 1.5;
+    line-height: 1.55;
   }
   .bos-micro {
-    @apply font-mono uppercase text-chalk500;
+    @apply font-body font-medium uppercase text-chalk500;
     font-size: 0.6875rem;
-    letter-spacing: 0.18em;
+    letter-spacing: 0.09em;
     line-height: 1.45;
   }
+  .bos-value {
+    @apply font-mono tabular-nums text-chalk100;
+    font-size: 0.875rem;
+    line-height: 1.5;
+  }
 
-  /* ── Structure ── */
+  /* ── Structure ──
+     Most information does not need a container. `bos-open` is the default: a
+     region held together by a single hairline and its own spacing. `bos-panel`
+     is reserved for genuinely discrete units — an interactive destination, a
+     withheld read, a comparison-like block. */
+  .bos-open {
+    border-top: 1px solid var(--bos-line);
+    padding-top: var(--bos-space-5);
+  }
   .bos-panel {
-    @apply border border-line bg-panel;
+    @apply border border-line/80 bg-panel/70;
     border-radius: var(--bos-radius-panel);
   }
   .bos-panel--inset {
@@ -235,60 +269,115 @@
     transition: border-color var(--bos-motion) ease, background-color var(--bos-motion) ease;
   }
   .bos-panel--interactive:hover {
-    @apply border-line-strong bg-panel-2;
+    @apply border-line-strong bg-panel-2/80;
   }
   .bos-rule {
     @apply border-0 border-t border-line;
   }
+  /* A quiet vertical accent used instead of a full border where a region only
+     needs to read as grouped. */
+  .bos-marker {
+    border-left: 1px solid var(--bos-line-strong);
+    padding-left: var(--bos-space-4);
+  }
 
-  /* The signature Today edition object: a hairline frame with a single blue
-     rule along the top edge and a very quiet vertical gradient. */
+  /* ── The signature Today edition object ──
+     Not a panel. The masthead sits directly on the page and is marked by a
+     single hairline rule at the top edge, a very quiet field of depth behind
+     it, and generous space. Removing the frame is what turns it from a system
+     panel into an edition masthead. */
   .bos-edition {
     position: relative;
-    border: 1px solid var(--bos-line);
-    border-radius: var(--bos-radius-panel);
-    background-image: linear-gradient(180deg, rgba(143, 184, 232, 0.05) 0%, rgba(7, 10, 13, 0) 55%);
-    background-color: var(--bos-panel);
-    box-shadow: var(--bos-shadow-edition);
+    isolation: isolate;
   }
   .bos-edition::before {
     content: '';
     position: absolute;
-    inset: -1px -1px auto -1px;
-    height: 2px;
-    border-radius: var(--bos-radius-panel) var(--bos-radius-panel) 0 0;
-    background-image: linear-gradient(90deg, var(--bos-signal) 0%, var(--bos-brass) 46%, rgba(216, 189, 126, 0) 100%);
+    inset: 0 0 auto 0;
+    height: 1px;
+    background-image: linear-gradient(
+      90deg,
+      var(--bos-signal) 0%,
+      rgba(143, 184, 232, 0.45) 18%,
+      rgba(216, 189, 126, 0.35) 42%,
+      rgba(216, 189, 126, 0) 78%
+    );
   }
-  /* Repeating tick rule used as the edition's masthead separator. */
+  /* Hairline used as the masthead separator. Continuous rather than ticked —
+     the ticked rule read as instrumentation. */
   .bos-edition-rule {
     height: 1px;
-    background-image: repeating-linear-gradient(
+    background-image: linear-gradient(
       90deg,
-      var(--bos-line-strong) 0px,
-      var(--bos-line-strong) 3px,
-      transparent 3px,
-      transparent 8px
+      var(--bos-line-strong) 0%,
+      var(--bos-line-strong) 55%,
+      rgba(44, 54, 68, 0) 100%
     );
   }
 
-  /* ── Controls ── */
+  /* ── Background depth ──
+     Two layers, both non-interactive and both far below the contrast threshold
+     of any text: a wide radial lift behind the top of the page, and a set of
+     slow analytical contour paths drawn once as an inline SVG. Together they
+     register as depth rather than as an illustration, and neither animates. */
+  .bos-depth {
+    position: relative;
+    isolation: isolate;
+  }
+  .bos-depth::before,
+  .bos-depth::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+  }
+  .bos-depth::before {
+    background-image:
+      radial-gradient(58rem 34rem at 12% -6%, rgba(143, 184, 232, 0.085), transparent 62%),
+      radial-gradient(42rem 28rem at 88% 4%, rgba(216, 189, 126, 0.045), transparent 60%);
+  }
+  .bos-depth::after {
+    opacity: 0.38;
+    background-repeat: no-repeat;
+    background-position: right top;
+    background-size: 62rem auto;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 800 460' fill='none'%3E%3Cg stroke='%238fb8e8' stroke-opacity='0.14' stroke-width='1'%3E%3Cpath d='M-40 402C120 402 196 330 300 258 404 186 512 128 700 128 780 128 820 122 860 112'/%3E%3Cpath d='M-40 358C130 358 208 292 312 222 416 152 520 96 700 96 784 96 826 90 860 80'/%3E%3Cpath d='M-40 314C140 314 220 254 324 186 428 118 528 64 700 64 788 64 832 58 860 48'/%3E%3C/g%3E%3Cg stroke='%23d8bd7e' stroke-opacity='0.1' stroke-width='1'%3E%3Cpath d='M-40 446C110 446 184 368 288 294 392 220 504 160 700 160 776 160 814 154 860 144'/%3E%3C/g%3E%3C/svg%3E");
+  }
+  @media (max-width: 767px) {
+    .bos-depth::after {
+      background-size: 44rem auto;
+      opacity: 0.3;
+    }
+  }
+
+  /* ── Controls ──
+     Application buttons, not console controls: interface sans, sentence case,
+     normal tracking, restrained fills. Touch targets stay at 44px. */
   .bos-action {
-    @apply inline-flex min-h-11 items-center justify-center gap-2 border px-4 py-2.5 font-mono uppercase transition-colors;
+    @apply inline-flex min-h-11 items-center justify-center gap-2 border px-5 py-2.5 text-sm font-medium transition-colors;
     border-radius: var(--bos-radius-control);
-    font-size: 0.75rem;
-    letter-spacing: 0.14em;
+    letter-spacing: -0.005em;
   }
   .bos-action--primary {
-    @apply border-signal/45 bg-signal-well text-signal;
+    @apply border-signal/40 bg-signal-well text-signal;
   }
   .bos-action--primary:hover {
-    @apply border-signal/80 text-chalk100;
+    @apply border-signal/75 bg-signal-well text-chalk100;
   }
   .bos-action--quiet {
-    @apply border-line bg-panel-2 text-chalk300;
+    @apply border-line-strong/70 bg-transparent text-chalk200;
   }
   .bos-action--quiet:hover {
-    @apply border-line-strong text-chalk100;
+    @apply border-line-strong bg-panel-2/60 text-chalk100;
+  }
+  /* Where a full button would add unnecessary weight, an inspection path is a
+     text link with a quiet chevron. */
+  .bos-link {
+    @apply inline-flex min-h-11 items-center gap-1.5 text-sm font-medium text-signal transition-colors;
+  }
+  .bos-link:hover {
+    @apply text-chalk100;
   }
 
   /* ── Card ── */
@@ -478,7 +567,7 @@
      so the reading column stays the loudest thing on screen. The rail is
      paired with aria-current, so the state never depends on color alone. */
   .nav-item {
-    @apply flex min-h-11 items-center gap-3 border-l-2 border-transparent px-4 py-2.5 text-sm font-medium text-chalk400 transition-colors duration-150 cursor-pointer;
+    @apply flex min-h-11 items-center border-l-2 border-transparent px-4 py-2.5 text-[0.9375rem] font-medium text-chalk400 transition-colors duration-150 cursor-pointer;
     border-radius: 0 var(--bos-radius-panel) var(--bos-radius-panel) 0;
   }
   .nav-item:hover {
