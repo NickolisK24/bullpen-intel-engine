@@ -9,12 +9,18 @@ const COLUMN_TONE = {
   monitoring: { color: '#fde047', dot: '#eab308' },
 }
 
+// Lane labels describe the situation each backend-supplied list represents.
+// They are deliberately free of superlative or extreme framing ("most",
+// "fewest", "best", "worst"): no public contract authorizes a claim that one
+// bullpen is the most or least anything, and a lane is league orientation, not
+// a classification. Canonical Team State remains Fresh / Stretched /
+// Vulnerable and is never derived from the lane a team sits in.
 export const BULLPEN_LANDSCAPE_COLUMNS = [
   {
     key: 'available',
     sourceKey: 'available_bullpens',
-    title: 'Most Available',
-    subtitle: 'Most room to maneuver',
+    title: 'Room to Maneuver',
+    subtitle: 'Rested arms available to work with',
     metric: 'available',
     suffix: 'rested and available',
   },
@@ -29,8 +35,8 @@ export const BULLPEN_LANDSCAPE_COLUMNS = [
   {
     key: 'constrained',
     sourceKey: 'constrained_bullpens',
-    title: 'Most Stretched',
-    subtitle: 'Fewest clean late-inning options',
+    title: 'Limited Late-Inning Margin',
+    subtitle: 'Clean late-inning options are limited',
     metric: 'restricted',
     suffix: 'needing rest or unavailable',
   },

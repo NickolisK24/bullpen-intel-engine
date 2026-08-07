@@ -90,7 +90,7 @@ test('the storylines card renders with its title and bullet observations', () =>
 
 test('the storylines card sits above the individual situation columns', () => {
   const html = render(React.createElement(BullpenLandscape, { landscape }))
-  assert.ok(html.indexOf('Storylines') < html.indexOf('Most Available'),
+  assert.ok(html.indexOf('Storylines') < html.indexOf('Room to Maneuver'),
     'storylines should precede the situation columns')
 })
 

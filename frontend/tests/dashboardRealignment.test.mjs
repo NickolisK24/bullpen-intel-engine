@@ -99,16 +99,16 @@ test('dashboard renders the core bullpen sections without duplicate league summa
 
 test('dashboard landscape uses canonical group titles and keeps descriptive subtitles', () => {
   const html = inRouter(React.createElement(DashboardView, { data: dashboardData }))
-  assert.ok(htmlIncludes(html, 'Most Stretched'))
-  assert.ok(htmlIncludes(html, 'Most Available'))
+  assert.ok(htmlIncludes(html, 'Limited Late-Inning Margin'))
+  assert.ok(htmlIncludes(html, 'Room to Maneuver'))
   assert.ok(htmlIncludes(html, 'On Watch'))
   assert.ok(
-    html.indexOf('Most Available') < html.indexOf('On Watch') &&
-    html.indexOf('On Watch') < html.indexOf('Most Stretched'),
-    'landscape columns should render Most Available, On Watch, then Most Stretched',
+    html.indexOf('Room to Maneuver') < html.indexOf('On Watch') &&
+    html.indexOf('On Watch') < html.indexOf('Limited Late-Inning Margin'),
+    'landscape columns should render Room to Maneuver, On Watch, then Limited Late-Inning Margin',
   )
-  assert.ok(htmlIncludes(html, 'Fewest clean late-inning options'))
-  assert.ok(htmlIncludes(html, 'Most room to maneuver'))
+  assert.ok(htmlIncludes(html, 'Clean late-inning options are limited'))
+  assert.ok(htmlIncludes(html, 'Rested arms available to work with'))
   assert.ok(htmlIncludes(html, 'Recent workload watch groups'))
 })
 
@@ -124,7 +124,7 @@ test('dashboard landscape preserves team-board deep links and honest empty group
 
   assert.ok(htmlIncludes(html, 'href="/bullpen?view=board&amp;team=WSH&amp;source=landscape"'))
   assert.ok(htmlIncludes(html, 'href="/bullpen?view=board&amp;team=TOR&amp;source=landscape"'))
-  assert.ok(htmlIncludes(html, 'Most Stretched'))
+  assert.ok(htmlIncludes(html, 'Limited Late-Inning Margin'))
   assert.ok(htmlIncludes(html, 'None right now.'))
   assert.equal(htmlIncludes(html, 'CHC'), false)
 })
