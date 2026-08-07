@@ -1,277 +1,262 @@
 # BaseballOS
 
-BaseballOS is a public MLB bullpen intelligence platform that explains which
-bullpens are fresh, stretched, or vulnerable — and why.
+BaseballOS is a public MLB **bullpen intelligence** platform.
 
-It reads public MLB workload, availability, and late-game context, then presents
-a daily descriptive view of bullpen state with visible freshness, data dates,
-and confidence context.
-BaseballOS is trust-first by design: it explains what it sees, shows how current
-the data is, and states what it cannot know.
+It answers a narrow question well:
+
+> **What is happening inside every MLB bullpen right now, and why?**
+
+BaseballOS turns public workload, roster, schedule, and appearance data into
+evidence-backed bullpen context. The product describes the observable present;
+it does not predict outcomes, infer private health, guess manager intent, or
+turn bullpen state into betting or fantasy advice.
+
+**Trust is the foundation. Intelligence is the product. Understanding is the outcome.**
 
 BaseballOS is an independent project and is not affiliated with or endorsed by
 Major League Baseball or its clubs.
 
-## Project Overview
+## Why BaseballOS Exists
 
-Bullpen context is hard to see in one place. A box score can tell you who
-pitched and for how long, but it does not clearly show how recent workload,
-rest, availability, and late-inning flexibility fit together heading into
-tonight.
+Bullpen information is fragmented. A box score can tell you who pitched, a
+roster page can tell you who is active, and a schedule can tell you when the
+next game starts. None of those sources alone explains what the current bullpen
+picture means.
 
-BaseballOS pulls that context into one readable product surface. It focuses on:
+BaseballOS assembles those facts into a checkable read:
 
-- Public MLB bullpen intelligence.
-- Workload, availability, and late-game context.
-- Fresh, stretched, and vulnerable bullpen reads.
-- Data dates and confidence context.
-- Freshness and data transparency.
-- Descriptive language instead of predictions or advice.
+```text
+authoritative source
+-> canonical baseball record
+-> deterministic derivation
+-> evidence
+-> public read
+-> trusted publication
+-> permanent memory
+```
 
-## What BaseballOS Does
+A useful BaseballOS read should leave a reader thinking:
 
-- Tracks recent bullpen usage and rest across MLB teams.
-- Shows which relievers are available, on watch, limited, or unavailable based
-  on public workload and roster context.
-- Summarizes league-wide bullpen state through daily reads such as Most
-  Available, On Watch, and Most Stretched.
-- Explains team bullpen boards with availability groups, workload context,
-  roster context, and freshness indicators.
-- Surfaces daily bullpen storylines without ranking pitchers or forecasting
-  outcomes.
-- Documents how reads are built through Methodology and Data & Trust pages.
+> “I did not know that — and I can see why it is true.”
 
-## What BaseballOS Does Not Do
-
-BaseballOS is descriptive by design. It does not:
-
-- Give picks or tell anyone who to use.
-- Predict game outcomes, saves, injuries, or manager decisions.
-- Provide betting advice or odds analysis.
-- Make private injury claims. The absence of a public flag is not a health
-  claim.
-- Claim certainty about manager intent, bullpen phones, or final game-day
-  choices.
-- Present private calculations as product certainty.
-
-## Current Product Surfaces
-
-| Surface | Route | Purpose |
-| --- | --- | --- |
-| Today | `/` | Daily front door: tonight's bullpen watch, a quick league teaser that hands off to the Dashboard, and learning links. |
-| Dashboard | `/dashboard` | The full league bullpen board: the landscape lanes, one league state read, and roster availability context. |
-| Bullpen | `/bullpen` | Team bullpen board, two-team comparison, and the all-pitchers reference table for team-specific reads. |
-| Stories | `/stories` | Browseable bullpen intelligence feed for the day's storylines and league context. |
-| Methodology | `/methodology` | Explanation of how BaseballOS builds its public bullpen reads. |
-| Data & Trust | `/trust` | Freshness, data coverage, provenance, and trust limitations. |
-| About | `/about` | Product-first explanation of why BaseballOS exists. |
-| How to Read | `/how-to-read` | One-line definitions for recurring BaseballOS terms. |
-
-## Core Terminology
-
-### Arm Availability
-
-- **Available**: rested enough to pitch today.
-- **On Watch**: usable, but recent work is worth watching.
-- **Limited**: available only in a reduced role after recent work.
-- **Unavailable**: not available today because of rest or roster status.
-
-### Bullpen Reads
-
-- **Bullpen Pressure**: how much workload strain the bullpen is carrying today.
-- **Recovery Window**: how much clean rest the bullpen has available.
-- **Workload Concentration**: whether recent work is spread around or clustered
-  on a few arms.
-- **Clean Options**: how many arms enter today without major recent workload
-  restriction.
-- **Coverage Safety**: whether the bullpen can cover the late innings if the
-  game runs long.
-- **Trusted Arms**: the rested, unrestricted arms a manager can lean on late.
-
-The canonical public dictionary lives in
-`frontend/src/utils/bullpenConcepts.js`, and the canonical public boundary
-language (descriptive-not-predictive, no betting advice, manager decisions
-unknown) lives in `frontend/src/utils/publicBoundaries.js`. About, How to
-Read, and Methodology render from those modules rather than keeping their own
-copies.
+## Public Product Contract
 
 ### Team State
 
-- **Fresh**: the bullpen comes in mostly rested, with room to maneuver late.
-- **Stretched**: the bullpen is thin on rested arms after recent work.
-- **Vulnerable**: little late-inning margin remains if the game runs long.
+The public Team State vocabulary is exactly:
 
-There is no fourth Team State. `backend/services/team_state_public_vocabulary.py`
-owns the mapping from internal readiness to these three public labels and
-projects the `team_state` block that board, comparison, and dashboard payloads
-carry. `frontend/src/adapters/publicTeamState.js` only validates that block and
-picks a visual tone; it defines no mapping of its own, and a read with no
-supported Team State shows a governed non-state message rather than a label.
+- **Fresh** — comparatively stronger rested coverage and operating room.
+- **Stretched** — recent workload or coverage has narrowed the bullpen's clean options.
+- **Vulnerable** — the current operating picture is materially constrained with limited margin if more work is required.
 
-## Data Freshness And Trust Posture
+There is no fourth Team State. Unsupported or data-limited reads fail closed
+instead of receiving a softer label.
 
-BaseballOS is built to be checkable. Product surfaces separate the baseball
-date represented in the read from the time BaseballOS last wrote new data.
+### Arm reads
 
-Key trust rules:
+The current public arm-read vocabulary is:
 
-- Data freshness is visible to users.
-- Stale, missing, or delayed data should fail closed instead of implying a
-  current live read.
-- Sample or non-live states must not look like current MLB-backed data.
-- Reads are descriptive and evidence-backed, not predictive.
-- Public roster flags are not private medical information.
-- BaseballOS cannot know manager intent or final game-day usage decisions.
+- **Clean Option**
+- **Watch Arm**
+- **Limited Rest**
+- **Unavailable**
+- **Limited Read**
 
-The production sync path is:
+Internal availability states remain implementation detail. Public labels are
+backend-owned and descriptive; they are not instructions to a manager or a
+fantasy player.
 
-```text
-team assignment sync
--> roster status sync
--> game log and workload sync
--> availability calculation
--> trust and freshness reporting
--> dashboard snapshot build
--> static team story preview export
-```
+### Public roles
 
-## Tech Stack
+Role and current workload are separate concepts. Public role labels are:
 
-| Layer | Technology / location |
+- **Trusted Arm**
+- **Setup Arm**
+- **Coverage Arm**
+- **Middle Relief Arm**
+- **Limited Read**
+
+A Trusted Arm can have Limited Rest. A Coverage Arm can be a Clean Option.
+BaseballOS does not collapse role and current workload into one score.
+
+## What BaseballOS Does
+
+- Tracks recent reliever appearances, pitches, outs, rest, and multi-day usage.
+- Separates current active-bullpen membership from historical appearance ownership.
+- Resolves completed-game starter/reliever identity from official game evidence.
+- Builds current team and arm reads from governed, reproducible inputs.
+- Shows the evidence and represented baseball date behind public claims.
+- Fails closed when source authority, freshness, coverage, or evidence is insufficient.
+- Preserves trusted historical publications as immutable Share Artifacts.
+- Provides league, team, arm, comparison, narrative, methodology, and trust surfaces.
+
+## What BaseballOS Does Not Do
+
+BaseballOS does not:
+
+- predict game outcomes, saves, blown saves, injuries, or future reliever usage;
+- provide betting picks, odds analysis, fantasy advice, or matchup “edges”;
+- claim private medical knowledge;
+- claim to know manager or pitching-coach intent;
+- convert missing information into zero or a plausible fallback;
+- lead public surfaces with unexplained composite scores, rankings, or leaderboards.
+
+Silence, limited scope, or a withheld read are valid product states.
+
+## Product Surfaces
+
+| Surface | Route | Primary question |
+| --- | --- | --- |
+| Today | `/` | What is the bullpen story today, and what deserves attention tonight? |
+| Dashboard | `/dashboard` | Across MLB, which bullpens are Fresh, Stretched, or Vulnerable, and where should I look closer? |
+| Team Board | `/bullpen` team view | What is this bullpen's current observable state, which arms are carrying it, and why? |
+| Compare | `/bullpen` comparison view | How do these two bullpen pictures differ right now? |
+| Reliever Finder | `/bullpen` pitcher finder | How do I find a reliever and inspect his current BaseballOS record? |
+| Pitcher Detail | current detail route/drawer | What has this reliever recently carried, what is his public read, and what supports it? |
+| Stories | `/stories` | Beyond today's lead, which supported bullpen storylines are worth inspecting? |
+| Methodology | `/methodology` | How does BaseballOS compute and govern what it shows? |
+| Data & Trust | `/trust` | Is the current data complete and current enough for the claim I am reading? |
+| Share Artifact | `/share/{public_id}` | What exactly did BaseballOS publish at that time, and what evidence supported it? |
+
+## Trust Model
+
+BaseballOS treats trust as infrastructure rather than a disclaimer.
+
+Core rules:
+
+- **One authority per fact.** Downstream services consume canonical facts instead of inventing local interpretations.
+- **Publication is separate from calculation.** A calculated state is not public until its trust gates pass.
+- **Freshness is visible.** The baseball date represented is distinct from technical sync time.
+- **Unknowns stay unknown.** Missing evidence narrows or suppresses the dependent claim.
+- **Historical and live state stay separate.** Published historical meaning is never silently recalculated from current data.
+- **Corrections preserve history.** Published artifacts are superseded or withdrawn rather than edited in place.
+- **Failure reduces scope.** Independent valid evidence can remain available when another domain fails.
+
+The appearance ledger is publication-critical. If BaseballOS cannot prove that
+required completed-game pitching evidence is complete, a new league snapshot is
+withheld and the previous trusted snapshot continues to serve with its original
+data-through date.
+
+## Current Architecture
+
+| Layer | Technology / responsibility |
 | --- | --- |
-| Frontend | React, Vite, TailwindCSS |
-| Backend | Flask, Python |
-| Database | PostgreSQL |
-| Data source | Public MLB Stats API data |
-| Hosted frontend | Vercel static build |
-| Hosted backend | Render Flask service |
-| Scheduled sync | GitHub Actions calling protected backend endpoints |
+| Frontend | React, Vite, TailwindCSS — public product surfaces and browser-safe internal views |
+| Backend | Python, Flask — APIs, intelligence services, publication, auth boundaries, operational services |
+| Persistence | PostgreSQL, SQLAlchemy, Alembic — canonical records, snapshots, artifacts, audits, users |
+| Source acquisition | Public MLB Stats API data |
+| Scheduled orchestration | GitHub Actions |
+| Hosted frontend | Vercel |
+| Hosted backend | Render |
 
-Daily sync is driven externally by `.github/workflows/baseballos-sync.yml`.
-Health checks do not perform sync. Protected write endpoints require the
-configured admin token in production.
+The production path currently preserves a deliberate authority boundary:
+
+- the legacy daily/postgame writer remains authoritative for baseball-data mutation;
+- game-driven daily and postgame lanes operate in **shadow**;
+- backfill is off unless explicitly dispatched for governed historical replay;
+- automated game-driven write mode and publication-authority transfer are not approved.
+
+Exact workflow schedules, budgets, and runtime values live in
+`.github/workflows/baseballos-sync.yml` and current runbooks rather than this
+README.
+
+## Documentation
+
+Start here:
+
+- [Documentation hub](docs/README.md)
+- [Canonical document library](docs/canonical/README.md)
+- [Repository documentation map](docs/REPOSITORY_DOCUMENTATION_MAP.md)
+- [Current roadmap & decision ledger](docs/canonical/05_PRODUCT_ROADMAP_DECISION_LEDGER.md)
+- [Sync pipeline runbook](docs/current/SYNC_PIPELINE.md)
+- [Setup guide](docs/current/SETUP.md)
+- [Changelog](docs/current/CHANGELOG.md)
+
+The six canonical documents are the durable authority layer. Audits, phase
+records, incident reports, implementation plans, and archived material are
+evidence — not competing product authorities.
 
 ## Local Development
 
-Prerequisites:
+### Prerequisites
 
 - Python 3.10+
 - Node.js 18+
 - npm 9+
 - PostgreSQL 14+
+- Git
 
-Backend:
+### Backend
 
-```powershell
+```bash
 cd backend
 python -m venv venv
-.\venv\Scripts\Activate.ps1
+source venv/bin/activate          # macOS/Linux
+# venv\Scripts\activate          # Windows
 pip install -r requirements.txt
-Copy-Item .env.example .env
-# Edit .env so DATABASE_URL points at your local PostgreSQL database.
+cp .env.example .env
+# Set a local DATABASE_URL and FLASK_APP=app.py
 flask db upgrade
-python seed.py
+python seed.py                    # optional; makes live MLB source calls
 flask run
 ```
 
-Frontend, in a separate terminal:
+Do **not** run `flask db init`; the repository already owns Alembic migration
+history.
 
-```powershell
+### Frontend
+
+```bash
 cd frontend
 npm install
 npm run dev
 ```
 
-The frontend dev server proxies API calls to the backend during local
-development. See [docs/current/SETUP.md](docs/current/SETUP.md) for full local
-setup, deployment, environment variable, and scheduled sync details.
+Production build:
 
-## Environment Variables
-
-Backend:
-
-| Variable | Purpose |
-| --- | --- |
-| `DATABASE_URL` | Explicit database connection string. Local development must use a local database. |
-| `FLASK_APP` | Flask CLI entry point, usually `app.py`. |
-| `APP_ENV` | Runtime environment; use `production` for hosted production. |
-| `SECRET_KEY` | Flask secret key; must be non-default in production. |
-| `MLB_API_BASE` | Optional MLB Stats API base URL override. |
-| `AUTO_SYNC` | Enables the local in-process scheduler when set to a true-like value. |
-| `ADMIN_API_TOKEN` | Gates protected operational endpoints. |
-| `EMAIL_PROVIDER` / `EMAIL_API_KEY` / `EMAIL_FROM` | Optional transactional email config. Missing provider config does not block audience signup persistence; welcome email is skipped safely. |
-
-Frontend:
-
-| Variable | Purpose |
-| --- | --- |
-| `VITE_API_BASE_URL` | Backend origin when hosted separately. |
-| `VITE_SENTRY_DSN` | Optional Sentry DSN for production/staging frontend error monitoring. Missing config is a safe no-op. |
-| `VITE_APP_ENV` | Optional frontend environment label for error monitoring (`production`, `staging`, `preview`, or local defaults). |
-| `VITE_RELEASE_SHA` | Optional release identifier attached to captured frontend errors. |
-
-The frontend has no admin token. Privileged operational endpoints are gated by
-the backend `ADMIN_API_TOKEN` and are triggered server-side or with manual
-operational commands, never from the browser.
-
-## Tests
-
-Backend:
-
-```powershell
-.\backend\venv\Scripts\python.exe -m pytest backend\tests
+```bash
+npm run build
+npm run preview
 ```
 
-Frontend:
+The exact environment-variable contract lives in `backend/.env.example` and
+`frontend/.env.example`. Production must never deliver an admin token to the
+browser.
 
-```powershell
+## Validation
+
+Backend tests:
+
+```bash
+python -m pytest backend/tests
+```
+
+Frontend tests and production build:
+
+```bash
 cd frontend
 npm test
-```
-
-Frontend production build:
-
-```powershell
-cd frontend
 npm run build
 ```
 
-README-only documentation edits do not require the full frontend or backend
-test suite unless implementation files also change. Use `git diff --check` for
-whitespace validation.
+CI uses PostgreSQL-backed backend confidence shards and lockfile-faithful
+frontend installation. A green test suite does not replace production smoke,
+scheduled-run evidence, or live-source verification when those are part of an
+acceptance contract.
 
-## Current Roadmap Direction
+## Current Direction
 
-### V3: Product Credibility Pass
+The canonical Roadmap is the only execution authority. The active work remains
+trust and production closeout before broader product expansion.
 
-V3 focuses on making BaseballOS clearer, more trustworthy, and easier for a
-first-time reader to understand. The pass includes public terminology cleanup,
-live-data trust guardrails, Today page hierarchy, footer and onboarding pages,
-and clearer product boundaries.
+The high-level sequence is:
 
-### Future Direction
+1. finish the current production reliability / authority evidence;
+2. close remaining public credibility contradictions;
+3. make trusted intelligence portable through canonical share assets and crawler-visible metadata;
+4. resume visible evidence depth such as Active Bullpen ERA and named-arm context;
+5. build the stronger daily habit and consequence layer;
+6. use the offseason for deeper pitch, leverage, dependency, depth, timeline, and archive work.
 
-Future work is expected to build toward:
-
-- Daily bullpen intelligence with clearer pregame context.
-- Upcoming games with bullpen context once the slate source is reliable.
-- Bullpen usage paths and coverage routes as future product direction, not a
-  current feature.
-- Continued freshness, provenance, and trust improvements.
-
-## Documentation Entry Points
-
-- [Documentation Index](docs/README.md)
-- [Setup Guide](docs/current/SETUP.md)
-- [Current Roadmap](docs/current/ROADMAP.md)
-- [V4 Foundation Integrity & Bullpen Evidence Roadmap](docs/roadmap/BaseballOS_V4_Daily_Bullpen_Platform.md)
-- [Product Vision Specification](docs/product/product-vision-specification.md)
-- [Product Credibility Pass Completion Audit](docs/audits/product-credibility-pass-completion.md)
-- [Data Freshness Validation Summary](backend/reports/data_freshness_validation_summary.md)
-
-Historical phase records remain under [docs/archive/2026-06/](docs/archive/2026-06/).
-
-## Authorship And Contribution Note
-
-BaseballOS is built and maintained by **Nickolis Kacludis**
-([NickolisK24](https://github.com/NickolisK24)).
+For exact current issue order, production evidence, and decisions, use the
+[Product Roadmap & Decision Ledger](docs/canonical/05_PRODUCT_ROADMAP_DECISION_LEDGER.md).
