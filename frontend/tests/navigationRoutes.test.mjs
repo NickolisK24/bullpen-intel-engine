@@ -23,6 +23,11 @@ const {
   sidebarFreshness,
   default: Sidebar,
 } = await server.ssrLoadModule('/src/components/Sidebar.jsx')
+const {
+  MASTHEAD_NAV,
+  PRIMARY_NAV,
+  SUPPORTING_NAV,
+} = await server.ssrLoadModule('/src/utils/navigation.js')
 
 const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const htmlIncludes = (html, text) => new RegExp(escapeRegExp(text)).test(html)
@@ -213,14 +218,50 @@ test('Sidebar Data Freshness uses published freshness when sync checked an incom
   assert.notEqual(freshness.dataThrough, 'July 5, 2026')
 })
 
-test('desktop shell keeps the navigation rail fixed while content scrolls', () => {
+// The public shell is a horizontal masthead, not a left rail. The rail's fixed
+// geometry and the matching content offset are both gone; nothing may
+// reintroduce a viewport-anchored side column or a hard-coded content inset,
+// because either one silently pushes the reading column off centre.
+test('desktop shell is a horizontal masthead with no side rail or content offset', () => {
   const sidebarSource = readFileSync(new URL('../src/components/Sidebar.jsx', import.meta.url), 'utf8')
   const appSource = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8')
 
-  assert.ok(sidebarSource.includes('lg:fixed'))
-  assert.ok(sidebarSource.includes('lg:inset-y-0'))
-  assert.ok(sidebarSource.includes('lg:overflow-y-auto'))
-  assert.ok(appSource.includes('lg:ml-56'))
+  // The shell renders a masthead landmark using the shared page frame.
+  assert.ok(sidebarSource.includes('bos-masthead'))
+  assert.ok(sidebarSource.includes('<header'))
+  assert.ok(sidebarSource.includes('bos-page'))
+
+  // No fixed side rail survives, and the content is not inset for one.
+  for (const railGeometry of ['lg:fixed', 'lg:inset-y-0', 'lg:w-56', 'lg:h-screen']) {
+    assert.equal(sidebarSource.includes(railGeometry), false, railGeometry)
+  }
+  assert.equal(/lg:ml-\d/.test(appSource), false, 'no left content offset remains')
+  assert.equal(/lg:flex-row/.test(appSource), false, 'the shell stacks rather than sitting beside a rail')
+
+  // The masthead is not sticky: Today is a finite edition read top to bottom.
+  assert.equal(/(sticky|fixed)/.test(sidebarSource), false)
+})
+
+test('the desktop masthead carries the six primary public destinations', () => {
+  const html = render(React.createElement(Sidebar))
+  const nav = html.slice(html.indexOf('aria-label="Primary"'), html.indexOf('aria-label="All destinations"'))
+
+  assert.deepEqual(
+    MASTHEAD_NAV.map(item => item.label),
+    ['Today', 'League Board', 'Team Bullpens', 'Stories', 'Methodology', 'Data & Trust'],
+  )
+  const escapeHtml = value => value.replace(/&/g, '&amp;')
+  for (const item of MASTHEAD_NAV) {
+    assert.ok(htmlIncludes(nav, `>${escapeHtml(item.label)}<`), item.label)
+  }
+  // Secondary utilities are deliberately absent from the masthead...
+  for (const label of ['Compare Bullpens', 'Reliever Finder', 'How to Read', 'About']) {
+    assert.equal(htmlIncludes(nav, `>${escapeHtml(label)}<`), false, label)
+  }
+  // ...but every route stays reachable from the menu sheet.
+  for (const item of [...PRIMARY_NAV, ...SUPPORTING_NAV]) {
+    assert.ok(htmlIncludes(html, `href="${item.to.replace(/&/g, '&amp;')}"`), item.to)
+  }
 })
 
 test('Vercel keeps shareable team URLs out of the SPA catch-all', () => {

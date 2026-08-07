@@ -141,11 +141,13 @@
   /* Page frame. One gutter and one measure for every intelligence surface, so
      the reading column stays the same width from Today to Data & Trust. */
   .bos-page {
-    @apply mx-auto w-full px-5 sm:px-8 lg:px-12;
-    max-width: 84rem;
+    @apply mx-auto w-full px-5 sm:px-8 lg:px-10 xl:px-12;
+    max-width: 90rem;
   }
+  /* The reading frame for an editorial surface. Wider than the old rail-offset
+     column, but still a deliberate composition rather than the full viewport. */
   .bos-page--reading {
-    max-width: 78rem;
+    max-width: 82rem;
   }
 
   /* Section rhythm. Sections are separated by space and a single hairline, not
@@ -204,6 +206,13 @@
     line-height: 1.1;
     letter-spacing: -0.02em;
   }
+  /* The closing product statement — the page's second editorial moment. */
+  .bos-statement {
+    @apply font-body font-semibold text-chalk100;
+    font-size: clamp(2rem, 5vw, 3.5rem);
+    line-height: 1.06;
+    letter-spacing: -0.024em;
+  }
   .bos-section-title {
     @apply font-body font-semibold text-chalk100;
     font-size: clamp(1.375rem, 2.4vw, 1.875rem);
@@ -242,6 +251,14 @@
     font-size: 0.6875rem;
     letter-spacing: 0.09em;
     line-height: 1.45;
+  }
+  /* Concept titles sit between a card title and a section title: large enough
+     to feel like named product language, small enough not to shout. */
+  .bos-concept-title {
+    @apply font-body font-semibold text-chalk100;
+    font-size: 1.375rem;
+    line-height: 1.22;
+    letter-spacing: -0.018em;
   }
   .bos-value {
     @apply font-mono tabular-nums text-chalk100;
@@ -561,7 +578,47 @@
     @apply h-1.5 bg-dirt rounded-full overflow-hidden;
   }
 
-  /* ── Nav item ──
+  /* ── The public masthead ──
+     One low-profile bar with a single hairline beneath it. It is not sticky:
+     Today is a finite daily edition read top to bottom, and a persistent bar
+     would take vertical space from the content on every scroll for no gain. */
+  .bos-masthead {
+    position: relative;
+    z-index: 20;
+    border-bottom: 1px solid var(--bos-line);
+    background-color: rgba(15, 19, 25, 0.92);
+  }
+  @supports (backdrop-filter: blur(6px)) {
+    .bos-masthead {
+      backdrop-filter: saturate(120%) blur(6px);
+    }
+  }
+
+  /* Desktop masthead destination: quiet text, a thin blue underline when
+     current. No pill, no filled tab, no heavy bar. */
+  .bos-nav-top,
+  .nav-top {
+    @apply relative inline-flex min-h-11 items-center px-3 text-[0.9375rem] font-medium text-chalk400 transition-colors duration-150;
+    letter-spacing: -0.005em;
+  }
+  .nav-top:hover {
+    @apply text-chalk100;
+  }
+  .nav-top.active {
+    @apply text-chalk100;
+  }
+  .nav-top.active::after {
+    content: '';
+    position: absolute;
+    left: 0.75rem;
+    right: 0.75rem;
+    bottom: 0.5rem;
+    height: 1.5px;
+    border-radius: 1px;
+    background-color: var(--bos-signal);
+  }
+
+  /* ── Nav item (mobile menu sheet) ──
      Navigation is deliberately quiet: the active destination is marked with a
      blue rail and a brighter label rather than a filled, high-contrast pill,
      so the reading column stays the loudest thing on screen. The rail is

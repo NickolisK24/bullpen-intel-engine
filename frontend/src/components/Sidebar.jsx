@@ -1,9 +1,20 @@
+// The public BaseballOS navigation shell.
+//
+// (The file keeps its historical `Sidebar.jsx` path so the eleven suites that
+// import it by path stay untouched; the component it exports is the masthead.)
+//
+// From lg up this is a horizontal masthead: wordmark left, the six primary
+// destinations centre, the ambient data-through stamp right. Below lg it is a
+// compact header with a menu sheet. The public surfaces read as a publication
+// rather than as an internal tool, so the navigation stays low-profile and the
+// content owns the page.
+
 import { useEffect, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { useFetch } from '../hooks/useFetch'
 import { getBullpenDashboard, getSyncStatus } from '../utils/api'
 import { getSyncStatusView } from './dashboard/syncStatusView'
-import { PRIMARY_NAV, SUPPORTING_NAV, isNavDestinationActive } from '../utils/navigation'
+import { MASTHEAD_NAV, PRIMARY_NAV, SUPPORTING_NAV, isNavDestinationActive } from '../utils/navigation'
 
 const PRIMARY_NAVIGATION_ID = 'primary-navigation'
 
@@ -62,6 +73,9 @@ export function SidebarDataFreshnessCard({ freshness }) {
   )
 }
 
+// A destination in the mobile menu sheet: a full-width row with a blue rail on
+// the active entry, paired with aria-current so the state never depends on
+// colour alone.
 function NavDestination({ item, location, onNavigate }) {
   const active = isNavDestinationActive(item, location)
   return (
@@ -72,6 +86,21 @@ function NavDestination({ item, location, onNavigate }) {
       className={`nav-item ${active ? 'active' : ''}`}
     >
       <span>{item.label}</span>
+    </Link>
+  )
+}
+
+// A destination in the desktop masthead: quiet text that brightens, marked
+// active by a thin blue underline rather than a filled tab or a pill.
+function MastheadDestination({ item, location }) {
+  const active = isNavDestinationActive(item, location)
+  return (
+    <Link
+      to={item.to}
+      aria-current={active ? 'page' : undefined}
+      className={`nav-top ${active ? 'active' : ''}`}
+    >
+      {item.label}
     </Link>
   )
 }
@@ -109,78 +138,105 @@ export default function Sidebar() {
 
   const closeMenu = () => setOpen(false)
 
-  return (
-    <aside className="w-full bg-panel border-b border-line lg:fixed lg:inset-y-0 lg:left-0 lg:z-30 lg:w-56 lg:border-b-0 lg:border-r flex flex-col lg:h-screen lg:overflow-y-auto">
-      {/* Masthead: the wordmark returns to Today; the hamburger is mobile-only.
-          The header stays quiet — content is the product, not the chrome. */}
-      <div className="flex items-center justify-between px-5 py-4 lg:border-b lg:border-line lg:py-6">
-        <Link
-          to="/"
-          onClick={closeMenu}
-          aria-current={location.pathname === '/' ? 'page' : undefined}
-          className="flex min-w-0 items-center gap-2.5 rounded-panel focus:outline-none"
-          aria-label="BaseballOS home"
-        >
-          <span
-            aria-hidden="true"
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-panel border border-signal/35 bg-signal-well font-mono text-[13px] font-semibold tracking-tight text-signal"
-          >
-            OS
-          </span>
-          <span className="min-w-0">
-            <span className="block truncate font-display text-2xl leading-none tracking-[0.16em] text-chalk100">
-              BaseballOS
-            </span>
-            <span className="mt-1 block text-[0.6875rem] font-medium uppercase tracking-[0.11em] text-chalk600">
-              Bullpen Intelligence
-            </span>
-          </span>
-        </Link>
+  // The masthead stamp is a claim about the data, so it appears only when the
+  // application actually served one. Loading and unavailable are states of the
+  // request, not dates, and never render as an ambient fact.
+  const hasPublishedDataThrough = Boolean(freshness.dataThrough)
+    && !['Loading', 'Unavailable', 'No data loaded'].includes(freshness.dataThrough)
 
-        <button
-          type="button"
-          onClick={() => setOpen((v) => !v)}
-          aria-label={open ? 'Close navigation menu' : 'Open navigation menu'}
-          aria-expanded={open}
-          aria-controls={PRIMARY_NAVIGATION_ID}
-          className="lg:hidden shrink-0 ml-3 h-11 w-11 flex items-center justify-center rounded-control border border-line text-chalk200 transition-colors hover:border-line-strong hover:bg-panel-2 focus:outline-none"
-        >
-          <span className="text-lg leading-none" aria-hidden="true">{open ? '✕' : '☰'}</span>
-        </button>
-      </div>
-
-      {/* Nav — hidden on mobile until toggled, always visible on lg+. Primary
-          bullpen destinations first, then the supporting trust/explainer pages,
-          kept visually distinct so first-time visitors can tell them apart. */}
-      <nav
-        id={PRIMARY_NAVIGATION_ID}
-        aria-label="Primary"
-        className={`${open ? 'flex' : 'hidden'} lg:flex flex-1 flex-col px-2 pb-4 pt-1 lg:py-6`}
+  const wordmark = (
+    <Link
+      to="/"
+      onClick={closeMenu}
+      aria-current={location.pathname === '/' ? 'page' : undefined}
+      className="flex min-w-0 shrink-0 items-center gap-2.5 rounded-panel focus:outline-none"
+      aria-label="BaseballOS home"
+    >
+      <span
+        aria-hidden="true"
+        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-panel border border-signal/35 bg-signal-well font-mono text-[12px] font-semibold tracking-tight text-signal"
       >
-        <div className="space-y-0.5">
-          {PRIMARY_NAV.map((item) => (
-            <NavDestination key={item.key} item={item} location={location} onNavigate={closeMenu} />
+        OS
+      </span>
+      <span className="min-w-0">
+        <span className="block truncate font-display text-[1.375rem] leading-none tracking-[0.16em] text-chalk100">
+          BaseballOS
+        </span>
+        <span className="mt-0.5 block text-[0.625rem] font-medium uppercase tracking-[0.11em] text-chalk600">
+          Bullpen Intelligence
+        </span>
+      </span>
+    </Link>
+  )
+
+  return (
+    <header className="bos-masthead">
+      <div className="bos-page flex h-16 items-center justify-between gap-6 lg:h-[4.5rem]">
+        {wordmark}
+
+        {/* Desktop masthead navigation. Only the six primary public
+            destinations appear here; the supporting explainer and trust pages
+            stay reachable from the footer, the menu sheet, and in-page links,
+            so the masthead does not become a directory. */}
+        <nav aria-label="Primary" className="hidden min-w-0 lg:flex lg:items-center lg:gap-1">
+          {MASTHEAD_NAV.map((item) => (
+            <MastheadDestination key={item.key} item={item} location={location} />
           ))}
-        </div>
+        </nav>
 
-        <div className="mt-6 border-t border-line pt-4">
-          <div className="px-4 pb-2 text-[0.6875rem] font-medium uppercase tracking-[0.09em] text-chalk600">
-            Learn &amp; Trust
-          </div>
-          <div className="space-y-0.5">
-            {SUPPORTING_NAV.map((item) => (
-              <NavDestination key={item.key} item={item} location={location} onNavigate={closeMenu} />
-            ))}
-          </div>
-        </div>
-      </nav>
+        <div className="flex shrink-0 items-center gap-4">
+          {/* Freshness is ambient: the represented baseball date sits in the
+              masthead on every surface, not only where a page repeats it. */}
+          {hasPublishedDataThrough && (
+            <span className="hidden font-mono text-[11px] leading-tight text-chalk500 xl:inline">
+              Data through <span className="text-chalk300">{freshness.dataThrough}</span>
+            </span>
+          )}
 
-      {/* Footer — follows the nav's mobile visibility, always shown on lg+ */}
-      <div className={`${open ? 'block' : 'hidden'} lg:block mt-auto px-4 py-4 border-t border-line`}>
-        <div className="space-y-3">
-          <SidebarDataFreshnessCard freshness={freshness} />
+          <button
+            type="button"
+            onClick={() => setOpen((v) => !v)}
+            aria-label={open ? 'Close navigation menu' : 'Open navigation menu'}
+            aria-expanded={open}
+            aria-controls={PRIMARY_NAVIGATION_ID}
+            className="lg:hidden h-11 w-11 flex shrink-0 items-center justify-center rounded-control border border-line text-chalk200 transition-colors hover:border-line-strong hover:bg-panel-2 focus:outline-none"
+          >
+            <span className="text-lg leading-none" aria-hidden="true">{open ? '\u2715' : '\u2630'}</span>
+          </button>
         </div>
       </div>
-    </aside>
+
+      {/* Menu sheet — below lg only. Every destination lives here, including the
+          supporting pages the desktop masthead deliberately leaves out. */}
+      <div
+        id={PRIMARY_NAVIGATION_ID}
+        className={`${open ? 'block' : 'hidden'} border-t border-line lg:hidden`}
+      >
+        <div className="bos-page py-4">
+          <nav aria-label="All destinations" className="flex flex-col">
+            <div className="space-y-0.5">
+              {PRIMARY_NAV.map((item) => (
+                <NavDestination key={item.key} item={item} location={location} onNavigate={closeMenu} />
+              ))}
+            </div>
+
+            <div className="mt-6 border-t border-line pt-4">
+              <div className="px-4 pb-2 text-[0.6875rem] font-medium uppercase tracking-[0.09em] text-chalk600">
+                Learn &amp; Trust
+              </div>
+              <div className="space-y-0.5">
+                {SUPPORTING_NAV.map((item) => (
+                  <NavDestination key={item.key} item={item} location={location} onNavigate={closeMenu} />
+                ))}
+              </div>
+            </div>
+          </nav>
+
+          <div className="mt-6">
+            <SidebarDataFreshnessCard freshness={freshness} />
+          </div>
+        </div>
+      </div>
+    </header>
   )
 }

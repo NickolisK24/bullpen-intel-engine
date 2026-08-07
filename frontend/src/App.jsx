@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { BrowserRouter, Navigate, Routes, Route } from 'react-router-dom'
+// The public navigation shell (a masthead; the file keeps its historical name).
 import Sidebar from './components/Sidebar'
 import Footer from './components/layout/Footer'
 import Home from './components/home/Home'
@@ -63,14 +64,14 @@ export default function App() {
   return (
     <BrowserRouter>
       <TrafficRouteObserver />
-      <div className="app-shell bg-noise flex-col lg:flex-row">
+      <div className="app-shell bg-noise flex-col">
         {/* Keyboard readers reach the page answer without walking the whole
             navigation first. Visible only while focused. */}
         <a href="#main-content" className="bos-skip-link">
           Skip to content
         </a>
         <Sidebar />
-        <main id="main-content" tabIndex={-1} className="flex-1 min-w-0 focus:outline-none lg:ml-56">
+        <main id="main-content" tabIndex={-1} className="w-full min-w-0 flex-1 focus:outline-none">
           <AppRoutes />
           <Footer />
         </main>

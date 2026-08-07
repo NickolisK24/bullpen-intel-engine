@@ -11,20 +11,33 @@
 
 import { BULLPEN_VIEWS, readBullpenLocation } from './evidenceLinks'
 
+// `masthead` controls only which destinations appear in the desktop masthead.
+// It changes no route and hides nothing: every destination below is rendered in
+// the mobile menu sheet, and Compare and Reliever Finder are also reachable
+// from the Today entry row and from the Team Bullpens views themselves. The
+// masthead stays six destinations wide so it reads as a publication header
+// rather than a directory.
 export const PRIMARY_NAV = [
   { key: 'today', to: '/', icon: '☀', label: 'Today' },
   { key: 'league-board', to: '/dashboard', icon: '⬡', label: 'League Board' },
   { key: 'team-bullpens', to: '/bullpen', icon: '🔥', label: 'Team Bullpens', bullpenView: BULLPEN_VIEWS.BOARD },
-  { key: 'compare-bullpens', to: '/bullpen?view=compare', icon: '⚖', label: 'Compare Bullpens', bullpenView: BULLPEN_VIEWS.COMPARE },
-  { key: 'reliever-finder', to: '/bullpen?view=pitchers', icon: '🔎', label: 'Reliever Finder', bullpenView: BULLPEN_VIEWS.PITCHERS },
+  { key: 'compare-bullpens', to: '/bullpen?view=compare', icon: '⚖', label: 'Compare Bullpens', bullpenView: BULLPEN_VIEWS.COMPARE, masthead: false },
+  { key: 'reliever-finder', to: '/bullpen?view=pitchers', icon: '🔎', label: 'Reliever Finder', bullpenView: BULLPEN_VIEWS.PITCHERS, masthead: false },
   { key: 'stories', to: '/stories', icon: '📰', label: 'Stories' },
 ]
 
 export const SUPPORTING_NAV = [
   { key: 'how-to-read', to: '/how-to-read', icon: '📖', label: 'How to Read' },
-  { key: 'methodology', to: '/methodology', icon: '📐', label: 'Methodology' },
-  { key: 'data-trust', to: '/trust', icon: '🛡', label: 'Data & Trust' },
+  { key: 'methodology', to: '/methodology', icon: '📐', label: 'Methodology', masthead: true },
+  { key: 'data-trust', to: '/trust', icon: '🛡', label: 'Data & Trust', masthead: true },
   { key: 'about', to: '/about', icon: 'ⓘ', label: 'About' },
+]
+
+// The desktop masthead: the four primary bullpen lanes plus the two trust
+// surfaces that make every other read credible.
+export const MASTHEAD_NAV = [
+  ...PRIMARY_NAV.filter(item => item.masthead !== false),
+  ...SUPPORTING_NAV.filter(item => item.masthead === true),
 ]
 
 // Active-state resolver. NavLink's built-in matching keys on pathname only, so
