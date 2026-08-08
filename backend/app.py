@@ -218,6 +218,13 @@ def create_app(config_name=None):
     from services.public_serving_authority import install_public_serving_authority
     install_public_serving_authority(app)
 
+    # Compare must select the trusted snapshot once for the entire response. A
+    # publication that lands between side A and side B must never create a mixed
+    # two-authority comparison.
+    if app.config.get('APP_ENV') == 'production':
+        from services.trusted_compare_authority import trusted_team_compare_view
+        app.view_functions['bullpen.compare_team_bullpens'] = trusted_team_compare_view
+
     # The legacy admin POST /api/bullpen/sync is a second manual production full-
     # sync entrypoint. D-051 retires manual authoritative daily operation, so the
     # production app replaces that writer view with a refusal after routes are
