@@ -29,3 +29,22 @@ build/
 
 # OS
 .DS_Store
+
+# Local browser/test artifacts
+artifacts/what-changed-team-focus/chrome-metrics/
+artifacts/what-changed-team-focus/chrome-mobile-profile/
+artifacts/what-changed-team-focus/edge-before/
+artifacts/what-changed-team-focus/edge-after-desktop/
+artifacts/what-changed-team-focus/edge-after-mobile/
+
+# Local validation/test server logs
+artifacts/what-changed-team-focus/*.err.log
+artifacts/what-changed-team-focus/*.out.log
+
+# Local QA / browser / validation artifacts
+/artifacts/
+/backend/artifacts/
+
+# Local replay / quality outputs
+/backend/c1-shadow-replay.json
+/quality_run.json

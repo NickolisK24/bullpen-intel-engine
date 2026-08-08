@@ -170,7 +170,7 @@ Get-Content .env.local | ForEach-Object {
 Confirm the target is local before any command that touches the database:
 
 ```powershell
-python -c "from urllib.parse import urlparse; import os; u=urlparse(os.environ['DATABASE_URL']); assert u.hostname in ('localhost','127.0.0.1','::1','host.docker.internal'), u.hostname; print(f'DATABASE_URL local host: {u.hostname}; database: {u.path.lstrip(\"/\")}')"
+python -c 'from urllib.parse import urlparse; import os; u=urlparse(os.environ["DATABASE_URL"]); assert u.hostname in ("localhost","127.0.0.1","::1","host.docker.internal"), u.hostname; print("DATABASE_URL local host:", u.hostname, "; database:", u.path.lstrip("/"))'
 ```
 
 It must print `localhost` and `baseballos_local`. Stop if it contains Supabase
