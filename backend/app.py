@@ -212,6 +212,12 @@ def create_app(config_name=None):
     app.register_blueprint(share_cards_bp, url_prefix='/api/share-cards')
     app.register_blueprint(share_artifacts_public_bp, url_prefix='/api/share-artifacts')
 
+    # Public claim-bearing bullpen reads are publication-bound in production.
+    # Acquisition tables may advance during a sync, but Board/Compare/Tonight do
+    # not become authoritative until a trusted published snapshot says they can.
+    from services.public_serving_authority import install_public_serving_authority
+    install_public_serving_authority(app)
+
     @app.route('/api/health')
     def health():
         return {
