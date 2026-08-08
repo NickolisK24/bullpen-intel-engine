@@ -70,6 +70,7 @@ def _production_daily_env(**overrides):
         'APP_ENV': 'production',
         'GITHUB_ACTIONS': 'true',
         'GITHUB_EVENT_NAME': 'schedule',
+        'GITHUB_RUN_ATTEMPT': '1',
     }
     values.update(overrides)
     return values
@@ -89,6 +90,17 @@ def test_workflow_dispatch_daily_is_refused():
 
     assert production_daily_trigger_refusal_reason(
         _production_daily_env(GITHUB_EVENT_NAME='workflow_dispatch')
+    ) == PRODUCTION_DAILY_TRIGGER_REFUSAL
+
+
+def test_scheduled_daily_manual_rerun_is_refused():
+    from scripts.run_daily_sync import (
+        PRODUCTION_DAILY_TRIGGER_REFUSAL,
+        production_daily_trigger_refusal_reason,
+    )
+
+    assert production_daily_trigger_refusal_reason(
+        _production_daily_env(GITHUB_RUN_ATTEMPT='2')
     ) == PRODUCTION_DAILY_TRIGGER_REFUSAL
 
 
