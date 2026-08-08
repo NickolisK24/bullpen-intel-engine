@@ -1,10 +1,15 @@
-"""CORS allowed-origins tests.
+"""CORS allowed-origins and production-entrypoint safety tests.
 
 The browser frontend calls the backend cross-origin, so the production
 frontend domains must be on the backend's CORS allowlist or requests fail with
 "Failed to fetch". These tests pin the canonical custom domain and the legacy
 Vercel domain as allowed, confirm an unknown origin is not, and confirm the
 CORS_ORIGINS env var can add origins without a code change.
+
+D-051 also makes the external production full-daily runner schedule-only. The
+pure trigger guard is kept here with other application-environment boundary
+tests so CI can prove a manual production invocation refuses before app/database
+initialization without creating a new shard-manifest entry.
 """
 
 import importlib
@@ -52,3 +57,52 @@ def test_cors_origins_env_var_extends_allowlist(monkeypatch):
     assert _allow_origin_for(app, extra) == extra
     # The baked-in production domain is still allowed alongside env additions.
     assert _allow_origin_for(app, 'https://baseballos.app') == 'https://baseballos.app'
+
+
+# ── D-051 production full-daily trigger authority ────────────────────────────
+
+
+def _production_daily_env(**overrides):
+    values = {
+        'APP_ENV': 'production',
+        'GITHUB_ACTIONS': 'true',
+        'GITHUB_EVENT_NAME': 'schedule',
+    }
+    values.update(overrides)
+    return values
+
+
+def test_scheduled_github_daily_is_authorized():
+    from scripts.run_daily_sync import production_daily_trigger_refusal_reason
+
+    assert production_daily_trigger_refusal_reason(_production_daily_env()) is None
+
+
+def test_workflow_dispatch_daily_is_refused():
+    from scripts.run_daily_sync import (
+        PRODUCTION_DAILY_TRIGGER_REFUSAL,
+        production_daily_trigger_refusal_reason,
+    )
+
+    assert production_daily_trigger_refusal_reason(
+        _production_daily_env(GITHUB_EVENT_NAME='workflow_dispatch')
+    ) == PRODUCTION_DAILY_TRIGGER_REFUSAL
+
+
+def test_local_production_daily_is_refused():
+    from scripts.run_daily_sync import (
+        PRODUCTION_DAILY_TRIGGER_REFUSAL,
+        production_daily_trigger_refusal_reason,
+    )
+
+    assert production_daily_trigger_refusal_reason(
+        {'APP_ENV': 'production'}
+    ) == PRODUCTION_DAILY_TRIGGER_REFUSAL
+
+
+def test_nonproduction_daily_runner_remains_available():
+    from scripts.run_daily_sync import production_daily_trigger_refusal_reason
+
+    assert production_daily_trigger_refusal_reason(
+        {'APP_ENV': 'test', 'GITHUB_EVENT_NAME': 'workflow_dispatch'}
+    ) is None
