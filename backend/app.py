@@ -218,6 +218,20 @@ def create_app(config_name=None):
     from services.public_serving_authority import install_public_serving_authority
     install_public_serving_authority(app)
 
+    # The legacy admin POST /api/bullpen/sync is a second manual production full-
+    # sync entrypoint. D-051 retires manual authoritative daily operation, so the
+    # production app replaces that writer view with a refusal after routes are
+    # registered. Development/test keep the old endpoint for isolated validation.
+    if app.config.get('APP_ENV') == 'production':
+        def retired_manual_production_sync():
+            return {
+                'status': 'refused',
+                'reason': 'manual_production_daily_sync_retired',
+                'message': 'Production full daily synchronization is schedule-only.',
+            }, 410
+
+        app.view_functions['bullpen.sync_recent_logs'] = retired_manual_production_sync
+
     @app.route('/api/health')
     def health():
         return {
