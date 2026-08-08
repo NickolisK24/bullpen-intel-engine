@@ -6,9 +6,13 @@ BaseballOS separates acquisition from publication. A sync may write canonical so
 
 ## Production full daily
 
-The external production full-daily runner is schedule-only. `backend/scripts/run_daily_sync.py` refuses a non-scheduled production invocation before importing the Flask application or initializing the database. An ordinary GitHub Actions `workflow_dispatch` daily attempt therefore cannot become a production writer.
+The external production full-daily runner is schedule-only and first-attempt-only. `backend/scripts/run_daily_sync.py` refuses a non-scheduled production invocation and refuses `GITHUB_RUN_ATTEMPT != 1` before importing the Flask application or initializing the database. An ordinary GitHub Actions `workflow_dispatch` daily attempt and a manually re-run scheduled daily therefore cannot become production writers.
+
+Production `POST /api/bullpen/sync` is also retired and returns an explicit refusal, so the historical admin writer cannot bypass the schedule-only command boundary. Development/test retain that route only for isolated validation.
 
 Scheduled daily remains the normal production-authoritative full reconciliation path. Postgame, backfill, intraday audit, game-driven shadow, and team-progressive authority retain their separately governed contracts; D-051 grants none of them new authority.
+
+The Actions workflow may still display the historical `daily` workflow-dispatch choice until that long workflow UI is simplified. The choice is intentionally non-authoritative: selecting it reaches the runner guard and refuses before application/database initialization.
 
 ## Dashboard publication boundary
 
@@ -36,13 +40,13 @@ Controlled schedule/postgame warming remains the producer of Tonight snapshots. 
 
 ## Failure behavior
 
-A failed or withheld daily attempt may leave canonical acquisition rows that help diagnose and resume the next governed run. Those rows cannot, by themselves, change the public Team Board, Compare, or Team State authority. The last trusted published view continues to govern until a new candidate passes publication.
+A failed or withheld daily attempt may leave canonical acquisition rows that help diagnose and reconcile the next governed run. Those rows cannot, by themselves, change the public Team Board, Compare, or Team State authority. The last trusted published view continues to govern until a new candidate passes publication.
 
 This is the intended fail-closed behavior: **safe and explicitly dated rather than current-looking but partially advanced.**
 
 ## OPS-002 proof
 
-D-051 retires the controlled-manual-daily recovery criterion because authoritative manual daily execution is intentionally prohibited. OPS-002 remains open and requires three consecutive scheduled full daily runs proving:
+D-051 retires the controlled-manual-daily recovery criterion because authoritative manual daily execution is intentionally prohibited. OPS-002 remains open and requires three consecutive scheduled, first-attempt full daily runs proving:
 
 - `budget_exhausted_pitchers == 0`;
 - `publication_critical_failed == 0`;
@@ -50,7 +54,9 @@ D-051 retires the controlled-manual-daily recovery criterion because authoritati
 - appearance-ledger proof passes;
 - Dashboard-cache proof passes;
 - game-driven shadow remains zero-write;
-- Team Board and Compare serve the same trusted snapshot authority;
+- Team Board and Compare serve trusted Dashboard publication authority;
 - Tonight does not perform a public on-demand live build.
+
+A manually re-run scheduled job is not eligible proof.
 
 The runtime mitigation remains temporary headroom. Permanent GameLog candidate prefiltering and incremental roster/transaction synchronization remain separate follow-up work.
