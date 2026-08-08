@@ -6,16 +6,19 @@ frontend domains must be on the backend's CORS allowlist or requests fail with
 Vercel domain as allowed, confirm an unknown origin is not, and confirm the
 CORS_ORIGINS env var can add origins without a code change.
 
-D-051 also makes the external production full-daily runner schedule-only. The
-pure trigger guard is kept here with other application-environment boundary
-tests so CI can prove a manual production invocation refuses before app/database
-initialization without creating a new shard-manifest entry.
+D-051 also makes the external production full-daily runner schedule-only and
+binds public Board/Compare/Tonight reads to trusted publication authority. The
+boundary regressions live here with other application-environment tests so the
+static CI shard manifest continues to own every collected test exactly once.
 """
 
 import importlib
 import os
+from datetime import date, datetime
+from types import SimpleNamespace
 
 import pytest
+from flask import Flask
 
 
 def _make_app(monkeypatch, cors_origins=None):
@@ -106,3 +109,204 @@ def test_nonproduction_daily_runner_remains_available():
     assert production_daily_trigger_refusal_reason(
         {'APP_ENV': 'test', 'GITHUB_EVENT_NAME': 'workflow_dispatch'}
     ) is None
+
+
+# ── D-051 trusted public serving authority ───────────────────────────────────
+
+
+def _trusted_authority_snapshot(authority, team_package):
+    return SimpleNamespace(
+        id=901,
+        sync_run_id=801,
+        data_through=date(2026, 8, 7),
+        availability_reference_date=date(2026, 8, 8),
+        snapshot_generated_at=datetime(2026, 8, 8, 10, 30, 0),
+        published_at=datetime(2026, 8, 8, 10, 31, 0),
+        payload={
+            authority.TEAM_BOARD_PACKAGE_KEY: {
+                'contract': authority.TEAM_BOARD_PACKAGE_CONTRACT,
+                'by_team_id': {'116': team_package},
+            },
+            'freshness': {
+                'data_through': '2026-08-07',
+                'availability_reference_date': '2026-08-08',
+                'is_current': True,
+                'limitations': [],
+            },
+        },
+    )
+
+
+def _trusted_board_record(pitcher_id, name, *, visible=True, unavailable_roster=False):
+    return {
+        'name': name,
+        'pitcher_id': pitcher_id,
+        'fatigue_score': 21.0,
+        'availability': {
+            'availability_status': 'Available',
+            'confidence': 'high',
+            'data_state': 'fresh',
+            'reasons': [],
+            'limitations': [],
+            'inputs': {
+                'appearances_last_5_days': 1,
+                'pitches_last_5_days': 12,
+            },
+        },
+        'last_appearance': {'game_date': '2026-08-07', 'pitches': 12},
+        'last_workload_appearance': {'game_date': '2026-08-07', 'pitches': 12},
+        'role': {},
+        'pitcher_labels': {},
+        'public_role_read': None,
+        'eligibility': {},
+        'roster_status': {},
+        'visibility': {
+            'is_visible_by_default': visible,
+            'is_unavailable_roster_status': unavailable_roster,
+        },
+    }
+
+
+def _trusted_team_package():
+    return {
+        'team': {
+            'team_id': 116,
+            'team_name': 'Detroit Tigers',
+            'team_abbreviation': 'DET',
+        },
+        'records': [
+            _trusted_board_record(1, 'Published Arm'),
+            _trusted_board_record(
+                2,
+                'Published IL Arm',
+                visible=False,
+                unavailable_roster=True,
+            ),
+        ],
+        'default_pitcher_ids': [1],
+        'roster_authority': {},
+        'workload_concentration': {},
+        'capacity_intelligence': {},
+        'rotation_support_pressure': {},
+        'bullpen_stability': {},
+        'bullpen_environment': {},
+    }
+
+
+def _stub_trusted_snapshot(monkeypatch, authority):
+    snapshot = _trusted_authority_snapshot(authority, _trusted_team_package())
+    monkeypatch.setattr(
+        authority.dashboard_snapshot_service,
+        'get_latest_valid_dashboard_snapshot',
+        lambda: snapshot,
+    )
+    monkeypatch.setattr(
+        authority.board_freshness,
+        'published_snapshot_freshness_block',
+        lambda: dict(snapshot.payload['freshness']),
+    )
+    return snapshot
+
+
+def test_team_board_serves_frozen_published_records(monkeypatch):
+    from services import public_serving_authority as authority
+
+    snapshot = _stub_trusted_snapshot(monkeypatch, authority)
+    monkeypatch.setattr(
+        authority,
+        '_published_team_state',
+        lambda _snapshot, _team_id: {
+            'contract': 'team_state_public_v1',
+            'available': True,
+            'public_state': 'fresh',
+            'public_label': 'Fresh',
+            'outcome': 'available',
+            'unavailable_message': None,
+            'reason_code': None,
+            'data_through': '2026-08-07',
+        },
+    )
+
+    board = authority.build_published_team_board(116)
+
+    assert board['served_from'] == 'trusted_dashboard_snapshot'
+    assert board['publication_authority']['snapshot_id'] == snapshot.id
+    assert board['team_state']['public_label'] == 'Fresh'
+    assert board['total_pitchers'] == 1
+    names = [
+        pitcher['name']
+        for group in board['groups']
+        for pitcher in group['pitchers']
+    ]
+    assert names == ['Published Arm']
+
+
+def test_team_board_include_stale_uses_only_frozen_context(monkeypatch):
+    from services import public_serving_authority as authority
+
+    _stub_trusted_snapshot(monkeypatch, authority)
+    monkeypatch.setattr(
+        authority,
+        '_published_team_state',
+        lambda *_args: authority.team_state_unavailable(
+            authority.TEAM_STATE_READINESS_UNAVAILABLE
+        ),
+    )
+
+    board = authority.build_published_team_board(116, include_stale=True)
+    names = sorted(
+        pitcher['name']
+        for group in board['groups']
+        for pitcher in group['pitchers']
+    )
+    assert names == ['Published Arm', 'Published IL Arm']
+
+
+def test_missing_frozen_board_package_fails_closed_without_live_rebuild(monkeypatch):
+    from services import public_serving_authority as authority
+
+    snapshot = _stub_trusted_snapshot(monkeypatch, authority)
+    snapshot.payload.pop(authority.TEAM_BOARD_PACKAGE_KEY)
+
+    board = authority.build_published_team_board(116)
+
+    assert board['status'] == 'snapshot_unavailable'
+    assert board['reason'] == authority.TEAM_BOARD_PACKAGE_MISSING
+    assert board['total_pitchers'] == 0
+    assert board['publication_authority']['snapshot_id'] == snapshot.id
+
+
+def test_trusted_tonight_view_never_builds_on_cache_miss(monkeypatch):
+    from services import public_serving_authority as authority
+
+    captured = {}
+
+    def fake_serve(**kwargs):
+        captured.update(kwargs)
+        return {
+            'status': 'empty',
+            'reference_date': '2026-08-08',
+            'cards': [],
+            'card_count': 0,
+            'empty_reason': (
+                authority.tonight_intelligence_snapshot.EMPTY_SNAPSHOT_BUILD_UNAVAILABLE
+            ),
+            'limitations': [],
+        }
+
+    monkeypatch.setattr(
+        authority.tonight_intelligence_snapshot,
+        'serve_tonight_cached',
+        fake_serve,
+    )
+    app = Flask(__name__)
+    with app.test_request_context(
+        '/api/bullpen/intelligence/tonight?reference_date=2026-08-08'
+    ):
+        response = authority.trusted_tonight_view()
+        payload = response.get_json()
+
+    assert captured['build_on_miss'] is False
+    assert captured['persist'] is False
+    assert payload['empty_reason'] == authority.TONIGHT_SNAPSHOT_UNAVAILABLE
+    assert 'live rebuild is disabled' in payload['limitations'][0].lower()
