@@ -14,6 +14,33 @@ if str(BACKEND_DIR) not in sys.path:
 os.environ['AUTO_SYNC'] = 'false'
 
 
+PRODUCTION_DAILY_TRIGGER_REFUSAL = (
+    'production_daily_runner_requires_scheduled_github_trigger'
+)
+
+
+def _truthy(value):
+    return str(value or '').strip().lower() in ('1', 'true', 'yes', 'on')
+
+
+def production_daily_trigger_refusal_reason(environ=None):
+    """Return a reason when the external production daily runner is unauthorized.
+
+    The production full-daily command is intentionally schedule-only. A GitHub
+    workflow_dispatch (or a local production invocation) must refuse before the
+    Flask app is imported, which means before database initialization and before
+    any canonical writer can run. Test/development commands remain usable.
+    """
+    env = environ or os.environ
+    if str(env.get('APP_ENV') or '').strip().lower() != 'production':
+        return None
+    if not _truthy(env.get('GITHUB_ACTIONS')):
+        return PRODUCTION_DAILY_TRIGGER_REFUSAL
+    if str(env.get('GITHUB_EVENT_NAME') or '').strip().lower() != 'schedule':
+        return PRODUCTION_DAILY_TRIGGER_REFUSAL
+    return None
+
+
 def _parse_args(argv=None):
     parser = argparse.ArgumentParser(
         description='Run BaseballOS daily bullpen sync outside the web request path.'
@@ -51,6 +78,15 @@ def main(argv=None):
         level=os.environ.get('LOG_LEVEL', 'INFO').upper(),
         format='%(asctime)s %(levelname)s %(name)s %(message)s',
     )
+
+    refusal_reason = production_daily_trigger_refusal_reason()
+    if refusal_reason is not None:
+        logging.getLogger(__name__).error(
+            'Production daily sync refused before application/database initialization '
+            '(reason=%s). Full daily production synchronization is schedule-only.',
+            refusal_reason,
+        )
+        return 2
 
     from app import app
     from services import sync as sync_service
