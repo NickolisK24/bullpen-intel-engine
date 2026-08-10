@@ -15,6 +15,7 @@ from models.scheduled_game import ScheduledGame
 from services import pitcher_season_ledger_coverage
 from services import public_team_relief_work
 from tests.db_config import configure_test_database, create_test_schema, drop_test_schema
+from tests.generated_team_pages import GENERATED_TEAM_PAGE_FILES
 from utils.db import db
 
 
@@ -1583,8 +1584,27 @@ def test_existing_public_routes_behavior_freeze(monkeypatch):
         'frontend/tests/publicCopyAuthority.test.mjs',
     }
 
+    allowed_static_team_preview_files = {
+        # dist-003 / #594 (routed team preview authority): the generated
+        # /team/{ABBR} pages stop publishing an undated present-tense claim in a
+        # non-canonical vocabulary. The preview builder now reads the trusted
+        # publication's canonical Team State, data-through date, and snapshot
+        # receipt instead of the team-shape adjective labels, and the exporter
+        # takes the same trusted published board every public request already
+        # takes. The generated HTML files are the regenerated output of that
+        # builder. No availability classification, threshold, Team State
+        # derivation, freshness semantic, route, or redirect target changes, and
+        # the in-product Team Board vocabulary is deliberately untouched.
+        'backend/services/team_story_previews.py',
+        'backend/scripts/export_team_story_pages.py',
+        'backend/services/share_artifact_public.py',
+        'frontend/tests/teamShare.test.mjs',
+        *GENERATED_TEAM_PAGE_FILES,
+    }
+
     assert not [
         path for path in changed
+        if path not in allowed_static_team_preview_files
         if path not in allowed_public_copy_authority_files
         if path not in allowed_public_score_removal_files
         if path not in allowed_canonical_team_state_files

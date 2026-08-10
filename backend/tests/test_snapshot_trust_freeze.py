@@ -24,6 +24,7 @@ from services.what_changed_since_yesterday import (
     STATE_NO_MEANINGFUL_CHANGES,
     build_what_changed_since_yesterday_payload,
 )
+from tests.generated_team_pages import GENERATED_TEAM_PAGE_FILES
 from tests.test_phase0e_exit_docs import EXPECTED_ALEMBIC_HEAD, _alembic_heads
 
 
@@ -647,9 +648,22 @@ def test_frozen_legacy_what_changed_files_untouched():
         'frontend/tests/publicCopyAuthority.test.mjs',
     }
 
+    allowed_static_team_preview_files = {
+        # dist-003 / #594 (routed team preview authority): the generated
+        # /team/{ABBR} pages and their static contract test. This freeze protects
+        # snapshot trust; #594 strengthens it rather than exempting itself from
+        # it — the pages now cite the trusted dashboard snapshot they were built
+        # from and refuse to publish a present-tense claim without one. No
+        # snapshot publication gate, freshness field meaning, or trusted-serving
+        # behavior changes.
+        'frontend/tests/teamShare.test.mjs',
+        *GENERATED_TEAM_PAGE_FILES,
+    }
+
     assert not sorted(
         path for path in changed
         if path.startswith('frontend/')
+        if path not in allowed_static_team_preview_files
         if path not in allowed_public_copy_authority_files
         if path not in allowed_public_score_removal_files
         if path not in allowed_canonical_team_state_files

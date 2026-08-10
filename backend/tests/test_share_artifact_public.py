@@ -107,6 +107,35 @@ def test_published_resolves_ok_with_whitelisted_view(app, monkeypatch):
     assert view['routes']['methodology_url'] and view['routes']['data_trust_url']
 
 
+def test_current_truth_link_points_at_this_artifacts_own_team_board(app, monkeypatch):
+    """The historical -> current handoff must not lose team identity.
+
+    A reader inspecting a historical artifact for one club was previously handed
+    the league bullpen surface. The destination is still constructed here from
+    constants; only the club's OWN frozen abbreviation is carried across.
+    """
+    artifact = _publish(monkeypatch)
+    view = load_public_share_artifact(artifact.public_id).view
+
+    assert view['team']['team_abbreviation'] == 'TST'
+    assert view['routes']['team_url'] == '/bullpen?view=board&team=TST'
+    # Still a first-party route built from constants, never an artifact URL.
+    assert view['routes']['team_url'].startswith('/bullpen')
+
+
+def test_current_truth_link_falls_back_when_no_abbreviation_was_stored(app, monkeypatch):
+    artifact = _publish(monkeypatch)
+    result = load_public_share_artifact(artifact.public_id)
+    assert result.view['routes']['team_url'] == '/bullpen?view=board&team=TST'
+
+    # An artifact whose frozen team block carries no abbreviation still gets a
+    # working current-truth destination rather than a malformed one.
+    assert public_module._team_route(None) == '/bullpen'
+    assert public_module._team_route('   ') == '/bullpen'
+    assert public_module._team_route('../evil') == '/bullpen?view=board&team=EVIL'
+    assert public_module._team_route(' tor ') == '/bullpen?view=board&team=TOR'
+
+
 def test_unknown_and_malformed_public_id_are_not_found(app):
     assert load_public_share_artifact('does-not-exist').status == RESULT_NOT_FOUND
     assert load_public_share_artifact('bad id!').status == RESULT_NOT_FOUND

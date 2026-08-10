@@ -76,6 +76,7 @@ _PUBLIC_ID_RE = re.compile(r'^[A-Za-z0-9._-]{1,64}$')
 METHODOLOGY_ROUTE = '/methodology'
 DATA_TRUST_ROUTE = '/trust'
 TEAM_SURFACE_ROUTE = '/bullpen'
+TEAM_SURFACE_VIEW = 'board'
 
 def _publication_scope(artifact) -> dict:
     """Scope-aware public labels from the durable source-authority discriminator.
@@ -168,10 +169,22 @@ def _iso(value) -> Optional[str]:
     return value.isoformat() if value is not None else None
 
 
-def _team_route(team_id) -> Optional[str]:
-    # The current/live canonical team bullpen surface (approved first-party route).
-    # A constant approved destination — never an artifact-provided URL.
-    return TEAM_SURFACE_ROUTE
+def _team_route(team_abbreviation) -> Optional[str]:
+    """The current/live canonical team bullpen surface for this artifact's team.
+
+    An approved first-party destination, still CONSTRUCTED HERE from constants —
+    never an artifact-provided URL. The only artifact-derived part is the team's
+    own frozen abbreviation, sanitised to the board's team-reference charset and
+    used as a query value, so a historical Brewers artifact hands the reader the
+    Brewers board rather than the league surface. An artifact with no stored
+    abbreviation falls back to the bare route.
+    """
+    if not isinstance(team_abbreviation, str):
+        return TEAM_SURFACE_ROUTE
+    abbreviation = re.sub(r'[^A-Z0-9-]', '', team_abbreviation.strip().upper())
+    if not abbreviation:
+        return TEAM_SURFACE_ROUTE
+    return f'{TEAM_SURFACE_ROUTE}?view={TEAM_SURFACE_VIEW}&team={abbreviation}'
 
 
 def _public_state(team_state: Mapping[str, Any], public_copy: Mapping[str, Any]) -> Optional[dict]:
@@ -304,7 +317,7 @@ def _public_view(artifact, session) -> dict:
         'copy': copy,
         'routes': {
             'share_url': share_route(artifact.public_id),
-            'team_url': _team_route(team.get('team_id') or artifact.team_id),
+            'team_url': _team_route(team.get('team_abbreviation')),
             'methodology_url': METHODOLOGY_ROUTE,
             'data_trust_url': DATA_TRUST_ROUTE,
         },
