@@ -3,12 +3,12 @@
 | Field | Value |
 |---|---|
 | Status | Canonical - current platform state, priority, sequence, decision, risk, and completion authority |
-| Version | 3.5 |
+| Version | 3.6 |
 | Effective date | August 10, 2026 |
 | Owner | Nickolis Kacludis |
 | Repository basis | `NickolisK24/bullpen-intel-engine` main at `b328c917c6813831db167f4f70a57fd1ff3aa847`; Phase 1A closeout evidence through runs `31393177954` and `31395294655`; closeout recorded by PR #628 |
 | Decision basis | Decision Ledger through D-052 |
-| Supersedes | Version 3.4 current-state wording while preserving every durable prior decision and its repository evidence |
+| Supersedes | Version 3.5 current-state wording while preserving every durable prior decision and its repository evidence |
 | Detailed predecessor archive | `docs/archive/2026-08/PRODUCT_ROADMAP_DECISION_LEDGER_PRE_V3.md` |
 | Update rule | Update after a priority change, material merge, phase exit, production incident, authority decision, risk change, or false current-state statement |
 | Review cadence | Weekly founder review; immediate update after a material production or product decision |
@@ -151,7 +151,7 @@ Work proceeds in this order unless a Decision Ledger entry changes it:
 
 1. **#595 - Public raw fatigue-score containment.** Remove or protect unauthenticated composite scores, component scores, risk tiers, and internal identifiers. Repository work is complete; the remaining step is inspecting the deployed unauthenticated responses.
 2. **#591 - Backend-owned Why copy.** Remove frontend regex rewriting, filtering, fallback invention, or silent dropping of governed public explanation text.
-3. **#594 - Routed/static team metadata and freshness.** Give the 30 team preview routes a canonical owner, canonical vocabulary, named evidence, and data-through context.
+3. **#594 - Routed/static team metadata and freshness.** Give the 30 team preview routes a canonical owner, canonical vocabulary, named evidence, and data-through context. Repository work is complete; the remaining step is inspecting the deployed pages and one social preview after the next scheduled export.
 4. **#600 - `/bullpen` H1 and accessibility structure.** Complete the semantic page contract.
 5. **#598 - Generated-content CI validation.** Ensure automated generated-content commits cannot bypass validation.
 6. **#601 - Dependency remediation.** Govern vulnerable dependencies and keep visible audit gates.
@@ -176,7 +176,7 @@ Work proceeds in this order unless a Decision Ledger entry changes it:
 | Methodology | Teaches canonical public language | Live product must continue matching it | Maintain through public-contract work |
 | Data & Trust | Strong public differentiator | Current method/incident history and scope clarity | Ongoing trust alignment |
 | Share Artifact | Immutable historical page implemented | Canonical image, crawler-visible claim metadata, complete actions | Portable Intelligence |
-| Routed team previews | Thirty static routes exist | Final route owner, vocabulary, freshness | #594 |
+| Routed team previews | Thirty routes carry canonical Team State, a data-through date, and the trusted snapshot they were generated from | Deployed verification of the regenerated pages | #594 production closeout |
 | Internal Product Intelligence | Artifact, traffic, operations views exist | Keep observer/refusal/publication signals actionable | Maintain; do not expand speculatively |
 
 ### Intelligence and operations
@@ -218,7 +218,7 @@ Work proceeds in this order unless a Decision Ledger entry changes it:
 | Status | Work item | Definition of done |
 |---|---|---|
 | Open | FE-001 (#591) | Backend owns Why copy; frontend renders without rewriting or dropping it |
-| Open | DIST-003 (#594) | Static/routed descriptions use canonical state, evidence, and data-through date |
+| Repository complete; deployed verification outstanding | DIST-003 (#594) | Static/routed descriptions use canonical state, evidence, and data-through date |
 | Open | UX-002 (#600) | Exactly one contextual H1 per `/bullpen` view with logical hierarchy |
 | Complete | CI-001 (#599) | `npm ci`, full tests, required production build, mutation-tested contract |
 | Open | CI-003 (#598) | Generated-content publication cannot bypass validation or obscure machine origin |
@@ -275,7 +275,7 @@ Phase 1A closure proves the path can be governed safely. It does **not** transfe
 - #590 complete.
 - #595 active; repository work complete, deployed verification outstanding.
 - #591 open.
-- #594 open.
+- #594 active; repository work complete, deployed verification outstanding.
 - #600 open.
 
 Exit test: a first-time reader sees backend-owned state and explanation, visible represented date, no raw black-box score, and consistent semantic structure across live and external surfaces.
@@ -394,7 +394,7 @@ Official source identity and finality
 | R-15 | Shadow bookkeeping absence is treated as a baseball deficit | High | D-044 dual-view classification and authority-aware blocker projection |
 | R-16 | Public raw score endpoint violates black-box boundary | High | #595 removal/protection and public contract tests; repository work complete, deployed verification outstanding |
 | R-17 | Shared links lose claim, evidence, and date | High | Canonical image and artifact-specific crawler metadata |
-| R-18 | Routed team previews drift without a canonical owner | High | O-005, #594, canonical copy and freshness |
+| R-18 | Routed team previews drift without a canonical owner | Medium | #594 gives every generated page one trusted publication authority, canonical Team State, a data-through date, and a snapshot receipt, with a static contract test; deployed verification outstanding |
 | R-19 | Frontend rewrites backend-owned meaning | Critical | #591 and backend public-copy contract |
 | R-20 | Generated commits bypass repository CI | High | #598 generated-content publication correction |
 | R-21 | Daily runtime headroom masks avoidable work | High | D-050 temporary mitigation plus permanent work-reduction backlog |
@@ -423,7 +423,7 @@ Stop when:
 
 - #595 raw score/internal-id containment (repository work complete; deployed verification outstanding);
 - #591 backend-owned Why copy;
-- #594 routed/static freshness and ownership;
+- #594 routed/static freshness and ownership (repository work complete; deployed verification outstanding);
 - #600 H1/accessibility corrections;
 - #598 generated-content CI validation;
 - #601 dependency remediation;
@@ -617,7 +617,7 @@ Branch names identify the user or operator who notices the work. Never work dire
 | Phase 0 - Canonical Trust Closeout | Complete | Independent official-line, starter, outs, appearance-team, and aggregation proof |
 | Phase 1 - Evidence Completeness | In progress / paused | M-001 contract complete; implementation resumes after higher-priority public-trust work |
 | Phase 1A - Authority Qualification | **Complete - Aug 10, 2026** | OPS-002 and #593 closed; candidate audit `31393177954`; no-op PASS `31395294655`; PR #628 / D-052; all broader game-driven authority remains unapproved |
-| Phase 1B - Vocabulary and Freshness | In progress / active | #590 complete; #595 implementation complete with deployed verification outstanding; #591, #594, #600 open |
+| Phase 1B - Vocabulary and Freshness | In progress / active | #590 complete; #595 and #594 implementation complete with deployed verification outstanding; #591 open; #600 open; in-product team-shape vocabulary parity still outstanding |
 | Phase 2 - Portable Intelligence | Foundation complete / final distribution not started | Renderer, raster assets, metadata, actions, funnel |
 | Phase 3 - Daily Habit and Consequence | Not started | What Changed, lead, slate, quiet day |
 | Phase 4 - Offseason Intelligence Depth | Not started | Pitch, leverage, depth, routes, archive |
@@ -653,3 +653,4 @@ The archived predecessor file and Git history preserve the full verbose rational
 | 3.3 | Aug 6, 2026 | Nickolis Kacludis | Recorded OPS-002 runtime-budget incident/mitigation and D-050; paused #593 pending reliable evidence. |
 | 3.4 | Aug 10, 2026 | Nickolis Kacludis | PR #628 reconciles production state through OPS-002 closure, PR #627 / D-051, #593 closure, candidate audit `31393177954`, and no-op qualification PASS `31395294655`. Adds D-052 closing Phase 1A without transferring game-driven write/publication/backfill authority, resolves O-007, makes #595 the active objective, and updates the phase exit, completion, risk, backlog, and authority records accordingly. |
 | 3.5 | Aug 10, 2026 | Nickolis Kacludis | Records SEC-001 (#595) implementation state: unauthenticated fatigue routes serve a narrowed public workload view model, board cards and the league stats overview no longer publish a composite or risk tier, the availability explanation cites counted workload, the internal tier is no longer a public filter, and an anonymous-response boundary strips the internal scoring vocabulary. Internal scored access remains behind `require_admin_token` and is documented as internal, not a public claim. #595 stays open pending deployed verification; no sync, write, publication, or serving authority changed. |
+| 3.6 | Aug 10, 2026 | Nickolis Kacludis | Records DIST-003 (#594) implementation state and the routed team preview surface. The thirty generated `/team/{ABBR}` pages stop publishing an undated present-tense claim in the in-product team-shape vocabulary: every generated page now resolves from ONE trusted dashboard publication, states canonical public Team State or the governed non-state, carries a backend-authored baseball point, publishes its baseball data-through date alongside separate generated and publication times, records the snapshot and sync-run receipt it came from, and keeps its current Team Board handoff in a crawlable body. The export no longer reads the live board builder, and it withholds the claim rather than dating a guess when authority or data-through cannot be established. The historical artifact current-board link now preserves team identity. #594 stays open pending deployed verification. No availability classification, threshold, Team State derivation, freshness field meaning, publication gate, or artifact immutability behavior changed, and the in-product team-shape read vocabulary is deliberately untouched and remains outstanding parity work. |

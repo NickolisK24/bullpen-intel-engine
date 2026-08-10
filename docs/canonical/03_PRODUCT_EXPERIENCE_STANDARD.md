@@ -3,8 +3,8 @@
 | Field | Value |
 |---|---|
 | Status | Canonical - public surface, navigation, interaction, accessibility, and end-state authority |
-| Version | 1.2 |
-| Effective date | July 30, 2026 |
+| Version | 1.3 |
+| Effective date | August 10, 2026 |
 | Owner | Nickolis Kacludis |
 | Supersedes | BaseballOS Product Vision Specification and overlapping surface descriptions in prior strategy documents |
 | Update rule | Revise when a page mission, navigation model, information hierarchy, primary user question, public route, failure behavior, or surface acceptance test changes |
@@ -128,6 +128,7 @@ Every page has an obvious deeper evidence step and an obvious next baseball dest
 | Pitcher Detail | current detail route/drawer | Arm | What has this reliever recently carried, what is his public read, and what supports it? |
 | Stories | `/stories` | League narrative | Beyond today's lead, which supported bullpen storylines remain live? |
 | Share Artifact | `/share/{public_id}` | Historical claim | What exactly did BaseballOS publish at that time, why, and on what evidence? |
+| Team Preview | `/team/{ABBR}` | Distribution entry | What did BaseballOS know about this bullpen, through what baseball date, and where is the current board? |
 | Methodology | `/methodology` | Meta | How does BaseballOS compute and govern what it shows? |
 | Data & Trust | `/trust` | Meta | Is the current picture complete and trustworthy enough to use? |
 | About / How to Read | current support routes | Meta | What is BaseballOS, what does it show, and what do the recurring terms mean? |
@@ -419,7 +420,25 @@ It displays historical-snapshot label, artifact identity and generated/published
 
 Published artifacts remain unchanged. A current-state panel never rewrites the historical artifact. Integrity failure serves no claim.
 
-## 21. Future Historical Surfaces
+## 21. Routed Team Preview Pages
+
+**Mission:** give a shared team link a truthful, self-dating entry representation that hands the reader to the current Team Board.
+
+`/team/{ABBR}` is a regenerating distribution surface, not an immutable historical Share Artifact. It is rebuilt on the publication cadence, it has no supersession lifecycle, and it is never a citation destination - `/share/{public_id}` remains the only permanent citation. It cites current truth; it never becomes current truth.
+
+A generated team preview carries team identity, canonical public Team State or the governed non-state, one backend-authored baseball point, the baseball data-through date the claim describes, the time the representation was generated, the trusted publication identity it was generated from, and an explicit link to the current Team Board. The same claim is readable in the social preview, in machine-readable metadata, and in the page body.
+
+One publication per representation. The story copy and the team state on a single generated page come from the same trusted published snapshot. A board that resolved from a different publication is not combined with that story, and the live builder is never a source for a public preview.
+
+Publication time is not the baseball date. Generated time, trusted-snapshot publication time, and data-through are three separate values and are published as three separate values. A representation generated on one day legitimately describes baseball data through an earlier day; that is correct, and it is only correct because the page states both.
+
+If the trusted publication authority or the data-through value cannot be established, the page publishes no present-tense team claim. It keeps team identity and the current Team Board link and states plainly that it has no dated read.
+
+The state vocabulary is the canonical public Team State dictionary. Internal team-shape read labels are not public state terms on this surface.
+
+Presentation and runtime code do not reinterpret this metadata. The values are backend-authored; the page renders them, and no frontend derives, re-dates, or restates them.
+
+## 22. Future Historical Surfaces
 
 ### State Timeline
 
@@ -431,7 +450,7 @@ Preserves every published observation as a permanent record with URL, timestamp,
 
 A six-month-old observation must reproduce the original evidence and method.
 
-## 22. Data & Trust
+## 23. Data & Trust
 
 **Mission:** make currentness, provenance, validation, and limitations inspectable without forcing the user through operational jargon.
 
@@ -439,7 +458,7 @@ Required sections: data-through date, latest successful sync/update, source cove
 
 Avoid alarming complete-page language when only one evidence family is unavailable. State the exact affected scope.
 
-## 23. Start Here / About and How to Read
+## 24. Start Here / About and How to Read
 
 A unified future Start Here experience may replace duplicate support pages.
 
@@ -447,7 +466,7 @@ It should contain one-sentence positioning, difference between state and perform
 
 A first-time visitor should explain BaseballOS in one sentence and correctly interpret the canonical state, arm-read, and Limited Read vocabulary.
 
-## 24. Internal Product Intelligence and Operations
+## 25. Internal Product Intelligence and Operations
 
 **Mission:** give the founder a secure, read-only view of publication, evidence coverage, artifact status, refusal diagnostics, and user-journey health.
 
@@ -455,7 +474,7 @@ Current internal surfaces include artifact generation/coverage, traffic/distribu
 
 Security requirements: absent from public navigation, noindex/nofollow, authenticated server-side, no admin token in browser, no private routes cached, founder/allowlist protection, read-only by default, and explicit confirmation for mutation.
 
-## 25. Universal Acceptance Tests
+## 26. Universal Acceptance Tests
 
 Every public surface must pass:
 
@@ -474,7 +493,7 @@ Every public surface must pass:
 - **Navigation test:** next evidence step and broader return path are obvious.
 - **Consistency test:** evidence and claim cannot disagree.
 
-## 26. Surface Change and Retirement
+## 27. Surface Change and Retirement
 
 Before changing a page, state the existing one-question contract, name the user who notices, identify the canonical fact owner for every new value, preserve altitude, define loading/quiet/stale/partial/error behavior, define mobile/accessibility, define the evidence destination, and update this Standard if the mission changes.
 
@@ -487,3 +506,4 @@ Retire or merge a surface when it no longer owns a unique question, another page
 | 1.0 | July 29, 2026 | Nickolis Kacludis | Established the permanent page map, experience principles, surface missions, current/end-state boundaries, mobile/accessibility standards, failure behavior, and acceptance tests for BaseballOS. |
 | 1.1 | July 29, 2026 | Nickolis Kacludis | Established the Team Board as the canonical public home for current active-pen performance, with placement below State and Why, minimum component requirements, evidence drill-down expectations, and aligned inheritance rules for Pitcher Detail, Compare, Today, Dashboard, Stories, and Share Artifacts. The Team Board owns presentation, not computation. One question per page and one canonical home per fact are preserved. |
 | 1.2 | July 30, 2026 | Nickolis Kacludis | Recorded the approved M-001 presentation contract on the Team Board: the public name Active Bullpen ERA, fixed two-decimal rendering with a real zero shown as a number, the below-sample read Not Enough Innings Yet rendered only with its counts, and the required group-size and contributing-arm disclosure. The frontend renders and never recalculates or re-rounds. No gate is opened. |
+| 1.3 | August 10, 2026 | Nickolis Kacludis | Recorded the routed team preview surface (`/team/{ABBR}`) as a regenerating distribution entry representation rather than an immutable historical artifact, and fixed its authority and freshness contract: one trusted publication per representation, canonical Team State or the governed non-state, a named baseball point, a published data-through date kept distinct from generated and publication time, a snapshot receipt, an explicit current Team Board handoff, and no present-tense team claim when authority or data-through cannot be established. No page mission, vocabulary catalogue, or computation changes. |
