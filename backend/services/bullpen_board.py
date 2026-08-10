@@ -507,6 +507,10 @@ def _withhold_team_shape(team_shape, roster_authority):
         'current_roster_claims_available': False,
         'counts_withheld': True,
         'reads': [],
+        # build_team_bullpen_shape returns the camelCase 'byKey'; clearing only
+        # 'by_key' left the withheld reads readable on the served payload, and
+        # the reader surfaces resolve byKey first.
+        'byKey': {},
         'by_key': {},
         'limitations': limitations,
     })

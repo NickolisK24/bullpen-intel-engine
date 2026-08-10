@@ -187,14 +187,25 @@ def guard_team_shape_reads(team_shape):
     if not isinstance(team_shape, Mapping):
         return team_shape
 
+    def _guard_read(key, read):
+        if not isinstance(read, Mapping):
+            return
+        for field in ('label', 'summary', 'explanation', 'reasons'):
+            guard_public_prose(f'team_shape.{key}.{field}', read.get(field))
+
     reads = team_shape.get('reads')
     if isinstance(reads, (list, tuple)):
         for index, read in enumerate(reads):
-            if not isinstance(read, Mapping):
-                continue
-            key = read.get('key') or index
-            for field in ('label', 'summary', 'explanation', 'reasons'):
-                guard_public_prose(f'team_shape.{key}.{field}', read.get(field))
+            key = read.get('key') if isinstance(read, Mapping) else None
+            _guard_read(key or index, read)
+
+    # Reader surfaces resolve reads through the keyed mapping, so it is guarded
+    # as its own publication surface rather than assumed identical to `reads`.
+    for mapping_key in ('byKey', 'by_key'):
+        mapping = team_shape.get(mapping_key)
+        if isinstance(mapping, Mapping):
+            for key, read in mapping.items():
+                _guard_read(key, read)
     return team_shape
 
 
