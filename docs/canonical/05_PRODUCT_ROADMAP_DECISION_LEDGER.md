@@ -6,7 +6,7 @@
 | Version | 3.4 |
 | Effective date | August 10, 2026 |
 | Owner | Nickolis Kacludis |
-| Repository basis | `NickolisK24/bullpen-intel-engine` main at `b328c917c6813831db167f4f70a57fd1ff3aa847`; Phase 1A closeout evidence through runs `31393177954` and `31395294655` |
+| Repository basis | `NickolisK24/bullpen-intel-engine` main at `b328c917c6813831db167f4f70a57fd1ff3aa847`; Phase 1A closeout evidence through runs `31393177954` and `31395294655`; closeout recorded by PR #628 |
 | Decision basis | Decision Ledger through D-052 |
 | Supersedes | Version 3.3 current-state wording while preserving every durable prior decision and its repository evidence |
 | Detailed predecessor archive | `docs/archive/2026-08/PRODUCT_ROADMAP_DECISION_LEDGER_PRE_V3.md` |
@@ -572,7 +572,7 @@ Branch names identify the user or operator who notices the work. Never work dire
 | Aug 3–10, 2026 | Phase 1A | OPS-001 signal-separation observation | PR #602 / issue #593 | Scheduled evidence proved public-sync and observer verdict separation; issue closed August 10 |
 | Aug 10, 2026 | Phase 1A | Read-only no-op candidate production audit | Run `31393177954` | `COMPLETE_ELIGIBLE_FOUND`; 109 completed work items found, five evaluated/eligible, zero durable writes, game `823924` suggested |
 | Aug 10, 2026 | Phase 1A | Manual one-game no-op write qualification | Run `31395294655` | `PASS`; game `823924`; 8/8 rows unchanged; zero baseball-data writes; exact governed lane-ledger delta; pre/post state identical |
-| Aug 10, 2026 | Phase 1A | **Authority Qualification phase exit** | D-052 | Phase complete; no automated write/publication/backfill authority granted |
+| Aug 10, 2026 | Phase 1A | **Authority Qualification phase exit** | PR #628 / D-052 | Phase complete; no automated write/publication/backfill authority granted |
 
 ## 20. Phase Exit Record
 
@@ -580,7 +580,7 @@ Branch names identify the user or operator who notices the work. Never work dire
 |---|---|---|
 | Phase 0 - Canonical Trust Closeout | Complete | Independent official-line, starter, outs, appearance-team, and aggregation proof |
 | Phase 1 - Evidence Completeness | In progress / paused | M-001 contract complete; implementation resumes after higher-priority public-trust work |
-| Phase 1A - Authority Qualification | **Complete - Aug 10, 2026** | OPS-002 and #593 closed; candidate audit `31393177954`; no-op PASS `31395294655`; D-052; all broader game-driven authority remains unapproved |
+| Phase 1A - Authority Qualification | **Complete - Aug 10, 2026** | OPS-002 and #593 closed; candidate audit `31393177954`; no-op PASS `31395294655`; PR #628 / D-052; all broader game-driven authority remains unapproved |
 | Phase 1B - Vocabulary and Freshness | In progress / active | #590 complete; #595 active; #591, #594, #600 open |
 | Phase 2 - Portable Intelligence | Foundation complete / final distribution not started | Renderer, raster assets, metadata, actions, funnel |
 | Phase 3 - Daily Habit and Consequence | Not started | What Changed, lead, slate, quiet day |
@@ -598,6 +598,7 @@ This current-state edition consolidates:
 - OPS-001 (#593) scheduled observation evidence and August 10 closure;
 - read-only no-op candidate audit run `31393177954` and retained artifact;
 - manual no-op write qualification run `31395294655` and retained artifact;
+- Phase 1A governance closeout PR #628 / D-052;
 - repository main `b328c917c6813831db167f4f70a57fd1ff3aa847`;
 - GitHub issue status for #589–#601 and #620;
 - the August 2 Full Platform Audit;
@@ -614,4 +615,4 @@ The archived predecessor file and Git history preserve the full verbose rational
 | 3.1 | Aug 6, 2026 | Nickolis Kacludis | Recorded terminal game 824487 source-revision checkpoint closeout and D-048. |
 | 3.2 | Aug 6, 2026 | Nickolis Kacludis | Recorded UX-001 production closeout and D-049. |
 | 3.3 | Aug 6, 2026 | Nickolis Kacludis | Recorded OPS-002 runtime-budget incident/mitigation and D-050; paused #593 pending reliable evidence. |
-| 3.4 | Aug 10, 2026 | Nickolis Kacludis | Reconciles production state through OPS-002 closure, PR #627 / D-051, #593 closure, candidate audit `31393177954`, and no-op qualification PASS `31395294655`. Adds D-052 closing Phase 1A without transferring game-driven write/publication/backfill authority, resolves O-007, makes #595 the active objective, and updates the phase exit, completion, risk, backlog, and authority records accordingly. |
+| 3.4 | Aug 10, 2026 | Nickolis Kacludis | PR #628 reconciles production state through OPS-002 closure, PR #627 / D-051, #593 closure, candidate audit `31393177954`, and no-op qualification PASS `31395294655`. Adds D-052 closing Phase 1A without transferring game-driven write/publication/backfill authority, resolves O-007, makes #595 the active objective, and updates the phase exit, completion, risk, backlog, and authority records accordingly. |
