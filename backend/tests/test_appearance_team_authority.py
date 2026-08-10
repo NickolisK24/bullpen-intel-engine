@@ -852,6 +852,31 @@ CANONICAL_TEAM_STATE_FILES = (
     'frontend/src/utils/evidenceCardStory.js',
 )
 
+# PUBLIC SCORE REMOVAL (SEC-001 / #595).
+#
+# The unauthenticated API stops publishing the internal workload composite, its
+# component sub-scores, the internal risk tier, and the FatigueScore row's own
+# database keys. These frontend files carry the consumer plumbing that follows:
+# the Reliever Finder addresses a pitcher through the pitcher object instead of
+# the score row's foreign key, the board card view model drops a computed score
+# field nothing rendered, and the unused local mirror of the backend fatigue
+# model is deleted.
+#
+# This guard exists so appearance-team work cannot incidentally alter Team State
+# payloads, immutable artifacts, or public surfaces. That purpose is intact and
+# actively enforced rather than merely exempted: none of these files read
+# appearance-team authority, which
+# test_public_score_removal_files_read_no_appearance_team_authority proves
+# directly. Share Artifact generation, eligibility, and the immutable lifecycle
+# are untouched, so published artifacts stay byte-unchanged.
+#
+# Exact paths only, never a directory exemption.
+PUBLIC_SCORE_REMOVAL_FILES = (
+    'frontend/src/components/bullpen/Bullpen.jsx',
+    'frontend/src/components/bullpen/board/tonightsBullpenBoardView.js',
+    'frontend/src/utils/fatigueModel.js',
+)
+
 
 def test_branch_touches_no_team_state_or_public_surface_files():
     # Source proof: Foundation 1 changes no Team State, Share Artifact, public API,
@@ -941,12 +966,15 @@ def test_branch_touches_no_team_state_or_public_surface_files():
     # remains fully protected, and adding a path here still requires its own
     # approval.
     APPROVED_CANONICAL_TEAM_STATE_FILES = CANONICAL_TEAM_STATE_FILES
+    # See PUBLIC_SCORE_REMOVAL_FILES above (SEC-001 / #595).
+    APPROVED_PUBLIC_SCORE_REMOVAL_FILES = PUBLIC_SCORE_REMOVAL_FILES
     offenders = [
         path for path in non_test
         if any(fragment in path for fragment in forbidden_fragments)
         and path not in APPROVED_PUBLIC_APPEARANCE_TEAM_CONSUMERS
         and path not in APPROVED_INTERNAL_APPEARANCE_TEAM_CONSUMERS
         and path not in APPROVED_CANONICAL_TEAM_STATE_FILES
+        and path not in APPROVED_PUBLIC_SCORE_REMOVAL_FILES
     ]
     assert offenders == [], f'Foundation 1 must not touch these runtime surfaces: {offenders}'
 
@@ -977,6 +1005,36 @@ def test_canonical_team_state_files_read_no_appearance_team_authority():
                 offenders.append(f'{relative}: {token}')
     assert offenders == [], (
         'canonical Team State files must not read appearance-team authority: '
+        f'{offenders}'
+    )
+
+
+def test_public_score_removal_files_read_no_appearance_team_authority():
+    """The SEC-001 allowlist is an exemption from the path guard, not its purpose.
+
+    #595 removes internal fatigue scoring from public responses. It has nothing
+    to do with appearance-team authority, and this proves it: not one of the
+    allowlisted files reads ``GameLog.appearance_team_id`` or the appearance-team
+    status, in either language. A future edit that reaches for appearance-team
+    authority from one of them fails here.
+    """
+    offenders = []
+    for relative in PUBLIC_SCORE_REMOVAL_FILES:
+        path = REPO_ROOT_FOR_DIFF / relative
+        if not path.exists():
+            # fatigueModel.js is deleted by this workstream.
+            continue
+        source = path.read_text(encoding='utf-8')
+        for token in (
+            'appearance_team_id',
+            'appearance_team_status',
+            'appearanceTeamId',
+            'appearanceTeamStatus',
+        ):
+            if token in source:
+                offenders.append(f'{relative}: {token}')
+    assert offenders == [], (
+        'public score-removal files must not read appearance-team authority: '
         f'{offenders}'
     )
 

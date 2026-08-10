@@ -47,8 +47,11 @@ _DATA_STATE_TO_FRESHNESS = {
     'unknown': 'unknown',
 }
 
+# Counted baseball facts only. The internal workload composite used to lead this
+# list as "Recent workload index"; publishing it made the anonymous explanation
+# route the last place a naked 0-100 score was a BaseballOS public claim
+# (SEC-001). The evidence below is what a reader can verify from box scores.
 _NUMERIC_INPUT_EVIDENCE = (
-    ('fatigue_score', 'Recent workload index', 'index'),
     ('pitches_yesterday', 'Pitches yesterday', 'pitches'),
     ('pitches_last_3_days', 'Pitches in 3 days', 'pitches'),
     ('pitches_last_5_days', 'Pitches in 5 days', 'pitches'),

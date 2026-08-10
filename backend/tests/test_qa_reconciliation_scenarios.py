@@ -603,8 +603,22 @@ def test_phase0e_switches_and_legacy_public_files_not_modified():
         'frontend/src/utils/evidenceCardStory.js',
     }
 
+    allowed_public_score_removal_files = {
+        # sec-001 / #595: the unauthenticated API stops publishing the internal
+        # workload composite, its component sub-scores, the internal risk tier,
+        # and the score row's database keys. The frontend change is consumer
+        # plumbing — the finder addresses a pitcher through the pitcher object,
+        # the board view model drops an unrendered score field, and the unused
+        # local mirror of the backend fatigue model is deleted. No public label,
+        # status, threshold, vocabulary, or route changed.
+        'frontend/src/components/bullpen/Bullpen.jsx',
+        'frontend/src/components/bullpen/board/tonightsBullpenBoardView.js',
+        'frontend/src/utils/fatigueModel.js',
+    }
+
     allowed_files = (
-        allowed_game_ingestion_work_state_files
+        allowed_public_score_removal_files
+        | allowed_game_ingestion_work_state_files
         |
         allowed_public_freshness_display_files
         | allowed_team_at_appearance_files

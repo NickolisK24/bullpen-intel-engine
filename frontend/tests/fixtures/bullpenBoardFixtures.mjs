@@ -128,7 +128,6 @@ function card(pitcherId, name, status, overrides = {}) {
     pitcher_id: pitcherId,
     name,
     availability_status: status,
-    fatigue_score: 25,
     confidence: 'high',
     short_reason: 'Fresh workload profile',
     data_state: 'fresh',
@@ -429,7 +428,6 @@ export const populatedBoard = makeBoard({
     Monitor: [
       card(3, 'Marty Monitor', 'Monitor', {
         confidence: 'medium',
-        fatigue_score: 45,
         short_reason: '18 pitches yesterday',
         last_appearance: { game_date: '2026-06-04', pitches: 18 },
         reasons: ['18 pitches yesterday', 'Only 1 day of rest'],
@@ -438,7 +436,6 @@ export const populatedBoard = makeBoard({
     Limited: [
       card(4, 'Larry Limited', 'Limited', {
         confidence: 'medium',
-        fatigue_score: 63,
         short_reason: '29 pitches yesterday',
         last_appearance: { game_date: '2026-06-03', pitches: 29 },
         reasons: ['29 pitches yesterday', '3 appearances in 5 days'],
@@ -446,14 +443,12 @@ export const populatedBoard = makeBoard({
     ],
     Avoid: [
       card(5, 'Avery Workload Unavailable', 'Avoid', {
-        fatigue_score: 80,
         short_reason: '42 pitches yesterday',
         last_appearance: { game_date: '2026-05-30', pitches: 42 },
       }),
     ],
     Unavailable: [
       card(6, 'Uri Unavailable', 'Unavailable', {
-        fatigue_score: 92,
         short_reason: '54 pitches yesterday',
         last_appearance: { game_date: '2026-06-01', pitches: 54 },
       }),

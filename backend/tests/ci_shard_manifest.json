@@ -1123,7 +1123,7 @@
       ]
     },
     "4": {
-      "measured_seconds": 498.39,
+      "measured_seconds": 503.19,
       "files": [
         {
           "path": "tests/test_active_bullpen_artifact_publication.py",
@@ -1284,6 +1284,10 @@
         {
           "path": "tests/test_progressive_source_authority_identity.py",
           "measured_seconds": 9.254
+        },
+        {
+          "path": "tests/test_public_fatigue_score_exposure.py",
+          "measured_seconds": 4.8
         },
         {
           "path": "tests/test_public_recent_work.py",

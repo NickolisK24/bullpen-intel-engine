@@ -187,13 +187,17 @@ class TestCard:
         assert card['data_state'] == 'fresh'
         assert card['reasons'] == ['29 pitches yesterday', '3 appearances in 5 days']
         assert 'No injury information available' in card['limitations']
-        assert card['fatigue_score'] == 63.4
+        # The composite that produced this read is an input to build_card, never
+        # a field on the card it returns (SEC-001).
+        assert 'fatigue_score' not in card
         assert card['last_appearance'] == last_appearance
         assert card['last_workload_appearance'] == last_appearance
 
     def test_card_handles_missing_score(self):
         card = build_card('A', 7, None, availability('Monitor', data_state='missing'))
-        assert card['fatigue_score'] is None
+        assert 'fatigue_score' not in card
+        assert card['data_state'] == 'missing'
+        assert card['availability_status'] == 'Monitor'
 
     def test_card_carries_backend_authored_pitcher_labels(self):
         card = build_card(
@@ -713,7 +717,11 @@ class TestBoardEndpoint:
         assert names == {'Authority Relief Arm'}
         assert 'Unscored Active Arm' not in names
         assert 'Authority Starter' not in names
-        assert all(card['fatigue_score'] is not None for card in cards)
+        # Cards come from the scored availability authority. The public proof of
+        # that is a real availability read, not a published composite.
+        assert all(card['data_state'] != 'missing' for card in cards)
+        assert all(card['availability_status'] is not None for card in cards)
+        assert all('fatigue_score' not in card for card in cards)
 
     def test_summed_team_boards_match_governed_authority_total(self, client):
         with client.application.app_context():
@@ -740,7 +748,8 @@ class TestBoardEndpoint:
             board_total += body['total_pitchers']
             for group in body['groups']:
                 for card in group['pitchers']:
-                    assert card['fatigue_score'] is not None
+                    assert card['data_state'] != 'missing'
+                    assert 'fatigue_score' not in card
 
         assert board_total == authority_total
 
@@ -770,7 +779,7 @@ class TestBoardEndpoint:
         names = [card['name'] for card in cards]
 
         assert names == ['Scored Relief Option']
-        assert all(card['fatigue_score'] is not None for card in cards)
+        assert all('fatigue_score' not in card for card in cards)
         assert all(card['data_state'] != 'missing' for card in cards)
 
     def test_reds_default_board_excludes_clear_starters_but_keeps_rested_relievers(self, client):

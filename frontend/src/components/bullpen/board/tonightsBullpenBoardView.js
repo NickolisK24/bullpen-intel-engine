@@ -622,7 +622,6 @@ export function getBoardCardView(card, freshness = null, now = new Date()) {
     name: card?.name || '—',
     status: badge.status,
     badge,
-    fatigueScore: card?.fatigue_score != null ? Math.round(card.fatigue_score) : null,
     confidenceLabel: formatConfidence(card?.confidence),
     shortReason: lastAppearanceLabel || dayAwareAppearanceReason(card?.short_reason, lastAppearance, userDay) || null,
     lastAppearance,

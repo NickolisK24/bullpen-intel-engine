@@ -18,7 +18,6 @@ export const availabilityStatusFixtures = [
       ],
       limitations: sharedLimitations,
       inputs: {
-        fatigue_score: 18,
         pitches_yesterday: 0,
         pitches_last_3_days: 8,
         pitches_last_5_days: 14,
@@ -46,7 +45,6 @@ export const availabilityStatusFixtures = [
         'Stale workload data must not be treated as current availability',
       ],
       inputs: {
-        fatigue_score: 44,
         pitches_yesterday: 18,
         pitches_last_3_days: 24,
         pitches_last_5_days: 38,
@@ -73,7 +71,6 @@ export const availabilityStatusFixtures = [
       ],
       limitations: sharedLimitations,
       inputs: {
-        fatigue_score: 63,
         pitches_yesterday: 29,
         pitches_last_3_days: 48,
         pitches_last_5_days: 64,
@@ -100,7 +97,6 @@ export const availabilityStatusFixtures = [
       ],
       limitations: sharedLimitations,
       inputs: {
-        fatigue_score: 78,
         pitches_yesterday: 42,
         pitches_last_3_days: 62,
         pitches_last_5_days: 76,
@@ -127,7 +123,6 @@ export const availabilityStatusFixtures = [
       ],
       limitations: sharedLimitations,
       inputs: {
-        fatigue_score: 91,
         pitches_yesterday: 54,
         pitches_last_3_days: 82,
         pitches_last_5_days: 96,
