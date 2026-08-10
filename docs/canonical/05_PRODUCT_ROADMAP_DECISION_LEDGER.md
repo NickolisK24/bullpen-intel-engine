@@ -99,6 +99,15 @@ Phase 1A authority qualification is closed. Work now returns to the public-contr
 
 Repository work is complete and validated; the deployed proof is not yet taken, so #595 remains open.
 
+#### Recorded identifier scope
+
+The exit-evidence wording above is the original issue language and is preserved verbatim. This is how its identifier clause is being satisfied, recorded transparently so the completion state cannot be read more broadly than the work actually delivered:
+
+- **In scope, delivered.** SEC-001 removes the internal serialization database identifiers exposed by fatigue serialization — `FatigueScore.id` and `FatigueScore.pitcher_id` — from anonymous fatigue-derived payloads. These exist only to correlate score rows and had no public purpose.
+- **Out of scope, unchanged.** The platform-wide `Pitcher.id` routing identity is a pre-existing, separate architectural concern. It is not introduced, widened, or resolved by #595.
+- **Why it is temporarily unchanged.** Migrating public pitcher identity to `mlb_id` would affect public routes, frontend deep links, persisted Dashboard snapshots, and potentially immutable historical Share Artifacts that already carry the current identifier. That reaches publication and artifact-immutability authority, which this issue explicitly must not change.
+- **Not claimed.** #595 does not solve the broader public routing-identifier question. Any future decision to migrate it needs its own issue, its own approval, and its own artifact/snapshot compatibility analysis.
+
 Satisfied in the repository:
 
 - `GET /api/bullpen/fatigue`, `GET /api/bullpen/fatigue/<pitcher_id>`, and `GET /api/bullpen/teams/<team_id>/bullpen` serve a purpose-built public workload view model — counted workload plus the read's freshness stamp — instead of broad `FatigueScore` ORM serialization;
@@ -112,11 +121,15 @@ Satisfied in the repository:
 
 **Internal scored access is retained and explicitly authorized.** `GET /api/bullpen/fatigue/snapshot` keeps the composite, the component sub-scores, the internal tier, and the score row identifiers behind the existing `require_admin_token` guard. It is an internal validation view, not a BaseballOS public claim, and anonymous callers are refused by the established 401 behavior. The response boundary exempts admin-authorized requests only.
 
-**Public pitcher identity is unchanged.** #595 removes the `FatigueScore` row's primary key and its `pitcher_id` foreign key — database-correlation artifacts — from public payloads. It does not change how a public surface addresses a pitcher: pitcher identity continues to travel on the pitcher object, and the public deep-link and detail routes are untouched. Migrating the public routing identity is not part of this issue.
+**Public pitcher identity is unchanged.** Consistent with the recorded identifier scope above, the removed identifiers are the `FatigueScore` row's primary key and its `pitcher_id` foreign key. How a public surface addresses a pitcher is untouched: identity continues to travel on the pitcher object, and the public deep-link and detail routes are unchanged. `Pitcher.id` therefore remains a sequential identifier on public surfaces, and this work does not claim otherwise.
 
 Outstanding for closure:
 
 - request each affected unauthenticated endpoint against deployed production, inspect the JSON recursively, and confirm the forbidden keys are absent while approved labels, evidence, and freshness remain.
+
+Tracked separately, not blocking #595:
+
+- decide whether the platform-wide `Pitcher.id` public routing identity should migrate to `mlb_id`, including the effect on persisted Dashboard snapshots and immutable historical Share Artifacts.
 
 ## 5. Nightly Operating State
 
@@ -196,7 +209,7 @@ Work proceeds in this order unless a Decision Ledger entry changes it:
 | Complete | Phase 1A Authority Qualification | D-052 |
 | Complete | PROD-001 (#592) | Full source persisted/read back; Tonight and Dashboard verification passed |
 | Complete | UX-001 (#590) | Canonical Team State production closeout |
-| **Active - implementation complete, deployed verification outstanding** | SEC-001 (#595) | Public scored/internal fields removed or explicitly protected. Repository work is merged-ready: public fatigue routes serve a narrowed workload view model, the board card and league stats overview no longer publish a composite or risk tier, the availability explanation cites counted workload instead of the composite, the internal tier is no longer a public filter, and a response boundary strips the scoring vocabulary from anonymous JSON. Scored access is retained behind the existing `require_admin_token` guard. The issue stays open until the deployed unauthenticated response is inspected. |
+| **Active - implementation complete, deployed verification outstanding** | SEC-001 (#595) | Public scored/internal fields removed or explicitly protected. Repository work is merged-ready: public fatigue routes serve a narrowed workload view model, the board card and league stats overview no longer publish a composite or risk tier, the availability explanation cites counted workload instead of the composite, the internal tier is no longer a public filter, and a response boundary strips the scoring vocabulary from anonymous JSON. Scored access is retained behind the existing `require_admin_token` guard. The identifiers removed are the fatigue-serialization database identifiers (`FatigueScore.id`, `FatigueScore.pitcher_id`); the platform-wide `Pitcher.id` routing identity is a separate pre-existing concern and is unchanged. The issue stays open until the deployed unauthenticated response is inspected. |
 | Maintain | Official appearance record | Ledger, starter, outs, appearance-team, and official-line checks stay green |
 | Maintain | Canonical documentation | Current documents contain no false execution authority |
 

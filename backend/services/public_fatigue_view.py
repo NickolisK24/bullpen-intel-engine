@@ -64,6 +64,14 @@ FORBIDDEN_PUBLIC_SCORE_FIELDS = frozenset({
 # Neither is public identity — a consumer that needs to address a pitcher reads
 # the pitcher object beside the workload facts, not the score row's keys.
 #
+# Scope note: these two are the identifiers SEC-001 removes. The platform-wide
+# ``Pitcher.id`` routing identity is a separate, pre-existing concern — it is
+# still a sequential database identifier, it is still published on public
+# surfaces because they deep-link on it, and migrating it to ``mlb_id`` would
+# affect public routes, frontend deep links, persisted Dashboard snapshots, and
+# potentially immutable historical Share Artifacts. Nothing here should be read
+# as having resolved that.
+#
 # These are handled by the narrowed view models below rather than by the
 # response backstop, because ``id`` and ``pitcher_id`` are ordinary key names
 # elsewhere in the API and a recursive strip would break unrelated payloads.

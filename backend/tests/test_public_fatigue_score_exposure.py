@@ -299,16 +299,31 @@ class TestPublicFatigueViewModel:
             for identifier in FORBIDDEN_PUBLIC_SCORE_IDENTIFIERS:
                 assert identifier not in row, identifier
 
-    def test_pitcher_identity_stays_available_for_public_routing(self, client):
-        """The MLB person ID is an externally meaningful identity, not a leak.
+    def test_pitcher_identity_is_out_of_scope_and_deliberately_unchanged(self, client):
+        """Records the identifier scope this work actually delivers.
 
-        #595 prohibits the internal sequential identifiers that correlate score
-        rows. It does not prohibit addressing a pitcher: the public surfaces
-        deep-link to a pitcher, and that identity travels on the pitcher object.
+        SEC-001 removes the internal serialization database identifiers exposed
+        by fatigue serialization — ``FatigueScore.id`` and its ``pitcher_id``
+        foreign key — from anonymous fatigue-derived payloads. That is what the
+        test above enforces.
+
+        The platform-wide ``Pitcher.id`` routing identity is a SEPARATE,
+        PRE-EXISTING architectural concern. It is still a sequential database
+        identifier and it is still published here, because the public surfaces
+        deep-link on it and migrating it to ``mlb_id`` would affect public
+        routes, frontend deep links, persisted Dashboard snapshots, and
+        potentially immutable historical Share Artifacts. #595 does not solve
+        that and must not be read as having solved it.
+
+        This test asserts the current state deliberately, so a future migration
+        is a reviewed change to this contract rather than a silent one.
         """
         rows = client.get('/api/bullpen/fatigue').get_json()
 
+        # Externally meaningful MLB person ID: intentionally public identity.
         assert all(row['pitcher']['mlb_id'] for row in rows)
+        # Pre-existing sequential routing identity: unchanged by #595, tracked
+        # separately. Not a claim that public sequential identifiers are gone.
         assert all(row['pitcher']['id'] for row in rows)
 
     def test_team_bullpen_fatigue_block_is_the_narrowed_view_model(self, client):
