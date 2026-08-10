@@ -1543,9 +1543,34 @@ def test_existing_public_routes_behavior_freeze(monkeypatch):
         'frontend/tests/dashboardScopeClarification.test.mjs',
         'frontend/tests/tonightsBullpenBoardContext.test.mjs',
     }
+    allowed_public_score_removal_files = {
+        # sec-001 / #595 (remove internal fatigue scoring from the public API):
+        # the unauthenticated API stops publishing the internal 0-100 workload
+        # composite, its component sub-scores, the internal risk tier, and the
+        # FatigueScore row's own database keys. Public routes serve a
+        # purpose-built workload view model instead of broad ORM serialization,
+        # and the scored view is retained behind the existing admin token.
+        #
+        # Frontend changes are consumer plumbing only: the Reliever Finder row
+        # now addresses a pitcher through the pitcher object instead of the
+        # score row's foreign key, the board card view model drops a computed
+        # score field that nothing rendered, and the unused local mirror of the
+        # backend fatigue model is deleted. No rendered label, availability
+        # status, threshold, vocabulary, ordering, or route changed.
+        'frontend/src/components/bullpen/Bullpen.jsx',
+        'frontend/src/components/bullpen/board/tonightsBullpenBoardView.js',
+        'frontend/src/utils/fatigueModel.js',
+        # Test-only: fixtures re-cut to the narrowed public payload, plus the
+        # new frontend regression suite for the removed fields.
+        'frontend/tests/fixtures/availabilityStatusFixtures.mjs',
+        'frontend/tests/fixtures/bullpenBoardFixtures.mjs',
+        'frontend/tests/relieverFinder.test.mjs',
+        'frontend/tests/publicScoreExposure.test.mjs',
+    }
 
     assert not [
         path for path in changed
+        if path not in allowed_public_score_removal_files
         if path not in allowed_canonical_team_state_files
         if path not in allowed_game_ingestion_work_state_files
         if path not in allowed_share_artifacts_domain_files

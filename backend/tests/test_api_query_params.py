@@ -156,7 +156,9 @@ def test_prospects_clamps_over_max_limit_and_preserves_valid_results(client):
     [
         ('/api/bullpen/pitchers/1/logs?days=-1', 'days'),
         ('/api/bullpen/fatigue?team_id=-1', 'team_id'),
-        ('/api/bullpen/fatigue?risk_level=SEVERE', 'risk_level'),
+        # The internal risk tier is no longer a public filter (SEC-001); the
+        # enum parameter is validated on the admin snapshot route instead.
+        ('/api/bullpen/fatigue/snapshot?risk_level=SEVERE', 'risk_level'),
         ('/api/prospects/?min_grade=10', 'min_grade'),
         ('/api/prospects/?level=LOWA', 'level'),
         ('/api/prospects/?position=SP', 'position'),

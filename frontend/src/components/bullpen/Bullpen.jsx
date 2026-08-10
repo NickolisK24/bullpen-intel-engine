@@ -160,7 +160,9 @@ export default function Bullpen() {
 
   const handleAllPitchersSelect = (row) => {
     const teamRef = row?.pitcher || resolveTeamReference(teamList, selectedTeam)
-    handlePitcherSelect(row?.pitcher_id, teamRef, 'all_pitchers')
+    // The reliever row addresses the pitcher through the pitcher object. The
+    // fatigue payload no longer carries the score row's foreign key.
+    handlePitcherSelect(row?.pitcher?.id, teamRef, 'all_pitchers')
   }
 
   return (
@@ -451,7 +453,7 @@ function PitcherView({
                   <tbody>
                     {visible.map(row => (
                       <tr
-                        key={row.id || row.pitcher_id}
+                        key={row.pitcher?.id ?? row.pitcher?.mlb_id}
                         onClick={() => onSelectPitcher(row)}
                         onKeyDown={(event) => handlePitcherRowKeyDown(event, row)}
                         tabIndex={0}

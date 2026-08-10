@@ -3,12 +3,12 @@
 | Field | Value |
 |---|---|
 | Status | Canonical - current platform state, priority, sequence, decision, risk, and completion authority |
-| Version | 3.4 |
+| Version | 3.5 |
 | Effective date | August 10, 2026 |
 | Owner | Nickolis Kacludis |
 | Repository basis | `NickolisK24/bullpen-intel-engine` main at `b328c917c6813831db167f4f70a57fd1ff3aa847`; Phase 1A closeout evidence through runs `31393177954` and `31395294655`; closeout recorded by PR #628 |
 | Decision basis | Decision Ledger through D-052 |
-| Supersedes | Version 3.3 current-state wording while preserving every durable prior decision and its repository evidence |
+| Supersedes | Version 3.4 current-state wording while preserving every durable prior decision and its repository evidence |
 | Detailed predecessor archive | `docs/archive/2026-08/PRODUCT_ROADMAP_DECISION_LEDGER_PRE_V3.md` |
 | Update rule | Update after a priority change, material merge, phase exit, production incident, authority decision, risk change, or false current-state statement |
 | Review cadence | Weekly founder review; immediate update after a material production or product decision |
@@ -95,6 +95,29 @@ Phase 1A authority qualification is closed. Work now returns to the public-contr
 - admin/internal scored access, if retained, is positively authorized;
 - no naked score remains a BaseballOS public claim.
 
+### Implementation state
+
+Repository work is complete and validated; the deployed proof is not yet taken, so #595 remains open.
+
+Satisfied in the repository:
+
+- `GET /api/bullpen/fatigue`, `GET /api/bullpen/fatigue/<pitcher_id>`, and `GET /api/bullpen/teams/<team_id>/bullpen` serve a purpose-built public workload view model — counted workload plus the read's freshness stamp — instead of broad `FatigueScore` ORM serialization;
+- board cards published by `/teams/<team_id>/board`, `/dashboard`, `/landscape`, `/teams/compare`, and `/intelligence/tonight` no longer carry a composite;
+- `/stats/overview` and the dashboard `stats_overview` report scored coverage only, without the league risk-tier breakdown or the league average composite;
+- the anonymous availability explanation cites counted workload instead of a "Recent workload index" value;
+- `availability.inputs` no longer publishes the composite or the internal tier;
+- `risk_level` is no longer a public filter, so the tier cannot be reconstructed by partitioning the public list;
+- an application response boundary recursively strips the internal scoring vocabulary from anonymous JSON, including payloads read back from snapshots written before this change;
+- contract tests assert absence recursively, and assert it both with and without that boundary installed, so a serializer cannot pass on the backstop alone.
+
+**Internal scored access is retained and explicitly authorized.** `GET /api/bullpen/fatigue/snapshot` keeps the composite, the component sub-scores, the internal tier, and the score row identifiers behind the existing `require_admin_token` guard. It is an internal validation view, not a BaseballOS public claim, and anonymous callers are refused by the established 401 behavior. The response boundary exempts admin-authorized requests only.
+
+**Public pitcher identity is unchanged.** #595 removes the `FatigueScore` row's primary key and its `pitcher_id` foreign key — database-correlation artifacts — from public payloads. It does not change how a public surface addresses a pitcher: pitcher identity continues to travel on the pitcher object, and the public deep-link and detail routes are untouched. Migrating the public routing identity is not part of this issue.
+
+Outstanding for closure:
+
+- request each affected unauthenticated endpoint against deployed production, inspect the JSON recursively, and confirm the forbidden keys are absent while approved labels, evidence, and freshness remain.
+
 ## 5. Nightly Operating State
 
 The production-evidence closeout that blocked the Product Credibility Pass is complete:
@@ -113,7 +136,7 @@ The permanent daily-sync work-reduction program remains important but is not a P
 
 Work proceeds in this order unless a Decision Ledger entry changes it:
 
-1. **#595 - Public raw fatigue-score containment.** Remove or protect unauthenticated composite scores, component scores, risk tiers, and internal identifiers.
+1. **#595 - Public raw fatigue-score containment.** Remove or protect unauthenticated composite scores, component scores, risk tiers, and internal identifiers. Repository work is complete; the remaining step is inspecting the deployed unauthenticated responses.
 2. **#591 - Backend-owned Why copy.** Remove frontend regex rewriting, filtering, fallback invention, or silent dropping of governed public explanation text.
 3. **#594 - Routed/static team metadata and freshness.** Give the 30 team preview routes a canonical owner, canonical vocabulary, named evidence, and data-through context.
 4. **#600 - `/bullpen` H1 and accessibility structure.** Complete the semantic page contract.
@@ -173,7 +196,7 @@ Work proceeds in this order unless a Decision Ledger entry changes it:
 | Complete | Phase 1A Authority Qualification | D-052 |
 | Complete | PROD-001 (#592) | Full source persisted/read back; Tonight and Dashboard verification passed |
 | Complete | UX-001 (#590) | Canonical Team State production closeout |
-| **Active** | SEC-001 (#595) | Public scored/internal fields removed or explicitly protected |
+| **Active - implementation complete, deployed verification outstanding** | SEC-001 (#595) | Public scored/internal fields removed or explicitly protected. Repository work is merged-ready: public fatigue routes serve a narrowed workload view model, the board card and league stats overview no longer publish a composite or risk tier, the availability explanation cites counted workload instead of the composite, the internal tier is no longer a public filter, and a response boundary strips the scoring vocabulary from anonymous JSON. Scored access is retained behind the existing `require_admin_token` guard. The issue stays open until the deployed unauthenticated response is inspected. |
 | Maintain | Official appearance record | Ledger, starter, outs, appearance-team, and official-line checks stay green |
 | Maintain | Canonical documentation | Current documents contain no false execution authority |
 
@@ -237,7 +260,7 @@ Phase 1A closure proves the path can be governed safely. It does **not** transfe
 **Status:** In progress; active.
 
 - #590 complete.
-- #595 active.
+- #595 active; repository work complete, deployed verification outstanding.
 - #591 open.
 - #594 open.
 - #600 open.
@@ -356,7 +379,7 @@ Official source identity and finality
 | R-13 | Live product vocabulary contradicts canonical promise | Critical | Backend ownership, canonical active-bullpen population, exact mapping tests, production evidence |
 | R-14 | Observer health obscures publication truth | High | Separate public-sync and shadow-health jobs; #593 production evidence |
 | R-15 | Shadow bookkeeping absence is treated as a baseball deficit | High | D-044 dual-view classification and authority-aware blocker projection |
-| R-16 | Public raw score endpoint violates black-box boundary | High | #595 removal/protection and public contract tests |
+| R-16 | Public raw score endpoint violates black-box boundary | High | #595 removal/protection and public contract tests; repository work complete, deployed verification outstanding |
 | R-17 | Shared links lose claim, evidence, and date | High | Canonical image and artifact-specific crawler metadata |
 | R-18 | Routed team previews drift without a canonical owner | High | O-005, #594, canonical copy and freshness |
 | R-19 | Frontend rewrites backend-owned meaning | Critical | #591 and backend public-copy contract |
@@ -385,7 +408,7 @@ Stop when:
 
 ### Near term
 
-- #595 raw score/internal-id containment;
+- #595 raw score/internal-id containment (repository work complete; deployed verification outstanding);
 - #591 backend-owned Why copy;
 - #594 routed/static freshness and ownership;
 - #600 H1/accessibility corrections;
@@ -581,7 +604,7 @@ Branch names identify the user or operator who notices the work. Never work dire
 | Phase 0 - Canonical Trust Closeout | Complete | Independent official-line, starter, outs, appearance-team, and aggregation proof |
 | Phase 1 - Evidence Completeness | In progress / paused | M-001 contract complete; implementation resumes after higher-priority public-trust work |
 | Phase 1A - Authority Qualification | **Complete - Aug 10, 2026** | OPS-002 and #593 closed; candidate audit `31393177954`; no-op PASS `31395294655`; PR #628 / D-052; all broader game-driven authority remains unapproved |
-| Phase 1B - Vocabulary and Freshness | In progress / active | #590 complete; #595 active; #591, #594, #600 open |
+| Phase 1B - Vocabulary and Freshness | In progress / active | #590 complete; #595 implementation complete with deployed verification outstanding; #591, #594, #600 open |
 | Phase 2 - Portable Intelligence | Foundation complete / final distribution not started | Renderer, raster assets, metadata, actions, funnel |
 | Phase 3 - Daily Habit and Consequence | Not started | What Changed, lead, slate, quiet day |
 | Phase 4 - Offseason Intelligence Depth | Not started | Pitch, leverage, depth, routes, archive |
@@ -616,3 +639,4 @@ The archived predecessor file and Git history preserve the full verbose rational
 | 3.2 | Aug 6, 2026 | Nickolis Kacludis | Recorded UX-001 production closeout and D-049. |
 | 3.3 | Aug 6, 2026 | Nickolis Kacludis | Recorded OPS-002 runtime-budget incident/mitigation and D-050; paused #593 pending reliable evidence. |
 | 3.4 | Aug 10, 2026 | Nickolis Kacludis | PR #628 reconciles production state through OPS-002 closure, PR #627 / D-051, #593 closure, candidate audit `31393177954`, and no-op qualification PASS `31395294655`. Adds D-052 closing Phase 1A without transferring game-driven write/publication/backfill authority, resolves O-007, makes #595 the active objective, and updates the phase exit, completion, risk, backlog, and authority records accordingly. |
+| 3.5 | Aug 10, 2026 | Nickolis Kacludis | Records SEC-001 (#595) implementation state: unauthenticated fatigue routes serve a narrowed public workload view model, board cards and the league stats overview no longer publish a composite or risk tier, the availability explanation cites counted workload, the internal tier is no longer a public filter, and an anonymous-response boundary strips the internal scoring vocabulary. Internal scored access remains behind `require_admin_token` and is documented as internal, not a public claim. #595 stays open pending deployed verification; no sync, write, publication, or serving authority changed. |

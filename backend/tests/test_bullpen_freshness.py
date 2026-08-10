@@ -85,8 +85,11 @@ class TestBullpenFreshness:
         body = res.get_json()
         assert isinstance(body, list)
         assert len(body) == 1
-        assert body[0]['pitcher_id'] == pitcher_id
-        assert 'raw_score' in body[0]
+        # The public row identifies the pitcher through the pitcher object, not
+        # through the score row's foreign key, and carries no composite.
+        assert body[0]['pitcher']['id'] == pitcher_id
+        assert 'pitcher_id' not in body[0]
+        assert 'raw_score' not in body[0]
         assert body[0]['availability']['availability_status'] in {
             'Available',
             'Monitor',
@@ -130,7 +133,10 @@ class TestBullpenFreshness:
         assert body['total_pitchers'] == 1
         assert body['total_game_logs'] == 1
         assert body['scored_pitchers'] == 1
-        assert body['risk_breakdown']['HIGH'] == 1
+        # Scored coverage is a freshness fact; the league risk-tier breakdown and
+        # the league average composite are internal model output (SEC-001).
+        assert 'risk_breakdown' not in body
+        assert 'avg_fatigue_score' not in body
         assert 'availability_summary' not in body
         inventory = body['scored_pitcher_inventory']
         assert inventory['mode'] == 'scored_pitcher_inventory'
@@ -151,7 +157,12 @@ class TestBullpenFreshness:
 
         assert detail.status_code == 200
         detail_body = detail.get_json()
-        assert detail_body['current_fatigue']['pitcher_id'] == pitcher_id
+        assert detail_body['pitcher']['id'] == pitcher_id
+        # ``current_fatigue`` is the narrowed public workload view model: counted
+        # workload plus the read's freshness stamp, no score-row identifiers.
+        assert detail_body['current_fatigue']['pitches_last_7_days'] is not None
+        assert 'pitcher_id' not in detail_body['current_fatigue']
+        assert 'id' not in detail_body['current_fatigue']
         assert detail_body['availability']['availability_status']
         assert isinstance(detail_body['availability']['reasons'], list)
 
@@ -159,7 +170,8 @@ class TestBullpenFreshness:
         team_body = team.get_json()
         assert len(team_body) == 1
         assert team_body[0]['pitcher']['id'] == pitcher_id
-        assert team_body[0]['fatigue']['pitcher_id'] == pitcher_id
+        assert 'pitcher_id' not in team_body[0]['fatigue']
+        assert 'raw_score' not in team_body[0]['fatigue']
         assert team_body[0]['availability']['availability_status']
 
 
@@ -215,7 +227,9 @@ def _fatigue_pitcher_ids(client, query=''):
     res = client.get(f'/api/bullpen/fatigue?limit=750&include_stale=true&with_meta=true{query}')
     assert res.status_code == 200
     body = res.get_json()
-    return body, {row['pitcher_id'] for row in body['data']}
+    # Public rows address the pitcher through the pitcher object; the score row's
+    # foreign key is not part of the public contract.
+    return body, {row['pitcher']['id'] for row in body['data']}
 
 
 class TestRelieverPopulationFilter:

@@ -616,10 +616,26 @@ def test_frozen_legacy_what_changed_files_untouched():
         'frontend/tests/dashboardScopeClarification.test.mjs',
         'frontend/tests/tonightsBullpenBoardContext.test.mjs',
     }
+    allowed_public_score_removal_files = {
+        # sec-001 / #595: the unauthenticated API stops publishing the internal
+        # workload composite, its component sub-scores, the internal risk tier,
+        # and the score row's database keys. The frontend change is consumer
+        # plumbing only — no rendered label, availability status, threshold,
+        # vocabulary, ordering, or route changed, and no What Changed or
+        # snapshot-trust behavior is touched.
+        'frontend/src/components/bullpen/Bullpen.jsx',
+        'frontend/src/components/bullpen/board/tonightsBullpenBoardView.js',
+        'frontend/src/utils/fatigueModel.js',
+        'frontend/tests/fixtures/availabilityStatusFixtures.mjs',
+        'frontend/tests/fixtures/bullpenBoardFixtures.mjs',
+        'frontend/tests/relieverFinder.test.mjs',
+        'frontend/tests/publicScoreExposure.test.mjs',
+    }
 
     assert not sorted(
         path for path in changed
         if path.startswith('frontend/')
+        if path not in allowed_public_score_removal_files
         if path not in allowed_canonical_team_state_files
         if path not in allowed_share_artifact_cutover_files
         if path not in allowed_share_artifact_operations_files

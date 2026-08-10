@@ -218,6 +218,14 @@ def create_app(config_name=None):
     from services.public_serving_authority import install_public_serving_authority
     install_public_serving_authority(app)
 
+    # SEC-001: anonymous responses never carry the internal workload composite,
+    # its component sub-scores, or the internal risk tier. Public routes are
+    # narrowed at the source; this is the boundary that keeps a stored snapshot
+    # or a future nested payload from quietly reintroducing them. Admin-token
+    # requests are exempt — internal scored access is intentionally retained.
+    from services.public_fatigue_view import install_public_score_boundary
+    install_public_score_boundary(app)
+
     # Compare must select the trusted snapshot once for the entire response. A
     # publication that lands between side A and side B must never create a mixed
     # two-authority comparison.
