@@ -29,14 +29,14 @@ COMPARISON_DIMENSIONS = [
     {
         'key': 'restricted',
         'metric': 'restricted',
-        'descriptor': 'marked Avoid or Unavailable',
-        'reason_label': 'Avoid or Unavailable',
+        'descriptor': 'marked Unavailable',
+        'reason_label': 'Unavailable',
     },
     {
         'key': 'monitor',
         'metric': 'monitor',
-        'descriptor': 'in the Monitor group',
-        'reason_label': 'Monitor',
+        'descriptor': 'in the On Watch group',
+        'reason_label': 'On Watch',
     },
 ]
 
@@ -93,16 +93,16 @@ def _dimension_reason_lines(dimension_key, label_a, label_b, value_a, value_b):
             _reason_line(
                 label_a,
                 value_a,
-                'restricted arm',
-                'restricted arms',
-                ' needing rest or unavailable',
+                'limited or unavailable arm',
+                'limited or unavailable arms',
+                '',
             ),
             _reason_line(
                 label_b,
                 value_b,
-                'restricted arm',
-                'restricted arms',
-                ' needing rest or unavailable',
+                'limited or unavailable arm',
+                'limited or unavailable arms',
+                '',
             ),
         ]
     return [
@@ -124,16 +124,16 @@ def _tie_statement(dimension_key, value):
         )
     if dimension_key == 'restricted':
         return _comparison_sentence(
-            subject='Both bullpens currently have the same number of relievers marked Avoid or Unavailable',
+            subject='Both bullpens currently have the same number of relievers marked Unavailable',
             reason=(
-                f'each side has {_count_phrase(value, "restricted arm", "restricted arms")} '
-                'needing rest or unavailable'
+                f'each side has {_count_phrase(value, "limited or unavailable arm", "limited or unavailable arms")} '
+                'limited or unavailable'
             ),
             consequence='That keeps the count of arms needing rest even between the two clubs',
             stable_parts=('compare_bullpens', dimension_key, 'tie', value),
         )
     return _comparison_sentence(
-        subject='Both bullpens currently have the same number of relievers in the Monitor group',
+        subject='Both bullpens currently have the same number of relievers in the On Watch group',
         reason=f'each side has {_count_phrase(value, "watch-list arm", "watch-list arms")} carrying recent workload',
         consequence='That keeps the On Watch count even between the two clubs',
         stable_parts=('compare_bullpens', dimension_key, 'tie', value),
@@ -156,16 +156,16 @@ def _leader_statement(dimension_key, leader_label, other_label, leader_value, ot
         )
     if dimension_key == 'restricted':
         return _comparison_sentence(
-            subject=f'{_team_subject(leader_label)} currently have more relievers marked Avoid or Unavailable',
+            subject=f'{_team_subject(leader_label)} currently have more relievers marked Unavailable',
             reason=(
-                f'{_has_count(leader_label, leader_value, "restricted arm", "restricted arms")} '
-                'needing rest or unavailable while '
-                f'{_has_count(other_label, other_value, "restricted arm", "restricted arms")}'
+                f'{_has_count(leader_label, leader_value, "limited or unavailable arm", "limited or unavailable arms")} '
+                'while '
+                f'{_has_count(other_label, other_value, "limited or unavailable arm", "limited or unavailable arms")}'
             ),
             stable_parts=('compare_bullpens', dimension_key, leader_label, other_label, leader_value, other_value),
         )
     return _comparison_sentence(
-        subject=f'{_team_subject(leader_label)} currently have more relievers in the Monitor group',
+        subject=f'{_team_subject(leader_label)} currently have more relievers in the On Watch group',
         reason=(
             f'{_has_count(leader_label, leader_value, "watch-list arm", "watch-list arms")} '
             'carrying recent workload while '
@@ -308,11 +308,11 @@ def _difference_summary(label_a, label_b, metrics_a, metrics_b, observations):
         thinner_value = max(metrics_a['restricted'], metrics_b['restricted'])
         cleaner_value = min(metrics_a['restricted'], metrics_b['restricted'])
         statement = _comparison_sentence(
-            subject=f'{_team_subject(cleaner_label)} currently have fewer relievers marked Avoid or Unavailable',
+            subject=f'{_team_subject(cleaner_label)} currently have fewer relievers marked Unavailable',
             reason=(
-                f'{_has_count(thinner_label, thinner_value, "restricted arm", "restricted arms")} '
-                'needing rest or unavailable while '
-                f'{_has_count(cleaner_label, cleaner_value, "restricted arm", "restricted arms")}'
+                f'{_has_count(thinner_label, thinner_value, "limited or unavailable arm", "limited or unavailable arms")} '
+                'while '
+                f'{_has_count(cleaner_label, cleaner_value, "limited or unavailable arm", "limited or unavailable arms")}'
             ),
             stable_parts=('compare_bullpens', 'summary', 'restricted', thinner_label, cleaner_label, thinner_value, cleaner_value),
         )
@@ -323,7 +323,7 @@ def _difference_summary(label_a, label_b, metrics_a, metrics_b, observations):
         higher_value = max(metrics_a['monitor'], metrics_b['monitor'])
         lower_value = min(metrics_a['monitor'], metrics_b['monitor'])
         statement = _comparison_sentence(
-            subject=f'{_team_subject(lower_label)} currently have fewer relievers in the Monitor group',
+            subject=f'{_team_subject(lower_label)} currently have fewer relievers in the On Watch group',
             reason=(
                 f'{_has_count(higher_label, higher_value, "watch-list arm", "watch-list arms")} '
                 'carrying recent workload while '

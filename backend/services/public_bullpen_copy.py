@@ -89,6 +89,20 @@ _BANNED_PROSE_PHRASES = (
     'model output',
     'engine says',
     'deterministic',
+    # Internal bullpen-structure vocabulary. These describe how the engine
+    # buckets arms, not anything a reader can verify from a box score. The
+    # browser used to strip them; refusing them here is what lets it stop.
+    'trust arms',
+    'trust arm',
+    'depth arms',
+    'depth arm',
+    'bridge arms',
+    'bridge arm',
+    'top trust bucket',
+    'trust structure',
+    'resource health',
+    'active capacity',
+    'interpretation weighs',
 )
 
 # ``Rest-Restricted`` is an already-governed public pitcher-read label owned by

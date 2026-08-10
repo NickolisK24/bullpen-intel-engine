@@ -144,7 +144,11 @@ function normalizeGroup(group, { countsWithheld = false } = {}) {
   const countWithheld = countsWithheld || group?.count_withheld === true || group?.countWithheld === true
   return {
     status,
-    label: getAvailabilityStatusLabel(group?.label || fallback.label),
+    // The backend group label is already the public form (Monitor -> On Watch,
+    // Avoid -> Unavailable, decided by services/public_bullpen_copy.py), so it
+    // is rendered as published. getAvailabilityStatusLabel is only consulted for
+    // the local fallback shape, never to re-translate a backend label.
+    label: group?.label || getAvailabilityStatusLabel(fallback.label),
     description: group?.description || fallback.description,
     count: countWithheld ? null : (typeof group?.count === 'number' ? group.count : pitchers.length),
     countWithheld,
@@ -603,7 +607,13 @@ export function getRolesSummaryView(roles) {
 }
 
 export function getBoardCardView(card, freshness = null, now = new Date()) {
-  const badge = getAvailabilityBadgeView(card?.availability_status)
+  // Styling is keyed by the engine status; the visible label is the backend's
+  // published public form when it supplied one, so the browser is not the thing
+  // deciding that Monitor reads as On Watch.
+  const badge = getAvailabilityBadgeView(
+    card?.availability_status,
+    card?.availability_public_label,
+  )
   const dataState = String(card?.data_state || 'unknown').toLowerCase()
   const showDataNote = dataState && !['fresh', 'unknown'].includes(dataState)
   // "Today" / "Yesterday" on a workload label are relative to the user's actual current day,
