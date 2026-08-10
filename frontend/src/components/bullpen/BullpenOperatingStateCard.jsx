@@ -26,29 +26,16 @@ function uniqueList(list) {
   })
 }
 
-function isLowValueZeroEvidence(item) {
-  const text = String(item || '').trim()
-  return (
-    /^0 of \d+ relievers? are in (the )?Monitor( group| lane)?\.$/i.test(text) ||
-    /^0 of \d+ relievers? are in (the )?On Watch( group| lane)?\.$/i.test(text) ||
-    /^No relievers? are marked Unavailable\.$/i.test(text)
-  )
-}
+// The compact card used to filter evidence through an allow-list of six regexes
+// and keep only sentences that matched one. Any backend evidence phrased another
+// way — including anything newly authored — was deleted before the reader saw
+// it, and the reader had no way to know. Density is now a deterministic count
+// cap that reads evidence in the order the backend published it and never
+// inspects what a sentence says.
+const COMPACT_EVIDENCE_LIMIT = 5
 
 function compactEvidenceList(view) {
-  const compactPatterns = [
-    /\b\d+ of \d+ relievers? are classified Available\./i,
-    /\b\d+ of \d+ relievers? are Limited or Unavailable\./i,
-    /\b\d+ of \d+ relievers? are Unavailable\./i,
-    /\bbullpen arms? (is|are) on the injured list\./i,
-    /\bbullpen arms? (is|are) inactive or unavailable\./i,
-    /\bbullpen arms? (has|have) unconfirmed roster status\./i,
-  ]
-
-  return uniqueList(view.evidence.filter(item => (
-    !isLowValueZeroEvidence(item) &&
-    compactPatterns.some(pattern => pattern.test(item))
-  ))).slice(0, 5)
+  return uniqueList(view.evidence).slice(0, COMPACT_EVIDENCE_LIMIT)
 }
 
 function compactLimitationList(view, staleWithError) {
@@ -376,6 +363,15 @@ function CompactBullpenOperatingStateCard({
               </p>
             )}
           </div>
+
+          {/* The Why, between State and Evidence. The compact card computed this
+              and never rendered it, so Team Board showed State then Evidence with
+              the explanation missing. Rendered verbatim from the backend. */}
+          {view.why && (
+            <p className="mt-2 break-words text-sm leading-snug text-chalk300" data-testid="compact-why">
+              {view.why}
+            </p>
+          )}
 
           {(view.primaryConcern || view.secondaryConcern) && (
             <div className="mt-2 flex flex-wrap gap-1.5">

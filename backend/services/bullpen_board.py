@@ -27,6 +27,12 @@ from services.bullpen_stress import build_bullpen_stress
 from services.pitcher_public_labels import build_pitcher_labels
 from services.pitcher_role_authority import author_public_role_read
 from services.public_roster_readiness import roster_claims_available
+from services.public_bullpen_copy import (
+    guard_board_context,
+    guard_board_groups,
+    guard_team_shape_reads,
+    public_availability_label,
+)
 from services.team_bullpen_shape import build_team_bullpen_shape
 from services.bullpen_visibility import default_visible_contract, summarize_visibility
 from services.workload_appearance import pitch_count_workload_logs
@@ -50,7 +56,9 @@ GROUP_META = {
         'description': 'Workload signals are inside normal ranges in the latest completed data.',
     },
     STATUS_MONITOR: {
-        'label': 'Monitor',
+        # Public label, not the engine state. ``Monitor`` is engine vocabulary;
+        # ``On Watch`` is the reader form (services/public_bullpen_copy.py).
+        'label': 'On Watch',
         'description': 'Worth a look at recent workload before counting on these arms.',
     },
     STATUS_LIMITED: {
@@ -58,8 +66,11 @@ GROUP_META = {
         'description': 'Recent workload suggests limited use from the latest completed data.',
     },
     STATUS_AVOID: {
-        'label': 'Avoid',
-        'description': 'Meaningful recent-use load on these arms.',
+        # ``Avoid`` is retired reader vocabulary; the public form is
+        # ``Unavailable`` (services/public_bullpen_copy.py). The engine state
+        # key is unchanged.
+        'label': 'Unavailable',
+        'description': 'Meaningful recent-use load keeps these arms out of the available group.',
     },
     STATUS_UNAVAILABLE: {
         'label': 'Unavailable Pitchers',
@@ -189,16 +200,16 @@ def _health_reasons(state, counts, total, freshness_note=None):
         'available from the latest completed workload data.'
     )
     if restricted == 0:
-        reasons.append('No relievers are marked Avoid or Unavailable.')
+        reasons.append('No relievers are marked Unavailable.')
     else:
         reasons.append(
             f'{_reliever_count_phrase(restricted).capitalize()} {_reliever_verb(restricted)} '
-            'Avoid or Unavailable.'
+            'Unavailable.'
         )
     if state in (HEALTH_MONITORING, HEALTH_ELEVATED):
         reasons.append(
             f'{_reliever_count_phrase(monitor).capitalize()} {_reliever_verb(monitor)} '
-            'in the Monitor group.'
+            'in the On Watch group.'
         )
     reasons.append(METHODOLOGY_REASON)
     if freshness_note:
@@ -281,7 +292,7 @@ def build_team_context(groups, freshness=None):
         confidence = 'low'
         freshness_note = (
             'Latest workload data is outside the active freshness window, '
-            'so this snapshot may not reflect current bullpen planning.'
+            'so this bullpen read may not reflect current bullpen planning.'
         )
         limitations.append(freshness_note)
     else:
@@ -300,7 +311,9 @@ def build_team_context(groups, freshness=None):
         'pct_restricted': _pct(restricted, total),
     }
 
-    return {
+    # Publication boundary for the Why and its evidence: guarded here so no
+    # caller can publish this block without the public prose being checked.
+    return guard_board_context({
         'metrics': metrics,
         'health': {
             'state': state,
@@ -309,7 +322,7 @@ def build_team_context(groups, freshness=None):
         },
         'confidence': confidence,
         'limitations': limitations,
-    }
+    })
 
 
 def short_reason_for(availability):
@@ -390,7 +403,13 @@ def build_card(
     return {
         'pitcher_id': pitcher_id,
         'name': name,
+        # Engine state, kept for internal consumers and existing contracts.
         'availability_status': availability.get('availability_status'),
+        # The reader-facing form of that state, decided by the backend public
+        # vocabulary authority. The frontend renders this and owns no mapping.
+        'availability_public_label': public_availability_label(
+            availability.get('availability_status')
+        ),
         'confidence': availability.get('confidence'),
         'short_reason': short_reason_for(availability),
         'last_appearance': workload_appearance,
@@ -488,6 +507,10 @@ def _withhold_team_shape(team_shape, roster_authority):
         'current_roster_claims_available': False,
         'counts_withheld': True,
         'reads': [],
+        # build_team_bullpen_shape returns the camelCase 'byKey'; clearing only
+        # 'by_key' left the withheld reads readable on the served payload, and
+        # the reader surfaces resolve byKey first.
+        'byKey': {},
         'by_key': {},
         'limitations': limitations,
     })
@@ -616,6 +639,12 @@ def build_board_payload(
         context = _withhold_team_context(context, roster_authority)
         stress = _withhold_bullpen_stress(stress, roster_authority)
         team_shape = _withhold_team_shape(team_shape, roster_authority)
+
+    # Publication boundary for the board payload: the reader-facing group labels
+    # and the authored team-shape reads are guarded before anything is returned,
+    # so unsafe public prose is refused rather than partially published.
+    guard_board_groups(groups)
+    guard_team_shape_reads(team_shape)
 
     return {
         'capability': CAPABILITY,

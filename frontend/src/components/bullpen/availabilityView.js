@@ -177,15 +177,26 @@ export function getRowAvailabilityStatus(row) {
   return normalizeAvailabilityStatus(getRowAvailability(row)?.availability_status)
 }
 
-export function getAvailabilityBadgeView(availabilityOrStatus) {
+/**
+ * Badge view for an availability status.
+ *
+ * `publicLabel` is the backend-published public form of the status
+ * (`availability_public_label`, decided by
+ * backend/services/public_bullpen_copy.py). When it is supplied it is rendered
+ * as published — the frontend does not re-derive or re-translate it. The local
+ * STATUS_CONFIG label remains only for surfaces whose payloads do not yet carry
+ * a public label, and only ever supplies styling and tone for the board path.
+ */
+export function getAvailabilityBadgeView(availabilityOrStatus, publicLabel = null) {
   const status = typeof availabilityOrStatus === 'string'
     ? availabilityOrStatus
     : availabilityOrStatus?.availability_status
   const normalized = normalizeAvailabilityStatus(status) || 'Unknown'
   const config = STATUS_CONFIG[normalized] || STATUS_CONFIG.Unknown
+  const backendLabel = typeof publicLabel === 'string' ? publicLabel.trim() : ''
   return {
     status: normalized,
-    label: config.label,
+    label: backendLabel || config.label,
     tone: config.tone,
     style: config.style,
     dotStyle: config.dotStyle,

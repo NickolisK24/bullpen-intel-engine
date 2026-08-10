@@ -156,30 +156,32 @@ function trustedTeamShape(overrides = {}) {
       activeBullpenArms: 7,
     },
     byKey: {
+      // Backend-authored and guarded copy: what the backend copy authority will
+      // actually publish. The card renders it verbatim (FE-001 / #591).
       cleanOptions: {
         key: 'cleanOptions',
         label: 'Thin Clean Options',
-        explanation: '2 Clean Options out of 8 active bullpen arms - 1 Trust, 1 Bridge, 0 Coverage, 0 Depth. Interpretation weighs clean Trust Arms above clean Depth Arms.',
-        reasons: [
-          '2 clean options are available.',
-          'Interpretation weighs clean Trust Arms above clean Depth Arms.',
-        ],
+        summary: 'Two of eight bullpen arms look cleanly available right now.',
+        explanation: 'Two of eight bullpen arms look cleanly available right now.',
+        reasons: ['2 clean options are available.'],
         supportingCounts: { cleanOptionCount: 2 },
         source: 'backend',
       },
       coverageSafety: {
         key: 'coverageSafety',
         label: 'Stable Coverage Safety',
-        explanation: 'Coverage margin combines active capacity, resource health, and trust structure.',
-        reasons: ['The top trust bucket still has one available arm.'],
+        summary: 'The group still has enough coverage for a normal game state.',
+        explanation: 'The group still has enough coverage for a normal game state.',
+        reasons: ['One late-inning arm is still available.'],
         supportingCounts: { coverageArms: 4 },
         source: 'backend',
       },
       workloadConcentration: {
         key: 'workloadConcentration',
         label: 'Some Workload Concentration',
-        explanation: 'Recent workload concentration uses coverageSafetyVersion 2.0 thresholds.',
-        reasons: ['capacityState and resourceHealthState should not render.'],
+        summary: 'Recent relief work has flowed through a smaller group of arms.',
+        explanation: 'Recent relief work has flowed through a smaller group of arms.',
+        reasons: ['Three arms carried most of the recent relief work.'],
         supportingCounts: { topThreeShare: 0.58 },
         source: 'backend',
       },
@@ -425,11 +427,11 @@ test('renders safe team context reads without changing freshness or limitations'
 
   assert.ok(htmlIncludes(html, 'Clean Options'))
   assert.ok(htmlIncludes(html, 'Thin Clean Options'))
-  assert.ok(htmlIncludes(html, 'Cleanly available choices are thinner than raw availability may suggest.'))
-  assert.ok(htmlIncludes(html, '2 Clean Options are available.'))
+  assert.ok(htmlIncludes(html, 'Two of eight bullpen arms look cleanly available right now.'))
+  assert.ok(htmlIncludes(html, '2 clean options are available.'))
   assert.ok(htmlIncludes(html, 'Coverage Safety'))
   assert.ok(htmlIncludes(html, 'Stable Coverage Safety'))
-  assert.ok(htmlIncludes(html, 'The current group appears to have enough coverage for a normal game state.'))
+  assert.ok(htmlIncludes(html, 'The group still has enough coverage for a normal game state.'))
   assert.equal(htmlIncludes(html, 'The top trust bucket still has one available arm.'), false)
   assert.ok(htmlIncludes(html, 'Workload Concentration'))
   assert.ok(htmlIncludes(html, 'Some Workload Concentration'))
@@ -438,9 +440,6 @@ test('renders safe team context reads without changing freshness or limitations'
   assert.ok(htmlIncludes(html, 'Bullpen data through Jun 4'))
   assert.ok(htmlIncludes(html, 'Limitations'))
   assert.ok(htmlIncludes(html, 'BaseballOS does not know manager intent'))
-  assert.equal(htmlIncludes(html, 'Interpretation weighs clean Trust Arms above clean Depth Arms.'), false)
-  assert.equal(htmlIncludes(html, 'Coverage margin combines active capacity'), false)
-  assert.equal(htmlIncludes(html, 'capacityState and resourceHealthState should not render.'), false)
 
   for (const term of internalTerms) {
     assert.equal(forbiddenPattern(term).test(html), false, `leaked ${term}`)
@@ -453,16 +452,19 @@ test('renders compact team context reads without overwhelming the team board car
     cleanOptions: {
       key: 'cleanOptions',
       label: 'Thin Clean Options',
+      summary: 'Two of eight bullpen arms look cleanly available right now.',
       reasons: ['2 clean options are available.'],
     },
     coverageSafety: {
       key: 'coverageSafety',
       label: 'Stable Coverage Safety',
+      summary: 'Coverage options remain playable for a normal game state.',
       reasons: ['Coverage options remain playable for a normal game state.'],
     },
     workloadConcentration: {
       key: 'workloadConcentration',
       label: 'Some Workload Concentration',
+      summary: 'Recent relief work has leaned on three arms.',
       reasons: ['Recent relief work has leaned on three arms.'],
     },
   }))
@@ -471,15 +473,13 @@ test('renders compact team context reads without overwhelming the team board car
   assert.ok(htmlIncludes(html, 'data-density="compact"'))
   assert.ok(htmlIncludes(html, 'Clean Options'))
   assert.ok(htmlIncludes(html, 'Thin Clean Options'))
-  assert.ok(htmlIncludes(html, 'Cleanly available choices are thinner than raw availability may suggest.'))
-  assert.ok(htmlIncludes(html, '2 Clean Options are available.'))
+  assert.ok(htmlIncludes(html, 'Two of eight bullpen arms look cleanly available right now.'))
+  assert.ok(htmlIncludes(html, '2 clean options are available.'))
   assert.ok(htmlIncludes(html, 'Coverage Safety'))
   assert.ok(htmlIncludes(html, 'Stable Coverage Safety'))
-  assert.ok(htmlIncludes(html, 'The current group appears to have enough coverage for a normal game state.'))
   assert.ok(htmlIncludes(html, 'Coverage options remain playable for a normal game state.'))
   assert.ok(htmlIncludes(html, 'Workload Concentration'))
   assert.ok(htmlIncludes(html, 'Some Workload Concentration'))
-  assert.ok(htmlIncludes(html, 'Recent relief work has flowed through a smaller group of arms.'))
   assert.ok(htmlIncludes(html, 'Recent relief work has leaned on three arms.'))
   assert.ok(htmlIncludes(html, 'Evidence'))
   assert.ok(htmlIncludes(html, 'Freshness: Current'))
@@ -491,24 +491,26 @@ test('renders compact team context reads without overwhelming the team board car
   }
 })
 
-test('omits limited reads and filters unsafe team context copy', () => {
+test('omits a limited read while rendering the governed reads beside it', () => {
   const board = withTeamShape(teamOperatingBoard(), trustedTeamShape({
+    // A limited read is the backend declining to make the call.
     cleanOptions: {
       key: 'cleanOptions',
       label: 'Limited Read',
-      explanation: 'Backend team bullpen shape was not returned.',
-      reasons: ['Backend team bullpen shape was not returned.'],
+      summary: 'Team bullpen shape could not be resolved.',
+      reasons: [],
     },
     coverageSafety: {
       key: 'coverageSafety',
       label: 'Stable Coverage Safety',
-      explanation: 'backend endpoint source snapshot V4 deterministic detail',
-      reasons: ['COIN source detail should not render.'],
+      summary: 'The current group appears to have enough coverage for a normal game state.',
+      reasons: ['One late-inning arm is still available.'],
       supportingCounts: { coverageArms: 4 },
     },
     workloadConcentration: {
       key: 'workloadConcentration',
       label: 'Some Workload Concentration',
+      summary: 'Recent relief work has flowed through a smaller group of arms.',
     },
   }))
   const html = renderTeamOperatingCard(board)
@@ -706,22 +708,29 @@ test('team card renders stable starter samples as facts', () => {
   assert.equal(htmlIncludes(stableHtml, 'No data'), false)
 })
 
-test('compact evidence omits unsafe reasons without placeholders', () => {
+test('compact card renders governed reads verbatim without placeholders', () => {
+  // This test used to feed internal vocabulary in and assert the compact card
+  // filtered it out. That filter is gone: the backend copy authority refuses
+  // such copy (backend/tests/test_public_copy_contract.py). What the card owes
+  // the reader is that governed copy arrives intact and nothing is invented.
   const board = withTeamShape(teamOperatingBoard(), trustedTeamShape({
     cleanOptions: {
       key: 'cleanOptions',
       label: 'Thin Clean Options',
-      reasons: ['backend endpoint source snapshot should not render.'],
+      summary: 'Two of eight bullpen arms look cleanly available right now.',
+      reasons: ['2 clean options are available.'],
     },
     coverageSafety: {
       key: 'coverageSafety',
       label: 'Stable Coverage Safety',
-      reasons: ['COIN V4 deterministic detail should not render.'],
+      summary: 'The group still has enough coverage for a normal game state.',
+      reasons: ['One late-inning arm is still available.'],
     },
     workloadConcentration: {
       key: 'workloadConcentration',
       label: 'Some Workload Concentration',
-      reasons: ['trustAvailability and bullpenPressure should not render.'],
+      summary: 'Recent relief work has flowed through a smaller group of arms.',
+      reasons: ['Three arms carried most of the recent relief work.'],
     },
   }))
   const html = renderCompactTeamOperatingCard(board)
@@ -750,24 +759,27 @@ test('team operating card does not expose internal vocabulary', () => {
   }
 })
 
-test('omits internal language from visible card copy', () => {
+test('renders the backend Why and evidence verbatim on the full card', () => {
+  // The invented fallback sentence this test used to assert
+  // ("BaseballOS is reading the current bullpen mix ...") is retired: it was
+  // written by the browser and read as a BaseballOS claim. The card now shows
+  // the backend Why or nothing.
+  const why = 'Bullpen workload appears manageable.'
   const context = {
     hasContext: true,
     state: 'manageable',
-    label: 'backend COIN snapshot V2 deterministic endpoint',
+    label: why,
     reasons: [
-      'The existing snapshot moved after the latest completed games.',
-      'COIN endpoint V4 detail should never render.',
+      'The existing bullpen read moved after the latest completed games.',
       '5 of 8 relievers are classified Available.',
     ],
     limitations: [
-      'governance layer detail should never render.',
-      'Latest workload data is outside the active freshness window, so this snapshot may not reflect current bullpen planning.',
+      'Latest workload data is outside the active freshness window, so this bullpen read may not reflect current bullpen planning.',
     ],
     metrics: { total: 8 },
     snapshot: [
       { status: 'Available', label: 'Available', count: 5 },
-      { status: 'Monitor', label: 'Monitor', count: 1 },
+      { status: 'Monitor', label: 'On Watch', count: 1 },
       { status: 'Limited', label: 'Limited', count: 1 },
       { status: 'Avoid', label: 'Unavailable', count: 1 },
       { status: 'Unavailable', label: 'Unavailable', count: 0 },
@@ -776,7 +788,11 @@ test('omits internal language from visible card copy', () => {
 
   const html = render({ context, freshness: currentFreshness })
 
-  assert.ok(htmlIncludes(html, 'BaseballOS is reading the current bullpen mix from available workload context.'))
+  assert.ok(htmlIncludes(html, why))
+  assert.equal(
+    htmlIncludes(html, 'BaseballOS is reading the current bullpen mix from available workload context.'),
+    false,
+  )
   assert.ok(htmlIncludes(html, 'existing bullpen read moved'))
   assert.ok(htmlIncludes(html, '5 of 8 relievers are classified Available.'))
   assert.ok(htmlIncludes(html, 'this bullpen read may not reflect current bullpen planning.'))

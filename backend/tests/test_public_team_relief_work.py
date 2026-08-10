@@ -1568,8 +1568,24 @@ def test_existing_public_routes_behavior_freeze(monkeypatch):
         'frontend/tests/publicScoreExposure.test.mjs',
     }
 
+    allowed_public_copy_authority_files = {
+        # fe-001 / #591 (frontend public-copy authority): meaning-bearing public
+        # language on the State -> Why -> Evidence path moves to the backend copy
+        # authority (services/public_bullpen_copy.py) and the frontend renders it
+        # verbatim. availabilityView.js stops deriving the public availability
+        # label and renders the backend-published one; copySuppressionAccounting
+        # is a temporary operator-only counter with no UI, no network, and no
+        # payload change; the test file is the rendering contract. No public
+        # label, availability threshold, classification, vocabulary decision,
+        # route, or Team State behavior changes.
+        'frontend/src/components/bullpen/availabilityView.js',
+        'frontend/src/utils/copySuppressionAccounting.js',
+        'frontend/tests/publicCopyAuthority.test.mjs',
+    }
+
     assert not [
         path for path in changed
+        if path not in allowed_public_copy_authority_files
         if path not in allowed_public_score_removal_files
         if path not in allowed_canonical_team_state_files
         if path not in allowed_game_ingestion_work_state_files

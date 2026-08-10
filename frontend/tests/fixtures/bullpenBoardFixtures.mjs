@@ -5,7 +5,9 @@ const BOARD_GROUP_ORDER = ['Available', 'Monitor', 'Limited', 'Avoid', 'Unavaila
 
 const GROUP_META = {
   Available: { label: 'Available', description: 'Workload signals are inside normal ranges in the latest completed data.' },
-  Monitor: { label: 'Monitor', description: 'Worth a look at recent workload before counting on these arms.' },
+  // Public group label, mirroring backend GROUP_META: the engine state Monitor
+  // is published as On Watch (backend/services/public_bullpen_copy.py).
+  Monitor: { label: 'On Watch', description: 'Worth a look at recent workload before counting on these arms.' },
   Limited: { label: 'Limited', description: 'Recent workload suggests limited use in the current availability read.' },
   Avoid: { label: 'Unavailable', description: 'Meaningful recent-use load keeps these arms out of the available group.' },
   Unavailable: { label: 'Unavailable Pitchers', description: 'Not available in the current bullpen planning read.' },

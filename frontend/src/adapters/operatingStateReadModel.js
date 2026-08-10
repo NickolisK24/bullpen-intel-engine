@@ -4,6 +4,7 @@ import {
   getAvailabilityStatusLabel,
 } from '../components/bullpen/availabilityView'
 import { NO_TEAM_STATE_TONE, readPublicTeamState } from './publicTeamState'
+import { recordCopySuppression } from '../utils/copySuppressionAccounting'
 
 const SNAPSHOT_ROWS = [
   { status: 'Available', label: 'Available', keys: ['available'], rawStatuses: ['Available'] },
@@ -31,8 +32,10 @@ const UNSUPPORTED_FIELDS = [
 
 const TEAM_CONTEXT_READ_KEYS = ['cleanOptions', 'coverageSafety', 'workloadConcentration']
 
-const INTERNAL_COPY_PATTERN = /\b(COIN|V2|V3|V4|deterministic|endpoint|backend|source|snapshot|recommendation engine|baseline distribution|baseline|governance layer|sample state|coverageSafetyVersion|capacityState|resourceHealthState|thresholds|trustAvailability|bullpenPressure)\b|2\.0/i
-const TEAM_CONTEXT_INTERNAL_COPY_PATTERN = /\b(COIN|V2|V3|V4|deterministic|endpoint|backend|source|snapshot|recommendation engine|baseline distribution|baseline|governance layer|governance|coverageSafetyVersion|capacityState|resourceHealthState|thresholds|Trust Arms?|Depth Arms?|top trust bucket|resource health|trust structure|active capacity|Interpretation weighs|trustAvailability|bullpenPressure)\b|2\.0|\b\d+\s+(Trust|Bridge|Depth)\b/i
+// The internal-vocabulary ban patterns that used to live here are gone. Public
+// language is decided and guarded by the backend copy authority
+// (backend/services/public_bullpen_copy.py). Re-checking it in the browser meant
+// a guard failure silently deleted a governed sentence with no record anywhere.
 const LIMITATION_COPY_PATTERN = /\b(workload-based only|does not include|not a team-specific|manager intent|bullpen phone activity|private medical|outside the active freshness window|may not reflect|treat this|limitation)\b/i
 
 function normalizeStateKey(state) {
@@ -48,24 +51,14 @@ function numericCount(value) {
   return Number.isFinite(number) && number > 0 ? number : 0
 }
 
+// Backend-authored copy is rendered as written. This trims surrounding
+// whitespace and rejects a non-string; it does not rewrite, paraphrase, or
+// translate a single word of governed public language. The vocabulary
+// substitutions that used to live here are now backend decisions.
 function safeText(value) {
   if (typeof value !== 'string') return null
-  const softened = value.trim()
-    .replace(/\bsnapshot\b/gi, 'bullpen read')
-    .replace(/\bMonitor\b/g, 'On Watch')
-    .replace(/\brestricted\b/g, 'limited')
-    .replace(/\bRestricted\b/g, 'Limited')
-    .replace(/\bLimited,\s*Avoid,\s*or\s*Unavailable\b/g, 'Limited or Unavailable')
-    .replace(/\bAvoid\s+or\s+Unavailable\b/g, 'Unavailable')
-    .replace(/\bAvoid\b/g, 'Unavailable')
-    .replace(/\bconstrained\b/g, 'stretched')
-    .replace(/\bConstrained\b/g, 'Stretched')
-    .replace(/\brecommendation engine\b/gi, 'BaseballOS read')
-    .replace(/\bclean options\b/g, 'Clean Options')
-    .replace(/\bClean options\b/g, 'Clean Options')
-  if (!softened) return null
-  if (INTERNAL_COPY_PATTERN.test(softened)) return null
-  return softened
+  const text = value.trim()
+  return text || null
 }
 
 function safeTextList(list) {
@@ -74,62 +67,17 @@ function safeTextList(list) {
     .filter(Boolean)
 }
 
-function safeTeamContextText(value) {
-  if (typeof value !== 'string') return null
-  const text = value.trim()
-    .replace(/\bsnapshot\b/gi, 'bullpen read')
-    .replace(/\bMonitor\b/g, 'On Watch')
-    .replace(/\brestricted\b/g, 'limited')
-    .replace(/\bRestricted\b/g, 'Limited')
-    .replace(/\bLimited,\s*Avoid,\s*or\s*Unavailable\b/g, 'Limited or Unavailable')
-    .replace(/\bAvoid\s+or\s+Unavailable\b/g, 'Unavailable')
-    .replace(/\bAvoid\b/g, 'Unavailable')
-    .replace(/\bconstrained\b/g, 'stretched')
-    .replace(/\bConstrained\b/g, 'Stretched')
-    .replace(/\brecommendation engine\b/gi, 'BaseballOS read')
-    .replace(/\bclean options\b/g, 'Clean Options')
-    .replace(/\bClean options\b/g, 'Clean Options')
-  if (!text || TEAM_CONTEXT_INTERNAL_COPY_PATTERN.test(text)) return null
-  return text
-}
+// Team-context reads carry the same governed copy under a different key and get
+// the same verbatim treatment. Kept as named aliases so the call sites still
+// read as what they are.
+const safeTeamContextText = safeText
+const safeTeamContextTextList = safeTextList
 
-function safeTeamContextTextList(list) {
-  return (Array.isArray(list) ? list : [])
-    .map(safeTeamContextText)
-    .filter(Boolean)
-}
-
-function teamContextSummary(key, label) {
-  const labelKey = normalizeStateKey(label)
-  if (key === 'cleanOptions') {
-    if (labelKey.includes('deep') || labelKey.includes('healthy')) {
-      return 'This bullpen has enough cleanly available choices for normal coverage.'
-    }
-    if (labelKey.includes('very_thin')) {
-      return 'Available arms exist, but fewer options look clean from a workload and role standpoint.'
-    }
-    return 'Cleanly available choices are thinner than raw availability may suggest.'
-  }
-  if (key === 'coverageSafety') {
-    if (labelKey.includes('strong') || labelKey.includes('stable')) {
-      return 'The current group appears to have enough coverage for a normal game state.'
-    }
-    if (labelKey.includes('thin')) {
-      return 'Coverage looks thinner than the raw active count suggests.'
-    }
-    return 'Coverage is usable, but the margin could tighten if the bullpen is needed early.'
-  }
-  if (key === 'workloadConcentration') {
-    if (labelKey.includes('no_workload_concentration')) {
-      return 'Recent bullpen work has been spread out without creating a clear concentration flag.'
-    }
-    if (labelKey.includes('some_workload_concentration')) {
-      return 'Recent relief work has flowed through a smaller group of arms.'
-    }
-    return 'A smaller group has handled a larger share of recent relief work.'
-  }
-  return null
-}
+// teamContextSummary() used to live here: nine hard-coded sentences chosen by
+// substring-matching the backend label. The backend had already authored a
+// sentence for every one of these reads and the browser threw it away and wrote
+// its own. The authored sentence is now published as `summary`
+// (backend/services/team_bullpen_shape.py) and is rendered verbatim.
 
 function emptyTeamContextReads() {
   return {
@@ -165,10 +113,24 @@ function getTeamShapeRead(shape, key) {
 function buildTeamContextRead(key, read) {
   if (!read || typeof read !== 'object') return null
   const label = safeText(read.label)
+  // A limited read is the backend saying it cannot make this call. That is a
+  // governed refusal, not copy the frontend withheld, so it is not accounted.
   if (!label || normalizeStateKey(label) === 'limited_read') return null
-  const summary = teamContextSummary(key, label)
+
+  // The backend-authored sentence, rendered as written.
+  const summary = safeText(read.summary) || safeText(read.explanation)
   const reasons = safeTeamContextTextList(read.reasons)
-  if (!summary) return null
+  if (!summary) {
+    // The backend published a read with a label but no sentence. The frontend
+    // no longer invents one, so the read is withheld — and said so out loud.
+    recordCopySuppression({
+      surface: 'team-board',
+      field: `teamContext.${key}.summary`,
+      reason: 'backend_summary_missing',
+      sample: label,
+    })
+    return null
+  }
   return { label, summary, reasons }
 }
 
@@ -727,6 +689,15 @@ function buildUnavailableReadModel({ scope, teamInfo, freshness, cta, density, t
   const teamName = scope === 'team'
     ? teamInfo.teamName || teamInfo.teamAbbreviation || 'Selected Team'
     : 'League-Wide'
+  // A payload with no context carries no Why to render. That is a legitimate
+  // fail-closed outcome — the card shows the backend's governed non-state
+  // message — but it is still a surface rendering without an explanation, so it
+  // is recorded rather than passed over in silence.
+  recordCopySuppression({
+    surface: scope === 'team' ? 'team-board' : 'dashboard',
+    field: 'context.health.label',
+    reason: 'no_context_in_payload',
+  })
   return {
     scope,
     scopeLabel: scope === 'team' ? 'Team' : 'Scope',
@@ -825,7 +796,18 @@ export function toOperatingStateReadModel(payload, { scope = 'league', team = nu
     ...freshness.limitations,
     ...safeTextList(payload?.limitations),
   ])
-  const why = safeText(context.label) || 'BaseballOS is reading the current bullpen mix from available workload context.'
+  // The Why is backend-authored or absent. The invented fallback sentence that
+  // used to sit here read as a BaseballOS claim while being written by the
+  // browser — including on the fail-closed path where the dashboard payload
+  // carries an empty context. A missing Why is now a recorded refusal.
+  const why = safeText(context.label)
+  if (!why) {
+    recordCopySuppression({
+      surface: isLeague ? 'dashboard' : 'team-board',
+      field: 'context.health.label',
+      reason: 'backend_why_missing',
+    })
+  }
   // Tone is decoration keyed only by the canonical public state the backend
   // supplied, and neutral whenever there is no Team State to show.
   const stateTone = teamState.tone

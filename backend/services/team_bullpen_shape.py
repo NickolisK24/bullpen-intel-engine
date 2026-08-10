@@ -308,6 +308,11 @@ def _read(key, label, explanation, supporting_counts, reasons=None):
         'key': key,
         'label': label,
         'explanation': explanation,
+        # The backend-authored public sentence for this read (FE-001 / #591).
+        # ``explanation`` predates the public contract and is kept for internal
+        # consumers; ``summary`` is the governed field the reader surfaces render
+        # verbatim, so the frontend no longer authors a sentence of its own.
+        'summary': explanation,
         'supportingCounts': supporting_counts,
         'reasons': list(reasons or [explanation]),
     }

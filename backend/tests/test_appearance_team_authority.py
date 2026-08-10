@@ -877,6 +877,27 @@ PUBLIC_SCORE_REMOVAL_FILES = (
     'frontend/src/utils/fatigueModel.js',
 )
 
+# PUBLIC COPY AUTHORITY (FE-001 / #591).
+#
+# Meaning-bearing public language on the State -> Why -> Evidence path moves to
+# the backend copy authority (services/public_bullpen_copy.py) and the frontend
+# renders it verbatim. availabilityView.js stops deriving the public
+# availability label and renders the backend-published one;
+# copySuppressionAccounting.js is a temporary operator-only counter with no UI,
+# no network, and no payload change.
+#
+# This guard protects Team State payloads, immutable artifacts, and public
+# surfaces from incidental appearance-team change. That purpose is intact and
+# actively enforced rather than exempted:
+# test_public_copy_authority_files_read_no_appearance_team_authority proves
+# neither file reads appearance-team authority.
+#
+# Exact paths only, never a directory exemption.
+PUBLIC_COPY_AUTHORITY_FILES = (
+    'frontend/src/components/bullpen/availabilityView.js',
+    'frontend/src/utils/copySuppressionAccounting.js',
+)
+
 
 def test_branch_touches_no_team_state_or_public_surface_files():
     # Source proof: Foundation 1 changes no Team State, Share Artifact, public API,
@@ -968,6 +989,8 @@ def test_branch_touches_no_team_state_or_public_surface_files():
     APPROVED_CANONICAL_TEAM_STATE_FILES = CANONICAL_TEAM_STATE_FILES
     # See PUBLIC_SCORE_REMOVAL_FILES above (SEC-001 / #595).
     APPROVED_PUBLIC_SCORE_REMOVAL_FILES = PUBLIC_SCORE_REMOVAL_FILES
+    # See PUBLIC_COPY_AUTHORITY_FILES above (FE-001 / #591).
+    APPROVED_PUBLIC_COPY_AUTHORITY_FILES = PUBLIC_COPY_AUTHORITY_FILES
     offenders = [
         path for path in non_test
         if any(fragment in path for fragment in forbidden_fragments)
@@ -975,6 +998,7 @@ def test_branch_touches_no_team_state_or_public_surface_files():
         and path not in APPROVED_INTERNAL_APPEARANCE_TEAM_CONSUMERS
         and path not in APPROVED_CANONICAL_TEAM_STATE_FILES
         and path not in APPROVED_PUBLIC_SCORE_REMOVAL_FILES
+        and path not in APPROVED_PUBLIC_COPY_AUTHORITY_FILES
     ]
     assert offenders == [], f'Foundation 1 must not touch these runtime surfaces: {offenders}'
 
@@ -1035,6 +1059,34 @@ def test_public_score_removal_files_read_no_appearance_team_authority():
                 offenders.append(f'{relative}: {token}')
     assert offenders == [], (
         'public score-removal files must not read appearance-team authority: '
+        f'{offenders}'
+    )
+
+
+def test_public_copy_authority_files_read_no_appearance_team_authority():
+    """The FE-001 allowlist is an exemption from the path guard, not its purpose.
+
+    #591 moves public copy ownership to the backend. It has nothing to do with
+    appearance-team authority, and this proves it: neither allowlisted file
+    reads ``GameLog.appearance_team_id`` or the appearance-team status, in
+    either language.
+    """
+    offenders = []
+    for relative in PUBLIC_COPY_AUTHORITY_FILES:
+        path = REPO_ROOT_FOR_DIFF / relative
+        if not path.exists():
+            continue
+        source = path.read_text(encoding='utf-8')
+        for token in (
+            'appearance_team_id',
+            'appearance_team_status',
+            'appearanceTeamId',
+            'appearanceTeamStatus',
+        ):
+            if token in source:
+                offenders.append(f'{relative}: {token}')
+    assert offenders == [], (
+        'public copy authority files must not read appearance-team authority: '
         f'{offenders}'
     )
 
