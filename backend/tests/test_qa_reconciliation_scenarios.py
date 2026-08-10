@@ -36,6 +36,7 @@ from services.legacy_read_reconciliation import (
     render_reconciliation_report,
 )
 from tests.db_config import configure_test_database, create_test_schema, drop_test_schema
+from tests.generated_team_pages import GENERATED_TEAM_PAGE_FILES
 from tests.qa_scenarios import (
     composed_reads_missing,
     conflict_state_evidence,
@@ -631,8 +632,22 @@ def test_phase0e_switches_and_legacy_public_files_not_modified():
         'frontend/tests/publicCopyAuthority.test.mjs',
     }
 
+    allowed_static_team_preview_files = {
+        # dist-003 / #594 (routed team preview authority): the generated
+        # /team/{ABBR} pages carry canonical Team State, a data-through date, a
+        # generated-at time, and the trusted snapshot receipt they were built
+        # from, and the exporter reads the same trusted published board the
+        # public API serves instead of the live mutable builder. The HTML files
+        # are that builder's regenerated output. This guard protects the
+        # renderer-isolation and public-vocabulary purposes; both are intact —
+        # the pages gain canonical public vocabulary and lose a non-canonical
+        # one, and no reconciliation renderer token is introduced.
+        *GENERATED_TEAM_PAGE_FILES,
+    }
+
     allowed_files = (
-        allowed_public_copy_authority_files
+        allowed_static_team_preview_files
+        | allowed_public_copy_authority_files
         | allowed_public_score_removal_files
         | allowed_game_ingestion_work_state_files
         |

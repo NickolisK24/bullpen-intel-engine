@@ -40,6 +40,7 @@ from services.appearance_team_authority import (
 )
 from services.appearance_team_coverage import build_appearance_team_coverage
 from tests.db_config import configure_test_database, create_test_schema, drop_test_schema
+from tests.generated_team_pages import GENERATED_TEAM_PAGE_FILES
 from utils.db import db
 
 
@@ -899,6 +900,32 @@ PUBLIC_COPY_AUTHORITY_FILES = (
 )
 
 
+# ROUTED TEAM PREVIEW AUTHORITY (DIST-003 / #594).
+#
+# The generated /team/{ABBR} pages become temporally honest: canonical Team
+# State, a data-through date, a generated-at time, and the trusted dashboard
+# snapshot receipt they were built from. share_artifact_public.py is here for
+# one isolated change — the historical artifact's "current bullpen surface" link
+# now carries the artifact's OWN stored team abbreviation instead of dropping the
+# reader on the league route.
+#
+# This guard protects Team State payloads, immutable artifacts, and public
+# surfaces from incidental appearance-team change. That purpose is intact and
+# actively enforced rather than exempted:
+# test_static_team_preview_files_read_no_appearance_team_authority proves none of
+# these files reads appearance-team authority, and
+# test_static_team_preview_files_do_not_touch_artifact_immutability proves the
+# artifact change is confined to route construction.
+#
+# Exact paths only, never a directory exemption — the generated pages are
+# enumerated one per club in tests/generated_team_pages.py.
+STATIC_TEAM_PREVIEW_FILES = (
+    'backend/services/team_story_previews.py',
+    'backend/scripts/export_team_story_pages.py',
+    'backend/services/share_artifact_public.py',
+) + GENERATED_TEAM_PAGE_FILES
+
+
 def test_branch_touches_no_team_state_or_public_surface_files():
     # Source proof: Foundation 1 changes no Team State, Share Artifact, public API,
     # or frontend file, so v1.2 payloads and immutable artifacts are byte-unchanged.
@@ -991,6 +1018,8 @@ def test_branch_touches_no_team_state_or_public_surface_files():
     APPROVED_PUBLIC_SCORE_REMOVAL_FILES = PUBLIC_SCORE_REMOVAL_FILES
     # See PUBLIC_COPY_AUTHORITY_FILES above (FE-001 / #591).
     APPROVED_PUBLIC_COPY_AUTHORITY_FILES = PUBLIC_COPY_AUTHORITY_FILES
+    # See STATIC_TEAM_PREVIEW_FILES above (DIST-003 / #594).
+    APPROVED_STATIC_TEAM_PREVIEW_FILES = STATIC_TEAM_PREVIEW_FILES
     offenders = [
         path for path in non_test
         if any(fragment in path for fragment in forbidden_fragments)
@@ -999,6 +1028,7 @@ def test_branch_touches_no_team_state_or_public_surface_files():
         and path not in APPROVED_CANONICAL_TEAM_STATE_FILES
         and path not in APPROVED_PUBLIC_SCORE_REMOVAL_FILES
         and path not in APPROVED_PUBLIC_COPY_AUTHORITY_FILES
+        and path not in APPROVED_STATIC_TEAM_PREVIEW_FILES
     ]
     assert offenders == [], f'Foundation 1 must not touch these runtime surfaces: {offenders}'
 
@@ -1089,6 +1119,70 @@ def test_public_copy_authority_files_read_no_appearance_team_authority():
         'public copy authority files must not read appearance-team authority: '
         f'{offenders}'
     )
+
+
+def test_static_team_preview_files_read_no_appearance_team_authority():
+    """The DIST-003 allowlist is an exemption from the path guard, not its purpose.
+
+    #594 makes the generated team previews cite the trusted publication they came
+    from. It has nothing to do with appearance-team authority, and this proves it:
+    not one allowlisted file reads ``GameLog.appearance_team_id`` or the
+    appearance-team status, in either language.
+    """
+    offenders = []
+    for relative in STATIC_TEAM_PREVIEW_FILES:
+        path = REPO_ROOT_FOR_DIFF / relative
+        if not path.exists():
+            continue
+        source = path.read_text(encoding='utf-8')
+        for token in (
+            'appearance_team_id',
+            'appearance_team_status',
+            'appearanceTeamId',
+            'appearanceTeamStatus',
+        ):
+            if token in source:
+                offenders.append(f'{relative}: {token}')
+    assert offenders == [], (
+        'routed team preview files must not read appearance-team authority: '
+        f'{offenders}'
+    )
+
+
+def test_static_team_preview_files_do_not_touch_artifact_immutability():
+    """The one artifact file on the #594 allowlist may only build a route.
+
+    ``share_artifact_public.py`` is allowlisted for a single isolated change: the
+    historical artifact's current-bullpen link carries the artifact's own stored
+    team abbreviation. The immutable read path must stay exactly what it was — no
+    live/current team lookup, no recomputation, no mutation, no schema or
+    lifecycle change. A future edit that reaches for live state from the public
+    artifact read fails here.
+    """
+    source = (
+        REPO_ROOT_FOR_DIFF / 'backend/services/share_artifact_public.py'
+    ).read_text(encoding='utf-8')
+
+    forbidden = (
+        'canonical_team_state',
+        'build_published_team_board',
+        '_build_team_board',
+        'resolve_team_readiness_payload',
+        'get_latest_valid_dashboard_snapshot',
+        'SHARE_ARTIFACT_SCHEMA_VERSION =',
+        'session.add(',
+        'session.commit(',
+        'session.delete(',
+    )
+    offenders = [token for token in forbidden if token in source]
+    assert offenders == [], (
+        'the public share artifact read must not reach for live state or mutate: '
+        f'{offenders}'
+    )
+    # The immutable contract the read still enforces.
+    assert 'verify_share_artifact_integrity(artifact)' in source
+    assert "RESULT_INTEGRITY_ERROR" in source
+    assert "'is_historical': True" in source
 
 
 def test_approved_public_consumers_use_appearance_team_authority_only():
