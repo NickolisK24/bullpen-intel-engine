@@ -809,6 +809,10 @@
           "measured_seconds": 0.013
         },
         {
+          "path": "tests/test_inherited_runners_authority_workflow_contract.py",
+          "measured_seconds": 0.42
+        },
+        {
           "path": "tests/test_inherited_traffic_evidence.py",
           "measured_seconds": 5.477
         },
