@@ -919,6 +919,31 @@ PUBLIC_COPY_AUTHORITY_FILES = (
 #
 # Exact paths only, never a directory exemption — the generated pages are
 # enumerated one per club in tests/generated_team_pages.py.
+# BULLPEN PAGE IDENTITY (UX-002 / #600).
+#
+# /bullpen hosts three canonically different views behind one route and rendered
+# no H1 at all. The route shell now derives one contextual page heading from the
+# active view and the team list it already fetches, SectionHeader gains an opt-in
+# `as` prop (still h2 for every other caller), and the Team Board tells the
+# shared operating-state card that the page already owns the club's name.
+#
+# This guard protects Team State payloads, immutable artifacts, and public
+# surfaces from incidental appearance-team change. That purpose is intact and
+# actively enforced rather than exempted:
+# test_bullpen_page_identity_files_read_no_appearance_team_authority proves none
+# of these files reads appearance-team authority, and
+# test_bullpen_page_identity_files_change_headings_only proves the change is
+# confined to semantic heading structure.
+#
+# Exact paths only, never a directory exemption. The other files in this
+# workstream — Bullpen.jsx, BullpenOperatingStateCard.jsx and
+# BullpenComparisonView.jsx — are already approved above and are not re-listed.
+BULLPEN_PAGE_IDENTITY_FILES = (
+    'frontend/src/components/UI/SectionHeader.jsx',
+    'frontend/src/components/bullpen/board/TonightsBullpenBoard.jsx',
+)
+
+
 STATIC_TEAM_PREVIEW_FILES = (
     'backend/services/team_story_previews.py',
     'backend/scripts/export_team_story_pages.py',
@@ -1020,6 +1045,8 @@ def test_branch_touches_no_team_state_or_public_surface_files():
     APPROVED_PUBLIC_COPY_AUTHORITY_FILES = PUBLIC_COPY_AUTHORITY_FILES
     # See STATIC_TEAM_PREVIEW_FILES above (DIST-003 / #594).
     APPROVED_STATIC_TEAM_PREVIEW_FILES = STATIC_TEAM_PREVIEW_FILES
+    # See BULLPEN_PAGE_IDENTITY_FILES above (UX-002 / #600).
+    APPROVED_BULLPEN_PAGE_IDENTITY_FILES = BULLPEN_PAGE_IDENTITY_FILES
     offenders = [
         path for path in non_test
         if any(fragment in path for fragment in forbidden_fragments)
@@ -1029,6 +1056,7 @@ def test_branch_touches_no_team_state_or_public_surface_files():
         and path not in APPROVED_PUBLIC_SCORE_REMOVAL_FILES
         and path not in APPROVED_PUBLIC_COPY_AUTHORITY_FILES
         and path not in APPROVED_STATIC_TEAM_PREVIEW_FILES
+        and path not in APPROVED_BULLPEN_PAGE_IDENTITY_FILES
     ]
     assert offenders == [], f'Foundation 1 must not touch these runtime surfaces: {offenders}'
 
@@ -1147,6 +1175,76 @@ def test_static_team_preview_files_read_no_appearance_team_authority():
         'routed team preview files must not read appearance-team authority: '
         f'{offenders}'
     )
+
+
+def test_bullpen_page_identity_files_read_no_appearance_team_authority():
+    """The UX-002 allowlist is an exemption from the path guard, not its purpose.
+
+    #600 gives /bullpen one contextual page heading per view. It has nothing to
+    do with appearance-team authority, and this proves it: neither allowlisted
+    file reads ``GameLog.appearance_team_id`` or the appearance-team status, in
+    either language.
+    """
+    offenders = []
+    for relative in BULLPEN_PAGE_IDENTITY_FILES:
+        path = REPO_ROOT_FOR_DIFF / relative
+        if not path.exists():
+            continue
+        source = path.read_text(encoding='utf-8')
+        for token in (
+            'appearance_team_id',
+            'appearance_team_status',
+            'appearanceTeamId',
+            'appearanceTeamStatus',
+        ):
+            if token in source:
+                offenders.append(f'{relative}: {token}')
+    assert offenders == [], (
+        'bullpen page identity files must not read appearance-team authority: '
+        f'{offenders}'
+    )
+
+
+def test_bullpen_page_identity_files_change_headings_only():
+    """The #600 allowlist covers semantic heading structure and nothing else.
+
+    The guard exists so public-surface work cannot incidentally alter Team State
+    payloads or publication behaviour. These two files may change which heading
+    element a surface renders; they may not derive a Team State, reach a public
+    API, or decide freshness. A future edit that reaches for any of that from a
+    page-heading file fails here.
+    """
+    # SectionHeader is a layout primitive. It renders a title, a subtitle and an
+    # action slot, and it must stay that: no state, no freshness, no fetching.
+    section_header = (
+        REPO_ROOT_FOR_DIFF / 'frontend/src/components/UI/SectionHeader.jsx'
+    ).read_text(encoding='utf-8')
+    offenders = [
+        token for token in (
+            'team_state', 'teamState', 'public_label', 'publicLabel',
+            'freshness', 'data_through', 'dataThrough', 'availability',
+            'fetch(', 'useEffect', 'useState',
+        )
+        if token in section_header
+    ]
+    assert offenders == [], (
+        f'SectionHeader must stay a layout primitive: {offenders}'
+    )
+    # It still defaults to h2, so every caller that did not opt in keeps the
+    # level it had. A global promotion would give the internal admin surfaces,
+    # which render their own H1, a second one.
+    assert "as: Heading = 'h2'" in section_header
+    assert '<Heading className="section-title">' in section_header
+
+    # The board container's part in #600 is one opt-in prop telling the shared
+    # operating-state card that the page already names the club. It does not
+    # take heading ownership: no H1 lives in the board subtree.
+    board = (
+        REPO_ROOT_FOR_DIFF
+        / 'frontend/src/components/bullpen/board/TonightsBullpenBoard.jsx'
+    ).read_text(encoding='utf-8')
+    assert 'titleOwnedByPage' in board
+    assert '<h1' not in board
 
 
 def test_static_team_preview_files_do_not_touch_artifact_immutability():

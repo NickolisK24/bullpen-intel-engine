@@ -632,6 +632,17 @@ def test_phase0e_switches_and_legacy_public_files_not_modified():
         'frontend/tests/publicCopyAuthority.test.mjs',
     }
 
+    allowed_bullpen_page_identity_files = {
+        # ux-002 / #600 (bullpen page identity): one contextual H1 per active
+        # /bullpen view, owned by the route shell, plus an opt-in heading level
+        # on the shared SectionHeader primitive. This guard protects renderer
+        # isolation and public vocabulary; both are intact — no reconciliation
+        # renderer token is introduced and no public label, state term, or
+        # availability word changes. Heading structure only.
+        'frontend/src/components/UI/SectionHeader.jsx',
+        'frontend/src/components/bullpen/board/TonightsBullpenBoard.jsx',
+    }
+
     allowed_static_team_preview_files = {
         # dist-003 / #594 (routed team preview authority): the generated
         # /team/{ABBR} pages carry canonical Team State, a data-through date, a
@@ -646,7 +657,8 @@ def test_phase0e_switches_and_legacy_public_files_not_modified():
     }
 
     allowed_files = (
-        allowed_static_team_preview_files
+        allowed_bullpen_page_identity_files
+        | allowed_static_team_preview_files
         | allowed_public_copy_authority_files
         | allowed_public_score_removal_files
         | allowed_game_ingestion_work_state_files

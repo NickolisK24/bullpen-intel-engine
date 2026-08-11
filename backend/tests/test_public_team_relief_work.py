@@ -1584,6 +1584,20 @@ def test_existing_public_routes_behavior_freeze(monkeypatch):
         'frontend/tests/publicCopyAuthority.test.mjs',
     }
 
+    allowed_bullpen_page_identity_files = {
+        # ux-002 / #600 (bullpen page identity): /bullpen renders three
+        # canonically different views and had no H1 at all, so the route shell
+        # now derives one contextual page heading from the active view and the
+        # already-fetched team list. SectionHeader gains an opt-in `as` prop and
+        # still renders h2 for every other caller; the new test file is the
+        # rendered heading contract. Semantic heading structure only: no Team
+        # State derivation, no availability or freshness logic, no backend call,
+        # no public vocabulary change, no route or query-parameter change.
+        'frontend/src/components/UI/SectionHeader.jsx',
+        'frontend/src/components/bullpen/board/TonightsBullpenBoard.jsx',
+        'frontend/tests/bullpenPageIdentity.test.mjs',
+    }
+
     allowed_static_team_preview_files = {
         # dist-003 / #594 (routed team preview authority): the generated
         # /team/{ABBR} pages stop publishing an undated present-tense claim in a
@@ -1604,6 +1618,7 @@ def test_existing_public_routes_behavior_freeze(monkeypatch):
 
     assert not [
         path for path in changed
+        if path not in allowed_bullpen_page_identity_files
         if path not in allowed_static_team_preview_files
         if path not in allowed_public_copy_authority_files
         if path not in allowed_public_score_removal_files
