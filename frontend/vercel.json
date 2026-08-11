@@ -12,6 +12,10 @@
   ],
   "rewrites": [
     {
+      "source": "^/team/(ATH|ATL|AZ|BAL|BOS|CHC|CIN|CLE|COL|CWS|DET|HOU|KC|LAA|LAD|MIA|MIL|MIN|NYM|NYY|PHI|PIT|SD|SEA|SF|STL|TB|TEX|TOR|WSH)$",
+      "destination": "/team/$1/index.html"
+    },
+    {
       "source": "/team/(.*)",
       "destination": "/team/index.html"
     },
