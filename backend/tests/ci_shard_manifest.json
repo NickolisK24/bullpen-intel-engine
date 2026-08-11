@@ -709,6 +709,10 @@
           "measured_seconds": 0.0
         },
         {
+          "path": "tests/test_bullpen_intelligence_standard_vocabulary.py",
+          "measured_seconds": 0.42
+        },
+        {
           "path": "tests/test_bullpen_optionality_context.py",
           "measured_seconds": 0.0
         },
