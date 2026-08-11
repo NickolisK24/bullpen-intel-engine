@@ -35,9 +35,15 @@ export const SUPPORTING_CONCEPT_DEFINITIONS = Object.freeze({
     name: 'Coverage Safety',
     definition: 'Whether the bullpen can cover the late innings if the game runs long.',
   },
+  // VOC-001: renamed from 'Trusted Arms'. It was never the plural of the
+  // pitcher ROLE 'Trusted Arm' — it mixes role with current workload and
+  // roster context — and two different things must not share a name.
+  // 'lean on' also implied manager intent, which is not observed.
   trustedArms: {
-    name: 'Trusted Arms',
-    definition: 'The rested, unrestricted arms a manager can lean on late.',
+    name: 'Late-Inning Options',
+    definition:
+      'Current late-inning arms whose workload and roster context leave them '
+      + 'usable in the represented read.',
   },
 })
 

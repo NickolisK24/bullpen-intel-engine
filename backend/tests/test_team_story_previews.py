@@ -145,7 +145,7 @@ def _board(
     team = team or _team()
     shape_labels = shape_labels or {
         'trustAvailability': 'Stable Late-Inning Availability',
-        'cleanOptions': 'Healthy Rested Bullpen',
+        'cleanOptions': 'Stable Rested Options',
         'bullpenPressure': 'Manageable Late-Inning Pressure',
     }
     if reasons is None:
@@ -385,7 +385,7 @@ def test_shape_read_labels_never_become_public_state_metadata():
         team,
         shape_labels={
             'trustAvailability': 'Thin Late-Inning Availability',
-            'cleanOptions': 'Very Thin Rested Bullpen',
+            'cleanOptions': 'Very Thin Rested Options',
             'bullpenPressure': 'High Late-Inning Pressure',
         },
     )
