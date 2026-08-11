@@ -209,13 +209,26 @@ export function getAvailabilityBadgeView(availabilityOrStatus, publicLabel = nul
 // 'Limited Read' is reserved for the pitcher label that means "not enough
 // data for a clear role/availability label" — confidence uses 'Partial Read'
 // so the two concepts never share a public name.
+// VOC-001: read confidence is a presentation-only quality scale, not a second
+// baseball read. The retired wording (Strong Read / Partial Read / Unclear
+// Read / No Read / Unknown Read) looked like a competing arm-read
+// classification sitting next to the governed pitcher read, so a reader had
+// two "read" vocabularies and no way to tell which one was the baseball
+// conclusion. This family is explicitly a confidence scale and must always be
+// rendered under READ_CONFIDENCE_FIELD_LABEL so a bare "High" can never be
+// mistaken for Team State or for arm availability.
+//
+// The raw API confidence values (high / medium / low / none / unknown) are
+// unchanged; only the display strings moved.
 const CONFIDENCE_READ_LABELS = {
-  high: 'Strong Read',
-  medium: 'Partial Read',
-  low: 'Unclear Read',
-  none: 'No Read',
-  unknown: 'Unknown Read',
+  high: 'High',
+  medium: 'Medium',
+  low: 'Low',
+  none: 'Unavailable',
+  unknown: 'Unavailable',
 }
+
+export const READ_CONFIDENCE_FIELD_LABEL = 'Read confidence'
 
 function capitalizeToken(value) {
   return `${value.charAt(0).toUpperCase()}${value.slice(1).toLowerCase()}`
@@ -223,7 +236,7 @@ function capitalizeToken(value) {
 
 export function formatConfidence(confidence) {
   const value = String(confidence || '').trim().toLowerCase()
-  if (!value) return 'Unknown Read'
+  if (!value) return CONFIDENCE_READ_LABELS.unknown
   return CONFIDENCE_READ_LABELS[value] || capitalizeToken(value)
 }
 

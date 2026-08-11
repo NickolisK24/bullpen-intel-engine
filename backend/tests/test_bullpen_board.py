@@ -209,7 +209,7 @@ class TestCard:
         )
         assert card['pitcher_labels']['role']['label'] == 'Trusted Arm'
         assert card['pitcher_labels']['role']['source'] == 'backend:role_key:late_high_leverage'
-        assert card['pitcher_labels']['read']['label'] == 'Rested'
+        assert card['pitcher_labels']['read']['label'] == 'Clean Option'
         assert card['pitcher_labels']['read']['source'] == 'backend:availability_status'
 
 
@@ -603,10 +603,10 @@ class TestBoardEndpoint:
 
         # One authoritative public Limited Read conclusion.
         assert card['pitcher_labels']['role']['key'] == 'limited_read'
-        assert card['pitcher_labels']['role']['label'] == 'Limited Read'
+        assert card['pitcher_labels']['role']['label'] == 'Role Unclear'
         assert card['public_role_read']['key'] == 'limited_read'
-        assert card['public_role_read']['label'] == 'Limited Read'
-        assert card['public_role_read']['headline'] == 'Limited Read'
+        assert card['public_role_read']['label'] == 'Role Unclear'
+        assert card['public_role_read']['headline'] == 'Role Unclear'
         assert 'Late-Inning' not in card['public_role_read']['headline']
         assert card['public_role_read']['reason'] == (
             'Recent usage does not support one clear bullpen role.'

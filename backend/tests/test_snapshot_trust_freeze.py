@@ -652,6 +652,37 @@ def test_frozen_legacy_what_changed_files_untouched():
         'frontend/tests/publicCopyAuthority.test.mjs',
     }
 
+    allowed_public_vocabulary_parity_files = {
+        # voc-001 / #638 (public vocabulary parity): reader-facing wording only.
+        # Backend pitcher_public_labels.py becomes the sole owner of the public
+        # role/read strings; pitcherLabels.js stops rewriting them and renders
+        # the authored label verbatim. Two semantic collisions are removed —
+        # the role and read families no longer share the fallback word
+        # 'Limited Read' (role says 'Role Unclear'), and the data-status badge
+        # stops borrowing the baseball words 'Limited' and 'Healthy'
+        # (Current / Partial Data / Stale / Data Unavailable). Read confidence
+        # becomes an explicit High/Medium/Low scale instead of a second
+        # arm-read vocabulary.
+        #
+        # No threshold, classification, derivation, authority, gate, or
+        # timestamp changes: every engine key, availability status, Team State
+        # value, freshness computation and publication rule is byte-identical,
+        # which test_public_vocabulary_parity_changes_wording_only proves
+        # against the diff. Exact paths only, never a directory exemption.
+        'frontend/src/utils/pitcherLabels.js',
+        'frontend/src/components/bullpen/availabilityView.js',
+        'frontend/src/components/dashboard/syncStatusView.js',
+        'frontend/src/components/bullpen/board/teamGameContextView.js',
+        'frontend/src/components/bullpen/board/tonightsBullpenBoardView.js',
+        # The four vocabulary contract tests no earlier workstream
+        # allowlisted. Test-only: they assert the new canonical wording and
+        # change no product code.
+        'frontend/tests/availabilityView.test.mjs',
+        'frontend/tests/bullpenIntelligencePanel.test.mjs',
+        'frontend/tests/dataThroughAuthority.test.mjs',
+        'frontend/tests/gameContextVisualHierarchy.test.mjs',
+    }
+
     allowed_bullpen_page_identity_files = {
         # ux-002 / #600 (bullpen page identity): the /bullpen route shell owns one
         # contextual H1 per active view; SectionHeader gains an opt-in `as` prop
@@ -687,6 +718,7 @@ def test_frozen_legacy_what_changed_files_untouched():
     assert not sorted(
         path for path in changed
         if path.startswith('frontend/')
+        if path not in allowed_public_vocabulary_parity_files
         if path not in allowed_bullpen_page_identity_files
         if path not in allowed_static_team_preview_files
         if path not in allowed_public_copy_authority_files

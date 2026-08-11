@@ -152,13 +152,13 @@ class TestPublicRoleRead:
             'evidence': ['9 appearances in the recent window', '1 save situation finish(es) recorded'],
             'limitations': ['Role is inferred from recent workload patterns only.'],
         }
-        labels = {'role': {'kind': 'role', 'key': 'limited_read', 'label': 'Limited Read',
+        labels = {'role': {'kind': 'role', 'key': 'limited_read', 'label': 'Role Unclear',
                            'source': 'backend:mixed_starter_reliever'}}
         public_read = author_public_role_read(role, labels)
 
         assert public_read['key'] == 'limited_read'
-        assert public_read['label'] == 'Limited Read'
-        assert public_read['headline'] == 'Limited Read'
+        assert public_read['label'] == 'Role Unclear'
+        assert public_read['headline'] == 'Role Unclear'
         assert public_read['reason'] == GUARDED_PUBLIC_REASON
         assert public_read['confidence'] == 'low'
         # Evidence and limitations stay visible and auditable.
@@ -193,10 +193,10 @@ class TestPublicRoleRead:
             'short_reason': 'Not enough recent usage data to classify a role.',
             'evidence': [], 'limitations': [],
         }
-        labels = {'role': {'kind': 'role', 'key': 'limited_read', 'label': 'Limited Read',
+        labels = {'role': {'kind': 'role', 'key': 'limited_read', 'label': 'Role Unclear',
                            'source': 'backend:role_key:insufficient_data'}}
         public_read = author_public_role_read(role, labels)
-        assert public_read['headline'] == 'Limited Read'
+        assert public_read['headline'] == 'Role Unclear'
         assert public_read['reason'] == 'Not enough recent usage data to classify a role.'
         assert public_read['confidence'] == 'none'
 
@@ -234,7 +234,7 @@ class TestAuthorityCases:
         role, labels, public_read = _author(logs, eligibility={'status': 'role_ambiguous'})
         assert role['role_key'] == 'insufficient_data'
         assert public_read['key'] == 'limited_read'
-        assert public_read['headline'] == 'Limited Read'
+        assert public_read['headline'] == 'Role Unclear'
         assert public_read['label'] not in ('Setup Arm', 'Coverage Arm')
         assert START_EXCLUDED_LIMITATION in role['limitations']
 
@@ -259,7 +259,7 @@ class TestAuthorityCases:
         # One confirmed relief appearance cannot support a pattern.
         assert role['role_key'] == 'low_unclear'
         assert public_read['key'] == 'limited_read'
-        assert public_read['headline'] == 'Limited Read'
+        assert public_read['headline'] == 'Role Unclear'
         assert UNKNOWN_START_EXCLUDED_LIMITATION in role['limitations']
         assert UNKNOWN_START_EXCLUDED_LIMITATION in public_read['limitations']
 
@@ -282,8 +282,8 @@ class TestAuthorityCases:
         # The public authority resolves to one Limited Read conclusion.
         assert labels['role']['key'] == 'limited_read'
         assert public_read['key'] == 'limited_read'
-        assert public_read['label'] == 'Limited Read'
-        assert public_read['headline'] == 'Limited Read'
+        assert public_read['label'] == 'Role Unclear'
+        assert public_read['headline'] == 'Role Unclear'
         assert public_read['reason'] == GUARDED_PUBLIC_REASON
         assert 'Late-Inning' not in public_read['headline']
         # Evidence stays auditable: save, hold, innings, appearance counts.
@@ -345,8 +345,8 @@ class TestCalibratedPublicReads:
         assert role['role_key'] == 'long_multi_inning'
         assert labels['role']['key'] == 'limited_read'
         assert public_read['key'] == 'limited_read'
-        assert public_read['label'] == 'Limited Read'
-        assert public_read['headline'] == 'Limited Read'
+        assert public_read['label'] == 'Role Unclear'
+        assert public_read['headline'] == 'Role Unclear'
         assert public_read['label'] not in ('Trusted Arm', 'Setup Arm')
 
     def test_chivilli_style_quiet_middle_relief_stays_stable(self):
@@ -379,7 +379,7 @@ class TestCalibratedPublicReads:
         role, labels, public_read = _author(logs)
         assert role['role_key'] == 'low_unclear'
         assert public_read['key'] == 'limited_read'
-        assert public_read['headline'] == 'Limited Read'
+        assert public_read['headline'] == 'Role Unclear'
         # The conflict is explained honestly, never presented as a concrete role.
         assert 'equally sustained' in public_read['reason']
         assert any('equally sustained' in lim for lim in public_read['limitations'])

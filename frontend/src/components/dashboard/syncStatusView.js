@@ -16,6 +16,26 @@ export const completedGamesDataLine = (ymd) => {
   return formatted ? `Updated after completed games through ${formatted}` : null
 }
 
+// VOC-001: the reader-facing DATA-STATUS family. It describes the state of the
+// data, never the state of a bullpen or an arm.
+//
+// The retired badges were Healthy / Limited / Not Current. Two of those words
+// were already taken by baseball vocabulary — `Limited` is a pitcher
+// availability status and a pitcher current-read concept, and `Healthy` reads
+// as a claim about player health, which this product never makes. A reader
+// seeing "Limited" could not tell whether the bullpen was limited or the data
+// was.
+//
+// These are labels only. freshnessIsCurrent, the authoritative data-through
+// selection, stale detection, publication gating, and every timestamp are
+// untouched, and the variant keys below still drive all styling and logic.
+export const DATA_STATUS_LABELS = Object.freeze({
+  CURRENT: 'Current',
+  PARTIAL: 'Partial Data',
+  STALE: 'Stale',
+  UNAVAILABLE: 'Data Unavailable',
+})
+
 const failedStatuses = new Set(['failed', 'error'])
 const successfulStatuses = new Set(['success', 'ok'])
 const currentStates = new Set(['current', 'fresh', 'healthy', 'success', 'ok'])
@@ -202,7 +222,7 @@ export function getSyncStatusView(data, { now = Date.now(), freshnessAuthority }
   if (failedStatuses.has(status)) {
     return {
       variant: stale ? 'stale' : 'failed',
-      healthLabel: stale ? 'Not Current' : 'Limited',
+      healthLabel: stale ? DATA_STATUS_LABELS.STALE : DATA_STATUS_LABELS.UNAVAILABLE,
       dot: stale ? '#f5a623' : '#ef4444',
       style: stale
         ? { borderColor: '#f5a62355', backgroundColor: '#f5a62312', color: '#f5a623' }
@@ -235,7 +255,9 @@ export function getSyncStatusView(data, { now = Date.now(), freshnessAuthority }
     const displayStale = authorityIsCurrent ? false : stale
     return {
       variant: displayStale ? 'stale' : (limited ? 'limited' : 'synced'),
-      healthLabel: displayStale ? 'Not Current' : (limited ? 'Limited' : 'Healthy'),
+      healthLabel: displayStale
+        ? DATA_STATUS_LABELS.STALE
+        : (limited ? DATA_STATUS_LABELS.PARTIAL : DATA_STATUS_LABELS.CURRENT),
       dot: displayStale || limited ? '#f5a623' : '#10b981',
       style: displayStale
         ? { borderColor: '#f5a62355', backgroundColor: '#f5a62312', color: '#f5a623' }
@@ -268,7 +290,7 @@ export function getSyncStatusView(data, { now = Date.now(), freshnessAuthority }
   if (logCount > 0 && dataThrough) {
     return {
       variant: 'metadata_unavailable',
-      healthLabel: 'Limited',
+      healthLabel: DATA_STATUS_LABELS.PARTIAL,
       dot: '#f5a623',
       style: { borderColor: '#f5a62355', backgroundColor: '#f5a62312', color: '#f5a623' },
       syncLabel: 'Sync metadata',
@@ -290,7 +312,7 @@ export function getSyncStatusView(data, { now = Date.now(), freshnessAuthority }
 
   return {
     variant: 'empty',
-    healthLabel: 'Limited',
+    healthLabel: DATA_STATUS_LABELS.UNAVAILABLE,
     dot: '#4a5568',
     style: {},
     syncLabel: 'No data loaded',

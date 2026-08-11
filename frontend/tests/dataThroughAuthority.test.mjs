@@ -183,7 +183,7 @@ test('Data & Trust separates public data-through from a newer incomplete checked
 
   assert.ok(html.includes('June 16, 2026'), 'public data-through date was not rendered')
   assert.ok(html.includes('DATA STATUS:') || html.includes('Data Status:'))
-  assert.ok(html.includes('Healthy'))
+  assert.ok(html.includes('Current'))
   assert.ok(html.includes('Current baseball data through 2026-06-16.'))
   assert.equal(html.includes('Baseball data through 2026-06-17 is incomplete and is not publishable as current.'), false)
   assert.equal(html.includes('Latest checked baseball date June 17, 2026 is not publishable yet.'), false)
@@ -247,7 +247,7 @@ test('Data & Trust treats publishable live dashboard freshness as current despit
   }))
 
   assert.ok(html.includes('July 5, 2026'), 'public data-through date was not rendered')
-  assert.ok(html.includes('Healthy'))
+  assert.ok(html.includes('Current'))
   assert.ok(html.includes('Public bullpen data is current through July 5, 2026.'))
   assert.equal(html.includes('Baseball data through 2026-07-05 is incomplete and is not publishable as current.'), false)
   assert.equal(html.includes('Slate coverage validations did not pass.'), false)
@@ -278,6 +278,6 @@ test('Data & Trust limited state still explains incomplete unpublished coverage'
     teamOperationsReadiness: fetchState(null),
   }))
 
-  assert.ok(html.includes('Limited'))
+  assert.ok(html.includes('Partial Data'))
   assert.ok(html.includes('Baseball data through 2026-06-17 is incomplete and is not publishable as current.'))
 })

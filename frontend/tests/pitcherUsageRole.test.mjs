@@ -306,7 +306,7 @@ test('getRoleView maps key, labels, confidence, and neutral tone', () => {
   const v = view.getRoleView(longRole)
   assert.equal(v.key, 'long_multi_inning')
   assert.equal(v.shortLabel, 'Coverage Arm')
-  assert.equal(v.confidenceLabel, 'Strong Read')
+  assert.equal(v.confidenceLabel, 'High')
   assert.equal(v.evidence.length, 3)
   assert.equal(view.getRoleView(null), null)
   // Insufficient/low use the muted tone; defined roles use the neutral tone.
@@ -395,11 +395,11 @@ const guardedRole = {
 }
 
 const guardedLabels = {
-  role: { kind: 'role', key: 'limited_read', label: 'Limited Read', source: 'backend:mixed_starter_reliever' },
+  role: { kind: 'role', key: 'limited_read', label: 'Role Unclear', source: 'backend:mixed_starter_reliever' },
   read: { kind: 'read', key: 'clean_option', label: 'Rested', source: 'backend:availability_status' },
 }
 
-test('a guarded card presents one Limited Read conclusion with auditable evidence', () => {
+test('a guarded card presents one Role Unclear conclusion with auditable evidence', () => {
   const board = makeBoard({
     cardsByStatus: {
       Available: [roleCard('Paul Conflict', 'Available', guardedRole, { pitcher_labels: guardedLabels })],
@@ -408,8 +408,8 @@ test('a guarded card presents one Limited Read conclusion with auditable evidenc
   const html = render(board)
   const card = visibleText(cardMarkup(html, 'Paul Conflict'))
 
-  assert.ok(card.includes('Limited Read'))
-  assert.ok(card.includes('Observed role: Limited Read'))
+  assert.ok(card.includes('Role Unclear'))
+  assert.ok(card.includes('Observed role: Role Unclear'))
   assert.ok(card.includes('Recent usage does not support one clear bullpen role.'))
   // The rejected concrete role never appears as the public verdict.
   assert.equal(card.includes('Late-Inning / High-Leverage Pattern'), false)
@@ -429,8 +429,8 @@ test('frontend cannot select the raw role headline when a public read exists', (
     public_role_read: {
       kind: 'public_role_read',
       key: 'limited_read',
-      label: 'Limited Read',
-      headline: 'Limited Read',
+      label: 'Role Unclear',
+      headline: 'Role Unclear',
       confidence: 'low',
       reason: 'Recent usage does not support one clear bullpen role.',
       evidence: guardedRole.evidence,
@@ -439,7 +439,7 @@ test('frontend cannot select the raw role headline when a public read exists', (
     },
   })
   assert.equal(cardView.role.key, 'limited_read')
-  assert.equal(cardView.role.label, 'Limited Read')
+  assert.equal(cardView.role.label, 'Role Unclear')
   assert.notEqual(cardView.role.label, 'Late-Inning / High-Leverage Pattern')
   assert.equal(cardView.role.reason, 'Recent usage does not support one clear bullpen role.')
 })
@@ -481,15 +481,16 @@ test('dashboard role composition renders final public role keys with canonical l
   assert.equal(byKey.bridge_arm.label, 'Setup Arm')
   assert.equal(byKey.depth_arm.label, 'Middle Relief Arm')
   assert.equal(byKey.coverage_arm.label, 'Coverage Arm')
-  // A guarded pitcher counts under Limited Read, not a concrete category.
-  assert.equal(byKey.limited_read.label, 'Limited Read')
+  // A guarded pitcher counts under the ROLE fallback, not a concrete
+  // category — and not under the READ family's 'Limited Read'.
+  assert.equal(byKey.limited_read.label, 'Role Unclear')
   assert.equal(byKey.limited_read.count, 2)
   assert.equal(summary.total, 9)
 })
 
 // ── Legacy payload compatibility (payloads without public_role_read) ─────────
 
-test('legacy guarded payload cannot recreate the Limited Read contradiction', () => {
+test('legacy guarded payload cannot recreate the role-read contradiction', () => {
   // Exact unsafe legacy shape: guarded chip + conflicting raw role, no
   // public_role_read. The public verdict must own the disclosure headline.
   const board = makeBoard({
@@ -508,7 +509,7 @@ test('legacy guarded payload cannot recreate the Limited Read contradiction', ()
           limitations: ['Leverage-index data was not available; role uses save/hold flags only.'],
         }, {
           pitcher_labels: {
-            role: { kind: 'role', key: 'limited_read', label: 'Limited Read', source: 'backend:mixed_starter_reliever' },
+            role: { kind: 'role', key: 'limited_read', label: 'Role Unclear', source: 'backend:mixed_starter_reliever' },
           },
           public_role_read: null,
         }),
@@ -518,8 +519,8 @@ test('legacy guarded payload cannot recreate the Limited Read contradiction', ()
   const html = render(board)
   const card = visibleText(cardMarkup(html, 'Legacy Conflict'))
 
-  assert.ok(card.includes('Limited Read'))
-  assert.ok(card.includes('Observed role: Limited Read'))
+  assert.ok(card.includes('Role Unclear'))
+  assert.ok(card.includes('Observed role: Role Unclear'))
   assert.ok(card.includes('Recent usage does not support one clear bullpen role.'))
   // Raw evidence and limitations remain visible.
   assert.ok(card.includes('1 save situation finish(es) recorded'))
@@ -545,7 +546,7 @@ test('legacy matching setup payload keeps its detailed pattern wording', () => {
   assert.ok(card.includes('Setup Arm'))
   assert.ok(card.includes('Observed role: Setup / Bridge Pattern'))
   assert.ok(card.includes('2 hold(s) recorded'))
-  assert.equal(card.includes('Observed role: Limited Read'), false)
+  assert.equal(card.includes('Observed role: Role Unclear'), false)
 })
 
 test('legacy matching middle-relief payload keeps its detailed pattern wording', () => {

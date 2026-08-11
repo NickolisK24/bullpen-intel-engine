@@ -4,7 +4,7 @@ import { fmtDataDate } from '../../dashboard/syncStatusView'
 const DATA_STATE_LABEL = {
   live: 'Current',
   historical: 'Historical',
-  stale: 'Not Current',
+  stale: 'Stale',
   unavailable: 'Unavailable',
 }
 
