@@ -1684,6 +1684,77 @@ Before any production correction: run the impact planner, review its artifact,
 confirm `database writes performed: 0`, confirm the affected set is finite and
 fully enumerated, and confirm `every_change_is_approved_field_only` is true.
 
+## GameLog `inherited_runners` — field authority UNRESOLVED
+
+Bullpen Sync run #491 published cleanly — public sync, appearance-ledger audit,
+dashboard snapshot verification and internal enrichment all succeeded — and
+`shadow-activation-health` FAILED on exactly one projected governed correction:
+game `824969`, pitcher `656240`, field `inherited_runners`, 342 of 343 rows
+unchanged, `writes_enabled: false`, `commits_performed: 0`,
+`game_log_rows_written: 0`, `publication_authoritative: false`.
+
+The row was classified `statistical_correction` **and**
+`decimal_companion_difference`. The companion difference is incidental: D-008
+already governs decimal innings as a derived companion of recorded outs, and it
+never authorizes a correction. The semantic question is `inherited_runners`
+alone.
+
+### What the diagnostic had to be taught
+
+`inspect_gamelog_field_authority.py` was generalized from the `balls` incident,
+but its report allowlist named only `balls`, `strikes` and `pitches_thrown`, so
+running it with `--field inherited_runners` would have reported the audited
+field's presence without its value. What may be reported is now declared per
+field, in `REPORT_PROFILES`:
+
+| audited field | reported stored values | reported source keys |
+|---|---|---|
+| `balls` | `balls`, `strikes`, `pitches_thrown` | `balls`, `strikes`, `numberOfPitches` |
+| `inherited_runners` | `inherited_runners`, `inherited_runners_scored` | `inheritedRunners`, `inherited_runners`, `inheritedRunnersScored`, `inherited_runners_scored` |
+
+A field with **no** declared profile is refused rather than audited under
+another field's allowlist. The alias set the audit checks for presence is read
+from the canonical `OPTIONAL_INT_STAT_FIELDS`, not copied, so the audit can
+never report presence for a key the planner does not read — and presence itself
+is decided by the canonical `stat_key_present`, so what the audit calls present
+is exactly what `correctable_fields` would have compared.
+
+Absence is reported as absence, never as zero and never as agreement:
+`source_key_absent` and `source_key_present_but_empty` are distinguished,
+because a source that sent `inheritedRunners: null` and a source that omits the
+key entirely are different facts about the same non-answer.
+
+The audit now also states a **conclusion** — `discrepancy_classification`, one
+of `source_shape_authority_gap`, `stale_canonical_value`, `source_conflict`,
+`planner_or_normalization_defect`, `legitimate_source_revision`,
+`no_projected_difference`, or `unresolved` — derived entirely from the two
+canonical planner verdicts and the three observed values. Where the evidence
+cannot distinguish two explanations it returns `unresolved` and exits non-zero.
+
+Run it against production:
+
+```bash
+python scripts/inspect_gamelog_field_authority.py \
+    --game-pk 824969 --pitcher-mlb-id 656240 --field inherited_runners \
+    --output artifacts/field-authority/inherited-runners-824969-656240.json
+```
+
+### Status: unresolved, failed closed
+
+The audit has **not** been run against production. The environment available to
+this work has neither the canonical database nor MLB egress, so no stored row,
+no box-score line and no split was obtained. The run was attempted and recorded
+its own outcome rather than crashing:
+`artifacts/field-authority/inherited-runners-824969-656240.json`,
+`discrepancy_classification: unresolved`, `authority_resolved: false`,
+`database_writes_performed: 0`, exit 1.
+
+Nothing was changed on the strength of an unrun audit. `inherited_runners` was
+**not** added to `APPROVED_FALLBACK_FIELDS`, which still has exactly one member;
+no reconciliation semantics, no writer, no publication gate, no shadow
+threshold, no contract version and no schema moved. The shadow failure stays
+active because it reports something real.
+
 ## Operator repair procedure
 
 ```bash
