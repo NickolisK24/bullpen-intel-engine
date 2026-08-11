@@ -719,14 +719,97 @@ def test_both_sources_agreeing_against_a_stored_value_is_stale_canonical():
     ) == audit.CLASSIFICATION_STALE_STORED_VALUE
 
 
-def test_a_previously_corrected_row_the_sources_have_moved_past_is_a_revision():
+@pytest.mark.parametrize('stat_corrections', [0, 1, 7])
+def test_the_row_correction_counter_cannot_establish_a_source_revision(
+    stat_corrections,
+):
+    """`stat_correction_count` counts corrections to the ROW, not to the field.
+
+    A row corrected once for `balls` carries exactly the same counter as a row
+    corrected for the audited field, so the counter cannot prove this field
+    ever held an earlier official value — and therefore cannot distinguish a
+    correction no lane realized from an official revision after ingestion.
+    """
     from scripts import inspect_gamelog_field_authority as audit
 
-    assert _classify(
-        stored_value=1, stat_corrections=1,
+    classification = _classify(
+        stored_value=1, stat_corrections=stat_corrections,
         box_stats=_ir_boxscore_stats(inherited_runners=0),
         split_stats=_ir_split_stats(inherited_runners=0),
-    ) == audit.CLASSIFICATION_SOURCE_REVISION
+    )
+    assert classification != audit.CLASSIFICATION_SOURCE_REVISION
+    assert classification == audit.CLASSIFICATION_STALE_STORED_VALUE
+
+
+def test_the_counter_does_not_change_the_classification_at_all():
+    """A correction to an unspecified field establishes no revision history
+    for this one, so it must not move the conclusion."""
+    verdicts = {
+        _classify(
+            stored_value=1, stat_corrections=count,
+            box_stats=_ir_boxscore_stats(inherited_runners=0),
+            split_stats=_ir_split_stats(inherited_runners=0),
+        )
+        for count in (0, 1, 2, 50)
+    }
+    assert len(verdicts) == 1
+
+
+def test_a_revision_is_never_claimed_without_field_specific_provenance():
+    """The vocabulary names it; the diagnostic never emits it.
+
+    Emitting it needs provenance saying WHICH field was corrected and from
+    what value. GameLog's correction columns are all row-level, so nothing in
+    this repository can support the claim.
+    """
+    import inspect
+
+    from scripts import inspect_gamelog_field_authority as audit
+
+    assert audit.CLASSIFICATION_SOURCE_REVISION in audit.CLASSIFICATION_NEVER_EMITTED
+
+    # Comments are allowed to explain the refusal; executable lines are not
+    # allowed to reach the constant or the row-level counter.
+    code = '\n'.join(
+        line for line in inspect.getsource(audit._classify).splitlines()
+        if not line.lstrip().startswith('#')
+    )
+    assert 'CLASSIFICATION_SOURCE_REVISION' not in code
+    assert 'stat_correction_count' not in code
+
+
+def test_no_field_specific_correction_provenance_exists_to_read():
+    """Pins the premise the classification rests on. If a future migration
+    adds field-level correction provenance, this fails and the revision
+    branch becomes a deliberate, reviewed decision rather than a silent one."""
+    from models.game_log import GameLog
+
+    correction_columns = sorted(
+        column.name for column in GameLog.__table__.columns
+        if 'correction' in column.name
+    )
+    assert correction_columns == [
+        'last_stat_correction_at', 'last_stat_correction_source',
+        'last_stat_correction_sync_run_id', 'stat_correction_count',
+    ]
+    # None of them names a field.
+    assert not any('field' in name for name in correction_columns)
+
+
+def test_stale_canonical_value_is_reported_as_an_observation_not_a_cause():
+    """The classification says the stored value disagrees with the sources.
+    It must not assert WHY, because the evidence does not establish why."""
+    from scripts import inspect_gamelog_field_authority as audit
+
+    payload, profile = _audit_fixture(
+        stored_value=1, stat_corrections=3,
+        box_stats=_ir_boxscore_stats(inherited_runners=0),
+        split_stats=_ir_split_stats(inherited_runners=0),
+    )
+    classification, explanation = audit._classify(payload, profile)
+    assert classification == audit.CLASSIFICATION_STALE_STORED_VALUE
+    assert 'NOT established' in explanation
+    assert 'row-level' in explanation
 
 
 def test_sources_disagreeing_with_each_other_is_a_source_conflict():
