@@ -40,7 +40,10 @@ from services.appearance_team_authority import (
 )
 from services.appearance_team_coverage import build_appearance_team_coverage
 from tests.db_config import configure_test_database, create_test_schema, drop_test_schema
-from tests.generated_team_pages import GENERATED_TEAM_PAGE_FILES
+from tests.generated_team_pages import (
+    GENERATED_TEAM_PAGE_FILES,
+    ROUTED_TEAM_PREVIEW_DELIVERY_FILES,
+)
 from utils.db import db
 
 
@@ -944,11 +947,19 @@ BULLPEN_PAGE_IDENTITY_FILES = (
 )
 
 
+# The DIST-003 / #594 delivery file joins this list rather than getting its own
+# exemption: it is the last mile of the same workstream, and it is held to the
+# same purpose proof as every other entry —
+# test_static_team_preview_files_read_no_appearance_team_authority sweeps this
+# tuple, so the routing table is proved to read no appearance-team authority
+# exactly like the builder, the exporter, and the generated pages.
+#
+# Exact paths only, never a directory exemption.
 STATIC_TEAM_PREVIEW_FILES = (
     'backend/services/team_story_previews.py',
     'backend/scripts/export_team_story_pages.py',
     'backend/services/share_artifact_public.py',
-) + GENERATED_TEAM_PAGE_FILES
+) + GENERATED_TEAM_PAGE_FILES + ROUTED_TEAM_PREVIEW_DELIVERY_FILES
 
 
 def test_branch_touches_no_team_state_or_public_surface_files():

@@ -10,6 +10,10 @@ exemption: only these thirty-one paths are permitted, one per MLB club plus the
 invalid-team fallback. A new file anywhere else under `frontend/public/` still
 fails every guard, and adding a thirty-first club here is a visible, reviewable
 edit rather than a silent widening.
+
+The same module now also names the one DELIVERY file (see
+``ROUTED_TEAM_PREVIEW_DELIVERY_FILES``), for the same reason and under the same
+rule: exact paths, never a directory.
 """
 
 # The thirty MLB club abbreviations the export writes a preview page for, in the
@@ -27,3 +31,35 @@ GENERATED_TEAM_PAGE_FILES = tuple(
     f'frontend/public/team/{abbreviation}/index.html'
     for abbreviation in GENERATED_TEAM_PAGE_ABBREVIATIONS
 ) + (GENERATED_TEAM_FALLBACK_PAGE,)
+
+
+# The one file that DELIVERS the pages above (DIST-003 / #594, last mile).
+#
+# The Aug 11 authorized scheduled export generated all 30 trusted dated preview
+# pages, and production still served none of them: with only `/team/(.*)` ->
+# `/team/index.html` in the rewrite table, every club path resolved to the
+# invalid-team fallback, so the generated artifacts existed and were
+# unreachable. Correcting that requires editing the routing table, and the
+# routing table lives in `frontend/`, under the change guards.
+#
+# This is a DELIVERY correction, not a product change: it adds one exact-match
+# rewrite ahead of the existing generic fallback so a valid club abbreviation
+# resolves to its own generated file, and leaves the fallback and the SPA
+# catch-all exactly as they were. It derives nothing, computes nothing, calls
+# nothing, and publishes nothing — it only stops discarding artifacts that a
+# governed export already produced.
+#
+# Named here, as one exact path, so the three guards that reject it allowlist
+# the SAME entry rather than each inventing a `frontend/*` or "routing changes"
+# exemption. Every other file directly under `frontend/` still fails every
+# guard. Each guard pairs this entry with its own purpose proof:
+#
+#   test_public_team_relief_work.py    — the rewrite table still routes exactly
+#                                        as #594 requires, and the diff adds
+#                                        only that one entry
+#   test_snapshot_trust_freeze.py      — the file declares no snapshot, trust,
+#                                        freshness, or publication surface
+#   test_appearance_team_authority.py  — covered by the existing
+#                                        test_static_team_preview_files_read_
+#                                        no_appearance_team_authority sweep
+ROUTED_TEAM_PREVIEW_DELIVERY_FILES = ('frontend/vercel.json',)
