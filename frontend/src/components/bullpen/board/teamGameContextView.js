@@ -8,11 +8,14 @@ const DATA_STATE_LABEL = {
   unavailable: 'Unavailable',
 }
 
-// Longer, plain labels for the subordinate metadata row.
+// Longer, plain labels for the subordinate metadata row. VOC-001: the badge
+// above stopped saying 'Not Current' and this row did not, so one game-log
+// state rendered under two different words on the same card. It carries the
+// same Data Status word the badge does, qualified by what is stale.
 const DATA_STATE_LONG_LABEL = {
   live: 'Current Game Log',
   historical: 'Historical Game Log',
-  stale: 'Game Log Not Current',
+  stale: 'Stale Game Log',
   unavailable: 'Unavailable',
 }
 

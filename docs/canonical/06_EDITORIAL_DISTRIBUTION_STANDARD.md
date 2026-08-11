@@ -244,8 +244,8 @@ Do not keyword-stuff. Search is earned through useful answers, stable destinatio
 | Established baseball | bullpen workload, reliever usage, active roster, short start, innings coverage, high leverage, bullpen hierarchy, rotation depth |
 | Team State | Fresh, Stretched, Vulnerable |
 | Arm reads | Clean Option, Watch Arm, Limited Rest, Unavailable, Limited Read |
-| Public roles | Trusted Arm, Setup Arm, Coverage Arm, Middle Relief Arm, Limited Read |
-| Named bullpen reads | Bullpen Pressure, Recovery Window, Workload Concentration, Clean Options, Coverage Safety, Trusted Arms |
+| Public roles | Trusted Arm, Setup Arm, Coverage Arm, Middle Relief Arm, Role Unclear |
+| Named bullpen reads | Bullpen Pressure, Recovery Window, Workload Concentration, Clean Options, Coverage Safety, Late-Inning Options |
 | Performance | Active Bullpen ERA, Not Enough Innings Yet |
 | Technical | Python, Flask, PostgreSQL, React, TypeScript, data pipeline, source authority, automated testing, CI/CD, immutable artifact |
 
