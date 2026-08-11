@@ -1726,10 +1726,28 @@ key entirely are different facts about the same non-answer.
 
 The audit now also states a **conclusion** — `discrepancy_classification`, one
 of `source_shape_authority_gap`, `stale_canonical_value`, `source_conflict`,
-`planner_or_normalization_defect`, `legitimate_source_revision`,
-`no_projected_difference`, or `unresolved` — derived entirely from the two
-canonical planner verdicts and the three observed values. Where the evidence
-cannot distinguish two explanations it returns `unresolved` and exits non-zero.
+`planner_or_normalization_defect`, `no_projected_difference`, or `unresolved` —
+derived entirely from the two canonical planner verdicts and the three observed
+values. Where the evidence cannot distinguish two explanations it returns
+`unresolved` and exits non-zero.
+
+### Why `legitimate_source_revision` is named but never emitted
+
+The vocabulary declares it; the diagnostic cannot support it. Separating "the
+stored value was never corrected" from "the stored value was right and the
+official source revised afterwards" needs provenance saying **which field** was
+corrected, and from what. GameLog carries `stat_correction_count`,
+`last_stat_correction_at`, `last_stat_correction_source` and
+`last_stat_correction_sync_run_id` — every one of them **row-level**. A row
+corrected once for `balls` carries exactly the same counter as a row corrected
+for `inherited_runners`, so the counter proves nothing about the audited field.
+
+So when both sources supply the field, agree with each other, and disagree with
+the stored row, the audit reports `stale_canonical_value` and says plainly that
+the *reason* is not established. That is an observation about the current state,
+not a claim about how it arose. Field-specific correction provenance would be a
+schema decision with its own review; it is not something a diagnostic may infer
+its way around.
 
 Run it against production:
 

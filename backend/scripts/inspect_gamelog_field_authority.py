@@ -150,11 +150,29 @@ ABSENT_KEY_EMPTY = 'source_key_present_but_empty'
 # ── Discrepancy classification vocabulary ───────────────────────────────────
 CLASSIFICATION_NO_PROJECTED_DIFFERENCE = 'no_projected_difference'
 CLASSIFICATION_SOURCE_SHAPE_GAP = 'source_shape_authority_gap'
+# The stored value disagrees with every source that supplies the field. That
+# is an observation, not a cause: it covers both a correction no lane realized
+# and an official revision after ingestion, and this audit cannot separate them.
 CLASSIFICATION_STALE_STORED_VALUE = 'stale_canonical_value'
 CLASSIFICATION_SOURCE_CONFLICT = 'source_conflict'
 CLASSIFICATION_PLANNER_DEFECT = 'planner_or_normalization_defect'
-CLASSIFICATION_SOURCE_REVISION = 'legitimate_source_revision'
 CLASSIFICATION_UNRESOLVED = 'unresolved'
+
+# Named, and deliberately NEVER emitted. Distinguishing "the stored value was
+# never corrected" from "the stored value was correct and the official source
+# revised afterwards" requires provenance that says WHICH FIELD was corrected
+# and to what. GameLog carries `stat_correction_count`,
+# `last_stat_correction_at`, `last_stat_correction_source` and
+# `last_stat_correction_sync_run_id` — all row-level. A row corrected once for
+# `balls` is indistinguishable from a row corrected for the audited field, so
+# the counter cannot support this claim and must not be read as if it could.
+#
+# Emitting this would require field-specific correction provenance, which does
+# not exist in this repository and is a schema decision, not a diagnostic one.
+# Until it does, the honest report is `stale_canonical_value`: the stored value
+# disagrees with the current sources, and the reason is not established.
+CLASSIFICATION_SOURCE_REVISION = 'legitimate_source_revision'
+CLASSIFICATION_NEVER_EMITTED = (CLASSIFICATION_SOURCE_REVISION,)
 
 EXIT_OK = 0
 EXIT_AUDIT_INCOMPLETE = 1
@@ -648,17 +666,20 @@ def _classify(audit, profile):
                 f'already holds it, yet the canonical planner still projects a '
                 f'change — the difference is in normalization, not in the data.'
             )
-        if (audit['stored'].get('stat_correction_count') or 0) > 0:
-            return CLASSIFICATION_SOURCE_REVISION, (
-                f'Both sources now agree on {field}={box["value"]} while the '
-                f'stored row holds {stored_value}, and the row already carries '
-                f'a recorded statistical correction — the stored value was '
-                f'reconciled against official evidence that has since moved.'
-            )
+        # Deliberately NOT branching on `stat_correction_count`. It counts
+        # corrections to the ROW, not to this field: a row corrected once for
+        # `balls` carries the same counter as a row corrected for
+        # `inherited_runners`, so it cannot establish that THIS field ever held
+        # an earlier official value. See the note on
+        # CLASSIFICATION_SOURCE_REVISION.
         return CLASSIFICATION_STALE_STORED_VALUE, (
-            f'Both sources agree on {field}={box["value"]} and the stored row '
-            f'holds {stored_value}, with no recorded correction on the row: a '
-            f'stale canonical value that no lane has yet corrected.'
+            f'Both sources currently supply {field}={box["value"]} and the '
+            f'stored row holds {stored_value}: the stored value disagrees with '
+            f'every source that supplies the field. Why it disagrees — a '
+            f'correction the lanes never realized, or an official revision '
+            f'after ingestion — is NOT established: GameLog provenance is '
+            f'row-level, so no column records whether {field} itself was ever '
+            f'corrected.'
         )
 
     if box['present'] != split['present']:
