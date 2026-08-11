@@ -933,6 +933,10 @@
           "measured_seconds": 8.092
         },
         {
+          "path": "tests/test_product_experience_standard_vocabulary.py",
+          "measured_seconds": 0.08
+        },
+        {
           "path": "tests/test_provenance_framework.py",
           "measured_seconds": 0.0
         },
