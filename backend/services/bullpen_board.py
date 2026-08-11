@@ -50,31 +50,58 @@ BOARD_GROUP_ORDER = [
 ]
 
 # Plain baseball language only — no governance/contract jargon on this surface.
+#
+# VOC-001: these are GROUP headings, not pitcher classifications. They used to
+# reuse the individual availability labels verbatim ('Available', 'On Watch',
+# 'Limited'), so a column heading and a chip on a card inside it read as the
+# same claim; and the two restricted groups both headed 'Unavailable' /
+# 'Unavailable Pitchers', which told a reader nothing about why they differ.
+#
+# The two restricted groups differ by WORKLOAD SEVERITY, not by cause. Both
+# STATUS_AVOID and STATUS_UNAVAILABLE are produced by the same workload-only
+# classifier in services/availability.py — one if/elif chain over pitches
+# yesterday, pitches across 3 and 5 days, appearances across 3 and 5 days,
+# back-to-back use, and fatigue score. STATUS_UNAVAILABLE is the more
+# restrictive tier; STATUS_AVOID is the tier below it.
+#
+# Roster authority is deliberately NOT named here. It is separate context
+# (roster_status on the card, the withhold helpers below, and the read family's
+# own roster path), and heading a workload group 'Unavailable — Roster' would
+# assert that a fully rostered arm who threw 45 pitches yesterday is off the
+# roster. 'Heavy' and 'Severe' name the thresholds actually crossed, imply no
+# injury, no manager intent, and no ranking among pitchers.
+#
+# Engine keys, BOARD_GROUP_ORDER, membership, counts and ordering are unchanged.
 GROUP_META = {
     STATUS_AVAILABLE: {
-        'label': 'Available',
-        'description': 'Workload signals are inside normal ranges in the latest completed data.',
+        'label': 'Available Arms',
+        'description': 'Recent workload remains inside the normal availability range.',
     },
     STATUS_MONITOR: {
         # Public label, not the engine state. ``Monitor`` is engine vocabulary;
         # ``On Watch`` is the reader form (services/public_bullpen_copy.py).
-        'label': 'On Watch',
-        'description': 'Worth a look at recent workload before counting on these arms.',
+        'label': 'On-Watch Arms',
+        'description': 'Recent workload is worth monitoring before assuming a full workload.',
     },
     STATUS_LIMITED: {
-        'label': 'Limited',
-        'description': 'Recent workload suggests limited use from the latest completed data.',
+        'label': 'Limited Arms',
+        'description': "Recent workload materially narrows the arm's current availability.",
     },
     STATUS_AVOID: {
-        # ``Avoid`` is retired reader vocabulary; the public form is
-        # ``Unavailable`` (services/public_bullpen_copy.py). The engine state
-        # key is unchanged.
-        'label': 'Unavailable',
-        'description': 'Meaningful recent-use load keeps these arms out of the available group.',
+        # ``Avoid`` is retired reader vocabulary. The engine state key is
+        # unchanged; the heading now names the workload threshold crossed.
+        'label': 'Unavailable — Heavy Workload',
+        'description': (
+            'Recent workload crosses the stronger restriction threshold and '
+            'keeps these arms out of the available group.'
+        ),
     },
     STATUS_UNAVAILABLE: {
-        'label': 'Unavailable Pitchers',
-        'description': 'Not available from the latest public workload and roster context.',
+        'label': 'Unavailable — Severe Workload',
+        'description': (
+            'Recent workload crosses the most restrictive workload threshold '
+            'in the current availability read.'
+        ),
     },
 }
 

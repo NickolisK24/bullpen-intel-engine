@@ -251,13 +251,44 @@ class TestPublicAvailabilityVocabularyIsBackendOwned:
         for card in cards:
             assert card['availability_public_label'] in PUBLIC_AVAILABILITY_STATUSES
 
-    def test_board_group_labels_are_public_vocabulary(self, client):
+    def test_board_group_labels_are_group_headings_not_pitcher_statuses(self, client):
+        """VOC-001: a group HEADING is not an individual availability status.
+
+        The headings used to be the availability labels verbatim, so a column
+        header and a chip on a card inside it read as the same claim. They are
+        now group-shaped, and the two restricted groups name the workload
+        threshold each one crosses instead of both reading 'Unavailable'.
+        """
         body = client.get(f'/api/bullpen/teams/{TEAM_ID}/board').get_json()
         labels = [group['label'] for group in body['groups']]
 
+        assert labels == [
+            'Available Arms',
+            'On-Watch Arms',
+            'Limited Arms',
+            'Unavailable — Heavy Workload',
+            'Unavailable — Severe Workload',
+        ]
+
+        # Engine vocabulary still never reaches a reader.
         assert 'Monitor' not in labels
         assert 'Avoid' not in labels
-        assert 'On Watch' in labels
+
+        # And no heading is a bare availability status any more — that
+        # collision is the thing this change removes.
+        for status in PUBLIC_AVAILABILITY_STATUSES:
+            assert status not in labels, status
+
+    def test_board_group_engine_keys_and_order_are_unchanged(self, client):
+        """The reader-facing wording moved; nothing behind it did."""
+        from services.bullpen_board import BOARD_GROUP_ORDER
+
+        body = client.get(f'/api/bullpen/teams/{TEAM_ID}/board').get_json()
+        assert [group['status'] for group in body['groups']] == list(BOARD_GROUP_ORDER)
+        assert body['group_order'] == list(BOARD_GROUP_ORDER)
+        assert list(BOARD_GROUP_ORDER) == [
+            'Available', 'Monitor', 'Limited', 'Avoid', 'Unavailable',
+        ]
 
 
 # ---------------------------------------------------------------------------
