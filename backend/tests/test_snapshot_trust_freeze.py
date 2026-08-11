@@ -29,6 +29,7 @@ from tests.generated_team_pages import (
     GENERATED_TEAM_PAGE_FILES,
     ROUTED_TEAM_PREVIEW_DELIVERY_FILES,
 )
+from tests.public_vocabulary_files import PUBLIC_VOCABULARY_FILES
 from tests.test_phase0e_exit_docs import EXPECTED_ALEMBIC_HEAD, _alembic_heads
 
 
@@ -694,6 +695,21 @@ def test_frozen_legacy_what_changed_files_untouched():
         'frontend/tests/bullpenPageIdentity.test.mjs',
     }
 
+    allowed_public_vocabulary_files = {
+        # voc-001 / #638 (public vocabulary parity): reader-facing wording gets
+        # one owner. The backend emits the final pitcher role/read strings and
+        # the frontend renders them verbatim instead of rewriting them; the role
+        # and read families stop sharing the fallback word 'Limited Read'; read
+        # confidence stops reading as a second baseball read; and the
+        # data-status badges stop borrowing baseball words. Strings only — no
+        # threshold, classification, derivation, availability rule, roster or
+        # publication authority, Team State projection, freshness computation,
+        # timestamp, or engine key changed.
+        #
+        # Exact paths only, never a directory exemption.
+        *PUBLIC_VOCABULARY_FILES,
+    }
+
     allowed_static_team_preview_files = {
         # dist-003 / #594 (routed team preview authority): the generated
         # /team/{ABBR} pages and their static contract test. This freeze protects
@@ -720,6 +736,7 @@ def test_frozen_legacy_what_changed_files_untouched():
         if path.startswith('frontend/')
         if path not in allowed_public_vocabulary_parity_files
         if path not in allowed_bullpen_page_identity_files
+        if path not in allowed_public_vocabulary_files
         if path not in allowed_static_team_preview_files
         if path not in allowed_public_copy_authority_files
         if path not in allowed_public_score_removal_files
