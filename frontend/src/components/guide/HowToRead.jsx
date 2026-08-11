@@ -2,8 +2,17 @@ import { Link } from 'react-router-dom'
 import {
   ARM_AVAILABILITY_DEFINITIONS,
   CONCEPT_DEFINITIONS,
+  DATA_STATUS_DEFINITIONS,
   FRESHNESS_LABEL_DEFINITIONS,
+  LIMITED_FAMILY_BOUNDARY,
+  LIMITED_FAMILY_DISAMBIGUATION,
+  PITCHER_CURRENT_READ_DEFINITIONS,
+  PITCHER_ROLE_DEFINITIONS,
+  PROVENANCE_LABEL_DEFINITIONS,
+  READ_CONFIDENCE_BOUNDARY,
+  READ_CONFIDENCE_DEFINITIONS,
   SUPPORTING_CONCEPT_DEFINITIONS,
+  SUPPORTING_READ_BOUNDARY,
   TEAM_STATE_DEFINITIONS,
 } from '../../utils/bullpenConcepts'
 import { PUBLIC_BOUNDARIES } from '../../utils/publicBoundaries'
@@ -24,16 +33,35 @@ const TEAM_STATES = TEAM_STATE_DEFINITIONS.map(asCard)
 
 const ARM_STATES = ARM_AVAILABILITY_DEFINITIONS.map(asCard)
 
-const BULLPEN_READS = [
-  CONCEPT_DEFINITIONS.pressure,
-  CONCEPT_DEFINITIONS.recovery,
+const PITCHER_ROLES = PITCHER_ROLE_DEFINITIONS.map(asCard)
+
+const PITCHER_READS = PITCHER_CURRENT_READ_DEFINITIONS.map(asCard)
+
+const READ_CONFIDENCE = READ_CONFIDENCE_DEFINITIONS.map(asCard)
+
+// Every supporting family, each rendered with its concept name attached.
+const SUPPORTING_READS = [
+  SUPPORTING_CONCEPT_DEFINITIONS.lateInningAvailability,
+  SUPPORTING_CONCEPT_DEFINITIONS.restedOptions,
+  SUPPORTING_CONCEPT_DEFINITIONS.lateInningPressure,
   CONCEPT_DEFINITIONS.concentration,
-  CONCEPT_DEFINITIONS.cleanOptions,
   SUPPORTING_CONCEPT_DEFINITIONS.coverageSafety,
+  SUPPORTING_CONCEPT_DEFINITIONS.depthSafety,
   SUPPORTING_CONCEPT_DEFINITIONS.trustedArms,
 ].map(asCard)
 
+// The four labels that share the word 'Limited', each tagged with the family
+// it belongs to so the difference is stated rather than inferred.
+const LIMITED_FAMILY = LIMITED_FAMILY_DISAMBIGUATION.map(entry => ({
+  term: `${entry.name} — ${entry.family}`,
+  detail: entry.definition,
+}))
+
 const FRESHNESS_LABELS = FRESHNESS_LABEL_DEFINITIONS.map(asCard)
+
+const DATA_STATUSES = DATA_STATUS_DEFINITIONS.map(asCard)
+
+const PROVENANCE_LABELS = PROVENANCE_LABEL_DEFINITIONS.map(asCard)
 
 const USING_READS = [
   PUBLIC_BOUNDARIES.descriptiveScope,
@@ -112,15 +140,69 @@ export default function HowToRead() {
       </Section>
 
       <Section
-        id="bullpen-reads"
-        title="Bullpen Reads"
-        intro="These reads describe today's bullpen from different angles. Each is descriptive, not predictive."
+        id="pitcher-role"
+        title="Pitcher Role"
+        intro="Role describes how a pitcher has been used. It does not describe whether he is available tonight, and it is not a quality grade."
       >
-        <DefinitionGrid items={BULLPEN_READS} columns="sm:grid-cols-2 lg:grid-cols-3" />
+        <DefinitionGrid items={PITCHER_ROLES} columns="sm:grid-cols-2 lg:grid-cols-3" />
       </Section>
 
-      <Section id="freshness" title="Freshness Labels">
-        <DefinitionGrid items={FRESHNESS_LABELS} columns="sm:grid-cols-2" />
+      <Section
+        id="pitcher-current-read"
+        title="Pitcher Current Read"
+        intro="The current read describes tonight's workload and availability context for one arm. It is a different question from role."
+      >
+        <DefinitionGrid items={PITCHER_READS} columns="sm:grid-cols-2 lg:grid-cols-3" />
+        <div className="mt-8 rounded-lg border border-amber/25 bg-amber/5 p-5">
+          <h3 className="font-mono text-xs uppercase tracking-widest text-amber/80">
+            Four labels share the word &ldquo;Limited&rdquo;
+          </h3>
+          <dl className="mt-4 space-y-3">
+            {LIMITED_FAMILY.map(item => (
+              <div key={item.term}>
+                <dt className="text-sm font-semibold text-chalk100">{item.term}</dt>
+                <dd className="text-sm leading-6 text-chalk400">{item.detail}</dd>
+              </div>
+            ))}
+          </dl>
+          <p className="mt-4 text-sm leading-6 text-chalk400">{LIMITED_FAMILY_BOUNDARY}</p>
+        </div>
+      </Section>
+
+      <Section
+        id="read-confidence"
+        title="Read Confidence"
+        intro={READ_CONFIDENCE_BOUNDARY}
+      >
+        <DefinitionGrid items={READ_CONFIDENCE} columns="sm:grid-cols-2 lg:grid-cols-4" />
+      </Section>
+
+      <Section
+        id="supporting-reads"
+        title="Bullpen Supporting Reads"
+        intro={SUPPORTING_READ_BOUNDARY}
+      >
+        <DefinitionGrid items={SUPPORTING_READS} columns="sm:grid-cols-2 lg:grid-cols-3" />
+      </Section>
+
+      <Section
+        id="freshness"
+        title="Freshness & Data Status"
+        intro="Three different clocks, and a status describing the data itself rather than any bullpen."
+      >
+        <DefinitionGrid items={FRESHNESS_LABELS} columns="sm:grid-cols-2 lg:grid-cols-3" />
+        <h3 className="mt-8 font-mono text-xs uppercase tracking-widest text-amber/80">
+          Data status
+        </h3>
+        <div className="mt-4">
+          <DefinitionGrid items={DATA_STATUSES} columns="sm:grid-cols-2 lg:grid-cols-4" />
+        </div>
+        <h3 className="mt-8 font-mono text-xs uppercase tracking-widest text-amber/80">
+          Provenance stamps
+        </h3>
+        <div className="mt-4">
+          <DefinitionGrid items={PROVENANCE_LABELS} columns="sm:grid-cols-2" />
+        </div>
       </Section>
 
       <Section id="using-reads" title="How to Use These Reads">

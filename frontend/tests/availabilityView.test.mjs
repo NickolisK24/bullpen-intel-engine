@@ -67,9 +67,9 @@ test('raw Avoid status displays as public Unavailable copy', () => {
 
 test('formats fixture confidence values for display', () => {
   for (const row of availabilityFixtureRows) {
-    assert.match(formatConfidence(row.availability.confidence), /^(Strong Read|Partial Read|Unclear Read)$/)
+    assert.match(formatConfidence(row.availability.confidence), /^(High|Medium|Low)$/)
   }
-  assert.equal(formatConfidence(null), 'Unknown Read')
+  assert.equal(formatConfidence(null), 'Unavailable')
 })
 
 test('describes stale data state clearly for Monitor fixture', () => {

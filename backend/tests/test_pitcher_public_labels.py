@@ -1,6 +1,7 @@
 from datetime import date, timedelta
 
 from services.pitcher_public_labels import (
+    READ_PUBLIC_LABELS,
     ROLE_KEY_TO_PUBLIC_KEY,
     ROLE_PUBLIC_LABELS,
     build_pitcher_labels,
@@ -33,8 +34,8 @@ CANONICAL_ROLE_PIPELINE = [
     ('setup_bridge', 'bridge_arm', 'Setup Arm'),
     ('middle_relief', 'depth_arm', 'Middle Relief Arm'),
     ('long_multi_inning', 'coverage_arm', 'Coverage Arm'),
-    ('low_unclear', 'limited_read', 'Limited Read'),
-    ('insufficient_data', 'limited_read', 'Limited Read'),
+    ('low_unclear', 'limited_read', 'Role Unclear'),
+    ('insufficient_data', 'limited_read', 'Role Unclear'),
 ]
 
 
@@ -112,7 +113,7 @@ def test_canonical_vocabulary_contract():
         'Setup Arm',
         'Middle Relief Arm',
         'Coverage Arm',
-        'Limited Read',
+        'Role Unclear',
     }
 
 
@@ -120,9 +121,9 @@ def test_low_sample_and_weak_confidence_degrade_role_label():
     low_sample = build_pitcher_labels(availability=availability(), role=role('setup_bridge', sample_size=1))
     weak_confidence = build_pitcher_labels(availability=availability(), role=role('setup_bridge', confidence='low'))
 
-    assert low_sample['role']['label'] == 'Limited Read'
+    assert low_sample['role']['label'] == 'Role Unclear'
     assert low_sample['role']['source'] == 'backend:low_usage_sample'
-    assert weak_confidence['role']['label'] == 'Limited Read'
+    assert weak_confidence['role']['label'] == 'Role Unclear'
     assert weak_confidence['role']['source'] == 'backend:weak_role_confidence'
 
 
@@ -143,7 +144,7 @@ def test_mixed_starter_reliever_role_stays_limited_unless_coverage_signal_is_cle
         eligibility={'status': 'role_ambiguous'},
     )
 
-    assert ambiguous_trust['role']['label'] == 'Limited Read'
+    assert ambiguous_trust['role']['label'] == 'Role Unclear'
     assert ambiguous_trust['role']['source'] == 'backend:mixed_starter_reliever'
     assert ambiguous_coverage['role']['label'] == 'Coverage Arm'
     assert ambiguous_coverage['role']['source'] == 'backend:mixed_coverage:long_multi_inning'
@@ -151,10 +152,10 @@ def test_mixed_starter_reliever_role_stays_limited_unless_coverage_signal_is_cle
 
 def test_read_labels_map_from_backend_availability_state():
     cases = [
-        ('Available', 'Rested', 'clean_option'),
+        ('Available', 'Clean Option', 'clean_option'),
         ('Monitor', 'Watch Arm', 'watch_arm'),
-        ('Limited', 'Rest-Restricted', 'rest_restricted'),
-        ('Avoid', 'Rest-Restricted', 'rest_restricted'),
+        ('Limited', 'Limited Rest', 'rest_restricted'),
+        ('Avoid', 'Limited Rest', 'rest_restricted'),
         ('Unavailable', 'Unavailable', 'unavailable'),
     ]
 
@@ -213,3 +214,72 @@ def test_mixed_coverage_with_recorded_save_or_hold_events_fails_closed():
     assert clean['role']['key'] == 'coverage_arm'
     assert with_events['role']['key'] == 'limited_read'
     assert with_events['role']['source'] == 'backend:mixed_starter_reliever'
+
+
+# ── VOC-001 public vocabulary contract ──────────────────────────────────────
+# The backend owns the reader-facing wording for both pitcher families. These
+# pin the exact public sets, so a label can only change by changing this test
+# too — which is the point: the wording is a product decision, not an
+# implementation detail one file can drift on its own.
+
+
+def test_public_role_labels_are_exactly_the_canonical_set():
+    assert [entry['label'] for entry in ROLE_PUBLIC_LABELS.values()] == [
+        'Trusted Arm',
+        'Setup Arm',
+        'Coverage Arm',
+        'Middle Relief Arm',
+        'Role Unclear',
+    ]
+
+
+def test_public_read_labels_are_exactly_the_canonical_set():
+    assert [entry['label'] for entry in READ_PUBLIC_LABELS.values()] == [
+        'Clean Option',
+        'Watch Arm',
+        'Limited Rest',
+        'Unavailable',
+        'Limited Read',
+    ]
+
+
+def test_internal_keys_did_not_move_with_the_wording():
+    """Only the strings changed. Every engine key is exactly as it was."""
+    assert sorted(ROLE_PUBLIC_LABELS) == [
+        'bridge_arm', 'coverage_arm', 'depth_arm', 'limited_read', 'trust_arm',
+    ]
+    assert sorted(READ_PUBLIC_LABELS) == [
+        'clean_option', 'limited_read', 'rest_restricted', 'unavailable',
+        'watch_arm',
+    ]
+
+
+def test_the_two_families_do_not_share_a_fallback_word():
+    """The collision VOC-001 removed.
+
+    Both families key their fallback on ``limited_read``, and both used to
+    render it as 'Limited Read'. Two chips on one pitcher card then read
+    identically while answering different questions — what kind of arm is this,
+    and what does tonight look like for it.
+    """
+    assert ROLE_PUBLIC_LABELS['limited_read']['label'] == 'Role Unclear'
+    assert READ_PUBLIC_LABELS['limited_read']['label'] == 'Limited Read'
+    assert (
+        ROLE_PUBLIC_LABELS['limited_read']['label']
+        != READ_PUBLIC_LABELS['limited_read']['label']
+    )
+
+
+def test_limited_read_is_not_a_public_role_label():
+    assert 'Limited Read' not in {
+        entry['label'] for entry in ROLE_PUBLIC_LABELS.values()
+    }
+
+
+def test_retired_reader_wording_is_gone_from_both_families():
+    published = {
+        entry['label']
+        for entry in list(ROLE_PUBLIC_LABELS.values()) + list(READ_PUBLIC_LABELS.values())
+    }
+    for retired in ('Rested', 'Rest-Restricted', 'Trust Arm', 'Bridge Arm', 'Depth Arm'):
+        assert retired not in published, retired

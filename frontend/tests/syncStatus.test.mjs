@@ -66,10 +66,10 @@ test('renders distinct sync freshness fields when all values are available', () 
   assert.equal(view.lastDataUpdateValue, '7:05 AM ET')
   assert.equal(view.dataLabel, 'Data through')
   assert.equal(view.dataValue, 'June 23, 2026')
-  assert.equal(view.healthLabel, 'Healthy')
+  assert.equal(view.healthLabel, 'Current')
   assert.equal(view.coverageValue, '428 Pitchers Refreshed')
   assert.ok(htmlIncludes(html, 'Data Status:'))
-  assert.ok(htmlIncludes(html, 'Healthy'))
+  assert.ok(htmlIncludes(html, 'Current'))
   assert.ok(htmlIncludes(html, 'Last checked:'))
   assert.ok(htmlIncludes(html, '7:07 AM ET'))
   assert.ok(htmlIncludes(html, 'Last data update:'))
@@ -131,7 +131,7 @@ test('renders sync metadata unavailable with data-through date', () => {
   )
 
   const view = getSyncStatusView(data, { now })
-  assert.equal(view.healthLabel, 'Limited')
+  assert.equal(view.healthLabel, 'Partial Data')
   assert.ok(htmlIncludes(html, 'Last checked:'))
   assert.ok(htmlIncludes(html, 'Unavailable'))
   assert.ok(htmlIncludes(html, 'Data through:'))
@@ -166,9 +166,9 @@ test('does not mark current data stale from sync age alone', () => {
     React.createElement(SyncStatusContent, { data, loading: false, error: null, now }),
   )
 
-  assert.equal(view.healthLabel, 'Healthy')
+  assert.equal(view.healthLabel, 'Current')
   assert.ok(htmlIncludes(html, 'Data Status:'))
-  assert.ok(htmlIncludes(html, 'Healthy'))
+  assert.ok(htmlIncludes(html, 'Current'))
   assert.equal(view.coverageValue, '429 Pitchers Refreshed')
 })
 
@@ -201,10 +201,10 @@ test('renders stale workload data from backend freshness reason codes', () => {
     React.createElement(SyncStatusContent, { data, loading: false, error: null, now }),
   )
 
-  assert.equal(view.healthLabel, 'Not Current')
+  assert.equal(view.healthLabel, 'Stale')
   assert.equal(view.reasonCodes[0], 'workload_data_outside_active_window')
   assert.ok(htmlIncludes(html, 'Data Status:'))
-  assert.ok(htmlIncludes(html, 'Not Current'))
+  assert.ok(htmlIncludes(html, 'Stale'))
   assert.ok(htmlIncludes(html, 'Stale baseball data through 2026-04-01.'))
   assert.ok(htmlIncludes(html, 'Data through:'))
   assert.ok(htmlIncludes(html, 'April 1, 2026'))
@@ -359,10 +359,10 @@ test('current served freshness suppresses stale raw sync helper copy', () => {
     }),
   )
 
-  assert.equal(view.healthLabel, 'Healthy')
+  assert.equal(view.healthLabel, 'Current')
   assert.equal(view.helper, 'Public bullpen data is current through July 5, 2026.')
   assert.equal(view.reasonCodes.length, 0)
-  assert.ok(htmlIncludes(html, 'Healthy'))
+  assert.ok(htmlIncludes(html, 'Current'))
   assert.ok(htmlIncludes(html, 'Public bullpen data is current through July 5, 2026.'))
   assert.equal(htmlIncludes(html, 'incomplete and is not publishable'), false)
 })
@@ -425,11 +425,11 @@ test('publishable served freshness suppresses stale incomplete dashboard label',
     }),
   )
 
-  assert.equal(view.healthLabel, 'Healthy')
+  assert.equal(view.healthLabel, 'Current')
   assert.equal(view.helper, 'Public bullpen data is current through July 5, 2026.')
   assert.equal(view.reasonCodes.length, 0)
   assert.equal(view.freshnessState, 'current')
-  assert.ok(htmlIncludes(html, 'Healthy'))
+  assert.ok(htmlIncludes(html, 'Current'))
   assert.ok(htmlIncludes(html, 'Public bullpen data is current through July 5, 2026.'))
   assert.equal(htmlIncludes(html, 'incomplete and is not publishable'), false)
 })
@@ -467,7 +467,7 @@ test('non-publishable limited served freshness preserves incomplete copy', () =>
 
   const view = getSyncStatusView(data, { now, freshnessAuthority: servedFreshness })
 
-  assert.equal(view.healthLabel, 'Limited')
+  assert.equal(view.healthLabel, 'Partial Data')
   assert.ok(view.helper.includes('incomplete and is not publishable'))
   assert.ok(view.limitations.includes('Slate coverage validations did not pass.'))
 })

@@ -3,8 +3,8 @@
 | Field | Value |
 |---|---|
 | Status | Canonical - intelligence, data, evidence, methodology, and publication authority |
-| Version | 1.2 |
-| Effective date | July 30, 2026 |
+| Version | 1.3 |
+| Effective date | August 11, 2026 |
 | Owner | Nickolis Kacludis |
 | Supersedes | Intelligence, metric, vocabulary, evidence, freshness, and trust rules spread across prior master documents |
 | Update rule | Revise when a source authority, data domain, public term, method, evidence contract, freshness rule, suppression rule, or publication gate changes |
@@ -43,6 +43,8 @@ Every layer must be inspectable. No downstream layer may silently repair, reinte
 | Unobservable | Real, relevant fact outside the public record | May not be asserted or estimated as known; must appear in limitations when material |
 
 Unobservables include bullpen warm-ups without game entry, medical status or soreness, private manager or coach plans, personal availability not reflected in a transaction, bullpen sessions, side work, and effort level not represented by tracked data.
+
+Public vocabulary is bound by this class. A reader-facing label may not use a word whose ordinary baseball meaning asserts an unobservable - medical status, soreness, injury absence, or private physical condition - even when the value behind it is computed purely from observed workload. Section 8 records the retirement this rule required.
 
 ## 3. Observation Ladder
 
@@ -475,6 +477,35 @@ The family limitation applies unchanged. One metric-specific limitation is added
 
 Internal engine states may remain granular. They do not automatically become public language.
 
+### Semantic families and their owners
+
+Public language is organized into semantic families. A family owns one question, one catalogue of labels, and one semantic owner in code. The owner decides what the words mean and which word applies. Nothing downstream may hold a second dictionary for the same family.
+
+| Public family | Question it answers | Semantic owner |
+|---|---|---|
+| Team State | What is this bullpen's canonical high-level current condition? | `backend/services/team_state_public_vocabulary.py` |
+| Arm availability | Is this arm currently available, and how fully? | `backend/services/public_bullpen_copy.py` |
+| Pitcher role | How has this arm been used? | `backend/services/pitcher_public_labels.py` |
+| Pitcher current read | What does this arm's current workload evidence say? | `backend/services/pitcher_public_labels.py` |
+| Bullpen supporting reads | What does one dimension of this bullpen look like? | `backend/services/team_bullpen_shape.py` |
+
+Team State is not arm availability, is not pitcher role, is not pitcher current read, is not read confidence, and is not a bullpen supporting read. These are not synonyms. No family may serve as a fallback or a substitute for another, and a surface that cannot resolve one family fails closed inside that family rather than borrowing a label from a neighbor.
+
+- **Team State** - the canonical high-level descriptive team conclusion, produced through the governed Team State authority.
+- **Arm availability** - the governed current availability classification for one arm, produced by the approved availability methodology over current authority inputs.
+- **Pitcher role** - a public classification of observed bullpen usage shape. It describes how the pitcher has been used. It is not current availability, talent, quality, manager intent, or a recommendation.
+- **Pitcher current read** - a public description of the current workload and availability evidence for one pitcher. It answers a current-context question and does not replace pitcher role.
+- **Read confidence** - a presentation of how clear or complete the evidence behind a read is. It is not Team State, not availability, not pitcher role, not pitcher quality, not a ranking, and not a prediction.
+- **Bullpen supporting read** - a deterministic explanatory dimension of the current bullpen picture. A supporting read may explain why a team picture is understandable. It does not itself become Team State.
+
+### Backend-governed labels and the frontend boundary
+
+For governed public vocabulary the backend decides the semantic label, and the frontend renders the label it was supplied.
+
+Presentation may own non-claim presentation metadata: layout, tone, style, iconography, and accessibility treatment. It may not translate, paraphrase, substitute, reclassify, or invent a fallback semantic label for a governed family. The frontend semantic-substitution path that once rewrote pitcher role and pitcher current-read labels on the way to the screen is retired. The label a reader sees is the label the owner emitted.
+
+This rule is scoped to governed semantic vocabulary. Genuinely frontend-owned, non-claim presentation copy is unaffected by it.
+
 ### Team State
 
 The canonical public Team State vocabulary is exactly:
@@ -489,7 +520,22 @@ The canonical public Team State vocabulary is exactly:
 
 **Implementation ownership.** `backend/services/team_state_public_vocabulary.py` is the sole semantic owner of the internal-to-public mapping and of the projection from a governed Team Operations readiness result into the reader-facing `public_state` and `public_label` fields. Every live reader surface carries that backend-authored block; no route handler, serializer, board builder, comparison builder, frontend adapter, component, or static-preview script holds a second mapping. A fail-closed outcome carries no public state and no label, only a governed non-state message. Team State is a team-level read, so a league-wide surface carries the non-state block rather than a league-shaped pseudo-state.
 
-### Public arm read labels
+Only that authority may publish a Team State. No supporting-read tier, tier adjective, group count, availability label, pitcher current read, or read-confidence value may be translated into one, and no surface may assemble a Team State from them.
+
+### Arm availability
+
+The public availability catalog is exactly:
+
+| Public label | Meaning |
+|---|---|
+| Available | Recent workload leaves the arm inside the normal availability range |
+| On Watch | The arm remains usable, and recent workload deserves visible context |
+| Limited | Recent workload materially narrows how fully the arm can be used |
+| Unavailable | Governed workload or roster authority removes the arm from the currently available set |
+
+`backend/services/public_bullpen_copy.py` maps the internal availability states into these final reader-facing labels. The internal engine vocabulary - Available, Monitor, Limited, Avoid, Unavailable - remains a calculation input where it is needed. `Monitor` and `Avoid` are internal-only states whose reader-facing forms are `On Watch` and `Unavailable`; neither internal word reaches a reader.
+
+### Pitcher current read - public arm read labels
 
 The public catalog is:
 
@@ -501,30 +547,50 @@ The public catalog is:
 | Unavailable | Governed state or roster authority removes the arm from the current available set |
 | Limited Read | Current, trusted evidence is insufficient for a stronger public conclusion |
 
-Internal availability states such as Available, Monitor, Limited, Avoid, and Unavailable may remain calculation inputs. Transitional backend wording may not create a second public vocabulary. Canonical public keys and frontend catalog own the final rendered language.
+Transitional backend wording may not create a second public vocabulary. `backend/services/pitcher_public_labels.py` owns the final rendered language for this family.
 
 Arm-read labels describe **one pitcher**. None of them may be reused for a team-level performance metric, in either direction.
 
-### Public role labels
+**Availability and current read are related and not interchangeable.** The same underlying evidence may contribute to both. Availability is the governed current availability classification; the current read is the reader-facing interpretation of current workload and evidence attached to that pitcher. Neither may be substituted for the other merely because some labels carry similar meanings. `Unavailable` legitimately appears in both catalogues, because in both it means the pitcher is not counted as currently available - but the surrounding family still determines which question is being answered.
+
+### Pitcher role - public role labels
 
 - Trusted Arm
 - Setup Arm
 - Coverage Arm
 - Middle Relief Arm
-- Limited Read
+- Role Unclear
 
 Role and read are separate chips. A Trusted Arm can carry Limited Rest; a Coverage Arm can be a Clean Option.
 
-### Named bullpen reads
+**The two families fail closed separately.** `Role Unclear` means observed usage evidence is insufficient for a reliable public role. `Limited Read` means current evidence is insufficient for a clear pitcher current read. These are different absences answering different questions, and they may not share one public label. The role family's earlier use of `Limited Read` is retired.
 
-- Bullpen Pressure
-- Recovery Window
+`Trusted Arm` belongs to this family alone. The former team-level concept `Trusted Arms` is retired: its team-level definition mixed role with current workload and roster usability context, so one public word carried two hierarchy levels. The team-level supporting concept is now **Late-Inning Options** - current late-inning arms whose workload and roster context leave them usable in the represented read. It describes usability. It never says a manager will use them.
+
+### Bullpen supporting reads - named bullpen reads
+
+The canonical supporting dimensions are:
+
+- Late-Inning Availability
+- Rested Options
+- Late-Inning Pressure
 - Workload Concentration
-- Clean Options
 - Coverage Safety
-- Trusted Arms
+- Depth Safety
+
+together with **Late-Inning Options**, the team-level late-inning usability concept described above.
 
 Every named read requires a versioned method, public definition, evidence contract, and suppression rule. A read name is not advice.
+
+Each supporting read is tiered inside its own dimension - Strong Late-Inning Availability, Stable Rested Options, High Late-Inning Pressure, Concentrated Workload, Thin Coverage Safety, Limited Depth Safety, and their siblings. The tier adjectives - Strong, Stable, Deep, Thin, Very Thin, Limited, High, Elevated, Manageable, Low - carry no Team State meaning by themselves. Only the Team State authority may publish Fresh, Stretched, or Vulnerable. No surface may translate a supporting-read tier into a Team State, and the frontend may explain or display these concepts but may not independently derive a competing public tier system.
+
+**Retired for private-health language.** `Healthy Rested Bullpen` is retired from the reader-facing supporting vocabulary. `Healthy` can imply medical status, soreness, injury absence, or other private physical-health knowledge that BaseballOS does not observe and that Section 2 classes as Unobservable. That tier is now **Stable Rested Options**, and the family is named for what it actually measures - rested options. This is a wording correction only: tier count, tier order, and every clean-options, workload, availability, and supporting-read boundary are unchanged.
+
+### Read confidence
+
+The public read-confidence scale is exactly High, Medium, Low, and Unavailable.
+
+Read confidence is a public evidence-quality presentation family, not another baseball-state or read classification. It is always rendered under its own field label, so a bare High or Low can never be read as a Team State, an availability label, or a baseball conclusion. The raw internal confidence values are unchanged; only the reader-facing scale is governed here. Read confidence is not a recommendation score and is not a confidence grade about a future outcome.
 
 ### Public performance vocabulary
 
@@ -573,6 +639,22 @@ Examples:
 - incomplete appearance ledger -> suppress every downstream workload read dependent on that game.
 
 Yesterday's value may remain visible only when explicitly labeled historical. A stale value is never presented as current.
+
+### Reader-facing temporal vocabulary
+
+Freshness reaches a reader through separate stamps that answer separate questions:
+
+| Term | Meaning |
+|---|---|
+| Data through | The represented completed baseball date. |
+| Last data update | The last successful baseball-data write. |
+| Last checked | The last refresh or observation attempt. |
+| Generated at | Artifact creation provenance. |
+| Published at | Trusted publication provenance. |
+
+These are different clocks. No surface collapses them into one value or uses one to stand for another. This restates for reader-facing language the separation Section 7A already requires of the represented baseball date; it establishes no new temporal model.
+
+The reader-facing data-status family - Current, Partial Data, Stale, Data Unavailable - describes the state of the data, never a bullpen or an arm, and therefore borrows no baseball word. `Limited` remains arm-availability vocabulary.
 
 ## 11. Observation and Story Governance
 
@@ -682,3 +764,4 @@ Before publication verify source authority, completeness, currentness, evidence 
 | 1.0 | July 29, 2026 | Nickolis Kacludis | Consolidated source authority, data domains, vocabulary, evidence, freshness, suppression, trusted publication, immutability, correction, methodology versioning, public-copy rules, and current capability state. |
 | 1.1 | July 29, 2026 | Nickolis Kacludis | Expanded performance context into the reusable Current Active-Pen Performance family contract (Section 7A): active-group, window, sample, date/freshness, evidence, evidence-level, and limitation contracts. Added the metric-family and metric-registry model with M-001 Current Active-Pen ERA reserved as contract-pending and non-public (Section 7B). Corrected the capability registry to separate the production-internal season bullpen aggregation from the unimplemented public metric. State is not performance, canonical integer outs, and historical appearance-team ownership are preserved unchanged. |
 | 1.2 | July 30, 2026 | Nickolis Kacludis | Specified M-001 in a new Section 7C: formula and denominator authority, the derived 108-out minimum sample stated in the denominator's own unit, family-wide rounding mechanics with worked examples, the approved below-sample read Not Enough Innings Yet, the no-usage call-up membership rule with its two group counts, and the filled four-level evidence contract. Added the inheritance split to Section 7B, the public performance vocabulary to Section 8, and corrected the capability registry. No gate is opened; M-001 remains unimplemented and non-public. |
+| 1.3 | August 11, 2026 | Nickolis Kacludis | Established public-language authority in Section 8 after VOC-001: the semantic owner of every governed public family is named in code - Team State wording in `team_state_public_vocabulary.py`, arm availability wording in `public_bullpen_copy.py`, pitcher role and pitcher current read in `pitcher_public_labels.py`, and bullpen supporting reads in `team_bullpen_shape.py`. Separated the families explicitly: Team State, arm availability, pitcher role, pitcher current read, read confidence, and bullpen supporting read answer different questions and may never substitute for one another. Recorded the backend-governed pass-through rule - the backend decides the semantic label, the frontend renders it, and the retired frontend semantic-substitution path may not return - scoped to governed vocabulary. Recorded that only the Team State authority may publish Fresh, Stretched, or Vulnerable, and that no supporting-read tier or adjective becomes a Team State. Separated the two fail-closed labels, Role Unclear for missing usage evidence and Limited Read for missing current-read evidence. Retired the team-level concept `Trusted Arms` in favor of `Late-Inning Options`, reserving `Trusted Arm` to the pitcher-role family. Retired `Healthy Rested Bullpen` in favor of `Stable Rested Options` and tied that retirement to the Unobservable class in Section 2, which now forbids reader-facing labels that assert private physical condition. Clarified the reader-facing temporal stamps and the data-status family in Section 10. No model, threshold, source authority, classification, publication, sync/write, recommendation, or prediction behavior changed. |

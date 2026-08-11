@@ -44,6 +44,7 @@ from tests.generated_team_pages import (
     GENERATED_TEAM_PAGE_FILES,
     ROUTED_TEAM_PREVIEW_DELIVERY_FILES,
 )
+from tests.public_vocabulary_files import PUBLIC_VOCABULARY_FILES
 from utils.db import db
 
 
@@ -962,6 +963,21 @@ STATIC_TEAM_PREVIEW_FILES = (
 ) + GENERATED_TEAM_PAGE_FILES + ROUTED_TEAM_PREVIEW_DELIVERY_FILES
 
 
+# VOC-001 / #638: reader-facing wording gets one owner. The backend emits the
+# final pitcher role/read strings and the frontend renders them verbatim; the
+# role and read families stop sharing a fallback word; read confidence stops
+# reading as a second baseball read; data-status badges stop borrowing baseball
+# words. Strings only.
+#
+# This guard protects Team State and public surfaces from incidental
+# appearance-team change. That purpose is intact and actively enforced rather
+# than merely exempted: test_public_vocabulary_files_read_no_appearance_team_authority
+# proves not one of these files reads appearance-team authority.
+#
+# Exact paths only, never a directory exemption.
+PUBLIC_VOCABULARY_ALLOWED_FILES = PUBLIC_VOCABULARY_FILES
+
+
 def test_branch_touches_no_team_state_or_public_surface_files():
     # Source proof: Foundation 1 changes no Team State, Share Artifact, public API,
     # or frontend file, so v1.2 payloads and immutable artifacts are byte-unchanged.
@@ -1058,6 +1074,8 @@ def test_branch_touches_no_team_state_or_public_surface_files():
     APPROVED_STATIC_TEAM_PREVIEW_FILES = STATIC_TEAM_PREVIEW_FILES
     # See BULLPEN_PAGE_IDENTITY_FILES above (UX-002 / #600).
     APPROVED_BULLPEN_PAGE_IDENTITY_FILES = BULLPEN_PAGE_IDENTITY_FILES
+    # See PUBLIC_VOCABULARY_ALLOWED_FILES above (VOC-001 / #638).
+    APPROVED_PUBLIC_VOCABULARY_FILES = PUBLIC_VOCABULARY_ALLOWED_FILES
     offenders = [
         path for path in non_test
         if any(fragment in path for fragment in forbidden_fragments)
@@ -1068,6 +1086,7 @@ def test_branch_touches_no_team_state_or_public_surface_files():
         and path not in APPROVED_PUBLIC_COPY_AUTHORITY_FILES
         and path not in APPROVED_STATIC_TEAM_PREVIEW_FILES
         and path not in APPROVED_BULLPEN_PAGE_IDENTITY_FILES
+        and path not in APPROVED_PUBLIC_VOCABULARY_FILES
     ]
     assert offenders == [], f'Foundation 1 must not touch these runtime surfaces: {offenders}'
 
@@ -1338,3 +1357,31 @@ def test_approved_public_consumers_use_appearance_team_authority_only():
     assert 'reconciled !== true' in panel
     for inference in ('games_started', 'gamesStarted', 'team_id =='):
         assert inference not in panel, inference
+
+
+def test_public_vocabulary_files_read_no_appearance_team_authority():
+    """The VOC-001 allowlist is an exemption from the path guard, not its purpose.
+
+    #638 moves reader-facing wording to one owner. It has nothing to do with
+    appearance-team authority, and this proves it: not one allowlisted file
+    reads ``GameLog.appearance_team_id`` or the appearance-team status, in
+    either language.
+    """
+    offenders = []
+    for relative in PUBLIC_VOCABULARY_ALLOWED_FILES:
+        path = REPO_ROOT_FOR_DIFF / relative
+        if not path.exists():
+            continue
+        source = path.read_text(encoding='utf-8')
+        for token in (
+            'appearance_team_id',
+            'appearance_team_status',
+            'appearanceTeamId',
+            'appearanceTeamStatus',
+        ):
+            if token in source:
+                offenders.append(f'{relative}: {token}')
+    assert offenders == [], (
+        'public vocabulary files must not read appearance-team authority: '
+        f'{offenders}'
+    )

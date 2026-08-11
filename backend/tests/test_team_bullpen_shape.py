@@ -158,9 +158,9 @@ def test_rested_bullpen_interpretation_uses_role_shape_on_backend():
     ])
 
     assert depth_led['cleanOptions']['supportingCounts']['cleanOptionCount'] == 5
-    assert depth_led['cleanOptions']['label'] == 'Thin Rested Bullpen'
+    assert depth_led['cleanOptions']['label'] == 'Thin Rested Options'
     assert trust_led['cleanOptions']['supportingCounts']['cleanOptionCount'] == 3
-    assert trust_led['cleanOptions']['label'] == 'Healthy Rested Bullpen'
+    assert trust_led['cleanOptions']['label'] == 'Stable Rested Options'
 
 
 def test_bullpen_pressure_uses_late_inning_baseball_copy_on_backend():
@@ -191,7 +191,7 @@ def test_late_inning_pressure_keeps_high_threshold_for_thinning_late_path():
     ])
 
     assert result['trustAvailability']['label'] == 'Stable Late-Inning Availability'
-    assert result['cleanOptions']['label'] == 'Deep Rested Bullpen'
+    assert result['cleanOptions']['label'] == 'Deep Rested Options'
     assert result['bullpenPressure']['label'] == 'High Late-Inning Pressure'
     assert result['bullpenPressure']['supportingCounts']['watchArmCount'] == 1
     assert result['bullpenPressure']['supportingCounts']['restRestrictedCount'] == 1

@@ -13,6 +13,14 @@ from services.roster_authority import (
 # One canonical public role vocabulary. These labels are the authority for
 # every public surface; the frontend renders them verbatim and must never
 # reinterpret one role key as another baseball role.
+#
+# VOC-001: the backend emits the final reader-facing wording. The frontend used
+# to rewrite these strings on the way out (Trust Arm -> Trusted Arm,
+# Rest-Restricted -> Limited Rest), which meant two files decided what a
+# pitcher chip said and only one of them was the declared owner. The wording
+# moved here; the rewriting is gone. Classification, role-key mapping,
+# availability interpretation, low-sample behavior, and roster-unavailable
+# behavior are all unchanged — only the strings moved.
 ROLE_PUBLIC_LABELS = {
     'trust_arm': {
         'kind': 'role',
@@ -38,10 +46,15 @@ ROLE_PUBLIC_LABELS = {
         'label': 'Middle Relief Arm',
         'source': 'backend',
     },
+    # The role family's fallback. It is deliberately NOT 'Limited Read': that
+    # wording belongs to the read family below, where it means "not enough
+    # evidence for a current read". Here the missing evidence is usage shape,
+    # so the label says so. Two families sharing one fallback word made the
+    # chips unreadable side by side. The internal key is unchanged.
     'limited_read': {
         'kind': 'role',
         'key': 'limited_read',
-        'label': 'Limited Read',
+        'label': 'Role Unclear',
         'source': 'backend',
     },
 }
@@ -50,7 +63,7 @@ READ_PUBLIC_LABELS = {
     'clean_option': {
         'kind': 'read',
         'key': 'clean_option',
-        'label': 'Rested',
+        'label': 'Clean Option',
         'source': 'backend',
     },
     'watch_arm': {
@@ -62,7 +75,7 @@ READ_PUBLIC_LABELS = {
     'rest_restricted': {
         'kind': 'read',
         'key': 'rest_restricted',
-        'label': 'Rest-Restricted',
+        'label': 'Limited Rest',
         'source': 'backend',
     },
     'unavailable': {

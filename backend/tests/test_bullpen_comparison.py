@@ -452,7 +452,7 @@ class TestCompareEndpoint:
         assert compare_card['public_role_read'] == board_card['public_role_read']
         assert compare_card['pitcher_labels']['role'] == board_card['pitcher_labels']['role']
         assert compare_card['public_role_read']['key'] == 'limited_read'
-        assert compare_card['public_role_read']['headline'] == 'Limited Read'
+        assert compare_card['public_role_read']['headline'] == 'Role Unclear'
 
     def test_compare_carries_the_same_canonical_team_state_contract_for_both_sides(self, client):
         """Both sides expose the board's backend-owned Team State, unmerged."""

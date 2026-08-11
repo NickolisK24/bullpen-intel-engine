@@ -23,11 +23,16 @@ TEAM_BULLPEN_PUBLIC_LABELS = {
         'Limited Late-Inning Availability',
         'Limited Read',
     ],
+    # VOC-001: 'Healthy Rested Bullpen' is retired. BaseballOS observes public
+    # workload, never private health, and 'Healthy' reads as a claim about
+    # player condition. The family is now named for what it measures — rested
+    # OPTIONS — and 'Stable' replaces 'Healthy' at the same tier. Tier count,
+    # tier order and every threshold are unchanged; only the strings moved.
     'cleanOptions': [
-        'Deep Rested Bullpen',
-        'Healthy Rested Bullpen',
-        'Thin Rested Bullpen',
-        'Very Thin Rested Bullpen',
+        'Deep Rested Options',
+        'Stable Rested Options',
+        'Thin Rested Options',
+        'Very Thin Rested Options',
         'Limited Read',
     ],
     'bullpenPressure': [
@@ -112,10 +117,10 @@ ROLE_INFLUENCE = {
 }
 
 CLEAN_OPTIONS_TIERS = [
-    'Very Thin Rested Bullpen',
-    'Thin Rested Bullpen',
-    'Healthy Rested Bullpen',
-    'Deep Rested Bullpen',
+    'Very Thin Rested Options',
+    'Thin Rested Options',
+    'Stable Rested Options',
+    'Deep Rested Options',
 ]
 CLEAN_TIER_VERY_THIN = 0
 CLEAN_TIER_THIN = 1

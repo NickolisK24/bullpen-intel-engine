@@ -35,9 +35,35 @@ export const SUPPORTING_CONCEPT_DEFINITIONS = Object.freeze({
     name: 'Coverage Safety',
     definition: 'Whether the bullpen can cover the late innings if the game runs long.',
   },
+  // VOC-001: renamed from 'Trusted Arms'. It was never the plural of the
+  // pitcher ROLE 'Trusted Arm' — it mixes role with current workload and
+  // roster context — and two different things must not share a name.
+  // 'lean on' also implied manager intent, which is not observed.
   trustedArms: {
-    name: 'Trusted Arms',
-    definition: 'The rested, unrestricted arms a manager can lean on late.',
+    name: 'Late-Inning Options',
+    definition:
+      'Current late-inning arms whose workload and roster context leave them '
+      + 'usable in the represented read.',
+  },
+  lateInningAvailability: {
+    name: 'Late-Inning Availability',
+    definition: 'How much usable late-inning coverage the bullpen currently has.',
+  },
+  restedOptions: {
+    name: 'Rested Options',
+    definition:
+      'How many current bullpen options enter the represented read without '
+      + 'major recent-workload restriction.',
+  },
+  lateInningPressure: {
+    name: 'Late-Inning Pressure',
+    definition: 'How much recent workload is narrowing the late-game path.',
+  },
+  depthSafety: {
+    name: 'Depth Safety',
+    definition:
+      'Whether usable options remain beyond the primary late-inning and '
+      + 'bridge layers.',
   },
 })
 
@@ -50,185 +76,110 @@ export const TEAM_STATE_DEFINITIONS = Object.freeze([
 
 // Per-arm availability vocabulary (the four public statuses).
 export const ARM_AVAILABILITY_DEFINITIONS = Object.freeze([
-  Object.freeze({ name: 'Available', definition: 'Rested enough to pitch today.' }),
-  Object.freeze({ name: 'On Watch', definition: 'Usable, but recent work is worth watching.' }),
-  Object.freeze({ name: 'Limited', definition: 'Available only in a reduced role after recent work.' }),
-  Object.freeze({ name: 'Unavailable', definition: 'Not available today because of rest or roster status.' }),
+  Object.freeze({ name: 'Available', definition: 'Recent workload leaves the pitcher inside the normal availability range.' }),
+  Object.freeze({ name: 'On Watch', definition: 'The pitcher remains usable, but recent workload deserves attention.' }),
+  Object.freeze({ name: 'Limited', definition: 'Recent workload materially narrows how fully the pitcher can be used in the current workload classification.' }),
+  Object.freeze({ name: 'Unavailable', definition: 'Current workload or governed roster context removes the pitcher from available bullpen options.' }),
 ])
 
 // Freshness stamp vocabulary.
 export const FRESHNESS_LABEL_DEFINITIONS = Object.freeze([
-  Object.freeze({ name: 'Data through', definition: 'The latest completed MLB date included in the read.' }),
-  Object.freeze({ name: 'Updated', definition: 'When BaseballOS last wrote new baseball data.' }),
+  Object.freeze({ name: 'Data through', definition: 'The latest completed baseball date represented by the public read.' }),
+  Object.freeze({ name: 'Last data update', definition: 'When BaseballOS last successfully wrote new baseball data.' }),
+  Object.freeze({ name: 'Last checked', definition: 'When BaseballOS most recently attempted or observed a refresh.' }),
 ])
+
+// Provenance stamps. Separate concepts from the three above: they describe an
+// artifact's lifecycle, never the baseball date the read represents.
+export const PROVENANCE_LABEL_DEFINITIONS = Object.freeze([
+  Object.freeze({ name: 'Generated at', definition: 'When a historical or distribution artifact was created.' }),
+  Object.freeze({ name: 'Published at', definition: 'When that artifact became the trusted public publication.' }),
+])
+
+// The data-status family. It describes the state of the DATA, never a bullpen
+// or an arm — which is why it borrows no baseball word.
+export const DATA_STATUS_DEFINITIONS = Object.freeze([
+  Object.freeze({ name: 'Current', definition: "The represented public data is current under the platform's freshness rules." }),
+  Object.freeze({ name: 'Partial Data', definition: 'Some current data exists, but the public read carries a material data limitation.' }),
+  Object.freeze({ name: 'Stale', definition: 'The represented public data is outside the current freshness window.' }),
+  Object.freeze({ name: 'Data Unavailable', definition: 'BaseballOS does not currently have enough usable public data for the status.' }),
+])
+
+// Pitcher ROLE — how the arm has been used. Not availability, not quality.
+export const PITCHER_ROLE_DEFINITIONS = Object.freeze([
+  Object.freeze({ name: 'Trusted Arm', definition: 'Observed usage points to the primary late-inning trust role.' }),
+  Object.freeze({ name: 'Setup Arm', definition: 'Observed usage points to the setup or handoff layer.' }),
+  Object.freeze({ name: 'Coverage Arm', definition: 'Observed usage points to longer or multi-inning relief coverage.' }),
+  Object.freeze({ name: 'Middle Relief Arm', definition: 'Observed usage points to lighter middle-relief work; this is not a talent judgment.' }),
+  Object.freeze({ name: 'Role Unclear', definition: 'Observed usage does not support a reliable public bullpen-role classification.' }),
+])
+
+// Pitcher CURRENT READ — what tonight looks like for the arm. Distinct from role.
+export const PITCHER_CURRENT_READ_DEFINITIONS = Object.freeze([
+  Object.freeze({ name: 'Clean Option', definition: 'Recent workload and current evidence support a clean current workload read.' }),
+  Object.freeze({ name: 'Watch Arm', definition: 'The pitcher remains usable, but recent workload deserves attention.' }),
+  Object.freeze({ name: 'Limited Rest', definition: 'Recent workload leaves materially less rest than a Clean Option.' }),
+  Object.freeze({ name: 'Unavailable', definition: 'Current workload or roster authority removes the pitcher from available bullpen options.' }),
+  Object.freeze({ name: 'Limited Read', definition: 'BaseballOS does not have enough current evidence for a clear pitcher read.' }),
+])
+
+// READ CONFIDENCE — how clear the evidence is. Not a baseball conclusion.
+export const READ_CONFIDENCE_FAMILY = 'Read Confidence'
+export const READ_CONFIDENCE_DEFINITIONS = Object.freeze([
+  Object.freeze({ name: 'High', definition: 'The evidence behind the read is complete and clear.' }),
+  Object.freeze({ name: 'Medium', definition: 'The evidence supports the read with some gaps.' }),
+  Object.freeze({ name: 'Low', definition: 'The evidence is thin enough that the read should be treated carefully.' }),
+  Object.freeze({ name: 'Unavailable', definition: 'There is not enough evidence to state a confidence level.' }),
+])
+export const READ_CONFIDENCE_BOUNDARY =
+  'Read confidence describes how complete or clear the evidence behind a read '
+  + 'is. It is not Team State, not arm availability, not a pitcher role, not a '
+  + 'quality grade, not a ranking, and not a prediction.'
+
+// THE LIMITED FAMILY. Four labels share a word and answer four different
+// questions; the page states the difference rather than leaving a reader to
+// infer it from four separate cards.
+export const LIMITED_FAMILY_DISAMBIGUATION = Object.freeze([
+  Object.freeze({
+    name: 'Limited',
+    family: 'Arm Availability',
+    definition: 'Recent workload materially narrows how fully the pitcher can be used.',
+  }),
+  Object.freeze({
+    name: 'Limited Rest',
+    family: 'Pitcher Current Read',
+    definition: 'Recent workload leaves materially less rest than a Clean Option.',
+  }),
+  Object.freeze({
+    name: 'Limited Read',
+    family: 'Pitcher Current Read / evidence limitation',
+    definition: 'BaseballOS does not have enough current evidence for a clear pitcher read.',
+  }),
+  Object.freeze({
+    name: 'Role Unclear',
+    family: 'Pitcher Role',
+    definition: 'Observed usage does not support a reliable public bullpen-role classification.',
+  }),
+])
+export const LIMITED_FAMILY_BOUNDARY =
+  'These are different dimensions, not degrees of the same thing: one is how '
+  + 'much of the arm is usable, one is how rested it is, one is how much '
+  + 'evidence there is, and one is what kind of arm it is.'
+
+export const SUPPORTING_READ_BOUNDARY =
+  'Supporting reads explain one dimension of a bullpen. They are not Team State.'
 
 export const LIMITED_READ_LABEL = 'Limited Read'
 
-// Count-led phrase helpers — every read's detail leads with the arms that
-// drive it, so a tooltip reads like "3 of 8 arms need rest; 2 more on watch."
-const needRestPhrase = (needRest, total) =>
-  `${needRest} of ${total} ${needRest === 1 ? 'arm needs' : 'arms need'} rest`
-const restedPhrase = (ready, total) =>
-  `${ready} of ${total} ${ready === 1 ? 'arm comes' : 'arms come'} in rested`
-const unrestrictedPhrase = (ready, total) =>
-  `${ready} of ${total} ${ready === 1 ? 'arm enters' : 'arms enter'} without major workload limits`
-const onWatchPhrase = (watch, total) => `${watch} of ${total} on watch`
-
-function normalizeCounts(counts = {}) {
-  const num = (value) => (typeof value === 'number' && Number.isFinite(value) ? value : 0)
-  const total = num(counts.total)
-  return {
-    total,
-    ready: num(counts.ready),
-    watch: num(counts.watch),
-    needRest: num(counts.needRest),
-    limitedRead: Boolean(counts.limitedRead) || total === 0,
-  }
-}
-
-function limitedRead(key) {
-  return {
-    key,
-    concept: CONCEPT_DEFINITIONS[key].name,
-    definition: CONCEPT_DEFINITIONS[key].definition,
-    label: LIMITED_READ_LABEL,
-    display: LIMITED_READ_LABEL,
-    tone: 'neutral',
-    detail: 'Not enough current data for this read.',
-  }
-}
-
-function pressureRead({ total, watch, needRest }) {
-  const base = {
-    key: 'pressure',
-    concept: CONCEPT_DEFINITIONS.pressure.name,
-    definition: CONCEPT_DEFINITIONS.pressure.definition,
-  }
-  // Lead with arms needing rest, then add the watch tail when it applies.
-  const restAndWatch = watch > 0
-    ? `${needRestPhrase(needRest, total)}; ${watch} more on watch.`
-    : `${needRestPhrase(needRest, total)}.`
-  if (needRest >= 3 || needRest / total >= 0.4) {
-    return {
-      ...base, label: 'High', display: 'High Bullpen Pressure', tone: 'stress', detail: restAndWatch,
-    }
-  }
-  if (needRest === 2 || (needRest >= 1 && watch >= 2)) {
-    return {
-      ...base, label: 'Elevated', display: 'Elevated Bullpen Pressure', tone: 'watch', detail: restAndWatch,
-    }
-  }
-  if (needRest === 1 || watch >= 2) {
-    return {
-      ...base,
-      label: 'Manageable',
-      display: 'Manageable Bullpen Pressure',
-      tone: 'rest',
-      detail: needRest === 1 ? `${needRestPhrase(needRest, total)}.` : `${onWatchPhrase(watch, total)}.`,
-    }
-  }
-  return {
-    ...base,
-    label: 'Low',
-    display: 'Low Bullpen Pressure',
-    tone: 'rest',
-    detail: watch > 0 ? `No arms need rest; ${watch} of ${total} on watch.` : 'No arms need rest today.',
-  }
-}
-
-function recoveryRead({ total, ready }) {
-  const base = {
-    key: 'recovery',
-    concept: CONCEPT_DEFINITIONS.recovery.name,
-    definition: CONCEPT_DEFINITIONS.recovery.definition,
-  }
-  const share = ready / total
-  const detail = `${restedPhrase(ready, total)}.`
-  if (ready >= 6 || share >= 0.65) {
-    return { ...base, label: 'Wide', display: 'Wide Recovery Window', tone: 'rest', detail }
-  }
-  if (share >= 0.45) {
-    return { ...base, label: 'Stable', display: 'Stable Recovery Window', tone: 'rest', detail }
-  }
-  if (share >= 0.25) {
-    return { ...base, label: 'Narrow', display: 'Narrow Recovery Window', tone: 'watch', detail }
-  }
-  return { ...base, label: 'Limited', display: 'Limited Recovery Window', tone: 'stress', detail }
-}
-
-function concentrationRead({ total, watch, needRest }) {
-  const base = {
-    key: 'concentration',
-    concept: CONCEPT_DEFINITIONS.concentration.name,
-    definition: CONCEPT_DEFINITIONS.concentration.definition,
-  }
-  if (watch >= 3 || (watch >= 2 && needRest >= 2)) {
-    return {
-      ...base, label: 'Concentrated', display: 'Concentrated Workload', tone: 'watch',
-      detail: `${onWatchPhrase(watch, total)} — the heavy work is falling on a few arms.`,
-    }
-  }
-  if (watch === 2 || (watch >= 1 && needRest >= 1)) {
-    return {
-      ...base, label: 'Some Concentration', display: 'Some Concentration', tone: 'neutral',
-      detail: `${onWatchPhrase(watch, total)} carrying more than their share.`,
-    }
-  }
-  return {
-    ...base, label: 'Spread-Out', display: 'Spread-Out Workload', tone: 'rest',
-    detail: watch > 0 ? `Just ${watch} of ${total} on watch; work otherwise spread.` : 'No arms on watch.',
-  }
-}
-
-function cleanOptionsRead({ total, ready }) {
-  const base = {
-    key: 'cleanOptions',
-    concept: CONCEPT_DEFINITIONS.cleanOptions.name,
-    definition: CONCEPT_DEFINITIONS.cleanOptions.definition,
-  }
-  const detail = `${unrestrictedPhrase(ready, total)}.`
-  if (ready >= 6 || ready / total >= 0.7) {
-    return { ...base, label: 'Deep', display: 'Deep Clean Options', tone: 'rest', detail }
-  }
-  if (ready >= 4 || ready / total >= 0.5) {
-    return { ...base, label: 'Enough', display: 'Enough Clean Options', tone: 'rest', detail }
-  }
-  if (ready >= 2) {
-    return { ...base, label: 'Thin', display: 'Thin Clean Options', tone: 'watch', detail }
-  }
-  return { ...base, label: 'Very Thin', display: 'Very Thin Clean Options', tone: 'stress', detail }
-}
-
-// All four reads from one set of counts:
-// { total, ready, watch, needRest, limitedRead? }.
-export function getBullpenReads(counts) {
-  const normalized = normalizeCounts(counts)
-  const keys = ['pressure', 'recovery', 'concentration', 'cleanOptions']
-
-  if (normalized.limitedRead) {
-    const reads = keys.map(key => limitedRead(key))
-    return { reads, byKey: Object.fromEntries(reads.map(read => [read.key, read])) }
-  }
-
-  const reads = [
-    pressureRead(normalized),
-    recoveryRead(normalized),
-    concentrationRead(normalized),
-    cleanOptionsRead(normalized),
-  ]
-  return { reads, byKey: Object.fromEntries(reads.map(read => [read.key, read])) }
-}
-
-// Adapter for the landscape entry shape the homepage view-model uses
-// ({ available, monitor, restricted, total }). The landscape's restricted
-// bucket folds roster-unavailable arms in with workload restriction, which is
-// fine for a descriptive read.
-export function getReadsForLandscapeEntry(entry) {
-  if (!entry) return getBullpenReads({ total: 0 })
-  return getBullpenReads({
-    total: entry.total,
-    ready: entry.available,
-    watch: entry.monitor,
-    needRest: entry.restricted,
-  })
-}
+// VOC-001 / #638: the local bullpen tier-derivation engine that used to live
+// below this line is gone. It computed its own pressure / recovery /
+// concentration / clean-options tiers in the browser from raw counts — a
+// second set of supporting reads competing with the backend-owned ones in
+// services/team_bullpen_shape.py. It had no production caller: nothing in
+// src/ imported getBullpenReads or getReadsForLandscapeEntry, and this
+// module's only production importer is HowToRead.jsx, which takes the
+// definitions above.
+//
+// What remains here is a glossary: canonical public definitions rendered by
+// How to Read. This file must not compute a bullpen read again — the backend
+// owns supporting-read tiers, and bullpenConcepts.test.mjs pins that.

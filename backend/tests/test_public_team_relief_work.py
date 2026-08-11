@@ -20,6 +20,7 @@ from tests.generated_team_pages import (
     GENERATED_TEAM_PAGE_FILES,
     ROUTED_TEAM_PREVIEW_DELIVERY_FILES,
 )
+from tests.public_vocabulary_files import PUBLIC_VOCABULARY_FILES
 from utils.db import db
 
 
@@ -1588,6 +1589,37 @@ def test_existing_public_routes_behavior_freeze(monkeypatch):
         'frontend/tests/publicCopyAuthority.test.mjs',
     }
 
+    allowed_public_vocabulary_parity_files = {
+        # voc-001 / #638 (public vocabulary parity): reader-facing wording only.
+        # Backend pitcher_public_labels.py becomes the sole owner of the public
+        # role/read strings; pitcherLabels.js stops rewriting them and renders
+        # the authored label verbatim. Two semantic collisions are removed —
+        # the role and read families no longer share the fallback word
+        # 'Limited Read' (role says 'Role Unclear'), and the data-status badge
+        # stops borrowing the baseball words 'Limited' and 'Healthy'
+        # (Current / Partial Data / Stale / Data Unavailable). Read confidence
+        # becomes an explicit High/Medium/Low scale instead of a second
+        # arm-read vocabulary.
+        #
+        # No threshold, classification, derivation, authority, gate, or
+        # timestamp changes: every engine key, availability status, Team State
+        # value, freshness computation and publication rule is byte-identical,
+        # which test_public_vocabulary_parity_changes_wording_only proves
+        # against the diff. Exact paths only, never a directory exemption.
+        'frontend/src/utils/pitcherLabels.js',
+        'frontend/src/components/bullpen/availabilityView.js',
+        'frontend/src/components/dashboard/syncStatusView.js',
+        'frontend/src/components/bullpen/board/teamGameContextView.js',
+        'frontend/src/components/bullpen/board/tonightsBullpenBoardView.js',
+        # The four vocabulary contract tests no earlier workstream
+        # allowlisted. Test-only: they assert the new canonical wording and
+        # change no product code.
+        'frontend/tests/availabilityView.test.mjs',
+        'frontend/tests/bullpenIntelligencePanel.test.mjs',
+        'frontend/tests/dataThroughAuthority.test.mjs',
+        'frontend/tests/gameContextVisualHierarchy.test.mjs',
+    }
+
     allowed_bullpen_page_identity_files = {
         # ux-002 / #600 (bullpen page identity): /bullpen renders three
         # canonically different views and had no H1 at all, so the route shell
@@ -1600,6 +1632,21 @@ def test_existing_public_routes_behavior_freeze(monkeypatch):
         'frontend/src/components/UI/SectionHeader.jsx',
         'frontend/src/components/bullpen/board/TonightsBullpenBoard.jsx',
         'frontend/tests/bullpenPageIdentity.test.mjs',
+    }
+
+    allowed_public_vocabulary_files = {
+        # voc-001 / #638 (public vocabulary parity): reader-facing wording gets
+        # one owner. The backend emits the final pitcher role/read strings and
+        # the frontend renders them verbatim instead of rewriting them; the role
+        # and read families stop sharing the fallback word 'Limited Read'; read
+        # confidence stops reading as a second baseball read; and the
+        # data-status badges stop borrowing baseball words. Strings only — no
+        # threshold, classification, derivation, availability rule, roster or
+        # publication authority, Team State projection, freshness computation,
+        # timestamp, or engine key changed.
+        #
+        # Exact paths only, never a directory exemption.
+        *PUBLIC_VOCABULARY_FILES,
     }
 
     allowed_static_team_preview_files = {
@@ -1632,7 +1679,9 @@ def test_existing_public_routes_behavior_freeze(monkeypatch):
 
     assert not [
         path for path in changed
+        if path not in allowed_public_vocabulary_parity_files
         if path not in allowed_bullpen_page_identity_files
+        if path not in allowed_public_vocabulary_files
         if path not in allowed_static_team_preview_files
         if path not in allowed_public_copy_authority_files
         if path not in allowed_public_score_removal_files
@@ -1829,6 +1878,73 @@ def test_routed_team_preview_delivery_changes_routing_only():
     assert not [line for line in added if line not in permitted_added], added
     # Nothing is removed but the brace the inserted object displaces.
     assert not [line for line in removed if line not in {'{', '},', '}'}], removed
+
+
+VOCABULARY_PARITY_FILES = (
+    'frontend/src/utils/pitcherLabels.js',
+    'frontend/src/components/bullpen/availabilityView.js',
+    'frontend/src/components/dashboard/syncStatusView.js',
+    'frontend/src/components/bullpen/board/teamGameContextView.js',
+    'frontend/src/components/bullpen/board/tonightsBullpenBoardView.js',
+)
+
+
+def test_public_vocabulary_parity_changed_no_governed_logic():
+    """The VOC-001 allowance is an exemption from the path guard, not its purpose.
+
+    This guard freezes existing public route behavior. VOC-001 is allowed to
+    touch reader-facing files because it changes what things are CALLED, never
+    what the product decides. Rather than inspect the shape of the diff — a
+    refactor that moves wording ownership legitimately changes non-string lines
+    — this pins the invariants a wording change must not disturb: the raw values
+    the API speaks, the variant keys that drive styling and logic, and the
+    freshness authority itself.
+    """
+    root = REPO_ROOT / 'frontend/src'
+
+    # The raw confidence values the API sends are untouched; only their display
+    # strings moved. Every key still present, no key added.
+    confidence = (root / 'components/bullpen/availabilityView.js').read_text(encoding='utf-8')
+    block = confidence.split('const CONFIDENCE_READ_LABELS = {', 1)[1].split('}', 1)[0]
+    assert sorted(re.findall(r'^\s*(\w+):', block, re.M)) == [
+        'high', 'low', 'medium', 'none', 'unknown',
+    ]
+
+    # The data-status VARIANT keys drive styling and downstream logic and are
+    # not reader-facing. They must survive a label change untouched.
+    sync = (root / 'components/dashboard/syncStatusView.js').read_text(encoding='utf-8')
+    for variant in (
+        "variant: stale ? 'stale' : 'failed'",
+        "variant: displayStale ? 'stale' : (limited ? 'limited' : 'synced')",
+        "variant: 'metadata_unavailable'",
+        "variant: 'empty'",
+    ):
+        assert variant in sync, variant
+
+    # The freshness authority is not part of the vocabulary surface.
+    assert 'export function freshnessIsCurrent(freshness) {' in sync
+    freshness_diff = [
+        line[1:].strip()
+        for line in _diff_vs_main(
+            'frontend/src/components/dashboard/syncStatusView.js'
+        ).splitlines()
+        if line.startswith(('+', '-')) and not line.startswith(('+++', '---'))
+        and not line[1:].strip().startswith('//')
+    ]
+    assert not [line for line in freshness_diff if 'freshnessIsCurrent' in line]
+
+    # No threshold, window, or numeric tuning entered any of these files.
+    for relative in VOCABULARY_PARITY_FILES:
+        added = [
+            line[1:] for line in _diff_vs_main(relative).splitlines()
+            if line.startswith('+') and not line.startswith('+++')
+        ]
+        for line in added:
+            body = line.strip()
+            if body.startswith('//'):
+                continue
+            assert not re.search(r'[<>]=?\s*-?\d', body), (relative, body)
+            assert 'threshold' not in body.lower(), (relative, body)
 
 
 def _freshness_block():

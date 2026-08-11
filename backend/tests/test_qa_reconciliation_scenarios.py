@@ -37,6 +37,7 @@ from services.legacy_read_reconciliation import (
 )
 from tests.db_config import configure_test_database, create_test_schema, drop_test_schema
 from tests.generated_team_pages import GENERATED_TEAM_PAGE_FILES
+from tests.public_vocabulary_files import PUBLIC_VOCABULARY_FILES
 from tests.qa_scenarios import (
     composed_reads_missing,
     conflict_state_evidence,
@@ -632,6 +633,37 @@ def test_phase0e_switches_and_legacy_public_files_not_modified():
         'frontend/tests/publicCopyAuthority.test.mjs',
     }
 
+    allowed_public_vocabulary_parity_files = {
+        # voc-001 / #638 (public vocabulary parity): reader-facing wording only.
+        # Backend pitcher_public_labels.py becomes the sole owner of the public
+        # role/read strings; pitcherLabels.js stops rewriting them and renders
+        # the authored label verbatim. Two semantic collisions are removed —
+        # the role and read families no longer share the fallback word
+        # 'Limited Read' (role says 'Role Unclear'), and the data-status badge
+        # stops borrowing the baseball words 'Limited' and 'Healthy'
+        # (Current / Partial Data / Stale / Data Unavailable). Read confidence
+        # becomes an explicit High/Medium/Low scale instead of a second
+        # arm-read vocabulary.
+        #
+        # No threshold, classification, derivation, authority, gate, or
+        # timestamp changes: every engine key, availability status, Team State
+        # value, freshness computation and publication rule is byte-identical,
+        # which test_public_vocabulary_parity_changes_wording_only proves
+        # against the diff. Exact paths only, never a directory exemption.
+        'frontend/src/utils/pitcherLabels.js',
+        'frontend/src/components/bullpen/availabilityView.js',
+        'frontend/src/components/dashboard/syncStatusView.js',
+        'frontend/src/components/bullpen/board/teamGameContextView.js',
+        'frontend/src/components/bullpen/board/tonightsBullpenBoardView.js',
+        # The four vocabulary contract tests no earlier workstream
+        # allowlisted. Test-only: they assert the new canonical wording and
+        # change no product code.
+        'frontend/tests/availabilityView.test.mjs',
+        'frontend/tests/bullpenIntelligencePanel.test.mjs',
+        'frontend/tests/dataThroughAuthority.test.mjs',
+        'frontend/tests/gameContextVisualHierarchy.test.mjs',
+    }
+
     allowed_bullpen_page_identity_files = {
         # ux-002 / #600 (bullpen page identity): one contextual H1 per active
         # /bullpen view, owned by the route shell, plus an opt-in heading level
@@ -641,6 +673,21 @@ def test_phase0e_switches_and_legacy_public_files_not_modified():
         # availability word changes. Heading structure only.
         'frontend/src/components/UI/SectionHeader.jsx',
         'frontend/src/components/bullpen/board/TonightsBullpenBoard.jsx',
+    }
+
+    allowed_public_vocabulary_files = {
+        # voc-001 / #638 (public vocabulary parity): reader-facing wording gets
+        # one owner. The backend emits the final pitcher role/read strings and
+        # the frontend renders them verbatim instead of rewriting them; the role
+        # and read families stop sharing the fallback word 'Limited Read'; read
+        # confidence stops reading as a second baseball read; and the
+        # data-status badges stop borrowing baseball words. Strings only — no
+        # threshold, classification, derivation, availability rule, roster or
+        # publication authority, Team State projection, freshness computation,
+        # timestamp, or engine key changed.
+        #
+        # Exact paths only, never a directory exemption.
+        *PUBLIC_VOCABULARY_FILES,
     }
 
     allowed_static_team_preview_files = {
@@ -658,6 +705,8 @@ def test_phase0e_switches_and_legacy_public_files_not_modified():
 
     allowed_files = (
         allowed_bullpen_page_identity_files
+        | allowed_public_vocabulary_parity_files
+        | allowed_public_vocabulary_files
         | allowed_static_team_preview_files
         | allowed_public_copy_authority_files
         | allowed_public_score_removal_files

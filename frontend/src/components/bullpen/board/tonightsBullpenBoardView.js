@@ -757,7 +757,7 @@ export function getBoardFreshnessView(freshness) {
     dataAgeDays: f.data_age_days ?? null,
     label: f.label || null,
     limitations,
-    healthLabel: isCurrent ? 'Current' : 'Not Current',
+    healthLabel: isCurrent ? 'Current' : 'Stale',
     tone: isCurrent
       ? { borderColor: '#10b98155', backgroundColor: '#10b98112', color: '#6ee7b7' }
       : { borderColor: '#f5a62355', backgroundColor: '#f5a62312', color: '#f5a623' },
