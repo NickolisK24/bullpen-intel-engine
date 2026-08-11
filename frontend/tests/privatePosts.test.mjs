@@ -593,14 +593,27 @@ test('private posts route is obscure, noindexed, robots-excluded, and not in nav
     ],
   })
   assert.equal(PRIVATE_POSTS_ROBOTS, 'noindex,nofollow,noarchive')
-  assert.deepEqual(config.rewrites[0], {
-    source: '/team/(.*)',
-    destination: '/team/index.html',
-  })
-  assert.deepEqual(config.rewrites[1], {
-    source: '/(.*)',
-    destination: '/index.html',
-  })
+  // Rewrite ORDER is owned by navigationRoutes.test.mjs, which pins all three
+  // entries positionally. What this test needs is delivery of the private
+  // route: the generic team fallback still exists, and the first rewrite that
+  // matches the private path is the SPA catch-all, so nothing shadows it.
+  const matchesPath = (source, path) =>
+    new RegExp(source.startsWith('^') ? source : `^${source}$`).test(path)
+
+  assert.deepEqual(
+    config.rewrites.find(rewrite => rewrite.source === '/team/(.*)'),
+    {
+      source: '/team/(.*)',
+      destination: '/team/index.html',
+    },
+  )
+  assert.deepEqual(
+    config.rewrites.find(rewrite => matchesPath(rewrite.source, PRIVATE_POSTS_PATH)),
+    {
+      source: '/(.*)',
+      destination: '/index.html',
+    },
+  )
 })
 
 test('private posts direct route uses protected API instead of public dashboard data', () => {

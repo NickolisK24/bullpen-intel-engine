@@ -15,7 +15,11 @@ from models.scheduled_game import ScheduledGame
 from services import pitcher_season_ledger_coverage
 from services import public_team_relief_work
 from tests.db_config import configure_test_database, create_test_schema, drop_test_schema
-from tests.generated_team_pages import GENERATED_TEAM_PAGE_FILES
+from tests.generated_team_pages import (
+    GENERATED_TEAM_PAGE_ABBREVIATIONS,
+    GENERATED_TEAM_PAGE_FILES,
+    ROUTED_TEAM_PREVIEW_DELIVERY_FILES,
+)
 from utils.db import db
 
 
@@ -1614,6 +1618,16 @@ def test_existing_public_routes_behavior_freeze(monkeypatch):
         'backend/services/share_artifact_public.py',
         'frontend/tests/teamShare.test.mjs',
         *GENERATED_TEAM_PAGE_FILES,
+        # The last mile of the same workstream. The Aug 11 authorized export
+        # generated all 30 trusted pages and production served the invalid-team
+        # fallback for every club, because the rewrite table had no exact-match
+        # rule ahead of the generic `/team/(.*)` catch. One rewrite is added;
+        # the generic fallback and the SPA catch-all are unchanged, so no
+        # existing public route's behavior changes and no redirect target moves
+        # — proved below by
+        # test_routed_team_preview_delivery_changes_routing_only rather than
+        # asserted here.
+        *ROUTED_TEAM_PREVIEW_DELIVERY_FILES,
     }
 
     assert not [
@@ -1696,6 +1710,125 @@ def test_existing_public_routes_behavior_freeze(monkeypatch):
     assert '/api/bullpen/pitchers/<int:pitcher_id>/recent-work' in rules
     assert '/api/bullpen/teams/<int:team_id>/bullpen' in rules
     assert '/api/system/internal/team-evidence' in rules
+
+
+TEAM_PREVIEW_ROUTING_FILE = 'frontend/vercel.json'
+CANONICAL_TEAM_REWRITE_SOURCE = (
+    '^/team/(ATH|ATL|AZ|BAL|BOS|CHC|CIN|CLE|COL|CWS|DET|HOU|KC|LAA|LAD|MIA|'
+    'MIL|MIN|NYM|NYY|PHI|PIT|SD|SEA|SF|STL|TB|TEX|TOR|WSH)$'
+)
+GENERIC_TEAM_FALLBACK_REWRITE = {
+    'source': '/team/(.*)',
+    'destination': '/team/index.html',
+}
+SPA_CATCH_ALL_REWRITE = {
+    'source': '/(.*)',
+    'destination': '/index.html',
+}
+
+
+def test_routed_team_preview_delivery_changes_routing_only():
+    """The DIST-003 delivery allowance is an exemption from the path guard, not
+    from its purpose.
+
+    This guard freezes existing public route behavior. The routing table is
+    allowed to change so the generated `/team/{ABBR}` pages stop resolving to
+    the invalid-team fallback, so this proves what the exemption actually
+    bought and, more importantly, what it did not: one exact-match rewrite is
+    ADDED ahead of the generic fallback, and every route that already existed
+    resolves exactly where it resolved before.
+
+    ``frontend/tests/navigationRoutes.test.mjs`` owns the detailed frontend
+    route-order contract and is not reproduced here. What is proved here is the
+    governance question — that this frozen file changed for the #594 delivery
+    correction and for nothing else.
+    """
+    config = json.loads(
+        (REPO_ROOT / TEAM_PREVIEW_ROUTING_FILE).read_text(encoding='utf-8'),
+    )
+    rewrites = config['rewrites']
+    sources = [rewrite['source'] for rewrite in rewrites]
+
+    # (A) exact, and limited to the 30 supported abbreviations.
+    assert CANONICAL_TEAM_REWRITE_SOURCE in sources
+    canonical = rewrites[sources.index(CANONICAL_TEAM_REWRITE_SOURCE)]
+    pattern = re.compile(CANONICAL_TEAM_REWRITE_SOURCE)
+    assert len(GENERATED_TEAM_PAGE_ABBREVIATIONS) == 30
+    for abbreviation in GENERATED_TEAM_PAGE_ABBREVIATIONS:
+        assert pattern.fullmatch(f'/team/{abbreviation}'), abbreviation
+        # ...and each one has the generated page this rewrite serves.
+        assert (
+            f'frontend/public/team/{abbreviation}/index.html'
+            in GENERATED_TEAM_PAGE_FILES
+        ), abbreviation
+
+    # (B) the destination is exactly the generated file for the matched club.
+    assert canonical['destination'] == '/team/$1/index.html'
+
+    # (C) it resolves BEFORE the generic fallback, or every club path would
+    # still reach the invalid-team page and the export would still be discarded.
+    assert sources.index(CANONICAL_TEAM_REWRITE_SOURCE) < sources.index(
+        GENERIC_TEAM_FALLBACK_REWRITE['source']
+    )
+
+    # (D) and (E) the two pre-existing routes survive unchanged, in order.
+    assert GENERIC_TEAM_FALLBACK_REWRITE in rewrites
+    assert SPA_CATCH_ALL_REWRITE in rewrites
+    assert sources.index(GENERIC_TEAM_FALLBACK_REWRITE['source']) < sources.index(
+        SPA_CATCH_ALL_REWRITE['source']
+    )
+
+    # (F) an unsupported abbreviation is NOT served a generated page; it keeps
+    # falling through to the invalid-team fallback exactly as before.
+    for unsupported in ('/team/INVALID', '/team/ath', '/team/ATHX', '/team/'):
+        assert not pattern.fullmatch(unsupported), unsupported
+
+    # (G) the change reaches no derivation, authority, or backend surface. A
+    # rewrite table can only reach one by naming a destination that leaves the
+    # static bundle, and none does.
+    for rewrite in rewrites:
+        assert rewrite['destination'].startswith('/')
+        assert not rewrite['destination'].startswith('//')
+        assert rewrite['destination'].endswith('.html')
+        assert '/api/' not in rewrite['destination']
+
+    source_text = (REPO_ROOT / TEAM_PREVIEW_ROUTING_FILE).read_text(
+        encoding='utf-8',
+    ).lower()
+    for token in (
+        'team_state', 'availability', 'fatigue', 'score', 'freshness',
+        'roster', 'publication', 'prediction', 'recommendation', 'api',
+        'backend', 'http',
+    ):
+        assert token not in source_text, token
+
+    # And the diff itself: this file's only change vs main is inside the
+    # rewrite table, adding the canonical rule. No header, no robots policy,
+    # and no other route is touched.
+    changed = {path.replace('\\', '/') for path in _changed_files_vs_main()}
+    if TEAM_PREVIEW_ROUTING_FILE not in changed:
+        return
+    diff = _diff_vs_main(TEAM_PREVIEW_ROUTING_FILE)
+    added = [
+        line[1:].strip() for line in diff.splitlines()
+        if line.startswith('+') and not line.startswith('+++')
+    ]
+    removed = [
+        line[1:].strip() for line in diff.splitlines()
+        if line.startswith('-') and not line.startswith('---')
+    ]
+    assert added, 'the routing file is in the diff but adds nothing'
+    # Everything added belongs to the one canonical rewrite object.
+    permitted_added = {
+        '{',
+        '},',
+        '}',
+        f'"source": "{CANONICAL_TEAM_REWRITE_SOURCE}",',
+        '"destination": "/team/$1/index.html"',
+    }
+    assert not [line for line in added if line not in permitted_added], added
+    # Nothing is removed but the brace the inserted object displaces.
+    assert not [line for line in removed if line not in {'{', '},', '}'}], removed
 
 
 def _freshness_block():

@@ -1,5 +1,6 @@
 from datetime import date, timedelta
 from pathlib import Path
+import json
 import subprocess
 
 import pytest
@@ -24,7 +25,10 @@ from services.what_changed_since_yesterday import (
     STATE_NO_MEANINGFUL_CHANGES,
     build_what_changed_since_yesterday_payload,
 )
-from tests.generated_team_pages import GENERATED_TEAM_PAGE_FILES
+from tests.generated_team_pages import (
+    GENERATED_TEAM_PAGE_FILES,
+    ROUTED_TEAM_PREVIEW_DELIVERY_FILES,
+)
 from tests.test_phase0e_exit_docs import EXPECTED_ALEMBIC_HEAD, _alembic_heads
 
 
@@ -667,8 +671,17 @@ def test_frozen_legacy_what_changed_files_untouched():
         # from and refuse to publish a present-tense claim without one. No
         # snapshot publication gate, freshness field meaning, or trusted-serving
         # behavior changes.
+        #
+        # The delivery file is the last mile of the same workstream: the Aug 11
+        # authorized export produced all 30 trusted pages and production served
+        # the invalid-team fallback for every club, because the rewrite table
+        # had no exact-match rule. Routing only — nothing in it reads a
+        # snapshot, a publication gate, freshness, or Team State, which
+        # test_routed_team_preview_delivery_touches_no_snapshot_trust_surface
+        # proves directly rather than merely asserting here.
         'frontend/tests/teamShare.test.mjs',
         *GENERATED_TEAM_PAGE_FILES,
+        *ROUTED_TEAM_PREVIEW_DELIVERY_FILES,
     }
 
     assert not sorted(
@@ -712,6 +725,49 @@ def test_frozen_legacy_what_changed_files_untouched():
         if path not in allowed_repair_execution_ledger_files
         if path not in allowed_tonight_snapshot_source_width_files
     )
+
+
+def test_routed_team_preview_delivery_touches_no_snapshot_trust_surface():
+    """The DIST-003 delivery allowance is an exemption from the path guard, not
+    from its purpose.
+
+    This freeze protects snapshot trust. The routing table is allowed to change
+    so already-generated pages can be served, so this proves the thing the
+    guard actually cares about: the file is a static rewrite/header table and
+    declares no snapshot, publication, freshness, or Team State surface at all.
+    Every rewrite destination is a static file inside the deployed frontend, so
+    no route added here can reach a backend read, a snapshot selection, or a
+    trust gate.
+    """
+    for relative in ROUTED_TEAM_PREVIEW_DELIVERY_FILES:
+        config = json.loads(
+            (REPO_ROOT / relative).read_text(encoding='utf-8'),
+        )
+
+        # A rewrite/header table and nothing else. A key that could introduce a
+        # backend hop — `redirects` to another origin, `functions`, `crons`,
+        # `env` — is not present and cannot be added silently.
+        assert sorted(config) == ['headers', 'rewrites'], relative
+
+        for rewrite in config['rewrites']:
+            destination = rewrite['destination']
+            # Static, same-origin, in-bundle. Never an API path and never an
+            # absolute URL to another host.
+            assert destination.startswith('/'), (relative, destination)
+            assert not destination.startswith('//'), (relative, destination)
+            assert destination.endswith('.html'), (relative, destination)
+            assert '/api/' not in destination, (relative, destination)
+
+        # No snapshot-trust vocabulary reaches the routing table in either
+        # language: nothing here selects, gates, dates, or describes a
+        # published snapshot.
+        source = (REPO_ROOT / relative).read_text(encoding='utf-8')
+        for token in (
+            'snapshot', 'dashboard_snapshot', 'published_at', 'is_published',
+            'data_through', 'freshness', 'trusted', 'team_state',
+            'what_changed', 'availability', 'publication',
+        ):
+            assert token not in source.lower(), (relative, token)
 
 
 def test_route_map_freeze(monkeypatch):
