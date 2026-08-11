@@ -44,6 +44,14 @@ PUBLIC_VOCABULARY_BACKEND_FILES = (
 #   tonightsBullpenBoardView.js — and on a third, so the product does not show
 #                             two competing freshness dictionaries
 PUBLIC_VOCABULARY_FRONTEND_FILES = (
+    # Phase 8: the local bullpen tier-derivation engine deleted from this
+    # module computed its own supporting-read tiers in the browser, competing
+    # with the backend-owned ones. It had no production caller. What remains is
+    # the glossary How to Read renders. Its test file is listed because the
+    # public-routes guard covers all of frontend/, and the tier-engine tests
+    # went with the engine.
+    'frontend/src/utils/bullpenConcepts.js',
+    'frontend/tests/bullpenConcepts.test.mjs',
     'frontend/src/utils/pitcherLabels.js',
     'frontend/src/components/bullpen/availabilityView.js',
     'frontend/src/components/dashboard/syncStatusView.js',
