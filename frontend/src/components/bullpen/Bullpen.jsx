@@ -48,6 +48,42 @@ const VIEW_MODES   = [
 ]
 const PAGE_SIZE = 50
 
+// The page identity for the active /bullpen view.
+//
+// /bullpen hosts three canonically different surfaces (Product Experience
+// Standard section 4), so the route — not any child view — owns the one H1 and
+// answers the active view's own question. This is a presentation/routing
+// concern only: it reads the resolved route state and the team list the shell
+// already fetches, and never the board payload, Team State, freshness,
+// availability, or the comparison response. That is what keeps the heading
+// stable while a child view loads, errors, refetches, or remounts.
+export function getBullpenPageIdentity(viewMode, teamList, urlState = {}) {
+  if (viewMode === BULLPEN_VIEWS.PITCHERS) {
+    return 'Reliever Finder'
+  }
+
+  if (viewMode === BULLPEN_VIEWS.COMPARE) {
+    // A comparison exists only once two DIFFERENT teams resolve. One side, an
+    // unknown reference, or the same club twice is still the generic identity —
+    // naming half a comparison would claim something the page is not showing.
+    const teamIdA = resolveTeamId(teamList, urlState.teamA)
+    const teamIdB = resolveTeamId(teamList, urlState.teamB)
+    const labelA = getTeamOptionLabel(resolveTeamReference(teamList, urlState.teamA))
+    const labelB = getTeamOptionLabel(resolveTeamReference(teamList, urlState.teamB))
+    if (teamIdA != null && teamIdB != null && teamIdA !== teamIdB && labelA && labelB) {
+      return `${labelA} vs. ${labelB} Bullpen Comparison`
+    }
+    return 'Compare Bullpens'
+  }
+
+  // getTeamOptionLabel is the existing shared rule and prefers the full club
+  // name; its abbreviation fallback only fires if a team row arrives without
+  // one, which is a data defect rather than a naming choice.
+  const teamLabel = getTeamOptionLabel(resolveTeamReference(teamList, urlState.team))
+  return teamLabel ? `${teamLabel} Bullpen` : 'Team Bullpen Board'
+}
+
+
 export default function Bullpen() {
   const location = useLocation()
   const navigate = useNavigate()
@@ -168,7 +204,8 @@ export default function Bullpen() {
   return (
     <div className={`p-4 sm:p-6 lg:p-8 mx-auto ${selectedPitcher ? 'max-w-[100rem]' : 'max-w-7xl'}`}>
       <SectionHeader
-        title="Bullpen"
+        as="h1"
+        title={getBullpenPageIdentity(viewMode, teamList, urlState)}
         subtitle="Team-specific bullpen analysis from latest completed data - current availability, recent workload, and role context"
         action={
           <div className="flex items-center gap-3 flex-wrap">
@@ -407,8 +444,10 @@ function PitcherView({
         // Neutral opening view: one short instruction, no result list, no result
         // count, no ranked examples. It reads as an invitation, not an error.
         <div className="rounded-lg border border-dirt bg-field/30 p-6 text-center">
-          <p className="font-mono text-[11px] uppercase tracking-widest text-chalk500">Reliever Finder</p>
-          <p className="mx-auto mt-2 max-w-md text-sm text-chalk300">
+          {/* The page heading names this surface permanently now, so the panel
+              no longer repeats "Reliever Finder" as a second visible title —
+              and the name no longer disappears the moment a search begins. */}
+          <p className="mx-auto max-w-md text-sm text-chalk300">
             Search for a reliever or choose a team to inspect recent workload.
           </p>
           <p className="mx-auto mt-1 max-w-md text-xs text-chalk500">

@@ -135,7 +135,11 @@ test('the answer comes first: identity/state, then availability, then the deep b
   assert.ok(operatingCard > -1 && distribution > -1 && board > -1)
   assert.ok(operatingCard < distribution, 'state card precedes the distribution')
   assert.ok(distribution < board, 'distribution precedes the full board')
-  // Team identity is shown in the answer zone.
+  // Team identity reaches the answer zone. Since UX-002 the /bullpen page
+  // heading owns the visible club name, so within the board itself identity
+  // travels on the operating card's region label and the board section heading
+  // rather than a second card title. bullpenPageIdentity.test.mjs pins that
+  // split; this only asserts the team is still identified here at all.
   assert.ok(htmlIncludes(html, 'Detroit Tigers'))
 })
 

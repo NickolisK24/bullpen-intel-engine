@@ -648,6 +648,17 @@ def test_frozen_legacy_what_changed_files_untouched():
         'frontend/tests/publicCopyAuthority.test.mjs',
     }
 
+    allowed_bullpen_page_identity_files = {
+        # ux-002 / #600 (bullpen page identity): the /bullpen route shell owns one
+        # contextual H1 per active view; SectionHeader gains an opt-in `as` prop
+        # and still defaults to h2. This freeze protects snapshot trust; nothing
+        # here reads a snapshot, a publication authority, freshness, or Team
+        # State. Heading semantics only.
+        'frontend/src/components/UI/SectionHeader.jsx',
+        'frontend/src/components/bullpen/board/TonightsBullpenBoard.jsx',
+        'frontend/tests/bullpenPageIdentity.test.mjs',
+    }
+
     allowed_static_team_preview_files = {
         # dist-003 / #594 (routed team preview authority): the generated
         # /team/{ABBR} pages and their static contract test. This freeze protects
@@ -663,6 +674,7 @@ def test_frozen_legacy_what_changed_files_untouched():
     assert not sorted(
         path for path in changed
         if path.startswith('frontend/')
+        if path not in allowed_bullpen_page_identity_files
         if path not in allowed_static_team_preview_files
         if path not in allowed_public_copy_authority_files
         if path not in allowed_public_score_removal_files
