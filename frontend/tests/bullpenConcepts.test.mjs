@@ -119,9 +119,12 @@ test('Clean Options keeps its name and avoids health-tinted alternatives', () =>
 })
 
 test('the vocabulary never reaches for prediction, betting, injury, or advice', () => {
-  const text = JSON.stringify({
-    ...conceptsModule,
-  }).toLowerCase()
+  const { READ_CONFIDENCE_BOUNDARY, LIMITED_FAMILY_BOUNDARY,
+    SUPPORTING_READ_BOUNDARY, ...catalogues } = conceptsModule
+  // Boundary strings state what these reads are NOT ("not a prediction"), so
+  // they are excluded here — the ban is on the vocabulary promising such a
+  // thing, not on the page disclaiming it.
+  const text = JSON.stringify(catalogues).toLowerCase()
   for (const term of [
     'will ', 'guarantee', 'collapse', 'injur', 'predict', 'bet ', 'betting',
     'odds', 'should use', 'recommend', 'best arm', 'best option', 'projected',
@@ -140,11 +143,25 @@ test('the glossary module computes no bullpen read', () => {
   assert.deepEqual(Object.keys(conceptsModule).sort(), [
     'ARM_AVAILABILITY_DEFINITIONS',
     'CONCEPT_DEFINITIONS',
+    'DATA_STATUS_DEFINITIONS',
     'FRESHNESS_LABEL_DEFINITIONS',
+    'LIMITED_FAMILY_BOUNDARY',
+    'LIMITED_FAMILY_DISAMBIGUATION',
     'LIMITED_READ_LABEL',
+    'PITCHER_CURRENT_READ_DEFINITIONS',
+    'PITCHER_ROLE_DEFINITIONS',
+    'PROVENANCE_LABEL_DEFINITIONS',
+    'READ_CONFIDENCE_BOUNDARY',
+    'READ_CONFIDENCE_DEFINITIONS',
+    'READ_CONFIDENCE_FAMILY',
     'SUPPORTING_CONCEPT_DEFINITIONS',
+    'SUPPORTING_READ_BOUNDARY',
     'TEAM_STATE_DEFINITIONS',
   ])
+  // Every export is a dictionary or a boundary string — none is a function.
+  for (const [name, value] of Object.entries(conceptsModule)) {
+    assert.notEqual(typeof value, 'function', `${name} must not be callable`)
+  }
   for (const removed of ['getBullpenReads', 'getReadsForLandscapeEntry']) {
     assert.equal(removed in conceptsModule, false, `${removed} came back`)
   }

@@ -52,6 +52,13 @@ PUBLIC_VOCABULARY_FRONTEND_FILES = (
     # went with the engine.
     'frontend/src/utils/bullpenConcepts.js',
     'frontend/tests/bullpenConcepts.test.mjs',
+    # Phase 9: How to Read becomes the reader-facing semantic map —
+    # organised by family, with the four labels that share the word
+    # 'Limited' disambiguated on the page instead of left to inference.
+    # It renders from the dictionary above and holds no vocabulary of
+    # its own.
+    'frontend/src/components/guide/HowToRead.jsx',
+    'frontend/tests/howToRead.test.mjs',
     'frontend/src/utils/pitcherLabels.js',
     'frontend/src/components/bullpen/availabilityView.js',
     'frontend/src/components/dashboard/syncStatusView.js',

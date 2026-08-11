@@ -45,6 +45,26 @@ export const SUPPORTING_CONCEPT_DEFINITIONS = Object.freeze({
       'Current late-inning arms whose workload and roster context leave them '
       + 'usable in the represented read.',
   },
+  lateInningAvailability: {
+    name: 'Late-Inning Availability',
+    definition: 'How much usable late-inning coverage the bullpen currently has.',
+  },
+  restedOptions: {
+    name: 'Rested Options',
+    definition:
+      'How many current bullpen options enter the represented read without '
+      + 'major recent-workload restriction.',
+  },
+  lateInningPressure: {
+    name: 'Late-Inning Pressure',
+    definition: 'How much recent workload is narrowing the late-game path.',
+  },
+  depthSafety: {
+    name: 'Depth Safety',
+    definition:
+      'Whether usable options remain beyond the primary late-inning and '
+      + 'bridge layers.',
+  },
 })
 
 // Team state vocabulary (Fresh / Stretched / Vulnerable).
@@ -56,17 +76,98 @@ export const TEAM_STATE_DEFINITIONS = Object.freeze([
 
 // Per-arm availability vocabulary (the four public statuses).
 export const ARM_AVAILABILITY_DEFINITIONS = Object.freeze([
-  Object.freeze({ name: 'Available', definition: 'Rested enough to pitch today.' }),
-  Object.freeze({ name: 'On Watch', definition: 'Usable, but recent work is worth watching.' }),
-  Object.freeze({ name: 'Limited', definition: 'Available only in a reduced role after recent work.' }),
-  Object.freeze({ name: 'Unavailable', definition: 'Not available today because of rest or roster status.' }),
+  Object.freeze({ name: 'Available', definition: 'Recent workload leaves the pitcher inside the normal availability range.' }),
+  Object.freeze({ name: 'On Watch', definition: 'The pitcher remains usable, but recent workload deserves attention.' }),
+  Object.freeze({ name: 'Limited', definition: 'Recent workload materially narrows how fully the pitcher can be used in the current workload classification.' }),
+  Object.freeze({ name: 'Unavailable', definition: 'Current workload or governed roster context removes the pitcher from available bullpen options.' }),
 ])
 
 // Freshness stamp vocabulary.
 export const FRESHNESS_LABEL_DEFINITIONS = Object.freeze([
-  Object.freeze({ name: 'Data through', definition: 'The latest completed MLB date included in the read.' }),
-  Object.freeze({ name: 'Updated', definition: 'When BaseballOS last wrote new baseball data.' }),
+  Object.freeze({ name: 'Data through', definition: 'The latest completed baseball date represented by the public read.' }),
+  Object.freeze({ name: 'Last data update', definition: 'When BaseballOS last successfully wrote new baseball data.' }),
+  Object.freeze({ name: 'Last checked', definition: 'When BaseballOS most recently attempted or observed a refresh.' }),
 ])
+
+// Provenance stamps. Separate concepts from the three above: they describe an
+// artifact's lifecycle, never the baseball date the read represents.
+export const PROVENANCE_LABEL_DEFINITIONS = Object.freeze([
+  Object.freeze({ name: 'Generated at', definition: 'When a historical or distribution artifact was created.' }),
+  Object.freeze({ name: 'Published at', definition: 'When that artifact became the trusted public publication.' }),
+])
+
+// The data-status family. It describes the state of the DATA, never a bullpen
+// or an arm — which is why it borrows no baseball word.
+export const DATA_STATUS_DEFINITIONS = Object.freeze([
+  Object.freeze({ name: 'Current', definition: "The represented public data is current under the platform's freshness rules." }),
+  Object.freeze({ name: 'Partial Data', definition: 'Some current data exists, but the public read carries a material data limitation.' }),
+  Object.freeze({ name: 'Stale', definition: 'The represented public data is outside the current freshness window.' }),
+  Object.freeze({ name: 'Data Unavailable', definition: 'BaseballOS does not currently have enough usable public data for the status.' }),
+])
+
+// Pitcher ROLE — how the arm has been used. Not availability, not quality.
+export const PITCHER_ROLE_DEFINITIONS = Object.freeze([
+  Object.freeze({ name: 'Trusted Arm', definition: 'Observed usage points to the primary late-inning trust role.' }),
+  Object.freeze({ name: 'Setup Arm', definition: 'Observed usage points to the setup or handoff layer.' }),
+  Object.freeze({ name: 'Coverage Arm', definition: 'Observed usage points to longer or multi-inning relief coverage.' }),
+  Object.freeze({ name: 'Middle Relief Arm', definition: 'Observed usage points to lighter middle-relief work; this is not a talent judgment.' }),
+  Object.freeze({ name: 'Role Unclear', definition: 'Observed usage does not support a reliable public bullpen-role classification.' }),
+])
+
+// Pitcher CURRENT READ — what tonight looks like for the arm. Distinct from role.
+export const PITCHER_CURRENT_READ_DEFINITIONS = Object.freeze([
+  Object.freeze({ name: 'Clean Option', definition: 'Recent workload and current evidence support a clean current workload read.' }),
+  Object.freeze({ name: 'Watch Arm', definition: 'The pitcher remains usable, but recent workload deserves attention.' }),
+  Object.freeze({ name: 'Limited Rest', definition: 'Recent workload leaves materially less rest than a Clean Option.' }),
+  Object.freeze({ name: 'Unavailable', definition: 'Current workload or roster authority removes the pitcher from available bullpen options.' }),
+  Object.freeze({ name: 'Limited Read', definition: 'BaseballOS does not have enough current evidence for a clear pitcher read.' }),
+])
+
+// READ CONFIDENCE — how clear the evidence is. Not a baseball conclusion.
+export const READ_CONFIDENCE_FAMILY = 'Read Confidence'
+export const READ_CONFIDENCE_DEFINITIONS = Object.freeze([
+  Object.freeze({ name: 'High', definition: 'The evidence behind the read is complete and clear.' }),
+  Object.freeze({ name: 'Medium', definition: 'The evidence supports the read with some gaps.' }),
+  Object.freeze({ name: 'Low', definition: 'The evidence is thin enough that the read should be treated carefully.' }),
+  Object.freeze({ name: 'Unavailable', definition: 'There is not enough evidence to state a confidence level.' }),
+])
+export const READ_CONFIDENCE_BOUNDARY =
+  'Read confidence describes how complete or clear the evidence behind a read '
+  + 'is. It is not Team State, not arm availability, not a pitcher role, not a '
+  + 'quality grade, not a ranking, and not a prediction.'
+
+// THE LIMITED FAMILY. Four labels share a word and answer four different
+// questions; the page states the difference rather than leaving a reader to
+// infer it from four separate cards.
+export const LIMITED_FAMILY_DISAMBIGUATION = Object.freeze([
+  Object.freeze({
+    name: 'Limited',
+    family: 'Arm Availability',
+    definition: 'Recent workload materially narrows how fully the pitcher can be used.',
+  }),
+  Object.freeze({
+    name: 'Limited Rest',
+    family: 'Pitcher Current Read',
+    definition: 'Recent workload leaves materially less rest than a Clean Option.',
+  }),
+  Object.freeze({
+    name: 'Limited Read',
+    family: 'Pitcher Current Read / evidence limitation',
+    definition: 'BaseballOS does not have enough current evidence for a clear pitcher read.',
+  }),
+  Object.freeze({
+    name: 'Role Unclear',
+    family: 'Pitcher Role',
+    definition: 'Observed usage does not support a reliable public bullpen-role classification.',
+  }),
+])
+export const LIMITED_FAMILY_BOUNDARY =
+  'These are different dimensions, not degrees of the same thing: one is how '
+  + 'much of the arm is usable, one is how rested it is, one is how much '
+  + 'evidence there is, and one is what kind of arm it is.'
+
+export const SUPPORTING_READ_BOUNDARY =
+  'Supporting reads explain one dimension of a bullpen. They are not Team State.'
 
 export const LIMITED_READ_LABEL = 'Limited Read'
 
