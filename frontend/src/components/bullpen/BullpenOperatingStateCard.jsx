@@ -133,6 +133,13 @@ export default function BullpenOperatingStateCard({
   ctaLabel,
   lastSyncLabel = 'Dashboard read synced',
   density = 'full',
+  // Opt-in: the surrounding page already states this team's identity as its own
+  // page heading, so the card drops its team-name heading rather than repeating
+  // it directly underneath. Only the Team Board passes this. It defaults to
+  // false so every other caller — the Dashboard above all — is unchanged, and it
+  // is deliberately explicit rather than inferred from scope or density, which
+  // are presentation facts and would couple this to the wrong thing.
+  titleOwnedByPage = false,
   className = '',
 }) {
   const view = getBullpenOperatingStateView({
@@ -156,6 +163,7 @@ export default function BullpenOperatingStateCard({
         staleWithError={staleWithError}
         onRetry={onRetry}
         lastSyncLabel={lastSyncLabel}
+        titleOwnedByPage={titleOwnedByPage}
         className={className}
       />
     )
@@ -177,9 +185,11 @@ export default function BullpenOperatingStateCard({
           <div className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
             {view.scopeLabel}
           </div>
-          <h3 className="mt-1 break-words font-display text-2xl leading-tight tracking-wide text-chalk100">
-            {view.teamLabel}
-          </h3>
+          {!titleOwnedByPage && (
+            <h3 className="mt-1 break-words font-display text-2xl leading-tight tracking-wide text-chalk100">
+              {view.teamLabel}
+            </h3>
+          )}
         </div>
         {view.stateLabel && (
           <StateBadge view={view} />
@@ -314,6 +324,7 @@ function CompactBullpenOperatingStateCard({
   staleWithError,
   onRetry,
   lastSyncLabel,
+  titleOwnedByPage = false,
   className = '',
 }) {
   const evidence = compactEvidenceList(view)
@@ -335,9 +346,11 @@ function CompactBullpenOperatingStateCard({
           <div className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
             {view.scopeLabel}
           </div>
-          <h3 className="mt-0.5 break-words font-display text-lg leading-tight tracking-wide text-chalk100 sm:text-xl">
-            {view.teamLabel}
-          </h3>
+          {!titleOwnedByPage && (
+            <h3 className="mt-0.5 break-words font-display text-lg leading-tight tracking-wide text-chalk100 sm:text-xl">
+              {view.teamLabel}
+            </h3>
+          )}
         </div>
         {view.stateLabel && <StateBadge view={view} compact />}
       </div>
