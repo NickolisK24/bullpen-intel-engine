@@ -10,16 +10,32 @@ const COLUMN_TONE = {
 }
 
 // Lane labels describe the situation each backend-supplied list represents.
+//
 // They are deliberately free of superlative or extreme framing ("most",
 // "fewest", "best", "worst"): no public contract authorizes a claim that one
 // bullpen is the most or least anything, and a lane is league orientation, not
 // a classification. Canonical Team State remains Fresh / Stretched /
 // Vulnerable and is never derived from the lane a team sits in.
+//
+// They are also deliberately phrased as descriptive clauses rather than as
+// short titles. The previous labels — "Room to Maneuver", "On Watch", "Limited
+// Late-Inning Margin" — were the same grammatical shape as a Team State: a
+// two-or-three word capitalised noun phrase. Sitting immediately above a club
+// name and its canonical state chip, they read as a fourth, fifth, and sixth
+// team state, which is exactly what the three-state contract forbids. A clause
+// ("Where arms are rested") cannot be mistaken for a state label, so the lane
+// can stay useful without competing with the vocabulary it sits next to.
+//
+// "On Watch" specifically remains canonical public vocabulary at the *arm*
+// altitude — it is one of the public availability reads, and it is unchanged
+// everywhere it describes an arm. It simply stops doubling as a league lane
+// title, where it was the same word doing a different job one line above a
+// Team State.
 export const BULLPEN_LANDSCAPE_COLUMNS = [
   {
     key: 'available',
     sourceKey: 'available_bullpens',
-    title: 'Room to Maneuver',
+    title: 'Where arms are rested',
     subtitle: 'Rested arms available to work with',
     metric: 'available',
     suffix: 'rested and available',
@@ -27,7 +43,7 @@ export const BULLPEN_LANDSCAPE_COLUMNS = [
   {
     key: 'monitoring',
     sourceKey: 'monitoring_concentration',
-    title: 'On Watch',
+    title: 'Where recent work is worth watching',
     subtitle: 'Recent workload watch groups',
     metric: 'monitor',
     suffix: 'on watch',
@@ -35,7 +51,7 @@ export const BULLPEN_LANDSCAPE_COLUMNS = [
   {
     key: 'constrained',
     sourceKey: 'constrained_bullpens',
-    title: 'Limited Late-Inning Margin',
+    title: 'Where late-inning margin is thin',
     subtitle: 'Clean late-inning options are limited',
     metric: 'restricted',
     suffix: 'needing rest or unavailable',

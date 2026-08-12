@@ -130,6 +130,7 @@ const EMPTY_REASON_COPY = {
   no_completed_game_contexts: 'No completed-game contexts are available for the current reference date.',
   no_publishable_coin_story: 'No publishable bullpen story is available from the current completed-game context.',
   lead_story_unavailable: 'The lead story service is unavailable right now.',
+  lead_story_copy_unavailable: 'No publishable lead copy was supplied for the selected story.',
 }
 
 const FAIL_CLOSED_EMPTY_REASONS = new Set([
@@ -192,7 +193,7 @@ export async function submitAudienceSignup({
 // to go next?" grid between the league picture and what changed, and a four-up
 // "learn & explore" grid at the bottom. Both duplicated navigation the shell
 // already owns, and the first one interrupted the reading path at its
-// strongest point. The masthead carries Today, League Board, Team Bullpens,
+// strongest point. The masthead carries Today, Dashboard, Bullpens,
 // Stories, Methodology, and Data & Trust; the footer carries About, How to
 // Read, Methodology, and Data & Trust. Compare and Reliever Finder are the
 // residue, so they are the whole of what Today still needs to expose.
@@ -941,14 +942,27 @@ function buildBullpenSnapshot(packagePayload = {}) {
   return rows
 }
 
-function buildSelectionMetadata(selection = {}) {
-  return [
-    ['Priority', displayKey(selection.story_priority)],
-    ['Confidence', displayKey(selection.confidence)],
-  ]
-    .filter(([, value]) => Boolean(value))
-    .map(([label, value]) => ({ label, value }))
-}
+// Reading the governed lead-story response.
+//
+// This adapter is the reader for `/bullpen/intelligence/today`. Today does not
+// currently render its output — a public lead-story claim contract does not yet
+// exist in the Bullpen Intelligence Standard, and Phase 3 "Today lead
+// authority" is unstarted — so the surface deliberately carries no lead. The
+// adapter and its tests stay, because the endpoint is live and the reader is
+// what the future lead region will consume.
+//
+// Two rules it must already satisfy, so that a later wiring cannot quietly
+// introduce them:
+//
+//   1. It never invents a headline. A response the backend marked publishable
+//      but that carries no usable draft copy is not a story the frontend can
+//      complete on the backend's behalf; it fails closed to no story, with a
+//      reason, exactly like an empty response.
+//   2. It never surfaces the selection internals. `story_priority` and
+//      `confidence` are the engine's own ranking and certainty fields. They are
+//      internal scoring vocabulary, they are not public claims, and a reader
+//      cannot check them, so they do not leave this module.
+const LEAD_STORY_NO_PUBLISHABLE_COPY = 'lead_story_copy_unavailable'
 
 export function getLeadStoryView(response, teams = []) {
   if (!response || response.status !== 'ok' || !response.lead_story) {
@@ -963,9 +977,18 @@ export function getLeadStoryView(response, teams = []) {
   const lead = response.lead_story
   const draft = firstAvailableDraft(lead.drafts)
   const packagePayload = lead.package || {}
-  const headline = cleanStoryCopy(draft?.headline) || 'BaseballOS is watching this bullpen story.'
+  const headline = cleanStoryCopy(draft?.headline)
   const body = cleanStoryCopy(draft?.body || draft?.text) || ''
   const team = resolveLeadTeam(lead, teams)
+
+  if (!headline) {
+    return {
+      hasStory: false,
+      emptyReason: emptyReasonText(LEAD_STORY_NO_PUBLISHABLE_COPY),
+      candidatesConsidered: numberValue(response?.candidates_considered),
+      publishableCandidates: numberValue(response?.publishable_candidates),
+    }
+  }
 
   return {
     hasStory: true,
@@ -981,7 +1004,6 @@ export function getLeadStoryView(response, teams = []) {
       packagePayload.public_limitations,
     ).slice(0, 3),
     snapshot: buildBullpenSnapshot(packagePayload),
-    metadata: buildSelectionMetadata(lead.selection || {}),
     referenceDate: textValue(response.reference_date),
     candidateSummary: {
       considered: numberValue(response.candidates_considered),
@@ -1253,25 +1275,44 @@ function briefFacts({ freshness, slateDate, teamsEvaluated }) {
   ]
 }
 
+// The edition date is the baseball date this edition represents, preferring the
+// slate the pregame reads describe and falling back to the completed date the
+// bullpen picture is built from. Both are governed values served with the page.
+// When neither is served the dateline disappears rather than reaching for the
+// reader's clock — an undated edition is honest, a wrongly dated one is not.
+function editionDateline({ freshness, slateDate }) {
+  return formatFreshnessDate(
+    firstTextValue(slateDate, freshnessDataThrough(freshness)),
+    { includeYear: true, weekday: true, month: 'long' },
+  )
+}
+
+// The masthead is a nameplate and a dateline, not a hero.
+//
+// It used to open with a value proposition ("See which bullpens are fresh,
+// stretched, or vulnerable tonight — and why."), a paragraph explaining how the
+// product works, and two calls to action. That is a landing page: it argued for
+// the product in the position where a daily edition states what day it is and
+// then reports the baseball. It also pushed the league picture — the first real
+// read on the page — off the opening screen entirely.
+//
+// What survives is what a masthead owes the reader: who is publishing, what
+// date the edition represents, and how current the data behind it is. The
+// product statement still exists, further down the page in its own region,
+// where it no longer outranks the day's baseball. The two calls to action are
+// gone: the league board is reachable from the end of the league picture and
+// from the masthead navigation, and an anchor link to the next section on the
+// same page was never doing work the scroll wasn't already doing.
 function DailyIntelligenceBrief({ freshness, slateDate, teamsEvaluated }) {
   return (
     <EditionHeader
-      eyebrow="Today's Intelligence Brief"
+      eyebrow="BaseballOS · Today"
       editionLabel="MLB BULLPEN INTELLIGENCE — UPDATED DAILY"
       shortEditionLabel="Updated daily"
-      title="See which bullpens are fresh, stretched, or vulnerable tonight — and why."
-      standfirst="BaseballOS reads public MLB usage, rest, and roster context after every completed game, then explains how each bullpen is set up tonight — with the date and the evidence each read rests on."
+      title="Today's Bullpen Edition"
+      editionDateLabel="Edition"
+      editionDate={editionDateline({ freshness, slateDate })}
       facts={briefFacts({ freshness, slateDate, teamsEvaluated })}
-      actions={
-        <>
-          <a href="#bullpen-picture" className="bos-action bos-action--primary w-full sm:w-auto">
-            Explore today's bullpen picture
-          </a>
-          <Link to="/dashboard" className="bos-action bos-action--quiet w-full sm:w-auto">
-            View the league board
-          </Link>
-        </>
-      }
     />
   )
 }
@@ -2022,11 +2063,19 @@ function BullpenPicture({
           <div className="grid grid-cols-1 gap-x-14 gap-y-10 md:grid-cols-3">
             {picture.columns.map(column => (
               <div key={column.title} className="flex min-w-0 flex-col border-t border-line pt-5">
-                <h3 className="text-[0.9375rem] font-semibold tracking-[-0.01em] text-chalk200">
+                {/* The lane label is deliberately the quietest text in the
+                    column. It is orientation — which list the club came out of
+                    — and it sits directly above a club name and that club's
+                    canonical Team State. Given as a heading in the same weight
+                    and size as the state below it, it competed with the state;
+                    given as a small label, it introduces the group and gets out
+                    of the way. The state chip stays the only state-shaped thing
+                    in the column. */}
+                <h3 className="bos-micro">
                   {column.title}
                 </h3>
                 {column.subtitle && (
-                  <p className="bos-support mt-1 text-chalk500">{column.subtitle}</p>
+                  <p className="bos-support mt-1.5 text-chalk500">{column.subtitle}</p>
                 )}
                 {column.lead ? (
                   <div className="mt-6 flex flex-1 flex-col">

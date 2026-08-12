@@ -584,10 +584,40 @@ test('lead story view resolves team, prose, evidence, metadata, and snapshot', (
   assert.deepEqual(view.limitations, [])
   assert.ok(view.snapshot.includes('Available arms: 3'))
   assert.ok(view.snapshot.includes('Named Clean Options: Erik Miller'))
-  assert.deepEqual(view.metadata.map(item => item.label), [
-    'Priority',
-    'Confidence',
-  ])
+})
+
+test('the lead story reader never exposes the engine selection internals', () => {
+  const view = getLeadStoryView(intelligenceOk, teams)
+
+  // story_priority and confidence are the engine's own ranking and certainty
+  // fields. They are internal scoring vocabulary, a reader cannot check them,
+  // and no public contract authorizes them, so the reader does not carry them
+  // out of the module at all.
+  assert.equal('metadata' in view, false)
+  const serialized = JSON.stringify(view)
+  for (const internal of ['story_priority', 'Priority', 'confidence', 'Confidence']) {
+    assert.equal(serialized.includes(internal), false, internal)
+  }
+})
+
+test('a publishable response with no usable draft copy fails closed instead of inventing a headline', () => {
+  const noCopy = clone(intelligenceOk)
+  for (const draft of Object.values(noCopy.lead_story.drafts)) {
+    delete draft.headline
+  }
+
+  const view = getLeadStoryView(noCopy, teams)
+
+  // The backend marked a story publishable but supplied no headline. The
+  // frontend does not complete the copy on its behalf — it reports no story and
+  // says why, exactly as it would for an empty response.
+  assert.equal(view.hasStory, false)
+  assert.equal(view.headline, undefined)
+  assert.ok(view.emptyReason)
+  assert.equal(
+    JSON.stringify(view).includes('BaseballOS is watching this bullpen story'),
+    false,
+  )
 })
 
 test('lead story view resolves payload limitations safely', () => {
@@ -614,9 +644,7 @@ test('Intelligence Surface shell renders before data resolves', () => {
   }))
 
   assert.ok(htmlIncludes(html, 'MLB BULLPEN INTELLIGENCE — UPDATED DAILY'))
-  assert.ok(htmlIncludes(html, 'See which bullpens are fresh, stretched, or vulnerable tonight — and why.'))
-  assert.ok(htmlIncludes(html, 'Explore today&#x27;s bullpen picture'))
-  assert.ok(htmlIncludes(html, 'href="#bullpen-picture"'))
+  assert.ok(htmlIncludes(html, "Today&#x27;s Bullpen Edition"))
   assert.ok(htmlIncludes(html, 'Get BaseballOS bullpen notes in your inbox.'))
   assert.ok(htmlIncludes(html, 'type="email"'))
   assert.ok(htmlIncludes(html, 'Get bullpen notes'))
@@ -653,7 +681,7 @@ test('homepage sections introduce the bullpen picture before Tonight watch', () 
   // changed → tonight → vocabulary → trust → positioning, and nothing is
   // allowed to interrupt that sequence with a navigation block.
   const orderedSections = [
-    'See which bullpens are fresh, stretched, or vulnerable tonight — and why.',
+    "Today&#x27;s Bullpen Edition",
     'Today&#x27;s Bullpen Picture',
     'SINCE YESTERDAY',
     'What changed across MLB bullpens',
@@ -698,7 +726,7 @@ test('Today moves straight from the league picture into what changed', () => {
 test('a bullpen picture standout builds an exact team board link from its stable identifier', () => {
   const view = getBullpenPictureView(landscape)
   const availableColumn = view.columns.find(column => column.metric === 'available')
-  // San Francisco is the standout in "Room to Maneuver"; its lead resolves to the
+  // San Francisco is the standout in "Where arms are rested"; its lead resolves to the
   // exact team board via the stable abbreviation, carrying landscape provenance.
   assert.equal(
     availableColumn.lead.teamHref,
@@ -1009,8 +1037,7 @@ test('Intelligence Surface renders a populated StoryPackage without raw JSON fie
   }))
 
   assert.ok(htmlIncludes(html, 'MLB BULLPEN INTELLIGENCE — UPDATED DAILY'))
-  assert.ok(htmlIncludes(html, 'See which bullpens are fresh, stretched, or vulnerable tonight — and why.'))
-  assert.ok(htmlIncludes(html, 'BaseballOS reads public MLB usage, rest, and roster context after every completed game, then explains how each bullpen is set up tonight — with the date and the evidence each read rests on.'))
+  assert.ok(htmlIncludes(html, "Today&#x27;s Bullpen Edition"))
   assert.equal(htmlIncludes(html, 'see the evidence behind each read'), false)
   assert.ok(htmlIncludes(html, 'Descriptive only — we show what we see and what we can&#x27;t. No picks, no predictions.'))
   assert.equal(htmlIncludes(html, 'Upcoming Games'), false)
@@ -1623,7 +1650,7 @@ test('Tonight error shows a graceful error state when fallback also fails', () =
   assert.equal(htmlIncludes(html, 'Giants bullpen let a four-run lead get away'), false)
   assert.ok(htmlIncludes(html, 'Tonight&#x27;s bullpen reads are temporarily unavailable.'))
   assert.ok(htmlIncludes(html, 'The rest of Today can still be used.'))
-  assert.ok(htmlIncludes(html, 'Room to Maneuver'))
+  assert.ok(htmlIncludes(html, 'Where arms are rested'))
 })
 
 test('Tonight empty state renders when neither Tonight nor fallback observations are available', () => {
@@ -1652,7 +1679,7 @@ test('fallback dashboard failure does not prevent Today sections rendering', () 
   assert.equal(htmlIncludes(html, 'Giants bullpen let a four-run lead get away'), false)
   assert.equal(htmlIncludes(html, 'The Giants reached the seventh with a cushion'), false)
   assert.ok(htmlIncludes(html, 'No standout bullpen watch point tonight.'))
-  assert.ok(htmlIncludes(html, 'Room to Maneuver'))
+  assert.ok(htmlIncludes(html, 'Where arms are rested'))
 })
 
 test('Bullpen Picture failure does not prevent Today page rendering', () => {
@@ -1676,13 +1703,13 @@ test('Bullpen Picture renders existing landscape lanes and handles missing data'
   const picture = getBullpenPictureView(landscape)
   assert.equal(picture.hasLandscape, true)
   assert.deepEqual(picture.columns.map(column => column.title), [
-    'Room to Maneuver',
-    'On Watch',
-    'Limited Late-Inning Margin',
+    'Where arms are rested',
+    'Where recent work is worth watching',
+    'Where late-inning margin is thin',
   ])
-  assert.equal(picture.columns.find(column => column.title === 'Limited Late-Inning Margin')?.entries[0]?.restricted, 4)
+  assert.equal(picture.columns.find(column => column.title === 'Where late-inning margin is thin')?.entries[0]?.restricted, 4)
   // Teaser view-model: one standout team per lane plus an overflow count.
-  assert.equal(picture.columns.find(column => column.title === 'Limited Late-Inning Margin')?.lead?.restricted, 4)
+  assert.equal(picture.columns.find(column => column.title === 'Where late-inning margin is thin')?.lead?.restricted, 4)
   assert.equal(picture.columns.every(column => column.moreCount === 0), true)
 
   const crowdedPicture = getBullpenPictureView({
@@ -1692,7 +1719,7 @@ test('Bullpen Picture renders existing landscape lanes and handles missing data'
       { team_id: 121, team_name: 'New York Mets', team_abbreviation: 'NYM', total_relievers: 8, available: 5, monitor: 2, restricted: 1 },
     ],
   })
-  const availableLane = crowdedPicture.columns.find(column => column.title === 'Room to Maneuver')
+  const availableLane = crowdedPicture.columns.find(column => column.title === 'Where arms are rested')
   assert.equal(availableLane?.lead?.teamAbbrev, 'SF')
   assert.equal(availableLane?.moreCount, 1)
 
@@ -1707,9 +1734,9 @@ test('Bullpen Picture renders existing landscape lanes and handles missing data'
   assert.ok(htmlIncludes(html, 'Today&#x27;s Bullpen Picture'))
   assert.ok(htmlIncludes(html, 'Where each bullpen sits across the league right now, and which clubs are worth opening first.'))
   assert.ok(htmlIncludes(html, 'Published view through Jun 25'))
-  assert.ok(htmlIncludes(html, 'Room to Maneuver'))
-  assert.ok(htmlIncludes(html, 'Limited Late-Inning Margin'))
-  assert.ok(htmlIncludes(html, 'On Watch'))
+  assert.ok(htmlIncludes(html, 'Where arms are rested'))
+  assert.ok(htmlIncludes(html, 'Where late-inning margin is thin'))
+  assert.ok(htmlIncludes(html, 'Where recent work is worth watching'))
   assert.ok(htmlIncludes(html, 'SF'))
   assert.ok(htmlIncludes(html, 'MIL'))
   assert.ok(htmlIncludes(html, 'TOR'))

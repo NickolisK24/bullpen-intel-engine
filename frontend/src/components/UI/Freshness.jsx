@@ -33,8 +33,11 @@ const NON_LIVE_FRESHNESS_STATES = new Set([
   'deterministic_sample_state',
 ])
 
-export function formatFreshnessDate(value, { includeYear = false } = {}) {
-  const formatted = formatDateOnly(value, { month: 'short' })
+export function formatFreshnessDate(
+  value,
+  { includeYear = false, month = 'short', weekday = false } = {},
+) {
+  const formatted = formatDateOnly(value, { month, weekday })
   if (!formatted) return null
   return includeYear ? formatted : formatted.replace(/,\s*\d{4}$/, '')
 }

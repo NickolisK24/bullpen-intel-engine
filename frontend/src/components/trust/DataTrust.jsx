@@ -27,7 +27,7 @@ const TRUST_LIMITATIONS = [
 const INSPECT_LINKS = [
   { to: '/methodology', label: 'Methodology — how reads are formed' },
   { to: '/how-to-read', label: 'How to Read — what the public labels mean' },
-  { to: '/bullpen', label: 'Team Bullpens — inspect a team’s live evidence' },
+  { to: '/bullpen', label: 'Bullpens — inspect a team’s live evidence' },
   { to: '/bullpen?view=pitchers', label: 'Reliever Finder — inspect one reliever' },
   { to: '/bullpen?view=compare', label: 'Compare Bullpens — put two pens side by side' },
 ]

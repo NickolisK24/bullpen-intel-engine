@@ -56,13 +56,13 @@ const landscape = {
 test('landscape renders canonical callout titles with descriptive subtitles', () => {
   const html = render(React.createElement(BullpenLandscape, { landscape }))
   assert.ok(htmlIncludes(html, 'Bullpen Landscape'))
-  assert.ok(htmlIncludes(html, 'Limited Late-Inning Margin'))
-  assert.ok(htmlIncludes(html, 'Room to Maneuver'))
-  assert.ok(htmlIncludes(html, 'On Watch'))
+  assert.ok(htmlIncludes(html, 'Where late-inning margin is thin'))
+  assert.ok(htmlIncludes(html, 'Where arms are rested'))
+  assert.ok(htmlIncludes(html, 'Where recent work is worth watching'))
   assert.ok(
-    html.indexOf('Room to Maneuver') < html.indexOf('On Watch') &&
-    html.indexOf('On Watch') < html.indexOf('Limited Late-Inning Margin'),
-    'landscape columns should render Room to Maneuver, On Watch, then Limited Late-Inning Margin',
+    html.indexOf('Where arms are rested') < html.indexOf('Where recent work is worth watching') &&
+    html.indexOf('Where recent work is worth watching') < html.indexOf('Where late-inning margin is thin'),
+    'landscape columns should render Where arms are rested, Where recent work is worth watching, then Where late-inning margin is thin',
   )
   assert.ok(htmlIncludes(html, 'Clean late-inning options are limited'))
   assert.ok(htmlIncludes(html, 'Rested arms available to work with'))
@@ -100,7 +100,7 @@ test('dashboard surfaces the landscape section near the top', () => {
   }
   const html = render(React.createElement(DashboardView, { data }))
   assert.ok(htmlIncludes(html, 'Bullpen Landscape'))
-  assert.ok(htmlIncludes(html, 'Limited Late-Inning Margin'))
+  assert.ok(htmlIncludes(html, 'Where late-inning margin is thin'))
   assert.ok(htmlIncludes(html, 'Clean late-inning options are limited'))
 })
 

@@ -2,6 +2,8 @@ const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
                       'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 const MONTHS_LONG = ['January', 'February', 'March', 'April', 'May', 'June',
                      'July', 'August', 'September', 'October', 'November', 'December']
+const WEEKDAYS_LONG = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday',
+                       'Friday', 'Saturday']
 
 const ET_DATE_TIME_FORMATTER = new Intl.DateTimeFormat('en-US', {
   month: 'short',
@@ -41,7 +43,7 @@ export function formatUtcDateTimeEt(value, { includeDate = true } = {}) {
   return `${formatter.format(date)} ET`
 }
 
-export function formatDateOnly(value, { month = 'long' } = {}) {
+export function formatDateOnly(value, { month = 'long', weekday = false } = {}) {
   if (!value) return null
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value))
   if (!match) return null
@@ -50,5 +52,13 @@ export function formatDateOnly(value, { month = 'long' } = {}) {
   const day = Number(dayValue)
   if (monthIndex < 0 || monthIndex > 11 || day < 1 || day > 31) return null
   const monthName = month === 'short' ? MONTHS_SHORT[monthIndex] : MONTHS_LONG[monthIndex]
-  return `${monthName} ${day}, ${year}`
+  const stamp = `${monthName} ${day}, ${year}`
+  if (!weekday) return stamp
+  // Derived from the supplied calendar date alone, through a UTC instant so no
+  // local timezone can shift the day. It is presentation on a date the caller
+  // already had — never a reading of the visitor's clock, and never a claim
+  // about which date is "today".
+  const utc = new Date(Date.UTC(Number(year), monthIndex, day))
+  if (Number.isNaN(utc.getTime()) || utc.getUTCDate() !== day) return stamp
+  return `${WEEKDAYS_LONG[utc.getUTCDay()]}, ${stamp}`
 }

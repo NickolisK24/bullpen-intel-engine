@@ -107,9 +107,10 @@ test('hidden technical, auth, and internal routes stay outside primary product n
 
 test('sidebar preserves public route order and excludes Prospects', () => {
   const html = render(React.createElement(Sidebar))
-  // Primary destinations use plain baseball labels; the old ambiguous
-  // "Dashboard"/"Bullpen" and population-overstating "All Pitchers" are gone.
-  const primaryLabels = ['Today', 'League Board', 'Team Bullpens', 'Compare Bullpens', 'Reliever Finder', 'Stories']
+  // Primary destinations use the canonical public lane names from
+  // docs/canonical/03_PRODUCT_EXPERIENCE_STANDARD.md section 5. The
+  // population-overstating "All Pitchers" stays gone.
+  const primaryLabels = ['Today', 'Dashboard', 'Bullpens', 'Compare Bullpens', 'Reliever Finder', 'Stories']
   const supportingLabels = ['How to Read', 'Methodology', 'Data &amp; Trust', 'About']
   const routeIndexes = publicProductRoutes.map(route => html.indexOf(`href="${route}"`))
 
@@ -124,8 +125,8 @@ test('sidebar preserves public route order and excludes Prospects', () => {
   // Compare Bullpens and Reliever Finder are direct destinations from the menu.
   assert.ok(htmlIncludes(html, 'href="/bullpen?view=compare"'))
   assert.ok(htmlIncludes(html, 'href="/bullpen?view=pitchers"'))
-  // Ambiguous or population-overstating labels no longer appear.
-  assert.equal(htmlIncludes(html, '>Dashboard<'), false)
+  // Population-overstating labels no longer appear. ("Dashboard" is canonical
+  // public naming and is asserted present above.)
   assert.equal(htmlIncludes(html, 'All Pitchers'), false)
   assert.equal(htmlIncludes(html, 'href="/prospects"'), false)
   assert.equal(htmlIncludes(html, 'Prospects'), false)
@@ -248,7 +249,7 @@ test('the desktop masthead carries the six primary public destinations', () => {
 
   assert.deepEqual(
     MASTHEAD_NAV.map(item => item.label),
-    ['Today', 'League Board', 'Team Bullpens', 'Stories', 'Methodology', 'Data & Trust'],
+    ['Today', 'Dashboard', 'Bullpens', 'Stories', 'Methodology', 'Data & Trust'],
   )
   const escapeHtml = value => value.replace(/&/g, '&amp;')
   for (const item of MASTHEAD_NAV) {

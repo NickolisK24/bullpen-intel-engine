@@ -331,12 +331,47 @@ test('Today opens with one edition brief carrying only governed facts', () => {
   }))
 
   assert.equal((html.match(/<h1/g) || []).length, 1, 'exactly one H1')
-  assert.ok(htmlIncludes(html, "Today&#x27;s Intelligence Brief"))
+  assert.ok(htmlIncludes(html, 'BaseballOS · Today'))
+  assert.ok(htmlIncludes(html, "Today&#x27;s Bullpen Edition"))
   assert.ok(htmlIncludes(html, 'Bullpen data through'))
   assert.ok(htmlIncludes(html, 'Aug 5, 2026'))
   assert.ok(htmlIncludes(html, 'Tonight slate'))
   assert.ok(htmlIncludes(html, 'Teams tracked'))
   assert.ok(htmlIncludes(html, '30'))
+})
+
+test('the masthead is a dated nameplate, not a product pitch', () => {
+  const html = render(React.createElement(IntelligenceSurfaceView, {
+    dashboard: { freshness },
+    landscape,
+    tonight: { status: 'ok', reference_date: '2026-08-06', cards: [] },
+    teams,
+  }))
+
+  // The edition is dated by the slate it represents, derived from the served
+  // reference date and never from the reader's clock.
+  assert.ok(htmlIncludes(html, 'Thursday, August 6, 2026'))
+
+  // A masthead names the publication and dates the issue. The value
+  // proposition, the how-it-works paragraph, and the two calls to action that
+  // used to occupy this position are gone: they argued for the product where a
+  // daily edition reports the day, and they pushed the first real read off the
+  // opening screen.
+  const head = html.slice(0, html.indexOf('id="bullpen-picture"'))
+  for (const marketing of [
+    'See which bullpens are fresh, stretched, or vulnerable tonight',
+    'BaseballOS reads public MLB usage, rest, and roster context after every completed game',
+    "Explore today&#x27;s bullpen picture",
+    'View the league board',
+  ]) {
+    assert.equal(htmlIncludes(head, marketing), false, marketing)
+  }
+
+  // The first substantive region on the page is baseball, not positioning.
+  assert.ok(
+    html.indexOf('id="bullpen-picture"') < html.indexOf('id="what-baseballos-is-for"'),
+    'the league picture outranks the product statement',
+  )
 })
 
 test('the edition brief withholds every temporal fact when nothing is served', () => {
@@ -346,8 +381,82 @@ test('the edition brief withholds every temporal fact when nothing is served', (
   assert.equal(htmlIncludes(html, 'Last updated'), false)
   assert.equal(htmlIncludes(html, 'Published view'), false)
   assert.equal(htmlIncludes(html, 'Teams tracked'), false)
-  // The lead statement and the boundary survive; only unsupported facts drop.
-  assert.ok(htmlIncludes(html, 'See which bullpens are fresh, stretched, or vulnerable tonight — and why.'))
+  // The nameplate survives — it is identity, not a claim about data.
+  assert.ok(htmlIncludes(html, "Today&#x27;s Bullpen Edition"))
+  // The dateline does not: an undated edition is honest, a guessed date is not.
+  assert.equal(/\b(Sunday|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday),/.test(visibleText(html)), false)
+})
+
+test('a stale edition is dated by the data it represents, not by the reader', () => {
+  const staleFreshness = {
+    ...freshness,
+    is_current: false,
+    is_stale: true,
+    freshness_state: 'stale',
+  }
+  const html = render(React.createElement(IntelligenceSurfaceView, {
+    dashboard: { freshness: staleFreshness },
+    landscape,
+    teams,
+  }))
+
+  // With no slate served the edition falls back to the completed date the
+  // bullpen picture is built from — and says so plainly. A prettier masthead
+  // must never let a stale read wear today's date.
+  assert.ok(htmlIncludes(html, 'Wednesday, August 5, 2026'))
+  assert.ok(htmlIncludes(html, 'Not current'))
+})
+
+test('no date on Today can come from the reader’s clock', () => {
+  // The only defence that survives refactoring: the Today rendering path never
+  // reads the current time at all. Every date it shows is a value the
+  // application was served, so there is no code path in which a stale read can
+  // acquire a fresh-looking date.
+  const clockSources = [
+    surfaceSource,
+    intelSources,
+    readFileSync(new URL('../src/utils/dateDisplay.js', import.meta.url), 'utf8'),
+    readFileSync(new URL('../src/components/UI/Freshness.jsx', import.meta.url), 'utf8'),
+  ].join('\n')
+
+  assert.equal(/\bnew Date\(\s*\)/.test(clockSources), false, 'new Date()')
+  assert.equal(/\bDate\.now\(\s*\)/.test(clockSources), false, 'Date.now()')
+})
+
+test('Today renders no lead story and invents no headline for one', () => {
+  // A public lead-story claim contract does not exist yet in the Bullpen
+  // Intelligence Standard, and Phase 3 "Today lead authority" is unstarted, so
+  // Today carries no lead region. What matters for this pass is that the
+  // position is not filled with something manufactured instead: the surface
+  // must not render a placeholder lead, a "nothing cleared the bar" notice that
+  // implies an evaluation this surface did not run, or the raw backend empty
+  // reason.
+  const html = render(React.createElement(IntelligenceSurfaceView, {
+    intelligence: {
+      status: 'empty',
+      lead_story: null,
+      empty_reason: 'no_publishable_coin_story',
+      candidates_considered: 4,
+      publishable_candidates: 0,
+    },
+    dashboard: { freshness },
+    landscape,
+    tonight: { status: 'ok', reference_date: '2026-08-06', cards: [] },
+    teams,
+  }))
+
+  for (const fabricated of [
+    'BaseballOS is watching this bullpen story',
+    'No lead bullpen story has cleared the bar yet.',
+    'No publishable bullpen story is available from the current completed-game context.',
+    'candidates considered',
+  ]) {
+    assert.equal(htmlIncludes(html, fabricated), false, fabricated)
+  }
+
+  // The first substantive read is still the governed league picture.
+  const head = html.slice(0, html.indexOf('id="bullpen-picture"'))
+  assert.equal((head.match(/<h2/g) || []).length, 0, 'nothing outranks the league picture')
 })
 
 test('the brief reports a non-current published view honestly instead of hiding it', () => {
@@ -378,7 +487,7 @@ test('the league overview renders backend Team State and fails closed without on
   // A team whose backend block says "unavailable" gets the governed non-state.
   assert.ok(htmlIncludes(overview, 'No current state'))
   // A team with no Team State block at all gets no state chip invented for it.
-  // (The lane heading "Limited Late-Inning Margin" is league orientation, not a
+  // (The lane heading "Where late-inning margin is thin" is league orientation, not a
   // Team State, so only the canonical state labels are checked here.)
   assert.equal(htmlIncludes(overview, 'Vulnerable'), false)
   assert.equal(htmlIncludes(overview, 'Team State: Stretched'), false)
@@ -504,6 +613,46 @@ test('Today never renders a synthetic score, ranking, or predictive framing', ()
   }
 })
 
+test('Today never leaks implementation vocabulary into public copy', () => {
+  const html = render(React.createElement(IntelligenceSurfaceView, {
+    dashboard: changedDashboard,
+    landscape,
+    tonight: {
+      status: 'ok',
+      reference_date: '2026-08-06',
+      cards: [{
+        team_id: 137,
+        team_name: 'San Francisco Giants',
+        pregame_story: {
+          headline: 'A narrower late-inning group tonight',
+          watching: 'BaseballOS is watching how much usable margin is left.',
+          watch_point: 'Whether the same arms cover the seventh and eighth again.',
+        },
+        evidence: ['Aug 5 vs SD: Camilo Doval, 18 pitches, 1.0 inning'],
+        limitations: [],
+      }],
+    },
+    teams,
+  }))
+  const text = visibleText(html)
+
+  // Engine, storage, and transport words the reader has no way to check, plus
+  // the advice framing the product refuses outright. "No picks, no betting"
+  // style refusals are deliberately not in this list: naming what BaseballOS
+  // does not do is a boundary statement, not a leak.
+  for (const banned of [
+    'recommendation', 'recommended', 'recommends',
+    'COIN', 'endpoint', 'backend', 'snapshot', 'payload', 'adapter',
+    'deterministic', 'signal_family', 'internal_strength', 'ranking_score',
+    'story_priority', 'confidence', 'fatigue', 'model version', 'method version',
+  ]) {
+    assert.equal(new RegExp(`\\b${escapeRegExp(banned)}\\b`, 'i').test(text), false, banned)
+  }
+
+  // No bare version stamp ("v1", "V2") anywhere a reader can see it.
+  assert.equal(/\bv\d+(\.\d+)*\b/i.test(text), false, 'version label')
+})
+
 test('the new surfaces never rewrite, filter, or invent backend-owned copy', () => {
   // The presentation primitives are pure presentation: no regex rewriting of
   // governed public text, and no locally authored replacement for it.
@@ -574,9 +723,54 @@ test('Today never uses superlative or extreme lane framing', () => {
     )
   }
   // The lanes still read as descriptive league orientation.
-  assert.ok(text.includes('Room to Maneuver'))
-  assert.ok(text.includes('On Watch'))
-  assert.ok(text.includes('Limited Late-Inning Margin'))
+  assert.ok(text.includes('Where arms are rested'))
+  assert.ok(text.includes('Where recent work is worth watching'))
+  assert.ok(text.includes('Where late-inning margin is thin'))
+})
+
+test('no league lane label can be mistaken for a fourth Team State', () => {
+  const html = render(React.createElement(IntelligenceSurfaceView, {
+    dashboard: { freshness },
+    landscape,
+    tonight: { status: 'ok', reference_date: '2026-08-06', cards: [] },
+    teams,
+  }))
+  const overview = html.slice(
+    html.indexOf('id="bullpen-picture"'),
+    html.indexOf('id="tonight"'),
+  )
+
+  // The retired lane titles were short capitalised noun phrases — the same
+  // grammatical shape as Fresh / Stretched / Vulnerable — sitting one line
+  // above a club's canonical state. They are gone from the league overview.
+  for (const stateShaped of [
+    'Room to Maneuver', 'Limited Late-Inning Margin',
+    'Stable', 'Strong', 'Healthy', 'Safe',
+  ]) {
+    assert.equal(htmlIncludes(overview, stateShaped), false, stateShaped)
+  }
+
+  // "On Watch" stays canonical public vocabulary at the arm altitude, so it is
+  // not banned outright — it simply no longer titles a league lane, where it
+  // read as a peer of the three team states.
+  assert.equal(/>\s*On Watch\s*</.test(overview), false, 'On Watch is not a lane heading')
+
+  // Only the backend-owned Team State is presented as a state: it is the one
+  // thing in the column carrying the screen-reader state prefix.
+  assert.ok(htmlIncludes(overview, 'Team State:'))
+
+  // Every lane label renders in the quiet label treatment, never in a heading
+  // weight that competes with the club name and its state.
+  for (const lane of [
+    'Where arms are rested',
+    'Where recent work is worth watching',
+    'Where late-inning margin is thin',
+  ]) {
+    assert.ok(
+      new RegExp(`class="bos-micro"[^>]*>\\s*${escapeRegExp(lane)}`).test(overview),
+      lane,
+    )
+  }
 })
 
 test('a supported Today payload always shows its data-through date', () => {

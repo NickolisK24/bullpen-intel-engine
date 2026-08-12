@@ -5,7 +5,7 @@
 // menu and the Today first-use entry area both read from here so a route's
 // public label never drifts between them.
 //
-// Team Bullpens, Compare Bullpens, and Reliever Finder are three views of the
+// Bullpens, Compare Bullpens, and Reliever Finder are three views of the
 // single `/bullpen` route, distinguished by the `view` query. Their routes and
 // query behavior are unchanged — this module only names them.
 
@@ -14,13 +14,18 @@ import { BULLPEN_VIEWS, readBullpenLocation } from './evidenceLinks'
 // `masthead` controls only which destinations appear in the desktop masthead.
 // It changes no route and hides nothing: every destination below is rendered in
 // the mobile menu sheet, and Compare and Reliever Finder are also reachable
-// from the Today entry row and from the Team Bullpens views themselves. The
+// from the Today entry row and from the Bullpens views themselves. The
 // masthead stays six destinations wide so it reads as a publication header
 // rather than a directory.
+// `label` is the public contract and matches the canonical lane naming in
+// docs/canonical/03_PRODUCT_EXPERIENCE_STANDARD.md section 5: Today, Dashboard,
+// Bullpens, Stories, Methodology, Data & Trust. `key` is an internal identifier
+// for list rendering and active-state lookup only; it is never rendered, so it
+// keeps its original value and no route or query changes when a label does.
 export const PRIMARY_NAV = [
   { key: 'today', to: '/', icon: '☀', label: 'Today' },
-  { key: 'league-board', to: '/dashboard', icon: '⬡', label: 'League Board' },
-  { key: 'team-bullpens', to: '/bullpen', icon: '🔥', label: 'Team Bullpens', bullpenView: BULLPEN_VIEWS.BOARD },
+  { key: 'league-board', to: '/dashboard', icon: '⬡', label: 'Dashboard' },
+  { key: 'team-bullpens', to: '/bullpen', icon: '🔥', label: 'Bullpens', bullpenView: BULLPEN_VIEWS.BOARD },
   { key: 'compare-bullpens', to: '/bullpen?view=compare', icon: '⚖', label: 'Compare Bullpens', bullpenView: BULLPEN_VIEWS.COMPARE, masthead: false },
   { key: 'reliever-finder', to: '/bullpen?view=pitchers', icon: '🔎', label: 'Reliever Finder', bullpenView: BULLPEN_VIEWS.PITCHERS, masthead: false },
   { key: 'stories', to: '/stories', icon: '📰', label: 'Stories' },
@@ -41,7 +46,7 @@ export const MASTHEAD_NAV = [
 ]
 
 // Active-state resolver. NavLink's built-in matching keys on pathname only, so
-// it would mark all three `/bullpen` views active at once. Team Bullpens,
+// it would mark all three `/bullpen` views active at once. Bullpens,
 // Compare, and Reliever Finder are therefore matched on the `view` query the
 // bullpen route reads, while every other destination matches on pathname.
 export function isNavDestinationActive(item, location = {}) {

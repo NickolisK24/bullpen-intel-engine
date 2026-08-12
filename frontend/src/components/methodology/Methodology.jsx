@@ -75,7 +75,7 @@ const LIMITATIONS = [
 ]
 
 const INSPECT_LINKS = [
-  { to: '/bullpen', label: 'Team Bullpens — see each bullpen’s state and its receipts' },
+  { to: '/bullpen', label: 'Bullpens — see each bullpen’s state and its receipts' },
   { to: '/bullpen?view=compare', label: 'Compare Bullpens — put two teams’ pens side by side' },
   { to: '/bullpen?view=pitchers', label: 'Reliever Finder — look up a reliever’s recent workload' },
   { to: '/how-to-read', label: 'How to Read — compact definitions of every public label' },

@@ -1,8 +1,8 @@
 // The BaseballOS signature object: the Daily Intelligence Brief masthead.
 //
 // This is the edition marker for a finite daily read. It carries the edition
-// identity, the lead statement, and the governed temporal context that makes
-// the rest of the page checkable — and nothing else.
+// identity, the date the edition represents, and the governed temporal context
+// that makes the rest of the page checkable — and nothing else.
 //
 // It is deliberately not a panel. The masthead sits directly on the page,
 // marked by one hairline at the top edge and a very quiet field of depth behind
@@ -10,11 +10,21 @@
 // left side is editorial; only the fact rail is allowed to look technical,
 // because it is metadata.
 //
-// Data authority: every fact in the rail is supplied by the caller from
-// governed application state. A fact with no current value is omitted entirely
-// (`TrustFact` returns null), so the brief silently shrinks on a degraded day
-// instead of showing a guessed date, an assumed coverage count, or a stale
-// value presented as current. There is no hardcoded verification claim
+// The title is a nameplate, not a statement. A masthead names the publication
+// and dates the issue; it does not argue for the product, describe what the
+// product can do for the reader, or ask the reader to go somewhere. Those are
+// landing-page moves, and on a daily edition they push the day's baseball below
+// the first screen. The edition's first substantive read follows immediately
+// after this header.
+//
+// Data authority: every fact in the rail — and the dateline — is supplied by
+// the caller from governed application state. A fact with no current value is
+// omitted entirely (`TrustFact` returns null), and the dateline disappears when
+// no represented date was served, so the brief silently shrinks on a degraded
+// day instead of showing a guessed date, an assumed coverage count, or a stale
+// value presented as current. The dateline is never taken from the reader's
+// clock: an edition is dated by the baseball date it represents, not by when
+// the page happened to be opened. There is no hardcoded verification claim
 // anywhere in this component.
 
 import { TrustFact } from './TrustStrip'
@@ -24,6 +34,8 @@ export default function EditionHeader({
   editionLabel,
   shortEditionLabel,
   title,
+  editionDate,
+  editionDateLabel,
   standfirst,
   facts = [],
   actions,
@@ -49,34 +61,47 @@ export default function EditionHeader({
 
       <div className="bos-edition-rule mt-5" aria-hidden="true" />
 
-      {/* Lead statement and the governed rail sit side by side from lg up, so
-          desktop reads as a briefing masthead rather than an oversized hero
-          that consumes the first screen. Below lg they stack in reading order:
-          answer first, then the context that qualifies it. */}
-      <div className="mt-9 grid grid-cols-1 gap-x-16 gap-y-9 lg:mt-11 lg:grid-cols-[minmax(0,1.5fr)_minmax(12rem,0.6fr)]">
-        <div className="min-w-0">
-          <h1 className="bos-hero max-w-[19ch]">
-            {title}
-          </h1>
+      {/* Nameplate, dateline, then the governed facts as a full-width bar
+          beneath them — the order a masthead actually has.
 
-          {standfirst && (
-            <p className="bos-body mt-6 max-w-measure text-chalk300">
-              {standfirst}
-            </p>
-          )}
+          These used to sit in two columns, with the facts as a right rail. That
+          worked while the left column carried a lead statement, a paragraph,
+          and two buttons tall enough to balance five stacked facts. With the
+          left column reduced to what a masthead owes the reader, the same grid
+          left a column of dead space the height of the rail before the first
+          read. A single column removes it, and the fact bar reads as the
+          dateline furniture it is. */}
+      <div className="mt-8 lg:mt-9">
+        <h1 className="bos-hero">
+          {title}
+        </h1>
 
-          {actions && (
-            <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
-              {actions}
-            </div>
-          )}
-        </div>
+        {/* The dateline: the baseball date this edition represents, stated
+            immediately under the nameplate the way a masthead dates an issue.
+            Rendered only when the application served a date. */}
+        {editionDate && (
+          <p className="bos-value mt-5 text-sm text-chalk200 sm:text-base">
+            {editionDateLabel && (
+              <span className="bos-meta mr-2 text-chalk500">{editionDateLabel}</span>
+            )}
+            {editionDate}
+          </p>
+        )}
 
-        {/* On phones the rail follows the lead statement, so the date the read
-            represents stays close to the answer. From lg it becomes the
-            masthead's right rail behind a hairline. */}
+        {standfirst && (
+          <p className="bos-body mt-6 max-w-measure text-chalk300">
+            {standfirst}
+          </p>
+        )}
+
+        {actions && (
+          <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+            {actions}
+          </div>
+        )}
+
         {visibleFacts.length > 0 && (
-          <dl className="grid min-w-0 grid-cols-2 gap-x-8 gap-y-5 border-t border-line pt-6 sm:grid-cols-3 lg:grid-cols-1 lg:gap-y-6 lg:border-l lg:border-t-0 lg:pl-10 lg:pt-1.5">
+          <dl className="mt-8 grid grid-cols-2 gap-x-8 gap-y-5 border-t border-line pt-6 sm:grid-cols-3 lg:mt-9 lg:grid-cols-5 lg:gap-x-10">
             {visibleFacts.map(fact => (
               <TrustFact
                 key={fact.label}

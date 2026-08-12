@@ -34,7 +34,7 @@ const renderAt = (el, path = '/') => renderToStaticMarkup(
 test('primary navigation is the six core bullpen surfaces in order', () => {
   assert.deepEqual(
     PRIMARY_NAV.map(item => item.label),
-    ['Today', 'League Board', 'Team Bullpens', 'Compare Bullpens', 'Reliever Finder', 'Stories'],
+    ['Today', 'Dashboard', 'Bullpens', 'Compare Bullpens', 'Reliever Finder', 'Stories'],
   )
 })
 
@@ -48,18 +48,27 @@ test('supporting navigation keeps the trust and explainer pages', () => {
 test('primary destinations map to the existing bullpen routes and query views', () => {
   const byLabel = Object.fromEntries(PRIMARY_NAV.map(item => [item.label, item.to]))
   assert.equal(byLabel['Today'], '/')
-  assert.equal(byLabel['League Board'], '/dashboard')
-  assert.equal(byLabel['Team Bullpens'], '/bullpen')
+  assert.equal(byLabel['Dashboard'], '/dashboard')
+  assert.equal(byLabel['Bullpens'], '/bullpen')
   assert.equal(byLabel['Compare Bullpens'], '/bullpen?view=compare')
   assert.equal(byLabel['Reliever Finder'], '/bullpen?view=pitchers')
   assert.equal(byLabel['Stories'], '/stories')
 })
 
-test('no primary label overstates the reliever population or uses the old ambiguous names', () => {
+test('the public lanes carry the canonical labels and no population-overstating name', () => {
   const labels = [...PRIMARY_NAV, ...SUPPORTING_NAV].map(item => item.label)
+
+  // docs/canonical/03_PRODUCT_EXPERIENCE_STANDARD.md section 5 names the public
+  // lanes: Today, Dashboard, Bullpen / Team Board, Stories, Methodology, and
+  // Data & Trust. Those are the labels a reader is expected to recognise, so
+  // they are the labels the product ships.
+  for (const canonical of ['Today', 'Dashboard', 'Bullpens', 'Stories', 'Methodology', 'Data & Trust']) {
+    assert.ok(labels.includes(canonical), canonical)
+  }
+
+  // "All Pitchers" claimed a population the finder does not carry: it searches
+  // relievers, and starters are not silently mixed in.
   assert.equal(labels.includes('All Pitchers'), false)
-  assert.equal(labels.includes('Dashboard'), false)
-  assert.equal(labels.includes('Bullpen'), false)
 })
 
 test('every navigation destination is a unique route with a unique label', () => {
@@ -80,9 +89,9 @@ function activeLabels(path) {
 
 test('exactly one primary destination is active per route, including bullpen views', () => {
   assert.deepEqual(activeLabels('/'), ['Today'])
-  assert.deepEqual(activeLabels('/dashboard'), ['League Board'])
-  assert.deepEqual(activeLabels('/bullpen'), ['Team Bullpens'])
-  assert.deepEqual(activeLabels('/bullpen?view=board'), ['Team Bullpens'])
+  assert.deepEqual(activeLabels('/dashboard'), ['Dashboard'])
+  assert.deepEqual(activeLabels('/bullpen'), ['Bullpens'])
+  assert.deepEqual(activeLabels('/bullpen?view=board'), ['Bullpens'])
   assert.deepEqual(activeLabels('/bullpen?view=compare'), ['Compare Bullpens'])
   assert.deepEqual(activeLabels('/bullpen?view=pitchers'), ['Reliever Finder'])
   assert.deepEqual(activeLabels('/stories'), ['Stories'])
@@ -122,7 +131,7 @@ function anchorFor(html, href) {
 
 test('the current route receives an active state on the matching destination', () => {
   const comparePage = renderAt(React.createElement(Sidebar), '/bullpen?view=compare')
-  // The Compare link is current; Team Bullpens (same path, different view) is not.
+  // The Compare link is current; Bullpens (same path, different view) is not.
   assert.ok(anchorFor(comparePage, '/bullpen?view=compare').includes('aria-current="page"'))
   assert.equal(anchorFor(comparePage, '/bullpen').includes('aria-current="page"'), false)
 

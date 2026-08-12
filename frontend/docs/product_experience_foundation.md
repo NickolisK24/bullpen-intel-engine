@@ -83,7 +83,7 @@ ranking, or an explanation, and none rewrites backend-owned copy.
 
 | Component | Purpose | Data authority |
 |---|---|---|
-| `EditionHeader` | Daily Intelligence Brief masthead: edition identity, lead statement, governed fact rail | caller, from served application state; a fact with no value is omitted |
+| `EditionHeader` | Daily edition masthead: nameplate, dateline, governed fact bar | caller, from served application state; a fact with no value is omitted, and the dateline disappears when no represented date was served |
 | `IntelSection` / `SectionHeading` | Section heading system (eyebrow, title, orientation line, aligned action) | none — layout only |
 | `TeamStateChip` / `TeamStateRead` | Canonical Fresh / Stretched / Vulnerable presentation, as toned text with a dot rather than a filled pill | `adapters/publicTeamState.js` → backend Team State block |
 | `EvidenceList` / `EvidenceRow` / `NamedArmReceipt` | Evidence receipts and named-arm evidence | the contract that supplied the row |
@@ -120,8 +120,11 @@ and gives the reading column the full page.
 - The masthead is **not sticky**. Today is a finite daily edition read top to
   bottom, and a persistent bar would take vertical space on every scroll.
 - `MASTHEAD_NAV` in `utils/navigation.js` selects the six destinations the
-  desktop bar shows: Today, League Board, Team Bullpens, Stories, Methodology,
-  Data & Trust. `masthead: false` on Compare and Reliever Finder, and
+  desktop bar shows: Today, Dashboard, Bullpens, Stories, Methodology,
+  Data & Trust — the canonical public lane names from
+  `docs/canonical/03_PRODUCT_EXPERIENCE_STANDARD.md` section 5. Only the
+  `label` changed; `key`, `to`, and the `view` query behaviour are untouched,
+  so no URL moved. `masthead: false` on Compare and Reliever Finder, and
   `masthead: true` on Methodology and Data & Trust, are presentation flags only
   — no route is removed, and every destination is in the mobile menu sheet.
 - Active destination: a thin blue underline plus `aria-current="page"`. Never a
@@ -135,7 +138,7 @@ and gives the reading column the full page.
 
 Rendered order in `IntelligenceSurfaceView`:
 
-1. Daily Intelligence Brief (`EditionHeader`) — the single `<h1>`
+1. Edition masthead (`EditionHeader`) — the single `<h1>`
 2. Today's Bullpen Picture — league overview (`#bullpen-picture`)
 3. What changed across MLB bullpens (`#since-yesterday`)
 4. Tonight's Bullpen Watch (`#tonight`)
@@ -153,12 +156,68 @@ no comparison; every other section always renders.
 Sections 2–4 keep the order and the data contracts they already had. The rest
 are presentation over existing governed values.
 
+### The masthead is a nameplate, not a hero
+
+Today used to open with a value proposition as its `<h1>` ("See which bullpens
+are fresh, stretched, or vulnerable tonight — and why."), a paragraph explaining
+how the product works, and two calls to action. That is a landing page. It
+argued for the product in the position where a daily edition states what day it
+is and then reports the baseball, and on every viewport it pushed the League
+Picture — the first real read — off the opening screen.
+
+The masthead now carries only what a masthead owes the reader:
+
+- **Nameplate** — "Today's Bullpen Edition", the `<h1>`, an identity rather than
+  a claim.
+- **Dateline** — the baseball date the edition represents, preferring the
+  served slate date and falling back to the completed date the bullpen picture
+  is built from. It is derived from a served value through
+  `formatDateOnly(..., { weekday: true })` and a UTC instant, so no local
+  timezone can shift the day.
+- **Fact bar** — the governed freshness facts, full width beneath the dateline
+  rather than as a right rail. With the left column reduced, the old two-column
+  grid left a column of dead space the height of the rail before the first read.
+
+Nothing on the Today path reads the clock: `tests/productExperienceFoundation
+.test.mjs` pins that neither `new Date()` nor `Date.now()` appears in the
+surface, the intel primitives, `utils/dateDisplay.js`, or `UI/Freshness.jsx`.
+That is the defence that survives refactoring — there is no code path in which a
+stale read can acquire a fresh-looking date.
+
+The product statement keeps its own region further down the page, where it no
+longer outranks the day's baseball. The two calls to action are gone: the league
+board is reachable from the end of the League Picture and from the masthead, and
+an anchor to the next section on the same page was not doing work the scroll was
+not already doing.
+
+### League lanes cannot impersonate a Team State
+
+The three League Picture lanes were titled "Room to Maneuver", "On Watch", and
+"Limited Late-Inning Margin" — short capitalised noun phrases, the same
+grammatical shape as Fresh / Stretched / Vulnerable, rendered at heading weight
+directly above a club name and that club's canonical state chip. Read quickly,
+they were a fourth, fifth, and sixth team state.
+
+Two changes, both in `components/dashboard/bullpenLandscapeView.js` and the
+Today rendering:
+
+- the titles are now descriptive clauses — "Where arms are rested", "Where
+  recent work is worth watching", "Where late-inning margin is thin" — which
+  cannot be mistaken for a state label;
+- on Today the lane label renders in `.bos-micro`, the quietest text in the
+  column, so the state chip is the only state-shaped thing in it.
+
+"On Watch" remains canonical public vocabulary at the **arm** altitude and is
+unchanged everywhere it describes an arm. It simply stops doubling as a league
+lane title. The Dashboard inherits the renamed lanes from the same module, which
+is the point — one lane vocabulary, not two.
+
 Today used to carry two navigation blocks: a four-up "Where do you want to go
 next?" grid between the league picture and what changed, and a four-up "Learn &
 Explore BaseballOS" grid at the bottom. Both are removed. The first interrupted
 the reading path at its strongest point — the reader had just been told what
 the league looks like and was immediately asked to leave. The second duplicated
-the footer. The masthead owns Today, League Board, Team Bullpens, Stories,
+the footer. The masthead owns Today, Dashboard, Bullpens, Stories,
 Methodology, and Data & Trust; the footer owns About, How to Read, Methodology,
 and Data & Trust. Compare and Reliever Finder are the only working views
 neither carries, so they are the whole of `#continue-exploring`: one labelled
@@ -206,9 +265,11 @@ flush against that edge read as unanchored; a link sits there naturally and
 matches every other inspection path on the page.
 
 League lane labels live in `components/dashboard/bullpenLandscapeView.js` and
-are deliberately free of superlative framing. They describe the situation a
-backend-supplied list represents; they are not a classification, and canonical
-Team State is never derived from the lane a club sits in.
+are deliberately free of superlative framing, and deliberately phrased as
+clauses rather than titles (see "League lanes cannot impersonate a Team State"
+above). They describe the situation a backend-supplied list represents; they are
+not a classification, and canonical Team State is never derived from the lane a
+club sits in.
 
 Today's data contracts are unchanged: `getTonightIntelligence`,
 `getBullpenLandscape`, `getBullpenDashboard`, `getTeams`.
@@ -222,7 +283,7 @@ order*, not how any surviving region looks; the visual system is unchanged.
 
 | Region | Status |
 |---|---|
-| Daily Intelligence Brief | FROZEN |
+| Edition masthead | FROZEN — nameplate, dateline, fact bar; no standfirst, no calls to action |
 | League Picture | FROZEN |
 | What Changed | FROZEN |
 | Tonight's Bullpen Watch | FROZEN |
@@ -244,9 +305,39 @@ a Today refinement.
 
 ## Deliberate non-goals
 
-- Today does not render a story lead. The lead-story contract is not currently
-  served on this surface and the canonical roadmap defers Today lead authority;
-  the brief occupies the lead position instead.
+### Today does not render a lead story
+
+`/bullpen/intelligence/today` is live, and `getLeadStoryView` in
+`components/home/IntelligenceSurface.jsx` reads it. Today still does not render
+it, and that is a canon decision rather than an unfinished one:
+
+- the **Bullpen Intelligence Standard** contains no public claim contract for
+  the COIN lead story, and it is the document that "controls what claims and
+  evidence the experience may present" (Product Experience Standard section 1);
+- the **Decision Ledger** carries no entry authorising a public Today lead;
+- **Phase 3 — Daily Habit and Consequence**, which owns "Today lead authority",
+  is *Not started*, and sits tenth in Next Approved Work behind an open
+  production incident (OPS-002), the #593 evidence checkpoint, #595, #591, #594,
+  #600, the permanent daily-sync work reduction, Portable Intelligence, and
+  M-001.
+
+Publishing a claim family canon has not authorised is the thing fail-closed
+exists to prevent, so the lead position stays empty of manufactured content
+rather than being filled with either a story or a standing "nothing cleared the
+bar" notice — which would imply an evaluation this surface did not run. The
+insertion point is unchanged: between the masthead and the League Picture.
+
+What did change is that the position can no longer be quietly filled by
+accident. `getLeadStoryView` now enforces two rules that a later wiring
+inherits:
+
+1. **it never invents a headline.** A response the backend marked publishable
+   but that carries no usable draft copy fails closed to no story with a reason.
+   The old `'BaseballOS is watching this bullpen story.'` fallback is gone —
+   that was exactly the "fallback invention" #591 targets.
+2. **it never surfaces the selection internals.** `story_priority` and
+   `confidence` are the engine's own ranking and certainty fields; they no
+   longer leave the module at all.
 - Stories keeps its own feed. Today links to it and does not duplicate it.
 - Dashboard, Team Board, Compare, Stories, Methodology, and Data & Trust were
   not redesigned. They inherit the shell and the shared UI primitives only.
