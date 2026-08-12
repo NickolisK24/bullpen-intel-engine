@@ -1,7 +1,6 @@
 import {
   formatConfidence,
   getAvailabilityBadgeView,
-  getAvailabilityStatusLabel,
   getDataStateView,
 } from '../availabilityView'
 import {
@@ -62,24 +61,33 @@ export const BULLPEN_VIEW_MODES = [
 
 const VALID_BULLPEN_VIEW_MODES = new Set(BULLPEN_VIEW_MODES.map(mode => mode.id))
 
+// Local mirror of the backend group vocabulary (services/bullpen_board.py
+// GROUP_META). It is a FALLBACK ONLY, used when a payload omits the groups or
+// a group's label/description. The backend is the author of these headings —
+// the browser never invents a different semantic group name, and in particular
+// never collapses the two restricted tiers into one generic heading.
 const GROUP_FALLBACK_META = {
-  Available: { label: 'Available', description: 'Recent usage leaves these arms in a clean spot for normal bullpen coverage.' },
-  Monitor: { label: 'On Watch', description: 'Recent work should be checked before counting on a full late-game lane.' },
-  Limited: { label: 'Limited', description: 'Recent usage narrows how comfortably these arms can be used.' },
-  Unavailable: { label: 'Unavailable', description: "Recent workload or roster context keeps these arms out of tonight's available group." },
+  Available: { label: 'Available Arms', description: 'Recent workload remains inside the normal availability range.' },
+  Monitor: { label: 'On-Watch Arms', description: 'Recent workload is worth monitoring before assuming a full workload.' },
+  Limited: { label: 'Limited Arms', description: "Recent workload materially narrows the arm's current availability." },
+  Avoid: { label: 'Unavailable — Heavy Workload', description: 'Recent workload crosses the stronger restriction threshold and keeps these arms out of the available group.' },
+  Unavailable: { label: 'Unavailable — Severe Workload', description: 'Recent workload crosses the most restrictive workload threshold in the current availability read.' },
 }
 
 const EMPTY_GROUP_COPY = {
   Available: 'No relievers are fully clear of recent workload right now.',
   Monitor: 'No relievers need an extra workload check right now.',
   Limited: 'No relievers have a narrowed-use read right now.',
-  Unavailable: "No pitchers are currently out of tonight's available group.",
+  Avoid: 'No relievers carry a heavy recent workload right now.',
+  Unavailable: 'No relievers carry a severe recent workload right now.',
 }
 
-// The backend can send both a workload-based 'Avoid' group and a roster-based
-// 'Unavailable' group. Publicly there is only one Unavailable read, so the two
-// buckets merge into a single group before anything renders. Workload-based
-// arms list first, matching the canonical backend order.
+// Both 'Avoid' and 'Unavailable' are workload-classifier tiers, separated by
+// severity, not by cause. They are rendered as the two distinct groups the
+// backend publishes — the board never merges them, and never substitutes a
+// generic 'Unavailable' heading for either one.
+const RESTRICTED_GROUP_STATUSES = new Set(['Avoid', 'Unavailable'])
+
 function rosterClaimNumber(value) {
   return typeof value === 'number' && Number.isFinite(value) ? value : null
 }
@@ -89,52 +97,15 @@ export function rosterCountsAreWithheld(board) {
   return readiness.counts_withheld === true || readiness.countsWithheld === true || readiness.claims_available === false || readiness.claimsAvailable === false
 }
 
-function mergePublicUnavailableGroups(groups, { countsWithheld = false } = {}) {
-  const unavailableStatuses = new Set(['Avoid', 'Unavailable'])
-  const toMerge = groups.filter(group => unavailableStatuses.has(group?.status))
-  if (!toMerge.length) return groups
-
-  const merged = {
-    status: 'Unavailable',
-    label: GROUP_FALLBACK_META.Unavailable.label,
-    description: GROUP_FALLBACK_META.Unavailable.description,
-    count: countsWithheld ? null : toMerge.reduce((sum, group) => sum + (group.count || 0), 0),
-    countWithheld: countsWithheld || toMerge.some(group => group.countWithheld),
-    pitchers: toMerge.flatMap(group => group.pitchers),
-    emptyCopy: EMPTY_GROUP_COPY.Unavailable,
-    badge: getAvailabilityBadgeView('Unavailable'),
-  }
-
-  const result = []
-  let placed = false
-  for (const group of groups) {
-    if (unavailableStatuses.has(group?.status)) {
-      if (!placed) {
-        result.push(merged)
-        placed = true
-      }
-      continue
-    }
-    result.push(group)
-  }
-  return result
-}
-
 export function getBoardGroups(board) {
   const groups = Array.isArray(board?.groups) ? board.groups : []
   const countsWithheld = rosterCountsAreWithheld(board)
   if (groups.length) {
-    return mergePublicUnavailableGroups(
-      groups.map(group => normalizeGroup(group, { countsWithheld })),
-      { countsWithheld },
-    )
+    return groups.map(group => normalizeGroup(group, { countsWithheld }))
   }
   // Fallback: present every canonical group as empty so the board structure is
   // stable even if the payload omitted groups.
-  return mergePublicUnavailableGroups(
-    BOARD_GROUP_ORDER.map(status => normalizeGroup({ status, pitchers: [] }, { countsWithheld })),
-    { countsWithheld },
-  )
+  return BOARD_GROUP_ORDER.map(status => normalizeGroup({ status, pitchers: [] }, { countsWithheld }))
 }
 
 function normalizeGroup(group, { countsWithheld = false } = {}) {
@@ -144,11 +115,11 @@ function normalizeGroup(group, { countsWithheld = false } = {}) {
   const countWithheld = countsWithheld || group?.count_withheld === true || group?.countWithheld === true
   return {
     status,
-    // The backend group label is already the public form (Monitor -> On Watch,
-    // Avoid -> Unavailable, decided by services/public_bullpen_copy.py), so it
-    // is rendered as published. getAvailabilityStatusLabel is only consulted for
-    // the local fallback shape, never to re-translate a backend label.
-    label: group?.label || getAvailabilityStatusLabel(fallback.label),
+    // The backend group label is already the published public heading
+    // (services/bullpen_board.py GROUP_META), so it is rendered verbatim. The
+    // local fallback catalogue mirrors that same vocabulary and is only used
+    // when a payload omits the field — a backend label is never re-translated.
+    label: group?.label || fallback.label,
     description: group?.description || fallback.description,
     count: countWithheld ? null : (typeof group?.count === 'number' ? group.count : pitchers.length),
     countWithheld,
@@ -320,8 +291,10 @@ export function filterBoardForViewMode(board, mode) {
       ...group,
       count: rosterCountsAreWithheld(board) ? null : group.pitchers.length,
     }))
+  // Unavailable-only keeps both restricted tiers pinned even at zero, so the
+  // governed vocabulary stays complete; other groups appear only when populated.
   const displayGroups = normalized === BULLPEN_VIEW_MODE_UNAVAILABLE_ONLY
-    ? filteredGroups.filter(group => group.status === 'Unavailable' || (group.count || 0) > 0)
+    ? filteredGroups.filter(group => RESTRICTED_GROUP_STATUSES.has(group.status) || (group.count || 0) > 0)
     : filteredGroups
   const totalPitchers = rosterCountsAreWithheld(board)
     ? null

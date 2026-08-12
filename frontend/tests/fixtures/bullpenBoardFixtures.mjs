@@ -3,14 +3,15 @@
 
 const BOARD_GROUP_ORDER = ['Available', 'Monitor', 'Limited', 'Avoid', 'Unavailable']
 
+// Mirrors backend/services/bullpen_board.py GROUP_META verbatim. The two
+// restricted tiers are separate published groups named by the workload
+// threshold each one crosses — never one merged generic 'Unavailable' heading.
 const GROUP_META = {
-  Available: { label: 'Available', description: 'Workload signals are inside normal ranges in the latest completed data.' },
-  // Public group label, mirroring backend GROUP_META: the engine state Monitor
-  // is published as On Watch (backend/services/public_bullpen_copy.py).
-  Monitor: { label: 'On Watch', description: 'Worth a look at recent workload before counting on these arms.' },
-  Limited: { label: 'Limited', description: 'Recent workload suggests limited use in the current availability read.' },
-  Avoid: { label: 'Unavailable', description: 'Meaningful recent-use load keeps these arms out of the available group.' },
-  Unavailable: { label: 'Unavailable Pitchers', description: 'Not available in the current bullpen planning read.' },
+  Available: { label: 'Available Arms', description: 'Recent workload remains inside the normal availability range.' },
+  Monitor: { label: 'On-Watch Arms', description: 'Recent workload is worth monitoring before assuming a full workload.' },
+  Limited: { label: 'Limited Arms', description: "Recent workload materially narrows the arm's current availability." },
+  Avoid: { label: 'Unavailable — Heavy Workload', description: 'Recent workload crosses the stronger restriction threshold and keeps these arms out of the available group.' },
+  Unavailable: { label: 'Unavailable — Severe Workload', description: 'Recent workload crosses the most restrictive workload threshold in the current availability read.' },
 }
 
 const ROLE_LABELS_BY_KEY = {
@@ -459,6 +460,33 @@ export const populatedBoard = makeBoard({
 })
 
 export const emptyBoard = makeBoard({ cardsByStatus: {} })
+
+// VOC-001: the exact group shape published in trusted dashboard snapshot 398
+// (Baltimore) — 4 Available, 3 On-Watch, 2 Limited, and BOTH restricted
+// workload tiers present at zero. Only the group shape is mirrored here; the
+// full API response is deliberately not snapshotted.
+export const snapshot398GroupShape = [
+  { status: 'Available', label: 'Available Arms', count: 4 },
+  { status: 'Monitor', label: 'On-Watch Arms', count: 3 },
+  { status: 'Limited', label: 'Limited Arms', count: 2 },
+  { status: 'Avoid', label: 'Unavailable — Heavy Workload', count: 0 },
+  { status: 'Unavailable', label: 'Unavailable — Severe Workload', count: 0 },
+]
+
+export const snapshot398Board = makeBoard({
+  team: { team_id: 110, team_name: 'Baltimore Orioles', team_abbreviation: 'BAL' },
+  cardsByStatus: {
+    Available: [1, 2, 3, 4].map(n => card(100 + n, `Available Arm ${n}`, 'Available')),
+    Monitor: [1, 2, 3].map(n => card(200 + n, `On-Watch Arm ${n}`, 'Monitor', {
+      confidence: 'medium',
+      short_reason: '18 pitches yesterday',
+    })),
+    Limited: [1, 2].map(n => card(300 + n, `Limited Arm ${n}`, 'Limited', {
+      confidence: 'medium',
+      short_reason: '29 pitches yesterday',
+    })),
+  },
+})
 
 export const staleBoard = makeBoard({
   cardsByStatus: {

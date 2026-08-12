@@ -64,6 +64,24 @@ PUBLIC_VOCABULARY_FRONTEND_FILES = (
     'frontend/src/components/dashboard/syncStatusView.js',
     'frontend/src/components/bullpen/board/teamGameContextView.js',
     'frontend/src/components/bullpen/board/tonightsBullpenBoardView.js',
+    # Production smoke on snapshot 398 found the last frontend-owned board
+    # wording: the browser merged the two backend-published restricted workload
+    # groups into one heading it authored itself. The merge is gone and the
+    # backend's group label and description render verbatim.
+    #
+    #   BullpenAvailabilityDistribution.jsx — the compact strip renders the same
+    #                             governed group labels the board does, so it
+    #                             showed the same invented heading. It carries no
+    #                             vocabulary of its own; the only change is the
+    #                             tile grid, which had a fixed four-column
+    #                             layout and now lays out all five published
+    #                             groups.
+    #   boardGroupVocabulary.test.mjs — the repair's regression proof. It also
+    #                             pins that 'Unavailable' stays valid
+    #                             pitcher-level vocabulary, which the fix
+    #                             deliberately does not touch.
+    'frontend/src/components/bullpen/board/BullpenAvailabilityDistribution.jsx',
+    'frontend/tests/boardGroupVocabulary.test.mjs',
 )
 
 PUBLIC_VOCABULARY_FILES = (
