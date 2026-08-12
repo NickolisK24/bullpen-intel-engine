@@ -70,8 +70,13 @@ concurrency:
   group: baseballos-sync
   cancel-in-progress: false
 
+# CI-003 / #598. Read-only by default. Repository write authority is granted to
+# the ONE job that publishes generated content (static-team-story-preview) and
+# to no other job in this workflow. public-sync, shadow-activation-health,
+# internal-enrichment, and intraday-audit never write to the repository, so they
+# no longer carry a token that could.
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   public-sync:
@@ -827,7 +832,29 @@ jobs:
     # a shadow-only failure can never be mistaken for a reason to skip.
     needs: public-sync
     if: ${{ needs.public-sync.result == 'success' && ((github.event_name == 'workflow_dispatch' && inputs.mode == 'daily') || (github.event_name == 'schedule' && github.event.schedule == '0 10 * * *')) }}
-    timeout-minutes: 15
+    # CI-003 / #598. The ONLY job in this workflow with repository write
+    # authority. The workflow default is contents: read; this grant is the whole
+    # reason the default could be narrowed.
+    permissions:
+      contents: write
+    # CI-003 / #598 raised this from 15, by five minutes, for measured reasons.
+    # The job now runs the required frontend gate — npm ci, the frontend test
+    # suite, and the production build — against the exact generated tree before
+    # that tree may become a commit on main. Measured on this repository at the
+    # time of the change: npm ci 4s warm, npm test 34s over 920 tests, npm run
+    # build 3s. Call it two minutes with a cold npm cache and Node setup. Twenty
+    # leaves the previous generation budget completely intact and adds roughly
+    # five minutes of headroom for about two minutes of new work.
+    #
+    # Deliberately bounded. This is publication validation, not an OPS-002-style
+    # runtime expansion: it must stay small enough that a hung gate is killed by
+    # the job rather than noticed by a human the next morning.
+    timeout-minutes: 20
+    env:
+      # Runner-local evidence for this run. Never staged, never committed — the
+      # staging step proves that directly by refusing any staged path outside
+      # the generated team pages.
+      GENERATED_EVIDENCE_DIR: artifacts/generated-team-preview
     steps:
       - uses: actions/checkout@v4
 
@@ -841,8 +868,13 @@ jobs:
       - name: Install backend dependencies
         run: pip install -r backend/requirements.txt
 
+      # ── 1. GENERATE ─────────────────────────────────────────────────────────
+      # Unchanged authority. The exporter resolves ONE trusted published
+      # dashboard snapshot and fails closed with no live-builder fallback. Its
+      # structured result is captured here because every downstream proof — the
+      # delivery gate and the commit provenance — reads that result rather than
+      # re-deriving anything about baseball.
       - name: Export static team story preview pages
-        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.mode == 'daily') || (github.event_name == 'schedule' && github.event.schedule == '0 10 * * *') }}
         env:
           APP_ENV: production
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
@@ -852,29 +884,313 @@ jobs:
           BASEBALLOS_SITE_URL: https://baseballos.app
         run: |
           set -euo pipefail
-          python backend/scripts/export_team_story_pages.py --output frontend/public --site-url "$BASEBALLOS_SITE_URL"
+          mkdir -p "$GENERATED_EVIDENCE_DIR"
+          # The exporter logs to stderr and prints exactly one JSON object to
+          # stdout, so this captures the result without swallowing the log.
+          # pipefail keeps the exporter's own exit code authoritative: a count
+          # mismatch (1) or an unprovable trusted publication (2) still fails
+          # here, before anything is validated or committed.
+          python backend/scripts/export_team_story_pages.py \
+            --output frontend/public \
+            --site-url "$BASEBALLOS_SITE_URL" \
+            | tee "$GENERATED_EVIDENCE_DIR/export-result.json"
 
-      - name: Upload team story preview pages
-        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.mode == 'daily') || (github.event_name == 'schedule' && github.event.schedule == '0 10 * * *') }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: team-story-preview-pages
-          path: frontend/public/team
-
-      - name: Commit team story preview pages
-        if: ${{ github.ref == 'refs/heads/main' && ((github.event_name == 'workflow_dispatch' && inputs.mode == 'daily') || (github.event_name == 'schedule' && github.event.schedule == '0 10 * * *')) }}
+      # ── 2. DELIVERY GATE ────────────────────────────────────────────────────
+      # Fail closed on delivery integrity only. It proves the filesystem agrees
+      # with what the exporter declared it published: every declared page
+      # present and non-empty, no stale page left behind, receipts present on
+      # every dated claim, and ONE publication snapshot across the whole set. It
+      # decides no baseball meaning — that stays with the generator.
+      - name: Verify generated preview delivery contract
+        id: delivery-gate
         run: |
           set -euo pipefail
-          if git diff --quiet -- frontend/public/team frontend/public/og/baseballos-card.svg; then
-            echo "No team story preview page changes to commit."
+          python backend/scripts/verify_generated_team_previews.py \
+            --export-result "$GENERATED_EVIDENCE_DIR/export-result.json" \
+            --output-root frontend/public \
+            --digest-out "$GENERATED_EVIDENCE_DIR/generated-digest.json" \
+            --summary-out "$GENERATED_EVIDENCE_DIR/delivery-verification.json"
+
+      # ── 3. FRONTEND GATE ────────────────────────────────────────────────────
+      # The same three commands canonical CI runs, in the same order, mirrored
+      # from the frontend-tests job in .github/workflows/ci.yml. They run HERE,
+      # after generation, so what they validate is the exact filesystem state
+      # that is about to become a commit — not an earlier tree that never
+      # contained these pages.
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci --no-audit --no-fund
+
+      - name: Run frontend tests
+        id: frontend-tests
+        working-directory: frontend
+        run: npm test
+
+      # Unit tests exercise modules; they do not prove the production bundle
+      # compiles with these generated files in the public root. Both are
+      # required, and neither may be soft-failed — no continue-on-error appears
+      # on any gate in this job.
+      - name: Build the production frontend bundle
+        id: frontend-build
+        working-directory: frontend
+        run: npm run build
+
+      # ── 4. STAGE THE VALIDATED TREE ─────────────────────────────────────────
+      - name: Stage the validated generated tree
+        id: stage
+        run: |
+          set -euo pipefail
+
+          # Re-prove delivery against the post-build filesystem and compare the
+          # digest byte for byte with the pre-gate digest. This is what makes
+          # "the validated tree is the committed tree" a proof: the bytes that
+          # passed npm test and npm run build are provably the bytes staged.
+          python backend/scripts/verify_generated_team_previews.py \
+            --export-result "$GENERATED_EVIDENCE_DIR/export-result.json" \
+            --output-root frontend/public \
+            --digest-out "$GENERATED_EVIDENCE_DIR/generated-digest-postbuild.json"
+          if ! diff -u \
+            "$GENERATED_EVIDENCE_DIR/generated-digest.json" \
+            "$GENERATED_EVIDENCE_DIR/generated-digest-postbuild.json"; then
+            echo "::error title=Generated Preview Publication::The generated files changed between validation and staging. The validated tree is not the tree that would be committed. Nothing is published."
+            exit 1
+          fi
+
+          # Exact scope. Never `git add .` / `git add -A`: only the governed
+          # generated delivery paths may enter this commit.
+          # frontend/public/og/baseballos-card.svg is deliberately NOT staged —
+          # it is a static committed asset that this generator never writes
+          # (write_team_story_pages only emits team/**), so including it only
+          # widened the commit's blast radius.
+          git add -- frontend/public/team
+
+          # Staged-diff detection, not worktree-diff detection. `git diff` is
+          # blind to untracked files, so a newly generated page — a relocated
+          # club, a changed abbreviation — used to look like "no changes" and
+          # was silently never published. Comparing the INDEX to HEAD sees adds,
+          # modifications, and deletions alike.
+          if git diff --cached --quiet; then
+            echo "No generated preview changes to publish."
+            echo "publish=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
-          git config user.name "Nickolis Kacludis"
-          git config user.email "nickoliskacludis@gmail.com"
-          git add frontend/public/team frontend/public/og/baseballos-card.svg
-          git commit -m "docs: update team story preview pages"
-          git push
+          unexpected="$(git diff --cached --name-only | grep -v '^frontend/public/team/' || true)"
+          if [ -n "$unexpected" ]; then
+            echo "::error title=Generated Preview Publication::Refusing to publish: paths outside the generated delivery scope are staged:"
+            echo "$unexpected"
+            exit 1
+          fi
+
+          # The tree object the index represents, computed WITHOUT creating a
+          # commit. This is the identity the generated commit must reproduce
+          # exactly before anything is pushed.
+          validated_tree_sha="$(git write-tree)"
+          staged_count="$(git diff --cached --name-only | wc -l | tr -d ' ')"
+          echo "publish=true" >> "$GITHUB_OUTPUT"
+          echo "validated_tree_sha=$validated_tree_sha" >> "$GITHUB_OUTPUT"
+          echo "staged_count=$staged_count" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Generated team preview publication"
+            echo ""
+            echo "- staged generated files: \`${staged_count}\`"
+            echo "- validated tree: \`${validated_tree_sha}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # ── 5. COMMIT UNDER THE MACHINE IDENTITY ────────────────────────────────
+      # BaseballOS Automation is a machine identity, not a person and not a
+      # vendor. It exists so automated repository history is separable from
+      # human-authored history at a glance and by `git log --format=%an`.
+      # Automated publication must never again be attributed to a human who did
+      # not write it.
+      - name: Commit generated team preview pages
+        id: commit
+        if: ${{ github.ref == 'refs/heads/main' && steps.stage.outputs.publish == 'true' }}
+        env:
+          VALIDATED_TREE_SHA: ${{ steps.stage.outputs.validated_tree_sha }}
+          WORKFLOW_RUN_ID: ${{ github.run_id }}
+          WORKFLOW_RUN_ATTEMPT: ${{ github.run_attempt }}
+          WORKFLOW_SOURCE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          git config user.name "BaseballOS Automation"
+          git config user.email "baseballoshq@gmail.com"
+
+          # Provenance comes from the exporter's structured result, never from
+          # scraping the rendered HTML.
+          python - <<'PY' > "$GENERATED_EVIDENCE_DIR/commit-message.txt"
+          import json
+          import os
+
+          summary_path = os.path.join(
+              os.environ['GENERATED_EVIDENCE_DIR'], 'delivery-verification.json'
+          )
+          with open(summary_path, encoding='utf-8') as handle:
+              summary = json.load(handle)
+
+          lines = [
+              'docs: publish generated team preview pages',
+              '',
+              'Generated by the BaseballOS Bullpen Sync scheduled daily publication',
+              'from one trusted published dashboard snapshot. The staged tree passed',
+              'the generated-delivery gate, the frontend test suite, and the',
+              'production frontend build before this commit was created.',
+              '',
+              f"Workflow-Run: {os.environ['WORKFLOW_RUN_ID']}",
+              f"Workflow-Run-Attempt: {os.environ['WORKFLOW_RUN_ATTEMPT']}",
+              f"Source-SHA: {os.environ['WORKFLOW_SOURCE_SHA']}",
+              f"Validated-Tree: {os.environ['VALIDATED_TREE_SHA']}",
+          ]
+          snapshot_id = summary.get('snapshot_id')
+          if snapshot_id not in (None, ''):
+              lines.append(f'Snapshot-ID: {snapshot_id}')
+          data_through = summary.get('data_through')
+          if data_through not in (None, ''):
+              lines.append(f'Data-Through: {data_through}')
+          print('\n'.join(lines))
+          PY
+
+          git commit -F "$GENERATED_EVIDENCE_DIR/commit-message.txt"
+
+          generated_commit_sha="$(git rev-parse HEAD)"
+          generated_commit_tree_sha="$(git rev-parse 'HEAD^{tree}')"
+          echo "generated_commit_sha=$generated_commit_sha" >> "$GITHUB_OUTPUT"
+          echo "generated_commit_tree_sha=$generated_commit_tree_sha" >> "$GITHUB_OUTPUT"
+
+          # THE TREE-EXACT CLOSE. The commit must reproduce the validated tree
+          # object exactly. If it does not, the thing that was tested is not the
+          # thing that would be published, and nothing is pushed.
+          if [ "$generated_commit_tree_sha" != "$VALIDATED_TREE_SHA" ]; then
+            echo "::error title=Generated Preview Publication::Tree mismatch. Validated tree ${VALIDATED_TREE_SHA} but the generated commit carries tree ${generated_commit_tree_sha}. The validated tree is not the committed tree; refusing to push."
+            exit 1
+          fi
+          echo "Tree-exact validation proven: ${generated_commit_tree_sha}"
+          {
+            echo "- generated commit: \`${generated_commit_sha}\`"
+            echo "- generated commit tree: \`${generated_commit_tree_sha}\` (matches validated tree)"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # ── 6. PUBLISH ──────────────────────────────────────────────────────────
+      # Fast-forward only. No --force, no --force-with-lease, no reset, no
+      # automatic rebase or merge. If main advanced while this run was
+      # generating, the push is refused and this job fails loudly. That is the
+      # correct outcome: the previously published pages stay in place and keep
+      # stating the baseball date they actually describe, and no human work is
+      # ever overwritten to publish a preview.
+      - name: Publish generated team preview pages to main
+        id: publish
+        if: ${{ github.ref == 'refs/heads/main' && steps.stage.outputs.publish == 'true' }}
+        run: |
+          set -euo pipefail
+          git push origin HEAD:refs/heads/main
+
+      # ── 7. PROVENANCE EVIDENCE ──────────────────────────────────────────────
+      # Runs on always() so a FAILED publication is as well evidenced as a
+      # successful one. Non-secret metadata only.
+      - name: Record generated publication provenance
+        if: ${{ always() }}
+        env:
+          WORKFLOW_RUN_ID: ${{ github.run_id }}
+          WORKFLOW_RUN_ATTEMPT: ${{ github.run_attempt }}
+          WORKFLOW_SOURCE_SHA: ${{ github.sha }}
+          DELIVERY_RESULT: ${{ steps.delivery-gate.outcome }}
+          FRONTEND_TEST_RESULT: ${{ steps.frontend-tests.outcome }}
+          FRONTEND_BUILD_RESULT: ${{ steps.frontend-build.outcome }}
+          PUBLISH_DECISION: ${{ steps.stage.outputs.publish }}
+          VALIDATED_TREE_SHA: ${{ steps.stage.outputs.validated_tree_sha }}
+          GENERATED_COMMIT_SHA: ${{ steps.commit.outputs.generated_commit_sha }}
+          GENERATED_COMMIT_TREE_SHA: ${{ steps.commit.outputs.generated_commit_tree_sha }}
+          PUSH_RESULT: ${{ steps.publish.outcome }}
+          GENERATED_FILE_COUNT: ${{ steps.stage.outputs.staged_count }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$GENERATED_EVIDENCE_DIR"
+          python - <<'PY'
+          import json
+          import os
+
+          evidence_dir = os.environ['GENERATED_EVIDENCE_DIR']
+          summary = {}
+          summary_path = os.path.join(evidence_dir, 'delivery-verification.json')
+          try:
+              with open(summary_path, encoding='utf-8') as handle:
+                  summary = json.load(handle)
+          except (OSError, ValueError):
+              summary = {}
+
+          def value(name):
+              raw = os.environ.get(name) or ''
+              return raw or None
+
+          record = {
+              'workflow_run_id': value('WORKFLOW_RUN_ID'),
+              'workflow_run_attempt': value('WORKFLOW_RUN_ATTEMPT'),
+              'workflow_source_sha': value('WORKFLOW_SOURCE_SHA'),
+              'generated_commit_sha': value('GENERATED_COMMIT_SHA'),
+              'validated_tree_sha': value('VALIDATED_TREE_SHA'),
+              'generated_commit_tree_sha': value('GENERATED_COMMIT_TREE_SHA'),
+              'tree_exact': (
+                  value('VALIDATED_TREE_SHA') is not None
+                  and value('VALIDATED_TREE_SHA') == value('GENERATED_COMMIT_TREE_SHA')
+              ),
+              'snapshot_id': summary.get('snapshot_id'),
+              'data_through': summary.get('data_through'),
+              'validation_result': value('DELIVERY_RESULT'),
+              'frontend_test_result': value('FRONTEND_TEST_RESULT'),
+              'frontend_build_result': value('FRONTEND_BUILD_RESULT'),
+              'publish_decision': value('PUBLISH_DECISION'),
+              'push_result': value('PUSH_RESULT'),
+              'generated_file_count': summary.get('generated_file_count'),
+              'staged_file_count': value('GENERATED_FILE_COUNT'),
+              'timestamp': summary.get('generated_at'),
+          }
+          path = os.path.join(evidence_dir, 'publication-provenance.json')
+          with open(path, 'w', encoding='utf-8') as handle:
+              json.dump(record, handle, indent=2, sort_keys=True)
+              handle.write('\n')
+          print(json.dumps(record, indent=2, sort_keys=True))
+          PY
+
+      # The same shared scanner the shadow-activation artifacts use. An unsafe
+      # file is quarantined on the runner and never uploaded; only its name and
+      # a category are reported, never the matched content.
+      - name: Scan generated publication evidence for secrets
+        if: ${{ always() }}
+        run: |
+          set -euo pipefail
+          rm -f "$GENERATED_EVIDENCE_DIR/commit-message.txt"
+          python backend/scripts/scan_forbidden_artifact_content.py \
+            --directory "$GENERATED_EVIDENCE_DIR" --quarantine \
+            --label "Generated Preview Evidence"
+
+      - name: Upload generated publication validation evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: generated-team-preview-validation-${{ github.run_id }}
+          path: |
+            artifacts/generated-team-preview/export-result.json
+            artifacts/generated-team-preview/delivery-verification.json
+            artifacts/generated-team-preview/generated-digest.json
+            artifacts/generated-team-preview/publication-provenance.json
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Upload team story preview pages
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: team-story-preview-pages-${{ github.run_id }}
+          path: frontend/public/team
+          retention-days: 30
+          if-no-files-found: warn
 
   # Manual-only, AUDIT-ONLY intraday reconciliation (Phase 1). This job never
   # runs on a schedule — there is deliberately no cron entry for it. It reads
