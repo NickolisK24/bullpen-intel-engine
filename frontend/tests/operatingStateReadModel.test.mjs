@@ -128,27 +128,29 @@ function trustedTeamShape(overrides = {}) {
       cleanOptions: {
         key: 'cleanOptions',
         label: 'Thin Clean Options',
-        explanation: '2 Clean Options out of 8 active bullpen arms - 1 Trust, 1 Bridge, 0 Coverage, 0 Depth. Interpretation weighs clean Trust Arms above clean Depth Arms.',
-        reasons: [
-          '2 clean options are available.',
-          'Interpretation weighs clean Trust Arms above clean Depth Arms.',
-        ],
+        // Backend-authored and guarded: this is copy the backend copy authority
+        // will actually publish. The adapter renders it verbatim.
+        summary: 'Two of eight bullpen arms look cleanly available right now.',
+        explanation: 'Two of eight bullpen arms look cleanly available right now.',
+        reasons: ['2 clean options are available.'],
         supportingCounts: { cleanOptionCount: 2 },
         source: 'backend',
       },
       coverageSafety: {
         key: 'coverageSafety',
         label: 'Stable Coverage Safety',
-        explanation: 'Coverage margin combines active capacity, resource health, and trust structure.',
-        reasons: ['The top trust bucket still has one available arm.'],
+        summary: 'The group still has enough coverage for a normal game state.',
+        explanation: 'The group still has enough coverage for a normal game state.',
+        reasons: ['One late-inning arm is still available.'],
         supportingCounts: { coverageArms: 4 },
         source: 'backend',
       },
       workloadConcentration: {
         key: 'workloadConcentration',
         label: 'Some Workload Concentration',
-        explanation: 'Recent workload concentration uses coverageSafetyVersion 2.0 thresholds.',
-        reasons: ['capacityState and resourceHealthState should not render.'],
+        summary: 'Recent relief work has flowed through a smaller group of arms.',
+        explanation: 'Recent relief work has flowed through a smaller group of arms.',
+        reasons: ['Three arms carried most of the recent relief work.'],
         supportingCounts: { topThreeShare: 0.58 },
         source: 'backend',
       },
@@ -283,33 +285,33 @@ test('freshness is attached to the read model', () => {
   assert.equal(model.freshness.hasFreshness, true)
 })
 
-test('team context reads map safe labels, explanations, and reasons only', () => {
+test('team context reads render the backend-authored summary verbatim', () => {
   const board = teamOperatingBoard({ freshness: currentFreshness })
   board.team_shape = trustedTeamShape()
 
   const model = modelFor(board, { scope: 'team' })
 
+  // Each summary is the sentence the backend published, character for
+  // character. The adapter used to discard it and substitute one of nine
+  // hard-coded frontend sentences chosen by matching the label.
   assert.deepEqual(model.cleanOptions, {
     label: 'Thin Clean Options',
-    summary: 'Cleanly available choices are thinner than raw availability may suggest.',
-    reasons: ['2 Clean Options are available.'],
+    summary: 'Two of eight bullpen arms look cleanly available right now.',
+    reasons: ['2 clean options are available.'],
   })
   assert.deepEqual(model.coverageSafety, {
     label: 'Stable Coverage Safety',
-    summary: 'The current group appears to have enough coverage for a normal game state.',
-    reasons: [],
+    summary: 'The group still has enough coverage for a normal game state.',
+    reasons: ['One late-inning arm is still available.'],
   })
   assert.deepEqual(model.workloadConcentration, {
     label: 'Some Workload Concentration',
     summary: 'Recent relief work has flowed through a smaller group of arms.',
-    reasons: [],
+    reasons: ['Three arms carried most of the recent relief work.'],
   })
   assert.equal(JSON.stringify(model).includes('supportingCounts'), false)
   assert.equal(JSON.stringify(model).includes('team_shape'), false)
   assert.equal(Object.prototype.hasOwnProperty.call(model.cleanOptions, 'key'), false)
-  assert.equal(JSON.stringify(model).includes('Interpretation weighs clean Trust Arms'), false)
-  assert.equal(JSON.stringify(model).includes('active capacity'), false)
-  assert.equal(JSON.stringify(model).includes('top trust bucket'), false)
   assertNoForbiddenLanguage(model)
 })
 
@@ -326,48 +328,44 @@ test('team context reads can map direct team_shape fields with public summaries'
 
   const model = modelFor(board, { scope: 'team' })
 
+  // No `summary` on this read, so the adapter falls back to the backend's
+  // `explanation` — still backend-authored, still verbatim.
   assert.deepEqual(model.cleanOptions, {
     label: 'Healthy Clean Options',
-    summary: 'This bullpen has enough cleanly available choices for normal coverage.',
-    reasons: ['5 Clean Options are available.'],
+    summary: 'Enough arms are cleanly available right now.',
+    reasons: ['5 clean options are available.'],
   })
   assert.equal(model.coverageSafety, null)
   assert.equal(model.workloadConcentration, null)
 })
 
-test('team context reads omit limited reads but keep safe labels when copy is filtered', () => {
+test('a limited read is refused and a read with no backend sentence is withheld', () => {
   const board = teamOperatingBoard()
   board.team_shape = trustedTeamShape({
+    // The backend saying "Limited Read" is a governed refusal, not copy the
+    // frontend chose to drop.
     cleanOptions: {
       key: 'cleanOptions',
       label: 'Limited Read',
-      explanation: 'Backend team bullpen shape was not returned.',
-      reasons: ['Backend team bullpen shape was not returned.'],
+      summary: 'Team bullpen shape could not be resolved.',
+      reasons: [],
     },
+    // A label with no authored sentence. The adapter no longer invents one, so
+    // the read is withheld — and the withholding is recorded, not silent.
     coverageSafety: {
       key: 'coverageSafety',
       label: 'Stable Coverage Safety',
-      explanation: 'backend endpoint source snapshot V4 deterministic detail',
-      reasons: ['COIN source detail should not render.'],
-    },
-    workloadConcentration: {
-      key: 'workloadConcentration',
-      label: 'Some Workload Concentration',
     },
   })
 
   const model = modelFor(board, { scope: 'team' })
 
   assert.equal(model.cleanOptions, null)
-  assert.deepEqual(model.coverageSafety, {
-    label: 'Stable Coverage Safety',
-    summary: 'The current group appears to have enough coverage for a normal game state.',
-    reasons: [],
-  })
+  assert.equal(model.coverageSafety, null)
   assert.deepEqual(model.workloadConcentration, {
     label: 'Some Workload Concentration',
     summary: 'Recent relief work has flowed through a smaller group of arms.',
-    reasons: [],
+    reasons: ['Three arms carried most of the recent relief work.'],
   })
   assertNoForbiddenLanguage(model)
 })
@@ -623,30 +621,36 @@ test('unsupported fields are named for awareness but not rendered as placeholder
   assert.equal(/unknown|null placeholder|not available yet/i.test(visible), false)
 })
 
-test('adapter output is scrubbed of internal vocabulary', () => {
+test('adapter renders governed backend copy verbatim and rewrites nothing', () => {
+  // This test used to feed internal vocabulary in and assert the adapter had
+  // scrubbed it. That scrubber is gone: public language is decided and refused
+  // at the backend boundary (backend/services/public_bullpen_copy.py, and
+  // backend/tests/test_public_copy_contract.py owns the refusal). What the
+  // adapter owes the reader now is that it changes nothing.
+  const why = 'The bullpen is short on rested arms right now.'
+  const reasons = [
+    'Five relievers are available from the latest completed workload data.',
+    'Two relievers are in the On Watch group.',
+    '5 of 8 relievers are classified Available.',
+  ]
+  const limitation =
+    'Latest workload data is outside the active freshness window, so this bullpen read may not reflect current bullpen planning.'
+
   const model = modelFor({
     context: {
       metrics: { total_relievers: 8, available: 5, monitor: 1, limited: 1, avoid: 1, unavailable: 0 },
-      health: {
-        state: 'manageable',
-        label: 'backend COIN snapshot V2 deterministic endpoint',
-        reasons: [
-          'The existing snapshot moved after the latest completed games.',
-          'COIN endpoint V4 detail should never render.',
-          '5 of 8 relievers are classified Available.',
-        ],
-      },
+      health: { state: 'manageable', label: why, reasons },
       confidence: 'high',
-      limitations: [
-        'governance layer detail should never render.',
-        'Latest workload data is outside the active freshness window, so this snapshot may not reflect current bullpen planning.',
-      ],
+      limitations: [limitation],
     },
     freshness: currentFreshness,
   }, { scope: 'league' })
 
-  assert.ok(model.evidence.includes('The existing bullpen read moved after the latest completed games.'))
-  assert.ok(model.limitations.includes('Latest workload data is outside the active freshness window, so this bullpen read may not reflect current bullpen planning.'))
+  // Character-for-character, including punctuation and capitalisation.
+  assert.equal(model.why, why)
+  assert.ok(model.evidence.includes('Five relievers are available from the latest completed workload data.'))
+  assert.ok(model.evidence.includes('Two relievers are in the On Watch group.'))
+  assert.ok(model.limitations.includes(limitation))
   assertNoForbiddenLanguage(model)
 })
 

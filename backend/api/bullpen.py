@@ -25,6 +25,7 @@ from services.availability_reference_date import (
     parse_reference_date,
     product_current_date,
 )
+from services.public_fatigue_view import public_availability, public_workload_facts
 from services.availability_snapshot import (
     CURRENT_AVAILABILITY_MODE,
     LATEST_WORKLOAD_SNAPSHOT_MODE,
@@ -269,7 +270,7 @@ def _served_score_cutoff():
     return snapshot.snapshot_generated_at
 
 
-def _latest_fatigue_query(team_id=None, risk_level=None, calculated_at_lte=None):
+def _latest_fatigue_query(team_id=None, calculated_at_lte=None):
     """Latest fatigue-score rows with optional user-visible filters applied."""
     score_scope = db.session.query(FatigueScore)
     if calculated_at_lte is not None:
@@ -294,8 +295,6 @@ def _latest_fatigue_query(team_id=None, risk_level=None, calculated_at_lte=None)
 
     if team_id:
         query = query.filter(Pitcher.team_id == team_id)
-    if risk_level:
-        query = query.filter(FatigueScore.risk_level == risk_level.upper())
 
     return query
 
@@ -306,7 +305,6 @@ def _fatigue_list_meta(
     returned_count,
     include_stale,
     team_id,
-    risk_level,
     reference_date=None,
 ):
     """Trust metadata explaining why a fatigue list may be empty."""
@@ -333,7 +331,6 @@ def _fatigue_list_meta(
         'returned_pitchers': int(returned_count),
         'filters': {
             'team_id': team_id,
-            'risk_level': risk_level.upper() if risk_level else None,
         },
     }
 
@@ -377,19 +374,25 @@ def _availability_for(pitcher_id, score, reference_date=None):
 @bullpen_bp.route('/fatigue', methods=['GET'])
 def get_fatigue_scores():
     """
-    Get current fatigue scores for all pitchers.
+    Public reliever workload read for the Reliever Finder.
+
+    This is a de-scored surface. It reports observed workload facts, the
+    governed availability read, and freshness — never the internal composite,
+    its component sub-scores, or the internal risk tier.
+
     Optional query params:
       - team_id: filter by team
-      - risk_level: LOW | MODERATE | HIGH | CRITICAL
       - limit: max results (default 50)
       - include_stale: when truthy, include pitchers whose most recent
                        appearance is older than 14 days. Default false.
       - with_meta: when truthy, return {data, meta} instead of the legacy array.
+
+    ``risk_level`` is intentionally NOT a public filter. Filtering an anonymous
+    list by internal tier would let any caller reconstruct the tier for every
+    pitcher, which is the same exposure as publishing it. The tier filter
+    remains on the admin ``/fatigue/snapshot`` route.
     """
     team_id, error = parse_positive_int_param(request.args, 'team_id')
-    if error:
-        return query_param_error_response(error)
-    risk_level, error = parse_enum_param(request.args, 'risk_level', RISK_LEVELS)
     if error:
         return query_param_error_response(error)
     limit, error = parse_positive_int_param(
@@ -409,7 +412,6 @@ def get_fatigue_scores():
 
     base_query     = _latest_fatigue_query(
         team_id=team_id,
-        risk_level=risk_level,
         calculated_at_lte=score_cutoff,
     )
     # The public All Pitchers list is a reliever finder, not a league-wide pitcher
@@ -439,10 +441,13 @@ def get_fatigue_scores():
     for record in records:
         score = record['score']
         pitcher = record['pitcher']
+        # Purpose-built public view model. Broad ``FatigueScore.to_dict()``
+        # serialization would carry the composite, the component sub-scores,
+        # the risk tier, and the score row's database keys.
         data.append({
-            **score.to_dict(),
+            **(public_workload_facts(score) or {}),
             'pitcher': pitcher.to_dict(),
-            'availability': record['availability'],
+            'availability': public_availability(record['availability']),
         })
     if not with_meta:
         return jsonify(data)
@@ -455,7 +460,6 @@ def get_fatigue_scores():
             returned_count=len(data),
             include_stale=include_stale,
             team_id=team_id,
-            risk_level=risk_level,
             reference_date=reference_date,
         ),
     })
@@ -585,15 +589,19 @@ def get_pitcher_fatigue(pitcher_id):
 
     return jsonify({
         'pitcher':         pitcher.to_dict(),
-        'current_fatigue': latest.to_dict() if latest else None,
-        'availability':    availability,
-        'workload_signal': workload_signal,
+        # ``current_fatigue`` keeps its name because Pitcher Detail reads the
+        # workload facts under it, but it is now the narrowed public view model:
+        # counted workload, no composite, no sub-scores, no risk tier, no
+        # database keys.
+        'current_fatigue': public_workload_facts(latest),
+        'availability':    public_availability(availability),
+        'workload_signal': public_availability(workload_signal),
         'roster_status':   roster_status,
         'freshness':       freshness,
         'last_appearance': last_workload_appearance,
         'last_workload_appearance': last_workload_appearance,
         'recent_logs':     [log.to_dict() for log in logs],
-        'fatigue_trend':   [s.to_dict() for s in history],
+        'fatigue_trend':   [public_workload_facts(s) for s in history],
     })
 
 
@@ -1049,8 +1057,8 @@ def get_team_bullpen(team_id):
     return jsonify([
         {
             'pitcher': pitcher.to_dict(),
-            'fatigue': score.to_dict() if score else None,
-            'availability': availability_by_pitcher.get(pitcher.id),
+            'fatigue': public_workload_facts(score),
+            'availability': public_availability(availability_by_pitcher.get(pitcher.id)),
         }
         for pitcher, score in results
     ])
@@ -2465,23 +2473,13 @@ def get_stats_overview():
         mode=CURRENT_AVAILABILITY_MODE,
     )
 
-    risk_breakdown = {'LOW': 0, 'MODERATE': 0, 'HIGH': 0, 'CRITICAL': 0}
-    for score in latest_scores:
-        if score.risk_level in risk_breakdown:
-            risk_breakdown[score.risk_level] += 1
-
-    avg_fatigue = (
-        sum(s.raw_score for s in latest_scores) / len(latest_scores)
-        if latest_scores else 0
-    )
-
     inventory_summary = summarize_scored_pitcher_inventory(availability_records)
 
+    # Coverage counts only — see build_bullpen_dashboard_payload. The league
+    # risk-tier breakdown and average composite are internal model output.
     return jsonify({
         'total_pitchers':    total_pitchers,
         'total_game_logs':   total_logs,
-        'risk_breakdown':    risk_breakdown,
-        'avg_fatigue_score': round(float(avg_fatigue), 1),
         'scored_pitchers':   len(latest_scores),
         'scored_pitcher_inventory': inventory_summary,
     })
@@ -2687,20 +2685,13 @@ def build_bullpen_dashboard_payload(*, use_published_freshness=False):
         for team_id, item in (bullpen_environment.get('by_team_id') or {}).items()
     }
     latest_scores = [score for score, _pitcher in latest_rows]
-    risk_breakdown = {'LOW': 0, 'MODERATE': 0, 'HIGH': 0, 'CRITICAL': 0}
-    for score in latest_scores:
-        if score.risk_level in risk_breakdown:
-            risk_breakdown[score.risk_level] += 1
-    avg_fatigue = (
-        sum(score.raw_score for score in latest_scores) / len(latest_scores)
-        if latest_scores else 0
-    )
     inventory_summary = summarize_scored_pitcher_inventory(inventory_records)
+    # Coverage counts only. The league risk-tier breakdown and the league average
+    # composite were the last naked scoring claims on this surface; scored
+    # coverage is a freshness/inventory fact, the composite was not.
     stats_overview = {
         'total_pitchers': Pitcher.query.filter_by(active=True).count(),
         'total_game_logs': GameLog.query.count(),
-        'risk_breakdown': risk_breakdown,
-        'avg_fatigue_score': round(float(avg_fatigue), 1),
         'scored_pitchers': len(latest_scores),
         'scored_pitcher_inventory': inventory_summary,
     }

@@ -3,8 +3,8 @@
 | Field | Value |
 |---|---|
 | Status | Canonical - system architecture, security, deployment, operations, and runbook authority |
-| Version | 1.3 |
-| Effective date | July 30, 2026 |
+| Version | 1.4 |
+| Effective date | August 12, 2026 |
 | Owner | Nickolis Kacludis |
 | Repository | `NickolisK24/bullpen-intel-engine` |
 | Production product | `baseballos.app` |
@@ -496,6 +496,51 @@ npm run build
 
 Never perform product expansion while a canonical source-authority incident is unresolved.
 
+### Automated generated-content publication (D-053)
+
+The order above governs human-authored work and is not weakened by this section. Reviewed
+change still reaches production through a branch and a pull request.
+
+There is exactly one exception, and it is a narrow one: the scheduled daily sync
+regenerates the routed `/team/{ABBR}` preview pages from trusted publication authority and
+commits them to `main` directly. That is permitted only because the job proves the tree
+before the tree becomes public repository state:
+
+```text
+trusted publication
+-> generate routed-team preview files
+-> generated-delivery gate (fail closed)
+-> canonical frontend tests and production build, against the generated tree
+-> stage exactly the generated delivery paths
+-> record the validated tree identity
+-> commit under the machine identity, with run provenance
+-> prove the commit's tree equals the validated tree
+-> fast-forward push
+```
+
+Rules that make it defensible:
+
+- the guarantee is **tree-exact, not commit-SHA-exact**. BaseballOS does not claim a SHA
+  was tested before it existed; it claims, and proves, that the tree which passed
+  validation is byte-for-byte the tree the commit carries;
+- the frontend commands and Node major are mirrored from the canonical CI workflow, so the
+  gate and CI cannot drift into validating different things;
+- repository write authority belongs to that one job. Every other job in the workflow is
+  read-only;
+- automated commits are authored and committed as an explicit machine identity, never as a
+  person. Automated history must remain separable from human history by
+  `git log --format=%an` alone;
+- staging is scoped to exact generated paths, never `git add .`, and change detection
+  compares the index rather than the working tree so a newly generated file cannot be
+  missed;
+- the push is fast-forward only. A non-fast-forward push fails loudly rather than
+  overwriting human work, and the previously published pages remain in place stating the
+  baseball date they actually describe;
+- no gate on this path may be soft-failed, and no PAT, GitHub App, or recursive workflow
+  mechanism is used to make the automated push trigger a follow-up CI run.
+
+Any future automated repository write must satisfy the same contract or it does not ship.
+
 ## 20. Production Smoke Tests
 
 At minimum verify:
@@ -622,3 +667,4 @@ Prioritized architecture work should follow product need:
 | 1.1 | July 29, 2026 | Nickolis Kacludis | Recorded the proven governed-repair operating shape after the July 2026 canonical-record closeout: an independent verifier separate from the apply, exact current reconciliation as terminal proof, and a no-longer-needed one-action apply closed rather than retried. Removed completed appearance/starter repair hardening from prioritized technical direction. |
 | 1.2 | July 29, 2026 | Nickolis Kacludis | Added the performance intelligence domain boundary establishing backend-owned canonical performance authority, no frontend recalculation, fail-closed publication below an approved sample, method-version and evidence ownership, upstream appearance-team attribution, immutable artifact freezing, and the metric registry as a governed definition set rather than a new subsystem. Updated prioritized technical direction now that the performance family contract is established. |
 | 1.3 | July 30, 2026 | Nickolis Kacludis | Added exact-arithmetic, sample-unit, and refusal-distinctness rules to the performance intelligence domain: integer numerators and denominators, no floating point, a single ROUND_HALF_UP at the declared precision, thresholds stated in the denominator's unit, and a mathematical zero-denominator refusal kept separate from a governance below-sample refusal. Recorded that the merged framework is an unwired production-internal foundation whose approved parameters are not yet set. |
+| 1.4 | August 12, 2026 | Nickolis Kacludis | Recorded the automated generated-content publication contract (D-053): generated repository writes are permitted only through a self-gating job that proves delivery integrity, runs the canonical frontend tests and production build against the exact generated tree, records that tree's identity, commits under an explicit machine identity with run provenance, proves the commit's tree equals the validated tree, and fast-forward pushes. Stated the guarantee as tree-exact rather than commit-SHA-exact, scoped repository write authority to that one job, and confirmed the ordinary branch/PR expectation for human-authored work is unchanged. |

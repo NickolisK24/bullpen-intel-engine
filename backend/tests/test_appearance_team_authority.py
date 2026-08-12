@@ -40,6 +40,11 @@ from services.appearance_team_authority import (
 )
 from services.appearance_team_coverage import build_appearance_team_coverage
 from tests.db_config import configure_test_database, create_test_schema, drop_test_schema
+from tests.generated_team_pages import (
+    GENERATED_TEAM_PAGE_FILES,
+    ROUTED_TEAM_PREVIEW_DELIVERY_FILES,
+)
+from tests.public_vocabulary_files import PUBLIC_VOCABULARY_FILES
 from utils.db import db
 
 
@@ -852,6 +857,126 @@ CANONICAL_TEAM_STATE_FILES = (
     'frontend/src/utils/evidenceCardStory.js',
 )
 
+# PUBLIC SCORE REMOVAL (SEC-001 / #595).
+#
+# The unauthenticated API stops publishing the internal workload composite, its
+# component sub-scores, the internal risk tier, and the FatigueScore row's own
+# database keys. These frontend files carry the consumer plumbing that follows:
+# the Reliever Finder addresses a pitcher through the pitcher object instead of
+# the score row's foreign key, the board card view model drops a computed score
+# field nothing rendered, and the unused local mirror of the backend fatigue
+# model is deleted.
+#
+# This guard exists so appearance-team work cannot incidentally alter Team State
+# payloads, immutable artifacts, or public surfaces. That purpose is intact and
+# actively enforced rather than merely exempted: none of these files read
+# appearance-team authority, which
+# test_public_score_removal_files_read_no_appearance_team_authority proves
+# directly. Share Artifact generation, eligibility, and the immutable lifecycle
+# are untouched, so published artifacts stay byte-unchanged.
+#
+# Exact paths only, never a directory exemption.
+PUBLIC_SCORE_REMOVAL_FILES = (
+    'frontend/src/components/bullpen/Bullpen.jsx',
+    'frontend/src/components/bullpen/board/tonightsBullpenBoardView.js',
+    'frontend/src/utils/fatigueModel.js',
+)
+
+# PUBLIC COPY AUTHORITY (FE-001 / #591).
+#
+# Meaning-bearing public language on the State -> Why -> Evidence path moves to
+# the backend copy authority (services/public_bullpen_copy.py) and the frontend
+# renders it verbatim. availabilityView.js stops deriving the public
+# availability label and renders the backend-published one;
+# copySuppressionAccounting.js is a temporary operator-only counter with no UI,
+# no network, and no payload change.
+#
+# This guard protects Team State payloads, immutable artifacts, and public
+# surfaces from incidental appearance-team change. That purpose is intact and
+# actively enforced rather than exempted:
+# test_public_copy_authority_files_read_no_appearance_team_authority proves
+# neither file reads appearance-team authority.
+#
+# Exact paths only, never a directory exemption.
+PUBLIC_COPY_AUTHORITY_FILES = (
+    'frontend/src/components/bullpen/availabilityView.js',
+    'frontend/src/utils/copySuppressionAccounting.js',
+)
+
+
+# ROUTED TEAM PREVIEW AUTHORITY (DIST-003 / #594).
+#
+# The generated /team/{ABBR} pages become temporally honest: canonical Team
+# State, a data-through date, a generated-at time, and the trusted dashboard
+# snapshot receipt they were built from. share_artifact_public.py is here for
+# one isolated change — the historical artifact's "current bullpen surface" link
+# now carries the artifact's OWN stored team abbreviation instead of dropping the
+# reader on the league route.
+#
+# This guard protects Team State payloads, immutable artifacts, and public
+# surfaces from incidental appearance-team change. That purpose is intact and
+# actively enforced rather than exempted:
+# test_static_team_preview_files_read_no_appearance_team_authority proves none of
+# these files reads appearance-team authority, and
+# test_static_team_preview_files_do_not_touch_artifact_immutability proves the
+# artifact change is confined to route construction.
+#
+# Exact paths only, never a directory exemption — the generated pages are
+# enumerated one per club in tests/generated_team_pages.py.
+# BULLPEN PAGE IDENTITY (UX-002 / #600).
+#
+# /bullpen hosts three canonically different views behind one route and rendered
+# no H1 at all. The route shell now derives one contextual page heading from the
+# active view and the team list it already fetches, SectionHeader gains an opt-in
+# `as` prop (still h2 for every other caller), and the Team Board tells the
+# shared operating-state card that the page already owns the club's name.
+#
+# This guard protects Team State payloads, immutable artifacts, and public
+# surfaces from incidental appearance-team change. That purpose is intact and
+# actively enforced rather than exempted:
+# test_bullpen_page_identity_files_read_no_appearance_team_authority proves none
+# of these files reads appearance-team authority, and
+# test_bullpen_page_identity_files_change_headings_only proves the change is
+# confined to semantic heading structure.
+#
+# Exact paths only, never a directory exemption. The other files in this
+# workstream — Bullpen.jsx, BullpenOperatingStateCard.jsx and
+# BullpenComparisonView.jsx — are already approved above and are not re-listed.
+BULLPEN_PAGE_IDENTITY_FILES = (
+    'frontend/src/components/UI/SectionHeader.jsx',
+    'frontend/src/components/bullpen/board/TonightsBullpenBoard.jsx',
+)
+
+
+# The DIST-003 / #594 delivery file joins this list rather than getting its own
+# exemption: it is the last mile of the same workstream, and it is held to the
+# same purpose proof as every other entry —
+# test_static_team_preview_files_read_no_appearance_team_authority sweeps this
+# tuple, so the routing table is proved to read no appearance-team authority
+# exactly like the builder, the exporter, and the generated pages.
+#
+# Exact paths only, never a directory exemption.
+STATIC_TEAM_PREVIEW_FILES = (
+    'backend/services/team_story_previews.py',
+    'backend/scripts/export_team_story_pages.py',
+    'backend/services/share_artifact_public.py',
+) + GENERATED_TEAM_PAGE_FILES + ROUTED_TEAM_PREVIEW_DELIVERY_FILES
+
+
+# VOC-001 / #638: reader-facing wording gets one owner. The backend emits the
+# final pitcher role/read strings and the frontend renders them verbatim; the
+# role and read families stop sharing a fallback word; read confidence stops
+# reading as a second baseball read; data-status badges stop borrowing baseball
+# words. Strings only.
+#
+# This guard protects Team State and public surfaces from incidental
+# appearance-team change. That purpose is intact and actively enforced rather
+# than merely exempted: test_public_vocabulary_files_read_no_appearance_team_authority
+# proves not one of these files reads appearance-team authority.
+#
+# Exact paths only, never a directory exemption.
+PUBLIC_VOCABULARY_ALLOWED_FILES = PUBLIC_VOCABULARY_FILES
+
 
 def test_branch_touches_no_team_state_or_public_surface_files():
     # Source proof: Foundation 1 changes no Team State, Share Artifact, public API,
@@ -941,12 +1066,27 @@ def test_branch_touches_no_team_state_or_public_surface_files():
     # remains fully protected, and adding a path here still requires its own
     # approval.
     APPROVED_CANONICAL_TEAM_STATE_FILES = CANONICAL_TEAM_STATE_FILES
+    # See PUBLIC_SCORE_REMOVAL_FILES above (SEC-001 / #595).
+    APPROVED_PUBLIC_SCORE_REMOVAL_FILES = PUBLIC_SCORE_REMOVAL_FILES
+    # See PUBLIC_COPY_AUTHORITY_FILES above (FE-001 / #591).
+    APPROVED_PUBLIC_COPY_AUTHORITY_FILES = PUBLIC_COPY_AUTHORITY_FILES
+    # See STATIC_TEAM_PREVIEW_FILES above (DIST-003 / #594).
+    APPROVED_STATIC_TEAM_PREVIEW_FILES = STATIC_TEAM_PREVIEW_FILES
+    # See BULLPEN_PAGE_IDENTITY_FILES above (UX-002 / #600).
+    APPROVED_BULLPEN_PAGE_IDENTITY_FILES = BULLPEN_PAGE_IDENTITY_FILES
+    # See PUBLIC_VOCABULARY_ALLOWED_FILES above (VOC-001 / #638).
+    APPROVED_PUBLIC_VOCABULARY_FILES = PUBLIC_VOCABULARY_ALLOWED_FILES
     offenders = [
         path for path in non_test
         if any(fragment in path for fragment in forbidden_fragments)
         and path not in APPROVED_PUBLIC_APPEARANCE_TEAM_CONSUMERS
         and path not in APPROVED_INTERNAL_APPEARANCE_TEAM_CONSUMERS
         and path not in APPROVED_CANONICAL_TEAM_STATE_FILES
+        and path not in APPROVED_PUBLIC_SCORE_REMOVAL_FILES
+        and path not in APPROVED_PUBLIC_COPY_AUTHORITY_FILES
+        and path not in APPROVED_STATIC_TEAM_PREVIEW_FILES
+        and path not in APPROVED_BULLPEN_PAGE_IDENTITY_FILES
+        and path not in APPROVED_PUBLIC_VOCABULARY_FILES
     ]
     assert offenders == [], f'Foundation 1 must not touch these runtime surfaces: {offenders}'
 
@@ -979,6 +1119,198 @@ def test_canonical_team_state_files_read_no_appearance_team_authority():
         'canonical Team State files must not read appearance-team authority: '
         f'{offenders}'
     )
+
+
+def test_public_score_removal_files_read_no_appearance_team_authority():
+    """The SEC-001 allowlist is an exemption from the path guard, not its purpose.
+
+    #595 removes internal fatigue scoring from public responses. It has nothing
+    to do with appearance-team authority, and this proves it: not one of the
+    allowlisted files reads ``GameLog.appearance_team_id`` or the appearance-team
+    status, in either language. A future edit that reaches for appearance-team
+    authority from one of them fails here.
+    """
+    offenders = []
+    for relative in PUBLIC_SCORE_REMOVAL_FILES:
+        path = REPO_ROOT_FOR_DIFF / relative
+        if not path.exists():
+            # fatigueModel.js is deleted by this workstream.
+            continue
+        source = path.read_text(encoding='utf-8')
+        for token in (
+            'appearance_team_id',
+            'appearance_team_status',
+            'appearanceTeamId',
+            'appearanceTeamStatus',
+        ):
+            if token in source:
+                offenders.append(f'{relative}: {token}')
+    assert offenders == [], (
+        'public score-removal files must not read appearance-team authority: '
+        f'{offenders}'
+    )
+
+
+def test_public_copy_authority_files_read_no_appearance_team_authority():
+    """The FE-001 allowlist is an exemption from the path guard, not its purpose.
+
+    #591 moves public copy ownership to the backend. It has nothing to do with
+    appearance-team authority, and this proves it: neither allowlisted file
+    reads ``GameLog.appearance_team_id`` or the appearance-team status, in
+    either language.
+    """
+    offenders = []
+    for relative in PUBLIC_COPY_AUTHORITY_FILES:
+        path = REPO_ROOT_FOR_DIFF / relative
+        if not path.exists():
+            continue
+        source = path.read_text(encoding='utf-8')
+        for token in (
+            'appearance_team_id',
+            'appearance_team_status',
+            'appearanceTeamId',
+            'appearanceTeamStatus',
+        ):
+            if token in source:
+                offenders.append(f'{relative}: {token}')
+    assert offenders == [], (
+        'public copy authority files must not read appearance-team authority: '
+        f'{offenders}'
+    )
+
+
+def test_static_team_preview_files_read_no_appearance_team_authority():
+    """The DIST-003 allowlist is an exemption from the path guard, not its purpose.
+
+    #594 makes the generated team previews cite the trusted publication they came
+    from. It has nothing to do with appearance-team authority, and this proves it:
+    not one allowlisted file reads ``GameLog.appearance_team_id`` or the
+    appearance-team status, in either language.
+    """
+    offenders = []
+    for relative in STATIC_TEAM_PREVIEW_FILES:
+        path = REPO_ROOT_FOR_DIFF / relative
+        if not path.exists():
+            continue
+        source = path.read_text(encoding='utf-8')
+        for token in (
+            'appearance_team_id',
+            'appearance_team_status',
+            'appearanceTeamId',
+            'appearanceTeamStatus',
+        ):
+            if token in source:
+                offenders.append(f'{relative}: {token}')
+    assert offenders == [], (
+        'routed team preview files must not read appearance-team authority: '
+        f'{offenders}'
+    )
+
+
+def test_bullpen_page_identity_files_read_no_appearance_team_authority():
+    """The UX-002 allowlist is an exemption from the path guard, not its purpose.
+
+    #600 gives /bullpen one contextual page heading per view. It has nothing to
+    do with appearance-team authority, and this proves it: neither allowlisted
+    file reads ``GameLog.appearance_team_id`` or the appearance-team status, in
+    either language.
+    """
+    offenders = []
+    for relative in BULLPEN_PAGE_IDENTITY_FILES:
+        path = REPO_ROOT_FOR_DIFF / relative
+        if not path.exists():
+            continue
+        source = path.read_text(encoding='utf-8')
+        for token in (
+            'appearance_team_id',
+            'appearance_team_status',
+            'appearanceTeamId',
+            'appearanceTeamStatus',
+        ):
+            if token in source:
+                offenders.append(f'{relative}: {token}')
+    assert offenders == [], (
+        'bullpen page identity files must not read appearance-team authority: '
+        f'{offenders}'
+    )
+
+
+def test_bullpen_page_identity_files_change_headings_only():
+    """The #600 allowlist covers semantic heading structure and nothing else.
+
+    The guard exists so public-surface work cannot incidentally alter Team State
+    payloads or publication behaviour. These two files may change which heading
+    element a surface renders; they may not derive a Team State, reach a public
+    API, or decide freshness. A future edit that reaches for any of that from a
+    page-heading file fails here.
+    """
+    # SectionHeader is a layout primitive. It renders a title, a subtitle and an
+    # action slot, and it must stay that: no state, no freshness, no fetching.
+    section_header = (
+        REPO_ROOT_FOR_DIFF / 'frontend/src/components/UI/SectionHeader.jsx'
+    ).read_text(encoding='utf-8')
+    offenders = [
+        token for token in (
+            'team_state', 'teamState', 'public_label', 'publicLabel',
+            'freshness', 'data_through', 'dataThrough', 'availability',
+            'fetch(', 'useEffect', 'useState',
+        )
+        if token in section_header
+    ]
+    assert offenders == [], (
+        f'SectionHeader must stay a layout primitive: {offenders}'
+    )
+    # It still defaults to h2, so every caller that did not opt in keeps the
+    # level it had. A global promotion would give the internal admin surfaces,
+    # which render their own H1, a second one.
+    assert "as: Heading = 'h2'" in section_header
+    assert '<Heading className="section-title">' in section_header
+
+    # The board container's part in #600 is one opt-in prop telling the shared
+    # operating-state card that the page already names the club. It does not
+    # take heading ownership: no H1 lives in the board subtree.
+    board = (
+        REPO_ROOT_FOR_DIFF
+        / 'frontend/src/components/bullpen/board/TonightsBullpenBoard.jsx'
+    ).read_text(encoding='utf-8')
+    assert 'titleOwnedByPage' in board
+    assert '<h1' not in board
+
+
+def test_static_team_preview_files_do_not_touch_artifact_immutability():
+    """The one artifact file on the #594 allowlist may only build a route.
+
+    ``share_artifact_public.py`` is allowlisted for a single isolated change: the
+    historical artifact's current-bullpen link carries the artifact's own stored
+    team abbreviation. The immutable read path must stay exactly what it was — no
+    live/current team lookup, no recomputation, no mutation, no schema or
+    lifecycle change. A future edit that reaches for live state from the public
+    artifact read fails here.
+    """
+    source = (
+        REPO_ROOT_FOR_DIFF / 'backend/services/share_artifact_public.py'
+    ).read_text(encoding='utf-8')
+
+    forbidden = (
+        'canonical_team_state',
+        'build_published_team_board',
+        '_build_team_board',
+        'resolve_team_readiness_payload',
+        'get_latest_valid_dashboard_snapshot',
+        'SHARE_ARTIFACT_SCHEMA_VERSION =',
+        'session.add(',
+        'session.commit(',
+        'session.delete(',
+    )
+    offenders = [token for token in forbidden if token in source]
+    assert offenders == [], (
+        'the public share artifact read must not reach for live state or mutate: '
+        f'{offenders}'
+    )
+    # The immutable contract the read still enforces.
+    assert 'verify_share_artifact_integrity(artifact)' in source
+    assert "RESULT_INTEGRITY_ERROR" in source
+    assert "'is_historical': True" in source
 
 
 def test_approved_public_consumers_use_appearance_team_authority_only():
@@ -1025,3 +1357,31 @@ def test_approved_public_consumers_use_appearance_team_authority_only():
     assert 'reconciled !== true' in panel
     for inference in ('games_started', 'gamesStarted', 'team_id =='):
         assert inference not in panel, inference
+
+
+def test_public_vocabulary_files_read_no_appearance_team_authority():
+    """The VOC-001 allowlist is an exemption from the path guard, not its purpose.
+
+    #638 moves reader-facing wording to one owner. It has nothing to do with
+    appearance-team authority, and this proves it: not one allowlisted file
+    reads ``GameLog.appearance_team_id`` or the appearance-team status, in
+    either language.
+    """
+    offenders = []
+    for relative in PUBLIC_VOCABULARY_ALLOWED_FILES:
+        path = REPO_ROOT_FOR_DIFF / relative
+        if not path.exists():
+            continue
+        source = path.read_text(encoding='utf-8')
+        for token in (
+            'appearance_team_id',
+            'appearance_team_status',
+            'appearanceTeamId',
+            'appearanceTeamStatus',
+        ):
+            if token in source:
+                offenders.append(f'{relative}: {token}')
+    assert offenders == [], (
+        'public vocabulary files must not read appearance-team authority: '
+        f'{offenders}'
+    )

@@ -1,5 +1,6 @@
 from datetime import date, timedelta
 from pathlib import Path
+import json
 import subprocess
 
 import pytest
@@ -24,6 +25,11 @@ from services.what_changed_since_yesterday import (
     STATE_NO_MEANINGFUL_CHANGES,
     build_what_changed_since_yesterday_payload,
 )
+from tests.generated_team_pages import (
+    GENERATED_TEAM_PAGE_FILES,
+    ROUTED_TEAM_PREVIEW_DELIVERY_FILES,
+)
+from tests.public_vocabulary_files import PUBLIC_VOCABULARY_FILES
 from tests.test_phase0e_exit_docs import EXPECTED_ALEMBIC_HEAD, _alembic_heads
 
 
@@ -616,10 +622,124 @@ def test_frozen_legacy_what_changed_files_untouched():
         'frontend/tests/dashboardScopeClarification.test.mjs',
         'frontend/tests/tonightsBullpenBoardContext.test.mjs',
     }
+    allowed_public_score_removal_files = {
+        # sec-001 / #595: the unauthenticated API stops publishing the internal
+        # workload composite, its component sub-scores, the internal risk tier,
+        # and the score row's database keys. The frontend change is consumer
+        # plumbing only — no rendered label, availability status, threshold,
+        # vocabulary, ordering, or route changed, and no What Changed or
+        # snapshot-trust behavior is touched.
+        'frontend/src/components/bullpen/Bullpen.jsx',
+        'frontend/src/components/bullpen/board/tonightsBullpenBoardView.js',
+        'frontend/src/utils/fatigueModel.js',
+        'frontend/tests/fixtures/availabilityStatusFixtures.mjs',
+        'frontend/tests/fixtures/bullpenBoardFixtures.mjs',
+        'frontend/tests/relieverFinder.test.mjs',
+        'frontend/tests/publicScoreExposure.test.mjs',
+    }
+
+    allowed_public_copy_authority_files = {
+        # fe-001 / #591 (frontend public-copy authority): meaning-bearing public
+        # language on the State -> Why -> Evidence path moves to the backend copy
+        # authority (services/public_bullpen_copy.py) and the frontend renders it
+        # verbatim. availabilityView.js stops deriving the public availability
+        # label and renders the backend-published one; copySuppressionAccounting
+        # is a temporary operator-only counter with no UI, no network, and no
+        # payload change; the test file is the rendering contract. No public
+        # label, availability threshold, classification, vocabulary decision,
+        # route, or Team State behavior changes.
+        'frontend/src/components/bullpen/availabilityView.js',
+        'frontend/src/utils/copySuppressionAccounting.js',
+        'frontend/tests/publicCopyAuthority.test.mjs',
+    }
+
+    allowed_public_vocabulary_parity_files = {
+        # voc-001 / #638 (public vocabulary parity): reader-facing wording only.
+        # Backend pitcher_public_labels.py becomes the sole owner of the public
+        # role/read strings; pitcherLabels.js stops rewriting them and renders
+        # the authored label verbatim. Two semantic collisions are removed —
+        # the role and read families no longer share the fallback word
+        # 'Limited Read' (role says 'Role Unclear'), and the data-status badge
+        # stops borrowing the baseball words 'Limited' and 'Healthy'
+        # (Current / Partial Data / Stale / Data Unavailable). Read confidence
+        # becomes an explicit High/Medium/Low scale instead of a second
+        # arm-read vocabulary.
+        #
+        # No threshold, classification, derivation, authority, gate, or
+        # timestamp changes: every engine key, availability status, Team State
+        # value, freshness computation and publication rule is byte-identical,
+        # which test_public_vocabulary_parity_changes_wording_only proves
+        # against the diff. Exact paths only, never a directory exemption.
+        'frontend/src/utils/pitcherLabels.js',
+        'frontend/src/components/bullpen/availabilityView.js',
+        'frontend/src/components/dashboard/syncStatusView.js',
+        'frontend/src/components/bullpen/board/teamGameContextView.js',
+        'frontend/src/components/bullpen/board/tonightsBullpenBoardView.js',
+        # The four vocabulary contract tests no earlier workstream
+        # allowlisted. Test-only: they assert the new canonical wording and
+        # change no product code.
+        'frontend/tests/availabilityView.test.mjs',
+        'frontend/tests/bullpenIntelligencePanel.test.mjs',
+        'frontend/tests/dataThroughAuthority.test.mjs',
+        'frontend/tests/gameContextVisualHierarchy.test.mjs',
+    }
+
+    allowed_bullpen_page_identity_files = {
+        # ux-002 / #600 (bullpen page identity): the /bullpen route shell owns one
+        # contextual H1 per active view; SectionHeader gains an opt-in `as` prop
+        # and still defaults to h2. This freeze protects snapshot trust; nothing
+        # here reads a snapshot, a publication authority, freshness, or Team
+        # State. Heading semantics only.
+        'frontend/src/components/UI/SectionHeader.jsx',
+        'frontend/src/components/bullpen/board/TonightsBullpenBoard.jsx',
+        'frontend/tests/bullpenPageIdentity.test.mjs',
+    }
+
+    allowed_public_vocabulary_files = {
+        # voc-001 / #638 (public vocabulary parity): reader-facing wording gets
+        # one owner. The backend emits the final pitcher role/read strings and
+        # the frontend renders them verbatim instead of rewriting them; the role
+        # and read families stop sharing the fallback word 'Limited Read'; read
+        # confidence stops reading as a second baseball read; and the
+        # data-status badges stop borrowing baseball words. Strings only — no
+        # threshold, classification, derivation, availability rule, roster or
+        # publication authority, Team State projection, freshness computation,
+        # timestamp, or engine key changed.
+        #
+        # Exact paths only, never a directory exemption.
+        *PUBLIC_VOCABULARY_FILES,
+    }
+
+    allowed_static_team_preview_files = {
+        # dist-003 / #594 (routed team preview authority): the generated
+        # /team/{ABBR} pages and their static contract test. This freeze protects
+        # snapshot trust; #594 strengthens it rather than exempting itself from
+        # it — the pages now cite the trusted dashboard snapshot they were built
+        # from and refuse to publish a present-tense claim without one. No
+        # snapshot publication gate, freshness field meaning, or trusted-serving
+        # behavior changes.
+        #
+        # The delivery file is the last mile of the same workstream: the Aug 11
+        # authorized export produced all 30 trusted pages and production served
+        # the invalid-team fallback for every club, because the rewrite table
+        # had no exact-match rule. Routing only — nothing in it reads a
+        # snapshot, a publication gate, freshness, or Team State, which
+        # test_routed_team_preview_delivery_touches_no_snapshot_trust_surface
+        # proves directly rather than merely asserting here.
+        'frontend/tests/teamShare.test.mjs',
+        *GENERATED_TEAM_PAGE_FILES,
+        *ROUTED_TEAM_PREVIEW_DELIVERY_FILES,
+    }
 
     assert not sorted(
         path for path in changed
         if path.startswith('frontend/')
+        if path not in allowed_public_vocabulary_parity_files
+        if path not in allowed_bullpen_page_identity_files
+        if path not in allowed_public_vocabulary_files
+        if path not in allowed_static_team_preview_files
+        if path not in allowed_public_copy_authority_files
+        if path not in allowed_public_score_removal_files
         if path not in allowed_canonical_team_state_files
         if path not in allowed_share_artifact_cutover_files
         if path not in allowed_share_artifact_operations_files
@@ -654,6 +774,49 @@ def test_frozen_legacy_what_changed_files_untouched():
         if path not in allowed_repair_execution_ledger_files
         if path not in allowed_tonight_snapshot_source_width_files
     )
+
+
+def test_routed_team_preview_delivery_touches_no_snapshot_trust_surface():
+    """The DIST-003 delivery allowance is an exemption from the path guard, not
+    from its purpose.
+
+    This freeze protects snapshot trust. The routing table is allowed to change
+    so already-generated pages can be served, so this proves the thing the
+    guard actually cares about: the file is a static rewrite/header table and
+    declares no snapshot, publication, freshness, or Team State surface at all.
+    Every rewrite destination is a static file inside the deployed frontend, so
+    no route added here can reach a backend read, a snapshot selection, or a
+    trust gate.
+    """
+    for relative in ROUTED_TEAM_PREVIEW_DELIVERY_FILES:
+        config = json.loads(
+            (REPO_ROOT / relative).read_text(encoding='utf-8'),
+        )
+
+        # A rewrite/header table and nothing else. A key that could introduce a
+        # backend hop — `redirects` to another origin, `functions`, `crons`,
+        # `env` — is not present and cannot be added silently.
+        assert sorted(config) == ['headers', 'rewrites'], relative
+
+        for rewrite in config['rewrites']:
+            destination = rewrite['destination']
+            # Static, same-origin, in-bundle. Never an API path and never an
+            # absolute URL to another host.
+            assert destination.startswith('/'), (relative, destination)
+            assert not destination.startswith('//'), (relative, destination)
+            assert destination.endswith('.html'), (relative, destination)
+            assert '/api/' not in destination, (relative, destination)
+
+        # No snapshot-trust vocabulary reaches the routing table in either
+        # language: nothing here selects, gates, dates, or describes a
+        # published snapshot.
+        source = (REPO_ROOT / relative).read_text(encoding='utf-8')
+        for token in (
+            'snapshot', 'dashboard_snapshot', 'published_at', 'is_published',
+            'data_through', 'freshness', 'trusted', 'team_state',
+            'what_changed', 'availability', 'publication',
+        ):
+            assert token not in source.lower(), (relative, token)
 
 
 def test_route_map_freeze(monkeypatch):

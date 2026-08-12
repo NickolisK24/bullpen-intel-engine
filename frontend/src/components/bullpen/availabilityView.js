@@ -177,15 +177,26 @@ export function getRowAvailabilityStatus(row) {
   return normalizeAvailabilityStatus(getRowAvailability(row)?.availability_status)
 }
 
-export function getAvailabilityBadgeView(availabilityOrStatus) {
+/**
+ * Badge view for an availability status.
+ *
+ * `publicLabel` is the backend-published public form of the status
+ * (`availability_public_label`, decided by
+ * backend/services/public_bullpen_copy.py). When it is supplied it is rendered
+ * as published — the frontend does not re-derive or re-translate it. The local
+ * STATUS_CONFIG label remains only for surfaces whose payloads do not yet carry
+ * a public label, and only ever supplies styling and tone for the board path.
+ */
+export function getAvailabilityBadgeView(availabilityOrStatus, publicLabel = null) {
   const status = typeof availabilityOrStatus === 'string'
     ? availabilityOrStatus
     : availabilityOrStatus?.availability_status
   const normalized = normalizeAvailabilityStatus(status) || 'Unknown'
   const config = STATUS_CONFIG[normalized] || STATUS_CONFIG.Unknown
+  const backendLabel = typeof publicLabel === 'string' ? publicLabel.trim() : ''
   return {
     status: normalized,
-    label: config.label,
+    label: backendLabel || config.label,
     tone: config.tone,
     style: config.style,
     dotStyle: config.dotStyle,
@@ -198,13 +209,26 @@ export function getAvailabilityBadgeView(availabilityOrStatus) {
 // 'Limited Read' is reserved for the pitcher label that means "not enough
 // data for a clear role/availability label" — confidence uses 'Partial Read'
 // so the two concepts never share a public name.
+// VOC-001: read confidence is a presentation-only quality scale, not a second
+// baseball read. The retired wording (Strong Read / Partial Read / Unclear
+// Read / No Read / Unknown Read) looked like a competing arm-read
+// classification sitting next to the governed pitcher read, so a reader had
+// two "read" vocabularies and no way to tell which one was the baseball
+// conclusion. This family is explicitly a confidence scale and must always be
+// rendered under READ_CONFIDENCE_FIELD_LABEL so a bare "High" can never be
+// mistaken for Team State or for arm availability.
+//
+// The raw API confidence values (high / medium / low / none / unknown) are
+// unchanged; only the display strings moved.
 const CONFIDENCE_READ_LABELS = {
-  high: 'Strong Read',
-  medium: 'Partial Read',
-  low: 'Unclear Read',
-  none: 'No Read',
-  unknown: 'Unknown Read',
+  high: 'High',
+  medium: 'Medium',
+  low: 'Low',
+  none: 'Unavailable',
+  unknown: 'Unavailable',
 }
+
+export const READ_CONFIDENCE_FIELD_LABEL = 'Read confidence'
 
 function capitalizeToken(value) {
   return `${value.charAt(0).toUpperCase()}${value.slice(1).toLowerCase()}`
@@ -212,7 +236,7 @@ function capitalizeToken(value) {
 
 export function formatConfidence(confidence) {
   const value = String(confidence || '').trim().toLowerCase()
-  if (!value) return 'Unknown Read'
+  if (!value) return CONFIDENCE_READ_LABELS.unknown
   return CONFIDENCE_READ_LABELS[value] || capitalizeToken(value)
 }
 

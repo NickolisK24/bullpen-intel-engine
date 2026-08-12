@@ -1,351 +1,249 @@
-# BaseballOS Product Roadmap & Decision Ledger
+BASEBALLOS  CANONICAL DOCUMENT LIBRARY
+
+05
+
+Product Roadmap & Decision Ledger
+
+Condensed Canonical Edition · Visual Audit Integrated
+
+One active objective. One canonical roadmap. Every durable decision recorded.
+
+VERSION 3.8  ·  PUBLIC-CREDIBILITY CURRENT-STATE EDITION
+
+Owner: Nickolis Kacludis
+
+Effective August 11, 2026
+
+# Contents
+
+This edition keeps the Product Roadmap & Decision Ledger as the sole canonical execution authority and integrates only the important, non-duplicative findings from the August 5 visual audit.
+
+01  Document Control
+
+02  Part I - Executive State
+
+03  Part II - Integrated Priority Matrix
+
+04  Part III - Phased Roadmap
+
+05  Part IV - Dependencies and Success Metrics
+
+06  Part V - Risks and Controls
+
+07  Part VI - Backlog and Stop Conditions
+
+08  Part VII - Decision Ledger
+
+09  Part VIII - Founder Operating System
+
+10  Appendix A - Completion Log
+
+11  Appendix B - Phase Exit Record
+
+12  Appendix C - Source Basis
+
+13  Appendix D - Revision History
+
+# Document Control
 
 | Field | Value |
-|---|---|
+| --- | --- |
+| Document | BaseballOS Product Roadmap and Decision Ledger |
 | Status | Canonical - current platform state, priority, sequence, decision, risk, and completion authority |
-| Version | 3.3 |
-| Effective date | August 6, 2026 |
+| Version | 3.8 |
+| Effective date | August 11, 2026 |
 | Owner | Nickolis Kacludis |
-| Repository basis | `NickolisK24/bullpen-intel-engine` main at `bcfae8ad2a617d8ae93610a762932aa2432bb3da`, with the Version 3.3 OPS-002 mitigation recorded through PR #621 |
-| Decision basis | Decision Ledger through D-050 |
-| Supersedes | Prior current-state wording through August 6, 2026 while preserving all durable decisions and evidence |
-| Detailed predecessor archive | `docs/archive/2026-08/PRODUCT_ROADMAP_DECISION_LEDGER_PRE_V3.md` |
+| Repository basis | Production/main: NickolisK24/bullpen-intel-engine main at 18dd6914a933928254e969c85ecb19cf75b6a9f2 after PR #637. In flight, not on main: PR #639 (VOC-001) on `fix/public-vocabulary-parity` |
+| Decision basis | Decision Ledger through D-052; Version 3.8 reconciles current execution state without adding, weakening, or renumbering a durable authority decision |
+| Audit basis | Production closeout for #595, #591, #600, and #594; VOC-001 (#638) has repository implementation in PR #639 and no production verification yet |
+| Supersedes | Version 3.7 current-state wording while preserving all durable prior decisions and completion evidence |
 | Update rule | Update after a priority change, material merge, phase exit, production incident, authority decision, risk change, or false current-state statement |
 | Review cadence | Weekly founder review; immediate update after a material production or product decision |
 
-> **One active objective. One canonical roadmap. Every durable decision recorded.**
+| INTEGRATION RULE | Current-state reconciliation only. #595, #591, #600, and #594 are complete and production-verified. VOC-001 (#638) is the active package: its repository implementation lives in PR #639, which is open and unmerged, and it has no production proof. Repository CI green is necessary and not sufficient. This edition does not reorder later CI/dependency, reliability, Portable Intelligence, or M-001 work, and adds no Decision Ledger ID. |
+| --- | --- |
 
-## 1. How to Use This Roadmap
+# Part I - Executive State
 
-- Work from the active objective downward.
-- Do not begin a lower-priority item while an unblocked higher-priority trust item is open.
-- A lower-priority package may proceed only when the higher item is genuinely blocked by time, external evidence, or an explicit Decision Ledger deferment.
-- Every significant completed item receives a branch, pull request, commit, test record, and production-evidence record where applicable.
-- Every durable product, intelligence, architecture, authority, or operating decision receives a Decision Ledger entry.
-- New ideas enter the backlog here; they do not create a competing roadmap.
-- Historical plans, audits, and archived verbose ledger entries remain evidence but do not override this document.
+## 1. Current Product Position
 
-The Roadmap decides sequence. It cannot weaken the Constitution, Bullpen Intelligence Standard, Product Experience Standard, Platform Architecture and Operations Manual, or Editorial and Distribution Standard.
+BaseballOS is a live public MLB bullpen-intelligence platform with a mature trust foundation, a defensible canonical appearance record, governed publication gates, immutable historical claims, and production evidence strong enough to close the game-driven ingestion authority-qualification phase without granting production write authority.
 
-## 2. Executive State
+The trust/copy/semantic credibility packages are substantially closed: raw public scores are contained, governed Why copy is backend-owned, `/bullpen` has one contextual H1 per view, and routed team previews are production-verified. The remaining immediate credibility gate is in-product vocabulary/glossary parity, whose repository implementation is in PR #639 and whose production proof has not yet been taken.
 
-BaseballOS is a live public MLB bullpen-intelligence platform with a mature trust foundation, a defensible canonical appearance record, governed publication gates, immutable historical claims, and unusually strong production evidence for a solo-built product.
+| CURRENT VERDICT | The trust/copy/semantic credibility packages are substantially closed: raw public scores are contained, governed Why copy is backend-owned, `/bullpen` has one contextual H1 per view, and routed team previews are production-verified. The remaining immediate credibility gate is in-product vocabulary/glossary parity, whose repository implementation is in PR #639 and whose production proof has not yet been taken. |
+| --- | --- |
 
-The platform currently provides:
-
-- a daily front door, full-league Dashboard, Team Boards, comparison, reliever discovery, and pitcher detail;
-- workload and availability intelligence with active-roster separation and official appearance evidence;
-- backend-owned Team State and arm-read authorities;
-- trusted league snapshots and team-progressive publication;
-- immutable Share Artifacts with integrity, lifecycle, and permanent historical pages;
-- read-only incident, correction, completeness, and qualification audits;
-- daily and postgame game-driven ingestion lanes operating in shadow;
-- a four-shard PostgreSQL CI confidence gate plus lockfile-faithful frontend test/build validation;
-- canonical Team State delivery to live reader surfaces, proven in corrected production.
-
-The central problem is no longer whether BaseballOS can build trustworthy baseball infrastructure. **The immediate problem is that the daily sync cannot reliably complete.** PR #619 proved a critical runtime-budget incident on August 6, 2026: publication-critical GameLog ingestion is starved by unconditional upstream work and repeatedly fails closed, freezing Dashboard freshness and degrading live Team Board and Compare reads. Restoring reliable daily completion precedes the remaining evidence closeout, the remaining public-contract contradictions, and the visibility and portability work.
-
-Fail-closed publication behaved correctly throughout that incident, and that distinction matters: the platform was **safe but frozen**, which is not the same as healthy and must never be reported as if it were.
-
-## 3. Current Repository and Authority State
+## 2. Current Repository and Authority State
 
 | Area | Current state | Meaning |
-|---|---|---|
-| Repository main | `bcfae8ad2a617d8ae93610a762932aa2432bb3da` | PR #619 merged August 6, 2026, recording the daily-sync runtime-budget incident investigation; includes PR #617's Team State population correction, PR #615's game 824487 repair evidence, and PR #616's retirement of that capability |
-| OPS-002 daily-sync runtime budget | **Active critical incident** | PR #619 proved root cause: five upstream stages consume 612-628s, the combined ingestion pool that remains is 151-168s, the shadow observer takes its share, and the legacy GameLog writer receives 112-125s for work whose corrected cold upper bound is 767-895s. Fail-closed publication worked correctly throughout; snapshot `360` remained the trusted served snapshot and candidates `359`, `361`, `362` were withheld. Mitigation implemented, **production proof pending** |
-| Daily-sync runtime headroom | Mitigation implemented, unproven | 2200s internal budget, 40m shell timeout, 60m job timeout, 1500s combined-pool cap, 300s final reserve unchanged. Conservative legacy GameLog floor 953.625s against a 950s requirement. Temporary headroom; the permanent work-reduction correction is not implemented |
-| Game 824487 source-revision checkpoint | Terminally closed | Verified, applied, and independently re-observed as already applied |
-| Game 824487 repair capability | Retired | PR #616 merged August 6, 2026; the single-purpose repair workflow no longer exists on main and must never be reintroduced or dispatched (D-048) |
-| Game-driven daily lane | Shadow | Observation only; no automated baseball-data writes |
-| Game-driven postgame lane | Shadow | Exact-cycle observation after the legacy postgame writer |
-| Backfill lane | Off | No automatic game-driven backfill authority |
-| Production writer | Legacy sync/postgame path | Remains authoritative for baseball-data mutation |
-| Automated write mode | Unapproved | Manual one-game qualification machinery grants no broader authority |
-| Game-driven publication authority | Unapproved | Publication authority has not transferred |
-| D-044 blocker scope | Implemented | Shadow bookkeeping backlog is observational; real baseball deficits remain fail-closed |
-| PROD-001 (#592) | Complete | Scheduled production run proved full Tonight provenance persistence and readback |
-| OPS-001 (#593) | Implemented; observation **paused by OPS-002**, issue open and unchanged | Job separation exists and behaved correctly during the OPS-002 incident - shadow failed independently while the ledger and cache proofs passed inside `public-sync`. The scheduled observation window is paused because failed runs skip `internal-enrichment` and `static-team-story-preview`, polluting the very evidence it needs. Reviewed for extension after OPS-002 production proof |
-| UX-001 (#590) | **Complete** | Closed August 6, 2026. PR #611 established backend-owned Team State with frontend passthrough; PR #617 corrected the readiness population to the canonical active bullpen after production proved a population mismatch. Corrected production run `31097712768` published and served snapshot `360` through August 5, and Team Board, Dashboard, and Compare rendered naturally occurring `Stretched` and `Vulnerable` plus a governed fail-closed case. No team naturally qualified as Fresh; closed under the D-049 natural-observability exception without manufacturing evidence |
-| CI-001 (#599) | Complete | Frontend CI uses the lockfile and requires tests plus the production build |
+| --- | --- | --- |
+| Repository main | 18dd6914a933928254e969c85ecb19cf75b6a9f2 | Current production baseline after PR #637 and #594 production closeout |
+| In-flight branch | `fix/public-vocabulary-parity` / PR #639 | VOC-001 repository implementation. Open, unmerged, not deployed; this is not production truth. |
+| Daily game-driven lane | Shadow | Observation only; no automated baseball-data writes. |
+| Postgame game-driven lane | Shadow | Exact-cycle observation after the legacy postgame writer. |
+| Backfill lane | Off | No automatic backfill authority. |
+| Production writer | Legacy sync/postgame path | Remains authoritative for baseball-data mutation. |
+| Automated write mode | Unapproved | Manual qualification machinery grants no broader authority. |
+| Game-driven publication authority | Unapproved | Publication authority has not transferred. |
+| PROD-001 (#592) | Complete | Scheduled production proof retained. |
+| OPS-001 (#593) | Complete | Scheduled signal-separation evidence closed August 10. |
+| OPS-002 (#620) | Complete | Runtime mitigation production-proven; permanent work reduction remains separate. |
+| UX-001 (#590) | Complete | Canonical Team State delivery proven in production. |
+| SEC-001 (#595) | Complete | Public score/internal fatigue fields contained and production-verified. |
+| FE-001 (#591) | Complete | Backend-owned Why copy production-verified; frontend no longer rewrites or drops it. |
+| DIST-003 (#594) | Complete | Routed team previews production-verified August 11, 2026 from trusted snapshot 393; issue closed. See Appendix A. |
+| UX-002 (#600) | Complete | One contextual H1 per `/bullpen` view; keyboard, accessibility-tree, and mobile checks passed. |
+| VOC-001 (#638) | Active; repository implementation in PR #639; not production-verified | Public vocabulary/glossary ownership. PR #639 is open and unmerged, #638 remains open, and no production vocabulary smoke has been taken. |
 
-## 4. Active Objective
+## 3. Active Objective
 
-> **Critical daily-sync reliability restoration - OPS-002**
+| ACTIVE OBJECTIVE | VOC-001 (#638) — public vocabulary / glossary parity closeout |
+| --- | --- |
 
-PR #619 proved on August 6, 2026 that the full daily sync cannot reliably complete from a cold-equivalent state. Three of four runs dead-lettered publication-critical GameLog work; the one that succeeded behaved as a warm second pass 30 minutes after a failure. **Manual retry has become load-bearing recovery behaviour, and that is not an acceptable operating model.**
+Current implementation state:
 
-This displaces the evidence closeout because the evidence itself is being corrupted: every failed `public-sync` skips `internal-enrichment` and `static-team-story-preview`, which pollutes exactly the scheduled observation #593 is waiting on. Waiting longer would accumulate unusable evidence.
+- Phases 1 through 10B are implemented in PR #639.
+- Product Experience Standard v1.4 is in PR #639.
+- Bullpen Intelligence Standard v1.3 is in PR #639.
+- Roadmap v3.8 is reconciled in this phase.
+- PR #639 is OPEN and NOT MERGED.
+- Issue #638 remains OPEN.
+- Production verification has NOT yet occurred for VOC-001.
 
-### Track A - OPS-002 mitigation and production proof
+Remaining work to close the objective:
 
-1. Merge the reviewed mitigation: 2200-second internal budget, 40-minute shell timeout, 60-minute `public-sync` job timeout, 1500-second combined ingestion cap, 300-second final reserve unchanged.
-2. Report the five runtime quantities separately - configured cap, combined pool, shadow allocation, shadow elapsed, legacy GameLog remainder.
-3. Execute one **separately authorized** controlled manual daily recovery run.
-4. Prove three consecutive scheduled daily runs with zero budget exhaustion and zero publication-critical failures.
-5. Keep daily/postgame shadow, backfill off, legacy writer authoritative, and automated write/authoritative modes unapproved.
+- Complete the remaining VOC-001 cross-family contracts and the retired-vocabulary repository sweep.
+- Merge PR #639 and let deployment complete.
+- Take a read-only production vocabulary smoke across Team Board, Compare, Dashboard, one limited/read-quality example, and one freshness/publication display.
+- Close #638 only after production proof; do not infer completion from repository CI alone.
+- #595, #591, #600, and #594 are complete and production-verified; do not reopen them absent a new defect.
+- Do not begin #598, #601, Portable Intelligence, or M-001 before #638 closes.
 
-This is **temporary headroom, not the permanent correction**. The durable fix is work reduction - candidate prefiltering, incremental roster sync, incremental transaction sync - and it remains separate follow-up work after production proof.
+Package outcome, recorded at roadmap altitude only — the Product Experience Standard v1.4 and the Bullpen Intelligence Standard v1.3 own the detail:
 
-### Track B - #593 scheduled observation - PAUSED, NOT CLOSED
+- one semantic owner per public vocabulary family, with backend-governed labels rendered verbatim;
+- Team State unchanged: Fresh / Stretched / Vulnerable;
+- Arm Availability unchanged: Available / On Watch / Limited / Unavailable;
+- Pitcher Role: Trusted Arm / Setup Arm / Coverage Arm / Middle Relief Arm / Role Unclear;
+- Pitcher Current Read: Clean Option / Watch Arm / Limited Rest / Unavailable / Limited Read;
+- Read Confidence: High / Medium / Low / Unavailable;
+- board group labels clarified as workload-group headings over unchanged engine statuses;
+- supporting-read vocabulary reconciled, and supporting reads never constitute a Team State;
+- `Trusted Arms` retired as a team-level concept in favor of `Late-Inning Options`;
+- `Healthy Rested Bullpen` retired in favor of `Stable Rested Options`;
+- the duplicate frontend tier-derivation engine removed;
+- How to Read established as the reader-facing semantic map;
+- freshness and Data Status vocabularies separated.
 
-**#593 remains open, unchanged, and unweakened.** Its shadow/public-sync separation behaved correctly throughout the incident: shadow failed independently in its own job while the appearance-ledger and dashboard-cache proofs passed inside `public-sync`. OPS-002 is the opposite defect - `public-sync` failing on its own merits - and must not absorb it.
+This is public-language ownership work. No model, threshold, classification, source authority, publication gate, or prediction behavior changed.
 
-The pause is about evidence quality, not about #593 being wrong. After OPS-002 production proof, the founder reviews whether #593's scheduled observation window requires extension to replace the runs this incident polluted.
+## 4. Protected Product Assets
 
-### Track C - Canonical Team State production proof - COMPLETE
+| Asset | Preserve |
+| --- | --- |
+| Three-state canon | Fresh / Stretched / Vulnerable; no fourth state, score, grade, or rank. |
+| Freshness discipline | Visible data-through dates and honest distinction between represented baseball date and system update time. |
+| Fail-closed UI | Intentional quiet, withheld, stale, and data-limited presentations rather than guessed output. |
+| Data & Trust validation | Public next-day-usage validation with sample sizes and explicit non-proof caveats. |
+| Team Board evidence chain | State → concern → named reads → evidence → freshness → limitations → arm receipts. |
+| Product identity | Bullpen-only scope, descriptive posture, dark visual system, and coherent navigation. |
 
-Closed August 6, 2026 with issue #590 (detail retained below).
+## 5. Audit Evidence Classification
 
-#### Track C detail
-
-Closed August 6, 2026 with issue #590. PR #611 established backend-owned Team State delivery; PR #617 corrected the readiness population to the canonical active bullpen after production exposed a population mismatch that collapsed supported teams toward `Vulnerable`. Corrected production run `31097712768` published and served snapshot `360` through August 5, and Team Board, Dashboard, and Compare rendered naturally occurring `Stretched` and `Vulnerable` alongside a governed fail-closed case with no invented fourth Team State.
-
-No team naturally qualified as Fresh after all 30 clubs played on August 5. Under D-049 that absence is not an implementation defect, Fresh evidence is never manufactured, and the automated contracts remain the proof that `operationally_stable` maps to `Fresh`.
-
-### Exit evidence
-
-- One controlled manual daily recovery run completes with `budget_exhausted_pitchers == 0` and `publication_critical_failed == 0`, and its candidate is published, selected, and served.
-- Three consecutive **scheduled** daily runs then satisfy the same criteria. The manual recovery does not substitute for them.
-- All five runtime quantities are present and internally consistent in the durable summary.
-- Appearance-ledger and dashboard-cache proofs pass; shadow remains zero-write.
-- Scheduled runs prove publication success or failure independently from shadow-observer health.
-- The observation backlog may remain incomplete without becoming a publication blocker in shadow mode.
-- Real baseball deficits remain blocking in every mode.
-- No closeout audit mutates GameLog, work-item, checkpoint, snapshot, marker, or dead-letter rows.
-- #593 closes only after its remaining scheduled-observation requirement is satisfied, reviewed after OPS-002 proof.
-
-## 5. Nightly Operating State
-
-The August 6 stopping posture no longer holds. A proven critical production incident replaced it: OPS-002 is an active implementation package, and it is the only one.
-
-The rest of the stop still stands, for the same reasons as before:
-
-- #595, #591, #594, and #600 remain deferred behind OPS-002 and the #593 evidence checkpoint.
-- #591 overlaps the same reader adapters that #590 just stabilised and deserves its own clean evidence.
-- #594 consumes the same Team State and freshness path in static/routed previews.
-- #600 touches the same `/bullpen` surfaces and should follow the public-contract packages.
-- Sync authority must not be inferred from green tests or from a short observation window.
-- **Merging the OPS-002 mitigation is not production proof.** The incident stays open until the controlled recovery and three scheduled runs succeed.
+| Class | Rule | Current examples |
+| --- | --- | --- |
+| Confirmed visible defect | Rendered text or structure is directly contradictory, malformed, circular, duplicated, or inaccurate for the visible surface. | Resolved #591/#600 defects; future confirmed regressions enter the owning package. |
+| Source verification required | The screenshot shows a tension, but thresholds, backend payloads, or source authority are needed before declaring the underlying intelligence wrong. | Workload-concentration headline versus evidence; population/count questions. |
+| Runtime verification required | The screenshot captures a state that may be temporary or persistent. | VOC-001 rendered public vocabulary after PR #639 deploys. |
+| Observation only | A potential correctness concern must remain read-only until canonical evidence confirms it. | Reliever eligibility or other source-authority questions. |
 
 ## 6. Next Approved Work
 
-Work proceeds in this order unless a Decision Ledger entry changes it:
+The Public Credibility Pass has materially advanced: #595 (public score containment), #591 (backend-owned Why copy), #600 (contextual H1/accessibility structure), and #594 (routed team previews) are complete and production-verified. VOC-001 (#638) is the remaining package. Its repository implementation is in PR #639, which is open and unmerged; the gate is merge, deployment, and read-only production vocabulary smoke. Repository CI green is necessary and not sufficient, and no lower-priority implementation should be mistaken for VOC-001 completion.
 
-1. **OPS-002 (#620) - Daily-sync runtime-budget exhaustion.** Immediate mitigation and production proof: one controlled manual recovery, then three consecutive clean scheduled runs. Nothing below starts until this is proven, because a daily sync that cannot complete makes every other package's production evidence unreliable.
-2. **Review and resume #593 scheduled evidence.** Determine whether the observation window needs extension to replace runs the incident polluted.
-3. **#595 - Public raw fatigue-score containment.** Remove or protect unauthenticated composite scores, component scores, risk tiers, and internal identifiers. Deferred behind OPS-002 and the #593 checkpoint.
-4. **#591 - Backend-owned Why copy.** Remove frontend regex rewriting, filtering, fallback invention, or silent dropping of governed public explanation text.
-5. **#594 - Routed/static team metadata and freshness.** Give the 30 team preview routes a canonical owner, canonical vocabulary, named evidence, and data-through context.
-6. **#600 - `/bullpen` H1 and accessibility structure.** Complete the semantic page contract.
-7. **Permanent daily-sync work reduction.** GameLog candidate prefiltering, incremental roster synchronization, and incremental transaction synchronization - the durable correction the OPS-002 mitigation only buys time for. Sequenced by founder review once OPS-002 is proven.
-8. **Portable Intelligence.** Canonical raster renderer, artifact-specific Open Graph/X metadata, share actions, and evidence-inspection funnel.
-9. **Resume M-001 Active Bullpen ERA.** Finish registry parameters, group/contributor evidence, Team Board delivery, and full trust gates.
-10. **Daily Habit and Consequence.** Public What Changed, team movement, Today lead authority, game-aware slate, and quiet-day behavior.
+| Order | Work package | Scope |
+| --- | --- | --- |
+| 1 | VOC-001 (#638) - Public vocabulary and glossary parity | Finish the remaining cross-family contracts and the retired-vocabulary sweep, merge PR #639, deploy, and take production vocabulary proof; one owner per term, preserving Fresh / Stretched / Vulnerable and the canonical arm-read dictionary. |
+| 2 | #598 - Generated-content CI validation | Ensure generated-content publication commits cannot bypass validation or obscure provenance. |
+| 3 | #601 - Dependency remediation | Assess and remediate request-path dependency risk while keeping audit gates green. |
+| 4 | Permanent daily-sync work reduction | Reduce avoidable upstream/runtime work without weakening D-051 or publication gates. |
+| 5 | Portable Intelligence | Canonical raster renderer, artifact-specific crawler metadata, share actions, and evidence-inspection funnel. |
+| 6 | Resume M-001 and visible evidence | Active Bullpen ERA, named-arm evidence, starter exposure, then Daily Habit work. |
+| 7 | Daily Habit and Consequence | Public What Changed, team movement, Today lead authority, game-aware slate, and quiet-day behavior. |
 
-## 7. Current Capability Assessment
+# Part II - Integrated Priority Matrix
 
-### Product surfaces
+## 7. Production Evidence Closeout
 
-| Surface | Current state | Main gap | Governing next move |
-|---|---|---|---|
-| Today | Live daily front door | Stronger lead, status-aware context; no independent Team State currently rendered | Daily Habit after higher-priority work |
-| Dashboard | Live league board; canonical per-team Team State proven in production | Stronger named evidence per team | Named-arm evidence expansion |
-| Team Board | Flagship team surface with arm groups, recent work, and canonical Team State | Why-copy ownership; performance/starter evidence | #591, then M-001 |
-| Compare | Descriptive two-team comparison; canonical state passed through per side and proven in production | H1, stronger named differences | #600 |
-| Reliever Finder | Search-first utility | H1/accessibility and faster evidence handoff | #600; do not overbuild |
-| Pitcher Detail | De-scored, evidence-first recent work | Active-group performance and later pitch-trend depth | M-001; offseason trends |
-| Stories | Live narrative feed | Specificity, named arms, evidence, suppression | Ongoing quality work |
-| Methodology | Teaches canonical public language | Live product must continue matching it | Maintain through public-contract work |
-| Data & Trust | Strong public differentiator | Current incident/method history and scope degradation clarity | Ongoing trust alignment |
-| Share Artifact | Immutable historical page implemented | Canonical image, crawler-visible claim metadata, complete actions | Portable Intelligence |
-| Routed team previews | Thirty static routes exist | No final route owner; metadata vocabulary and freshness incomplete | #594 |
-| Internal Product Intelligence | Artifact, traffic, and operations views exist | Unify incident, observer, refusal, and publication signals when actionability improves | Maintain, do not expand speculatively |
+| Status | Work item | Why | Exit evidence |
+| --- | --- | --- | --- |
+| Complete | #593 scheduled signal separation | Public-sync and shadow-health remain independently meaningful. | Required scheduled window passed. |
+| Complete | #590 production Team State proof | Canonical Team State merged and rendered correctly. | Corrected production proof complete. |
+| Complete | Phase 1A authority qualification | Governed write-capable path needed positive no-op qualification. | Candidate audit + no-op PASS + D-052. |
 
-### Intelligence and operations
+## 8. Public Trust and Correctness
 
-| Capability | State | Assessment |
-|---|---|---|
-| Official appearance ledger | Production / publication-critical | Canonical recorded outs, starter distinction, and appearance-team authority are the strongest asset |
-| Active roster/team authority | Production | Unknown and conflict states fail closed; historical appearance ownership stays separate |
-| Arm reads and roles | Production | Backend-owned public labels exist |
-| Team State authority | Production | Exactly Fresh / Stretched / Vulnerable, backend-owned and derived from the canonical active bullpen; `Stretched`, `Vulnerable`, and a governed fail-closed case proven in production |
-| Trusted league snapshots | Production | Whole-slate authority and appearance gate remain fail-closed |
-| Team-progressive publication | Production | Eligible teams may publish independently after team-scoped proof |
-| Game-driven ingestion | Shadow / qualification | Daily and postgame observe; legacy writer remains authoritative |
-| Active Bullpen ERA | Contract complete; implementation paused | D-021 through D-030 fully specify M-001; it remains non-public |
-| Starter/rotation transfer | Partial | Official starter authority is hardened; consequence layer incomplete |
-| Immutable Share Artifacts | Production foundation | Artifact, lifecycle, integrity, audit, and public history are real; travel layer incomplete |
-| Leverage/concentration | Partial | Requires a published method, named evidence, and suppression |
-| Pitch characteristics | Experimental / planned | Offseason depth after product correctness and distribution |
+| Sequence | Work package | Integrated evidence | Definition of done |
+| --- | --- | --- | --- |
+| Complete | #595 - Raw score/internal ID containment | Production verified and issue closed | Unauthenticated scored/internal fatigue fields are not public claims; retained scored access is explicitly admin-only. |
+| Complete | #591 - Explanation integrity | Backend-owned public copy | Frontend pass-through is proven; Why cannot be regex-rewritten or silently dropped; representative production surfaces verified. |
+| Complete | #600 - Contextual page semantics | One H1 per `/bullpen` view | Team Board, Compare, and Reliever Finder have one contextual H1, logical hierarchy, and successful keyboard/accessibility/mobile smoke. |
+| Complete | #594 - Routed team preview delivery | Production closeout August 11, 2026 | All 30 dated previews regenerate from one trusted publication; invalid routes fail closed; issue closed. |
+| Active | VOC-001 (#638) - Public vocabulary and glossary parity | Repository implementation in PR #639; no production proof | One public owner per term; in-product team-shape vocabulary reconciled; semantic families cannot be mistaken for Team State; production vocabulary smoke passed and #638 closed. |
+| Verification only | Bounded surface checks | Potential reliever/stale/population concerns remain evidence-first | Open or widen work only when source/runtime evidence proves a defect. |
 
-## 8. Canonical Priority Matrix
+## 9. Public Surface Semantics
 
-### Critical - production authority and public trust
+| Status | Owner | Outcome |
+| --- | --- | --- |
+| Complete | #594 | Routed/static team preview contract production-verified: 30 of 30 dated previews from trusted snapshot 393, 0 withheld, and `/team/INVALID` fail-closed. |
+| Complete | #600 | Exactly one contextual H1 per `/bullpen` view; logical heading hierarchy; production keyboard/accessibility/mobile checks passed. |
+| Active | VOC-001 (#638) vocabulary/glossary parity | Reconcile in-product team-shape labels, semantic families, Team State headers, and freshness terminology without changing canonical state/read ownership. Implementation in PR #639; production proof outstanding. |
 
-| Status | Work item | Exit evidence |
-|---|---|---|
-| Evidence pending | D-044 and OPS-001 scheduled proof | Independent public-sync and observer verdicts across the required window |
-| Evidence pending | No-op candidate determination | Read-only candidate report or governed no-candidate decision |
-| Complete | PROD-001 (#592) | Run `30921186222`; full source persisted/read back; Tonight and dashboard verification passed |
-| Complete | UX-001 (#590) | Run `31097712768`, snapshot `360`, data through August 5; `Stretched`, `Vulnerable`, and a governed fail-closed case observed; Fresh closed under the D-049 natural-observability exception |
-| Next | SEC-001 (#595) | Public scored/internal fields removed or explicitly protected |
-| Maintain | Official appearance record | Ledger, starter, outs, appearance-team, and official-line checks stay green |
-| Maintain | Canonical documentation cutover | Current documents contain no false execution authority |
+## 10. Reliability, Portable Intelligence, and Evidence
 
-### High - public correctness and freshness
+| Lane | Work item | Definition of done |
+| --- | --- | --- |
+| CI/reliability | #598 | Generated-content commits cannot bypass validation or obscure provenance. |
+| Dependencies | #601 | Known backend/frontend advisories are assessed; request-path risk is remediated; visible audit gates remain green. |
+| Permanent runtime work | Daily-sync work reduction | Reduce candidate enumeration and repeated roster/transaction work without weakening D-051. |
+| Portable Intelligence | #597 then #596 | Supported raster assets first; then artifact-specific crawler-visible title, description, image, URL, alt text, and actions. |
+| Visible evidence | M-001 then named-arm/starter context | Resume approved evidence work only after Public Credibility Pass exit. |
+| Daily Habit | Public What Changed and Today lead | Comparable trusted change, receipt-bearing copy, quiet-day suppression, and game-aware status without prediction. |
 
-| Status | Work item | Definition of done |
-|---|---|---|
-| Open | FE-001 (#591) | Backend owns Why copy; frontend renders without rewriting or dropping it |
-| Open | DIST-003 (#594) | Static/routed descriptions use canonical state, evidence, and data-through date |
-| Open | UX-002 (#600) | Exactly one contextual H1 per `/bullpen` view with logical hierarchy |
-| Complete | CI-001 (#599) | `npm ci`, full tests, required production build, mutation-tested contract |
-| Open | CI-003 (#598) | Generated-content publication cannot bypass validation or obscure machine origin |
-| Open | DEP-001 (#601) | Request-path advisories assessed; upgrades/audits governed and green |
+# Part III - Phased Roadmap
 
-### High - portable intelligence and visible evidence
+## 11. Dependency Map
 
-| Status | Work item | Definition of done |
-|---|---|---|
-| Foundation complete | Immutable artifact and historical page | Integrity-verified permanent destination resolves publicly |
-| Open | DIST-002 (#597) | Supported raster social assets and recorded renderer/storage decision |
-| Open | DIST-001 (#596) | Non-JavaScript crawler receives artifact-specific metadata |
-| Paused | M-001 Active Bullpen ERA | Approved sample, group, contributors, evidence, surface, and regression coverage ship |
-| Planned | Named-arm evidence expansion | Every material team read names relevant arms and receipts |
-| Planned | Starter-exposure context | Official recent starter ranges appear as history with exact games/windows |
+| Phase | Status | Exit / remaining work |
+| --- | --- | --- |
+| Phase 0 - Canonical Trust Closeout | Complete | Maintain official-line, starter, outs, appearance-team, and publication-gate regressions. |
+| Phase 1 - Evidence Completeness | In progress / paused | M-001 contract complete; implementation resumes after public-credibility work. |
+| Phase 1A - Authority Qualification | Complete - August 10, 2026 | D-052 phase exit; all broader game-driven write/publication/backfill authority remains unapproved. |
+| Phase 1B - Public Credibility Pass | In progress / active | #590, #595, #591, #600, and #594 complete and production-verified. Exits only after PR #639 merges, deployment completes, read-only production vocabulary smoke passes, and #638 closes. Repository CI green is necessary and not sufficient. |
+| Phase 2 - Portable Intelligence | Foundation complete / final distribution not started | Raster renderer, immutable asset, crawler metadata, actions, funnel. |
+| Phase 3 - Daily Habit and Consequence | Not started | Public What Changed, team movement, Today lead, game-aware slate, quiet-day behavior. |
+| Phase 4 - Offseason Intelligence Depth | Not started | Pitch trends, leverage/dependency, organizational depth, routed discovery, timeline/archive. |
+| Phase 5 - Opening Day 2027 | Not started | Complete daily relaunch with current trust and reliability proof. |
+| Phase 6 - Growth and Validation | Not started | Measured behavior and rights evidence choose direction. |
 
-## 9. Phased Roadmap
+## 12. Success Metrics
 
-### Phase 0 - Canonical Trust Closeout
+| Metric family | Measures |
+| --- | --- |
+| Product quality | Public vocabulary drift: 0; malformed or claim/evidence-contradicting explanations: 0; contextual H1/accessibility checks remain green; every public label has glossary coverage. |
+| Trust and operations | Silent stale incidents: 0; final-game appearance deficits reaching publication: 0; shadow baseball-data writes: 0; raw public composite-score exposure: 0; observer/publication gates remain separate. |
+| Evidence | Every material team read names relevant arms or concrete counts; unexplained public numbers: 0; suppressed-copy reasons are observable. |
+| Habit and distribution | Weekly return, Today-to-Team Board handoff, team-page return, evidence inspection, share actions, and external citations increase only after trust gates hold. |
 
-**Status:** Complete - July 29, 2026.
-
-Official pitching-line completeness, starter authority, recorded-outs authority, appearance-team history, dependent evidence, and read-only production closeout were proven. The six-document canonical library became execution authority.
-
-### Phase 1 - Evidence Completeness
-
-**Status:** In progress; implementation paused.
-
-The Current Active-Pen Performance family and M-001 decisions are complete. Public implementation resumes after authority closeout and public-contract remediation.
-
-### Phase 1A - Game-Driven Ingestion Authority Qualification
-
-**Status:** Active evidence closeout.
-
-Foundation 3C bootstrap and shadow activation are complete. Current work proves scheduled signal separation and determines a valid no-op qualification path. Automated write and authoritative modes remain unapproved.
-
-### Phase 1B - Public Vocabulary and Freshness Reconciliation
-
-**Status:** In progress.
-
-- #590 complete.
-- #591 open.
-- #594 open.
-- #595 open and next independent trust package.
-- #600 open.
-
-Exit test: a first-time reader sees backend-owned state and explanation, visible represented date, no raw black-box score, and consistent semantic structure across live and external surfaces.
-
-### Phase 2 - Portable Intelligence
-
-**Status:** Foundation complete; final distribution not started.
-
-Scope: canonical server-side raster renderer, frozen image persistence/checksums, Open Graph/X metadata, copy/native share/download actions, Product Intelligence funnel, controlled circulation, and supersede/withdraw production proof.
-
-### Phase 3 - Daily Habit and Consequence
-
-**Status:** Not started.
-
-Scope: Public What Changed, team since-last-game movement, Today lead authority, game-aware slate status, official starter ranges, rotation load transfer, story-strength governance, and quiet-day behavior.
-
-### Phase 4 - Offseason Intelligence Depth
-
-Candidate order:
-
-1. pitch-characteristic ingestion and trends;
-2. leverage, concentration, and dependency;
-3. organizational reinforcement depth and roster mechanics;
-4. routed team pages and search discovery after O-005;
-5. state timeline and observation archive;
-6. story-engine consolidation;
-7. accessibility and technical-debt window;
-8. Follow My Team only if returning-user demand justifies account value.
-
-### Phase 5 - Opening Day 2027
-
-Relaunch the complete daily product with a full-season runway: Daily Edition/Slate v2, governed share artifacts and images v2, only manually proven newsletter automation, creator round two, routed discovery, current trust proof, and a refreshed reliability baseline.
-
-### Phase 6 - 2027 Growth and Validation
-
-Let measured behavior and rights evidence choose the business direction. No monetization path is authorized before trust, habit, audience, and licensing evidence exist.
-
-## 10. Dependency Map
-
-```text
-Official source identity and finality
--> complete appearance ledger
--> correct arm and team state
--> evidence objects
--> trusted snapshot or team authority
--> immutable artifact and public story
--> distribution and returning use
-```
-
-| Capability | Requires |
-|---|---|
-| Game-driven publication authority | Scheduled shadow proof + correct blocker scope + write-path qualification + explicit founder authority-transfer decision |
-| No-op write qualification | Completed durable work item + exact one-game unchanged plan + source revision/fingerprint + positive readback + zero baseball-data mutation |
-| M-001 Active Bullpen ERA | Official pitching lines + canonical active group + 108-out sample + group/contributor counts + four evidence levels |
-| Live Team State closure | Backend authority + deployed payload + Fresh/Stretched/Vulnerable state coverage + rendered-text equality |
-| Backend-owned Why copy | Governed public copy authority + frontend pass-through + suppression accounting |
-| Share image and metadata | Published immutable artifact + renderer version + frozen asset + crawler-visible delivery |
-| Public What Changed | Adjacent comparable trusted states + same method + same vocabulary + correct product dates |
-| Routed team pages | O-005 route decision + canonical surface owner + backend state/copy authority + server/static freshness |
-
-## 11. Success Metrics
-
-### Product quality
-
-- percentage of public claims with inspectable evidence;
-- percentage of team stories naming relevant arms;
-- time for a first-time user to identify state and reason;
-- public vocabulary drift defects: target zero;
-- unexplained public numbers: target zero;
-- quiet-day suppression and reasons;
-- H1, mobile, and accessibility acceptance-test pass rate.
-
-### Trust and operations
-
-- silent stale incidents: target zero;
-- final-game appearance deficits reaching publication: target zero;
-- official starter mismatches reaching public copy: target zero;
-- artifact integrity mismatches served publicly: target zero;
-- unknown-as-zero defects: target zero;
-- publication blockers separated from non-authoritative observer backlog;
-- scheduled public-sync success and shadow-observer verdict reported independently;
-- game-driven baseball-data writes while in shadow: target zero;
-- raw public composite-score exposure: target zero;
-- method-version and correction-history completeness.
-
-### Habit and distribution
-
-- weekly returning users;
-- Today-to-Team Board handoff;
-- team-page return rate;
-- What Changed engagement;
-- copy, native-share, and image-download actions;
-- human share-page views separated from crawlers;
-- evidence inspection from share pages;
-- external citations, backlinks, and creator mentions;
-- freshness retained in external screenshots and previews.
-
-## 12. Risk Register
+# Part IV - Risks and Controls
 
 | ID | Risk | Severity | Standing control |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | R-01 | Canonical game data is wrong or incomplete | Critical | Source authority, appearance gate, reviewed repairs, independent closeout |
 | R-02 | Foundation perfectionism prevents public learning | High | Phase exits, one active objective, reader-facing next moves |
-| R-03 | Generic stories fail to surprise | High | Named arms, story shapes, suppression, editorial review |
+| R-03 | Generic stories fail to surprise | High | Named-arm receipts, duplicate-template suppression, quiet-day rules, editorial review. |
 | R-04 | Trust warnings overpower the baseball insight | High | State first, evidence second, limitation only where material |
 | R-05 | Single-founder capacity fragments work | High | One active objective, small branches, sustainable cadence |
 | R-06 | Transitional share renderer becomes permanent | High | Portable Intelligence phase; no new legacy composition |
@@ -355,175 +253,140 @@ Official source identity and finality
 | R-10 | Competitor copies the surface | Medium | Trust history, evidence depth, immutable memory, creator workflow |
 | R-11 | SEO remains weak | Medium | Routed owner decision and server/static metadata |
 | R-12 | Founder burnout ends cadence | High | Quality ceiling, life-first planning, manual proof before automation |
-| R-13 | Live product vocabulary contradicts canonical promise | Critical | #590 is complete and protected by backend ownership, the canonical active-bullpen population, contract tests pinning the exact three-state set and mapping, and corrected production evidence. Remains listed as an ongoing regression risk |
-| R-14 | Observer health obscures publication truth | High | Separate public-sync and shadow-health jobs; independent verdicts |
+| R-13 | Live product vocabulary contradicts canonical promise | Critical | #590 canonical Team State proof, #591 backend-owned Why, #600 semantic structure, and remaining vocabulary/glossary parity. |
+| R-14 | Observer health obscures publication truth | High | Separate public-sync and shadow-health jobs; #593 production evidence |
 | R-15 | Shadow bookkeeping absence is treated as a baseball deficit | High | D-044 dual-view classification and authority-aware blocker projection |
-| R-16 | Public raw score endpoint violates black-box boundary | High | #595 removal/protection and public contract tests |
+| R-16 | Public raw score endpoint violates black-box boundary | High | #595 complete and production-verified; public contract tests and admin-only scored access preserve the black-box boundary. |
 | R-17 | Shared links lose claim, evidence, and date | High | Canonical image and artifact-specific crawler metadata |
-| R-18 | Routed team previews drift without a canonical owner | High | O-005, #594, canonical copy and freshness |
-| R-19 | Frontend rewrites backend-owned meaning | Critical | #591 and backend public-copy contract |
+| R-18 | Routed team previews drift without a canonical owner | Medium | #594 complete and production-verified: one trusted publication, canonical state/non-state, baseball point, data-through, receipt, fail-closed export. |
+| R-19 | Frontend rewrites backend-owned meaning | Critical | #591 complete: backend-owned Why copy, frontend pass-through, public-copy contract tests, representative production verification. |
 | R-20 | Generated commits bypass repository CI | High | #598 generated-content publication correction |
-| R-21 | A cold-equivalent daily sync cannot complete inside its runtime budget | Critical | OPS-002 mitigation: 2200s internal budget with a 953.625s conservative legacy GameLog floor, and five-quantity runtime reporting so the binding constraint is visible. Unproven until one controlled recovery and three consecutive clean scheduled runs |
-| R-22 | Manual retry is load-bearing recovery behaviour | Critical | Nobody designed retry as a control and it is not reliable - the warm second pass is not reproducible from a cold start. OPS-002 exists to remove the need for it. No automatic retry was added, because retrying the whole daily command would double the work the incident is about |
-| R-23 | Live Team Board and Compare degrade silently after partial ingestion | High | Dead-lettered pitchers leave live reads computing against incomplete rows, and live reads do not consult the dead-letter ledger. Fail-closed publication protects the Dashboard snapshot but not live reads. Mitigated indirectly by completing ingestion; a durable surfaced-limitation control remains unbuilt |
-| R-24 | Raising the ceiling masks the inefficiency it accommodates | High | D-050 records the mitigation as explicitly temporary. ~470-480s per run of unconditional roster and transaction work remains, and the ceiling will need raising again as the pitcher population grows if the permanent work-reduction correction does not land |
+| R-21 | Daily runtime headroom masks avoidable work | High | D-050 temporary mitigation plus permanent work-reduction backlog |
+| R-22 | Manual daily execution becomes de facto authority | Critical | D-051 schedule-only, first-attempt-only production daily execution |
+| R-23 | Partial acquisition leaks into public serving | Critical | D-051 binds Team Board, Compare, Tonight to trusted published authority |
+| R-24 | Authority qualification is mistaken for authority transfer | Critical | D-052 phase-exit language; O-008 remains open and requires explicit founder approval |
 
-## 13. Stop Conditions
+# Part V - Backlog and Stop Conditions
 
-Stop when:
+## 13. Near-Term Backlog
 
-- required baseline is absent from `origin/main`;
-- source authority is unresolved;
-- a public term has two competing owners;
-- a write or authority-transfer step lacks positive production qualification;
-- implementation requires prediction, manager intent, private health inference, or unknown-as-zero behavior;
-- a migration cannot preserve immutable history or refuses unsafe downgrade behavior;
-- production smoke or a required audit cannot be completed safely;
-- a dangerous write lacks a read-only plan, exact scope, explicit confirmation, and post-write proof;
-- the change silently expands scope beyond the approved objective;
-- production-evidence capture would be obscured by an overlapping presentation change.
+- VOC-001 (#638) public vocabulary and glossary parity: remaining cross-family contracts, retired-vocabulary sweep, PR #639 merge, and production vocabulary proof.
+- #598 generated-content CI validation.
+- #601 dependency remediation.
+- Permanent daily-sync work reduction.
+- Portable Intelligence: canonical raster renderer, artifact metadata, share actions, and evidence-inspection funnel.
+- Resume M-001 Active Bullpen ERA after the Public Credibility Pass.
+- Named-arm evidence expansion and starter-exposure context after M-001.
 
-## 14. Backlog
+## 14. Later and Parked
 
-### Near term
+Later: named-arm evidence, starter exposure, Public What Changed, team movement, pitch trends, leverage/dependency, organizational depth, routed discovery, state timeline, story-engine consolidation, accessibility and technical-debt windows.
 
-- #593 scheduled observation and closure;
-- read-only no-op candidate audit and explicit next decision;
-- #595 raw score/internal-id containment;
-- #591 backend-owned Why copy;
-- #594 routed/static freshness and ownership;
-- #600 H1/accessibility corrections;
-- #598 generated-content CI validation;
-- #601 dependency remediation;
-- canonical renderer, Open Graph/X metadata, and share actions;
-- M-001 Active Bullpen ERA implementation;
-- named-arm evidence expansion;
-- creator seeding and evidence-led outreach.
+Parked until demand: Follow My Team, automated newsletter, game pages beyond the Slate, embeds, public API/exports, push notifications, professional sales tooling, sponsorship, and monetization tests.
 
-### Offseason
+Never backlog: predictions, betting/odds, game-outcome projections, injury prediction, fantasy advice, manager-intent claims, generic rankings, black-box public scores, or user-editable claims inside immutable artifacts.
 
-- pitch trends;
-- leverage, concentration, and dependency;
-- organizational reinforcement depth and roster mechanics;
-- routed team pages and SEO after O-005;
-- state timeline and observation archive;
-- story-engine consolidation;
-- Start Here merge;
-- accessibility pass;
-- large-module debt only when touched;
-- CI false-confidence and freeze-guard cleanup.
+## 15. Stop Conditions
 
-### Parked until demand
+- Required baseline is absent from origin/main.
+- Source authority is unresolved or a public term has two competing owners.
+- A write or authority-transfer step lacks positive production qualification.
+- A rendered claim contradicts its own evidence and source review cannot establish which side owns the correction.
+- Implementation requires prediction, manager intent, private health inference, unknown-as-zero behavior, or a fourth Team State.
+- A migration cannot preserve history or safely refuse destructive downgrade behavior.
+- Production smoke, runtime verification, or required audit cannot complete safely.
+- A dangerous write lacks a read-only plan, exact scope, explicit confirmation, and post-write proof.
+- Production-evidence capture would be obscured by an overlapping presentation change.
+- The change silently expands beyond the approved objective.
 
-- Follow My Team and broad account expansion;
-- automated newsletter digest;
-- game pages beyond the Slate;
-- embeddable partner widgets;
-- public API and exports;
-- push notifications;
-- professional or team-sales tooling;
-- sponsorship and monetization tests.
+# Part VI - Decision Ledger
 
-### Never backlog
+The current-state reconciliation does not create a new durable semantic or authority decision. D-001 through D-052 remain in force; D-050 through D-052 are included below because they govern the current operating and authority posture.
 
-Predictions, betting or odds products, game-outcome projections, injury prediction, fantasy start/sit advice, manager-intent claims, generic team/player rankings, black-box public scores, a general prospect/draft/trade product inside BaseballOS, paid resale without rights authority, and user-editable claims inside immutable artifacts are refusals, not deferred ideas.
-
-## 15. Decision Ledger Rules
-
-- Decisions are append-only.
-- A reversal receives a new entry referencing the original.
-- Every entry records date, decision, rationale, status, affected canonical owners, and implementation evidence where applicable.
-- Detailed pre-Version-3 rationales remain preserved in the archived predecessor ledger and Git history.
-- Implementation detail belongs in branches and pull requests; this table records durable meaning.
-
-## 16. Permanent and Standing Decisions
+D-053 was added after this version's reconciliation, by CI-003 (#598). It governs how generated content may be published to the repository. It adds no baseball semantics and changes neither D-051 nor D-052.
 
 | ID | Date | Decision | Status |
-|---|---|---|---|
-| D-001 | Prior to Jul 2026 | BaseballOS is trust-first | Permanent |
-| D-002 | Prior to Jul 2026 | Predictions, betting, fantasy advice, private injury claims, and manager-intent certainty are prohibited | Permanent |
-| D-003 | Jul 24, 2026 | Public Team State labels are Fresh, Stretched, and Vulnerable | Adopted |
-| D-004 | Jul 24, 2026 | Team State has exactly three public labels; internal states stay internal | Standing |
-| D-005 | Jul 2026 | Public arm reads are Clean Option, Watch Arm, Limited Rest, Unavailable, and Limited Read; backend keys own meaning | Standing |
-| D-006 | Jul 2026 | The immutable Share Artifact, not an image or browser component, is the source of truth | Permanent |
-| D-007 | Jul 29, 2026 | An eligible team may publish progressively before the full league slate completes | Adopted |
-| D-008 | Jul 29, 2026 | Integer recorded outs are the semantic innings authority; decimal innings are derived | Permanent |
-| D-009 | Jul 29, 2026 | Historical appearance team comes from the game side, not current organization | Permanent |
-| D-010 | Jul 24, 2026 | Meaning-bearing Share Artifact copy is deterministic, backend-owned, and not free-form AI analysis | Permanent |
-| D-011 | Jul 2026 | Published artifacts are immutable; corrections supersede or withdraw rather than rewrite | Permanent |
-| D-012 | Jul 2026 | Current and historical state remain separate objects | Permanent |
-| D-013 | Prior to Jul 2026 | Nickolis Kacludis remains sole repository author/committer; no AI attribution is added | Permanent |
-| D-014 | Prior to Jul 2026 | One user question per page and one canonical home per fact | Permanent |
-| D-015 | Prior to Jul 2026 | Manual proof precedes automation for newsletter and distribution workflows | Standing |
-| D-016 | Prior to Jul 2026 | Follow My Team waits for demonstrated retention value | Standing |
-| D-017 | Jul 29, 2026 | Six living canonical documents replace recurring master documents | Adopted |
-| D-018 | Jul 29, 2026 | Foundation 3A closed with independent production proof; Phase 1 Evidence Completeness opened | Adopted |
-| D-019 | Jul 29, 2026 | The Matt Festa one-action apply is terminally closed and must not be dispatched again | Permanent |
-| D-020 | Jul 29, 2026 | A fingerprint-locked apply refusing because its manifest no longer regenerates is a correct terminal outcome | Permanent |
-| D-021 | Jul 29, 2026 | The Current Active-Pen Performance family owns group, window, sample, date, evidence, limits, and Team Board home | Adopted |
-| D-022 | Jul 29, 2026 | Metric family and metric definition are separate governed objects; M-001 is reserved but non-public | Adopted |
-| D-023 | Jul 30, 2026 | M-001 publishes only at 108 recorded outs or more | Adopted |
-| D-024 | Jul 30, 2026 | M-001 formula is earned runs times 27 divided by integer recorded outs; zero denominator refuses first | Adopted |
-| D-025 | Jul 30, 2026 | Performance rates use exact integers and one ROUND_HALF_UP operation at declared precision; M-001 displays two decimals | Adopted |
-| D-026 | Jul 30, 2026 | Below-sample wording is Not Enough Innings Yet with current and required innings adjacent | Adopted |
-| D-027 | Jul 30, 2026 | A no-usage call-up remains in the active group with zero contribution; reads report group size and contributing arms | Adopted |
-| D-028 | Jul 30, 2026 | M-001 public name is Active Bullpen ERA | Adopted |
-| D-029 | Jul 30, 2026 | M-001 uses four evidence levels; a value unable to reach source-level proof is not publishable | Adopted |
-| D-030 | Jul 30, 2026 | Future metrics inherit the performance-family authority, evidence, freshness, failure, and rounding contracts | Adopted |
-| D-031 | Jul 31, 2026 | Foundation 3C bootstrap completed for governed games and rows without granting activation authority | Adopted |
-| D-032 | Jul 31, 2026 | Foundation 3C rollout closed, production replay verified, and temporary rollout workflows retired | Adopted |
-| D-033 | Aug 1, 2026 | The missing postgame integration point was built; postgame write and authoritative modes remain refused | Adopted |
-| D-034 | Aug 1, 2026 | Automated shadow activation approved for daily and postgame only; backfill remains off and writes remain unapproved | Adopted |
-| D-035 | Aug 1, 2026 | First postgame shadow failure was isolated to scope; postgame shadow paused and no repair was guessed | Adopted |
-| D-036 | Aug 1, 2026 | Exact-cycle scope repair accepted and postgame shadow reactivated with stronger validation and diagnostics | Adopted |
-| D-037 | Aug 1, 2026 | GameLog balls authority was declared unresolved; no writer changed; a read-only source-authority audit was added | Adopted |
-| D-038 | Aug 1, 2026 | Completed-game box score is canonical fallback for balls only when the split omits it and the official pitch triple validates | Adopted |
-| D-039 | Aug 2, 2026 | PROD-001 widens Tonight provenance capacity to 128, preserves full source, and requires scheduled production closure | Adopted; production proof complete |
-| D-040 | Aug 2, 2026 | Trusted public-sync and experimental shadow-health are separate jobs; neither publication nor observer gates are weakened | Adopted; observation window open |
-| D-041 | Aug 3, 2026 | Manual exact-one-game no-op write qualification machinery exists and authorizes no real mutation or broader mode | Adopted |
-| D-042 | Aug 4, 2026 | First qualification refused on missing durable work item; candidate selection belongs to a bounded read-only audit | Adopted |
-| D-043 | Aug 4, 2026 | The August 3 failed publication cycle is handled by a manual exact-scope read-only incident audit; shadow is not assumed to be the failure | Adopted |
-| D-044 | Aug 4, 2026 | Shadow observation backlog and publication blockers are separate views; missing work-item proof blocks only in authoritative mode | Adopted |
-| D-045 | Aug 4, 2026 | Backend CI is partitioned across four deterministic, file-balanced shards with separate PostgreSQL databases and exact collection accounting | Adopted |
-| D-046 | Aug 4, 2026 | Trust-critical CI receives full Git history; frontend CI uses the committed lockfile and requires tests plus the production build | Adopted |
-| D-047 | Aug 5, 2026 | The game 824487 source-revision mismatch is investigated by a manual exact-scope read-only audit that will not guess a field delta from a SHA-256 digest | Adopted; production audit executed August 5, 2026 as run `31044299167` |
-| D-048 | Aug 6, 2026 | Game 824487's source-revision checkpoint was corrected through the reviewed one-row workflow, terminally re-observed as already applied with zero additional writes, and the single-purpose repair capability is retired. The workflow must not be dispatched again. This grants no broader game-driven write or publication authority | Permanent |
-| D-049 | Aug 6, 2026 | UX-001 closes after corrected production proved backend-owned `Stretched` and `Vulnerable` states across Team Board, Dashboard, and Compare plus a governed fail-closed case. A naturally qualifying Fresh team was not present after all 30 clubs played; Fresh evidence must never be manufactured. The exact three-state mapping remains contract-pinned, and a future natural Fresh capture is supplemental unless it reveals a real defect. This decision changes no sync, write, backfill, writer, or publication authority | Permanent |
-| D-050 | Aug 6, 2026 | OPS-002 temporarily supersedes the #593 observation window and #595 implementation because the full daily sync cannot reliably complete from a cold-equivalent state. The immediate mitigation raises the daily internal budget to 2200 seconds, the shell timeout to 40 minutes, the public-sync job timeout to 60 minutes, and the combined ingestion cap to 1500 seconds while preserving the 300-second final reserve. The runtime summary must distinguish the configured cap, combined pool, shadow allocation, shadow elapsed, and legacy GameLog remainder. This is temporary headroom, not the permanent correction, and grants no write, backfill, writer, mode, or publication authority. OPS-002 remains open until one controlled recovery and three consecutive scheduled daily runs prove zero budget exhaustion and zero publication-critical failures | Operational until permanent work-reduction proof supersedes it |
+| --- | --- | --- | --- |
+| D-001 | Prior to Jul 2026 | BaseballOS is trust-first. | Permanent |
+| D-002 | Prior to Jul 2026 | Predictions, betting, fantasy advice, private injury claims, and manager-intent certainty are prohibited. | Permanent |
+| D-003 | Jul 24, 2026 | Public Team State labels are Fresh, Stretched, and Vulnerable. | Adopted |
+| D-004 | Jul 24, 2026 | Team State has exactly three public labels; internal states stay internal. | Standing |
+| D-005 | Jul 2026 | Public arm reads are Clean Option, Watch Arm, Limited Rest, Unavailable, and Limited Read; backend keys own meaning. | Standing |
+| D-006 | Jul 2026 | The immutable Share Artifact, not an image or browser component, is the source of truth. | Permanent |
+| D-007 | Jul 29, 2026 | An eligible team may publish progressively before the full league slate completes. | Adopted |
+| D-008 | Jul 29, 2026 | Integer recorded outs are the semantic innings authority; decimal innings are derived. | Permanent |
+| D-009 | Jul 29, 2026 | Historical appearance team comes from the game side, not current organization. | Permanent |
+| D-010 | Jul 24, 2026 | Meaning-bearing Share Artifact copy is deterministic, backend-owned, and not free-form AI analysis. | Permanent |
+| D-011 | Jul 2026 | Published artifacts are immutable; corrections supersede or withdraw rather than rewrite. | Permanent |
+| D-012 | Jul 2026 | Current and historical state remain separate objects. | Permanent |
+| D-013 | Prior to Jul 2026 | Nickolis Kacludis remains sole repository author/committer; no AI attribution is added. | Permanent |
+| D-014 | Prior to Jul 2026 | One user question per page and one canonical home per fact. | Permanent |
+| D-015 | Prior to Jul 2026 | Manual proof precedes automation for newsletter and distribution workflows. | Standing |
+| D-016 | Prior to Jul 2026 | Follow My Team waits for demonstrated retention value. | Standing |
+| D-017 | Jul 29, 2026 | Six living canonical documents replace recurring master documents. | Adopted |
+| D-018 | Jul 29, 2026 | Foundation 3A closed with independent production proof; Phase 1 Evidence Completeness opened. | Adopted |
+| D-019 | Jul 29, 2026 | The Matt Festa one-action apply is terminally closed and must not be dispatched again. | Permanent |
+| D-020 | Jul 29, 2026 | A fingerprint-locked apply refusing because its manifest no longer regenerates is a correct terminal outcome. | Permanent |
+| D-021 | Jul 29, 2026 | The Current Active-Pen Performance family owns group, window, sample, date, evidence, limits, and Team Board home. | Adopted |
+| D-022 | Jul 29, 2026 | Metric family and metric definition are separate governed objects; M-001 is reserved but non-public. | Adopted |
+| D-023 | Jul 30, 2026 | M-001 publishes only at 108 recorded outs or more. | Adopted |
+| D-024 | Jul 30, 2026 | M-001 formula is earned runs times 27 divided by integer recorded outs; zero denominator refuses first. | Adopted |
+| D-025 | Jul 30, 2026 | Performance rates use exact integers and one ROUND_HALF_UP operation at declared precision; M-001 displays two decimals. | Adopted |
+| D-026 | Jul 30, 2026 | Below-sample wording is Not Enough Innings Yet with current and required innings adjacent. | Adopted |
+| D-027 | Jul 30, 2026 | A no-usage call-up remains in the active group with zero contribution; reads report group size and contributing arms. | Adopted |
+| D-028 | Jul 30, 2026 | M-001 public name is Active Bullpen ERA. | Adopted |
+| D-029 | Jul 30, 2026 | M-001 uses four evidence levels; a value unable to reach source-level proof is not publishable. | Adopted |
+| D-030 | Jul 30, 2026 | Future metrics inherit the performance-family authority, evidence, freshness, failure, and rounding contracts. | Adopted |
+| D-031 | Jul 31, 2026 | Foundation 3C bootstrap completed for governed games and rows without granting activation authority. | Adopted |
+| D-032 | Jul 31, 2026 | Foundation 3C rollout closed, production replay verified, and temporary rollout workflows retired. | Adopted |
+| D-033 | Aug 1, 2026 | The missing postgame integration point was built; postgame write and authoritative modes remain refused. | Adopted |
+| D-034 | Aug 1, 2026 | Automated shadow activation approved for daily and postgame only; backfill remains off and writes remain unapproved. | Adopted |
+| D-035 | Aug 1, 2026 | First postgame shadow failure was isolated to scope; postgame shadow paused and no repair was guessed. | Adopted |
+| D-036 | Aug 1, 2026 | Exact-cycle scope repair accepted and postgame shadow reactivated with stronger validation and diagnostics. | Adopted |
+| D-037 | Aug 1, 2026 | GameLog balls authority was declared unresolved; no writer changed; a read-only source-authority audit was added. | Adopted |
+| D-038 | Aug 1, 2026 | Completed-game box score is canonical fallback for balls only when the split omits it and the official pitch triple validates. | Adopted |
+| D-039 | Aug 2, 2026 | PROD-001 widens Tonight provenance capacity to 128, preserves full source, and requires scheduled production closure. | Adopted; production proof complete |
+| D-040 | Aug 2, 2026 | Trusted public-sync and experimental shadow-health are separate jobs; neither publication nor observer gates are weakened. | Adopted; production observation complete |
+| D-041 | Aug 3, 2026 | Manual exact-one-game no-op write qualification machinery exists and authorizes no real mutation or broader mode. | Adopted |
+| D-042 | Aug 4, 2026 | First qualification refused on missing durable work item; candidate selection belongs to a bounded read-only audit. | Adopted |
+| D-043 | Aug 4, 2026 | The August 3 failed publication cycle is handled by a manual exact-scope read-only incident audit; shadow is not assumed to be the failure. | Adopted |
+| D-044 | Aug 4, 2026 | Shadow observation backlog and publication blockers are separate views; missing work-item proof blocks only in authoritative mode. | Adopted |
+| D-045 | Aug 4, 2026 | Backend CI is partitioned across four deterministic, file-balanced shards with separate PostgreSQL databases and exact collection accounting. | Adopted |
+| D-046 | Aug 4, 2026 | Trust-critical CI receives full Git history; frontend CI uses the committed lockfile and requires tests plus the production build. | Adopted |
+| D-047 | Aug 5, 2026 | The game 824487 source-revision mismatch is investigated by a manual exact-scope read-only audit that will not guess a field delta from a SHA-256 digest. | Adopted; production audit executed |
+| D-048 | Aug 6, 2026 | Game 824487's source-revision checkpoint was corrected through the reviewed one-row workflow, terminally re-observed as already applied with zero additional writes, and the single-purpose repair capability is retired. This grants no broader game-driven write or publication authority. | Permanent |
+| D-049 | Aug 6, 2026 | UX-001 closes after corrected production proved backend-owned Stretched and Vulnerable states plus governed fail-closed behavior; naturally absent Fresh evidence is never manufactured. | Permanent |
+| D-050 | Aug 6, 2026 | OPS-002 uses temporary runtime headroom while preserving publication gates and all game-driven authority boundaries; permanent work reduction remains separate. | Operational until permanent work-reduction proof supersedes it |
+| D-051 | Aug 8, 2026 | Acquisition may advance independently, but public Team Board, Compare, and Tonight authority advances only through trusted publication. Production full-daily execution is scheduled and first-attempt only; generic manual daily execution, local production daily invocation, the legacy admin daily writer route, and GitHub reruns are non-authoritative/refused. | Standing trust boundary |
+| D-052 | Aug 10, 2026 | Phase 1A Game-Driven Ingestion Authority Qualification is complete after OPS-002 scheduled reliability proof, OPS-001 scheduled signal-separation proof, read-only candidate audit run 31393177954, and no-op write qualification PASS run 31395294655 for game 823924. The PASS proves safe governed entry into the write-capable path with zero baseball-data mutation and exact lane-ledger movement. It grants no automated/scheduled write authority, no game-driven publication authority, no backfill authority, and no legacy-writer retirement. | Permanent phase-exit decision |
+| D-053 | Aug 12, 2026 | Automated generated content may reach `main` only through a self-gating publication job: generate from trusted publication, prove delivery integrity, run the canonical frontend tests and production build against the exact generated tree, record that tree's identity, commit under `BaseballOS Automation <baseballoshq@gmail.com>` with run provenance, prove the commit's tree equals the validated tree, and fast-forward push. Repository write authority is scoped to that one job. The guarantee is tree-exact, not commit-SHA-exact. No baseball semantics move into CI; D-051 and D-052 are unchanged. | Standing publication boundary; repository implementation only, not production-verified |
 
-## 17. Open Decisions
+## 16. Open Decisions
 
 | ID | Decision required | Gate | Current default |
-|---|---|---|---|
-| O-001 | Resolved by D-021 | Closed | Performance family established; M-001 remains unimplemented and non-public |
-| O-002 | Current-versus-shared comparison contract | Trusted comparability and public UX | Historical page remains frozen only |
-| O-003 | Canonical server renderer technology and storage | Artifact contract, hosting cost, performance | Transitional browser renderer only |
-| O-004 | Public leverage calculation and table | Complete source coverage and reproducible method | Legacy/partial claims remain bounded |
-| O-005 | Routed team URL shape and surface ownership | Product route and SEO plan | Team Board remains canonical live destination |
-| O-006 | Whether account/sign-in remains after Follow My Team review | Demonstrated retention value | Keep internal auth substrate; no broad account push |
-| O-007 | First valid no-op qualification path when no completed durable candidate exists | Read-only candidate audit plus exact-scope creation/initialization contract | No guessed target; no automatic work-item creation |
-| O-008 | Game-driven automated write and later publication-authority transfer | No-op proof, real-mutation proof, scheduled stability, rollback, observability, explicit founder approval | Daily/postgame shadow; backfill off; legacy writer authoritative |
+| --- | --- | --- | --- |
+| O-001 | Resolved by D-021 | Closed | Performance family established; M-001 remains unimplemented and non-public. |
+| O-002 | Current-versus-shared comparison contract | Trusted comparability and public UX | Historical page remains frozen only. |
+| O-003 | Canonical server renderer technology and storage | Artifact contract, hosting cost, and performance | Transitional browser renderer only. |
+| O-004 | Public leverage calculation and table | Complete source coverage and reproducible method | Legacy/partial claims remain bounded. |
+| O-005 | Routed team URL shape and surface ownership | Product route and SEO plan | Current Team Board remains canonical live destination. |
+| O-006 | Whether account/sign-in remains after Follow My Team review | Demonstrated retention value | Keep internal auth substrate; no broad account push. |
+| O-007 | Resolved by D-052 | Closed | A completed durable candidate was found read-only and game 823924 passed the exact no-op qualification contract. |
+| O-008 | Game-driven automated write and later publication-authority transfer | Real-mutation proof, scheduled write stability, rollback, observability, and explicit founder approval | Daily/postgame shadow; backfill off; legacy writer authoritative. |
 
-## 18. Founder Operating System
+# Part VII - Founder Operating System
 
-### Weekly review
+## 17. Weekly Review
 
-1. current main commit;
-2. sole active objective;
-3. current branch and blocker;
-4. merged work and production evidence;
-5. changed risk;
-6. next approved work;
-7. deliberately deferred work;
-8. documentation alignment;
-9. sustainable distribution cadence;
-10. whether a lower-priority item began without a recorded reason.
+- Current main commit and production deployment state.
+- One active objective and the evidence currently blocking it.
+- Open branch, merged work, CI result, and production proof.
+- Which audit evidence moved from observation to confirmed defect.
+- Which risk changed and which protected asset could be harmed by the next package.
+- Next approved work, deliberate deferrals, and documentation alignment.
+- Sustainable distribution cadence and whether a lower-priority item began without a recorded reason.
 
-### Branch rule
-
-Branch names identify the user or operator who notices the work. Never work directly on `main`.
-
-### Founder principles
+## 18. Founder Principles
 
 1. Every feature must justify its hours.
 2. No feature without a user or operator problem.
@@ -538,73 +401,111 @@ Branch names identify the user or operator who notices the work. Never work dire
 11. Life comes first; the system should survive absence.
 12. One active objective is the default.
 
-## 19. Completion Log
+# Appendix A - Completion Log
 
-| Date | Phase | Item | Branch / PR / commit | Evidence and status |
-|---|---|---|---|---|
-| Jul 29, 2026 | Phase 0 | Canonical Trust Closeout and Phase 1 opening | PR #559 / `ec636f2...` | Independent closeout passed; six-document authority recorded |
-| Jul 29–30, 2026 | Phase 1 | Current Active-Pen Performance contract and M-001 governance | D-021 through D-030 / PRs #560–#566 | Group, formula, 108-out sample, name, precision, wording, membership, and evidence contract; implementation remains non-public |
-| Jul 31, 2026 | Phase 1A | Foundation 3C bootstrap and closeout | PRs #572–#581 | 109 governed final games and 946 appearance rows reconciled; no activation authority granted |
-| Aug 1, 2026 | Phase 1A | Daily/postgame shadow activation and exact-cycle repair | PRs #582–#585 | Shadow isolated; first scope failure diagnosed; postgame reactivated; writes remained unapproved |
-| Aug 1, 2026 | Phase 1A | GameLog balls authority and fallback | PRs #586–#587 | Production audit established box-score fallback contract for balls only |
-| Aug 2, 2026 | Operations | Tonight source-capacity repair | PR #588 / migration `c7f1b408d93a` | Code and PostgreSQL proof merged |
-| Aug 4, 2026 | Operations | PROD-001 production closure (#592) | Run `30921186222` | Full source persisted/read back; Tonight verified; ledger 120/120 and 1,029/1,029; dashboard cache verified |
-| Aug 2, 2026 | Operations | Public-sync separated from shadow-health | PR #602 | Publication-dependent jobs no longer depend on observer verdict; #593 observation window remains open |
-| Aug 3, 2026 | Phase 1A | Manual no-op write qualification machinery | PR #604 | Exact one-game, main-only, fingerprinted path; first production execution refused safely |
-| Aug 4, 2026 | Phase 1A | No-op candidate audit | PR #605 | First run proved missing durable work item; bounded read-only selection added |
-| Aug 4, 2026 | Phase 1A | Postgame publication incident audit and runtime repair | PRs #606–#607 | Read-only staged evidence and real-PostgreSQL completion proof; no mutation authorized |
-| Aug 4, 2026 | Phase 1A | Observation backlog separated from publication blockers | PR #608 / `d746471...` | 105 expected, 42 work-item complete, 63 shadow-only backlog, zero real baseball deficits |
-| Aug 4, 2026 | CI | Four-shard PostgreSQL confidence gate | PR #609 | 7,254 collected; 7,249 passed, 5 skipped; exact ownership and separate databases |
-| Aug 4, 2026 | CI | CI-001 closure (#599) | PR #610 / `ebe2db4...` / run `30957543371` | `npm ci`, 864 frontend tests, required production build, mutation-tested contract |
-| Aug 5, 2026 | Phase 1B | UX-001 canonical Team State implementation (#590) | PR #611 / `8a528ef...` | 7,315 backend tests, 864 frontend tests, build success, docs updated; production triad evidence pending. **Superseded by the Aug 6 production-validation failure below: the vocabulary authority was correct, the population feeding it was not** |
-| Aug 5, 2026 | Governance cleanup | Obsolete simulation README issue #5 closed | Issue #5 | Closed as not planned; no longer matches bullpen-intelligence product identity |
-| Aug 5, 2026 | Phase 1A | Game 824487 source-revision audit package | PR #613 / `cb4ec4a...` / run `31044299167` | Read-only audit executed: verdict `COMPLETE_SCOPE_AND_MATERIALITY_IDENTIFIED_FIELD_DELTA_UNAVAILABLE`, exit 0, no failed or unproven reasons; root condition `official_appearance_set_changed`; checkpoint stale relative to current source; no repair authorized by the audit itself |
-| Aug 6, 2026 | Phase 1A | Game 824487 source-revision checkpoint repair and retirement | PR #615 / merge `b29b1f0e41fffb0a58db9d276a506ae6613dfcce` / runs `31065643787`, `31065894573`, `31066123772` | Terminally complete. Verify run `31065643787` returned `VERIFIED_REPAIR_REQUIRED_AND_SAFE`, exit 0, mutation performed false (artifact `8953731050`, `sha256:e6fdd499867eaab3e13a364ac700daf6502257f4a344a86dcfb8d6cc8795ee3c`). Apply run `31065894573` returned `REPAIR_APPLIED`, exit 0, mutation performed true (artifact `8953812423`, `sha256:fa0f8c1caa9d44aed478aa6ff137beb1335bb73ef580752730c205844f5cc50e`): `game_ingestion_work_items` row `id = 103`, `mlb_game_pk = 824487`, `source_revision` moved from `90213dc8e42a9622e9c0dcaea80adb04507a4a5bfe054eaa9b98d2d138b804a0` to `a0fe2dbce8ad75ffc880e76996a6fec7bc90f86c296350898c009f97f241ecf4`, exactly one row affected, one target-table UPDATE issued, `source_revision` and the automatic `updated_at` the only changed columns, post-commit verification in a positively proven read-only transaction. Run `31066123772` **selected operation `apply`** and returned `REPAIR_NOT_REQUIRED`, exit 0, apply gate open false, apply attempted false, commits performed 0, zero durable write attempts (artifact `8953882289`, `sha256:860ca09c65c9d74372b93d54f8e9cf2d042caf3391da7875a303568901a4cf6e`) — the already-applied safety gate resolved it before the writable path opened. Zero GameLog changes; no other work item, governed scope, or out-of-scope digest moved. No migration, no mode change, no authority transfer. Temporary package retired by the cleanup PR |
-| Aug 6, 2026 | Phase 1B | **UX-001 production validation FAILED; Team State population corrected (#590)** | `team-fans/issue-590-state-discrimination-fix` | Repository change only; no workflow dispatch, no production execution, no production database session, no row mutation, no snapshot rebuild, no artifact generation or mutation, no threshold change, no migration, no mode change. Production published Vulnerable for every supported team across materially different Dashboard lanes — Detroit read Vulnerable while showing eight rested and available arms — while Athletics correctly failed closed. Root cause is population, not vocabulary: readiness distributions were built from every pitcher carrying a fatigue score filtered only by `Pitcher.active` (starters, injured-list arms, off-active depth), while the trust metadata authorizing the same read used the canonical current active bullpen. `Avoid`/`Unavailable` maps to elevated workload, and either an unavailable count or an elevated count returns `operationally_stressed`, so one starter who worked yesterday collapsed a whole club. Membership is now resolved once in the readiness-coverage domain and used for both the distributions and the coverage check. Reproduced end-to-end on the real resolver before the fix and pinned by regression. No threshold, status meaning, public mapping, fail-closed behavior, publication authority, sync mode, writer, roster authority, or baseball-data change, and no new decision — D-003 and D-004 stand. Revalidation against the corrected build was outstanding at the time of this entry; it completed the same day and is recorded in the closeout row below |
-| Aug 6, 2026 | Phase 1B | **UX-001 canonical Team State production closeout — issue #590 complete** | Issue #590; PR #611 / merge `8a528efec1affcdaf98fa1e87f9090d105db4248`; PR #617 / merge `d5ddb5fd56651203edf75de40d7f3f0d2630fa4b` | Production recovery and evidence run `31097712768` (`workflow_dispatch`, run SHA `d5ddb5fd56651203edf75de40d7f3f0d2630fa4b`, success): published, selected, and served snapshot `360`, data through August 5, 2026; publication-critical completion 418 / 418; best-effort completion 443 / 443; appearance ledger 124 / 124 completed games and 1,049 / 1,049 appearances with zero mismatches; dashboard snapshot ready/published/selected/served with cache verification passed. Reader-visible evidence: Team Board showed Los Angeles Dodgers `Stretched`, Houston Astros `Stretched`, and New York Mets `Vulnerable`, with Colorado Rockies rendering the governed unavailable presentation and no invented fourth Team State; Compare showed Atlanta Braves `Stretched` beside New York Mets `Vulnerable`, both `Published View Current` through August 5. **Fresh natural-observability exception (D-049):** all 30 clubs played August 5 and no team naturally qualified as Fresh, so no current Fresh screenshot exists and none was manufactured — the automated contracts remain the proof that `operationally_stable` maps to `Fresh` and that the public set contains exactly three labels. The daily lane remained shadow with zero GameLog writes, zero commits, zero checkpoint advances, and zero publication authority; no sync mode, writer authority, backfill setting, publication gate, threshold, formula, mapping, schema, or baseball-data row changed |
+| Date | Phase | Item | Branch / PR / commit | Production evidence | Notes |
+| --- | --- | --- | --- | --- | --- |
+| Jul 29, 2026 | Phase 0 | Canonical Trust Closeout and Phase 1 opening | PR #559 / ec636f2... | Independent closeout passed; six-doc authority recorded | Foundation 3A closed; M-001 became first scoped evidence item. |
+| Jul 29-30, 2026 | Phase 1 | Current Active-Pen Performance contract and M-001 governance | D-021 through D-030 / PRs #560-#566 | Group, formula, 108-out sample, name, precision, wording, membership, and evidence contract | Implementation remains non-public. |
+| Jul 31, 2026 | Phase 1A | Foundation 3C bootstrap and closeout | PRs #572-#581 | 109 governed final games and 946 appearance rows reconciled; replay and drift checks passed | No activation authority granted by bootstrap. |
+| Aug 1, 2026 | Phase 1A | Daily/postgame shadow activation and exact-cycle repair | PRs #582-#585 | Shadow isolated; first scope failure diagnosed; postgame reactivated after exact-scope proof | Automated write and authoritative modes stayed unapproved. |
+| Aug 1, 2026 | Phase 1A | GameLog balls authority and fallback | PRs #586-#587 | Production audit proved split omission and official box-score fallback contract | Fallback approved only for balls with pitch-accounting validation. |
+| Aug 2, 2026 | Operations | Tonight source-capacity repair | PR #588 / migration c7f1b408d93a | Code and PostgreSQL proof merged | Scheduled production closure completed August 4 through run 30921186222. |
+| Aug 2, 2026 | Operations | Public-sync separated from shadow-health observer | PR #602 | Publication-dependent jobs no longer depend on observer verdict | No publication gate or observer gate weakened. |
+| Aug 3, 2026 | Phase 1A | Manual no-op write qualification machinery | PR #604 | Exact one-game, main-only, owner-only, fingerprinted and evidence-scanned path | No production execution occurred in implementation. |
+| Aug 4, 2026 | Phase 1A | No-op candidate audit | PR #605 | First run refused safely on missing work item; bounded read-only candidate selection added | No target may be guessed. |
+| Aug 4, 2026 | Phase 1A | Observation backlog separated from publication blockers | PR #608 / d746471... | Shadow backlog classified separately from real baseball deficits | No authority boundary changed. |
+| Aug 4, 2026 | CI | Four-shard PostgreSQL confidence gate | PR #609 | Separate PostgreSQL databases with exact collection accounting | Trust-critical CI hardened. |
+| Aug 4, 2026 | CI | CI-001 closure (#599) | PR #610 / ebe2db4... | Lockfile-faithful frontend CI, full tests, production build | Complete. |
+| Aug 5-6, 2026 | Phase 1A | Game 824487 audit, repair, and retirement | PRs #613, #615, #616 | Exact-scope source-revision correction terminally closed | Temporary repair capability retired. |
+| Aug 6, 2026 | Phase 1B | UX-001 canonical Team State production closeout | PRs #611, #617 / run 31097712768 | Canonical Team State production evidence complete | #590 closed. |
+| Aug 6-10, 2026 | Operations | OPS-002 runtime mitigation and trusted-serving correction | PRs #619, #621, #627 / D-050, D-051 | Three scheduled first-attempt daily PASS runs | Issue #620 closed. |
+| Aug 3-10, 2026 | Phase 1A | OPS-001 signal-separation observation | PR #602 / issue #593 | Scheduled evidence proved public-sync and observer separation | Issue closed August 10. |
+| Aug 10, 2026 | Phase 1A | Read-only no-op candidate production audit | Run 31393177954 | COMPLETE_ELIGIBLE_FOUND; five candidates; zero durable writes | Suggested game 823924. |
+| Aug 10, 2026 | Phase 1A | Manual one-game no-op write qualification | Run 31395294655 | PASS; game 823924; zero baseball-data writes; exact lane-ledger delta | Pre/post state identical. |
+| Aug 10, 2026 | Phase 1A | Authority Qualification phase exit | PR #628 / D-052 | Phase complete | No automated write/publication/backfill authority granted. |
+| Aug 10, 2026 | Phase 1B | SEC-001 public score containment (#595) | PR #630 / main b328c917… | Production verification passed; issue closed. | Public scored/internal fatigue fields contained; admin-only scored access retained. |
+| Aug 10, 2026 | Phase 1B | FE-001 backend-owned Why copy (#591) | PR #631 / main f4a23cc… | Production representative-team verification passed; issue closed. | Frontend no longer regex-rewrites or silently drops governed Why copy. |
+| Aug 10, 2026 | Phase 1B | DIST-003 routed team preview implementation (#594) | PR #632 / merge d13bf529… | Repository implementation complete. | One trusted publication per representation; fail closed without provable date/authority. |
+| Aug 10-11, 2026 | Phase 1B | UX-002 contextual `/bullpen` page identity (#600) | PR #633 / merge 98e452e… | CI green; production keyboard, accessibility-tree, and mobile checks passed; issue closed. | Exactly one contextual H1 per active `/bullpen` view; no answer-first regression. |
+| Aug 11, 2026 | Phase 1B | Routed team preview delivery correction | PR #637 "Serve dated team preview pages at public team routes" / merge 5e79c3c… | Public team routes serve the dated static previews rather than the application shell. | Delivery-path repair; the #594 authority and freshness contract is unchanged. |
+| Aug 11, 2026 | Phase 1B | DIST-003 production closeout (#594) | Scheduled run 31483859116 / export job 93760656523 | 30 of 30 dated previews from trusted snapshot 393, 0 withheld, data through 2026-08-10; `/team/COL` and `/team/INVALID` verified in production; issue closed. | Complete and production-verified. Evidence below. |
+| Aug 12, 2026 | CI | CI-003 generated-content CI gate (#598) | Session 1 read-only audit; repository implementation on `fix/generated-content-ci-gate` / D-053 | Repository implementation only. Delivery gate, canonical frontend tests and production build, tree-exact validation, `BaseballOS Automation` identity, and workflow permission narrowing are implemented and covered by contract tests. | **NOT complete.** Closeout requires the next naturally authorized scheduled run to produce a gated, tree-exact, machine-attributed generated commit, plus read-only Vercel deployment verification. #598 remains open. |
 
-## 20. Phase Exit Record
+## DIST-003 (#594) Production Closeout Evidence
 
-| Phase | Status | Exit evidence / remaining work |
-|---|---|---|
-| Phase 0 - Canonical Trust Closeout | Complete | Independent official-line, starter, outs, appearance-team, and aggregation proof |
-| Phase 1 - Evidence Completeness | In progress / paused | M-001 contract complete; implementation resumes after higher-priority trust work |
-| Phase 1A - Authority Qualification | Active evidence closeout | D-044 merged; #593 observation and valid no-op path remain |
-| Phase 1B - Vocabulary and Freshness | In progress | #590 complete (run `31097712768`, snapshot `360`); #591, #594, #595, and #600 remain |
-| Phase 2 - Portable Intelligence | Foundation complete / final distribution not started | Renderer, raster assets, metadata, actions, funnel |
-| Phase 3 - Daily Habit and Consequence | Not started | What Changed, lead, slate, quiet day |
-| Phase 4 - Offseason Intelligence Depth | Not started | Pitch, leverage, depth, routes, archive |
-| Phase 5 - Opening Day 2027 | Not started | Complete daily relaunch |
-| Phase 6 - Growth and Validation | Not started | Behavior and rights evidence choose direction |
+DIST-003 (#594) is **Complete**, production-verified August 11, 2026.
 
-## 21. Source Basis
+| Item | Value |
+| --- | --- |
+| Authorized scheduled production export | GitHub Actions run 31483859116 |
+| Static team-preview export job | 93760656523 |
+| Previews generated | 30 of 30 dated team previews |
+| Previews withheld | 0 |
+| Represented baseball data | through 2026-08-10 |
+| Trusted export snapshot | 393 |
+| Export generated-at | 2026-08-11T11:15:00+00:00 |
+| Production routing repair | PR #637 "Serve dated team preview pages at public team routes", merged August 11, 2026 |
+| Issue closed | August 11, 2026 |
 
-This current-state edition consolidates:
+The trusted export snapshot for this closeout is **393**. An earlier working note recorded 398; that value came from a different observed scheduled-run state and is not the snapshot the verified production pages were generated from. It is recorded here so the wrong number cannot be reintroduced as the closeout basis.
 
-- the repository's prior canonical Roadmap and detailed Decision Ledger through D-046;
-- the August 4, 2026 current-state Roadmap DOCX;
-- repository main `bcfae8ad2a617d8ae93610a762932aa2432bb3da`, with the Version 3.3 OPS-002
-  mitigation recorded through PR #621;
-- merged pull requests through #619;
-- the merged daily-sync runtime-budget incident investigation,
-  `docs/audits/DAILY_SYNC_RUNTIME_BUDGET_EXHAUSTION_2026-08-06.md`, and its four-run evidence
-  from runs `31095686315`, `31097712768`, `31099639901`, and `31103076829`;
-- scheduled production evidence through run `30921186222`, and manual production recovery
-  evidence from run `31097712768` with published snapshot `360`;
-- manual game 824487 production evidence: audit run `31044299167` and checkpoint-repair runs
-  `31065643787`, `31065894573`, and `31066123772`, with their retained artifacts;
-- GitHub issue status for #5 and #589–#601;
-- the August 2 Full Platform Audit;
-- the current Constitution, Bullpen Intelligence Standard, Product Experience Standard, Architecture and Operations Manual, and Editorial and Distribution Standard.
+**Valid route proof.** `GET https://baseballos.app/team/COL` returned Colorado-specific dated static HTML carrying: title `Colorado Rockies Bullpen: Vulnerable`; representation `dated_team_read`; Team State `Vulnerable`; the specific baseball point "Two relievers are available from the latest completed workload data."; data-through `2026-08-10`; generated-at `2026-08-11T11:15:00+00:00`; snapshot-id `393`; sync-run-id `684`; authority-contract `trusted_dashboard_publication_v1`; published-at `2026-08-11T11:07:55.967061`; canonical `https://baseballos.app/team/COL`; and handoff `/bullpen?view=board&team=COL&source=share`.
 
-The archived predecessor file preserves the verbose rationale and evidence language for D-001 through D-046. Git history, pull requests, workflow artifacts, and runbooks remain the exact implementation and operational evidence.
+**Invalid route fail-closed proof.** `GET https://baseballos.app/team/INVALID` returned representation `invalid_team` with generic BaseballOS fallback copy and no Team State, no data-through, no snapshot-id, no sync-run-id, no publication timestamp, and no trusted-publication authority; canonical `https://baseballos.app/team/` and handoff `/`.
 
-## 22. Revision History
+A third-party social-platform unfurl is not part of this recorded closeout. The literal #594 acceptance criteria were satisfied by the routed static/crawl proof together with the production valid and invalid route evidence above.
+
+# Appendix B - Phase Exit Record
+
+| Phase | Status | Exit date | Evidence | Remaining work |
+| --- | --- | --- | --- | --- |
+| Phase 0 - Canonical Trust Closeout | Complete | Jul 29, 2026 | Independent official-line, starter, outs, appearance-team, and aggregation closeout | Maintain regression and publication gates |
+| Phase 1 - Evidence Completeness | In progress / paused |  | D-021 through D-030 establish M-001 contract | Registry, backend read, Team Board, evidence, tests |
+| Phase 1A - Authority Qualification | Complete | Aug 10, 2026 | D-052; #593/OPS-002 closed; candidate audit and no-op PASS | No authority transfer; O-008 remains open |
+| Phase 1B - Vocabulary and Freshness | In progress / active |  | #590, #595, #591, #600, and #594 complete and production-verified | VOC-001 (#638): merge PR #639, deploy, pass read-only production vocabulary smoke, close #638. Repository CI green does not exit the phase. |
+| Phase 2 - Portable Intelligence | Foundation complete / final distribution not started |  | Immutable artifact and historical page are production | Renderer, metadata, actions, funnel |
+| Phase 3 - Daily Habit and Consequence | Not started |  | Comparability and surface foundations exist | What Changed, lead, slate, quiet day |
+| Phase 4 - Offseason Intelligence Depth | Not started |  | Candidate domains governed | Pitch, leverage, depth, routes, archive |
+| Phase 5 - Opening Day 2027 | Not started |  |  | Complete daily relaunch |
+| Phase 6 - Growth and Validation | Not started |  |  | Behavior and rights evidence choose direction |
+
+# Appendix C - Source Basis
+
+- BaseballOS Product Roadmap & Decision Ledger Version 3.7, effective August 11, 2026.
+- Repository main 18dd6914a933928254e969c85ecb19cf75b6a9f2 after PR #637.
+- Decision Ledger through D-052.
+- GitHub issue state through August 11, 2026, including #595, #591, #600, and #594 closed and #638 open with its implementation in PR #639.
+- Production evidence retained for #590, #592, #593, #595, #591, #600, #594, OPS-002, and Phase 1A authority qualification.
+- Product Experience Standard Version 1.3 routed-team preview contract; Version 1.4 public-vocabulary presentation contract in PR #639.
+- Bullpen Intelligence Standard Version 1.3 public-language authority in PR #639.
+
+## Repository basis
+
+Current production main: 18dd6914a933928254e969c85ecb19cf75b6a9f2 after PR #637. Phase 1A remains closed under D-052. SEC-001 (#595), FE-001 (#591), UX-002 (#600), and DIST-003 (#594) are closed after production verification.
+
+VOC-001 (#638) is implemented on `fix/public-vocabulary-parity` in PR #639, which is open and unmerged. Its canonical documents — Product Experience Standard v1.4 and Bullpen Intelligence Standard v1.3 — are repository implementation pending merge and are not production or main truth until PR #639 merges.
+
+## Active objective
+
+The active objective is VOC-001 (#638) public vocabulary/glossary parity closeout. The repository implementation exists in PR #639 and its CI is green, which is necessary and not sufficient: the objective closes only after the remaining cross-family contracts and retired-vocabulary sweep land, PR #639 merges, deployment completes, a read-only production vocabulary smoke passes, and #638 closes.
+
+## Next approved sequence
+
+1) Close VOC-001 (#638): remaining contracts and sweep, merge PR #639, deploy, take production vocabulary proof. 2) Complete #598 generated-content CI validation. 3) Complete #601 dependency remediation. 4) Continue permanent daily-sync work reduction, preserving D-051 in full. 5) Begin Portable Intelligence only after the Public Credibility Pass exit is actually proven. 6) Resume M-001 and visible evidence. 7) Daily Habit and consequence work.
+
+# Appendix D - Revision History
 
 | Version | Date | Author | Summary |
-|---|---|---|---|
-| 1.0–2.9 | Jul 29–Aug 4, 2026 | Nickolis Kacludis | Established the canonical execution roadmap and appended detailed decisions through D-046. The full verbose predecessor is preserved in the August 2026 archive and Git history. |
-| 3.0 | Aug 5, 2026 | Nickolis Kacludis | Reconciled current state through PR #611 and main `8a528ef`; recorded #592 and #599 complete, #593 observation pending, #590 merged with production triad evidence pending, the current authority modes, next approved work, updated phases, priorities, risks, backlog, open decisions, completion log, and phase exits. Preserved the detailed predecessor ledger in the archive without changing any durable decision. |
-| 3.1 | Aug 6, 2026 | Nickolis Kacludis | Recorded the terminal game 824487 source-revision checkpoint closeout: corrected the repository basis to main `b29b1f0` and PR #615, corrected D-047's status and the audit completion row to reflect that read-only audit run `31044299167` was executed, added D-048 retiring the single-purpose repair capability and prohibiting any further dispatch, and logged all three production runs with their artifact identities and digests. No prior decision was changed or removed, no authority moved, no roadmap order changed, and no Phase 1A gate was closed. |
-| 3.3 | Aug 6, 2026 | Nickolis Kacludis | Recorded the OPS-002 daily-sync runtime-budget incident and its immediate mitigation through PR #621. PR #619 merged the investigation proving that five upstream stages consume 612-628s before the combined ingestion pool is calculated, the shadow observer then consumes part of that pool, and the legacy GameLog writer received 112-125s against a corrected cold-equivalent upper bound of 767-895s; three of four August 6 runs dead-lettered publication-critical work and the one success behaved as a warm second pass. Added D-050 recording the temporary mitigation: 2200-second internal budget, 40-minute shell timeout, 60-minute public-sync job timeout, 1500-second combined ingestion cap, and an unchanged 300-second final reserve, giving a 953.625-second conservative legacy GameLog floor against a 950-second requirement, plus mandatory separate reporting of the configured cap, combined pool, shadow allocation, shadow elapsed, and legacy GameLog remainder. Made OPS-002 the active objective and recorded risks R-21 through R-24. Paused the #593 scheduled observation window without closing, weakening, or absorbing it - its shadow/public-sync separation behaved correctly throughout the incident - and deferred #595 behind OPS-002 and the #593 evidence checkpoint. Explicitly preserved every mode and authority: daily and postgame lanes remain shadow, backfill remains off, the legacy writer remains authoritative, and automated write and game-driven publication authority remain unapproved. No durable decision was changed or removed; D-003, D-004, D-044, D-048, and D-049 are untouched. This edition claims no production proof: the mitigation is implemented and unproven until one controlled recovery and three consecutive clean scheduled daily runs succeed. |
-| 3.2 | Aug 6, 2026 | Nickolis Kacludis | Recorded the UX-001 production closeout: issue #590 is complete through PR #611 and PR #617 with corrected-production evidence from run `31097712768` and snapshot `360`, and Track B of the active objective is closed. Added D-049 recording the founder-approved Fresh natural-observability exception — no naturally qualifying Fresh team existed after all 30 clubs played August 5, and Fresh evidence is never manufactured. Corrected the repository basis from `b29b1f0` to current main `5be94b7`, recorded PR #616 as merged and the game 824487 repair capability as retired rather than pending, and updated the surface, capability, priority, phase, risk, and backlog wording that still described #590 as pending. Preserved Track A: #593 scheduled observation and the governed no-op-candidate decision remain the active objective, daily and postgame lanes remain shadow, backfill remains off, the legacy writer remains authoritative, and automated write and game-driven publication authority remain unapproved. No durable decision was changed or removed; D-003 and D-004 are untouched. |
+| --- | --- | --- | --- |
+| 1.0 | July 29, 2026 | Nickolis Kacludis | Established the canonical execution roadmap and durable Decision Ledger. |
+| 2.0 | August 4, 2026 | Nickolis Kacludis | Reconciled current state through D-044 and the authority-qualification work. |
+| 3.0 | August 5, 2026 | Nickolis Kacludis | Reconciled current state through PR #612 and main a27631d; recorded #592/#599 complete and #590/#593 evidence pending. |
+| 3.1 | August 5, 2026 | Nickolis Kacludis | Condensed the canonical roadmap and integrated the important visual-audit evidence without changing the approved sequence or durable decisions. |
+| 3.2 | August 6, 2026 | Nickolis Kacludis | Recorded UX-001 production closeout and D-049. |
+| 3.3 | August 6, 2026 | Nickolis Kacludis | Recorded OPS-002 runtime-budget incident/mitigation and D-050; paused #593 pending reliable evidence. |
+| 3.4 | August 10, 2026 | Nickolis Kacludis | Closed Phase 1A through D-052 after OPS-002/#593 evidence, candidate audit, and governed no-op PASS; made #595 the active public-trust objective without transferring game-driven authority. |
+| 3.5 | August 10, 2026 | Nickolis Kacludis | Recorded SEC-001 (#595) implementation and production closeout: public scored/internal fatigue fields contained; retained scored access explicitly admin-only. |
+| 3.6 | August 10, 2026 | Nickolis Kacludis | Recorded DIST-003 (#594) implementation: routed team previews use one trusted publication, canonical Team State/non-state, data-through, receipts, and fail-closed output; production verification remained pending. |
+| 3.7 | August 11, 2026 | Nickolis Kacludis | Reconciled current state through PR #633/main 98e452e: #595, #591, and #600 complete and production-verified; #594 merged and awaiting the next authorized scheduled export; vocabulary/glossary parity is the next implementation package after #594 closeout. No durable authority decision changed. |
+| 3.8 | August 11, 2026 | Nickolis Kacludis | Recorded the DIST-003 (#594) production closeout: authorized scheduled run 31483859116, export job 93760656523, 30 of 30 dated previews with 0 withheld, data through 2026-08-10, trusted snapshot 393, generated-at 2026-08-11T11:15:00+00:00, production `/team/COL` dated-read proof and `/team/INVALID` fail-closed proof, issue closed August 11. Recorded PR #637 "Serve dated team preview pages at public team routes" as the delivery-path correction that made those routes serve the dated previews. Moved the active objective to VOC-001 (#638), whose repository implementation — including Product Experience Standard v1.4 and Bullpen Intelligence Standard v1.3 — is in PR #639, which is open and unmerged and carries no production proof; #638 remains open. The Public Credibility Pass and Phase 1B remain active and exit only after PR #639 merges, deployment completes, read-only production vocabulary smoke passes, and #638 closes; repository CI green is necessary and not sufficient. The downstream sequence is preserved exactly: #598, then #601, then permanent daily-sync work reduction, then Portable Intelligence, then M-001 and visible evidence, then Daily Habit and consequence. No durable authority decision was added, weakened, or renumbered, D-051 and D-052 stand unchanged, and no new Decision Ledger ID was created. |

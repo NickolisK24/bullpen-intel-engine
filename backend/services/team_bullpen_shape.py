@@ -23,11 +23,16 @@ TEAM_BULLPEN_PUBLIC_LABELS = {
         'Limited Late-Inning Availability',
         'Limited Read',
     ],
+    # VOC-001: 'Healthy Rested Bullpen' is retired. BaseballOS observes public
+    # workload, never private health, and 'Healthy' reads as a claim about
+    # player condition. The family is now named for what it measures — rested
+    # OPTIONS — and 'Stable' replaces 'Healthy' at the same tier. Tier count,
+    # tier order and every threshold are unchanged; only the strings moved.
     'cleanOptions': [
-        'Deep Rested Bullpen',
-        'Healthy Rested Bullpen',
-        'Thin Rested Bullpen',
-        'Very Thin Rested Bullpen',
+        'Deep Rested Options',
+        'Stable Rested Options',
+        'Thin Rested Options',
+        'Very Thin Rested Options',
         'Limited Read',
     ],
     'bullpenPressure': [
@@ -112,10 +117,10 @@ ROLE_INFLUENCE = {
 }
 
 CLEAN_OPTIONS_TIERS = [
-    'Very Thin Rested Bullpen',
-    'Thin Rested Bullpen',
-    'Healthy Rested Bullpen',
-    'Deep Rested Bullpen',
+    'Very Thin Rested Options',
+    'Thin Rested Options',
+    'Stable Rested Options',
+    'Deep Rested Options',
 ]
 CLEAN_TIER_VERY_THIN = 0
 CLEAN_TIER_THIN = 1
@@ -227,7 +232,18 @@ def _label_key(card, kind):
     return payload.get('key') or 'limited_read'
 
 
-def _card_fatigue(card):
+def _card_fatigue(card, fatigue_by_pitcher=None):
+    """Internal workload magnitude behind one card.
+
+    The public card no longer carries the composite (SEC-001), so the value is
+    supplied by the caller keyed on pitcher. The dict lookups remain as a
+    fallback for internal callers and fixtures that still hand in scored
+    records directly.
+    """
+    if fatigue_by_pitcher:
+        supplied = fatigue_by_pitcher.get(card.get('pitcher_id'))
+        if supplied is not None:
+            return _as_number(supplied)
     return _as_number(
         card.get('fatigue_score')
         or card.get('raw_score')
@@ -235,7 +251,7 @@ def _card_fatigue(card):
     )
 
 
-def _summarize_cards(groups, context=None):
+def _summarize_cards(groups, context=None, fatigue_by_pitcher=None):
     cards = _flatten_cards(groups)
     read_counts = _empty_counts(READ_LABELS.values())
     role_counts = _empty_counts(ROLE_COUNT_LABELS.values())
@@ -261,7 +277,7 @@ def _summarize_cards(groups, context=None):
         role_bucket = ROLE_KEY_BY_LABEL_KEY.get(role_key)
         if role_bucket and not (is_swing_bulk and role_bucket in ('trust', 'bridge')):
             role_read_counts[role_bucket][read_label] += 1
-        if _card_fatigue(card) >= 70:
+        if _card_fatigue(card, fatigue_by_pitcher) >= 70:
             high_fatigue_arms += 1
 
     total = len(cards)
@@ -297,6 +313,11 @@ def _read(key, label, explanation, supporting_counts, reasons=None):
         'key': key,
         'label': label,
         'explanation': explanation,
+        # The backend-authored public sentence for this read (FE-001 / #591).
+        # ``explanation`` predates the public contract and is kept for internal
+        # consumers; ``summary`` is the governed field the reader surfaces render
+        # verbatim, so the frontend no longer authors a sentence of its own.
+        'summary': explanation,
         'supportingCounts': supporting_counts,
         'reasons': list(reasons or [explanation]),
     }
@@ -770,9 +791,19 @@ def build_team_bullpen_shape(
     workload_concentration=None,
     capacity_intelligence=None,
     bullpen_environment=None,
+    fatigue_by_pitcher=None,
 ):
-    """Return backend-authored public team reads for a board payload."""
-    summary = _summarize_cards(groups, context=context)
+    """Return backend-authored public team reads for a board payload.
+
+    ``fatigue_by_pitcher`` carries the internal workload composite keyed on
+    pitcher. It is an input to the authored reads only — the composite is never
+    published on the cards or in the reads themselves.
+    """
+    summary = _summarize_cards(
+        groups,
+        context=context,
+        fatigue_by_pitcher=fatigue_by_pitcher,
+    )
     coverage_safety = (
         build_bullpen_coverage_safety_read(
             capacity_intelligence,

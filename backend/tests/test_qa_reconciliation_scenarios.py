@@ -36,6 +36,8 @@ from services.legacy_read_reconciliation import (
     render_reconciliation_report,
 )
 from tests.db_config import configure_test_database, create_test_schema, drop_test_schema
+from tests.generated_team_pages import GENERATED_TEAM_PAGE_FILES
+from tests.public_vocabulary_files import PUBLIC_VOCABULARY_FILES
 from tests.qa_scenarios import (
     composed_reads_missing,
     conflict_state_evidence,
@@ -603,8 +605,112 @@ def test_phase0e_switches_and_legacy_public_files_not_modified():
         'frontend/src/utils/evidenceCardStory.js',
     }
 
+    allowed_public_score_removal_files = {
+        # sec-001 / #595: the unauthenticated API stops publishing the internal
+        # workload composite, its component sub-scores, the internal risk tier,
+        # and the score row's database keys. The frontend change is consumer
+        # plumbing — the finder addresses a pitcher through the pitcher object,
+        # the board view model drops an unrendered score field, and the unused
+        # local mirror of the backend fatigue model is deleted. No public label,
+        # status, threshold, vocabulary, or route changed.
+        'frontend/src/components/bullpen/Bullpen.jsx',
+        'frontend/src/components/bullpen/board/tonightsBullpenBoardView.js',
+        'frontend/src/utils/fatigueModel.js',
+    }
+
+    allowed_public_copy_authority_files = {
+        # fe-001 / #591 (frontend public-copy authority): meaning-bearing public
+        # language on the State -> Why -> Evidence path moves to the backend copy
+        # authority (services/public_bullpen_copy.py) and the frontend renders it
+        # verbatim. availabilityView.js stops deriving the public availability
+        # label and renders the backend-published one; copySuppressionAccounting
+        # is a temporary operator-only counter with no UI, no network, and no
+        # payload change; the test file is the rendering contract. No public
+        # label, availability threshold, classification, vocabulary decision,
+        # route, or Team State behavior changes.
+        'frontend/src/components/bullpen/availabilityView.js',
+        'frontend/src/utils/copySuppressionAccounting.js',
+        'frontend/tests/publicCopyAuthority.test.mjs',
+    }
+
+    allowed_public_vocabulary_parity_files = {
+        # voc-001 / #638 (public vocabulary parity): reader-facing wording only.
+        # Backend pitcher_public_labels.py becomes the sole owner of the public
+        # role/read strings; pitcherLabels.js stops rewriting them and renders
+        # the authored label verbatim. Two semantic collisions are removed —
+        # the role and read families no longer share the fallback word
+        # 'Limited Read' (role says 'Role Unclear'), and the data-status badge
+        # stops borrowing the baseball words 'Limited' and 'Healthy'
+        # (Current / Partial Data / Stale / Data Unavailable). Read confidence
+        # becomes an explicit High/Medium/Low scale instead of a second
+        # arm-read vocabulary.
+        #
+        # No threshold, classification, derivation, authority, gate, or
+        # timestamp changes: every engine key, availability status, Team State
+        # value, freshness computation and publication rule is byte-identical,
+        # which test_public_vocabulary_parity_changes_wording_only proves
+        # against the diff. Exact paths only, never a directory exemption.
+        'frontend/src/utils/pitcherLabels.js',
+        'frontend/src/components/bullpen/availabilityView.js',
+        'frontend/src/components/dashboard/syncStatusView.js',
+        'frontend/src/components/bullpen/board/teamGameContextView.js',
+        'frontend/src/components/bullpen/board/tonightsBullpenBoardView.js',
+        # The four vocabulary contract tests no earlier workstream
+        # allowlisted. Test-only: they assert the new canonical wording and
+        # change no product code.
+        'frontend/tests/availabilityView.test.mjs',
+        'frontend/tests/bullpenIntelligencePanel.test.mjs',
+        'frontend/tests/dataThroughAuthority.test.mjs',
+        'frontend/tests/gameContextVisualHierarchy.test.mjs',
+    }
+
+    allowed_bullpen_page_identity_files = {
+        # ux-002 / #600 (bullpen page identity): one contextual H1 per active
+        # /bullpen view, owned by the route shell, plus an opt-in heading level
+        # on the shared SectionHeader primitive. This guard protects renderer
+        # isolation and public vocabulary; both are intact — no reconciliation
+        # renderer token is introduced and no public label, state term, or
+        # availability word changes. Heading structure only.
+        'frontend/src/components/UI/SectionHeader.jsx',
+        'frontend/src/components/bullpen/board/TonightsBullpenBoard.jsx',
+    }
+
+    allowed_public_vocabulary_files = {
+        # voc-001 / #638 (public vocabulary parity): reader-facing wording gets
+        # one owner. The backend emits the final pitcher role/read strings and
+        # the frontend renders them verbatim instead of rewriting them; the role
+        # and read families stop sharing the fallback word 'Limited Read'; read
+        # confidence stops reading as a second baseball read; and the
+        # data-status badges stop borrowing baseball words. Strings only — no
+        # threshold, classification, derivation, availability rule, roster or
+        # publication authority, Team State projection, freshness computation,
+        # timestamp, or engine key changed.
+        #
+        # Exact paths only, never a directory exemption.
+        *PUBLIC_VOCABULARY_FILES,
+    }
+
+    allowed_static_team_preview_files = {
+        # dist-003 / #594 (routed team preview authority): the generated
+        # /team/{ABBR} pages carry canonical Team State, a data-through date, a
+        # generated-at time, and the trusted snapshot receipt they were built
+        # from, and the exporter reads the same trusted published board the
+        # public API serves instead of the live mutable builder. The HTML files
+        # are that builder's regenerated output. This guard protects the
+        # renderer-isolation and public-vocabulary purposes; both are intact —
+        # the pages gain canonical public vocabulary and lose a non-canonical
+        # one, and no reconciliation renderer token is introduced.
+        *GENERATED_TEAM_PAGE_FILES,
+    }
+
     allowed_files = (
-        allowed_game_ingestion_work_state_files
+        allowed_bullpen_page_identity_files
+        | allowed_public_vocabulary_parity_files
+        | allowed_public_vocabulary_files
+        | allowed_static_team_preview_files
+        | allowed_public_copy_authority_files
+        | allowed_public_score_removal_files
+        | allowed_game_ingestion_work_state_files
         |
         allowed_public_freshness_display_files
         | allowed_team_at_appearance_files

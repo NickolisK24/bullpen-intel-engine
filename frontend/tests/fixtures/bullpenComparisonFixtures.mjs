@@ -5,8 +5,10 @@ import { makeBoard } from './bullpenBoardFixtures.mjs'
 
 const DIMENSIONS = [
   { key: 'available', metric: 'available', descriptor: 'classified Available', reasonLabel: 'Available' },
-  { key: 'restricted', metric: 'restricted', descriptor: 'marked Avoid or Unavailable', reasonLabel: 'Avoid or Unavailable' },
-  { key: 'monitor', metric: 'monitor', descriptor: 'in the Monitor group', reasonLabel: 'Monitor' },
+  // Public vocabulary, mirroring backend/services/bullpen_comparison.py. The
+  // engine keys stay as they are; only the reader-facing text is public.
+  { key: 'restricted', metric: 'restricted', descriptor: 'marked Unavailable', reasonLabel: 'Unavailable' },
+  { key: 'monitor', metric: 'monitor', descriptor: 'in the On Watch group', reasonLabel: 'On Watch' },
 ]
 
 function cardsFor(counts) {

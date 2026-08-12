@@ -205,6 +205,12 @@ export default function TonightsBullpenBoard({
                 onRetry={boardState.refetch}
                 lastSyncLabel="Bullpen read synced"
                 density="compact"
+                // The Team Board's page heading already reads
+                // "{Full Team Name} Bullpen", so the card would otherwise repeat
+                // the club name as a second title directly beneath it. The
+                // card's region label still carries the team for anyone landing
+                // on it out of context.
+                titleOwnedByPage
               />
               <BullpenAvailabilityDistribution board={filteredBoard} />
             </div>

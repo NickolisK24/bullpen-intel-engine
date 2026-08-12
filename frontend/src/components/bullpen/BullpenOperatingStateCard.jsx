@@ -26,29 +26,16 @@ function uniqueList(list) {
   })
 }
 
-function isLowValueZeroEvidence(item) {
-  const text = String(item || '').trim()
-  return (
-    /^0 of \d+ relievers? are in (the )?Monitor( group| lane)?\.$/i.test(text) ||
-    /^0 of \d+ relievers? are in (the )?On Watch( group| lane)?\.$/i.test(text) ||
-    /^No relievers? are marked Unavailable\.$/i.test(text)
-  )
-}
+// The compact card used to filter evidence through an allow-list of six regexes
+// and keep only sentences that matched one. Any backend evidence phrased another
+// way — including anything newly authored — was deleted before the reader saw
+// it, and the reader had no way to know. Density is now a deterministic count
+// cap that reads evidence in the order the backend published it and never
+// inspects what a sentence says.
+const COMPACT_EVIDENCE_LIMIT = 5
 
 function compactEvidenceList(view) {
-  const compactPatterns = [
-    /\b\d+ of \d+ relievers? are classified Available\./i,
-    /\b\d+ of \d+ relievers? are Limited or Unavailable\./i,
-    /\b\d+ of \d+ relievers? are Unavailable\./i,
-    /\bbullpen arms? (is|are) on the injured list\./i,
-    /\bbullpen arms? (is|are) inactive or unavailable\./i,
-    /\bbullpen arms? (has|have) unconfirmed roster status\./i,
-  ]
-
-  return uniqueList(view.evidence.filter(item => (
-    !isLowValueZeroEvidence(item) &&
-    compactPatterns.some(pattern => pattern.test(item))
-  ))).slice(0, 5)
+  return uniqueList(view.evidence).slice(0, COMPACT_EVIDENCE_LIMIT)
 }
 
 function compactLimitationList(view, staleWithError) {
@@ -146,6 +133,13 @@ export default function BullpenOperatingStateCard({
   ctaLabel,
   lastSyncLabel = 'Dashboard read synced',
   density = 'full',
+  // Opt-in: the surrounding page already states this team's identity as its own
+  // page heading, so the card drops its team-name heading rather than repeating
+  // it directly underneath. Only the Team Board passes this. It defaults to
+  // false so every other caller — the Dashboard above all — is unchanged, and it
+  // is deliberately explicit rather than inferred from scope or density, which
+  // are presentation facts and would couple this to the wrong thing.
+  titleOwnedByPage = false,
   className = '',
 }) {
   const view = getBullpenOperatingStateView({
@@ -169,6 +163,7 @@ export default function BullpenOperatingStateCard({
         staleWithError={staleWithError}
         onRetry={onRetry}
         lastSyncLabel={lastSyncLabel}
+        titleOwnedByPage={titleOwnedByPage}
         className={className}
       />
     )
@@ -190,9 +185,11 @@ export default function BullpenOperatingStateCard({
           <div className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
             {view.scopeLabel}
           </div>
-          <h3 className="mt-1 break-words font-display text-2xl leading-tight tracking-wide text-chalk100">
-            {view.teamLabel}
-          </h3>
+          {!titleOwnedByPage && (
+            <h3 className="mt-1 break-words font-display text-2xl leading-tight tracking-wide text-chalk100">
+              {view.teamLabel}
+            </h3>
+          )}
         </div>
         {view.stateLabel && (
           <StateBadge view={view} />
@@ -327,6 +324,7 @@ function CompactBullpenOperatingStateCard({
   staleWithError,
   onRetry,
   lastSyncLabel,
+  titleOwnedByPage = false,
   className = '',
 }) {
   const evidence = compactEvidenceList(view)
@@ -348,9 +346,11 @@ function CompactBullpenOperatingStateCard({
           <div className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
             {view.scopeLabel}
           </div>
-          <h3 className="mt-0.5 break-words font-display text-lg leading-tight tracking-wide text-chalk100 sm:text-xl">
-            {view.teamLabel}
-          </h3>
+          {!titleOwnedByPage && (
+            <h3 className="mt-0.5 break-words font-display text-lg leading-tight tracking-wide text-chalk100 sm:text-xl">
+              {view.teamLabel}
+            </h3>
+          )}
         </div>
         {view.stateLabel && <StateBadge view={view} compact />}
       </div>
@@ -376,6 +376,15 @@ function CompactBullpenOperatingStateCard({
               </p>
             )}
           </div>
+
+          {/* The Why, between State and Evidence. The compact card computed this
+              and never rendered it, so Team Board showed State then Evidence with
+              the explanation missing. Rendered verbatim from the backend. */}
+          {view.why && (
+            <p className="mt-2 break-words text-sm leading-snug text-chalk300" data-testid="compact-why">
+              {view.why}
+            </p>
+          )}
 
           {(view.primaryConcern || view.secondaryConcern) && (
             <div className="mt-2 flex flex-wrap gap-1.5">

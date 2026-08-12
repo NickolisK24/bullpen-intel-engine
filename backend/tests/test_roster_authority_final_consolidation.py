@@ -164,9 +164,9 @@ def test_public_read_label_unchanged_for_off_roster_and_active():
     active = build_pitcher_labels(
         availability=_availability('Available'), role=_role(), roster_status=_classified(STATUS_ACTIVE),
     )
-    assert active['read']['label'] == 'Rested'
+    assert active['read']['label'] == 'Clean Option'
 
     unknown = build_pitcher_labels(
         availability=_availability('Available'), role=_role(), roster_status=_classified(STATUS_UNKNOWN),
     )
-    assert unknown['read']['label'] == 'Rested'   # unknown roster status is not "unavailable"
+    assert unknown['read']['label'] == 'Clean Option'   # unknown roster status is not "unavailable"

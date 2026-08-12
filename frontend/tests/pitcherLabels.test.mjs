@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import test from 'node:test'
 
 import {
@@ -20,13 +21,13 @@ const authoredCard = {
   data_state: 'fresh',
   role: {
     role_key: 'late_high_leverage',
-    role: 'Trust Arm',
+    role: 'Trusted Arm',
   },
   pitcher_labels: {
     role: {
       kind: 'role',
       key: 'trust_arm',
-      label: 'Trust Arm',
+      label: 'Trusted Arm',
       source: 'backend:role_key:late_high_leverage',
     },
     read: {
@@ -60,7 +61,7 @@ test('camelCase backend labels are accepted', () => {
   const labels = getPitcherLabels({
     pitcherLabels: {
       role: { key: 'coverage_arm', label: 'Coverage Arm', source: 'backend:mixed_coverage' },
-      read: { key: 'rest_restricted', label: 'Rest-Restricted', source: 'backend:availability_status' },
+      read: { key: 'rest_restricted', label: 'Limited Rest', source: 'backend:availability_status' },
     },
   })
 
@@ -80,13 +81,13 @@ test('raw role and availability fields no longer create frontend-authored labels
     },
   })
 
-  assert.equal(labels.role.label, 'Limited Read')
+  assert.equal(labels.role.label, 'Role Unclear')
   assert.equal(labels.role.source, 'missing_backend_label')
   assert.equal(labels.read.label, 'Limited Read')
   assert.equal(labels.read.source, 'missing_backend_label')
 })
 
-test('unknown backend keys fail closed to Limited Read', () => {
+test('unknown backend keys fail closed to each family fallback', () => {
   const labels = getPitcherLabels({
     pitcher_labels: {
       role: { key: 'closer_grade', label: 'Closer Grade', source: 'backend:test' },
@@ -94,10 +95,14 @@ test('unknown backend keys fail closed to Limited Read', () => {
     },
   })
 
-  assert.equal(labels.role.label, 'Limited Read')
+  // Each family falls back to its OWN fallback, and the two are different
+  // words: an unreadable role says the role is unclear, an unreadable read
+  // says the read is limited.
+  assert.equal(labels.role.label, 'Role Unclear')
   assert.equal(labels.role.source, 'backend:test')
   assert.equal(labels.read.label, 'Limited Read')
   assert.equal(labels.read.source, 'backend:test')
+  assert.notEqual(labels.role.label, labels.read.label)
 })
 
 test('individual helpers read the same backend-authored payload', () => {
@@ -122,7 +127,7 @@ test('public label sets remain unchanged', () => {
     'Setup Arm',
     'Coverage Arm',
     'Middle Relief Arm',
-    'Limited Read',
+    'Role Unclear',
   ])
   assert.deepEqual(APPROVED_READ_LABELS, [
     'Clean Option',
@@ -157,18 +162,55 @@ test('label copy avoids advisory and speculative language', () => {
   }
 })
 
-test('retired backend role wording is rewritten to the canonical public set', () => {
-  const cases = [
-    { key: 'trust_arm', label: 'Trust Arm', expected: 'Trusted Arm' },
-    { key: 'bridge_arm', label: 'Bridge Arm', expected: 'Setup Arm' },
-    { key: 'depth_arm', label: 'Depth Arm', expected: 'Middle Relief Arm' },
+test('the frontend performs no semantic rewriting of governed labels', () => {
+  // VOC-001 moved wording ownership to the backend. This file used to rewrite
+  // authored labels on the way out (Trust Arm -> Trusted Arm,
+  // Rest-Restricted -> Limited Rest, Monitor -> On Watch), which meant the
+  // rendered chip was decided by two files. Those substitutions are gone, and
+  // this proves it: whatever the backend authors for a valid key is what the
+  // reader sees, verbatim, awkward or not.
+  const awkward = [
+    { catalog: 'role', key: 'trust_arm', authored: 'Trust Arm' },
+    { catalog: 'role', key: 'bridge_arm', authored: 'Bridge Arm' },
+    { catalog: 'role', key: 'depth_arm', authored: 'Depth Arm' },
+    { catalog: 'read', key: 'rest_restricted', authored: 'Rest-Restricted' },
+    { catalog: 'read', key: 'watch_arm', authored: 'Monitor' },
   ]
-  for (const { key, label, expected } of cases) {
+  for (const { catalog, key, authored } of awkward) {
     const labels = getPitcherLabels({
-      pitcher_labels: { role: { kind: 'role', key, label, source: 'backend:test' } },
+      pitcher_labels: { [catalog]: { kind: catalog, key, label: authored, source: 'backend:test' } },
     })
-    assert.equal(labels.role.label, expected)
+    assert.equal(labels[catalog].label, authored, `${key} must render verbatim`)
   }
+})
+
+test('the frontend source carries no label substitution table', () => {
+  // A regression here would reintroduce the second owner rather than merely
+  // producing a wrong string, so it is worth pinning at the source level.
+  // Comments are allowed to name the retired wording — explaining what was
+  // removed is the point. Executable lines are not.
+  const code = readFileSync(new URL('../src/utils/pitcherLabels.js', import.meta.url), 'utf8')
+    .split('\n')
+    .filter(line => !line.trim().startsWith('//'))
+    .join('\n')
+  for (const retired of [
+    'Rest-Restricted', 'Trust Arm', 'Bridge Arm', 'Depth Arm', 'Monitor',
+  ]) {
+    assert.equal(code.includes(retired), false, `leaked substitution: ${retired}`)
+  }
+  assert.equal(code.includes('.replace('), false)
+  assert.equal(code.includes('publicLabel'), false)
+})
+
+test('an absent authored label falls back to the catalog wording', () => {
+  const labels = getPitcherLabels({
+    pitcher_labels: {
+      role: { kind: 'role', key: 'coverage_arm', source: 'backend:test' },
+      read: { kind: 'read', key: 'watch_arm', label: '   ', source: 'backend:test' },
+    },
+  })
+  assert.equal(labels.role.label, 'Coverage Arm')
+  assert.equal(labels.read.label, 'Watch Arm')
 })
 
 test('canonical role keys render their canonical labels', () => {
@@ -177,7 +219,7 @@ test('canonical role keys render their canonical labels', () => {
     { key: 'bridge_arm', expected: 'Setup Arm' },
     { key: 'depth_arm', expected: 'Middle Relief Arm' },
     { key: 'coverage_arm', expected: 'Coverage Arm' },
-    { key: 'limited_read', expected: 'Limited Read' },
+    { key: 'limited_read', expected: 'Role Unclear' },
   ]
   for (const { key, expected } of cases) {
     const labels = getPitcherLabels({
@@ -188,16 +230,36 @@ test('canonical role keys render their canonical labels', () => {
   }
 })
 
-test('a backend-authored depth_arm role can never render as Setup Arm', () => {
-  // The role KEY is the authority: even a malformed payload that carries
-  // another role's wording must render the key's canonical label, so one
-  // baseball role can never be reinterpreted as another.
-  const malformed = getPitcherLabels({
+test('the frontend never maps one role key onto another role identity', () => {
+  // The frontend's job is a KEYED LOOKUP, not a translation. Given a payload
+  // whose authored wording contradicts its key, the frontend must not "fix" it
+  // in either direction: it renders the authored text verbatim, and the
+  // identity it attaches — key, tone, reader definition — stays the key's own.
+  // The Setup Arm chip's styling and definition are never borrowed.
+  const contradictory = getPitcherLabels({
     pitcher_labels: { role: { kind: 'role', key: 'depth_arm', label: 'Bridge Arm', source: 'backend:test' } },
   })
-  assert.equal(malformed.role.key, 'depth_arm')
-  assert.equal(malformed.role.label, 'Middle Relief Arm')
-  assert.notEqual(malformed.role.label, 'Setup Arm')
+  assert.equal(contradictory.role.key, 'depth_arm')
+  assert.equal(contradictory.role.label, 'Bridge Arm')
+  assert.equal(contradictory.role.definition, PITCHER_ROLE_LABELS.DEPTH_ARM.definition)
+  assert.deepEqual(contradictory.role.tone, PITCHER_ROLE_LABELS.DEPTH_ARM.tone)
+  assert.notEqual(contradictory.role.definition, PITCHER_ROLE_LABELS.BRIDGE_ARM.definition)
+  // And the governed backend cannot actually author this: its own contract
+  // test (backend/tests/test_pitcher_public_labels.py) pins depth_arm to
+  // 'Middle Relief Arm'.
+})
+
+test('role and read fallbacks are different words', () => {
+  // The collision VOC-001 removed: both families used to fall back to
+  // 'Limited Read', so two chips on one card could read identically while
+  // meaning different things.
+  assert.equal(PITCHER_ROLE_LABELS.LIMITED_READ.label, 'Role Unclear')
+  assert.equal(PITCHER_READ_LABELS.LIMITED_READ.label, 'Limited Read')
+  assert.notEqual(
+    PITCHER_ROLE_LABELS.LIMITED_READ.label,
+    PITCHER_READ_LABELS.LIMITED_READ.label,
+  )
+  assert.equal(APPROVED_ROLE_LABELS.includes('Limited Read'), false)
 })
 
 test('usage-role vocabulary contract matches the backend canonical table', () => {
@@ -208,8 +270,8 @@ test('usage-role vocabulary contract matches the backend canonical table', () =>
     setup_bridge: { key: 'bridge_arm', label: 'Setup Arm' },
     middle_relief: { key: 'depth_arm', label: 'Middle Relief Arm' },
     long_multi_inning: { key: 'coverage_arm', label: 'Coverage Arm' },
-    low_unclear: { key: 'limited_read', label: 'Limited Read' },
-    insufficient_data: { key: 'limited_read', label: 'Limited Read' },
+    low_unclear: { key: 'limited_read', label: 'Role Unclear' },
+    insufficient_data: { key: 'limited_read', label: 'Role Unclear' },
   }
   assert.deepEqual(Object.keys(USAGE_ROLE_PUBLIC_ROLES).sort(), Object.keys(expected).sort())
   for (const [roleKey, { key, label }] of Object.entries(expected)) {

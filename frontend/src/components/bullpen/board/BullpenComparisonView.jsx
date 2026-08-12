@@ -170,7 +170,7 @@ export default function BullpenComparisonView({ payload }) {
       {/* 1. Team State for each side, from the same backend authority the team
           boards use. No winner, edge, lean, advantage, grade, score, or rank. */}
       <section aria-label="Team State comparison">
-        <h3 className="mb-2 font-mono text-xs uppercase tracking-widest text-chalk400">Team State</h3>
+        <h2 className="mb-2 font-mono text-xs uppercase tracking-widest text-chalk400">Team State</h2>
         <div className="grid gap-3 sm:grid-cols-2">
           <TeamStateChip label={view.labelA} teamState={view.teamStateA} />
           <TeamStateChip label={view.labelB} teamState={view.teamStateB} />
@@ -179,7 +179,7 @@ export default function BullpenComparisonView({ payload }) {
 
       {/* 2. Freshness information */}
       <section aria-label="Comparison freshness">
-        <h3 className="mb-2 font-mono text-xs uppercase tracking-widest text-chalk400">Freshness</h3>
+        <h2 className="mb-2 font-mono text-xs uppercase tracking-widest text-chalk400">Freshness</h2>
         <div className="grid gap-3 sm:grid-cols-2">
           <FreshnessChip label={view.labelA} freshness={view.freshnessA} />
           <FreshnessChip label={view.labelB} freshness={view.freshnessB} />
@@ -188,7 +188,7 @@ export default function BullpenComparisonView({ payload }) {
 
       {/* 3. Side-by-side bullpen read */}
       <section aria-label="Side-by-side bullpen read">
-        <h3 className="mb-2 font-mono text-xs uppercase tracking-widest text-chalk400">Side-by-side Bullpen Read</h3>
+        <h2 className="mb-2 font-mono text-xs uppercase tracking-widest text-chalk400">Side-by-side Bullpen Read</h2>
         <SnapshotTable view={view} />
       </section>
 
@@ -200,7 +200,7 @@ export default function BullpenComparisonView({ payload }) {
         className="scroll-mt-24 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/60"
       >
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-          <h3 className="font-mono text-xs uppercase tracking-widest text-chalk400">Comparison</h3>
+          <h2 className="font-mono text-xs uppercase tracking-widest text-chalk400">Comparison</h2>
           <span className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
             Workload Read: {view.confidenceLabel}
           </span>
@@ -230,7 +230,7 @@ export default function BullpenComparisonView({ payload }) {
       {/* 5. Team board links. The comparison compares; each full board lives
           on the Team Board tab instead of being embedded twice here. */}
       <section aria-label="Open a full team board">
-        <h3 className="mb-2 font-mono text-xs uppercase tracking-widest text-chalk400">Full Team Boards</h3>
+        <h2 className="mb-2 font-mono text-xs uppercase tracking-widest text-chalk400">Full Team Boards</h2>
         <div className="flex flex-wrap gap-3">
           <TeamBoardLink team={payload?.team_a?.team} label={view.labelA} />
           <TeamBoardLink team={payload?.team_b?.team} label={view.labelB} />

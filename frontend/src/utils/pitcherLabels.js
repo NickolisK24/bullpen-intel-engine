@@ -39,10 +39,13 @@ export const PITCHER_ROLE_LABELS = Object.freeze({
     'Existing usage read points to lighter middle-relief usage; a usage label, not a talent judgment.',
     { borderColor: 'rgba(203,213,225,0.30)', backgroundColor: 'rgba(203,213,225,0.07)', color: '#cbd5e1' },
   ),
+  // The ROLE family's fallback, and deliberately not 'Limited Read' — that
+  // wording is the READ family's fallback below and means something else.
+  // Mirrors backend ROLE_PUBLIC_LABELS['limited_read']. The key is unchanged.
   LIMITED_READ: role(
     'limited_read',
-    'Limited Read',
-    'The current payload does not support a clear role label.',
+    'Role Unclear',
+    'Not enough usage evidence to assign a public bullpen role.',
     { borderColor: 'rgba(148,163,184,0.28)', backgroundColor: 'rgba(148,163,184,0.07)', color: '#cbd5e1' },
   ),
 })
@@ -124,24 +127,22 @@ function normalizeKey(value) {
   return String(value || '').trim().toLowerCase()
 }
 
-// One public role vocabulary: backend-authored labels that still use the
-// retired role wording are rewritten to the canonical public set
-// (Trusted Arm / Setup Arm / Middle Relief Arm / Coverage Arm / Limited Read).
-function publicLabel(value) {
-  return String(value || '')
-    .replace(/\bRest-Restricted\b/g, 'Limited Rest')
-    .replace(/\bMonitor\b/g, 'On Watch')
-    .replace(/\bRestricted\b/g, 'Limited')
-    .replace(/\bTrust Arm\b/g, 'Trusted Arm')
-    .replace(/\bBridge Arm\b/g, 'Setup Arm')
-    .replace(/\bDepth Arm\b/g, 'Middle Relief Arm')
-}
-
 function authoredLabels(card) {
   return card?.pitcher_labels || card?.pitcherLabels || {}
 }
 
-function mergeAuthoredLabel(payload, catalogByKey, fallback, { preferCatalogLabel = false } = {}) {
+// VOC-001: the backend owns the wording. This file used to run every authored
+// label through a set of string substitutions (Rest-Restricted -> Limited Rest,
+// Trust Arm -> Trusted Arm, Monitor -> On Watch, ...), which made the rendered
+// chip a negotiation between two files. The backend now emits the canonical
+// wording, so the substitutions are gone rather than merely unused.
+//
+// What remains is a KEYED LOOKUP, not a translation: the backend key selects
+// local tone and reader definition, and the backend's own label text is
+// rendered verbatim. A key the catalog does not recognise fails closed to that
+// family's fallback, so an unknown key can never borrow another role's styling
+// or another family's wording.
+function mergeAuthoredLabel(payload, catalogByKey, fallback) {
   if (!payload || typeof payload !== 'object') {
     return {
       ...fallback,
@@ -158,22 +159,21 @@ function mergeAuthoredLabel(payload, catalogByKey, fallback, { preferCatalogLabe
     }
   }
 
+  const authored = typeof payload.label === 'string' ? payload.label.trim() : ''
   return {
     ...catalog,
-    label: preferCatalogLabel ? catalog.label : publicLabel(payload.label || catalog.label),
+    // Verbatim. An awkward-but-valid backend label is the backend's decision to
+    // make; only an absent one falls back to the catalog wording.
+    label: authored || catalog.label,
     source: payload.source || 'backend',
   }
 }
 
 export function derivePitcherRoleLabel(card) {
-  // The backend-authored role KEY is the authority; the rendered wording always
-  // comes from the canonical catalog so one role key can never be rewritten
-  // into another baseball role's label.
   return mergeAuthoredLabel(
     authoredLabels(card).role,
     ROLE_BY_KEY,
     PITCHER_ROLE_LABELS.LIMITED_READ,
-    { preferCatalogLabel: true },
   )
 }
 

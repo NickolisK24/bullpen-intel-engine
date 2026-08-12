@@ -325,7 +325,115 @@ At minimum:
 - shadow remains zero-write and reports its own verdict independently;
 - public surfaces expose the correct represented baseball date.
 
-## 18. Related Current Authorities
+## 18. Generated-Content Publication (`static-team-story-preview`)
+
+This is the only job in the workflow that writes to the repository, and the only
+automated path by which anything reaches `main` without a pull request. D-053
+governs it.
+
+**Job:** `static-team-story-preview`. Runs only after `public-sync` succeeds, and
+only on the daily lane (`0 10 * * *` or `workflow_dispatch mode=daily`). It holds
+`contents: write`; every other job in this workflow is `contents: read`.
+
+### Generator
+
+`backend/scripts/export_team_story_pages.py`, via
+`services/team_story_previews.write_team_story_pages`. It resolves ONE trusted
+published dashboard snapshot, takes every board from the trusted public-serving
+path, and stamps each page with the snapshot it came from. With no valid
+published snapshot it writes nothing and exits non-zero — there is no
+live-builder fallback and no fabricated present-tense claim.
+
+### Generated paths
+
+```text
+frontend/public/team/{ABBR}/index.html   one per MLB club
+frontend/public/team/index.html          invalid-team fallback
+```
+
+Nothing else. `frontend/public/og/baseballos-card.svg` is a static committed
+asset that the generator never writes, and it is not part of this commit.
+
+### Gates, in order
+
+```text
+export (captures the exporter's structured result)
+-> delivery gate      backend/scripts/verify_generated_team_previews.py
+-> npm ci             frontend/
+-> npm test           frontend/
+-> npm run build      frontend/
+-> stage + tree identity
+-> commit + tree equality proof
+-> fast-forward push
+```
+
+The frontend commands and Node major are mirrored from the `frontend-tests` job
+in `.github/workflows/ci.yml` so the gate and canonical CI cannot drift. No step
+on this path carries `continue-on-error`.
+
+The **delivery gate** proves the filesystem agrees with what the exporter
+declared: every declared page present and non-empty, the fallback intact, no
+stale page left behind, receipts present on every dated claim, one publication
+snapshot across the whole set, and the withheld set on disk matching the declared
+one. It decides no baseball meaning and imports no service, model, or Flask app.
+
+### Tree-exact provenance
+
+The claim BaseballOS makes is deliberately precise:
+
+> The filesystem tree that passed the delivery gate, the frontend test suite, and
+> the production build is byte-for-byte the tree the generated commit carries.
+
+It is not "the generated commit SHA was tested" — a SHA cannot be tested before
+it exists. The proof has two links: a sha256 digest of the generated files taken
+before the frontend gate and recomputed after it must match, and `git write-tree`
+taken from the index before any commit must equal `HEAD^{tree}` after it. The
+equality check runs **before** the push; a mismatch fails the job with nothing
+pushed.
+
+### Automation identity
+
+Automated commits are authored and committed as:
+
+```text
+BaseballOS Automation <baseballoshq@gmail.com>
+```
+
+never as a person, and never with AI or vendor attribution. The commit body
+carries `Workflow-Run`, `Workflow-Run-Attempt`, `Source-SHA`, `Validated-Tree`,
+`Snapshot-ID`, and `Data-Through`, taken from the exporter's structured result
+rather than scraped from the rendered HTML, so `git show --format=fuller`
+explains the commit without anyone having to guess its origin.
+
+### Fail-closed behaviour
+
+Any failing gate means no commit and no push. The previously published pages stay
+exactly where they are and continue to state the baseball date they actually
+describe — which is honest, and is the designed outcome rather than a
+degradation. There is no fallback commit and no forced publication.
+
+A run that generates no change stages nothing, creates no empty commit, and
+exits successfully. Change detection compares the index after staging, not the
+working tree, so a newly generated page cannot be mistaken for "no changes".
+
+### Non-fast-forward behaviour
+
+The push is fast-forward only — no `--force`, no `--force-with-lease`, no reset,
+no automatic rebase or merge. If `main` advanced while the run was generating,
+the push is refused and the job fails loudly. Human work is never overwritten to
+publish a preview. The correct response is to let the next authorized scheduled
+run publish; do not re-run the daily workflow to force it, which D-051 forbids
+in any case.
+
+### What does not follow
+
+The generated push is made with the default `GITHUB_TOKEN`, so it still does not
+trigger a follow-up CI run — and it is not supposed to. The whole point of the
+gate is that validation happens before the commit becomes public repository
+state, so no PAT, GitHub App, `repository_dispatch`, or recursive workflow
+mechanism is needed or used.
+
+## 19. Related Current Authorities
 
 - [Platform Architecture & Operations Manual](../canonical/04_PLATFORM_ARCHITECTURE_OPERATIONS.md)
 - [Bullpen Intelligence Standard](../canonical/02_BULLPEN_INTELLIGENCE_STANDARD.md)
@@ -333,5 +441,7 @@ At minimum:
 - [Daily publication-critical contract](DAILY_SYNC_PUBLICATION_CRITICAL_CONTRACT.md)
 - [Game-driven daily ingestion subsystem](GAME_DRIVEN_DAILY_INGESTION.md)
 - [August 6 runtime-budget incident evidence](../audits/DAILY_SYNC_RUNTIME_BUDGET_EXHAUSTION_2026-08-06.md)
+- [Generated-content CI gate and automation identity (D-053)](../decisions/2026-08-12-generated-content-ci-gate-and-automation-identity.md)
 - GitHub issue `#620` — OPS-002
 - GitHub issue `#593` — OPS-001 scheduled observation closeout
+- GitHub issue `#598` — CI-003 generated-content CI validation

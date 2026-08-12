@@ -8,7 +8,7 @@
   "timing_note": "measured_seconds values are balancing inputs only. They are not test-selection authority: the per-shard file lists decide what runs, and \"python scripts/ci_shard.py verify\" proves those lists cover live pytest collection exactly once.",
   "shards": {
     "1": {
-      "measured_seconds": 499.109,
+      "measured_seconds": 502.259,
       "files": [
         {
           "path": "tests/test_availability_unavailable_experiment.py",
@@ -165,6 +165,18 @@
         {
           "path": "tests/test_postgame_shadow_scope.py",
           "measured_seconds": 26.378
+        },
+        {
+          "path": "tests/test_product_roadmap_current_state.py",
+          "measured_seconds": 0.1
+        },
+        {
+          "path": "tests/test_public_copy_contract.py",
+          "measured_seconds": 2.8
+        },
+        {
+          "path": "tests/test_public_vocabulary_family_contract.py",
+          "measured_seconds": 0.35
         },
         {
           "path": "tests/test_readiness_freshness_partial_sync.py",
@@ -610,7 +622,7 @@
       ]
     },
     "3": {
-      "measured_seconds": 501.329,
+      "measured_seconds": 501.549,
       "files": [
         {
           "path": "tests/test_active_bullpen_readiness_resolver.py",
@@ -703,6 +715,10 @@
         {
           "path": "tests/test_bullpen_identity_distribution_review.py",
           "measured_seconds": 0.0
+        },
+        {
+          "path": "tests/test_bullpen_intelligence_standard_vocabulary.py",
+          "measured_seconds": 0.42
         },
         {
           "path": "tests/test_bullpen_optionality_context.py",
@@ -803,6 +819,14 @@
         {
           "path": "tests/test_gamelog_field_authority.py",
           "measured_seconds": 0.013
+        },
+        {
+          "path": "tests/test_generated_content_ci_gate_workflow_contract.py",
+          "measured_seconds": 0.22
+        },
+        {
+          "path": "tests/test_inherited_runners_authority_workflow_contract.py",
+          "measured_seconds": 0.42
         },
         {
           "path": "tests/test_inherited_traffic_evidence.py",
@@ -923,6 +947,10 @@
         {
           "path": "tests/test_postgame_refresh.py",
           "measured_seconds": 8.092
+        },
+        {
+          "path": "tests/test_product_experience_standard_vocabulary.py",
+          "measured_seconds": 0.08
         },
         {
           "path": "tests/test_provenance_framework.py",
@@ -1123,7 +1151,7 @@
       ]
     },
     "4": {
-      "measured_seconds": 498.39,
+      "measured_seconds": 503.19,
       "files": [
         {
           "path": "tests/test_active_bullpen_artifact_publication.py",
@@ -1284,6 +1312,10 @@
         {
           "path": "tests/test_progressive_source_authority_identity.py",
           "measured_seconds": 9.254
+        },
+        {
+          "path": "tests/test_public_fatigue_score_exposure.py",
+          "measured_seconds": 4.8
         },
         {
           "path": "tests/test_public_recent_work.py",

@@ -22,9 +22,24 @@ ADMIN_API_TOKEN env var):
 import hmac
 from functools import wraps
 
-from flask import current_app, jsonify, request
+from flask import current_app, g, jsonify, request
 
 ADMIN_TOKEN_HEADER = 'X-Admin-Token'
+
+# Set on ``flask.g`` once a request has cleared the guard below. Response-level
+# public boundaries read it to tell an authorized internal read apart from an
+# anonymous one — see services/public_fatigue_view.py.
+ADMIN_AUTHORIZED_FLAG = 'baseballos_admin_authorized'
+
+
+def mark_request_admin_authorized():
+    """Record that the current request passed the admin-token guard."""
+    setattr(g, ADMIN_AUTHORIZED_FLAG, True)
+
+
+def request_is_admin_authorized():
+    """Whether the current request cleared the admin-token guard."""
+    return bool(getattr(g, ADMIN_AUTHORIZED_FLAG, False))
 
 
 def _expected_token():
@@ -51,6 +66,7 @@ def require_admin_token(view):
                 'Set ADMIN_API_TOKEN to require the %s header.',
                 request.path, ADMIN_TOKEN_HEADER,
             )
+            mark_request_admin_authorized()
             return view(*args, **kwargs)
 
         if not provided or not hmac.compare_digest(provided, expected):
@@ -58,6 +74,7 @@ def require_admin_token(view):
                 'error': f'Unauthorized: a valid {ADMIN_TOKEN_HEADER} header is required.',
             }), 401
 
+        mark_request_admin_authorized()
         return view(*args, **kwargs)
 
     return wrapper

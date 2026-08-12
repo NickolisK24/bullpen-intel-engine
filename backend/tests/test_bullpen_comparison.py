@@ -113,11 +113,14 @@ class TestObservations:
         comp = build_team_comparison(a, b)
         restricted = next(o for o in comp['observations'] if o['dimension'] == 'restricted')
         assert restricted['leader'] == 'B'  # Bears have 5 restricted vs 2
+        # Public vocabulary: the engine states Avoid and Monitor are never
+        # reader words (FE-001 / #591). Their public forms are Unavailable and
+        # On Watch, decided by services/public_bullpen_copy.py.
         assert restricted['statement'].startswith(
-            'The Bears currently have more relievers marked Avoid or Unavailable because '
+            'The Bears currently have more relievers marked Unavailable because '
         )
-        assert 'The Bears have five restricted arms' in restricted['statement']
-        assert 'The Aces have both restricted arms' in restricted['statement']
+        assert 'The Bears have five limited or unavailable arms' in restricted['statement']
+        assert 'The Aces have both limited or unavailable arms' in restricted['statement']
         assert 'late-inning' not in restricted['statement'].lower()
         assert restricted['team_a_value'] == 2
         assert restricted['team_b_value'] == 5
@@ -131,7 +134,7 @@ class TestObservations:
 
         assert monitor['leader'] == 'A'
         assert 'carrying recent workload' in monitor['statement']
-        assert 'fewer relievers in the Monitor group' in comp['summary']['statement']
+        assert 'fewer relievers in the On Watch group' in comp['summary']['statement']
         assert 'carrying caution' not in text
 
     def test_uses_neutral_language_no_grading_terms(self):
@@ -224,8 +227,8 @@ class TestNarrativeEvidenceAlignment:
         comp = build_team_comparison(a, b)
         restricted = next(o for o in comp['observations'] if o['dimension'] == 'restricted')
         monitor = next(o for o in comp['observations'] if o['dimension'] == 'monitor')
-        assert 'marked Avoid or Unavailable' in restricted['statement']
-        assert 'in the Monitor group' in monitor['statement']
+        assert 'marked Unavailable' in restricted['statement']
+        assert 'in the On Watch group' in monitor['statement']
 
     def test_no_leverage_or_manager_language_across_many_distributions(self):
         distributions = [
@@ -449,7 +452,7 @@ class TestCompareEndpoint:
         assert compare_card['public_role_read'] == board_card['public_role_read']
         assert compare_card['pitcher_labels']['role'] == board_card['pitcher_labels']['role']
         assert compare_card['public_role_read']['key'] == 'limited_read'
-        assert compare_card['public_role_read']['headline'] == 'Limited Read'
+        assert compare_card['public_role_read']['headline'] == 'Role Unclear'
 
     def test_compare_carries_the_same_canonical_team_state_contract_for_both_sides(self, client):
         """Both sides expose the board's backend-owned Team State, unmerged."""

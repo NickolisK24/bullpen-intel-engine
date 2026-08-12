@@ -265,18 +265,35 @@ test('the desktop masthead carries the six primary public destinations', () => {
   }
 })
 
-test('Vercel keeps shareable team URLs out of the SPA catch-all', () => {
+test('Vercel serves canonical team preview files before the invalid-team and SPA fallbacks', () => {
   const config = JSON.parse(readFileSync(new URL('../vercel.json', import.meta.url), 'utf8'))
   const rewrites = config.rewrites || []
+  const teamRoot = new URL('../public/team/', import.meta.url)
+  const teams = readdirSync(teamRoot, { withFileTypes: true })
+    .filter(entry => entry.isDirectory())
+    .map(entry => entry.name)
+    .sort()
+  const canonicalTeamSource = '^/team/(ATH|ATL|AZ|BAL|BOS|CHC|CIN|CLE|COL|CWS|DET|HOU|KC|LAA|LAD|MIA|MIL|MIN|NYM|NYY|PHI|PIT|SD|SEA|SF|STL|TB|TEX|TOR|WSH)$'
 
   assert.deepEqual(rewrites[0], {
+    source: canonicalTeamSource,
+    destination: '/team/$1/index.html',
+  })
+  assert.deepEqual(rewrites[1], {
     source: '/team/(.*)',
     destination: '/team/index.html',
   })
-  assert.deepEqual(rewrites[1], {
+  assert.deepEqual(rewrites[2], {
     source: '/(.*)',
     destination: '/index.html',
   })
+
+  const canonicalTeamPattern = new RegExp(canonicalTeamSource)
+  assert.equal(teams.length, 30)
+  for (const team of teams) {
+    assert.equal(canonicalTeamPattern.test(`/team/${team}`), true, `${team} is missing from the canonical team rewrite`)
+  }
+  assert.equal(canonicalTeamPattern.test('/team/INVALID'), false)
 })
 
 test('invalid team share fallback and generic OG card are static public assets', () => {

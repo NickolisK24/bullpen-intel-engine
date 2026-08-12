@@ -15,6 +15,12 @@ from models.scheduled_game import ScheduledGame
 from services import pitcher_season_ledger_coverage
 from services import public_team_relief_work
 from tests.db_config import configure_test_database, create_test_schema, drop_test_schema
+from tests.generated_team_pages import (
+    GENERATED_TEAM_PAGE_ABBREVIATIONS,
+    GENERATED_TEAM_PAGE_FILES,
+    ROUTED_TEAM_PREVIEW_DELIVERY_FILES,
+)
+from tests.public_vocabulary_files import PUBLIC_VOCABULARY_FILES
 from utils.db import db
 
 
@@ -1543,9 +1549,142 @@ def test_existing_public_routes_behavior_freeze(monkeypatch):
         'frontend/tests/dashboardScopeClarification.test.mjs',
         'frontend/tests/tonightsBullpenBoardContext.test.mjs',
     }
+    allowed_public_score_removal_files = {
+        # sec-001 / #595 (remove internal fatigue scoring from the public API):
+        # the unauthenticated API stops publishing the internal 0-100 workload
+        # composite, its component sub-scores, the internal risk tier, and the
+        # FatigueScore row's own database keys. Public routes serve a
+        # purpose-built workload view model instead of broad ORM serialization,
+        # and the scored view is retained behind the existing admin token.
+        #
+        # Frontend changes are consumer plumbing only: the Reliever Finder row
+        # now addresses a pitcher through the pitcher object instead of the
+        # score row's foreign key, the board card view model drops a computed
+        # score field that nothing rendered, and the unused local mirror of the
+        # backend fatigue model is deleted. No rendered label, availability
+        # status, threshold, vocabulary, ordering, or route changed.
+        'frontend/src/components/bullpen/Bullpen.jsx',
+        'frontend/src/components/bullpen/board/tonightsBullpenBoardView.js',
+        'frontend/src/utils/fatigueModel.js',
+        # Test-only: fixtures re-cut to the narrowed public payload, plus the
+        # new frontend regression suite for the removed fields.
+        'frontend/tests/fixtures/availabilityStatusFixtures.mjs',
+        'frontend/tests/fixtures/bullpenBoardFixtures.mjs',
+        'frontend/tests/relieverFinder.test.mjs',
+        'frontend/tests/publicScoreExposure.test.mjs',
+    }
+
+    allowed_public_copy_authority_files = {
+        # fe-001 / #591 (frontend public-copy authority): meaning-bearing public
+        # language on the State -> Why -> Evidence path moves to the backend copy
+        # authority (services/public_bullpen_copy.py) and the frontend renders it
+        # verbatim. availabilityView.js stops deriving the public availability
+        # label and renders the backend-published one; copySuppressionAccounting
+        # is a temporary operator-only counter with no UI, no network, and no
+        # payload change; the test file is the rendering contract. No public
+        # label, availability threshold, classification, vocabulary decision,
+        # route, or Team State behavior changes.
+        'frontend/src/components/bullpen/availabilityView.js',
+        'frontend/src/utils/copySuppressionAccounting.js',
+        'frontend/tests/publicCopyAuthority.test.mjs',
+    }
+
+    allowed_public_vocabulary_parity_files = {
+        # voc-001 / #638 (public vocabulary parity): reader-facing wording only.
+        # Backend pitcher_public_labels.py becomes the sole owner of the public
+        # role/read strings; pitcherLabels.js stops rewriting them and renders
+        # the authored label verbatim. Two semantic collisions are removed —
+        # the role and read families no longer share the fallback word
+        # 'Limited Read' (role says 'Role Unclear'), and the data-status badge
+        # stops borrowing the baseball words 'Limited' and 'Healthy'
+        # (Current / Partial Data / Stale / Data Unavailable). Read confidence
+        # becomes an explicit High/Medium/Low scale instead of a second
+        # arm-read vocabulary.
+        #
+        # No threshold, classification, derivation, authority, gate, or
+        # timestamp changes: every engine key, availability status, Team State
+        # value, freshness computation and publication rule is byte-identical,
+        # which test_public_vocabulary_parity_changes_wording_only proves
+        # against the diff. Exact paths only, never a directory exemption.
+        'frontend/src/utils/pitcherLabels.js',
+        'frontend/src/components/bullpen/availabilityView.js',
+        'frontend/src/components/dashboard/syncStatusView.js',
+        'frontend/src/components/bullpen/board/teamGameContextView.js',
+        'frontend/src/components/bullpen/board/tonightsBullpenBoardView.js',
+        # The four vocabulary contract tests no earlier workstream
+        # allowlisted. Test-only: they assert the new canonical wording and
+        # change no product code.
+        'frontend/tests/availabilityView.test.mjs',
+        'frontend/tests/bullpenIntelligencePanel.test.mjs',
+        'frontend/tests/dataThroughAuthority.test.mjs',
+        'frontend/tests/gameContextVisualHierarchy.test.mjs',
+    }
+
+    allowed_bullpen_page_identity_files = {
+        # ux-002 / #600 (bullpen page identity): /bullpen renders three
+        # canonically different views and had no H1 at all, so the route shell
+        # now derives one contextual page heading from the active view and the
+        # already-fetched team list. SectionHeader gains an opt-in `as` prop and
+        # still renders h2 for every other caller; the new test file is the
+        # rendered heading contract. Semantic heading structure only: no Team
+        # State derivation, no availability or freshness logic, no backend call,
+        # no public vocabulary change, no route or query-parameter change.
+        'frontend/src/components/UI/SectionHeader.jsx',
+        'frontend/src/components/bullpen/board/TonightsBullpenBoard.jsx',
+        'frontend/tests/bullpenPageIdentity.test.mjs',
+    }
+
+    allowed_public_vocabulary_files = {
+        # voc-001 / #638 (public vocabulary parity): reader-facing wording gets
+        # one owner. The backend emits the final pitcher role/read strings and
+        # the frontend renders them verbatim instead of rewriting them; the role
+        # and read families stop sharing the fallback word 'Limited Read'; read
+        # confidence stops reading as a second baseball read; and the
+        # data-status badges stop borrowing baseball words. Strings only — no
+        # threshold, classification, derivation, availability rule, roster or
+        # publication authority, Team State projection, freshness computation,
+        # timestamp, or engine key changed.
+        #
+        # Exact paths only, never a directory exemption.
+        *PUBLIC_VOCABULARY_FILES,
+    }
+
+    allowed_static_team_preview_files = {
+        # dist-003 / #594 (routed team preview authority): the generated
+        # /team/{ABBR} pages stop publishing an undated present-tense claim in a
+        # non-canonical vocabulary. The preview builder now reads the trusted
+        # publication's canonical Team State, data-through date, and snapshot
+        # receipt instead of the team-shape adjective labels, and the exporter
+        # takes the same trusted published board every public request already
+        # takes. The generated HTML files are the regenerated output of that
+        # builder. No availability classification, threshold, Team State
+        # derivation, freshness semantic, route, or redirect target changes, and
+        # the in-product Team Board vocabulary is deliberately untouched.
+        'backend/services/team_story_previews.py',
+        'backend/scripts/export_team_story_pages.py',
+        'backend/services/share_artifact_public.py',
+        'frontend/tests/teamShare.test.mjs',
+        *GENERATED_TEAM_PAGE_FILES,
+        # The last mile of the same workstream. The Aug 11 authorized export
+        # generated all 30 trusted pages and production served the invalid-team
+        # fallback for every club, because the rewrite table had no exact-match
+        # rule ahead of the generic `/team/(.*)` catch. One rewrite is added;
+        # the generic fallback and the SPA catch-all are unchanged, so no
+        # existing public route's behavior changes and no redirect target moves
+        # — proved below by
+        # test_routed_team_preview_delivery_changes_routing_only rather than
+        # asserted here.
+        *ROUTED_TEAM_PREVIEW_DELIVERY_FILES,
+    }
 
     assert not [
         path for path in changed
+        if path not in allowed_public_vocabulary_parity_files
+        if path not in allowed_bullpen_page_identity_files
+        if path not in allowed_public_vocabulary_files
+        if path not in allowed_static_team_preview_files
+        if path not in allowed_public_copy_authority_files
+        if path not in allowed_public_score_removal_files
         if path not in allowed_canonical_team_state_files
         if path not in allowed_game_ingestion_work_state_files
         if path not in allowed_share_artifacts_domain_files
@@ -1620,6 +1759,253 @@ def test_existing_public_routes_behavior_freeze(monkeypatch):
     assert '/api/bullpen/pitchers/<int:pitcher_id>/recent-work' in rules
     assert '/api/bullpen/teams/<int:team_id>/bullpen' in rules
     assert '/api/system/internal/team-evidence' in rules
+
+
+TEAM_PREVIEW_ROUTING_FILE = 'frontend/vercel.json'
+CANONICAL_TEAM_REWRITE_SOURCE = (
+    '^/team/(ATH|ATL|AZ|BAL|BOS|CHC|CIN|CLE|COL|CWS|DET|HOU|KC|LAA|LAD|MIA|'
+    'MIL|MIN|NYM|NYY|PHI|PIT|SD|SEA|SF|STL|TB|TEX|TOR|WSH)$'
+)
+GENERIC_TEAM_FALLBACK_REWRITE = {
+    'source': '/team/(.*)',
+    'destination': '/team/index.html',
+}
+SPA_CATCH_ALL_REWRITE = {
+    'source': '/(.*)',
+    'destination': '/index.html',
+}
+
+
+def test_routed_team_preview_delivery_changes_routing_only():
+    """The DIST-003 delivery allowance is an exemption from the path guard, not
+    from its purpose.
+
+    This guard freezes existing public route behavior. The routing table is
+    allowed to change so the generated `/team/{ABBR}` pages stop resolving to
+    the invalid-team fallback, so this proves what the exemption actually
+    bought and, more importantly, what it did not: one exact-match rewrite is
+    ADDED ahead of the generic fallback, and every route that already existed
+    resolves exactly where it resolved before.
+
+    ``frontend/tests/navigationRoutes.test.mjs`` owns the detailed frontend
+    route-order contract and is not reproduced here. What is proved here is the
+    governance question — that this frozen file changed for the #594 delivery
+    correction and for nothing else.
+    """
+    config = json.loads(
+        (REPO_ROOT / TEAM_PREVIEW_ROUTING_FILE).read_text(encoding='utf-8'),
+    )
+    rewrites = config['rewrites']
+    sources = [rewrite['source'] for rewrite in rewrites]
+
+    # (A) exact, and limited to the 30 supported abbreviations.
+    assert CANONICAL_TEAM_REWRITE_SOURCE in sources
+    canonical = rewrites[sources.index(CANONICAL_TEAM_REWRITE_SOURCE)]
+    pattern = re.compile(CANONICAL_TEAM_REWRITE_SOURCE)
+    assert len(GENERATED_TEAM_PAGE_ABBREVIATIONS) == 30
+    for abbreviation in GENERATED_TEAM_PAGE_ABBREVIATIONS:
+        assert pattern.fullmatch(f'/team/{abbreviation}'), abbreviation
+        # ...and each one has the generated page this rewrite serves.
+        assert (
+            f'frontend/public/team/{abbreviation}/index.html'
+            in GENERATED_TEAM_PAGE_FILES
+        ), abbreviation
+
+    # (B) the destination is exactly the generated file for the matched club.
+    assert canonical['destination'] == '/team/$1/index.html'
+
+    # (C) it resolves BEFORE the generic fallback, or every club path would
+    # still reach the invalid-team page and the export would still be discarded.
+    assert sources.index(CANONICAL_TEAM_REWRITE_SOURCE) < sources.index(
+        GENERIC_TEAM_FALLBACK_REWRITE['source']
+    )
+
+    # (D) and (E) the two pre-existing routes survive unchanged, in order.
+    assert GENERIC_TEAM_FALLBACK_REWRITE in rewrites
+    assert SPA_CATCH_ALL_REWRITE in rewrites
+    assert sources.index(GENERIC_TEAM_FALLBACK_REWRITE['source']) < sources.index(
+        SPA_CATCH_ALL_REWRITE['source']
+    )
+
+    # (F) an unsupported abbreviation is NOT served a generated page; it keeps
+    # falling through to the invalid-team fallback exactly as before.
+    for unsupported in ('/team/INVALID', '/team/ath', '/team/ATHX', '/team/'):
+        assert not pattern.fullmatch(unsupported), unsupported
+
+    # (G) the change reaches no derivation, authority, or backend surface. A
+    # rewrite table can only reach one by naming a destination that leaves the
+    # static bundle, and none does.
+    for rewrite in rewrites:
+        assert rewrite['destination'].startswith('/')
+        assert not rewrite['destination'].startswith('//')
+        assert rewrite['destination'].endswith('.html')
+        assert '/api/' not in rewrite['destination']
+
+    source_text = (REPO_ROOT / TEAM_PREVIEW_ROUTING_FILE).read_text(
+        encoding='utf-8',
+    ).lower()
+    for token in (
+        'team_state', 'availability', 'fatigue', 'score', 'freshness',
+        'roster', 'publication', 'prediction', 'recommendation', 'api',
+        'backend', 'http',
+    ):
+        assert token not in source_text, token
+
+    # And the diff itself: this file's only change vs main is inside the
+    # rewrite table, adding the canonical rule. No header, no robots policy,
+    # and no other route is touched.
+    changed = {path.replace('\\', '/') for path in _changed_files_vs_main()}
+    if TEAM_PREVIEW_ROUTING_FILE not in changed:
+        return
+    diff = _diff_vs_main(TEAM_PREVIEW_ROUTING_FILE)
+    added = [
+        line[1:].strip() for line in diff.splitlines()
+        if line.startswith('+') and not line.startswith('+++')
+    ]
+    removed = [
+        line[1:].strip() for line in diff.splitlines()
+        if line.startswith('-') and not line.startswith('---')
+    ]
+    assert added, 'the routing file is in the diff but adds nothing'
+    # Everything added belongs to the one canonical rewrite object.
+    permitted_added = {
+        '{',
+        '},',
+        '}',
+        f'"source": "{CANONICAL_TEAM_REWRITE_SOURCE}",',
+        '"destination": "/team/$1/index.html"',
+    }
+    assert not [line for line in added if line not in permitted_added], added
+    # Nothing is removed but the brace the inserted object displaces.
+    assert not [line for line in removed if line not in {'{', '},', '}'}], removed
+
+
+BOARD_GROUP_VIEW_FILE = 'frontend/src/components/bullpen/board/tonightsBullpenBoardView.js'
+
+
+def _backend_board_group_copy():
+    """Every label and description the backend publishes for a board group."""
+    tree = ast.parse(
+        (REPO_ROOT / 'backend/services/bullpen_board.py').read_text(encoding='utf-8')
+    )
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Assign):
+            continue
+        if not any(
+            isinstance(target, ast.Name) and target.id == 'GROUP_META'
+            for target in node.targets
+        ):
+            continue
+        strings = set()
+        for value in node.value.values:
+            meta = ast.literal_eval(value)
+            strings.add(meta['label'])
+            strings.add(meta['description'])
+        return strings
+    raise AssertionError('backend GROUP_META not found')
+
+
+def _frontend_board_group_copy():
+    """The board's local fallback catalogue for the same groups."""
+    source = (REPO_ROOT / BOARD_GROUP_VIEW_FILE).read_text(encoding='utf-8')
+    block = source.split('const GROUP_FALLBACK_META = {', 1)[1].split('\n}', 1)[0]
+    return {
+        single or double
+        for single, double in re.findall(
+            r"""(?:label|description):\s*(?:'([^']*)'|"([^"]*)")""",
+            block,
+        )
+    }
+
+
+VOCABULARY_PARITY_FILES = (
+    'frontend/src/utils/pitcherLabels.js',
+    'frontend/src/components/bullpen/availabilityView.js',
+    'frontend/src/components/dashboard/syncStatusView.js',
+    'frontend/src/components/bullpen/board/teamGameContextView.js',
+    'frontend/src/components/bullpen/board/tonightsBullpenBoardView.js',
+)
+
+
+def test_public_vocabulary_parity_changed_no_governed_logic():
+    """The VOC-001 allowance is an exemption from the path guard, not its purpose.
+
+    This guard freezes existing public route behavior. VOC-001 is allowed to
+    touch reader-facing files because it changes what things are CALLED, never
+    what the product decides. Rather than inspect the shape of the diff — a
+    refactor that moves wording ownership legitimately changes non-string lines
+    — this pins the invariants a wording change must not disturb: the raw values
+    the API speaks, the variant keys that drive styling and logic, and the
+    freshness authority itself.
+    """
+    root = REPO_ROOT / 'frontend/src'
+
+    # The raw confidence values the API sends are untouched; only their display
+    # strings moved. Every key still present, no key added.
+    confidence = (root / 'components/bullpen/availabilityView.js').read_text(encoding='utf-8')
+    block = confidence.split('const CONFIDENCE_READ_LABELS = {', 1)[1].split('}', 1)[0]
+    assert sorted(re.findall(r'^\s*(\w+):', block, re.M)) == [
+        'high', 'low', 'medium', 'none', 'unknown',
+    ]
+
+    # The data-status VARIANT keys drive styling and downstream logic and are
+    # not reader-facing. They must survive a label change untouched.
+    sync = (root / 'components/dashboard/syncStatusView.js').read_text(encoding='utf-8')
+    for variant in (
+        "variant: stale ? 'stale' : 'failed'",
+        "variant: displayStale ? 'stale' : (limited ? 'limited' : 'synced')",
+        "variant: 'metadata_unavailable'",
+        "variant: 'empty'",
+    ):
+        assert variant in sync, variant
+
+    # The freshness authority is not part of the vocabulary surface.
+    assert 'export function freshnessIsCurrent(freshness) {' in sync
+    freshness_diff = [
+        line[1:].strip()
+        for line in _diff_vs_main(
+            'frontend/src/components/dashboard/syncStatusView.js'
+        ).splitlines()
+        if line.startswith(('+', '-')) and not line.startswith(('+++', '---'))
+        and not line[1:].strip().startswith('//')
+    ]
+    assert not [line for line in freshness_diff if 'freshnessIsCurrent' in line]
+
+    # The board's local group catalogue is a verbatim mirror of the backend's,
+    # never a second vocabulary. Proving that first is what lets the word
+    # 'threshold' through below: the only permitted occurrences are inside
+    # backend-authored reader copy, quoted exactly as the backend publishes it.
+    backend_group_copy = _backend_board_group_copy()
+    assert _frontend_board_group_copy() == backend_group_copy
+
+    # No threshold, window, or numeric tuning entered any of these files.
+    comparison = re.compile(r'\S+\s*[<>]=?\s*-?\d+(?:\.\d+)?')
+    for relative in VOCABULARY_PARITY_FILES:
+        diff = _diff_vs_main(relative).splitlines()
+        added = [
+            line[1:] for line in diff
+            if line.startswith('+') and not line.startswith('+++')
+        ]
+        carried_over = {
+            found
+            for line in diff
+            if line.startswith('-') and not line.startswith('---')
+            for found in comparison.findall(line[1:])
+        }
+        for line in added:
+            body = line.strip()
+            if body.startswith('//'):
+                continue
+            for found in comparison.findall(body):
+                # A comparison is permitted only when it is carried over rather
+                # than introduced: the identical expression must appear on a
+                # line this same diff removed. Moving an existing non-empty test
+                # is not tuning; a new number to compare against is.
+                assert found in carried_over, (relative, body)
+            if 'threshold' in body.lower():
+                # Permitted only as backend copy reproduced byte for byte —
+                # never as a tuning value the browser decides for itself.
+                assert any(text in body for text in backend_group_copy), (relative, body)
 
 
 def _freshness_block():

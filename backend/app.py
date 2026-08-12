@@ -212,6 +212,41 @@ def create_app(config_name=None):
     app.register_blueprint(share_cards_bp, url_prefix='/api/share-cards')
     app.register_blueprint(share_artifacts_public_bp, url_prefix='/api/share-artifacts')
 
+    # Public claim-bearing bullpen reads are publication-bound in production.
+    # Acquisition tables may advance during a sync, but Board/Compare/Tonight do
+    # not become authoritative until a trusted published snapshot says they can.
+    from services.public_serving_authority import install_public_serving_authority
+    install_public_serving_authority(app)
+
+    # SEC-001: anonymous responses never carry the internal workload composite,
+    # its component sub-scores, or the internal risk tier. Public routes are
+    # narrowed at the source; this is the boundary that keeps a stored snapshot
+    # or a future nested payload from quietly reintroducing them. Admin-token
+    # requests are exempt — internal scored access is intentionally retained.
+    from services.public_fatigue_view import install_public_score_boundary
+    install_public_score_boundary(app)
+
+    # Compare must select the trusted snapshot once for the entire response. A
+    # publication that lands between side A and side B must never create a mixed
+    # two-authority comparison.
+    if app.config.get('APP_ENV') == 'production':
+        from services.trusted_compare_authority import trusted_team_compare_view
+        app.view_functions['bullpen.compare_team_bullpens'] = trusted_team_compare_view
+
+    # The legacy admin POST /api/bullpen/sync is a second manual production full-
+    # sync entrypoint. D-051 retires manual authoritative daily operation, so the
+    # production app replaces that writer view with a refusal after routes are
+    # registered. Development/test keep the old endpoint for isolated validation.
+    if app.config.get('APP_ENV') == 'production':
+        def retired_manual_production_sync():
+            return {
+                'status': 'refused',
+                'reason': 'manual_production_daily_sync_retired',
+                'message': 'Production full daily synchronization is schedule-only.',
+            }, 410
+
+        app.view_functions['bullpen.sync_recent_logs'] = retired_manual_production_sync
+
     @app.route('/api/health')
     def health():
         return {

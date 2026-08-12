@@ -87,7 +87,7 @@ test('usage roles are described as a league-wide distribution', () => {
   assert.ok(htmlIncludes(html, 'Setup Arm'))
   assert.ok(htmlIncludes(html, 'Middle Relief Arm'))
   assert.ok(htmlIncludes(html, 'Unclear Role'))
-  assert.ok(htmlIncludes(html, 'Limited Read'))
+  assert.ok(htmlIncludes(html, 'Role Unclear'))
   assert.equal((html.match(/Bridge Arm/g) || []).length, 0)
 })
 

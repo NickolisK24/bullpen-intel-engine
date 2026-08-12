@@ -37,12 +37,18 @@ const {
 const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const htmlIncludes = (html, text) => new RegExp(escapeRegExp(text)).test(html)
 
+// Mirrors the narrowed public /api/bullpen/fatigue row: pitcher identity and
+// counted workload facts, with no score-row id, no composite, and no risk tier.
 function mkRow({ id, name, team, status, p7, rest, app7 }) {
   const [teamName, teamAbbr] = team
   return {
-    id,
-    pitcher_id: id,
-    pitcher: { full_name: name, team_name: teamName, team_abbreviation: teamAbbr },
+    pitcher: {
+      id,
+      mlb_id: 600000 + id,
+      full_name: name,
+      team_name: teamName,
+      team_abbreviation: teamAbbr,
+    },
     availability: { availability_status: status },
     pitches_last_7_days: p7,
     days_since_last_appearance: rest,

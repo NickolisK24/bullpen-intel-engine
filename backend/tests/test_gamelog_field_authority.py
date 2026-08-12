@@ -324,6 +324,39 @@ def test_the_audit_tool_reports_only_the_fields_needed_to_interpret_the_stat():
     assert audit.REPORTABLE_SOURCE_KEYS == ('balls', 'strikes', 'numberOfPitches')
 
 
+def test_the_default_profile_is_the_original_allowlist():
+    """Extending the tool to a second field must not widen the first one's
+    report. The `balls` audit reports exactly what it always reported."""
+    from scripts import inspect_gamelog_field_authority as audit
+
+    profile = audit.REPORT_PROFILES['balls']
+    assert audit.DEFAULT_FIELD == 'balls'
+    assert profile.value_fields == ('balls', 'strikes', 'pitches_thrown')
+    assert profile.source_keys == ('balls', 'strikes', 'numberOfPitches')
+
+
+def test_a_field_with_no_declared_profile_is_refused_not_guessed(monkeypatch):
+    """Auditing an undeclared field with another field's allowlist would print
+    the wrong statistic's values under the new field's name."""
+    import argparse
+
+    from scripts import inspect_gamelog_field_authority as audit
+
+    # The CLI refuses it outright...
+    with pytest.raises(SystemExit):
+        audit._parse_args([
+            '--game-pk', str(GAME_PK), '--pitcher-mlb-id', '970100',
+            '--field', 'strikeouts',
+        ])
+
+    # ...and the entry point refuses it again, before it imports the app or
+    # opens any session, because `main` is importable and callable directly.
+    monkeypatch.setattr(audit, '_parse_args', lambda argv=None: argparse.Namespace(
+        game_pk=GAME_PK, pitcher_mlb_id=970100, field='strikeouts', output=None,
+    ))
+    assert audit.main([]) == audit.EXIT_AUDIT_INCOMPLETE
+
+
 def test_the_audit_tool_pins_the_lane_off_before_importing_anything():
     import pathlib
 
@@ -425,3 +458,486 @@ def test_the_required_correction_keys_are_unchanged():
 ])
 def test_no_contract_version_moved(version, expected):
     assert getattr(reconciliation, version) == expected
+
+
+# ── The same rule, audited for a second field: inherited_runners ────────────
+# Run #491's shadow lane projected exactly one governed correction, on
+# `inherited_runners`. The audit tool could not report it, because its report
+# allowlist named only the `balls` incident's fields. These tests own the
+# extension, and they prove the RULE — no production identifier appears in any
+# assertion about behaviour.
+
+
+def _ir_boxscore_stats(*, inherited_runners=1, scored=0, **overrides):
+    stats = _boxscore_stats()
+    if inherited_runners is not None:
+        stats['inheritedRunners'] = inherited_runners
+    if scored is not None:
+        stats['inheritedRunnersScored'] = scored
+    stats.update(overrides)
+    return stats
+
+
+def _ir_split_stats(*, inherited_runners=None, **overrides):
+    """The split shape, parameterised on whether it carries the field at all."""
+    stats = _split_stats(with_balls=True)
+    if inherited_runners is not None:
+        stats['inheritedRunners'] = inherited_runners
+    stats.update(overrides)
+    return stats
+
+
+def _ir_profile():
+    from scripts import inspect_gamelog_field_authority as audit
+
+    return audit.REPORT_PROFILES['inherited_runners']
+
+
+def test_the_audit_can_report_inherited_runners():
+    profile = _ir_profile()
+    assert profile.field == 'inherited_runners'
+    assert 'inherited_runners' in profile.value_fields
+    # ...and only the one companion needed to read the count.
+    assert profile.value_fields == (
+        'inherited_runners', 'inherited_runners_scored',
+    )
+
+
+def test_the_audit_reads_its_alias_keys_from_the_canonical_planner():
+    """A second copy of the alias set could report presence for a key the
+    planner does not read."""
+    assert _ir_profile().audited_source_keys == dict(
+        reconciliation.OPTIONAL_INT_STAT_FIELDS
+    )['inherited_runners']
+
+
+def test_an_exact_zero_is_reported_as_a_value_not_as_absence():
+    """Zero inherited runners is a fact the source stated. Treating it as
+    missing would make a real correction invisible."""
+    from scripts import inspect_gamelog_field_authority as audit
+
+    evidence = audit._audited_field_evidence(
+        _ir_profile(), _ir_boxscore_stats(inherited_runners=0),
+    )
+    assert evidence['present'] is True
+    assert evidence['value'] == 0
+    assert evidence['absent_reason'] is None
+
+
+def test_a_missing_source_key_is_reported_absent_rather_than_zero():
+    from scripts import inspect_gamelog_field_authority as audit
+
+    evidence = audit._audited_field_evidence(
+        _ir_profile(), _ir_split_stats(inherited_runners=None),
+    )
+    assert evidence['present'] is False
+    assert evidence['value'] is None
+    assert evidence['absent_reason'] == audit.ABSENT_KEY_MISSING
+
+
+def test_a_present_but_empty_source_key_is_a_distinct_absence():
+    from scripts import inspect_gamelog_field_authority as audit
+
+    evidence = audit._audited_field_evidence(
+        _ir_profile(), _ir_boxscore_stats(inherited_runners=None, scored=None),
+    )
+    assert evidence['present'] is False
+    assert evidence['absent_reason'] == audit.ABSENT_KEY_MISSING
+
+    evidence = audit._audited_field_evidence(
+        _ir_profile(), _ir_split_stats(inherited_runners='' ),
+    )
+    assert evidence['present'] is False
+    assert evidence['absent_reason'] == audit.ABSENT_KEY_EMPTY
+
+
+def test_presence_matches_the_canonical_comparability_rule():
+    """Whatever the audit reports as present is exactly what the planner
+    would have compared — one predicate, not two."""
+    from scripts import inspect_gamelog_field_authority as audit
+
+    for stats in (
+        _ir_boxscore_stats(inherited_runners=0),
+        _ir_boxscore_stats(inherited_runners=2),
+        _ir_split_stats(inherited_runners=None),
+        _ir_split_stats(inherited_runners=''),
+    ):
+        reported = audit._audited_field_evidence(_ir_profile(), stats)['present']
+        comparable = 'inherited_runners' in reconciliation.correctable_fields(
+            _values(inherited_runners=0), stats, include_leverage_index=False,
+        )
+        assert reported == comparable
+
+
+def test_a_source_omitting_inherited_runners_cannot_compare_it():
+    stored = _Row(inherited_runners=1)
+    plan = _plan(
+        stored, _values(inherited_runners=None),
+        _ir_split_stats(inherited_runners=None),
+    )
+    assert plan['action'] == reconciliation.ACTION_UNCHANGED
+    assert 'inherited_runners' in plan['uncomparable_fields']
+
+
+def test_a_stored_one_against_a_sourced_zero_is_a_statistical_correction():
+    """The exact shape run #491 projected: absence is not the only way the two
+    lanes can differ, and a zero is a real value."""
+    stored = _Row(inherited_runners=1, inherited_runners_scored=0)
+    plan = _plan(
+        stored,
+        _values(inherited_runners=0, inherited_runners_scored=0),
+        _ir_boxscore_stats(inherited_runners=0),
+    )
+    assert plan['action'] == reconciliation.ACTION_UPDATE
+    assert 'inherited_runners' in plan['changed_fields']
+    assert reconciliation.DIFFERENCE_STATISTICAL in (
+        plan['difference_classifications']
+    )
+
+
+def test_inherited_runners_is_governed_as_a_statistical_correction():
+    assert reconciliation.field_category('inherited_runners') == (
+        reconciliation.CATEGORY_STATISTICAL_CORRECTION
+    )
+    assert 'inherited_runners' in reconciliation.PUBLISHED_EVIDENCE_FIELDS
+
+
+def test_the_audit_did_not_widen_the_approved_fallback_set():
+    """The diagnostic answers a question; it does not grant authority."""
+    from services import gamelog_source_authority as authority
+
+    assert authority.APPROVED_FALLBACK_FIELDS == ('balls',)
+    assert not authority.is_approved_fallback_field('inherited_runners')
+
+
+# ── The planner stays the only comparator ───────────────────────────────────
+
+
+class _Pitcher:
+    def __init__(self, pitcher_id=1, mlb_id=970100):
+        self.id = pitcher_id
+        self.mlb_id = mlb_id
+
+
+def _verdict(stored, stats):
+    from scripts import inspect_gamelog_field_authority as audit
+
+    return audit._planner_verdict(
+        stored, {'available': True}, stats, _Pitcher(), GAME_PK, _ir_profile(),
+    )
+
+
+def test_the_verdict_reports_the_planners_own_answer_for_the_field():
+    stored = _Row(inherited_runners=1, inherited_runners_scored=0)
+    verdict = _verdict(stored, _ir_boxscore_stats(inherited_runners=0))
+    assert verdict['action'] == reconciliation.ACTION_UPDATE
+    assert verdict['audited_field_changed'] is True
+    assert verdict['audited_field_uncomparable'] is False
+    assert 'inherited_runners' in verdict['changed_fields']
+    assert verdict['target_state_digest'] != verdict['stored_state_digest']
+
+
+def test_the_verdict_reports_uncomparability_rather_than_agreement():
+    stored = _Row(inherited_runners=1, inherited_runners_scored=0)
+    verdict = _verdict(stored, _ir_split_stats(inherited_runners=None))
+    assert verdict['audited_field_changed'] is False
+    assert verdict['audited_field_uncomparable'] is True
+
+
+def test_the_verdict_derives_values_through_the_canonical_builder():
+    stored = _Row(inherited_runners=1, inherited_runners_scored=0)
+    verdict = _verdict(stored, _ir_boxscore_stats(inherited_runners=0, scored=0))
+    assert verdict['derived_values'] == {
+        'inherited_runners': 0, 'inherited_runners_scored': 0,
+    }
+
+
+# ── The conclusion is evidence-bound, and refuses to guess ──────────────────
+
+
+def _audit_fixture(*, stored_value, box_stats, split_stats, stat_corrections=0):
+    """A whole audit assembled from the audit tool's own evidence builders."""
+    from scripts import inspect_gamelog_field_authority as audit
+
+    profile = _ir_profile()
+    stored_row = _Row(
+        inherited_runners=stored_value, inherited_runners_scored=0,
+    )
+    payload = {
+        'audited_field': 'inherited_runners',
+        'stored': {
+            'available': True,
+            'values': {
+                'inherited_runners': stored_value,
+                'inherited_runners_scored': 0,
+            },
+            'audited_field_stored': stored_value is not None,
+            'stat_correction_count': stat_corrections,
+        },
+        'boxscore': audit._source_evidence(
+            profile, box_stats, 'completed_game_boxscore',
+        ),
+        'game_log_split': audit._source_evidence(
+            profile, split_stats, 'player_game_log_split',
+        ),
+        'boxscore_plan': audit._planner_verdict(
+            stored_row, {'available': True}, box_stats, _Pitcher(), GAME_PK,
+            profile,
+        ),
+        'game_log_split_plan': audit._planner_verdict(
+            stored_row, {'available': True}, split_stats, _Pitcher(), GAME_PK,
+            profile,
+        ),
+    }
+    return payload, profile
+
+
+def _classify(**kwargs):
+    from scripts import inspect_gamelog_field_authority as audit
+
+    payload, profile = _audit_fixture(**kwargs)
+    return audit._classify(payload, profile)[0]
+
+
+def test_box_score_supplies_the_field_and_the_split_omits_it_is_a_shape_gap():
+    from scripts import inspect_gamelog_field_authority as audit
+
+    assert _classify(
+        stored_value=1,
+        box_stats=_ir_boxscore_stats(inherited_runners=0),
+        split_stats=_ir_split_stats(inherited_runners=None),
+    ) == audit.CLASSIFICATION_SOURCE_SHAPE_GAP
+
+
+def test_both_sources_agreeing_against_a_stored_value_is_stale_canonical():
+    from scripts import inspect_gamelog_field_authority as audit
+
+    assert _classify(
+        stored_value=1,
+        box_stats=_ir_boxscore_stats(inherited_runners=0),
+        split_stats=_ir_split_stats(inherited_runners=0),
+    ) == audit.CLASSIFICATION_STALE_STORED_VALUE
+
+
+@pytest.mark.parametrize('stat_corrections', [0, 1, 7])
+def test_the_row_correction_counter_cannot_establish_a_source_revision(
+    stat_corrections,
+):
+    """`stat_correction_count` counts corrections to the ROW, not to the field.
+
+    A row corrected once for `balls` carries exactly the same counter as a row
+    corrected for the audited field, so the counter cannot prove this field
+    ever held an earlier official value — and therefore cannot distinguish a
+    correction no lane realized from an official revision after ingestion.
+    """
+    from scripts import inspect_gamelog_field_authority as audit
+
+    classification = _classify(
+        stored_value=1, stat_corrections=stat_corrections,
+        box_stats=_ir_boxscore_stats(inherited_runners=0),
+        split_stats=_ir_split_stats(inherited_runners=0),
+    )
+    assert classification != audit.CLASSIFICATION_SOURCE_REVISION
+    assert classification == audit.CLASSIFICATION_STALE_STORED_VALUE
+
+
+def test_the_counter_does_not_change_the_classification_at_all():
+    """A correction to an unspecified field establishes no revision history
+    for this one, so it must not move the conclusion."""
+    verdicts = {
+        _classify(
+            stored_value=1, stat_corrections=count,
+            box_stats=_ir_boxscore_stats(inherited_runners=0),
+            split_stats=_ir_split_stats(inherited_runners=0),
+        )
+        for count in (0, 1, 2, 50)
+    }
+    assert len(verdicts) == 1
+
+
+def test_a_revision_is_never_claimed_without_field_specific_provenance():
+    """The vocabulary names it; the diagnostic never emits it.
+
+    Emitting it needs provenance saying WHICH field was corrected and from
+    what value. GameLog's correction columns are all row-level, so nothing in
+    this repository can support the claim.
+    """
+    import inspect
+
+    from scripts import inspect_gamelog_field_authority as audit
+
+    assert audit.CLASSIFICATION_SOURCE_REVISION in audit.CLASSIFICATION_NEVER_EMITTED
+
+    # Comments are allowed to explain the refusal; executable lines are not
+    # allowed to reach the constant or the row-level counter.
+    code = '\n'.join(
+        line for line in inspect.getsource(audit._classify).splitlines()
+        if not line.lstrip().startswith('#')
+    )
+    assert 'CLASSIFICATION_SOURCE_REVISION' not in code
+    assert 'stat_correction_count' not in code
+
+
+def test_no_field_specific_correction_provenance_exists_to_read():
+    """Pins the premise the classification rests on. If a future migration
+    adds field-level correction provenance, this fails and the revision
+    branch becomes a deliberate, reviewed decision rather than a silent one."""
+    from models.game_log import GameLog
+
+    correction_columns = sorted(
+        column.name for column in GameLog.__table__.columns
+        if 'correction' in column.name
+    )
+    assert correction_columns == [
+        'last_stat_correction_at', 'last_stat_correction_source',
+        'last_stat_correction_sync_run_id', 'stat_correction_count',
+    ]
+    # None of them names a field.
+    assert not any('field' in name for name in correction_columns)
+
+
+def test_stale_canonical_value_is_reported_as_an_observation_not_a_cause():
+    """The classification says the stored value disagrees with the sources.
+    It must not assert WHY, because the evidence does not establish why."""
+    from scripts import inspect_gamelog_field_authority as audit
+
+    payload, profile = _audit_fixture(
+        stored_value=1, stat_corrections=3,
+        box_stats=_ir_boxscore_stats(inherited_runners=0),
+        split_stats=_ir_split_stats(inherited_runners=0),
+    )
+    classification, explanation = audit._classify(payload, profile)
+    assert classification == audit.CLASSIFICATION_STALE_STORED_VALUE
+    assert 'NOT established' in explanation
+    assert 'row-level' in explanation
+
+
+def test_sources_disagreeing_with_each_other_is_a_source_conflict():
+    from scripts import inspect_gamelog_field_authority as audit
+
+    assert _classify(
+        stored_value=1,
+        box_stats=_ir_boxscore_stats(inherited_runners=0),
+        split_stats=_ir_split_stats(inherited_runners=2),
+    ) == audit.CLASSIFICATION_SOURCE_CONFLICT
+
+
+def test_no_lane_projecting_the_field_is_reported_as_no_difference():
+    from scripts import inspect_gamelog_field_authority as audit
+
+    assert _classify(
+        stored_value=0,
+        box_stats=_ir_boxscore_stats(inherited_runners=0),
+        split_stats=_ir_split_stats(inherited_runners=0),
+    ) == audit.CLASSIFICATION_NO_PROJECTED_DIFFERENCE
+
+
+def test_incomplete_evidence_fails_closed_as_unresolved():
+    from scripts import inspect_gamelog_field_authority as audit
+
+    payload, profile = _audit_fixture(
+        stored_value=1,
+        box_stats=_ir_boxscore_stats(inherited_runners=0),
+        split_stats=_ir_split_stats(inherited_runners=None),
+    )
+    payload['game_log_split'] = {'available': False, 'reason': 'no_split_for_game'}
+    payload['game_log_split_plan'] = {'available': False}
+
+    classification, explanation = audit._classify(payload, profile)
+    assert classification == audit.CLASSIFICATION_UNRESOLVED
+    assert explanation
+    payload['discrepancy_classification'] = classification
+    assert audit._authority_resolved(payload) is False
+
+
+def test_a_resolved_classification_resolves_the_authority():
+    from scripts import inspect_gamelog_field_authority as audit
+
+    payload, profile = _audit_fixture(
+        stored_value=1,
+        box_stats=_ir_boxscore_stats(inherited_runners=0),
+        split_stats=_ir_split_stats(inherited_runners=None),
+    )
+    payload['discrepancy_classification'] = audit._classify(payload, profile)[0]
+    assert audit._authority_resolved(payload) is True
+
+
+# ── The safety proof survived the extension ─────────────────────────────────
+
+
+def test_the_audit_still_reports_every_read_only_safety_field():
+    import pathlib
+
+    from scripts import inspect_gamelog_field_authority as audit
+
+    text = pathlib.Path(audit.__file__).read_text(encoding='utf-8')
+    for key in (
+        'read_only_transaction', 'write_probe_refused',
+        'database_writes_performed', 'row_fingerprint_before',
+        'row_fingerprint_after', 'row_unchanged',
+    ):
+        assert f"'{key}'" in text
+
+
+def test_the_row_fingerprint_covers_the_provenance_a_write_would_stamp():
+    """A correction to the audited field bumps the correction counter, so
+    covering it makes "the row did not change" a stronger claim."""
+    from scripts import inspect_gamelog_field_authority as audit
+
+    assert audit.FINGERPRINT_PROVENANCE_FIELDS == (
+        'stat_correction_count', 'last_stat_correction_at',
+        'last_stat_correction_source',
+    )
+
+
+def test_an_unrunnable_environment_fails_closed_instead_of_crashing():
+    """An audit that cannot reach the canonical database has an outcome, and
+    it is `unresolved` — not a traceback, which proves nothing and prints
+    paths the report is not allowed to carry."""
+    from scripts import inspect_gamelog_field_authority as audit
+
+    payload = {
+        'audited_field': 'inherited_runners',
+        'row_unchanged': None,
+        'environment_configured': False,
+        'environment_error_class': 'RuntimeError',
+    }
+    classification, explanation = audit._classify(payload, _ir_profile())
+    assert classification == audit.CLASSIFICATION_UNRESOLVED
+    assert 'not configured' in explanation
+    payload['discrepancy_classification'] = classification
+    assert audit._authority_resolved(payload) is False
+
+
+def test_the_unrunnable_path_never_claims_the_row_was_disturbed():
+    """`row_unchanged` is None when no transaction was ever opened, and a run
+    that read nothing must not exit as if it had corrupted something."""
+    from scripts import inspect_gamelog_field_authority as audit
+
+    payload = {
+        'audited_field': 'inherited_runners',
+        'game_pk': GAME_PK,
+        'pitcher_mlb_id': 970100,
+        'row_unchanged': None,
+        'database_writes_performed': 0,
+        'read_only_transaction': False,
+        'write_probe_refused': False,
+        'environment_configured': False,
+        'environment_error_class': 'RuntimeError',
+    }
+    exit_code = audit._conclude(
+        payload, _ir_profile(), None, exit_code=audit.EXIT_AUDIT_INCOMPLETE,
+    )
+    assert exit_code == audit.EXIT_AUDIT_INCOMPLETE
+    assert exit_code != audit.EXIT_UNSAFE
+    assert payload['database_writes_performed'] == 0
+
+
+def test_the_extension_added_no_production_identifier_to_the_audit_body():
+    import pathlib
+
+    from scripts import inspect_gamelog_field_authority as audit
+
+    body = pathlib.Path(audit.__file__).read_text(encoding='utf-8').split('"""', 2)[-1]
+    for identifier in ('824969', '656240', '824488', '668716'):
+        assert identifier not in body

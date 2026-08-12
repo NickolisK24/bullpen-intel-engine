@@ -232,12 +232,12 @@ def test_context_explanation_editorial_review_fixture_backed_healthy_corpus(tmp_
         'Setup Arm',
         'Coverage Arm',
         'Middle Relief Arm',
-        'Limited Read',
+        'Role Unclear',
     }.issubset(set(coverage['role_labels_found']))
     assert {
-        'Rested',
+        'Clean Option',
         'Watch Arm',
-        'Rest-Restricted',
+        'Limited Rest',
         'Unavailable',
         'Limited Read',
     }.issubset(set(coverage['read_labels_found']))
@@ -251,7 +251,10 @@ def test_context_explanation_editorial_review_fixture_backed_healthy_corpus(tmp_
         label != 'Limited Read'
         for label in coverage['team_shape_read_labels_found']
     )
-    assert 'Clean Option' not in text
+    # 'Clean Options' stays retired: it was TEAM-shape phrasing for rested
+    # late-inning depth. The singular 'Clean Option' is no longer banned —
+    # VOC-001 makes it the canonical pitcher CURRENT-READ label, so it appears
+    # here as a governed read-family label, not as the retired team concept.
     assert 'Clean Options' not in text
     assert 'length option' not in public_copy.lower()
     assert 'Interpretation weighs' not in text

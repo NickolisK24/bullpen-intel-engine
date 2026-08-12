@@ -163,7 +163,7 @@ test('similar distributions read as similar, not as a winner', () => {
 test('stale bullpen surfaces freshness limitations and degraded confidence', () => {
   const html = render(staleComparison)
   assert.ok(htmlIncludes(html, 'Recent workload unclear — read with caution'))
-  assert.ok(htmlIncludes(html, 'Workload Read: Unclear Read'))
+  assert.ok(htmlIncludes(html, 'Workload Read: Low'))
   assert.ok(htmlIncludes(html, 'one or both bullpens have degraded freshness'))
   // The board-level freshness limitation text now lives on the linked team
   // boards, not inside the comparison (the boards are no longer embedded).
@@ -205,7 +205,7 @@ test('getComparisonView maps labels, observations, and degraded confidence', () 
   assert.equal(view.getComparisonView({}).hasComparison, false)
 })
 
-test('a guarded card inherits one Limited Read conclusion through Compare', async () => {
+test('a guarded card inherits one Role Unclear conclusion through Compare', async () => {
   const { makeBoard } = await import('./fixtures/bullpenBoardFixtures.mjs')
   const boardView = await server.ssrLoadModule(
     '/src/components/bullpen/board/tonightsBullpenBoardView.js',
@@ -223,7 +223,7 @@ test('a guarded card inherits one Limited Read conclusion through Compare', asyn
       limitations: [],
     },
     pitcher_labels: {
-      role: { kind: 'role', key: 'limited_read', label: 'Limited Read', source: 'backend:mixed_starter_reliever' },
+      role: { kind: 'role', key: 'limited_read', label: 'Role Unclear', source: 'backend:mixed_starter_reliever' },
       read: { kind: 'read', key: 'clean_option', label: 'Rested', source: 'backend:availability_status' },
     },
   }
@@ -243,8 +243,8 @@ test('a guarded card inherits one Limited Read conclusion through Compare', asyn
   assert.ok(embedded.public_role_read)
   assert.equal(embedded.public_role_read.key, 'limited_read')
   const cardView = boardView.getBoardCardView(embedded)
-  assert.equal(cardView.role.label, 'Limited Read')
-  assert.equal(cardView.pitcherLabels.role.label, 'Limited Read')
+  assert.equal(cardView.role.label, 'Role Unclear')
+  assert.equal(cardView.pitcherLabels.role.label, 'Role Unclear')
 
   // The Compare surface itself introduces no concrete role wording.
   const html = render(payload)
@@ -254,7 +254,7 @@ test('a guarded card inherits one Limited Read conclusion through Compare', asyn
   }
 })
 
-test('a legacy guarded card resolves the same safe Limited Read through Compare', async () => {
+test('a legacy guarded card resolves the same safe Role Unclear through Compare', async () => {
   const { makeBoard } = await import('./fixtures/bullpenBoardFixtures.mjs')
   const boardView = await server.ssrLoadModule(
     '/src/components/bullpen/board/tonightsBullpenBoardView.js',
@@ -273,7 +273,7 @@ test('a legacy guarded card resolves the same safe Limited Read through Compare'
       limitations: [],
     },
     pitcher_labels: {
-      role: { kind: 'role', key: 'limited_read', label: 'Limited Read', source: 'backend:mixed_starter_reliever' },
+      role: { kind: 'role', key: 'limited_read', label: 'Role Unclear', source: 'backend:mixed_starter_reliever' },
     },
     public_role_read: null,
   }
@@ -292,8 +292,8 @@ test('a legacy guarded card resolves the same safe Limited Read through Compare'
   // The same board adapter Compare relies on resolves the same safe verdict.
   const cardView = boardView.getBoardCardView(embedded)
   assert.equal(cardView.role.key, 'limited_read')
-  assert.equal(cardView.role.label, 'Limited Read')
-  assert.equal(cardView.pitcherLabels.role.label, 'Limited Read')
+  assert.equal(cardView.role.label, 'Role Unclear')
+  assert.equal(cardView.pitcherLabels.role.label, 'Role Unclear')
 
   const html = render(payload)
   assert.equal(htmlIncludes(html, 'Late-Inning / High-Leverage Pattern'), false)

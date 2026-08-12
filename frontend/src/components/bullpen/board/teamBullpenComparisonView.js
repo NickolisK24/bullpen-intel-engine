@@ -40,18 +40,12 @@ function safeMetrics(metrics) {
   }
 }
 
+// Comparison copy comes from the same guarded board context as the Team Board,
+// so it is rendered as the backend published it. The substitution table that
+// used to sit here is gone: public vocabulary is decided by
+// backend/services/public_bullpen_copy.py (FE-001 / #591).
 function displayPublicCopy(value) {
-  if (typeof value !== 'string') return value
   return value
-    .replace(/\bMonitor\b/g, 'On Watch')
-    .replace(/\brestricted\b/g, 'limited')
-    .replace(/\bRestricted\b/g, 'Limited')
-    .replace(/\bAvoid\s+or\s+Unavailable\b/g, 'Unavailable')
-    .replace(/\bAvoid\b/g, 'Unavailable')
-    .replace(/\bconstrained\b/g, 'stretched')
-    .replace(/\bConstrained\b/g, 'Stretched')
-    .replace(/\bsnapshot\b/gi, 'read')
-    .replace(/\brecommendation engine\b/gi, 'BaseballOS read')
 }
 
 function sumMetrics(metrics, keys) {

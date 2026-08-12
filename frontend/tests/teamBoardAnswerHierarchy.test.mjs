@@ -77,12 +77,18 @@ const withheldBoard = (() => {
 
 // ── Availability distribution (the new answer-zone element) ─────────────────
 
-test('the distribution shows all four public availability counts in order', () => {
+test('the distribution shows every published availability group in order', () => {
   const text = visibleText(renderDistribution(populatedBoard))
-  for (const label of ['Available', 'On Watch', 'Limited', 'Unavailable']) {
-    assert.ok(htmlIncludes(text, label), `missing status: ${label}`)
+  for (const label of [
+    'Available Arms',
+    'On-Watch Arms',
+    'Limited Arms',
+    'Unavailable — Heavy Workload',
+    'Unavailable — Severe Workload',
+  ]) {
+    assert.ok(htmlIncludes(text, label), `missing group: ${label}`)
   }
-  // The internal Avoid tier is never surfaced separately.
+  // The internal engine key is never surfaced as reader vocabulary.
   assert.equal(htmlIncludes(text, 'Avoid'), false)
 })
 
@@ -92,12 +98,13 @@ test('distribution counts reconcile with the eligible reliever total', () => {
   const sum = groups.reduce((acc, group) => acc + group.count, 0)
   assert.equal(sum, totals.total)
   const text = visibleText(renderDistribution(populatedBoard))
-  // Fixture: 2 Available, 1 On Watch, 1 Limited, 2 Unavailable = 6 eligible.
+  // Fixture: 2 Available, 1 On-Watch, 1 Limited, 1 Heavy, 1 Severe = 6 eligible.
   assert.ok(htmlIncludes(text, 'Eligible relievers 6'))
-  assert.ok(htmlIncludes(text, 'Available 2'))
-  assert.ok(htmlIncludes(text, 'On Watch 1'))
-  assert.ok(htmlIncludes(text, 'Limited 1'))
-  assert.ok(htmlIncludes(text, 'Unavailable 2'))
+  assert.ok(htmlIncludes(text, 'Available Arms 2'))
+  assert.ok(htmlIncludes(text, 'On-Watch Arms 1'))
+  assert.ok(htmlIncludes(text, 'Limited Arms 1'))
+  assert.ok(htmlIncludes(text, 'Unavailable — Heavy Workload 1'))
+  assert.ok(htmlIncludes(text, 'Unavailable — Severe Workload 1'))
 })
 
 test('withheld counts render as unknown, never as zero', () => {
@@ -114,7 +121,7 @@ test('withheld counts render as unknown, never as zero', () => {
 test('an empty bullpen reports honest zeros, not fabricated evidence', () => {
   const text = visibleText(renderDistribution(emptyBoard))
   assert.ok(htmlIncludes(text, 'Eligible relievers 0'))
-  assert.ok(htmlIncludes(text, 'Available 0'))
+  assert.ok(htmlIncludes(text, 'Available Arms 0'))
 })
 
 test('the distribution introduces no score, ranking, or recommendation language', () => {
@@ -135,7 +142,11 @@ test('the answer comes first: identity/state, then availability, then the deep b
   assert.ok(operatingCard > -1 && distribution > -1 && board > -1)
   assert.ok(operatingCard < distribution, 'state card precedes the distribution')
   assert.ok(distribution < board, 'distribution precedes the full board')
-  // Team identity is shown in the answer zone.
+  // Team identity reaches the answer zone. Since UX-002 the /bullpen page
+  // heading owns the visible club name, so within the board itself identity
+  // travels on the operating card's region label and the board section heading
+  // rather than a second card title. bullpenPageIdentity.test.mjs pins that
+  // split; this only asserts the team is still identified here at all.
   assert.ok(htmlIncludes(html, 'Detroit Tigers'))
 })
 

@@ -1,0 +1,352 @@
+name: Inherited Runners Authority Diagnostic
+
+# Read-only field-authority evidence for ONE appearance and ONE governed field.
+#
+# Bullpen Sync run #491 published cleanly — public sync, appearance-ledger
+# audit, dashboard snapshot verification and internal enrichment all succeeded —
+# and shadow-activation-health FAILED on exactly one projected governed
+# correction: game 824969, pitcher 656240, field inherited_runners, 342 of 343
+# rows unchanged, writes_enabled false, commits_performed 0,
+# game_log_rows_written 0, publication_authoritative false.
+#
+# The evidence that settles it — the completed-game box-score line, the player
+# game-log split, and the stored canonical row — needs the production database
+# and MLB egress, which no development environment has. This workflow exists to
+# obtain that evidence and nothing else.
+#
+# The target is HARD-PINNED IN CODE, not exposed as input. game_pk,
+# pitcher_mlb_id and field are compile-time constants here, so this can never
+# become a generic production-query tool pointed at an arbitrary row from a
+# phone.
+#
+# It runs one command. That command is
+# `backend/scripts/inspect_gamelog_field_authority.py`, which opens a
+# PostgreSQL read-only transaction, issues a write probe that MUST be refused,
+# fingerprints the audited row (values, context, and the provenance columns a
+# correction would stamp) before and after, rolls back, and exits UNSAFE if the
+# row moved. It creates no work item, no dead letter and no SyncFailure,
+# advances no checkpoint, and publishes nothing. This workflow does not weaken
+# any of that; it supplies an environment and captures the artifact.
+#
+# It runs no sync, no backfill, no publication, no cache warm, no story
+# generation, no migration, and dispatches no workflow.
+
+on:
+  workflow_dispatch:
+
+# No inputs, deliberately. The three target values are pinned in code, so there
+# is nothing an operator could legitimately vary; and with no input there is no
+# operator string to cross the shell boundary at all. The comparable manual
+# audits in this repository gate on a typed 40-character SHA and a confirmation
+# phrase because they acquire the writer lane, download artifacts by run id, or
+# accept variable scope. This one has none of that: fixed scope, one read-only
+# command, and an owner-only gate below. Requiring a hand-typed SHA would only
+# make the run harder to start from a phone, which is the reason it exists.
+
+# Share the production sync writer lane so this can never overlap a production
+# writer. cancel-in-progress stays false: a queued diagnostic waits for the
+# writer rather than displacing it.
+concurrency:
+  group: baseballos-sync
+  cancel-in-progress: false
+
+# contents: read to check out the reviewed commit. Nothing here writes to
+# contents, actions, packages, or any other scope.
+permissions:
+  contents: read
+
+jobs:
+  inherited-runners-authority-diagnostic:
+    runs-on: ubuntu-latest
+    # Bounded by one database session and at most two upstream MLB calls.
+    timeout-minutes: 15
+    if: >-
+      github.event_name == 'workflow_dispatch'
+      && github.repository == 'NickolisK24/bullpen-intel-engine'
+      && github.ref == 'refs/heads/main'
+      && github.actor == github.repository_owner
+
+    steps:
+      # SHELL BOUNDARY (established in PR #604). No `${{ }}` expression may
+      # appear inside any `run:` script: GitHub substitutes into the script
+      # text before bash parses it, so an expression would become shell code in
+      # a step carrying production credentials. Every value a script reads
+      # crosses through `env:` and is read as a quoted variable.
+      - name: Refuse an unauthorized invocation
+        env:
+          RESOLVED_REPOSITORY: ${{ github.repository }}
+          RESOLVED_REF: ${{ github.ref }}
+          SECRET_DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SECRET_KEY_PRESENT: ${{ secrets.SECRET_KEY }}
+          SECRET_ADMIN_TOKEN: ${{ secrets.BASEBALLOS_ADMIN_API_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          if [ "$RESOLVED_REPOSITORY" != "NickolisK24/bullpen-intel-engine" ]; then
+            echo "Refused: this diagnostic runs only in NickolisK24/bullpen-intel-engine."
+            exit 1
+          fi
+
+          if [ "$RESOLVED_REF" != "refs/heads/main" ]; then
+            echo "Refused: this diagnostic runs only from main."
+            exit 1
+          fi
+
+          # Every secret the diagnostic needs must be present BEFORE a database
+          # session is opened. Presence only: no value is echoed, compared, or
+          # recorded.
+          if [ -z "${SECRET_DATABASE_URL:-}" ]; then
+            echo "Refused: DATABASE_URL secret is absent."
+            exit 1
+          fi
+          if [ -z "${SECRET_KEY_PRESENT:-}" ]; then
+            echo "Refused: SECRET_KEY secret is absent."
+            exit 1
+          fi
+          if [ -z "${SECRET_ADMIN_TOKEN:-}" ]; then
+            echo "Refused: BASEBALLOS_ADMIN_API_TOKEN secret is absent."
+            exit 1
+          fi
+
+          echo "Authorization preconditions satisfied."
+          echo "Scope is locked in code: game 824969, pitcher 656240, field inherited_runners."
+
+      - name: Check out the reviewed commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install backend dependencies
+        run: pip install -r backend/requirements.txt
+
+      # An artifact from an EARLIER run is committed at this path. Removing it
+      # before the diagnostic runs is what makes the upload honest: if the
+      # diagnostic dies before writing, the upload finds nothing and the gate
+      # says so, instead of shipping last month's evidence under this run's id.
+      - name: Clear the checked-out artifact from any earlier run
+        run: |
+          set -euo pipefail
+          rm -f artifacts/field-authority/inherited-runners-824969-656240.json
+          mkdir -p artifacts/field-authority
+          echo "Artifact path cleared; only this run can populate it."
+
+      # The one command. Its three target values are literals in this script,
+      # not variables and not expressions — there is nothing here to point
+      # somewhere else.
+      - name: Run the read-only field-authority diagnostic
+        id: diagnostic
+        continue-on-error: true
+        env:
+          APP_ENV: production
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SECRET_KEY: ${{ secrets.SECRET_KEY }}
+          # ADMIN_API_TOKEN is required for APPLICATION STARTUP ONLY:
+          #   config.py:96   APP_ENV != production refuses a non-local
+          #                  DATABASE_URL, so reaching production requires
+          #                  APP_ENV=production;
+          #   config.py:231  APP_ENV=production refuses to boot without
+          #                  ADMIN_API_TOKEN.
+          # Booting against the production database is therefore impossible
+          # without it. Its presence authorizes no admin endpoint and no write:
+          # the diagnostic never reads this value, makes no HTTP call to this
+          # service, and invokes no admin endpoint.
+          ADMIN_API_TOKEN: ${{ secrets.BASEBALLOS_ADMIN_API_TOKEN }}
+          # No BASEBALLOS_SYNC_URL and no publication token: nothing here calls
+          # a sync endpoint, publishes a snapshot, or dispatches a workflow.
+          AUTO_SYNC: 'false'
+          # The lane is never RUN by this diagnostic. Asserted off anyway so no
+          # code path it touches can read a write-capable mode from the
+          # environment. The script pins the same value into os.environ before
+          # it imports the application, so this is the outer of two locks.
+          GAME_DRIVEN_INGESTION_MODE: 'off'
+        run: |
+          set -uo pipefail
+          exit_code=0
+          python backend/scripts/inspect_gamelog_field_authority.py \
+            --game-pk 824969 \
+            --pitcher-mlb-id 656240 \
+            --field inherited_runners \
+            --output artifacts/field-authority/inherited-runners-824969-656240.json \
+            || exit_code=$?
+          echo "exit_code=$exit_code" >> "$GITHUB_OUTPUT"
+          exit "$exit_code"
+
+      # Defence in depth. The diagnostic's report allowlist is narrow and unit
+      # tested, so this should never find anything — but `--quarantine` DELETES
+      # an unsafe file rather than flagging it, so a leak cannot reach the
+      # upload step below even though that step always runs. The final gate
+      # fails the workflow if anything was quarantined.
+      - name: Scan the diagnostic artifact
+        id: scan
+        if: ${{ always() }}
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          exit_code=0
+          python backend/scripts/scan_forbidden_artifact_content.py \
+            --directory artifacts/field-authority \
+            --quarantine \
+            --label 'Inherited runners authority diagnostic' \
+            || exit_code=$?
+          echo "exit_code=$exit_code" >> "$GITHUB_OUTPUT"
+          exit "$exit_code"
+
+      # Always. An unresolved diagnostic is the outcome most worth reading, and
+      # exit 1 is a legitimate result — the artifact must survive it.
+      - name: Upload the diagnostic artifact
+        id: upload
+        if: ${{ always() }}
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: inherited-runners-authority-${{ github.run_id }}
+          path: artifacts/field-authority/inherited-runners-824969-656240.json
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Append the diagnostic summary
+        if: ${{ always() }}
+        env:
+          DIAGNOSTIC_EXIT_CODE: ${{ steps.diagnostic.outputs.exit_code }}
+          DIAGNOSTIC_OUTCOME: ${{ steps.diagnostic.outcome }}
+          SCAN_OUTCOME: ${{ steps.scan.outcome }}
+          UPLOAD_OUTCOME: ${{ steps.upload.outcome }}
+          ARTIFACT_NAME: inherited-runners-authority-${{ github.run_id }}
+        run: |
+          set -uo pipefail
+          python - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json
+          import os
+          import pathlib
+
+          ARTIFACT_PATH = (
+              'artifacts/field-authority/inherited-runners-824969-656240.json'
+          )
+
+          exit_code = os.environ.get('DIAGNOSTIC_EXIT_CODE') or 'not recorded'
+          print('## Inherited runners authority diagnostic\n')
+          print('**READ-ONLY.** This run performed no write of any kind.\n')
+          print('| field | value |')
+          print('| :--- | :--- |')
+          print('| game_pk | 824969 |')
+          print('| pitcher_mlb_id | 656240 |')
+          print('| audited field | `inherited_runners` |')
+          print(f"| artifact name | `{os.environ.get('ARTIFACT_NAME', '')}` |")
+          print(f'| artifact path | `{ARTIFACT_PATH}` |')
+          print(f'| diagnostic exit code | `{exit_code}` |')
+          print(f"| diagnostic step outcome | `{os.environ.get('DIAGNOSTIC_OUTCOME', '')}` |")
+          print(f"| forbidden-content scan | `{os.environ.get('SCAN_OUTCOME', '')}` |")
+          print(f"| artifact upload | `{os.environ.get('UPLOAD_OUTCOME', '')}` |")
+
+          path = pathlib.Path(ARTIFACT_PATH)
+          if not path.exists():
+              print(
+                  '\nNo artifact was produced or it was quarantined. '
+                  'Treat this run as UNRESOLVED.'
+              )
+          else:
+              try:
+                  doc = json.loads(path.read_text(encoding='utf-8'))
+              except ValueError:
+                  doc = None
+              if doc is None:
+                  print('\nThe artifact could not be parsed. Treat this run as UNRESOLVED.')
+              else:
+                  print('\n**Read-only proof**\n')
+                  print('| check | value |')
+                  print('| :--- | :--- |')
+                  for key in (
+                      'read_only_transaction', 'write_probe_refused',
+                      'database_writes_performed', 'row_fingerprint_before',
+                      'row_fingerprint_after', 'row_unchanged',
+                  ):
+                      print(f'| {key} | `{doc.get(key)}` |')
+                  print('\n**Conclusion**\n')
+                  print('| item | value |')
+                  print('| :--- | :--- |')
+                  print(f"| classification | `{doc.get('discrepancy_classification')}` |")
+                  print(f"| authority resolved | `{doc.get('authority_resolved')}` |")
+                  explanation = doc.get('discrepancy_explanation')
+                  if explanation:
+                      print(f'\n{explanation}')
+
+          print(
+              '\nExit 0 means the discrepancy was classified from complete '
+              'evidence. Exit 1 means the evidence was incomplete and the '
+              'diagnostic failed closed — a legitimate result, deliberately '
+              'not converted into a green run. Exit 2 means the read-only '
+              'guarantee itself could not be proven.'
+          )
+          print(
+              '\nThis run authorizes no mutation. It ran no sync, no backfill, '
+              'no publication and no migration; it created no work item, '
+              'advanced no checkpoint, and dispatched no workflow. '
+              '**Automated writes remain prohibited and publication authority '
+              'was not changed.** Any correction to game 824969 remains a '
+              'separate, reviewed decision.'
+          )
+          PY
+
+      # Ordered last so a failing diagnostic still leaves a reviewable
+      # artifact and a readable summary. This gate never converts a non-zero
+      # diagnostic result into success, and carries no continue-on-error.
+      - name: Final diagnostic gate
+        if: ${{ always() }}
+        env:
+          DIAGNOSTIC_EXIT_CODE: ${{ steps.diagnostic.outputs.exit_code }}
+          DIAGNOSTIC_OUTCOME: ${{ steps.diagnostic.outcome }}
+          SCAN_EXIT_CODE: ${{ steps.scan.outputs.exit_code }}
+          SCAN_OUTCOME: ${{ steps.scan.outcome }}
+          UPLOAD_OUTCOME: ${{ steps.upload.outcome }}
+        run: |
+          set -uo pipefail
+
+          if [ "$SCAN_OUTCOME" != "success" ]; then
+            echo "UNSAFE: the artifact did not pass the forbidden-content scan"
+            echo "(scan exit ${SCAN_EXIT_CODE:-unknown}). Anything unsafe was"
+            echo "quarantined on the runner and was not uploaded."
+            exit 1
+          fi
+
+          if [ "$UPLOAD_OUTCOME" != "success" ]; then
+            echo "UNPROVEN: the diagnostic artifact did not upload."
+            exit 1
+          fi
+
+          case "${DIAGNOSTIC_EXIT_CODE:-}" in
+            0)
+              ;;
+            1)
+              echo "UNRESOLVED: the diagnostic failed closed on incomplete"
+              echo "evidence. Read the artifact; do not treat this as a repair"
+              echo "signal and do not change production behaviour on it."
+              exit 1
+              ;;
+            2)
+              echo "UNSAFE: the diagnostic could not prove it was read-only,"
+              echo "or the audited row changed during the audit. Investigate"
+              echo "before running anything else against this row."
+              exit 1
+              ;;
+            *)
+              echo "The diagnostic did not complete (step outcome"
+              echo "${DIAGNOSTIC_OUTCOME:-unknown}, exit"
+              echo "${DIAGNOSTIC_EXIT_CODE:-unrecorded}). See the artifact."
+              exit 1
+              ;;
+          esac
+
+          echo "Field-authority diagnostic completed read-only."
+          echo "game_pk 824969, pitcher_mlb_id 656240, field inherited_runners."
+          echo "This run authorizes no mutation. It does not correct the row,"
+          echo "does not backfill, does not add inherited_runners to the approved"
+          echo "fallback set, does not publish or select a snapshot, does not"
+          echo "change any ingestion mode or publication authority, does not"
+          echo "weaken a validator, and does not run a migration."

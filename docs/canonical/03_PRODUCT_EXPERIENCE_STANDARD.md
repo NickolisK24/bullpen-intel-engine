@@ -3,8 +3,8 @@
 | Field | Value |
 |---|---|
 | Status | Canonical - public surface, navigation, interaction, accessibility, and end-state authority |
-| Version | 1.2 |
-| Effective date | July 30, 2026 |
+| Version | 1.4 |
+| Effective date | August 11, 2026 |
 | Owner | Nickolis Kacludis |
 | Supersedes | BaseballOS Product Vision Specification and overlapping surface descriptions in prior strategy documents |
 | Update rule | Revise when a page mission, navigation model, information hierarchy, primary user question, public route, failure behavior, or surface acceptance test changes |
@@ -49,6 +49,7 @@ Every public page owns one primary user question. If two pages answer the same q
 | Deeper current story feed | Stories |
 | Historical published claim | Share Artifact / future Archive |
 | Definitions and computation | Methodology |
+| Reader-facing public vocabulary map | About and How to Read |
 | Currentness, coverage, and validation | Data & Trust |
 | Product orientation | Start Here / About and How to Read |
 | Operational coverage and refusals | Internal Product Intelligence |
@@ -128,6 +129,7 @@ Every page has an obvious deeper evidence step and an obvious next baseball dest
 | Pitcher Detail | current detail route/drawer | Arm | What has this reliever recently carried, what is his public read, and what supports it? |
 | Stories | `/stories` | League narrative | Beyond today's lead, which supported bullpen storylines remain live? |
 | Share Artifact | `/share/{public_id}` | Historical claim | What exactly did BaseballOS publish at that time, why, and on what evidence? |
+| Team Preview | `/team/{ABBR}` | Distribution entry | What did BaseballOS know about this bullpen, through what baseball date, and where is the current board? |
 | Methodology | `/methodology` | Meta | How does BaseballOS compute and govern what it shows? |
 | Data & Trust | `/trust` | Meta | Is the current picture complete and trustworthy enough to use? |
 | About / How to Read | current support routes | Meta | What is BaseballOS, what does it show, and what do the recurring terms mean? |
@@ -161,7 +163,17 @@ Navigation behavior:
 
 ## 6. Public Vocabulary Presentation
 
-The public vocabulary is defined by the Bullpen Intelligence Standard and canonical code owners.
+The public vocabulary is defined by the Bullpen Intelligence Standard and canonical code owners. This Standard governs how those labels reach a reader: which family the reader is being shown, how families stay apart, and who may change a word.
+
+### One semantic owner per family
+
+Every public vocabulary family has exactly one semantic owner. The owner decides what the words mean and which word applies. No second surface, adapter, view module, or presentation layer may hold a competing dictionary for the same family, and no family may borrow a word that already belongs to another family.
+
+### Backend-governed labels render verbatim
+
+A backend-authored public label is final reader-facing wording, not an input to further wording. Presentation renders the supplied string exactly as supplied.
+
+Presentation owns layout, density, ordering within a governed order, tone, icons, color, interaction, and accessibility treatment. Presentation does not own meaning: it may not translate, paraphrase, abbreviate, re-case, substitute, or derive a governed label, and it may not supply a fallback label where the authority supplies none. A surface with no supported label shows the governed absent-value message for that family.
 
 ### Team State
 
@@ -171,7 +183,28 @@ The public vocabulary is defined by the Bullpen Intelligence Standard and canoni
 
 Dashboard, Today where Team State appears, Team Board, and Compare all consume the same backend-authored public Team State fields. Presentation may render the supplied label, choose layout and density, and attach a non-semantic tone keyed by the supplied canonical state. Presentation may not derive a Team State, reinterpret an internal availability or readiness value, infer one from counts, lanes, stress, or freshness, or substitute a fallback label. A surface with no supported Team State shows a governed non-state message; it never shows Unknown, Neutral, or any other fourth state.
 
-### Arm read
+Team State is never inferred from supporting reads, arm availability, board group counts, tier adjectives, or Read Confidence.
+
+### Arm Availability
+
+- Available
+- On Watch
+- Limited
+- Unavailable
+
+Arm Availability is the current availability classification for one arm.
+
+### Pitcher Role
+
+- Trusted Arm
+- Setup Arm
+- Coverage Arm
+- Middle Relief Arm
+- Role Unclear
+
+Pitcher Role describes observed bullpen usage shape. It is not current availability and it is not pitcher quality. `Trusted Arm` belongs to this family alone.
+
+### Pitcher Current Read
 
 - Clean Option
 - Watch Arm
@@ -179,13 +212,87 @@ Dashboard, Today where Team State appears, Team Board, and Compare all consume t
 - Unavailable
 - Limited Read
 
-### Public role
+Pitcher Current Read describes the current workload and availability evidence for one arm.
 
-- Trusted Arm
-- Setup Arm
-- Coverage Arm
-- Middle Relief Arm
-- Limited Read
+Pitcher Role and Pitcher Current Read answer different questions. They are presented as separate values, and neither is derived from the other.
+
+Arm Availability and Pitcher Current Read may be related — both speak to current usability — but they are separate vocabularies and are never interchangeable. A surface renders the family it was given.
+
+### The Limited family
+
+Three public labels share the word `Limited`, and a fourth is routinely read as part of the same ladder. They answer four different questions:
+
+| Label | Family | Meaning |
+|---|---|---|
+| Limited | Arm Availability | Recent workload materially narrows how fully the pitcher can be used. |
+| Limited Rest | Pitcher Current Read | Recent workload leaves materially less rest than a Clean Option. |
+| Limited Read | Pitcher Current Read / evidence limitation | BaseballOS does not have enough current evidence for a clear pitcher read. |
+| Role Unclear | Pitcher Role | Observed usage does not support a reliable public bullpen-role classification. |
+
+These are four different dimensions, not four severity levels of one concept: how much of the arm is usable, how rested it is, how much evidence exists, and what kind of arm it is. No surface may ladder, order, or style them as degrees of the same thing.
+
+### Read Confidence
+
+- High
+- Medium
+- Low
+- Unavailable
+
+Read Confidence describes how clear or complete the evidence behind a read is. It is an evidence-quality presentation family, not a baseball conclusion: it is not Team State, not Arm Availability, not Pitcher Role, not pitcher quality, not a ranking, and not a prediction. It always appears under its own field label, so a bare High or Low can never be read as a baseball verdict.
+
+### Board group presentation
+
+Reader-facing board group headings:
+
+- Available Arms
+- On-Watch Arms
+- Limited Arms
+- Unavailable — Heavy Workload
+- Unavailable — Severe Workload
+
+These headings name workload groups. The underlying engine statuses — Available, Monitor, Limited, Avoid, Unavailable — are unchanged, and the headings change no classification, membership, count, or ordering behavior. A group heading is a presentation label for a workload group; it is not a pitcher's public read label and is never presented as one.
+
+### Bullpen supporting reads
+
+Canonical supporting concepts:
+
+- Late-Inning Availability
+- Rested Options
+- Late-Inning Pressure
+- Workload Concentration
+- Coverage Safety
+- Depth Safety
+- Late-Inning Options
+
+Rested Options tiers: Deep Rested Options, Stable Rested Options, Thin Rested Options, Very Thin Rested Options.
+
+Each supporting read explains one dimension of a bullpen. Supporting reads are not Team State. No supporting read, tier adjective, count, or combination of them constitutes, implies, or overrides a Team State, and a surface without a supported Team State never assembles one from them.
+
+`Trusted Arms` is retired as a team-level concept; `Trusted Arm` now belongs exclusively to the Pitcher Role family. `Healthy Rested Bullpen` is retired: BaseballOS observes public workload, never player health.
+
+### Freshness
+
+- **Data through** - the latest completed baseball date the public read represents.
+- **Last data update** - when BaseballOS last successfully wrote new baseball data.
+- **Last checked** - when BaseballOS most recently attempted or observed a refresh.
+
+These are three separate reader-facing temporal concepts. No surface collapses them into one stamp or uses one to stand for another.
+
+### Data Status
+
+- Current
+- Partial Data
+- Stale
+- Data Unavailable
+
+Data Status describes the state of the data, never a bullpen or an arm, and so it borrows no baseball word. `Healthy`, `Limited`, and `Not Current` are not Data Status labels. `Limited` remains valid Arm Availability vocabulary.
+
+### Provenance
+
+- Generated at
+- Published at
+
+These are provenance timestamps for historical and distribution artifacts. They are not synonyms for Data through or Last data update.
 
 Internal engine codes never appear as public labels.
 
@@ -318,7 +425,7 @@ Above the fold:
 2. current Fresh/Stretched/Vulnerable state;
 3. plain-language why sentence;
 4. named supporting arms/evidence;
-5. current arm groups using public read labels;
+5. current arm groups under the canonical board group headings;
 6. data-through and trust state.
 
 Required evidence includes recent relief work, appearance dates/opponents/outs or innings/pitches/rest, current active-roster context, current performance context when approved, official starter/rotation-transfer context when complete, What Changed since the last comparable trusted date, schedule/recovery runway when current, and explicit limits.
@@ -419,7 +526,25 @@ It displays historical-snapshot label, artifact identity and generated/published
 
 Published artifacts remain unchanged. A current-state panel never rewrites the historical artifact. Integrity failure serves no claim.
 
-## 21. Future Historical Surfaces
+## 21. Routed Team Preview Pages
+
+**Mission:** give a shared team link a truthful, self-dating entry representation that hands the reader to the current Team Board.
+
+`/team/{ABBR}` is a regenerating distribution surface, not an immutable historical Share Artifact. It is rebuilt on the publication cadence, it has no supersession lifecycle, and it is never a citation destination - `/share/{public_id}` remains the only permanent citation. It cites current truth; it never becomes current truth.
+
+A generated team preview carries team identity, canonical public Team State or the governed non-state, one backend-authored baseball point, the baseball data-through date the claim describes, the time the representation was generated, the trusted publication identity it was generated from, and an explicit link to the current Team Board. The same claim is readable in the social preview, in machine-readable metadata, and in the page body.
+
+One publication per representation. The story copy and the team state on a single generated page come from the same trusted published snapshot. A board that resolved from a different publication is not combined with that story, and the live builder is never a source for a public preview.
+
+Publication time is not the baseball date. Generated time, trusted-snapshot publication time, and data-through are three separate values and are published as three separate values. A representation generated on one day legitimately describes baseball data through an earlier day; that is correct, and it is only correct because the page states both.
+
+If the trusted publication authority or the data-through value cannot be established, the page publishes no present-tense team claim. It keeps team identity and the current Team Board link and states plainly that it has no dated read.
+
+The state vocabulary is the canonical public Team State dictionary. Internal team-shape read labels are not public state terms on this surface.
+
+Presentation and runtime code do not reinterpret this metadata. The values are backend-authored; the page renders them, and no frontend derives, re-dates, or restates them.
+
+## 22. Future Historical Surfaces
 
 ### State Timeline
 
@@ -431,7 +556,7 @@ Preserves every published observation as a permanent record with URL, timestamp,
 
 A six-month-old observation must reproduce the original evidence and method.
 
-## 22. Data & Trust
+## 23. Data & Trust
 
 **Mission:** make currentness, provenance, validation, and limitations inspectable without forcing the user through operational jargon.
 
@@ -439,15 +564,19 @@ Required sections: data-through date, latest successful sync/update, source cove
 
 Avoid alarming complete-page language when only one evidence family is unavailable. State the exact affected scope.
 
-## 23. Start Here / About and How to Read
+## 24. Start Here / About and How to Read
 
 A unified future Start Here experience may replace duplicate support pages.
 
-It should contain one-sentence positioning, difference between state and performance, Team State definitions, arm-read labels, public role labels, named reads, evidence/freshness contract, one concise boundary statement, and links to Today, Dashboard, and Methodology.
+How to Read is the canonical reader-facing semantic map. It is organised by the Section 6 families - Team State, Arm Availability, Pitcher Role, Pitcher Current Read, Read Confidence, bullpen supporting reads, and the freshness, Data Status, and provenance stamps - and it names each family alongside its labels so a reader always knows which question a word answers. It renders the canonical definitions; it holds no vocabulary of its own.
 
-A first-time visitor should explain BaseballOS in one sentence and correctly interpret the canonical state, arm-read, and Limited Read vocabulary.
+It must state the difference between the similar terms explicitly rather than leave it to inference, including `Limited`, `Limited Rest`, `Limited Read`, and `Role Unclear`, each shown with its family. It must also record that supporting reads are not Team State and that Read Confidence is not a baseball conclusion.
 
-## 24. Internal Product Intelligence and Operations
+It should contain one-sentence positioning, difference between state and performance, Team State definitions, Arm Availability labels, Pitcher Role labels, Pitcher Current Read labels, named reads, evidence/freshness contract, one concise boundary statement, and links to Today, Dashboard, and Methodology.
+
+A first-time visitor should explain BaseballOS in one sentence, correctly interpret the canonical Team State, Arm Availability, Pitcher Role, and Pitcher Current Read vocabulary, and tell the four Limited-family terms apart.
+
+## 25. Internal Product Intelligence and Operations
 
 **Mission:** give the founder a secure, read-only view of publication, evidence coverage, artifact status, refusal diagnostics, and user-journey health.
 
@@ -455,7 +584,7 @@ Current internal surfaces include artifact generation/coverage, traffic/distribu
 
 Security requirements: absent from public navigation, noindex/nofollow, authenticated server-side, no admin token in browser, no private routes cached, founder/allowlist protection, read-only by default, and explicit confirmation for mutation.
 
-## 25. Universal Acceptance Tests
+## 26. Universal Acceptance Tests
 
 Every public surface must pass:
 
@@ -465,7 +594,7 @@ Every public surface must pass:
 - **Freshness test:** represented date/status is visible.
 - **Stranger test:** first-time visitor understands what BaseballOS is doing.
 - **Skeptic test:** hostile reader can check method and limits.
-- **Vocabulary test:** public labels match canonical authority.
+- **Vocabulary test:** public labels match canonical authority, render verbatim, and stay inside their declared semantic family.
 - **Refusal test:** no prediction, betting, fantasy, health, ranking, or manager-intent claim.
 - **Quiet-day test:** no story is manufactured.
 - **Mobile test:** primary answer works without horizontal scrolling.
@@ -474,7 +603,7 @@ Every public surface must pass:
 - **Navigation test:** next evidence step and broader return path are obvious.
 - **Consistency test:** evidence and claim cannot disagree.
 
-## 26. Surface Change and Retirement
+## 27. Surface Change and Retirement
 
 Before changing a page, state the existing one-question contract, name the user who notices, identify the canonical fact owner for every new value, preserve altitude, define loading/quiet/stale/partial/error behavior, define mobile/accessibility, define the evidence destination, and update this Standard if the mission changes.
 
@@ -487,3 +616,5 @@ Retire or merge a surface when it no longer owns a unique question, another page
 | 1.0 | July 29, 2026 | Nickolis Kacludis | Established the permanent page map, experience principles, surface missions, current/end-state boundaries, mobile/accessibility standards, failure behavior, and acceptance tests for BaseballOS. |
 | 1.1 | July 29, 2026 | Nickolis Kacludis | Established the Team Board as the canonical public home for current active-pen performance, with placement below State and Why, minimum component requirements, evidence drill-down expectations, and aligned inheritance rules for Pitcher Detail, Compare, Today, Dashboard, Stories, and Share Artifacts. The Team Board owns presentation, not computation. One question per page and one canonical home per fact are preserved. |
 | 1.2 | July 30, 2026 | Nickolis Kacludis | Recorded the approved M-001 presentation contract on the Team Board: the public name Active Bullpen ERA, fixed two-decimal rendering with a real zero shown as a number, the below-sample read Not Enough Innings Yet rendered only with its counts, and the required group-size and contributing-arm disclosure. The frontend renders and never recalculates or re-rounds. No gate is opened. |
+| 1.3 | August 10, 2026 | Nickolis Kacludis | Recorded the routed team preview surface (`/team/{ABBR}`) as a regenerating distribution entry representation rather than an immutable historical artifact, and fixed its authority and freshness contract: one trusted publication per representation, canonical Team State or the governed non-state, a named baseball point, a published data-through date kept distinct from generated and publication time, a snapshot receipt, an explicit current Team Board handoff, and no present-tense team claim when authority or data-through cannot be established. No page mission, vocabulary catalogue, or computation changes. |
+| 1.4 | August 11, 2026 | Nickolis Kacludis | Reconciled public vocabulary ownership after VOC-001: one semantic owner per public family, and backend-governed labels rendered verbatim by a presentation layer that owns layout, density, tone, icons, color, interaction, and accessibility treatment but never meaning. Separated the public families explicitly - Team State, Arm Availability, Pitcher Role, Pitcher Current Read, and Read Confidence - and recorded that Pitcher Role and Pitcher Current Read answer different questions, that Arm Availability and Pitcher Current Read are not interchangeable, and that Read Confidence is an evidence-quality family rather than a baseball conclusion. Recorded the board group headings as presentation labels for workload groups over unchanged engine statuses, and the bullpen supporting reads as single explanatory dimensions that never constitute a Team State. Recorded the Limited / Limited Rest / Limited Read / Role Unclear distinction with each term's family, retired `Trusted Arms` and `Healthy Rested Bullpen`, and clarified the freshness, Data Status, and provenance stamps as separate concepts. Named How to Read the canonical reader-facing semantic map. No model, threshold, classification, capability, authority, or prediction behavior changes. |

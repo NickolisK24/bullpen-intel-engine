@@ -1516,11 +1516,12 @@ class TestSyncSnapshotIntegration:
                 game_type='R',
             ))
             _seed_complete_slate(workload_date, [9301])
+            published_calculated_at = utc_now_naive() - timedelta(minutes=5)
             db.session.add(FatigueScore(
                 pitcher_id=pitcher.id,
                 raw_score=12.0,
                 risk_level='LOW',
-                calculated_at=utc_now_naive() - timedelta(minutes=5),
+                calculated_at=published_calculated_at,
             ))
             db.session.add(SyncRun(
                 started_at=utc_now_naive() - timedelta(minutes=4),
@@ -1553,7 +1554,10 @@ class TestSyncSnapshotIntegration:
         body = response.get_json()
 
         row = next(item for item in body['data'] if item['pitcher']['full_name'] == 'Published Arm')
-        assert row['raw_score'] == 12.0
+        # The public row no longer publishes the composite, so the published
+        # generation is proven by the score row's freshness stamp: the read is
+        # anchored on the published calculation, not the later unpublished one.
+        assert row['calculated_at'] == published_calculated_at.isoformat()
 
 
 class _FakeTransactionsSourceClient:

@@ -81,18 +81,34 @@ const staleActivatedAssignmentBoard = makeBoard({
   },
 })
 
-test('renders the four public availability groups in order', () => {
+test('renders the published availability groups in order', () => {
   const html = render(populatedBoard)
   assert.ok(htmlIncludes(html, 'id="pitcher-lanes"'))
-  for (const label of ['Available', 'On Watch', 'Limited', 'Unavailable']) {
+  for (const label of [
+    'Available Arms',
+    'On-Watch Arms',
+    'Limited Arms',
+    'Unavailable — Heavy Workload',
+    'Unavailable — Severe Workload',
+  ]) {
     assert.ok(htmlIncludes(html, label), `missing group: ${label}`)
   }
   assert.equal(htmlIncludes(html, 'Avoid'), false)
-  // One public Unavailable bucket: the workload-based and roster-based groups merge.
+  // The two restricted workload tiers stay distinct: the board never merges them
+  // into one generic heading, and never invents 'Unavailable' as a group name.
+  assert.equal(countOccurrences(html, 'aria-label="Unavailable — Heavy Workload group"'), 1)
+  assert.equal(countOccurrences(html, 'aria-label="Unavailable — Severe Workload group"'), 1)
+  assert.equal(htmlIncludes(html, 'aria-label="Unavailable group"'), false)
   assert.equal(htmlIncludes(html, 'Unavailable Pitchers'), false)
-  assert.equal(countOccurrences(html, 'aria-label="Unavailable group"'), 1)
-  // Available must appear before the Unavailable group on the board.
-  assert.ok(html.indexOf('aria-label="Available group"') < html.indexOf('aria-label="Unavailable group"'))
+  // Available must appear before the restricted groups on the board.
+  assert.ok(
+    html.indexOf('aria-label="Available Arms group"')
+    < html.indexOf('aria-label="Unavailable — Heavy Workload group"'),
+  )
+  assert.ok(
+    html.indexOf('aria-label="Unavailable — Heavy Workload group"')
+    < html.indexOf('aria-label="Unavailable — Severe Workload group"'),
+  )
 })
 
 test('board controls collapse to one row with an unavailable toggle', () => {
@@ -292,7 +308,10 @@ test('groups with no pitchers render their own empty copy', () => {
     cardsByStatus: { Available: populatedBoard.groups[0].pitchers },
   })
   const html = render(board)
-  assert.ok(htmlIncludes(html, 'No pitchers are currently out of tonight&#x27;s available group.'))
+  assert.ok(htmlIncludes(html, 'No relievers carry a heavy recent workload right now.'))
+  assert.ok(htmlIncludes(html, 'No relievers carry a severe recent workload right now.'))
+  // The retired merged-group copy is never recreated on the board.
+  assert.equal(htmlIncludes(html, 'No pitchers are currently out of tonight&#x27;s available group.'), false)
 })
 
 test('stale data surfaces existing trust messaging', () => {
@@ -310,7 +329,7 @@ test('stale data surfaces existing trust messaging', () => {
 
 test('unavailable roster pitchers render status labels without active availability', () => {
   const html = render(rosterContextBoard)
-  assert.ok(htmlIncludes(html, 'aria-label="Unavailable group"'))
+  assert.ok(htmlIncludes(html, 'aria-label="Unavailable — Severe Workload group"'))
   assert.equal(htmlIncludes(html, 'Unavailable Pitchers'), false)
   assert.ok(htmlIncludes(html, 'Graham Ashcraft'))
   assert.ok(htmlIncludes(html, '60-Day IL'))
@@ -353,7 +372,7 @@ test('NYY-like: 40-man (not active) arms shown as cards back the unavailable cou
   // Both inactive arms are shown as cards and are inspectable in the canonical banner; no
   // separate "not shown" line is needed. (The legacy getRosterStatusSummaryView was retired in CRC-10.)
   const html = render(fortyManShownBoard)
-  assert.ok(htmlIncludes(html, 'aria-label="Unavailable group"'))
+  assert.ok(htmlIncludes(html, 'aria-label="Unavailable — Severe Workload group"'))
   assert.equal(htmlIncludes(html, 'Unavailable Pitchers'), false)
   assert.ok(htmlIncludes(html, '40-Man (not active)'))
   assert.ok(htmlIncludes(html, 'Milo Marquez'))
@@ -561,7 +580,7 @@ test('does not expose raw governance fields or jargon on the baseball surface', 
 
 test('view helpers group, total, and detect stale freshness deterministically', () => {
   const groups = view.getBoardGroups(populatedBoard)
-  assert.deepEqual(groups.map(g => g.status), ['Available', 'Monitor', 'Limited', 'Unavailable'])
+  assert.deepEqual(groups.map(g => g.status), ['Available', 'Monitor', 'Limited', 'Avoid', 'Unavailable'])
 
   const totals = view.getBoardTotals(populatedBoard)
   assert.equal(totals.total, 6)

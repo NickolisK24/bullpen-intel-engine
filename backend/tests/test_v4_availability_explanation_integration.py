@@ -116,7 +116,9 @@ class TestV4AvailabilityExplanationIntegration:
         assert payload['state_explained'] == STATUS_AVAILABLE
         assert payload['primary_reasons'] == []
         assert evidence_by_type(payload)['availability_status']['value'] == STATUS_AVAILABLE
-        assert evidence_by_type(payload)['availability_fatigue_score']['value'] == 20.0
+        # The internal composite is never published as explanation evidence
+        # (SEC-001) — the explanation cites counted workload instead.
+        assert 'availability_fatigue_score' not in evidence_by_type(payload)
         assert_governance_safe(payload)
 
     def test_monitor_state_explanation_maps_monitor_and_workload_reasons(self, make_log):

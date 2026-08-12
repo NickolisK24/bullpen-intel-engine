@@ -229,7 +229,7 @@ test('renders title, summary, evidence, limitations, metadata, and governance co
   assert.ok(htmlIncludes(html, 'Workload Read'))
   assert.ok(htmlIncludes(html, 'Clear Visibility'))
   assert.ok(htmlIncludes(html, 'current'))
-  assert.ok(htmlIncludes(html, 'Partial Read'))
+  assert.ok(htmlIncludes(html, 'Medium'))
   assert.ok(htmlIncludes(html, 'Explanation Reference'))
   assert.ok(htmlIncludes(html, 'v5.observations.inventory'))
   assert.ok(htmlIncludes(html, 'Observations describe bullpen movement and decision context without choosing an arm.'))
@@ -286,7 +286,7 @@ test('renders empty and fail-closed states with safe copy', () => {
   assert.ok(htmlIncludes(html, 'Bullpen Visibility'))
   assert.ok(htmlIncludes(html, 'Unavailable - output withheld'))
   assert.ok(htmlIncludes(html, 'unavailable'))
-  assert.ok(htmlIncludes(html, 'Unclear Read'))
+  assert.ok(htmlIncludes(html, 'Low'))
   assert.ok(!htmlIncludes(html, 'Availability inventory contracted since the previous snapshot.'))
 })
 
