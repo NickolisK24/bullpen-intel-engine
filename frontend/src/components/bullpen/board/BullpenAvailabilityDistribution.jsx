@@ -1,6 +1,6 @@
 import { getBoardGroups, getBoardTotals } from './tonightsBullpenBoardView'
 
-// Compact answer-zone distribution of the four public availability states for
+// Compact answer-zone distribution of the published availability groups for
 // the selected team. It reads the same board authority the grouped board uses
 // (getBoardGroups / getBoardTotals), so the counts always reconcile with the
 // board group headers and the eligible-reliever total. It never recomputes a
@@ -32,19 +32,19 @@ export default function BullpenAvailabilityDistribution({ board }) {
         </div>
       </div>
 
-      <dl className="mt-2 grid grid-cols-4 gap-1.5">
+      <dl className="mt-2 grid grid-cols-2 gap-1.5 sm:grid-cols-3 lg:grid-cols-5">
         {groups.map(group => (
           <div
             key={group.status}
             className="min-w-0 rounded border border-dirt/70 bg-dugout/50 px-1.5 py-1.5 text-center"
           >
-            <dt className="flex items-center justify-center gap-1 font-mono text-[9px] uppercase tracking-wide text-chalk500">
+            <dt className="flex items-center justify-center gap-1 font-mono text-[9px] uppercase leading-tight tracking-wide text-chalk500">
               <span
                 className="h-1.5 w-1.5 shrink-0 rounded-full"
                 style={group.badge.dotStyle}
                 aria-hidden="true"
               />
-              <span className="min-w-0 truncate">{group.label}</span>
+              <span className="min-w-0 break-words">{group.label}</span>
             </dt>
             <dd className="mt-0.5 font-display text-xl leading-none tracking-wide text-chalk100">
               {group.count == null ? '—' : group.count}

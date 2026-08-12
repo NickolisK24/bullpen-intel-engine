@@ -1880,6 +1880,44 @@ def test_routed_team_preview_delivery_changes_routing_only():
     assert not [line for line in removed if line not in {'{', '},', '}'}], removed
 
 
+BOARD_GROUP_VIEW_FILE = 'frontend/src/components/bullpen/board/tonightsBullpenBoardView.js'
+
+
+def _backend_board_group_copy():
+    """Every label and description the backend publishes for a board group."""
+    tree = ast.parse(
+        (REPO_ROOT / 'backend/services/bullpen_board.py').read_text(encoding='utf-8')
+    )
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Assign):
+            continue
+        if not any(
+            isinstance(target, ast.Name) and target.id == 'GROUP_META'
+            for target in node.targets
+        ):
+            continue
+        strings = set()
+        for value in node.value.values:
+            meta = ast.literal_eval(value)
+            strings.add(meta['label'])
+            strings.add(meta['description'])
+        return strings
+    raise AssertionError('backend GROUP_META not found')
+
+
+def _frontend_board_group_copy():
+    """The board's local fallback catalogue for the same groups."""
+    source = (REPO_ROOT / BOARD_GROUP_VIEW_FILE).read_text(encoding='utf-8')
+    block = source.split('const GROUP_FALLBACK_META = {', 1)[1].split('\n}', 1)[0]
+    return {
+        single or double
+        for single, double in re.findall(
+            r"""(?:label|description):\s*(?:'([^']*)'|"([^"]*)")""",
+            block,
+        )
+    }
+
+
 VOCABULARY_PARITY_FILES = (
     'frontend/src/utils/pitcherLabels.js',
     'frontend/src/components/bullpen/availabilityView.js',
@@ -1933,18 +1971,41 @@ def test_public_vocabulary_parity_changed_no_governed_logic():
     ]
     assert not [line for line in freshness_diff if 'freshnessIsCurrent' in line]
 
+    # The board's local group catalogue is a verbatim mirror of the backend's,
+    # never a second vocabulary. Proving that first is what lets the word
+    # 'threshold' through below: the only permitted occurrences are inside
+    # backend-authored reader copy, quoted exactly as the backend publishes it.
+    backend_group_copy = _backend_board_group_copy()
+    assert _frontend_board_group_copy() == backend_group_copy
+
     # No threshold, window, or numeric tuning entered any of these files.
+    comparison = re.compile(r'\S+\s*[<>]=?\s*-?\d+(?:\.\d+)?')
     for relative in VOCABULARY_PARITY_FILES:
+        diff = _diff_vs_main(relative).splitlines()
         added = [
-            line[1:] for line in _diff_vs_main(relative).splitlines()
+            line[1:] for line in diff
             if line.startswith('+') and not line.startswith('+++')
         ]
+        carried_over = {
+            found
+            for line in diff
+            if line.startswith('-') and not line.startswith('---')
+            for found in comparison.findall(line[1:])
+        }
         for line in added:
             body = line.strip()
             if body.startswith('//'):
                 continue
-            assert not re.search(r'[<>]=?\s*-?\d', body), (relative, body)
-            assert 'threshold' not in body.lower(), (relative, body)
+            for found in comparison.findall(body):
+                # A comparison is permitted only when it is carried over rather
+                # than introduced: the identical expression must appear on a
+                # line this same diff removed. Moving an existing non-empty test
+                # is not tuning; a new number to compare against is.
+                assert found in carried_over, (relative, body)
+            if 'threshold' in body.lower():
+                # Permitted only as backend copy reproduced byte for byte —
+                # never as a tuning value the browser decides for itself.
+                assert any(text in body for text in backend_group_copy), (relative, body)
 
 
 def _freshness_block():

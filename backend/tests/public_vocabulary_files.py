@@ -64,6 +64,13 @@ PUBLIC_VOCABULARY_FRONTEND_FILES = (
     'frontend/src/components/dashboard/syncStatusView.js',
     'frontend/src/components/bullpen/board/teamGameContextView.js',
     'frontend/src/components/bullpen/board/tonightsBullpenBoardView.js',
+    # Production smoke on snapshot 398 found the last frontend-owned board
+    # wording: the browser merged the two backend-published restricted workload
+    # groups into one heading it authored itself. The merge is gone and the
+    # backend's group label and description render verbatim. This file is that
+    # repair's regression proof — it also pins that 'Unavailable' stays valid
+    # pitcher-level vocabulary, which the fix deliberately does not touch.
+    'frontend/tests/boardGroupVocabulary.test.mjs',
 )
 
 PUBLIC_VOCABULARY_FILES = (
