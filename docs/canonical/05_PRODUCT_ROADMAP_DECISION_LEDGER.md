@@ -303,6 +303,8 @@ Never backlog: predictions, betting/odds, game-outcome projections, injury predi
 
 The current-state reconciliation does not create a new durable semantic or authority decision. D-001 through D-052 remain in force; D-050 through D-052 are included below because they govern the current operating and authority posture.
 
+D-053 was added after this version's reconciliation, by CI-003 (#598). It governs how generated content may be published to the repository. It adds no baseball semantics and changes neither D-051 nor D-052.
+
 | ID | Date | Decision | Status |
 | --- | --- | --- | --- |
 | D-001 | Prior to Jul 2026 | BaseballOS is trust-first. | Permanent |
@@ -357,6 +359,7 @@ The current-state reconciliation does not create a new durable semantic or autho
 | D-050 | Aug 6, 2026 | OPS-002 uses temporary runtime headroom while preserving publication gates and all game-driven authority boundaries; permanent work reduction remains separate. | Operational until permanent work-reduction proof supersedes it |
 | D-051 | Aug 8, 2026 | Acquisition may advance independently, but public Team Board, Compare, and Tonight authority advances only through trusted publication. Production full-daily execution is scheduled and first-attempt only; generic manual daily execution, local production daily invocation, the legacy admin daily writer route, and GitHub reruns are non-authoritative/refused. | Standing trust boundary |
 | D-052 | Aug 10, 2026 | Phase 1A Game-Driven Ingestion Authority Qualification is complete after OPS-002 scheduled reliability proof, OPS-001 scheduled signal-separation proof, read-only candidate audit run 31393177954, and no-op write qualification PASS run 31395294655 for game 823924. The PASS proves safe governed entry into the write-capable path with zero baseball-data mutation and exact lane-ledger movement. It grants no automated/scheduled write authority, no game-driven publication authority, no backfill authority, and no legacy-writer retirement. | Permanent phase-exit decision |
+| D-053 | Aug 12, 2026 | Automated generated content may reach `main` only through a self-gating publication job: generate from trusted publication, prove delivery integrity, run the canonical frontend tests and production build against the exact generated tree, record that tree's identity, commit under `BaseballOS Automation <baseballoshq@gmail.com>` with run provenance, prove the commit's tree equals the validated tree, and fast-forward push. Repository write authority is scoped to that one job. The guarantee is tree-exact, not commit-SHA-exact. No baseball semantics move into CI; D-051 and D-052 are unchanged. | Standing publication boundary; repository implementation only, not production-verified |
 
 ## 16. Open Decisions
 
@@ -427,6 +430,7 @@ The current-state reconciliation does not create a new durable semantic or autho
 | Aug 10-11, 2026 | Phase 1B | UX-002 contextual `/bullpen` page identity (#600) | PR #633 / merge 98e452e… | CI green; production keyboard, accessibility-tree, and mobile checks passed; issue closed. | Exactly one contextual H1 per active `/bullpen` view; no answer-first regression. |
 | Aug 11, 2026 | Phase 1B | Routed team preview delivery correction | PR #637 "Serve dated team preview pages at public team routes" / merge 5e79c3c… | Public team routes serve the dated static previews rather than the application shell. | Delivery-path repair; the #594 authority and freshness contract is unchanged. |
 | Aug 11, 2026 | Phase 1B | DIST-003 production closeout (#594) | Scheduled run 31483859116 / export job 93760656523 | 30 of 30 dated previews from trusted snapshot 393, 0 withheld, data through 2026-08-10; `/team/COL` and `/team/INVALID` verified in production; issue closed. | Complete and production-verified. Evidence below. |
+| Aug 12, 2026 | CI | CI-003 generated-content CI gate (#598) | Session 1 read-only audit; repository implementation on `fix/generated-content-ci-gate` / D-053 | Repository implementation only. Delivery gate, canonical frontend tests and production build, tree-exact validation, `BaseballOS Automation` identity, and workflow permission narrowing are implemented and covered by contract tests. | **NOT complete.** Closeout requires the next naturally authorized scheduled run to produce a gated, tree-exact, machine-attributed generated commit, plus read-only Vercel deployment verification. #598 remains open. |
 
 ## DIST-003 (#594) Production Closeout Evidence
 

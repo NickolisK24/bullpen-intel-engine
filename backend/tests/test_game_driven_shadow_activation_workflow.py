@@ -128,7 +128,24 @@ def test_the_manual_inputs_are_unchanged(workflow):
 
 
 def test_permissions_are_not_broadened(workflow):
-    assert workflow['permissions'] == {'contents': 'write'}
+    """CI-003 / #598 narrowed this, and it must stay narrowed.
+
+    The workflow used to grant ``contents: write`` to every job in it, including
+    four that never touch the repository. Write authority now belongs to the one
+    job that publishes generated content, and the workflow default is read-only.
+    Anything that puts write back at workflow scope — or hands it to a second
+    job — is a broadening, which is what this test has always existed to catch.
+    """
+    assert workflow['permissions'] == {'contents': 'read'}
+
+    writers = sorted(
+        name for name, job in workflow['jobs'].items()
+        if (job.get('permissions') or {}).get('contents') == 'write'
+    )
+    assert writers == ['static-team-story-preview']
+    assert workflow['jobs']['static-team-story-preview']['permissions'] == {
+        'contents': 'write'
+    }
 
 
 def test_concurrency_is_unchanged(workflow):
@@ -702,15 +719,30 @@ def test_the_download_outcome_is_captured_for_the_gate(shadow_activation_health)
     assert 'steps.handoff-download.outcome' in json.dumps(gate['env'])
 
 
-def test_no_forbidden_pattern_list_is_duplicated_in_the_workflow(workflow_text):
-    """One scanner, one pattern list.
+def test_no_forbidden_pattern_list_is_duplicated_in_the_workflow(workflow, workflow_text):
+    """One pattern list, however many scans there are.
 
     The two scans previously carried independent copies of the same list, which
     is a list that can drift silently — the second copy learns about a new
-    secret shape only if someone remembers it exists.
+    secret shape only if someone remembers it exists. The fix was never "scan
+    once"; it was "never inline the list". CI-003 / #598 added a third scan, for
+    the generated-publication evidence, and it delegates to the same shared
+    scanner. What must stay true is that every scan step in this workflow goes
+    through that one script and none rolls its own patterns.
     """
     assert 'BASEBALLOS_ADMIN_API_TOKEN|token=' not in workflow_text
-    assert workflow_text.count('scan_forbidden_artifact_content.py') == 1
+
+    scan_steps = [
+        step
+        for job in workflow['jobs'].values()
+        for step in (job.get('steps') or [])
+        if 'scan' in (step.get('name') or '').lower()
+    ]
+    assert scan_steps, 'the workflow no longer scans artifacts before upload'
+    for step in scan_steps:
+        assert 'scan_forbidden_artifact_content.py' in (step.get('run') or ''), (
+            f'{step.get("name")!r} must delegate to the one shared scanner'
+        )
 
 
 # ══ Dependency graph ═════════════════════════════════════════════════════════

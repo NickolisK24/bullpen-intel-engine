@@ -622,7 +622,7 @@
       ]
     },
     "3": {
-      "measured_seconds": 501.329,
+      "measured_seconds": 501.549,
       "files": [
         {
           "path": "tests/test_active_bullpen_readiness_resolver.py",
@@ -819,6 +819,10 @@
         {
           "path": "tests/test_gamelog_field_authority.py",
           "measured_seconds": 0.013
+        },
+        {
+          "path": "tests/test_generated_content_ci_gate_workflow_contract.py",
+          "measured_seconds": 0.22
         },
         {
           "path": "tests/test_inherited_runners_authority_workflow_contract.py",

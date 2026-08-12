@@ -307,11 +307,22 @@ def test_d052_is_unchanged_in_meaning():
 
 
 def test_version_3_8_introduces_no_new_decision_ledger_id():
+    """A current-state reconciliation must not invent authority.
+
+    This owns one property: Version 3.8 renumbered nothing and added no decision
+    of its own. It is not a freeze on the ledger — an approved work package may
+    still record a real decision afterwards, and CI-003 (#598) did, as D-053. The
+    guard therefore pins the ledger through D-052 as Version 3.8's basis, and
+    requires that anything past it is contiguous and explicitly attributed to the
+    package that decided it, rather than appearing as reconciliation drift.
+    """
     text = _roadmap_text()
 
     ids = re.findall(r'^\| (D-\d{3}) \|', text, re.MULTILINE)
-    assert ids == [f'D-{number:03d}' for number in range(1, 53)]
-    assert ids[-1] == 'D-052'
+    assert ids == [f'D-{number:03d}' for number in range(1, len(ids) + 1)], (
+        'the Decision Ledger must stay contiguous and never renumber'
+    )
+    assert 'D-052' in ids
 
     assert 'Decision Ledger through D-052' in text
     assert 'adds no Decision Ledger ID' in text
@@ -319,6 +330,12 @@ def test_version_3_8_introduces_no_new_decision_ledger_id():
         'The current-state reconciliation does not create a new durable '
         'semantic or authority decision.'
     ) in text
+
+    for later in ids[ids.index('D-052') + 1:]:
+        assert f'{later} was added after this version' in text, (
+            f'{later} must state which package added it, so a reconciliation '
+            'cannot be mistaken for the source of a durable decision'
+        )
 
 
 def test_completion_log_records_594_and_637_but_not_638():
