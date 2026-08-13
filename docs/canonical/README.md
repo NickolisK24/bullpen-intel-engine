@@ -2,7 +2,7 @@
 
 **Owner:** Nickolis Kacludis  
 **Established:** July 29, 2026  
-**Last repository-wide documentation review:** August 6, 2026  
+**Last repository-wide documentation review:** August 13, 2026  
 **Status:** Canonical documentation system
 
 BaseballOS uses six living documents. Together they define the product without
@@ -82,7 +82,7 @@ the language that was true when they were produced.
 
 ## Current Authority Boundaries Worth Protecting
 
-As of the August 6 review:
+As of the August 13 review:
 
 - public Team State remains exactly `Fresh`, `Stretched`, `Vulnerable`;
 - arm reads remain `Clean Option`, `Watch Arm`, `Limited Rest`, `Unavailable`, `Limited Read`;
@@ -92,7 +92,20 @@ As of the August 6 review:
 - the legacy writer remains authoritative for baseball-data mutation;
 - automated game-driven write and publication-authority transfer remain unapproved;
 - the game `824487` single-purpose repair capability is retired;
-- OPS-002 is an operational reliability incident, not permission to weaken fail-closed publication gates.
+- OPS-002 was an operational reliability incident, not permission to weaken fail-closed publication gates, and its permanent work-reduction follow-up remains separate;
+- generated content may reach `main` only through the self-gating publication job (D-053); repository write authority is scoped to that one job.
+
+### Security and reliability boundary
+
+- production installs the backend runtime requirements only; test dependencies live in the development requirements file and must not ship;
+- backend runtime dependencies carry no known advisories;
+- a standing read-only CI dependency audit refuses unreviewed production dependency risk and never upgrades anything itself;
+- the residual frontend React Router advisories are an explicit, expiry-controlled acceptance — **2026-11-13** — tracked by #645 and bounded by a validated-redirect control whose regression tests are part of the acceptance;
+- an accepted advisory that is later remediated must have its exception deleted, not left in place.
+
+The current boundary detail lives in
+[`../current/DEPENDENCY_SECURITY_CLOSEOUT_2026-08-13.md`](../current/DEPENDENCY_SECURITY_CLOSEOUT_2026-08-13.md);
+the durable rule lives in the Architecture Manual.
 
 The canonical Roadmap owns exact current sequence and production acceptance
 evidence.

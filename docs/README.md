@@ -23,12 +23,12 @@ historical despite living outside `archive/`, see
 
 ## Current Execution Snapshot
 
-As of August 6, 2026:
+As of August 13, 2026, with `main` at `e3ad8bd`:
 
-- **UX-001 (#590) is complete.** Backend-owned Team State is proven in corrected production. PR #617 aligned readiness derivation with the canonical current active bullpen. Production run `31097712768` published and served snapshot `360`, data through August 5, with naturally occurring `Stretched`, `Vulnerable`, and a governed fail-closed case. Fresh evidence was not manufactured when no team naturally qualified.
-- **PROD-001 (#592) and CI-001 (#599) are complete.**
-- **OPS-001 (#593) is implemented but its scheduled observation window remains open.** `public-sync` and `shadow-activation-health` are separate verdicts.
-- **OPS-002 (#620) is the immediate production-reliability blocker.** August 6 evidence proved that daily runtime allocation can starve the publication-critical legacy GameLog writer after expensive unconditional upstream work. Three candidate snapshots were correctly withheld while snapshot `360` remained served. The system failed closed safely, but live Team Board/Compare/Tonight freshness was degraded.
+- **The Public Credibility Pass is complete.** UX-001 (#590), SEC-001 (#595), FE-001 (#591), UX-002 (#600), DIST-003 (#594), and VOC-001 (#638) are all closed after production verification. VOC-001 closed August 12 on trusted snapshot `398`.
+- **PROD-001 (#592), CI-001 (#599), OPS-001 (#593), and OPS-002 (#620) are complete.** The permanent daily-sync work reduction that OPS-002's mitigation deliberately did not implement remains separate follow-up work.
+- **DEP-001 (#601) is complete.** Backend runtime dependencies carry no known advisories, test dependencies no longer ship to production, and a standing read-only CI dependency audit refuses unreviewed production dependency risk. Three residual React Router advisories are an explicit acceptance expiring **2026-11-13**, tracked by #645. See [`current/DEPENDENCY_SECURITY_CLOSEOUT_2026-08-13.md`](current/DEPENDENCY_SECURITY_CLOSEOUT_2026-08-13.md).
+- **CI-003 (#598) is the ordered next package.** The generated-content publication gate (D-053) is on main and its issue is closed, but the closeout evidence the Roadmap requires — a naturally authorized scheduled export producing a gated, tree-exact, machine-attributed commit, plus read-only deployment proof — has not yet been recorded. A closed issue and recorded production proof are different claims.
 - Daily and postgame game-driven ingestion remain **shadow**. Backfill is off by default. The legacy writer remains authoritative. Automated game-driven write mode and publication-authority transfer remain unapproved.
 - The game `824487` source-revision checkpoint repair is terminally complete and its single-purpose mutation capability has been retired. It must not be reintroduced as a current operator path.
 
@@ -66,6 +66,7 @@ intelligence, experience, architecture, or editorial contract.
 - [`current/SHARE_CARDS_OPERATIONS.md`](current/SHARE_CARDS_OPERATIONS.md) — internal artifact coverage and refusal monitoring.
 - [`current/PROGRESSIVE_TEAM_ARTIFACT_PUBLICATION.md`](current/PROGRESSIVE_TEAM_ARTIFACT_PUBLICATION.md) — team-scoped progressive publication authority.
 - [`current/SHARE_CARDS_PUBLIC_ARTIFACT_PAGE.md`](current/SHARE_CARDS_PUBLIC_ARTIFACT_PAGE.md) — public immutable share-page implementation contract.
+- [`current/DEPENDENCY_SECURITY_CLOSEOUT_2026-08-13.md`](current/DEPENDENCY_SECURITY_CLOSEOUT_2026-08-13.md) — current dependency-security boundary: runtime/test dependency separation, the standing CI audit gate, and the expiry-controlled frontend acceptance.
 - [`current/CHANGELOG.md`](current/CHANGELOG.md) — major product, governance, rollout, CI, and operational milestones.
 
 These files may explain exact procedures or implementation state. They do not

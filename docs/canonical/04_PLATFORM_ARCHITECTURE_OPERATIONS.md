@@ -3,8 +3,8 @@
 | Field | Value |
 |---|---|
 | Status | Canonical - system architecture, security, deployment, operations, and runbook authority |
-| Version | 1.4 |
-| Effective date | August 12, 2026 |
+| Version | 1.5 |
+| Effective date | August 13, 2026 |
 | Owner | Nickolis Kacludis |
 | Repository | `NickolisK24/bullpen-intel-engine` |
 | Production product | `baseballos.app` |
@@ -58,8 +58,9 @@ The preferred architecture is boring, explicit, testable, and recoverable.
 ### Automation and quality
 
 - GitHub Actions scheduled and manual workflows
-- pytest backend suites
+- pytest backend suites, installed from the development requirements rather than the runtime set
 - Node-based frontend tests
+- continuous dependency auditing of both runtime surfaces
 - production smoke tests and operator audits
 - immutable database records and typed refusal/accounting where required
 
@@ -567,6 +568,16 @@ Critical fixtures include official starter mismatch, decimal-innings drift, trad
 
 A release is not complete merely because tests are green. The public behavior, production authority, and operational accounting must also pass.
 
+### Dependency audit gate
+
+CI carries a standing `dependency-audit` job alongside the functional gates. It audits the backend runtime requirements file with a pinned scanner and checks frontend production findings against a reviewed accepted-risk contract. Development and build-time advisories are reported as information and never gate the build.
+
+The gate is **read-only by design**. It never upgrades, pins, or edits a dependency, and no auto-upgrade or auto-merge path exists. Its only outputs are a report and a refusal; a human decides the remediation.
+
+It refuses a build when a production advisory is unknown, expired, mismatched against the package it is attributed to, duplicated, or missing its required metadata — and also when an acceptance no longer corresponds to anything reported, so a solved advisory's exception must be deleted rather than left behind where it could silently suppress a recurrence. A scanner or network failure is distinguished from a clean audit rather than passing quietly.
+
+Auditing declared requirements rather than the installed environment is deliberate: it measures what production actually ships instead of the CI runner's own tooling.
+
 ## 22. Observability
 
 Operator-visible signals include:
@@ -640,9 +651,22 @@ Three properties made it terminal:
 - maintain non-affiliation and source attribution where appropriate;
 - obtain rights/licensing review before commercial MLB-derived data use.
 
+### Runtime dependency surface
+
+The production dependency surface is kept deliberately smaller than the development one.
+
+- `backend/requirements.txt` is the runtime set and is what production installs.
+- `backend/requirements-dev.txt` pulls that set in and adds test-only packages, so a development environment is a superset of production rather than a different resolution.
+- Test-only packages must not appear in the runtime set. Shipping one adds its advisories to the production surface for no runtime benefit.
+- A declared frontend dependency with no import site is removed, not overridden. Deleting the package that carries an advisory is preferable to pinning around it.
+
+Known dependency risk that cannot be removed today is accepted only as an explicit, revocable decision: exact advisory identifier, exact package, a hard expiry date, a tracking issue, and a written decision record that exists in the repository. Severity-level suppression, wildcard entries, and blanket ignore rules are not permitted, and an acceptance is invalid from 00:00 UTC on its expiry date. Where an acceptance depends on a compensating control in application code, that control's regression tests are part of the acceptance: weakening them voids it.
+
+The dependency audit gate in §21 enforces this mechanically so an acceptance cannot outlive its review by being forgotten.
+
 ## 25. Operational Runbooks
 
-Active detailed procedures remain under `docs/current/`, including setup, sync pipeline, intraday reconciliation, Share Cards operations, cutover, team-progressive publication, and public artifact-page behavior.
+Active detailed procedures remain under `docs/current/`, including setup, sync pipeline, intraday reconciliation, Share Cards operations, cutover, team-progressive publication, public artifact-page behavior, and the current dependency-security boundary.
 
 Runbooks may be more detailed and may change more frequently. They do not override this Manual.
 
@@ -668,3 +692,4 @@ Prioritized architecture work should follow product need:
 | 1.2 | July 29, 2026 | Nickolis Kacludis | Added the performance intelligence domain boundary establishing backend-owned canonical performance authority, no frontend recalculation, fail-closed publication below an approved sample, method-version and evidence ownership, upstream appearance-team attribution, immutable artifact freezing, and the metric registry as a governed definition set rather than a new subsystem. Updated prioritized technical direction now that the performance family contract is established. |
 | 1.3 | July 30, 2026 | Nickolis Kacludis | Added exact-arithmetic, sample-unit, and refusal-distinctness rules to the performance intelligence domain: integer numerators and denominators, no floating point, a single ROUND_HALF_UP at the declared precision, thresholds stated in the denominator's unit, and a mathematical zero-denominator refusal kept separate from a governance below-sample refusal. Recorded that the merged framework is an unwired production-internal foundation whose approved parameters are not yet set. |
 | 1.4 | August 12, 2026 | Nickolis Kacludis | Recorded the automated generated-content publication contract (D-053): generated repository writes are permitted only through a self-gating job that proves delivery integrity, runs the canonical frontend tests and production build against the exact generated tree, records that tree's identity, commits under an explicit machine identity with run provenance, proves the commit's tree equals the validated tree, and fast-forward pushes. Stated the guarantee as tree-exact rather than commit-SHA-exact, scoped repository write authority to that one job, and confirmed the ordinary branch/PR expectation for human-authored work is unchanged. |
+| 1.5 | August 13, 2026 | Nickolis Kacludis | Recorded the runtime dependency surface as an architectural boundary: production installs the runtime requirements file only, development requirements are a superset that add test-only packages, test-only packages must not ship to production, and an unused frontend dependency is removed rather than overridden. Stated the accepted-risk standard for dependency advisories that cannot be removed today — exact advisory identifier, exact package, hard expiry, tracking issue, and an existing decision record, with no severity suppression, wildcards, or blanket ignores, and with any compensating control's regression tests forming part of the acceptance. Added the standing read-only dependency audit gate to the shipping gates: it audits declared requirements rather than the installed environment, treats development and build advisories as informational, distinguishes scanner failure from a clean audit, refuses unknown, expired, mismatched, duplicated, under-documented, or no-longer-reported entries, and never upgrades or edits a dependency itself. No baseball semantics, publication gate, sync mode, API, deployment process, or write authority changed. |

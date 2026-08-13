@@ -2,7 +2,7 @@
 
 **Status:** Current operational setup guide  
 **Owner:** Nickolis Kacludis  
-**Reviewed:** August 6, 2026
+**Reviewed:** August 13, 2026
 
 This guide gets the current BaseballOS application running locally. It is a
 procedure, not a product or architecture authority. Durable rules live in the

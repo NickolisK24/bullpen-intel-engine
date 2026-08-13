@@ -2,7 +2,7 @@
 
 **Status:** Supporting navigation and classification guide  
 **Owner:** Nickolis Kacludis  
-**Reviewed:** August 6, 2026  
+**Reviewed:** August 13, 2026  
 **Authority:** This file does not define product behavior. The six canonical documents remain authoritative.
 
 The BaseballOS repository contains several generations of product, engineering,
@@ -45,6 +45,7 @@ Current examples include:
 - `INTRADAY_RECONCILIATION.md` — current audit/reconciliation subsystem record.
 - `PROGRESSIVE_TEAM_ARTIFACT_PUBLICATION.md` — current team-progressive publication support.
 - share-artifact operations/cutover/public-page documents — current support for the immutable Share Artifact domain.
+- `DEPENDENCY_SECURITY_CLOSEOUT_2026-08-13.md` — current dependency-security boundary and standing obligations. Despite the date in its filename it is **current state, not point-in-time evidence**: it describes the boundary the platform operates under now and carries a live expiry date. It is superseded by a later boundary statement, not archived on a schedule.
 - `CHANGELOG.md` — milestone chronology, not execution authority.
 
 A `current/` file may be detailed, but detail does not let it override a
@@ -161,6 +162,27 @@ as shorthand for “the current production picture was healthy.”
 The current bounded mitigation and its production-proof requirements belong in
 the canonical Roadmap and current sync runbook. The investigation remains
 point-in-time evidence.
+
+## 9A. Dependency Accepted-Risk Records
+
+Dependency risk that cannot be removed today is accepted only as a dated,
+revocable decision. Two files are involved and they are not interchangeable:
+
+- `docs/decisions/2026-08-13-react-router-v7-security-defer.md` — the **decision
+  record**. It owns the reasoning, the applicability analysis, the compensating
+  control, and the revisit conditions.
+- `.github/dependency-audit-accepted.json` — the **machine contract** CI reads.
+  It owns the exact advisory identifiers, packages, expiry, and tracking issue.
+
+Rules for repository readers:
+
+- neither file may be edited to make a build pass; changing an expiry is a
+  security decision, not maintenance;
+- an acceptance is invalid from 00:00 UTC on its expiry date;
+- when the underlying advisory is remediated, the machine entry must be
+  **deleted**, while the decision record is preserved as history;
+- a decision record is not an authority to accept new risk by analogy. A new
+  advisory needs its own review.
 
 ## 10. Search-Result Interpretation Rules
 
