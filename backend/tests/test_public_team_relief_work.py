@@ -6,6 +6,8 @@ from datetime import date
 from pathlib import Path
 
 import pytest
+
+import freeze_policy
 from flask import Flask
 
 from api.team_recent_work import team_recent_work_bp
@@ -18,9 +20,7 @@ from tests.db_config import configure_test_database, create_test_schema, drop_te
 from tests.generated_team_pages import (
     GENERATED_TEAM_PAGE_ABBREVIATIONS,
     GENERATED_TEAM_PAGE_FILES,
-    ROUTED_TEAM_PREVIEW_DELIVERY_FILES,
 )
-from tests.public_vocabulary_files import PUBLIC_VOCABULARY_FILES
 from utils.db import db
 
 
@@ -1211,585 +1211,30 @@ def test_app_registers_team_relief_work_blueprint_static_contract():
 
 
 def test_existing_public_routes_behavior_freeze(monkeypatch):
+    """Frozen public routes and their services stay byte-frozen on a branch.
+
+    Exact paths only. The two directory clauses this guard used to carry --
+    ``frontend/`` and ``backend/migrations/`` -- protected nothing named here
+    and forced unrelated work into per-change allowlists; see
+    backend/tests/freeze_policy.py. ``backend/api/system.py`` is frozen along
+    with the public routes because the guard also pins its admin-gated internal
+    routes, asserted below.
+    """
     changed = _changed_files_vs_main()
     if not changed:
         pytest.skip('git diff against origin/main unavailable')
 
-    changed = [path.replace('\\', '/') for path in changed]
-    # backend/services/sync.py and backend/services/dashboard_snapshot.py were
-    # removed from this freeze for the July 2026 appearance-ledger trust
-    # incident (dead daily lane + missing publish gate). Their behavior is
-    # pinned by dedicated regression suites (test_statusless_split_finality.py,
-    # test_postgame_lookback.py, test_appearance_ledger.py).
-    blocked_files = {
-        'backend/api/bullpen.py',
-        'backend/api/pitchers.py',
-        'backend/api/recent_work.py',
-        'backend/api/system.py',
-        'backend/services/public_recent_work.py',
-        'backend/services/board_freshness.py',
-        'backend/services/team_story_previews.py',
-    }
-    allowed_internal_admin_files = {
-        'backend/api/system.py',
-    }
-    allowed_phase_a_audience_signup_files = {
-        'backend/migrations/versions/2f7b9c1a5d43_add_audience_subscribers.py',
-        'frontend/src/components/home/IntelligenceSurface.jsx',
-        'frontend/src/utils/api.js',
-        'frontend/tests/intelligenceSurface.test.mjs',
-    }
-    allowed_bullpen_game_context_files = {
-        'frontend/src/components/bullpen/TeamReliefWorkPanel.jsx',
-        'frontend/tests/teamReliefWorkPanel.test.mjs',
-    }
-    allowed_pitcher_ledger_coverage_files = {
-        'backend/migrations/versions/7c4d2e9f1a6b_add_pitcher_season_ledger_coverage.py',
-    }
-    allowed_public_what_changed_contract_files = {
-        # Branch 1 public What Changed contract completion permits only the
-        # dashboard storage condition and snapshot-unavailable fallback state.
-        'backend/api/bullpen.py',
-    }
-    allowed_phase0i_roster_readiness_files = {
-        'backend/api/bullpen.py',
-        'frontend/src/adapters/operatingStateReadModel.js',
-        'frontend/src/components/bullpen/board/BullpenBoardView.jsx',
-            'frontend/src/components/bullpen/board/TonightsBullpenBoard.jsx',
-            'frontend/src/components/bullpen/board/tonightsBullpenBoardView.js',
-            'frontend/src/components/dashboard/Dashboard.jsx',
-            'frontend/src/components/dashboard/AvailabilityDashboardSummary.jsx',
-            'frontend/src/components/dashboard/availabilityDashboardSummaryView.js',
-            'frontend/src/components/dashboard/injuryIlContextView.js',
-            'frontend/tests/availabilityDashboardSummary.test.mjs',
-            'frontend/tests/injuryIlContext.test.mjs',
-            'frontend/tests/tonightsBullpenBoard.test.mjs',
-        }
-    allowed_public_role_vocabulary_files = {
-        # fix/public-relief-role-consistency: one canonical public relief-role
-        # vocabulary (middle_relief -> depth_arm -> Middle Relief Arm) across
-        # the chip, disclosure, and dashboard surfaces.
-        'frontend/src/utils/pitcherLabels.js',
-        'frontend/src/components/bullpen/board/tonightsBullpenBoardView.js',
-        'frontend/tests/fixtures/bullpenBoardFixtures.mjs',
-        'frontend/tests/pitcherLabels.test.mjs',
-        'frontend/tests/pitcherUsageRole.test.mjs',
-    }
-    allowed_relief_role_input_integrity_files = {
-        # fix/relief-role-input-integrity: one backend-authored public role
-        # read owns the chip and disclosure; Compare inherits it untransformed.
-        'frontend/tests/teamBullpenComparison.test.mjs',
-    }
-    allowed_legacy_retirement_files = {
-        'backend/api/system.py',
-        'frontend/package-lock.json',
-        'frontend/package.json',
-        'frontend/src/App.jsx',
-        'frontend/src/components/admin/ProductIntelligenceAdmin.jsx',
-        'frontend/src/components/bullpen/Bullpen.jsx',
-        'frontend/src/components/dashboard/BullpenLandscape.jsx',
-        'frontend/src/components/home/IntelligenceSurface.jsx',
-        'frontend/src/components/layout/Footer.jsx',
-        'frontend/src/components/methodology/Methodology.jsx',
-        'frontend/src/components/share/TeamShareButton.jsx',
-        'frontend/src/components/stories/Stories.jsx',
-        'frontend/src/components/trust/DataTrust.jsx',
-        'frontend/src/hooks/useProductIntelligence.js',
-        'frontend/src/utils/adminProductEvents.js',
-        'frontend/src/utils/analytics.js',
-        'frontend/src/utils/api.js',
-        'frontend/src/utils/productIdentity.js',
-        'frontend/src/utils/productIntelligence.js',
-        'frontend/tests/analytics.test.mjs',
-        'frontend/tests/authClient.test.mjs',
-        'frontend/tests/intelligenceSurface.test.mjs',
-        'frontend/tests/navigationRoutes.test.mjs',
-        'frontend/tests/productIntelligence.test.mjs',
-        'frontend/tests/productIntelligenceAdmin.test.mjs',
-    }
-    allowed_trusted_traffic_files = {
-        'frontend/src/components/bullpen/Bullpen.jsx',
-        'frontend/src/components/bullpen/board/BullpenComparisonView.jsx',
-        'frontend/src/components/bullpen/board/TonightsBullpenBoard.jsx',
-        'frontend/src/components/bullpen/board/teamBullpenComparisonView.js',
-        'frontend/src/components/share/EvidenceShareMenu.jsx',
-        'frontend/src/components/share/TeamShareButton.jsx',
-        'frontend/src/components/stories/Stories.jsx',
-        'frontend/src/utils/adminDateTime.js',
-        'frontend/src/utils/evidenceCardModel.js',
-        'frontend/src/utils/evidenceCardStory.js',
-        'frontend/tests/canonicalEvidenceLinks.test.mjs',
-        'frontend/src/utils/evidenceCardRenderer.js',
-        'frontend/src/utils/evidenceCardText.js',
-        'frontend/src/utils/shareActions.js',
-        'frontend/src/utils/teamShare.js',
-        'frontend/tests/evidenceCards.test.mjs',
-        'frontend/tests/bullpenOperatingStateCard.test.mjs',
-        'frontend/tests/operatingStateReadModel.test.mjs',
-        'frontend/tests/fixtures/bullpenComparisonFixtures.mjs',
-        'frontend/tests/shareActions.test.mjs',
-        'frontend/tests/teamShare.test.mjs',
-        'backend/migrations/versions/a9e4c7d2f1b6_add_trusted_external_traffic.py',
-        'backend/migrations/versions/b2e7c4a9d1f3_add_traffic_evidence_context.py',
-        'backend/migrations/versions/c4f8a2d6e9b3_add_traffic_share_actions.py',
-        'backend/migrations/versions/d7e4f1a8c2b6_add_share_story_context.py',
-        'frontend/src/components/TrafficRouteObserver.jsx',
-        'frontend/src/components/admin/TrafficIntelligenceAdmin.jsx',
-        'frontend/src/utils/trafficMeasurement.js',
-        'frontend/src/utils/trafficReporting.js',
-        'frontend/tests/trafficIntelligenceAdmin.test.mjs',
-        'frontend/tests/trafficMeasurement.test.mjs',
-    }
-    allowed_wp42_schedule_files = {
-        'backend/migrations/versions/e6b4c2a8d1f3_add_slate_games.py',
-        'frontend/src/components/posts/PrivatePosts.jsx',
-        'frontend/src/components/posts/privatePostsView.js',
-        'frontend/tests/privatePosts.test.mjs',
-        'backend/migrations/versions/f7c5d3b9a2e1_add_editorial_post_history.py',
-        'backend/migrations/versions/a1d8e4c6b2f0_extend_editorial_post_history.py',
-    }
-    allowed_public_trust_consistency_files = {
-        # fix/public-trust-consistency: the Data & Trust availability usage check
-        # folds the internal Avoid tier into the single public Unavailable row so
-        # the same public label never appears twice. Public vocabulary, sample
-        # sizes, and conservative framing are unchanged.
-        'frontend/src/components/trust/AvailabilityBacktestCard.jsx',
-        'frontend/tests/availabilityBacktest.test.mjs',
-    }
-    allowed_mobile_navigation_first_use_files = {
-        # feat/mobile-navigation-first-use-clarity: plain-language mobile menu with
-        # primary bullpen destinations (Team Bullpens, Compare Bullpens, Reliever
-        # Finder) and a compact first-use entry area on Today. Routes, query
-        # behavior, and bullpen calculations are unchanged — labels and navigation
-        # structure only.
-        'frontend/src/components/Sidebar.jsx',
-        'frontend/src/utils/navigation.js',
-        'frontend/src/components/home/IntelligenceSurface.jsx',
-        'frontend/src/components/bullpen/Bullpen.jsx',
-        'frontend/tests/navigationRoutes.test.mjs',
-        'frontend/tests/bullpenTabLabels.test.mjs',
-        'frontend/tests/demoReadinessPolish.test.mjs',
-        'frontend/tests/mobileNavigation.test.mjs',
-        'frontend/tests/intelligenceSurface.test.mjs',
-    }
-    allowed_team_board_answer_hierarchy_files = {
-        # feat/team-board-answer-hierarchy: the Team Board leads with the answer
-        # (state, why, availability distribution, receipts, freshness) and moves
-        # the secondary team story and game context behind clear disclosures. The
-        # availability distribution reads the existing board count authority; no
-        # bullpen calculation, availability classification, or role authority
-        # changes.
-        'frontend/src/components/bullpen/board/TonightsBullpenBoard.jsx',
-        'frontend/src/components/bullpen/board/BullpenAvailabilityDistribution.jsx',
-        'frontend/tests/teamBoardAnswerHierarchy.test.mjs',
-    }
-    allowed_reliever_finder_search_first_files = {
-        # feat/reliever-finder-search-first: the Reliever Finder opens in a
-        # neutral, search-first state (no broad reliever list until the visitor
-        # searches, selects a team, or selects a public availability status),
-        # defaults to a neutral name A-Z order, compacts the
-        # search/team/availability/freshness controls into one responsive area
-        # that fits a 320px column, and clarifies the workload column labels. No
-        # bullpen calculation, availability classification, role authority, or
-        # route/query changes.
-        'frontend/src/components/bullpen/Bullpen.jsx',
-        'frontend/src/components/bullpen/relieverFinderView.js',
-        'frontend/tests/relieverFinder.test.mjs',
-        'frontend/tests/phaseALaunchProtection.test.mjs',
-    }
-    allowed_methodology_public_first_files = {
-        # feat/methodology-public-first-rewrite: the Methodology page explains the
-        # public read process (evidence -> arm read -> team read -> freshness ->
-        # limitations) in plain baseball language, with one fixed illustrative
-        # worked example. It removes the composite-score/weight framing and no
-        # longer fetches backend methodology data; it is presentation copy only.
-        # No calculation, threshold, classification, or vocabulary changes.
-        'frontend/src/components/methodology/Methodology.jsx',
-        'frontend/tests/methodologyDescore.test.mjs',
-        'frontend/tests/pageHierarchyDedupe.test.mjs',
-    }
-    allowed_data_trust_reader_first_files = {
-        # feat/data-trust-reader-first-rewrite: the Data & Trust page leads with the
-        # current public-data answer (served dashboard freshness authority), then
-        # explains freshness/coverage, then the retrospective next-day usage check.
-        # The usage-check formatting is made unknown-vs-zero honest (missing stays
-        # em dash, incomplete merged Unavailable fails closed), the scored-pitcher
-        # inventory diagnostic is removed, and Methodology/How to Read are linked.
-        # Presentation only: no availability/usage-check calculation, threshold,
-        # sync, snapshot, or API change.
-        'frontend/src/components/trust/DataTrust.jsx',
-        'frontend/src/components/trust/AvailabilityBacktestCard.jsx',
-        'frontend/tests/availabilityBacktest.test.mjs',
-        'frontend/tests/pageHierarchyDedupe.test.mjs',
-        'frontend/tests/dashboardRealignment.test.mjs',
-        'frontend/tests/syncStatus.test.mjs',
-    }
-    allowed_analytics_evidence_alignment_files = {
-        # feat/analytics-evidence-alignment: align the existing privacy-bounded,
-        # route-based traffic measurement with the evidence-first product. Adds the
-        # bounded since_yesterday entry source for trusted-change links, a
-        # consolidated "Evidence & Trust Use" reporting section (team read, recent
-        # bullpen work, pitcher lane, reliever detail, comparison read/evidence,
-        # reliever finder, methodology, data & trust views, since-yesterday opens,
-        # deeper-evidence sessions and depth), and current internal display names.
-        # Page views stay openings, not reading. No baseball intelligence,
-        # classification, evidence, freshness, route, or public claim changes.
-        'frontend/src/utils/evidenceLinks.js',
-        'frontend/src/components/home/IntelligenceSurface.jsx',
-        'frontend/src/components/admin/TrafficIntelligenceAdmin.jsx',
-        'frontend/src/utils/trafficReporting.js',
-        'frontend/tests/trafficMeasurement.test.mjs',
-        'frontend/tests/trafficIntelligenceAdmin.test.mjs',
-    }
-    allowed_share_artifacts_domain_files = {
-        # feature/share-artifacts-domain (Share Cards SC-01): the immutable share
-        # artifact domain migration. Backend domain only — no rendering, routes,
-        # or public runtime changes.
-        'backend/migrations/versions/c1a7f4e2b9d6_add_share_artifacts.py',
-        # feature/share-artifact-generation-cutover (Share Cards SC-03A): the
-        # governed generation audit migration and the internal admin generation
-        # endpoint. Backend orchestration/audit only — no public route or renderer.
-        'backend/migrations/versions/e2b8d5a3c9f1_add_share_artifact_generation_audits.py',
-        'backend/api/share_artifacts_admin.py',
-    }
-    allowed_share_artifact_cutover_files = {
-        # feature/share-artifact-generation-cutover (Share Cards SC-03A cutover):
-        # the active Share Card entry points now read the published, integrity-
-        # verified immutable Share Artifact via a governed backend read endpoint
-        # and a pure projection adapter, instead of composing card intelligence in
-        # the browser. No public availability/classification/vocabulary change: the
-        # endpoint serves only the already-governed compatibility projection.
-        'backend/api/share_cards.py',
-        'frontend/src/utils/shareCardArtifact.js',
-        'frontend/tests/shareCardArtifact.test.mjs',
-        'frontend/tests/shareCardCutover.test.mjs',
-    }
-    allowed_share_artifact_operations_files = {
-        # feature/share-artifact-operations + operator-ui (Share Cards SC-03B-03):
-        # a read-only internal operations/coverage/monitoring surface — a shared
-        # read model, an admin-token + browser-session (Bearer + email allowlist)
-        # read boundary, and an authenticated internal operator page. No public
-        # route, no generation, no mutation, no admin token in the browser.
-        'frontend/src/utils/shareArtifactOperations.js',
-        'frontend/src/components/admin/ShareArtifactOperations.jsx',
-        'frontend/tests/shareArtifactOperations.test.mjs',
-    }
-    allowed_public_share_artifact_page_files = {
-        # feat/public-share-artifact-page (Share Cards SC-04): the permanent public,
-        # read-only Share Artifact citation page at /share/:publicId, rendering an
-        # immutable historical artifact from a new public read API only. No live/
-        # current-state lookup, no internal/admin call, no generation, no deprecated
-        # generator, no new public claim/classification/vocabulary — it displays the
-        # already-frozen artifact.
-        'frontend/src/components/share/PublicShareArtifactPage.jsx',
-        # SC-04B v1.2: the code-rendered Team State card + its test, rendered first for
-        # team-state-1.2.0 artifacts (older artifacts keep their existing components).
-        'frontend/src/components/share/TeamStateArtifactCard.jsx',
-        'frontend/tests/teamStateArtifactCard.test.mjs',
-        'frontend/src/utils/publicShareArtifact.js',
-        'frontend/tests/publicShareArtifact.test.mjs',
-        'frontend/src/App.jsx',
-    }
-    allowed_progressive_team_publication_files = {
-        # fix/progressive-team-artifact-publication: the immutable team-scoped source
-        # authority checkpoint migration for progressive per-team Team State
-        # publication. New provenance table only; no public route, no SC-02/vocabulary
-        # change, and the league dashboard snapshot stays all-or-nothing.
-        'backend/migrations/versions/b3d9f1a7c2e5_add_team_progressive_publications.py',
-    }
-    allowed_team_at_appearance_files = {
-        # feat/team-at-appearance-authority (Bullpen Performance Context — Foundation 1):
-        # additive, nullable team-at-appearance columns on game_logs. Purely additive,
-        # reversible, no historical backfill, no reader migrated, no public route.
-        'backend/migrations/versions/a4f1c7e9b3d2_add_game_log_appearance_team.py',
-    }
-    allowed_repair_execution_ledger_files = {
-        # trust/apply-reviewed-pitching-line-repair (Foundation 3A): the durable execution
-        # ledger for the one reviewed, fingerprint-locked official pitching-line repair.
-        # A new internal table only — purely additive, reversible, no existing table
-        # touched, no reader migrated, and no public route.
-        'backend/migrations/versions/'
-        'c7b3e5a91d48_add_official_pitching_line_repair_executions.py',
-    }
-    allowed_game_ingestion_work_state_files = {
-        # operators/game-driven-daily-ingestion (Foundation 3C): the durable
-        # game-level ingestion checkpoint. A new internal table only — purely
-        # additive, reversible, no existing table touched, no existing row
-        # modified, no backfill, no reader migrated, and no public route.
-        'backend/migrations/versions/'
-        'b9d4e17c3a80_add_game_ingestion_work_items.py',
-    }
-    allowed_canonical_team_state_files = {
-    # ux-001 / #590 (team-fans/canonical-team-state-language): the live reader
-    # surfaces are migrated onto the backend-owned canonical Team State contract.
-    # The backend vocabulary authority gains one projection from governed Team
-    # Operations readiness; board, comparison, and dashboard payloads carry the
-    # resulting `team_state` block; and the frontend adapter is reduced to
-    # validating and rendering it, with its competing state dictionary removed.
-    # Reader-facing wording only: no derivation, threshold, readiness status
-    # code, publication gate, snapshot-selection rule, writer, migration, or
-    # Share Artifact behavior changed, and persisted snapshots are not rewritten.
-    # Founder-approved by D-003 and D-004; exact paths only, never a directory
-    # exemption.
-        'backend/api/bullpen.py',
-        'backend/services/bullpen_comparison.py',
-        'backend/services/team_state_public_vocabulary.py',
-        'frontend/src/adapters/operatingStateReadModel.js',
-        'frontend/src/adapters/publicTeamState.js',
-        'frontend/src/components/bullpen/BullpenOperatingStateCard.jsx',
-        'frontend/src/components/bullpen/board/BullpenComparisonView.jsx',
-        'frontend/src/components/bullpen/board/teamBullpenComparisonView.js',
-        'frontend/src/components/dashboard/BullpenLandscape.jsx',
-        'frontend/src/components/dashboard/bullpenLandscapeView.js',
-        'frontend/src/utils/evidenceCardModel.js',
-        'frontend/src/utils/evidenceCardStory.js',
-        # The two migrated frontend guard tests that no earlier workstream
-        # allowlisted. Test-only: they assert the new canonical behavior and
-        # change no product code.
-        'frontend/tests/dashboardScopeClarification.test.mjs',
-        'frontend/tests/tonightsBullpenBoardContext.test.mjs',
-    }
-    allowed_public_score_removal_files = {
-        # sec-001 / #595 (remove internal fatigue scoring from the public API):
-        # the unauthenticated API stops publishing the internal 0-100 workload
-        # composite, its component sub-scores, the internal risk tier, and the
-        # FatigueScore row's own database keys. Public routes serve a
-        # purpose-built workload view model instead of broad ORM serialization,
-        # and the scored view is retained behind the existing admin token.
-        #
-        # Frontend changes are consumer plumbing only: the Reliever Finder row
-        # now addresses a pitcher through the pitcher object instead of the
-        # score row's foreign key, the board card view model drops a computed
-        # score field that nothing rendered, and the unused local mirror of the
-        # backend fatigue model is deleted. No rendered label, availability
-        # status, threshold, vocabulary, ordering, or route changed.
-        'frontend/src/components/bullpen/Bullpen.jsx',
-        'frontend/src/components/bullpen/board/tonightsBullpenBoardView.js',
-        'frontend/src/utils/fatigueModel.js',
-        # Test-only: fixtures re-cut to the narrowed public payload, plus the
-        # new frontend regression suite for the removed fields.
-        'frontend/tests/fixtures/availabilityStatusFixtures.mjs',
-        'frontend/tests/fixtures/bullpenBoardFixtures.mjs',
-        'frontend/tests/relieverFinder.test.mjs',
-        'frontend/tests/publicScoreExposure.test.mjs',
-    }
+    moved = freeze_policy.protected_hits(
+        changed,
+        exact=freeze_policy.FROZEN_PUBLIC_ROUTE_PATHS,
+    )
+    assert moved == [], (
+        f'frozen public route surfaces changed: {moved}. Changing reader-facing '
+        'route behavior needs its own review.'
+    )
 
-    allowed_public_copy_authority_files = {
-        # fe-001 / #591 (frontend public-copy authority): meaning-bearing public
-        # language on the State -> Why -> Evidence path moves to the backend copy
-        # authority (services/public_bullpen_copy.py) and the frontend renders it
-        # verbatim. availabilityView.js stops deriving the public availability
-        # label and renders the backend-published one; copySuppressionAccounting
-        # is a temporary operator-only counter with no UI, no network, and no
-        # payload change; the test file is the rendering contract. No public
-        # label, availability threshold, classification, vocabulary decision,
-        # route, or Team State behavior changes.
-        'frontend/src/components/bullpen/availabilityView.js',
-        'frontend/src/utils/copySuppressionAccounting.js',
-        'frontend/tests/publicCopyAuthority.test.mjs',
-    }
-
-    allowed_public_vocabulary_parity_files = {
-        # voc-001 / #638 (public vocabulary parity): reader-facing wording only.
-        # Backend pitcher_public_labels.py becomes the sole owner of the public
-        # role/read strings; pitcherLabels.js stops rewriting them and renders
-        # the authored label verbatim. Two semantic collisions are removed —
-        # the role and read families no longer share the fallback word
-        # 'Limited Read' (role says 'Role Unclear'), and the data-status badge
-        # stops borrowing the baseball words 'Limited' and 'Healthy'
-        # (Current / Partial Data / Stale / Data Unavailable). Read confidence
-        # becomes an explicit High/Medium/Low scale instead of a second
-        # arm-read vocabulary.
-        #
-        # No threshold, classification, derivation, authority, gate, or
-        # timestamp changes: every engine key, availability status, Team State
-        # value, freshness computation and publication rule is byte-identical,
-        # which test_public_vocabulary_parity_changes_wording_only proves
-        # against the diff. Exact paths only, never a directory exemption.
-        'frontend/src/utils/pitcherLabels.js',
-        'frontend/src/components/bullpen/availabilityView.js',
-        'frontend/src/components/dashboard/syncStatusView.js',
-        'frontend/src/components/bullpen/board/teamGameContextView.js',
-        'frontend/src/components/bullpen/board/tonightsBullpenBoardView.js',
-        # The four vocabulary contract tests no earlier workstream
-        # allowlisted. Test-only: they assert the new canonical wording and
-        # change no product code.
-        'frontend/tests/availabilityView.test.mjs',
-        'frontend/tests/bullpenIntelligencePanel.test.mjs',
-        'frontend/tests/dataThroughAuthority.test.mjs',
-        'frontend/tests/gameContextVisualHierarchy.test.mjs',
-    }
-
-    allowed_bullpen_page_identity_files = {
-        # ux-002 / #600 (bullpen page identity): /bullpen renders three
-        # canonically different views and had no H1 at all, so the route shell
-        # now derives one contextual page heading from the active view and the
-        # already-fetched team list. SectionHeader gains an opt-in `as` prop and
-        # still renders h2 for every other caller; the new test file is the
-        # rendered heading contract. Semantic heading structure only: no Team
-        # State derivation, no availability or freshness logic, no backend call,
-        # no public vocabulary change, no route or query-parameter change.
-        'frontend/src/components/UI/SectionHeader.jsx',
-        'frontend/src/components/bullpen/board/TonightsBullpenBoard.jsx',
-        'frontend/tests/bullpenPageIdentity.test.mjs',
-    }
-
-    allowed_public_vocabulary_files = {
-        # voc-001 / #638 (public vocabulary parity): reader-facing wording gets
-        # one owner. The backend emits the final pitcher role/read strings and
-        # the frontend renders them verbatim instead of rewriting them; the role
-        # and read families stop sharing the fallback word 'Limited Read'; read
-        # confidence stops reading as a second baseball read; and the
-        # data-status badges stop borrowing baseball words. Strings only — no
-        # threshold, classification, derivation, availability rule, roster or
-        # publication authority, Team State projection, freshness computation,
-        # timestamp, or engine key changed.
-        #
-        # Exact paths only, never a directory exemption.
-        *PUBLIC_VOCABULARY_FILES,
-    }
-
-    allowed_static_team_preview_files = {
-        # dist-003 / #594 (routed team preview authority): the generated
-        # /team/{ABBR} pages stop publishing an undated present-tense claim in a
-        # non-canonical vocabulary. The preview builder now reads the trusted
-        # publication's canonical Team State, data-through date, and snapshot
-        # receipt instead of the team-shape adjective labels, and the exporter
-        # takes the same trusted published board every public request already
-        # takes. The generated HTML files are the regenerated output of that
-        # builder. No availability classification, threshold, Team State
-        # derivation, freshness semantic, route, or redirect target changes, and
-        # the in-product Team Board vocabulary is deliberately untouched.
-        'backend/services/team_story_previews.py',
-        'backend/scripts/export_team_story_pages.py',
-        'backend/services/share_artifact_public.py',
-        'frontend/tests/teamShare.test.mjs',
-        *GENERATED_TEAM_PAGE_FILES,
-        # The last mile of the same workstream. The Aug 11 authorized export
-        # generated all 30 trusted pages and production served the invalid-team
-        # fallback for every club, because the rewrite table had no exact-match
-        # rule ahead of the generic `/team/(.*)` catch. One rewrite is added;
-        # the generic fallback and the SPA catch-all are unchanged, so no
-        # existing public route's behavior changes and no redirect target moves
-        # — proved below by
-        # test_routed_team_preview_delivery_changes_routing_only rather than
-        # asserted here.
-        *ROUTED_TEAM_PREVIEW_DELIVERY_FILES,
-    }
-
-    allowed_frontend_runtime_dependency_files = {
-        # security/frontend-runtime-dependencies (#601 Slice C): the sign-in
-        # flow test gains the open-redirect regression contract for
-        # safeVerifyRedirect(), the compensating control recorded in
-        # docs/decisions/2026-08-13-react-router-v7-security-defer.md for the
-        # React Router advisories that have no 6.x fix.
-        #
-        # Test-only, and additive: no existing assertion was changed or removed,
-        # and no public route, reader, vocabulary, or serving behavior is
-        # touched. The new tests exercise a pure string validator.
-        'frontend/tests/signInFlow.test.mjs',
-    }
-
-    allowed_dead_ui_component_retirement_files = {
-        # cleanup/repository-retirement-pass: five shared UI components with no
-        # importer anywhere in the application are deleted together with their
-        # barrel exports — RiskBadge, GradeBox, FatigueBar, StatCard, Spinner.
-        #
-        # Nothing rendered them. Their only surviving references were *negative*
-        # assertions in frontend/tests/phaseALaunchProtection.test.mjs and
-        # frontend/tests/teamReliefWorkPanel.test.mjs, which require that
-        # '<RiskBadge' and '<FatigueBar' do NOT appear in Pitcher Detail, the
-        # Reliever Finder, or the Team Board. Deleting the components makes
-        # those assertions unfalsifiable rather than relaxing them; no
-        # assertion was weakened, removed, or edited.
-        #
-        # Because no module imported these files, no markup, public vocabulary,
-        # reader, route, snapshot, freshness, Team State, publication gate, or
-        # trusted-serving path changes. Verified by the full frontend suite
-        # (924/924) and a clean production build.
-        #
-        # Exact paths only, never a directory exemption.
-        'frontend/src/components/UI/RiskBadge.jsx',
-        'frontend/src/components/UI/GradeBox.jsx',
-        'frontend/src/components/UI/FatigueBar.jsx',
-        'frontend/src/components/UI/StatCard.jsx',
-        'frontend/src/components/UI/Spinner.jsx',
-        'frontend/src/components/UI/index.js',
-    }
-
-    assert not [
-        path for path in changed
-        if path not in allowed_dead_ui_component_retirement_files
-        if path not in allowed_frontend_runtime_dependency_files
-        if path not in allowed_public_vocabulary_parity_files
-        if path not in allowed_bullpen_page_identity_files
-        if path not in allowed_public_vocabulary_files
-        if path not in allowed_static_team_preview_files
-        if path not in allowed_public_copy_authority_files
-        if path not in allowed_public_score_removal_files
-        if path not in allowed_canonical_team_state_files
-        if path not in allowed_game_ingestion_work_state_files
-        if path not in allowed_share_artifacts_domain_files
-        if path not in allowed_share_artifact_cutover_files
-        if path not in allowed_share_artifact_operations_files
-        if path not in allowed_progressive_team_publication_files
-        if path not in allowed_team_at_appearance_files
-        if path not in allowed_repair_execution_ledger_files
-        if path not in allowed_public_share_artifact_page_files
-        if path not in allowed_phase_a_audience_signup_files
-        if path not in allowed_bullpen_game_context_files
-        if path not in allowed_pitcher_ledger_coverage_files
-        if path not in allowed_public_what_changed_contract_files
-        if path not in allowed_phase0i_roster_readiness_files
-        if path not in allowed_public_role_vocabulary_files
-        if path not in allowed_relief_role_input_integrity_files
-        if path not in allowed_legacy_retirement_files
-        if path not in allowed_trusted_traffic_files
-        if path not in allowed_wp42_schedule_files
-        if path not in allowed_public_trust_consistency_files
-        if path not in allowed_mobile_navigation_first_use_files
-        if path not in allowed_team_board_answer_hierarchy_files
-        if path not in allowed_reliever_finder_search_first_files
-        if path not in allowed_methodology_public_first_files
-        if path not in allowed_data_trust_reader_first_files
-        if path not in allowed_analytics_evidence_alignment_files
-        if (
-            path in blocked_files and path not in allowed_internal_admin_files
-        )
-        or path.startswith('frontend/')
-        or path.startswith('backend/migrations/')
-    ]
-
-    if (
-        'backend/api/bullpen.py' in changed
-        and 'backend/api/bullpen.py' not in allowed_phase0i_roster_readiness_files
-    ):
-        diff = _diff_vs_main('backend/api/bullpen.py')
-        assert "payload['what_changed_since_yesterday'] = changes" in diff
-        assert "'state': 'insufficient_context'" in diff
-        assert "'reason_codes': [reason or 'dashboard_snapshot_unavailable']" in diff
-
-    if (
-        'backend/api/system.py' in changed
-        and 'backend/api/system.py' not in allowed_legacy_retirement_files
-    ):
-        diff = _diff_vs_main('backend/api/system.py')
-        assert '/internal/snapshot-audit' in diff
-        assert '/internal/pitcher-evidence' in diff
-        assert '@require_admin_token' in diff
-
-        system_text = (REPO_ROOT / 'backend/api/system.py').read_text(encoding='utf-8')
-        for route in (
-            '/internal/team-evidence',
-            '/internal/snapshot-audit',
-            '/internal/pitcher-evidence',
-        ):
-            assert route in system_text
-            assert re.search(
-                rf"@system_bp\.route\('{re.escape(route)}', methods=\['GET'\]\)\s+@require_admin_token",
-                system_text,
-            )
-
+    # Route registration is proved directly rather than inferred from a diff,
+    # so it holds on every run instead of only when a comparison ref exists.
     monkeypatch.setenv('APP_ENV', 'test')
     monkeypatch.setenv('DATABASE_URL', 'sqlite:///:memory:')
     monkeypatch.setenv('TEST_DATABASE_URL', 'sqlite:///:memory:')
@@ -1801,6 +1246,20 @@ def test_existing_public_routes_behavior_freeze(monkeypatch):
     assert '/api/bullpen/pitchers/<int:pitcher_id>/recent-work' in rules
     assert '/api/bullpen/teams/<int:team_id>/bullpen' in rules
     assert '/api/system/internal/team-evidence' in rules
+
+    # The internal routes stay admin-gated. Previously this only ran when the
+    # branch diff happened to touch system.py and that change was allowlisted.
+    system_text = (REPO_ROOT / 'backend/api/system.py').read_text(encoding='utf-8')
+    for route in (
+        '/internal/team-evidence',
+        '/internal/snapshot-audit',
+        '/internal/pitcher-evidence',
+    ):
+        assert route in system_text
+        assert re.search(
+            rf"@system_bp\.route\('{re.escape(route)}', methods=\['GET'\]\)\s+@require_admin_token",
+            system_text,
+        )
 
 
 TEAM_PREVIEW_ROUTING_FILE = 'frontend/vercel.json'

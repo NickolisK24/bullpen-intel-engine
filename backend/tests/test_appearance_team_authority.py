@@ -14,6 +14,8 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import pytest
+
+import freeze_policy
 import sqlalchemy as sa
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
@@ -979,8 +981,21 @@ PUBLIC_VOCABULARY_ALLOWED_FILES = PUBLIC_VOCABULARY_FILES
 
 
 def test_branch_touches_no_team_state_or_public_surface_files():
-    # Source proof: Foundation 1 changes no Team State, Share Artifact, public API,
-    # or frontend file, so v1.2 payloads and immutable artifacts are byte-unchanged.
+    """Appearance-team work must not disturb Team State or Share Artifact surfaces.
+
+    This guard used to match by *substring*: any changed path containing
+    ``team_state``, ``share_artifact``, ``frontend/`` and so on. That is how
+    archiving ``docs/.../public_team_relief_work_panel.md`` -- a markdown record
+    -- tripped a runtime-surface freeze, and how every ordinary frontend change
+    landed here. Matching is now anchored to whole paths and real directories;
+    see backend/tests/freeze_policy.py.
+
+    The ``frontend/`` clause is gone entirely. The frontend files this guard
+    cared about are the ones proved clean directly, on every run, by the
+    ownership tests below (test_canonical_team_state_files_read_no_appearance_
+    team_authority and its siblings), which are strictly stronger than a diff
+    check that skips whenever the comparison ref is missing.
+    """
     import subprocess
     repo_root = REPO_ROOT_FOR_DIFF
     try:
@@ -993,163 +1008,38 @@ def test_branch_touches_no_team_state_or_public_surface_files():
     changed = [line.strip() for line in out.splitlines() if line.strip()]
     if not changed:
         pytest.skip('no diff resolved')
-    # Runtime surfaces only — guard/allowlist TEST updates (which change no product
-    # behavior) are expected and excluded.
+    # Guard/allowlist TEST updates change no product behavior.
     non_test = [
         path for path in changed
         if not path.startswith(('backend/tests/', 'frontend/tests/'))
     ]
-    forbidden_fragments = (
-        'team_state', 'share_artifact', 'frontend/', 'backend/api/',
-        'services/season_era', 'bullpen_context', 'public_team_relief_work',
+
+    offenders = freeze_policy.protected_hits(
+        non_test,
+        exact=(
+            freeze_policy.APPEARANCE_TEAM_PROTECTED_PATHS
+            + freeze_policy.SHARE_ARTIFACT_SCHEMA_PATHS
+        ),
+        prefixes=(
+            freeze_policy.PUBLIC_API_PREFIX,
+            freeze_policy.TEAM_STATE_PATH_PREFIX,
+            freeze_policy.SHARE_ARTIFACT_SERVICE_PREFIX,
+            freeze_policy.SHARE_ARTIFACT_MODEL_PREFIX,
+        ),
+        # The two approved public consumers of GameLog.appearance_team_id
+        # (founder-approved 2026-07-30 for the July 28 official-starter
+        # alignment incident) and the M-001 internal admin read. That these two
+        # use appearance-team authority and never fall back to Pitcher.team_id
+        # is proved by test_approved_public_consumers_use_appearance_team_
+        # authority_only, not merely exempted here.
+        approved=(
+            'backend/services/public_team_relief_work.py',
+            'backend/api/performance_intelligence_admin.py',
+        ),
     )
-    # THE FIRST APPROVED PUBLIC CONSUMERS OF CANONICAL APPEARANCE-TEAM AUTHORITY.
-    #
-    # These two files, and only these two, are approved to read
-    # GameLog.appearance_team_id (Foundation 1) on a public surface. Founder-
-    # approved 2026-07-30 for the July 28 official-starter alignment incident:
-    # the Team Board relief-work surface published a game narrative naming a
-    # pitcher who did not start that game, because it scoped appearances by the
-    # pitcher's current club instead of the official game side. Correcting it
-    # required a public consumer, which Foundation 1 deliberately shipped
-    # without. See docs/audits/official-starter-evidence-alignment-2026-07-28.md.
-    #
-    # The guard's purpose is intact: this payload is computed per request and is
-    # never snapshotted, stored on a story, or written into a share artifact, so
-    # Team State v1.2 payloads and immutable artifacts remain byte-unchanged.
-    #
-    # This is an exact-path allowlist, never a directory exemption. Adding any
-    # further public consumer REQUIRES an explicit change to this test and its
-    # own approval. Team State, Share Artifacts, season aggregation, backend/api,
-    # and every other public surface remain fully protected. Neither approved
-    # consumer may fall back to Pitcher.team_id for attribution — enforced by
-    # test_approved_public_consumers_use_appearance_team_authority_only below.
-    APPROVED_PUBLIC_APPEARANCE_TEAM_CONSUMERS = (
-        'backend/services/public_team_relief_work.py',
-        'frontend/src/components/bullpen/TeamReliefWorkPanel.jsx',
+    assert offenders == [], (
+        f'appearance-team work must not touch these runtime surfaces: {offenders}'
     )
-    # INTERNAL, NON-PUBLIC CONSUMERS.
-    #
-    # backend/api/ holds both public routes and authenticated internal ones, so
-    # the 'backend/api/' fragment above catches a route that reaches no reader.
-    # This file is the M-001 internal review read (D-023 to D-030): it requires
-    # the existing admin token, is read-only, serves one team and one
-    # represented date, renders on no public surface, and reports every
-    # publication gate as blocked. It writes nothing and is never snapshotted
-    # or frozen into an artifact, so Team State v1.2 payloads and immutable
-    # artifacts remain byte-unchanged.
-    #
-    # Exact paths only, never a directory exemption. This entry authorizes no
-    # public consumer, and adding one still requires changing the list above
-    # and its own approval.
-    APPROVED_INTERNAL_APPEARANCE_TEAM_CONSUMERS = (
-        'backend/api/performance_intelligence_admin.py',
-    )
-    # CANONICAL TEAM STATE RECONCILIATION (UX-001 / #590), founder-approved by
-    # D-003 and D-004.
-    #
-    # These files carry the deliberate migration of the live reader surfaces onto
-    # the backend-owned public Team State contract: the vocabulary authority gains
-    # one projection from governed Team Operations readiness, the board /
-    # comparison / dashboard payloads carry the resulting block, and the frontend
-    # adapter is reduced to validating and rendering it.
-    #
-    # This guard exists so appearance-team work cannot incidentally alter Team
-    # State v1.2 payloads or immutable artifacts. That purpose is intact and is
-    # now actively enforced rather than merely exempted: none of these files may
-    # read appearance-team authority at all, which
-    # test_canonical_team_state_files_read_no_appearance_team_authority proves
-    # directly. Share Artifact generation, eligibility, and the immutable
-    # lifecycle are untouched, so published artifacts stay byte-unchanged.
-    #
-    # Exact paths only, never a directory exemption. Every other public surface
-    # remains fully protected, and adding a path here still requires its own
-    # approval.
-    APPROVED_CANONICAL_TEAM_STATE_FILES = CANONICAL_TEAM_STATE_FILES
-    # See PUBLIC_SCORE_REMOVAL_FILES above (SEC-001 / #595).
-    APPROVED_PUBLIC_SCORE_REMOVAL_FILES = PUBLIC_SCORE_REMOVAL_FILES
-    # See PUBLIC_COPY_AUTHORITY_FILES above (FE-001 / #591).
-    APPROVED_PUBLIC_COPY_AUTHORITY_FILES = PUBLIC_COPY_AUTHORITY_FILES
-    # See STATIC_TEAM_PREVIEW_FILES above (DIST-003 / #594).
-    APPROVED_STATIC_TEAM_PREVIEW_FILES = STATIC_TEAM_PREVIEW_FILES
-    # See BULLPEN_PAGE_IDENTITY_FILES above (UX-002 / #600).
-    APPROVED_BULLPEN_PAGE_IDENTITY_FILES = BULLPEN_PAGE_IDENTITY_FILES
-    # See PUBLIC_VOCABULARY_ALLOWED_FILES above (VOC-001 / #638).
-    APPROVED_PUBLIC_VOCABULARY_FILES = PUBLIC_VOCABULARY_ALLOWED_FILES
-    # FRONTEND DEPENDENCY MANIFESTS (DEP-001 / #601 Slice C).
-    #
-    # The 'frontend/' fragment above is deliberately broad, so it also catches
-    # the two files that declare the frontend's dependency set. This entry
-    # approves those two files only.
-    #
-    # The guard's purpose is intact. These manifests carry no reader, no
-    # rendering, no vocabulary, and no payload: the Slice C change removes two
-    # dependencies that had zero import sites anywhere in the frontend
-    # (recharts, and clsx which only recharts pulled), which transitively drops
-    # the lodash advisory, and patches react-router-dom 6.30.3 -> 6.30.4. No
-    # component, adapter, Team State projection, or Share Artifact surface is
-    # touched, so Team State v1.2 payloads and immutable artifacts remain
-    # byte-unchanged, and no appearance-team authority is read.
-    #
-    # Exact paths only, never a directory exemption. A frontend SOURCE file
-    # still trips this guard and still requires its own approval.
-    APPROVED_FRONTEND_DEPENDENCY_MANIFESTS = (
-        'frontend/package.json',
-        'frontend/package-lock.json',
-    )
-    # DEAD SHARED UI COMPONENT RETIREMENT (cleanup/repository-retirement-pass).
-    #
-    # Five shared UI components with no importer anywhere in src/ are deleted
-    # together with their barrel exports: RiskBadge, GradeBox, FatigueBar,
-    # StatCard and Spinner. Nothing rendered them, so no markup, Team State
-    # projection, Share Artifact surface, public payload, or appearance-team
-    # read changes; v1.2 payloads and immutable artifacts stay byte-unchanged.
-    #
-    # Their only surviving references were negative assertions requiring that
-    # '<RiskBadge' and '<FatigueBar' NOT appear in Pitcher Detail, the Reliever
-    # Finder, or the Team Board. Deleting the components makes those assertions
-    # unfalsifiable rather than relaxing them.
-    #
-    # Exact paths only, never a directory exemption. Any other frontend source
-    # file still trips this guard and still requires its own approval.
-    APPROVED_DEAD_UI_COMPONENT_RETIREMENT_FILES = (
-        'frontend/src/components/UI/RiskBadge.jsx',
-        'frontend/src/components/UI/GradeBox.jsx',
-        'frontend/src/components/UI/FatigueBar.jsx',
-        'frontend/src/components/UI/StatCard.jsx',
-        'frontend/src/components/UI/Spinner.jsx',
-        'frontend/src/components/UI/index.js',
-    )
-    # CLOSED PHASE 0G DOCUMENT ARCHIVE (cleanup/repository-retirement-pass).
-    #
-    # Phase 0G closed with Phase 0 on July 29, 2026, so its folder moved
-    # unmodified to docs/archive/2026-07/. The archived copy is byte-identical
-    # to the original; git reports the move as a rename, and it lands here only
-    # because the 'public_team_relief_work' fragment matches the file NAME.
-    #
-    # A markdown record under docs/archive/ is not a runtime surface: no code,
-    # payload, artifact, or appearance-team read is involved. The exemption is
-    # this one path, not docs/ — a documentation change that actually altered a
-    # runtime surface would still be caught by the path it changed.
-    APPROVED_ARCHIVED_PHASE0G_DOCUMENT_FILES = (
-        'docs/archive/2026-07/phase0g/public_team_relief_work_panel.md',
-    )
-    offenders = [
-        path for path in non_test
-        if any(fragment in path for fragment in forbidden_fragments)
-        and path not in APPROVED_DEAD_UI_COMPONENT_RETIREMENT_FILES
-        and path not in APPROVED_ARCHIVED_PHASE0G_DOCUMENT_FILES
-        and path not in APPROVED_PUBLIC_APPEARANCE_TEAM_CONSUMERS
-        and path not in APPROVED_INTERNAL_APPEARANCE_TEAM_CONSUMERS
-        and path not in APPROVED_CANONICAL_TEAM_STATE_FILES
-        and path not in APPROVED_PUBLIC_SCORE_REMOVAL_FILES
-        and path not in APPROVED_PUBLIC_COPY_AUTHORITY_FILES
-        and path not in APPROVED_STATIC_TEAM_PREVIEW_FILES
-        and path not in APPROVED_BULLPEN_PAGE_IDENTITY_FILES
-        and path not in APPROVED_PUBLIC_VOCABULARY_FILES
-        and path not in APPROVED_FRONTEND_DEPENDENCY_MANIFESTS
-    ]
-    assert offenders == [], f'Foundation 1 must not touch these runtime surfaces: {offenders}'
 
 
 def test_canonical_team_state_files_read_no_appearance_team_authority():

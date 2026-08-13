@@ -317,7 +317,7 @@
       ]
     },
     "2": {
-      "measured_seconds": 497.63,
+      "measured_seconds": 498.48,
       "files": [
         {
           "path": "tests/test_appearance_ledger.py",
@@ -370,6 +370,10 @@
         {
           "path": "tests/test_editorial_roster_authority_migration.py",
           "measured_seconds": 0.006
+        },
+        {
+          "path": "tests/test_freeze_guard_behavior.py",
+          "measured_seconds": 0.85
         },
         {
           "path": "tests/test_game_driven_shadow_activation_validator.py",
@@ -610,7 +614,7 @@
       ]
     },
     "3": {
-      "measured_seconds": 498.449,
+      "measured_seconds": 498.519,
       "files": [
         {
           "path": "tests/test_active_bullpen_readiness_resolver.py",
@@ -775,6 +779,10 @@
         {
           "path": "tests/test_fatigue.py",
           "measured_seconds": 0.012
+        },
+        {
+          "path": "tests/test_freeze_policy.py",
+          "measured_seconds": 0.07
         },
         {
           "path": "tests/test_freshness_degradation.py",
