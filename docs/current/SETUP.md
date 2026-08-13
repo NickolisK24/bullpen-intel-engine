@@ -241,20 +241,19 @@ Do not create production tables ad hoc from application startup.
 
 ## 9. Production Architecture Boundary
 
-Current operating posture:
-
-- legacy daily/postgame sync remains authoritative for baseball-data mutation;
-- game-driven daily and postgame lanes are **shadow** observers;
-- backfill is off by default and only runs through explicit governed dispatch;
-- automated game-driven write mode is unapproved;
-- game-driven publication-authority transfer is unapproved.
+What a local developer must not get wrong: legacy daily/postgame sync remains
+authoritative for baseball-data mutation, the game-driven daily and postgame
+lanes are **shadow** observers, and backfill is off by default.
 
 Do not infer authority from the existence of a workflow, service, test, or
-manual qualification tool.
+manual qualification tool. In particular, the game `824487` single-purpose
+source-revision checkpoint repair is completed and retired; its former mutation
+path is not a general repair tool.
 
-The game `824487` single-purpose source-revision checkpoint repair has been
-completed and retired. Its former mutation path must not be treated as a general
-repair tool or reintroduced for convenience.
+The exact current posture, its approvals, and its evidence are owned by
+[`../canonical/05_PRODUCT_ROADMAP_DECISION_LEDGER.md`](../canonical/05_PRODUCT_ROADMAP_DECISION_LEDGER.md)
+and [`SYNC_PIPELINE.md`](SYNC_PIPELINE.md). This setup guide is not a second
+place for that list to drift.
 
 ## 10. Sync and Production Operations
 

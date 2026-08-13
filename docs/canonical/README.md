@@ -86,24 +86,24 @@ As of the August 13 review:
 
 - public Team State remains exactly `Fresh`, `Stretched`, `Vulnerable`;
 - arm reads remain `Clean Option`, `Watch Arm`, `Limited Rest`, `Unavailable`, `Limited Read`;
-- Team State is derived from the canonical current active bullpen population;
-- daily and postgame game-driven ingestion remain shadow;
-- backfill is off by default;
-- the legacy writer remains authoritative for baseball-data mutation;
-- automated game-driven write and publication-authority transfer remain unapproved;
-- the game `824487` single-purpose repair capability is retired;
-- OPS-002 was an operational reliability incident, not permission to weaken fail-closed publication gates, and its permanent work-reduction follow-up remains separate;
-- generated content may reach `main` only through the self-gating publication job (D-053); repository write authority is scoped to that one job.
+- Team State is derived from the canonical current active bullpen population.
+
+The production-mutation posture is unchanged and is **not restated here**: the
+legacy writer remains authoritative, game-driven daily/postgame lanes remain
+shadow, backfill is off by default, the game `824487` repair capability is
+retired, and generated content reaches `main` only through the self-gating
+publication job (D-053). The exact list, its evidence, and its decision history
+are owned by
+[`05_PRODUCT_ROADMAP_DECISION_LEDGER.md`](05_PRODUCT_ROADMAP_DECISION_LEDGER.md),
+with the operating procedure in
+[`../current/SYNC_PIPELINE.md`](../current/SYNC_PIPELINE.md).
 
 ### Security and reliability boundary
 
-- production installs the backend runtime requirements only; test dependencies live in the development requirements file and must not ship;
-- backend runtime dependencies carry no known advisories;
-- a standing read-only CI dependency audit refuses unreviewed production dependency risk and never upgrades anything itself;
-- the residual frontend React Router advisories are an explicit, expiry-controlled acceptance — **2026-11-13** — tracked by #645 and bounded by a validated-redirect control whose regression tests are part of the acceptance;
-- an accepted advisory that is later remediated must have its exception deleted, not left in place.
-
-The current boundary detail lives in
+Production ships runtime requirements only, a standing read-only CI dependency
+audit refuses unreviewed production dependency risk, and the residual frontend
+React Router advisories are an expiry-controlled acceptance — **2026-11-13**,
+tracked by #645. The full boundary and its standing obligations live in
 [`../current/DEPENDENCY_SECURITY_CLOSEOUT_2026-08-13.md`](../current/DEPENDENCY_SECURITY_CLOSEOUT_2026-08-13.md);
 the durable rule lives in the Architecture Manual.
 

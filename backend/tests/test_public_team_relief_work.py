@@ -1690,8 +1690,36 @@ def test_existing_public_routes_behavior_freeze(monkeypatch):
         'frontend/tests/signInFlow.test.mjs',
     }
 
+    allowed_dead_ui_component_retirement_files = {
+        # cleanup/repository-retirement-pass: five shared UI components with no
+        # importer anywhere in the application are deleted together with their
+        # barrel exports — RiskBadge, GradeBox, FatigueBar, StatCard, Spinner.
+        #
+        # Nothing rendered them. Their only surviving references were *negative*
+        # assertions in frontend/tests/phaseALaunchProtection.test.mjs and
+        # frontend/tests/teamReliefWorkPanel.test.mjs, which require that
+        # '<RiskBadge' and '<FatigueBar' do NOT appear in Pitcher Detail, the
+        # Reliever Finder, or the Team Board. Deleting the components makes
+        # those assertions unfalsifiable rather than relaxing them; no
+        # assertion was weakened, removed, or edited.
+        #
+        # Because no module imported these files, no markup, public vocabulary,
+        # reader, route, snapshot, freshness, Team State, publication gate, or
+        # trusted-serving path changes. Verified by the full frontend suite
+        # (924/924) and a clean production build.
+        #
+        # Exact paths only, never a directory exemption.
+        'frontend/src/components/UI/RiskBadge.jsx',
+        'frontend/src/components/UI/GradeBox.jsx',
+        'frontend/src/components/UI/FatigueBar.jsx',
+        'frontend/src/components/UI/StatCard.jsx',
+        'frontend/src/components/UI/Spinner.jsx',
+        'frontend/src/components/UI/index.js',
+    }
+
     assert not [
         path for path in changed
+        if path not in allowed_dead_ui_component_retirement_files
         if path not in allowed_frontend_runtime_dependency_files
         if path not in allowed_public_vocabulary_parity_files
         if path not in allowed_bullpen_page_identity_files

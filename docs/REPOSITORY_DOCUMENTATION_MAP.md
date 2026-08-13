@@ -89,6 +89,23 @@ Directories and top-level docs in this class include historical phase folders,
 `docs/reports/`, older `docs/governance/` packets, `docs/methodology/` research,
 and legacy top-level design/reconciliation documents.
 
+### Phase 0 folder locations
+
+Phase 0 closed July 29, 2026 (Canonical Trust Closeout). The August 13
+retirement pass moved the sub-phase folders whose only remaining role is
+implementation history — `phase0b`, `phase0f`, `phase0g`, `phase0h`,
+`phase0i`, `phase0j` — unmodified, to `docs/archive/2026-07/`.
+
+Three folders stayed at `docs/phase0c/`, `docs/phase0d/`, and `docs/phase0e/`
+because they are **not** inert history: runtime code and tests read them.
+`backend/services/evidence_classification.py` cites
+`docs/phase0d/public_language_rules.md` anchors as required-language
+references, and `test_phase0c_foundation_invariants.py`,
+`test_phase0d_evidence_contract.py`, `test_evidence_classification.py`,
+`test_phase0e_exit_docs.py`, and `test_qa_reconciliation_scenarios.py` read
+those files by path. Moving them would break an evidence contract, not just a
+link.
+
 Examples include older role-authority plans, weighting investigations,
 recommendation-engine certifications, bullpen-shape audits, and phase plans.
 
@@ -121,17 +138,22 @@ canonical library and current runbooks instead.
 
 ## 7. Older Top-Level Documentation
 
-Several `docs/*.md` files predate the canonical-library cutover. Examples
-include weighting foundations, reconciliation audits, role-authority plans, and
-bullpen-shape investigations.
+Several `docs/*.md` files predated the canonical-library cutover: weighting
+foundations, reconciliation audits, role-authority plans, bullpen-shape
+investigations, and the intelligence-surface design paper.
 
-They remain useful evidence. Their top-level placement does not make them active
-authorities.
+The August 13 retirement pass moved that batch, unmodified, to:
 
-Future cleanup may move these into dated archive folders in bounded batches,
-but moving them is organizational cleanup rather than product work. Do not
-mass-edit their historical terminology merely to make repository search results
-look current.
+`docs/archive/pre-canonical/`
+
+The folder is named for the boundary it sits behind — the July 29 canonical
+cutover — rather than a month, because these files carry no reliable individual
+authoring date in repository history. No historical terminology was rewritten
+during the move.
+
+`README.md`, `REPOSITORY_DOCUMENTATION_MAP.md`, and `local-development.md`
+remain at the top level: the first two are navigation, and the third is an
+active local-development procedure.
 
 ## 8. Retired Game 824487 Repair Material
 

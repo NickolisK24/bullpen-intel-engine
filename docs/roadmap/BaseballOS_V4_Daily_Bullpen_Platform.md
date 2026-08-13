@@ -1,5 +1,12 @@
 # BaseballOS V4 Roadmap: Foundation Integrity & Bullpen Evidence
 
+> **Historical implementation record — superseded.** Current sequence, priority,
+> and decision state are owned by
+> [`docs/canonical/05_PRODUCT_ROADMAP_DECISION_LEDGER.md`](../canonical/05_PRODUCT_ROADMAP_DECISION_LEDGER.md).
+> This file is retained in place because Phase 0E exit evidence
+> (`backend/tests/test_phase0e_exit_docs.py`) reads it. Its body below is the
+> original V4 record and is not rewritten to current language.
+
 This is the canonical execution roadmap for BaseballOS V4. The foundation
 sequence starts with Phase 0A — Pipeline Integrity & Data Trust before broader
 daily, follow-team, share, digest, creator, or monetization work.

@@ -1,5 +1,12 @@
 # BaseballOS Writing Rules & Narrative Standards
 
+> **Historical implementation record — superseded.** Public voice, claim
+> structure, vocabulary, and correction rules are owned by
+> [`docs/canonical/06_EDITORIAL_DISTRIBUTION_STANDARD.md`](../canonical/06_EDITORIAL_DISTRIBUTION_STANDARD.md).
+> The "source of truth" wording below is the original 2026 statement and is
+> preserved unrewritten as history; it does not grant this file current
+> authority over user-facing language.
+
 Version: 1.0
 
 Status: Foundational Product Governance Document

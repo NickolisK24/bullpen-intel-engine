@@ -1097,9 +1097,48 @@ def test_branch_touches_no_team_state_or_public_surface_files():
         'frontend/package.json',
         'frontend/package-lock.json',
     )
+    # DEAD SHARED UI COMPONENT RETIREMENT (cleanup/repository-retirement-pass).
+    #
+    # Five shared UI components with no importer anywhere in src/ are deleted
+    # together with their barrel exports: RiskBadge, GradeBox, FatigueBar,
+    # StatCard and Spinner. Nothing rendered them, so no markup, Team State
+    # projection, Share Artifact surface, public payload, or appearance-team
+    # read changes; v1.2 payloads and immutable artifacts stay byte-unchanged.
+    #
+    # Their only surviving references were negative assertions requiring that
+    # '<RiskBadge' and '<FatigueBar' NOT appear in Pitcher Detail, the Reliever
+    # Finder, or the Team Board. Deleting the components makes those assertions
+    # unfalsifiable rather than relaxing them.
+    #
+    # Exact paths only, never a directory exemption. Any other frontend source
+    # file still trips this guard and still requires its own approval.
+    APPROVED_DEAD_UI_COMPONENT_RETIREMENT_FILES = (
+        'frontend/src/components/UI/RiskBadge.jsx',
+        'frontend/src/components/UI/GradeBox.jsx',
+        'frontend/src/components/UI/FatigueBar.jsx',
+        'frontend/src/components/UI/StatCard.jsx',
+        'frontend/src/components/UI/Spinner.jsx',
+        'frontend/src/components/UI/index.js',
+    )
+    # CLOSED PHASE 0G DOCUMENT ARCHIVE (cleanup/repository-retirement-pass).
+    #
+    # Phase 0G closed with Phase 0 on July 29, 2026, so its folder moved
+    # unmodified to docs/archive/2026-07/. The archived copy is byte-identical
+    # to the original; git reports the move as a rename, and it lands here only
+    # because the 'public_team_relief_work' fragment matches the file NAME.
+    #
+    # A markdown record under docs/archive/ is not a runtime surface: no code,
+    # payload, artifact, or appearance-team read is involved. The exemption is
+    # this one path, not docs/ — a documentation change that actually altered a
+    # runtime surface would still be caught by the path it changed.
+    APPROVED_ARCHIVED_PHASE0G_DOCUMENT_FILES = (
+        'docs/archive/2026-07/phase0g/public_team_relief_work_panel.md',
+    )
     offenders = [
         path for path in non_test
         if any(fragment in path for fragment in forbidden_fragments)
+        and path not in APPROVED_DEAD_UI_COMPONENT_RETIREMENT_FILES
+        and path not in APPROVED_ARCHIVED_PHASE0G_DOCUMENT_FILES
         and path not in APPROVED_PUBLIC_APPEARANCE_TEAM_CONSUMERS
         and path not in APPROVED_INTERNAL_APPEARANCE_TEAM_CONSUMERS
         and path not in APPROVED_CANONICAL_TEAM_STATE_FILES
