@@ -213,21 +213,19 @@ def test_preflight_never_returns_wildcard_origin(monkeypatch):
     assert _acao(_preflight(app, PUBLIC_API_ROUTE, PROD_ORIGIN)) != '*'
 
 
-# C11 — *** PRE-UPGRADE BEHAVIOUR RECEIPT — EXPECTED TO BE FLIPPED. ***
+# C11 — Private Network Access is not granted.
 #
-# Flask-CORS 4.0.0 answers a Private Network Access preflight with
+# Flask-CORS 4.0.0 answered this preflight with
 # Access-Control-Allow-Private-Network: true unconditionally, with no
-# configuration option to disable it (CVE-2024-6221). This test freezes that
-# observed pre-upgrade behaviour so the security upgrade can prove the
-# transition rather than assert it.
+# configuration option to disable it (CVE-2024-6221). The previous commit
+# asserted that as the pre-upgrade receipt; this is the post-upgrade state.
 #
-# This is NOT an endorsement of the behaviour. It is a before-state receipt, and
-# it is deliberately a hard assertion — not xfail, not skip — because a test
-# that is allowed to pass either way proves nothing about the upgrade.
-#
-# When Flask-CORS moves to a version that fixes CVE-2024-6221, this expectation
-# must be changed to assert the secure condition.
-def test_private_network_access_current_flask_cors_4_behaviour(monkeypatch):
+# The governed condition is "private network access is not granted", so that is
+# what this asserts. Flask-CORS 6.0.5 expresses it by emitting the header with
+# the value "false" rather than omitting it — that exact spelling is an
+# implementation detail and is documented here rather than pinned, so a future
+# release that omits the header instead still passes.
+def test_private_network_access_is_not_granted(monkeypatch):
     app = _make_app(monkeypatch)
     resp = _preflight(
         app,
@@ -237,8 +235,9 @@ def test_private_network_access_current_flask_cors_4_behaviour(monkeypatch):
         **{'Access-Control-Request-Private-Network': 'true'},
     )
 
+    # The origin itself is still allowlisted — this is about the PNA grant only.
     assert _acao(resp) == PROD_ORIGIN
-    assert resp.headers.get('Access-Control-Allow-Private-Network') == 'true'
+    assert resp.headers.get('Access-Control-Allow-Private-Network') != 'true'
 
 
 # C12 — Private Network Access is still governed by the allowlist: a hostile
@@ -264,21 +263,21 @@ def test_non_api_path_receives_no_cors_authorization(monkeypatch):
     assert _acao(_request(app, 'get', NON_API_ROUTE, origin=PROD_ORIGIN)) is None
 
 
-# C14 — *** PRE-UPGRADE BEHAVIOUR RECEIPT — EXPECTED TO BE FLIPPED. ***
+# C14 — the r"/api/*" resource pattern is matched case-sensitively.
 #
-# Flask-CORS 4.0.0 matches the r"/api/*" resource pattern case-insensitively
-# (CVE-2024-6866), so an uppercase /API/... path is treated as in-scope and
-# receives CORS headers. BaseballOS declares a single resource policy, so this
-# grants no additional origin access today — but it is still incorrect matching,
-# and it is fixed by the upgrade.
+# Flask-CORS 4.0.0 matched the pattern case-insensitively (CVE-2024-6866), so an
+# uppercase /API/... path was treated as in-scope and received CORS headers. The
+# previous commit asserted that as the pre-upgrade receipt; this is the
+# post-upgrade state.
 #
-# Frozen here as a hard assertion for the same reason as C11: the upgrade must
-# demonstrate the change, not quietly absorb it.
-def test_uppercase_api_path_current_flask_cors_4_behaviour(monkeypatch):
+# BaseballOS declares a single resource policy, so the old behaviour granted no
+# additional origin access — but URL paths are case-sensitive, and the policy
+# should only apply where it was declared.
+def test_uppercase_api_path_is_outside_the_cors_policy(monkeypatch):
     app = _make_app(monkeypatch)
     resp = _request(app, 'get', '/API/health', origin=PROD_ORIGIN)
 
-    assert _acao(resp) == PROD_ORIGIN
+    assert _acao(resp) is None
 
 
 # C15 — covered by test_cors_origins_env_var_extends_allowlist above: an extra
