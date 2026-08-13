@@ -169,8 +169,8 @@ and a reference back to this record, and the `dependency-audit` CI job refuses
 the build when an advisory here is unknown, expired, attributed to a different
 package, duplicated, missing metadata, or no longer reported by npm — that last
 case forcing the exception to be deleted once the risk is gone rather than left
-behind. The substance of the decision below is unchanged; CI now checks it
-instead of relying on someone remembering the date.
+behind. The substance of this decision is unchanged; CI now checks it instead of
+relying on someone remembering the date.
 
 ## Revisit conditions
 
@@ -191,7 +191,11 @@ This acceptance ends early if **any** of the following occur:
 
 ## Scope
 
-No backend change. No dependency-audit CI gate (Slice D). No React Router v7
+This section records the scope of the Slice C change that produced this record.
+It is not a standing prohibition: Slice D subsequently added the dependency-audit
+CI gate described above, which is what now enforces this acceptance.
+
+No backend change. No dependency-audit CI gate in this slice. No React Router v7
 installation. No Lodash override or direct pin. No Vite, PostCSS, esbuild, Babel,
 nanoid or picomatch change — those are dev/build-only advisories outside the
 `npm audit --omit=dev` acceptance view for #601 and remain deferred. No change to

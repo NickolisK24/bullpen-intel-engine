@@ -4,6 +4,65 @@ This changelog summarizes major product, governance, rollout, and operational
 milestones. It does not replace the detailed evidence records linked from
 [docs/README.md](../README.md).
 
+## August 13, 2026 - Dependency Remediation And Standing Audit Gate (DEP-001)
+
+- Closed DEP-001 (#601) across four bounded slices, verified on `main` at
+  `e3ad8bd` by CI run `31729458591`. No baseball semantics, publication gate,
+  source authority, runtime configuration, production data, or game-driven
+  authority posture changed.
+- Upgraded the advisory-bearing backend request-path packages in one reviewed
+  pass (PR #643): Flask 3.0.0 → 3.1.3, Flask-CORS 4.0.0 → 6.0.5, gunicorn
+  21.2.0 → 23.0.0, requests 2.31.0 → 2.34.2, python-dotenv 1.0.0 → 1.2.2.
+  CORS behaviour was pinned by regression tests **before** the upgrade and
+  re-verified after it. The origin allowlist is unchanged and
+  `supports_credentials` remains disabled — credentials were never enabled,
+  which is what bounded the Flask-CORS advisory class in the first place.
+- Removed `pytest` from the production runtime (PR #644). `backend/requirements.txt`
+  is now the runtime set and `backend/requirements-dev.txt` pulls it in and adds
+  `pytest`, so a development environment is a superset of production rather than
+  a different resolution. Nothing under `backend/` imports `pytest` outside
+  `backend/tests/`. Production had been installing a test-only package, and its
+  advisories, for no runtime benefit.
+- Removed the unused frontend packages `recharts` and `clsx` and patched
+  `react-router-dom` to 6.30.4 (PR #646). Both removed packages had zero import
+  sites; deleting `recharts` removed the only **high**-severity production
+  advisory, because `lodash` entered the graph solely through it. **No override
+  and no direct pin was added** — the dependency carrying the advisory was
+  deleted instead. `npm audit --omit=dev` went from 4 advisory rows to 2.
+- Recorded the three residual React Router advisories — GHSA-wrjc-x8rr-h8h6,
+  GHSA-jjmj-jmhj-qwj2, and GHSA-337j-9hxr-rhxg — as an explicit, **time-boxed**
+  acceptance expiring **2026-11-13**, tracked by issue #645. None has a fix in
+  the 6.x line; npm's only offered remediation is a breaking major version, and
+  the v7 migration is blocked on the frontend test harness rather than on the
+  router. The SSR-hydration advisory does not apply to this client-only SPA, and
+  the open-redirect classes are bounded at the single URL-derived navigation
+  sink by `safeVerifyRedirect()`. **Its regression tests are part of the
+  acceptance: deleting or weakening them voids it.**
+- Added a standing `dependency-audit` CI job (PR #647). It audits the backend
+  runtime requirements file with a pinned scanner and checks frontend production
+  findings against `.github/dependency-audit-accepted.json`. Dev/build advisories
+  are informational and never gate the build.
+- The gate refuses a build when a production advisory is unknown, expired,
+  mismatched against the package npm attributes it to, duplicated, or missing
+  required metadata — and **also when an acceptance no longer corresponds to
+  anything reported**, so a solved advisory's exception must be deleted rather
+  than left behind where it would silently suppress a recurrence. Scanner and
+  network failures are distinguished from a clean audit rather than passing
+  quietly.
+- **The gate is read-only.** It never upgrades, pins, or edits a dependency, and
+  no auto-upgrade or auto-merge path was created. It reports and refuses; a
+  human decides the remediation. Its behaviour is covered by
+  `backend/tests/test_dependency_audit_gate.py`, which tests the evaluator
+  directly and asserts the workflow contract, so the job cannot be quietly
+  weakened without a failing test.
+- Auditing declared requirements rather than the installed environment is
+  deliberate: it measures what production actually ships instead of the CI
+  runner's own tooling.
+- The current boundary and its standing obligations are recorded in
+  `docs/current/DEPENDENCY_SECURITY_CLOSEOUT_2026-08-13.md`; the accepted-risk
+  reasoning is in
+  `docs/decisions/2026-08-13-react-router-v7-security-defer.md`.
+
 ## August 2026 - Daily Sync Runtime-Budget Incident (OPS-002)
 
 - Merged the daily-sync runtime-budget incident investigation through PR #619.

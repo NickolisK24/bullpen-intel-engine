@@ -8,11 +8,11 @@ Condensed Canonical Edition · Visual Audit Integrated
 
 One active objective. One canonical roadmap. Every durable decision recorded.
 
-VERSION 3.8  ·  PUBLIC-CREDIBILITY CURRENT-STATE EDITION
+VERSION 3.9  ·  DEPENDENCY-SECURITY CURRENT-STATE EDITION
 
 Owner: Nickolis Kacludis
 
-Effective August 11, 2026
+Effective August 13, 2026
 
 # Contents
 
@@ -50,17 +50,17 @@ This edition keeps the Product Roadmap & Decision Ledger as the sole canonical e
 | --- | --- |
 | Document | BaseballOS Product Roadmap and Decision Ledger |
 | Status | Canonical - current platform state, priority, sequence, decision, risk, and completion authority |
-| Version | 3.8 |
-| Effective date | August 11, 2026 |
+| Version | 3.9 |
+| Effective date | August 13, 2026 |
 | Owner | Nickolis Kacludis |
-| Repository basis | Production/main: NickolisK24/bullpen-intel-engine main at 18dd6914a933928254e969c85ecb19cf75b6a9f2 after PR #637. In flight, not on main: PR #639 (VOC-001) on `fix/public-vocabulary-parity` |
-| Decision basis | Decision Ledger through D-052; Version 3.8 reconciles current execution state without adding, weakening, or renumbering a durable authority decision |
-| Audit basis | Production closeout for #595, #591, #600, and #594; VOC-001 (#638) has repository implementation in PR #639 and no production verification yet |
-| Supersedes | Version 3.7 current-state wording while preserving all durable prior decisions and completion evidence |
+| Repository basis | Production/main: NickolisK24/bullpen-intel-engine main at e3ad8bdf47a0bf6209917051df2070fba8eff417 after PR #647. No in-flight implementation branch. |
+| Decision basis | Decision Ledger through D-053; Version 3.9 reconciles current execution state without adding, weakening, or renumbering a durable authority decision |
+| Audit basis | Production closeout for #595, #591, #600, #594, and VOC-001 (#638); DEP-001 (#601) complete and verified on main by CI run 31729458591 |
+| Supersedes | Version 3.8 current-state wording while preserving all durable prior decisions and completion evidence |
 | Update rule | Update after a priority change, material merge, phase exit, production incident, authority decision, risk change, or false current-state statement |
 | Review cadence | Weekly founder review; immediate update after a material production or product decision |
 
-| INTEGRATION RULE | Current-state reconciliation only. #595, #591, #600, and #594 are complete and production-verified. VOC-001 (#638) is the active package: its repository implementation lives in PR #639, which is open and unmerged, and it has no production proof. Repository CI green is necessary and not sufficient. This edition does not reorder later CI/dependency, reliability, Portable Intelligence, or M-001 work, and adds no Decision Ledger ID. |
+| INTEGRATION RULE | Current-state reconciliation only. VOC-001 (#638) is complete and production-verified, which exits the Public Credibility Pass. DEP-001 (#601) is complete on main with a time-boxed residual frontend advisory acceptance expiring 2026-11-13. CI-003 (#598) is the remaining ordered package and this edition does not adjudicate, weaken, or advance it: its recorded production-proof requirement stands exactly as written. This edition adds no Decision Ledger ID, and changes no authority, publication, or write posture. |
 | --- | --- |
 
 # Part I - Executive State
@@ -69,17 +69,17 @@ This edition keeps the Product Roadmap & Decision Ledger as the sole canonical e
 
 BaseballOS is a live public MLB bullpen-intelligence platform with a mature trust foundation, a defensible canonical appearance record, governed publication gates, immutable historical claims, and production evidence strong enough to close the game-driven ingestion authority-qualification phase without granting production write authority.
 
-The trust/copy/semantic credibility packages are substantially closed: raw public scores are contained, governed Why copy is backend-owned, `/bullpen` has one contextual H1 per view, and routed team previews are production-verified. The remaining immediate credibility gate is in-product vocabulary/glossary parity, whose repository implementation is in PR #639 and whose production proof has not yet been taken.
+The Public Credibility Pass is closed. Raw public scores are contained, governed Why copy is backend-owned, `/bullpen` has one contextual H1 per view, routed team previews are production-verified, and public vocabulary/glossary ownership is production-verified. Attention has moved from public credibility to delivery reliability and supply-chain hygiene: dependency risk on the production request path is remediated and continuously audited, and the remaining ordered package is the generated-content publication gate.
 
-| CURRENT VERDICT | The trust/copy/semantic credibility packages are substantially closed: raw public scores are contained, governed Why copy is backend-owned, `/bullpen` has one contextual H1 per view, and routed team previews are production-verified. The remaining immediate credibility gate is in-product vocabulary/glossary parity, whose repository implementation is in PR #639 and whose production proof has not yet been taken. |
+| CURRENT VERDICT | The Public Credibility Pass is closed: #595, #591, #600, #594, and #638 are all complete and production-verified. Dependency risk (#601) is remediated on main and now has a standing CI control, with one time-boxed frontend acceptance expiring 2026-11-13. The remaining ordered package is CI-003 (#598), whose recorded closeout still requires a naturally authorized scheduled generated-content publication and read-only deployment proof. |
 | --- | --- |
 
 ## 2. Current Repository and Authority State
 
 | Area | Current state | Meaning |
 | --- | --- | --- |
-| Repository main | 18dd6914a933928254e969c85ecb19cf75b6a9f2 | Current production baseline after PR #637 and #594 production closeout |
-| In-flight branch | `fix/public-vocabulary-parity` / PR #639 | VOC-001 repository implementation. Open, unmerged, not deployed; this is not production truth. |
+| Repository main | e3ad8bdf47a0bf6209917051df2070fba8eff417 | Current baseline after PR #647; CI run 31729458591 green on this commit |
+| In-flight branch | None | No open implementation branch carries product state. |
 | Daily game-driven lane | Shadow | Observation only; no automated baseball-data writes. |
 | Postgame game-driven lane | Shadow | Exact-cycle observation after the legacy postgame writer. |
 | Backfill lane | Off | No automatic backfill authority. |
@@ -94,33 +94,40 @@ The trust/copy/semantic credibility packages are substantially closed: raw publi
 | FE-001 (#591) | Complete | Backend-owned Why copy production-verified; frontend no longer rewrites or drops it. |
 | DIST-003 (#594) | Complete | Routed team previews production-verified August 11, 2026 from trusted snapshot 393; issue closed. See Appendix A. |
 | UX-002 (#600) | Complete | One contextual H1 per `/bullpen` view; keyboard, accessibility-tree, and mobile checks passed. |
-| VOC-001 (#638) | Active; repository implementation in PR #639; not production-verified | Public vocabulary/glossary ownership. PR #639 is open and unmerged, #638 remains open, and no production vocabulary smoke has been taken. |
+| VOC-001 (#638) | Complete | Public vocabulary/glossary ownership production-verified August 12, 2026 from trusted snapshot 398; issue closed. |
+| DEP-001 (#601) | Complete | Backend runtime audit clean; frontend production advisories reduced to three reviewed, time-boxed React Router acceptances expiring 2026-11-13; standing CI dependency gate added. Issue closed August 13, 2026. |
+| CI-003 (#598) | Ordered next; recorded closeout evidence outstanding | Repository implementation and the PR #642 result-transport repair are on main. The recorded closeout still requires a naturally authorized scheduled generated-content publication and read-only deployment proof. |
 
 ## 3. Active Objective
 
-| ACTIVE OBJECTIVE | VOC-001 (#638) — public vocabulary / glossary parity closeout |
+| ACTIVE OBJECTIVE | CI-003 (#598) — generated-content publication closeout |
 | --- | --- |
 
-Current implementation state:
+VOC-001 (#638) closed on production proof August 12, 2026, which exits the
+Public Credibility Pass. DEP-001 (#601) closed August 13, 2026. CI-003 (#598) is
+therefore the next package in the previously approved order, unchanged.
 
-- Phases 1 through 10B are implemented in PR #639.
-- Product Experience Standard v1.4 is in PR #639.
-- Bullpen Intelligence Standard v1.3 is in PR #639.
-- Roadmap v3.8 is reconciled in this phase.
-- PR #639 is OPEN and NOT MERGED.
-- Issue #638 remains OPEN.
-- Production verification has NOT yet occurred for VOC-001.
+Current state, recorded without adjudicating it:
+
+- The generated-content publication gate (D-053) and the PR #642 result-transport repair are both on main.
+- The GitHub issue #598 was closed August 12, 2026 through its linked pull request #641.
+- The closeout evidence this Roadmap requires has **not** yet been recorded: no gated, tree-exact, machine-attributed generated commit exists on main, and the read-only deployment verification has not been taken.
+- The first scheduled exercise, run 31693516516 on August 13, refused correctly rather than publishing. The repair merged after that run, so the next naturally authorized daily export has not yet occurred.
 
 Remaining work to close the objective:
 
-- Complete the remaining VOC-001 cross-family contracts and the retired-vocabulary repository sweep.
-- Merge PR #639 and let deployment complete.
-- Take a read-only production vocabulary smoke across Team Board, Compare, Dashboard, one limited/read-quality example, and one freshness/publication display.
-- Close #638 only after production proof; do not infer completion from repository CI alone.
-- #595, #591, #600, and #594 are complete and production-verified; do not reopen them absent a new defect.
-- Do not begin #598, #601, Portable Intelligence, or M-001 before #638 closes.
+- Let the next naturally authorized scheduled daily export run; do not force, rerun, or manually dispatch it to manufacture the proof.
+- Confirm the run produces a gated, tree-exact generated commit attributed to the machine identity, with run provenance.
+- Take read-only deployment verification of the published previews.
+- Reconcile the issue's recorded state against that evidence.
+- Do not treat the closed issue as the proof; the closed issue and the recorded evidence gate are different claims.
 
-Package outcome, recorded at roadmap altitude only — the Product Experience Standard v1.4 and the Bullpen Intelligence Standard v1.3 own the detail:
+Nothing in this edition changes the generated-content publication contract, its
+workflow, D-053, or any authority it governs.
+
+## 3A. Preceding Package Outcomes
+
+VOC-001 (#638) outcome, recorded at roadmap altitude only — the Product Experience Standard v1.4 and the Bullpen Intelligence Standard v1.3 own the detail:
 
 - one semantic owner per public vocabulary family, with backend-governed labels rendered verbatim;
 - Team State unchanged: Fresh / Stretched / Vulnerable;
@@ -137,6 +144,17 @@ Package outcome, recorded at roadmap altitude only — the Product Experience St
 - freshness and Data Status vocabularies separated.
 
 This is public-language ownership work. No model, threshold, classification, source authority, publication gate, or prediction behavior changed.
+
+DEP-001 (#601) outcome, recorded at roadmap altitude only — the current
+dependency-security boundary document owns the detail:
+
+- backend runtime dependencies carry no known advisories; the advisory-bearing request-path packages were upgraded in one reviewed pass with CORS behaviour pinned before the upgrade and re-verified after it;
+- `pytest` no longer ships to production; `backend/requirements-dev.txt` carries test dependencies and pulls the runtime set in;
+- unused frontend packages were removed rather than overridden, which deleted the only high-severity production advisory;
+- three React Router advisories remain, accepted as a **time-boxed** risk expiring 2026-11-13 and tracked by #645, bounded by a validated-redirect control and its regression tests;
+- a standing `dependency-audit` CI job now refuses new, expired, stale, mismatched, duplicated, or under-documented production dependency risk, and never upgrades anything itself.
+
+This is supply-chain hygiene. No baseball semantics, publication gate, source authority, runtime configuration, or write authority changed.
 
 ## 4. Protected Product Assets
 
@@ -155,22 +173,25 @@ This is public-language ownership work. No model, threshold, classification, sou
 | --- | --- | --- |
 | Confirmed visible defect | Rendered text or structure is directly contradictory, malformed, circular, duplicated, or inaccurate for the visible surface. | Resolved #591/#600 defects; future confirmed regressions enter the owning package. |
 | Source verification required | The screenshot shows a tension, but thresholds, backend payloads, or source authority are needed before declaring the underlying intelligence wrong. | Workload-concentration headline versus evidence; population/count questions. |
-| Runtime verification required | The screenshot captures a state that may be temporary or persistent. | VOC-001 rendered public vocabulary after PR #639 deploys. |
+| Runtime verification required | The screenshot captures a state that may be temporary or persistent. | Generated-content publication behaviour on the next naturally authorized scheduled export. |
 | Observation only | A potential correctness concern must remain read-only until canonical evidence confirms it. | Reliever eligibility or other source-authority questions. |
 
 ## 6. Next Approved Work
 
-The Public Credibility Pass has materially advanced: #595 (public score containment), #591 (backend-owned Why copy), #600 (contextual H1/accessibility structure), and #594 (routed team previews) are complete and production-verified. VOC-001 (#638) is the remaining package. Its repository implementation is in PR #639, which is open and unmerged; the gate is merge, deployment, and read-only production vocabulary smoke. Repository CI green is necessary and not sufficient, and no lower-priority implementation should be mistaken for VOC-001 completion.
+The Public Credibility Pass is complete: #595 (public score containment), #591 (backend-owned Why copy), #600 (contextual H1/accessibility structure), #594 (routed team previews), and #638 (public vocabulary/glossary parity) are all complete and production-verified. DEP-001 (#601) is complete on main. The order below is the previously approved sequence with the finished packages removed; nothing was reprioritized.
 
 | Order | Work package | Scope |
 | --- | --- | --- |
-| 1 | VOC-001 (#638) - Public vocabulary and glossary parity | Finish the remaining cross-family contracts and the retired-vocabulary sweep, merge PR #639, deploy, and take production vocabulary proof; one owner per term, preserving Fresh / Stretched / Vulnerable and the canonical arm-read dictionary. |
-| 2 | #598 - Generated-content CI validation | Ensure generated-content publication commits cannot bypass validation or obscure provenance. |
-| 3 | #601 - Dependency remediation | Assess and remediate request-path dependency risk while keeping audit gates green. |
-| 4 | Permanent daily-sync work reduction | Reduce avoidable upstream/runtime work without weakening D-051 or publication gates. |
-| 5 | Portable Intelligence | Canonical raster renderer, artifact-specific crawler metadata, share actions, and evidence-inspection funnel. |
-| 6 | Resume M-001 and visible evidence | Active Bullpen ERA, named-arm evidence, starter exposure, then Daily Habit work. |
-| 7 | Daily Habit and Consequence | Public What Changed, team movement, Today lead authority, game-aware slate, and quiet-day behavior. |
+| 1 | #598 - Generated-content CI validation | Take the outstanding closeout evidence: a naturally authorized scheduled export that produces a gated, tree-exact, machine-attributed generated commit, plus read-only deployment proof. Do not force or rerun a scheduled export to manufacture it. |
+| 2 | Permanent daily-sync work reduction | Reduce avoidable upstream/runtime work without weakening D-051 or publication gates. |
+| 3 | Portable Intelligence | #597 then #596: canonical raster renderer, artifact-specific crawler metadata, share actions, and evidence-inspection funnel. |
+| 4 | Resume M-001 and visible evidence | Active Bullpen ERA, named-arm evidence, starter exposure, then Daily Habit work. |
+| 5 | Daily Habit and Consequence | Public What Changed, team movement, Today lead authority, game-aware slate, and quiet-day behavior. |
+
+One dated obligation sits outside this order and does not wait for it: the
+React Router acceptance recorded under #645 expires **2026-11-13**, and the
+`dependency-audit` CI job refuses the build from that date onward. Either the
+migration lands or the acceptance is re-reviewed before then.
 
 # Part II - Integrated Priority Matrix
 
@@ -190,7 +211,8 @@ The Public Credibility Pass has materially advanced: #595 (public score containm
 | Complete | #591 - Explanation integrity | Backend-owned public copy | Frontend pass-through is proven; Why cannot be regex-rewritten or silently dropped; representative production surfaces verified. |
 | Complete | #600 - Contextual page semantics | One H1 per `/bullpen` view | Team Board, Compare, and Reliever Finder have one contextual H1, logical hierarchy, and successful keyboard/accessibility/mobile smoke. |
 | Complete | #594 - Routed team preview delivery | Production closeout August 11, 2026 | All 30 dated previews regenerate from one trusted publication; invalid routes fail closed; issue closed. |
-| Active | VOC-001 (#638) - Public vocabulary and glossary parity | Repository implementation in PR #639; no production proof | One public owner per term; in-product team-shape vocabulary reconciled; semantic families cannot be mistaken for Team State; production vocabulary smoke passed and #638 closed. |
+| Complete | VOC-001 (#638) - Public vocabulary and glossary parity | Production closeout August 12, 2026 from trusted snapshot 398 | One public owner per term; in-product team-shape vocabulary reconciled; semantic families cannot be mistaken for Team State; issue closed. |
+| Complete | DEP-001 (#601) - Dependency remediation | Verified on main by CI run 31729458591 | Backend runtime audit clean; frontend production risk reduced to three reviewed, expiry-controlled acceptances; standing CI dependency gate with no auto-upgrade path. |
 | Verification only | Bounded surface checks | Potential reliever/stale/population concerns remain evidence-first | Open or widen work only when source/runtime evidence proves a defect. |
 
 ## 9. Public Surface Semantics
@@ -199,14 +221,14 @@ The Public Credibility Pass has materially advanced: #595 (public score containm
 | --- | --- | --- |
 | Complete | #594 | Routed/static team preview contract production-verified: 30 of 30 dated previews from trusted snapshot 393, 0 withheld, and `/team/INVALID` fail-closed. |
 | Complete | #600 | Exactly one contextual H1 per `/bullpen` view; logical heading hierarchy; production keyboard/accessibility/mobile checks passed. |
-| Active | VOC-001 (#638) vocabulary/glossary parity | Reconcile in-product team-shape labels, semantic families, Team State headers, and freshness terminology without changing canonical state/read ownership. Implementation in PR #639; production proof outstanding. |
+| Complete | VOC-001 (#638) vocabulary/glossary parity | In-product team-shape labels, semantic families, Team State headers, and freshness terminology reconciled without changing canonical state/read ownership; production-verified August 12, 2026. |
 
 ## 10. Reliability, Portable Intelligence, and Evidence
 
 | Lane | Work item | Definition of done |
 | --- | --- | --- |
-| CI/reliability | #598 | Generated-content commits cannot bypass validation or obscure provenance. |
-| Dependencies | #601 | Known backend/frontend advisories are assessed; request-path risk is remediated; visible audit gates remain green. |
+| CI/reliability | #598 | Generated-content commits cannot bypass validation or obscure provenance. Implementation is on main; the recorded closeout evidence is outstanding. |
+| Dependencies | #601 - Complete | Known backend/frontend advisories assessed; request-path risk remediated; test dependencies removed from the production runtime; a standing read-only CI gate refuses unreviewed production dependency risk. Residual React Router acceptance expires 2026-11-13 under #645. |
 | Permanent runtime work | Daily-sync work reduction | Reduce candidate enumeration and repeated roster/transaction work without weakening D-051. |
 | Portable Intelligence | #597 then #596 | Supported raster assets first; then artifact-specific crawler-visible title, description, image, URL, alt text, and actions. |
 | Visible evidence | M-001 then named-arm/starter context | Resume approved evidence work only after Public Credibility Pass exit. |
@@ -221,7 +243,7 @@ The Public Credibility Pass has materially advanced: #595 (public score containm
 | Phase 0 - Canonical Trust Closeout | Complete | Maintain official-line, starter, outs, appearance-team, and publication-gate regressions. |
 | Phase 1 - Evidence Completeness | In progress / paused | M-001 contract complete; implementation resumes after public-credibility work. |
 | Phase 1A - Authority Qualification | Complete - August 10, 2026 | D-052 phase exit; all broader game-driven write/publication/backfill authority remains unapproved. |
-| Phase 1B - Public Credibility Pass | In progress / active | #590, #595, #591, #600, and #594 complete and production-verified. Exits only after PR #639 merges, deployment completes, read-only production vocabulary smoke passes, and #638 closes. Repository CI green is necessary and not sufficient. |
+| Phase 1B - Public Credibility Pass | Complete - August 12, 2026 | #590, #595, #591, #600, #594, and #638 all complete and production-verified. Maintain the vocabulary, copy-authority, and page-semantics regressions. |
 | Phase 2 - Portable Intelligence | Foundation complete / final distribution not started | Raster renderer, immutable asset, crawler metadata, actions, funnel. |
 | Phase 3 - Daily Habit and Consequence | Not started | Public What Changed, team movement, Today lead, game-aware slate, quiet-day behavior. |
 | Phase 4 - Offseason Intelligence Depth | Not started | Pitch trends, leverage/dependency, organizational depth, routed discovery, timeline/archive. |
@@ -265,14 +287,14 @@ The Public Credibility Pass has materially advanced: #595 (public score containm
 | R-22 | Manual daily execution becomes de facto authority | Critical | D-051 schedule-only, first-attempt-only production daily execution |
 | R-23 | Partial acquisition leaks into public serving | Critical | D-051 binds Team Board, Compare, Tonight to trusted published authority |
 | R-24 | Authority qualification is mistaken for authority transfer | Critical | D-052 phase-exit language; O-008 remains open and requires explicit founder approval |
+| R-25 | Dependency risk re-enters the production request path, or an accepted advisory quietly becomes permanent | High | #601 remediation; the standing read-only `dependency-audit` CI job; exact advisory/package-bound acceptances with hard expiry, tracking issue, and decision record; a solved advisory's exception must be deleted rather than left behind |
 
 # Part V - Backlog and Stop Conditions
 
 ## 13. Near-Term Backlog
 
-- VOC-001 (#638) public vocabulary and glossary parity: remaining cross-family contracts, retired-vocabulary sweep, PR #639 merge, and production vocabulary proof.
-- #598 generated-content CI validation.
-- #601 dependency remediation.
+- #598 generated-content CI validation: the outstanding closeout evidence from a naturally authorized scheduled export, plus read-only deployment proof.
+- React Router v7 migration (#645) before the 2026-11-13 acceptance expiry.
 - Permanent daily-sync work reduction.
 - Portable Intelligence: canonical raster renderer, artifact metadata, share actions, and evidence-inspection funnel.
 - Resume M-001 Active Bullpen ERA after the Public Credibility Pass.
@@ -301,9 +323,11 @@ Never backlog: predictions, betting/odds, game-outcome projections, injury predi
 
 # Part VI - Decision Ledger
 
-The current-state reconciliation does not create a new durable semantic or authority decision. D-001 through D-052 remain in force; D-050 through D-052 are included below because they govern the current operating and authority posture.
+The current-state reconciliation does not create a new durable semantic or authority decision. D-001 through D-053 remain in force; D-050 through D-053 are included below because they govern the current operating and authority posture.
 
-D-053 was added after this version's reconciliation, by CI-003 (#598). It governs how generated content may be published to the repository. It adds no baseball semantics and changes neither D-051 nor D-052.
+D-053, added by CI-003 (#598), governs how generated content may be published to the repository. It adds no baseball semantics and changes neither D-051 nor D-052.
+
+DEP-001 (#601) created no Decision Ledger ID. Its time-boxed acceptance of the residual React Router advisories is a dated, revocable security decision recorded in `docs/decisions/2026-08-13-react-router-v7-security-defer.md` and machine-enforced by `.github/dependency-audit-accepted.json` — deliberately not a durable authority decision, because it is designed to expire.
 
 | ID | Date | Decision | Status |
 | --- | --- | --- | --- |
@@ -433,6 +457,12 @@ D-053 was added after this version's reconciliation, by CI-003 (#598). It govern
 | Aug 12, 2026 | CI | CI-003 generated-content CI gate (#598) | Session 1 read-only audit; repository implementation on `fix/generated-content-ci-gate` / D-053 | Repository implementation only. Delivery gate, canonical frontend tests and production build, tree-exact validation, `BaseballOS Automation` identity, and workflow permission narrowing are implemented and covered by contract tests. | **NOT complete.** Closeout requires the next naturally authorized scheduled run to produce a gated, tree-exact, machine-attributed generated commit, plus read-only Vercel deployment verification. #598 remains open. |
 | Aug 13, 2026 | CI | CI-003 first scheduled D-053 exercise (#598) | Scheduled run 31693516516 | The exporter succeeded — 30 of 30 previews from trusted snapshot 404, 0 withheld, data through Aug 12 — and the delivery gate then refused to publish, because the structured result reached it through the exporter's stdout and stdout also carried an application diagnostic line. No generated commit and no push occurred. | **NOT complete.** Correct fail-closed refusal, not a gate defect. Bounded repair underway: the exporter writes its structured result to an explicit file instead of stdout. No trust or authority boundary weakened; the verifier stays strict. #598 remains open pending the next naturally authorized scheduled run and Vercel proof. |
 
+| Aug 12, 2026 | Phase 1B | VOC-001 public vocabulary and glossary parity (#638) | PRs #639, #640 / scheduled run 31589796614 | Trusted snapshot 398, data through 2026-08-11, sync_run_id 695. Production browser smoke verified canonical Team State, pitcher role/read labels, supporting reads, freshness/data-through, and all five board groups rendering independently. Issue closed August 12. | **Complete and production-verified.** PR #640 removed a frontend-only path that collapsed zero-count groups into a manufactured generic heading. No model, threshold, authority, or publication behavior changed; D-051 respected — no manual production daily sync was used for closeout. |
+| Aug 13, 2026 | Dependencies | DEP-001 backend request-path remediation (#601) | PR #643 | Flask 3.0.0 → 3.1.3, Flask-CORS 4.0.0 → 6.0.5, gunicorn 21.2.0 → 23.0.0, requests 2.31.0 → 2.34.2, python-dotenv 1.0.0 → 1.2.2. | CORS behaviour pinned by regression tests before the upgrade and re-verified after it. The origin allowlist is unchanged and `supports_credentials` remains disabled. |
+| Aug 13, 2026 | Dependencies | DEP-001 test/runtime dependency separation (#601) | PR #644 | `pytest` removed from `backend/requirements.txt`; `backend/requirements-dev.txt` added, pulling the runtime set in. | Production no longer installs test-only packages or their advisories. Nothing under `backend/` imports `pytest` outside `backend/tests/`. |
+| Aug 13, 2026 | Dependencies | DEP-001 frontend runtime remediation (#601) | PR #646 | Unused `recharts` and `clsx` removed, which deleted the only high-severity production advisory by removing the package `lodash` entered through; `react-router-dom` patched to 6.30.4. | No override and no direct pin was added. Three React Router advisories remain, accepted time-boxed to 2026-11-13 under #645, bounded by a validated-redirect control and its regression tests. |
+| Aug 13, 2026 | Dependencies | DEP-001 standing CI dependency gate and closeout (#601) | PR #647 / main e3ad8bd / CI run 31729458591 | Backend runtime audit clean. `dependency-audit` job refuses new, expired, stale, mismatched, duplicated, or under-documented production dependency risk; dev/build advisories are informational only. | **Complete.** The gate is read-only — it never upgrades, pins, or edits a dependency, and creates no auto-upgrade path. Issue closed August 13. |
+
 ## DIST-003 (#594) Production Closeout Evidence
 
 DIST-003 (#594) is **Complete**, production-verified August 11, 2026.
@@ -464,7 +494,7 @@ A third-party social-platform unfurl is not part of this recorded closeout. The 
 | Phase 0 - Canonical Trust Closeout | Complete | Jul 29, 2026 | Independent official-line, starter, outs, appearance-team, and aggregation closeout | Maintain regression and publication gates |
 | Phase 1 - Evidence Completeness | In progress / paused |  | D-021 through D-030 establish M-001 contract | Registry, backend read, Team Board, evidence, tests |
 | Phase 1A - Authority Qualification | Complete | Aug 10, 2026 | D-052; #593/OPS-002 closed; candidate audit and no-op PASS | No authority transfer; O-008 remains open |
-| Phase 1B - Vocabulary and Freshness | In progress / active |  | #590, #595, #591, #600, and #594 complete and production-verified | VOC-001 (#638): merge PR #639, deploy, pass read-only production vocabulary smoke, close #638. Repository CI green does not exit the phase. |
+| Phase 1B - Vocabulary and Freshness | Complete | Aug 12, 2026 | #590, #595, #591, #600, #594, and #638 complete and production-verified; VOC-001 closed on trusted snapshot 398 proof | Maintain vocabulary, copy-authority, and page-semantics regressions |
 | Phase 2 - Portable Intelligence | Foundation complete / final distribution not started |  | Immutable artifact and historical page are production | Renderer, metadata, actions, funnel |
 | Phase 3 - Daily Habit and Consequence | Not started |  | Comparability and surface foundations exist | What Changed, lead, slate, quiet day |
 | Phase 4 - Offseason Intelligence Depth | Not started |  | Candidate domains governed | Pitch, leverage, depth, routes, archive |
@@ -473,27 +503,34 @@ A third-party social-platform unfurl is not part of this recorded closeout. The 
 
 # Appendix C - Source Basis
 
-- BaseballOS Product Roadmap & Decision Ledger Version 3.7, effective August 11, 2026.
-- Repository main 18dd6914a933928254e969c85ecb19cf75b6a9f2 after PR #637.
-- Decision Ledger through D-052.
-- GitHub issue state through August 11, 2026, including #595, #591, #600, and #594 closed and #638 open with its implementation in PR #639.
-- Production evidence retained for #590, #592, #593, #595, #591, #600, #594, OPS-002, and Phase 1A authority qualification.
-- Product Experience Standard Version 1.3 routed-team preview contract; Version 1.4 public-vocabulary presentation contract in PR #639.
-- Bullpen Intelligence Standard Version 1.3 public-language authority in PR #639.
+- BaseballOS Product Roadmap & Decision Ledger Version 3.8, effective August 11, 2026.
+- Repository main e3ad8bdf47a0bf6209917051df2070fba8eff417 after PR #647; CI run 31729458591 green on that commit.
+- Decision Ledger through D-053.
+- GitHub issue state through August 13, 2026: #595, #591, #600, #594, #638, and #601 closed; #645, #597, #596, and the #589 tracker open.
+- Production evidence retained for #590, #592, #593, #595, #591, #600, #594, #638, OPS-002, and Phase 1A authority qualification.
+- Product Experience Standard Version 1.4 and Bullpen Intelligence Standard Version 1.3 public-vocabulary authority, both merged.
+- Current dependency-security boundary: `docs/current/DEPENDENCY_SECURITY_CLOSEOUT_2026-08-13.md`.
+- Accepted-risk decision record: `docs/decisions/2026-08-13-react-router-v7-security-defer.md`.
 
 ## Repository basis
 
-Current production main: 18dd6914a933928254e969c85ecb19cf75b6a9f2 after PR #637. Phase 1A remains closed under D-052. SEC-001 (#595), FE-001 (#591), UX-002 (#600), and DIST-003 (#594) are closed after production verification.
+Current main: e3ad8bdf47a0bf6209917051df2070fba8eff417 after PR #647. No open implementation branch carries product state. Phase 1A remains closed under D-052 and Phase 1B closed August 12, 2026.
 
-VOC-001 (#638) is implemented on `fix/public-vocabulary-parity` in PR #639, which is open and unmerged. Its canonical documents — Product Experience Standard v1.4 and Bullpen Intelligence Standard v1.3 — are repository implementation pending merge and are not production or main truth until PR #639 merges.
+SEC-001 (#595), FE-001 (#591), UX-002 (#600), DIST-003 (#594), VOC-001 (#638), and DEP-001 (#601) are all closed after verification.
 
 ## Active objective
 
-The active objective is VOC-001 (#638) public vocabulary/glossary parity closeout. The repository implementation exists in PR #639 and its CI is green, which is necessary and not sufficient: the objective closes only after the remaining cross-family contracts and retired-vocabulary sweep land, PR #639 merges, deployment completes, a read-only production vocabulary smoke passes, and #638 closes.
+The active objective is CI-003 (#598) generated-content publication closeout — the next package in the previously approved order, reached because VOC-001 and DEP-001 both closed.
+
+Its repository implementation and the PR #642 result-transport repair are on main, and its GitHub issue was closed August 12, 2026 through linked pull request #641. The closeout evidence this Roadmap requires is nevertheless still outstanding: no gated, tree-exact, machine-attributed generated commit exists on main, and read-only deployment verification has not been taken. The first scheduled exercise refused correctly rather than publishing, and the repair merged after that run.
+
+A closed issue and recorded production proof are different claims. This edition records that distinction and does not resolve it; #598's contract, workflow, and authority are untouched.
 
 ## Next approved sequence
 
-1) Close VOC-001 (#638): remaining contracts and sweep, merge PR #639, deploy, take production vocabulary proof. 2) Complete #598 generated-content CI validation. 3) Complete #601 dependency remediation. 4) Continue permanent daily-sync work reduction, preserving D-051 in full. 5) Begin Portable Intelligence only after the Public Credibility Pass exit is actually proven. 6) Resume M-001 and visible evidence. 7) Daily Habit and consequence work.
+1) Take the outstanding #598 closeout evidence from a naturally authorized scheduled export plus read-only deployment proof; do not force or rerun one to manufacture it. 2) Continue permanent daily-sync work reduction, preserving D-051 in full. 3) Begin Portable Intelligence — #597 then #596. 4) Resume M-001 and visible evidence. 5) Daily Habit and consequence work.
+
+Running alongside this order, and not gated by it: complete or re-review the React Router acceptance (#645) before it expires 2026-11-13.
 
 # Appendix D - Revision History
 
@@ -510,3 +547,4 @@ The active objective is VOC-001 (#638) public vocabulary/glossary parity closeou
 | 3.6 | August 10, 2026 | Nickolis Kacludis | Recorded DIST-003 (#594) implementation: routed team previews use one trusted publication, canonical Team State/non-state, data-through, receipts, and fail-closed output; production verification remained pending. |
 | 3.7 | August 11, 2026 | Nickolis Kacludis | Reconciled current state through PR #633/main 98e452e: #595, #591, and #600 complete and production-verified; #594 merged and awaiting the next authorized scheduled export; vocabulary/glossary parity is the next implementation package after #594 closeout. No durable authority decision changed. |
 | 3.8 | August 11, 2026 | Nickolis Kacludis | Recorded the DIST-003 (#594) production closeout: authorized scheduled run 31483859116, export job 93760656523, 30 of 30 dated previews with 0 withheld, data through 2026-08-10, trusted snapshot 393, generated-at 2026-08-11T11:15:00+00:00, production `/team/COL` dated-read proof and `/team/INVALID` fail-closed proof, issue closed August 11. Recorded PR #637 "Serve dated team preview pages at public team routes" as the delivery-path correction that made those routes serve the dated previews. Moved the active objective to VOC-001 (#638), whose repository implementation — including Product Experience Standard v1.4 and Bullpen Intelligence Standard v1.3 — is in PR #639, which is open and unmerged and carries no production proof; #638 remains open. The Public Credibility Pass and Phase 1B remain active and exit only after PR #639 merges, deployment completes, read-only production vocabulary smoke passes, and #638 closes; repository CI green is necessary and not sufficient. The downstream sequence is preserved exactly: #598, then #601, then permanent daily-sync work reduction, then Portable Intelligence, then M-001 and visible evidence, then Daily Habit and consequence. No durable authority decision was added, weakened, or renumbered, D-051 and D-052 stand unchanged, and no new Decision Ledger ID was created. |
+| 3.9 | August 13, 2026 | Nickolis Kacludis | Reconciled current state through PR #647/main e3ad8bd, verified by CI run 31729458591. Recorded VOC-001 (#638) complete and production-verified August 12, 2026 from trusted snapshot 398, which exits the Public Credibility Pass and closes Phase 1B. Recorded DEP-001 (#601) complete across PRs #643, #644, #646, and #647: backend runtime dependency advisories cleared with CORS behaviour pinned before the upgrade and re-verified after it, `pytest` removed from the production runtime in favour of `backend/requirements-dev.txt`, unused frontend packages removed rather than overridden, `react-router-dom` patched to 6.30.4, and a standing read-only `dependency-audit` CI job added that refuses new, expired, stale, mismatched, duplicated, or under-documented production dependency risk without creating any auto-upgrade path. Recorded the three residual React Router advisories as a time-boxed acceptance expiring 2026-11-13 under tracking issue #645, bounded by a validated-redirect control and its regression tests, and added R-25 for dependency drift and acceptance permanence. Moved the active objective to CI-003 (#598), the next package in the unchanged approved order, and recorded that its GitHub issue is closed while the production-proof evidence this Roadmap requires is still outstanding — without adjudicating, weakening, or advancing that package. No durable authority decision was added, weakened, or renumbered; D-051, D-052, and D-053 stand unchanged; no new Decision Ledger ID was created; and the shadow/backfill/legacy-writer authority posture is untouched. |
