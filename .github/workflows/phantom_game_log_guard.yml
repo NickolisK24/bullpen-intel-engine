@@ -51,10 +51,16 @@ jobs:
         with:
           python-version: '3.11'
           cache: pip
-          cache-dependency-path: backend/requirements.txt
+          # requirements-dev.txt pulls in requirements.txt, so both files
+          # determine the resolved install and both belong in the cache key.
+          cache-dependency-path: |
+            backend/requirements.txt
+            backend/requirements-dev.txt
 
-      - name: Install backend dependencies
-        run: pip install -r requirements.txt
+      # This workflow runs pytest, so it needs the test dependencies rather
+      # than the runtime-only set.
+      - name: Install backend test dependencies
+        run: pip install -r requirements-dev.txt
 
       - name: Run focused phantom reconciliation tests
         id: focused_tests

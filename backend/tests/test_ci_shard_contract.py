@@ -426,6 +426,194 @@ def test_the_backend_requirements_do_not_carry_pytest_xdist():
     assert 'xdist' not in requirements
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# Runtime / test dependency separation
+#
+# Production installs requirements.txt only. Nothing under backend/ imports
+# pytest outside backend/tests/, so shipping it to Render put an unused package
+# — and its advisories — on the production dependency surface.
+#
+# The split is only worth anything while two things stay true: the runtime file
+# never regains a test dependency, and the operational workflows never quietly
+# start installing the dev layer. Both are asserted here, and the second is
+# derived from the workflows themselves rather than from a hand-kept list, so a
+# new job cannot slip through.
+# ══════════════════════════════════════════════════════════════════════════════
+
+RUNTIME_REQUIREMENTS_PATH = os.path.join(BACKEND_ROOT, 'requirements.txt')
+DEV_REQUIREMENTS_PATH = os.path.join(BACKEND_ROOT, 'requirements-dev.txt')
+
+DEV_REQUIREMENTS_REF = 'requirements-dev.txt'
+RUNTIME_REQUIREMENTS_CACHE_KEY = 'backend/requirements.txt'
+DEV_REQUIREMENTS_CACHE_KEY = 'backend/requirements-dev.txt'
+
+# The only workflows allowed to install the dev/test layer. Everything else —
+# including the production sync path — stays on the runtime set.
+DEV_REQUIREMENTS_WORKFLOWS = frozenset({'ci.yml', 'phantom_game_log_guard.yml'})
+
+# ci.yml jobs that must install the dev/test layer: one collects the suite, the
+# others run it.
+DEV_DEPENDENCY_JOB_IDS = (ACCOUNTING_JOB_ID, SHARD_JOB_ID)
+
+# The migration job deliberately stays on the runtime set. It runs only
+# `flask db upgrade`, which is the production startup path, so keeping it here
+# proves the runtime requirements alone are sufficient to boot production.
+RUNTIME_ONLY_JOB_ID = 'postgres-migrations'
+
+
+def _workflow_paths():
+    return sorted(
+        os.path.join(WORKFLOWS_DIR, name)
+        for name in os.listdir(WORKFLOWS_DIR)
+        if name.endswith(('.yml', '.yaml'))
+    )
+
+
+def _setup_python_steps(job):
+    return [
+        step for step in job.get('steps', [])
+        if 'actions/setup-python' in str(step.get('uses', ''))
+    ]
+
+
+def _cache_dependency_paths(step):
+    raw = (step.get('with') or {}).get('cache-dependency-path') or ''
+    return [line.strip() for line in str(raw).splitlines() if line.strip()]
+
+
+def test_the_runtime_requirements_do_not_carry_pytest():
+    """Production must not install a test framework it never imports."""
+    with open(RUNTIME_REQUIREMENTS_PATH, encoding='utf-8') as handle:
+        declarations = [
+            line.strip().lower()
+            for line in handle
+            if line.strip() and not line.lstrip().startswith('#')
+        ]
+    offenders = [line for line in declarations if line.startswith('pytest')]
+    assert offenders == [], (
+        'pytest belongs in requirements-dev.txt, not the production runtime set: '
+        f'{offenders}'
+    )
+
+
+def test_the_dev_requirements_exist_and_include_the_runtime_set():
+    """A dev environment must be a superset of production, not a second resolution."""
+    assert os.path.isfile(DEV_REQUIREMENTS_PATH), (
+        'backend/requirements-dev.txt is the declared development/test layer'
+    )
+    with open(DEV_REQUIREMENTS_PATH, encoding='utf-8') as handle:
+        body = handle.read()
+    assert '-r requirements.txt' in body, (
+        'requirements-dev.txt must pull in the runtime set so developers and CI '
+        'resolve the same production dependencies plus test tooling'
+    )
+
+
+def test_the_dev_requirements_declare_pytest():
+    with open(DEV_REQUIREMENTS_PATH, encoding='utf-8') as handle:
+        declarations = [
+            line.strip().lower()
+            for line in handle
+            if line.strip() and not line.lstrip().startswith('#')
+        ]
+    assert any(line.startswith('pytest') for line in declarations), (
+        'requirements-dev.txt is where pytest is pinned'
+    )
+
+
+def test_only_test_consuming_workflows_install_the_dev_requirements():
+    """Operational workflows stay on the runtime set.
+
+    Repointing them wholesale would put the test tooling back on every
+    production and scheduled run, which is the thing the split removes.
+    """
+    leaked = []
+    for path in _workflow_paths():
+        name = os.path.basename(path)
+        if name in DEV_REQUIREMENTS_WORKFLOWS:
+            continue
+        with open(path, encoding='utf-8') as handle:
+            if DEV_REQUIREMENTS_REF in handle.read():
+                leaked.append(name)
+    assert leaked == [], (
+        'these workflows do not run tests and must install the runtime '
+        f'requirements only: {leaked}'
+    )
+
+
+def test_the_production_sync_workflow_stays_on_the_runtime_requirements():
+    """Called out separately because this is the scheduled production path."""
+    path = os.path.join(WORKFLOWS_DIR, 'baseballos-sync.yml')
+    with open(path, encoding='utf-8') as handle:
+        body = handle.read()
+    assert DEV_REQUIREMENTS_REF not in body, (
+        'baseballos-sync.yml is the scheduled production sync; it does not run '
+        'pytest and must never install the development/test layer'
+    )
+    assert 'pip install -r backend/requirements.txt' in body
+
+
+def test_the_migration_job_installs_only_the_runtime_requirements(ci_workflow):
+    """Keeping this job runtime-only is what proves production can boot on it."""
+    job = ci_workflow['jobs'][RUNTIME_ONLY_JOB_ID]
+    commands = ' '.join(_run_blocks(job))
+    assert DEV_REQUIREMENTS_REF not in commands, (
+        f'{RUNTIME_ONLY_JOB_ID} runs only `flask db upgrade`. Leaving it on the '
+        'runtime set is the evidence that the production startup path needs no '
+        'test dependencies.'
+    )
+    assert 'pip install -r requirements.txt' in commands
+
+
+@pytest.mark.parametrize('job_id', DEV_DEPENDENCY_JOB_IDS)
+def test_backend_test_jobs_install_the_dev_requirements(ci_workflow, job_id):
+    commands = ' '.join(_run_blocks(ci_workflow['jobs'][job_id]))
+    assert f'pip install -r {DEV_REQUIREMENTS_REF}' in commands, (
+        f'{job_id} collects or runs the backend suite, so it needs the '
+        'development/test requirements'
+    )
+
+
+@pytest.mark.parametrize('job_id', DEV_DEPENDENCY_JOB_IDS)
+def test_dev_dependency_jobs_cache_on_both_requirements_files(ci_workflow, job_id):
+    """requirements-dev.txt includes requirements.txt, so both decide the install."""
+    steps = _setup_python_steps(ci_workflow['jobs'][job_id])
+    assert steps, f'{job_id} does not set up Python'
+    for step in steps:
+        paths = _cache_dependency_paths(step)
+        assert RUNTIME_REQUIREMENTS_CACHE_KEY in paths, (
+            f'{job_id} must keep {RUNTIME_REQUIREMENTS_CACHE_KEY} in its pip cache '
+            f'key; the dev file includes it. Got {paths}'
+        )
+        assert DEV_REQUIREMENTS_CACHE_KEY in paths, (
+            f'{job_id} installs the dev requirements, so {DEV_REQUIREMENTS_CACHE_KEY} '
+            f'must be part of its pip cache key. Got {paths}'
+        )
+
+
+def test_every_job_that_runs_the_suite_installs_the_dev_requirements():
+    """Derived from the workflows themselves, so a new test job cannot slip through."""
+    offenders = []
+    for path in _workflow_paths():
+        with open(path, encoding='utf-8') as handle:
+            workflow = yaml.safe_load(handle)
+        if not isinstance(workflow, dict):
+            continue
+        for job_id, job in (workflow.get('jobs') or {}).items():
+            blocks = _run_blocks(job)
+            runs_suite = any(
+                'pytest' in block or 'ci_shard.py' in block for block in blocks
+            )
+            if not runs_suite:
+                continue
+            if not any(DEV_REQUIREMENTS_REF in block for block in blocks):
+                offenders.append((os.path.basename(path), job_id))
+    assert offenders == [], (
+        'these jobs run pytest or drive pytest collection but do not install the '
+        f'development/test requirements: {offenders}'
+    )
+
+
 # ── preserved CI behaviour ────────────────────────────────────────────────────
 def test_the_migration_job_still_upgrades_a_fresh_postgres(ci_workflow):
     job = ci_workflow['jobs']['postgres-migrations']

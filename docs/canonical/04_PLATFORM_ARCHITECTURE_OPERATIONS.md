@@ -454,7 +454,7 @@ Typical sequence:
 python -m venv venv
 source venv/bin/activate       # macOS/Linux
 # venv\Scripts\activate       # Windows
-pip install -r backend/requirements.txt
+pip install -r backend/requirements-dev.txt   # production installs backend/requirements.txt
 # set local DATABASE_URL and FLASK_APP=app.py
 flask db upgrade
 pytest

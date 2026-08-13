@@ -1,0 +1,16 @@
+# Development / test dependencies.
+#
+# Production installs requirements.txt only. Nothing under backend/ imports
+# pytest outside backend/tests/, so shipping it to Render added an unused
+# package — and its advisories — to the production dependency surface.
+#
+# Install this file for local development and in any CI job that collects or
+# runs the test suite. It pulls in the full runtime set first, so a dev
+# environment is a superset of production rather than a different resolution.
+#
+#   production / operational workflows : pip install -r requirements.txt
+#   local development and test jobs    : pip install -r requirements-dev.txt
+
+-r requirements.txt
+
+pytest==8.3.4
