@@ -885,15 +885,23 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$GENERATED_EVIDENCE_DIR"
-          # The exporter logs to stderr and prints exactly one JSON object to
-          # stdout, so this captures the result without swallowing the log.
-          # pipefail keeps the exporter's own exit code authoritative: a count
-          # mismatch (1) or an unprovable trusted publication (2) still fails
-          # here, before anything is validated or committed.
+          # The exporter writes its structured result itself, to the path named
+          # by --result-out. stdout is NOT that channel and must never be
+          # captured as one: scheduled run 31693516516 proved it in production.
+          # The exporter's own imports print "[scheduler] AUTO_SYNC disabled" to
+          # stdout before main() runs, so `| tee export-result.json` produced a
+          # file whose first byte was not JSON, and the delivery gate correctly
+          # refused to publish from evidence it could not read. stdout stays
+          # visible in this log as the human diagnostic stream it always was.
+          #
+          # No pipeline, so the exporter's exit status is the step's directly: a
+          # count mismatch (1), an unprovable trusted publication (2), or a
+          # result file that could not be written (3) all still fail here,
+          # before anything is validated or committed.
           python backend/scripts/export_team_story_pages.py \
             --output frontend/public \
             --site-url "$BASEBALLOS_SITE_URL" \
-            | tee "$GENERATED_EVIDENCE_DIR/export-result.json"
+            --result-out "$GENERATED_EVIDENCE_DIR/export-result.json"
 
       # ── 2. DELIVERY GATE ────────────────────────────────────────────────────
       # Fail closed on delivery integrity only. It proves the filesystem agrees

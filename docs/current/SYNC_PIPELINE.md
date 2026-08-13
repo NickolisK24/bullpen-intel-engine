@@ -357,7 +357,7 @@ asset that the generator never writes, and it is not part of this commit.
 ### Gates, in order
 
 ```text
-export (captures the exporter's structured result)
+export (--result-out writes the exporter's structured result)
 -> delivery gate      backend/scripts/verify_generated_team_previews.py
 -> npm ci             frontend/
 -> npm test           frontend/
@@ -376,6 +376,12 @@ declared: every declared page present and non-empty, the fallback intact, no
 stale page left behind, receipts present on every dated claim, one publication
 snapshot across the whole set, and the withheld set on disk matching the declared
 one. It decides no baseball meaning and imports no service, model, or Flask app.
+
+Its input is the file the exporter writes to `--result-out`, never the exporter's
+stdout. stdout is a mixed human/diagnostic stream — importing the exporter prints
+a scheduler banner before `main` runs — so capturing it produces a file that does
+not parse. The gate parses strictly and refuses what it cannot read; the fix for
+that is a separate channel, not a looser parser.
 
 ### Tree-exact provenance
 

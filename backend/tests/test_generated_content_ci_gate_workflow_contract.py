@@ -34,7 +34,9 @@ malformed input is not a gate.
 
 import ast
 import json
+import os
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -48,6 +50,11 @@ CI_WORKFLOW_PATH = REPO_ROOT / '.github/workflows/ci.yml'
 
 PUBLICATION_JOB = 'static-team-story-preview'
 GENERATED_PATH_PREFIX = 'frontend/public/team'
+EXPORT_RESULT_FILE = '$GENERATED_EVIDENCE_DIR/export-result.json'
+
+EXPORTER_PATH = REPO_ROOT / 'backend/scripts/export_team_story_pages.py'
+# The exact line production run 31693516516 put on stdout ahead of the JSON.
+SCHEDULER_BANNER = '[scheduler] AUTO_SYNC disabled'
 
 AUTOMATION_NAME = 'BaseballOS Automation'
 AUTOMATION_EMAIL = 'baseballoshq@gmail.com'
@@ -647,3 +654,284 @@ def test_delivery_gate_imports_no_baseball_authority():
                         '__future__'}, (
         f'the delivery gate grew an unexpected dependency: {sorted(imported)}'
     )
+
+
+# ── 9. The structured result transport (production run 31693516516) ──────────
+# The first naturally scheduled run of this gate generated all 30 previews from
+# snapshot 404 and then refused to publish them, because the evidence file it
+# was handed did not parse:
+#
+#     Could not read the exporter result (Expecting value: line 1 column 2
+#     (char 1)). Delivery is UNPROVEN.
+#
+# The gate was right. The transport was wrong. The workflow captured the
+# exporter's stdout with `| tee export-result.json`, and stdout is not a
+# machine channel: importing the exporter pulls in the Flask app, which prints
+# a scheduler banner before `main` is ever entered, so the file's first byte
+# was `[`, not `{`.
+#
+# The repair is a channel, not a looser parser. These tests own that channel,
+# and they exercise the REAL exporter in a REAL process — the banner in the
+# captured stdout below is genuinely emitted by the import, not simulated —
+# because a fixture that mocked the contamination away could not fail the way
+# production failed. SQLite keeps it hermetic: nothing connects, and no
+# production data is reachable.
+
+_EMIT_RESULT_IN_A_REAL_PROCESS = '''
+import json
+import sys
+
+from scripts.export_team_story_pages import emit_result
+
+sys.exit(0 if emit_result(json.loads(sys.argv[1]), sys.argv[2] or None) else 7)
+'''
+
+
+def _run_exporter_emit(result, result_out):
+    """Emit ``result`` through the exporter's own result channel, out of process."""
+    return subprocess.run(
+        [
+            sys.executable,
+            '-c',
+            _EMIT_RESULT_IN_A_REAL_PROCESS,
+            json.dumps(result),
+            str(result_out or ''),
+        ],
+        cwd=str(REPO_ROOT),
+        env={
+            **os.environ,
+            'APP_ENV': 'test',
+            'DATABASE_URL': 'sqlite:///:memory:',
+            'AUTO_SYNC': 'false',
+            'PYTHONPATH': str(REPO_ROOT / 'backend'),
+        },
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+
+def _exporter_source():
+    return EXPORTER_PATH.read_text(encoding='utf-8')
+
+
+def test_the_exporter_still_contaminates_its_own_stdout(tmp_path):
+    """The defect's precondition, asserted rather than assumed.
+
+    If this ever stops being true the regression fixtures below stop proving
+    anything, and the failure should say so out loud instead of passing
+    vacuously. Note the assertion is on the FIRST line: nothing the exporter
+    prints can be reached without stepping over this.
+    """
+    result_path = tmp_path / 'export-result.json'
+    proc = _run_exporter_emit({'status': 'ok'}, result_path)
+
+    assert proc.returncode == 0, proc.stderr
+    assert proc.stdout.splitlines()[0].startswith(SCHEDULER_BANNER)
+
+
+def test_the_old_stdout_transport_is_what_production_could_not_parse(tmp_path):
+    """`| tee export-result.json`, reproduced end to end.
+
+    This is run 31693516516 in miniature: the same stdout, captured the old
+    way, rejected by the same strict loader with the same class of error.
+    """
+    result, _ = _export_result(tmp_path)
+    proc = _run_exporter_emit(result, tmp_path / 'export-result.json')
+
+    teed = tmp_path / 'teed-export-result.json'
+    teed.write_text(proc.stdout, encoding='utf-8')
+
+    with pytest.raises(json.JSONDecodeError):
+        json.loads(teed.read_text(encoding='utf-8'))
+
+
+def test_stdout_contamination_cannot_corrupt_the_structured_result_file(tmp_path):
+    """The repair: same contaminated stdout, clean evidence file, gate passes.
+
+    The whole chain in one assertion set — a diagnostic banner on stdout, one
+    complete JSON document in the result file, and the unmodified delivery gate
+    verifying a coherent publication from it.
+    """
+    result, root = _export_result(tmp_path)
+    result_path = tmp_path / 'evidence' / 'export-result.json'
+    proc = _run_exporter_emit(result, result_path)
+
+    assert proc.returncode == 0, proc.stderr
+    assert SCHEDULER_BANNER in proc.stdout
+
+    # Exactly one JSON document, parsed strictly, with nothing in front of it.
+    written = result_path.read_text(encoding='utf-8')
+    assert SCHEDULER_BANNER not in written
+    assert json.loads(written) == result
+
+    assert verify_main([
+        '--export-result', str(result_path),
+        '--output-root', str(root),
+    ]) == EXIT_OK
+
+
+def test_the_result_file_and_stdout_carry_one_object_not_two(tmp_path):
+    """No second representation: the file is the printed object, verbatim."""
+    result, _ = _export_result(tmp_path)
+    result_path = tmp_path / 'export-result.json'
+    proc = _run_exporter_emit(result, result_path)
+
+    printed = json.loads(proc.stdout.splitlines()[-1])
+    assert printed == json.loads(result_path.read_text(encoding='utf-8')) == result
+
+
+def test_a_nested_result_path_is_created_rather_than_silently_skipped(tmp_path):
+    result_path = tmp_path / 'artifacts' / 'generated-team-preview' / 'export-result.json'
+    proc = _run_exporter_emit({'status': 'ok', 'teams': 30}, result_path)
+
+    assert proc.returncode == 0, proc.stderr
+    assert json.loads(result_path.read_text(encoding='utf-8')) == {
+        'status': 'ok', 'teams': 30,
+    }
+
+
+def test_an_unwritable_result_path_fails_instead_of_running_on(tmp_path):
+    """Missing provenance and a clean run must never look the same."""
+    blocker = tmp_path / 'blocker'
+    blocker.write_text('not a directory', encoding='utf-8')
+
+    proc = _run_exporter_emit({'status': 'ok'}, blocker / 'export-result.json')
+
+    assert proc.returncode == 7
+    assert 'reason=' in proc.stderr
+    assert str(tmp_path) not in proc.stderr  # the reason is a class, not a path
+
+
+def test_a_failed_result_write_can_never_leave_a_successful_export(tmp_path):
+    """Source-level, because the zero-exit path is the one that must not exist."""
+    source = _exporter_source()
+
+    assert 'EXIT_RESULT_OUTPUT_FAILED = 3' in source
+    assert 'return exit_code or EXIT_RESULT_OUTPUT_FAILED' in source
+
+
+def test_no_trusted_publication_is_written_as_valid_json_and_still_refused(tmp_path):
+    """A failure result is diagnostic evidence, never an authorization."""
+    _, root = _export_result(tmp_path)
+    result_path = tmp_path / 'export-result.json'
+    failure = {
+        'status': 'no_trusted_publication',
+        'generated_at': '2026-08-12T11:00:00+00:00',
+        'pages_written': 0,
+    }
+    proc = _run_exporter_emit(failure, result_path)
+
+    assert proc.returncode == 0, proc.stderr
+    assert json.loads(result_path.read_text(encoding='utf-8')) == failure
+
+    # The gate reads it fine and refuses it anyway — parseable, not publishable.
+    assert verify_main([
+        '--export-result', str(result_path),
+        '--output-root', str(root),
+    ]) == EXIT_DELIVERY_VIOLATION
+
+
+def test_the_trusted_publication_refusal_keeps_its_own_exit_code():
+    """Writing diagnostic evidence must not renumber the refusal itself."""
+    source = _exporter_source()
+    tree = ast.parse(source)
+    main_fn = next(
+        node for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef) and node.name == 'main'
+    )
+
+    emits = [
+        node for node in ast.walk(main_fn)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == 'emit_result'
+    ]
+    assert len(emits) == 2, 'both result outcomes go through the one result channel'
+
+    returned = {
+        node.value.id for node in ast.walk(main_fn)
+        if isinstance(node, ast.Return) and isinstance(node.value, ast.Name)
+    }
+    assert 'EXIT_NO_TRUSTED_PUBLICATION' in returned
+
+
+def test_the_exporter_result_channel_reuses_the_durable_summary_writer():
+    """One helper, atomically replaced: never a half-written authority file."""
+    source = _exporter_source()
+
+    assert 'from utils.summary_output import' in source
+    assert 'write_summary' in source
+    assert 'SummaryOutputError' in source
+    # The stdout line and the file are the same serialization of one object.
+    assert 'print(serialize_summary(result))' in source
+
+    writer = (REPO_ROOT / 'backend/utils/summary_output.py').read_text(encoding='utf-8')
+    assert 'os.replace(temporary, destination)' in writer
+
+
+# ── 10. The workflow carries the result on that channel, not on stdout ───────
+def test_the_workflow_asks_the_exporter_to_write_its_own_result_file(steps):
+    export = steps[_script_index(steps, 'export_team_story_pages.py')]
+    assert f'--result-out "{EXPORT_RESULT_FILE}"' in _commands(export)
+
+
+def test_the_workflow_never_captures_stdout_as_the_authority_file(workflow):
+    """The regression guard for run 31693516516.
+
+    Asserted against executable lines only: the comments above the export step
+    quote the old `tee` construct on purpose, to record what changed and why.
+    """
+    commands = _all_commands(workflow)
+
+    for forbidden in (
+        f'tee "{EXPORT_RESULT_FILE}"',
+        f'tee {EXPORT_RESULT_FILE}',
+        f'> "{EXPORT_RESULT_FILE}"',
+        f'>"{EXPORT_RESULT_FILE}"',
+    ):
+        assert forbidden not in commands, (
+            f'{forbidden!r} would rebuild the stdout capture that produced '
+            'unparseable delivery evidence in production'
+        )
+
+
+def test_the_export_step_pipes_its_stdout_nowhere(steps):
+    """stdout stays visible in the run log and feeds nothing."""
+    export = _commands(steps[_script_index(steps, 'export_team_story_pages.py')])
+    exporter_invocation = export.split('python backend/scripts/export_team_story_pages.py')[1]
+
+    assert '|' not in exporter_invocation
+    assert 'set -euo pipefail' in export
+
+
+def test_every_delivery_proof_reads_the_explicit_result_file(steps):
+    """Both the gate and the post-build re-proof read the file the exporter
+    wrote — never a re-derivation, never a second capture."""
+    verifications = [
+        _commands(step) for step in steps
+        if 'verify_generated_team_previews.py' in _script(step)
+    ]
+    assert len(verifications) == 2
+    for script in verifications:
+        assert f'--export-result "{EXPORT_RESULT_FILE}"' in script
+
+
+def test_a_malformed_result_file_still_blocks_every_publication_step(tmp_path, steps):
+    """Unchanged behaviour, re-asserted: the gate that stopped run 31693516516
+    is the same gate, and it still stands ahead of everything."""
+    _, root = _export_result(tmp_path)
+    malformed = tmp_path / 'export-result.json'
+    malformed.write_text(
+        f'{SCHEDULER_BANNER} — daily scheduler not started.\n{{"status": "ok"}}\n',
+        encoding='utf-8',
+    )
+
+    assert verify_main([
+        '--export-result', str(malformed), '--output-root', str(root),
+    ]) == EXIT_CANNOT_VERIFY
+
+    gate = _script_index(steps, 'verify_generated_team_previews.py')
+    for later in ('npm ci', 'npm test', 'npm run build', 'git add', 'git commit',
+                  'git push'):
+        assert gate < _script_index(steps, later)
