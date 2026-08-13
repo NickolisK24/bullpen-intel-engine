@@ -38,6 +38,7 @@ from services.legacy_read_reconciliation import (
 from tests.db_config import configure_test_database, create_test_schema, drop_test_schema
 from tests.generated_team_pages import GENERATED_TEAM_PAGE_FILES
 from tests.public_vocabulary_files import PUBLIC_VOCABULARY_FILES
+from tests.product_experience_files import UX003_PRODUCT_EXPERIENCE_FRONTEND_FILES
 from tests.qa_scenarios import (
     composed_reads_missing,
     conflict_state_evidence,
@@ -690,6 +691,26 @@ def test_phase0e_switches_and_legacy_public_files_not_modified():
         *PUBLIC_VOCABULARY_FILES,
     }
 
+    allowed_product_experience_files = {
+        # ux-003 / D-054 (Product Experience Foundation migration): the public
+        # presentation layer moves onto the approved visual system and the Today
+        # Daily Edition hierarchy — shared presentation primitives, typography,
+        # spacing, geometry, responsive behaviour, accessibility contrast,
+        # canonical public navigation labels, and freshness/evidence
+        # presentation. Presentation only — no threshold, classification,
+        # derivation, availability rule, roster or publication authority, Team
+        # State projection, freshness computation, timestamp, or engine key
+        # changed, and every route and `view` query is byte-unchanged, so no URL
+        # moved.
+        #
+        # test_product_experience_package.py proves the semantic-ownership
+        # properties directly, and pins this list against the branch so it
+        # cannot silently drift.
+        #
+        # Exact paths only, never a directory exemption.
+        *UX003_PRODUCT_EXPERIENCE_FRONTEND_FILES,
+    }
+
     allowed_static_team_preview_files = {
         # dist-003 / #594 (routed team preview authority): the generated
         # /team/{ABBR} pages carry canonical Team State, a data-through date, a
@@ -707,6 +728,7 @@ def test_phase0e_switches_and_legacy_public_files_not_modified():
         allowed_bullpen_page_identity_files
         | allowed_public_vocabulary_parity_files
         | allowed_public_vocabulary_files
+        | allowed_product_experience_files
         | allowed_static_team_preview_files
         | allowed_public_copy_authority_files
         | allowed_public_score_removal_files

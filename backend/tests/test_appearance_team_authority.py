@@ -45,6 +45,10 @@ from tests.generated_team_pages import (
     ROUTED_TEAM_PREVIEW_DELIVERY_FILES,
 )
 from tests.public_vocabulary_files import PUBLIC_VOCABULARY_FILES
+from tests.product_experience_files import (
+    UX003_PRODUCT_EXPERIENCE_FRONTEND_FILES,
+    UX003_PRODUCT_EXPERIENCE_RUNTIME_FILES,
+)
 from utils.db import db
 
 
@@ -977,6 +981,28 @@ STATIC_TEAM_PREVIEW_FILES = (
 # Exact paths only, never a directory exemption.
 PUBLIC_VOCABULARY_ALLOWED_FILES = PUBLIC_VOCABULARY_FILES
 
+# PRODUCT EXPERIENCE FOUNDATION MIGRATION (UX-003), founder-approved by D-054.
+#
+# These files carry the migration of the public presentation layer onto the
+# approved Product Experience visual system and the Today Daily Edition
+# hierarchy. The authority is presentation only: no threshold, classification,
+# derivation, availability rule, roster or publication authority, Team State
+# projection, freshness computation, or engine key changed, and every route and
+# `view` query is byte-unchanged.
+#
+# This guard exists so appearance-team work cannot incidentally alter Team State
+# v1.2 payloads or immutable artifacts. That purpose is intact and is actively
+# enforced rather than merely exempted: none of these files may read
+# appearance-team authority at all, which
+# test_product_experience_files_read_no_appearance_team_authority proves
+# directly. Share Artifact generation, eligibility, and the immutable lifecycle
+# are untouched, so published artifacts stay byte-unchanged.
+#
+# Exact paths only, never a directory exemption. Every other public surface
+# remains fully protected, and adding a path here still requires its own
+# approval.
+PRODUCT_EXPERIENCE_ALLOWED_FILES = UX003_PRODUCT_EXPERIENCE_FRONTEND_FILES
+
 
 def test_branch_touches_no_team_state_or_public_surface_files():
     # Source proof: Foundation 1 changes no Team State, Share Artifact, public API,
@@ -1076,6 +1102,8 @@ def test_branch_touches_no_team_state_or_public_surface_files():
     APPROVED_BULLPEN_PAGE_IDENTITY_FILES = BULLPEN_PAGE_IDENTITY_FILES
     # See PUBLIC_VOCABULARY_ALLOWED_FILES above (VOC-001 / #638).
     APPROVED_PUBLIC_VOCABULARY_FILES = PUBLIC_VOCABULARY_ALLOWED_FILES
+    # See PRODUCT_EXPERIENCE_ALLOWED_FILES above (UX-003 / D-054).
+    APPROVED_PRODUCT_EXPERIENCE_FILES = PRODUCT_EXPERIENCE_ALLOWED_FILES
     offenders = [
         path for path in non_test
         if any(fragment in path for fragment in forbidden_fragments)
@@ -1087,8 +1115,40 @@ def test_branch_touches_no_team_state_or_public_surface_files():
         and path not in APPROVED_STATIC_TEAM_PREVIEW_FILES
         and path not in APPROVED_BULLPEN_PAGE_IDENTITY_FILES
         and path not in APPROVED_PUBLIC_VOCABULARY_FILES
+        and path not in APPROVED_PRODUCT_EXPERIENCE_FILES
     ]
     assert offenders == [], f'Foundation 1 must not touch these runtime surfaces: {offenders}'
+
+
+def test_product_experience_files_read_no_appearance_team_authority():
+    """The UX-003 allowlist is an exemption from the path guard, not from its purpose.
+
+    The guard above protects Team State and public surfaces from incidental
+    appearance-team change. The Product Experience Foundation migration is
+    allowed to touch those paths, so this proves the thing the guard actually
+    cares about: not one of those files reads ``GameLog.appearance_team_id`` or
+    the appearance-team status, in either language. A presentation migration that
+    reached for appearance-team authority would be deriving baseball meaning in
+    the browser, and it fails here.
+    """
+    offenders = []
+    for relative in UX003_PRODUCT_EXPERIENCE_RUNTIME_FILES:
+        path = REPO_ROOT_FOR_DIFF / relative
+        if not path.exists():
+            continue
+        source = path.read_text(encoding='utf-8')
+        for token in (
+            'appearance_team_id',
+            'appearance_team_status',
+            'appearanceTeamId',
+            'appearanceTeamStatus',
+        ):
+            if token in source:
+                offenders.append(f'{relative}: {token}')
+    assert offenders == [], (
+        'Product Experience files must not read appearance-team authority: '
+        f'{offenders}'
+    )
 
 
 def test_canonical_team_state_files_read_no_appearance_team_authority():

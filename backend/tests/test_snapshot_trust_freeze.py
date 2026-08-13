@@ -30,6 +30,7 @@ from tests.generated_team_pages import (
     ROUTED_TEAM_PREVIEW_DELIVERY_FILES,
 )
 from tests.public_vocabulary_files import PUBLIC_VOCABULARY_FILES
+from tests.product_experience_files import UX003_PRODUCT_EXPERIENCE_FRONTEND_FILES
 from tests.test_phase0e_exit_docs import EXPECTED_ALEMBIC_HEAD, _alembic_heads
 
 
@@ -731,9 +732,31 @@ def test_frozen_legacy_what_changed_files_untouched():
         *ROUTED_TEAM_PREVIEW_DELIVERY_FILES,
     }
 
+    allowed_product_experience_files = {
+        # ux-003 / D-054 (Product Experience Foundation migration): the public
+        # presentation layer moves onto the approved visual system and the Today
+        # Daily Edition hierarchy. Presentation only — no threshold,
+        # classification, derivation, availability rule, roster or publication
+        # authority, Team State projection, freshness computation, timestamp, or
+        # engine key changed.
+        #
+        # This freeze protects snapshot trust, and UX-003 strengthens it rather
+        # than exempting itself from it: the edition is dated by the represented
+        # baseball date the application was served, a non-current published view
+        # is stated rather than hidden, and no file on the Today path reads the
+        # reader's clock, so a stale read cannot acquire a fresh-looking date.
+        # test_product_experience_files_touch_no_snapshot_trust_authority proves
+        # directly that none of these files reads a snapshot, a publication gate,
+        # or a trusted-serving decision.
+        #
+        # Exact paths only, never a directory exemption.
+        *UX003_PRODUCT_EXPERIENCE_FRONTEND_FILES,
+    }
+
     assert not sorted(
         path for path in changed
         if path.startswith('frontend/')
+        if path not in allowed_product_experience_files
         if path not in allowed_public_vocabulary_parity_files
         if path not in allowed_bullpen_page_identity_files
         if path not in allowed_public_vocabulary_files
