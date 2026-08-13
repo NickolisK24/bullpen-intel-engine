@@ -233,3 +233,187 @@ jobs:
       # passes every test and fails the build. Both are required.
       - name: Build the production frontend bundle
         run: npm run build
+
+  # Dependency risk, audited on every push and pull request. The jobs above prove
+  # the application behaves; this one proves the tree it ships is still one we
+  # have looked at.
+  #
+  # It is deliberately its own job. Folding it into the test jobs would let a
+  # scanner outage or a brand-new advisory mask the real behavioural signal, and
+  # it runs in parallel so it adds no wall-clock time.
+  #
+  # Nothing here upgrades, fixes, or rewrites anything: no `npm audit fix`, no
+  # `npm update`, no `pip install --upgrade`. The job is read-only with respect to
+  # repository content, and it requests no write permission.
+  dependency-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      # Pinned on purpose. An unpinned scanner makes the gate non-reproducible and
+      # lets a tool release change CI behaviour without review. It is installed as
+      # an isolated CI tool and is deliberately absent from both backend manifests,
+      # so its own transitive tree never enlarges the surface being audited.
+      - name: Install the dependency scanner
+        run: pip install "pip-audit==2.10.1"
+
+      # requirements-file mode, not environment mode. Environment mode also audits
+      # the runner's virtualenv furniture (setuptools and friends), which
+      # BaseballOS neither declares nor controls — that would force an
+      # --ignore-vuln entry on day one and poison the mechanism.
+      #
+      # backend/requirements.txt is the production surface. requirements-dev.txt
+      # still carries the pytest advisory by design (#601 Slice B); auditing it
+      # here would make production CI permanently red for a test-only tool.
+      #
+      # One bounded retry, because a registry blip is not a vulnerability. If both
+      # attempts fail the step fails loudly: "the scanner could not run" must never
+      # be reported as "nothing was found".
+      - name: Audit backend runtime dependencies
+        id: backend_audit
+        run: |
+          set -euo pipefail
+          for attempt in 1 2; do
+            if python -m pip_audit \
+                 -r backend/requirements.txt \
+                 --strict \
+                 --progress-spinner off > backend_audit.txt 2>&1; then
+              echo "backend audit clean on attempt ${attempt}"
+              cat backend_audit.txt
+              exit 0
+            fi
+            if grep -qiE 'known vulnerabilit|Found [0-9]+ known' backend_audit.txt; then
+              echo "::error::backend runtime dependencies have known advisories"
+              cat backend_audit.txt
+              exit 1
+            fi
+            echo "scanner did not complete on attempt ${attempt}:"
+            cat backend_audit.txt
+            if [ "${attempt}" -eq 1 ]; then sleep 15; fi
+          done
+          echo "::error::pip-audit failed to complete; refusing to report a clean audit"
+          exit 1
+
+      - name: Report backend audit result
+        if: always()
+        run: |
+          {
+            echo "### Backend runtime audit"
+            echo ""
+            echo "- manifest: \`backend/requirements.txt\` (production surface)"
+            echo "- scanner: \`pip-audit==2.10.1\`, requirements-file mode, \`--strict\`"
+            echo "- checked: $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+            echo ""
+            echo '```text'
+            cat backend_audit.txt 2>/dev/null || echo 'the scanner produced no output'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      # Same deterministic install the test job uses. --no-audit stays: the audit
+      # is run explicitly below so its output can be captured and evaluated, rather
+      # than relying on npm's implicit install-time check.
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci --no-audit --no-fund
+
+      # npm exits non-zero merely because advisories exist, so its status cannot
+      # distinguish "found advisories" from "could not run". The JSON is captured
+      # here and judged by the evaluator; a missing or unparseable report fails.
+      - name: Capture frontend production audit
+        working-directory: frontend
+        run: |
+          set -uo pipefail
+          npm audit --omit=dev --json > ../npm-audit-production.json || true
+          if [ ! -s ../npm-audit-production.json ]; then
+            echo "::error::npm audit produced no output; refusing to report a clean audit"
+            exit 1
+          fi
+          python -c "import json,sys; json.load(open('../npm-audit-production.json'))" || {
+            echo "::error::npm audit output is not valid JSON; refusing to report a clean audit"
+            exit 1
+          }
+
+      # The gate. Unknown, expired, stale, mismatched, duplicated or
+      # missing-metadata acceptances all fail here.
+      - name: Verify frontend production advisories against reviewed exceptions
+        run: |
+          set -euo pipefail
+          python backend/scripts/verify_dependency_audit.py \
+            --audit npm-audit-production.json \
+            --accepted .github/dependency-audit-accepted.json \
+            --repo-root . | tee frontend_audit.txt
+
+      - name: Report frontend production audit result
+        if: always()
+        run: |
+          {
+            echo "### Frontend production audit"
+            echo ""
+            echo "- scope: \`npm audit --omit=dev\` (production dependencies)"
+            echo "- exceptions: \`.github/dependency-audit-accepted.json\`"
+            echo ""
+            echo '```text'
+            cat frontend_audit.txt 2>/dev/null || echo 'the evaluator produced no output'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Informational only, and deliberately so. Dev/build advisories do not ship
+      # to a browser, so they are outside the production gate — but they are not
+      # allowed to disappear either. Advisory-positive exit is normalised here on
+      # purpose; a scanner that cannot run or emits unparseable JSON still fails.
+      - name: Frontend dev/build informational audit
+        working-directory: frontend
+        run: |
+          set -uo pipefail
+          npm audit --json > ../npm-audit-full.json || true
+          if [ ! -s ../npm-audit-full.json ]; then
+            echo "::error::npm audit (full) produced no output"
+            exit 1
+          fi
+          python - <<'PY' > ../dev_audit_summary.txt
+          import json
+          with open('../npm-audit-full.json', encoding='utf-8') as handle:
+              report = json.load(handle)
+          counts = report.get('metadata', {}).get('vulnerabilities', {})
+          rows = report.get('vulnerabilities', {})
+          production = {'react-router', 'react-router-dom'}
+          dev_rows = sorted(name for name in rows if name not in production)
+          print('Full dependency tree (production + dev/build)')
+          print(f"  total advisory rows : {counts.get('total', 'unknown')}")
+          for level in ('critical', 'high', 'moderate', 'low', 'info'):
+              if counts.get(level):
+                  print(f'  {level:<20}: {counts[level]}')
+          print()
+          print(f'  dev/build rows      : {len(dev_rows)}')
+          for name in dev_rows:
+              print(f'    - {name} ({rows[name].get("severity")})')
+          print()
+          print('  Blocking: no. Dev/build advisories are reported for visibility;')
+          print('  they are not part of the production gate and must never be')
+          print('  listed in the production accepted-risk file.')
+          PY
+          cat ../dev_audit_summary.txt
+
+      - name: Report dev/build informational audit
+        if: always()
+        run: |
+          {
+            echo "### Frontend dev/build informational audit"
+            echo ""
+            echo '```text'
+            cat dev_audit_summary.txt 2>/dev/null || echo 'the summary was not produced'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

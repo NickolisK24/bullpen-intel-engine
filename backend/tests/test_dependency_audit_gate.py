@@ -10,8 +10,12 @@ that no longer exists, or corresponds to an advisory npm no longer reports. That
 last rule is what stops a solved exception from lingering and silently suppressing
 the same advisory if it ever returns.
 
-Deliberately database-free. It reads checked-in JSON and calls the evaluator
-in-process.
+Second, the workflow wiring: a perfect evaluator is worthless if ci.yml audits the
+wrong manifest, installs an unpinned scanner, or swallows failures. Those
+assertions live here too, keyed on job/step content rather than line numbers.
+
+Deliberately database-free. It reads checked-in JSON, calls the evaluator
+in-process, and parses `.github/workflows/ci.yml`.
 """
 
 import json
@@ -21,13 +25,18 @@ import sys
 from datetime import date
 
 import pytest
+import yaml
 
 from scripts import verify_dependency_audit as gate
 
 BACKEND_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 REPO_ROOT = os.path.dirname(BACKEND_ROOT)
+WORKFLOWS_DIR = os.path.join(REPO_ROOT, '.github', 'workflows')
+CI_WORKFLOW_PATH = os.path.join(WORKFLOWS_DIR, 'ci.yml')
 ACCEPTED_PATH = os.path.join(REPO_ROOT, '.github', 'dependency-audit-accepted.json')
 EVALUATOR_PATH = os.path.join(BACKEND_ROOT, 'scripts', 'verify_dependency_audit.py')
+
+AUDIT_JOB_ID = 'dependency-audit'
 
 # The production manifest is the acceptance-critical surface. requirements-dev.txt
 # still carries the pytest advisory by design (#601 Slice B), so auditing it would
@@ -149,6 +158,24 @@ def _run(report, accepted, today=BEFORE_EXPIRY, repo_root=REPO_ROOT):
 def accepted_payload():
     with open(ACCEPTED_PATH, encoding='utf-8') as handle:
         return json.load(handle)
+
+
+@pytest.fixture(scope='module')
+def ci_workflow():
+    with open(CI_WORKFLOW_PATH, encoding='utf-8') as handle:
+        return yaml.safe_load(handle)
+
+
+@pytest.fixture(scope='module')
+def audit_job(ci_workflow):
+    return ci_workflow['jobs'][AUDIT_JOB_ID]
+
+
+def _run_blocks(job):
+    return [
+        step['run'] for step in job.get('steps', [])
+        if isinstance(step.get('run'), str)
+    ]
 
 
 # ── npm JSON parsing ──────────────────────────────────────────────────────────
@@ -513,3 +540,183 @@ def test_the_machine_allowlist_agrees_with_the_human_decision_record(
             'the tracking issue in the machine file must match the human record'
         )
         assert entry['decision_record'] == DECISION_RECORD
+
+
+# ── workflow contract ─────────────────────────────────────────────────────────
+def test_the_dependency_audit_job_exists_and_is_independent(ci_workflow):
+    assert AUDIT_JOB_ID in ci_workflow['jobs']
+    job = ci_workflow['jobs'][AUDIT_JOB_ID]
+
+    # It audits dependency risk; the other jobs prove application behaviour.
+    # Coupling them would let a scanner outage mask a real test signal.
+    assert 'needs' not in job
+    for behaviour_job in (
+        'postgres-migrations', 'backend-collection-accounting',
+        'backend-postgres-tests', 'frontend-tests',
+    ):
+        assert behaviour_job in ci_workflow['jobs'], (
+            f'{behaviour_job} must survive; the audit job adds to CI rather '
+            'than replacing behavioural validation'
+        )
+
+
+def test_the_backend_audit_targets_the_production_manifest(audit_job):
+    """requirements-dev.txt still carries the pytest advisory by design."""
+    commands = ' '.join(_run_blocks(audit_job))
+
+    assert 'pip_audit' in commands or 'pip-audit' in commands
+    assert RUNTIME_MANIFEST in commands
+    assert DEV_MANIFEST not in commands, (
+        'auditing the dev manifest would make production CI permanently red for '
+        'a test-only tool; the fix is to audit the correct manifest, not to '
+        'ignore the advisory'
+    )
+
+
+def test_the_backend_audit_uses_requirements_file_mode(audit_job):
+    """Environment mode would surface runner packages BaseballOS does not declare."""
+    commands = ' '.join(_run_blocks(audit_job))
+
+    assert f'-r {RUNTIME_MANIFEST}' in commands or f'-r "{RUNTIME_MANIFEST}"' in commands
+    assert '--strict' in commands
+
+
+def test_the_backend_scanner_is_version_pinned(audit_job):
+    commands = ' '.join(_run_blocks(audit_job))
+
+    assert 'pip-audit==' in commands, (
+        'an unpinned scanner makes the gate non-reproducible and lets a tool '
+        'release change CI behaviour without review'
+    )
+    assert 'pip install pip-audit ' not in commands
+    assert not commands.rstrip().endswith('pip install pip-audit')
+
+
+def test_the_frontend_install_stays_deterministic(audit_job):
+    commands = ' '.join(_run_blocks(audit_job))
+
+    assert 'npm ci --no-audit --no-fund' in commands, (
+        'the audit is run explicitly; npm ci must keep installing exactly what '
+        'the committed lockfile says'
+    )
+
+
+def test_the_production_audit_omits_dev_dependencies(audit_job):
+    commands = ' '.join(_run_blocks(audit_job))
+
+    assert 'npm audit --omit=dev --json' in commands
+
+
+def test_the_evaluator_runs_on_the_production_audit_json(audit_job):
+    commands = ' '.join(_run_blocks(audit_job))
+
+    assert 'verify_dependency_audit.py' in commands
+    assert '--accepted' in commands
+    assert 'dependency-audit-accepted.json' in commands
+
+
+def test_the_full_audit_is_informational_and_separate(audit_job):
+    """Dev/build advisories must stay visible without gating merges."""
+    commands = ' '.join(_run_blocks(audit_job))
+
+    assert 'npm audit --json' in commands, (
+        'the dev/build audit must still run so its findings do not disappear'
+    )
+    # The informational step must not be fed to the production evaluator.
+    assert '--audit npm-audit-dev.json' not in commands
+
+
+def test_the_workflow_contains_no_auto_fix_or_upgrade_path(ci_workflow):
+    """A gate that can upgrade things is an unreviewed auto-upgrade path."""
+    blocks = []
+    for job in ci_workflow['jobs'].values():
+        blocks.extend(_run_blocks(job))
+    commands = ' '.join(blocks)
+
+    for forbidden in (
+        'npm audit fix',
+        'npm update',
+        'npm upgrade',
+        'pip install --upgrade -r',
+        'pip install -U -r',
+        'pip install --upgrade -r requirements',
+    ):
+        assert forbidden not in commands, (
+            f'{forbidden!r} would let CI mutate dependencies without review'
+        )
+
+
+def test_the_audit_job_requests_no_write_permission(ci_workflow, audit_job):
+    """The gate reads; it never writes to the repository."""
+    for permissions in (ci_workflow.get('permissions'), audit_job.get('permissions')):
+        if permissions is None:
+            continue
+        if isinstance(permissions, str):
+            assert permissions != 'write-all'
+            continue
+        for scope, level in permissions.items():
+            assert level != 'write', (
+                f'the dependency-audit job must not request write on {scope}'
+            )
+
+
+def test_no_audit_step_is_soft_failed_with_continue_on_error(audit_job):
+    """continue-on-error would make the whole job advisory rather than a gate."""
+    for step in audit_job.get('steps', []):
+        assert step.get('continue-on-error') is not True, (
+            f'step {step.get("name")!r} must not continue-on-error; the job is a '
+            'gate, and a gate that cannot fail is decoration'
+        )
+
+
+def test_the_gate_step_itself_never_swallows_a_failure(audit_job):
+    """The evaluator's exit code IS the verdict, so nothing may mask it."""
+    gate_steps = [
+        step for step in audit_job.get('steps', [])
+        if isinstance(step.get('run'), str)
+        and 'verify_dependency_audit.py' in step['run']
+    ]
+    assert gate_steps, 'the production gate step is missing'
+
+    for step in gate_steps:
+        run = step['run']
+        assert '|| true' not in run, (
+            'the gate step must never swallow a failure'
+        )
+        assert 'set -euo pipefail' in run, (
+            'the gate step must abort on error, and `| tee` means pipefail is '
+            'required or the evaluator exit code would be lost'
+        )
+
+
+def test_normalised_npm_exit_codes_are_always_paired_with_a_real_failure_path(
+    audit_job,
+):
+    """`npm audit` exits non-zero merely because advisories exist.
+
+    So `|| true` is legitimate on the capture steps — but ONLY because each one
+    then proves the report actually arrived. Normalising the exit code without
+    that check is the failure mode this asserts against: it would turn "the
+    scanner could not run" into "nothing was found".
+    """
+    for step in audit_job.get('steps', []):
+        run = step.get('run')
+        if not isinstance(run, str) or '|| true' not in run:
+            continue
+        name = str(step.get('name', ''))
+
+        assert 'npm audit' in run, (
+            f'{name!r} normalises an exit code for something other than npm audit'
+        )
+        assert 'exit 1' in run, (
+            f'{name!r} normalises npm audit exit but never fails; a scanner that '
+            'could not run must still turn the step red'
+        )
+        assert '-s ' in run or '-s"' in run, (
+            f'{name!r} must verify the report is non-empty before trusting it'
+        )
+
+
+def test_the_audit_job_has_a_timeout_like_every_other_job(ci_workflow):
+    for job_id, job in ci_workflow['jobs'].items():
+        assert 'timeout-minutes' in job, f'{job_id} has no timeout'

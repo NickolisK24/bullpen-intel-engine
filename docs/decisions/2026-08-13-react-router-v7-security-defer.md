@@ -161,9 +161,16 @@ advisory is inapplicable to this client-only SPA and the open-redirect classes
 are bounded at the single reachable sink by `safeVerifyRedirect()` and its
 regression tests.
 
-This is not a permanent suppression and no blanket ignore rule was created. The
-machine-enforced allowlist that will make this expiry checkable in CI belongs to
-#601 Slice D and does not exist yet.
+This is not a permanent suppression and no blanket ignore rule was created.
+
+Since #601 Slice D this acceptance is machine-enforced. `.github/dependency-audit-accepted.json`
+carries the three advisory ids, their packages, this expiry, the tracking issue
+and a reference back to this record, and the `dependency-audit` CI job refuses
+the build when an advisory here is unknown, expired, attributed to a different
+package, duplicated, missing metadata, or no longer reported by npm — that last
+case forcing the exception to be deleted once the risk is gone rather than left
+behind. The substance of the decision below is unchanged; CI now checks it
+instead of relying on someone remembering the date.
 
 ## Revisit conditions
 
