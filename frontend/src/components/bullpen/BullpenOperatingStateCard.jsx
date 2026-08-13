@@ -6,6 +6,7 @@ import {
   StaleDataNotice,
   UnavailableDataState,
 } from '../UI'
+import { EvidenceList } from '../intel'
 import { toOperatingStateReadModel } from '../../adapters/operatingStateReadModel'
 
 function limitationKey(value) {
@@ -319,6 +320,32 @@ export default function BullpenOperatingStateCard({
   )
 }
 
+// The Team Board answer zone.
+//
+// The Team Board owns one question — what is this bullpen's observable current
+// state, which arms are carrying it, and why — and this is where the first two
+// thirds of that answer live. So it is composed in the order the answer is read
+// rather than in the order the payload happens to arrive:
+//
+//   team identity -> Team State -> why -> evidence -> freshness -> limitations
+//
+// What changed, and why. The state used to be a small badge in the top-right
+// corner, sized like metadata, while a mono micro-label ("Current Bullpen
+// State:") carried the sentence beneath it and the Why sat below that in
+// smaller, dimmer type than the evidence under it. The page's own answer was
+// the least prominent text on it. The state is now the first thing after the
+// club, at reading size, and the Why is the largest prose in the region.
+//
+// The card also used to take its border and background from the state tone, so
+// the whole panel turned amber or red with the read. That is meaning carried by
+// colour across a large surface, and it made a routine Stretched bullpen look
+// like an alert. The panel is now neutral; the state keeps its tone on the label
+// and its dot, where it stays legible with colour removed.
+//
+// Nothing here decides anything. `view.stateLabel` is non-null only when the
+// adapter validated a canonical backend Team State, `view.why` is backend
+// copy or absent, and `view.tone` is decoration keyed off a state the backend
+// already chose. There is no fallback for any of them.
 function CompactBullpenOperatingStateCard({
   view,
   staleWithError,
@@ -329,30 +356,22 @@ function CompactBullpenOperatingStateCard({
 }) {
   const evidence = compactEvidenceList(view)
   const limitations = compactLimitationList(view, staleWithError)
+  const stateNote = view.stateLabel ? view.stateDetail : view.stateUnavailableMessage
 
   return (
     <article
       data-density="compact"
-      className={`card p-2.5 sm:p-3.5 ${className}`}
-      style={{
-        borderColor: view.tone.borderColor,
-        backgroundColor: view.tone.backgroundColor,
-      }}
+      className={`bos-panel p-4 sm:p-6 ${className}`}
       role="region"
       aria-label={`${view.teamLabel} bullpen operating state`}
     >
-      <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:justify-between">
-        <div className="min-w-0">
-          <div className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
-            {view.scopeLabel}
-          </div>
-          {!titleOwnedByPage && (
-            <h3 className="mt-0.5 break-words font-display text-lg leading-tight tracking-wide text-chalk100 sm:text-xl">
-              {view.teamLabel}
-            </h3>
-          )}
-        </div>
-        {view.stateLabel && <StateBadge view={view} compact />}
+      <div className="min-w-0">
+        <p className="bos-micro">{view.scopeLabel}</p>
+        {!titleOwnedByPage && (
+          <h3 className="bos-card-title mt-1.5 break-words">
+            {view.teamLabel}
+          </h3>
+        )}
       </div>
 
       {view.isUnavailable ? (
@@ -360,34 +379,36 @@ function CompactBullpenOperatingStateCard({
           title="No current bullpen read available."
           message="BaseballOS will show this card when enough current bullpen context is available."
           onRetry={onRetry}
-          className="mt-3 border-dirt/70 bg-field/35 p-3"
-          titleClassName="font-display text-lg leading-tight tracking-wide text-chalk100"
-          messageClassName="mt-1 text-xs leading-relaxed text-chalk500"
+          className="mt-4 border-line bg-panel-2 p-4"
+          titleClassName="bos-card-title"
+          messageClassName="bos-support mt-1.5 text-chalk400"
         />
       ) : (
         <>
-          <div className="mt-2 text-xs leading-snug text-chalk400">
-            {(view.stateLabel ? view.stateDetail : view.stateUnavailableMessage) && (
-              <p>
-                <span className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
-                  Current Bullpen State:
-                </span>{' '}
-                {view.stateLabel ? view.stateDetail : view.stateUnavailableMessage}
+          {/* The answer. Canonical Team State when the backend supplied one,
+              the governed non-state message when it did not — never a fourth
+              state, never a guess. */}
+          <div className="mt-4 border-t border-line pt-4">
+            <StateBadge view={view} prominent />
+            {stateNote && (
+              <p className="bos-support mt-2 max-w-measure text-chalk400">
+                {stateNote}
               </p>
             )}
           </div>
 
-          {/* The Why, between State and Evidence. The compact card computed this
-              and never rendered it, so Team Board showed State then Evidence with
-              the explanation missing. Rendered verbatim from the backend. */}
+          {/* The Why: the largest prose in the region, immediately under the
+              state it explains. Backend-authored and rendered verbatim; a
+              missing Why is a recorded refusal in the adapter, never a
+              sentence written here. */}
           {view.why && (
-            <p className="mt-2 break-words text-sm leading-snug text-chalk300" data-testid="compact-why">
+            <p className="bos-body mt-4 max-w-measure break-words" data-testid="compact-why">
               {view.why}
             </p>
           )}
 
           {(view.primaryConcern || view.secondaryConcern) && (
-            <div className="mt-2 flex flex-wrap gap-1.5">
+            <div className="mt-4 flex flex-wrap gap-1.5">
               {view.primaryConcern && (
                 <CompactConcern label="Primary Concern" concern={view.primaryConcern} />
               )}
@@ -400,28 +421,18 @@ function CompactBullpenOperatingStateCard({
           <CompactContextReads view={view} />
 
           {evidence.length > 0 && (
-            <section className="mt-2" aria-label="Evidence">
-              <div className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
-                Evidence
-              </div>
-              <ul className="mt-1 flex flex-col gap-0.5 sm:flex-row sm:flex-wrap sm:gap-1.5">
-                {evidence.map((item, index) => (
-                  <li
-                    key={`${index}-${item}`}
-                    className="text-[11px] leading-snug text-chalk300 sm:rounded sm:border sm:border-dirt/70 sm:bg-field/40 sm:px-2 sm:py-1 sm:leading-relaxed"
-                  >
-                    {item}
-                  </li>
-                ))}
-              </ul>
+            <section className="mt-5 border-t border-line pt-4" aria-label="Evidence">
+              <EvidenceList items={evidence} label="Evidence" />
             </section>
           )}
         </>
       )}
 
-      <section className="mt-2 border-t border-dirt/60 pt-1.5" aria-label="Freshness">
+      {/* Freshness stays inside the same region as the claim it qualifies, so
+          the represented date can never drift away from the read. */}
+      <section className="mt-5 border-t border-line pt-4" aria-label="Freshness">
         {staleWithError && (
-          <div className="mb-2">
+          <div className="mb-3">
             <StaleDataNotice
               dataThrough={view.freshness?.data_through}
               onRetry={onRetry}
@@ -429,46 +440,44 @@ function CompactBullpenOperatingStateCard({
             />
           </div>
         )}
-        <div className="flex flex-wrap items-center gap-1.5">
-          <span className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
-            Freshness
-          </span>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="bos-micro">Freshness</span>
           {view.hasFreshness ? (
             <>
-              <FreshnessBadge freshness={view.freshness} className="min-h-5 px-1.5 py-0.5 text-[9px] sm:min-h-6 sm:px-2 sm:text-[10px]" />
+              <FreshnessBadge freshness={view.freshness} className="min-h-6 px-2 py-0.5 text-[10px]" />
               <DataThroughStamp
                 date={view.freshness?.data_through}
                 label="Bullpen data through"
-                className="min-h-5 px-1.5 py-0.5 text-[9px] sm:min-h-6 sm:px-2 sm:text-[10px]"
+                className="min-h-6 px-2 py-0.5 text-[10px]"
               />
               <LastSyncLabel
                 label={lastSyncLabel}
                 value={view.freshness?.last_successful_sync}
-                className="min-h-5 px-1.5 py-0.5 text-[9px] sm:min-h-6 sm:px-2 sm:text-[10px]"
+                className="min-h-6 px-2 py-0.5 text-[10px]"
               />
             </>
           ) : (
-            <FreshnessBadge state="unavailable" label="Freshness unavailable" className="min-h-5 px-1.5 py-0.5 text-[9px] sm:min-h-6 sm:px-2 sm:text-[10px]" />
+            <FreshnessBadge state="unavailable" label="Freshness unavailable" className="min-h-6 px-2 py-0.5 text-[10px]" />
           )}
         </div>
         {view.isSample && (
-          <p className="mt-1 text-xs leading-relaxed text-chalk500">
+          <p className="bos-meta mt-2 normal-case">
             Not live MLB data.
           </p>
         )}
       </section>
 
       {limitations.length > 0 && (
-        <section className="mt-1.5 text-[11px] leading-snug text-chalk400" aria-label="Limitations">
-          <span className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
-            Limitations:
-          </span>{' '}
-          {limitations.join('; ')}
+        <section className="mt-4" aria-label="Limitations">
+          <p className="bos-micro">Limitations:</p>
+          <p className="bos-meta mt-1.5 max-w-measure normal-case">
+            {limitations.join('; ')}
+          </p>
         </section>
       )}
 
       {view.ctaHref && (
-        <div className="mt-2">
+        <div className="mt-5">
           <OperatingStateCta view={view} compact />
         </div>
       )}
@@ -476,7 +485,36 @@ function CompactBullpenOperatingStateCard({
   )
 }
 
-function StateBadge({ view, compact = false }) {
+// `prominent` is the Team Board answer-zone treatment: the state is the page's
+// primary answer, so it is rendered at reading size as toned text with a dot
+// rather than as a bordered mono pill sized like metadata. The other call sites
+// (the full card, used at league scope on the Dashboard) keep the original
+// badge, because this pass does not redesign that surface.
+//
+// The field name and the label stay in one text run deliberately. "Current
+// Bullpen State: Fresh" is established public copy and is pinned as a
+// contiguous string by the operating-state contract tests; splitting it across
+// elements to size the two halves differently would break that contract for a
+// purely visual gain.
+function StateBadge({ view, compact = false, prominent = false }) {
+  if (prominent) {
+    return (
+      <div
+        className="inline-flex max-w-full items-start gap-2.5"
+        style={{ color: view.tone.color }}
+      >
+        <span
+          className="mt-1.5 h-2.5 w-2.5 shrink-0 self-start rounded-full"
+          style={{ backgroundColor: view.tone.dot }}
+          aria-hidden="true"
+        />
+        <span className="bos-card-title min-w-0 break-words" style={{ color: 'inherit' }}>
+          Current Bullpen State: {view.stateLabel}
+        </span>
+      </div>
+    )
+  }
+
   return (
     <div
       className={`inline-flex max-w-full items-center gap-2 rounded border font-mono uppercase tracking-widest ${

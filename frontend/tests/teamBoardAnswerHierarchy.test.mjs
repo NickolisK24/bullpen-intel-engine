@@ -216,3 +216,118 @@ test('the success answer zone is keyed by team so a switch cannot retain prior d
   assert.ok(htmlIncludes(yankees, 'New York Yankees'))
   assert.equal(htmlIncludes(yankees, 'Detroit Tigers'), false)
 })
+
+// ── Pass 2: the answer zone reads in the order the answer is read ──────────
+//
+// The Team Board owns one question — what is this bullpen's observable current
+// state, which arms are carrying it, and why. These pin the composition that
+// answers it, and the boundaries that keep the answer backend-owned.
+
+test('the answer zone runs identity, then state, then why, then evidence, then freshness', () => {
+  const html = renderBoard(populatedBoard)
+  const zone = html.slice(
+    html.indexOf('bullpen operating state'),
+    html.indexOf('aria-label="Bullpen availability distribution"'),
+  )
+
+  const state = zone.indexOf('Current Bullpen State')
+  const why = zone.indexOf('data-testid="compact-why"')
+  const evidence = zone.indexOf('aria-label="Evidence"')
+  const freshness = zone.indexOf('aria-label="Freshness"')
+
+  assert.ok(state > -1, 'the state is in the answer zone')
+  assert.ok(freshness > -1, 'freshness is in the answer zone')
+  assert.ok(state < freshness, 'state precedes freshness')
+  if (why > -1) assert.ok(state < why, 'the state precedes the why it explains')
+  if (why > -1 && evidence > -1) assert.ok(why < evidence, 'the why precedes its evidence')
+  if (evidence > -1) assert.ok(evidence < freshness, 'evidence precedes freshness')
+})
+
+test('the Team State is the answer, not corner metadata', () => {
+  const html = renderBoard(populatedBoard)
+
+  // Rendered at reading size through the shared card-title level rather than as
+  // a 10px mono pill. The state used to be the least prominent text in the
+  // region that exists to state it.
+  assert.match(
+    html,
+    /class="bos-card-title[^"]*"[^>]*>\s*Current Bullpen State:/,
+    'the state renders at reading size',
+  )
+
+  // Meaning survives colour removal: the label is text, never a bare swatch.
+  assert.ok(htmlIncludes(html, 'Current Bullpen State:'))
+})
+
+test('the answer panel never takes its background from the state tone', () => {
+  // A whole panel tinted by the read turned a routine Stretched bullpen into
+  // something that looked like an alert. Tone belongs on the label and its dot.
+  const source = readFileSync('src/components/bullpen/BullpenOperatingStateCard.jsx', 'utf8')
+  const compact = source.slice(source.indexOf('function CompactBullpenOperatingStateCard'))
+  assert.equal(
+    /backgroundColor:\s*view\.tone\.backgroundColor/.test(compact),
+    false,
+    'the compact panel is neutral',
+  )
+})
+
+test('no fourth Team State and no fabricated why reach the Team Board', () => {
+  const html = renderBoard(populatedBoard)
+  const text = visibleText(html)
+
+  // Only the three canonical public states may appear as a Team State.
+  const stated = text.match(/Current Bullpen State:\s*([A-Za-z ]+?)(?:\s{2,}|$)/)
+  if (stated) {
+    assert.ok(
+      ['Fresh', 'Stretched', 'Vulnerable'].includes(stated[1].trim()),
+      `non-canonical Team State rendered: ${stated[1]}`,
+    )
+  }
+
+  // The retired browser-authored Why must not come back.
+  assert.equal(
+    htmlIncludes(html, 'BaseballOS is reading the current bullpen mix'),
+    false,
+  )
+})
+
+test('the answer zone introduces no prediction, ranking, or internal score', () => {
+  const html = renderBoard(populatedBoard)
+  const text = visibleText(html.slice(
+    html.indexOf('bullpen operating state'),
+    html.indexOf('id="pitcher-lanes"'),
+  ))
+
+  for (const banned of [
+    'prediction', 'projected', 'recommendation', 'recommended', 'ranking', 'ranked',
+    'fatigue score', 'confidence score', 'likely next', 'next reliever', 'best arm',
+    'top arm', 'grade', 'odds', 'edge',
+  ]) {
+    assert.equal(
+      new RegExp(`\\b${escapeRegExp(banned)}\\b`, 'i').test(text),
+      false,
+      banned,
+    )
+  }
+})
+
+test('the availability distribution stays subordinate to the state', () => {
+  const html = renderDistribution(populatedBoard)
+
+  // Group labels are the backend's, rendered verbatim, and the row is a quiet
+  // count list rather than five bordered tiles competing with the answer.
+  assert.ok(htmlIncludes(html, 'Availability'))
+  assert.equal(/text-center/.test(html), false, 'counts are not boxed tiles')
+  assert.equal(/font-display/.test(html), false, 'counts are not display type')
+})
+
+test('Active Bullpen ERA is not introduced by this pass', () => {
+  // M-001 is reserved and non-public under D-022, so the Team Board must not
+  // show it — and must not show a paraphrase of it either.
+  const html = renderBoard(populatedBoard)
+  for (const name of [
+    'Active Bullpen ERA', 'Bullpen ERA', 'Relief ERA', 'Active ERA',
+  ]) {
+    assert.equal(htmlIncludes(html, name), false, name)
+  }
+})

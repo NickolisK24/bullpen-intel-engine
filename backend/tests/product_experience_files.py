@@ -36,10 +36,21 @@ the constant cannot silently drift away from the branch it describes.
 
 Adding a surface
 ----------------
-The remaining public surfaces — Team Board, Dashboard content, Compare, Reliever
-Finder, Stories, Pitcher Detail — are NOT migrated by UX-003 and are NOT listed
-here. Migrating one is a new package or an explicitly amended UX-003 decision,
-reviewed on its own evidence. This list does not extend itself.
+Each surface enters this list by an explicit amendment reviewed on its own
+evidence. The list does not extend itself, and a surface is only ever added for
+the files a pass actually changes.
+
+  Pass 1 (D-054)  — the shared visual system, the presentation primitives, the
+                    public navigation labels, and the Today Daily Edition.
+  Pass 2 (D-055)  — the Team Board answer zone: the operating-state card's
+                    compact variant and the availability distribution beneath
+                    it.
+
+Still NOT migrated and NOT listed: Dashboard content, Compare, Reliever Finder,
+Stories, Pitcher Detail, and the remainder of the Team Board below the answer
+zone (the grouped arm picture, the relief-work ledger, and the two collapsed
+narrative sections). Those keep the older register inside their content and
+require their own amendment.
 """
 
 # Runtime surfaces: the presentation layer the migration rebuilt.
@@ -102,6 +113,38 @@ UX003_PRODUCT_EXPERIENCE_RUNTIME_FILES = (
     'frontend/src/components/trust/DataTrust.jsx',
     'frontend/src/utils/dateDisplay.js',
     'frontend/src/utils/navigation.js',
+    # Pass 2 — the Team Board answer zone. The Team Board owns one question:
+    # what is this bullpen's observable current state, which arms are carrying
+    # it, and why. These two files are where the first part of that answer is
+    # composed, and Pass 2 reorders and restyles them without touching what they
+    # are allowed to say.
+    #
+    #   BullpenOperatingStateCard.jsx
+    #                           — the answer zone. The compact (Team Board)
+    #                             variant is recomposed in reading order: team
+    #                             identity, then the canonical backend Team
+    #                             State at reading size, then the backend Why,
+    #                             then evidence receipts, then freshness, then
+    #                             limitations. The state stopped being a corner
+    #                             badge and the panel stopped taking its
+    #                             background from the state tone. The full
+    #                             variant, which the Dashboard renders, is
+    #                             deliberately unchanged.
+    #   BullpenAvailabilityDistribution.jsx
+    #                           — the four published availability counts under
+    #                             that answer, recomposed from five bordered
+    #                             tiles into a quiet count row so the
+    #                             distribution supports the state instead of
+    #                             competing with it. It already renders the
+    #                             backend's group labels verbatim (VOC-001) and
+    #                             still does; only the layout changed.
+    #
+    # Neither file gained a derivation. Team State still arrives validated from
+    # `adapters/publicTeamState.js` through the operating-state read model, the
+    # Why is still backend copy or absent, and a withheld count is still
+    # "Withheld" rather than a zero.
+    'frontend/src/components/bullpen/BullpenOperatingStateCard.jsx',
+    'frontend/src/components/bullpen/board/BullpenAvailabilityDistribution.jsx',
 )
 
 # Test surfaces: the contracts the migration asserts, and the existing suites
@@ -118,6 +161,11 @@ UX003_PRODUCT_EXPERIENCE_TEST_FILES = (
     'frontend/tests/dashboardRealignment.test.mjs',
     'frontend/tests/dashboardStorylines.test.mjs',
     'frontend/tests/bullpenLandscapeAndGameContext.test.mjs',
+    # Pass 2: the Team Board answer-zone contract — reading order, state
+    # prominence, the neutral panel, no fourth state, no fabricated why, no
+    # prediction or internal score, the subordinate distribution, and the
+    # absence of the still-reserved M-001 metric.
+    'frontend/tests/teamBoardAnswerHierarchy.test.mjs',
 )
 
 UX003_PRODUCT_EXPERIENCE_FRONTEND_FILES = (

@@ -11,34 +11,32 @@ export default function BullpenAvailabilityDistribution({ board }) {
   const totals = getBoardTotals(board)
   const withheld = totals.countWithheld
 
+  // Composed as a hairline-separated count row rather than five bordered tiles.
+  // The distribution supports the read directly above it; boxed and centred, it
+  // read as five independent metrics competing with the state for attention,
+  // which is the dashboard-tile failure the Team Board is meant to avoid.
   return (
     <section
       aria-label="Bullpen availability distribution"
-      className="mt-3 rounded-lg border border-dirt bg-field/40 p-3 sm:p-3.5"
+      className="bos-panel mt-3 p-4 sm:px-6 sm:py-5"
     >
-      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-        <div className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
-          Availability
-        </div>
-        <div className="font-mono text-[11px] text-chalk400">
+      <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-1">
+        <p className="bos-micro">Availability</p>
+        <p className="bos-meta normal-case">
           {withheld ? (
-            <span className="text-chalk500">Eligible relievers: withheld</span>
+            'Eligible relievers: withheld'
           ) : (
             <>
-              <span className="text-chalk500">Eligible relievers</span>{' '}
-              <span className="text-chalk200">{totals.total}</span>
+              Eligible relievers <span className="text-chalk200">{totals.total}</span>
             </>
           )}
-        </div>
+        </p>
       </div>
 
-      <dl className="mt-2 grid grid-cols-2 gap-1.5 sm:grid-cols-3 lg:grid-cols-5">
+      <dl className="mt-3 grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-3 lg:grid-cols-5">
         {groups.map(group => (
-          <div
-            key={group.status}
-            className="min-w-0 rounded border border-dirt/70 bg-dugout/50 px-1.5 py-1.5 text-center"
-          >
-            <dt className="flex items-center justify-center gap-1 font-mono text-[9px] uppercase leading-tight tracking-wide text-chalk500">
+          <div key={group.status} className="min-w-0">
+            <dt className="flex items-center gap-1.5 bos-micro">
               <span
                 className="h-1.5 w-1.5 shrink-0 rounded-full"
                 style={group.badge.dotStyle}
@@ -46,7 +44,7 @@ export default function BullpenAvailabilityDistribution({ board }) {
               />
               <span className="min-w-0 break-words">{group.label}</span>
             </dt>
-            <dd className="mt-0.5 font-display text-xl leading-none tracking-wide text-chalk100">
+            <dd className="bos-value mt-1 text-lg leading-none text-chalk100">
               {group.count == null ? '—' : group.count}
             </dd>
           </div>
@@ -54,7 +52,7 @@ export default function BullpenAvailabilityDistribution({ board }) {
       </dl>
 
       {withheld && (
-        <p className="mt-2 text-[11px] leading-snug text-chalk500">
+        <p className="bos-meta mt-3 max-w-measure normal-case">
           Current usable bullpen depth is withheld until roster status is verified.
         </p>
       )}
