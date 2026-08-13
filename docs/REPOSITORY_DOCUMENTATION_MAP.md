@@ -168,6 +168,29 @@ Rules for repository readers:
 - the retired capability grants no general game-driven write authority;
 - daily/postgame game-driven lanes remain shadow until a separate authority-transfer decision.
 
+### The read-only audit package is now retired too
+
+The repair package was removed by PR #616 on August 6, 2026. The separate
+**read-only** audit package outlived it. That audit ran in production on
+August 5, 2026 as run `31044299167`, returning
+`COMPLETE_SCOPE_AND_MATERIALITY_IDENTIFIED_FIELD_DELTA_UNAVAILABLE` at exit 0
+(D-047), and the condition it identified was terminally closed by D-048. It has
+no remaining operator role and derives no future authority.
+
+The August 13 retirement pass removed it using the removal recipe the audit
+document itself carried, deleting the workflow, service, runner, and five
+dedicated test files, and dropping those five paths from
+`backend/tests/ci_shard_manifest.json`.
+
+The implementation document moved, unmodified, to
+`docs/archive/2026-08/GAME_824487_SOURCE_REVISION_AUDIT.md`. Read it as
+history, not status: its **Status header is stale**. It still reads "The
+production audit has NOT been executed... Review verdict: HOLD" because it was
+written before the run and never updated afterwards. The Decision Ledger and
+`CHANGELOG.md` carry what actually happened. The header was deliberately left
+unrewritten, because correcting a historical document's own words to match a
+later outcome is exactly what this repository does not do.
+
 ## 9. Current Operational Incident Boundary
 
 OPS-002 (#620) concerns daily sync runtime-budget exhaustion.
