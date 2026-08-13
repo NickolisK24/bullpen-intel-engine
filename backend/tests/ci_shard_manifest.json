@@ -8,7 +8,7 @@
   "timing_note": "measured_seconds values are balancing inputs only. They are not test-selection authority: the per-shard file lists decide what runs, and \"python scripts/ci_shard.py verify\" proves those lists cover live pytest collection exactly once.",
   "shards": {
     "1": {
-      "measured_seconds": 502.259,
+      "measured_seconds": 500.979,
       "files": [
         {
           "path": "tests/test_availability_unavailable_experiment.py",
@@ -97,14 +97,6 @@
         {
           "path": "tests/test_game_log_boxscore_migration.py",
           "measured_seconds": 0.02
-        },
-        {
-          "path": "tests/test_game_source_revision_audit_artifacts.py",
-          "measured_seconds": 0.62
-        },
-        {
-          "path": "tests/test_game_source_revision_audit_classification.py",
-          "measured_seconds": 0.66
         },
         {
           "path": "tests/test_intelligence_surface_service.py",
@@ -325,7 +317,7 @@
       ]
     },
     "2": {
-      "measured_seconds": 531.43,
+      "measured_seconds": 497.63,
       "files": [
         {
           "path": "tests/test_appearance_ledger.py",
@@ -390,10 +382,6 @@
         {
           "path": "tests/test_game_ingestion_planner.py",
           "measured_seconds": 10.325
-        },
-        {
-          "path": "tests/test_game_source_revision_audit_execution.py",
-          "measured_seconds": 33.8
         },
         {
           "path": "tests/test_internal_pitcher_evidence.py",
@@ -622,7 +610,7 @@
       ]
     },
     "3": {
-      "measured_seconds": 502.149,
+      "measured_seconds": 498.449,
       "files": [
         {
           "path": "tests/test_active_bullpen_readiness_resolver.py",
@@ -815,10 +803,6 @@
         {
           "path": "tests/test_game_shape_workload_integration.py",
           "measured_seconds": 0.0
-        },
-        {
-          "path": "tests/test_game_source_revision_audit_code_drift.py",
-          "measured_seconds": 3.7
         },
         {
           "path": "tests/test_gamelog_field_authority.py",
@@ -1155,7 +1139,7 @@
       ]
     },
     "4": {
-      "measured_seconds": 503.19,
+      "measured_seconds": 502.63,
       "files": [
         {
           "path": "tests/test_active_bullpen_artifact_publication.py",
@@ -1244,10 +1228,6 @@
         {
           "path": "tests/test_game_driven_ingestion.py",
           "measured_seconds": 13.39
-        },
-        {
-          "path": "tests/test_game_source_revision_audit_contract.py",
-          "measured_seconds": 0.56
         },
         {
           "path": "tests/test_games_started.py",

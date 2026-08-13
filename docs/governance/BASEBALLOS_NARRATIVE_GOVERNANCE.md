@@ -1,5 +1,10 @@
 # BaseballOS Narrative Governance
 
+> **Historical implementation record — superseded.** Editorial authority now
+> belongs to
+> [`docs/canonical/06_EDITORIAL_DISTRIBUTION_STANDARD.md`](../canonical/06_EDITORIAL_DISTRIBUTION_STANDARD.md).
+> The routing statements below are preserved unrewritten as history.
+
 BaseballOS story standards are governed by
 [`docs/product/BASEBALLOS_STORY_RULES.md`](../product/BASEBALLOS_STORY_RULES.md).
 `BASEBALLOS_STORY_RULES.md` governs what qualifies as a BaseballOS story and how

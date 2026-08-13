@@ -352,7 +352,7 @@ not months.
 - [Storytelling Surfaces](STORYTELLING_SURFACES.md) — turning the engine into stories.
 - [Competitive Analysis](COMPETITIVE_ANALYSIS_JUNE_2026.md) — the category to own.
 - [Monetization & Adoption](MONETIZATION_AND_ADOPTION.md) — who pays and why.
-- [Roadmap 2.0 Proposal](../current/ROADMAP_2_0_PROPOSAL.md) — Do Next / Later / Much Later / Never.
+- [Roadmap 2.0 Proposal](../archive/2026-06/ROADMAP_2_0_PROPOSAL.md) — Do Next / Later / Much Later / Never.
 
 *Audit produced read-only. No application code, API, schema, test, or migration
 was modified.*

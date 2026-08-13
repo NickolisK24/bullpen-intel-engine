@@ -28,24 +28,25 @@ records for the immutable artifact domain.
 Repository-wide classification:
 [`../REPOSITORY_DOCUMENTATION_MAP.md`](../REPOSITORY_DOCUMENTATION_MAP.md).
 
-## Current Production Boundary — August 13, 2026
+## Current Production Boundary
 
-- legacy daily/postgame writer remains authoritative;
-- daily and postgame game-driven lanes are shadow;
-- backfill is off by default;
-- automated game-driven write/publication authority is unapproved;
-- game `824487` repair is retired;
-- OPS-002 (#620) is complete; its permanent work-reduction follow-up remains separate;
-- generated content reaches `main` only through the self-gating publication job (D-053);
-- fail-closed publication remains mandatory.
+Unchanged: the legacy daily/postgame writer remains authoritative, game-driven
+lanes remain shadow, backfill is off by default, the game `824487` repair is
+retired, and fail-closed publication stays mandatory.
 
-## Current Dependency-Security Boundary — August 13, 2026
+This directory does not own that list. Read it, with its evidence and decision
+history, in
+[`../canonical/05_PRODUCT_ROADMAP_DECISION_LEDGER.md`](../canonical/05_PRODUCT_ROADMAP_DECISION_LEDGER.md);
+read the operating procedure in [`SYNC_PIPELINE.md`](SYNC_PIPELINE.md).
 
-- production installs `backend/requirements.txt` only; `backend/requirements-dev.txt` adds test dependencies for local work and test jobs;
-- backend runtime dependencies carry no known advisories;
-- a standing read-only `dependency-audit` CI job refuses unreviewed production dependency risk and never upgrades a dependency itself;
-- three React Router advisories are an explicit acceptance expiring **2026-11-13** — the first refused day, not the last accepted one — tracked by #645;
-- the acceptance depends on `safeVerifyRedirect()` and its regression tests; weakening them voids it.
+## Current Dependency-Security Boundary
 
-Detail and standing obligations:
+Production installs `backend/requirements.txt` only, a standing read-only
+`dependency-audit` CI job refuses unreviewed production dependency risk, and
+three React Router advisories are an explicit acceptance expiring
+**2026-11-13** — the first refused day, not the last accepted one — tracked by
+#645. Weakening `safeVerifyRedirect()` or its regression tests voids that
+acceptance.
+
+Full boundary and standing obligations:
 [`DEPENDENCY_SECURITY_CLOSEOUT_2026-08-13.md`](DEPENDENCY_SECURITY_CLOSEOUT_2026-08-13.md).

@@ -180,7 +180,7 @@ milestones. It does not replace the detailed evidence records linked from
   `non_material_to_canonical_writer_target`, checkpoint state
   `checkpoint_stale_relative_to_current_source`. The audit identified the
   condition and authorized no repair of its own. See
-  [GAME_824487_SOURCE_REVISION_AUDIT.md](GAME_824487_SOURCE_REVISION_AUDIT.md).
+  [GAME_824487_SOURCE_REVISION_AUDIT.md](../archive/2026-08/GAME_824487_SOURCE_REVISION_AUDIT.md).
 - Corrected and terminally closed the game 824487 source-revision checkpoint
   through PR #615 at merge commit
   `b29b1f0e41fffb0a58db9d276a506ae6613dfcce`, then retired the single-purpose
