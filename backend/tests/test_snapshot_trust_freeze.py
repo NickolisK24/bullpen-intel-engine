@@ -731,6 +731,22 @@ def test_frozen_legacy_what_changed_files_untouched():
         *ROUTED_TEAM_PREVIEW_DELIVERY_FILES,
     }
 
+    allowed_frontend_runtime_dependency_files = {
+        # security/frontend-runtime-dependencies (#601 Slice C): the sign-in
+        # flow test gains the open-redirect regression contract for
+        # safeVerifyRedirect(), which is the compensating control recorded in
+        # docs/decisions/2026-08-13-react-router-v7-security-defer.md for the
+        # React Router advisories that have no 6.x fix.
+        #
+        # Test-only, and additive: no existing assertion was changed or removed.
+        # Nothing in it reads a snapshot, a publication gate, freshness, Team
+        # State, or any trusted-serving path — it exercises a pure string
+        # validator and the app-relative paths it must preserve.
+        #
+        # Exact path only, never a directory exemption.
+        'frontend/tests/signInFlow.test.mjs',
+    }
+
     assert not sorted(
         path for path in changed
         if path.startswith('frontend/')
@@ -738,6 +754,7 @@ def test_frozen_legacy_what_changed_files_untouched():
         if path not in allowed_bullpen_page_identity_files
         if path not in allowed_public_vocabulary_files
         if path not in allowed_static_team_preview_files
+        if path not in allowed_frontend_runtime_dependency_files
         if path not in allowed_public_copy_authority_files
         if path not in allowed_public_score_removal_files
         if path not in allowed_canonical_team_state_files

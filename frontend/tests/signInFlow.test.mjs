@@ -249,6 +249,85 @@ test('verify redirect accepts only app-relative next paths', () => {
   assert.equal(safeVerifyRedirect('/\\example.com'), '/')
 })
 
+// ── open-redirect compensating control (#601) ────────────────────────────────
+//
+// safeVerifyRedirect() is the only validation standing between an
+// attacker-supplied ?next= value and useNavigate(). It is also the ONLY
+// URL-derived navigation sink in the frontend: every other <Link to>,
+// <Navigate to> and navigate() target is a literal or an internally built href.
+//
+// The React Router advisories that remain after the 6.30.4 patch
+// (GHSA-wrjc-x8rr-h8h6 and GHSA-jjmj-jmhj-qwj2) are open-redirect classes
+// reached through exactly this kind of sink. They have no 6.x fix, and the
+// accepted-risk record at docs/decisions/2026-08-13-react-router-v7-security-defer.md
+// names this function as the control that keeps the exposure bounded and names
+// these tests as its enforcement.
+//
+// If these tests are deleted or weakened, that acceptance is void. Widening the
+// guard is a security decision, not a refactor.
+
+const OFF_ORIGIN_NEXT_VALUES = [
+  '//evil.example',            // protocol-relative — the browser reads it as a host
+  '//evil.example/path',
+  '/\\evil.example',           // backslash form, CVE-2025-68470 bypass shape
+  '/\\/evil.example',
+  '\\\\evil.example',          // UNC-style, never app-relative
+  'https://evil.example',
+  'http://evil.example',
+  'HTTPS://evil.example',      // scheme casing must not matter
+  'evil.example',              // schemeless host
+  'javascript:alert(1)',
+  '   //evil.example',         // leading whitespace must be trimmed BEFORE the check
+]
+
+const APP_RELATIVE_NEXT_VALUES = [
+  '/',
+  '/today',
+  '/bullpen',
+  '/dashboard',
+  '/stories',
+  '/auth/verify',
+  '/bullpen?view=pitchers',
+  '/stories?team=ACE',
+  '/team/NYY',                 // served by the vercel.json rewrite, still app-relative
+]
+
+test('safeVerifyRedirect refuses every off-origin redirect shape', () => {
+  for (const value of OFF_ORIGIN_NEXT_VALUES) {
+    assert.equal(
+      safeVerifyRedirect(value),
+      '/',
+      `expected ${JSON.stringify(value)} to be refused and fall back to "/"`,
+    )
+  }
+})
+
+test('safeVerifyRedirect preserves app-relative destinations unchanged', () => {
+  for (const value of APP_RELATIVE_NEXT_VALUES) {
+    assert.equal(
+      safeVerifyRedirect(value),
+      value,
+      `expected ${JSON.stringify(value)} to survive validation unchanged`,
+    )
+  }
+})
+
+test('safeVerifyRedirect falls back for absent or blank input', () => {
+  assert.equal(safeVerifyRedirect(undefined), '/')
+  assert.equal(safeVerifyRedirect(null), '/')
+  assert.equal(safeVerifyRedirect(''), '/')
+  assert.equal(safeVerifyRedirect('   '), '/')
+})
+
+test('safeVerifyRedirect honours an explicit fallback for refused input', () => {
+  // The fallback is a destination, not a bypass: it is used verbatim, and a
+  // refused value never reaches the caller.
+  assert.equal(safeVerifyRedirect('//evil.example', '/bullpen'), '/bullpen')
+  assert.equal(safeVerifyRedirect('https://evil.example', '/dashboard'), '/dashboard')
+  assert.equal(safeVerifyRedirect('', '/today'), '/today')
+  assert.equal(safeVerifyRedirect('/stories', '/today'), '/stories')
+})
+
 test('auth-state helpers normalize anonymous, loading, and authenticated states', () => {
   const storage = createStorage()
   installWindow(storage)
