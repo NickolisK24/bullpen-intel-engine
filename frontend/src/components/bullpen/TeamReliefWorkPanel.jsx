@@ -7,16 +7,16 @@ const textValue = (value) => (typeof value === 'string' && value.trim() ? value 
 
 function Section({ title, children, compact = false }) {
   return (
-    <section className={`rounded border border-dirt bg-field/45 ${compact ? 'p-2.5' : 'p-3'}`}>
-      <div className="text-chalk600 text-[10px] font-mono uppercase tracking-wider">{title}</div>
-      <div className={`mt-2 ${compact ? 'space-y-1.5' : 'space-y-2'}`}>{children}</div>
+    <section className="border-t border-line pt-4">
+      <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-chalk500">{title}</div>
+      <div className={`mt-3 ${compact ? 'space-y-2' : 'space-y-3'}`}>{children}</div>
     </section>
   )
 }
 
 function Sentence({ children }) {
   if (!textValue(children)) return null
-  return <p className="font-mono text-sm leading-relaxed text-chalk200">{children}</p>
+  return <p className="text-sm leading-relaxed text-chalk200">{children}</p>
 }
 
 function DataCurrency({ payload }) {
@@ -61,10 +61,10 @@ function AppearanceRow({ appearance, rosterContextLimited = false }) {
   const status = rosterContextLimited ? null : textValue(appearance?.roster_status_sentence)
   return (
     <li
-      className="grid gap-1.5 px-2 py-1.5 text-xs text-chalk300 sm:grid-cols-[minmax(9rem,1.5fr)_repeat(6,minmax(2.25rem,auto))_minmax(8rem,1fr)] sm:items-center"
+      className="grid grid-cols-3 gap-x-3 gap-y-2 py-3 text-xs text-chalk300 sm:grid-cols-[minmax(9rem,1.5fr)_repeat(6,minmax(2.25rem,auto))_minmax(8rem,1fr)] sm:items-center"
       title={textValue(appearance?.sentence) || undefined}
     >
-      <span className="font-mono text-chalk200">{displayValue(appearance?.pitcher_full_name)}</span>
+      <span className="col-span-3 font-body text-sm font-medium text-chalk100 sm:col-span-1 sm:font-mono sm:text-xs">{displayValue(appearance?.pitcher_full_name)}</span>
       <span className="font-mono"><span className="text-chalk600">IP </span>{inningsValue(appearance)}</span>
       <span className="font-mono"><span className="text-chalk600">P </span>{displayValue(appearance?.pitches_thrown)}</span>
       <span className="font-mono"><span className="text-chalk600">K </span>{displayValue(appearance?.strikeouts)}</span>
@@ -92,7 +92,7 @@ function GameContextNote({ game }) {
 
   return (
     <div
-      className="space-y-1 border-t border-dirt/60 bg-chalk/25 px-3 py-2"
+      className="space-y-1 border-l border-brass/60 py-2 pl-3"
       data-testid="team-relief-game-context"
     >
       <div className="font-mono text-[10px] uppercase tracking-wider text-amber/80">{label}</div>
@@ -170,13 +170,13 @@ function GameSection({ section, multiGame, rosterContextLimited }) {
 
   return (
     <div
-      className="border-t border-dirt/60"
+      className="border-t border-line"
       data-testid="team-relief-game-section"
       data-game-pk={section?.gamePk ?? undefined}
     >
       {multiGame && (
         <div
-          className="bg-dugout/40 px-3 py-1.5 font-mono text-[10px] uppercase tracking-wider text-chalk500"
+          className="py-2 font-mono text-[10px] uppercase tracking-wider text-chalk500"
           data-testid="team-relief-game-label"
         >
           {gameSectionLabel(section)}
@@ -187,7 +187,7 @@ function GameSection({ section, multiGame, rosterContextLimited }) {
         <Sentence>Game context for this game is unavailable.</Sentence>
       )}
       {rows.length > 0 && (
-        <ul className="divide-y divide-dirt/60 border-t border-dirt/60">
+        <ul className="divide-y divide-line border-t border-line">
           {rows.map((appearance, index) => (
             <AppearanceRow
               key={`${appearance?.pitcher_id || 'pitcher'}:${appearance?.mlb_game_pk || 'game'}:${index}`}
@@ -212,12 +212,12 @@ function ReliefWorkByDate({ groups, absenceSentence, rosterContextLimited = fals
       {dateGroups.map((group, groupIndex) => (
         <details
           key={`${group?.game_date || 'group'}:${groupIndex}`}
-          className="overflow-hidden rounded border border-dirt/70 bg-chalk/20"
+          className="border-t border-line"
           aria-label={textValue(group?.sentence) || `Relief work date ${groupIndex + 1}`}
           open={groupIndex === 0}
         >
           <summary
-            className="cursor-pointer list-none border-l-2 border-l-amber/40 bg-dugout/70 px-3 py-2.5 marker:hidden transition-colors hover:bg-dugout focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/50"
+            className="min-h-11 cursor-pointer list-none border-l border-l-brass/60 py-3 pl-3 marker:hidden transition-colors hover:bg-panel focus:outline-none focus-visible:ring-2 focus-visible:ring-signal/60"
             data-testid="team-relief-date-summary"
           >
             <DateSummary>{group?.sentence}</DateSummary>
@@ -247,7 +247,7 @@ function WorkWindow({ value }) {
   }
 
   return (
-    <div className="rounded border border-dirt/60 bg-chalk/25 p-2">
+    <div className="border-l border-line-strong pl-3">
       <Sentence>{value?.sentence}</Sentence>
       <Sentence>{value?.pitchers_sentence}</Sentence>
       <Sentence>{value?.pitches_sentence}</Sentence>
@@ -275,14 +275,14 @@ function PanelShell({ children }) {
   return (
     <section
       id="team-relief-work"
-      className="scroll-mt-24 space-y-2.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/50"
+      className="scroll-mt-24 space-y-5 focus:outline-none focus-visible:ring-2 focus-visible:ring-signal/50"
       aria-labelledby="team-relief-work-title"
       tabIndex={-1}
     >
-      <div>
-        <div id="team-relief-work-title" className="text-chalk600 text-[10px] font-mono uppercase tracking-wider">
+      <div className="border-b border-line pb-3">
+        <h2 id="team-relief-work-title" className="font-display text-xl font-semibold uppercase tracking-[0.09em] text-chalk100">
           Recent Bullpen Work
-        </div>
+        </h2>
       </div>
       {children}
     </section>
@@ -316,7 +316,7 @@ export default function TeamReliefWorkPanel({
   if (loading) {
     return (
       <PanelShell>
-        <section className="rounded border border-dirt bg-field/45 p-3">
+        <section className="border-l border-line-strong pl-3">
           <div className="font-mono text-sm text-chalk400">Loading recent bullpen work…</div>
         </section>
       </PanelShell>
@@ -326,7 +326,7 @@ export default function TeamReliefWorkPanel({
   if (error) {
     return (
       <PanelShell>
-        <section className="rounded border border-dirt bg-field/45 p-3">
+        <section className="border-l border-brass/60 pl-3">
           <div className="font-mono text-sm text-chalk400">Recent bullpen work is unavailable.</div>
         </section>
       </PanelShell>

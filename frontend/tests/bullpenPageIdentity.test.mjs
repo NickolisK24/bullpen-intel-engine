@@ -244,7 +244,7 @@ test('the operating card drops its team heading when the page owns the identity'
   // The board's own section heading keeps its level, its id, and its binding.
   assert.ok(htmlIncludes(html, '<h2 id="pitcher-lanes-title"'))
   assert.ok(htmlIncludes(html, 'aria-labelledby="pitcher-lanes-title"'))
-  assert.ok(htmlIncludes(html, `Tonight&#x27;s Bullpen Board — ${teamName}`))
+  assert.ok(htmlIncludes(html, `Current Arm Picture — ${teamName}`))
 })
 
 test('the operating card keeps its team heading everywhere else', () => {

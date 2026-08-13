@@ -44,7 +44,7 @@ test('bullpen tabs use the clarified labels', () => {
 })
 
 test('bullpen section is framed as team-specific', () => {
-  assert.ok(htmlIncludes(html, 'Team-specific bullpen analysis'))
+  assert.ok(htmlIncludes(html, 'The observable current state, the arms carrying the recent work'))
 })
 
 test('all-pitchers view no longer exposes the public recalculate control', () => {

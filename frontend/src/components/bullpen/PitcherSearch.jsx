@@ -43,11 +43,11 @@ export function PitcherSearchPanel({
   return (
     <section
       aria-label="Pitcher Search"
-      className="mb-5 rounded border border-dirt bg-chalk/20 p-4"
+      className="border-b border-line py-5"
     >
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <label className="flex min-w-0 flex-1 flex-col gap-1">
-          <span className="font-mono text-xs uppercase tracking-wide text-chalk400">
+          <span className="bos-micro">
             Pitcher Search
           </span>
           <input
@@ -56,7 +56,7 @@ export function PitcherSearchPanel({
             onChange={event => onQueryChange(event.target.value)}
             aria-label="Search pitcher"
             placeholder="Search pitchers..."
-            className="w-full rounded border border-dirt bg-field/70 px-3 py-2 text-sm text-chalk200 outline-none transition-colors placeholder:text-chalk600 focus:border-amber/50"
+            className="min-h-11 w-full border border-line-strong bg-panel px-3 text-sm text-chalk200 outline-none transition-colors placeholder:text-chalk600 focus:border-signal"
           />
         </label>
       </div>
@@ -64,19 +64,19 @@ export function PitcherSearchPanel({
       {shouldShowResults && (
         <div className="mt-3">
           {loading ? (
-            <div className="rounded border border-dirt bg-field/40 px-3 py-2 font-mono text-xs text-chalk400">
+            <div className="border-l border-line-strong py-2 pl-3 font-mono text-xs text-chalk400">
               Searching pitchers...
             </div>
           ) : error ? (
-            <div className="rounded border border-red-400/35 bg-red-400/10 px-3 py-2 font-mono text-xs text-red-300">
+            <div className="border-l border-danger py-2 pl-3 font-mono text-xs text-red-300">
               Search unavailable
             </div>
           ) : results.length === 0 ? (
-            <div className="rounded border border-dirt bg-field/40 px-3 py-2 font-mono text-xs text-chalk400">
+            <div className="border-l border-line-strong py-2 pl-3 font-mono text-xs text-chalk400">
               No pitchers found.
             </div>
           ) : (
-            <div className="grid gap-2">
+            <div className="border-t border-line">
               {results.map(result => {
                 const view = getPitcherSearchResultView(result)
                 return (
@@ -84,14 +84,14 @@ export function PitcherSearchPanel({
                     key={view.id}
                     type="button"
                     onClick={() => onSelectPitcher(result)}
-                    className="w-full rounded border border-dirt bg-field/60 px-3 py-3 text-left transition-colors hover:border-amber/40 hover:bg-amber/5 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/70"
+                    className="min-h-11 w-full border-b border-line bg-transparent py-3 text-left transition-colors hover:bg-panel focus:outline-none focus-visible:ring-2 focus-visible:ring-signal/70"
                     aria-label={`Open pitcher detail for ${view.name}`}
                   >
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
                           <span className="font-medium text-chalk200">{view.name}</span>
-                          <span className="rounded border border-dirt px-1.5 py-0.5 font-mono text-[10px] text-chalk400">
+                          <span className="border border-line px-1.5 py-0.5 font-mono text-[10px] text-chalk400">
                             {view.position}
                           </span>
                         </div>

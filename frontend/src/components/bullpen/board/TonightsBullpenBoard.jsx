@@ -118,51 +118,53 @@ export default function TonightsBullpenBoard({
   }, [rosterContextLimited, showUnavailable])
 
   return (
-    <div>
-      {/* One controls row: team selector plus the unavailable toggle. */}
-      <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-        <div className="flex min-w-0 flex-wrap gap-1.5">
+    <div className="pt-5 sm:pt-6">
+      {/* One compact context row: a real team selector plus the optional
+          unavailable-roster context. Thirty club buttons made selection read
+          like another data panel and wrapped unpredictably on small screens. */}
+      <div className="mb-6 flex flex-col gap-3 border-b border-line pb-5 sm:flex-row sm:items-end sm:justify-between">
+        <label className="block min-w-0 flex-1 sm:max-w-sm">
+          <span className="bos-micro">Club</span>
           {teams?.loading && teamList.length === 0 ? (
-            <span className="font-mono text-xs text-chalk500">Loading teams…</span>
+            <span className="mt-2 block font-mono text-xs text-chalk500">Loading teams…</span>
           ) : (
-            teamList.map(team => (
-              <button
-                key={team.team_id}
-                onClick={() => onSelectTeam(team.team_id)}
-                aria-pressed={selectedTeam === team.team_id}
-                className={`rounded border px-2.5 py-1 text-xs font-mono transition-all ${
-                  selectedTeam === team.team_id
-                    ? 'bg-amber/10 border-amber/40 text-amber'
-                    : 'border-dirt text-chalk400 hover:border-chalk400'
-                }`}
-              >
-                {team.team_abbreviation || team.team_name}
-              </button>
-            ))
+            <select
+              value={selectedTeam ?? ''}
+              onChange={event => onSelectTeam(event.target.value ? Number(event.target.value) : null)}
+              className="mt-2 min-h-11 w-full border border-line-strong bg-panel px-3 font-body text-sm text-chalk100 outline-none focus:border-signal"
+              aria-label="Select team"
+            >
+              <option value="">Select a team</option>
+              {teamList.map(team => (
+                <option key={team.team_id} value={team.team_id}>
+                  {team.team_name || team.team_abbreviation}
+                </option>
+              ))}
+            </select>
           )}
-        </div>
-        <div className="flex shrink-0 flex-col items-end gap-1">
+        </label>
+        <div className="flex min-w-0 flex-wrap items-center gap-2 sm:justify-end">
           <button
             type="button"
             onClick={() => setShowUnavailable(value => !value)}
             aria-pressed={showUnavailable}
             disabled={rosterContextLimited}
-            className={`rounded border px-2.5 py-1 font-mono text-xs transition-all ${
+            className={`min-h-11 border px-3 font-mono text-[11px] uppercase tracking-[0.1em] transition-colors ${
               rosterContextLimited
-                ? 'cursor-not-allowed border-dirt text-chalk600 opacity-70'
+                ? 'cursor-not-allowed border-line text-chalk600 opacity-70'
                 : showUnavailable
-                  ? 'bg-amber/10 border-amber/40 text-amber'
-                  : 'border-dirt text-chalk400 hover:border-chalk400'
+                  ? 'border-signal/50 bg-signal-well text-signal-deep'
+                  : 'border-line-strong text-chalk400 hover:border-signal/50 hover:text-chalk100'
             }`}
           >
             Show unavailable arms
           </button>
           {rosterContextLimited ? (
-            <span className="rounded border border-dirt bg-dugout px-2 py-1 font-mono text-[10px] uppercase tracking-widest text-chalk500">
+            <span className="border-l border-brass/60 pl-3 font-mono text-[10px] uppercase tracking-widest text-chalk500">
               Unavailable roster context withheld.
             </span>
           ) : showUnavailable && (
-            <span className="rounded border border-dirt bg-dugout px-2 py-1 font-mono text-[10px] uppercase tracking-widest text-chalk500">
+            <span className="border-l border-line-strong pl-3 font-mono text-[10px] uppercase tracking-widest text-chalk500">
               Unavailable relievers are context only.
             </span>
           )}
@@ -178,15 +180,16 @@ export default function TonightsBullpenBoard({
       ) : (
         // Keyed by team so a team switch fully remounts the answer: no prior
         // team's state, distribution, evidence, or disclosure state can linger.
-        <div key={selectedTeam} className="flex flex-col gap-6 2xl:flex-row 2xl:items-start">
+        <div key={selectedTeam} className="flex flex-col gap-8">
           <div className="min-w-0 flex-1">
             {/* Answer zone: team identity, current state, one-sentence why,
                 immediate receipts, freshness, and limitations live in the
                 operating-state card; the availability distribution sits directly
                 beneath it so the four public counts are part of the fast answer. */}
-            <div className="mb-4">
-              <div className="mb-2 flex justify-end">
+            <div className="mb-8">
+              <div className="mb-3 flex justify-end">
                 <EvidenceShareMenu
+                  className="[&>button]:min-h-11 [&_[role=menuitem]]:min-h-11"
                   cardModel={teamCard}
                   destinationUrl={teamDestinationUrl}
                   shareText={teamShareText}
@@ -214,7 +217,7 @@ export default function TonightsBullpenBoard({
               />
               <BullpenAvailabilityDistribution board={filteredBoard} />
             </div>
-            <div className="mb-4">
+            <div className="mb-10">
               <TeamReliefWorkPanel
                 teamId={selectedTeam}
                 payload={teamReliefWorkPayload}
@@ -231,12 +234,12 @@ export default function TonightsBullpenBoard({
             {/* Secondary narrative context moves behind clear disclosures so the
                 default view stays focused on the bullpen answer. Neither carries
                 an inbound evidence anchor, so collapsing them breaks no links. */}
-            <details className="mt-6 rounded-lg border border-dirt bg-dugout/35" aria-label="Team story">
-              <summary className="flex cursor-pointer items-center justify-between gap-2 px-4 py-3 font-mono text-[11px] uppercase tracking-widest text-chalk300 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/60">
+            <details className="mt-10 border-t border-line" aria-label="Team story">
+              <summary className="flex min-h-12 cursor-pointer items-center justify-between gap-4 py-3 font-mono text-[11px] uppercase tracking-widest text-chalk300 focus:outline-none focus-visible:ring-2 focus-visible:ring-signal/60">
                 <span>Read the team story</span>
                 <span className="text-[10px] text-chalk600">Today's bullpen storyline</span>
               </summary>
-              <div className="px-3 pb-3">
+              <div className="pb-3 pt-2">
                 <StoryCard
                   story={storyState.data}
                   loading={storyState.loading}
@@ -245,12 +248,12 @@ export default function TonightsBullpenBoard({
                 />
               </div>
             </details>
-            <details className="mt-4 rounded-lg border border-dirt bg-dugout/35" aria-label="Recent game context">
-              <summary className="flex cursor-pointer items-center justify-between gap-2 px-4 py-3 font-mono text-[11px] uppercase tracking-widest text-chalk300 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/60">
+            <details className="mt-2 border-t border-line" aria-label="Recent game context">
+              <summary className="flex min-h-12 cursor-pointer items-center justify-between gap-4 py-3 font-mono text-[11px] uppercase tracking-widest text-chalk300 focus:outline-none focus-visible:ring-2 focus-visible:ring-signal/60">
                 <span>See recent game context</span>
                 <span className="text-[10px] text-chalk600">Latest completed-game detail</span>
               </summary>
-              <div className="px-3 pb-3">
+              <div className="pb-3 pt-2">
                 <TeamGameContextCard
                   gameContext={gameContextState.data}
                   loading={gameContextState.loading}

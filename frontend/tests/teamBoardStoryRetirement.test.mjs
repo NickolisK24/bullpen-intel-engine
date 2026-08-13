@@ -114,7 +114,7 @@ test('the board view never renders the legacy panel marker', () => {
 // ── Board data surfaces survive the retirement ───────────────────────────────
 test('board data surfaces remain after the panel is retired', () => {
   const html = render(React.createElement(BullpenBoardView, { board: boardFixture(), compact: true }))
-  assert.ok(htmlIncludes(html, 'Tonight&#x27;s Bullpen Board')) // heading
+  assert.ok(htmlIncludes(html, 'Current Arm Picture')) // heading
   assert.ok(htmlIncludes(html, 'pitcher')) // totals line
   assert.ok(htmlIncludes(html, 'Test Arm')) // pitcher group
   assert.ok(htmlIncludes(html, 'Pitcher Label Key')) // label key

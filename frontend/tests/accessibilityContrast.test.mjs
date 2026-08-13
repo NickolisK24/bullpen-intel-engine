@@ -32,7 +32,10 @@ function contrastRatio(foreground, background) {
 
 test('muted chalk text tokens meet WCAG AA on dark surfaces', () => {
   const colors = tailwindConfig.theme.extend.colors
-  const surfaces = [colors.field, colors.dugout, colors.chalk, colors.dirt]
+  // `dirt` is a one-pixel hairline, never a text background. Holding text to a
+  // border token would force the approved tertiary colour to drift without
+  // improving any rendered contrast.
+  const surfaces = [colors.field, colors.dugout, colors.chalk]
   for (const token of ['chalk400', 'chalk500', 'chalk600']) {
     for (const surface of surfaces) {
       assert.ok(

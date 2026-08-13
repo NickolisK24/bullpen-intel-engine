@@ -210,8 +210,8 @@ function RosterStatusBanner({ board }) {
 function WhyDisclosure({ reasons, limitations }) {
   if (!reasons.length && !limitations.length) return null
   return (
-    <details className="mt-3 rounded border border-dirt bg-dugout/60 p-2">
-      <summary className="cursor-pointer font-mono text-[10px] uppercase tracking-widest text-chalk500 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/60">
+    <details className="mt-3 border-t border-line pt-2">
+      <summary className="min-h-11 cursor-pointer py-2 font-mono text-[10px] uppercase tracking-widest text-chalk500 focus:outline-none focus-visible:ring-2 focus-visible:ring-signal/60">
         Why?
       </summary>
       <div className="mt-2 space-y-3">
@@ -243,7 +243,7 @@ function PitcherLabelChip({ label, compact = false }) {
   const dotColor = label.tone?.color || '#cbd5e1'
   return (
     <span
-      className={`inline-flex max-w-full items-center gap-1.5 rounded border font-mono uppercase tracking-wide ${
+      className={`inline-flex max-w-full items-center gap-1.5 border font-mono uppercase tracking-wide ${
         isRole
           ? `${compact ? 'px-2 py-0.5 text-[10px]' : 'px-2.5 py-1 text-[11px]'} font-semibold`
           : `${compact ? 'px-2 py-0.5' : 'px-2 py-0.5'} text-[10px] font-medium opacity-90`
@@ -279,7 +279,7 @@ function EligibilityChip({ eligibility }) {
   if (!eligibility) return null
   return (
     <span
-      className="inline-flex items-center gap-1.5 rounded border px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide"
+      className="inline-flex items-center gap-1.5 border px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide"
       style={eligibility.tone}
       title={eligibility.reason || eligibility.label}
         aria-label={`${eligibility.label}, workload read ${eligibility.confidenceLabel}`}
@@ -294,7 +294,7 @@ function RosterStatusChip({ rosterStatus }) {
   if (!rosterStatus) return null
   return (
     <span
-      className="inline-flex items-center gap-1.5 rounded border px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide"
+      className="inline-flex items-center gap-1.5 border px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide"
       style={rosterStatus.tone}
       title={`Roster status: ${rosterStatus.label} (workload read: ${rosterStatus.confidenceLabel})`}
       aria-label={`Roster status: ${rosterStatus.label}, workload read ${rosterStatus.confidenceLabel}`}
@@ -308,8 +308,8 @@ function RosterStatusChip({ rosterStatus }) {
 function RoleDisclosure({ role }) {
   if (!role) return null
   return (
-    <details className="mt-2 rounded border border-dirt/60 bg-dugout/50 p-2">
-      <summary className="cursor-pointer font-mono text-[10px] uppercase tracking-widest text-chalk500 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/60">
+    <details className="mt-2 border-t border-line pt-2">
+      <summary className="min-h-11 cursor-pointer py-2 font-mono text-[10px] uppercase tracking-widest text-chalk500 focus:outline-none focus-visible:ring-2 focus-visible:ring-signal/60">
         Usage role
       </summary>
       <div className="mt-2 space-y-2">
@@ -347,8 +347,8 @@ function PitcherLabelKey() {
   const roleLabels = Object.values(PITCHER_ROLE_LABELS)
   const readLabels = Object.values(PITCHER_READ_LABELS)
   return (
-    <details className="mb-4 rounded-lg border border-dirt bg-dugout/35 p-3 sm:p-4" aria-label={PITCHER_LABEL_KEY_COPY.title}>
-      <summary className="flex cursor-pointer flex-wrap items-center justify-between gap-2 font-mono text-[11px] uppercase tracking-widest text-chalk300 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/60">
+    <details className="mb-7 border-y border-line py-2" aria-label={PITCHER_LABEL_KEY_COPY.title}>
+      <summary className="flex min-h-11 cursor-pointer flex-wrap items-center justify-between gap-2 py-2 font-mono text-[11px] uppercase tracking-widest text-chalk300 focus:outline-none focus-visible:ring-2 focus-visible:ring-signal/60">
         <span>{PITCHER_LABEL_KEY_COPY.title}</span>
         <span className="text-[10px] text-chalk600">Role and read definitions</span>
       </summary>
@@ -387,7 +387,7 @@ function PitcherCard({ card, freshness, onViewDetails, now }) {
   const view = getBoardCardView(card, freshness, now)
   const canView = typeof onViewDetails === 'function' && view.pitcherId != null
   return (
-    <div className="rounded-lg border border-dirt bg-field/60 p-3">
+    <article className="border-b border-line py-4" data-testid="pitcher-card">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="truncate font-medium text-chalk100">{view.name}</div>
@@ -396,7 +396,7 @@ function PitcherCard({ card, freshness, onViewDetails, now }) {
           )}
         </div>
         <span
-          className="inline-flex shrink-0 items-center gap-1.5 rounded border px-2 py-1 font-mono text-[10px] font-semibold uppercase tracking-wide"
+          className="inline-flex shrink-0 items-center gap-1.5 border px-2 py-1 font-mono text-[10px] font-semibold uppercase tracking-wide"
           style={view.badge.style}
           title={view.badge.tone}
           aria-label={`Availability status: ${view.badge.label}`}
@@ -439,22 +439,22 @@ function PitcherCard({ card, freshness, onViewDetails, now }) {
         <button
           type="button"
           onClick={() => onViewDetails(view.pitcherId)}
-          className="mt-3 w-full rounded border border-dirt bg-dugout px-3 py-1.5 font-mono text-[11px] uppercase tracking-wider text-chalk300 transition-colors hover:border-amber/40 hover:text-amber focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/60"
+          className="mt-3 min-h-11 w-full border border-line-strong bg-transparent px-3 py-2 font-mono text-[11px] uppercase tracking-wider text-chalk300 transition-colors hover:border-signal/50 hover:text-signal-deep focus:outline-none focus-visible:ring-2 focus-visible:ring-signal/60"
           aria-label={`View pitcher details for ${view.name}`}
         >
           Open pitcher context →
         </button>
       )}
-    </div>
+    </article>
   )
 }
 
 function BoardGroup({ group, freshness, onViewDetails, now }) {
   return (
-    <section className="card overflow-hidden" aria-label={`${group.label} group`}>
-      <header className="border-b border-dirt bg-chalk/20 px-4 py-3">
+    <section className="min-w-0" aria-label={`${group.label} group`}>
+      <header className="border-b border-line pb-3">
         <div className="flex items-center justify-between gap-3">
-          <h3 className="flex items-center gap-2 font-display text-lg tracking-wide text-chalk100">
+          <h3 className="flex items-center gap-2 font-display text-base font-semibold uppercase tracking-[0.12em] text-chalk100">
             <span className="h-2.5 w-2.5 rounded-full" style={group.badge.dotStyle} aria-hidden="true" />
             {group.label}
           </h3>
@@ -466,11 +466,11 @@ function BoardGroup({ group, freshness, onViewDetails, now }) {
           <p className="mt-1 text-xs leading-relaxed text-chalk500">{group.description}</p>
         )}
       </header>
-      <div className="p-3">
+      <div>
         {group.pitchers.length === 0 ? (
           <p className="px-1 py-4 text-center text-xs text-chalk600">{group.emptyCopy}</p>
         ) : (
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div>
             {group.pitchers.map(card => (
               <PitcherCard key={card.pitcher_id ?? card.name} card={card} freshness={freshness} onViewDetails={onViewDetails} now={now} />
             ))}
@@ -500,17 +500,17 @@ export default function BullpenBoardView({
     <div
       id="pitcher-lanes"
       tabIndex={-1}
-      className="scroll-mt-24 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/60"
+      className="scroll-mt-24 focus:outline-none focus-visible:ring-2 focus-visible:ring-signal/60"
       aria-labelledby="pitcher-lanes-title"
     >
       <FreshnessBanner freshness={board?.freshness} showRoutine={showRoutineFreshness} />
       <RosterStatusBanner board={board} />
 
-      <div className="mb-4">
-        <h2 id="pitcher-lanes-title" className="font-display text-xl tracking-wide text-chalk100">
-          Tonight's Bullpen Board{teamName ? ` — ${teamName}` : ''}
+      <div className="mb-6 flex flex-col gap-2 border-b border-line pb-3 sm:flex-row sm:items-end sm:justify-between">
+        <h2 id="pitcher-lanes-title" className="font-display text-xl font-semibold uppercase tracking-[0.09em] text-chalk100">
+          Current Arm Picture{teamName ? ` — ${teamName}` : ''}
         </h2>
-        <p className="mt-1 text-xs text-chalk500">
+        <p className="max-w-2xl font-mono text-[11px] leading-relaxed text-chalk500 sm:text-right">
           {totals.countWithheld
             ? 'Recent workload evidence is available; current usable bullpen depth is withheld until roster status is verified.'
             : `Grouped by how recent usage changes tonight's options. ${totals.total} pitcher${totals.total === 1 ? '' : 's'} shown.`}
@@ -525,7 +525,7 @@ export default function BullpenBoardView({
       ) : (
         <>
           <PitcherLabelKey />
-          <div className="grid gap-5 xl:grid-cols-2">
+          <div className="grid gap-x-6 gap-y-8 md:grid-cols-2 xl:grid-cols-3">
             {groups.map(group => (
               <BoardGroup key={group.status} group={group} freshness={board?.freshness} onViewDetails={onSelectPitcher} now={now} />
             ))}

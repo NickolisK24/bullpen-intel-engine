@@ -17,12 +17,12 @@ Tokens live in two mirrored places and must stay in sync:
 
 | Group | Tokens |
 |---|---|
-| Surfaces | `ink`, `panel`, `panel-2` |
-| Borders | `line`, `line-strong` |
-| Accents | `signal`, `signal-deep`, `signal-well`, `brass`, `brass-deep` |
+| Surfaces | `ink` (`#0B0F14`), `panel` (`#10161E`), `panel-2` (`#141C26`) |
+| Borders | `line` (`#232C38`), `line-strong` |
+| Accents | `signal` (`#5B8CD6`), `brass` (`#C9A96A`), state hues |
 | Focus | `focus` |
 | Spacing | `--bos-space-1` … `--bos-space-8`; named Tailwind steps `gutter`, `rhythm`, `section` |
-| Radii | `edge` (2px), `panel` (4px), `control` (6px) |
+| Radii | `edge`, `panel`, `control` (all square: `0`) |
 | Shadows | `panel`, `edition` — near-invisible; borders carry the structure |
 | Breakpoint | `xs: 390px`, alongside the existing Tailwind scale |
 
@@ -38,16 +38,13 @@ Typographic levels (`src/index.css`): `.bos-eyebrow`, `.bos-kicker`,
 Face assignment is the rule that keeps the product editorial rather than
 operational:
 
-- **DM Sans** carries every reading level — headlines, section titles, card
-  titles, body, support, evidence, buttons, and navigation.
-- **JetBrains Mono** is reserved for values that benefit from precision:
+- **Archivo Narrow** carries display levels — headlines, section titles, card
+  titles, and short editorial marks.
+- **IBM Plex Sans** carries body, support, evidence, buttons, and navigation.
+- **IBM Plex Mono** is reserved for values that benefit from precision:
   `.bos-meta` and `.bos-value` (dates, times, counts, provenance, timestamps).
-- **Bebas Neue** survives only as `.bos-kicker` — a short condensed accent for
-  team-name kickers and the wordmark. It is never a page statement, a button,
-  a paragraph, or a section title.
-
-No font family was added. DM Sans 700 was added to the existing Google Fonts
-request so display levels have a proper semibold/bold weight.
+The font request matches the approved design reference directly. No component
+owns an alternate typography system.
 
 Structure classes: `.bos-page` / `.bos-page--reading` (frame and measure),
 `.bos-section` (rhythm plus a hairline between sections), `.bos-open` and
@@ -297,11 +294,11 @@ The Today Lead insertion point is unchanged by this pass: it sits between the
 Daily Intelligence Brief and the League Picture, and removing the navigation
 block that used to follow the League Picture does not move it.
 
-The remaining public surfaces (Dashboard, Bullpens, Compare, Reliever Finder,
-Stories, How to Read, Methodology, Data & Trust, About) still use the older
-amber / Bebas register inside their content. They inherit the masthead and the
-shared UI primitives only. Migrating them is the next visual-system package, not
-a Today refinement.
+The Team Board page chrome, selector/search controls, answer, Recent Bullpen Work, Current Arm
+Picture, and narrative disclosures now share this system. Dashboard, Pitcher
+Detail, Stories, How to Read, Methodology, Data & Trust, About, Compare, and the
+Reliever Finder content still require surface-level convergence beyond their
+shared shell and tokens.
 
 ## Deliberate non-goals
 

@@ -107,5 +107,5 @@ test('existing realignment headings remain (substrings preserved for stability)'
 
 test('the Bullpen section is labelled team-specific to contrast with the dashboard', () => {
   const html = inRouter(React.createElement(Bullpen))
-  assert.ok(htmlIncludes(html, 'Team-specific bullpen analysis'))
+  assert.ok(htmlIncludes(html, 'The observable current state, the arms carrying the recent work'))
 })

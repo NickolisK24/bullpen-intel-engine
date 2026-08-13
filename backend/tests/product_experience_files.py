@@ -45,12 +45,13 @@ the files a pass actually changes.
   Pass 2 (D-055)  — the Team Board answer zone: the operating-state card's
                     compact variant and the availability distribution beneath
                     it.
+  Pass 3 (D-056)  — approved foundation-token alignment and the remainder of
+                    Team Board presentation: page chrome, team control, recent
+                    bullpen work, current arm groups, search, and disclosures.
 
 Still NOT migrated and NOT listed: Dashboard content, Compare, Reliever Finder,
-Stories, Pitcher Detail, and the remainder of the Team Board below the answer
-zone (the grouped arm picture, the relief-work ledger, and the two collapsed
-narrative sections). Those keep the older register inside their content and
-require their own amendment.
+Stories, and Pitcher Detail. Those keep the older register inside their content
+and require their own amendment.
 """
 
 # Runtime surfaces: the presentation layer the migration rebuilt.
@@ -58,8 +59,8 @@ require their own amendment.
 #   product_experience_foundation.md — the package's own design record: the
 #                             token layer, the primitives, the Today hierarchy,
 #                             and the deliberate non-goals
-#   index.html              — the font request gained DM Sans 700 so the display
-#                             levels have a real semibold; no meta claim changed
+#   index.html              — the approved Archivo Narrow / IBM Plex font
+#                             request; no meta claim changed
 #   tailwind.config.js      — the additive `bos-*` token scale (colour, spacing,
 #                             radii, shadow, the 390px breakpoint)
 #   index.css               — the same tokens as custom properties plus the
@@ -145,6 +146,16 @@ UX003_PRODUCT_EXPERIENCE_RUNTIME_FILES = (
     # "Withheld" rather than a zero.
     'frontend/src/components/bullpen/BullpenOperatingStateCard.jsx',
     'frontend/src/components/bullpen/board/BullpenAvailabilityDistribution.jsx',
+    # Pass 3 — the Team Board becomes one visual product from its page identity
+    # through its deepest governed evidence. These paths only change layout,
+    # typography, controls, responsive composition, and disclosure treatment.
+    # They continue to consume the existing board, relief-work, story, and game
+    # context contracts verbatim; no browser-owned baseball meaning is added.
+    'frontend/src/components/bullpen/Bullpen.jsx',
+    'frontend/src/components/bullpen/PitcherSearch.jsx',
+    'frontend/src/components/bullpen/TeamReliefWorkPanel.jsx',
+    'frontend/src/components/bullpen/board/BullpenBoardView.jsx',
+    'frontend/src/components/bullpen/board/TonightsBullpenBoard.jsx',
 )
 
 # Test surfaces: the contracts the migration asserts, and the existing suites
@@ -166,6 +177,15 @@ UX003_PRODUCT_EXPERIENCE_TEST_FILES = (
     # prediction or internal score, the subordinate distribution, and the
     # absence of the still-reserved M-001 metric.
     'frontend/tests/teamBoardAnswerHierarchy.test.mjs',
+    'frontend/tests/bullpenPageIdentity.test.mjs',
+    'frontend/tests/teamReliefWorkPanel.test.mjs',
+    'frontend/tests/bullpenTabLabels.test.mjs',
+    'frontend/tests/canonicalEvidenceLinks.test.mjs',
+    'frontend/tests/dashboardScopeClarification.test.mjs',
+    'frontend/tests/pitcherUsageRole.test.mjs',
+    'frontend/tests/teamBoardStoryRetirement.test.mjs',
+    'frontend/tests/teamShare.test.mjs',
+    'frontend/tests/tonightsBullpenBoard.test.mjs',
 )
 
 UX003_PRODUCT_EXPERIENCE_FRONTEND_FILES = (

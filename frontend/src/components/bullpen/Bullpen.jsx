@@ -14,7 +14,7 @@ import {
   resolveTeamId,
   resolveTeamReference,
 } from '../../utils/evidenceLinks'
-import { LoadingPane, ErrorState, EmptyState, SectionHeader } from '../UI'
+import { LoadingPane, ErrorState, EmptyState } from '../UI'
 import PitcherDetail from './PitcherDetail'
 import TonightsBullpenBoard from './board/TonightsBullpenBoard'
 import TeamBullpenComparison from './board/TeamBullpenComparison'
@@ -81,6 +81,43 @@ export function getBullpenPageIdentity(viewMode, teamList, urlState = {}) {
   // one, which is a data defect rather than a naming choice.
   const teamLabel = getTeamOptionLabel(resolveTeamReference(teamList, urlState.team))
   return teamLabel ? `${teamLabel} Bullpen` : 'Team Bullpen Board'
+}
+
+function BullpenPageHeader({ title, viewMode, onViewChange }) {
+  const descriptions = {
+    [BULLPEN_VIEWS.BOARD]: 'The observable current state, the arms carrying the recent work, and the evidence behind the read.',
+    [BULLPEN_VIEWS.COMPARE]: 'Two current bullpen pictures placed side by side without naming an advantage.',
+    [BULLPEN_VIEWS.PITCHERS]: 'Find a reliever and open the current public workload record.',
+  }
+
+  return (
+    <header className="border-b border-line pb-5 sm:pb-6">
+      <p className="bos-meta uppercase tracking-[0.18em]">Bullpens</p>
+      <div className="mt-2 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+        <div className="min-w-0">
+          <h1 className="bos-hero break-words">{title}</h1>
+          <p className="bos-support mt-3 max-w-[68ch]">{descriptions[viewMode]}</p>
+        </div>
+        <nav className="flex max-w-full gap-3 overflow-x-auto border-b border-line sm:gap-5" aria-label="Bullpen views">
+          {VIEW_MODES.map(mode => (
+            <button
+              key={mode.id}
+              type="button"
+              onClick={() => onViewChange(mode.id)}
+              aria-current={viewMode === mode.id ? 'page' : undefined}
+              className={`min-h-11 shrink-0 border-b px-0 pb-2 font-mono text-[10px] uppercase tracking-[0.1em] transition-colors sm:text-[11px] sm:tracking-[0.12em] ${
+                viewMode === mode.id
+                  ? 'border-signal text-chalk100'
+                  : 'border-transparent text-chalk500 hover:text-chalk200'
+              }`}
+            >
+              {mode.label}
+            </button>
+          ))}
+        </nav>
+      </div>
+    </header>
+  )
 }
 
 
@@ -202,30 +239,11 @@ export default function Bullpen() {
   }
 
   return (
-    <div className={`p-4 sm:p-6 lg:p-8 mx-auto ${selectedPitcher ? 'max-w-[100rem]' : 'max-w-7xl'}`}>
-      <SectionHeader
-        as="h1"
+    <div className={`bos-page pb-16 pt-7 sm:pt-9 ${selectedPitcher ? 'max-w-[100rem]' : 'bos-page--reading'}`}>
+      <BullpenPageHeader
         title={getBullpenPageIdentity(viewMode, teamList, urlState)}
-        subtitle="Team-specific bullpen analysis from latest completed data - current availability, recent workload, and role context"
-        action={
-          <div className="flex items-center gap-3 flex-wrap">
-            <div className="flex flex-wrap gap-1 bg-chalk/30 p-1 rounded-lg border border-dirt">
-              {VIEW_MODES.map(m => (
-                <button
-                  key={m.id}
-                  onClick={() => handleViewChange(m.id)}
-                  className={`px-3 py-1.5 rounded text-xs font-mono transition-all ${
-                    viewMode === m.id
-                      ? 'bg-chalk border-dirt text-chalk200 shadow'
-                      : 'text-chalk400 hover:text-chalk200'
-                  }`}
-                >
-                  {m.label}
-                </button>
-              ))}
-            </div>
-          </div>
-        }
+        viewMode={viewMode}
+        onViewChange={handleViewChange}
       />
 
       {viewMode === BULLPEN_VIEWS.BOARD ? (
@@ -244,7 +262,7 @@ export default function Bullpen() {
               tabIndex={-1}
               role="region"
               aria-label="Selected pitcher detail"
-              className="fixed inset-0 z-40 overflow-y-auto bg-field/95 p-4 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-amber/70 lg:p-6"
+              className="fixed inset-0 z-40 overflow-y-auto bg-ink/95 p-4 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-signal/70 lg:p-6"
             >
               <div className="mx-auto max-w-5xl">
                 <PitcherDetail pitcherId={selectedPitcher.pitcher_id} onClose={closeSelectedPitcher} />

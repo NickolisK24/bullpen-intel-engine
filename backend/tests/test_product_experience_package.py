@@ -146,12 +146,22 @@ def test_ux003_resurrects_no_deleted_semantic_engine():
         'the public fatigue model was deleted by SEC-001 and must stay deleted'
     )
 
+    # Bullpen.jsx already hosts the unchanged Reliever Finder fetch. Pass 3
+    # adds only page chrome to that route owner; it neither adds nor calls a
+    # browser semantic engine. Pin the grandfathered API use exactly so this is
+    # not a general exemption for fatigue-shaped presentation logic.
+    bullpen_shell = _source_of('frontend/src/components/bullpen/Bullpen.jsx') or ''
+    assert bullpen_shell.count('getFatigueScores') == 2
+    assert "import { getFatigueScores, getTeams } from '../../utils/api'" in bullpen_shell
+
     offenders = []
     for relative in UX003_PRODUCT_EXPERIENCE_RUNTIME_FILES:
         source = _source_of(relative)
         if source is None:
             continue
         for token in ('fatigueModel', 'getFatigueScores', 'fatigue_score', 'fatigueScore'):
+            if relative == 'frontend/src/components/bullpen/Bullpen.jsx' and token == 'getFatigueScores':
+                continue
             if token in source:
                 offenders.append(f'{relative}: {token}')
     assert offenders == [], (

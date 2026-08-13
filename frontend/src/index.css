@@ -4,34 +4,34 @@
 
 @layer base {
   :root {
-    --field:    #0a0c0f;
-    --dugout:   #111418;
-    --chalk:    #1a1f26;
-    --dirt:     #242b35;
-    --amber:    #f5a623;
-    --gold:     #e8943a;
-    --pine:     #2d6a4f;
-    --warning:  #d97706;
-    --danger:   #dc2626;
+    --field:    #0B0F14;
+    --dugout:   #10161E;
+    --chalk:    #141C26;
+    --dirt:     #232C38;
+    --amber:    #C9A96A;
+    --gold:     #C9A96A;
+    --pine:     #6FB6A0;
+    --warning:  #D6A45C;
+    --danger:   #C97F6E;
 
     /* ── BaseballOS product experience tokens ─────────────────────────────
        Surfaces, borders, and accents for the intelligence surfaces. These
        mirror the Tailwind token names one-for-one so a component can reach
        for either without the two systems drifting. */
-    --bos-ink:            #070a0d;
-    --bos-panel:          #0f1319;
-    --bos-panel-2:        #151a21;
-    --bos-line:           #1e2530;
-    --bos-line-strong:    #2c3644;
-    --bos-signal:         #8fb8e8;
-    --bos-signal-deep:    #7aa9e0;
-    --bos-signal-well:    #122234;
-    --bos-brass:          #d8bd7e;
-    --bos-brass-deep:     #c9a961;
-    --bos-focus:          #9ecbff;
-    --bos-text:           #f0f4f8;
-    --bos-text-2:         #c3cedb;
-    --bos-text-muted:     #93a3b5;
+    --bos-ink:            #0B0F14;
+    --bos-panel:          #10161E;
+    --bos-panel-2:        #141C26;
+    --bos-line:           #232C38;
+    --bos-line-strong:    #2E3A49;
+    --bos-signal:         #5B8CD6;
+    --bos-signal-deep:    #8FB2E0;
+    --bos-signal-well:    #101B2A;
+    --bos-brass:          #C9A96A;
+    --bos-brass-deep:     #A08D62;
+    --bos-focus:          #5B8CD6;
+    --bos-text:           #E9EEF5;
+    --bos-text-2:         #B4C0CE;
+    --bos-text-muted:     #8592A3;
 
     /* Spacing scale. Steps 1-4 carry dense metadata and evidence rows; 5-8
        carry cards, section padding, and page rhythm. */
@@ -45,9 +45,9 @@
     --bos-space-8: 3.5rem;
 
     /* Restrained radii — panels stay close to rectilinear. */
-    --bos-radius-edge:    2px;
-    --bos-radius-panel:   4px;
-    --bos-radius-control: 6px;
+    --bos-radius-edge:    0;
+    --bos-radius-panel:   0;
+    --bos-radius-control: 0;
 
     /* Shadows stay near-invisible; borders carry the structure. */
     --bos-shadow-panel:   0 1px 0 rgba(255, 255, 255, 0.02), 0 18px 40px -34px rgba(0, 0, 0, 0.95);
@@ -68,7 +68,7 @@
   }
 
   body {
-    font-family: 'DM Sans', sans-serif;
+    font-family: 'IBM Plex Sans', sans-serif;
     background-color: var(--field);
     min-height: 100vh;
     overflow-x: hidden;
@@ -108,7 +108,7 @@
   ::-webkit-scrollbar-thumb:hover { background: #3a4555; }
 
   /* Selection */
-  ::selection { background: rgba(245, 166, 35, 0.25); color: #f5a623; }
+  ::selection { background: rgba(91, 140, 214, 0.28); color: #E9EEF5; }
 }
 
 @layer components {
@@ -195,32 +195,32 @@
     line-height: 1.2;
   }
   .bos-hero {
-    @apply font-body font-semibold text-chalk100;
+    @apply font-display font-semibold text-chalk100;
     font-size: clamp(2.125rem, 5.4vw, 3.5rem);
     line-height: 1.06;
     letter-spacing: -0.022em;
   }
   .bos-lead-headline {
-    @apply font-body font-semibold text-chalk100;
+    @apply font-display font-semibold text-chalk100;
     font-size: clamp(1.875rem, 4.4vw, 3rem);
     line-height: 1.1;
     letter-spacing: -0.02em;
   }
   /* The closing product statement — the page's second editorial moment. */
   .bos-statement {
-    @apply font-body font-semibold text-chalk100;
+    @apply font-display font-semibold text-chalk100;
     font-size: clamp(2rem, 5vw, 3.5rem);
     line-height: 1.06;
     letter-spacing: -0.024em;
   }
   .bos-section-title {
-    @apply font-body font-semibold text-chalk100;
+    @apply font-display font-semibold text-chalk100;
     font-size: clamp(1.375rem, 2.4vw, 1.875rem);
     line-height: 1.18;
     letter-spacing: -0.016em;
   }
   .bos-card-title {
-    @apply font-body font-semibold text-chalk100;
+    @apply font-display font-semibold text-chalk100;
     font-size: clamp(1.0625rem, 1.5vw, 1.25rem);
     line-height: 1.3;
     letter-spacing: -0.012em;

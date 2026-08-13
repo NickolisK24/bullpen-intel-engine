@@ -84,12 +84,46 @@ test('the product experience colour tokens exist in both token systems', () => {
   }
 })
 
+test('the product experience tokens match the approved design reference', () => {
+  const colors = tailwindConfig.theme.extend.colors
+  assert.deepEqual(
+    {
+      ink: colors.ink,
+      panel: colors.panel,
+      elevated: colors['panel-2'],
+      line: colors.line,
+      primary: colors.chalk100,
+      secondary: colors.chalk200,
+      tertiary: colors.chalk500,
+      muted: colors.chalk600,
+      blue: colors.signal,
+      gold: colors.brass,
+      fresh: colors.pine,
+      stretched: colors.warning,
+      vulnerable: colors.danger,
+    },
+    {
+      ink: '#0B0F14', panel: '#10161E', elevated: '#141C26', line: '#232C38',
+      primary: '#E9EEF5', secondary: '#B4C0CE', tertiary: '#8592A3', muted: '#788698',
+      blue: '#5B8CD6', gold: '#C9A96A', fresh: '#6FB6A0',
+      stretched: '#D6A45C', vulnerable: '#C97F6E',
+    },
+  )
+  assert.deepEqual(tailwindConfig.theme.extend.fontFamily, {
+    display: ['"Archivo Narrow"', 'sans-serif'],
+    mono: ['"IBM Plex Mono"', 'monospace'],
+    body: ['"IBM Plex Sans"', 'sans-serif'],
+  })
+})
+
 test('spacing, radii, shadow, and breakpoint scales are deliberate rather than ad hoc', () => {
   const extend = tailwindConfig.theme.extend
   for (const step of ['gutter', 'rhythm', 'section']) {
     assert.ok(extend.spacing[step], `spacing.${step}`)
   }
-  assert.deepEqual(Object.keys(extend.borderRadius), ['edge', 'panel', 'control'])
+  for (const radius of ['DEFAULT', 'sm', 'md', 'lg', 'xl', '2xl', '3xl', 'edge', 'panel', 'control']) {
+    assert.equal(extend.borderRadius[radius], '0', `borderRadius.${radius}`)
+  }
   assert.deepEqual(Object.keys(extend.boxShadow), ['panel', 'edition'])
   assert.equal(extend.screens.xs, '390px')
 })
@@ -670,18 +704,17 @@ test('the new surfaces never rewrite, filter, or invent backend-owned copy', () 
 // back. They deliberately assert behaviour and vocabulary rather than freezing
 // class names, so ordinary CSS work stays cheap.
 
-test('editorial levels use the interface face; only metadata keeps the mono face', () => {
+test('editorial headings use the approved display face; only metadata keeps the mono face', () => {
   const level = name => {
     const start = indexCss.indexOf(`${name} {`)
     return start < 0 ? '' : indexCss.slice(start, indexCss.indexOf('}', start))
   }
-  // Reading content is never condensed and never monospaced.
+  // Headings use Archivo Narrow through the display token and never mono.
   for (const name of ['.bos-hero', '.bos-lead-headline', '.bos-section-title', '.bos-card-title']) {
-    assert.ok(level(name).includes('font-body'), `${name} uses the interface face`)
-    assert.equal(level(name).includes('font-display'), false, `${name} is not condensed`)
+    assert.ok(level(name).includes('font-display'), `${name} uses the display face`)
     assert.equal(level(name).includes('font-mono'), false, `${name} is not monospaced`)
   }
-  // The condensed face survives only as a named accent.
+  // Short kickers use the same display family.
   assert.ok(level('.bos-kicker').includes('font-display'))
   // Precision values keep the mono face.
   for (const name of ['.bos-meta', '.bos-value']) {

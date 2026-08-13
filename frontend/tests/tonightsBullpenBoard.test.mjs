@@ -197,7 +197,7 @@ test('team board can delegate routine freshness to the operating card while pres
 
   assert.equal(htmlIncludes(currentHtml, 'Data Freshness'), false)
   assert.equal(htmlIncludes(currentHtml, 'Current baseball data through'), false)
-  assert.ok(htmlIncludes(currentHtml, 'Tonight&#x27;s Bullpen Board'))
+  assert.ok(htmlIncludes(currentHtml, 'Current Arm Picture'))
 
   assert.ok(htmlIncludes(staleHtml, 'Historical baseball data through 2026-04-01.'))
   assert.ok(htmlIncludes(staleHtml, 'Latest workload data is outside the active freshness window'))

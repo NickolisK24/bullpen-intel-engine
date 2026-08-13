@@ -154,7 +154,7 @@ test('the full bullpen board and its pitcher-lanes anchor remain visible (not co
   const html = renderBoard(populatedBoard)
   // The board anchor targeted by the operating card CTA is preserved.
   assert.ok(htmlIncludes(html, 'id="pitcher-lanes"'))
-  assert.ok(htmlIncludes(html, "Tonight&#x27;s Bullpen Board"))
+  assert.ok(htmlIncludes(html, 'Current Arm Picture'))
 })
 
 test('secondary story and game context move behind clear, labeled disclosures', () => {
@@ -203,6 +203,13 @@ test('no team selected shows the picker, not a stale answer zone', () => {
   )
   assert.ok(htmlIncludes(html, 'Pick a team'))
   assert.equal(htmlIncludes(html, 'Bullpen availability distribution'), false)
+})
+
+test('team context uses one mobile-safe selector instead of a wall of club buttons', () => {
+  const html = renderBoard(populatedBoard)
+  assert.ok(htmlIncludes(html, 'aria-label="Select team"'))
+  assert.equal((html.match(/aria-pressed="(?:true|false)"/g) || []).length, 1)
+  assert.ok(htmlIncludes(html, 'min-h-11'))
 })
 
 test('the success answer zone is keyed by team so a switch cannot retain prior data', () => {

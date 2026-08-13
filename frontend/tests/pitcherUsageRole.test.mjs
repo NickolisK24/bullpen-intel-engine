@@ -107,9 +107,10 @@ const render = (board) => renderToStaticMarkup(React.createElement(BullpenBoardV
 
 // The page-level label key legend always lists the full role vocabulary, so
 // per-card wording assertions must scope to that pitcher's own card markup.
-const CARD_MARKER = 'rounded-lg border border-dirt bg-field/60 p-3'
 function cardMarkup(html, name) {
-  const segment = html.split(CARD_MARKER).find(part => part.includes(name))
+  const segment = [...html.matchAll(/<article[^>]*data-testid="pitcher-card"[^>]*>[\s\S]*?<\/article>/g)]
+    .map(match => match[0])
+    .find(part => part.includes(name))
   assert.ok(segment, `no rendered card found for ${name}`)
   return segment
 }
