@@ -1076,6 +1076,27 @@ def test_branch_touches_no_team_state_or_public_surface_files():
     APPROVED_BULLPEN_PAGE_IDENTITY_FILES = BULLPEN_PAGE_IDENTITY_FILES
     # See PUBLIC_VOCABULARY_ALLOWED_FILES above (VOC-001 / #638).
     APPROVED_PUBLIC_VOCABULARY_FILES = PUBLIC_VOCABULARY_ALLOWED_FILES
+    # FRONTEND DEPENDENCY MANIFESTS (DEP-001 / #601 Slice C).
+    #
+    # The 'frontend/' fragment above is deliberately broad, so it also catches
+    # the two files that declare the frontend's dependency set. This entry
+    # approves those two files only.
+    #
+    # The guard's purpose is intact. These manifests carry no reader, no
+    # rendering, no vocabulary, and no payload: the Slice C change removes two
+    # dependencies that had zero import sites anywhere in the frontend
+    # (recharts, and clsx which only recharts pulled), which transitively drops
+    # the lodash advisory, and patches react-router-dom 6.30.3 -> 6.30.4. No
+    # component, adapter, Team State projection, or Share Artifact surface is
+    # touched, so Team State v1.2 payloads and immutable artifacts remain
+    # byte-unchanged, and no appearance-team authority is read.
+    #
+    # Exact paths only, never a directory exemption. A frontend SOURCE file
+    # still trips this guard and still requires its own approval.
+    APPROVED_FRONTEND_DEPENDENCY_MANIFESTS = (
+        'frontend/package.json',
+        'frontend/package-lock.json',
+    )
     offenders = [
         path for path in non_test
         if any(fragment in path for fragment in forbidden_fragments)
@@ -1087,6 +1108,7 @@ def test_branch_touches_no_team_state_or_public_surface_files():
         and path not in APPROVED_STATIC_TEAM_PREVIEW_FILES
         and path not in APPROVED_BULLPEN_PAGE_IDENTITY_FILES
         and path not in APPROVED_PUBLIC_VOCABULARY_FILES
+        and path not in APPROVED_FRONTEND_DEPENDENCY_MANIFESTS
     ]
     assert offenders == [], f'Foundation 1 must not touch these runtime surfaces: {offenders}'
 
