@@ -1,13 +1,15 @@
-"""VOC-001 / #638 — the Product Roadmap's current-state contract.
+"""The Product Roadmap's current-state contract.
 
 The Roadmap is the canonical execution authority, and its failure mode is not a
 wrong sentence: it is a stale true-yesterday sentence. Version 3.7 said #594 was
 awaiting production verification for a day after that verification happened, and
-nothing in the repository noticed. This contract pins the statements that go
-stale — what is complete, what is active, what is merely in flight, what exits
-the phase, and in what order the remaining work runs.
+nothing in the repository noticed. Version 3.8 then said VOC-001 was an unmerged
+in-flight branch for a day after it merged and was production-verified — and
+this file is what noticed. This contract pins the statements that go stale —
+what is complete, what is active, what exits the phase, and in what order the
+remaining work runs.
 
-Two things it guards specifically:
+Re-pinned to Version 3.9 (DEP-001 closeout). What it guards:
 
   * A closeout is evidence, not a status word. The #594 section must carry the
     run, the job, the counts, the represented date, the trusted snapshot, the
@@ -15,17 +17,23 @@ Two things it guards specifically:
     and it must not name 398 as the trusted snapshot, which an earlier working
     note did. That assertion is scoped to the closeout section rather than
     banning the number document-wide, because 398 is a legitimate value
-    elsewhere.
+    elsewhere, including as VOC-001's own trusted snapshot.
 
-  * Branch work is not production truth. PR #639 is open and unmerged, #638 is
-    open, and the canonical documents it carries are pending merge. A Roadmap
-    that reads a green branch as a finished product is the exact error this
-    file exists to catch.
+  * A closed issue is not production proof. CI-003 (#598) is the active
+    objective, and the Roadmap must keep saying that its issue is closed while
+    the evidence it requires is outstanding. Collapsing those two into
+    "complete" is the exact error this file exists to catch, in the same shape
+    as the PR #639 guard it replaces.
+
+  * Order is the contract. A roadmap that quietly promotes Portable Intelligence
+    ahead of the reliability work is the reordering this pins against.
+
+  * An acceptance that expires must keep its date visible.
 
 Narrow on purpose. Phase structure, protected assets, risks, stop conditions,
 the founder operating system, and the Decision Ledger's contents are not
-snapshotted here — only that the ledger gained no ID and that D-051 and D-052
-still say what they said.
+snapshotted here — only that the ledger gained no ID from a reconciliation and
+that D-051 and D-052 still say what they said.
 """
 
 from pathlib import Path
@@ -36,27 +44,34 @@ ROADMAP_PATH = (
     REPO_ROOT / 'docs' / 'canonical' / '05_PRODUCT_ROADMAP_DECISION_LEDGER.md'
 )
 
-EXPECTED_VERSION = '3.8'
-EXPECTED_EFFECTIVE_DATE = 'August 11, 2026'
+EXPECTED_VERSION = '3.9'
+EXPECTED_EFFECTIVE_DATE = 'August 13, 2026'
+EXPECTED_MAIN = 'e3ad8bdf47a0bf6209917051df2070fba8eff417'
 
 CLOSEOUT_HEADING = 'DIST-003 (#594) Production Closeout Evidence'
 
-# The trusted export snapshot the verified production pages were generated
-# from, and the earlier mistaken value that must never take its place.
+# The trusted export snapshot the verified #594 production pages were generated
+# from, and the earlier mistaken value that must never take its place *in that
+# closeout*. 398 is legitimate elsewhere — it is VOC-001's trusted snapshot.
 CLOSEOUT_SNAPSHOT = '393'
 REJECTED_CLOSEOUT_SNAPSHOT = '398'
 
-# The approved order after VOC-001 closes. Order is the contract — a roadmap
-# that quietly promotes Portable Intelligence ahead of the reliability work is
-# the reordering this pins against.
-POST_VOC_ORDER = (
+# The approved order now that VOC-001 and DEP-001 have closed. The packages that
+# finished were removed; nothing was reordered.
+APPROVED_ORDER = (
     '#598',
-    '#601',
     'Permanent daily-sync work reduction',
     'Portable Intelligence',
     'Resume M-001 and visible evidence',
     'Daily Habit and Consequence',
 )
+
+# Completed packages must not reappear as ordered future work.
+COMPLETED_PACKAGES = ('VOC-001', '#638', '#601', 'DEP-001')
+
+# The residual dependency acceptance is dated. If the date stops being visible,
+# the expiry stops being reviewable.
+ACCEPTANCE_EXPIRY = '2026-11-13'
 
 # D-051 and D-052 carry the current authority posture. Their meaning is pinned
 # by phrase, not by whole-row equality, so unrelated formatting cannot fail
@@ -76,6 +91,16 @@ D052_REQUIRED_PHRASES = (
     'publication authority, no backfill authority, and no legacy-writer '
     'retirement.',
     'Permanent phase-exit decision',
+)
+
+# The shadow/backfill/legacy-writer posture a documentation pass must never move.
+AUTHORITY_POSTURE_ROWS = (
+    '| Daily game-driven lane | Shadow |',
+    '| Postgame game-driven lane | Shadow |',
+    '| Backfill lane | Off |',
+    '| Production writer | Legacy sync/postgame path |',
+    '| Automated write mode | Unapproved |',
+    '| Game-driven publication authority | Unapproved |',
 )
 
 
@@ -117,20 +142,30 @@ def _next_approved_work_order(text):
     return [package for _, package in packages]
 
 
-def test_roadmap_declares_version_3_8():
+def test_roadmap_declares_version_3_9():
     text = _roadmap_text()
 
     assert f'| Version | {EXPECTED_VERSION} |' in text
     assert f'VERSION {EXPECTED_VERSION}' in text
-    assert '| Version | 3.7 |' not in text
-    assert 'VERSION 3.7' not in text
+    assert '| Version | 3.8 |' not in text
+    assert 'VERSION 3.8' not in text
 
 
-def test_effective_date_is_august_11_2026():
+def test_effective_date_is_august_13_2026():
     text = _roadmap_text()
 
     assert f'| Effective date | {EXPECTED_EFFECTIVE_DATE} |' in text
     assert f'Effective {EXPECTED_EFFECTIVE_DATE}' in text
+
+
+def test_repository_basis_is_merged_main_with_no_in_flight_branch():
+    text = _roadmap_text()
+
+    assert EXPECTED_MAIN in text
+    assert '| In-flight branch | None |' in text
+
+    # The superseded baseline must not still be claimed as current.
+    assert '| Repository main | 18dd6914a933928254e969c85ecb19cf75b6a9f2 |' not in text
 
 
 def test_dist_003_is_recorded_complete_and_production_verified():
@@ -191,20 +226,74 @@ def test_closeout_does_not_name_398_as_the_trusted_snapshot():
         assert 'is not the snapshot' in line, line
 
 
-def test_voc_001_is_the_active_objective():
+def test_ci_003_is_the_active_objective():
     text = _roadmap_text()
 
     assert (
-        '| ACTIVE OBJECTIVE | VOC-001 (#638) — public vocabulary / glossary '
-        'parity closeout |'
+        '| ACTIVE OBJECTIVE | CI-003 (#598) — generated-content publication '
+        'closeout |'
     ) in text
 
-    body = _section(text, '3. Active Objective')
-    assert 'Phases 1 through 10B are implemented in PR #639.' in body
-    assert 'Product Experience Standard v1.4 is in PR #639.' in body
-    assert 'Bullpen Intelligence Standard v1.3 is in PR #639.' in body
+    # The superseded objective must not still be declared.
+    assert '| ACTIVE OBJECTIVE | VOC-001 (#638)' not in text
 
-    # Roadmap-altitude scope summary only, and no capability claim.
+
+def test_ci_003_closed_issue_is_not_recorded_as_production_proof():
+    """A closed issue and recorded evidence are different claims.
+
+    This is the successor to the PR #639 guard: the same error in a new shape.
+    """
+    body = _section(_roadmap_text(), '3. Active Objective')
+
+    assert 'closed August 12, 2026 through its linked pull request #641' in body
+    assert 'has **not** yet been recorded' in body
+    assert 'no gated, tree-exact, machine-attributed generated commit exists on main' in body
+    assert 'the closed issue and the recorded evidence gate are different claims' in body
+
+    # The proof must be taken, never manufactured.
+    assert 'do not force, rerun, or manually dispatch it' in body
+
+    # A documentation pass does not move this package.
+    assert (
+        'Nothing in this edition changes the generated-content publication '
+        'contract, its\nworkflow, D-053, or any authority it governs.'
+    ) in body
+
+
+def test_voc_001_and_dep_001_are_recorded_complete():
+    text = _roadmap_text()
+
+    assert '| VOC-001 (#638) | Complete |' in text
+    assert '| DEP-001 (#601) | Complete |' in text
+
+    # The stale in-flight language must be gone in all its forms.
+    assert '| VOC-001 (#638) | Active;' not in text
+    assert 'PR #639 is OPEN and NOT MERGED.' not in text
+    assert 'Issue #638 remains OPEN.' not in text
+    assert 'Open, unmerged, not deployed; this is not production truth.' not in text
+
+
+def test_dep_001_records_its_residual_acceptance_and_expiry():
+    text = _roadmap_text()
+
+    assert ACCEPTANCE_EXPIRY in text
+    assert '#645' in text
+
+    # Recorded as time-boxed, not as a clean audit.
+    body = _section(text, '3A. Preceding Package Outcomes')
+    assert 'time-boxed' in body
+    assert ACCEPTANCE_EXPIRY in body
+    assert 'This is supply-chain hygiene.' in body
+    assert (
+        'No baseball semantics, publication gate, source authority, runtime '
+        'configuration, or write authority changed.'
+    ) in body
+
+
+def test_voc_001_package_outcome_is_preserved_at_roadmap_altitude():
+    """The vocabulary contract survives the package closing."""
+    body = _section(_roadmap_text(), '3A. Preceding Package Outcomes')
+
     for label in (
         'Fresh / Stretched / Vulnerable',
         'Available / On Watch / Limited / Unavailable',
@@ -215,65 +304,43 @@ def test_voc_001_is_the_active_objective():
         '`Stable Rested Options`',
     ):
         assert label in body, label
+
     assert 'No model, threshold, classification, source authority, publication ' \
            'gate, or prediction behavior changed.' in body
 
 
-def test_voc_001_is_not_marked_complete():
-    text = _roadmap_text()
-    body = _section(text, '3. Active Objective')
-
-    assert 'Issue #638 remains OPEN.' in body
-    assert 'Production verification has NOT yet occurred for VOC-001.' in body
-    assert 'Close #638 only after production proof' in body
-
-    # The state table must not promote it.
-    assert '| VOC-001 (#638) | Complete |' not in text
-    assert '| VOC-001 (#638) | Active;' in text
-
-
-def test_pr_639_is_recorded_as_in_flight_and_not_production_truth():
+def test_phase_1b_is_complete_in_both_phase_tables():
     text = _roadmap_text()
 
-    assert 'PR #639 is OPEN and NOT MERGED.' in _section(text, '3. Active Objective')
-    assert 'Open, unmerged, not deployed; this is not production truth.' in text
-
-    basis = _section(text, 'Repository basis')
-    assert 'PR #639, which is open and unmerged' in basis
-    assert 'repository implementation pending merge' in basis
-    assert 'are not production or main truth until PR #639 merges' in basis
-
-    # Production main is the merged baseline, not the branch.
-    assert '18dd6914a933928254e969c85ecb19cf75b6a9f2' in text
-
-
-def test_phase_1b_remains_active_with_a_production_exit_condition():
-    text = _roadmap_text()
-
-    active_rows = [
-        line for line in text.splitlines()
-        if line.startswith('| Phase 1B') and 'In progress / active' in line
+    phase_rows = [
+        line for line in text.splitlines() if line.startswith('| Phase 1B')
     ]
-    assert len(active_rows) == 2, 'Phase 1B is active in both phase tables'
+    assert len(phase_rows) == 2, 'Phase 1B appears in both phase tables'
 
-    for row in active_rows:
-        assert 'PR #639' in row
-        assert '#638' in row
-        assert 'smoke' in row
-        # Repository CI is never the phase exit, however each table words it.
-        assert 'CI green' in row
-        assert 'not sufficient' in row or 'does not exit the phase' in row
+    for row in phase_rows:
+        assert 'Complete' in row, row
+        assert 'In progress' not in row, row
+        # The exit is dated and attributed to production proof.
+        assert 'Aug' in row and '12, 2026' in row, row
+
+    # Phase 1A's exit is untouched by a later reconciliation.
+    assert '| Phase 1A - Authority Qualification | Complete - August 10, 2026 |' in text
 
 
-def test_post_voc_work_order_is_preserved_exactly():
+def test_approved_work_order_is_preserved_exactly():
     packages = _next_approved_work_order(_roadmap_text())
 
-    # VOC-001 is first; everything after it keeps the approved order.
-    assert packages[0].startswith('VOC-001 (#638)')
-    remaining = packages[1:]
-    assert len(remaining) == len(POST_VOC_ORDER)
-    for actual, expected in zip(remaining, POST_VOC_ORDER):
+    assert len(packages) == len(APPROVED_ORDER)
+    for actual, expected in zip(packages, APPROVED_ORDER):
         assert actual.startswith(expected), f'{actual!r} does not start with {expected!r}'
+
+
+def test_completed_packages_are_not_listed_as_future_work():
+    packages = _next_approved_work_order(_roadmap_text())
+    joined = '\n'.join(packages)
+
+    for completed in COMPLETED_PACKAGES:
+        assert completed not in joined, completed
 
 
 def test_portable_intelligence_does_not_precede_the_reliability_work():
@@ -287,9 +354,16 @@ def test_portable_intelligence_does_not_precede_the_reliability_work():
 
     portable = position_of('Portable Intelligence')
     assert position_of('#598') < portable
-    assert position_of('#601') < portable
     assert position_of('Permanent daily-sync work reduction') < portable
     assert portable < position_of('Resume M-001 and visible evidence')
+
+
+def test_authority_posture_is_unmoved():
+    """A documentation reconciliation must never move the write posture."""
+    text = _roadmap_text()
+
+    for row in AUTHORITY_POSTURE_ROWS:
+        assert row in text, row
 
 
 def test_d051_is_unchanged_in_meaning():
@@ -306,15 +380,15 @@ def test_d052_is_unchanged_in_meaning():
         assert phrase in row, phrase
 
 
-def test_version_3_8_introduces_no_new_decision_ledger_id():
+def test_version_3_9_introduces_no_new_decision_ledger_id():
     """A current-state reconciliation must not invent authority.
 
-    This owns one property: Version 3.8 renumbered nothing and added no decision
+    This owns one property: Version 3.9 renumbered nothing and added no decision
     of its own. It is not a freeze on the ledger — an approved work package may
-    still record a real decision afterwards, and CI-003 (#598) did, as D-053. The
-    guard therefore pins the ledger through D-052 as Version 3.8's basis, and
-    requires that anything past it is contiguous and explicitly attributed to the
-    package that decided it, rather than appearing as reconciliation drift.
+    still record a real decision, and CI-003 (#598) did, as D-053. The guard
+    pins the ledger through D-053 as Version 3.9's basis, requires that anything
+    past it is contiguous and explicitly attributed to the package that decided
+    it, and requires DEP-001's expiring acceptance to stay out of the ledger.
     """
     text = _roadmap_text()
 
@@ -322,23 +396,23 @@ def test_version_3_8_introduces_no_new_decision_ledger_id():
     assert ids == [f'D-{number:03d}' for number in range(1, len(ids) + 1)], (
         'the Decision Ledger must stay contiguous and never renumber'
     )
-    assert 'D-052' in ids
+    assert 'D-053' in ids
 
-    assert 'Decision Ledger through D-052' in text
+    assert 'Decision Ledger through D-053' in text
     assert 'adds no Decision Ledger ID' in text
     assert (
         'The current-state reconciliation does not create a new durable '
         'semantic or authority decision.'
     ) in text
 
-    for later in ids[ids.index('D-052') + 1:]:
-        assert f'{later} was added after this version' in text, (
-            f'{later} must state which package added it, so a reconciliation '
-            'cannot be mistaken for the source of a durable decision'
-        )
+    # D-053 still names the package that decided it.
+    assert 'D-053, added by CI-003 (#598)' in text
+
+    # A decision designed to expire is deliberately not a durable authority ID.
+    assert 'DEP-001 (#601) created no Decision Ledger ID.' in text
 
 
-def test_completion_log_records_594_and_637_but_not_638():
+def test_completion_log_records_the_closed_packages_with_evidence():
     text = _roadmap_text()
     body = _section(text, 'Appendix A - Completion Log', level=1)
 
@@ -348,44 +422,57 @@ def test_completion_log_records_594_and_637_but_not_638():
     ]
     joined = '\n'.join(log_rows)
 
+    # Earlier evidence is preserved, not displaced.
     assert 'DIST-003 production closeout (#594)' in joined
     assert 'Routed team preview delivery correction' in joined
     assert 'PR #637' in joined
 
-    # An open package is never logged as completed work.
-    assert '#638' not in joined
-    assert 'VOC-001' not in joined
+    # VOC-001 is now completed work, with its production evidence.
+    assert 'VOC-001 public vocabulary and glossary parity (#638)' in joined
+    assert '31589796614' in joined
+    assert 'snapshot 398' in joined
+
+    # DEP-001 is logged per slice, with the PRs and the verifying CI run.
+    for fragment in ('PR #643', 'PR #644', 'PR #646', 'PR #647', '31729458591'):
+        assert fragment in joined, fragment
+    assert ACCEPTANCE_EXPIRY in joined
 
 
-def test_revision_history_records_the_version_3_8_entry():
+def test_revision_history_records_the_version_3_9_entry():
     text = _roadmap_text()
     rows = [
         line for line in text.splitlines()
         if line.startswith(f'| {EXPECTED_VERSION} | {EXPECTED_EFFECTIVE_DATE} |')
     ]
-    assert len(rows) == 1, 'exactly one Version 3.8 revision-history row'
+    assert len(rows) == 1, 'exactly one Version 3.9 revision-history row'
     entry = rows[0]
 
     assert 'Nickolis Kacludis' in entry
     for claimed in (
-        '31483859116',
-        '93760656523',
-        'trusted snapshot 393',
-        '/team/COL',
-        '/team/INVALID',
-        'PR #637',
-        'VOC-001 (#638)',
-        'open and unmerged',
-        '#638 remains open',
-        'repository CI green is necessary and not sufficient',
-        '#598, then #601, then permanent daily-sync work reduction, then '
-        'Portable Intelligence, then M-001 and visible evidence, then Daily '
-        'Habit and consequence',
+        'e3ad8bd',
+        '31729458591',
+        'trusted snapshot 398',
+        'PRs #643, #644, #646, and #647',
+        'requirements-dev.txt',
+        '6.30.4',
+        ACCEPTANCE_EXPIRY,
+        '#645',
+        'CI-003 (#598)',
+        'production-proof evidence this Roadmap requires is still outstanding',
     ):
         assert claimed in entry, claimed
 
     assert (
-        'No durable authority decision was added, weakened, or renumbered, '
-        'D-051 and D-052 stand unchanged, and no new Decision Ledger ID was '
-        'created.'
+        'No durable authority decision was added, weakened, or renumbered; '
+        'D-051, D-052, and D-053 stand unchanged; no new Decision Ledger ID was '
+        'created; and the shadow/backfill/legacy-writer authority posture is '
+        'untouched.'
     ) in entry
+
+
+def test_prior_revision_history_is_preserved():
+    """History is appended, never rewritten."""
+    text = _roadmap_text()
+
+    for prior in ('| 3.7 | August 11, 2026 |', '| 3.8 | August 11, 2026 |'):
+        assert prior in text, prior
