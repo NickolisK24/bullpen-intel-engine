@@ -622,7 +622,7 @@
       ]
     },
     "3": {
-      "measured_seconds": 501.549,
+      "measured_seconds": 502.149,
       "files": [
         {
           "path": "tests/test_active_bullpen_readiness_resolver.py",
@@ -763,6 +763,10 @@
         {
           "path": "tests/test_daily_sync_runtime.py",
           "measured_seconds": 31.714
+        },
+        {
+          "path": "tests/test_dependency_audit_gate.py",
+          "measured_seconds": 0.6
         },
         {
           "path": "tests/test_editorial_voice_inventory_e2a.py",

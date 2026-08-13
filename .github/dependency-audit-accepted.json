@@ -1,0 +1,53 @@
+{
+  "_comment": [
+    "Machine-readable accepted-risk contract for the CI dependency-audit gate.",
+    "",
+    "This file is the ONLY way a production advisory is allowed past the gate.",
+    "Every entry names one exact advisory, one exact package, a hard expiry, the",
+    "issue tracking its removal, and the human decision record that justifies it.",
+    "",
+    "There is deliberately no wildcard advisory, no wildcard package, no",
+    "severity-threshold suppression and no blanket 'ignore' flag. Adding an entry",
+    "is a reviewed security decision, not a way to quiet CI.",
+    "",
+    "The gate fails when an entry expires, when an entry no longer matches a",
+    "reported advisory (a solved advisory must have its exception deleted, not",
+    "left behind), when the package does not match, when an entry is duplicated,",
+    "when a required field is missing, or when the referenced decision record is",
+    "absent from the repository.",
+    "",
+    "Expiry rule: an acceptance is invalid from 00:00 UTC on expires_on, so",
+    "2026-11-13 is the first day these entries are refused.",
+    "",
+    "Enforced by backend/scripts/verify_dependency_audit.py.",
+    "Scope: production dependencies only (npm audit --omit=dev). Dev/build",
+    "advisories are reported informationally and must never be listed here."
+  ],
+  "schema_version": 1,
+  "frontend": [
+    {
+      "advisory_id": "GHSA-wrjc-x8rr-h8h6",
+      "package": "react-router",
+      "summary": "Open redirect via backslash in <Link> and useNavigate (CVE-2025-68470 bypass)",
+      "expires_on": "2026-11-13",
+      "tracking_issue": 645,
+      "decision_record": "docs/decisions/2026-08-13-react-router-v7-security-defer.md"
+    },
+    {
+      "advisory_id": "GHSA-jjmj-jmhj-qwj2",
+      "package": "react-router-dom",
+      "summary": "Open redirect leading to XSS",
+      "expires_on": "2026-11-13",
+      "tracking_issue": 645,
+      "decision_record": "docs/decisions/2026-08-13-react-router-v7-security-defer.md"
+    },
+    {
+      "advisory_id": "GHSA-337j-9hxr-rhxg",
+      "package": "react-router",
+      "summary": "Arbitrary constructor injection via deserializeErrors() in SSR hydration; not applicable to this client-only SPA",
+      "expires_on": "2026-11-13",
+      "tracking_issue": 645,
+      "decision_record": "docs/decisions/2026-08-13-react-router-v7-security-defer.md"
+    }
+  ]
+}
