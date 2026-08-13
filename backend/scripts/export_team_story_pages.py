@@ -21,10 +21,16 @@ non-zero. It never falls back to the live builder, and it never fabricates a
 present-tense claim. The previously generated pages stay in place — and because
 they now carry their own data-through date, leaving them is honest: they visibly
 describe an earlier baseball date instead of silently claiming tonight.
+
+The run's structured result travels on its own channel. ``--result-out`` names a
+file this process writes atomically; stdout stays a mixed human/diagnostic
+stream and carries the same JSON only as a courtesy. The two are not
+interchangeable, and the difference is not theoretical: importing this script's
+own dependencies prints a scheduler banner to stdout before ``main`` runs, so
+capturing stdout as machine evidence produces a file that does not parse.
 """
 
 import argparse
-import json
 import logging
 import os
 import sys
@@ -52,6 +58,11 @@ from services.team_story_previews import (
 from services import dashboard_snapshot as dashboard_snapshot_service
 from services.public_serving_authority import build_published_team_board
 from utils.db import db
+from utils.summary_output import (
+    SummaryOutputError,
+    serialize_summary,
+    write_summary,
+)
 
 EXPECTED_MLB_TEAM_COUNT = 30
 
@@ -60,6 +71,7 @@ EXPECTED_MLB_TEAM_COUNT = 30
 EXIT_OK = 0
 EXIT_COUNT_MISMATCH = 1
 EXIT_NO_TRUSTED_PUBLICATION = 2
+EXIT_RESULT_OUTPUT_FAILED = 3
 
 export_logger = logging.getLogger('baseballos.team_story_export')
 
@@ -88,6 +100,13 @@ def parse_args():
         type=int,
         default=EXPECTED_MLB_TEAM_COUNT,
         help='Expected number of MLB team preview pages to emit.',
+    )
+    parser.add_argument(
+        '--result-out',
+        help=(
+            'Write the structured export result JSON to this path. This is the '
+            'machine-readable channel the delivery gate reads; stdout is not.'
+        ),
     )
     return parser.parse_args()
 
@@ -143,6 +162,41 @@ def build_team_boards(teams):
     return boards
 
 
+def emit_result(result, result_out):
+    """Emit ONE result object on both channels; report whether evidence landed.
+
+    stdout keeps its existing JSON line, unchanged, for humans and for local
+    operators. It is not the machine channel and never was safe as one: this
+    script's own imports print ``[scheduler] AUTO_SYNC disabled — daily
+    scheduler not started.`` to stdout before ``main`` is ever entered, so
+    anything that captures stdout captures a diagnostic line ahead of the JSON.
+    Scheduled run 31693516516 captured exactly that, and the delivery gate —
+    correctly — refused to publish from a file whose first byte was not JSON.
+
+    ``--result-out`` is the machine channel: the SAME object, serialized the
+    same way, written atomically by this process instead of reconstructed by a
+    shell reading a mixed stream.
+
+    Returns ``False`` when a requested result file could not be written, so the
+    caller can refuse to exit zero without provenance.
+    """
+    print(serialize_summary(result))
+    if not result_out:
+        return True
+    try:
+        write_summary(result, result_out)
+    except SummaryOutputError as exc:
+        # Only the safe classification is reported; the underlying message can
+        # carry a filesystem path.
+        export_logger.error(
+            'Structured export result output failed (reason=%s). This run '
+            'produced no machine-readable delivery evidence.',
+            exc.reason,
+        )
+        return False
+    return True
+
+
 def main():
     args = parse_args()
     logging.basicConfig(
@@ -159,11 +213,16 @@ def main():
                 'generate team preview pages. Previously generated pages are left '
                 'in place and continue to state the baseball date they describe.'
             )
-            print(json.dumps({
+            # Diagnostic evidence for a refusal, not a rescue. This run exits
+            # non-zero either way, so the distinguishable trusted-publication
+            # code stays the reported one; emit_result has already logged any
+            # write failure loudly. A failure result in the file can never
+            # authorize publication — the gate requires status 'ok'.
+            emit_result({
                 'status': 'no_trusted_publication',
                 'generated_at': generated_at,
                 'pages_written': 0,
-            }, sort_keys=True))
+            }, args.result_out)
             return EXIT_NO_TRUSTED_PUBLICATION
 
         payload = snapshot.payload
@@ -219,11 +278,20 @@ def main():
         'generated_at': generated_at,
         'output': output,
     }
-    print(json.dumps(result, sort_keys=True))
+    emitted = emit_result(result, args.result_out)
+
     expected_count = args.expected_team_count
     if output['count'] == len(teams) == expected_count:
-        return EXIT_OK
-    return EXIT_COUNT_MISMATCH
+        exit_code = EXIT_OK
+    else:
+        exit_code = EXIT_COUNT_MISMATCH
+
+    # A run that was asked for durable evidence and could not produce it must
+    # never exit zero: a missing result file and a clean publication would
+    # otherwise be indistinguishable downstream.
+    if not emitted:
+        return exit_code or EXIT_RESULT_OUTPUT_FAILED
+    return exit_code
 
 
 if __name__ == '__main__':
