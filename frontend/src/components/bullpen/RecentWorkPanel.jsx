@@ -17,7 +17,7 @@ const textValue = (value) => (typeof value === 'string' && value.trim() ? value 
 
 function Section({ title, children }) {
   return (
-    <section className="rounded border border-dirt bg-field/45 p-3">
+    <section className="border-t border-line pt-4">
       <div className="text-chalk600 text-[10px] font-mono uppercase tracking-wider">{title}</div>
       <div className="mt-2 space-y-2">{children}</div>
     </section>
@@ -39,7 +39,7 @@ function DataCurrency({ payload }) {
       <Sentence>{payload?.roster_status?.sentence}</Sentence>
       <Sentence>{freshnessLabel}</Sentence>
       {dataThrough && (
-        <div className="inline-flex max-w-full items-center gap-2 rounded border border-dirt/70 bg-chalk/30 px-2 py-1 font-mono text-xs text-chalk400">
+        <div className="inline-flex max-w-full items-center gap-2 font-mono text-xs text-chalk400">
           <span className="text-chalk600">Data through</span>
           <span className="text-chalk200">{dataThrough}</span>
         </div>
@@ -113,10 +113,7 @@ function RecentAppearances({ lines }) {
               {stats.length > 0 && (
                 <div className="mt-1 flex flex-wrap gap-1.5">
                   {stats.map((stat) => (
-                    <span
-                      key={stat}
-                      className="rounded border border-dirt/70 bg-chalk/30 px-1.5 py-0.5 font-mono text-[11px] text-chalk400"
-                    >
+                    <span key={stat} className="font-mono text-[11px] text-chalk400">
                       {stat}
                     </span>
                   ))}
@@ -133,7 +130,7 @@ function RecentAppearances({ lines }) {
 function WorkloadWindow({ window }) {
   if (!window?.sentence && !window?.pitches_sentence) return null
   return (
-    <div className="rounded border border-dirt/70 bg-chalk/30 p-2">
+    <div className="border-l-2 border-line-strong py-1 pl-3">
       <Sentence>{window.sentence}</Sentence>
       <Sentence>{window.pitches_sentence}</Sentence>
     </div>
@@ -173,7 +170,7 @@ export default function RecentWorkPanel({
 
   if (loading) {
     return (
-      <section className="rounded border border-dirt bg-field/45 p-3" role="status">
+      <section className="border border-line bg-panel p-4" role="status">
         <div className="font-mono text-sm text-chalk400">Loading recent work…</div>
       </section>
     )
@@ -181,7 +178,7 @@ export default function RecentWorkPanel({
 
   if (error) {
     return (
-      <section className="rounded border border-dirt bg-field/45 p-3" role="status">
+      <section className="border-l-2 border-line-strong py-1 pl-4" role="status">
         <div className="font-mono text-sm text-chalk400">Recent work is unavailable.</div>
       </section>
     )

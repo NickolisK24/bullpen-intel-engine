@@ -44,7 +44,7 @@ export default function EditionHeader({
   const visibleFacts = (Array.isArray(facts) ? facts : []).filter(fact => fact?.value)
 
   return (
-    <header className="bos-edition bos-depth pb-4 pt-9 sm:pb-6 sm:pt-12 lg:pb-8 lg:pt-14">
+    <header className="bos-edition pb-0 pt-[1.875rem]">
       <div className="flex flex-wrap items-baseline justify-between gap-x-8 gap-y-2">
         <p className="bos-eyebrow">{eyebrow}</p>
         {/* The full masthead strapline is a desktop object. On a phone the
@@ -59,8 +59,6 @@ export default function EditionHeader({
         )}
       </div>
 
-      <div className="bos-edition-rule mt-5" aria-hidden="true" />
-
       {/* Nameplate, dateline, then the governed facts as a full-width bar
           beneath them — the order a masthead actually has.
 
@@ -71,7 +69,7 @@ export default function EditionHeader({
           left a column of dead space the height of the rail before the first
           read. A single column removes it, and the fact bar reads as the
           dateline furniture it is. */}
-      <div className="mt-8 lg:mt-9">
+      <div className="mt-5">
         <h1 className="bos-hero">
           {title}
         </h1>
@@ -80,7 +78,7 @@ export default function EditionHeader({
             immediately under the nameplate the way a masthead dates an issue.
             Rendered only when the application served a date. */}
         {editionDate && (
-          <p className="bos-value mt-5 text-sm text-chalk200 sm:text-base">
+          <p className="bos-value mt-3 text-sm text-chalk200 sm:text-base">
             {editionDateLabel && (
               <span className="bos-meta mr-2 text-chalk500">{editionDateLabel}</span>
             )}
@@ -89,19 +87,19 @@ export default function EditionHeader({
         )}
 
         {standfirst && (
-          <p className="bos-body mt-6 max-w-measure text-chalk300">
+          <p className="bos-body mt-4 max-w-measure text-chalk300">
             {standfirst}
           </p>
         )}
 
         {actions && (
-          <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+          <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
             {actions}
           </div>
         )}
 
         {visibleFacts.length > 0 && (
-          <dl className="mt-8 grid grid-cols-2 gap-x-8 gap-y-5 border-t border-line pt-6 sm:grid-cols-3 lg:mt-9 lg:grid-cols-5 lg:gap-x-10">
+          <dl className="mt-5 grid grid-cols-2 gap-x-8 gap-y-4 border-t border-line pt-4 sm:grid-cols-3 lg:grid-cols-5 lg:gap-x-10">
             {visibleFacts.map(fact => (
               <TrustFact
                 key={fact.label}
@@ -113,6 +111,8 @@ export default function EditionHeader({
           </dl>
         )}
       </div>
+
+      <div className="bos-edition-rule mt-5" aria-hidden="true" />
 
       {children}
     </header>

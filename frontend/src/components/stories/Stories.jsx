@@ -70,26 +70,27 @@ export function StoriesView({
   const activeLabel = getActiveStoryFilterLabel(activeFilter, activeCount)
   const visible = filterStoryFeed(feed.items, activeFilter)
   return (
-    <div className="p-4 sm:p-5 lg:p-6 max-w-7xl mx-auto">
-      <header className="mb-5 border-b border-dirt pb-4 animate-fade-up opacity-0" style={{ animationFillMode: 'forwards' }}>
+    <div className="bos-page pb-12">
+      <header className="pt-[1.875rem]">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <div className="font-mono text-[10px] uppercase tracking-widest text-amber/70">
+            <div className="bos-eyebrow">
               The Bullpen Intelligence Feed
             </div>
-            <h1 className="mt-1 font-display text-4xl tracking-wider text-chalk100 leading-none">
-              BASEBALL<span className="text-gradient-amber">OS</span> STORIES
+            <h1 className="bos-hero mt-2">
+              Stories
             </h1>
           </div>
           <div className="flex flex-wrap items-center gap-2 font-mono text-[11px] text-chalk400">
-            <span className="rounded border border-amber/30 bg-amber/5 px-2 py-1 text-amber/80">
+            <span className="text-brass">
               Descriptive bullpen notes.
             </span>
           </div>
         </div>
-        <p className="mt-2 max-w-3xl text-sm leading-relaxed text-chalk400">
+        <p className="bos-body mt-4 max-w-measure text-chalk300">
           What else BaseballOS is seeing today — team observations, trend notes, and bullpen watch items beyond the morning briefing.
         </p>
+        <div className="bos-intelligence-rule mt-5" aria-hidden="true" />
       </header>
 
       {loading && !dashboard ? (
@@ -115,7 +116,7 @@ export function StoriesView({
             counts={counts}
           />
 
-          <section className="mb-8" aria-label="Story feed">
+          <section className="bos-section" aria-label="Story feed">
             <SectionHeading
               title="The Story Feed"
               subtitle="Every storyline BaseballOS is carrying today. Pick a lane or read it all."
@@ -153,7 +154,7 @@ export function StoriesView({
                 onReset={() => setFilter(DEFAULT_STORY_FILTER)}
               />
             ) : (
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <div className="divide-y divide-line border-y border-line">
                 {visible.map((story, index) => (
                   <FeedStoryCard
                     key={`${story.kicker}-${story.teamId ?? 'league'}-${index}`}
@@ -236,7 +237,7 @@ function FeedScope({ feed, counts }) {
   ]
 
   return (
-    <section className="mb-6 border border-dirt bg-dugout p-4 sm:p-5" aria-label="Stories scope">
+    <section className="bos-section" aria-label="Stories scope">
       <div className="font-mono text-[10px] uppercase tracking-widest text-amber/70">
         Beyond Today
       </div>
@@ -309,8 +310,9 @@ function FeedStoryCard({ story }) {
   const hasBlueprint = Array.isArray(story.blueprint) && story.blueprint.length > 0
   return (
     <article
-      className={`card flex flex-col p-5${hasDestination ? ' group transition-all duration-200 hover:border-amber/40 hover:bg-amber/5' : ''}`}
+      className={`group grid gap-4 py-5 md:grid-cols-[minmax(0,1fr)_minmax(18rem,0.65fr)]${hasDestination ? ' transition-colors' : ''}`}
     >
+      <div className="flex min-w-0 flex-col">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="h-1 w-8 rounded-full" style={{ backgroundColor: tone.dot }} aria-hidden="true" />
         <div className="flex flex-wrap items-center justify-end gap-2">
@@ -379,6 +381,7 @@ function FeedStoryCard({ story }) {
           {story.cta || 'Open the team board'} →
         </Link>
       )}
+      </div>
     </article>
   )
 }

@@ -12,6 +12,7 @@ export default {
         ink:            '#0B0F14',   // Page ground
         panel:          '#10161E',   // Primary panel surface
         'panel-2':      '#141C26',   // Elevated / secondary panel surface
+        'line-quiet':   '#171E27',   // Quiet dividers / table rails
         line:           '#232C38',   // Subtle hairline border
         'line-strong':  '#2E3A49',   // Emphasized border
         signal:         '#5B8CD6',   // BaseballOS blue — interaction and structure
@@ -51,13 +52,13 @@ export default {
       // section spacing the Today edition uses. Named rather than numeric so a
       // section's spacing intent survives refactors.
       spacing: {
-        'gutter':      '1rem',
+        'gutter':      '1.5rem',
         'gutter-md':   '1.5rem',
-        'gutter-lg':   '2rem',
+        'gutter-lg':   '1.5rem',
         'rhythm-tight': '0.75rem',
-        'rhythm':       '1.25rem',
-        'rhythm-loose': '2.5rem',
-        'section':      '3.5rem',
+        'rhythm':       '1.125rem',
+        'rhythm-loose': '2.25rem',
+        'section':      '2.75rem',
       },
       borderRadius: {
         // Restrained: panels stay rectilinear, only controls soften slightly.
@@ -73,16 +74,18 @@ export default {
         control: '0',
       },
       boxShadow: {
-        // Borders do the structural work; shadows only lift the signature
-        // edition object off the page ground.
-        panel: '0 1px 0 rgba(255,255,255,0.02), 0 18px 40px -34px rgba(0,0,0,0.95)',
-        edition: '0 1px 0 rgba(255,255,255,0.03), 0 30px 70px -50px rgba(0,0,0,1)',
+        // Foundations uses surface contrast and hairlines, never shadow.
+        panel: 'none',
+        edition: 'none',
       },
       screens: {
         xs: '390px',
       },
       maxWidth: {
-        measure: '68ch',
+        shell: '85rem',
+        reading: '72.5rem',
+        measure: '66ch',
+        definition: '76ch',
         lead: '24ch',
       },
       backgroundImage: {

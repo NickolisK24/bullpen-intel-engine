@@ -64,7 +64,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <TrafficRouteObserver />
-      <div className="app-shell bg-noise flex-col">
+      <div className="app-shell flex-col">
         {/* Keyboard readers reach the page answer without walking the whole
             navigation first. Visible only while focused. */}
         <a href="#main-content" className="bos-skip-link">

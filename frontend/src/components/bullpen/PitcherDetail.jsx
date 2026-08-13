@@ -26,7 +26,7 @@ function ClosePitcherDetailButton({ onClose }) {
       type="button"
       onClick={onClose}
       aria-label="Close selected pitcher detail"
-      className="shrink-0 rounded px-2 py-1 text-lg leading-none text-chalk400 hover:text-chalk200 focus-visible:ring-2 focus-visible:ring-amber/70"
+      className="flex h-[2.875rem] w-[2.875rem] shrink-0 items-center justify-center border border-line text-lg leading-none text-chalk400 hover:border-signal hover:text-chalk200 focus-visible:ring-2 focus-visible:ring-signal"
     >
       ✕
     </button>
@@ -84,12 +84,12 @@ export function PitcherDetailContent({ data, pitcherId, onClose }) {
   ] : []
 
   return (
-    <div className="card sticky top-6 w-full min-w-0 max-w-full max-h-[calc(100vh-3rem)] overflow-y-auto">
+    <div className="sticky top-6 w-full min-w-0 max-w-full max-h-[calc(100vh-3rem)] overflow-y-auto border border-line bg-ink">
       {/* Header */}
-      <div className="card-header gap-3">
+      <div className="flex items-start justify-between gap-3 border-b border-line p-4 sm:p-5">
         <div className="min-w-0">
-          <div className="text-chalk400 font-mono text-xs mb-1">{pitcher?.team_name}</div>
-          <div className="font-display text-2xl tracking-wider text-chalk100 break-words">{pitcher?.full_name}</div>
+          <div className="bos-eyebrow mb-2">{pitcher?.team_name}</div>
+          <div className="break-words font-display text-[2rem] font-semibold leading-none text-chalk100">{pitcher?.full_name}</div>
           <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1 font-mono text-xs text-chalk400">
             <span>{pitcher?.position}</span>
             <span>·</span>
@@ -100,9 +100,10 @@ export function PitcherDetailContent({ data, pitcherId, onClose }) {
         </div>
         <ClosePitcherDetailButton onClose={onClose} />
       </div>
+      <div className="bos-intelligence-rule" aria-hidden="true" />
 
       {hasCurrentRead ? (
-        <div className="min-w-0 p-4 space-y-5 sm:p-5">
+        <div className="min-w-0 space-y-6 p-4 sm:p-5">
           {availability ? (
             <AvailabilitySummary
               availability={availability}
@@ -112,7 +113,7 @@ export function PitcherDetailContent({ data, pitcherId, onClose }) {
               lastAppearance={mostRecentAppearance}
             />
           ) : (
-            <section className="rounded border border-dirt bg-chalk/30 p-4 sm:p-5">
+            <section className="border-l-2 border-line-strong py-1 pl-4">
               <div className="text-chalk600 text-[10px] font-mono uppercase tracking-wider">Current Status</div>
               <p className="mt-2 text-sm font-mono leading-relaxed text-chalk400">
                 Current availability is not available for this pitcher yet.
@@ -121,7 +122,7 @@ export function PitcherDetailContent({ data, pitcherId, onClose }) {
           )}
 
           {mostRecentAppearanceLabel && (
-            <div className="rounded border border-dirt bg-field/50 p-3">
+            <div className="border-t border-line pt-4">
               <div className="text-chalk600 text-[10px] font-mono uppercase tracking-wider">Most Recent Workload Appearance</div>
               <div className="mt-1 font-mono text-sm font-semibold text-chalk200">{mostRecentAppearanceLabel}</div>
             </div>
@@ -137,15 +138,15 @@ export function PitcherDetailContent({ data, pitcherId, onClose }) {
           {workloadFacts.length > 0 && (
             <>
               <Divider label="Recent Workload Snapshot" />
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+              <div className="grid grid-cols-2 border-l border-t border-line sm:grid-cols-3">
                 {workloadFacts.map(({ label, value }) => (
-                  <div key={label} className="bg-chalk/40 border border-dirt rounded p-2.5 text-center">
+                  <div key={label} className="border-b border-r border-line p-3 text-left">
                     <div className="font-mono font-semibold text-chalk200">{value}</div>
                     <div className="text-chalk600 text-[10px] font-mono mt-0.5">{label}</div>
                   </div>
                 ))}
               </div>
-              <div className="rounded border border-dirt bg-field/40 px-3 py-2 text-xs font-mono leading-relaxed text-chalk400">
+              <div className="border-l-2 border-line-strong py-1 pl-4 text-xs leading-relaxed text-chalk400">
                 Workload units describe recent usage only; they do not describe injury status or future performance.
               </div>
             </>
@@ -200,7 +201,7 @@ export function PitcherDetailContent({ data, pitcherId, onClose }) {
           )}
         </div>
       ) : (
-        <div className="p-8 text-center text-chalk400 font-mono text-sm">
+        <div className="m-5 border-l-2 border-line-strong py-1 pl-4 text-sm text-chalk400">
           No recent workload read is available yet.
         </div>
       )}

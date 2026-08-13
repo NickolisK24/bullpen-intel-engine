@@ -48,6 +48,9 @@ the files a pass actually changes.
   Pass 3 (D-056)  — approved foundation-token alignment and the remainder of
                     Team Board presentation: page chrome, team control, recent
                     bullpen work, current arm groups, search, and disclosures.
+  Pass 4 (D-057)  — Foundations geometry and signatures across the shared shell,
+                    footer, system states, Dashboard, Stories, Methodology, and
+                    Data & Trust presentation.
 
 Still NOT migrated and NOT listed: Dashboard content, Compare, Reliever Finder,
 Stories, and Pitcher Detail. Those keep the older register inside their content
@@ -97,9 +100,11 @@ UX003_PRODUCT_EXPERIENCE_RUNTIME_FILES = (
     'frontend/src/index.css',
     'frontend/src/App.jsx',
     'frontend/src/components/Sidebar.jsx',
+    'frontend/src/components/layout/Footer.jsx',
     'frontend/src/components/UI/Freshness.jsx',
     'frontend/src/components/UI/StaleDataNotice.jsx',
     'frontend/src/components/dashboard/bullpenLandscapeView.js',
+    'frontend/src/components/dashboard/Dashboard.jsx',
     'frontend/src/components/home/IntelligenceSurface.jsx',
     'frontend/src/components/intel/ConceptCard.jsx',
     'frontend/src/components/intel/ConceptGlyph.jsx',
@@ -111,6 +116,7 @@ UX003_PRODUCT_EXPERIENCE_RUNTIME_FILES = (
     'frontend/src/components/intel/TrustStrip.jsx',
     'frontend/src/components/intel/index.js',
     'frontend/src/components/methodology/Methodology.jsx',
+    'frontend/src/components/stories/Stories.jsx',
     'frontend/src/components/trust/DataTrust.jsx',
     'frontend/src/utils/dateDisplay.js',
     'frontend/src/utils/navigation.js',
@@ -152,7 +158,10 @@ UX003_PRODUCT_EXPERIENCE_RUNTIME_FILES = (
     # They continue to consume the existing board, relief-work, story, and game
     # context contracts verbatim; no browser-owned baseball meaning is added.
     'frontend/src/components/bullpen/Bullpen.jsx',
+    'frontend/src/components/bullpen/AvailabilitySummary.jsx',
+    'frontend/src/components/bullpen/PitcherDetail.jsx',
     'frontend/src/components/bullpen/PitcherSearch.jsx',
+    'frontend/src/components/bullpen/RecentWorkPanel.jsx',
     'frontend/src/components/bullpen/TeamReliefWorkPanel.jsx',
     'frontend/src/components/bullpen/board/BullpenBoardView.jsx',
     'frontend/src/components/bullpen/board/TonightsBullpenBoard.jsx',

@@ -13,18 +13,18 @@ const TONE = {
   // A designed quiet day: the product looked and found nothing worth leading
   // with. Neutral, never alarming.
   quiet: {
-    frame: 'border-line bg-panel',
+    frame: 'border-line-strong',
     eyebrow: 'text-chalk500',
   },
   // A read BaseballOS is deliberately holding back because it cannot be
   // supported. Marked, but not styled as a failure.
   limited: {
-    frame: 'border-brass/30 bg-panel',
+    frame: 'border-brass',
     eyebrow: 'text-brass',
   },
   // Something could not be loaded. Retry is offered only when retry is real.
   unavailable: {
-    frame: 'border-line-strong bg-panel',
+    frame: 'border-danger',
     eyebrow: 'text-chalk400',
   },
 }
@@ -42,7 +42,7 @@ export default function IntelNotice({
   const styles = TONE[tone] || TONE.quiet
   return (
     <div
-      className={`rounded-panel border p-4 sm:p-6 ${styles.frame} ${className}`}
+      className={`border-l-2 py-1 pl-4 ${styles.frame} ${className}`}
       role="status"
       aria-live="polite"
     >
@@ -51,8 +51,8 @@ export default function IntelNotice({
           {eyebrow}
         </p>
       )}
-      {title && <h3 className={`bos-card-title ${eyebrow ? 'mt-2' : ''}`}>{title}</h3>}
-      {message && <p className="bos-support mt-2 max-w-measure">{message}</p>}
+      {title && <h3 className={`bos-card-title ${eyebrow ? 'mt-1.5' : ''}`}>{title}</h3>}
+      {message && <p className="bos-support mt-1.5 max-w-measure">{message}</p>}
       {children}
       {onRetry && (
         <button type="button" onClick={onRetry} className="bos-action bos-action--quiet mt-4">

@@ -71,7 +71,7 @@ function ConnectIcon({ type }) {
 
 function ConnectLinks() {
   return (
-    <div className="mt-5 flex items-center justify-center gap-4">
+    <div className="flex items-center gap-2">
       {CONNECT_LINKS.map(link => (
         <a
           key={link.href}
@@ -79,7 +79,7 @@ function ConnectLinks() {
           aria-label={link.ariaLabel}
           target={link.external ? '_blank' : undefined}
           rel={link.external ? 'noopener noreferrer' : undefined}
-          className={`inline-flex h-14 w-14 items-center justify-center rounded-md border border-dirt bg-field/70 transition-colors hover:border-amber/50 hover:bg-amber/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/60 ${link.iconClassName}`}
+          className={`inline-flex h-[2.875rem] w-[2.875rem] items-center justify-center border border-line transition-colors hover:border-signal focus:outline-none focus-visible:ring-2 focus-visible:ring-signal ${link.iconClassName}`}
         >
           <ConnectIcon type={link.key} />
         </a>
@@ -90,19 +90,19 @@ function ConnectLinks() {
 
 export default function Footer() {
   return (
-    <footer className="border-t border-dirt bg-field/95 px-4 py-8 sm:px-6 lg:px-8">
-      <div className="mx-auto w-full max-w-7xl rounded-lg border border-dirt bg-dugout/80 px-5 py-7 text-center sm:px-10">
-        <div className="font-display text-2xl uppercase tracking-widest text-chalk100">
-          BaseballOS
+    <footer className="mt-12 border-t border-line bg-ink">
+      <div className="bos-page py-8">
+        <div className="grid gap-7 md:grid-cols-[minmax(0,1fr)_auto] md:items-start">
+          <div>
+            <div className="font-display text-[1.1875rem] font-bold uppercase tracking-[0.15em] text-chalk100">BASEBALLOS</div>
+            <p className="mt-2 max-w-measure text-sm leading-6 text-chalk400">
+              Public MLB bullpen intelligence — a daily read on which bullpens are fresh, stretched, or vulnerable, and why.
+            </p>
+          </div>
+          <ConnectLinks />
         </div>
-        <p className="mx-auto mt-3 max-w-2xl text-sm leading-6 text-chalk400">
-          Public MLB bullpen intelligence — a daily read on which bullpens are
-          fresh, stretched, or vulnerable, and why.
-        </p>
 
-        <ConnectLinks />
-
-        <nav aria-label="Learn and trust pages" className="mt-6 flex flex-wrap items-center justify-center gap-x-5 gap-y-2">
+        <nav aria-label="Learn and trust pages" className="mt-7 flex flex-wrap items-center gap-x-5 gap-y-3 border-t border-line pt-5">
           {LEARN_LINKS.map(link => (
             <Link
               key={link.to}
@@ -114,8 +114,9 @@ export default function Footer() {
           ))}
         </nav>
 
-        <div className="mt-6 border-t border-dirt pt-5">
-          <p className="mx-auto max-w-3xl text-xs leading-5 text-chalk500">
+        <div className="mt-5 grid gap-2 border-t border-line pt-5 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
+          <div>
+          <p className="max-w-definition text-xs leading-5 text-chalk500">
             BaseballOS is an independent baseball intelligence platform and is
             not affiliated with or endorsed by Major League Baseball or its
             clubs.
@@ -123,7 +124,8 @@ export default function Footer() {
           <p className="mt-2 text-xs leading-5 text-chalk500">
             Data is descriptive and drawn from public sources.
           </p>
-          <p className="mt-5 font-mono text-[11px] uppercase tracking-widest text-chalk600">
+          </div>
+          <p className="font-mono text-[11px] uppercase tracking-widest text-chalk600">
             © 2026 BaseballOS — All rights reserved.
           </p>
         </div>

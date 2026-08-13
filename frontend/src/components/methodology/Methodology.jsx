@@ -90,7 +90,7 @@ function SubHead({ eyebrow, children, id }) {
           {eyebrow}
         </div>
       )}
-      <h2 id={id} className="mt-1 font-display text-2xl tracking-wide text-chalk100 scroll-mt-24">
+      <h2 id={id} className="bos-section-title mt-1 scroll-mt-24">
         {children}
       </h2>
     </div>
@@ -103,23 +103,24 @@ export default function Methodology() {
 
 export function MethodologyView() {
   return (
-    <div className="p-4 sm:p-6 lg:p-8 max-w-3xl mx-auto">
-      <header className="mb-8 border-b border-dirt pb-4">
-        <div className="font-mono text-[10px] uppercase tracking-widest text-amber/75">
+    <div className="bos-page bos-page--reading pb-12">
+      <header className="pt-[1.875rem]">
+        <div className="bos-eyebrow">
           Methodology
         </div>
-        <h1 className="mt-1 font-display text-3xl sm:text-4xl tracking-wide text-chalk100">
+        <h1 className="bos-hero mt-2">
           How BaseballOS reads a bullpen
         </h1>
-        <p className="mt-3 max-w-2xl text-sm leading-relaxed text-chalk300">
+        <p className="bos-body mt-4 max-w-measure text-chalk300">
           BaseballOS describes the current state of every MLB bullpen from recent,
           completed-game data. It reads recent workload, rest, role and roster
           context, and freshness, and it shows why each read exists. When the
           evidence is missing or stale, it withholds the read instead of guessing.
         </p>
+        <div className="bos-intelligence-rule mt-5" aria-hidden="true" />
       </header>
 
-      <div className="space-y-10">
+      <div className="[&>section]:bos-section">
         {/* A / B — what is examined (inbound anchor: #methodology, #data-sources) */}
         <section id="methodology" className="scroll-mt-24">
           <SubHead eyebrow="What it examines" id="data-sources">
@@ -130,9 +131,9 @@ export function MethodologyView() {
             scores from completed games. BaseballOS looks at a small set of
             trusted workload and context signals:
           </p>
-          <dl className="mt-4 space-y-3">
+          <dl className="mt-4 grid md:grid-cols-2">
             {EXAMINED_INPUTS.map(([term, detail]) => (
-              <div key={term} className="rounded border border-dirt bg-chalk/10 p-3">
+              <div key={term} className="border-t border-line py-3 md:pr-6 md:even:pl-6 md:even:pr-0">
                 <dt className="font-mono text-sm text-chalk100">{term}</dt>
                 <dd className="mt-1 text-xs leading-relaxed text-chalk400">{detail}</dd>
               </div>
@@ -164,7 +165,7 @@ export function MethodologyView() {
           </p>
           <dl className="mt-4 space-y-2">
             {ARM_STATUSES.map(status => (
-              <div key={status.label} className="flex flex-col gap-1 rounded border border-dirt bg-chalk/10 p-3 sm:flex-row sm:gap-3">
+              <div key={status.label} className="flex flex-col gap-1 border-l-2 border-line-strong py-1 pl-4 sm:flex-row sm:gap-3">
                 <dt className="shrink-0 font-mono text-sm text-chalk100 sm:w-28">{status.label}</dt>
                 <dd className="text-xs leading-relaxed text-chalk400">{status.body}</dd>
               </div>
@@ -193,7 +194,7 @@ export function MethodologyView() {
           </p>
           <dl className="mt-4 space-y-2">
             {TEAM_STATES.map(state => (
-              <div key={state.label} className="flex flex-col gap-1 rounded border border-dirt bg-chalk/10 p-3 sm:flex-row sm:gap-3">
+              <div key={state.label} className="flex flex-col gap-1 border-l-2 border-line-strong py-1 pl-4 sm:flex-row sm:gap-3">
                 <dt className="shrink-0 font-mono text-sm text-chalk100 sm:w-28">{state.label}</dt>
                 <dd className="text-xs leading-relaxed text-chalk400">{state.body}</dd>
               </div>
@@ -216,7 +217,7 @@ export function MethodologyView() {
           <SubHead eyebrow="Worked example" id="worked-example">
             From facts to a public read
           </SubHead>
-          <div className="rounded-lg border border-amber/30 bg-amber/5 p-4">
+          <div className="border-l-2 border-brass py-1 pl-4">
             <p className="font-mono text-[11px] uppercase tracking-widest text-amber/80">
               Illustrative example — not current MLB data
             </p>

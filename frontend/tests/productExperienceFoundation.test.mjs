@@ -91,6 +91,7 @@ test('the product experience tokens match the approved design reference', () => 
       ink: colors.ink,
       panel: colors.panel,
       elevated: colors['panel-2'],
+      quietLine: colors['line-quiet'],
       line: colors.line,
       primary: colors.chalk100,
       secondary: colors.chalk200,
@@ -103,7 +104,7 @@ test('the product experience tokens match the approved design reference', () => 
       vulnerable: colors.danger,
     },
     {
-      ink: '#0B0F14', panel: '#10161E', elevated: '#141C26', line: '#232C38',
+      ink: '#0B0F14', panel: '#10161E', elevated: '#141C26', quietLine: '#171E27', line: '#232C38',
       primary: '#E9EEF5', secondary: '#B4C0CE', tertiary: '#8592A3', muted: '#788698',
       blue: '#5B8CD6', gold: '#C9A96A', fresh: '#6FB6A0',
       stretched: '#D6A45C', vulnerable: '#C97F6E',
@@ -118,13 +119,18 @@ test('the product experience tokens match the approved design reference', () => 
 
 test('spacing, radii, shadow, and breakpoint scales are deliberate rather than ad hoc', () => {
   const extend = tailwindConfig.theme.extend
-  for (const step of ['gutter', 'rhythm', 'section']) {
-    assert.ok(extend.spacing[step], `spacing.${step}`)
-  }
+  assert.deepEqual(
+    { gutter: extend.spacing.gutter, tight: extend.spacing['rhythm-tight'], rhythm: extend.spacing.rhythm, loose: extend.spacing['rhythm-loose'], section: extend.spacing.section },
+    { gutter: '1.5rem', tight: '0.75rem', rhythm: '1.125rem', loose: '2.25rem', section: '2.75rem' },
+  )
   for (const radius of ['DEFAULT', 'sm', 'md', 'lg', 'xl', '2xl', '3xl', 'edge', 'panel', 'control']) {
     assert.equal(extend.borderRadius[radius], '0', `borderRadius.${radius}`)
   }
-  assert.deepEqual(Object.keys(extend.boxShadow), ['panel', 'edition'])
+  assert.deepEqual(extend.boxShadow, { panel: 'none', edition: 'none' })
+  assert.deepEqual(
+    { shell: extend.maxWidth.shell, reading: extend.maxWidth.reading, measure: extend.maxWidth.measure, definition: extend.maxWidth.definition },
+    { shell: '85rem', reading: '72.5rem', measure: '66ch', definition: '76ch' },
+  )
   assert.equal(extend.screens.xs, '390px')
 })
 
@@ -725,14 +731,14 @@ test('editorial headings use the approved display face; only metadata keeps the 
   assert.equal(level('.bos-action').includes('uppercase'), false)
 })
 
-test('background depth is decorative only and cannot intercept interaction', () => {
+test('Foundations remains flat: no contour art, radial glow, or component shadow', () => {
+  assert.match(indexCss, /--bos-shadow-panel:\s+none/)
+  assert.match(indexCss, /--bos-shadow-edition:\s+none/)
   const start = indexCss.indexOf('.bos-depth::before,')
-  assert.ok(start > -1, 'the depth layer exists')
-  const block = indexCss.slice(start, start + 400)
-  assert.ok(block.includes('pointer-events: none'))
-  assert.ok(block.includes('z-index: -1'))
-  // Depth is drawn, never animated.
-  assert.equal(/\.bos-depth[^{]*\{[^}]*animation/.test(indexCss), false)
+  const block = indexCss.slice(start, start + 500)
+  assert.ok(block.includes('content: none'))
+  assert.equal(block.includes('radial-gradient'), false)
+  assert.equal(block.includes('data:image/svg+xml'), false)
 })
 
 test('Today never uses superlative or extreme lane framing', () => {

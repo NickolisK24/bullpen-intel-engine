@@ -126,25 +126,26 @@ export function DataTrustView({
   const servedDataThrough = freshnessDataThrough(servedFreshness)
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8 max-w-4xl mx-auto">
-      <header className="mb-8 border-b border-dirt pb-4">
-        <div className="font-mono text-[10px] uppercase tracking-widest text-amber/75">
+    <div className="bos-page bos-page--reading pb-12">
+      <header className="pt-[1.875rem]">
+        <div className="bos-eyebrow">
           Data &amp; Trust
         </div>
-        <h1 className="mt-1 font-display text-3xl sm:text-4xl tracking-wide text-chalk100">
+        <h1 className="bos-hero mt-2">
           Is this current — and do the labels hold up?
         </h1>
-        <p className="mt-3 max-w-2xl text-sm leading-relaxed text-chalk300">
+        <p className="bos-body mt-4 max-w-measure text-chalk300">
           This page keeps the reliability layer behind the bullpen picture: whether
           the public data is current, which completed games it includes, and how the
           four availability labels matched what pitchers actually did the next day.
         </p>
+        <div className="bos-intelligence-rule mt-5" aria-hidden="true" />
       </header>
 
-      <div className="space-y-10">
+      <div className="[&>section]:bos-section">
         {/* 1. Is the public bullpen picture current? */}
         <section aria-labelledby="current-data" className="scroll-mt-24">
-          <h2 id="current-data" className="mb-3 font-display text-2xl tracking-wide text-chalk100">
+          <h2 id="current-data" className="bos-section-title mb-3">
             Is the public bullpen picture current?
           </h2>
           <CurrentDataAnswer dashboard={dashboard} />
@@ -152,7 +153,7 @@ export function DataTrustView({
 
         {/* 2. What completed games, when checked, when updated. */}
         <section id="freshness-update-schedule" className="scroll-mt-24" aria-labelledby="freshness-detail">
-          <h2 id="freshness-detail" className="mb-3 font-display text-2xl tracking-wide text-chalk100">
+          <h2 id="freshness-detail" className="bos-section-title mb-3">
             Freshness and coverage detail
           </h2>
           <p className="mb-3 max-w-2xl text-xs leading-relaxed text-chalk500">
@@ -202,7 +203,7 @@ export function DataTrustView({
 
         {/* 4. Limitations and where to inspect the live evidence. */}
         <section aria-labelledby="trust-limitations" className="scroll-mt-24">
-          <h2 id="trust-limitations" className="mb-3 font-display text-2xl tracking-wide text-chalk100">
+          <h2 id="trust-limitations" className="bos-section-title mb-3">
             What these checks do not prove
           </h2>
           <ul className="max-w-2xl space-y-2 text-sm leading-relaxed text-chalk400">

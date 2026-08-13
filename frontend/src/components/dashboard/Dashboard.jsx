@@ -52,27 +52,19 @@ export function DashboardView({ data, loading = false, error = null, staleWithEr
   const isLive = provenance.isLive
 
   return (
-    <div className="p-4 sm:p-5 lg:p-6 max-w-7xl mx-auto">
-      {/* Section 1 — Hero */}
-      <div className="mb-6 animate-fade-up opacity-0" style={{ animationFillMode: 'forwards' }}>
-        <div className="relative overflow-hidden rounded-xl border border-dirt bg-dugout p-4 sm:p-6 bg-stadium-glow">
-          <div className="absolute inset-0 bg-grid-lines opacity-100 pointer-events-none" />
-          <div className="relative z-10">
-            <div className="font-mono text-xs text-amber/60 uppercase tracking-widest mb-2">
-              League-Wide Bullpen Overview
-            </div>
-            <h1 className="font-display text-4xl sm:text-5xl tracking-wider text-chalk100 leading-none mb-2">
-              League Bullpen Board
-            </h1>
-            <p className="text-chalk400 text-sm max-w-2xl font-mono leading-relaxed">
+    <div className="bos-page pb-12">
+      <header className="pt-[1.875rem]">
+        <div className="bos-eyebrow mb-2">League-Wide Bullpen Overview</div>
+        <h1 className="bos-hero">League Bullpen Board</h1>
+        <p className="bos-body mt-4 max-w-measure text-chalk300">
               A league-wide bullpen board from the latest completed data - who looks
               usable, which pens are stretched, and what kind of role each arm appears
               to fill.
               Open <span className="text-chalk200">Bullpen</span> for a single team's pen.
-            </p>
+        </p>
 
-            <div className="mt-4 flex flex-wrap items-center gap-3">
-              <span className="rounded border border-amber/30 bg-amber/5 px-2.5 py-1 font-mono text-[10px] uppercase tracking-widest text-amber/80">
+        <div className="mt-5 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-line pt-4">
+              <span className="bos-meta uppercase text-brass">
                 League-Wide · Bullpen-eligible MLB arms
               </span>
               <SeasonBanner season={season} isLive={isLive} />
@@ -83,14 +75,13 @@ export function DashboardView({ data, loading = false, error = null, staleWithEr
               />
               <Link
                 to="/trust"
-                className="rounded border border-dirt bg-field/60 px-3 py-2 font-mono text-xs uppercase tracking-wider text-chalk300 transition-colors hover:border-amber/40 hover:text-amber"
+                className="bos-link font-mono text-xs uppercase tracking-wider"
               >
                 Data &amp; Trust details →
               </Link>
-            </div>
-          </div>
         </div>
-      </div>
+        <div className="bos-intelligence-rule mt-5" aria-hidden="true" />
+      </header>
 
       {loading && !data ? (
         <LoadingPane message="Loading bullpen overview..." />
@@ -127,9 +118,9 @@ export function DashboardView({ data, loading = false, error = null, staleWithEr
             title="League-Wide Usage Roles"
             subtitle="Observed usage-role distribution across bullpen-eligible MLB arms — not a single team, and not assigned roles."
           >
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+            <div className="grid grid-cols-2 border-l border-t border-line sm:grid-cols-3 lg:grid-cols-6">
               {roles.rows.map(row => (
-                <div key={row.key} className="card flex items-center justify-between gap-2 p-3" style={row.tone}>
+                <div key={row.key} className="flex min-h-20 items-center justify-between gap-2 border-b border-r border-line p-3">
                   <span className="font-mono text-[10px] uppercase tracking-wider">{row.label}</span>
                   <span className="font-mono text-xl">{row.count}</span>
                 </div>
@@ -170,7 +161,7 @@ function InjuryIlContextSection({ context }) {
       title="Bullpen Availability Context"
       subtitle="Roster-status context for the dashboard bullpen population. Workload availability remains separate."
     >
-      <div className="card p-4">
+      <div className="border-t border-line pt-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
             <div className="font-mono text-[10px] uppercase tracking-widest text-amber/80">
@@ -180,16 +171,16 @@ function InjuryIlContextSection({ context }) {
               {getInjuryIlContextSummary(context)}
             </p>
           </div>
-          <div className="shrink-0 rounded border border-dirt bg-dugout/60 px-2.5 py-1 font-mono text-[10px] uppercase tracking-widest text-chalk500">
+          <div className="shrink-0 font-mono text-[10px] uppercase tracking-widest text-chalk500">
             {context.countsWithheld
               ? 'Roster counts withheld'
               : `${context.league.bullpenPopulationCount} dashboard relievers`}
           </div>
         </div>
 
-        <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
+        <div className="mt-4 grid grid-cols-1 border-l border-t border-line sm:grid-cols-3">
           {stats.map(stat => (
-            <div key={stat.label} className="rounded border border-dirt/70 bg-field/35 p-3">
+            <div key={stat.label} className="border-b border-r border-line p-3">
               <div className="font-mono text-[10px] uppercase tracking-wider text-chalk500">
                 {stat.label}
               </div>
@@ -221,10 +212,10 @@ function InjuryIlContextSection({ context }) {
 
 function Section({ title, subtitle, children }) {
   return (
-    <section className="mb-6">
-      <div className="mb-3">
-        <h2 className="font-mono text-xs uppercase tracking-widest text-chalk400">{title}</h2>
-        {subtitle && <p className="mt-1 text-xs leading-relaxed text-chalk600">{subtitle}</p>}
+    <section className="bos-section">
+      <div className="mb-4">
+        <h2 className="bos-section-title">{title}</h2>
+        {subtitle && <p className="bos-support mt-2 max-w-measure">{subtitle}</p>}
       </div>
       {children}
     </section>
@@ -237,8 +228,8 @@ function FreshnessPill({ provenance, lastSync, confidenceLabel }) {
     : 'No completed MLB data loaded'
   return (
     <div
-      className="rounded border px-3 py-2 font-mono text-[11px] leading-relaxed"
-      style={{ borderColor: provenance.tone.borderColor, backgroundColor: provenance.tone.backgroundColor, color: provenance.tone.color }}
+      className="border-l-2 py-0.5 pl-3 font-mono text-[11px] leading-relaxed"
+      style={{ borderColor: provenance.tone.borderColor, color: provenance.tone.color }}
       title={provenance.throughHint}
     >
       <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-0.5">

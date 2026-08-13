@@ -9,19 +9,21 @@
 // is for a labelled value pair. `NamedArmReceipt` is the compact named-reliever
 // form: a name is content, so it gets its own recognizable object.
 
+import { Children, cloneElement, isValidElement } from 'react'
+
 export function EvidenceList({ items = [], label, className = '' }) {
   const rows = (Array.isArray(items) ? items : []).filter(Boolean)
   if (rows.length === 0) return null
   return (
     <div className={className}>
       {label && <p className="bos-micro">{label}</p>}
-      <ul className={label ? 'mt-2 space-y-1.5' : 'space-y-1.5'}>
-        {rows.map(item => (
-          <li key={item} className="flex gap-2.5">
-            <span
-              aria-hidden="true"
-              className="mt-2 h-px w-3 shrink-0 bg-line-strong"
-            />
+      <ul className={label ? 'mt-3' : ''}>
+        {rows.map((item, index) => (
+          <li key={item} className="grid grid-cols-[22px_1px_minmax(0,1fr)] gap-x-3 py-2 first:pt-0">
+            <span aria-hidden="true" className="font-mono text-[11px] tabular-nums text-brass-deep">
+              E{index + 1}
+            </span>
+            <span aria-hidden="true" className="h-full min-h-6 bg-line" />
             <span className="bos-evidence min-w-0 break-words">{item}</span>
           </li>
         ))}
@@ -45,27 +47,30 @@ export function EvidenceRow({ label, value, detail, className = '' }) {
 
 // A named arm carrying recent work. `name` is required; every other field is
 // rendered only when the contract supplied it.
-export function NamedArmReceipt({ name, detail, note, className = '' }) {
+export function NamedArmReceipt({ name, detail, note, index, className = '' }) {
   if (!name) return null
   return (
-    <li className={`flex min-w-0 flex-col gap-0.5 border-l-2 border-line-strong py-1 pl-3 ${className}`}>
-      <span className="truncate text-sm font-medium text-chalk100">{name}</span>
-      {detail && (
-        <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-chalk500">
-          {detail}
-        </span>
-      )}
-      {note && <span className="bos-meta normal-case">{note}</span>}
+    <li className={`grid min-w-0 grid-cols-[22px_1px_minmax(0,1fr)] gap-x-3 py-1 ${className}`}>
+      <span aria-hidden="true" className="font-mono text-[11px] tabular-nums text-brass-deep">E{index || '—'}</span>
+      <span aria-hidden="true" className="h-full min-h-10 bg-line" />
+      <span className="flex min-w-0 flex-col gap-0.5">
+        <span className="truncate text-base font-medium text-chalk100">{name}</span>
+        {detail && <span className="font-mono text-sm tabular-nums text-chalk300">{detail}</span>}
+        {note && <span className="text-[0.84375rem] leading-snug text-chalk400">{note}</span>}
+      </span>
     </li>
   )
 }
 
 export function NamedArmReceipts({ label, children, className = '' }) {
+  const indexedChildren = Children.map(children, (child, index) => (
+    isValidElement(child) ? cloneElement(child, { index: index + 1 }) : child
+  ))
   return (
     <div className={className}>
       {label && <p className="bos-micro">{label}</p>}
-      <ul className={`${label ? 'mt-2' : ''} grid grid-cols-1 gap-2 sm:grid-cols-2`}>
-        {children}
+      <ul className={`${label ? 'mt-3' : ''} grid grid-cols-1 gap-3 sm:grid-cols-2`}>
+        {indexedChildren}
       </ul>
     </div>
   )

@@ -18,12 +18,12 @@ Tokens live in two mirrored places and must stay in sync:
 | Group | Tokens |
 |---|---|
 | Surfaces | `ink` (`#0B0F14`), `panel` (`#10161E`), `panel-2` (`#141C26`) |
-| Borders | `line` (`#232C38`), `line-strong` |
+| Borders | `line-quiet` (`#171E27`), `line` (`#232C38`), `line-strong` |
 | Accents | `signal` (`#5B8CD6`), `brass` (`#C9A96A`), state hues |
 | Focus | `focus` |
-| Spacing | `--bos-space-1` … `--bos-space-8`; named Tailwind steps `gutter`, `rhythm`, `section` |
+| Spacing | `4`, `8`, `12`, `18`, `26`, `36`, `44`; `24px` desktop gutter; `44px` desktop / `30px` mobile section rhythm |
 | Radii | `edge`, `panel`, `control` (all square: `0`) |
-| Shadows | `panel`, `edition` — near-invisible; borders carry the structure |
+| Shadows | `panel`, `edition` — both `none`; borders and surface contrast carry structure |
 | Breakpoint | `xs: 390px`, alongside the existing Tailwind scale |
 
 The legacy `field` / `dugout` / `chalk` / `dirt` / `amber` palette is unchanged.
@@ -49,23 +49,28 @@ owns an alternate typography system.
 Structure classes: `.bos-page` / `.bos-page--reading` (frame and measure),
 `.bos-section` (rhythm plus a hairline between sections), `.bos-open` and
 `.bos-marker` (grouping without a container), `.bos-panel` (reserved for
-discrete units), `.bos-rule`, `.bos-edition` / `.bos-edition-rule` (the
-signature masthead), `.bos-depth` (background depth), `.bos-action--primary` /
+discrete units), `.bos-rule`, `.bos-edition` / `.bos-edition-rule` and
+`.bos-intelligence-rule` (the blue-to-gold signature rule), `.bos-action--primary` /
 `--quiet`, `.bos-link`, and `.bos-skip-link`.
 
-### Background depth
+The outer shell is `1360px` maximum with `24px` desktop gutters. Reading
+surfaces use a `1160px` maximum, prose uses `66ch`, and long definitions use
+`76ch`. The public masthead is `62px` high. Mobile controls are at least `46px`.
 
-`.bos-depth` draws two non-interactive layers behind its content: a wide radial
-lift and a set of analytical contour paths as an inline SVG data URI. Both are
-`pointer-events: none` at `z-index: -1`, neither animates, and neither adds a
-network request or a dependency. It is applied to the edition masthead and the
-product-positioning statement only.
+### Flat surface discipline
+
+Foundations has no decorative noise, radial glow, contour illustration, or
+component shadow. `.bos-depth` remains as a compatibility class for migrated
+callers but its pseudo-elements are disabled. Surface contrast, whitespace, and
+one-pixel hairlines create hierarchy.
 
 ### Container discipline
 
 Most regions have no container. A hairline plus spacing groups them. `bos-panel`
 is used only where a boundary carries meaning: slate cards (discrete game
-reads), since-yesterday cards (comparison units), and withheld/limited reads.
+reads) and since-yesterday cards (comparison units). Non-loading quiet,
+withheld, and unavailable states use a two-pixel left rule; only loading uses a
+skeleton panel.
 
 Motion is limited to state changes and is disabled entirely under
 `prefers-reduced-motion: reduce`.
@@ -83,7 +88,7 @@ ranking, or an explanation, and none rewrites backend-owned copy.
 | `EditionHeader` | Daily edition masthead: nameplate, dateline, governed fact bar | caller, from served application state; a fact with no value is omitted, and the dateline disappears when no represented date was served |
 | `IntelSection` / `SectionHeading` | Section heading system (eyebrow, title, orientation line, aligned action) | none — layout only |
 | `TeamStateChip` / `TeamStateRead` | Canonical Fresh / Stretched / Vulnerable presentation, as toned text with a dot rather than a filled pill | `adapters/publicTeamState.js` → backend Team State block |
-| `EvidenceList` / `EvidenceRow` / `NamedArmReceipt` | Evidence receipts and named-arm evidence | the contract that supplied the row |
+| `EvidenceList` / `EvidenceRow` / `NamedArmReceipt` | Indexed `E1`, `E2` evidence receipts with a 22px index column, vertical hairline, and named-arm evidence | the contract that supplied the row; the index is presentation order only |
 | `TrustStrip` / `TrustFact` | Ambient freshness and trust stamps | governed freshness block |
 | `ConceptCard` / `ConceptGlossary` | BaseballOS vocabulary | `utils/bullpenConcepts.js` |
 | `ConceptGlyph` | Abstract concept marks for the vocabulary | none — fixed geometry, decorative |

@@ -149,20 +149,14 @@ export default function Sidebar() {
       to="/"
       onClick={closeMenu}
       aria-current={location.pathname === '/' ? 'page' : undefined}
-      className="flex min-w-0 shrink-0 items-center gap-2.5 rounded-panel focus:outline-none"
+      className="flex min-w-0 shrink-0 items-baseline focus:outline-none"
       aria-label="BaseballOS home"
     >
-      <span
-        aria-hidden="true"
-        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-panel border border-signal/35 bg-signal-well font-mono text-[12px] font-semibold tracking-tight text-signal"
-      >
-        OS
-      </span>
       <span className="min-w-0">
-        <span className="block truncate font-display text-[1.375rem] leading-none tracking-[0.16em] text-chalk100">
-          BaseballOS
+        <span className="block truncate font-display text-[1.1875rem] font-bold uppercase leading-none tracking-[0.15em] text-chalk100">
+          BASEBALLOS
         </span>
-        <span className="mt-0.5 block text-[0.625rem] font-medium uppercase tracking-[0.11em] text-chalk600">
+        <span className="mt-1 block font-mono text-[0.59375rem] uppercase leading-none tracking-[0.08em] text-chalk600">
           Bullpen Intelligence
         </span>
       </span>
@@ -171,7 +165,7 @@ export default function Sidebar() {
 
   return (
     <header className="bos-masthead">
-      <div className="bos-page flex h-16 items-center justify-between gap-6 lg:h-[4.5rem]">
+      <div className="bos-page flex h-[3.875rem] items-center justify-between gap-6">
         {wordmark}
 
         {/* Desktop masthead navigation. Only the six primary public
@@ -199,12 +193,14 @@ export default function Sidebar() {
             aria-label={open ? 'Close navigation menu' : 'Open navigation menu'}
             aria-expanded={open}
             aria-controls={PRIMARY_NAVIGATION_ID}
-            className="lg:hidden h-11 w-11 flex shrink-0 items-center justify-center rounded-control border border-line text-chalk200 transition-colors hover:border-line-strong hover:bg-panel-2 focus:outline-none"
+            className="lg:hidden flex h-[2.875rem] w-[2.875rem] shrink-0 items-center justify-center rounded-control border border-line text-chalk200 transition-colors hover:border-line-strong hover:bg-panel-2 focus:outline-none"
           >
             <span className="text-lg leading-none" aria-hidden="true">{open ? '\u2715' : '\u2630'}</span>
           </button>
         </div>
       </div>
+
+      <div className="bos-intelligence-rule" aria-hidden="true" />
 
       {/* Menu sheet — below lg only. Every destination lives here, including the
           supporting pages the desktop masthead deliberately leaves out. */}

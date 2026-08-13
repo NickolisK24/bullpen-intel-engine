@@ -361,7 +361,7 @@ function CompactBullpenOperatingStateCard({
   return (
     <article
       data-density="compact"
-      className={`bos-panel p-4 sm:p-6 ${className}`}
+      className={`py-1 ${className}`}
       role="region"
       aria-label={`${view.teamLabel} bullpen operating state`}
     >
@@ -388,10 +388,10 @@ function CompactBullpenOperatingStateCard({
           {/* The answer. Canonical Team State when the backend supplied one,
               the governed non-state message when it did not — never a fourth
               state, never a guess. */}
-          <div className="mt-4 border-t border-line pt-4">
+          <div className="mt-5">
             <StateBadge view={view} prominent />
             {stateNote && (
-              <p className="bos-support mt-2 max-w-measure text-chalk400">
+              <p className="bos-support mt-3 max-w-measure text-chalk400">
                 {stateNote}
               </p>
             )}
@@ -402,13 +402,13 @@ function CompactBullpenOperatingStateCard({
               missing Why is a recorded refusal in the adapter, never a
               sentence written here. */}
           {view.why && (
-            <p className="bos-body mt-4 max-w-measure break-words" data-testid="compact-why">
+            <p className="bos-body mt-4 max-w-measure break-words text-chalk200" data-testid="compact-why">
               {view.why}
             </p>
           )}
 
           {(view.primaryConcern || view.secondaryConcern) && (
-            <div className="mt-4 flex flex-wrap gap-1.5">
+            <div className="mt-5 grid gap-3 border-t border-line pt-4 sm:grid-cols-2">
               {view.primaryConcern && (
                 <CompactConcern label="Primary Concern" concern={view.primaryConcern} />
               )}
@@ -421,7 +421,7 @@ function CompactBullpenOperatingStateCard({
           <CompactContextReads view={view} />
 
           {evidence.length > 0 && (
-            <section className="mt-5 border-t border-line pt-4" aria-label="Evidence">
+            <section className="mt-6 border-t border-line pt-4" aria-label="Evidence">
               <EvidenceList items={evidence} label="Evidence" />
             </section>
           )}
@@ -430,7 +430,7 @@ function CompactBullpenOperatingStateCard({
 
       {/* Freshness stays inside the same region as the claim it qualifies, so
           the represented date can never drift away from the read. */}
-      <section className="mt-5 border-t border-line pt-4" aria-label="Freshness">
+      <section className="mt-6 border-t border-line pt-4" aria-label="Freshness">
         {staleWithError && (
           <div className="mb-3">
             <StaleDataNotice
@@ -440,7 +440,7 @@ function CompactBullpenOperatingStateCard({
             />
           </div>
         )}
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
           <span className="bos-micro">Freshness</span>
           {view.hasFreshness ? (
             <>
@@ -468,7 +468,7 @@ function CompactBullpenOperatingStateCard({
       </section>
 
       {limitations.length > 0 && (
-        <section className="mt-4" aria-label="Limitations">
+        <section className="mt-4 border-l-2 border-line-strong py-0.5 pl-4" aria-label="Limitations">
           <p className="bos-micro">Limitations:</p>
           <p className="bos-meta mt-1.5 max-w-measure normal-case">
             {limitations.join('; ')}
@@ -500,16 +500,17 @@ function StateBadge({ view, compact = false, prominent = false }) {
   if (prominent) {
     return (
       <div
-        className="inline-flex max-w-full items-start gap-2.5"
+        className="inline-flex max-w-full items-start gap-3"
         style={{ color: view.tone.color }}
+        aria-label={`Current Bullpen State: ${view.stateLabel}`}
       >
         <span
-          className="mt-1.5 h-2.5 w-2.5 shrink-0 self-start rounded-full"
-          style={{ backgroundColor: view.tone.dot }}
+          className="mt-2.5 h-3 w-3 shrink-0 rotate-45 self-start border"
+          style={{ borderColor: view.tone.dot, backgroundColor: 'transparent' }}
           aria-hidden="true"
         />
-        <span className="bos-card-title min-w-0 break-words" style={{ color: 'inherit' }}>
-          Current Bullpen State: {view.stateLabel}
+        <span className="min-w-0 break-words font-display text-[1.875rem] font-bold uppercase leading-none tracking-[0.13em] sm:text-[2.375rem]" style={{ color: 'inherit' }}>
+          <span className="sr-only">Current Bullpen State: </span>{view.stateLabel}
         </span>
       </div>
     )
@@ -530,12 +531,12 @@ function StateBadge({ view, compact = false, prominent = false }) {
 
 function CompactConcern({ label, concern }) {
   return (
-    <div className="min-w-[10.5rem] flex-1 rounded border border-dirt/70 bg-field/25 px-2.5 py-1">
-      <div className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
+    <div className="min-w-0">
+      <div className="bos-micro">
         {label}
       </div>
       {concern.label && (
-        <div className="mt-1 break-words font-display text-sm leading-tight tracking-wide text-chalk100">
+        <div className="mt-1.5 break-words text-base font-medium leading-tight text-chalk100">
           {concern.label}
         </div>
       )}
@@ -547,19 +548,19 @@ function CompactContextReads({ view }) {
   const rows = getTeamContextReadRows(view)
   if (rows.length === 0) return null
   return (
-    <section className="mt-2 grid gap-1.5 sm:grid-cols-2 2xl:grid-cols-4" aria-label="Bullpen context">
+    <section className="mt-5 grid border-t border-line sm:grid-cols-2 2xl:grid-cols-4" aria-label="Bullpen context">
       {rows.map(row => {
         const reasons = Array.isArray(row.read?.reasons)
           ? row.read.reasons.filter(Boolean).slice(0, 2)
           : []
 
         return (
-          <div key={row.key} className="rounded border border-dirt/70 bg-field/25 px-2.5 py-1.5">
-            <div className="font-mono text-[9px] uppercase tracking-widest text-chalk500">
+          <div key={row.key} className="border-b border-line py-4 sm:pr-5 sm:odd:border-r sm:even:pl-5 2xl:border-b-0 2xl:border-r 2xl:pl-5 2xl:first:pl-0 2xl:last:border-r-0">
+            <div className="bos-micro">
               {row.label}
             </div>
             {row.read?.label && (
-              <div className="mt-1 break-words font-display text-sm leading-tight tracking-wide text-chalk100">
+              <div className="mt-1.5 break-words text-base font-medium leading-tight text-chalk100">
                 {row.read.label}
               </div>
             )}

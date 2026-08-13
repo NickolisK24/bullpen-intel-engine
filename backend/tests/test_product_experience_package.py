@@ -101,6 +101,17 @@ def test_ux003_lists_are_disjoint_exact_paths_with_no_wildcard():
         assert not entry.startswith('frontend/tests/'), f'test path in runtime list: {entry}'
 
 
+def test_ux003_exact_paths_fail_closed_for_an_unauthorized_frontend_neighbor():
+    """A nearby protected path is denied unless it is explicitly reviewed."""
+    unauthorized = 'frontend/src/components/dashboard/UnauthorizedProbe.jsx'
+    assert unauthorized not in UX003_PRODUCT_EXPERIENCE_FRONTEND_FILES
+    assert not any(
+        unauthorized.startswith(entry.rstrip('*'))
+        for entry in UX003_PRODUCT_EXPERIENCE_FRONTEND_FILES
+        if '*' in entry
+    )
+
+
 def test_ux003_transfers_no_team_state_authority_to_the_browser():
     """Presentation may render a decided Team State; it may not decide one.
 

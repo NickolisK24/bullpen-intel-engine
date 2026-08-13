@@ -253,14 +253,11 @@ test('the answer zone runs identity, then state, then why, then evidence, then f
 test('the Team State is the answer, not corner metadata', () => {
   const html = renderBoard(populatedBoard)
 
-  // Rendered at reading size through the shared card-title level rather than as
-  // a 10px mono pill. The state used to be the least prominent text in the
-  // region that exists to state it.
-  assert.match(
-    html,
-    /class="bos-card-title[^"]*"[^>]*>\s*Current Bullpen State:/,
-    'the state renders at reading size',
-  )
+  // Foundations renders the answer as a 30px/38px condensed state word with a
+  // diamond marker, never as a 10px mono pill.
+  assert.ok(htmlIncludes(html, 'text-[1.875rem]'), 'the state renders at reading size')
+  assert.ok(htmlIncludes(html, 'sm:text-[2.375rem]'), 'the desktop state reaches 38px')
+  assert.ok(htmlIncludes(html, 'rotate-45'), 'the state uses the Foundations diamond')
 
   // Meaning survives colour removal: the label is text, never a bare swatch.
   assert.ok(htmlIncludes(html, 'Current Bullpen State:'))
