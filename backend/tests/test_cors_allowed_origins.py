@@ -42,7 +42,8 @@ def _allow_origin_for(app, origin):
 @pytest.mark.parametrize('origin', [
     'https://baseballos.app',         # canonical custom domain (the fix)
     'https://baseballos.vercel.app',  # legacy domain, kept during transition
-    'http://localhost:5173',          # local dev
+    'http://localhost:5173',          # local dev (Vite)
+    'http://localhost:3000',          # local dev (alternate port)
 ])
 def test_production_and_dev_origins_are_allowed(monkeypatch, origin):
     app = _make_app(monkeypatch)
@@ -60,6 +61,299 @@ def test_cors_origins_env_var_extends_allowlist(monkeypatch):
     assert _allow_origin_for(app, extra) == extra
     # The baked-in production domain is still allowed alongside env additions.
     assert _allow_origin_for(app, 'https://baseballos.app') == 'https://baseballos.app'
+
+
+# ── CORS request-path regression contract (#601) ─────────────────────────────
+#
+# The backend's CORS layer is a production request-path dependency: it decides
+# which browser origins may read /api/*. The tests above pin the allowlist, but
+# they only exercise simple GET on /api/health. That leaves the rest of the
+# contract — preflight, credentials, wildcards, path scoping, Private Network
+# Access — unasserted, so a dependency upgrade could change any of it and the
+# suite would stay green.
+#
+# The cases below close that gap. Two of them (Private Network Access and
+# request-path case sensitivity) deliberately assert CURRENT, KNOWN-INSECURE
+# behaviour so the security upgrade has an executable before/after receipt.
+# Those two are marked inline and are expected to be flipped — never deleted —
+# when the dependency moves.
+
+PROD_ORIGIN = 'https://baseballos.app'
+LEGACY_ORIGIN = 'https://baseballos.vercel.app'
+DEV_ORIGIN_5173 = 'http://localhost:5173'
+DEV_ORIGIN_3000 = 'http://localhost:3000'
+EVIL_ORIGIN = 'https://evil.example'
+
+# Real routes, chosen because they exercise the genuine production CORS path
+# without needing database schema:
+#   * the public one answers 200 with no auth and no database read;
+#   * the authenticated one answers 401 from the bearer-token check, which runs
+#     before any database access. CORS headers are applied by the extension
+#     regardless of the view's status, which is exactly what these assert.
+PUBLIC_API_ROUTE = '/api/methodology/'
+AUTHENTICATED_API_ROUTE = '/api/me/teams'
+# Outside the r"/api/*" resource pattern. CORS scoping is decided from the
+# request path, so whether this path routes to a view is irrelevant here.
+NON_API_ROUTE = '/health'
+
+
+def _request(app, method, path, origin=None, **extra_headers):
+    headers = dict(extra_headers)
+    if origin is not None:
+        headers['Origin'] = origin
+    return getattr(app.test_client(), method)(path, headers=headers)
+
+
+def _preflight(app, path, origin, request_method='POST',
+               request_headers='Authorization, Content-Type', **extra_headers):
+    headers = {
+        'Access-Control-Request-Method': request_method,
+        'Access-Control-Request-Headers': request_headers,
+    }
+    headers.update(extra_headers)
+    return _request(app, 'options', path, origin=origin, **headers)
+
+
+def _acao(response):
+    return response.headers.get('Access-Control-Allow-Origin')
+
+
+# C1-C4 — every allowlisted origin is authorized. Covered by
+# test_production_and_dev_origins_are_allowed above (all four origins).
+
+# C5 — an arbitrary hostile origin receives no CORS authorization.
+def test_hostile_origin_receives_no_cors_authorization(monkeypatch):
+    app = _make_app(monkeypatch)
+    assert _acao(_request(app, 'get', '/api/health', origin=EVIL_ORIGIN)) is None
+
+
+# C6 — the opaque "null" origin (sandboxed iframe, file://, some redirects) is
+# not an allowlist entry and must not be authorized.
+def test_null_origin_receives_no_cors_authorization(monkeypatch):
+    app = _make_app(monkeypatch)
+    assert _acao(_request(app, 'get', '/api/health', origin='null')) is None
+
+
+# C7 — preflight from an allowed origin is authorized, and the method/header
+# negotiation the frontend depends on is governed rather than absent.
+def test_preflight_from_allowed_origin_is_authorized(monkeypatch):
+    app = _make_app(monkeypatch)
+    resp = _preflight(app, PUBLIC_API_ROUTE, PROD_ORIGIN)
+
+    assert _acao(resp) == PROD_ORIGIN
+
+    allowed_methods = {
+        method.strip().upper()
+        for method in (resp.headers.get('Access-Control-Allow-Methods') or '').split(',')
+        if method.strip()
+    }
+    # The requested method is granted, and the response enumerates a governed
+    # method set rather than leaving it unset.
+    assert 'POST' in allowed_methods
+    assert 'GET' in allowed_methods
+    assert allowed_methods
+
+    allowed_headers = {
+        header.strip().lower()
+        for header in (resp.headers.get('Access-Control-Allow-Headers') or '').split(',')
+        if header.strip()
+    }
+    # Both headers the browser client actually sends must survive preflight.
+    assert 'authorization' in allowed_headers
+    assert 'content-type' in allowed_headers
+
+
+# C8 — the same preflight from an unapproved origin is not authorized.
+def test_preflight_from_hostile_origin_is_not_authorized(monkeypatch):
+    app = _make_app(monkeypatch)
+    resp = _preflight(app, PUBLIC_API_ROUTE, EVIL_ORIGIN)
+
+    assert _acao(resp) is None
+    assert resp.headers.get('Access-Control-Allow-Methods') is None
+    assert resp.headers.get('Access-Control-Allow-Headers') is None
+
+
+# C9 — CRITICAL SECURITY INVARIANT. The API is not configured for credentialed
+# cross-origin requests, so Access-Control-Allow-Credentials must never be
+# emitted. Combined with the explicit allowlist, this is what keeps a permissive
+# CORS response from being able to carry cookies or auth material.
+def test_credentials_are_never_allowed_on_simple_request(monkeypatch):
+    app = _make_app(monkeypatch)
+    resp = _request(app, 'get', '/api/health', origin=PROD_ORIGIN)
+
+    assert _acao(resp) == PROD_ORIGIN
+    assert resp.headers.get('Access-Control-Allow-Credentials') is None
+
+
+def test_credentials_are_never_allowed_on_preflight(monkeypatch):
+    app = _make_app(monkeypatch)
+    resp = _preflight(app, PUBLIC_API_ROUTE, PROD_ORIGIN)
+
+    assert _acao(resp) == PROD_ORIGIN
+    assert resp.headers.get('Access-Control-Allow-Credentials') is None
+
+
+# C10 — the allowlist is echoed per-origin; a wildcard is never returned.
+@pytest.mark.parametrize('origin', [
+    PROD_ORIGIN,
+    LEGACY_ORIGIN,
+    DEV_ORIGIN_5173,
+    DEV_ORIGIN_3000,
+])
+def test_allowed_origin_is_echoed_and_never_wildcarded(monkeypatch, origin):
+    app = _make_app(monkeypatch)
+    resp = _request(app, 'get', '/api/health', origin=origin)
+
+    assert _acao(resp) == origin
+    assert _acao(resp) != '*'
+
+
+def test_preflight_never_returns_wildcard_origin(monkeypatch):
+    app = _make_app(monkeypatch)
+    assert _acao(_preflight(app, PUBLIC_API_ROUTE, PROD_ORIGIN)) != '*'
+
+
+# C11 — Private Network Access is not granted.
+#
+# Flask-CORS 4.0.0 answered this preflight with
+# Access-Control-Allow-Private-Network: true unconditionally, with no
+# configuration option to disable it (CVE-2024-6221). The previous commit
+# asserted that as the pre-upgrade receipt; this is the post-upgrade state.
+#
+# The governed condition is "private network access is not granted", so that is
+# what this asserts. Flask-CORS 6.0.5 expresses it by emitting the header with
+# the value "false" rather than omitting it — that exact spelling is an
+# implementation detail and is documented here rather than pinned, so a future
+# release that omits the header instead still passes.
+def test_private_network_access_is_not_granted(monkeypatch):
+    app = _make_app(monkeypatch)
+    resp = _preflight(
+        app,
+        '/api/health',
+        PROD_ORIGIN,
+        request_method='GET',
+        **{'Access-Control-Request-Private-Network': 'true'},
+    )
+
+    # The origin itself is still allowlisted — this is about the PNA grant only.
+    assert _acao(resp) == PROD_ORIGIN
+    assert resp.headers.get('Access-Control-Allow-Private-Network') != 'true'
+
+
+# C12 — Private Network Access is still governed by the allowlist: a hostile
+# origin gets nothing, on this version and every later one.
+def test_private_network_access_from_hostile_origin_is_not_authorized(monkeypatch):
+    app = _make_app(monkeypatch)
+    resp = _preflight(
+        app,
+        '/api/health',
+        EVIL_ORIGIN,
+        request_method='GET',
+        **{'Access-Control-Request-Private-Network': 'true'},
+    )
+
+    assert _acao(resp) is None
+    assert resp.headers.get('Access-Control-Allow-Private-Network') is None
+
+
+# C13 — the CORS policy is scoped to r"/api/*". Paths outside it are not
+# authorized for cross-origin reads even from an allowlisted origin.
+def test_non_api_path_receives_no_cors_authorization(monkeypatch):
+    app = _make_app(monkeypatch)
+    assert _acao(_request(app, 'get', NON_API_ROUTE, origin=PROD_ORIGIN)) is None
+
+
+# C14 — the r"/api/*" resource pattern is matched case-sensitively.
+#
+# Flask-CORS 4.0.0 matched the pattern case-insensitively (CVE-2024-6866), so an
+# uppercase /API/... path was treated as in-scope and received CORS headers. The
+# previous commit asserted that as the pre-upgrade receipt; this is the
+# post-upgrade state.
+#
+# BaseballOS declares a single resource policy, so the old behaviour granted no
+# additional origin access — but URL paths are case-sensitive, and the policy
+# should only apply where it was declared.
+def test_uppercase_api_path_is_outside_the_cors_policy(monkeypatch):
+    app = _make_app(monkeypatch)
+    resp = _request(app, 'get', '/API/health', origin=PROD_ORIGIN)
+
+    assert _acao(resp) is None
+
+
+# C15 — covered by test_cors_origins_env_var_extends_allowlist above: an extra
+# configured origin is accepted without displacing the baked-in production
+# origins.
+
+# C16 — CORS_ORIGINS parsing tolerates surrounding whitespace and ignores empty
+# entries, so a hand-edited environment variable cannot silently authorize an
+# empty origin or drop a valid one.
+def test_cors_origins_parsing_handles_whitespace_and_empty_entries(monkeypatch):
+    app = _make_app(
+        monkeypatch,
+        cors_origins=' https://a.example , , https://b.example ',
+    )
+
+    # Surrounding whitespace is stripped: the configured ' https://a.example '
+    # authorizes the exact origin a browser actually sends.
+    assert _allow_origin_for(app, 'https://a.example') == 'https://a.example'
+    assert _allow_origin_for(app, 'https://b.example') == 'https://b.example'
+    # The baked-in production origins survive the env addition.
+    assert _allow_origin_for(app, PROD_ORIGIN) == PROD_ORIGIN
+    assert _allow_origin_for(app, LEGACY_ORIGIN) == LEGACY_ORIGIN
+    # The empty entry between the commas is dropped rather than widening the
+    # allowlist: a hostile origin is still refused, and a whitespace-only origin
+    # never matches the stripped empty entry.
+    assert _acao(_request(app, 'get', '/api/health', origin=EVIL_ORIGIN)) is None
+    assert _acao(_request(app, 'get', '/api/health', origin='   ')) is None
+
+
+# A request that carries no Origin header at all is not a cross-origin browser
+# request, and the extension answers it with a default allowlisted origin rather
+# than a wildcard or a caller-supplied value. Pinned so the fallback can never
+# silently widen: it must stay inside the allowlist and never become "*".
+def test_request_without_origin_header_falls_back_inside_the_allowlist(monkeypatch):
+    app = _make_app(monkeypatch)
+    resp = app.test_client().get('/api/health')
+
+    allowlisted = {PROD_ORIGIN, LEGACY_ORIGIN, DEV_ORIGIN_5173, DEV_ORIGIN_3000}
+    assert _acao(resp) != '*'
+    assert _acao(resp) in allowlisted
+    assert resp.headers.get('Access-Control-Allow-Credentials') is None
+
+
+# C17 — a real public, unauthenticated API route follows the same policy as
+# /api/health; the contract is not special-cased to the health endpoint.
+def test_public_api_route_follows_the_same_cors_policy(monkeypatch):
+    app = _make_app(monkeypatch)
+
+    allowed = _request(app, 'get', PUBLIC_API_ROUTE, origin=PROD_ORIGIN)
+    assert _acao(allowed) == PROD_ORIGIN
+    assert allowed.headers.get('Access-Control-Allow-Credentials') is None
+
+    hostile = _request(app, 'get', PUBLIC_API_ROUTE, origin=EVIL_ORIGIN)
+    assert _acao(hostile) is None
+
+
+# C18 — an authenticated/internal route is not MORE permissive than a public
+# one. No production token is used: the route answers 401 without credentials,
+# and CORS headers are applied independently of that, which is precisely the
+# property under test.
+def test_authenticated_api_route_is_not_more_permissive(monkeypatch):
+    app = _make_app(monkeypatch)
+
+    hostile = _request(app, 'get', AUTHENTICATED_API_ROUTE, origin=EVIL_ORIGIN)
+    assert _acao(hostile) is None
+    assert hostile.headers.get('Access-Control-Allow-Credentials') is None
+
+    hostile_preflight = _preflight(app, AUTHENTICATED_API_ROUTE, EVIL_ORIGIN)
+    assert _acao(hostile_preflight) is None
+
+    # The allowlisted origin is authorized on the same route, so the assertion
+    # above is about the origin being rejected rather than the route being
+    # unreachable.
+    allowed = _request(app, 'get', AUTHENTICATED_API_ROUTE, origin=PROD_ORIGIN)
+    assert _acao(allowed) == PROD_ORIGIN
+    assert allowed.headers.get('Access-Control-Allow-Credentials') is None
 
 
 # ── D-051 production full-daily trigger authority ────────────────────────────
