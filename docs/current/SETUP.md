@@ -44,9 +44,13 @@ cd backend
 python -m venv venv
 source venv/bin/activate          # macOS/Linux
 # venv\Scripts\activate          # Windows
-pip install -r requirements.txt
+pip install -r requirements-dev.txt
 cp .env.example .env
 ```
+
+`requirements-dev.txt` pulls in `requirements.txt` and adds pytest. Production
+installs `requirements.txt` alone, so use the dev file locally or the tests in
+section 7 will not run.
 
 Set at minimum:
 

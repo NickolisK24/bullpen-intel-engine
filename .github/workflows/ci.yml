@@ -78,10 +78,16 @@ jobs:
         with:
           python-version: '3.11'
           cache: pip
-          cache-dependency-path: backend/requirements.txt
+          # requirements-dev.txt pulls in requirements.txt, so both files
+          # determine the resolved install and both belong in the cache key.
+          cache-dependency-path: |
+            backend/requirements.txt
+            backend/requirements-dev.txt
 
-      - name: Install backend dependencies
-        run: pip install -r requirements.txt
+      # Shard verification runs live pytest collection, so this job needs the
+      # test dependencies rather than the runtime-only set.
+      - name: Install backend test dependencies
+        run: pip install -r requirements-dev.txt
 
       - name: Verify every backend test is owned by exactly one shard
         run: |
@@ -150,10 +156,15 @@ jobs:
         with:
           python-version: '3.11'
           cache: pip
-          cache-dependency-path: backend/requirements.txt
+          # requirements-dev.txt pulls in requirements.txt, so both files
+          # determine the resolved install and both belong in the cache key.
+          cache-dependency-path: |
+            backend/requirements.txt
+            backend/requirements-dev.txt
 
-      - name: Install backend dependencies
-        run: pip install -r requirements.txt
+      # These shards run pytest directly.
+      - name: Install backend test dependencies
+        run: pip install -r requirements-dev.txt
 
       - name: Resolve the files this shard owns
         run: |

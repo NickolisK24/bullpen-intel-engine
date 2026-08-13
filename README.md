@@ -193,7 +193,7 @@ cd backend
 python -m venv venv
 source venv/bin/activate          # macOS/Linux
 # venv\Scripts\activate          # Windows
-pip install -r requirements.txt
+pip install -r requirements-dev.txt   # runtime deps + pytest; production uses requirements.txt
 cp .env.example .env
 # Set a local DATABASE_URL and FLASK_APP=app.py
 flask db upgrade

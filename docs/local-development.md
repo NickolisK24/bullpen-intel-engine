@@ -149,8 +149,12 @@ across sessions without committing secrets.
 cd D:\Programming\baseballos\backend
 python -m venv venv
 .\venv\Scripts\Activate.ps1
-pip install -r requirements.txt
+pip install -r requirements-dev.txt
 ```
+
+`requirements-dev.txt` pulls in `requirements.txt` and adds pytest. Production
+installs `requirements.txt` alone, so use the dev file locally or the test
+commands below will not run.
 
 ### 5. Load The Local Env In The Backend Terminal
 
