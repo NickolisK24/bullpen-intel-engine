@@ -145,6 +145,40 @@ H12_DOCUMENT_PATH_REPAIR_PATHS = (
     'backend/api/team_operations.py',
 )
 
+# Reviewed exceptions for the current branch, and only for the current branch.
+#
+# H-6 / H-7 residual closeout, August 14 2026. Three frozen surfaces changed,
+# and in each case the guard fired correctly: what a reader receives DID move.
+# That is the package.
+#
+# * ``team_state_card_metrics.py`` (Team State prefix) and
+#   ``share_artifact_public.py`` (Share Artifact service prefix) — the share
+#   card published the availability ENGINE state into its reader-facing
+#   Availability column, so ``Monitor`` and ``Avoid`` reached readers on a
+#   public route. The metrics builder now projects through the public
+#   vocabulary owner; the read boundary withholds a non-public value on an
+#   already-published artifact.
+# * ``bullpen_board.py`` (Phase 0E legacy public path) — the On Watch count is
+#   authored whenever there is one, so generated previews stop collapsing onto
+#   a single constant sentence.
+#
+# The exception is exactly as wide as those changes. No stored artifact is
+# rewritten, no availability or Team State calculation moves, no threshold
+# moves, and no publication gate changes. What the guards actually protect is
+# proved directly and on every run by
+# test_team_state_card_v1_2.py (public vocabulary, engine words absent,
+# fail-closed withholding, ordering) and test_preview_evidence_corpus.py
+# (evidence discrimination, determinism, count grammar) — both stronger
+# statements than a diff check can make.
+#
+# Entries go inert the moment this branch merges: the paths land on origin/main
+# and can no longer appear in a future ``git diff origin/main...HEAD``.
+PUBLIC_INTEGRITY_RESIDUAL_PATHS = (
+    'backend/services/bullpen_board.py',
+    'backend/services/share_artifact_public.py',
+    'backend/services/team_state_card_metrics.py',
+)
+
 
 def normalize(path):
     """Repository-relative path with forward slashes and no surrounding space."""

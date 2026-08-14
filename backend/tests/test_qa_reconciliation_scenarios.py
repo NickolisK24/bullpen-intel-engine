@@ -302,7 +302,8 @@ def test_phase0e_switches_and_legacy_public_files_not_modified():
         # types. A wording change fails there instead of passing silently here.
         approved=freeze_policy.INTERNAL_ONLY_API_PATHS + (
             'backend/api/explanations.py',
-        ) + freeze_policy.H12_DOCUMENT_PATH_REPAIR_PATHS,
+        ) + freeze_policy.H12_DOCUMENT_PATH_REPAIR_PATHS
+        + freeze_policy.PUBLIC_INTEGRITY_RESIDUAL_PATHS,
     )
     assert moved == [], (
         f'frozen legacy public surfaces changed: {moved}. A public route or '
