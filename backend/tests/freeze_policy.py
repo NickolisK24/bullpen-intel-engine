@@ -114,6 +114,37 @@ INTERNAL_ONLY_API_PATHS = (
     'backend/api/performance_intelligence_admin.py',
 )
 
+# Reviewed exceptions for the current branch, and only for the current branch.
+#
+# This is the rare, deliberate event the module docstring describes: an approved
+# change to a frozen surface names its exception at the time it is made. Both
+# public-API guards read this one tuple, so an exception is stated once rather
+# than copied into two test modules -- the duplication this module exists to end.
+#
+# H-12, August 14 2026. Seven governing-document paths shipped in API response
+# metadata and none of them resolved: the Recommendation Engine V1 policy,
+# contract, and implementation plan, two V3 team-operations phase records, and a
+# V5 observation phase record had all been archived to docs/archive/2026-06/.
+# The values now name the canonical owner of each boundary instead, because an
+# archived phase record is implementation history rather than the contract an
+# API response obeys.
+#
+# The exception is exactly as wide as that change: these two modules' route
+# handlers, response shapes, status codes, gating, and baseball values are
+# untouched. Nothing here exempts the *behavior* these guards protect --
+# test_document_authority_contract.py::TestCodeCitedDocumentPaths proves on
+# every run that every cited path exists, is not archived, and belongs to the
+# canonical or current-methodology class, which is a stronger statement than a
+# diff check can make.
+#
+# Entries become inert the moment this branch merges: the paths land on
+# origin/main and can no longer appear in a future ``git diff origin/main...HEAD``.
+# Remove them when convenient; leaving them protects nothing and grants nothing.
+H12_DOCUMENT_PATH_REPAIR_PATHS = (
+    'backend/api/recommendations.py',
+    'backend/api/team_operations.py',
+)
+
 
 def normalize(path):
     """Repository-relative path with forward slashes and no surrounding space."""
