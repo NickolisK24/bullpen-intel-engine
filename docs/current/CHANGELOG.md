@@ -27,10 +27,12 @@ milestones. It does not replace the detailed evidence records linked from
   the Product Experience Standard owns its public field.
 - The Roadmap recorded that no gated, machine-attributed generated commit
   existed on main. One does — commit `2e83fa0` from scheduled run
-  `31794183367`. The Roadmap now records it, along with the deployment
-  verification that is still outstanding, and D-013 is amended to scope sole
-  human authorship to engineering work with the governed publication job as
-  its one machine exception under D-053.
+  `31794183367` — and CI-003 (#598) is complete: the deployment succeeded and
+  read-only verification of the live routed page served snapshot 411, sync run
+  721, and data through 2026-08-13. The active objective advances to the next
+  already-approved item, permanent daily-sync work reduction. D-013 is amended
+  to scope sole human authorship to engineering work with the governed
+  publication job as its one machine exception under D-053.
 - API responses advertised governing documents at seven paths that no longer
   exist, and an availability readiness gate reported PASS without reading the
   corpus it was written to check. Both were repaired.
