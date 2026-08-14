@@ -14,13 +14,19 @@ const ACRONYM_TOKENS = new Set([
 // `governance metadata` was removed: no backend module emits that key, so the
 // entry could never fire, and the label it invented — "decision boundary
 // detail" — was itself internal-sounding copy with no owner behind it.
+//
+// `ranking applied` and `selection made` were removed for the same reason, with
+// the additional problem that they claimed ownership of a label somebody else
+// already owned. Those two governance flags reach the reader only through
+// ExplanationDisclosure's GovernanceStrip, which renders its own "Team order"
+// and "Pitcher choice" headings from the camelCase view fields and never routes
+// them through humanizeLabel. Two places named the same thing; only one of them
+// could ever fire.
 const DISPLAY_LABEL_REPLACEMENTS = new Map([
   ['trust metadata', 'visibility detail'],
   ['trust metadata limited', 'visibility detail limited'],
   ['freshness metadata', 'freshness detail'],
   ['fail closed', 'source boundary'],
-  ['ranking applied', 'team order'],
-  ['selection made', 'pitcher choice'],
 ])
 
 function normalizeDisplayString(value) {

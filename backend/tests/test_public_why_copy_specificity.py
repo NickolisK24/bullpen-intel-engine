@@ -268,3 +268,35 @@ def test_a_legacy_document_without_stored_copy_still_renders_safely():
     items = _evidence_items({'constraints': [_constraint('availability_distribution', 2)]}, {})
     assert items[0]['detail'] == '2 relievers are limited or unavailable.'
     assert 'availability_distribution' not in items[0]['label']
+
+
+# ── clean options: one concept, three governed scopes ───────────────────────
+#
+# The audit flagged "clean options" as a cross-surface conflict. It is not
+# drift; it is surface scoping that had never been written down. Pinned here so
+# a future change has to break a test rather than a reader's page.
+
+def test_share_artifact_copy_may_say_clean_options():
+    """The Share Artifact guard is the owner on this surface, and it allows it."""
+    copy = _copy(FRESH)
+    assert 'clean options' in copy['why']
+    # build_public_copy runs guard_public_copy internally; reaching here is the
+    # proof that the owning guard permits the phrase.
+
+
+def test_the_editorial_deny_list_is_not_the_share_artifact_guard():
+    """Widening the review deny list into a global ban would unpublish the why."""
+    from services.editorial_voice_contract_v1 import EDITORIAL_BANNED_LANGUAGE
+    from services.team_state_public_vocabulary import find_banned_public_language
+
+    assert 'clean options' in EDITORIAL_BANNED_LANGUAGE
+    # The Share Artifact guard is a different authority and does not ban it.
+    assert find_banned_public_language('why', _copy(FRESH)['why']) is None
+
+
+def test_the_review_surfaces_still_deny_clean_options():
+    """The narrower scope keeps its rule; this package did not weaken it."""
+    from services.editorial_voice_contract_v1 import find_editorial_violations
+
+    violations = find_editorial_violations('The bullpen has four clean options tonight.')
+    assert any('clean option' in str(v).lower() for v in violations)
