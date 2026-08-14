@@ -95,7 +95,9 @@ def test_critical_story_has_opening_context():
     draft = _team_story()
     assert draft.story_priority == 'CRITICAL'
     # Opening establishes the baseball situation with the starter, not the bullpen.
-    assert draft.body.startswith('After their most recent game, Landen Roupp gave the Giants')
+    # The opener names the starter and his innings, so it locates the game
+    # itself and carries no time prefix.
+    assert draft.body.startswith('Landen Roupp gave the Giants')
     assert draft.observations  # CRITICAL carries the "why" list
     assert draft.evidence
 

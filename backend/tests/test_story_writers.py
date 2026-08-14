@@ -176,7 +176,7 @@ def test_team_story_translates_lost_game_shape_facts():
         'Late lead slipped away',
         'Lead disappeared late',
     }
-    assert draft.body.startswith('After their most recent game,')
+    assert draft.body.startswith('In their most recent game,')
     assert 'four-run lead' in draft.body
     assert 'seven runs' in draft.body
     assert 'slipped away in the late innings' in draft.body
@@ -694,10 +694,10 @@ def test_low_confidence_never_invents_detail():
 
 # ── Safe time context respected ───────────────────────────────────────────────
 
-def test_safe_time_after_most_recent_game_prefix():
+def test_safe_time_most_recent_game_prefix_is_in_game_framing():
     draft = TeamStoryWriter(_feed()).write()
     assert draft.safe_time_context == 'AFTER_MOST_RECENT_GAME'
-    assert draft.body.startswith('After their most recent game,')
+    assert draft.body.startswith('In their most recent game,')
 
 
 def test_safe_time_current_status_prefix_on_low_confidence():

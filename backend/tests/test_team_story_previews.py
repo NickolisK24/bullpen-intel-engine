@@ -363,7 +363,10 @@ def test_neutral_team_leads_with_canonical_team_state_and_a_baseball_point():
     assert preview['og_title'] == 'Quiet Club Bullpen: Stretched'
     assert preview['og_description'] == (
         'Quiet Club bullpen state: Stretched. '
-        'Five relievers are available from the latest completed workload data. '
+        # The preview selects the most state-discriminating reason the board
+        # authored, not its first one: an On Watch count explains a Stretched
+        # read, an identical available count across clubs does not.
+        'Two relievers are in the On Watch group. '
         f'Data through {DATA_THROUGH}.'
     )
     assert preview['og_title'] != preview['og_description']
@@ -599,7 +602,9 @@ def test_the_crawlable_body_states_team_state_point_date_and_the_current_board()
 
     assert 'Crawl Club Bullpen' in body
     assert 'BaseballOS Team State: Vulnerable.' in body
-    assert 'Five relievers are available from the latest completed workload data.' in body
+    assert 'Two relievers are in the On Watch group.' in body
+    # Provenance stays in the dated line; it is not embedded in the baseball claim.
+    assert 'from the latest completed workload data' not in body
     assert 'Baseball data through' in body
     assert DATA_THROUGH in body
     # The date is marked up as a machine-readable time, not just prose.

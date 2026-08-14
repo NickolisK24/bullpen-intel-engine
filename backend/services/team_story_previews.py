@@ -42,6 +42,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import quote
 
+from services.bullpen_board import METHODOLOGY_REASON
 from services.public_bullpen_copy import guard_public_prose
 from services.team_state_public_vocabulary import PUBLIC_TEAM_STATE_LABEL_SET
 
@@ -235,23 +236,56 @@ def _team_state_read(board):
     return None, message
 
 
-def _baseball_point(board):
-    """One concrete, already backend-authored baseball sentence from the board.
+# The board publishes its governed reasons in a fixed order whose first entry
+# is always the available-count sentence. Taking that first entry gave three
+# clubs in three different Team States the same preview sentence, because an
+# identical available count says nothing about why the states differ -- and that
+# sentence is also the one that carries provenance ("from the latest completed
+# workload data") inside a baseball claim.
+#
+# So the preview SELECTS among the reasons the board already authored, most
+# state-discriminating first. Nothing is composed here, no count is recomputed,
+# and no new metric was added: the ranking reads the canonical public
+# availability labels that are already in the published sentences.
+_DISCRIMINATING_STATUS_TOKENS = ('Unavailable', 'On Watch')
 
-    Preference order is the board's own publication order: the first governed
-    evidence reason (a count-referencing sentence), then the governed health
-    label, then an honest note that the supporting reads are limited. Nothing is
-    composed from counts here.
+
+def _reason_rank(text):
+    """Lower sorts first. Ranks a governed reason by how much it explains."""
+    if 'Unavailable' in text and not text.lower().startswith('no relievers'):
+        return 0                      # a non-zero constraint: the strongest why
+    if 'On Watch' in text:
+        return 1                      # partial constraint
+    if 'Unavailable' in text:
+        return 2                      # "No relievers are marked Unavailable."
+    return 3                          # the generic available-count sentence
+
+
+def _baseball_point(board):
+    """The most state-discriminating baseball sentence the board authored.
+
+    Preference is by explanatory strength rather than the board's publication
+    order: a stated constraint (Unavailable, then On Watch) explains a Team
+    State; a bare available count does not, and repeats across clubs whose
+    states differ. Falls back to the governed health label, then to an honest
+    limited-read note. Nothing is composed from counts here.
     """
     context = (board or {}).get('context')
     context = context if isinstance(context, dict) else {}
     health = context.get('health')
     health = health if isinstance(health, dict) else {}
 
-    for reason in health.get('reasons') or []:
+    candidates = []
+    for index, reason in enumerate(health.get('reasons') or []):
         text = _clean_text(reason)
-        if text:
-            return text
+        # The methodology line is a standing disclosure, not evidence about
+        # this club, so it never becomes the preview's baseball point.
+        if text and text != METHODOLOGY_REASON:
+            candidates.append((_reason_rank(text), index, text))
+    if candidates:
+        # Sorting on (rank, original index) keeps selection fully deterministic:
+        # equal-rank reasons resolve to the board's own published order.
+        return sorted(candidates)[0][2]
 
     label = _clean_text(health.get('label'))
     if label:
