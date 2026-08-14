@@ -44,9 +44,21 @@ ROADMAP_PATH = (
     REPO_ROOT / 'docs' / 'canonical' / '05_PRODUCT_ROADMAP_DECISION_LEDGER.md'
 )
 
-EXPECTED_VERSION = '3.9'
-EXPECTED_EFFECTIVE_DATE = 'August 13, 2026'
-EXPECTED_MAIN = 'e3ad8bdf47a0bf6209917051df2070fba8eff417'
+EXPECTED_VERSION = '4.0'
+EXPECTED_EFFECTIVE_DATE = 'August 14, 2026'
+EXPECTED_MAIN = 'b2f0e90718321857f3f631cda3c81c1175af85de'
+
+# The gated generated-content publication commit and the scheduled run that
+# produced it. Version 3.9 asserted no such commit existed; that was true when
+# written and false a day later, which is exactly the failure mode this file
+# exists to catch.
+CI_003_PUBLICATION_COMMIT = '2e83fa0'
+CI_003_PUBLICATION_RUN = '31794183367'
+
+# The DEP-001 edition, whose revision entry this file has pinned since #647.
+# Later editions append beside it; they do not replace what it recorded.
+DEP_VERSION = '3.9'
+DEP_EFFECTIVE_DATE = 'August 13, 2026'
 
 CLOSEOUT_HEADING = 'DIST-003 (#594) Production Closeout Evidence'
 
@@ -142,16 +154,16 @@ def _next_approved_work_order(text):
     return [package for _, package in packages]
 
 
-def test_roadmap_declares_version_3_9():
+def test_roadmap_declares_version_4_0():
     text = _roadmap_text()
 
     assert f'| Version | {EXPECTED_VERSION} |' in text
     assert f'VERSION {EXPECTED_VERSION}' in text
-    assert '| Version | 3.8 |' not in text
-    assert 'VERSION 3.8' not in text
+    assert '| Version | 3.9 |' not in text
+    assert 'VERSION 3.9' not in text
 
 
-def test_effective_date_is_august_13_2026():
+def test_effective_date_is_august_14_2026():
     text = _roadmap_text()
 
     assert f'| Effective date | {EXPECTED_EFFECTIVE_DATE} |' in text
@@ -164,8 +176,10 @@ def test_repository_basis_is_merged_main_with_no_in_flight_branch():
     assert EXPECTED_MAIN in text
     assert '| In-flight branch | None |' in text
 
-    # The superseded baseline must not still be claimed as current.
+    # A superseded baseline must not still be claimed as current. The prior
+    # basis may be named as history; it may not sit in the current-state row.
     assert '| Repository main | 18dd6914a933928254e969c85ecb19cf75b6a9f2 |' not in text
+    assert '| Repository main | e3ad8bdf47a0bf6209917051df2070fba8eff417 |' not in text
 
 
 def test_dist_003_is_recorded_complete_and_production_verified():
@@ -242,16 +256,43 @@ def test_ci_003_closed_issue_is_not_recorded_as_production_proof():
     """A closed issue and recorded evidence are different claims.
 
     This is the successor to the PR #639 guard: the same error in a new shape.
+    The guard survives the evidence arriving. Half of CI-003's recorded
+    requirement — the gated, tree-exact, machine-attributed commit — landed on
+    August 14; the deployment verification did not. Collapsing that into
+    "complete" is the same collapse the closed issue invited.
     """
     body = _section(_roadmap_text(), '3. Active Objective')
 
     assert 'closed August 12, 2026 through its linked pull request #641' in body
-    assert 'has **not** yet been recorded' in body
-    assert 'no gated, tree-exact, machine-attributed generated commit exists on main' in body
     assert 'the closed issue and the recorded evidence gate are different claims' in body
 
+    # The outstanding half must stay outstanding, and must stay named.
+    assert 'read-only deployment verification' in body
+    assert 'has not been taken' in body
+
     # The proof must be taken, never manufactured.
-    assert 'do not force, rerun, or manually dispatch it' in body
+    assert 'do not force, rerun, or manually dispatch' in body
+
+
+def test_ci_003_publication_evidence_is_recorded_with_its_provenance():
+    """The recorded negative went stale, so the positive carries its receipt.
+
+    A bare "the commit exists" would rot the same way. The run, the attempt,
+    the machine identity, the validated tree, and the snapshot are what make
+    the claim checkable against the repository itself.
+    """
+    body = _section(_roadmap_text(), '3. Active Objective')
+
+    assert CI_003_PUBLICATION_COMMIT in body
+    assert CI_003_PUBLICATION_RUN in body
+    assert 'BaseballOS Automation <baseballoshq@gmail.com>' in body
+    assert 'Snapshot-ID 411' in body
+
+    # The retired false negative may not return in any edition.
+    assert (
+        'no gated, tree-exact, machine-attributed generated commit exists on main'
+        not in body
+    )
 
     # A documentation pass does not move this package.
     assert (
@@ -438,11 +479,41 @@ def test_completion_log_records_the_closed_packages_with_evidence():
     assert ACCEPTANCE_EXPIRY in joined
 
 
-def test_revision_history_records_the_version_3_9_entry():
+def test_revision_history_records_the_version_4_0_entry():
+    """The current edition names what it reconciled and what it did not move."""
     text = _roadmap_text()
     rows = [
         line for line in text.splitlines()
         if line.startswith(f'| {EXPECTED_VERSION} | {EXPECTED_EFFECTIVE_DATE} |')
+    ]
+    assert len(rows) == 1, 'exactly one Version 4.0 revision-history row'
+    entry = rows[0]
+
+    assert 'Nickolis Kacludis' in entry
+    for claimed in (
+        'b2f0e90',
+        CI_003_PUBLICATION_COMMIT,
+        CI_003_PUBLICATION_RUN,
+        'D-013',
+        'D-053',
+        'Amended',
+        'read-only deployment verification',
+    ):
+        assert claimed in entry, claimed
+
+    # A reconciliation claims no new authority.
+    assert (
+        'No Decision Ledger ID was added, weakened, renumbered, or removed'
+        in entry
+    )
+    assert 'D-051 and D-052 stand unchanged' in entry
+
+
+def test_revision_history_records_the_version_3_9_entry():
+    text = _roadmap_text()
+    rows = [
+        line for line in text.splitlines()
+        if line.startswith(f'| {DEP_VERSION} | {DEP_EFFECTIVE_DATE} |')
     ]
     assert len(rows) == 1, 'exactly one Version 3.9 revision-history row'
     entry = rows[0]

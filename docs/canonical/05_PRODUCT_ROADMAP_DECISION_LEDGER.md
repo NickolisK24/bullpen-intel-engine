@@ -8,11 +8,11 @@ Condensed Canonical Edition · Visual Audit Integrated
 
 One active objective. One canonical roadmap. Every durable decision recorded.
 
-VERSION 3.9  ·  DEPENDENCY-SECURITY CURRENT-STATE EDITION
+VERSION 4.0  ·  DOCUMENT-AUTHORITY CURRENT-STATE EDITION
 
 Owner: Nickolis Kacludis
 
-Effective August 13, 2026
+Effective August 14, 2026
 
 # Contents
 
@@ -50,17 +50,17 @@ This edition keeps the Product Roadmap & Decision Ledger as the sole canonical e
 | --- | --- |
 | Document | BaseballOS Product Roadmap and Decision Ledger |
 | Status | Canonical - current platform state, priority, sequence, decision, risk, and completion authority |
-| Version | 3.9 |
-| Effective date | August 13, 2026 |
+| Version | 4.0 |
+| Effective date | August 14, 2026 |
 | Owner | Nickolis Kacludis |
-| Repository basis | Production/main: NickolisK24/bullpen-intel-engine main at e3ad8bdf47a0bf6209917051df2070fba8eff417 after PR #647. No in-flight implementation branch. |
-| Decision basis | Decision Ledger through D-053; Version 3.9 reconciles current execution state without adding, weakening, or renumbering a durable authority decision |
-| Audit basis | Production closeout for #595, #591, #600, #594, and VOC-001 (#638); DEP-001 (#601) complete and verified on main by CI run 31729458591 |
-| Supersedes | Version 3.8 current-state wording while preserving all durable prior decisions and completion evidence |
+| Repository basis | Production/main: NickolisK24/bullpen-intel-engine main at b2f0e90718321857f3f631cda3c81c1175af85de after PR #659. No in-flight implementation branch. |
+| Decision basis | Decision Ledger through D-053; Version 4.0 reconciles current execution state and records the D-013 scope amendment required by D-053, without adding, weakening, or renumbering a durable authority decision |
+| Audit basis | Production closeout for #595, #591, #600, #594, and VOC-001 (#638); DEP-001 (#601) complete and verified on main by CI run 31729458591; CI-003 (#598) gated publication commit `2e83fa0` on main from scheduled run 31794183367; H-5 through H-12 documentation and public-surface closeouts through PR #659 |
+| Supersedes | Version 3.9 current-state wording while preserving all durable prior decisions and completion evidence |
 | Update rule | Update after a priority change, material merge, phase exit, production incident, authority decision, risk change, or false current-state statement |
 | Review cadence | Weekly founder review; immediate update after a material production or product decision |
 
-| INTEGRATION RULE | Current-state reconciliation only. VOC-001 (#638) is complete and production-verified, which exits the Public Credibility Pass. DEP-001 (#601) is complete on main with a time-boxed residual frontend advisory acceptance expiring 2026-11-13. CI-003 (#598) is the remaining ordered package and this edition does not adjudicate, weaken, or advance it: its recorded production-proof requirement stands exactly as written. This edition adds no Decision Ledger ID, and changes no authority, publication, or write posture. |
+| INTEGRATION RULE | Current-state reconciliation only. VOC-001 (#638) and DEP-001 (#601) remain complete. CI-003 (#598) is still the remaining ordered package: this edition records that the gated, tree-exact, machine-attributed generated commit the previous edition said did not exist now does, and that the read-only deployment verification the same requirement names has still not been taken. That is evidence recording, not adjudication — the requirement stands exactly as written and #598 stays open. This edition adds no Decision Ledger ID and changes no authority, publication, or write posture; it records the D-013 scope amendment D-053 already required in practice, and introduces a decision status vocabulary that describes existing entries without altering any of them. |
 | --- | --- |
 
 # Part I - Executive State
@@ -71,14 +71,14 @@ BaseballOS is a live public MLB bullpen-intelligence platform with a mature trus
 
 The Public Credibility Pass is closed. Raw public scores are contained, governed Why copy is backend-owned, `/bullpen` has one contextual H1 per view, routed team previews are production-verified, and public vocabulary/glossary ownership is production-verified. Attention has moved from public credibility to delivery reliability and supply-chain hygiene: dependency risk on the production request path is remediated and continuously audited, and the remaining ordered package is the generated-content publication gate.
 
-| CURRENT VERDICT | The Public Credibility Pass is closed: #595, #591, #600, #594, and #638 are all complete and production-verified. Dependency risk (#601) is remediated on main and now has a standing CI control, with one time-boxed frontend acceptance expiring 2026-11-13. The remaining ordered package is CI-003 (#598), whose recorded closeout still requires a naturally authorized scheduled generated-content publication and read-only deployment proof. |
+| CURRENT VERDICT | The Public Credibility Pass is closed: #595, #591, #600, #594, and #638 are all complete and production-verified. Dependency risk (#601) is remediated on main and now has a standing CI control, with one time-boxed frontend acceptance expiring 2026-11-13. The remaining ordered package is CI-003 (#598): the naturally authorized scheduled generated-content publication has now occurred and is on main as commit `2e83fa0`, and the recorded closeout still requires read-only deployment proof. |
 | --- | --- |
 
 ## 2. Current Repository and Authority State
 
 | Area | Current state | Meaning |
 | --- | --- | --- |
-| Repository main | e3ad8bdf47a0bf6209917051df2070fba8eff417 | Current baseline after PR #647; CI run 31729458591 green on this commit |
+| Repository main | b2f0e90718321857f3f631cda3c81c1175af85de | Current baseline after PR #659. The August 13 baseline was e3ad8bd after PR #647, verified by CI run 31729458591. |
 | In-flight branch | None | No open implementation branch carries product state. |
 | Daily game-driven lane | Shadow | Observation only; no automated baseball-data writes. |
 | Postgame game-driven lane | Shadow | Exact-cycle observation after the legacy postgame writer. |
@@ -96,7 +96,7 @@ The Public Credibility Pass is closed. Raw public scores are contained, governed
 | UX-002 (#600) | Complete | One contextual H1 per `/bullpen` view; keyboard, accessibility-tree, and mobile checks passed. |
 | VOC-001 (#638) | Complete | Public vocabulary/glossary ownership production-verified August 12, 2026 from trusted snapshot 398; issue closed. |
 | DEP-001 (#601) | Complete | Backend runtime audit clean; frontend production advisories reduced to three reviewed, time-boxed React Router acceptances expiring 2026-11-13; standing CI dependency gate added. Issue closed August 13, 2026. |
-| CI-003 (#598) | Ordered next; recorded closeout evidence outstanding | Repository implementation and the PR #642 result-transport repair are on main. The recorded closeout still requires a naturally authorized scheduled generated-content publication and read-only deployment proof. |
+| CI-003 (#598) | Active; publication evidence recorded, deployment proof outstanding | Repository implementation and the PR #642 result-transport repair are on main. Scheduled run 31794183367 (attempt 1, August 14) produced gated publication commit `2e83fa0` under `BaseballOS Automation`, Validated-Tree `1c9d7dc`, Snapshot-ID 411, data through August 13. The recorded closeout still requires read-only deployment verification. |
 
 ## 3. Active Objective
 
@@ -111,16 +111,15 @@ Current state, recorded without adjudicating it:
 
 - The generated-content publication gate (D-053) and the PR #642 result-transport repair are both on main.
 - The GitHub issue #598 was closed August 12, 2026 through its linked pull request #641.
-- The closeout evidence this Roadmap requires has **not** yet been recorded: no gated, tree-exact, machine-attributed generated commit exists on main, and the read-only deployment verification has not been taken.
-- The first scheduled exercise, run 31693516516 on August 13, refused correctly rather than publishing. The repair merged after that run, so the next naturally authorized daily export has not yet occurred.
+- The first scheduled exercise, run 31693516516 on August 13, refused correctly rather than publishing. The repair merged after that run.
+- **The gated publication has since occurred.** Scheduled run 31794183367 — `schedule` event, attempt 1, concluded success — produced commit `2e83fa0` on main: `docs: publish generated team preview pages`, authored and committed by `BaseballOS Automation <baseballoshq@gmail.com>`, carrying Workflow-Run 31794183367, Workflow-Run-Attempt 1, Source-SHA `71e0b89`, Validated-Tree `1c9d7dc`, Snapshot-ID 411, and Data-Through 2026-08-13. It is the only machine-authored commit in the repository's history. Version 3.9 recorded that no such commit existed; that statement was true when written and is false now, which is why this edition exists.
+- **The remaining closeout evidence is the read-only deployment verification**, which has not been taken.
 
 Remaining work to close the objective:
 
-- Let the next naturally authorized scheduled daily export run; do not force, rerun, or manually dispatch it to manufacture the proof.
-- Confirm the run produces a gated, tree-exact generated commit attributed to the machine identity, with run provenance.
-- Take read-only deployment verification of the published previews.
+- Take read-only deployment verification of the published previews from commit `2e83fa0`. Take it; do not force, rerun, or manually dispatch anything to manufacture it.
 - Reconcile the issue's recorded state against that evidence.
-- Do not treat the closed issue as the proof; the closed issue and the recorded evidence gate are different claims.
+- Do not treat the closed issue as the proof; the closed issue and the recorded evidence gate are different claims. The publication commit satisfies one half of the recorded requirement, not the whole of it.
 
 Nothing in this edition changes the generated-content publication contract, its
 workflow, D-053, or any authority it governs.
@@ -329,6 +328,23 @@ D-053, added by CI-003 (#598), governs how generated content may be published to
 
 DEP-001 (#601) created no Decision Ledger ID. Its time-boxed acceptance of the residual React Router advisories is a dated, revocable security decision recorded in `docs/decisions/2026-08-13-react-router-v7-security-defer.md` and machine-enforced by `.github/dependency-audit-accepted.json` — deliberately not a durable authority decision, because it is designed to expire.
 
+## Decision status vocabulary
+
+The ledger is history and current policy at once, and until Version 4.0 the two looked identical: a decision that had been narrowed read exactly like one still in force. The Status column now uses a defined vocabulary.
+
+| Status | Meaning |
+| --- | --- |
+| Permanent | In force, and not expected to change without a constitutional-level reason. |
+| Standing | In force as an ongoing boundary or trust rule. |
+| Adopted | In force as an accepted decision of record. |
+| Amended | In force, with its scope narrowed or clarified by a later decision, which the row names. |
+| Superseded | No longer in force; a later decision replaces it, and the row names that decision. |
+| Historical | Retained as record of a decision whose subject no longer exists. |
+
+Applying the vocabulary changes no decision. A row moves to Amended or Superseded only where a later decision already did that work; nothing here narrows a decision by relabelling it, and no ID is renumbered or removed.
+
+D-013 is the one row this edition amends, and D-053 is what amended it. No other status changed.
+
 | ID | Date | Decision | Status |
 | --- | --- | --- | --- |
 | D-001 | Prior to Jul 2026 | BaseballOS is trust-first. | Permanent |
@@ -343,7 +359,7 @@ DEP-001 (#601) created no Decision Ledger ID. Its time-boxed acceptance of the r
 | D-010 | Jul 24, 2026 | Meaning-bearing Share Artifact copy is deterministic, backend-owned, and not free-form AI analysis. | Permanent |
 | D-011 | Jul 2026 | Published artifacts are immutable; corrections supersede or withdraw rather than rewrite. | Permanent |
 | D-012 | Jul 2026 | Current and historical state remain separate objects. | Permanent |
-| D-013 | Prior to Jul 2026 | Nickolis Kacludis remains sole repository author/committer; no AI attribution is added. | Permanent |
+| D-013 | Prior to Jul 2026 | Nickolis Kacludis remains sole repository author/committer; no AI attribution is added. **Amended by D-053, August 12, 2026:** scoped to human-authored engineering work, which remains Nickolis Kacludis only. The single approved exception is the governed generated-content publication job, which commits as `BaseballOS Automation <baseballoshq@gmail.com>` with run provenance. That identity is a machine publisher operating inside D-053's gate, not a second engineering author, and its write authority reaches nothing outside that one job. The no-AI-attribution rule is unchanged and absolute: no AI, Claude, or Anthropic attribution, generated-by footer, session link, or co-author trailer appears in any commit, pull request, or artifact. | Amended by D-053 |
 | D-014 | Prior to Jul 2026 | One user question per page and one canonical home per fact. | Permanent |
 | D-015 | Prior to Jul 2026 | Manual proof precedes automation for newsletter and distribution workflows. | Standing |
 | D-016 | Prior to Jul 2026 | Follow My Team waits for demonstrated retention value. | Standing |
@@ -383,7 +399,7 @@ DEP-001 (#601) created no Decision Ledger ID. Its time-boxed acceptance of the r
 | D-050 | Aug 6, 2026 | OPS-002 uses temporary runtime headroom while preserving publication gates and all game-driven authority boundaries; permanent work reduction remains separate. | Operational until permanent work-reduction proof supersedes it |
 | D-051 | Aug 8, 2026 | Acquisition may advance independently, but public Team Board, Compare, and Tonight authority advances only through trusted publication. Production full-daily execution is scheduled and first-attempt only; generic manual daily execution, local production daily invocation, the legacy admin daily writer route, and GitHub reruns are non-authoritative/refused. | Standing trust boundary |
 | D-052 | Aug 10, 2026 | Phase 1A Game-Driven Ingestion Authority Qualification is complete after OPS-002 scheduled reliability proof, OPS-001 scheduled signal-separation proof, read-only candidate audit run 31393177954, and no-op write qualification PASS run 31395294655 for game 823924. The PASS proves safe governed entry into the write-capable path with zero baseball-data mutation and exact lane-ledger movement. It grants no automated/scheduled write authority, no game-driven publication authority, no backfill authority, and no legacy-writer retirement. | Permanent phase-exit decision |
-| D-053 | Aug 12, 2026 | Automated generated content may reach `main` only through a self-gating publication job: generate from trusted publication, prove delivery integrity, run the canonical frontend tests and production build against the exact generated tree, record that tree's identity, commit under `BaseballOS Automation <baseballoshq@gmail.com>` with run provenance, prove the commit's tree equals the validated tree, and fast-forward push. Repository write authority is scoped to that one job. The guarantee is tree-exact, not commit-SHA-exact. No baseball semantics move into CI; D-051 and D-052 are unchanged. | Standing publication boundary; repository implementation only, not production-verified |
+| D-053 | Aug 12, 2026 | Automated generated content may reach `main` only through a self-gating publication job: generate from trusted publication, prove delivery integrity, run the canonical frontend tests and production build against the exact generated tree, record that tree's identity, commit under `BaseballOS Automation <baseballoshq@gmail.com>` with run provenance, prove the commit's tree equals the validated tree, and fast-forward push. Repository write authority is scoped to that one job. The guarantee is tree-exact, not commit-SHA-exact. No baseball semantics move into CI; D-051 and D-052 are unchanged. | Standing publication boundary; production-exercised August 14, 2026 by scheduled run 31794183367, which produced gated commit `2e83fa0` under the machine identity. Deployment verification for the CI-003 closeout remains outstanding. Amends D-013 by scoping it to human-authored engineering work. |
 
 ## 16. Open Decisions
 
@@ -462,6 +478,12 @@ DEP-001 (#601) created no Decision Ledger ID. Its time-boxed acceptance of the r
 | Aug 13, 2026 | Dependencies | DEP-001 test/runtime dependency separation (#601) | PR #644 | `pytest` removed from `backend/requirements.txt`; `backend/requirements-dev.txt` added, pulling the runtime set in. | Production no longer installs test-only packages or their advisories. Nothing under `backend/` imports `pytest` outside `backend/tests/`. |
 | Aug 13, 2026 | Dependencies | DEP-001 frontend runtime remediation (#601) | PR #646 | Unused `recharts` and `clsx` removed, which deleted the only high-severity production advisory by removing the package `lodash` entered through; `react-router-dom` patched to 6.30.4. | No override and no direct pin was added. Three React Router advisories remain, accepted time-boxed to 2026-11-13 under #645, bounded by a validated-redirect control and its regression tests. |
 | Aug 13, 2026 | Dependencies | DEP-001 standing CI dependency gate and closeout (#601) | PR #647 / main e3ad8bd / CI run 31729458591 | Backend runtime audit clean. `dependency-audit` job refuses new, expired, stale, mismatched, duplicated, or under-documented production dependency risk; dev/build advisories are informational only. | **Complete.** The gate is read-only — it never upgrades, pins, or edits a dependency, and creates no auto-upgrade path. Issue closed August 13. |
+| Aug 13-14, 2026 | Human Quality | Repository retirement and freeze narrowing (H-1) | PRs #650, #651 | Dangling and root-level documents archived or classified; byte-freeze policy narrowed to the files that need it. | **Complete.** No public behavior changed. The broad phase-freeze claim survives in no active document.
+| Aug 14, 2026 | Human Quality | Public-copy ownership and language quality (H-5 through H-9) | PRs #652, #653, #654, #655, #656, #657 | Backend-owned public copy, generated-copy quality, team-preview claim authority, public language polish, explanation label ownership and envelope language. | **Complete.** Wording and ownership only; no model, threshold, classification, authority, or publication behavior changed. |
+| Aug 14, 2026 | Human Quality | UX density and information hierarchy (H-10) | PR #658 / main a049c45 | Today and Team Board hierarchy and density pass. | **Complete.** Presentation only: no semantic change, no new metric, no vocabulary change. |
+| Aug 14, 2026 | Human Quality | Public vocabulary and freshness convergence (H-11) | PR #659 / main b2f0e90 | Nine re-audit defects closed: share cards project canonical public state, freshness stamps converge on the five canonical labels, Read Confidence is named everywhere including ARIA, `Clean Options` retired from surfaces in favour of `Rested Options`, unknown values fail closed. | **Complete.** The Workload Data family was introduced here because a pitcher's workload-record status is a different question from platform Data Status; Version 4.0 records its canonical home in the Bullpen Intelligence Standard and Product Experience Standard. |
+| Aug 14, 2026 | CI | CI-003 first gated generated-content publication (#598) | Scheduled run 31794183367 (attempt 1) / commit `2e83fa0` | The scheduled daily export published under the D-053 gate: generated from trusted publication, delivery integrity proven, canonical frontend tests and production build run against the exact generated tree, tree identity recorded, committed as `BaseballOS Automation <baseballoshq@gmail.com>` with Source-SHA `71e0b89`, Validated-Tree `1c9d7dc`, Snapshot-ID 411, data through August 13, and fast-forward pushed. | **Not complete.** This is the gated, tree-exact, machine-attributed commit the closeout requires, taken from a naturally authorized scheduled run rather than a forced one. Read-only deployment verification remains outstanding, so #598 stays open. |
+| Aug 14, 2026 | Human Quality | Document authority reconciliation (H-12) | This edition | Nine competing-authority defects closed across the canonical library, current subsystem contracts, code-cited document paths, and secondary-document status labelling. | **Complete.** Documentation and documentation-reference reconciliation only. No sync mode, publication gate, write authority, baseball logic, schema, or dependency changed. |
 
 ## DIST-003 (#594) Production Closeout Evidence
 
@@ -503,18 +525,20 @@ A third-party social-platform unfurl is not part of this recorded closeout. The 
 
 # Appendix C - Source Basis
 
-- BaseballOS Product Roadmap & Decision Ledger Version 3.8, effective August 11, 2026.
-- Repository main e3ad8bdf47a0bf6209917051df2070fba8eff417 after PR #647; CI run 31729458591 green on that commit.
+- BaseballOS Product Roadmap & Decision Ledger Version 3.9, effective August 13, 2026.
+- Repository main b2f0e90718321857f3f631cda3c81c1175af85de after PR #659. The August 13 baseline was e3ad8bd after PR #647, with CI run 31729458591 green on that commit.
+- Gated generated-content publication commit `2e83fa0` on main, from scheduled run 31794183367 (attempt 1), Validated-Tree `1c9d7dc`, Snapshot-ID 411, data through August 13, 2026.
+- Git authorship on main at this basis: every engineering commit authored by Nickolis Kacludis, plus the one `BaseballOS Automation` publication commit above.
 - Decision Ledger through D-053.
-- GitHub issue state through August 13, 2026: #595, #591, #600, #594, #638, and #601 closed; #645, #597, #596, and the #589 tracker open.
+- GitHub issue state through August 14, 2026: #595, #591, #600, #594, #638, and #601 closed; #645, #597, #596, and the #589 tracker open. #598's issue is closed while its recorded deployment evidence is outstanding.
 - Production evidence retained for #590, #592, #593, #595, #591, #600, #594, #638, OPS-002, and Phase 1A authority qualification.
-- Product Experience Standard Version 1.4 and Bullpen Intelligence Standard Version 1.3 public-vocabulary authority, both merged.
+- Product Experience Standard Version 1.5, Bullpen Intelligence Standard Version 1.4, Platform Architecture & Operations Manual Version 1.6, and Editorial & Distribution Standard Version 1.3.
 - Current dependency-security boundary: `docs/current/DEPENDENCY_SECURITY_CLOSEOUT_2026-08-13.md`.
 - Accepted-risk decision record: `docs/decisions/2026-08-13-react-router-v7-security-defer.md`.
 
 ## Repository basis
 
-Current main: e3ad8bdf47a0bf6209917051df2070fba8eff417 after PR #647. No open implementation branch carries product state. Phase 1A remains closed under D-052 and Phase 1B closed August 12, 2026.
+Current main: b2f0e90718321857f3f631cda3c81c1175af85de after PR #659. No open implementation branch carries product state. Phase 1A remains closed under D-052 and Phase 1B closed August 12, 2026.
 
 SEC-001 (#595), FE-001 (#591), UX-002 (#600), DIST-003 (#594), VOC-001 (#638), and DEP-001 (#601) are all closed after verification.
 
@@ -522,13 +546,13 @@ SEC-001 (#595), FE-001 (#591), UX-002 (#600), DIST-003 (#594), VOC-001 (#638), a
 
 The active objective is CI-003 (#598) generated-content publication closeout — the next package in the previously approved order, reached because VOC-001 and DEP-001 both closed.
 
-Its repository implementation and the PR #642 result-transport repair are on main, and its GitHub issue was closed August 12, 2026 through linked pull request #641. The closeout evidence this Roadmap requires is nevertheless still outstanding: no gated, tree-exact, machine-attributed generated commit exists on main, and read-only deployment verification has not been taken. The first scheduled exercise refused correctly rather than publishing, and the repair merged after that run.
+Its repository implementation and the PR #642 result-transport repair are on main, and its GitHub issue was closed August 12, 2026 through linked pull request #641. The first scheduled exercise refused correctly rather than publishing, and the repair merged after that run. Scheduled run 31794183367 then produced the gated, tree-exact, machine-attributed commit `2e83fa0` on main. The remaining recorded requirement is read-only deployment verification, which has not been taken.
 
 A closed issue and recorded production proof are different claims. This edition records that distinction and does not resolve it; #598's contract, workflow, and authority are untouched.
 
 ## Next approved sequence
 
-1) Take the outstanding #598 closeout evidence from a naturally authorized scheduled export plus read-only deployment proof; do not force or rerun one to manufacture it. 2) Continue permanent daily-sync work reduction, preserving D-051 in full. 3) Begin Portable Intelligence — #597 then #596. 4) Resume M-001 and visible evidence. 5) Daily Habit and consequence work.
+1) Take the outstanding #598 read-only deployment proof against the published previews from commit `2e83fa0`; the scheduled-export half of that evidence is recorded, and neither half may be forced or rerun to manufacture it. 2) Continue permanent daily-sync work reduction, preserving D-051 in full. 3) Begin Portable Intelligence — #597 then #596. 4) Resume M-001 and visible evidence. 5) Daily Habit and consequence work.
 
 Running alongside this order, and not gated by it: complete or re-review the React Router acceptance (#645) before it expires 2026-11-13.
 
@@ -548,3 +572,4 @@ Running alongside this order, and not gated by it: complete or re-review the Rea
 | 3.7 | August 11, 2026 | Nickolis Kacludis | Reconciled current state through PR #633/main 98e452e: #595, #591, and #600 complete and production-verified; #594 merged and awaiting the next authorized scheduled export; vocabulary/glossary parity is the next implementation package after #594 closeout. No durable authority decision changed. |
 | 3.8 | August 11, 2026 | Nickolis Kacludis | Recorded the DIST-003 (#594) production closeout: authorized scheduled run 31483859116, export job 93760656523, 30 of 30 dated previews with 0 withheld, data through 2026-08-10, trusted snapshot 393, generated-at 2026-08-11T11:15:00+00:00, production `/team/COL` dated-read proof and `/team/INVALID` fail-closed proof, issue closed August 11. Recorded PR #637 "Serve dated team preview pages at public team routes" as the delivery-path correction that made those routes serve the dated previews. Moved the active objective to VOC-001 (#638), whose repository implementation — including Product Experience Standard v1.4 and Bullpen Intelligence Standard v1.3 — is in PR #639, which is open and unmerged and carries no production proof; #638 remains open. The Public Credibility Pass and Phase 1B remain active and exit only after PR #639 merges, deployment completes, read-only production vocabulary smoke passes, and #638 closes; repository CI green is necessary and not sufficient. The downstream sequence is preserved exactly: #598, then #601, then permanent daily-sync work reduction, then Portable Intelligence, then M-001 and visible evidence, then Daily Habit and consequence. No durable authority decision was added, weakened, or renumbered, D-051 and D-052 stand unchanged, and no new Decision Ledger ID was created. |
 | 3.9 | August 13, 2026 | Nickolis Kacludis | Reconciled current state through PR #647/main e3ad8bd, verified by CI run 31729458591. Recorded VOC-001 (#638) complete and production-verified August 12, 2026 from trusted snapshot 398, which exits the Public Credibility Pass and closes Phase 1B. Recorded DEP-001 (#601) complete across PRs #643, #644, #646, and #647: backend runtime dependency advisories cleared with CORS behaviour pinned before the upgrade and re-verified after it, `pytest` removed from the production runtime in favour of `backend/requirements-dev.txt`, unused frontend packages removed rather than overridden, `react-router-dom` patched to 6.30.4, and a standing read-only `dependency-audit` CI job added that refuses new, expired, stale, mismatched, duplicated, or under-documented production dependency risk without creating any auto-upgrade path. Recorded the three residual React Router advisories as a time-boxed acceptance expiring 2026-11-13 under tracking issue #645, bounded by a validated-redirect control and its regression tests, and added R-25 for dependency drift and acceptance permanence. Moved the active objective to CI-003 (#598), the next package in the unchanged approved order, and recorded that its GitHub issue is closed while the production-proof evidence this Roadmap requires is still outstanding — without adjudicating, weakening, or advancing that package. No durable authority decision was added, weakened, or renumbered; D-051, D-052, and D-053 stand unchanged; no new Decision Ledger ID was created; and the shadow/backfill/legacy-writer authority posture is untouched. |
+| 4.0 | August 14, 2026 | Nickolis Kacludis | Reconciled current state through PR #659/main b2f0e90 and closed the roadmap half of the H-12 document-authority audit. Recorded that the CI-003 (#598) closeout evidence Version 3.9 said did not exist now partly does: scheduled run 31794183367, a `schedule` event on attempt 1, produced gated commit `2e83fa0` on main under `BaseballOS Automation <baseballoshq@gmail.com>` with Source-SHA `71e0b89`, Validated-Tree `1c9d7dc`, Snapshot-ID 411, and data through August 13. That is the gated, tree-exact, machine-attributed commit the requirement names; the read-only deployment verification it also names is still outstanding, so #598 remains open and its recorded requirement is unchanged. Recorded the H-1 and H-5 through H-11 closeouts across PRs #650 through #659 in the Completion Log, and the H-12 reconciliation itself. Introduced a Decision status vocabulary — Permanent, Standing, Adopted, Amended, Superseded, Historical — so a narrowed decision no longer reads identically to one still in force, and applied it only where a later decision had already done that work. Amended D-013 accordingly: sole human authorship is scoped to engineering work, the governed generated-content publication job is its single approved machine exception under D-053, that identity is a publisher rather than a second author, and the no-AI-attribution rule is unchanged and absolute. Updated D-053's status from "not production-verified" to production-exercised on August 14. No Decision Ledger ID was added, weakened, renumbered, or removed; D-051 and D-052 stand unchanged; the approved sequence is preserved exactly; and the shadow, backfill, legacy-writer, and publication authority posture is untouched. |
