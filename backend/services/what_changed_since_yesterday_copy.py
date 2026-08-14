@@ -6,6 +6,7 @@ import re
 from typing import Any
 
 from services.bullpen_identity import IDENTITY_LABELS
+from services.public_bullpen_copy import find_banned_public_prose
 from services.editorial_voice_contract_v1 import (
     build_comparison_sentence,
     contains_editorial_banned_language,
@@ -37,6 +38,11 @@ COPY_FLAG_RANKING_LANGUAGE = 'ranking_language'
 COPY_FLAG_RAW_SCORE_LEAK = 'raw_score_leak'
 COPY_FLAG_IDENTITY_LABEL_LEAK = 'identity_label_leak'
 COPY_FLAG_TINY_CHANGE_PROMOTED = 'tiny_change_promoted'
+# Engine vocabulary the shared public-copy guard bans (avoid / monitor /
+# snapshot / restricted / constrained and the internal-structure phrases). This
+# surface authors its own sentences, so it checks them against the same scan the
+# board and Team State copy authorities use instead of keeping a private list.
+COPY_FLAG_ENGINE_VOCABULARY = 'engine_vocabulary'
 
 HEADLINE_MAX_WORDS = 13
 SUMMARY_MAX_WORDS = 28
@@ -372,8 +378,11 @@ def _summary(team_change: dict[str, Any], change: dict[str, Any]) -> str:
                 stable_parts=(team, change_type, direction, previous, current),
             )
         return _public_sentence(
+            # ``constrained`` is engine vocabulary the public-copy guard bans;
+            # its governed public counterpart is the ordinary word this very
+            # pair already uses in the opposite direction ("less tight").
             subject='The bullpen margin tightened from yesterday',
-            reason='the resource picture is more constrained',
+            reason='the resource picture is tighter',
             consequence='That leaves less room around the middle innings',
             stable_parts=(team, change_type, direction, previous, current),
         )
@@ -482,6 +491,10 @@ def _copy_flags(
         flags.append(COPY_FLAG_IDENTITY_LABEL_LEAK)
     if contains_editorial_banned_language(text):
         flags.append(COPY_FLAG_TOO_MECHANICAL)
+    # Any flag makes the caller withhold the item, so a sentence carrying engine
+    # vocabulary is never published rather than published in repaired form.
+    if find_banned_public_prose('what_changed_public_copy', text) is not None:
+        flags.append(COPY_FLAG_ENGINE_VOCABULARY)
 
     return flags
 

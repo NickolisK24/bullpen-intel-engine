@@ -23,7 +23,8 @@ function projection(cardOverrides = {}) {
       render_version: 'team-state-1.0.0',
       payload_version: 'team-state-1.0.0',
       team: { team_id: 147, team_name: 'Test Club', team_abbreviation: 'TST' },
-      headline: 'Operationally Constrained',
+      headline: 'Stretched',
+      public_state: 'stretched',
       status_code: 'operationally_constrained',
       summary: 'Two late-inning arms are down.',
       receipts: [{ category: 'workload', detail: 'Heavy recent relief workload.' }],
@@ -39,7 +40,7 @@ test('adapter projects the immutable artifact into the team card shape', () => {
   assert.equal(card.cardType, 'team')
   assert.equal(card.teamName, 'Test Club')
   assert.equal(card.teamAbbreviation, 'TST')
-  assert.equal(card.stateLabel, 'Operationally Constrained')
+  assert.equal(card.stateLabel, 'Stretched')
   assert.deepEqual(card.receipts, ['Heavy recent relief workload.'])
   assert.equal(card.dataThrough, '2026-07-20')
   assert.equal(card.dataThroughLabel, 'July 20, 2026')
@@ -78,4 +79,40 @@ test('the existing renderer renders the adapted card without error', () => {
 
 test('EVIDENCE_CARD_ORIGIN is exported so entry points do not depend on the legacy composer', () => {
   assert.equal(mod.EVIDENCE_CARD_ORIGIN, 'https://baseballos.app')
+})
+
+// ── H-11: internal readiness wording never reaches a shareable card ─────────
+
+test('the state badge carries a canonical public Team State, not internal wording', () => {
+  const card = mod.buildTeamShareCardFromArtifact(projection())
+  const svg = renderer.renderEvidenceCardSvg(card)
+
+  assert.ok(svg.includes('BASEBALLOS STATE · STRETCHED'))
+  for (const internal of [
+    'Operationally Stable', 'Operationally Constrained', 'Operationally Stressed',
+    'OPERATIONALLY STABLE', 'OPERATIONALLY CONSTRAINED', 'OPERATIONALLY STRESSED',
+    'operationally_stable', 'operationally_constrained', 'operationally_stressed',
+  ]) {
+    assert.equal(svg.includes(internal), false, `card must not render ${internal}`)
+    assert.equal(String(card.altText).includes(internal), false, `alt text must not carry ${internal}`)
+  }
+})
+
+test('a non-canonical state label withholds the card instead of stamping it', () => {
+  // Contract violation only: the backend projection resolves the public label
+  // from the artifact's status code, so this can never arrive in normal
+  // operation. If it ever did, no card is better than an internal word on a
+  // shareable image.
+  for (const leaked of ['Operationally Stressed', 'operationally_stressed', 'Stable', 'Unknown', '']) {
+    const spoofed = projection({ headline: leaked })
+    assert.equal(mod.buildTeamShareCardFromArtifact(spoofed), null, leaked)
+  }
+})
+
+test('every canonical public Team State renders a badge', () => {
+  for (const label of ['Fresh', 'Stretched', 'Vulnerable']) {
+    const card = mod.buildTeamShareCardFromArtifact(projection({ headline: label }))
+    assert.ok(card, label)
+    assert.ok(renderer.renderEvidenceCardSvg(card).includes(`BASEBALLOS STATE · ${label.toUpperCase()}`))
+  }
 })

@@ -15,6 +15,8 @@
  * once the SC-06/SC-07 renderer consumes the canonical payload directly.
  */
 
+import { PUBLIC_TEAM_STATE_LABELS } from '../adapters/publicTeamState'
+
 // Canonical public origin for share links. Defined here so the active entry
 // points no longer depend on the deprecated client-side card composer module.
 export const EVIDENCE_CARD_ORIGIN = 'https://baseballos.app'
@@ -50,7 +52,14 @@ export function buildTeamShareCardFromArtifact(response) {
   const team = card.team || {}
   const abbr = (team.team_abbreviation || '').toString()
   const teamName = team.team_name || abbr || 'Team'
+  // The card's state badge must carry a canonical public Team State. The
+  // backend projection resolves it from the artifact's internal status code, so
+  // anything else here is a contract violation rather than a display choice —
+  // and the card is withheld instead of stamping a non-canonical word onto a
+  // shareable image. This is the same fail-closed gate the evidence-card model
+  // applies before it will build receipts for a state.
   const statusLabel = card.headline || null
+  if (!PUBLIC_TEAM_STATE_LABELS.includes(statusLabel)) return null
   const summary = card.summary || null
   const receipts = Array.isArray(card.receipts)
     ? card.receipts.map((item) => (item ? item.detail : null)).filter(Boolean).slice(0, 3)

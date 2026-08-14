@@ -45,6 +45,7 @@ from services.share_artifact_repository import (
     list_recent_team_state_artifacts,
 )
 from services.share_artifacts import verify_share_artifact_integrity, withdraw_share_artifact
+from services.team_state_public_vocabulary import UnmappedTeamStateError
 from services.share_card_compatibility import (
     COMPATIBILITY_SOURCE,
     build_share_card_compatibility_view,
@@ -419,7 +420,11 @@ def test_compatibility_view_is_projected_from_artifact(app, monkeypatch):
     assert view['public_id'] == artifact.public_id
     assert view['team']['team_id'] == TEAM_ID
     # Every field is a projection of the immutable payload — nothing composed.
-    assert view['headline'] == document['team_state']['status_label']
+    # The headline is the canonical PUBLIC Team State resolved from the frozen
+    # internal status code, never the payload's internal ``status_label``.
+    assert view['headline'] == 'Stretched'
+    assert view['public_state'] == 'stretched'
+    assert view['headline'] != document['team_state']['status_label']
     assert view['summary'] == document['team_state']['summary']
     assert view['status_code'] == document['team_state']['status_code']
     assert [r['detail'] for r in view['receipts']] == [
@@ -625,3 +630,80 @@ def test_share_card_endpoint_does_not_serve_withdrawn(share_card_client, monkeyp
     resp = share_card_client.get(_card_path())
     assert resp.status_code == 200
     assert resp.get_json()['available'] is False
+
+
+# ---------------------------------------------------------------------------
+# H-11: internal readiness wording never reaches a reader-facing card
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize('status_code,label,code', [
+    ('operationally_stable', 'Fresh', 'fresh'),
+    ('operationally_constrained', 'Stretched', 'stretched'),
+    ('operationally_stressed', 'Vulnerable', 'vulnerable'),
+])
+def test_compatibility_projects_canonical_public_team_state(app, monkeypatch, status_code, label, code):
+    """Every publishable internal state projects its canonical public label.
+
+    The frozen payload keeps the internal ``status_label`` untouched; the
+    reader-facing headline is resolved from ``status_code`` through the one
+    public vocabulary owner, so already-published immutable artifacts render
+    public wording without being rewritten.
+    """
+    _eligible_env(monkeypatch)
+    artifact = generate_team_state_artifact(
+        TEAM_ID, readiness_resolver=_resolver(_readiness(status_code=status_code)),
+    ).artifact
+    view = build_share_card_compatibility_view(artifact)
+
+    assert view['headline'] == label
+    assert view['public_state'] == code
+    # The internal wording is still in the frozen payload, and absent from every
+    # projected reader-facing field.
+    assert artifact.payload['team_state']['status_label'].startswith('Operationally')
+    rendered = ' '.join(str(value) for value in view.values())
+    assert 'Operationally' not in rendered
+    assert 'operationally_' not in str(view['headline'])
+
+
+def test_compatibility_fails_closed_for_a_state_with_no_public_label(app, monkeypatch):
+    """An unmapped internal state withholds the card instead of leaking wording."""
+    import services.share_card_compatibility as compat
+
+    class _Stub:
+        public_id = 'stub'
+        artifact_type = TEAM_STATE_ARTIFACT_TYPE
+        render_version = 'team-state-1.0.0'
+        payload = {
+            'payload_version': TEAM_STATE_LATEST,
+            'team': {'team_id': TEAM_ID, 'team_name': 'Test Club', 'team_abbreviation': 'TST'},
+            'team_state': {
+                'status_code': 'data_limited',
+                'status_label': 'Data Limited',
+                'summary': 'Not publishable.',
+                'constraints': [],
+            },
+            'trust': {}, 'authority': {},
+        }
+
+    monkeypatch.setattr(compat, 'verify_share_artifact_integrity', lambda artifact: True)
+    with pytest.raises(UnmappedTeamStateError):
+        compat.build_share_card_compatibility_view(_Stub())
+
+
+def test_entry_point_withholds_the_card_when_no_public_team_state_exists(app, monkeypatch):
+    """The reader-facing entry point degrades exactly as it does with no artifact.
+
+    The strict projection raises for an unmapped internal state; the entry point
+    turns that into "no card", so the share menu shows its controlled
+    unavailable state and the public route keeps its existing behaviour.
+    """
+    import services.share_card_compatibility as compat
+
+    _publish_one(monkeypatch)
+
+    def _raise(artifact):
+        raise UnmappedTeamStateError('no public Team State')
+
+    monkeypatch.setattr(compat, 'build_share_card_compatibility_view', _raise)
+    assert compat.get_team_state_card(TEAM_ID) is None

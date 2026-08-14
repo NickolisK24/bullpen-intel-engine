@@ -511,7 +511,11 @@ def _select_league_mode(
     if depth_broad:
         return (
             LEAGUE_MODE_DEPTH_HEALTHY,
-            'Most bullpens carry healthy late-inning depth today.',
+            # 'healthy' is health-adjacent language BaseballOS does not claim:
+            # the evidence is rested arms, which is what the summary below
+            # already says. The evidence-surface guards and the Tonight copy
+            # filter both refuse the word; this surface now agrees with them.
+            'Most bullpens carry rested late-inning depth today.',
             'A broad share of clubs have rested late-inning options, with little widespread pressure.',
             True,
         )
