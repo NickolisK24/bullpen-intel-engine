@@ -779,8 +779,14 @@ test('Since Yesterday groups changes into descriptive lanes led by the primary d
 
   assert.ok(htmlIncludes(sinceHtml, 'What changed across MLB bullpens'))
   assert.ok(htmlIncludes(sinceHtml, 'Comparing complete, adjacent daily views only. Movement is descriptive, not predictive.'))
-  assert.ok(htmlIncludes(sinceHtml, 'Previous view Jun 24'))
-  assert.ok(htmlIncludes(sinceHtml, 'Current view Jun 25'))
+  // Scope, then the canonical field name, then the value. These assertions used
+  // to read 'Previous view Jun 24', which pinned the field rename: the scope
+  // word had replaced 'Data through', leaving the timestamp semantically
+  // unnamed.
+  assert.ok(htmlIncludes(sinceHtml, 'Previous view'))
+  assert.ok(htmlIncludes(sinceHtml, 'Current view'))
+  assert.ok(htmlIncludes(sinceHtml, 'Data through Jun 24'))
+  assert.ok(htmlIncludes(sinceHtml, 'Data through Jun 25'))
   // League movement summary.
   assert.ok(htmlIncludes(sinceHtml, 'Across MLB since yesterday'))
   assert.ok(htmlIncludes(sinceHtml, 'gained breathing room'))

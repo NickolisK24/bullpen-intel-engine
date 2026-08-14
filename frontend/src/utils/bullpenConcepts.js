@@ -1,6 +1,13 @@
-// The BaseballOS vocabulary layer — four named reads that describe bullpen
-// state in plain baseball language: Bullpen Pressure, Recovery Window,
-// Workload Concentration, and Clean Options.
+// The BaseballOS vocabulary layer — three named reads that describe bullpen
+// state in plain baseball language: Bullpen Pressure, Recovery Window, and
+// Workload Concentration.
+//
+// A fourth entry, the team-level `Clean Options`, was retired here. The team
+// read is `Rested Options` (SUPPORTING_CONCEPT_DEFINITIONS.restedOptions);
+// `Clean Option` singular remains the PITCHER current read and is unaffected.
+// The entry rendered nowhere — How to Read pulls only `concentration` from this
+// object — but a test pinned its retired name, so CI was defending vocabulary
+// the canonical standards had already replaced.
 //
 // These are descriptive product concepts, not metrics. Every label derives
 // from the same availability counts the rest of the frontend already shows
@@ -19,10 +26,6 @@ export const CONCEPT_DEFINITIONS = {
   concentration: {
     name: 'Workload Concentration',
     definition: 'Whether recent work is spread around or clustered on a few arms.',
-  },
-  cleanOptions: {
-    name: 'Clean Options',
-    definition: 'How many arms enter today without major recent workload restriction.',
   },
 }
 

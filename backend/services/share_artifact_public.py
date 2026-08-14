@@ -38,6 +38,7 @@ from models.share_artifact import (
     ShareArtifactRelation,
     source_authority_type,
 )
+from services.public_bullpen_copy import PUBLIC_AVAILABILITY_STATUSES
 from services.share_artifact_repository import get_share_artifact_by_public_id
 from services.share_artifact_scope import scope_labels_for_authority
 from services.share_artifacts import verify_share_artifact_integrity
@@ -331,6 +332,30 @@ def _public_view(artifact, session) -> dict:
     return view
 
 
+def _public_reliever_row(row) -> dict:
+    """Project one frozen reliever-evidence row, withholding non-public availability.
+
+    Artifacts published before the card metrics projected availability froze the
+    ENGINE state into this field, so historical payloads can carry ``Monitor`` or
+    ``Avoid`` — words the public vocabulary owner reserves as engine-only. This
+    module's contract is that it never exposes an internal-only field, so a value
+    outside the approved public vocabulary is withheld rather than translated.
+
+    Withheld, not remapped, deliberately. Remapping would re-author at read time
+    what an immutable artifact actually published, and this boundary does not get
+    to decide retroactively what a frozen claim meant. The renderer already shows
+    an absent availability as a neutral dash, so a historical row keeps its name,
+    workload, and rest facts and simply carries no availability claim.
+
+    The stored payload is untouched either way — this projects a whitelisted view
+    of it and mutates nothing.
+    """
+    projected = dict(_mapping(row))
+    if projected.get('availability') not in PUBLIC_AVAILABILITY_STATUSES:
+        projected.pop('availability', None)
+    return projected
+
+
 def _card_view(artifact, document: Mapping[str, Any]) -> Optional[dict]:
     """Project the immutable v1.2 ``card`` block for the code-rendered card.
 
@@ -361,7 +386,7 @@ def _card_view(artifact, document: Mapping[str, Any]) -> Optional[dict]:
         'team': dict(_mapping(card.get('team'))),
         'state': dict(_mapping(card.get('state'))),
         'readiness_summary': dict(_mapping(card.get('readiness_summary'))),
-        'reliever_evidence': [dict(_mapping(row)) for row in (card.get('reliever_evidence') or ())],
+        'reliever_evidence': [_public_reliever_row(row) for row in (card.get('reliever_evidence') or ())],
         'trust': dict(_mapping(card.get('trust'))),
         'limitations': [str(item) for item in (card.get('limitations') or ())],
     }

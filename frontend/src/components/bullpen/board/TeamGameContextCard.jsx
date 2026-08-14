@@ -1,3 +1,4 @@
+import { READ_CONFIDENCE_FIELD_LABEL } from '../availabilityView'
 import { getTeamGameContextView } from './teamGameContextView'
 
 // Game Context — frames a team's bullpen with its upcoming scheduled game or its
@@ -41,7 +42,9 @@ function Matchup({ view }) {
       <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-[11px] uppercase tracking-widest text-chalk500">
         <span>{view.dataStateLongLabel}</span>
         <span className="text-chalk700" aria-hidden="true">·</span>
-        <span>{view.confidenceLabel}</span>
+        {/* Named: a bare "Unavailable" in this strip is indistinguishable
+            from the arm-availability label of the same name. */}
+        <span>{READ_CONFIDENCE_FIELD_LABEL}: {view.confidenceLabel}</span>
         <span className="text-chalk700" aria-hidden="true">·</span>
         <span>{view.statusLabel}</span>
       </div>

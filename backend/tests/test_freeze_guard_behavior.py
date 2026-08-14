@@ -75,7 +75,12 @@ GUARDS = (
 FROZEN_EXAMPLES = (
     ('frozen legacy What Changed', _run_what_changed, 'backend/services/team_changes.py'),
     ('frozen public routes', _run_public_routes, 'backend/api/pitchers.py'),
-    ('phase 0E legacy public', _run_phase0e, 'backend/services/bullpen_board.py'),
+    # dashboard_snapshot rather than bullpen_board: the H-6/H-7 residual
+    # closeout holds a reviewed, branch-scoped exception for bullpen_board, so
+    # using it here would prove the guard was exempted rather than that it still
+    # refuses. Any genuinely frozen path in the same catalogue proves the same
+    # thing without that overlap.
+    ('phase 0E legacy public', _run_phase0e, 'backend/services/dashboard_snapshot.py'),
     (
         'appearance-team runtime surfaces',
         _run_appearance,

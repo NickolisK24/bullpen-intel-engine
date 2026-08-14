@@ -57,7 +57,7 @@ function cardFixture(overrides = {}) {
     },
     reliever_evidence: [
       { pitcher_id: 1, name: 'Reliever One', last_three_appearances: 2, outs_recorded: 6, innings_text: '2.0', last_appearance_date: '2026-07-23', last_opponent: 'SF', rest_days: 0, availability: 'Limited' },
-      { pitcher_id: 2, name: 'Reliever Two', last_three_appearances: 1, outs_recorded: 3, innings_text: '1.0', last_appearance_date: '2026-07-22', last_opponent: 'SF', rest_days: 1, availability: 'Monitor' },
+      { pitcher_id: 2, name: 'Reliever Two', last_three_appearances: 1, outs_recorded: 3, innings_text: '1.0', last_appearance_date: '2026-07-22', last_opponent: 'SF', rest_days: 1, availability: 'On Watch' },
       { pitcher_id: 3, name: 'Reliever Three', last_three_appearances: 0, outs_recorded: 0, innings_text: '0.0', last_appearance_date: '2026-07-18', last_opponent: 'LAD', rest_days: 5, availability: 'Available' },
     ],
     trust: {
@@ -136,7 +136,9 @@ test('card evidence table renders the five governed columns and canonical availa
   assert.match(html, /Availability/)
   assert.match(html, /Reliever One/)
   assert.match(html, /Limited/)
-  assert.match(html, /Monitor/)
+  // Public vocabulary, not the engine state: this line asserted /Monitor/ and so
+  // pinned the leak it was meant to catch.
+  assert.match(html, /On Watch/)
   assert.match(html, /Available/)
   assert.match(html, /vs SF/)
 })
@@ -226,4 +228,53 @@ test('a team-progressive v1.2 card shows the progressive scope, not a league cla
   const html = render(React.createElement(TeamStateArtifactCard, { card }))
   assert.match(html, /Published Team Bullpen State/)
   assert.ok(!html.includes('Published BaseballOS Snapshot'))
+})
+
+// ── Reader-facing availability vocabulary (H-6) ──────────────────────────────
+
+test('the availability column renders only public vocabulary, never an engine state', () => {
+  // The backend now projects every engine state through the public vocabulary
+  // owner before it is frozen, so these are the only five values a current
+  // artifact can carry: the four public labels, plus an absent value for a
+  // historical row whose non-public state the read boundary withheld.
+  const html = render(React.createElement(TeamStateArtifactCard, {
+    card: cardFixture({
+      reliever_evidence: [
+        { pitcher_id: 1, name: 'A', last_three_appearances: 0, outs_recorded: 0, innings_text: '0.0', last_appearance_date: '2026-07-23', last_opponent: 'SF', rest_days: 0, availability: 'Unavailable' },
+        { pitcher_id: 2, name: 'B', last_three_appearances: 0, outs_recorded: 0, innings_text: '0.0', last_appearance_date: '2026-07-23', last_opponent: 'SF', rest_days: 0, availability: 'Limited' },
+        { pitcher_id: 3, name: 'C', last_three_appearances: 0, outs_recorded: 0, innings_text: '0.0', last_appearance_date: '2026-07-23', last_opponent: 'SF', rest_days: 0, availability: 'On Watch' },
+        { pitcher_id: 4, name: 'D', last_three_appearances: 0, outs_recorded: 0, innings_text: '0.0', last_appearance_date: '2026-07-23', last_opponent: 'SF', rest_days: 0, availability: 'Available' },
+        // A historical row: the read boundary withheld a non-public state.
+        { pitcher_id: 5, name: 'E', last_three_appearances: 0, outs_recorded: 0, innings_text: '0.0', last_appearance_date: '2026-07-23', last_opponent: 'SF', rest_days: 0 },
+      ],
+    }),
+  }))
+
+  // The engine-only words never reach a reader.
+  assert.ok(!html.includes('Monitor'), 'Monitor must not be reader-visible')
+  assert.ok(!html.includes('Avoid'), 'Avoid must not be reader-visible')
+
+  // The public forms are present where the projection produced them.
+  assert.ok(html.includes('On Watch'), 'On Watch must be rendered')
+  assert.ok(html.includes('Unavailable'), 'Unavailable must be rendered')
+  assert.ok(html.includes('Limited'))
+  assert.ok(html.includes('Available'))
+
+  // The withheld row still renders its non-semantic facts.
+  assert.ok(html.includes('>E<') || html.includes('E'), 'withheld row still lists the pitcher')
+})
+
+test('the card invents no availability label when the value was withheld', () => {
+  // Fail-closed presentation: no title-casing, no raw echo, no fifth label.
+  const html = render(React.createElement(TeamStateArtifactCard, {
+    card: cardFixture({
+      reliever_evidence: [
+        { pitcher_id: 1, name: 'Solo', last_three_appearances: 0, outs_recorded: 0, innings_text: '0.0', last_appearance_date: '2026-07-23', last_opponent: 'SF', rest_days: 0 },
+      ],
+    }),
+  }))
+
+  for (const invented of ['Unknown', 'None', 'N/A', 'Monitor', 'Avoid']) {
+    assert.ok(!html.includes(invented), `must not invent ${invented}`)
+  }
 })

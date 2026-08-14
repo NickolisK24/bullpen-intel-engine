@@ -630,7 +630,7 @@
       ]
     },
     "3": {
-      "measured_seconds": 499.719,
+      "measured_seconds": 500.61,
       "files": [
         {
           "path": "tests/test_active_bullpen_readiness_resolver.py",
@@ -963,6 +963,10 @@
         {
           "path": "tests/test_postgame_refresh.py",
           "measured_seconds": 8.092
+        },
+        {
+          "path": "tests/test_preview_evidence_corpus.py",
+          "measured_seconds": 0.887
         },
         {
           "path": "tests/test_product_experience_standard_vocabulary.py",

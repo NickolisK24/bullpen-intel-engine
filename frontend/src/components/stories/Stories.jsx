@@ -1,4 +1,4 @@
-import { DATA_THROUGH_LABEL, LAST_DATA_UPDATE_LABEL } from '../../utils/bullpenConcepts'
+import { LAST_DATA_UPDATE_LABEL } from '../../utils/bullpenConcepts'
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useFetch } from '../../hooks/useFetch'
@@ -186,7 +186,7 @@ function StoriesTrustStrip({ feed, isLive }) {
     >
       <div className="flex flex-wrap items-center gap-2">
         {hasFreshness && <FreshnessBadge freshness={freshness} />}
-        <DataThroughStamp date={dataThrough} label={DATA_THROUGH_LABEL} />
+        <DataThroughStamp date={dataThrough} />
         <LastSyncLabel value={lastSync} label={LAST_DATA_UPDATE_LABEL} />
         {hasLiveState && (
           <span className={`inline-flex min-h-7 items-center rounded border px-2.5 py-1 font-mono text-[11px] uppercase tracking-widest ${

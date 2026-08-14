@@ -17,7 +17,7 @@ after(async () => {
 })
 
 const conceptsModule = await server.ssrLoadModule('/src/utils/bullpenConcepts.js')
-const { CONCEPT_DEFINITIONS } = conceptsModule
+const { CONCEPT_DEFINITIONS, PITCHER_CURRENT_READ_DEFINITIONS } = conceptsModule
 const { StoriesView } = await server.ssrLoadModule('/src/components/stories/Stories.jsx')
 
 const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -25,7 +25,7 @@ const htmlIncludes = (html, text) => new RegExp(escapeRegExp(text)).test(html)
 const render = (el) => renderToStaticMarkup(React.createElement(MemoryRouter, null, el))
 
 test('every concept ships a visible name and definition', () => {
-  for (const key of ['pressure', 'recovery', 'concentration', 'cleanOptions']) {
+  for (const key of ['pressure', 'recovery', 'concentration']) {
     assert.ok(CONCEPT_DEFINITIONS[key].name.length > 0)
     assert.ok(CONCEPT_DEFINITIONS[key].definition.length > 20)
   }
@@ -94,7 +94,7 @@ test('stories feed cards render unlabeled narrative instead of compact concept t
 // ── Definition polish ───────────────────────────────────────────────────────
 
 test('definitions stay short and plain', () => {
-  for (const key of ['pressure', 'recovery', 'concentration', 'cleanOptions']) {
+  for (const key of ['pressure', 'recovery', 'concentration']) {
     const { definition } = CONCEPT_DEFINITIONS[key]
     assert.ok(definition.length > 20, `${key} definition too short`)
     assert.ok(definition.length <= 80, `${key} definition should stay a single plain sentence`)
@@ -102,20 +102,33 @@ test('definitions stay short and plain', () => {
   }
 })
 
-test('the concept set stays at four — no new concepts were added', () => {
-  assert.equal(Object.keys(CONCEPT_DEFINITIONS).length, 4)
+test('the concept set stays at three — no new concepts were added', () => {
+  assert.equal(Object.keys(CONCEPT_DEFINITIONS).length, 3)
   assert.deepEqual(
     Object.keys(CONCEPT_DEFINITIONS).sort(),
-    ['cleanOptions', 'concentration', 'pressure', 'recovery'],
+    ['concentration', 'pressure', 'recovery'],
   )
 })
 
-test('Clean Options keeps its name and avoids health-tinted alternatives', () => {
-  assert.equal(CONCEPT_DEFINITIONS.cleanOptions.name, 'Clean Options')
+test('the retired team-level Clean Options is gone and stays gone', () => {
+  // This file used to assert the opposite — that `cleanOptions` kept its name —
+  // which pinned vocabulary the canonical standards had retired in favour of
+  // `Rested Options`. The pitcher-level `Clean Option` singular is a different
+  // family and is asserted intact below.
+  assert.equal('cleanOptions' in CONCEPT_DEFINITIONS, false)
+  assert.equal(JSON.stringify(CONCEPT_DEFINITIONS).includes('Clean Options'), false)
+})
+
+test('the named reads avoid health-tinted alternatives', () => {
   const copy = JSON.stringify(CONCEPT_DEFINITIONS).toLowerCase()
   for (const term of ['healthy', 'fit', 'injury-free', 'ready-bodied']) {
     assert.equal(copy.includes(term), false, `health-tinted term: ${term}`)
   }
+})
+
+test('the pitcher-level Clean Option read is untouched', () => {
+  const names = PITCHER_CURRENT_READ_DEFINITIONS.map(entry => entry.name)
+  assert.ok(names.includes('Clean Option'))
 })
 
 test('the vocabulary never reaches for prediction, betting, injury, or advice', () => {

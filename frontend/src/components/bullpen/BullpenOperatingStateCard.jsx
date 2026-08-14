@@ -1,4 +1,4 @@
-import { DATA_THROUGH_LABEL, LAST_DATA_UPDATE_LABEL } from '../../utils/bullpenConcepts'
+import { LAST_DATA_UPDATE_LABEL } from '../../utils/bullpenConcepts'
 import { Link } from 'react-router-dom'
 import {
   DataThroughStamp,
@@ -279,10 +279,7 @@ export default function BullpenOperatingStateCard({
           {view.hasFreshness ? (
             <>
               <FreshnessBadge freshness={view.freshness} />
-              <DataThroughStamp
-                date={view.freshness?.data_through}
-                label={DATA_THROUGH_LABEL}
-              />
+              <DataThroughStamp date={view.freshness?.data_through} />
               <LastSyncLabel
                 label={lastSyncLabel}
                 value={view.freshness?.last_successful_sync}
@@ -450,7 +447,6 @@ function CompactBullpenOperatingStateCard({
               <FreshnessBadge freshness={view.freshness} className="min-h-5 px-1.5 py-0.5 text-[9px] sm:min-h-6 sm:px-2 sm:text-[10px]" />
               <DataThroughStamp
                 date={view.freshness?.data_through}
-                label={DATA_THROUGH_LABEL}
                 className="min-h-5 px-1.5 py-0.5 text-[9px] sm:min-h-6 sm:px-2 sm:text-[10px]"
               />
               <LastSyncLabel

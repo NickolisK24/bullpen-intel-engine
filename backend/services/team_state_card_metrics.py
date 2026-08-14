@@ -38,6 +38,7 @@ from services.availability_snapshot import (
 )
 from services.availability_summary import STATUS_ORDER
 from services.bullpen_optionality_context import build_bullpen_optionality_context
+from services.public_bullpen_copy import public_availability_label
 from services.workload_appearance import is_workload_appearance_log, workload_out_count
 from utils.db import db
 
@@ -313,8 +314,20 @@ def _build_reliever_evidence(
     order (spec): more-restrictive availability, then more window appearances, then
     more recorded outs, then more recent appearance, then a stable pitcher-id / name
     tiebreak. The bounded table shows the first ``MAX_RELIEVER_ROWS``.
+
+    ``availability`` is the READER-FACING label, not the engine state. This row is
+    published verbatim into an immutable share artifact and rendered under the
+    card's ``Availability`` column, so it is reader vocabulary by destination even
+    though it is a structured field rather than a sentence. It previously carried
+    the engine state, which put ``Monitor`` and ``Avoid`` — words
+    ``public_bullpen_copy`` reserves as engine-only — in front of readers.
+
+    The engine state is still what ORDERS the table: it is carried beside the row
+    rather than inside it, because the public vocabulary is deliberately lossy
+    (``Avoid`` and ``Unavailable`` share one public label) and ranking on the
+    public label would silently merge two distinct restriction tiers.
     """
-    candidates = []
+    candidates = []  # (engine_status, published_row)
     for pid in active_ids:
         record = record_by_pid.get(pid)
         if record is None:
@@ -322,6 +335,12 @@ def _build_reliever_evidence(
         pitcher = pitchers.get(pid) or record.get('pitcher')
         availability = _availability_of(record)
         status = availability.get('availability_status')
+        public_label = public_availability_label(status)
+        if public_label is None:
+            # Fails closed on an unrecognised engine state, exactly as the missing
+            # -record case above does: no governed public label, no published row.
+            # The card never shows a raw state and never guesses a public one.
+            continue
         entry = workload.get(pid, {})
         appearances = int(entry.get('appearances', 0))
         outs = int(entry.get('outs', 0))
@@ -329,7 +348,7 @@ def _build_reliever_evidence(
         last_date = last.get('date')
         rest_days = _rest_days(last_date, reference_date)
         name = getattr(pitcher, 'full_name', None) or record.get('pitcher_name')
-        candidates.append({
+        candidates.append((status, {
             'pitcher_id': pid,
             'name': name,
             'last_three_appearances': appearances,
@@ -338,15 +357,16 @@ def _build_reliever_evidence(
             'last_appearance_date': last_date.isoformat() if isinstance(last_date, date) else None,
             'last_opponent': last.get('opponent'),
             'rest_days': rest_days,
-            'availability': status,
-        })
+            'availability': public_label,
+        }))
 
-    def sort_key(row):
+    def sort_key(candidate):
+        engine_status, row = candidate
         last_date = row['last_appearance_date']
         # More recent first: a real ISO date sorts ahead of a missing one.
         date_rank = last_date or ''
         return (
-            _restriction_rank(row['availability']),          # most restrictive first
+            _restriction_rank(engine_status),                # most restrictive first
             -row['last_three_appearances'],                  # more appearances first
             -row['outs_recorded'],                           # more recorded outs first
             _DateDesc(date_rank),                            # more recent first
@@ -355,7 +375,7 @@ def _build_reliever_evidence(
         )
 
     candidates.sort(key=sort_key)
-    return candidates[:MAX_RELIEVER_ROWS]
+    return [row for _engine_status, row in candidates[:MAX_RELIEVER_ROWS]]
 
 
 class _DateDesc:

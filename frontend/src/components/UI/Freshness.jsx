@@ -144,17 +144,29 @@ export function FreshnessBadge({
   )
 }
 
+// ``scope`` adds context around the stamp ("Previous", "Current") without
+// renaming the field: a surface may say WHICH data-through it is showing, but
+// the reader must still be told the value is a data-through. Replacing the
+// field name with a scope word — the old `label` override — left the timestamp
+// semantically unnamed.
 export function DataThroughStamp({
   date,
-  label = DATA_THROUGH_LABEL,
+  scope = null,
   includeYear = false,
   className = '',
 }) {
   const formatted = formatFreshnessDate(date, { includeYear })
   if (!formatted) return null
+  const scopeText = typeof scope === 'string' ? scope.trim() : ''
   return (
     <span className={`inline-flex min-h-7 items-center rounded border border-dirt bg-field/50 px-2.5 py-1 font-mono text-[11px] uppercase tracking-widest text-chalk400 ${className}`}>
-      {label} {formatted}
+      {scopeText && (
+        <>
+          <span className="text-chalk500">{scopeText}</span>
+          <span className="mx-1.5 text-chalk700" aria-hidden="true">·</span>
+        </>
+      )}
+      {DATA_THROUGH_LABEL} {formatted}
     </span>
   )
 }
