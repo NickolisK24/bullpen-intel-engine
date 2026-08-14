@@ -181,3 +181,61 @@ def test_the_catalogue_introduces_no_runtime_variability():
     for banned in ('import random', 'random.choice', 'datetime.now', 'time.time',
                    'os.environ'):
         assert banned not in source, banned
+
+
+# ── the public wording did not change ───────────────────────────────────────
+#
+# api/explanations.py is a frozen public-route surface. Moving its label table
+# into the contract is only safe because the bytes a reader receives are
+# identical, so the historical wording is pinned here explicitly rather than
+# left implied by "it matches the catalogue". If a future edit changes one of
+# these strings, this fails and the change gets the public-copy review the
+# freeze guard exists to demand.
+
+HISTORICAL_PUBLIC_LABELS = {
+    'missing_data': 'Required explanation inputs are unavailable',
+    'stale_data': 'Required explanation inputs are stale',
+    'partial_coverage': 'Required explanation inputs have partial coverage',
+    'uncertified_source': 'Requested explanation scope is unavailable',
+    'limited_confidence': 'Explanation confidence is limited',
+    'insufficient_context': 'Explanation context is insufficient',
+}
+
+
+@pytest.mark.parametrize('limitation_type,expected', sorted(HISTORICAL_PUBLIC_LABELS.items()))
+def test_the_public_label_is_byte_for_byte_what_the_route_already_shipped(
+    limitation_type, expected
+):
+    from api.explanations import _limitation_label
+
+    assert _limitation_label(limitation_type) == expected
+    assert limitation_type_label(limitation_type) == expected
+
+
+def test_the_historical_wording_covers_every_allowed_type():
+    """No type may quietly acquire new public wording under this migration."""
+    assert set(HISTORICAL_PUBLIC_LABELS) == set(ALLOWED_LIMITATION_TYPES)
+
+
+def test_the_unknown_fallback_is_the_one_the_route_already_shipped():
+    from api.explanations import _limitation_label
+
+    assert _limitation_label('not_a_type') == 'Explanation unavailable'
+
+
+def test_the_explanation_route_reads_no_appearance_team_authority():
+    """The purpose proof behind this file's appearance-team guard exemption.
+
+    ``backend/api/explanations.py`` is caught by that guard's public-API prefix.
+    It is exempted from the PATH match only; what the guard actually protects is
+    proved here, on every run rather than only when a diff against main
+    resolves: this route never reaches for appearance-team authority in either
+    language.
+    """
+    from pathlib import Path
+
+    import api.explanations as module
+
+    source = Path(module.__file__).read_text(encoding='utf-8')
+    for forbidden in ('appearance_team', 'appearance-team', 'appearanceTeam'):
+        assert forbidden not in source, forbidden

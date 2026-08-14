@@ -1036,6 +1036,13 @@ def test_branch_touches_no_team_state_or_public_surface_files():
         approved=(
             'backend/services/public_team_relief_work.py',
             'backend/api/performance_intelligence_admin.py',
+            # The V4 explanation route. Caught by the public-API prefix, exempt
+            # from the PATH match only: it reads no appearance-team authority,
+            # which is proved on every run by
+            # test_the_explanation_route_reads_no_appearance_team_authority, and
+            # the bytes it returns a reader are pinned byte-for-byte by
+            # test_the_public_label_is_byte_for_byte_what_the_route_already_shipped.
+            'backend/api/explanations.py',
             # The Team State public copy authority. It is caught by the
             # team_state path prefix, but it authors reader-facing sentences and
             # reads no roster or appearance authority at all. Like the entries
