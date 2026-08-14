@@ -173,8 +173,8 @@ export async function submitAudienceSignup({
 
 // Compact first-use entry path: the four primary product surfaces a new
 // visitor most often wants, using the existing bullpen routes and query views.
-// It sits after the daily read, never replacing it, so returning visitors still
-// reach today's answer first.
+// It sits after the intelligence sections, never replacing them, so every
+// visitor reaches today's answer before any navigation cards.
 const FIRST_USE_ACTIONS = [
   {
     title: "See Today's Bullpen Read",
@@ -1245,11 +1245,14 @@ function AudienceSignupForm() {
 function SeesHeader() {
 
   return (
-    <header className="mb-7 max-w-4xl pt-2 sm:pt-4">
+    <header className="mb-6 max-w-4xl pt-2 sm:pt-4">
       <div className="font-mono text-[10px] uppercase tracking-[0.28em] text-amber/75">
         MLB BULLPEN INTELLIGENCE — UPDATED DAILY
       </div>
-      <h1 className="mt-3 font-display text-5xl leading-none tracking-wide text-chalk100 sm:text-6xl lg:text-7xl">
+      {/* The headline is one type step smaller per breakpoint so the day's
+          bullpen picture lands earlier — on a phone the answer starts within
+          the first scroll instead of below a display-size masthead. */}
+      <h1 className="mt-3 font-display text-4xl leading-none tracking-wide text-chalk100 sm:text-5xl lg:text-6xl">
         See which bullpens are fresh, stretched, or vulnerable tonight — and why.
       </h1>
       <p className="mt-4 max-w-3xl text-base leading-relaxed text-chalk300 sm:text-lg">
@@ -1864,7 +1867,6 @@ function TonightSection({
     return (
       <SectionShell
         id="tonight"
-        eyebrow="Tonight"
         title={TONIGHT_SECTION_TITLE}
         subtitle={TONIGHT_SECTION_SUBTITLE}
       >
@@ -1877,7 +1879,6 @@ function TonightSection({
     return (
       <SectionShell
         id="tonight"
-        eyebrow="Tonight"
         title={TONIGHT_SECTION_TITLE}
         subtitle={TONIGHT_SECTION_SUBTITLE}
       >
@@ -1968,7 +1969,6 @@ function BullpenPicture({
   return (
     <SectionShell
       id="bullpen-picture"
-      eyebrow="Today's Bullpen Picture"
       title="Today's Bullpen Picture"
       subtitle="A quick look at which bullpens look rested and available, stretched, or on watch."
     >
@@ -2079,9 +2079,9 @@ function BullpenPicture({
   )
 }
 
-// Compact primary-action row placed right after the daily read. It helps a
-// first-time visitor reach the strongest surfaces without hunting through the
-// product, and stays short so it never reads as a marketing landing page.
+// Compact primary-action row placed after the intelligence sections. It helps
+// a first-time visitor reach the strongest surfaces without hunting through
+// the product, and stays short so it never reads as a marketing landing page.
 function ExploreBaseballOS() {
   return (
     <section id="explore-baseballos" aria-labelledby="explore-baseballos-title" className="mb-10">
@@ -2117,7 +2117,6 @@ function Explore() {
   return (
     <SectionShell
       id="explore"
-      eyebrow="Learn & Explore"
       title="Learn & Explore BaseballOS"
       subtitle="Get to know BaseballOS, then dig into every bullpen."
       className="mb-6"
@@ -2169,7 +2168,6 @@ export function IntelligenceSurfaceView({
         onRetry={onRetryLandscape}
         freshness={pageFreshness}
       />
-      <ExploreBaseballOS />
       <SinceYesterdaySection dashboard={dashboard} teams={teams} />
       <TonightSection
         tonight={tonight}
@@ -2180,6 +2178,7 @@ export function IntelligenceSurfaceView({
         onRetry={onRetryTonight}
         dashboard={dashboard}
       />
+      <ExploreBaseballOS />
       <Explore />
     </div>
   )

@@ -618,12 +618,15 @@ test('selected team board renders Recent Bullpen Work in the visible board path'
   assert.ok(htmlIncludes(html, 'id="team-relief-work"'))
   assert.ok(htmlIncludes(html, 'tabindex="-1"'))
   assert.ok(htmlIncludes(html, 'Review pitcher lanes'))
-  assert.ok(htmlIncludes(html, 'Tonight&#x27;s Bullpen Board — New York Yankees'))
+  // H-10: the club name inside the board heading is screen-reader-only now
+  // that the page heading names the club visibly.
+  assert.ok(htmlIncludes(html, 'Tonight&#x27;s Bullpen Board'))
+  assert.ok(htmlIncludes(html, '<span class="sr-only"> — New York Yankees</span>'))
   assert.ok(htmlIncludes(html, teamReliefWorkPayload.scope_sentence))
 
   const operatingIndex = html.indexOf('Review pitcher lanes')
   const reliefIndex = html.indexOf('Recent Bullpen Work')
-  const boardIndex = html.indexOf('Tonight&#x27;s Bullpen Board — New York Yankees')
+  const boardIndex = html.indexOf('Tonight&#x27;s Bullpen Board')
 
   assert.ok(operatingIndex !== -1)
   assert.ok(reliefIndex !== -1)
@@ -641,7 +644,8 @@ test('selected team board keeps relief work visible on endpoint failure', () => 
   assert.ok(htmlIncludes(html, 'Recent Bullpen Work'))
   assert.ok(htmlIncludes(html, 'Recent bullpen work is unavailable.'))
   assert.equal(htmlIncludes(html, 'request failed'), false)
-  assert.ok(htmlIncludes(html, 'Tonight&#x27;s Bullpen Board — New York Yankees'))
+  assert.ok(htmlIncludes(html, 'Tonight&#x27;s Bullpen Board'))
+  assert.ok(htmlIncludes(html, '<span class="sr-only"> — New York Yankees</span>'))
 })
 
 test('selected team board renders one Recent Bullpen Work panel', () => {

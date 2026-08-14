@@ -244,7 +244,11 @@ test('the operating card drops its team heading when the page owns the identity'
   // The board's own section heading keeps its level, its id, and its binding.
   assert.ok(htmlIncludes(html, '<h2 id="pitcher-lanes-title"'))
   assert.ok(htmlIncludes(html, 'aria-labelledby="pitcher-lanes-title"'))
-  assert.ok(htmlIncludes(html, `Tonight&#x27;s Bullpen Board — ${teamName}`))
+  // H-10: the page heading already names the club visibly, so the board
+  // heading carries the team for assistive tech only — the name stays inside
+  // the heading element, but no longer as a second visible title.
+  assert.ok(htmlIncludes(html, 'Tonight&#x27;s Bullpen Board'))
+  assert.ok(htmlIncludes(html, `<span class="sr-only"> — ${teamName}</span>`))
 })
 
 test('the operating card keeps its team heading everywhere else', () => {

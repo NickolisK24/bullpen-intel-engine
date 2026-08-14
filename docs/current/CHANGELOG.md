@@ -4,6 +4,39 @@ This changelog summarizes major product, governance, rollout, and operational
 milestones. It does not replace the detailed evidence records linked from
 [docs/README.md](../README.md).
 
+## August 14, 2026 - Today and Team Board Density Pass (H-10)
+
+- Today's sections now run intelligence-first: the first-use navigation card
+  row moved from between the Bullpen Picture and the Since Yesterday briefing
+  to after Tonight's Bullpen Watch, so both nav grids sit together at the
+  bottom of the page and every intelligence section reads contiguously. At
+  390px the Since Yesterday briefing starts roughly 700px earlier. The
+  governed section order itself (picture, since-yesterday, tonight) is
+  unchanged.
+- Redundant section eyebrows were dropped where they restated the title
+  directly beneath them ("Today's Bullpen Picture" twice, "Tonight" above
+  "Tonight's Bullpen Watch", "Learn & Explore" above "Learn & Explore
+  BaseballOS"), and the Today masthead headline stepped down one display size
+  per breakpoint so the day's answer lands within the first scroll on a phone.
+- On the Team Board, the same field label no longer repeats within one card:
+  the compact operating-state card's detail sentence drops its "Current
+  Bullpen State:" prefix when the state badge two lines above already carries
+  it (the prefix stays when no state is published, so the unavailable message
+  still names its field); pitcher-card eligibility and roster-status chips no
+  longer append the read-confidence value that the card's own "Read
+  Confidence" field row states — the confidence still travels in each chip's
+  hover and screen-reader text; and the board section heading no longer
+  repeats the club name visibly beneath the page heading that already names
+  it (the name remains inside the heading for assistive tech and anchor
+  landings).
+- The relief-work panel's Data Currency sentence is now a quiet metadata line
+  instead of a bordered panel of its own. The server-authored sentence renders
+  verbatim and stays visible; only the chrome changed.
+- Presentation only: no Team State, availability, Read Confidence, freshness
+  meaning, evidence meaning, ordering, or backend contract changed, no
+  governed label was reworded, and no timestamp fields were merged. Evidence,
+  freshness, limitations, and technical disclosures all remain rendered.
+
 ## August 14, 2026 - Internal Explanation Metadata Left the Reader Surface
 
 - The explanation disclosure title-cased backend enums straight into reader

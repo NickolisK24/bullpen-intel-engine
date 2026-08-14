@@ -19,14 +19,20 @@ function Sentence({ children }) {
   return <p className="font-mono text-sm leading-relaxed text-chalk200">{children}</p>
 }
 
+// The server-authored currency sentence stays visible verbatim, but as a
+// quiet metadata line instead of its own bordered panel, so it supports the
+// workload sections below it without competing at equal visual weight.
 function DataCurrency({ payload }) {
   const label = textValue(payload?.freshness?.label)
   if (!label) return null
 
   return (
-    <Section title="Data Currency" compact>
-      <Sentence>{label}</Sentence>
-    </Section>
+    <p className="text-[11px] leading-snug text-chalk500">
+      <span className="font-mono text-[10px] uppercase tracking-wider text-chalk600">
+        Data Currency:
+      </span>{' '}
+      {label}
+    </p>
   )
 }
 

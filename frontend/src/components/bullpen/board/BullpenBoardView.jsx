@@ -275,6 +275,11 @@ function PitcherLabelChips({ labels }) {
   )
 }
 
+// The eligibility and roster-status chips carry only their own governed label.
+// The card's read confidence renders exactly once, under its own "Read
+// Confidence" field label in the metadata row below; repeating it as a suffix
+// inside each chip made the same value appear up to three times per card. The
+// title/aria text keeps the confidence context for hover and screen readers.
 function EligibilityChip({ eligibility }) {
   if (!eligibility) return null
   return (
@@ -282,10 +287,9 @@ function EligibilityChip({ eligibility }) {
       className="inline-flex items-center gap-1.5 rounded border px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide"
       style={eligibility.tone}
       title={eligibility.reason || eligibility.label}
-        aria-label={`${eligibility.label}, workload read ${eligibility.confidenceLabel}`}
+      aria-label={`${eligibility.label}, workload read ${eligibility.confidenceLabel}`}
     >
       {eligibility.label}
-      <span className="opacity-70">· {eligibility.confidenceLabel}</span>
     </span>
   )
 }
@@ -300,7 +304,6 @@ function RosterStatusChip({ rosterStatus }) {
       aria-label={`Roster status: ${rosterStatus.label}, workload read ${rosterStatus.confidenceLabel}`}
     >
       {rosterStatus.label}
-      <span className="opacity-70">· {rosterStatus.confidenceLabel}</span>
     </span>
   )
 }
@@ -507,8 +510,13 @@ export default function BullpenBoardView({
       <RosterStatusBanner board={board} />
 
       <div className="mb-4">
+        {/* The /bullpen page heading already names the club ("{Team} Bullpen"),
+            so the visible board heading does not repeat it. The team stays in
+            the heading text for screen readers and anyone landing on the
+            #pitcher-lanes anchor out of context. */}
         <h2 id="pitcher-lanes-title" className="font-display text-xl tracking-wide text-chalk100">
-          Tonight's Bullpen Board{teamName ? ` — ${teamName}` : ''}
+          Tonight's Bullpen Board
+          {teamName ? <span className="sr-only"> — {teamName}</span> : null}
         </h2>
         <p className="mt-1 text-xs text-chalk500">
           {totals.countWithheld
