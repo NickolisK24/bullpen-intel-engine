@@ -1224,9 +1224,33 @@ def test_existing_public_routes_behavior_freeze(monkeypatch):
     if not changed:
         pytest.skip('git diff against origin/main unavailable')
 
+    # TEAM PREVIEW EVIDENCE SELECTION (H-7, cleanup/generated-copy-quality).
+    #
+    # The preview picked the board's FIRST governed reason, which is always the
+    # available-count sentence. Three clubs in three different Team States
+    # therefore published the same explanation, and that sentence is also the
+    # one carrying provenance inside a baseball claim. It now ranks the reasons
+    # the board already authored, most state-discriminating first.
+    #
+    # This is a reviewed reader-facing copy change, which is why it is named
+    # here rather than waved through: the preview description now reads
+    # "Two relievers are in the On Watch group." where it read "Five relievers
+    # are available from the latest completed workload data."
+    #
+    # What did NOT change: no route, no payload shape, no count, no Team State,
+    # no publication gate, no withheld/fail-closed path. Nothing is composed --
+    # every candidate sentence is one bullpen_board already published, and
+    # bullpen_board.py itself is untouched. Selection stays deterministic:
+    # equal-rank reasons resolve to the board's own published order.
+    #
+    # Exact path only, never a directory exemption.
+    approved_preview_evidence_selection = (
+        'backend/services/team_story_previews.py',
+    )
     moved = freeze_policy.protected_hits(
         changed,
         exact=freeze_policy.FROZEN_PUBLIC_ROUTE_PATHS,
+        approved=approved_preview_evidence_selection,
     )
     assert moved == [], (
         f'frozen public route surfaces changed: {moved}. Changing reader-facing '

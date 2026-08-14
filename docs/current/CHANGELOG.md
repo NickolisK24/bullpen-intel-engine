@@ -4,6 +4,40 @@ This changelog summarizes major product, governance, rollout, and operational
 milestones. It does not replace the detailed evidence records linked from
 [docs/README.md](../README.md).
 
+## August 14, 2026 - Generated Bullpen Copy Made Evidence-Specific (H-7 / H-9)
+
+- Team previews now select the evidence that explains the state. The board
+  publishes its governed reasons in a fixed order whose first entry is always
+  the available-count sentence, and the preview took that first entry — so
+  three clubs in three different Team States all read "3 available", and the
+  chosen sentence was also the one carrying provenance inside a baseball claim.
+  The preview ranks the reasons the board already authored, most
+  state-discriminating first: a stated Unavailable count, then On Watch, then
+  the meaningful zero, then the bare available count. Nothing is composed, no
+  count is recomputed, and no new metric was added. Ties resolve to the board's
+  own published order, so selection stays deterministic.
+- Fixed the story time framing. One prefix served both in-game narratives and
+  post-game state, which made "After their most recent game, Merrill Kelly
+  worked 6.0 innings" — he worked them in the game. In-game sentences take an
+  in-game framing, and a sentence that already names the starter and his
+  innings carries no prefix at all, because it has located the game itself.
+  Measured across 72 rendered stories, the share opening with one identical
+  clause fell from 61% to 11% and distinct openers rose from 8 to 25. The same
+  anchoring rule applies to the morning brief's one-sentence recap, which names
+  the club and the outcome and so locates the game by itself.
+- Fixed the What Changed context sentence. Its secondary phrases are
+  independent clauses ("coverage also stabilized"), so they could not follow
+  "including", which needs a noun phrase — that produced "...including coverage
+  also stabilized." The multi-item frame introduces the clause with a colon
+  instead. The frame is chosen to fit the phrase's grammatical shape; the
+  rendered sentence is not repaired afterwards.
+- **No randomness was introduced.** Variant selection remains hash-of-evidence
+  based, and a structural test refuses `random` in the writers. Determinism is
+  proved directly: identical input yields byte-identical bodies, headlines and
+  What Changed context across repeated runs.
+- No threshold, Team State, availability, confidence, roster-authority,
+  publication-gate, or schema change. No immutable artifact was regenerated.
+
 ## August 13, 2026 - Public Copy Follows Canonical Ownership (H-5 / H-6)
 
 - Removed the frontend's public-copy rewriting. Three components carried chained

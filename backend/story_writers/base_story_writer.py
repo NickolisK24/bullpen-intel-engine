@@ -38,6 +38,25 @@ _TIME_PREFIX = {
     TIME_INSUFFICIENT_CONTEXT: '',
 }
 
+# The same feed context frames two different kinds of sentence, and they need
+# different prepositions:
+#
+#   in-game    -- what happened during the game. "After their most recent game,
+#                 Merrill Kelly worked 6.0 innings" is temporally wrong: he
+#                 worked them IN the game, not after it.
+#   post-game  -- the state the club is in now, which "After" describes
+#                 correctly ("After their most recent game, there isn't enough
+#                 completed-game detail ...").
+#
+# One prefix used to serve both, which is why every completed-game lead opened
+# with the same misplaced clause. Selection is by sentence kind, not by chance.
+_TIME_PREFIX_IN_GAME = {
+    TIME_AFTER_MOST_RECENT_GAME: 'In their most recent game',
+    TIME_ENTERING_TODAY: 'Entering today',
+    TIME_CURRENT_STATUS: 'Currently',
+    TIME_INSUFFICIENT_CONTEXT: '',
+}
+
 CONFIDENCE_LOW = 'LOW'
 PRIMARY_INSUFFICIENT = 'insufficient_context'
 
@@ -372,6 +391,10 @@ class BaseStoryWriter:
     def time_prefix(self) -> str:
         return _TIME_PREFIX.get(self.safe_time_context(), '')
 
+    def in_game_time_prefix(self) -> str:
+        """Time framing for a sentence describing action during the game."""
+        return _TIME_PREFIX_IN_GAME.get(self.safe_time_context(), '')
+
     def headline_text(self) -> str:
         forms = _HEADLINES.get(self.headline_key(), (_DEFAULT_HEADLINE,))
         return _variant(
@@ -408,6 +431,26 @@ class BaseStoryWriter:
         """Open a sentence with the feed's permitted time framing (or none)."""
         rest = rest.strip()
         prefix = self.time_prefix()
+        if prefix:
+            return f'{prefix}, {rest}.'
+        return rest[:1].upper() + rest[1:] + '.'
+
+    def _start_in_game(self, rest: str, *, anchored: bool = False) -> str:
+        """Open a sentence describing what happened *during* the game.
+
+        Two corrections to the single shared opener that used to front every
+        completed-game story:
+
+        1. The preposition. "After their most recent game, Merrill Kelly worked
+           6.0 innings" is wrong -- he worked them in the game.
+        2. The repetition. When the sentence already names the starter and his
+           innings, it has located the game by itself, and the prefix only
+           repeats what the clause has said. ``anchored`` is set by the caller
+           from the evidence it actually has, so the opener varies because the
+           evidence varies -- never by chance.
+        """
+        rest = rest.strip()
+        prefix = '' if anchored else self.in_game_time_prefix()
         if prefix:
             return f'{prefix}, {rest}.'
         return rest[:1].upper() + rest[1:] + '.'
@@ -468,7 +511,7 @@ class BaseStoryWriter:
         if late:
             clause += f', allowing {_runs_word(late)} over the late innings'
         clause += ', turning a strong start into a difficult finish'
-        return self._start(clause)
+        return self._start_in_game(clause)
 
     def _lead_protected(self) -> str:
         entry_lead = self._entry_lead_value()
@@ -484,7 +527,7 @@ class BaseStoryWriter:
         if late == 0:
             clause += ' without giving anything back'
         clause += ', closing out the win'
-        return self._start(clause)
+        return self._start_in_game(clause)
 
     def _lead_kept_alive(self) -> str:
         deficit = self.fact('largest_deficit')
@@ -492,7 +535,7 @@ class BaseStoryWriter:
         if deficit:
             clause += f' after {self._team_subject()} fell behind by {deficit}'
         clause += ', keeping it close enough to complete the comeback'
-        return self._start(clause)
+        return self._start_in_game(clause)
 
     def _lead_overexposed(self) -> str:
         late = self.fact('late_runs_allowed')
@@ -504,14 +547,14 @@ class BaseStoryWriter:
             clause = 'a short start forced the bullpen to cover heavy innings'
         if late:
             clause += f', including {_runs_word(late)} late'
-        return self._start(clause)
+        return self._start_in_game(clause)
 
     def _lead_late_pressure(self) -> str:
         late = self.fact('runs_allowed_innings_7_to_9')
         clause = 'the bullpen pitched through repeated late traffic'
         if late:
             clause += f', allowing {_runs_word(late)} across the 7th through 9th'
-        return self._start(clause)
+        return self._start_in_game(clause)
 
     def _lead_starter_covered(self) -> str:
         anchor = self._starter_covered_anchor()
@@ -523,8 +566,8 @@ class BaseStoryWriter:
         )
         line = f'{anchor}, keeping the bullpen out of the heaviest innings'
         if consequence:
-            return f'{self._start(line)} {consequence}'
-        return self._start(line)
+            return f'{self._start_in_game(line)} {consequence}'
+        return self._start_in_game(line)
 
     def _lead_insufficient(self) -> str:
         return self._start(
@@ -680,7 +723,7 @@ class BaseStoryWriter:
             line = f'{base} slipped away in the late innings'
             if late:
                 line += f', with {_num(late)} runs crossing'
-            return self._start(line)
+            return self._start_in_game(line)
 
         variant = self._voice_index(2, 'lost_body')
         if variant == 0:
@@ -692,7 +735,7 @@ class BaseStoryWriter:
             opener = f'{starter} gave {team} {ipw} innings and a {_num(entry_lead)}-run lead'
         else:
             opener = f'{starter} worked {ipw} innings before a {_num(entry_lead)}-run lead reached the bullpen'
-        sentences = [self._start(opener), "It didn't last."]
+        sentences = [self._start_in_game(opener, anchored=True), "It didn't last."]
 
         closing = ''
         if late:
@@ -729,7 +772,7 @@ class BaseStoryWriter:
                 opener = (f'{starter} built {team} a {_num(entry_lead)}-run cushion over {ipw} innings'
                           if team else
                           f'{starter} built a {_num(entry_lead)}-run cushion over {ipw} innings')
-            sentences.append(self._start(opener))
+            sentences.append(self._start_in_game(opener, anchored=True))
             sentences.append(_variant((
                 'The bullpen brought it home.',
                 'The relievers handled the finish.',
@@ -765,7 +808,7 @@ class BaseStoryWriter:
             else:
                 opener = (f'{starter} put a {_num(entry_lead)}-run lead in place over {ipw} '
                           f'innings, and the relievers carried it home')
-            sentences.append(self._start(opener))
+            sentences.append(self._start_in_game(opener, anchored=True))
         else:
             if variant in (0, 3):
                 line = 'the bullpen protected '
@@ -780,7 +823,7 @@ class BaseStoryWriter:
             else:
                 line = 'the late innings held around '
                 line += f'a {_num(lead)}-run lead' if lead else 'the lead'
-            sentences.append(self._start(line))
+            sentences.append(self._start_in_game(line))
 
         if include_consequence and names:
             tail = f'{_join_names(names)} slammed the door'
@@ -821,7 +864,7 @@ class BaseStoryWriter:
             else:
                 opener = (f'{starter} left a {_num(entry_deficit)}-run deficit after {ipw} innings, '
                           f'and the bullpen held the game there')
-            sentences.append(self._start(opener))
+            sentences.append(self._start_in_game(opener, anchored=True))
         elif starter and ipw and entry_tied:
             if team:
                 opener = (f"{starter}'s {ipw} innings handed {team} a tied game, "
@@ -829,12 +872,12 @@ class BaseStoryWriter:
             else:
                 opener = (f"{starter}'s {ipw} innings handed the bullpen a tied game, "
                           f'and the relievers held the line from there')
-            sentences.append(self._start(opener))
+            sentences.append(self._start_in_game(opener, anchored=True))
         else:
             line = 'the bullpen kept the game within reach'
             if largest_deficit:
                 line += f' after {self._team_subject()} had fallen behind by {_num(largest_deficit)}'
-            sentences.append(self._start(line))
+            sentences.append(self._start_in_game(line))
 
         if include_consequence:
             if names:
@@ -868,7 +911,9 @@ class BaseStoryWriter:
             line = 'a short start left the bullpen to cover the rest'
         if late:
             line += f', including {_num(late)} late {"run" if late == 1 else "runs"}'
-        return self._start(line)
+        # Anchored exactly when the line names the starter and his innings: that
+        # branch locates the game itself, the bare "a short start" branch does not.
+        return self._start_in_game(line, anchored=bool(starter and ipw))
 
     def _compose_starter_covered(self, include_opening, include_consequence) -> str:
         anchor = self._starter_covered_anchor()
@@ -904,7 +949,7 @@ class BaseStoryWriter:
             line = f'{anchor}, leaving the bullpen with fewer innings to cover'
         else:
             line = f'{anchor}, before the bullpen took over for a shorter handoff'
-        sentences = [self._start(line)]
+        sentences = [self._start_in_game(line, anchored=True)]
         if consequence:
             sentences.append(consequence)
         return ' '.join(sentences)
@@ -991,7 +1036,11 @@ class BaseStoryWriter:
                 clause = f'{team} {self.short_summary()}'
         else:
             clause = f'{team} {self.short_summary()}'
-        return self._start(clause)
+        # The brief's recap names the club and states the game's outcome in one
+        # sentence, so it locates the game the same way a starter line does --
+        # the same anchoring rule, applied consistently. The sentences that
+        # follow it are explicitly about today.
+        return self._start_in_game(clause, anchored=True)
 
     def brief_today_line(self) -> str | None:
         """The morning brief's bullpen read — causal when yesterday changed it."""

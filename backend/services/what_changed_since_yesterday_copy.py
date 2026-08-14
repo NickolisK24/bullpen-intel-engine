@@ -425,10 +425,13 @@ def _context(
     phrase = _secondary_phrase(secondary[0])
     if len(secondary) == 1:
         return f'There is another meaningful shift here: {phrase}.'
-    return (
-        f'There are {_other_shift_phrase(len(secondary))} here, including '
-        f'{phrase}.'
-    )
+    # Every secondary phrase is an independent clause ("coverage also
+    # stabilized"), so it cannot follow "including", which needs a noun phrase
+    # -- that produced "...including coverage also stabilized." A colon
+    # introduces a clause grammatically, and the count already tells the reader
+    # how many others there are. The frame is chosen to fit the phrase's
+    # grammatical shape rather than the sentence being repaired afterwards.
+    return f'There are {_other_shift_phrase(len(secondary))} here: {phrase}.'
 
 
 def _word_count(value: str | None) -> int:

@@ -8,7 +8,7 @@
   "timing_note": "measured_seconds values are balancing inputs only. They are not test-selection authority: the per-shard file lists decide what runs, and \"python scripts/ci_shard.py verify\" proves those lists cover live pytest collection exactly once.",
   "shards": {
     "1": {
-      "measured_seconds": 500.979,
+      "measured_seconds": 501.479,
       "files": [
         {
           "path": "tests/test_availability_unavailable_experiment.py",
@@ -157,6 +157,10 @@
         {
           "path": "tests/test_postgame_shadow_scope.py",
           "measured_seconds": 26.378
+        },
+        {
+          "path": "tests/test_preview_evidence_selection.py",
+          "measured_seconds": 0.5
         },
         {
           "path": "tests/test_product_roadmap_current_state.py",
@@ -1151,7 +1155,7 @@
       ]
     },
     "4": {
-      "measured_seconds": 502.63,
+      "measured_seconds": 503.13,
       "files": [
         {
           "path": "tests/test_active_bullpen_artifact_publication.py",
@@ -1244,6 +1248,10 @@
         {
           "path": "tests/test_games_started.py",
           "measured_seconds": 1.101
+        },
+        {
+          "path": "tests/test_generated_copy_grammar.py",
+          "measured_seconds": 0.5
         },
         {
           "path": "tests/test_identity_infrastructure.py",
