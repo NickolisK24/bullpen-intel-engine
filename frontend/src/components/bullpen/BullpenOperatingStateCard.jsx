@@ -367,12 +367,20 @@ function CompactBullpenOperatingStateCard({
       ) : (
         <>
           <div className="mt-2 text-xs leading-snug text-chalk400">
-            {(view.stateLabel ? view.stateDetail : view.stateUnavailableMessage) && (
+            {/* When the state badge is rendered it already reads
+                "Current Bullpen State: {label}", so the detail sentence below
+                it stands alone instead of repeating the same field label two
+                lines apart. Without a badge (no published state) the label
+                stays, so the unavailable message still says which field it is
+                speaking for. */}
+            {view.stateLabel ? (
+              view.stateDetail && <p>{view.stateDetail}</p>
+            ) : view.stateUnavailableMessage && (
               <p>
                 <span className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
                   Current Bullpen State:
                 </span>{' '}
-                {view.stateLabel ? view.stateDetail : view.stateUnavailableMessage}
+                {view.stateUnavailableMessage}
               </p>
             )}
           </div>
