@@ -622,7 +622,7 @@
       ]
     },
     "3": {
-      "measured_seconds": 498.519,
+      "measured_seconds": 499.119,
       "files": [
         {
           "path": "tests/test_active_bullpen_readiness_resolver.py",
@@ -1119,6 +1119,10 @@
         {
           "path": "tests/test_team_operations_bullpen_readiness_api.py",
           "measured_seconds": 8.869
+        },
+        {
+          "path": "tests/test_team_preview_claim_authority.py",
+          "measured_seconds": 0.6
         },
         {
           "path": "tests/test_team_progressive_publication.py",

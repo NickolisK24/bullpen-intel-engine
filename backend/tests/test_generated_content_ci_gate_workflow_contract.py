@@ -495,7 +495,14 @@ def _export_result(tmp_path, **overrides):
             '<meta name="baseballos:data-through" content="2026-08-11" />\n'
             '<meta name="baseballos:snapshot-id" content="398" />\n'
             '<meta name="baseballos:authority-contract" '
-            'content="trusted_dashboard_publication_v1" />\n',
+            'content="trusted_dashboard_publication_v1" />\n'
+            '<meta name="baseballos:team-state" content="Stretched" />\n'
+            '<meta name="baseballos:unfurl-team-state" content="Stretched" />\n'
+            '<meta property="og:title" content="Team Bullpen: Stretched" />\n'
+            '<meta property="og:description" content="Team bullpen state: '
+            'Stretched. Data through 2026-08-11." />\n'
+            '<p data-baseballos-team-state="Stretched">BaseballOS Team State: '
+            'Stretched.</p>\n',
             encoding='utf-8',
         )
     (team_root / 'index.html').write_text(
@@ -574,6 +581,70 @@ def test_delivery_gate_refuses_a_dated_claim_without_receipts(tmp_path):
     )
     violations, _ = verify(result, str(root), REPO_ROOT)
     assert any('data-through' in violation for violation in violations)
+
+
+def test_delivery_gate_passes_a_page_whose_unfurl_names_no_team_state(tmp_path):
+    """Canonical story wording often names no state. Silence is not a conflict."""
+    result, root = _export_result(tmp_path)
+    page = Path(result['output']['files'][0])
+    text = page.read_text(encoding='utf-8')
+    text = text.replace(
+        '<meta name="baseballos:unfurl-team-state" content="Stretched" />\n', ''
+    )
+    text = text.replace('Team Bullpen: Stretched', 'Yankees leaned on their late arms')
+    text = text.replace(
+        'Team bullpen state: Stretched. Data through 2026-08-11.',
+        'Three relievers worked a third straight day. Data through 2026-08-11.',
+    )
+    page.write_text(text, encoding='utf-8')
+    violations, _ = verify(result, str(root), REPO_ROOT)
+    assert violations == []
+
+
+def test_delivery_gate_refuses_a_body_that_contradicts_the_published_state(tmp_path):
+    """The H-8 defect from the reader's side: body says one state, page another."""
+    result, root = _export_result(tmp_path)
+    page = Path(result['output']['files'][0])
+    page.write_text(
+        page.read_text(encoding='utf-8').replace(
+            '<p data-baseballos-team-state="Stretched">BaseballOS Team State: Stretched.</p>',
+            '<p data-baseballos-team-state="Fresh">BaseballOS Team State: Fresh.</p>',
+        ),
+        encoding='utf-8',
+    )
+    violations, _ = verify(result, str(root), REPO_ROOT)
+    assert any('crawler-visible body renders Team State' in v for v in violations)
+
+
+def test_delivery_gate_refuses_an_unfurl_that_contradicts_the_published_state(tmp_path):
+    """The H-8 defect from the crawler's side: the share card claims another state."""
+    result, root = _export_result(tmp_path)
+    page = Path(result['output']['files'][0])
+    page.write_text(
+        page.read_text(encoding='utf-8')
+        .replace(
+            '<meta name="baseballos:unfurl-team-state" content="Stretched" />',
+            '<meta name="baseballos:unfurl-team-state" content="Fresh" />',
+        )
+        .replace('Team Bullpen: Stretched', 'Team Bullpen: Fresh'),
+        encoding='utf-8',
+    )
+    violations, _ = verify(result, str(root), REPO_ROOT)
+    assert any('would store different claims about this bullpen' in v for v in violations)
+
+
+def test_delivery_gate_refuses_an_unfurl_receipt_the_shipped_bytes_do_not_support(tmp_path):
+    """The receipt describes the artifact, so it may not outrun the artifact."""
+    result, root = _export_result(tmp_path)
+    page = Path(result['output']['files'][0])
+    page.write_text(
+        page.read_text(encoding='utf-8')
+        .replace('Team Bullpen: Stretched', 'Team Bullpen Read')
+        .replace('Team bullpen state: Stretched. ', ''),
+        encoding='utf-8',
+    )
+    violations, _ = verify(result, str(root), REPO_ROOT)
+    assert any('no og:title/og:description on the page states it' in v for v in violations)
 
 
 def test_delivery_gate_refuses_disagreeing_exporter_counts(tmp_path):

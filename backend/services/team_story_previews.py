@@ -301,6 +301,87 @@ def data_through_sentence(data_through):
     return f'Data through {data_through}.'
 
 
+# ---------------------------------------------------------------------------
+# One claim per page (H-8).
+#
+# The published Team Board owns this page's claim. Every receipt field
+# (snapshot, sync run, data_through, published_at, authority contract), the
+# Team State and the baseball point all come from it, and the page exists to
+# hand the reader to that board.
+#
+# A canonical story may supply the SOCIAL WORDING (DIST-003 / #594) but it is a
+# different evidence family -- a completed-game narrative -- and it must not
+# become a second author of the claim. It used to be able to: the metadata was
+# selected from the story while the body was rendered from the board, under one
+# shared snapshot id and with nothing comparing them. That published pages whose
+# unfurl said "Fresh with seven close-game options available" above a body
+# reading "BaseballOS Team State: Vulnerable. 5 relievers are Unavailable.", and
+# pages whose summary described one date while the stamp carried another.
+#
+# So story wording is now checked against the claim before it is used. The
+# checks are structural: identity fields compared directly, and Team State
+# compared against the canonical three-label catalogue rather than by reading
+# arbitrary English.
+# ---------------------------------------------------------------------------
+
+# Why a canonical story was refused as the source of this page's wording. Each
+# is a real disagreement with the claim, not an error.
+STORY_REJECTED_TEAM_MISMATCH = 'story_team_mismatch'
+STORY_REJECTED_DATE_MISMATCH = 'story_represented_date_mismatch'
+STORY_REJECTED_STATE_CONFLICT = 'story_team_state_conflict'
+
+
+def _story_states_a_team_state(text):
+    """The canonical Team State labels named in ``text``, as a set.
+
+    Word-boundary matched against the canonical public catalogue only. This is
+    a closed three-label vocabulary, not an attempt to parse the sentence.
+    """
+    found = set()
+    for label in PUBLIC_TEAM_STATE_LABEL_SET:
+        if re.search(rf'\b{re.escape(label)}\b', text or ''):
+            found.add(label)
+    return found
+
+
+def _sole_state_named(text):
+    """The single Team State ``text`` names, or ``None`` if it names 0 or 2+."""
+    named = _story_states_a_team_state(text)
+    return next(iter(named)) if len(named) == 1 else None
+
+
+def story_claim_disagreement(story, *, abbr, team_id, state_label, data_through):
+    """Why this story may not word the page's claim, or ``None`` if it may.
+
+    Checked in a fixed order so the reported reason is deterministic.
+    """
+    if not isinstance(story, dict):
+        return None
+
+    story_abbr = _clean_text(story.get('team_abbreviation')).upper()
+    story_team_id = story.get('team_id')
+    if (story_abbr and abbr and story_abbr != abbr) or (
+        story_team_id is not None and team_id is not None and story_team_id != team_id
+    ):
+        return STORY_REJECTED_TEAM_MISMATCH
+
+    # The page stamps the board's data_through under the story's prose. A story
+    # representing another date would date someone else's sentence.
+    story_date = _clean_text(story.get('date'))
+    if story_date and data_through and story_date != data_through:
+        return STORY_REJECTED_DATE_MISMATCH
+
+    # A story that names a Team State must name this page's Team State. When the
+    # board publishes no state, a story may not introduce one.
+    named = _story_states_a_team_state(
+        f'{_clean_text(story.get("share_title"))} {_clean_text(story.get("share_summary"))}'
+    )
+    if named and named != ({state_label} if state_label else set()):
+        return STORY_REJECTED_STATE_CONFLICT
+
+    return None
+
+
 def _story_title(story):
     """Share-card title: the canonical share title, falling back to the headline."""
     for key in ('share_title', 'headline'):
@@ -379,6 +460,7 @@ def _withheld_preview(
         'category': None,
         'tone': None,
         'team_state_label': None,
+        'unfurl_team_state': None,
         'non_state_message': None,
         'baseball_point': None,
         'data_through': None,
@@ -464,6 +546,19 @@ def build_team_story_preview(
     state_label, non_state_message = _team_state_read(board)
     baseball_point = _baseball_point(board)
 
+    # The board's claim is settled above. A canonical story may word it only if
+    # it agrees with it; otherwise the page falls back to the board's own
+    # wording, so both projections still describe one claim.
+    story_disagreement = story_claim_disagreement(
+        story,
+        abbr=abbr,
+        team_id=(team or {}).get('team_id') or ((board or {}).get('team') or {}).get('team_id'),
+        state_label=state_label,
+        data_through=data_through,
+    )
+    if story_disagreement is not None:
+        story = None
+
     if story:
         title = _story_title(story)
         if not title:
@@ -499,6 +594,11 @@ def build_team_story_preview(
         description_authority = 'team_state+context.health+data_through'
         source = 'trusted_team_board'
         framing = 'neutral'
+        if story_disagreement is not None:
+            # Visible and machine-readable: the page says which claim it is
+            # publishing and why the story's wording was refused.
+            title_authority = f'{title_authority}+{story_disagreement}'
+            description_authority = f'{description_authority}+{story_disagreement}'
 
     return {
         'team_id': (team or {}).get('team_id') or ((board or {}).get('team') or {}).get('team_id'),
@@ -514,6 +614,10 @@ def build_team_story_preview(
         'category': (story or {}).get('category'),
         'tone': (story or {}).get('tone'),
         'team_state_label': state_label,
+        # Which Team State the unfurl copy itself names, if any. Canonical story
+        # wording may legitimately name none; what it may never do is name a
+        # different one, and this makes that checkable on the artifact.
+        'unfurl_team_state': _sole_state_named(f'{title} {description}'),
         'non_state_message': None if state_label else non_state_message,
         'baseball_point': baseball_point,
         # Four separate temporal facts. They are never collapsed into each other.
@@ -612,6 +716,13 @@ def _authority_meta(preview):
         lines.append(_meta_name('baseballos:sync-run-id', preview['sync_run_id']))
     if preview.get('authority_contract'):
         lines.append(_meta_name('baseballos:authority-contract', preview['authority_contract']))
+    if preview.get('team_state_label'):
+        # The one Team State this page publishes. Both the unfurl copy and the
+        # crawler-visible body are projections of this value, so a delivery gate
+        # can prove they agree without re-deriving any baseball meaning.
+        lines.append(_meta_name('baseballos:team-state', preview['team_state_label']))
+    if preview.get('unfurl_team_state'):
+        lines.append(_meta_name('baseballos:unfurl-team-state', preview['unfurl_team_state']))
     published_at = preview.get('published_at')
     if published_at and published_at != preview.get('generated_at'):
         lines.append(_meta_name('baseballos:published-at', published_at))
@@ -633,8 +744,10 @@ def _body_lines(preview):
 
     if preview.get('representation') == REPRESENTATION_DATED_READ:
         if preview.get('team_state_label'):
+            state_attr = html.escape(preview['team_state_label'], quote=True)
             lines.append(
-                f'      <p>BaseballOS Team State: {html.escape(preview["team_state_label"])}.</p>'
+                f'      <p data-baseballos-team-state="{state_attr}">BaseballOS Team '
+                f'State: {html.escape(preview["team_state_label"])}.</p>'
             )
         elif preview.get('non_state_message'):
             lines.append(f'      <p>{html.escape(preview["non_state_message"])}</p>')

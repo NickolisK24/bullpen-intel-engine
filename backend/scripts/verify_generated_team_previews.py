@@ -33,7 +33,15 @@ publication can silently go wrong:
   8. every snapshot receipt on disk names the ONE trusted publication the
      exporter says this run published from — two clocks in one run is the
      failure #594 exists to prevent, and this proves it did not happen;
-  9. the withheld set on disk is exactly the withheld set the exporter declared.
+  9. the withheld set on disk is exactly the withheld set the exporter declared;
+ 10. every dated page tells a crawler and a human reader the SAME thing. The page
+     declares the one Team State it published, and both renderings of it -- the
+     unfurl metadata and the crawler-visible body -- are proven against that one
+     declaration. This is a string-agreement check on two projections of a value
+     the page itself declared; it still decides nothing about baseball. Note its
+     honest limit: unfurl copy that names no Team State at all is permitted (a
+     canonical story sentence often names none), so this catches contradiction,
+     not silence.
 
 Reading receipts back out of the emitted HTML is deliberate: the point is to
 verify the ARTIFACT, not to re-ask the generator what it intended. The values
@@ -81,6 +89,16 @@ _META_PATTERN = re.compile(
     r'<meta\s+name="baseballos:(?P<key>[a-z-]+)"\s+content="(?P<value>[^"]*)"\s*/>'
 )
 
+_OG_PATTERN = re.compile(
+    r'<meta\s+property="og:(?P<key>[a-z_]+)"\s+content="(?P<value>[^"]*)"\s*/>'
+)
+
+# The body element that renders the published Team State carries the value it
+# rendered. Reading it back is a projection check, not a re-derivation: the page
+# declares its own claim in the ``baseballos:team-state`` receipt, and this only
+# proves the two renderings of that one declared value did not diverge.
+_BODY_STATE_PATTERN = re.compile(r'data-baseballos-team-state="(?P<value>[^"]*)"')
+
 
 def _parse_args(argv=None):
     parser = argparse.ArgumentParser(
@@ -121,6 +139,61 @@ def _read_authority_meta(text):
         match.group('key'): html.unescape(match.group('value'))
         for match in _META_PATTERN.finditer(text)
     }
+
+
+def _read_open_graph(text):
+    """Return the ``og:*`` values a generated page presents to crawlers."""
+    return {
+        match.group('key'): html.unescape(match.group('value'))
+        for match in _OG_PATTERN.finditer(text)
+    }
+
+
+def _read_body_team_state(text):
+    """Return the Team State the crawler-visible body rendered, if any."""
+    match = _BODY_STATE_PATTERN.search(text)
+    return html.unescape(match.group('value')) if match else None
+
+
+def _claim_violations(relative, meta, text):
+    """Prove one page's metadata and body publish the same Team State.
+
+    This is the H-8 invariant, and it is deliberately a string-agreement check.
+    The page itself declares which Team State it published; nothing here decides
+    what that state should have been. Two projections that disagree mean the
+    unfurl a crawler or social platform stores says one thing about a bullpen
+    while the human reader is told another, which is a trust defect regardless
+    of which of the two happens to be right.
+    """
+    declared = meta.get('team-state')
+    unfurl_state = meta.get('unfurl-team-state')
+    body_state = _read_body_team_state(text)
+    violations = []
+
+    if body_state != declared:
+        violations.append(
+            f'{relative}: crawler-visible body renders Team State {body_state!r} '
+            f'but the page declares {declared!r}'
+        )
+
+    if unfurl_state:
+        if unfurl_state != declared:
+            violations.append(
+                f'{relative}: unfurl metadata states Team State {unfurl_state!r} '
+                f'while the page publishes {declared!r}; a social platform and a '
+                'reader would store different claims about this bullpen'
+            )
+        # The receipt must describe the bytes actually shipped, not the
+        # generator's intention about them.
+        open_graph = _read_open_graph(text)
+        unfurl = f'{open_graph.get("title", "")} {open_graph.get("description", "")}'
+        if unfurl_state not in unfurl:
+            violations.append(
+                f'{relative}: baseballos:unfurl-team-state claims {unfurl_state!r} '
+                'but no og:title/og:description on the page states it'
+            )
+
+    return violations
 
 
 def _load_export_result(path):
@@ -228,10 +301,12 @@ def verify(export_result, output_root, repo_root):
     observed_snapshot_ids = set()
     withheld_on_disk = []
     dated_pages = 0
+    coherent_claims = 0
     for path in declared:
         if not path.is_file():
             continue
-        meta = _read_authority_meta(path.read_text(encoding='utf-8'))
+        text = path.read_text(encoding='utf-8')
+        meta = _read_authority_meta(text)
         relative = _relative(path, repo_root)
         representation = meta.get('representation')
 
@@ -257,6 +332,10 @@ def verify(export_result, output_root, repo_root):
                         f'{relative}: dated claim is missing the '
                         f'baseballos:{key} receipt'
                     )
+            claim_problems = _claim_violations(relative, meta, text)
+            violations.extend(claim_problems)
+            if not claim_problems and meta.get('team-state'):
+                coherent_claims += 1
         else:
             violations.append(
                 f'{relative}: unrecognised representation {representation!r}'
@@ -266,6 +345,7 @@ def verify(export_result, output_root, repo_root):
             observed_snapshot_ids.add(meta['snapshot-id'])
 
     facts['dated_pages'] = dated_pages
+    facts['coherent_team_state_claims'] = coherent_claims
     facts['withheld_pages'] = sorted(withheld_on_disk)
     facts['observed_snapshot_ids'] = sorted(observed_snapshot_ids)
 
