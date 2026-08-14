@@ -626,7 +626,7 @@
       ]
     },
     "3": {
-      "measured_seconds": 499.119,
+      "measured_seconds": 499.719,
       "files": [
         {
           "path": "tests/test_active_bullpen_readiness_resolver.py",
@@ -787,6 +787,10 @@
         {
           "path": "tests/test_evidence_composition_service.py",
           "measured_seconds": 0.0
+        },
+        {
+          "path": "tests/test_explanation_label_ownership.py",
+          "measured_seconds": 0.6
         },
         {
           "path": "tests/test_fatigue.py",

@@ -100,8 +100,15 @@ def build_limitation(
     severity: str = 'informational',
     affected_scopes: Sequence[str] | None = None,
     requires_refusal: bool = False,
+    label: str | None = None,
 ) -> V4Limitation:
-    """Build a validated V4 limitation."""
+    """Build a validated V4 limitation.
+
+    ``label`` is accepted so an already-serialised limitation can round-trip
+    through ``_limitation_reference`` without losing a field. It is normally
+    left unset: V4Limitation resolves the governed label from the validated
+    type, so the label has one author regardless of which door it came in.
+    """
 
     validate_limitation_type(limitation_type)
     return V4Limitation(
@@ -110,6 +117,7 @@ def build_limitation(
         summary=summary,
         affected_scopes=tuple(affected_scopes or ()),
         requires_refusal=requires_refusal,
+        label=label,
     )
 
 

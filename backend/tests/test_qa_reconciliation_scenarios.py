@@ -291,7 +291,18 @@ def test_phase0e_switches_and_legacy_public_files_not_modified():
         # Authenticated internal routes reach no reader. system.py stays frozen
         # by test_existing_public_routes_behavior_freeze, which also pins its
         # admin gating, so exempting it here weakens nothing.
-        approved=freeze_policy.INTERNAL_ONLY_API_PATHS,
+        #
+        # explanations.py is a reader-facing route and is exempted only from the
+        # PATH match. What this guard protects -- the bytes a reader receives --
+        # is proved directly and on every run by
+        # test_the_public_label_is_byte_for_byte_what_the_route_already_shipped,
+        # which pins all six public limitation labels and the unknown-key
+        # fallback to the exact strings the route shipped before its duplicate
+        # label table was folded into the contract that already validated those
+        # types. A wording change fails there instead of passing silently here.
+        approved=freeze_policy.INTERNAL_ONLY_API_PATHS + (
+            'backend/api/explanations.py',
+        ),
     )
     assert moved == [], (
         f'frozen legacy public surfaces changed: {moved}. A public route or '
