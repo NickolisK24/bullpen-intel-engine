@@ -165,7 +165,7 @@ test('reasons, evidence and limitations all still reach the reader', () => {
 
 test('freshness, visibility and read confidence survive', () => {
   const text = visibleText(render())
-  for (const kept of ['Freshness', 'Data Through', 'Last Sync', 'Visibility',
+  for (const kept of ['Freshness', 'Data through', 'Last data update', 'Visibility',
     'Read Confidence', 'Explanation confidence reflects current source evidence.']) {
     assert.ok(text.includes(kept), kept)
   }

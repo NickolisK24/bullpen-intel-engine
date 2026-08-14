@@ -7,6 +7,12 @@
 // invents no team/state/count/label, and shows missing values honestly. Every
 // number and sentence comes straight from the immutable artifact.
 
+import { formatConfidence, READ_CONFIDENCE_FIELD_LABEL } from '../bullpen/availabilityView'
+import {
+  DATA_THROUGH_LABEL,
+  GENERATED_AT_LABEL,
+  PUBLISHED_AT_LABEL,
+} from '../../utils/bullpenConcepts'
 import { formatDateOnly, formatUtcDateTimeEt } from '../../utils/dateDisplay'
 
 const SITE = 'BaseballOS'
@@ -246,11 +252,11 @@ export default function TeamStateArtifactCard({ card }) {
         ) : null}
         <dl className="mt-3 grid grid-cols-2 gap-3 text-sm lg:grid-cols-4">
           <div>
-            <dt className="font-mono text-[10px] uppercase tracking-widest text-chalk500">Confidence</dt>
-            <dd className="mt-0.5 capitalize text-chalk200">{trust.confidence || '—'}</dd>
+            <dt className="font-mono text-[10px] uppercase tracking-widest text-chalk500">{READ_CONFIDENCE_FIELD_LABEL}</dt>
+            <dd className="mt-0.5 text-chalk200">{formatConfidence(trust.confidence)}</dd>
           </div>
           <div>
-            <dt className="font-mono text-[10px] uppercase tracking-widest text-chalk500">Data through</dt>
+            <dt className="font-mono text-[10px] uppercase tracking-widest text-chalk500">{DATA_THROUGH_LABEL}</dt>
             <dd className="mt-0.5 text-chalk200">
               {dataThroughText ? <time dateTime={ctx.data_through}>{dataThroughText}</time> : '—'}
             </dd>
@@ -260,7 +266,7 @@ export default function TeamStateArtifactCard({ card }) {
             <dd className="mt-0.5 text-chalk200">{ctx.publication_label || '—'}</dd>
           </div>
           <div>
-            <dt className="font-mono text-[10px] uppercase tracking-widest text-chalk500">Generated</dt>
+            <dt className="font-mono text-[10px] uppercase tracking-widest text-chalk500">{GENERATED_AT_LABEL}</dt>
             <dd className="mt-0.5 text-chalk200">
               {fmtDateTime(ctx.generated_at) ? (
                 <time dateTime={ctx.generated_at}>{fmtDateTime(ctx.generated_at)}</time>

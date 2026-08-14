@@ -1,3 +1,4 @@
+import { LAST_DATA_UPDATE_LABEL } from '../../utils/bullpenConcepts'
 import { Link } from 'react-router-dom'
 import { toOperatingStateReadModel } from '../../adapters/operatingStateReadModel'
 import { useFetch } from '../../hooks/useFetch'
@@ -244,7 +245,7 @@ function FreshnessPill({ provenance, lastSync, confidenceLabel }) {
       <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-0.5">
         <span>{provenance.label}</span>
         <span>{dataLine}</span>
-        {lastSync && <span className="text-chalk500">· Latest data update: {lastSync}</span>}
+        {lastSync && <span className="text-chalk500">· {LAST_DATA_UPDATE_LABEL}: {lastSync}</span>}
         <span className="text-chalk500">· Read Confidence: {confidenceLabel}</span>
       </span>
     </div>

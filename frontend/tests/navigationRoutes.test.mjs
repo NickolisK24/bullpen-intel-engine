@@ -149,14 +149,16 @@ test('Sidebar Data Freshness renders sync status timestamps in ET', () => {
   const html = render(React.createElement(SidebarDataFreshnessCard, { freshness }))
 
   assert.ok(htmlIncludes(html, 'Data Freshness'))
-  assert.ok(htmlIncludes(html, 'Page checked'))
+  assert.ok(htmlIncludes(html, 'Last checked'))
   assert.ok(htmlIncludes(html, '6:00 AM ET'))
-  assert.ok(htmlIncludes(html, 'Latest data update'))
+  assert.ok(htmlIncludes(html, 'Last data update'))
   assert.ok(htmlIncludes(html, '6:02 AM ET'))
-  assert.ok(htmlIncludes(html, 'Bullpen data through'))
-  assert.equal(htmlIncludes(html, '>Data through<'), false)
+  // H-11: the sidebar renders the three canonical stamp names. The two
+  // assertions removed here pinned the surface-specific variants it used to
+  // invent ("Latest data update", "Bullpen data through") and asserted the
+  // canonical names were ABSENT — the exact drift this package closed.
+  assert.ok(htmlIncludes(html, 'Data through'))
   assert.ok(htmlIncludes(html, 'June 23, 2026'))
-  assert.equal(htmlIncludes(html, 'Last Sync'), false)
   assert.equal(htmlIncludes(html, '10:02 AM ET'), false)
 })
 

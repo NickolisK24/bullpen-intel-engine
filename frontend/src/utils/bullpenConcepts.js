@@ -83,21 +83,56 @@ export const ARM_AVAILABILITY_DEFINITIONS = Object.freeze([
 ])
 
 // Freshness stamp vocabulary.
+//
+// H-11: these five names are the ONE reader-facing label for each temporal
+// field, and every surface imports them from here rather than spelling its own
+// variant. That is what stopped `data_through` from reading as "Data through" /
+// "Bullpen data through" / "Published view through" on three surfaces at once,
+// and it makes glossary drift impossible by construction: How to Read renders
+// the same constants the product renders.
+//
+// These stay five SEPARATE labels because they are five separate clocks. A
+// surface may add scope around a stamp (a heading, a section title); it may not
+// rename the field or use one stamp to stand for another.
+export const DATA_THROUGH_LABEL = 'Data through'
+export const LAST_DATA_UPDATE_LABEL = 'Last data update'
+export const LAST_CHECKED_LABEL = 'Last checked'
+export const GENERATED_AT_LABEL = 'Generated at'
+export const PUBLISHED_AT_LABEL = 'Published at'
+
 export const FRESHNESS_LABEL_DEFINITIONS = Object.freeze([
-  Object.freeze({ name: 'Data through', definition: 'The latest completed baseball date represented by the public read.' }),
-  Object.freeze({ name: 'Last data update', definition: 'When BaseballOS last successfully wrote new baseball data.' }),
-  Object.freeze({ name: 'Last checked', definition: 'When BaseballOS most recently attempted or observed a refresh.' }),
+  Object.freeze({ name: DATA_THROUGH_LABEL, definition: 'The latest completed baseball date represented by the public read.' }),
+  Object.freeze({ name: LAST_DATA_UPDATE_LABEL, definition: 'When BaseballOS last successfully wrote new baseball data.' }),
+  Object.freeze({ name: LAST_CHECKED_LABEL, definition: 'When BaseballOS most recently attempted or observed a refresh.' }),
 ])
 
 // Provenance stamps. Separate concepts from the three above: they describe an
 // artifact's lifecycle, never the baseball date the read represents.
 export const PROVENANCE_LABEL_DEFINITIONS = Object.freeze([
-  Object.freeze({ name: 'Generated at', definition: 'When a historical or distribution artifact was created.' }),
-  Object.freeze({ name: 'Published at', definition: 'When that artifact became the trusted public publication.' }),
+  Object.freeze({ name: GENERATED_AT_LABEL, definition: 'When a historical or distribution artifact was created.' }),
+  Object.freeze({ name: PUBLISHED_AT_LABEL, definition: 'When that artifact became the trusted public publication.' }),
 ])
 
-// The data-status family. It describes the state of the DATA, never a bullpen
-// or an arm — which is why it borrows no baseball word.
+// Workload Data — the state of ONE pitcher's stored workload record, shown on
+// Pitcher Detail and on the Team Board pitcher cards. It is a different
+// question from Data Status below: Data Status describes whether the published
+// READ is current, this describes how complete and how recent the workload
+// record behind a single arm is. The two are named differently so a reader is
+// never asked to tell them apart from context. Owned by
+// components/bullpen/availabilityView.js, which holds the value catalogue.
+export const WORKLOAD_DATA_FAMILY = 'Workload Data'
+export const WORKLOAD_DATA_DEFINITIONS = Object.freeze([
+  Object.freeze({ name: 'Current', definition: "The arm's latest workload information is inside the active freshness window." }),
+  Object.freeze({ name: 'Outside Freshness Window', definition: 'Workload history exists, but the latest appearance is older than the active freshness window.' }),
+  Object.freeze({ name: 'No Workload Record', definition: 'No recent workload history is available for this pitcher.' }),
+  Object.freeze({ name: 'Incomplete Workload Inputs', definition: 'Some workload inputs are incomplete, so the read should be treated cautiously.' }),
+  Object.freeze({ name: 'Fetch Failed', definition: 'The latest workload fetch failed, so the read is unresolved until a refresh succeeds.' }),
+  Object.freeze({ name: 'Historical', definition: 'The read is based on an older workload record.' }),
+  Object.freeze({ name: 'Unavailable', definition: 'BaseballOS has no usable workload data state for this pitcher.' }),
+])
+
+// The data-status family. It describes the state of the published READ, never a
+// bullpen or an arm — which is why it borrows no baseball word.
 export const DATA_STATUS_DEFINITIONS = Object.freeze([
   Object.freeze({ name: 'Current', definition: "The represented public data is current under the platform's freshness rules." }),
   Object.freeze({ name: 'Partial Data', definition: 'Some current data exists, but the public read carries a material data limitation.' }),
@@ -124,7 +159,9 @@ export const PITCHER_CURRENT_READ_DEFINITIONS = Object.freeze([
 ])
 
 // READ CONFIDENCE — how clear the evidence is. Not a baseball conclusion.
-export const READ_CONFIDENCE_FAMILY = 'Read Confidence'
+// Re-exported from the value catalogue so the glossary and the product can
+// never disagree on this field's name.
+export { READ_CONFIDENCE_FIELD_LABEL as READ_CONFIDENCE_FAMILY } from '../components/bullpen/availabilityView'
 export const READ_CONFIDENCE_DEFINITIONS = Object.freeze([
   Object.freeze({ name: 'High', definition: 'The evidence behind the read is complete and clear.' }),
   Object.freeze({ name: 'Medium', definition: 'The evidence supports the read with some gaps.' }),

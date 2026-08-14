@@ -1,3 +1,8 @@
+import {
+  DATA_THROUGH_LABEL,
+  LAST_CHECKED_LABEL,
+  LAST_DATA_UPDATE_LABEL,
+} from '../../utils/bullpenConcepts'
 import { useFetch } from '../../hooks/useFetch'
 import { getSyncStatus } from '../../utils/api'
 import { getSyncStatusView } from './syncStatusView'
@@ -56,9 +61,9 @@ export function SyncStatusContent({ data, loading, error, now, freshnessAuthorit
         dot="#8899aa"
         status="Checking"
         metrics={[
-          { label: 'Last checked', value: 'Checking sync status', muted: true },
-          { label: 'Last data update', value: 'Checking data update', muted: true },
-          { label: 'Data through', value: 'Checking data coverage', muted: true },
+          { label: LAST_CHECKED_LABEL, value: 'Checking sync status', muted: true },
+          { label: LAST_DATA_UPDATE_LABEL, value: 'Checking data update', muted: true },
+          { label: DATA_THROUGH_LABEL, value: 'Checking data coverage', muted: true },
         ]}
       />
     )
@@ -70,9 +75,9 @@ export function SyncStatusContent({ data, loading, error, now, freshnessAuthorit
         status="Limited"
         helper="Sync status unavailable."
         metrics={[
-          { label: 'Last checked', value: 'Unavailable', muted: true },
-          { label: 'Last data update', value: 'Unavailable', muted: true },
-          { label: 'Data through', value: 'Unavailable', muted: true },
+          { label: LAST_CHECKED_LABEL, value: 'Unavailable', muted: true },
+          { label: LAST_DATA_UPDATE_LABEL, value: 'Unavailable', muted: true },
+          { label: DATA_THROUGH_LABEL, value: 'Unavailable', muted: true },
         ]}
       />
     )
@@ -94,9 +99,9 @@ export function SyncStatusContent({ data, loading, error, now, freshnessAuthorit
       status={view.healthLabel}
       helper={view.helper}
       metrics={[
-        { label: view.lastCheckedLabel || 'Last checked', value: lastCheckedValue, muted: !view.lastCheckedValue },
-        { label: view.lastDataUpdateLabel || 'Last data update', value: lastDataUpdateValue, muted: !view.lastDataUpdateValue },
-        { label: view.dataLabel || 'Data through', value: dataValue, muted: !view.dataValue },
+        { label: view.lastCheckedLabel || LAST_CHECKED_LABEL, value: lastCheckedValue, muted: !view.lastCheckedValue },
+        { label: view.lastDataUpdateLabel || LAST_DATA_UPDATE_LABEL, value: lastDataUpdateValue, muted: !view.lastDataUpdateValue },
+        { label: view.dataLabel || DATA_THROUGH_LABEL, value: dataValue, muted: !view.dataValue },
       ]}
     />
   )

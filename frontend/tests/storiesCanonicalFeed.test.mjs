@@ -297,8 +297,8 @@ test('Stories renders page-level freshness, live state, limitations, and trust l
     dashboard: dashboardFixture({ stories: canonicalStories() }),
   }))
 
-  assert.ok(htmlIncludes(html, 'Bullpen data through Jun 25'))
-  assert.ok(htmlIncludes(html, 'Last synced 4:15 AM ET'))
+  assert.ok(htmlIncludes(html, 'Data through Jun 25'))
+  assert.ok(htmlIncludes(html, 'Last data update 4:15 AM ET'))
   assert.ok(htmlIncludes(html, 'Freshness: Current'))
   assert.ok(htmlIncludes(html, 'Current MLB data'))
   assert.ok(htmlIncludes(html, 'Scope'))

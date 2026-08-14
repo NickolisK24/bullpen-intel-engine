@@ -1,3 +1,4 @@
+import { DATA_THROUGH_LABEL, LAST_CHECKED_LABEL, LAST_DATA_UPDATE_LABEL } from '../utils/bullpenConcepts'
 import { useEffect, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { useFetch } from '../hooks/useFetch'
@@ -54,9 +55,9 @@ export function SidebarDataFreshnessCard({ freshness }) {
         Data Freshness
       </div>
       <div className="space-y-3">
-        <SidebarFreshnessItem label="Page checked" value={freshness.lastChecked} />
-        <SidebarFreshnessItem label="Latest data update" value={freshness.lastDataUpdate} />
-        <SidebarFreshnessItem label="Bullpen data through" value={freshness.dataThrough} />
+        <SidebarFreshnessItem label={LAST_CHECKED_LABEL} value={freshness.lastChecked} />
+        <SidebarFreshnessItem label={LAST_DATA_UPDATE_LABEL} value={freshness.lastDataUpdate} />
+        <SidebarFreshnessItem label={DATA_THROUGH_LABEL} value={freshness.dataThrough} />
       </div>
     </div>
   )

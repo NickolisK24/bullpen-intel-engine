@@ -1,3 +1,4 @@
+import { DATA_THROUGH_LABEL, LAST_DATA_UPDATE_LABEL } from '../../utils/bullpenConcepts'
 import {
   formatDateOnly,
   formatUtcDateTimeEt,
@@ -145,7 +146,7 @@ export function FreshnessBadge({
 
 export function DataThroughStamp({
   date,
-  label = 'Data through',
+  label = DATA_THROUGH_LABEL,
   includeYear = false,
   className = '',
 }) {
@@ -175,7 +176,7 @@ export function SlateDateStamp({
 
 export function LastSyncLabel({
   value,
-  label = 'Last synced',
+  label = LAST_DATA_UPDATE_LABEL,
   includeDate = false,
   className = '',
 }) {

@@ -1,3 +1,4 @@
+import { DATA_THROUGH_LABEL } from '../../utils/bullpenConcepts'
 import { fmtDataDate } from './syncStatusView'
 import { buildTeamBoardHref } from '../../utils/evidenceLinks'
 import { readPublicTeamState } from '../../adapters/publicTeamState'
@@ -21,7 +22,12 @@ export const BULLPEN_LANDSCAPE_COLUMNS = [
   {
     key: 'monitoring',
     sourceKey: 'monitoring_concentration',
-    title: 'On Watch',
+    // H-11: this lane used the governed per-arm availability label verbatim
+    // while its siblings used superlatives, so "On Watch / TOR" could read as
+    // "Toronto is On Watch" — a team-level state — rather than "Toronto has the
+    // most on-watch arms". The qualified title says which it is, and reuses the
+    // governed board group heading ("On-Watch Arms") rather than new wording.
+    title: 'Most On-Watch Arms',
     subtitle: 'Recent workload watch groups',
     metric: 'monitor',
     suffix: 'on watch',
@@ -82,7 +88,7 @@ export function getLandscapeView(landscape) {
     gamesLabel = `Scheduled MLB games today: ${count} game${count === 1 ? '' : 's'}`
   } else if (asOfDate) {
     const count = games.as_of_count || 0
-    gamesLabel = `Bullpen data through ${asOfDate} (${count} completed MLB game${count === 1 ? '' : 's'})`
+    gamesLabel = `${DATA_THROUGH_LABEL} ${asOfDate} (${count} completed MLB game${count === 1 ? '' : 's'})`
   } else {
     gamesLabel = 'Schedule data unavailable'
   }
