@@ -2,7 +2,6 @@ import { useId, useState } from 'react'
 
 import {
   explanationLabel,
-  humanizeLabel,
   isPlainObject,
   shouldShowTechnicalKey,
   summarizeDisplayValue,
@@ -27,9 +26,8 @@ function displayValue(value) {
   return String(value)
 }
 
-function titleCase(value) {
-  return humanizeLabel(value)
-}
+// No titleCase helper here any more. Turning a raw backend enum into public
+// text is exactly the inference this surface is not entitled to do.
 
 function TechnicalKeyLine({ label = 'Technical key', value }) {
   if (!shouldShowTechnicalKey(value)) return null
@@ -154,11 +152,9 @@ function EvidenceList({ evidence }) {
             <TechnicalKeyLine value={item.evidence_type} />
             <ValueBlock value={item.value} unit={item.unit} />
             {item.impact && <p className="mt-1 text-xs leading-relaxed text-chalk500">{item.impact}</p>}
-            {[item.source, item.trust_status].filter(Boolean).length > 0 && (
-              <p className="mt-2 font-mono text-[10px] uppercase tracking-wider text-chalk600">
-                {[item.source, item.trust_status].filter(Boolean).map(titleCase).join(' / ')}
-              </p>
-            )}
+            {/* `source` is an internal producer key -- title-casing it read as
+                "Team Operations Readiness". It stays available below as an
+                explicitly labelled technical key rather than as reader copy. */}
             <TechnicalKeyLine label="Source key" value={item.source} />
           </li>
         )
@@ -188,8 +184,11 @@ function LimitationList({ limitations }) {
             <p className="mt-1 text-sm leading-relaxed text-chalk300">
               {item.summary || 'Explanation limitation was returned without additional summary.'}
             </p>
+            {/* `severity` is the explanation engine's own priority word
+                (informational / significant), not governed public vocabulary,
+                and the limitation's own label and summary already say what is
+                limited. */}
             <TechnicalKeyLine value={item.limitation_type} />
-            {item.severity && <p className="mt-2 font-mono text-[10px] uppercase tracking-wider text-chalk600">{titleCase(item.severity)}</p>}
           </li>
         )
       })}
@@ -203,8 +202,9 @@ function MetadataGrid({ freshness, trust, confidence }) {
     ['Data Through', asObject(freshness).data_through],
     ['Last Sync', asObject(freshness).last_sync_at],
     ['Visibility', asObject(trust).status],
-    ['Visibility Source', asObject(trust).source],
-    ['Certification', asObject(trust).certification_status],
+    // 'Visibility Source' was an internal producer key and 'Certification' an
+    // internal contract state ('certified_with_non_blocking_observations').
+    // Neither answered a reader question; the visibility status itself does.
     ['Read Confidence', asObject(confidence).level],
     ['Read Confidence Summary', asObject(confidence).summary],
   ]
@@ -252,16 +252,18 @@ function ExplanationDetails({ explanationView }) {
 
   return (
     <div className="space-y-3">
+      {/* The envelope's scope, state_explained, subject_type and route_status
+          were title-cased into this header and chip row, which turned engine
+          enums into reader copy with no semantic owner: `readiness_state` read
+          as "Readiness State", `operationally_stable` as "Operationally
+          Stable", `internal_uncertified_route` as "Internal Uncertified
+          Route". None of them answered a reader question. Scope and subject are
+          already established by the surface that opens this disclosure;
+          state_explained is the internal readiness code whose public name is a
+          Team State published elsewhere; route_status is which internal route
+          served the request. The summary carries the explanation. */}
       <div className="rounded border border-dirt bg-field/60 p-3">
-        <div className="font-mono text-[10px] uppercase tracking-widest text-chalk600">
-          {titleCase(explanationView.scope || explanationView.explanationType)}
-        </div>
-        <p className="mt-1 text-sm leading-relaxed text-chalk200">{explanationView.summary}</p>
-        <div className="mt-2 flex flex-wrap gap-2 font-mono text-[10px] uppercase tracking-wider text-chalk600">
-          <span>{titleCase(explanationView.stateExplained)}</span>
-          <span>{titleCase(explanationView.subjectType)}</span>
-          {explanationView.routeStatus && <span>{titleCase(explanationView.routeStatus)}</span>}
-        </div>
+        <p className="text-sm leading-relaxed text-chalk200">{explanationView.summary}</p>
       </div>
 
       <DetailSection title="Reasons" initiallyOpen>
