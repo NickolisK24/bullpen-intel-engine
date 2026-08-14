@@ -1,6 +1,6 @@
 # Roster Authority V1 — Foundation
 
-Status: **Single source of roster truth — CRC complete (CRC Phase 10).** Introduced as a pure
+Status: **Implementation contract for roster authority — CRC complete (CRC Phase 10).** This object is the single in-code roster-context source every consumer reads from; it is not a canonical document, and it is not the authority root. Source authority for roster and team assignment is owned by [`docs/canonical/02_BULLPEN_INTELLIGENCE_STANDARD.md`](../canonical/02_BULLPEN_INTELLIGENCE_STANDARD.md) Section 5, and the platform boundary by [`docs/canonical/04_PLATFORM_ARCHITECTURE_OPERATIONS.md`](../canonical/04_PLATFORM_ARCHITECTURE_OPERATIONS.md). Where this document and either of those differ, the canonical standard is authoritative. Introduced as a pure
 foundation in CRC-1; every roster/category consumer now reads from it (Bullpen Board, the
 Capacity family, the editorial Story/Digest, the public pitcher labels, and the Home page), no
 consumer keeps a private roster status set or roster predicate, and the legacy board

@@ -1,5 +1,16 @@
 # Backend Bridge-Instability Story — Phase 4B.3 (June 2026)
 
+> **Status: Superseded implementation record — retained as implementation history.**
+> This backend phase shipped. The document describes the state of the story
+> system at the time of that phase, including legacy paths and UI surfaces that
+> later phases removed; it is not a description of the system today.
+>
+> Nothing here is current implementation authority. Current product behavior is
+> governed by
+> [`docs/canonical/03_PRODUCT_EXPERIENCE_STANDARD.md`](../canonical/03_PRODUCT_EXPERIENCE_STANDARD.md)
+> and current claims by
+> [`docs/canonical/02_BULLPEN_INTELLIGENCE_STANDARD.md`](../canonical/02_BULLPEN_INTELLIGENCE_STANDARD.md).
+
 **Companion docs:** `team_board_canonical_migration_audit.md` (Phase 4A), `team_board_storycard_parity_phase_4b_1.md` (4B.1), `trust_lane_story_phase_4b_2.md` (4B.2)
 **Scope:** Add a canonical bridge-instability story path to Story Intelligence V1, end to end. **No Team Board migration. `TeamBullpenStoryPanel` untouched. No new raw data.** Home and Stories only *receive* the new story type through their existing adapters.
 

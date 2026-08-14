@@ -1,9 +1,20 @@
 # BaseballOS Certification Ledger
 
+> **Status: Historical evidence — not current product authority.**
+> This ledger summarizes certification and rollout decisions taken during the
+> June 2026 V2.5/V3 programme, and its rows are sourced to records now in
+> `docs/archive/2026-06/`. Several describe surfaces that no longer exist:
+> the Prospect Pipeline row, for example, refers to a prototype removed from
+> the frontend entirely. Current product and rollout authority lives in
+> [`docs/canonical/05_PRODUCT_ROADMAP_DECISION_LEDGER.md`](../canonical/05_PRODUCT_ROADMAP_DECISION_LEDGER.md);
+> current surfaces live in
+> [`docs/canonical/03_PRODUCT_EXPERIENCE_STANDARD.md`](../canonical/03_PRODUCT_EXPERIENCE_STANDARD.md).
+> The rows below are preserved as the record of what was decided and when.
+
 This ledger summarizes certification, production, rollout, and governance state
 by surface. Detailed evidence remains in the linked source records.
 
-## Current Certification Summary
+## Certification Summary as of June 2026
 
 | Surface | Certification status | Rollout status | Evidence |
 | --- | --- | --- | --- |

@@ -26,7 +26,9 @@ six authorities below.
 
 ## Precedence
 
-When two documents appear to conflict, use this order:
+The authority order is defined by the
+[Constitution](01_BASEBALLOS_CONSTITUTION.md), Section 15. It is restated here
+for navigation:
 
 1. Constitution
 2. Bullpen Intelligence Standard

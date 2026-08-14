@@ -23,13 +23,16 @@ historical despite living outside `archive/`, see
 
 ## Current Execution Snapshot
 
-As of August 13, 2026, with `main` at `e3ad8bd`:
+As of August 14, 2026, with `main` at `b2f0e90`:
 
 - **The Public Credibility Pass is complete.** UX-001 (#590), SEC-001 (#595), FE-001 (#591), UX-002 (#600), DIST-003 (#594), and VOC-001 (#638) are all closed after production verification. VOC-001 closed August 12 on trusted snapshot `398`.
 - **PROD-001 (#592), CI-001 (#599), OPS-001 (#593), and OPS-002 (#620) are complete.** The permanent daily-sync work reduction that OPS-002's mitigation deliberately did not implement remains separate follow-up work.
 - **DEP-001 (#601) is complete.** Backend runtime dependencies carry no known advisories, test dependencies no longer ship to production, and a standing read-only CI dependency audit refuses unreviewed production dependency risk. Three residual React Router advisories are an explicit acceptance expiring **2026-11-13**, tracked by #645. See [`current/DEPENDENCY_SECURITY_CLOSEOUT_2026-08-13.md`](current/DEPENDENCY_SECURITY_CLOSEOUT_2026-08-13.md).
-- **CI-003 (#598) is the ordered next package.** The generated-content publication gate (D-053) is on main and its issue is closed, but the closeout evidence the Roadmap requires — a naturally authorized scheduled export producing a gated, tree-exact, machine-attributed commit, plus read-only deployment proof — has not yet been recorded. A closed issue and recorded production proof are different claims.
+- **CI-003 (#598) is complete.** Naturally scheduled run `31794183367` (attempt 1) produced the gated, tree-exact, machine-attributed commit `2e83fa0` under `BaseballOS Automation`; the commit's tree equals the validated tree `1c9d7dc`; the Vercel deployment succeeded; and read-only verification of `https://baseballos.app/team/ATH` served trusted snapshot `411`, sync run `721`, and data through `2026-08-13` under `trusted_dashboard_publication_v1`. Issue #598 is closed as completed. The full chain — natural schedule, generated-content gate, frontend tests, production build, tree-exact staging, machine commit, push, deployment, live routed page — is proven.
+- **Permanent daily-sync work reduction is the current ordered work**, preserving D-051 in full: scheduled first-attempt-only production daily execution, legacy writer authority, daily and postgame shadow, backfill off, and no game-driven write or publication authority.
 - Daily and postgame game-driven ingestion remain **shadow**. Backfill is off by default. The legacy writer remains authoritative. Automated game-driven write mode and publication-authority transfer remain unapproved.
+- **Authoritative manual daily execution is prohibited under D-051.** The production full-daily runner is schedule-only and first-attempt-only; manual dispatch and reruns are refused before application startup.
+- **H-1 and H-5 through H-12 are closed** across PRs #650-#659 and this documentation-authority reconciliation. They changed public copy ownership, language quality, hierarchy, vocabulary and freshness convergence, and documentation authority — no baseball logic, sync behavior, or publication authority.
 - The game `824487` source-revision checkpoint repair is terminally complete and its single-purpose mutation capability has been retired. It must not be reintroduced as a current operator path.
 
 The exact current execution order and decision state live in the
@@ -38,7 +41,9 @@ GitHub issues remain the precise acceptance checklist for open remediation work.
 
 ## Authority Order
 
-When two documents appear to conflict, use this order:
+The authority order is defined by the
+[Constitution](canonical/01_BASEBALLOS_CONSTITUTION.md), Section 15. It is
+restated here for navigation:
 
 1. Constitution
 2. Bullpen Intelligence Standard
@@ -121,7 +126,7 @@ drift categories:
 
 1. public README vocabulary that still used the old Available / On Watch / Limited ladder;
 2. setup text that still described BaseballOS as a broader analytics platform with a Prospect Pipeline;
-3. sync documentation that still described game-driven daily mode as `off` and implied the legacy all-pitcher loop had already retired;
+3. sync documentation that still described game-driven daily mode as `off` and implied the legacy all-pitcher loop had already retired (this category recurred and was closed again on August 14 — see `backend/tests/test_document_authority_contract.py`, which now pins the workflow value against the document);
 4. historical project-state files living under `docs/current/`;
 5. operational documents that could be mistaken for broader authority after the game `824487` repair was retired;
 6. current execution summaries that predated OPS-002.

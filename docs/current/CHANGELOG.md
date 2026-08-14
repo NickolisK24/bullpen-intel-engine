@@ -4,6 +4,61 @@ This changelog summarizes major product, governance, rollout, and operational
 milestones. It does not replace the detailed evidence records linked from
 [docs/README.md](../README.md).
 
+## August 14, 2026 - Documentation Authority Reconciliation (H-12)
+
+- The game-driven ingestion contract said the lane was `off` in three places
+  while the workflow ran it in `shadow` — and said `shadow` in a fourth place
+  in the same file. Those three sentences were written when the bootstrap
+  closed and were true then; they now read as the historical position they
+  are, and the mode table names the current value for each cycle.
+- D-051 retired authoritative manual daily execution, but the Architecture
+  Manual still listed "manual founder/admin sync" as supported and the sync
+  runbook still required a manual daily recovery run as OPS-002 proof. Both
+  now match D-051, with the retired criterion preserved as an explicit
+  historical note. The Architecture Manual also gained the current
+  baseball-data authority summary it had never carried, which is why the
+  subsystem runbooks were free to disagree beneath it.
+- The Editorial & Distribution Standard stopped defining public vocabulary. Its
+  named-bullpen-read row had drifted from the two higher-ranked standards and
+  still carried team-level `Clean Options`, the word PR #659 retired from the
+  surfaces. The table now names its owners per row and defers to them.
+- The Workload Data family PR #659 shipped has a canonical home: the Bullpen
+  Intelligence Standard owns its meaning and its separation from Data Status,
+  the Product Experience Standard owns its public field.
+- The Roadmap recorded that no gated, machine-attributed generated commit
+  existed on main. One does — commit `2e83fa0` from scheduled run
+  `31794183367` — and CI-003 (#598) is complete: the deployment succeeded and
+  read-only verification of the live routed page served snapshot 411, sync run
+  721, and data through 2026-08-13. The active objective advances to the next
+  already-approved item, permanent daily-sync work reduction. D-013 is amended
+  to scope sole human authorship to engineering work with the governed
+  publication job as its one machine exception under D-053.
+- API responses advertised governing documents at seven paths that no longer
+  exist, and an availability readiness gate reported PASS without reading the
+  corpus it was written to check. Both were repaired.
+- No baseball logic, sync behavior, publication authority, schema, or
+  dependency changed.
+
+## August 14, 2026 - Public Vocabulary and Freshness Convergence (H-11)
+
+- Share Cards project canonical public Team State rather than composing their
+  own state words, and withhold the card instead of stamping a non-canonical
+  label onto a shareable image.
+- The five freshness stamps converged on their canonical labels — Data
+  through, Last data update, Last checked, Generated at, Published at — and
+  the retired `Synced:` / `DATA STATUS` variants are gone from the surfaces.
+- Read Confidence carries its field label everywhere it appears, including in
+  ARIA, so a bare High or Low can never be read as a baseball verdict.
+- `Clean Options` was retired as a team-level label in favour of `Rested
+  Options`, keeping `Clean Option` to the single-arm read it belongs to.
+- Pitcher workload-record status separated from platform Data Status under the
+  new reader-facing field `Workload Data`, because `Fresh` could not be reused
+  for "this data is recent" one surface away from "this bullpen is rested".
+- Unknown and unrecognised values fail closed rather than borrowing a
+  neighbouring label.
+- Wording and ownership only: no model, threshold, availability rule,
+  classification, or publication behavior changed.
+
 ## August 14, 2026 - Today and Team Board Density Pass (H-10)
 
 - Today's sections now run intelligence-first: the first-use navigation card

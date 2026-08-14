@@ -3,8 +3,8 @@
 | Field | Value |
 |---|---|
 | Status | Canonical - intelligence, data, evidence, methodology, and publication authority |
-| Version | 1.3 |
-| Effective date | August 11, 2026 |
+| Version | 1.4 |
+| Effective date | August 14, 2026 |
 | Owner | Nickolis Kacludis |
 | Supersedes | Intelligence, metric, vocabulary, evidence, freshness, and trust rules spread across prior master documents |
 | Update rule | Revise when a source authority, data domain, public term, method, evidence contract, freshness rule, suppression rule, or publication gate changes |
@@ -488,6 +488,7 @@ Public language is organized into semantic families. A family owns one question,
 | Pitcher role | How has this arm been used? | `backend/services/pitcher_public_labels.py` |
 | Pitcher current read | What does this arm's current workload evidence say? | `backend/services/pitcher_public_labels.py` |
 | Bullpen supporting reads | What does one dimension of this bullpen look like? | `backend/services/team_bullpen_shape.py` |
+| Workload Data | How complete and how recent is the workload record behind this one arm's read? | Backend `availability.data_state`; public label catalogue in `frontend/src/components/bullpen/availabilityView.js` |
 
 Team State is not arm availability, is not pitcher role, is not pitcher current read, is not read confidence, and is not a bullpen supporting read. These are not synonyms. No family may serve as a fallback or a substitute for another, and a surface that cannot resolve one family fails closed inside that family rather than borrowing a label from a neighbor.
 
@@ -592,6 +593,26 @@ The public read-confidence scale is exactly High, Medium, Low, and Unavailable.
 
 Read confidence is a public evidence-quality presentation family, not another baseball-state or read classification. It is always rendered under its own field label, so a bare High or Low can never be read as a Team State, an availability label, or a baseball conclusion. The raw internal confidence values are unchanged; only the reader-facing scale is governed here. Read confidence is not a recommendation score and is not a confidence grade about a future outcome.
 
+### Workload Data
+
+Workload Data describes the state of the workload record behind **one arm's** read: how complete it is and how recent it is. It is a governed public family, and it is the only family that speaks about evidence coverage for a single pitcher.
+
+The public catalog is exactly:
+
+| Public label | Meaning |
+|---|---|
+| Current | The arm's latest workload information is inside the active freshness window |
+| Outside Freshness Window | Workload history exists, but the latest appearance is older than the active freshness window |
+| No Workload Record | No recent workload history is available for this pitcher |
+| Incomplete Workload Inputs | Some workload inputs are incomplete, so the read should be treated cautiously |
+| Fetch Failed | The latest workload fetch failed, so the read is unresolved until a refresh succeeds |
+| Historical | The read is based on an older workload record |
+| Unavailable | BaseballOS has no usable workload data state for this pitcher |
+
+**Workload Data is not Data Status.** Data Status - Current, Partial Data, Stale, Data Unavailable, in Section 10 - describes the state of the published platform read. Workload Data describes one arm's underlying workload record. They can disagree honestly: a current published read may still carry an arm whose own workload record is outside the freshness window. A surface may not use one as a fallback for the other, and neither may borrow a baseball word.
+
+**Ownership.** The backend decides the state. `availability.data_state` is emitted by the availability authority, and it is the semantic decision: nothing downstream may derive, infer, or override it. The governed public label catalogue for those states currently resides in shared frontend utilities (`frontend/src/components/bullpen/availabilityView.js`, with the reader glossary in `frontend/src/utils/bullpenConcepts.js`). That is an implementation location, not a transfer of semantic authority: the wording is governed by this Section, the catalogue may not add, rename, or reinterpret a state on its own, and an unrecognised state fails closed to `Unavailable` rather than borrowing a neighbouring label. Relocating the catalogue to a backend or shared semantic owner is a permitted implementation change and requires no change to this contract.
+
 ### Public performance vocabulary
 
 | Term | Meaning | Authority |
@@ -654,7 +675,9 @@ Freshness reaches a reader through separate stamps that answer separate question
 
 These are different clocks. No surface collapses them into one value or uses one to stand for another. This restates for reader-facing language the separation Section 7A already requires of the represented baseball date; it establishes no new temporal model.
 
-The reader-facing data-status family - Current, Partial Data, Stale, Data Unavailable - describes the state of the data, never a bullpen or an arm, and therefore borrows no baseball word. `Limited` remains arm-availability vocabulary.
+The reader-facing data-status family - Current, Partial Data, Stale, Data Unavailable - describes the state of the published platform read, never a bullpen or an arm, and therefore borrows no baseball word. `Limited` remains arm-availability vocabulary.
+
+The per-arm Workload Data family in Section 8 answers the neighbouring question - how complete and how recent the workload record behind one arm is. The two are separate stamps about separate subjects, they are rendered under separate field labels, and neither substitutes for the other.
 
 ## 11. Observation and Story Governance
 
@@ -765,3 +788,4 @@ Before publication verify source authority, completeness, currentness, evidence 
 | 1.1 | July 29, 2026 | Nickolis Kacludis | Expanded performance context into the reusable Current Active-Pen Performance family contract (Section 7A): active-group, window, sample, date/freshness, evidence, evidence-level, and limitation contracts. Added the metric-family and metric-registry model with M-001 Current Active-Pen ERA reserved as contract-pending and non-public (Section 7B). Corrected the capability registry to separate the production-internal season bullpen aggregation from the unimplemented public metric. State is not performance, canonical integer outs, and historical appearance-team ownership are preserved unchanged. |
 | 1.2 | July 30, 2026 | Nickolis Kacludis | Specified M-001 in a new Section 7C: formula and denominator authority, the derived 108-out minimum sample stated in the denominator's own unit, family-wide rounding mechanics with worked examples, the approved below-sample read Not Enough Innings Yet, the no-usage call-up membership rule with its two group counts, and the filled four-level evidence contract. Added the inheritance split to Section 7B, the public performance vocabulary to Section 8, and corrected the capability registry. No gate is opened; M-001 remains unimplemented and non-public. |
 | 1.3 | August 11, 2026 | Nickolis Kacludis | Established public-language authority in Section 8 after VOC-001: the semantic owner of every governed public family is named in code - Team State wording in `team_state_public_vocabulary.py`, arm availability wording in `public_bullpen_copy.py`, pitcher role and pitcher current read in `pitcher_public_labels.py`, and bullpen supporting reads in `team_bullpen_shape.py`. Separated the families explicitly: Team State, arm availability, pitcher role, pitcher current read, read confidence, and bullpen supporting read answer different questions and may never substitute for one another. Recorded the backend-governed pass-through rule - the backend decides the semantic label, the frontend renders it, and the retired frontend semantic-substitution path may not return - scoped to governed vocabulary. Recorded that only the Team State authority may publish Fresh, Stretched, or Vulnerable, and that no supporting-read tier or adjective becomes a Team State. Separated the two fail-closed labels, Role Unclear for missing usage evidence and Limited Read for missing current-read evidence. Retired the team-level concept `Trusted Arms` in favor of `Late-Inning Options`, reserving `Trusted Arm` to the pitcher-role family. Retired `Healthy Rested Bullpen` in favor of `Stable Rested Options` and tied that retirement to the Unobservable class in Section 2, which now forbids reader-facing labels that assert private physical condition. Clarified the reader-facing temporal stamps and the data-status family in Section 10. No model, threshold, source authority, classification, publication, sync/write, recommendation, or prediction behavior changed. |
+| 1.4 | August 14, 2026 | Nickolis Kacludis | Gave the Workload Data family a canonical home in Section 8 (H-12). PR #659 shipped the family into the product because pitcher workload-record status is a different question from platform Data Status, but the meaning existed only in shared frontend utilities, so no canonical document defined it. Section 8 now lists Workload Data among the semantic families with its governing question, records its exact seven-label public catalog, states that Workload Data is not Data Status and that the two may honestly disagree about the same screen, and records the ownership split: the backend decides the state through `availability.data_state` and nothing downstream may derive, infer, or override it, while the governed label catalogue currently resides in shared frontend utilities as an implementation location rather than a transfer of semantic authority, fails closed to `Unavailable` on an unrecognised state, and may be relocated to a backend or shared owner without changing this contract. Section 10 now cross-references the family so the two data-state stamps are separated where a reader meets them. No threshold, classification, derivation, availability rule, source authority, publication gate, or freshness computation changed, and no public label was added, renamed, or retired. |

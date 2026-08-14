@@ -1,6 +1,9 @@
 # Trusted Public Serving Authority
 
-**Status:** Current operating contract after D-051
+**Status:** Current operating contract after D-051  
+**Authority:** Secondary to `docs/canonical/04_PLATFORM_ARCHITECTURE_OPERATIONS.md` and the D-051 entry in `docs/canonical/05_PRODUCT_ROADMAP_DECISION_LEDGER.md`. This document owns the trusted-serving detail and the current OPS-002 criterion set.  
+**Owner:** Nickolis Kacludis  
+**Last reviewed:** August 14, 2026
 
 BaseballOS separates acquisition from publication. A sync may write canonical source rows before the full candidate has passed every publication gate. Those writes are inspectable operational state; they are not automatically public authority.
 

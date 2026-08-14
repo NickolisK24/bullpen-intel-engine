@@ -321,7 +321,7 @@
       ]
     },
     "2": {
-      "measured_seconds": 499.58,
+      "measured_seconds": 500.33,
       "files": [
         {
           "path": "tests/test_appearance_ledger.py",
@@ -366,6 +366,10 @@
         {
           "path": "tests/test_cors_allowed_origins.py",
           "measured_seconds": 0.122
+        },
+        {
+          "path": "tests/test_document_authority_contract.py",
+          "measured_seconds": 0.749
         },
         {
           "path": "tests/test_editorial_review_v1.py",

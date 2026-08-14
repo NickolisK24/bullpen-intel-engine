@@ -33,11 +33,20 @@ from services.availability_reference_date import (
 
 recommendations_bp = Blueprint('recommendations', __name__)
 
-CONTRACT_DOCUMENT = 'docs/RECOMMENDATION_ENGINE_V1_API_CONTRACT.md'
-POLICY_DOCUMENT = 'docs/RECOMMENDATION_ENGINE_V1_POLICY.md'
-IMPLEMENTATION_PLAN = 'docs/RECOMMENDATION_ENGINE_V1_IMPLEMENTATION_PLAN.md'
+# Governing documents named in API response metadata.
+#
+# These previously pointed at the Recommendation Engine V1 policy, API
+# contract, and implementation plan under `docs/`. All three were archived to
+# `docs/archive/2026-06/` and the paths went dead, so the API was telling
+# consumers its governing policy lived somewhere that does not exist. Archived
+# phase records are implementation history; the canonical library reserves
+# current authority to itself, so the metadata names the canonical owner of the
+# recommendation boundary instead. The V1 phase records remain readable in the
+# archive as the history of how that boundary was built.
+CONTRACT_DOCUMENT = 'docs/canonical/02_BULLPEN_INTELLIGENCE_STANDARD.md'
+POLICY_DOCUMENT = 'docs/canonical/02_BULLPEN_INTELLIGENCE_STANDARD.md'
 API_ENGINE_VERSION = 'recommendation_engine_v1_candidate_api'
-V2_CONTRACT_DOCUMENT = 'docs/RECOMMENDATION_ENGINE_V2_API_CONTRACT.md'
+V2_CONTRACT_DOCUMENT = 'docs/methodology/RECOMMENDATION_ENGINE_V2_API_CONTRACT.md'
 V2_API_ENGINE_VERSION = 'recommendation_engine_v2_bullpen_state_api'
 V2_BULLPEN_STATE_ENDPOINT = '/api/recommendations/v2/bullpen-state'
 V2_DEFAULT_LIMIT = 750
@@ -919,9 +928,12 @@ def _meta_payload(metadata):
     meta['engine_version'] = meta.get('engine_version') or API_ENGINE_VERSION
     meta['policy_document'] = meta.get('policy_document') or POLICY_DOCUMENT
     meta['contract_document'] = CONTRACT_DOCUMENT
-    meta['implementation_plan'] = (
-        meta.get('implementation_plan') or IMPLEMENTATION_PLAN
-    )
+    # `implementation_plan` is no longer emitted. Its only referent was an
+    # archived V1 phase plan, and an implementation plan is not a governing
+    # document for an API consumer in the first place. An upstream caller that
+    # supplies its own value still passes through.
+    if meta.get('implementation_plan') is None:
+        meta.pop('implementation_plan', None)
     meta['response_mode'] = (
         meta.get('response_mode') or 'candidate_category_eligibility'
     )

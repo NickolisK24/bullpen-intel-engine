@@ -29,7 +29,10 @@ from observations.validators import require_collection_payload_valid
 
 OBSERVATION_API_ROUTE = '/api/observations'
 OBSERVATION_API_PREVIEW_ROUTE = '/api/observations/preview'
-OBSERVATION_API_DOCUMENT = 'docs/V5_PHASE_6_OBSERVATION_API_SURFACE.md'
+# The V5 Phase 6 record this named was archived to `docs/archive/2026-06/`.
+# Observations are evidence, and the canonical Bullpen Intelligence Standard
+# owns what may be claimed from them.
+OBSERVATION_API_DOCUMENT = 'docs/canonical/02_BULLPEN_INTELLIGENCE_STANDARD.md'
 OBSERVATION_COLLECTION_ID = 'bullpen-observations:deterministic-sample'
 STATIC_SAMPLE_GENERATED_AT = '2026-06-04T18:00:00Z'
 

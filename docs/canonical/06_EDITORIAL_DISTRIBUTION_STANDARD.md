@@ -3,8 +3,8 @@
 | Field | Value |
 |---|---|
 | Status | Canonical - public voice, content, share-artifact presentation, channel, outreach, and measurement authority |
-| Version | 1.2 |
-| Effective date | July 30, 2026 |
+| Version | 1.3 |
+| Effective date | August 14, 2026 |
 | Owner | Nickolis Kacludis |
 | Supersedes | BaseballOS Content Posting Standards and overlapping content/distribution sections of prior specifications |
 | Update rule | Revise when public voice, content pillars, channel rules, distribution context, visual artifact standard, correction policy, or sustainable cadence changes |
@@ -239,15 +239,23 @@ Do not keyword-stuff. Search is earned through useful answers, stable destinatio
 
 ## 12. Established Public Language
 
-| Layer | Terms |
-|---|---|
-| Established baseball | bullpen workload, reliever usage, active roster, short start, innings coverage, high leverage, bullpen hierarchy, rotation depth |
-| Team State | Fresh, Stretched, Vulnerable |
-| Arm reads | Clean Option, Watch Arm, Limited Rest, Unavailable, Limited Read |
-| Public roles | Trusted Arm, Setup Arm, Coverage Arm, Middle Relief Arm, Role Unclear |
-| Named bullpen reads | Bullpen Pressure, Recovery Window, Workload Concentration, Clean Options, Coverage Safety, Late-Inning Options |
-| Performance | Active Bullpen ERA, Not Enough Innings Yet |
-| Technical | Python, Flask, PostgreSQL, React, TypeScript, data pipeline, source authority, automated testing, CI/CD, immutable artifact |
+This Standard does not define public vocabulary. The Bullpen Intelligence Standard Section 8 and the Product Experience Standard Section 6 own every governed family below, and **the canonical owners are authoritative** wherever this table and those Sections differ. The table is reproduced here so a writer can check publishable copy without leaving the page; it must match its owners exactly, and a term is added to it only after the owners add it.
+
+| Layer | Terms | Owner |
+|---|---|---|
+| Established baseball | bullpen workload, reliever usage, active roster, short start, innings coverage, high leverage, bullpen hierarchy, rotation depth | this Standard |
+| Team State | Fresh, Stretched, Vulnerable | 02 Section 8 / 03 Section 6 |
+| Arm availability | Available, On Watch, Limited, Unavailable | 02 Section 8 / 03 Section 6 |
+| Arm reads | Clean Option, Watch Arm, Limited Rest, Unavailable, Limited Read | 02 Section 8 / 03 Section 6 |
+| Public roles | Trusted Arm, Setup Arm, Coverage Arm, Middle Relief Arm, Role Unclear | 02 Section 8 / 03 Section 6 |
+| Named bullpen reads | Late-Inning Availability, Rested Options, Late-Inning Pressure, Workload Concentration, Coverage Safety, Depth Safety, Late-Inning Options | 02 Section 8 / 03 Section 6 |
+| Read Confidence | High, Medium, Low, Unavailable | 02 Section 8 / 03 Section 6 |
+| Data Status | Current, Partial Data, Stale, Data Unavailable | 02 Section 10 / 03 Section 6 |
+| Workload Data | Current, Outside Freshness Window, No Workload Record, Incomplete Workload Inputs, Fetch Failed, Historical, Unavailable | 02 Section 8 / 03 Section 6 |
+| Performance | Active Bullpen ERA, Not Enough Innings Yet | 02 Section 8 |
+| Technical | Python, Flask, PostgreSQL, React, TypeScript, data pipeline, source authority, automated testing, CI/CD, immutable artifact | this Standard |
+
+**Families do not lend words to each other.** `Clean Option` is a single arm's current read; published copy may not describe a team's rested arms as `Clean Options`. `Trusted Arm` is a pitcher role; the retired team-level `Trusted Arms` is now `Late-Inning Options`. `Limited Read` and `Unavailable` are arm-level labels and are never team-level performance labels. A caption that needs a word the owners have not published does not get to invent one.
 
 Write for a person first.
 
@@ -687,3 +695,5 @@ Go deeper
 | 1.0 | July 29, 2026 | Nickolis Kacludis | Established the permanent editorial and distribution authority covering voice, pillars, evidence, freshness, platform-native standards, share artifacts, cadence, workflow, corrections, measurement, and reusable templates. |
 | 1.1 | July 29, 2026 | Nickolis Kacludis | Added performance language rules for metrics governed by the Current Active-Pen Performance Contract: descriptive copy only, group and sample and represented date and receipt adjacent to every material performance claim, no quality adjective or ranking verdict earned from a metric alone, no substitute value below an approved sample, and state kept separate from performance. Concise material limitations are preserved. |
 | 1.2 | July 30, 2026 | Nickolis Kacludis | Added the approved public performance terms Active Bullpen ERA and Not Enough Innings Yet to Established Public Language, with worked publishable lines, the prohibition on shortening the metric name or borrowing an arm-read label for a below-sample read, and the requirement to state a materially smaller contributing-arm count. |
+| 1.2 (content change, recorded retroactively) | August 11, 2026 | Nickolis Kacludis | Recorded here on August 14, 2026 as an appended correction rather than a silent rewrite. Commit `5dace50` changed the Established Public Language table on August 11 without bumping the version, moving the effective date, or adding a revision entry, which left the header declaring July 30 content. The change itself was a VOC-001 follow-through: the retired team-level `Trusted Arms` became `Late-Inning Options` in Named bullpen reads, and the retired role fallback `Limited Read` became `Role Unclear` in Public roles. Wording only; no rule, boundary, or publication behavior changed at that time. |
+| 1.3 | August 14, 2026 | Nickolis Kacludis | Ended this Standard's competing vocabulary table (H-12). Established Public Language now names the Bullpen Intelligence Standard Section 8 and the Product Experience Standard Section 6 as the owners of every governed family, states that the owners are authoritative wherever the reproduced table differs, and carries an Owner column per row. Corrected the Named bullpen reads row, which had drifted to `Bullpen Pressure, Recovery Window, Workload Concentration, Clean Options, Coverage Safety, Late-Inning Options`, to the canonical supporting-read set: Late-Inning Availability, Rested Options, Late-Inning Pressure, Workload Concentration, Coverage Safety, Depth Safety, Late-Inning Options. Removing team-level `Clean Options` also closed a family borrow the two higher-ranked standards forbid — `Clean Option` is one arm's current read — and matches the surface rename shipped in PR #659. Added the Arm availability, Read Confidence, Data Status, and Workload Data rows so a writer checking publishable copy sees every governed family, and added an explicit no-borrowing rule. No voice, pillar, channel, cadence, correction, measurement, share-artifact, or publication rule changed, and no public vocabulary was created or retired by this edition. |

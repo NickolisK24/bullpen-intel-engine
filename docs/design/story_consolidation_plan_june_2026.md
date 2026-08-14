@@ -1,5 +1,18 @@
 # BaseballOS Story Consolidation Plan — June 2026
 
+> **Status: Superseded implementation plan — retained as implementation history.**
+> This plan was never signed off in the form written here; the consolidation it
+> proposes was carried out across Phases 1.5 through 5D, and the flagged,
+> reversible shape it describes was dismantled rather than kept. Its §9 blockers
+> and its "do not implement from this document" instruction are preserved as the
+> record of how the work was scoped, not as live guidance.
+>
+> Nothing here is current implementation authority. Current product behavior is
+> governed by
+> [`docs/canonical/03_PRODUCT_EXPERIENCE_STANDARD.md`](../canonical/03_PRODUCT_EXPERIENCE_STANDARD.md)
+> and current claims by
+> [`docs/canonical/02_BULLPEN_INTELLIGENCE_STANDARD.md`](../canonical/02_BULLPEN_INTELLIGENCE_STANDARD.md).
+
 **Type:** Implementation plan (design only — no code in this document)
 **Companion audit:** `docs/audits/story_architecture_audit_june_2026.md`
 **Objective:** Collapse the four current narrative generators into **one canonical backend story system**, with the browser doing presentation only.

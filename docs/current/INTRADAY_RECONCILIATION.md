@@ -1,6 +1,8 @@
 # Intraday Reconciliation — Phase 1 (Audit-Only)
 
 Status: **Phase 1 shipped — audit/check-only, manual, non-writing.**
+Authority: secondary to `docs/canonical/04_PLATFORM_ARCHITECTURE_OPERATIONS.md`
+and `docs/current/SYNC_PIPELINE.md`. Last reviewed August 14, 2026.
 Related: `docs/current/SYNC_PIPELINE.md` · Workflow:
 `.github/workflows/baseballos-sync.yml` (job `intraday-audit`) · Service:
 `backend/services/intraday_reconcile.py` · Command:
@@ -14,7 +16,7 @@ writer advisory lock** so they can never overlap.
 
 | Mode | Cadence | Purpose | Writes canonical data? |
 |---|---|---|---|
-| **daily** | morning cron + manual | full authoritative morning reconciliation: team assignments, roster statuses, transactions, recent game-log ingestion, fatigue, trusted snapshot publication | yes |
+| **daily** | morning cron only, first attempt (D-051) | full authoritative morning reconciliation: team assignments, roster statuses, transactions, recent game-log ingestion, fatigue, trusted snapshot publication | yes |
 | **intraday** | **manual only (Phase 1)** | lightweight, delta-aware reconciliation *throughout the day*; Phase 1 is **audit-only** | **no (Phase 1)** |
 | **postgame** | overnight cron + manual | completed-game ingestion, trailing slate repair, fatigue recalculation, trusted snapshot publication | yes |
 | **backfill** | manual only | explicit historical repair for one requested slate date | yes |

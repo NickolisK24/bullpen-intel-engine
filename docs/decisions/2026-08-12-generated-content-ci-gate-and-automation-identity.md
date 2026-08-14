@@ -1,7 +1,7 @@
 # D-053 — Generated-content CI gate, tree-exact validation, and the BaseballOS Automation identity
 
 - **Date:** 2026-08-12
-- **Status:** Approved founder decision; repository implementation tracked by CI-003 / #598. **Not production-verified.**
+- **Status:** Approved founder decision; repository implementation tracked by CI-003 / #598. **Production-verified 2026-08-14** — see Closeout evidence below.
 - **Scope:** CI validation, provenance, and permission scope for the automated routed-team preview publication path. No change to baseball semantics, publication authority, snapshot selection, Team State, D-051, D-052, or Vercel configuration.
 
 ## Context
@@ -212,3 +212,31 @@ expected trusted snapshot, and the Vercel deployment relationship must be verifi
 read-only. The production daily workflow must not be manually invoked to obtain this
 evidence — D-051 forbids it, and manufactured evidence would not prove the scheduled path
 works.
+
+## Closeout evidence — 2026-08-14
+
+Appended, not rewritten: the requirement above is the record of what was demanded, and it
+stands exactly as written. Every clause of it was met.
+
+- Naturally authorized scheduled run `31794183367`, attempt 1, on source SHA
+  `71e0b89ea96781a1a06cda760cd91f5d85aebd6e`. Not manually invoked, not rerun.
+- Delivery gate, `npm test`, and the production frontend build: all passing.
+- Validated tree `1c9d7dc5ca1e9e03acbd721b18baef61e7b16ee7`; committed tree identical.
+- Generated commit `2e83fa064e40fb5dc70042682fd90ab185e33751`, authored and committed by
+  `BaseballOS Automation <baseballoshq@gmail.com>`, fast-forward pushed to `main`.
+- Trusted snapshot `411`, sync run `721`, data through `2026-08-13`.
+- Vercel deployment status on the generated commit: success.
+- Read-only routed-production verification against `https://baseballos.app/team/ATH`: the
+  served HTML matched the generated artifact and carried `baseballos:snapshot-id="411"`,
+  `baseballos:sync-run-id="721"`, `baseballos:data-through="2026-08-13"`,
+  `baseballos:authority-contract="trusted_dashboard_publication_v1"`, and Team State
+  `Vulnerable` in metadata, unfurl, and body.
+
+The first scheduled attempt, run `31693516516` on 2026-08-13, failed closed because
+exporter stdout contaminated the structured result file. That refusal is retained as
+evidence the gate withholds rather than publishes when its input is untrustworthy; PR #642
+repaired the result handoff, and no manual rerun was used to manufacture closeout.
+
+Issue #598 is closed as completed with all six acceptance criteria met. This decision's
+text, scope, and authority are unchanged, and this closeout grants no broader game-driven
+write or publication authority.

@@ -31,8 +31,12 @@ from services.pitcher_public_labels import (
 REPO_ROOT = Path(__file__).resolve().parents[2]
 STANDARD_PATH = REPO_ROOT / 'docs' / 'canonical' / '03_PRODUCT_EXPERIENCE_STANDARD.md'
 
-EXPECTED_VERSION = '1.4'
-EXPECTED_EFFECTIVE_DATE = 'August 11, 2026'
+EXPECTED_VERSION = '1.5'
+EXPECTED_EFFECTIVE_DATE = 'August 14, 2026'
+
+# The VOC-001 edition, whose revision entry this file has pinned since #638.
+VOC_VERSION = '1.4'
+VOC_EFFECTIVE_DATE = 'August 11, 2026'
 
 # The board's reader-facing group headings. Held here as literals on purpose:
 # services/bullpen_board.py cannot be imported without the database stack, and
@@ -101,12 +105,12 @@ def _limited_family_rows(text):
     return rows
 
 
-def test_document_control_declares_version_1_4():
+def test_document_control_declares_version_1_5():
     text = _standard_text()
 
     assert f'| Version | {EXPECTED_VERSION} |' in text
     assert f'| Effective date | {EXPECTED_EFFECTIVE_DATE} |' in text
-    assert '| Version | 1.3 |' not in text
+    assert '| Version | 1.4 |' not in text
 
 
 def test_team_state_family_is_exactly_the_three_canonical_states():
@@ -347,10 +351,12 @@ def test_how_to_read_is_the_canonical_reader_facing_semantic_map():
 
 
 def test_revision_history_records_the_version_1_4_entry():
+    # The VOC-001 entry is durable history. Later editions append beside it;
+    # they do not replace what it recorded.
     text = _standard_text()
     rows = [
         line for line in text.splitlines()
-        if line.startswith(f'| {EXPECTED_VERSION} | {EXPECTED_EFFECTIVE_DATE} |')
+        if line.startswith(f'| {VOC_VERSION} | {VOC_EFFECTIVE_DATE} |')
     ]
     assert len(rows) == 1, 'exactly one Version 1.4 revision-history row'
     entry = rows[0]

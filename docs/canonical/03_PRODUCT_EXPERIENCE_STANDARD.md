@@ -3,8 +3,8 @@
 | Field | Value |
 |---|---|
 | Status | Canonical - public surface, navigation, interaction, accessibility, and end-state authority |
-| Version | 1.4 |
-| Effective date | August 11, 2026 |
+| Version | 1.5 |
+| Effective date | August 14, 2026 |
 | Owner | Nickolis Kacludis |
 | Supersedes | BaseballOS Product Vision Specification and overlapping surface descriptions in prior strategy documents |
 | Update rule | Revise when a page mission, navigation model, information hierarchy, primary user question, public route, failure behavior, or surface acceptance test changes |
@@ -285,7 +285,23 @@ These are three separate reader-facing temporal concepts. No surface collapses t
 - Stale
 - Data Unavailable
 
-Data Status describes the state of the data, never a bullpen or an arm, and so it borrows no baseball word. `Healthy`, `Limited`, and `Not Current` are not Data Status labels. `Limited` remains valid Arm Availability vocabulary.
+Data Status describes the state of the published platform read, never a bullpen or an arm, and so it borrows no baseball word. `Healthy`, `Limited`, and `Not Current` are not Data Status labels. `Limited` remains valid Arm Availability vocabulary.
+
+### Workload Data
+
+- Current
+- Outside Freshness Window
+- No Workload Record
+- Incomplete Workload Inputs
+- Fetch Failed
+- Historical
+- Unavailable
+
+Workload Data is the public field describing how complete and how recent the workload record behind **one arm's** read is. It appears under its own field label - `Workload Data` - on the surfaces that present a single arm's evidence, beside Roster Status and Read Confidence.
+
+**Workload Data is not Data Status.** Data Status is about the published platform read; Workload Data is about one pitcher's underlying workload record, and the two may honestly disagree on the same screen. A surface never renders one under the other's field label, never uses one as a fallback for the other, and never merges them into a single stamp. The Bullpen Intelligence Standard Section 8 owns the meanings and the fail-closed rule; this Section owns the field's public presence.
+
+The family exists because the word `Fresh` could not be reused here: `Fresh` is a canonical Team State, and a reader who met it on an arm card meaning "this data is recent" would meet it one surface away meaning "this bullpen is rested".
 
 ### Provenance
 
@@ -568,7 +584,9 @@ Avoid alarming complete-page language when only one evidence family is unavailab
 
 A unified future Start Here experience may replace duplicate support pages.
 
-How to Read is the canonical reader-facing semantic map. It is organised by the Section 6 families - Team State, Arm Availability, Pitcher Role, Pitcher Current Read, Read Confidence, bullpen supporting reads, and the freshness, Data Status, and provenance stamps - and it names each family alongside its labels so a reader always knows which question a word answers. It renders the canonical definitions; it holds no vocabulary of its own.
+How to Read is the canonical reader-facing semantic map. It is organised by the Section 6 families - Team State, Arm Availability, Pitcher Role, Pitcher Current Read, Read Confidence, bullpen supporting reads, Workload Data, and the freshness, Data Status, and provenance stamps - and it names each family alongside its labels so a reader always knows which question a word answers.
+
+It renders the canonical definitions and defines none. Public vocabulary is governed by the canonical standards and implemented through shared product catalogues; where a catalogue happens to live is an implementation choice, and the surface may never invent, rename, or reinterpret a semantic label on its own.
 
 It must state the difference between the similar terms explicitly rather than leave it to inference, including `Limited`, `Limited Rest`, `Limited Read`, and `Role Unclear`, each shown with its family. It must also record that supporting reads are not Team State and that Read Confidence is not a baseball conclusion.
 
@@ -618,3 +636,4 @@ Retire or merge a surface when it no longer owns a unique question, another page
 | 1.2 | July 30, 2026 | Nickolis Kacludis | Recorded the approved M-001 presentation contract on the Team Board: the public name Active Bullpen ERA, fixed two-decimal rendering with a real zero shown as a number, the below-sample read Not Enough Innings Yet rendered only with its counts, and the required group-size and contributing-arm disclosure. The frontend renders and never recalculates or re-rounds. No gate is opened. |
 | 1.3 | August 10, 2026 | Nickolis Kacludis | Recorded the routed team preview surface (`/team/{ABBR}`) as a regenerating distribution entry representation rather than an immutable historical artifact, and fixed its authority and freshness contract: one trusted publication per representation, canonical Team State or the governed non-state, a named baseball point, a published data-through date kept distinct from generated and publication time, a snapshot receipt, an explicit current Team Board handoff, and no present-tense team claim when authority or data-through cannot be established. No page mission, vocabulary catalogue, or computation changes. |
 | 1.4 | August 11, 2026 | Nickolis Kacludis | Reconciled public vocabulary ownership after VOC-001: one semantic owner per public family, and backend-governed labels rendered verbatim by a presentation layer that owns layout, density, tone, icons, color, interaction, and accessibility treatment but never meaning. Separated the public families explicitly - Team State, Arm Availability, Pitcher Role, Pitcher Current Read, and Read Confidence - and recorded that Pitcher Role and Pitcher Current Read answer different questions, that Arm Availability and Pitcher Current Read are not interchangeable, and that Read Confidence is an evidence-quality family rather than a baseball conclusion. Recorded the board group headings as presentation labels for workload groups over unchanged engine statuses, and the bullpen supporting reads as single explanatory dimensions that never constitute a Team State. Recorded the Limited / Limited Rest / Limited Read / Role Unclear distinction with each term's family, retired `Trusted Arms` and `Healthy Rested Bullpen`, and clarified the freshness, Data Status, and provenance stamps as separate concepts. Named How to Read the canonical reader-facing semantic map. No model, threshold, classification, capability, authority, or prediction behavior changes. |
+| 1.5 | August 14, 2026 | Nickolis Kacludis | Recorded the public Workload Data field in Section 6 (H-12), completing the surface half of the family PR #659 shipped: its seven public values, its own field label beside Roster Status and Read Confidence, the rule that it is never rendered under the Data Status field label or used as a fallback for it, and the reason the family exists at all - `Fresh` is a canonical Team State and could not be reused to mean "this data is recent" one surface away from meaning "this bullpen is rested". Clarified that Data Status describes the published platform read rather than data in general, which is what distinguishes it from the per-arm family. Corrected the How to Read description in Section 24: the page still defines no vocabulary, but the claim that it "holds no vocabulary of its own" is now stated as the governing rule it was meant to express - public vocabulary is governed by the canonical standards and implemented through shared product catalogues, where a catalogue lives is an implementation choice, and the surface may never invent, rename, or reinterpret a semantic label. No page mission, navigation model, route, information hierarchy, failure behavior, or acceptance test changed. |

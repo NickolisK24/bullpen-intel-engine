@@ -1,5 +1,25 @@
 # Stories Page Migration to Canonical Feed — Phase 3 (June 2026)
 
+> **Status: Superseded migration plan — retained as implementation history.**
+> The migration described here has shipped, and the reversible world it is
+> written around no longer exists. The feature flags it depends on
+> (`VITE_USE_CANONICAL_HOME_STORIES`, `VITE_USE_CANONICAL_STORIES_PAGE`,
+> `VITE_USE_CANONICAL_TEAM_BOARD`) were removed at Phases 4B.5, 4B.6, and 5D,
+> along with the legacy paths these documents promise to keep — the Stories
+> feed is canonical-only since Phase 5D, and `TeamBullpenStoryPanel` was
+> retired at Phase 4B.6. Those closing phases have no document of their own;
+> `frontend/tests/teamBoardStoryRetirement.test.mjs` is their record, and it
+> asserts the flags are *absent*. Named deliverables that no longer exist
+> include `homeCanonicalStoriesView.js`, `storyEngineV1.js`, and
+> `homeCanonicalStories.test.mjs`. The Phase 4A companion these files cite,
+> `team_board_canonical_migration_audit.md`, is not present in the repository.
+>
+> Nothing here is current implementation authority. Current product behavior is
+> governed by
+> [`docs/canonical/03_PRODUCT_EXPERIENCE_STANDARD.md`](../canonical/03_PRODUCT_EXPERIENCE_STANDARD.md)
+> and current claims by
+> [`docs/canonical/02_BULLPEN_INTELLIGENCE_STANDARD.md`](../canonical/02_BULLPEN_INTELLIGENCE_STANDARD.md).
+
 **Companion docs:** `story_consolidation_plan_june_2026.md`, `quiet_day_strategy_phase_1_6.md`, `canonical_story_continuity_phase_1_7.md`, `home_canonical_stories_phase_2.md`
 **Scope:** Stories page only, behind a feature flag. Home and Team Board untouched. No legacy engine removed; the Four-Beat path and API field stay.
 

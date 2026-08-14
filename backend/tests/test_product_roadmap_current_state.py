@@ -44,9 +44,25 @@ ROADMAP_PATH = (
     REPO_ROOT / 'docs' / 'canonical' / '05_PRODUCT_ROADMAP_DECISION_LEDGER.md'
 )
 
-EXPECTED_VERSION = '3.9'
-EXPECTED_EFFECTIVE_DATE = 'August 13, 2026'
-EXPECTED_MAIN = 'e3ad8bdf47a0bf6209917051df2070fba8eff417'
+EXPECTED_VERSION = '4.0'
+EXPECTED_EFFECTIVE_DATE = 'August 14, 2026'
+EXPECTED_MAIN = 'b2f0e90718321857f3f631cda3c81c1175af85de'
+
+# The gated generated-content publication commit and the scheduled run that
+# produced it. Version 3.9 asserted no such commit existed; that was true when
+# written and false a day later, which is exactly the failure mode this file
+# exists to catch.
+CI_003_PUBLICATION_COMMIT = '2e83fa0'
+CI_003_PUBLICATION_RUN = '31794183367'
+CI_003_SNAPSHOT = '411'
+CI_003_SYNC_RUN = '721'
+CI_003_DATA_THROUGH = '2026-08-13'
+CI_003_LIVE_ROUTE = 'https://baseballos.app/team/ATH'
+
+# The DEP-001 edition, whose revision entry this file has pinned since #647.
+# Later editions append beside it; they do not replace what it recorded.
+DEP_VERSION = '3.9'
+DEP_EFFECTIVE_DATE = 'August 13, 2026'
 
 CLOSEOUT_HEADING = 'DIST-003 (#594) Production Closeout Evidence'
 
@@ -59,7 +75,6 @@ REJECTED_CLOSEOUT_SNAPSHOT = '398'
 # The approved order now that VOC-001 and DEP-001 have closed. The packages that
 # finished were removed; nothing was reordered.
 APPROVED_ORDER = (
-    '#598',
     'Permanent daily-sync work reduction',
     'Portable Intelligence',
     'Resume M-001 and visible evidence',
@@ -67,7 +82,7 @@ APPROVED_ORDER = (
 )
 
 # Completed packages must not reappear as ordered future work.
-COMPLETED_PACKAGES = ('VOC-001', '#638', '#601', 'DEP-001')
+COMPLETED_PACKAGES = ('VOC-001', '#638', '#601', 'DEP-001', 'CI-003', '#598')
 
 # The residual dependency acceptance is dated. If the date stops being visible,
 # the expiry stops being reviewable.
@@ -142,16 +157,16 @@ def _next_approved_work_order(text):
     return [package for _, package in packages]
 
 
-def test_roadmap_declares_version_3_9():
+def test_roadmap_declares_version_4_0():
     text = _roadmap_text()
 
     assert f'| Version | {EXPECTED_VERSION} |' in text
     assert f'VERSION {EXPECTED_VERSION}' in text
-    assert '| Version | 3.8 |' not in text
-    assert 'VERSION 3.8' not in text
+    assert '| Version | 3.9 |' not in text
+    assert 'VERSION 3.9' not in text
 
 
-def test_effective_date_is_august_13_2026():
+def test_effective_date_is_august_14_2026():
     text = _roadmap_text()
 
     assert f'| Effective date | {EXPECTED_EFFECTIVE_DATE} |' in text
@@ -164,8 +179,10 @@ def test_repository_basis_is_merged_main_with_no_in_flight_branch():
     assert EXPECTED_MAIN in text
     assert '| In-flight branch | None |' in text
 
-    # The superseded baseline must not still be claimed as current.
+    # A superseded baseline must not still be claimed as current. The prior
+    # basis may be named as history; it may not sit in the current-state row.
     assert '| Repository main | 18dd6914a933928254e969c85ecb19cf75b6a9f2 |' not in text
+    assert '| Repository main | e3ad8bdf47a0bf6209917051df2070fba8eff417 |' not in text
 
 
 def test_dist_003_is_recorded_complete_and_production_verified():
@@ -226,32 +243,93 @@ def test_closeout_does_not_name_398_as_the_trusted_snapshot():
         assert 'is not the snapshot' in line, line
 
 
-def test_ci_003_is_the_active_objective():
+def test_daily_sync_work_reduction_is_the_active_objective():
+    """CI-003 closed, so the objective advances to the next approved item.
+
+    A sequencing consequence, not a new priority: the package below CI-003 in
+    the already-approved order moves up, and nothing is reordered around it.
+    """
     text = _roadmap_text()
 
-    assert (
-        '| ACTIVE OBJECTIVE | CI-003 (#598) — generated-content publication '
-        'closeout |'
-    ) in text
+    assert '| ACTIVE OBJECTIVE | Permanent daily-sync work reduction |' in text
 
-    # The superseded objective must not still be declared.
+    # No superseded objective may still be declared.
     assert '| ACTIVE OBJECTIVE | VOC-001 (#638)' not in text
+    assert '| ACTIVE OBJECTIVE | CI-003 (#598)' not in text
 
 
-def test_ci_003_closed_issue_is_not_recorded_as_production_proof():
-    """A closed issue and recorded evidence are different claims.
+def test_the_new_objective_preserves_every_authority_boundary():
+    """Advancing the sequence must not quietly relax what the prior objective
+    was bounded by. The new objective names each boundary it keeps."""
+    body = _section(_roadmap_text(), '3. Active Objective')
 
-    This is the successor to the PR #639 guard: the same error in a new shape.
+    for preserved in (
+        'D-051',
+        'authoritative manual daily execution stays prohibited',
+        'legacy writer authority',
+        '`shadow`',
+        'backfill `off`',
+        'no game-driven write authority and no game-driven publication authority',
+    ):
+        assert preserved in body, preserved
+
+
+def test_ci_003_completion_rests_on_evidence_not_on_the_closed_issue():
+    """A closed issue and recorded evidence are still different claims.
+
+    This is the successor to the PR #639 guard, and it survives the package
+    closing. CI-003 is complete — but the Roadmap must record it complete
+    because the run, the tree, the deployment, and the served page say so, not
+    because the issue is closed. The distinction is what stops the next
+    package from being marked complete on an issue state alone.
     """
     body = _section(_roadmap_text(), '3. Active Objective')
 
-    assert 'closed August 12, 2026 through its linked pull request #641' in body
-    assert 'has **not** yet been recorded' in body
-    assert 'no gated, tree-exact, machine-attributed generated commit exists on main' in body
-    assert 'the closed issue and the recorded evidence gate are different claims' in body
+    assert 'closed as **completed**' in body
 
-    # The proof must be taken, never manufactured.
-    assert 'do not force, rerun, or manually dispatch it' in body
+    # The distinction itself must survive the package closing. If it is dropped
+    # the moment it stops being inconvenient, it was never a contract.
+    assert 'closed issue is still not by itself production proof' in body
+
+    # Completion was not manufactured.
+    assert (
+        'No manual rerun, forced dispatch, or production mutation was used'
+        in body
+    )
+
+
+def test_ci_003_publication_evidence_is_recorded_with_its_provenance():
+    """The recorded negative went stale, so the positive carries its receipt.
+
+    A bare "the commit exists" would rot the same way. The run, the attempt,
+    the machine identity, the validated tree, and the snapshot are what make
+    the claim checkable against the repository itself.
+    """
+    body = _section(_roadmap_text(), '3. Active Objective')
+
+    assert CI_003_PUBLICATION_COMMIT in body
+    assert CI_003_PUBLICATION_RUN in body
+    assert 'BaseballOS Automation <baseballoshq@gmail.com>' in body
+    assert CI_003_SNAPSHOT in body
+    assert CI_003_SYNC_RUN in body
+    assert CI_003_DATA_THROUGH in body
+
+    # Deployment and the live routed page are half the closeout. A Roadmap
+    # that records only the commit records only half of what was required.
+    assert 'deployment status on the generated commit is success' in body
+    assert CI_003_LIVE_ROUTE in body
+    assert 'trusted_dashboard_publication_v1' in body
+
+    # Both retired false negatives. Each was true when written and false a day
+    # later, which is the exact failure mode this file exists to catch.
+    for retired in (
+        'no gated, tree-exact, machine-attributed generated commit exists on main',
+        'has not been taken',
+        'The remaining closeout evidence',
+        'deployment proof outstanding',
+        'half the evidence',
+    ):
+        assert retired not in body, retired
 
     # A documentation pass does not move this package.
     assert (
@@ -353,7 +431,9 @@ def test_portable_intelligence_does_not_precede_the_reliability_work():
         return matches[0]
 
     portable = position_of('Portable Intelligence')
-    assert position_of('#598') < portable
+    # #598 is no longer in this list at all: it is complete. The reliability
+    # work it used to sit above is now the head of the order, and Portable
+    # Intelligence still may not jump it.
     assert position_of('Permanent daily-sync work reduction') < portable
     assert portable < position_of('Resume M-001 and visible evidence')
 
@@ -438,11 +518,43 @@ def test_completion_log_records_the_closed_packages_with_evidence():
     assert ACCEPTANCE_EXPIRY in joined
 
 
-def test_revision_history_records_the_version_3_9_entry():
+def test_revision_history_records_the_version_4_0_entry():
+    """The current edition names what it reconciled and what it did not move."""
     text = _roadmap_text()
     rows = [
         line for line in text.splitlines()
         if line.startswith(f'| {EXPECTED_VERSION} | {EXPECTED_EFFECTIVE_DATE} |')
+    ]
+    assert len(rows) == 1, 'exactly one Version 4.0 revision-history row'
+    entry = rows[0]
+
+    assert 'Nickolis Kacludis' in entry
+    for claimed in (
+        'b2f0e90',
+        CI_003_PUBLICATION_COMMIT,
+        CI_003_PUBLICATION_RUN,
+        'D-013',
+        'D-053',
+        'Amended',
+        CI_003_SNAPSHOT,
+        CI_003_LIVE_ROUTE,
+        'complete and production-verified',
+    ):
+        assert claimed in entry, claimed
+
+    # A reconciliation claims no new authority.
+    assert (
+        'No Decision Ledger ID was added, weakened, renumbered, or removed'
+        in entry
+    )
+    assert 'D-051 and D-052 stand unchanged' in entry
+
+
+def test_revision_history_records_the_version_3_9_entry():
+    text = _roadmap_text()
+    rows = [
+        line for line in text.splitlines()
+        if line.startswith(f'| {DEP_VERSION} | {DEP_EFFECTIVE_DATE} |')
     ]
     assert len(rows) == 1, 'exactly one Version 3.9 revision-history row'
     entry = rows[0]
