@@ -36,8 +36,12 @@ STANDARD_PATH = (
     REPO_ROOT / 'docs' / 'canonical' / '02_BULLPEN_INTELLIGENCE_STANDARD.md'
 )
 
-EXPECTED_VERSION = '1.3'
-EXPECTED_EFFECTIVE_DATE = 'August 11, 2026'
+EXPECTED_VERSION = '1.4'
+EXPECTED_EFFECTIVE_DATE = 'August 14, 2026'
+
+# The VOC-001 edition, whose revision entry this file has pinned since #638.
+VOC_VERSION = '1.3'
+VOC_EFFECTIVE_DATE = 'August 11, 2026'
 
 # The four modules Section 8 names as semantic owners. Each is a real import
 # above, so a rename that leaves the document behind breaks collection here
@@ -129,21 +133,23 @@ def _first_column(body):
     return tuple(row[0] for row in _table_rows(body))
 
 
-def _revision_row(text):
+def _revision_row(text, version=None, effective=None):
+    version = version or EXPECTED_VERSION
+    effective = effective or EXPECTED_EFFECTIVE_DATE
     rows = [
         line for line in text.splitlines()
-        if line.startswith(f'| {EXPECTED_VERSION} | {EXPECTED_EFFECTIVE_DATE} |')
+        if line.startswith(f'| {version} | {effective} |')
     ]
-    assert len(rows) == 1, 'exactly one Version 1.3 revision-history row'
+    assert len(rows) == 1, f'exactly one Version {version} revision-history row'
     return rows[0]
 
 
-def test_document_control_declares_version_1_3():
+def test_document_control_declares_version_1_4():
     text = _standard_text()
 
     assert f'| Version | {EXPECTED_VERSION} |' in text
     assert f'| Effective date | {EXPECTED_EFFECTIVE_DATE} |' in text
-    assert '| Version | 1.2 |' not in text
+    assert '| Version | 1.3 |' not in text
     # Ownership of the document itself is unchanged.
     assert '| Owner | Nickolis Kacludis |' in text
 
@@ -158,6 +164,14 @@ def test_public_language_owner_map_names_every_semantic_owner():
         'Pitcher role': 'backend/services/pitcher_public_labels.py',
         'Pitcher current read': 'backend/services/pitcher_public_labels.py',
         'Bullpen supporting reads': 'backend/services/team_bullpen_shape.py',
+        # Workload Data is the one family whose label catalogue does not live in
+        # a backend module. The backend still decides the state; the owner cell
+        # says so, and says where the catalogue currently is, rather than
+        # pretending a backend owner exists.
+        'Workload Data': (
+            'Backend availability.data_state; public label catalogue in '
+            'frontend/src/components/bullpen/availabilityView.js'
+        ),
     }
 
     for path in EXPECTED_OWNER_PATHS:
@@ -392,7 +406,9 @@ def test_reader_facing_temporal_stamps_stay_separate_clocks():
 
 
 def test_revision_history_records_the_version_1_3_entry():
-    entry = _revision_row(_standard_text())
+    # The VOC-001 entry is durable history. Later editions append beside it;
+    # they do not replace what it recorded.
+    entry = _revision_row(_standard_text(), VOC_VERSION, VOC_EFFECTIVE_DATE)
 
     assert 'Nickolis Kacludis' in entry
     for claimed in (
@@ -415,7 +431,7 @@ def test_revision_history_records_the_version_1_3_entry():
 
 
 def test_the_new_revision_claims_no_threshold_model_or_authority_change():
-    entry = _revision_row(_standard_text())
+    entry = _revision_row(_standard_text(), VOC_VERSION, VOC_EFFECTIVE_DATE)
 
     assert (
         'No model, threshold, source authority, classification, publication, '
