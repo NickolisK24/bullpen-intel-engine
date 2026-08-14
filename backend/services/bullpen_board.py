@@ -233,7 +233,20 @@ def _health_reasons(state, counts, total, freshness_note=None):
             f'{_reliever_count_phrase(restricted).capitalize()} {_reliever_verb(restricted)} '
             'Unavailable.'
         )
-    if state in (HEALTH_MONITORING, HEALTH_ELEVATED):
+    # The On Watch count is authored whenever there is one, not only when the
+    # board entered the monitoring/elevated branch.
+    #
+    # It used to be branch-gated, which left a calm board with exactly two
+    # authored candidates: the available-count sentence and, when nothing was
+    # restricted, the fixed 'No relievers are marked Unavailable.' Downstream
+    # consumers that rank candidates correctly demote the generic available-count
+    # sentence, so the constant won by default — 14 of 30 generated team previews
+    # shipped that one sentence, including seven Vulnerable teams whose only
+    # published evidence read as the opposite of their state. The selector was
+    # working; it had nothing discriminating to select.
+    #
+    # Purely additive: every case that authored this sentence before still does.
+    if monitor > 0 or state in (HEALTH_MONITORING, HEALTH_ELEVATED):
         reasons.append(
             f'{_reliever_count_phrase(monitor).capitalize()} {_reliever_verb(monitor)} '
             'in the On Watch group.'
