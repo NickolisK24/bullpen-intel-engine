@@ -102,14 +102,48 @@ REASON_CODE_DEFINITIONS = {
 
 ALLOWED_REASON_CODES = frozenset(REASON_CODE_DEFINITIONS)
 
+# Every limitation type carries its own reader-facing ``label``, in the same
+# shape as REASON_CODE_DEFINITIONS above. Reasons and evidence items have always
+# carried a governed label; limitations did not, so the browser was left to
+# invent a heading from the internal key -- ``insufficient_context`` became
+# "Insufficient Context". The label is authored here, once, next to the
+# definition it names.
 LIMITATION_TYPE_DEFINITIONS = {
-    'missing_data': 'Required data or metadata is unavailable.',
-    'stale_data': 'Source data is not current.',
-    'partial_coverage': 'Evidence coverage is incomplete.',
-    'uncertified_source': 'The source is not available for this explanation.',
-    'limited_confidence': 'Explanation confidence is limited.',
-    'insufficient_context': 'BaseballOS lacks context needed for deeper claims.',
+    'missing_data': {
+        'label': 'Required explanation inputs are unavailable',
+        'summary': 'Required data or metadata is unavailable.',
+    },
+    'stale_data': {
+        'label': 'Required explanation inputs are stale',
+        'summary': 'Source data is not current.',
+    },
+    'partial_coverage': {
+        'label': 'Required explanation inputs have partial coverage',
+        'summary': 'Evidence coverage is incomplete.',
+    },
+    'uncertified_source': {
+        'label': 'Requested explanation scope is unavailable',
+        'summary': 'The source is not available for this explanation.',
+    },
+    'limited_confidence': {
+        'label': 'Explanation confidence is limited',
+        'summary': 'Explanation confidence is limited.',
+    },
+    'insufficient_context': {
+        'label': 'Explanation context is insufficient',
+        'summary': 'BaseballOS lacks context needed for deeper claims.',
+    },
 }
+
+
+def limitation_type_label(limitation_type) -> str | None:
+    """The governed reader label for a limitation type, or ``None``.
+
+    ``None`` is the fail-closed answer: an unrecognised type has no approved
+    public name, and no caller may manufacture one from the key itself.
+    """
+    definition = LIMITATION_TYPE_DEFINITIONS.get(limitation_type)
+    return definition['label'] if definition else None
 
 ALLOWED_LIMITATION_TYPES = frozenset(LIMITATION_TYPE_DEFINITIONS)
 
@@ -430,6 +464,7 @@ class V4Limitation:
     severity: str = 'informational'
     affected_scopes: tuple[str | ExplanationScope, ...] = field(default_factory=tuple)
     requires_refusal: bool = False
+    label: str | None = None
 
     def __post_init__(self):
         validate_limitation_type(self.limitation_type)
@@ -439,10 +474,20 @@ class V4Limitation:
             'affected_scopes',
             tuple(validate_explanation_scope(scope) for scope in self.affected_scopes),
         )
+        # The type is already validated above, so a governed label always exists.
+        # Resolving it here means every constructed limitation carries its public
+        # name, exactly as V4Reason does, rather than leaving the reader-facing
+        # heading to whoever renders it.
+        object.__setattr__(
+            self,
+            'label',
+            self.label or limitation_type_label(self.limitation_type),
+        )
 
     def to_dict(self) -> dict[str, Any]:
         return {
             'limitation_type': self.limitation_type,
+            'label': self.label,
             'severity': self.severity,
             'summary': self.summary,
             'affected_scopes': list(self.affected_scopes),

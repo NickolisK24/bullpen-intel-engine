@@ -11,6 +11,7 @@ from sqlalchemy import desc
 from api.query_params import parse_positive_int_param
 from explanations import (
     V4GovernancePayload,
+    limitation_type_label,
     require_v4_governance_safe,
     serialize_availability_explanation,
     serialize_readiness_explanation,
@@ -490,15 +491,18 @@ def _governance_payload() -> dict[str, Any]:
 
 
 def _limitation_label(limitation_type: str) -> str:
-    labels = {
-        'missing_data': 'Required explanation inputs are unavailable',
-        'stale_data': 'Required explanation inputs are stale',
-        'partial_coverage': 'Required explanation inputs have partial coverage',
-        'uncertified_source': 'Requested explanation scope is unavailable',
-        'limited_confidence': 'Explanation confidence is limited',
-        'insufficient_context': 'Explanation context is insufficient',
-    }
-    return labels.get(limitation_type, 'Explanation unavailable')
+    """The governed public label for a refused explanation's limitation.
+
+    This route used to carry its own copy of the six labels, which made the same
+    limitation type read one way here and another way in a successful
+    explanation. The wording below is the wording that catalogue shipped; it now
+    lives once, in the contract that already validates the type, and this is a
+    lookup rather than a second authority.
+
+    The fallback is unreachable while the type is validated, and is deliberately
+    a generic governed phrase rather than anything derived from the key.
+    """
+    return limitation_type_label(limitation_type) or 'Explanation unavailable'
 
 
 def _iso_timestamp(value: Any) -> str | None:

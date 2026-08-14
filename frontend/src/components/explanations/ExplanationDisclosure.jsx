@@ -1,6 +1,7 @@
 import { useId, useState } from 'react'
 
 import {
+  explanationLabel,
   humanizeLabel,
   isPlainObject,
   shouldShowTechnicalKey,
@@ -115,12 +116,14 @@ function ReasonList({ reasons }) {
     <ul className="space-y-2">
       {items.map((reason, index) => {
         const item = asObject(reason)
-        const labelSource = item.label || item.code || `reason ${index + 1}`
+        const label = explanationLabel(item)
         return (
           <li key={`${item.code || item.label || index}`} className="rounded border border-dirt bg-field/60 p-3">
-            <div className="font-mono text-[11px] uppercase tracking-widest text-chalk500">
-              {humanizeLabel(labelSource)}
-            </div>
+            {label && (
+              <div className="font-mono text-[11px] uppercase tracking-widest text-chalk500">
+                {label}
+              </div>
+            )}
             {item.summary && <p className="mt-1 text-sm leading-relaxed text-chalk300">{item.summary}</p>}
             <TechnicalKeyLine value={item.code} />
           </li>
@@ -140,13 +143,15 @@ function EvidenceList({ evidence }) {
     <ul className="space-y-2">
       {items.map((evidenceItem, index) => {
         const item = asObject(evidenceItem)
-        const labelSource = item.label || item.evidence_type || `evidence ${index + 1}`
+        const label = explanationLabel(item)
         return (
           <li key={`${item.evidence_id || item.label || index}`} className="rounded border border-dirt bg-field/60 p-3">
-            <div className="font-mono text-[11px] uppercase tracking-widest text-chalk500">
-              {humanizeLabel(labelSource)}
-            </div>
-            <TechnicalKeyLine value={labelSource} />
+            {label && (
+              <div className="font-mono text-[11px] uppercase tracking-widest text-chalk500">
+                {label}
+              </div>
+            )}
+            <TechnicalKeyLine value={item.evidence_type} />
             <ValueBlock value={item.value} unit={item.unit} />
             {item.impact && <p className="mt-1 text-xs leading-relaxed text-chalk500">{item.impact}</p>}
             {[item.source, item.trust_status].filter(Boolean).length > 0 && (
@@ -172,12 +177,14 @@ function LimitationList({ limitations }) {
     <ul className="space-y-2">
       {items.map((limitation, index) => {
         const item = asObject(limitation)
-        const labelSource = item.label || item.limitation_type || `limitation ${index + 1}`
+        const label = explanationLabel(item)
         return (
           <li key={`${item.limitation_type || item.label || index}`} className="rounded border border-dirt bg-field/60 p-3">
-            <div className="font-mono text-[11px] uppercase tracking-widest text-chalk500">
-              {humanizeLabel(labelSource)}
-            </div>
+            {label && (
+              <div className="font-mono text-[11px] uppercase tracking-widest text-chalk500">
+                {label}
+              </div>
+            )}
             <p className="mt-1 text-sm leading-relaxed text-chalk300">
               {item.summary || 'Explanation limitation was returned without additional summary.'}
             </p>
@@ -225,12 +232,9 @@ function UnavailableExplanation({ explanationView }) {
           Required explanation inputs were unavailable for this request.
         </p>
         {refusal.reason_code && (
-          <>
-            <p className="mt-2 font-mono text-[10px] uppercase tracking-wider text-chalk600">
-              {humanizeLabel(refusal.reason_code)}
-            </p>
-            <TechnicalKeyLine value={refusal.reason_code} />
-          </>
+          // The reason code is an internal key with no governed public label,
+          // so it is disclosed as a technical key and never as reader copy.
+          <TechnicalKeyLine label="Reason code" value={refusal.reason_code} />
         )}
       </div>
       <DetailSection title="Limitations" initiallyOpen>

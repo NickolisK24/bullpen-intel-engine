@@ -7,35 +7,41 @@ const ACRONYM_TOKENS = new Set([
   'url',
 ])
 
-// Reader labels for the explanation keys the backend emits as structured data.
-// These rename engine KEYS (`trust_metadata`), not public sentences, so they are
-// formatting rather than a second authoring of a BaseballOS claim.
+// The explanation-key label table is gone. It renamed engine KEYS into
+// reader-facing text, which made this file a second author of public
+// vocabulary, and it only ever covered the handful of keys somebody happened to
+// notice — every other key was title-cased into public copy by accident
+// (`deterministic_sample_state` -> "Deterministic Sample State").
 //
-// `governance metadata` was removed: no backend module emits that key, so the
-// entry could never fire, and the label it invented — "decision boundary
-// detail" — was itself internal-sounding copy with no owner behind it.
+// Structured explanation items now carry a governed `label` from the backend
+// contract that already validates their type. Read it with `explanationLabel`
+// below; it returns null rather than inventing a heading, so an unlabelled item
+// is withheld instead of leaking an internal key.
 //
-// `ranking applied` and `selection made` were removed for the same reason, with
-// the additional problem that they claimed ownership of a label somebody else
-// already owned. Those two governance flags reach the reader only through
-// ExplanationDisclosure's GovernanceStrip, which renders its own "Team order"
-// and "Pitcher choice" headings from the camelCase view fields and never routes
-// them through humanizeLabel. Two places named the same thing; only one of them
-// could ever fire.
-const DISPLAY_LABEL_REPLACEMENTS = new Map([
-  ['trust metadata', 'visibility detail'],
-  ['trust metadata limited', 'visibility detail limited'],
-  ['freshness metadata', 'freshness detail'],
-  ['fail closed', 'source boundary'],
-])
-
+// `humanizeLabel` remains for bounded UI enum chips the frontend legitimately
+// formats (scope, subject type, severity). It must not be used to name a
+// structured explanation item.
 function normalizeDisplayString(value) {
-  const normalized = String(value || '')
+  return String(value || '')
     .replace(/^explains[_-]+/i, '')
     .replace(/[_-]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
-  return DISPLAY_LABEL_REPLACEMENTS.get(normalized.toLowerCase()) || normalized
+}
+
+/**
+ * The backend-authored public label for a structured explanation item.
+ *
+ * Returns null when the item carries no governed label. Callers withhold the
+ * heading in that case; they never fall back to `limitation_type`, `code`,
+ * `evidence_type`, or any other internal key.
+ */
+export function explanationLabel(item) {
+  const label = item && typeof item === 'object' ? item.label : null
+  if (typeof label !== 'string' || !label.trim()) return null
+  // A governed label that is itself shaped like an internal key is a backend
+  // defect, not a heading. Withhold rather than publish it.
+  return isTechnicalKey(label) ? null : label
 }
 
 function formatToken(token) {
@@ -66,21 +72,52 @@ export function shouldShowTechnicalKey(value) {
   return isTechnicalKey(value) && humanizeLabel(value) !== value
 }
 
+// An internal key appearing as a VALUE is not reader copy either. It used to be
+// title-cased into public text through the same table that named explanation
+// items, which is how `trust_metadata` reached readers as "Visibility Detail".
+// Nothing in the frontend is entitled to name it, so it is withheld.
+const WITHHELD = Symbol('withheld-technical-value')
+
 function displayScalar(value) {
   if (value === false) return 'false'
   if (value === true) return 'true'
   if (value === 0) return '0'
   if (typeof value === 'number') return value.toLocaleString()
   if (typeof value !== 'string') return String(value)
-  return isTechnicalKey(value) ? humanizeLabel(value) : value
+  return isTechnicalKey(value) ? WITHHELD : value
+}
+
+// Internal-key values are dropped from the summary entirely: a row reading
+// "Affected Area: <withheld>" would be noise, and naming the key would be the
+// leak this package exists to close. The raw object stays available under the
+// component's explicit "Technical details" disclosure.
+function summarizeEntry(key, item, fallback) {
+  // Scalars go through displayScalar directly so the withheld sentinel is still
+  // visible here; summarizeDisplayValue converts it to the fallback for callers
+  // outside this module.
+  const summarized = isPlainObject(item) || Array.isArray(item)
+    ? summarizeDisplayValue(item, fallback)
+    : displayScalar(item)
+  if (summarized === WITHHELD) return null
+  return `${humanizeLabel(key)}: ${summarized}`
 }
 
 export function summarizeDisplayValue(value, fallback = 'Not provided') {
   if (value === null || value === undefined || value === '') return fallback
   if (Array.isArray(value)) {
-    return value.length ? value.map(item => summarizeDisplayValue(item, fallback)).join(', ') : 'None'
+    if (!value.length) return 'None'
+    const items = value
+      .map(item => (isPlainObject(item) || Array.isArray(item)
+        ? summarizeDisplayValue(item, fallback)
+        : displayScalar(item)))
+      .filter(item => item !== WITHHELD)
+    return items.length ? items.join(', ') : 'None'
   }
-  if (!isPlainObject(value)) return displayScalar(value)
+  if (!isPlainObject(value)) {
+    const scalar = displayScalar(value)
+    // Callers outside this module get the fallback, never the sentinel.
+    return scalar === WITHHELD ? fallback : scalar
+  }
 
   const priorityKeys = [
     'label',
@@ -100,14 +137,16 @@ export function summarizeDisplayValue(value, fallback = 'Not provided') {
   const entries = priorityKeys
     .filter(key => Object.prototype.hasOwnProperty.call(value, key))
     .filter(key => !isPlainObject(value[key]) && !Array.isArray(value[key]))
-    .map(key => `${humanizeLabel(key)}: ${summarizeDisplayValue(value[key], fallback)}`)
+    .map(key => summarizeEntry(key, value[key], fallback))
+    .filter(Boolean)
 
   if (entries.length) return entries.join('; ')
 
   return Object.entries(value)
     .filter(([, item]) => !isPlainObject(item) && !Array.isArray(item))
     .slice(0, 4)
-    .map(([key, item]) => `${humanizeLabel(key)}: ${summarizeDisplayValue(item, fallback)}`)
+    .map(([key, item]) => summarizeEntry(key, item, fallback))
+    .filter(Boolean)
     .join('; ') || fallback
 }
 
