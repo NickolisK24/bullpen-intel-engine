@@ -1,5 +1,16 @@
 # Game-Driven Daily Appearance Ingestion (Foundation 3C)
 
+**Status:** Current subsystem contract  
+**Authority:** Secondary to `docs/canonical/04_PLATFORM_ARCHITECTURE_OPERATIONS.md`, which owns the current baseball-data authority posture at platform altitude. This document owns the lane's implementation detail.  
+**Owner:** Nickolis Kacludis  
+**Last reviewed:** August 14, 2026  
+**Workflow authority:** `.github/workflows/baseballos-sync.yml`
+
+**Current mode:** daily `shadow`, postgame `shadow`, explicit backfill `off`.
+Automated write and authoritative modes are unapproved, and the legacy writer
+remains authoritative. Sections describing the July 2026 bootstrap record the
+mode as it stood *then*; they are marked historical where they do.
+
 Canonical reference for the daily publication-critical appearance lane: how the
 work plan is built, how games are fetched and reconciled, how the durable
 checkpoint resumes an interrupted run, how corrections are rediscovered, and
@@ -911,19 +922,21 @@ record what the completed bootstrap looked like. They are not authorization and
 cannot be supplied to authorize a future write — any later write requires its
 own reviewed fingerprint from its own reviewed shadow.
 
-**`GAME_DRIVEN_INGESTION_MODE` remains `off`.**
-**Automated activation is a separate decision.**
-**Authoritative mode remains unapproved.**
+At the moment the bootstrap closed, `GAME_DRIVEN_INGESTION_MODE` was still
+`off`, automated activation was an open decision, and authoritative mode was
+unapproved.
 
 A completed bootstrap is a precondition for considering activation, not an
 argument for it. Enabling either lane requires its own reviewed change.
 
-### Next stage
+### Next stage — taken
 
-The next controlled step is **automated game-driven ingestion shadow
-activation**, handled by a separate reviewed change with its own evidence and
-its own production observation. Write and authoritative modes are **not
-approved** for automated operation.
+The next controlled step was **automated game-driven ingestion shadow
+activation**, and it was taken by a separate reviewed change with its own
+evidence and its own production observation. Daily and postgame now run in
+`shadow`; see [Automated shadow activation](#automated-shadow-activation) for
+the current contract. Write and authoritative modes remain **not approved**
+for automated operation.
 
 `backend/scripts/profile_daily_ingestion_readonly.py` is retained as activation
 operations support: a read-only profile for observing universe selection,
@@ -948,18 +961,21 @@ dead letters recorded at closeout all remain open and separate.
 
 | `GAME_DRIVEN_INGESTION_MODE` | What the lane does | Publication authority |
 |---|---|---|
-| `off` | nothing. **This is the current production value.** | old pitcher loop |
-| `shadow` | plan, fetch, extract, project insert/update/no-op; writes nothing | old pitcher loop |
+| `off` | nothing. **This is the current value on the explicit backfill step.** | old pitcher loop |
+| `shadow` | plan, fetch, extract, project insert/update/no-op; writes nothing. **This is the current production value on the daily and postgame cycles.** | old pitcher loop |
 | `write` | reconcile and checkpoint for real | old pitcher loop |
 | `authoritative` | as `write`, and the game-level proof drives publication | **game lane** |
 
 `--plan-only` builds the work plan and stops: no MLB request, no write. It is
 available in any mode.
 
-**Production is `off` and stays `off` until a separate reviewed change moves
-it.** The bootstrap was completed by explicit manual dispatch, not by enabling
-the lane, and completing it granted no activation authority. Moving to `shadow`,
-`write`, or `authoritative` is its own decision with its own evidence.
+**Production runs `shadow` on the daily and postgame cycles and `off` on the
+explicit backfill step, and each of those values stays where it is until a
+separate reviewed change moves it.** The bootstrap was completed by explicit
+manual dispatch, not by enabling the lane, and completing it granted no
+activation authority; the move to `shadow` was its own reviewed decision with
+its own evidence. Moving to `write` or `authoritative` is likewise its own
+decision with its own evidence, and neither is approved.
 
 Authoritative mode is unapproved. It is the only mode that changes who decides
 whether a snapshot publishes, so it does not follow automatically from a
@@ -983,10 +999,11 @@ is an operator tool, not part of any automated cycle.
 > **Backfill shares the postgame entry point.** The workflow's explicit backfill
 > step runs `run_postgame_refresh.py --date`, which is the same function as the
 > scheduled postgame refresh. Adding the lane to that function therefore put it
-> on the backfill path too. This is inert while the lane is `off`, and writing
-> modes are refused on that cycle regardless — but **any activation must set
-> `GAME_DRIVEN_INGESTION_MODE: 'off'` explicitly on the backfill step**, because
-> backfill will not inherit `off` merely by being a different workflow step.
+> on the backfill path too. Writing modes are refused on that cycle regardless —
+> but **the backfill step must set `GAME_DRIVEN_INGESTION_MODE: 'off'`
+> explicitly**, because backfill will not inherit `off` merely by being a
+> different workflow step. Shadow activation set it explicitly, and it is
+> `'off'` there today.
 > `test_explicit_backfill_shares_the_postgame_entry_point` pins this so the
 > requirement cannot be forgotten silently.
 

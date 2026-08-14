@@ -3,8 +3,8 @@
 | Field | Value |
 |---|---|
 | Status | Canonical - system architecture, security, deployment, operations, and runbook authority |
-| Version | 1.5 |
-| Effective date | August 13, 2026 |
+| Version | 1.6 |
+| Effective date | August 14, 2026 |
 | Owner | Nickolis Kacludis |
 | Repository | `NickolisK24/bullpen-intel-engine` |
 | Production product | `baseballos.app` |
@@ -230,9 +230,23 @@ This enables What Changed, timelines, archives, follow-up/calibration, and as-of
 
 ## 8. Sync and Publication Modes
 
-Supported operational modes include scheduled daily sync, manual founder/admin sync, focused repair or reconciliation, intraday source refresh, team-progressive publication, and controlled artifact generation.
+Supported operational modes include scheduled daily sync, scheduled postgame reconciliation, focused repair or reconciliation, governed historical backfill on an explicit date, intraday source refresh, team-progressive publication, and controlled artifact generation.
+
+**Authoritative manual daily execution is not a supported mode.** Under D-051 the production full-daily path is schedule-only and first-attempt-only: generic manual daily dispatch, local production daily invocation, the legacy admin daily writer route, and reruns of a scheduled daily job are non-authoritative and refused. Narrowly scoped operator work outside the authoritative daily path — governed backfill on an explicit date, read-only intraday audit, and separately authorized repair — retains its own contract and gains no daily-sync authority from this section.
 
 Every mode records start/end time, requested date/window, source status, records attempted/created/updated/refused/failed, publication result, and durable error context.
+
+### Current baseball-data authority
+
+This is the platform-altitude answer. `docs/current/SYNC_PIPELINE.md` and `docs/current/GAME_DRIVEN_DAILY_INGESTION.md` carry the implementation detail and may not contradict it.
+
+- The legacy daily/postgame path remains the authoritative baseball-data writer.
+- The game-driven lane operates in `shadow` on the daily and postgame cycles, and `off` on the explicit backfill step.
+- Shadow observation grants no durable write authority and no publication authority.
+- Automated game-driven write mode and authoritative mode are unapproved.
+- Backfill remains disabled as an automatic authority; it runs only on an explicit reviewed date.
+- Acquisition authority and publication authority are separate: a write does not publish, and publication advances only through a trusted candidate that passed every gate.
+- Any expansion of this authority requires an explicit Decision Ledger entry.
 
 ## 9. Canonical Public Sync Order
 
@@ -492,7 +506,7 @@ npm run build
 6. deploy frontend;
 7. run production smoke tests;
 8. verify trust/freshness and publication accounting;
-9. enable scheduled/automatic behavior only after manual proof;
+9. enable scheduled/automatic behavior only after separately authorized, reviewed proof;
 10. record completion in the Roadmap.
 
 Never perform product expansion while a canonical source-authority incident is unresolved.
@@ -692,4 +706,5 @@ Prioritized architecture work should follow product need:
 | 1.2 | July 29, 2026 | Nickolis Kacludis | Added the performance intelligence domain boundary establishing backend-owned canonical performance authority, no frontend recalculation, fail-closed publication below an approved sample, method-version and evidence ownership, upstream appearance-team attribution, immutable artifact freezing, and the metric registry as a governed definition set rather than a new subsystem. Updated prioritized technical direction now that the performance family contract is established. |
 | 1.3 | July 30, 2026 | Nickolis Kacludis | Added exact-arithmetic, sample-unit, and refusal-distinctness rules to the performance intelligence domain: integer numerators and denominators, no floating point, a single ROUND_HALF_UP at the declared precision, thresholds stated in the denominator's unit, and a mathematical zero-denominator refusal kept separate from a governance below-sample refusal. Recorded that the merged framework is an unwired production-internal foundation whose approved parameters are not yet set. |
 | 1.4 | August 12, 2026 | Nickolis Kacludis | Recorded the automated generated-content publication contract (D-053): generated repository writes are permitted only through a self-gating job that proves delivery integrity, runs the canonical frontend tests and production build against the exact generated tree, records that tree's identity, commits under an explicit machine identity with run provenance, proves the commit's tree equals the validated tree, and fast-forward pushes. Stated the guarantee as tree-exact rather than commit-SHA-exact, scoped repository write authority to that one job, and confirmed the ordinary branch/PR expectation for human-authored work is unchanged. |
+| 1.6 | August 14, 2026 | Nickolis Kacludis | Absorbed D-051 into Section 8: removed generic manual founder/admin sync from the supported operational modes and stated explicitly that authoritative manual daily execution is not a supported mode, while preserving the separately governed operator paths — explicit-date backfill, read-only intraday audit, and separately authorized repair — that D-051 does not touch. Added a Current baseball-data authority subsection giving the platform-altitude answer that the subsystem runbooks previously answered alone: legacy writer authoritative, game-driven daily and postgame in `shadow` with backfill `off`, shadow granting no durable write or publication authority, automated write and authoritative modes unapproved, acquisition separated from publication, and any expansion requiring an explicit Decision Ledger entry. Reworded deployment step 9 so "manual proof" cannot be read as authorization for a manual daily run. Documentation reconciliation only: no sync mode, workflow, publication gate, write authority, schema, or dependency changed. |
 | 1.5 | August 13, 2026 | Nickolis Kacludis | Recorded the runtime dependency surface as an architectural boundary: production installs the runtime requirements file only, development requirements are a superset that add test-only packages, test-only packages must not ship to production, and an unused frontend dependency is removed rather than overridden. Stated the accepted-risk standard for dependency advisories that cannot be removed today — exact advisory identifier, exact package, hard expiry, tracking issue, and an existing decision record, with no severity suppression, wildcards, or blanket ignores, and with any compensating control's regression tests forming part of the acceptance. Added the standing read-only dependency audit gate to the shipping gates: it audits declared requirements rather than the installed environment, treats development and build advisories as informational, distinguishes scanner failure from a clean audit, refuses unknown, expired, mismatched, duplicated, under-documented, or no-longer-reported entries, and never upgrades or edits a dependency itself. No baseball semantics, publication gate, sync mode, API, deployment process, or write authority changed. |

@@ -1,8 +1,9 @@
 # BaseballOS Sync Pipeline — Execution Order, Authority, and Trust Gates
 
 **Status:** Current operational runbook  
+**Authority:** Secondary to `docs/canonical/04_PLATFORM_ARCHITECTURE_OPERATIONS.md`, which owns the current sync and publication authority posture. This document owns execution order and trust-gate detail.  
 **Owner:** Nickolis Kacludis  
-**Reviewed:** August 6, 2026  
+**Last reviewed:** August 14, 2026  
 **Workflow authority:** `.github/workflows/baseballos-sync.yml`
 
 This document describes the current production sync/publication workflow and
@@ -20,18 +21,21 @@ The most important facts are:
 - automatic game-driven backfill authority is **off**;
 - automated game-driven write mode is **unapproved**;
 - game-driven publication-authority transfer is **unapproved**;
+- authoritative **manual** daily execution is prohibited under D-051: the
+  production full-daily runner is schedule-only and first-attempt-only;
 - the existence of qualification machinery does not grant broader mutation authority.
 
 Do not describe the game-driven lane as `off`: daily and postgame are actively
 observed in shadow. Do not describe the legacy per-pitcher GameLog lane as
 retired: it remains authoritative until a separate explicit authority-transfer
-decision is made.
+decision is made. Do not describe manual daily dispatch as an authoritative
+recovery path: D-051 retired it, and the runner refuses it.
 
 ## 2. Operating Modes
 
 | Mode | Trigger | Current meaning |
 |---|---|---|
-| `daily` | scheduled morning run or manual dispatch | legacy writer authoritative; game-driven lane shadow-observed; trusted snapshot/public cache attempted after gates |
+| `daily` | scheduled morning run only (first attempt) | legacy writer authoritative; game-driven lane shadow-observed; trusted snapshot/public cache attempted after gates. Manual dispatch and reruns reach the D-051 runner guard and are refused before application/database initialization |
 | `postgame` | scheduled overnight passes or manual dispatch | completed-game reconciliation; game-driven lane shadow-observed after the legacy path; trusted publication follows existing gates |
 | `backfill` | manual only with explicit date | governed historical replay; no automatic broad backfill authority |
 | `intraday` | manual/read-only unless separately authorized | audit/reconciliation; does not silently gain write authority |
@@ -213,18 +217,22 @@ It is explicitly a reliability bridge, not the permanent architecture.
 
 Do not close the incident when implementation merges.
 
-Required proof:
+Required proof, over three consecutive **scheduled**, first-attempt daily runs:
 
-1. one separately authorized controlled manual daily recovery run succeeds;
-2. `budget_exhausted_pitchers == 0`;
-3. `publication_critical_failed == 0`;
-4. a new candidate snapshot is published, selected, and served;
-5. appearance-ledger proof passes;
-6. dashboard-cache proof passes;
-7. shadow remains zero-write;
-8. three consecutive **scheduled** daily runs satisfy the same completion criteria.
+1. `budget_exhausted_pitchers == 0`;
+2. `publication_critical_failed == 0`;
+3. a new candidate snapshot is published, selected, and served;
+4. appearance-ledger proof passes;
+5. dashboard-cache proof passes;
+6. shadow remains zero-write.
 
-The manual recovery run does not substitute for the three-scheduled-run window.
+`docs/current/TRUSTED_PUBLIC_SERVING_AUTHORITY.md` owns the full current OPS-002
+criterion set and is authoritative where the two differ.
+
+**Historical note.** An earlier version of this proof opened with "one separately
+authorized controlled manual daily recovery run succeeds". D-051 retired that
+criterion, because authoritative manual daily execution is intentionally
+prohibited. A manually re-run scheduled job is likewise not eligible proof.
 
 ## 11. Permanent Work-Reduction Direction
 
