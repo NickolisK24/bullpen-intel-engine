@@ -1,5 +1,16 @@
 # Positive Depth / Rest Story Beat — Phase 1.5 (June 2026)
 
+> **Status: Superseded implementation record — retained as implementation history.**
+> This backend phase shipped. The document describes the state of the story
+> system at the time of that phase, including legacy paths and UI surfaces that
+> later phases removed; it is not a description of the system today.
+>
+> Nothing here is current implementation authority. Current product behavior is
+> governed by
+> [`docs/canonical/03_PRODUCT_EXPERIENCE_STANDARD.md`](../canonical/03_PRODUCT_EXPERIENCE_STANDARD.md)
+> and current claims by
+> [`docs/canonical/02_BULLPEN_INTELLIGENCE_STANDARD.md`](../canonical/02_BULLPEN_INTELLIGENCE_STANDARD.md).
+
 **Companion docs:** `story_coverage_audit_june_2026.md`, `story_consolidation_plan_june_2026.md`, `story_adapter_phase_1_notes.md`
 **Scope:** Backend-only. No frontend changes. No engine removed. No UI migrated (Home, Stories, Team Board untouched).
 

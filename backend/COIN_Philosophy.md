@@ -1,5 +1,15 @@
 COIN Philosophy
 
+> **Status: Philosophy and reference note — not canonical authority.**
+> This is the founding statement of intent behind the COIN subsystem, retained
+> for the reasoning it records. It is not part of the canonical library and
+> defines no rule. The
+> [Constitution](../docs/canonical/01_BASEBALLOS_CONSTITUTION.md) owns product
+> guardrails, and the
+> [Bullpen Intelligence Standard](../docs/canonical/02_BULLPEN_INTELLIGENCE_STANDARD.md)
+> owns what may be claimed and on what evidence. Where this note and either of
+> those differ, the canonical documents are authoritative.
+
 Contextual Observation Intelligence Network
 
 Version 1.0

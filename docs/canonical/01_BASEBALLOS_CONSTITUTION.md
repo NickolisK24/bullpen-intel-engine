@@ -3,8 +3,8 @@
 | Field | Value |
 |---|---|
 | Status | Canonical - highest product authority |
-| Version | 1.0 |
-| Effective date | July 29, 2026 |
+| Version | 1.1 |
+| Effective date | August 14, 2026 |
 | Owner | Nickolis Kacludis |
 | Product | BaseballOS - Public MLB Bullpen Intelligence |
 | Supersedes | BaseballOS Intelligence Operating System v2.0 as constitutional authority |
@@ -252,6 +252,25 @@ BaseballOS maintains four documentation classes:
 
 Do not create a new master document for every initiative.
 
+### Authority order
+
+When two documents appear to conflict, the higher entry wins:
+
+1. Constitution
+2. Bullpen Intelligence Standard
+3. Product Experience Standard
+4. Platform Architecture & Operations Manual
+5. Editorial & Distribution Standard
+6. Product Roadmap & Decision Ledger
+7. Active subsystem specification or current runbook, within its narrow scope
+8. Decision record or implementation record
+9. Point-in-time audit or report
+10. Historical or archived material
+
+The Roadmap controls sequence. It cannot weaken a higher product, intelligence, experience, architecture, or editorial contract. A runbook may hold exact procedural detail; it may not create a new source authority, public vocabulary, product promise, or publication rule.
+
+`docs/README.md` and `docs/canonical/README.md` restate this order for navigation. They are navigation aids, not its home: this Section is where the order lives, and where an amendment to it is made.
+
 ## 16. Long-Term Direction
 
 1. **Establish the reference:** reliable current reads, evidence-bearing team pages, a game-aware daily front door, immutable share artifacts, and visible trust.
@@ -285,3 +304,4 @@ This Constitution consolidates the durable identity and guardrails from the Inte
 | Version | Date | Author | Summary |
 |---|---|---|---|
 | 1.0 | July 29, 2026 | Nickolis Kacludis | Established the six-document canonical library and consolidated BaseballOS identity, category, permanent guardrails, ontology, competitive strategy, and documentation governance. |
+| 1.1 | August 14, 2026 | Nickolis Kacludis | Gave the authority order a constitutional home (H-12). The ten-level order was explicit and consistent, but it lived only in two navigation README files — both of which the order itself ranks below the six canonical documents, so the hierarchy had no canonical owner. Section 15 now states it, and the two READMEs are named as restatements rather than sources. The order is unchanged, level for level, from what those files already declared; nothing was added, removed, or reordered. |

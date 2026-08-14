@@ -2,11 +2,17 @@
 
 Version: 1.0
 
-Status: Foundational Product Governance Document
+Status: **Subsystem implementation reference — secondary authority.**
 
 Purpose: Define what qualifies as a BaseballOS story, how stories are selected, what makes a story valuable, and what story patterns should be prioritized or rejected.
 
-This document governs story generation.
+This document is the story subsystem's implementation reference. It does not govern independently.
+
+- Canonical editorial, voice, and publication authority: [`docs/canonical/06_EDITORIAL_DISTRIBUTION_STANDARD.md`](../canonical/06_EDITORIAL_DISTRIBUTION_STANDARD.md).
+- Canonical intelligence, evidence, and public-vocabulary authority: [`docs/canonical/02_BULLPEN_INTELLIGENCE_STANDARD.md`](../canonical/02_BULLPEN_INTELLIGENCE_STANDARD.md).
+- Canonical surface authority: [`docs/canonical/03_PRODUCT_EXPERIENCE_STANDARD.md`](../canonical/03_PRODUCT_EXPERIENCE_STANDARD.md).
+
+Where this document and any of those differ, the canonical standard is authoritative.
 
 It is complementary to:
 

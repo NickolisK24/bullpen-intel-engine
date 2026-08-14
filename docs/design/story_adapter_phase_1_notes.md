@@ -1,5 +1,16 @@
 # Story Adapter — Phase 1 Implementation Notes (June 2026)
 
+> **Status: Superseded implementation record — retained as implementation history.**
+> This backend phase shipped. The document describes the state of the story
+> system at the time of that phase, including legacy paths and UI surfaces that
+> later phases removed; it is not a description of the system today.
+>
+> Nothing here is current implementation authority. Current product behavior is
+> governed by
+> [`docs/canonical/03_PRODUCT_EXPERIENCE_STANDARD.md`](../canonical/03_PRODUCT_EXPERIENCE_STANDARD.md)
+> and current claims by
+> [`docs/canonical/02_BULLPEN_INTELLIGENCE_STANDARD.md`](../canonical/02_BULLPEN_INTELLIGENCE_STANDARD.md).
+
 **Companion plan:** `docs/design/story_consolidation_plan_june_2026.md` (Phase 1)
 **Scope:** Purely additive backend canonical story adapter. No frontend behavior change, no removals, no engine changes.
 

@@ -1,10 +1,20 @@
 # BaseballOS Operational Reviews
 
+> **Status: Historical evidence — not current product authority.**
+> This document summarizes the operational review and monitoring evidence of
+> the June 2026 V3 rollout path, sourced to records now in
+> `docs/archive/2026-06/`. The rollout status block below is that programme's
+> state as of June 2026 and is not a statement about production today.
+> Current operational authority lives in
+> [`docs/canonical/04_PLATFORM_ARCHITECTURE_OPERATIONS.md`](../canonical/04_PLATFORM_ARCHITECTURE_OPERATIONS.md)
+> and the current runbooks under `docs/current/`; current execution state lives
+> in [`docs/canonical/05_PRODUCT_ROADMAP_DECISION_LEDGER.md`](../canonical/05_PRODUCT_ROADMAP_DECISION_LEDGER.md).
+
 This document summarizes operational review, remediation, verification, and
-monitoring evidence for the current V3 rollout path. Detailed evidence remains
+monitoring evidence for the June 2026 V3 rollout path. Detailed evidence remains
 in the linked source documents and retained artifacts.
 
-## Current Operational Status
+## Operational Status as of June 2026
 
 ```text
 V3_TEAM_OPERATIONS_BULLPEN_READINESS_CERTIFIED_WITH_NON_BLOCKING_OPERATIONAL_GAPS

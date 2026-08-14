@@ -1,5 +1,12 @@
 # Dashboard Trust Strip Polish
 
+> **Status: Historical implementation record — superseded wording.**
+> This records a June 2026 dashboard trust-strip change. Its freshness wording
+> (`Synced:`, `DATA STATUS`, `Refresh Coverage`) was retired by VOC-001 and the
+> H-11 freshness convergence; the current stamps are Data through, Last data
+> update, Last checked, Generated at, and Published at. Current authority:
+> [`docs/canonical/03_PRODUCT_EXPERIENCE_STANDARD.md`](../../docs/canonical/03_PRODUCT_EXPERIENCE_STANDARD.md).
+
 ## Scope
 
 This polish changes only dashboard trust and freshness presentation. It does not

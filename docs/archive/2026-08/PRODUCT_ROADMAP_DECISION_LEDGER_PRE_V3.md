@@ -1,5 +1,13 @@
 # BaseballOS Product Roadmap & Decision Ledger
 
+> **Archived historical snapshot — superseded by
+> [`docs/canonical/05_PRODUCT_ROADMAP_DECISION_LEDGER.md`](../../canonical/05_PRODUCT_ROADMAP_DECISION_LEDGER.md).**
+> This is the pre-V3 edition. The Document Control table below still reads
+> "Status: Canonical" because that is what it said when it was current; the body
+> is preserved unmodified under the archive's no-rewrite policy. It is not
+> current authority for platform state, priority, sequence, decisions, risk, or
+> completion.
+
 | Field | Value |
 |---|---|
 | Status | Canonical - current platform state, priority, sequence, decision, risk, and completion authority |

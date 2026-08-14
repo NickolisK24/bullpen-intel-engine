@@ -86,8 +86,26 @@ is the evidence basis for OPS-002 (#620). It is not a replacement sync runbook.
 ## 5. Phase, Report, Methodology, Governance, and Implementation Records
 
 Directories and top-level docs in this class include historical phase folders,
-`docs/reports/`, older `docs/governance/` packets, `docs/methodology/` research,
-and legacy top-level design/reconciliation documents.
+`backend/reports/`, older `docs/governance/` packets, `docs/methodology/`
+research, and legacy top-level design/reconciliation documents.
+
+There is no `docs/reports/`. Earlier editions of this map listed one; the report
+corpus is and has been `backend/reports/`.
+
+### Documentation outside `docs/`
+
+This map classifies `docs/`. Four bodies of documentation live elsewhere and are
+classified here so a reader does not have to guess:
+
+| Location | Class | Notes |
+|---|---|---|
+| `docs/design/` | Historical implementation records | June 2026 story-consolidation migration plans, all superseded. The flags, legacy paths, and reversibility they are built around were removed at Phases 4B.5, 4B.6, and 5D, which have no documents of their own. Each file carries a superseded banner. Not current implementation authority; `docs/canonical/03` governs product behavior. |
+| `backend/reports/` | Historical evidence | 31 generated audit and certification reports, each carrying its own generation stamp and an evidence-only disclaimer. They record June 2026 measurements; they set no current threshold or policy. |
+| `backend/COIN_Philosophy.md` | Reference note | The founding statement of intent behind the COIN subsystem. Not canonical, defines no rule, carries a status banner. `docs/canonical/01` and `02` are authoritative. |
+| `frontend/docs/` | Historical implementation records | One file, a June 2026 dashboard trust-strip note whose freshness wording VOC-001 and H-11 retired. Carries a status banner. |
+| `artifacts/` | Generated tool output | Dated editorial-review exports written by `backend/services/todays_story_editorial_review.py` and asserted as output paths by its tests. Never authority; not hand-maintained. |
+
+Generated and runtime output is never canonical, regardless of where it lands.
 
 ### Phase 0 folder locations
 
@@ -123,6 +141,21 @@ Their historical language is part of the record.
 
 If an archived rule still matters, the current canonical document should state
 that rule independently.
+
+### Archived documents that still read as current
+
+Two archived files carry headers that were accurate when written and read as
+current authority now. Neither body was rewritten; both are handled by adding a
+supersession marker above the preserved text, or by explanation here.
+
+`docs/archive/2026-08/PRODUCT_ROADMAP_DECISION_LEDGER_PRE_V3.md` shares its
+title with the canonical Roadmap and its Document Control table still says
+"Status: Canonical". A supersession banner now sits above that table pointing at
+`docs/canonical/05_PRODUCT_ROADMAP_DECISION_LEDGER.md`; the table itself is
+untouched. No active document, code path, test, or workflow references the file.
+
+`docs/archive/2026-08/GAME_824487_SOURCE_REVISION_AUDIT.md` keeps its stale
+`HOLD` header deliberately, explained in section 8 below.
 
 ### June project-state snapshot
 
