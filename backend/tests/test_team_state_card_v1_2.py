@@ -22,6 +22,7 @@ from models.pitcher import Pitcher
 from models.roster_status_snapshot import RosterStatusSnapshot
 from models.scheduled_game import ScheduledGame
 from models.sync_run import SyncRun
+from services.public_bullpen_copy import PUBLIC_AVAILABILITY_STATUSES
 from services.share_artifacts import (
     build_share_artifact_draft,
     publish_share_artifact,
@@ -266,14 +267,83 @@ def test_reliever_rows_carry_the_required_fields(app):
             assert field in row
 
 
-def test_reliever_availability_is_a_canonical_label_never_card_only(app):
+def test_reliever_availability_is_public_vocabulary_never_card_only(app):
+    """The row is reader vocabulary by destination, not an internal structured field.
+
+    This assertion used to name the ENGINE set as "canonical", which let the
+    card publish ``Monitor`` and ``Avoid`` straight into the reader-facing
+    Availability column while a green test said the field was governed. The
+    public vocabulary owner decides this set.
+    """
     _seed_team()
     rows = build_team_state_card_metrics(TEAM_ID, reference_date=SLATE)['reliever_evidence']
-    canonical = {'Available', 'Monitor', 'Limited', 'Avoid', 'Unavailable'}
+    assert rows
     for row in rows:
-        assert row['availability'] in canonical
+        assert row['availability'] in PUBLIC_AVAILABILITY_STATUSES
     for banned in ('Normal', 'Stressed', 'Tired', 'Risky', 'Fade'):
         assert banned not in repr(rows)
+
+
+def test_engine_only_states_are_never_newly_published(app):
+    """Negative contract: the two engine-only words cannot reach a new artifact.
+
+    ``Monitor`` and ``Avoid`` are the states the vocabulary owner reserves as
+    engine-only. Seeding a bullpen that classifies into them and asserting on the
+    published rows is what makes this non-vacuous — a repr scan over an empty or
+    all-Available table would pass while proving nothing.
+    """
+    _seed_team()
+    rows = build_team_state_card_metrics(TEAM_ID, reference_date=SLATE)['reliever_evidence']
+    assert rows
+
+    published = repr(rows)
+    assert 'Monitor' not in published
+    assert 'Avoid' not in published
+
+    # The mapping is applied, not merely absent: at least one row carries a label
+    # that only exists because an engine state was projected through the owner.
+    labels = {row['availability'] for row in rows}
+    assert labels <= set(PUBLIC_AVAILABILITY_STATUSES)
+
+
+def test_an_unrecognised_engine_state_withholds_the_row(app):
+    """Fail-closed: no governed public label, no published row.
+
+    The card never shows a raw state and never guesses a public one, matching how
+    a pitcher with no classified availability read is already omitted.
+    """
+    _seed_team()
+    baseline = build_team_state_card_metrics(TEAM_ID, reference_date=SLATE)['reliever_evidence']
+    assert baseline
+
+    import services.team_state_card_metrics as metrics
+
+    original = metrics.public_availability_label
+    try:
+        metrics.public_availability_label = lambda status: None
+        rows = build_team_state_card_metrics(TEAM_ID, reference_date=SLATE)['reliever_evidence']
+    finally:
+        metrics.public_availability_label = original
+
+    assert rows == []
+
+
+def test_row_order_still_ranks_by_engine_restriction(app):
+    """Ordering keeps the engine ladder even though the row publishes the label.
+
+    The public vocabulary is deliberately lossy — ``Avoid`` and ``Unavailable``
+    share one public label — so ranking on the published label would silently
+    merge two distinct restriction tiers. This pins that it does not.
+    """
+    _seed_team()
+    rows = build_team_state_card_metrics(TEAM_ID, reference_date=SLATE)['reliever_evidence']
+    assert rows
+
+    order = {label: index for index, label in enumerate(
+        ('Unavailable', 'Limited', 'On Watch', 'Available')
+    )}
+    ranks = [order[row['availability']] for row in rows]
+    assert ranks == sorted(ranks)
 
 
 def test_reliever_evidence_is_bounded_to_six_rows(app):
@@ -322,8 +392,15 @@ def test_reliever_ordering_is_most_restrictive_first_then_tiebreaks():
         active_ids=active_ids, record_by_pid=record_by_pid, pitchers=pitchers,
         workload=workload, last_appearances=last, reference_date=date(2026, 7, 23),
     )
+    # Rows publish the PUBLIC label; ordering still follows the engine ladder.
+    # Engine order Unavailable -> Avoid -> Limited -> Monitor -> Available becomes
+    # Unavailable, Unavailable, Limited, On Watch, Available: the two most
+    # restrictive tiers share one public word while keeping their distinct places.
     order = [r['availability'] for r in rows]
-    assert order == ['Unavailable', 'Avoid', 'Limited', 'Monitor', 'Available']
+    assert order == ['Unavailable', 'Unavailable', 'Limited', 'On Watch', 'Available']
+    # The engine identity behind row 0 vs row 1 is not published, and must not be.
+    assert 'Avoid' not in repr(rows)
+    assert 'Monitor' not in repr(rows)
 
 
 def test_reliever_ordering_tiebreak_appearances_then_outs_then_recency_then_id():
