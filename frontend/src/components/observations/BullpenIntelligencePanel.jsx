@@ -249,7 +249,7 @@ function ObservationCard({ observation }) {
           detail={freshnessDetail}
         />
         <StatusChip
-          label="Workload Read"
+          label="Read Confidence"
           value={formatConfidence(observation.confidence?.status)}
           detail={confidenceDetail}
         />
@@ -364,7 +364,7 @@ export default function BullpenIntelligencePanel({
                 subtext={state.freshness?.data_through ? `Data through ${state.freshness.data_through}` : null}
               />
               <MetadataCell
-                label="Workload Read"
+                label="Read Confidence"
                 value={formatConfidence(state.confidence?.status)}
                 subtext={state.confidence?.reason}
               />

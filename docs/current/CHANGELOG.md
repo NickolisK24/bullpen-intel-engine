@@ -4,6 +4,43 @@ This changelog summarizes major product, governance, rollout, and operational
 milestones. It does not replace the detailed evidence records linked from
 [docs/README.md](../README.md).
 
+## August 13, 2026 - Public Copy Follows Canonical Ownership (H-5 / H-6)
+
+- Removed the frontend's public-copy rewriting. Three components carried chained
+  regex tables that rewrote already-authored public sentences on their way to
+  the reader — `Monitor` to `On Watch`, `Avoid` to `Unavailable`,
+  `deterministically` to `consistently`, `endpoint` to `data feed`, and more.
+  That made the browser a second author of BaseballOS claims, and on the
+  availability usage-check card it meant the blocked-framing guard scanned copy
+  the browser had already repaired.
+- Moved each sentence to its semantic owner, with the reader-visible wording
+  unchanged: the landscape grouping note is authored in
+  `services/game_context.py`, the Today watch note reads `stretched` rather than
+  the engine's `constrained` in `services/tonight_candidate_selection.py`, and
+  the usage-check framing uses the public `Unavailable` label and drops the
+  `Backtest` tooling word in `services/availability_backtest.py`. A repository
+  sweep confirmed these were the only public *sentences* carrying engine
+  vocabulary; every other match is a structured engine key, which
+  `services/public_bullpen_copy.py` already documents as legitimately exempt.
+- Kept every fail-closed guard. Prohibited framing — prediction, betting,
+  accuracy, ranking, internal tooling — is still detected and **withheld**, and
+  the guards are now stronger because they inspect exactly what the backend
+  published instead of a browser-repaired copy.
+- Humanized internal language that was reaching readers: "no bullpen situation
+  cleared the BaseballOS publication standard" became "no bullpen read is ready
+  to publish yet", and the completed-game-context empty states became plain
+  baseball sentences. Removed the dead `governance metadata` display mapping,
+  which invented the internal-sounding label "decision boundary detail" for a
+  key no backend module emits.
+- Corrected glossary drift. `Clean Option` no longer defines itself with the
+  word "clean", and the availability definitions drop "current workload
+  classification" and "governed roster context". The surface label `Workload
+  Read` is now `Read Confidence` across all eight surfaces, matching the family
+  the Product Experience Standard names and requires to appear under its own
+  field label; readers previously saw a label the glossary never defined.
+- No threshold, Team State, pitcher-read, availability, or generated-copy
+  behavior changed, and no layout changed.
+
 ## August 13, 2026 - Freeze Guards Narrowed To Protected Surfaces (H-1)
 
 - Narrowed the four branch-diff behaviour-freeze guards so they refuse the

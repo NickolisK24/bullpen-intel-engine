@@ -216,7 +216,7 @@ test('renders pitcher cards with name, status, workload read and short reason', 
   assert.ok(!htmlIncludes(html, '18 pitches yesterday'))
   assert.equal(htmlIncludes(html, 'Recent Load'), false)
   assert.equal(htmlIncludes(html, '0-100'), false)
-  assert.ok(htmlIncludes(html, 'Workload Read'))
+  assert.ok(htmlIncludes(html, 'Read Confidence'))
   assert.ok(htmlIncludes(html, 'Limited Read'))           // confidence formatted
 })
 

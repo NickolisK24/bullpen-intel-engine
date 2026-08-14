@@ -625,7 +625,10 @@ def _optionality_evidence(band):
         return 'Bullpen cushion is thin'
     if band == 'narrow':
         return 'Bullpen cushion is narrow'
-    return 'Bullpen cushion is constrained'
+    # ``constrained`` is engine vocabulary (the bullpen_board health code). The
+    # reader form is authored here rather than swapped in the browser; the
+    # rendered sentence is unchanged.
+    return 'Bullpen cushion is stretched'
 
 
 def _concentration_evidence(band):

@@ -105,21 +105,11 @@ function Column({ column }) {
   )
 }
 
+// Landscape notes are backend-authored public sentences
+// (services/game_context.py). They render verbatim: this component no longer
+// rewrites BaseballOS public copy on its way to the reader.
 function displayLandscapeNote(note) {
   return String(note ?? '')
-    .replace(/\bSorted deterministically by count, then percentage, then team name\./gi, 'Groups reflect the current bullpen counts for each team.')
-    .replace(/\bSorted deterministically by\b/gi, 'Grouped by')
-    .replace(/\bdeterministically\b/gi, 'consistently')
-    .replace(/\bdeterministic\b/gi, 'consistent')
-    .replace(/\bendpoints\b/gi, 'data feeds')
-    .replace(/\bendpoint\b/gi, 'data feed')
-    .replace(/\bbackend\b/gi, 'BaseballOS service')
-    .replace(/\bsnapshot\b/gi, 'read')
-    .replace(/\bMonitor\b/g, 'On Watch')
-    .replace(/\brestricted\b/g, 'limited')
-    .replace(/\bRestricted\b/g, 'Limited')
-    .replace(/\bconstrained\b/g, 'stretched')
-    .replace(/\bConstrained\b/g, 'Stretched')
 }
 
 export default function BullpenLandscape({ landscape }) {

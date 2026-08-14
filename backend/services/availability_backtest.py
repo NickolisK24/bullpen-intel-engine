@@ -397,20 +397,30 @@ def _payload_from_rows(rows):
 
 
 def _framing():
+    """Reader-facing framing copy, authored here at the owner.
+
+    ``Avoid`` and ``backtest`` are engine vocabulary: ``Avoid`` is an internal
+    availability state whose public form is ``Unavailable``
+    (services/public_bullpen_copy.py), and ``backtest`` is a tooling word. The
+    browser used to swap both at render time, which made the presentation layer
+    a second author of this public claim and meant the card's blocked-framing
+    guard scanned already-rewritten text. Both are authored correctly here now;
+    the rendered copy is unchanged.
+    """
     return {
-        'title': 'Operational Availability Backtest',
+        'title': 'Operational Availability Usage Check',
         'summary': (
             'Observed next-day relief usage by availability tier, reconstructed '
             'from game logs and Role Authority reliever filtering.'
         ),
         'claim': (
-            'Arms classified Avoid or Unavailable were used the next day far '
+            'Arms classified Unavailable were used the next day far '
             'less often than arms classified Available.'
         ),
         'caveat': (
             'This is an observed association with bullpen management behavior, '
             'not a physiological proof or causal workload claim. Reverse '
-            'causality is present: an arm can be Avoid because he was just used, '
+            'causality is present: an arm can be Unavailable because he was just used, '
             'and managers may sit him the next day for the same reason.'
         ),
     }

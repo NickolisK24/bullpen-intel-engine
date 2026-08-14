@@ -33,9 +33,11 @@ const payload = {
   status: 'ok',
   computed_at: '2026-06-15T07:00:00Z',
   framing: {
-    title: 'Operational Availability Backtest',
-    summary: 'Stored backtest summary from the API.',
-    claim: 'Avoid and Unavailable were used less often than Available.',
+    // Mirrors what services/availability_backtest.py now authors: the reader
+    // form is decided at the owner, not repaired in the browser.
+    title: 'Operational Availability Usage Check',
+    summary: 'Stored usage-check summary from the API.',
+    claim: 'Unavailable was used less often than Available.',
     caveat: 'This is an observed association with bullpen management behavior, not a physiological proof or causal workload claim.',
   },
   windows: [

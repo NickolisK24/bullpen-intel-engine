@@ -34,7 +34,7 @@ const TONIGHT_SECTION_SUBTITLE =
 const TONIGHT_EMPTY_TITLE =
   'No standout bullpen watch point tonight.'
 const TONIGHT_EMPTY_BODY =
-  "Games are on tonight's slate, but no bullpen situation cleared the BaseballOS publication standard."
+  "Games are on tonight's slate, but no bullpen read is ready to publish yet."
 const TONIGHT_OFF_DAY_TITLE =
   'No MLB games scheduled tonight.'
 const TONIGHT_OFF_DAY_BODY =
@@ -112,9 +112,9 @@ const INTERNAL_TONIGHT_COPY_PATTERN =
   /\b(fatigue score|confidence score|internal_strength|ranking_score|signal_family|signal_type|recommend(?:ed|ation)?|ranked|ranking|projection|prediction|bet(?:ting|s)?|odds|pick|edge|guaranteed|expected to happen|will happen|healthy|injury-free)\b/i
 
 const EMPTY_REASON_COPY = {
-  no_completed_game_contexts: 'No completed-game contexts are available for the current reference date.',
-  no_publishable_coin_story: 'No publishable bullpen story is available from the current completed-game context.',
-  lead_story_unavailable: 'The lead story service is unavailable right now.',
+  no_completed_game_contexts: 'No completed games are available for this date yet.',
+  no_publishable_coin_story: 'No bullpen story is ready from the most recent completed games.',
+  lead_story_unavailable: "Tonight's lead story is unavailable right now.",
 }
 
 const FAIL_CLOSED_EMPTY_REASONS = new Set([
@@ -226,16 +226,18 @@ function textValue(value) {
   return text || null
 }
 
+// Story and tonight copy is backend-authored public prose. It renders verbatim.
+//
+// This surface used to swap engine vocabulary here (Monitor -> On Watch,
+// constrained -> stretched, and so on). Those are decisions the backend already
+// owns: services/public_bullpen_copy.py maps the availability states and
+// refuses engine vocabulary inside guarded public prose, and the one Today
+// sentence that still read `constrained` is authored as `stretched` at its
+// owner in services/tonight_candidate_selection.py. Rewriting downstream made
+// the browser a second author and let internal copy pass the refusal guards
+// below in repaired form.
 function publicTerminology(value) {
   return String(value || '')
-    .replace(/\bMonitor\b/g, 'On Watch')
-    .replace(/\brestricted\b/g, 'limited')
-    .replace(/\bRestricted\b/g, 'Limited')
-    .replace(/\bconstrained\b/g, 'stretched')
-    .replace(/\bConstrained\b/g, 'Stretched')
-    .replace(/\brecommendation engine\b/gi, 'how BaseballOS reads workload')
-    .replace(/\bclean options\b/g, 'Clean Options')
-    .replace(/\bClean options\b/g, 'Clean Options')
 }
 
 function numberValue(value) {

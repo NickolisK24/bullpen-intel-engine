@@ -163,7 +163,7 @@ test('similar distributions read as similar, not as a winner', () => {
 test('stale bullpen surfaces freshness limitations and degraded confidence', () => {
   const html = render(staleComparison)
   assert.ok(htmlIncludes(html, 'Recent workload unclear — read with caution'))
-  assert.ok(htmlIncludes(html, 'Workload Read: Low'))
+  assert.ok(htmlIncludes(html, 'Read Confidence: Low'))
   assert.ok(htmlIncludes(html, 'one or both bullpens have degraded freshness'))
   // The board-level freshness limitation text now lives on the linked team
   // boards, not inside the comparison (the boards are no longer embedded).

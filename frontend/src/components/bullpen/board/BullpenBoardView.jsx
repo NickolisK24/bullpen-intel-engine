@@ -421,7 +421,7 @@ function PitcherCard({ card, freshness, onViewDetails, now }) {
 
       <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 font-mono text-[11px] text-chalk500">
         <span>
-          <span className="text-chalk600">Workload Read</span>{' '}
+          <span className="text-chalk600">Read Confidence</span>{' '}
           <span className="text-chalk200">{view.confidenceLabel}</span>
         </span>
         {view.dataStateView && (
