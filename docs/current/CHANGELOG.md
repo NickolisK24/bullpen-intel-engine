@@ -4,6 +4,41 @@ This changelog summarizes major product, governance, rollout, and operational
 milestones. It does not replace the detailed evidence records linked from
 [docs/README.md](../README.md).
 
+## August 14, 2026 - One Team Page, One Bullpen Claim (H-8)
+
+- A `/team/{ABBR}` page publishes two projections of one publication: the social
+  unfurl a crawler stores and the small body a scriptless reader sees. They were
+  selected independently — the metadata from a canonical story, the body from
+  the published Team Board — under one shared snapshot receipt, with nothing
+  comparing them. A page could therefore tell a social platform the bullpen was
+  "Fresh with seven close-game options" while telling the reader "Vulnerable, 5
+  relievers are Unavailable", both stamped with the same snapshot id, and a
+  story representing an earlier date could sit beneath a later data-through
+  stamp. Both were reproduced from deterministic fixtures before any fix.
+- The published Team Board now owns the page's claim. Every receipt field, the
+  Team State and the baseball point come from it. A canonical story may still
+  word the unfurl (DIST-003 / #594), but only when it agrees with that claim:
+  the story must be for this team, represent this data-through date, and name no
+  Team State other than the one published. When it disagrees the page falls back
+  to the board's own governed wording and records why — `story_team_mismatch`,
+  `story_represented_date_mismatch`, or `story_team_state_conflict` — rather
+  than withholding a valid dated read from the reader.
+- Made the agreement checkable on the artifact, not just in the generator. Each
+  dated page now declares the one Team State it publishes, the body element
+  carries the state it rendered, and the fail-closed delivery gate proves both
+  projections against that single declaration before anything reaches `main`.
+  Honest limit: unfurl copy that names no Team State is permitted, because
+  canonical story sentences often name none, so the gate catches contradiction
+  rather than silence.
+- Verified across a 30-team publication covering every Team State, limited
+  reads, agreeing stories, contradicting stories, stale-dated stories,
+  cross-team stories, and teams with no story. No production run was performed
+  and no daily workflow was triggered; the corpus is synthesized fixtures.
+- No threshold, Team State formula, availability, Read Confidence, pitcher
+  classification, roster-authority, story-eligibility, or publication-gate
+  change. Determinism unchanged: repeated renders of one publication are
+  byte-identical, and `generated_at` moves without touching the baseball claim.
+
 ## August 14, 2026 - Generated Bullpen Copy Made Evidence-Specific (H-7 / H-9)
 
 - Team previews now select the evidence that explains the state. The board
