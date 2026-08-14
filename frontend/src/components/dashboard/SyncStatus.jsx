@@ -5,7 +5,7 @@ import {
 } from '../../utils/bullpenConcepts'
 import { useFetch } from '../../hooks/useFetch'
 import { getSyncStatus } from '../../utils/api'
-import { getSyncStatusView } from './syncStatusView'
+import { DATA_STATUS_LABELS, getSyncStatusView } from './syncStatusView'
 
 const Metric = ({ label, value, muted = false }) => (
   <div className="min-w-0">
@@ -59,7 +59,10 @@ export function SyncStatusContent({ data, loading, error, now, freshnessAuthorit
     return (
       <TrustStrip
         dot="#8899aa"
-        status="Checking"
+        // Honest while evidence is still arriving: the platform read is not
+        // claimed Current before it is known. 'Checking' was an ungoverned
+        // fifth value under a governed field label.
+        status={DATA_STATUS_LABELS.UNAVAILABLE}
         metrics={[
           { label: LAST_CHECKED_LABEL, value: 'Checking sync status', muted: true },
           { label: LAST_DATA_UPDATE_LABEL, value: 'Checking data update', muted: true },
@@ -72,7 +75,10 @@ export function SyncStatusContent({ data, loading, error, now, freshnessAuthorit
     return (
       <TrustStrip
         dot="#4a5568"
-        status="Limited"
+        // 'Limited' is arm-availability vocabulary. Under the Data Status field
+        // label a reader could not tell whether the bullpen was limited or the
+        // data was — the exact ambiguity this family was renamed to remove.
+        status={DATA_STATUS_LABELS.UNAVAILABLE}
         helper="Sync status unavailable."
         metrics={[
           { label: LAST_CHECKED_LABEL, value: 'Unavailable', muted: true },

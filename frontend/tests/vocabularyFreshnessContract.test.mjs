@@ -13,6 +13,8 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import test, { after } from 'node:test'
+import React from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
 import { createServer } from 'vite'
 
 const server = await createServer({
@@ -63,6 +65,61 @@ test('the glossary teaches exactly the labels the product renders', () => {
   )
 })
 
+// Every reader-facing surface this contract governs.
+//
+// The list used to sit inside one test and omitted BullpenBoardView,
+// AvailabilityBadge and TeamGameContextCard — which is precisely where three
+// live drifts survived #659: the Team Board rendered the retired 'Last synced:',
+// the Reliever Finder badge labelled Workload Data as 'Data:', and the game
+// context strip rendered a bare Read Confidence value. A surface list that a
+// reader-facing component can be absent from is not a contract.
+const GOVERNED_SURFACES = [
+  '../src/components/home/IntelligenceSurface.jsx',
+  '../src/components/Sidebar.jsx',
+  '../src/components/dashboard/SyncStatus.jsx',
+  '../src/components/dashboard/syncStatusView.js',
+  '../src/components/dashboard/Dashboard.jsx',
+  '../src/components/dashboard/bullpenLandscapeView.js',
+  '../src/components/bullpen/BullpenOperatingStateCard.jsx',
+  '../src/components/bullpen/AvailabilityBadge.jsx',
+  '../src/components/bullpen/AvailabilitySummary.jsx',
+  '../src/components/bullpen/board/TonightsBullpenBoard.jsx',
+  '../src/components/bullpen/board/BullpenBoardView.jsx',
+  '../src/components/bullpen/board/TeamGameContextCard.jsx',
+  '../src/components/bullpen/RecentWorkPanel.jsx',
+  '../src/components/stories/Stories.jsx',
+  '../src/components/explanations/ExplanationDisclosure.jsx',
+  '../src/components/share/TeamStateArtifactCard.jsx',
+  '../src/components/share/PublicShareArtifactPage.jsx',
+  '../src/components/UI/Freshness.jsx',
+]
+
+// A retired label is retired in every form a JSX author can write it.
+//
+// The old matcher checked only `'X`, `"X` and `>X<`. `>Last synced:</span>` — the
+// form the Team Board actually shipped — matched none of the three, so the
+// variant sat inside the governed set and the contract stayed green. The fix is
+// in the matcher, not in the production string: a label followed by a colon is
+// the same label.
+// Scanning source for reader strings must not read the comments that explain
+// why a string is banned — otherwise documenting a ban trips it.
+function withoutComments(source) {
+  return source
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/^\s*\/\/.*$/gm, '')
+}
+
+
+function containsRetiredLabel(source, variant) {
+  const escaped = variant.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  // The label must OPEN a quoted string or JSX text node and then TERMINATE —
+  // optionally through a colon. Requiring termination is what keeps ordinary
+  // prose out: 'Last sync failed' is a sentence about a failure, not a second
+  // name for the field, and must not be flagged. Case-sensitive, because a
+  // retired variant is retired in the exact casing it shipped as.
+  return new RegExp(`(['"\`>])\\s*${escaped}\\s*:?\\s*(['"\`<{]|$)`, 'm').test(source)
+}
+
 test('no surface invents its own variant of a governed stamp name', async () => {
   // The retired variants, each of which named a field a second way.
   const RETIRED_STAMP_VARIANTS = [
@@ -78,27 +135,11 @@ test('no surface invents its own variant of a governed stamp name', async () => 
     'Data Through',
     'Last Sync',
   ]
-  const SURFACES = [
-    '../src/components/home/IntelligenceSurface.jsx',
-    '../src/components/Sidebar.jsx',
-    '../src/components/dashboard/SyncStatus.jsx',
-    '../src/components/dashboard/syncStatusView.js',
-    '../src/components/dashboard/Dashboard.jsx',
-    '../src/components/dashboard/bullpenLandscapeView.js',
-    '../src/components/bullpen/BullpenOperatingStateCard.jsx',
-    '../src/components/bullpen/board/TonightsBullpenBoard.jsx',
-    '../src/components/bullpen/RecentWorkPanel.jsx',
-    '../src/components/stories/Stories.jsx',
-    '../src/components/explanations/ExplanationDisclosure.jsx',
-    '../src/components/share/TeamStateArtifactCard.jsx',
-    '../src/components/share/PublicShareArtifactPage.jsx',
-    '../src/components/UI/Freshness.jsx',
-  ]
-  for (const file of SURFACES) {
-    const source = await read(file)
+  for (const file of GOVERNED_SURFACES) {
+    const source = withoutComments(await read(file))
     for (const variant of RETIRED_STAMP_VARIANTS) {
       assert.equal(
-        source.includes(`'${variant}`) || source.includes(`"${variant}`) || source.includes(`>${variant}<`),
+        containsRetiredLabel(source, variant),
         false,
         `${file} re-introduces the retired stamp variant "${variant}"`,
       )
@@ -247,4 +288,82 @@ test('unknown governed values fail closed instead of being prettified', () => {
   const fresh = availability.getDataStateView('fresh')
   assert.equal(fresh.isCurrent, true)
   assert.equal(fresh.label, 'Current')
+})
+
+// ── The exact drifts #659 missed, pinned by name ────────────────────────────
+
+test('the retired-label matcher catches a trailing-colon JSX form', () => {
+  // The regression that let 'Last synced:' survive: the old matcher checked
+  // only `'X`, `"X` and `>X<`, and the shipped form was `>Last synced:</span>`.
+  assert.equal(containsRetiredLabel('<span>Last synced:</span>', 'Last synced'), true)
+  assert.equal(containsRetiredLabel("label: 'Last synced'", 'Last synced'), true)
+  assert.equal(containsRetiredLabel('<span>Last synced</span>', 'Last synced'), true)
+
+  // ...without flagging ordinary prose that merely starts with the same words.
+  assert.equal(containsRetiredLabel("syncLabel: 'Last sync failed'", 'Last Sync'), false)
+})
+
+test('no governed surface labels a semantic field with an invented name', async () => {
+  // Scoped to the specific inventions the integrity audit found reachable.
+  // These are field-label forms, not a ban on the English words.
+  const INVENTED_FIELD_LABELS = [
+    'Data:',            // Workload Data rendered under an invented short name
+    'Data State',       // the same family under a second invented name
+  ]
+  for (const file of GOVERNED_SURFACES) {
+    const source = withoutComments(await read(file))
+    for (const invented of INVENTED_FIELD_LABELS) {
+      assert.equal(
+        source.includes(`>${invented}`) || source.includes(`'${invented}`) || source.includes(`"${invented}`),
+        false,
+        `${file} labels a semantic field "${invented}"`,
+      )
+    }
+  }
+})
+
+test('Data Status never borrows a value from another family', async () => {
+  // 'Limited' is arm-availability vocabulary and 'Checking' was never governed.
+  // Both shipped under the Data Status field label on /trust.
+  const source = withoutComments(await read('../src/components/dashboard/SyncStatus.jsx'))
+
+  assert.equal(source.includes('status="Limited"'), false)
+  assert.equal(source.includes('status="Checking"'), false)
+  assert.ok(source.includes('DATA_STATUS_LABELS'))
+})
+
+test('every rendered Read Confidence value is named as Read Confidence', async () => {
+  // Rendered, not grepped: a string count cannot tell whether the value that
+  // reached the reader carried its field name. Both components below shipped a
+  // bare value — one in a metadata strip, one as a parenthetical after a role.
+  const { READ_CONFIDENCE_FIELD_LABEL } = await server.ssrLoadModule(
+    '/src/components/bullpen/availabilityView.js',
+  )
+  const TeamGameContextCard = (await server.ssrLoadModule(
+    '/src/components/bullpen/board/TeamGameContextCard.jsx',
+  )).default
+
+  const html = renderToStaticMarkup(
+    React.createElement(TeamGameContextCard, {
+      gameContext: {
+        available: true,
+        state: 'stored_game_log',
+        data_state: 'current',
+        opponent: 'San Francisco Giants',
+        opponent_abbreviation: 'SF',
+        game_date: '2026-08-13',
+        confidence: 'high',
+        is_today: false,
+        team: { team_name: 'Arizona Diamondbacks', team_abbreviation: 'AZ' },
+      },
+    }),
+  )
+
+  // The value is present, and never present without its field name.
+  assert.ok(html.includes('High'))
+  assert.ok(html.includes(READ_CONFIDENCE_FIELD_LABEL))
+  assert.ok(
+    html.includes(`${READ_CONFIDENCE_FIELD_LABEL}: High`),
+    'a Read Confidence value reached the reader without its field label',
+  )
 })

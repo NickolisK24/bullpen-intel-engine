@@ -1,5 +1,4 @@
 import {
-  DATA_THROUGH_LABEL,
   GENERATED_AT_LABEL,
   LAST_DATA_UPDATE_LABEL,
 } from '../../utils/bullpenConcepts'
@@ -798,7 +797,6 @@ function SectionFreshnessRow({
   lastSync,
   stale = false,
   freshness,
-  dataThroughLabel = DATA_THROUGH_LABEL,
   className = '',
 }) {
   const sample = isSampleFreshness(freshness)
@@ -810,7 +808,7 @@ function SectionFreshnessRow({
         freshness={freshness}
         label={publishedFreshnessBadgeLabel(stale, freshness)}
       />
-      <DataThroughStamp date={dataThrough} label={dataThroughLabel} />
+      <DataThroughStamp date={dataThrough} />
       <LastSyncLabel value={lastSync} label={LAST_DATA_UPDATE_LABEL} />
       {sample && (
         <span className="font-mono text-[11px] uppercase tracking-widest text-chalk500">
@@ -846,7 +844,7 @@ function TonightFreshnessRow({
           label={scopedStaleLabel || publishedFreshnessBadgeLabel(stale, freshness)}
         />
       )}
-      <DataThroughStamp date={dataThrough} label={DATA_THROUGH_LABEL} />
+      <DataThroughStamp date={dataThrough} />
       <LastSyncLabel value={generatedAt} label={GENERATED_AT_LABEL} />
       <LastSyncLabel value={lastSync} label={LAST_DATA_UPDATE_LABEL} />
       {sample && (
@@ -1651,8 +1649,8 @@ function SinceYesterdaySection({ dashboard, teams }) {
     >
       {(view.previousDate || view.currentDate) && (
         <div className="mb-3 flex flex-wrap items-center gap-2">
-          <DataThroughStamp date={view.previousDate} label="Previous view" />
-          <DataThroughStamp date={view.currentDate} label="Current view" />
+          <DataThroughStamp date={view.previousDate} scope="Previous view" />
+          <DataThroughStamp date={view.currentDate} scope="Current view" />
         </div>
       )}
       {view.state === 'changes_detected' ? (

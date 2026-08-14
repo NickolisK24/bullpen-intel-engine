@@ -1,4 +1,8 @@
-import { getAvailabilityBadgeView, getDataStateView } from './availabilityView'
+import {
+  WORKLOAD_DATA_FIELD_LABEL,
+  getAvailabilityBadgeView,
+  getDataStateView,
+} from './availabilityView'
 
 export default function AvailabilityBadge({
   availability,
@@ -22,8 +26,15 @@ export default function AvailabilityBadge({
         {badge.label}
       </span>
       {stateView && (
-        <span className="font-mono text-[10px] leading-none text-chalk400">
-          Data: {stateView.label}
+        // Named with the governed field label, not an invented "Data:". The
+        // value belongs to the Workload Data family — one arm's workload
+        // record — and is not the platform-level Data Status family.
+        <span
+          className="font-mono text-[10px] leading-none text-chalk400"
+          title={stateView.message}
+          aria-label={`${WORKLOAD_DATA_FIELD_LABEL}: ${stateView.label}`}
+        >
+          {WORKLOAD_DATA_FIELD_LABEL}: {stateView.label}
         </span>
       )}
     </span>

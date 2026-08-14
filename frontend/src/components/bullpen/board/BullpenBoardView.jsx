@@ -1,4 +1,5 @@
 import { EmptyState } from '../../UI'
+import { LAST_DATA_UPDATE_LABEL } from '../../../utils/bullpenConcepts'
 import {
   READ_CONFIDENCE_FIELD_LABEL,
   WORKLOAD_DATA_FIELD_LABEL,
@@ -42,7 +43,7 @@ function FreshnessBanner({ freshness, showRoutine = true }) {
         </summary>
         <div className="mt-2 space-y-1 text-xs leading-relaxed text-chalk400">
           {view.lastSync && (
-            <p><span className="text-chalk500">Last synced:</span> {view.lastSync}</p>
+            <p><span className="text-chalk500">{LAST_DATA_UPDATE_LABEL}:</span> {view.lastSync}</p>
           )}
           {view.label && <p>{view.label}</p>}
         </div>
@@ -68,7 +69,7 @@ function FreshnessBanner({ freshness, showRoutine = true }) {
         </span>
         {view.lastSync && (
           <span className="font-mono text-xs">
-            <span className="text-chalk500">Last synced:</span> {view.lastSync}
+            <span className="text-chalk500">{LAST_DATA_UPDATE_LABEL}:</span> {view.lastSync}
           </span>
         )}
       </div>
@@ -322,7 +323,11 @@ function RoleDisclosure({ role }) {
       <div className="mt-2 space-y-2">
         <div className="text-xs leading-relaxed text-chalk200">
           <span className="text-chalk500">Observed role:</span> {role.label}
-          <span className="ml-1 text-chalk500">({role.confidenceLabel})</span>
+          {/* Named, not bare: an unlabelled "(Unavailable)" here reads as a
+              qualifier on the role rather than as Read Confidence. */}
+          <span className="ml-1 text-chalk500">
+            ({READ_CONFIDENCE_FIELD_LABEL}: {role.confidenceLabel})
+          </span>
         </div>
         {role.reason && <p className="text-xs leading-relaxed text-chalk300">{role.reason}</p>}
         {role.evidence.length > 0 && (
