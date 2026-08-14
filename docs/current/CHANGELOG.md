@@ -4,6 +4,36 @@ This changelog summarizes major product, governance, rollout, and operational
 milestones. It does not replace the detailed evidence records linked from
 [docs/README.md](../README.md).
 
+## August 14, 2026 - Internal Explanation Metadata Left the Reader Surface
+
+- The explanation disclosure title-cased backend enums straight into reader
+  copy. Rendering the real component found seven, not the five the audit named:
+  `readiness_state` read as "Readiness State", `operationally_stable` as
+  "Operationally Stable", `bullpen` as "Bullpen", `internal_uncertified_route`
+  as "Internal Uncertified Route", `informational` as "Informational",
+  `team_operations_readiness` as "Team Operations Readiness", and the trust
+  block shipped `certified_with_non_blocking_observations` verbatim.
+- None of them answered a question a reader has, so none was renamed and none
+  received a label. Scope and subject are already established by the surface
+  that opens the disclosure; route status is which internal route served the
+  request; severity is the explanation engine's own priority word, and the
+  limitation's own label and summary already say what is limited.
+- `state_explained` is worth naming separately: `operationally_stable` is the
+  internal readiness code whose public name is a Team State. Giving it a public
+  label on this surface would have made the explanation a second publisher of
+  Team State, which the claim-authority work forbids, so it was removed rather
+  than mapped.
+- The `titleCase` helper went with them, so the mechanism that manufactured
+  public copy out of an enum no longer exists in that component. Unknown enum
+  values are now neither prettified nor printed raw.
+- Reader transparency is unchanged: reasons, evidence, limitations, freshness,
+  visibility, read confidence, the refusal path and the decision-boundary strip
+  all still render. A disposition matrix pins every envelope field, so a newly
+  added field is not reader-visible by default.
+- No Team State, availability, Read Confidence, roster, appearance, story
+  eligibility or publication eligibility change. No backend payload field was
+  deleted — only its reader-facing rendering.
+
 ## August 14, 2026 - Public Language Polish (H-5 through H-9 tail)
 
 - Share Artifact why copy now reacts to the evidence in front of it. Selection
