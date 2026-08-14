@@ -321,7 +321,7 @@
       ]
     },
     "2": {
-      "measured_seconds": 499.08,
+      "measured_seconds": 499.58,
       "files": [
         {
           "path": "tests/test_appearance_ledger.py",
@@ -470,6 +470,10 @@
         {
           "path": "tests/test_public_copy_ownership.py",
           "measured_seconds": 0.6
+        },
+        {
+          "path": "tests/test_public_why_copy_specificity.py",
+          "measured_seconds": 0.5
         },
         {
           "path": "tests/test_recommendation_engine_integration.py",

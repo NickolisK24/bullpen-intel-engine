@@ -848,6 +848,7 @@ CANONICAL_TEAM_STATE_FILES = (
     'backend/services/team_readiness_coverage.py',
     'backend/services/bullpen_comparison.py',
     'backend/services/team_state_public_vocabulary.py',
+    'backend/services/team_state_public_copy.py',
     'frontend/src/adapters/operatingStateReadModel.js',
     'frontend/src/adapters/publicTeamState.js',
     'frontend/src/components/bullpen/BullpenOperatingStateCard.jsx',
@@ -1035,6 +1036,13 @@ def test_branch_touches_no_team_state_or_public_surface_files():
         approved=(
             'backend/services/public_team_relief_work.py',
             'backend/api/performance_intelligence_admin.py',
+            # The Team State public copy authority. It is caught by the
+            # team_state path prefix, but it authors reader-facing sentences and
+            # reads no roster or appearance authority at all. Like the entries
+            # above, this is an exemption from the PATH match only: the file is
+            # in CANONICAL_TEAM_STATE_FILES, so the ownership test below proves
+            # on every run that it never reaches for appearance-team authority.
+            'backend/services/team_state_public_copy.py',
         ),
     )
     assert offenders == [], (

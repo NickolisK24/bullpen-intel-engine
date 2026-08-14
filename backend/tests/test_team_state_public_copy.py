@@ -225,7 +225,9 @@ def test_headline_uses_approved_public_vocabulary():
 def test_why_names_a_baseball_cause_without_internal_language():
     copy = _arizona_copy()
     why = copy['why']
-    assert 'workload' in why and 'clean options' in why
+    # The why names a baseball cause. Which cause depends on the evidence: this
+    # fixture carries arms that are out, so availability is the stated cause.
+    assert 'relievers' in why and 'clean options' in why
     assert 'Vulnerable' not in why  # never repeats the state label
     for banned in ('team-level', 'readiness', 'constrained inventory', 'status_code',
                    'data_state', 'availability_distribution'):
@@ -261,7 +263,9 @@ def test_state_specific_why_templates():
         constraints=[{'constraint_id': 'workload_elevated', 'category': 'workload',
                       'affected_area': 'workload_pressure', 'severity': 'caution', 'count': 2}],
         product_date='2026-07-23')
-    assert 'narrowed' in stretched['why']
+    assert 'narrowing its clean options' in stretched['why']
+    # The stretched sentence states the governed count it was built from.
+    assert '2 relievers' in stretched['why']
 
 
 # ===========================================================================

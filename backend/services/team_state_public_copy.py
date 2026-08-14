@@ -108,6 +108,47 @@ def _possessive(name: str) -> str:
     return f"{name}'" if name[-1] in ('s', 'S') else f"{name}'s"
 
 
+# ---------------------------------------------------------------------------
+# Team language — sentence grammar only.
+#
+# This is NOT team identity: it never edits a stored display name, and every
+# form is derived from the name it is given. Two defects lived here.
+#
+# 1. The bare club name was used as a sentence subject ("New York Yankees is
+#    missing a few bullpen arms, narrowing its clean options"). Club names take
+#    plural agreement, so that sentence disagreed with itself twice.
+# 2. Composed fields named the club twice in adjacent clauses ("New York
+#    Yankees' bullpen is Fresh. New York Yankees' bullpen has a full set...").
+#
+# Both are fixed by construction rather than by repairing rendered text: the
+# why sentence is written around a possessive SLOT, and the composer decides
+# whether that slot takes a first reference or a second one. The possessive
+# frame is also number-neutral, so no subject-verb agreement can be got wrong.
+# ---------------------------------------------------------------------------
+
+# The second-reference possessive. English gives collective club names plural
+# agreement ("the Yankees are"), so the plural possessive pronoun is correct for
+# every club name and needs no per-team table.
+_SECOND_REFERENCE_POSSESSIVE = 'Their'
+
+
+def team_possessive(team_name: str) -> str:
+    """First-reference possessive with its article: ``the New York Yankees'``.
+
+    The article is what makes the club name read as a noun phrase in running
+    prose. Sentence-initial capitalisation is applied by the caller's frame.
+    """
+    name = (team_name or '').strip()
+    if not name:
+        return 'The team’s'.replace('’', "'")
+    return f'the {_possessive(name)}'
+
+
+def _sentence_case(text: str) -> str:
+    """Capitalise the first character without touching the rest of the string."""
+    return f'{text[:1].upper()}{text[1:]}' if text else text
+
+
 def _family_of(constraint: Mapping) -> Optional[str]:
     affected = constraint.get('affected_area')
     if affected in _AFFECTED_AREA_FAMILY:
@@ -126,8 +167,40 @@ def _family_of(constraint: Mapping) -> Optional[str]:
 # reuses the engine ``message`` and never exposes the internal enum.
 # ---------------------------------------------------------------------------
 
+# What each counted family says when its governed count is unusable. Each still
+# names the real evidence family; none of them invents a number.
+_UNCOUNTED_EVIDENCE_DETAIL = {
+    'workload_pressure': 'Relievers are carrying elevated recent workload.',
+    'availability_distribution': 'Relievers are limited or unavailable.',
+    'coverage_inventory': 'Active bullpen records are missing current data.',
+    'handedness_coverage': 'Active relievers are missing throwing-hand data.',
+}
+
+
+def _countable(count) -> Optional[int]:
+    """The governed count as a non-negative int, or ``None`` if it is not one.
+
+    A missing or malformed count used to be interpolated straight into public
+    copy, which published the literal ``None relievers are limited or
+    unavailable.`` The canonical readiness authority only emits positive counts,
+    so this is the legacy/stored path talking; either way an unusable count now
+    falls back to a countless sentence rather than printing a Python value at a
+    reader.
+    """
+    if isinstance(count, bool) or not isinstance(count, int):
+        return None
+    return count if count >= 0 else None
+
 
 def _evidence_detail(affected_area, count) -> str:
+    countable = _countable(count)
+    if countable is None and affected_area in (
+        'workload_pressure',
+        'availability_distribution',
+        'coverage_inventory',
+        'handedness_coverage',
+    ):
+        return _UNCOUNTED_EVIDENCE_DETAIL[affected_area]
     if affected_area == 'workload_pressure':
         return (
             f'{count} {_plural(count, "reliever is", "relievers are")} carrying '
@@ -190,33 +263,84 @@ def build_evidence_receipts(constraints: Sequence[Mapping]) -> list:
 # ---------------------------------------------------------------------------
 
 
-def _why(public_code: str, team_name: str, families: frozenset) -> str:
-    team = (team_name or '').strip() or 'The team'
-    owns = _possessive(team)
+def _relievers(count: int) -> str:
+    return f'{count} {_plural(count, "reliever", "relievers")}'
+
+
+def _why_template(public_code: str, families: frozenset, counts: Mapping) -> str:
+    """The one why sentence this evidence earns, as a ``{owns}`` template.
+
+    Selection is deterministic and driven only by evidence already governed and
+    already present on the artifact: the public state, the coarse constraint
+    families, and each family's governed ``count``. It invents no metric, reads
+    no new source, and adds no randomness or synonym pool — the sentence changes
+    only when the evidence changes.
+
+    A template rather than a finished sentence because the same claim is
+    rendered twice on an artifact (as the standalone ``why``, and again inside
+    the composed description) and those two renderings must never drift apart.
+    One selection, two referring expressions.
+
+    Family precedence is fixed, most bullpen-specific first: arms actually out,
+    then arms carrying workload, then incomplete bullpen data, then a limited
+    read. Ties cannot occur because the first matching family wins.
+    """
+    unavailable = counts.get(_FAMILY_AVAILABILITY)
+    workload = counts.get(_FAMILY_WORKLOAD)
+    data_gap = _FAMILY_COVERAGE in families or _FAMILY_HANDEDNESS in families
+    limited_read = _FAMILY_FRESHNESS in families or _FAMILY_TRUST in families
+
     if public_code == 'vulnerable':
-        if _FAMILY_WORKLOAD in families:
+        if unavailable:
             return (
-                f'{owns} bullpen is carrying a heavier recent workload, leaving '
-                'fewer clean options available.'
+                f'{{owns}} bullpen is down {_relievers(unavailable)}, leaving fewer '
+                'clean options available.'
             )
-        if _FAMILY_AVAILABILITY in families:
+        if workload:
             return (
-                f'{owns} bullpen is down several arms, leaving fewer clean options '
-                'available.'
+                f'{{owns}} bullpen has {_relievers(workload)} carrying elevated '
+                'recent workload, leaving fewer clean options available.'
             )
-        return f'{owns} bullpen has fewer clean options available after recent work.'
+        return '{owns} bullpen has fewer clean options available after recent work.'
+
     if public_code == 'stretched':
-        if _FAMILY_WORKLOAD in families:
+        if workload:
             return (
-                f'Recent bullpen work has narrowed {owns} clean options for the '
-                'next game.'
+                f'{{owns}} bullpen has {_relievers(workload)} carrying elevated '
+                'recent workload, narrowing its clean options.'
             )
-        if _FAMILY_AVAILABILITY in families:
-            return f'{team} is missing a few bullpen arms, narrowing its clean options.'
-        return f'{owns} clean bullpen options are narrower than usual.'
-    # fresh
+        if unavailable:
+            return (
+                f'{{owns}} bullpen is missing {_relievers(unavailable)}, narrowing '
+                'its clean options.'
+            )
+        return '{owns} clean bullpen options are narrower than usual.'
+
+    # Fresh. Previously one sentence for every Fresh club in the league, no
+    # matter what its evidence said. A Fresh read still carries real evidence,
+    # and the concessive clause is factual rather than a hedge.
+    if unavailable:
+        return (
+            f'{{owns}} bullpen has a full set of clean options, with '
+            f'{_relievers(unavailable)} limited or unavailable.'
+        )
+    if workload:
+        return (
+            f'{{owns}} bullpen has a full set of clean options, with '
+            f'{_relievers(workload)} carrying elevated recent workload.'
+        )
+    if data_gap:
+        return (
+            '{owns} bullpen has a full set of clean options, with some current '
+            'bullpen data still incomplete.'
+        )
+    if limited_read:
+        return (
+            '{owns} bullpen has a full set of clean options, on a read limited by '
+            'the available data.'
+        )
     return (
-        f'{owns} bullpen has a full set of clean options, with no heavy recent '
+        '{owns} bullpen has a full set of clean options, with no heavy recent '
         'workload.'
     )
 
@@ -335,9 +459,26 @@ def build_public_copy(
         family for family in (_family_of(c) for c in constraints if isinstance(c, Mapping))
         if family is not None
     )
+    # Governed counts per family, already on the constraint rows. Highest count
+    # wins within a family so the sentence describes the whole family, and an
+    # unusable count is dropped rather than published.
+    counts: dict = {}
+    for constraint in constraints:
+        if not isinstance(constraint, Mapping):
+            continue
+        family = _family_of(constraint)
+        countable = _countable(constraint.get('count'))
+        if family is None or not countable:
+            continue
+        counts[family] = max(counts.get(family, 0), countable)
 
     evidence = build_evidence_receipts(constraints)
-    why = _why(public_code, team_name, families)
+    # One selection, rendered twice: a first reference for the standalone why
+    # and a second reference wherever the club has just been named.
+    why_template = _why_template(public_code, families, counts)
+    owns = team_possessive(team_name)
+    why = _sentence_case(why_template.format(owns=owns))
+    why_second_reference = why_template.format(owns=_SECOND_REFERENCE_POSSESSIVE)
     headline = f'{team_name} bullpen — {public_label}'
     trust_line = _trust_line(confidence)
     limitation_copy = _limitations(active_bullpen_coverage, limitations)
@@ -349,16 +490,21 @@ def build_public_copy(
     evidence_labels = ', '.join(item['label'] for item in evidence)
     evidence_clause = f' Evidence: {evidence_labels}.' if evidence_labels else ''
     data_through_sentence = f' Data through {date_display}.' if date_display else ''
+    # Both composed fields name the club once and then refer back to it, so no
+    # artifact repeats the same club-name phrase in adjacent clauses.
     alt_text = (
-        f'{team_name} bullpen is {public_label}. {why}{evidence_clause}'
-        f'{data_through_sentence}'
+        f'{team_name} bullpen is {public_label}. {why_second_reference}'
+        f'{evidence_clause}{data_through_sentence}'
     )
     snapshot_sentence = (
         f'A published BaseballOS bullpen snapshot, data through {date_display}.'
         if date_display
         else 'A published BaseballOS bullpen snapshot.'
     )
-    description = f'{_possessive(team_name)} bullpen is {public_label}. {why} {snapshot_sentence}'
+    description = (
+        f'{_sentence_case(team_possessive(team_name))} bullpen is {public_label}. '
+        f'{why_second_reference} {snapshot_sentence}'
+    )
 
     copy = {
         'contract': PUBLIC_COPY_CONTRACT,

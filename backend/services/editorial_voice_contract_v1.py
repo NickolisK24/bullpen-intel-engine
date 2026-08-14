@@ -77,6 +77,26 @@ BASEBALL_CONSEQUENCE_LINES = {
     ),
 }
 
+# SURFACE-SCOPED, not a global public-language ban. These terms are denied on
+# the surfaces that run ``find_editorial_violations`` — Today's Story editorial
+# review and context explanation editorial review — where engine shorthand
+# standing in for a baseball sentence is the defect being prevented.
+#
+# They are deliberately NOT the rule everywhere, and the "clean options" family
+# is the case that keeps being read as drift, so it is written down here once:
+#
+#   * Share Artifact / Team State public copy publishes "clean options" in its
+#     why sentence. That surface is governed by ``guard_public_copy`` in
+#     ``services.team_state_public_vocabulary``, which allows it. It is the
+#     reader-facing name for a real, defined bullpen concept there.
+#   * The frontend treats "Clean Option(s)" as a defined glossary concept with a
+#     written definition (``frontend/src/utils/bullpenConcepts.js``).
+#   * On the two review surfaces below it is denied, because a generated
+#     editorial sentence should name the baseball consequence rather than lean
+#     on the label.
+#
+# Three scopes, one concept, each with an owner. Widening this tuple into a
+# global ban would silently unpublish the Share Artifact why sentence.
 EXPANDED_EDITORIAL_DENY_TERMS = (
     '0 trusted',
     'clean option',
