@@ -7,10 +7,16 @@ const ACRONYM_TOKENS = new Set([
   'url',
 ])
 
+// Reader labels for the explanation keys the backend emits as structured data.
+// These rename engine KEYS (`trust_metadata`), not public sentences, so they are
+// formatting rather than a second authoring of a BaseballOS claim.
+//
+// `governance metadata` was removed: no backend module emits that key, so the
+// entry could never fire, and the label it invented — "decision boundary
+// detail" — was itself internal-sounding copy with no owner behind it.
 const DISPLAY_LABEL_REPLACEMENTS = new Map([
   ['trust metadata', 'visibility detail'],
   ['trust metadata limited', 'visibility detail limited'],
-  ['governance metadata', 'decision boundary detail'],
   ['freshness metadata', 'freshness detail'],
   ['fail closed', 'source boundary'],
   ['ranking applied', 'team order'],

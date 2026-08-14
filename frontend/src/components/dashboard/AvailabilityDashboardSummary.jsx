@@ -184,7 +184,7 @@ export default function AvailabilityDashboardSummary({ summary, compact = false,
 
         {detailsOpen && (
           <div id="availability-summary-details" className="mt-4 grid gap-5 lg:grid-cols-2">
-            <DistributionRows title="Workload Read" rows={view.confidenceRows} total={view.totalPitchers} />
+            <DistributionRows title="Read Confidence" rows={view.confidenceRows} total={view.totalPitchers} />
             <DistributionRows title="Data State" rows={view.dataStateRows} total={view.totalPitchers} />
             {(view.limitedByData || view.notes.length > 1) && (
               <div className="lg:col-span-2 flex flex-wrap gap-2">
@@ -227,7 +227,7 @@ export default function AvailabilityDashboardSummary({ summary, compact = false,
 
       <div className="grid gap-6 lg:grid-cols-3">
         <DistributionRows title="Statuses" rows={view.statusRows} total={view.totalPitchers} />
-        <DistributionRows title="Workload Read" rows={view.confidenceRows} total={view.totalPitchers} />
+        <DistributionRows title="Read Confidence" rows={view.confidenceRows} total={view.totalPitchers} />
         <DistributionRows title="Data State" rows={view.dataStateRows} total={view.totalPitchers} />
       </div>
 

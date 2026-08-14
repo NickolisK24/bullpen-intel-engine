@@ -212,7 +212,12 @@ test('Methodology and Data & Trust rendered text does not leak internal labels',
   assert.ok(methodologyText.includes('On Watch'))
 })
 
-test('dashboard landscape notes soften internal sorting language', () => {
+test('dashboard landscape notes render as the backend authored them', () => {
+  // The reader-facing wording is authored at services/game_context.py. This
+  // component used to rewrite the note at render time, which made the browser a
+  // second author of a public sentence; the softening invariant now lives with
+  // the owner (backend/tests/test_public_copy_ownership.py pins that the
+  // internal phrasing is not emitted).
   const html = render(React.createElement(BullpenLandscape, {
     landscape: {
       reference_date: '2026-06-14',
@@ -221,7 +226,7 @@ test('dashboard landscape notes soften internal sorting language', () => {
       constrained_bullpens: [],
       available_bullpens: [],
       monitoring_concentration: [],
-      notes: ['Sorted deterministically by count, then percentage, then team name.'],
+      notes: ['Groups reflect the current bullpen counts for each team.'],
     },
   }))
   const text = visibleText(html)

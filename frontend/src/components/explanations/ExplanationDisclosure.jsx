@@ -198,8 +198,8 @@ function MetadataGrid({ freshness, trust, confidence }) {
     ['Visibility', asObject(trust).status],
     ['Visibility Source', asObject(trust).source],
     ['Certification', asObject(trust).certification_status],
-    ['Workload Read', asObject(confidence).level],
-    ['Workload Read Summary', asObject(confidence).summary],
+    ['Read Confidence', asObject(confidence).level],
+    ['Read Confidence Summary', asObject(confidence).summary],
   ]
 
   return (
@@ -272,7 +272,7 @@ function ExplanationDetails({ explanationView }) {
         <LimitationList limitations={explanationView.limitations} />
       </DetailSection>
 
-      <DetailSection title="Freshness / Visibility / Workload Read">
+      <DetailSection title="Freshness / Visibility / Read Confidence">
         <MetadataGrid
           freshness={explanationView.freshness}
           trust={explanationView.trust}

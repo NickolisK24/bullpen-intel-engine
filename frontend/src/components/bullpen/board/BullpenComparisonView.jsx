@@ -202,7 +202,7 @@ export default function BullpenComparisonView({ payload }) {
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
           <h2 className="font-mono text-xs uppercase tracking-widest text-chalk400">Comparison</h2>
           <span className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
-            Workload Read: {view.confidenceLabel}
+            Read Confidence: {view.confidenceLabel}
           </span>
         </div>
         {view.summary.statement && (

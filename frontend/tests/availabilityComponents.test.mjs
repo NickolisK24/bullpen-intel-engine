@@ -59,7 +59,7 @@ test('AvailabilitySummary renders status, confidence, reasons, and limitations f
     assert.ok(htmlIncludes(html, 'Final Availability'))
     assert.ok(htmlIncludes(html, label))
     assert.ok(htmlIncludes(html, 'Roster Status'))
-    assert.ok(htmlIncludes(html, 'Workload Read'))
+    assert.ok(htmlIncludes(html, 'Read Confidence'))
     assert.ok(htmlIncludes(html, confidence))
     assert.ok(htmlIncludes(html, 'Data Status'))
     assert.ok(htmlIncludes(html, 'Final Availability Reasons'))

@@ -78,8 +78,8 @@ export const TEAM_STATE_DEFINITIONS = Object.freeze([
 export const ARM_AVAILABILITY_DEFINITIONS = Object.freeze([
   Object.freeze({ name: 'Available', definition: 'Recent workload leaves the pitcher inside the normal availability range.' }),
   Object.freeze({ name: 'On Watch', definition: 'The pitcher remains usable, but recent workload deserves attention.' }),
-  Object.freeze({ name: 'Limited', definition: 'Recent workload materially narrows how fully the pitcher can be used in the current workload classification.' }),
-  Object.freeze({ name: 'Unavailable', definition: 'Current workload or governed roster context removes the pitcher from available bullpen options.' }),
+  Object.freeze({ name: 'Limited', definition: 'Recent workload materially narrows how fully the pitcher can be used tonight.' }),
+  Object.freeze({ name: 'Unavailable', definition: 'Recent workload or current roster status takes the pitcher out of tonight’s bullpen options.' }),
 ])
 
 // Freshness stamp vocabulary.
@@ -116,10 +116,10 @@ export const PITCHER_ROLE_DEFINITIONS = Object.freeze([
 
 // Pitcher CURRENT READ — what tonight looks like for the arm. Distinct from role.
 export const PITCHER_CURRENT_READ_DEFINITIONS = Object.freeze([
-  Object.freeze({ name: 'Clean Option', definition: 'Recent workload and current evidence support a clean current workload read.' }),
+  Object.freeze({ name: 'Clean Option', definition: 'The pitcher is rested enough to be used freely tonight.' }),
   Object.freeze({ name: 'Watch Arm', definition: 'The pitcher remains usable, but recent workload deserves attention.' }),
   Object.freeze({ name: 'Limited Rest', definition: 'Recent workload leaves materially less rest than a Clean Option.' }),
-  Object.freeze({ name: 'Unavailable', definition: 'Current workload or roster authority removes the pitcher from available bullpen options.' }),
+  Object.freeze({ name: 'Unavailable', definition: 'Recent workload or current roster status takes the pitcher out of tonight’s bullpen options.' }),
   Object.freeze({ name: 'Limited Read', definition: 'BaseballOS does not have enough current evidence for a clear pitcher read.' }),
 ])
 

@@ -245,7 +245,7 @@ function FreshnessPill({ provenance, lastSync, confidenceLabel }) {
         <span>{provenance.label}</span>
         <span>{dataLine}</span>
         {lastSync && <span className="text-chalk500">· Latest data update: {lastSync}</span>}
-        <span className="text-chalk500">· Workload Read: {confidenceLabel}</span>
+        <span className="text-chalk500">· Read Confidence: {confidenceLabel}</span>
       </span>
     </div>
   )

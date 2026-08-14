@@ -100,7 +100,7 @@ test('Team board pitcher cards do not expose the 0-100 workload index', async ()
     'utf8',
   )
 
-  assert.ok(source.includes('Workload Read'))
+  assert.ok(source.includes('Read Confidence'))
   for (const forbidden of [
     'Recent workload index',
     '0-100',

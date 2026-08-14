@@ -226,7 +226,7 @@ test('renders title, summary, evidence, limitations, metadata, and governance co
   assert.ok(htmlIncludes(html, 'Observation is limited to deterministic supplied state.'))
   assert.ok(htmlIncludes(html, 'Bullpen Visibility'))
   assert.ok(htmlIncludes(html, 'Freshness'))
-  assert.ok(htmlIncludes(html, 'Workload Read'))
+  assert.ok(htmlIncludes(html, 'Read Confidence'))
   assert.ok(htmlIncludes(html, 'Clear Visibility'))
   assert.ok(htmlIncludes(html, 'current'))
   assert.ok(htmlIncludes(html, 'Medium'))

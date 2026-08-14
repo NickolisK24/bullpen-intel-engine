@@ -107,20 +107,17 @@ function formatDate(value) {
   return formatDateOnly(value, { month: 'long' }) || 'Not available'
 }
 
-function publicAvailabilityCopy(value) {
-  return String(value || '')
-    .replace(/\bAvoid\s+and\s+Unavailable\s+were\b/g, 'Unavailable was')
-    .replace(/\bAvoid\s+and\s+Unavailable\b/g, 'Unavailable')
-    .replace(/\bAvoid\s+or\s+Unavailable\b/g, 'Unavailable')
-    .replace(/\bAvoid\b/g, 'Unavailable')
-    .replace(/\bbacktest\b/gi, 'usage check')
-}
-
 // The framing block (title / summary / claim / caveat) is backend-supplied
-// copy. It is quoted, never trusted: a framing string that reads as
-// prediction, accuracy, betting, ranking, or internal tooling is withheld and
-// the card falls back to its fixed descriptive copy — same pattern as the
-// internal-language guards on the Today and Stories surfaces.
+// copy authored at services/availability_backtest.py. It is quoted, never
+// trusted: a framing string that reads as prediction, accuracy, betting,
+// ranking, or internal tooling is withheld and the card falls back to its
+// fixed descriptive copy — same pattern as the internal-language guards on the
+// Today and Stories surfaces.
+//
+// This card used to rewrite the copy (Avoid -> Unavailable, backtest -> usage
+// check) *before* running the guard below, so the guard scanned text the
+// browser had already repaired. The backend authors the reader form now, and
+// the guard sees exactly what the backend published.
 export const BLOCKED_FRAMING_COPY_PATTERN = new RegExp(
   `\\b(${[
     'predict\\w*', 'forecast\\w*', 'accura\\w*', 'probabilit\\w*', 'proves?',
@@ -133,7 +130,7 @@ export const BLOCKED_FRAMING_COPY_PATTERN = new RegExp(
 )
 
 export function publicFramingCopy(value) {
-  const text = publicAvailabilityCopy(value)
+  const text = String(value || '')
   if (!text) return ''
   return BLOCKED_FRAMING_COPY_PATTERN.test(text) ? '' : text
 }

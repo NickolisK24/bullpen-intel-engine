@@ -254,7 +254,10 @@ def _landscape_notes(games):
     # best/worst/advice/forecast language), so the surface stays descriptive.
     notes = [
         'Descriptive groupings of bullpen situations only — this is bullpen context, not a league ranking or a game forecast.',
-        'Sorted deterministically by count, then percentage, then team name.',
+        # Reader-facing wording is authored here, at the owner. The browser used
+        # to rewrite this line at render time, which made the presentation layer
+        # a second author of a public sentence. The rendered text is unchanged.
+        'Groups reflect the current bullpen counts for each team.',
     ]
     state = (games or {}).get('data_state')
     if state == 'unavailable':
