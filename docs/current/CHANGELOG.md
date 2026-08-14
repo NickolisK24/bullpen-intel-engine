@@ -4,6 +4,46 @@ This changelog summarizes major product, governance, rollout, and operational
 milestones. It does not replace the detailed evidence records linked from
 [docs/README.md](../README.md).
 
+## August 14, 2026 - Public Language Polish (H-5 through H-9 tail)
+
+- Share Artifact why copy now reacts to the evidence in front of it. Selection
+  consulted the public Team State and two coarse constraint families and nothing
+  else, ignoring the governed `count` already sitting on every constraint row —
+  so a bullpen with one arm out and a bullpen with six read identically, and
+  every Fresh club in the league received one sentence regardless of its
+  evidence. A deterministic fixture corpus went from 3 distinct sentences across
+  12 materially different rows (largest identical cluster 4) to 12 distinct
+  sentences (largest cluster 1). No metric was invented, no source added, and no
+  randomness or synonym pool introduced: the sentence changes only when the
+  evidence changes.
+- Fixed two grammar defects at the sentence frame rather than in rendered text.
+  The club name was used as a bare sentence subject, which disagreed with itself
+  twice because club names take plural agreement ("New York Yankees is missing a
+  few bullpen arms, narrowing its clean options"); the sentence is now built
+  around a number-neutral possessive slot carrying its article. Composed fields
+  named the club in adjacent clauses ("New York Yankees' bullpen is Fresh. New
+  York Yankees' bullpen has a full set..."); one selection is now rendered with
+  two referring expressions, so the standalone why and the composed description
+  cannot drift apart.
+- An unusable governed count no longer reaches a reader. A missing count
+  published the literal "None relievers are limited or unavailable."; it now
+  falls back to a countless sentence that still names the evidence family.
+- Wrote down the clean-options rule once. Three surfaces appeared to disagree
+  and none said why: Share Artifact public copy publishes the phrase under its
+  own guard, the frontend carries Clean Option as a defined glossary concept,
+  and the two editorial review surfaces deny it so a generated sentence names
+  the baseball consequence instead of leaning on the label. That is surface
+  scoping, not drift — now documented at the deny list and pinned by a test that
+  fails if the review-scoped list is widened into a global ban, which would
+  silently unpublish the why sentence.
+- Removed two frontend label mappings that could never fire; the governance
+  flags they claimed to name are rendered by `GovernanceStrip` from its own
+  headings and never routed through `humanizeLabel`.
+- Published artifacts are untouched: the public read service returns stored copy
+  verbatim, and only new publications take the new wording. No Team State
+  formula, availability, Read Confidence, roster, appearance, story-eligibility,
+  or publication-eligibility change.
+
 ## August 14, 2026 - One Team Page, One Bullpen Claim (H-8)
 
 - A `/team/{ABBR}` page publishes two projections of one publication: the social
