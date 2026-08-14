@@ -141,7 +141,10 @@ def test_the_shared_opener_no_longer_dominates_the_corpus():
             over['game_pk'] = 7000 + index
             openers.append(_draft(writer, **over).body.split(',')[0])
     most_common = max(openers.count(opener) for opener in openers)
-    assert most_common / len(openers) <= 0.55, (
+    # Headroom is deliberate: this catches collapse back toward one universal
+    # template, it does not demand superficial uniqueness. Teams with genuinely
+    # similar evidence should still be allowed to read similarly.
+    assert most_common / len(openers) <= 0.35, (
         f'{most_common}/{len(openers)} stories share one opener'
     )
 

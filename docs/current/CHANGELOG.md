@@ -22,9 +22,9 @@ milestones. It does not replace the detailed evidence records linked from
   in-game framing, and a sentence that already names the starter and his
   innings carries no prefix at all, because it has located the game itself.
   Measured across 72 rendered stories, the share opening with one identical
-  clause fell from 61% to 44% and distinct openers rose from 8 to 13. The
-  remaining prefix use is concentrated in the morning brief, where stating when
-  is appropriate.
+  clause fell from 61% to 11% and distinct openers rose from 8 to 25. The same
+  anchoring rule applies to the morning brief's one-sentence recap, which names
+  the club and the outcome and so locates the game by itself.
 - Fixed the What Changed context sentence. Its secondary phrases are
   independent clauses ("coverage also stabilized"), so they could not follow
   "including", which needs a noun phrase — that produced "...including coverage

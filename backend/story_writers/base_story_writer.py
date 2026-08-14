@@ -1036,7 +1036,11 @@ class BaseStoryWriter:
                 clause = f'{team} {self.short_summary()}'
         else:
             clause = f'{team} {self.short_summary()}'
-        return self._start_in_game(clause)
+        # The brief's recap names the club and states the game's outcome in one
+        # sentence, so it locates the game the same way a starter line does --
+        # the same anchoring rule, applied consistently. The sentences that
+        # follow it are explicitly about today.
+        return self._start_in_game(clause, anchored=True)
 
     def brief_today_line(self) -> str | None:
         """The morning brief's bullpen read — causal when yesterday changed it."""
