@@ -4,6 +4,41 @@ This changelog summarizes major product, governance, rollout, and operational
 milestones. It does not replace the detailed evidence records linked from
 [docs/README.md](../README.md).
 
+## August 13, 2026 - Freeze Guards Narrowed To Protected Surfaces (H-1)
+
+- Narrowed the four branch-diff behaviour-freeze guards so they refuse the
+  surfaces they name instead of two whole directories. No product code, public
+  copy, vocabulary, schema, migration, or authority posture changed; this is a
+  change to what CI permits, not to what the platform does.
+- Removed the blanket `frontend/` and `backend/migrations/` path clauses, and
+  the substring matching in the appearance-team guard. A directory is not an
+  invariant: the prefixes swept in files no freeze owned, and the only way past
+  was a hand-maintained allowlist. Thirty-four had accumulated in one guard.
+  Two failures made the cost concrete — deleting five UI components that
+  nothing imported required editing four backend allowlists, and archiving
+  `docs/phase0g/public_team_relief_work_panel.md` tripped a *runtime surface*
+  guard because a markdown filename contained a protected service's name.
+- The protected catalogues now live in `backend/tests/freeze_policy.py` as
+  exact paths plus `backend/api/`, which is a public-surface boundary in its
+  own right. Matching is whole-path or anchored path-prefix, never substring.
+- Deleted every historical allowlist. Each existed because some past branch
+  changed a protected path; all of those branches merged, so the paths are in
+  `origin/main` and can no longer appear in a future branch diff. They were
+  protecting nothing forward-looking.
+- Every real invariant is preserved and several are now stronger. The frozen
+  legacy What Changed paths, the frozen public routes, the Phase 0E legacy
+  public surface, and Team State / Share Artifact ownership all still fail
+  closed — including `WhatChangedCard.jsx`, the one genuinely frozen frontend
+  file. Route registration and the admin gating of the internal system routes
+  are now asserted on every run rather than only when a branch diff happened to
+  touch them and that change was allowlisted.
+- Pinned the result both ways in `backend/tests/test_freeze_policy.py` and
+  `backend/tests/test_freeze_guard_behavior.py`: unrelated frontend files,
+  unrelated migrations, and archived filename collisions are accepted, while
+  frozen paths are still refused. A regression test refuses to let
+  `frontend/`, `frontend/src/`, `frontend/public/` or `backend/migrations/`
+  return as a protected prefix.
+
 ## August 13, 2026 - Dependency Remediation And Standing Audit Gate (DEP-001)
 
 - Closed DEP-001 (#601) across four bounded slices, verified on `main` at
