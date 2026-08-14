@@ -30,11 +30,17 @@ from team_operations.contracts import require_team_operations_governance_safe
 team_operations_bp = Blueprint('team_operations', __name__)
 
 TEAM_OPERATIONS_READINESS_ENDPOINT = '/api/team-operations/bullpen-readiness'
+# The V3 Phase 4 and Phase 6 records that these previously named were archived
+# to `docs/archive/2026-06/`, leaving the route advertising two dead paths as
+# its governing documents. The route boundary is owned by the canonical
+# Architecture & Operations Manual and the readiness content by the canonical
+# Bullpen Intelligence Standard; the phase records remain in the archive as the
+# history of how this surface was certified.
 TEAM_OPERATIONS_READINESS_DOCUMENT = (
-    'docs/V3_PHASE_6_TEAM_OPERATIONS_BULLPEN_READINESS_INTERNAL_API_ROUTE_INTEGRATION.md'
+    'docs/canonical/04_PLATFORM_ARCHITECTURE_OPERATIONS.md'
 )
 TEAM_OPERATIONS_CONTRACT_DOCUMENT = (
-    'docs/V3_PHASE_4_TEAM_OPERATIONS_BULLPEN_READINESS_API_CONTRACT_AND_CERTIFICATION_REQUIREMENTS.md'
+    'docs/canonical/02_BULLPEN_INTELLIGENCE_STANDARD.md'
 )
 TEAM_OPERATIONS_DEFAULT_LIMIT = 750
 TEAM_OPERATIONS_ALLOWED_QUERY_FIELDS = frozenset(

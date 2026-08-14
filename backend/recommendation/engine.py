@@ -24,8 +24,13 @@ class RecommendationEngine:
     """
 
     policy_name = 'recommendation_engine_v1'
-    policy_document = 'docs/RECOMMENDATION_ENGINE_V1_POLICY.md'
-    implementation_plan = 'docs/RECOMMENDATION_ENGINE_V1_IMPLEMENTATION_PLAN.md'
+    # The V1 policy document was archived to `docs/archive/2026-06/`, and the
+    # path this pointed at stopped existing. An archived phase record is not
+    # the engine's governing authority; the canonical Bullpen Intelligence
+    # Standard is, and it owns the recommendation boundary this engine refuses
+    # to cross. `implementation_plan` was dropped rather than repointed: the
+    # archived plan it named is history, and no live document replaces it.
+    policy_document = 'docs/canonical/02_BULLPEN_INTELLIGENCE_STANDARD.md'
     implementation_phase = 'candidate_engine_integration'
 
     def recommend(
@@ -66,7 +71,6 @@ class RecommendationEngine:
         metadata = {
             'policy': self.policy_name,
             'policy_document': self.policy_document,
-            'implementation_plan': self.implementation_plan,
             'implementation_phase': self.implementation_phase,
             'decision_logic_enabled': False,
             'ranking_applied': False,

@@ -24,7 +24,8 @@ Two concrete failures that motivated the narrowing:
    four backend allowlists, purely because the paths began with ``frontend/``.
 2. Archiving ``docs/phase0g/public_team_relief_work_panel.md`` tripped a
    *runtime surface* guard, because the substring ``public_team_relief_work``
-   appears in the markdown file's name.
+   appears in the markdown file's name. (That archiving is what moved it to
+   ``docs/archive/2026-07/phase0g/``, where it lives today.)
 
 What replaces them
 ------------------

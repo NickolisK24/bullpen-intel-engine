@@ -131,18 +131,41 @@ def status_reachability_examples(reference_date=None):
     return rows
 
 
-def find_current_threshold_doc_issues(repo_root):
-    docs_dir = Path(repo_root) / 'docs'
+# The availability threshold corpus this gate polices, named explicitly.
+#
+# It used to be a non-recursive ``docs/*.md`` glob. The August 13 documentation
+# retirement pass moved these two files to ``docs/methodology/`` and left three
+# unrelated files at the top level, so the glob stopped seeing anything it was
+# written to check — and reported PASS every time, because a scan that reads no
+# documents finds no issues. An explicit list cannot go quiet that way: a
+# missing file is now a finding rather than a silent skip.
+CURRENT_THRESHOLD_DOCS = (
+    'docs/methodology/BULLPEN_AVAILABILITY_ENGINE_V1.md',
+    'docs/methodology/AVAILABILITY_THRESHOLD_TUNING_PLAN.md',
+)
+
+RETIRED_THRESHOLD_PATTERN = re.compile(
+    r'Pitches (?:in|over) (?:last )?3 days \| >= 30 \| >= 45 \| >= 60 \| >= 80'
+)
+
+
+def find_current_threshold_doc_issues(repo_root, doc_paths=CURRENT_THRESHOLD_DOCS):
+    root = Path(repo_root)
     issues = []
-    doc_files = sorted(docs_dir.glob('*.md'))
-    current_threshold_pattern = re.compile(
-        r'Pitches (?:in|over) (?:last )?3 days \| >= 30 \| >= 45 \| >= 60 \| >= 80'
-    )
-    for path in doc_files:
-        text = path.read_text(encoding='utf-8')
-        if current_threshold_pattern.search(text):
+    for relative in doc_paths:
+        path = root / relative
+        if not path.is_file():
             issues.append({
-                'file': path.relative_to(repo_root).as_posix(),
+                'file': relative,
+                'issue': (
+                    'Expected availability threshold document is missing, so the '
+                    'documentation check cannot verify the current threshold table.'
+                ),
+            })
+            continue
+        if RETIRED_THRESHOLD_PATTERN.search(path.read_text(encoding='utf-8')):
+            issues.append({
+                'file': relative,
                 'issue': 'Current threshold table still lists Unavailable 3-day pitches as >= 80.',
             })
     return issues
@@ -231,10 +254,7 @@ def collect_readiness_evidence(app, repo_root, reference_date=None):
         'snapshot_summary': snapshot_summary,
         'snapshot_status_distribution': snapshot_counts,
         'documentation': {
-            'doc_files': [
-                'docs/BULLPEN_AVAILABILITY_ENGINE_V1.md',
-                'docs/AVAILABILITY_THRESHOLD_TUNING_PLAN.md',
-            ],
+            'doc_files': list(CURRENT_THRESHOLD_DOCS),
             'issues': docs_issues,
             'status': pass_fail(not docs_issues and THRESHOLDS.unavailable_pitches_last_3_days == 90),
         },

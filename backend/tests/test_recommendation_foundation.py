@@ -27,7 +27,13 @@ class TestRecommendationFoundation:
 
         assert engine.policy_name == 'recommendation_engine_v1'
         assert engine.implementation_phase == 'candidate_engine_integration'
-        assert engine.policy_document == 'docs/RECOMMENDATION_ENGINE_V1_POLICY.md'
+        # The engine's governing document is the canonical standard that owns
+        # the recommendation boundary, not the archived V1 phase policy this
+        # once pinned. That path stopped existing when the record was archived,
+        # and this assertion was what kept the dead string alive.
+        assert engine.policy_document == (
+            'docs/canonical/02_BULLPEN_INTELLIGENCE_STANDARD.md'
+        )
 
     def test_default_engine_behavior_refuses(self):
         result = RecommendationEngine().recommend()
