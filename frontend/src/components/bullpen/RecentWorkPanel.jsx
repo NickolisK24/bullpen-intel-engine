@@ -1,3 +1,4 @@
+import { DATA_THROUGH_LABEL } from '../../utils/bullpenConcepts'
 import { useFetch } from '../../hooks/useFetch'
 import { getPitcherRecentWork } from '../../utils/api'
 import { fmtIP } from '../../utils/formatters'
@@ -40,7 +41,7 @@ function DataCurrency({ payload }) {
       <Sentence>{freshnessLabel}</Sentence>
       {dataThrough && (
         <div className="inline-flex max-w-full items-center gap-2 rounded border border-dirt/70 bg-chalk/30 px-2 py-1 font-mono text-xs text-chalk400">
-          <span className="text-chalk600">Data through</span>
+          <span className="text-chalk600">{DATA_THROUGH_LABEL}</span>
           <span className="text-chalk200">{dataThrough}</span>
         </div>
       )}

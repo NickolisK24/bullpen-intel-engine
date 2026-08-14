@@ -203,7 +203,6 @@ export default function TonightsBullpenBoard({
                 readModel={teamOperatingRead}
                 staleWithError={teamOperatingRead.freshness?.isStale || teamOperatingRead.freshness?.failClosed}
                 onRetry={boardState.refetch}
-                lastSyncLabel="Bullpen read synced"
                 density="compact"
                 // The Team Board's page heading already reads
                 // "{Full Team Name} Bullpen", so the card would otherwise repeat

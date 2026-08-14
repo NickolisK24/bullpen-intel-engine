@@ -22,6 +22,10 @@ from typing import Optional
 
 from services.share_artifact_repository import get_latest_published_team_state_artifact
 from services.share_artifacts import verify_share_artifact_integrity
+from services.team_state_public_vocabulary import (
+    public_state_for,
+    UnmappedTeamStateError,
+)
 from utils.db import db
 
 
@@ -43,6 +47,19 @@ def build_share_card_compatibility_view(artifact) -> dict:
     authority = document.get('authority') if isinstance(document.get('authority'), dict) else {}
     constraints = team_state.get('constraints') if isinstance(team_state.get('constraints'), list) else []
 
+    # The frozen payload carries ``status_label``, which is the INTERNAL Team
+    # Operations readiness wording ("Operationally Stressed"). A reader-facing
+    # card must show the canonical public Team State instead, so the projection
+    # reads the frozen ``status_code`` and resolves it through the one public
+    # vocabulary owner. Reading the code rather than the stored label is what
+    # lets already-published immutable artifacts render correct public wording
+    # without rewriting a single byte of their payload.
+    #
+    # An internal state with no public Team State (``data_limited``/``refused``/
+    # unknown) raises out of here, so the surface degrades to its controlled
+    # unavailable state rather than publishing an internal word.
+    public_state = public_state_for(team_state.get('status_code'))
+
     return {
         'source': COMPATIBILITY_SOURCE,
         'public_id': artifact.public_id,
@@ -54,7 +71,8 @@ def build_share_card_compatibility_view(artifact) -> dict:
             'team_name': team.get('team_name'),
             'team_abbreviation': team.get('team_abbreviation'),
         },
-        'headline': team_state.get('status_label'),
+        'headline': public_state['public_label'],
+        'public_state': public_state['public_code'],
         'status_code': team_state.get('status_code'),
         'summary': team_state.get('summary'),
         'receipts': [
@@ -82,4 +100,12 @@ def get_team_state_card(team_id: int, *, session=None) -> Optional[dict]:
     artifact = get_latest_published_team_state_artifact(team_id, session=session)
     if artifact is None:
         return None
-    return build_share_card_compatibility_view(artifact)
+    try:
+        return build_share_card_compatibility_view(artifact)
+    except UnmappedTeamStateError:
+        # The artifact's internal readiness state has no public Team State, so
+        # there is no governed word for a reader-facing card to show. Withhold
+        # the card exactly as an absent artifact does, rather than falling back
+        # to the internal wording. Handled here so the frozen public route keeps
+        # its existing "no card" behaviour untouched.
+        return None

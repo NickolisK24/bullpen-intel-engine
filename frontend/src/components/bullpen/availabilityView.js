@@ -81,9 +81,25 @@ const STATUS_CONFIG = {
   },
 }
 
+// Workload Data — the state of ONE pitcher's stored workload record.
+//
+// H-11: this family used to render under the field label "Data Status", which
+// is the platform-wide public family (Current / Partial Data / Stale / Data
+// Unavailable) describing whether the published READ is current. This one
+// answers a different question — how complete and how recent the workload
+// record behind a single arm is — and its values carry that detail (a missing
+// record and a failed fetch are different things a reader can act on, and
+// collapsing both into "Data Unavailable" would delete that).
+//
+// It is therefore its own named public family rather than a second dictionary
+// for Data Status. The baseball word 'Fresh' is gone: it is a canonical Team
+// State label, and a reader met it here meaning "the data is recent" while it
+// means "this bullpen is rested" one surface away.
+export const WORKLOAD_DATA_FIELD_LABEL = 'Workload Data'
+
 const DATA_STATE_COPY = {
   fresh: {
-    label: 'Fresh',
+    label: 'Current',
     message: 'Latest workload information is inside the active freshness window.',
   },
   stale: {
@@ -107,10 +123,17 @@ const DATA_STATE_COPY = {
     message: 'This status is based on an older workload read.',
   },
   unknown: {
-    label: 'Unknown',
+    label: 'Unavailable',
     message: 'BaseballOS does not have a workload data state for this pitcher.',
   },
 }
+
+// The complete public value set for this family. A value outside it is not
+// rendered at all (see getDataStateView) rather than title-cased into a new
+// public label, so the family cannot grow by accident.
+export const WORKLOAD_DATA_LABELS = Object.freeze(
+  Array.from(new Set(Object.values(DATA_STATE_COPY).map(entry => entry.label))),
+)
 
 const ROSTER_STATUS_LABELS = {
   ACTIVE: 'Active MLB',
@@ -160,13 +183,24 @@ export function getPublicAvailabilityStatus(status) {
   return PUBLIC_STATUS_BY_RAW_STATUS[normalized] || normalized
 }
 
+// Every governed PUBLIC availability label, keyed by its lowercase form. Some
+// callers pass an already-public label ("On Watch") rather than a raw engine
+// status ("Monitor"); recognising it is not a translation, it is the identity.
+const PUBLIC_LABELS_BY_LOWERCASE = Object.fromEntries(
+  Object.values(STATUS_CONFIG).map(config => [config.label.toLowerCase(), config.label]),
+)
+
+// Fails closed: a value that is neither a governed raw status nor a governed
+// public label yields '' rather than echoing an internal token to a reader.
+// Callers already treat an empty label as "nothing to show" for that row.
 export function getAvailabilityStatusLabel(status) {
   const text = String(status || '').trim()
   if (!text) return ''
-  if (text.toLowerCase() === 'all') return 'All'
+  const lower = text.toLowerCase()
+  if (lower === 'all') return 'All'
   const normalized = normalizeAvailabilityStatus(text)
-  if (normalized) return STATUS_CONFIG[normalized]?.label || text
-  return STATUS_DISPLAY_LABELS[text.toLowerCase()] || text
+  if (normalized) return STATUS_CONFIG[normalized]?.label || ''
+  return PUBLIC_LABELS_BY_LOWERCASE[lower] || STATUS_DISPLAY_LABELS[lower] || ''
 }
 
 export function getRowAvailability(row) {
@@ -228,24 +262,31 @@ const CONFIDENCE_READ_LABELS = {
   unknown: 'Unavailable',
 }
 
-export const READ_CONFIDENCE_FIELD_LABEL = 'Read confidence'
+// The one field-label owner for this family. Every surface renders this exact
+// string, so a bare value can never be mistaken for a Team State or an arm
+// availability label. It is re-exported through utils/bullpenConcepts for the
+// glossary, which must name the family the same way the product does.
+export const READ_CONFIDENCE_FIELD_LABEL = 'Read Confidence'
 
-function capitalizeToken(value) {
-  return `${value.charAt(0).toUpperCase()}${value.slice(1).toLowerCase()}`
-}
-
+// Fails closed: an unrecognised confidence token resolves to the governed
+// 'Unavailable' value instead of being title-cased into a new public label.
 export function formatConfidence(confidence) {
   const value = String(confidence || '').trim().toLowerCase()
   if (!value) return CONFIDENCE_READ_LABELS.unknown
-  return CONFIDENCE_READ_LABELS[value] || capitalizeToken(value)
+  return CONFIDENCE_READ_LABELS[value] || CONFIDENCE_READ_LABELS.unknown
 }
 
+// Fails closed: an unrecognised backend state resolves to the governed
+// unavailable entry rather than being title-cased into a brand-new public
+// label. `isKnown` lets a caller style or omit the row without comparing
+// reader-facing text, so renaming a label can never change behaviour.
 export function getDataStateView(dataState) {
   const key = String(dataState || 'unknown').toLowerCase()
-  return DATA_STATE_COPY[key] || {
-    label: capitalizeToken(key),
-    message: 'The workload feed returned a state BaseballOS does not normally show.',
+  const entry = DATA_STATE_COPY[key]
+  if (!entry) {
+    return { ...DATA_STATE_COPY.unknown, key: 'unknown', isKnown: false, isCurrent: false }
   }
+  return { ...entry, key, isKnown: true, isCurrent: key === 'fresh' }
 }
 
 export function filterRowsByAvailability(rows, availabilityFilter = 'ALL') {

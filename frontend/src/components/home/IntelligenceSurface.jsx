@@ -1,3 +1,8 @@
+import {
+  DATA_THROUGH_LABEL,
+  GENERATED_AT_LABEL,
+  LAST_DATA_UPDATE_LABEL,
+} from '../../utils/bullpenConcepts'
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useFetch } from '../../hooks/useFetch'
@@ -106,16 +111,9 @@ const AUDIENCE_SIGNUP_ERROR_MESSAGE =
 const AUDIENCE_SIGNUP_IDLE_MESSAGE =
   'No picks. No betting. Just bullpen context and product updates.'
 
-const INTERNAL_TODAY_COPY_PATTERN =
-  /\b(COIN|V2|V3|V4|deterministic|snapshot|endpoint|backend|recommendation engine|baseline distribution|governance layer|sample state)\b/i
 const INTERNAL_TONIGHT_COPY_PATTERN =
   /\b(fatigue score|confidence score|internal_strength|ranking_score|signal_family|signal_type|recommend(?:ed|ation)?|ranked|ranking|projection|prediction|bet(?:ting|s)?|odds|pick|edge|guaranteed|expected to happen|will happen|healthy|injury-free)\b/i
 
-const EMPTY_REASON_COPY = {
-  no_completed_game_contexts: 'No completed games are available for this date yet.',
-  no_publishable_coin_story: 'No bullpen story is ready from the most recent completed games.',
-  lead_story_unavailable: "Tonight's lead story is unavailable right now.",
-}
 
 const FAIL_CLOSED_EMPTY_REASONS = new Set([
   'lead_story_unavailable',
@@ -245,23 +243,6 @@ function numberValue(value) {
   return Number.isFinite(num) ? num : null
 }
 
-function displayKey(value) {
-  const text = textValue(value)
-  if (!text) return null
-  return text
-    .replace(/[_-]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .toLowerCase()
-    .replace(/\b\w/g, char => char.toUpperCase())
-}
-
-function emptyReasonText(value) {
-  const key = textValue(value)
-  if (!key) return null
-  return EMPTY_REASON_COPY[key] || displayKey(key)
-}
-
 function cleanTeamName(value) {
   const text = textValue(value)
   if (!text) return null
@@ -327,58 +308,6 @@ function findTeamByName(name, teams = []) {
       candidate.endsWith(` ${normalized}`) || normalized.endsWith(` ${candidate}`)
     )
   }) || null
-}
-
-function resolveLeadTeam(leadStory, teams = []) {
-  const teamId = teamIdOf(leadStory?.team_id ?? leadStory?.package?.team_id)
-  const byId = buildTeamsById(teams)
-  const fromTeams = teamId != null ? byId.get(teamId) : null
-  if (fromTeams) {
-    return {
-      ...fromTeams,
-      label: fromTeams.teamName || fromTeams.teamAbbr || `Team ${teamId}`,
-      href: teamBoardHref(fromTeams),
-    }
-  }
-
-  const completed = leadStory?.package?.completed_game_context || {}
-  const teamName = cleanTeamName(completed.team_name)
-  const teamAbbr = textValue(completed.team_abbreviation)
-  const fallback = {
-    teamId,
-    teamName,
-    teamAbbr,
-  }
-  return {
-    ...fallback,
-    label: teamName || teamAbbr || (teamId != null ? `Team ${teamId}` : 'The lead club'),
-    href: teamBoardHref(fallback),
-  }
-}
-
-function firstAvailableDraft(drafts = {}) {
-  if (drafts?.team_story) return drafts.team_story
-  const values = Object.values(drafts || {})
-  return values.find(value => value && typeof value === 'object') || null
-}
-
-function cleanDraftList(value) {
-  return (Array.isArray(value) ? value : [])
-    .map(textValue)
-    .filter(Boolean)
-}
-
-function cleanStoryCopy(value) {
-  const text = textValue(value)
-  if (!text || INTERNAL_TODAY_COPY_PATTERN.test(text)) return null
-  return publicTerminology(text)
-}
-
-function cleanStoryList(...values) {
-  return values
-    .flatMap(value => (Array.isArray(value) ? value : [value]))
-    .map(cleanStoryCopy)
-    .filter(Boolean)
 }
 
 function cleanTonightCopy(value) {
@@ -869,7 +798,7 @@ function SectionFreshnessRow({
   lastSync,
   stale = false,
   freshness,
-  dataThroughLabel = 'Published view through',
+  dataThroughLabel = DATA_THROUGH_LABEL,
   className = '',
 }) {
   const sample = isSampleFreshness(freshness)
@@ -882,7 +811,7 @@ function SectionFreshnessRow({
         label={publishedFreshnessBadgeLabel(stale, freshness)}
       />
       <DataThroughStamp date={dataThrough} label={dataThroughLabel} />
-      <LastSyncLabel value={lastSync} />
+      <LastSyncLabel value={lastSync} label={LAST_DATA_UPDATE_LABEL} />
       {sample && (
         <span className="font-mono text-[11px] uppercase tracking-widest text-chalk500">
           Not live MLB data.
@@ -917,9 +846,9 @@ function TonightFreshnessRow({
           label={scopedStaleLabel || publishedFreshnessBadgeLabel(stale, freshness)}
         />
       )}
-      <DataThroughStamp date={dataThrough} label="Published view through" />
-      <LastSyncLabel value={generatedAt} label="Tonight watch generated" />
-      <LastSyncLabel value={lastSync} />
+      <DataThroughStamp date={dataThrough} label={DATA_THROUGH_LABEL} />
+      <LastSyncLabel value={generatedAt} label={GENERATED_AT_LABEL} />
+      <LastSyncLabel value={lastSync} label={LAST_DATA_UPDATE_LABEL} />
       {sample && (
         <span className="font-mono text-[11px] uppercase tracking-widest text-chalk500">
           Not live MLB data.
@@ -927,90 +856,6 @@ function TonightFreshnessRow({
       )}
     </div>
   )
-}
-
-function cleanOptionNames(items) {
-  return (Array.isArray(items) ? items : [])
-    .map(item => textValue(item?.name ?? item?.player_name ?? item?.full_name))
-    .filter(Boolean)
-}
-
-function buildBullpenSnapshot(packagePayload = {}) {
-  const availability = packagePayload.availability_snapshot || {}
-  const bullpen = packagePayload.bullpen_snapshot || {}
-  const workload = packagePayload.workload_snapshot || {}
-  const rows = []
-  const available = numberValue(availability.available_arms_count)
-  const monitor = numberValue(availability.monitor_arms_count)
-  const unavailable = numberValue(availability.unavailable_arms_count)
-  const cleanOptionsCount = numberValue(bullpen.clean_options_count)
-  const optionalityBand = displayKey(
-    bullpen.optionality_band || availability.optionality_band,
-  )
-  const concentrationBand = displayKey(workload.concentration_band)
-  const cleanOptions = cleanOptionNames(bullpen.clean_options)
-
-  if (available != null) rows.push(`Available arms: ${available}`)
-  if (monitor != null) rows.push(`On watch: ${monitor}`)
-  if (unavailable != null) rows.push(`Unavailable: ${unavailable}`)
-  if (cleanOptionsCount != null) rows.push(`Clean Options: ${cleanOptionsCount}`)
-  if (optionalityBand) rows.push(`Clean Options: ${optionalityBand}`)
-  if (concentrationBand) rows.push(`Workload Concentration: ${concentrationBand}`)
-  if (cleanOptions.length > 0) {
-    rows.push(`Named Clean Options: ${cleanOptions.slice(0, 3).join(', ')}`)
-  }
-
-  return rows
-}
-
-function buildSelectionMetadata(selection = {}) {
-  return [
-    ['Priority', displayKey(selection.story_priority)],
-    ['Confidence', displayKey(selection.confidence)],
-  ]
-    .filter(([, value]) => Boolean(value))
-    .map(([label, value]) => ({ label, value }))
-}
-
-export function getLeadStoryView(response, teams = []) {
-  if (!response || response.status !== 'ok' || !response.lead_story) {
-    return {
-      hasStory: false,
-      emptyReason: emptyReasonText(response?.empty_reason),
-      candidatesConsidered: numberValue(response?.candidates_considered),
-      publishableCandidates: numberValue(response?.publishable_candidates),
-    }
-  }
-
-  const lead = response.lead_story
-  const draft = firstAvailableDraft(lead.drafts)
-  const packagePayload = lead.package || {}
-  const headline = cleanStoryCopy(draft?.headline) || 'BaseballOS is watching this bullpen story.'
-  const body = cleanStoryCopy(draft?.body || draft?.text) || ''
-  const team = resolveLeadTeam(lead, teams)
-
-  return {
-    hasStory: true,
-    team,
-    headline,
-    body,
-    observations: cleanStoryList(draft?.observations),
-    evidence: cleanStoryList(draft?.evidence),
-    limitations: cleanStoryList(
-      draft?.limitations,
-      lead.limitations,
-      packagePayload.limitations,
-      packagePayload.public_limitations,
-    ).slice(0, 3),
-    snapshot: buildBullpenSnapshot(packagePayload),
-    metadata: buildSelectionMetadata(lead.selection || {}),
-    referenceDate: textValue(response.reference_date),
-    candidateSummary: {
-      considered: numberValue(response.candidates_considered),
-      publishable: numberValue(response.publishable_candidates),
-      errors: numberValue(response.errors),
-    },
-  }
 }
 
 function resolveTonightTeam(card, teams = []) {

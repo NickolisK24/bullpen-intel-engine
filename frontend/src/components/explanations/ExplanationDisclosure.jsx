@@ -1,3 +1,4 @@
+import { DATA_THROUGH_LABEL, LAST_DATA_UPDATE_LABEL } from '../../utils/bullpenConcepts'
 import { useId, useState } from 'react'
 
 import {
@@ -199,8 +200,8 @@ function LimitationList({ limitations }) {
 function MetadataGrid({ freshness, trust, confidence }) {
   const rows = [
     ['Freshness', asObject(freshness).status],
-    ['Data Through', asObject(freshness).data_through],
-    ['Last Sync', asObject(freshness).last_sync_at],
+    [DATA_THROUGH_LABEL, asObject(freshness).data_through],
+    [LAST_DATA_UPDATE_LABEL, asObject(freshness).last_sync_at],
     ['Visibility', asObject(trust).status],
     // 'Visibility Source' was an internal producer key and 'Certification' an
     // internal contract state ('certified_with_non_blocking_observations').

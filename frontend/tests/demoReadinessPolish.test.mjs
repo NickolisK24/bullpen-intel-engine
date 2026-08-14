@@ -86,7 +86,7 @@ test('dashboard hero pill states data provenance plainly', () => {
   }
   const html = inRouter(React.createElement(DashboardView, { data }))
   assert.ok(htmlIncludes(html, 'Updated after completed games through Jun 4, 2026'))
-  assert.ok(htmlIncludes(html, 'Latest data update:'))
+  assert.ok(htmlIncludes(html, 'Last data update:'))
 })
 
 // ── Priority 2: board → pitcher detail ─────────────────────────────────────

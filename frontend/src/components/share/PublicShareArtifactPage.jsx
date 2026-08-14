@@ -9,6 +9,12 @@
 
 import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
+import { formatConfidence, READ_CONFIDENCE_FIELD_LABEL } from '../bullpen/availabilityView'
+import {
+  DATA_THROUGH_LABEL,
+  GENERATED_AT_LABEL,
+  PUBLISHED_AT_LABEL,
+} from '../../utils/bullpenConcepts'
 import {
   SHARE_STATE,
   fetchPublicShareArtifact,
@@ -287,17 +293,17 @@ function LegacyArtifactBody({ artifact }) {
         {copy.trust_line ? <p className="mt-3 text-sm leading-relaxed text-chalk200">{copy.trust_line}</p> : null}
         <dl className="mt-4 grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
           <div>
-            <dt className="font-mono text-[11px] uppercase tracking-widest text-chalk500">Confidence</dt>
-            <dd className="mt-0.5 capitalize text-chalk200">{trust.confidence || '—'}</dd>
+            <dt className="font-mono text-[11px] uppercase tracking-widest text-chalk500">{READ_CONFIDENCE_FIELD_LABEL}</dt>
+            <dd className="mt-0.5 text-chalk200">{formatConfidence(trust.confidence)}</dd>
           </div>
           <div>
-            <dt className="font-mono text-[11px] uppercase tracking-widest text-chalk500">Data through</dt>
+            <dt className="font-mono text-[11px] uppercase tracking-widest text-chalk500">{DATA_THROUGH_LABEL}</dt>
             <dd className="mt-0.5 text-chalk200">
               {fmtDate(dataThrough) ? <time dateTime={dataThrough}>{fmtDate(dataThrough)}</time> : '—'}
             </dd>
           </div>
           <div>
-            <dt className="font-mono text-[11px] uppercase tracking-widest text-chalk500">Published</dt>
+            <dt className="font-mono text-[11px] uppercase tracking-widest text-chalk500">{PUBLISHED_AT_LABEL}</dt>
             <dd className="mt-0.5 text-chalk200">
               {fmtDateTime(artifact.published_at) ? (
                 <time dateTime={artifact.published_at}>{fmtDateTime(artifact.published_at)}</time>
@@ -305,7 +311,7 @@ function LegacyArtifactBody({ artifact }) {
             </dd>
           </div>
           <div>
-            <dt className="font-mono text-[11px] uppercase tracking-widest text-chalk500">Generated</dt>
+            <dt className="font-mono text-[11px] uppercase tracking-widest text-chalk500">{GENERATED_AT_LABEL}</dt>
             <dd className="mt-0.5 text-chalk200">
               {fmtDateTime(artifact.generated_at) ? (
                 <time dateTime={artifact.generated_at}>{fmtDateTime(artifact.generated_at)}</time>

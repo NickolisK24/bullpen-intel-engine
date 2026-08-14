@@ -61,7 +61,10 @@ test('AvailabilitySummary renders status, confidence, reasons, and limitations f
     assert.ok(htmlIncludes(html, 'Roster Status'))
     assert.ok(htmlIncludes(html, 'Read Confidence'))
     assert.ok(htmlIncludes(html, confidence))
-    assert.ok(htmlIncludes(html, 'Data Status'))
+    // H-11: the per-pitcher workload-record family is named Workload Data;
+    // 'Data Status' is the separate platform-wide public family.
+    assert.ok(htmlIncludes(html, 'Workload Data'))
+    assert.equal(htmlIncludes(html, 'Data Status'), false)
     assert.ok(htmlIncludes(html, 'Final Availability Reasons'))
     assert.ok(htmlIncludes(html, 'Limitations'))
 

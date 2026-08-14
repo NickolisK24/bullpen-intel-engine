@@ -131,7 +131,7 @@ function renderTeamOperatingCard(board, props = {}) {
   return render({
     readModel,
     staleWithError: teamOperatingStateFreshnessIsDegraded(readModel.freshness),
-    lastSyncLabel: 'Bullpen read synced',
+    lastSyncLabel: 'Last data update',
     density,
     ...props,
   })
@@ -294,8 +294,8 @@ test('renders trusted freshness values without inventing per-card freshness', ()
   const html = render({ context, freshness: currentFreshness })
 
   assert.ok(htmlIncludes(html, 'Freshness: Current'))
-  assert.ok(htmlIncludes(html, 'Bullpen data through Jun 26'))
-  assert.ok(htmlIncludes(html, 'Dashboard read synced 6:04 AM ET'))
+  assert.ok(htmlIncludes(html, 'Data through Jun 26'))
+  assert.ok(htmlIncludes(html, 'Last data update 6:04 AM ET'))
 })
 
 test('renders league-wide Thin summary without implied baseline language', () => {
@@ -389,8 +389,8 @@ test('renders a team operating card from a team-board fixture', () => {
   assert.ok(htmlIncludes(html, 'Review pitcher lanes'))
   assert.ok(htmlIncludes(html, 'href="#pitcher-lanes"'))
   assert.ok(htmlIncludes(html, 'Freshness: Current'))
-  assert.ok(htmlIncludes(html, 'Bullpen data through Jun 4'))
-  assert.ok(htmlIncludes(html, 'Bullpen read synced 8:00 AM ET'))
+  assert.ok(htmlIncludes(html, 'Data through Jun 4'))
+  assert.ok(htmlIncludes(html, 'Last data update 8:00 AM ET'))
 })
 
 test('renders compact team operating card density with the core read intact', () => {
@@ -411,8 +411,8 @@ test('renders compact team operating card density with the core read intact', ()
   assert.ok(htmlIncludes(html, '3 bullpen arms are inactive or unavailable.'))
   assert.ok(htmlIncludes(html, 'Freshness'))
   assert.ok(htmlIncludes(html, 'Freshness: Current'))
-  assert.ok(htmlIncludes(html, 'Bullpen data through Jun 4'))
-  assert.ok(htmlIncludes(html, 'Bullpen read synced 8:00 AM ET'))
+  assert.ok(htmlIncludes(html, 'Data through Jun 4'))
+  assert.ok(htmlIncludes(html, 'Last data update 8:00 AM ET'))
   assert.ok(htmlIncludes(html, 'Limitations:'))
   assert.ok(htmlIncludes(html, 'workload-based only; excludes manager intent, bullpen phone activity, private medical availability, unreported injuries, and final game-day decisions.'))
   assert.ok(htmlIncludes(html, 'Review pitcher lanes'))
@@ -437,7 +437,7 @@ test('renders safe team context reads without changing freshness or limitations'
   assert.ok(htmlIncludes(html, 'Some Workload Concentration'))
   assert.ok(htmlIncludes(html, 'Recent relief work has flowed through a smaller group of arms.'))
   assert.ok(htmlIncludes(html, 'Freshness: Current'))
-  assert.ok(htmlIncludes(html, 'Bullpen data through Jun 4'))
+  assert.ok(htmlIncludes(html, 'Data through Jun 4'))
   assert.ok(htmlIncludes(html, 'Limitations'))
   assert.ok(htmlIncludes(html, 'BaseballOS does not know manager intent'))
 
@@ -587,7 +587,7 @@ test('team card carries degraded freshness limitations when freshness fails clos
   const html = renderTeamOperatingCard(board)
 
   assert.ok(htmlIncludes(html, 'Refresh delayed'))
-  assert.ok(htmlIncludes(html, 'Bullpen data through Jun 1'))
+  assert.ok(htmlIncludes(html, 'Data through Jun 1'))
   assert.ok(htmlIncludes(html, 'Latest workload data is outside the active freshness window.'))
   assert.equal(teamOperatingStateFreshnessIsDegraded(board.freshness), true)
 })

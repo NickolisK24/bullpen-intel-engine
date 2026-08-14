@@ -94,9 +94,9 @@ test('data-through and last-sync labels format trusted payload values', () => {
 
   const bullpenDataThrough = render(React.createElement(DataThroughStamp, {
     date: '2026-06-26',
-    label: 'Bullpen data through',
+    label: 'Data through',
   }))
-  assert.ok(htmlIncludes(bullpenDataThrough, 'Bullpen data through Jun 26'))
+  assert.ok(htmlIncludes(bullpenDataThrough, 'Data through Jun 26'))
 
   const slate = render(React.createElement(SlateDateStamp, {
     date: '2026-06-27',
@@ -107,7 +107,7 @@ test('data-through and last-sync labels format trusted payload values', () => {
   const lastSync = render(React.createElement(LastSyncLabel, {
     value: '2026-06-26T10:04:00Z',
   }))
-  assert.ok(htmlIncludes(lastSync, 'Last synced 6:04 AM ET'))
+  assert.ok(htmlIncludes(lastSync, 'Last data update 6:04 AM ET'))
 })
 
 test('stale and unavailable states avoid implementation storage language', () => {

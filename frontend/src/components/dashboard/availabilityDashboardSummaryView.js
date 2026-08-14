@@ -159,7 +159,7 @@ function getModeCopy(mode, isCurrentAvailability) {
       modeLabel: 'Pitcher workload inventory',
       title: 'Pitcher Workload Inventory',
       distributionTitle: 'Read Confidence Mix',
-      distributionAriaLabel: 'Workload read mix',
+      distributionAriaLabel: 'Read Confidence mix',
       detailsOpenLabel: 'Hide Inventory Detail',
       detailsClosedLabel: 'View Inventory Detail',
       totalLabel: 'pitchers with workload reads',
@@ -167,10 +167,10 @@ function getModeCopy(mode, isCurrentAvailability) {
   }
 
   return {
-    modeLabel: 'Non-current workload read',
+    modeLabel: 'Non-current Read Confidence',
     title: 'Read Confidence',
     distributionTitle: 'Read Confidence Mix',
-    distributionAriaLabel: 'Workload read mix',
+    distributionAriaLabel: 'Read Confidence mix',
     detailsOpenLabel: 'Hide Workload Detail',
     detailsClosedLabel: 'View Workload Detail',
     totalLabel: 'pitchers with workload reads',

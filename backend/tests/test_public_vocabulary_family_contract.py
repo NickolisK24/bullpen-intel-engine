@@ -189,9 +189,30 @@ def _js_named_definitions(text, name):
     return re.findall(r"name:\s*'([^']*)'", block)
 
 
+def _js_label_constants(text):
+    """The glossary's exported stamp-name constants, resolved to their values.
+
+    H-11 made these constants the single owner of each reader-facing stamp
+    name, so every surface (and the glossary itself) renders the same string.
+    The definitions below therefore reference the constant rather than
+    repeating the literal, and this contract follows the indirection instead
+    of being weakened to accommodate it.
+    """
+    return dict(re.findall(r"export const (\w+_LABEL) = '([^']*)'", text))
+
+
 def _js_definitions_by_name(text, name):
     block = _js_block(text, f'export const {name} = Object.freeze([', '])')
-    return dict(re.findall(r"name:\s*'([^']*)',\s*definition:\s*'([^']*)'", block))
+    constants = _js_label_constants(text)
+    pairs = re.findall(r"name:\s*([A-Z_]+|'[^']*'),\s*definition:\s*'([^']*)'", block)
+    resolved = {}
+    for raw_name, definition in pairs:
+        if raw_name.startswith("'"):
+            resolved[raw_name.strip("'")] = definition
+        else:
+            assert raw_name in constants, f'unresolved label constant {raw_name}'
+            resolved[constants[raw_name]] = definition
+    return resolved
 
 
 def data_status_labels():
@@ -759,9 +780,12 @@ def test_data_through_is_never_aliased_to_a_provenance_stamp():
     resolver = _js_block(sync, 'export function freshnessDataThrough(freshness) {', '\n}')
     for provenance_field in ('generated', 'published', 'last_checked', 'lastChecked'):
         assert provenance_field not in resolver, provenance_field
-    assert "dataLabel: dataThrough ? 'Data through' : null" in sync
-    assert "lastCheckedLabel: 'Last checked'" in sync
-    assert "lastDataUpdateLabel: 'Last data update'" in sync
+    # The stamp names come from the one glossary-owned constant for each field,
+    # so the resolver cannot drift from what How to Read teaches.
+    assert 'dataLabel: dataThrough ? DATA_THROUGH_LABEL : null' in sync
+    assert 'lastCheckedLabel: LAST_CHECKED_LABEL' in sync
+    assert 'lastDataUpdateLabel: LAST_DATA_UPDATE_LABEL' in sync
+    assert "from '../../utils/bullpenConcepts'" in sync
 
 
 # ---------------------------------------------------------------------------

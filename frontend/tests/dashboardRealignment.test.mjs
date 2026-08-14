@@ -101,11 +101,11 @@ test('dashboard landscape uses canonical group titles and keeps descriptive subt
   const html = inRouter(React.createElement(DashboardView, { data: dashboardData }))
   assert.ok(htmlIncludes(html, 'Most Stretched'))
   assert.ok(htmlIncludes(html, 'Most Available'))
-  assert.ok(htmlIncludes(html, 'On Watch'))
+  assert.ok(htmlIncludes(html, 'Most On-Watch Arms'))
   assert.ok(
-    html.indexOf('Most Available') < html.indexOf('On Watch') &&
-    html.indexOf('On Watch') < html.indexOf('Most Stretched'),
-    'landscape columns should render Most Available, On Watch, then Most Stretched',
+    html.indexOf('Most Available') < html.indexOf('Most On-Watch Arms') &&
+    html.indexOf('Most On-Watch Arms') < html.indexOf('Most Stretched'),
+    'landscape columns should render Most Available, Most On-Watch Arms, then Most Stretched',
   )
   assert.ok(htmlIncludes(html, 'Fewest clean late-inning options'))
   assert.ok(htmlIncludes(html, 'Most room to maneuver'))
@@ -131,7 +131,7 @@ test('dashboard landscape preserves team-board deep links and honest empty group
 
 test('dashboard uses completed-game freshness wording for the landscape', () => {
   const html = inRouter(React.createElement(DashboardView, { data: dashboardData }))
-  assert.ok(htmlIncludes(html, 'Bullpen data through Jun 4, 2026'))
+  assert.ok(htmlIncludes(html, 'Data through Jun 4, 2026'))
   assert.equal(htmlIncludes(html, 'Tonight slate'), false)
   assert.equal(htmlIncludes(html, "Tonight's Bullpen Landscape"), false)
   assert.equal(htmlIncludes(html, 'latest completed MLB slate'), false)

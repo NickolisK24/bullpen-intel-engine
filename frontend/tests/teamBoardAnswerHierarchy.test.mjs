@@ -175,7 +175,7 @@ test('freshness and the current state stay visible without opening anything', ()
   const html = renderBoard(populatedBoard)
   assert.ok(htmlIncludes(html, 'Current Bullpen State'))
   assert.ok(htmlIncludes(html, 'Freshness'))
-  assert.ok(htmlIncludes(html, 'Bullpen data through'))
+  assert.ok(htmlIncludes(html, 'Data through'))
 })
 
 test('stale data keeps its trust warning visible in the answer zone', () => {
