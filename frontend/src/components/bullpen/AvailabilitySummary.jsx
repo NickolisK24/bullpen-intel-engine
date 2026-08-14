@@ -1,5 +1,10 @@
 import AvailabilityBadge from './AvailabilityBadge'
-import { getAvailabilitySummary, getRosterStatusSummary } from './availabilityView'
+import {
+  getAvailabilitySummary,
+  getRosterStatusSummary,
+  READ_CONFIDENCE_FIELD_LABEL,
+  WORKLOAD_DATA_FIELD_LABEL,
+} from './availabilityView'
 import {
   dayAwareAppearanceReasons,
   platformDateFromFreshness,
@@ -45,7 +50,9 @@ export default function AvailabilitySummary({
   const resolvedRosterStatus = getRosterStatusSummary(
     rosterStatus || availability?.roster_status,
   )
-  const isCurrentData = summary.dataStateView.label === 'Fresh'
+  // Keyed off the governed state, never the reader-facing text, so renaming a
+  // label can never silently change the stale styling.
+  const isCurrentData = summary.dataStateView.isCurrent === true
 
   return (
     <section className="rounded border border-dirt bg-chalk/30 p-4 sm:p-5">
@@ -67,11 +74,11 @@ export default function AvailabilitySummary({
             </div>
           </div>
           <div className="rounded border border-dirt bg-field/60 p-2">
-            <div className="text-chalk600 text-[10px] font-mono uppercase tracking-wider">Read Confidence</div>
+            <div className="text-chalk600 text-[10px] font-mono uppercase tracking-wider">{READ_CONFIDENCE_FIELD_LABEL}</div>
             <div className="mt-1 font-mono text-xs font-semibold text-chalk200">{summary.confidenceLabel}</div>
           </div>
           <div className={`rounded border bg-field/60 p-2 ${isCurrentData ? 'border-dirt' : 'border-amber/40'}`}>
-            <div className="text-chalk600 text-[10px] font-mono uppercase tracking-wider">Data Status</div>
+            <div className="text-chalk600 text-[10px] font-mono uppercase tracking-wider">{WORKLOAD_DATA_FIELD_LABEL}</div>
             <div className="mt-1 font-mono text-xs font-semibold text-chalk200">{summary.dataStateView.label}</div>
           </div>
         </div>

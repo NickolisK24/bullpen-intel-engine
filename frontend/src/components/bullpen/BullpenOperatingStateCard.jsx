@@ -1,3 +1,4 @@
+import { DATA_THROUGH_LABEL, LAST_DATA_UPDATE_LABEL } from '../../utils/bullpenConcepts'
 import { Link } from 'react-router-dom'
 import {
   DataThroughStamp,
@@ -66,7 +67,10 @@ function compactLimitationList(view, staleWithError) {
 
 function getTeamContextReadRows(view) {
   return [
-    { key: 'cleanOptions', label: 'Clean Options', read: view.cleanOptions },
+    // VOC-001 renamed this team-level supporting-read family to Rested
+    // Options (its values read '… Rested Options'). 'Clean Option' remains
+    // the pitcher-level current-read label — a different hierarchy level.
+    { key: 'cleanOptions', label: 'Rested Options', read: view.cleanOptions },
     { key: 'coverageSafety', label: 'Coverage Safety', read: view.coverageSafety },
     { key: 'workloadConcentration', label: 'Workload Concentration', read: view.workloadConcentration },
     { key: 'starterSupport', label: 'Recent Starter Length', read: view.starterSupportPressure },
@@ -131,7 +135,7 @@ export default function BullpenOperatingStateCard({
   onRetry,
   ctaHref,
   ctaLabel,
-  lastSyncLabel = 'Dashboard read synced',
+  lastSyncLabel = LAST_DATA_UPDATE_LABEL,
   density = 'full',
   // Opt-in: the surrounding page already states this team's identity as its own
   // page heading, so the card drops its team-name heading rather than repeating
@@ -277,7 +281,7 @@ export default function BullpenOperatingStateCard({
               <FreshnessBadge freshness={view.freshness} />
               <DataThroughStamp
                 date={view.freshness?.data_through}
-                label="Bullpen data through"
+                label={DATA_THROUGH_LABEL}
               />
               <LastSyncLabel
                 label={lastSyncLabel}
@@ -446,7 +450,7 @@ function CompactBullpenOperatingStateCard({
               <FreshnessBadge freshness={view.freshness} className="min-h-5 px-1.5 py-0.5 text-[9px] sm:min-h-6 sm:px-2 sm:text-[10px]" />
               <DataThroughStamp
                 date={view.freshness?.data_through}
-                label="Bullpen data through"
+                label={DATA_THROUGH_LABEL}
                 className="min-h-5 px-1.5 py-0.5 text-[9px] sm:min-h-6 sm:px-2 sm:text-[10px]"
               />
               <LastSyncLabel

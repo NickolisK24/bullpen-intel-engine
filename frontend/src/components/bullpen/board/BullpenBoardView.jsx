@@ -1,5 +1,9 @@
 import { EmptyState } from '../../UI'
 import {
+  READ_CONFIDENCE_FIELD_LABEL,
+  WORKLOAD_DATA_FIELD_LABEL,
+} from '../availabilityView'
+import {
   getBoardCardView,
   getBoardFreshnessView,
   getBoardGroups,
@@ -287,7 +291,7 @@ function EligibilityChip({ eligibility }) {
       className="inline-flex items-center gap-1.5 rounded border px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide"
       style={eligibility.tone}
       title={eligibility.reason || eligibility.label}
-      aria-label={`${eligibility.label}, workload read ${eligibility.confidenceLabel}`}
+      aria-label={`${eligibility.label}, ${READ_CONFIDENCE_FIELD_LABEL} ${eligibility.confidenceLabel}`}
     >
       {eligibility.label}
     </span>
@@ -300,8 +304,8 @@ function RosterStatusChip({ rosterStatus }) {
     <span
       className="inline-flex items-center gap-1.5 rounded border px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide"
       style={rosterStatus.tone}
-      title={`Roster status: ${rosterStatus.label} (workload read: ${rosterStatus.confidenceLabel})`}
-      aria-label={`Roster status: ${rosterStatus.label}, workload read ${rosterStatus.confidenceLabel}`}
+      title={`Roster status: ${rosterStatus.label} (${READ_CONFIDENCE_FIELD_LABEL}: ${rosterStatus.confidenceLabel})`}
+      aria-label={`Roster status: ${rosterStatus.label}, ${READ_CONFIDENCE_FIELD_LABEL} ${rosterStatus.confidenceLabel}`}
     >
       {rosterStatus.label}
     </span>
@@ -424,12 +428,12 @@ function PitcherCard({ card, freshness, onViewDetails, now }) {
 
       <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 font-mono text-[11px] text-chalk500">
         <span>
-          <span className="text-chalk600">Read Confidence</span>{' '}
+          <span className="text-chalk600">{READ_CONFIDENCE_FIELD_LABEL}</span>{' '}
           <span className="text-chalk200">{view.confidenceLabel}</span>
         </span>
         {view.dataStateView && (
           <span title={view.dataStateView.message}>
-            <span className="text-chalk600">Data</span>{' '}
+            <span className="text-chalk600">{WORKLOAD_DATA_FIELD_LABEL}</span>{' '}
             <span className="text-chalk200">{view.dataStateView.label}</span>
           </span>
         )}

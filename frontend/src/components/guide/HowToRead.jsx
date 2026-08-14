@@ -9,6 +9,8 @@ import {
   PITCHER_CURRENT_READ_DEFINITIONS,
   PITCHER_ROLE_DEFINITIONS,
   PROVENANCE_LABEL_DEFINITIONS,
+  WORKLOAD_DATA_DEFINITIONS,
+  WORKLOAD_DATA_FAMILY,
   READ_CONFIDENCE_BOUNDARY,
   READ_CONFIDENCE_DEFINITIONS,
   SUPPORTING_CONCEPT_DEFINITIONS,
@@ -62,6 +64,7 @@ const FRESHNESS_LABELS = FRESHNESS_LABEL_DEFINITIONS.map(asCard)
 const DATA_STATUSES = DATA_STATUS_DEFINITIONS.map(asCard)
 
 const PROVENANCE_LABELS = PROVENANCE_LABEL_DEFINITIONS.map(asCard)
+const WORKLOAD_DATA = WORKLOAD_DATA_DEFINITIONS.map(asCard)
 
 const USING_READS = [
   PUBLIC_BOUNDARIES.descriptiveScope,
@@ -196,6 +199,16 @@ export default function HowToRead() {
         </h3>
         <div className="mt-4">
           <DefinitionGrid items={DATA_STATUSES} columns="sm:grid-cols-2 lg:grid-cols-4" />
+        </div>
+        <h3 className="mt-8 font-mono text-xs uppercase tracking-widest text-amber/80">
+          {WORKLOAD_DATA_FAMILY}
+        </h3>
+        <p className="mt-2 max-w-3xl text-sm leading-7 text-chalk400">
+          Data status describes the published read. Workload Data describes one
+          pitcher&rsquo;s stored workload record, which is a different question.
+        </p>
+        <div className="mt-4">
+          <DefinitionGrid items={WORKLOAD_DATA} columns="sm:grid-cols-2 lg:grid-cols-4" />
         </div>
         <h3 className="mt-8 font-mono text-xs uppercase tracking-widest text-amber/80">
           Provenance stamps

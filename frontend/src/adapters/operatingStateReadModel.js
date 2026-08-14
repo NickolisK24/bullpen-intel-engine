@@ -320,7 +320,7 @@ function getWorkloadConcern(context) {
 
   if (counts.available === 0) {
     return buildConcern(
-      'Clean Options are tight',
+      'Rested Options are tight',
       `${counts.available} of ${counts.total} ${pluralRelievers(counts.total)} are classified Available.`,
     )
   }

@@ -100,7 +100,8 @@ test('Team board pitcher cards do not expose the 0-100 workload index', async ()
     'utf8',
   )
 
-  assert.ok(source.includes('Read Confidence'))
+  // The field label is rendered from the one shared constant (H-11).
+  assert.ok(source.includes('READ_CONFIDENCE_FIELD_LABEL'))
   for (const forbidden of [
     'Recent workload index',
     '0-100',
