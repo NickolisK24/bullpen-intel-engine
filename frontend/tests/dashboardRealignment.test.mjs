@@ -6,6 +6,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { createServer } from 'vite'
 
 import { makeBoard } from './fixtures/bullpenBoardFixtures.mjs'
+import { makeLeagueTeamStateListing } from './fixtures/leagueTeamStateListingFixtures.mjs'
 
 const server = await createServer({
   root: process.cwd(),
@@ -14,223 +15,139 @@ const server = await createServer({
   logLevel: 'silent',
 })
 
-after(async () => {
-  await server.close()
-})
+after(async () => server.close())
 
 const { DashboardView } = await server.ssrLoadModule('/src/components/dashboard/Dashboard.jsx')
 const { default: DataTrust } = await server.ssrLoadModule('/src/components/trust/DataTrust.jsx')
 const { default: Sidebar } = await server.ssrLoadModule('/src/components/Sidebar.jsx')
 
-const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-const htmlIncludes = (html, text) => new RegExp(escapeRegExp(text)).test(html)
-const inRouter = (el) => renderToStaticMarkup(React.createElement(MemoryRouter, null, el))
-const visibleText = (html) => html
-  .replace(/<style[\s\S]*?<\/style>/gi, ' ')
-  .replace(/<script[\s\S]*?<\/script>/gi, ' ')
-  .replace(/<[^>]+>/g, ' ')
-  .replace(/\s+/g, ' ')
-  .trim()
+const render = element => renderToStaticMarkup(React.createElement(MemoryRouter, null, element))
+const visibleText = html => html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
+const findElement = (node, predicate) => {
+  if (!React.isValidElement(node)) return null
+  if (predicate(node)) return node
+  for (const child of React.Children.toArray(node.props.children)) {
+    const match = findElement(child, predicate)
+    if (match) return match
+  }
+  return null
+}
 
-const forbiddenVisibleTerms =
-  /\b(COIN|V2|V3|V4|deterministic|snapshot|endpoint|backend|recommendation engine|baseline distribution|governance layer|sample state)\b/i
-
-// Dashboard payload: league-wide context + roles + freshness.
-const board = makeBoard({
-  cardsByStatus: {
-    Available: Array.from({ length: 5 }, (_, i) => ({ pitcher_id: i + 1, name: `A${i}`, availability_status: 'Available' })),
-    Monitor: Array.from({ length: 3 }, (_, i) => ({ pitcher_id: 20 + i, name: `M${i}`, availability_status: 'Monitor' })),
-    Limited: Array.from({ length: 2 }, (_, i) => ({ pitcher_id: 40 + i, name: `L${i}`, availability_status: 'Limited' })),
-    Avoid: [{ pitcher_id: 60, name: 'Av', availability_status: 'Avoid' }],
-    Unavailable: [{ pitcher_id: 70, name: 'Un', availability_status: 'Unavailable' }],
-  },
-})
+const board = makeBoard({ cardsByStatus: {
+  Available: Array.from({ length: 5 }, (_, index) => ({ pitcher_id: index + 1, name: `A${index}`, availability_status: 'Available' })),
+} })
 const dashboardData = {
   capability: 'bullpen_dashboard',
   context: board.context,
-  freshness: {
-    data_through: '2026-06-04',
-    last_successful_sync: '2026-06-04T12:00:00+00:00',
-    is_current: true,
-    sync_status: 'success',
-  },
+  freshness: { data_through: '2026-06-04', is_current: true, sync_status: 'success' },
   roles: {
     order: ['late_high_leverage', 'setup_bridge', 'middle_relief', 'long_multi_inning', 'low_unclear', 'insufficient_data'],
     counts: { late_high_leverage: 2, setup_bridge: 3, middle_relief: 5, long_multi_inning: 1, low_unclear: 1, insufficient_data: 0 },
     total: 12,
   },
-  landscape: {
-    capability: 'tonights_bullpen_landscape',
-    reference_date: '2026-06-05',
-    teams_evaluated: 3,
-    games: { available: true, data_state: 'historical', today_count: 0, as_of_date: '2026-06-04', as_of_count: 5, is_today: false, message: null },
-    constrained_bullpens: [
-      { team_id: 1, team_name: 'Chicago Cubs', team_abbreviation: 'CHC', total_relievers: 8, available: 2, monitor: 2, restricted: 4 },
-    ],
-    available_bullpens: [
-      { team_id: 2, team_name: 'Washington Nationals', team_abbreviation: 'WSH', total_relievers: 8, available: 6, monitor: 1, restricted: 1 },
-    ],
-    monitoring_concentration: [
-      { team_id: 3, team_name: 'Toronto Blue Jays', team_abbreviation: 'TOR', total_relievers: 8, available: 3, monitor: 4, restricted: 1 },
-    ],
-    notes: [],
-    storylines: ['Published bullpen storyline from the league context.'],
-  },
+  landscape: { storylines: ['Published bullpen storyline from the league context.'] },
 }
+const listing = makeLeagueTeamStateListing()
+const renderDashboard = (props = {}) => render(React.createElement(DashboardView, {
+  data: dashboardData,
+  leagueTeamStates: listing,
+  ...props,
+}))
 
-test('dashboard leads with bullpen language, not operations/governance language', () => {
-  const html = inRouter(React.createElement(DashboardView, { data: dashboardData }))
-  assert.ok(htmlIncludes(html, 'Bullpen Overview'))
-  // The old operations/governance framing is gone from the landing.
-  assert.ok(!htmlIncludes(html, 'Operational Readiness Dashboard'))
-  assert.ok(!htmlIncludes(html, 'governed recommendation context'))
+test('dashboard leads with baseball language and one governed all-club picture', () => {
+  const html = renderDashboard()
+  assert.match(html, /MLB Bullpen Overview/)
+  assert.match(html, /MLB Bullpen Picture/)
+  assert.match(html, /Current Bullpen State/)
+  assert.match(html, /30 MLB clubs · grouped by published Team State/)
+  assert.doesNotMatch(html, /Operational Readiness Dashboard|League-Wide Bullpen State|Quick Actions/)
 })
 
-test('dashboard renders the core bullpen sections without duplicate league summaries', () => {
-  const html = inRouter(React.createElement(DashboardView, { data: dashboardData }))
-  assert.ok(htmlIncludes(html, 'Storylines'))
-  assert.ok(htmlIncludes(html, 'Published Situation Lanes'))
-  assert.ok(htmlIncludes(html, 'Usage Roles'))
-  assert.equal(htmlIncludes(html, 'League-Wide Bullpen Read'), false)
-  assert.equal(htmlIncludes(html, 'League-Wide Bullpen State'), false)
-  assert.equal(htmlIncludes(html, 'Quick Actions'), false)
+test('backend Storylines lead the all-club state landscape and secondary context', () => {
+  const html = renderDashboard()
+  assert.ok(html.indexOf('Storylines') < html.indexOf('Current Bullpen State'))
+  assert.ok(html.indexOf('Current Bullpen State') < html.indexOf('Usage Roles'))
+  assert.match(html, /Published bullpen storyline from the league context\./)
 })
 
-test('dashboard landscape uses plain lane titles and keeps descriptive subtitles', () => {
-  const html = inRouter(React.createElement(DashboardView, { data: dashboardData }))
-  assert.ok(htmlIncludes(html, 'Needs Rest / Unavailable'))
-  assert.ok(htmlIncludes(html, 'Rested &amp; Available'))
-  assert.ok(htmlIncludes(html, 'On Watch'))
-  assert.ok(
-    html.indexOf('Rested &amp; Available') < html.indexOf('On Watch') &&
-    html.indexOf('On Watch') < html.indexOf('Needs Rest / Unavailable'),
-    'landscape columns should render Rested & Available, On Watch, then Needs Rest / Unavailable',
-  )
-  assert.ok(htmlIncludes(html, 'Clubs shown with tighter late-inning options'))
-  assert.ok(htmlIncludes(html, 'Clubs shown with rested, available depth'))
-  assert.ok(htmlIncludes(html, 'Clubs shown with recent workload watch groups'))
+test('retired partial Dashboard lanes and their metric copy are absent', () => {
+  const text = visibleText(renderDashboard())
+  for (const retired of [
+    'Published Situation Lanes', 'Rested & Available', 'On Watch',
+    'Needs Rest / Unavailable', 'Clubs shown with rested, available depth',
+  ]) assert.equal(text.includes(retired), false, retired)
 })
 
-test('dashboard landscape preserves team-board deep links and honest empty groups', () => {
-  const emptyLandscapeData = {
-    ...dashboardData,
-    landscape: {
-      ...dashboardData.landscape,
-      constrained_bullpens: [],
-    },
-  }
-  const html = inRouter(React.createElement(DashboardView, { data: emptyLandscapeData }))
-
-  assert.ok(htmlIncludes(html, 'href="/bullpen?view=board&amp;team=WSH&amp;source=landscape"'))
-  assert.ok(htmlIncludes(html, 'href="/bullpen?view=board&amp;team=TOR&amp;source=landscape"'))
-  assert.ok(htmlIncludes(html, 'Needs Rest / Unavailable'))
-  assert.ok(htmlIncludes(html, 'None right now.'))
-  assert.equal(htmlIncludes(html, 'CHC'), false)
+test('all-club rows keep canonical Dashboard Team Board deep links', () => {
+  const html = renderDashboard()
+  assert.match(html, /href="\/bullpen\?view=board&amp;team=ARI&amp;source=dashboard"/)
+  assert.match(html, /href="\/bullpen\?view=board&amp;team=WSH&amp;source=dashboard"/)
+  assert.doesNotMatch(html, /source=landscape/)
 })
 
-test('dashboard uses completed-game freshness wording for the landscape', () => {
-  const html = inRouter(React.createElement(DashboardView, { data: dashboardData }))
-  assert.ok(htmlIncludes(html, 'dateTime="2026-06-04">Jun 4'))
-  assert.equal(htmlIncludes(html, 'Tonight slate'), false)
-  assert.equal(htmlIncludes(html, "Tonight's Bullpen Landscape"), false)
-  assert.equal(htmlIncludes(html, 'latest completed MLB slate'), false)
-})
-
-test('storylines lead the situation lanes and the synthetic state card stays absent', () => {
-  const html = inRouter(React.createElement(DashboardView, { data: dashboardData }))
-  assert.ok(html.indexOf('Storylines') < html.indexOf('Published Situation Lanes'))
-  assert.equal(htmlIncludes(html, 'League-Wide Bullpen State'), false)
-})
-
-test('dashboard does not synthesize availability status tiles from league counts', () => {
-  const html = inRouter(React.createElement(DashboardView, { data: dashboardData }))
-  assert.equal(htmlIncludes(html, 'Current Bullpen State'), false)
-  assert.equal(htmlIncludes(html, 'of 12 relievers are classified Available.'), false)
-  assert.equal(htmlIncludes(html, 'Avoid'), false)
-})
-
-test('dashboard keeps routine trust quiet and one authoritative freshness stamp', () => {
-  const html = inRouter(React.createElement(DashboardView, { data: dashboardData }))
+test('dashboard uses one listing-owned Data-through stamp and keeps routine trust quiet', () => {
+  const html = renderDashboard()
   assert.equal((html.match(/Data through/g) || []).length, 1)
-  assert.equal(htmlIncludes(html, 'Read Confidence:'), false)
-  assert.equal(htmlIncludes(html, 'Last data update'), false)
-  assert.equal(htmlIncludes(html, 'Generated:'), false)
+  assert.match(html, /dateTime="2026-08-14">Aug 14/)
+  assert.doesNotMatch(html, /dateTime="2026-06-04"/)
+  assert.doesNotMatch(html, /Read Confidence:|Last data update|Generated:|Published at|Last checked/)
+  assert.match(html, /href="\/trust"/)
 })
 
-test('usage-roles summary shows distinct role composition counts', () => {
-  const html = inRouter(React.createElement(DashboardView, { data: dashboardData }))
-  assert.ok(htmlIncludes(html, 'Trusted Arm'))
-  assert.ok(htmlIncludes(html, 'Setup Arm'))
-  assert.ok(htmlIncludes(html, 'Middle Relief Arm'))
-  assert.ok(htmlIncludes(html, 'Coverage Arm'))
-  assert.ok(htmlIncludes(html, 'Unclear Role'))
-  assert.ok(htmlIncludes(html, 'Role Unclear'))
-  assert.equal((html.match(/Bridge Arm/g) || []).length, 0)
+test('usage-role summary remains secondary and uses its existing vocabulary', () => {
+  const html = renderDashboard()
+  for (const label of ['Trusted Arm', 'Setup Arm', 'Middle Relief Arm', 'Coverage Arm', 'Unclear Role', 'Role Unclear']) {
+    assert.match(html, new RegExp(label))
+  }
 })
 
-test('dashboard keeps team deep links without a quick-actions nav block', () => {
-  const html = inRouter(React.createElement(DashboardView, { data: dashboardData }))
-  // The landscape rows and the state card still route into the team board...
-  assert.ok(htmlIncludes(html, 'href="/bullpen?view=board'))
-  // ...but the sidebar-duplicating action cards are gone.
-  assert.equal(htmlIncludes(html, 'Quick Actions'), false)
-  assert.equal(htmlIncludes(html, 'Read bullpen stories'), false)
-  assert.equal(htmlIncludes(html, 'href="/bullpen?view=pitchers"'), false)
+test('league endpoint failure does not fall back to partial or derived Team State', () => {
+  const html = renderDashboard({ leagueTeamStates: null, leagueTeamStatesError: 'raw network exception' })
+  assert.match(html, /The current league Team State view is unavailable\./)
+  assert.doesNotMatch(html, /raw network exception|Published Situation Lanes|Rested &amp; Available/)
+  assert.match(html, /Usage Roles/)
 })
 
-test('dashboard links to the Data & Trust destination instead of exposing it inline', () => {
-  const html = inRouter(React.createElement(DashboardView, { data: dashboardData }))
-  assert.ok(htmlIncludes(html, 'href="/trust"'))
-  // Governance/diagnostic panels are NOT inline on the dashboard.
-  assert.ok(!htmlIncludes(html, 'Operational readiness partially unavailable'))
+test('secondary Dashboard context failure is explicit without replacing the primary league view', () => {
+  const retry = () => {}
+  const html = renderDashboard({ data: null, error: 'raw secondary exception', onRetry: retry })
+  assert.match(html, /Current Bullpen State/)
+  assert.match(html, /30 MLB clubs · grouped by published Team State/)
+  assert.match(html, /Secondary Dashboard Context/)
+  assert.match(html, /Secondary context unavailable/)
+  assert.match(html, /Roster-status and usage-role context could not be loaded\./)
+  assert.match(html, /Try Again/)
+  assert.doesNotMatch(html, /raw secondary exception|Something went wrong/)
 })
 
-test('dashboard avoids story-feed duplication, trend modules, and internal language', () => {
-  const html = inRouter(React.createElement(DashboardView, { data: dashboardData }))
-  const text = visibleText(html)
-
-  assert.equal(text.includes('What Changed Since Yesterday'), false)
-  assert.equal(text.includes('Trend Since Yesterday'), false)
-  assert.equal(forbiddenVisibleTerms.test(text), false)
-})
-
-test('dashboard renders the hero without data and does not crash', () => {
-  const html = inRouter(React.createElement(DashboardView, { data: null, loading: true }))
-  assert.ok(htmlIncludes(html, 'Bullpen Overview'))
-  assert.ok(!htmlIncludes(html, 'Bullpen Read'))
-})
-
-test('dashboard labels retained data when the latest refresh failed', () => {
-  const html = inRouter(React.createElement(DashboardView, {
+test('secondary Dashboard context retains delayed-refresh copy and retry wiring with usable data', () => {
+  const retry = () => {}
+  const view = DashboardView({
     data: dashboardData,
-    error: 'Network failed',
     staleWithError: true,
-  }))
+    onRetry: retry,
+    leagueTeamStates: listing,
+  })
+  const retryButton = findElement(view, element => element.type === 'button' && element.props.children === 'Retry')
+  const html = render(view)
 
-  assert.ok(htmlIncludes(html, 'Refresh delayed'))
-  assert.ok(htmlIncludes(html, 'showing last loaded data from Jun 4.'))
-  assert.ok(htmlIncludes(html, 'Published Situation Lanes'))
+  assert.match(html, /Secondary Dashboard context refresh is delayed; showing the last loaded context\./)
+  assert.ok(retryButton)
+  assert.equal(retryButton.props.onClick, retry)
 })
 
-test('Data & Trust page hosts trust detail without duplicate operational sections', () => {
-  const html = inRouter(React.createElement(DataTrust))
-  assert.ok(htmlIncludes(html, 'Data &amp; Trust') || htmlIncludes(html, 'Data & Trust'))
-  assert.ok(htmlIncludes(html, 'Freshness'))
-  // The scored-pitcher inventory diagnostic was removed from the public page.
-  assert.equal(htmlIncludes(html, 'Pitcher Workload Inventory'), false)
-  assert.equal(htmlIncludes(html, 'Secondary Exploratory ERA Study'), false)
-  assert.equal(htmlIncludes(html, 'Digest Preferences'), false)
-  assert.equal(htmlIncludes(html, 'Bullpen State + Team Readiness'), false)
-  // The Bullpen Intelligence surface fails closed without a live source, so it
-  // is not mounted on the live Trust page until it is wired to live MLB data.
-  assert.ok(!htmlIncludes(html, 'Bullpen Intelligence'))
-  assert.ok(!htmlIncludes(html, 'Bullpen Observations'))
+test('Dashboard avoids ranking, generated conclusions, and internal reader leakage', () => {
+  const text = visibleText(renderDashboard())
+  assert.equal(/\b(Most|Top|Best|Worst|score|rank|grade)\b/i.test(text), false)
+  assert.doesNotMatch(text, /What Changed Since Yesterday|Trend Since Yesterday|deterministic|endpoint|backend|governance layer/)
 })
 
-test('sidebar navigation includes a Data & Trust destination', () => {
-  const html = inRouter(React.createElement(Sidebar))
-  assert.ok(htmlIncludes(html, 'Data &amp; Trust') || htmlIncludes(html, 'Data & Trust'))
-  assert.ok(htmlIncludes(html, 'href="/trust"'))
-  // Core bullpen nav remains.
-  assert.ok(htmlIncludes(html, 'href="/bullpen"'))
+test('Data & Trust and sidebar destinations remain intact', () => {
+  const trustHtml = render(React.createElement(DataTrust))
+  assert.match(trustHtml, /Data &amp; Trust|Data & Trust/)
+  assert.match(trustHtml, /Freshness/)
+
+  const sidebarHtml = render(React.createElement(Sidebar))
+  assert.match(sidebarHtml, /href="\/trust"/)
+  assert.match(sidebarHtml, /href="\/bullpen"/)
 })

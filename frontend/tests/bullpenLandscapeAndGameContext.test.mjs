@@ -5,8 +5,6 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { MemoryRouter } from 'react-router-dom'
 import { createServer } from 'vite'
 
-import { makeBoard } from './fixtures/bullpenBoardFixtures.mjs'
-
 const server = await createServer({
   root: process.cwd(),
   server: { middlewareMode: true },
@@ -18,9 +16,7 @@ after(async () => {
   await server.close()
 })
 
-const { default: BullpenLandscape } = await server.ssrLoadModule('/src/components/dashboard/BullpenLandscape.jsx')
 const { default: TeamGameContextCard } = await server.ssrLoadModule('/src/components/bullpen/board/TeamGameContextCard.jsx')
-const { DashboardView } = await server.ssrLoadModule('/src/components/dashboard/Dashboard.jsx')
 
 const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const htmlIncludes = (html, text) => new RegExp(escapeRegExp(text)).test(html)
@@ -37,74 +33,6 @@ const noAffirmativeAdvisory = (html) => {
   const low = html.toLowerCase()
   return FORBIDDEN_AFFIRMATIVE.every(term => !low.includes(term))
 }
-
-const landscape = {
-  capability: 'tonights_bullpen_landscape',
-  ranking_applied: false,
-  selection_made: false,
-  reference_date: '2026-06-06',
-  teams_evaluated: 3,
-  games: { available: true, data_state: 'historical', today_count: 0, as_of_date: '2026-06-04', as_of_count: 5, is_today: false, message: null },
-  constrained_bullpens: [{ team_id: 1, team_name: 'Aces', team_abbreviation: 'ACE', total_relievers: 8, available: 2, monitor: 2, restricted: 4, pct_available: 25, pct_restricted: 50, health_state: 'constrained', health_label: 'The bullpen is short on clean options right now.' }],
-  available_bullpens: [{ team_id: 2, team_name: 'Bears', team_abbreviation: 'BEA', total_relievers: 8, available: 6, monitor: 1, restricted: 1, pct_available: 75, pct_restricted: 12, health_state: 'manageable', health_label: 'Bullpen workload appears manageable.' }],
-  monitoring_concentration: [{ team_id: 3, team_name: 'Cubs', team_abbreviation: 'CHC', total_relievers: 8, available: 3, monitor: 4, restricted: 1, pct_available: 37, pct_restricted: 12, health_state: 'monitoring', health_label: 'Several relievers require monitoring.' }],
-  notes: ['Descriptive groupings of bullpen situations only — this is bullpen context, not a league ranking or a game forecast.', 'Game context is from the latest stored game log, not a live schedule.'],
-}
-
-// ── Tonight's Bullpen Landscape ────────────────────────────────────────────
-
-test('landscape renders plain descriptive lane titles and subtitles', () => {
-  const html = render(React.createElement(BullpenLandscape, { landscape }))
-  assert.ok(htmlIncludes(html, 'Published Situation Lanes'))
-  assert.ok(htmlIncludes(html, 'current published landscape. These lanes are descriptive'))
-  assert.ok(htmlIncludes(html, 'Needs Rest / Unavailable'))
-  assert.ok(htmlIncludes(html, 'Rested &amp; Available'))
-  assert.ok(htmlIncludes(html, 'On Watch'))
-  assert.ok(
-    html.indexOf('Rested &amp; Available') < html.indexOf('On Watch') &&
-    html.indexOf('On Watch') < html.indexOf('Needs Rest / Unavailable'),
-    'landscape columns should render Rested & Available, On Watch, then Needs Rest / Unavailable',
-  )
-  assert.ok(htmlIncludes(html, 'Clubs shown with tighter late-inning options'))
-  assert.ok(htmlIncludes(html, 'Clubs shown with rested, available depth'))
-  assert.ok(htmlIncludes(html, 'Clubs shown with recent workload watch groups'))
-  assert.ok(htmlIncludes(html, 'Aces'))
-  assert.ok(htmlIncludes(html, 'Bears'))
-  assert.ok(htmlIncludes(html, 'Cubs'))
-})
-
-test('landscape leaves freshness to the page-level stamp and states its limits', () => {
-  const html = render(React.createElement(BullpenLandscape, { landscape }))
-  assert.equal(htmlIncludes(html, 'Data through Jun 4, 2026'), false)
-  assert.equal(htmlIncludes(html, 'Tonight slate'), false)
-  assert.equal(htmlIncludes(html, 'latest completed MLB slate'), false)
-  assert.ok(htmlIncludes(html, 'not a complete league grouping or game prediction'))
-  assert.ok(htmlIncludes(html, 'Limits on these lanes'))
-})
-
-test('landscape renders nothing without data', () => {
-  const html = render(React.createElement(BullpenLandscape, { landscape: null }))
-  assert.equal(html, '')
-})
-
-test('landscape contains no affirmative advisory language', () => {
-  const html = render(React.createElement(BullpenLandscape, { landscape }))
-  assert.ok(noAffirmativeAdvisory(html), 'affirmative advisory language leaked')
-})
-
-test('dashboard surfaces the landscape section near the top', () => {
-  const data = {
-    capability: 'bullpen_dashboard',
-    context: makeBoard({ cardsByStatus: { Available: [{ pitcher_id: 1, name: 'A', availability_status: 'Available' }] } }).context,
-    roles: { order: [], counts: {}, total: 1 },
-    freshness: { is_current: false, sync_status: 'metadata_unavailable', data_through: '2026-06-04' },
-    landscape,
-  }
-  const html = render(React.createElement(DashboardView, { data }))
-  assert.ok(htmlIncludes(html, 'Published Situation Lanes'))
-  assert.ok(htmlIncludes(html, 'Needs Rest / Unavailable'))
-  assert.ok(htmlIncludes(html, 'Clubs shown with tighter late-inning options'))
-})
 
 // ── Today's Game Context card ──────────────────────────────────────────────
 

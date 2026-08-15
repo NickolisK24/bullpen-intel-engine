@@ -21,7 +21,6 @@ const { default: Home } = await server.ssrLoadModule('/src/components/home/Home.
 const { MethodologyView } = await server.ssrLoadModule('/src/components/methodology/Methodology.jsx')
 const { DataTrustView } = await server.ssrLoadModule('/src/components/trust/DataTrust.jsx')
 const { default: Sidebar } = await server.ssrLoadModule('/src/components/Sidebar.jsx')
-const { default: BullpenLandscape } = await server.ssrLoadModule('/src/components/dashboard/BullpenLandscape.jsx')
 
 const render = (element) => renderToStaticMarkup(
   React.createElement(MemoryRouter, null, element),
@@ -210,30 +209,6 @@ test('Methodology and Data & Trust rendered text does not leak internal labels',
   assert.equal(forbiddenVisibleTerms.test(trustText), false)
   assert.ok(methodologyText.includes('public MLB data'))
   assert.ok(methodologyText.includes('On Watch'))
-})
-
-test('dashboard landscape notes render as the backend authored them', () => {
-  // The reader-facing wording is authored at services/game_context.py. This
-  // component used to rewrite the note at render time, which made the browser a
-  // second author of a public sentence; the softening invariant now lives with
-  // the owner (backend/tests/test_public_copy_ownership.py pins that the
-  // internal phrasing is not emitted).
-  const html = render(React.createElement(BullpenLandscape, {
-    landscape: {
-      reference_date: '2026-06-14',
-      teams_evaluated: 1,
-      games: { available: true, data_state: 'historical', as_of_date: '2026-06-14', as_of_count: 1 },
-      constrained_bullpens: [],
-      available_bullpens: [],
-      monitoring_concentration: [],
-      notes: ['Groups reflect the current bullpen counts for each team.'],
-    },
-  }))
-  const text = visibleText(html)
-
-  assert.ok(text.includes('Groups reflect the current bullpen counts for each team.'))
-  assert.equal(text.includes('Sorted by count'), false)
-  assert.equal(forbiddenVisibleTerms.test(text), false)
 })
 
 test('Today route stays pointed at the Intelligence Surface', () => {

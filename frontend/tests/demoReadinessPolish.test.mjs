@@ -6,6 +6,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { createServer } from 'vite'
 
 import { makeBoard, staleBoard } from './fixtures/bullpenBoardFixtures.mjs'
+import { makeLeagueTeamStateListing } from './fixtures/leagueTeamStateListingFixtures.mjs'
 
 const server = await createServer({
   root: process.cwd(),
@@ -84,7 +85,10 @@ test('dashboard hero uses one quiet data-through line', () => {
     roles: { order: [], counts: {}, total: 1 },
     freshness: { is_current: true, sync_status: 'success', data_through: '2026-06-04', last_successful_sync: '2026-06-04T12:00:00Z' },
   }
-  const html = inRouter(React.createElement(DashboardView, { data }))
+  const html = inRouter(React.createElement(DashboardView, {
+    data,
+    leagueTeamStates: makeLeagueTeamStateListing({ freshness: data.freshness }),
+  }))
   assert.equal((html.match(/Data through/g) || []).length, 1)
   assert.ok(htmlIncludes(html, 'dateTime="2026-06-04">Jun 4'))
   assert.equal(htmlIncludes(html, 'Last data update:'), false)
