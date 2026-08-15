@@ -40,7 +40,8 @@ function shapeReadLabels() {
   )
   const start = source.indexOf('TEAM_BULLPEN_PUBLIC_LABELS = {')
   assert.ok(start > -1, 'team_bullpen_shape.py no longer declares TEAM_BULLPEN_PUBLIC_LABELS')
-  const block = source.slice(start, source.indexOf('\n}\n', start))
+  const end = source.slice(start).search(/\r?\n}\r?\n/)
+  const block = source.slice(start, end < 0 ? source.length : start + end)
   // Labels are multi-word public strings; the single-word entries are read keys.
   return [...block.matchAll(/'([^']+)'/g)]
     .map(match => match[1])

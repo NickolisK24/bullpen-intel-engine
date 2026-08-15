@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom'
 import { DATA_THROUGH_LABEL, LAST_DATA_UPDATE_LABEL } from '../../utils/bullpenConcepts'
 import {
   formatDateOnly,
@@ -168,6 +169,32 @@ export function DataThroughStamp({
       )}
       {DATA_THROUGH_LABEL} {formatted}
     </span>
+  )
+}
+
+// The shared reader-facing freshness presentation. Routine freshness is one
+// quiet data-through line; exceptional state remains explicit beside it.
+export function FreshnessStamp({ freshness, className = '', showTrustLink = true, showExceptional = true }) {
+  const dataThrough = freshnessDataThrough(freshness)
+  const state = normalizeFreshnessMetadata(freshness)
+  const isExceptional = state && state !== 'current'
+  const formatted = formatFreshnessDate(dataThrough)
+  if (!formatted && !isExceptional) return null
+
+  return (
+    <div className={`flex flex-wrap items-center gap-2 ${className}`} aria-label="Data freshness">
+      {formatted && (
+        <span className="font-mono text-[11px] text-chalk500">
+          {DATA_THROUGH_LABEL} <time dateTime={dataThrough}>{formatted}</time>
+        </span>
+      )}
+      {showExceptional && isExceptional && <FreshnessBadge state={state} freshness={freshness} />}
+      {showTrustLink && (
+        <Link to="/trust" className="font-mono text-[10px] text-chalk600 underline-offset-2 hover:text-amber hover:underline">
+          Freshness details
+        </Link>
+      )}
+    </div>
   )
 }
 

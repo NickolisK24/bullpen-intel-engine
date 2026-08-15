@@ -2,10 +2,10 @@ import { useEffect, useState } from 'react'
 import { useFetch } from '../../../hooks/useFetch'
 import { toOperatingStateReadModel } from '../../../adapters/operatingStateReadModel'
 import { getTeamBullpenBoard, getTeamGameContext, getTeamStory, getTeamShareCard } from '../../../utils/api'
-import { LoadingPane, ErrorState, EmptyState } from '../../UI'
-import BullpenOperatingStateCard from '../BullpenOperatingStateCard'
+import { FreshnessStamp, LoadingPane, ErrorState, EmptyState } from '../../UI'
+import BullpenOperatingStateCard, { BullpenReadDisclosure } from '../BullpenOperatingStateCard'
 import BullpenAvailabilityDistribution from './BullpenAvailabilityDistribution'
-import BullpenBoardView from './BullpenBoardView'
+import BullpenBoardView, { RosterStatusBanner } from './BullpenBoardView'
 import TeamGameContextCard from './TeamGameContextCard'
 import StoryCard from './StoryCard'
 import TeamReliefWorkPanel from '../TeamReliefWorkPanel'
@@ -45,6 +45,7 @@ export default function TonightsBullpenBoard({
   teamReliefWorkPayload,
   teamReliefWorkLoading,
   teamReliefWorkError,
+  workloadRows = [],
 }) {
   const teamList = teams?.data || []
   const selectedTeam = initialSelectedTeam ?? resolveTeamId(teamList, requestedTeam)
@@ -119,26 +120,27 @@ export default function TonightsBullpenBoard({
 
   return (
     <div>
-      {/* One controls row: team selector plus the unavailable toggle. */}
+      {/* Compact selection keeps all 30 teams to one accessible control. */}
       <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-        <div className="flex min-w-0 flex-wrap gap-1.5">
-          {teams?.loading && teamList.length === 0 ? (
-            <span className="font-mono text-xs text-chalk500">Loading teams…</span>
+        <div className="min-w-0 flex-1 sm:max-w-xs">
+          {teamList.length === 0 ? (
+            <span className="inline-flex min-h-11 items-center font-mono text-xs text-chalk500">
+              {teams?.loading ? 'Loading teams…' : 'Teams unavailable.'}
+            </span>
           ) : (
-            teamList.map(team => (
-              <button
-                key={team.team_id}
-                onClick={() => onSelectTeam(team.team_id)}
-                aria-pressed={selectedTeam === team.team_id}
-                className={`rounded border px-2.5 py-1 text-xs font-mono transition-all ${
-                  selectedTeam === team.team_id
-                    ? 'bg-amber/10 border-amber/40 text-amber'
-                    : 'border-dirt text-chalk400 hover:border-chalk400'
-                }`}
+            <>
+              <label htmlFor="team-board-selector" className="block font-mono text-[10px] uppercase tracking-widest text-chalk500">Team</label>
+              <select
+                id="team-board-selector"
+                aria-label="Select team for Team Board"
+                value={selectedTeam ?? ''}
+                onChange={event => onSelectTeam(event.target.value ? Number(event.target.value) : null)}
+                className="mt-1 min-h-11 w-full rounded border border-dirt bg-field/70 px-3 py-2 font-mono text-xs text-chalk200 outline-none focus:border-amber/50 focus-visible:ring-2 focus-visible:ring-amber/60"
               >
-                {team.team_abbreviation || team.team_name}
-              </button>
-            ))
+                <option value="">Pick a team</option>
+                {teamList.map(team => <option key={team.team_id} value={team.team_id}>{team.team_name || team.team_abbreviation}</option>)}
+              </select>
+            </>
           )}
         </div>
         <div className="flex shrink-0 flex-col items-end gap-1">
@@ -180,25 +182,8 @@ export default function TonightsBullpenBoard({
         // team's state, distribution, evidence, or disclosure state can linger.
         <div key={selectedTeam} className="flex flex-col gap-6 2xl:flex-row 2xl:items-start">
           <div className="min-w-0 flex-1">
-            {/* Answer zone: team identity, current state, one-sentence why,
-                immediate receipts, freshness, and limitations live in the
-                operating-state card; the availability distribution sits directly
-                beneath it so the four public counts are part of the fast answer. */}
+            {/* Baseball answer zone: state, why, game context, freshness, counts. */}
             <div className="mb-4">
-              <div className="mb-2 flex justify-end">
-                <EvidenceShareMenu
-                  cardModel={teamCard}
-                  destinationUrl={teamDestinationUrl}
-                  shareText={teamShareText}
-                  context={{
-                    surface: 'bullpen_board',
-                    cardType: 'team',
-                    team_ref: teamOperatingRead.teamAbbreviation,
-                    evidence_target: teamEvidenceTarget,
-                    data_through: teamOperatingRead.freshness?.dataThrough,
-                  }}
-                />
-              </div>
               <BullpenOperatingStateCard
                 readModel={teamOperatingRead}
                 staleWithError={teamOperatingRead.freshness?.isStale || teamOperatingRead.freshness?.failClosed}
@@ -210,9 +195,26 @@ export default function TonightsBullpenBoard({
                 // card's region label still carries the team for anyone landing
                 // on it out of context.
                 titleOwnedByPage
+                readerFirst
               />
+              {(gameContextState.loading || gameContextState.error || gameContextState.data) && (
+                <TeamGameContextCard
+                  gameContext={gameContextState.data}
+                  loading={gameContextState.loading}
+                  error={gameContextState.error}
+                  compact
+                />
+              )}
+              <FreshnessStamp freshness={boardState.data?.freshness} className="mt-3 px-1" showExceptional={false} />
               <BullpenAvailabilityDistribution board={filteredBoard} />
             </div>
+            <BullpenBoardView
+              board={filteredBoard}
+              onSelectPitcher={onSelectPitcher}
+              showRoutineFreshness={false}
+              showRosterContext={false}
+              workloadRows={workloadRows}
+            />
             <div className="mb-4">
               <TeamReliefWorkPanel
                 teamId={selectedTeam}
@@ -220,44 +222,41 @@ export default function TonightsBullpenBoard({
                 loading={teamReliefWorkLoading}
                 error={teamReliefWorkError}
                 rosterContextLimited={rosterContextLimited}
+                hideRoutineFreshness
               />
             </div>
-            <BullpenBoardView
-              board={filteredBoard}
-              onSelectPitcher={onSelectPitcher}
-              showRoutineFreshness={false}
-            />
-            {/* Secondary narrative context moves behind clear disclosures so the
-                default view stays focused on the bullpen answer. Neither carries
-                an inbound evidence anchor, so collapsing them breaks no links. */}
-            <details className="mt-6 rounded-lg border border-dirt bg-dugout/35" aria-label="Team story">
-              <summary className="flex cursor-pointer items-center justify-between gap-2 px-4 py-3 font-mono text-[11px] uppercase tracking-widest text-chalk300 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/60">
-                <span>Read the team story</span>
-                <span className="text-[10px] text-chalk600">Today's bullpen storyline</span>
-              </summary>
-              <div className="px-3 pb-3">
+            {storyState.data?.story_available === true && <section className="mt-6" aria-labelledby="what-changed-title">
+              <h2 id="what-changed-title" className="font-display text-xl tracking-wide text-chalk100">What Changed</h2>
+              <div className="mt-2">
                 <StoryCard
                   story={storyState.data}
                   loading={storyState.loading}
                   error={storyState.error}
                   onRetry={storyState.refetch}
+                  hideFreshnessMeta
                 />
               </div>
-            </details>
-            <details className="mt-4 rounded-lg border border-dirt bg-dugout/35" aria-label="Recent game context">
-              <summary className="flex cursor-pointer items-center justify-between gap-2 px-4 py-3 font-mono text-[11px] uppercase tracking-widest text-chalk300 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/60">
-                <span>See recent game context</span>
-                <span className="text-[10px] text-chalk600">Latest completed-game detail</span>
-              </summary>
-              <div className="px-3 pb-3">
-                <TeamGameContextCard
-                  gameContext={gameContextState.data}
-                  loading={gameContextState.loading}
-                  error={gameContextState.error}
-                  compact
-                />
-              </div>
-            </details>
+            </section>}
+            <div className="mt-4"><RosterStatusBanner board={filteredBoard} /></div>
+            <div className="mt-4 flex justify-end">
+              <EvidenceShareMenu
+                cardModel={teamCard}
+                destinationUrl={teamDestinationUrl}
+                shareText={teamShareText}
+                context={{
+                  surface: 'bullpen_board',
+                  cardType: 'team',
+                  team_ref: teamOperatingRead.teamAbbreviation,
+                  evidence_target: teamEvidenceTarget,
+                  data_through: teamOperatingRead.freshness?.dataThrough,
+                }}
+              />
+            </div>
+            <BullpenReadDisclosure
+              readModel={teamOperatingRead}
+              staleWithError={teamOperatingRead.freshness?.isStale || teamOperatingRead.freshness?.failClosed}
+              className="mt-4"
+            />
           </div>
         </div>
       )}

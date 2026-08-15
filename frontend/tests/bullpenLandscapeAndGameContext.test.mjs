@@ -116,7 +116,7 @@ const presentContext = {
 test('game-context card shows opponent, date, and stored-context labelling', () => {
   const html = render(React.createElement(TeamGameContextCard, { gameContext: presentContext }))
   assert.ok(htmlIncludes(html, 'Most Recent Completed Game'))
-  assert.ok(htmlIncludes(html, 'Stored game-log context'))
+  assert.equal(htmlIncludes(html, 'Stored game-log context'), false)
   assert.ok(htmlIncludes(html, 'Rivals'))
   assert.ok(htmlIncludes(html, 'Jun 4, 2026'))
   // Unavailable fields are stated, not fabricated.

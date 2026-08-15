@@ -161,8 +161,7 @@ test('renders compact Why this state action while explanation details stay close
   })
 
   assert.ok(htmlIncludes(html, 'Why this state?'))
-  assert.ok(htmlIncludes(html, 'aria-expanded="false"'))
-  assert.ok(htmlIncludes(html, 'Explanation'))
+  assert.match(html, /<details[^>]*aria-label="Explanation details"/)
   assert.equal(htmlIncludes(html, explanationEnvelope.explanation.summary), false)
   assert.equal(htmlIncludes(html, 'Availability Distribution Total'), false)
 })
@@ -173,8 +172,7 @@ test('opens explanation detail surface with summary and reasons when disclosure 
     initialExplanation: normalizeV4ExplanationApiResponse(explanationEnvelope),
   })
 
-  assert.ok(htmlIncludes(html, 'Hide Explanation'))
-  assert.ok(htmlIncludes(html, 'aria-expanded="true"'))
+  assert.match(html, /<details[^>]*open=""[^>]*aria-label="Explanation details"/)
   assert.ok(htmlIncludes(html, explanationEnvelope.explanation.summary))
   // The backend label is rendered byte-for-byte; the frontend no longer re-cases it.
   assert.ok(htmlIncludes(html, 'Readiness context reviewed'))
@@ -194,19 +192,17 @@ test('renders evidence and limitations inside the opened explanation detail surf
   assert.ok(htmlIncludes(html, 'Availability distribution total'))
   assert.equal(htmlIncludes(html, 'Availability Distribution Total'), false)
   assert.ok(htmlIncludes(html, '6 pitchers'))
-  // This fixture's label is itself an internal key, so the heading is withheld
-  // rather than published; the technical key line still discloses it.
+  // Internal keys and raw technical output stay out of the reader surface.
   assert.equal(htmlIncludes(html, 'Data Limited Status Code'), false)
-  assert.ok(htmlIncludes(html, 'Technical key: data_limited_status_code'))
-  assert.ok(htmlIncludes(html, 'Source key: explains_workload_state'))
+  assert.equal(htmlIncludes(html, 'data_limited_status_code'), false)
+  assert.equal(htmlIncludes(html, 'explains_workload_state'), false)
   // `trust_metadata` as a VALUE is an internal key. It used to be renamed to
   // "Visibility Detail" by the frontend; it is now withheld entirely.
   assert.equal(htmlIncludes(html, 'Visibility Detail'), false)
   assert.equal(htmlIncludes(html, 'Affected Area: Trust Metadata'), false)
-  assert.ok(htmlIncludes(html, 'Technical details'))
+  assert.equal(htmlIncludes(html, 'Technical details'), false)
   assert.ok(htmlIncludes(html, 'Manager intent is not represented.'))
   assert.ok(htmlIncludes(html, 'medium'))
-  assert.ok(htmlIncludes(html, 'current'))
 })
 
 test('renders fail-closed explanation responses safely', () => {
@@ -217,26 +213,21 @@ test('renders fail-closed explanation responses safely', () => {
 
   assert.ok(htmlIncludes(html, 'Explanation unavailable for this state.'))
   assert.ok(htmlIncludes(html, 'Required explanation inputs were unavailable for this request.'))
-  assert.ok(htmlIncludes(html, 'missing_source_data'))
+  assert.equal(htmlIncludes(html, 'missing_source_data'), false)
   assert.ok(htmlIncludes(html, 'Required explanation inputs are unavailable'))
   assert.equal(htmlIncludes(html, 'Required Explanation Inputs Are Unavailable'), false)
-  assert.ok(htmlIncludes(html, 'BaseballOS explains the current bullpen read without choosing an arm or calling an outcome.'))
+  assert.equal(htmlIncludes(html, 'Decision Boundary'), false)
 })
 
-test('keeps governance-safe messaging visible in explanation details', () => {
+test('removes implementation governance machinery from explanation details', () => {
   const html = renderDisclosure({
     initialOpen: true,
     initialExplanation: normalizeV4ExplanationApiResponse(explanationEnvelope),
   })
 
-  assert.ok(htmlIncludes(html, 'Decision Boundary'))
-  assert.ok(htmlIncludes(html, 'BaseballOS explains the current bullpen read without choosing an arm or calling an outcome.'))
-  assert.ok(htmlIncludes(html, 'Team order'))
-  assert.ok(htmlIncludes(html, 'Pitcher choice'))
-  assert.ok(htmlIncludes(html, 'Arm choice'))
-  assert.ok(htmlIncludes(html, 'Outcome call'))
-  assert.ok(htmlIncludes(html, 'Explanation only'))
-  assert.ok(htmlIncludes(html, 'No bullpen advice'))
+  for (const text of ['Decision Boundary', 'Team order', 'Pitcher choice', 'Arm choice', 'Outcome call', 'No bullpen advice']) {
+    assert.equal(htmlIncludes(html, text), false)
+  }
 })
 
 test('does not render prohibited explanation surface language', () => {

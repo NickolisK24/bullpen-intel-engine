@@ -264,6 +264,22 @@ test('the availability column renders only public vocabulary, never an engine st
   assert.ok(html.includes('>E<') || html.includes('E'), 'withheld row still lists the pitcher')
 })
 
+test('historical raw Monitor and Avoid values cannot leak through the card badge', () => {
+  const html = render(React.createElement(TeamStateArtifactCard, {
+    card: cardFixture({
+      reliever_evidence: [
+        { pitcher_id: 1, name: 'First Arm', availability: 'Monitor' },
+        { pitcher_id: 2, name: 'Second Arm', availability: 'Avoid' },
+      ],
+    }),
+  }))
+
+  assert.equal(html.includes('Monitor'), false)
+  assert.equal(html.includes('Avoid'), false)
+  assert.ok(html.includes('On Watch'))
+  assert.ok(html.includes('Unavailable'))
+})
+
 test('the card invents no availability label when the value was withheld', () => {
   // Fail-closed presentation: no title-casing, no raw echo, no fifth label.
   const html = render(React.createElement(TeamStateArtifactCard, {

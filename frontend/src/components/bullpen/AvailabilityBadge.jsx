@@ -8,8 +8,9 @@ export default function AvailabilityBadge({
   availability,
   showDataState = false,
   ariaLabelPrefix = 'Availability status',
+  compact = false,
 }) {
-  const badge = getAvailabilityBadgeView(availability)
+  const badge = getAvailabilityBadgeView(availability, availability?.availability_public_label)
   const dataState = String(availability?.data_state || 'unknown').toLowerCase()
   const showStateNote = showDataState && dataState && !['fresh', 'unknown'].includes(dataState)
   const stateView = showStateNote ? getDataStateView(dataState) : null
@@ -17,7 +18,7 @@ export default function AvailabilityBadge({
   return (
     <span className="inline-flex flex-col items-start gap-1">
       <span
-        className="inline-flex min-w-[6.75rem] items-center justify-center gap-1.5 rounded border px-2 py-1 font-mono text-[10px] font-semibold uppercase tracking-wide"
+        className={`inline-flex items-center justify-center gap-1.5 rounded border px-2 py-1 font-mono text-[10px] font-semibold uppercase tracking-wide ${compact ? '' : 'min-w-[6.75rem]'}`}
         style={badge.style}
         title={badge.tone}
         aria-label={`${ariaLabelPrefix}: ${badge.label}`}

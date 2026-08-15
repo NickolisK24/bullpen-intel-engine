@@ -111,7 +111,7 @@ const CARD_MARKER = 'rounded-lg border border-dirt bg-field/60 p-3'
 function cardMarkup(html, name) {
   const segment = html.split(CARD_MARKER).find(part => part.includes(name))
   assert.ok(segment, `no rendered card found for ${name}`)
-  return segment
+  return segment.split('Pitcher Label Key')[0]
 }
 
 test('role and read label chips render product labels only on the pitcher card', () => {
@@ -174,7 +174,7 @@ test('role explanation expands with reason, evidence, and limitations', () => {
   assert.ok(htmlIncludes(html, 'Observed role:'))
   assert.ok(htmlIncludes(html, 'Recent outings show repeated multi-inning workload.'))
   assert.ok(htmlIncludes(html, 'Average recent IP: 1.9'))            // evidence
-  assert.ok(htmlIncludes(html, 'Does not include manager intent.'))  // limitation
+  assert.equal(htmlIncludes(html, 'Does not include manager intent.'), false) // repeated boilerplate is quiet
 })
 
 test('low-confidence role remains a limited role read with a watch read', () => {

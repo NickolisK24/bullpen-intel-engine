@@ -168,20 +168,17 @@ test('board no longer restates the team state above the groups', () => {
   assert.ok(!htmlIncludes(html, 'Stress Score'))
 })
 
-test('normal freshness, roster context, and pitcher label key are collapsed by default', () => {
+test('normal freshness and pitcher label key are collapsed while roster QA metrics stay absent', () => {
   const html = render(populatedBoard)
   const freshnessTag = detailsTagFor(html, 'Data freshness details')
-  const rosterTag = detailsTagFor(html, 'Roster status details')
   const labelKeyTag = detailsTagFor(html, 'Pitcher Label Key')
 
   assert.ok(freshnessTag)
-  assert.ok(rosterTag)
   assert.ok(labelKeyTag)
   assert.ok(!freshnessTag.includes('open'))
-  assert.ok(!rosterTag.includes('open'))
   assert.ok(!labelKeyTag.includes('open'))
   assert.ok(htmlIncludes(html, 'Data Freshness'))
-  assert.ok(htmlIncludes(html, 'Roster Context'))
+  assert.equal(htmlIncludes(html, 'Roster Status Coverage'), false)
   assert.ok(htmlIncludes(html, 'Role and read definitions'))
 })
 
@@ -197,22 +194,23 @@ test('team board can delegate routine freshness to the operating card while pres
 
   assert.equal(htmlIncludes(currentHtml, 'Data Freshness'), false)
   assert.equal(htmlIncludes(currentHtml, 'Current baseball data through'), false)
-  assert.ok(htmlIncludes(currentHtml, 'Tonight&#x27;s Bullpen Board'))
+  assert.ok(htmlIncludes(currentHtml, 'Active Bullpen'))
 
   assert.ok(htmlIncludes(staleHtml, 'Historical baseball data through 2026-04-01.'))
   assert.ok(htmlIncludes(staleHtml, 'Latest workload data is outside the active freshness window'))
   assert.ok(htmlIncludes(staleHtml, 'read with caution'))
 })
 
-test('renders pitcher cards with name, status, workload read and short reason', () => {
+test('renders pitcher cards with name, status, and one authoritative outing fact', () => {
   // "Today" / "Yesterday" workload labels are relative to the user's current day, injected here
   // for a deterministic test (the populated fixture dates its workloads relative to June 4).
   const html = renderWithOptions({ board: populatedBoard, now: new Date(2026, 5, 4) })
   assert.ok(htmlIncludes(html, 'Larry Limited'))
   assert.ok(htmlIncludes(html, 'Availability status: Limited'))
-  assert.ok(htmlIncludes(html, 'Last workload: Today (18 pitches)'))
-  assert.ok(htmlIncludes(html, 'Last workload: Yesterday (29 pitches)'))
-  assert.ok(htmlIncludes(html, 'Last workload: May 30 (42 pitches)'))
+  assert.ok(htmlIncludes(html, 'Jun 4 • 18 pitches'))
+  assert.ok(htmlIncludes(html, 'Jun 3 • 29 pitches'))
+  assert.ok(htmlIncludes(html, 'May 30 • 42 pitches'))
+  assert.equal((html.match(/Jun 4 • 18 pitches/g) || []).length, 1)
   assert.ok(!htmlIncludes(html, '18 pitches yesterday'))
   assert.equal(htmlIncludes(html, 'Recent Load'), false)
   assert.equal(htmlIncludes(html, '0-100'), false)
@@ -234,9 +232,8 @@ test('compact card skips zero-pitch rows for last workload context', () => {
     data_through: '2026-06-20',
   }, new Date(2026, 5, 20))
 
-  assert.equal(cardView.lastAppearanceLabel, 'Last workload: Jun 17 (14 pitches)')
-  assert.equal(cardView.shortReason, 'Last workload: Jun 17 (14 pitches)')
-  assert.notEqual(cardView.shortReason, 'Last workload: Yesterday (0 pitches)')
+  assert.equal(cardView.lastAppearanceLabel, 'Jun 17 • 14 pitches')
+  assert.equal(cardView.shortReason, null)
 })
 
 // Day-aware workload labels (the reported bug): the "Today" / "Yesterday" anchor is the user's
@@ -252,8 +249,7 @@ test('last-workload label reads Yesterday for a June 25 workload viewed on June 
   // The platform data-through date is June 25 (it lags one day behind the user's real day).
   // Anchoring on it would wrongly read "Today"; anchoring on the user day (June 26) reads Yesterday.
   const view26 = view.getBoardCardView(card, { data_through: '2026-06-25' }, new Date(2026, 5, 26))
-  assert.equal(view26.lastAppearanceLabel, 'Last workload: Yesterday (22 pitches)')
-  assert.notEqual(view26.lastAppearanceLabel, 'Last workload: Today (22 pitches)')
+  assert.equal(view26.lastAppearanceLabel, 'Jun 25 • 22 pitches')
 })
 
 test('last-workload label reads Today for a June 26 workload viewed on June 26', () => {
@@ -264,7 +260,7 @@ test('last-workload label reads Today for a June 26 workload viewed on June 26',
     last_workload_appearance: { game_date: '2026-06-26', pitches: 15 },
   }
   const cardView = view.getBoardCardView(card, { data_through: '2026-06-25' }, new Date(2026, 5, 26))
-  assert.equal(cardView.lastAppearanceLabel, 'Last workload: Today (15 pitches)')
+  assert.equal(cardView.lastAppearanceLabel, 'Jun 26 • 15 pitches')
 })
 
 test('last-workload label shows a stable date for workloads older than yesterday', () => {
@@ -275,7 +271,7 @@ test('last-workload label shows a stable date for workloads older than yesterday
     last_workload_appearance: { game_date: '2026-06-24', pitches: 31 },
   }
   const cardView = view.getBoardCardView(card, { data_through: '2026-06-25' }, new Date(2026, 5, 26))
-  assert.equal(cardView.lastAppearanceLabel, 'Last workload: Jun 24 (31 pitches)')
+  assert.equal(cardView.lastAppearanceLabel, 'Jun 24 • 31 pitches')
 })
 
 test('the data-through provenance still shows the platform date, not the user current day', () => {
@@ -294,7 +290,7 @@ test('Why? disclosure surfaces engine reasons and limitations', () => {
   assert.ok(htmlIncludes(html, '18 pitches today'))
   assert.ok(htmlIncludes(html, '29 pitches yesterday'))
   assert.ok(htmlIncludes(html, '3 appearances in 5 days'))           // a reason
-  assert.ok(htmlIncludes(html, 'No injury information available'))   // a limitation
+  assert.equal(htmlIncludes(html, 'No injury information available'), false) // boilerplate is quiet
 })
 
 test('empty board shows a friendly empty state, not a blank surface', () => {
@@ -317,10 +313,7 @@ test('groups with no pitchers render their own empty copy', () => {
 test('stale data surfaces existing trust messaging', () => {
   const html = render(staleBoard)
   assert.ok(htmlIncludes(html, 'Outside Freshness Window'))
-  assert.ok(htmlIncludes(html, 'Roster Status Pending'))
-  assert.ok(htmlIncludes(html, 'Roster status unavailable'))
-  assert.ok(htmlIncludes(html, 'Bullpen Arms'))
-  assert.ok(htmlIncludes(html, 'Roster Status Coverage'))
+  assert.equal(htmlIncludes(html, 'Roster Status Coverage'), false)
   assert.ok(htmlIncludes(html, 'outside the active freshness window'))
   assert.ok(htmlIncludes(html, 'Outside active freshness window'))
   assert.ok(htmlIncludes(html, 'Historical baseball data through 2026-04-01.'))
@@ -352,18 +345,18 @@ test('STL-like: broad roster-context count is separated from the shown unavailab
     .find(group => group.status === 'Unavailable')
   assert.equal(unavailableGroup.pitchers.length, 1)
 
-  // CRC Phase 4: the migrated banner is driven by Roster Authority. It shows ONE
-  // invariant "Off the Active Roster" count (7) with a view-only "showing 1 of 7 here",
-  // and every one of the seven arms is inspectable in the evidence list.
+  // The reader roster context uses the canonical evidence names and statuses,
+  // without exposing coverage or pipeline-count chrome.
   const html = render(rosterContextExcludedBoard)
-  assert.ok(htmlIncludes(html, 'Off the Active Roster'))
-  assert.ok(htmlIncludes(html, 'showing 1 of 7 here'))
+  assert.ok(htmlIncludes(html, 'Off the active roster'))
   for (const name of [
     'Ike Injured', 'Cal Optioned', 'Dom Designated', 'Ned Nonroster',
     'Saul Suspended', 'Pat Paternity', 'Rex Restricted',
   ]) {
     assert.ok(htmlIncludes(html, name), `evidence missing ${name}`)
   }
+  assert.equal(htmlIncludes(html, 'Roster Status Coverage'), false)
+  assert.equal(htmlIncludes(html, 'showing 1 of 7 here'), false)
   // The legacy "(not shown)" framing is gone — one canonical count plus a view note.
   assert.ok(!htmlIncludes(html, 'Off Roster (not shown)'))
 })
@@ -418,18 +411,19 @@ test('Roster Authority evidence lists match the displayed counts and are inspect
   }
 })
 
-test('the board ships no legacy roster_status and the banner reads only Roster Authority', () => {
+test('the board ships no legacy roster_status and routine authority QA stays out of reader UI', () => {
   // CRC-10: the legacy roster_status board summary is retired. The board carries only the
   // canonical roster_authority, which here describes 1 active arm.
   const board = makeBoard({
     cardsByStatus: { Available: [populatedBoard.groups[0].pitchers[0]] },
   })
   assert.ok(!('roster_status' in board))
-  // The banner reflects the AUTHORITY (1 active arm).
+  // The authority remains available to the view model without becoming routine UI chrome.
   assert.equal(view.getRosterAuthorityView(board.roster_authority).bullpenArms, 1)
   const html = render(board)
   assert.ok(!htmlIncludes(html, '999'))
-  assert.ok(htmlIncludes(html, 'Bullpen Arms'))
+  assert.equal(htmlIncludes(html, 'Bullpen Arms'), false)
+  assert.equal(htmlIncludes(html, 'Roster Status Coverage'), false)
 })
 
 test('withheld roster readiness does not render zero substituted counts', () => {
@@ -464,8 +458,8 @@ test('withheld roster readiness does not render zero substituted counts', () => 
   assert.equal(auth.countsWithheld, true)
   assert.equal(auth.bullpenArms, null)
   assert.equal(totals.total, null)
-  assert.ok(htmlIncludes(html, 'Current usable bullpen depth withheld'))
-  assert.ok(htmlIncludes(html, 'Withheld'))
+  assert.ok(htmlIncludes(html, 'Roster context is withheld'))
+  assert.ok(htmlIncludes(html, 'withheld'))
   assert.ok(!htmlIncludes(html, 'Bullpen Arms 0'))
 })
 

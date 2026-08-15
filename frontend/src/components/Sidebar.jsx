@@ -1,67 +1,8 @@
-import { DATA_THROUGH_LABEL, LAST_CHECKED_LABEL, LAST_DATA_UPDATE_LABEL } from '../utils/bullpenConcepts'
 import { useEffect, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
-import { useFetch } from '../hooks/useFetch'
-import { getBullpenDashboard, getSyncStatus } from '../utils/api'
-import { getSyncStatusView } from './dashboard/syncStatusView'
 import { PRIMARY_NAV, SUPPORTING_NAV, isNavDestinationActive } from '../utils/navigation'
 
 const PRIMARY_NAVIGATION_ID = 'primary-navigation'
-
-export function sidebarFreshness(syncStatus, loading, error, freshnessAuthority) {
-  if (loading && !syncStatus) {
-    return {
-      lastChecked: 'Loading',
-      lastDataUpdate: 'Loading',
-      dataThrough: 'Loading',
-    }
-  }
-
-  if (error && !syncStatus) {
-    return {
-      lastChecked: 'Unavailable',
-      lastDataUpdate: 'Unavailable',
-      dataThrough: 'Unavailable',
-    }
-  }
-
-  const view = getSyncStatusView(syncStatus, { freshnessAuthority })
-  return {
-    lastChecked: view.lastCheckedValue || 'Unavailable',
-    lastDataUpdate: view.lastDataUpdateValue || (
-      view.syncLabel === 'No data loaded' ? 'No data loaded' : 'Unavailable'
-    ),
-    dataThrough: view.dataValue || 'Unavailable',
-  }
-}
-
-function SidebarFreshnessItem({ label, value }) {
-  return (
-    <div>
-      <div className="font-mono text-[9px] uppercase tracking-widest text-chalk600">
-        {label}
-      </div>
-      <div className="mt-1 font-mono text-[11px] leading-tight text-chalk200">
-        {value}
-      </div>
-    </div>
-  )
-}
-
-export function SidebarDataFreshnessCard({ freshness }) {
-  return (
-    <div className="rounded-lg border border-dirt/80 bg-field/45 p-3">
-      <div className="mb-3 font-mono text-[9px] uppercase tracking-widest text-amber/80">
-        Data Freshness
-      </div>
-      <div className="space-y-3">
-        <SidebarFreshnessItem label={LAST_CHECKED_LABEL} value={freshness.lastChecked} />
-        <SidebarFreshnessItem label={LAST_DATA_UPDATE_LABEL} value={freshness.lastDataUpdate} />
-        <SidebarFreshnessItem label={DATA_THROUGH_LABEL} value={freshness.dataThrough} />
-      </div>
-    </div>
-  )
-}
 
 function NavDestination({ item, location, onNavigate }) {
   const active = isNavDestinationActive(item, location)
@@ -83,14 +24,6 @@ export default function Sidebar() {
   // state is irrelevant (the hamburger is hidden and `lg:flex` forces it open).
   const [open, setOpen] = useState(false)
   const location = useLocation()
-  const dashboard = useFetch(getBullpenDashboard)
-  const syncStatus = useFetch(getSyncStatus)
-  const freshness = sidebarFreshness(
-    syncStatus.data,
-    syncStatus.loading,
-    syncStatus.error,
-    dashboard.data?.freshness || null,
-  )
 
   // Close the mobile menu whenever the route changes so browser back/forward,
   // deep links, and in-app navigation never leave it stuck open.
@@ -161,12 +94,6 @@ export default function Sidebar() {
         </div>
       </nav>
 
-      {/* Footer — follows the nav's mobile visibility, always shown on lg+ */}
-      <div className={`${open ? 'block' : 'hidden'} lg:block mt-auto px-4 py-4 border-t border-dirt`}>
-        <div className="space-y-3">
-          <SidebarDataFreshnessCard freshness={freshness} />
-        </div>
-      </div>
     </aside>
   )
 }

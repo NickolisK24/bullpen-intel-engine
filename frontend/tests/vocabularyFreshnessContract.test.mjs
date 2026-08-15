@@ -332,7 +332,7 @@ test('Data Status never borrows a value from another family', async () => {
   assert.ok(source.includes('DATA_STATUS_LABELS'))
 })
 
-test('every rendered Read Confidence value is named as Read Confidence', async () => {
+test('normal Read Confidence stays quiet in game context', async () => {
   // Rendered, not grepped: a string count cannot tell whether the value that
   // reached the reader carried its field name. Both components below shipped a
   // bare value — one in a metadata strip, one as a parenthetical after a role.
@@ -359,11 +359,6 @@ test('every rendered Read Confidence value is named as Read Confidence', async (
     }),
   )
 
-  // The value is present, and never present without its field name.
-  assert.ok(html.includes('High'))
-  assert.ok(html.includes(READ_CONFIDENCE_FIELD_LABEL))
-  assert.ok(
-    html.includes(`${READ_CONFIDENCE_FIELD_LABEL}: High`),
-    'a Read Confidence value reached the reader without its field label',
-  )
+  assert.equal(html.includes('High'), false)
+  assert.equal(html.includes(READ_CONFIDENCE_FIELD_LABEL), false)
 })

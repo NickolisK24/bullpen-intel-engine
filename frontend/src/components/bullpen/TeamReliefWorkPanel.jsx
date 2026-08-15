@@ -22,9 +22,13 @@ function Sentence({ children }) {
 // The server-authored currency sentence stays visible verbatim, but as a
 // quiet metadata line instead of its own bordered panel, so it supports the
 // workload sections below it without competing at equal visual weight.
-function DataCurrency({ payload }) {
+function DataCurrency({ payload, hideRoutine = false }) {
+  const freshness = payload?.freshness || {}
   const label = textValue(payload?.freshness?.label)
   if (!label) return null
+  const state = String(freshness.freshness_state || freshness.state || '').trim().toLowerCase()
+  const exceptional = freshness.is_current === false || freshness.is_stale === true || freshness.fail_closed === true || (state && state !== 'current')
+  if (hideRoutine && !exceptional) return null
 
   return (
     <p className="text-[11px] leading-snug text-chalk500">
@@ -308,6 +312,7 @@ export default function TeamReliefWorkPanel({
   loading: loadingOverride,
   error: errorOverride,
   rosterContextLimited = false,
+  hideRoutineFreshness = false,
 }) {
   const fetched = useFetch(
     () => (payload !== undefined || !isFilled(teamId)
@@ -342,7 +347,7 @@ export default function TeamReliefWorkPanel({
   return (
     <PanelShell>
       <ScopeSentence payload={data} rosterContextLimited={rosterContextLimited} />
-      <DataCurrency payload={data} />
+      <DataCurrency payload={data} hideRoutine={hideRoutineFreshness} />
       <ReliefWorkWindows windows={data?.windows} />
       <ReliefWorkByDate
         groups={data?.relief_by_date}
