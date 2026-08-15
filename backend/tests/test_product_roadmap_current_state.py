@@ -44,9 +44,9 @@ ROADMAP_PATH = (
     REPO_ROOT / 'docs' / 'canonical' / '05_PRODUCT_ROADMAP_DECISION_LEDGER.md'
 )
 
-EXPECTED_VERSION = '4.0'
-EXPECTED_EFFECTIVE_DATE = 'August 14, 2026'
-EXPECTED_MAIN = 'b2f0e90718321857f3f631cda3c81c1175af85de'
+EXPECTED_VERSION = '4.1'
+EXPECTED_EFFECTIVE_DATE = 'August 15, 2026'
+EXPECTED_MAIN = '893d216bdf8d21654fad26f9726e9c4c29a94b0c'
 
 # The gated generated-content publication commit and the scheduled run that
 # produced it. Version 3.9 asserted no such commit existed; that was true when
@@ -157,7 +157,7 @@ def _next_approved_work_order(text):
     return [package for _, package in packages]
 
 
-def test_roadmap_declares_version_4_0():
+def test_roadmap_declares_version_4_1():
     text = _roadmap_text()
 
     assert f'| Version | {EXPECTED_VERSION} |' in text
@@ -166,18 +166,18 @@ def test_roadmap_declares_version_4_0():
     assert 'VERSION 3.9' not in text
 
 
-def test_effective_date_is_august_14_2026():
+def test_effective_date_is_august_15_2026():
     text = _roadmap_text()
 
     assert f'| Effective date | {EXPECTED_EFFECTIVE_DATE} |' in text
     assert f'Effective {EXPECTED_EFFECTIVE_DATE}' in text
 
 
-def test_repository_basis_is_merged_main_with_no_in_flight_branch():
+def test_repository_basis_is_current_main_with_the_scoped_in_flight_branch():
     text = _roadmap_text()
 
     assert EXPECTED_MAIN in text
-    assert '| In-flight branch | None |' in text
+    assert '| In-flight branch | `backend/league-team-state-listing` |' in text
 
     # A superseded baseline must not still be claimed as current. The prior
     # basis may be named as history; it may not sit in the current-state row.
@@ -460,33 +460,21 @@ def test_d052_is_unchanged_in_meaning():
         assert phrase in row, phrase
 
 
-def test_version_3_9_introduces_no_new_decision_ledger_id():
-    """A current-state reconciliation must not invent authority.
-
-    This owns one property: Version 3.9 renumbered nothing and added no decision
-    of its own. It is not a freeze on the ledger — an approved work package may
-    still record a real decision, and CI-003 (#598) did, as D-053. The guard
-    pins the ledger through D-053 as Version 3.9's basis, requires that anything
-    past it is contiguous and explicitly attributed to the package that decided
-    it, and requires DEP-001's expiring acceptance to stay out of the ledger.
-    """
+def test_decision_ledger_is_contiguous_through_d054():
+    """D-054 is additive, contiguous, and attributed to its work package."""
     text = _roadmap_text()
 
     ids = re.findall(r'^\| (D-\d{3}) \|', text, re.MULTILINE)
     assert ids == [f'D-{number:03d}' for number in range(1, len(ids) + 1)], (
         'the Decision Ledger must stay contiguous and never renumber'
     )
-    assert 'D-053' in ids
+    assert ids[-1] == 'D-054'
 
-    assert 'Decision Ledger through D-053' in text
-    assert 'adds no Decision Ledger ID' in text
-    assert (
-        'The current-state reconciliation does not create a new durable '
-        'semantic or authority decision.'
-    ) in text
+    assert 'Decision Ledger through D-054' in text
 
     # D-053 still names the package that decided it.
     assert 'D-053, added by CI-003 (#598)' in text
+    assert 'D-054, added by UX-2B' in text
 
     # A decision designed to expire is deliberately not a durable authority ID.
     assert 'DEP-001 (#601) created no Decision Ledger ID.' in text
@@ -518,36 +506,27 @@ def test_completion_log_records_the_closed_packages_with_evidence():
     assert ACCEPTANCE_EXPIRY in joined
 
 
-def test_revision_history_records_the_version_4_0_entry():
-    """The current edition names what it reconciled and what it did not move."""
+def test_revision_history_records_the_version_4_1_entry():
+    """The current edition names D-054 and preserves prior authority."""
     text = _roadmap_text()
     rows = [
         line for line in text.splitlines()
         if line.startswith(f'| {EXPECTED_VERSION} | {EXPECTED_EFFECTIVE_DATE} |')
     ]
-    assert len(rows) == 1, 'exactly one Version 4.0 revision-history row'
+    assert len(rows) == 1, 'exactly one Version 4.1 revision-history row'
     entry = rows[0]
 
     assert 'Nickolis Kacludis' in entry
     for claimed in (
-        'b2f0e90',
-        CI_003_PUBLICATION_COMMIT,
-        CI_003_PUBLICATION_RUN,
-        'D-013',
-        'D-053',
-        'Amended',
-        CI_003_SNAPSHOT,
-        CI_003_LIVE_ROUTE,
-        'complete and production-verified',
+        'D-054',
+        'UX-2B',
+        'read-only',
+        '30-club',
+        'one current trusted Dashboard snapshot',
+        'represented + withheld = expected = 30',
+        'D-001 through D-053 unchanged',
     ):
         assert claimed in entry, claimed
-
-    # A reconciliation claims no new authority.
-    assert (
-        'No Decision Ledger ID was added, weakened, renumbered, or removed'
-        in entry
-    )
-    assert 'D-051 and D-052 stand unchanged' in entry
 
 
 def test_revision_history_records_the_version_3_9_entry():

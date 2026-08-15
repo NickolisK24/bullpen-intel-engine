@@ -14,6 +14,7 @@ from services.availability_reference_date import (
     parse_reference_date,
     product_current_date,
 )
+from services.snapshot_read_guard import read_snapshot_first
 from utils.db import db
 from utils.time import utc_now_naive
 
@@ -778,22 +779,36 @@ def build_bullpen_dashboard_snapshot_v2(
     return result
 
 
+def _latest_dashboard_snapshot_query(snapshot_type):
+    return (
+        DashboardSnapshot.query
+        .filter_by(
+            snapshot_type=snapshot_type,
+            status=SNAPSHOT_STATUS_READY,
+            is_published=True,
+            payload_version=DASHBOARD_PAYLOAD_VERSION,
+        )
+        .order_by(
+            DashboardSnapshot.snapshot_generated_at.desc(),
+            DashboardSnapshot.id.desc(),
+        )
+    )
+
+
+def _latest_dashboard_snapshot_record_query(snapshot_type):
+    return (
+        DashboardSnapshot.query
+        .filter_by(snapshot_type=snapshot_type)
+        .order_by(
+            DashboardSnapshot.snapshot_generated_at.desc(),
+            DashboardSnapshot.id.desc(),
+        )
+    )
+
+
 def get_latest_dashboard_snapshot(snapshot_type=SNAPSHOT_TYPE_BULLPEN_DASHBOARD):
     try:
-        return (
-            DashboardSnapshot.query
-            .filter_by(
-                snapshot_type=snapshot_type,
-                status=SNAPSHOT_STATUS_READY,
-                is_published=True,
-                payload_version=DASHBOARD_PAYLOAD_VERSION,
-            )
-            .order_by(
-                DashboardSnapshot.snapshot_generated_at.desc(),
-                DashboardSnapshot.id.desc(),
-            )
-            .first()
-        )
+        return _latest_dashboard_snapshot_query(snapshot_type).first()
     except SQLAlchemyError as exc:
         db.session.rollback()
         logger.warning('Could not read dashboard snapshot: %s', exc)
@@ -802,19 +817,35 @@ def get_latest_dashboard_snapshot(snapshot_type=SNAPSHOT_TYPE_BULLPEN_DASHBOARD)
 
 def get_latest_dashboard_snapshot_record(snapshot_type=SNAPSHOT_TYPE_BULLPEN_DASHBOARD):
     try:
-        return (
-            DashboardSnapshot.query
-            .filter_by(snapshot_type=snapshot_type)
-            .order_by(
-                DashboardSnapshot.snapshot_generated_at.desc(),
-                DashboardSnapshot.id.desc(),
-            )
-            .first()
-        )
+        return _latest_dashboard_snapshot_record_query(snapshot_type).first()
     except SQLAlchemyError as exc:
         db.session.rollback()
         logger.warning('Could not read dashboard snapshot record: %s', exc)
         return None
+
+
+def get_latest_dashboard_snapshot_guarded(
+    snapshot_type=SNAPSHOT_TYPE_BULLPEN_DASHBOARD,
+):
+    """Current published snapshot read that distinguishes DB failure from miss."""
+    return read_snapshot_first(
+        _latest_dashboard_snapshot_query(snapshot_type),
+        snapshot_type=snapshot_type,
+        reference_date='current_publication',
+        snapshot_version=DASHBOARD_PAYLOAD_VERSION,
+    )
+
+
+def get_latest_dashboard_snapshot_record_guarded(
+    snapshot_type=SNAPSHOT_TYPE_BULLPEN_DASHBOARD,
+):
+    """Latest snapshot record read that distinguishes DB failure from miss."""
+    return read_snapshot_first(
+        _latest_dashboard_snapshot_record_query(snapshot_type),
+        snapshot_type=snapshot_type,
+        reference_date='latest_record',
+        snapshot_version=DASHBOARD_PAYLOAD_VERSION,
+    )
 
 
 def get_latest_dashboard_snapshot_before(

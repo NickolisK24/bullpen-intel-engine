@@ -307,12 +307,12 @@ INCIDENT_CANONICAL_MODULE_DIGESTS = {
         '351eaccc43d28b773bd213753a84f895082d547204893a7fe33ff337d476c9b2',
 }
 
-# This package deliberately modified ONE canonical module: it added a read-only
-# membership helper to the completeness service so the audit could classify the
-# exact games behind `unresolved_final_games` instead of inventing a second
-# definition. Recording it here keeps Question 3 honest — a module that differs
-# from the incident SHA because THIS package changed it is a different fact
-# from one that drifted in production, and the two must not be conflated.
+# Later governed packages deliberately modified the canonical modules recorded
+# below. This is current package accounting, not a rewrite of incident evidence:
+# INCIDENT_CANONICAL_MODULE_DIGESTS remains the immutable Aug. 3 tree. Recording
+# each approved post-incident digest keeps Question 3 honest — a module that
+# differs because a named governed package changed it is a different fact from
+# unexplained production drift, and the two must not be conflated.
 PACKAGE_MODIFIED_MODULES = {
     'services/game_ingestion_completeness.py': {
         'digest_after':
@@ -329,6 +329,21 @@ PACKAGE_MODIFIED_MODULES = {
         # incident must know the gate moved underneath them. Reporting False
         # here would let a corrected gate look like an unchanged one.
         'behaviour_changed': True,
+    },
+    'services/dashboard_snapshot.py': {
+        'digest_after':
+            '016055732b2b557beb3fdce0fc862590f9d487941b339e9bcd47ac30430a1f1e',
+        'change': (
+            'D-054 extracted the existing latest Dashboard snapshot queries '
+            'for reuse and added guarded read entry points that distinguish a '
+            'database-read failure from a legitimate missing snapshot; the '
+            'existing selection filters and order, snapshot_unavailable_reason, '
+            'and snapshot publishability, freshness, version, status, and '
+            'publication-eligibility semantics remain unchanged'
+        ),
+        # D-054 adds infrastructure-error distinction for its new reader. The
+        # existing serving selectors and publication gate keep their behavior.
+        'behaviour_changed': False,
     },
 }
 

@@ -1250,7 +1250,10 @@ def test_existing_public_routes_behavior_freeze(monkeypatch):
     moved = freeze_policy.protected_hits(
         changed,
         exact=freeze_policy.FROZEN_PUBLIC_ROUTE_PATHS,
-        approved=approved_preview_evidence_selection,
+        approved=(
+            approved_preview_evidence_selection
+            + freeze_policy.D054_LEAGUE_TEAM_STATE_LISTING_PATHS
+        ),
     )
     assert moved == [], (
         f'frozen public route surfaces changed: {moved}. Changing reader-facing '

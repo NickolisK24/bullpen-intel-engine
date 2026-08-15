@@ -234,7 +234,7 @@ def test_comparison_carries_each_side_team_state_without_combining_them():
 
 VOCABULARY_MODULE = os.path.join(
     'backend', 'services', 'team_state_public_vocabulary.py',
-)
+).replace(os.sep, '/')
 
 # Every internal status that has a public Team State. A production module other
 # than the authority that names one of these next to a canonical public label is

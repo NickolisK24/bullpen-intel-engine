@@ -8,15 +8,15 @@ Condensed Canonical Edition · Visual Audit Integrated
 
 One active objective. One canonical roadmap. Every durable decision recorded.
 
-VERSION 4.0  ·  DOCUMENT-AUTHORITY CURRENT-STATE EDITION
+VERSION 4.1  ·  GOVERNED LEAGUE TEAM STATE LISTING DECISION
 
 Owner: Nickolis Kacludis
 
-Effective August 14, 2026
+Effective August 15, 2026
 
 # Contents
 
-This edition keeps the Product Roadmap & Decision Ledger as the sole canonical execution authority and integrates only the important, non-duplicative findings from the August 5 visual audit.
+This edition keeps the Product Roadmap & Decision Ledger as the sole canonical execution authority and records the governed league Team State listing decision without altering prior authority decisions.
 
 01  Document Control
 
@@ -50,17 +50,17 @@ This edition keeps the Product Roadmap & Decision Ledger as the sole canonical e
 | --- | --- |
 | Document | BaseballOS Product Roadmap and Decision Ledger |
 | Status | Canonical - current platform state, priority, sequence, decision, risk, and completion authority |
-| Version | 4.0 |
-| Effective date | August 14, 2026 |
+| Version | 4.1 |
+| Effective date | August 15, 2026 |
 | Owner | Nickolis Kacludis |
-| Repository basis | Production/main: NickolisK24/bullpen-intel-engine main at b2f0e90718321857f3f631cda3c81c1175af85de after PR #659. No in-flight implementation branch. |
-| Decision basis | Decision Ledger through D-053; Version 4.0 reconciles current execution state and records the D-013 scope amendment required by D-053, without adding, weakening, or renumbering a durable authority decision |
+| Repository basis | Production/main: NickolisK24/bullpen-intel-engine main at 893d216bdf8d21654fad26f9726e9c4c29a94b0c after PR #665. UX-2B implementation branch: `backend/league-team-state-listing`. |
+| Decision basis | Decision Ledger through D-054; Version 4.1 adds the governed read-only league Team State listing authority while preserving D-001 through D-053 unchanged |
 | Audit basis | Production closeout for #595, #591, #600, #594, and VOC-001 (#638); DEP-001 (#601) complete and verified on main by CI run 31729458591; CI-003 (#598) gated publication commit `2e83fa0` on main from scheduled run 31794183367; H-5 through H-12 documentation and public-surface closeouts through PR #659 |
-| Supersedes | Version 3.9 current-state wording while preserving all durable prior decisions and completion evidence |
+| Supersedes | Version 4.0 current-state wording while preserving all durable prior decisions and completion evidence |
 | Update rule | Update after a priority change, material merge, phase exit, production incident, authority decision, risk change, or false current-state statement |
 | Review cadence | Weekly founder review; immediate update after a material production or product decision |
 
-| INTEGRATION RULE | Current-state reconciliation only. VOC-001 (#638) and DEP-001 (#601) remain complete, and **CI-003 (#598) is now complete**: scheduled run 31794183367 produced gated commit `2e83fa0`, its Vercel deployment succeeded, and read-only verification of the live routed page `/team/ATH` served trusted snapshot 411, sync run 721, and data through 2026-08-13. Issue #598 is closed as completed with all six acceptance criteria met. Version 3.9 recorded that no such commit existed and the first draft of this edition recorded the deployment half as outstanding; both statements were true when written and are false now, which is what this edition reconciles. Recording completed evidence adjudicates nothing: the closeout requirement stood exactly as written and was met. The active objective advances to the next already-approved item, permanent daily-sync work reduction. This edition adds no Decision Ledger ID and changes no authority, publication, or write posture; it records the D-013 scope amendment D-053 already required in practice, and introduces a decision status vocabulary that describes existing entries without altering any of them. |
+| INTEGRATION RULE | D-054 permits one new read-only public listing of already-published Team State artifacts pinned to one current trusted Dashboard snapshot. The static 30-club registry owns denominator integrity and fallback identity only; it computes no baseball meaning. D-054 adds no Team State label, ranking, prediction, selection, write authority, acquisition authority, or publication authority. D-001 through D-053 remain unchanged, including D-051, D-052, and D-053. |
 | --- | --- |
 
 # Part I - Executive State
@@ -78,8 +78,8 @@ The Public Credibility Pass is closed. Raw public scores are contained, governed
 
 | Area | Current state | Meaning |
 | --- | --- | --- |
-| Repository main | b2f0e90718321857f3f631cda3c81c1175af85de | Current baseline after PR #659. The August 13 baseline was e3ad8bd after PR #647, verified by CI run 31729458591. |
-| In-flight branch | None | No open implementation branch carries product state. |
+| Repository main | 893d216bdf8d21654fad26f9726e9c4c29a94b0c | Current baseline after PR #665. The Version 4.0 baseline was b2f0e90 after PR #659. |
+| In-flight branch | `backend/league-team-state-listing` | UX-2B implementation only; no commit, push, pull request, or merge before review. |
 | Daily game-driven lane | Shadow | Observation only; no automated baseball-data writes. |
 | Postgame game-driven lane | Shadow | Exact-cycle observation after the legacy postgame writer. |
 | Backfill lane | Off | No automatic backfill authority. |
@@ -344,9 +344,11 @@ Never backlog: predictions, betting/odds, game-outcome projections, injury predi
 
 # Part VI - Decision Ledger
 
-The current-state reconciliation does not create a new durable semantic or authority decision. D-001 through D-053 remain in force; D-050 through D-053 are included below because they govern the current operating and authority posture.
+Version 4.1 adds D-054 as a durable read-only publication-serving decision. D-001 through D-053 remain in force and unchanged; D-050 through D-054 are included below because they govern the current operating and authority posture.
 
 D-053, added by CI-003 (#598), governs how generated content may be published to the repository. It adds no baseball semantics and changes neither D-051 nor D-052.
+
+D-054, added by UX-2B, governs how an all-club reader may list already-published Team State without recalculation, ranking, or denominator drift. It changes no prior Team State, snapshot, artifact, or publication authority.
 
 DEP-001 (#601) created no Decision Ledger ID. Its time-boxed acceptance of the residual React Router advisories is a dated, revocable security decision recorded in `docs/decisions/2026-08-13-react-router-v7-security-defer.md` and machine-enforced by `.github/dependency-audit-accepted.json` — deliberately not a durable authority decision, because it is designed to expire.
 
@@ -365,7 +367,7 @@ The ledger is history and current policy at once, and until Version 4.0 the two 
 
 Applying the vocabulary changes no decision. A row moves to Amended or Superseded only where a later decision already did that work; nothing here narrows a decision by relabelling it, and no ID is renumbered or removed.
 
-D-013 is the one row this edition amends, and D-053 is what amended it. No other status changed.
+Version 4.0 amended D-013 through D-053. Version 4.1 changes no prior decision status.
 
 | ID | Date | Decision | Status |
 | --- | --- | --- | --- |
@@ -422,6 +424,7 @@ D-013 is the one row this edition amends, and D-053 is what amended it. No other
 | D-051 | Aug 8, 2026 | Acquisition may advance independently, but public Team Board, Compare, and Tonight authority advances only through trusted publication. Production full-daily execution is scheduled and first-attempt only; generic manual daily execution, local production daily invocation, the legacy admin daily writer route, and GitHub reruns are non-authoritative/refused. | Standing trust boundary |
 | D-052 | Aug 10, 2026 | Phase 1A Game-Driven Ingestion Authority Qualification is complete after OPS-002 scheduled reliability proof, OPS-001 scheduled signal-separation proof, read-only candidate audit run 31393177954, and no-op write qualification PASS run 31395294655 for game 823924. The PASS proves safe governed entry into the write-capable path with zero baseball-data mutation and exact lane-ledger movement. It grants no automated/scheduled write authority, no game-driven publication authority, no backfill authority, and no legacy-writer retirement. | Permanent phase-exit decision |
 | D-053 | Aug 12, 2026 | Automated generated content may reach `main` only through a self-gating publication job: generate from trusted publication, prove delivery integrity, run the canonical frontend tests and production build against the exact generated tree, record that tree's identity, commit under `BaseballOS Automation <baseballoshq@gmail.com>` with run provenance, prove the commit's tree equals the validated tree, and fast-forward push. Repository write authority is scoped to that one job. The guarantee is tree-exact, not commit-SHA-exact. No baseball semantics move into CI; D-051 and D-052 are unchanged. | Standing publication boundary; production-exercised and production-verified August 14, 2026: scheduled run 31794183367 produced gated commit `2e83fa0` under the machine identity, deployment succeeded, and read-only verification of the live routed page served trusted snapshot 411. Amends D-013 by scoping it to human-authored engineering work. |
+| D-054 | Aug 15, 2026 | The league Dashboard may serve a neutral listing of already-published Team State artifacts pinned to one current trusted Dashboard snapshot. One immutable 30-club registry owns denominator integrity and fallback identity only; live directory identity may improve labels but never membership. The listing computes no Team State, derives no state from counts, introduces no ranking or new public state vocabulary, and must preserve `represented + withheld = expected = 30` with Withheld remaining a publication state rather than a Team State. | Standing read-only publication-serving boundary |
 
 ## 16. Open Decisions
 
@@ -552,7 +555,7 @@ A third-party social-platform unfurl is not part of this recorded closeout. The 
 - Repository main b2f0e90718321857f3f631cda3c81c1175af85de after PR #659. The August 13 baseline was e3ad8bd after PR #647, with CI run 31729458591 green on that commit.
 - Gated generated-content publication commit `2e83fa0` on main, from scheduled run 31794183367 (attempt 1), Validated-Tree `1c9d7dc`, Snapshot-ID 411, data through August 13, 2026.
 - Git authorship on main at this basis: every engineering commit authored by Nickolis Kacludis, plus the one `BaseballOS Automation` publication commit above.
-- Decision Ledger through D-053.
+- Decision Ledger through D-054.
 - GitHub issue state through August 14, 2026: #595, #591, #600, #594, #638, #601, and #598 closed as completed; #645, #597, #596, and the #589 tracker open.
 - CI-003 routed-production verification: read-only `https://baseballos.app/team/ATH`, serving `baseballos:snapshot-id="411"`, `baseballos:sync-run-id="721"`, `baseballos:data-through="2026-08-13"`, `baseballos:authority-contract="trusted_dashboard_publication_v1"`, Team State `Vulnerable`.
 - Production evidence retained for #590, #592, #593, #595, #591, #600, #594, #638, OPS-002, and Phase 1A authority qualification.
@@ -562,7 +565,7 @@ A third-party social-platform unfurl is not part of this recorded closeout. The 
 
 ## Repository basis
 
-Current main: b2f0e90718321857f3f631cda3c81c1175af85de after PR #659. No open implementation branch carries product state. Phase 1A remains closed under D-052 and Phase 1B closed August 12, 2026.
+Current main: 893d216bdf8d21654fad26f9726e9c4c29a94b0c after PR #665. UX-2B implementation is confined to `backend/league-team-state-listing` until review. Phase 1A remains closed under D-052 and Phase 1B closed August 12, 2026.
 
 SEC-001 (#595), FE-001 (#591), UX-002 (#600), DIST-003 (#594), VOC-001 (#638), and DEP-001 (#601) are all closed after verification.
 
@@ -597,3 +600,4 @@ Running alongside this order, and not gated by it: complete or re-review the Rea
 | 3.8 | August 11, 2026 | Nickolis Kacludis | Recorded the DIST-003 (#594) production closeout: authorized scheduled run 31483859116, export job 93760656523, 30 of 30 dated previews with 0 withheld, data through 2026-08-10, trusted snapshot 393, generated-at 2026-08-11T11:15:00+00:00, production `/team/COL` dated-read proof and `/team/INVALID` fail-closed proof, issue closed August 11. Recorded PR #637 "Serve dated team preview pages at public team routes" as the delivery-path correction that made those routes serve the dated previews. Moved the active objective to VOC-001 (#638), whose repository implementation — including Product Experience Standard v1.4 and Bullpen Intelligence Standard v1.3 — is in PR #639, which is open and unmerged and carries no production proof; #638 remains open. The Public Credibility Pass and Phase 1B remain active and exit only after PR #639 merges, deployment completes, read-only production vocabulary smoke passes, and #638 closes; repository CI green is necessary and not sufficient. The downstream sequence is preserved exactly: #598, then #601, then permanent daily-sync work reduction, then Portable Intelligence, then M-001 and visible evidence, then Daily Habit and consequence. No durable authority decision was added, weakened, or renumbered, D-051 and D-052 stand unchanged, and no new Decision Ledger ID was created. |
 | 3.9 | August 13, 2026 | Nickolis Kacludis | Reconciled current state through PR #647/main e3ad8bd, verified by CI run 31729458591. Recorded VOC-001 (#638) complete and production-verified August 12, 2026 from trusted snapshot 398, which exits the Public Credibility Pass and closes Phase 1B. Recorded DEP-001 (#601) complete across PRs #643, #644, #646, and #647: backend runtime dependency advisories cleared with CORS behaviour pinned before the upgrade and re-verified after it, `pytest` removed from the production runtime in favour of `backend/requirements-dev.txt`, unused frontend packages removed rather than overridden, `react-router-dom` patched to 6.30.4, and a standing read-only `dependency-audit` CI job added that refuses new, expired, stale, mismatched, duplicated, or under-documented production dependency risk without creating any auto-upgrade path. Recorded the three residual React Router advisories as a time-boxed acceptance expiring 2026-11-13 under tracking issue #645, bounded by a validated-redirect control and its regression tests, and added R-25 for dependency drift and acceptance permanence. Moved the active objective to CI-003 (#598), the next package in the unchanged approved order, and recorded that its GitHub issue is closed while the production-proof evidence this Roadmap requires is still outstanding — without adjudicating, weakening, or advancing that package. No durable authority decision was added, weakened, or renumbered; D-051, D-052, and D-053 stand unchanged; no new Decision Ledger ID was created; and the shadow/backfill/legacy-writer authority posture is untouched. |
 | 4.0 | August 14, 2026 | Nickolis Kacludis | Reconciled current state through PR #659/main b2f0e90 and closed the roadmap half of the H-12 document-authority audit. Recorded CI-003 (#598) **complete and production-verified**, which Version 3.9 could not: scheduled run 31794183367, a `schedule` event on attempt 1, produced gated commit `2e83fa0` on main under `BaseballOS Automation <baseballoshq@gmail.com>` with Source-SHA `71e0b89`, Validated-Tree and committed tree both `1c9d7dc`, trusted snapshot 411, sync run 721, and data through August 13; the Vercel deployment on that commit succeeded; and read-only verification of the live routed page `https://baseballos.app/team/ATH` served snapshot 411, sync run 721, data through 2026-08-13, authority contract `trusted_dashboard_publication_v1`, and Team State `Vulnerable` in metadata, unfurl, and body. Issue #598 is closed as completed with all six acceptance criteria met. Version 3.9 said no such commit existed and an earlier draft of this edition said the deployment half was outstanding; both were true when written and false by the time this edition was finalized, which is exactly the staleness this document's update rule exists to catch. Advanced the active objective to the next already-approved item, permanent daily-sync work reduction — a sequencing consequence of a package closing, not a new priority, with D-051, legacy writer authority, daily/postgame shadow, backfill off, and the unapproved game-driven write and publication authority all preserved. Retained the failed-closed first scheduled attempt 31693516516 and the PR #642 repair in the Completion Log as historical progression, distinguished from current status. Recorded the H-1 and H-5 through H-11 closeouts across PRs #650 through #659 in the Completion Log, and the H-12 reconciliation itself. Introduced a Decision status vocabulary — Permanent, Standing, Adopted, Amended, Superseded, Historical — so a narrowed decision no longer reads identically to one still in force, and applied it only where a later decision had already done that work. Amended D-013 accordingly: sole human authorship is scoped to engineering work, the governed generated-content publication job is its single approved machine exception under D-053, that identity is a publisher rather than a second author, and the no-AI-attribution rule is unchanged and absolute. Updated D-053's status from "not production-verified" to production-exercised on August 14. No Decision Ledger ID was added, weakened, renumbered, or removed; D-051 and D-052 stand unchanged; the approved sequence is preserved exactly; and the shadow, backfill, legacy-writer, and publication authority posture is untouched. |
+| 4.1 | August 15, 2026 | Nickolis Kacludis | Added D-054 for UX-2B: a read-only, non-ranking 30-club Team State listing pinned to one current trusted Dashboard snapshot, with one immutable registry owning denominator integrity and fallback identity, existing immutable Share Artifacts owning published state, and the governed public Team State projection remaining the sole vocabulary owner. Recorded `represented + withheld = expected = 30`, kept Withheld outside Team State, rejected Pitcher-derived membership, live MLB reader calls, cross-snapshot artifact selection, frontend derivation, and per-team fan-out, and left D-001 through D-053 unchanged. |

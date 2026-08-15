@@ -179,6 +179,23 @@ PUBLIC_INTEGRITY_RESIDUAL_PATHS = (
     'backend/services/team_state_card_metrics.py',
 )
 
+# D-054, August 15 2026. The governed league Team State listing adds one public
+# route, guarded snapshot reads, and snapshot-pinned reuse of the existing board
+# freshness serializer. The decision authority is recorded in
+# docs/decisions/2026-08-15-governed-league-team-state-listing.md.
+#
+# This exception is exact-path and decision-linked. In particular,
+# board_freshness.py may accept an explicit snapshot and suppress its runtime
+# overlay only for pinned serialization; default callers, freshness calculations,
+# stale gates, and fail-closed semantics remain unchanged and directly tested.
+# As with the reviewed exceptions above, these entries become inert after merge
+# because the paths no longer differ from origin/main.
+D054_LEAGUE_TEAM_STATE_LISTING_PATHS = (
+    'backend/api/bullpen.py',
+    'backend/services/board_freshness.py',
+    'backend/services/dashboard_snapshot.py',
+)
+
 
 def normalize(path):
     """Repository-relative path with forward slashes and no surrounding space."""

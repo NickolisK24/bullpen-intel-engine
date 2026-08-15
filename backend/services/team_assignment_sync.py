@@ -11,6 +11,7 @@ from collections import Counter, defaultdict
 
 from models.pitcher import Pitcher
 from services.mlb_api import MlbApiFetchError, mlb_client
+from services.mlb_club_directory import MLB_TEAM_IDS
 from services.roster_evidence import (
     CONSUMER_TEAM_ASSIGNMENT,
     ROSTER_TYPES,
@@ -31,12 +32,6 @@ TEAM_ASSIGNMENT_NO_ORGANIZATION = 'NO_ORGANIZATION'
 TEAM_ASSIGNMENT_UNKNOWN = 'UNKNOWN'
 
 SOURCE_PREFIX = 'mlb_stats_api:team_assignment_sync'
-
-MLB_TEAM_IDS = (
-    108, 109, 110, 111, 112, 113, 114, 115, 116, 117,
-    118, 119, 120, 121, 133, 134, 135, 136, 137, 138,
-    139, 140, 141, 142, 143, 144, 145, 146, 147, 158,
-)
 
 ROSTER_PRECEDENCE = (
     ROSTER_TYPE_ACTIVE,

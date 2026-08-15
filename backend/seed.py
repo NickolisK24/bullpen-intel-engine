@@ -18,6 +18,7 @@ from models.prospect import Prospect
 from models.fatigue_score import FatigueScore
 from services.appearance_team_authority import resolve_for_write
 from services.mlb_api import mlb_client
+from services.mlb_club_directory import MLB_TEAM_IDS
 from services.fatigue import calculate_fatigue
 from services.roster_status import STATUS_UNKNOWN, normalize_roster_status_value
 from services.roster_status_sync import sync_roster_statuses
@@ -32,12 +33,8 @@ from utils.time import utc_now_naive
 
 app = create_app()
 
-# All 30 MLB team IDs
-ALL_TEAM_IDS = [
-    108, 109, 110, 111, 112, 113, 114, 115, 116, 117,
-    118, 119, 120, 121, 133, 134, 135, 136, 137, 138,
-    139, 140, 141, 142, 143, 144, 145, 146, 147, 158
-]
+# Backward-compatible seeder name, derived from the D-054 club registry.
+ALL_TEAM_IDS = list(MLB_TEAM_IDS)
 
 # Seasons to pull — 2024 (full) + 2025 (current/upcoming)
 HISTORICAL_SEASONS = [2024, 2025]

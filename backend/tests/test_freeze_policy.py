@@ -232,6 +232,32 @@ def test_approved_paths_are_subtracted():
     ) == []
 
 
+def test_d054_exception_is_exact_decision_linked_and_does_not_unfreeze_paths():
+    approved = freeze_policy.D054_LEAGUE_TEAM_STATE_LISTING_PATHS
+    assert approved == (
+        'backend/api/bullpen.py',
+        'backend/services/board_freshness.py',
+        'backend/services/dashboard_snapshot.py',
+    )
+
+    changed = ['backend/services/board_freshness.py']
+    assert freeze_policy.protected_hits(
+        changed,
+        exact=freeze_policy.FROZEN_LEGACY_WHAT_CHANGED_PATHS,
+    ) == changed
+    assert freeze_policy.protected_hits(
+        changed,
+        exact=freeze_policy.FROZEN_LEGACY_WHAT_CHANGED_PATHS,
+        approved=approved,
+    ) == []
+
+    assert freeze_policy.protected_hits(
+        ['backend/services/team_changes.py'],
+        exact=freeze_policy.FROZEN_LEGACY_WHAT_CHANGED_PATHS,
+        approved=approved,
+    ) == ['backend/services/team_changes.py']
+
+
 def test_no_catalogue_uses_a_bare_directory_as_an_invariant():
     """H-1's success condition, stated as an assertion.
 

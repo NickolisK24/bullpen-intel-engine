@@ -49,7 +49,7 @@ def _board_from_snapshot(snapshot, team_id, *, include_stale=False, freshness=No
         bullpen_environment=deepcopy(team_package.get('bullpen_environment') or {}),
     )
     payload['team_state'] = authority._published_team_state(snapshot, team_id)
-    payload['publication_authority'] = authority._publication_authority(snapshot)
+    payload['publication_authority'] = authority.publication_authority(snapshot)
     payload['served_from'] = 'trusted_dashboard_snapshot'
     return payload
 
@@ -96,7 +96,7 @@ def trusted_team_compare_view():
             include_stale=include_stale,
             freshness=freshness,
         )
-        publication_authority = authority._publication_authority(snapshot)
+        publication_authority = authority.publication_authority(snapshot)
 
     comparison = build_team_comparison(
         board_a,
