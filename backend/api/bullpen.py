@@ -82,6 +82,7 @@ from services.bullpen_population import (
 )
 from services.bullpen_visibility import build_visibility_contract
 from services.game_context import build_landscape, build_team_game_context
+from services.league_state_board import build_league_state_board
 from services.injury_il_context import build_injury_il_context_payload
 from services.intelligence_surface_snapshot import serve_today_lead_story
 from services.tonight_intelligence_snapshot import serve_tonight_cached
@@ -121,6 +122,7 @@ from services.roster_status_audit import with_recent_inactive_roster_audit
 from services.baseline_distribution import build_baseline_payload
 from services.season_era import build_season_era_payload
 from services.team_state_public_vocabulary import (
+    TEAM_STATE_DATA_LIMITED,
     TEAM_STATE_READINESS_UNAVAILABLE,
     public_team_state,
     team_state_not_team_scoped,
@@ -134,6 +136,7 @@ from services.workload_concentration import (
 )
 from services.mlb_api import MlbApiFetchError, mlb_client
 from services import dashboard_snapshot as dashboard_snapshot_service
+from services import public_serving_authority
 from services import sync as sync_service
 from services import sync_metadata
 from services import board_freshness
@@ -3181,6 +3184,61 @@ def get_bullpen_landscape():
             freshness=freshness,
         ),
         canonical_team_state,
+    ))
+
+
+@bullpen_bp.route('/league-board', methods=['GET'])
+def get_league_team_state_board():
+    """Every represented MLB club grouped by its governed public Team State.
+
+    This is the complete reader contract behind the public League Board.  It is
+    deliberately separate from ``/landscape``, whose three small lanes are an
+    orientation sample.  Team State remains backend-owned and fails closed;
+    availability counts are descriptive support and never derive the state.
+    """
+    freshness = _board_freshness_block()
+    reference_date = _public_availability_reference_date(freshness)
+    records = current_availability_records(
+        availability_latest_fatigue_rows(calculated_at_lte=_served_score_cutoff()),
+        reference_date=reference_date,
+    )
+    team_rows = (
+        db.session.query(
+            Pitcher.team_id,
+            Pitcher.team_name,
+            Pitcher.team_abbreviation,
+        )
+        .filter(Pitcher.team_id.isnot(None))
+        .distinct()
+        .all()
+    )
+    teams = [
+        {
+            'team_id': row.team_id,
+            'team_name': row.team_name,
+            'team_abbreviation': row.team_abbreviation,
+        }
+        for row in team_rows
+    ]
+    snapshot = dashboard_snapshot_service.get_latest_valid_dashboard_snapshot()
+
+    def current_published_team_state(team_id):
+        if (
+            freshness.get('is_current') is not True
+            or freshness.get('complete_enough_to_publish') is not True
+        ):
+            return team_state_unavailable(
+                TEAM_STATE_DATA_LIMITED,
+                data_through=freshness.get('data_through'),
+                reason_code='current_league_snapshot_unavailable',
+            )
+        return public_serving_authority._published_team_state(snapshot, team_id)
+
+    return jsonify(build_league_state_board(
+        teams=teams,
+        records=records,
+        team_state_for_team=current_published_team_state,
+        freshness=freshness,
     ))
 
 

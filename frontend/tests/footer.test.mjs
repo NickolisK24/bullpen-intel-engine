@@ -21,7 +21,6 @@ const { default: Footer } = await server.ssrLoadModule('/src/components/layout/F
 
 const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const htmlIncludes = (html, text) => new RegExp(escapeRegExp(text)).test(html)
-const countOccurrences = (html, text) => (html.match(new RegExp(escapeRegExp(text), 'g')) || []).length
 const decodeHtml = (html) => String(html)
   .replace(/&amp;/g, '&')
   .replace(/&#x27;/g, "'")
@@ -35,18 +34,13 @@ const render = (element) => renderToStaticMarkup(
   React.createElement(MemoryRouter, null, element),
 )
 
-test('site footer renders the centered brand card and trust copy', () => {
+test('site footer renders the compact trust statement from the product reference', () => {
   const html = render(React.createElement(Footer))
   const text = visibleText(html)
 
-  assert.ok(text.includes('BaseballOS'))
-  assert.ok(text.includes('Public MLB bullpen intelligence'))
   assert.ok(text.includes('not affiliated with or endorsed by Major League Baseball or its clubs'))
-  assert.ok(text.includes('Data is descriptive and drawn from public sources.'))
-  assert.ok(text.includes('© 2026 BaseballOS — All rights reserved.'))
-  assert.ok(htmlIncludes(html, 'href="mailto:baseballoshq@gmail.com"'))
-  assert.equal(text.includes('@baseballoshq'), false)
-  assert.equal(text.includes('baseballoshq@gmail.com'), false)
+  assert.ok(text.includes('Reads describe observable present conditions drawn from public sources.'))
+  assert.equal(htmlIncludes(html, 'mailto:'), false)
 })
 
 test('site footer links to the learn and trust pages', () => {
@@ -55,7 +49,7 @@ test('site footer links to the learn and trust pages', () => {
 
   for (const [href, label] of [
     ['/about', 'About'],
-    ['/how-to-read', 'How to Read'],
+    ['/how-to-read', 'Start Here'],
     ['/methodology', 'Methodology'],
     ['/trust', 'Data & Trust'],
   ]) {
@@ -68,23 +62,11 @@ test('site footer links to the learn and trust pages', () => {
   }
 })
 
-test('site footer keeps icon-only connect links and shell wiring intact', () => {
+test('site footer stays a compact trust rail and shell wiring remains intact', () => {
   const html = render(React.createElement(Footer))
   const appSource = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8')
-  const text = visibleText(html)
-  assert.equal(text.includes('X: @baseballoshq'), false)
-  assert.equal(text.includes('Instagram: @baseballoshq'), false)
-  assert.equal(text.includes('Email: baseballoshq@gmail.com'), false)
-  assert.ok(htmlIncludes(html, 'href="https://x.com/baseballoshq"'))
-  assert.ok(htmlIncludes(html, 'aria-label="BaseballOS on X"'))
-  assert.ok(htmlIncludes(html, 'href="https://instagram.com/baseballoshq"'))
-  assert.ok(htmlIncludes(html, 'aria-label="BaseballOS on Instagram"'))
-  assert.ok(htmlIncludes(html, 'href="mailto:baseballoshq@gmail.com"'))
-  assert.ok(htmlIncludes(html, 'aria-label="Email BaseballOS"'))
-  assert.equal(countOccurrences(html, '<svg'), 3)
-  assert.equal(htmlIncludes(html, '>X</span>'), false)
-  assert.ok(htmlIncludes(html, 'target="_blank"'))
-  assert.ok(htmlIncludes(html, 'rel="noopener noreferrer"'))
+  assert.equal(htmlIncludes(html, '<svg'), false)
+  assert.equal(htmlIncludes(html, 'target="_blank"'), false)
   assert.ok(appSource.includes("import Footer from './components/layout/Footer'"))
   assert.ok(/<AppRoutes\s*\/>\s*<Footer\s*\/>/.test(appSource))
 })

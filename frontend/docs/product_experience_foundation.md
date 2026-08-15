@@ -1,5 +1,28 @@
 # BaseballOS Product Experience Foundation
 
+## Product reference alignment
+
+The public shell now follows the BaseballOS v2 product reference rather than
+the earlier long-form landing-page sequence:
+
+- `/` is the Daily Edition: dateline, one governed lead, league-state rail,
+  trusted change context, and Tonight preview;
+- `/slate` is the second Today view and carries the complete served pregame
+  observation set without naming an advantage;
+- `/dashboard` is the complete League Board, grouped by backend-owned Fresh,
+  Stretched, and Vulnerable Team State, with unavailable reads separated as a
+  publication-level Withheld group;
+- `/stories`, `/methodology`, and `/trust` use the finite observation,
+  six-stage method, and evidence-status structures from the reference;
+- `/bullpen` retains the governed team, pitcher, and comparison readers and now
+  presents them inside the reference's Bullpens subnavigation.
+
+The League Board reads `GET /api/bullpen/league-board`. That contract accounts
+for every represented club exactly once, joins immutable published Team State
+artifacts to already-classified arm-read counts, and fails closed when the
+served league snapshot is not current and complete. The frontend never derives
+Team State from Clean Option counts or from landscape lane membership.
+
 Frontend-only reference for the shared visual system, the reusable intelligence
 primitives, and the Today edition hierarchy. It records what exists and which
 rules the components enforce; it does not define product policy. The canonical

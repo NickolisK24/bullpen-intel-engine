@@ -56,6 +56,6 @@ export function isNavDestinationActive(item, location = {}) {
     const { view } = readBullpenLocation(location.search || '', '')
     return view === item.bullpenView
   }
-  if (item.to === '/') return pathname === '/'
+  if (item.to === '/') return pathname === '/' || pathname === '/slate'
   return pathname === item.to || pathname.startsWith(`${item.to}/`)
 }

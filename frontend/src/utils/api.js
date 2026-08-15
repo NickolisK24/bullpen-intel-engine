@@ -487,6 +487,10 @@ export const markSlateBriefingPosted = (payload) => request('/slate-briefing/mar
 })
 // Tonight's Bullpen Landscape — league-wide bullpen context (descriptive only).
 export const getBullpenLandscape = () => request('/bullpen/landscape')
+// Complete league reader contract: every represented club appears exactly
+// once under its governed public Team State (or the publication-level withheld
+// group). The browser never derives Team State from availability counts.
+export const getLeagueTeamStateBoard = () => request('/bullpen/league-board')
 // Intelligence Surface — the single league lead story for the homepage.
 export const getTodayIntelligence = (params = {}) => (
   request(`/bullpen/intelligence/today${buildQuery(params)}`)

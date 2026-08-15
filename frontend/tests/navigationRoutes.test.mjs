@@ -79,8 +79,9 @@ test('public homepage and README copy do not imply evidence surfacing', () => {
 })
 
 test('/today redirects to the Today surface and catch-all routes home', () => {
-  assert.equal(routeByPath('/')?.Component?.name, 'Home')
+  assert.equal(routeByPath('/')?.Component?.name, 'DailyEdition')
   assert.equal(routeByPath('/today')?.redirectTo, '/')
+  assert.equal(routeByPath('/slate')?.Component?.name, 'Slate')
   assert.equal(routeByPath('*')?.redirectTo, '/')
 })
 

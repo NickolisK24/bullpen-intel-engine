@@ -3,14 +3,15 @@ import { BrowserRouter, Navigate, Routes, Route } from 'react-router-dom'
 // The public navigation shell (a masthead; the file keeps its historical name).
 import Sidebar from './components/Sidebar'
 import Footer from './components/layout/Footer'
-import Home from './components/home/Home'
-import Stories from './components/stories/Stories'
-import Dashboard from './components/dashboard/Dashboard'
+import DailyEdition from './components/product/DailyEdition'
+import Slate from './components/product/Slate'
+import ProductStories from './components/product/Stories'
+import LeagueBoard from './components/product/LeagueBoard'
 import Bullpen from './components/bullpen/Bullpen'
 import About from './components/about/About'
 import HowToRead from './components/guide/HowToRead'
-import Methodology from './components/methodology/Methodology'
-import DataTrust from './components/trust/DataTrust'
+import ProductMethodology from './components/product/Methodology'
+import ProductDataTrust from './components/product/DataTrust'
 import PrivatePosts from './components/posts/PrivatePosts'
 import SignIn from './components/auth/SignIn'
 import VerifySignIn from './components/auth/VerifySignIn'
@@ -24,15 +25,16 @@ import { SHARE_ARTIFACT_OPERATIONS_PATH } from './utils/shareArtifactOperations'
 import PublicShareArtifactPage from './components/share/PublicShareArtifactPage'
 
 export const APP_ROUTES = [
-  { path: '/', Component: Home },
+  { path: '/', Component: DailyEdition },
   { path: '/today', redirectTo: '/' },
-  { path: '/dashboard', Component: Dashboard },
+  { path: '/slate', Component: Slate },
+  { path: '/dashboard', Component: LeagueBoard },
   { path: '/bullpen', Component: Bullpen },
-  { path: '/stories', Component: Stories },
+  { path: '/stories', Component: ProductStories },
   { path: '/about', Component: About },
   { path: '/how-to-read', Component: HowToRead },
-  { path: '/methodology', Component: Methodology },
-  { path: '/trust', Component: DataTrust },
+  { path: '/methodology', Component: ProductMethodology },
+  { path: '/trust', Component: ProductDataTrust },
   { path: '/signin', Component: SignIn },
   { path: '/auth/verify', Component: VerifySignIn },
   { path: TRAFFIC_REPORTING_PATH, Component: TrafficIntelligenceAdmin },

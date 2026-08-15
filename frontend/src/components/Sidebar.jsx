@@ -15,6 +15,7 @@ import { useFetch } from '../hooks/useFetch'
 import { getBullpenDashboard, getSyncStatus } from '../utils/api'
 import { getSyncStatusView } from './dashboard/syncStatusView'
 import { MASTHEAD_NAV, PRIMARY_NAV, SUPPORTING_NAV, isNavDestinationActive } from '../utils/navigation'
+import { readBullpenLocation } from '../utils/evidenceLinks'
 
 const PRIMARY_NAVIGATION_ID = 'primary-navigation'
 
@@ -143,6 +144,13 @@ export default function Sidebar() {
   // request, not dates, and never render as an ambient fact.
   const hasPublishedDataThrough = Boolean(freshness.dataThrough)
     && !['Loading', 'Unavailable', 'No data loaded'].includes(freshness.dataThrough)
+  const compactDataDate = hasPublishedDataThrough
+    ? String(freshness.dataThrough).replace(/[^0-9]/g, '.').replace(/^\.|\.$/g, '')
+    : null
+  const publicationStatus = dashboard.data?.freshness?.is_current === true ? 'CURRENT' : 'DELAYED'
+  const publicationTone = publicationStatus === 'CURRENT' ? 'text-pine' : 'text-brass'
+  const onTodayLane = location.pathname === '/' || location.pathname === '/slate'
+  const onBullpenLane = location.pathname === '/bullpen'
 
   const wordmark = (
     <Link
@@ -182,9 +190,10 @@ export default function Sidebar() {
           {/* Freshness is ambient: the represented baseball date sits in the
               masthead on every surface, not only where a page repeats it. */}
           {hasPublishedDataThrough && (
-            <span className="hidden font-mono text-[11px] leading-tight text-chalk500 xl:inline">
-              Data through <span className="text-chalk300">{freshness.dataThrough}</span>
-            </span>
+            <div className="hidden border border-line font-mono text-[10px] tracking-[0.1em] xl:flex">
+              <span className="px-2 py-1 text-chalk500">{compactDataDate}</span>
+              <span className={`border-l border-line px-2 py-1 ${publicationTone}`}>{publicationStatus}</span>
+            </div>
           )}
 
           <button
@@ -201,6 +210,30 @@ export default function Sidebar() {
       </div>
 
       <div className="bos-intelligence-rule" aria-hidden="true" />
+
+      {onTodayLane && (
+        <nav aria-label="Today views" className="hidden border-b border-line-quiet md:block">
+          <div className="bos-page flex min-h-[2.15rem] items-center gap-5">
+            <Link to="/" aria-current={location.pathname === '/' ? 'page' : undefined} className={`font-mono text-[10px] uppercase tracking-[0.14em] ${location.pathname === '/' ? 'text-brass' : 'text-chalk500 hover:text-chalk200'}`}>Daily edition</Link>
+            <Link to="/slate" aria-current={location.pathname === '/slate' ? 'page' : undefined} className={`font-mono text-[10px] uppercase tracking-[0.14em] ${location.pathname === '/slate' ? 'text-brass' : 'text-chalk500 hover:text-chalk200'}`}>The slate</Link>
+          </div>
+        </nav>
+      )}
+
+      {onBullpenLane && (
+        <nav aria-label="Bullpen views" className="hidden border-b border-line-quiet md:block">
+          <div className="bos-page flex min-h-[2.15rem] items-center gap-5">
+            {[
+              ['/bullpen', 'Team board', 'board'],
+              ['/bullpen?view=pitchers', 'Pitcher record', 'pitchers'],
+              ['/bullpen?view=compare', 'Compare', 'compare'],
+            ].map(([to, label, view]) => {
+              const active = readBullpenLocation(location.search || '', '').view === view
+              return <Link key={view} to={to} aria-current={active ? 'page' : undefined} className={`font-mono text-[10px] uppercase tracking-[0.14em] ${active ? 'text-brass' : 'text-chalk500 hover:text-chalk200'}`}>{label}</Link>
+            })}
+          </div>
+        </nav>
+      )}
 
       {/* Menu sheet — below lg only. Every destination lives here, including the
           supporting pages the desktop masthead deliberately leaves out. */}
