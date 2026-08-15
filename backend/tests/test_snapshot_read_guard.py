@@ -19,6 +19,7 @@ from tests.db_config import (
 )
 
 from services.snapshot_read_guard import SnapshotReadUnavailable, read_snapshot_first
+from services import dashboard_snapshot as dashboard_snapshot_service
 from utils.db import db
 from models.tonight_intelligence_snapshot import TonightIntelligenceSnapshot
 import models.pitcher  # noqa: F401  (full model registry for create_all)
@@ -128,3 +129,18 @@ def test_cache_miss_returns_none_not_error(app):
             snapshot_version='tonight_v1',
         )
     assert result is None
+
+
+def test_guarded_dashboard_snapshot_read_preserves_infrastructure_failure(app, monkeypatch):
+    with app.app_context():
+        monkeypatch.setattr(
+            dashboard_snapshot_service,
+            '_latest_dashboard_snapshot_query',
+            lambda _snapshot_type: _FailingQuery(_operational_error()),
+        )
+        with pytest.raises(SnapshotReadUnavailable) as info:
+            dashboard_snapshot_service.get_latest_dashboard_snapshot_guarded()
+
+    assert info.value.snapshot_type == 'bullpen_dashboard'
+    assert info.value.reference_date == 'current_publication'
+    assert info.value.snapshot_version == 1

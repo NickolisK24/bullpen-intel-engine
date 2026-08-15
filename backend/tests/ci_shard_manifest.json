@@ -634,7 +634,7 @@
       ]
     },
     "3": {
-      "measured_seconds": 500.61,
+      "measured_seconds": 501.58,
       "files": [
         {
           "path": "tests/test_active_bullpen_readiness_resolver.py",
@@ -883,6 +883,10 @@
         {
           "path": "tests/test_intraday_workflow.py",
           "measured_seconds": 0.343
+        },
+        {
+          "path": "tests/test_league_team_state_listing.py",
+          "measured_seconds": 0.97
         },
         {
           "path": "tests/test_legacy_read_reconciliation.py",

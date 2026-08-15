@@ -20,6 +20,9 @@ from services.availability_reference_date import (
 )
 
 
+_SNAPSHOT_NOT_SUPPLIED = object()
+
+
 def sync_status_freshness_block(status_payload=None):
     """
     Compact freshness/trust block for the board, derived from the same durable
@@ -130,14 +133,17 @@ def published_snapshot_overlay(snapshot):
     }
 
 
-def published_snapshot_freshness_block():
-    snapshot = dashboard_snapshot_service.get_latest_valid_dashboard_snapshot()
+def published_snapshot_freshness_block(
+    *, snapshot=_SNAPSHOT_NOT_SUPPLIED, include_runtime_overlay=True,
+):
+    if snapshot is _SNAPSHOT_NOT_SUPPLIED:
+        snapshot = dashboard_snapshot_service.get_latest_valid_dashboard_snapshot()
     if snapshot is None or not isinstance(snapshot.payload, dict):
         return None
     freshness = dict((snapshot.payload or {}).get('freshness') or {})
     if not freshness:
         return None
-    overlay = published_snapshot_overlay(snapshot)
+    overlay = published_snapshot_overlay(snapshot) if include_runtime_overlay else {}
     if overlay:
         reason_codes = list(freshness.get('reason_codes') or [])
         limitations = list(freshness.get('limitations') or [])

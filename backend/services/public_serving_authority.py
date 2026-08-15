@@ -41,11 +41,10 @@ from services.bullpen_visibility import build_visibility_contract
 from services.pitcher_role_authority import author_role_read_labels, role_logs_by_pitcher
 from services.public_roster_readiness import apply_public_roster_readiness, build_public_roster_readiness
 from services.roster_authority import build_roster_authority
-from services.share_artifacts import verify_share_artifact_integrity
+from services.published_team_state import project_published_team_state_artifact
 from services.team_state_payload import TEAM_STATE_ARTIFACT_TYPE
 from services.team_state_public_vocabulary import (
     TEAM_STATE_READINESS_UNAVAILABLE,
-    public_team_state,
     team_state_unavailable,
 )
 from services.workload_concentration import summarize_recent_relief_workload
@@ -76,7 +75,8 @@ def _as_int(value):
         return None
 
 
-def _publication_authority(snapshot):
+def publication_authority(snapshot):
+    """Serialize one trusted Dashboard snapshot's public authority context."""
     if snapshot is None:
         return None
     return {
@@ -322,32 +322,10 @@ def _published_team_state(snapshot, team_id):
         .order_by(ShareArtifact.published_at.desc(), ShareArtifact.id.desc())
         .first()
     )
-    if artifact is None:
-        return team_state_unavailable(
-            TEAM_STATE_READINESS_UNAVAILABLE,
-            data_through=_iso(snapshot.data_through),
-            reason_code='published_team_state_artifact_missing',
-        )
-    try:
-        verify_share_artifact_integrity(artifact)
-    except Exception:
-        return team_state_unavailable(
-            TEAM_STATE_READINESS_UNAVAILABLE,
-            data_through=_iso(snapshot.data_through),
-            reason_code='published_team_state_artifact_integrity_failed',
-        )
-    document = artifact.payload if isinstance(artifact.payload, Mapping) else {}
-    team_state = document.get('team_state') if isinstance(document.get('team_state'), Mapping) else {}
-    authority = document.get('authority') if isinstance(document.get('authority'), Mapping) else {}
-    status_code = team_state.get('status_code')
-    readiness = {
-        'contract_state': team_state.get('contract_state'),
-        'readiness': {'status_code': status_code},
-        'freshness': {
-            'data_through': authority.get('data_through') or _iso(snapshot.data_through),
-        },
-    }
-    return public_team_state(readiness)
+    return project_published_team_state_artifact(
+        artifact,
+        data_through=snapshot.data_through,
+    )
 
 
 def _records_for_view(team_package, include_stale):
@@ -407,7 +385,7 @@ def build_published_team_board(team_id, *, include_stale=False):
         bullpen_environment=deepcopy(team_package.get('bullpen_environment') or {}),
     )
     payload['team_state'] = _published_team_state(snapshot, team_id)
-    payload['publication_authority'] = _publication_authority(snapshot)
+    payload['publication_authority'] = publication_authority(snapshot)
     payload['served_from'] = 'trusted_dashboard_snapshot'
     return payload
 
@@ -430,7 +408,7 @@ def _unavailable_board(team_id, reason, *, snapshot):
             data_through=_iso(snapshot.data_through) if snapshot else None,
             reason_code=reason,
         ),
-        'publication_authority': _publication_authority(snapshot),
+        'publication_authority': publication_authority(snapshot),
         'served_from': 'trusted_dashboard_snapshot_unavailable',
     })
     return payload

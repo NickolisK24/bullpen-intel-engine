@@ -1051,7 +1051,8 @@ def test_branch_touches_no_team_state_or_public_surface_files():
             # on every run that it never reaches for appearance-team authority.
             'backend/services/team_state_public_copy.py',
         ) + freeze_policy.H12_DOCUMENT_PATH_REPAIR_PATHS
-              + freeze_policy.PUBLIC_INTEGRITY_RESIDUAL_PATHS,
+              + freeze_policy.PUBLIC_INTEGRITY_RESIDUAL_PATHS
+              + freeze_policy.D054_LEAGUE_TEAM_STATE_LISTING_PATHS,
     )
     assert offenders == [], (
         f'appearance-team work must not touch these runtime surfaces: {offenders}'

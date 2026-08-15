@@ -289,12 +289,30 @@ def test_frozen_legacy_what_changed_files_untouched():
     moved = freeze_policy.protected_hits(
         changed,
         exact=freeze_policy.FROZEN_LEGACY_WHAT_CHANGED_PATHS,
+        approved=freeze_policy.D054_LEAGUE_TEAM_STATE_LISTING_PATHS,
     )
     assert moved == [], (
         f'frozen legacy What Changed surfaces changed: {moved}. These are '
         'frozen deliberately; changing one needs its own review, not an '
         'allowlist entry here.'
     )
+
+
+def test_d054_records_the_exact_board_freshness_change_authority():
+    decision = (
+        REPO_ROOT
+        / 'docs/decisions/2026-08-15-governed-league-team-state-listing.md'
+    ).read_text(encoding='utf-8')
+    for required in (
+        '`backend/services/board_freshness.py`',
+        'already-selected Dashboard snapshot explicitly',
+        'suppress the runtime sync overlay',
+        'zero-argument and default callers retain their prior behavior',
+        'freshness calculations, stale gates, and fail-closed semantics do not change',
+        'reuses existing published-snapshot freshness',
+        'freshness authority',
+    ):
+        assert required in decision
 
 
 def test_routed_team_preview_delivery_touches_no_snapshot_trust_surface():

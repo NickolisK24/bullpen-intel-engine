@@ -340,13 +340,15 @@ def test_125_the_existing_no_op_qualification_is_unchanged(relative):
 
 
 def test_126_this_package_changes_only_the_approved_canonical_module():
-    """Exactly one authority was modified, deliberately and additively.
+    """Exactly two authorities were modified by named governed packages.
 
     The completeness service gained a read-only membership helper so the audit
     could classify the canonical unresolved set instead of inventing a second
-    definition. Every other authority stays byte-identical to the incident
-    tree, and the one exception must match the digest recorded for it — an
-    unrecorded edit to any canonical module still fails here."""
+    definition. D-054 later extracted the existing Dashboard snapshot selectors
+    and added guarded read entry points without moving their serving semantics.
+    Every other authority stays byte-identical to the incident tree, and both
+    exceptions must match their recorded digest — an unrecorded edit to any
+    canonical module still fails here."""
     for relative, expected in audit.INCIDENT_CANONICAL_MODULE_DIGESTS.items():
         current = _digest(f'backend/{relative}')
         approved = audit.PACKAGE_MODIFIED_MODULES.get(relative)
@@ -356,8 +358,15 @@ def test_126_this_package_changes_only_the_approved_canonical_module():
             assert current == approved['digest_after'], relative
 
     assert set(audit.PACKAGE_MODIFIED_MODULES) == {
-        'services/game_ingestion_completeness.py'
+        'services/dashboard_snapshot.py',
+        'services/game_ingestion_completeness.py',
     }
+    dashboard = audit.PACKAGE_MODIFIED_MODULES['services/dashboard_snapshot.py']
+    assert dashboard['digest_after'] == (
+        '016055732b2b557beb3fdce0fc862590f9d487941b339e9bcd47ac30430a1f1e'
+    )
+    assert dashboard['behaviour_changed'] is False
+    assert 'D-054' in dashboard['change']
 
 
 def test_126d_the_modified_module_is_reported_as_changed_by_this_package():
@@ -369,10 +378,14 @@ def test_126d_the_modified_module_is_reported_as_changed_by_this_package():
     }
     drift = audit.canonical_module_drift(observed)
     assert drift['changed_by_this_package'] == [
+        'services/dashboard_snapshot.py',
         'services/game_ingestion_completeness.py'
     ]
     assert drift['changed_upstream_since_incident'] == []
     assert drift['any_upstream_change_since_incident'] is False
+    assert drift['modules']['services/dashboard_snapshot.py'][
+        'behaviour_changed'
+    ] is False
 
 
 def test_126b_no_migration_was_added():

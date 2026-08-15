@@ -84,6 +84,12 @@ from services.bullpen_visibility import build_visibility_contract
 from services.game_context import build_landscape, build_team_game_context
 from services.injury_il_context import build_injury_il_context_payload
 from services.intelligence_surface_snapshot import serve_today_lead_story
+from services.league_team_state_listing import (
+    SNAPSHOT_READ_UNAVAILABLE,
+    build_league_team_state_listing,
+    build_snapshot_unavailable_listing,
+)
+from services.snapshot_read_guard import SnapshotReadUnavailable
 from services.tonight_intelligence_snapshot import serve_tonight_cached
 from services.narrative_memory import (
     DEFAULT_WINDOWS as NARRATIVE_MEMORY_WINDOWS,
@@ -3122,6 +3128,23 @@ def build_dashboard_snapshot_endpoint():
 @bullpen_bp.route('/dashboard', methods=['GET'])
 def get_bullpen_dashboard():
     return jsonify(bullpen_dashboard_response_payload())
+
+
+@bullpen_bp.route('/team-states', methods=['GET'])
+def get_league_team_states():
+    """Complete read-only Team State publication listing for active MLB clubs."""
+    try:
+        return jsonify(build_league_team_state_listing())
+    except SnapshotReadUnavailable:
+        current_app.logger.warning('league Team State snapshot read unavailable')
+        return jsonify(build_snapshot_unavailable_listing(
+            SNAPSHOT_READ_UNAVAILABLE,
+        )), 503
+    except Exception:
+        current_app.logger.exception('league Team State listing unavailable')
+        return jsonify(build_snapshot_unavailable_listing(
+            'league_team_state_listing_unavailable',
+        )), 503
 
 
 def bullpen_dashboard_response_payload():
