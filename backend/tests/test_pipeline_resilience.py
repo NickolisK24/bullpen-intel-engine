@@ -79,7 +79,7 @@ def app(tmp_path, monkeypatch):
     monkeypatch.setattr(sync_service, 'STATUS_FILE', tmp_path / 'sync_status.json')
     # Roster / team-assignment sub-syncs are out of scope here — stub them so
     # the test exercises the game-log batch and run wiring.
-    monkeypatch.setattr(sync_service, 'sync_team_assignments', lambda: {
+    monkeypatch.setattr(sync_service, 'sync_team_assignments', lambda **_kwargs: {
         'pitchers_refreshed': 0, 'pitchers_changed': 0, 'reassigned_count': 0,
         'no_organization_count': 0, 'unknown_count': 0, 'errors': 0,
         'by_status': {},
@@ -374,7 +374,7 @@ class TestNetworkKill:
 class TestCrashingJobRecordsRun:
     def test_crashing_daily_job_still_writes_a_sync_runs_row(self, app, monkeypatch):
         # The very first sub-sync crashes — the job must still record its run.
-        def explode():
+        def explode(**_kwargs):
             raise RuntimeError('roster source exploded')
 
         monkeypatch.setattr(sync_service, 'sync_team_assignments', explode)

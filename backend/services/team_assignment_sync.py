@@ -11,15 +11,17 @@ from collections import Counter, defaultdict
 
 from models.pitcher import Pitcher
 from services.mlb_api import MlbApiFetchError, mlb_client
-from services.roster_status import STATUS_UNKNOWN
-from services.roster_status_sync import (
+from services.roster_evidence import (
+    CONSUMER_TEAM_ASSIGNMENT,
     ROSTER_TYPES,
     ROSTER_TYPE_40_MAN,
     ROSTER_TYPE_ACTIVE,
     ROSTER_TYPE_FULL,
     ROSTER_TYPE_NON_ROSTER,
-    roster_entry_player_id,
+    build_run_roster_evidence,
 )
+from services.roster_status import STATUS_UNKNOWN
+from services.roster_status_sync import roster_entry_player_id
 from utils.db import db
 from utils.time import utc_now_naive
 
@@ -99,45 +101,16 @@ def _is_no_organization_status(value):
     )
 
 
-def _existing_team_map():
-    rows = (
-        db.session.query(Pitcher.team_id, Pitcher.team_name, Pitcher.team_abbreviation)
-        .filter(Pitcher.team_id.isnot(None))
-        .distinct()
-        .all()
-    )
-    return {
-        row.team_id: {
-            'id': row.team_id,
-            'name': row.team_name,
-            'abbreviation': row.team_abbreviation,
-        }
-        for row in rows
-    }
-
-
-def _fetch_team_map(client):
+def _team_map_from_evidence(evidence):
+    """Read run team metadata and report a metadata fetch failure as our own."""
+    metadata = evidence.team_metadata()
     errors = []
-    team_map = _existing_team_map()
-    try:
-        teams = client.get_all_teams()
-    except Exception as exc:
-        teams = []
+    if metadata.error is not None:
         errors.append({
             'source': f'{SOURCE_PREFIX}:teams',
-            'error': str(exc),
+            'error': metadata.error,
         })
-
-    for team in teams or []:
-        team_id = team.get('id')
-        if team_id is None:
-            continue
-        team_map[team_id] = {
-            'id': team_id,
-            'name': team.get('name'),
-            'abbreviation': team.get('abbreviation'),
-        }
-    return team_map, errors
+    return metadata.team_map, errors
 
 
 def _team_ids_to_sync(team_ids, team_map):
@@ -175,10 +148,18 @@ def _record_roster_evidence(index, team_id, roster_type, entry):
     })
 
 
-def build_team_assignment_index(team_ids=None, client=None, roster_types=ROSTER_TYPES):
-    """Fetch MLB team roster ownership evidence by MLB player id."""
-    client = client or mlb_client
-    team_map, errors = _fetch_team_map(client)
+def build_team_assignment_index(team_ids=None, client=None, roster_types=ROSTER_TYPES, evidence=None):
+    """
+    Read MLB team roster ownership evidence by MLB player id.
+
+    ``evidence`` is this run's shared :class:`~services.roster_evidence.
+    RunRosterEvidence`, whose official roster views are also read by roster
+    status. Without it, a throwaway run-scoped evidence is built for this call
+    alone, which fetches exactly as before.
+    """
+    evidence = evidence or build_run_roster_evidence(client=client, roster_types=roster_types)
+    evidence.note_consumer(CONSUMER_TEAM_ASSIGNMENT)
+    team_map, errors = _team_map_from_evidence(evidence)
     resolved_team_ids = _team_ids_to_sync(team_ids, team_map)
     index = defaultdict(lambda: {
         'player_id': None,
@@ -187,18 +168,17 @@ def build_team_assignment_index(team_ids=None, client=None, roster_types=ROSTER_
 
     for team_id in resolved_team_ids:
         for roster_type in roster_types:
-            try:
-                roster = client.get_team_roster(team_id, roster_type=roster_type)
-            except Exception as exc:
+            view = evidence.roster_view(team_id, roster_type)
+            if view.error is not None:
                 errors.append({
                     'team_id': team_id,
                     'roster_type': roster_type,
                     'source': _source_for(roster_type),
-                    'error': str(exc),
+                    'error': view.error,
                 })
                 continue
 
-            for entry in roster or []:
+            for entry in view.entries:
                 _record_roster_evidence(index, team_id, roster_type, entry)
 
     return {
@@ -338,19 +318,27 @@ def _apply_assignment(pitcher, classification, timestamp):
     return before != _assignment_fields(pitcher), before
 
 
-def sync_team_assignments(team_ids=None, client=None, timestamp=None, commit=True):
+def sync_team_assignments(team_ids=None, client=None, timestamp=None, commit=True, evidence=None):
     """
     Persist authoritative organization ownership for every tracked pitcher.
 
     Missing or ambiguous authority is fail-closed: the stale team assignment is
     cleared and the pitcher is marked inactive until ownership can be resolved.
+
+    ``evidence`` is this run's shared roster evidence. Passing the same evidence
+    to the roster-status stage lets one official fetch pass serve both consumers;
+    omitting it fetches the roster views for this stage alone.
     """
     client = client or mlb_client
     timestamp = timestamp or utc_now_naive()
-    evidence = build_team_assignment_index(team_ids=team_ids, client=client)
-    roster_index = evidence['index']
-    team_map = evidence['team_map']
-    errors = list(evidence['errors'])
+    assignment_evidence = build_team_assignment_index(
+        team_ids=team_ids,
+        client=client,
+        evidence=evidence,
+    )
+    roster_index = assignment_evidence['index']
+    team_map = assignment_evidence['team_map']
+    errors = list(assignment_evidence['errors'])
     roster_error_team_ids = {
         item.get('team_id')
         for item in errors
@@ -401,7 +389,7 @@ def sync_team_assignments(team_ids=None, client=None, timestamp=None, commit=Tru
 
     return {
         'source': SOURCE_PREFIX,
-        'teams_processed': len(evidence['team_ids']),
+        'teams_processed': len(assignment_evidence['team_ids']),
         'pitchers_refreshed': refreshed,
         'pitchers_changed': changed,
         'reassigned_count': reassigned,

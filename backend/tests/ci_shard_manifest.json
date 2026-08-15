@@ -321,7 +321,7 @@
       ]
     },
     "2": {
-      "measured_seconds": 500.33,
+      "measured_seconds": 502.63,
       "files": [
         {
           "path": "tests/test_appearance_ledger.py",
@@ -502,6 +502,10 @@
         {
           "path": "tests/test_roster_depth_evidence.py",
           "measured_seconds": 6.996
+        },
+        {
+          "path": "tests/test_roster_evidence_reuse.py",
+          "measured_seconds": 2.3
         },
         {
           "path": "tests/test_roster_readiness_fixture.py",

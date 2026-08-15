@@ -151,7 +151,7 @@ def test_stage_failure_reports_in_progress_stage_not_uncompleted_future_stage(
     client,
     monkeypatch,
 ):
-    monkeypatch.setattr(sync_service, 'sync_team_assignments', lambda: {
+    monkeypatch.setattr(sync_service, 'sync_team_assignments', lambda **_kwargs: {
         'pitchers_refreshed': 1,
         'pitchers_changed': 0,
         'reassigned_count': 0,
@@ -181,7 +181,7 @@ def test_daily_sync_logs_post_fatigue_phase_instrumentation(
     monkeypatch,
     caplog,
 ):
-    monkeypatch.setattr(sync_service, 'sync_team_assignments', lambda: {
+    monkeypatch.setattr(sync_service, 'sync_team_assignments', lambda **_kwargs: {
         'pitchers_refreshed': 1,
         'pitchers_changed': 0,
         'reassigned_count': 0,
@@ -301,7 +301,7 @@ def test_daily_sync_public_snapshot_survives_post_publish_internal_failure(
     caplog,
 ):
     events = []
-    monkeypatch.setattr(sync_service, 'sync_team_assignments', lambda: {
+    monkeypatch.setattr(sync_service, 'sync_team_assignments', lambda **_kwargs: {
         'pitchers_refreshed': 1,
         'pitchers_changed': 0,
         'reassigned_count': 0,
@@ -387,7 +387,7 @@ def test_daily_sync_public_only_skips_internal_enrichment(
     client,
     monkeypatch,
 ):
-    monkeypatch.setattr(sync_service, 'sync_team_assignments', lambda: {
+    monkeypatch.setattr(sync_service, 'sync_team_assignments', lambda **_kwargs: {
         'pitchers_refreshed': 1,
         'pitchers_changed': 0,
         'reassigned_count': 0,
@@ -537,7 +537,7 @@ def test_internal_enrichment_failure_is_isolated_from_public_sync(
     monkeypatch,
 ):
     events = []
-    monkeypatch.setattr(sync_service, 'sync_team_assignments', lambda: {
+    monkeypatch.setattr(sync_service, 'sync_team_assignments', lambda **_kwargs: {
         'pitchers_refreshed': 1,
         'pitchers_changed': 0,
         'reassigned_count': 0,

@@ -37,7 +37,7 @@ def client(tmp_path, monkeypatch):
                             'new_logs_added': 3, 'pitchers_touched': 2,
                             'errors': 0, 'records_failed': 0})
     monkeypatch.setattr(sync_service, 'recalculate_all_fatigue', lambda reference_date=None: 5)
-    monkeypatch.setattr(sync_service, 'sync_team_assignments', lambda: {
+    monkeypatch.setattr(sync_service, 'sync_team_assignments', lambda **_kwargs: {
         'pitchers_refreshed': 1,
         'pitchers_changed': 0,
         'reassigned_count': 0,
