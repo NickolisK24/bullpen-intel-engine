@@ -128,7 +128,7 @@ def test_daily_sync_offseason_check_uses_product_timezone_day(
         'date',
         _host_local_date_class(date(2099, 1, 1)),
     )
-    monkeypatch.setattr(sync_service, 'sync_team_assignments', lambda: {
+    monkeypatch.setattr(sync_service, 'sync_team_assignments', lambda **_kwargs: {
         'pitchers_refreshed': 0,
         'pitchers_changed': 0,
         'reassigned_count': 0,

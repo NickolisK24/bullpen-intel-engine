@@ -14,6 +14,15 @@ from models.pitcher import Pitcher
 from models.roster_status_snapshot import RosterStatusSnapshot
 from services import dead_letter, source_provenance
 from services.mlb_api import mlb_client
+from services.roster_evidence import (
+    CONSUMER_ROSTER_STATUS,
+    ROSTER_TYPE_40_MAN,
+    ROSTER_TYPE_ACTIVE,
+    ROSTER_TYPE_FULL,
+    ROSTER_TYPE_NON_ROSTER,
+    ROSTER_TYPES,
+    build_run_roster_evidence,
+)
 from services.roster_status import (
     STATUS_40_MAN_ONLY,
     STATUS_ACTIVE,
@@ -28,17 +37,9 @@ from utils.time import utc_now_naive
 
 logger = logging.getLogger(__name__)
 
-ROSTER_TYPE_ACTIVE = 'active'
-ROSTER_TYPE_40_MAN = '40Man'
-ROSTER_TYPE_FULL = 'fullRoster'
-ROSTER_TYPE_NON_ROSTER = 'nonRosterInvitees'
-
-ROSTER_TYPES = (
-    ROSTER_TYPE_ACTIVE,
-    ROSTER_TYPE_40_MAN,
-    ROSTER_TYPE_FULL,
-    ROSTER_TYPE_NON_ROSTER,
-)
+# ROSTER_TYPE_* / ROSTER_TYPES are owned by services.roster_evidence, which
+# fetches those views, and imported above so existing importers of this module
+# keep resolving them here unchanged.
 
 SOURCE_PREFIX = 'mlb_stats_api:roster_sync'
 ROSTER_STATUS_FETCH_ENTITY_TYPE = 'roster_status_fetch'
@@ -266,9 +267,18 @@ def classify_roster_evidence(evidence):
     return _classification(STATUS_UNKNOWN, None, f'{SOURCE_PREFIX}:unavailable')
 
 
-def build_team_roster_status_index(team_id, client=None, roster_types=ROSTER_TYPES):
-    """Fetch roster evidence for one MLB team and return it by MLB player id."""
-    client = client or mlb_client
+def build_team_roster_status_index(team_id, client=None, roster_types=ROSTER_TYPES, evidence=None):
+    """
+    Read roster evidence for one MLB team and return it by MLB player id.
+
+    ``evidence`` is this run's shared :class:`~services.roster_evidence.
+    RunRosterEvidence`. Views it already holds are reused; views it does not are
+    fetched fresh from the official endpoint, so a view the run has never read is
+    never mistaken for an empty roster. Without it, a throwaway run-scoped
+    evidence is built for this call alone, which fetches exactly as before.
+    """
+    evidence = evidence or build_run_roster_evidence(client=client)
+    evidence.note_consumer(CONSUMER_ROSTER_STATUS)
     index = defaultdict(lambda: {
         'player_id': None,
         'roster_types': set(),
@@ -278,19 +288,18 @@ def build_team_roster_status_index(team_id, client=None, roster_types=ROSTER_TYP
     errors = []
 
     for roster_type in roster_types:
-        try:
-            roster = client.get_team_roster(team_id, roster_type=roster_type)
-        except Exception as exc:
+        view = evidence.roster_view(team_id, roster_type)
+        if view.error is not None:
             errors.append({
                 'reason': 'fetch_failed',
                 'team_id': team_id,
                 'roster_type': roster_type,
                 'entity_type': ROSTER_STATUS_FETCH_ENTITY_TYPE,
-                'error': str(exc),
+                'error': view.error,
             })
             continue
 
-        for entry in roster or []:
+        for entry in view.entries:
             error = _record_evidence(index, team_id, roster_type, entry)
             if error:
                 errors.append(error)
@@ -659,14 +668,20 @@ def sync_roster_statuses(
     commit=True,
     sync_run_id=None,
     snapshot_date=None,
+    evidence=None,
 ):
     """
     Persist roster status for tracked pitchers.
 
     Returns a summary suitable for sync status payloads and tests. Unknowns are
     explicit persisted values when no roster endpoint can classify the row.
+
+    ``evidence`` is this run's shared roster evidence. Passing the same evidence
+    the team-assignment stage already read lets one official fetch pass serve
+    both consumers; omitting it fetches the roster views for this stage alone.
     """
     client = client or mlb_client
+    run_evidence = evidence or build_run_roster_evidence(client=client)
     timestamp = timestamp or utc_now_naive()
     snapshot_date = snapshot_date or timestamp.date()
     team_ids = _team_ids_to_sync(team_ids)
@@ -684,7 +699,10 @@ def sync_roster_statuses(
     reconciled_conflict_refs = []
 
     for team_id in team_ids:
-        index, team_errors = build_team_roster_status_index(team_id, client=client)
+        index, team_errors = build_team_roster_status_index(
+            team_id,
+            evidence=run_evidence,
+        )
         errors.extend(team_errors)
         fetch_errors = [
             error for error in team_errors

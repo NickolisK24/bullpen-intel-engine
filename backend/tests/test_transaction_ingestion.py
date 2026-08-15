@@ -413,7 +413,7 @@ def test_daily_sync_transaction_stage_is_bounded_and_non_authoritative(app, monk
             return value.replace(tzinfo=tz) if tz else value
 
     monkeypatch.setattr(sync_service, 'datetime', FixedDatetime)
-    monkeypatch.setattr(sync_service, 'sync_team_assignments', lambda: {
+    monkeypatch.setattr(sync_service, 'sync_team_assignments', lambda **_kwargs: {
         'pitchers_refreshed': 0,
         'pitchers_changed': 0,
         'reassigned_count': 0,

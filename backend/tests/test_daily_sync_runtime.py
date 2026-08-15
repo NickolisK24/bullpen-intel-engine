@@ -276,7 +276,7 @@ def test_daily_sync_clean_partial_finishes_snapshot_and_metadata(app, monkeypatc
         calendar_date=REFERENCE_DATE,
         limitations=(),
     ))
-    monkeypatch.setattr(sync_service, 'sync_team_assignments', lambda: {
+    monkeypatch.setattr(sync_service, 'sync_team_assignments', lambda **_kwargs: {
         'pitchers_refreshed': 1,
         'pitchers_changed': 0,
         'reassigned_count': 0,
@@ -441,7 +441,7 @@ def test_daily_finality_preflight_runs_before_statusless_ingestion(app, monkeypa
             _schedule_api_game(824940, JULY_6)
         ],
     )
-    monkeypatch.setattr(sync_service, 'sync_team_assignments', lambda: {
+    monkeypatch.setattr(sync_service, 'sync_team_assignments', lambda **_kwargs: {
         'pitchers_refreshed': 1,
         'pitchers_changed': 0,
         'reassigned_count': 0,
@@ -507,7 +507,7 @@ def test_daily_finality_preflight_failure_finishes_clean_partial(app, monkeypatc
         'get_schedule',
         lambda **_kwargs: (_ for _ in ()).throw(RuntimeError('schedule unavailable')),
     )
-    monkeypatch.setattr(sync_service, 'sync_team_assignments', lambda: {
+    monkeypatch.setattr(sync_service, 'sync_team_assignments', lambda **_kwargs: {
         'pitchers_refreshed': 1,
         'pitchers_changed': 0,
         'reassigned_count': 0,

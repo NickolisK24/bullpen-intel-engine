@@ -60,6 +60,7 @@ from services.play_by_play_foundation import (
     FINAL_PBP_FETCH_ENTITY_TYPE,
     process_final_play_by_play_foundation,
 )
+from services.roster_evidence import build_run_roster_evidence
 from services.roster_status import STATUS_ACTIVE, STATUS_UNKNOWN
 from services.roster_status_sync import sync_roster_statuses
 from services.team_game_pitching_splits import (
@@ -6247,7 +6248,13 @@ def run_daily_sync(
             status['stage_timings'] = stage_timings
             stage_started = time.monotonic()
             active_stage = sync_metadata.STAGE_TEAM_ASSIGNMENTS
-            team_assignment = sync_team_assignments()
+            # One run-scoped pass over the official roster feeds. Team
+            # assignment reads it first, roster status reuses the same fresh
+            # evidence below instead of fetching every roster view a second
+            # time. Nothing is fetched until a consumer asks for it, and a
+            # failed view stays a failure for both consumers.
+            run_roster_evidence = build_run_roster_evidence()
+            team_assignment = sync_team_assignments(evidence=run_roster_evidence)
             stage_timings['team_assignments'] = round(time.monotonic() - stage_started, 1)
             sync_metadata.set_sync_stage(sync_run_id, sync_metadata.STAGE_TEAM_ASSIGNMENTS)
             team_assignment_records_failed = record_sync_error_details(
@@ -6269,16 +6276,31 @@ def run_daily_sync(
             roster = sync_roster_statuses(
                 sync_run_id=sync_run_id,
                 snapshot_date=product_day.calendar_date,
+                evidence=run_roster_evidence,
             )
             stage_timings['roster_statuses'] = round(time.monotonic() - stage_started, 1)
             sync_metadata.set_sync_stage(sync_run_id, sync_metadata.STAGE_ROSTER_STATUS)
             roster_records_failed = roster.get('records_failed', 0)
             run_logger.info(
-                'Refreshed roster status for %s pitchers (%s changed, %s unknown, %s errors)',
+                'Refreshed roster status for %s pitchers (%s changed, %s created, '
+                '%s corrected, %s unchanged, %s unknown, %s errors)',
                 roster['pitchers_refreshed'],
                 roster['pitchers_changed'],
+                roster.get('snapshots_created', 0),
+                roster.get('snapshots_corrected', 0),
+                roster.get('snapshots_unchanged', 0),
                 roster['unknown_count'],
                 roster['errors'],
+            )
+            roster_evidence_summary = run_roster_evidence.summary()
+            run_logger.info(
+                'Roster evidence: %s teams x %s roster types = %s roster requests '
+                '(%s fetch failures) reused by %s',
+                roster_evidence_summary['teams_fetched'],
+                len(roster_evidence_summary['roster_types_fetched']),
+                roster_evidence_summary['roster_requests'],
+                roster_evidence_summary['fetch_failures'],
+                ', '.join(roster_evidence_summary['consumers']) or 'no consumers',
             )
             active_stage = sync_metadata.STAGE_TRANSACTIONS
             stage_started = time.monotonic()

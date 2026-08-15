@@ -42,6 +42,32 @@ Roster sync runs in three places:
 - Scheduled `run_daily_sync`
 - The database seeder after pitcher rows are loaded
 
+## Shared Roster Evidence Within One Run
+
+Team assignment and roster status read the same official roster views for the
+same clubs. `services.roster_evidence.RunRosterEvidence` fetches each
+`(team_id, roster_type)` view at most once per scheduled run and hands both
+consumers the same official response, so the scheduled daily sync issues one
+roster pass instead of two.
+
+The evidence owns neither classification. Team assignment still resolves
+organization ownership and roster status still resolves roster category, from
+their own unchanged rules.
+
+Properties that keep this safe:
+
+- Run scoped. The evidence is created inside `run_daily_sync` and passed
+  explicitly to each consumer. Nothing is cached across runs and nothing is
+  persisted, so a run never reads another run's roster feeds.
+- Fresh. Views are fetched during the run, on first ask. A view no consumer
+  needs is never fetched, and a view the shared pass never read is fetched
+  fresh rather than treated as an absent roster.
+- Fail closed. A failed fetch is remembered as a failure, never as an empty
+  roster, so every consumer of that view observes the same failure and neither
+  invents authority from a partial fetch.
+- Read only. Each read returns a copy, so one consumer cannot alter what the
+  other observes.
+
 ## Normalization Rules
 
 The sync persists these statuses when authority exists:
