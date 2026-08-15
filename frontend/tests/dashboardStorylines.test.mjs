@@ -17,7 +17,7 @@ after(async () => {
 })
 
 const { default: BullpenLandscape } = await server.ssrLoadModule('/src/components/dashboard/BullpenLandscape.jsx')
-const { getStorylines, STORYLINES_FALLBACK } = await server.ssrLoadModule('/src/components/dashboard/bullpenLandscapeView.js')
+const { getStorylines } = await server.ssrLoadModule('/src/components/dashboard/bullpenLandscapeView.js')
 
 const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const htmlIncludes = (html, text) => new RegExp(escapeRegExp(text)).test(html)
@@ -39,37 +39,32 @@ const landscape = {
     { team_id: 3, team_name: 'Toronto Blue Jays', team_abbreviation: 'TOR', total_relievers: 8, available: 3, monitor: 4, restricted: 1, pct_available: 37, pct_restricted: 12 },
   ],
   notes: [],
+  storylines: [
+    'Chicago Cubs have four relievers needing rest or unavailable.',
+    { public_text: 'Washington Nationals have six rested relievers.' },
+    { text: 'Toronto Blue Jays have four relievers on watch.' },
+  ],
 }
 
 // ── getStorylines computation ──────────────────────────────────────────────
 
-test('storylines are derived dynamically from the landscape counts', () => {
+test('backend-authored storylines pass through verbatim', () => {
   const view = getStorylines(landscape)
   assert.ok(view.hasStorylines)
-  assert.ok(view.items.length >= 3 && view.items.length <= 4)
-  assert.ok(view.items.some(item => /Chicago Cubs has 4 relievers needing rest or unavailable, narrowing the late-game margin\./.test(item)))
-  assert.ok(view.items.some(item => /Washington Nationals has 6 rested relievers, giving the manager more ways through the late innings\./.test(item)))
-  assert.ok(view.items.some(item => /Toronto Blue Jays has 4 relievers on watch, so recent work may still be leaning on the same group\./.test(item)))
+  assert.deepEqual(view.items, [
+    'Chicago Cubs have four relievers needing rest or unavailable.',
+    'Washington Nationals have six rested relievers.',
+    'Toronto Blue Jays have four relievers on watch.',
+  ])
 })
 
-test('an elevated-stress count storyline appears when multiple clubs are constrained', () => {
-  const view = getStorylines(landscape)
-  // Two constrained clubs (Cubs, Mets) both carry restricted arms.
-  assert.ok(view.items.some(item => /Two clubs have at least one reliever needing rest or unavailable, which can tighten late-game choices\./.test(item)))
-})
-
-test('storylines fall back gracefully when no notable situations exist', () => {
-  const empty = getStorylines({
-    constrained_bullpens: [],
-    available_bullpens: [],
-    monitoring_concentration: [],
-  })
+test('storylines fail closed when backend-authored copy is absent', () => {
+  const empty = getStorylines({ storylines: [] })
   assert.equal(empty.hasStorylines, false)
   assert.deepEqual(empty.items, [])
-  assert.equal(empty.fallback, STORYLINES_FALLBACK)
 })
 
-test('zero-count entries do not produce empty or misleading storylines', () => {
+test('lane counts never generate client-side storylines', () => {
   const view = getStorylines({
     constrained_bullpens: [{ team_id: 1, team_name: 'Quiet Club', team_abbreviation: 'QC', restricted: 0 }],
     available_bullpens: [{ team_id: 2, team_name: 'Calm Club', team_abbreviation: 'CC', available: 0 }],
@@ -84,22 +79,22 @@ test('zero-count entries do not produce empty or misleading storylines', () => {
 test('the storylines card renders with its title and bullet observations', () => {
   const html = render(React.createElement(BullpenLandscape, { landscape }))
   assert.ok(htmlIncludes(html, 'Storylines'))
-  assert.ok(htmlIncludes(html, 'Chicago Cubs has 4 relievers needing rest or unavailable, narrowing the late-game margin.'))
-  assert.ok(htmlIncludes(html, 'Washington Nationals has 6 rested relievers, giving the manager more ways through the late innings.'))
+  assert.ok(htmlIncludes(html, 'Chicago Cubs have four relievers needing rest or unavailable.'))
+  assert.ok(htmlIncludes(html, 'Washington Nationals have six rested relievers.'))
 })
 
 test('the storylines card sits above the individual situation columns', () => {
   const html = render(React.createElement(BullpenLandscape, { landscape }))
-  assert.ok(html.indexOf('Storylines') < html.indexOf('Most Available'),
+  assert.ok(html.indexOf('Storylines') < html.indexOf('Rested &amp; Available'),
     'storylines should precede the situation columns')
 })
 
-test('the storylines fallback renders when the dataset is thin', () => {
+test('the storylines block is absent when backend copy is unavailable', () => {
   const html = render(React.createElement(BullpenLandscape, {
-    landscape: { ...landscape, constrained_bullpens: [], available_bullpens: [], monitoring_concentration: [] },
+    landscape: { ...landscape, storylines: [] },
   }))
-  assert.ok(htmlIncludes(html, 'Storylines'))
-  assert.ok(htmlIncludes(html, STORYLINES_FALLBACK))
+  assert.equal(htmlIncludes(html, 'Storylines'), false)
+  assert.ok(htmlIncludes(html, 'Published Situation Lanes'))
 })
 
 // ── Guardrails: descriptive only ────────────────────────────────────────────

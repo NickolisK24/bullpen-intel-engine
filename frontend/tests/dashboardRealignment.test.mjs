@@ -21,7 +21,6 @@ after(async () => {
 const { DashboardView } = await server.ssrLoadModule('/src/components/dashboard/Dashboard.jsx')
 const { default: DataTrust } = await server.ssrLoadModule('/src/components/trust/DataTrust.jsx')
 const { default: Sidebar } = await server.ssrLoadModule('/src/components/Sidebar.jsx')
-const { getBoardContextView } = await server.ssrLoadModule('/src/components/bullpen/board/tonightsBullpenBoardView.js')
 
 const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const htmlIncludes = (html, text) => new RegExp(escapeRegExp(text)).test(html)
@@ -75,6 +74,7 @@ const dashboardData = {
       { team_id: 3, team_name: 'Toronto Blue Jays', team_abbreviation: 'TOR', total_relievers: 8, available: 3, monitor: 4, restricted: 1 },
     ],
     notes: [],
+    storylines: ['Published bullpen storyline from the league context.'],
   },
 }
 
@@ -88,28 +88,27 @@ test('dashboard leads with bullpen language, not operations/governance language'
 
 test('dashboard renders the core bullpen sections without duplicate league summaries', () => {
   const html = inRouter(React.createElement(DashboardView, { data: dashboardData }))
-  assert.ok(htmlIncludes(html, 'Bullpen Landscape'))
-  assert.ok(htmlIncludes(html, 'Bullpen State'))
+  assert.ok(htmlIncludes(html, 'Storylines'))
+  assert.ok(htmlIncludes(html, 'Published Situation Lanes'))
   assert.ok(htmlIncludes(html, 'Usage Roles'))
-  // phase-0-clarity/02: the count-tile league summary and quick-action nav
-  // cards are gone — the landscape plus one state read carry the league view.
   assert.equal(htmlIncludes(html, 'League-Wide Bullpen Read'), false)
+  assert.equal(htmlIncludes(html, 'League-Wide Bullpen State'), false)
   assert.equal(htmlIncludes(html, 'Quick Actions'), false)
 })
 
-test('dashboard landscape uses canonical group titles and keeps descriptive subtitles', () => {
+test('dashboard landscape uses plain lane titles and keeps descriptive subtitles', () => {
   const html = inRouter(React.createElement(DashboardView, { data: dashboardData }))
-  assert.ok(htmlIncludes(html, 'Most Stretched'))
-  assert.ok(htmlIncludes(html, 'Most Available'))
-  assert.ok(htmlIncludes(html, 'Most On-Watch Arms'))
+  assert.ok(htmlIncludes(html, 'Needs Rest / Unavailable'))
+  assert.ok(htmlIncludes(html, 'Rested &amp; Available'))
+  assert.ok(htmlIncludes(html, 'On Watch'))
   assert.ok(
-    html.indexOf('Most Available') < html.indexOf('Most On-Watch Arms') &&
-    html.indexOf('Most On-Watch Arms') < html.indexOf('Most Stretched'),
-    'landscape columns should render Most Available, Most On-Watch Arms, then Most Stretched',
+    html.indexOf('Rested &amp; Available') < html.indexOf('On Watch') &&
+    html.indexOf('On Watch') < html.indexOf('Needs Rest / Unavailable'),
+    'landscape columns should render Rested & Available, On Watch, then Needs Rest / Unavailable',
   )
-  assert.ok(htmlIncludes(html, 'Fewest clean late-inning options'))
-  assert.ok(htmlIncludes(html, 'Most room to maneuver'))
-  assert.ok(htmlIncludes(html, 'Recent workload watch groups'))
+  assert.ok(htmlIncludes(html, 'Clubs shown with tighter late-inning options'))
+  assert.ok(htmlIncludes(html, 'Clubs shown with rested, available depth'))
+  assert.ok(htmlIncludes(html, 'Clubs shown with recent workload watch groups'))
 })
 
 test('dashboard landscape preserves team-board deep links and honest empty groups', () => {
@@ -124,66 +123,38 @@ test('dashboard landscape preserves team-board deep links and honest empty group
 
   assert.ok(htmlIncludes(html, 'href="/bullpen?view=board&amp;team=WSH&amp;source=landscape"'))
   assert.ok(htmlIncludes(html, 'href="/bullpen?view=board&amp;team=TOR&amp;source=landscape"'))
-  assert.ok(htmlIncludes(html, 'Most Stretched'))
+  assert.ok(htmlIncludes(html, 'Needs Rest / Unavailable'))
   assert.ok(htmlIncludes(html, 'None right now.'))
   assert.equal(htmlIncludes(html, 'CHC'), false)
 })
 
 test('dashboard uses completed-game freshness wording for the landscape', () => {
   const html = inRouter(React.createElement(DashboardView, { data: dashboardData }))
-  assert.ok(htmlIncludes(html, 'Data through Jun 4, 2026'))
+  assert.ok(htmlIncludes(html, 'dateTime="2026-06-04">Jun 4'))
   assert.equal(htmlIncludes(html, 'Tonight slate'), false)
   assert.equal(htmlIncludes(html, "Tonight's Bullpen Landscape"), false)
   assert.equal(htmlIncludes(html, 'latest completed MLB slate'), false)
 })
 
-test('league-wide bullpen state sits directly after the landscape', () => {
+test('storylines lead the situation lanes and the synthetic state card stays absent', () => {
   const html = inRouter(React.createElement(DashboardView, { data: dashboardData }))
-  const landscapeIndex = html.indexOf('Bullpen Landscape')
-  const stateIndex = html.indexOf('League-Wide Bullpen State')
-
-  assert.ok(landscapeIndex >= 0)
-  assert.ok(stateIndex > landscapeIndex)
+  assert.ok(html.indexOf('Storylines') < html.indexOf('Published Situation Lanes'))
+  assert.equal(htmlIncludes(html, 'League-Wide Bullpen State'), false)
 })
 
-test('bullpen read cards show the four public availability labels', () => {
+test('dashboard does not synthesize availability status tiles from league counts', () => {
   const html = inRouter(React.createElement(DashboardView, { data: dashboardData }))
-  for (const label of ['Available', 'On Watch', 'Limited', 'Unavailable']) {
-    assert.ok(htmlIncludes(html, label), `missing bullpen read label: ${label}`)
-  }
+  assert.equal(htmlIncludes(html, 'Current Bullpen State'), false)
+  assert.equal(htmlIncludes(html, 'of 12 relievers are classified Available.'), false)
   assert.equal(htmlIncludes(html, 'Avoid'), false)
 })
 
-test('league-wide bullpen read combines raw unavailable statuses into one public bucket', () => {
-  const context = getBoardContextView(dashboardData)
-  const unavailableRows = context.snapshot.filter(row => row.label === 'Unavailable')
-
-  assert.deepEqual(context.snapshot.map(row => row.label), [
-    'Available',
-    'On Watch',
-    'Limited',
-    'Unavailable',
-  ])
-  assert.equal(unavailableRows.length, 1)
-  assert.equal(unavailableRows[0].count, 2)
-  assert.equal(context.snapshot.reduce((total, row) => total + row.count, 0), context.metrics.total)
-})
-
-test('bullpen state reuses the Team Context Layer statement and confidence', () => {
+test('dashboard keeps routine trust quiet and one authoritative freshness stamp', () => {
   const html = inRouter(React.createElement(DashboardView, { data: dashboardData }))
-  assert.ok(htmlIncludes(html, 'Scope'))
-  assert.ok(htmlIncludes(html, 'League-Wide'))
-  // League scope has no Team State; the retired pseudo-state is gone for good.
-  assert.equal(htmlIncludes(html, 'Stable Overall'), false)
-  assert.ok(htmlIncludes(html, 'Open the Bullpen Board for a team-specific read.'))
-  assert.equal(htmlIncludes(html, "Open Bullpen for one team's current state"), false)
-  assert.ok(htmlIncludes(html, 'Bullpen workload appears manageable.'))
-  assert.ok(htmlIncludes(html, 'Read Confidence:'))
-  assert.ok(htmlIncludes(html, 'of 12 relievers are classified Available.'))
-  assert.ok(htmlIncludes(html, 'This is a league-wide read, not a team-specific diagnosis.'))
-  assert.equal((html.match(/Availability classifications are workload-based only/g) || []).length, 1)
-  assert.equal(htmlIncludes(html, 'Open Team Bullpen Board'), false)
-  assert.ok(htmlIncludes(html, 'Open Bullpen Board'))
+  assert.equal((html.match(/Data through/g) || []).length, 1)
+  assert.equal(htmlIncludes(html, 'Read Confidence:'), false)
+  assert.equal(htmlIncludes(html, 'Last data update'), false)
+  assert.equal(htmlIncludes(html, 'Generated:'), false)
 })
 
 test('usage-roles summary shows distinct role composition counts', () => {
@@ -238,7 +209,7 @@ test('dashboard labels retained data when the latest refresh failed', () => {
 
   assert.ok(htmlIncludes(html, 'Refresh delayed'))
   assert.ok(htmlIncludes(html, 'showing last loaded data from Jun 4.'))
-  assert.ok(htmlIncludes(html, 'Bullpen State'))
+  assert.ok(htmlIncludes(html, 'Published Situation Lanes'))
 })
 
 test('Data & Trust page hosts trust detail without duplicate operational sections', () => {

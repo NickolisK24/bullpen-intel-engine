@@ -155,18 +155,45 @@ test('each observation explains itself with both raw counts', () => {
   assert.ok(htmlIncludes(html, 'Bears Available: 3.'))
 })
 
-test('similar distributions read as similar, not as a winner', () => {
+test('comparison does not generate an unsupported similarity lede', () => {
   const html = render(similarComparison)
-  assert.ok(htmlIncludes(html, 'The bullpens match across every availability group in the current read.'))
+  assert.equal(htmlIncludes(html, 'The bullpens match across every availability group in the current read.'), false)
 })
 
 test('stale bullpen surfaces freshness limitations and degraded confidence', () => {
   const html = render(staleComparison)
-  assert.ok(htmlIncludes(html, 'Recent workload unclear — read with caution'))
+  assert.ok(htmlIncludes(html, 'Refresh delayed'))
   assert.ok(htmlIncludes(html, 'Read Confidence: Low'))
-  assert.ok(htmlIncludes(html, 'one or both bullpens have degraded freshness'))
+  assert.ok(htmlIncludes(html, 'do not share the same data-through date'))
   // The board-level freshness limitation text now lives on the linked team
   // boards, not inside the comparison (the boards are no longer embedded).
+})
+
+test('normal trust stays quiet while team state lives in the comparison headers', () => {
+  const html = render(differingComparison)
+  assert.equal(htmlIncludes(html, 'Read Confidence: High'), false)
+  assert.equal((html.match(/Data through/g) || []).length, 1)
+  assert.ok(htmlIncludes(html, 'Aces'))
+  assert.ok(htmlIncludes(html, 'Bears'))
+  assert.equal(/<h2[^>]*>Team State<\/h2>/.test(html), false)
+  assert.equal(/<h2[^>]*>Freshness<\/h2>/.test(html), false)
+})
+
+test('comparison table preserves all rows inside its horizontal scroll container', () => {
+  const html = render(differingComparison)
+  assert.ok(htmlIncludes(html, 'data-testid="comparison-table-scroll"'))
+  assert.ok(htmlIncludes(html, 'min-w-[38rem]'))
+  for (const label of ['Total relievers', 'Available', 'On Watch', 'Limited', 'Unavailable', '% Available', '% Unavailable']) {
+    assert.ok(htmlIncludes(html, label), `missing comparison row: ${label}`)
+  }
+})
+
+test('share utility follows the comparison, observations, and team-board links', () => {
+  const html = render(differingComparison)
+  const shareIndex = html.lastIndexOf('Share')
+  assert.ok(shareIndex > html.indexOf('Side-by-side Bullpen Read'))
+  assert.ok(shareIndex > html.indexOf('Comparison'))
+  assert.ok(shareIndex > html.indexOf('Full Team Boards'))
 })
 
 test('links to both team boards instead of embedding two full boards', () => {

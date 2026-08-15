@@ -1,28 +1,24 @@
 import { Link } from 'react-router-dom'
+import { Disclosure } from '../UI'
 import { getLandscapeView, getStorylines } from './bullpenLandscapeView'
 
-// Bullpen Storylines — a compact, scannable recap of the most notable bullpen
-// situations, summarized from the same landscape data in plain baseball language.
-// Descriptive only: no charts, rankings, recommendations, or predictions.
+// Backend-authored Storylines — presented verbatim, with no client-side recap.
 function Storylines({ storylines }) {
+  if (!storylines.hasStorylines) return null
   return (
-    <div className="card mb-4 p-4" aria-label="Bullpen Storylines">
+    <div className="card mb-4 p-4" aria-label="Storylines">
       <div className="flex items-center gap-2">
         <span className="h-2 w-2 rounded-full bg-amber" aria-hidden="true" />
-        <h3 className="font-mono text-xs uppercase tracking-widest text-chalk400">Bullpen Storylines</h3>
+        <h3 className="font-mono text-xs uppercase tracking-widest text-chalk400">Storylines</h3>
       </div>
-      {storylines.hasStorylines ? (
-        <ul className="mt-3 space-y-1.5">
-          {storylines.items.map((item, index) => (
-            <li key={index} className="flex gap-2 text-sm leading-relaxed text-chalk200">
-              <span className="select-none text-amber" aria-hidden="true">•</span>
-              <span>{item}</span>
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <p className="mt-3 text-sm leading-relaxed text-chalk500">{storylines.fallback}</p>
-      )}
+      <ul className="mt-3 space-y-1.5">
+        {storylines.items.map((item, index) => (
+          <li key={index} className="flex gap-2 text-sm leading-relaxed text-chalk200">
+            <span className="select-none text-amber" aria-hidden="true">•</span>
+            <span>{item}</span>
+          </li>
+        ))}
+      </ul>
     </div>
   )
 }
@@ -36,7 +32,7 @@ function TeamStateChip({ teamState }) {
   if (!teamState?.available) return null
   return (
     <span
-      className="shrink-0 rounded border px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-widest"
+      className="inline-flex min-h-7 shrink-0 items-center rounded border px-2 py-1 font-mono text-[11px] uppercase tracking-wider"
       style={{ borderColor: teamState.tone.borderColor, color: teamState.tone.color }}
     >
       {teamState.publicLabel}
@@ -45,16 +41,17 @@ function TeamStateChip({ teamState }) {
 }
 
 function EntryRow({ entry, column }) {
+  const metric = entry[column.metric]
   const content = (
     <>
-      <span className="flex min-w-0 items-baseline gap-1.5">
-        <span className="truncate font-medium text-chalk200 group-hover:text-amber group-hover:underline" title={entry.teamName || entry.label}>
+      <span className="flex min-w-0 flex-wrap items-center gap-1.5">
+        <span className="font-medium text-chalk200 group-hover:text-amber group-hover:underline">
           {entry.label}
         </span>
         <TeamStateChip teamState={entry.teamState} />
       </span>
       <span className="flex shrink-0 items-baseline gap-1 font-mono text-xs" style={{ color: column.tone.color }}>
-        {entry[column.metric]} <span className="text-chalk600">{column.suffix}</span>
+        {metric == null ? 'Withheld' : metric} {metric != null && <span className="text-chalk600">{column.suffix}</span>}
         {entry.teamHref && (
           <span className="text-chalk600 opacity-0 transition-opacity group-hover:opacity-100" aria-hidden="true">→</span>
         )}
@@ -63,13 +60,13 @@ function EntryRow({ entry, column }) {
   )
 
   if (!entry.teamHref) {
-    return <li className="flex items-baseline justify-between gap-2">{content}</li>
+    return <li className="flex min-h-11 items-center justify-between gap-2">{content}</li>
   }
   return (
     <li>
       <Link
         to={entry.teamHref}
-        className="group -mx-1 flex cursor-pointer items-baseline justify-between gap-2 rounded px-1 py-0.5 transition-colors hover:bg-amber/5 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/60"
+        className="group -mx-1 flex min-h-11 cursor-pointer items-center justify-between gap-2 rounded px-1 py-1 transition-colors hover:bg-amber/5 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/60"
         aria-label={`Open the bullpen board for ${entry.teamName || entry.label}`}
       >
         {content}
@@ -78,10 +75,9 @@ function EntryRow({ entry, column }) {
   )
 }
 
-// Bullpen Landscape — league-wide orientation for first-time users.
-// Descriptive context only: it surfaces which bullpens are most constrained /
-// most available / carrying the most monitoring. It is NOT a ranking, a
-// scoreboard, or a game forecast.
+// Bullpen Landscape — partial league orientation for first-time users.
+// Descriptive context only: the published lanes are not a ranking, scoreboard,
+// complete league grouping, or game forecast.
 function Column({ column }) {
   return (
     <div className="card p-4">
@@ -95,11 +91,11 @@ function Column({ column }) {
       {column.entries.length === 0 ? (
         <p className="mt-3 text-xs text-chalk600">None right now.</p>
       ) : (
-        <ol className="mt-3 space-y-1">
+        <ul className="mt-3 space-y-1">
           {column.entries.map(entry => (
             <EntryRow key={entry.teamId ?? entry.label} entry={entry} column={column} />
           ))}
-        </ol>
+        </ul>
       )}
     </div>
   )
@@ -120,22 +116,18 @@ export default function BullpenLandscape({ landscape }) {
 
   return (
     <section className="mb-6" aria-label="Bullpen Landscape">
+      {/* Existing storylines lead; the partial lanes are supporting context. */}
+      <Storylines storylines={storylines} />
       <div className="mb-3">
-        <h2 className="font-mono text-xs uppercase tracking-widest text-chalk400">Bullpen Landscape</h2>
+        <h2 className="font-mono text-xs uppercase tracking-widest text-chalk400">Published Situation Lanes</h2>
         <p className="mt-1 text-xs leading-relaxed text-chalk600">
-          League-wide bullpen state across {view.teamsEvaluated} tracked team{view.teamsEvaluated === 1 ? '' : 's'}.
-          This is bullpen context, not a game prediction.
+          {view.teamsEvaluated == null
+            ? 'Partial league context from the current published landscape.'
+            : `Partial league context from ${view.teamsEvaluated} club${view.teamsEvaluated === 1 ? '' : 's'} in the current published landscape.`}
+          {' '}
+          These lanes are descriptive, not a complete league grouping or game prediction.
         </p>
       </div>
-
-      {/* Stored games anchor */}
-      <div className="mb-4 flex flex-col gap-1 rounded-lg border border-dirt bg-field/50 px-4 py-2 sm:flex-row sm:flex-wrap sm:items-baseline sm:gap-x-2">
-        <span className="font-mono text-[11px] uppercase tracking-widest text-chalk500">Games</span>
-        <span className="font-mono text-xs leading-relaxed text-chalk300">{view.games.label}</span>
-      </div>
-
-      {/* Quick-read recap, surfaced before the individual situation columns. */}
-      <Storylines storylines={storylines} />
 
       <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
         {view.columns.map(column => (
@@ -144,11 +136,13 @@ export default function BullpenLandscape({ landscape }) {
       </div>
 
       {view.notes.length > 0 && (
-        <ul className="mt-3 space-y-1">
-          {view.notes.map((note, index) => (
-            <li key={index} className="text-[11px] leading-relaxed text-chalk600">• {displayLandscapeNote(note)}</li>
-          ))}
-        </ul>
+        <Disclosure label="Limits on these lanes" className="mt-3">
+          <ul className="space-y-1">
+            {view.notes.map((note, index) => (
+              <li key={index} className="text-[11px] leading-relaxed text-chalk600">• {displayLandscapeNote(note)}</li>
+            ))}
+          </ul>
+        </Disclosure>
       )}
     </section>
   )

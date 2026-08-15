@@ -132,7 +132,7 @@ test('dashboard renders compact league bullpen availability context', () => {
   assert.ok(!htmlIncludes(html, 'tracked arms'))
   assert.ok(htmlIncludes(html, 'Why it matters:'))
   assert.ok(htmlIncludes(html, 'Bullpen workload can become concentrated when active relief depth is reduced.'))
-  assert.ok(htmlIncludes(html, 'Availability classifications are workload-based.'))
+  assert.ok(htmlIncludes(html, 'Limits on this context'))
 })
 
 test('dashboard does not render followed team context on the Phase 0 launch surface', () => {

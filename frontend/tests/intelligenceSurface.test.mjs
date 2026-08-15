@@ -584,9 +584,8 @@ test('Intelligence Surface shell renders before data resolves', () => {
   }))
 
   assert.ok(htmlIncludes(html, 'MLB BULLPEN INTELLIGENCE — UPDATED DAILY'))
-  assert.ok(htmlIncludes(html, 'See which bullpens are fresh, stretched, or vulnerable tonight — and why.'))
-  assert.ok(htmlIncludes(html, 'Explore today&#x27;s bullpen picture'))
-  assert.ok(htmlIncludes(html, 'href="#bullpen-picture"'))
+  assert.ok(htmlIncludes(html, 'See which bullpens are fresh, stretched, or vulnerable.'))
+  assert.equal(htmlIncludes(html, 'Explore today&#x27;s bullpen picture'), false)
   assert.ok(htmlIncludes(html, 'Get BaseballOS bullpen notes in your inbox.'))
   assert.ok(htmlIncludes(html, 'type="email"'))
   assert.ok(htmlIncludes(html, 'Get bullpen notes'))
@@ -610,7 +609,7 @@ test('Intelligence Surface shell renders before data resolves', () => {
   assert.equal(htmlIncludes(html, 'No lead bullpen story has cleared the bar yet.'), false)
 })
 
-test('homepage sections introduce the bullpen picture before Tonight watch', () => {
+test('homepage follows the daily read, tonight, league teaser, explore, and signup hierarchy', () => {
   const html = render(React.createElement(IntelligenceSurfaceView, {
     intelligence: intelligenceOk,
     tonight: tonightOk,
@@ -620,12 +619,13 @@ test('homepage sections introduce the bullpen picture before Tonight watch', () 
   }))
 
   const orderedSections = [
-    'See which bullpens are fresh, stretched, or vulnerable tonight — and why.',
-    'Today&#x27;s Bullpen Picture',
+    'See which bullpens are fresh, stretched, or vulnerable.',
     'SINCE YESTERDAY',
     'What changed across MLB bullpens',
     'Tonight&#x27;s Bullpen Watch',
-    'Learn &amp; Explore BaseballOS',
+    'Today&#x27;s Bullpen Picture',
+    'Where do you want to go next?',
+    'Get BaseballOS bullpen notes in your inbox.',
   ]
   let previousIndex = -1
   for (const section of orderedSections) {
@@ -675,7 +675,7 @@ test('the bullpen picture teaser deep-links standouts to their exact board and n
   }))
   // Slice to just the teaser's standout grid (excludes the generic first-use
   // browse area, whose entry points legitimately include a bare /bullpen link).
-  const teaser = sectionSlice(html, 'tracked teams', 'View full league board')
+  const teaser = sectionSlice(html, 'clubs in this published view', 'View full league board')
   assert.ok(teaser.length > 0)
   // The standout is a real anchor to the exact team board (abbr + provenance).
   assert.ok(
@@ -700,7 +700,7 @@ test('a bullpen picture standout with no resolvable team renders as plain text, 
     landscape: unresolvable,
     teams,
   }))
-  const teaser = sectionSlice(html, 'tracked teams', 'View full league board')
+  const teaser = sectionSlice(html, 'clubs in this published view', 'View full league board')
   // The claim survives as readable text...
   assert.ok(htmlIncludes(teaser, 'Unlisted Club'))
   // ...but there is no misleading bare-bullpen link promising a team board.
@@ -783,36 +783,20 @@ test('Since Yesterday groups changes into descriptive lanes led by the primary d
   // to read 'Previous view Jun 24', which pinned the field rename: the scope
   // word had replaced 'Data through', leaving the timestamp semantically
   // unnamed.
-  assert.ok(htmlIncludes(sinceHtml, 'Previous view'))
-  assert.ok(htmlIncludes(sinceHtml, 'Current view'))
-  assert.ok(htmlIncludes(sinceHtml, 'Data through Jun 24'))
-  assert.ok(htmlIncludes(sinceHtml, 'Data through Jun 25'))
+  assert.ok(htmlIncludes(sinceHtml, 'Adjacent views'))
+  assert.ok(htmlIncludes(sinceHtml, 'Jun 24'))
+  assert.ok(htmlIncludes(sinceHtml, 'Jun 25'))
   // League movement summary.
   assert.ok(htmlIncludes(sinceHtml, 'Across MLB since yesterday'))
-  assert.ok(htmlIncludes(sinceHtml, 'gained breathing room'))
-  assert.ok(htmlIncludes(sinceHtml, 'became tighter'))
-  assert.ok(htmlIncludes(sinceHtml, 'remained steady'))
-  // Movement tabs replace the stacked lanes: a tablist with a tab per category.
-  assert.ok(htmlIncludes(sinceHtml, 'role="tablist"'))
-  assert.equal(countOccurrences(sinceHtml, 'role="tab"'), 3)
-  // The full lane name reaches screen readers through the tab aria-label,
-  // even though the visible chip uses the compact label.
-  assert.ok(htmlIncludes(sinceHtml, 'aria-label="More breathing room, 1 team"'))
-  assert.ok(htmlIncludes(sinceHtml, 'aria-label="Tighter today, 1 team"'))
-  assert.ok(htmlIncludes(sinceHtml, 'aria-label="All changes, 2 teams"'))
-  // "All changes" is the default active tab; exactly one panel is in the DOM.
-  assert.ok(htmlIncludes(sinceHtml, 'id="since-yesterday-tab-all" aria-selected="true"'))
-  assert.equal(countOccurrences(sinceHtml, 'aria-selected="true"'), 1)
-  assert.equal(countOccurrences(sinceHtml, 'role="tabpanel"'), 1)
-  assert.ok(htmlIncludes(sinceHtml, 'id="since-yesterday-panel-all"'))
-  assert.ok(htmlIncludes(sinceHtml, 'aria-labelledby="since-yesterday-tab-all"'))
-  // No "Steady" tab is ever offered — steadiness is not a movement category.
-  assert.equal(htmlIncludes(sinceHtml, 'aria-label="Steady'), false)
-  // The default All panel shows every card and states how many are detailed.
-  assert.ok(htmlIncludes(sinceHtml, 'Showing all 2 detailed team changes.'))
-  assert.ok(htmlIncludes(sinceHtml, 'Find a team'))
+  assert.ok(htmlIncludes(sinceHtml, '2 clubs moved'))
+  assert.ok(htmlIncludes(sinceHtml, '2 clubs were steady'))
+  // Two cards do not need filtering chrome.
+  assert.equal(htmlIncludes(sinceHtml, 'role="tablist"'), false)
+  assert.equal(htmlIncludes(sinceHtml, 'Showing all 2 detailed team changes.'), false)
+  assert.equal(htmlIncludes(sinceHtml, 'Find a team'), false)
   // Primary delta anchor (numbers + signed net) and consolidated prose.
   assert.ok(htmlIncludes(sinceHtml, 'Rested relievers'))
+  assert.equal(htmlIncludes(sinceHtml, 'Rested arms'), false)
   assert.ok(htmlIncludes(sinceHtml, '+2'))
   assert.ok(htmlIncludes(sinceHtml, 'New York has more usable late-inning margin than yesterday.'))
   assert.ok(htmlIncludes(sinceHtml, 'That creates more ways through a close game tonight.'))
@@ -822,7 +806,7 @@ test('Since Yesterday groups changes into descriptive lanes led by the primary d
   assert.ok(htmlIncludes(sinceHtml, 'Reed Garrett'))
   assert.ok(htmlIncludes(sinceHtml, '21 pitches'))
   // Expandable evidence keeps the structured rows available.
-  assert.ok(htmlIncludes(sinceHtml, 'View evidence'))
+  assert.ok(htmlIncludes(sinceHtml, 'Why this read?'))
   assert.ok(htmlIncludes(sinceHtml, 'Resource pool'))
   assert.ok(htmlIncludes(sinceHtml, 'Yesterday tight'))
   assert.ok(htmlIncludes(sinceHtml, 'Today less tight'))
@@ -834,8 +818,8 @@ test('Since Yesterday groups changes into descriptive lanes led by the primary d
   assert.ok(htmlIncludes(sinceHtml, 'href="/bullpen?view=board&amp;team=NYM&amp;source=since_yesterday"'))
   assert.ok(htmlIncludes(sinceHtml, 'href="/bullpen?view=board&amp;team=SF&amp;source=since_yesterday"'))
   // Two card evidence disclosures + one steady disclosure, none open by default.
-  assert.equal(countOccurrences(sinceHtml, '<details'), 3)
-  assert.equal(countOccurrences(sinceHtml, '<summary'), 3)
+  assert.equal(countOccurrences(sinceHtml, '<details'), 2)
+  assert.equal(countOccurrences(sinceHtml, '<summary'), 2)
   assert.equal(/<details[^>]*\sopen(?:=|>|\s)/i.test(sinceHtml), false)
   assert.equal(htmlIncludes(sinceHtml, 'what_changed_item_opened'), false)
   // The old repetitive headline line is no longer shown as separate prose.
@@ -957,8 +941,8 @@ test('Intelligence Surface renders a populated StoryPackage without raw JSON fie
   }))
 
   assert.ok(htmlIncludes(html, 'MLB BULLPEN INTELLIGENCE — UPDATED DAILY'))
-  assert.ok(htmlIncludes(html, 'See which bullpens are fresh, stretched, or vulnerable tonight — and why.'))
-  assert.ok(htmlIncludes(html, 'BaseballOS reads public MLB usage and workload after every game, so you can tell which pens are gassed and which are loaded — with the data date and confidence always shown.'))
+  assert.ok(htmlIncludes(html, 'See which bullpens are fresh, stretched, or vulnerable.'))
+  assert.ok(htmlIncludes(html, 'BaseballOS reads public MLB usage and workload after every game.'))
   assert.equal(htmlIncludes(html, 'see the evidence behind each read'), false)
   assert.ok(htmlIncludes(html, 'Descriptive only — we show what we see and what we can&#x27;t. No picks, no predictions.'))
   assert.equal(htmlIncludes(html, 'Upcoming Games'), false)
@@ -967,11 +951,11 @@ test('Intelligence Surface renders a populated StoryPackage without raw JSON fie
   assert.equal(htmlIncludes(html, 'Why BaseballOS Sees It'), false)
   assert.equal(htmlIncludes(html, 'The relievers could not hold the lead.'), false)
   assert.equal(htmlIncludes(html, 'Starter: Landen Roupp, 6.0 IP, 95 pitches'), false)
-  assert.ok(htmlIncludes(html, 'Published view current'))
+  assert.equal(htmlIncludes(html, 'Published view current'), false)
   assert.equal(htmlIncludes(html, 'Freshness: Current'), false)
-  assert.ok(htmlIncludes(html, 'Generated at 11:30 PM ET'))
-  assert.ok(htmlIncludes(html, 'Data through Jun 25'))
-  assert.ok(htmlIncludes(html, 'Last data update 6:04 AM ET'))
+  assert.equal(htmlIncludes(html, 'Generated at 11:30 PM ET'), false)
+  assert.ok(htmlIncludes(html, 'dateTime="2026-06-25">Jun 25'))
+  assert.equal(htmlIncludes(html, 'Last data update 6:04 AM ET'), false)
   assert.ok(htmlIncludes(html, 'href="/bullpen?view=board&amp;team=SF&amp;source=landscape"'))
   assert.ok(htmlIncludes(html, 'Tonight&#x27;s Bullpen Watch'))
   assert.ok(htmlIncludes(html, 'What BaseballOS is watching before first pitch.'))
@@ -987,7 +971,7 @@ test('Intelligence Surface renders a populated StoryPackage without raw JSON fie
   }
 })
 
-test('Tonight generated timestamp treats timezone-less UTC as EDT before labeling ET', () => {
+test('Tonight hides generated timestamp metadata in summer', () => {
   const summerTonight = clone(tonightOk)
   summerTonight.snapshot.generated_at = '2026-06-29T03:30:00'
 
@@ -999,11 +983,11 @@ test('Tonight generated timestamp treats timezone-less UTC as EDT before labelin
     teams,
   }))
 
-  assert.ok(htmlIncludes(html, 'Generated at 11:30 PM ET'))
+  assert.equal(htmlIncludes(html, 'Generated at 11:30 PM ET'), false)
   assert.equal(htmlIncludes(html, 'Generated at 3:30 AM ET'), false)
 })
 
-test('Tonight generated timestamp treats timezone-less UTC as EST before labeling ET', () => {
+test('Tonight hides generated timestamp metadata in winter', () => {
   const winterTonight = clone(tonightOk)
   winterTonight.snapshot.generated_at = '2026-12-15T03:30:00'
 
@@ -1015,7 +999,7 @@ test('Tonight generated timestamp treats timezone-less UTC as EST before labelin
     teams,
   }))
 
-  assert.ok(htmlIncludes(html, 'Generated at 10:30 PM ET'))
+  assert.equal(htmlIncludes(html, 'Generated at 10:30 PM ET'), false)
   assert.equal(htmlIncludes(html, 'Generated at 3:30 AM ET'), false)
 })
 
@@ -1049,10 +1033,10 @@ test('homepage freshness separates Tonight slate from completed-game bullpen dat
     teams,
   }))
 
-  assert.ok(htmlIncludes(html, 'Tonight slate: Jun 27'))
-  assert.ok(htmlIncludes(html, 'Generated at 11:30 PM ET'))
-  assert.ok(htmlIncludes(html, 'Data through Jun 26'))
-  assert.ok(htmlIncludes(html, 'Last data update 11:04 AM ET'))
+  assert.ok(htmlIncludes(html, 'Tonight&#x27;s games · Jun 27'))
+  assert.equal(htmlIncludes(html, 'Generated at 11:30 PM ET'), false)
+  assert.ok(htmlIncludes(html, 'dateTime="2026-06-26">Jun 26'))
+  assert.equal(htmlIncludes(html, 'Last data update 11:04 AM ET'), false)
   assert.equal(htmlIncludes(html, 'Data through Jun 27'), false)
   assert.equal(htmlIncludes(html, 'Data through Jun 27'), false)
 })
@@ -1094,10 +1078,9 @@ test('stale homepage freshness does not imply current live data', () => {
     landscape,
     teams,
   }))
-  const pictureHtml = sectionSlice(html, 'Today&#x27;s Bullpen Picture', 'Tonight&#x27;s Bullpen Watch')
-
-  assert.ok(htmlIncludes(pictureHtml, 'Refresh delayed'))
-  assert.equal(htmlIncludes(pictureHtml, 'Freshness: Current'), false)
+  assert.ok(htmlIncludes(html, 'Refresh delayed'))
+  assert.equal((html.match(/Refresh delayed/g) || []).length, 1)
+  assert.equal(htmlIncludes(html, 'Freshness: Current'), false)
 })
 
 test('Bullpen Picture omits data-through when no trusted completed-game date exists', () => {
@@ -1328,14 +1311,10 @@ test('Tonight live build timeout reason renders unavailable state without fallba
     landscape,
     teams,
   }))
-  const tonightHtml = sectionSlice(html, 'Tonight&#x27;s Bullpen Watch', 'Learn &amp; Explore BaseballOS')
-
   assert.ok(htmlIncludes(html, 'Tonight&#x27;s bullpen reads are temporarily unavailable.'))
   assert.ok(htmlIncludes(html, 'The rest of Today can still be used.'))
-  assert.ok(htmlIncludes(html, 'Generated at 11:30 PM ET'))
-  assert.ok(htmlIncludes(tonightHtml, 'Tonight slate unavailable'))
-  assert.equal(htmlIncludes(tonightHtml, 'Refresh delayed'), false)
-  assert.equal(htmlIncludes(tonightHtml, 'Freshness: Current'), false)
+  assert.equal(htmlIncludes(html, 'Generated at 11:30 PM ET'), false)
+  assert.equal(htmlIncludes(html, 'Freshness: Current'), false)
   assert.equal(htmlIncludes(html, 'Reading tonight&#x27;s bullpen context...'), false)
   assert.equal(htmlIncludes(html, 'Around Baseball'), false)
   assert.equal(htmlIncludes(html, 'New York Mets added 2 rested arms'), false)
@@ -1380,14 +1359,12 @@ test('live publishable dashboard freshness keeps Today current while Tonight is 
     landscape: liveLandscape,
     teams,
   }))
-  const tonightHtml = sectionSlice(html, 'Tonight&#x27;s Bullpen Watch', 'Learn &amp; Explore BaseballOS')
-
-  assert.ok(htmlIncludes(html, 'Published view current'))
-  assert.ok(htmlIncludes(html, 'Data through Jul 5'))
-  assert.ok(htmlIncludes(tonightHtml, 'Tonight slate unavailable'))
+  assert.equal(htmlIncludes(html, 'Published view current'), false)
+  assert.ok(htmlIncludes(html, 'dateTime="2026-07-05">Jul 5'))
+  assert.ok(htmlIncludes(html, 'Tonight&#x27;s bullpen reads are temporarily unavailable.'))
   assert.equal(htmlIncludes(html, 'Sample data'), false)
   assert.equal(htmlIncludes(html, 'incomplete and is not publishable'), false)
-  assert.equal(htmlIncludes(tonightHtml, 'Refresh delayed'), false)
+  assert.equal(htmlIncludes(html, 'Refresh delayed'), false)
 })
 
 test('Bullpen Picture uses current published freshness when landscape freshness is incomplete', () => {
@@ -1450,12 +1427,12 @@ test('Bullpen Picture uses current published freshness when landscape freshness 
     landscape: incompleteLandscape,
     teams,
   }))
-  const pictureHtml = sectionSlice(html, 'Today&#x27;s Bullpen Picture', 'Tonight&#x27;s Bullpen Watch')
+  const pictureHtml = sectionSlice(html, 'Today&#x27;s Bullpen Picture', 'Where do you want to go next?')
 
-  assert.ok(htmlIncludes(pictureHtml, 'Published view current'))
-  assert.ok(htmlIncludes(pictureHtml, 'Data through Jul 5'))
-  assert.ok(htmlIncludes(pictureHtml, 'Last data update 12:34 AM ET'))
-  assert.equal(htmlIncludes(pictureHtml, 'Refresh delayed'), false)
+  assert.equal(htmlIncludes(pictureHtml, 'Published view current'), false)
+  assert.equal(htmlIncludes(pictureHtml, 'Data through Jul 5'), false)
+  assert.equal(htmlIncludes(pictureHtml, 'Last data update 12:34 AM ET'), false)
+  assert.equal(htmlIncludes(html, 'Refresh delayed'), false)
 })
 
 test('Tonight fail-closed payload scopes stale chip to the slate when published view is current', () => {
@@ -1474,12 +1451,10 @@ test('Tonight fail-closed payload scopes stale chip to the slate when published 
     landscape,
     teams,
   }))
-  const tonightHtml = sectionSlice(html, 'Tonight&#x27;s Bullpen Watch', 'Learn &amp; Explore BaseballOS')
-
-  assert.ok(htmlIncludes(tonightHtml, 'Tonight slate unavailable'))
-  assert.ok(htmlIncludes(tonightHtml, 'Data through Jun 25'))
-  assert.ok(htmlIncludes(tonightHtml, 'Last data update 6:04 AM ET'))
-  assert.equal(htmlIncludes(tonightHtml, 'Refresh delayed'), false)
+  assert.ok(htmlIncludes(html, 'No standout bullpen watch point tonight.'))
+  assert.ok(htmlIncludes(html, 'dateTime="2026-06-25">Jun 25'))
+  assert.equal(htmlIncludes(html, 'Last data update 6:04 AM ET'), false)
+  assert.equal(htmlIncludes(html, 'Refresh delayed'), false)
 })
 
 test('Tonight unavailable keeps generic stale copy when published bullpen view is stale', () => {
@@ -1506,11 +1481,9 @@ test('Tonight unavailable keeps generic stale copy when published bullpen view i
     landscape,
     teams,
   }))
-  const tonightHtml = sectionSlice(html, 'Tonight&#x27;s Bullpen Watch', 'Learn &amp; Explore BaseballOS')
-
-  assert.ok(htmlIncludes(tonightHtml, 'Refresh delayed'))
-  assert.equal(htmlIncludes(tonightHtml, 'Tonight slate unavailable'), false)
-  assert.equal(htmlIncludes(tonightHtml, 'Freshness: Current'), false)
+  assert.ok(htmlIncludes(html, 'Refresh delayed'))
+  assert.equal((html.match(/Refresh delayed/g) || []).length, 1)
+  assert.equal(htmlIncludes(html, 'Freshness: Current'), false)
 })
 
 test('Tonight error shows unavailable state when dashboard observations exist', () => {
@@ -1545,7 +1518,7 @@ test('Tonight error shows a graceful error state when fallback also fails', () =
   assert.equal(htmlIncludes(html, 'Giants bullpen let a four-run lead get away'), false)
   assert.ok(htmlIncludes(html, 'Tonight&#x27;s bullpen reads are temporarily unavailable.'))
   assert.ok(htmlIncludes(html, 'The rest of Today can still be used.'))
-  assert.ok(htmlIncludes(html, 'Most Available'))
+  assert.ok(htmlIncludes(html, 'Rested &amp; Available'))
 })
 
 test('Tonight empty state renders when neither Tonight nor fallback observations are available', () => {
@@ -1574,7 +1547,7 @@ test('fallback dashboard failure does not prevent Today sections rendering', () 
   assert.equal(htmlIncludes(html, 'Giants bullpen let a four-run lead get away'), false)
   assert.equal(htmlIncludes(html, 'The Giants reached the seventh with a cushion'), false)
   assert.ok(htmlIncludes(html, 'No standout bullpen watch point tonight.'))
-  assert.ok(htmlIncludes(html, 'Most Available'))
+  assert.ok(htmlIncludes(html, 'Rested &amp; Available'))
 })
 
 test('Bullpen Picture failure does not prevent Today page rendering', () => {
@@ -1598,13 +1571,13 @@ test('Bullpen Picture renders existing landscape lanes and handles missing data'
   const picture = getBullpenPictureView(landscape)
   assert.equal(picture.hasLandscape, true)
   assert.deepEqual(picture.columns.map(column => column.title), [
-    'Most Available',
-    'Most On-Watch Arms',
-    'Most Stretched',
+    'Rested & Available',
+    'On Watch',
+    'Needs Rest / Unavailable',
   ])
-  assert.equal(picture.columns.find(column => column.title === 'Most Stretched')?.entries[0]?.restricted, 4)
+  assert.equal(picture.columns.find(column => column.title === 'Needs Rest / Unavailable')?.entries[0]?.restricted, 4)
   // Teaser view-model: one standout team per lane plus an overflow count.
-  assert.equal(picture.columns.find(column => column.title === 'Most Stretched')?.lead?.restricted, 4)
+  assert.equal(picture.columns.find(column => column.title === 'Needs Rest / Unavailable')?.lead?.restricted, 4)
   assert.equal(picture.columns.every(column => column.moreCount === 0), true)
 
   const crowdedPicture = getBullpenPictureView({
@@ -1614,7 +1587,7 @@ test('Bullpen Picture renders existing landscape lanes and handles missing data'
       { team_id: 121, team_name: 'New York Mets', team_abbreviation: 'NYM', total_relievers: 8, available: 5, monitor: 2, restricted: 1 },
     ],
   })
-  const availableLane = crowdedPicture.columns.find(column => column.title === 'Most Available')
+  const availableLane = crowdedPicture.columns.find(column => column.title === 'Rested & Available')
   assert.equal(availableLane?.lead?.teamAbbrev, 'SF')
   assert.equal(availableLane?.moreCount, 1)
 
@@ -1627,11 +1600,11 @@ test('Bullpen Picture renders existing landscape lanes and handles missing data'
   }))
 
   assert.ok(htmlIncludes(html, 'Today&#x27;s Bullpen Picture'))
-  assert.ok(htmlIncludes(html, 'A quick look at which bullpens look rested and available, stretched, or on watch.'))
-  assert.ok(htmlIncludes(html, 'Data through Jun 25'))
-  assert.ok(htmlIncludes(html, 'Most Available'))
-  assert.ok(htmlIncludes(html, 'Most Stretched'))
-  assert.ok(htmlIncludes(html, 'Most On-Watch Arms'))
+  assert.ok(htmlIncludes(html, 'A quick look at which bullpens are rested and available, on watch, or need rest / are unavailable.'))
+  assert.ok(htmlIncludes(html, 'dateTime="2026-06-25">Jun 25'))
+  assert.ok(htmlIncludes(html, 'Rested &amp; Available'))
+  assert.ok(htmlIncludes(html, 'Needs Rest / Unavailable'))
+  assert.ok(htmlIncludes(html, 'On Watch'))
   assert.ok(htmlIncludes(html, 'SF'))
   assert.ok(htmlIncludes(html, 'MIL'))
   assert.ok(htmlIncludes(html, 'TOR'))
@@ -1648,7 +1621,7 @@ test('Bullpen Picture renders existing landscape lanes and handles missing data'
     },
     teams,
   }))
-  assert.ok(htmlIncludes(emptyLaneHtml, 'No bullpen currently shows enough stretched workload to stand out.'))
+  assert.ok(htmlIncludes(emptyLaneHtml, 'No stretched-workload club is shown in this published view.'))
   assert.equal(htmlIncludes(emptyLaneHtml, 'No bullpen currently meets this threshold.'), false)
   assert.equal(htmlIncludes(emptyLaneHtml, 'No entries in this lane.'), false)
 
@@ -1699,32 +1672,24 @@ test('Explore links render to existing routes', () => {
     teams,
   }))
 
-  assert.ok(htmlIncludes(html, 'Learn &amp; Explore'))
-  assert.ok(htmlIncludes(html, 'Learn &amp; Explore BaseballOS'))
-  assert.ok(htmlIncludes(html, 'Get to know BaseballOS, then dig into every bullpen.'))
+  assert.ok(htmlIncludes(html, 'Explore BaseballOS'))
+  assert.ok(htmlIncludes(html, 'Where do you want to go next?'))
 
   for (const href of [
-    'href="/about"',
-    'href="/how-to-read"',
-    'href="/methodology"',
-    'href="/trust"',
+    'href="/dashboard"',
+    'href="/bullpen"',
+    'href="/bullpen?view=compare"',
+    'href="/bullpen?view=pitchers"',
   ]) {
     assert.ok(htmlIncludes(html, href), href)
   }
 
-  assert.ok(htmlIncludes(html, 'About BaseballOS'))
-  assert.ok(htmlIncludes(html, 'Why BaseballOS exists, in a minute.'))
-  assert.ok(htmlIncludes(html, 'How to Read BaseballOS'))
-  assert.ok(htmlIncludes(html, 'Learn every term in one line each.'))
-  assert.ok(htmlIncludes(html, 'See how each read is built.'))
-  assert.ok(htmlIncludes(html, 'Check freshness and how we know.'))
-
-  const exploreHtml = sectionSlice(html, 'Learn &amp; Explore BaseballOS')
+  const exploreHtml = sectionSlice(html, 'Where do you want to go next?')
   const orderedTitles = [
-    'About BaseballOS',
-    'How to Read BaseballOS',
-    'Methodology',
-    'Data &amp; Trust',
+    'League Board',
+    'Find a Team',
+    'Compare Two Bullpens',
+    'Find a Reliever',
   ]
   let previousIndex = -1
   for (const title of orderedTitles) {
@@ -1732,18 +1697,8 @@ test('Explore links render to existing routes', () => {
     assert.ok(index > previousIndex, title)
     previousIndex = index
   }
-  for (const removedTitle of ['Dashboard', 'Bullpen', 'Stories']) {
-    assert.equal(htmlIncludes(exploreHtml, removedTitle), false, removedTitle)
-  }
-  // The Learn & Explore (supporting) section links only to the trust/explainer
-  // pages — the primary bullpen links live in the separate first-use entry area.
-  assert.equal(htmlIncludes(exploreHtml, 'href="/dashboard"'), false)
-  assert.equal(htmlIncludes(exploreHtml, 'href="/bullpen"'), false)
-  assert.equal(htmlIncludes(exploreHtml, 'href="/stories"'), false)
-
-  // The first-use entry area does link to the primary bullpen surfaces.
-  assert.ok(htmlIncludes(html, 'href="/bullpen?view=compare"'))
-  assert.ok(htmlIncludes(html, 'href="/bullpen?view=pitchers"'))
+  assert.equal(htmlIncludes(exploreHtml, 'href="/"'), false)
+  assert.equal((html.match(/id="explore-baseballos"/g) || []).length, 1)
 })
 
 test('Today visible text avoids internal platform terms', () => {
@@ -2018,7 +1973,7 @@ test('Since Yesterday structure lane renders a delta with no signed net', () => 
   const sinceHtml = sectionSlice(html, 'SINCE YESTERDAY', 'Tonight&#x27;s Bullpen Watch')
   assert.ok(htmlIncludes(sinceHtml, 'Structure changed'))
   assert.ok(htmlIncludes(sinceHtml, 'Late-inning support arms'))
-  assert.ok(htmlIncludes(sinceHtml, 'changed structurally'))
+  assert.ok(htmlIncludes(sinceHtml, 'Late-inning support arms'))
   // A structural delta must not fabricate a +/- net value.
   assert.equal(/net change/.test(sinceHtml), false)
 })
@@ -2036,7 +1991,7 @@ test('Since Yesterday summary omits zero-count lanes and withholds unproven stea
 
   assert.equal(view.summary.countsComplete, false)
   assert.equal('steadyCount' in view.summary, false)
-  assert.ok(htmlIncludes(sinceHtml, 'changed structurally'))
+  assert.ok(htmlIncludes(sinceHtml, '1 club moved'))
   // Zero-count directions are not rendered as "0 gained breathing room".
   assert.equal(htmlIncludes(sinceHtml, 'gained breathing room'), false)
   assert.equal(htmlIncludes(sinceHtml, 'became tighter'), false)
@@ -2060,7 +2015,6 @@ test('Since Yesterday item without a backend lane falls closed to the neutral la
     teams,
   }))
   const sinceHtml = sectionSlice(html, 'SINCE YESTERDAY', 'Tonight&#x27;s Bullpen Watch')
-  assert.ok(htmlIncludes(sinceHtml, 'Other meaningful change'))
   assert.ok(htmlIncludes(sinceHtml, 'Movement without a backend-authored lane.'))
   assert.equal(htmlIncludes(sinceHtml, 'Across MLB since yesterday'), false)
 })
@@ -2133,65 +2087,62 @@ test('Since Yesterday count clarity reconciles detailed cards with the complete 
   const allClarity = sinceYesterdayCountClarity(allTab, view.summary)
   assert.equal(
     allClarity,
-    'Showing 2 of 5 teams with movement. Three additional teams are included in the league summary but do not have a publishable detailed card. They are not counted as steady.',
+    '3 more teams moved; details on their team boards.',
   )
   // Category tab, plural withheld: reconciles against the lane league count and
   // does not repeat the steady clarification.
   assert.equal(
     sinceYesterdayCountClarity(moreRoomTab, view.summary),
-    'Showing 1 of 3 teams with movement in this category. Two additional teams are included in the league count but do not have a publishable detailed card.',
+    '2 more teams moved in this category; details remain on their team boards.',
   )
   // Category tab, singular withheld: "One additional team ... does not have".
   assert.equal(
     sinceYesterdayCountClarity(tighterTab, view.summary),
-    'Showing 1 of 2 teams with movement in this category. One additional team is included in the league count but does not have a publishable detailed card.',
+    '1 more team moved in this category; details remain on their team boards.',
   )
 
   // All tab, large plural example (11 of 22) spelled-out and steady-qualified.
   assert.equal(
     sinceYesterdayCountClarity({ key: 'all', count: 11 }, { meaningfulChangeCount: 22 }),
-    'Showing 11 of 22 teams with movement. Eleven additional teams are included in the league summary but do not have a publishable detailed card. They are not counted as steady.',
+    '11 more teams moved; details on their team boards.',
   )
   // Category tab, larger example (6 of 10) — uses "league count", no steady line.
   assert.equal(
     sinceYesterdayCountClarity({ key: 'more_breathing_room', count: 6 }, { moreBreathingRoomCount: 10 }),
-    'Showing 6 of 10 teams with movement in this category. Four additional teams are included in the league count but do not have a publishable detailed card.',
+    '4 more teams moved in this category; details remain on their team boards.',
   )
   // All tab, singular withheld: both 1-of-2 and 2-of-3 leave exactly one team
   // withheld and must read "One additional team ... does not have ... It is not
   // counted as steady."
   assert.equal(
     sinceYesterdayCountClarity({ key: 'all', count: 1 }, { meaningfulChangeCount: 2 }),
-    'Showing 1 of 2 teams with movement. One additional team is included in the league summary but does not have a publishable detailed card. It is not counted as steady.',
+    '1 more team moved; details on their team boards.',
   )
   assert.equal(
     sinceYesterdayCountClarity({ key: 'all', count: 2 }, { meaningfulChangeCount: 3 }),
-    'Showing 2 of 3 teams with movement. One additional team is included in the league summary but does not have a publishable detailed card. It is not counted as steady.',
+    '1 more team moved; details on their team boards.',
   )
 
   // When every moving team has a card, reassure that all are shown — with no
   // additional-team sentence at all.
   const completeView = getSinceYesterdayView(dashboardWithSinceYesterdayChanges, teams)
   const allComplete = sinceYesterdayCountClarity(completeView.tabs[0], completeView.summary)
-  assert.equal(allComplete, 'Showing all 2 detailed team changes.')
-  assert.equal(/additional team/.test(allComplete), false)
+  assert.equal(allComplete, null)
   assert.equal(
     sinceYesterdayCountClarity(completeView.tabs[1], completeView.summary),
-    'Showing all 1 detailed team change in this category.',
+    null,
   )
 
   // No summary / unknown denominator: numerator only, never "of 0", and no
   // withheld-card explanation.
   const numeratorOnly = sinceYesterdayCountClarity(completeView.tabs[0], null)
-  assert.equal(numeratorOnly, 'Showing 2 detailed team changes.')
-  assert.equal(/of 0/.test(numeratorOnly), false)
-  assert.equal(/additional team/.test(numeratorOnly), false)
+  assert.equal(numeratorOnly, null)
 
   // A complete count smaller than the cards on hand is ignored, not shown as a
   // zero or negative remainder.
   assert.equal(
     sinceYesterdayCountClarity({ key: 'all', count: 3 }, { meaningfulChangeCount: 1 }),
-    'Showing 3 detailed team changes.',
+    null,
   )
 
   // The retired internal-sounding phrasing never appears in any produced copy.
@@ -2203,7 +2154,7 @@ test('Since Yesterday count clarity reconciles detailed cards with the complete 
     sinceYesterdayCountClarity({ key: 'all', count: 1 }, { meaningfulChangeCount: 2 }),
     allComplete,
     numeratorOnly,
-  ].join('')
+  ].filter(Boolean).join('')
   for (const banned of ['published write-up', 'write-up yet', 'moved too']) {
     assert.equal(everyString.includes(banned), false, banned)
   }
@@ -2224,14 +2175,14 @@ test('Since Yesterday panel explains when detailed cards are fewer than the leag
   const sinceHtml = sectionSlice(html, 'SINCE YESTERDAY', 'Tonight&#x27;s Bullpen Watch')
 
   // The league summary still reports the complete counts...
-  assert.ok(htmlIncludes(sinceHtml, 'gained breathing room'))
-  assert.ok(htmlIncludes(sinceHtml, 'remained steady'))
+  assert.ok(htmlIncludes(sinceHtml, '5 clubs moved'))
+  assert.ok(htmlIncludes(sinceHtml, '1 club was steady'))
   // ...and the active All panel reconciles them with the detailed cards shown:
   // the additional teams are inside the league summary but have no public-safe
   // card, and are explicitly not counted as steady.
   assert.ok(htmlIncludes(
     sinceHtml,
-    'Showing 2 of 5 teams with movement. Three additional teams are included in the league summary but do not have a publishable detailed card. They are not counted as steady.',
+    '3 more teams moved; details on their team boards.',
   ))
   assert.equal(/\bof 0\b/.test(sinceHtml), false)
   // Retired internal-sounding phrasing is gone from the rendered copy.
@@ -2240,7 +2191,7 @@ test('Since Yesterday panel explains when detailed cards are fewer than the leag
   }
 })
 
-test('Since Yesterday tabs expose roving focus and panel wiring, with only the active panel mounted', () => {
+test('Since Yesterday omits tabs and search for a small result set', () => {
   const html = render(React.createElement(IntelligenceSurfaceView, {
     intelligence: intelligenceOk,
     tonight: tonightOk,
@@ -2250,17 +2201,7 @@ test('Since Yesterday tabs expose roving focus and panel wiring, with only the a
   }))
   const sinceHtml = sectionSlice(html, 'SINCE YESTERDAY', 'Tonight&#x27;s Bullpen Watch')
 
-  // Roving tabindex: only the active tab is focusable; the other two are -1.
-  assert.equal(countOccurrences(sinceHtml, 'tabindex="-1"'), 2)
-  // Every tab points at its own panel id (arrow-key handler is attached to the
-  // labelled, horizontally oriented tablist).
-  assert.ok(htmlIncludes(sinceHtml, 'aria-label="Movement categories"'))
-  assert.ok(htmlIncludes(sinceHtml, 'aria-orientation="horizontal"'))
-  assert.ok(htmlIncludes(sinceHtml, 'aria-controls="since-yesterday-panel-all"'))
-  assert.ok(htmlIncludes(sinceHtml, 'aria-controls="since-yesterday-panel-more_breathing_room"'))
-  assert.ok(htmlIncludes(sinceHtml, 'aria-controls="since-yesterday-panel-tighter_today"'))
-  // Only the active tab's panel is in the DOM; inactive panels are not mounted.
+  assert.equal(countOccurrences(sinceHtml, 'role="tab"'), 0)
   assert.equal(countOccurrences(sinceHtml, 'role="tabpanel"'), 1)
-  assert.equal(htmlIncludes(sinceHtml, 'id="since-yesterday-panel-more_breathing_room"'), false)
-  assert.equal(htmlIncludes(sinceHtml, 'id="since-yesterday-panel-tighter_today"'), false)
+  assert.equal(htmlIncludes(sinceHtml, 'Search teams'), false)
 })

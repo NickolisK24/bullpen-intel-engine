@@ -53,31 +53,33 @@ const landscape = {
 
 // ── Tonight's Bullpen Landscape ────────────────────────────────────────────
 
-test('landscape renders canonical callout titles with descriptive subtitles', () => {
+test('landscape renders plain descriptive lane titles and subtitles', () => {
   const html = render(React.createElement(BullpenLandscape, { landscape }))
-  assert.ok(htmlIncludes(html, 'Bullpen Landscape'))
-  assert.ok(htmlIncludes(html, 'Most Stretched'))
-  assert.ok(htmlIncludes(html, 'Most Available'))
-  assert.ok(htmlIncludes(html, 'Most On-Watch Arms'))
+  assert.ok(htmlIncludes(html, 'Published Situation Lanes'))
+  assert.ok(htmlIncludes(html, 'current published landscape. These lanes are descriptive'))
+  assert.ok(htmlIncludes(html, 'Needs Rest / Unavailable'))
+  assert.ok(htmlIncludes(html, 'Rested &amp; Available'))
+  assert.ok(htmlIncludes(html, 'On Watch'))
   assert.ok(
-    html.indexOf('Most Available') < html.indexOf('Most On-Watch Arms') &&
-    html.indexOf('Most On-Watch Arms') < html.indexOf('Most Stretched'),
-    'landscape columns should render Most Available, Most On-Watch Arms, then Most Stretched',
+    html.indexOf('Rested &amp; Available') < html.indexOf('On Watch') &&
+    html.indexOf('On Watch') < html.indexOf('Needs Rest / Unavailable'),
+    'landscape columns should render Rested & Available, On Watch, then Needs Rest / Unavailable',
   )
-  assert.ok(htmlIncludes(html, 'Fewest clean late-inning options'))
-  assert.ok(htmlIncludes(html, 'Most room to maneuver'))
-  assert.ok(htmlIncludes(html, 'Recent workload watch groups'))
-  assert.ok(htmlIncludes(html, 'ACE'))
-  assert.ok(htmlIncludes(html, 'BEA'))
-  assert.ok(htmlIncludes(html, 'CHC'))
+  assert.ok(htmlIncludes(html, 'Clubs shown with tighter late-inning options'))
+  assert.ok(htmlIncludes(html, 'Clubs shown with rested, available depth'))
+  assert.ok(htmlIncludes(html, 'Clubs shown with recent workload watch groups'))
+  assert.ok(htmlIncludes(html, 'Aces'))
+  assert.ok(htmlIncludes(html, 'Bears'))
+  assert.ok(htmlIncludes(html, 'Cubs'))
 })
 
-test('landscape shows the stored-games anchor honestly (not a live schedule)', () => {
+test('landscape leaves freshness to the page-level stamp and states its limits', () => {
   const html = render(React.createElement(BullpenLandscape, { landscape }))
-  assert.ok(htmlIncludes(html, 'Data through Jun 4, 2026'))
+  assert.equal(htmlIncludes(html, 'Data through Jun 4, 2026'), false)
   assert.equal(htmlIncludes(html, 'Tonight slate'), false)
   assert.equal(htmlIncludes(html, 'latest completed MLB slate'), false)
-  assert.ok(htmlIncludes(html, 'not a game prediction'))   // required disclaimer
+  assert.ok(htmlIncludes(html, 'not a complete league grouping or game prediction'))
+  assert.ok(htmlIncludes(html, 'Limits on these lanes'))
 })
 
 test('landscape renders nothing without data', () => {
@@ -99,9 +101,9 @@ test('dashboard surfaces the landscape section near the top', () => {
     landscape,
   }
   const html = render(React.createElement(DashboardView, { data }))
-  assert.ok(htmlIncludes(html, 'Bullpen Landscape'))
-  assert.ok(htmlIncludes(html, 'Most Stretched'))
-  assert.ok(htmlIncludes(html, 'Fewest clean late-inning options'))
+  assert.ok(htmlIncludes(html, 'Published Situation Lanes'))
+  assert.ok(htmlIncludes(html, 'Needs Rest / Unavailable'))
+  assert.ok(htmlIncludes(html, 'Clubs shown with tighter late-inning options'))
 })
 
 // ── Today's Game Context card ──────────────────────────────────────────────

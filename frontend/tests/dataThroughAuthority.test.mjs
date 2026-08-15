@@ -122,8 +122,9 @@ const todayExpectedLine = 'Data through Jun 16'
 const todaySyncAheadLine = 'Data through Jun 17'
 
 function assertUsesServedFreshness(surface, html) {
-  assert.ok(html.includes(expectedLine), `${surface} did not show served freshness data-through`)
-  assert.equal(html.includes(syncAheadLine), false, `${surface} leaked raw sync data-through`)
+  const text = html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ')
+  assert.ok(text.includes(expectedLine), `${surface} did not show served freshness data-through`)
+  assert.equal(text.includes(syncAheadLine), false, `${surface} leaked raw sync data-through`)
 }
 
 test('user-facing data-through surfaces use served freshness when sync is ahead of publish', () => {
@@ -152,11 +153,17 @@ test('user-facing data-through surfaces use served freshness when sync is ahead 
   }
 
   for (const [surface, html] of Object.entries(surfaces)) {
-    if (surface === 'Today') {
-      assert.ok(html.includes('Published view current'), `${surface} did not label the published view as current`)
-      assert.equal(html.includes('Freshness: Current'), false, `${surface} used generic current freshness copy`)
-      assert.ok(html.includes(todayExpectedLine), `${surface} did not show served freshness data-through`)
-      assert.equal(html.includes(todaySyncAheadLine), false, `${surface} leaked raw sync data-through`)
+    if (['Today', 'Dashboard', 'Stories', 'Comparison'].includes(surface)) {
+      assert.equal((html.match(/Data through/g) || []).length, 1, `${surface} did not render one authoritative freshness stamp`)
+      if (surface === 'Today') {
+        assert.equal(html.includes('Published view current'), false, `${surface} exposed routine trust chrome`)
+      }
+      if (surface !== 'Stories') {
+        assert.equal(html.includes('Freshness: Current'), false, `${surface} used generic current freshness copy`)
+      }
+      const text = html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ')
+      assert.ok(text.includes(todayExpectedLine), `${surface} did not show served freshness data-through`)
+      assert.equal(text.includes(todaySyncAheadLine), false, `${surface} leaked raw sync data-through`)
     } else {
       assertUsesServedFreshness(surface, html)
     }

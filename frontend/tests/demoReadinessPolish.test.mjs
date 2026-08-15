@@ -77,7 +77,7 @@ test('board banner flags historical data with the stale caution', () => {
   assert.ok(htmlIncludes(html, 'read with caution'))
 })
 
-test('dashboard hero pill states data provenance plainly', () => {
+test('dashboard hero uses one quiet data-through line', () => {
   const data = {
     capability: 'bullpen_dashboard',
     context: liveBoard.context,
@@ -85,8 +85,9 @@ test('dashboard hero pill states data provenance plainly', () => {
     freshness: { is_current: true, sync_status: 'success', data_through: '2026-06-04', last_successful_sync: '2026-06-04T12:00:00Z' },
   }
   const html = inRouter(React.createElement(DashboardView, { data }))
-  assert.ok(htmlIncludes(html, 'Updated after completed games through Jun 4, 2026'))
-  assert.ok(htmlIncludes(html, 'Last data update:'))
+  assert.equal((html.match(/Data through/g) || []).length, 1)
+  assert.ok(htmlIncludes(html, 'dateTime="2026-06-04">Jun 4'))
+  assert.equal(htmlIncludes(html, 'Last data update:'), false)
 })
 
 // ── Priority 2: board → pitcher detail ─────────────────────────────────────
