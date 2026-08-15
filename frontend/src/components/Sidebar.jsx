@@ -225,7 +225,7 @@ export default function Sidebar() {
           <div className="bos-page flex min-h-[2.15rem] items-center gap-5">
             {[
               ['/bullpen', 'Team board', 'board'],
-              ['/bullpen?view=pitchers', 'Pitcher record', 'pitchers'],
+              ['/bullpen?view=pitchers', 'Reliever finder', 'pitchers'],
               ['/bullpen?view=compare', 'Compare', 'compare'],
             ].map(([to, label, view]) => {
               const active = readBullpenLocation(location.search || '', '').view === view
