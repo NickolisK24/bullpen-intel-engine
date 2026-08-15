@@ -7,6 +7,7 @@ import { createServer } from 'vite'
 
 import { makeBoard } from './fixtures/bullpenBoardFixtures.mjs'
 import { makeComparison } from './fixtures/bullpenComparisonFixtures.mjs'
+import { makeLeagueTeamStateListing } from './fixtures/leagueTeamStateListingFixtures.mjs'
 
 const server = await createServer({
   root: process.cwd(),
@@ -137,7 +138,10 @@ test('user-facing data-through surfaces use served freshness when sync is ahead 
       v2BullpenState: fetchState(null),
       teamOperationsReadiness: fetchState(null),
     })),
-    Dashboard: render(React.createElement(DashboardView, { data: dashboard })),
+    Dashboard: render(React.createElement(DashboardView, {
+      data: dashboard,
+      leagueTeamStates: makeLeagueTeamStateListing({ freshness: servedFreshness }),
+    })),
     Today: render(React.createElement(IntelligenceSurfaceView, {
       intelligence: {
         status: 'empty',

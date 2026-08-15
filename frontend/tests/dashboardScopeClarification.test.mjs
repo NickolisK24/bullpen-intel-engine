@@ -6,6 +6,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { createServer } from 'vite'
 
 import { makeBoard } from './fixtures/bullpenBoardFixtures.mjs'
+import { makeLeagueTeamStateListing } from './fixtures/leagueTeamStateListingFixtures.mjs'
 
 const server = await createServer({
   root: process.cwd(),
@@ -43,13 +44,16 @@ const dashboardData = {
   },
 }
 
-const renderDashboard = () => inRouter(React.createElement(DashboardView, { data: dashboardData }))
+const renderDashboard = () => inRouter(React.createElement(DashboardView, {
+  data: dashboardData,
+  leagueTeamStates: makeLeagueTeamStateListing(),
+}))
 
 test('hero states the dashboard is a league-wide / MLB-wide view', () => {
   const html = renderDashboard()
   assert.ok(htmlIncludes(html, 'MLB Bullpen Overview'))
   assert.ok(htmlIncludes(html, 'MLB Bullpen Picture'))
-  assert.ok(htmlIncludes(html, 'partial view, not a complete ranking of all 30 clubs'))
+  assert.ok(htmlIncludes(html, 'already-published Team State reads for every expected club'))
   assert.equal(htmlIncludes(html, 'Bullpen-eligible MLB arms'), false)
 })
 
@@ -62,10 +66,11 @@ test('the duplicate league count summary no longer renders', () => {
   assert.equal(htmlIncludes(html, 'bullpen-eligible relievers in the current bullpen availability set'), false)
 })
 
-test('the synthetic league-wide operating-state card is absent', () => {
+test('the governed all-club Team State landscape replaces the synthetic operating-state card', () => {
   const html = renderDashboard()
   assert.equal(htmlIncludes(html, 'League-Wide Bullpen State'), false)
-  assert.equal(htmlIncludes(html, 'Current Bullpen State'), false)
+  assert.ok(htmlIncludes(html, 'Current Bullpen State'))
+  assert.ok(htmlIncludes(html, '30 MLB clubs · grouped by published Team State'))
   assert.equal(htmlIncludes(html, 'data-density="full"'), false)
 })
 

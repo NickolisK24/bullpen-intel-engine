@@ -16,7 +16,7 @@ after(async () => {
   await server.close()
 })
 
-const { default: BullpenLandscape } = await server.ssrLoadModule('/src/components/dashboard/BullpenLandscape.jsx')
+const { default: DashboardStorylines } = await server.ssrLoadModule('/src/components/dashboard/DashboardStorylines.jsx')
 const { getStorylines } = await server.ssrLoadModule('/src/components/dashboard/bullpenLandscapeView.js')
 
 const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -77,30 +77,24 @@ test('lane counts never generate client-side storylines', () => {
 // ── Rendering & placement ──────────────────────────────────────────────────
 
 test('the storylines card renders with its title and bullet observations', () => {
-  const html = render(React.createElement(BullpenLandscape, { landscape }))
+  const html = render(React.createElement(DashboardStorylines, { landscape }))
   assert.ok(htmlIncludes(html, 'Storylines'))
   assert.ok(htmlIncludes(html, 'Chicago Cubs have four relievers needing rest or unavailable.'))
   assert.ok(htmlIncludes(html, 'Washington Nationals have six rested relievers.'))
 })
 
-test('the storylines card sits above the individual situation columns', () => {
-  const html = render(React.createElement(BullpenLandscape, { landscape }))
-  assert.ok(html.indexOf('Storylines') < html.indexOf('Rested &amp; Available'),
-    'storylines should precede the situation columns')
-})
-
 test('the storylines block is absent when backend copy is unavailable', () => {
-  const html = render(React.createElement(BullpenLandscape, {
+  const html = render(React.createElement(DashboardStorylines, {
     landscape: { ...landscape, storylines: [] },
   }))
   assert.equal(htmlIncludes(html, 'Storylines'), false)
-  assert.ok(htmlIncludes(html, 'Published Situation Lanes'))
+  assert.equal(html, '')
 })
 
 // ── Guardrails: descriptive only ────────────────────────────────────────────
 
 test('storylines avoid advisory, ranking, and prediction language', () => {
-  const html = render(React.createElement(BullpenLandscape, { landscape })).toLowerCase()
+  const html = render(React.createElement(DashboardStorylines, { landscape })).toLowerCase()
   for (const term of [
     'should use', 'best option', 'best bullpen', 'worst bullpen', 'recommended',
     'recommendation', 'strongest bullpen', 'weakest bullpen', 'expected to win',

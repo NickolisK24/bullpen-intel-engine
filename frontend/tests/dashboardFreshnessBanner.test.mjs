@@ -6,6 +6,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { createServer } from 'vite'
 
 import { makeBoard } from './fixtures/bullpenBoardFixtures.mjs'
+import { makeLeagueTeamStateListing } from './fixtures/leagueTeamStateListingFixtures.mjs'
 
 const server = await createServer({
   root: process.cwd(),
@@ -27,10 +28,13 @@ const inRouter = (el) => renderToStaticMarkup(React.createElement(MemoryRouter, 
 const context = makeBoard({ cardsByStatus: { Available: [{ pitcher_id: 1, name: 'A', availability_status: 'Available' }] } }).context
 
 const withFreshness = (freshness) => ({
-  capability: 'bullpen_dashboard',
-  context,
-  roles: { order: [], counts: {}, total: 1 },
-  freshness,
+  data: {
+    capability: 'bullpen_dashboard',
+    context,
+    roles: { order: [], counts: {}, total: 1 },
+    freshness: { data_through: '1999-01-01' },
+  },
+  leagueTeamStates: makeLeagueTeamStateListing({ freshness }),
 })
 
 // The banner derives from authoritative (durable-backed) freshness only. These
@@ -39,7 +43,7 @@ const withFreshness = (freshness) => ({
 
 test('healthy durable freshness renders one quiet data-through line', () => {
   const html = inRouter(React.createElement(DashboardView, {
-    data: withFreshness({ is_current: true, sync_status: 'success', data_through: '2026-06-04', last_successful_sync: '2026-06-04T12:00:00Z' }),
+    ...withFreshness({ is_current: true, sync_status: 'success', data_through: '2026-06-04', last_successful_sync: '2026-06-04T12:00:00Z' }),
   }))
   assert.equal((html.match(/Data through/g) || []).length, 1)
   assert.ok(htmlIncludes(html, 'dateTime="2026-06-04">Jun 4'))
@@ -49,7 +53,7 @@ test('healthy durable freshness renders one quiet data-through line', () => {
 
 test('non-current freshness retains an exceptional stale signal', () => {
   const html = inRouter(React.createElement(DashboardView, {
-    data: withFreshness({ is_current: false, sync_status: 'metadata_unavailable', data_through: '2026-04-01', last_successful_sync: null }),
+    ...withFreshness({ is_current: false, sync_status: 'metadata_unavailable', data_through: '2026-04-01', last_successful_sync: null }),
   }))
   assert.ok(htmlIncludes(html, 'dateTime="2026-04-01">Apr 1'))
   assert.ok(htmlIncludes(html, 'Refresh delayed'))
@@ -59,7 +63,7 @@ test('non-current freshness retains an exceptional stale signal', () => {
 
 test('in-season July dashboard does not show end-of-season copy', () => {
   const html = inRouter(React.createElement(DashboardView, {
-    data: withFreshness({ is_current: true, data_through: '2026-07-05', last_successful_sync: '2026-07-06T04:00:00Z' }),
+    ...withFreshness({ is_current: true, data_through: '2026-07-05', last_successful_sync: '2026-07-06T04:00:00Z' }),
   }))
   assert.ok(htmlIncludes(html, 'dateTime="2026-07-05">Jul 5'))
   assert.equal(htmlIncludes(html, 'Freshness: Current'), false)
@@ -68,7 +72,7 @@ test('in-season July dashboard does not show end-of-season copy', () => {
 
 test('publishable live dashboard freshness does not render as sample or snapshot', () => {
   const html = inRouter(React.createElement(DashboardView, {
-    data: withFreshness({
+    ...withFreshness({
       data_through: '2026-07-05',
       latest_workload_date: '2026-07-05',
       last_successful_sync: '2026-07-06T04:34:36Z',
@@ -99,7 +103,7 @@ test('publishable live dashboard freshness does not render as sample or snapshot
 test('a failed latest sync does not render as current even with a recent data date', () => {
   // status drives Current; a failed durable sync must not be painted healthy.
   const html = inRouter(React.createElement(DashboardView, {
-    data: withFreshness({ is_current: true, sync_status: 'failed', data_through: '2026-06-04', last_successful_sync: '2026-06-01T12:00:00Z' }),
+    ...withFreshness({ is_current: true, sync_status: 'failed', data_through: '2026-06-04', last_successful_sync: '2026-06-01T12:00:00Z' }),
   }))
   assert.ok(!htmlIncludes(html, 'Current — 2026 Season'))
   assert.ok(!htmlIncludes(html, 'End-of-Season Read'))
@@ -107,7 +111,7 @@ test('a failed latest sync does not render as current even with a recent data da
 
 test('running background lane does not make the dashboard look generally mid-sync', () => {
   const html = inRouter(React.createElement(DashboardView, {
-    data: withFreshness({
+    ...withFreshness({
       is_current: true,
       sync_status: 'success',
       data_through: '2026-07-03',

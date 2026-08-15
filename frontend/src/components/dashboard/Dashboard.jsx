@@ -1,20 +1,22 @@
 import { useFetch } from '../../hooks/useFetch'
-import { getBullpenDashboard } from '../../utils/api'
-import { Disclosure, ErrorState, FreshnessStamp, LoadingPane, StaleDataNotice, UnavailableDataState } from '../UI'
-import BullpenLandscape from './BullpenLandscape'
+import { getBullpenDashboard, getLeagueTeamStates } from '../../utils/api'
+import { Disclosure, FreshnessStamp, UnavailableDataState } from '../UI'
+import DashboardStorylines from './DashboardStorylines'
+import LeagueTeamStateLandscape from './LeagueTeamStateLandscape'
+import { getLeagueTeamStateListingView } from './leagueTeamStateListingView'
 import {
   getInjuryIlContextSummary,
   normalizeInjuryIlContext,
 } from './injuryIlContextView'
-import { freshnessDataThrough } from './syncStatusView'
 import {
   getRolesSummaryView,
 } from '../bullpen/board/tonightsBullpenBoardView'
 
-// Interim league bullpen orientation: backend-authored storylines and partial
-// situation lanes lead, with roster and usage-role context kept secondary.
+// Final league bullpen orientation: one governed all-club Team State listing
+// leads, while backend-authored storylines and independent context stay intact.
 export default function Dashboard() {
   const dash = useFetch(getBullpenDashboard)
+  const leagueTeamStates = useFetch(getLeagueTeamStates)
   return (
     <DashboardView
       data={dash.data}
@@ -22,15 +24,28 @@ export default function Dashboard() {
       error={dash.error}
       staleWithError={dash.staleWithError}
       onRetry={dash.refetch}
+      leagueTeamStates={leagueTeamStates.data}
+      leagueTeamStatesLoading={leagueTeamStates.loading}
+      leagueTeamStatesError={leagueTeamStates.error}
+      leagueTeamStatesStaleWithError={leagueTeamStates.staleWithError}
+      onRetryLeagueTeamStates={leagueTeamStates.refetch}
     />
   )
 }
-export function DashboardView({ data, loading = false, error = null, staleWithError = false, onRetry }) {
+export function DashboardView({
+  data,
+  error = null,
+  staleWithError = false,
+  onRetry,
+  leagueTeamStates = null,
+  leagueTeamStatesLoading = false,
+  leagueTeamStatesError = null,
+  leagueTeamStatesStaleWithError = false,
+  onRetryLeagueTeamStates,
+}) {
   const roles = data?.roles?.counts ? getRolesSummaryView(data.roles) : null
   const injuryIlContext = normalizeInjuryIlContext(data)
-
-  const freshness = data?.freshness || {}
-  const dataThroughSource = freshnessDataThrough(freshness)
+  const leagueView = getLeagueTeamStateListingView(leagueTeamStates)
 
   return (
     <div className="p-4 sm:p-5 lg:p-6 max-w-7xl mx-auto">
@@ -46,29 +61,45 @@ export function DashboardView({ data, loading = false, error = null, staleWithEr
               MLB Bullpen Picture
             </h1>
             <p className="max-w-2xl text-sm leading-relaxed text-chalk400">
-              Current published context across MLB bullpens. The situation lanes below are a partial view, not a complete ranking of all 30 clubs.
+              The current bullpen picture across MLB, using already-published Team State reads for every expected club.
             </p>
-            <FreshnessStamp freshness={freshness} className="mt-3" />
+            <FreshnessStamp freshness={leagueView.freshness} className="mt-3" />
           </div>
         </div>
       </div>
 
-      {loading && !data ? (
-        <LoadingPane message="Loading bullpen overview..." />
-      ) : error && !data ? (
-        <ErrorState message={error} onRetry={onRetry} />
-      ) : !data ? null : (
+      <DashboardStorylines landscape={data?.landscape} />
+
+      <LeagueTeamStateLandscape
+        view={leagueView}
+        loading={leagueTeamStatesLoading}
+        error={leagueTeamStatesError}
+        staleWithError={leagueTeamStatesStaleWithError}
+        onRetry={onRetryLeagueTeamStates}
+      />
+
+      {error && !data ? (
+        <Section
+          title="Secondary Dashboard Context"
+          subtitle="Roster-status and usage-role context remain separate from the published league Team State view."
+        >
+          <UnavailableDataState
+            title="Secondary context unavailable"
+            message="Roster-status and usage-role context could not be loaded."
+            onRetry={onRetry}
+            className="bg-field/25"
+            titleClassName="font-mono text-xs uppercase tracking-widest text-chalk300"
+            messageClassName="mt-2 text-xs leading-relaxed text-chalk500"
+          />
+        </Section>
+      ) : data && (
         <>
           {staleWithError && (
-            <StaleDataNotice
-              dataThrough={dataThroughSource}
-              onRetry={onRetry}
-            />
+            <p className="mb-4 text-xs leading-relaxed text-chalk500">
+              Secondary Dashboard context refresh is delayed; showing the last loaded context.
+              {onRetry && <button type="button" onClick={onRetry} className="ml-1 underline hover:text-amber">Retry</button>}
+            </p>
           )}
-
-          {/* Interim published league context. */}
-          <BullpenLandscape landscape={data.landscape} />
-
           <InjuryIlContextSection context={injuryIlContext} />
 
           {/* Section 4 — Usage Roles Summary */}
