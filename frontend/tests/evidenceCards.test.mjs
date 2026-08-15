@@ -481,14 +481,16 @@ test('Cleveland versus Boston leads with the 7-to-4 Available difference before 
   assert.equal(model.storyAngle, 'comparison_availability')
   assert.equal(model.supportingLine, 'The Cleveland Guardians have 3 limited arms; the Boston Red Sox have 1.')
   assert.equal(model.headline.includes('ON WATCH'), false)
-  assert.equal(view.summary.statement, view.featuredObservation)
+  assert.equal('summary' in view, false)
+  assert.equal('featuredObservation' in view, false)
 })
 
 test('identical comparisons fail closed instead of publishing a bland card', () => {
   const view = comparison.getComparisonView(similarComparison)
   const model = cards.buildComparisonEvidenceCard(view, { teamA: 'ACE', teamB: 'BEA' })
   assert.equal(model, null)
-  assert.equal(view.summary.statement, 'The bullpens match across every availability group in the current read.')
+  assert.equal('summary' in view, false)
+  assert.equal('featuredObservation' in view, false)
 })
 
 test('all-tied comparisons only produce a card when another specific safe observation exists', () => {

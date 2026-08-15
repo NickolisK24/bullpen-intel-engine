@@ -1,7 +1,3 @@
-import {
-  GENERATED_AT_LABEL,
-  LAST_DATA_UPDATE_LABEL,
-} from '../../utils/bullpenConcepts'
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useFetch } from '../../hooks/useFetch'
@@ -14,11 +10,10 @@ import {
 } from '../../utils/api'
 import { buildTeamBoardHref } from '../../utils/evidenceLinks'
 import {
-  DataThroughStamp,
+  Disclosure,
   FreshnessBadge,
+  FreshnessStamp,
   isSampleFreshness,
-  LastSyncLabel,
-  SlateDateStamp,
   StaleDataNotice,
   UnavailableDataState,
 } from '../UI'
@@ -29,7 +24,6 @@ import {
 } from '../dashboard/bullpenLandscapeView'
 import {
   freshnessDataThrough,
-  freshnessIsCurrent,
 } from '../dashboard/syncStatusView'
 
 const TONIGHT_SECTION_TITLE = "Tonight's Bullpen Watch"
@@ -174,9 +168,9 @@ export async function submitAudienceSignup({
 // visitor reaches today's answer before any navigation cards.
 const FIRST_USE_ACTIONS = [
   {
-    title: "See Today's Bullpen Read",
-    body: 'Fresh, stretched, and vulnerable pens tonight.',
-    to: '/',
+    title: 'League Board',
+    body: 'Scan the current bullpen picture across MLB.',
+    to: '/dashboard',
   },
   {
     title: 'Find a Team',
@@ -192,29 +186,6 @@ const FIRST_USE_ACTIONS = [
     title: 'Find a Reliever',
     body: 'Search a reliever and scan workload.',
     to: '/bullpen?view=pitchers',
-  },
-]
-
-const EXPLORE_LINKS = [
-  {
-    title: 'About BaseballOS',
-    body: 'Why BaseballOS exists, in a minute.',
-    to: '/about',
-  },
-  {
-    title: 'How to Read BaseballOS',
-    body: 'Learn every term in one line each.',
-    to: '/how-to-read',
-  },
-  {
-    title: 'Methodology',
-    body: 'See how each read is built.',
-    to: '/methodology',
-  },
-  {
-    title: 'Data & Trust',
-    body: 'Check freshness and how we know.',
-    to: '/trust',
   },
 ]
 
@@ -581,22 +552,6 @@ function sinceYesterdayCompleteCount(tab, summary) {
   return typeof laneCount === 'number' ? laneCount : null
 }
 
-// Small number-to-word table for the withheld-card sentence, which starts with
-// the spelled-out count. MLB has 30 teams, so the withheld count never exceeds
-// that; anything beyond the table falls back to digits rather than guessing.
-const SINCE_YESTERDAY_NUMBER_WORDS = [
-  'zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine',
-  'ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen',
-  'seventeen', 'eighteen', 'nineteen', 'twenty', 'twenty-one', 'twenty-two',
-  'twenty-three', 'twenty-four', 'twenty-five', 'twenty-six', 'twenty-seven',
-  'twenty-eight', 'twenty-nine', 'thirty',
-]
-
-function sinceYesterdaySentenceCountWord(value) {
-  const word = SINCE_YESTERDAY_NUMBER_WORDS[value] || String(value)
-  return word.charAt(0).toUpperCase() + word.slice(1)
-}
-
 // Explains, in the panel, how the detailed cards relate to the complete league
 // movement counts. When every moving team has a detailed card, it reassures
 // that all are shown. When there are fewer cards than complete movements, it
@@ -611,29 +566,11 @@ export function sinceYesterdayCountClarity(tab, summary) {
   const isAll = tab.key === SINCE_YESTERDAY_ALL_TAB_KEY
   const scope = isAll ? '' : ' in this category'
   const complete = sinceYesterdayCompleteCount(tab, summary)
-  if (complete == null || complete < count) {
-    const noun = count === 1 ? 'team change' : 'team changes'
-    return `Showing ${count} detailed ${noun}${scope}.`
-  }
-  if (complete === count) {
-    const noun = count === 1 ? 'team change' : 'team changes'
-    return `Showing all ${count} detailed ${noun}${scope}.`
-  }
+  if (complete == null || complete <= count) return null
   const withheld = complete - count
-  const withheldWord = sinceYesterdaySentenceCountWord(withheld)
   const withheldTeams = withheld === 1 ? 'team' : 'teams'
-  const isIncluded = withheld === 1 ? 'is' : 'are'
-  const hasCard = withheld === 1 ? 'does not have' : 'do not have'
-  // The league summary is the complete-population framing for All; a single
-  // lane's tab reconciles against that lane's league count instead.
-  const population = isAll ? 'league summary' : 'league count'
-  let explanation =
-    `${withheldWord} additional ${withheldTeams} ${isIncluded} included in the ${population} but ${hasCard} a publishable detailed card.`
-  if (isAll) {
-    const steadySubject = withheld === 1 ? 'It is' : 'They are'
-    explanation += ` ${steadySubject} not counted as steady.`
-  }
-  return `Showing ${count} of ${complete} teams with movement${scope}. ${explanation}`
+  const detail = isAll ? 'details on their team boards' : 'details remain on their team boards'
+  return `${withheld} more ${withheldTeams} moved${scope}; ${detail}.`
 }
 
 function normalizeSinceYesterdayItem(item, teamsById, teams, index) {
@@ -724,7 +661,6 @@ export function getSinceYesterdayView(dashboard, teams = []) {
       .filter(Boolean)
     if (items.length === 0) return null
     const itemCount = itemCountValue ?? items.length
-    const countCopy = `${itemCount} teams show meaningful, evidence-backed movement in this daily comparison.`
     return {
       ...baseView,
       items,
@@ -734,8 +670,8 @@ export function getSinceYesterdayView(dashboard, teams = []) {
       summary,
       orderingBasis: textValue(block.ordering_basis),
       footerCopy: block.ordering_basis === SINCE_YESTERDAY_ALPHABETICAL_ORDERING
-        ? `Teams are listed alphabetically. ${countCopy}`
-        : countCopy,
+        ? 'Teams are listed alphabetically.'
+        : null,
     }
   }
 
@@ -776,81 +712,19 @@ function sinceYesterdayUnavailableCopy(block, comparison) {
   return SINCE_YESTERDAY_UNAVAILABLE_COPY
 }
 
-function publishedFreshnessBadgeLabel(stale, freshness) {
+function TonightContextRow({ slateDate, freshness }) {
   const sample = isSampleFreshness(freshness)
-  const syncStatus = String(freshness?.sync_status || freshness?.syncStatus || '').toLowerCase()
-  const staleState = String(freshness?.freshness_state || freshness?.freshnessState || freshness?.state || '').toLowerCase()
-  const publishedCurrent = !sample
-    && !stale
-    && freshnessIsCurrent(freshness)
-    && freshness?.is_stale !== true
-    && freshness?.isStale !== true
-    && staleState !== 'stale'
-    && staleState !== 'historical'
-    && syncStatus !== 'failed'
-    && syncStatus !== 'error'
-  return publishedCurrent ? 'Published view current' : undefined
-}
-
-function SectionFreshnessRow({
-  dataThrough,
-  lastSync,
-  stale = false,
-  freshness,
-  className = '',
-}) {
-  const sample = isSampleFreshness(freshness)
-  if (!dataThrough && !lastSync && !stale && !freshness) return null
-  return (
-    <div className={`mb-3 flex flex-wrap items-center gap-2 ${className}`}>
-      <FreshnessBadge
-        state={stale ? 'stale' : 'current'}
-        freshness={freshness}
-        label={publishedFreshnessBadgeLabel(stale, freshness)}
-      />
-      <DataThroughStamp date={dataThrough} />
-      <LastSyncLabel value={lastSync} label={LAST_DATA_UPDATE_LABEL} />
-      {sample && (
-        <span className="font-mono text-[11px] uppercase tracking-widest text-chalk500">
-          Not live MLB data.
-        </span>
-      )}
-    </div>
-  )
-}
-
-function TonightFreshnessRow({
-  slateDate,
-  dataThrough,
-  lastSync,
-  generatedAt,
-  stale = false,
-  slateUnavailable = false,
-  publishedViewCurrent = false,
-  freshness,
-}) {
-  const sample = isSampleFreshness(freshness)
-  const scopedStaleLabel = slateUnavailable && publishedViewCurrent
-    ? 'Tonight slate unavailable'
-    : null
-  if (!slateDate && !dataThrough && !lastSync && !generatedAt && !stale && !freshness) return null
+  const formattedSlateDate = formatFreshnessDate(slateDate)
+  if (!formattedSlateDate && !sample) return null
   return (
     <div className="mb-3 flex flex-wrap items-center gap-2">
-      <SlateDateStamp date={slateDate} />
-      {(dataThrough || lastSync || stale || freshness) && (
-        <FreshnessBadge
-          state={stale ? 'stale' : 'current'}
-          freshness={freshness}
-          label={scopedStaleLabel || publishedFreshnessBadgeLabel(stale, freshness)}
-        />
-      )}
-      <DataThroughStamp date={dataThrough} />
-      <LastSyncLabel value={generatedAt} label={GENERATED_AT_LABEL} />
-      <LastSyncLabel value={lastSync} label={LAST_DATA_UPDATE_LABEL} />
-      {sample && (
+      {formattedSlateDate && (
         <span className="font-mono text-[11px] uppercase tracking-widest text-chalk500">
-          Not live MLB data.
+          Tonight&apos;s games · {formattedSlateDate}
         </span>
+      )}
+      {sample && (
+        <FreshnessBadge state="sample" freshness={freshness} />
       )}
     </div>
   )
@@ -912,9 +786,9 @@ function pictureColumnByKey(landscapeView, key) {
 }
 
 const BULLPEN_PICTURE_EMPTY_COPY = {
-  available: 'No bullpen currently stands out as rested and available.',
-  monitoring: 'No bullpen currently has enough arms on watch to stand out.',
-  constrained: 'No bullpen currently shows enough stretched workload to stand out.',
+  available: 'No rested-coverage club is shown in this published view.',
+  monitoring: 'No on-watch pressure club is shown in this published view.',
+  constrained: 'No stretched-workload club is shown in this published view.',
 }
 
 export function getBullpenPictureView(landscape) {
@@ -922,7 +796,7 @@ export function getBullpenPictureView(landscape) {
   if (!view.hasLandscape) {
     return {
       hasLandscape: false,
-      teamsEvaluated: 0,
+      teamsEvaluated: null,
       gamesLabel: null,
       columns: [],
     }
@@ -1086,33 +960,20 @@ function AudienceSignupForm() {
 }
 
 function SeesHeader() {
-
   return (
-    <header className="mb-6 max-w-4xl pt-2 sm:pt-4">
+    <header className="mb-4 max-w-4xl pt-1 sm:pt-2">
       <div className="font-mono text-[10px] uppercase tracking-[0.28em] text-amber/75">
         MLB BULLPEN INTELLIGENCE — UPDATED DAILY
       </div>
-      {/* The headline is one type step smaller per breakpoint so the day's
-          bullpen picture lands earlier — on a phone the answer starts within
-          the first scroll instead of below a display-size masthead. */}
-      <h1 className="mt-3 font-display text-4xl leading-none tracking-wide text-chalk100 sm:text-5xl lg:text-6xl">
-        See which bullpens are fresh, stretched, or vulnerable tonight — and why.
+      <h1 className="mt-2 font-display text-3xl leading-none tracking-wide text-chalk100 sm:text-4xl lg:text-5xl">
+        See which bullpens are fresh, stretched, or vulnerable.
       </h1>
-      <p className="mt-4 max-w-3xl text-base leading-relaxed text-chalk300 sm:text-lg">
-        BaseballOS reads public MLB usage and workload after every game, so you can tell which pens are gassed and which are loaded — with the data date and confidence always shown.
+      <p className="mt-3 max-w-3xl text-sm leading-relaxed text-chalk400 sm:text-base">
+        BaseballOS reads public MLB usage and workload after every game.
       </p>
-      <p className="mt-3 max-w-2xl text-sm leading-relaxed text-chalk500">
+      <p className="mt-2 max-w-2xl text-sm leading-relaxed text-chalk500">
         Descriptive only — we show what we see and what we can't. No picks, no predictions.
       </p>
-      <div className="mt-5 grid max-w-4xl gap-4 lg:grid-cols-[auto_minmax(20rem,1fr)] lg:items-start">
-        <a
-          href="#bullpen-picture"
-          className="inline-flex min-h-11 w-full items-center justify-center rounded border border-amber/40 bg-amber/10 px-4 py-3 font-mono text-xs uppercase tracking-widest text-amber transition-colors hover:border-amber/70 hover:bg-amber/15 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/60 lg:w-auto"
-        >
-          Explore today's bullpen picture
-        </a>
-        <AudienceSignupForm />
-      </div>
     </header>
   )
 }
@@ -1326,23 +1187,11 @@ function SinceYesterdayEvidenceRow({ label, yesterday, today }) {
 }
 
 function SinceYesterdayEvidence({ item }) {
-  const showRested = item.hasRestedCounts
   const rows = item.publicEvidence
-  if (!showRested && rows.length === 0) return null
+  if (rows.length === 0) return null
   return (
-    <details className="group mt-3 border border-dirt/75 bg-field/45">
-      <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 font-mono text-[10px] uppercase tracking-widest text-chalk500 transition-colors hover:text-amber focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/60">
-        <span className="group-open:hidden">View evidence</span>
-        <span className="hidden group-open:inline">Hide evidence</span>
-      </summary>
+    <Disclosure label="Why this read?" className="mt-3">
       <dl className="space-y-2 border-t border-dirt/75 px-3 py-3">
-        {showRested && (
-          <SinceYesterdayEvidenceRow
-            label="Rested relievers"
-            yesterday={item.yesterdayRestedCount}
-            today={item.todayRestedCount}
-          />
-        )}
         {rows.map(row => (
           <SinceYesterdayEvidenceRow
             key={row.key}
@@ -1352,7 +1201,24 @@ function SinceYesterdayEvidence({ item }) {
           />
         ))}
       </dl>
-    </details>
+    </Disclosure>
+  )
+}
+
+function SinceYesterdayRestedBasis({ item }) {
+  const primaryAlreadyShowsRestedCounts = String(item.primaryDelta?.label || '')
+    .toLowerCase()
+    .includes('rested')
+  if (!item.hasRestedCounts || primaryAlreadyShowsRestedCounts) return null
+  return (
+    <div className="mt-3">
+      <p className="font-mono text-[10px] uppercase tracking-widest text-chalk500">Rested arms</p>
+      <p className="mt-1 font-display text-2xl tracking-wide text-chalk100">
+        <span className="sr-only">Yesterday </span>{item.yesterdayRestedCount}
+        <span className="mx-2 text-chalk500" aria-hidden="true">→</span>
+        <span className="text-amber"><span className="sr-only">Today </span>{item.todayRestedCount}</span>
+      </p>
+    </div>
   )
 }
 
@@ -1371,6 +1237,7 @@ function SinceYesterdayCard({ item }) {
         )}
       </div>
       <SinceYesterdayPrimaryDelta delta={item.primaryDelta} />
+      <SinceYesterdayRestedBasis item={item} />
       {explanation && (
         <p className="mt-3 text-sm leading-relaxed text-chalk300">{explanation}</p>
       )}
@@ -1472,36 +1339,16 @@ function SinceYesterdayTabs({ tabs, activeKey, onActivate }) {
 
 function SinceYesterdayLeagueSummary({ summary }) {
   if (!summary) return null
-  const rows = [
-    ['more_breathing_room', summary.moreBreathingRoomCount, 'gained breathing room'],
-    ['tighter_today', summary.tighterTodayCount, 'became tighter'],
-    ['structure_changed', summary.structureChangedCount, 'changed structurally'],
-    ['other_meaningful', summary.otherMeaningfulChangeCount, 'had other meaningful movement'],
-  ].filter(([, count]) => typeof count === 'number' && count > 0)
-  const showSteady = typeof summary.steadyCount === 'number' && summary.steadyCount > 0
-  if (rows.length === 0 && !showSteady) return null
+  const moved = summary.meaningfulChangeCount
+  const steady = summary.steadyCount
+  if (typeof moved !== 'number' && typeof steady !== 'number') return null
   return (
-    <div className="mb-4 border border-dirt bg-dugout p-4">
-      <h3 className="font-mono text-[11px] uppercase tracking-widest text-chalk500">
-        Across MLB since yesterday
-      </h3>
-      <ul className="mt-2 flex flex-wrap gap-x-6 gap-y-2">
-        {rows.map(([key, count, label]) => (
-          <li key={key} className="text-sm text-chalk300">
-            <span className="font-display text-xl tracking-wide text-chalk100">{count}</span>{' '}
-            {label}
-          </li>
-        ))}
-        {showSteady && (
-          <li className="text-sm text-chalk300">
-            <span className="font-display text-xl tracking-wide text-chalk100">
-              {summary.steadyCount}
-            </span>{' '}
-            remained steady
-          </li>
-        )}
-      </ul>
-    </div>
+    <p className="mb-4 font-mono text-[11px] leading-relaxed text-chalk500">
+      Across MLB since yesterday:{' '}
+      {typeof moved === 'number' && <span className="text-chalk200">{moved} {moved === 1 ? 'club moved' : 'clubs moved'}</span>}
+      {typeof moved === 'number' && typeof steady === 'number' && <span aria-hidden="true"> · </span>}
+      {typeof steady === 'number' && <span className="text-chalk300">{steady} {steady === 1 ? 'club was' : 'clubs were'} steady</span>}
+    </p>
   )
 }
 
@@ -1563,12 +1410,13 @@ function SinceYesterdayBriefing({ view }) {
     ? view.tabs
     : buildSinceYesterdayTabs(view.items || [])
   const [activeKey, setActiveKey] = useState(SINCE_YESTERDAY_ALL_TAB_KEY)
+  const showTabs = (view.items || []).length >= 4 && tabs.length > 2
   // Search persists across tab switches; it only ever filters the cards inside
   // whichever tab is active.
   const [query, setQuery] = useState('')
   // If the active tab is no longer available (data refreshed), fall back to All
   // so the panel and tablist can never disagree.
-  const activeTab = tabs.find(tab => tab.key === activeKey) || tabs[0]
+  const activeTab = showTabs ? (tabs.find(tab => tab.key === activeKey) || tabs[0]) : tabs[0]
   const effectiveKey = activeTab ? activeTab.key : SINCE_YESTERDAY_ALL_TAB_KEY
   const clarity = sinceYesterdayCountClarity(activeTab, view.summary)
   const visibleItems = filterSinceYesterdayItems(activeTab ? activeTab.items : [], query)
@@ -1577,16 +1425,18 @@ function SinceYesterdayBriefing({ view }) {
   return (
     <>
       <SinceYesterdayLeagueSummary summary={view.summary} />
-      <SinceYesterdayTabs tabs={tabs} activeKey={effectiveKey} onActivate={setActiveKey} />
-      <SinceYesterdayTeamSearch
-        query={query}
-        onChange={setQuery}
-        onReset={() => setQuery('')}
-      />
+      {showTabs && <SinceYesterdayTabs tabs={tabs} activeKey={effectiveKey} onActivate={setActiveKey} />}
+      {(view.items || []).length >= 6 && (
+        <SinceYesterdayTeamSearch
+          query={query}
+          onChange={setQuery}
+          onReset={() => setQuery('')}
+        />
+      )}
       <div
         role="tabpanel"
         id={sinceYesterdayPanelId(effectiveKey)}
-        aria-labelledby={sinceYesterdayTabId(effectiveKey)}
+        aria-labelledby={showTabs ? sinceYesterdayTabId(effectiveKey) : undefined}
         tabIndex={0}
         className="focus:outline-none"
       >
@@ -1618,7 +1468,7 @@ function SinceYesterdayBriefing({ view }) {
         )}
       </div>
       <SinceYesterdaySteadyDisclosure summary={view.summary} />
-      <p className="mt-4 text-xs leading-relaxed text-chalk500">{view.footerCopy}</p>
+      {view.footerCopy && <p className="mt-4 text-xs leading-relaxed text-chalk500">{view.footerCopy}</p>}
     </>
   )
 }
@@ -1648,10 +1498,9 @@ function SinceYesterdaySection({ dashboard, teams }) {
       subtitle={SINCE_YESTERDAY_EXPLAINER}
     >
       {(view.previousDate || view.currentDate) && (
-        <div className="mb-3 flex flex-wrap items-center gap-2">
-          <DataThroughStamp date={view.previousDate} scope="Previous view" />
-          <DataThroughStamp date={view.currentDate} scope="Current view" />
-        </div>
+        <p className="mb-3 font-mono text-[11px] uppercase tracking-widest text-chalk500">
+          Adjacent views · {view.previousDateLabel} → {view.currentDateLabel}
+        </p>
       )}
       {view.state === 'changes_detected' ? (
         <SinceYesterdayBriefing view={view} />
@@ -1673,14 +1522,12 @@ function TonightSection({
   teams,
   loading,
   error,
-  staleWithError,
   onRetry,
   dashboard,
 }) {
   const cards = getTonightCards(tonight, teams)
   const sectionLimitations = cleanTonightList(tonight?.limitations)
   const freshness = dashboardFreshness(dashboard)
-  const publishedViewCurrent = freshnessIsCurrent(freshness)
   const missingCompletedPayload = !tonight && !loading && !error
   const tonightPayloadUnavailable = payloadIsFailClosed(tonight)
   const rowFreshness = sectionFreshness(
@@ -1688,22 +1535,12 @@ function TonightSection({
     freshness,
   )
   const slateDate = textValue(tonight?.reference_date)
-  const dataThrough = textValue(freshnessDataThrough(rowFreshness))
-  const lastSync = firstTextValue(rowFreshness?.last_successful_sync, rowFreshness?.lastSuccessfulSync)
-  const generatedAt = textValue(tonight?.snapshot?.generated_at)
   const emptyReason = textValue(tonight?.empty_reason)
   const snapshotUnavailable = [
     'tonight_live_build_timeout',
     'tonight_snapshot_build_unavailable',
     'tonight_snapshot_unavailable',
   ].includes(emptyReason)
-  const scheduleUnverified = emptyReason === TONIGHT_EMPTY_REASON_SCHEDULE_UNVERIFIED
-  const slateUnavailable = (
-    snapshotUnavailable
-    || scheduleUnverified
-    || missingCompletedPayload
-    || tonightPayloadUnavailable
-  )
   const showUnavailable = Boolean(error && !tonight) || snapshotUnavailable
 
   if (loading && !tonight) {
@@ -1725,20 +1562,8 @@ function TonightSection({
         title={TONIGHT_SECTION_TITLE}
         subtitle={TONIGHT_SECTION_SUBTITLE}
       >
-        {staleWithError && (
-          <StaleDataNotice
-            dataThrough={dataThrough}
-            onRetry={onRetry}
-          />
-        )}
-        <TonightFreshnessRow
+        <TonightContextRow
           slateDate={slateDate}
-          dataThrough={dataThrough}
-          lastSync={lastSync}
-          generatedAt={generatedAt}
-          stale={staleWithError}
-          slateUnavailable={staleWithError}
-          publishedViewCurrent={publishedViewCurrent}
           freshness={rowFreshness}
         />
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
@@ -1747,10 +1572,7 @@ function TonightSection({
           ))}
         </div>
         {sectionLimitations.length > 0 && (
-          <div className="mt-3 border border-dirt bg-dugout p-4">
-            <h3 className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
-              Limitations
-            </h3>
+          <Disclosure label="Limits on tonight's read" className="mt-3">
             <ul className="mt-2 space-y-1">
               {sectionLimitations.map(item => (
                 <li key={item} className="text-xs leading-relaxed text-chalk500">
@@ -1758,7 +1580,7 @@ function TonightSection({
                 </li>
               ))}
             </ul>
-          </div>
+          </Disclosure>
         )}
       </SectionShell>
     )
@@ -1772,14 +1594,8 @@ function TonightSection({
       subtitle={TONIGHT_SECTION_SUBTITLE}
     >
       {!Boolean(error && !tonight) && (
-        <TonightFreshnessRow
+        <TonightContextRow
           slateDate={slateDate}
-          dataThrough={dataThrough}
-          lastSync={lastSync}
-          generatedAt={generatedAt}
-          stale={staleWithError || slateUnavailable}
-          slateUnavailable={staleWithError || slateUnavailable}
-          publishedViewCurrent={publishedViewCurrent}
           freshness={rowFreshness}
         />
       )}
@@ -1796,24 +1612,14 @@ function BullpenPicture({
   landscape,
   loading,
   error,
-  staleWithError,
   onRetry,
-  freshness,
 }) {
   const picture = getBullpenPictureView(landscape)
-  const rowFreshness = freshnessIsCurrent(freshness)
-    ? freshness
-    : sectionFreshness(landscape, freshness)
-  const dataThrough = firstTextValue(
-    landscape?.games?.as_of_date,
-    freshnessDataThrough(rowFreshness),
-  )
-  const lastSync = firstTextValue(rowFreshness?.last_successful_sync, rowFreshness?.lastSuccessfulSync)
   return (
     <SectionShell
       id="bullpen-picture"
       title="Today's Bullpen Picture"
-      subtitle="A quick look at which bullpens look rested and available, stretched, or on watch."
+      subtitle="A quick look at which bullpens are rested and available, on watch, or need rest / are unavailable."
     >
       {loading && !landscape ? (
         <div className="border border-dirt bg-dugout p-4" role="status" aria-live="polite">
@@ -1834,30 +1640,15 @@ function BullpenPicture({
         />
       ) : (
         <>
-          {staleWithError && (
-            <StaleDataNotice
-              dataThrough={dataThrough}
-              onRetry={onRetry}
-            />
-          )}
-          <SectionFreshnessRow
-            dataThrough={dataThrough}
-            lastSync={lastSync}
-            stale={staleWithError}
-            freshness={rowFreshness}
-          />
           {/* Teaser strip: one standout team per lane. The Dashboard owns the
               full league landscape — Today only points there. */}
           <div className="border border-dirt bg-dugout p-4">
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <div className="mb-3 flex flex-wrap items-center gap-2">
               <p className="font-mono text-[11px] uppercase tracking-widest text-chalk500">
-                {picture.teamsEvaluated} tracked teams
+                {picture.teamsEvaluated == null
+                  ? 'Published league context'
+                  : `${picture.teamsEvaluated} clubs in this published view`}
               </p>
-              {picture.gamesLabel && (
-                <p className="font-mono text-[11px] leading-relaxed text-chalk600">
-                  {picture.gamesLabel}
-                </p>
-              )}
             </div>
             <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
               {picture.columns.map(column => (
@@ -1877,7 +1668,8 @@ function BullpenPicture({
                             {column.lead.label}
                           </span>
                           <span className="shrink-0 font-mono text-xs leading-snug text-chalk400">
-                            {column.lead[column.metric]} <span className="text-chalk600">{column.suffix}</span>
+                            {column.lead[column.metric] == null ? 'Withheld' : column.lead[column.metric]}{' '}
+                            {column.lead[column.metric] != null && <span className="text-chalk600">{column.suffix}</span>}
                           </span>
                         </Link>
                       ) : (
@@ -1889,7 +1681,8 @@ function BullpenPicture({
                             {column.lead.label}
                           </span>
                           <span className="shrink-0 font-mono text-xs leading-snug text-chalk400">
-                            {column.lead[column.metric]} <span className="text-chalk600">{column.suffix}</span>
+                            {column.lead[column.metric] == null ? 'Withheld' : column.lead[column.metric]}{' '}
+                            {column.lead[column.metric] != null && <span className="text-chalk600">{column.suffix}</span>}
                           </span>
                         </div>
                       )}
@@ -1956,31 +1749,11 @@ function ExploreBaseballOS() {
   )
 }
 
-function Explore() {
+function AudienceSignupSection() {
   return (
-    <SectionShell
-      id="explore"
-      title="Learn & Explore BaseballOS"
-      subtitle="Get to know BaseballOS, then dig into every bullpen."
-      className="mb-6"
-    >
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        {EXPLORE_LINKS.map(link => (
-          <Link
-            key={link.title}
-            to={link.to}
-            className="min-w-0 border border-dirt bg-dugout p-4 transition-colors hover:border-amber/35 hover:bg-amber/5"
-          >
-            <h3 className="font-display text-xl tracking-wide text-chalk100">
-              {link.title}
-            </h3>
-            <p className="mt-1 text-xs leading-relaxed text-chalk500">
-              {link.body}
-            </p>
-          </Link>
-        ))}
-      </div>
-    </SectionShell>
+    <section id="audience-signup" className="mb-6 border-t border-dirt pt-5" aria-label="BaseballOS bullpen notes">
+      <AudienceSignupForm />
+    </section>
   )
 }
 
@@ -1996,33 +1769,41 @@ export function IntelligenceSurfaceView({
   landscapeStaleWithError = false,
   onRetryLandscape,
   dashboard = null,
+  dashboardStaleWithError = false,
+  onRetryDashboard,
   teams = [],
 }) {
   const pageFreshness = dashboardFreshness(dashboard)
+  const pageIsStale = dashboardStaleWithError || tonightStaleWithError || landscapeStaleWithError
+  const pageDataThrough = freshnessDataThrough(pageFreshness)
+  const pageRetry = dashboardStaleWithError
+    ? onRetryDashboard
+    : tonightStaleWithError
+      ? onRetryTonight
+      : onRetryLandscape
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-5 sm:px-6 lg:px-8">
       <SeesHeader />
-      <BullpenPicture
-        landscape={landscape}
-        loading={landscapeLoading}
-        error={landscapeError}
-        staleWithError={landscapeStaleWithError}
-        onRetry={onRetryLandscape}
-        freshness={pageFreshness}
-      />
+      <FreshnessStamp freshness={pageFreshness} className="mb-4" />
+      {pageIsStale && <StaleDataNotice dataThrough={pageDataThrough} onRetry={pageRetry} />}
       <SinceYesterdaySection dashboard={dashboard} teams={teams} />
       <TonightSection
         tonight={tonight}
         teams={teams}
         loading={tonightLoading}
         error={tonightError}
-        staleWithError={tonightStaleWithError}
         onRetry={onRetryTonight}
         dashboard={dashboard}
       />
+      <BullpenPicture
+        landscape={landscape}
+        loading={landscapeLoading}
+        error={landscapeError}
+        onRetry={onRetryLandscape}
+      />
       <ExploreBaseballOS />
-      <Explore />
+      <AudienceSignupSection />
     </div>
   )
 }

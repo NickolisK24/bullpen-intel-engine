@@ -47,11 +47,10 @@ const renderDashboard = () => inRouter(React.createElement(DashboardView, { data
 
 test('hero states the dashboard is a league-wide / MLB-wide view', () => {
   const html = renderDashboard()
-  assert.ok(htmlIncludes(html, 'League-Wide Bullpen Overview'))
-  assert.ok(htmlIncludes(html, 'Bullpen-eligible MLB arms'))     // scope chip
-  assert.ok(htmlIncludes(html, 'bullpen-eligible MLB arms'))     // subtitle
-  // It points the user to the team-specific section for a single pen.
-  assert.ok(htmlIncludes(html, 'for a single team'))
+  assert.ok(htmlIncludes(html, 'MLB Bullpen Overview'))
+  assert.ok(htmlIncludes(html, 'MLB Bullpen Picture'))
+  assert.ok(htmlIncludes(html, 'partial view, not a complete ranking of all 30 clubs'))
+  assert.equal(htmlIncludes(html, 'Bullpen-eligible MLB arms'), false)
 })
 
 test('the duplicate league count summary no longer renders', () => {
@@ -63,26 +62,17 @@ test('the duplicate league count summary no longer renders', () => {
   assert.equal(htmlIncludes(html, 'bullpen-eligible relievers in the current bullpen availability set'), false)
 })
 
-test('bullpen state is clearly league-wide, not a single team', () => {
+test('the synthetic league-wide operating-state card is absent', () => {
   const html = renderDashboard()
-  assert.ok(htmlIncludes(html, 'League-Wide Bullpen State'))
-  assert.ok(htmlIncludes(html, 'not a single team'))
-  assert.ok(htmlIncludes(html, 'Open the Bullpen Board for a team-specific read.'))
-  assert.equal(htmlIncludes(html, "Open Bullpen for one team's current state"), false)
-  // The aggregate card itself carries league-wide scope and operating state.
-  assert.ok(htmlIncludes(html, 'Scope'))
-  assert.ok(htmlIncludes(html, 'data-density="full"'))
-  assert.ok(htmlIncludes(html, 'League-Wide'))
-  assert.ok(htmlIncludes(html, 'Current Bullpen State'))
-  assert.equal(htmlIncludes(html, 'Stable Overall'), false)
-  assert.ok(htmlIncludes(html, 'Open Bullpen Board'))
-  assert.equal(htmlIncludes(html, 'Open Team Bullpen Board'), false)
+  assert.equal(htmlIncludes(html, 'League-Wide Bullpen State'), false)
+  assert.equal(htmlIncludes(html, 'Current Bullpen State'), false)
+  assert.equal(htmlIncludes(html, 'data-density="full"'), false)
 })
 
-test('usage roles are described as a league-wide distribution', () => {
+test('usage roles are described as the represented published view', () => {
   const html = renderDashboard()
-  assert.ok(htmlIncludes(html, 'League-Wide Usage Roles'))
-  assert.ok(htmlIncludes(html, 'across bullpen-eligible MLB arms'))
+  assert.ok(htmlIncludes(html, 'Usage Roles'))
+  assert.ok(htmlIncludes(html, 'represented in this published view'))
   assert.ok(htmlIncludes(html, 'Trusted Arm'))
   assert.ok(htmlIncludes(html, 'Setup Arm'))
   assert.ok(htmlIncludes(html, 'Middle Relief Arm'))
@@ -100,7 +90,7 @@ test('quick actions no longer duplicate sidebar navigation', () => {
 
 test('existing realignment headings remain (substrings preserved for stability)', () => {
   const html = renderDashboard()
-  for (const heading of ['Bullpen Overview', 'Bullpen State', 'Usage Roles']) {
+  for (const heading of ['MLB Bullpen Overview', 'Usage Roles']) {
     assert.ok(htmlIncludes(html, heading), `missing heading substring: ${heading}`)
   }
 })

@@ -12,7 +12,7 @@ function TeamSelect({ label, teams, value, onChange }) {
         value={value ?? ''}
         onChange={e => onChange(e.target.value ? Number(e.target.value) : null)}
         aria-label={label}
-        className="rounded border border-dirt bg-field/70 px-3 py-2 font-mono text-xs text-chalk200 outline-none focus:border-amber/50"
+        className="min-h-11 rounded border border-dirt bg-field/70 px-3 py-2 font-mono text-xs text-chalk200 outline-none focus:border-amber/50"
       >
         <option value="">Select a team…</option>
         {teams.map(team => (
@@ -31,7 +31,7 @@ export function comparisonIsReady(teamA, teamB) {
 
 // Team Bullpen Comparison lives inside the Bullpen workflow. It receives the
 // shared teams fetch, manages two team selections, and renders the descriptive
-// side-by-side comparison plus both full boards.
+// side-by-side comparison plus links to both full boards.
 export default function TeamBullpenComparison({
   teams,
   requestedTeamA = null,

@@ -1,7 +1,6 @@
 import { formatConfidence, getAvailabilityBadgeView, getAvailabilityStatusLabel } from '../availabilityView'
 import { fmtDataDate, fmtSyncDate } from '../../dashboard/syncStatusView'
 import { getDataProvenance } from './tonightsBullpenBoardView'
-import { comparisonObservationCandidates } from '../../../utils/evidenceCardModel'
 import { readPublicTeamState } from '../../../adapters/publicTeamState'
 
 // Snapshot rows shown in the side-by-side table, in the board's reading order.
@@ -21,22 +20,27 @@ const LEADER_TONE = {
 
 function safeMetrics(metrics) {
   const m = metrics || {}
+  const value = key => {
+    if (m[key] == null || m[key] === '') return null
+    const numeric = Number(m[key])
+    return Number.isFinite(numeric) ? numeric : null
+  }
   return {
-    total_relievers: Number(m.total_relievers) || 0,
-    available: Number(m.available) || 0,
-    monitor: Number(m.monitor) || 0,
-    limited: Number(m.limited) || 0,
-    avoid: Number(m.avoid) || 0,
-    unavailable: Number(m.unavailable) || 0,
-    restricted: Number(m.restricted) || 0,
-    pct_available: Number(m.pct_available) || 0,
-    pct_unavailable: Number(m.pct_unavailable) || 0,
+    total_relievers: value('total_relievers'),
+    available: value('available'),
+    monitor: value('monitor'),
+    limited: value('limited'),
+    avoid: value('avoid'),
+    unavailable: value('unavailable'),
+    restricted: value('restricted'),
+    pct_available: value('pct_available'),
+    pct_unavailable: value('pct_unavailable'),
     // The public "Unavailable" row combines the Avoid and Unavailable groups
     // (getAvailabilityStatusLabel folds Avoid into Unavailable), so its matching
     // percentage is pct_restricted — the share of that same combined population.
     // pct_unavailable alone counts only the strict Unavailable group and would
     // read 0% next to a non-zero combined count.
-    pct_restricted: Number(m.pct_restricted) || 0,
+    pct_restricted: value('pct_restricted'),
   }
 }
 
@@ -49,7 +53,8 @@ function displayPublicCopy(value) {
 }
 
 function sumMetrics(metrics, keys) {
-  return keys.reduce((total, key) => total + (Number(metrics?.[key]) || 0), 0)
+  const values = keys.map(key => metrics?.[key]).filter(value => value != null)
+  return values.length > 0 ? values.reduce((total, value) => total + value, 0) : null
 }
 
 function freshnessRow(freshness) {
@@ -96,8 +101,6 @@ export function getComparisonView(payload) {
     leaderTone: LEADER_TONE[o.leader] || LEADER_TONE.tie,
     reasons: Array.isArray(o.reasons) ? o.reasons.map(displayPublicCopy) : [],
   }))
-  const featuredObservation = comparisonObservationCandidates(snapshot, labelA, labelB)[0]
-
   const confidence = comparison.confidence || 'high'
 
   return {
@@ -108,15 +111,10 @@ export function getComparisonView(payload) {
     metricsB,
     snapshot,
     observations,
-    featuredObservation,
-    summary: {
-      state: comparison.summary?.state || 'differ',
-      statement: featuredObservation || displayPublicCopy(comparison.summary?.statement) || null,
-      reasons: Array.isArray(comparison.summary?.reasons) ? comparison.summary.reasons.map(displayPublicCopy) : [],
-    },
     confidence,
     confidenceLabel: formatConfidence(confidence),
     isDegraded: confidence === 'low' || confidence === 'none',
+    showConfidence: !['high', ''].includes(String(confidence).toLowerCase()),
     limitations: Array.isArray(comparison.limitations) ? comparison.limitations.map(displayPublicCopy) : [],
     freshnessA: freshnessRow(comparison.freshness?.team_a),
     freshnessB: freshnessRow(comparison.freshness?.team_b),

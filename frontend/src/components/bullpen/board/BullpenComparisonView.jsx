@@ -1,60 +1,31 @@
 import { Link } from 'react-router-dom'
-import { EmptyState } from '../../UI'
+import { Disclosure, EmptyState, FreshnessStamp, StaleDataNotice } from '../../UI'
 import { buildComparisonHref, buildTeamBoardHref, normalizeTeamReference } from '../../../utils/evidenceLinks'
 import { EVIDENCE_CARD_ORIGIN } from '../../../utils/shareCardArtifact'
 import EvidenceShareMenu from '../../share/EvidenceShareMenu'
 import { getComparisonView } from './teamBullpenComparisonView'
 
-function FreshnessChip({ label, freshness }) {
-  return (
-    <div className="rounded border border-dirt bg-field/50 px-3 py-2">
-      <div className="flex items-center justify-between gap-3">
-        <span className="font-mono text-xs text-chalk300">{label}</span>
-        <span
-          className="inline-flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-widest text-chalk400"
-          title={freshness.throughHint}
-        >
-          <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: freshness.dot }} aria-hidden="true" />
-          {freshness.healthLabel}
-        </span>
-      </div>
-      {freshness.completedGamesLine && (
-        <div className="mt-1 font-mono text-[11px] text-chalk500" title={freshness.throughHint}>
-          {freshness.completedGamesLine}
-        </div>
-      )}
-      {freshness.isStale && (
-        <div className="mt-1 font-mono text-[10px] uppercase tracking-wider text-amber">
-          Recent workload unclear — read with caution
-        </div>
-      )}
-    </div>
-  )
-}
+const metricValue = value => value == null ? 'Withheld' : value
+const percentValue = value => value == null ? 'Withheld' : `${value}%`
 
 // One side's canonical Team State. Descriptive only: each side is read on its
 // own, and a side without a supported state shows the governed non-state message
 // rather than a placeholder state or a partial winner.
 function TeamStateChip({ label, teamState }) {
   return (
-    <div
-      className="rounded border px-3 py-2"
-      style={{ borderColor: teamState.tone.borderColor, backgroundColor: teamState.tone.backgroundColor }}
-    >
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <span className="font-mono text-xs text-chalk300">{label}</span>
-        {teamState.available && (
-          <span
-            className="inline-flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-widest"
-            style={{ color: teamState.tone.color }}
-          >
-            <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: teamState.tone.dot }} aria-hidden="true" />
-            Team State: {teamState.publicLabel}
-          </span>
-        )}
-      </div>
+    <div className="flex min-w-32 flex-col items-end gap-1">
+      <span className="font-mono text-xs text-chalk200">{label}</span>
+      {teamState.available && (
+        <span
+          className="inline-flex min-h-7 items-center gap-1.5 rounded border px-2 py-1 font-mono text-[11px] uppercase tracking-wider"
+          style={{ borderColor: teamState.tone.borderColor, backgroundColor: teamState.tone.backgroundColor, color: teamState.tone.color }}
+        >
+          <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: teamState.tone.dot }} aria-hidden="true" />
+          Team State: {teamState.publicLabel}
+        </span>
+      )}
       {!teamState.available && (
-        <p className="mt-1 text-xs leading-relaxed text-chalk500">{teamState.unavailableMessage}</p>
+        <span className="max-w-48 text-right text-[11px] leading-relaxed text-chalk500">{teamState.unavailableMessage}</span>
       )}
     </div>
   )
@@ -62,13 +33,13 @@ function TeamStateChip({ label, teamState }) {
 
 function SnapshotTable({ view }) {
   return (
-    <div className="card overflow-hidden">
-      <table className="data-table w-full">
+    <div className="card overflow-x-auto" data-testid="comparison-table-scroll">
+      <table className="data-table min-w-[38rem] w-full">
         <thead>
           <tr>
             <th className="text-chalk400">Availability</th>
-            <th className="text-chalk200 text-right">{view.labelA}</th>
-            <th className="text-chalk200 text-right">{view.labelB}</th>
+            <th><TeamStateChip label={view.labelA} teamState={view.teamStateA} /></th>
+            <th><TeamStateChip label={view.labelB} teamState={view.teamStateB} /></th>
           </tr>
         </thead>
         <tbody>
@@ -80,24 +51,24 @@ function SnapshotTable({ view }) {
                   {row.label}
                 </span>
               </td>
-              <td className="text-right font-mono text-chalk100">{row.valueA}</td>
-              <td className="text-right font-mono text-chalk100">{row.valueB}</td>
+              <td className="text-right font-mono text-chalk100">{metricValue(row.valueA)}</td>
+              <td className="text-right font-mono text-chalk100">{metricValue(row.valueB)}</td>
             </tr>
           ))}
           <tr className="border-t border-dirt">
             <td className="text-chalk400 font-medium">Total relievers</td>
-            <td className="text-right font-mono text-chalk200">{view.metricsA.total_relievers}</td>
-            <td className="text-right font-mono text-chalk200">{view.metricsB.total_relievers}</td>
+            <td className="text-right font-mono text-chalk200">{metricValue(view.metricsA.total_relievers)}</td>
+            <td className="text-right font-mono text-chalk200">{metricValue(view.metricsB.total_relievers)}</td>
           </tr>
           <tr>
             <td className="text-chalk400">% Available</td>
-            <td className="text-right font-mono text-chalk400">{view.metricsA.pct_available}%</td>
-            <td className="text-right font-mono text-chalk400">{view.metricsB.pct_available}%</td>
+            <td className="text-right font-mono text-chalk400">{percentValue(view.metricsA.pct_available)}</td>
+            <td className="text-right font-mono text-chalk400">{percentValue(view.metricsB.pct_available)}</td>
           </tr>
           <tr>
             <td className="text-chalk400">% Unavailable</td>
-            <td className="text-right font-mono text-chalk400">{view.metricsA.pct_restricted}%</td>
-            <td className="text-right font-mono text-chalk400">{view.metricsB.pct_restricted}%</td>
+            <td className="text-right font-mono text-chalk400">{percentValue(view.metricsA.pct_restricted)}</td>
+            <td className="text-right font-mono text-chalk400">{percentValue(view.metricsB.pct_restricted)}</td>
           </tr>
         </tbody>
       </table>
@@ -112,16 +83,13 @@ function Observation({ observation }) {
         {observation.statement}
       </p>
       {observation.reasons.length > 0 && (
-        <details className="mt-2 rounded border border-dirt/60 bg-dugout/50 p-2">
-          <summary className="cursor-pointer font-mono text-[10px] uppercase tracking-widest text-chalk500 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/60">
-            Why?
-          </summary>
+        <Disclosure label="Why?" className="mt-2">
           <ul className="mt-2 space-y-1">
             {observation.reasons.map((reason, index) => (
               <li key={index} className="text-xs leading-relaxed text-chalk300">• {reason}</li>
             ))}
           </ul>
-        </details>
+        </Disclosure>
       )}
     </div>
   )
@@ -149,10 +117,81 @@ export default function BullpenComparisonView({ payload }) {
   const sharedDataThrough = view.freshnessA?.dataThroughRaw === view.freshnessB?.dataThroughRaw
     ? view.freshnessA?.dataThroughRaw
     : null
+  const rawFreshnessA = payload?.comparison?.freshness?.team_a || {}
+  const freshnessDiffers = Boolean(
+    view.freshnessA?.dataThroughRaw
+    && view.freshnessB?.dataThroughRaw
+    && !sharedDataThrough,
+  )
+  const freshnessDegraded = view.freshnessA?.isStale || view.freshnessB?.isStale
 
   return (
     <div className="space-y-8">
-      <div className="flex justify-end">
+      {/* Team State belongs to the team headers; normal freshness is one quiet
+          page-level line before the first baseball number. */}
+      <section aria-label="Side-by-side bullpen read">
+        <h2 className="mb-2 font-mono text-xs uppercase tracking-widest text-chalk400">Side-by-side Bullpen Read</h2>
+        {sharedDataThrough && (
+          <FreshnessStamp freshness={{ ...rawFreshnessA, data_through: sharedDataThrough }} showExceptional={false} className="mb-3" />
+        )}
+        {(freshnessDiffers || freshnessDegraded) && (
+          <StaleDataNotice
+            dataThrough={sharedDataThrough || view.freshnessA?.dataThroughRaw || view.freshnessB?.dataThroughRaw}
+            message={freshnessDiffers
+              ? `${view.labelA} and ${view.labelB} do not share the same data-through date, so compare with caution.`
+              : 'One or both bullpens have degraded freshness, so compare with caution.'}
+          />
+        )}
+        <SnapshotTable view={view} />
+      </section>
+
+      {/* Context comparison observations */}
+      <section
+        id="comparison-evidence"
+        tabIndex={-1}
+        aria-label="Bullpen comparison observations"
+        className="scroll-mt-24 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/60"
+      >
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+          <h2 className="font-mono text-xs uppercase tracking-widest text-chalk400">Comparison</h2>
+          {view.showConfidence && (
+            <span className="font-mono text-[10px] uppercase tracking-widest text-amber">
+              Read Confidence: {view.confidenceLabel}
+            </span>
+          )}
+        </div>
+        {view.showConfidence && !freshnessDegraded && (
+          <p className="mb-3 font-mono text-[11px] uppercase tracking-wider text-amber">
+            Comparison confidence is limited; review the supporting observations.
+          </p>
+        )}
+        <div className="grid gap-3 md:grid-cols-3">
+          {view.observations.map(observation => (
+            <Observation key={observation.dimension} observation={observation} />
+          ))}
+        </div>
+        {view.limitations.length > 0 && (
+          <Disclosure label="Limits on this comparison" className="mt-3">
+            <ul className="space-y-1">
+              {view.limitations.map((limitation, index) => (
+                <li key={index} className="text-xs leading-relaxed text-chalk400">• {limitation}</li>
+              ))}
+            </ul>
+          </Disclosure>
+        )}
+      </section>
+
+      {/* Team board links. The comparison compares; each full board lives
+          on the Team Board tab instead of being embedded twice here. */}
+      <section aria-label="Open a full team board">
+        <h2 className="mb-2 font-mono text-xs uppercase tracking-widest text-chalk400">Full Team Boards</h2>
+        <div className="flex flex-wrap gap-3">
+          <TeamBoardLink team={payload?.team_a?.team} label={view.labelA} />
+          <TeamBoardLink team={payload?.team_b?.team} label={view.labelB} />
+        </div>
+      </section>
+
+      <div className="flex justify-end border-t border-dirt pt-4">
         <EvidenceShareMenu
           cardModel={cardModel}
           destinationUrl={destinationUrl}
@@ -167,75 +206,6 @@ export default function BullpenComparisonView({ payload }) {
           }}
         />
       </div>
-      {/* 1. Team State for each side, from the same backend authority the team
-          boards use. No winner, edge, lean, advantage, grade, score, or rank. */}
-      <section aria-label="Team State comparison">
-        <h2 className="mb-2 font-mono text-xs uppercase tracking-widest text-chalk400">Team State</h2>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <TeamStateChip label={view.labelA} teamState={view.teamStateA} />
-          <TeamStateChip label={view.labelB} teamState={view.teamStateB} />
-        </div>
-      </section>
-
-      {/* 2. Freshness information */}
-      <section aria-label="Comparison freshness">
-        <h2 className="mb-2 font-mono text-xs uppercase tracking-widest text-chalk400">Freshness</h2>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <FreshnessChip label={view.labelA} freshness={view.freshnessA} />
-          <FreshnessChip label={view.labelB} freshness={view.freshnessB} />
-        </div>
-      </section>
-
-      {/* 3. Side-by-side bullpen read */}
-      <section aria-label="Side-by-side bullpen read">
-        <h2 className="mb-2 font-mono text-xs uppercase tracking-widest text-chalk400">Side-by-side Bullpen Read</h2>
-        <SnapshotTable view={view} />
-      </section>
-
-      {/* 4. Context comparison observations */}
-      <section
-        id="comparison-evidence"
-        tabIndex={-1}
-        aria-label="Bullpen comparison observations"
-        className="scroll-mt-24 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/60"
-      >
-        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-          <h2 className="font-mono text-xs uppercase tracking-widest text-chalk400">Comparison</h2>
-          <span className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
-            Read Confidence: {view.confidenceLabel}
-          </span>
-        </div>
-        {view.summary.statement && (
-          <p className="mb-3 text-sm font-medium text-chalk100">{view.summary.statement}</p>
-        )}
-        {view.isDegraded && (
-          <p className="mb-3 font-mono text-[11px] uppercase tracking-wider text-amber">
-            Unclear read — one or both bullpens have degraded freshness.
-          </p>
-        )}
-        <div className="grid gap-3 md:grid-cols-3">
-          {view.observations.map(observation => (
-            <Observation key={observation.dimension} observation={observation} />
-          ))}
-        </div>
-        {view.limitations.length > 0 && (
-          <ul className="mt-3 space-y-1">
-            {view.limitations.map((limitation, index) => (
-              <li key={index} className="text-xs leading-relaxed text-chalk400">• {limitation}</li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      {/* 5. Team board links. The comparison compares; each full board lives
-          on the Team Board tab instead of being embedded twice here. */}
-      <section aria-label="Open a full team board">
-        <h2 className="mb-2 font-mono text-xs uppercase tracking-widest text-chalk400">Full Team Boards</h2>
-        <div className="flex flex-wrap gap-3">
-          <TeamBoardLink team={payload?.team_a?.team} label={view.labelA} />
-          <TeamBoardLink team={payload?.team_b?.team} label={view.labelB} />
-        </div>
-      </section>
     </div>
   )
 }

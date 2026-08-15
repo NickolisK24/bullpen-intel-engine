@@ -1,28 +1,18 @@
-import { LAST_DATA_UPDATE_LABEL } from '../../utils/bullpenConcepts'
-import { Link } from 'react-router-dom'
-import { toOperatingStateReadModel } from '../../adapters/operatingStateReadModel'
 import { useFetch } from '../../hooks/useFetch'
 import { getBullpenDashboard } from '../../utils/api'
-import { buildTeamBoardHref } from '../../utils/evidenceLinks'
-import { LoadingPane, ErrorState, StaleDataNotice } from '../UI'
-import SeasonBanner from './SeasonBanner'
+import { Disclosure, ErrorState, FreshnessStamp, LoadingPane, StaleDataNotice, UnavailableDataState } from '../UI'
 import BullpenLandscape from './BullpenLandscape'
 import {
   getInjuryIlContextSummary,
   normalizeInjuryIlContext,
 } from './injuryIlContextView'
-import { fmtSyncDate, freshnessDataThrough } from './syncStatusView'
+import { freshnessDataThrough } from './syncStatusView'
 import {
-  getBoardContextView,
-  getDataProvenance,
   getRolesSummaryView,
 } from '../bullpen/board/tonightsBullpenBoardView'
-import BullpenOperatingStateCard from '../bullpen/BullpenOperatingStateCard'
 
-// The league bullpen board: the only full league-wide landscape surface.
-// Centered on the bullpen landscape with one league state read, roster
-// context, and usage-role composition. Trust/freshness summaries are shown;
-// the deep governance/diagnostic detail lives on the Data & Trust page.
+// Interim league bullpen orientation: backend-authored storylines and partial
+// situation lanes lead, with roster and usage-role context kept secondary.
 export default function Dashboard() {
   const dash = useFetch(getBullpenDashboard)
   return (
@@ -35,60 +25,30 @@ export default function Dashboard() {
     />
   )
 }
-
 export function DashboardView({ data, loading = false, error = null, staleWithError = false, onRetry }) {
-  const context = getBoardContextView(data || {})
-  const operatingStateRead = toOperatingStateReadModel(data || {}, {
-    scope: 'league',
-    cta: { href: buildTeamBoardHref(null, { source: 'dashboard' }), label: 'Open Bullpen Board' },
-  })
-  const roles = getRolesSummaryView(data?.roles)
+  const roles = data?.roles?.counts ? getRolesSummaryView(data.roles) : null
   const injuryIlContext = normalizeInjuryIlContext(data)
 
   const freshness = data?.freshness || {}
-  const provenance = getDataProvenance(freshness)
   const dataThroughSource = freshnessDataThrough(freshness)
-  const lastSync = fmtSyncDate(freshness.last_successful_sync || freshness.lastSuccessfulSync)
-  const season = (dataThroughSource || '').slice(0, 4) || '2024'
-  const isLive = provenance.isLive
 
   return (
     <div className="p-4 sm:p-5 lg:p-6 max-w-7xl mx-auto">
       {/* Section 1 — Hero */}
-      <div className="mb-6 animate-fade-up opacity-0" style={{ animationFillMode: 'forwards' }}>
-        <div className="relative overflow-hidden rounded-xl border border-dirt bg-dugout p-4 sm:p-6 bg-stadium-glow">
+      <div className="mb-5 animate-fade-up opacity-0" style={{ animationFillMode: 'forwards' }}>
+        <div className="relative overflow-hidden rounded-xl border border-dirt bg-dugout p-4 sm:p-5 bg-stadium-glow">
           <div className="absolute inset-0 bg-grid-lines opacity-100 pointer-events-none" />
           <div className="relative z-10">
             <div className="font-mono text-xs text-amber/60 uppercase tracking-widest mb-2">
-              League-Wide Bullpen Overview
+              MLB Bullpen Overview
             </div>
-            <h1 className="font-display text-4xl sm:text-5xl tracking-wider text-chalk100 leading-none mb-2">
-              League Bullpen Board
+            <h1 className="mb-2 font-display text-4xl leading-none tracking-wider text-chalk100 sm:text-5xl">
+              MLB Bullpen Picture
             </h1>
-            <p className="text-chalk400 text-sm max-w-2xl font-mono leading-relaxed">
-              A league-wide bullpen board from the latest completed data - who looks
-              usable, which pens are stretched, and what kind of role each arm appears
-              to fill.
-              Open <span className="text-chalk200">Bullpen</span> for a single team's pen.
+            <p className="max-w-2xl text-sm leading-relaxed text-chalk400">
+              Current published context across MLB bullpens. The situation lanes below are a partial view, not a complete ranking of all 30 clubs.
             </p>
-
-            <div className="mt-4 flex flex-wrap items-center gap-3">
-              <span className="rounded border border-amber/30 bg-amber/5 px-2.5 py-1 font-mono text-[10px] uppercase tracking-widest text-amber/80">
-                League-Wide · Bullpen-eligible MLB arms
-              </span>
-              <SeasonBanner season={season} isLive={isLive} />
-              <FreshnessPill
-                provenance={provenance}
-                lastSync={lastSync}
-                confidenceLabel={context.confidenceLabel}
-              />
-              <Link
-                to="/trust"
-                className="rounded border border-dirt bg-field/60 px-3 py-2 font-mono text-xs uppercase tracking-wider text-chalk300 transition-colors hover:border-amber/40 hover:text-amber"
-              >
-                Data &amp; Trust details →
-              </Link>
-            </div>
+            <FreshnessStamp freshness={freshness} className="mt-3" />
           </div>
         </div>
       </div>
@@ -106,28 +66,16 @@ export function DashboardView({ data, loading = false, error = null, staleWithEr
             />
           )}
 
-          {/* Tonight's Bullpen Landscape — first-time league orientation */}
+          {/* Interim published league context. */}
           <BullpenLandscape landscape={data.landscape} />
-
-          {/* Section 2 — Bullpen State */}
-          <Section
-            title="League-Wide Bullpen State"
-            subtitle="League-wide context across bullpen-eligible arms — not a single team. Open the Bullpen Board for a team-specific read."
-          >
-            <BullpenOperatingStateCard
-              readModel={operatingStateRead}
-              staleWithError={staleWithError}
-              onRetry={onRetry}
-            />
-          </Section>
 
           <InjuryIlContextSection context={injuryIlContext} />
 
           {/* Section 4 — Usage Roles Summary */}
-          <Section
-            title="League-Wide Usage Roles"
-            subtitle="Observed usage-role distribution across bullpen-eligible MLB arms — not a single team, and not assigned roles."
-          >
+          <Section title="Usage Roles" subtitle="Observed role context across the bullpen arms represented in this published view — not assigned roles.">
+            {!roles ? (
+              <UnavailableDataState title="Role context unavailable" message="No published usage-role counts are available for this view." />
+            ) : (
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
               {roles.rows.map(row => (
                 <div key={row.key} className="card flex items-center justify-between gap-2 p-3" style={row.tone}>
@@ -136,6 +84,7 @@ export function DashboardView({ data, loading = false, error = null, staleWithEr
                 </div>
               ))}
             </div>
+            )}
           </Section>
 
         </>
@@ -201,20 +150,19 @@ function InjuryIlContextSection({ context }) {
         </div>
 
         {context.limitations.length > 0 && (
-          <ul className="mt-3 space-y-1">
-            {context.limitations.map((limitation, index) => (
-              <li key={index} className="text-[11px] leading-relaxed text-chalk500">• {limitation}</li>
-            ))}
-          </ul>
+          <Disclosure label="Limits on this context" className="mt-3">
+            <ul className="space-y-1">
+              {context.limitations.map((limitation, index) => (
+                <li key={index} className="text-[11px] leading-relaxed text-chalk500">• {limitation}</li>
+              ))}
+            </ul>
+          </Disclosure>
         )}
 
         <p className="mt-3 text-[11px] leading-relaxed text-chalk500">
           <span className="text-chalk300">Why it matters:</span> Bullpen workload can become concentrated when active relief depth is reduced.
         </p>
 
-        <p className="mt-2 text-[11px] leading-relaxed text-chalk500">
-          Availability classifications are workload-based. Roster status context is separate and does not change the availability model.
-        </p>
       </div>
     </Section>
   )
@@ -229,25 +177,5 @@ function Section({ title, subtitle, children }) {
       </div>
       {children}
     </section>
-  )
-}
-
-function FreshnessPill({ provenance, lastSync, confidenceLabel }) {
-  const dataLine = provenance.completedGamesLine
-    ? provenance.completedGamesLine
-    : 'No completed MLB data loaded'
-  return (
-    <div
-      className="rounded border px-3 py-2 font-mono text-[11px] leading-relaxed"
-      style={{ borderColor: provenance.tone.borderColor, backgroundColor: provenance.tone.backgroundColor, color: provenance.tone.color }}
-      title={provenance.throughHint}
-    >
-      <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-0.5">
-        <span>{provenance.label}</span>
-        <span>{dataLine}</span>
-        {lastSync && <span className="text-chalk500">· {LAST_DATA_UPDATE_LABEL}: {lastSync}</span>}
-        <span className="text-chalk500">· Read Confidence: {confidenceLabel}</span>
-      </span>
-    </div>
   )
 }

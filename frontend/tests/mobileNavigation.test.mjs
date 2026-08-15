@@ -155,12 +155,13 @@ test('mobile menu wires close-on-select, close-on-route-change, escape, and a cl
 test('the first-use entry area offers the four primary actions with existing routes', () => {
   const html = renderAt(React.createElement(IntelligenceSurfaceView, {}))
   // ("Today's" has an apostrophe React escapes to &#x27;, so match the rest.)
-  for (const title of ['Bullpen Read', 'Find a Team', 'Compare Two Bullpens', 'Find a Reliever']) {
+  for (const title of ['League Board', 'Find a Team', 'Compare Two Bullpens', 'Find a Reliever']) {
     assert.ok(htmlIncludes(html, title), `missing action: ${title}`)
   }
   assert.ok(htmlIncludes(html, 'href="/bullpen?view=compare"'))
   assert.ok(htmlIncludes(html, 'href="/bullpen?view=pitchers"'))
   assert.ok(htmlIncludes(html, 'href="/bullpen"'))
+  assert.ok(htmlIncludes(html, 'href="/dashboard"'))
 })
 
 test('the entry area sits after the daily read and does not replace it', () => {

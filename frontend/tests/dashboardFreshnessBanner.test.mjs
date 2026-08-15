@@ -37,28 +37,32 @@ const withFreshness = (freshness) => ({
 // pin the user-facing symptom: healthy durable freshness => "Current", never a
 // snapshot label, regardless of deploy-local state.
 
-test('healthy durable freshness renders the current banner, not a snapshot', () => {
+test('healthy durable freshness renders one quiet data-through line', () => {
   const html = inRouter(React.createElement(DashboardView, {
     data: withFreshness({ is_current: true, sync_status: 'success', data_through: '2026-06-04', last_successful_sync: '2026-06-04T12:00:00Z' }),
   }))
-  assert.ok(htmlIncludes(html, 'Current — 2026 Season'))
+  assert.equal((html.match(/Data through/g) || []).length, 1)
+  assert.ok(htmlIncludes(html, 'dateTime="2026-06-04">Jun 4'))
+  assert.equal(htmlIncludes(html, 'Freshness: Current'), false)
   assert.ok(!htmlIncludes(html, 'End-of-Season Read'))
 })
 
-test('non-current freshness renders the honest season snapshot label', () => {
+test('non-current freshness retains an exceptional stale signal', () => {
   const html = inRouter(React.createElement(DashboardView, {
     data: withFreshness({ is_current: false, sync_status: 'metadata_unavailable', data_through: '2026-04-01', last_successful_sync: null }),
   }))
-  assert.ok(htmlIncludes(html, '2026 Season Snapshot'))
+  assert.ok(htmlIncludes(html, 'dateTime="2026-04-01">Apr 1'))
+  assert.ok(htmlIncludes(html, 'Refresh delayed'))
   assert.ok(!htmlIncludes(html, 'End-of-Season Read'))
-  assert.ok(!htmlIncludes(html, 'Current — 2026 Season'))
+  assert.ok(!htmlIncludes(html, 'Freshness: Current'))
 })
 
 test('in-season July dashboard does not show end-of-season copy', () => {
   const html = inRouter(React.createElement(DashboardView, {
     data: withFreshness({ is_current: true, data_through: '2026-07-05', last_successful_sync: '2026-07-06T04:00:00Z' }),
   }))
-  assert.ok(htmlIncludes(html, 'Current — 2026 Season'))
+  assert.ok(htmlIncludes(html, 'dateTime="2026-07-05">Jul 5'))
+  assert.equal(htmlIncludes(html, 'Freshness: Current'), false)
   assert.ok(!htmlIncludes(html, 'End-of-Season Read'))
 })
 
@@ -85,9 +89,8 @@ test('publishable live dashboard freshness does not render as sample or snapshot
     }),
   }))
 
-  assert.ok(htmlIncludes(html, 'Current — 2026 Season'))
-  assert.ok(htmlIncludes(html, 'Published view current'))
-  assert.ok(htmlIncludes(html, 'Updated after completed games through Jul 5, 2026'))
+  assert.ok(htmlIncludes(html, 'dateTime="2026-07-05">Jul 5'))
+  assert.equal(htmlIncludes(html, 'Published view current'), false)
   assert.equal(htmlIncludes(html, 'Sample data'), false)
   assert.equal(htmlIncludes(html, '2026 Season Snapshot'), false)
   assert.equal(htmlIncludes(html, 'incomplete and is not publishable'), false)
@@ -115,7 +118,7 @@ test('running background lane does not make the dashboard look generally mid-syn
     }),
   }))
 
-  assert.ok(htmlIncludes(html, 'Published view; background refresh running'))
-  assert.ok(htmlIncludes(html, 'Updated after completed games through Jul 3, 2026'))
+  assert.ok(htmlIncludes(html, 'dateTime="2026-07-03">Jul 3'))
+  assert.equal(htmlIncludes(html, 'Published view; background refresh running'), false)
   assert.equal(htmlIncludes(html, 'Sync in progress'), false)
 })
