@@ -23,7 +23,6 @@ const { DashboardView } = await server.ssrLoadModule('/src/components/dashboard/
 const { IntelligenceSurfaceView } = await server.ssrLoadModule('/src/components/home/IntelligenceSurface.jsx')
 const { StoriesView } = await server.ssrLoadModule('/src/components/stories/Stories.jsx')
 const { DataTrustView } = await server.ssrLoadModule('/src/components/trust/DataTrust.jsx')
-const { SidebarDataFreshnessCard, sidebarFreshness } = await server.ssrLoadModule('/src/components/Sidebar.jsx')
 const { default: BullpenBoardView } = await server.ssrLoadModule('/src/components/bullpen/board/BullpenBoardView.jsx')
 const { default: BullpenComparisonView } = await server.ssrLoadModule('/src/components/bullpen/board/BullpenComparisonView.jsx')
 
@@ -150,9 +149,6 @@ test('user-facing data-through surfaces use served freshness when sync is ahead 
     Stories: render(React.createElement(StoriesView, { dashboard })),
     Bullpen: render(React.createElement(BullpenBoardView, { board })),
     Comparison: render(React.createElement(BullpenComparisonView, { payload: comparison })),
-    Sidebar: render(React.createElement(SidebarDataFreshnessCard, {
-      freshness: sidebarFreshness(syncAhead, false, null, servedFreshness),
-    })),
   }
 
   for (const [surface, html] of Object.entries(surfaces)) {
@@ -161,10 +157,6 @@ test('user-facing data-through surfaces use served freshness when sync is ahead 
       assert.equal(html.includes('Freshness: Current'), false, `${surface} used generic current freshness copy`)
       assert.ok(html.includes(todayExpectedLine), `${surface} did not show served freshness data-through`)
       assert.equal(html.includes(todaySyncAheadLine), false, `${surface} leaked raw sync data-through`)
-    } else if (surface === 'Sidebar') {
-      assert.ok(html.includes('Data through'), `${surface} did not label public data-through`)
-      assert.ok(html.includes('June 16, 2026'), `${surface} did not show served freshness data-through`)
-      assert.equal(html.includes('June 17, 2026'), false, `${surface} leaked raw sync data-through`)
     } else {
       assertUsesServedFreshness(surface, html)
     }

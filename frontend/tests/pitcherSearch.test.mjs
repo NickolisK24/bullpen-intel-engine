@@ -85,7 +85,7 @@ test('Pitcher Search keeps missing team ownership explicit', () => {
   assert.equal(view.availability, 'Unavailable')
 })
 
-test('Pitcher Search result clicks open existing Pitcher Detail from Bullpen', async () => {
+test('Pitcher Search stays out of the Team Board primary path', async () => {
   const searchSource = await readFile(
     new URL('../src/components/bullpen/PitcherSearch.jsx', import.meta.url),
     'utf8',
@@ -100,7 +100,8 @@ test('Pitcher Search result clicks open existing Pitcher Detail from Bullpen', a
   )
 
   assert.ok(searchSource.includes('onClick={() => onSelectPitcher(result)}'))
-  assert.ok(bullpenSource.includes("handlePitcherSelect(result.player_id, result, 'pitcher_search')"))
+  assert.equal(bullpenSource.includes('<PitcherSearch'), false)
+  assert.ok(bullpenSource.includes('id="reliever-finder-search"'))
   assert.ok(bullpenSource.includes('navigate(buildPitcherHref(pitcherId'))
   assert.ok(bullpenSource.includes('<PitcherDetail pitcherId={selectedPitcher.pitcher_id} onClose={closeSelectedPitcher} />'))
   assert.ok(apiSource.includes('export const searchPitchers'))

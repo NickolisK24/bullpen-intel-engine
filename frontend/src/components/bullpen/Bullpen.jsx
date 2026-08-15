@@ -20,7 +20,6 @@ import TonightsBullpenBoard from './board/TonightsBullpenBoard'
 import TeamBullpenComparison from './board/TeamBullpenComparison'
 import { getBullpenEmptyState } from './emptyState'
 import AvailabilityBadge from './AvailabilityBadge'
-import PitcherSearch from './PitcherSearch'
 import { filterRowsByAvailability } from './availabilityView'
 import {
   computeFinderIntent,
@@ -167,11 +166,6 @@ export default function Bullpen() {
     }))
   }
 
-  const handlePitcherSearchSelect = (result) => {
-    if (!result?.player_id) return
-    handlePitcherSelect(result.player_id, result, 'pitcher_search')
-  }
-
   const closeSelectedPitcher = () => {
     navigate(buildTeamBoardHref(activeTeamRef, {
       source: urlState.source,
@@ -230,13 +224,13 @@ export default function Bullpen() {
 
       {viewMode === BULLPEN_VIEWS.BOARD ? (
         <>
-          <PitcherSearch onSelectPitcher={handlePitcherSearchSelect} />
           <TonightsBullpenBoard
             teams={teams}
             requestedTeam={urlState.team}
             requestedSection={urlState.section}
             onSelectTeam={handleTeamSelect}
             onSelectPitcher={handlePitcherSelect}
+            workloadRows={Array.isArray(allScores.data) ? allScores.data : (allScores.data?.data || [])}
           />
           {showBoardDetail && (
             <div

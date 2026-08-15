@@ -134,7 +134,7 @@ test('URL ownership is wired through navigation for team, comparison, pitcher, a
   assert.ok(bullpen.includes('navigate(buildAllPitchersHref({ teamRef: team'))
   assert.ok(bullpen.includes('navigate(buildPitcherHref(pitcherId'))
   assert.ok(bullpen.includes("navigate(canonicalHref, { replace: true })"))
-  assert.ok(board.includes('onClick={() => onSelectTeam(team.team_id)}'))
+  assert.ok(board.includes('onChange={event => onSelectTeam(event.target.value ? Number(event.target.value) : null)}'))
   assert.ok(board.includes('onSelectPitcher={onSelectPitcher}'))
   assert.equal(board.includes('appliedRequestRef'), false)
   assert.equal(comparison.includes('teamList[0].team_id'), false)

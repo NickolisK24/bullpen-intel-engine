@@ -104,7 +104,7 @@ test('the backend description survives verbatim for both zero-count groups', () 
   assert.ok(htmlIncludes(text, SEVERE.description))
 })
 
-test('the two restricted groups remain distinct sections, both shown at zero', () => {
+test('the two restricted groups remain distinct sections without duplicated header counts', () => {
   const groups = view.getBoardGroups(snapshot398Board)
   const restricted = groups.filter(g => g.status === 'Avoid' || g.status === 'Unavailable')
   assert.equal(restricted.length, 2)
@@ -112,31 +112,32 @@ test('the two restricted groups remain distinct sections, both shown at zero', (
   assert.notEqual(restricted[0].description, restricted[1].description)
   assert.notEqual(restricted[0].emptyCopy, restricted[1].emptyCopy)
 
-  // Empty-group policy is unchanged: the board still shows empty groups, so
-  // both canonical restricted headings render at a count of 0.
+  // Empty-group policy is unchanged, while counts are owned by the compact
+  // four-status summary above the board.
   const html = render(snapshot398Board)
   assert.equal(
     html.indexOf(`aria-label="${HEAVY.label} group"`) < html.indexOf(`aria-label="${SEVERE.label} group"`),
     true,
   )
   const text = visibleText(html)
-  assert.ok(htmlIncludes(text, `${HEAVY.label} 0`))
-  assert.ok(htmlIncludes(text, `${SEVERE.label} 0`))
+  assert.ok(htmlIncludes(text, HEAVY.label))
+  assert.ok(htmlIncludes(text, SEVERE.label))
+  assert.equal(htmlIncludes(text, `${HEAVY.label} 0`), false)
 })
 
-test('no frontend mapping merges the Avoid and Unavailable groups for presentation', () => {
+test('governed board groups stay distinct while the summary uses four public counts', () => {
   const groups = view.getBoardGroups(snapshot398Board)
   assert.deepEqual(groups.map(g => g.status), ['Available', 'Monitor', 'Limited', 'Avoid', 'Unavailable'])
   assert.equal(new Set(groups.map(g => g.label)).size, groups.length)
-  // Counts are passed through, never summed into a combined bucket.
   assert.deepEqual(groups.map(g => g.count), [4, 3, 2, 0, 0])
   // The merge helper the board used to run is gone from the governed path.
   assert.equal(/mergePublicUnavailableGroups/.test(boardViewSource), false)
 
-  // Both restricted tiers also stay distinct in the compact distribution strip.
+  // The compact summary is explicitly the four-reader-status presentation.
   const distribution = visibleText(renderDistribution(snapshot398Board))
-  assert.ok(htmlIncludes(distribution, `${HEAVY.label} 0`))
-  assert.ok(htmlIncludes(distribution, `${SEVERE.label} 0`))
+  assert.ok(htmlIncludes(distribution, 'Unavailable 0'))
+  assert.equal(htmlIncludes(distribution, HEAVY.label), false)
+  assert.equal(htmlIncludes(distribution, SEVERE.label), false)
 })
 
 test('populated groups are unchanged: backend labels, counts, and cards', () => {
@@ -148,9 +149,9 @@ test('populated groups are unchanged: backend labels, counts, and cards', () => 
   assert.equal(view.getBoardTotals(snapshot398Board).total, 9)
 
   const text = visibleText(render(snapshot398Board))
-  assert.ok(htmlIncludes(text, 'Available Arms 4'))
-  assert.ok(htmlIncludes(text, 'On-Watch Arms 3'))
-  assert.ok(htmlIncludes(text, 'Limited Arms 2'))
+  assert.ok(htmlIncludes(text, 'Available Arms'))
+  assert.ok(htmlIncludes(text, 'On-Watch Arms'))
+  assert.ok(htmlIncludes(text, 'Limited Arms'))
   assert.ok(htmlIncludes(text, 'Available Arm 1'))
   assert.ok(htmlIncludes(text, 'Limited Arm 2'))
 })

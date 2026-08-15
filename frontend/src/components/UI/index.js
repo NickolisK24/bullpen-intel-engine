@@ -6,6 +6,7 @@ export {
   FreshnessBadge,
   isSampleFreshness,
   DataThroughStamp,
+  FreshnessStamp,
   SlateDateStamp,
   LastSyncLabel,
   UnavailableDataState,
@@ -13,3 +14,4 @@ export {
 export { default as SectionHeader } from './SectionHeader'
 export { default as Divider }       from './Divider'
 export { default as EmptyState }    from './EmptyState'
+export { default as Disclosure }    from './Disclosure'

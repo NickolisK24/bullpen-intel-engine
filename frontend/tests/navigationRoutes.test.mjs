@@ -18,11 +18,7 @@ after(async () => {
 })
 
 const { APP_ROUTES } = await server.ssrLoadModule('/src/App.jsx')
-const {
-  SidebarDataFreshnessCard,
-  sidebarFreshness,
-  default: Sidebar,
-} = await server.ssrLoadModule('/src/components/Sidebar.jsx')
+const { default: Sidebar } = await server.ssrLoadModule('/src/components/Sidebar.jsx')
 
 const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const htmlIncludes = (html, text) => new RegExp(escapeRegExp(text)).test(html)
@@ -130,89 +126,9 @@ test('sidebar preserves public route order and excludes Prospects', () => {
   assert.equal(htmlIncludes(html, 'href="/signin"'), false)
 })
 
-test('Sidebar Data Freshness renders sync status timestamps in ET', () => {
-  const freshness = sidebarFreshness({
-    status: 'success',
-    last_checked: '2026-06-24T10:00:00Z',
-    last_sync: '2026-06-24T10:02:00Z',
-    last_successful_sync: '2026-06-24T10:02:00Z',
-    data_through: '2026-06-23',
-    data: { game_logs: 1, latest_game_date: '2026-06-23' },
-    freshness: {
-      is_current: true,
-      freshness_state: 'current',
-      limitations: [],
-      reason_codes: [],
-    },
-  }, false, null)
-
-  const html = render(React.createElement(SidebarDataFreshnessCard, { freshness }))
-
-  assert.ok(htmlIncludes(html, 'Data Freshness'))
-  assert.ok(htmlIncludes(html, 'Last checked'))
-  assert.ok(htmlIncludes(html, '6:00 AM ET'))
-  assert.ok(htmlIncludes(html, 'Last data update'))
-  assert.ok(htmlIncludes(html, '6:02 AM ET'))
-  // H-11: the sidebar renders the three canonical stamp names. The two
-  // assertions removed here pinned the surface-specific variants it used to
-  // invent ("Latest data update", "Bullpen data through") and asserted the
-  // canonical names were ABSENT — the exact drift this package closed.
-  assert.ok(htmlIncludes(html, 'Data through'))
-  assert.ok(htmlIncludes(html, 'June 23, 2026'))
-  assert.equal(htmlIncludes(html, '10:02 AM ET'), false)
-})
-
-test('Sidebar Data Freshness keeps date-only data through values timezone-safe', () => {
-  const freshness = sidebarFreshness({
-    status: 'success',
-    last_checked: '2026-06-01T00:30:00Z',
-    last_sync: '2026-06-01T00:30:00Z',
-    last_successful_sync: '2026-06-01T00:30:00Z',
-    data_through: '2026-06-01',
-    data: { game_logs: 1, latest_game_date: '2026-06-01' },
-    freshness: {
-      is_current: true,
-      freshness_state: 'current',
-      limitations: [],
-      reason_codes: [],
-    },
-  }, false, null)
-
-  assert.equal(freshness.lastChecked, '8:30 PM ET')
-  assert.equal(freshness.lastDataUpdate, '8:30 PM ET')
-  assert.equal(freshness.dataThrough, 'June 1, 2026')
-  assert.notEqual(freshness.dataThrough, 'May 31, 2026')
-})
-
-test('Sidebar Data Freshness uses published freshness when sync checked an incomplete newer date', () => {
-  const freshness = sidebarFreshness({
-    status: 'success',
-    last_checked: '2026-07-06T00:27:00Z',
-    last_sync: '2026-07-06T00:27:00Z',
-    last_successful_sync: '2026-07-06T00:27:00Z',
-    data_through: '2026-07-05',
-    data: { game_logs: 1, latest_game_date: '2026-07-05' },
-    freshness: {
-      is_current: false,
-      freshness_state: 'limited',
-      label: 'Baseball data through 2026-07-05 is incomplete and is not publishable as current.',
-      limitations: ['Missing completed-game coverage for the checked date.'],
-      reason_codes: ['slate_log_coverage_incomplete'],
-    },
-  }, false, null, {
-    data_through: '2026-07-03',
-    latest_workload_date: '2026-07-03',
-    last_successful_sync: '2026-07-04T10:42:00Z',
-    sync_status: 'success',
-    is_current: true,
-    is_stale: false,
-    freshness_state: 'current',
-    label: 'Current baseball data through 2026-07-03.',
-    limitations: [],
-  })
-
-  assert.equal(freshness.dataThrough, 'July 3, 2026')
-  assert.notEqual(freshness.dataThrough, 'July 5, 2026')
+test('sidebar omits the permanent Data Freshness card', () => {
+  const html = render(React.createElement(Sidebar))
+  assert.equal(htmlIncludes(html, 'Data Freshness'), false)
 })
 
 test('desktop shell keeps the navigation rail fixed while content scrolls', () => {

@@ -10,6 +10,21 @@ export default function BullpenAvailabilityDistribution({ board }) {
   const groups = getBoardGroups(board)
   const totals = getBoardTotals(board)
   const withheld = totals.countWithheld
+  const unavailableCounts = [groups[3]?.count, groups[4]?.count]
+  const unavailableCount = withheld || unavailableCounts.some(count => count == null)
+    ? null
+    : unavailableCounts.reduce((sum, count) => sum + count, 0)
+  const publicGroups = [
+    { ...groups[0], label: 'Available' },
+    { ...groups[1], label: 'On Watch' },
+    { ...groups[2], label: 'Limited' },
+    {
+      status: 'Unavailable',
+      label: 'Unavailable',
+      badge: groups[4]?.badge || groups[3]?.badge,
+      count: unavailableCount,
+    },
+  ]
 
   return (
     <section
@@ -32,8 +47,8 @@ export default function BullpenAvailabilityDistribution({ board }) {
         </div>
       </div>
 
-      <dl className="mt-2 grid grid-cols-2 gap-1.5 sm:grid-cols-3 lg:grid-cols-5">
-        {groups.map(group => (
+      <dl className="mt-2 grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+        {publicGroups.map(group => (
           <div
             key={group.status}
             className="min-w-0 rounded border border-dirt/70 bg-dugout/50 px-1.5 py-1.5 text-center"

@@ -57,12 +57,10 @@ test('sidebar keeps feedback out of the permanent app rail', () => {
 
   assertNoFeedbackEntryPoint(html)
   assert.ok(htmlIncludes(html, 'nav-item'))
-  assert.ok(htmlIncludes(html, 'Data Freshness'))
-  assert.ok(htmlIncludes(html, 'Last checked'))
-  assert.ok(htmlIncludes(html, 'Last data update'))
-  // H-11: the sidebar renders the canonical stamp name, not a surface-specific
-  // variant ("Bullpen data through"), so the bare label is now expected.
-  assert.ok(htmlIncludes(html, 'Data through'))
+  assert.equal(htmlIncludes(html, 'Data Freshness'), false)
+  assert.equal(htmlIncludes(html, 'Last checked'), false)
+  assert.equal(htmlIncludes(html, 'Last data update'), false)
+  assert.equal(htmlIncludes(html, 'Data through'), false)
   assert.ok(!htmlIncludes(html, 'Building BaseballOS in public. Have feedback?'))
 })
 

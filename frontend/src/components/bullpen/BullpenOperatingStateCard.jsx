@@ -2,6 +2,7 @@ import { LAST_DATA_UPDATE_LABEL } from '../../utils/bullpenConcepts'
 import { Link } from 'react-router-dom'
 import {
   DataThroughStamp,
+  Disclosure,
   FreshnessBadge,
   LastSyncLabel,
   StaleDataNotice,
@@ -34,6 +35,7 @@ function uniqueList(list) {
 // cap that reads evidence in the order the backend published it and never
 // inspects what a sentence says.
 const COMPACT_EVIDENCE_LIMIT = 5
+const ROUTINE_BOUNDARY_LIMITATION = /(workload-based only|manager intent|bullpen phone activity|private medical|unreported injuries|final game-day)/i
 
 function compactEvidenceList(view) {
   return uniqueList(view.evidence).slice(0, COMPACT_EVIDENCE_LIMIT)
@@ -63,6 +65,42 @@ function compactLimitationList(view, staleWithError) {
   }
 
   return uniqueList(compact).slice(0, 3)
+}
+
+function readerMaterialLimitations(view, staleWithError) {
+  return compactLimitationList(view, staleWithError)
+    .filter(item => !ROUTINE_BOUNDARY_LIMITATION.test(String(item)))
+}
+
+export function BullpenReadDisclosure({ readModel, staleWithError = false, className = '' }) {
+  const view = getBullpenOperatingStateView({ readModel, density: 'compact' })
+  const evidence = compactEvidenceList(view)
+  const routineLimitations = compactLimitationList(view, staleWithError)
+    .filter(item => ROUTINE_BOUNDARY_LIMITATION.test(String(item)))
+
+  return (
+    <Disclosure label="Why this read?" hint="Evidence, limits, and methodology" className={className}>
+      {evidence.length > 0 && (
+        <div className="mt-2">
+          <div className="font-mono text-[10px] uppercase tracking-widest text-chalk500">Evidence</div>
+          <ul className="mt-1 space-y-1">
+            {evidence.map((item, index) => <li key={`${index}-${item}`} className="text-xs text-chalk300">• {item}</li>)}
+          </ul>
+        </div>
+      )}
+      {routineLimitations.length > 0 && (
+        <div className="mt-3">
+          <div className="font-mono text-[10px] uppercase tracking-widest text-chalk500">Reading boundary</div>
+          <ul className="mt-1 space-y-1">
+            {routineLimitations.map((item, index) => <li key={`${index}-${item}`} className="text-xs text-chalk400">• {item}</li>)}
+          </ul>
+        </div>
+      )}
+      <Link to="/methodology" className="mt-3 inline-block text-xs text-chalk500 underline-offset-2 hover:text-amber hover:underline">
+        Methodology
+      </Link>
+    </Disclosure>
+  )
 }
 
 function getTeamContextReadRows(view) {
@@ -144,6 +182,7 @@ export default function BullpenOperatingStateCard({
   // is deliberately explicit rather than inferred from scope or density, which
   // are presentation facts and would couple this to the wrong thing.
   titleOwnedByPage = false,
+  readerFirst = false,
   className = '',
 }) {
   const view = getBullpenOperatingStateView({
@@ -168,6 +207,7 @@ export default function BullpenOperatingStateCard({
         onRetry={onRetry}
         lastSyncLabel={lastSyncLabel}
         titleOwnedByPage={titleOwnedByPage}
+        readerFirst={readerFirst}
         className={className}
       />
     )
@@ -326,10 +366,12 @@ function CompactBullpenOperatingStateCard({
   onRetry,
   lastSyncLabel,
   titleOwnedByPage = false,
+  readerFirst = false,
   className = '',
 }) {
   const evidence = compactEvidenceList(view)
   const limitations = compactLimitationList(view, staleWithError)
+  const materialLimitations = readerMaterialLimitations(view, staleWithError)
 
   return (
     <article
@@ -395,7 +437,7 @@ function CompactBullpenOperatingStateCard({
             </p>
           )}
 
-          {(view.primaryConcern || view.secondaryConcern) && (
+          {!readerFirst && (view.primaryConcern || view.secondaryConcern) && (
             <div className="mt-2 flex flex-wrap gap-1.5">
               {view.primaryConcern && (
                 <CompactConcern label="Primary Concern" concern={view.primaryConcern} />
@@ -406,9 +448,9 @@ function CompactBullpenOperatingStateCard({
             </div>
           )}
 
-          <CompactContextReads view={view} />
+          {readerFirst ? <CompactContextReads view={view} exceptionalOnly /> : <CompactContextReads view={view} />}
 
-          {evidence.length > 0 && (
+          {!readerFirst && evidence.length > 0 && (
             <section className="mt-2" aria-label="Evidence">
               <div className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
                 Evidence
@@ -428,7 +470,7 @@ function CompactBullpenOperatingStateCard({
         </>
       )}
 
-      <section className="mt-2 border-t border-dirt/60 pt-1.5" aria-label="Freshness">
+      {!readerFirst && <section className="mt-2 border-t border-dirt/60 pt-1.5" aria-label="Freshness">
         {staleWithError && (
           <div className="mb-2">
             <StaleDataNotice
@@ -464,14 +506,29 @@ function CompactBullpenOperatingStateCard({
             Not live MLB data.
           </p>
         )}
-      </section>
+      </section>}
 
-      {limitations.length > 0 && (
+      {!readerFirst && limitations.length > 0 && (
         <section className="mt-1.5 text-[11px] leading-snug text-chalk400" aria-label="Limitations">
           <span className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
             Limitations:
           </span>{' '}
           {limitations.join('; ')}
+        </section>
+      )}
+
+      {readerFirst && view.isSample && (
+        <p className="mt-2 rounded border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning" role="status">
+          Sample data — not live MLB data.
+        </p>
+      )}
+
+      {readerFirst && materialLimitations.length > 0 && (
+        <section className="mt-2 rounded border border-amber/30 bg-amber/5 px-3 py-2" aria-label="Material limitations">
+          <div className="font-mono text-[10px] uppercase tracking-widest text-amber">Limited read</div>
+          <ul className="mt-1 space-y-1">
+            {materialLimitations.map((item, index) => <li key={`${index}-${item}`} className="text-xs text-chalk300">• {item}</li>)}
+          </ul>
         </section>
       )}
 
@@ -513,8 +570,10 @@ function CompactConcern({ label, concern }) {
   )
 }
 
-function CompactContextReads({ view }) {
-  const rows = getTeamContextReadRows(view)
+function CompactContextReads({ view, exceptionalOnly = false }) {
+  const rows = getTeamContextReadRows(view).filter(row => (
+    !exceptionalOnly || row.read?.isDegraded || ['low', 'degraded', 'unavailable'].includes(String(row.read?.confidence || '').toLowerCase())
+  ))
   if (rows.length === 0) return null
   return (
     <section className="mt-2 grid gap-1.5 sm:grid-cols-2 2xl:grid-cols-4" aria-label="Bullpen context">

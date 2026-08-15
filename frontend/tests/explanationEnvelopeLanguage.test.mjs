@@ -163,19 +163,19 @@ test('reasons, evidence and limitations all still reach the reader', () => {
   }
 })
 
-test('freshness, visibility and read confidence survive', () => {
+test('routine freshness and visibility stay quiet while limited confidence survives', () => {
   const text = visibleText(render())
-  for (const kept of ['Freshness', 'Data through', 'Last data update', 'Visibility',
-    'Read Confidence', 'Explanation confidence reflects current source evidence.']) {
+  for (const kept of ['Read Confidence', 'Explanation confidence reflects current source evidence.']) {
     assert.ok(text.includes(kept), kept)
   }
+  for (const quiet of ['Data through', 'Last data update']) assert.equal(text.includes(quiet), false)
 })
 
-test('the decision boundary strip is untouched', () => {
+test('the implementation decision-boundary strip is absent', () => {
   const text = visibleText(render())
-  assert.ok(text.includes('Decision boundary'))
-  assert.ok(text.includes('No pitcher chosen'))
-  assert.ok(text.includes('No outcome call made'))
+  assert.equal(text.includes('Decision boundary'), false)
+  assert.equal(text.includes('No pitcher chosen'), false)
+  assert.equal(text.includes('No outcome call made'), false)
 })
 
 test('a refused explanation still explains itself', () => {

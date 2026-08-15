@@ -7,7 +7,8 @@
 // invents no team/state/count/label, and shows missing values honestly. Every
 // number and sentence comes straight from the immutable artifact.
 
-import { formatConfidence, READ_CONFIDENCE_FIELD_LABEL } from '../bullpen/availabilityView'
+import { formatConfidence, getAvailabilityStatusLabel, READ_CONFIDENCE_FIELD_LABEL } from '../bullpen/availabilityView'
+import SharedAvailabilityBadge from '../bullpen/AvailabilityBadge'
 import {
   DATA_THROUGH_LABEL,
   GENERATED_AT_LABEL,
@@ -26,16 +27,6 @@ const STATE_ACCENT = {
   vulnerable: { border: 'border-danger/50', bg: 'bg-danger/10', dot: 'bg-danger' },
 }
 const NEUTRAL_ACCENT = { border: 'border-dirt', bg: 'bg-chalk/10', dot: 'bg-chalk500' }
-
-// Canonical governed availability vocabulary → a subtle, meaningful accent dot.
-// The label text itself is always the backend's canonical string, never remapped.
-const AVAILABILITY_DOT = {
-  Available: 'bg-pine',
-  Monitor: 'bg-chalk500',
-  Limited: 'bg-warning',
-  Avoid: 'bg-warning',
-  Unavailable: 'bg-danger',
-}
 
 // The four readiness_summary metrics, in a fixed display order. Keys match the
 // backend contract; the card never computes or reorders them.
@@ -83,17 +74,6 @@ function GlanceMetric({ metric }) {
   )
 }
 
-function AvailabilityBadge({ status }) {
-  if (!status) return <span className="text-chalk500">—</span>
-  const dot = AVAILABILITY_DOT[status] || 'bg-chalk500'
-  return (
-    <span className="inline-flex items-center gap-1.5">
-      <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${dot}`} aria-hidden="true" />
-      <span className="text-chalk200">{status}</span>
-    </span>
-  )
-}
-
 function EvidenceCell({ label, children, className = '' }) {
   return (
     <div className={className}>
@@ -106,6 +86,7 @@ function EvidenceCell({ label, children, className = '' }) {
 }
 
 function RelieverRow({ row }) {
+  const availabilityLabel = getAvailabilityStatusLabel(row.availability)
   const appearances = Number.isFinite(row.last_three_appearances) ? row.last_three_appearances : null
   const appearanceText =
     appearances === null
@@ -137,7 +118,12 @@ function RelieverRow({ row }) {
       </EvidenceCell>
       <EvidenceCell label="Rest">{restText}</EvidenceCell>
       <EvidenceCell label="Availability">
-        <AvailabilityBadge status={row.availability} />
+        {availabilityLabel ? (
+          <SharedAvailabilityBadge
+            availability={{ availability_status: row.availability, availability_public_label: availabilityLabel }}
+            compact
+          />
+        ) : <span className="text-chalk500">—</span>}
       </EvidenceCell>
     </div>
   )

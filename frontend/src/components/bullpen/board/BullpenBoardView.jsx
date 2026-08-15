@@ -1,4 +1,4 @@
-import { EmptyState } from '../../UI'
+import { Disclosure, EmptyState } from '../../UI'
 import { LAST_DATA_UPDATE_LABEL } from '../../../utils/bullpenConcepts'
 import {
   READ_CONFIDENCE_FIELD_LABEL,
@@ -113,94 +113,25 @@ function RosterContextEvidence({ heading, entries }) {
   )
 }
 
-function RosterStatusBanner({ board }) {
+export function RosterStatusBanner({ board }) {
   const renderedCards = getBoardGroups(board).flatMap(group => group.pitchers || [])
   const view = getRosterAuthorityView(board?.roster_authority, { renderedCards })
   if (!view.shouldShow) return null
+  const hasNamedRosterContext = view.evidence.offActiveRoster.length > 0 || view.evidence.rosterStatusPending.length > 0
+  if (!hasNamedRosterContext && !view.countsWithheld && view.limitations.length === 0) return null
 
-  const shownNote = (view.shownOffActiveRoster != null && view.offActiveRoster > 0)
-    ? ` · showing ${view.shownOffActiveRoster} of ${view.offActiveRoster} here`
-    : ''
-
-  const rosterFacts = (
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-      <span className="font-mono text-[11px] uppercase tracking-widest">{view.statusLabel}</span>
-      {view.countsWithheld ? (
-        <span className="font-mono text-xs text-chalk300">
-          Current usable bullpen depth withheld
-        </span>
-      ) : (
-        <>
-          <span
-            className="font-mono text-xs"
-            title="Relievers on the team's active MLB roster — the club's current bullpen."
-          >
-            <span className="text-chalk500">Bullpen Arms</span> {view.bullpenArms}
-          </span>
-          <span
-            className="font-mono text-xs"
-            title="Relievers off the active roster (injured list, optioned, or 40-man only). Open the list below to see every one."
-          >
-            <span className="text-chalk500">Off the Active Roster</span> {view.offActiveRoster}{shownNote}
-          </span>
-          <span
-            className="font-mono text-xs"
-            title="Share of bullpen candidates with a confirmed roster status."
-          >
-            <span className="text-chalk500">Roster Status Coverage</span> {view.coverageLabel}
-          </span>
-          <span
-            className="font-mono text-xs"
-            title="Bullpen candidates whose roster status is not yet confirmed."
-          >
-            <span className="text-chalk500">Roster Status Pending</span> {view.rosterStatusPending}
-          </span>
-        </>
+  return (
+    <section className="mb-6 rounded-lg border border-dirt bg-dugout/35 p-4" aria-labelledby="roster-context-title">
+      <h2 id="roster-context-title" className="font-display text-xl tracking-wide text-chalk100">Roster Context</h2>
+      {view.countsWithheld && (
+        <p className="mt-2 text-xs leading-relaxed text-amber" role="status">
+          Roster context is withheld until the current roster evidence is complete.
+        </p>
       )}
-    </div>
-  )
-
-  const hasEvidence = view.evidence.offActiveRoster.length > 0 || view.evidence.rosterStatusPending.length > 0
-  const evidenceBlock = hasEvidence ? (
-    <details className="mt-2 rounded border border-dirt/60 bg-dugout/50 p-2" aria-label="Roster context evidence">
-      <summary className="cursor-pointer font-mono text-[10px] uppercase tracking-widest text-chalk500 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/60">
-        Who is off the active roster?
-      </summary>
-      <div className="mt-2 space-y-3">
+      <div className="mt-3 space-y-3">
         <RosterContextEvidence heading="Off the active roster" entries={view.evidence.offActiveRoster} />
         <RosterContextEvidence heading="Roster status pending" entries={view.evidence.rosterStatusPending} />
       </div>
-    </details>
-  ) : null
-
-  if (!view.isProminent) {
-    return (
-      <details
-        className="mb-3 rounded border border-dirt bg-dugout/35 p-3"
-        aria-label="Roster status details"
-      >
-        <summary className="flex cursor-pointer flex-wrap items-center gap-x-4 gap-y-1 font-mono text-[10px] uppercase tracking-widest text-chalk500 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/60">
-          <span>Roster Context</span>
-          <span className="normal-case tracking-normal text-chalk400">
-            {view.countsWithheld
-              ? 'Current usable depth withheld'
-              : `${view.bullpenArms} bullpen arms · ${view.coverageLabel} coverage`}
-          </span>
-        </summary>
-        <div className="mt-2">{rosterFacts}{evidenceBlock}</div>
-      </details>
-    )
-  }
-
-  return (
-    <div
-      className="mb-6 rounded-lg border p-4"
-      style={view.tone}
-      role="status"
-      aria-live="polite"
-    >
-      {rosterFacts}
-      {evidenceBlock}
       {view.limitations.length > 0 && (
         <ul className="mt-2 space-y-1">
           {view.limitations.map((limitation, index) => (
@@ -208,17 +139,17 @@ function RosterStatusBanner({ board }) {
           ))}
         </ul>
       )}
-    </div>
+    </section>
   )
 }
 
-function WhyDisclosure({ reasons, limitations }) {
-  if (!reasons.length && !limitations.length) return null
+const BOILERPLATE_LIMITATION = /(manager intent|bullpen phone|private medical|injury information)/i
+
+function WhyDisclosure({ reasons, limitations, role }) {
+  const materialLimitations = limitations.filter(item => !BOILERPLATE_LIMITATION.test(String(item)))
+  if (!reasons.length && !materialLimitations.length && !role) return null
   return (
-    <details className="mt-3 rounded border border-dirt bg-dugout/60 p-2">
-      <summary className="cursor-pointer font-mono text-[10px] uppercase tracking-widest text-chalk500 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/60">
-        Why?
-      </summary>
+    <Disclosure label="Why?" hint="Evidence and context" className="mt-3">
       <div className="mt-2 space-y-3">
         {reasons.length > 0 && (
           <ul className="space-y-1">
@@ -227,18 +158,36 @@ function WhyDisclosure({ reasons, limitations }) {
             ))}
           </ul>
         )}
-        {limitations.length > 0 && (
+        {materialLimitations.length > 0 && (
           <div>
             <div className="font-mono text-[10px] uppercase tracking-widest text-chalk600">What this doesn't know</div>
             <ul className="mt-1 space-y-1">
-              {limitations.map((limitation, index) => (
+              {materialLimitations.map((limitation, index) => (
                 <li key={index} className="text-xs leading-relaxed text-chalk500">• {limitation}</li>
               ))}
             </ul>
           </div>
         )}
+        {role && (
+          <div>
+            <div className="font-mono text-[10px] uppercase tracking-widest text-chalk600">Usage role</div>
+            <p className="mt-1 text-xs text-chalk300"><span className="text-chalk500">Observed role:</span> {role.label}</p>
+            {role.confidence && role.confidence !== 'high' && <p className="mt-1 text-xs text-amber">Read Confidence: {role.confidenceLabel}</p>}
+            {role.reason && <p className="mt-1 text-xs text-chalk300">{role.reason}</p>}
+            {role.evidence?.length > 0 && (
+              <ul className="mt-2 space-y-1">
+                {role.evidence.map((item, index) => <li key={`${index}-${item}`} className="text-xs text-chalk300">• {item}</li>)}
+              </ul>
+            )}
+            {role.limitations?.filter(item => !BOILERPLATE_LIMITATION.test(String(item))).length > 0 && (
+              <ul className="mt-2 space-y-1">
+                {role.limitations.filter(item => !BOILERPLATE_LIMITATION.test(String(item))).map((item, index) => <li key={`${index}-${item}`} className="text-xs text-chalk500">• {item}</li>)}
+              </ul>
+            )}
+          </div>
+        )}
       </div>
-    </details>
+    </Disclosure>
   )
 }
 
@@ -313,48 +262,6 @@ function RosterStatusChip({ rosterStatus }) {
   )
 }
 
-function RoleDisclosure({ role }) {
-  if (!role) return null
-  return (
-    <details className="mt-2 rounded border border-dirt/60 bg-dugout/50 p-2">
-      <summary className="cursor-pointer font-mono text-[10px] uppercase tracking-widest text-chalk500 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/60">
-        Usage role
-      </summary>
-      <div className="mt-2 space-y-2">
-        <div className="text-xs leading-relaxed text-chalk200">
-          <span className="text-chalk500">Observed role:</span> {role.label}
-          {/* Named, not bare: an unlabelled "(Unavailable)" here reads as a
-              qualifier on the role rather than as Read Confidence. */}
-          <span className="ml-1 text-chalk500">
-            ({READ_CONFIDENCE_FIELD_LABEL}: {role.confidenceLabel})
-          </span>
-        </div>
-        {role.reason && <p className="text-xs leading-relaxed text-chalk300">{role.reason}</p>}
-        {role.evidence.length > 0 && (
-          <div>
-            <div className="font-mono text-[10px] uppercase tracking-widest text-chalk600">Evidence</div>
-            <ul className="mt-1 space-y-1">
-              {role.evidence.map((item, index) => (
-                <li key={index} className="text-xs leading-relaxed text-chalk300">• {item}</li>
-              ))}
-            </ul>
-          </div>
-        )}
-        {role.limitations.length > 0 && (
-          <div>
-            <div className="font-mono text-[10px] uppercase tracking-widest text-chalk600">What this doesn't know</div>
-            <ul className="mt-1 space-y-1">
-              {role.limitations.map((item, index) => (
-                <li key={index} className="text-xs leading-relaxed text-chalk500">• {item}</li>
-              ))}
-            </ul>
-          </div>
-        )}
-      </div>
-    </details>
-  )
-}
-
 function PitcherLabelKey() {
   const roleLabels = Object.values(PITCHER_ROLE_LABELS)
   const readLabels = Object.values(PITCHER_READ_LABELS)
@@ -395,14 +302,14 @@ function PitcherLabelKey() {
   )
 }
 
-function PitcherCard({ card, freshness, onViewDetails, now }) {
-  const view = getBoardCardView(card, freshness, now)
+function PitcherCard({ card, freshness, workload, onViewDetails, now }) {
+  const view = getBoardCardView(card, freshness, now, workload)
   const canView = typeof onViewDetails === 'function' && view.pitcherId != null
   return (
     <div className="rounded-lg border border-dirt bg-field/60 p-3">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <div className="truncate font-medium text-chalk100">{view.name}</div>
+          <div className="break-words font-medium text-chalk100">{view.name}</div>
           {view.shortReason && (
             <div className="mt-0.5 text-xs leading-relaxed text-chalk400">{view.shortReason}</div>
           )}
@@ -424,6 +331,13 @@ function PitcherCard({ card, freshness, onViewDetails, now }) {
         </div>
       )}
 
+      {view.role && (
+        <p className="mt-2 min-w-0 break-words text-xs text-chalk300">
+          <span className="font-mono text-[10px] uppercase tracking-widest text-chalk600">Role</span>{' '}
+          {view.role.label}
+        </p>
+      )}
+
       {(view.eligibility || view.rosterStatus) && (
         <div className="mt-1.5 flex flex-wrap gap-1.5">
           <RosterStatusChip rosterStatus={view.rosterStatus} />
@@ -431,11 +345,14 @@ function PitcherCard({ card, freshness, onViewDetails, now }) {
         </div>
       )}
 
-      <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 font-mono text-[11px] text-chalk500">
-        <span>
+      <div className="mt-3 grid min-w-0 grid-cols-2 gap-x-4 gap-y-1 font-mono text-[11px] text-chalk500 sm:grid-cols-3">
+        <span className="min-w-0 break-words"><span className="text-chalk600">Last outing</span> <span className="text-chalk200">{view.lastAppearanceLabel || 'Unavailable'}</span></span>
+        <span className="min-w-0 break-words"><span className="text-chalk600">Days rest</span> <span className="text-chalk200">{view.daysRest ?? 'Unavailable'}</span></span>
+        <span className="min-w-0 break-words"><span className="text-chalk600">Pitches / 7d</span> <span className="text-chalk200">{view.pitchesLast7 ?? 'Unavailable'}</span></span>
+        {view.showConfidence && <span>
           <span className="text-chalk600">{READ_CONFIDENCE_FIELD_LABEL}</span>{' '}
           <span className="text-chalk200">{view.confidenceLabel}</span>
-        </span>
+        </span>}
         {view.dataStateView && (
           <span title={view.dataStateView.message}>
             <span className="text-chalk600">{WORKLOAD_DATA_FIELD_LABEL}</span>{' '}
@@ -444,8 +361,7 @@ function PitcherCard({ card, freshness, onViewDetails, now }) {
         )}
       </div>
 
-      <WhyDisclosure reasons={view.reasons} limitations={view.limitations} />
-      <RoleDisclosure role={view.role} />
+      <WhyDisclosure reasons={view.reasons} limitations={view.limitations} role={view.role} />
 
       {canView && (
         <button
@@ -461,7 +377,7 @@ function PitcherCard({ card, freshness, onViewDetails, now }) {
   )
 }
 
-function BoardGroup({ group, freshness, onViewDetails, now }) {
+function BoardGroup({ group, freshness, workloadByPitcher, onViewDetails, now }) {
   return (
     <section className="card overflow-hidden" aria-label={`${group.label} group`}>
       <header className="border-b border-dirt bg-chalk/20 px-4 py-3">
@@ -470,9 +386,6 @@ function BoardGroup({ group, freshness, onViewDetails, now }) {
             <span className="h-2.5 w-2.5 rounded-full" style={group.badge.dotStyle} aria-hidden="true" />
             {group.label}
           </h3>
-          <span className="font-mono text-xs text-chalk400">
-            {group.count == null ? 'Withheld' : group.count}
-          </span>
         </div>
         {group.description && (
           <p className="mt-1 text-xs leading-relaxed text-chalk500">{group.description}</p>
@@ -484,7 +397,7 @@ function BoardGroup({ group, freshness, onViewDetails, now }) {
         ) : (
           <div className="grid gap-3 sm:grid-cols-2">
             {group.pitchers.map(card => (
-              <PitcherCard key={card.pitcher_id ?? card.name} card={card} freshness={freshness} onViewDetails={onViewDetails} now={now} />
+              <PitcherCard key={card.pitcher_id ?? card.name} card={card} freshness={freshness} workload={workloadByPitcher?.get(String(card.pitcher_id))} onViewDetails={onViewDetails} now={now} />
             ))}
           </div>
         )}
@@ -501,12 +414,15 @@ export default function BullpenBoardView({
   board,
   onSelectPitcher,
   showRoutineFreshness = true,
+  showRosterContext = true,
+  workloadRows = [],
   emptyState = null,
   now,
 }) {
   const groups = getBoardGroups(board)
   const totals = getBoardTotals(board)
   const teamName = board?.team?.team_name || board?.team?.team_abbreviation
+  const workloadByPitcher = new Map(workloadRows.map(row => [String(row?.pitcher?.id ?? row?.pitcher_id ?? ''), row]))
 
   return (
     <div
@@ -516,7 +432,7 @@ export default function BullpenBoardView({
       aria-labelledby="pitcher-lanes-title"
     >
       <FreshnessBanner freshness={board?.freshness} showRoutine={showRoutineFreshness} />
-      <RosterStatusBanner board={board} />
+      {showRosterContext && <RosterStatusBanner board={board} />}
 
       <div className="mb-4">
         {/* The /bullpen page heading already names the club ("{Team} Bullpen"),
@@ -524,7 +440,7 @@ export default function BullpenBoardView({
             the heading text for screen readers and anyone landing on the
             #pitcher-lanes anchor out of context. */}
         <h2 id="pitcher-lanes-title" className="font-display text-xl tracking-wide text-chalk100">
-          Tonight's Bullpen Board
+          Active Bullpen
           {teamName ? <span className="sr-only"> — {teamName}</span> : null}
         </h2>
         <p className="mt-1 text-xs text-chalk500">
@@ -541,12 +457,12 @@ export default function BullpenBoardView({
         />
       ) : (
         <>
-          <PitcherLabelKey />
           <div className="grid gap-5 xl:grid-cols-2">
             {groups.map(group => (
-              <BoardGroup key={group.status} group={group} freshness={board?.freshness} onViewDetails={onSelectPitcher} now={now} />
+              <BoardGroup key={group.status} group={group} freshness={board?.freshness} workloadByPitcher={workloadByPitcher} onViewDetails={onSelectPitcher} now={now} />
             ))}
           </div>
+          <div className="mt-5"><PitcherLabelKey /></div>
         </>
       )}
     </div>

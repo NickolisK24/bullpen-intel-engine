@@ -27,6 +27,7 @@ export default function StoryCard({
   loading = false,
   error = null,
   onRetry,
+  hideFreshnessMeta = false,
 }) {
   if (loading) {
     return (
@@ -59,6 +60,9 @@ export default function StoryCard({
   }
 
   const view = getStoryCardView(story)
+  const visibleMeta = hideFreshnessMeta
+    ? view.meta.filter(item => !String(item).startsWith('Data through'))
+    : view.meta
 
   if (!view.available) {
     return (
@@ -66,7 +70,7 @@ export default function StoryCard({
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="font-mono text-[10px] uppercase tracking-widest text-chalk500">Bullpen Note</div>
           <div className="flex flex-wrap gap-1.5">
-            {view.meta.map(item => <MetaPill key={item}>{item}</MetaPill>)}
+            {visibleMeta.map(item => <MetaPill key={item}>{item}</MetaPill>)}
           </div>
         </div>
         <h3 className="mt-2 font-display text-xl tracking-wide text-chalk100">{view.title}</h3>
@@ -80,7 +84,7 @@ export default function StoryCard({
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="font-mono text-[10px] uppercase tracking-widest text-amber/70">Bullpen Note</div>
         <div className="flex flex-wrap gap-1.5">
-          {view.meta.map(item => <MetaPill key={item}>{item}</MetaPill>)}
+          {visibleMeta.map(item => <MetaPill key={item}>{item}</MetaPill>)}
         </div>
       </div>
 

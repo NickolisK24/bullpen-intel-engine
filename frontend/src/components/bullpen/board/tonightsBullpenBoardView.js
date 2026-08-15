@@ -17,11 +17,11 @@ import {
 } from '../../dashboard/syncStatusView'
 import { isSampleFreshness } from '../../UI/Freshness'
 import {
-  compactWorkloadAppearanceLabel,
   currentUserBaseballDay,
   dayAwareAppearanceReason,
   dayAwareAppearanceReasons,
   isWorkloadAppearance,
+  workloadAppearanceDetailLabel,
 } from '../../../utils/appearanceLanguage'
 import { getPitcherLabels, PITCHER_ROLE_LABELS, USAGE_ROLE_PUBLIC_ROLES } from '../../../utils/pitcherLabels'
 
@@ -579,7 +579,7 @@ export function getRolesSummaryView(roles) {
   }
 }
 
-export function getBoardCardView(card, freshness = null, now = new Date()) {
+export function getBoardCardView(card, freshness = null, now = new Date(), workload = null) {
   // Styling is keyed by the engine status; the visible label is the backend's
   // published public form when it supplied one, so the browser is not the thing
   // deciding that Monitor reads as On Watch.
@@ -599,16 +599,20 @@ export function getBoardCardView(card, freshness = null, now = new Date()) {
     card?.last_appearance,
     card?.lastAppearance,
   ].find(isWorkloadAppearance) || null
-  const lastAppearanceLabel = compactWorkloadAppearanceLabel(lastAppearance, userDay)
+  const lastAppearanceLabel = workloadAppearanceDetailLabel(lastAppearance)
+  const confidence = String(card?.confidence || '').trim().toLowerCase()
   return {
     pitcherId: card?.pitcher_id,
     name: card?.name || '—',
     status: badge.status,
     badge,
     confidenceLabel: formatConfidence(card?.confidence),
-    shortReason: lastAppearanceLabel || dayAwareAppearanceReason(card?.short_reason, lastAppearance, userDay) || null,
+    showConfidence: !['high', ''].includes(confidence),
+    shortReason: lastAppearanceLabel ? null : dayAwareAppearanceReason(card?.short_reason, lastAppearance, userDay) || null,
     lastAppearance,
     lastAppearanceLabel,
+    daysRest: workload?.days_since_last_appearance ?? null,
+    pitchesLast7: workload?.pitches_last_7_days ?? null,
     dataState,
     dataStateView: showDataNote ? getDataStateView(dataState) : null,
     reasons: dayAwareAppearanceReasons(card?.reasons, lastAppearance, userDay),

@@ -247,7 +247,7 @@ test('the operating card drops its team heading when the page owns the identity'
   // H-10: the page heading already names the club visibly, so the board
   // heading carries the team for assistive tech only — the name stays inside
   // the heading element, but no longer as a second visible title.
-  assert.ok(htmlIncludes(html, 'Tonight&#x27;s Bullpen Board'))
+  assert.ok(htmlIncludes(html, 'Active Bullpen'))
   assert.ok(htmlIncludes(html, `<span class="sr-only"> — ${teamName}</span>`))
 })
 

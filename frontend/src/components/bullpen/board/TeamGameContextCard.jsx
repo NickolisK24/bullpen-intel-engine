@@ -38,14 +38,10 @@ function Matchup({ view }) {
         <div className="mt-1 font-mono text-sm text-chalk300">{view.gameDate}</div>
       )}
 
-      {/* Subordinate trust metadata — present but visually quiet. */}
+      {/* Routine trust stays quiet; only a limitation changes interpretation. */}
       <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-[11px] uppercase tracking-widest text-chalk500">
-        <span>{view.dataStateLongLabel}</span>
-        <span className="text-chalk700" aria-hidden="true">·</span>
-        {/* Named: a bare "Unavailable" in this strip is indistinguishable
-            from the arm-availability label of the same name. */}
-        <span>{READ_CONFIDENCE_FIELD_LABEL}: {view.confidenceLabel}</span>
-        <span className="text-chalk700" aria-hidden="true">·</span>
+        {view.dataState !== 'live' && <span>{view.dataStateLongLabel}</span>}
+        {view.isConfidenceLimited && <span>{READ_CONFIDENCE_FIELD_LABEL}: {view.confidenceLabel}</span>}
         <span>{view.statusLabel}</span>
       </div>
       {view.missingFields.length > 0 && (
@@ -96,9 +92,6 @@ export default function TeamGameContextCard({ gameContext, loading = false, erro
     <section className={`${compact ? 'mt-5' : 'mb-5'} rounded-lg border border-dirt bg-field/60 p-3 sm:p-4`} aria-label={title}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 className="font-mono text-xs uppercase tracking-widest text-chalk400">{title}</h3>
-        <span className="rounded border border-dirt bg-dugout px-2 py-0.5 font-mono text-[10px] uppercase tracking-widest text-chalk500">
-          Stored game-log context
-        </span>
       </div>
 
       {body}

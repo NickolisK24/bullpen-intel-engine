@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises'
 import test, { after } from 'node:test'
 import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
+import { MemoryRouter } from 'react-router-dom'
 import { createServer } from 'vite'
 import { populatedBoard } from './fixtures/bullpenBoardFixtures.mjs'
 
@@ -257,27 +258,29 @@ function renderPanel(props = {}) {
 
 function renderSelectedTeamBoard(props = {}) {
   return renderToStaticMarkup(
-    React.createElement(TonightsBullpenBoard, {
-      teams: {
-        loading: false,
-        data: [
-          { team_id: 110, team_name: 'Test Club', team_abbreviation: 'TST' },
-          { team_id: 147, team_name: 'New York Yankees', team_abbreviation: 'NYY' },
-        ],
-      },
-      initialSelectedTeam: 147,
-      boardPayload: {
-        ...populatedBoard,
-        team: { team_id: 147, team_name: 'New York Yankees', team_abbreviation: 'NYY' },
-      },
-      storyPayload: null,
-      gameContextPayload: null,
-      teamReliefWorkPayload: {
-        ...teamReliefWorkPayload,
-        team: { team_id: 147, team_name: 'New York Yankees', team_abbreviation: 'NYY' },
-      },
-      ...props,
-    }),
+    React.createElement(MemoryRouter, null,
+      React.createElement(TonightsBullpenBoard, {
+        teams: {
+          loading: false,
+          data: [
+            { team_id: 110, team_name: 'Test Club', team_abbreviation: 'TST' },
+            { team_id: 147, team_name: 'New York Yankees', team_abbreviation: 'NYY' },
+          ],
+        },
+        initialSelectedTeam: 147,
+        boardPayload: {
+          ...populatedBoard,
+          team: { team_id: 147, team_name: 'New York Yankees', team_abbreviation: 'NYY' },
+        },
+        storyPayload: null,
+        gameContextPayload: null,
+        teamReliefWorkPayload: {
+          ...teamReliefWorkPayload,
+          team: { team_id: 147, team_name: 'New York Yankees', team_abbreviation: 'NYY' },
+        },
+        ...props,
+      }),
+    ),
   )
 }
 
@@ -620,19 +623,19 @@ test('selected team board renders Recent Bullpen Work in the visible board path'
   assert.ok(htmlIncludes(html, 'Review pitcher lanes'))
   // H-10: the club name inside the board heading is screen-reader-only now
   // that the page heading names the club visibly.
-  assert.ok(htmlIncludes(html, 'Tonight&#x27;s Bullpen Board'))
+  assert.ok(htmlIncludes(html, 'Active Bullpen'))
   assert.ok(htmlIncludes(html, '<span class="sr-only"> — New York Yankees</span>'))
   assert.ok(htmlIncludes(html, teamReliefWorkPayload.scope_sentence))
 
   const operatingIndex = html.indexOf('Review pitcher lanes')
   const reliefIndex = html.indexOf('Recent Bullpen Work')
-  const boardIndex = html.indexOf('Tonight&#x27;s Bullpen Board')
+  const boardIndex = html.indexOf('Active Bullpen')
 
   assert.ok(operatingIndex !== -1)
   assert.ok(reliefIndex !== -1)
   assert.ok(boardIndex !== -1)
-  assert.ok(operatingIndex < reliefIndex)
-  assert.ok(reliefIndex < boardIndex)
+  assert.ok(operatingIndex < boardIndex)
+  assert.ok(boardIndex < reliefIndex)
 })
 
 test('selected team board keeps relief work visible on endpoint failure', () => {
@@ -644,7 +647,7 @@ test('selected team board keeps relief work visible on endpoint failure', () => 
   assert.ok(htmlIncludes(html, 'Recent Bullpen Work'))
   assert.ok(htmlIncludes(html, 'Recent bullpen work is unavailable.'))
   assert.equal(htmlIncludes(html, 'request failed'), false)
-  assert.ok(htmlIncludes(html, 'Tonight&#x27;s Bullpen Board'))
+  assert.ok(htmlIncludes(html, 'Active Bullpen'))
   assert.ok(htmlIncludes(html, '<span class="sr-only"> — New York Yankees</span>'))
 })
 
@@ -799,7 +802,7 @@ test('the relief work panel mounts once, on the team board only', async () => {
   }
 })
 
-test('team board mounts the panel between operating state and board lanes', async () => {
+test('team board mounts the panel after the active bullpen lanes', async () => {
   const source = await readFile(
     new URL('../src/components/bullpen/board/TonightsBullpenBoard.jsx', import.meta.url),
     'utf8',
@@ -811,8 +814,8 @@ test('team board mounts the panel between operating state and board lanes', asyn
   assert.notEqual(operatingIndex, -1)
   assert.notEqual(mountIndex, -1)
   assert.notEqual(boardIndex, -1)
-  assert.ok(operatingIndex < mountIndex)
-  assert.ok(mountIndex < boardIndex)
+  assert.ok(operatingIndex < boardIndex)
+  assert.ok(boardIndex < mountIndex)
   assert.ok(source.includes('teamId={selectedTeam}'))
   assert.equal(source.includes('teamId={detailPitcherId}'), false)
 })

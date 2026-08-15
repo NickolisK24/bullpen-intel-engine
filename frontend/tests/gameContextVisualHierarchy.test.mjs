@@ -50,14 +50,14 @@ test('the opponent reads before the trust metadata (hierarchy)', () => {
     'matchup should dominate, metadata follows')
 })
 
-// ── Trust metadata is preserved (visible, subordinate) ─────────────────────
+// ── Only exceptional trust metadata is visible ──────────────────────────────
 
-test('trust metadata stays visible: data state, confidence, status, missing fields', () => {
+test('exception trust metadata stays visible while routine provenance is quiet', () => {
   const html = render({ gameContext: present })
   assert.ok(htmlIncludes(html, 'Historical Game Log'))
   assert.ok(htmlIncludes(html, 'Medium'))
   assert.ok(htmlIncludes(html, 'Final'))
-  assert.ok(htmlIncludes(html, 'Stored game-log context'))
+  assert.equal(htmlIncludes(html, 'Stored game-log context'), false)
   assert.ok(htmlIncludes(html, 'Home/away and Scheduled time unavailable in stored game-log data.'))
   assert.ok(htmlIncludes(html, '2026'))   // game date present
 })

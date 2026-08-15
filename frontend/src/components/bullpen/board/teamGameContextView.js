@@ -48,6 +48,7 @@ export function getTeamGameContextView(ctx) {
     opponentAbbr: ctx.opponent_abbreviation || null,
     gameDate: fmtDataDate(ctx.game_date),
     confidenceLabel: formatConfidence(ctx.confidence),
+    isConfidenceLimited: !['high', ''].includes(String(ctx.confidence || '').toLowerCase()),
     statusLabel: ctx.is_today ? 'Scheduled' : 'Final',
     missingFields: missing,
     isToday: !!ctx.is_today,
