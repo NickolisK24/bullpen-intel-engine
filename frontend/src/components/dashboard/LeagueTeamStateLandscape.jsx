@@ -100,7 +100,7 @@ export default function LeagueTeamStateLandscape({ view, loading = false, error 
             {' · '}
             {view.withheldTeamCount} unavailable
           </p>
-          <div className="grid min-w-0 grid-cols-1 gap-3 lg:grid-cols-3">
+          <div className="grid min-w-0 grid-cols-1 items-start gap-3 lg:grid-cols-3">
             {view.groups.map(group => <StateGroup key={group.key} group={group} />)}
           </div>
 
