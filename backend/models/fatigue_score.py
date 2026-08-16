@@ -25,7 +25,7 @@ class FatigueScore(db.Model):
     days_since_last_appearance = db.Column(db.Integer)
     appearances_last_7 = db.Column(db.Integer, default=0)
     appearances_last_14 = db.Column(db.Integer, default=0)
-    pitches_last_7_days = db.Column(db.Integer, default=0)
+    pitches_last_7_days = db.Column(db.Integer)
     innings_last_7_days = db.Column(db.Float, default=0.0)
     avg_leverage_last_7 = db.Column(db.Float)
 
