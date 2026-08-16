@@ -45,7 +45,52 @@ const htmlIncludes = (html, text) => new RegExp(escapeRegExp(text)).test(html)
 const visibleText = (html) => html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
 const renderDistribution = (board) => renderToStaticMarkup(React.createElement(BullpenAvailabilityDistribution, { board }))
 
-function renderBoard(boardPayload, { team, storyPayload = null, gameContextPayload = null } = {}) {
+const reliefWorkPayload = {
+  data_through: '2026-06-04',
+  freshness: {
+    data_through: '2026-06-04',
+    freshness_state: 'current',
+    is_current: true,
+    label: 'Public bullpen data is current through June 4, 2026.',
+  },
+  scope_sentence: 'Covers appearances made for TST per official MLB game records.',
+  windows: {
+    window_7: {
+      through: '2026-06-04',
+      relief_appearances: 3,
+      pitchers_in_relief: 2,
+      pitches_total: 42,
+      appearances_with_pitches: 3,
+      start_relief_unknown: 0,
+      sentence: '3 relief appearances in the 7 days through June 4.',
+      pitchers_sentence: '2 pitchers appeared in relief in the 7 days through June 4.',
+      pitches_sentence: '42 pitches across those 3 relief appearances.',
+    },
+    window_14: {
+      through: '2026-06-04',
+      relief_appearances: 5,
+      pitchers_in_relief: 3,
+      pitches_total: 70,
+      appearances_with_pitches: 5,
+      start_relief_unknown: 0,
+      sentence: '5 relief appearances in the 14 days through June 4.',
+      pitchers_sentence: '3 pitchers appeared in relief in the 14 days through June 4.',
+      pitches_sentence: '70 pitches across those 5 relief appearances.',
+    },
+  },
+  relief_by_date: [{
+    game_date: '2026-06-04',
+    sentence: 'June 4 — 2 relief appearances, 2.0 IP, 28 pitches.',
+    appearances: [],
+  }],
+}
+
+function renderBoard(boardPayload, {
+  team,
+  storyPayload = null,
+  gameContextPayload = null,
+  teamReliefWorkPayload = reliefWorkPayload,
+} = {}) {
   const teamRecord = team || boardPayload?.team || { team_id: 1, team_name: 'Test Club', team_abbreviation: 'TST' }
   return renderToStaticMarkup(
     React.createElement(MemoryRouter, null,
@@ -55,7 +100,7 @@ function renderBoard(boardPayload, { team, storyPayload = null, gameContextPaylo
         boardPayload,
         gameContextPayload,
         storyPayload,
-        teamReliefWorkPayload: null,
+        teamReliefWorkPayload,
       }),
     ),
   )
@@ -170,7 +215,27 @@ test('meaningful what-changed content is promoted while absent game context stay
   assert.ok(htmlIncludes(html, 'What Changed'))
   assert.equal(htmlIncludes(html, 'Game Context'), false)
   assert.ok(html.indexOf('Active Bullpen') < html.indexOf('What Changed'))
+  assert.ok(html.indexOf('Active Bullpen') < html.indexOf('Recent Usage'))
+  assert.ok(html.indexOf('Recent Usage') < html.indexOf('What Changed'))
   assert.ok(html.indexOf('What Changed') < html.indexOf('Recent Bullpen Work'))
+})
+
+test('Recent Usage owns the 7-day orientation without duplicating summary or arm facts', () => {
+  const html = renderBoard(populatedBoard)
+  const recentStart = html.indexOf('Recent Usage')
+  const detailStart = html.indexOf('Recent Bullpen Work')
+  const recentSection = html.slice(recentStart, detailStart)
+
+  assert.equal((html.match(new RegExp(reliefWorkPayload.windows.window_7.sentence, 'g')) || []).length, 1)
+  assert.ok(htmlIncludes(recentSection, reliefWorkPayload.windows.window_7.sentence))
+  assert.equal(htmlIncludes(recentSection, reliefWorkPayload.windows.window_14.sentence), false)
+  for (const group of populatedBoard.groups) {
+    for (const card of group.pitchers) {
+      assert.equal(htmlIncludes(recentSection, card.name), false)
+    }
+  }
+  const summaryEnd = html.indexOf('id="pitcher-lanes"')
+  assert.equal(htmlIncludes(html.slice(0, summaryEnd), reliefWorkPayload.windows.window_7.sentence), false)
 })
 
 test('freshness and the current state stay visible without opening anything', () => {
@@ -383,6 +448,7 @@ test('Why this read stays closed after roster context while evidence remains rea
   assert.ok(labelIndex > -1 && detailsStart > -1)
   assert.equal(/\sopen(?:=|\s|>)/.test(disclosureTag), false)
   assert.ok(labelIndex > html.indexOf('Active Bullpen'))
+  assert.ok(labelIndex > html.indexOf('Recent Bullpen Work'))
   assert.ok(htmlIncludes(html, 'Evidence'))
   assert.ok(htmlIncludes(html, 'Methodology'))
 })

@@ -1,6 +1,3 @@
-import { useFetch } from '../../hooks/useFetch'
-import { getTeamReliefWork } from '../../utils/api'
-
 const asArray = (value) => (Array.isArray(value) ? value : [])
 const isFilled = (value) => value !== undefined && value !== null && value !== ''
 const textValue = (value) => (typeof value === 'string' && value.trim() ? value : null)
@@ -22,12 +19,15 @@ function Sentence({ children }) {
 // The server-authored currency sentence stays visible verbatim, but as a
 // quiet metadata line instead of its own bordered panel, so it supports the
 // workload sections below it without competing at equal visual weight.
-function DataCurrency({ payload, hideRoutine = false }) {
+function DataCurrency({ payload, boardDataThrough = null, hideRoutine = false }) {
   const freshness = payload?.freshness || {}
   const label = textValue(payload?.freshness?.label)
   if (!label) return null
   const state = String(freshness.freshness_state || freshness.state || '').trim().toLowerCase()
-  const exceptional = freshness.is_current === false || freshness.is_stale === true || freshness.fail_closed === true || (state && state !== 'current')
+  const reliefDataThrough = textValue(payload?.data_through || freshness.data_through || freshness.dataThrough)
+  const boardDate = textValue(boardDataThrough)
+  const differsFromBoard = Boolean(reliefDataThrough && boardDate && reliefDataThrough !== boardDate)
+  const exceptional = differsFromBoard || freshness.is_current === false || freshness.is_stale === true || freshness.fail_closed === true || (state && state !== 'current')
   if (hideRoutine && !exceptional) return null
 
   return (
@@ -266,17 +266,13 @@ function WorkWindow({ value }) {
   )
 }
 
-function ReliefWorkWindows({ windows }) {
-  const window7 = windows?.window_7
+function ReliefWorkHistoryContext({ windows }) {
   const window14 = windows?.window_14
-  if (!window7 && !window14) return null
+  if (!window14) return null
 
   return (
-    <Section title="Relief Work Windows" compact>
-      <div className="grid gap-2 md:grid-cols-2">
-        <WorkWindow value={window7} />
-        <WorkWindow value={window14} />
-      </div>
+    <Section title="14-Day Context" compact>
+      <WorkWindow value={window14} />
     </Section>
   )
 }
@@ -307,23 +303,13 @@ function ScopeSentence({ payload, rosterContextLimited = false }) {
 }
 
 export default function TeamReliefWorkPanel({
-  teamId,
   payload,
-  loading: loadingOverride,
-  error: errorOverride,
+  loading = false,
+  error = null,
   rosterContextLimited = false,
   hideRoutineFreshness = false,
+  boardDataThrough = null,
 }) {
-  const fetched = useFetch(
-    () => (payload !== undefined || !isFilled(teamId)
-      ? Promise.resolve(payload ?? null)
-      : getTeamReliefWork(teamId)),
-    [teamId, payload],
-  )
-  const data = payload !== undefined ? payload : fetched.data
-  const error = errorOverride ?? (payload !== undefined ? null : fetched.error)
-  const loading = loadingOverride ?? (error ? false : (payload !== undefined ? false : fetched.loading))
-
   if (loading) {
     return (
       <PanelShell>
@@ -346,12 +332,16 @@ export default function TeamReliefWorkPanel({
 
   return (
     <PanelShell>
-      <ScopeSentence payload={data} rosterContextLimited={rosterContextLimited} />
-      <DataCurrency payload={data} hideRoutine={hideRoutineFreshness} />
-      <ReliefWorkWindows windows={data?.windows} />
+      <ScopeSentence payload={payload} rosterContextLimited={rosterContextLimited} />
+      <DataCurrency
+        payload={payload}
+        boardDataThrough={boardDataThrough}
+        hideRoutine={hideRoutineFreshness}
+      />
+      <ReliefWorkHistoryContext windows={payload?.windows} />
       <ReliefWorkByDate
-        groups={data?.relief_by_date}
-        absenceSentence={data?.absence_sentence}
+        groups={payload?.relief_by_date}
+        absenceSentence={payload?.absence_sentence}
         rosterContextLimited={rosterContextLimited}
       />
     </PanelShell>

@@ -8,6 +8,8 @@ import BullpenAvailabilityDistribution from './BullpenAvailabilityDistribution'
 import BullpenBoardView, { RosterStatusBanner } from './BullpenBoardView'
 import RestStatus from './RestStatus'
 import WorkloadOverview from './WorkloadOverview'
+import RecentUsage from './RecentUsage'
+import { useTeamReliefWork } from './useTeamReliefWork'
 import TeamGameContextCard from './TeamGameContextCard'
 import StoryCard from './StoryCard'
 import TeamReliefWorkPanel from '../TeamReliefWorkPanel'
@@ -88,7 +90,21 @@ export default function TonightsBullpenBoard({
   )
   const boardState = boardPayload !== undefined ? staticFetchState(boardPayload) : board
   const gameContextState = gameContextPayload !== undefined ? staticFetchState(gameContextPayload) : gameContext
+  const hasReliefWorkOverride = (
+    teamReliefWorkPayload !== undefined
+    || teamReliefWorkLoading !== undefined
+    || teamReliefWorkError !== undefined
+  )
   const storyState = storyPayload !== undefined ? staticFetchState(storyPayload) : story
+  const reliefWork = useTeamReliefWork(selectedTeam, !hasReliefWorkOverride)
+  const reliefWorkState = hasReliefWorkOverride
+    ? {
+        data: teamReliefWorkPayload ?? null,
+        loading: teamReliefWorkLoading === true,
+        error: teamReliefWorkError ?? null,
+        refetch: () => {},
+      }
+    : reliefWork
   const rosterContextLimited = rosterCountsAreWithheld(boardState.data)
   const filteredBoard = filterBoardForViewMode(boardState.data, boardViewMode)
   const teamOperatingRead = toOperatingStateReadModel(boardState.data || {}, {
@@ -216,8 +232,15 @@ export default function TonightsBullpenBoard({
               showRosterContext={false}
             />
             <div className="mt-5 grid items-start gap-4 lg:grid-cols-2">
-              <RestStatus restStatus={boardState.data?.rest_status} />
-              <WorkloadOverview read={teamOperatingRead.workloadConcentration} />
+              <RecentUsage
+                payload={reliefWorkState.data}
+                loading={reliefWorkState.loading}
+                error={reliefWorkState.error}
+              />
+              <div className="self-start space-y-4">
+                <RestStatus restStatus={boardState.data?.rest_status} />
+                <WorkloadOverview read={teamOperatingRead.workloadConcentration} />
+              </div>
             </div>
             {storyState.data?.story_available === true && <section className="mt-6" aria-labelledby="what-changed-title">
               <h2 id="what-changed-title" className="font-display text-xl tracking-wide text-chalk100">What Changed</h2>
@@ -233,12 +256,12 @@ export default function TonightsBullpenBoard({
             </section>}
             <div className="mt-6">
               <TeamReliefWorkPanel
-                teamId={selectedTeam}
-                payload={teamReliefWorkPayload}
-                loading={teamReliefWorkLoading}
-                error={teamReliefWorkError}
+                payload={reliefWorkState.data}
+                loading={reliefWorkState.loading}
+                error={reliefWorkState.error}
                 rosterContextLimited={rosterContextLimited}
                 hideRoutineFreshness
+                boardDataThrough={boardState.data?.freshness?.data_through || boardState.data?.freshness?.dataThrough || boardState.data?.data_through}
               />
             </div>
             <div className="mt-4"><RosterStatusBanner board={filteredBoard} /></div>

@@ -249,10 +249,7 @@ const teamReliefWorkPayload = {
 
 function renderPanel(props = {}) {
   return renderToStaticMarkup(
-    React.createElement(TeamReliefWorkPanel, {
-      teamId: 110,
-      ...props,
-    }),
+    React.createElement(TeamReliefWorkPanel, props),
   )
 }
 
@@ -381,16 +378,20 @@ test('renders server-authored team relief-work sentences verbatim', () => {
     teamReliefWorkPayload.relief_by_date[1].sentence,
     teamReliefWorkPayload.relief_by_date[1].appearances[0].sentence,
     teamReliefWorkPayload.relief_by_date[1].appearances[0].roster_status_sentence,
-    teamReliefWorkPayload.windows.window_7.sentence,
-    teamReliefWorkPayload.windows.window_7.pitchers_sentence,
-    teamReliefWorkPayload.windows.window_7.pitches_sentence,
-    teamReliefWorkPayload.windows.window_7.start_relief_unknown_sentence,
     teamReliefWorkPayload.windows.window_14.sentence,
     teamReliefWorkPayload.windows.window_14.pitchers_sentence,
     teamReliefWorkPayload.windows.window_14.pitches_sentence,
     teamReliefWorkPayload.absence_sentence,
   ]) {
     assert.ok(htmlIncludes(html, sentence), sentence)
+  }
+  for (const movedSentence of [
+    teamReliefWorkPayload.windows.window_7.sentence,
+    teamReliefWorkPayload.windows.window_7.pitchers_sentence,
+    teamReliefWorkPayload.windows.window_7.pitches_sentence,
+    teamReliefWorkPayload.windows.window_7.start_relief_unknown_sentence,
+  ]) {
+    assert.equal(htmlIncludes(html, movedSentence), false, movedSentence)
   }
 })
 
@@ -401,21 +402,23 @@ test('roster-limited relief work keeps workload facts without current roster cla
   })
 
   assert.ok(htmlIncludes(html, 'Recent workload remains visible, but current roster coverage is not verified.'))
-  assert.ok(htmlIncludes(html, teamReliefWorkPayload.windows.window_7.sentence))
+  assert.ok(htmlIncludes(html, teamReliefWorkPayload.windows.window_14.sentence))
   assert.ok(htmlIncludes(html, teamReliefWorkPayload.relief_by_date[0].sentence))
   assert.ok(htmlIncludes(html, teamReliefWorkPayload.relief_by_date[0].appearances[0].pitcher_full_name))
   assert.equal(htmlIncludes(html, teamReliefWorkPayload.scope_sentence), false)
   assert.equal(htmlIncludes(html, teamReliefWorkPayload.relief_by_date[0].appearances[0].roster_status_sentence), false)
 })
 
-test('renders relief work windows before date groups', () => {
+test('keeps 14-day context before date groups without duplicating the 7-day summary', () => {
   const html = renderPanel({ payload: teamReliefWorkPayload })
-  const windowsIndex = html.indexOf('Relief Work Windows')
+  const windowsIndex = html.indexOf('14-Day Context')
   const byDateIndex = html.indexOf('Relief Work by Date')
 
   assert.notEqual(windowsIndex, -1)
   assert.notEqual(byDateIndex, -1)
   assert.ok(windowsIndex < byDateIndex)
+  assert.equal(htmlIncludes(html, teamReliefWorkPayload.windows.window_7.sentence), false)
+  assert.ok(htmlIncludes(html, teamReliefWorkPayload.windows.window_14.sentence))
 })
 
 test('date groups are collapsible with the latest date expanded', () => {
@@ -614,6 +617,23 @@ test('renders exact loading and error states', () => {
   assert.equal(htmlIncludes(errorHtml, 'network details must not render'), false)
 })
 
+test('routine relief freshness stays quiet while a board-date mismatch remains explicit', () => {
+  const routine = renderPanel({
+    payload: teamReliefWorkPayload,
+    boardDataThrough: teamReliefWorkPayload.data_through,
+    hideRoutineFreshness: true,
+  })
+  const mismatch = renderPanel({
+    payload: teamReliefWorkPayload,
+    boardDataThrough: '2026-07-06',
+    hideRoutineFreshness: true,
+  })
+
+  assert.equal(htmlIncludes(routine, 'Data Currency'), false)
+  assert.ok(htmlIncludes(mismatch, 'Data Currency'))
+  assert.ok(htmlIncludes(mismatch, teamReliefWorkPayload.freshness.label))
+})
+
 test('selected team board renders Recent Bullpen Work in the visible board path', () => {
   const html = renderSelectedTeamBoard()
 
@@ -626,6 +646,8 @@ test('selected team board renders Recent Bullpen Work in the visible board path'
   assert.ok(htmlIncludes(html, 'Active Bullpen'))
   assert.ok(htmlIncludes(html, '<span class="sr-only"> — New York Yankees</span>'))
   assert.ok(htmlIncludes(html, teamReliefWorkPayload.scope_sentence))
+  assert.ok(htmlIncludes(html, 'Recent Usage'))
+  assert.ok(htmlIncludes(html, teamReliefWorkPayload.windows.window_7.sentence))
 
   const operatingIndex = html.indexOf('Review pitcher lanes')
   const reliefIndex = html.indexOf('Recent Bullpen Work')
@@ -646,6 +668,7 @@ test('selected team board keeps relief work visible on endpoint failure', () => 
 
   assert.ok(htmlIncludes(html, 'Recent Bullpen Work'))
   assert.ok(htmlIncludes(html, 'Recent bullpen work is unavailable.'))
+  assert.ok(htmlIncludes(html, 'Recent usage unavailable.'))
   assert.equal(htmlIncludes(html, 'request failed'), false)
   assert.ok(htmlIncludes(html, 'Active Bullpen'))
   assert.ok(htmlIncludes(html, '<span class="sr-only"> — New York Yankees</span>'))
@@ -685,7 +708,15 @@ test('source guard blocks private routes and fields from the new panel and mount
     new URL('../src/components/bullpen/board/TonightsBullpenBoard.jsx', import.meta.url),
     'utf8',
   )
-  const source = `${panelSource}\n${bullpenSource}\n${boardSource}`
+  const recentUsageSource = await readFile(
+    new URL('../src/components/bullpen/board/RecentUsage.jsx', import.meta.url),
+    'utf8',
+  )
+  const recentUsageViewSource = await readFile(
+    new URL('../src/components/bullpen/board/recentUsageView.js', import.meta.url),
+    'utf8',
+  )
+  const source = `${panelSource}\n${bullpenSource}\n${boardSource}\n${recentUsageSource}\n${recentUsageViewSource}`
 
   for (const forbidden of [
     '/api/system/internal/team-evidence',
@@ -770,7 +801,7 @@ test('new panel source does not author forbidden public vocabulary', async () =>
   assert.equal(/last\s+14\s+days/i.test(source), false)
 })
 
-test('the relief work panel mounts once, on the team board only', async () => {
+test('the shared relief-work modules mount once, on the team board only', async () => {
   const source = await readFile(
     new URL('../src/components/bullpen/Bullpen.jsx', import.meta.url),
     'utf8',
@@ -783,6 +814,9 @@ test('the relief work panel mounts once, on the team board only', async () => {
   // removed — the Phase 0G evidence panel renders once, on the Team Board.
   assert.equal(source.includes('TeamReliefWorkPanel'), false)
   assert.ok(boardSource.includes('<TeamReliefWorkPanel'))
+  assert.ok(boardSource.includes('<RecentUsage'))
+  assert.equal((boardSource.match(/<TeamReliefWorkPanel/g) || []).length, 1)
+  assert.equal((boardSource.match(/<RecentUsage/g) || []).length, 1)
   for (const finderMarker of [
     'All teams',
     'Availability',
@@ -802,21 +836,27 @@ test('the relief work panel mounts once, on the team board only', async () => {
   }
 })
 
-test('team board mounts the panel after the active bullpen lanes', async () => {
+test('team board owns one shared relief-work request and mounts summary before detail', async () => {
   const source = await readFile(
     new URL('../src/components/bullpen/board/TonightsBullpenBoard.jsx', import.meta.url),
     'utf8',
   )
   const operatingIndex = source.indexOf('<BullpenOperatingStateCard')
+  const recentUsageIndex = source.indexOf('<RecentUsage')
   const mountIndex = source.indexOf('<TeamReliefWorkPanel')
   const boardIndex = source.indexOf('<BullpenBoardView')
 
   assert.notEqual(operatingIndex, -1)
   assert.notEqual(mountIndex, -1)
+  assert.notEqual(recentUsageIndex, -1)
   assert.notEqual(boardIndex, -1)
   assert.ok(operatingIndex < boardIndex)
-  assert.ok(boardIndex < mountIndex)
-  assert.ok(source.includes('teamId={selectedTeam}'))
+  assert.ok(boardIndex < recentUsageIndex)
+  assert.ok(recentUsageIndex < mountIndex)
+  assert.ok(source.includes('useTeamReliefWork(selectedTeam, !hasReliefWorkOverride)'))
+  assert.equal((source.match(/useTeamReliefWork\(/g) || []).length, 1)
+  assert.equal(source.includes('getTeamReliefWork('), false)
+  assert.equal(source.includes('teamId={selectedTeam}'), false)
   assert.equal(source.includes('teamId={detailPitcherId}'), false)
 })
 
