@@ -13,6 +13,8 @@ Each case states which of the two failure modes it protects against:
   guards must not quietly unprotect anything.
 """
 
+from pathlib import Path
+
 import freeze_policy
 
 
@@ -256,6 +258,51 @@ def test_d054_exception_is_exact_decision_linked_and_does_not_unfreeze_paths():
         exact=freeze_policy.FROZEN_LEGACY_WHAT_CHANGED_PATHS,
         approved=approved,
     ) == ['backend/services/team_changes.py']
+
+
+def test_d055_exception_is_exact_decision_linked_and_does_not_unfreeze_paths():
+    approved = freeze_policy.D055_TEAM_BOARD_WORKLOAD_CONTEXT_PATHS
+    assert approved == (
+        'backend/api/bullpen.py',
+        'backend/services/bullpen_board.py',
+    )
+
+    for changed, exact in (
+        (['backend/api/bullpen.py'], freeze_policy.FROZEN_PUBLIC_ROUTE_PATHS),
+        (
+            ['backend/services/bullpen_board.py'],
+            freeze_policy.FROZEN_PHASE0E_LEGACY_PUBLIC_PATHS,
+        ),
+    ):
+        assert freeze_policy.protected_hits(changed, exact=exact) == changed
+        assert freeze_policy.protected_hits(
+            changed,
+            exact=exact,
+            approved=approved,
+        ) == []
+
+    assert freeze_policy.protected_hits(
+        ['backend/api/pitchers.py'],
+        exact=freeze_policy.FROZEN_PUBLIC_ROUTE_PATHS,
+        approved=approved,
+    ) == ['backend/api/pitchers.py']
+
+    # When no authorized path differs from main, the exception subtracts
+    # nothing and therefore grants nothing.
+    assert freeze_policy.protected_hits(
+        ['backend/services/team_changes.py'],
+        exact=freeze_policy.FROZEN_LEGACY_WHAT_CHANGED_PATHS,
+        approved=approved,
+    ) == ['backend/services/team_changes.py']
+
+    decision = (
+        Path(__file__).resolve().parents[2]
+        / 'docs/decisions/2026-08-15-governed-team-board-workload-context.md'
+    ).read_text(encoding='utf-8')
+    for exact_path in approved:
+        assert f'`{exact_path}`' in decision
+    assert 'No directory, prefix, or' in decision
+    assert 'global bypass is authorized.' in decision
 
 
 def test_no_catalogue_uses_a_bare_directory_as_an_invariant():

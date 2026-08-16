@@ -196,6 +196,21 @@ D054_LEAGUE_TEAM_STATE_LISTING_PATHS = (
     'backend/services/dashboard_snapshot.py',
 )
 
+# D-055, August 15 2026. The Team Board contract may project already-public
+# workload facts from its loaded fatigue and availability authority and author
+# one fail-closed Rest Status block. The decision authority is recorded in
+# docs/decisions/2026-08-15-governed-team-board-workload-context.md.
+#
+# This exception names only the route assembly and its existing presentation
+# service. It grants no directory exemption, score exposure, recalculation,
+# reader-path acquisition, Team State change, or publication-authority change.
+# As with the reviewed exceptions above, these entries become inert after merge
+# because the paths no longer differ from origin/main.
+D055_TEAM_BOARD_WORKLOAD_CONTEXT_PATHS = (
+    'backend/api/bullpen.py',
+    'backend/services/bullpen_board.py',
+)
+
 
 def normalize(path):
     """Repository-relative path with forward slashes and no surrounding space."""
