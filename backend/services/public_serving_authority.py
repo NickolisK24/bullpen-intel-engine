@@ -39,6 +39,7 @@ from services.bullpen_comparison import build_team_comparison
 from services.bullpen_population import eligible_bullpen_pitcher_contexts, usage_logs_by_pitcher
 from services.bullpen_visibility import build_visibility_contract
 from services.pitcher_role_authority import author_role_read_labels, role_logs_by_pitcher
+from services.public_fatigue_view import public_workload_facts
 from services.public_roster_readiness import apply_public_roster_readiness, build_public_roster_readiness
 from services.roster_authority import build_roster_authority
 from services.published_team_state import project_published_team_state_artifact
@@ -127,6 +128,7 @@ def _plain_board_record(record, role_logs, reference_date):
         'name': pitcher.full_name,
         'pitcher_id': pitcher.id,
         'fatigue_score': float(raw_score) if raw_score is not None else None,
+        'workload_facts': deepcopy(public_workload_facts(score)),
         'availability': deepcopy(record.get('availability') or {}),
         'last_appearance': deepcopy(last_workload_appearance),
         'last_workload_appearance': deepcopy(last_workload_appearance),

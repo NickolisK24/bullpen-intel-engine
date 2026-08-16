@@ -1,0 +1,389 @@
+"""D-055 workload facts survive the D-051 trusted publication carrier."""
+
+from datetime import timedelta
+import importlib
+import json
+
+import pytest
+from sqlalchemy import event
+
+from api.bullpen import _board_records_from_authority_records
+from models.fatigue_score import FatigueScore
+from models.game_log import GameLog
+from models.pitcher import Pitcher
+from models.sync_run import SyncRun
+from services import dashboard_snapshot
+from services import public_serving_authority
+from services import sync as sync_service
+from services.availability_population import current_availability_records
+from services.availability_snapshot import latest_fatigue_rows
+from services.public_fatigue_view import PUBLIC_WORKLOAD_FACT_FIELDS, public_workload_facts
+from tests.db_config import (
+    create_test_schema,
+    drop_test_schema,
+    test_database_url as _test_database_url,
+)
+from tests.roster_readiness_fixture import seed_roster_readiness_snapshots
+from utils.db import db
+from utils.time import utc_now_naive
+
+
+TEAM_ID = 116
+OTHER_TEAM_ID = 134
+
+
+def _complete_slate_coverage(slate_date):
+    return {
+        'slate_date': slate_date.isoformat(),
+        'games_scheduled': 0,
+        'games_final': 0,
+        'games_fully_ingested': 0,
+        'games_incomplete': 0,
+        'games_failed': 0,
+        'games_postponed': 0,
+        'games_suspended': 0,
+        'games_included': 0,
+        'validations_passed': True,
+        'complete_enough_to_publish': True,
+        'coverage_known': True,
+        'reason_codes': ['no_scheduled_games', 'slate_complete'],
+        'degradation_reasons': [],
+        'marker_counts': {
+            'fully_processed': 0,
+            'incomplete': 0,
+            'failed': 0,
+            'missing': 0,
+        },
+    }
+
+
+def _dashboard_payload(reference_date):
+    data_through = reference_date - timedelta(days=1)
+    coverage = _complete_slate_coverage(data_through)
+    return {
+        'capability': 'bullpen_dashboard',
+        'generated_at': utc_now_naive().isoformat(),
+        'ranking_applied': False,
+        'selection_made': False,
+        'scope': 'bullpen_eligible',
+        'context': {},
+        'roles': {'order': [], 'counts': {}, 'total': 0},
+        'landscape': {},
+        'freshness': {
+            'data_through': data_through.isoformat(),
+            'latest_workload_date': data_through.isoformat(),
+            'availability_reference_date': reference_date.isoformat(),
+            'reference_date': reference_date.isoformat(),
+            'sync_status': 'success',
+            'last_successful_sync': utc_now_naive().isoformat(),
+            'slate_coverage': coverage,
+            'validations_passed': True,
+            'complete_enough_to_publish': True,
+        },
+        'availability_summary': {},
+    }
+
+
+def _seed_pitcher_with_workload(
+    reference_date,
+    *,
+    mlb_id=5116001,
+    full_name='Trusted Workload Arm',
+    team_id=TEAM_ID,
+    team_name='Detroit Tigers',
+    team_abbreviation='DET',
+    days_since_last_appearance=2,
+    appearances_last_7=3,
+    appearances_last_14=5,
+    pitches_last_7_days=41,
+    innings_last_7_days=3.0,
+    with_score=True,
+):
+    pitcher = Pitcher(
+        mlb_id=mlb_id,
+        full_name=full_name,
+        team_id=team_id,
+        team_name=team_name,
+        team_abbreviation=team_abbreviation,
+        position='P',
+        active=True,
+        roster_status='active',
+        roster_status_source='test_fixture',
+        roster_status_updated_at=utc_now_naive(),
+    )
+    db.session.add(pitcher)
+    db.session.flush()
+    db.session.add(GameLog(
+        pitcher_id=pitcher.id,
+        mlb_game_pk=90000000 + mlb_id,
+        game_date=reference_date - timedelta(days=days_since_last_appearance),
+        game_type='R',
+        games_started=0,
+        innings_pitched=1.0,
+        innings_pitched_outs=3,
+        pitches_thrown=18,
+    ))
+    score = None
+    if with_score:
+        score = FatigueScore(
+            pitcher_id=pitcher.id,
+            calculated_at=utc_now_naive(),
+            raw_score=19.0,
+            pitch_count_score=11.0,
+            rest_days_score=9.0,
+            appearances_score=13.0,
+            leverage_score=7.0,
+            innings_score=8.0,
+            days_since_last_appearance=days_since_last_appearance,
+            appearances_last_7=appearances_last_7,
+            appearances_last_14=appearances_last_14,
+            pitches_last_7_days=pitches_last_7_days,
+            innings_last_7_days=innings_last_7_days,
+            risk_level='LOW',
+        )
+        db.session.add(score)
+    db.session.commit()
+    if score is not None and pitches_last_7_days is None:
+        score.pitches_last_7_days = None
+        db.session.commit()
+    return pitcher, score
+
+
+@pytest.fixture
+def trusted_app(tmp_path, monkeypatch):
+    monkeypatch.setenv('APP_ENV', 'test')
+    monkeypatch.setenv('DATABASE_URL', _test_database_url())
+    monkeypatch.setattr(sync_service, 'STATUS_FILE', tmp_path / 'sync_status.json')
+    app_module = importlib.import_module('app')
+    app = app_module.create_app('test')
+    app.config['TRUSTED_PUBLIC_SERVING_ENABLED'] = True
+
+    with app.app_context():
+        create_test_schema(app)
+        try:
+            reference_date = public_serving_authority.product_current_date()
+            pitcher, score = _seed_pitcher_with_workload(reference_date)
+            other_pitcher, other_score = _seed_pitcher_with_workload(
+                reference_date,
+                mlb_id=5134001,
+                full_name='Trusted Null Pitch Arm',
+                team_id=OTHER_TEAM_ID,
+                team_name='Pittsburgh Pirates',
+                team_abbreviation='PIT',
+                days_since_last_appearance=1,
+                appearances_last_7=2,
+                appearances_last_14=4,
+                pitches_last_7_days=None,
+                innings_last_7_days=2.0,
+            )
+            unscored_pitcher, _ = _seed_pitcher_with_workload(
+                reference_date,
+                mlb_id=5116002,
+                full_name='Trusted Unscored Arm',
+                days_since_last_appearance=3,
+                with_score=False,
+            )
+            seed_roster_readiness_snapshots([reference_date])
+
+            from api import bullpen as bullpen_api
+
+            monkeypatch.setattr(
+                bullpen_api,
+                'build_bullpen_dashboard_payload',
+                lambda **_kwargs: _dashboard_payload(reference_date),
+            )
+            assert public_serving_authority.install_public_serving_authority(app) is True
+
+            run = SyncRun(
+                job_name='trusted_workload_test',
+                started_at=utc_now_naive() - timedelta(minutes=2),
+                completed_at=utc_now_naive() - timedelta(minutes=1),
+                status='success',
+                stage='published',
+                source='test',
+                latest_game_date=reference_date - timedelta(days=1),
+                latest_workload_date=reference_date - timedelta(days=1),
+                latest_fatigue_calculated_at=utc_now_naive(),
+            )
+            db.session.add(run)
+            db.session.flush()
+            snapshot = dashboard_snapshot.build_bullpen_dashboard_snapshot(
+                sync_run_id=run.id,
+                source='trusted_workload_test',
+                publish=True,
+                raise_errors=True,
+            )
+            assert snapshot.is_published is True
+            yield {
+                'app': app,
+                'pitcher': pitcher,
+                'score': score,
+                'other_pitcher': other_pitcher,
+                'other_score': other_score,
+                'unscored_pitcher': unscored_pitcher,
+                'snapshot': snapshot,
+                'reference_date': reference_date,
+            }
+        finally:
+            db.session.remove()
+            drop_test_schema(app)
+
+
+def test_trusted_public_board_endpoint_serves_frozen_workload_facts_and_rest_status(
+    trusted_app,
+):
+    app = trusted_app['app']
+    pitcher = trusted_app['pitcher']
+    snapshot = trusted_app['snapshot']
+
+    response = app.test_client().get(f'/api/bullpen/teams/{TEAM_ID}/board')
+    assert response.status_code == 200
+    body = response.get_json()
+    cards = [card for group in body['groups'] for card in group['pitchers']]
+    card = next(item for item in cards if item['pitcher_id'] == pitcher.id)
+
+    assert body['served_from'] == 'trusted_dashboard_snapshot'
+    assert body['publication_authority']['snapshot_id'] == snapshot.id
+    assert (
+        body['rest_status']['available'],
+        body['rest_status']['reason_code'],
+    ) == (True, None)
+    assert card['workload_facts'] == {
+        'days_since_last_appearance': 2,
+        'appearances_last_7': 3,
+        'pitches_last_7_days': 41,
+        'back_to_back': False,
+    }
+
+
+def test_frozen_team_board_package_carries_exact_public_projection_and_nulls(trusted_app):
+    snapshot = trusted_app['snapshot']
+    package = snapshot.payload[public_serving_authority.TEAM_BOARD_PACKAGE_KEY]
+    records = {
+        record['pitcher_id']: record
+        for team in package['by_team_id'].values()
+        for record in team['records']
+    }
+
+    assert records[trusted_app['pitcher'].id]['workload_facts'] == public_workload_facts(
+        trusted_app['score']
+    )
+    assert records[trusted_app['other_pitcher'].id]['workload_facts'] == public_workload_facts(
+        trusted_app['other_score']
+    )
+    assert records[trusted_app['other_pitcher'].id]['workload_facts'][
+        'pitches_last_7_days'
+    ] is None
+    assert records[trusted_app['unscored_pitcher'].id]['workload_facts'] is None
+    assert json.dumps(package)
+
+
+def test_live_and_frozen_board_records_match_on_workload_facts(trusted_app):
+    reference_date = trusted_app['reference_date']
+    authority_records = current_availability_records(
+        latest_fatigue_rows(),
+        reference_date=reference_date,
+    )
+    live_records, _ = _board_records_from_authority_records(
+        authority_records,
+        reference_date=reference_date,
+    )
+    live_by_pitcher = {record['pitcher_id']: record for record in live_records}
+
+    package = trusted_app['snapshot'].payload[public_serving_authority.TEAM_BOARD_PACKAGE_KEY]
+    frozen_by_pitcher = {
+        record['pitcher_id']: record
+        for team in package['by_team_id'].values()
+        for record in team['records']
+    }
+
+    for pitcher_id, live_record in live_by_pitcher.items():
+        assert frozen_by_pitcher[pitcher_id]['workload_facts'] == live_record['workload_facts']
+
+
+def test_trusted_compare_retains_workload_facts_for_both_teams(trusted_app):
+    response = trusted_app['app'].test_client().get(
+        f'/api/bullpen/teams/compare?team_a={TEAM_ID}&team_b={OTHER_TEAM_ID}'
+    )
+    assert response.status_code == 200
+    body = response.get_json()
+
+    for side, pitcher, expected_days, expected_appearances, expected_pitches in (
+        ('team_a', trusted_app['pitcher'], 2, 3, 41),
+        ('team_b', trusted_app['other_pitcher'], 1, 2, None),
+    ):
+        board = body[side]
+        cards = [card for group in board['groups'] for card in group['pitchers']]
+        card = next(item for item in cards if item['pitcher_id'] == pitcher.id)
+        assert board['served_from'] == 'trusted_dashboard_snapshot'
+        assert card['workload_facts']['days_since_last_appearance'] == expected_days
+        assert card['workload_facts']['appearances_last_7'] == expected_appearances
+        assert card['workload_facts']['pitches_last_7_days'] == expected_pitches
+        assert isinstance(card['workload_facts']['back_to_back'], bool)
+
+
+def _all_keys(value):
+    if isinstance(value, dict):
+        yield from value.keys()
+        for child in value.values():
+            yield from _all_keys(child)
+    elif isinstance(value, list):
+        for child in value:
+            yield from _all_keys(child)
+
+
+def test_trusted_team_board_response_and_workload_projection_do_not_leak_scores(trusted_app):
+    body = trusted_app['app'].test_client().get(
+        f'/api/bullpen/teams/{TEAM_ID}/board'
+    ).get_json()
+    forbidden = {
+        'raw_score',
+        'fatigue_score',
+        'risk_level',
+        'usage_score',
+        'recovery_score',
+        'workload_score',
+        'breakdown',
+        'breakdowns',
+        'subscores',
+        'pitch_count_score',
+        'rest_days_score',
+        'appearances_score',
+        'leverage_score',
+        'innings_score',
+    }
+    assert forbidden.isdisjoint(set(_all_keys(body)))
+
+    package = trusted_app['snapshot'].payload[public_serving_authority.TEAM_BOARD_PACKAGE_KEY]
+    record = next(
+        record
+        for team in package['by_team_id'].values()
+        for record in team['records']
+        if record['pitcher_id'] == trusted_app['pitcher'].id
+    )
+    assert set(record['workload_facts']) == {'calculated_at', *PUBLIC_WORKLOAD_FACT_FIELDS}
+
+
+def test_public_workload_projection_executes_no_sql(trusted_app):
+    score = trusted_app['score']
+    expected = public_workload_facts(score)
+    statements = []
+
+    def capture(_conn, _cursor, statement, _params, _context, _executemany):
+        statements.append(statement)
+
+    event.listen(db.engine, 'before_cursor_execute', capture)
+    try:
+        assert public_workload_facts(score) == expected
+    finally:
+        event.remove(db.engine, 'before_cursor_execute', capture)
+
+    assert statements == []
+
+
+def test_trusted_package_contract_and_dashboard_payload_version_are_unchanged():
+    assert (
+        public_serving_authority.TEAM_BOARD_PACKAGE_CONTRACT
+        == 'trusted_team_board_publication_v1'
+    )
+    assert dashboard_snapshot.DASHBOARD_PAYLOAD_VERSION == 1

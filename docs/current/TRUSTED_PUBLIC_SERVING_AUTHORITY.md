@@ -3,7 +3,7 @@
 **Status:** Current operating contract after D-051  
 **Authority:** Secondary to `docs/canonical/04_PLATFORM_ARCHITECTURE_OPERATIONS.md` and the D-051 entry in `docs/canonical/05_PRODUCT_ROADMAP_DECISION_LEDGER.md`. This document owns the trusted-serving detail and the current OPS-002 criterion set.  
 **Owner:** Nickolis Kacludis  
-**Last reviewed:** August 14, 2026
+**Last reviewed:** August 16, 2026
 
 BaseballOS separates acquisition from publication. A sync may write canonical source rows before the full candidate has passed every publication gate. Those writes are inspectable operational state; they are not automatically public authority.
 
@@ -21,6 +21,12 @@ The Actions workflow may still display the historical `daily` workflow-dispatch 
 
 While a candidate Dashboard snapshot is being built, BaseballOS captures a JSON-safe `trusted_team_boards` package inside that candidate. The package contains the per-team board source material as it existed for that candidate: board records, default membership, roster authority, workload concentration, and supporting team context.
 
+Under D-055, each frozen board record also carries the exact already-public workload
+facts projected from the `FatigueScore` object the candidate builder has already
+loaded. This is serialization inside the existing D-051 carrier: it adds no query,
+recalculation, fallback, read authority, write authority, or publication authority.
+`trusted_team_board_publication_v1` and Dashboard payload version 1 remain unchanged.
+
 The package is not a public authority merely because it exists. It becomes servable only when the containing Dashboard snapshot becomes the latest valid published snapshot.
 
 If the candidate is withheld, the previous published snapshot — and therefore the previous frozen Team Board package — remains authoritative.
@@ -34,6 +40,12 @@ The current request may add a freshness overlay explaining that a newer sync is 
 Team State is source-exact. The board reads the immutable published Team State artifact tied to the same league Dashboard snapshot. A missing or integrity-failed exact artifact produces the governed Team State unavailable block. The reader path never substitutes a different date, a team-progressive artifact, or a live readiness recomputation.
 
 A legacy published Dashboard snapshot created before D-051 has no frozen board package. In production the board fails closed until a D-051-capable snapshot publishes; it does not silently rebuild from newer mutable rows.
+
+A published snapshot created before the D-055 carrier correction may have a valid
+frozen board package without `workload_facts`. That snapshot remains immutable and its
+Team Board workload context remains fail-closed. The field appears only after the next
+naturally scheduled candidate publishes successfully; no manual rerun or backfill is
+part of this contract.
 
 ## Tonight
 

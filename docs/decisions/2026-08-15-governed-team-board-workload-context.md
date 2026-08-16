@@ -76,16 +76,34 @@ It authorizes no:
 The existing Team State, availability, grouping, freshness, snapshot, and public
 response-stripping authorities remain unchanged.
 
+### Production carrier clarification — August 16, 2026
+
+In production, the D-051 `trusted_team_boards` package is the carrier for the D-055
+Team Board contract. Each frozen board record therefore carries the exact existing
+public workload projection from the `FatigueScore` object already loaded while the
+candidate snapshot is built. The frozen carrier performs no query, recalculation, or
+fallback and grants no new read, write, or publication authority.
+
+This clarification is additive within the existing
+`trusted_team_board_publication_v1` package and Dashboard payload version. Previously
+published snapshots may legitimately omit `workload_facts`; they remain immutable and
+continue to fail closed until a later naturally scheduled publication carries the
+field.
+
 ## Frozen-path authorization
 
 The exact production paths authorized by D-055 are:
 
 - `backend/api/bullpen.py`
 - `backend/services/bullpen_board.py`
+- `backend/services/public_serving_authority.py`
 
-The repository freeze policy records only those exact paths. No directory, prefix, or
-global bypass is authorized. The exception follows the existing branch-diff model and
-becomes inert after the authorized changes merge into `origin/main`.
+The repository freeze policy records exact exceptions only for the protected route and
+legacy presentation paths. `backend/services/public_serving_authority.py` is not in a
+frozen-path list, so this carrier correction needs no exemption.
+No directory, prefix, or global bypass is authorized.
+Existing exact-path exceptions follow the branch-diff model and become inert after
+their authorized changes merge into `origin/main`.
 
 ## Query behavior
 
