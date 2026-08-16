@@ -172,7 +172,6 @@ function WhyDisclosure({ reasons, limitations, role }) {
           <div>
             <div className="font-mono text-[10px] uppercase tracking-widest text-chalk600">Usage role</div>
             <p className="mt-1 text-xs text-chalk300"><span className="text-chalk500">Observed role:</span> {role.label}</p>
-            {role.confidence && role.confidence !== 'high' && <p className="mt-1 text-xs text-amber">Read Confidence: {role.confidenceLabel}</p>}
             {role.reason && <p className="mt-1 text-xs text-chalk300">{role.reason}</p>}
             {role.evidence?.length > 0 && (
               <ul className="mt-2 space-y-1">
@@ -302,8 +301,13 @@ function PitcherLabelKey() {
   )
 }
 
-function PitcherCard({ card, freshness, workload, onViewDetails, now }) {
-  const view = getBoardCardView(card, freshness, now, workload)
+function factValue(value, unit, singularUnit = unit) {
+  if (value == null) return '—'
+  return `${value} ${value === 1 ? singularUnit : unit}`
+}
+
+function PitcherCard({ card, freshness, onViewDetails, now }) {
+  const view = getBoardCardView(card, freshness, now)
   const canView = typeof onViewDetails === 'function' && view.pitcherId != null
   return (
     <div className="rounded-lg border border-dirt bg-field/60 p-3">
@@ -312,6 +316,11 @@ function PitcherCard({ card, freshness, workload, onViewDetails, now }) {
           <div className="break-words font-medium text-chalk100">{view.name}</div>
           {view.shortReason && (
             <div className="mt-0.5 text-xs leading-relaxed text-chalk400">{view.shortReason}</div>
+          )}
+          {view.pitcherLabels && (
+            <div className="mt-2">
+              <PitcherLabelChips labels={view.pitcherLabels} />
+            </div>
           )}
         </div>
         <span
@@ -325,19 +334,6 @@ function PitcherCard({ card, freshness, workload, onViewDetails, now }) {
         </span>
       </div>
 
-      {view.pitcherLabels && (
-        <div className="mt-2">
-          <PitcherLabelChips labels={view.pitcherLabels} />
-        </div>
-      )}
-
-      {view.role && (
-        <p className="mt-2 min-w-0 break-words text-xs text-chalk300">
-          <span className="font-mono text-[10px] uppercase tracking-widest text-chalk600">Role</span>{' '}
-          {view.role.label}
-        </p>
-      )}
-
       {(view.eligibility || view.rosterStatus) && (
         <div className="mt-1.5 flex flex-wrap gap-1.5">
           <RosterStatusChip rosterStatus={view.rosterStatus} />
@@ -345,21 +341,27 @@ function PitcherCard({ card, freshness, workload, onViewDetails, now }) {
         </div>
       )}
 
-      <div className="mt-3 grid min-w-0 grid-cols-2 gap-x-4 gap-y-1 font-mono text-[11px] text-chalk500 sm:grid-cols-3">
-        <span className="min-w-0 break-words"><span className="text-chalk600">Last outing</span> <span className="text-chalk200">{view.lastAppearanceLabel || 'Unavailable'}</span></span>
-        <span className="min-w-0 break-words"><span className="text-chalk600">Days rest</span> <span className="text-chalk200">{view.daysRest ?? 'Unavailable'}</span></span>
-        <span className="min-w-0 break-words"><span className="text-chalk600">Pitches / 7d</span> <span className="text-chalk200">{view.pitchesLast7 ?? 'Unavailable'}</span></span>
-        {view.showConfidence && <span>
-          <span className="text-chalk600">{READ_CONFIDENCE_FIELD_LABEL}</span>{' '}
-          <span className="text-chalk200">{view.confidenceLabel}</span>
-        </span>}
-        {view.dataStateView && (
-          <span title={view.dataStateView.message}>
-            <span className="text-chalk600">{WORKLOAD_DATA_FIELD_LABEL}</span>{' '}
-            <span className="text-chalk200">{view.dataStateView.label}</span>
-          </span>
+      <dl className="mt-3 grid min-w-0 grid-cols-2 gap-x-4 gap-y-2 font-mono text-[11px]">
+        <div className="min-w-0"><dt className="text-chalk600">Last outing</dt><dd className="mt-0.5 break-words text-chalk200">{view.lastAppearanceLabel || '—'}</dd></div>
+        <div className="min-w-0"><dt className="text-chalk600">Rest</dt><dd className="mt-0.5 break-words text-chalk200">{factValue(view.workloadFacts.days_since_last_appearance, 'days', 'day')}</dd></div>
+        <div className="min-w-0"><dt className="text-chalk600">Last 7 days</dt><dd className="mt-0.5 break-words text-chalk200">{factValue(view.workloadFacts.pitches_last_7_days, 'pitches')}</dd></div>
+        <div className="min-w-0"><dt className="text-chalk600">Recent work</dt><dd className="mt-0.5 break-words text-chalk200">{factValue(view.workloadFacts.appearances_last_7, 'appearances', 'appearance')}</dd></div>
+        {view.workloadFacts.back_to_back === true && (
+          <div className="col-span-2 mt-0.5 rounded border border-amber/25 bg-amber/5 px-2 py-1 text-amber">
+            <dt className="sr-only">Recent workload exception</dt><dd>Worked back-to-back</dd>
+          </div>
         )}
-      </div>
+        {view.showConfidence && <div>
+          <dt className="text-chalk600">{READ_CONFIDENCE_FIELD_LABEL}</dt>
+          <dd className="mt-0.5 text-chalk200">{view.confidenceLabel}</dd>
+        </div>}
+        {view.dataStateView && (
+          <div title={view.dataStateView.message}>
+            <dt className="text-chalk600">{WORKLOAD_DATA_FIELD_LABEL}</dt>
+            <dd className="mt-0.5 text-chalk200">{view.dataStateView.label}</dd>
+          </div>
+        )}
+      </dl>
 
       <WhyDisclosure reasons={view.reasons} limitations={view.limitations} role={view.role} />
 
@@ -367,7 +369,7 @@ function PitcherCard({ card, freshness, workload, onViewDetails, now }) {
         <button
           type="button"
           onClick={() => onViewDetails(view.pitcherId)}
-          className="mt-3 w-full rounded border border-dirt bg-dugout px-3 py-1.5 font-mono text-[11px] uppercase tracking-wider text-chalk300 transition-colors hover:border-amber/40 hover:text-amber focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/60"
+          className="mt-3 min-h-11 w-full rounded border border-dirt bg-dugout px-3 py-2 font-mono text-[11px] uppercase tracking-wider text-chalk300 transition-colors hover:border-amber/40 hover:text-amber focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/60"
           aria-label={`View pitcher details for ${view.name}`}
         >
           Open pitcher context →
@@ -377,7 +379,7 @@ function PitcherCard({ card, freshness, workload, onViewDetails, now }) {
   )
 }
 
-function BoardGroup({ group, freshness, workloadByPitcher, onViewDetails, now }) {
+function BoardGroup({ group, freshness, onViewDetails, now }) {
   return (
     <section className="card overflow-hidden" aria-label={`${group.label} group`}>
       <header className="border-b border-dirt bg-chalk/20 px-4 py-3">
@@ -397,7 +399,7 @@ function BoardGroup({ group, freshness, workloadByPitcher, onViewDetails, now })
         ) : (
           <div className="grid gap-3 sm:grid-cols-2">
             {group.pitchers.map(card => (
-              <PitcherCard key={card.pitcher_id ?? card.name} card={card} freshness={freshness} workload={workloadByPitcher?.get(String(card.pitcher_id))} onViewDetails={onViewDetails} now={now} />
+              <PitcherCard key={card.pitcher_id ?? card.name} card={card} freshness={freshness} onViewDetails={onViewDetails} now={now} />
             ))}
           </div>
         )}
@@ -415,14 +417,12 @@ export default function BullpenBoardView({
   onSelectPitcher,
   showRoutineFreshness = true,
   showRosterContext = true,
-  workloadRows = [],
   emptyState = null,
   now,
 }) {
   const groups = getBoardGroups(board)
   const totals = getBoardTotals(board)
   const teamName = board?.team?.team_name || board?.team?.team_abbreviation
-  const workloadByPitcher = new Map(workloadRows.map(row => [String(row?.pitcher?.id ?? row?.pitcher_id ?? ''), row]))
 
   return (
     <div
@@ -459,7 +459,7 @@ export default function BullpenBoardView({
         <>
           <div className="grid gap-5 xl:grid-cols-2">
             {groups.map(group => (
-              <BoardGroup key={group.status} group={group} freshness={board?.freshness} workloadByPitcher={workloadByPitcher} onViewDetails={onSelectPitcher} now={now} />
+              <BoardGroup key={group.status} group={group} freshness={board?.freshness} onViewDetails={onSelectPitcher} now={now} />
             ))}
           </div>
           <div className="mt-5"><PitcherLabelKey /></div>

@@ -218,6 +218,57 @@ test('renders pitcher cards with name, status, and one authoritative outing fact
   assert.ok(htmlIncludes(html, 'Limited Read'))           // confidence formatted
 })
 
+test('card workload facts come only from the governed board contract and preserve nulls', () => {
+  const cardView = view.getBoardCardView({
+    pitcher_id: 45,
+    name: 'Contract Arm',
+    availability_status: 'Available',
+    fatigue_score: 99,
+    workload_facts: {
+      days_since_last_appearance: 0,
+      appearances_last_7: 3,
+      pitches_last_7_days: null,
+      back_to_back: false,
+    },
+  })
+  assert.deepEqual(cardView.workloadFacts, {
+    days_since_last_appearance: 0,
+    appearances_last_7: 3,
+    pitches_last_7_days: null,
+    back_to_back: false,
+  })
+  assert.equal(Object.prototype.hasOwnProperty.call(cardView, 'fatigueScore'), false)
+  assert.equal(Object.prototype.hasOwnProperty.call(cardView, 'daysRest'), false)
+})
+
+test('malformed workload and Rest Status contracts fail closed', () => {
+  assert.deepEqual(view.getBoardCardView({ workload_facts: { days_since_last_appearance: '2', back_to_back: 1 } }).workloadFacts, {
+    days_since_last_appearance: null,
+    appearances_last_7: null,
+    pitches_last_7_days: null,
+    back_to_back: null,
+  })
+  assert.deepEqual(view.getRestStatusView(null), { available: false })
+  assert.deepEqual(view.getRestStatusView({
+    available: true,
+    active_arm_count: 2,
+    rested_arm_count: 1,
+    worked_yesterday_count: 1,
+    back_to_back_count: 0,
+    summary: '',
+  }), { available: false })
+})
+
+test('normal card view has one canonical role chip and no repeated plain Role row', () => {
+  const board = makeBoard({ cardsByStatus: { Monitor: [populatedBoard.groups[1].pitchers[0]] } })
+  const html = renderWithOptions({ board, now: new Date(2026, 5, 4) })
+  const start = html.indexOf('Marty Monitor')
+  const end = html.indexOf('aria-label="Pitcher Label Key"', start)
+  const card = html.slice(start, end)
+  assert.equal((card.match(/data-label-kind="role"/g) || []).length, 1)
+  assert.equal(/>Role<\/span>/.test(card), false)
+})
+
 test('compact card skips zero-pitch rows for last workload context', () => {
   const cardView = view.getBoardCardView({
     pitcher_id: 44,

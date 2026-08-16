@@ -6,7 +6,7 @@ import { getBoardGroups, getBoardTotals } from './tonightsBullpenBoardView'
 // board group headers and the eligible-reliever total. It never recomputes a
 // classification, never folds anything new, and never turns a withheld count
 // into zero — a withheld population shows "Withheld", not "0".
-export default function BullpenAvailabilityDistribution({ board }) {
+export default function BullpenAvailabilityDistribution({ board, restedOptions = null }) {
   const groups = getBoardGroups(board)
   const totals = getBoardTotals(board)
   const withheld = totals.countWithheld
@@ -28,13 +28,13 @@ export default function BullpenAvailabilityDistribution({ board }) {
 
   return (
     <section
-      aria-label="Bullpen availability distribution"
+      aria-labelledby="bullpen-summary-title"
       className="mt-3 rounded-lg border border-dirt bg-field/40 p-3 sm:p-3.5"
     >
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-        <div className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
-          Availability
-        </div>
+        <h2 id="bullpen-summary-title" className="font-display text-lg tracking-wide text-chalk100">
+          Bullpen Summary
+        </h2>
         <div className="font-mono text-[11px] text-chalk400">
           {withheld ? (
             <span className="text-chalk500">Eligible relievers: withheld</span>
@@ -67,6 +67,14 @@ export default function BullpenAvailabilityDistribution({ board }) {
           </div>
         ))}
       </dl>
+
+      {restedOptions && (
+        <div className="mt-3 border-t border-dirt/70 pt-2.5">
+          <div className="font-mono text-[10px] uppercase tracking-widest text-chalk500">Rested Options</div>
+          <div className="mt-1 font-display text-sm tracking-wide text-chalk100">{restedOptions.label}</div>
+          <p className="mt-1 text-xs leading-relaxed text-chalk400">{restedOptions.summary}</p>
+        </div>
+      )}
 
       {withheld && (
         <p className="mt-2 text-[11px] leading-snug text-chalk500">

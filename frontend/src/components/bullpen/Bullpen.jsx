@@ -106,15 +106,6 @@ export default function Bullpen() {
   const canonicalTeam = resolveTeamReference(teamList, urlState.team)
   const activeTeamRef = canonicalTeam || urlState.team
   const selectedPitcher = showBoardDetail ? { pitcher_id: urlState.pitcherId } : null
-  const allScores = useFetch(
-    () => {
-      const params = { limit: 750, include_stale: includeStale, with_meta: true }
-      if (selectedTeam) params.team_id = selectedTeam
-      return getFatigueScores(params)
-    },
-    [selectedTeam, includeStale]
-  )
-
   useEvidenceHashNavigation(viewMode)
 
   useEffect(() => {
@@ -230,7 +221,6 @@ export default function Bullpen() {
             requestedSection={urlState.section}
             onSelectTeam={handleTeamSelect}
             onSelectPitcher={handlePitcherSelect}
-            workloadRows={Array.isArray(allScores.data) ? allScores.data : (allScores.data?.data || [])}
           />
           {showBoardDetail && (
             <div
@@ -257,7 +247,6 @@ export default function Bullpen() {
       ) : (
         <PitcherView
           teams={teams}
-          allScores={allScores}
           selectedTeam={selectedTeam}
           onSelectTeam={handleAllPitchersTeamChange}
           onSelectPitcher={handleAllPitchersSelect}
@@ -274,7 +263,7 @@ export default function Bullpen() {
 }
 
 function PitcherView({
-  teams, allScores,
+  teams,
   selectedTeam, onSelectTeam,
   onSelectPitcher,
   sortBy, setSortBy,
@@ -283,6 +272,16 @@ function PitcherView({
 }) {
   const [page, setPage] = useState(1)
   const [searchTerm, setSearchTerm] = useState('')
+  // This collection belongs to Reliever Finder. Keeping it inside the mounted
+  // finder prevents Team Board from loading a second workload authority.
+  const allScores = useFetch(
+    () => {
+      const params = { limit: 750, include_stale: includeStale, with_meta: true }
+      if (selectedTeam) params.team_id = selectedTeam
+      return getFatigueScores(params)
+    },
+    [selectedTeam, includeStale],
+  )
 
   const fatiguePayload = allScores.data
   const allRows = Array.isArray(fatiguePayload) ? fatiguePayload : (fatiguePayload?.data || [])
