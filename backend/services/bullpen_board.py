@@ -403,6 +403,107 @@ def short_reason_for(availability):
     return 'Workload indicators elevated'
 
 
+REST_STATUS_NO_ELIGIBLE_ARMS = 'no_eligible_arms'
+REST_STATUS_BOARD_CONTEXT_UNAVAILABLE = 'board_context_unavailable'
+REST_STATUS_ROSTER_CONTEXT_UNAVAILABLE = 'roster_context_unavailable'
+REST_STATUS_WORKLOAD_EVIDENCE_INCOMPLETE = 'workload_evidence_incomplete'
+
+
+def _board_workload_facts(workload_facts, availability):
+    """Project only D-055's already-public facts, preserving nulls exactly."""
+    facts = workload_facts if isinstance(workload_facts, dict) else {}
+    inputs = (availability or {}).get('inputs') or {}
+    back_to_back = inputs.get('back_to_back')
+    if type(back_to_back) is not bool:
+        back_to_back = None
+    return {
+        'days_since_last_appearance': facts.get('days_since_last_appearance'),
+        'appearances_last_7': facts.get('appearances_last_7'),
+        'pitches_last_7_days': facts.get('pitches_last_7_days'),
+        'back_to_back': back_to_back,
+    }
+
+
+def _unavailable_rest_status(reason_code):
+    return {
+        'available': False,
+        'active_arm_count': None,
+        'rested_arm_count': None,
+        'worked_yesterday_count': None,
+        'back_to_back_count': None,
+        'summary': None,
+        'reason_code': reason_code,
+    }
+
+
+def _arm_word(count):
+    return 'arm' if count == 1 else 'arms'
+
+
+def build_rest_status(cards, *, counts_withheld=False, board_context_unavailable=False):
+    """Author the D-055 Rest Status from represented active Team Board cards.
+
+    ``days_since_last_appearance >= 2`` means at least one full calendar day
+    elapsed between the last appearance and the board availability date;
+    ``== 1`` means the pitcher worked yesterday. ``back_to_back`` is reused as
+    the existing governed availability boolean and is not recalculated here.
+    """
+    if board_context_unavailable:
+        return _unavailable_rest_status(REST_STATUS_BOARD_CONTEXT_UNAVAILABLE)
+    if counts_withheld:
+        return _unavailable_rest_status(REST_STATUS_ROSTER_CONTEXT_UNAVAILABLE)
+
+    active_cards = [
+        card for card in list(cards or [])
+        if (card.get('visibility') or {}).get('is_visible_by_default', True)
+    ]
+    if not active_cards:
+        return _unavailable_rest_status(REST_STATUS_NO_ELIGIBLE_ARMS)
+
+    for card in active_cards:
+        facts = card.get('workload_facts') or {}
+        days_since = facts.get('days_since_last_appearance')
+        back_to_back = facts.get('back_to_back')
+        if (
+            card.get('data_state') != 'fresh'
+            or type(days_since) is not int
+            or days_since < 0
+            or type(back_to_back) is not bool
+        ):
+            return _unavailable_rest_status(
+                REST_STATUS_WORKLOAD_EVIDENCE_INCOMPLETE
+            )
+
+    active_count = len(active_cards)
+    rested_count = sum(
+        card['workload_facts']['days_since_last_appearance'] >= 2
+        for card in active_cards
+    )
+    worked_yesterday_count = sum(
+        card['workload_facts']['days_since_last_appearance'] == 1
+        for card in active_cards
+    )
+    back_to_back_count = sum(
+        card['workload_facts']['back_to_back'] is True
+        for card in active_cards
+    )
+    summary = (
+        f'{rested_count} of {active_count} active bullpen {_arm_word(active_count)} '
+        f'{"has" if rested_count == 1 else "have"} at least one full day of rest; '
+        f'{worked_yesterday_count} {_arm_word(worked_yesterday_count)} worked yesterday '
+        f'and {back_to_back_count} {_arm_word(back_to_back_count)} worked back-to-back.'
+    )
+    return {
+        'available': True,
+        'active_arm_count': active_count,
+        'rested_arm_count': rested_count,
+        'worked_yesterday_count': worked_yesterday_count,
+        'back_to_back_count': back_to_back_count,
+        'summary': summary,
+        'reason_code': None,
+    }
+
+
 def build_card(
     name,
     pitcher_id,
@@ -416,6 +517,7 @@ def build_card(
     public_role_read=None,
     last_appearance=None,
     last_workload_appearance=None,
+    workload_facts=None,
 ):
     """Build a single display card from existing availability output.
 
@@ -454,6 +556,7 @@ def build_card(
         'short_reason': short_reason_for(availability),
         'last_appearance': workload_appearance,
         'last_workload_appearance': workload_appearance,
+        'workload_facts': _board_workload_facts(workload_facts, availability),
         'data_state': availability.get('data_state'),
         'reasons': list(availability.get('reasons') or []),
         'limitations': list(availability.get('limitations') or []),
@@ -649,6 +752,7 @@ def build_board_payload(
             public_role_read=record.get('public_role_read'),
             last_appearance=record.get('last_appearance'),
             last_workload_appearance=record.get('last_workload_appearance'),
+            workload_facts=record.get('workload_facts'),
         )
         for record in records
     ]
@@ -661,6 +765,16 @@ def build_board_payload(
     }
     groups = group_cards(cards)
     counts_withheld = _roster_counts_withheld(roster_authority)
+    board_context_unavailable = bool(
+        (freshness or {}).get('fail_closed') is True
+        or (freshness or {}).get('degradation_state') == 'unavailable'
+        or (freshness or {}).get('freshness_state') == 'metadata_unavailable'
+    )
+    rest_status = build_rest_status(
+        cards,
+        counts_withheld=counts_withheld,
+        board_context_unavailable=board_context_unavailable,
+    )
     grouped_total = None if counts_withheld else sum(group['count'] for group in groups)
     generated = generated_at or datetime.now(timezone.utc).isoformat()
     context = build_team_context(groups, freshness=freshness)
@@ -702,6 +816,7 @@ def build_board_payload(
         'bullpen_stability': bullpen_stability or {},
         'bullpen_environment': bullpen_environment or {},
         'visibility': visibility,
+        'rest_status': rest_status,
         'groups': groups,
         'total_pitchers': grouped_total,
         'ungrouped_pitchers': None if counts_withheld else max(len(cards) - grouped_total, 0),

@@ -289,7 +289,10 @@ def test_frozen_legacy_what_changed_files_untouched():
     moved = freeze_policy.protected_hits(
         changed,
         exact=freeze_policy.FROZEN_LEGACY_WHAT_CHANGED_PATHS,
-        approved=freeze_policy.D054_LEAGUE_TEAM_STATE_LISTING_PATHS,
+        approved=(
+            freeze_policy.D054_LEAGUE_TEAM_STATE_LISTING_PATHS
+            + freeze_policy.D055_TEAM_BOARD_WORKLOAD_CONTEXT_PATHS
+        ),
     )
     assert moved == [], (
         f'frozen legacy What Changed surfaces changed: {moved}. These are '

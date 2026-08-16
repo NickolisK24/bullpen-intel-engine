@@ -15,6 +15,7 @@ from types import SimpleNamespace
 
 import pytest
 from flask import Flask
+from sqlalchemy import event
 from tests.db_config import configure_test_database, create_test_schema, drop_test_schema
 from tests.roster_readiness_fixture import seed_roster_readiness_snapshots
 
@@ -24,6 +25,7 @@ from services.bullpen_board import (
     BOARD_GROUP_ORDER,
     build_board_payload,
     build_card,
+    build_rest_status,
     group_cards,
     last_appearance_from_logs,
     last_workload_appearance_from_logs,
@@ -199,6 +201,39 @@ class TestCard:
         assert card['data_state'] == 'missing'
         assert card['availability_status'] == 'Monitor'
 
+    def test_card_projects_only_required_workload_facts_and_preserves_nulls(self):
+        card = build_card(
+            'A',
+            7,
+            63.4,
+            availability('Monitor', inputs={'back_to_back': False}),
+            workload_facts={
+                'calculated_at': '2026-06-20T00:00:00',
+                'days_since_last_appearance': 3,
+                'appearances_last_7': 2,
+                'appearances_last_14': 4,
+                'pitches_last_7_days': None,
+                'innings_last_7_days': 2.0,
+            },
+        )
+
+        assert card['workload_facts'] == {
+            'days_since_last_appearance': 3,
+            'appearances_last_7': 2,
+            'pitches_last_7_days': None,
+            'back_to_back': False,
+        }
+
+    def test_back_to_back_fails_closed_when_input_is_not_boolean(self):
+        card = build_card(
+            'A',
+            7,
+            10,
+            availability('Available', inputs={'back_to_back': 0}),
+            workload_facts={'days_since_last_appearance': 2},
+        )
+        assert card['workload_facts']['back_to_back'] is None
+
     def test_card_carries_backend_authored_pitcher_labels(self):
         card = build_card(
             'A',
@@ -227,6 +262,89 @@ class TestShortReason:
         assert short_reason_for(availability('Monitor', data_state='stale')) == 'Outside active freshness window'
         assert short_reason_for(availability('Monitor', data_state='missing')) == 'No workload record available'
         assert short_reason_for(availability('Monitor', data_state='failed')) == 'Recent workload fetch failed'
+
+
+class TestRestStatus:
+    @staticmethod
+    def _card(name, days_since, back_to_back=False, data_state='fresh', visible=True):
+        return build_card(
+            name,
+            abs(hash(name)) % 100000,
+            10,
+            availability(
+                'Available',
+                data_state=data_state,
+                inputs={'back_to_back': back_to_back},
+            ),
+            workload_facts={
+                'days_since_last_appearance': days_since,
+                'appearances_last_7': 1,
+                'pitches_last_7_days': 12,
+            },
+            visibility={'is_visible_by_default': visible},
+        )
+
+    def test_available_counts_use_governed_date_and_boolean_definitions(self):
+        status = build_rest_status([
+            self._card('Rested', 3),
+            self._card('Yesterday', 1, back_to_back=True),
+            self._card('Same Day', 0),
+        ])
+
+        assert status == {
+            'available': True,
+            'active_arm_count': 3,
+            'rested_arm_count': 1,
+            'worked_yesterday_count': 1,
+            'back_to_back_count': 1,
+            'summary': (
+                '1 of 3 active bullpen arms has at least one full day of rest; '
+                '1 arm worked yesterday and 1 arm worked back-to-back.'
+            ),
+            'reason_code': None,
+        }
+
+    @pytest.mark.parametrize(
+        'cards,counts_withheld,reason_code',
+        [
+            ([], False, 'no_eligible_arms'),
+            ([_card.__func__('Missing Date', None)], False, 'workload_evidence_incomplete'),
+            ([_card.__func__('Stale', 2, data_state='stale')], False, 'workload_evidence_incomplete'),
+            ([_card.__func__('Ready', 2)], True, 'roster_context_unavailable'),
+        ],
+    )
+    def test_unavailable_paths_withhold_counts(self, cards, counts_withheld, reason_code):
+        status = build_rest_status(cards, counts_withheld=counts_withheld)
+
+        assert status['available'] is False
+        assert status['reason_code'] == reason_code
+        for key in (
+            'active_arm_count',
+            'rested_arm_count',
+            'worked_yesterday_count',
+            'back_to_back_count',
+            'summary',
+        ):
+            assert status[key] is None
+
+    def test_inactive_context_card_is_not_counted_as_an_active_arm(self):
+        status = build_rest_status([
+            self._card('Active', 2),
+            self._card('Inactive Context', 1, visible=False),
+        ])
+        assert status['active_arm_count'] == 1
+        assert status['rested_arm_count'] == 1
+        assert status['worked_yesterday_count'] == 0
+
+    def test_unavailable_board_context_withholds_otherwise_ready_counts(self):
+        status = build_rest_status(
+            [self._card('Ready', 2)],
+            board_context_unavailable=True,
+        )
+        assert status['available'] is False
+        assert status['reason_code'] == 'board_context_unavailable'
+        assert status['active_arm_count'] is None
+        assert status['rested_arm_count'] is None
 
 
 class TestPayload:
@@ -520,6 +638,101 @@ class TestBoardEndpoint:
         )
         assert body['stress']['state'] == body['context']['health']['state']
         assert body['stress']['summary']
+
+    def test_board_workload_facts_and_rest_status_use_loaded_authority_values(self, client):
+        with client.application.app_context():
+            rested = _seed_pitcher(
+                'Rested Arm', team_id=1, mlb_id=41001, days_ago=[3]
+            )
+            yesterday = _seed_pitcher(
+                'Back To Back Arm',
+                team_id=1,
+                mlb_id=41002,
+                innings=[1.0, 1.0],
+                days_ago=[1, 2],
+            )
+            rested_score = FatigueScore.query.filter_by(pitcher_id=rested.id).one()
+            rested_score.days_since_last_appearance = 3
+            rested_score.appearances_last_7 = 1
+            rested_score.pitches_last_7_days = None
+            yesterday_score = FatigueScore.query.filter_by(pitcher_id=yesterday.id).one()
+            yesterday_score.days_since_last_appearance = 1
+            yesterday_score.appearances_last_7 = 2
+            yesterday_score.pitches_last_7_days = 24
+            db.session.commit()
+
+        body = client.get('/api/bullpen/teams/1/board').get_json()
+        cards = {
+            card['name']: card
+            for group in body['groups']
+            for card in group['pitchers']
+        }
+
+        assert cards['Rested Arm']['workload_facts'] == {
+            'days_since_last_appearance': 3,
+            'appearances_last_7': 1,
+            'pitches_last_7_days': None,
+            'back_to_back': False,
+        }
+        assert cards['Back To Back Arm']['workload_facts'] == {
+            'days_since_last_appearance': 1,
+            'appearances_last_7': 2,
+            'pitches_last_7_days': 24,
+            'back_to_back': True,
+        }
+        assert body['rest_status'] == {
+            'available': True,
+            'active_arm_count': 2,
+            'rested_arm_count': 1,
+            'worked_yesterday_count': 1,
+            'back_to_back_count': 1,
+            'summary': (
+                '1 of 2 active bullpen arms has at least one full day of rest; '
+                '1 arm worked yesterday and 1 arm worked back-to-back.'
+            ),
+            'reason_code': None,
+        }
+
+        forbidden = {
+            'raw_score',
+            'fatigue_score',
+            'risk_level',
+            'usage_score',
+            'recovery_score',
+            'workload_score',
+            'breakdown',
+            'pitch_count_score',
+            'rest_days_score',
+            'appearances_score',
+            'leverage_score',
+            'innings_score',
+        }
+
+        def _forbidden_paths(value, path='$'):
+            found = []
+            if isinstance(value, dict):
+                for key, nested in value.items():
+                    if key in forbidden:
+                        found.append(f'{path}.{key}')
+                    found.extend(_forbidden_paths(nested, f'{path}.{key}'))
+            elif isinstance(value, list):
+                for index, nested in enumerate(value):
+                    found.extend(_forbidden_paths(nested, f'{path}[{index}]'))
+            return found
+
+        assert _forbidden_paths(body) == []
+
+    def test_empty_team_rest_status_withholds_counts(self, client):
+        body = client.get('/api/bullpen/teams/999/board').get_json()
+        assert body['rest_status'] == {
+            'available': False,
+            'active_arm_count': None,
+            'rested_arm_count': None,
+            'worked_yesterday_count': None,
+            'back_to_back_count': None,
+            'summary': None,
+            'reason_code': 'board_context_unavailable',
+        }
 
     def test_middle_relief_card_uses_canonical_depth_arm_public_label(self, client):
         # Contract: a realistic middle-relief pitcher must carry the raw
@@ -1532,3 +1745,60 @@ class TestBoardEndpoint:
             'limited recent relief-length sample' in limitation
             for limitation in cards[0]['eligibility']['limitations']
         )
+
+
+def _real_team_board_query_count(pitcher_count):
+    app = Flask(f'test_team_board_query_count_{pitcher_count}')
+    configure_test_database(app)
+    app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+    db.init_app(app)
+    app.register_blueprint(bullpen_bp, url_prefix='/api/bullpen')
+
+    with app.app_context():
+        create_test_schema(app)
+        try:
+            for index in range(pitcher_count):
+                pitcher = _seed_pitcher(
+                    f'Query Count Arm {index:02d}',
+                    team_id=188,
+                    team_abbr='QCT',
+                    mlb_id=488000 + index,
+                    days_ago=[1 + (index % 3)],
+                )
+                score = FatigueScore.query.filter_by(pitcher_id=pitcher.id).one()
+                score.days_since_last_appearance = 1 + (index % 3)
+                score.appearances_last_7 = 1
+                score.pitches_last_7_days = 12
+            db.session.commit()
+            seed_roster_readiness_snapshots()
+            db.session.remove()
+
+            statements = []
+
+            def _capture(_conn, _cursor, statement, _params, _context, _executemany):
+                statements.append(statement)
+
+            event.listen(db.engine, 'before_cursor_execute', _capture)
+            try:
+                response = app.test_client().get('/api/bullpen/teams/188/board')
+            finally:
+                event.remove(db.engine, 'before_cursor_execute', _capture)
+
+            body = response.get_json()
+            assert response.status_code == 200
+            assert body['total_pitchers'] == pitcher_count
+            assert body['rest_status']['available'] is True
+            assert body['rest_status']['active_arm_count'] == pitcher_count
+            return len(statements)
+        finally:
+            db.session.remove()
+            drop_test_schema(app)
+
+
+def test_team_board_real_query_count_does_not_grow_with_bullpen_population():
+    counts = {
+        pitcher_count: _real_team_board_query_count(pitcher_count)
+        for pitcher_count in (1, 13)
+    }
+
+    assert counts[1] == counts[13]
