@@ -94,6 +94,15 @@ loaded by the Team Board request. D-055 authorizes no per-card query, no second 
 fetch, and no MLB request. Real SQL instrumentation must prove that statement count
 does not grow with the represented bullpen population.
 
+## Persistence integrity
+
+The persistence layer must preserve nullable `pitches_last_7_days` evidence exactly.
+When a qualifying appearance lacks pitch-count evidence, the calculator's null must
+remain null through the production fatigue-score writer and public workload projection;
+an ORM/client-side zero default must not coerce that unknown state into a reported zero.
+A legitimate calculated zero remains zero. This restores the existing D-055 null
+semantics and creates no new calculation, read, write, or publication authority.
+
 ## Consequences
 
 A later frontend package may consume one freshness-aligned Team Board response for
