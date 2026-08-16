@@ -160,6 +160,30 @@ test('rendered landscape is compact, uses full names and canonical Team Board li
   assert.doesNotMatch(html, /overflow-x/)
 })
 
+test('zero-count groups remain visible at natural height without changing governed order or populated groups', () => {
+  const payload = makeLeagueTeamStateListing()
+  payload.teams.forEach((team, index) => {
+    team.team_state.public_state = index < 14 ? 'stretched' : 'vulnerable'
+    team.team_state.public_label = index < 14 ? 'Stretched' : 'Vulnerable'
+  })
+  const view = getLeagueTeamStateListingView(payload)
+  const html = render(React.createElement(LeagueTeamStateLandscape, { view }))
+  const text = visibleText(html)
+
+  assert.equal(view.valid, true)
+  assert.deepEqual(view.groups.map(group => group.label), ['Fresh', 'Stretched', 'Vulnerable'])
+  assert.deepEqual(view.groups.map(group => group.teams.length), [0, 14, 16])
+  assert.ok(text.indexOf('Fresh') < text.indexOf('Stretched'))
+  assert.ok(text.indexOf('Stretched') < text.indexOf('Vulnerable'))
+  assert.match(html, /Fresh<\/h3><span[^>]*>0<\/span>/)
+  assert.match(html, /No published club reads in this group\./)
+  assert.match(html, /class="grid min-w-0 grid-cols-1 items-start gap-3 lg:grid-cols-3"/)
+  assert.equal((html.match(/source=dashboard/g) || []).length, 30)
+  assert.match(html, /Arizona Diamondbacks/)
+  assert.match(html, /Washington Nationals/)
+  assert.doesNotMatch(html, /Publication exceptions/)
+})
+
 test('network and malformed-contract states fail closed without rendering fake groups', () => {
   const invalid = getLeagueTeamStateListingView({})
   for (const props of [
