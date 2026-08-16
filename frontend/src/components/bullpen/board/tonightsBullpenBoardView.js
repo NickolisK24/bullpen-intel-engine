@@ -24,6 +24,9 @@ import {
   workloadAppearanceDetailLabel,
 } from '../../../utils/appearanceLanguage'
 import { getPitcherLabels, PITCHER_ROLE_LABELS, USAGE_ROLE_PUBLIC_ROLES } from '../../../utils/pitcherLabels'
+import { getGovernedWorkloadFacts } from './teamBoardWorkloadView'
+
+export { getRestStatusView } from './teamBoardWorkloadView'
 
 // Canonical group order, mirrored from the backend. Used only as a fallback
 // when the payload is missing or malformed — the backend is the source of
@@ -579,7 +582,7 @@ export function getRolesSummaryView(roles) {
   }
 }
 
-export function getBoardCardView(card, freshness = null, now = new Date(), workload = null) {
+export function getBoardCardView(card, freshness = null, now = new Date()) {
   // Styling is keyed by the engine status; the visible label is the backend's
   // published public form when it supplied one, so the browser is not the thing
   // deciding that Monitor reads as On Watch.
@@ -601,6 +604,7 @@ export function getBoardCardView(card, freshness = null, now = new Date(), workl
   ].find(isWorkloadAppearance) || null
   const lastAppearanceLabel = workloadAppearanceDetailLabel(lastAppearance)
   const confidence = String(card?.confidence || '').trim().toLowerCase()
+  const workloadFacts = getGovernedWorkloadFacts(card)
   return {
     pitcherId: card?.pitcher_id,
     name: card?.name || '—',
@@ -611,8 +615,7 @@ export function getBoardCardView(card, freshness = null, now = new Date(), workl
     shortReason: lastAppearanceLabel ? null : dayAwareAppearanceReason(card?.short_reason, lastAppearance, userDay) || null,
     lastAppearance,
     lastAppearanceLabel,
-    daysRest: workload?.days_since_last_appearance ?? null,
-    pitchesLast7: workload?.pitches_last_7_days ?? null,
+    workloadFacts,
     dataState,
     dataStateView: showDataNote ? getDataStateView(dataState) : null,
     reasons: dayAwareAppearanceReasons(card?.reasons, lastAppearance, userDay),

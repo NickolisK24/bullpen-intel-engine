@@ -35,6 +35,9 @@ const { default: BullpenAvailabilityDistribution } = await server.ssrLoadModule(
 const view = await server.ssrLoadModule('/src/components/bullpen/board/tonightsBullpenBoardView.js')
 
 const containerSource = readFileSync('src/components/bullpen/board/TonightsBullpenBoard.jsx', 'utf8')
+const bullpenSource = readFileSync('src/components/bullpen/Bullpen.jsx', 'utf8')
+const boardViewSource = readFileSync('src/components/bullpen/board/BullpenBoardView.jsx', 'utf8')
+const restStatusSource = readFileSync('src/components/bullpen/board/RestStatus.jsx', 'utf8')
 const disclosureSource = readFileSync('src/components/UI/Disclosure.jsx', 'utf8')
 
 const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -42,7 +45,7 @@ const htmlIncludes = (html, text) => new RegExp(escapeRegExp(text)).test(html)
 const visibleText = (html) => html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
 const renderDistribution = (board) => renderToStaticMarkup(React.createElement(BullpenAvailabilityDistribution, { board }))
 
-function renderBoard(boardPayload, { team, workloadRows = [], storyPayload = null, gameContextPayload = null } = {}) {
+function renderBoard(boardPayload, { team, storyPayload = null, gameContextPayload = null } = {}) {
   const teamRecord = team || boardPayload?.team || { team_id: 1, team_name: 'Test Club', team_abbreviation: 'TST' }
   return renderToStaticMarkup(
     React.createElement(MemoryRouter, null,
@@ -53,7 +56,6 @@ function renderBoard(boardPayload, { team, workloadRows = [], storyPayload = nul
         gameContextPayload,
         storyPayload,
         teamReliefWorkPayload: null,
-        workloadRows,
       }),
     ),
   )
@@ -139,7 +141,7 @@ test('the answer comes first: identity/state, then availability, then the deep b
   const detroitBoard = { ...populatedBoard, team: { team_id: 1, team_name: 'Detroit Tigers', team_abbreviation: 'DET' } }
   const html = renderBoard(detroitBoard)
   const operatingCard = html.indexOf('bullpen operating state')
-  const distribution = html.indexOf('aria-label="Bullpen availability distribution"')
+  const distribution = html.indexOf('id="bullpen-summary-title"')
   const board = html.indexOf('id="pitcher-lanes"')
   assert.ok(operatingCard > -1 && distribution > -1 && board > -1)
   assert.ok(operatingCard < distribution, 'state card precedes the distribution')
@@ -167,6 +169,8 @@ test('meaningful what-changed content is promoted while absent game context stay
   } })
   assert.ok(htmlIncludes(html, 'What Changed'))
   assert.equal(htmlIncludes(html, 'Game Context'), false)
+  assert.ok(html.indexOf('Active Bullpen') < html.indexOf('What Changed'))
+  assert.ok(html.indexOf('What Changed') < html.indexOf('Recent Bullpen Work'))
 })
 
 test('freshness and the current state stay visible without opening anything', () => {
@@ -192,31 +196,125 @@ test('normal trust chrome is quiet and one page-level data-through stamp remains
   }
 })
 
-test('degraded arm trust stays visible while observed rest and seven-day pitches are promoted', () => {
-  const html = renderBoard(populatedBoard, {
-    workloadRows: [{
-      pitcher: { id: 3, full_name: 'Marty Monitor' },
-      days_since_last_appearance: 1,
-      pitches_last_7_days: 34,
-    }],
-  })
-  assert.ok(htmlIncludes(html, 'Read Confidence'))
-  assert.ok(htmlIncludes(html, 'Days rest'))
-  assert.ok(htmlIncludes(html, 'Pitches / 7d'))
-  assert.match(html, /Days rest<\/span>\s*<span[^>]*>1<\/span>/)
-  assert.ok(htmlIncludes(html, '>34<'))
+test('degraded arm trust stays visible while board-owned workload facts are promoted', () => {
+  const board = {
+    ...populatedBoard,
+    groups: populatedBoard.groups.map(group => ({
+      ...group,
+      pitchers: group.pitchers.map(card => card.pitcher_id === 3 ? {
+        ...card,
+        workload_facts: {
+          days_since_last_appearance: 1,
+          appearances_last_7: 3,
+          pitches_last_7_days: 34,
+          back_to_back: true,
+        },
+      } : card),
+    })),
+  }
+  const html = renderBoard(board)
+  const start = html.indexOf('Marty Monitor')
+  const end = html.indexOf('Open pitcher context', start)
+  const card = html.slice(start, end)
+  assert.ok(htmlIncludes(card, 'Read Confidence'))
+  assert.equal((card.match(/Read Confidence/g) || []).length, 1)
+  assert.ok(htmlIncludes(card, 'Rest'))
+  assert.ok(htmlIncludes(card, '1 day'))
+  assert.ok(htmlIncludes(card, 'Last 7 days'))
+  assert.ok(htmlIncludes(card, '34 pitches'))
+  assert.ok(htmlIncludes(card, '3 appearances'))
+  assert.ok(htmlIncludes(card, 'Worked back-to-back'))
 })
 
-test('missing arm facts render unavailable and never become zero', () => {
+test('missing arm facts render quiet dashes and never become zero or availability labels', () => {
   const board = makeBoard({ cardsByStatus: {
     Available: [{ pitcher_id: 91, name: 'Unknown Work Arm', availability_status: 'Available', confidence: 'high', data_state: 'fresh' }],
   } })
   const html = renderBoard(board)
   const card = html.slice(html.indexOf('Unknown Work Arm'), html.indexOf('Open pitcher context', html.indexOf('Unknown Work Arm')))
-  for (const label of ['Last outing', 'Days rest', 'Pitches / 7d']) assert.ok(htmlIncludes(card, label))
-  assert.ok((card.match(/Unavailable/g) || []).length >= 3)
-  assert.equal(/Days rest<\/span>\s*<span[^>]*>0<\/span>/.test(card), false)
-  assert.equal(/Pitches \/ 7d<\/span>\s*<span[^>]*>0<\/span>/.test(card), false)
+  for (const label of ['Last outing', 'Rest', 'Last 7 days', 'Recent work']) assert.ok(htmlIncludes(card, label))
+  assert.ok((card.match(/—/g) || []).length >= 4)
+  assert.equal(htmlIncludes(card, 'Unavailable'), false)
+  assert.equal(htmlIncludes(card, '0 pitches'), false)
+  assert.equal(htmlIncludes(card, '0 appearances'), false)
+})
+
+test('false and null back-to-back facts stay quiet', () => {
+  for (const backToBack of [false, null]) {
+    const board = makeBoard({ cardsByStatus: {
+      Available: [{
+        pitcher_id: 93,
+        name: 'Quiet Work Arm',
+        availability_status: 'Available',
+        confidence: 'high',
+        data_state: 'fresh',
+        workload_facts: {
+          days_since_last_appearance: 2,
+          appearances_last_7: 1,
+          pitches_last_7_days: 12,
+          back_to_back: backToBack,
+        },
+      }],
+    } })
+    assert.equal(htmlIncludes(renderBoard(board), 'Worked back-to-back'), false)
+  }
+})
+
+test('Team Board owns no fatigue request or fatigue-row join while Finder retains its request', () => {
+  assert.equal(containerSource.includes('workloadRows'), false)
+  assert.equal(boardViewSource.includes('workloadRows'), false)
+  assert.equal(boardViewSource.includes('workloadByPitcher'), false)
+  assert.equal(containerSource.includes('getFatigueScores'), false)
+  assert.ok(bullpenSource.indexOf('getFatigueScores(params)') > bullpenSource.indexOf('function PitcherView'))
+})
+
+test('summary, Rest Status, and Workload Overview use governed board reads', () => {
+  const board = {
+    ...populatedBoard,
+    rest_status: {
+      available: true,
+      active_arm_count: 6,
+      rested_arm_count: 3,
+      worked_yesterday_count: 2,
+      back_to_back_count: 1,
+      summary: '3 of 6 active bullpen arms have at least one full day of rest; 2 arms worked yesterday and 1 arm worked back-to-back.',
+      reason_code: null,
+    },
+    team_shape: {
+      cleanOptions: { label: 'Stable Rested Options', summary: 'Several rested options remain available.', reasons: [] },
+      workloadConcentration: { label: 'Shared Recent Work', summary: 'Recent relief work is spread across the bullpen.', reasons: [] },
+    },
+  }
+  const html = renderBoard(board)
+  for (const copy of [
+    'Bullpen Summary',
+    'Stable Rested Options',
+    'Several rested options remain available.',
+    'Rest Status',
+    '3 of 6 active bullpen arms have at least one full day of rest',
+    'Workload Overview',
+    'Shared Recent Work',
+    'Recent relief work is spread across the bullpen.',
+  ]) assert.ok(htmlIncludes(html, copy), `missing governed copy: ${copy}`)
+  assert.equal(htmlIncludes(html, 'Resource Health'), false)
+})
+
+test('unavailable and malformed Rest Status fail closed without zero counts or reason codes', () => {
+  assert.equal(restStatusSource.includes('getBoardGroups'), false)
+  assert.equal(restStatusSource.includes('.reduce('), false)
+  for (const rest_status of [
+    { available: false, active_arm_count: null, rested_arm_count: null, worked_yesterday_count: null, back_to_back_count: null, summary: null, reason_code: 'workload_evidence_incomplete' },
+    { available: true, active_arm_count: 6, rested_arm_count: null, worked_yesterday_count: 0, back_to_back_count: 0, summary: 'Malformed.' },
+    { available: true, active_arm_count: 6, rested_arm_count: 3, worked_yesterday_count: 0, back_to_back_count: 0, summary: null },
+  ]) {
+    const html = renderBoard({ ...populatedBoard, rest_status })
+    const start = html.indexOf('Rest Status')
+    const end = html.indexOf('Workload Overview', start)
+    const section = html.slice(start, end)
+    assert.ok(htmlIncludes(section, 'Rest status unavailable'))
+    assert.equal(htmlIncludes(section, '>0<'), false)
+    assert.equal(htmlIncludes(section, 'workload_evidence_incomplete'), false)
+  }
 })
 
 test('incomplete workload evidence and unavailable reads remain explicit', () => {
@@ -314,7 +412,7 @@ test('team selection is a single accessible control and arm explanations use nat
 
 test('stale data keeps its trust warning visible in the answer zone', () => {
   const html = renderBoard(staleBoard)
-  assert.ok(htmlIncludes(html, 'Bullpen availability distribution'))
+  assert.ok(htmlIncludes(html, 'Bullpen Summary'))
   // The operating card and board both keep the stale messaging visible.
   assert.ok(htmlIncludes(html, 'Outside Freshness Window') || htmlIncludes(html, 'outside the active freshness window'))
 })
