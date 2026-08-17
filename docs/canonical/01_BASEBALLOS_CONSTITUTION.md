@@ -1,307 +1,136 @@
-# BaseballOS Constitution
+BASEBALLOS  /  REWORKED CANONICAL DIRECTION
+
+# 01 BaseballOS Constitution
+
+Identity · Product Thesis · Market Ambition · Permanent Boundaries
+
+VERSION 2.0  ·  FOUNDER PRODUCT-FIRST EDITION
 
 | Field | Value |
-|---|---|
-| Status | Canonical - highest product authority |
-| Version | 1.1 |
-| Effective date | August 14, 2026 |
+| --- | --- |
+| Document | 01 BaseballOS Constitution |
+| Version | VERSION 2.0 |
+| Status | FOUNDER PRODUCT-FIRST EDITION |
 | Owner | Nickolis Kacludis |
-| Product | BaseballOS - Public MLB Bullpen Intelligence |
-| Supersedes | BaseballOS Intelligence Operating System v2.0 as constitutional authority |
-| Update rule | Change only when identity, category, permanent guardrails, ontology, or authority hierarchy changes |
-| Review cadence | Annual, plus any founder-approved constitutional amendment |
+| Effective date | August 17, 2026 |
+| Product | BaseballOS - MLB Bullpen Command Center |
 
-> **Trust is the foundation. Intelligence is the product. Understanding is the outcome. Category ownership is the destination.**
+| GOVERNING STATEMENT | BaseballOS exists to become the best bullpen product in baseball: extraordinarily deep underneath, extraordinarily simple on top, relentlessly current, and useful before every game. |
+| --- | --- |
 
-## 1. Purpose
+## Part I - Identity
 
-This document defines why BaseballOS exists, what category it is building, what it promises, what it refuses to become, and which principles outrank every roadmap item.
+### 1. Mission
 
-It does not own current implementation status, active work packages, route details, API contracts, page layouts, or posting cadence. Those belong to the other canonical documents.
+Build the definitive MLB bullpen platform: the fastest and clearest place to understand every bullpen, every reliever, and the game context that makes bullpen usage matter.
 
-## 2. Mission
+### 2. Vision
 
-Build the most trusted bullpen intelligence platform in baseball.
+BaseballOS becomes habitual baseball infrastructure. Before first pitch, during a series, after a heavy bullpen night, or when a reliever role changes, people open BaseballOS because it answers the bullpen question faster and more completely than any alternative.
 
-## 3. Vision
+### 3. Category
 
-Become the first place baseball people check to understand what is happening in MLB bullpens today.
+BaseballOS owns Bullpen Intelligence, but the category is defined by user utility rather than internal rigor. The product combines current workload, rest, deployment, roster, performance, rotation burden, schedule pressure, and role movement into a coherent bullpen picture.
 
-## 4. Category
+### 4. Primary Product Promise
 
-BaseballOS is building **Bullpen Intelligence**: the practice of transforming public bullpen data into understandable, evidence-backed baseball context.
+Open BaseballOS and know the bullpen situation better than almost anyone watching the game.
 
-Bullpen Intelligence explains the observable present. It does not pretend to know private health information, manager intent, or future outcomes.
+### 5. What BaseballOS Is
 
-BaseballOS should answer:
+- A daily pregame bullpen command center for MLB.
+- The definitive current page for every team bullpen.
+- A complete recent-work and deployment record for every reliever.
+- A game-aware context layer connecting rotation workload to bullpen consequence.
+- A historical memory of how bullpen state, workload, roles, and roster structure changed through the season.
 
-- Which bullpens are Fresh, Stretched, or Vulnerable right now?
-- Which relievers are carrying the recent work?
-- How did the current state develop?
-- Which games, pitches, innings, roster events, and schedule conditions support the read?
-- What changed since the previous trusted state?
-- What should a fan watch when the game reaches the bullpen?
+### 6. What BaseballOS Is Not
 
-## 5. Product Promise
+- Not a generic baseball statistics site.
+- Not a sportsbook or betting product.
+- Not a fantasy recommendation product.
+- Not a prediction engine.
+- Not a general MLB analytics portal.
+- Not a trust or methodology website with baseball attached.
 
-> BaseballOS explains which MLB bullpens are fresh, stretched, or vulnerable - and why.
+## Part II - Product Philosophy
 
-The complete promise is transparent, evidence-backed, freshness-stamped understanding of every MLB bullpen's current operating condition.
+### 7. Baseball First
 
-No surface may quietly replace this promise with a broader general-baseball, betting, fantasy, prediction, or ranking promise.
+The first visible thing on every major public surface is baseball. Methodology, source quality, freshness, and limitations remain available, but they support the experience rather than dominate it.
 
-## 6. The Business BaseballOS Is In
+### 8. Depth Under Simplicity
 
-BaseballOS is not in the statistics business and is not in the prediction business. It is in the understanding business.
+The backend may be highly sophisticated. The public product should feel obvious. BaseballOS may compute across many domains, but the user should receive a concise answer, named arms, and the most useful context before deeper detail.
 
-The desired reaction is:
+### 9. The Product Spine
 
-> I did not know that - and I can see why it is true.
+1. Tonight: understand the games and bullpen situations that matter today.
+2. League: scan all 30 bullpens and choose where to look closer.
+3. Team: understand one bullpen completely.
+4. Pitcher: understand one reliever's current workload, role, usage, performance, and recent trends.
+5. History: understand how the bullpen got here and what changed.
 
-Surprise without evidence is content. Evidence without interpretation is a database. BaseballOS must deliver both.
+### 10. The Team Board Is the Center of Gravity
 
-## 7. Primary Audiences
+If BaseballOS becomes exceptional at only one surface, it must be the Team Board. It should be bookmark-worthy for a team fan, creator, broadcaster, beat writer, analyst, and baseball professional.
 
-When needs conflict, the earlier audience wins.
+### 11. Habit Beats Feature Count
 
-1. **Daily baseball fan** - needs one clear bullpen answer in seconds on a phone.
-2. **Creator, podcaster, writer, newsletter author, team-community participant** - needs a specific, quotable, checkable observation with a permanent destination.
-3. **Analyst, beat writer, researcher, serious fan** - needs method, evidence, history, and limitations.
-4. **Baseball operations and sports-technology professionals** - evaluate architecture, provenance, reproducibility, restraint, and the rigor of the data product.
+A feature matters when it creates a reason to return, makes the pregame decision faster, reveals a non-obvious bullpen development, or deepens a team/reliever understanding. Internal elegance without user impact does not count as product progress.
 
-BaseballOS may serve all four. It must not make the daily fan decode an analyst tool before receiving value.
+### 12. Trust Is Infrastructure
 
-## 8. Category Focus
+Correctness, provenance, suppression, and reproducibility remain non-negotiable, but they are implementation properties. Public trust language should be compact and contextual. The platform proves trust by consistently being right, current, and checkable—not by repeatedly explaining that it is trustworthy.
 
-The public product is bullpen-only.
+## Part III - Permanent Boundaries
 
-Rotation, roster, schedule, travel, lineup, pitch, park, performance, and organizational data may be used when they explain bullpen state. They are evidence domains, not separate product categories.
+### 13. Descriptive, Not Predictive
 
-Prospect rankings, draft coverage, trade evaluation, general player leaderboards, betting, fantasy optimization, and broad MLB analytics do not belong inside the BaseballOS product identity.
+- BaseballOS may describe current state, completed deployment, historical tendencies, workload, and game context.
+- BaseballOS does not predict game outcomes, future reliever usage, saves, blown saves, injuries, or manager intent.
+- Game comparisons describe differences without selecting a winner or declaring an edge.
 
-The internal test is:
+### 14. No Private Health or Intent Claims
 
-> Does this help baseball people understand bullpens better?
+Public data can reveal workload and observable pitch or performance change. It cannot reveal soreness, treatment, bullpen warmups, internal availability decisions, or private manager plans. Those remain outside the product.
 
-If no, stop.
+### 15. No Black-Box Public Ranking Product
 
-## 9. Foundational Product Philosophy
+BaseballOS may use internal derived values, but public experience should prefer understandable labels, counts, history, and trends over unexplained composite scores, grades, ranks, or leaderboards.
 
-### Trust is infrastructure
+### 16. Bullpen-Only Scope
 
-Every public claim should make its source, freshness, evidence, limitations, and method inspectable. Historical meaning may not be silently rewritten.
+Rotation, schedule, roster, pitch, park, travel, lineup, and organizational data may be used when they explain bullpen reality. They do not become separate BaseballOS product categories.
 
-### Intelligence is interpretation with receipts
+## Part IV - Winning the Market
 
-The required chain is:
+### 17. Competitive Standard
 
-```text
-Source Data
--> Canonical Baseball Record
--> Deterministic Derivation
--> Evidence
--> Observation
--> Story or Read
--> Trusted Publication
--> Distribution
--> Memory and Review
-```
+BaseballOS is not competing to have the most raw data. It competes to make bullpen reality easier to understand than MLB.com, Baseball Savant, FanGraphs, Baseball Reference, fantasy closer tools, or isolated beat-reporting workflows.
 
-Skipping a layer is prohibited.
+| User need | BaseballOS answer |
+| --- | --- |
+| What do I need to know before tonight's game? | Tonight and matchup bullpen briefing. |
+| What is happening with my team's bullpen? | Definitive Team Board. |
+| Who has been carrying the workload? | Named-arm workload and usage views. |
+| How is this reliever being used? | Dynamic deployment and role history. |
+| Why did this bullpen become stretched? | Rotation transfer, recent usage, roster and schedule context. |
+| What changed since yesterday? | Daily delta across state, arms, workload, rotation, and roster. |
+| How did the bullpen get here? | Season state timeline and event overlays. |
 
-### Answer before data
+### 18. Market-Leadership Test
 
-The default public order is:
+BaseballOS is winning when fans bookmark team pages, creators use it before recording, writers cite it for bullpen context, and people naturally ask: “What does BaseballOS show for this bullpen tonight?”
 
-```text
-State -> Why -> Evidence -> Freshness -> Limitations
-```
+### 19. Product Decision Test
 
-The answer must be understandable quickly. The evidence must be close enough to inspect without hunting.
+1. Does this make Tonight, the Team Board, or the Pitcher experience materially better?
+2. Does it deepen bullpen understanding without broadening into unrelated baseball analytics?
+3. Will a baseball person notice the improvement?
+4. Does it make returning tomorrow more valuable?
+5. Can the system support it reliably without exposing internal complexity to the user?
 
-### Stories are compression
+### 20. Final Principle
 
-Stories translate evidence into baseball meaning. They do not manufacture significance for weak or incomplete evidence.
-
-### Plain baseball language
-
-BaseballOS should sound like a careful, knowledgeable baseball person - not a sportsbook, data-science paper, or marketing department.
-
-### Daily utility over feature count
-
-The product should prioritize a repeatable reason to return: understand tonight, inspect a team, see what changed, verify a claim, share a receipt, and revisit the historical record.
-
-### Distribution is part of the product
-
-A distributed claim must preserve evidence, freshness, limitations, historical meaning, and an exact destination.
-
-### Silence is valid
-
-A quiet day, incomplete source, or unsupported observation may correctly produce no story. The platform gets quieter under uncertainty, never wronger.
-
-### Capability grows through observation
-
-New capability must come from more verifiable facts and better assembly, not greater certainty about unobservable health, intent, or outcome.
-
-## 10. Permanent Guardrails
-
-BaseballOS will not become:
-
-- a prediction or projection product;
-- a betting, odds, picks, or edge product;
-- a fantasy start/sit or save-prediction product;
-- a private injury or health-inference product;
-- a manager-intent product;
-- a black-box scoring or ranking product;
-- a general MLB statistics site;
-- a clickbait content engine;
-- a product that converts unknowns into zero or plausible values.
-
-Additional permanent rules:
-
-- **Evidence outranks engagement.** A more exciting claim never justifies weaker support.
-- **Freshness is visible.** A current read without a date or time is incomplete.
-- **Provenance is explicit.** Meaning-bearing facts have a named authority.
-- **Corrections preserve history.** Material corrections supersede or append; they do not erase what was published.
-- **One question per page.** Competing page missions create product drift.
-- **One canonical home per fact.** Other surfaces inherit, reference, or link; they do not independently redefine.
-- **Architecture serves the product.** Complexity requires a real trust, reliability, or user-value reason.
-- **Founder sustainability is a product constraint.** Scope must survive a full-time job, family responsibilities, and limited weekly hours.
-
-## 11. Bullpen Ontology
-
-The permanent conceptual language includes:
-
-| Concept | Meaning |
-|---|---|
-| Bullpen Intelligence | Evidence-backed understanding of the bullpen's observable present condition |
-| Bullpen State | Current operating condition created by workload, rest, roster context, coverage, and structure |
-| Bullpen Identity | Slower-moving profile of how a bullpen is built and used |
-| Bullpen Dependency | Reliance on a small number of arms |
-| Bullpen Resilience | Ability to absorb stress without losing functional structure |
-| Recovery Window | Workload-based path back toward a cleaner operating state |
-| Leverage Concentration | Share of meaningful work carried by a small group |
-| Workload Accumulation | Build-up of appearances, pitches, batters faced, and multi-day use |
-| Bullpen Stability | Consistency of roles and deployment patterns over time |
-| Bullpen Flexibility | Number and variety of realistic observable options |
-
-State is not performance. A good-performing bullpen may be overextended; a poorly performing bullpen may be rested and structurally intact.
-
-Exact public labels, mappings, definitions, and thresholds are governed by the Bullpen Intelligence Standard and canonical code owners.
-
-## 12. Competitive Strategy
-
-BaseballOS does not compete by becoming a smaller Baseball Savant, FanGraphs, Baseball Reference, MLB.com, fantasy closer tool, or PitcherList.
-
-Its open category is:
-
-> Daily, trustworthy bullpen intelligence.
-
-The moat is the accumulated system:
-
-1. fail-closed trust architecture;
-2. useful bullpen ontology;
-3. cross-domain evidence assembly;
-4. story and consequence layer;
-5. immutable memory, method versions, and corrections;
-6. creator and citation workflows that preserve context.
-
-Technology supports the moat. Technology alone is not the moat.
-
-## 13. What Winning Looks Like
-
-BaseballOS is winning when:
-
-- fans check it before games;
-- creators use it to prepare segments;
-- writers cite permanent BaseballOS observations;
-- analysts inspect and accept the method;
-- team communities use its vocabulary naturally;
-- baseball-operations professionals ask questions the platform can answer better than public alternatives;
-- people begin asking, "What does BaseballOS say?"
-
-Trust precedes growth. Growth precedes monetization. Before commercial use of MLB-derived data, rights and licensing require qualified review.
-
-## 14. Governance
-
-Every major decision must answer:
-
-1. What user problem does this solve?
-2. Which surface owns the problem?
-3. Does it improve understanding?
-4. Does it strengthen category ownership?
-5. Can it carry evidence, freshness, and limitations?
-6. Can it be explained simply?
-7. Does it preserve trust?
-8. Which canonical document authorizes it?
-9. What is the opportunity cost?
-10. What will be removed, deferred, or left unchanged?
-
-A constitutional change requires a written amendment, exact affected section, rationale, downstream impact, founder approval, and revision-history entry. Permanent guardrails are never silently edited.
-
-## 15. Documentation Discipline
-
-BaseballOS maintains four documentation classes:
-
-| Class | Purpose | Lifecycle |
-|---|---|---|
-| Canonical document | One of the six permanent authorities | Living and versioned |
-| Decision record | One focused durable decision | Append-only; never a competing manual |
-| Runbook | Current operational procedure | Updated when procedure changes |
-| Implementation record | Phase plan, audit, exit report, or subsystem specification | Active during work, then historical |
-
-Do not create a new master document for every initiative.
-
-### Authority order
-
-When two documents appear to conflict, the higher entry wins:
-
-1. Constitution
-2. Bullpen Intelligence Standard
-3. Product Experience Standard
-4. Platform Architecture & Operations Manual
-5. Editorial & Distribution Standard
-6. Product Roadmap & Decision Ledger
-7. Active subsystem specification or current runbook, within its narrow scope
-8. Decision record or implementation record
-9. Point-in-time audit or report
-10. Historical or archived material
-
-The Roadmap controls sequence. It cannot weaken a higher product, intelligence, experience, architecture, or editorial contract. A runbook may hold exact procedural detail; it may not create a new source authority, public vocabulary, product promise, or publication rule.
-
-`docs/README.md` and `docs/canonical/README.md` restate this order for navigation. They are navigation aids, not its home: this Section is where the order lives, and where an amendment to it is made.
-
-## 16. Long-Term Direction
-
-1. **Establish the reference:** reliable current reads, evidence-bearing team pages, a game-aware daily front door, immutable share artifacts, and visible trust.
-2. **Build authority through memory:** daily state, permanent observations, method versions, corrections, timelines, archives, and honest follow-up.
-3. **Own the category:** a complete bullpen-intelligence ecosystem that remains understandable to fans and inspectable by professionals.
-
-## 17. Final Principle
-
-> BaseballOS wins when a reader understands a bullpen better than they did a few minutes ago and can check every word of it.
-
-## Constitutional Review Checklist
-
-- [ ] The work is about bullpen understanding.
-- [ ] The user question and owning surface are clear.
-- [ ] The claim is descriptive, not predictive.
-- [ ] Every substantive claim can carry evidence, freshness, and limitations.
-- [ ] Unknowns remain unknown.
-- [ ] No private health or manager-intent claim is introduced.
-- [ ] No betting, fantasy, ranking, or black-box framing is introduced.
-- [ ] Public vocabulary remains single-sourced.
-- [ ] Corrections and historical meaning remain reproducible.
-- [ ] Scope is sustainable for a single founder.
-- [ ] The correct canonical document will absorb the durable rule.
-
-## Source Basis
-
-This Constitution consolidates the durable identity and guardrails from the Intelligence Operating System v2.0, Strategic Operating Manual, Product Vision Specification, Bullpen Intelligence Standard v1.0, Share Cards V1 specification, Content Posting Standards, accepted repository decisions, and current production governance through July 29, 2026.
-
-## Revision History
-
-| Version | Date | Author | Summary |
-|---|---|---|---|
-| 1.0 | July 29, 2026 | Nickolis Kacludis | Established the six-document canonical library and consolidated BaseballOS identity, category, permanent guardrails, ontology, competitive strategy, and documentation governance. |
-| 1.1 | August 14, 2026 | Nickolis Kacludis | Gave the authority order a constitutional home (H-12). The ten-level order was explicit and consistent, but it lived only in two navigation README files — both of which the order itself ranks below the six canonical documents, so the hierarchy had no canonical owner. Section 15 now states it, and the two READMEs are named as restatements rather than sources. The order is unchanged, level for level, from what those files already declared; nothing was added, removed, or reordered. |
+BaseballOS should feel simple because the hard work happened underneath. The product is the bullpen answer. Everything else exists to make that answer better.
