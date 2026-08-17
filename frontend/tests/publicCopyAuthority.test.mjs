@@ -1,9 +1,9 @@
 // FE-001 / #591 — the frontend renders backend-authored public copy verbatim.
 //
 // The old contract was "the browser will clean this up." These tests assert the
-// new one: whatever the backend published for State, Why and Evidence reaches
-// the reader unchanged, the Why cannot vanish quietly, and no semantic
-// vocabulary mapping is left in the frontend for the governed board path.
+// new one: governed State summary and supporting copy keep their backend owners,
+// no competing Team Board Why is borrowed from board-health context, and no
+// semantic vocabulary mapping is left in the frontend governed path.
 
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
@@ -12,7 +12,11 @@ import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { createServer } from 'vite'
 
-import { makeBoard } from './fixtures/bullpenBoardFixtures.mjs'
+import {
+  failClosedTeamState,
+  makeBoard,
+  publicTeamState,
+} from './fixtures/bullpenBoardFixtures.mjs'
 
 const server = await createServer({
   root: process.cwd(),
@@ -50,7 +54,7 @@ const currentFreshness = {
 const UNUSUAL_BUT_VALID_WHY =
   'The bullpen is short on rested arms right now — 3 of 8 arms are limited or unavailable, and two more are close.'
 
-function boardWith(why, { reasons = [], limitations = [] } = {}) {
+function boardWith(why, { reasons = [], limitations = [], teamState } = {}) {
   return makeBoard({
     team: { team_id: 121, team_name: 'New York Mets', team_abbreviation: 'NYM' },
     cardsByStatus: {
@@ -58,6 +62,7 @@ function boardWith(why, { reasons = [], limitations = [] } = {}) {
       Monitor: [{ pitcher_id: 2, name: 'M1', availability_status: 'Monitor' }],
     },
     freshness: currentFreshness,
+    teamState,
     // Mirrors the real board/dashboard context block: the Why is
     // context.health.label and its evidence is context.health.reasons.
     context: {
@@ -114,14 +119,21 @@ test('backend evidence is rendered as published, not re-worded or re-ordered', (
   )
 })
 
-// ── E2 / E3 / E4: the Why cannot silently disappear ─────────────────────────
+// ── E2 / E3 / E4: summary ownership and fail-closed separation ───────────────
 
-test('a valid payload always yields a Why on the read model', () => {
+test('league context keeps its Why while Team Board uses the canonical state summary', () => {
   const why = 'Bullpen workload appears manageable.'
-  for (const scope of ['league', 'team']) {
-    const model = toOperatingStateReadModel(boardWith(why), { scope })
-    assert.equal(model.why, why, `scope ${scope}`)
-  }
+  const board = boardWith(why)
+
+  const leagueModel = toOperatingStateReadModel(board, { scope: 'league' })
+  assert.equal(leagueModel.why, why)
+
+  const teamModel = toOperatingStateReadModel(board, { scope: 'team' })
+  assert.equal(teamModel.why, null)
+  assert.equal(
+    teamModel.stateSummary,
+    'Strong rested coverage gives the active bullpen operating room.',
+  )
 })
 
 test('Dashboard renders State then Why then Evidence in order', () => {
@@ -140,22 +152,79 @@ test('Dashboard renders State then Why then Evidence in order', () => {
   assert.ok(whyAt < evidenceAt, 'Why must precede Evidence')
 })
 
-test('Team Board compact renders State then Why then Evidence in order', () => {
-  // The regression this locks: Team Board uses compact density and the compact
-  // card never rendered the Why, so the product showed State -> Evidence.
-  const why = 'The bullpen is short on rested arms right now.'
-  const board = boardWith(why, { reasons: ['Two relievers are in the On Watch group.'] })
+test('Team Board compact renders canonical State summary before Evidence', () => {
+  const legacyWhy = 'The bullpen is short on rested arms right now.'
+  const canonicalSummary = 'Strong rested coverage gives the active bullpen operating room.'
+  const board = boardWith(legacyWhy, { reasons: ['Two relievers are in the On Watch group.'] })
   const model = getTeamOperatingStateContext(board)
   const html = renderCard(model, 'compact')
   const text = visibleText(html)
 
   assert.ok(html.includes('data-density="compact"'))
-  assert.ok(text.includes(why), `compact card lost the Why: ${text.slice(0, 400)}`)
+  assert.ok(text.includes(canonicalSummary), `compact card lost the summary: ${text.slice(0, 400)}`)
+  assert.equal(text.includes(legacyWhy), false)
 
-  const whyAt = text.indexOf(why)
+  const summaryAt = text.indexOf(canonicalSummary)
   const evidenceAt = text.indexOf('Evidence')
   assert.ok(evidenceAt > -1, 'Evidence is missing from the compact card')
-  assert.ok(whyAt < evidenceAt, 'Why must precede Evidence on the compact card')
+  assert.ok(summaryAt < evidenceAt, 'Team State summary must precede Evidence')
+})
+
+test('Team Board state summaries come from the closed canonical authority', () => {
+  const cases = [
+    ['fresh', 'Fresh', 'Strong rested coverage gives the active bullpen operating room.'],
+    ['stretched', 'Stretched', "Recent work or coverage has narrowed the active bullpen's clean options."],
+    ['vulnerable', 'Vulnerable', 'The active bullpen has limited operating margin for additional work.'],
+  ]
+
+  for (const [code, label, summary] of cases) {
+    const legacyWhy = `Legacy count-derived explanation for ${label}.`
+    const board = boardWith(legacyWhy, { teamState: publicTeamState(code) })
+    const model = getTeamOperatingStateContext(board)
+    const text = visibleText(renderCard(model, 'compact'))
+
+    assert.equal(model.stateLabel, label)
+    assert.equal(model.stateSummary, summary)
+    assert.equal(model.why, null)
+    assert.ok(text.includes(summary), `${label} summary missing: ${text.slice(0, 400)}`)
+    assert.equal(text.includes(legacyWhy), false)
+  }
+})
+
+test('Fresh Team State cannot be contradicted by adverse legacy board health copy', () => {
+  const conflicting = 'The bullpen is short on rested arms right now.'
+  const board = boardWith(conflicting, { teamState: publicTeamState('fresh') })
+  const model = getTeamOperatingStateContext(board)
+  const text = visibleText(renderCard(model, 'compact'))
+
+  assert.equal(model.stateLabel, 'Fresh')
+  assert.equal(model.stateSummary, 'Strong rested coverage gives the active bullpen operating room.')
+  assert.ok(text.includes('Current Bullpen State: Fresh'))
+  assert.ok(text.includes(model.stateSummary))
+  assert.equal(text.includes(conflicting), false)
+})
+
+test('data-limited and refused Team State use governed messages without health fallback', () => {
+  const conflicting = 'The bullpen is short on rested arms right now.'
+  const cases = [
+    failClosedTeamState('data_limited'),
+    failClosedTeamState(
+      'refused',
+      'A current Team State read is not available for this bullpen because the latest evidence did not meet the freshness and trust bar.',
+    ),
+  ]
+
+  for (const unavailable of cases) {
+    const board = boardWith(conflicting, { teamState: unavailable })
+    const model = getTeamOperatingStateContext(board)
+    const text = visibleText(renderCard(model, 'compact'))
+
+    assert.equal(model.stateLabel, null)
+    assert.equal(model.stateSummary, null)
+    assert.equal(model.why, null)
+    assert.ok(text.includes(unavailable.unavailable_message))
+    assert.equal(text.includes(conflicting), false)
+  }
 })
 
 test('compact evidence is capped by count, never by matching the words in a sentence', () => {

@@ -211,6 +211,16 @@ D055_TEAM_BOARD_WORKLOAD_CONTEXT_PATHS = (
     'backend/services/bullpen_board.py',
 )
 
+# HOTFIX-01, August 17 2026. The canonical Team State projection gains one
+# deterministic summary field so reader surfaces no longer use the independent,
+# count-derived board-health sentence as the explanation of Team State.
+#
+# The exception is one exact semantic-owner path. It grants no classifier,
+# readiness, publication, artifact, migration, route, or directory exemption.
+HOTFIX01_TEAM_STATE_SUMMARY_AUTHORITY_PATHS = (
+    'backend/services/team_state_public_vocabulary.py',
+)
+
 
 def normalize(path):
     """Repository-relative path with forward slashes and no surrounding space."""

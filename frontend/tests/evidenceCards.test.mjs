@@ -244,9 +244,14 @@ test('production-shaped Yankees read keeps Team Board claims and card receipts a
   // This production payload carries heavy short-start pressure (3 of 5), so the
   // corrected starter-support path now leads with the exact short-start count.
   assert.equal(model.stateLabel, readModel.stateLabel)
-  // With frontend state copy retired, the card's summary is the backend why line.
-  assert.equal(readModel.stateSummary, null)
-  assert.equal(model.summary, readModel.why)
+  // The evidence card receives the same backend-owned Team State summary as the
+  // Team Board; legacy board-health copy is not its fallback.
+  assert.equal(
+    readModel.stateSummary,
+    'Strong rested coverage gives the active bullpen operating room.',
+  )
+  assert.equal(readModel.why, null)
+  assert.equal(model.summary, readModel.stateSummary)
   assert.equal(model.storyAngle, 'starter_support')
   assert.equal(model.headline, '3 OF 5 RECENT NEW YORK YANKEES STARTS ENDED BEFORE FIVE INNINGS')
   assert.equal(model.receipts[0], '3 of 5 analyzed starts ended before five innings.')
