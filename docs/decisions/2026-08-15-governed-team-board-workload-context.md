@@ -1,7 +1,7 @@
 # D-055 — Governed Team Board workload context
 
 - **Date:** 2026-08-15
-- **Status:** Adopted
+- **Status:** Production-proven
 - **Scope:** Additive Team Board projection of already-public pitcher workload facts and a backend-authored team Rest Status. No Team State, availability vocabulary, ranking, prediction, acquisition, or publication authority changes.
 
 ## Context
@@ -120,6 +120,46 @@ remain null through the production fatigue-score writer and public workload proj
 an ORM/client-side zero default must not coerce that unknown state into a reported zero.
 A legitimate calculated zero remains zero. This restores the existing D-055 null
 semantics and creates no new calculation, read, write, or publication authority.
+
+## Production proof — August 16, 2026
+
+D-055 and Team Board Phase 2 are production-proven.
+
+The null-persistence correction (PR #672) and trusted Team Board carrier correction
+(PR #673) were both merged before governed `BaseballOS Intraday Roster Repair` runs
+rebuilt the publication candidate. The scheduled intraday producer recalculated fatigue
+under the corrected nullable persistence semantics and published replacement Dashboard
+snapshots through the existing D-051 ledger-gated publication path.
+
+Snapshot 426 was published by intraday run `31970550823` from post-fix main, and snapshot
+427 was subsequently published by scheduled intraday run `31985029067`. Snapshot 427 was
+the serving authority during the production observation. Both snapshots retained
+`data_through = 2026-08-15` because that field reflects completed-game evidence rather
+than snapshot recency.
+
+Production observation on the New York Yankees Team Board confirmed the D-055 contract
+through the trusted snapshot authority:
+
+- pitcher cards rendered populated `days_since_last_appearance`,
+  `pitches_last_7_days`, and `appearances_last_7` values;
+- visible rest values were coherent with the governed 2026-08-16 availability reference
+  date, including Aug. 11 -> 5 days, Aug. 13 -> 3 days, and Aug. 15 -> 1 day;
+- Rest Status passed its fail-closed evidence gate and rendered `rested = 4`,
+  `worked_yesterday = 4`, and `back_to_back = 3` across eight default-visible active
+  bullpen arms;
+- the governed distinction between nine represented eligible relievers and eight
+  default-visible active arms remained intact; and
+- no request-time reconstruction, snapshot mutation, cache substitution, publication
+  authority drift, Team State change, or availability change was found.
+
+The production-authority audit classified the observed behavior as
+`EXPECTED — OTHER GOVERNED PUBLICATION PATH`: the intraday repair lane is an authorized
+scheduled Dashboard snapshot producer, so production proof did not require waiting for
+the next full daily sync. D-051 snapshot immutability and trusted-serving authority
+remained intact.
+
+No further D-055 backend remediation is required. Team Board Phase 2 is considered
+production-proven as of this evidence.
 
 ## Consequences
 
