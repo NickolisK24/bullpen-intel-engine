@@ -90,6 +90,51 @@ def test_workflow_uploads_the_artifact_and_errors_when_absent(workflow_text):
     assert 'if-no-files-found: error' in workflow_text
 
 
-def test_workflow_does_not_request_admin_or_write_secrets(workflow_text):
-    assert 'ADMIN_API_TOKEN' not in workflow_text
-    assert 'BASEBALLOS_SYNC_URL' not in workflow_text
+def test_workflow_supplies_the_production_config_invariants(workflow_text):
+    """The exporter cannot boot against production without these three.
+
+    ``config.py:96`` refuses a non-local DATABASE_URL unless APP_ENV=production,
+    and ``config.py:214`` then refuses to boot without ADMIN_API_TOKEN. Reaching
+    the production database therefore requires all three, and lowering APP_ENV to
+    avoid the token check would make the hosted DATABASE_URL refuse instead.
+    """
+    for required in ('APP_ENV: production', 'DATABASE_URL:', 'SECRET_KEY:', 'ADMIN_API_TOKEN:'):
+        assert required in workflow_text, f'workflow must supply {required}'
+
+
+def test_admin_token_comes_from_the_existing_production_secret(workflow_text):
+    """No new secret is minted; this is the secret every other production
+    workflow already maps to ADMIN_API_TOKEN."""
+    assert 'ADMIN_API_TOKEN: ${{ secrets.BASEBALLOS_ADMIN_API_TOKEN }}' in workflow_text
+
+
+def test_admin_token_is_documented_as_startup_only(workflow_text):
+    assert 'APPLICATION STARTUP ONLY' in workflow_text
+
+
+def test_admin_token_value_is_never_printed(executable_text):
+    """The token may be supplied, never echoed, logged, or written out."""
+    for leak in (
+        'echo "$ADMIN_API_TOKEN"', 'echo $ADMIN_API_TOKEN',
+        'echo "${ADMIN_API_TOKEN}"', '${{ secrets.BASEBALLOS_ADMIN_API_TOKEN }}"',
+    ):
+        assert leak not in executable_text, f'token must not be printed: {leak}'
+    # The only permitted shell reference is the emptiness guard.
+    references = [
+        line for line in executable_text.splitlines()
+        if 'ADMIN_API_TOKEN' in line and 'secrets.BASEBALLOS_ADMIN_API_TOKEN' not in line
+    ]
+    for line in references:
+        assert '-z "${ADMIN_API_TOKEN:-}"' in line or 'BASEBALLOS_ADMIN_API_TOKEN repository secret' in line, (
+            f'unexpected ADMIN_API_TOKEN reference: {line.strip()}'
+        )
+
+
+def test_workflow_requests_no_sync_or_publication_secret(executable_text):
+    """Scoped to executable lines: the workflow documents this secret's absence
+    in a comment, matching the convention in the read-only audit workflows."""
+    assert 'BASEBALLOS_SYNC_URL' not in executable_text
+
+
+def test_workflow_fails_loudly_when_required_secrets_are_absent(workflow_text):
+    assert 'Missing DATABASE_URL, SECRET_KEY, or BASEBALLOS_ADMIN_API_TOKEN' in workflow_text
