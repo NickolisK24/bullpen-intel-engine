@@ -19,7 +19,7 @@ from services.public_serving_authority import (
     TEAM_BOARD_PACKAGE_CONTRACT,
     TEAM_BOARD_PACKAGE_KEY,
 )
-from services.team_state_history_export import (
+from services.calibration_history_export import (
     UNPRESERVED_ARM_FIELDS,
     UNPRESERVED_TEAM_LEVEL_FIELDS,
     build_export,
@@ -238,7 +238,7 @@ def test_export_carries_no_credentials_or_raw_rows():
 # ── the exporter performs no writes ──────────────────────────────────────────
 
 def test_exporter_module_contains_no_mutation_calls():
-    source = Path(__file__).resolve().parents[1] / 'services' / 'team_state_history_export.py'
+    source = Path(__file__).resolve().parents[1] / 'services' / 'calibration_history_export.py'
     text = source.read_text()
 
     for forbidden in (
