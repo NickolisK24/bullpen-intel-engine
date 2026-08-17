@@ -1,0 +1,91 @@
+name: Team State History Export
+
+# Manual, read-only extraction of historical Team State calibration evidence.
+#
+# This workflow exists only because the exporter needs the production database
+# to read frozen snapshots and published Team State artifacts. It runs SELECT
+# queries and uploads a JSON artifact. It has no schedule, no write mode, no
+# publication route, and no sync path. It never pushes a commit.
+on:
+  workflow_dispatch:
+    inputs:
+      snapshot_id_from:
+        description: 'Earliest Dashboard snapshot id to export (inclusive).'
+        required: false
+      snapshot_id_to:
+        description: 'Latest Dashboard snapshot id to export (inclusive).'
+        required: false
+      date_from:
+        description: 'Earliest data_through date, YYYY-MM-DD (inclusive).'
+        required: false
+      date_to:
+        description: 'Latest data_through date, YYYY-MM-DD (inclusive).'
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: team-state-history-export
+  cancel-in-progress: false
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install backend dependencies
+        run: pip install -r backend/requirements.txt
+
+      - name: Export Team State calibration history
+        env:
+          APP_ENV: production
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SECRET_KEY: ${{ secrets.SECRET_KEY }}
+          AUTO_SYNC: 'false'
+          SNAPSHOT_ID_FROM: ${{ inputs.snapshot_id_from }}
+          SNAPSHOT_ID_TO: ${{ inputs.snapshot_id_to }}
+          DATE_FROM: ${{ inputs.date_from }}
+          DATE_TO: ${{ inputs.date_to }}
+        run: |
+          set -euo pipefail
+          if [ -z "${DATABASE_URL:-}" ] || [ -z "${SECRET_KEY:-}" ]; then
+            echo "::error::Missing DATABASE_URL or SECRET_KEY repository secret."
+            exit 1
+          fi
+
+          args=()
+          [ -n "${SNAPSHOT_ID_FROM:-}" ] && args+=(--snapshot-id-from "$SNAPSHOT_ID_FROM")
+          [ -n "${SNAPSHOT_ID_TO:-}" ] && args+=(--snapshot-id-to "$SNAPSHOT_ID_TO")
+          [ -n "${DATE_FROM:-}" ] && args+=(--date-from "$DATE_FROM")
+          [ -n "${DATE_TO:-}" ] && args+=(--date-to "$DATE_TO")
+
+          if [ ${#args[@]} -eq 0 ]; then
+            echo "::error::A bounded range is required. Provide a snapshot id range or a date range."
+            exit 1
+          fi
+
+          cd backend
+          # The exporter exits non-zero on an invalid range, a missing range, no
+          # matching trusted snapshots, or an unsupported payload shape, so an
+          # empty calibration dataset can never be reported as success.
+          python -m scripts.export_team_state_history \
+            "${args[@]}" \
+            --output "$GITHUB_WORKSPACE/team_state_calibration_history.json"
+
+      - name: Upload calibration artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: team-state-calibration-history
+          path: team_state_calibration_history.json
+          if-no-files-found: error
+          retention-days: 14
