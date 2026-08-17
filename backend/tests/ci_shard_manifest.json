@@ -642,7 +642,7 @@
       ]
     },
     "3": {
-      "measured_seconds": 502.617,
+      "measured_seconds": 502.79,
       "files": [
         {
           "path": "tests/test_active_bullpen_readiness_resolver.py",
@@ -1009,6 +1009,10 @@
           "measured_seconds": 8.521
         },
         {
+          "path": "tests/test_readiness_population_comparison.py",
+          "measured_seconds": 0.101
+        },
+        {
           "path": "tests/test_readiness_snapshot_freshness.py",
           "measured_seconds": 0.0
         },
@@ -1171,6 +1175,10 @@
         {
           "path": "tests/test_team_state_history_export_workflow.py",
           "measured_seconds": 0.244
+        },
+        {
+          "path": "tests/test_team_state_population_compare_workflow.py",
+          "measured_seconds": 0.072
         },
         {
           "path": "tests/test_test_database_safety.py",

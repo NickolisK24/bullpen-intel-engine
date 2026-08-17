@@ -1,0 +1,87 @@
+name: Team State Population Compare
+
+# Manual, read-only, same-moment comparison of the two Team State populations.
+#
+# This workflow exists only because the comparison must run against the
+# production database: the board population and the readiness population must be
+# resolved in one process, at one reference date, against one database state.
+# Historical membership is unrecoverable, so a current measurement is the only
+# honest one available.
+#
+# It runs SELECT queries and uploads a JSON artifact. It has no schedule, no
+# write mode, no publication route, and no sync path. It never pushes a commit.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: team-state-population-compare
+  cancel-in-progress: false
+
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install backend dependencies
+        run: pip install -r backend/requirements.txt
+
+      - name: Compare Team State populations
+        env:
+          APP_ENV: production
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SECRET_KEY: ${{ secrets.SECRET_KEY }}
+          # ADMIN_API_TOKEN is required for APPLICATION STARTUP ONLY, proven by
+          # inspection rather than assumed:
+          #   config.py:96   APP_ENV != production refuses a non-local
+          #                  DATABASE_URL, so reaching the production database
+          #                  requires APP_ENV=production;
+          #   config.py:214  APP_ENV=production refuses to boot without
+          #                  ADMIN_API_TOKEN.
+          # Booting against the production database is therefore impossible
+          # without it, and lowering APP_ENV to dodge the check would make the
+          # hosted DATABASE_URL itself refuse to start. The comparator never
+          # reads this value, makes no HTTP call, and invokes no admin endpoint —
+          # it runs SELECT queries and rolls back. This is the same secret the
+          # existing production workflows already map; no new secret is minted.
+          ADMIN_API_TOKEN: ${{ secrets.BASEBALLOS_ADMIN_API_TOKEN }}
+          # No BASEBALLOS_SYNC_URL and no publication token: nothing here calls
+          # a sync endpoint, publishes a snapshot, or dispatches a workflow.
+          AUTO_SYNC: 'false'
+        run: |
+          set -euo pipefail
+          # Fail before the app boots, with a named secret, rather than letting
+          # config.py raise a RuntimeError deep in bootstrap.
+          if [ -z "${DATABASE_URL:-}" ] || [ -z "${SECRET_KEY:-}" ] \
+             || [ -z "${ADMIN_API_TOKEN:-}" ]; then
+            echo "::error::Missing DATABASE_URL, SECRET_KEY, or BASEBALLOS_ADMIN_API_TOKEN repository secret."
+            exit 1
+          fi
+
+          cd backend
+          # The comparator exits non-zero when the canonical club directory does
+          # not resolve 30 clubs, when either population cannot be resolved, when
+          # a published board package has an unsupported shape, or when the ORM
+          # session stages a change — so an empty or partial comparison can never
+          # be reported as success.
+          python -m scripts.compare_team_state_populations \
+            --output "$GITHUB_WORKSPACE/team_state_population_comparison.json"
+
+      - name: Upload comparison artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: team-state-population-comparison
+          path: team_state_population_comparison.json
+          if-no-files-found: error
+          retention-days: 14
