@@ -253,14 +253,14 @@ def _add_starter(seed):
     return pitcher
 
 
-def test_a_starter_who_worked_yesterday_does_not_make_a_rested_bullpen_stressed(app):
+def test_a_starter_who_worked_yesterday_is_excluded_from_the_bullpen_state(app):
     """The #590 production defect: population, not vocabulary.
 
-    Detroit published Vulnerable while the Dashboard showed eight rested and
-    available arms. The bullpen was fine; the state was derived from a wider
-    pitcher set that included a starter classified Unavailable. Readiness now
-    describes the canonical active bullpen, so the rested bullpen reads as
-    rested and the starter stays visible as roster context elsewhere.
+    Detroit's Team State was derived from a wider pitcher set that included a
+    starter classified Unavailable — a single off-active record decided the club's
+    state. Readiness now describes the canonical active bullpen only: the starter
+    reaches the resolver's rows but never enters the distribution, so the state is
+    decided by the bullpen's own arms (via Contract A) and by nothing else.
     """
     for seed in range(1, 9):
         _add_reliever(seed, usable=True, hand='L' if seed % 2 else 'R')
@@ -275,11 +275,18 @@ def test_a_starter_who_worked_yesterday_does_not_make_a_rested_bullpen_stressed(
     # resolver's rows — he simply is not part of the bullpen the state describes.
     assert starter.id is not None
     distribution = payload['availability_distribution']
+    # The off-active starter (classified Unavailable) never enters the active
+    # bullpen distribution: the population is exactly the eight relievers, so a
+    # non-bullpen record can neither be counted severe nor move the state.
+    assert distribution['total'] == 8
     assert distribution['unavailable'] == 0, (
         'a non-bullpen record must not appear in the active-bullpen distribution'
     )
     assert payload['workload_pressure']['elevated_count'] == 0
-    assert payload['readiness']['status_code'] != 'operationally_stressed'
+    # The state is decided by the eight canonical arms alone.
+    evidence = payload['team_state_evidence']
+    assert evidence['active_pitcher_count'] == 8
+    assert evidence['severe_count'] == 0
     assert payload['readiness']['status_code'] in SUPPORTED
 
 

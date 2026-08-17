@@ -56,6 +56,22 @@ def team_payload():
 
 
 def stable_pitcher_records():
+    # Six clean arms clear the Contract A Fresh floor (clean_share >= 3/5,
+    # clean_count >= 5, severe_count <= 1).
+    return tuple(
+        {
+            'availability_status': 'available',
+            'workload_category': 'low',
+            'throwing_hand': hand,
+        }
+        for hand in ('left', 'right', 'left', 'right', 'left', 'right')
+    )
+
+
+def constrained_pitcher_records():
+    # Four clean arms out of seven: above the Vulnerable margin floor and below
+    # the Fresh clean floor, no severe share -> residual Stretched. Exactly one
+    # Monitor arm so the monitor-count evidence assertion still holds.
     return (
         {
             'availability_status': 'available',
@@ -67,15 +83,15 @@ def stable_pitcher_records():
             'workload_category': 'low',
             'throwing_hand': 'right',
         },
-    )
-
-
-def constrained_pitcher_records():
-    return (
         {
             'availability_status': 'available',
             'workload_category': 'low',
             'throwing_hand': 'left',
+        },
+        {
+            'availability_status': 'available',
+            'workload_category': 'low',
+            'throwing_hand': 'right',
         },
         {
             'availability_status': 'monitor',
@@ -86,6 +102,11 @@ def constrained_pitcher_records():
             'availability_status': 'limited',
             'workload_category': 'low',
             'throwing_hand': 'right',
+        },
+        {
+            'availability_status': 'limited',
+            'workload_category': 'low',
+            'throwing_hand': 'left',
         },
     )
 
@@ -106,11 +127,36 @@ def stressed_pitcher_records():
 
 
 def coverage_limited_pitcher_records():
+    # Four fully-covered clean arms plus one record with no current workload,
+    # no availability, and no handedness. Four clean out of five is Stretched
+    # under Contract A (a supported state), and the one unresolved record keeps
+    # coverage and handedness partial so the coverage-scope evidence still fires.
     return (
         {
             'availability_status': 'available',
             'workload_category': 'low',
             'throwing_hand': 'left',
+            'has_current_workload': True,
+            'has_availability': True,
+        },
+        {
+            'availability_status': 'available',
+            'workload_category': 'low',
+            'throwing_hand': 'right',
+            'has_current_workload': True,
+            'has_availability': True,
+        },
+        {
+            'availability_status': 'available',
+            'workload_category': 'low',
+            'throwing_hand': 'left',
+            'has_current_workload': True,
+            'has_availability': True,
+        },
+        {
+            'availability_status': 'available',
+            'workload_category': 'low',
+            'throwing_hand': 'right',
             'has_current_workload': True,
             'has_availability': True,
         },
@@ -220,7 +266,7 @@ class TestV4TeamOperationsReadinessExplanationIntegration:
         evidence = evidence_by_type(payload)
         assert evidence['readiness_status_code']['value'] == 'operationally_stable'
         assert evidence['workload_pressure_state']['value'] == 'low'
-        assert evidence['availability_distribution_total']['value'] == 2
+        assert evidence['availability_distribution_total']['value'] == 6
         assert_governance_safe(payload)
 
     def test_operationally_constrained_readiness_explanation_is_neutral(self):

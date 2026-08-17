@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from fractions import Fraction
 from typing import Any, Iterable, Mapping
 
 from team_operations.contracts import (
@@ -9,10 +10,17 @@ from team_operations.contracts import (
     CAPABILITY,
     CONTRACT,
     CONTRACT_VERSION,
+    DECISIVE_RULE_DATA_LIMITED,
+    DECISIVE_RULE_FRESH_COVERAGE,
+    DECISIVE_RULE_MARGIN_FLOOR,
+    DECISIVE_RULE_RESIDUAL_STRETCHED,
+    DECISIVE_RULE_SEVERITY_SHARE,
     NO_RANKING_APPLIED,
     NO_SELECTION_MADE,
     READINESS_STATUSES,
     SCOPE,
+    TEAM_STATE_CONTRACT_A,
+    TEAM_STATE_METHOD_VERSION,
     TeamOperationsFailClosedMetadata,
     TeamOperationsFreshnessMetadata,
     TeamOperationsRefusalMetadata,
@@ -20,6 +28,22 @@ from team_operations.contracts import (
     freshness_validation_errors,
     require_team_operations_governance_safe,
     trust_metadata_validation_errors,
+)
+
+
+# Exact Contract A thresholds, resolved once from the frozen contract. Held as
+# Fractions so a boundary case (clean_share == 3/5, severe_share == 1/3) is
+# decided by exact arithmetic, never by a rounded display value.
+_CLEAN_SHARE_FRESH_MIN = Fraction(*TEAM_STATE_CONTRACT_A['clean_share_fresh_min'])
+_CLEAN_COUNT_FRESH_MIN = TEAM_STATE_CONTRACT_A['clean_count_fresh_min']
+_SEVERE_COUNT_FRESH_MAX = TEAM_STATE_CONTRACT_A['severe_count_fresh_max']
+_CLEAN_COUNT_VULNERABLE_MAX = TEAM_STATE_CONTRACT_A['clean_count_vulnerable_max']
+_SEVERE_SHARE_VULNERABLE_MIN = Fraction(*TEAM_STATE_CONTRACT_A['severe_share_vulnerable_min'])
+
+# The freshness states that withhold a Team State (fail closed). Anything that is
+# not fully current is a data limitation, not a baseball condition.
+_NON_CURRENT_FRESHNESS_STATES = frozenset(
+    {'stale', 'missing', 'incomplete', 'historical', 'unknown'}
 )
 
 
@@ -140,13 +164,27 @@ def assemble_bullpen_readiness(
         freshness_metadata,
         trust,
     )
-    readiness_code = _readiness_status_code(
-        availability_distribution,
-        workload_pressure,
+    # Team State vNext (Contract A). The state is decided by the status-only
+    # partition of the canonical readiness population — nothing else. Workload
+    # pressure, raw fatigue scores, and handedness coverage are computed above as
+    # governed context for other surfaces, but they do NOT decide the state.
+    team_state_partition = _team_state_partition(availability_distribution)
+    readiness_code, decisive_rule, decisive_inputs = _contract_a_decision(
+        team_state_partition,
         coverage_inventory,
         handedness_coverage,
         freshness_metadata,
         trust,
+    )
+    team_state_evidence = _team_state_evidence(
+        readiness_code=readiness_code,
+        decisive_rule=decisive_rule,
+        decisive_inputs=decisive_inputs,
+        partition=team_state_partition,
+        coverage_inventory=coverage_inventory,
+        handedness_coverage=handedness_coverage,
+        freshness=freshness_metadata,
+        trust=trust,
     )
     contract_state = (
         'degraded'
@@ -181,6 +219,7 @@ def assemble_bullpen_readiness(
         freshness=freshness_metadata.to_dict(),
         refusal=TeamOperationsRefusalMetadata().to_dict(),
         fail_closed=fail_closed_state.to_dict(),
+        team_state_evidence=team_state_evidence,
     )
     require_team_operations_governance_safe(payload)
     return payload
@@ -445,45 +484,283 @@ def _constraints(
     return constraints
 
 
-def _readiness_status_code(
-    availability_distribution: Mapping[str, Any],
-    workload_pressure: Mapping[str, Any],
+def _team_state_partition(availability_distribution: Mapping[str, Any]) -> dict[str, int]:
+    """Status-only clean/moderate/severe/unknown partition of the active bullpen.
+
+    This is a straight regrouping of the governed availability statuses the
+    availability authority already published — no status is escalated, no raw
+    score is read, and an UNKNOWN arm is never promoted to clean. The partition
+    invariant ``clean + moderate + severe + unknown == active_pitcher_count`` holds
+    by construction because ``availability_distribution`` already places every
+    active record in exactly one status bucket.
+    """
+    clean_count = availability_distribution['available']
+    moderate_count = (
+        availability_distribution['monitor'] + availability_distribution['limited']
+    )
+    severe_count = (
+        availability_distribution['avoid'] + availability_distribution['unavailable']
+    )
+    unknown_count = availability_distribution['unknown']
+    active_pitcher_count = availability_distribution['total']
+    return {
+        'active_pitcher_count': active_pitcher_count,
+        'clean_count': clean_count,
+        'moderate_count': moderate_count,
+        'severe_count': severe_count,
+        'unknown_count': unknown_count,
+    }
+
+
+def _team_state_data_gate(
+    partition: Mapping[str, int],
     coverage_inventory: Mapping[str, Any],
     handedness_coverage: Mapping[str, Any],
     freshness: TeamOperationsFreshnessMetadata,
     trust: TeamOperationsTrustMetadata,
-) -> str:
-    if freshness.freshness_state in {'stale', 'missing', 'incomplete', 'historical', 'unknown'}:
-        return 'data_limited'
+) -> dict[str, Any] | None:
+    """Trust / data-quality gate. Returns the withholding reason, or None to pass.
+
+    This preserves the existing fail-closed trust behavior exactly. Handedness is
+    only ever a TRUST signal here (routed to ``data_limited``); it never produces a
+    baseball state. An empty active population has no Team State — reporting one
+    would convert a data condition into a classification — so it withholds too.
+    """
+    if freshness.freshness_state in _NON_CURRENT_FRESHNESS_STATES:
+        return {'gate': 'freshness', 'freshness_state': freshness.freshness_state}
     if trust.confidence in {'low', 'unknown'} or trust.data_state != 'fresh':
-        return 'data_limited'
-    # Share Cards SC-03B-07: team trust is now the canonical active-bullpen coverage
-    # authority (high/medium = sufficient current coverage). The raw whole-active
-    # coverage_inventory/handedness gates below use a different (coarser Pitcher.active)
-    # scope, so they must NOT re-limit a team the trust authority already deemed
-    # sufficiently covered — otherwise bounded partial (medium) coverage could never
-    # reach a supported status. They still fail closed for a low/unknown team (handled
-    # above), and continue to refine the constrained/stressed nuance further down.
-    _trust_coverage_sufficient = trust.confidence in {'high', 'medium'}
-    if not _trust_coverage_sufficient and coverage_inventory['coverage_state'] in {'missing', 'unknown'}:
-        return 'data_limited'
-    if not _trust_coverage_sufficient and coverage_inventory['coverage_state'] == 'partial':
-        return 'data_limited'
-    if not _trust_coverage_sufficient and handedness_coverage['coverage_state'] in {'missing', 'unknown'}:
-        return 'data_limited'
-    if workload_pressure['elevated_count'] or availability_distribution[
-        'unavailable'
-    ]:
-        return 'operationally_stressed'
+        return {
+            'gate': 'trust',
+            'trust_confidence': trust.confidence,
+            'trust_data_state': trust.data_state,
+        }
+    # Share Cards SC-03B-07: team trust is the canonical active-bullpen coverage
+    # authority (high/medium = sufficient current coverage). The coarser whole-active
+    # coverage_inventory / handedness gates only fail closed a team the trust
+    # authority has NOT already deemed sufficiently covered. Handedness is confined
+    # to this trust routing — it can withhold a read, but it can never downgrade a
+    # baseball state.
+    trust_coverage_sufficient = trust.confidence in {'high', 'medium'}
+    if not trust_coverage_sufficient and coverage_inventory['coverage_state'] in {
+        'missing',
+        'unknown',
+        'partial',
+    }:
+        return {'gate': 'coverage', 'coverage_state': coverage_inventory['coverage_state']}
+    if not trust_coverage_sufficient and handedness_coverage['coverage_state'] in {
+        'missing',
+        'unknown',
+    }:
+        return {
+            'gate': 'handedness',
+            'handedness_coverage_state': handedness_coverage['coverage_state'],
+        }
+    if partition['active_pitcher_count'] == 0:
+        return {'gate': 'empty_population', 'active_pitcher_count': 0}
+    return None
+
+
+def _contract_a_decision(
+    partition: Mapping[str, int],
+    coverage_inventory: Mapping[str, Any],
+    handedness_coverage: Mapping[str, Any],
+    freshness: TeamOperationsFreshnessMetadata,
+    trust: TeamOperationsTrustMetadata,
+) -> tuple[str, str, dict[str, Any]]:
+    """Locked Contract A precedence. Returns (status_code, decisive_rule, inputs).
+
+    Exact precedence, evaluated in this order and no other:
+
+      1. TRUST / DATA GATE   -> data_limited (no public Team State)
+      2. VULNERABLE          -> operationally_stressed
+                                clean_count <= 2  OR  severe_share >= 1/3
+      3. FRESH               -> operationally_stable
+                                clean_share >= 3/5 AND clean_count >= 5
+                                AND severe_count <= 1
+      4. STRETCHED           -> operationally_constrained  (residual)
+
+    Vulnerable is evaluated before Fresh. Shares are compared as exact rationals so
+    clean_share == 3/5 and severe_share == 1/3 land on the qualifying side of the
+    boundary without any float ambiguity.
+    """
+    gate = _team_state_data_gate(
+        partition, coverage_inventory, handedness_coverage, freshness, trust
+    )
+    if gate is not None:
+        return 'data_limited', DECISIVE_RULE_DATA_LIMITED, dict(gate)
+
+    total = partition['active_pitcher_count']
+    clean = partition['clean_count']
+    severe = partition['severe_count']
+    clean_share = Fraction(clean, total)
+    severe_share = Fraction(severe, total)
+
+    # 2. VULNERABLE — margin floor first, then severity share.
+    if clean <= _CLEAN_COUNT_VULNERABLE_MAX:
+        return (
+            'operationally_stressed',
+            DECISIVE_RULE_MARGIN_FLOOR,
+            {'clean_count': clean, 'clean_count_vulnerable_max': _CLEAN_COUNT_VULNERABLE_MAX},
+        )
+    if severe_share >= _SEVERE_SHARE_VULNERABLE_MIN:
+        return (
+            'operationally_stressed',
+            DECISIVE_RULE_SEVERITY_SHARE,
+            {
+                'severe_count': severe,
+                'active_pitcher_count': total,
+                'severe_share': _share(severe, total),
+            },
+        )
+
+    # 3. FRESH — strong clean coverage with at most one severe arm.
     if (
-        availability_distribution['monitor']
-        or availability_distribution['limited']
-        or availability_distribution['avoid']
-        or handedness_coverage['coverage_state'] == 'partial'
-        or workload_pressure['moderate_count']
+        clean_share >= _CLEAN_SHARE_FRESH_MIN
+        and clean >= _CLEAN_COUNT_FRESH_MIN
+        and severe <= _SEVERE_COUNT_FRESH_MAX
     ):
-        return 'operationally_constrained'
-    return 'operationally_stable'
+        return (
+            'operationally_stable',
+            DECISIVE_RULE_FRESH_COVERAGE,
+            {
+                'clean_count': clean,
+                'clean_share': _share(clean, total),
+                'severe_count': severe,
+                'active_pitcher_count': total,
+            },
+        )
+
+    # 4. STRETCHED — neither route fired.
+    return (
+        'operationally_constrained',
+        DECISIVE_RULE_RESIDUAL_STRETCHED,
+        {
+            'clean_count': clean,
+            'clean_share': _share(clean, total),
+            'severe_count': severe,
+            'severe_share': _share(severe, total),
+            'active_pitcher_count': total,
+        },
+    )
+
+
+def _share(count: int, denominator: int) -> float | None:
+    """Display-only ratio (never used to decide the state). None when empty."""
+    if not denominator:
+        return None
+    return count / denominator
+
+
+def _team_state_evidence(
+    *,
+    readiness_code: str,
+    decisive_rule: str,
+    decisive_inputs: Mapping[str, Any],
+    partition: Mapping[str, int],
+    coverage_inventory: Mapping[str, Any],
+    handedness_coverage: Mapping[str, Any],
+    freshness: TeamOperationsFreshnessMetadata,
+    trust: TeamOperationsTrustMetadata,
+) -> dict[str, Any]:
+    """Canonical Team State evidence vector from the exact classifier inputs.
+
+    Built from the same partition and the same decision that produced the state —
+    one population, one threshold interpretation. Shares are emitted as floats for
+    readability; the thresholds are emitted as exact rationals ``[numerator,
+    denominator]`` so a downstream reader can reproduce the boundary arithmetic.
+    """
+    total = partition['active_pitcher_count']
+    material_limitations = _team_state_material_limitations(
+        readiness_code=readiness_code,
+        partition=partition,
+        handedness_coverage=handedness_coverage,
+        freshness=freshness,
+        trust=trust,
+    )
+    return {
+        'method_version': TEAM_STATE_METHOD_VERSION,
+        'contract': TEAM_STATE_CONTRACT_A['contract'],
+        'basis': TEAM_STATE_CONTRACT_A['basis'],
+        'readiness_status_code': readiness_code,
+        'active_pitcher_count': total,
+        'clean_count': partition['clean_count'],
+        'moderate_count': partition['moderate_count'],
+        'severe_count': partition['severe_count'],
+        'unknown_count': partition['unknown_count'],
+        'clean_share': _share(partition['clean_count'], total),
+        'moderate_share': _share(partition['moderate_count'], total),
+        'severe_share': _share(partition['severe_count'], total),
+        'unknown_share': _share(partition['unknown_count'], total),
+        'decisive_rule': decisive_rule,
+        'decisive_inputs': dict(decisive_inputs),
+        'thresholds_applied': _team_state_thresholds_applied(),
+        'trust_state': trust.confidence,
+        'trust_data_state': trust.data_state,
+        'freshness_state': freshness.freshness_state,
+        'material_limitations': material_limitations,
+        'evidence_references': {
+            'population_authority': 'resolve_readiness_population',
+            'membership_authority': 'resolve_active_bullpen_membership',
+            'availability_authority': 'services.availability',
+            'coverage_state': coverage_inventory.get('coverage_state'),
+        },
+    }
+
+
+def _team_state_thresholds_applied() -> dict[str, Any]:
+    """The locked Contract A thresholds, exact rationals plus float for readability."""
+    clean_share = TEAM_STATE_CONTRACT_A['clean_share_fresh_min']
+    severe_share = TEAM_STATE_CONTRACT_A['severe_share_vulnerable_min']
+    return {
+        'clean_share_fresh_min': list(clean_share),
+        'clean_share_fresh_min_value': clean_share[0] / clean_share[1],
+        'clean_count_fresh_min': TEAM_STATE_CONTRACT_A['clean_count_fresh_min'],
+        'severe_count_fresh_max': TEAM_STATE_CONTRACT_A['severe_count_fresh_max'],
+        'clean_count_vulnerable_max': TEAM_STATE_CONTRACT_A['clean_count_vulnerable_max'],
+        'severe_share_vulnerable_min': list(severe_share),
+        'severe_share_vulnerable_min_value': severe_share[0] / severe_share[1],
+    }
+
+
+def _team_state_material_limitations(
+    *,
+    readiness_code: str,
+    partition: Mapping[str, int],
+    handedness_coverage: Mapping[str, Any],
+    freshness: TeamOperationsFreshnessMetadata,
+    trust: TeamOperationsTrustMetadata,
+) -> list[dict[str, Any]]:
+    """Structured, non-prose material limitations attached to the evidence vector."""
+    limitations: list[dict[str, Any]] = []
+    if readiness_code == 'data_limited':
+        limitations.append({
+            'limitation_id': 'team_state_withheld',
+            'detail': 'Team State is withheld because governed evidence did not clear the trust/data bar.',
+        })
+    if partition['unknown_count']:
+        # Preserved, never dropped and never counted as clean: an arm with no
+        # governed availability state stays UNKNOWN in the partition.
+        limitations.append({
+            'limitation_id': 'unknown_arms_present',
+            'count': partition['unknown_count'],
+            'detail': 'Some active bullpen arms have no governed availability state.',
+        })
+    if handedness_coverage.get('coverage_state') == 'partial':
+        limitations.append({
+            'limitation_id': 'handedness_partial',
+            'detail': 'Bullpen handedness coverage is partial. This is context only and does not change Team State.',
+        })
+    if freshness.freshness_state != 'current':
+        limitations.append({
+            'limitation_id': f'freshness_{freshness.freshness_state}',
+            'detail': 'Current workload evidence is not fully current.',
+        })
+    if trust.confidence == 'medium':
+        limitations.append({
+            'limitation_id': 'bounded_partial_coverage',
+            'detail': 'Read confidence is medium: current active-bullpen coverage is bounded but partial.',
+        })
+    return limitations
 
 
 def _readiness_payload(status_code: str) -> dict[str, Any]:
@@ -644,9 +921,59 @@ def _fail_closed_payload(
         freshness=freshness_payload,
         refusal=refusal_payload,
         fail_closed=fail_closed_payload,
+        team_state_evidence=_refused_team_state_evidence(
+            reason_code=reason_code,
+            trust_payload=trust_payload,
+            freshness_payload=freshness_payload,
+        ),
     )
     require_team_operations_governance_safe(payload)
     return payload
+
+
+def _refused_team_state_evidence(
+    *,
+    reason_code: str,
+    trust_payload: Mapping[str, Any],
+    freshness_payload: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Team State evidence for a refused/fail-closed read: no state, no partition.
+
+    Carries the method version and the withheld decisive rule so a refused
+    publication still records WHICH method refused, with a null partition (no
+    records were classified) rather than a fabricated zero-arm state.
+    """
+    return {
+        'method_version': TEAM_STATE_METHOD_VERSION,
+        'contract': TEAM_STATE_CONTRACT_A['contract'],
+        'basis': TEAM_STATE_CONTRACT_A['basis'],
+        'readiness_status_code': 'refused',
+        'active_pitcher_count': None,
+        'clean_count': None,
+        'moderate_count': None,
+        'severe_count': None,
+        'unknown_count': None,
+        'clean_share': None,
+        'moderate_share': None,
+        'severe_share': None,
+        'unknown_share': None,
+        'decisive_rule': DECISIVE_RULE_DATA_LIMITED,
+        'decisive_inputs': {'gate': 'refused', 'reason_code': reason_code},
+        'thresholds_applied': _team_state_thresholds_applied(),
+        'trust_state': trust_payload.get('confidence'),
+        'trust_data_state': trust_payload.get('data_state'),
+        'freshness_state': freshness_payload.get('freshness_state'),
+        'material_limitations': [{
+            'limitation_id': 'team_state_refused',
+            'detail': 'Readiness output failed closed before any Team State was assembled.',
+        }],
+        'evidence_references': {
+            'population_authority': 'resolve_readiness_population',
+            'membership_authority': 'resolve_active_bullpen_membership',
+            'availability_authority': 'services.availability',
+            'coverage_state': None,
+        },
+    }
 
 
 def _safe_trust_payload(
@@ -712,6 +1039,7 @@ def _base_payload(
     freshness: Mapping[str, Any],
     refusal: Mapping[str, Any],
     fail_closed: Mapping[str, Any],
+    team_state_evidence: Mapping[str, Any],
 ) -> dict[str, Any]:
     return {
         'capability': CAPABILITY,
@@ -739,6 +1067,7 @@ def _base_payload(
         'freshness': dict(freshness),
         'refusal': dict(refusal),
         'fail_closed': dict(fail_closed),
+        'team_state_evidence': dict(team_state_evidence),
     }
 
 

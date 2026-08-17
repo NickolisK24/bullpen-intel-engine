@@ -1084,6 +1084,19 @@ def _fixture_freshness_metadata(**overrides) -> dict[str, Any]:
 
 
 def _fixture_stable_readiness_records() -> tuple[dict[str, str], ...]:
+    # Six clean arms clear the Contract A Fresh floor.
+    return tuple(
+        {
+            'availability_status': 'available',
+            'workload_category': 'low',
+            'throwing_hand': hand,
+        }
+        for hand in ('left', 'right', 'left', 'right', 'left', 'right')
+    )
+
+
+def _fixture_constrained_readiness_records() -> tuple[dict[str, str], ...]:
+    # Four clean arms out of seven with no severe share -> residual Stretched.
     return (
         {
             'availability_status': 'available',
@@ -1095,15 +1108,15 @@ def _fixture_stable_readiness_records() -> tuple[dict[str, str], ...]:
             'workload_category': 'low',
             'throwing_hand': 'right',
         },
-    )
-
-
-def _fixture_constrained_readiness_records() -> tuple[dict[str, str], ...]:
-    return (
         {
             'availability_status': 'available',
             'workload_category': 'low',
             'throwing_hand': 'left',
+        },
+        {
+            'availability_status': 'available',
+            'workload_category': 'low',
+            'throwing_hand': 'right',
         },
         {
             'availability_status': 'monitor',
@@ -1114,6 +1127,11 @@ def _fixture_constrained_readiness_records() -> tuple[dict[str, str], ...]:
             'availability_status': 'limited',
             'workload_category': 'low',
             'throwing_hand': 'right',
+        },
+        {
+            'availability_status': 'limited',
+            'workload_category': 'low',
+            'throwing_hand': 'left',
         },
     )
 
