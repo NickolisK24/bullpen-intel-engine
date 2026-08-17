@@ -14,9 +14,21 @@ from typing import Any, Mapping
 CAPABILITY = 'team_operations_bullpen_readiness'
 SCOPE = 'team_bullpen_readiness'
 CONTRACT = 'team_operations_bullpen_readiness_api_contract'
-CONTRACT_VERSION = 'v3_phase_4'
+# v3_phase_5 introduces the calibrated Team State classifier (Contract A). The
+# aggregation method genuinely changed — the worst-arm-wins escalation is gone —
+# so the readiness contract version advances one phase. Every payload assembled
+# under the new classifier stamps this value; historical rows keep 'v3_phase_4'.
+# Do not silently continue 'v3_phase_4'.
+CONTRACT_VERSION = 'v3_phase_5'
 NO_RANKING_APPLIED = False
 NO_SELECTION_MADE = False
+
+# The Team State classification method version. It is the readiness contract
+# version because the classifier is the readiness contract's decision core; a
+# consumer reading only the Team State evidence vector still learns which method
+# produced the state. Distinct from the immutable artifact render version
+# (team-state-1.x.0), which versions the published document shape.
+TEAM_STATE_METHOD_VERSION = CONTRACT_VERSION
 
 CONTRACT_STATES = frozenset(
     {
@@ -35,6 +47,57 @@ READINESS_STATUSES = {
     'refused': 'Refused',
 }
 ALLOWED_READINESS_STATUS_CODES = frozenset(READINESS_STATUSES)
+
+
+# ---------------------------------------------------------------------------
+# Team State vNext — locked Contract A (calibrated aggregation thresholds).
+#
+# These values are FINAL for this classifier. They are held as exact rationals
+# (numerator, denominator) so a boundary case is decided by arithmetic, never by
+# a float representation, and mirror the founder-approved calibration contract in
+# ``services.readiness_population_comparison.CONTRACT_A`` byte-for-byte. A freeze
+# test pins the two copies equal so neither can drift.
+#
+# Classification is STATUS ONLY. The arm signal is the governed availability
+# status the availability authority already published — never a raw fatigue
+# score, never a workload-pressure count, never handedness coverage. Team State
+# aggregates those statuses; it does not reinterpret them.
+# ---------------------------------------------------------------------------
+
+TEAM_STATE_CONTRACT_A = {
+    'contract': 'team_state_contract_a',
+    'basis': 'status_only',
+    'clean_definition': 'Available',
+    'moderate_definition': 'Monitor + Limited',
+    'severe_definition': 'Avoid + Unavailable',
+    'clean_share_fresh_min': (3, 5),          # clean_share >= 0.60
+    'clean_count_fresh_min': 5,               # clean_count >= 5
+    'severe_count_fresh_max': 1,              # severe_count <= 1
+    'clean_count_vulnerable_max': 2,          # clean_count <= 2
+    'severe_share_vulnerable_min': (1, 3),    # severe_share >= 1/3
+}
+
+# The status → partition axis map (status-only). Governed availability values are
+# normalised case-insensitively; anything without a governed availability state is
+# UNKNOWN and is never promoted to clean.
+TEAM_STATE_CLEAN_STATUSES = frozenset({'available'})
+TEAM_STATE_MODERATE_STATUSES = frozenset({'monitor', 'limited'})
+TEAM_STATE_SEVERE_STATUSES = frozenset({'avoid', 'unavailable'})
+
+# Closed decisive-rule vocabulary for the Team State evidence vector. Exactly one
+# of these is the rule that decided the published state.
+DECISIVE_RULE_MARGIN_FLOOR = 'margin_floor'          # Vulnerable: clean_count <= 2
+DECISIVE_RULE_SEVERITY_SHARE = 'severity_share'      # Vulnerable: severe_share >= 1/3
+DECISIVE_RULE_FRESH_COVERAGE = 'fresh_coverage'      # Fresh: clean share/count + severe cap
+DECISIVE_RULE_RESIDUAL_STRETCHED = 'residual_stretched'  # Stretched: neither route fired
+DECISIVE_RULE_DATA_LIMITED = 'data_limited'          # Trust/data/empty gate withheld a state
+ALLOWED_DECISIVE_RULES = frozenset({
+    DECISIVE_RULE_MARGIN_FLOOR,
+    DECISIVE_RULE_SEVERITY_SHARE,
+    DECISIVE_RULE_FRESH_COVERAGE,
+    DECISIVE_RULE_RESIDUAL_STRETCHED,
+    DECISIVE_RULE_DATA_LIMITED,
+})
 
 ALLOWED_CONSTRAINT_CATEGORIES = frozenset(
     {

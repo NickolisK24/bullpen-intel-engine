@@ -329,7 +329,7 @@
       ]
     },
     "2": {
-      "measured_seconds": 502.63,
+      "measured_seconds": 504.13,
       "files": [
         {
           "path": "tests/test_appearance_ledger.py",
@@ -622,6 +622,10 @@
         {
           "path": "tests/test_team_scoped_public_roster_readiness.py",
           "measured_seconds": 0.002
+        },
+        {
+          "path": "tests/test_team_state_vnext_contract_a.py",
+          "measured_seconds": 1.5
         },
         {
           "path": "tests/test_tonight_intelligence_snapshot.py",

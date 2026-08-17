@@ -13,9 +13,13 @@ Unavailable — and ``_readiness_status_code`` returns ``operationally_stressed`
 when either the unavailable count or the elevated workload count is nonzero.
 Every club has such an arm on any given day, so every club collapsed.
 
-These tests pin the population contract at the layer that decides it. They do
-not change any threshold, status meaning, or public mapping — a genuine active
-bullpen record still drives state exactly as it did.
+These tests pin the population contract at the layer that decides it: which
+records reach the readiness distributions. That contract — the canonical active
+bullpen resolved by ``resolve_active_bullpen_membership`` — is unchanged by the
+Team State vNext (Contract A) recalibration. The classification thresholds
+themselves DID change with vNext (the worst-arm-wins escalation is gone), so the
+status expectations below reflect Contract A; the population intent each fixture
+demonstrates is identical.
 """
 
 import pytest
@@ -114,45 +118,61 @@ def test_a_complete_rested_active_bullpen_is_operationally_stable():
 # ── FIXTURE 2 — Stretched ────────────────────────────────────────────────────
 
 def test_a_monitored_active_bullpen_is_operationally_constrained():
-    bullpen = [arm('available', 'low') for _ in range(6)]
-    bullpen += [arm('monitor', 'moderate'), arm('limited', 'moderate')]
+    """Thin-but-not-severe clean coverage is Stretched under Contract A.
+
+    Four clean arms out of seven: above the Vulnerable margin floor (clean > 2)
+    and below the Fresh clean floor (clean < 5), with no severe share. The
+    residual Stretched rule is what fires.
+    """
+    bullpen = [arm('available', 'low') for _ in range(4)]
+    bullpen += [arm('monitor', 'moderate'), arm('limited', 'moderate'), arm('monitor', 'moderate')]
 
     payload = readiness_for(bullpen)
 
     assert payload['readiness']['status_code'] == 'operationally_constrained'
-    # No stressed trigger: the constrained rule is what fired.
+    assert payload['team_state_evidence']['decisive_rule'] == 'residual_stretched'
+    # No severe inventory: the Stretched rule fired on clean coverage alone.
     assert payload['availability_distribution']['unavailable'] == 0
-    assert payload['workload_pressure']['elevated_count'] == 0
+    assert payload['availability_distribution']['avoid'] == 0
 
 
 # ── FIXTURE 3 — Vulnerable ───────────────────────────────────────────────────
 
 def test_a_genuine_active_bullpen_stress_trigger_is_operationally_stressed():
-    """A true canonical member still drives Vulnerable. The rule is unchanged."""
-    bullpen = [arm('available', 'low') for _ in range(6)]
-    bullpen += [arm('limited', 'moderate'), arm('unavailable', 'elevated')]
+    """A true severe share in the canonical bullpen drives Vulnerable.
+
+    Under Contract A a single severe arm does NOT force Vulnerable; a severe SHARE
+    at or above one third does. Four clean and three severe (3/7 severe) trips the
+    severity-share route.
+    """
+    bullpen = [arm('available', 'low') for _ in range(4)]
+    bullpen += [arm('avoid', 'elevated') for _ in range(3)]
 
     payload = readiness_for(bullpen)
 
     assert payload['readiness']['status_code'] == 'operationally_stressed'
-    assert payload['availability_distribution']['unavailable'] == 1
-    assert payload['workload_pressure']['elevated_count'] == 1
+    assert payload['team_state_evidence']['decisive_rule'] == 'severity_share'
+    assert payload['availability_distribution']['avoid'] == 3
 
 
 # ── FIXTURE 4 — Off-active records must not contaminate state ────────────────
 
-def test_one_non_bullpen_record_flips_a_rested_team_to_stressed():
+def test_off_active_records_distort_a_rested_team_state():
     """The production defect, reproduced at the layer that caused it.
 
-    This is the mechanism behind Detroit publishing Vulnerable while showing
-    eight rested and available arms: the team's own bullpen is untouched, and a
-    single extra record that is not part of it decides the state.
+    This is the mechanism behind Detroit publishing a stressed state while showing
+    a rested and available bullpen: the team's own bullpen is untouched, and extra
+    records that are not part of it distort the state. Under Contract A one severe
+    arm no longer flips a strong bullpen, but off-active severe arms still push the
+    severe share past the Vulnerable route — which is exactly why the canonical
+    population must exclude them.
     """
     bullpen = [arm('available', 'low') for _ in range(8)]
-    starter_who_worked_yesterday = arm('unavailable', 'elevated')
+    starters_and_injured = [arm('unavailable', 'elevated') for _ in range(4)]
 
     assert status_of(bullpen) == 'operationally_stable'
-    assert status_of(bullpen + [starter_who_worked_yesterday]) == 'operationally_stressed'
+    # 8 clean + 4 severe = 4/12 severe share (>= 1/3) -> Vulnerable if counted.
+    assert status_of(bullpen + starters_and_injured) == 'operationally_stressed'
 
 
 def test_selecting_the_canonical_population_removes_the_contamination():
@@ -214,10 +234,14 @@ def test_an_empty_population_never_produces_a_supported_state():
 # ── FIXTURE 6 — Sequential teams do not leak ─────────────────────────────────
 
 def test_sequential_teams_resolve_independent_states():
-    """Three teams, three expected states, resolved back to back."""
+    """Three teams, three expected states, resolved back to back (Contract A)."""
     fresh = [arm('available', 'low') for _ in range(8)]
-    stretched = [arm('available', 'low') for _ in range(7)] + [arm('monitor', 'moderate')]
-    vulnerable = [arm('available', 'low') for _ in range(7)] + [arm('unavailable', 'elevated')]
+    stretched = [arm('available', 'low') for _ in range(4)] + [
+        arm('monitor', 'moderate') for _ in range(3)
+    ]
+    vulnerable = [arm('available', 'low') for _ in range(4)] + [
+        arm('avoid', 'elevated') for _ in range(3)
+    ]
 
     results = [status_of(records) for records in (fresh, stretched, vulnerable, fresh)]
 
@@ -251,15 +275,21 @@ def test_selection_tolerates_records_without_a_resolvable_pitcher():
     assert [record['pitcher'].id for record in selected] == [1]
 
 
-# ── The thresholds and the mapping are untouched ─────────────────────────────
+# ── The public mapping is untouched; the classification is Contract A ────────
 
 @pytest.mark.parametrize('records,expected', [
-    ([arm('available', 'low')], 'operationally_stable'),
-    ([arm('monitor', 'moderate')], 'operationally_constrained'),
-    ([arm('limited', 'moderate')], 'operationally_constrained'),
-    ([arm('avoid', 'elevated')], 'operationally_stressed'),
-    ([arm('unavailable', 'elevated')], 'operationally_stressed'),
+    # A strong clean bullpen is Fresh.
+    ([arm('available', 'low') for _ in range(6)], 'operationally_stable'),
+    # Thin clean coverage with no severe share is Stretched.
+    ([arm('available', 'low') for _ in range(4)]
+     + [arm('monitor', 'moderate') for _ in range(3)], 'operationally_constrained'),
+    # A severe share at or above one third is Vulnerable.
+    ([arm('available', 'low') for _ in range(4)]
+     + [arm('avoid', 'elevated') for _ in range(3)], 'operationally_stressed'),
+    # Two or fewer clean arms is Vulnerable on the margin floor alone.
+    ([arm('available', 'low') for _ in range(2)]
+     + [arm('monitor', 'moderate') for _ in range(4)], 'operationally_stressed'),
 ])
-def test_the_status_rule_itself_is_unchanged(records, expected):
-    """Same inputs, same status. Only which records are inputs changed."""
+def test_the_status_rule_is_contract_a(records, expected):
+    """The status is decided by the Contract A partition of the same population."""
     assert status_of(records) == expected

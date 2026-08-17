@@ -167,11 +167,24 @@ class TestTeamOperationsBullpenReadiness:
         assert payload['scope'] == 'team_bullpen_readiness'
         assert payload['contract_state'] == 'available'
         assert payload['team']['team_id'] == 111
-        assert payload['readiness']['status_code'] == 'operationally_constrained'
+        # Two clean arms out of four is Vulnerable under Contract A: the clean
+        # margin floor (clean_count <= 2) fires before any Fresh check. This is the
+        # calibrated behavior, not the old worst-arm escalation.
+        assert payload['readiness']['status_code'] == 'operationally_stressed'
         assert payload['availability_distribution']['total'] == 4
         assert payload['workload_pressure']['moderate_count'] == 1
         assert payload['coverage_inventory']['active_pitcher_count'] == 4
         assert payload['handedness_coverage']['left_handed_count'] == 1
+        # Team State evidence is derived from the exact classifier population.
+        evidence = payload['team_state_evidence']
+        assert evidence['decisive_rule'] == 'margin_floor'
+        assert (
+            evidence['clean_count'],
+            evidence['moderate_count'],
+            evidence['severe_count'],
+            evidence['unknown_count'],
+            evidence['active_pitcher_count'],
+        ) == (2, 2, 0, 0, 4)
         assert 'pitchers' not in payload
         assert 'candidate_groups' not in payload
         assert team_operations_governance_errors(payload) == []
