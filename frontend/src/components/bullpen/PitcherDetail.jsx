@@ -10,6 +10,7 @@ import {
   workloadAppearanceDetailLabel,
 } from '../../utils/appearanceLanguage'
 import AvailabilitySummary from './AvailabilitySummary'
+import { formatWorkloadCount } from './relieverFinderView'
 import RecentWorkPanel from './RecentWorkPanel'
 import ExplanationDisclosure from '../explanations/ExplanationDisclosure'
 
@@ -77,7 +78,7 @@ export function PitcherDetailContent({ data, pitcherId, onClose }) {
   const hasCurrentRead = Boolean(cf || availability)
   const workloadFacts = cf ? [
     { label: 'Days Rest',  value: cf.days_since_last_appearance != null ? `${cf.days_since_last_appearance}d` : '---' },
-    { label: 'Pitches/7d', value: cf.pitches_last_7_days ?? 0 },
+    { label: 'Pitches/7d', value: formatWorkloadCount(cf.pitches_last_7_days) },
     { label: 'Apps/7d',    value: cf.appearances_last_7 ?? 0 },
     { label: 'IP/7d',      value: fmtIP(cf.innings_last_7_days) },
     { label: 'Apps/14d',   value: cf.appearances_last_14 ?? 0 },
