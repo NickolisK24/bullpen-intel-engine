@@ -51,6 +51,21 @@ jobs:
           APP_ENV: production
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           SECRET_KEY: ${{ secrets.SECRET_KEY }}
+          # ADMIN_API_TOKEN is required for APPLICATION STARTUP ONLY, proven by
+          # inspection rather than assumed:
+          #   config.py:96   APP_ENV != production refuses a non-local
+          #                  DATABASE_URL, so reaching the production database
+          #                  requires APP_ENV=production;
+          #   config.py:214  APP_ENV=production refuses to boot without
+          #                  ADMIN_API_TOKEN.
+          # Booting against the production database is therefore impossible
+          # without it, and lowering APP_ENV to dodge the check would make the
+          # hosted DATABASE_URL itself refuse to start. The exporter never reads
+          # this value, makes no HTTP call, and invokes no admin endpoint — it
+          # runs SELECT queries and rolls back.
+          ADMIN_API_TOKEN: ${{ secrets.BASEBALLOS_ADMIN_API_TOKEN }}
+          # No BASEBALLOS_SYNC_URL and no publication token: nothing here calls
+          # a sync endpoint, publishes a snapshot, or dispatches a workflow.
           AUTO_SYNC: 'false'
           SNAPSHOT_ID_FROM: ${{ inputs.snapshot_id_from }}
           SNAPSHOT_ID_TO: ${{ inputs.snapshot_id_to }}
@@ -58,8 +73,11 @@ jobs:
           DATE_TO: ${{ inputs.date_to }}
         run: |
           set -euo pipefail
-          if [ -z "${DATABASE_URL:-}" ] || [ -z "${SECRET_KEY:-}" ]; then
-            echo "::error::Missing DATABASE_URL or SECRET_KEY repository secret."
+          # Fail before the app boots, with a named secret, rather than letting
+          # config.py raise a RuntimeError deep in bootstrap.
+          if [ -z "${DATABASE_URL:-}" ] || [ -z "${SECRET_KEY:-}" ] \
+             || [ -z "${ADMIN_API_TOKEN:-}" ]; then
+            echo "::error::Missing DATABASE_URL, SECRET_KEY, or BASEBALLOS_ADMIN_API_TOKEN repository secret."
             exit 1
           fi
 
