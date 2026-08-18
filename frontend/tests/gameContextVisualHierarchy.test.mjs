@@ -40,8 +40,8 @@ test('the matchup (team vs opponent) is rendered prominently', () => {
   assert.ok(htmlIncludes(html, 'Arizona Diamondbacks'))
   assert.ok(htmlIncludes(html, 'Los Angeles Dodgers'))
   assert.ok(htmlIncludes(html, '>vs<'))
-  // The opponent carries the hero emphasis (display-size, amber gradient).
-  assert.ok(/text-gradient-amber[^>]*>\s*Los Angeles Dodgers/.test(html), 'opponent is the hero element')
+  // The opponent carries the hero emphasis through scale and restrained gold.
+  assert.ok(/text-gold[^>]*>\s*Los Angeles Dodgers/.test(html), 'opponent is the hero element')
 })
 
 test('the opponent reads before the trust metadata (hierarchy)', () => {

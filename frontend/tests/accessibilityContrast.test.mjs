@@ -42,3 +42,25 @@ test('muted chalk text tokens meet WCAG AA on dark surfaces', () => {
     }
   }
 })
+
+test('semantic foundation colors remain readable with visible text on dark surfaces', () => {
+  const colors = tailwindConfig.theme.extend.colors
+  for (const token of [
+    'stateFresh',
+    'stateStretched',
+    'stateVulnerable',
+    'readAvailable',
+    'readWatch',
+    'readLimited',
+    'readUnavailable',
+    'signal',
+    'gold',
+  ]) {
+    for (const surface of [colors.field, colors.dugout]) {
+      assert.ok(
+        contrastRatio(colors[token], surface) >= 4.5,
+        `${token} should pass AA on ${surface}`,
+      )
+    }
+  }
+})

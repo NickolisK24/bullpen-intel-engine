@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useFetch } from '../../../hooks/useFetch'
 import { toOperatingStateReadModel } from '../../../adapters/operatingStateReadModel'
 import { getTeamBullpenBoard, getTeamGameContext, getTeamStory, getTeamShareCard } from '../../../utils/api'
-import { FreshnessStamp, LoadingPane, ErrorState, EmptyState } from '../../UI'
+import { FreshnessStamp, TeamBoardSkeleton, ErrorState, EmptyState } from '../../UI'
 import BullpenOperatingStateCard, { BullpenReadDisclosure } from '../BullpenOperatingStateCard'
 import BullpenAvailabilityDistribution from './BullpenAvailabilityDistribution'
 import BullpenBoardView, { RosterStatusBanner } from './BullpenBoardView'
@@ -146,7 +146,7 @@ export default function TonightsBullpenBoard({
             </span>
           ) : (
             <>
-              <label htmlFor="team-board-selector" className="block font-mono text-[10px] uppercase tracking-widest text-chalk500">Team</label>
+              <label htmlFor="team-board-selector" className="type-overline block">Team</label>
               <select
                 id="team-board-selector"
                 aria-label="Select team for Team Board"
@@ -177,11 +177,11 @@ export default function TonightsBullpenBoard({
             Show unavailable arms
           </button>
           {rosterContextLimited ? (
-            <span className="rounded border border-dirt bg-dugout px-2 py-1 font-mono text-[10px] uppercase tracking-widest text-chalk500">
+            <span className="type-overline rounded border border-dirt bg-dugout px-2 py-1">
               Unavailable roster context withheld.
             </span>
           ) : showUnavailable && (
-            <span className="rounded border border-dirt bg-dugout px-2 py-1 font-mono text-[10px] uppercase tracking-widest text-chalk500">
+            <span className="type-overline rounded border border-dirt bg-dugout px-2 py-1">
               Unavailable relievers are context only.
             </span>
           )}
@@ -191,7 +191,7 @@ export default function TonightsBullpenBoard({
       {selectedTeam == null ? (
         <EmptyState title="Pick a team" subtitle="Select a team above to see its current bullpen board." />
       ) : boardState.loading ? (
-        <LoadingPane message="Building current bullpen board..." />
+        <TeamBoardSkeleton message="Building current bullpen board..." />
       ) : boardState.error ? (
         <ErrorState message={boardState.error} onRetry={boardState.refetch} />
       ) : (

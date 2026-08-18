@@ -1,30 +1,15 @@
+import { designTokens } from './src/styles/designTokens.js'
+
 /** @type {import('tailwindcss').Config} */
 export default {
   content: ['./index.html', './src/**/*.{js,jsx}'],
   theme: {
     extend: {
-      colors: {
-        // Core palette
-        field:   '#0a0c0f',   // Near-black background
-        dugout:  '#111418',   // Card/panel background
-        chalk:   '#1a1f26',   // Elevated surface
-        dirt:    '#242b35',   // Border/divider
-        // Accents
-        amber:   '#f5a623',   // Primary accent — stadium lights
-        gold:    '#e8943a',   // Secondary warm accent
-        pine:    '#2d6a4f',   // Green — safe/low fatigue
-        warning: '#d97706',   // Amber — moderate fatigue
-        danger:  '#dc2626',   // Red — high/critical fatigue
-        ice:     '#93c5fd',   // Blue — cool stat highlight
-        // Text
-        chalk100: '#f0f4f8',
-        chalk200: '#d1dce8',
-        chalk300: '#b7c4d1',
-        chalk400: '#9aa8b8',
-        chalk500: '#8b9bae',
-        chalk600: '#8294aa',
-        chalk700: '#8294aa',
-      },
+      colors: designTokens.colors,
+      fontSize: designTokens.typography,
+      spacing: designTokens.spacing,
+      screens: designTokens.screens,
+      maxWidth: designTokens.maxWidth,
       fontFamily: {
         display: ['"Bebas Neue"', 'sans-serif'],
         mono:    ['"JetBrains Mono"', 'monospace'],
@@ -41,14 +26,12 @@ export default {
       animation: {
         'fade-up':      'fadeUp 0.5s ease forwards',
         'fade-in':      'fadeIn 0.4s ease forwards',
-        'pulse-amber':  'pulseAmber 2s ease-in-out infinite',
         'slide-right':  'slideRight 0.6s ease forwards',
         'count-up':     'countUp 0.8s ease forwards',
       },
       keyframes: {
         fadeUp:      { '0%': { opacity: 0, transform: 'translateY(16px)' }, '100%': { opacity: 1, transform: 'translateY(0)' } },
         fadeIn:      { '0%': { opacity: 0 }, '100%': { opacity: 1 } },
-        pulseAmber:  { '0%,100%': { boxShadow: '0 0 0 0 rgba(245,166,35,0)' }, '50%': { boxShadow: '0 0 12px 2px rgba(245,166,35,0.25)' } },
         slideRight:  { '0%': { opacity: 0, transform: 'translateX(-20px)' }, '100%': { opacity: 1, transform: 'translateX(0)' } },
         countUp:     { '0%': { opacity: 0 }, '100%': { opacity: 1 } },
       },

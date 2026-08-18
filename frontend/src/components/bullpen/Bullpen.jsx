@@ -187,7 +187,9 @@ export default function Bullpen() {
   }
 
   return (
-    <div className={`p-4 sm:p-6 lg:p-8 mx-auto ${selectedPitcher ? 'max-w-[100rem]' : 'max-w-7xl'}`}>
+    <div className={viewMode === BULLPEN_VIEWS.BOARD
+      ? 'team-board-shell'
+      : `p-4 sm:p-6 lg:p-8 mx-auto ${selectedPitcher ? 'max-w-[100rem]' : 'max-w-7xl'}`}>
       <SectionHeader
         as="h1"
         title={getBullpenPageIdentity(viewMode, teamList, urlState)}
