@@ -149,11 +149,13 @@ test('team board launch landing is neutral and ignores stale preferred team stat
   assert.equal(tonightsBullpenBoardSource.includes('baseballos.preferredTeam'), false)
 })
 
-test('team board uses compact operating card density', () => {
-  assert.ok(tonightsBullpenBoardSource.includes('<BullpenOperatingStateCard'))
-  assert.ok(tonightsBullpenBoardSource.includes('density="compact"'))
+test('team board adopts the v2 Answer Block without adopting ActiveArmRow', () => {
+  assert.ok(tonightsBullpenBoardSource.includes('<TeamBoardAnswerBlock'))
+  assert.ok(tonightsBullpenBoardSource.includes('getTeamBoardV2(selectedTeam)'))
   assert.ok(tonightsBullpenBoardSource.includes("href: '#pitcher-lanes'"))
   assert.ok(tonightsBullpenBoardSource.includes('showRoutineFreshness={false}'))
+  assert.equal(tonightsBullpenBoardSource.includes('ActiveArmRow'), false)
+  assert.equal(tonightsBullpenBoardSource.includes('<BullpenOperatingStateCard'), false)
 })
 
 test('board no longer restates the team state above the groups', () => {

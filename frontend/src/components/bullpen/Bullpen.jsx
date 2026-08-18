@@ -75,11 +75,10 @@ export function getBullpenPageIdentity(viewMode, teamList, urlState = {}) {
     return 'Compare Bullpens'
   }
 
-  // getTeamOptionLabel is the existing shared rule and prefers the full club
-  // name; its abbreviation fallback only fires if a team row arrives without
-  // one, which is a data defect rather than a naming choice.
-  const teamLabel = getTeamOptionLabel(resolveTeamReference(teamList, urlState.team))
-  return teamLabel ? `${teamLabel} Bullpen` : 'Team Bullpen Board'
+  // TB-01 moves the selected club identity into the v2-backed Answer Block.
+  // The route shell now names the product surface once and does not repeat the
+  // club directly above the block that owns the current team answer.
+  return 'Team Board'
 }
 
 
