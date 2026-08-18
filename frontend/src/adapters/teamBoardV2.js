@@ -29,6 +29,7 @@ export function readTeamBoardV2(payload) {
     teamState: payload.team_state,
     summary: payload.summary,
     activeBullpen: payload.active_bullpen,
+    recentUsage: payload.recent_usage,
     restStatus: payload.rest_status,
     rotationImpact: payload.rotation_impact,
     rosterContext: payload.roster_context,
