@@ -3,39 +3,32 @@
 @tailwind utilities;
 
 @layer base {
-  :root {
-    --field:    #0a0c0f;
-    --dugout:   #111418;
-    --chalk:    #1a1f26;
-    --dirt:     #242b35;
-    --amber:    #f5a623;
-    --gold:     #e8943a;
-    --pine:     #2d6a4f;
-    --warning:  #d97706;
-    --danger:   #dc2626;
-  }
-
   * { box-sizing: border-box; }
 
   html {
-    background-color: var(--field);
-    color: #d1dce8;
+    @apply bg-field text-chalk200;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
 
   body {
-    font-family: 'DM Sans', sans-serif;
-    background-color: var(--field);
-    min-height: 100vh;
-    overflow-x: hidden;
+    @apply min-h-screen bg-field font-body;
+    overflow-wrap: break-word;
+  }
+
+  html,
+  body,
+  #root {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
   }
 
   button:focus-visible,
   a:focus-visible,
   input:focus-visible,
   [tabindex]:focus-visible {
-    outline: 2px solid rgba(245, 166, 35, 0.8);
+    @apply outline-2 outline-signal;
     outline-offset: 2px;
   }
 
@@ -45,12 +38,12 @@
 
   /* Custom scrollbar */
   ::-webkit-scrollbar { width: 6px; height: 6px; }
-  ::-webkit-scrollbar-track { background: var(--field); }
-  ::-webkit-scrollbar-thumb { background: #2a3340; border-radius: 3px; }
-  ::-webkit-scrollbar-thumb:hover { background: #3a4555; }
+  ::-webkit-scrollbar-track { @apply bg-field; }
+  ::-webkit-scrollbar-thumb { @apply rounded-sm bg-dirt; }
+  ::-webkit-scrollbar-thumb:hover { @apply bg-chalk700; }
 
   /* Selection */
-  ::selection { background: rgba(245, 166, 35, 0.25); color: #f5a623; }
+  ::selection { @apply bg-gold/25 text-gold; }
 }
 
 @layer components {
@@ -58,6 +51,51 @@
   .app-shell {
     display: flex;
     min-height: 100vh;
+  }
+  .app-shell > * {
+    min-width: 0;
+  }
+
+  /* Team Board foundation shell: the current content order is unchanged, while
+     later packages can intentionally use the 1280–1440 desktop range. */
+  .team-board-shell {
+    @apply mx-auto w-full min-w-0 max-w-team-board bg-field px-panel py-panel sm:px-section sm:py-section lg:px-section-lg lg:py-section-lg;
+    container-type: inline-size;
+  }
+
+  /* Named typography roles. New foundation components use these roles instead
+     of inventing one-off 9px/10px/11px values. */
+  .type-page-title {
+    @apply font-display text-page-title uppercase text-chalk100;
+  }
+  .type-section-title {
+    @apply font-display text-section-title text-chalk100;
+  }
+  .type-body {
+    @apply font-body text-body text-chalk300;
+  }
+  .type-compact {
+    @apply font-body text-compact text-chalk300;
+  }
+  .type-metadata {
+    @apply font-mono text-metadata text-chalk500;
+  }
+  .type-overline {
+    @apply font-mono text-overline uppercase text-chalk500;
+  }
+  .type-data {
+    @apply font-mono text-data tabular-nums text-chalk200;
+  }
+
+  /* Shared rhythm roles for later Team Board composition packages. */
+  .foundation-section {
+    @apply mt-section first:mt-0 lg:mt-section-lg;
+  }
+  .foundation-panel {
+    @apply border border-dirt bg-dugout p-panel;
+  }
+  .foundation-row-stack {
+    @apply flex flex-col gap-row;
   }
 
   /* ── Card ── */
@@ -216,7 +254,7 @@
     @apply bg-amber text-field;
   }
 
-  /* ── Risk badges ── */
+  /* ── Legacy risk badges (non-Team-State compatibility only) ── */
   .badge-low      { @apply inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-mono font-medium bg-pine/20 text-emerald-400 border border-pine/40; }
   .badge-moderate { @apply inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-mono font-medium bg-warning/20 text-yellow-400 border border-warning/40; }
   .badge-high     { @apply inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-mono font-medium bg-orange-500/20 text-orange-400 border border-orange-500/40; }
@@ -251,7 +289,7 @@
 
   /* ── Section title ── */
   .section-title {
-    @apply font-display text-3xl tracking-wider text-chalk100 uppercase;
+    @apply font-display text-section-title uppercase text-chalk100;
   }
 
   /* ── Mono number ── */
@@ -259,9 +297,56 @@
     @apply font-mono font-medium tabular-nums;
   }
 
-  /* ── Glow text ── */
-  .glow-amber {
-    text-shadow: 0 0 20px rgba(245, 166, 35, 0.4);
+  /* Public semantic presentation. The component still requires visible label
+     text; these tones never classify or rename a backend-provided value. */
+  .semantic-label {
+    @apply inline-flex min-h-6 max-w-full items-center rounded-sm border px-2 py-1 font-mono text-metadata font-medium;
+  }
+  .semantic-label--neutral { @apply border-dirt bg-chalk/45 text-chalk300; }
+  .semantic-label--fresh { @apply border-stateFresh/40 bg-stateFresh/10 text-stateFresh; }
+  .semantic-label--stretched { @apply border-stateStretched/40 bg-stateStretched/10 text-stateStretched; }
+  .semantic-label--vulnerable { @apply border-stateVulnerable/40 bg-stateVulnerable/10 text-stateVulnerable; }
+  .semantic-label--available { @apply border-readAvailable/40 bg-readAvailable/10 text-readAvailable; }
+  .semantic-label--watch { @apply border-readWatch/40 bg-readWatch/10 text-readWatch; }
+  .semantic-label--limited { @apply border-readLimited/40 bg-readLimited/10 text-readLimited; }
+  .semantic-label--unavailable { @apply border-readUnavailable/40 bg-readUnavailable/10 text-readUnavailable; }
+
+  /* Dense record primitive. It is intentionally one column by default and only
+     gains parallel metadata once the container has room. */
+  .active-arm-row {
+    @apply grid min-w-0 grid-cols-1 gap-row border-b border-dirt px-panel py-row text-left last:border-b-0;
+  }
+  .active-arm-row > * {
+    min-width: 0;
+  }
+  .active-arm-row__text {
+    overflow-wrap: anywhere;
+  }
+  @container (min-width: 44rem) {
+    .active-arm-row {
+      grid-template-columns: minmax(12rem, 1.2fr) minmax(10rem, 0.8fr);
+      align-items: start;
+    }
+  }
+  @container (min-width: 64rem) {
+    .active-arm-row {
+      grid-template-columns: minmax(12rem, 1.35fr) minmax(10rem, 0.8fr) minmax(12rem, 1fr) auto;
+      align-items: center;
+    }
+  }
+
+  .foundation-skeleton {
+    @apply rounded-sm bg-chalk700/35 motion-safe:animate-pulse motion-reduce:animate-none;
+  }
+
+  .section-state {
+    @apply min-w-0 border-l-2 border-dirt bg-dugout/55 p-panel;
+  }
+  .section-state--partial { @apply border-l-gold; }
+  .section-state--error { @apply border-l-stateVulnerable; }
+  .section-state--unavailable { @apply border-l-chalk600; }
+  .section-state__action {
+    @apply mt-row inline-flex min-h-11 items-center rounded-sm border border-signal/50 px-3 py-2 font-mono text-metadata text-signal transition-colors hover:border-signal hover:bg-signal/10;
   }
 
   /* ── Animated entry delays ── */
@@ -284,10 +369,6 @@
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
-  }
-
-  .border-gradient {
-    border-image: linear-gradient(135deg, #f5a623, transparent) 1;
   }
 
   /* Fade-up animation utility */
