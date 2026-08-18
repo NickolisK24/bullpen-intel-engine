@@ -8,6 +8,11 @@ from __future__ import annotations
 
 from copy import deepcopy
 
+from services.pitcher_public_labels import (
+    PUBLIC_ROLE_COMPOSITION_KEYS,
+    ROLE_PUBLIC_LABELS,
+)
+
 
 CAPABILITY = 'team_board_v2'
 CONTRACT_VERSION = 'team-board-2.0.0'
@@ -25,6 +30,7 @@ WORKLOAD_WINDOW_POPULATION_BASIS = 'official_appearance_team_relief_appearances'
 WORKLOAD_CONCENTRATION_POPULATION_BASIS = (
     'current_bullpen_eligible_pitchers_recent_relief_pitch_workload'
 )
+ROLES_DEPLOYMENT_POPULATION_BASIS = 'current_visible_active_bullpen_public_role_reads'
 RECENT_RELIEF_WORK_POPULATION_BASIS = 'official_appearance_team_relief_appearances'
 ROTATION_IMPACT_POPULATION_BASIS = 'stored_team_game_pitching_splits'
 
@@ -110,6 +116,61 @@ def _active_status(board, represented_date):
             represented_date=represented_date,
         )
     return _section_status(STATUS_AVAILABLE, represented_date=represented_date)
+
+
+def _roles_deployment(arms, represented_date):
+    """Summarize final public role reads without reclassifying any pitcher.
+
+    The active-arm projection already carries the output of the one public role
+    authority. This composition only counts its governed keys in that owner's
+    stable display order. Unsupported deployment domains are intentionally not
+    represented in this contract.
+    """
+    counts = {key: 0 for key in PUBLIC_ROLE_COMPOSITION_KEYS}
+    missing_role_count = 0
+
+    for arm in arms:
+        public_role_read = arm.get('public_role_read') or {}
+        key = public_role_read.get('key')
+        if key not in counts:
+            missing_role_count += 1
+            continue
+        counts[key] += 1
+
+    roles = [
+        {
+            'role_key': key,
+            'label': ROLE_PUBLIC_LABELS[key]['label'],
+            'arm_count': counts[key],
+        }
+        for key in PUBLIC_ROLE_COMPOSITION_KEYS
+        if counts[key] > 0
+    ]
+    return {
+        'population_basis': ROLES_DEPLOYMENT_POPULATION_BASIS,
+        'arm_count': len(arms),
+        'role_arm_count': len(arms) - missing_role_count,
+        'missing_role_count': missing_role_count,
+        'roles': roles,
+        'represented_date': represented_date,
+    }
+
+
+def _roles_deployment_status(board, roles_deployment, represented_date):
+    active_status = _active_status(board, represented_date)
+    missing_role_count = roles_deployment['missing_role_count']
+    if active_status['status'] == STATUS_AVAILABLE and missing_role_count == 0:
+        return _section_status(STATUS_AVAILABLE, represented_date=represented_date)
+
+    limitations = list(active_status.get('limitations') or [])
+    if missing_role_count:
+        limitations.append('Some current arms do not have a public role read.')
+    return _section_status(
+        STATUS_PARTIAL,
+        reason_code='role_composition_limited',
+        limitations=limitations,
+        represented_date=represented_date,
+    )
 
 
 def _rotation_status(rotation, error, represented_date):
@@ -326,6 +387,7 @@ def build_team_board_v2_payload(
         or freshness.get('latest_workload_date')
     )
     arms = _active_arms(board)
+    roles_deployment = _roles_deployment(arms, represented_date)
     rotation = deepcopy(board.get('rotation_support_pressure') or {})
     relief_work = deepcopy(recent_relief_work) if isinstance(recent_relief_work, dict) else None
     context = deepcopy(game_context) if isinstance(game_context, dict) else None
@@ -354,6 +416,7 @@ def build_team_board_v2_payload(
             errors.get('recent_relief_work'),
             represented_date,
         ),
+        'roles_deployment': _roles_deployment_status(board, roles_deployment, represented_date),
         'rotation_impact': _rotation_status(rotation, errors.get('rotation_impact'), represented_date),
         'recent_relief_work': _relief_work_status(relief_work, errors.get('recent_relief_work'), represented_date),
         'game_context': _game_context_status(context, errors.get('game_context'), represented_date),
@@ -376,6 +439,7 @@ def build_team_board_v2_payload(
         'rest_status': deepcopy(board.get('rest_status') or {}),
         'recent_usage': _recent_usage(relief_work),
         'workload_overview': _workload_overview(board, relief_work),
+        'roles_deployment': roles_deployment,
         'rotation_impact': {
             'population_basis': ROTATION_IMPACT_POPULATION_BASIS,
             'read': rotation,
@@ -396,6 +460,7 @@ __all__ = [
     'CAPABILITY',
     'CONTRACT_VERSION',
     'RECENT_USAGE_POPULATION_BASIS',
+    'ROLES_DEPLOYMENT_POPULATION_BASIS',
     'WORKLOAD_OVERVIEW_POPULATION_BASIS',
     'RECENT_RELIEF_WORK_POPULATION_BASIS',
     'ROTATION_IMPACT_POPULATION_BASIS',

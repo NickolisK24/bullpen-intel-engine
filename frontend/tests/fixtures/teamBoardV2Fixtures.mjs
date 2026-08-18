@@ -32,6 +32,21 @@ export function teamBoardV2Fixture(board, overrides = {}) {
       roster_status: card?.roster_status ?? null,
       visibility: card?.visibility ?? null,
     }))
+  const roleOrder = ['trust_arm', 'bridge_arm', 'depth_arm', 'coverage_arm', 'limited_read']
+  const roleLabels = {
+    trust_arm: 'Trusted Arm',
+    bridge_arm: 'Setup Arm',
+    depth_arm: 'Middle Relief Arm',
+    coverage_arm: 'Coverage Arm',
+    limited_read: 'Role Unclear',
+  }
+  const roleCounts = Object.fromEntries(roleOrder.map(key => [key, 0]))
+  let missingRoleCount = 0
+  for (const arm of activeArms) {
+    const key = arm?.public_role_read?.key
+    if (Object.hasOwn(roleCounts, key)) roleCounts[key] += 1
+    else missingRoleCount += 1
+  }
 
   return {
     capability: 'team_board_v2',
@@ -68,6 +83,16 @@ export function teamBoardV2Fixture(board, overrides = {}) {
       represented_date: representedDate,
       limitations: [],
     },
+    roles_deployment: {
+      population_basis: 'current_visible_active_bullpen_public_role_reads',
+      arm_count: activeArms.length,
+      role_arm_count: activeArms.length - missingRoleCount,
+      missing_role_count: missingRoleCount,
+      roles: roleOrder
+        .filter(key => roleCounts[key] > 0)
+        .map(key => ({ role_key: key, label: roleLabels[key], arm_count: roleCounts[key] })),
+      represented_date: representedDate,
+    },
     rotation_impact: { population_basis: 'stored_team_game_pitching_splits', read: board?.rotation_support_pressure || {} },
     roster_context: board?.roster_authority || {},
     recent_relief_work: { population_basis: 'official_appearance_team_relief_appearances', read: null },
@@ -101,6 +126,12 @@ export function teamBoardV2Fixture(board, overrides = {}) {
         status: board?.team_shape?.workloadConcentration ? 'available' : 'unavailable',
         reason_code: board?.team_shape?.workloadConcentration ? null : 'workload_overview_unavailable',
         limitations: [],
+        represented_date: representedDate,
+      },
+      roles_deployment: {
+        status: activeStatus === 'available' && missingRoleCount === 0 ? 'available' : 'partial',
+        reason_code: activeStatus === 'available' && missingRoleCount === 0 ? null : 'role_composition_limited',
+        limitations: missingRoleCount > 0 ? ['Some current arms do not have a public role read.'] : board?.limitations || [],
         represented_date: representedDate,
       },
     },
