@@ -16,8 +16,9 @@ and appearances counted against the just-completed trigger slate inclusive — w
 the two CURRENT-availability statements (the classified availability behind every
 row label, and the rest days published beside it) are anchored to the canonical
 availability reference the slate resolves to. No build-time clock is read; both
-dates derive from the same governed slate, so a rerun on it is byte-identical. Off days never enter a window because only ``final`` games count,
-and a doubleheader contributes two distinct ``game_pk`` window entries.
+dates derive from the same governed slate, so a rerun on it is byte-identical.
+Off days never enter a window because only ``final`` games count, and a
+doubleheader contributes two distinct ``game_pk`` window entries.
 """
 
 from __future__ import annotations
@@ -34,11 +35,11 @@ from services.availability import (
     STATUS_AVAILABLE,
     STATUS_MONITOR,
 )
+from services.availability_reference_date import trusted_slate_reference_dates
 from services.availability_snapshot import (
     classify_latest_fatigue_rows,
     latest_fatigue_rows,
 )
-from services.availability_reference_date import trusted_slate_reference_dates
 from services.availability_summary import STATUS_ORDER
 from services.bullpen_optionality_context import build_bullpen_optionality_context
 from services.public_bullpen_copy import public_availability_label

@@ -26,6 +26,7 @@ from datetime import date
 from typing import Any, Mapping, Optional
 
 from models.share_artifact_generation_audit import ShareArtifactGenerationAudit
+from services.availability_reference_date import trusted_slate_reference_dates
 from services.share_artifacts import (
     build_share_artifact_draft,
     find_published_equivalent,
@@ -38,7 +39,6 @@ from services.team_state_payload import (
     TeamStatePayloadError,
     build_team_state_payload,
 )
-from services.availability_reference_date import trusted_slate_reference_dates
 from services.team_state_source import gather_team_state_source
 from utils.db import db
 
