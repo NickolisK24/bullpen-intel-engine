@@ -1664,7 +1664,13 @@ def canonical_team_state(team_id):
     return public_team_state(readiness)
 
 
-def _build_team_board(team_id, include_stale=False, freshness=None, reference_date=None):
+def _build_team_board(
+    team_id,
+    include_stale=False,
+    freshness=None,
+    reference_date=None,
+    rotation_builder=None,
+):
     """
     Build a Tonight's Bullpen Board payload for one team.
 
@@ -1755,7 +1761,7 @@ def _build_team_board(team_id, include_stale=False, freshness=None, reference_da
         capacity_records,
         ref,
     )
-    rotation_support_pressure = _rotation_support_for_team(
+    rotation_support_pressure = (rotation_builder or _rotation_support_for_team)(
         team_info,
         ref,
     )

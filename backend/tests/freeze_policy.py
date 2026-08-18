@@ -211,6 +211,15 @@ D055_TEAM_BOARD_WORKLOAD_CONTEXT_PATHS = (
     'backend/services/bullpen_board.py',
 )
 
+# PRE-02, August 17 2026. The new versioned Team Board contract is additive.
+# ``bullpen.py`` changes only by accepting an optional rotation callable; every
+# legacy caller retains the original default owner and payload. The new API
+# module owns only ``/board-v2`` and performs no writes or publication work.
+PRE02_TEAM_BOARD_V2_PATHS = (
+    'backend/api/bullpen.py',
+    'backend/api/team_board_v2.py',
+)
+
 # HOTFIX-01, August 17 2026. The canonical Team State projection gains one
 # deterministic summary field so reader surfaces no longer use the independent,
 # count-derived board-health sentence as the explanation of Team State.
