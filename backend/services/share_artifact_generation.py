@@ -126,7 +126,12 @@ class TeamStateGenerationResult:
 # ---------------------------------------------------------------------------
 
 
-def resolve_readiness_reference_dates(source_snapshot, *, sync_status=None) -> tuple:
+_RESOLVE_FRESHNESS = object()
+
+
+def resolve_readiness_reference_dates(
+    source_snapshot, *, sync_status=None, snapshot_freshness=_RESOLVE_FRESHNESS,
+) -> tuple:
     """The two governed reference dates one readiness read is produced against.
 
     Returns ``(membership_reference_date, availability_reference_date)``.
@@ -151,6 +156,10 @@ def resolve_readiness_reference_dates(source_snapshot, *, sync_status=None) -> t
     snapshot. Fails closed: with no trusted source, or a source carrying no
     usable ``data_through``, both values stay the live global reference date the
     unanchored read already used.
+
+    ``snapshot_freshness`` lets a caller that has already resolved the serving
+    freshness verdict hand it over rather than paying for a second resolution per
+    team; omitted, it is resolved here.
     """
     from api.team_operations import _availability_reference_date, _sync_status_payload
     from models.share_artifact import SUBJECT_TYPE_TEAM_PROGRESSIVE
@@ -158,11 +167,13 @@ def resolve_readiness_reference_dates(source_snapshot, *, sync_status=None) -> t
 
     if sync_status is None:
         sync_status = _sync_status_payload()
+    if snapshot_freshness is _RESOLVE_FRESHNESS:
+        snapshot_freshness = serving_snapshot_freshness_authority(source_snapshot)
     live_reference_date = _availability_reference_date(sync_status)
 
     is_trusted_source = (
         getattr(source_snapshot, 'subject_type', None) == SUBJECT_TYPE_TEAM_PROGRESSIVE
-        or serving_snapshot_freshness_authority(source_snapshot) is not None
+        or snapshot_freshness is not None
     )
     if not is_trusted_source:
         return live_reference_date, live_reference_date
@@ -234,15 +245,20 @@ def resolve_team_readiness_payload(
     from team_operations import assemble_bullpen_readiness
 
     sync_status = _sync_status_payload()
+    # Resolved once and shared: the reference-date split and the freshness anchor
+    # below both need this verdict, and it is not free to compute per team.
+    snapshot_freshness = serving_snapshot_freshness_authority(source_snapshot)
     membership_reference_date, availability_reference_date = (
-        resolve_readiness_reference_dates(source_snapshot, sync_status=sync_status)
+        resolve_readiness_reference_dates(
+            source_snapshot, sync_status=sync_status,
+            snapshot_freshness=snapshot_freshness,
+        )
     )
     if isinstance(reference_dates_out, dict):
         # Record the dates this read actually used, at the moment it used them, so
         # the production-proof artifact observes them instead of re-deriving them.
         reference_dates_out['membership_reference_date'] = membership_reference_date
         reference_dates_out['availability_reference_date'] = availability_reference_date
-    snapshot_freshness = serving_snapshot_freshness_authority(source_snapshot)
     if snapshot_freshness is not None:
         # Only the freshness VERDICT is anchored to the serving trusted snapshot, so a
         # current published snapshot is not reported stale merely because the live
