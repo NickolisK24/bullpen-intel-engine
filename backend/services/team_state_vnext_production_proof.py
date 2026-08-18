@@ -351,6 +351,7 @@ def historical_team_state_inventory(exclude_source_snapshot_id, *, session=None)
     rewrite. Today's own artifacts are excluded: they are supposed to be new.
     """
     from models.share_artifact import ShareArtifact
+    from services.team_state_payload import TEAM_STATE_ARTIFACT_TYPE
     from utils.db import db
 
     session = session or db.session
@@ -362,7 +363,9 @@ def historical_team_state_inventory(exclude_source_snapshot_id, *, session=None)
             ShareArtifact.lifecycle_state,
             ShareArtifact.superseded_at,
         )
-        .filter(ShareArtifact.artifact_type == 'team_state')
+        # The artifact type comes from its owner, so this selector cannot drift away
+        # from what the payload builder actually publishes.
+        .filter(ShareArtifact.artifact_type == TEAM_STATE_ARTIFACT_TYPE)
         .filter(ShareArtifact.lifecycle_state.in_(('published', 'superseded')))
     )
     if exclude_source_snapshot_id is not None:
@@ -395,8 +398,8 @@ def _historical_block(before, after) -> dict:
     return {
         'scope': 'published_team_state_share_artifacts_from_prior_publications',
         'window_scope': 'daily_league_publication_hook',
-        'selector': "artifact_type='team_state' AND lifecycle_state IN "
-                    "('published','superseded') AND source_snapshot_id <> this_publication",
+        'selector': 'team_state artifacts, lifecycle published or superseded, '
+                    'excluding this publication',
         'digest_algorithm': 'sha256(canonical_json([[id, public_id, integrity_hash, '
                             'lifecycle_state, superseded_at], ...]))',
         'artifact_count_before': before['count'],
@@ -677,7 +680,7 @@ def build_proof(*, snapshot, teams, expected_team_count, historical_before=None,
             'outcomes': _outcome_counts(teams),
         },
         'distribution': distribution,
-        'teams': sorted(teams, key=lambda team: (team['team_id'] is None, team['team_id'])),
+        'teams': sorted(teams, key=_team_sort_key),
         'historical_immutability': historical,
         'cross_version_what_changed': cross_version,
         'invariants': invariants,
@@ -687,6 +690,12 @@ def build_proof(*, snapshot, teams, expected_team_count, historical_before=None,
         'inconclusive_assertions': inconclusive,
         'overall_verdict': verdict,
     }
+
+
+def _team_sort_key(team):
+    """Stable order that tolerates a team with no id rather than raising on it."""
+    team_id = team.get('team_id')
+    return (team_id is None, team_id if isinstance(team_id, int) else 0)
 
 
 def _outcome_counts(teams) -> dict:
