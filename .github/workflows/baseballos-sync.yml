@@ -122,6 +122,18 @@ jobs:
           # step in this job must keep the deployed default of off.
           GAME_DRIVEN_INGESTION_MODE: 'shadow'
           DAILY_SYNC_SUMMARY_PATH: artifacts/game-driven-shadow/daily-sync-summary.json
+          # Team State vNext production proof (D-056). Side-channel evidence only:
+          # the post-publication hook writes this file after the publication has
+          # already committed, and does nothing at all when the variable is unset —
+          # which is every other process, including the deployed web service. It
+          # deliberately does NOT live in artifacts/game-driven-shadow/, which the
+          # shadow handoff step below sweeps wholesale into its own evidence lane.
+          TEAM_STATE_VNEXT_PROOF_PATH: artifacts/team-state-vnext-proof/team-state-vnext-production-proof.json
+          # The already-passed v3_phase_4 -> v3_phase_5 boundary publication. Its
+          # frozen What Changed block is carried as historical boundary evidence,
+          # because a later publication is v3_phase_5 -> v3_phase_5 and is not that
+          # boundary.
+          TEAM_STATE_VNEXT_BOUNDARY_SNAPSHOT_ID: '437'
           # OPS-002 last-resort kill. 40m = 2400s sits 200s above the 2200s
           # internal budget, so the Python process always reaches its own
           # governed shutdown first and this never becomes normal control flow.
@@ -540,6 +552,35 @@ jobs:
       # empty staging directory only if it passes, so a scanner bug produces an
       # empty handoff rather than a leak.
 
+      # The same shared scanner the shadow and generated-preview evidence use. An
+      # unsafe file is quarantined on the runner and never uploaded; only its name
+      # and a category are reported, never the matched content.
+      - name: Scan Team State vNext proof for forbidden content
+        continue-on-error: true
+        if: ${{ always() && ((github.event_name == 'workflow_dispatch' && inputs.mode == 'daily') || (github.event_name == 'schedule' && github.event.schedule == '0 10 * * *')) }}
+        run: |
+          set -uo pipefail
+          if [ -d artifacts/team-state-vnext-proof ]; then
+            python backend/scripts/scan_forbidden_artifact_content.py \
+              --directory artifacts/team-state-vnext-proof --quarantine \
+              --label "Team State vNext Proof"
+          else
+            echo "No Team State vNext proof directory to scan."
+          fi
+
+      # Uploaded on always(). Evidence when an assertion fails is the entire point
+      # of the mechanism, and a missing artifact is itself a signal the observer
+      # job below reports.
+      - name: Upload Team State vNext production proof
+        continue-on-error: true
+        if: ${{ always() && ((github.event_name == 'workflow_dispatch' && inputs.mode == 'daily') || (github.event_name == 'schedule' && github.event.schedule == '0 10 * * *')) }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: team-state-vnext-proof-${{ github.run_id }}
+          path: artifacts/team-state-vnext-proof
+          retention-days: 30
+          if-no-files-found: warn
+
       - name: Prepare game-driven shadow handoff
         id: shadow-handoff-prepare
         continue-on-error: true
@@ -570,6 +611,76 @@ jobs:
           path: artifacts/game-driven-shadow-handoff
           retention-days: 7
           if-no-files-found: warn
+
+  # ── Observer: Team State vNext production proof ─────────────────────────
+  # Separated from public-sync for the same reason shadow-activation-health is:
+  # internal-enrichment and static-team-story-preview both gate on public-sync
+  # succeeding, so failing that job on a proof assertion would suppress the static
+  # publication for a run whose sync, snapshot publication, appearance-ledger proof,
+  # and dashboard verification all succeeded. The publication has already committed
+  # by the time the proof is written; failing it protects nothing.
+  #
+  # This job holds NO production credential and runs NO production command. It reads
+  # the uploaded evidence and renders a verdict. It cannot change the
+  # publication-critical result of the run, and nothing downstream depends on it.
+  team-state-vnext-proof:
+    runs-on: ubuntu-latest
+    needs: public-sync
+    if: ${{ always() && ((github.event_name == 'workflow_dispatch' && inputs.mode == 'daily') || (github.event_name == 'schedule' && github.event.schedule == '0 10 * * *')) }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Download Team State vNext production proof
+        id: download
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: team-state-vnext-proof-${{ github.run_id }}
+          path: artifacts/team-state-vnext-proof
+
+      # The validator is standard library only: no database, no app context, no
+      # network, and no secret. Exit 0 = valid and not FAIL, 1 = valid and FAIL,
+      # 3 = the artifact itself is invalid (missing / empty / malformed / a verdict
+      # softer than its own invariants).
+      - name: Validate the Team State vNext production proof
+        id: validate
+        if: ${{ always() }}
+        run: |
+          set -uo pipefail
+          proof=artifacts/team-state-vnext-proof/team-state-vnext-production-proof.json
+          if [ ! -f "$proof" ]; then
+            echo "::error::No Team State vNext proof artifact was produced by this publication."
+            echo "verdict=missing" >> "$GITHUB_OUTPUT"
+            exit 3
+          fi
+          set +e
+          python backend/scripts/validate_team_state_vnext_proof.py "$proof" | tee proof-report.txt
+          exit_code=${PIPESTATUS[0]}
+          set -e
+          echo "verdict_exit_code=$exit_code" >> "$GITHUB_OUTPUT"
+          exit "$exit_code"
+
+      - name: Append the proof verdict to the run summary
+        if: ${{ always() }}
+        run: |
+          set -uo pipefail
+          {
+            echo "### Team State vNext production proof"
+            echo
+            if [ -f proof-report.txt ]; then
+              echo '```'
+              cat proof-report.txt
+              echo '```'
+            else
+              echo "No proof report was produced."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
 
   # ── Observer: game-driven shadow activation health ──────────────────────
   # Separated from public-sync so one red signal cannot mean two different

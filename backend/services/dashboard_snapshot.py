@@ -485,6 +485,17 @@ def _maybe_generate_team_state_artifacts_after_publication(snapshot):
         snapshot_id, product_date, enabled,
     )
     try:
+        # Team State vNext production proof (D-056). Env-gated and side-channel: with
+        # TEAM_STATE_VNEXT_PROOF_PATH unset this returns None immediately and the
+        # unchanged generation call below runs exactly as before. When it is set, the
+        # same generation runs under observation and the runtime evidence vectors,
+        # partitions, method versions, and reference dates are written to a JSON file
+        # for the workflow to upload. It observes an already-committed publication and
+        # never raises, so it cannot roll back, unpublish, or alter anything.
+        from services.team_state_vnext_production_proof import capture_publication_proof
+        if capture_publication_proof(snapshot) is not None:
+            return
+
         from services.share_artifact_publication_hook import (
             run_post_publication_generation,
         )
