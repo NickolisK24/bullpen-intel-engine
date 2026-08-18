@@ -32,12 +32,15 @@ const payload = {
     }],
   },
   rest_status: { available: false, active_arm_count: null },
+  recent_usage: { appearances: [{ pitcher_name: 'Exact Source Name', pitches_thrown: null }] },
   rotation_impact: { read: { starter_avg_innings: 5.2, summary: 'Backend sentence.' } },
   roster_context: {},
   recent_relief_work: { read: { relief_by_date: [] } },
   game_context: null,
   section_status: {
     active_bullpen: { status: 'available' },
+    recent_usage: { status: 'available' },
+    rest_status: { status: 'unavailable' },
     recent_relief_work: { status: 'unavailable', reason_code: 'source_unavailable' },
   },
   limitations: [],
@@ -59,12 +62,14 @@ test('adapter passes backend semantics and nulls through unchanged', () => {
   assert.equal(view.activeBullpen, payload.active_bullpen)
   assert.equal(view.activeBullpen.arms[0].workload.pitches_last_7_days, null)
   assert.equal(view.restStatus.active_arm_count, null)
+  assert.equal(view.recentUsage, payload.recent_usage)
+  assert.equal(view.recentUsage.appearances[0].pitches_thrown, null)
   assert.equal(view.sectionStatus, payload.section_status)
   assert.equal(view.rotationImpact.read.summary, 'Backend sentence.')
 })
 
 
-test('TB-02 reuses the v2 read for Answer Block and Active Bullpen without frontend derivation', async () => {
+test('TB-03 reuses the v2 read for Answer Block, Active Bullpen, Recent Usage, and Rest Status', async () => {
   const boardSource = await readFile(
     new URL('../src/components/bullpen/board/TonightsBullpenBoard.jsx', import.meta.url),
     'utf8',
@@ -78,6 +83,8 @@ test('TB-02 reuses the v2 read for Answer Block and Active Bullpen without front
   assert.equal(boardSource.includes('getTeamBoardV2(selectedTeam)'), true)
   assert.equal(boardSource.includes('<TeamBoardAnswerBlock'), true)
   assert.equal(boardSource.includes('<TeamBoardActiveBullpen'), true)
+  assert.equal(boardSource.includes('<TeamBoardRecentUsage'), true)
+  assert.equal(boardSource.includes('<TeamBoardRestStatus'), true)
   assert.equal((boardSource.match(/getTeamBoardV2\(/g) || []).length, 1)
   assert.match(
     apiSource,

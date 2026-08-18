@@ -38,7 +38,7 @@ const view = await server.ssrLoadModule('/src/components/bullpen/board/tonightsB
 const containerSource = readFileSync('src/components/bullpen/board/TonightsBullpenBoard.jsx', 'utf8')
 const bullpenSource = readFileSync('src/components/bullpen/Bullpen.jsx', 'utf8')
 const boardViewSource = readFileSync('src/components/bullpen/board/BullpenBoardView.jsx', 'utf8')
-const restStatusSource = readFileSync('src/components/bullpen/board/RestStatus.jsx', 'utf8')
+const restStatusSource = readFileSync('src/components/bullpen/board/TeamBoardRestStatus.jsx', 'utf8')
 
 const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const htmlIncludes = (html, text) => new RegExp(escapeRegExp(text)).test(html)
@@ -216,14 +216,32 @@ test('meaningful what-changed content is promoted while absent game context stay
   assert.ok(html.indexOf('What Changed') < html.indexOf('Recent Bullpen Work'))
 })
 
-test('Recent Usage owns the 7-day orientation without duplicating summary or arm facts', () => {
-  const html = renderBoard(populatedBoard)
+test('Recent Usage owns chronological appearances without duplicating the Active Bullpen row', () => {
+  const teamBoardV2Payload = teamBoardV2Fixture(populatedBoard, {
+    recent_usage: {
+      population_basis: 'official_recent_team_relief_appearance_rows',
+      represented_date: '2026-06-04',
+      appearances: [{
+        pitcher_id: 91,
+        pitcher_name: 'Chronology Reliever',
+        game_date: '2026-06-04',
+        opponent_abbreviation: 'BOS',
+        pitches_thrown: 18,
+        outs_recorded: 3,
+        game_id: 8123,
+      }],
+      limitations: [],
+    },
+  })
+  const html = renderBoard(populatedBoard, { teamBoardV2Payload })
   const recentStart = html.indexOf('Recent Usage')
   const detailStart = html.indexOf('Recent Bullpen Work')
   const recentSection = html.slice(recentStart, detailStart)
 
-  assert.equal((html.match(new RegExp(reliefWorkPayload.windows.window_7.sentence, 'g')) || []).length, 1)
-  assert.ok(htmlIncludes(recentSection, reliefWorkPayload.windows.window_7.sentence))
+  assert.ok(htmlIncludes(recentSection, 'Chronology Reliever'))
+  assert.ok(htmlIncludes(recentSection, 'Jun 4, 2026'))
+  assert.ok(htmlIncludes(recentSection, '18 pitches'))
+  assert.equal(htmlIncludes(recentSection, reliefWorkPayload.windows.window_7.sentence), false)
   assert.equal(htmlIncludes(recentSection, reliefWorkPayload.windows.window_14.sentence), false)
   for (const group of populatedBoard.groups) {
     for (const card of group.pitchers) {
@@ -370,7 +388,7 @@ test('unavailable and malformed Rest Status fail closed without zero counts or r
     const start = html.indexOf('Rest Status')
     const end = html.indexOf('Workload Overview', start)
     const section = html.slice(start, end)
-    assert.ok(htmlIncludes(section, 'Rest status unavailable'))
+    assert.ok(htmlIncludes(section, 'Rest Status unavailable'))
     assert.equal(htmlIncludes(section, '>0<'), false)
     assert.equal(htmlIncludes(section, 'workload_evidence_incomplete'), false)
   }

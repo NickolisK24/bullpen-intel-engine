@@ -652,7 +652,7 @@ test('selected team board renders Recent Bullpen Work in the visible board path'
   assert.ok(htmlIncludes(html, '<span class="sr-only"> — New York Yankees</span>'))
   assert.ok(htmlIncludes(html, teamReliefWorkPayload.scope_sentence))
   assert.ok(htmlIncludes(html, 'Recent Usage'))
-  assert.ok(htmlIncludes(html, teamReliefWorkPayload.windows.window_7.sentence))
+  assert.ok(htmlIncludes(html, 'No recent relief appearances'))
 
   const answerIndex = html.indexOf('data-testid="team-board-answer-block"')
   const reliefIndex = html.indexOf('Recent Bullpen Work')
@@ -673,7 +673,7 @@ test('selected team board keeps relief work visible on endpoint failure', () => 
 
   assert.ok(htmlIncludes(html, 'Recent Bullpen Work'))
   assert.ok(htmlIncludes(html, 'Recent bullpen work is unavailable.'))
-  assert.ok(htmlIncludes(html, 'Recent usage unavailable.'))
+  assert.ok(htmlIncludes(html, 'No recent relief appearances'))
   assert.equal(htmlIncludes(html, 'request failed'), false)
   assert.ok(htmlIncludes(html, 'Active Bullpen'))
   assert.ok(htmlIncludes(html, '<span class="sr-only"> — New York Yankees</span>'))
@@ -819,9 +819,9 @@ test('the shared relief-work modules mount once, on the team board only', async 
   // removed — the Phase 0G evidence panel renders once, on the Team Board.
   assert.equal(source.includes('TeamReliefWorkPanel'), false)
   assert.ok(boardSource.includes('<TeamReliefWorkPanel'))
-  assert.ok(boardSource.includes('<RecentUsage'))
+  assert.ok(boardSource.includes('<TeamBoardRecentUsage'))
   assert.equal((boardSource.match(/<TeamReliefWorkPanel/g) || []).length, 1)
-  assert.equal((boardSource.match(/<RecentUsage/g) || []).length, 1)
+  assert.equal((boardSource.match(/<TeamBoardRecentUsage/g) || []).length, 1)
   for (const finderMarker of [
     'All teams',
     'Availability',
@@ -847,7 +847,7 @@ test('team board owns one shared relief-work request and mounts summary before d
     'utf8',
   )
   const answerIndex = source.indexOf('<TeamBoardAnswerBlock')
-  const recentUsageIndex = source.indexOf('<RecentUsage')
+  const recentUsageIndex = source.indexOf('<TeamBoardRecentUsage')
   const mountIndex = source.indexOf('<TeamReliefWorkPanel')
   const boardIndex = source.indexOf('<TeamBoardActiveBullpen')
 

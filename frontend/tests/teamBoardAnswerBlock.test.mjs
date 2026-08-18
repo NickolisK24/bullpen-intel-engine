@@ -177,8 +177,6 @@ test('production adoption keeps the Answer Block and migrates only Active Bullpe
   assert.ok(source.includes('<TeamBoardAnswerBlock'))
   assert.ok(source.includes('<TeamBoardActiveBullpen'))
   for (const legacySection of [
-    '<RecentUsage',
-    '<RestStatus',
     '<WorkloadOverview',
     '<StoryCard',
     '<TeamReliefWorkPanel',
@@ -187,6 +185,8 @@ test('production adoption keeps the Answer Block and migrates only Active Bullpe
   ]) {
     assert.ok(source.includes(legacySection), legacySection)
   }
+  assert.ok(source.includes('<TeamBoardRecentUsage'))
+  assert.ok(source.includes('<TeamBoardRestStatus'))
   assert.equal(source.includes('<BullpenBoardView'), false)
   assert.equal(source.includes('<BullpenOperatingStateCard'), false)
   assert.equal(source.includes('<BullpenAvailabilityDistribution'), false)

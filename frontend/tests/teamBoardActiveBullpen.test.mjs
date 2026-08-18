@@ -204,9 +204,11 @@ test('production reuses one v2 request and retires only the grouped Team Board r
   assert.equal(source.includes('<BullpenBoardView'), false)
   assert.equal(source.includes('showUnavailable'), false)
   assert.equal(source.includes('include_stale'), false)
-  for (const legacySection of ['<RecentUsage', '<RestStatus', '<WorkloadOverview', '<TeamReliefWorkPanel']) {
+  for (const legacySection of ['<WorkloadOverview', '<TeamReliefWorkPanel']) {
     assert.ok(source.includes(legacySection), legacySection)
   }
+  assert.ok(source.includes('<TeamBoardRecentUsage'))
+  assert.ok(source.includes('<TeamBoardRestStatus'))
 })
 
 test('the migrated section contains no sorting, ranking, new workload windows, or Why accordion', async () => {

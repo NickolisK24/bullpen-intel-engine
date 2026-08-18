@@ -17,6 +17,7 @@ STATUS_PARTIAL = 'partial'
 STATUS_UNAVAILABLE = 'unavailable'
 
 ACTIVE_BULLPEN_POPULATION_BASIS = 'current_scored_bullpen_eligible_pitchers'
+RECENT_USAGE_POPULATION_BASIS = 'official_recent_team_relief_appearance_rows'
 RECENT_RELIEF_WORK_POPULATION_BASIS = 'official_appearance_team_relief_appearances'
 ROTATION_IMPACT_POPULATION_BASIS = 'stored_team_game_pitching_splits'
 
@@ -130,6 +131,67 @@ def _relief_work_status(relief_work, error, represented_date):
     )
 
 
+def _recent_usage(relief_work):
+    """Project the existing bounded relief chronology without reclassification."""
+    appearances = []
+    limitations = []
+    if not isinstance(relief_work, dict):
+        return {
+            'population_basis': RECENT_USAGE_POPULATION_BASIS,
+            'appearances': appearances,
+            'represented_date': None,
+            'limitations': limitations,
+        }
+
+    for group in relief_work.get('relief_by_date') or []:
+        if not isinstance(group, dict):
+            continue
+        if group.get('unavailable') is True or group.get('available') is False:
+            if group.get('sentence'):
+                limitations.append(group['sentence'])
+            continue
+        for appearance in group.get('appearances') or []:
+            if not isinstance(appearance, dict):
+                continue
+            appearances.append({
+                'pitcher_id': appearance.get('pitcher_id'),
+                'pitcher_name': appearance.get('pitcher_full_name'),
+                'game_date': appearance.get('game_date'),
+                'opponent': appearance.get('opponent'),
+                'opponent_abbreviation': appearance.get('opponent_abbreviation'),
+                'pitches_thrown': appearance.get('pitches_thrown'),
+                'outs_recorded': appearance.get('innings_pitched_outs'),
+                'game_id': appearance.get('mlb_game_pk'),
+            })
+
+    if relief_work.get('unattributed_sentence'):
+        limitations.append(relief_work['unattributed_sentence'])
+
+    return {
+        'population_basis': RECENT_USAGE_POPULATION_BASIS,
+        'appearances': appearances,
+        'represented_date': relief_work.get('data_through'),
+        'limitations': limitations,
+    }
+
+
+def _recent_usage_status(relief_work, error, represented_date):
+    if (
+        error
+        or not isinstance(relief_work, dict)
+        or not relief_work.get('data_through')
+    ):
+        return unavailable_section('recent_usage_unavailable')
+    read = _recent_usage(relief_work)
+    limitations = read['limitations']
+    return _section_status(
+        STATUS_PARTIAL if limitations else STATUS_AVAILABLE,
+        reason_code='recent_usage_reconciliation_limited' if limitations else None,
+        limitations=limitations,
+        represented_date=read['represented_date'] or represented_date,
+    )
+
+
 def _game_context_status(game_context, error, represented_date):
     if error:
         return deepcopy(error)
@@ -179,6 +241,11 @@ def build_team_board_v2_payload(
             reason_code=(board.get('rest_status') or {}).get('reason_code'),
             represented_date=represented_date,
         ),
+        'recent_usage': _recent_usage_status(
+            relief_work,
+            errors.get('recent_relief_work'),
+            represented_date,
+        ),
         'rotation_impact': _rotation_status(rotation, errors.get('rotation_impact'), represented_date),
         'recent_relief_work': _relief_work_status(relief_work, errors.get('recent_relief_work'), represented_date),
         'game_context': _game_context_status(context, errors.get('game_context'), represented_date),
@@ -199,6 +266,7 @@ def build_team_board_v2_payload(
             'arms': arms,
         },
         'rest_status': deepcopy(board.get('rest_status') or {}),
+        'recent_usage': _recent_usage(relief_work),
         'rotation_impact': {
             'population_basis': ROTATION_IMPACT_POPULATION_BASIS,
             'read': rotation,
@@ -218,6 +286,7 @@ __all__ = [
     'ACTIVE_BULLPEN_POPULATION_BASIS',
     'CAPABILITY',
     'CONTRACT_VERSION',
+    'RECENT_USAGE_POPULATION_BASIS',
     'RECENT_RELIEF_WORK_POPULATION_BASIS',
     'ROTATION_IMPACT_POPULATION_BASIS',
     'build_team_board_v2_payload',

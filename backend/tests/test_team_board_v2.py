@@ -10,6 +10,7 @@ from services.team_board_v2 import (
     ACTIVE_BULLPEN_POPULATION_BASIS,
     CAPABILITY,
     CONTRACT_VERSION,
+    RECENT_USAGE_POPULATION_BASIS,
     RECENT_RELIEF_WORK_POPULATION_BASIS,
     ROTATION_IMPACT_POPULATION_BASIS,
     build_team_board_v2_payload,
@@ -125,15 +126,18 @@ def _relief_work():
         'data_through': '2026-08-16',
         'scope_sentence': 'Covers appearances made for EX per official MLB game records.',
         'relief_by_date': [{
-            'date': '2026-08-15',
+            'game_date': '2026-08-15',
             'available': True,
             'appearances': [{
                 'pitcher_id': 7,
+                'pitcher_full_name': 'Example Arm',
                 'mlb_game_pk': 123,
-                'outs_recorded': 3,
+                'game_date': '2026-08-15',
+                'innings_pitched_outs': 3,
                 'innings_pitched': 1.0,
-                'pitches': 18,
-                'opponent': 'OPP',
+                'pitches_thrown': None,
+                'opponent': 'Opponent Club',
+                'opponent_abbreviation': 'OPP',
             }],
         }],
     }
@@ -170,6 +174,7 @@ def test_contract_pins_version_and_preserves_canonical_owner_outputs():
     assert payload['summary'] == TEAM_STATE['summary']
     assert payload['rotation_impact']['read'] == ROTATION
     assert payload['recent_relief_work']['read'] == relief
+    assert payload['section_status']['recent_relief_work']['status'] == 'available'
     assert payload['game_context'] == context
     assert (board, relief, context) == originals
 
@@ -197,6 +202,98 @@ def test_active_bullpen_matches_legacy_population_and_preserves_unknowns():
     assert 'fatigue_score' not in repr(arms)
     assert '3_in_4' not in repr(arms)
     assert '4_in_6' not in repr(arms)
+
+
+def test_recent_usage_projects_existing_chronology_and_preserves_nulls():
+    relief = _relief_work()
+    relief['relief_by_date'].append({
+        'game_date': '2026-08-14',
+        'available': True,
+        'appearances': [{
+            'pitcher_id': 9,
+            'pitcher_full_name': 'Second Arm',
+            'mlb_game_pk': 122,
+            'game_date': '2026-08-14',
+            'innings_pitched_outs': 2,
+            'pitches_thrown': 0,
+            'opponent': None,
+            'opponent_abbreviation': None,
+        }],
+    })
+
+    payload = build_team_board_v2_payload(_board(), recent_relief_work=relief)
+    recent = payload['recent_usage']
+
+    assert recent == {
+        'population_basis': RECENT_USAGE_POPULATION_BASIS,
+        'appearances': [
+            {
+                'pitcher_id': 7,
+                'pitcher_name': 'Example Arm',
+                'game_date': '2026-08-15',
+                'opponent': 'Opponent Club',
+                'opponent_abbreviation': 'OPP',
+                'pitches_thrown': None,
+                'outs_recorded': 3,
+                'game_id': 123,
+            },
+            {
+                'pitcher_id': 9,
+                'pitcher_name': 'Second Arm',
+                'game_date': '2026-08-14',
+                'opponent': None,
+                'opponent_abbreviation': None,
+                'pitches_thrown': 0,
+                'outs_recorded': 2,
+                'game_id': 122,
+            },
+        ],
+        'represented_date': '2026-08-16',
+        'limitations': [],
+    }
+    assert payload['section_status']['recent_usage']['status'] == 'available'
+    assert [row['pitcher_id'] for row in recent['appearances']] == [7, 9]
+    for forbidden in ('3_in_4', '4_in_5', '4_in_6', 'fatigue', 'rest_quality'):
+        assert forbidden not in repr(recent)
+
+
+def test_recent_usage_scopes_source_limitations_without_partial_rows():
+    relief = _relief_work()
+    relief['relief_by_date'].insert(0, {
+        'game_date': '2026-08-16',
+        'unavailable': True,
+        'sentence': 'August 16 — relief work is unavailable.',
+        'appearances': [],
+    })
+
+    payload = build_team_board_v2_payload(_board(), recent_relief_work=relief)
+
+    assert [row['pitcher_id'] for row in payload['recent_usage']['appearances']] == [7]
+    assert payload['section_status']['recent_usage'] == {
+        'status': 'partial',
+        'reason_code': 'recent_usage_reconciliation_limited',
+        'limitations': ['August 16 — relief work is unavailable.'],
+        'represented_date': '2026-08-16',
+    }
+
+
+def test_recent_usage_distinguishes_missing_anchor_from_empty_population():
+    unavailable = _relief_work()
+    unavailable['data_through'] = None
+    unavailable['relief_by_date'] = []
+    empty = _relief_work()
+    empty['relief_by_date'] = []
+
+    unavailable_payload = build_team_board_v2_payload(
+        _board(), recent_relief_work=unavailable
+    )
+    empty_payload = build_team_board_v2_payload(_board(), recent_relief_work=empty)
+
+    assert unavailable_payload['section_status']['recent_usage'] == unavailable_section(
+        'recent_usage_unavailable'
+    )
+    assert empty_payload['section_status']['recent_usage']['status'] == 'available'
+    assert empty_payload['recent_usage']['appearances'] == []
 
 
 def test_population_bases_do_not_claim_identical_cohorts():
@@ -228,6 +325,9 @@ def test_optional_failure_keeps_independent_sections_available():
     assert payload['section_status']['active_bullpen']['status'] == 'available'
     assert payload['section_status']['rotation_impact']['status'] == 'unavailable'
     assert payload['section_status']['recent_relief_work']['status'] == 'unavailable'
+    assert payload['section_status']['recent_usage'] == unavailable_section(
+        'recent_usage_unavailable'
+    )
     assert payload['section_status']['game_context']['status'] == 'available'
 
 
