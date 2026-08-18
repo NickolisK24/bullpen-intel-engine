@@ -12,6 +12,7 @@ from services.team_board_v2 import (
     CONTRACT_VERSION,
     RECENT_USAGE_POPULATION_BASIS,
     RECENT_RELIEF_WORK_POPULATION_BASIS,
+    ROLES_DEPLOYMENT_POPULATION_BASIS,
     ROTATION_IMPACT_POPULATION_BASIS,
     WORKLOAD_OVERVIEW_POPULATION_BASIS,
     build_team_board_v2_payload,
@@ -235,6 +236,98 @@ def test_active_bullpen_matches_legacy_population_and_preserves_unknowns():
     assert 'fatigue_score' not in repr(arms)
     assert '3_in_4' not in repr(arms)
     assert '4_in_6' not in repr(arms)
+
+
+def test_roles_deployment_reuses_public_role_reads_in_governed_order():
+    board = _board()
+    roles = [
+        ('coverage_arm', 'Coverage Arm'),
+        ('limited_read', 'Role Unclear'),
+        ('trust_arm', 'Trusted Arm'),
+        ('bridge_arm', 'Setup Arm'),
+        ('depth_arm', 'Middle Relief Arm'),
+    ]
+    cards = []
+    for index, (key, label) in enumerate(roles, start=1):
+        card = deepcopy(ARM)
+        card['pitcher_id'] = index
+        card['name'] = f'Arm {index}'
+        card['public_role_read'] = {'key': key, 'label': label}
+        card['pitcher_labels']['role'] = {'key': key, 'label': label}
+        cards.append(card)
+    board['groups'][1]['pitchers'] = cards
+    board['groups'][1]['count'] = len(cards)
+    board['total_pitchers'] = len(cards)
+
+    payload = build_team_board_v2_payload(board)
+    composition = payload['roles_deployment']
+
+    assert composition['population_basis'] == ROLES_DEPLOYMENT_POPULATION_BASIS
+    assert composition['arm_count'] == len(cards)
+    assert composition['role_arm_count'] == len(cards)
+    assert composition['missing_role_count'] == 0
+    assert [role['role_key'] for role in composition['roles']] == [
+        'trust_arm', 'bridge_arm', 'depth_arm', 'coverage_arm', 'limited_read',
+    ]
+    assert [role['label'] for role in composition['roles']] == [
+        'Trusted Arm', 'Setup Arm', 'Middle Relief Arm', 'Coverage Arm', 'Role Unclear',
+    ]
+    assert [role['arm_count'] for role in composition['roles']] == [1, 1, 1, 1, 1]
+    assert payload['section_status']['roles_deployment']['status'] == 'available'
+
+
+def test_roles_deployment_matches_visible_active_population_and_preserves_missing_role():
+    board = _board()
+    missing = deepcopy(ARM)
+    missing['pitcher_id'] = 8
+    missing['name'] = 'Unknown Role Arm'
+    missing['public_role_read'] = None
+    missing['pitcher_labels']['role'] = {'key': 'trust_arm', 'label': 'Trusted Arm'}
+    hidden = deepcopy(ARM)
+    hidden['pitcher_id'] = 9
+    hidden['visibility'] = {'is_visible_by_default': False}
+    board['groups'][1]['pitchers'] = [missing, hidden]
+    board['groups'][1]['count'] = 2
+    board['total_pitchers'] = 1
+
+    payload = build_team_board_v2_payload(board)
+    composition = payload['roles_deployment']
+
+    assert [arm['pitcher_id'] for arm in payload['active_bullpen']['arms']] == [8]
+    assert composition['arm_count'] == 1
+    assert composition['role_arm_count'] == 0
+    assert composition['missing_role_count'] == 1
+    assert composition['roles'] == []
+    assert payload['section_status']['roles_deployment']['status'] == 'partial'
+    assert payload['section_status']['roles_deployment']['reason_code'] == 'role_composition_limited'
+    assert payload['active_bullpen']['arms'][0]['public_labels']['role']['label'] == 'Trusted Arm'
+
+
+def test_roles_deployment_does_not_publish_or_infer_deployment_intelligence():
+    board = _board()
+    card = board['groups'][1]['pitchers'][0]
+    card.update({
+        'saves': 12,
+        'holds': 8,
+        'inning_entered': 9,
+        'multi_inning_appearances': 4,
+        'leverage_index': 2.4,
+        'role_movement': 'promoted',
+    })
+
+    composition = build_team_board_v2_payload(board)['roles_deployment']
+
+    assert composition['roles'] == [{
+        'role_key': 'bridge_arm',
+        'label': 'Setup Arm',
+        'arm_count': 1,
+    }]
+    assert 'deployment' not in composition
+    for forbidden in (
+        'saves', 'holds', 'inning_entered', 'multi_inning', 'leverage',
+        'movement', 'trend', 'manager', 'prediction',
+    ):
+        assert forbidden not in repr(composition).lower()
 
 
 def test_recent_usage_projects_existing_chronology_and_preserves_nulls():

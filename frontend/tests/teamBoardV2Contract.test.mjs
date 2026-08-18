@@ -37,6 +37,13 @@ const payload = {
     windows: [{ window_days: 7, relief_appearances: 3, pitches_total: null }],
     concentration: { label: 'Exact Concentration', summary: 'Backend workload sentence.' },
   },
+  roles_deployment: {
+    population_basis: 'current_visible_active_bullpen_public_role_reads',
+    arm_count: 1,
+    role_arm_count: 1,
+    missing_role_count: 0,
+    roles: [{ role_key: 'bridge_arm', label: 'Setup Arm', arm_count: 1 }],
+  },
   rotation_impact: { read: { starter_avg_innings: 5.2, summary: 'Backend sentence.' } },
   roster_context: {},
   recent_relief_work: { read: { relief_by_date: [] } },
@@ -46,6 +53,7 @@ const payload = {
     recent_usage: { status: 'available' },
     rest_status: { status: 'unavailable' },
     workload_overview: { status: 'partial' },
+    roles_deployment: { status: 'available' },
     recent_relief_work: { status: 'unavailable', reason_code: 'source_unavailable' },
   },
   limitations: [],
@@ -71,12 +79,14 @@ test('adapter passes backend semantics and nulls through unchanged', () => {
   assert.equal(view.recentUsage.appearances[0].pitches_thrown, null)
   assert.equal(view.workloadOverview, payload.workload_overview)
   assert.equal(view.workloadOverview.windows[0].pitches_total, null)
+  assert.equal(view.rolesDeployment, payload.roles_deployment)
+  assert.equal(view.rolesDeployment.roles[0].label, 'Setup Arm')
   assert.equal(view.sectionStatus, payload.section_status)
   assert.equal(view.rotationImpact.read.summary, 'Backend sentence.')
 })
 
 
-test('TB-04 reuses the v2 read through Workload Overview', async () => {
+test('TB-05 reuses the v2 read through Roles & Deployment', async () => {
   const boardSource = await readFile(
     new URL('../src/components/bullpen/board/TonightsBullpenBoard.jsx', import.meta.url),
     'utf8',
@@ -93,6 +103,7 @@ test('TB-04 reuses the v2 read through Workload Overview', async () => {
   assert.equal(boardSource.includes('<TeamBoardRecentUsage'), true)
   assert.equal(boardSource.includes('<TeamBoardRestStatus'), true)
   assert.equal(boardSource.includes('<TeamBoardWorkloadOverview'), true)
+  assert.equal(boardSource.includes('<TeamBoardRolesDeployment'), true)
   assert.equal((boardSource.match(/getTeamBoardV2\(/g) || []).length, 1)
   assert.match(
     apiSource,

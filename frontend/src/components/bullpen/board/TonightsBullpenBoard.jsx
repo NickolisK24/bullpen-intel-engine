@@ -10,6 +10,7 @@ import TeamBoardActiveBullpen from './TeamBoardActiveBullpen'
 import TeamBoardRecentUsage from './TeamBoardRecentUsage'
 import TeamBoardRestStatus from './TeamBoardRestStatus'
 import TeamBoardWorkloadOverview from './TeamBoardWorkloadOverview'
+import TeamBoardRolesDeployment from './TeamBoardRolesDeployment'
 import { useTeamReliefWork } from './useTeamReliefWork'
 import TeamGameContextCard from './TeamGameContextCard'
 import StoryCard from './StoryCard'
@@ -209,6 +210,12 @@ export default function TonightsBullpenBoard({
               onRetry={teamBoardV2State.refetch}
             />
             <TeamBoardWorkloadOverview
+              read={teamBoardRead}
+              loading={teamBoardV2State.loading}
+              error={teamBoardV2State.error}
+              onRetry={teamBoardV2State.refetch}
+            />
+            <TeamBoardRolesDeployment
               read={teamBoardRead}
               loading={teamBoardV2State.loading}
               error={teamBoardV2State.error}

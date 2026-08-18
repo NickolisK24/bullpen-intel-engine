@@ -126,7 +126,8 @@ test('production reuses one v2 request, retires the legacy mount, and leaves lat
   assert.ok(boardSource.includes('<TeamBoardWorkloadOverview'))
   assert.equal(boardSource.includes('<WorkloadOverview'), false)
   assert.ok(boardSource.includes('<TeamReliefWorkPanel'))
-  assert.equal(boardSource.includes('<TeamBoardRoles'), false)
+  assert.ok(boardSource.includes('<TeamBoardRolesDeployment'))
+  assert.ok(boardSource.indexOf('<TeamBoardWorkloadOverview') < boardSource.indexOf('<TeamBoardRolesDeployment'))
   assert.ok(boardSource.indexOf('<TeamBoardRestStatus') < boardSource.indexOf('<TeamBoardWorkloadOverview'))
   for (const forbidden of ['.sort(', '.reduce(', 'Math.', 'trend', 'fatigue', 'workload_score', '3_in_4', '4_in_5', '4_in_6']) {
     assert.equal(componentSource.includes(forbidden), false, forbidden)
