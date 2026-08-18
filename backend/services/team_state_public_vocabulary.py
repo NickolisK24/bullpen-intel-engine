@@ -49,6 +49,21 @@ PUBLIC_STATE_LABELS = {
     PUBLIC_STATE_VULNERABLE: 'Vulnerable',
 }
 
+# One bounded baseball sentence for each already-decided public Team State.
+# These sentences describe the canonical result; they do not re-run Contract A,
+# inspect board counts, or introduce another classifier.
+PUBLIC_STATE_SUMMARIES = {
+    PUBLIC_STATE_FRESH: (
+        'Strong rested coverage gives the active bullpen operating room.'
+    ),
+    PUBLIC_STATE_STRETCHED: (
+        "Recent work or coverage has narrowed the active bullpen's clean options."
+    ),
+    PUBLIC_STATE_VULNERABLE: (
+        'The active bullpen has limited operating margin for additional work.'
+    ),
+}
+
 # The one canonical internal-readiness-code -> public-state map (founder final).
 # Internal codes are NOT modified; only the publishable subset is mapped.
 INTERNAL_TO_PUBLIC_STATE = {
@@ -148,6 +163,7 @@ def _team_state_block(
     outcome: str,
     public_code: Optional[str] = None,
     public_label: Optional[str] = None,
+    summary: Optional[str] = None,
     data_through=None,
     reason_code: Optional[str] = None,
 ) -> dict:
@@ -156,6 +172,7 @@ def _team_state_block(
         'available': outcome == TEAM_STATE_AVAILABLE,
         'public_state': public_code,
         'public_label': public_label,
+        'summary': summary if outcome == TEAM_STATE_AVAILABLE else None,
         'outcome': outcome,
         'unavailable_message': (
             None
@@ -266,6 +283,7 @@ def public_team_state(readiness) -> dict:
         outcome=TEAM_STATE_AVAILABLE,
         public_code=state['public_code'],
         public_label=state['public_label'],
+        summary=PUBLIC_STATE_SUMMARIES[state['public_code']],
         data_through=data_through,
     )
 

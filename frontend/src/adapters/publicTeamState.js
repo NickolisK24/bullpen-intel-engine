@@ -72,6 +72,7 @@ export function readPublicTeamState(teamState) {
     available: false,
     publicState: null,
     publicLabel: null,
+    summary: null,
     tone: NO_TEAM_STATE_TONE,
     unavailableMessage,
     dataThrough: textOrNull(block?.data_through),
@@ -82,6 +83,7 @@ export function readPublicTeamState(teamState) {
 
   const publicState = textOrNull(block.public_state)
   const publicLabel = textOrNull(block.public_label)
+  const summary = textOrNull(block.summary)
   if (!publicState || !PUBLIC_TEAM_STATE_CODES.includes(publicState)) return unavailable
   if (CANONICAL_LABEL_FOR_CODE[publicState] !== publicLabel) return unavailable
 
@@ -89,6 +91,7 @@ export function readPublicTeamState(teamState) {
     available: true,
     publicState,
     publicLabel,
+    summary,
     tone: PUBLIC_TEAM_STATE_TONE[publicState],
     unavailableMessage: null,
     dataThrough: textOrNull(block.data_through),

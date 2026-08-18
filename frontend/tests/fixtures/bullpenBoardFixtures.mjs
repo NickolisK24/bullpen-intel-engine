@@ -353,11 +353,17 @@ export function deriveRosterAuthority(cards, { referenceDate = null } = {}) {
 // derive it from the board's counts or from context.health.
 export function publicTeamState(publicState = 'fresh', { dataThrough = '2026-06-04' } = {}) {
   const labels = { fresh: 'Fresh', stretched: 'Stretched', vulnerable: 'Vulnerable' }
+  const summaries = {
+    fresh: 'Strong rested coverage gives the active bullpen operating room.',
+    stretched: "Recent work or coverage has narrowed the active bullpen's clean options.",
+    vulnerable: 'The active bullpen has limited operating margin for additional work.',
+  }
   return {
     contract: 'team_state_public_v1',
     available: true,
     public_state: publicState,
     public_label: labels[publicState],
+    summary: summaries[publicState],
     outcome: 'available',
     unavailable_message: null,
     reason_code: null,
@@ -371,6 +377,7 @@ export function failClosedTeamState(outcome = 'data_limited', message = 'A curre
     available: false,
     public_state: null,
     public_label: null,
+    summary: null,
     outcome,
     unavailable_message: message,
     reason_code: outcome,

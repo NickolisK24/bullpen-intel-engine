@@ -305,6 +305,30 @@ def test_d055_exception_is_exact_decision_linked_and_does_not_unfreeze_paths():
     assert 'global bypass is authorized.' in decision
 
 
+def test_hotfix01_exception_is_exact_and_does_not_unfreeze_neighbors():
+    approved = freeze_policy.HOTFIX01_TEAM_STATE_SUMMARY_AUTHORITY_PATHS
+    assert approved == (
+        'backend/services/team_state_public_vocabulary.py',
+    )
+
+    changed = ['backend/services/team_state_public_vocabulary.py']
+    assert freeze_policy.protected_hits(
+        changed,
+        prefixes=(freeze_policy.TEAM_STATE_PATH_PREFIX,),
+    ) == changed
+    assert freeze_policy.protected_hits(
+        changed,
+        prefixes=(freeze_policy.TEAM_STATE_PATH_PREFIX,),
+        approved=approved,
+    ) == []
+
+    assert freeze_policy.protected_hits(
+        ['backend/services/team_state_payload.py'],
+        prefixes=(freeze_policy.TEAM_STATE_PATH_PREFIX,),
+        approved=approved,
+    ) == ['backend/services/team_state_payload.py']
+
+
 def test_no_catalogue_uses_a_bare_directory_as_an_invariant():
     """H-1's success condition, stated as an assertion.
 

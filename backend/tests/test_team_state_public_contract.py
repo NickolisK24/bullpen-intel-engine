@@ -12,6 +12,7 @@ Three layers, no database required:
 """
 
 import ast
+import copy
 import os
 import re
 
@@ -22,6 +23,7 @@ from services.team_state_public_vocabulary import (
     INTERNAL_TO_PUBLIC_STATE,
     PUBLIC_STATE_CODES,
     PUBLIC_STATE_LABELS,
+    PUBLIC_STATE_SUMMARIES,
     PUBLIC_TEAM_STATE_CONTRACT,
     PUBLIC_TEAM_STATE_LABEL_SET,
     TEAM_STATE_AVAILABLE,
@@ -51,6 +53,11 @@ CANONICAL_MAPPING = {
     'operationally_constrained': 'Stretched',
     'operationally_stressed': 'Vulnerable',
 }
+CANONICAL_SUMMARIES = {
+    'fresh': 'Strong rested coverage gives the active bullpen operating room.',
+    'stretched': "Recent work or coverage has narrowed the active bullpen's clean options.",
+    'vulnerable': 'The active bullpen has limited operating margin for additional work.',
+}
 
 
 # ── Canonical vocabulary ─────────────────────────────────────────────────────
@@ -76,6 +83,11 @@ def test_the_internal_to_public_map_holds_exactly_three_entries():
     # A fourth mapping — public or internal — fails here on purpose.
     assert set(INTERNAL_TO_PUBLIC_STATE) == set(CANONICAL_MAPPING)
     assert len(PUBLIC_STATE_LABELS) == 3
+
+
+def test_every_public_state_has_exactly_one_canonical_summary():
+    assert PUBLIC_STATE_SUMMARIES == CANONICAL_SUMMARIES
+    assert set(PUBLIC_STATE_SUMMARIES) == set(PUBLIC_STATE_LABELS)
 
 
 @pytest.mark.parametrize('status_code', [
@@ -122,6 +134,7 @@ def test_supported_readiness_produces_backend_owned_public_fields(
     assert block['available'] is True
     assert block['public_state'] == public_state
     assert block['public_label'] == public_label
+    assert block['summary'] == CANONICAL_SUMMARIES[public_state]
     assert block['outcome'] == TEAM_STATE_AVAILABLE
     assert block['unavailable_message'] is None
     assert block['data_through'] == '2026-08-04'
@@ -133,6 +146,7 @@ def test_data_limited_readiness_produces_no_public_team_state():
     assert block['available'] is False
     assert block['public_state'] is None
     assert block['public_label'] is None
+    assert block['summary'] is None
     assert block['outcome'] == TEAM_STATE_DATA_LIMITED
     # Fail-closed metadata stays inspectable, and the message is not a state.
     assert block['reason_code'] == 'data_limited'
@@ -149,6 +163,7 @@ def test_refused_readiness_preserves_its_reason_and_publishes_no_state():
 
     assert block['available'] is False
     assert block['public_label'] is None
+    assert block['summary'] is None
     assert block['outcome'] == TEAM_STATE_REFUSED
     assert block['reason_code'] == 'source_inputs_missing'
 
@@ -167,6 +182,7 @@ def test_missing_readiness_produces_no_public_team_state(payload):
     assert block['available'] is False
     assert block['public_state'] is None
     assert block['public_label'] is None
+    assert block['summary'] is None
     assert block['outcome'] == TEAM_STATE_READINESS_UNAVAILABLE
 
 
@@ -201,6 +217,28 @@ def test_no_projection_ever_emits_a_label_outside_the_canonical_set():
     labels = {public_team_state(readiness(status))['public_label'] for status in statuses}
 
     assert labels <= CANONICAL_PUBLIC_LABELS | {None}
+
+
+def test_summary_uses_only_the_canonical_result_and_does_not_mutate_evidence():
+    payload = readiness(
+        'operationally_stable',
+        team_state_evidence={
+            'method_version': 'v3_phase_5',
+            'clean_count': 5,
+            'severe_count': 1,
+            'decisive_rule': 'fresh_coverage',
+        },
+        board_counts={'available': 0, 'limited': 8},
+        workload_pressure='elevated',
+    )
+    original = copy.deepcopy(payload)
+
+    block = public_team_state(payload)
+
+    assert block['public_state'] == 'fresh'
+    assert block['summary'] == CANONICAL_SUMMARIES['fresh']
+    assert payload == original
+    assert payload['team_state_evidence']['method_version'] == 'v3_phase_5'
 
 
 # ── The comparison contract passes both sides through unchanged ──────────────
