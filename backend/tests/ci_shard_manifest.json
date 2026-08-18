@@ -8,7 +8,7 @@
   "timing_note": "measured_seconds values are balancing inputs only. They are not test-selection authority: the per-shard file lists decide what runs, and \"python scripts/ci_shard.py verify\" proves those lists cover live pytest collection exactly once.",
   "shards": {
     "1": {
-      "measured_seconds": 503.739,
+      "measured_seconds": 503.939,
       "files": [
         {
           "path": "tests/test_availability_unavailable_experiment.py",
@@ -299,12 +299,12 @@
           "measured_seconds": 5.189
         },
         {
-          "path": "tests/test_team_story_previews.py",
-          "measured_seconds": 0.014
+          "path": "tests/test_team_state_vnext_proof_workflow.py",
+          "measured_seconds": 0.2
         },
         {
-          "path": "tests/test_trusted_team_board_workload_facts.py",
-          "measured_seconds": 1.49
+          "path": "tests/test_team_story_previews.py",
+          "measured_seconds": 0.014
         },
         {
           "path": "tests/test_tonight_candidate_selection.py",
@@ -321,6 +321,10 @@
         {
           "path": "tests/test_traffic_share_actions.py",
           "measured_seconds": 0.224
+        },
+        {
+          "path": "tests/test_trusted_team_board_workload_facts.py",
+          "measured_seconds": 1.49
         },
         {
           "path": "tests/test_v4_team_operations_readiness_explanation_integration.py",
@@ -646,7 +650,7 @@
       ]
     },
     "3": {
-      "measured_seconds": 502.79,
+      "measured_seconds": 505.19,
       "files": [
         {
           "path": "tests/test_active_bullpen_readiness_resolver.py",
@@ -1185,6 +1189,10 @@
           "measured_seconds": 0.072
         },
         {
+          "path": "tests/test_team_state_reference_date_split.py",
+          "measured_seconds": 2.4
+        },
+        {
           "path": "tests/test_test_database_safety.py",
           "measured_seconds": 0.006
         },
@@ -1211,7 +1219,7 @@
       ]
     },
     "4": {
-      "measured_seconds": 503.13,
+      "measured_seconds": 504.33,
       "files": [
         {
           "path": "tests/test_active_bullpen_artifact_publication.py",
@@ -1472,6 +1480,10 @@
         {
           "path": "tests/test_team_state_population_contract.py",
           "measured_seconds": 0.2
+        },
+        {
+          "path": "tests/test_team_state_vnext_production_proof.py",
+          "measured_seconds": 1.2
         },
         {
           "path": "tests/test_traffic_reporting.py",

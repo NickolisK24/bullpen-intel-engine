@@ -26,6 +26,7 @@ from datetime import date
 from typing import Any, Mapping, Optional
 
 from models.share_artifact_generation_audit import ShareArtifactGenerationAudit
+from services.availability_reference_date import trusted_slate_reference_dates
 from services.share_artifacts import (
     build_share_artifact_draft,
     find_published_equivalent,
@@ -77,6 +78,16 @@ class TeamStateGenerationResult:
     audit_id: Optional[int]
     failure_code: Optional[str]
     artifact: Optional[Any] = None
+    # Transient production-proof plumbing. The governed readiness payload that
+    # produced this artifact, plus the two reference dates it was produced
+    # against. The immutable artifact document deliberately carries none of this
+    # (see services.team_state_payload), so the post-publication proof collector
+    # would otherwise have no way to observe the runtime evidence vector without
+    # recomputing it from later pitcher state. Deliberately absent from
+    # ``to_dict()``: this is internal plumbing, not a response shape.
+    readiness: Optional[Mapping[str, Any]] = None
+    membership_reference_date: Optional[date] = None
+    availability_reference_date: Optional[date] = None
 
     @property
     def published(self) -> bool:
@@ -115,12 +126,73 @@ class TeamStateGenerationResult:
 # ---------------------------------------------------------------------------
 
 
+_RESOLVE_FRESHNESS = object()
+
+
+def resolve_readiness_reference_dates(
+    source_snapshot, *, sync_status=None, snapshot_freshness=_RESOLVE_FRESHNESS,
+) -> tuple:
+    """The two governed reference dates one readiness read is produced against.
+
+    Returns ``(membership_reference_date, availability_reference_date)``.
+
+    These are different questions and they had been sharing one mutable local,
+    which is how the published Team State came to classify arms a day earlier
+    than the Team Board, the readiness route, and the calibration shadow — all
+    three of which read at the canonical availability reference date.
+
+    * **Membership** is asked on the trusted source's slate (``data_through``).
+      The roster authority only resolves for the date its roster snapshot covers;
+      once a slate goes final the global availability reference advances past it
+      and the read strands as authority-missing (the run-471 progressive refusal
+      and the run-476 all-30-team league refusal). Anchoring membership to the
+      slate is that repair and it is preserved exactly.
+    * **Availability** is asked on the slate plus one day, resolved by the
+      canonical owner (``services.availability_reference_date``), because an
+      availability read describes the bullpen a reader is about to watch.
+
+    Applies to BOTH trusted sources — a team-progressive checkpoint
+    (``subject_type='team_progressive'``) and a trusted/current league serving
+    snapshot. Fails closed: with no trusted source, or a source carrying no
+    usable ``data_through``, both values stay the live global reference date the
+    unanchored read already used.
+
+    ``snapshot_freshness`` lets a caller that has already resolved the serving
+    freshness verdict hand it over rather than paying for a second resolution per
+    team; omitted, it is resolved here.
+    """
+    from api.team_operations import _availability_reference_date, _sync_status_payload
+    from models.share_artifact import SUBJECT_TYPE_TEAM_PROGRESSIVE
+    from services.readiness_snapshot_freshness import serving_snapshot_freshness_authority
+
+    if sync_status is None:
+        sync_status = _sync_status_payload()
+    if snapshot_freshness is _RESOLVE_FRESHNESS:
+        snapshot_freshness = serving_snapshot_freshness_authority(source_snapshot)
+    live_reference_date = _availability_reference_date(sync_status)
+
+    is_trusted_source = (
+        getattr(source_snapshot, 'subject_type', None) == SUBJECT_TYPE_TEAM_PROGRESSIVE
+        or snapshot_freshness is not None
+    )
+    if not is_trusted_source:
+        return live_reference_date, live_reference_date
+
+    membership_reference_date, availability_reference_date = trusted_slate_reference_dates(
+        getattr(source_snapshot, 'data_through', None)
+    )
+    if membership_reference_date is None or availability_reference_date is None:
+        return live_reference_date, live_reference_date
+    return membership_reference_date, availability_reference_date
+
+
 def resolve_team_readiness_payload(
     team_id: int,
     *,
     requested_date: Optional[date] = None,
     session=None,
     source_snapshot=None,
+    reference_dates_out: Optional[dict] = None,
 ) -> Optional[Mapping[str, Any]]:
     """Resolve the governed Team Operations readiness payload for a team.
 
@@ -140,6 +212,14 @@ def resolve_team_readiness_payload(
     untrusted / stale / non-serving snapshot (or none) keeps the prior conservative
     live freshness. Per-team coverage is untouched — a team whose own active-bullpen
     inputs are insufficient still degrades through the unchanged coverage classifier.
+
+    The two reference dates this read is produced against come from
+    :func:`resolve_readiness_reference_dates`: membership on the trusted source's
+    slate, availability on the canonical next-day reference. They are distinct
+    values and are never collapsed. ``reference_dates_out`` is an optional dict
+    the caller supplies to receive the pair actually used, so the production-proof
+    artifact records the dates this read classified at rather than re-deriving
+    them afterwards.
     """
     from api.team_operations import (
         TEAM_OPERATIONS_DEFAULT_LIMIT,
@@ -165,44 +245,32 @@ def resolve_team_readiness_payload(
     from team_operations import assemble_bullpen_readiness
 
     sync_status = _sync_status_payload()
-    # The active-bullpen membership, availability classification, and appearance
-    # ledger stay anchored to the data-derived availability reference (what the
-    # pitchers' records actually describe). Only the freshness VERDICT is anchored to
-    # the serving trusted snapshot, so a current published snapshot is not reported
-    # stale merely because the live global game-log recompute (judged against the
-    # wall-clock product date) trails it. This is the exact reference-date mismatch
-    # that made every team stale. Fails closed to live freshness when no current
-    # serving-snapshot authority is available.
-    reference_date = _availability_reference_date(sync_status)
+    # Resolved once and shared: the reference-date split and the freshness anchor
+    # below both need this verdict, and it is not free to compute per team.
     snapshot_freshness = serving_snapshot_freshness_authority(source_snapshot)
-    # Anchor the active-bullpen ROSTER AUTHORITY reference date to the trusted source's
-    # slate (its data_through). The roster authority only resolves for the reference
-    # date its roster snapshot covers (the slate day). Once a slate is final the GLOBAL
-    # availability reference date advances to the day AFTER it, so it points past the
-    # slate's roster snapshot and strands the read as authority-missing
-    # (data_state=missing / confidence=unknown / status_code=data_limited — the run-471
-    # progressive refusal AND the run-476 all-30-team LEAGUE refusal). This applies
-    # symmetrically to BOTH trusted sources: a team-progressive checkpoint
-    # (subject_type='team_progressive') and a trusted/current league serving snapshot
-    # (freshness verdict present). It still fails closed unchanged when that slate
-    # genuinely has no roster snapshot. Non-anchored (no trusted source) reads keep the
-    # prior global reference date.
-    from models.share_artifact import SUBJECT_TYPE_TEAM_PROGRESSIVE
-    is_team_progressive = (
-        getattr(source_snapshot, 'subject_type', None) == SUBJECT_TYPE_TEAM_PROGRESSIVE
+    membership_reference_date, availability_reference_date = (
+        resolve_readiness_reference_dates(
+            source_snapshot, sync_status=sync_status,
+            snapshot_freshness=snapshot_freshness,
+        )
     )
-    if is_team_progressive or snapshot_freshness is not None:
-        slate_reference = getattr(source_snapshot, 'data_through', None)
-        if isinstance(slate_reference, date):
-            reference_date = slate_reference
+    if isinstance(reference_dates_out, dict):
+        # Record the dates this read actually used, at the moment it used them, so
+        # the production-proof artifact observes them instead of re-deriving them.
+        reference_dates_out['membership_reference_date'] = membership_reference_date
+        reference_dates_out['availability_reference_date'] = availability_reference_date
     if snapshot_freshness is not None:
+        # Only the freshness VERDICT is anchored to the serving trusted snapshot, so a
+        # current published snapshot is not reported stale merely because the live
+        # global game-log recompute (judged against the wall-clock product date) trails
+        # it. This is the exact reference-date mismatch that made every team stale.
         sync_status = anchor_sync_status_to_serving_snapshot(sync_status, snapshot_freshness)
     rows = tuple(latest_fatigue_rows(team_id=team_id, limit=TEAM_OPERATIONS_DEFAULT_LIMIT))
     records = tuple(
         _filter_records_by_team_abbreviation(
             classify_latest_fatigue_rows(
                 rows,
-                reference_date=reference_date,
+                reference_date=availability_reference_date,
                 mode=CURRENT_AVAILABILITY_MODE,
             ),
         )
@@ -219,14 +287,14 @@ def resolve_team_readiness_payload(
     # not decide the active bullpen's state. Membership is resolved once and
     # shared with the trust classifier so the roster authority runs once.
     readiness_records, membership = resolve_readiness_population(
-        records, team_id=team_id, reference_date=reference_date,
+        records, team_id=team_id, reference_date=membership_reference_date,
     )
     return assemble_bullpen_readiness(
         team=_team_payload_from_records(records, team_id=team_id),
         pitcher_records=tuple(_readiness_record(record) for record in readiness_records),
         trust_metadata=_team_operations_trust_metadata(
             records, sync_status=sync_status, generated_at=generated_at,
-            team_id=team_id, reference_date=reference_date, membership=membership,
+            team_id=team_id, reference_date=membership_reference_date, membership=membership,
         ),
         freshness=_team_operations_freshness_metadata(
             records, sync_status=sync_status, generated_at=generated_at,
@@ -286,8 +354,9 @@ def _record_audit(
 
 def _result(outcome, *, team_id, requested_date, eligibility=None, source=None,
             artifact=None, created_new=False, reused_existing=False, audit=None,
-            failure_code=None) -> TeamStateGenerationResult:
+            failure_code=None, reference_dates=None) -> TeamStateGenerationResult:
     snapshot = source.snapshot if source is not None else None
+    reference_dates = reference_dates if isinstance(reference_dates, dict) else {}
     return TeamStateGenerationResult(
         outcome=outcome,
         eligible=eligibility.eligible if eligibility is not None else False,
@@ -305,6 +374,9 @@ def _result(outcome, *, team_id, requested_date, eligibility=None, source=None,
         audit_id=audit.id if audit is not None else None,
         failure_code=failure_code,
         artifact=artifact,
+        readiness=source.readiness if source is not None else None,
+        membership_reference_date=reference_dates.get('membership_reference_date'),
+        availability_reference_date=reference_dates.get('availability_reference_date'),
     )
 
 
@@ -353,22 +425,28 @@ def _fail_closed(
 # ---------------------------------------------------------------------------
 
 
-def _resolver_accepts_source_snapshot(resolver) -> bool:
-    """Whether ``resolver`` accepts a ``source_snapshot`` keyword.
+def _resolver_accepts(resolver, keyword: str) -> bool:
+    """Whether ``resolver`` accepts ``keyword``.
 
     Lets the production resolver receive the shared serving snapshot for freshness
-    anchoring while injected/legacy resolvers (test doubles) keep their existing
-    signature. Fails closed to False when the signature cannot be read.
+    anchoring, and the reference-date capture dict for the production proof, while
+    injected/legacy resolvers (test doubles) keep their existing signature. Fails
+    closed to False when the signature cannot be read.
     """
     try:
         parameters = inspect.signature(resolver).parameters
     except (TypeError, ValueError):
         return False
-    if 'source_snapshot' in parameters:
+    if keyword in parameters:
         return True
     return any(
         param.kind == inspect.Parameter.VAR_KEYWORD for param in parameters.values()
     )
+
+
+def _resolver_accepts_source_snapshot(resolver) -> bool:
+    """Backwards-compatible alias for the ``source_snapshot`` probe."""
+    return _resolver_accepts(resolver, 'source_snapshot')
 
 
 def generate_team_state_artifact(
@@ -413,8 +491,13 @@ def generate_team_state_artifact(
     #    so injected/legacy resolvers keep working unchanged.
     freshness_source = source_authority if source_authority is not None else snapshot
     resolver_kwargs = {'requested_date': requested_date, 'session': session}
-    if _resolver_accepts_source_snapshot(resolver):
+    if _resolver_accepts(resolver, 'source_snapshot'):
         resolver_kwargs['source_snapshot'] = freshness_source
+    # Capture the two reference dates the read is actually produced against, so the
+    # production proof observes them rather than re-deriving them after the fact.
+    reference_dates: dict = {}
+    if _resolver_accepts(resolver, 'reference_dates_out'):
+        resolver_kwargs['reference_dates_out'] = reference_dates
     try:
         readiness = resolver(team_id, **resolver_kwargs)
     except Exception:
@@ -467,6 +550,7 @@ def generate_team_state_artifact(
         return _result(
             OUTCOME_REFUSED, team_id=team_id, requested_date=requested_date,
             eligibility=eligibility, source=source, audit=audit,
+            reference_dates=reference_dates,
         )
 
     # 5. Eligible -> build canonical payload, publish (dedup), verify, audit;
@@ -526,4 +610,5 @@ def generate_team_state_artifact(
         outcome, team_id=team_id, requested_date=requested_date,
         eligibility=eligibility, source=source, artifact=artifact,
         created_new=created_new, reused_existing=reused_existing, audit=audit,
+        reference_dates=reference_dates,
     )

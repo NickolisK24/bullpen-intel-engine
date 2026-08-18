@@ -112,3 +112,32 @@ def product_availability_reference_date_from_sync_status(sync_status):
         return existing
     data = sync_status.get('data') or {}
     return product_availability_reference_date_from_metadata(data)
+
+
+def trusted_slate_reference_dates(data_through):
+    """Split one trusted source's slate into its two governed reference dates.
+
+    A trusted publication carries a single ``data_through`` (the slate its
+    evidence covers), but two different questions are asked of it and they have
+    different correct answers:
+
+    * ``membership_reference_date`` — the slate itself. The roster authority only
+      resolves for the date its roster snapshot covers, so active-bullpen
+      membership must be asked on the slate day. Asking on the day after strands
+      the read as authority-missing, which is what refused every team once a
+      slate went final.
+    * ``availability_reference_date`` — the slate plus one day, from
+      :func:`product_availability_reference_date`. Availability describes the
+      bullpen a reader is about to watch, not the one that just finished
+      working: "a data set through June 7 describes the next availability read
+      on June 8."
+
+    Collapsing the two into one value classifies arms a day early, which keeps a
+    second day of used arms out of the clean bucket and disagrees with every
+    live read of the same bullpen. Returns ``(None, None)`` when ``data_through``
+    is not a usable date, so callers fail closed to their prior behavior.
+    """
+    slate = parse_reference_date(data_through)
+    if not isinstance(slate, date):
+        return None, None
+    return slate, product_availability_reference_date(latest_game_date=slate)

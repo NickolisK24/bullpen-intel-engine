@@ -332,17 +332,25 @@ PACKAGE_MODIFIED_MODULES = {
     },
     'services/dashboard_snapshot.py': {
         'digest_after':
-            '016055732b2b557beb3fdce0fc862590f9d487941b339e9bcd47ac30430a1f1e',
+            '2ee8064d79384859fa3e6deee883f2ed76b0fdd84ac911a5fe2f1ac5060c8f4d',
         'change': (
             'D-054 extracted the existing latest Dashboard snapshot queries '
             'for reuse and added guarded read entry points that distinguish a '
             'database-read failure from a legitimate missing snapshot; the '
             'existing selection filters and order, snapshot_unavailable_reason, '
             'and snapshot publishability, freshness, version, status, and '
-            'publication-eligibility semantics remain unchanged'
+            'publication-eligibility semantics remain unchanged. D-056 then '
+            'added an env-gated branch in the post-commit publication hook that '
+            'runs the SAME single Team State generation under observation and '
+            'writes a side-channel proof file; with TEAM_STATE_VNEXT_PROOF_PATH '
+            'unset the branch is not taken at all'
         ),
-        # D-054 adds infrastructure-error distinction for its new reader. The
-        # existing serving selectors and publication gate keep their behavior.
+        # Neither package moved a publication outcome. D-054 adds
+        # infrastructure-error distinction for its new reader. D-056 observes a
+        # publication that has ALREADY committed, is off unless a workflow step
+        # asks for evidence, and cannot roll back, unpublish, or re-gate
+        # anything. The serving selectors and the publication gate this audit
+        # exists to reason about keep their exact behavior.
         'behaviour_changed': False,
     },
 }

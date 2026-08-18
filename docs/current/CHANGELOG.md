@@ -4,6 +4,50 @@ This changelog summarizes major product, governance, rollout, and operational
 milestones. It does not replace the detailed evidence records linked from
 [docs/README.md](../README.md).
 
+## August 18, 2026 - Team State availability reference date (D-056)
+
+- The published Team State path classified bullpen availability on the trusted
+  source's slate (`data_through`) instead of the canonical next-day availability
+  reference (`data_through + 1`) that the Team Board, the readiness route, and the
+  calibration shadow all use. `resolve_team_readiness_payload` resolved the
+  canonical date, then overwrote that same local while anchoring the roster
+  authority — a correct repair for the run-476 all-team refusal — and passed the
+  overwritten value on to `classify_latest_fatigue_rows`. One variable was
+  answering two questions.
+- Effect: an arm that worked the day before the slate still carried
+  `days_rest = 1` and still had its pitch count counted as "yesterday", so a
+  second full game of used arms stayed out of the clean bucket. The payload's own
+  freshness metadata was anchored to `data_through + 1` at the same time, so one
+  immutable artifact stated one date and classified at another.
+- Affected natural publication: workflow run 32126672100, sync run 774, dashboard
+  snapshot 437, data through 2026-08-17, published 2026-08-18T10:30:09.693370Z,
+  distribution 0 Fresh / 13 Stretched / 17 Vulnerable. **Snapshot 437 and its 30
+  artifacts remain immutable.** They are not rewritten, regenerated, superseded, or
+  backfilled, and the preview pages that publication committed stay as they are. It
+  stands on the record as the affected first natural vNext publication; the defect
+  is recorded, not erased. Correction is by forward publication.
+- Correction: membership and availability are now independent governed values
+  behind one authority. Membership stays on the slate (the run-476 repair,
+  preserved exactly, including for the trust classifier); availability moves to the
+  canonical next-day reference resolved by `product_availability_reference_date`.
+  The Team State card takes the same split, so the card and the verdict describe
+  one bullpen on one date.
+- Contract A is unchanged. No threshold, precedence, partition mapping,
+  `v3_phase_5` semantic, or Fresh/Stretched/Vulnerable definition moves, and the
+  freeze test pinning the classifier to the calibration contract stays green. The
+  6/2/0/0 profile that exposed this was Fresh before the fix and still is.
+- Production proof now includes `reference_date_alignment`: for every team,
+  membership must equal `data_through` and availability must equal the canonical
+  next-day reference. The first natural publication would have passed all seven
+  original gate requirements while classifying the league a day early, which is
+  why the eighth invariant exists. A zero-Fresh league is surfaced as
+  `distribution_degenerate` for human review rather than tallied silently.
+- **Team State vNext closeout is deferred.** This branch corrects the defect and
+  instruments the proof; only a corrected natural scheduled publication, with its
+  proof artifact showing reference-date alignment across all 30 teams alongside the
+  original requirements, can mark Team State vNext production-proven.
+- Authority: `docs/decisions/2026-08-18-team-state-availability-reference-date.md`.
+
 ## August 14, 2026 - Documentation Authority Reconciliation (H-12)
 
 - The game-driven ingestion contract said the lane was `off` in three places
