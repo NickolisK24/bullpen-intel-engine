@@ -363,10 +363,11 @@ def test_126_this_package_changes_only_the_approved_canonical_module():
     }
     dashboard = audit.PACKAGE_MODIFIED_MODULES['services/dashboard_snapshot.py']
     assert dashboard['digest_after'] == (
-        '016055732b2b557beb3fdce0fc862590f9d487941b339e9bcd47ac30430a1f1e'
+        '2ee8064d79384859fa3e6deee883f2ed76b0fdd84ac911a5fe2f1ac5060c8f4d'
     )
     assert dashboard['behaviour_changed'] is False
     assert 'D-054' in dashboard['change']
+    assert 'D-056' in dashboard['change']
 
 
 def test_126d_the_modified_module_is_reported_as_changed_by_this_package():
