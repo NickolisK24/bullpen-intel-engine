@@ -16,10 +16,13 @@ Before H-1 the first three were refused by these same guards, which is what
 forced ordinary changes into per-change allowlists in four test modules.
 """
 
+import os
 import subprocess
+from pathlib import Path
 
 import pytest
 
+import branch_diff
 import test_appearance_team_authority as appearance_guard
 import test_public_team_relief_work as public_routes_guard
 import test_qa_reconciliation_scenarios as phase0e_guard
@@ -31,6 +34,65 @@ UNRELATED_MIGRATION = 'backend/migrations/versions/example_future_migration.py'
 ARCHIVED_NAME_COLLISION = 'docs/archive/example_public_team_relief_work_history.md'
 
 HARMLESS = (UNRELATED_FRONTEND, UNRELATED_MIGRATION, ARCHIVED_NAME_COLLISION)
+TB04_FILES = (
+    'backend/services/team_board_v2.py',
+    'frontend/src/components/bullpen/board/TeamBoardWorkloadOverview.jsx',
+)
+
+
+def _git(repo, *args):
+    environment = dict(os.environ)
+    environment.update({
+        'GIT_AUTHOR_NAME': 'Test Author',
+        'GIT_AUTHOR_EMAIL': 'test@example.com',
+        'GIT_COMMITTER_NAME': 'Test Author',
+        'GIT_COMMITTER_EMAIL': 'test@example.com',
+    })
+    return subprocess.run(
+        ['git', *args],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=True,
+        env=environment,
+    )
+
+
+def _commit_files(repo, message, files):
+    for relative, contents in files.items():
+        path = Path(repo) / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(contents, encoding='utf-8')
+    _git(repo, 'add', '--all')
+    _git(repo, 'commit', '-m', message)
+
+
+def _set_remote_ref(repo, name):
+    _git(repo, 'update-ref', f'refs/remotes/origin/{name}', 'HEAD')
+
+
+def _integration_feature_repo(tmp_path):
+    repo = tmp_path / 'repo'
+    repo.mkdir()
+    _git(repo, 'init', '-b', 'main')
+    _commit_files(repo, 'initial', {
+        'backend/services/share_artifact_generation.py': 'main\n',
+        'backend/services/team_board_v2.py': 'main\n',
+    })
+    _set_remote_ref(repo, 'main')
+
+    _git(repo, 'checkout', '-b', 'integration')
+    _commit_files(repo, 'approved integration change', {
+        'backend/services/share_artifact_generation.py': 'integration\n',
+    })
+    _set_remote_ref(repo, 'integration')
+
+    _git(repo, 'checkout', '-b', 'feature')
+    _commit_files(repo, 'ordinary feature change', {
+        'backend/services/team_board_v2.py': 'feature\n',
+    })
+    _set_remote_ref(repo, 'feature')
+    return repo
 
 
 def _run_what_changed(monkeypatch, changed):
@@ -56,11 +118,9 @@ def _run_phase0e(monkeypatch, changed):
 
 
 def _run_appearance(monkeypatch, changed):
-    # This guard shells out to git itself rather than using a module helper.
-    class _Result:
-        stdout = '\n'.join(changed)
-
-    monkeypatch.setattr(subprocess, 'run', lambda *a, **k: _Result())
+    monkeypatch.setattr(
+        branch_diff, 'changed_files_for_current_change', lambda *_a, **_k: changed
+    )
     appearance_guard.test_branch_touches_no_team_state_or_public_surface_files()
 
 
@@ -90,6 +150,74 @@ FROZEN_EXAMPLES = (
         'backend/services/team_state_payload.py',
     ),
 )
+
+
+def test_integration_base_history_is_not_attributed_to_feature_branch(tmp_path):
+    repo = _integration_feature_repo(tmp_path)
+
+    local_changed = branch_diff.changed_files_for_current_change(repo, environ={})
+    ci_changed = branch_diff.changed_files_for_current_change(
+        repo, environ={'GITHUB_BASE_REF': 'integration'}
+    )
+
+    assert local_changed == ['backend/services/team_board_v2.py']
+    assert ci_changed == local_changed
+    assert 'backend/services/share_artifact_generation.py' not in local_changed
+
+
+def test_actual_protected_feature_change_still_fails_guard(tmp_path, monkeypatch):
+    repo = _integration_feature_repo(tmp_path)
+    _commit_files(repo, 'protected feature change', {
+        'backend/services/share_artifact_generation.py': 'feature\n',
+    })
+
+    changed = branch_diff.changed_files_for_current_change(
+        repo, environ={'GITHUB_BASE_REF': 'integration'}
+    )
+
+    assert 'backend/services/share_artifact_generation.py' in changed
+    with pytest.raises(AssertionError):
+        _run_appearance(monkeypatch, changed)
+
+
+def test_main_based_feature_uses_main_as_actual_base(tmp_path):
+    repo = tmp_path / 'repo'
+    repo.mkdir()
+    _git(repo, 'init', '-b', 'main')
+    _commit_files(repo, 'initial', {'allowed.txt': 'main\n'})
+    _set_remote_ref(repo, 'main')
+    _git(repo, 'checkout', '-b', 'feature')
+    _commit_files(repo, 'feature', {'allowed.txt': 'feature\n'})
+    _set_remote_ref(repo, 'feature')
+
+    assert branch_diff.resolve_comparison_ref(repo, environ={}) == 'origin/main'
+    assert branch_diff.changed_files_for_current_change(repo, environ={}) == [
+        'allowed.txt'
+    ]
+
+
+def test_missing_explicit_comparison_ref_never_produces_false_pass(tmp_path):
+    repo = _integration_feature_repo(tmp_path)
+
+    with pytest.raises(branch_diff.ComparisonBaseUnavailable):
+        branch_diff.changed_files_for_current_change(
+            repo, environ={'GITHUB_BASE_REF': 'missing-base'}
+        )
+
+
+def test_appearance_guard_skips_when_comparison_base_is_unavailable(monkeypatch):
+    def unavailable(*_args, **_kwargs):
+        raise branch_diff.ComparisonBaseUnavailable('fixture missing base')
+
+    monkeypatch.setattr(
+        branch_diff, 'changed_files_for_current_change', unavailable
+    )
+    with pytest.raises(pytest.skip.Exception):
+        appearance_guard.test_branch_touches_no_team_state_or_public_surface_files()
+
+
+def test_appearance_guard_accepts_ordinary_tb04_paths(monkeypatch):
+    _run_appearance(monkeypatch, list(TB04_FILES))
 
 
 @pytest.mark.parametrize('label,runner', GUARDS)
