@@ -169,6 +169,7 @@ def create_app(config_name=None):
     from api.pitchers import pitchers_bp
     from api.recent_work import recent_work_bp
     from api.team_recent_work import team_recent_work_bp
+    from api.team_board_v2 import team_board_v2_bp
     from api.system import system_bp
     from api.auth import auth_bp
     from api.me import me_bp
@@ -192,6 +193,7 @@ def create_app(config_name=None):
     app.register_blueprint(pitchers_bp, url_prefix='/api/pitchers')
     app.register_blueprint(recent_work_bp, url_prefix='/api/bullpen')
     app.register_blueprint(team_recent_work_bp, url_prefix='/api/bullpen')
+    app.register_blueprint(team_board_v2_bp, url_prefix='/api/bullpen')
     app.register_blueprint(system_bp, url_prefix='/api/system')
     app.register_blueprint(auth_bp, url_prefix='/api/auth')
     app.register_blueprint(me_bp, url_prefix='/api/me')
