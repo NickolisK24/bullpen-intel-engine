@@ -14,6 +14,7 @@ import {
   publicTeamState,
   staleBoard,
 } from './fixtures/bullpenBoardFixtures.mjs'
+import { teamBoardV2Fixture } from './fixtures/teamBoardV2Fixtures.mjs'
 
 const server = await createServer({
   root: process.cwd(),
@@ -90,6 +91,7 @@ function renderBoard(boardPayload, {
   storyPayload = null,
   gameContextPayload = null,
   teamReliefWorkPayload = reliefWorkPayload,
+  teamBoardV2Payload = teamBoardV2Fixture(boardPayload),
 } = {}) {
   const teamRecord = team || boardPayload?.team || { team_id: 1, team_name: 'Test Club', team_abbreviation: 'TST' }
   return renderToStaticMarkup(
@@ -98,6 +100,7 @@ function renderBoard(boardPayload, {
         teams: { loading: false, data: [teamRecord] },
         initialSelectedTeam: teamRecord.team_id,
         boardPayload,
+        teamBoardV2Payload,
         gameContextPayload,
         storyPayload,
         teamReliefWorkPayload,
@@ -182,21 +185,15 @@ test('the distribution introduces no score, ranking, or recommendation language'
 
 // ── Answer-zone hierarchy in the Team Board container ───────────────────────
 
-test('the answer comes first: identity/state, then availability, then the deep board', () => {
+test('the v2 answer comes first, followed by the unchanged deep board', () => {
   const detroitBoard = { ...populatedBoard, team: { team_id: 1, team_name: 'Detroit Tigers', team_abbreviation: 'DET' } }
   const html = renderBoard(detroitBoard)
-  const operatingCard = html.indexOf('bullpen operating state')
-  const distribution = html.indexOf('id="bullpen-summary-title"')
+  const answer = html.indexOf('data-testid="team-board-answer-block"')
   const board = html.indexOf('id="pitcher-lanes"')
-  assert.ok(operatingCard > -1 && distribution > -1 && board > -1)
-  assert.ok(operatingCard < distribution, 'state card precedes the distribution')
-  assert.ok(distribution < board, 'distribution precedes the full board')
-  // Team identity reaches the answer zone. Since UX-002 the /bullpen page
-  // heading owns the visible club name, so within the board itself identity
-  // travels on the operating card's region label and the board section heading
-  // rather than a second card title. bullpenPageIdentity.test.mjs pins that
-  // split; this only asserts the team is still identified here at all.
+  assert.ok(answer > -1 && board > -1)
+  assert.ok(answer < board, 'v2 answer precedes the legacy board')
   assert.ok(htmlIncludes(html, 'Detroit Tigers'))
+  assert.equal(htmlIncludes(html, 'Bullpen availability distribution'), false)
 })
 
 test('the full bullpen board and its pitcher-lanes anchor remain visible (not collapsed)', () => {
@@ -240,7 +237,7 @@ test('Recent Usage owns the 7-day orientation without duplicating summary or arm
 
 test('freshness and the current state stay visible without opening anything', () => {
   const html = renderBoard(populatedBoard)
-  assert.ok(htmlIncludes(html, 'Current Bullpen State'))
+  assert.ok(htmlIncludes(html, 'Team State'))
   assert.ok(htmlIncludes(html, 'Data through'))
 })
 
@@ -352,9 +349,6 @@ test('summary, Rest Status, and Workload Overview use governed board reads', () 
   }
   const html = renderBoard(board)
   for (const copy of [
-    'Bullpen Summary',
-    'Stable Rested Options',
-    'Several rested options remain available.',
     'Rest Status',
     '3 of 6 active bullpen arms have at least one full day of rest',
     'Workload Overview',
@@ -478,14 +472,14 @@ test('team selection is a single accessible control and arm explanations use nat
 
 test('stale data keeps its trust warning visible in the answer zone', () => {
   const html = renderBoard(staleBoard)
-  assert.ok(htmlIncludes(html, 'Bullpen Summary'))
-  // The operating card and board both keep the stale messaging visible.
+  assert.ok(htmlIncludes(html, 'Limited read'))
   assert.ok(htmlIncludes(html, 'Outside Freshness Window') || htmlIncludes(html, 'outside the active freshness window'))
 })
 
 test('withheld roster context does not show a completed distribution', () => {
   const html = renderBoard(withheldBoard, { team: { team_id: 1, team_name: 'Test Club', team_abbreviation: 'TST' } })
-  assert.ok(htmlIncludes(html, 'Eligible relievers: withheld'))
+  assert.ok(htmlIncludes(html, 'Limited read'))
+  assert.equal(htmlIncludes(html, 'Active arms'), false)
   assert.equal(htmlIncludes(html, 'Eligible relievers 0'), false)
 })
 

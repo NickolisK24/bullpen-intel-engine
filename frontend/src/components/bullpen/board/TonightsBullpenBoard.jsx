@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
 import { useFetch } from '../../../hooks/useFetch'
 import { toOperatingStateReadModel } from '../../../adapters/operatingStateReadModel'
-import { getTeamBullpenBoard, getTeamGameContext, getTeamStory, getTeamShareCard } from '../../../utils/api'
-import { FreshnessStamp, TeamBoardSkeleton, ErrorState, EmptyState } from '../../UI'
-import BullpenOperatingStateCard, { BullpenReadDisclosure } from '../BullpenOperatingStateCard'
-import BullpenAvailabilityDistribution from './BullpenAvailabilityDistribution'
+import { readTeamBoardV2 } from '../../../adapters/teamBoardV2'
+import { getTeamBoardV2, getTeamBullpenBoard, getTeamGameContext, getTeamStory, getTeamShareCard } from '../../../utils/api'
+import { TeamBoardSkeleton, ErrorState, EmptyState } from '../../UI'
+import { BullpenReadDisclosure } from '../BullpenOperatingStateCard'
 import BullpenBoardView, { RosterStatusBanner } from './BullpenBoardView'
+import TeamBoardAnswerBlock from './TeamBoardAnswerBlock'
 import RestStatus from './RestStatus'
 import WorkloadOverview from './WorkloadOverview'
 import RecentUsage from './RecentUsage'
@@ -44,6 +45,9 @@ export default function TonightsBullpenBoard({
   onSelectTeam = () => {},
   onSelectPitcher = () => {},
   boardPayload,
+  teamBoardV2Payload,
+  teamBoardV2Loading,
+  teamBoardV2Error,
   gameContextPayload,
   storyPayload,
   teamReliefWorkPayload,
@@ -72,6 +76,10 @@ export default function TonightsBullpenBoard({
     },
     [selectedTeam, showUnavailable],
   )
+  const teamBoardV2 = useFetch(
+    () => (selectedTeam == null ? Promise.resolve(null) : getTeamBoardV2(selectedTeam)),
+    [selectedTeam],
+  )
 
   // Game context for the selected team (stored game-log only).
   const gameContext = useFetch(
@@ -89,6 +97,20 @@ export default function TonightsBullpenBoard({
     [selectedTeam],
   )
   const boardState = boardPayload !== undefined ? staticFetchState(boardPayload) : board
+  const hasTeamBoardV2Override = (
+    teamBoardV2Payload !== undefined
+    || teamBoardV2Loading !== undefined
+    || teamBoardV2Error !== undefined
+  )
+  const teamBoardV2State = hasTeamBoardV2Override
+    ? {
+        data: teamBoardV2Payload ?? null,
+        loading: teamBoardV2Loading === true,
+        error: teamBoardV2Error ?? null,
+        refetch: () => {},
+      }
+    : teamBoardV2
+  const teamBoardAnswerRead = readTeamBoardV2(teamBoardV2State.data)
   const gameContextState = gameContextPayload !== undefined ? staticFetchState(gameContextPayload) : gameContext
   const hasReliefWorkOverride = (
     teamReliefWorkPayload !== undefined
@@ -199,20 +221,17 @@ export default function TonightsBullpenBoard({
         // team's state, distribution, evidence, or disclosure state can linger.
         <div key={selectedTeam} className="flex flex-col gap-6 2xl:flex-row 2xl:items-start">
           <div className="min-w-0 flex-1">
-            {/* Baseball answer zone: state, why, game context, freshness, counts. */}
+            {/* TB-01 adopts only the v2-backed answer. Every section below this
+                block remains on its legacy owner until its migration package.
+                The former titleOwnedByPage operating-card handoff is retired:
+                the route owns the H1 and this block owns the selected-club H2. */}
             <div className="mb-4">
-              <BullpenOperatingStateCard
-                readModel={teamOperatingRead}
-                staleWithError={teamOperatingRead.freshness?.isStale || teamOperatingRead.freshness?.failClosed}
-                onRetry={boardState.refetch}
-                density="compact"
-                // The Team Board's page heading already reads
-                // "{Full Team Name} Bullpen", so the card would otherwise repeat
-                // the club name as a second title directly beneath it. The
-                // card's region label still carries the team for anyone landing
-                // on it out of context.
-                titleOwnedByPage
-                readerFirst
+              <TeamBoardAnswerBlock
+                read={teamBoardAnswerRead}
+                team={selectedTeamRecord}
+                loading={teamBoardV2State.loading}
+                error={teamBoardV2State.error}
+                onRetry={teamBoardV2State.refetch}
               />
               {(gameContextState.loading || gameContextState.error || gameContextState.data) && (
                 <TeamGameContextCard
@@ -222,8 +241,6 @@ export default function TonightsBullpenBoard({
                   compact
                 />
               )}
-              <FreshnessStamp freshness={boardState.data?.freshness} className="mt-3 px-1" showExceptional={false} />
-              <BullpenAvailabilityDistribution board={filteredBoard} restedOptions={teamOperatingRead.cleanOptions} />
             </div>
             <BullpenBoardView
               board={filteredBoard}

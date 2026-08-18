@@ -6,6 +6,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { MemoryRouter } from 'react-router-dom'
 import { createServer } from 'vite'
 import { populatedBoard } from './fixtures/bullpenBoardFixtures.mjs'
+import { teamBoardV2Fixture } from './fixtures/teamBoardV2Fixtures.mjs'
 
 const server = await createServer({
   root: process.cwd(),
@@ -269,6 +270,10 @@ function renderSelectedTeamBoard(props = {}) {
           ...populatedBoard,
           team: { team_id: 147, team_name: 'New York Yankees', team_abbreviation: 'NYY' },
         },
+        teamBoardV2Payload: teamBoardV2Fixture({
+          ...populatedBoard,
+          team: { team_id: 147, team_name: 'New York Yankees', team_abbreviation: 'NYY' },
+        }),
         storyPayload: null,
         gameContextPayload: null,
         teamReliefWorkPayload: {
@@ -640,23 +645,23 @@ test('selected team board renders Recent Bullpen Work in the visible board path'
   assert.ok(htmlIncludes(html, 'Recent Bullpen Work'))
   assert.ok(htmlIncludes(html, 'id="team-relief-work"'))
   assert.ok(htmlIncludes(html, 'tabindex="-1"'))
-  assert.ok(htmlIncludes(html, 'Review pitcher lanes'))
-  // H-10: the club name inside the board heading is screen-reader-only now
-  // that the page heading names the club visibly.
+  assert.ok(htmlIncludes(html, 'Team State'))
+  // The v2 Answer Block owns the visible club identity; the unchanged legacy
+  // board heading retains its screen-reader team suffix.
   assert.ok(htmlIncludes(html, 'Active Bullpen'))
   assert.ok(htmlIncludes(html, '<span class="sr-only"> — New York Yankees</span>'))
   assert.ok(htmlIncludes(html, teamReliefWorkPayload.scope_sentence))
   assert.ok(htmlIncludes(html, 'Recent Usage'))
   assert.ok(htmlIncludes(html, teamReliefWorkPayload.windows.window_7.sentence))
 
-  const operatingIndex = html.indexOf('Review pitcher lanes')
+  const answerIndex = html.indexOf('data-testid="team-board-answer-block"')
   const reliefIndex = html.indexOf('Recent Bullpen Work')
   const boardIndex = html.indexOf('Active Bullpen')
 
-  assert.ok(operatingIndex !== -1)
+  assert.ok(answerIndex !== -1)
   assert.ok(reliefIndex !== -1)
   assert.ok(boardIndex !== -1)
-  assert.ok(operatingIndex < boardIndex)
+  assert.ok(answerIndex < boardIndex)
   assert.ok(boardIndex < reliefIndex)
 })
 
@@ -841,16 +846,16 @@ test('team board owns one shared relief-work request and mounts summary before d
     new URL('../src/components/bullpen/board/TonightsBullpenBoard.jsx', import.meta.url),
     'utf8',
   )
-  const operatingIndex = source.indexOf('<BullpenOperatingStateCard')
+  const answerIndex = source.indexOf('<TeamBoardAnswerBlock')
   const recentUsageIndex = source.indexOf('<RecentUsage')
   const mountIndex = source.indexOf('<TeamReliefWorkPanel')
   const boardIndex = source.indexOf('<BullpenBoardView')
 
-  assert.notEqual(operatingIndex, -1)
+  assert.notEqual(answerIndex, -1)
   assert.notEqual(mountIndex, -1)
   assert.notEqual(recentUsageIndex, -1)
   assert.notEqual(boardIndex, -1)
-  assert.ok(operatingIndex < boardIndex)
+  assert.ok(answerIndex < boardIndex)
   assert.ok(boardIndex < recentUsageIndex)
   assert.ok(recentUsageIndex < mountIndex)
   assert.ok(source.includes('useTeamReliefWork(selectedTeam, !hasReliefWorkOverride)'))
