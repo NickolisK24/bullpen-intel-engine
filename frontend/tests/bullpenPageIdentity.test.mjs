@@ -238,10 +238,10 @@ test('the answer block owns the selected club identity below the route heading',
   assert.ok(new RegExp(`<h2[^>]*>\\s*${escapeRegExp(teamName)}\\s*</h2>`).test(html))
   assert.ok(htmlIncludes(html, 'data-testid="team-board-answer-block"'))
   // The board's own section heading keeps its level, its id, and its binding.
-  assert.ok(htmlIncludes(html, '<h2 id="pitcher-lanes-title"'))
-  assert.ok(htmlIncludes(html, 'aria-labelledby="pitcher-lanes-title"'))
-  // The selected club is the Answer Block's visible h2; the legacy board keeps
-  // its existing section heading and remains below it.
+  assert.ok(htmlIncludes(html, '<h2 id="active-bullpen-title"'))
+  assert.ok(htmlIncludes(html, 'aria-labelledby="active-bullpen-title"'))
+  // The selected club is the Answer Block's visible h2; the migrated v2
+  // Active Bullpen keeps its section heading and remains below it.
   assert.ok(htmlIncludes(html, 'Active Bullpen'))
   assert.ok(htmlIncludes(html, `<span class="sr-only"> — ${teamName}</span>`))
 })

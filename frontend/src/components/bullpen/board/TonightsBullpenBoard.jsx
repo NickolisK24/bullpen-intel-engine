@@ -1,12 +1,12 @@
-import { useEffect, useState } from 'react'
 import { useFetch } from '../../../hooks/useFetch'
 import { toOperatingStateReadModel } from '../../../adapters/operatingStateReadModel'
 import { readTeamBoardV2 } from '../../../adapters/teamBoardV2'
 import { getTeamBoardV2, getTeamBullpenBoard, getTeamGameContext, getTeamStory, getTeamShareCard } from '../../../utils/api'
 import { TeamBoardSkeleton, ErrorState, EmptyState } from '../../UI'
 import { BullpenReadDisclosure } from '../BullpenOperatingStateCard'
-import BullpenBoardView, { RosterStatusBanner } from './BullpenBoardView'
+import { RosterStatusBanner } from './BullpenBoardView'
 import TeamBoardAnswerBlock from './TeamBoardAnswerBlock'
+import TeamBoardActiveBullpen from './TeamBoardActiveBullpen'
 import RestStatus from './RestStatus'
 import WorkloadOverview from './WorkloadOverview'
 import RecentUsage from './RecentUsage'
@@ -17,12 +17,7 @@ import TeamReliefWorkPanel from '../TeamReliefWorkPanel'
 import { buildTeamBoardHref, resolveTeamId } from '../../../utils/evidenceLinks'
 import { EVIDENCE_CARD_ORIGIN, buildTeamShareCardFromArtifact } from '../../../utils/shareCardArtifact'
 import EvidenceShareMenu from '../../share/EvidenceShareMenu'
-import {
-  BULLPEN_VIEW_MODE_ACTIVE,
-  BULLPEN_VIEW_MODE_ACTIVE_PLUS_UNAVAILABLE,
-  filterBoardForViewMode,
-  rosterCountsAreWithheld,
-} from './tonightsBullpenBoardView'
+import { rosterCountsAreWithheld } from './tonightsBullpenBoardView'
 
 export { resolveTeamId } from '../../../utils/evidenceLinks'
 
@@ -57,24 +52,9 @@ export default function TonightsBullpenBoard({
   const teamList = teams?.data || []
   const selectedTeam = initialSelectedTeam ?? resolveTeamId(teamList, requestedTeam)
   const selectedTeamRecord = teamList.find(team => Number(team.team_id) === Number(selectedTeam)) || boardPayload?.team || null
-  // One control instead of the old three-mode "View" row: the board shows the
-  // active bullpen by default, and the toggle adds roster-unavailable arms as
-  // context. The unavailable-only audit view moved out of the public controls
-  // in phase-0-clarity/03 (the roster banner's evidence list covers that job).
-  const [showUnavailable, setShowUnavailable] = useState(false)
-  const boardViewMode = showUnavailable
-    ? BULLPEN_VIEW_MODE_ACTIVE_PLUS_UNAVAILABLE
-    : BULLPEN_VIEW_MODE_ACTIVE
-
   const board = useFetch(
-    () => {
-      if (selectedTeam == null) return Promise.resolve(null)
-      return getTeamBullpenBoard(
-        selectedTeam,
-        showUnavailable ? { include_stale: true } : {},
-      )
-    },
-    [selectedTeam, showUnavailable],
+    () => (selectedTeam == null ? Promise.resolve(null) : getTeamBullpenBoard(selectedTeam)),
+    [selectedTeam],
   )
   const teamBoardV2 = useFetch(
     () => (selectedTeam == null ? Promise.resolve(null) : getTeamBoardV2(selectedTeam)),
@@ -110,7 +90,7 @@ export default function TonightsBullpenBoard({
         refetch: () => {},
       }
     : teamBoardV2
-  const teamBoardAnswerRead = readTeamBoardV2(teamBoardV2State.data)
+  const teamBoardRead = readTeamBoardV2(teamBoardV2State.data)
   const gameContextState = gameContextPayload !== undefined ? staticFetchState(gameContextPayload) : gameContext
   const hasReliefWorkOverride = (
     teamReliefWorkPayload !== undefined
@@ -128,7 +108,6 @@ export default function TonightsBullpenBoard({
       }
     : reliefWork
   const rosterContextLimited = rosterCountsAreWithheld(boardState.data)
-  const filteredBoard = filterBoardForViewMode(boardState.data, boardViewMode)
   const teamOperatingRead = toOperatingStateReadModel(boardState.data || {}, {
     scope: 'team',
     team: boardState.data?.team,
@@ -151,16 +130,10 @@ export default function TonightsBullpenBoard({
   const teamShareText = teamCard?.shareText
     || `Current ${teamOperatingRead.teamName || 'team'} bullpen evidence on BaseballOS.`
 
-  useEffect(() => {
-    if (rosterContextLimited && showUnavailable) {
-      setShowUnavailable(false)
-    }
-  }, [rosterContextLimited, showUnavailable])
-
   return (
     <div>
       {/* Compact selection keeps all 30 teams to one accessible control. */}
-      <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+      <div className="mb-4 flex flex-wrap items-start gap-3">
         <div className="min-w-0 flex-1 sm:max-w-xs">
           {teamList.length === 0 ? (
             <span className="inline-flex min-h-11 items-center font-mono text-xs text-chalk500">
@@ -182,32 +155,6 @@ export default function TonightsBullpenBoard({
             </>
           )}
         </div>
-        <div className="flex shrink-0 flex-col items-end gap-1">
-          <button
-            type="button"
-            onClick={() => setShowUnavailable(value => !value)}
-            aria-pressed={showUnavailable}
-            disabled={rosterContextLimited}
-            className={`min-h-11 rounded border px-2.5 py-2 font-mono text-xs transition-all ${
-              rosterContextLimited
-                ? 'cursor-not-allowed border-dirt text-chalk600 opacity-70'
-                : showUnavailable
-                  ? 'bg-amber/10 border-amber/40 text-amber'
-                  : 'border-dirt text-chalk400 hover:border-chalk400'
-            }`}
-          >
-            Show unavailable arms
-          </button>
-          {rosterContextLimited ? (
-            <span className="type-overline rounded border border-dirt bg-dugout px-2 py-1">
-              Unavailable roster context withheld.
-            </span>
-          ) : showUnavailable && (
-            <span className="type-overline rounded border border-dirt bg-dugout px-2 py-1">
-              Unavailable relievers are context only.
-            </span>
-          )}
-        </div>
       </div>
 
       {selectedTeam == null ? (
@@ -227,7 +174,7 @@ export default function TonightsBullpenBoard({
                 the route owns the H1 and this block owns the selected-club H2. */}
             <div className="mb-4">
               <TeamBoardAnswerBlock
-                read={teamBoardAnswerRead}
+                read={teamBoardRead}
                 team={selectedTeamRecord}
                 loading={teamBoardV2State.loading}
                 error={teamBoardV2State.error}
@@ -242,11 +189,12 @@ export default function TonightsBullpenBoard({
                 />
               )}
             </div>
-            <BullpenBoardView
-              board={filteredBoard}
+            <TeamBoardActiveBullpen
+              read={teamBoardRead}
+              loading={teamBoardV2State.loading}
+              error={teamBoardV2State.error}
+              onRetry={teamBoardV2State.refetch}
               onSelectPitcher={onSelectPitcher}
-              showRoutineFreshness={false}
-              showRosterContext={false}
             />
             <div className="mt-5 grid items-start gap-4 lg:grid-cols-2">
               <RecentUsage
@@ -281,7 +229,7 @@ export default function TonightsBullpenBoard({
                 boardDataThrough={boardState.data?.freshness?.data_through || boardState.data?.freshness?.dataThrough || boardState.data?.data_through}
               />
             </div>
-            <div className="mt-4"><RosterStatusBanner board={filteredBoard} /></div>
+            <div className="mt-4"><RosterStatusBanner board={boardState.data} /></div>
             <div className="mt-4 flex justify-end">
               <EvidenceShareMenu
                 cardModel={teamCard}

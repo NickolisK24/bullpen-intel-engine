@@ -646,8 +646,8 @@ test('selected team board renders Recent Bullpen Work in the visible board path'
   assert.ok(htmlIncludes(html, 'id="team-relief-work"'))
   assert.ok(htmlIncludes(html, 'tabindex="-1"'))
   assert.ok(htmlIncludes(html, 'Team State'))
-  // The v2 Answer Block owns the visible club identity; the unchanged legacy
-  // board heading retains its screen-reader team suffix.
+  // The v2 Answer Block owns visible club identity; the migrated Active Bullpen
+  // keeps a screen-reader team suffix.
   assert.ok(htmlIncludes(html, 'Active Bullpen'))
   assert.ok(htmlIncludes(html, '<span class="sr-only"> — New York Yankees</span>'))
   assert.ok(htmlIncludes(html, teamReliefWorkPayload.scope_sentence))
@@ -849,7 +849,7 @@ test('team board owns one shared relief-work request and mounts summary before d
   const answerIndex = source.indexOf('<TeamBoardAnswerBlock')
   const recentUsageIndex = source.indexOf('<RecentUsage')
   const mountIndex = source.indexOf('<TeamReliefWorkPanel')
-  const boardIndex = source.indexOf('<BullpenBoardView')
+  const boardIndex = source.indexOf('<TeamBoardActiveBullpen')
 
   assert.notEqual(answerIndex, -1)
   assert.notEqual(mountIndex, -1)

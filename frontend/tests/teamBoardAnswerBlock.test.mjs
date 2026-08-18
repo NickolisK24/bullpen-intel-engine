@@ -166,7 +166,7 @@ test('identity, state, currentness, and color-independent labels are semantic', 
   assert.ok(text(html).includes('Data through Aug 16'))
 })
 
-test('production adoption remains bounded to the Answer Block and legacy sections stay mounted', async () => {
+test('production adoption keeps the Answer Block and migrates only Active Bullpen beyond it', async () => {
   const source = await readFile(
     new URL('../src/components/bullpen/board/TonightsBullpenBoard.jsx', import.meta.url),
     'utf8',
@@ -175,8 +175,8 @@ test('production adoption remains bounded to the Answer Block and legacy section
   assert.ok(source.includes('getTeamBoardV2(selectedTeam)'))
   assert.equal((source.match(/getTeamBoardV2\(/g) || []).length, 1)
   assert.ok(source.includes('<TeamBoardAnswerBlock'))
+  assert.ok(source.includes('<TeamBoardActiveBullpen'))
   for (const legacySection of [
-    '<BullpenBoardView',
     '<RecentUsage',
     '<RestStatus',
     '<WorkloadOverview',
@@ -187,7 +187,7 @@ test('production adoption remains bounded to the Answer Block and legacy section
   ]) {
     assert.ok(source.includes(legacySection), legacySection)
   }
-  assert.equal(source.includes('<ActiveArmRow'), false)
+  assert.equal(source.includes('<BullpenBoardView'), false)
   assert.equal(source.includes('<BullpenOperatingStateCard'), false)
   assert.equal(source.includes('<BullpenAvailabilityDistribution'), false)
   assert.equal(source.includes('<FreshnessStamp'), false)

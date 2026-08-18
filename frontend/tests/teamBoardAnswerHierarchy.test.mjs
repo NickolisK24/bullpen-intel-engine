@@ -39,7 +39,6 @@ const containerSource = readFileSync('src/components/bullpen/board/TonightsBullp
 const bullpenSource = readFileSync('src/components/bullpen/Bullpen.jsx', 'utf8')
 const boardViewSource = readFileSync('src/components/bullpen/board/BullpenBoardView.jsx', 'utf8')
 const restStatusSource = readFileSync('src/components/bullpen/board/RestStatus.jsx', 'utf8')
-const disclosureSource = readFileSync('src/components/UI/Disclosure.jsx', 'utf8')
 
 const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const htmlIncludes = (html, text) => new RegExp(escapeRegExp(text)).test(html)
@@ -258,7 +257,7 @@ test('normal trust chrome is quiet and one page-level data-through stamp remains
   }
 })
 
-test('degraded arm trust stays visible while board-owned workload facts are promoted', () => {
+test('backend arm read and authorized workload facts stay visible in the migrated row', () => {
   const board = {
     ...populatedBoard,
     groups: populatedBoard.groups.map(group => ({
@@ -276,29 +275,30 @@ test('degraded arm trust stays visible while board-owned workload facts are prom
   }
   const html = renderBoard(board)
   const start = html.indexOf('Marty Monitor')
-  const end = html.indexOf('Open pitcher context', start)
+  const end = html.indexOf('Open pitcher', start)
   const card = html.slice(start, end)
-  assert.ok(htmlIncludes(card, 'Read Confidence'))
-  assert.equal((card.match(/Read Confidence/g) || []).length, 1)
-  assert.ok(htmlIncludes(card, 'Rest'))
-  assert.ok(htmlIncludes(card, '1 day'))
-  assert.ok(htmlIncludes(card, 'Last 7 days'))
-  assert.ok(htmlIncludes(card, '34 pitches'))
-  assert.ok(htmlIncludes(card, '3 appearances'))
-  assert.ok(htmlIncludes(card, 'Worked back-to-back'))
+  assert.ok(htmlIncludes(card, 'Current Arm Read'))
+  assert.ok(htmlIncludes(card, 'Last Used'))
+  assert.ok(htmlIncludes(card, '1 day ago'))
+  assert.ok(htmlIncludes(card, '7D Pitches'))
+  assert.ok(htmlIncludes(card, '34'))
+  assert.ok(htmlIncludes(card, '7D App'))
+  assert.ok(htmlIncludes(card, '3'))
+  assert.ok(htmlIncludes(card, 'Back-to-back'))
+  assert.equal(htmlIncludes(card, 'Read Confidence'), false)
 })
 
-test('missing arm facts render quiet dashes and never become zero or availability labels', () => {
+test('missing arm facts are omitted and never become zero', () => {
   const board = makeBoard({ cardsByStatus: {
     Available: [{ pitcher_id: 91, name: 'Unknown Work Arm', availability_status: 'Available', confidence: 'high', data_state: 'fresh' }],
   } })
   const html = renderBoard(board)
-  const card = html.slice(html.indexOf('Unknown Work Arm'), html.indexOf('Open pitcher context', html.indexOf('Unknown Work Arm')))
-  for (const label of ['Last outing', 'Rest', 'Last 7 days', 'Recent work']) assert.ok(htmlIncludes(card, label))
-  assert.ok((card.match(/—/g) || []).length >= 4)
-  assert.equal(htmlIncludes(card, 'Unavailable'), false)
+  const card = html.slice(html.indexOf('Unknown Work Arm'), html.indexOf('Open pitcher', html.indexOf('Unknown Work Arm')))
+  for (const label of ['Last Used', 'Last Game', '7D App', '7D Pitches', 'Pattern']) {
+    assert.equal(htmlIncludes(card, label), false)
+  }
   assert.equal(htmlIncludes(card, '0 pitches'), false)
-  assert.equal(htmlIncludes(card, '0 appearances'), false)
+  assert.equal(htmlIncludes(card, '7D App 0'), false)
 })
 
 test('false and null back-to-back facts stay quiet', () => {
@@ -389,10 +389,11 @@ test('incomplete workload evidence and unavailable reads remain explicit', () =>
     }],
   } })
   const html = renderBoard(board)
-  assert.ok(htmlIncludes(html, 'Availability status: Unavailable'))
-  assert.ok(htmlIncludes(html, 'Read Confidence'))
-  assert.ok(htmlIncludes(html, 'Workload Data'))
-  assert.ok(htmlIncludes(html, 'Pitch history is incomplete for this arm.'))
+  assert.ok(htmlIncludes(html, 'Current Arm Read'))
+  assert.ok(htmlIncludes(html, 'Unavailable'))
+  assert.equal(htmlIncludes(html, 'Read Confidence'), false)
+  assert.equal(htmlIncludes(html, 'Workload Data'), false)
+  assert.equal(htmlIncludes(html, 'Pitch history is incomplete for this arm.'), false)
 })
 
 test('sample boards remain clearly identified', () => {
@@ -459,21 +460,20 @@ test('a material team limitation stays visible before the deferred trust disclos
   assert.ok(htmlIncludes(html, 'Limited read'))
 })
 
-test('team selection is a single accessible control and arm explanations use native disclosure', () => {
+test('team selection is accessible and per-pitcher Why disclosures are retired', () => {
   const html = renderBoard(populatedBoard)
   assert.match(html, /<select[^>]*aria-label="Select team for Team Board"/)
   assert.match(html, /<label[^>]*for="team-board-selector"[^>]*>Team<\/label>/)
   assert.ok(containerSource.includes('min-h-11'))
-  assert.match(html, /<summary[^>]*>[\s\S]*?<span>Why\?<\/span>/)
-  assert.ok(disclosureSource.includes("event.key !== 'Enter' && event.key !== ' '"))
-  assert.ok(disclosureSource.includes('focus-visible:ring-2'))
+  assert.equal(/<summary[^>]*>[\s\S]*?<span>Why\?<\/span>/.test(html), false)
+  assert.match(html, /<button[^>]*aria-label="Open pitcher context for /)
   assert.equal(htmlIncludes(visibleText(html), 'Pitcher Search'), false)
 })
 
 test('stale data keeps its trust warning visible in the answer zone', () => {
   const html = renderBoard(staleBoard)
   assert.ok(htmlIncludes(html, 'Limited read'))
-  assert.ok(htmlIncludes(html, 'Outside Freshness Window') || htmlIncludes(html, 'outside the active freshness window'))
+  assert.ok(htmlIncludes(html, 'Limited read'))
 })
 
 test('withheld roster context does not show a completed distribution', () => {

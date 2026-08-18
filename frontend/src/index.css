@@ -322,6 +322,9 @@
   .active-arm-row__text {
     overflow-wrap: anywhere;
   }
+  .active-arm-row__facts:empty {
+    display: none;
+  }
   @container (min-width: 44rem) {
     .active-arm-row {
       grid-template-columns: minmax(12rem, 1.2fr) minmax(10rem, 0.8fr);

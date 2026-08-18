@@ -11,6 +11,27 @@ export function teamBoardV2Fixture(board, overrides = {}) {
   )
     ? 'partial'
     : 'available'
+  const activeArms = (board?.groups || []).flatMap(group => (group?.pitchers || []))
+    .filter(card => card?.visibility?.is_visible_by_default !== false)
+    .map(card => ({
+      pitcher_id: card?.pitcher_id ?? null,
+      name: card?.name ?? null,
+      public_role_read: card?.public_role_read ?? null,
+      public_labels: card?.pitcher_labels ?? null,
+      availability: {
+        status: card?.availability_status ?? null,
+        label: card?.availability_public_label ?? null,
+        confidence: card?.confidence ?? null,
+        data_state: card?.data_state ?? null,
+        short_reason: card?.short_reason ?? null,
+        reasons: card?.reasons || [],
+        limitations: card?.limitations || [],
+      },
+      last_appearance: card?.last_appearance ?? null,
+      workload: card?.workload_facts ?? {},
+      roster_status: card?.roster_status ?? null,
+      visibility: card?.visibility ?? null,
+    }))
 
   return {
     capability: 'team_board_v2',
@@ -24,7 +45,7 @@ export function teamBoardV2Fixture(board, overrides = {}) {
     active_bullpen: {
       population_basis: 'current_scored_bullpen_eligible_pitchers',
       arm_count: board?.total_pitchers ?? null,
-      arms: [],
+      arms: activeArms,
     },
     rest_status: board?.rest_status || {},
     rotation_impact: { population_basis: 'stored_team_game_pitching_splits', read: board?.rotation_support_pressure || {} },
