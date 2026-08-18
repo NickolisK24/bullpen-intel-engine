@@ -492,8 +492,15 @@ def _maybe_generate_team_state_artifacts_after_publication(snapshot):
         # partitions, method versions, and reference dates are written to a JSON file
         # for the workflow to upload. It observes an already-committed publication and
         # never raises, so it cannot roll back, unpublish, or alter anything.
-        from services.team_state_vnext_production_proof import capture_publication_proof
-        if capture_publication_proof(snapshot) is not None:
+        from services.team_state_vnext_production_proof import (
+            capture_publication_proof,
+            proof_capture_enabled,
+        )
+        if proof_capture_enabled():
+            # Capture OWNS the one generation call in this branch. Branching on the
+            # environment rather than on whether a proof came back is what keeps a
+            # failed write from looking like a skipped generation and running it twice.
+            capture_publication_proof(snapshot)
             return
 
         from services.share_artifact_publication_hook import (

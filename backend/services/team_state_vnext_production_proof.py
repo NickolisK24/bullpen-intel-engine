@@ -715,6 +715,17 @@ def proof_path() -> Optional[str]:
     return os.environ.get(PROOF_PATH_ENV) or None
 
 
+def proof_capture_enabled() -> bool:
+    """Whether this process was asked for evidence. A bare environment read.
+
+    The publication hook branches on THIS, never on whether a proof was
+    successfully produced: capture runs the one post-publication generation itself,
+    so a failure to write the file must not read as "generation did not happen" and
+    send the hook round a second time.
+    """
+    return proof_path() is not None
+
+
 def boundary_snapshot_id() -> Optional[int]:
     raw = os.environ.get(BOUNDARY_SNAPSHOT_ENV)
     try:
@@ -723,28 +734,29 @@ def boundary_snapshot_id() -> Optional[int]:
         return None
 
 
-def capture_publication_proof(snapshot, *, generator=None, path=None) -> Optional[dict]:
-    """Run post-publication generation under observation and write the proof.
+def _safe_inventory(snapshot_id, *, when: str):
+    try:
+        return historical_team_state_inventory(snapshot_id)
+    except Exception:
+        logger.exception('Team State proof: %s-publication inventory failed.', when)
+        return None
 
-    Returns the proof document, or ``None`` when proof capture is off or could not
-    run. Never raises: the publication has already committed and a proof problem
-    must not become a publication problem. When ``TEAM_STATE_VNEXT_PROOF_PATH`` is
-    unset this returns ``None`` without touching anything, which is the deployed
-    default everywhere except the workflow step that asks for evidence.
+
+def capture_publication_proof(snapshot, *, generator=None, path=None) -> Optional[dict]:
+    """Run the one post-publication generation under observation, then write the proof.
+
+    Returns the proof document, or ``None`` when the proof could not be built or
+    written. The generation itself happens exactly once either way — this function
+    OWNS it when capture is enabled, so a returned ``None`` means "no proof", never
+    "no generation". Never raises: the publication has already committed and a proof
+    problem must not become a publication problem.
     """
     from services.share_artifact_publication_hook import run_post_publication_generation
 
     destination = path or proof_path()
-    if not destination:
-        return None
-
     collector = ProofCollector()
-    before = after = None
     snapshot_id = getattr(snapshot, 'id', None)
-    try:
-        before = historical_team_state_inventory(snapshot_id)
-    except Exception:
-        logger.exception('Team State proof: pre-publication inventory failed.')
+    before = _safe_inventory(snapshot_id, when='pre')
 
     base_generator = generator
     if base_generator is None:
@@ -752,10 +764,11 @@ def capture_publication_proof(snapshot, *, generator=None, path=None) -> Optiona
         base_generator = generate_team_state_artifact
     batch = run_post_publication_generation(snapshot, generator=collector.wrap(base_generator))
 
-    try:
-        after = historical_team_state_inventory(snapshot_id)
-    except Exception:
-        logger.exception('Team State proof: post-publication inventory failed.')
+    after = _safe_inventory(snapshot_id, when='post')
+    if not destination:
+        # Generation is done and correct; there is simply nowhere to put evidence.
+        logger.info('Team State proof: no destination configured, nothing written.')
+        return None
 
     try:
         from services.availability_reference_date import trusted_slate_reference_dates

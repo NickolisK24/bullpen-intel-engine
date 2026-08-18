@@ -510,7 +510,12 @@ def test_the_collector_records_each_team_without_altering_the_result():
 
 def test_capture_is_off_when_the_path_env_is_unset(monkeypatch):
     monkeypatch.delenv(proof_module.PROOF_PATH_ENV, raising=False)
-    assert proof_module.capture_publication_proof(_snapshot()) is None
+    assert proof_module.proof_capture_enabled() is False
+
+
+def test_capture_is_enabled_by_the_path_env(monkeypatch, tmp_path):
+    monkeypatch.setenv(proof_module.PROOF_PATH_ENV, str(tmp_path / 'proof.json'))
+    assert proof_module.proof_capture_enabled() is True
 
 
 def test_capture_writes_the_proof_and_returns_it(monkeypatch, tmp_path):
@@ -583,6 +588,41 @@ def test_a_capture_failure_never_propagates_to_the_publication(monkeypatch, tmp_
         # The hook wrapper in dashboard_snapshot owns the isolation; the capture must
         # at minimum not corrupt state on its way out.
         proof_module.capture_publication_proof(_snapshot(), path=str(tmp_path / 'p.json'))
+
+
+def test_generation_runs_exactly_once_even_when_the_proof_cannot_be_written(
+    monkeypatch, autogeneration_enabled,
+):
+    """A failed write must not read as "generation did not happen".
+
+    Capture owns the one post-publication generation call. If the hook branched on
+    whether a proof came back instead of on whether capture was asked for, an
+    unwritable destination would send it round a second time and generate the whole
+    league twice inside the daily final-phase budget.
+    """
+    import services.dashboard_snapshot as dashboard_snapshot
+
+    monkeypatch.setenv(proof_module.PROOF_PATH_ENV, '/proc/nope/proof.json')
+    monkeypatch.setattr(
+        proof_module, 'historical_team_state_inventory', lambda *a, **k: None,
+    )
+    monkeypatch.setattr(
+        'services.share_artifact_generation.generate_team_state_artifact',
+        lambda team_id, **kwargs: _result(team_id),
+    )
+    generations = []
+
+    def _generation(snapshot, *, generator=None):
+        generations.append(generator)
+        generator(100, requested_date=SLATE)
+        return SimpleNamespace(canonical_team_count=1)
+
+    monkeypatch.setattr(
+        'services.share_artifact_publication_hook.run_post_publication_generation',
+        _generation,
+    )
+    dashboard_snapshot.run_post_commit_snapshot_publication(_published_snapshot())
+    assert len(generations) == 1
 
 
 def test_an_unwritable_destination_returns_none_rather_than_raising(monkeypatch):
