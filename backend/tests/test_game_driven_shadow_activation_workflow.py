@@ -809,9 +809,13 @@ def test_the_workflow_yaml_parses(workflow):
 
 
 def test_the_expected_jobs_exist(workflow):
+    # 'team-state-vnext-proof' is the second observer job, added with D-056. Like
+    # this file's shadow observer it holds no production credential, gates nothing,
+    # and is itself gated by nothing; its own contract lives in
+    # tests/test_team_state_vnext_proof_workflow.py.
     assert sorted(workflow['jobs']) == sorted([
         'public-sync', SHADOW_JOB, 'internal-enrichment',
-        'static-team-story-preview', 'intraday-audit',
+        'static-team-story-preview', 'intraday-audit', 'team-state-vnext-proof',
     ])
 
 
@@ -1035,13 +1039,17 @@ def test_the_mitigation_values_do_not_leak_into_any_other_job(workflow):
             assert not leaked, f'{job_name}/{step.get("name")}: {leaked}'
 
 
-# The only advisory steps in public-sync are the shadow handoff pair, and they
-# are advisory by OPS-001 design: an observer artifact must not fail the
-# publication job. Pinned as an exact set so the mitigation cannot quietly add
-# a third one.
+# The only advisory steps in public-sync are the shadow handoff pair and the Team
+# State vNext proof pair, and all four are advisory by the same OPS-001 design: an
+# observer artifact must not fail the publication job. The proof pair is written
+# after the publication has already committed, so failing the job on it would
+# suppress the static delivery that follows and protect nothing. Pinned as an exact
+# set so nothing else can quietly join them.
 ADVISORY_PUBLIC_SYNC_STEPS = {
     'Prepare game-driven shadow handoff',
     'Upload game-driven shadow handoff',
+    'Scan Team State vNext proof for forbidden content',
+    'Upload Team State vNext production proof',
 }
 
 
