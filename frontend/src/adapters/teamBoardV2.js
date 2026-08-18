@@ -31,6 +31,7 @@ export function readTeamBoardV2(payload) {
     activeBullpen: payload.active_bullpen,
     recentUsage: payload.recent_usage,
     restStatus: payload.rest_status,
+    workloadOverview: payload.workload_overview,
     rotationImpact: payload.rotation_impact,
     rosterContext: payload.roster_context,
     recentReliefWork: payload.recent_relief_work,

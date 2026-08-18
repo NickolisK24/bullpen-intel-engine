@@ -154,7 +154,7 @@ test('team board adopts the v2 Answer Block, Active Bullpen, Recent Usage, and R
   assert.equal(tonightsBullpenBoardSource.includes('<BullpenBoardView'), false)
   assert.ok(tonightsBullpenBoardSource.includes('<TeamBoardRecentUsage'))
   assert.ok(tonightsBullpenBoardSource.includes('<TeamBoardRestStatus'))
-  assert.ok(tonightsBullpenBoardSource.includes('<WorkloadOverview'))
+  assert.ok(tonightsBullpenBoardSource.includes('<TeamBoardWorkloadOverview'))
   assert.equal(tonightsBullpenBoardSource.includes('<BullpenOperatingStateCard'), false)
 })
 

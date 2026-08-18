@@ -33,6 +33,10 @@ const payload = {
   },
   rest_status: { available: false, active_arm_count: null },
   recent_usage: { appearances: [{ pitcher_name: 'Exact Source Name', pitches_thrown: null }] },
+  workload_overview: {
+    windows: [{ window_days: 7, relief_appearances: 3, pitches_total: null }],
+    concentration: { label: 'Exact Concentration', summary: 'Backend workload sentence.' },
+  },
   rotation_impact: { read: { starter_avg_innings: 5.2, summary: 'Backend sentence.' } },
   roster_context: {},
   recent_relief_work: { read: { relief_by_date: [] } },
@@ -41,6 +45,7 @@ const payload = {
     active_bullpen: { status: 'available' },
     recent_usage: { status: 'available' },
     rest_status: { status: 'unavailable' },
+    workload_overview: { status: 'partial' },
     recent_relief_work: { status: 'unavailable', reason_code: 'source_unavailable' },
   },
   limitations: [],
@@ -64,12 +69,14 @@ test('adapter passes backend semantics and nulls through unchanged', () => {
   assert.equal(view.restStatus.active_arm_count, null)
   assert.equal(view.recentUsage, payload.recent_usage)
   assert.equal(view.recentUsage.appearances[0].pitches_thrown, null)
+  assert.equal(view.workloadOverview, payload.workload_overview)
+  assert.equal(view.workloadOverview.windows[0].pitches_total, null)
   assert.equal(view.sectionStatus, payload.section_status)
   assert.equal(view.rotationImpact.read.summary, 'Backend sentence.')
 })
 
 
-test('TB-03 reuses the v2 read for Answer Block, Active Bullpen, Recent Usage, and Rest Status', async () => {
+test('TB-04 reuses the v2 read through Workload Overview', async () => {
   const boardSource = await readFile(
     new URL('../src/components/bullpen/board/TonightsBullpenBoard.jsx', import.meta.url),
     'utf8',
@@ -85,6 +92,7 @@ test('TB-03 reuses the v2 read for Answer Block, Active Bullpen, Recent Usage, a
   assert.equal(boardSource.includes('<TeamBoardActiveBullpen'), true)
   assert.equal(boardSource.includes('<TeamBoardRecentUsage'), true)
   assert.equal(boardSource.includes('<TeamBoardRestStatus'), true)
+  assert.equal(boardSource.includes('<TeamBoardWorkloadOverview'), true)
   assert.equal((boardSource.match(/getTeamBoardV2\(/g) || []).length, 1)
   assert.match(
     apiSource,

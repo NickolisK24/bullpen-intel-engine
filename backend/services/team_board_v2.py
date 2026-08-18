@@ -18,8 +18,20 @@ STATUS_UNAVAILABLE = 'unavailable'
 
 ACTIVE_BULLPEN_POPULATION_BASIS = 'current_scored_bullpen_eligible_pitchers'
 RECENT_USAGE_POPULATION_BASIS = 'official_recent_team_relief_appearance_rows'
+WORKLOAD_OVERVIEW_POPULATION_BASIS = (
+    'official_team_relief_appearances_and_current_bullpen_eligible_pitchers'
+)
+WORKLOAD_WINDOW_POPULATION_BASIS = 'official_appearance_team_relief_appearances'
+WORKLOAD_CONCENTRATION_POPULATION_BASIS = (
+    'current_bullpen_eligible_pitchers_recent_relief_pitch_workload'
+)
 RECENT_RELIEF_WORK_POPULATION_BASIS = 'official_appearance_team_relief_appearances'
 ROTATION_IMPACT_POPULATION_BASIS = 'stored_team_game_pitching_splits'
+
+WORKLOAD_OVERVIEW_WINDOWS = (
+    ('window_7', 7),
+    ('window_14', 14),
+)
 
 
 def unavailable_section(reason_code, *, limitations=None):
@@ -192,6 +204,96 @@ def _recent_usage_status(relief_work, error, represented_date):
     )
 
 
+def _workload_overview(board, relief_work):
+    """Project only the already-public relief windows and concentration read."""
+    source_windows = (
+        relief_work.get('windows') if isinstance(relief_work, dict) else {}
+    )
+    source_windows = source_windows if isinstance(source_windows, dict) else {}
+    windows = []
+    limitations = []
+
+    for source_key, window_days in WORKLOAD_OVERVIEW_WINDOWS:
+        source = source_windows.get(source_key)
+        if not isinstance(source, dict):
+            continue
+        windows.append({
+            'window_days': window_days,
+            'through': source.get('through'),
+            'relief_appearances': source.get('relief_appearances'),
+            'pitchers_in_relief': source.get('pitchers_in_relief'),
+            'pitches_total': source.get('pitches_total'),
+        })
+        if source.get('start_relief_unknown_sentence'):
+            limitations.append(source['start_relief_unknown_sentence'])
+        if (
+            source.get('relief_appearances') is not None
+            and source.get('appearances_with_pitches') is not None
+            and source.get('appearances_with_pitches')
+            < source.get('relief_appearances')
+            and source.get('pitches_sentence')
+        ):
+            limitations.append(source['pitches_sentence'])
+
+    source_concentration = (
+        (board.get('team_shape') or {}).get('workloadConcentration')
+        if isinstance(board, dict)
+        else None
+    )
+    concentration = None
+    if isinstance(source_concentration, dict):
+        concentration = {
+            'population_basis': WORKLOAD_CONCENTRATION_POPULATION_BASIS,
+            'label': source_concentration.get('label'),
+            'summary': source_concentration.get('summary'),
+        }
+        if (
+            source_concentration.get('label') == 'Limited Read'
+            and source_concentration.get('summary')
+        ):
+            limitations.append(source_concentration['summary'])
+
+    return {
+        'population_basis': WORKLOAD_OVERVIEW_POPULATION_BASIS,
+        'window_population_basis': WORKLOAD_WINDOW_POPULATION_BASIS,
+        'windows': windows,
+        'concentration': concentration,
+        'represented_date': (
+            relief_work.get('data_through')
+            if isinstance(relief_work, dict)
+            else None
+        ),
+        'limitations': limitations,
+    }
+
+
+def _workload_overview_status(board, relief_work, error, represented_date):
+    read = _workload_overview(board, relief_work)
+    windows = read['windows']
+    concentration = read['concentration']
+    has_concentration = bool(
+        isinstance(concentration, dict)
+        and concentration.get('label')
+        and concentration.get('summary')
+    )
+    if not windows and not has_concentration:
+        return unavailable_section('workload_overview_unavailable')
+
+    partial = bool(
+        error
+        or len(windows) != len(WORKLOAD_OVERVIEW_WINDOWS)
+        or not has_concentration
+        or concentration.get('label') == 'Limited Read'
+        or read['limitations']
+    )
+    return _section_status(
+        STATUS_PARTIAL if partial else STATUS_AVAILABLE,
+        reason_code='workload_overview_limited' if partial else None,
+        limitations=read['limitations'],
+        represented_date=read['represented_date'] or represented_date,
+    )
+
+
 def _game_context_status(game_context, error, represented_date):
     if error:
         return deepcopy(error)
@@ -246,6 +348,12 @@ def build_team_board_v2_payload(
             errors.get('recent_relief_work'),
             represented_date,
         ),
+        'workload_overview': _workload_overview_status(
+            board,
+            relief_work,
+            errors.get('recent_relief_work'),
+            represented_date,
+        ),
         'rotation_impact': _rotation_status(rotation, errors.get('rotation_impact'), represented_date),
         'recent_relief_work': _relief_work_status(relief_work, errors.get('recent_relief_work'), represented_date),
         'game_context': _game_context_status(context, errors.get('game_context'), represented_date),
@@ -267,6 +375,7 @@ def build_team_board_v2_payload(
         },
         'rest_status': deepcopy(board.get('rest_status') or {}),
         'recent_usage': _recent_usage(relief_work),
+        'workload_overview': _workload_overview(board, relief_work),
         'rotation_impact': {
             'population_basis': ROTATION_IMPACT_POPULATION_BASIS,
             'read': rotation,
@@ -287,6 +396,7 @@ __all__ = [
     'CAPABILITY',
     'CONTRACT_VERSION',
     'RECENT_USAGE_POPULATION_BASIS',
+    'WORKLOAD_OVERVIEW_POPULATION_BASIS',
     'RECENT_RELIEF_WORK_POPULATION_BASIS',
     'ROTATION_IMPACT_POPULATION_BASIS',
     'build_team_board_v2_payload',

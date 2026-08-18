@@ -7,9 +7,9 @@ import { BullpenReadDisclosure } from '../BullpenOperatingStateCard'
 import { RosterStatusBanner } from './BullpenBoardView'
 import TeamBoardAnswerBlock from './TeamBoardAnswerBlock'
 import TeamBoardActiveBullpen from './TeamBoardActiveBullpen'
-import WorkloadOverview from './WorkloadOverview'
 import TeamBoardRecentUsage from './TeamBoardRecentUsage'
 import TeamBoardRestStatus from './TeamBoardRestStatus'
+import TeamBoardWorkloadOverview from './TeamBoardWorkloadOverview'
 import { useTeamReliefWork } from './useTeamReliefWork'
 import TeamGameContextCard from './TeamGameContextCard'
 import StoryCard from './StoryCard'
@@ -208,9 +208,12 @@ export default function TonightsBullpenBoard({
               error={teamBoardV2State.error}
               onRetry={teamBoardV2State.refetch}
             />
-            <div className="mt-5">
-              <WorkloadOverview read={teamOperatingRead.workloadConcentration} />
-            </div>
+            <TeamBoardWorkloadOverview
+              read={teamBoardRead}
+              loading={teamBoardV2State.loading}
+              error={teamBoardV2State.error}
+              onRetry={teamBoardV2State.refetch}
+            />
             {storyState.data?.story_available === true && <section className="mt-6" aria-labelledby="what-changed-title">
               <h2 id="what-changed-title" className="font-display text-xl tracking-wide text-chalk100">What Changed</h2>
               <div className="mt-2">
