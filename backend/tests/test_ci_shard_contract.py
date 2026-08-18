@@ -6,13 +6,13 @@ one shard, no two shards share a PostgreSQL database, and no shard quietly turns
 on worker parallelism inside a single database. Those are the properties that were
 proven once by measurement; this file is what keeps them true.
 
-It also holds the two prerequisites a green suite can otherwise hide. Several
-behaviour-freeze guards diff the branch against ``origin/main``; under a shallow
-checkout that ref does not exist, the diff fails, the helper swallows the error,
-and the guard skips — passing without ever running. And frontend unit tests
-exercise modules, not the bundle, so a production build that no longer compiles
-can sit behind a green test job. Full checkout history and a required build step
-close both, and the assertions here keep them closed.
+It also holds the two prerequisites a green suite can otherwise hide. Three
+behaviour-freeze guards use ``origin/main`` and the appearance-team guard uses
+the actual PR/integration base; under a shallow checkout those refs may not
+exist, so a guard can skip without running. And frontend unit tests exercise
+modules, not the bundle, so a production build that no longer compiles can sit
+behind a green test job. Full checkout history and a required build step close
+both, and the assertions here keep them closed.
 
 Deliberately database-free. It reads the checked-in manifest, drives pytest
 collection through subprocesses, and parses `.github/workflows/ci.yml`.
@@ -48,10 +48,10 @@ FRONTEND_JOB_ID = 'frontend-tests'
 # to see the same repository shape the shards do.
 FULL_HISTORY_JOB_IDS = (SHARD_JOB_ID, ACCOUNTING_JOB_ID)
 
-# The behaviour-freeze guards that compare this branch against origin/main. Each
-# one protects a frozen public or legacy contract, and each one silently skips
-# when the comparison ref is missing. Named exactly so a rename is a visible
-# failure rather than an assertion that quietly stops checking anything.
+# The behaviour-freeze guards that compare this branch against a governed base.
+# Each protects a frozen public or legacy contract, and each skips when the
+# comparison ref is missing. Named exactly so a rename is a visible failure
+# rather than an assertion that quietly stops checking anything.
 FREEZE_GUARD_NODE_IDS = (
     'tests/test_appearance_team_authority.py::test_branch_touches_no_team_state_or_public_surface_files',
     'tests/test_public_team_relief_work.py::test_existing_public_routes_behavior_freeze',
@@ -764,15 +764,20 @@ def test_each_behaviour_freeze_guard_is_still_collected(collection, node_id):
 
 
 @pytest.mark.parametrize('node_id', FREEZE_GUARD_NODE_IDS)
-def test_each_behaviour_freeze_guard_still_compares_against_origin_main(node_id):
+def test_each_behaviour_freeze_guard_keeps_its_governed_diff_baseline(node_id):
     """The guards' prerequisite is real, so supplying history is not cosmetic."""
     path = os.path.join(BACKEND_ROOT, node_id.split('::', 1)[0])
     with open(path, encoding='utf-8') as handle:
         source = handle.read()
-    assert 'origin/main' in source, (
-        f'{node_id} no longer diffs against origin/main; the full-history '
-        'requirement in ci.yml may no longer describe why it exists'
-    )
+    if 'test_appearance_team_authority.py' in node_id:
+        assert 'changed_files_for_current_change' in source, (
+            f'{node_id} no longer resolves the current PR/integration diff'
+        )
+    else:
+        assert 'origin/main' in source, (
+            f'{node_id} no longer diffs against origin/main; the full-history '
+            'requirement in ci.yml may no longer describe why it exists'
+        )
 
 
 def test_every_behaviour_freeze_guard_runs_in_a_full_history_job(manifest, ci_workflow):

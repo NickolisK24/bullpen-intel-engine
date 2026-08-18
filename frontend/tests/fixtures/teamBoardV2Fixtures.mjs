@@ -54,6 +54,20 @@ export function teamBoardV2Fixture(board, overrides = {}) {
       represented_date: representedDate,
       limitations: [],
     },
+    workload_overview: {
+      population_basis: 'official_team_relief_appearances_and_current_bullpen_eligible_pitchers',
+      window_population_basis: 'official_appearance_team_relief_appearances',
+      windows: [],
+      concentration: board?.team_shape?.workloadConcentration
+          ? {
+            population_basis: 'current_bullpen_eligible_pitchers_recent_relief_pitch_workload',
+            label: board.team_shape.workloadConcentration.label ?? null,
+            summary: board.team_shape.workloadConcentration.summary ?? null,
+          }
+        : null,
+      represented_date: representedDate,
+      limitations: [],
+    },
     rotation_impact: { population_basis: 'stored_team_game_pitching_splits', read: board?.rotation_support_pressure || {} },
     roster_context: board?.roster_authority || {},
     recent_relief_work: { population_basis: 'official_appearance_team_relief_appearances', read: null },
@@ -80,6 +94,12 @@ export function teamBoardV2Fixture(board, overrides = {}) {
       rest_status: {
         status: board?.rest_status?.available === true ? 'available' : 'unavailable',
         reason_code: board?.rest_status?.reason_code || null,
+        limitations: [],
+        represented_date: representedDate,
+      },
+      workload_overview: {
+        status: board?.team_shape?.workloadConcentration ? 'available' : 'unavailable',
+        reason_code: board?.team_shape?.workloadConcentration ? null : 'workload_overview_unavailable',
         limitations: [],
         represented_date: representedDate,
       },

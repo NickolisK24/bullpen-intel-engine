@@ -147,10 +147,11 @@ test('production reuses one v2 request, retires legacy section mounts, and leave
   assert.ok(boardSource.includes('<TeamBoardRestStatus'))
   assert.equal(boardSource.includes('<RecentUsage'), false)
   assert.equal(boardSource.includes('<RestStatus'), false)
-  assert.ok(boardSource.includes('<WorkloadOverview'))
+  assert.ok(boardSource.includes('<TeamBoardWorkloadOverview'))
   assert.ok(boardSource.includes('<TeamReliefWorkPanel'))
   assert.ok(boardSource.indexOf('<TeamBoardActiveBullpen') < boardSource.indexOf('<TeamBoardRecentUsage'))
   assert.ok(boardSource.indexOf('<TeamBoardRecentUsage') < boardSource.indexOf('<TeamBoardRestStatus'))
+  assert.ok(boardSource.indexOf('<TeamBoardRestStatus') < boardSource.indexOf('<TeamBoardWorkloadOverview'))
   for (const forbidden of ['.sort(', '3_in_4', '4_in_5', '4_in_6', 'fatigue', 'workload_score', 'reason_code']) {
     assert.equal(recentSource.includes(forbidden), false, forbidden)
   }

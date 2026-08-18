@@ -15,6 +15,7 @@ from pathlib import Path
 
 import pytest
 
+import branch_diff
 import freeze_policy
 import sqlalchemy as sa
 from alembic.migration import MigrationContext
@@ -997,19 +998,12 @@ def test_branch_touches_no_team_state_or_public_surface_files():
     team_authority and its siblings), which are strictly stronger than a diff
     check that skips whenever the comparison ref is missing.
     """
-    import subprocess
-    repo_root = REPO_ROOT_FOR_DIFF
     try:
-        out = subprocess.run(
-            # Include committed, staged, and unstaged tracked changes so this
-            # guard remains effective during the pre-commit review workflow,
-            # matching the other three branch-diff freeze guards.
-            ['git', 'diff', '--name-only', 'origin/main'],
-            cwd=repo_root, capture_output=True, text=True, check=True,
-        ).stdout
-    except Exception:
-        pytest.skip('git diff against origin/main unavailable')
-    changed = [line.strip() for line in out.splitlines() if line.strip()]
+        # Resolve the actual pull-request/integration base and include committed,
+        # staged, and unstaged tracked changes from its merge base.
+        changed = branch_diff.changed_files_for_current_change(REPO_ROOT_FOR_DIFF)
+    except branch_diff.ComparisonBaseUnavailable as exc:
+        pytest.skip(f'git comparison base unavailable: {exc}')
     if not changed:
         pytest.skip('no diff resolved')
     # Guard/allowlist TEST updates change no product behavior.

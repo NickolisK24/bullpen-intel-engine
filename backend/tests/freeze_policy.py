@@ -1,7 +1,9 @@
 """Shared catalogue for the branch-diff freeze guards.
 
-Four guards compare the working branch against ``origin/main`` and fail when a
-frozen surface changed:
+Four guards compare the working branch against their governed branch baseline
+and fail when a frozen surface changed. Three retain their historical
+``origin/main`` baseline; the appearance-team guard resolves the actual pull-
+request base so integration-branch history is not attributed to a feature PR:
 
 - ``test_snapshot_trust_freeze.py::test_frozen_legacy_what_changed_files_untouched``
 - ``test_public_team_relief_work.py::test_existing_public_routes_behavior_freeze``
@@ -42,8 +44,8 @@ merged, so the path is in ``origin/main`` and can no longer appear in a future
 approved change to a frozen surface adds its exception then, which is the rare
 and deliberate event this mechanism is for.
 
-This module holds the catalogue only. Each guard keeps its own diff helper and
-its own assertions, so a guard still fails in its own voice.
+This module holds the catalogue only. Each guard keeps its own assertions, so a
+guard still fails in its own voice.
 """
 
 # ``backend/api/`` is the public HTTP surface. Unlike ``frontend/`` it is a

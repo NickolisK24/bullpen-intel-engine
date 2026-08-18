@@ -177,7 +177,7 @@ test('production adoption keeps the Answer Block and migrates only Active Bullpe
   assert.ok(source.includes('<TeamBoardAnswerBlock'))
   assert.ok(source.includes('<TeamBoardActiveBullpen'))
   for (const legacySection of [
-    '<WorkloadOverview',
+    '<TeamBoardWorkloadOverview',
     '<StoryCard',
     '<TeamReliefWorkPanel',
     '<RosterStatusBanner',
