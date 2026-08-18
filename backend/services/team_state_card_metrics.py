@@ -11,10 +11,12 @@ card-only availability label (Normal/Stressed/Tired/…) or recommendation langu
 
 Determinism / temporal correctness: the SAME governed slate (the source
 snapshot's ``data_through``) always produces the SAME metrics. Every window is
-anchored to that slate — three completed TEAM games (never three calendar days),
-rest measured to the slate, appearances counted against the just-completed trigger
-slate inclusive. No build-time clock is read; a rerun on the same slate is
-byte-identical. Off days never enter a window because only ``final`` games count,
+anchored to that slate — three completed TEAM games (never three calendar days)
+and appearances counted against the just-completed trigger slate inclusive — while
+the two CURRENT-availability statements (the classified availability behind every
+row label, and the rest days published beside it) are anchored to the canonical
+availability reference the slate resolves to. No build-time clock is read; both
+dates derive from the same governed slate, so a rerun on it is byte-identical. Off days never enter a window because only ``final`` games count,
 and a doubleheader contributes two distinct ``game_pk`` window entries.
 """
 
@@ -36,6 +38,7 @@ from services.availability_snapshot import (
     classify_latest_fatigue_rows,
     latest_fatigue_rows,
 )
+from services.availability_reference_date import trusted_slate_reference_dates
 from services.availability_summary import STATUS_ORDER
 from services.bullpen_optionality_context import build_bullpen_optionality_context
 from services.public_bullpen_copy import public_availability_label
@@ -50,8 +53,10 @@ TEAM_GAME_WINDOW = 3
 # The bounded reliever evidence table size.
 MAX_RELIEVER_ROWS = 6
 
-# Short rest is zero or one day since the last completed appearance, measured to
-# the slate (a pitcher who worked the just-completed trigger game is on zero rest).
+# Short rest is zero or one day since the last completed appearance, measured to the
+# availability reference date (a pitcher who worked the just-completed trigger game
+# is on one day of rest entering the next date, which is the same arm the
+# availability classifier's own ``days_rest <= 1`` trigger catches).
 SHORT_REST_DAYS = (0, 1)
 
 # Most-restrictive-first ordering for reliever rows: the governed availability
@@ -177,24 +182,46 @@ def _metric(label: str, count: int, total: int, statement: str, **extra) -> dict
     return metric
 
 
-def build_team_state_card_metrics(team_id: int, *, reference_date: date) -> dict:
+def build_team_state_card_metrics(
+    team_id: int,
+    *,
+    reference_date: date,
+    availability_reference_date: Optional[date] = None,
+) -> dict:
     """Return ``{'readiness_summary': {...}, 'reliever_evidence': [...]}`` for a team.
 
     ``reference_date`` is the governed slate the artifact is anchored to (the source
-    snapshot's ``data_through``). It is the single reference for membership, rest,
-    and the three-team-game workload window, so a progressive read and a league read
-    on the SAME slate produce identical card metrics (distinct provenance, identical
-    baseball facts).
+    snapshot's ``data_through``). It anchors membership and the three-team-game
+    workload window, so a progressive read and a league read on the SAME slate
+    produce identical card metrics (distinct provenance, identical baseball facts).
+
+    ``availability_reference_date`` is the canonical next-day availability read
+    (slate + 1), resolved by ``services.availability_reference_date`` when not
+    supplied. It anchors the two CURRENT-availability statements — the classified
+    availability every row's reader-facing label projects, and the rest days
+    published beside it — because those describe the bullpen a reader is about to
+    watch, not the one that just finished working. The card and the authoritative
+    Team State verdict therefore read the same bullpen at the same availability
+    date; sharing one date for both questions is what let them disagree.
+
+    Determinism is unchanged: both dates derive from the same governed slate, so a
+    rerun on that slate is byte-identical.
     """
     from api.team_operations import _active_bullpen_membership
+
+    if availability_reference_date is None:
+        _, availability_reference_date = trusted_slate_reference_dates(reference_date)
 
     active_ids, authority_complete = _active_bullpen_membership(team_id, reference_date)
     active_ids = {pid for pid in active_ids if pid is not None}
 
-    # Classified availability for the team, anchored to the slate — the SAME
-    # authority the readiness verdict used, so labels never contradict the read.
+    # Classified availability for the team, anchored to the canonical availability
+    # reference — the SAME authority and the SAME date the readiness verdict used,
+    # so labels never contradict the read.
     rows = latest_fatigue_rows(team_id=team_id)
-    records = classify_latest_fatigue_rows(rows, reference_date=reference_date)
+    records = classify_latest_fatigue_rows(
+        rows, reference_date=availability_reference_date,
+    )
     record_by_pid = {
         r['pitcher_id']: r
         for r in records
@@ -213,6 +240,9 @@ def build_team_state_card_metrics(team_id: int, *, reference_date: date) -> dict
     game_pks = [g.game_pk for g in games]
     workload = _window_workload_by_pitcher(active_ids, game_pks)
     last_appearances = _last_appearances(active_ids, reference_date)
+    # Rest is a CURRENT-availability statement, so it is measured to the same date
+    # the availability labels were classified at (the availability classifier's own
+    # ``days_rest <= 1`` trigger is measured there too).
 
     active_count = len(active_ids)
 
@@ -220,7 +250,7 @@ def build_team_state_card_metrics(team_id: int, *, reference_date: date) -> dict
     # Existing canonical optionality authority — clean (Available, no workload
     # warning) arms of the active bullpen.
     optionality = build_bullpen_optionality_context(
-        active_records, reference_date=reference_date
+        active_records, reference_date=availability_reference_date
     )
     if optionality.get('context_available') is True:
         clean_count = int(optionality['optionality_summary_inputs']['clean_count'])
@@ -249,7 +279,9 @@ def build_team_state_card_metrics(team_id: int, *, reference_date: date) -> dict
     # -- SHORT-REST ARMS ----------------------------------------------------
     short_rest_count = 0
     for pid in active_ids:
-        rest = _rest_days(last_appearances.get(pid, {}).get('date'), reference_date)
+        rest = _rest_days(
+            last_appearances.get(pid, {}).get('date'), availability_reference_date,
+        )
         if rest in SHORT_REST_DAYS:
             short_rest_count += 1
     short_rest_arms = _metric(
@@ -291,7 +323,7 @@ def build_team_state_card_metrics(team_id: int, *, reference_date: date) -> dict
         pitchers=pitchers,
         workload=workload,
         last_appearances=last_appearances,
-        reference_date=reference_date,
+        reference_date=availability_reference_date,
     )
 
     return {

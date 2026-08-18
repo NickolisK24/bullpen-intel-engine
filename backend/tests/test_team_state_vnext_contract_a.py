@@ -161,6 +161,13 @@ REAL_WORLD_FIXTURES = [
     ('KC shadow',           9, 2, 0, 0, 'Fresh',      'fresh_coverage'),
     ('ATH',                 6, 4, 0, 0, 'Fresh',      'fresh_coverage'),
     ('CIN',                 1, 4, 3, 0, 'Vulnerable', 'margin_floor'),
+    # The user-visible profile that exposed the reference-date defect: a Yankees
+    # board showing six clean arms and two limited arms published as Stretched.
+    # The classifier was never wrong about this shape — it is Fresh, and by a
+    # wider margin than the 6/4/0/0 boundary above. What reached it was a
+    # bullpen classified one day early. See
+    # docs/decisions/2026-08-18-team-state-availability-reference-date.md.
+    ('NYY 6 clean 2 limited', 6, 2, 0, 0, 'Fresh', 'fresh_coverage'),
 ]
 
 
@@ -173,6 +180,29 @@ def test_real_world_fixture_classifies_exactly(name, clean, moderate, severe, un
     code = payload['readiness']['status_code']
     assert PUBLIC[code] == public, name
     assert payload['team_state_evidence']['decisive_rule'] == rule, name
+
+
+def test_six_clean_two_limited_is_fresh_with_a_three_quarter_clean_share():
+    """The exact Yankees-shaped profile, stated as its own contract.
+
+    Eight active arms, six clean, two moderate, nothing severe or unknown. Clean
+    share is 3/4 — comfortably over the 3/5 floor — clean count clears 5, and no
+    severe arm exists to cap it. This is Fresh on the fresh-coverage route, and it
+    is the shape a reader saw published as Stretched before the availability
+    reference date was split from the membership reference date.
+    """
+    evidence = _evidence(6, 2, 0, 0)
+    assert (
+        evidence['clean_count'],
+        evidence['moderate_count'],
+        evidence['severe_count'],
+        evidence['unknown_count'],
+        evidence['active_pitcher_count'],
+    ) == (6, 2, 0, 0, 8)
+    assert Fraction(evidence['clean_count'], evidence['active_pitcher_count']) == Fraction(3, 4)
+    assert evidence['readiness_status_code'] == 'operationally_stable'
+    assert PUBLIC[evidence['readiness_status_code']] == 'Fresh'
+    assert evidence['decisive_rule'] == 'fresh_coverage'
 
 
 def test_atl_divergence_preserves_the_unknown_arm():

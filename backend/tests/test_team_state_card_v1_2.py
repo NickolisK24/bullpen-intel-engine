@@ -359,10 +359,15 @@ def test_reliever_includes_the_just_completed_trigger_game(app):
     _seed_team()
     rows = build_team_state_card_metrics(TEAM_ID, reference_date=SLATE)['reliever_evidence']
     by_id = {r['pitcher_id']: r for r in rows}
-    # P1 worked the slate doubleheader: last appearance is the slate, rest 0.
+    # P1 worked the slate doubleheader: last appearance is the slate. Rest is a
+    # CURRENT-availability statement measured to the availability reference date
+    # (slate + 1), so an arm that worked the just-completed trigger game is on one
+    # day of rest entering the next date -- the same arm the availability
+    # classifier's own ``days_rest <= 1`` trigger catches. The window itself is
+    # still slate-anchored, which is what this test exists to prove.
     p1 = next(r for r in rows if r['name'] == 'Reliever 01')
     assert p1['last_appearance_date'] == SLATE.isoformat()
-    assert p1['rest_days'] == 0
+    assert p1['rest_days'] == 1
     assert p1['last_three_appearances'] == 2
 
 
@@ -449,9 +454,12 @@ def test_post_slate_appearance_never_leaks_into_a_slate_read(app):
     _seed_team()
     rows = build_team_state_card_metrics(TEAM_ID, reference_date=SLATE)['reliever_evidence']
     p5 = next(r for r in rows if r['name'] == 'Reliever 05')
-    # P5 has a post-slate appearance (7009), but the slate read stops at the slate.
+    # P5 has a post-slate appearance (7009), but the slate read stops at the slate:
+    # the last appearance and the opponent are the slate's, never the future game's.
+    # Rest is measured to the availability reference date (slate + 1), so working the
+    # slate reads as one day of rest.
     assert p5['last_appearance_date'] == SLATE.isoformat()
-    assert p5['rest_days'] == 0
+    assert p5['rest_days'] == 1
     assert p5['last_opponent'] != 'FUT'
 
 

@@ -646,7 +646,7 @@
       ]
     },
     "3": {
-      "measured_seconds": 502.79,
+      "measured_seconds": 505.19,
       "files": [
         {
           "path": "tests/test_active_bullpen_readiness_resolver.py",
@@ -1183,6 +1183,10 @@
         {
           "path": "tests/test_team_state_population_compare_workflow.py",
           "measured_seconds": 0.072
+        },
+        {
+          "path": "tests/test_team_state_reference_date_split.py",
+          "measured_seconds": 2.4
         },
         {
           "path": "tests/test_test_database_safety.py",
