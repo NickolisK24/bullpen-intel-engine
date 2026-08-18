@@ -115,6 +115,25 @@ test('Active Arm Row remains partial-safe and does not convert missing facts to 
   assert.equal(html.includes('href='), false)
 })
 
+test('Active Arm Row accepts production facts and preserves legitimate zero values', () => {
+  const html = renderToStaticMarkup(React.createElement(ActiveArmRow, {
+    name: 'Zero Example',
+    roleLabel: 'Backend Role',
+    readLabel: 'Backend Read',
+    facts: [
+      { label: '7D App', value: 0 },
+      { label: '7D Pitches', value: 0 },
+    ],
+    onAction: () => {},
+    actionLabel: 'Open pitcher',
+    actionAriaLabel: 'Open pitcher context for Zero Example',
+  }))
+
+  assert.ok(visibleText(html).includes('7D App 0'))
+  assert.ok(visibleText(html).includes('7D Pitches 0'))
+  assert.match(html, /<button[^>]*aria-label="Open pitcher context for Zero Example"/)
+})
+
 test('Active Arm Row loading state preserves row hierarchy without semantic claims', () => {
   const html = renderToStaticMarkup(React.createElement(ActiveArmRowSkeleton))
 

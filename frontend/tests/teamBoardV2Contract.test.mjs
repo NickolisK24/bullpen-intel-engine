@@ -64,7 +64,7 @@ test('adapter passes backend semantics and nulls through unchanged', () => {
 })
 
 
-test('TB-01 adopts v2 only for the Answer Block without frontend derivation', async () => {
+test('TB-02 reuses the v2 read for Answer Block and Active Bullpen without frontend derivation', async () => {
   const boardSource = await readFile(
     new URL('../src/components/bullpen/board/TonightsBullpenBoard.jsx', import.meta.url),
     'utf8',
@@ -77,7 +77,8 @@ test('TB-01 adopts v2 only for the Answer Block without frontend derivation', as
 
   assert.equal(boardSource.includes('getTeamBoardV2(selectedTeam)'), true)
   assert.equal(boardSource.includes('<TeamBoardAnswerBlock'), true)
-  assert.equal(boardSource.includes('ActiveArmRow'), false)
+  assert.equal(boardSource.includes('<TeamBoardActiveBullpen'), true)
+  assert.equal((boardSource.match(/getTeamBoardV2\(/g) || []).length, 1)
   assert.match(
     apiSource,
     /getTeamBoardV2 = \(teamId\) => request\(`\/bullpen\/teams\/\$\{encodeURIComponent\(teamId\)\}\/board-v2`\)/,
