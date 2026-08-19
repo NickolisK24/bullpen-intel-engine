@@ -44,7 +44,10 @@ const payload = {
     missing_role_count: 0,
     roles: [{ role_key: 'bridge_arm', label: 'Setup Arm', arm_count: 1 }],
   },
-  rotation_impact: { read: { starter_avg_innings: 5.2, summary: 'Backend sentence.' } },
+  rotation_impact: {
+    population_basis: 'stored_team_game_pitching_splits',
+    read: { starter_avg_innings: 5.2, summary: 'Backend sentence.' },
+  },
   roster_context: {},
   recent_relief_work: { read: { relief_by_date: [] } },
   game_context: null,
@@ -54,6 +57,7 @@ const payload = {
     rest_status: { status: 'unavailable' },
     workload_overview: { status: 'partial' },
     roles_deployment: { status: 'available' },
+    rotation_impact: { status: 'available' },
     recent_relief_work: { status: 'unavailable', reason_code: 'source_unavailable' },
   },
   limitations: [],
@@ -86,7 +90,7 @@ test('adapter passes backend semantics and nulls through unchanged', () => {
 })
 
 
-test('TB-05 reuses the v2 read through Roles & Deployment', async () => {
+test('TB-07 reuses the v2 read through Rotation Impact', async () => {
   const boardSource = await readFile(
     new URL('../src/components/bullpen/board/TonightsBullpenBoard.jsx', import.meta.url),
     'utf8',
@@ -104,6 +108,7 @@ test('TB-05 reuses the v2 read through Roles & Deployment', async () => {
   assert.equal(boardSource.includes('<TeamBoardRestStatus'), true)
   assert.equal(boardSource.includes('<TeamBoardWorkloadOverview'), true)
   assert.equal(boardSource.includes('<TeamBoardRolesDeployment'), true)
+  assert.equal(boardSource.includes('<TeamBoardRotationImpact'), true)
   assert.equal((boardSource.match(/getTeamBoardV2\(/g) || []).length, 1)
   assert.match(
     apiSource,

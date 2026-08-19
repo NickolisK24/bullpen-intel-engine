@@ -134,6 +134,18 @@ export function teamBoardV2Fixture(board, overrides = {}) {
         limitations: missingRoleCount > 0 ? ['Some current arms do not have a public role read.'] : board?.limitations || [],
         represented_date: representedDate,
       },
+      rotation_impact: {
+        status: board?.rotation_support_pressure?.status === 'limited_read'
+          || (Array.isArray(board?.rotation_support_pressure?.limitations)
+            && board.rotation_support_pressure.limitations.length > 0)
+          ? 'partial'
+          : Object.keys(board?.rotation_support_pressure || {}).length > 0
+            ? 'available'
+            : 'unavailable',
+        reason_code: board?.rotation_support_pressure?.limitation_reasons?.[0] || null,
+        limitations: board?.rotation_support_pressure?.limitations || [],
+        represented_date: board?.rotation_support_pressure?.reference_date || representedDate,
+      },
     },
     limitations: board?.limitations || [],
     ...overrides,
