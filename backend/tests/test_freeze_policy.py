@@ -71,7 +71,7 @@ ALL_GUARD_QUERIES = (
             'approved': (
                 'backend/services/public_team_relief_work.py',
                 'backend/api/performance_intelligence_admin.py',
-            ),
+            ) + freeze_policy.TB09A_DELTA_SUBSTRATE_PATHS,
         },
     ),
 )
@@ -327,6 +327,35 @@ def test_hotfix01_exception_is_exact_and_does_not_unfreeze_neighbors():
         prefixes=(freeze_policy.TEAM_STATE_PATH_PREFIX,),
         approved=approved,
     ) == ['backend/services/team_state_payload.py']
+
+
+def test_tb09a_exception_is_exact_and_does_not_unfreeze_artifact_neighbors():
+    approved = freeze_policy.TB09A_DELTA_SUBSTRATE_PATHS
+    assert approved == ('backend/services/share_artifact_generation.py',)
+
+    changed = ['backend/services/share_artifact_generation.py']
+    assert freeze_policy.protected_hits(
+        changed,
+        prefixes=(freeze_policy.SHARE_ARTIFACT_SERVICE_PREFIX,),
+    ) == changed
+    assert freeze_policy.protected_hits(
+        changed,
+        prefixes=(freeze_policy.SHARE_ARTIFACT_SERVICE_PREFIX,),
+        approved=approved,
+    ) == []
+
+    assert freeze_policy.protected_hits(
+        ['backend/services/share_artifacts.py'],
+        prefixes=(freeze_policy.SHARE_ARTIFACT_SERVICE_PREFIX,),
+        approved=approved,
+    ) == ['backend/services/share_artifacts.py']
+
+    decision = (
+        Path(__file__).resolve().parents[2]
+        / 'docs/decisions/2026-08-18-versioned-daily-delta-substrate.md'
+    ).read_text(encoding='utf-8')
+    assert '`backend/services/share_artifact_generation.py`' in decision
+    assert 'No Share Artifact payload or historical row is modified.' in decision
 
 
 def test_no_catalogue_uses_a_bare_directory_as_an_invariant():
