@@ -18,6 +18,7 @@ from services.team_board_v2 import (
     build_team_board_v2_payload,
     unavailable_section,
 )
+from services.public_recent_transactions import POPULATION_BASIS as RECENT_TRANSACTIONS_POPULATION_BASIS
 
 
 TEAM = {
@@ -190,6 +191,28 @@ def _game_context():
     }
 
 
+def _recent_transactions(*, status='available', events=None, limitations=None):
+    return {
+        'capability': 'public_recent_transactions_v1',
+        'version': '2026-08-18.team-board',
+        'population_basis': RECENT_TRANSACTIONS_POPULATION_BASIS,
+        'status': status,
+        'events': events if events is not None else [{
+            'event_id': 'tx-1',
+            'player_id': 7,
+            'player_mlb_id': 700007,
+            'player_name': 'Example Arm',
+            'date': '2026-08-16',
+            'type': 'recall',
+            'label': 'Recalled',
+        }],
+        'window_start_date': '2026-08-10',
+        'window_end_date': '2026-08-17',
+        'represented_date': '2026-08-17',
+        'limitations': limitations or [],
+    }
+
+
 def test_contract_pins_version_and_preserves_canonical_owner_outputs():
     board = _board()
     relief = _relief_work()
@@ -199,6 +222,7 @@ def test_contract_pins_version_and_preserves_canonical_owner_outputs():
     payload = build_team_board_v2_payload(
         board,
         recent_relief_work=relief,
+        recent_transactions=_recent_transactions(),
         game_context=context,
     )
 
@@ -207,6 +231,8 @@ def test_contract_pins_version_and_preserves_canonical_owner_outputs():
     assert payload['team_state'] == TEAM_STATE
     assert payload['summary'] == TEAM_STATE['summary']
     assert payload['rotation_impact']['read'] == ROTATION
+    assert payload['recent_transactions'] == _recent_transactions()
+    assert payload['section_status']['recent_transactions']['status'] == 'available'
     assert payload['recent_relief_work']['read'] == relief
     assert payload['section_status']['recent_relief_work']['status'] == 'available'
     assert payload['game_context'] == context
@@ -543,6 +569,40 @@ def test_optional_failure_keeps_independent_sections_available():
     assert payload['section_status']['game_context']['status'] == 'available'
 
 
+def test_recent_transactions_status_is_scoped_and_preserves_available_events():
+    partial = _recent_transactions(
+        status='partial',
+        limitations=['Some verified transaction records are unavailable.'],
+    )
+    payload = build_team_board_v2_payload(
+        _board(),
+        recent_transactions=partial,
+    )
+
+    assert payload['recent_transactions']['events'][0]['event_id'] == 'tx-1'
+    assert payload['section_status']['recent_transactions'] == {
+        'status': 'partial',
+        'reason_code': 'recent_transactions_limited',
+        'limitations': ['Some verified transaction records are unavailable.'],
+        'represented_date': '2026-08-17',
+    }
+
+    unavailable = build_team_board_v2_payload(
+        _board(),
+        recent_transactions=_recent_transactions(
+            status='unavailable',
+            events=[],
+            limitations=['Recent official transaction records are unavailable.'],
+        ),
+    )
+    assert unavailable['team_state'] == TEAM_STATE
+    assert unavailable['active_bullpen']['arms'][0]['pitcher_id'] == 7
+    assert unavailable['section_status']['recent_transactions'] == unavailable_section(
+        'recent_transactions_unavailable',
+        limitations=['Recent official transaction records are unavailable.'],
+    )
+
+
 def test_unavailable_team_state_remains_null_and_uses_governed_message():
     board = _board()
     board['team_state'] = {
@@ -570,7 +630,7 @@ def test_unavailable_team_state_remains_null_and_uses_governed_message():
 
 
 def test_route_composes_each_owner_once_without_frontend_derivation(client, monkeypatch):
-    calls = {'board': 0, 'rotation': 0, 'relief': 0, 'game': 0}
+    calls = {'board': 0, 'rotation': 0, 'relief': 0, 'game': 0, 'transactions': 0}
 
     def rotation(team, reference_date):
         calls['rotation'] += 1
@@ -598,15 +658,22 @@ def test_route_composes_each_owner_once_without_frontend_derivation(client, monk
         assert reference_date == date(2026, 8, 16)
         return _game_context()
 
+    def transactions(team_id, reference_date=None):
+        calls['transactions'] += 1
+        assert team_id == 1
+        assert reference_date == date(2026, 8, 16)
+        return _recent_transactions()
+
     monkeypatch.setattr(team_board_v2_api, '_build_team_board', board)
     monkeypatch.setattr(team_board_v2_api, '_rotation_support_for_team', rotation)
     monkeypatch.setattr(team_board_v2_api, 'build_public_team_relief_work_payload', relief)
     monkeypatch.setattr(team_board_v2_api, 'build_team_game_context', game)
+    monkeypatch.setattr(team_board_v2_api, 'build_public_recent_transactions', transactions)
 
     response = client.get('/api/bullpen/teams/1/board-v2')
     assert response.status_code == 200
     payload = response.get_json()
-    assert calls == {'board': 1, 'rotation': 1, 'relief': 1, 'game': 1}
+    assert calls == {'board': 1, 'rotation': 1, 'relief': 1, 'game': 1, 'transactions': 1}
     assert payload['contract_version'] == CONTRACT_VERSION
     assert payload['summary'] == TEAM_STATE['summary']
 
@@ -626,6 +693,11 @@ def test_route_scopes_optional_failure_without_destroying_core(client, monkeypat
         team_board_v2_api,
         'build_team_game_context',
         lambda _team_id, reference_date=None: _game_context(),
+    )
+    monkeypatch.setattr(
+        team_board_v2_api,
+        'build_public_recent_transactions',
+        lambda _team_id, reference_date=None: _recent_transactions(),
     )
 
     response = client.get('/api/bullpen/teams/1/board-v2')
@@ -666,6 +738,11 @@ def test_route_scopes_rotation_failure_without_rebuilding_board(client, monkeypa
         'build_team_game_context',
         lambda _team_id, reference_date=None: _game_context(),
     )
+    monkeypatch.setattr(
+        team_board_v2_api,
+        'build_public_recent_transactions',
+        lambda _team_id, reference_date=None: _recent_transactions(),
+    )
 
     response = client.get('/api/bullpen/teams/1/board-v2')
     assert response.status_code == 200
@@ -678,10 +755,43 @@ def test_route_scopes_rotation_failure_without_rebuilding_board(client, monkeypa
     )
 
 
+def test_route_scopes_transaction_failure_without_destroying_other_sections(client, monkeypatch):
+    monkeypatch.setattr(
+        team_board_v2_api,
+        '_build_team_board',
+        lambda _team_id, **_kwargs: _board(),
+    )
+    monkeypatch.setattr(
+        team_board_v2_api,
+        'build_public_team_relief_work_payload',
+        lambda _team_id: _relief_work(),
+    )
+    monkeypatch.setattr(
+        team_board_v2_api,
+        'build_team_game_context',
+        lambda _team_id, reference_date=None: _game_context(),
+    )
+    monkeypatch.setattr(
+        team_board_v2_api,
+        'build_public_recent_transactions',
+        lambda _team_id, reference_date=None: (_ for _ in ()).throw(RuntimeError('fixture failure')),
+    )
+
+    response = client.get('/api/bullpen/teams/1/board-v2')
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload['active_bullpen']['arms'][0]['pitcher_id'] == 7
+    assert payload['rotation_impact']['read'] == ROTATION
+    assert payload['section_status']['recent_transactions'] == unavailable_section(
+        'recent_transactions_unavailable'
+    )
+
+
 def test_endpoint_is_get_only_and_composition_has_no_write_path():
     root = Path(__file__).resolve().parents[2]
     api_source = (root / 'backend/api/team_board_v2.py').read_text(encoding='utf-8')
     service_source = (root / 'backend/services/team_board_v2.py').read_text(encoding='utf-8')
+    transactions_source = (root / 'backend/services/public_recent_transactions.py').read_text(encoding='utf-8')
     app_source = (root / 'backend/app.py').read_text(encoding='utf-8')
 
     assert "@team_board_v2_bp.route('/teams/<int:team_id>/board-v2', methods=['GET'])" in api_source
@@ -690,3 +800,4 @@ def test_endpoint_is_get_only_and_composition_has_no_write_path():
     for forbidden in ('db.session', '.commit(', '.add(', '.delete(', 'requests.', 'mlb_client'):
         assert forbidden not in api_source
         assert forbidden not in service_source
+        assert forbidden not in transactions_source

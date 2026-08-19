@@ -34,6 +34,7 @@ export function readTeamBoardV2(payload) {
     workloadOverview: payload.workload_overview,
     rolesDeployment: payload.roles_deployment,
     rotationImpact: payload.rotation_impact,
+    recentTransactions: payload.recent_transactions,
     rosterContext: payload.roster_context,
     recentReliefWork: payload.recent_relief_work,
     gameContext: payload.game_context,
