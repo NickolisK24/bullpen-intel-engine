@@ -730,7 +730,13 @@ function buildUnavailableReadModel({ scope, teamInfo, freshness, cta, density, t
   }
 }
 
-export function toOperatingStateReadModel(payload, { scope = 'league', team = null, cta = null, density = 'full' } = {}) {
+export function toOperatingStateReadModel(payload, {
+  scope = 'league',
+  team = null,
+  cta = null,
+  density = 'full',
+  includeRotationSupport = true,
+} = {}) {
   const resolvedScope = normalizeScope(scope)
   const teamInfo = resolveTeam(payload, team)
   const freshness = buildFreshnessModel(payload?.freshness)
@@ -771,7 +777,7 @@ export function toOperatingStateReadModel(payload, { scope = 'league', team = nu
   // missing one.
   const stateLabel = teamState.publicLabel
   const rosterPressure = resolvedScope === 'team' ? buildRosterPressure(payload?.roster_authority) : null
-  const starterSupportPressure = resolvedScope === 'team'
+  const starterSupportPressure = resolvedScope === 'team' && includeRotationSupport
     ? buildStarterSupportPressure(payload?.rotation_support_pressure, freshness)
     : null
   const teamContextReads = buildTeamContextReads(payload, resolvedScope)

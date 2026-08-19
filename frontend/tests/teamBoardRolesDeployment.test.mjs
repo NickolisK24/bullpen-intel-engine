@@ -106,7 +106,7 @@ test('production uses the shared v2 request and leaves later packages untouched'
   assert.ok(boardSource.includes('<TeamReliefWorkPanel'))
   assert.ok(boardSource.indexOf('<TeamBoardWorkloadOverview') < boardSource.indexOf('<TeamBoardRolesDeployment'))
   assert.equal(boardSource.includes('<TeamBoardPerformance'), false)
-  assert.equal(boardSource.includes('<TeamBoardRotationImpact'), false)
+  assert.ok(boardSource.includes('<TeamBoardRotationImpact'))
   for (const forbidden of ['.sort(', '.reduce(', 'Math.', 'leverage', 'roleMovement', 'role_movement']) {
     assert.equal(componentSource.includes(forbidden), false, forbidden)
   }

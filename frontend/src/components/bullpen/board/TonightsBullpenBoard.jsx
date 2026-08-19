@@ -11,6 +11,7 @@ import TeamBoardRecentUsage from './TeamBoardRecentUsage'
 import TeamBoardRestStatus from './TeamBoardRestStatus'
 import TeamBoardWorkloadOverview from './TeamBoardWorkloadOverview'
 import TeamBoardRolesDeployment from './TeamBoardRolesDeployment'
+import TeamBoardRotationImpact from './TeamBoardRotationImpact'
 import { useTeamReliefWork } from './useTeamReliefWork'
 import TeamGameContextCard from './TeamGameContextCard'
 import StoryCard from './StoryCard'
@@ -114,6 +115,10 @@ export default function TonightsBullpenBoard({
     team: boardState.data?.team,
     cta: { href: '#pitcher-lanes', label: 'Review pitcher lanes' },
     density: 'compact',
+    // Rotation Impact now owns this Team Board fact family through v2. Keep
+    // the legacy operating-state adapter available to its other consumers,
+    // but do not repeat its browser-authored starter interpretation here.
+    includeRotationSupport: false,
   })
   const normalizedRequestedSection = String(requestedSection || '').replace(/^#/, '')
   // Canonical artifact-backed card; null when no published artifact exists, which
@@ -216,6 +221,12 @@ export default function TonightsBullpenBoard({
               onRetry={teamBoardV2State.refetch}
             />
             <TeamBoardRolesDeployment
+              read={teamBoardRead}
+              loading={teamBoardV2State.loading}
+              error={teamBoardV2State.error}
+              onRetry={teamBoardV2State.refetch}
+            />
+            <TeamBoardRotationImpact
               read={teamBoardRead}
               loading={teamBoardV2State.loading}
               error={teamBoardV2State.error}
