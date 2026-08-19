@@ -4,7 +4,6 @@ import { readTeamBoardV2 } from '../../../adapters/teamBoardV2'
 import { getTeamBoardV2, getTeamBullpenBoard, getTeamGameContext, getTeamStory, getTeamShareCard } from '../../../utils/api'
 import { TeamBoardSkeleton, ErrorState, EmptyState } from '../../UI'
 import { BullpenReadDisclosure } from '../BullpenOperatingStateCard'
-import { RosterStatusBanner } from './BullpenBoardView'
 import TeamBoardAnswerBlock from './TeamBoardAnswerBlock'
 import TeamBoardActiveBullpen from './TeamBoardActiveBullpen'
 import TeamBoardRecentUsage from './TeamBoardRecentUsage'
@@ -12,6 +11,7 @@ import TeamBoardRestStatus from './TeamBoardRestStatus'
 import TeamBoardWorkloadOverview from './TeamBoardWorkloadOverview'
 import TeamBoardRolesDeployment from './TeamBoardRolesDeployment'
 import TeamBoardRotationImpact from './TeamBoardRotationImpact'
+import TeamBoardRecentTransactions from './TeamBoardRecentTransactions'
 import { useTeamReliefWork } from './useTeamReliefWork'
 import TeamGameContextCard from './TeamGameContextCard'
 import StoryCard from './StoryCard'
@@ -232,6 +232,12 @@ export default function TonightsBullpenBoard({
               error={teamBoardV2State.error}
               onRetry={teamBoardV2State.refetch}
             />
+            <TeamBoardRecentTransactions
+              read={teamBoardRead}
+              loading={teamBoardV2State.loading}
+              error={teamBoardV2State.error}
+              onRetry={teamBoardV2State.refetch}
+            />
             {storyState.data?.story_available === true && <section className="mt-6" aria-labelledby="what-changed-title">
               <h2 id="what-changed-title" className="font-display text-xl tracking-wide text-chalk100">What Changed</h2>
               <div className="mt-2">
@@ -254,7 +260,6 @@ export default function TonightsBullpenBoard({
                 boardDataThrough={boardState.data?.freshness?.data_through || boardState.data?.freshness?.dataThrough || boardState.data?.data_through}
               />
             </div>
-            <div className="mt-4"><RosterStatusBanner board={boardState.data} /></div>
             <div className="mt-4 flex justify-end">
               <EvidenceShareMenu
                 cardModel={teamCard}

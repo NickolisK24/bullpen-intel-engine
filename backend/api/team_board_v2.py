@@ -12,6 +12,7 @@ from services.public_team_relief_work import (
     TeamNotFoundError,
     build_public_team_relief_work_payload,
 )
+from services.public_recent_transactions import build_public_recent_transactions
 from services.team_board_v2 import build_team_board_v2_payload, unavailable_section
 
 
@@ -72,9 +73,21 @@ def get_team_board_v2(team_id):
     if game_error:
         section_errors['game_context'] = game_error
 
+    recent_transactions, transactions_error = _optional_failure(
+        'recent_transactions',
+        'recent_transactions_unavailable',
+        lambda: build_public_recent_transactions(
+            team_id,
+            reference_date=_freshness_reference_date(board.get('freshness') or {}),
+        ),
+    )
+    if transactions_error:
+        section_errors['recent_transactions'] = transactions_error
+
     return jsonify(build_team_board_v2_payload(
         board,
         recent_relief_work=relief_work,
+        recent_transactions=recent_transactions,
         game_context=game_context,
         section_errors=section_errors,
     ))

@@ -166,7 +166,7 @@ test('identity, state, currentness, and color-independent labels are semantic', 
   assert.ok(text(html).includes('Data through Aug 16'))
 })
 
-test('production adoption keeps the Answer Block and migrates only Active Bullpen beyond it', async () => {
+test('production adoption keeps the Answer Block and current package migrations intact', async () => {
   const source = await readFile(
     new URL('../src/components/bullpen/board/TonightsBullpenBoard.jsx', import.meta.url),
     'utf8',
@@ -176,11 +176,11 @@ test('production adoption keeps the Answer Block and migrates only Active Bullpe
   assert.equal((source.match(/getTeamBoardV2\(/g) || []).length, 1)
   assert.ok(source.includes('<TeamBoardAnswerBlock'))
   assert.ok(source.includes('<TeamBoardActiveBullpen'))
+  assert.ok(source.includes('<TeamBoardRecentTransactions'))
   for (const legacySection of [
     '<TeamBoardWorkloadOverview',
     '<StoryCard',
     '<TeamReliefWorkPanel',
-    '<RosterStatusBanner',
     '<BullpenReadDisclosure',
   ]) {
     assert.ok(source.includes(legacySection), legacySection)

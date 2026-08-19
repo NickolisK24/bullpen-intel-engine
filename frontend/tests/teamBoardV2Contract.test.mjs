@@ -48,6 +48,11 @@ const payload = {
     population_basis: 'stored_team_game_pitching_splits',
     read: { starter_avg_innings: 5.2, summary: 'Backend sentence.' },
   },
+  recent_transactions: {
+    population_basis: 'explanatory_eligible_pitcher_transactions_touching_selected_team_in_latest_source_sync_window',
+    status: 'available',
+    events: [{ player_id: 7, player_name: 'Exact Source Name', date: '2026-08-16', label: 'Recalled' }],
+  },
   roster_context: {},
   recent_relief_work: { read: { relief_by_date: [] } },
   game_context: null,
@@ -58,6 +63,7 @@ const payload = {
     workload_overview: { status: 'partial' },
     roles_deployment: { status: 'available' },
     rotation_impact: { status: 'available' },
+    recent_transactions: { status: 'available' },
     recent_relief_work: { status: 'unavailable', reason_code: 'source_unavailable' },
   },
   limitations: [],
@@ -87,10 +93,12 @@ test('adapter passes backend semantics and nulls through unchanged', () => {
   assert.equal(view.rolesDeployment.roles[0].label, 'Setup Arm')
   assert.equal(view.sectionStatus, payload.section_status)
   assert.equal(view.rotationImpact.read.summary, 'Backend sentence.')
+  assert.equal(view.recentTransactions, payload.recent_transactions)
+  assert.equal(view.recentTransactions.events[0].label, 'Recalled')
 })
 
 
-test('TB-07 reuses the v2 read through Rotation Impact', async () => {
+test('TB-08 reuses the v2 read through Recent Transactions', async () => {
   const boardSource = await readFile(
     new URL('../src/components/bullpen/board/TonightsBullpenBoard.jsx', import.meta.url),
     'utf8',
@@ -109,6 +117,7 @@ test('TB-07 reuses the v2 read through Rotation Impact', async () => {
   assert.equal(boardSource.includes('<TeamBoardWorkloadOverview'), true)
   assert.equal(boardSource.includes('<TeamBoardRolesDeployment'), true)
   assert.equal(boardSource.includes('<TeamBoardRotationImpact'), true)
+  assert.equal(boardSource.includes('<TeamBoardRecentTransactions'), true)
   assert.equal((boardSource.match(/getTeamBoardV2\(/g) || []).length, 1)
   assert.match(
     apiSource,

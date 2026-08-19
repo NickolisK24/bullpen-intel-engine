@@ -188,6 +188,28 @@ def _rotation_status(rotation, error, represented_date):
     )
 
 
+def _recent_transactions_status(recent_transactions, error, represented_date):
+    if error:
+        return deepcopy(error)
+    if not isinstance(recent_transactions, dict):
+        return unavailable_section('recent_transactions_unavailable')
+
+    status = recent_transactions.get('status')
+    if status == STATUS_UNAVAILABLE:
+        return unavailable_section(
+            'recent_transactions_unavailable',
+            limitations=recent_transactions.get('limitations') or [],
+        )
+    if status not in (STATUS_AVAILABLE, STATUS_PARTIAL):
+        return unavailable_section('recent_transactions_unavailable')
+    return _section_status(
+        status,
+        reason_code='recent_transactions_limited' if status == STATUS_PARTIAL else None,
+        limitations=recent_transactions.get('limitations') or [],
+        represented_date=recent_transactions.get('represented_date') or represented_date,
+    )
+
+
 def _relief_work_status(relief_work, error, represented_date):
     if error:
         return deepcopy(error)
@@ -371,6 +393,7 @@ def build_team_board_v2_payload(
     board,
     *,
     recent_relief_work=None,
+    recent_transactions=None,
     game_context=None,
     section_errors=None,
 ):
@@ -418,6 +441,11 @@ def build_team_board_v2_payload(
         ),
         'roles_deployment': _roles_deployment_status(board, roles_deployment, represented_date),
         'rotation_impact': _rotation_status(rotation, errors.get('rotation_impact'), represented_date),
+        'recent_transactions': _recent_transactions_status(
+            recent_transactions,
+            errors.get('recent_transactions'),
+            represented_date,
+        ),
         'recent_relief_work': _relief_work_status(relief_work, errors.get('recent_relief_work'), represented_date),
         'game_context': _game_context_status(context, errors.get('game_context'), represented_date),
     }
@@ -445,6 +473,7 @@ def build_team_board_v2_payload(
             'read': rotation,
         },
         'roster_context': deepcopy(board.get('roster_authority') or {}),
+        'recent_transactions': deepcopy(recent_transactions) if isinstance(recent_transactions, dict) else None,
         'recent_relief_work': {
             'population_basis': RECENT_RELIEF_WORK_POPULATION_BASIS,
             'read': relief_work,
