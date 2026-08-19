@@ -8,11 +8,11 @@ Condensed Canonical Edition · Visual Audit Integrated
 
 One active objective. One canonical roadmap. Every durable decision recorded.
 
-VERSION 4.2  ·  GOVERNED TEAM BOARD WORKLOAD CONTEXT DECISION
+VERSION 4.3  ·  GAME-DRIVEN REAL-MUTATION QUALIFICATION MECHANISM
 
 Owner: Nickolis Kacludis
 
-Effective August 15, 2026
+Effective August 19, 2026
 
 # Contents
 
@@ -50,11 +50,11 @@ This edition keeps the Product Roadmap & Decision Ledger as the sole canonical e
 | --- | --- |
 | Document | BaseballOS Product Roadmap and Decision Ledger |
 | Status | Canonical - current platform state, priority, sequence, decision, risk, and completion authority |
-| Version | 4.2 |
-| Effective date | August 15, 2026 |
+| Version | 4.3 |
+| Effective date | August 19, 2026 |
 | Owner | Nickolis Kacludis |
 | Repository basis | Production/main: NickolisK24/bullpen-intel-engine main at 66be1b57f2d523d643db82d605538771f656dfa9 after PR #668. Team Board Phase 2 Package 1 implementation branch: `backend/team-board-workload-context`. |
-| Decision basis | Decision Ledger through D-055; Version 4.2 adds the governed Team Board workload-context authority while preserving D-001 through D-054 unchanged |
+| Decision basis | Decision Ledger through D-056; Version 4.3 adds the game-driven real-mutation qualification mechanism while preserving D-001 through D-055 unchanged |
 | Audit basis | Production closeout for #595, #591, #600, #594, and VOC-001 (#638); DEP-001 (#601) complete and verified on main by CI run 31729458591; CI-003 (#598) gated publication commit `2e83fa0` on main from scheduled run 31794183367; H-5 through H-12 documentation and public-surface closeouts through PR #659 |
 | Supersedes | Version 4.1 current-state wording while preserving all durable prior decisions and completion evidence |
 | Update rule | Update after a priority change, material merge, phase exit, production incident, authority decision, risk change, or false current-state statement |
@@ -352,6 +352,8 @@ D-054, added by UX-2B, governs how an all-club reader may list already-published
 
 D-055, added by Team Board Phase 2 Package 1, governs how the Team Board may project already-public workload facts from its loaded authority and author one fail-closed Rest Status without exposing scores, recalculating workload, or creating frontend interpretation authority. It changes no Team State, availability, snapshot, acquisition, write, or publication authority.
 
+D-056, added by the game-driven real-mutation qualification package, governs how one reviewed canonical statistical correction may be applied to one existing GameLog row in one completed game under manual owner-only authorization. It refuses unresolved source authority, identity mutation, appearance-team repair, multi-row and multi-field mutation, and publication authority, and its existence authorizes no production qualification run. O-008 remains open.
+
 DEP-001 (#601) created no Decision Ledger ID. Its time-boxed acceptance of the residual React Router advisories is a dated, revocable security decision recorded in `docs/decisions/2026-08-13-react-router-v7-security-defer.md` and machine-enforced by `.github/dependency-audit-accepted.json` — deliberately not a durable authority decision, because it is designed to expire.
 
 ## Decision status vocabulary
@@ -369,7 +371,7 @@ The ledger is history and current policy at once, and until Version 4.0 the two 
 
 Applying the vocabulary changes no decision. A row moves to Amended or Superseded only where a later decision already did that work; nothing here narrows a decision by relabelling it, and no ID is renumbered or removed.
 
-Version 4.0 amended D-013 through D-053. Versions 4.1 and 4.2 change no prior decision status.
+Version 4.0 amended D-013 through D-053. Versions 4.1, 4.2 and 4.3 change no prior decision status.
 
 | ID | Date | Decision | Status |
 | --- | --- | --- | --- |
@@ -607,3 +609,4 @@ Running alongside this order, and not gated by it: complete or re-review the Rea
 | 4.0 | August 14, 2026 | Nickolis Kacludis | Reconciled current state through PR #659/main b2f0e90 and closed the roadmap half of the H-12 document-authority audit. Recorded CI-003 (#598) **complete and production-verified**, which Version 3.9 could not: scheduled run 31794183367, a `schedule` event on attempt 1, produced gated commit `2e83fa0` on main under `BaseballOS Automation <baseballoshq@gmail.com>` with Source-SHA `71e0b89`, Validated-Tree and committed tree both `1c9d7dc`, trusted snapshot 411, sync run 721, and data through August 13; the Vercel deployment on that commit succeeded; and read-only verification of the live routed page `https://baseballos.app/team/ATH` served snapshot 411, sync run 721, data through 2026-08-13, authority contract `trusted_dashboard_publication_v1`, and Team State `Vulnerable` in metadata, unfurl, and body. Issue #598 is closed as completed with all six acceptance criteria met. Version 3.9 said no such commit existed and an earlier draft of this edition said the deployment half was outstanding; both were true when written and false by the time this edition was finalized, which is exactly the staleness this document's update rule exists to catch. Advanced the active objective to the next already-approved item, permanent daily-sync work reduction — a sequencing consequence of a package closing, not a new priority, with D-051, legacy writer authority, daily/postgame shadow, backfill off, and the unapproved game-driven write and publication authority all preserved. Retained the failed-closed first scheduled attempt 31693516516 and the PR #642 repair in the Completion Log as historical progression, distinguished from current status. Recorded the H-1 and H-5 through H-11 closeouts across PRs #650 through #659 in the Completion Log, and the H-12 reconciliation itself. Introduced a Decision status vocabulary — Permanent, Standing, Adopted, Amended, Superseded, Historical — so a narrowed decision no longer reads identically to one still in force, and applied it only where a later decision had already done that work. Amended D-013 accordingly: sole human authorship is scoped to engineering work, the governed generated-content publication job is its single approved machine exception under D-053, that identity is a publisher rather than a second author, and the no-AI-attribution rule is unchanged and absolute. Updated D-053's status from "not production-verified" to production-exercised on August 14. No Decision Ledger ID was added, weakened, renumbered, or removed; D-051 and D-052 stand unchanged; the approved sequence is preserved exactly; and the shadow, backfill, legacy-writer, and publication authority posture is untouched. |
 | 4.1 | August 15, 2026 | Nickolis Kacludis | Added D-054 for UX-2B: a read-only, non-ranking 30-club Team State listing pinned to one current trusted Dashboard snapshot, with one immutable registry owning denominator integrity and fallback identity, existing immutable Share Artifacts owning published state, and the governed public Team State projection remaining the sole vocabulary owner. Recorded `represented + withheld = expected = 30`, kept Withheld outside Team State, rejected Pitcher-derived membership, live MLB reader calls, cross-snapshot artifact selection, frontend derivation, and per-team fan-out, and left D-001 through D-053 unchanged. |
 | 4.2 | August 15, 2026 | Nickolis Kacludis | Added D-055 for Team Board Phase 2 Package 1: an additive projection of already-public workload facts from fatigue and availability records already loaded by the Team Board, plus one backend-authored, fail-closed Rest Status with exact date semantics. Required evidence remains nullable, incomplete or stale evidence never becomes zero, raw fatigue scores remain private, real query-count invariance is required, and no Team State, availability vocabulary, ranking, prediction, frontend derivation, reader-path acquisition, write authority, or publication authority changes. D-001 through D-054 remain unchanged. |
+| 4.3 | August 19, 2026 | Nickolis Kacludis | Added D-056 for the game-driven real-mutation qualification package: a manual, workflow-dispatch-only, main-only, repository-owner-only, expected-SHA and reviewed-fingerprint bound qualification limited to one statistical correction to one existing GameLog row on one resolved-authority field, plus a bounded read-only candidate audit. Unresolved source authority is refused and `inherited_runners` stays excluded; identity mutation, appearance-team repair, multi-row and multi-field mutation, inserts, blocked rows, provenance-only rows, backfill, scheduled execution and publication authority are all refused. Expected effects are exact integers measured through the canonical path; a replay resolves NO_LONGER_MUTATING and never a second PASS; a post-write realization failure fails hard and attempts no compensating write. The mechanism has never been run in production and authorizes no run. D-001 through D-055 remain unchanged, O-008 remains open, and the daily/postgame shadow, backfill-off, legacy-writer and publication posture is untouched. |
