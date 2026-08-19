@@ -255,6 +255,7 @@ def test_new_natural_generation_freezes_versioned_delta_sidecar(app, monkeypatch
     ).one()
 
     assert result.created_new is True
+    assert sidecar.sync_run_id is None
     assert sidecar.payload['source']['artifact_id'] == result.artifact.id
     assert sidecar.payload['source']['snapshot_id'] == result.source_snapshot_id
     assert sidecar.payload['source']['sync_run_id'] == result.source_sync_run_id

@@ -194,7 +194,10 @@ def stamp_prospective_snapshot(*, source, readiness, artifact, session=None):
     represented_date = _as_date(envelope.get('represented_date'))
     row = DashboardSnapshot(
         snapshot_type=SNAPSHOT_TYPE,
-        sync_run_id=(envelope.get('source') or {}).get('sync_run_id'),
+        # This observational sidecar is created by Share Artifact publication,
+        # not by the source SyncRun. Preserve that immutable source identity in
+        # the comparison envelope without claiming relational ownership here.
+        sync_run_id=None,
         status='ready',
         is_published=False,
         # Durable proof that the sidecar was captured from a publication that

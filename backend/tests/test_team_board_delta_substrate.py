@@ -137,8 +137,10 @@ def test_naturally_generated_sidecar_is_append_only_and_inspectable(app):
 
     assert stored.snapshot_type == delta.SNAPSHOT_TYPE
     assert stored.source == f'{delta.SNAPSHOT_SOURCE_PREFIX}{TEAM_ID}'
+    assert stored.sync_run_id is None
     assert stored.data_through == date(2026, 8, 18)
     assert stored.published_at == datetime(2026, 8, 18, 12, 30)
+    assert stored.payload['source']['sync_run_id'] == 12
     assert stored.payload['domains']['team_state']['method_version'] == TEAM_STATE_METHOD_VERSION
     assert stored.payload['domains']['team_state']['population_basis'] == {
         'basis': 'status_only',
