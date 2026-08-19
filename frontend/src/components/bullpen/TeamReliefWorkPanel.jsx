@@ -1,349 +1,231 @@
-const asArray = (value) => (Array.isArray(value) ? value : [])
-const isFilled = (value) => value !== undefined && value !== null && value !== ''
-const textValue = (value) => (typeof value === 'string' && value.trim() ? value : null)
+import SectionState from '../UI/SectionState'
+import { SkeletonBlock } from '../UI/Skeleton'
+import { formatDateOnly } from '../../utils/dateDisplay'
 
-function Section({ title, children, compact = false }) {
+const asArray = value => Array.isArray(value) ? value : []
+const textValue = value => typeof value === 'string' && value.trim() ? value.trim() : null
+const countValue = value => Number.isInteger(value) && value >= 0 ? value : null
+
+export function formatBaseballIpFromOuts(outs) {
+  const value = countValue(outs)
+  return value == null ? null : `${Math.floor(value / 3)}.${value % 3}`
+}
+
+function gameSections(group) {
+  const appearances = asArray(group?.appearances)
+  const games = asArray(group?.games)
+  const sections = new Map()
+  const order = []
+
+  for (const game of games) {
+    const gameId = game?.mlb_game_pk
+    if (gameId == null || sections.has(gameId)) continue
+    sections.set(gameId, { gameId, game, appearances: [] })
+    order.push(gameId)
+  }
+
+  const soleGameId = order.length === 1 ? order[0] : null
+  for (const appearance of appearances) {
+    const suppliedGameId = appearance?.mlb_game_pk
+    const gameId = suppliedGameId == null ? soleGameId : suppliedGameId
+    const key = gameId == null ? '__unattributed_game__' : gameId
+    if (!sections.has(key)) {
+      sections.set(key, { gameId, game: null, appearances: [] })
+      order.push(key)
+    }
+    sections.get(key).appearances.push(appearance)
+  }
+
+  return order.map(key => sections.get(key)).filter(Boolean)
+}
+
+function opponentLabel(section) {
+  const appearance = section?.appearances?.[0]
+  return textValue(section?.game?.opponent_abbreviation)
+    || textValue(section?.game?.opponent)
+    || textValue(appearance?.opponent_abbreviation)
+    || textValue(appearance?.opponent)
+}
+
+function gameLabel(section, multipleGames) {
+  const gameNumber = section?.game?.game_number
+  const opponent = opponentLabel(section)
+  const labels = []
+  if (multipleGames && Number.isInteger(gameNumber)) labels.push(`Game ${gameNumber}`)
+  if (opponent) labels.push(`vs. ${opponent}`)
+  return labels.join(' · ') || (multipleGames ? 'Game context unavailable' : null)
+}
+
+export function getReliefLedgerGroups(recentReliefWork) {
+  const payload = recentReliefWork?.read
+  return asArray(payload?.relief_by_date).map((group, index) => ({
+    key: `${textValue(group?.game_date) || 'relief-date'}-${index}`,
+    gameDate: textValue(group?.game_date),
+    dateLabel: formatDateOnly(group?.game_date, { month: 'short' }),
+    summary: textValue(group?.sentence),
+    unavailable: group?.unavailable === true || group?.available === false,
+    sections: gameSections(group),
+  }))
+}
+
+function ReliefWorkSkeleton() {
   return (
-    <section className={`rounded border border-dirt bg-field/45 ${compact ? 'p-2.5' : 'p-3'}`}>
-      <div className="text-chalk600 text-[10px] font-mono uppercase tracking-wider">{title}</div>
-      <div className={`mt-2 ${compact ? 'space-y-1.5' : 'space-y-2'}`}>{children}</div>
+    <section id="team-relief-work" className="foundation-section scroll-mt-24" aria-labelledby="team-relief-work-title" aria-busy="true" tabIndex={-1} data-testid="recent-relief-work-skeleton">
+      <h2 id="team-relief-work-title" className="type-section-title">Recent Relief Work</h2>
+      <span className="sr-only">Loading recent relief work.</span>
+      <div className="mt-row border-y border-dirt">
+        {[0, 1].map(index => (
+          <div key={index} className="border-b border-dirt px-panel py-row last:border-b-0">
+            <SkeletonBlock className="h-5 w-40 max-w-full" />
+            <div className="mt-row grid gap-row tablet:grid-cols-[minmax(12rem,1.5fr)_minmax(9rem,1fr)_minmax(8rem,0.8fr)]">
+              <SkeletonBlock className="h-5 w-48 max-w-full" />
+              <SkeletonBlock className="h-4 w-28 max-w-full" />
+              <SkeletonBlock className="h-4 w-24 max-w-full" />
+            </div>
+          </div>
+        ))}
+      </div>
     </section>
   )
 }
 
-function Sentence({ children }) {
-  if (!textValue(children)) return null
-  return <p className="font-mono text-sm leading-relaxed text-chalk200">{children}</p>
-}
-
-// The server-authored currency sentence stays visible verbatim, but as a
-// quiet metadata line instead of its own bordered panel, so it supports the
-// workload sections below it without competing at equal visual weight.
-function DataCurrency({ payload, boardDataThrough = null, hideRoutine = false }) {
-  const freshness = payload?.freshness || {}
-  const label = textValue(payload?.freshness?.label)
-  if (!label) return null
-  const state = String(freshness.freshness_state || freshness.state || '').trim().toLowerCase()
-  const reliefDataThrough = textValue(payload?.data_through || freshness.data_through || freshness.dataThrough)
-  const boardDate = textValue(boardDataThrough)
-  const differsFromBoard = Boolean(reliefDataThrough && boardDate && reliefDataThrough !== boardDate)
-  const exceptional = differsFromBoard || freshness.is_current === false || freshness.is_stale === true || freshness.fail_closed === true || (state && state !== 'current')
-  if (hideRoutine && !exceptional) return null
+function GameContext({ game }) {
+  if (game?.reconciled !== true) return null
+  if (game?.starter_authority !== 'official_completed_game_starter') return null
+  const label = textValue(game?.context_label)
+  const sentences = asArray(game?.context_sentences).map(textValue).filter(Boolean)
+  if (!label && sentences.length === 0) return null
 
   return (
-    <p className="text-[11px] leading-snug text-chalk500">
-      <span className="font-mono text-[10px] uppercase tracking-wider text-chalk600">
-        Data Currency:
-      </span>{' '}
-      {label}
-    </p>
+    <div className="border-t border-dirt px-panel py-row" data-testid="team-relief-game-context">
+      {label && <div className="type-overline text-amber/80">{label}</div>}
+      {sentences.map((sentence, index) => (
+        <p key={`${sentence}-${index}`} className="type-compact mt-meta text-chalk300">{sentence}</p>
+      ))}
+    </div>
   )
 }
 
-const displayValue = (value) => (value === undefined || value === null || value === '' ? '--' : value)
+function AppearanceRow({ appearance }) {
+  const outs = countValue(appearance?.innings_pitched_outs)
+  const innings = formatBaseballIpFromOuts(outs)
+  const pitches = countValue(appearance?.pitches_thrown)
+  const name = textValue(appearance?.pitcher_full_name) || 'Pitcher unavailable'
 
-export function formatBaseballIpFromOuts(outs) {
-  if (!Number.isFinite(outs)) return '--'
-  return `${Math.floor(outs / 3)}.${outs % 3}`
-}
-
-function inningsValue(appearance) {
-  if (Number.isFinite(appearance?.innings_pitched_outs)) {
-    return formatBaseballIpFromOuts(appearance.innings_pitched_outs)
-  }
-
-  if (!isFilled(appearance?.innings_pitched)) return '--'
-  const numericInnings = Number(appearance.innings_pitched)
-  if (!Number.isFinite(numericInnings)) return String(appearance.innings_pitched)
-
-  const rawText = String(appearance.innings_pitched)
-  if (/^\d+\.[012]$/.test(rawText)) return rawText
-
-  return formatBaseballIpFromOuts(Math.round(numericInnings * 3))
-}
-
-function DateSummary({ children }) {
-  if (!textValue(children)) return null
-  return <span className="font-mono text-sm leading-snug text-chalk100">{children}</span>
-}
-
-function AppearanceRow({ appearance, rosterContextLimited = false }) {
-  const status = rosterContextLimited ? null : textValue(appearance?.roster_status_sentence)
   return (
-    <li
-      className="grid gap-1.5 px-2 py-1.5 text-xs text-chalk300 sm:grid-cols-[minmax(9rem,1.5fr)_repeat(6,minmax(2.25rem,auto))_minmax(8rem,1fr)] sm:items-center"
-      title={textValue(appearance?.sentence) || undefined}
-    >
-      <span className="font-mono text-chalk200">{displayValue(appearance?.pitcher_full_name)}</span>
-      <span className="font-mono"><span className="text-chalk600">IP </span>{inningsValue(appearance)}</span>
-      <span className="font-mono"><span className="text-chalk600">P </span>{displayValue(appearance?.pitches_thrown)}</span>
-      <span className="font-mono"><span className="text-chalk600">K </span>{displayValue(appearance?.strikeouts)}</span>
-      <span className="font-mono"><span className="text-chalk600">BB </span>{displayValue(appearance?.walks)}</span>
-      <span className="font-mono"><span className="text-chalk600">H </span>{displayValue(appearance?.hits_allowed)}</span>
-      <span className="font-mono"><span className="text-chalk600">R </span>{displayValue(appearance?.runs_allowed)}</span>
-      {status && (
-        <span className="font-mono text-[11px] leading-snug text-chalk500 sm:text-right">
-          {status}
-        </span>
-      )}
+    <li className="grid min-w-0 gap-row border-t border-dirt px-panel py-row tablet:grid-cols-[minmax(12rem,1.5fr)_minmax(9rem,1fr)_minmax(8rem,0.8fr)] tablet:items-center">
+      <div className="min-w-0">
+        <h4 className="type-data break-words text-chalk100">{name}</h4>
+      </div>
+      <div className="min-w-0">
+        <div className="type-overline">Recorded</div>
+        <div className="type-data mt-meta">
+          {outs == null ? 'Outs unavailable' : `${outs} ${outs === 1 ? 'out' : 'outs'} · ${innings} IP`}
+        </div>
+      </div>
+      <div className="min-w-0">
+        <div className="type-overline">Pitches</div>
+        <div className="type-data mt-meta">{pitches == null ? 'Unavailable' : pitches}</div>
+      </div>
     </li>
   )
 }
 
-// A game-level note is a starter-dependent claim. It renders only when the
-// backend has affirmatively marked it reconciled against official starter
-// authority; the frontend never infers starter or reliever meaning itself.
-function GameContextNote({ game }) {
-  if (game?.reconciled !== true) return null
-  if (game?.starter_authority !== 'official_completed_game_starter') return null
-  const label = textValue(game?.context_label)
-  if (!label) return null
-  const sentences = asArray(game?.context_sentences).filter((sentence) => textValue(sentence))
+function GameGroup({ section, multipleGames, groupKey, sectionIndex }) {
+  const label = gameLabel(section, multipleGames)
+  const heading = label || 'Relief appearances'
+  const appearances = asArray(section?.appearances)
 
   return (
-    <div
-      className="space-y-1 border-t border-dirt/60 bg-chalk/25 px-3 py-2"
-      data-testid="team-relief-game-context"
-    >
-      <div className="font-mono text-[10px] uppercase tracking-wider text-amber/80">{label}</div>
-      {sentences.map((sentence, index) => (
-        <Sentence key={`${sentence}:${index}`}>{sentence}</Sentence>
-      ))}
-    </div>
-  )
-}
-
-// Split a date's appearance rows into game-scoped sections so a game-level
-// narrative can never sit above another game's rows. Grouping uses the
-// mlb_game_pk the server stamps on every row and on every game block; the
-// frontend derives no baseball meaning of its own. Section order follows the
-// server's already-ordered games (official MLB game number, then game_pk), and
-// any game that has rows but no published narrative keeps its own section
-// rather than being folded into a sibling.
-function groupGameSections(group) {
-  const appearances = asArray(group?.appearances)
-  const blocks = asArray(group?.games)
-  const rowsByGame = new Map()
-  const order = []
-
-  for (const block of blocks) {
-    const pk = block?.mlb_game_pk
-    if (pk === undefined || pk === null || rowsByGame.has(pk)) continue
-    rowsByGame.set(pk, { key: String(pk), gamePk: pk, game: block, rows: [] })
-    order.push(pk)
-  }
-  // A row that carries no game id cannot be split out on its own when this
-  // date has exactly one published game — that would invent a second game.
-  // With two or more games it stays separate and is disclosed, never guessed
-  // into one of them.
-  const soleGamePk = order.length === 1 ? order[0] : null
-
-  for (const appearance of appearances) {
-    const rawPk = appearance?.mlb_game_pk
-    const pk = rawPk === undefined || rawPk === null ? soleGamePk : rawPk
-    const key = pk === undefined || pk === null ? '__ungrouped__' : pk
-    if (!rowsByGame.has(key)) {
-      rowsByGame.set(key, {
-        key: String(key),
-        gamePk: pk ?? null,
-        game: null,
-        rows: [],
-      })
-      order.push(key)
-    }
-    rowsByGame.get(key).rows.push(appearance)
-  }
-
-  return order
-    .map((key) => rowsByGame.get(key))
-    .filter((section) => section && (section.rows.length > 0 || section.game))
-}
-
-// Label authority, strongest first: MLB's own gameNumber from the schedule
-// ledger, then the official opponent. A position in the list is never promoted
-// into a "Game 1 / Game 2" claim, and the raw game_pk stays metadata.
-function gameSectionLabel(section) {
-  const number = section?.game?.game_number
-  if (Number.isInteger(number)) return `Game ${number}`
-  const opponent = textValue(section?.game?.opponent_abbreviation)
-    || textValue(section?.game?.opponent)
-  if (opponent) return `vs ${opponent}`
-  return 'Game'
-}
-
-function GameSection({ section, multiGame, rosterContextLimited }) {
-  const rows = asArray(section?.rows)
-  const hasNarrative = Boolean(section?.game)
-  // A game with rows but no published narrative says so plainly instead of
-  // silently inheriting the sibling game's meaning.
-  const disclosure = multiGame && !hasNarrative && rows.length > 0
-
-  return (
-    <div
-      className="border-t border-dirt/60"
-      data-testid="team-relief-game-section"
-      data-game-pk={section?.gamePk ?? undefined}
-    >
-      {multiGame && (
-        <div
-          className="bg-dugout/40 px-3 py-1.5 font-mono text-[10px] uppercase tracking-wider text-chalk500"
-          data-testid="team-relief-game-label"
-        >
-          {gameSectionLabel(section)}
-        </div>
-      )}
-      {hasNarrative && <GameContextNote game={section.game} />}
-      {disclosure && (
-        <Sentence>Game context for this game is unavailable.</Sentence>
-      )}
-      {rows.length > 0 && (
-        <ul className="divide-y divide-dirt/60 border-t border-dirt/60">
-          {rows.map((appearance, index) => (
-            <AppearanceRow
-              key={`${appearance?.pitcher_id || 'pitcher'}:${appearance?.mlb_game_pk || 'game'}:${index}`}
-              appearance={appearance}
-              rosterContextLimited={rosterContextLimited}
-            />
+    <section aria-labelledby={`${groupKey}-game-${sectionIndex}`}>
+      <h3 id={`${groupKey}-game-${sectionIndex}`} className="type-overline border-t border-dirt bg-dugout/35 px-panel py-row text-chalk400">
+        {heading}
+      </h3>
+      <GameContext game={section?.game} />
+      {appearances.length > 0 && (
+        <ul aria-label={`${heading} relief appearances`}>
+          {appearances.map((appearance, index) => (
+            <AppearanceRow key={`${appearance?.pitcher_id ?? 'pitcher'}-${appearance?.mlb_game_pk ?? 'game'}-${index}`} appearance={appearance} />
           ))}
         </ul>
       )}
-    </div>
-  )
-}
-
-function ReliefWorkByDate({ groups, absenceSentence, rosterContextLimited = false }) {
-  const dateGroups = asArray(groups)
-  const hasAbsence = Boolean(textValue(absenceSentence))
-  if (dateGroups.length === 0 && !hasAbsence) return null
-
-  return (
-    <Section title="Relief Work by Date" compact>
-      <Sentence>{absenceSentence}</Sentence>
-      {dateGroups.map((group, groupIndex) => (
-        <details
-          key={`${group?.game_date || 'group'}:${groupIndex}`}
-          className="overflow-hidden rounded border border-dirt/70 bg-chalk/20"
-          aria-label={textValue(group?.sentence) || `Relief work date ${groupIndex + 1}`}
-          open={groupIndex === 0}
-        >
-          <summary
-            className="cursor-pointer list-none border-l-2 border-l-amber/40 bg-dugout/70 px-3 py-2.5 marker:hidden transition-colors hover:bg-dugout focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/50"
-            data-testid="team-relief-date-summary"
-          >
-            <DateSummary>{group?.sentence}</DateSummary>
-          </summary>
-          {groupGameSections(group).map((section, index) => (
-            <GameSection
-              key={`${section.key}:${index}`}
-              section={section}
-              multiGame={groupGameSections(group).length > 1}
-              rosterContextLimited={rosterContextLimited}
-            />
-          ))}
-        </details>
-      ))}
-    </Section>
-  )
-}
-
-function WorkWindow({ value }) {
-  if (
-    !textValue(value?.sentence)
-    && !textValue(value?.pitchers_sentence)
-    && !textValue(value?.pitches_sentence)
-    && !textValue(value?.start_relief_unknown_sentence)
-  ) {
-    return null
-  }
-
-  return (
-    <div className="rounded border border-dirt/60 bg-chalk/25 p-2">
-      <Sentence>{value?.sentence}</Sentence>
-      <Sentence>{value?.pitchers_sentence}</Sentence>
-      <Sentence>{value?.pitches_sentence}</Sentence>
-      <Sentence>{value?.start_relief_unknown_sentence}</Sentence>
-    </div>
-  )
-}
-
-function ReliefWorkHistoryContext({ windows }) {
-  const window14 = windows?.window_14
-  if (!window14) return null
-
-  return (
-    <Section title="14-Day Context" compact>
-      <WorkWindow value={window14} />
-    </Section>
-  )
-}
-
-function PanelShell({ children }) {
-  return (
-    <section
-      id="team-relief-work"
-      className="scroll-mt-24 space-y-2.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/50"
-      aria-labelledby="team-relief-work-title"
-      tabIndex={-1}
-    >
-      <div>
-        <div id="team-relief-work-title" className="text-chalk600 text-[10px] font-mono uppercase tracking-wider">
-          Recent Bullpen Work
-        </div>
-      </div>
-      {children}
     </section>
   )
 }
 
-function ScopeSentence({ payload, rosterContextLimited = false }) {
-  if (rosterContextLimited) {
-    return <Sentence>Recent workload remains visible, but current roster coverage is not verified.</Sentence>
-  }
-  return <Sentence>{payload?.scope_sentence}</Sentence>
+function firstLimitation(status, payload) {
+  return [
+    ...asArray(status?.limitations),
+    textValue(payload?.unattributed_sentence),
+  ].map(textValue).find(Boolean) || null
 }
 
-export default function TeamReliefWorkPanel({
-  payload,
-  loading = false,
-  error = null,
-  rosterContextLimited = false,
-  hideRoutineFreshness = false,
-  boardDataThrough = null,
-}) {
-  if (loading) {
-    return (
-      <PanelShell>
-        <section className="rounded border border-dirt bg-field/45 p-3">
-          <div className="font-mono text-sm text-chalk400">Loading recent bullpen work…</div>
-        </section>
-      </PanelShell>
-    )
-  }
+export default function TeamReliefWorkPanel({ read, loading = false, error = null, onRetry }) {
+  if (loading) return <ReliefWorkSkeleton />
 
-  if (error) {
-    return (
-      <PanelShell>
-        <section className="rounded border border-dirt bg-field/45 p-3">
-          <div className="font-mono text-sm text-chalk400">Recent bullpen work is unavailable.</div>
-        </section>
-      </PanelShell>
-    )
-  }
+  const recentReliefWork = read?.recentReliefWork
+  const payload = recentReliefWork?.read
+  const status = read?.sectionStatus?.recent_relief_work
+  const statusName = ['available', 'partial', 'unavailable'].includes(status?.status)
+    ? status.status
+    : 'unavailable'
+  const groups = getReliefLedgerGroups(recentReliefWork)
+  const limitation = firstLimitation(status, payload)
+  const representedDate = textValue(payload?.data_through) || textValue(status?.represented_date)
 
   return (
-    <PanelShell>
-      <ScopeSentence payload={payload} rosterContextLimited={rosterContextLimited} />
-      <DataCurrency
-        payload={payload}
-        boardDataThrough={boardDataThrough}
-        hideRoutine={hideRoutineFreshness}
-      />
-      <ReliefWorkHistoryContext windows={payload?.windows} />
-      <ReliefWorkByDate
-        groups={payload?.relief_by_date}
-        absenceSentence={payload?.absence_sentence}
-        rosterContextLimited={rosterContextLimited}
-      />
-    </PanelShell>
+    <section id="team-relief-work" className="foundation-section scroll-mt-24 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/50" aria-labelledby="team-relief-work-title" tabIndex={-1} data-testid="team-board-recent-relief-work">
+      <header className="mb-row flex min-w-0 flex-wrap items-end justify-between gap-meta">
+        <div className="min-w-0">
+          <h2 id="team-relief-work-title" className="type-section-title">Recent Relief Work</h2>
+          {textValue(payload?.scope_sentence) && <p className="type-compact mt-meta max-w-3xl text-chalk300">{payload.scope_sentence}</p>}
+        </div>
+        {representedDate && (
+          <p className="type-metadata">Through <time dateTime={representedDate}>{formatDateOnly(representedDate, { month: 'short' })}</time></p>
+        )}
+      </header>
+
+      {error ? (
+        <SectionState status="error" title="Recent Relief Work unavailable" message="Recent relief-work records could not be loaded." onRetry={onRetry} />
+      ) : !read || !recentReliefWork || !payload || statusName === 'unavailable' ? (
+        <SectionState status="unavailable" title="Recent Relief Work unavailable" message="Official recent relief-work records are unavailable." onRetry={!read ? onRetry : undefined} />
+      ) : (
+        <>
+          {groups.length > 0 && (
+            <div className="border-y border-dirt" aria-label="Recent relief work by game date">
+              {groups.map(group => (
+                <section key={group.key} className="border-b border-dirt last:border-b-0" aria-labelledby={`${group.key}-title`}>
+                  <header className="px-panel py-row">
+                    <h3 id={`${group.key}-title`} className="type-data text-chalk100">
+                      {group.gameDate && group.dateLabel
+                        ? <time dateTime={group.gameDate}>{group.dateLabel}</time>
+                        : 'Date unavailable'}
+                    </h3>
+                    {group.summary && <p className="type-metadata mt-meta">{group.summary}</p>}
+                  </header>
+                  {group.unavailable ? (
+                    <SectionState status="unavailable" title="Game relief work unavailable" message={group.summary || 'This game group did not reconcile with its appearance records.'} className="m-panel mt-0" />
+                  ) : group.sections.length > 0 ? (
+                    group.sections.map((section, sectionIndex) => (
+                      <GameGroup key={`${group.key}-${section?.gameId ?? sectionIndex}`} section={section} multipleGames={group.sections.length > 1} groupKey={group.key} sectionIndex={sectionIndex} />
+                    ))
+                  ) : null}
+                </section>
+              ))}
+            </div>
+          )}
+
+          {statusName === 'partial' && (
+            <SectionState status="partial" title="Recent Relief Work is partially available" message={limitation || 'Some official relief-work records are unavailable or unattributed.'} className={groups.length > 0 ? 'mt-row' : ''} />
+          )}
+          {statusName === 'available' && groups.length === 0 && (
+            <div className="section-state" role="status" data-state="empty">
+              <h3 className="type-section-title">No recent relief work</h3>
+              <p className="type-compact mt-meta">{textValue(payload?.absence_sentence) || 'The governed recent relief-work population is empty.'}</p>
+            </div>
+          )}
+        </>
+      )}
+    </section>
   )
 }

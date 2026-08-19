@@ -12,14 +12,12 @@ import TeamBoardWorkloadOverview from './TeamBoardWorkloadOverview'
 import TeamBoardRolesDeployment from './TeamBoardRolesDeployment'
 import TeamBoardRotationImpact from './TeamBoardRotationImpact'
 import TeamBoardRecentTransactions from './TeamBoardRecentTransactions'
-import { useTeamReliefWork } from './useTeamReliefWork'
 import TeamGameContextCard from './TeamGameContextCard'
 import StoryCard from './StoryCard'
 import TeamReliefWorkPanel from '../TeamReliefWorkPanel'
 import { buildTeamBoardHref, resolveTeamId } from '../../../utils/evidenceLinks'
 import { EVIDENCE_CARD_ORIGIN, buildTeamShareCardFromArtifact } from '../../../utils/shareCardArtifact'
 import EvidenceShareMenu from '../../share/EvidenceShareMenu'
-import { rosterCountsAreWithheld } from './tonightsBullpenBoardView'
 
 export { resolveTeamId } from '../../../utils/evidenceLinks'
 
@@ -47,9 +45,6 @@ export default function TonightsBullpenBoard({
   teamBoardV2Error,
   gameContextPayload,
   storyPayload,
-  teamReliefWorkPayload,
-  teamReliefWorkLoading,
-  teamReliefWorkError,
 }) {
   const teamList = teams?.data || []
   const selectedTeam = initialSelectedTeam ?? resolveTeamId(teamList, requestedTeam)
@@ -94,22 +89,7 @@ export default function TonightsBullpenBoard({
     : teamBoardV2
   const teamBoardRead = readTeamBoardV2(teamBoardV2State.data)
   const gameContextState = gameContextPayload !== undefined ? staticFetchState(gameContextPayload) : gameContext
-  const hasReliefWorkOverride = (
-    teamReliefWorkPayload !== undefined
-    || teamReliefWorkLoading !== undefined
-    || teamReliefWorkError !== undefined
-  )
   const storyState = storyPayload !== undefined ? staticFetchState(storyPayload) : story
-  const reliefWork = useTeamReliefWork(selectedTeam, !hasReliefWorkOverride)
-  const reliefWorkState = hasReliefWorkOverride
-    ? {
-        data: teamReliefWorkPayload ?? null,
-        loading: teamReliefWorkLoading === true,
-        error: teamReliefWorkError ?? null,
-        refetch: () => {},
-      }
-    : reliefWork
-  const rosterContextLimited = rosterCountsAreWithheld(boardState.data)
   const teamOperatingRead = toOperatingStateReadModel(boardState.data || {}, {
     scope: 'team',
     team: boardState.data?.team,
@@ -252,12 +232,10 @@ export default function TonightsBullpenBoard({
             </section>}
             <div className="mt-6">
               <TeamReliefWorkPanel
-                payload={reliefWorkState.data}
-                loading={reliefWorkState.loading}
-                error={reliefWorkState.error}
-                rosterContextLimited={rosterContextLimited}
-                hideRoutineFreshness
-                boardDataThrough={boardState.data?.freshness?.data_through || boardState.data?.freshness?.dataThrough || boardState.data?.data_through}
+                read={teamBoardRead}
+                loading={teamBoardV2State.loading}
+                error={teamBoardV2State.error}
+                onRetry={teamBoardV2State.refetch}
               />
             </div>
             <div className="mt-4 flex justify-end">

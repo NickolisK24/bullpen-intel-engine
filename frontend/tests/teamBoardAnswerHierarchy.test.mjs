@@ -93,16 +93,31 @@ function renderBoard(boardPayload, {
   teamBoardV2Payload = teamBoardV2Fixture(boardPayload),
 } = {}) {
   const teamRecord = team || boardPayload?.team || { team_id: 1, team_name: 'Test Club', team_abbreviation: 'TST' }
+  const resolvedTeamBoardV2Payload = {
+    ...teamBoardV2Payload,
+    recent_relief_work: {
+      population_basis: 'official_appearance_team_relief_appearances',
+      read: teamReliefWorkPayload,
+    },
+    section_status: {
+      ...teamBoardV2Payload.section_status,
+      recent_relief_work: {
+        status: teamReliefWorkPayload ? 'available' : 'unavailable',
+        reason_code: teamReliefWorkPayload ? null : 'recent_relief_work_unavailable',
+        limitations: [],
+        represented_date: teamReliefWorkPayload?.data_through || null,
+      },
+    },
+  }
   return renderToStaticMarkup(
     React.createElement(MemoryRouter, null,
       React.createElement(TonightsBullpenBoard, {
         teams: { loading: false, data: [teamRecord] },
         initialSelectedTeam: teamRecord.team_id,
         boardPayload,
-        teamBoardV2Payload,
+        teamBoardV2Payload: resolvedTeamBoardV2Payload,
         gameContextPayload,
         storyPayload,
-        teamReliefWorkPayload,
       }),
     ),
   )
@@ -213,7 +228,7 @@ test('meaningful what-changed content is promoted while absent game context stay
   assert.ok(html.indexOf('Active Bullpen') < html.indexOf('What Changed'))
   assert.ok(html.indexOf('Active Bullpen') < html.indexOf('Recent Usage'))
   assert.ok(html.indexOf('Recent Usage') < html.indexOf('What Changed'))
-  assert.ok(html.indexOf('What Changed') < html.indexOf('Recent Bullpen Work'))
+  assert.ok(html.indexOf('What Changed') < html.indexOf('Recent Relief Work'))
 })
 
 test('Recent Usage owns chronological appearances without duplicating the Active Bullpen row', () => {
@@ -235,7 +250,7 @@ test('Recent Usage owns chronological appearances without duplicating the Active
   })
   const html = renderBoard(populatedBoard, { teamBoardV2Payload })
   const recentStart = html.indexOf('Recent Usage')
-  const detailStart = html.indexOf('Recent Bullpen Work')
+  const detailStart = html.indexOf('Recent Relief Work')
   const recentSection = html.slice(recentStart, detailStart)
 
   assert.ok(htmlIncludes(recentSection, 'Chronology Reliever'))
@@ -461,7 +476,7 @@ test('Why this read stays closed after roster context while evidence remains rea
   assert.ok(labelIndex > -1 && detailsStart > -1)
   assert.equal(/\sopen(?:=|\s|>)/.test(disclosureTag), false)
   assert.ok(labelIndex > html.indexOf('Active Bullpen'))
-  assert.ok(labelIndex > html.indexOf('Recent Bullpen Work'))
+  assert.ok(labelIndex > html.indexOf('Recent Relief Work'))
   assert.ok(htmlIncludes(html, 'Evidence'))
   assert.ok(htmlIncludes(html, 'Methodology'))
 })
