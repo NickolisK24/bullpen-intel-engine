@@ -429,6 +429,26 @@ def test_recent_usage_scopes_source_limitations_without_partial_rows():
     }
 
 
+def test_recent_relief_work_status_recognizes_reconciled_withheld_groups():
+    relief = _relief_work()
+    relief['relief_by_date'].insert(0, {
+        'game_date': '2026-08-16',
+        'unavailable': True,
+        'sentence': 'August 16 — relief work is unavailable.',
+        'appearances': [],
+    })
+
+    payload = build_team_board_v2_payload(_board(), recent_relief_work=relief)
+
+    assert payload['recent_relief_work']['read'] == relief
+    assert payload['section_status']['recent_relief_work'] == {
+        'status': 'partial',
+        'reason_code': 'relief_work_reconciliation_limited',
+        'limitations': [],
+        'represented_date': '2026-08-16',
+    }
+
+
 def test_recent_usage_distinguishes_missing_anchor_from_empty_population():
     unavailable = _relief_work()
     unavailable['data_through'] = None

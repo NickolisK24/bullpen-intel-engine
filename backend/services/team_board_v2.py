@@ -217,7 +217,8 @@ def _relief_work_status(relief_work, error, represented_date):
         return unavailable_section('recent_relief_work_unavailable')
     groups = relief_work.get('relief_by_date') or []
     partial = bool(relief_work.get('unattributed_appearance_count')) or any(
-        group.get('available') is False for group in groups if isinstance(group, dict)
+        group.get('available') is False or group.get('unavailable') is True
+        for group in groups if isinstance(group, dict)
     )
     return _section_status(
         STATUS_PARTIAL if partial else STATUS_AVAILABLE,

@@ -142,7 +142,8 @@ test('production reuses one v2 request, retires legacy section mounts, and leave
   const recentSource = await readFile(new URL('../src/components/bullpen/board/TeamBoardRecentUsage.jsx', import.meta.url), 'utf8')
 
   assert.equal((boardSource.match(/getTeamBoardV2\(/g) || []).length, 1)
-  assert.equal((boardSource.match(/useTeamReliefWork\(/g) || []).length, 1)
+  assert.equal((boardSource.match(/useTeamReliefWork\(/g) || []).length, 0)
+  assert.equal(boardSource.includes('getTeamReliefWork'), false)
   assert.ok(boardSource.includes('<TeamBoardRecentUsage'))
   assert.ok(boardSource.includes('<TeamBoardRestStatus'))
   assert.equal(boardSource.includes('<RecentUsage'), false)

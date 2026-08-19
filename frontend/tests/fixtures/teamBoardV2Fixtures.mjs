@@ -163,6 +163,12 @@ export function teamBoardV2Fixture(board, overrides = {}) {
         limitations: [],
         represented_date: representedDate,
       },
+      recent_relief_work: {
+        status: 'unavailable',
+        reason_code: 'recent_relief_work_unavailable',
+        limitations: [],
+        represented_date: representedDate,
+      },
     },
     limitations: board?.limitations || [],
     ...overrides,
