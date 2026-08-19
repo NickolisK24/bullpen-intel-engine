@@ -658,7 +658,7 @@
       ]
     },
     "3": {
-      "measured_seconds": 505.19,
+      "measured_seconds": 507.444,
       "files": [
         {
           "path": "tests/test_active_bullpen_readiness_resolver.py",
@@ -1033,6 +1033,10 @@
           "measured_seconds": 0.0
         },
         {
+          "path": "tests/test_real_mutation_qualification_replay.py",
+          "measured_seconds": 2.254
+        },
+        {
           "path": "tests/test_recommendation_builder.py",
           "measured_seconds": 0.0
         },
@@ -1227,7 +1231,7 @@
       ]
     },
     "4": {
-      "measured_seconds": 504.33,
+      "measured_seconds": 506.047,
       "files": [
         {
           "path": "tests/test_active_bullpen_artifact_publication.py",
@@ -1400,6 +1404,10 @@
         {
           "path": "tests/test_qa_reliever_read_scenarios.py",
           "measured_seconds": 4.936
+        },
+        {
+          "path": "tests/test_real_mutation_qualification_workflow_contract.py",
+          "measured_seconds": 1.717
         },
         {
           "path": "tests/test_recommendation_api.py",

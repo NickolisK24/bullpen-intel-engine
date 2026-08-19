@@ -1,0 +1,346 @@
+name: Manual Game-Driven Real-Mutation Qualification
+
+# Manual, one-game, one-row, one-field real-mutation qualification.
+#
+# Proves the game-driven ingestion lane can apply ONE reviewed canonical
+# statistical correction to ONE existing GameLog row in ONE completed game, and
+# change nothing else.
+#
+# This workflow is deliberately isolated from BaseballOS Bullpen Sync. It has
+# only workflow_dispatch: no schedule, no push, no pull_request, no
+# workflow_run, no repository_dispatch, and no retry that could re-enter a
+# write. Nothing in the scheduled pipeline can invoke it.
+#
+# What a PASS does NOT mean: it does not activate automated writes, does not
+# grant authoritative publication, does not enable backfill, does not widen
+# scope beyond the single reviewed row, does not change the daily or postgame
+# lanes (both remain shadow), and does not retire the legacy sync writer. It
+# authorizes nothing about any future run. O-008 remains open.
+#
+# REPLAY. A re-run against an already-corrected row resolves
+# NO_LONGER_MUTATING (exit 3), never PASS. The final gate below refuses to
+# report success on anything but exit 0, so a replay can never be recorded as a
+# second real-mutation proof.
+#
+# POST-WRITE FAILURE. Fail hard, preserve evidence, no automatic compensating
+# write. If the mutation commits and realization is wrong, the verdict is FAILED
+# and the artifact is still scanned and uploaded. This workflow is not a
+# rollback tool and must never be turned into one.
+#
+# Required repository secrets (same governed pattern as the authorized sync
+# jobs): DATABASE_URL, SECRET_KEY, BASEBALLOS_ADMIN_API_TOKEN.
+
+on:
+  workflow_dispatch:
+    inputs:
+      game_pk:
+        description: >-
+          EXACTLY ONE completed MLB gamePk. One positive integer only — no
+          list, no comma, no range, no date, no wildcard.
+        required: true
+        type: string
+      expected_head_sha:
+        description: >-
+          Full 40-character lowercase commit SHA this qualification must run
+          against. Must equal the resolved GITHUB_SHA or the run refuses.
+        required: true
+        type: string
+      reviewed_plan_fingerprint:
+        description: >-
+          The 64-character lowercase reconciliation-plan fingerprint a human
+          reviewed. The run refuses before any mutation if this run's shadow
+          plan is not that exact plan.
+        required: true
+        type: string
+      confirmation:
+        description: >-
+          Must be exactly QUALIFY_REAL_MUTATION_GAME_<game_pk>, e.g.
+          QUALIFY_REAL_MUTATION_GAME_824969.
+        required: true
+        type: string
+      operator_note:
+        description: >-
+          Optional free-text note for the evidence artifact. Never affects
+          authorization and is sanitized before it is recorded.
+        required: false
+        default: ''
+        type: string
+
+# Share the production sync writer lane so this can never race a scheduled or
+# manual production writer. cancel-in-progress stays false: cancelling a run
+# mid-transaction is exactly what must not happen.
+concurrency:
+  group: baseballos-sync
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  real-mutation-qualification:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # Every condition is also re-validated inside the script, which trusts none
+    # of these. A guard that trusts its caller is not a guard.
+    if: >-
+      github.event_name == 'workflow_dispatch'
+      && github.repository == 'NickolisK24/bullpen-intel-engine'
+      && github.ref == 'refs/heads/main'
+      && github.actor == github.repository_owner
+
+    steps:
+      # SHELL BOUNDARY (established in PR #604). No `${{ }}` expression may
+      # appear inside any `run:` script in this workflow. GitHub substitutes
+      # expressions into the script text BEFORE bash parses it, so a crafted
+      # input would become shell code in a step that holds production
+      # credentials. Sanitising in Python is far too late. Every user-controlled
+      # value therefore crosses into the shell only through `env:`, and is read
+      # only as a quoted variable.
+      - name: Refuse an unauthorized invocation
+        env:
+          INPUT_GAME_PK: ${{ inputs.game_pk }}
+          INPUT_EXPECTED_HEAD_SHA: ${{ inputs.expected_head_sha }}
+          INPUT_REVIEWED_FINGERPRINT: ${{ inputs.reviewed_plan_fingerprint }}
+          INPUT_CONFIRMATION: ${{ inputs.confirmation }}
+          INPUT_OPERATOR_NOTE: ${{ inputs.operator_note }}
+          RESOLVED_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          # Exactly one positive integer. Anything with a separator, a range, a
+          # date, or a wildcard is refused rather than reinterpreted.
+          if ! printf '%s' "$INPUT_GAME_PK" | grep -Eq '^[1-9][0-9]*$'; then
+            echo "Refused: game_pk must be exactly one positive integer."
+            exit 1
+          fi
+
+          if ! printf '%s' "$INPUT_EXPECTED_HEAD_SHA" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "Refused: expected_head_sha must be a full 40-character hex SHA."
+            exit 1
+          fi
+
+          if [ "$INPUT_EXPECTED_HEAD_SHA" != "$RESOLVED_SHA" ]; then
+            echo "Refused: expected_head_sha does not match the resolved commit."
+            exit 1
+          fi
+
+          if ! printf '%s' "$INPUT_REVIEWED_FINGERPRINT" | grep -Eq '^[0-9a-f]{64}$'; then
+            echo "Refused: reviewed_plan_fingerprint must be 64 lowercase hex characters."
+            exit 1
+          fi
+
+          if [ "$INPUT_CONFIRMATION" != "QUALIFY_REAL_MUTATION_GAME_${INPUT_GAME_PK}" ]; then
+            echo "Refused: confirmation must be exactly QUALIFY_REAL_MUTATION_GAME_ plus the game id."
+            exit 1
+          fi
+
+          # The note is never interpreted. It is not evaluated, not expanded,
+          # and not used in any authorization decision — only length-reported.
+          printf 'Operator note supplied: %s characters.\n' \
+            "$(printf '%s' "$INPUT_OPERATOR_NOTE" | wc -c)"
+
+          echo "Authorization preconditions satisfied."
+
+      - name: Check out the reviewed commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install backend dependencies
+        run: pip install -r backend/requirements.txt
+
+      - name: Run the real-mutation qualification
+        id: qualification
+        continue-on-error: true
+        env:
+          APP_ENV: production
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SECRET_KEY: ${{ secrets.SECRET_KEY }}
+          ADMIN_API_TOKEN: ${{ secrets.BASEBALLOS_ADMIN_API_TOKEN }}
+          AUTO_SYNC: 'false'
+          # The lane mode is supplied by the qualification itself, per phase.
+          # It is deliberately NOT set here: every other step in this job keeps
+          # the deployed default of off. There is no authoritative-mode input
+          # and no backfill input anywhere in this workflow.
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_ACTOR: ${{ github.actor }}
+          GITHUB_REF: ${{ github.ref }}
+          GITHUB_SHA: ${{ github.sha }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
+          GITHUB_WORKFLOW: ${{ github.workflow }}
+          # Same shell boundary as the precheck: user-controlled values reach
+          # the script as environment variables and are passed as quoted shell
+          # variables, never interpolated into the script text.
+          INPUT_GAME_PK: ${{ inputs.game_pk }}
+          INPUT_EXPECTED_HEAD_SHA: ${{ inputs.expected_head_sha }}
+          INPUT_REVIEWED_FINGERPRINT: ${{ inputs.reviewed_plan_fingerprint }}
+          INPUT_CONFIRMATION: ${{ inputs.confirmation }}
+          INPUT_OPERATOR_NOTE: ${{ inputs.operator_note }}
+        run: |
+          set -uo pipefail
+          cd backend
+          exit_code=0
+          python scripts/run_game_driven_real_mutation_qualification.py \
+            --game-pk "$INPUT_GAME_PK" \
+            --expected-head-sha "$INPUT_EXPECTED_HEAD_SHA" \
+            --reviewed-plan-fingerprint "$INPUT_REVIEWED_FINGERPRINT" \
+            --confirmation "$INPUT_CONFIRMATION" \
+            --operator-note "$INPUT_OPERATOR_NOTE" \
+            --artifact-dir ../artifacts/manual-real-mutation-qualification \
+            || exit_code=$?
+          echo "exit_code=$exit_code" >> "$GITHUB_OUTPUT"
+          # Exit with the qualification's own code so this step's outcome is
+          # its real verdict. continue-on-error keeps the job going so the
+          # evidence is still scanned and uploaded; the final gate re-fails.
+          exit "$exit_code"
+
+      # The artifact is scanned BEFORE it is uploaded, using the one shared
+      # forbidden-content contract. An unsafe or unreadable artifact is never
+      # published.
+      - name: Scan the evidence artifact
+        id: scan
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          exit_code=0
+          python backend/scripts/scan_forbidden_artifact_content.py \
+            --directory artifacts/manual-real-mutation-qualification \
+            || exit_code=$?
+          echo "exit_code=$exit_code" >> "$GITHUB_OUTPUT"
+          exit "$exit_code"
+
+      - name: Upload the evidence artifact
+        id: upload
+        continue-on-error: true
+        if: ${{ steps.scan.outcome == 'success' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: game-driven-real-mutation-qualification-${{ github.run_id }}
+          path: artifacts/manual-real-mutation-qualification
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Append the qualification summary
+        if: ${{ always() }}
+        run: |
+          set -uo pipefail
+          python - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json
+          import pathlib
+
+          path = pathlib.Path(
+              'artifacts/manual-real-mutation-qualification/'
+              'qualification-summary.json'
+          )
+          print('## Manual real-mutation qualification\n')
+          if not path.exists():
+              print('No evidence document was produced. Result: UNPROVEN.')
+              raise SystemExit(0)
+
+          doc = json.loads(path.read_text(encoding='utf-8'))
+          identity = doc.get('identity') or {}
+          verdict = doc.get('verdict') or {}
+          execution = doc.get('execution') or {}
+          reviewed = (doc.get('reviewed_plan') or {}).get(
+              'reviewed_mutation'
+          ) or {}
+          integrity = doc.get('integrity') or {}
+          bookkeeping = doc.get('bookkeeping') or {}
+          expected = execution.get('expected_baseball_data_effects') or {}
+          observed = execution.get('baseball_data_effects') or {}
+          ledger = execution.get('lane_bookkeeping_effects') or {}
+
+          print(f"**Verdict: {verdict.get('result')}**\n")
+          print('| field | value |')
+          print('| :--- | :--- |')
+          print(f"| qualification type | `{identity.get('qualification_type')}` |")
+          print(f"| requested game | {identity.get('requested_game_pk')} |")
+          print(f"| commit | `{identity.get('commit_sha')}` |")
+          print(f"| reviewed pitcher | {reviewed.get('pitcher_mlb_id')} |")
+          print(f"| reviewed field | `{reviewed.get('field')}` |")
+          print(f"| writes enabled | {execution.get('writes_enabled')} |")
+          print(f"| publication authoritative | "
+                f"{execution.get('publication_authoritative')} |")
+          print(f"| target reached canonical value | "
+                f"{integrity.get('target_reached_canonical_value')} |")
+          print(f"| unreviewed fields unchanged | "
+                f"{integrity.get('target_unreviewed_fields_unchanged')} |")
+          print(f"| other rows unchanged | "
+                f"{integrity.get('other_rows_unchanged')} |")
+          print(f"| correction count delta | "
+                f"{bookkeeping.get('observed_correction_count_delta')} |")
+          print(f"| artifact | "
+                f"game-driven-real-mutation-qualification-"
+                f"{identity.get('workflow_run_id')} |")
+
+          print('\n**Baseball data effects (exact, never >= 1)**\n')
+          print('| counter | expected | observed |')
+          print('| :--- | ---: | ---: |')
+          for key in sorted(expected):
+              print(f'| `{key}` | {expected[key]} | {observed.get(key)} |')
+
+          print('\n**Lane completion ledger (not baseball data)**\n')
+          print('| counter | value |')
+          print('| :--- | ---: |')
+          for key in sorted(ledger):
+              print(f'| `{key}` | {ledger[key]} |')
+
+          for reason in verdict.get('failed_reasons') or ():
+              print(f'\n- FAILED: `{reason}`')
+          for reason in verdict.get('unproven_reasons') or ():
+              print(f'\n- UNPROVEN: `{reason}`')
+
+          print(f"\n{verdict.get('explanation')}")
+          print(f"\n{verdict.get('non_authorization_statement')}")
+          PY
+
+      # The final gate runs AFTER the artifact was scanned and uploaded, so a
+      # failing qualification still leaves reviewable evidence behind. A missing
+      # scan or a failed upload is UNPROVEN, never PASS. NO_LONGER_MUTATING
+      # (exit 3) is not success either: a replay must never be presentable as a
+      # second real-mutation proof.
+      - name: Final qualification gate
+        env:
+          SCAN_OUTCOME: ${{ steps.scan.outcome }}
+          UPLOAD_OUTCOME: ${{ steps.upload.outcome }}
+          QUALIFICATION_OUTCOME: ${{ steps.qualification.outcome }}
+          QUALIFICATION_EXIT: ${{ steps.qualification.outputs.exit_code }}
+        run: |
+          set -euo pipefail
+
+          if [ "$SCAN_OUTCOME" != "success" ]; then
+            echo "UNPROVEN: the evidence artifact could not be proven safe."
+            exit 1
+          fi
+
+          if [ "$UPLOAD_OUTCOME" != "success" ]; then
+            echo "UNPROVEN: the evidence artifact did not upload."
+            exit 1
+          fi
+
+          if [ "${QUALIFICATION_EXIT:-1}" = "3" ]; then
+            echo "NO_LONGER_MUTATING: the reviewed correction is already applied."
+            echo "Nothing was mutated by this run. This is NOT a real-mutation"
+            echo "PASS and must never be recorded as one."
+            exit 1
+          fi
+
+          if [ "$QUALIFICATION_OUTCOME" != "success" ]; then
+            echo "The qualification did not return PASS. See the artifact."
+            exit 1
+          fi
+
+          echo "Manual real-mutation qualification: PASS."
+          echo "Exactly one reviewed canonical correction was applied to exactly"
+          echo "one row on one field. This does not authorize scheduled writes,"
+          echo "automated writes, authoritative publication, backfill,"
+          echo "multiple-game mutation, or identity mutation. O-008 remains open."
