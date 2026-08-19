@@ -337,7 +337,7 @@
       ]
     },
     "2": {
-      "measured_seconds": 505.155,
+      "measured_seconds": 507.904,
       "files": [
         {
           "path": "tests/test_appearance_ledger.py",
@@ -494,6 +494,10 @@
         {
           "path": "tests/test_public_why_copy_specificity.py",
           "measured_seconds": 0.5
+        },
+        {
+          "path": "tests/test_real_mutation_candidate_audit_execution.py",
+          "measured_seconds": 2.749
         },
         {
           "path": "tests/test_real_mutation_qualification_contract.py",
@@ -1231,7 +1235,7 @@
       ]
     },
     "4": {
-      "measured_seconds": 506.047,
+      "measured_seconds": 506.967,
       "files": [
         {
           "path": "tests/test_active_bullpen_artifact_publication.py",
@@ -1404,6 +1408,10 @@
         {
           "path": "tests/test_qa_reliever_read_scenarios.py",
           "measured_seconds": 4.936
+        },
+        {
+          "path": "tests/test_real_mutation_candidate_audit_contract.py",
+          "measured_seconds": 0.92
         },
         {
           "path": "tests/test_real_mutation_qualification_workflow_contract.py",
