@@ -38,6 +38,8 @@ TB04_FILES = (
     'backend/services/team_board_v2.py',
     'frontend/src/components/bullpen/board/TeamBoardWorkloadOverview.jsx',
 )
+TB09A_APPROVED_PATH = 'backend/services/share_artifact_generation.py'
+UNAPPROVED_SHARE_ARTIFACT_NEIGHBOR = 'backend/services/share_artifacts.py'
 
 
 def _git(repo, *args):
@@ -165,19 +167,40 @@ def test_integration_base_history_is_not_attributed_to_feature_branch(tmp_path):
     assert 'backend/services/share_artifact_generation.py' not in local_changed
 
 
-def test_actual_protected_feature_change_still_fails_guard(tmp_path, monkeypatch):
+@pytest.mark.parametrize(
+    'environ',
+    ({}, {'GITHUB_BASE_REF': 'integration'}),
+    ids=('local-nearest-ancestor', 'github-explicit-base'),
+)
+def test_actual_protected_feature_change_still_fails_guard(
+    tmp_path, monkeypatch, environ
+):
     repo = _integration_feature_repo(tmp_path)
     _commit_files(repo, 'protected feature change', {
-        'backend/services/share_artifact_generation.py': 'feature\n',
+        UNAPPROVED_SHARE_ARTIFACT_NEIGHBOR: 'feature\n',
+    })
+
+    changed = branch_diff.changed_files_for_current_change(repo, environ=environ)
+
+    assert UNAPPROVED_SHARE_ARTIFACT_NEIGHBOR in changed
+    with pytest.raises(AssertionError):
+        _run_appearance(monkeypatch, changed)
+
+
+def test_exact_tb09a_exception_remains_allowed_for_feature_change(
+    tmp_path, monkeypatch
+):
+    repo = _integration_feature_repo(tmp_path)
+    _commit_files(repo, 'approved protected feature change', {
+        TB09A_APPROVED_PATH: 'feature\n',
     })
 
     changed = branch_diff.changed_files_for_current_change(
         repo, environ={'GITHUB_BASE_REF': 'integration'}
     )
 
-    assert 'backend/services/share_artifact_generation.py' in changed
-    with pytest.raises(AssertionError):
-        _run_appearance(monkeypatch, changed)
+    assert TB09A_APPROVED_PATH in changed
+    _run_appearance(monkeypatch, changed)
 
 
 def test_main_based_feature_uses_main_as_actual_base(tmp_path):
