@@ -39,6 +39,7 @@ from services.team_state_payload import (
     build_team_state_payload,
 )
 from services.team_state_source import gather_team_state_source
+from services.team_board_delta_substrate import try_stamp_prospective_snapshot
 from utils.db import db
 
 
@@ -490,6 +491,17 @@ def generate_team_state_artifact(
         created_new = existing is None
         reused_existing = existing is not None
         outcome = OUTCOME_REUSED if reused_existing else OUTCOME_PUBLISHED
+        # TB-09A is prospective: capture comparison authority only beside a newly
+        # created immutable artifact. Reused historical artifacts are deliberately
+        # not backfilled. Capture is fail-closed for comparison but non-blocking for
+        # the already-authoritative Share Artifact publication.
+        if created_new:
+            try_stamp_prospective_snapshot(
+                source=source,
+                readiness=readiness,
+                artifact=artifact,
+                session=session,
+            )
         audit = _record_audit(
             session,
             outcome=outcome,

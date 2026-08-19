@@ -1149,6 +1149,10 @@
           "measured_seconds": 0.67
         },
         {
+          "path": "tests/test_team_board_delta_substrate.py",
+          "measured_seconds": 0.0
+        },
+        {
           "path": "tests/test_team_bullpen_shape.py",
           "measured_seconds": 0.018
         },

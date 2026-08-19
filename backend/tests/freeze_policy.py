@@ -222,6 +222,19 @@ PRE02_TEAM_BOARD_V2_PATHS = (
     'backend/api/team_board_v2.py',
 )
 
+# TB-09A, August 18 2026. Newly published immutable Team State artifacts may
+# stage one append-only Team Board delta sidecar from the exact readiness read
+# already in the generation transaction. The artifact payload, lifecycle,
+# integrity, eligibility, public serving contract, and historical artifacts are
+# unchanged. The authorization is recorded in
+# docs/decisions/2026-08-18-versioned-daily-delta-substrate.md.
+#
+# The exception is one exact orchestration path. It grants no Team State owner,
+# Share Artifact model/repository, public API, migration, or directory exemption.
+TB09A_DELTA_SUBSTRATE_PATHS = (
+    'backend/services/share_artifact_generation.py',
+)
+
 # HOTFIX-01, August 17 2026. The canonical Team State projection gains one
 # deterministic summary field so reader surfaces no longer use the independent,
 # count-derived board-health sentence as the explanation of Team State.
