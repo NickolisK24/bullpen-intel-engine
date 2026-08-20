@@ -358,6 +358,29 @@ def test_tb09a_exception_is_exact_and_does_not_unfreeze_artifact_neighbors():
     assert 'No Share Artifact payload or historical row is modified.' in decision
 
 
+def test_gap30_exception_is_exact_and_decision_linked():
+    approved = freeze_policy.GAP30_TEAM_STATE_DELTA_PATHS
+    assert approved == ('backend/services/team_changes.py',)
+
+    assert freeze_policy.protected_hits(
+        ['backend/services/team_changes.py'],
+        exact=freeze_policy.FROZEN_LEGACY_WHAT_CHANGED_PATHS,
+        approved=approved,
+    ) == []
+    assert freeze_policy.protected_hits(
+        ['backend/services/what_changed_since_yesterday.py'],
+        exact=freeze_policy.FROZEN_LEGACY_WHAT_CHANGED_PATHS,
+        approved=approved,
+    ) == ['backend/services/what_changed_since_yesterday.py']
+
+    decision = (
+        Path(__file__).resolve().parents[2]
+        / 'docs/decisions/2026-08-20-governed-team-state-what-changed.md'
+    ).read_text(encoding='utf-8')
+    assert '`backend/services/team_changes.py`' in decision
+    assert 'No classifier is rerun' in decision
+
+
 def test_no_catalogue_uses_a_bare_directory_as_an_invariant():
     """H-1's success condition, stated as an assertion.
 

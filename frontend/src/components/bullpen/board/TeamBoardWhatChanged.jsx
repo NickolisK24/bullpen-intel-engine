@@ -32,6 +32,23 @@ function PitcherSubject({ row, onSelectPitcher }) {
 }
 
 function ChangeRow({ row, groupKey, onSelectPitcher }) {
+  if (groupKey === 'team-state') {
+    const hasWindow = row.fromDate && row.toDate && row.fromDateLabel && row.toDateLabel
+    return (
+      <li className="min-w-0 py-row">
+        {row.transition && <p className="type-data break-words text-text-secondary">{row.transition}</p>}
+        {row.summary && <p className="type-compact mt-meta max-w-3xl break-words text-text-secondary">{row.summary}</p>}
+        {hasWindow && (
+          <p className="type-metadata mt-meta">
+            Since <time dateTime={row.fromDate}>{row.fromDateLabel}</time>
+            {' · through '}
+            <time dateTime={row.toDate}>{row.toDateLabel}</time>
+          </p>
+        )}
+      </li>
+    )
+  }
+
   const detail = groupKey === 'arm-read'
     ? row.transition
     : row.gameDate && row.dateLabel
@@ -81,6 +98,8 @@ export default function TeamBoardWhatChanged({ changes, loading = false, error =
 
   const view = getWhatChangedView(changes)
   const limitation = view.limitations[0] || null
+  const teamStateUnavailable = view.teamStateComparison.status === 'unavailable'
+  const teamStateLimitation = view.teamStateComparison.limitation
   const hasGroups = view.groups.length > 0
 
   return (
@@ -98,6 +117,13 @@ export default function TeamBoardWhatChanged({ changes, loading = false, error =
         <SectionState status="unavailable" title="No comparison baseline" message={limitation || 'No earlier completed game is available for comparison.'} className="mt-row" />
       ) : view.state === 'stale' ? (
         <SectionState status="unavailable" title="Comparison freshness blocked" message={limitation || 'Current workload data is not fresh enough to compare safely.'} className="mt-row" />
+      ) : view.state === 'no_changes' && teamStateUnavailable ? (
+        <SectionState
+          status="partial"
+          title="Team State comparison unavailable"
+          message={teamStateLimitation}
+          className="mt-row"
+        />
       ) : view.state === 'no_changes' ? (
         <div className="section-state mt-row" role="status" data-state="quiet">
           <p className="type-compact">No material changes were detected for this published comparison.</p>
@@ -105,6 +131,9 @@ export default function TeamBoardWhatChanged({ changes, loading = false, error =
       ) : view.state === 'changes' && hasGroups ? (
         <>
           {view.groups.map(group => <ChangeGroup key={group.key} group={group} onSelectPitcher={onSelectPitcher} />)}
+          {teamStateUnavailable && teamStateLimitation && (
+            <SectionState status="partial" title="Team State comparison unavailable" message={teamStateLimitation} className="mt-row" />
+          )}
           {limitation && <SectionState status="partial" title="Some change context is limited" message={limitation} className="mt-row" />}
         </>
       ) : (

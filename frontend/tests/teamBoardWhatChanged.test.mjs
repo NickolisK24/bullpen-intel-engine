@@ -28,6 +28,20 @@ const changes = {
     anchor_game_date: '2026-08-17',
     current_game_date: '2026-08-18',
   },
+  team_state_change: {
+    type: 'team_state_change',
+    from_state: 'stretched',
+    from_label: 'Stretched',
+    to_state: 'vulnerable',
+    to_label: 'Vulnerable',
+    from_date: '2026-08-16',
+    to_date: '2026-08-18',
+    summary: 'Team State changed from Stretched to Vulnerable.',
+  },
+  team_state_comparison: {
+    status: 'changed',
+    limitation: null,
+  },
   pitcher_changes: [
     {
       type: 'status_change',
@@ -55,11 +69,15 @@ test('supported change groups render in materiality order with governed endpoint
   const view = getWhatChangedView(changes)
   const html = render({ changes })
 
-  assert.deepEqual(view.groups.map(group => group.key), ['arm-read', 'appearance'])
+  assert.deepEqual(view.groups.map(group => group.key), ['team-state', 'arm-read', 'appearance'])
+  assert.ok(html.indexOf('Team State') < html.indexOf('Arm Read movement'))
   assert.ok(html.indexOf('Arm Read movement') < html.indexOf('New appearance / workload'))
   assert.match(html, /date(?:T|t)ime="2026-08-17"/)
   assert.match(html, /date(?:T|t)ime="2026-08-18"/)
   assert.ok(html.includes('Monitor → Limited'))
+  assert.ok(html.includes('Stretched → Vulnerable'))
+  assert.ok(html.includes(changes.team_state_change.summary))
+  assert.match(html, /date(?:T|t)ime="2026-08-16"/)
   assert.ok(html.includes(changes.pitcher_changes[0].summary))
   assert.ok(html.includes('0 pitches'))
 })
@@ -67,6 +85,7 @@ test('supported change groups render in materiality order with governed endpoint
 test('unknown categories are omitted rather than converted into no-change rows', () => {
   const unsupported = {
     ...changes,
+    team_state_change: null,
     pitcher_changes: [{ type: 'roster_status', pitcher_name: 'Current Arm', current_status: 'Optioned' }],
   }
   const html = render({ changes: unsupported })
@@ -78,10 +97,17 @@ test('unknown categories are omitted rather than converted into no-change rows',
 })
 
 test('quiet, no-baseline, freshness-blocked, unavailable, and error states remain distinct', () => {
-  const quiet = render({ changes: { ...changes, state: 'no_changes', pitcher_changes: [] } })
+  const quiet = render({ changes: {
+    ...changes,
+    state: 'no_changes',
+    team_state_change: null,
+    team_state_comparison: { status: 'unchanged', limitation: null },
+    pitcher_changes: [],
+  } })
   const baseline = render({ changes: {
     ...changes,
     state: 'no_baseline',
+    team_state_change: null,
     comparison: { anchor_game_date: null, current_game_date: '2026-08-18' },
     pitcher_changes: [],
     limitations: ['No earlier completed game is available for comparison.'],
@@ -89,6 +115,7 @@ test('quiet, no-baseline, freshness-blocked, unavailable, and error states remai
   const stale = render({ changes: {
     ...changes,
     state: 'stale',
+    team_state_change: null,
     pitcher_changes: [],
     limitations: ['Current workload data is not fresh enough to compare safely.'],
   } })
@@ -104,6 +131,59 @@ test('quiet, no-baseline, freshness-blocked, unavailable, and error states remai
   assert.equal(error.includes('private exception'), false)
 })
 
+test('an unavailable Team State lane prevents a definitive quiet-day claim', () => {
+  const limitation = 'Backend-authored Team State comparison limitation.'
+  const unavailable = {
+    ...changes,
+    state: 'no_changes',
+    team_state_change: null,
+    team_state_comparison: {
+      status: 'unavailable',
+      reason_code: 'contract_incompatible',
+      limitation,
+    },
+    pitcher_changes: [],
+  }
+  const html = render({ changes: unavailable })
+
+  assert.equal(html.includes('No material changes were detected'), false)
+  assert.ok(html.includes('Team State comparison unavailable'))
+  assert.ok(html.includes(limitation))
+  assert.equal(html.includes('contract_incompatible'), false)
+})
+
+test('an unavailable Team State lane remains disclosed beside proven status movement', () => {
+  const limitation = 'Backend-authored Team State comparison limitation.'
+  const statusOnly = {
+    ...changes,
+    team_state_change: null,
+    team_state_comparison: { status: 'unavailable', limitation },
+    pitcher_changes: [changes.pitcher_changes[0]],
+  }
+  const html = render({ changes: statusOnly })
+
+  assert.ok(html.includes('Monitor → Limited'))
+  assert.ok(html.includes(changes.pitcher_changes[0].summary))
+  assert.ok(html.includes(limitation))
+  assert.equal(html.includes('No material changes were detected'), false)
+})
+
+test('an unavailable Team State lane remains disclosed beside proven appearance movement', () => {
+  const limitation = 'Backend-authored Team State comparison limitation.'
+  const appearanceOnly = {
+    ...changes,
+    team_state_change: null,
+    team_state_comparison: { status: 'unavailable', limitation },
+    pitcher_changes: [changes.pitcher_changes[1]],
+  }
+  const html = render({ changes: appearanceOnly })
+
+  assert.ok(html.includes('New appearance / workload'))
+  assert.ok(html.includes(changes.pitcher_changes[1].summary))
+  assert.ok(html.includes(limitation))
+  assert.equal(html.includes('No material changes were detected'), false)
+})
+
 test('arm subjects reuse the existing pitcher handoff without making whole rows interactive', () => {
   const html = render({ changes, onSelectPitcher: () => {} })
 
@@ -116,8 +196,10 @@ test('the view model presents the public contract without client snapshot or cat
   const source = await readFile(new URL('../src/components/bullpen/board/whatChangedView.js', import.meta.url), 'utf8')
 
   for (const forbidden of [
-    '.reduce(', '.sort(', 'team_state', 'roster_authority', 'bullpen_stability',
+    '.reduce(', '.sort(', 'roster_authority', 'bullpen_stability',
     'workload_7d', 'workload_14d', 'rotation_impact', 'role_movement',
+    "'Fresh'", "'Stretched'", "'Vulnerable'", 'from_state ===', 'to_state ===',
+    'contract_incompatible', 'method_version_mismatch', 'previous_missing',
   ]) {
     assert.equal(source.includes(forbidden), false, forbidden)
   }
