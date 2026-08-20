@@ -1242,10 +1242,9 @@ class TestBoardEndpoint:
     def test_team_board_exposes_the_canonical_public_team_state_contract(self, client):
         """The board's Team State comes from the backend public-vocabulary authority.
 
-        The board keeps its count-derived ``context.health`` block for the counts
-        and the why sentence, but that internal state is never the public Team
-        State — the ``team_state`` block is, and it only ever carries a canonical
-        label or no label at all.
+        The board keeps its count-derived ``context.health`` block for legacy and
+        supporting consumers, but that block is never the public Team State or
+        its summary. The ``team_state`` block owns both.
         """
         with client.application.app_context():
             _seed_pitcher(
@@ -1262,18 +1261,25 @@ class TestBoardEndpoint:
 
         assert team_state['contract'] == 'team_state_public_v1'
         assert set(team_state) >= {
-            'available', 'public_state', 'public_label', 'outcome', 'unavailable_message',
+            'available', 'public_state', 'public_label', 'summary', 'outcome',
+            'unavailable_message',
         }
         # Whatever the governed readiness resolved to, the label is canonical or absent.
         assert team_state['public_label'] in {'Fresh', 'Stretched', 'Vulnerable', None}
         assert team_state['public_state'] in {'fresh', 'stretched', 'vulnerable', None}
         if team_state['available']:
             assert team_state['public_label'] is not None
+            assert team_state['summary'] == {
+                'fresh': 'Strong rested coverage gives the active bullpen operating room.',
+                'stretched': "Recent work or coverage has narrowed the active bullpen's clean options.",
+                'vulnerable': 'The active bullpen has limited operating margin for additional work.',
+            }[team_state['public_state']]
             assert team_state['unavailable_message'] is None
         else:
             # Fail-closed reads publish no state and say so in non-state language.
             assert team_state['public_label'] is None
             assert team_state['public_state'] is None
+            assert team_state['summary'] is None
             assert 'not available' in team_state['unavailable_message']
 
         # The internal, count-derived bullpen-health state is still present and

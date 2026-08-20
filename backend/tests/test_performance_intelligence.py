@@ -296,7 +296,7 @@ def test_zero_denominator_refuses_without_fabricating(app):
 def test_a_satisfied_sample_is_still_not_publishable(app):
     """Meeting D-023 makes the metric reviewable. It does not open a gate."""
     arm = _pitcher('Sample Arm')
-    _log(arm, outs=108, earned_runs=12)
+    _relief(arm, outs_each=3, appearances=36, earned_runs=12)
     db.session.commit()
 
     read = _read()

@@ -331,14 +331,16 @@ test('getTeamStory calls the Story Intelligence API V1 team endpoint', async (t)
   assert.equal(result.story_available, true)
 })
 
-test('Tonight board owns the StoryCard API seam for selected teams', () => {
+test('Team Board no longer owns the StoryCard API seam', () => {
   const source = readFileSync(
     new URL('../src/components/bullpen/board/TonightsBullpenBoard.jsx', import.meta.url),
     'utf8',
   )
 
-  assert.ok(source.includes('getTeamStory(selectedTeam)'))
-  assert.ok(source.includes('<StoryCard'))
+  assert.equal(source.includes('getTeamStory(selectedTeam)'), false)
+  assert.equal(source.includes('<StoryCard'), false)
+  assert.ok(source.includes('getTeamChanges(selectedTeam)'))
+  assert.ok(source.includes('<TeamBoardWhatChanged'))
   assert.ok(!source.includes('story_observation_engine'))
   assert.ok(!source.includes('story_construction_engine'))
   assert.ok(!source.includes('story_writer'))

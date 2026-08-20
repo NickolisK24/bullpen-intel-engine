@@ -1254,6 +1254,7 @@ def test_existing_public_routes_behavior_freeze(monkeypatch):
             approved_preview_evidence_selection
             + freeze_policy.D054_LEAGUE_TEAM_STATE_LISTING_PATHS
             + freeze_policy.D055_TEAM_BOARD_WORKLOAD_CONTEXT_PATHS
+            + freeze_policy.PRE02_TEAM_BOARD_V2_PATHS
         ),
     )
     assert moved == [], (

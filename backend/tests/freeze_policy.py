@@ -1,7 +1,9 @@
 """Shared catalogue for the branch-diff freeze guards.
 
-Four guards compare the working branch against ``origin/main`` and fail when a
-frozen surface changed:
+Four guards compare the working branch against their governed branch baseline
+and fail when a frozen surface changed. Three retain their historical
+``origin/main`` baseline; the appearance-team guard resolves the actual pull-
+request base so integration-branch history is not attributed to a feature PR:
 
 - ``test_snapshot_trust_freeze.py::test_frozen_legacy_what_changed_files_untouched``
 - ``test_public_team_relief_work.py::test_existing_public_routes_behavior_freeze``
@@ -42,8 +44,8 @@ merged, so the path is in ``origin/main`` and can no longer appear in a future
 approved change to a frozen surface adds its exception then, which is the rare
 and deliberate event this mechanism is for.
 
-This module holds the catalogue only. Each guard keeps its own diff helper and
-its own assertions, so a guard still fails in its own voice.
+This module holds the catalogue only. Each guard keeps its own assertions, so a
+guard still fails in its own voice.
 """
 
 # ``backend/api/`` is the public HTTP surface. Unlike ``frontend/`` it is a
@@ -209,6 +211,38 @@ D054_LEAGUE_TEAM_STATE_LISTING_PATHS = (
 D055_TEAM_BOARD_WORKLOAD_CONTEXT_PATHS = (
     'backend/api/bullpen.py',
     'backend/services/bullpen_board.py',
+)
+
+# PRE-02, August 17 2026. The new versioned Team Board contract is additive.
+# ``bullpen.py`` changes only by accepting an optional rotation callable; every
+# legacy caller retains the original default owner and payload. The new API
+# module owns only ``/board-v2`` and performs no writes or publication work.
+PRE02_TEAM_BOARD_V2_PATHS = (
+    'backend/api/bullpen.py',
+    'backend/api/team_board_v2.py',
+)
+
+# TB-09A, August 18 2026. Newly published immutable Team State artifacts may
+# stage one append-only Team Board delta sidecar from the exact readiness read
+# already in the generation transaction. The artifact payload, lifecycle,
+# integrity, eligibility, public serving contract, and historical artifacts are
+# unchanged. The authorization is recorded in
+# docs/decisions/2026-08-18-versioned-daily-delta-substrate.md.
+#
+# The exception is one exact orchestration path. It grants no Team State owner,
+# Share Artifact model/repository, public API, migration, or directory exemption.
+TB09A_DELTA_SUBSTRATE_PATHS = (
+    'backend/services/share_artifact_generation.py',
+)
+
+# HOTFIX-01, August 17 2026. The canonical Team State projection gains one
+# deterministic summary field so reader surfaces no longer use the independent,
+# count-derived board-health sentence as the explanation of Team State.
+#
+# The exception is one exact semantic-owner path. It grants no classifier,
+# readiness, publication, artifact, migration, route, or directory exemption.
+HOTFIX01_TEAM_STATE_SUMMARY_AUTHORITY_PATHS = (
+    'backend/services/team_state_public_vocabulary.py',
 )
 
 # D-056, August 18 2026. The published Team State path classified bullpen

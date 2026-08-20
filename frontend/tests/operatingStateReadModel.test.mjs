@@ -216,6 +216,8 @@ test('team read renders the backend Team State and does not imply no injuries', 
 
   assert.equal(model.stateLabel, 'Fresh')
   assert.equal(model.publicState, 'fresh')
+  assert.equal(model.stateSummary, 'Strong rested coverage gives the active bullpen operating room.')
+  assert.equal(model.why, null)
   assert.equal(model.primaryConcern.label, 'Active workload is usable')
   assert.equal(model.secondaryConcern.label, 'Roster pressure remains part of the story')
   assert.equal(/nobody is hurt|no injuries/i.test(json), false)

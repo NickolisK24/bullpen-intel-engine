@@ -131,14 +131,16 @@ test('sidebar omits the permanent Data Freshness card', () => {
   assert.equal(htmlIncludes(html, 'Data Freshness'), false)
 })
 
-test('desktop shell keeps the navigation rail fixed while content scrolls', () => {
+test('xl shell keeps the navigation rail fixed while content scrolls', () => {
   const sidebarSource = readFileSync(new URL('../src/components/Sidebar.jsx', import.meta.url), 'utf8')
   const appSource = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8')
 
-  assert.ok(sidebarSource.includes('lg:fixed'))
-  assert.ok(sidebarSource.includes('lg:inset-y-0'))
-  assert.ok(sidebarSource.includes('lg:overflow-y-auto'))
-  assert.ok(appSource.includes('lg:ml-56'))
+  assert.ok(sidebarSource.includes('xl:fixed'))
+  assert.ok(sidebarSource.includes('xl:inset-y-0'))
+  assert.ok(sidebarSource.includes('xl:overflow-y-auto'))
+  assert.ok(appSource.includes('xl:ml-56'))
+  assert.equal(sidebarSource.includes('lg:fixed'), false)
+  assert.equal(appSource.includes('lg:ml-56'), false)
 })
 
 test('Vercel serves canonical team preview files before the invalid-team and SPA fallbacks', () => {

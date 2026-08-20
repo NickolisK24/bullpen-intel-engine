@@ -63,9 +63,9 @@ export default function App() {
   return (
     <BrowserRouter>
       <TrafficRouteObserver />
-      <div className="app-shell bg-noise flex-col lg:flex-row">
+      <div className="app-shell bg-noise flex-col xl:flex-row">
         <Sidebar />
-        <main className="flex-1 min-w-0 lg:ml-56">
+        <main className="flex-1 min-w-0 xl:ml-56">
           <AppRoutes />
           <Footer />
         </main>

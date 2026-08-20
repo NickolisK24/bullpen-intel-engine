@@ -730,7 +730,13 @@ function buildUnavailableReadModel({ scope, teamInfo, freshness, cta, density, t
   }
 }
 
-export function toOperatingStateReadModel(payload, { scope = 'league', team = null, cta = null, density = 'full' } = {}) {
+export function toOperatingStateReadModel(payload, {
+  scope = 'league',
+  team = null,
+  cta = null,
+  density = 'full',
+  includeRotationSupport = true,
+} = {}) {
   const resolvedScope = normalizeScope(scope)
   const teamInfo = resolveTeam(payload, team)
   const freshness = buildFreshnessModel(payload?.freshness)
@@ -771,7 +777,7 @@ export function toOperatingStateReadModel(payload, { scope = 'league', team = nu
   // missing one.
   const stateLabel = teamState.publicLabel
   const rosterPressure = resolvedScope === 'team' ? buildRosterPressure(payload?.roster_authority) : null
-  const starterSupportPressure = resolvedScope === 'team'
+  const starterSupportPressure = resolvedScope === 'team' && includeRotationSupport
     ? buildStarterSupportPressure(payload?.rotation_support_pressure, freshness)
     : null
   const teamContextReads = buildTeamContextReads(payload, resolvedScope)
@@ -796,12 +802,12 @@ export function toOperatingStateReadModel(payload, { scope = 'league', team = nu
     ...freshness.limitations,
     ...safeTextList(payload?.limitations),
   ])
-  // The Why is backend-authored or absent. The invented fallback sentence that
-  // used to sit here read as a BaseballOS claim while being written by the
-  // browser — including on the fail-closed path where the dashboard payload
-  // carries an empty context. A missing Why is now a recorded refusal.
-  const why = safeText(context.label)
-  if (!why) {
+  // League context may keep its backend-authored board explanation. A team read
+  // instead uses the canonical Team State summary from `team_state`; the
+  // independently count-derived `context.health.label` is never its Why or a
+  // fallback when Team State is unavailable.
+  const why = isLeague ? safeText(context.label) : null
+  if (isLeague && !why) {
     recordCopySuppression({
       surface: isLeague ? 'dashboard' : 'team-board',
       field: 'context.health.label',
@@ -821,10 +827,11 @@ export function toOperatingStateReadModel(payload, { scope = 'league', team = nu
     teamLabel: teamName,
     stateLabel,
     publicState: teamState.publicState,
-    // State copy is backend-owned. Without a backend-authored state sentence the
-    // card shows the canonical label and the backend why line beneath it.
-    stateSummary: null,
-    stateDetail: null,
+    // The summary is carried by the same backend projection as the canonical
+    // public state. Missing summary stays missing; counts and legacy board
+    // health copy are not substitutes.
+    stateSummary: teamState.summary,
+    stateDetail: teamState.summary,
     stateUnavailableMessage: teamState.unavailableMessage,
     stateTone,
     tone: stateTone,

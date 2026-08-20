@@ -455,6 +455,9 @@ export const getTeamBullpenBoard = (teamId, params = {}) => {
   const q = new URLSearchParams(params).toString()
   return request(`/bullpen/teams/${teamId}/board${q ? `?${q}` : ''}`)
 }
+// Additive Team Board v2 composition contract. Production Team Board adoption
+// remains in later packages; this helper only exposes the versioned read.
+export const getTeamBoardV2 = (teamId) => request(`/bullpen/teams/${encodeURIComponent(teamId)}/board-v2`)
 // Story Intelligence API V1 - one deterministic team bullpen story.
 export const getTeamStory = (teamId, params = {}) => {
   return request(`/bullpen/teams/${teamId}/story${buildQuery(params)}`)

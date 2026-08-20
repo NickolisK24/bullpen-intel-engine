@@ -20,6 +20,7 @@ import { createServer } from 'vite'
 
 import { populatedBoard } from './fixtures/bullpenBoardFixtures.mjs'
 import { differingComparison } from './fixtures/bullpenComparisonFixtures.mjs'
+import { teamBoardV2Fixture } from './fixtures/teamBoardV2Fixtures.mjs'
 
 const server = await createServer({
   root: process.cwd(),
@@ -75,9 +76,9 @@ function renderBoard(boardPayload, team = BREWERS) {
         teams: { loading: false, data: [team] },
         initialSelectedTeam: team.team_id,
         boardPayload,
+        teamBoardV2Payload: teamBoardV2Fixture(boardPayload),
         gameContextPayload: null,
-        storyPayload: null,
-        teamReliefWorkPayload: null,
+        changesPayload: null,
       }),
     ),
   )
@@ -85,20 +86,20 @@ function renderBoard(boardPayload, team = BREWERS) {
 
 // ── Page identity wording (AC-3), across every route/team state ─────────────
 
-test('Team Board identity names the full club, and falls back before one resolves', () => {
+test('Team Board route identity stays stable while the answer block owns the club', () => {
   assert.equal(
     getBullpenPageIdentity('board', TEAM_LIST, { team: 'MIL' }),
-    'Milwaukee Brewers Bullpen',
+    'Team Board',
   )
   // A team id and a full name resolve through the same shared helper.
   assert.equal(
     getBullpenPageIdentity('board', TEAM_LIST, { team: '158' }),
-    'Milwaukee Brewers Bullpen',
+    'Team Board',
   )
   // No team, an unknown reference, and an unloaded team list all read the same.
-  assert.equal(getBullpenPageIdentity('board', TEAM_LIST, {}), 'Team Bullpen Board')
-  assert.equal(getBullpenPageIdentity('board', TEAM_LIST, { team: 'ZZZ' }), 'Team Bullpen Board')
-  assert.equal(getBullpenPageIdentity('board', [], { team: 'MIL' }), 'Team Bullpen Board')
+  assert.equal(getBullpenPageIdentity('board', TEAM_LIST, {}), 'Team Board')
+  assert.equal(getBullpenPageIdentity('board', TEAM_LIST, { team: 'ZZZ' }), 'Team Board')
+  assert.equal(getBullpenPageIdentity('board', [], { team: 'MIL' }), 'Team Board')
 })
 
 test('the Team Board identity carries no state, freshness, or temporal claim', () => {
@@ -192,7 +193,7 @@ test('the h1 precedes the first h2 wherever a h2 is rendered', () => {
 })
 
 test('the unresolved views render their generic identity verbatim', () => {
-  assert.equal(h1Text(renderBullpen(['/bullpen'])), 'Team Bullpen Board')
+  assert.equal(h1Text(renderBullpen(['/bullpen'])), 'Team Board')
   assert.equal(h1Text(renderBullpen(['/bullpen?view=compare'])), 'Compare Bullpens')
   assert.equal(h1Text(renderBullpen(['/bullpen?view=compare&team_a=MIL'])), 'Compare Bullpens')
   assert.equal(h1Text(renderBullpen(['/bullpen?view=pitchers'])), 'Reliever Finder')
@@ -227,26 +228,19 @@ test('the finder names itself once, and keeps naming itself after intent', () =>
 
 // ── The Team Board stops repeating the club as a second title (AC-8) ───────
 
-test('the operating card drops its team heading when the page owns the identity', () => {
+test('the answer block owns the selected club identity below the route heading', () => {
   const html = renderBoard(populatedBoard)
   const teamName = populatedBoard.team.team_name
 
   // No h1 inside the board subtree — the shell owns the only one.
   assert.equal(countH1(html), 0)
-  // The card no longer carries the club name as a heading of any level.
-  assert.equal(
-    new RegExp(`<h[1-6][^>]*>\\s*${escapeRegExp(teamName)}\\s*</h[1-6]>`).test(html),
-    false,
-    'the operating card still renders the team name as a competing title',
-  )
-  // Identity is still available to anyone landing on the card out of context.
-  assert.ok(htmlIncludes(html, `aria-label="${teamName} bullpen operating state"`))
+  assert.ok(new RegExp(`<h2[^>]*>\\s*${escapeRegExp(teamName)}\\s*</h2>`).test(html))
+  assert.ok(htmlIncludes(html, 'data-testid="team-board-answer-block"'))
   // The board's own section heading keeps its level, its id, and its binding.
-  assert.ok(htmlIncludes(html, '<h2 id="pitcher-lanes-title"'))
-  assert.ok(htmlIncludes(html, 'aria-labelledby="pitcher-lanes-title"'))
-  // H-10: the page heading already names the club visibly, so the board
-  // heading carries the team for assistive tech only — the name stays inside
-  // the heading element, but no longer as a second visible title.
+  assert.ok(htmlIncludes(html, '<h2 id="active-bullpen-title"'))
+  assert.ok(htmlIncludes(html, 'aria-labelledby="active-bullpen-title"'))
+  // The selected club is the Answer Block's visible h2; the migrated v2
+  // Active Bullpen keeps its section heading and remains below it.
   assert.ok(htmlIncludes(html, 'Active Bullpen'))
   assert.ok(htmlIncludes(html, `<span class="sr-only"> — ${teamName}</span>`))
 })

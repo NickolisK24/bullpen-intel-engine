@@ -8,7 +8,7 @@
   "timing_note": "measured_seconds values are balancing inputs only. They are not test-selection authority: the per-shard file lists decide what runs, and \"python scripts/ci_shard.py verify\" proves those lists cover live pytest collection exactly once.",
   "shards": {
     "1": {
-      "measured_seconds": 508.203,
+      "measured_seconds": 508.303,
       "files": [
         {
           "path": "tests/test_availability_unavailable_experiment.py",
@@ -337,7 +337,7 @@
       ]
     },
     "2": {
-      "measured_seconds": 507.904,
+      "measured_seconds": 507.903,
       "files": [
         {
           "path": "tests/test_appearance_ledger.py",
@@ -662,7 +662,7 @@
       ]
     },
     "3": {
-      "measured_seconds": 507.444,
+      "measured_seconds": 509.03,
       "files": [
         {
           "path": "tests/test_active_bullpen_readiness_resolver.py",
@@ -1165,6 +1165,14 @@
           "measured_seconds": 10.464
         },
         {
+          "path": "tests/test_team_board_v2.py",
+          "measured_seconds": 0.67
+        },
+        {
+          "path": "tests/test_team_board_delta_substrate.py",
+          "measured_seconds": 0.0
+        },
+        {
           "path": "tests/test_team_bullpen_shape.py",
           "measured_seconds": 0.018
         },
@@ -1235,7 +1243,7 @@
       ]
     },
     "4": {
-      "measured_seconds": 506.967,
+      "measured_seconds": 507.497,
       "files": [
         {
           "path": "tests/test_active_bullpen_artifact_publication.py",
@@ -1404,6 +1412,10 @@
         {
           "path": "tests/test_public_recent_work.py",
           "measured_seconds": 3.9
+        },
+        {
+          "path": "tests/test_public_recent_transactions.py",
+          "measured_seconds": 0.53
         },
         {
           "path": "tests/test_qa_reliever_read_scenarios.py",

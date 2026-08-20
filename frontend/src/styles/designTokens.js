@@ -1,0 +1,91 @@
+// BaseballOS frontend foundation tokens.
+//
+// Tailwind consumes this module directly, making it the single value authority
+// for color, type, spacing, breakpoints, and shell width. Components consume
+// the named utilities Tailwind generates rather than copying raw values.
+export const designTokens = Object.freeze({
+  colors: Object.freeze({
+    // Final Team Board 2.0 palette. Existing names remain below for surfaces
+    // that have not yet migrated; Team Board code consumes these semantic
+    // names instead of creating a parallel theme.
+    'surface-base': '#0C1116',
+    'surface-nav': '#111820',
+    'surface-raised': '#161E27',
+    'surface-hover': '#1A232D',
+    'text-primary': '#E9EEF3',
+    'text-secondary': '#BAC5D1',
+    'text-tertiary': '#93A0AE',
+    'text-withheld': '#8792A0',
+    'line-subtle': '#202A34',
+    'line-default': '#34414E',
+    'line-strong': '#536171',
+    'line-focus': '#8FB8DA',
+    'state-clear': '#6FBF9B',
+    'state-caution': '#E0A458',
+    'state-constrained': '#E08585',
+    'brand-blue': '#7BA7CC',
+    'brand-gold': '#C9A24A',
+    'chart-bar': '#6E8799',
+    field: '#080d14',
+    dugout: '#0f1620',
+    chalk: '#18222e',
+    dirt: '#26313e',
+    signal: '#6e9fc8',
+    gold: '#c89b4b',
+    // Compatibility alias for existing surfaces. New foundation work uses
+    // `gold` or `signal` according to purpose.
+    amber: '#c89b4b',
+    pine: '#4f8f70',
+    warning: '#c38a3f',
+    danger: '#bd6468',
+    ice: '#8db9dc',
+    stateFresh: '#79b99a',
+    stateStretched: '#d5a45b',
+    stateVulnerable: '#d77b7d',
+    readAvailable: '#79b99a',
+    readWatch: '#d5a45b',
+    readLimited: '#d28b5d',
+    readUnavailable: '#d77b7d',
+    chalk100: '#f2f4f1',
+    chalk200: '#d8dfe5',
+    chalk300: '#bcc8d3',
+    chalk400: '#a1afbe',
+    chalk500: '#95a5b7',
+    chalk600: '#899bad',
+    chalk700: '#8294aa',
+  }),
+  typography: Object.freeze({
+    'page-title': ['clamp(2rem, 4vw, 3.25rem)', { lineHeight: '0.96', letterSpacing: '0.025em' }],
+    'section-title': ['1.5rem', { lineHeight: '1.1', letterSpacing: '0.025em' }],
+    body: ['0.9375rem', { lineHeight: '1.55' }],
+    compact: ['0.8125rem', { lineHeight: '1.45' }],
+    metadata: ['0.75rem', { lineHeight: '1.35' }],
+    overline: ['0.6875rem', { lineHeight: '1.2', letterSpacing: '0.12em' }],
+    data: ['0.875rem', { lineHeight: '1.25' }],
+    'board-page-title': ['1.5rem', { lineHeight: '1.17', letterSpacing: '0' }],
+    'board-section-title': ['0.9375rem', { lineHeight: '1.35', letterSpacing: '0' }],
+    'board-body': ['0.875rem', { lineHeight: '1.55' }],
+    'board-compact': ['0.8125rem', { lineHeight: '1.45' }],
+    'board-metadata': ['0.8125rem', { lineHeight: '1.4' }],
+    'board-label': ['0.75rem', { lineHeight: '1.3', letterSpacing: '0.06em' }],
+    'board-data': ['0.875rem', { lineHeight: '1.25' }],
+  }),
+  spacing: Object.freeze({
+    meta: '0.375rem',
+    row: '0.75rem',
+    panel: '1rem',
+    pair: '1rem',
+    section: '1.5rem',
+    'section-lg': '2rem',
+  }),
+  screens: Object.freeze({
+    phone: '390px',
+    tablet: '768px',
+    desktop: '1280px',
+    wide: '1440px',
+  }),
+  maxWidth: Object.freeze({
+    reading: '42.5rem',
+    'team-board': '72rem',
+  }),
+})
