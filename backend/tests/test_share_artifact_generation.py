@@ -244,6 +244,27 @@ def test_delta_sidecar_capture_is_prospective_and_never_backfills_reuse(app, mon
     assert captured[0]['readiness'] == _readiness()
 
 
+def test_generation_threads_same_cycle_arm_read_capture_to_new_sidecar(app, monkeypatch):
+    _eligible_env(monkeypatch)
+    captured = []
+    monkeypatch.setattr(
+        gen_module,
+        'try_stamp_prospective_snapshot',
+        lambda **kwargs: captured.append(kwargs),
+    )
+
+    def _resolve(team_id, *, requested_date=None, session=None, arm_reads_out=None):
+        arm_reads_out.update({'capture_identity': 'same_readiness_cycle'})
+        return _readiness()
+
+    result = generate_team_state_artifact(TEAM_ID, readiness_resolver=_resolve)
+
+    assert result.created_new is True
+    assert captured[0]['arm_read_capture'] == {
+        'capture_identity': 'same_readiness_cycle',
+    }
+
+
 def test_new_natural_generation_freezes_versioned_delta_sidecar(app, monkeypatch):
     _eligible_env(monkeypatch, with_sync_run=True)
 

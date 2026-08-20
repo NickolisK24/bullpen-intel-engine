@@ -21,6 +21,7 @@ rollback.
 from __future__ import annotations
 
 import inspect
+import logging
 from dataclasses import dataclass
 from datetime import date
 from typing import Any, Mapping, Optional
@@ -40,8 +41,14 @@ from services.team_state_payload import (
     build_team_state_payload,
 )
 from services.team_state_source import gather_team_state_source
-from services.team_board_delta_substrate import try_stamp_prospective_snapshot
+from services.team_board_delta_substrate import (
+    build_arm_read_capture,
+    try_stamp_prospective_snapshot,
+)
 from utils.db import db
+
+
+logger = logging.getLogger(__name__)
 
 
 # Governed generation outcome codes.
@@ -194,6 +201,7 @@ def resolve_team_readiness_payload(
     session=None,
     source_snapshot=None,
     reference_dates_out: Optional[dict] = None,
+    arm_reads_out: Optional[dict] = None,
 ) -> Optional[Mapping[str, Any]]:
     """Resolve the governed Team Operations readiness payload for a team.
 
@@ -220,7 +228,9 @@ def resolve_team_readiness_payload(
     values and are never collapsed. ``reference_dates_out`` is an optional dict
     the caller supplies to receive the pair actually used, so the production-proof
     artifact records the dates this read classified at rather than re-deriving
-    them afterwards.
+    them afterwards. ``arm_reads_out`` receives the exact canonical public Arm
+    Reads projected from the already-classified active-bullpen records in this
+    same invocation; it never triggers another availability calculation.
     """
     from api.team_operations import (
         TEAM_OPERATIONS_DEFAULT_LIMIT,
@@ -290,6 +300,22 @@ def resolve_team_readiness_payload(
     readiness_records, membership = resolve_readiness_population(
         records, team_id=team_id, reference_date=membership_reference_date,
     )
+    if isinstance(arm_reads_out, dict):
+        try:
+            arm_reads_out.update(build_arm_read_capture(
+                records=readiness_records,
+                team_id=team_id,
+                membership=membership,
+                membership_reference_date=membership_reference_date,
+                availability_reference_date=availability_reference_date,
+            ))
+        except Exception as exc:  # noqa: BLE001 - optional delta capture is fail closed
+            arm_reads_out.clear()
+            logger.warning(
+                'Prospective Arm Read capture withheld team_id=%s reason=%s.',
+                team_id,
+                type(exc).__name__,
+            )
     return assemble_bullpen_readiness(
         team=_team_payload_from_records(records, team_id=team_id),
         pitcher_records=tuple(_readiness_record(record) for record in readiness_records),
@@ -499,6 +525,9 @@ def generate_team_state_artifact(
     reference_dates: dict = {}
     if _resolver_accepts(resolver, 'reference_dates_out'):
         resolver_kwargs['reference_dates_out'] = reference_dates
+    arm_read_capture: dict = {}
+    if _resolver_accepts(resolver, 'arm_reads_out'):
+        resolver_kwargs['arm_reads_out'] = arm_read_capture
     try:
         readiness = resolver(team_id, **resolver_kwargs)
     except Exception:
@@ -584,6 +613,7 @@ def generate_team_state_artifact(
                 source=source,
                 readiness=readiness,
                 artifact=artifact,
+                arm_read_capture=arm_read_capture or None,
                 session=session,
             )
         audit = _record_audit(

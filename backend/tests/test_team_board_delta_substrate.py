@@ -1,7 +1,7 @@
 """TB-09A prospective Team Board comparison-substrate contract."""
 
 from copy import deepcopy
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -83,17 +83,68 @@ def _artifact(*, artifact_id=44, state='stretched', label='Stretched'):
     )
 
 
+def _arm_record(
+    pitcher_id,
+    availability_status,
+    *,
+    data_state='fresh',
+    confidence='high',
+    roster_status='ACTIVE',
+):
+    pitcher = SimpleNamespace(
+        id=pitcher_id,
+        mlb_id=600000 + pitcher_id,
+        full_name=f'Pitcher {pitcher_id}',
+        team_id=TEAM_ID,
+        active=True,
+        roster_status=roster_status,
+        roster_status_source='mlb_stats_api:roster_sync:active:test',
+        roster_status_raw_code=None,
+        roster_status_raw_description=None,
+        roster_status_updated_at=datetime(2026, 8, 18, 9, 0),
+        team_assignment_status=None,
+        team_assignment_source=None,
+        team_assignment_updated_at=None,
+    )
+    return {
+        'pitcher': pitcher,
+        'availability': {
+            'availability_status': availability_status,
+            'data_state': data_state,
+            'confidence': confidence,
+        },
+    }
+
+
+def _arm_capture(represented_date, statuses, *, member_ids=None):
+    records = tuple(
+        _arm_record(pitcher_id, status)
+        for pitcher_id, status in statuses
+    )
+    if member_ids is None:
+        member_ids = tuple(pitcher_id for pitcher_id, _status in statuses)
+    return delta.build_arm_read_capture(
+        records=records,
+        team_id=TEAM_ID,
+        membership=(set(member_ids), True),
+        membership_reference_date=represented_date,
+        availability_reference_date=represented_date + timedelta(days=1),
+    )
+
+
 def _snapshot(
     represented_date,
     *,
     snapshot_id,
     state='stretched',
     active_count=7,
+    arm_capture=None,
 ):
     envelope = delta.build_prospective_envelope(
         source=_source(represented_date=represented_date, snapshot_id=100 + snapshot_id),
         readiness=_readiness(active_count=active_count),
         artifact=_artifact(artifact_id=200 + snapshot_id, state=state, label=state.title()),
+        arm_read_capture=arm_capture,
     )
     return SimpleNamespace(id=snapshot_id, payload=envelope)
 
@@ -127,10 +178,12 @@ def test_prospective_envelope_refuses_a_method_stamp_that_drifted_from_owner():
 
 
 def test_naturally_generated_sidecar_is_append_only_and_inspectable(app):
+    arm_capture = _arm_capture(date(2026, 8, 18), ((1, 'Monitor'),))
     row = delta.stamp_prospective_snapshot(
         source=_source(),
         readiness=_readiness(),
         artifact=_artifact(),
+        arm_read_capture=arm_capture,
     )
     db.session.commit()
     stored = db.session.get(DashboardSnapshot, row.id)
@@ -148,6 +201,12 @@ def test_naturally_generated_sidecar_is_append_only_and_inspectable(app):
         'membership_authority': 'resolve_active_bullpen_membership',
     }
     assert stored.payload['values']['team_state']['public_state'] == 'stretched'
+    assert stored.payload['values']['arm_read']['records'][0]['public_read'] == {
+        'kind': 'read',
+        'key': 'watch_arm',
+        'label': 'Watch Arm',
+        'source': 'backend:availability_status',
+    }
 
 
 def test_stamping_new_sidecar_does_not_rewrite_existing_dashboard_history(app):
@@ -178,6 +237,32 @@ def test_stamping_new_sidecar_does_not_rewrite_existing_dashboard_history(app):
     unchanged = db.session.get(DashboardSnapshot, historical_id)
     assert unchanged.payload == historical_payload
     assert unchanged.snapshot_type == 'bullpen_dashboard'
+
+
+def test_reentry_for_same_publication_identity_reuses_immutable_sidecar(app):
+    original_capture = _arm_capture(date(2026, 8, 18), ((1, 'Available'),))
+    first = delta.stamp_prospective_snapshot(
+        source=_source(), readiness=_readiness(), artifact=_artifact(),
+        arm_read_capture=original_capture,
+    )
+    db.session.commit()
+    original_payload = deepcopy(first.payload)
+
+    changed_capture = _arm_capture(date(2026, 8, 18), ((1, 'Monitor'),))
+    repeated = delta.stamp_prospective_snapshot(
+        source=_source(), readiness=_readiness(), artifact=_artifact(),
+        arm_read_capture=changed_capture,
+    )
+    db.session.commit()
+
+    assert repeated.id == first.id
+    assert DashboardSnapshot.query.filter_by(
+        snapshot_type=delta.SNAPSHOT_TYPE,
+    ).count() == 1
+    assert repeated.payload == original_payload
+    assert repeated.payload['values']['arm_read']['records'][0][
+        'public_read'
+    ]['label'] == 'Clean Option'
 
 
 def test_capture_failure_does_not_fail_the_authoritative_publication(app):
@@ -315,9 +400,304 @@ def test_unready_domains_are_explicitly_withheld():
         _snapshot(date(2026, 8, 18), snapshot_id=2),
     )
 
+    assert result['domains']['team_state']['status'] == delta.COMPARABLE
     assert result['domains']['arm_read']['status'] == delta.DOMAIN_NOT_READY
     assert result['domains']['role_movement']['status'] == delta.DOMAIN_NOT_READY
     assert result['domains']['roster_transactions']['status'] == delta.DOMAIN_NOT_INCLUDED
+
+
+def test_missing_prior_prospective_arm_domain_does_not_block_team_state():
+    previous = _snapshot(date(2026, 8, 17), snapshot_id=1)
+    current = _snapshot(
+        date(2026, 8, 18), snapshot_id=2,
+        arm_capture=_arm_capture(date(2026, 8, 18), ((1, 'Available'),)),
+    )
+
+    result = delta.compare_snapshots(previous, current)
+
+    assert result['domains']['arm_read']['status'] == delta.DOMAIN_NOT_READY
+    assert result['domains']['team_state']['status'] == delta.COMPARABLE
+
+
+@pytest.mark.parametrize(
+    ('previous_status', 'current_status', 'previous_label', 'current_label'),
+    (
+        ('Available', 'Monitor', 'Clean Option', 'Watch Arm'),
+        ('Monitor', 'Limited', 'Watch Arm', 'Limited Rest'),
+        ('Avoid', 'Available', 'Limited Rest', 'Clean Option'),
+    ),
+)
+def test_frozen_public_read_key_changes_produce_movement_candidates(
+    previous_status, current_status, previous_label, current_label,
+):
+    previous = _snapshot(
+        date(2026, 8, 17), snapshot_id=1,
+        arm_capture=_arm_capture(date(2026, 8, 17), ((1, previous_status),)),
+    )
+    current = _snapshot(
+        date(2026, 8, 18), snapshot_id=2,
+        arm_capture=_arm_capture(date(2026, 8, 18), ((1, current_status),)),
+    )
+
+    comparison = delta.compare_snapshots(previous, current)['domains']['arm_read']
+
+    assert comparison['status'] == delta.COMPARABLE
+    assert len(comparison['movement_candidates']) == 1
+    movement = comparison['movement_candidates'][0]
+    assert movement['previous']['public_read']['label'] == previous_label
+    assert movement['current']['public_read']['label'] == current_label
+
+
+def test_internal_status_change_without_public_read_change_produces_no_movement():
+    previous = _snapshot(
+        date(2026, 8, 17), snapshot_id=1,
+        arm_capture=_arm_capture(date(2026, 8, 17), ((1, 'Limited'),)),
+    )
+    current = _snapshot(
+        date(2026, 8, 18), snapshot_id=2,
+        arm_capture=_arm_capture(date(2026, 8, 18), ((1, 'Avoid'),)),
+    )
+
+    comparison = delta.compare_snapshots(previous, current)['domains']['arm_read']
+
+    assert comparison['movement_candidates'] == []
+    assert comparison['arm_comparisons'][0]['movement'] is False
+    assert comparison['arm_comparisons'][0]['previous']['public_read']['key'] == 'rest_restricted'
+    assert comparison['arm_comparisons'][0]['current']['public_read']['key'] == 'rest_restricted'
+
+
+def test_capture_freezes_limited_read_when_evidence_is_not_current():
+    record = _arm_record(1, 'Available', data_state='stale', confidence='low')
+    capture = delta.build_arm_read_capture(
+        records=(record,), team_id=TEAM_ID, membership=({1}, True),
+        membership_reference_date=date(2026, 8, 18),
+        availability_reference_date=date(2026, 8, 19),
+    )
+
+    assert capture['records'][0]['public_read']['key'] == 'limited_read'
+    assert capture['records'][0]['public_read']['label'] == 'Limited Read'
+
+
+def test_capture_freezes_roster_authority_unavailable_as_unavailable():
+    record = _arm_record(1, 'Available', roster_status='IL_15')
+    record['roster_status'] = {
+        'status': 'IL_15',
+        'is_authoritative': True,
+        'is_active_mlb': False,
+        'is_inactive_context': True,
+        'source': 'governed_test_roster_authority',
+    }
+    capture = delta.build_arm_read_capture(
+        records=(record,), team_id=TEAM_ID, membership=({1}, True),
+        membership_reference_date=date(2026, 8, 18),
+        availability_reference_date=date(2026, 8, 19),
+    )
+
+    assert capture['records'][0]['public_read']['key'] == 'unavailable'
+    assert capture['records'][0]['public_read']['label'] == 'Unavailable'
+    assert capture['records'][0]['roster_authority']['status'] == 'IL_15'
+
+
+def test_limited_read_to_watch_arm_is_a_legitimate_frozen_movement():
+    previous_record = _arm_record(1, 'Available', data_state='stale', confidence='low')
+    previous_capture = delta.build_arm_read_capture(
+        records=(previous_record,), team_id=TEAM_ID, membership=({1}, True),
+        membership_reference_date=date(2026, 8, 17),
+        availability_reference_date=date(2026, 8, 18),
+    )
+    current_capture = _arm_capture(date(2026, 8, 18), ((1, 'Monitor'),))
+    comparison = delta.compare_snapshots(
+        _snapshot(date(2026, 8, 17), snapshot_id=1, arm_capture=previous_capture),
+        _snapshot(date(2026, 8, 18), snapshot_id=2, arm_capture=current_capture),
+    )['domains']['arm_read']
+
+    movement = comparison['movement_candidates'][0]
+    assert movement['previous']['public_read']['label'] == 'Limited Read'
+    assert movement['current']['public_read']['label'] == 'Watch Arm'
+
+
+def test_watch_arm_to_limited_read_is_a_legitimate_frozen_movement():
+    current_record = _arm_record(
+        1, 'Available', data_state='incomplete', confidence='low',
+    )
+    current_capture = delta.build_arm_read_capture(
+        records=(current_record,), team_id=TEAM_ID, membership=({1}, True),
+        membership_reference_date=date(2026, 8, 18),
+        availability_reference_date=date(2026, 8, 19),
+    )
+    comparison = delta.compare_snapshots(
+        _snapshot(
+            date(2026, 8, 17), snapshot_id=1,
+            arm_capture=_arm_capture(date(2026, 8, 17), ((1, 'Monitor'),)),
+        ),
+        _snapshot(date(2026, 8, 18), snapshot_id=2, arm_capture=current_capture),
+    )['domains']['arm_read']
+
+    movement = comparison['movement_candidates'][0]
+    assert movement['previous']['public_read']['label'] == 'Watch Arm'
+    assert movement['current']['public_read']['label'] == 'Limited Read'
+
+
+def test_limited_read_to_limited_read_produces_no_movement():
+    captures = []
+    for represented_date in (date(2026, 8, 17), date(2026, 8, 18)):
+        record = _arm_record(
+            1, 'Available', data_state='stale', confidence='low',
+        )
+        captures.append(delta.build_arm_read_capture(
+            records=(record,), team_id=TEAM_ID, membership=({1}, True),
+            membership_reference_date=represented_date,
+            availability_reference_date=represented_date + timedelta(days=1),
+        ))
+
+    comparison = delta.compare_snapshots(
+        _snapshot(date(2026, 8, 17), snapshot_id=1, arm_capture=captures[0]),
+        _snapshot(date(2026, 8, 18), snapshot_id=2, arm_capture=captures[1]),
+    )['domains']['arm_read']
+
+    assert comparison['movement_candidates'] == []
+    assert comparison['arm_comparisons'][0]['movement'] is False
+    assert comparison['arm_comparisons'][0]['current']['public_read']['key'] == 'limited_read'
+
+
+def test_arm_read_contract_version_mismatch_is_not_comparable():
+    previous = _snapshot(
+        date(2026, 8, 17), snapshot_id=1,
+        arm_capture=_arm_capture(date(2026, 8, 17), ((1, 'Available'),)),
+    )
+    current = _snapshot(
+        date(2026, 8, 18), snapshot_id=2,
+        arm_capture=_arm_capture(date(2026, 8, 18), ((1, 'Monitor'),)),
+    )
+    current.payload['domains']['arm_read']['public_contract_version'] = 'future_v2'
+
+    comparison = delta.compare_snapshots(previous, current)['domains']['arm_read']
+
+    assert comparison['status'] == delta.CONTRACT_INCOMPATIBLE
+
+
+def test_arm_read_method_version_mismatch_is_not_comparable():
+    previous = _snapshot(
+        date(2026, 8, 17), snapshot_id=1,
+        arm_capture=_arm_capture(date(2026, 8, 17), ((1, 'Available'),)),
+    )
+    current = _snapshot(
+        date(2026, 8, 18), snapshot_id=2,
+        arm_capture=_arm_capture(date(2026, 8, 18), ((1, 'Monitor'),)),
+    )
+    current.payload['domains']['arm_read']['method_version'] = 'future_method_v2'
+
+    comparison = delta.compare_snapshots(previous, current)['domains']['arm_read']
+
+    assert comparison['status'] == delta.METHOD_VERSION_MISMATCH
+    assert delta.compare_snapshots(previous, current)['domains']['team_state'][
+        'status'
+    ] == delta.COMPARABLE
+
+
+def test_arm_read_untrusted_publication_is_not_comparable():
+    previous = _snapshot(
+        date(2026, 8, 17), snapshot_id=1,
+        arm_capture=_arm_capture(date(2026, 8, 17), ((1, 'Available'),)),
+    )
+    current = _snapshot(
+        date(2026, 8, 18), snapshot_id=2,
+        arm_capture=_arm_capture(date(2026, 8, 18), ((1, 'Monitor'),)),
+    )
+    current.payload['domains']['arm_read']['trusted'] = False
+
+    comparison = delta.compare_snapshots(previous, current)['domains']['arm_read']
+
+    assert comparison['status'] == delta.FRESHNESS_UNTRUSTED
+
+
+def test_label_change_under_bumped_public_contract_is_not_reinterpreted():
+    previous = _snapshot(
+        date(2026, 8, 17), snapshot_id=1,
+        arm_capture=_arm_capture(date(2026, 8, 17), ((1, 'Available'),)),
+    )
+    current = _snapshot(
+        date(2026, 8, 18), snapshot_id=2,
+        arm_capture=_arm_capture(date(2026, 8, 18), ((1, 'Available'),)),
+    )
+    current.payload['domains']['arm_read']['public_contract_version'] = 'future_copy_v2'
+    current.payload['values']['arm_read']['records'][0]['public_read'][
+        'label'
+    ] = 'Future Clean Label'
+
+    comparison = delta.compare_snapshots(previous, current)['domains']['arm_read']
+
+    assert comparison['status'] == delta.CONTRACT_INCOMPATIBLE
+    assert 'movement_candidates' not in comparison
+
+
+def test_arm_read_population_authority_mismatch_is_not_comparable():
+    previous = _snapshot(
+        date(2026, 8, 17), snapshot_id=1,
+        arm_capture=_arm_capture(date(2026, 8, 17), ((1, 'Available'),)),
+    )
+    current = _snapshot(
+        date(2026, 8, 18), snapshot_id=2,
+        arm_capture=_arm_capture(date(2026, 8, 18), ((1, 'Monitor'),)),
+    )
+    current.payload['domains']['arm_read']['population_basis'][
+        'membership_authority'
+    ] = 'future_membership_authority'
+
+    comparison = delta.compare_snapshots(previous, current)['domains']['arm_read']
+
+    assert comparison['status'] == delta.POPULATION_BASIS_MISMATCH
+
+
+def test_missing_frozen_read_is_not_comparable_for_that_arm():
+    previous_capture = _arm_capture(date(2026, 8, 17), (), member_ids=(1,))
+    current_capture = _arm_capture(date(2026, 8, 18), ((1, 'Available'),))
+    comparison = delta.compare_snapshots(
+        _snapshot(date(2026, 8, 17), snapshot_id=1, arm_capture=previous_capture),
+        _snapshot(date(2026, 8, 18), snapshot_id=2, arm_capture=current_capture),
+    )['domains']['arm_read']
+
+    assert comparison['movement_candidates'] == []
+    assert comparison['arm_comparisons'][0]['comparable'] is False
+    assert comparison['arm_comparisons'][0]['reason_code'] == delta.VALUE_MISSING
+
+
+@pytest.mark.parametrize(
+    ('previous_statuses', 'current_statuses', 'population_change', 'reason'),
+    (
+        ((), ((1, 'Available'),), 'added', delta.PREVIOUS_MISSING),
+        (((1, 'Available'),), (), 'removed', delta.CURRENT_MISSING),
+    ),
+)
+def test_population_changes_do_not_invent_a_public_read_endpoint(
+    previous_statuses, current_statuses, population_change, reason,
+):
+    previous = _snapshot(
+        date(2026, 8, 17), snapshot_id=1,
+        arm_capture=_arm_capture(date(2026, 8, 17), previous_statuses),
+    )
+    current = _snapshot(
+        date(2026, 8, 18), snapshot_id=2,
+        arm_capture=_arm_capture(date(2026, 8, 18), current_statuses),
+    )
+
+    comparison = delta.compare_snapshots(previous, current)['domains']['arm_read']
+
+    assert comparison['movement_candidates'] == []
+    assert comparison['arm_comparisons'][0]['population_change'] == population_change
+    assert comparison['arm_comparisons'][0]['reason_code'] == reason
+
+
+def test_capture_preserves_represented_and_reference_dates():
+    capture = _arm_capture(date(2026, 8, 18), ((1, 'Available'),))
+    envelope = delta.build_prospective_envelope(
+        source=_source(represented_date=date(2026, 8, 18)),
+        readiness=_readiness(), artifact=_artifact(), arm_read_capture=capture,
+    )
+
+    assert envelope['represented_date'] == '2026-08-18'
+    assert capture['membership_reference_date'] == '2026-08-18'
+    assert capture['availability_reference_date'] == '2026-08-19'
 
 
 def test_previous_snapshot_resolver_uses_nearest_prior_represented_date(app):
