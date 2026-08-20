@@ -284,6 +284,16 @@ GAP30_TEAM_STATE_DELTA_PATHS = (
     'backend/services/team_changes.py',
 )
 
+# Gap #51 Phase 1, August 20 2026. New immutable Team Board publications may
+# carry one dormant D-055 Rest Status object authored through the existing
+# semantic owner. Public readers remain on their pre-Phase-1 behavior until a
+# natural scheduled publication is qualified and Phase 2 is separately
+# reviewed. The authority is recorded in
+# docs/decisions/2026-08-20-d055-rest-status-publication-authority.md.
+GAP51_REST_STATUS_CARRIER_PATHS = (
+    'backend/services/bullpen_board.py',
+)
+
 
 def normalize(path):
     """Repository-relative path with forward slashes and no surrounding space."""

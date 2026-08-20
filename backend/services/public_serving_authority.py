@@ -34,7 +34,14 @@ from services.availability_snapshot import (
     classify_fatigue_rows,
     latest_fatigue_rows,
 )
-from services.bullpen_board import build_board_payload, last_workload_appearance_from_logs
+from services.bullpen_board import (
+    REST_STATUS_METHOD_VERSION,
+    REST_STATUS_PUBLIC_CONTRACT_VERSION,
+    author_rest_status,
+    build_board_payload,
+    is_valid_rest_status_carrier,
+    last_workload_appearance_from_logs,
+)
 from services.bullpen_comparison import build_team_comparison
 from services.bullpen_population import eligible_bullpen_pitcher_contexts, usage_logs_by_pitcher
 from services.bullpen_visibility import build_visibility_contract
@@ -54,11 +61,30 @@ from utils.db import db
 
 TEAM_BOARD_PACKAGE_KEY = 'trusted_team_boards'
 TEAM_BOARD_PACKAGE_CONTRACT = 'trusted_team_board_publication_v1'
+REST_STATUS_POPULATION_BASIS = 'represented_default_visible_active_bullpen'
+REST_STATUS_POPULATION_AUTHORITY = 'trusted_team_boards.default_pitcher_ids'
+REST_STATUS_MEMBERSHIP_AUTHORITY = 'eligible_bullpen_pitcher_contexts'
+REST_STATUS_REFERENCE_DATE_POLICY = 'd055_availability_reference_date_v1'
 PUBLICATION_AUTHORITY_CONTRACT = 'trusted_dashboard_publication_v1'
 TEAM_BOARD_UNAVAILABLE = 'trusted_team_board_unavailable'
 TEAM_BOARD_PACKAGE_MISSING = 'trusted_team_board_package_missing'
 TEAM_BOARD_TEAM_MISSING = 'trusted_team_board_team_missing'
 TONIGHT_SNAPSHOT_UNAVAILABLE = 'trusted_tonight_snapshot_unavailable'
+
+REST_STATUS_CARRIER_QUALIFIED = 'qualified'
+REST_STATUS_CARRIER_SNAPSHOT_MISSING = 'snapshot_missing'
+REST_STATUS_CARRIER_SNAPSHOT_NOT_PERSISTED = 'snapshot_not_persisted'
+REST_STATUS_CARRIER_SNAPSHOT_NOT_READY = 'snapshot_not_ready'
+REST_STATUS_CARRIER_SNAPSHOT_UNPUBLISHED = 'snapshot_unpublished'
+REST_STATUS_CARRIER_PUBLICATION_IDENTITY_MISSING = 'publication_identity_missing'
+REST_STATUS_CARRIER_PACKAGE_MISSING = 'team_board_package_missing'
+REST_STATUS_CARRIER_PACKAGE_CONTRACT_INVALID = 'package_contract_invalid'
+REST_STATUS_CARRIER_REPRESENTED_DATE_INVALID = 'represented_date_invalid'
+REST_STATUS_CARRIER_REFERENCE_DATE_INVALID = 'reference_date_invalid'
+REST_STATUS_CARRIER_TEAM_POPULATION_INVALID = 'team_population_invalid'
+REST_STATUS_CARRIER_TEAM_MISSING = 'team_carrier_missing'
+REST_STATUS_CARRIER_AUTHORITY_INVALID = 'team_carrier_authority_invalid'
+REST_STATUS_CARRIER_VALUE_INVALID = 'team_carrier_value_invalid'
 
 
 def _truthy(value):
@@ -238,6 +264,7 @@ def build_frozen_team_board_package(dashboard_payload):
             'team_abbreviation': pitcher.team_abbreviation,
         })
 
+    freshness = payload.get('freshness') if isinstance(payload.get('freshness'), Mapping) else {}
     by_team_id = {}
     for team_id in sorted(records_by_team):
         records = sorted(
@@ -259,10 +286,20 @@ def build_frozen_team_board_package(dashboard_payload):
             roster_readiness,
         )
         default_ids = sorted(default_ids_by_team.get(team_id) or [])
+        default_id_set = set(default_ids)
         workload_concentration = summarize_recent_relief_workload(
             role_logs,
             reference_date,
-            pitcher_ids=set(default_ids),
+            pitcher_ids=default_id_set,
+        )
+        selected_records = [
+            record for record in records
+            if _as_int(record.get('pitcher_id')) in default_id_set
+        ]
+        rest_status = author_rest_status(
+            records=selected_records,
+            freshness=deepcopy(freshness),
+            roster_authority=deepcopy(roster_authority),
         )
         by_team_id[str(team_id)] = {
             'team': deepcopy(team_info.get(team_id) or {'team_id': team_id}),
@@ -270,13 +307,25 @@ def build_frozen_team_board_package(dashboard_payload):
             'default_pitcher_ids': default_ids,
             'roster_authority': deepcopy(roster_authority),
             'workload_concentration': deepcopy(workload_concentration),
+            'rest_status': deepcopy(rest_status),
+            'rest_status_authority': {
+                'method_version': REST_STATUS_METHOD_VERSION,
+                'public_contract_version': REST_STATUS_PUBLIC_CONTRACT_VERSION,
+                'team_board_package_contract': TEAM_BOARD_PACKAGE_CONTRACT,
+                'population_basis': {
+                    'basis': REST_STATUS_POPULATION_BASIS,
+                    'population_authority': REST_STATUS_POPULATION_AUTHORITY,
+                    'membership_authority': REST_STATUS_MEMBERSHIP_AUTHORITY,
+                },
+                'reference_date_policy': REST_STATUS_REFERENCE_DATE_POLICY,
+                'availability_reference_date': reference_date.isoformat(),
+            },
             'capacity_intelligence': _support_for_team(payload, 'capacity_intelligence', team_id),
             'rotation_support_pressure': _support_for_team(payload, 'rotation_support_pressure', team_id),
             'bullpen_stability': _support_for_team(payload, 'bullpen_stability', team_id),
             'bullpen_environment': _support_for_team(payload, 'bullpen_environment', team_id),
         }
 
-    freshness = payload.get('freshness') if isinstance(payload.get('freshness'), Mapping) else {}
     return {
         'contract': TEAM_BOARD_PACKAGE_CONTRACT,
         'generated_at': payload.get('generated_at') or datetime.now(timezone.utc).isoformat(),
@@ -285,6 +334,165 @@ def build_frozen_team_board_package(dashboard_payload):
         'team_count': len(by_team_id),
         'by_team_id': by_team_id,
     }
+
+
+def _carrier_result(snapshot, *, qualified=False, reason_code, represented_team_count=0,
+                    qualified_team_count=0, failed_team_id=None):
+    return {
+        'qualified': qualified,
+        'reason_code': reason_code,
+        'snapshot': publication_authority(snapshot),
+        'represented_date': _iso(getattr(snapshot, 'data_through', None)),
+        'represented_team_count': represented_team_count,
+        'qualified_team_count': qualified_team_count,
+        'failed_team_id': failed_team_id,
+    }
+
+
+def qualify_rest_status_carrier(snapshot):
+    """Qualify one persisted publication's dormant D-055 carrier, read-only."""
+    if snapshot is None:
+        return _carrier_result(
+            snapshot,
+            reason_code=REST_STATUS_CARRIER_SNAPSHOT_MISSING,
+        )
+    if type(getattr(snapshot, 'id', None)) is not int or snapshot.id <= 0:
+        return _carrier_result(
+            snapshot,
+            reason_code=REST_STATUS_CARRIER_SNAPSHOT_NOT_PERSISTED,
+        )
+    if (
+        getattr(snapshot, 'snapshot_type', None)
+        != dashboard_snapshot_service.SNAPSHOT_TYPE_BULLPEN_DASHBOARD
+        or getattr(snapshot, 'status', None)
+        != dashboard_snapshot_service.SNAPSHOT_STATUS_READY
+    ):
+        return _carrier_result(
+            snapshot,
+            reason_code=REST_STATUS_CARRIER_SNAPSHOT_NOT_READY,
+        )
+    if getattr(snapshot, 'is_published', False) is not True:
+        return _carrier_result(
+            snapshot,
+            reason_code=REST_STATUS_CARRIER_SNAPSHOT_UNPUBLISHED,
+        )
+    if (
+        type(getattr(snapshot, 'sync_run_id', None)) is not int
+        or snapshot.sync_run_id <= 0
+        or getattr(snapshot, 'published_at', None) is None
+    ):
+        return _carrier_result(
+            snapshot,
+            reason_code=REST_STATUS_CARRIER_PUBLICATION_IDENTITY_MISSING,
+        )
+
+    payload = snapshot.payload if isinstance(snapshot.payload, Mapping) else {}
+    package = payload.get(TEAM_BOARD_PACKAGE_KEY)
+    if not isinstance(package, Mapping):
+        return _carrier_result(
+            snapshot,
+            reason_code=REST_STATUS_CARRIER_PACKAGE_MISSING,
+        )
+    if package.get('contract') != TEAM_BOARD_PACKAGE_CONTRACT:
+        return _carrier_result(
+            snapshot,
+            reason_code=REST_STATUS_CARRIER_PACKAGE_CONTRACT_INVALID,
+        )
+
+    represented_date = package.get('data_through')
+    if (
+        not isinstance(represented_date, str)
+        or represented_date != _iso(snapshot.data_through)
+    ):
+        return _carrier_result(
+            snapshot,
+            reason_code=REST_STATUS_CARRIER_REPRESENTED_DATE_INVALID,
+        )
+    reference_date = package.get('availability_reference_date')
+    if (
+        not isinstance(reference_date, str)
+        or reference_date != _iso(snapshot.availability_reference_date)
+    ):
+        return _carrier_result(
+            snapshot,
+            reason_code=REST_STATUS_CARRIER_REFERENCE_DATE_INVALID,
+        )
+
+    by_team = package.get('by_team_id')
+    team_count = package.get('team_count')
+    if (
+        not isinstance(by_team, Mapping)
+        or not by_team
+        or type(team_count) is not int
+        or team_count != len(by_team)
+    ):
+        return _carrier_result(
+            snapshot,
+            reason_code=REST_STATUS_CARRIER_TEAM_POPULATION_INVALID,
+        )
+
+    expected_population = {
+        'basis': REST_STATUS_POPULATION_BASIS,
+        'population_authority': REST_STATUS_POPULATION_AUTHORITY,
+        'membership_authority': REST_STATUS_MEMBERSHIP_AUTHORITY,
+    }
+    qualified_count = 0
+    for raw_team_id in sorted(by_team, key=lambda value: str(value)):
+        team = by_team.get(raw_team_id)
+        team_id = _as_int(raw_team_id)
+        if team_id is None:
+            return _carrier_result(
+                snapshot,
+                reason_code=REST_STATUS_CARRIER_TEAM_POPULATION_INVALID,
+                represented_team_count=team_count,
+                qualified_team_count=qualified_count,
+            )
+        if not isinstance(team, Mapping) or 'rest_status' not in team:
+            return _carrier_result(
+                snapshot,
+                reason_code=REST_STATUS_CARRIER_TEAM_MISSING,
+                represented_team_count=team_count,
+                qualified_team_count=qualified_count,
+                failed_team_id=team_id,
+            )
+        authority = team.get('rest_status_authority')
+        authority_valid = (
+            isinstance(authority, Mapping)
+            and authority.get('method_version') == REST_STATUS_METHOD_VERSION
+            and authority.get('public_contract_version')
+            == REST_STATUS_PUBLIC_CONTRACT_VERSION
+            and authority.get('team_board_package_contract')
+            == TEAM_BOARD_PACKAGE_CONTRACT
+            and authority.get('population_basis') == expected_population
+            and authority.get('reference_date_policy')
+            == REST_STATUS_REFERENCE_DATE_POLICY
+            and authority.get('availability_reference_date') == reference_date
+        )
+        if not authority_valid:
+            return _carrier_result(
+                snapshot,
+                reason_code=REST_STATUS_CARRIER_AUTHORITY_INVALID,
+                represented_team_count=team_count,
+                qualified_team_count=qualified_count,
+                failed_team_id=team_id,
+            )
+        if not is_valid_rest_status_carrier(team.get('rest_status')):
+            return _carrier_result(
+                snapshot,
+                reason_code=REST_STATUS_CARRIER_VALUE_INVALID,
+                represented_team_count=team_count,
+                qualified_team_count=qualified_count,
+                failed_team_id=team_id,
+            )
+        qualified_count += 1
+
+    return _carrier_result(
+        snapshot,
+        qualified=True,
+        reason_code=REST_STATUS_CARRIER_QUALIFIED,
+        represented_team_count=team_count,
+        qualified_team_count=qualified_count,
+    )
 
 
 def attach_frozen_team_boards(dashboard_payload):
