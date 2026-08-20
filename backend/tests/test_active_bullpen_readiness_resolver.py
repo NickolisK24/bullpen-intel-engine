@@ -177,6 +177,25 @@ def test_complete_active_bullpen_resolves_high_and_supported(app):
     assert payload['readiness']['status_code'] in SUPPORTED
 
 
+def test_complete_active_bullpen_exposes_prospective_frozen_arm_reads(app):
+    _seed_team(usable_count=8, total_count=8)
+    arm_reads = {}
+
+    payload = resolve_team_readiness_payload(TEAM_ID, arm_reads_out=arm_reads)
+
+    assert payload is not None
+    assert arm_reads['team_id'] == TEAM_ID
+    assert len(arm_reads['member_pitcher_ids']) == 8
+    assert len(arm_reads['records']) == 8
+    assert arm_reads['missing_record_pitcher_ids'] == []
+    assert {
+        record['public_read']['key'] for record in arm_reads['records']
+    }.issubset({
+        'clean_option', 'watch_arm', 'rest_restricted',
+        'unavailable', 'limited_read',
+    })
+
+
 def test_bounded_partial_bullpen_resolves_medium_supported_with_limitation(app):
     # 6 of 8 usable, 2 unresolved -> medium (>=75%, >=6 usable, <=2 unresolved).
     _seed_team(usable_count=6, total_count=8)
