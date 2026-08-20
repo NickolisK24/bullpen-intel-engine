@@ -11,6 +11,7 @@ from sqlalchemy import event
 
 from models.dashboard_snapshot import DashboardSnapshot
 from services import team_board_delta_substrate as delta
+from services import public_team_relief_work
 from team_operations import TEAM_STATE_METHOD_VERSION
 from tests.db_config import (
     configure_test_database,
@@ -139,14 +140,154 @@ def _snapshot(
     state='stretched',
     active_count=7,
     arm_capture=None,
+    workload_capture=None,
 ):
     envelope = delta.build_prospective_envelope(
         source=_source(represented_date=represented_date, snapshot_id=100 + snapshot_id),
         readiness=_readiness(active_count=active_count),
         artifact=_artifact(artifact_id=200 + snapshot_id, state=state, label=state.title()),
         arm_read_capture=arm_capture,
+        workload_window_capture=workload_capture,
     )
     return SimpleNamespace(id=snapshot_id, payload=envelope)
+
+
+def _workload_window(
+    represented_date,
+    *,
+    relief_appearances,
+    pitchers_in_relief=None,
+    pitches_total=None,
+    appearances_with_pitches=None,
+    start_relief_unknown=0,
+):
+    pitchers_in_relief = (
+        relief_appearances if pitchers_in_relief is None else pitchers_in_relief
+    )
+    appearances_with_pitches = (
+        relief_appearances
+        if appearances_with_pitches is None
+        else appearances_with_pitches
+    )
+    return {
+        'through': represented_date.isoformat(),
+        'relief_appearances': relief_appearances,
+        'pitchers_in_relief': pitchers_in_relief,
+        'pitches_total': pitches_total,
+        'appearances_with_pitches': appearances_with_pitches,
+        'start_relief_unknown': start_relief_unknown,
+        'sentence': f'{relief_appearances} relief appearances.',
+        'pitchers_sentence': f'{pitchers_in_relief} pitchers appeared in relief.',
+        'pitches_sentence': (
+            f'{pitches_total} pitches.'
+            if pitches_total is not None
+            else 'Pitch count unavailable.'
+        ),
+        **(
+            {'start_relief_unknown_sentence': 'One appearance is unclassified.'}
+            if start_relief_unknown
+            else {}
+        ),
+    }
+
+
+def _workload_capture(
+    represented_date,
+    *,
+    window_7=None,
+    window_14=None,
+):
+    return {
+        'team_id': TEAM_ID,
+        'represented_date': represented_date.isoformat(),
+        'method_version': public_team_relief_work.WORKLOAD_WINDOWS_METHOD_VERSION,
+        'public_contract_version': (
+            public_team_relief_work.WORKLOAD_WINDOWS_PUBLIC_CONTRACT_VERSION
+        ),
+        'contract_version': 'trusted_team_board_publication_v1',
+        'population_basis': {
+            'basis': public_team_relief_work.WORKLOAD_WINDOWS_POPULATION_BASIS,
+            'population_authority': (
+                public_team_relief_work.WORKLOAD_WINDOWS_POPULATION_AUTHORITY
+            ),
+            'membership_authority': (
+                public_team_relief_work.WORKLOAD_WINDOWS_MEMBERSHIP_AUTHORITY
+            ),
+        },
+        'reference_date_policy': (
+            public_team_relief_work.WORKLOAD_WINDOWS_REFERENCE_DATE_POLICY
+        ),
+        'source_authority': 'trusted_team_board_publication',
+        'windows': {
+            'window_7': window_7 or _workload_window(
+                represented_date,
+                relief_appearances=2,
+                pitches_total=36,
+            ),
+            'window_14': window_14 or _workload_window(
+                represented_date,
+                relief_appearances=4,
+                pitches_total=72,
+            ),
+        },
+    }
+
+
+def _workload_carrier_snapshot(represented_date, *, team_id=TEAM_ID, carrier=None):
+    carrier = carrier or {
+        'contract': public_team_relief_work.WORKLOAD_WINDOWS_CARRIER_CONTRACT,
+        'status': public_team_relief_work.WORKLOAD_WINDOWS_COMPLETE,
+        'reason_code': None,
+        'data_through': represented_date.isoformat(),
+        'windows': _workload_capture(represented_date)['windows'],
+    }
+    return SimpleNamespace(
+        id=501,
+        data_through=represented_date,
+        payload={
+            'trusted_team_boards': {
+                'contract': 'trusted_team_board_publication_v1',
+                'data_through': represented_date.isoformat(),
+                'by_team_id': {
+                    str(team_id): {
+                        'team': {'team_id': team_id},
+                        'workload_windows': carrier,
+                        'workload_windows_authority': {
+                            'method_version': (
+                                public_team_relief_work.WORKLOAD_WINDOWS_METHOD_VERSION
+                            ),
+                            'public_contract_version': (
+                                public_team_relief_work
+                                .WORKLOAD_WINDOWS_PUBLIC_CONTRACT_VERSION
+                            ),
+                            'team_board_package_contract': (
+                                'trusted_team_board_publication_v1'
+                            ),
+                            'population_basis': {
+                                'basis': (
+                                    public_team_relief_work
+                                    .WORKLOAD_WINDOWS_POPULATION_BASIS
+                                ),
+                                'population_authority': (
+                                    public_team_relief_work
+                                    .WORKLOAD_WINDOWS_POPULATION_AUTHORITY
+                                ),
+                                'membership_authority': (
+                                    public_team_relief_work
+                                    .WORKLOAD_WINDOWS_MEMBERSHIP_AUTHORITY
+                                ),
+                            },
+                            'reference_date_policy': (
+                                public_team_relief_work
+                                .WORKLOAD_WINDOWS_REFERENCE_DATE_POLICY
+                            ),
+                            'data_through': represented_date.isoformat(),
+                        },
+                    },
+                },
+            },
+        },
+    )
 
 
 def test_prospective_envelope_uses_canonical_team_state_method_owner():
@@ -241,17 +382,22 @@ def test_stamping_new_sidecar_does_not_rewrite_existing_dashboard_history(app):
 
 def test_reentry_for_same_publication_identity_reuses_immutable_sidecar(app):
     original_capture = _arm_capture(date(2026, 8, 18), ((1, 'Available'),))
+    original_workload = _workload_capture(date(2026, 8, 18))
     first = delta.stamp_prospective_snapshot(
         source=_source(), readiness=_readiness(), artifact=_artifact(),
         arm_read_capture=original_capture,
+        workload_window_capture=original_workload,
     )
     db.session.commit()
     original_payload = deepcopy(first.payload)
 
     changed_capture = _arm_capture(date(2026, 8, 18), ((1, 'Monitor'),))
+    changed_workload = _workload_capture(date(2026, 8, 18))
+    changed_workload['windows']['window_7']['pitches_total'] = 999
     repeated = delta.stamp_prospective_snapshot(
         source=_source(), readiness=_readiness(), artifact=_artifact(),
         arm_read_capture=changed_capture,
+        workload_window_capture=changed_workload,
     )
     db.session.commit()
 
@@ -263,6 +409,7 @@ def test_reentry_for_same_publication_identity_reuses_immutable_sidecar(app):
     assert repeated.payload['values']['arm_read']['records'][0][
         'public_read'
     ]['label'] == 'Clean Option'
+    assert repeated.payload['values']['workload_7d']['pitches_total'] == 36
 
 
 def test_capture_failure_does_not_fail_the_authoritative_publication(app):
@@ -434,6 +581,8 @@ def test_unready_domains_are_explicitly_withheld():
 
     assert result['domains']['team_state']['status'] == delta.COMPARABLE
     assert result['domains']['arm_read']['status'] == delta.DOMAIN_NOT_READY
+    assert result['domains']['workload_7d']['status'] == delta.DOMAIN_NOT_READY
+    assert result['domains']['workload_14d']['status'] == delta.DOMAIN_NOT_READY
     assert result['domains']['role_movement']['status'] == delta.DOMAIN_NOT_READY
     assert result['domains']['roster_transactions']['status'] == delta.DOMAIN_NOT_INCLUDED
 
@@ -449,6 +598,272 @@ def test_missing_prior_prospective_arm_domain_does_not_block_team_state():
 
     assert result['domains']['arm_read']['status'] == delta.DOMAIN_NOT_READY
     assert result['domains']['team_state']['status'] == delta.COMPARABLE
+
+
+def test_workload_capture_copies_exact_same_cycle_carrier_without_calculation():
+    represented_date = date(2026, 8, 18)
+    snapshot = _workload_carrier_snapshot(represented_date)
+
+    capture = delta.build_workload_window_capture(
+        snapshot=snapshot,
+        team_id=TEAM_ID,
+    )
+
+    assert capture['represented_date'] == represented_date.isoformat()
+    assert capture['windows'] == snapshot.payload['trusted_team_boards'][
+        'by_team_id'
+    ][str(TEAM_ID)]['workload_windows']['windows']
+    assert capture['windows'] is not snapshot.payload['trusted_team_boards'][
+        'by_team_id'
+    ][str(TEAM_ID)]['workload_windows']['windows']
+    capture['windows']['window_7']['pitches_total'] = 999
+    assert snapshot.payload['trusted_team_boards']['by_team_id'][str(TEAM_ID)][
+        'workload_windows'
+    ]['windows']['window_7']['pitches_total'] == 36
+    assert capture['population_basis']['basis'] == (
+        'official_appearance_team_relief_appearances'
+    )
+
+
+def test_workload_capture_preserves_legitimate_zero_values():
+    represented_date = date(2026, 8, 18)
+    zero = _workload_window(
+        represented_date,
+        relief_appearances=0,
+        pitchers_in_relief=0,
+        pitches_total=0,
+        appearances_with_pitches=0,
+    )
+    carrier = {
+        'contract': public_team_relief_work.WORKLOAD_WINDOWS_CARRIER_CONTRACT,
+        'status': public_team_relief_work.WORKLOAD_WINDOWS_COMPLETE,
+        'reason_code': None,
+        'data_through': represented_date.isoformat(),
+        'windows': {'window_7': zero, 'window_14': deepcopy(zero)},
+    }
+
+    capture = delta.build_workload_window_capture(
+        snapshot=_workload_carrier_snapshot(represented_date, carrier=carrier),
+        team_id=TEAM_ID,
+    )
+
+    assert capture['windows']['window_7']['relief_appearances'] == 0
+    assert capture['windows']['window_7']['pitches_total'] == 0
+
+
+def test_missing_or_withheld_workload_carrier_is_not_reconstructed():
+    represented_date = date(2026, 8, 18)
+    missing = _workload_carrier_snapshot(represented_date)
+    missing.payload['trusted_team_boards']['by_team_id'][str(TEAM_ID)].pop(
+        'workload_windows'
+    )
+    withheld = _workload_carrier_snapshot(represented_date)
+    withheld.payload['trusted_team_boards']['by_team_id'][str(TEAM_ID)][
+        'workload_windows'
+    ].update({'status': 'withheld', 'reason_code': 'data_through_missing'})
+
+    assert delta.build_workload_window_capture(
+        snapshot=missing,
+        team_id=TEAM_ID,
+    ) is None
+    assert delta.try_build_workload_window_capture(
+        snapshot=withheld,
+        team_id=TEAM_ID,
+    ) is None
+
+
+def test_workload_capture_rejects_wrong_team_identity():
+    snapshot = _workload_carrier_snapshot(date(2026, 8, 18))
+    snapshot.payload['trusted_team_boards']['by_team_id'][str(TEAM_ID)]['team'][
+        'team_id'
+    ] = 999
+
+    with pytest.raises(delta.DeltaStampError, match='team_identity_mismatch'):
+        delta.build_workload_window_capture(snapshot=snapshot, team_id=TEAM_ID)
+
+
+def test_workload_windows_freeze_into_sidecar_domains_independently():
+    represented_date = date(2026, 8, 18)
+    capture = _workload_capture(represented_date)
+
+    envelope = delta.build_prospective_envelope(
+        source=_source(represented_date=represented_date),
+        readiness=_readiness(),
+        artifact=_artifact(),
+        workload_window_capture=capture,
+    )
+
+    assert envelope['domains']['workload_7d']['window_days'] == 7
+    assert envelope['domains']['workload_14d']['window_days'] == 14
+    assert envelope['values']['workload_7d'] == capture['windows']['window_7']
+    assert envelope['values']['workload_14d'] == capture['windows']['window_14']
+
+
+@pytest.mark.parametrize(
+    ('previous_pitches', 'current_pitches', 'movement'),
+    ((2, 4, True), (4, 2, True), (3, 3, False), (0, 2, True), (2, 0, True), (0, 0, False)),
+)
+def test_workload_comparison_preserves_changed_unchanged_and_zero(
+    previous_pitches,
+    current_pitches,
+    movement,
+):
+    previous_date = date(2026, 8, 17)
+    current_date = date(2026, 8, 18)
+    previous = _snapshot(
+        previous_date,
+        snapshot_id=1,
+        workload_capture=_workload_capture(
+            previous_date,
+            window_7=_workload_window(
+                previous_date,
+                relief_appearances=2,
+                pitches_total=previous_pitches,
+            ),
+        ),
+    )
+    current = _snapshot(
+        current_date,
+        snapshot_id=2,
+        workload_capture=_workload_capture(
+            current_date,
+            window_7=_workload_window(
+                current_date,
+                relief_appearances=2,
+                pitches_total=current_pitches,
+            ),
+        ),
+    )
+
+    comparison = delta.compare_snapshots(previous, current)['domains']['workload_7d']
+
+    assert comparison['status'] == delta.COMPARABLE
+    assert comparison['movement'] is movement
+    assert ('pitches_total' in comparison['changed_fields']) is movement
+
+
+def test_workload_7d_and_14d_compare_independently():
+    previous_date = date(2026, 8, 17)
+    current_date = date(2026, 8, 18)
+    previous = _snapshot(
+        previous_date,
+        snapshot_id=1,
+        workload_capture=_workload_capture(previous_date),
+    )
+    current_capture = _workload_capture(current_date)
+    current_capture['windows']['window_14']['pitches_total'] = 90
+    current = _snapshot(
+        current_date,
+        snapshot_id=2,
+        workload_capture=current_capture,
+    )
+
+    result = delta.compare_snapshots(previous, current)['domains']
+
+    assert result['workload_7d']['movement'] is False
+    assert result['workload_14d']['movement'] is True
+    assert result['workload_14d']['changed_fields'] == ['pitches_total']
+
+
+def test_partial_pitch_coverage_compares_the_frozen_known_pitch_claim():
+    previous_date = date(2026, 8, 17)
+    current_date = date(2026, 8, 18)
+    previous_window = _workload_window(
+        previous_date,
+        relief_appearances=2,
+        pitches_total=None,
+        appearances_with_pitches=1,
+    )
+    current_window = _workload_window(
+        current_date,
+        relief_appearances=2,
+        pitches_total=None,
+        appearances_with_pitches=1,
+    )
+    previous_window['pitches_sentence'] = (
+        'Pitch count unavailable for 1 of 2 relief appearances; '
+        '18 pitches across the other 1.'
+    )
+    current_window['pitches_sentence'] = (
+        'Pitch count unavailable for 1 of 2 relief appearances; '
+        '24 pitches across the other 1.'
+    )
+    previous = _snapshot(
+        previous_date,
+        snapshot_id=1,
+        workload_capture=_workload_capture(
+            previous_date,
+            window_7=previous_window,
+        ),
+    )
+    current = _snapshot(
+        current_date,
+        snapshot_id=2,
+        workload_capture=_workload_capture(
+            current_date,
+            window_7=current_window,
+        ),
+    )
+
+    comparison = delta.compare_snapshots(previous, current)['domains']['workload_7d']
+
+    assert comparison['movement'] is True
+    assert comparison['changed_fields'] == ['pitches_sentence']
+
+
+@pytest.mark.parametrize(
+    ('field', 'reason'),
+    (
+        ('method_version', delta.METHOD_VERSION_MISMATCH),
+        ('public_contract_version', delta.CONTRACT_INCOMPATIBLE),
+        ('population_basis', delta.POPULATION_BASIS_MISMATCH),
+    ),
+)
+def test_workload_compatibility_fails_closed_on_authority_mismatch(field, reason):
+    previous_date = date(2026, 8, 17)
+    current_date = date(2026, 8, 18)
+    previous = _snapshot(
+        previous_date,
+        snapshot_id=1,
+        workload_capture=_workload_capture(previous_date),
+    )
+    current = _snapshot(
+        current_date,
+        snapshot_id=2,
+        workload_capture=_workload_capture(current_date),
+    )
+    current.payload['domains']['workload_7d'][field] = (
+        {'basis': 'different', 'population_authority': 'different', 'membership_authority': 'different'}
+        if field == 'population_basis'
+        else 'different'
+    )
+
+    comparison = delta.compare_snapshots(previous, current)['domains']['workload_7d']
+
+    assert comparison['status'] == reason
+
+
+def test_untrusted_or_invalidly_ordered_workload_endpoints_fail_closed():
+    previous_date = date(2026, 8, 17)
+    current_date = date(2026, 8, 18)
+    previous = _snapshot(
+        previous_date,
+        snapshot_id=1,
+        workload_capture=_workload_capture(previous_date),
+    )
+    current = _snapshot(
+        current_date,
+        snapshot_id=2,
+        workload_capture=_workload_capture(current_date),
+    )
+    current.payload['domains']['workload_7d']['trusted'] = False
+
+    assert delta.compare_snapshots(previous, current)['domains']['workload_7d'][
+        'status'
+    ] == delta.FRESHNESS_UNTRUSTED
+    assert delta.compare_snapshots(current, previous)['domains']['workload_7d'][
+        'status'
+    ] == delta.REPRESENTED_DATE_INVALID
 
 
 @pytest.mark.parametrize(
@@ -866,5 +1281,8 @@ def test_comparison_source_contains_no_historical_recompute_path():
         'assemble_bullpen_readiness',
         'classify_latest_fatigue_rows',
         'recalculate_all_fatigue',
+        'author_workload_windows',
+        'build_public_team_relief_work_payload',
+        'GameLog.query',
     ):
         assert forbidden not in source

@@ -2,8 +2,10 @@
 
 This module does not author change events or reader-facing copy.  It freezes a
 small comparison envelope next to each newly published Team State artifact and
-later proves whether two such envelopes are semantically compatible.  Existing
-dashboard snapshots and Share Artifacts are never modified or backfilled.
+later proves whether two such envelopes are semantically compatible. Optional
+Arm Read and workload-window domains are copied only from values already frozen
+in that publication cycle. Existing dashboard snapshots and Share Artifacts are
+never modified or backfilled.
 """
 
 from __future__ import annotations
@@ -22,6 +24,14 @@ from services.pitcher_public_labels import (
     READ_PUBLIC_LABELS,
     build_public_arm_read,
 )
+from services.public_team_relief_work import (
+    WORKLOAD_WINDOWS_CARRIER_CONTRACT,
+    WORKLOAD_WINDOWS_COMPLETE,
+    WORKLOAD_WINDOWS_METHOD_VERSION,
+    WORKLOAD_WINDOWS_PUBLIC_CONTRACT_VERSION,
+    WINDOW_DAYS,
+)
+from services.public_serving_authority import TEAM_BOARD_PACKAGE_CONTRACT
 from services.roster_authority import VERSION as ROSTER_AUTHORITY_VERSION
 from services.team_state_public_vocabulary import PUBLIC_TEAM_STATE_CONTRACT
 from team_operations import TEAM_STATE_METHOD_VERSION
@@ -66,8 +76,8 @@ DOMAIN_READINESS = MappingProxyType({
     'active_arm_count': READINESS_COMPARABLE_WHEN_STAMPED,
     'arm_read': READINESS_COMPARABLE_WHEN_STAMPED,
     'rest_status': READINESS_NOT_YET_COMPARABLE,
-    'workload_7d': READINESS_NOT_YET_COMPARABLE,
-    'workload_14d': READINESS_NOT_YET_COMPARABLE,
+    'workload_7d': READINESS_COMPARABLE_WHEN_STAMPED,
+    'workload_14d': READINESS_COMPARABLE_WHEN_STAMPED,
     'workload_concentration': READINESS_NOT_YET_COMPARABLE,
     'rotation_impact': READINESS_NOT_YET_COMPARABLE,
     'role_movement': READINESS_NOT_YET_COMPARABLE,
@@ -206,7 +216,133 @@ def build_arm_read_capture(
     }
 
 
-def build_prospective_envelope(*, source, readiness, artifact, arm_read_capture=None) -> dict:
+def _valid_workload_window(value, *, window_days, represented_date):
+    value = _mapping(value)
+    if value.get('through') != represented_date:
+        return False
+    integer_fields = (
+        'relief_appearances',
+        'pitchers_in_relief',
+        'appearances_with_pitches',
+        'start_relief_unknown',
+    )
+    if any(
+        type(value.get(field)) is not int or value.get(field) < 0
+        for field in integer_fields
+    ):
+        return False
+    pitches_total = value.get('pitches_total')
+    if pitches_total is not None and (
+        type(pitches_total) is not int or pitches_total < 0
+    ):
+        return False
+    if value.get('appearances_with_pitches') > value.get('relief_appearances'):
+        return False
+    for field in ('sentence', 'pitchers_sentence', 'pitches_sentence'):
+        if not isinstance(value.get(field), str) or not value.get(field):
+            return False
+    if value.get('start_relief_unknown') and not isinstance(
+        value.get('start_relief_unknown_sentence'), str
+    ):
+        return False
+    return window_days in WINDOW_DAYS
+
+
+def build_workload_window_capture(*, snapshot, team_id) -> dict | None:
+    """Copy same-cycle workload windows from one immutable Team Board package.
+
+    Missing carriers identify pre-Gap-32 publications and return ``None`` so
+    their existing Team State and Arm Read domains remain independently usable.
+    Present-but-invalid authority raises and is withheld by the optional sidecar
+    capture path; no workload calculation or historical query occurs here.
+    """
+    payload = _mapping(getattr(snapshot, 'payload', None))
+    package = _mapping(payload.get('trusted_team_boards'))
+    by_team_id = _mapping(package.get('by_team_id'))
+    team = _mapping(by_team_id.get(str(int(team_id))))
+    if not team or 'workload_windows' not in team:
+        return None
+    team_identity = _mapping(team.get('team'))
+    if team_identity.get('team_id') != int(team_id):
+        raise DeltaStampError('workload_team_identity_mismatch')
+
+    carrier = _mapping(team.get('workload_windows'))
+    authority = _mapping(team.get('workload_windows_authority'))
+    represented_date = _iso(getattr(snapshot, 'data_through', None))
+    if package.get('contract') != TEAM_BOARD_PACKAGE_CONTRACT:
+        raise DeltaStampError('workload_package_contract_unproven')
+    if carrier.get('contract') != WORKLOAD_WINDOWS_CARRIER_CONTRACT:
+        raise DeltaStampError('workload_carrier_contract_invalid')
+    if carrier.get('status') != WORKLOAD_WINDOWS_COMPLETE:
+        raise DeltaStampError('workload_value_unavailable')
+    if carrier.get('data_through') != represented_date:
+        raise DeltaStampError('workload_represented_date_mismatch')
+    if package.get('data_through') != represented_date:
+        raise DeltaStampError('workload_package_date_mismatch')
+    if authority.get('method_version') != WORKLOAD_WINDOWS_METHOD_VERSION:
+        raise DeltaStampError('workload_method_version_unproven')
+    if (
+        authority.get('public_contract_version')
+        != WORKLOAD_WINDOWS_PUBLIC_CONTRACT_VERSION
+    ):
+        raise DeltaStampError('workload_public_contract_unproven')
+    if authority.get('team_board_package_contract') != package.get('contract'):
+        raise DeltaStampError('workload_package_contract_unproven')
+    if authority.get('data_through') != represented_date:
+        raise DeltaStampError('workload_authority_date_mismatch')
+    population_basis = authority.get('population_basis')
+    if not isinstance(population_basis, Mapping) or any(
+        population_basis.get(field) in (None, '')
+        for field in ('basis', 'population_authority', 'membership_authority')
+    ):
+        raise DeltaStampError('workload_population_basis_unproven')
+    if authority.get('reference_date_policy') in (None, ''):
+        raise DeltaStampError('workload_reference_date_policy_unproven')
+
+    windows = _mapping(carrier.get('windows'))
+    frozen = {}
+    for window_days in WINDOW_DAYS:
+        key = f'window_{window_days}'
+        value = windows.get(key)
+        if not _valid_workload_window(
+            value,
+            window_days=window_days,
+            represented_date=represented_date,
+        ):
+            raise DeltaStampError(f'{key}_value_invalid')
+        frozen[key] = deepcopy(dict(value))
+
+    return {
+        'team_id': int(team_id),
+        'represented_date': represented_date,
+        'method_version': authority.get('method_version'),
+        'public_contract_version': authority.get('public_contract_version'),
+        'contract_version': authority.get('team_board_package_contract'),
+        'population_basis': deepcopy(dict(population_basis)),
+        'reference_date_policy': authority.get('reference_date_policy'),
+        'source_authority': 'trusted_team_board_publication',
+        'windows': frozen,
+    }
+
+
+def try_build_workload_window_capture(*, snapshot, team_id) -> dict | None:
+    """Read an optional workload carrier without blocking existing domains."""
+    try:
+        return build_workload_window_capture(snapshot=snapshot, team_id=team_id)
+    except Exception as exc:  # noqa: BLE001 - optional prospective domain
+        logger.warning(
+            'Workload window capture withheld team_id=%s snapshot_id=%s reason=%s.',
+            team_id,
+            getattr(snapshot, 'id', None),
+            type(exc).__name__,
+        )
+        return None
+
+
+def build_prospective_envelope(
+    *, source, readiness, artifact, arm_read_capture=None,
+    workload_window_capture=None,
+) -> dict:
     """Build metadata from the exact governed read frozen by ``artifact``.
 
     No classifier or historical service is called.  The method stamp is read
@@ -317,11 +453,42 @@ def build_prospective_envelope(*, source, readiness, artifact, arm_read_capture=
             ),
             'records': deepcopy(records),
         }
+    workload_window_capture = _mapping(workload_window_capture)
+    if workload_window_capture:
+        if workload_window_capture.get('team_id') != envelope['team_id']:
+            raise DeltaStampError('workload_team_identity_mismatch')
+        if workload_window_capture.get('represented_date') != envelope['represented_date']:
+            raise DeltaStampError('workload_represented_date_mismatch')
+        windows = _mapping(workload_window_capture.get('windows'))
+        for window_days in WINDOW_DAYS:
+            domain = f'workload_{window_days}d'
+            value_key = f'window_{window_days}'
+            value = windows.get(value_key)
+            if not isinstance(value, Mapping):
+                raise DeltaStampError(f'{value_key}_value_missing')
+            envelope['domains'][domain] = {
+                'method_version': workload_window_capture.get('method_version'),
+                'contract_version': workload_window_capture.get('contract_version'),
+                'public_contract_version': (
+                    workload_window_capture.get('public_contract_version')
+                ),
+                'population_basis': deepcopy(
+                    workload_window_capture.get('population_basis')
+                ),
+                'reference_date_policy': (
+                    workload_window_capture.get('reference_date_policy')
+                ),
+                'source_authority': workload_window_capture.get('source_authority'),
+                'window_days': window_days,
+                'trusted': trusted,
+            }
+            envelope['values'][domain] = deepcopy(dict(value))
     return envelope
 
 
 def stamp_prospective_snapshot(
-    *, source, readiness, artifact, arm_read_capture=None, session=None,
+    *, source, readiness, artifact, arm_read_capture=None,
+    workload_window_capture=None, session=None,
 ):
     """Stage one append-only sidecar for a newly published Team State artifact."""
     session = session or db.session
@@ -330,6 +497,7 @@ def stamp_prospective_snapshot(
         readiness=readiness,
         artifact=artifact,
         arm_read_capture=arm_read_capture,
+        workload_window_capture=workload_window_capture,
     )
     represented_date = _as_date(envelope.get('represented_date'))
     source_key = f'{SNAPSHOT_SOURCE_PREFIX}{envelope["team_id"]}'
@@ -370,7 +538,8 @@ def stamp_prospective_snapshot(
 
 
 def try_stamp_prospective_snapshot(
-    *, source, readiness, artifact, arm_read_capture=None, session=None,
+    *, source, readiness, artifact, arm_read_capture=None,
+    workload_window_capture=None, session=None,
 ):
     """Capture a sidecar without making Share Artifact publication depend on it.
 
@@ -387,6 +556,7 @@ def try_stamp_prospective_snapshot(
                 readiness=readiness,
                 artifact=artifact,
                 arm_read_capture=arm_read_capture,
+                workload_window_capture=workload_window_capture,
                 session=session,
             )
     except Exception as exc:  # noqa: BLE001 - optional capture must not block publish
@@ -703,6 +873,75 @@ def _compatible_arm_read_domain(previous, current):
     }
 
 
+def _compatible_workload_domain(previous, current, *, window_days):
+    domain = f'workload_{window_days}d'
+    if previous is None:
+        return _withheld(domain, PREVIOUS_MISSING)
+    if current is None:
+        return _withheld(domain, CURRENT_MISSING)
+    if (
+        not _domain_metadata(_payload(previous), domain)
+        or not _domain_metadata(_payload(current), domain)
+    ):
+        # Older sidecars remain valid for domains they already carried. No
+        # workload value is reconstructed from historical GameLog rows.
+        return _withheld(domain, DOMAIN_NOT_READY)
+
+    base = _compatible_domain(previous, current, domain, domain)
+    if base.get('status') != COMPARABLE:
+        return base
+
+    previous_metadata = _domain_metadata(_payload(previous), domain)
+    current_metadata = _domain_metadata(_payload(current), domain)
+    for field in ('reference_date_policy', 'source_authority'):
+        if (
+            previous_metadata.get(field) in (None, '')
+            or current_metadata.get(field) in (None, '')
+            or previous_metadata.get(field) != current_metadata.get(field)
+        ):
+            return _withheld(domain, CONTRACT_INCOMPATIBLE)
+    if (
+        previous_metadata.get('window_days') != window_days
+        or current_metadata.get('window_days') != window_days
+    ):
+        return _withheld(domain, CONTRACT_INCOMPATIBLE)
+
+    previous_date = _payload(previous).get('represented_date')
+    current_date = _payload(current).get('represented_date')
+    previous_value = base.get('previous')
+    current_value = base.get('current')
+    if not _valid_workload_window(
+        previous_value,
+        window_days=window_days,
+        represented_date=previous_date,
+    ) or not _valid_workload_window(
+        current_value,
+        window_days=window_days,
+        represented_date=current_date,
+    ):
+        return _withheld(domain, VALUE_MISSING)
+
+    material_fields = (
+        'relief_appearances',
+        'pitchers_in_relief',
+        'pitches_total',
+        'appearances_with_pitches',
+        'start_relief_unknown',
+        # When pitch coverage is partial, the governed known-pitch subtotal is
+        # carried only in this backend-authored sentence. It is material data,
+        # not presentation regenerated by the comparator.
+        'pitches_sentence',
+    )
+    changed_fields = [
+        field
+        for field in material_fields
+        if previous_value.get(field) != current_value.get(field)
+    ]
+    base['movement'] = bool(changed_fields)
+    base['changed_fields'] = changed_fields
+    return base
+
+
 def compare_snapshots(previous, current) -> dict:
     """Return raw values only for domains whose compatibility is proven."""
     previous_payload = _payload(previous)
@@ -715,6 +954,12 @@ def compare_snapshots(previous, current) -> dict:
             previous, current, 'active_arm_count', 'active_arm_count'
         ),
         'arm_read': _compatible_arm_read_domain(previous, current),
+        'workload_7d': _compatible_workload_domain(
+            previous, current, window_days=7
+        ),
+        'workload_14d': _compatible_workload_domain(
+            previous, current, window_days=14
+        ),
     }
     for domain, readiness in DOMAIN_READINESS.items():
         if domain in domains:
