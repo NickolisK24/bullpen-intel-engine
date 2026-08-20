@@ -245,6 +245,35 @@ HOTFIX01_TEAM_STATE_SUMMARY_AUTHORITY_PATHS = (
     'backend/services/team_state_public_vocabulary.py',
 )
 
+# D-056, August 18 2026. The published Team State path classified bullpen
+# availability on the trusted source's slate instead of the canonical next-day
+# availability reference every other read of the same bullpen uses (the Team Board,
+# the readiness route, and the calibration shadow). One local variable was answering
+# two questions -- roster membership, which genuinely needs the slate, and
+# availability, which needs slate + 1 -- so arms that worked the day before the slate
+# were held out of the clean bucket and the artifact's own freshness metadata
+# disagreed with the date it classified at. The decision authority is recorded in
+# docs/decisions/2026-08-18-team-state-availability-reference-date.md.
+#
+# This exception is exact-path and decision-linked. Contract A is untouched: no
+# threshold, precedence, partition mapping, vocabulary, or v3_phase_5 semantic
+# moves, and its freeze test against the calibration contract stays green. No stored
+# artifact is rewritten, no publication gate changes, no schema or migration is
+# involved, and the proof capture added to dashboard_snapshot.py is env-gated,
+# side-channel, and runs only after publication has already committed.
+#
+# What the guards protect is proved directly and on every run by
+# test_team_state_vnext_contract_a.py and test_team_state_reference_date_split.py --
+# both stronger statements than a diff check. As with the reviewed exceptions above,
+# these entries go inert the moment this branch merges, because the paths land on
+# origin/main and can no longer appear in a future ``git diff origin/main...HEAD``.
+D056_TEAM_STATE_REFERENCE_DATE_PATHS = (
+    'backend/services/share_artifact_generation.py',
+    'backend/services/team_state_card_metrics.py',
+    'backend/services/team_state_vnext_production_proof.py',
+    'backend/services/dashboard_snapshot.py',
+)
+
 
 def normalize(path):
     """Repository-relative path with forward slashes and no surrounding space."""

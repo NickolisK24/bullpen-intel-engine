@@ -306,7 +306,8 @@ def test_phase0e_switches_and_legacy_public_files_not_modified():
         + freeze_policy.PUBLIC_INTEGRITY_RESIDUAL_PATHS
         + freeze_policy.D054_LEAGUE_TEAM_STATE_LISTING_PATHS
         + freeze_policy.D055_TEAM_BOARD_WORKLOAD_CONTEXT_PATHS
-        + freeze_policy.PRE02_TEAM_BOARD_V2_PATHS,
+        + freeze_policy.PRE02_TEAM_BOARD_V2_PATHS
+        + freeze_policy.D056_TEAM_STATE_REFERENCE_DATE_PATHS,
     )
     assert moved == [], (
         f'frozen legacy public surfaces changed: {moved}. A public route or '

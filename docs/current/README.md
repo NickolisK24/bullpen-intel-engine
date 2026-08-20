@@ -11,7 +11,8 @@ Start with:
 4. [`GAME_DRIVEN_DAILY_INGESTION.md`](GAME_DRIVEN_DAILY_INGESTION.md) — game-driven ingestion qualification subsystem; daily/postgame remain shadow.
 5. [`INTRADAY_RECONCILIATION.md`](INTRADAY_RECONCILIATION.md) — audit/reconciliation subsystem.
 6. [`DEPENDENCY_SECURITY_CLOSEOUT_2026-08-13.md`](DEPENDENCY_SECURITY_CLOSEOUT_2026-08-13.md) — current dependency-security boundary and its standing obligations.
-7. [`CHANGELOG.md`](CHANGELOG.md) — milestone chronology.
+7. [`TEAM_STATE_VNEXT_PRODUCTION_PROOF.md`](TEAM_STATE_VNEXT_PRODUCTION_PROOF.md) — the side-channel evidence artifact one natural publication produces, its eight invariants, and the closeout condition for Team State vNext.
+8. [`CHANGELOG.md`](CHANGELOG.md) — milestone chronology.
 
 Share Artifact support files in this directory remain implementation/operations
 records for the immutable artifact domain.

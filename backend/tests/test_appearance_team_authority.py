@@ -1053,7 +1053,8 @@ def test_branch_touches_no_team_state_or_public_surface_files():
               + freeze_policy.D055_TEAM_BOARD_WORKLOAD_CONTEXT_PATHS
               + freeze_policy.HOTFIX01_TEAM_STATE_SUMMARY_AUTHORITY_PATHS
               + freeze_policy.PRE02_TEAM_BOARD_V2_PATHS
-              + freeze_policy.TB09A_DELTA_SUBSTRATE_PATHS,
+              + freeze_policy.TB09A_DELTA_SUBSTRATE_PATHS
+              + freeze_policy.D056_TEAM_STATE_REFERENCE_DATE_PATHS,
     )
     assert offenders == [], (
         f'appearance-team work must not touch these runtime surfaces: {offenders}'
