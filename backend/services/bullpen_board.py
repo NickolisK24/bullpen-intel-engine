@@ -49,6 +49,13 @@ BOARD_GROUP_ORDER = [
     STATUS_UNAVAILABLE,
 ]
 
+# D-055 Rest Status carrier compatibility. The method version owns the
+# governed population, evidence gates, and count definitions. The public
+# contract version owns the exact frozen reader-object shape and meaning.
+# Phase 1 records these stamps without changing any reader path.
+REST_STATUS_METHOD_VERSION = 'd055_rest_status_v1'
+REST_STATUS_PUBLIC_CONTRACT_VERSION = 'd055_rest_status_public_v1'
+
 # Plain baseball language only — no governance/contract jargon on this surface.
 #
 # VOC-001: these are GROUP headings, not pitcher classifications. They used to
@@ -436,6 +443,46 @@ def _unavailable_rest_status(reason_code):
     }
 
 
+def is_valid_rest_status_carrier(value):
+    """Return whether ``value`` is one complete governed D-055 public object."""
+    if not isinstance(value, dict):
+        return False
+
+    expected_fields = {
+        'available',
+        'active_arm_count',
+        'rested_arm_count',
+        'worked_yesterday_count',
+        'back_to_back_count',
+        'summary',
+        'reason_code',
+    }
+    if set(value) != expected_fields:
+        return False
+
+    count_fields = (
+        'active_arm_count',
+        'rested_arm_count',
+        'worked_yesterday_count',
+        'back_to_back_count',
+    )
+    if value.get('available') is True:
+        return (
+            all(type(value.get(field)) is int and value[field] >= 0 for field in count_fields)
+            and isinstance(value.get('summary'), str)
+            and bool(value['summary'].strip())
+            and value.get('reason_code') is None
+        )
+    if value.get('available') is False:
+        return (
+            all(value.get(field) is None for field in count_fields)
+            and value.get('summary') is None
+            and isinstance(value.get('reason_code'), str)
+            and bool(value['reason_code'].strip())
+        )
+    return False
+
+
 def _arm_word(count):
     return 'arm' if count == 1 else 'arms'
 
@@ -502,6 +549,41 @@ def build_rest_status(cards, *, counts_withheld=False, board_context_unavailable
         'summary': summary,
         'reason_code': None,
     }
+
+
+def _board_cards(records):
+    return [
+        build_card(
+            name=record.get('name'),
+            pitcher_id=record.get('pitcher_id'),
+            fatigue_score=record.get('fatigue_score'),
+            availability=record.get('availability'),
+            role=record.get('role'),
+            eligibility=record.get('eligibility'),
+            roster_status=record.get('roster_status'),
+            visibility=record.get('visibility'),
+            pitcher_labels=record.get('pitcher_labels'),
+            public_role_read=record.get('public_role_read'),
+            last_appearance=record.get('last_appearance'),
+            last_workload_appearance=record.get('last_workload_appearance'),
+            workload_facts=record.get('workload_facts'),
+        )
+        for record in records
+    ]
+
+
+def author_rest_status(records, *, freshness=None, roster_authority=None):
+    """Author D-055 once from the existing governed publication inputs."""
+    cards = _board_cards(list(records or []))
+    return build_rest_status(
+        cards,
+        counts_withheld=_roster_counts_withheld(roster_authority),
+        board_context_unavailable=bool(
+            (freshness or {}).get('fail_closed') is True
+            or (freshness or {}).get('degradation_state') == 'unavailable'
+            or (freshness or {}).get('freshness_state') == 'metadata_unavailable'
+        ),
+    )
 
 
 def build_card(
@@ -738,24 +820,7 @@ def build_board_payload(
         hard-coded ``False`` — this surface is presentation only.
     """
     records = list(records or [])
-    cards = [
-        build_card(
-            name=record.get('name'),
-            pitcher_id=record.get('pitcher_id'),
-            fatigue_score=record.get('fatigue_score'),
-            availability=record.get('availability'),
-            role=record.get('role'),
-            eligibility=record.get('eligibility'),
-            roster_status=record.get('roster_status'),
-            visibility=record.get('visibility'),
-            pitcher_labels=record.get('pitcher_labels'),
-            public_role_read=record.get('public_role_read'),
-            last_appearance=record.get('last_appearance'),
-            last_workload_appearance=record.get('last_workload_appearance'),
-            workload_facts=record.get('workload_facts'),
-        )
-        for record in records
-    ]
+    cards = _board_cards(records)
     # The internal composite stays on this side of the boundary: the authored
     # team-shape reads are derived from it, the published payload never is.
     fatigue_by_pitcher = {

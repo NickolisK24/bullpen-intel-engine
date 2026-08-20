@@ -1,8 +1,10 @@
 """D-055 workload facts survive the D-051 trusted publication carrier."""
 
+from copy import deepcopy
 from datetime import timedelta
 import importlib
 import json
+from types import SimpleNamespace
 
 import pytest
 from sqlalchemy import event
@@ -12,6 +14,7 @@ from models.fatigue_score import FatigueScore
 from models.game_log import GameLog
 from models.pitcher import Pitcher
 from models.sync_run import SyncRun
+from services import bullpen_board as bullpen_board_service
 from services import dashboard_snapshot
 from services import public_serving_authority
 from services import sync as sync_service
@@ -30,6 +33,7 @@ from utils.time import utc_now_naive
 
 TEAM_ID = 116
 OTHER_TEAM_ID = 134
+ZERO_TEAM_ID = 135
 
 
 def _complete_slate_coverage(slate_date):
@@ -183,6 +187,19 @@ def trusted_app(tmp_path, monkeypatch):
                 days_since_last_appearance=3,
                 with_score=False,
             )
+            zero_pitcher, zero_score = _seed_pitcher_with_workload(
+                reference_date,
+                mlb_id=5135001,
+                full_name='Trusted Zero Rest Arm',
+                team_id=ZERO_TEAM_ID,
+                team_name='San Diego Padres',
+                team_abbreviation='SD',
+                days_since_last_appearance=1,
+                appearances_last_7=1,
+                appearances_last_14=2,
+                pitches_last_7_days=18,
+                innings_last_7_days=1.0,
+            )
             seed_roster_readiness_snapshots([reference_date])
 
             from api import bullpen as bullpen_api
@@ -207,6 +224,18 @@ def trusted_app(tmp_path, monkeypatch):
             )
             db.session.add(run)
             db.session.flush()
+            rest_status_calls = []
+            original_build_rest_status = bullpen_board_service.build_rest_status
+
+            def tracked_build_rest_status(*args, **kwargs):
+                rest_status_calls.append((args, kwargs))
+                return original_build_rest_status(*args, **kwargs)
+
+            monkeypatch.setattr(
+                bullpen_board_service,
+                'build_rest_status',
+                tracked_build_rest_status,
+            )
             snapshot = dashboard_snapshot.build_bullpen_dashboard_snapshot(
                 sync_run_id=run.id,
                 source='trusted_workload_test',
@@ -221,8 +250,11 @@ def trusted_app(tmp_path, monkeypatch):
                 'other_pitcher': other_pitcher,
                 'other_score': other_score,
                 'unscored_pitcher': unscored_pitcher,
+                'zero_pitcher': zero_pitcher,
+                'zero_score': zero_score,
                 'snapshot': snapshot,
                 'reference_date': reference_date,
+                'rest_status_calls': rest_status_calls,
             }
         finally:
             db.session.remove()
@@ -254,6 +286,253 @@ def test_trusted_public_board_endpoint_serves_frozen_workload_facts_and_rest_sta
         'pitches_last_7_days': 41,
         'back_to_back': False,
     }
+
+
+def _snapshot_copy(snapshot, **overrides):
+    values = {
+        'id': snapshot.id,
+        'snapshot_type': snapshot.snapshot_type,
+        'sync_run_id': snapshot.sync_run_id,
+        'status': snapshot.status,
+        'is_published': snapshot.is_published,
+        'published_at': snapshot.published_at,
+        'payload': deepcopy(snapshot.payload),
+        'data_through': snapshot.data_through,
+        'availability_reference_date': snapshot.availability_reference_date,
+        'snapshot_generated_at': snapshot.snapshot_generated_at,
+    }
+    values.update(overrides)
+    return SimpleNamespace(**values)
+
+
+def test_phase1_publication_authors_one_d055_carrier_per_team(trusted_app):
+    snapshot = trusted_app['snapshot']
+    package = snapshot.payload[public_serving_authority.TEAM_BOARD_PACKAGE_KEY]
+
+    assert len(trusted_app['rest_status_calls']) == package['team_count']
+    assert public_serving_authority.qualify_rest_status_carrier(snapshot) == {
+        'qualified': True,
+        'reason_code': public_serving_authority.REST_STATUS_CARRIER_QUALIFIED,
+        'snapshot': public_serving_authority.publication_authority(snapshot),
+        'represented_date': snapshot.data_through.isoformat(),
+        'represented_team_count': package['team_count'],
+        'qualified_team_count': package['team_count'],
+        'failed_team_id': None,
+    }
+
+    positive = package['by_team_id'][str(TEAM_ID)]['rest_status']
+    zero = package['by_team_id'][str(ZERO_TEAM_ID)]['rest_status']
+    assert positive['rested_arm_count'] > 0
+    assert zero['available'] is True
+    assert zero['rested_arm_count'] == 0
+
+
+def test_phase1_governed_unavailable_carrier_is_valid_and_qualifies(trusted_app):
+    snapshot = _snapshot_copy(trusted_app['snapshot'])
+    team = snapshot.payload[public_serving_authority.TEAM_BOARD_PACKAGE_KEY][
+        'by_team_id'
+    ][str(OTHER_TEAM_ID)]
+    unavailable = bullpen_board_service.author_rest_status(
+        [],
+        freshness={'fail_closed': True},
+        roster_authority={},
+    )
+    team['rest_status'] = deepcopy(unavailable)
+
+    result = public_serving_authority.qualify_rest_status_carrier(snapshot)
+
+    assert unavailable == {
+        'available': False,
+        'active_arm_count': None,
+        'rested_arm_count': None,
+        'worked_yesterday_count': None,
+        'back_to_back_count': None,
+        'summary': None,
+        'reason_code': bullpen_board_service.REST_STATUS_BOARD_CONTEXT_UNAVAILABLE,
+    }
+    assert result['qualified'] is True
+
+
+def test_phase1_frozen_carrier_matches_direct_canonical_d055(trusted_app):
+    snapshot = trusted_app['snapshot']
+    package = snapshot.payload[public_serving_authority.TEAM_BOARD_PACKAGE_KEY]
+    team = package['by_team_id'][str(TEAM_ID)]
+    default_ids = set(team['default_pitcher_ids'])
+    records = [
+        record for record in team['records']
+        if record['pitcher_id'] in default_ids
+    ]
+
+    direct = bullpen_board_service.author_rest_status(
+        records,
+        freshness=snapshot.payload['freshness'],
+        roster_authority=team['roster_authority'],
+    )
+
+    assert team['rest_status'] == direct
+
+
+def test_phase1_carrier_stamps_exact_authority(trusted_app):
+    package = trusted_app['snapshot'].payload[
+        public_serving_authority.TEAM_BOARD_PACKAGE_KEY
+    ]
+    for team in package['by_team_id'].values():
+        assert team['rest_status_authority'] == {
+            'method_version': bullpen_board_service.REST_STATUS_METHOD_VERSION,
+            'public_contract_version': (
+                bullpen_board_service.REST_STATUS_PUBLIC_CONTRACT_VERSION
+            ),
+            'team_board_package_contract': (
+                public_serving_authority.TEAM_BOARD_PACKAGE_CONTRACT
+            ),
+            'population_basis': {
+                'basis': public_serving_authority.REST_STATUS_POPULATION_BASIS,
+                'population_authority': (
+                    public_serving_authority.REST_STATUS_POPULATION_AUTHORITY
+                ),
+                'membership_authority': (
+                    public_serving_authority.REST_STATUS_MEMBERSHIP_AUTHORITY
+                ),
+            },
+            'reference_date_policy': (
+                public_serving_authority.REST_STATUS_REFERENCE_DATE_POLICY
+            ),
+            'availability_reference_date': trusted_app['reference_date'].isoformat(),
+        }
+
+
+def test_phase1_readers_ignore_dormant_carrier_and_keep_live_behavior(trusted_app):
+    app = trusted_app['app']
+    snapshot = trusted_app['snapshot']
+    package = snapshot.payload[public_serving_authority.TEAM_BOARD_PACKAGE_KEY]
+    calls_after_publication = len(trusted_app['rest_status_calls'])
+
+    board_before = app.test_client().get(
+        f'/api/bullpen/teams/{TEAM_ID}/board'
+    ).get_json()
+    assert len(trusted_app['rest_status_calls']) == calls_after_publication + 1
+
+    v2_before = app.test_client().get(
+        f'/api/bullpen/teams/{TEAM_ID}/board-v2'
+    ).get_json()
+    assert len(trusted_app['rest_status_calls']) == calls_after_publication + 2
+
+    package['by_team_id'][str(TEAM_ID)].pop('rest_status', None)
+    package['by_team_id'][str(TEAM_ID)].pop('rest_status_authority', None)
+    board_after = app.test_client().get(
+        f'/api/bullpen/teams/{TEAM_ID}/board'
+    ).get_json()
+    v2_after = app.test_client().get(
+        f'/api/bullpen/teams/{TEAM_ID}/board-v2'
+    ).get_json()
+
+    assert board_after['rest_status'] == board_before['rest_status']
+    assert v2_after['rest_status'] == v2_before['rest_status']
+    assert len(trusted_app['rest_status_calls']) == calls_after_publication + 4
+
+
+@pytest.mark.parametrize(
+    ('mutate', 'reason_code'),
+    (
+        (
+            lambda snapshot: snapshot.payload[
+                public_serving_authority.TEAM_BOARD_PACKAGE_KEY
+            ]['by_team_id'][str(TEAM_ID)].pop('rest_status'),
+            public_serving_authority.REST_STATUS_CARRIER_TEAM_MISSING,
+        ),
+        (
+            lambda snapshot: snapshot.payload[
+                public_serving_authority.TEAM_BOARD_PACKAGE_KEY
+            ]['by_team_id'][str(TEAM_ID)]['rest_status_authority'].__setitem__(
+                'method_version', 'future_method'
+            ),
+            public_serving_authority.REST_STATUS_CARRIER_AUTHORITY_INVALID,
+        ),
+        (
+            lambda snapshot: snapshot.payload[
+                public_serving_authority.TEAM_BOARD_PACKAGE_KEY
+            ]['by_team_id'][str(TEAM_ID)].pop('rest_status_authority'),
+            public_serving_authority.REST_STATUS_CARRIER_AUTHORITY_INVALID,
+        ),
+        (
+            lambda snapshot: snapshot.payload[
+                public_serving_authority.TEAM_BOARD_PACKAGE_KEY
+            ]['by_team_id'][str(TEAM_ID)]['rest_status'].__setitem__(
+                'rested_arm_count', None
+            ),
+            public_serving_authority.REST_STATUS_CARRIER_VALUE_INVALID,
+        ),
+        (
+            lambda snapshot: snapshot.payload[
+                public_serving_authority.TEAM_BOARD_PACKAGE_KEY
+            ]['by_team_id'][str(TEAM_ID)]['rest_status'].__setitem__(
+                'unexpected', True
+            ),
+            public_serving_authority.REST_STATUS_CARRIER_VALUE_INVALID,
+        ),
+    ),
+)
+def test_phase1_qualification_rejects_incomplete_carriers_deterministically(
+    trusted_app,
+    mutate,
+    reason_code,
+):
+    snapshot = _snapshot_copy(trusted_app['snapshot'])
+    mutate(snapshot)
+
+    result = public_serving_authority.qualify_rest_status_carrier(snapshot)
+
+    assert result['qualified'] is False
+    assert result['reason_code'] == reason_code
+    assert result['failed_team_id'] == TEAM_ID
+
+
+def test_phase1_qualification_rejects_unpublished_candidate(trusted_app):
+    snapshot = _snapshot_copy(
+        trusted_app['snapshot'],
+        is_published=False,
+        published_at=None,
+    )
+
+    result = public_serving_authority.qualify_rest_status_carrier(snapshot)
+
+    assert result['qualified'] is False
+    assert result['reason_code'] == (
+        public_serving_authority.REST_STATUS_CARRIER_SNAPSHOT_UNPUBLISHED
+    )
+
+
+def test_phase1_qualification_is_read_only_and_does_not_backfill(trusted_app):
+    snapshot = _snapshot_copy(trusted_app['snapshot'])
+    team = snapshot.payload[public_serving_authority.TEAM_BOARD_PACKAGE_KEY][
+        'by_team_id'
+    ][str(TEAM_ID)]
+    team.pop('rest_status')
+    before = deepcopy(snapshot.payload)
+
+    first = public_serving_authority.qualify_rest_status_carrier(snapshot)
+    second = public_serving_authority.qualify_rest_status_carrier(snapshot)
+    first['qualified_team_count'] = 999
+
+    assert snapshot.payload == before
+    assert second['qualified'] is False
+    assert second['qualified_team_count'] != 999
+
+
+def test_phase1_valid_qualification_does_not_reauthor_or_mutate_carrier(trusted_app):
+    snapshot = trusted_app['snapshot']
+    calls_before = len(trusted_app['rest_status_calls'])
+    payload_before = deepcopy(snapshot.payload)
+
+    first = public_serving_authority.qualify_rest_status_carrier(snapshot)
+    second = public_serving_authority.qualify_rest_status_carrier(snapshot)
+    first['snapshot']['snapshot_id'] = 999
+
+    assert first['qualified'] is True
+    assert second['qualified'] is True
+    assert second['snapshot']['snapshot_id'] == snapshot.id
+    assert len(trusted_app['rest_status_calls']) == calls_before
+    assert snapshot.payload == payload_before
 
 
 def test_frozen_team_board_package_carries_exact_public_projection_and_nulls(trusted_app):
