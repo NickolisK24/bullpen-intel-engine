@@ -17,6 +17,7 @@ from datetime import date, datetime, timedelta
 import pytest
 from flask import Flask
 
+from models.dashboard_snapshot import DashboardSnapshot
 from models.fatigue_score import FatigueScore
 from models.game_log import GameLog
 from models.pitcher import Pitcher
@@ -25,6 +26,7 @@ from models.scheduled_game import ScheduledGame
 from models.share_artifact import ShareArtifact
 from models.share_artifact_generation_audit import ShareArtifactGenerationAudit
 from models.sync_run import SyncRun
+from services import team_board_delta_substrate as delta_substrate
 from services import team_state_source as source_module
 from services.share_artifact_batch_generation import (
     BATCH_OUTCOME_GENERATED,
@@ -210,11 +212,23 @@ def test_fixture_a_high_confidence_publishes_verifies_reuses_projects(app, monke
     audit = db.session.get(ShareArtifactGenerationAudit, result.audit_id)
     assert audit.outcome == OUTCOME_PUBLISHED and audit.eligible is True
 
+    sidecar = DashboardSnapshot.query.filter_by(
+        snapshot_type=delta_substrate.SNAPSHOT_TYPE,
+    ).one()
+    assert sidecar.payload['represented_date'] == PRODUCT_DATE.isoformat()
+    assert sidecar.payload['domains']['arm_read']['public_contract_version']
+    frozen_arm_reads = sidecar.payload['values']['arm_read']['records']
+    assert len(frozen_arm_reads) == 8
+    assert all(record['team_id'] == 31 for record in frozen_arm_reads)
+
     # Idempotent reuse.
     rerun = _publish(31)
     assert rerun.outcome == OUTCOME_REUSED and rerun.reused_existing is True
     assert rerun.public_id == result.public_id
     assert db.session.query(ShareArtifact).filter_by(lifecycle_state='published').count() == 1
+    assert DashboardSnapshot.query.filter_by(
+        snapshot_type=delta_substrate.SNAPSHOT_TYPE,
+    ).count() == 1
 
     # Compatibility projection consumes the immutable artifact (no recompute).
     view = build_share_card_compatibility_view(artifact)

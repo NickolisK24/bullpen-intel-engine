@@ -92,6 +92,14 @@ READ_PUBLIC_LABELS = {
     },
 }
 
+# Compatibility stamps for frozen public Arm Read records.  The contract stamp
+# owns the stable key/reader-facing label vocabulary.  The method stamp is the
+# compatibility boundary for the full governed input-to-read projection and
+# must advance when availability, evidence, roster, or projection semantics can
+# make the same evidence mean a different public read.
+ARM_READ_PUBLIC_CONTRACT_VERSION = 'pitcher_current_read_v1'
+ARM_READ_METHOD_VERSION = 'pitcher_public_labels_v1'
+
 # Canonical usage-role -> public-role mapping. middle_relief is a distinct
 # baseball role and must never collapse into the setup/bridge slot.
 ROLE_KEY_TO_PUBLIC_KEY = {
@@ -325,9 +333,19 @@ def _read_label(availability, roster_status=None):
     return _label({'key': 'limited_read', 'source': 'backend:unknown_availability'}, READ_PUBLIC_LABELS)
 
 
+def build_public_arm_read(availability=None, roster_status=None):
+    """Return the canonical backend-owned public Arm Read.
+
+    This narrow public entry point lets publication freeze the exact same read
+    projection used by current public pitcher labels.  It does not classify
+    availability, infer roster state, or recalculate workload.
+    """
+    return _read_label(availability, roster_status=roster_status)
+
+
 def build_pitcher_labels(availability=None, role=None, eligibility=None, roster_status=None):
     """Return backend-authored public label chips for a pitcher card."""
     return {
         'role': _role_label(role, eligibility=eligibility),
-        'read': _read_label(availability, roster_status=roster_status),
+        'read': build_public_arm_read(availability, roster_status=roster_status),
     }

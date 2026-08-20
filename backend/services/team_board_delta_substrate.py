@@ -15,6 +15,14 @@ from types import MappingProxyType
 from typing import Any, Mapping
 
 from models.dashboard_snapshot import DashboardSnapshot
+from services.availability_snapshot import CURRENT_AVAILABILITY_MODE
+from services.pitcher_public_labels import (
+    ARM_READ_METHOD_VERSION,
+    ARM_READ_PUBLIC_CONTRACT_VERSION,
+    READ_PUBLIC_LABELS,
+    build_public_arm_read,
+)
+from services.roster_authority import VERSION as ROSTER_AUTHORITY_VERSION
 from services.team_state_public_vocabulary import PUBLIC_TEAM_STATE_CONTRACT
 from team_operations import TEAM_STATE_METHOD_VERSION
 from utils.db import db
@@ -41,6 +49,7 @@ FRESHNESS_UNTRUSTED = 'freshness_untrusted'
 REPRESENTED_DATE_INVALID = 'represented_date_invalid'
 SOURCE_IDENTITY_MISSING = 'source_identity_missing'
 TEAM_ID_MISMATCH = 'team_id_mismatch'
+PITCHER_IDENTITY_MISMATCH = 'pitcher_identity_mismatch'
 VALUE_MISSING = 'value_missing'
 DOMAIN_NOT_READY = 'domain_not_ready'
 DOMAIN_NOT_INCLUDED = 'domain_not_in_substrate'
@@ -55,7 +64,7 @@ READINESS_NOT_PART_OF_SUBSTRATE = 'not_part_of_substrate'
 DOMAIN_READINESS = MappingProxyType({
     'team_state': READINESS_COMPARABLE_WHEN_STAMPED,
     'active_arm_count': READINESS_COMPARABLE_WHEN_STAMPED,
-    'arm_read': READINESS_NOT_YET_COMPARABLE,
+    'arm_read': READINESS_COMPARABLE_WHEN_STAMPED,
     'rest_status': READINESS_NOT_YET_COMPARABLE,
     'workload_7d': READINESS_NOT_YET_COMPARABLE,
     'workload_14d': READINESS_NOT_YET_COMPARABLE,
@@ -96,7 +105,108 @@ def _artifact_public_state(artifact) -> Mapping[str, Any]:
     }
 
 
-def build_prospective_envelope(*, source, readiness, artifact) -> dict:
+def build_arm_read_capture(
+    *,
+    records,
+    team_id,
+    membership,
+    membership_reference_date,
+    availability_reference_date,
+) -> dict:
+    """Freeze canonical public reads from one already-classified publication read.
+
+    ``records`` must be the exact active-bullpen records already selected for the
+    Team State read.  This function projects their public labels; it never loads
+    rows, classifies availability, or reconstructs an older date.
+    """
+    member_ids, authority_complete = membership or ((), False)
+    membership_date = _as_date(membership_reference_date)
+    availability_date = _as_date(availability_reference_date)
+    if not authority_complete:
+        raise DeltaStampError('arm_read_population_authority_unproven')
+    if membership_date is None or availability_date is None:
+        raise DeltaStampError('arm_read_reference_date_missing')
+
+    expected_ids = {int(value) for value in (member_ids or ())}
+    frozen = []
+    for record in records or ():
+        record = _mapping(record)
+        pitcher = record.get('pitcher')
+        pitcher_id = getattr(pitcher, 'id', None)
+        if pitcher_id is None:
+            raise DeltaStampError('arm_read_pitcher_identity_missing')
+        pitcher_id = int(pitcher_id)
+        if pitcher_id not in expected_ids:
+            raise DeltaStampError('arm_read_population_identity_mismatch')
+        pitcher_team_id = getattr(pitcher, 'team_id', None)
+        if pitcher_team_id is not None and int(pitcher_team_id) != int(team_id):
+            raise DeltaStampError('arm_read_team_identity_mismatch')
+
+        availability = deepcopy(dict(record.get('availability') or {}))
+        # Membership has already been resolved by the canonical Roster
+        # Authority. Do not classify the pitcher again here: a selected member
+        # is authoritatively active unless the same-cycle record carries a more
+        # specific already-governed roster payload.
+        roster_status = _mapping(record.get('roster_status')) or {
+            'status': 'ACTIVE',
+            'is_authoritative': True,
+            'is_active_mlb': True,
+            'is_inactive_context': False,
+            'source': 'canonical_active_bullpen_membership',
+        }
+        public_read = build_public_arm_read(
+            availability=availability,
+            roster_status=roster_status,
+        )
+        if (
+            public_read.get('key') not in READ_PUBLIC_LABELS
+            or public_read.get('label') in (None, '')
+        ):
+            raise DeltaStampError('arm_read_public_value_missing')
+
+        frozen.append({
+            'pitcher_id': pitcher_id,
+            'mlb_id': getattr(pitcher, 'mlb_id', None),
+            'pitcher_name': getattr(pitcher, 'full_name', None),
+            'team_id': int(team_id),
+            'public_read': deepcopy(public_read),
+            'evidence_state': {
+                'data_state': availability.get('data_state'),
+                'confidence': availability.get('confidence'),
+            },
+            'roster_authority': {
+                'version': ROSTER_AUTHORITY_VERSION,
+                'status': roster_status.get('status'),
+                'is_authoritative': roster_status.get('is_authoritative'),
+                'is_active_mlb': roster_status.get('is_active_mlb'),
+            },
+        })
+
+    frozen.sort(key=lambda item: item['pitcher_id'])
+    frozen_ids = [item['pitcher_id'] for item in frozen]
+    missing_ids = sorted(expected_ids.difference(frozen_ids))
+
+    return {
+        'team_id': int(team_id),
+        'membership_reference_date': membership_date.isoformat(),
+        'availability_reference_date': availability_date.isoformat(),
+        'method_version': ARM_READ_METHOD_VERSION,
+        'public_contract_version': ARM_READ_PUBLIC_CONTRACT_VERSION,
+        'population_basis': {
+            'basis': 'canonical_current_active_bullpen',
+            'population_authority': 'resolve_readiness_population',
+            'membership_authority': 'resolve_active_bullpen_membership',
+            'roster_authority_version': ROSTER_AUTHORITY_VERSION,
+            'availability_mode': CURRENT_AVAILABILITY_MODE,
+            'reference_date_policy': 'membership_slate_availability_next_day_v1',
+        },
+        'member_pitcher_ids': sorted(expected_ids),
+        'missing_record_pitcher_ids': missing_ids,
+        'records': frozen,
+    }
+
+
+def build_prospective_envelope(*, source, readiness, artifact, arm_read_capture=None) -> dict:
     """Build metadata from the exact governed read frozen by ``artifact``.
 
     No classifier or historical service is called.  The method stamp is read
@@ -157,7 +267,7 @@ def build_prospective_envelope(*, source, readiness, artifact) -> dict:
         'freshness_state': evidence.get('freshness_state'),
         'trusted': trusted,
     }
-    return {
+    envelope = {
         'capability': CAPABILITY,
         'envelope_version': ENVELOPE_VERSION,
         'team_id': int(getattr(source, 'team_id')),
@@ -181,17 +291,61 @@ def build_prospective_envelope(*, source, readiness, artifact) -> dict:
             'active_arm_count': evidence.get('active_pitcher_count'),
         },
     }
+    arm_read_capture = _mapping(arm_read_capture)
+    if arm_read_capture:
+        if arm_read_capture.get('team_id') != envelope['team_id']:
+            raise DeltaStampError('arm_read_team_identity_mismatch')
+        records = arm_read_capture.get('records')
+        member_ids = arm_read_capture.get('member_pitcher_ids')
+        population_basis = arm_read_capture.get('population_basis')
+        if not isinstance(records, list) or not isinstance(member_ids, list):
+            raise DeltaStampError('arm_read_values_missing')
+        if not isinstance(population_basis, Mapping):
+            raise DeltaStampError('arm_read_population_basis_unproven')
+        envelope['domains']['arm_read'] = {
+            'method_version': arm_read_capture.get('method_version'),
+            'public_contract_version': arm_read_capture.get('public_contract_version'),
+            'population_basis': deepcopy(dict(population_basis)),
+            'membership_reference_date': arm_read_capture.get('membership_reference_date'),
+            'availability_reference_date': arm_read_capture.get('availability_reference_date'),
+            'trusted': trusted,
+        }
+        envelope['values']['arm_read'] = {
+            'member_pitcher_ids': deepcopy(member_ids),
+            'missing_record_pitcher_ids': deepcopy(
+                arm_read_capture.get('missing_record_pitcher_ids') or []
+            ),
+            'records': deepcopy(records),
+        }
+    return envelope
 
 
-def stamp_prospective_snapshot(*, source, readiness, artifact, session=None):
+def stamp_prospective_snapshot(
+    *, source, readiness, artifact, arm_read_capture=None, session=None,
+):
     """Stage one append-only sidecar for a newly published Team State artifact."""
     session = session or db.session
     envelope = build_prospective_envelope(
         source=source,
         readiness=readiness,
         artifact=artifact,
+        arm_read_capture=arm_read_capture,
     )
     represented_date = _as_date(envelope.get('represented_date'))
+    source_key = f'{SNAPSHOT_SOURCE_PREFIX}{envelope["team_id"]}'
+    candidates = (
+        session.query(DashboardSnapshot)
+        .filter(DashboardSnapshot.snapshot_type == SNAPSHOT_TYPE)
+        .filter(DashboardSnapshot.source == source_key)
+        .filter(DashboardSnapshot.data_through == represented_date)
+        .all()
+    )
+    for candidate in candidates:
+        candidate_source = _mapping(_payload(candidate).get('source'))
+        if candidate_source.get('artifact_id') == artifact.id:
+            # Publication identity is immutable. Re-entry returns the exact
+            # existing sidecar and never refreshes it from newer mutable rows.
+            return candidate
     row = DashboardSnapshot(
         snapshot_type=SNAPSHOT_TYPE,
         # This observational sidecar is created by Share Artifact publication,
@@ -208,14 +362,16 @@ def stamp_prospective_snapshot(*, source, readiness, artifact, session=None):
         data_through=represented_date,
         availability_reference_date=None,
         snapshot_generated_at=utc_now_naive(),
-        source=f'{SNAPSHOT_SOURCE_PREFIX}{envelope["team_id"]}',
+        source=source_key,
     )
     session.add(row)
     session.flush()
     return row
 
 
-def try_stamp_prospective_snapshot(*, source, readiness, artifact, session=None):
+def try_stamp_prospective_snapshot(
+    *, source, readiness, artifact, arm_read_capture=None, session=None,
+):
     """Capture a sidecar without making Share Artifact publication depend on it.
 
     The nested transaction confines any capture problem to this observational
@@ -230,6 +386,7 @@ def try_stamp_prospective_snapshot(*, source, readiness, artifact, session=None)
                 source=source,
                 readiness=readiness,
                 artifact=artifact,
+                arm_read_capture=arm_read_capture,
                 session=session,
             )
     except Exception as exc:  # noqa: BLE001 - optional capture must not block publish
@@ -326,7 +483,11 @@ def _compatible_domain(previous, current, domain, value_key):
     if previous_method != current_method:
         return _withheld(domain, METHOD_VERSION_MISMATCH)
 
-    contract_fields = ('contract_version', 'public_contract_version')
+    contract_fields = (
+        ('public_contract_version',)
+        if domain == 'arm_read'
+        else ('contract_version', 'public_contract_version')
+    )
     if any(
         previous_metadata.get(field) in (None, '')
         or current_metadata.get(field) in (None, '')
@@ -375,6 +536,152 @@ def _compatible_domain(previous, current, domain, value_key):
     }
 
 
+def _arm_records(value):
+    records = _mapping(value).get('records')
+    if not isinstance(records, list):
+        return None
+    result = {}
+    for record in records:
+        record = _mapping(record)
+        pitcher_id = record.get('pitcher_id')
+        public_read = _mapping(record.get('public_read'))
+        if (
+            pitcher_id is None
+            or public_read.get('key') in (None, '')
+            or public_read.get('label') in (None, '')
+            or int(pitcher_id) in result
+        ):
+            return None
+        result[int(pitcher_id)] = record
+    return result
+
+
+def _compatible_arm_read_domain(previous, current):
+    if previous is None:
+        return _withheld('arm_read', PREVIOUS_MISSING)
+    if current is None:
+        return _withheld('arm_read', CURRENT_MISSING)
+    if (
+        not _domain_metadata(_payload(previous), 'arm_read')
+        or not _domain_metadata(_payload(current), 'arm_read')
+    ):
+        # Older sidecars remain prospective-only.  Their Team State values can
+        # still compare, but no Arm Read is reconstructed or retro-stamped.
+        return _withheld('arm_read', DOMAIN_NOT_READY)
+    base = _compatible_domain(previous, current, 'arm_read', 'arm_read')
+    if base.get('status') != COMPARABLE:
+        return base
+
+    previous_value = _mapping(base.get('previous'))
+    current_value = _mapping(base.get('current'))
+    previous_records = _arm_records(previous_value)
+    current_records = _arm_records(current_value)
+    previous_members = previous_value.get('member_pitcher_ids')
+    current_members = current_value.get('member_pitcher_ids')
+    if (
+        previous_records is None
+        or current_records is None
+        or not isinstance(previous_members, list)
+        or not isinstance(current_members, list)
+    ):
+        return _withheld('arm_read', VALUE_MISSING)
+
+    previous_member_ids = {int(value) for value in previous_members}
+    current_member_ids = {int(value) for value in current_members}
+    if (
+        len(previous_member_ids) != len(previous_members)
+        or len(current_member_ids) != len(current_members)
+        or not set(previous_records).issubset(previous_member_ids)
+        or not set(current_records).issubset(current_member_ids)
+    ):
+        return _withheld('arm_read', VALUE_MISSING)
+    previous_team_id = _payload(previous).get('team_id')
+    current_team_id = _payload(current).get('team_id')
+    if any(
+        record.get('team_id') != expected_team_id
+        for records, expected_team_id in (
+            (previous_records.values(), previous_team_id),
+            (current_records.values(), current_team_id),
+        )
+        for record in records
+    ):
+        return _withheld('arm_read', TEAM_ID_MISMATCH)
+    comparisons = []
+    movements = []
+    for pitcher_id in sorted(previous_member_ids | current_member_ids):
+        previous_record = previous_records.get(pitcher_id)
+        current_record = current_records.get(pitcher_id)
+        if pitcher_id not in previous_member_ids:
+            comparison = {
+                'pitcher_id': pitcher_id,
+                'comparable': False,
+                'reason_code': PREVIOUS_MISSING,
+                'population_change': 'added',
+                'previous': None,
+                'current': deepcopy(current_record),
+            }
+        elif pitcher_id not in current_member_ids:
+            comparison = {
+                'pitcher_id': pitcher_id,
+                'comparable': False,
+                'reason_code': CURRENT_MISSING,
+                'population_change': 'removed',
+                'previous': deepcopy(previous_record),
+                'current': None,
+            }
+        elif previous_record is None or current_record is None:
+            comparison = {
+                'pitcher_id': pitcher_id,
+                'comparable': False,
+                'reason_code': VALUE_MISSING,
+                'population_change': None,
+                'previous': deepcopy(previous_record),
+                'current': deepcopy(current_record),
+            }
+        else:
+            previous_read = _mapping(previous_record.get('public_read'))
+            current_read = _mapping(current_record.get('public_read'))
+            previous_mlb_id = previous_record.get('mlb_id')
+            current_mlb_id = current_record.get('mlb_id')
+            if (
+                previous_mlb_id is not None
+                and current_mlb_id is not None
+                and previous_mlb_id != current_mlb_id
+            ):
+                comparison = {
+                    'pitcher_id': pitcher_id,
+                    'comparable': False,
+                    'reason_code': PITCHER_IDENTITY_MISMATCH,
+                    'population_change': None,
+                    'previous': deepcopy(previous_record),
+                    'current': deepcopy(current_record),
+                }
+            else:
+                changed = previous_read.get('key') != current_read.get('key')
+                comparison = {
+                    'pitcher_id': pitcher_id,
+                    'comparable': True,
+                    'reason_code': None,
+                    'population_change': None,
+                    'previous': deepcopy(previous_record),
+                    'current': deepcopy(current_record),
+                    'movement': changed,
+                }
+                if changed:
+                    movements.append(deepcopy(comparison))
+        comparisons.append(comparison)
+
+    return {
+        'readiness': DOMAIN_READINESS['arm_read'],
+        'status': COMPARABLE,
+        'reason_code': None,
+        'previous': deepcopy(previous_value),
+        'current': deepcopy(current_value),
+        'arm_comparisons': comparisons,
+        'movement_candidates': movements,
+    }
+
+
 def compare_snapshots(previous, current) -> dict:
     """Return raw values only for domains whose compatibility is proven."""
     previous_payload = _payload(previous)
@@ -386,6 +693,7 @@ def compare_snapshots(previous, current) -> dict:
         'active_arm_count': _compatible_domain(
             previous, current, 'active_arm_count', 'active_arm_count'
         ),
+        'arm_read': _compatible_arm_read_domain(previous, current),
     }
     for domain, readiness in DOMAIN_READINESS.items():
         if domain in domains:
