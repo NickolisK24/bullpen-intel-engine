@@ -650,7 +650,7 @@
       ]
     },
     "3": {
-      "measured_seconds": 505.19,
+      "measured_seconds": 505.86,
       "files": [
         {
           "path": "tests/test_active_bullpen_readiness_resolver.py",
@@ -1149,6 +1149,14 @@
           "measured_seconds": 10.464
         },
         {
+          "path": "tests/test_team_board_v2.py",
+          "measured_seconds": 0.67
+        },
+        {
+          "path": "tests/test_team_board_delta_substrate.py",
+          "measured_seconds": 0.0
+        },
+        {
           "path": "tests/test_team_bullpen_shape.py",
           "measured_seconds": 0.018
         },
@@ -1219,7 +1227,7 @@
       ]
     },
     "4": {
-      "measured_seconds": 504.33,
+      "measured_seconds": 504.86,
       "files": [
         {
           "path": "tests/test_active_bullpen_artifact_publication.py",
@@ -1388,6 +1396,10 @@
         {
           "path": "tests/test_public_recent_work.py",
           "measured_seconds": 3.9
+        },
+        {
+          "path": "tests/test_public_recent_transactions.py",
+          "measured_seconds": 0.53
         },
         {
           "path": "tests/test_qa_reliever_read_scenarios.py",

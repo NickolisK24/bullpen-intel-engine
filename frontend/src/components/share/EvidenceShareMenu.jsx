@@ -24,6 +24,7 @@ export default function EvidenceShareMenu({
   destinationUrl,
   shareText,
   linkOnly = false,
+  variant = 'default',
   className = '',
 }) {
   const [open, setOpen] = useState(false)
@@ -34,6 +35,7 @@ export default function EvidenceShareMenu({
   const cardAvailable = Boolean(cardModel)
   const shareDestination = cardModel?.destinationUrl || destinationUrl
   const nativeShareText = cardModel?.shareText || shareText
+  const isTeamBoard = variant === 'team-board'
 
   useEffect(() => {
     if (!open) return undefined
@@ -93,7 +95,9 @@ export default function EvidenceShareMenu({
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen(value => !value)}
-        className="rounded border border-dirt bg-field/60 px-3 py-1.5 font-mono text-[11px] uppercase tracking-widest text-chalk300 transition-colors hover:border-amber/40 hover:text-amber focus:outline-none focus:ring-2 focus:ring-amber/40"
+        className={isTeamBoard
+          ? 'min-h-11 rounded-sm border border-brand-blue/50 bg-transparent px-3 py-2 font-board text-board-metadata text-brand-blue hover:border-brand-blue hover:bg-surface-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-line-focus'
+          : 'rounded border border-dirt bg-field/60 px-3 py-1.5 font-mono text-[11px] uppercase tracking-widest text-chalk300 transition-colors hover:border-amber/40 hover:text-amber focus:outline-none focus:ring-2 focus:ring-amber/40'}
       >
         Share
       </button>

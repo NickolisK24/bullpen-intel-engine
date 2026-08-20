@@ -75,11 +75,10 @@ export function getBullpenPageIdentity(viewMode, teamList, urlState = {}) {
     return 'Compare Bullpens'
   }
 
-  // getTeamOptionLabel is the existing shared rule and prefers the full club
-  // name; its abbreviation fallback only fires if a team row arrives without
-  // one, which is a data defect rather than a naming choice.
-  const teamLabel = getTeamOptionLabel(resolveTeamReference(teamList, urlState.team))
-  return teamLabel ? `${teamLabel} Bullpen` : 'Team Bullpen Board'
+  // TB-01 moves the selected club identity into the v2-backed Answer Block.
+  // The route shell now names the product surface once and does not repeat the
+  // club directly above the block that owns the current team answer.
+  return 'Team Board'
 }
 
 
@@ -97,6 +96,8 @@ export default function Bullpen() {
   const [includeStale, setIncludeStale]   = useState(false)
   const [availabilityFilter, setAvailabilityFilter] = useState('ALL')
   const boardDetailRegionRef = useRef(null)
+  const boardPitcherOriginRef = useRef(null)
+  const restoreBoardPitcherFocusRef = useRef(false)
   const showBoardDetail = viewMode === BULLPEN_VIEWS.BOARD && urlState.pitcherId != null
 
   const teams    = useFetch(getTeams)
@@ -128,6 +129,11 @@ export default function Bullpen() {
   useEffect(() => {
     if (showBoardDetail) {
       boardDetailRegionRef.current?.focus()
+    } else if (restoreBoardPitcherFocusRef.current) {
+      restoreBoardPitcherFocusRef.current = false
+      const origin = boardPitcherOriginRef.current
+      boardPitcherOriginRef.current = null
+      if (origin?.isConnected) origin.focus({ preventScroll: true })
     }
   }, [showBoardDetail, selectedPitcher?.pitcher_id])
 
@@ -157,7 +163,13 @@ export default function Bullpen() {
     }))
   }
 
+  const handleBoardPitcherSelect = (pitcherId, origin) => {
+    boardPitcherOriginRef.current = origin || null
+    handlePitcherSelect(pitcherId)
+  }
+
   const closeSelectedPitcher = () => {
+    restoreBoardPitcherFocusRef.current = true
     navigate(buildTeamBoardHref(activeTeamRef, {
       source: urlState.source,
       section: urlState.section,
@@ -187,23 +199,31 @@ export default function Bullpen() {
   }
 
   return (
-    <div className={`p-4 sm:p-6 lg:p-8 mx-auto ${selectedPitcher ? 'max-w-[100rem]' : 'max-w-7xl'}`}>
+    <div className={viewMode === BULLPEN_VIEWS.BOARD
+      ? 'team-board-shell'
+      : `p-4 sm:p-6 lg:p-8 mx-auto ${selectedPitcher ? 'max-w-[100rem]' : 'max-w-7xl'}`}>
       <SectionHeader
         as="h1"
         title={getBullpenPageIdentity(viewMode, teamList, urlState)}
         subtitle="Team-specific bullpen analysis from latest completed data - current availability, recent workload, and role context"
         action={
           <div className="flex items-center gap-3 flex-wrap">
-            <div className="flex flex-wrap gap-1 bg-chalk/30 p-1 rounded-lg border border-dirt">
+            <div className={viewMode === BULLPEN_VIEWS.BOARD
+              ? 'flex flex-wrap gap-1 border-b border-line-default'
+              : 'flex flex-wrap gap-1 rounded-lg border border-dirt bg-chalk/30 p-1'}>
               {VIEW_MODES.map(m => (
                 <button
                   key={m.id}
+                  type="button"
+                  aria-pressed={viewMode === m.id}
                   onClick={() => handleViewChange(m.id)}
-                  className={`px-3 py-1.5 rounded text-xs font-mono transition-all ${
-                    viewMode === m.id
-                      ? 'bg-chalk border-dirt text-chalk200 shadow'
-                      : 'text-chalk400 hover:text-chalk200'
-                  }`}
+                  className={viewMode === BULLPEN_VIEWS.BOARD
+                    ? `min-h-11 rounded-sm border-b-2 px-3 py-2 font-board text-board-metadata focus:outline-none focus-visible:ring-2 focus-visible:ring-line-focus ${m.id === viewMode
+                      ? 'border-brand-blue text-brand-blue'
+                      : 'border-transparent text-text-tertiary hover:text-text-primary'}`
+                    : `rounded px-3 py-1.5 font-mono text-xs transition-all ${m.id === viewMode
+                      ? 'border-dirt bg-chalk text-chalk200 shadow'
+                      : 'text-chalk400 hover:text-chalk200'}`}
                 >
                   {m.label}
                 </button>
@@ -220,7 +240,7 @@ export default function Bullpen() {
             requestedTeam={urlState.team}
             requestedSection={urlState.section}
             onSelectTeam={handleTeamSelect}
-            onSelectPitcher={handlePitcherSelect}
+            onSelectPitcher={handleBoardPitcherSelect}
           />
           {showBoardDetail && (
             <div

@@ -97,9 +97,11 @@ test('BullpenBoardView no longer references the legacy panel or its wiring', () 
   assert.equal(src.includes('showStoryPanel'), false)
 })
 
-test('TonightsBullpenBoard keeps the canonical StoryCard and drops the retired flag module', () => {
+test('Team Board retires StoryCard only after the structured What Changed replacement', () => {
   const src = readSrc('components/bullpen/board/TonightsBullpenBoard.jsx')
-  assert.ok(src.includes('<StoryCard')) // the single story surface remains
+  assert.equal(src.includes('<StoryCard'), false)
+  assert.ok(src.includes('<TeamBoardWhatChanged'))
+  assert.ok(src.includes('getTeamChanges(selectedTeam)'))
   assert.equal(src.includes('teamBoardCanonicalView'), false)
   assert.equal(src.includes('shouldMountLegacyStoryPanel'), false)
   assert.equal(src.includes('VITE_USE_CANONICAL_TEAM_BOARD'), false)
@@ -160,4 +162,9 @@ test('Home and Stories do not reference the retired panel or flag', () => {
     assert.equal(src.includes('VITE_USE_CANONICAL_TEAM_BOARD'), false, rel)
     assert.equal(src.includes('teamBoardCanonicalView'), false, rel)
   }
+})
+
+test('StoryCard implementation remains intact for its non-Team Board consumers', () => {
+  assert.equal(existsSync(srcPath('components/bullpen/board/StoryCard.jsx')), true)
+  assert.equal(existsSync(srcPath('components/bullpen/board/storyCardView.js')), true)
 })

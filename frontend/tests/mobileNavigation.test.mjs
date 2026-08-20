@@ -22,6 +22,7 @@ const { IntelligenceSurfaceView } = await server.ssrLoadModule('/src/components/
 const { PRIMARY_NAV, SUPPORTING_NAV, isNavDestinationActive } = await server.ssrLoadModule('/src/utils/navigation.js')
 
 const sidebarSource = readFileSync(new URL('../src/components/Sidebar.jsx', import.meta.url), 'utf8')
+const appSource = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8')
 
 const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const htmlIncludes = (html, text) => new RegExp(escapeRegExp(text)).test(html)
@@ -148,6 +149,16 @@ test('mobile menu wires close-on-select, close-on-route-change, escape, and a cl
   assert.ok(sidebarSource.includes('setOpen(false)'))
   // Escape closes the menu.
   assert.ok(sidebarSource.includes("event.key === 'Escape'"))
+})
+
+test('persistent navigation begins at xl while the top-bar path remains active below 1280', () => {
+  for (const className of ['xl:fixed', 'xl:w-56', 'xl:hidden', 'xl:flex']) {
+    assert.ok(sidebarSource.includes(className), className)
+  }
+  assert.equal(/\blg:(fixed|w-56|hidden|flex)\b/.test(sidebarSource), false)
+  assert.ok(appSource.includes('xl:flex-row'))
+  assert.ok(appSource.includes('xl:ml-56'))
+  assert.equal(appSource.includes('lg:ml-56'), false)
 })
 
 // ── First-use entry path on Today ──────────────────────────────────────────

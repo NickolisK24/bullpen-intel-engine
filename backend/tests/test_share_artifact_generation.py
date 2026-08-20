@@ -19,11 +19,13 @@ from alembic.operations import Operations
 from flask import Flask
 
 import models.share_artifact  # noqa: F401  (registers ORM immutability listeners)
+from models.dashboard_snapshot import DashboardSnapshot
 from models.pitcher import Pitcher
 from models.share_artifact import ShareArtifact
 from models.share_artifact_generation_audit import ShareArtifactGenerationAudit
 from models.sync_run import SyncRun
 from services import share_artifact_generation as gen_module
+from services import team_board_delta_substrate as delta_substrate
 from services import team_state_source as source_module
 from services.share_artifact_generation import (
     FAILURE_PUBLICATION,
@@ -62,6 +64,7 @@ from tests.db_config import (
     drop_test_schema,
 )
 from utils.db import db
+from team_operations import TEAM_STATE_METHOD_VERSION
 
 
 TEAM_ID = 147
@@ -139,6 +142,23 @@ def _resolver(readiness):
     return _resolve
 
 
+def _versioned_readiness():
+    readiness = _readiness()
+    readiness['contract_version'] = TEAM_STATE_METHOD_VERSION
+    readiness['team_state_evidence'] = {
+        'method_version': TEAM_STATE_METHOD_VERSION,
+        'contract': 'team_state_contract_a',
+        'basis': 'status_only',
+        'readiness_status_code': 'operationally_constrained',
+        'active_pitcher_count': 7,
+        'evidence_references': {
+            'population_authority': 'resolve_readiness_population',
+            'membership_authority': 'resolve_active_bullpen_membership',
+        },
+    }
+    return readiness
+
+
 def _install_trusted_snapshot(monkeypatch, *, snapshot_id=SNAPSHOT_ID, sync_run_id=None,
                               data_through=date(2026, 7, 20), unavailable_reason=None):
     class _Snap:
@@ -199,6 +219,72 @@ def test_equivalent_source_reuses_existing(app, monkeypatch):
     assert second.reused_existing is True and second.created_new is False
     assert second.public_id == first.public_id
     assert db.session.query(ShareArtifact).filter_by(lifecycle_state='published').count() == 1
+
+
+def test_delta_sidecar_capture_is_prospective_and_never_backfills_reuse(app, monkeypatch):
+    _eligible_env(monkeypatch)
+    captured = []
+    monkeypatch.setattr(
+        gen_module,
+        'try_stamp_prospective_snapshot',
+        lambda **kwargs: captured.append(kwargs),
+    )
+
+    first = generate_team_state_artifact(
+        TEAM_ID, readiness_resolver=_resolver(_readiness())
+    )
+    second = generate_team_state_artifact(
+        TEAM_ID, readiness_resolver=_resolver(_readiness())
+    )
+
+    assert first.created_new is True
+    assert second.reused_existing is True
+    assert len(captured) == 1
+    assert captured[0]['artifact'].id == first.artifact.id
+    assert captured[0]['readiness'] == _readiness()
+
+
+def test_new_natural_generation_freezes_versioned_delta_sidecar(app, monkeypatch):
+    _eligible_env(monkeypatch, with_sync_run=True)
+
+    result = generate_team_state_artifact(
+        TEAM_ID, readiness_resolver=_resolver(_versioned_readiness())
+    )
+    sidecar = DashboardSnapshot.query.filter_by(
+        snapshot_type=delta_substrate.SNAPSHOT_TYPE,
+    ).one()
+
+    assert result.created_new is True
+    assert sidecar.sync_run_id is None
+    assert sidecar.payload['source']['artifact_id'] == result.artifact.id
+    assert sidecar.payload['source']['snapshot_id'] == result.source_snapshot_id
+    assert sidecar.payload['source']['sync_run_id'] == result.source_sync_run_id
+    assert sidecar.payload['represented_date'] == result.product_date.isoformat()
+    assert sidecar.payload['domains']['team_state']['method_version'] == (
+        TEAM_STATE_METHOD_VERSION
+    )
+    assert 'team_board_delta' not in result.artifact.payload
+
+
+def test_reused_unstamped_artifact_is_not_backfilled(app, monkeypatch):
+    _eligible_env(monkeypatch)
+    first = generate_team_state_artifact(
+        TEAM_ID, readiness_resolver=_resolver(_readiness())
+    )
+    assert first.created_new is True
+    assert DashboardSnapshot.query.filter_by(
+        snapshot_type=delta_substrate.SNAPSHOT_TYPE,
+    ).count() == 0
+
+    second = generate_team_state_artifact(
+        TEAM_ID, readiness_resolver=_resolver(_versioned_readiness())
+    )
+
+    assert second.reused_existing is True
+    assert second.artifact.id == first.artifact.id
+    assert DashboardSnapshot.query.filter_by(
+        snapshot_type=delta_substrate.SNAPSHOT_TYPE,
+    ).count() == 0
 
 
 def test_ineligible_source_refuses_without_publication(app, monkeypatch):

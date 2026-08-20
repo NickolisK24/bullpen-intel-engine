@@ -111,7 +111,7 @@ test('renders the published availability groups in order', () => {
   )
 })
 
-test('board controls collapse to one row with an unavailable toggle', () => {
+test('board controls keep one team selector and retire the legacy unavailable toggle', () => {
   const html = renderToStaticMarkup(React.createElement(TonightsBullpenBoard, {
     teams: {
       loading: false,
@@ -119,14 +119,11 @@ test('board controls collapse to one row with an unavailable toggle', () => {
     },
   }))
 
-  // phase-0-clarity/03: the three-mode "View" segmented control became a
-  // single "Show unavailable arms" toggle beside the team selector; the board
-  // defaults to the active bullpen.
-  assert.ok(htmlIncludes(html, 'Show unavailable arms'))
+  assert.equal(htmlIncludes(html, 'Show unavailable arms'), false)
   assert.equal(htmlIncludes(html, 'Active + Unavailable'), false)
   assert.equal(htmlIncludes(html, 'Unavailable Only'), false)
-  assert.ok(htmlIncludes(html, 'aria-pressed="false"'))
-  assert.equal(htmlIncludes(html, 'Unavailable relievers are context only.'), false)
+  assert.equal(htmlIncludes(html, 'aria-pressed="false"'), false)
+  assert.match(html, /<select[^>]*aria-label="Select team for Team Board"/)
 })
 
 test('team board launch landing is neutral and ignores stale preferred team state', () => {
@@ -149,11 +146,16 @@ test('team board launch landing is neutral and ignores stale preferred team stat
   assert.equal(tonightsBullpenBoardSource.includes('baseballos.preferredTeam'), false)
 })
 
-test('team board uses compact operating card density', () => {
-  assert.ok(tonightsBullpenBoardSource.includes('<BullpenOperatingStateCard'))
-  assert.ok(tonightsBullpenBoardSource.includes('density="compact"'))
+test('team board adopts the v2 Answer Block, Active Bullpen, Recent Usage, and Rest Status', () => {
+  assert.ok(tonightsBullpenBoardSource.includes('<TeamBoardAnswerBlock'))
+  assert.ok(tonightsBullpenBoardSource.includes('getTeamBoardV2(selectedTeam)'))
   assert.ok(tonightsBullpenBoardSource.includes("href: '#pitcher-lanes'"))
-  assert.ok(tonightsBullpenBoardSource.includes('showRoutineFreshness={false}'))
+  assert.ok(tonightsBullpenBoardSource.includes('<TeamBoardActiveBullpen'))
+  assert.equal(tonightsBullpenBoardSource.includes('<BullpenBoardView'), false)
+  assert.ok(tonightsBullpenBoardSource.includes('<TeamBoardRecentUsage'))
+  assert.ok(tonightsBullpenBoardSource.includes('<TeamBoardRestStatus'))
+  assert.ok(tonightsBullpenBoardSource.includes('<TeamBoardWorkloadOverview'))
+  assert.equal(tonightsBullpenBoardSource.includes('<BullpenOperatingStateCard'), false)
 })
 
 test('board no longer restates the team state above the groups', () => {

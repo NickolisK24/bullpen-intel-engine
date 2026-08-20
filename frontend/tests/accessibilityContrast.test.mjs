@@ -30,6 +30,16 @@ function contrastRatio(foreground, background) {
   return (lighter + 0.05) / (darker + 0.05)
 }
 
+function blendHex(foreground, background, alpha) {
+  const channels = hex => [1, 3, 5].map(index => Number.parseInt(hex.slice(index, index + 2), 16))
+  const foregroundChannels = channels(foreground)
+  const backgroundChannels = channels(background)
+  const blended = foregroundChannels.map((value, index) => (
+    Math.round(value * alpha + backgroundChannels[index] * (1 - alpha))
+  ))
+  return `#${blended.map(value => value.toString(16).padStart(2, '0')).join('')}`
+}
+
 test('muted chalk text tokens meet WCAG AA on dark surfaces', () => {
   const colors = tailwindConfig.theme.extend.colors
   const surfaces = [colors.field, colors.dugout, colors.chalk, colors.dirt]
@@ -41,4 +51,60 @@ test('muted chalk text tokens meet WCAG AA on dark surfaces', () => {
       )
     }
   }
+})
+
+test('semantic foundation colors remain readable with visible text on dark surfaces', () => {
+  const colors = tailwindConfig.theme.extend.colors
+  for (const token of [
+    'stateFresh',
+    'stateStretched',
+    'stateVulnerable',
+    'readAvailable',
+    'readWatch',
+    'readLimited',
+    'readUnavailable',
+    'signal',
+    'gold',
+  ]) {
+    for (const surface of [colors.field, colors.dugout]) {
+      assert.ok(
+        contrastRatio(colors[token], surface) >= 4.5,
+        `${token} should pass AA on ${surface}`,
+      )
+    }
+  }
+})
+
+test('final Team Board text tones pass AA on every permitted surface', () => {
+  const colors = tailwindConfig.theme.extend.colors
+  const surfaces = ['surface-base', 'surface-nav', 'surface-raised', 'surface-hover']
+  for (const token of ['text-primary', 'text-secondary', 'text-tertiary', 'text-withheld']) {
+    for (const surface of surfaces) {
+      assert.ok(
+        contrastRatio(colors[token], colors[surface]) >= 4.5,
+        `${token} should pass AA on ${surface}`,
+      )
+    }
+  }
+})
+
+test('final Team Board focus, chart, semantic, and brand tokens meet contrast requirements', () => {
+  const colors = tailwindConfig.theme.extend.colors
+  const surfaces = ['surface-base', 'surface-nav', 'surface-raised', 'surface-hover']
+  for (const surface of surfaces) {
+    assert.ok(contrastRatio(colors['line-focus'], colors[surface]) >= 3, `line-focus on ${surface}`)
+  }
+  assert.ok(contrastRatio(colors['chart-bar'], colors['surface-base']) >= 3)
+
+  for (const token of ['state-clear', 'state-caution', 'state-constrained']) {
+    assert.ok(contrastRatio(colors[token], colors['surface-base']) >= 4.5, `${token} on surface-base`)
+    const tint = blendHex(colors[token], colors['surface-base'], 0.1)
+    assert.ok(contrastRatio(colors[token], tint) >= 4.5, `${token} on its 10% tint`)
+  }
+
+  for (const token of ['brand-blue', 'brand-gold']) {
+    assert.ok(contrastRatio(colors[token], colors['surface-base']) >= 4.5, `${token} on surface-base`)
+  }
+  assert.ok(contrastRatio(colors['text-secondary'], colors['text-withheld']) >= 1.5)
+  assert.equal(new Set(surfaces.map(token => colors[token])).size, surfaces.length)
 })

@@ -30,7 +30,7 @@ function Matchup({ view }) {
           <span className="font-display text-xl tracking-wide text-chalk100">{view.teamName}</span>
         )}
         <span className="font-mono text-[11px] uppercase tracking-widest text-chalk500">vs</span>
-        <span className="font-display text-2xl tracking-wide text-gradient-amber">
+        <span className="font-display text-2xl tracking-wide text-gold">
           {view.opponent || 'Opponent unavailable'}
         </span>
       </div>

@@ -3,39 +3,32 @@
 @tailwind utilities;
 
 @layer base {
-  :root {
-    --field:    #0a0c0f;
-    --dugout:   #111418;
-    --chalk:    #1a1f26;
-    --dirt:     #242b35;
-    --amber:    #f5a623;
-    --gold:     #e8943a;
-    --pine:     #2d6a4f;
-    --warning:  #d97706;
-    --danger:   #dc2626;
-  }
-
   * { box-sizing: border-box; }
 
   html {
-    background-color: var(--field);
-    color: #d1dce8;
+    @apply bg-field text-chalk200;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
 
   body {
-    font-family: 'DM Sans', sans-serif;
-    background-color: var(--field);
-    min-height: 100vh;
-    overflow-x: hidden;
+    @apply min-h-screen bg-field font-body;
+    overflow-wrap: break-word;
+  }
+
+  html,
+  body,
+  #root {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
   }
 
   button:focus-visible,
   a:focus-visible,
   input:focus-visible,
   [tabindex]:focus-visible {
-    outline: 2px solid rgba(245, 166, 35, 0.8);
+    @apply outline-2 outline-signal;
     outline-offset: 2px;
   }
 
@@ -45,12 +38,12 @@
 
   /* Custom scrollbar */
   ::-webkit-scrollbar { width: 6px; height: 6px; }
-  ::-webkit-scrollbar-track { background: var(--field); }
-  ::-webkit-scrollbar-thumb { background: #2a3340; border-radius: 3px; }
-  ::-webkit-scrollbar-thumb:hover { background: #3a4555; }
+  ::-webkit-scrollbar-track { @apply bg-field; }
+  ::-webkit-scrollbar-thumb { @apply rounded-sm bg-dirt; }
+  ::-webkit-scrollbar-thumb:hover { @apply bg-chalk700; }
 
   /* Selection */
-  ::selection { background: rgba(245, 166, 35, 0.25); color: #f5a623; }
+  ::selection { @apply bg-gold/25 text-gold; }
 }
 
 @layer components {
@@ -58,6 +51,57 @@
   .app-shell {
     display: flex;
     min-height: 100vh;
+  }
+  .app-shell > * {
+    min-width: 0;
+  }
+
+  /* Team Board foundation shell: the current content order is unchanged, while
+     later packages can intentionally use the 1280–1440 desktop range. */
+  .team-board-shell {
+    @apply mx-auto w-full min-w-0 max-w-team-board bg-surface-base px-4 py-4 font-board text-text-secondary md:px-6 md:py-6 xl:px-8 xl:py-8;
+    container-type: inline-size;
+  }
+  .team-board-shell * {
+    font-family: "Inter", sans-serif !important;
+  }
+  .team-board-shell .section-title {
+    @apply font-board text-board-section-title font-semibold normal-case tracking-normal text-text-primary;
+  }
+
+  /* Named typography roles. New foundation components use these roles instead
+     of inventing one-off 9px/10px/11px values. */
+  .type-page-title {
+    @apply font-board text-board-page-title font-semibold text-text-primary;
+  }
+  .type-section-title {
+    @apply font-board text-board-section-title font-semibold text-text-primary;
+  }
+  .type-body {
+    @apply font-board text-board-body text-text-secondary;
+  }
+  .type-compact {
+    @apply font-board text-board-compact text-text-tertiary;
+  }
+  .type-metadata {
+    @apply font-board text-board-metadata text-text-tertiary;
+  }
+  .type-overline {
+    @apply font-board text-board-label font-medium uppercase text-text-tertiary;
+  }
+  .type-data {
+    @apply font-board text-board-data tabular-nums text-text-secondary;
+  }
+
+  /* Shared rhythm roles for later Team Board composition packages. */
+  .foundation-section {
+    @apply mt-section first:mt-0 lg:mt-section-lg;
+  }
+  .foundation-panel {
+    @apply bg-transparent p-0;
+  }
+  .foundation-row-stack {
+    @apply flex flex-col gap-row;
   }
 
   /* ── Card ── */
@@ -216,7 +260,7 @@
     @apply bg-amber text-field;
   }
 
-  /* ── Risk badges ── */
+  /* ── Legacy risk badges (non-Team-State compatibility only) ── */
   .badge-low      { @apply inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-mono font-medium bg-pine/20 text-emerald-400 border border-pine/40; }
   .badge-moderate { @apply inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-mono font-medium bg-warning/20 text-yellow-400 border border-warning/40; }
   .badge-high     { @apply inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-mono font-medium bg-orange-500/20 text-orange-400 border border-orange-500/40; }
@@ -251,7 +295,7 @@
 
   /* ── Section title ── */
   .section-title {
-    @apply font-display text-3xl tracking-wider text-chalk100 uppercase;
+    @apply font-display text-section-title uppercase text-chalk100;
   }
 
   /* ── Mono number ── */
@@ -259,9 +303,147 @@
     @apply font-mono font-medium tabular-nums;
   }
 
-  /* ── Glow text ── */
-  .glow-amber {
-    text-shadow: 0 0 20px rgba(245, 166, 35, 0.4);
+  /* Public semantic presentation. The component still requires visible label
+     text; these tones never classify or rename a backend-provided value. */
+  .semantic-label {
+    @apply inline-flex min-h-6 max-w-full items-center rounded-sm border px-2 py-1 font-board text-board-metadata font-medium;
+  }
+  .semantic-label--neutral { @apply border-dirt bg-chalk/45 text-chalk300; }
+  .semantic-label--fresh { @apply border-stateFresh/40 bg-stateFresh/10 text-stateFresh; }
+  .semantic-label--stretched { @apply border-stateStretched/40 bg-stateStretched/10 text-stateStretched; }
+  .semantic-label--vulnerable { @apply border-stateVulnerable/40 bg-stateVulnerable/10 text-stateVulnerable; }
+  .semantic-label--available { @apply border-readAvailable/40 bg-readAvailable/10 text-readAvailable; }
+  .semantic-label--watch { @apply border-readWatch/40 bg-readWatch/10 text-readWatch; }
+  .semantic-label--limited { @apply border-readLimited/40 bg-readLimited/10 text-readLimited; }
+  .semantic-label--unavailable { @apply border-readUnavailable/40 bg-readUnavailable/10 text-readUnavailable; }
+
+  /* Active Bullpen is a composed record below 768 and an aligned table-like
+     destination row above it. The same DOM carries both modes. */
+  .active-arm-table__header {
+    @apply hidden;
+  }
+  .active-arm-row {
+    @apply grid min-h-16 w-full min-w-0 grid-cols-[minmax(0,1fr)_auto] gap-x-panel gap-y-meta border-b border-line-subtle bg-transparent px-0 py-row text-left last:border-b-0;
+  }
+  button.active-arm-row,
+  a.active-arm-row {
+    @apply cursor-pointer no-underline hover:bg-surface-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-line-focus;
+  }
+  .active-arm-row > * {
+    min-width: 0;
+  }
+  .active-arm-row__name,
+  .active-arm-row__role,
+  .active-arm-row__mobile-meta,
+  .active-arm-row__tablet-pattern {
+    overflow-wrap: anywhere;
+  }
+  .active-arm-row__identity {
+    @apply flex flex-col;
+  }
+  .active-arm-row__read {
+    @apply flex items-start justify-end;
+  }
+  .active-arm-row__mobile-meta {
+    @apply col-span-2 leading-relaxed;
+  }
+  .active-arm-row__cell,
+  .active-arm-row__destination,
+  .active-arm-row__tablet-pattern {
+    display: none;
+  }
+  .active-arm-read {
+    @apply inline-flex min-w-0 items-center gap-2 font-board text-board-body;
+  }
+  .active-arm-read__marker {
+    @apply h-2 w-2 shrink-0;
+  }
+  .active-arm-read__marker--dot {
+    @apply rounded-full bg-current;
+  }
+  .active-arm-read__marker--square {
+    @apply bg-current;
+  }
+  .active-arm-read__marker--ring {
+    @apply rounded-full border-2 border-current bg-transparent;
+  }
+  .active-arm-read--neutral { @apply text-text-secondary; }
+  .active-arm-read--watch { @apply text-readWatch; }
+  .active-arm-read--limited { @apply text-readLimited; }
+  .active-arm-read--withheld { @apply text-text-withheld; }
+
+  @media (min-width: 768px) {
+    .active-arm-table__header,
+    .active-arm-row {
+      grid-template-columns: minmax(10rem, 1.5fr) minmax(7rem, 0.9fr) minmax(4.5rem, 0.55fr) minmax(3.5rem, 0.4fr) minmax(3.5rem, 0.4fr) minmax(4.5rem, 0.5fr);
+    }
+    .active-arm-table__header {
+      @apply grid items-end gap-panel border-b border-line-default py-meta font-board text-board-label font-medium uppercase text-text-tertiary;
+    }
+    .active-arm-row {
+      @apply min-h-12 items-center gap-panel py-panel;
+    }
+    .active-arm-row__mobile-meta,
+    .active-arm-row__pattern,
+    .active-arm-table__pattern {
+      @apply hidden;
+    }
+    .active-arm-row__cell,
+    .active-arm-row__destination {
+      @apply block text-right text-board-data tabular-nums;
+    }
+    .active-arm-row__last-p,
+    .active-arm-table__last-p {
+      display: none;
+    }
+    .active-arm-row__pattern {
+      display: none;
+    }
+    .active-arm-row__destination {
+      @apply text-brand-blue;
+    }
+    .active-arm-row__tablet-pattern {
+      @apply block;
+    }
+    .active-arm-row__partial {
+      @apply col-span-full;
+    }
+  }
+
+  @media (min-width: 1024px) {
+    .active-arm-table__header,
+    .active-arm-row {
+      grid-template-columns: minmax(14rem, 1.6fr) minmax(8rem, 0.85fr) minmax(5.5rem, 0.5fr) minmax(4.5rem, 0.35fr) minmax(4.5rem, 0.35fr) minmax(6rem, 0.55fr) minmax(5.5rem, 0.45fr);
+    }
+    .active-arm-table__header.active-arm-row--with-last-p,
+    .active-arm-row--with-last-p {
+      grid-template-columns: minmax(14rem, 1.6fr) minmax(8rem, 0.85fr) minmax(5.5rem, 0.5fr) minmax(4rem, 0.3fr) minmax(4.5rem, 0.35fr) minmax(4.5rem, 0.35fr) minmax(6rem, 0.55fr) minmax(5.5rem, 0.45fr);
+    }
+    .active-arm-row__last-p,
+    .active-arm-table__last-p {
+      @apply block;
+    }
+    .active-arm-row__pattern,
+    .active-arm-table__pattern {
+      @apply block text-left;
+    }
+    .active-arm-row__tablet-pattern {
+      @apply hidden;
+    }
+  }
+
+  .foundation-skeleton {
+    @apply rounded-sm bg-surface-raised;
+  }
+
+  .section-state {
+    @apply min-w-0 bg-transparent py-row;
+  }
+  .section-state--partial { @apply text-text-tertiary; }
+  .section-state--error { @apply text-state-constrained; }
+  .section-state--unavailable { @apply text-text-withheld; }
+  .section-state__action {
+    @apply mt-row inline-flex min-h-11 items-center rounded-sm border border-brand-blue/50 px-3 py-2 font-board text-board-metadata text-brand-blue hover:border-brand-blue hover:bg-surface-hover;
   }
 
   /* ── Animated entry delays ── */
@@ -273,6 +455,12 @@
 }
 
 @layer utilities {
+  .team-board-shell .text-\[9px\],
+  .team-board-shell .text-\[10px\],
+  .team-board-shell .text-\[11px\] {
+    font-size: 0.75rem !important;
+  }
+
   .bg-noise {
     background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
     background-repeat: repeat;
@@ -284,10 +472,6 @@
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
-  }
-
-  .border-gradient {
-    border-image: linear-gradient(135deg, #f5a623, transparent) 1;
   }
 
   /* Fade-up animation utility */
