@@ -359,6 +359,38 @@ def test_missing_previous_snapshot_is_withheld():
     assert comparison['status'] == delta.PREVIOUS_MISSING
 
 
+def test_missing_current_snapshot_is_withheld():
+    previous = _snapshot(date(2026, 8, 17), snapshot_id=1)
+
+    comparison = delta.compare_snapshots(previous, None)['domains']['team_state']
+
+    assert comparison['status'] == delta.CURRENT_MISSING
+
+
+def test_team_state_comparison_rejects_wrong_team_and_date_order():
+    previous = _snapshot(date(2026, 8, 17), snapshot_id=1)
+    wrong_team = _snapshot(date(2026, 8, 18), snapshot_id=2)
+    wrong_team.payload['team_id'] = TEAM_ID + 1
+    reversed_date = _snapshot(date(2026, 8, 17), snapshot_id=3)
+
+    assert delta.compare_snapshots(previous, wrong_team)['domains']['team_state'][
+        'status'
+    ] == delta.TEAM_ID_MISMATCH
+    assert delta.compare_snapshots(previous, reversed_date)['domains']['team_state'][
+        'status'
+    ] == delta.REPRESENTED_DATE_INVALID
+
+
+def test_untrusted_team_state_endpoint_is_withheld():
+    previous = _snapshot(date(2026, 8, 17), snapshot_id=1)
+    current = _snapshot(date(2026, 8, 18), snapshot_id=2)
+    current.payload['domains']['team_state']['trusted'] = False
+
+    comparison = delta.compare_snapshots(previous, current)['domains']['team_state']
+
+    assert comparison['status'] == delta.FRESHNESS_UNTRUSTED
+
+
 def test_same_state_is_comparable_and_unchanged_is_not_authored_as_prose():
     previous = _snapshot(date(2026, 8, 17), snapshot_id=1, state='fresh')
     current = _snapshot(date(2026, 8, 18), snapshot_id=2, state='fresh')
@@ -754,6 +786,74 @@ def test_previous_snapshot_resolution_is_one_bounded_query(app):
     assert previous is not None
     assert len(statements) == 1
     assert 'LIMIT' in statements[0].upper()
+
+
+def test_latest_team_state_resolver_uses_nearest_compatible_publication(app):
+    older = delta.stamp_prospective_snapshot(
+        source=_source(represented_date=date(2026, 8, 16), snapshot_id=41),
+        readiness=_readiness(),
+        artifact=_artifact(artifact_id=41, state='stretched', label='Stretched'),
+    )
+    incompatible = delta.stamp_prospective_snapshot(
+        source=_source(represented_date=date(2026, 8, 17), snapshot_id=42),
+        readiness=_readiness(),
+        artifact=_artifact(artifact_id=42, state='fresh', label='Fresh'),
+    )
+    current = delta.stamp_prospective_snapshot(
+        source=_source(represented_date=date(2026, 8, 18), snapshot_id=43),
+        readiness=_readiness(),
+        artifact=_artifact(artifact_id=43, state='vulnerable', label='Vulnerable'),
+    )
+    payload = deepcopy(incompatible.payload)
+    payload['domains']['team_state']['method_version'] = 'incompatible-method'
+    incompatible.payload = payload
+    db.session.commit()
+
+    result = delta.resolve_latest_team_state_comparison(team_id=TEAM_ID)
+
+    assert result['comparison'] == {
+        'team_id': TEAM_ID,
+        'from_represented_date': '2026-08-16',
+        'to_represented_date': '2026-08-18',
+        'previous_delta_snapshot_id': older.id,
+        'current_delta_snapshot_id': current.id,
+    }
+    assert result['domains']['team_state']['status'] == delta.COMPARABLE
+    assert result['domains']['team_state']['previous']['public_label'] == 'Stretched'
+    assert result['domains']['team_state']['current']['public_label'] == 'Vulnerable'
+
+
+def test_latest_team_state_resolver_returns_nearest_failure_when_none_compare(app):
+    previous = delta.stamp_prospective_snapshot(
+        source=_source(represented_date=date(2026, 8, 17), snapshot_id=41),
+        readiness=_readiness(),
+        artifact=_artifact(artifact_id=41),
+    )
+    delta.stamp_prospective_snapshot(
+        source=_source(represented_date=date(2026, 8, 18), snapshot_id=42),
+        readiness=_readiness(),
+        artifact=_artifact(artifact_id=42, state='fresh', label='Fresh'),
+    )
+    payload = deepcopy(previous.payload)
+    payload['domains']['team_state']['public_contract_version'] = 'incompatible-contract'
+    previous.payload = payload
+    db.session.commit()
+
+    result = delta.resolve_latest_team_state_comparison(team_id=TEAM_ID)
+
+    assert result['domains']['team_state']['status'] == delta.CONTRACT_INCOMPATIBLE
+    assert result['comparison']['from_represented_date'] == '2026-08-17'
+    assert result['comparison']['to_represented_date'] == '2026-08-18'
+
+
+def test_team_state_comparison_requires_both_frozen_public_labels():
+    previous = _snapshot(date(2026, 8, 17), snapshot_id=1)
+    current = _snapshot(date(2026, 8, 18), snapshot_id=2, state='fresh')
+    previous.payload['values']['team_state']['public_label'] = None
+
+    result = delta.compare_snapshots(previous, current)
+
+    assert result['domains']['team_state']['status'] == delta.VALUE_MISSING
 
 
 def test_comparison_source_contains_no_historical_recompute_path():

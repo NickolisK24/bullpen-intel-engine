@@ -422,6 +422,25 @@ def get_previous_snapshot(*, team_id, represented_date, session=None):
     )
 
 
+def get_latest_snapshot(*, team_id, session=None):
+    """Return the latest frozen publication sidecar for one team."""
+    session = session or db.session
+    return (
+        session.query(DashboardSnapshot)
+        .filter(DashboardSnapshot.snapshot_type == SNAPSHOT_TYPE)
+        .filter(DashboardSnapshot.status == 'ready')
+        .filter(DashboardSnapshot.payload_version == SNAPSHOT_PAYLOAD_VERSION)
+        .filter(DashboardSnapshot.published_at.isnot(None))
+        .filter(DashboardSnapshot.source == f'{SNAPSHOT_SOURCE_PREFIX}{int(team_id)}')
+        .order_by(
+            DashboardSnapshot.data_through.desc(),
+            DashboardSnapshot.id.desc(),
+        )
+        .limit(1)
+        .one_or_none()
+    )
+
+
 def _payload(snapshot) -> Mapping[str, Any]:
     return _mapping(getattr(snapshot, 'payload', None))
 
@@ -439,10 +458,10 @@ def _withheld(domain, reason):
 
 
 def _compatible_domain(previous, current, domain, value_key):
-    if previous is None:
-        return _withheld(domain, PREVIOUS_MISSING)
     if current is None:
         return _withheld(domain, CURRENT_MISSING)
+    if previous is None:
+        return _withheld(domain, PREVIOUS_MISSING)
 
     previous_payload = _payload(previous)
     current_payload = _payload(current)
@@ -524,6 +543,8 @@ def _compatible_domain(previous, current, domain, value_key):
         or not isinstance(current_value, Mapping)
         or previous_value.get('public_state') in (None, '')
         or current_value.get('public_state') in (None, '')
+        or previous_value.get('public_label') in (None, '')
+        or current_value.get('public_label') in (None, '')
     ):
         return _withheld(domain, VALUE_MISSING)
 
@@ -717,3 +738,43 @@ def compare_snapshots(previous, current) -> dict:
         },
         'domains': domains,
     }
+
+
+def resolve_latest_team_state_comparison(*, team_id, session=None) -> dict:
+    """Compare the latest publication with its nearest compatible predecessor.
+
+    Candidate rows are visited newest first. An incompatible publication is
+    never reinterpreted; the resolver only moves farther back to find the
+    nearest endpoint that the existing Team State compatibility contract proves
+    comparable. If none qualifies, the nearest fail-closed result is returned.
+    """
+    session = session or db.session
+    current = get_latest_snapshot(team_id=team_id, session=session)
+    if current is None:
+        return compare_snapshots(None, None)
+
+    nearest_withheld = compare_snapshots(None, current)
+    current_date = _as_date(_payload(current).get('represented_date'))
+    if current_date is None:
+        return nearest_withheld
+
+    candidates = (
+        session.query(DashboardSnapshot)
+        .filter(DashboardSnapshot.snapshot_type == SNAPSHOT_TYPE)
+        .filter(DashboardSnapshot.status == 'ready')
+        .filter(DashboardSnapshot.payload_version == SNAPSHOT_PAYLOAD_VERSION)
+        .filter(DashboardSnapshot.published_at.isnot(None))
+        .filter(DashboardSnapshot.source == f'{SNAPSHOT_SOURCE_PREFIX}{int(team_id)}')
+        .filter(DashboardSnapshot.data_through < current_date)
+        .order_by(
+            DashboardSnapshot.data_through.desc(),
+            DashboardSnapshot.id.desc(),
+        )
+    )
+    for previous in candidates:
+        result = compare_snapshots(previous, current)
+        if nearest_withheld['domains']['team_state']['status'] == PREVIOUS_MISSING:
+            nearest_withheld = result
+        if result['domains']['team_state']['status'] == COMPARABLE:
+            return result
+    return nearest_withheld
