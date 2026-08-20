@@ -72,14 +72,14 @@ function readerMaterialLimitations(view, staleWithError) {
     .filter(item => !ROUTINE_BOUNDARY_LIMITATION.test(String(item)))
 }
 
-export function BullpenReadDisclosure({ readModel, staleWithError = false, className = '' }) {
+export function BullpenReadDisclosure({ readModel, staleWithError = false, flat = false, className = '' }) {
   const view = getBullpenOperatingStateView({ readModel, density: 'compact' })
   const evidence = compactEvidenceList(view)
   const routineLimitations = compactLimitationList(view, staleWithError)
     .filter(item => ROUTINE_BOUNDARY_LIMITATION.test(String(item)))
 
   return (
-    <Disclosure label="Why this read?" hint="Evidence, limits, and methodology" className={className}>
+    <Disclosure label="Why this read?" hint="Evidence, limits, and methodology" variant={flat ? 'flat' : 'default'} className={className}>
       {evidence.length > 0 && (
         <div className="mt-2">
           <div className="font-mono text-[10px] uppercase tracking-widest text-chalk500">Evidence</div>

@@ -2,10 +2,19 @@ import SectionState from '../../UI/SectionState'
 import ActiveArmRow, { ActiveArmRowSkeleton } from './ActiveArmRow'
 
 const READ_TONES = Object.freeze({
-  clean_option: 'available',
+  clean_option: 'neutral',
   watch_arm: 'watch',
   rest_restricted: 'limited',
-  unavailable: 'unavailable',
+  unavailable: 'withheld',
+  limited_read: 'withheld',
+})
+
+const READ_MARKERS = Object.freeze({
+  clean_option: 'dot',
+  watch_arm: 'dot',
+  rest_restricted: 'dot',
+  unavailable: 'square',
+  limited_read: 'ring',
 })
 
 function textValue(value) {
@@ -16,16 +25,12 @@ function countValue(value) {
   return typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : null
 }
 
-function formatDaysSince(value) {
-  const days = countValue(value)
-  if (days == null) return null
-  if (days === 0) return 'Today'
-  return `${days} day${days === 1 ? '' : 's'} ago`
-}
-
-function readTone(arm) {
+function readPresentation(arm) {
   const key = textValue(arm?.public_labels?.read?.key)?.toLowerCase()
-  return READ_TONES[key] || 'neutral'
+  return {
+    tone: READ_TONES[key] || 'withheld',
+    marker: READ_MARKERS[key] || 'ring',
+  }
 }
 
 export function getActiveBullpenRows(activeBullpen) {
@@ -36,23 +41,39 @@ export function getActiveBullpenRows(activeBullpen) {
     const lastGamePitches = countValue(lastAppearance.pitches)
     const appearancesLast7 = countValue(workload.appearances_last_7)
     const pitchesLast7 = countValue(workload.pitches_last_7_days)
-    const facts = [
-      { label: 'Last Used', value: formatDaysSince(workload.days_since_last_appearance) },
-      { label: 'Last Game', value: lastGamePitches == null ? null : `${lastGamePitches} pitches` },
-      { label: '7D App', value: appearancesLast7 },
-      { label: '7D Pitches', value: pitchesLast7 },
-      { label: 'Pattern', value: workload.back_to_back === true ? 'Back-to-back' : null },
-    ].filter(fact => fact.value != null)
+    const roleKey = textValue(arm?.public_role_read?.key) || textValue(arm?.public_labels?.role?.key)
+    const read = readPresentation(arm)
 
     return {
       pitcherId: countValue(arm?.pitcher_id),
       name: textValue(arm?.name) || 'Reliever',
       roleLabel: textValue(arm?.public_role_read?.label) || textValue(arm?.public_labels?.role?.label),
+      roleWithheld: roleKey === 'limited_read',
       readLabel: textValue(arm?.public_labels?.read?.label) || textValue(arm?.availability?.label),
-      readTone: readTone(arm),
-      facts,
+      readTone: read.tone,
+      readMarker: read.marker,
+      daysSince: countValue(workload.days_since_last_appearance),
+      lastGamePitches,
+      appearancesLast7,
+      pitchesLast7,
+      pattern: workload.back_to_back === true ? 'B2B' : null,
     }
   })
+}
+
+function TableHeader({ showLastGamePitches }) {
+  return (
+    <div className={`active-arm-table__header ${showLastGamePitches ? 'active-arm-row--with-last-p' : ''}`} aria-hidden="true">
+      <span>Arm</span>
+      <span>Read</span>
+      <span className="text-right">Last / Rest</span>
+      {showLastGamePitches && <span className="active-arm-table__last-p text-right">Last P</span>}
+      <span className="text-right">7d App</span>
+      <span className="text-right">7d P</span>
+      <span className="active-arm-table__pattern">Pattern</span>
+      <span className="text-right">Destination</span>
+    </div>
+  )
 }
 
 function firstLimitation(status) {
@@ -94,6 +115,7 @@ export default function TeamBoardActiveBullpen({
     ? status.status
     : 'unavailable'
   const rows = getActiveBullpenRows(activeBullpen)
+  const showLastGamePitches = rows.some(row => row.lastGamePitches != null)
   const limitation = firstLimitation(status)
   const hasError = Boolean(error)
   const teamName = textValue(read?.team?.team_name) || textValue(read?.team?.team_abbreviation)
@@ -133,23 +155,33 @@ export default function TeamBoardActiveBullpen({
       ) : (
         <>
           {rows.length > 0 && (
-            <div className="border-y border-dirt" role="list" aria-label="Active bullpen pitchers">
-              {rows.map((row, index) => (
-                <div key={row.pitcherId ?? `${row.name}-${index}`} role="listitem">
-                  <ActiveArmRow
-                    name={row.name}
-                    roleLabel={row.roleLabel}
-                    readLabel={row.readLabel}
-                    readTone={row.readTone}
-                    facts={row.facts}
-                    onAction={row.pitcherId != null && typeof onSelectPitcher === 'function'
-                      ? () => onSelectPitcher(row.pitcherId)
-                      : null}
-                    actionLabel="Open pitcher"
-                    actionAriaLabel={`Open pitcher context for ${row.name}`}
-                  />
-                </div>
-              ))}
+            <div className="active-arm-table border-y border-line-default">
+              <TableHeader showLastGamePitches={showLastGamePitches} />
+              <div role="list" aria-label="Active bullpen pitchers">
+                {rows.map((row, index) => (
+                  <div key={row.pitcherId ?? `${row.name}-${index}`} role="listitem">
+                    <ActiveArmRow
+                      pitcherId={row.pitcherId}
+                      name={row.name}
+                      roleLabel={row.roleLabel}
+                      roleWithheld={row.roleWithheld}
+                      readLabel={row.readLabel}
+                      readTone={row.readTone}
+                      readMarker={row.readMarker}
+                      daysSince={row.daysSince}
+                      lastGamePitches={row.lastGamePitches}
+                      appearancesLast7={row.appearancesLast7}
+                      pitchesLast7={row.pitchesLast7}
+                      pattern={row.pattern}
+                      showLastGamePitches={showLastGamePitches}
+                      onAction={row.pitcherId != null && typeof onSelectPitcher === 'function'
+                        ? event => onSelectPitcher(row.pitcherId, event.currentTarget)
+                        : null}
+                      actionAriaLabel={`Open pitcher context for ${row.name}`}
+                    />
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 

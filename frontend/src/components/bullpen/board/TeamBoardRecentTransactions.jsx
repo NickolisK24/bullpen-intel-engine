@@ -31,10 +31,12 @@ function TransactionsSkeleton() {
       <span className="sr-only">Loading recent transactions.</span>
       <div className="mt-row border-y border-dirt">
         {[0, 1].map(index => (
-          <div key={index} className="grid min-w-0 gap-row border-b border-dirt px-panel py-row last:border-b-0 tablet:grid-cols-[minmax(8rem,0.7fr)_minmax(12rem,1.4fr)_minmax(12rem,1fr)]">
+          <div key={index} className="grid min-w-0 grid-cols-[minmax(5.5rem,auto)_minmax(0,1fr)] gap-row border-b border-dirt px-panel py-row last:border-b-0">
             <SkeletonBlock className="h-4 w-24 max-w-full" />
-            <SkeletonBlock className="h-5 w-40 max-w-full" />
-            <SkeletonBlock className="h-4 w-36 max-w-full" />
+            <div className="min-w-0 space-y-meta">
+              <SkeletonBlock className="h-5 w-40 max-w-full" />
+              <SkeletonBlock className="h-4 w-28 max-w-full" />
+            </div>
           </div>
         ))}
       </div>
@@ -42,15 +44,32 @@ function TransactionsSkeleton() {
   )
 }
 
-function RosterEvidence({ heading, entries }) {
+function PitcherHandoff({ pitcherId, name, onSelectPitcher, className = '' }) {
+  if (pitcherId == null || typeof onSelectPitcher !== 'function') {
+    return <span className={className}>{name}</span>
+  }
+  return (
+    <button
+      type="button"
+      className={`${className} min-h-11 text-left text-brand-blue focus:outline-none focus-visible:ring-2 focus-visible:ring-line-focus`.trim()}
+      onClick={event => onSelectPitcher(pitcherId, event.currentTarget)}
+    >
+      {name}
+    </button>
+  )
+}
+
+function RosterEvidence({ heading, entries, onSelectPitcher }) {
   if (!entries.length) return null
   return (
     <div className="min-w-0">
       <h4 className="type-overline">{heading}</h4>
       <ul className="mt-meta space-y-meta">
         {entries.map((entry, index) => (
-          <li key={entry.pitcherId ?? `${entry.name}-${index}`} className="type-compact break-words text-chalk300">
-            {entry.name} · {entry.rosterStatusLabel}
+          <li key={entry.pitcherId ?? `${entry.name}-${index}`} className="type-compact flex min-w-0 flex-wrap items-center gap-x-meta text-chalk300">
+            <PitcherHandoff pitcherId={entry.pitcherId} name={entry.name} onSelectPitcher={onSelectPitcher} className="break-words" />
+            <span aria-hidden="true">·</span>
+            <span>{entry.rosterStatusLabel}</span>
           </li>
         ))}
       </ul>
@@ -58,7 +77,7 @@ function RosterEvidence({ heading, entries }) {
   )
 }
 
-function RosterContext({ rosterContext }) {
+function RosterContext({ rosterContext, onSelectPitcher }) {
   const view = getRosterAuthorityView(rosterContext)
   if (!view.shouldShow) return null
   const readiness = rosterContext?.readiness || {}
@@ -68,7 +87,7 @@ function RosterContext({ rosterContext }) {
   return (
     <div className="mt-row border-t border-dirt pt-row" aria-labelledby="recent-transactions-roster-context-title">
       <div className="flex min-w-0 flex-wrap items-baseline justify-between gap-meta">
-        <h3 id="recent-transactions-roster-context-title" className="type-section-title text-base">Roster Context</h3>
+        <h3 id="recent-transactions-roster-context-title" className="type-section-title text-base">Current roster status</h3>
         <p className="type-metadata">
           {view.statusLabel}
           {representedDate ? <> · Through <time dateTime={representedDate}>{representedDate}</time></> : null}
@@ -76,8 +95,8 @@ function RosterContext({ rosterContext }) {
       </div>
       {(view.evidence.offActiveRoster.length > 0 || view.evidence.rosterStatusPending.length > 0) && (
         <div className="mt-row grid gap-row tablet:grid-cols-2">
-          <RosterEvidence heading="Off the active roster" entries={view.evidence.offActiveRoster} />
-          <RosterEvidence heading="Roster status pending" entries={view.evidence.rosterStatusPending} />
+          <RosterEvidence heading="Off the active roster" entries={view.evidence.offActiveRoster} onSelectPitcher={onSelectPitcher} />
+          <RosterEvidence heading="Roster status pending" entries={view.evidence.rosterStatusPending} onSelectPitcher={onSelectPitcher} />
         </div>
       )}
       {limitation && <p className="type-compact mt-row text-chalk400">{limitation}</p>}
@@ -85,7 +104,7 @@ function RosterContext({ rosterContext }) {
   )
 }
 
-export default function TeamBoardRecentTransactions({ read, loading = false, error = null, onRetry }) {
+export default function TeamBoardRecentTransactions({ read, loading = false, error = null, onRetry, onSelectPitcher }) {
   if (loading) return <TransactionsSkeleton />
 
   const recentTransactions = read?.recentTransactions
@@ -105,6 +124,8 @@ export default function TeamBoardRecentTransactions({ read, loading = false, err
         )}
       </header>
 
+      <h3 className="type-overline mb-meta">Recent movement</h3>
+
       {error ? (
         <SectionState status="error" title="Recent Transactions unavailable" message="Recent transaction records could not be loaded." onRetry={onRetry} />
       ) : !read || !recentTransactions || statusName === 'unavailable' ? (
@@ -112,24 +133,24 @@ export default function TeamBoardRecentTransactions({ read, loading = false, err
       ) : (
         <>
           {rows.length > 0 && (
-            <div className="border-y border-dirt" role="list" aria-label="Recent pitching transactions">
+            <div className="divide-y divide-line-subtle border-y border-line-subtle" role="list" aria-label="Recent pitching transactions">
               {rows.map(row => (
-                <article key={row.key} role="listitem" className="grid min-w-0 gap-row border-b border-dirt px-panel py-row last:border-b-0 tablet:grid-cols-[minmax(8rem,0.7fr)_minmax(12rem,1.4fr)_minmax(12rem,1fr)] tablet:items-center">
+                <article key={row.key} role="listitem" className="grid min-w-0 grid-cols-[minmax(5.5rem,auto)_minmax(0,1fr)] gap-row px-panel py-row tablet:grid-cols-[minmax(6rem,auto)_minmax(0,1fr)] tablet:items-center">
                   <div className="min-w-0">
-                    <div className="type-overline">Date</div>
-                    <div className="type-data mt-meta">
+                    <div className="type-data">
                       {row.eventDate && row.dateLabel
                         ? <time dateTime={row.eventDate}>{row.dateLabel}</time>
-                        : <span>Unavailable</span>}
+                        : <span className="text-text-withheld">—</span>}
                     </div>
                   </div>
-                  <div className="min-w-0">
-                    <div className="type-overline tablet:sr-only">Player</div>
-                    <h3 className="type-data mt-meta break-words text-chalk100 tablet:mt-0">{row.playerName || 'Player unavailable'}</h3>
-                  </div>
-                  <div className="min-w-0">
-                    <div className="type-overline">Move</div>
-                    <div className="type-data mt-meta break-words">{row.label || 'Unavailable'}</div>
+                  <div className="flex min-w-0 flex-wrap items-center gap-x-row gap-y-meta">
+                    <PitcherHandoff
+                      pitcherId={row.playerId}
+                      name={row.playerName || 'Player unavailable'}
+                      onSelectPitcher={onSelectPitcher}
+                      className={`type-data break-words ${row.playerName ? 'text-chalk100' : 'text-text-withheld'}`}
+                    />
+                    <span className={`type-data break-words ${row.label ? '' : 'text-text-withheld'}`}>{row.label || '—'}</span>
                   </div>
                 </article>
               ))}
@@ -148,7 +169,7 @@ export default function TeamBoardRecentTransactions({ read, loading = false, err
         </>
       )}
 
-      <RosterContext rosterContext={read?.rosterContext} />
+      <RosterContext rosterContext={read?.rosterContext} onSelectPitcher={onSelectPitcher} />
     </section>
   )
 }

@@ -61,6 +61,8 @@ test('Tailwind consumes the single foundation token authority', () => {
 test('foundation exposes named type, rhythm, viewport, and shell scales', () => {
   assert.deepEqual(Object.keys(designTokens.typography), [
     'page-title', 'section-title', 'body', 'compact', 'metadata', 'overline', 'data',
+    'board-page-title', 'board-section-title', 'board-body', 'board-compact',
+    'board-metadata', 'board-label', 'board-data',
   ])
   assert.deepEqual(designTokens.spacing, {
     meta: '0.375rem',
@@ -73,7 +75,9 @@ test('foundation exposes named type, rhythm, viewport, and shell scales', () => 
   assert.deepEqual(designTokens.screens, {
     phone: '390px', tablet: '768px', desktop: '1280px', wide: '1440px',
   })
-  assert.equal(designTokens.maxWidth['team-board'], '90rem')
+  assert.equal(designTokens.maxWidth.reading, '42.5rem')
+  assert.equal(designTokens.maxWidth['team-board'], '72rem')
+  assert.equal(tailwindConfig.theme.extend.fontFamily.board[0], '"Inter"')
 })
 
 test('Active Arm Row renders backend-provided facts and an accessible handoff', () => {
@@ -82,30 +86,35 @@ test('Active Arm Row renders backend-provided facts and an accessible handoff', 
     roleLabel: 'Setup Arm',
     readLabel: 'On Watch',
     readTone: 'watch',
-    lastUsed: 'Yesterday',
-    recentWorkload: '28 pitches / 3 days',
-    pattern: 'Used on consecutive days',
+    daysSince: 1,
+    lastGamePitches: 18,
+    appearancesLast7: 3,
+    pitchesLast7: 28,
+    pattern: 'B2B',
+    showLastGamePitches: true,
     href: '/pitchers/42',
   }))
   const text = visibleText(html)
 
   for (const value of [
-    'Jordan Example', 'Setup Arm', 'On Watch', 'Yesterday',
-    '28 pitches / 3 days', 'Used on consecutive days', 'View pitcher',
+    'Jordan Example', 'Setup Arm', 'On Watch', '1d rest',
+    '3 app', '28 p (7d)', '18 last P', 'B2B', 'Open',
   ]) {
     assert.ok(text.includes(value), `missing ${value}`)
   }
   assert.match(html, /href="\/pitchers\/42"/)
-  assert.match(html, /semantic-label--watch/)
-  assert.match(html, /min-h-11/)
+  assert.match(html, /active-arm-read--watch/)
+  assert.match(html, /active-arm-read__marker--ring/)
 })
 
 test('Active Arm Row remains partial-safe and does not convert missing facts to zero', () => {
   const html = renderToStaticMarkup(React.createElement(ActiveArmRow, {
     name: 'Partial Example',
     roleLabel: 'Role Unclear',
+    roleWithheld: true,
     readLabel: 'Limited Read',
-    readTone: 'limited',
+    readTone: 'withheld',
+    readMarker: 'ring',
     partialMessage: 'Recent workload metadata was not supplied.',
   }))
   const text = visibleText(html)
@@ -120,17 +129,19 @@ test('Active Arm Row accepts production facts and preserves legitimate zero valu
     name: 'Zero Example',
     roleLabel: 'Backend Role',
     readLabel: 'Backend Read',
-    facts: [
-      { label: '7D App', value: 0 },
-      { label: '7D Pitches', value: 0 },
-    ],
+    daysSince: 0,
+    lastGamePitches: 0,
+    appearancesLast7: 0,
+    pitchesLast7: 0,
+    showLastGamePitches: true,
     onAction: () => {},
-    actionLabel: 'Open pitcher',
     actionAriaLabel: 'Open pitcher context for Zero Example',
   }))
 
-  assert.ok(visibleText(html).includes('7D App 0'))
-  assert.ok(visibleText(html).includes('7D Pitches 0'))
+  assert.ok(visibleText(html).includes('0d rest'))
+  assert.ok(visibleText(html).includes('0 app'))
+  assert.ok(visibleText(html).includes('0 p (7d)'))
+  assert.ok(visibleText(html).includes('0 last P'))
   assert.match(html, /<button[^>]*aria-label="Open pitcher context for Zero Example"/)
 })
 
@@ -143,15 +154,15 @@ test('Active Arm Row loading state preserves row hierarchy without semantic clai
   assert.equal(visibleText(html).includes('Fresh'), false)
 })
 
-test('Team Board skeleton is hierarchy-preserving and reduced-motion safe', () => {
+test('Team Board skeleton is hierarchy-preserving and motionless', () => {
   const html = renderToStaticMarkup(React.createElement(TeamBoardSkeleton))
 
   assert.match(html, /data-testid="team-board-skeleton"/)
   assert.match(html, /role="status"/)
   assert.match(html, /aria-busy="true"/)
   assert.match(html, /active-arm-row/)
-  assert.match(indexCss, /motion-reduce:animate-none/)
-  assert.equal(html.includes('animate-ping'), false)
+  assert.doesNotMatch(indexCss.match(/\.foundation-skeleton\s*\{[^}]*\}/s)?.[0] || '', /animate|transition/)
+  assert.equal(/animate-(ping|pulse)/.test(html), false)
 })
 
 test('Section State preserves independent loaded content and offers a focused retry', () => {
@@ -202,7 +213,8 @@ test('foundation exposes overflow instead of globally hiding it', () => {
   assert.doesNotMatch(indexCss, /body\s*\{[^}]*overflow-x\s*:\s*hidden/s)
   assert.match(indexCss, /\.team-board-shell\s*\{/)
   assert.match(indexCss, /\.active-arm-row\s*\{/)
-  assert.match(indexCss, /grid-template-columns:\s*minmax\(12rem, 1\.35fr\)/)
+  assert.match(indexCss, /@media \(min-width: 768px\)[\s\S]*grid-template-columns:\s*minmax\(10rem, 1\.5fr\)/)
+  assert.match(indexCss, /@media \(min-width: 1024px\)[\s\S]*grid-template-columns:\s*minmax\(14rem, 1\.6fr\)/)
   assert.match(indexCss, /overflow-wrap:\s*anywhere/)
 })
 
@@ -216,4 +228,16 @@ test('Team Board foundation does not depend on retired decorative chrome', () =>
   }
   assert.equal(indexCss.includes('.glow-amber'), false)
   assert.equal(indexCss.includes('.border-gradient'), false)
+})
+
+test('Team Board foundation uses final type floors, flat states, and the approved content cap', () => {
+  assert.deepEqual(designTokens.typography['board-metadata'], ['0.8125rem', { lineHeight: '1.4' }])
+  assert.deepEqual(designTokens.typography['board-label'], ['0.75rem', { lineHeight: '1.3', letterSpacing: '0.06em' }])
+  assert.deepEqual(designTokens.typography['board-data'], ['0.875rem', { lineHeight: '1.25' }])
+  assert.deepEqual(designTokens.typography['section-title'], ['1.5rem', { lineHeight: '1.1', letterSpacing: '0.025em' }])
+  assert.match(indexCss, /\.team-board-shell\s*\{[^}]*font-board/s)
+  assert.match(indexCss, /\.team-board-shell \*\s*\{[^}]*font-family:\s*"Inter", sans-serif !important/s)
+  assert.match(indexCss, /\.foundation-panel\s*\{[^}]*bg-transparent/s)
+  assert.match(indexCss, /\.section-state\s*\{[^}]*bg-transparent/s)
+  assert.doesNotMatch(indexCss.match(/\.section-state\s*\{[^}]*\}/s)?.[0] || '', /border|bg-dugout/)
 })

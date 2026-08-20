@@ -13,7 +13,7 @@ after(async () => {
   await server.close()
 })
 
-const { getFetchStatus } = await server.ssrLoadModule('/src/hooks/useFetch.js')
+const { createRequestGuard, getFetchStatus } = await server.ssrLoadModule('/src/hooks/useFetch.js')
 
 test('fetch status distinguishes fresh data, stale data with error, and no-data error', () => {
   assert.deepEqual(
@@ -30,4 +30,16 @@ test('fetch status distinguishes fresh data, stale data with error, and no-data 
     getFetchStatus({ data: null, error: 'Network failed', loading: false }),
     { hasData: false, noDataError: true, staleWithError: false },
   )
+})
+
+test('request guard rejects late responses after a dependency change or newer retry', () => {
+  const guard = createRequestGuard()
+  const firstTeam = guard.begin()
+  const secondTeam = guard.begin()
+
+  assert.equal(guard.isCurrent(firstTeam), false)
+  assert.equal(guard.isCurrent(secondTeam), true)
+
+  guard.invalidate()
+  assert.equal(guard.isCurrent(secondTeam), false)
 })

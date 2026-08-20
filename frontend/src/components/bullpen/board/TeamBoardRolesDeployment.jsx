@@ -30,9 +30,9 @@ function RoleCompositionSkeleton() {
     <section className="foundation-section" aria-labelledby="roles-deployment-title" aria-busy="true" data-testid="roles-deployment-skeleton">
       <h2 id="roles-deployment-title" className="type-section-title">Roles &amp; Deployment</h2>
       <span className="sr-only">Loading role composition.</span>
-      <div className="mt-row border-y border-dirt">
+      <div className="mt-row divide-y divide-line-subtle">
         {[0, 1, 2].map(index => (
-          <div key={index} className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-row border-b border-dirt px-panel py-row last:border-b-0">
+          <div key={index} className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-row py-row">
             <SkeletonBlock className="h-5 w-36 max-w-full" />
             <SkeletonBlock className="h-5 w-14 max-w-full" />
           </div>
@@ -67,17 +67,24 @@ export default function TeamBoardRolesDeployment({ read, loading = false, error 
       ) : (
         <>
           {rows.length > 0 && (
-            <dl className="border-y border-dirt" aria-label="Current active bullpen role composition">
+            <dl className="divide-y divide-line-subtle" aria-label="Current active bullpen role composition">
               {rows.map(row => (
-                <div key={row.key} className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-row border-b border-dirt px-panel py-row last:border-b-0 tablet:grid-cols-[minmax(12rem,1fr)_minmax(8rem,auto)]">
-                  <dt className="type-data min-w-0 break-words text-chalk100">{row.label}</dt>
-                  <dd className="type-compact whitespace-nowrap text-right">
+                <div key={row.key} className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-row py-row tablet:grid-cols-[minmax(12rem,1fr)_minmax(8rem,auto)]">
+                  <dt className={`type-data min-w-0 break-words ${row.key === 'limited_read' || row.key === 'role-unavailable' ? 'text-text-withheld' : 'text-text-primary'}`}>{row.label}</dt>
+                  <dd className="type-data whitespace-nowrap text-right tabular-nums text-text-secondary">
                     {row.count} {row.count === 1 ? 'arm' : 'arms'}
                   </dd>
                 </div>
               ))}
             </dl>
           )}
+
+          <SectionState
+            status="unavailable"
+            title="Deployment detail unavailable"
+            message="Detailed team deployment context is not published for Team Board."
+            className={rows.length > 0 ? 'mt-section' : ''}
+          />
 
           {statusName === 'partial' && (
             <SectionState status="partial" title="Role composition is partially available" message={limitation || 'Some current role reads are unavailable.'} className={rows.length > 0 ? 'mt-row' : ''} />

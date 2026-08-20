@@ -14,7 +14,7 @@ const server = await createServer({
 
 after(async () => server.close())
 
-const { default: TeamReliefWorkPanel, getReliefLedgerGroups } = await server.ssrLoadModule(
+const { default: TeamReliefWorkPanel, getReliefLedgerGroups, groupGameSections } = await server.ssrLoadModule(
   '/src/components/bullpen/TeamReliefWorkPanel.jsx',
 )
 
@@ -25,7 +25,11 @@ const reliefPayload = {
   relief_by_date: [
     {
       game_date: '2026-08-18',
-      sentence: 'August 18 — 3 relief appearances across 2 games, 2.0 IP, 28 pitches.',
+      relief_appearances: 3,
+      outs_total: 6,
+      pitches_total: null,
+      appearances_with_pitches: 2,
+      sentence: 'August 18 — 3 relief appearances across 2 games, 2.0 IP.',
       games: [
         {
           mlb_game_pk: 802,
@@ -54,6 +58,11 @@ const reliefPayload = {
           opponent_abbreviation: 'BOS',
           innings_pitched_outs: 0,
           pitches_thrown: 0,
+          strikeouts: 0,
+          walks: 0,
+          hits_allowed: 0,
+          runs_allowed: 0,
+          roster_status_sentence: 'On the active roster per MLB roster data.',
         },
         {
           pitcher_id: 9,
@@ -62,6 +71,11 @@ const reliefPayload = {
           opponent_abbreviation: 'BOS',
           innings_pitched_outs: 3,
           pitches_thrown: null,
+          strikeouts: 2,
+          walks: 1,
+          hits_allowed: 1,
+          runs_allowed: 0,
+          roster_status_sentence: 'Roster status: Optioned / Minors per MLB roster data.',
         },
         {
           pitcher_id: 8,
@@ -70,11 +84,20 @@ const reliefPayload = {
           opponent_abbreviation: 'BOS',
           innings_pitched_outs: 3,
           pitches_thrown: 28,
+          strikeouts: 1,
+          walks: 0,
+          hits_allowed: 0,
+          runs_allowed: 0,
+          roster_status_sentence: 'On the active roster per MLB roster data.',
         },
       ],
     },
     {
       game_date: '2026-08-16',
+      relief_appearances: 1,
+      outs_total: 3,
+      pitches_total: 12,
+      appearances_with_pitches: 1,
       sentence: 'August 16 — 1 relief appearance, 1.0 IP, 12 pitches.',
       appearances: [{
         pitcher_id: 7,
@@ -83,6 +106,11 @@ const reliefPayload = {
         opponent: 'New York Club',
         innings_pitched_outs: 3,
         pitches_thrown: 12,
+        strikeouts: 0,
+        walks: 0,
+        hits_allowed: 0,
+        runs_allowed: 0,
+        roster_status_sentence: 'On the active roster per MLB roster data.',
       }],
     },
   ],
@@ -110,8 +138,8 @@ const read = {
 
 const renderPanel = props => renderToStaticMarkup(React.createElement(TeamReliefWorkPanel, props))
 
-test('Recent Relief Work renders the Team Board v2 read as a game ledger', () => {
-  const html = renderPanel({ read })
+test('Recent Relief Work renders mobile records and the shared-header governed table', () => {
+  const html = renderPanel({ read, onSelectPitcher: () => {} })
 
   assert.ok(html.includes('Recent Relief Work'))
   assert.ok(html.includes(reliefPayload.scope_sentence))
@@ -119,7 +147,15 @@ test('Recent Relief Work renders the Team Board v2 read as a game ledger', () =>
   assert.ok(html.includes('Game 2 · vs. BOS'))
   assert.ok(html.includes('Game 1 · vs. BOS'))
   assert.ok(html.includes('Zachary Very Long Relief Pitcher Name'))
-  assert.ok(html.includes('3 outs · 1.0 IP'))
+  assert.ok(html.includes('Recent relief work records'))
+  assert.ok(html.includes('Recent relief work table'))
+  for (const heading of ['Arm', 'IP', 'P', 'K', 'BB', 'H', 'R', 'Status']) {
+    assert.ok(html.includes(`>${heading}<`), heading)
+  }
+  assert.ok(html.includes('2.0 IP'))
+  assert.ok(html.includes('Pitch coverage:'))
+  assert.ok(html.includes('2 of 3 appearances'))
+  assert.ok(html.includes('Optioned / Minors'))
   assert.equal(html.includes(reliefPayload.windows.window_14.sentence), false)
   assert.equal(html.includes('<details'), false)
 })
@@ -138,20 +174,49 @@ test('backend game and appearance order is preserved without frontend ranking', 
   assert.ok(html.indexOf('Zachary Very Long Relief Pitcher Name') < html.indexOf('Second Game Arm'))
   assert.ok(html.indexOf('Second Game Arm') < html.indexOf('First Game Arm'))
   assert.equal(componentSource.includes('.sort('), false)
+  assert.equal(componentSource.includes('soleGameId'), false)
 })
 
-test('unknown work remains unavailable while legitimate zero remains zero', () => {
-  const html = renderPanel({ read })
-  const unknownStart = html.indexOf('Zachary Very Long Relief Pitcher Name')
-  const unknownEnd = html.indexOf('Second Game Arm')
-  const unknownRow = html.slice(unknownStart, unknownEnd)
-  const zeroStart = html.indexOf('First Game Arm')
-  const zeroRow = html.slice(zeroStart)
+test('official game identity drives grouping and ungrouped appearances stay disclosed', () => {
+  const sections = groupGameSections({
+    games: [{ mlb_game_pk: 801, game_number: 1 }],
+    appearances: [
+      { pitcher_id: 1, mlb_game_pk: 801 },
+      { pitcher_id: 2, mlb_game_pk: null },
+    ],
+  })
+  assert.deepEqual(sections.map(section => section.gameId), [801, null])
+  assert.deepEqual(sections[0].appearances.map(row => row.pitcher_id), [1])
+  assert.deepEqual(sections[1].appearances.map(row => row.pitcher_id), [2])
 
-  assert.ok(unknownRow.includes('Unavailable'))
-  assert.equal(unknownRow.includes('>0<'), false)
-  assert.ok(zeroRow.includes('0 outs · 0.0 IP'))
-  assert.ok(zeroRow.includes('>0<'))
+  const ungroupedPayload = structuredClone(reliefPayload)
+  ungroupedPayload.relief_by_date[0].appearances[0].mlb_game_pk = null
+  const html = renderPanel({ read: {
+    ...read,
+    recentReliefWork: { ...recentReliefWork, read: ungroupedPayload },
+  } })
+  assert.ok(html.includes('Game context unavailable'))
+
+  const identityOnlyPayload = structuredClone(reliefPayload)
+  identityOnlyPayload.relief_by_date[0].games = []
+  const identityOnlyHtml = renderPanel({ read: {
+    ...read,
+    recentReliefWork: { ...recentReliefWork, read: identityOnlyPayload },
+  } })
+  assert.ok(identityOnlyHtml.includes('MLB game 801 · vs. BOS'))
+  assert.ok(identityOnlyHtml.includes('MLB game 802 · vs. BOS'))
+})
+
+test('withheld work remains an em dash while legitimate zero remains zero', () => {
+  const html = renderPanel({ read })
+
+  assert.ok(html.includes('— P'))
+  assert.ok(html.includes('0.0 IP'))
+  assert.ok(html.includes('0 P'))
+  assert.ok(html.includes('0 K'))
+  assert.ok(html.includes('0 BB'))
+  assert.ok(html.includes('0 H'))
+  assert.ok(html.includes('0 R'))
 })
 
 test('game context remains fail-closed on reconciliation and starter authority', () => {
@@ -168,6 +233,15 @@ test('game context remains fail-closed on reconciliation and starter authority',
   assert.ok(validHtml.includes('Three relievers covered the remaining six outs.'))
   assert.equal(invalidHtml.includes('Extended bullpen coverage'), false)
   assert.equal(invalidHtml.includes('Three relievers covered the remaining six outs.'), false)
+
+  const wrongAuthority = structuredClone(reliefPayload)
+  wrongAuthority.relief_by_date[0].games[0].starter_authority = 'inferred_starter'
+  const wrongAuthorityHtml = renderPanel({ read: {
+    ...read,
+    recentReliefWork: { ...recentReliefWork, read: wrongAuthority },
+  } })
+  assert.equal(wrongAuthorityHtml.includes('Extended bullpen coverage'), false)
+  assert.equal(wrongAuthorityHtml.includes('Three relievers covered the remaining six outs.'), false)
 })
 
 test('loading, request error, unavailable, partial, and empty states stay scoped', () => {
@@ -232,10 +306,43 @@ test('production consumes one shared v2 request and retires the relief-work requ
   assert.equal(boardSource.includes('getTeamReliefWork'), false)
   assert.equal(boardSource.includes('teamReliefWorkPayload'), false)
   assert.ok(boardSource.includes('read={teamBoardRead}'))
+  assert.ok(boardSource.includes('onSelectPitcher={onSelectPitcher}'))
   assert.ok(boardSource.indexOf('<TeamBoardRecentUsage') < boardSource.indexOf('<TeamReliefWorkPanel'))
-  assert.ok(boardSource.indexOf('<StoryCard') < boardSource.indexOf('<TeamReliefWorkPanel'))
+  assert.ok(boardSource.indexOf('<TeamBoardWhatChanged') < boardSource.indexOf('<TeamReliefWorkPanel'))
   assert.equal(boardSource.includes('teamId={selectedTeam}'), false)
   assert.equal(boardSource.includes('teamId={detailPitcherId}'), false)
+})
+
+test('responsive structure uses records below 768 and a sticky shared header at 768+', async () => {
+  const html = renderPanel({ read, onSelectPitcher: () => {} })
+  const source = await readFile(
+    new URL('../src/components/bullpen/TeamReliefWorkPanel.jsx', import.meta.url),
+    'utf8',
+  )
+
+  assert.ok(html.includes('tablet:hidden'))
+  assert.match(html, /hidden w-full table-fixed border-collapse tablet:table/)
+  assert.match(html, /sticky top-0 z-10 bg-surface-base/)
+  assert.equal(source.includes('sticky bg-surface-raised'), false)
+  assert.equal(source.includes('overflow-x'), false)
+  assert.ok(source.includes('min-h-16'))
+  assert.ok(source.includes("onSelectPitcher(pitcherId, event.currentTarget)"))
+  assert.ok(source.includes("hidden min-w-52 py-row pl-panel type-metadata lg:table-cell"))
+})
+
+test('the view does not calculate governed totals or manufacture game labels from position', async () => {
+  const source = await readFile(
+    new URL('../src/components/bullpen/TeamReliefWorkPanel.jsx', import.meta.url),
+    'utf8',
+  )
+
+  assert.equal(source.includes('reduce('), false)
+  assert.equal(source.includes('pitchesTotal +'), false)
+  assert.equal(source.includes('outsTotal +'), false)
+  assert.equal(source.includes('Game ${sectionIndex'), false)
+  assert.ok(source.includes('group?.pitches_total'))
+  assert.ok(source.includes('group?.outs_total'))
+  assert.ok(source.includes('game?.game_number'))
 })
 
 test('the evidence anchor remains focusable and TB-09 semantics are absent', async () => {

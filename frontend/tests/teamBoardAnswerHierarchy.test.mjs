@@ -87,7 +87,7 @@ const reliefWorkPayload = {
 
 function renderBoard(boardPayload, {
   team,
-  storyPayload = null,
+  changesPayload = null,
   gameContextPayload = null,
   teamReliefWorkPayload = reliefWorkPayload,
   teamBoardV2Payload = teamBoardV2Fixture(boardPayload),
@@ -117,7 +117,7 @@ function renderBoard(boardPayload, {
         boardPayload,
         teamBoardV2Payload: resolvedTeamBoardV2Payload,
         gameContextPayload,
-        storyPayload,
+        changesPayload,
       }),
     ),
   )
@@ -217,11 +217,16 @@ test('the full bullpen board and its pitcher-lanes anchor remain visible (not co
   assert.ok(htmlIncludes(html, 'Active Bullpen'))
 })
 
-test('meaningful what-changed content is promoted while absent game context stays out of the way', () => {
-  const html = renderBoard(populatedBoard, { storyPayload: {
-    story_available: true,
-    headline: 'The late-inning path changed',
-    observation: 'Two rested arms returned to the active group.',
+test('meaningful structured changes are promoted while absent game context stays out of the way', () => {
+  const html = renderBoard(populatedBoard, { changesPayload: {
+    capability: 'what_changed_since_last_game',
+    state: 'changes',
+    comparison: { anchor_game_date: '2026-06-03', current_game_date: '2026-06-04' },
+    pitcher_changes: [{
+      type: 'appearance', pitcher_id: 1, pitcher_name: 'Test Reliever',
+      game_date: '2026-06-04', pitches: 18, summary: 'Pitched Thursday - 18 pitches.',
+    }],
+    limitations: [],
   } })
   assert.ok(htmlIncludes(html, 'What Changed'))
   assert.equal(htmlIncludes(html, 'Game Context'), false)
@@ -231,40 +236,29 @@ test('meaningful what-changed content is promoted while absent game context stay
   assert.ok(html.indexOf('What Changed') < html.indexOf('Recent Relief Work'))
 })
 
-test('Recent Usage owns chronological appearances without duplicating the Active Bullpen row', () => {
-  const teamBoardV2Payload = teamBoardV2Fixture(populatedBoard, {
-    recent_usage: {
-      population_basis: 'official_recent_team_relief_appearance_rows',
-      represented_date: '2026-06-04',
-      appearances: [{
-        pitcher_id: 91,
-        pitcher_name: 'Chronology Reliever',
-        game_date: '2026-06-04',
-        opponent_abbreviation: 'BOS',
-        pitches_thrown: 18,
-        outs_recorded: 3,
-        game_id: 8123,
-      }],
-      limitations: [],
-    },
-  })
-  const html = renderBoard(populatedBoard, { teamBoardV2Payload })
+test('Recent Usage owns governed window summaries and the latest published arm list', () => {
+  const teamReliefWorkPayload = {
+    ...reliefWorkPayload,
+    relief_by_date: [{
+      ...reliefWorkPayload.relief_by_date[0],
+      appearances: [{ pitcher_id: 91, pitcher_full_name: 'Chronology Reliever' }],
+    }],
+  }
+  const html = renderBoard(populatedBoard, { teamReliefWorkPayload })
   const recentStart = html.indexOf('Recent Usage')
   const detailStart = html.indexOf('Recent Relief Work')
   const recentSection = html.slice(recentStart, detailStart)
 
   assert.ok(htmlIncludes(recentSection, 'Chronology Reliever'))
   assert.ok(htmlIncludes(recentSection, 'Jun 4, 2026'))
-  assert.ok(htmlIncludes(recentSection, '18 pitches'))
-  assert.equal(htmlIncludes(recentSection, reliefWorkPayload.windows.window_7.sentence), false)
-  assert.equal(htmlIncludes(recentSection, reliefWorkPayload.windows.window_14.sentence), false)
+  assert.ok(htmlIncludes(recentSection, reliefWorkPayload.windows.window_7.sentence))
+  assert.ok(htmlIncludes(recentSection, reliefWorkPayload.windows.window_14.sentence))
+  assert.equal(htmlIncludes(recentSection, 'Yesterday'), false)
   for (const group of populatedBoard.groups) {
     for (const card of group.pitchers) {
       assert.equal(htmlIncludes(recentSection, card.name), false)
     }
   }
-  const summaryEnd = html.indexOf('id="pitcher-lanes"')
-  assert.equal(htmlIncludes(html.slice(0, summaryEnd), reliefWorkPayload.windows.window_7.sentence), false)
 })
 
 test('freshness and the current state stay visible without opening anything', () => {
@@ -310,28 +304,25 @@ test('backend arm read and authorized workload facts stay visible in the migrate
   const start = html.indexOf('Marty Monitor')
   const end = html.indexOf('Open pitcher', start)
   const card = html.slice(start, end)
-  assert.ok(htmlIncludes(card, 'Current Arm Read'))
-  assert.ok(htmlIncludes(card, 'Last Used'))
-  assert.ok(htmlIncludes(card, '1 day ago'))
-  assert.ok(htmlIncludes(card, '7D Pitches'))
-  assert.ok(htmlIncludes(card, '34'))
-  assert.ok(htmlIncludes(card, '7D App'))
-  assert.ok(htmlIncludes(card, '3'))
-  assert.ok(htmlIncludes(card, 'Back-to-back'))
+  assert.ok(htmlIncludes(card, 'Watch Arm'))
+  assert.ok(htmlIncludes(card, '1d rest'))
+  assert.ok(htmlIncludes(card, '34 p (7d)'))
+  assert.ok(htmlIncludes(card, '3 app'))
+  assert.ok(htmlIncludes(card, 'B2B'))
   assert.equal(htmlIncludes(card, 'Read Confidence'), false)
 })
 
-test('missing arm facts are omitted and never become zero', () => {
+test('missing arm facts are withheld and never become zero', () => {
   const board = makeBoard({ cardsByStatus: {
     Available: [{ pitcher_id: 91, name: 'Unknown Work Arm', availability_status: 'Available', confidence: 'high', data_state: 'fresh' }],
   } })
   const html = renderBoard(board)
   const card = html.slice(html.indexOf('Unknown Work Arm'), html.indexOf('Open pitcher', html.indexOf('Unknown Work Arm')))
-  for (const label of ['Last Used', 'Last Game', '7D App', '7D Pitches', 'Pattern']) {
-    assert.equal(htmlIncludes(card, label), false)
-  }
+  assert.ok(htmlIncludes(card, '— rest'))
+  assert.ok(htmlIncludes(card, '— app'))
+  assert.ok(htmlIncludes(card, '— p (7d)'))
   assert.equal(htmlIncludes(card, '0 pitches'), false)
-  assert.equal(htmlIncludes(card, '7D App 0'), false)
+  assert.equal(htmlIncludes(card, '0 app'), false)
 })
 
 test('false and null back-to-back facts stay quiet', () => {
@@ -409,7 +400,7 @@ test('unavailable and malformed Rest Status fail closed without zero counts or r
   }
 })
 
-test('incomplete workload evidence and unavailable reads remain explicit', () => {
+test('incomplete workload evidence and Limited Read remain explicit', () => {
   const board = makeBoard({ cardsByStatus: {
     Unavailable: [{
       pitcher_id: 92,
@@ -422,8 +413,9 @@ test('incomplete workload evidence and unavailable reads remain explicit', () =>
     }],
   } })
   const html = renderBoard(board)
-  assert.ok(htmlIncludes(html, 'Current Arm Read'))
   assert.ok(htmlIncludes(html, 'Unavailable'))
+  assert.ok(htmlIncludes(html, 'Limited Read'))
+  assert.match(html, /active-arm-read__marker--ring/)
   assert.equal(htmlIncludes(html, 'Read Confidence'), false)
   assert.equal(htmlIncludes(html, 'Workload Data'), false)
   assert.equal(htmlIncludes(html, 'Pitch history is incomplete for this arm.'), false)
@@ -468,15 +460,15 @@ test('opponent context appears before Active Bullpen when governed data exists',
   assert.ok(html.indexOf('Rival Club') < html.indexOf('Active Bullpen'))
 })
 
-test('Why this read stays closed after roster context while evidence remains reachable', () => {
+test('Why this read stays closed in the header while evidence remains reachable', () => {
   const html = renderBoard(populatedBoard)
   const labelIndex = html.indexOf('<span>Why this read?</span>')
   const detailsStart = html.lastIndexOf('<details', labelIndex)
   const disclosureTag = html.slice(detailsStart, html.indexOf('>', detailsStart) + 1)
   assert.ok(labelIndex > -1 && detailsStart > -1)
   assert.equal(/\sopen(?:=|\s|>)/.test(disclosureTag), false)
-  assert.ok(labelIndex > html.indexOf('Active Bullpen'))
-  assert.ok(labelIndex > html.indexOf('Recent Relief Work'))
+  assert.ok(labelIndex < html.indexOf('Bullpen Summary'))
+  assert.ok(labelIndex < html.indexOf('Active Bullpen'))
   assert.ok(htmlIncludes(html, 'Evidence'))
   assert.ok(htmlIncludes(html, 'Methodology'))
 })
@@ -512,7 +504,7 @@ test('stale data keeps its trust warning visible in the answer zone', () => {
 test('withheld roster context does not show a completed distribution', () => {
   const html = renderBoard(withheldBoard, { team: { team_id: 1, team_name: 'Test Club', team_abbreviation: 'TST' } })
   assert.ok(htmlIncludes(html, 'Limited read'))
-  assert.equal(htmlIncludes(html, 'Active arms'), false)
+  assert.ok(visibleText(html).includes('Active arms — Not published'))
   assert.equal(htmlIncludes(html, 'Eligible relievers 0'), false)
 })
 

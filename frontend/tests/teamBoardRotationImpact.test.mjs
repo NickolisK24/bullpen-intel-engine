@@ -55,13 +55,13 @@ test('Rotation Impact renders the backend summary and supplied metrics verbatim'
 
   assert.deepEqual(metrics.map(metric => [metric.label, metric.value]), [
     ['Average starter length', 5.33],
-    ['Bullpen innings required', 8],
     ['Short starts', 0],
-    ['Analyzed starts', 4],
+    ['Bullpen innings covered', 8],
   ])
   assert.ok(html.includes(rotationImpact.read.summary))
   assert.ok(html.includes('5.33 IP'))
-  assert.ok(html.includes('>0<'))
+  assert.ok(html.includes('0 of 4'))
+  assert.ok(html.includes('4 starts analyzed'))
   assert.ok(html.includes('7-day window'))
   assert.match(html, /date(?:T|t)ime="2026-08-16"/)
 })
@@ -80,10 +80,21 @@ test('Rotation Impact omits unknown metrics without converting them to zero', ()
   const metrics = getRotationImpactMetrics(limited)
   const html = renderRotation({ read: { ...read, rotationImpact: limited } })
 
-  assert.deepEqual(metrics.map(metric => metric.label), ['Analyzed starts'])
+  assert.deepEqual(metrics.map(metric => metric.label), [])
   assert.equal(html.includes('Average starter length'), false)
   assert.equal(html.includes('Bullpen innings required'), false)
   assert.equal(html.includes('Short starts'), false)
+})
+
+test('Rotation Impact keeps normal governed context visible and uses no browser threshold', async () => {
+  const html = renderRotation({ read })
+  const source = await readFile(new URL('../src/components/bullpen/board/TeamBoardRotationImpact.jsx', import.meta.url), 'utf8')
+
+  assert.ok(html.includes(rotationImpact.read.summary))
+  assert.equal(source.includes('games_analyzed >='), false)
+  assert.equal(source.includes('games_analyzed <'), false)
+  assert.equal(source.includes('short_start_rate'), false)
+  assert.equal(source.includes('severity'), false)
 })
 
 test('Rotation Impact uses scoped loading, partial, unavailable, error, and empty states', () => {
@@ -140,8 +151,10 @@ test('production keeps one v2 request, correct placement, and later-package boun
   assert.equal((boardSource.match(/getTeamBoardV2\(/g) || []).length, 1)
   assert.ok(boardSource.includes('<TeamBoardRotationImpact'))
   assert.ok(boardSource.indexOf('<TeamBoardRolesDeployment') < boardSource.indexOf('<TeamBoardRotationImpact'))
-  assert.ok(boardSource.indexOf('<TeamBoardRotationImpact') < boardSource.indexOf('<StoryCard'))
-  assert.equal(boardSource.includes('<TeamBoardPerformance'), false)
+  assert.ok(boardSource.indexOf('<TeamBoardPerformance') < boardSource.indexOf('<TeamBoardRotationImpact'))
+  assert.ok(boardSource.indexOf('<TeamBoardRotationImpact') < boardSource.indexOf('<TeamBoardWhatChanged'))
+  assert.ok(boardSource.includes('<SectionPair label="Rotation and transactions">'))
+  assert.ok(boardSource.includes('<TeamBoardPerformance'))
   assert.ok(boardSource.includes('<TeamReliefWorkPanel'))
   assert.ok(boardSource.includes('includeRotationSupport: false'))
   assert.equal(gameContextSource.includes('starter_avg_innings'), false)

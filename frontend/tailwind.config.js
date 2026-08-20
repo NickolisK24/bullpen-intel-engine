@@ -14,6 +14,7 @@ export default {
         display: ['"Bebas Neue"', 'sans-serif'],
         mono:    ['"JetBrains Mono"', 'monospace'],
         body:    ['"DM Sans"', 'sans-serif'],
+        board:   ['"Inter"', 'sans-serif'],
       },
       backgroundImage: {
         'grid-lines': `linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px),

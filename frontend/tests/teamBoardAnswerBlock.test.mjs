@@ -18,6 +18,7 @@ after(async () => {
 
 const {
   default: TeamBoardAnswerBlock,
+  getBullpenSummaryView,
   getTeamBoardAnswerView,
   TeamBoardAnswerSkeleton,
 } = await server.ssrLoadModule('/src/components/bullpen/board/TeamBoardAnswerBlock.jsx')
@@ -46,9 +47,13 @@ function read(overrides = {}) {
       worked_yesterday_count: 2,
       back_to_back_count: 1,
     },
+    workloadOverview: {
+      windows: [{ window_days: 7, pitches_total: 0 }],
+    },
     sectionStatus: {
       team_state: { status: 'available', limitations: [] },
       active_bullpen: { status: 'available', limitations: [] },
+      rest_status: { status: 'available', limitations: [] },
     },
     ...overrides,
   }
@@ -102,22 +107,41 @@ test('fail-closed Team State renders the governed message and no manufactured st
   }
 })
 
-test('supporting signals are exact backend counts and missing values are omitted', () => {
-  const view = getTeamBoardAnswerView(read())
-  assert.deepEqual(view.signals, [
+test('Bullpen Summary publishes exact fields and withholds undefined target meanings', () => {
+  const figures = getBullpenSummaryView(read())
+  const publishedHtml = render({ read: read() })
+  assert.deepEqual(figures.map(({ label, value }) => ({ label, value })), [
     { label: 'Active arms', value: 8 },
-    { label: 'Rested arms', value: 5 },
-    { label: 'Worked yesterday', value: 2 },
+    { label: 'Rested options', value: 5 },
+    { label: 'Recently used arms', value: null },
+    { label: 'Off-active count', value: null },
+    { label: '7-day workload', value: 0 },
   ])
 
-  const missing = getTeamBoardAnswerView(read({
+  const missingRead = read({
     activeBullpen: { arm_count: null, arms: [] },
     restStatus: { available: false, active_arm_count: null },
-  }))
-  assert.deepEqual(missing.signals, [])
-  const html = render({ read: { ...read(), activeBullpen: { arm_count: null }, restStatus: { available: false } } })
-  assert.equal(text(html).includes('Active arms 0'), false)
-  assert.equal(text(html).includes('Rested arms 0'), false)
+    workloadOverview: { windows: [{ window_days: 7, pitches_total: null }] },
+    sectionStatus: {
+      ...read().sectionStatus,
+      active_bullpen: { status: 'partial', limitations: [] },
+      rest_status: { status: 'unavailable', limitations: [] },
+    },
+  })
+  assert.deepEqual(getBullpenSummaryView(missingRead).map(figure => figure.value), [null, null, null, null, null])
+  const withheldHtml = render({ read: missingRead })
+  assert.equal(text(withheldHtml).includes('Active arms 0'), false)
+  assert.equal(text(withheldHtml).includes('Rested options 0'), false)
+  assert.ok(text(publishedHtml).includes('7-day workload 0 Pitches'))
+  assert.ok(text(withheldHtml).includes('Recently used arms — Public window not defined'))
+})
+
+test('header keeps one governed state, one currentness line, and the answer intact', () => {
+  const answer = read()
+  const html = render({ read: answer })
+  assert.equal((html.match(/aria-label="Team State:/g) || []).length, 1)
+  assert.equal((text(html).match(/Data through/g) || []).length, 1)
+  assert.ok(text(html).includes(answer.summary))
 })
 
 test('loading skeleton preserves the team identity and Answer Block hierarchy', () => {
@@ -174,12 +198,13 @@ test('production adoption keeps the Answer Block and current package migrations 
 
   assert.ok(source.includes('getTeamBoardV2(selectedTeam)'))
   assert.equal((source.match(/getTeamBoardV2\(/g) || []).length, 1)
+  assert.equal(source.includes('getTeamGameContext('), false)
   assert.ok(source.includes('<TeamBoardAnswerBlock'))
   assert.ok(source.includes('<TeamBoardActiveBullpen'))
   assert.ok(source.includes('<TeamBoardRecentTransactions'))
   for (const legacySection of [
     '<TeamBoardWorkloadOverview',
-    '<StoryCard',
+    '<TeamBoardWhatChanged',
     '<TeamReliefWorkPanel',
     '<BullpenReadDisclosure',
   ]) {

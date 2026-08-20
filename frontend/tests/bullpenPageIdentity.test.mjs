@@ -78,7 +78,7 @@ function renderBoard(boardPayload, team = BREWERS) {
         boardPayload,
         teamBoardV2Payload: teamBoardV2Fixture(boardPayload),
         gameContextPayload: null,
-        storyPayload: null,
+        changesPayload: null,
       }),
     ),
   )

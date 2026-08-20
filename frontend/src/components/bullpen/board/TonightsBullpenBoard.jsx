@@ -1,8 +1,8 @@
 import { useFetch } from '../../../hooks/useFetch'
 import { toOperatingStateReadModel } from '../../../adapters/operatingStateReadModel'
 import { readTeamBoardV2 } from '../../../adapters/teamBoardV2'
-import { getTeamBoardV2, getTeamBullpenBoard, getTeamGameContext, getTeamStory, getTeamShareCard } from '../../../utils/api'
-import { TeamBoardSkeleton, ErrorState, EmptyState } from '../../UI'
+import { getTeamBoardV2, getTeamBullpenBoard, getTeamChanges, getTeamShareCard } from '../../../utils/api'
+import { TeamBoardSkeleton, ErrorState, EmptyState, SectionPair } from '../../UI'
 import { BullpenReadDisclosure } from '../BullpenOperatingStateCard'
 import TeamBoardAnswerBlock from './TeamBoardAnswerBlock'
 import TeamBoardActiveBullpen from './TeamBoardActiveBullpen'
@@ -10,10 +10,10 @@ import TeamBoardRecentUsage from './TeamBoardRecentUsage'
 import TeamBoardRestStatus from './TeamBoardRestStatus'
 import TeamBoardWorkloadOverview from './TeamBoardWorkloadOverview'
 import TeamBoardRolesDeployment from './TeamBoardRolesDeployment'
+import TeamBoardPerformance from './TeamBoardPerformance'
 import TeamBoardRotationImpact from './TeamBoardRotationImpact'
 import TeamBoardRecentTransactions from './TeamBoardRecentTransactions'
-import TeamGameContextCard from './TeamGameContextCard'
-import StoryCard from './StoryCard'
+import TeamBoardWhatChanged from './TeamBoardWhatChanged'
 import TeamReliefWorkPanel from '../TeamReliefWorkPanel'
 import { buildTeamBoardHref, resolveTeamId } from '../../../utils/evidenceLinks'
 import { EVIDENCE_CARD_ORIGIN, buildTeamShareCardFromArtifact } from '../../../utils/shareCardArtifact'
@@ -44,7 +44,7 @@ export default function TonightsBullpenBoard({
   teamBoardV2Loading,
   teamBoardV2Error,
   gameContextPayload,
-  storyPayload,
+  changesPayload,
 }) {
   const teamList = teams?.data || []
   const selectedTeam = initialSelectedTeam ?? resolveTeamId(teamList, requestedTeam)
@@ -58,13 +58,8 @@ export default function TonightsBullpenBoard({
     [selectedTeam],
   )
 
-  // Game context for the selected team (stored game-log only).
-  const gameContext = useFetch(
-    () => (selectedTeam == null ? Promise.resolve(null) : getTeamGameContext(selectedTeam)),
-    [selectedTeam],
-  )
-  const story = useFetch(
-    () => (selectedTeam == null ? Promise.resolve(null) : getTeamStory(selectedTeam)),
+  const changes = useFetch(
+    () => (selectedTeam == null ? Promise.resolve(null) : getTeamChanges(selectedTeam)),
     [selectedTeam],
   )
   // SC-03A cutover: the Share Card is sourced from the canonical, published,
@@ -88,8 +83,10 @@ export default function TonightsBullpenBoard({
       }
     : teamBoardV2
   const teamBoardRead = readTeamBoardV2(teamBoardV2State.data)
-  const gameContextState = gameContextPayload !== undefined ? staticFetchState(gameContextPayload) : gameContext
-  const storyState = storyPayload !== undefined ? staticFetchState(storyPayload) : story
+  const teamBoardAnswerRead = teamBoardRead && gameContextPayload !== undefined
+    ? { ...teamBoardRead, gameContext: gameContextPayload }
+    : teamBoardRead
+  const changesState = changesPayload !== undefined ? staticFetchState(changesPayload) : changes
   const teamOperatingRead = toOperatingStateReadModel(boardState.data || {}, {
     scope: 'team',
     team: boardState.data?.team,
@@ -115,36 +112,37 @@ export default function TonightsBullpenBoard({
         : 'team_read')
   const teamShareText = teamCard?.shareText
     || `Current ${teamOperatingRead.teamName || 'team'} bullpen evidence on BaseballOS.`
+  const teamSwitcher = (
+    <div className="w-full min-w-0 tablet:w-56">
+      {teamList.length === 0 ? (
+        <span className="inline-flex min-h-11 items-center font-board text-board-metadata text-text-tertiary">
+          {teams?.loading ? 'Loading teams…' : 'Teams unavailable.'}
+        </span>
+      ) : (
+        <>
+          <label htmlFor="team-board-selector" className="type-overline block">Team</label>
+          <select
+            id="team-board-selector"
+            aria-label="Select team for Team Board"
+            value={selectedTeam ?? ''}
+            onChange={event => onSelectTeam(event.target.value ? Number(event.target.value) : null)}
+            className="mt-1 min-h-11 w-full rounded-sm border border-line-default bg-surface-base px-3 py-2 font-board text-board-metadata text-text-primary outline-none focus-visible:ring-2 focus-visible:ring-line-focus"
+          >
+            <option value="">Pick a team</option>
+            {teamList.map(team => <option key={team.team_id} value={team.team_id}>{team.team_name || team.team_abbreviation}</option>)}
+          </select>
+        </>
+      )}
+    </div>
+  )
 
   return (
     <div>
-      {/* Compact selection keeps all 30 teams to one accessible control. */}
-      <div className="mb-4 flex flex-wrap items-start gap-3">
-        <div className="min-w-0 flex-1 sm:max-w-xs">
-          {teamList.length === 0 ? (
-            <span className="inline-flex min-h-11 items-center font-mono text-xs text-chalk500">
-              {teams?.loading ? 'Loading teams…' : 'Teams unavailable.'}
-            </span>
-          ) : (
-            <>
-              <label htmlFor="team-board-selector" className="type-overline block">Team</label>
-              <select
-                id="team-board-selector"
-                aria-label="Select team for Team Board"
-                value={selectedTeam ?? ''}
-                onChange={event => onSelectTeam(event.target.value ? Number(event.target.value) : null)}
-                className="mt-1 min-h-11 w-full rounded border border-dirt bg-field/70 px-3 py-2 font-mono text-xs text-chalk200 outline-none focus:border-amber/50 focus-visible:ring-2 focus-visible:ring-amber/60"
-              >
-                <option value="">Pick a team</option>
-                {teamList.map(team => <option key={team.team_id} value={team.team_id}>{team.team_name || team.team_abbreviation}</option>)}
-              </select>
-            </>
-          )}
-        </div>
-      </div>
-
       {selectedTeam == null ? (
-        <EmptyState title="Pick a team" subtitle="Select a team above to see its current bullpen board." />
+        <>
+          <div className="mb-4 max-w-xs">{teamSwitcher}</div>
+          <EmptyState title="Pick a team" subtitle="Select a team above to see its current bullpen board." />
+        </>
       ) : boardState.loading ? (
         <TeamBoardSkeleton message="Building current bullpen board..." />
       ) : boardState.error ? (
@@ -160,20 +158,21 @@ export default function TonightsBullpenBoard({
                 the route owns the H1 and this block owns the selected-club H2. */}
             <div className="mb-4">
               <TeamBoardAnswerBlock
-                read={teamBoardRead}
+                read={teamBoardAnswerRead}
                 team={selectedTeamRecord}
                 loading={teamBoardV2State.loading}
                 error={teamBoardV2State.error}
                 onRetry={teamBoardV2State.refetch}
+                teamSwitcher={teamSwitcher}
+                evidenceDisclosure={(
+                  <BullpenReadDisclosure
+                    readModel={teamOperatingRead}
+                    staleWithError={teamOperatingRead.freshness?.isStale || teamOperatingRead.freshness?.failClosed}
+                    flat
+                    className="mt-panel"
+                  />
+                )}
               />
-              {(gameContextState.loading || gameContextState.error || gameContextState.data) && (
-                <TeamGameContextCard
-                  gameContext={gameContextState.data}
-                  loading={gameContextState.loading}
-                  error={gameContextState.error}
-                  compact
-                />
-              )}
             </div>
             <TeamBoardActiveBullpen
               read={teamBoardRead}
@@ -187,59 +186,65 @@ export default function TonightsBullpenBoard({
               loading={teamBoardV2State.loading}
               error={teamBoardV2State.error}
               onRetry={teamBoardV2State.refetch}
+              onSelectPitcher={onSelectPitcher}
             />
-            <TeamBoardRestStatus
-              read={teamBoardRead}
-              loading={teamBoardV2State.loading}
-              error={teamBoardV2State.error}
-              onRetry={teamBoardV2State.refetch}
+            <SectionPair label="Rest and workload">
+              <TeamBoardRestStatus
+                read={teamBoardRead}
+                loading={teamBoardV2State.loading}
+                error={teamBoardV2State.error}
+                onRetry={teamBoardV2State.refetch}
+              />
+              <TeamBoardWorkloadOverview
+                read={teamBoardRead}
+                loading={teamBoardV2State.loading}
+                error={teamBoardV2State.error}
+                onRetry={teamBoardV2State.refetch}
+              />
+            </SectionPair>
+            <SectionPair label="Roles and performance" ratio="7:5">
+              <TeamBoardRolesDeployment
+                read={teamBoardRead}
+                loading={teamBoardV2State.loading}
+                error={teamBoardV2State.error}
+                onRetry={teamBoardV2State.refetch}
+              />
+              <TeamBoardPerformance />
+            </SectionPair>
+            <SectionPair label="Rotation and transactions">
+              <TeamBoardRotationImpact
+                read={teamBoardRead}
+                loading={teamBoardV2State.loading}
+                error={teamBoardV2State.error}
+                onRetry={teamBoardV2State.refetch}
+              />
+              <TeamBoardRecentTransactions
+                read={teamBoardRead}
+                loading={teamBoardV2State.loading}
+                error={teamBoardV2State.error}
+                onRetry={teamBoardV2State.refetch}
+                onSelectPitcher={onSelectPitcher}
+              />
+            </SectionPair>
+            <TeamBoardWhatChanged
+              changes={changesState.data}
+              loading={changesState.loading}
+              error={changesState.error}
+              onRetry={changesState.refetch}
+              onSelectPitcher={onSelectPitcher}
             />
-            <TeamBoardWorkloadOverview
-              read={teamBoardRead}
-              loading={teamBoardV2State.loading}
-              error={teamBoardV2State.error}
-              onRetry={teamBoardV2State.refetch}
-            />
-            <TeamBoardRolesDeployment
-              read={teamBoardRead}
-              loading={teamBoardV2State.loading}
-              error={teamBoardV2State.error}
-              onRetry={teamBoardV2State.refetch}
-            />
-            <TeamBoardRotationImpact
-              read={teamBoardRead}
-              loading={teamBoardV2State.loading}
-              error={teamBoardV2State.error}
-              onRetry={teamBoardV2State.refetch}
-            />
-            <TeamBoardRecentTransactions
-              read={teamBoardRead}
-              loading={teamBoardV2State.loading}
-              error={teamBoardV2State.error}
-              onRetry={teamBoardV2State.refetch}
-            />
-            {storyState.data?.story_available === true && <section className="mt-6" aria-labelledby="what-changed-title">
-              <h2 id="what-changed-title" className="font-display text-xl tracking-wide text-chalk100">What Changed</h2>
-              <div className="mt-2">
-                <StoryCard
-                  story={storyState.data}
-                  loading={storyState.loading}
-                  error={storyState.error}
-                  onRetry={storyState.refetch}
-                  hideFreshnessMeta
-                />
-              </div>
-            </section>}
             <div className="mt-6">
               <TeamReliefWorkPanel
                 read={teamBoardRead}
                 loading={teamBoardV2State.loading}
                 error={teamBoardV2State.error}
                 onRetry={teamBoardV2State.refetch}
+                onSelectPitcher={onSelectPitcher}
               />
             </div>
             <div className="mt-4 flex justify-end">
               <EvidenceShareMenu
+                variant="team-board"
                 cardModel={teamCard}
                 destinationUrl={teamDestinationUrl}
                 shareText={teamShareText}
@@ -252,11 +257,6 @@ export default function TonightsBullpenBoard({
                 }}
               />
             </div>
-            <BullpenReadDisclosure
-              readModel={teamOperatingRead}
-              staleWithError={teamOperatingRead.freshness?.isStale || teamOperatingRead.freshness?.failClosed}
-              className="mt-4"
-            />
           </div>
         </div>
       )}

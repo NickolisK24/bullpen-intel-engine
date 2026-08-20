@@ -1,97 +1,138 @@
-import SemanticLabel from '../../UI/SemanticLabel'
 import { SkeletonBlock } from '../../UI/Skeleton'
 
-function Fact({ label, value }) {
+const markerClass = {
+  dot: 'active-arm-read__marker--dot',
+  square: 'active-arm-read__marker--square',
+  ring: 'active-arm-read__marker--ring',
+}
+
+function displayValue(value) {
+  return value == null ? '—' : value
+}
+
+function ArmRead({ label, tone = 'withheld', marker = 'ring' }) {
   return (
-    <div className="min-w-0">
-      <dt className="type-overline">{label}</dt>
-      <dd className="type-data active-arm-row__text mt-meta">{value ?? '—'}</dd>
-    </div>
+    <span className={`active-arm-read active-arm-read--${tone}`}>
+      <span className={`active-arm-read__marker ${markerClass[marker] || markerClass.ring}`} aria-hidden="true" />
+      <span>{label || '—'}</span>
+    </span>
+  )
+}
+
+function TableCell({ value, className = '' }) {
+  return (
+    <span className={`active-arm-row__cell type-data ${value == null ? 'text-text-withheld' : 'text-text-secondary'} ${className}`.trim()}>
+      {displayValue(value)}
+    </span>
   )
 }
 
 export function ActiveArmRowSkeleton() {
   return (
-    <div className="active-arm-row" role="status" aria-label="Loading reliever record" aria-busy="true">
+    <div className="active-arm-row active-arm-row--skeleton" role="status" aria-label="Loading reliever record" aria-busy="true">
       <div>
         <SkeletonBlock className="h-5 w-40 max-w-full" />
         <SkeletonBlock className="mt-meta h-3 w-24 max-w-full" />
       </div>
-      <SkeletonBlock className="h-7 w-24 max-w-full" />
+      <SkeletonBlock className="h-5 w-24 max-w-full" />
       <SkeletonBlock className="h-4 w-full max-w-48" />
-      <SkeletonBlock className="h-11 w-24 max-w-full" />
     </div>
   )
 }
 
 export default function ActiveArmRow({
+  pitcherId,
   name,
   roleLabel,
+  roleWithheld = false,
   readLabel,
-  readTone = 'neutral',
-  lastUsed,
-  recentWorkload,
+  readTone = 'withheld',
+  readMarker = 'ring',
+  daysSince,
+  lastGamePitches,
+  appearancesLast7,
+  pitchesLast7,
   pattern,
-  facts,
+  showLastGamePitches = false,
   href,
   onAction,
-  actionLabel = 'View pitcher',
   actionAriaLabel,
   partialMessage,
   loading = false,
 }) {
   if (loading) return <ActiveArmRowSkeleton />
 
-  const rowFacts = Array.isArray(facts)
-    ? facts.filter(fact => fact?.value != null)
-    : [
-        lastUsed != null ? { label: 'Last Used', value: lastUsed } : null,
-        recentWorkload != null ? { label: 'Recent Workload', value: recentWorkload } : null,
-        pattern != null ? { label: 'Multi-Day Pattern', value: pattern } : null,
-      ].filter(Boolean)
-  const actionClassName = 'inline-flex min-h-11 w-full items-center justify-center rounded-sm border border-signal/50 px-3 py-2 font-mono text-metadata text-signal transition-colors hover:border-signal hover:bg-signal/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-signal/70 tablet:w-auto'
+  const rowClassName = `active-arm-row ${showLastGamePitches ? 'active-arm-row--with-last-p' : ''}`
+  const content = (
+    <>
+      <span className="active-arm-row__identity min-w-0">
+        <span className="type-section-title active-arm-row__name">{name || 'Reliever'}</span>
+        <span className={`type-metadata active-arm-row__role mt-meta ${roleWithheld || !roleLabel ? 'text-text-withheld' : ''}`}>
+          {roleLabel || '—'}
+        </span>
+        {pattern && <span className="type-metadata active-arm-row__tablet-pattern mt-meta">{pattern}</span>}
+      </span>
 
-  return (
-    <article className="active-arm-row" aria-label={`${name || 'Reliever'} record`}>
-      <div className="min-w-0">
-        <h3 className="type-section-title active-arm-row__text">{name || 'Reliever'}</h3>
-        <p className="type-metadata active-arm-row__text mt-meta">{roleLabel || 'Role unavailable'}</p>
-      </div>
+      <span className="active-arm-row__read min-w-0">
+        <ArmRead label={readLabel} tone={readTone} marker={readMarker} />
+      </span>
 
-      <div className="min-w-0">
-        <div className="type-overline mb-meta">Current Arm Read</div>
-        <SemanticLabel label={readLabel || 'Read unavailable'} tone={readTone} />
-      </div>
+      <span className="active-arm-row__mobile-meta type-metadata min-w-0">
+        <span className={daysSince == null ? 'text-text-withheld' : ''}>{daysSince == null ? '— rest' : `${daysSince}d rest`}</span>
+        <span aria-hidden="true"> · </span>
+        <span className={appearancesLast7 == null ? 'text-text-withheld' : ''}>{displayValue(appearancesLast7)} app</span>
+        <span> / </span>
+        <span className={pitchesLast7 == null ? 'text-text-withheld' : ''}>{displayValue(pitchesLast7)} p (7d)</span>
+        {lastGamePitches != null && <><span aria-hidden="true"> · </span><span>{lastGamePitches} last P</span></>}
+        {pattern && <><span aria-hidden="true"> · </span><span>{pattern}</span></>}
+      </span>
 
-      <dl className="active-arm-row__facts grid min-w-0 grid-cols-2 gap-pair">
-        {rowFacts.map(fact => <Fact key={fact.label} label={fact.label} value={fact.value} />)}
-      </dl>
+      <TableCell value={daysSince == null ? null : `${daysSince}d`} className="active-arm-row__rest" />
+      {showLastGamePitches && <TableCell value={lastGamePitches} className="active-arm-row__last-p" />}
+      <TableCell value={appearancesLast7} className="active-arm-row__app" />
+      <TableCell value={pitchesLast7} className="active-arm-row__pitches" />
+      <TableCell value={pattern} className="active-arm-row__pattern" />
+      <span className="active-arm-row__destination type-metadata">Open</span>
 
-      <div className="min-w-0">
-        {typeof onAction === 'function' ? (
-          <button
-            type="button"
-            onClick={onAction}
-            className={actionClassName}
-            aria-label={actionAriaLabel}
-          >
-            {actionLabel}<span aria-hidden="true" className="ml-2">→</span>
-          </button>
-        ) : href ? (
-          <a
-            href={href}
-            className={actionClassName}
-            aria-label={actionAriaLabel}
-          >
-            {actionLabel}<span aria-hidden="true" className="ml-2">→</span>
-          </a>
-        ) : null}
-        {partialMessage && (
-          <p className="type-metadata active-arm-row__text mt-meta" role="status">
-            {partialMessage}
-          </p>
-        )}
-      </div>
-    </article>
+      {partialMessage && (
+        <span className="active-arm-row__partial type-metadata text-text-withheld" role="status">
+          {partialMessage}
+        </span>
+      )}
+    </>
   )
+
+  if (typeof onAction === 'function') {
+    return (
+      <button
+        type="button"
+        onClick={onAction}
+        onKeyDown={event => {
+          if (event.key !== 'Enter' && event.key !== ' ') return
+          event.preventDefault()
+          onAction(event)
+        }}
+        className={rowClassName}
+        aria-label={actionAriaLabel || `Open pitcher context for ${name || 'reliever'}`}
+        data-pitcher-id={pitcherId ?? undefined}
+      >
+        {content}
+      </button>
+    )
+  }
+
+  if (href) {
+    return (
+      <a
+        href={href}
+        className={rowClassName}
+        aria-label={actionAriaLabel || `Open pitcher context for ${name || 'reliever'}`}
+        data-pitcher-id={pitcherId ?? undefined}
+      >
+        {content}
+      </a>
+    )
+  }
+
+  return <article className={rowClassName} aria-label={`${name || 'Reliever'} record`}>{content}</article>
 }

@@ -79,6 +79,23 @@ test('role composition remains team-level and exposes no unsupported deployment 
     assert.equal(html.toLowerCase().includes(forbidden.toLowerCase()), false, forbidden)
   }
   assert.equal(html.includes('Example Pitcher'), false)
+  assert.ok(html.includes('Deployment detail unavailable'))
+  assert.ok(html.includes('Detailed team deployment context is not published for Team Board.'))
+})
+
+test('role labels stay neutral and role composition is never rebuilt in the browser', async () => {
+  const html = renderRoles({ read })
+  const componentSource = await readFile(new URL('../src/components/bullpen/board/TeamBoardRolesDeployment.jsx', import.meta.url), 'utf8')
+
+  for (const label of ['Coverage Arm', 'Trusted Arm', 'Role Unclear']) {
+    assert.ok(html.includes(label))
+  }
+  for (const forbiddenClass of ['state-clear', 'state-caution', 'state-constrained', 'rounded-full', 'role-marker']) {
+    assert.equal(componentSource.includes(forbiddenClass), false, forbiddenClass)
+  }
+  for (const forbiddenCalculation of ['.reduce(', 'saves', 'holds', 'leverage_share', 'multi_inning', 'role_movement']) {
+    assert.equal(componentSource.includes(forbiddenCalculation), false, forbiddenCalculation)
+  }
 })
 
 test('Roles & Deployment distinguishes loading, unavailable, error, and empty states', () => {
@@ -105,7 +122,8 @@ test('production uses the shared v2 request and leaves later packages untouched'
   assert.ok(boardSource.includes('<TeamBoardRolesDeployment'))
   assert.ok(boardSource.includes('<TeamReliefWorkPanel'))
   assert.ok(boardSource.indexOf('<TeamBoardWorkloadOverview') < boardSource.indexOf('<TeamBoardRolesDeployment'))
-  assert.equal(boardSource.includes('<TeamBoardPerformance'), false)
+  assert.ok(boardSource.includes('<TeamBoardPerformance'))
+  assert.ok(boardSource.includes('<SectionPair label="Roles and performance" ratio="7:5">'))
   assert.ok(boardSource.includes('<TeamBoardRotationImpact'))
   for (const forbidden of ['.sort(', '.reduce(', 'Math.', 'leverage', 'roleMovement', 'role_movement']) {
     assert.equal(componentSource.includes(forbidden), false, forbidden)

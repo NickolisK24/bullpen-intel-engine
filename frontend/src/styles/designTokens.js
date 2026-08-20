@@ -5,6 +5,27 @@
 // the named utilities Tailwind generates rather than copying raw values.
 export const designTokens = Object.freeze({
   colors: Object.freeze({
+    // Final Team Board 2.0 palette. Existing names remain below for surfaces
+    // that have not yet migrated; Team Board code consumes these semantic
+    // names instead of creating a parallel theme.
+    'surface-base': '#0C1116',
+    'surface-nav': '#111820',
+    'surface-raised': '#161E27',
+    'surface-hover': '#1A232D',
+    'text-primary': '#E9EEF3',
+    'text-secondary': '#BAC5D1',
+    'text-tertiary': '#93A0AE',
+    'text-withheld': '#8792A0',
+    'line-subtle': '#202A34',
+    'line-default': '#34414E',
+    'line-strong': '#536171',
+    'line-focus': '#8FB8DA',
+    'state-clear': '#6FBF9B',
+    'state-caution': '#E0A458',
+    'state-constrained': '#E08585',
+    'brand-blue': '#7BA7CC',
+    'brand-gold': '#C9A24A',
+    'chart-bar': '#6E8799',
     field: '#080d14',
     dugout: '#0f1620',
     chalk: '#18222e',
@@ -41,6 +62,13 @@ export const designTokens = Object.freeze({
     metadata: ['0.75rem', { lineHeight: '1.35' }],
     overline: ['0.6875rem', { lineHeight: '1.2', letterSpacing: '0.12em' }],
     data: ['0.875rem', { lineHeight: '1.25' }],
+    'board-page-title': ['1.5rem', { lineHeight: '1.17', letterSpacing: '0' }],
+    'board-section-title': ['0.9375rem', { lineHeight: '1.35', letterSpacing: '0' }],
+    'board-body': ['0.875rem', { lineHeight: '1.55' }],
+    'board-compact': ['0.8125rem', { lineHeight: '1.45' }],
+    'board-metadata': ['0.8125rem', { lineHeight: '1.4' }],
+    'board-label': ['0.75rem', { lineHeight: '1.3', letterSpacing: '0.06em' }],
+    'board-data': ['0.875rem', { lineHeight: '1.25' }],
   }),
   spacing: Object.freeze({
     meta: '0.375rem',
@@ -57,7 +85,7 @@ export const designTokens = Object.freeze({
     wide: '1440px',
   }),
   maxWidth: Object.freeze({
-    reading: '72rem',
-    'team-board': '90rem',
+    reading: '42.5rem',
+    'team-board': '72rem',
   }),
 })

@@ -20,8 +20,8 @@ function NavDestination({ item, location, onNavigate }) {
 }
 
 export default function Sidebar() {
-  // Mobile-only collapsible nav. On lg+ the nav is always shown and this
-  // state is irrelevant (the hamburger is hidden and `lg:flex` forces it open).
+  // Collapsible top-bar nav below xl. At xl+ the rail is always shown and this
+  // state is irrelevant (the hamburger is hidden and `xl:flex` forces it open).
   const [open, setOpen] = useState(false)
   const location = useLocation()
 
@@ -45,9 +45,9 @@ export default function Sidebar() {
   const closeMenu = () => setOpen(false)
 
   return (
-    <aside className="w-full bg-dugout border-b border-dirt lg:fixed lg:inset-y-0 lg:left-0 lg:z-30 lg:w-56 lg:border-b-0 lg:border-r flex flex-col lg:h-screen lg:overflow-y-auto">
+    <aside className="w-full bg-dugout border-b border-dirt xl:fixed xl:inset-y-0 xl:left-0 xl:z-30 xl:w-56 xl:border-b-0 xl:border-r flex flex-col xl:h-screen xl:overflow-y-auto">
       {/* Header row: logo + (mobile) hamburger */}
-      <div className="flex items-center justify-between px-5 py-4 lg:py-6 lg:border-b lg:border-dirt">
+      <div className="flex items-center justify-between px-5 py-4 xl:py-6 xl:border-b xl:border-dirt">
         <div className="flex items-center gap-2.5 min-w-0">
           <span className="text-2xl">⚾</span>
           <div className="min-w-0">
@@ -62,7 +62,7 @@ export default function Sidebar() {
           aria-label={open ? 'Close navigation menu' : 'Open navigation menu'}
           aria-expanded={open}
           aria-controls={PRIMARY_NAVIGATION_ID}
-          className="lg:hidden shrink-0 ml-3 h-11 w-11 flex items-center justify-center rounded-lg border border-dirt text-chalk200 hover:bg-chalk/50 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/60"
+          className="xl:hidden shrink-0 ml-3 h-11 w-11 flex items-center justify-center rounded-lg border border-dirt text-chalk200 hover:bg-chalk/50 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/60"
         >
           <span className="text-lg leading-none" aria-hidden="true">{open ? '✕' : '☰'}</span>
         </button>
@@ -74,7 +74,7 @@ export default function Sidebar() {
       <nav
         id={PRIMARY_NAVIGATION_ID}
         aria-label="Primary"
-        className={`${open ? 'flex' : 'hidden'} lg:flex flex-1 flex-col px-3 pb-4 pt-1 lg:py-5`}
+        className={`${open ? 'flex' : 'hidden'} xl:flex flex-1 flex-col px-3 pb-4 pt-1 xl:py-5`}
       >
         <div className="space-y-1">
           {PRIMARY_NAV.map((item) => (

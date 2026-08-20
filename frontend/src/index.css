@@ -59,32 +59,38 @@
   /* Team Board foundation shell: the current content order is unchanged, while
      later packages can intentionally use the 1280–1440 desktop range. */
   .team-board-shell {
-    @apply mx-auto w-full min-w-0 max-w-team-board bg-field px-panel py-panel sm:px-section sm:py-section lg:px-section-lg lg:py-section-lg;
+    @apply mx-auto w-full min-w-0 max-w-team-board bg-surface-base px-4 py-4 font-board text-text-secondary md:px-6 md:py-6 xl:px-8 xl:py-8;
     container-type: inline-size;
+  }
+  .team-board-shell * {
+    font-family: "Inter", sans-serif !important;
+  }
+  .team-board-shell .section-title {
+    @apply font-board text-board-section-title font-semibold normal-case tracking-normal text-text-primary;
   }
 
   /* Named typography roles. New foundation components use these roles instead
      of inventing one-off 9px/10px/11px values. */
   .type-page-title {
-    @apply font-display text-page-title uppercase text-chalk100;
+    @apply font-board text-board-page-title font-semibold text-text-primary;
   }
   .type-section-title {
-    @apply font-display text-section-title text-chalk100;
+    @apply font-board text-board-section-title font-semibold text-text-primary;
   }
   .type-body {
-    @apply font-body text-body text-chalk300;
+    @apply font-board text-board-body text-text-secondary;
   }
   .type-compact {
-    @apply font-body text-compact text-chalk300;
+    @apply font-board text-board-compact text-text-tertiary;
   }
   .type-metadata {
-    @apply font-mono text-metadata text-chalk500;
+    @apply font-board text-board-metadata text-text-tertiary;
   }
   .type-overline {
-    @apply font-mono text-overline uppercase text-chalk500;
+    @apply font-board text-board-label font-medium uppercase text-text-tertiary;
   }
   .type-data {
-    @apply font-mono text-data tabular-nums text-chalk200;
+    @apply font-board text-board-data tabular-nums text-text-secondary;
   }
 
   /* Shared rhythm roles for later Team Board composition packages. */
@@ -92,7 +98,7 @@
     @apply mt-section first:mt-0 lg:mt-section-lg;
   }
   .foundation-panel {
-    @apply border border-dirt bg-dugout p-panel;
+    @apply bg-transparent p-0;
   }
   .foundation-row-stack {
     @apply flex flex-col gap-row;
@@ -300,7 +306,7 @@
   /* Public semantic presentation. The component still requires visible label
      text; these tones never classify or rename a backend-provided value. */
   .semantic-label {
-    @apply inline-flex min-h-6 max-w-full items-center rounded-sm border px-2 py-1 font-mono text-metadata font-medium;
+    @apply inline-flex min-h-6 max-w-full items-center rounded-sm border px-2 py-1 font-board text-board-metadata font-medium;
   }
   .semantic-label--neutral { @apply border-dirt bg-chalk/45 text-chalk300; }
   .semantic-label--fresh { @apply border-stateFresh/40 bg-stateFresh/10 text-stateFresh; }
@@ -311,45 +317,133 @@
   .semantic-label--limited { @apply border-readLimited/40 bg-readLimited/10 text-readLimited; }
   .semantic-label--unavailable { @apply border-readUnavailable/40 bg-readUnavailable/10 text-readUnavailable; }
 
-  /* Dense record primitive. It is intentionally one column by default and only
-     gains parallel metadata once the container has room. */
+  /* Active Bullpen is a composed record below 768 and an aligned table-like
+     destination row above it. The same DOM carries both modes. */
+  .active-arm-table__header {
+    @apply hidden;
+  }
   .active-arm-row {
-    @apply grid min-w-0 grid-cols-1 gap-row border-b border-dirt px-panel py-row text-left last:border-b-0;
+    @apply grid min-h-16 w-full min-w-0 grid-cols-[minmax(0,1fr)_auto] gap-x-panel gap-y-meta border-b border-line-subtle bg-transparent px-0 py-row text-left last:border-b-0;
+  }
+  button.active-arm-row,
+  a.active-arm-row {
+    @apply cursor-pointer no-underline hover:bg-surface-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-line-focus;
   }
   .active-arm-row > * {
     min-width: 0;
   }
-  .active-arm-row__text {
+  .active-arm-row__name,
+  .active-arm-row__role,
+  .active-arm-row__mobile-meta,
+  .active-arm-row__tablet-pattern {
     overflow-wrap: anywhere;
   }
-  .active-arm-row__facts:empty {
+  .active-arm-row__identity {
+    @apply flex flex-col;
+  }
+  .active-arm-row__read {
+    @apply flex items-start justify-end;
+  }
+  .active-arm-row__mobile-meta {
+    @apply col-span-2 leading-relaxed;
+  }
+  .active-arm-row__cell,
+  .active-arm-row__destination,
+  .active-arm-row__tablet-pattern {
     display: none;
   }
-  @container (min-width: 44rem) {
+  .active-arm-read {
+    @apply inline-flex min-w-0 items-center gap-2 font-board text-board-body;
+  }
+  .active-arm-read__marker {
+    @apply h-2 w-2 shrink-0;
+  }
+  .active-arm-read__marker--dot {
+    @apply rounded-full bg-current;
+  }
+  .active-arm-read__marker--square {
+    @apply bg-current;
+  }
+  .active-arm-read__marker--ring {
+    @apply rounded-full border-2 border-current bg-transparent;
+  }
+  .active-arm-read--neutral { @apply text-text-secondary; }
+  .active-arm-read--watch { @apply text-readWatch; }
+  .active-arm-read--limited { @apply text-readLimited; }
+  .active-arm-read--withheld { @apply text-text-withheld; }
+
+  @media (min-width: 768px) {
+    .active-arm-table__header,
     .active-arm-row {
-      grid-template-columns: minmax(12rem, 1.2fr) minmax(10rem, 0.8fr);
-      align-items: start;
+      grid-template-columns: minmax(10rem, 1.5fr) minmax(7rem, 0.9fr) minmax(4.5rem, 0.55fr) minmax(3.5rem, 0.4fr) minmax(3.5rem, 0.4fr) minmax(4.5rem, 0.5fr);
+    }
+    .active-arm-table__header {
+      @apply grid items-end gap-panel border-b border-line-default py-meta font-board text-board-label font-medium uppercase text-text-tertiary;
+    }
+    .active-arm-row {
+      @apply min-h-12 items-center gap-panel py-panel;
+    }
+    .active-arm-row__mobile-meta,
+    .active-arm-row__pattern,
+    .active-arm-table__pattern {
+      @apply hidden;
+    }
+    .active-arm-row__cell,
+    .active-arm-row__destination {
+      @apply block text-right text-board-data tabular-nums;
+    }
+    .active-arm-row__last-p,
+    .active-arm-table__last-p {
+      display: none;
+    }
+    .active-arm-row__pattern {
+      display: none;
+    }
+    .active-arm-row__destination {
+      @apply text-brand-blue;
+    }
+    .active-arm-row__tablet-pattern {
+      @apply block;
+    }
+    .active-arm-row__partial {
+      @apply col-span-full;
     }
   }
-  @container (min-width: 64rem) {
+
+  @media (min-width: 1024px) {
+    .active-arm-table__header,
     .active-arm-row {
-      grid-template-columns: minmax(12rem, 1.35fr) minmax(10rem, 0.8fr) minmax(12rem, 1fr) auto;
-      align-items: center;
+      grid-template-columns: minmax(14rem, 1.6fr) minmax(8rem, 0.85fr) minmax(5.5rem, 0.5fr) minmax(4.5rem, 0.35fr) minmax(4.5rem, 0.35fr) minmax(6rem, 0.55fr) minmax(5.5rem, 0.45fr);
+    }
+    .active-arm-table__header.active-arm-row--with-last-p,
+    .active-arm-row--with-last-p {
+      grid-template-columns: minmax(14rem, 1.6fr) minmax(8rem, 0.85fr) minmax(5.5rem, 0.5fr) minmax(4rem, 0.3fr) minmax(4.5rem, 0.35fr) minmax(4.5rem, 0.35fr) minmax(6rem, 0.55fr) minmax(5.5rem, 0.45fr);
+    }
+    .active-arm-row__last-p,
+    .active-arm-table__last-p {
+      @apply block;
+    }
+    .active-arm-row__pattern,
+    .active-arm-table__pattern {
+      @apply block text-left;
+    }
+    .active-arm-row__tablet-pattern {
+      @apply hidden;
     }
   }
 
   .foundation-skeleton {
-    @apply rounded-sm bg-chalk700/35 motion-safe:animate-pulse motion-reduce:animate-none;
+    @apply rounded-sm bg-surface-raised;
   }
 
   .section-state {
-    @apply min-w-0 border-l-2 border-dirt bg-dugout/55 p-panel;
+    @apply min-w-0 bg-transparent py-row;
   }
-  .section-state--partial { @apply border-l-gold; }
-  .section-state--error { @apply border-l-stateVulnerable; }
-  .section-state--unavailable { @apply border-l-chalk600; }
+  .section-state--partial { @apply text-text-tertiary; }
+  .section-state--error { @apply text-state-constrained; }
+  .section-state--unavailable { @apply text-text-withheld; }
   .section-state__action {
-    @apply mt-row inline-flex min-h-11 items-center rounded-sm border border-signal/50 px-3 py-2 font-mono text-metadata text-signal transition-colors hover:border-signal hover:bg-signal/10;
+    @apply mt-row inline-flex min-h-11 items-center rounded-sm border border-brand-blue/50 px-3 py-2 font-board text-board-metadata text-brand-blue hover:border-brand-blue hover:bg-surface-hover;
   }
 
   /* ── Animated entry delays ── */
@@ -361,6 +455,12 @@
 }
 
 @layer utilities {
+  .team-board-shell .text-\[9px\],
+  .team-board-shell .text-\[10px\],
+  .team-board-shell .text-\[11px\] {
+    font-size: 0.75rem !important;
+  }
+
   .bg-noise {
     background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
     background-repeat: repeat;

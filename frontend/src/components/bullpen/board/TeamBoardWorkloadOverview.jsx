@@ -1,19 +1,11 @@
 import SectionState from '../../UI/SectionState'
 import { SkeletonBlock } from '../../UI/Skeleton'
+import { formatDateOnly } from '../../../utils/dateDisplay'
+import WorkloadTrend from './WorkloadTrend'
+import { getWorkloadColumns, getWorkloadTrendView, getWorkloadWindowRows } from './teamBoardWorkloadView'
 
-const countValue = value => Number.isInteger(value) && value >= 0 ? value : null
 const textValue = value => typeof value === 'string' && value.trim() ? value.trim() : null
-
-export function getWorkloadWindowRows(workloadOverview) {
-  const windows = Array.isArray(workloadOverview?.windows) ? workloadOverview.windows : []
-  return windows.map((window, index) => ({
-    key: countValue(window?.window_days) == null ? `window-${index}` : `window-${window.window_days}`,
-    label: countValue(window?.window_days) == null ? 'Window unavailable' : `${window.window_days} days`,
-    appearances: countValue(window?.relief_appearances),
-    pitchers: countValue(window?.pitchers_in_relief),
-    pitches: countValue(window?.pitches_total),
-  }))
-}
+export { getWorkloadWindowRows } from './teamBoardWorkloadView'
 
 function firstLimitation(status, workloadOverview) {
   return [
@@ -27,11 +19,10 @@ function WorkloadOverviewSkeleton() {
     <section className="foundation-section" aria-labelledby="workload-overview-title" aria-busy="true" data-testid="workload-overview-skeleton">
       <h2 id="workload-overview-title" className="type-section-title">Workload Overview</h2>
       <span className="sr-only">Loading workload overview.</span>
-      <div className="mt-row border-y border-dirt">
+      <div className="mt-row">
         {[0, 1].map(index => (
-          <div key={index} className="grid min-w-0 grid-cols-2 gap-row border-b border-dirt px-panel py-row last:border-b-0 tablet:grid-cols-4">
+          <div key={index} className="grid min-w-0 grid-cols-3 gap-row border-b border-dirt py-row">
             <SkeletonBlock className="h-5 w-20 max-w-full" />
-            <SkeletonBlock className="h-5 w-16 max-w-full" />
             <SkeletonBlock className="h-5 w-16 max-w-full" />
             <SkeletonBlock className="h-5 w-16 max-w-full" />
           </div>
@@ -50,6 +41,9 @@ export default function TeamBoardWorkloadOverview({ read, loading = false, error
     ? status.status
     : 'unavailable'
   const rows = getWorkloadWindowRows(workloadOverview)
+  const columns = getWorkloadColumns(rows)
+  const gridTemplateColumns = `minmax(0, 1fr) repeat(${columns.length}, minmax(0, 0.65fr))`
+  const trend = getWorkloadTrendView(read?.recentReliefWork?.read)
   const concentration = workloadOverview?.concentration
   const concentrationLabel = textValue(concentration?.label)
   const concentrationSummary = textValue(concentration?.summary)
@@ -68,32 +62,35 @@ export default function TeamBoardWorkloadOverview({ read, loading = false, error
       ) : (
         <>
           {rows.length > 0 && (
-            <div className="border-y border-dirt" role="list" aria-label="Recent team relief workload windows">
+            <div className="min-w-0" role="table" aria-label="Recent team relief workload windows">
+              <div className="grid min-w-0 gap-row border-b border-dirt pb-meta" style={{ gridTemplateColumns }} role="row">
+                <div className="type-overline" role="columnheader">Window</div>
+                {columns.map(column => (
+                  <div key={column.key} className="type-overline text-right" role="columnheader">
+                    {column.key === 'appearances' ? (
+                      <><span className="tablet:hidden">Apps</span><span className="hidden tablet:inline">{column.label}</span></>
+                    ) : column.label}
+                  </div>
+                ))}
+              </div>
               {rows.map(row => (
-                <article key={row.key} role="listitem" className="grid min-w-0 grid-cols-2 gap-row border-b border-dirt px-panel py-row last:border-b-0 tablet:grid-cols-4 tablet:items-center">
-                  <div className="min-w-0">
-                    <div className="type-overline">Window</div>
-                    <div className="type-data mt-meta text-chalk100">{row.label}</div>
+                <div key={row.key} role="row" className="grid min-w-0 items-center gap-row border-b border-dirt py-row" style={{ gridTemplateColumns }}>
+                  <div className="min-w-0" role="rowheader">
+                    <div className="type-data text-chalk100">{row.label}</div>
+                    {row.through && <div className="type-overline mt-meta">Through {formatDateOnly(row.through, { month: 'short' })}</div>}
                   </div>
-                  <div className="min-w-0">
-                    <div className="type-overline">Relief appearances</div>
-                    <div className="type-data mt-meta">{row.appearances ?? 'Unavailable'}</div>
-                  </div>
-                  <div className="min-w-0">
-                    <div className="type-overline">Relievers</div>
-                    <div className="type-data mt-meta">{row.pitchers ?? 'Unavailable'}</div>
-                  </div>
-                  <div className="min-w-0">
-                    <div className="type-overline">Pitches</div>
-                    <div className="type-data mt-meta">{row.pitches ?? 'Unavailable'}</div>
-                  </div>
-                </article>
+                  {columns.map(column => (
+                    <div key={column.key} className={`type-data min-w-0 text-right tabular-nums ${row[column.key] == null ? 'text-text-withheld' : ''}`} role="cell">
+                      {row[column.key] ?? '—'}
+                    </div>
+                  ))}
+                </div>
               ))}
             </div>
           )}
 
           {(concentrationLabel || concentrationSummary) ? (
-            <div className="mt-row border-b border-dirt px-panel pb-row">
+            <div className="mt-section max-w-reading">
               <h3 className="type-overline">Concentration</h3>
               {concentrationLabel && <p className="type-data mt-meta text-chalk100">{concentrationLabel}</p>}
               {concentrationSummary && <p className="type-compact mt-meta max-w-3xl">{concentrationSummary}</p>}
@@ -101,6 +98,8 @@ export default function TeamBoardWorkloadOverview({ read, loading = false, error
           ) : rows.length > 0 ? (
             <SectionState status="unavailable" title="Concentration unavailable" message="A backend-authored workload concentration read is not available." className="mt-row" />
           ) : null}
+
+          <WorkloadTrend view={trend} />
 
           {statusName === 'partial' && (
             <SectionState status="partial" title="Workload Overview is partially available" message={limitation || 'Some workload evidence is unavailable.'} className={(rows.length > 0 || concentrationLabel) ? 'mt-row' : ''} />

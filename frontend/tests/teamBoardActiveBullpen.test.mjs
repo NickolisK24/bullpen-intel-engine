@@ -61,7 +61,7 @@ function read(overrides = {}) {
           public_role_read: { key: 'limited_read', label: 'Backend Role Phrase' },
           public_labels: {
             role: { key: 'limited_read', label: 'Backend Role Phrase' },
-            read: { key: 'unknown-new-key', label: 'Backend Limited Phrase' },
+            read: { key: 'limited_read', label: 'Backend Limited Phrase' },
           },
           last_appearance: { date: '2026-08-16', pitches: 0 },
           workload: {
@@ -87,7 +87,7 @@ test('renders the v2 arm population exactly once and preserves backend order', (
   assert.deepEqual(rows.map(row => row.pitcherId), [22, 11])
 
   const html = render({ read: read(), onSelectPitcher: () => {} })
-  assert.equal((html.match(/class="active-arm-row"/g) || []).length, 2)
+  assert.equal((html.match(/class="active-arm-row active-arm-row--with-last-p"/g) || []).length, 2)
   assert.ok(html.indexOf('Christopher Longname-Example') < html.indexOf('Second Arm'))
   assert.equal(html.includes('BullpenBoardView'), false)
 })
@@ -98,24 +98,47 @@ test('renders backend-owned read and role labels verbatim with color-independent
   assert.ok(text(html).includes('Backend Setup Phrase'))
   assert.ok(text(html).includes('Backend Limited Phrase'))
   assert.ok(text(html).includes('Backend Role Phrase'))
-  assert.match(html, /semantic-label--watch/)
-  assert.match(html, /semantic-label--neutral/)
+  assert.match(html, /active-arm-read--watch/)
+  assert.match(html, /active-arm-read__marker--dot/)
+  assert.match(html, /active-arm-read__marker--ring/)
+  assert.match(html, /active-arm-row__role[^>]*text-text-withheld/)
+})
+
+test('Arm Read markers use the governed neutral, caution, constrained, and withheld treatment', () => {
+  const keys = [
+    ['clean_option', 'neutral', 'dot'],
+    ['watch_arm', 'watch', 'dot'],
+    ['rest_restricted', 'limited', 'dot'],
+    ['unavailable', 'withheld', 'square'],
+    ['limited_read', 'withheld', 'ring'],
+  ]
+  const rows = getActiveBullpenRows({
+    arms: keys.map(([key], index) => arm({
+      pitcher_id: index + 1,
+      public_labels: {
+        role: { key: 'bridge_arm', label: 'Setup Arm' },
+        read: { key, label: `Backend ${key}` },
+      },
+    })),
+  })
+
+  assert.deepEqual(rows.map(row => [row.readTone, row.readMarker]), keys.map(([, tone, marker]) => [tone, marker]))
 })
 
 test('renders only authorized workload facts and preserves legitimate zero', () => {
   const html = render({ read: read() })
   const visible = text(html)
 
-  for (const expected of ['1 day ago', '18 pitches', '34', 'Back-to-back', 'Today', '0 pitches']) {
+  for (const expected of ['1d rest', '18 last P', '2 app', '34 p (7d)', 'B2B', '0d rest', '0 app', '0 last P']) {
     assert.ok(visible.includes(expected), expected)
   }
-  assert.equal((visible.match(/7D Pitches/g) || []).length, 1)
+  assert.ok(visible.includes('Last P'))
   assert.equal(visible.includes('3-in-4'), false)
   assert.equal(visible.includes('4-in-6'), false)
   assert.equal(visible.includes('fatigue'), false)
 })
 
-test('missing facts are omitted rather than converted to zero', () => {
+test('missing facts use withheld values rather than converted zero', () => {
   const rows = getActiveBullpenRows({ arms: [arm({
     last_appearance: null,
     workload: {
@@ -126,18 +149,23 @@ test('missing facts are omitted rather than converted to zero', () => {
     },
   })] })
 
-  assert.deepEqual(rows[0].facts, [])
+  assert.equal(rows[0].daysSince, null)
+  assert.equal(rows[0].lastGamePitches, null)
+  assert.equal(rows[0].appearancesLast7, null)
+  assert.equal(rows[0].pitchesLast7, null)
+  assert.equal(rows[0].pattern, null)
   const html = render({ read: read({
     activeBullpen: { population_basis: 'basis', arm_count: 1, arms: [arm({ last_appearance: null, workload: {} })] },
   }) })
-  assert.equal(text(html).includes('7D Pitches 0'), false)
-  assert.equal(text(html).includes('Last Game 0'), false)
+  assert.ok(text(html).includes('— rest'))
+  assert.ok(text(html).includes('— app'))
+  assert.equal(text(html).includes('Last P'), false)
 })
 
 test('multi-day pattern is used only for the supplied true back-to-back fact', () => {
   const rows = getActiveBullpenRows(read().activeBullpen)
-  assert.deepEqual(rows[0].facts.at(-1), { label: 'Pattern', value: 'Back-to-back' })
-  assert.equal(rows[1].facts.some(fact => fact.label === 'Pattern'), false)
+  assert.equal(rows[0].pattern, 'B2B')
+  assert.equal(rows[1].pattern, null)
 })
 
 test('loading uses the row-oriented ActiveArmRow skeleton', () => {
@@ -180,17 +208,50 @@ test('unavailable, error, and legitimately empty populations remain distinct', (
   assert.ok(text(empty).includes('The current active-bullpen population is empty.'))
 })
 
-test('pitcher handoff is an explicit keyboard-accessible action using the existing callback', async () => {
+test('pitcher handoff makes the whole row a native keyboard target using the existing callback', async () => {
   const html = render({ read: read(), onSelectPitcher: () => {} })
-  assert.match(html, /<button[^>]*aria-label="Open pitcher context for Christopher Longname-Example"/)
-  assert.ok(html.includes('min-h-11'))
+  assert.match(html, /<button[^>]*class="active-arm-row active-arm-row--with-last-p"[^>]*aria-label="Open pitcher context for Christopher Longname-Example"/)
+  assert.equal((html.match(/<button/g) || []).length, 2)
+  assert.equal(html.includes('View pitcher'), false)
+  assert.equal(html.includes('Open pitcher</button>'), false)
 
   const source = await readFile(
     new URL('../src/components/bullpen/board/TeamBoardActiveBullpen.jsx', import.meta.url),
     'utf8',
   )
-  assert.ok(source.includes('onSelectPitcher(row.pitcherId)'))
+  const rowSource = await readFile(
+    new URL('../src/components/bullpen/board/ActiveArmRow.jsx', import.meta.url),
+    'utf8',
+  )
+  assert.ok(source.includes('onSelectPitcher(row.pitcherId, event.currentTarget)'))
   assert.equal(source.includes('onClick={() => onSelectPitcher'), false)
+  assert.ok(rowSource.includes("event.key !== 'Enter' && event.key !== ' '"))
+  assert.ok(rowSource.includes('event.preventDefault()'))
+})
+
+test('Last P is conditional and absent rather than a permanently withheld column', () => {
+  const withoutLastP = read({
+    activeBullpen: {
+      population_basis: 'basis',
+      arm_count: 1,
+      arms: [arm({ last_appearance: { date: '2026-08-15', pitches: null } })],
+    },
+  })
+  const html = render({ read: withoutLastP })
+
+  assert.equal(text(html).includes('Last P'), false)
+  assert.equal(html.includes('active-arm-row--with-last-p'), false)
+})
+
+test('pitcher-detail close restores focus to the originating whole row', async () => {
+  const source = await readFile(
+    new URL('../src/components/bullpen/Bullpen.jsx', import.meta.url),
+    'utf8',
+  )
+
+  assert.ok(source.includes('boardPitcherOriginRef.current = origin || null'))
+  assert.ok(source.includes('restoreBoardPitcherFocusRef.current = true'))
+  assert.ok(source.includes('if (origin?.isConnected) origin.focus({ preventScroll: true })'))
 })
 
 test('production reuses one v2 request and retires only the grouped Team Board roster UI', async () => {

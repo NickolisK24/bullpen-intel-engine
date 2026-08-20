@@ -6,11 +6,18 @@ const numberValue = value => typeof value === 'number' && Number.isFinite(value)
 
 export function getRotationImpactMetrics(rotationImpact) {
   const read = rotationImpact?.read || {}
+  const gamesAnalyzed = numberValue(read.games_analyzed)
+  const shortStarts = numberValue(read.short_start_count)
   return [
     { key: 'starter-average', label: 'Average starter length', value: numberValue(read.starter_avg_innings), unit: 'IP' },
-    { key: 'bullpen-innings', label: 'Bullpen innings required', value: numberValue(read.bullpen_innings_required), unit: 'IP' },
-    { key: 'short-starts', label: 'Short starts', value: numberValue(read.short_start_count), unit: null },
-    { key: 'analyzed-starts', label: 'Analyzed starts', value: numberValue(read.games_analyzed), unit: null },
+    {
+      key: 'short-starts',
+      label: 'Short starts',
+      value: shortStarts,
+      displayValue: shortStarts != null && gamesAnalyzed != null ? `${shortStarts} of ${gamesAnalyzed}` : shortStarts,
+      unit: null,
+    },
+    { key: 'bullpen-innings', label: 'Bullpen innings covered', value: numberValue(read.bullpen_innings_required), unit: 'IP' },
   ].filter(metric => metric.value != null)
 }
 
@@ -28,8 +35,8 @@ function RotationImpactSkeleton() {
       <h2 id="rotation-impact-title" className="type-section-title">Rotation Impact</h2>
       <span className="sr-only">Loading rotation impact.</span>
       <SkeletonBlock className="mt-row h-5 w-full max-w-2xl" />
-      <div className="mt-row grid grid-cols-2 border-y border-dirt tablet:grid-cols-4">
-        {[0, 1, 2, 3].map(index => <SkeletonBlock key={index} className="m-panel h-10 w-24 max-w-full" />)}
+      <div className="mt-row grid grid-cols-2 border-y border-dirt tablet:grid-cols-3">
+        {[0, 1, 2].map(index => <SkeletonBlock key={index} className="m-panel h-10 w-24 max-w-full" />)}
       </div>
     </section>
   )
@@ -47,6 +54,8 @@ export default function TeamBoardRotationImpact({ read, loading = false, error =
   const summary = textValue(rotationRead?.summary)
   const metrics = getRotationImpactMetrics(rotationImpact)
   const windowDays = numberValue(rotationRead?.window_days)
+  const gamesAnalyzed = numberValue(rotationRead?.games_analyzed)
+  const gamesInWindow = numberValue(rotationRead?.games_in_window)
   const representedDate = textValue(rotationRead?.reference_date) || textValue(status?.represented_date)
   const limitation = firstLimitation(status, rotationImpact)
   const hasFacts = Boolean(summary || metrics.length > 0)
@@ -66,22 +75,26 @@ export default function TeamBoardRotationImpact({ read, loading = false, error =
           {summary && <p className="type-compact max-w-3xl text-chalk200">{summary}</p>}
 
           {metrics.length > 0 && (
-            <dl className="mt-row grid grid-cols-2 border-y border-dirt tablet:grid-cols-4" aria-label="Recent rotation support facts">
+            <dl className="mt-row grid grid-cols-2 border-y border-dirt tablet:grid-cols-3" aria-label="Recent rotation support facts">
               {metrics.map(metric => (
-                <div key={metric.key} className="min-w-0 border-b border-dirt px-panel py-row last:border-b-0 tablet:border-b-0 tablet:border-r tablet:last:border-r-0">
+                <div key={metric.key} className="min-w-0 border-b border-dirt px-panel py-row last:col-span-2 last:border-b-0 tablet:border-b-0 tablet:border-r tablet:last:col-span-1 tablet:last:border-r-0">
                   <dt className="type-overline break-words">{metric.label}</dt>
                   <dd className="type-data mt-meta text-lg text-chalk100">
-                    {metric.value}{metric.unit ? ` ${metric.unit}` : ''}
+                    {metric.displayValue ?? metric.value}{metric.unit ? ` ${metric.unit}` : ''}
                   </dd>
                 </div>
               ))}
             </dl>
           )}
 
-          {(windowDays != null || representedDate) && (
+          {(windowDays != null || representedDate || gamesAnalyzed != null || gamesInWindow != null) && (
             <p className="type-metadata mt-row">
               {windowDays != null ? `${windowDays}-day window` : null}
-              {windowDays != null && representedDate ? ' · ' : null}
+              {windowDays != null && (gamesAnalyzed != null || representedDate) ? ' · ' : null}
+              {gamesAnalyzed != null
+                ? `${gamesAnalyzed}${gamesInWindow != null ? ` of ${gamesInWindow}` : ''} starts analyzed`
+                : null}
+              {gamesAnalyzed != null && representedDate ? ' · ' : null}
               {representedDate ? <>Through <time dateTime={representedDate}>{representedDate}</time></> : null}
             </p>
           )}

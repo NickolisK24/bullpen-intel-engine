@@ -7,8 +7,8 @@ function RestStatusSkeleton() {
     <section className="foundation-section" aria-labelledby="rest-status-title" aria-busy="true" data-testid="rest-status-skeleton">
       <h2 id="rest-status-title" className="type-section-title">Rest Status</h2>
       <span className="sr-only">Loading rest status.</span>
-      <div className="mt-row grid border-y border-dirt tablet:grid-cols-3">
-        {[0, 1, 2].map(index => <SkeletonBlock key={index} className="m-panel h-10 w-24 max-w-full" />)}
+      <div className="mt-row grid grid-cols-3 gap-panel">
+        {[0, 1, 2].map(index => <SkeletonBlock key={index} className="h-10 w-24 max-w-full" />)}
       </div>
     </section>
   )
@@ -35,15 +35,15 @@ export default function TeamBoardRestStatus({ read, loading = false, error = nul
         <SectionState status="unavailable" title="Rest Status unavailable" message="A current backend-authored Rest Status is not available." onRetry={!read ? onRetry : undefined} />
       ) : (
         <>
-          <dl className="grid border-y border-dirt tablet:grid-cols-3" aria-label="Current bullpen rest coverage">
+          <dl className="grid grid-cols-3 gap-panel" aria-label="Current bullpen rest coverage">
             {[
               ['Rested arms', view.rested_arm_count],
               ['Worked yesterday', view.worked_yesterday_count],
               ['Back-to-back', view.back_to_back_count],
             ].map(([label, value]) => (
-              <div key={label} className="min-w-0 border-b border-dirt px-panel py-row last:border-b-0 tablet:border-b-0 tablet:border-r tablet:last:border-r-0">
+              <div key={label} className="min-w-0">
                 <dt className="type-overline">{label}</dt>
-                <dd className="type-data mt-meta text-lg text-chalk100">{value}</dd>
+                <dd className="type-data mt-meta text-lg tabular-nums text-chalk100">{value}</dd>
               </div>
             ))}
           </dl>
