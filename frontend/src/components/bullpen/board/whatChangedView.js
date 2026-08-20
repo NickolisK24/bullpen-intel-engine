@@ -23,6 +23,14 @@ function teamStateRows(change) {
   }]
 }
 
+function teamStateComparisonView(comparison) {
+  const source = comparison && typeof comparison === 'object' ? comparison : {}
+  return {
+    status: textValue(source.status),
+    limitation: textValue(source.limitation),
+  }
+}
+
 function statusRows(changes) {
   return changes.flatMap((change, index) => {
     if (change?.type !== 'status_change') return []
@@ -75,6 +83,7 @@ export function getWhatChangedView(payload) {
       toDate: textValue(comparison.current_game_date),
       toLabel: formatDateOnly(comparison.current_game_date, { month: 'short' }),
     },
+    teamStateComparison: teamStateComparisonView(source.team_state_comparison),
     groups,
     limitations: Array.isArray(source.limitations)
       ? source.limitations.map(textValue).filter(Boolean)

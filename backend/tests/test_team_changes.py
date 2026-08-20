@@ -288,6 +288,7 @@ class TestTeamChangesEndpoint:
             'reason_code': None,
             'from_represented_date': anchor.isoformat(),
             'to_represented_date': current.isoformat(),
+            'limitation': None,
         }
         assert body['team_state_change'] == {
             'type': 'team_state_change',
@@ -320,6 +321,7 @@ class TestTeamChangesEndpoint:
         assert body['state'] == 'no_changes'
         assert body['team_state_change'] is None
         assert body['team_state_comparison']['status'] == 'unchanged'
+        assert body['team_state_comparison']['limitation'] is None
 
     @pytest.mark.parametrize(
         ('override', 'reason'),
@@ -351,6 +353,9 @@ class TestTeamChangesEndpoint:
         assert body['team_state_change'] is None
         assert body['team_state_comparison']['status'] == 'unavailable'
         assert body['team_state_comparison']['reason_code'] == reason
+        assert body['team_state_comparison']['limitation'] == (
+            'Team State comparison is unavailable for this publication window.'
+        )
 
     def test_missing_frozen_team_state_endpoints_fail_closed_without_recompute(self, client):
         anchor, current = _recent_dates()
@@ -359,6 +364,9 @@ class TestTeamChangesEndpoint:
 
         missing_current = client.get('/api/bullpen/teams/1/changes').get_json()
         assert missing_current['team_state_comparison']['reason_code'] == 'current_missing'
+        assert missing_current['team_state_comparison']['limitation'] == (
+            'Team State comparison is unavailable for this publication window.'
+        )
 
         with client.application.app_context():
             _team_state_sidecar(
@@ -391,7 +399,7 @@ class TestTeamChangesEndpoint:
         assert body['team_state_change']['to_date'] == current.isoformat()
         assert 'previous_team_game_missing' in body['state_reason_codes']
 
-    def test_changes_state_emits_status_change_and_new_appearance(self, client):
+    def test_team_state_change_preserves_status_change_and_new_appearance(self, client):
         anchor, current = _recent_dates()
         with client.application.app_context():
             pitcher = _pitcher('Shift Arm', mlb_id=101)
@@ -400,6 +408,12 @@ class TestTeamChangesEndpoint:
             _score(pitcher, 43.0, anchor)
             _score(pitcher, 65.0, current)
             _successful_sync(current)
+            _team_state_sidecar(
+                anchor, 'stretched', 'Stretched', artifact_id=551,
+            )
+            _team_state_sidecar(
+                current, 'vulnerable', 'Vulnerable', artifact_id=552,
+            )
 
         body = client.get('/api/bullpen/teams/1/changes').get_json()
 
@@ -407,6 +421,9 @@ class TestTeamChangesEndpoint:
         assert body['ranking_applied'] is False
         assert body['selection_made'] is False
         assert body['state'] == 'changes'
+        assert body['team_state_change']['summary'] == (
+            'Team State changed from Stretched to Vulnerable.'
+        )
         assert body['comparison']['anchor_game_date'] == anchor.isoformat()
         assert body['comparison']['current_game_date'] == current.isoformat()
         assert body['comparison']['label'] == (
@@ -433,6 +450,56 @@ class TestTeamChangesEndpoint:
         assert appearances[0]['pitches'] == 24
         assert 'Pitched' in appearances[0]['summary']
         assert '24 pitches' in appearances[0]['summary']
+
+    def test_unavailable_team_state_preserves_status_movement(self, client):
+        anchor, current = _recent_dates()
+        with client.application.app_context():
+            pitcher = _pitcher('Status Only Arm', mlb_id=111)
+            marker = _pitcher('Current Date Starter', mlb_id=112, position='SP')
+            _log(pitcher, anchor, 1110, pitches=6)
+            _log(marker, current, 1120, pitches=88, innings=6.0)
+            _score(pitcher, 43.0, anchor)
+            _score(pitcher, 65.0, current)
+            _successful_sync(current)
+            _team_state_sidecar(
+                current, 'vulnerable', 'Vulnerable', artifact_id=561,
+            )
+
+        body = client.get('/api/bullpen/teams/1/changes').get_json()
+
+        assert body['state'] == 'changes'
+        assert body['team_state_change'] is None
+        assert body['team_state_comparison']['status'] == 'unavailable'
+        assert body['team_state_comparison']['reason_code'] == 'previous_missing'
+        assert body['team_state_comparison']['limitation'] == (
+            'Team State comparison is unavailable for this publication window.'
+        )
+        assert [change['type'] for change in body['pitcher_changes']] == ['status_change']
+
+    def test_unavailable_team_state_preserves_appearance_movement(self, client):
+        anchor, current = _recent_dates()
+        with client.application.app_context():
+            marker = _pitcher('Anchor Date Starter', mlb_id=121, position='SP')
+            pitcher = _pitcher('Appearance Only Arm', mlb_id=122)
+            _log(marker, anchor, 1210, pitches=88, innings=6.0)
+            _log(pitcher, current, 1220, pitches=6)
+            _score(pitcher, 20.0, anchor)
+            _score(pitcher, 20.0, current)
+            _successful_sync(current)
+            _team_state_sidecar(
+                current, 'stretched', 'Stretched', artifact_id=571,
+            )
+
+        body = client.get('/api/bullpen/teams/1/changes').get_json()
+
+        assert body['state'] == 'changes'
+        assert body['team_state_change'] is None
+        assert body['team_state_comparison']['status'] == 'unavailable'
+        assert body['team_state_comparison']['reason_code'] == 'previous_missing'
+        assert body['team_state_comparison']['limitation'] == (
+            'Team State comparison is unavailable for this publication window.'
+        )
+        assert [change['type'] for change in body['pitcher_changes']] == ['appearance']
 
     def test_no_changes_state_ignores_fatigue_drift_without_label_change(self, client):
         anchor, current = _recent_dates()

@@ -38,6 +38,10 @@ const changes = {
     to_date: '2026-08-18',
     summary: 'Team State changed from Stretched to Vulnerable.',
   },
+  team_state_comparison: {
+    status: 'changed',
+    limitation: null,
+  },
   pitcher_changes: [
     {
       type: 'status_change',
@@ -93,7 +97,13 @@ test('unknown categories are omitted rather than converted into no-change rows',
 })
 
 test('quiet, no-baseline, freshness-blocked, unavailable, and error states remain distinct', () => {
-  const quiet = render({ changes: { ...changes, state: 'no_changes', team_state_change: null, pitcher_changes: [] } })
+  const quiet = render({ changes: {
+    ...changes,
+    state: 'no_changes',
+    team_state_change: null,
+    team_state_comparison: { status: 'unchanged', limitation: null },
+    pitcher_changes: [],
+  } })
   const baseline = render({ changes: {
     ...changes,
     state: 'no_baseline',
@@ -121,6 +131,59 @@ test('quiet, no-baseline, freshness-blocked, unavailable, and error states remai
   assert.equal(error.includes('private exception'), false)
 })
 
+test('an unavailable Team State lane prevents a definitive quiet-day claim', () => {
+  const limitation = 'Backend-authored Team State comparison limitation.'
+  const unavailable = {
+    ...changes,
+    state: 'no_changes',
+    team_state_change: null,
+    team_state_comparison: {
+      status: 'unavailable',
+      reason_code: 'contract_incompatible',
+      limitation,
+    },
+    pitcher_changes: [],
+  }
+  const html = render({ changes: unavailable })
+
+  assert.equal(html.includes('No material changes were detected'), false)
+  assert.ok(html.includes('Team State comparison unavailable'))
+  assert.ok(html.includes(limitation))
+  assert.equal(html.includes('contract_incompatible'), false)
+})
+
+test('an unavailable Team State lane remains disclosed beside proven status movement', () => {
+  const limitation = 'Backend-authored Team State comparison limitation.'
+  const statusOnly = {
+    ...changes,
+    team_state_change: null,
+    team_state_comparison: { status: 'unavailable', limitation },
+    pitcher_changes: [changes.pitcher_changes[0]],
+  }
+  const html = render({ changes: statusOnly })
+
+  assert.ok(html.includes('Monitor → Limited'))
+  assert.ok(html.includes(changes.pitcher_changes[0].summary))
+  assert.ok(html.includes(limitation))
+  assert.equal(html.includes('No material changes were detected'), false)
+})
+
+test('an unavailable Team State lane remains disclosed beside proven appearance movement', () => {
+  const limitation = 'Backend-authored Team State comparison limitation.'
+  const appearanceOnly = {
+    ...changes,
+    team_state_change: null,
+    team_state_comparison: { status: 'unavailable', limitation },
+    pitcher_changes: [changes.pitcher_changes[1]],
+  }
+  const html = render({ changes: appearanceOnly })
+
+  assert.ok(html.includes('New appearance / workload'))
+  assert.ok(html.includes(changes.pitcher_changes[1].summary))
+  assert.ok(html.includes(limitation))
+  assert.equal(html.includes('No material changes were detected'), false)
+})
+
 test('arm subjects reuse the existing pitcher handoff without making whole rows interactive', () => {
   const html = render({ changes, onSelectPitcher: () => {} })
 
@@ -136,6 +199,7 @@ test('the view model presents the public contract without client snapshot or cat
     '.reduce(', '.sort(', 'roster_authority', 'bullpen_stability',
     'workload_7d', 'workload_14d', 'rotation_impact', 'role_movement',
     "'Fresh'", "'Stretched'", "'Vulnerable'", 'from_state ===', 'to_state ===',
+    'contract_incompatible', 'method_version_mismatch', 'previous_missing',
   ]) {
     assert.equal(source.includes(forbidden), false, forbidden)
   }

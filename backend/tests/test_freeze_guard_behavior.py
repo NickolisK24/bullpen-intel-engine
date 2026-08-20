@@ -135,7 +135,11 @@ GUARDS = (
 
 # One genuinely frozen path per guard.
 FROZEN_EXAMPLES = (
-    ('frozen legacy What Changed', _run_what_changed, 'backend/services/team_changes.py'),
+    (
+        'frozen legacy What Changed',
+        _run_what_changed,
+        'backend/services/what_changed_since_yesterday.py',
+    ),
     ('frozen public routes', _run_public_routes, 'backend/api/pitchers.py'),
     # tonight_intelligence_snapshot rather than bullpen_board or
     # dashboard_snapshot: those files hold reviewed branch-scoped exceptions

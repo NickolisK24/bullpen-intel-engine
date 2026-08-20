@@ -26,6 +26,9 @@ STATE_UNAVAILABLE = 'unavailable'
 TEAM_STATE_CHANGED = 'changed'
 TEAM_STATE_UNCHANGED = 'unchanged'
 TEAM_STATE_UNAVAILABLE = 'unavailable'
+TEAM_STATE_UNAVAILABLE_LIMITATION = (
+    'Team State comparison is unavailable for this publication window.'
+)
 
 STATUS_ORDER = {status: index for index, status in enumerate(BOARD_GROUP_ORDER)}
 
@@ -111,6 +114,7 @@ def _base_payload(team, freshness=None, generated_at=None):
             'reason_code': 'current_missing',
             'from_represented_date': None,
             'to_represented_date': None,
+            'limitation': TEAM_STATE_UNAVAILABLE_LIMITATION,
         },
         'limitations': [],
         'freshness': freshness or {},
@@ -373,6 +377,7 @@ def _team_state_lane(team_id):
         'reason_code': domain.get('reason_code') or status,
         'from_represented_date': window.get('from_represented_date'),
         'to_represented_date': window.get('to_represented_date'),
+        'limitation': TEAM_STATE_UNAVAILABLE_LIMITATION,
     }
     if status != DELTA_COMPARABLE:
         return comparison, None
@@ -382,12 +387,20 @@ def _team_state_lane(team_id):
     previous_state = previous.get('public_state')
     current_state = current.get('public_state')
     if previous_state == current_state:
-        comparison.update({'status': TEAM_STATE_UNCHANGED, 'reason_code': None})
+        comparison.update({
+            'status': TEAM_STATE_UNCHANGED,
+            'reason_code': None,
+            'limitation': None,
+        })
         return comparison, None
 
     previous_label = previous.get('public_label')
     current_label = current.get('public_label')
-    comparison.update({'status': TEAM_STATE_CHANGED, 'reason_code': None})
+    comparison.update({
+        'status': TEAM_STATE_CHANGED,
+        'reason_code': None,
+        'limitation': None,
+    })
     return comparison, {
         'type': 'team_state_change',
         'from_state': previous_state,

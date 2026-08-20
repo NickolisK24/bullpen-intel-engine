@@ -14,7 +14,12 @@ The public `/changes` payload adds a separate `team_state_change` object and a
 keys, exact frozen public labels, represented dates, and backend-authored neutral
 summary. It exists only when the stable public Team State key changes. Comparable
 unchanged endpoints emit no movement; missing, incompatible, or untrusted
-endpoints fail closed with no inferred state.
+endpoints fail closed with no inferred state. An unavailable Team State lane
+also carries a backend-authored reader limitation. When no other movement is
+present, the top-level compatibility state may remain `no_changes`, but readers
+must present that limitation instead of claiming that no material change was
+detected. When another lane proves movement, that movement remains visible
+alongside the Team State limitation.
 
 The only previously frozen What Changed service authorized to change is
 `backend/services/team_changes.py`. The delta substrate supplies endpoint
