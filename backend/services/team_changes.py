@@ -8,6 +8,10 @@ from models.pitcher import Pitcher
 from services.availability import ACTIVE_WINDOW_DAYS, classify_availability
 from services.bullpen_board import BOARD_GROUP_ORDER
 from services.bullpen_population import eligible_bullpen_pitchers
+from services.team_board_delta_substrate import (
+    COMPARABLE as DELTA_COMPARABLE,
+    resolve_latest_team_state_comparison,
+)
 from utils.db import db
 
 
@@ -18,6 +22,10 @@ STATE_NO_CHANGES = 'no_changes'
 STATE_STALE = 'stale'
 STATE_NO_BASELINE = 'no_baseline'
 STATE_UNAVAILABLE = 'unavailable'
+
+TEAM_STATE_CHANGED = 'changed'
+TEAM_STATE_UNCHANGED = 'unchanged'
+TEAM_STATE_UNAVAILABLE = 'unavailable'
 
 STATUS_ORDER = {status: index for index, status in enumerate(BOARD_GROUP_ORDER)}
 
@@ -97,6 +105,13 @@ def _base_payload(team, freshness=None, generated_at=None):
         },
         'pitcher_changes': [],
         'team_summary': None,
+        'team_state_change': None,
+        'team_state_comparison': {
+            'status': TEAM_STATE_UNAVAILABLE,
+            'reason_code': 'current_missing',
+            'from_represented_date': None,
+            'to_represented_date': None,
+        },
         'limitations': [],
         'freshness': freshness or {},
     }
@@ -348,6 +363,65 @@ def _appearance_changes(team_id, anchor_date, current_date, pitcher_ids):
     return changes
 
 
+def _team_state_lane(team_id):
+    frozen = resolve_latest_team_state_comparison(team_id=team_id)
+    window = frozen.get('comparison') or {}
+    domain = (frozen.get('domains') or {}).get('team_state') or {}
+    status = domain.get('status')
+    comparison = {
+        'status': TEAM_STATE_UNAVAILABLE,
+        'reason_code': domain.get('reason_code') or status,
+        'from_represented_date': window.get('from_represented_date'),
+        'to_represented_date': window.get('to_represented_date'),
+    }
+    if status != DELTA_COMPARABLE:
+        return comparison, None
+
+    previous = domain.get('previous') or {}
+    current = domain.get('current') or {}
+    previous_state = previous.get('public_state')
+    current_state = current.get('public_state')
+    if previous_state == current_state:
+        comparison.update({'status': TEAM_STATE_UNCHANGED, 'reason_code': None})
+        return comparison, None
+
+    previous_label = previous.get('public_label')
+    current_label = current.get('public_label')
+    comparison.update({'status': TEAM_STATE_CHANGED, 'reason_code': None})
+    return comparison, {
+        'type': 'team_state_change',
+        'from_state': previous_state,
+        'from_label': previous_label,
+        'to_state': current_state,
+        'to_label': current_label,
+        'from_date': window.get('from_represented_date'),
+        'to_date': window.get('to_represented_date'),
+        'summary': (
+            f'Team State changed from {previous_label} to {current_label}.'
+        ),
+    }
+
+
+def _apply_terminal_state(payload, state, reason_codes, limitations):
+    team_state_change = payload.get('team_state_change')
+    if team_state_change:
+        payload.update({
+            'state': STATE_CHANGES,
+            'state_reason_codes': _merge_unique(
+                ['meaningful_changes_detected', 'team_state_change_detected'],
+                reason_codes,
+            ),
+            'limitations': limitations,
+        })
+    else:
+        payload.update({
+            'state': state,
+            'state_reason_codes': reason_codes,
+            'limitations': limitations,
+        })
+    return payload
+
+
 def build_team_changes_payload(team_id, freshness=None, generated_at=None):
     """
     Build the team-scoped "What Changed Since Last Game" payload.
@@ -358,6 +432,11 @@ def build_team_changes_payload(team_id, freshness=None, generated_at=None):
     """
     team = _team_info(team_id)
     payload = _base_payload(team, freshness=freshness, generated_at=generated_at)
+    team_state_comparison, team_state_change = _team_state_lane(team_id)
+    payload.update({
+        'team_state_comparison': team_state_comparison,
+        'team_state_change': team_state_change,
+    })
 
     # Resolve the team's data-derived game dates up front and publish the current
     # game reference date before any freshness gate can short-circuit. The board,
@@ -383,34 +462,31 @@ def build_team_changes_payload(team_id, freshness=None, generated_at=None):
 
     blocker_state, blocker_codes, blocker_limitations = _freshness_blocker(freshness)
     if blocker_state:
-        payload.update({
-            'state': blocker_state,
-            'state_reason_codes': blocker_codes,
-            'limitations': blocker_limitations,
-        })
-        return payload
+        return _apply_terminal_state(
+            payload, blocker_state, blocker_codes, blocker_limitations,
+        )
 
     if not dates:
-        payload.update({
-            'state': STATE_UNAVAILABLE,
-            'state_reason_codes': ['team_game_logs_missing'],
-            'limitations': ['No completed game logs are available for this team.'],
-        })
-        return payload
+        return _apply_terminal_state(
+            payload,
+            STATE_UNAVAILABLE,
+            ['team_game_logs_missing'],
+            ['No completed game logs are available for this team.'],
+        )
 
     if len(dates) < 2:
-        payload.update({
-            'state': STATE_NO_BASELINE,
-            'state_reason_codes': _merge_unique(
+        return _apply_terminal_state(
+            payload,
+            STATE_NO_BASELINE,
+            _merge_unique(
                 ['previous_team_game_missing'],
                 team_reason_codes,
             ),
-            'limitations': _merge_unique(
+            _merge_unique(
                 ['No earlier completed game is available for comparison.'],
                 team_limitations,
             ),
-        })
-        return payload
+        )
 
     anchor_date = dates[1]
     payload['comparison'].update({
@@ -450,10 +526,11 @@ def build_team_changes_payload(team_id, freshness=None, generated_at=None):
         ),
     })
 
-    if pitcher_changes or team_summary:
+    if pitcher_changes or team_summary or team_state_change:
         payload['state'] = STATE_CHANGES
         payload['state_reason_codes'] = _merge_unique(
             ['meaningful_changes_detected'],
+            ['team_state_change_detected'] if team_state_change else [],
             team_reason_codes,
         )
     else:

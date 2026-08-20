@@ -8,6 +8,7 @@ from sqlalchemy import inspect
 
 import services.sync as sync_service
 from models.fatigue_score import FatigueScore
+from models.dashboard_snapshot import DashboardSnapshot
 from models.game_log import GameLog
 from models.pitcher import Pitcher
 from models.postgame_processed_game import PostgameProcessedGame
@@ -15,7 +16,10 @@ from models.scheduled_game import ScheduledGame
 from models.sync_run import SyncRun
 import models.prospect  # noqa: F401  (register on db.metadata)
 from services.availability import ACTIVE_WINDOW_DAYS
+from services import team_board_delta_substrate as delta_substrate
 from services.roster_status import STATUS_ACTIVE
+from services.team_state_public_vocabulary import PUBLIC_TEAM_STATE_CONTRACT
+from team_operations import TEAM_STATE_METHOD_VERSION
 from api.bullpen import bullpen_bp
 from utils.db import db
 
@@ -170,6 +174,81 @@ def _recent_dates():
     return anchor, current
 
 
+def _team_state_sidecar(
+    represented_date,
+    state,
+    label,
+    *,
+    team_id=1,
+    artifact_id,
+    method_version=TEAM_STATE_METHOD_VERSION,
+    public_contract_version=PUBLIC_TEAM_STATE_CONTRACT,
+    population_basis=None,
+    trusted=True,
+):
+    population_basis = population_basis or {
+        'basis': 'status_only',
+        'population_authority': 'resolve_readiness_population',
+        'membership_authority': 'resolve_active_bullpen_membership',
+    }
+    row = DashboardSnapshot(
+        snapshot_type=delta_substrate.SNAPSHOT_TYPE,
+        status='ready',
+        is_published=False,
+        published_at=datetime.combine(represented_date, datetime.min.time()),
+        payload_version=delta_substrate.SNAPSHOT_PAYLOAD_VERSION,
+        data_through=represented_date,
+        snapshot_generated_at=datetime.combine(represented_date, datetime.min.time()),
+        source=f'{delta_substrate.SNAPSHOT_SOURCE_PREFIX}{team_id}',
+        payload={
+            'capability': delta_substrate.CAPABILITY,
+            'envelope_version': delta_substrate.ENVELOPE_VERSION,
+            'team_id': team_id,
+            'represented_date': represented_date.isoformat(),
+            'source': {
+                'frozen_value_source': 'team_state_share_artifact',
+                'artifact_id': artifact_id,
+                'artifact_payload_version': 'team-state-1.2.0',
+                'snapshot_authority': 'dashboard_snapshot',
+                'snapshot_id': 1000 + artifact_id,
+                'sync_run_id': artifact_id,
+                'subject_key': None,
+            },
+            'domains': {
+                'team_state': {
+                    'method_version': method_version,
+                    'contract_version': TEAM_STATE_METHOD_VERSION,
+                    'public_contract_version': public_contract_version,
+                    'population_basis': population_basis,
+                    'trust_state': 'trusted',
+                    'trust_data_state': 'current',
+                    'freshness_state': 'current',
+                    'trusted': trusted,
+                },
+            },
+            'values': {
+                'team_state': {
+                    'public_state': state,
+                    'public_label': label,
+                },
+            },
+        },
+    )
+    db.session.add(row)
+    db.session.commit()
+    return row
+
+
+def _seed_quiet_game_lane(anchor, current):
+    reliever = _pitcher('Stable Delta Arm', mlb_id=301)
+    starter = _pitcher('Date Marker Starter', mlb_id=302, position='SP')
+    _log(reliever, anchor, 3010, pitches=9)
+    _score(reliever, 35.0, anchor)
+    _score(reliever, 35.0, current)
+    _log(starter, current, 3020, pitches=88, innings=6.0)
+    _successful_sync(current)
+
+
 def _change_ids(body, change_type=None):
     changes = body.get('pitcher_changes') or []
     if change_type:
@@ -178,6 +257,140 @@ def _change_ids(body, change_type=None):
 
 
 class TestTeamChangesEndpoint:
+    @pytest.mark.parametrize(
+        ('from_state', 'from_label', 'to_state', 'to_label'),
+        (
+            ('fresh', 'Fresh', 'stretched', 'Stretched'),
+            ('stretched', 'Stretched', 'vulnerable', 'Vulnerable'),
+            ('vulnerable', 'Vulnerable', 'fresh', 'Fresh'),
+        ),
+    )
+    def test_frozen_team_state_change_is_a_meaningful_public_lane(
+        self, client, from_state, from_label, to_state, to_label,
+    ):
+        anchor, current = _recent_dates()
+        with client.application.app_context():
+            _seed_quiet_game_lane(anchor, current)
+            _team_state_sidecar(
+                anchor, from_state, from_label, artifact_id=501,
+            )
+            _team_state_sidecar(
+                current, to_state, to_label, artifact_id=502,
+            )
+
+        body = client.get('/api/bullpen/teams/1/changes').get_json()
+
+        assert body['state'] == 'changes'
+        assert body['pitcher_changes'] == []
+        assert body['team_summary'] is None
+        assert body['team_state_comparison'] == {
+            'status': 'changed',
+            'reason_code': None,
+            'from_represented_date': anchor.isoformat(),
+            'to_represented_date': current.isoformat(),
+        }
+        assert body['team_state_change'] == {
+            'type': 'team_state_change',
+            'from_state': from_state,
+            'from_label': from_label,
+            'to_state': to_state,
+            'to_label': to_label,
+            'from_date': anchor.isoformat(),
+            'to_date': current.isoformat(),
+            'summary': f'Team State changed from {from_label} to {to_label}.',
+        }
+
+    @pytest.mark.parametrize(
+        ('state', 'label'),
+        (
+            ('fresh', 'Fresh'),
+            ('stretched', 'Stretched'),
+            ('vulnerable', 'Vulnerable'),
+        ),
+    )
+    def test_unchanged_frozen_team_state_emits_no_movement(self, client, state, label):
+        anchor, current = _recent_dates()
+        with client.application.app_context():
+            _seed_quiet_game_lane(anchor, current)
+            _team_state_sidecar(anchor, state, label, artifact_id=511)
+            _team_state_sidecar(current, state, label, artifact_id=512)
+
+        body = client.get('/api/bullpen/teams/1/changes').get_json()
+
+        assert body['state'] == 'no_changes'
+        assert body['team_state_change'] is None
+        assert body['team_state_comparison']['status'] == 'unchanged'
+
+    @pytest.mark.parametrize(
+        ('override', 'reason'),
+        (
+            ({'method_version': 'other-method'}, 'method_version_mismatch'),
+            ({'public_contract_version': 'other-contract'}, 'contract_incompatible'),
+            ({'population_basis': {
+                'basis': 'other-basis',
+                'population_authority': 'resolve_readiness_population',
+                'membership_authority': 'resolve_active_bullpen_membership',
+            }}, 'population_basis_mismatch'),
+            ({'trusted': False}, 'freshness_untrusted'),
+        ),
+    )
+    def test_incompatible_frozen_team_state_fails_closed(self, client, override, reason):
+        anchor, current = _recent_dates()
+        with client.application.app_context():
+            _seed_quiet_game_lane(anchor, current)
+            _team_state_sidecar(
+                anchor, 'stretched', 'Stretched', artifact_id=521, **override,
+            )
+            _team_state_sidecar(
+                current, 'vulnerable', 'Vulnerable', artifact_id=522,
+            )
+
+        body = client.get('/api/bullpen/teams/1/changes').get_json()
+
+        assert body['state'] == 'no_changes'
+        assert body['team_state_change'] is None
+        assert body['team_state_comparison']['status'] == 'unavailable'
+        assert body['team_state_comparison']['reason_code'] == reason
+
+    def test_missing_frozen_team_state_endpoints_fail_closed_without_recompute(self, client):
+        anchor, current = _recent_dates()
+        with client.application.app_context():
+            _seed_quiet_game_lane(anchor, current)
+
+        missing_current = client.get('/api/bullpen/teams/1/changes').get_json()
+        assert missing_current['team_state_comparison']['reason_code'] == 'current_missing'
+
+        with client.application.app_context():
+            _team_state_sidecar(
+                current, 'vulnerable', 'Vulnerable', artifact_id=531,
+            )
+
+        missing_previous = client.get('/api/bullpen/teams/1/changes').get_json()
+        assert missing_previous['team_state_comparison']['reason_code'] == 'previous_missing'
+        assert missing_previous['team_state_change'] is None
+
+    def test_team_state_window_remains_independent_when_game_baseline_is_missing(self, client):
+        anchor, current = _recent_dates()
+        with client.application.app_context():
+            reliever = _pitcher('Single Game Arm', mlb_id=303)
+            _log(reliever, current, 3030, pitches=10)
+            _score(reliever, 35.0, current)
+            _successful_sync(current)
+            _team_state_sidecar(
+                anchor, 'stretched', 'Stretched', artifact_id=541,
+            )
+            _team_state_sidecar(
+                current, 'vulnerable', 'Vulnerable', artifact_id=542,
+            )
+
+        body = client.get('/api/bullpen/teams/1/changes').get_json()
+
+        assert body['state'] == 'changes'
+        assert body['comparison']['anchor_game_date'] is None
+        assert body['team_state_change']['from_date'] == anchor.isoformat()
+        assert body['team_state_change']['to_date'] == current.isoformat()
+        assert 'previous_team_game_missing' in body['state_reason_codes']
+
     def test_changes_state_emits_status_change_and_new_appearance(self, client):
         anchor, current = _recent_dates()
         with client.application.app_context():

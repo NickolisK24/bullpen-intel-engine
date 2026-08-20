@@ -274,6 +274,16 @@ D056_TEAM_STATE_REFERENCE_DATE_PATHS = (
     'backend/services/dashboard_snapshot.py',
 )
 
+# Gap #30, August 20 2026. The reader-facing What Changed contract may add one
+# Team State lane sourced exclusively from compatible frozen Team Board delta
+# sidecars. The existing game-date status/appearance lanes, availability
+# calculation, Team State classifier, historical rows, and legacy fields remain
+# unchanged. The authority is recorded in
+# docs/decisions/2026-08-20-governed-team-state-what-changed.md.
+GAP30_TEAM_STATE_DELTA_PATHS = (
+    'backend/services/team_changes.py',
+)
+
 
 def normalize(path):
     """Repository-relative path with forward slashes and no surrounding space."""

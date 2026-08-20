@@ -32,6 +32,23 @@ function PitcherSubject({ row, onSelectPitcher }) {
 }
 
 function ChangeRow({ row, groupKey, onSelectPitcher }) {
+  if (groupKey === 'team-state') {
+    const hasWindow = row.fromDate && row.toDate && row.fromDateLabel && row.toDateLabel
+    return (
+      <li className="min-w-0 py-row">
+        {row.transition && <p className="type-data break-words text-text-secondary">{row.transition}</p>}
+        {row.summary && <p className="type-compact mt-meta max-w-3xl break-words text-text-secondary">{row.summary}</p>}
+        {hasWindow && (
+          <p className="type-metadata mt-meta">
+            Since <time dateTime={row.fromDate}>{row.fromDateLabel}</time>
+            {' · through '}
+            <time dateTime={row.toDate}>{row.toDateLabel}</time>
+          </p>
+        )}
+      </li>
+    )
+  }
+
   const detail = groupKey === 'arm-read'
     ? row.transition
     : row.gameDate && row.dateLabel

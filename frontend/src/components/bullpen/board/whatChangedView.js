@@ -7,6 +7,22 @@ function changeKey(change, index) {
   return `${change?.type || 'change'}-${change?.pitcher_id ?? 'unknown'}-${change?.game_date || index}-${index}`
 }
 
+function teamStateRows(change) {
+  if (change?.type !== 'team_state_change') return []
+  const fromLabel = textValue(change.from_label)
+  const toLabel = textValue(change.to_label)
+  if (!fromLabel || !toLabel) return []
+  return [{
+    key: 'team-state-change',
+    transition: `${fromLabel} → ${toLabel}`,
+    summary: textValue(change.summary),
+    fromDate: textValue(change.from_date),
+    fromDateLabel: formatDateOnly(change.from_date, { month: 'short' }),
+    toDate: textValue(change.to_date),
+    toDateLabel: formatDateOnly(change.to_date, { month: 'short' }),
+  }]
+}
+
 function statusRows(changes) {
   return changes.flatMap((change, index) => {
     if (change?.type !== 'status_change') return []
@@ -45,6 +61,7 @@ export function getWhatChangedView(payload) {
     : {}
   const changes = Array.isArray(source.pitcher_changes) ? source.pitcher_changes : []
   const groups = [
+    { key: 'team-state', label: 'Team State', rows: teamStateRows(source.team_state_change) },
     { key: 'arm-read', label: 'Arm Read movement', rows: statusRows(changes) },
     { key: 'appearance', label: 'New appearance / workload', rows: appearanceRows(changes) },
   ].filter(group => group.rows.length > 0)
