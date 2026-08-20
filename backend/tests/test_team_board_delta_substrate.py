@@ -204,6 +204,9 @@ def _workload_capture(
         'public_contract_version': (
             public_team_relief_work.WORKLOAD_WINDOWS_PUBLIC_CONTRACT_VERSION
         ),
+        'carrier_contract_version': (
+            public_team_relief_work.WORKLOAD_WINDOWS_CARRIER_CONTRACT
+        ),
         'contract_version': 'trusted_team_board_publication_v1',
         'population_basis': {
             'basis': public_team_relief_work.WORKLOAD_WINDOWS_POPULATION_BASIS,
@@ -623,6 +626,9 @@ def test_workload_capture_copies_exact_same_cycle_carrier_without_calculation():
     assert capture['population_basis']['basis'] == (
         'official_appearance_team_relief_appearances'
     )
+    assert capture['carrier_contract_version'] == (
+        public_team_relief_work.WORKLOAD_WINDOWS_CARRIER_CONTRACT
+    )
 
 
 def test_workload_capture_preserves_legitimate_zero_values():
@@ -695,6 +701,12 @@ def test_workload_windows_freeze_into_sidecar_domains_independently():
 
     assert envelope['domains']['workload_7d']['window_days'] == 7
     assert envelope['domains']['workload_14d']['window_days'] == 14
+    assert envelope['domains']['workload_7d']['carrier_contract_version'] == (
+        public_team_relief_work.WORKLOAD_WINDOWS_CARRIER_CONTRACT
+    )
+    assert envelope['domains']['workload_14d']['carrier_contract_version'] == (
+        public_team_relief_work.WORKLOAD_WINDOWS_CARRIER_CONTRACT
+    )
     assert envelope['values']['workload_7d'] == capture['windows']['window_7']
     assert envelope['values']['workload_14d'] == capture['windows']['window_14']
 
@@ -763,6 +775,131 @@ def test_workload_7d_and_14d_compare_independently():
     assert result['workload_7d']['movement'] is False
     assert result['workload_14d']['movement'] is True
     assert result['workload_14d']['changed_fields'] == ['pitches_total']
+
+
+def test_workload_7d_change_leaves_unchanged_14d_comparable():
+    previous_date = date(2026, 8, 17)
+    current_date = date(2026, 8, 18)
+    previous = _snapshot(
+        previous_date,
+        snapshot_id=1,
+        workload_capture=_workload_capture(previous_date),
+    )
+    current_capture = _workload_capture(current_date)
+    current_capture['windows']['window_7']['pitches_total'] = 54
+    current = _snapshot(
+        current_date,
+        snapshot_id=2,
+        workload_capture=current_capture,
+    )
+
+    result = delta.compare_snapshots(previous, current)['domains']
+
+    assert result['workload_7d']['status'] == delta.COMPARABLE
+    assert result['workload_7d']['movement'] is True
+    assert result['workload_7d']['changed_fields'] == ['pitches_total']
+    assert result['workload_14d']['status'] == delta.COMPARABLE
+    assert result['workload_14d']['movement'] is False
+
+
+@pytest.mark.parametrize(
+    ('missing_domain', 'comparable_domain'),
+    (
+        ('workload_7d', 'workload_14d'),
+        ('workload_14d', 'workload_7d'),
+    ),
+)
+def test_domain_local_missing_workload_value_leaves_sibling_comparable(
+    missing_domain,
+    comparable_domain,
+):
+    previous_date = date(2026, 8, 17)
+    current_date = date(2026, 8, 18)
+    previous = _snapshot(
+        previous_date,
+        snapshot_id=1,
+        workload_capture=_workload_capture(previous_date),
+    )
+    current = _snapshot(
+        current_date,
+        snapshot_id=2,
+        workload_capture=_workload_capture(current_date),
+    )
+    current.payload['values'].pop(missing_domain)
+
+    result = delta.compare_snapshots(previous, current)['domains']
+
+    assert result[missing_domain]['status'] == delta.VALUE_MISSING
+    assert result[comparable_domain]['status'] == delta.COMPARABLE
+    assert result[comparable_domain]['movement'] is False
+
+
+def test_matching_workload_carrier_versions_compare_successfully():
+    previous_date = date(2026, 8, 17)
+    current_date = date(2026, 8, 18)
+    previous = _snapshot(
+        previous_date,
+        snapshot_id=1,
+        workload_capture=_workload_capture(previous_date),
+    )
+    current = _snapshot(
+        current_date,
+        snapshot_id=2,
+        workload_capture=_workload_capture(current_date),
+    )
+
+    result = delta.compare_snapshots(previous, current)['domains']
+
+    assert result['workload_7d']['status'] == delta.COMPARABLE
+    assert result['workload_14d']['status'] == delta.COMPARABLE
+
+
+def test_mismatched_workload_carrier_version_invalidates_both_domains():
+    previous_date = date(2026, 8, 17)
+    current_date = date(2026, 8, 18)
+    previous = _snapshot(
+        previous_date,
+        snapshot_id=1,
+        workload_capture=_workload_capture(previous_date),
+    )
+    current = _snapshot(
+        current_date,
+        snapshot_id=2,
+        workload_capture=_workload_capture(current_date),
+    )
+    for domain in ('workload_7d', 'workload_14d'):
+        current.payload['domains'][domain]['carrier_contract_version'] = (
+            'team_board_workload_windows_carrier_v2'
+        )
+
+    result = delta.compare_snapshots(previous, current)['domains']
+
+    assert result['workload_7d']['status'] == delta.CONTRACT_INCOMPATIBLE
+    assert result['workload_14d']['status'] == delta.CONTRACT_INCOMPATIBLE
+
+
+@pytest.mark.parametrize('endpoint', ('previous', 'current'))
+def test_missing_workload_carrier_version_fails_closed(endpoint):
+    previous_date = date(2026, 8, 17)
+    current_date = date(2026, 8, 18)
+    previous = _snapshot(
+        previous_date,
+        snapshot_id=1,
+        workload_capture=_workload_capture(previous_date),
+    )
+    current = _snapshot(
+        current_date,
+        snapshot_id=2,
+        workload_capture=_workload_capture(current_date),
+    )
+    selected = previous if endpoint == 'previous' else current
+    for domain in ('workload_7d', 'workload_14d'):
+        selected.payload['domains'][domain].pop('carrier_contract_version')
+
+    result = delta.compare_snapshots(previous, current)['domains']
+
+    assert result['workload_7d']['status'] == delta.CONTRACT_INCOMPATIBLE
+    assert result['workload_14d']['status'] == delta.CONTRACT_INCOMPATIBLE
 
 
 def test_partial_pitch_coverage_compares_the_frozen_known_pitch_claim():

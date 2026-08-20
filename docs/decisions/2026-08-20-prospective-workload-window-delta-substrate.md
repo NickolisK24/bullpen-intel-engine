@@ -69,6 +69,13 @@ endpoints prove:
 - structurally complete frozen window objects whose `through` dates match their
   containing endpoints.
 
+The carrier contract version is copied explicitly from the immutable Team Board
+carrier into each workload domain's sidecar metadata. A missing carrier version
+or a mismatch between endpoints is contract-incompatible and fails both workload
+domains closed because the carrier is their shared transport/storage authority.
+Missing or invalid frozen value data remains domain-local: one workload window
+may be unavailable while its valid sibling still compares.
+
 Legitimate numeric zero is preserved. A missing window or authority stamp is
 not zero and fails closed. A null pitch total remains the existing governed
 partial pitch-coverage statement; appearances and the coverage count remain

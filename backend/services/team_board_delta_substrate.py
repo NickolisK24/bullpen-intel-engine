@@ -317,6 +317,7 @@ def build_workload_window_capture(*, snapshot, team_id) -> dict | None:
         'represented_date': represented_date,
         'method_version': authority.get('method_version'),
         'public_contract_version': authority.get('public_contract_version'),
+        'carrier_contract_version': carrier.get('contract'),
         'contract_version': authority.get('team_board_package_contract'),
         'population_basis': deepcopy(dict(population_basis)),
         'reference_date_policy': authority.get('reference_date_policy'),
@@ -471,6 +472,9 @@ def build_prospective_envelope(
                 'contract_version': workload_window_capture.get('contract_version'),
                 'public_contract_version': (
                     workload_window_capture.get('public_contract_version')
+                ),
+                'carrier_contract_version': (
+                    workload_window_capture.get('carrier_contract_version')
                 ),
                 'population_basis': deepcopy(
                     workload_window_capture.get('population_basis')
@@ -893,7 +897,11 @@ def _compatible_workload_domain(previous, current, *, window_days):
 
     previous_metadata = _domain_metadata(_payload(previous), domain)
     current_metadata = _domain_metadata(_payload(current), domain)
-    for field in ('reference_date_policy', 'source_authority'):
+    for field in (
+        'carrier_contract_version',
+        'reference_date_policy',
+        'source_authority',
+    ):
         if (
             previous_metadata.get(field) in (None, '')
             or current_metadata.get(field) in (None, '')
