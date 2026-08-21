@@ -9,6 +9,11 @@ from services.team_board_v2 import (
     ACTIVE_BULLPEN_POPULATION_BASIS,
     CAPABILITY,
     CONTRACT_VERSION,
+    OFF_ACTIVE_COUNT_AUTHORITY,
+    OFF_ACTIVE_COUNT_CONTRACT,
+    OFF_ACTIVE_COUNT_EXCLUDED_CATEGORIES,
+    OFF_ACTIVE_COUNT_POPULATION_BASIS,
+    OFF_ACTIVE_COUNT_QUALIFYING_CATEGORIES,
     RECENT_USAGE_POPULATION_BASIS,
     RECENTLY_USED_ARMS_CONTRACT,
     RECENTLY_USED_ARMS_WINDOW_DAYS,
@@ -96,7 +101,87 @@ ARM = {
 }
 
 
-def _board(*, rotation=None):
+def _off_active_entry(
+    pitcher_id=8,
+    name='Off-Active Arm',
+    *,
+    status='IL_60',
+    category='injured_list',
+):
+    return {
+        'pitcher_id': pitcher_id,
+        'name': name,
+        'roster_status': status,
+        'roster_status_label': '60-Day IL',
+        'roster_status_category': category,
+        'roster_status_category_label': 'Injured list',
+        'availability': None,
+        'reason': 'Off the active roster.',
+    }
+
+
+def _roster_authority(*, off_active=None, claims_available=True, through='2026-08-16'):
+    off_active = (
+        [_off_active_entry()]
+        if off_active is None
+        else deepcopy(off_active)
+    )
+    category_counts = {
+        'active': 1,
+        'injured_list': 0,
+        'optioned_or_minors': 0,
+        'forty_man_not_active': 0,
+        'restricted_or_special_list': 0,
+        'non_roster_depth': 0,
+        'unknown': 0,
+    }
+    for entry in off_active:
+        category = entry.get('roster_status_category')
+        if category in category_counts:
+            category_counts[category] += 1
+    return {
+        'capability': 'roster_authority_v1',
+        'version': '2026-06-25.foundation',
+        'invariant': True,
+        'reference_date': through,
+        'population': {
+            'total_candidates': 1 + len(off_active),
+            'known_count': 1 + len(off_active),
+            'unknown_count': 0,
+            'roster_status_coverage': 1.0,
+        },
+        'counts': {
+            'bullpen_arms': 1,
+            'inactive_roster_context_count': len(off_active),
+            'roster_unknown_count': 0,
+        },
+        'category_counts': category_counts,
+        'evidence': {
+            'bullpen_arms': [{
+                'pitcher_id': 7,
+                'name': 'Example Arm',
+                'roster_status': 'ACTIVE',
+                'roster_status_category': 'active',
+            }],
+            'inactive_roster_context_count': off_active,
+            'roster_unknown_count': [],
+        },
+        'readiness': {
+            'claims_available': claims_available,
+            'current_roster_claims_available': claims_available,
+            'counts_withheld': not claims_available,
+            'data_through': through,
+            'reader_limitations': (
+                []
+                if claims_available
+                else ['Current active-roster coverage could not be verified.']
+            ),
+        },
+        'limitations': [],
+    }
+
+
+def _board(*, rotation=None, roster_authority=None):
     return {
         'capability': 'tonights_bullpen_board',
         'team': deepcopy(TEAM),
@@ -132,11 +217,9 @@ def _board(*, rotation=None):
                 },
             },
         },
-        'roster_authority': {
-            'capability': 'roster_authority_v1',
-            'readiness': {'current_roster_claims_available': True},
-            'limitations': [],
-        },
+        'roster_authority': deepcopy(
+            roster_authority if roster_authority is not None else _roster_authority()
+        ),
         'limitations': ['Manager intent is not known.'],
     }
 
@@ -657,6 +740,158 @@ def test_recently_used_arms_fails_closed_without_suppressing_other_reads(
     assert payload['active_bullpen']['arms'][0]['pitcher_id'] == 7
 
 
+def test_off_active_count_projects_the_canonical_roster_population_and_reconciles_evidence():
+    categories = list(OFF_ACTIVE_COUNT_QUALIFYING_CATEGORIES)
+    entries = [
+        _off_active_entry(
+            20 + index,
+            f'Off-Active Arm {index}',
+            status=(
+                'IL_60', 'OPTIONED', '40_MAN_ONLY', 'RESTRICTED', 'NON_ROSTER'
+            )[index],
+            category=category,
+        )
+        for index, category in enumerate(categories)
+    ]
+    transactions = _recent_transactions(events=[
+        {
+            'event_id': f'historical-{index}',
+            'player_id': entries[index % len(entries)]['pitcher_id'],
+            'player_name': entries[index % len(entries)]['name'],
+            'date': '2026-07-01',
+            'type': 'option',
+            'label': 'Optioned',
+            'description': 'Historical transaction context.',
+        }
+        for index in range(10)
+    ])
+
+    payload = build_team_board_v2_payload(
+        _board(roster_authority=_roster_authority(off_active=entries)),
+        recent_transactions=transactions,
+    )
+    read = payload['off_active_count']
+
+    assert read == {
+        'contract': OFF_ACTIVE_COUNT_CONTRACT,
+        'status': 'available',
+        'reason_code': None,
+        'value': 5,
+        'through': '2026-08-16',
+        'population_basis': OFF_ACTIVE_COUNT_POPULATION_BASIS,
+        'authority': OFF_ACTIVE_COUNT_AUTHORITY,
+        'roster_authority_version': '2026-06-25.foundation',
+        'qualifying_roster_categories': categories,
+        'excluded_roster_categories': list(OFF_ACTIVE_COUNT_EXCLUDED_CATEGORIES),
+        'context_label': 'Current roster context',
+        'summary': '5 bullpen arms are currently off the active roster.',
+        'limitations': [],
+    }
+    assert payload['section_status']['off_active_count'] == {
+        'status': 'available',
+        'reason_code': None,
+        'limitations': [],
+        'represented_date': '2026-08-16',
+    }
+    assert read['value'] == len(
+        payload['roster_context']['evidence']['inactive_roster_context_count']
+    )
+    assert payload['recent_transactions'] == transactions
+
+
+def test_off_active_count_publishes_authoritative_zero_without_suppressing_other_summary_reads():
+    payload = build_team_board_v2_payload(
+        _board(roster_authority=_roster_authority(off_active=[])),
+        recent_relief_work=_relief_work(),
+    )
+
+    assert payload['off_active_count']['status'] == 'available'
+    assert payload['off_active_count']['value'] == 0
+    assert payload['off_active_count']['summary'] == (
+        '0 bullpen arms are currently off the active roster.'
+    )
+    assert payload['recently_used_arms']['value'] == 1
+    assert payload['rest_status']['available'] is True
+
+
+@pytest.mark.parametrize(
+    ('mutate', 'reason_code'),
+    [
+        (
+            lambda roster: roster['readiness'].update({
+                'claims_available': False,
+                'counts_withheld': True,
+            }),
+            'roster_authority_unavailable',
+        ),
+        (
+            lambda roster: roster.update({'version': 'wrong-version'}),
+            'roster_authority_incompatible',
+        ),
+        (
+            lambda roster: (
+                roster['readiness'].update({'data_through': None}),
+                roster.update({'reference_date': None}),
+            ),
+            'roster_reference_date_unavailable',
+        ),
+        (
+            lambda roster: (
+                roster['evidence']['inactive_roster_context_count'].append(
+                    deepcopy(roster['evidence']['inactive_roster_context_count'][0])
+                ),
+                roster['counts'].update({'inactive_roster_context_count': 2}),
+                roster['category_counts'].update({'injured_list': 2}),
+            ),
+            'off_active_evidence_invalid',
+        ),
+        (
+            lambda roster: roster['category_counts'].update({'injured_list': 0}),
+            'off_active_categories_invalid',
+        ),
+        (
+            lambda roster: (
+                roster['counts'].update({'roster_unknown_count': 1}),
+                roster['evidence']['roster_unknown_count'].append({
+                    'pitcher_id': 99,
+                    'name': 'Roster Pending Arm',
+                }),
+                roster['limitations'].append(
+                    'Some bullpen candidates have an unconfirmed roster status.'
+                ),
+            ),
+            'roster_status_incomplete',
+        ),
+        (
+            lambda roster: roster['evidence']['bullpen_arms'].append({
+                'pitcher_id': 8,
+                'name': 'Off-Active Arm',
+            }),
+            'off_active_population_overlap',
+        ),
+    ],
+)
+def test_off_active_count_fails_closed_independently_for_unprovable_authority(
+    mutate,
+    reason_code,
+):
+    roster = _roster_authority()
+    mutate(roster)
+
+    payload = build_team_board_v2_payload(
+        _board(roster_authority=roster),
+        recent_relief_work=_relief_work(),
+    )
+
+    assert payload['off_active_count']['status'] == 'unavailable'
+    assert payload['off_active_count']['value'] is None
+    assert payload['off_active_count']['reason_code'] == reason_code
+    assert payload['section_status']['off_active_count']['status'] == 'unavailable'
+    assert payload['active_bullpen']['arm_count'] == 1
+    assert payload['recently_used_arms']['value'] == 1
+    assert payload['rest_status']['available'] is True
+
+
 def test_workload_overview_projects_only_governed_windows_and_concentration():
     board = _board()
     relief = _relief_work()
@@ -977,6 +1212,11 @@ def test_route_uses_rotation_already_frozen_in_published_board(client, monkeypat
     payload = response.get_json()
     assert calls == {'board': 1}
     assert payload['active_bullpen']['arms'][0]['pitcher_id'] == 7
+    assert payload['off_active_count']['value'] == 1
+    assert payload['off_active_count']['context_label'] == 'Current roster context'
+    assert payload['off_active_count']['summary'] == (
+        '1 bullpen arm is currently off the active roster.'
+    )
     assert payload['rotation_impact']['read'] == ROTATION
 
 
