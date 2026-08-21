@@ -226,10 +226,10 @@ def trusted_app(tmp_path, monkeypatch):
             db.session.add(run)
             db.session.flush()
             rest_status_calls = []
-            workload_window_calls = []
+            relief_authority_calls = []
             original_build_rest_status = bullpen_board_service.build_rest_status
-            original_author_workload_windows = (
-                public_serving_authority.author_workload_windows
+            original_author_public_team_relief_authority = (
+                public_serving_authority.author_public_team_relief_authority
             )
 
             def tracked_build_rest_status(*args, **kwargs):
@@ -242,14 +242,14 @@ def trusted_app(tmp_path, monkeypatch):
                 tracked_build_rest_status,
             )
 
-            def tracked_author_workload_windows(*args, **kwargs):
-                workload_window_calls.append((args, kwargs))
-                return original_author_workload_windows(*args, **kwargs)
+            def tracked_author_public_team_relief_authority(*args, **kwargs):
+                relief_authority_calls.append((args, kwargs))
+                return original_author_public_team_relief_authority(*args, **kwargs)
 
             monkeypatch.setattr(
                 public_serving_authority,
-                'author_workload_windows',
-                tracked_author_workload_windows,
+                'author_public_team_relief_authority',
+                tracked_author_public_team_relief_authority,
             )
             snapshot = dashboard_snapshot.build_bullpen_dashboard_snapshot(
                 sync_run_id=run.id,
@@ -270,7 +270,7 @@ def trusted_app(tmp_path, monkeypatch):
                 'snapshot': snapshot,
                 'reference_date': reference_date,
                 'rest_status_calls': rest_status_calls,
-                'workload_window_calls': workload_window_calls,
+                'relief_authority_calls': relief_authority_calls,
             }
         finally:
             db.session.remove()
@@ -349,7 +349,7 @@ def test_workload_windows_are_authored_once_and_frozen_with_publication_authorit
     snapshot = trusted_app['snapshot']
     package = snapshot.payload[public_serving_authority.TEAM_BOARD_PACKAGE_KEY]
 
-    assert len(trusted_app['workload_window_calls']) == package['team_count']
+    assert len(trusted_app['relief_authority_calls']) == package['team_count']
     for team in package['by_team_id'].values():
         carrier = team['workload_windows']
         authority = team['workload_windows_authority']
@@ -382,12 +382,26 @@ def test_workload_windows_are_authored_once_and_frozen_with_publication_authorit
             ),
             'data_through': snapshot.data_through.isoformat(),
         }
+        assert team['bullpen_membership_authority'] == {
+            'method_version': public_serving_authority.BULLPEN_MEMBERSHIP_METHOD_VERSION,
+            'public_contract_version': public_serving_authority.BULLPEN_MEMBERSHIP_PUBLIC_CONTRACT_VERSION,
+            'carrier_contract_version': public_serving_authority.BULLPEN_MEMBERSHIP_CARRIER_CONTRACT,
+            'team_board_package_contract': public_serving_authority.TEAM_BOARD_PACKAGE_CONTRACT,
+            'population_basis': {
+                'basis': public_serving_authority.BULLPEN_MEMBERSHIP_POPULATION_BASIS,
+                'population_authority': public_serving_authority.BULLPEN_MEMBERSHIP_POPULATION_AUTHORITY,
+                'membership_authority': public_serving_authority.BULLPEN_MEMBERSHIP_MEMBERSHIP_AUTHORITY,
+                'roster_authority_version': '2026-06-25.foundation',
+            },
+            'reference_date_policy': public_serving_authority.BULLPEN_MEMBERSHIP_REFERENCE_DATE_POLICY,
+            'membership_reference_date': trusted_app['reference_date'].isoformat(),
+        }
 
 
 def test_frozen_workload_windows_match_the_canonical_public_owner(trusted_app):
     snapshot = trusted_app['snapshot']
     package = snapshot.payload[public_serving_authority.TEAM_BOARD_PACKAGE_KEY]
-    calls_before = len(trusted_app['workload_window_calls'])
+    calls_before = len(trusted_app['relief_authority_calls'])
 
     for team_id, team in package['by_team_id'].items():
         direct = public_team_relief_work.author_workload_windows(
@@ -398,7 +412,46 @@ def test_frozen_workload_windows_match_the_canonical_public_owner(trusted_app):
 
     # Direct parity probes above use the canonical owner, not the publication
     # wrapper tracked by this fixture. The package itself authored once/team.
-    assert len(trusted_app['workload_window_calls']) == calls_before
+    assert len(trusted_app['relief_authority_calls']) == calls_before
+
+
+def test_deployment_profiles_are_authored_once_and_frozen_with_authority(trusted_app):
+    snapshot = trusted_app['snapshot']
+    package = snapshot.payload[public_serving_authority.TEAM_BOARD_PACKAGE_KEY]
+
+    assert len(trusted_app['relief_authority_calls']) == package['team_count']
+    for team_id, team in package['by_team_id'].items():
+        carrier = team['deployment_profile']
+        authority = team['deployment_profile_authority']
+        assert carrier == public_team_relief_work.author_deployment_profile(
+            int(team_id),
+            data_through=snapshot.data_through,
+        )
+        assert authority == {
+            'method_version': public_team_relief_work.DEPLOYMENT_PROFILE_METHOD_VERSION,
+            'public_contract_version': (
+                public_team_relief_work.DEPLOYMENT_PROFILE_PUBLIC_CONTRACT_VERSION
+            ),
+            'carrier_contract_version': (
+                public_team_relief_work.DEPLOYMENT_PROFILE_CARRIER_CONTRACT
+            ),
+            'team_board_package_contract': (
+                public_serving_authority.TEAM_BOARD_PACKAGE_CONTRACT
+            ),
+            'population_basis': {
+                'basis': public_team_relief_work.DEPLOYMENT_PROFILE_POPULATION_BASIS,
+                'population_authority': (
+                    public_team_relief_work.DEPLOYMENT_PROFILE_POPULATION_AUTHORITY
+                ),
+                'membership_authority': (
+                    public_team_relief_work.DEPLOYMENT_PROFILE_MEMBERSHIP_AUTHORITY
+                ),
+            },
+            'reference_date_policy': (
+                public_team_relief_work.DEPLOYMENT_PROFILE_REFERENCE_DATE_POLICY
+            ),
+            'data_through': snapshot.data_through.isoformat(),
+        }
 
 
 def test_phase1_governed_unavailable_carrier_is_valid_and_qualifies(trusted_app):
@@ -510,7 +563,7 @@ def test_workload_window_carrier_is_dormant_for_board_and_board_v2(trusted_app):
     package = trusted_app['snapshot'].payload[
         public_serving_authority.TEAM_BOARD_PACKAGE_KEY
     ]
-    publication_calls = len(trusted_app['workload_window_calls'])
+    publication_calls = len(trusted_app['relief_authority_calls'])
 
     board_before = app.test_client().get(
         f'/api/bullpen/teams/{TEAM_ID}/board'
@@ -533,7 +586,7 @@ def test_workload_window_carrier_is_dormant_for_board_and_board_v2(trusted_app):
     assert board_after == board_before
     assert v2_after['workload_overview'] == v2_before['workload_overview']
     assert v2_after['recent_relief_work'] == v2_before['recent_relief_work']
-    assert len(trusted_app['workload_window_calls']) == publication_calls
+    assert len(trusted_app['relief_authority_calls']) == publication_calls
 
 
 @pytest.mark.parametrize(

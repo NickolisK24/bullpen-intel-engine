@@ -32,6 +32,12 @@ from utils.innings import log_innings_outs, outs_to_decimal_innings
 CAPABILITY = 'rotation_support_pressure_v1'
 LEAGUE_CAPABILITY = 'league_rotation_support_pressure_v1'
 VERSION = '2026-06-18.phase2'
+PUBLIC_CONTRACT_VERSION = 'rotation_support_pressure_public_v1'
+DELTA_CARRIER_CONTRACT = 'team_board_rotation_impact_carrier_v1'
+POPULATION_BASIS = 'official_scheduled_final_team_games_with_team_game_pitching_splits'
+POPULATION_AUTHORITY = 'scheduled_games_team_game_identity'
+MEMBERSHIP_AUTHORITY = 'team_game_pitching_splits_team_at_game'
+REFERENCE_DATE_POLICY = 'rotation_support_inclusive_reference_date_v1'
 
 DEFAULT_WINDOW_DAYS = 7
 SHORT_START_OUTS = 15
@@ -909,6 +915,10 @@ def build_team_rotation_support_pressure_from_splits(
             for code in _split_reason_codes(split):
                 source_reason_codes[code] += 1
             continue
+        item = dict(item)
+        item['mlb_game_pk'] = int(game_pk)
+        game_date = _date_value(_value(split, 'game_date'))
+        item['game_date'] = game_date.isoformat() if game_date else None
         shape_counts[item['shape']] += 1
         kind = item['kind']
         if kind == KIND_ROTATION_START:
@@ -1008,6 +1018,17 @@ def build_team_rotation_support_pressure_from_splits(
             'split_row_count': parts['split_row_count'],
             'source_window_partial': parts['source_window_partial'],
         },
+        'relief_work_handoff': {
+            'target': 'team-relief-work',
+            'summary': 'View the matching Recent Relief Work receipts.',
+            'games': [
+                {
+                    'mlb_game_pk': game['mlb_game_pk'],
+                    'game_date': game['game_date'],
+                }
+                for game in rotation_games
+            ],
+        },
         'summary': _summary(
             status,
             games_analyzed,
@@ -1051,6 +1072,12 @@ __all__ = [
     'NO_RECENT_GAMES_LIMITATION',
     'OPENER_BULK_LIMITATION',
     'PARTIAL_SOURCE_COVERAGE_LIMITATION',
+    'DELTA_CARRIER_CONTRACT',
+    'MEMBERSHIP_AUTHORITY',
+    'POPULATION_AUTHORITY',
+    'POPULATION_BASIS',
+    'PUBLIC_CONTRACT_VERSION',
+    'REFERENCE_DATE_POLICY',
     'SOURCE_LIMITATIONS',
     'STATUS_HEAVY',
     'STATUS_LIMITED',

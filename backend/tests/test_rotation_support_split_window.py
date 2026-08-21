@@ -173,6 +173,15 @@ def test_transaction_assignment_changes_do_not_drop_historical_team_games(app):
         assert payload['games_analyzed'] == 3
         assert payload['starter_outs'] == 54
         assert payload['bullpen_outs_required'] == 27
+        assert payload['relief_work_handoff'] == {
+            'target': 'team-relief-work',
+            'summary': 'View the matching Recent Relief Work receipts.',
+            'games': [
+                {'mlb_game_pk': 8103, 'game_date': '2026-06-15'},
+                {'mlb_game_pk': 8102, 'game_date': '2026-06-16'},
+                {'mlb_game_pk': 8101, 'game_date': '2026-06-17'},
+            ],
+        }
         assert payload['games_excluded'] == 0
         assert INCOMPLETE_HISTORICAL_ATTRIBUTION_LIMITATION not in payload['limitations']
         assert 'split_row_missing' not in payload['excluded_game_reasons']

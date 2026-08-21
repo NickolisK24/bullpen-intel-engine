@@ -194,7 +194,7 @@ def _game_context():
 def _recent_transactions(*, status='available', events=None, limitations=None):
     return {
         'capability': 'public_recent_transactions_v1',
-        'version': '2026-08-18.team-board',
+        'version': '2026-08-20.rotation-roster',
         'population_basis': RECENT_TRANSACTIONS_POPULATION_BASIS,
         'status': status,
         'events': events if events is not None else [{
@@ -205,6 +205,7 @@ def _recent_transactions(*, status='available', events=None, limitations=None):
             'date': '2026-08-16',
             'type': 'recall',
             'label': 'Recalled',
+            'description': 'Example Arm was recalled.',
         }],
         'window_start_date': '2026-08-10',
         'window_end_date': '2026-08-17',
@@ -299,7 +300,8 @@ def test_roles_deployment_reuses_public_role_reads_in_governed_order():
         'Trusted Arm', 'Setup Arm', 'Middle Relief Arm', 'Coverage Arm', 'Role Unclear',
     ]
     assert [role['arm_count'] for role in composition['roles']] == [1, 1, 1, 1, 1]
-    assert payload['section_status']['roles_deployment']['status'] == 'available'
+    assert payload['section_status']['roles_deployment']['status'] == 'partial'
+    assert composition['deployment_profile'] is None
 
 
 def test_roles_deployment_matches_visible_active_population_and_preserves_missing_role():
@@ -329,7 +331,7 @@ def test_roles_deployment_matches_visible_active_population_and_preserves_missin
     assert payload['active_bullpen']['arms'][0]['public_labels']['role']['label'] == 'Trusted Arm'
 
 
-def test_roles_deployment_does_not_publish_or_infer_deployment_intelligence():
+def test_roles_deployment_copies_canonical_observed_profile_without_inference():
     board = _board()
     card = board['groups'][1]['pitchers'][0]
     card.update({
@@ -341,17 +343,38 @@ def test_roles_deployment_does_not_publish_or_infer_deployment_intelligence():
         'role_movement': 'promoted',
     })
 
-    composition = build_team_board_v2_payload(board)['roles_deployment']
+    deployment = {
+        'contract': 'team_board_deployment_profile_carrier_v1',
+        'status': 'complete',
+        'data_through': '2026-08-20',
+        'window_days': 14,
+        'summary': 'One arm recorded a save or hold and one arm worked multiple innings.',
+        'profiles': [{
+            'pitcher_id': 1,
+            'pitcher_name': 'Observed Arm',
+            'saves': 0,
+            'holds': 2,
+            'multi_inning_appearances': 1,
+            'appearances_analyzed': 3,
+            'appearances_with_outs': 3,
+            'summary': 'Observed Arm recorded 0 saves, 2 holds, and worked multiple innings in 1 of 3 relief appearances with recorded outs during the 14-day window.',
+        }],
+        'limitations': [],
+    }
+    composition = build_team_board_v2_payload(
+        board,
+        recent_relief_work={'deployment_profile': deployment},
+    )['roles_deployment']
 
     assert composition['roles'] == [{
         'role_key': 'bridge_arm',
         'label': 'Setup Arm',
         'arm_count': 1,
     }]
-    assert 'deployment' not in composition
+    assert composition['deployment_profile'] == deployment
     for forbidden in (
-        'saves', 'holds', 'inning_entered', 'multi_inning', 'leverage',
-        'movement', 'trend', 'manager', 'prediction',
+        'inning_entered', 'leverage', 'movement', 'trend', 'manager', 'prediction',
+        'closer', 'fireman',
     ):
         assert forbidden not in repr(composition).lower()
 

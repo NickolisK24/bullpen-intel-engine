@@ -434,6 +434,61 @@ def test_gap32_workload_window_exception_is_exact_and_decision_linked():
     assert 'No historical GameLog replay or backfill is authorized' in decision
 
 
+def test_rotation_roster_intelligence_exception_is_exact_and_decision_linked():
+    approved = freeze_policy.ROTATION_ROSTER_INTELLIGENCE_PATHS
+    assert approved == ('backend/services/share_artifact_generation.py',)
+
+    assert freeze_policy.protected_hits(
+        list(approved),
+        prefixes=(freeze_policy.SHARE_ARTIFACT_SERVICE_PREFIX,),
+        approved=approved,
+    ) == []
+    assert freeze_policy.protected_hits(
+        ['backend/services/share_artifacts.py'],
+        prefixes=(freeze_policy.SHARE_ARTIFACT_SERVICE_PREFIX,),
+        approved=approved,
+    ) == ['backend/services/share_artifacts.py']
+    assert freeze_policy.protected_hits(
+        ['backend/api/team_board_v2.py'],
+        prefixes=(freeze_policy.PUBLIC_API_PREFIX,),
+        approved=approved,
+    ) == ['backend/api/team_board_v2.py']
+
+    decision = (
+        Path(__file__).resolve().parents[2]
+        / 'docs/decisions/2026-08-20-rotation-roster-intelligence-authority.md'
+    ).read_text(encoding='utf-8')
+    assert '`backend/services/share_artifact_generation.py`' in decision
+    assert 'No historical recomputation or backfill is authorized.' in decision
+
+
+def test_roles_deployment_intelligence_exception_is_exact_and_decision_linked():
+    approved = freeze_policy.ROLES_DEPLOYMENT_INTELLIGENCE_PATHS
+    assert approved == (
+        'backend/services/public_team_relief_work.py',
+        'backend/services/share_artifact_generation.py',
+    )
+    assert freeze_policy.protected_hits(
+        list(approved),
+        exact=freeze_policy.APPEARANCE_TEAM_PROTECTED_PATHS,
+        prefixes=(freeze_policy.SHARE_ARTIFACT_SERVICE_PREFIX,),
+        approved=approved,
+    ) == []
+    assert freeze_policy.protected_hits(
+        ['backend/api/team_board_v2.py'],
+        prefixes=(freeze_policy.PUBLIC_API_PREFIX,),
+        approved=approved,
+    ) == ['backend/api/team_board_v2.py']
+
+    decision = (
+        Path(__file__).resolve().parents[2]
+        / 'docs/decisions/2026-08-20-roles-deployment-intelligence-authority.md'
+    ).read_text(encoding='utf-8')
+    assert '`backend/services/public_team_relief_work.py`' in decision
+    assert '`backend/services/share_artifact_generation.py`' in decision
+    assert 'No historical replay or backfill is authorized.' in decision
+
+
 def test_no_catalogue_uses_a_bare_directory_as_an_invariant():
     """H-1's success condition, stated as an assertion.
 

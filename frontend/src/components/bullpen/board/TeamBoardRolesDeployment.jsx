@@ -19,6 +19,16 @@ export function getRoleCompositionRows(rolesDeployment) {
   return rows
 }
 
+export function getDeploymentRows(rolesDeployment) {
+  const deployment = rolesDeployment?.deployment_profile
+  if (deployment?.status !== 'complete' || !Array.isArray(deployment?.profiles)) return []
+  return deployment.profiles.map((profile, index) => ({
+    key: Number.isInteger(profile?.pitcher_id) ? `pitcher-${profile.pitcher_id}` : `deployment-${index}`,
+    name: textValue(profile?.pitcher_name),
+    summary: textValue(profile?.summary),
+  })).filter(profile => profile.name && profile.summary)
+}
+
 function firstLimitation(status) {
   return Array.isArray(status?.limitations)
     ? status.limitations.find(value => textValue(value))?.trim() || null
@@ -51,6 +61,9 @@ export default function TeamBoardRolesDeployment({ read, loading = false, error 
     ? status.status
     : 'unavailable'
   const rows = getRoleCompositionRows(rolesDeployment)
+  const deploymentRows = getDeploymentRows(rolesDeployment)
+  const deployment = rolesDeployment?.deployment_profile
+  const deploymentSummary = textValue(deployment?.summary)
   const limitation = firstLimitation(status)
 
   return (
@@ -79,12 +92,27 @@ export default function TeamBoardRolesDeployment({ read, loading = false, error 
             </dl>
           )}
 
-          <SectionState
-            status="unavailable"
-            title="Deployment detail unavailable"
-            message="Detailed team deployment context is not published for Team Board."
-            className={rows.length > 0 ? 'mt-section' : ''}
-          />
+          {deploymentRows.length > 0 ? (
+            <div className={rows.length > 0 ? 'mt-section' : ''} aria-label="Observed bullpen deployment">
+              <h3 className="type-section-title">Observed deployment</h3>
+              {deploymentSummary && <p className="type-compact mt-meta text-text-secondary">{deploymentSummary}</p>}
+              <ul className="mt-row divide-y divide-line-subtle">
+                {deploymentRows.map(row => (
+                  <li key={row.key} className="py-row">
+                    <p className="type-data text-text-primary">{row.name}</p>
+                    <p className="type-compact mt-meta text-text-secondary">{row.summary}</p>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : (
+            <SectionState
+              status="unavailable"
+              title="Deployment detail unavailable"
+              message="Observed deployment detail is not available for the represented window."
+              className={rows.length > 0 ? 'mt-section' : ''}
+            />
+          )}
 
           {statusName === 'partial' && (
             <SectionState status="partial" title="Role composition is partially available" message={limitation || 'Some current role reads are unavailable.'} className={rows.length > 0 ? 'mt-row' : ''} />

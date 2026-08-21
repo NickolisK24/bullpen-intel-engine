@@ -14,6 +14,7 @@ export function getRecentTransactionRows(recentTransactions) {
     eventDate: textValue(event?.date),
     dateLabel: formatDateOnly(event?.date, { month: 'short' }),
     label: textValue(event?.label),
+    description: textValue(event?.description),
   }))
 }
 
@@ -146,11 +147,13 @@ export default function TeamBoardRecentTransactions({ read, loading = false, err
                   <div className="flex min-w-0 flex-wrap items-center gap-x-row gap-y-meta">
                     <PitcherHandoff
                       pitcherId={row.playerId}
-                      name={row.playerName || 'Player unavailable'}
+                      name={row.description || row.playerName || 'Player unavailable'}
                       onSelectPitcher={onSelectPitcher}
-                      className={`type-data break-words ${row.playerName ? 'text-chalk100' : 'text-text-withheld'}`}
+                      className={`type-data break-words ${row.description || row.playerName ? 'text-chalk100' : 'text-text-withheld'}`}
                     />
-                    <span className={`type-data break-words ${row.label ? '' : 'text-text-withheld'}`}>{row.label || '—'}</span>
+                    {!row.description && row.playerName && (
+                      <span className={`type-data break-words ${row.label ? '' : 'text-text-withheld'}`}>{row.label || '—'}</span>
+                    )}
                   </div>
                 </article>
               ))}

@@ -25,13 +25,41 @@ from services.pitcher_public_labels import (
     build_public_arm_read,
 )
 from services.public_team_relief_work import (
+    DEPLOYMENT_PROFILE_CARRIER_CONTRACT,
+    DEPLOYMENT_PROFILE_COMPLETE,
+    DEPLOYMENT_PROFILE_MEMBERSHIP_AUTHORITY,
+    DEPLOYMENT_PROFILE_METHOD_VERSION,
+    DEPLOYMENT_PROFILE_POPULATION_AUTHORITY,
+    DEPLOYMENT_PROFILE_POPULATION_BASIS,
+    DEPLOYMENT_PROFILE_PUBLIC_CONTRACT_VERSION,
+    DEPLOYMENT_PROFILE_REFERENCE_DATE_POLICY,
+    DEPLOYMENT_PROFILE_WINDOW_DAYS,
     WORKLOAD_WINDOWS_CARRIER_CONTRACT,
     WORKLOAD_WINDOWS_COMPLETE,
     WORKLOAD_WINDOWS_METHOD_VERSION,
     WORKLOAD_WINDOWS_PUBLIC_CONTRACT_VERSION,
     WINDOW_DAYS,
 )
-from services.public_serving_authority import TEAM_BOARD_PACKAGE_CONTRACT
+from services.public_serving_authority import (
+    BULLPEN_MEMBERSHIP_CARRIER_CONTRACT,
+    BULLPEN_MEMBERSHIP_MEMBERSHIP_AUTHORITY,
+    BULLPEN_MEMBERSHIP_METHOD_VERSION,
+    BULLPEN_MEMBERSHIP_POPULATION_AUTHORITY,
+    BULLPEN_MEMBERSHIP_POPULATION_BASIS,
+    BULLPEN_MEMBERSHIP_PUBLIC_CONTRACT_VERSION,
+    BULLPEN_MEMBERSHIP_REFERENCE_DATE_POLICY,
+    TEAM_BOARD_PACKAGE_CONTRACT,
+)
+from services.rotation_support_pressure import (
+    CAPABILITY as ROTATION_IMPACT_CAPABILITY,
+    DELTA_CARRIER_CONTRACT as ROTATION_IMPACT_CARRIER_CONTRACT,
+    MEMBERSHIP_AUTHORITY as ROTATION_IMPACT_MEMBERSHIP_AUTHORITY,
+    POPULATION_AUTHORITY as ROTATION_IMPACT_POPULATION_AUTHORITY,
+    POPULATION_BASIS as ROTATION_IMPACT_POPULATION_BASIS,
+    PUBLIC_CONTRACT_VERSION as ROTATION_IMPACT_PUBLIC_CONTRACT_VERSION,
+    REFERENCE_DATE_POLICY as ROTATION_IMPACT_REFERENCE_DATE_POLICY,
+    VERSION as ROTATION_IMPACT_METHOD_VERSION,
+)
 from services.roster_authority import VERSION as ROSTER_AUTHORITY_VERSION
 from services.team_state_public_vocabulary import PUBLIC_TEAM_STATE_CONTRACT
 from team_operations import TEAM_STATE_METHOD_VERSION
@@ -79,10 +107,31 @@ DOMAIN_READINESS = MappingProxyType({
     'workload_7d': READINESS_COMPARABLE_WHEN_STAMPED,
     'workload_14d': READINESS_COMPARABLE_WHEN_STAMPED,
     'workload_concentration': READINESS_NOT_YET_COMPARABLE,
-    'rotation_impact': READINESS_NOT_YET_COMPARABLE,
+    'rotation_impact': READINESS_COMPARABLE_WHEN_STAMPED,
+    'bullpen_membership': READINESS_COMPARABLE_WHEN_STAMPED,
+    'deployment_profile': READINESS_COMPARABLE_WHEN_STAMPED,
     'role_movement': READINESS_NOT_YET_COMPARABLE,
     'roster_transactions': READINESS_NOT_PART_OF_SUBSTRATE,
 })
+
+FROZEN_TEAM_BOARD_SOURCE_AUTHORITY = 'trusted_team_board_publication'
+
+
+def _canonical_rotation_population_basis():
+    return {
+        'basis': ROTATION_IMPACT_POPULATION_BASIS,
+        'population_authority': ROTATION_IMPACT_POPULATION_AUTHORITY,
+        'membership_authority': ROTATION_IMPACT_MEMBERSHIP_AUTHORITY,
+    }
+
+
+def _canonical_membership_population_basis():
+    return {
+        'basis': BULLPEN_MEMBERSHIP_POPULATION_BASIS,
+        'population_authority': BULLPEN_MEMBERSHIP_POPULATION_AUTHORITY,
+        'membership_authority': BULLPEN_MEMBERSHIP_MEMBERSHIP_AUTHORITY,
+        'roster_authority_version': ROSTER_AUTHORITY_VERSION,
+    }
 
 
 class DeltaStampError(ValueError):
@@ -321,7 +370,7 @@ def build_workload_window_capture(*, snapshot, team_id) -> dict | None:
         'contract_version': authority.get('team_board_package_contract'),
         'population_basis': deepcopy(dict(population_basis)),
         'reference_date_policy': authority.get('reference_date_policy'),
-        'source_authority': 'trusted_team_board_publication',
+        'source_authority': FROZEN_TEAM_BOARD_SOURCE_AUTHORITY,
         'windows': frozen,
     }
 
@@ -340,9 +389,281 @@ def try_build_workload_window_capture(*, snapshot, team_id) -> dict | None:
         return None
 
 
+def _valid_deployment_profile(value, represented_date):
+    value = _mapping(value)
+    if (
+        value.get('contract') != DEPLOYMENT_PROFILE_CARRIER_CONTRACT
+        or value.get('status') != DEPLOYMENT_PROFILE_COMPLETE
+        or value.get('data_through') != represented_date
+        or value.get('window_days') != DEPLOYMENT_PROFILE_WINDOW_DAYS
+        or value.get('population_basis') != DEPLOYMENT_PROFILE_POPULATION_BASIS
+        or not isinstance(value.get('profiles'), list)
+        or not isinstance(value.get('team_summary'), Mapping)
+        or not isinstance(value.get('summary'), str)
+        or not isinstance(value.get('limitations'), list)
+    ):
+        return False
+    seen = set()
+    for raw in value.get('profiles') or []:
+        profile = _mapping(raw)
+        pitcher_id = profile.get('pitcher_id')
+        if type(pitcher_id) is not int or pitcher_id in seen:
+            return False
+        seen.add(pitcher_id)
+        if not isinstance(profile.get('pitcher_name'), str) or not profile.get('pitcher_name'):
+            return False
+        for field in (
+            'appearances_analyzed', 'saves', 'holds', 'games_finished',
+            'appearances_with_games_finished', 'multi_inning_appearances',
+            'appearances_with_outs',
+        ):
+            if type(profile.get(field)) is not int or profile.get(field) < 0:
+                return False
+        if (
+            profile.get('appearances_with_outs') > profile.get('appearances_analyzed')
+            or profile.get('appearances_with_games_finished') > profile.get('appearances_analyzed')
+            or profile.get('multi_inning_appearances') > profile.get('appearances_with_outs')
+            or not isinstance(profile.get('summary'), str)
+            or not isinstance(profile.get('limitations'), list)
+        ):
+            return False
+    return True
+
+
+def build_deployment_profile_capture(*, snapshot, team_id) -> dict | None:
+    """Copy one same-cycle deployment carrier; never replay appearance rows."""
+    package, team = _trusted_team_package(snapshot, team_id, domain='deployment')
+    if 'deployment_profile' not in team:
+        return None
+    value = _mapping(team.get('deployment_profile'))
+    authority = _mapping(team.get('deployment_profile_authority'))
+    represented_date = _iso(getattr(snapshot, 'data_through', None))
+    if not _valid_deployment_profile(value, represented_date):
+        raise DeltaStampError('deployment_value_invalid')
+    expected_population = {
+        'basis': DEPLOYMENT_PROFILE_POPULATION_BASIS,
+        'population_authority': DEPLOYMENT_PROFILE_POPULATION_AUTHORITY,
+        'membership_authority': DEPLOYMENT_PROFILE_MEMBERSHIP_AUTHORITY,
+    }
+    if (
+        authority.get('method_version') != DEPLOYMENT_PROFILE_METHOD_VERSION
+        or authority.get('public_contract_version')
+        != DEPLOYMENT_PROFILE_PUBLIC_CONTRACT_VERSION
+        or authority.get('carrier_contract_version')
+        != DEPLOYMENT_PROFILE_CARRIER_CONTRACT
+        or authority.get('team_board_package_contract') != package.get('contract')
+        or authority.get('reference_date_policy')
+        != DEPLOYMENT_PROFILE_REFERENCE_DATE_POLICY
+        or authority.get('data_through') != represented_date
+        or dict(_mapping(authority.get('population_basis'))) != expected_population
+    ):
+        raise DeltaStampError('deployment_authority_unproven')
+    return {
+        'team_id': int(team_id),
+        'represented_date': represented_date,
+        'method_version': authority.get('method_version'),
+        'public_contract_version': authority.get('public_contract_version'),
+        'carrier_contract_version': authority.get('carrier_contract_version'),
+        'contract_version': authority.get('team_board_package_contract'),
+        'population_basis': deepcopy(dict(authority.get('population_basis'))),
+        'reference_date_policy': authority.get('reference_date_policy'),
+        'source_authority': FROZEN_TEAM_BOARD_SOURCE_AUTHORITY,
+        'value': deepcopy(dict(value)),
+    }
+
+
+def try_build_deployment_profile_capture(*, snapshot, team_id) -> dict | None:
+    try:
+        return build_deployment_profile_capture(snapshot=snapshot, team_id=team_id)
+    except Exception as exc:  # noqa: BLE001 - optional prospective domain
+        logger.warning(
+            'Deployment profile capture withheld team_id=%s snapshot_id=%s reason=%s.',
+            team_id,
+            getattr(snapshot, 'id', None),
+            type(exc).__name__,
+        )
+        return None
+
+
+def _trusted_team_package(snapshot, team_id, *, domain):
+    payload = _mapping(getattr(snapshot, 'payload', None))
+    package = _mapping(payload.get('trusted_team_boards'))
+    team = _mapping(_mapping(package.get('by_team_id')).get(str(int(team_id))))
+    if package.get('contract') != TEAM_BOARD_PACKAGE_CONTRACT:
+        raise DeltaStampError(f'{domain}_package_contract_unproven')
+    if package.get('data_through') != _iso(getattr(snapshot, 'data_through', None)):
+        raise DeltaStampError(f'{domain}_package_date_mismatch')
+    if _mapping(team.get('team')).get('team_id') != int(team_id):
+        raise DeltaStampError(f'{domain}_team_identity_mismatch')
+    return package, team
+
+
+def build_rotation_impact_capture(*, snapshot, team_id) -> dict | None:
+    """Copy the already-frozen Rotation Impact object without recalculation."""
+    package, team = _trusted_team_package(snapshot, team_id, domain='rotation')
+    if 'rotation_support_pressure' not in team:
+        return None
+    value = _mapping(team.get('rotation_support_pressure'))
+    authority = _mapping(team.get('rotation_support_pressure_authority'))
+    represented_date = _iso(getattr(snapshot, 'data_through', None))
+    if not value:
+        return None
+    if value.get('capability') != ROTATION_IMPACT_CAPABILITY:
+        raise DeltaStampError('rotation_capability_invalid')
+    if value.get('version') != ROTATION_IMPACT_METHOD_VERSION:
+        raise DeltaStampError('rotation_method_version_unproven')
+    if value.get('team_id') != int(team_id):
+        raise DeltaStampError('rotation_team_identity_mismatch')
+    rotation_reference_date = value.get('reference_date')
+    if (
+        _as_date(rotation_reference_date) is None
+        or rotation_reference_date != package.get('availability_reference_date')
+    ):
+        raise DeltaStampError('rotation_reference_date_mismatch')
+    if type(value.get('window_days')) is not int or value.get('window_days') <= 0:
+        raise DeltaStampError('rotation_window_invalid')
+    for field in (
+        'games_in_window', 'games_analyzed', 'games_excluded',
+        'starter_outs', 'bullpen_outs_required', 'short_start_count',
+    ):
+        if type(value.get(field)) is not int or value.get(field) < 0:
+            raise DeltaStampError('rotation_value_invalid')
+    if not isinstance(value.get('summary'), str) or not isinstance(
+        value.get('limitations'), list
+    ):
+        raise DeltaStampError('rotation_value_invalid')
+    if authority.get('method_version') != ROTATION_IMPACT_METHOD_VERSION:
+        raise DeltaStampError('rotation_method_version_unproven')
+    if (
+        authority.get('public_contract_version')
+        != ROTATION_IMPACT_PUBLIC_CONTRACT_VERSION
+        or authority.get('carrier_contract_version')
+        != ROTATION_IMPACT_CARRIER_CONTRACT
+        or authority.get('team_board_package_contract') != package.get('contract')
+    ):
+        raise DeltaStampError('rotation_contract_unproven')
+    population_basis = authority.get('population_basis')
+    if (
+        not isinstance(population_basis, Mapping)
+        or dict(population_basis) != _canonical_rotation_population_basis()
+    ):
+        raise DeltaStampError('rotation_population_basis_unproven')
+    if (
+        authority.get('reference_date_policy')
+        != ROTATION_IMPACT_REFERENCE_DATE_POLICY
+        or authority.get('reference_date') != rotation_reference_date
+    ):
+        raise DeltaStampError('rotation_reference_date_unproven')
+    return {
+        'team_id': int(team_id),
+        'represented_date': represented_date,
+        'method_version': authority.get('method_version'),
+        'public_contract_version': authority.get('public_contract_version'),
+        'carrier_contract_version': authority.get('carrier_contract_version'),
+        'contract_version': authority.get('team_board_package_contract'),
+        'population_basis': deepcopy(dict(population_basis)),
+        'reference_date_policy': authority.get('reference_date_policy'),
+        'reference_date': rotation_reference_date,
+        'source_authority': FROZEN_TEAM_BOARD_SOURCE_AUTHORITY,
+        'value': deepcopy(dict(value)),
+    }
+
+
+def try_build_rotation_impact_capture(*, snapshot, team_id) -> dict | None:
+    try:
+        return build_rotation_impact_capture(snapshot=snapshot, team_id=team_id)
+    except Exception as exc:  # noqa: BLE001 - optional prospective domain
+        logger.warning(
+            'Rotation Impact capture withheld team_id=%s snapshot_id=%s reason=%s.',
+            team_id,
+            getattr(snapshot, 'id', None),
+            type(exc).__name__,
+        )
+        return None
+
+
+def build_bullpen_membership_capture(*, snapshot, team_id) -> dict | None:
+    """Copy the frozen default-visible bullpen membership and public identity."""
+    package, team = _trusted_team_package(snapshot, team_id, domain='membership')
+    if 'default_pitcher_ids' not in team:
+        return None
+    authority = _mapping(team.get('bullpen_membership_authority'))
+    represented_date = _iso(getattr(snapshot, 'data_through', None))
+    raw_ids = team.get('default_pitcher_ids')
+    if not isinstance(raw_ids, list) or any(type(value) is not int for value in raw_ids):
+        raise DeltaStampError('membership_values_invalid')
+    member_ids = sorted(raw_ids)
+    if len(member_ids) != len(set(member_ids)):
+        raise DeltaStampError('membership_values_invalid')
+    records_by_id = {}
+    for record in team.get('records') or []:
+        record = _mapping(record)
+        pitcher_id = record.get('pitcher_id')
+        if type(pitcher_id) is int and pitcher_id not in records_by_id:
+            records_by_id[pitcher_id] = record
+    members = []
+    for pitcher_id in member_ids:
+        record = records_by_id.get(pitcher_id)
+        if not record or not isinstance(record.get('name'), str) or not record.get('name'):
+            raise DeltaStampError('membership_identity_missing')
+        members.append({'pitcher_id': pitcher_id, 'pitcher_name': record.get('name')})
+    if authority.get('method_version') != BULLPEN_MEMBERSHIP_METHOD_VERSION:
+        raise DeltaStampError('membership_method_version_unproven')
+    if (
+        authority.get('public_contract_version')
+        != BULLPEN_MEMBERSHIP_PUBLIC_CONTRACT_VERSION
+        or authority.get('carrier_contract_version')
+        != BULLPEN_MEMBERSHIP_CARRIER_CONTRACT
+        or authority.get('team_board_package_contract') != package.get('contract')
+    ):
+        raise DeltaStampError('membership_contract_unproven')
+    population_basis = authority.get('population_basis')
+    if (
+        not isinstance(population_basis, Mapping)
+        or dict(population_basis) != _canonical_membership_population_basis()
+    ):
+        raise DeltaStampError('membership_population_basis_unproven')
+    if (
+        authority.get('reference_date_policy')
+        != BULLPEN_MEMBERSHIP_REFERENCE_DATE_POLICY
+        or _as_date(authority.get('membership_reference_date')) is None
+        or authority.get('membership_reference_date')
+        != package.get('availability_reference_date')
+    ):
+        raise DeltaStampError('membership_reference_date_unproven')
+    return {
+        'team_id': int(team_id),
+        'represented_date': represented_date,
+        'method_version': authority.get('method_version'),
+        'public_contract_version': authority.get('public_contract_version'),
+        'carrier_contract_version': authority.get('carrier_contract_version'),
+        'contract_version': authority.get('team_board_package_contract'),
+        'population_basis': deepcopy(dict(population_basis)),
+        'reference_date_policy': authority.get('reference_date_policy'),
+        'membership_reference_date': authority.get('membership_reference_date'),
+        'source_authority': FROZEN_TEAM_BOARD_SOURCE_AUTHORITY,
+        'member_pitcher_ids': member_ids,
+        'members': members,
+    }
+
+
+def try_build_bullpen_membership_capture(*, snapshot, team_id) -> dict | None:
+    try:
+        return build_bullpen_membership_capture(snapshot=snapshot, team_id=team_id)
+    except Exception as exc:  # noqa: BLE001 - optional prospective domain
+        logger.warning(
+            'Bullpen membership capture withheld team_id=%s snapshot_id=%s reason=%s.',
+            team_id,
+            getattr(snapshot, 'id', None),
+            type(exc).__name__,
+        )
+        return None
+
+
 def build_prospective_envelope(
     *, source, readiness, artifact, arm_read_capture=None,
-    workload_window_capture=None,
+    workload_window_capture=None, rotation_impact_capture=None,
+    bullpen_membership_capture=None, deployment_profile_capture=None,
 ) -> dict:
     """Build metadata from the exact governed read frozen by ``artifact``.
 
@@ -487,12 +808,111 @@ def build_prospective_envelope(
                 'trusted': trusted,
             }
             envelope['values'][domain] = deepcopy(dict(value))
+    rotation_impact_capture = _mapping(rotation_impact_capture)
+    if rotation_impact_capture:
+        if (
+            rotation_impact_capture.get('team_id') != envelope['team_id']
+            or rotation_impact_capture.get('represented_date')
+            != envelope['represented_date']
+        ):
+            raise DeltaStampError('rotation_identity_mismatch')
+        envelope['domains']['rotation_impact'] = {
+            'method_version': rotation_impact_capture.get('method_version'),
+            'contract_version': rotation_impact_capture.get('contract_version'),
+            'public_contract_version': (
+                rotation_impact_capture.get('public_contract_version')
+            ),
+            'carrier_contract_version': (
+                rotation_impact_capture.get('carrier_contract_version')
+            ),
+            'population_basis': deepcopy(
+                rotation_impact_capture.get('population_basis')
+            ),
+            'reference_date_policy': (
+                rotation_impact_capture.get('reference_date_policy')
+            ),
+            'source_authority': rotation_impact_capture.get('source_authority'),
+            'reference_date': rotation_impact_capture.get('reference_date'),
+            'window_days': _mapping(
+                rotation_impact_capture.get('value')
+            ).get('window_days'),
+            'trusted': trusted,
+        }
+        envelope['values']['rotation_impact'] = deepcopy(
+            dict(_mapping(rotation_impact_capture.get('value')))
+        )
+    bullpen_membership_capture = _mapping(bullpen_membership_capture)
+    if bullpen_membership_capture:
+        if (
+            bullpen_membership_capture.get('team_id') != envelope['team_id']
+            or bullpen_membership_capture.get('represented_date')
+            != envelope['represented_date']
+        ):
+            raise DeltaStampError('membership_identity_mismatch')
+        envelope['domains']['bullpen_membership'] = {
+            'method_version': bullpen_membership_capture.get('method_version'),
+            'contract_version': bullpen_membership_capture.get('contract_version'),
+            'public_contract_version': (
+                bullpen_membership_capture.get('public_contract_version')
+            ),
+            'carrier_contract_version': (
+                bullpen_membership_capture.get('carrier_contract_version')
+            ),
+            'population_basis': deepcopy(
+                bullpen_membership_capture.get('population_basis')
+            ),
+            'reference_date_policy': (
+                bullpen_membership_capture.get('reference_date_policy')
+            ),
+            'source_authority': bullpen_membership_capture.get('source_authority'),
+            'membership_reference_date': (
+                bullpen_membership_capture.get('membership_reference_date')
+            ),
+            'trusted': trusted,
+        }
+        envelope['values']['bullpen_membership'] = {
+            'member_pitcher_ids': deepcopy(
+                bullpen_membership_capture.get('member_pitcher_ids')
+            ),
+            'members': deepcopy(bullpen_membership_capture.get('members')),
+        }
+    deployment_profile_capture = _mapping(deployment_profile_capture)
+    if deployment_profile_capture:
+        if (
+            deployment_profile_capture.get('team_id') != envelope['team_id']
+            or deployment_profile_capture.get('represented_date')
+            != envelope['represented_date']
+        ):
+            raise DeltaStampError('deployment_identity_mismatch')
+        envelope['domains']['deployment_profile'] = {
+            'method_version': deployment_profile_capture.get('method_version'),
+            'contract_version': deployment_profile_capture.get('contract_version'),
+            'public_contract_version': (
+                deployment_profile_capture.get('public_contract_version')
+            ),
+            'carrier_contract_version': (
+                deployment_profile_capture.get('carrier_contract_version')
+            ),
+            'population_basis': deepcopy(
+                deployment_profile_capture.get('population_basis')
+            ),
+            'reference_date_policy': (
+                deployment_profile_capture.get('reference_date_policy')
+            ),
+            'source_authority': deployment_profile_capture.get('source_authority'),
+            'window_days': DEPLOYMENT_PROFILE_WINDOW_DAYS,
+            'trusted': trusted,
+        }
+        envelope['values']['deployment_profile'] = deepcopy(
+            dict(_mapping(deployment_profile_capture.get('value')))
+        )
     return envelope
 
 
 def stamp_prospective_snapshot(
     *, source, readiness, artifact, arm_read_capture=None,
-    workload_window_capture=None, session=None,
+    workload_window_capture=None, rotation_impact_capture=None,
+    bullpen_membership_capture=None, deployment_profile_capture=None, session=None,
 ):
     """Stage one append-only sidecar for a newly published Team State artifact."""
     session = session or db.session
@@ -502,6 +922,9 @@ def stamp_prospective_snapshot(
         artifact=artifact,
         arm_read_capture=arm_read_capture,
         workload_window_capture=workload_window_capture,
+        rotation_impact_capture=rotation_impact_capture,
+        bullpen_membership_capture=bullpen_membership_capture,
+        deployment_profile_capture=deployment_profile_capture,
     )
     represented_date = _as_date(envelope.get('represented_date'))
     source_key = f'{SNAPSHOT_SOURCE_PREFIX}{envelope["team_id"]}'
@@ -543,7 +966,8 @@ def stamp_prospective_snapshot(
 
 def try_stamp_prospective_snapshot(
     *, source, readiness, artifact, arm_read_capture=None,
-    workload_window_capture=None, session=None,
+    workload_window_capture=None, rotation_impact_capture=None,
+    bullpen_membership_capture=None, deployment_profile_capture=None, session=None,
 ):
     """Capture a sidecar without making Share Artifact publication depend on it.
 
@@ -561,6 +985,9 @@ def try_stamp_prospective_snapshot(
                 artifact=artifact,
                 arm_read_capture=arm_read_capture,
                 workload_window_capture=workload_window_capture,
+                rotation_impact_capture=rotation_impact_capture,
+                bullpen_membership_capture=bullpen_membership_capture,
+                deployment_profile_capture=deployment_profile_capture,
                 session=session,
             )
     except Exception as exc:  # noqa: BLE001 - optional capture must not block publish
@@ -950,6 +1377,264 @@ def _compatible_workload_domain(previous, current, *, window_days):
     return base
 
 
+def _compatible_rotation_domain(previous, current):
+    domain = 'rotation_impact'
+    if previous is None:
+        return _withheld(domain, PREVIOUS_MISSING)
+    if current is None:
+        return _withheld(domain, CURRENT_MISSING)
+    if (
+        not _domain_metadata(_payload(previous), domain)
+        or not _domain_metadata(_payload(current), domain)
+    ):
+        return _withheld(domain, DOMAIN_NOT_READY)
+    base = _compatible_domain(previous, current, domain, domain)
+    if base.get('status') != COMPARABLE:
+        return base
+    previous_metadata = _domain_metadata(_payload(previous), domain)
+    current_metadata = _domain_metadata(_payload(current), domain)
+    expected_population = _canonical_rotation_population_basis()
+    for metadata in (previous_metadata, current_metadata):
+        if (
+            metadata.get('method_version') != ROTATION_IMPACT_METHOD_VERSION
+            or metadata.get('contract_version') != TEAM_BOARD_PACKAGE_CONTRACT
+            or metadata.get('public_contract_version')
+            != ROTATION_IMPACT_PUBLIC_CONTRACT_VERSION
+            or metadata.get('carrier_contract_version')
+            != ROTATION_IMPACT_CARRIER_CONTRACT
+            or metadata.get('source_authority')
+            != FROZEN_TEAM_BOARD_SOURCE_AUTHORITY
+            or metadata.get('reference_date_policy')
+            != ROTATION_IMPACT_REFERENCE_DATE_POLICY
+        ):
+            return _withheld(domain, CONTRACT_INCOMPATIBLE)
+        population = metadata.get('population_basis')
+        if not isinstance(population, Mapping):
+            return _withheld(domain, POPULATION_BASIS_MISSING)
+        if dict(population) != expected_population:
+            return _withheld(domain, POPULATION_BASIS_MISMATCH)
+    for field in (
+        'carrier_contract_version', 'reference_date_policy', 'source_authority',
+        'window_days',
+    ):
+        if (
+            previous_metadata.get(field) in (None, '')
+            or current_metadata.get(field) in (None, '')
+            or previous_metadata.get(field) != current_metadata.get(field)
+        ):
+            return _withheld(domain, CONTRACT_INCOMPATIBLE)
+    previous_value = _mapping(base.get('previous'))
+    current_value = _mapping(base.get('current'))
+    previous_reference_date = _as_date(previous_metadata.get('reference_date'))
+    current_reference_date = _as_date(current_metadata.get('reference_date'))
+    if (
+        previous_reference_date is None
+        or current_reference_date is None
+        or previous_reference_date >= current_reference_date
+        or previous_value.get('reference_date')
+        != previous_metadata.get('reference_date')
+        or current_value.get('reference_date')
+        != current_metadata.get('reference_date')
+    ):
+        return _withheld(domain, REPRESENTED_DATE_INVALID)
+    material_fields = (
+        'status', 'games_in_window', 'games_analyzed', 'games_excluded',
+        'starter_outs', 'starter_avg_outs', 'bullpen_outs_required',
+        'short_start_count', 'short_start_rate', 'opener_bulk_games',
+        'bullpen_games', 'summary', 'limitations',
+    )
+    if any(field not in previous_value or field not in current_value for field in material_fields):
+        return _withheld(domain, VALUE_MISSING)
+    changed_fields = [
+        field for field in material_fields
+        if previous_value.get(field) != current_value.get(field)
+    ]
+    base['movement'] = bool(changed_fields)
+    base['changed_fields'] = changed_fields
+    return base
+
+
+def _membership_records(value):
+    value = _mapping(value)
+    member_ids = value.get('member_pitcher_ids')
+    members = value.get('members')
+    if not isinstance(member_ids, list) or not isinstance(members, list):
+        return None
+    if any(type(pitcher_id) is not int for pitcher_id in member_ids):
+        return None
+    if len(member_ids) != len(set(member_ids)):
+        return None
+    records = {}
+    for member in members:
+        member = _mapping(member)
+        pitcher_id = member.get('pitcher_id')
+        if (
+            type(pitcher_id) is not int
+            or pitcher_id in records
+            or not isinstance(member.get('pitcher_name'), str)
+            or not member.get('pitcher_name')
+        ):
+            return None
+        records[pitcher_id] = dict(member)
+    if set(records) != set(member_ids):
+        return None
+    return records
+
+
+def _compatible_membership_domain(previous, current):
+    domain = 'bullpen_membership'
+    if previous is None:
+        return _withheld(domain, PREVIOUS_MISSING)
+    if current is None:
+        return _withheld(domain, CURRENT_MISSING)
+    if (
+        not _domain_metadata(_payload(previous), domain)
+        or not _domain_metadata(_payload(current), domain)
+    ):
+        return _withheld(domain, DOMAIN_NOT_READY)
+    base = _compatible_domain(previous, current, domain, domain)
+    if base.get('status') != COMPARABLE:
+        return base
+    previous_metadata = _domain_metadata(_payload(previous), domain)
+    current_metadata = _domain_metadata(_payload(current), domain)
+    expected_population = _canonical_membership_population_basis()
+    for metadata in (previous_metadata, current_metadata):
+        if (
+            metadata.get('method_version') != BULLPEN_MEMBERSHIP_METHOD_VERSION
+            or metadata.get('contract_version') != TEAM_BOARD_PACKAGE_CONTRACT
+            or metadata.get('public_contract_version')
+            != BULLPEN_MEMBERSHIP_PUBLIC_CONTRACT_VERSION
+            or metadata.get('carrier_contract_version')
+            != BULLPEN_MEMBERSHIP_CARRIER_CONTRACT
+            or metadata.get('source_authority')
+            != FROZEN_TEAM_BOARD_SOURCE_AUTHORITY
+            or metadata.get('reference_date_policy')
+            != BULLPEN_MEMBERSHIP_REFERENCE_DATE_POLICY
+        ):
+            return _withheld(domain, CONTRACT_INCOMPATIBLE)
+        population = metadata.get('population_basis')
+        if not isinstance(population, Mapping):
+            return _withheld(domain, POPULATION_BASIS_MISSING)
+        if dict(population) != expected_population:
+            return _withheld(domain, POPULATION_BASIS_MISMATCH)
+    for field in ('carrier_contract_version', 'reference_date_policy', 'source_authority'):
+        if (
+            previous_metadata.get(field) in (None, '')
+            or current_metadata.get(field) in (None, '')
+            or previous_metadata.get(field) != current_metadata.get(field)
+        ):
+            return _withheld(domain, CONTRACT_INCOMPATIBLE)
+    previous_membership_date = _as_date(
+        previous_metadata.get('membership_reference_date')
+    )
+    current_membership_date = _as_date(
+        current_metadata.get('membership_reference_date')
+    )
+    if (
+        previous_membership_date is None
+        or current_membership_date is None
+        or previous_membership_date >= current_membership_date
+    ):
+        return _withheld(domain, REPRESENTED_DATE_INVALID)
+    previous_records = _membership_records(base.get('previous'))
+    current_records = _membership_records(base.get('current'))
+    if previous_records is None or current_records is None:
+        return _withheld(domain, VALUE_MISSING)
+    added_ids = sorted(set(current_records).difference(previous_records))
+    removed_ids = sorted(set(previous_records).difference(current_records))
+    base['movement'] = bool(added_ids or removed_ids)
+    base['added'] = [deepcopy(current_records[pitcher_id]) for pitcher_id in added_ids]
+    base['removed'] = [deepcopy(previous_records[pitcher_id]) for pitcher_id in removed_ids]
+    return base
+
+
+def _deployment_records(value):
+    value = _mapping(value)
+    profiles = value.get('profiles')
+    if not isinstance(profiles, list):
+        return None
+    records = {}
+    for raw in profiles:
+        profile = _mapping(raw)
+        pitcher_id = profile.get('pitcher_id')
+        if type(pitcher_id) is not int or pitcher_id in records:
+            return None
+        records[pitcher_id] = dict(profile)
+    return records
+
+
+def _compatible_deployment_domain(previous, current):
+    domain = 'deployment_profile'
+    if previous is None:
+        return _withheld(domain, PREVIOUS_MISSING)
+    if current is None:
+        return _withheld(domain, CURRENT_MISSING)
+    if (
+        not _domain_metadata(_payload(previous), domain)
+        or not _domain_metadata(_payload(current), domain)
+    ):
+        return _withheld(domain, DOMAIN_NOT_READY)
+    base = _compatible_domain(previous, current, domain, domain)
+    if base.get('status') != COMPARABLE:
+        return base
+    previous_metadata = _domain_metadata(_payload(previous), domain)
+    current_metadata = _domain_metadata(_payload(current), domain)
+    expected_population = {
+        'basis': DEPLOYMENT_PROFILE_POPULATION_BASIS,
+        'population_authority': DEPLOYMENT_PROFILE_POPULATION_AUTHORITY,
+        'membership_authority': DEPLOYMENT_PROFILE_MEMBERSHIP_AUTHORITY,
+    }
+    for metadata in (previous_metadata, current_metadata):
+        if (
+            metadata.get('method_version') != DEPLOYMENT_PROFILE_METHOD_VERSION
+            or metadata.get('contract_version') != TEAM_BOARD_PACKAGE_CONTRACT
+            or metadata.get('public_contract_version')
+            != DEPLOYMENT_PROFILE_PUBLIC_CONTRACT_VERSION
+            or metadata.get('carrier_contract_version')
+            != DEPLOYMENT_PROFILE_CARRIER_CONTRACT
+            or metadata.get('reference_date_policy')
+            != DEPLOYMENT_PROFILE_REFERENCE_DATE_POLICY
+            or metadata.get('source_authority')
+            != FROZEN_TEAM_BOARD_SOURCE_AUTHORITY
+            or metadata.get('window_days') != DEPLOYMENT_PROFILE_WINDOW_DAYS
+        ):
+            return _withheld(domain, CONTRACT_INCOMPATIBLE)
+        if dict(_mapping(metadata.get('population_basis'))) != expected_population:
+            return _withheld(domain, POPULATION_BASIS_MISMATCH)
+    previous_value = _mapping(base.get('previous'))
+    current_value = _mapping(base.get('current'))
+    if not _valid_deployment_profile(
+        previous_value, _payload(previous).get('represented_date')
+    ) or not _valid_deployment_profile(
+        current_value, _payload(current).get('represented_date')
+    ):
+        return _withheld(domain, VALUE_MISSING)
+    previous_records = _deployment_records(previous_value)
+    current_records = _deployment_records(current_value)
+    if previous_records is None or current_records is None:
+        return _withheld(domain, VALUE_MISSING)
+    material_fields = (
+        'appearances_analyzed', 'saves', 'holds', 'games_finished',
+        'appearances_with_games_finished', 'multi_inning_appearances',
+        'appearances_with_outs', 'most_recent_multi_inning_date',
+    )
+    pitcher_ids = sorted(set(previous_records) | set(current_records))
+    changed_pitcher_ids = [
+        pitcher_id
+        for pitcher_id in pitcher_ids
+        if pitcher_id not in previous_records
+        or pitcher_id not in current_records
+        or any(
+            previous_records[pitcher_id].get(field)
+            != current_records[pitcher_id].get(field)
+            for field in material_fields
+        )
+    ]
+    base['movement'] = bool(changed_pitcher_ids)
+    base['changed_pitcher_ids'] = changed_pitcher_ids
+    return base
+
+
 def compare_snapshots(previous, current) -> dict:
     """Return raw values only for domains whose compatibility is proven."""
     previous_payload = _payload(previous)
@@ -968,6 +1653,9 @@ def compare_snapshots(previous, current) -> dict:
         'workload_14d': _compatible_workload_domain(
             previous, current, window_days=14
         ),
+        'rotation_impact': _compatible_rotation_domain(previous, current),
+        'bullpen_membership': _compatible_membership_domain(previous, current),
+        'deployment_profile': _compatible_deployment_domain(previous, current),
     }
     for domain, readiness in DOMAIN_READINESS.items():
         if domain in domains:
