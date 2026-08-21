@@ -17,6 +17,7 @@ from models.sync_run import SyncRun
 from services import bullpen_board as bullpen_board_service
 from services import dashboard_snapshot
 from services import public_serving_authority
+from services import public_team_relief_work
 from services import sync as sync_service
 from services.availability_population import current_availability_records
 from services.availability_snapshot import latest_fatigue_rows
@@ -225,7 +226,11 @@ def trusted_app(tmp_path, monkeypatch):
             db.session.add(run)
             db.session.flush()
             rest_status_calls = []
+            workload_window_calls = []
             original_build_rest_status = bullpen_board_service.build_rest_status
+            original_author_workload_windows = (
+                public_serving_authority.author_workload_windows
+            )
 
             def tracked_build_rest_status(*args, **kwargs):
                 rest_status_calls.append((args, kwargs))
@@ -235,6 +240,16 @@ def trusted_app(tmp_path, monkeypatch):
                 bullpen_board_service,
                 'build_rest_status',
                 tracked_build_rest_status,
+            )
+
+            def tracked_author_workload_windows(*args, **kwargs):
+                workload_window_calls.append((args, kwargs))
+                return original_author_workload_windows(*args, **kwargs)
+
+            monkeypatch.setattr(
+                public_serving_authority,
+                'author_workload_windows',
+                tracked_author_workload_windows,
             )
             snapshot = dashboard_snapshot.build_bullpen_dashboard_snapshot(
                 sync_run_id=run.id,
@@ -255,6 +270,7 @@ def trusted_app(tmp_path, monkeypatch):
                 'snapshot': snapshot,
                 'reference_date': reference_date,
                 'rest_status_calls': rest_status_calls,
+                'workload_window_calls': workload_window_calls,
             }
         finally:
             db.session.remove()
@@ -325,6 +341,64 @@ def test_phase1_publication_authors_one_d055_carrier_per_team(trusted_app):
     assert positive['rested_arm_count'] > 0
     assert zero['available'] is True
     assert zero['rested_arm_count'] == 0
+
+
+def test_workload_windows_are_authored_once_and_frozen_with_publication_authority(
+    trusted_app,
+):
+    snapshot = trusted_app['snapshot']
+    package = snapshot.payload[public_serving_authority.TEAM_BOARD_PACKAGE_KEY]
+
+    assert len(trusted_app['workload_window_calls']) == package['team_count']
+    for team in package['by_team_id'].values():
+        carrier = team['workload_windows']
+        authority = team['workload_windows_authority']
+        assert carrier['status'] == public_team_relief_work.WORKLOAD_WINDOWS_COMPLETE
+        assert carrier['data_through'] == snapshot.data_through.isoformat()
+        assert set(carrier['windows']) == {'window_7', 'window_14'}
+        assert authority == {
+            'method_version': (
+                public_team_relief_work.WORKLOAD_WINDOWS_METHOD_VERSION
+            ),
+            'public_contract_version': (
+                public_team_relief_work.WORKLOAD_WINDOWS_PUBLIC_CONTRACT_VERSION
+            ),
+            'team_board_package_contract': (
+                public_serving_authority.TEAM_BOARD_PACKAGE_CONTRACT
+            ),
+            'population_basis': {
+                'basis': (
+                    public_team_relief_work.WORKLOAD_WINDOWS_POPULATION_BASIS
+                ),
+                'population_authority': (
+                    public_team_relief_work.WORKLOAD_WINDOWS_POPULATION_AUTHORITY
+                ),
+                'membership_authority': (
+                    public_team_relief_work.WORKLOAD_WINDOWS_MEMBERSHIP_AUTHORITY
+                ),
+            },
+            'reference_date_policy': (
+                public_team_relief_work.WORKLOAD_WINDOWS_REFERENCE_DATE_POLICY
+            ),
+            'data_through': snapshot.data_through.isoformat(),
+        }
+
+
+def test_frozen_workload_windows_match_the_canonical_public_owner(trusted_app):
+    snapshot = trusted_app['snapshot']
+    package = snapshot.payload[public_serving_authority.TEAM_BOARD_PACKAGE_KEY]
+    calls_before = len(trusted_app['workload_window_calls'])
+
+    for team_id, team in package['by_team_id'].items():
+        direct = public_team_relief_work.author_workload_windows(
+            int(team_id),
+            data_through=snapshot.data_through,
+        )
+        assert team['workload_windows'] == direct
+
+    # Direct parity probes above use the canonical owner, not the publication
+    # wrapper tracked by this fixture. The package itself authored once/team.
+    assert len(trusted_app['workload_window_calls']) == calls_before
 
 
 def test_phase1_governed_unavailable_carrier_is_valid_and_qualifies(trusted_app):
@@ -429,6 +503,37 @@ def test_phase1_readers_ignore_dormant_carrier_and_keep_live_behavior(trusted_ap
     assert board_after['rest_status'] == board_before['rest_status']
     assert v2_after['rest_status'] == v2_before['rest_status']
     assert len(trusted_app['rest_status_calls']) == calls_after_publication + 4
+
+
+def test_workload_window_carrier_is_dormant_for_board_and_board_v2(trusted_app):
+    app = trusted_app['app']
+    package = trusted_app['snapshot'].payload[
+        public_serving_authority.TEAM_BOARD_PACKAGE_KEY
+    ]
+    publication_calls = len(trusted_app['workload_window_calls'])
+
+    board_before = app.test_client().get(
+        f'/api/bullpen/teams/{TEAM_ID}/board'
+    ).get_json()
+    v2_before = app.test_client().get(
+        f'/api/bullpen/teams/{TEAM_ID}/board-v2'
+    ).get_json()
+
+    team = package['by_team_id'][str(TEAM_ID)]
+    team.pop('workload_windows')
+    team.pop('workload_windows_authority')
+
+    board_after = app.test_client().get(
+        f'/api/bullpen/teams/{TEAM_ID}/board'
+    ).get_json()
+    v2_after = app.test_client().get(
+        f'/api/bullpen/teams/{TEAM_ID}/board-v2'
+    ).get_json()
+
+    assert board_after == board_before
+    assert v2_after['workload_overview'] == v2_before['workload_overview']
+    assert v2_after['recent_relief_work'] == v2_before['recent_relief_work']
+    assert len(trusted_app['workload_window_calls']) == publication_calls
 
 
 @pytest.mark.parametrize(

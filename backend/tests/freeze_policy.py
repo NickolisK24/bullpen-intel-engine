@@ -294,6 +294,18 @@ GAP51_REST_STATUS_CARRIER_PATHS = (
     'backend/services/bullpen_board.py',
 )
 
+# Gap #32, August 20 2026. New immutable Team Board publications may author the
+# already-public 7-day and 14-day official relief-work windows against their
+# represented date, and newly published Team State artifacts may copy those
+# exact frozen values into the existing prospective delta sidecar. No reader
+# delta, historical replay, current-roster reinterpretation, or public-route
+# behavior is authorized. The authority is recorded in
+# docs/decisions/2026-08-20-prospective-workload-window-delta-substrate.md.
+GAP32_WORKLOAD_WINDOW_PATHS = (
+    'backend/services/public_team_relief_work.py',
+    'backend/services/share_artifact_generation.py',
+)
+
 
 def normalize(path):
     """Repository-relative path with forward slashes and no surrounding space."""
