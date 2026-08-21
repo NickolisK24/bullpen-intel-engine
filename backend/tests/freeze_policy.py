@@ -294,6 +294,17 @@ GAP51_REST_STATUS_CARRIER_PATHS = (
     'backend/services/bullpen_board.py',
 )
 
+# Gap #51 Phase 2, August 21 2026. Snapshot 626 qualified the dormant carrier
+# across all 30 represented teams, authorizing trusted `/board` and `/board-v2`
+# readers to project that exact frozen D-055 object. Publication authoring stays
+# unchanged; no Rest Status delta, replay, backfill, or historical mutation is
+# authorized. The authority is recorded in
+# docs/decisions/2026-08-21-d055-rest-status-frozen-reader-enforcement.md.
+GAP51_REST_STATUS_FROZEN_READER_PATHS = (
+    'backend/api/team_board_v2.py',
+    'backend/services/bullpen_board.py',
+)
+
 # Gap #32, August 20 2026. New immutable Team Board publications may author the
 # already-public 7-day and 14-day official relief-work windows against their
 # represented date, and newly published Team State artifacts may copy those

@@ -1,5 +1,4 @@
 from copy import deepcopy
-from datetime import date
 from pathlib import Path
 
 import pytest
@@ -673,22 +672,12 @@ def test_unavailable_team_state_remains_null_and_uses_governed_message():
 
 
 def test_route_composes_each_owner_once_without_frontend_derivation(client, monkeypatch):
-    calls = {'board': 0, 'rotation': 0, 'relief': 0, 'game': 0, 'transactions': 0}
+    calls = {'board': 0, 'relief': 0, 'game': 0, 'transactions': 0}
 
-    def rotation(team, reference_date):
-        calls['rotation'] += 1
-        assert team == TEAM
-        assert reference_date == date(2026, 8, 16)
-        return deepcopy(ROTATION)
-
-    def board(team_id, **kwargs):
+    def board(team_id):
         calls['board'] += 1
         assert team_id == 1
-        payload = _board(rotation={})
-        payload['rotation_support_pressure'] = kwargs['rotation_builder'](
-            deepcopy(TEAM), date(2026, 8, 16)
-        )
-        return payload
+        return _board()
 
     def relief(team_id):
         calls['relief'] += 1
@@ -698,17 +687,16 @@ def test_route_composes_each_owner_once_without_frontend_derivation(client, monk
     def game(team_id, reference_date=None):
         calls['game'] += 1
         assert team_id == 1
-        assert reference_date == date(2026, 8, 16)
+        assert reference_date.isoformat() == '2026-08-16'
         return _game_context()
 
     def transactions(team_id, reference_date=None):
         calls['transactions'] += 1
         assert team_id == 1
-        assert reference_date == date(2026, 8, 16)
+        assert reference_date.isoformat() == '2026-08-16'
         return _recent_transactions()
 
-    monkeypatch.setattr(team_board_v2_api, '_build_team_board', board)
-    monkeypatch.setattr(team_board_v2_api, '_rotation_support_for_team', rotation)
+    monkeypatch.setattr(team_board_v2_api, 'build_published_team_board', board)
     monkeypatch.setattr(team_board_v2_api, 'build_public_team_relief_work_payload', relief)
     monkeypatch.setattr(team_board_v2_api, 'build_team_game_context', game)
     monkeypatch.setattr(team_board_v2_api, 'build_public_recent_transactions', transactions)
@@ -716,7 +704,7 @@ def test_route_composes_each_owner_once_without_frontend_derivation(client, monk
     response = client.get('/api/bullpen/teams/1/board-v2')
     assert response.status_code == 200
     payload = response.get_json()
-    assert calls == {'board': 1, 'rotation': 1, 'relief': 1, 'game': 1, 'transactions': 1}
+    assert calls == {'board': 1, 'relief': 1, 'game': 1, 'transactions': 1}
     assert payload['contract_version'] == CONTRACT_VERSION
     assert payload['summary'] == TEAM_STATE['summary']
 
@@ -724,8 +712,8 @@ def test_route_composes_each_owner_once_without_frontend_derivation(client, monk
 def test_route_scopes_optional_failure_without_destroying_core(client, monkeypatch):
     monkeypatch.setattr(
         team_board_v2_api,
-        '_build_team_board',
-        lambda _team_id, **_kwargs: _board(),
+        'build_published_team_board',
+        lambda _team_id: _board(),
     )
     monkeypatch.setattr(
         team_board_v2_api,
@@ -754,23 +742,14 @@ def test_route_scopes_optional_failure_without_destroying_core(client, monkeypat
     )
 
 
-def test_route_scopes_rotation_failure_without_rebuilding_board(client, monkeypatch):
-    calls = {'board': 0, 'rotation': 0}
+def test_route_uses_rotation_already_frozen_in_published_board(client, monkeypatch):
+    calls = {'board': 0}
 
-    def rotation(_team, _reference_date):
-        calls['rotation'] += 1
-        raise RuntimeError('fixture rotation failure')
-
-    def board(_team_id, **kwargs):
+    def board(_team_id):
         calls['board'] += 1
-        payload = _board(rotation={})
-        payload['rotation_support_pressure'] = kwargs['rotation_builder'](
-            deepcopy(TEAM), date(2026, 8, 16)
-        )
-        return payload
+        return _board()
 
-    monkeypatch.setattr(team_board_v2_api, '_build_team_board', board)
-    monkeypatch.setattr(team_board_v2_api, '_rotation_support_for_team', rotation)
+    monkeypatch.setattr(team_board_v2_api, 'build_published_team_board', board)
     monkeypatch.setattr(
         team_board_v2_api,
         'build_public_team_relief_work_payload',
@@ -790,19 +769,16 @@ def test_route_scopes_rotation_failure_without_rebuilding_board(client, monkeypa
     response = client.get('/api/bullpen/teams/1/board-v2')
     assert response.status_code == 200
     payload = response.get_json()
-    assert calls == {'board': 1, 'rotation': 1}
+    assert calls == {'board': 1}
     assert payload['active_bullpen']['arms'][0]['pitcher_id'] == 7
-    assert payload['rotation_impact']['read'] == {}
-    assert payload['section_status']['rotation_impact'] == unavailable_section(
-        'rotation_impact_unavailable'
-    )
+    assert payload['rotation_impact']['read'] == ROTATION
 
 
 def test_route_scopes_transaction_failure_without_destroying_other_sections(client, monkeypatch):
     monkeypatch.setattr(
         team_board_v2_api,
-        '_build_team_board',
-        lambda _team_id, **_kwargs: _board(),
+        'build_published_team_board',
+        lambda _team_id: _board(),
     )
     monkeypatch.setattr(
         team_board_v2_api,
@@ -838,6 +814,9 @@ def test_endpoint_is_get_only_and_composition_has_no_write_path():
     app_source = (root / 'backend/app.py').read_text(encoding='utf-8')
 
     assert "@team_board_v2_bp.route('/teams/<int:team_id>/board-v2', methods=['GET'])" in api_source
+    assert 'build_published_team_board(team_id)' in api_source
+    assert '_build_team_board' not in api_source
+    assert '_rotation_support_for_team' not in api_source
     assert 'from api.team_board_v2 import team_board_v2_bp' in app_source
     assert "app.register_blueprint(team_board_v2_bp, url_prefix='/api/bullpen')" in app_source
     for forbidden in ('db.session', '.commit(', '.add(', '.delete(', 'requests.', 'mlb_client'):

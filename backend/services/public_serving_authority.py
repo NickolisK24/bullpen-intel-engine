@@ -684,6 +684,35 @@ def _trusted_board_freshness(snapshot):
     return dict(raw) if isinstance(raw, Mapping) else {}
 
 
+def _frozen_rest_status_for_view(snapshot, team_package):
+    """Return a stamped D-055 carrier or an invalid/missing projection marker."""
+    if 'rest_status' not in team_package:
+        return None
+
+    authority = team_package.get('rest_status_authority')
+    if not isinstance(authority, Mapping):
+        return {}
+    expected_population = {
+        'basis': REST_STATUS_POPULATION_BASIS,
+        'population_authority': REST_STATUS_POPULATION_AUTHORITY,
+        'membership_authority': REST_STATUS_MEMBERSHIP_AUTHORITY,
+    }
+    if (
+        authority.get('method_version') != REST_STATUS_METHOD_VERSION
+        or authority.get('public_contract_version')
+        != REST_STATUS_PUBLIC_CONTRACT_VERSION
+        or authority.get('team_board_package_contract')
+        != TEAM_BOARD_PACKAGE_CONTRACT
+        or authority.get('population_basis') != expected_population
+        or authority.get('reference_date_policy')
+        != REST_STATUS_REFERENCE_DATE_POLICY
+        or authority.get('availability_reference_date')
+        != _iso(getattr(snapshot, 'availability_reference_date', None))
+    ):
+        return {}
+    return deepcopy(team_package.get('rest_status'))
+
+
 def build_published_team_board(team_id, *, include_stale=False):
     snapshot = dashboard_snapshot_service.get_latest_valid_dashboard_snapshot()
     if snapshot is None:
@@ -706,6 +735,7 @@ def build_published_team_board(team_id, *, include_stale=False):
         rotation_support_pressure=deepcopy(team_package.get('rotation_support_pressure') or {}),
         bullpen_stability=deepcopy(team_package.get('bullpen_stability') or {}),
         bullpen_environment=deepcopy(team_package.get('bullpen_environment') or {}),
+        frozen_rest_status=_frozen_rest_status_for_view(snapshot, team_package),
     )
     payload['team_state'] = _published_team_state(snapshot, team_id)
     payload['publication_authority'] = publication_authority(snapshot)
@@ -722,6 +752,7 @@ def _unavailable_board(team_id, reason, *, snapshot):
         limitations=list(freshness.get('limitations') or []),
         roster_authority={},
         generated_at=(snapshot.snapshot_generated_at.isoformat() if snapshot and snapshot.snapshot_generated_at else None),
+        frozen_rest_status=None,
     )
     payload.update({
         'status': 'snapshot_unavailable',

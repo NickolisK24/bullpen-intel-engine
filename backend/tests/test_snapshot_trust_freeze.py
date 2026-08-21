@@ -293,6 +293,7 @@ def test_frozen_legacy_what_changed_files_untouched():
             freeze_policy.D054_LEAGUE_TEAM_STATE_LISTING_PATHS
             + freeze_policy.D055_TEAM_BOARD_WORKLOAD_CONTEXT_PATHS
             + freeze_policy.GAP51_REST_STATUS_CARRIER_PATHS
+            + freeze_policy.GAP51_REST_STATUS_FROZEN_READER_PATHS
             + freeze_policy.GAP30_TEAM_STATE_DELTA_PATHS
         ),
     )

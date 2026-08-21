@@ -404,6 +404,35 @@ def test_gap51_phase1_exception_is_exact_and_decision_linked():
     assert 'Readers retain their pre-Phase-1 behavior' in decision
 
 
+def test_gap51_phase2_exception_is_exact_and_decision_linked():
+    approved = freeze_policy.GAP51_REST_STATUS_FROZEN_READER_PATHS
+    assert approved == (
+        'backend/api/team_board_v2.py',
+        'backend/services/bullpen_board.py',
+    )
+
+    assert freeze_policy.protected_hits(
+        list(approved),
+        exact=freeze_policy.FROZEN_PHASE0E_LEGACY_PUBLIC_PATHS,
+        prefixes=(freeze_policy.PUBLIC_API_PREFIX,),
+        approved=approved,
+    ) == []
+    assert freeze_policy.protected_hits(
+        ['backend/api/bullpen.py'],
+        exact=freeze_policy.FROZEN_PHASE0E_LEGACY_PUBLIC_PATHS,
+        prefixes=(freeze_policy.PUBLIC_API_PREFIX,),
+        approved=approved,
+    ) == ['backend/api/bullpen.py']
+
+    decision = (
+        Path(__file__).resolve().parents[2]
+        / 'docs/decisions/2026-08-21-d055-rest-status-frozen-reader-enforcement.md'
+    ).read_text(encoding='utf-8')
+    assert '`backend/api/team_board_v2.py`' in decision
+    assert '`backend/services/bullpen_board.py`' in decision
+    assert 'Trusted request-time D-055 recomputation is prohibited.' in decision
+
+
 def test_gap32_workload_window_exception_is_exact_and_decision_linked():
     approved = freeze_policy.GAP32_WORKLOAD_WINDOW_PATHS
     assert approved == (
