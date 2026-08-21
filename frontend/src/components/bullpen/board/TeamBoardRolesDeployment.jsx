@@ -37,16 +37,18 @@ function firstLimitation(status) {
 
 function RoleCompositionSkeleton() {
   return (
-    <section className="foundation-section" aria-labelledby="roles-deployment-title" aria-busy="true" data-testid="roles-deployment-skeleton">
-      <h2 id="roles-deployment-title" className="type-section-title">Roles &amp; Deployment</h2>
-      <span className="sr-only">Loading role composition.</span>
-      <div className="mt-row divide-y divide-line-subtle">
-        {[0, 1, 2].map(index => (
-          <div key={index} className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-row py-row">
-            <SkeletonBlock className="h-5 w-36 max-w-full" />
-            <SkeletonBlock className="h-5 w-14 max-w-full" />
-          </div>
-        ))}
+    <section className="foundation-section min-w-0" aria-labelledby="roles-deployment-title" aria-busy="true" data-testid="roles-deployment-skeleton">
+      <div className="rounded-sm border border-line-subtle bg-surface-raised/30 p-panel tablet:p-section">
+        <h2 id="roles-deployment-title" className="type-section-title">Roles &amp; Deployment</h2>
+        <span className="sr-only">Loading role composition.</span>
+        <div className="mt-panel divide-y divide-line-subtle">
+          {[0, 1, 2].map(index => (
+            <div key={index} className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-row py-row">
+              <SkeletonBlock className="h-5 w-36 max-w-full" />
+              <SkeletonBlock className="h-5 w-14 max-w-full" />
+            </div>
+          ))}
+        </div>
       </div>
     </section>
   )
@@ -67,10 +69,11 @@ export default function TeamBoardRolesDeployment({ read, loading = false, error 
   const limitation = firstLimitation(status)
 
   return (
-    <section className="foundation-section" aria-labelledby="roles-deployment-title" data-testid="team-board-roles-deployment">
-      <header className="mb-row">
-        <h2 id="roles-deployment-title" className="type-section-title">Roles &amp; Deployment</h2>
-        <p className="type-metadata mt-meta">Current role mix</p>
+    <section className="foundation-section min-w-0" aria-labelledby="roles-deployment-title" data-testid="team-board-roles-deployment">
+      <header className="mb-panel border-b border-line-default pb-panel">
+        <div className="type-overline text-brand-gold">Bullpen structure</div>
+        <h2 id="roles-deployment-title" className="type-section-title mt-meta">Roles &amp; Deployment</h2>
+        <p className="type-metadata mt-meta max-w-reading text-text-tertiary">Current role mix and observed usage patterns.</p>
       </header>
 
       {error ? (
@@ -80,27 +83,29 @@ export default function TeamBoardRolesDeployment({ read, loading = false, error 
       ) : (
         <>
           {rows.length > 0 && (
-            <dl className="divide-y divide-line-subtle" aria-label="Current active bullpen role composition">
-              {rows.map(row => (
-                <div key={row.key} className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-row py-row tablet:grid-cols-[minmax(12rem,1fr)_minmax(8rem,auto)]">
-                  <dt className={`type-data min-w-0 break-words ${row.key === 'limited_read' || row.key === 'role-unavailable' ? 'text-text-withheld' : 'text-text-primary'}`}>{row.label}</dt>
-                  <dd className="type-data whitespace-nowrap text-right tabular-nums text-text-secondary">
-                    {row.count} {row.count === 1 ? 'arm' : 'arms'}
-                  </dd>
-                </div>
-              ))}
-            </dl>
+            <div className="rounded-sm border border-line-subtle bg-surface-raised/30 px-panel" aria-label="Current role mix">
+              <dl className="divide-y divide-line-subtle" aria-label="Current active bullpen role composition">
+                {rows.map(row => (
+                  <div key={row.key} className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-panel py-row tablet:grid-cols-[minmax(12rem,1fr)_minmax(8rem,auto)]">
+                    <dt className={`font-board text-board-body font-medium min-w-0 break-words ${row.key === 'limited_read' || row.key === 'role-unavailable' ? 'text-text-withheld' : 'text-text-primary'}`}>{row.label}</dt>
+                    <dd className="font-board text-board-body whitespace-nowrap text-right font-semibold tabular-nums text-text-secondary">
+                      {row.count} {row.count === 1 ? 'arm' : 'arms'}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
           )}
 
           {deploymentRows.length > 0 ? (
-            <div className={rows.length > 0 ? 'mt-section' : ''} aria-label="Observed bullpen deployment">
-              <h3 className="type-section-title">Observed deployment</h3>
-              {deploymentSummary && <p className="type-compact mt-meta text-text-secondary">{deploymentSummary}</p>}
-              <ul className="mt-row divide-y divide-line-subtle">
+            <div className={rows.length > 0 ? 'mt-section border-t border-line-default pt-section' : ''} aria-label="Observed bullpen deployment">
+              <div className="type-overline">Observed deployment</div>
+              {deploymentSummary && <p className="type-compact mt-meta max-w-reading text-text-secondary">{deploymentSummary}</p>}
+              <ul className="mt-panel divide-y divide-line-subtle border-y border-line-subtle">
                 {deploymentRows.map(row => (
-                  <li key={row.key} className="py-row">
-                    <p className="type-data text-text-primary">{row.name}</p>
-                    <p className="type-compact mt-meta text-text-secondary">{row.summary}</p>
+                  <li key={row.key} className="py-panel">
+                    <p className="font-board text-board-body font-semibold text-text-primary">{row.name}</p>
+                    <p className="type-compact mt-meta max-w-reading text-text-secondary">{row.summary}</p>
                   </li>
                 ))}
               </ul>

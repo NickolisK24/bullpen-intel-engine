@@ -15,12 +15,12 @@ const publishedValue = value => Number.isInteger(value) && value >= 0 ? value : 
 
 function RecentUsageSkeleton() {
   return (
-    <section className="foundation-section" aria-labelledby="recent-usage-title" aria-busy="true" data-testid="recent-usage-skeleton">
+    <section className="min-w-0" aria-labelledby="recent-usage-title" aria-busy="true" data-testid="recent-usage-skeleton">
       <h2 id="recent-usage-title" className="type-section-title">Recent Usage</h2>
       <span className="sr-only">Loading recent usage.</span>
-      <div className="mt-row border-y border-dirt">
+      <div className="mt-panel rounded-sm border border-line-subtle bg-surface-raised/35 p-panel">
         {[0, 1].map(index => (
-          <div key={index} className="grid min-w-0 gap-row border-b border-dirt py-row last:border-b-0 tablet:grid-cols-[minmax(10rem,1.2fr)_repeat(3,minmax(6rem,0.6fr))]">
+          <div key={index} className="grid min-w-0 gap-row border-b border-line-subtle py-row first:pt-0 last:border-b-0 last:pb-0 tablet:grid-cols-[minmax(10rem,1.2fr)_repeat(3,minmax(6rem,0.6fr))]">
             <SkeletonBlock className="h-5 w-40 max-w-full" />
             <SkeletonBlock className="h-4 w-24 max-w-full" />
             <SkeletonBlock className="h-4 w-28 max-w-full" />
@@ -34,10 +34,10 @@ function RecentUsageSkeleton() {
 
 function UsageWindowRow({ row }) {
   return (
-    <article role="listitem" className="min-w-0 border-b border-line-subtle py-row last:border-b-0">
+    <article role="listitem" className="min-w-0 border-b border-line-subtle py-panel first:pt-row last:border-b-0 last:pb-row">
       <div className="grid min-w-0 grid-cols-3 gap-panel tablet:grid-cols-[minmax(10rem,1.2fr)_repeat(3,minmax(6rem,0.6fr))] tablet:items-center">
         <div className="col-span-3 min-w-0 tablet:col-span-1">
-          <h3 className="type-label text-text-primary">Last {row.days} days</h3>
+          <h3 className="font-board text-board-body font-semibold text-text-primary">Last {row.days} days</h3>
           <p className="type-metadata mt-meta text-text-tertiary">
             Through <time dateTime={row.through}>{formatDateOnly(row.through, { month: 'short' })}</time>
           </p>
@@ -49,7 +49,7 @@ function UsageWindowRow({ row }) {
         ].map(([label, value]) => (
           <div key={label} className="min-w-0 tablet:text-right">
             <div className="type-overline tablet:hidden">{label}</div>
-            <div className={`type-data mt-meta tabular-nums ${value === '—' ? 'text-text-withheld' : 'text-text-primary'}`}>{value}</div>
+            <div className={`mt-meta font-board text-lg font-semibold tabular-nums ${value === '—' ? 'text-text-withheld' : 'text-text-primary'}`}>{value}</div>
           </div>
         ))}
       </div>
@@ -66,27 +66,29 @@ function LatestPublishedUsage({ group, onSelectPitcher }) {
   const dateLabel = formatDateOnly(group.gameDate, { month: 'short' })
 
   return (
-    <div className="border-b border-line-default pb-row">
-      <div className="type-overline">Most recent published date</div>
-      <h3 className="type-data mt-meta text-text-primary">
-        <time dateTime={group.gameDate}>{dateLabel}</time>
-      </h3>
-      <p className="type-compact mt-meta max-w-[48rem] text-text-secondary">{group.sentence}</p>
+    <div className="rounded-sm border border-line-default bg-surface-raised/55 p-panel tablet:p-section">
+      <div className="type-overline text-brand-gold">Most recent published date</div>
+      <div className="mt-meta flex min-w-0 flex-wrap items-baseline gap-x-panel gap-y-meta">
+        <h3 className="font-board text-xl font-semibold text-text-primary tablet:text-2xl">
+          <time dateTime={group.gameDate}>{dateLabel}</time>
+        </h3>
+        <p className="type-compact max-w-[48rem] text-text-secondary">{group.sentence}</p>
+      </div>
       {group.arms.length > 0 && (
-        <div className="mt-row" aria-label={`Arms used on ${dateLabel}`}>
+        <div className="mt-panel border-t border-line-subtle pt-row" aria-label={`Arms used on ${dateLabel}`}>
           <div className="type-overline">Arms used</div>
           <div className="mt-meta flex min-w-0 flex-wrap gap-x-panel gap-y-meta">
             {group.arms.map(arm => arm.pitcherId != null && typeof onSelectPitcher === 'function' ? (
               <button
                 key={arm.key}
                 type="button"
-                className="min-h-11 rounded-sm font-board text-board-body text-brand-blue focus:outline-none focus-visible:ring-2 focus-visible:ring-line-focus"
+                className="min-h-11 rounded-sm font-board text-board-body font-medium text-brand-blue focus:outline-none focus-visible:ring-2 focus-visible:ring-line-focus"
                 onClick={event => onSelectPitcher(arm.pitcherId, event.currentTarget)}
               >
                 {arm.name}
               </button>
             ) : (
-              <span key={arm.key} className="inline-flex min-h-11 items-center font-board text-board-body text-text-secondary">{arm.name}</span>
+              <span key={arm.key} className="inline-flex min-h-11 items-center font-board text-board-body font-medium text-text-secondary">{arm.name}</span>
             ))}
           </div>
         </div>
@@ -108,9 +110,12 @@ export default function TeamBoardRecentUsage({ read, loading = false, error = nu
   const limitation = firstLimitation(status)
 
   return (
-    <section className="foundation-section" aria-labelledby="recent-usage-title" data-testid="team-board-recent-usage">
-      <header className="mb-row flex min-w-0 flex-wrap items-end justify-between gap-meta">
-        <h2 id="recent-usage-title" className="type-section-title">Recent Usage</h2>
+    <section className="min-w-0" aria-labelledby="recent-usage-title" data-testid="team-board-recent-usage">
+      <header className="mb-panel flex min-w-0 flex-wrap items-end justify-between gap-meta border-b border-line-subtle pb-row">
+        <div className="min-w-0">
+          <div className="type-overline text-brand-gold">Who just worked</div>
+          <h2 id="recent-usage-title" className="mt-meta font-board text-xl font-semibold text-text-primary">Recent Usage</h2>
+        </div>
         {reliefWork?.data_through && <p className="type-metadata">Published through {formatDateOnly(reliefWork.data_through, { month: 'short' })}</p>}
       </header>
 
@@ -122,8 +127,8 @@ export default function TeamBoardRecentUsage({ read, loading = false, error = nu
         <>
           <LatestPublishedUsage group={view.latestGroup} onSelectPitcher={onSelectPitcher} />
           {rows.length > 0 && (
-            <div className="mt-row min-w-0" role="list" aria-label="Published recent relief usage windows">
-              <div className="hidden grid-cols-[minmax(10rem,1.2fr)_repeat(3,minmax(6rem,0.6fr))] gap-panel border-b border-line-default pb-meta font-board text-board-label font-medium uppercase text-text-tertiary tablet:grid">
+            <div className="mt-panel min-w-0 rounded-sm border border-line-subtle bg-surface-base px-panel" role="list" aria-label="Published recent relief usage windows">
+              <div className="hidden grid-cols-[minmax(10rem,1.2fr)_repeat(3,minmax(6rem,0.6fr))] gap-panel border-b border-line-default py-row font-board text-board-label font-medium uppercase text-text-tertiary tablet:grid">
                 <div>Window</div>
                 <div className="text-right">Appearances</div>
                 <div className="text-right">Arms</div>

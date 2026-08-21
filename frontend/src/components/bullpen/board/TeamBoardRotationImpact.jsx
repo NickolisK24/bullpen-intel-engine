@@ -40,12 +40,18 @@ function firstLimitation(status, rotationImpact) {
 
 function RotationImpactSkeleton() {
   return (
-    <section className="foundation-section" aria-labelledby="rotation-impact-title" aria-busy="true" data-testid="rotation-impact-skeleton">
-      <h2 id="rotation-impact-title" className="type-section-title">Rotation Impact</h2>
-      <span className="sr-only">Loading rotation impact.</span>
-      <SkeletonBlock className="mt-row h-5 w-full max-w-2xl" />
-      <div className="mt-row grid grid-cols-2 border-y border-dirt tablet:grid-cols-3">
-        {[0, 1, 2].map(index => <SkeletonBlock key={index} className="m-panel h-10 w-24 max-w-full" />)}
+    <section className="foundation-section min-w-0" aria-labelledby="rotation-impact-title" aria-busy="true" data-testid="rotation-impact-skeleton">
+      <div className="rounded-sm border border-line-subtle bg-surface-raised/25 p-panel tablet:p-section">
+        <h2 id="rotation-impact-title" className="type-section-title">Rotation Impact</h2>
+        <span className="sr-only">Loading rotation impact.</span>
+        <SkeletonBlock className="mt-panel h-5 w-full max-w-2xl" />
+        <div className="mt-panel grid grid-cols-2 gap-px overflow-hidden rounded-sm border border-line-subtle bg-line-subtle tablet:grid-cols-3">
+          {[0, 1, 2].map(index => (
+            <div key={index} className="bg-surface-base p-panel">
+              <SkeletonBlock className="h-10 w-24 max-w-full" />
+            </div>
+          ))}
+        </div>
       </div>
     </section>
   )
@@ -74,9 +80,11 @@ export default function TeamBoardRotationImpact({ read, loading = false, error =
   const hasFacts = Boolean(summary || metrics.length > 0)
 
   return (
-    <section className="foundation-section" aria-labelledby="rotation-impact-title" data-testid="team-board-rotation-impact">
-      <header className="mb-row">
-        <h2 id="rotation-impact-title" className="type-section-title">Rotation Impact</h2>
+    <section className="foundation-section min-w-0" aria-labelledby="rotation-impact-title" data-testid="team-board-rotation-impact">
+      <header className="mb-panel border-b border-line-default pb-panel">
+        <div className="type-overline text-text-tertiary">Game load context</div>
+        <h2 id="rotation-impact-title" className="type-section-title mt-meta">Rotation Impact</h2>
+        <p className="type-metadata mt-meta max-w-reading text-text-tertiary">How recent starter length has shaped bullpen coverage demand.</p>
       </header>
 
       {error ? (
@@ -85,14 +93,18 @@ export default function TeamBoardRotationImpact({ read, loading = false, error =
         <SectionState status="unavailable" title="Rotation Impact unavailable" message="A current backend-authored rotation read is not available." onRetry={!read ? onRetry : undefined} />
       ) : (
         <>
-          {summary && <p className="type-compact max-w-3xl text-chalk200">{summary}</p>}
+          {summary && (
+            <div className="rounded-sm border border-line-subtle bg-surface-raised/25 p-panel">
+              <p className="type-compact max-w-reading text-text-secondary">{summary}</p>
+            </div>
+          )}
 
           {metrics.length > 0 && (
-            <dl className="mt-row grid grid-cols-2 border-y border-dirt tablet:grid-cols-3" aria-label="Recent rotation support facts">
+            <dl className={`${summary ? 'mt-panel' : ''} grid grid-cols-2 gap-px overflow-hidden rounded-sm border border-line-subtle bg-line-subtle tablet:grid-cols-3`} aria-label="Recent rotation support facts">
               {metrics.map(metric => (
-                <div key={metric.key} className="min-w-0 border-b border-dirt px-panel py-row last:col-span-2 last:border-b-0 tablet:border-b-0 tablet:border-r tablet:last:col-span-1 tablet:last:border-r-0">
-                  <dt className="type-overline break-words">{metric.label}</dt>
-                  <dd className="type-data mt-meta text-lg text-chalk100">
+                <div key={metric.key} className="min-w-0 bg-surface-base p-panel last:col-span-2 tablet:last:col-span-1">
+                  <dt className="type-overline break-words text-text-tertiary">{metric.label}</dt>
+                  <dd className="mt-meta font-board text-lg font-semibold tabular-nums text-text-primary">
                     {metric.displayValue ?? metric.value}{metric.unit ? ` ${metric.unit}` : ''}
                   </dd>
                 </div>
@@ -101,7 +113,7 @@ export default function TeamBoardRotationImpact({ read, loading = false, error =
           )}
 
           {(windowDays != null || representedDate || gamesAnalyzed != null || gamesInWindow != null) && (
-            <p className="type-metadata mt-row">
+            <p className="type-metadata mt-panel text-text-tertiary">
               {windowDays != null ? `${windowDays}-day window` : null}
               {windowDays != null && (gamesAnalyzed != null || representedDate) ? ' · ' : null}
               {gamesAnalyzed != null
@@ -113,17 +125,19 @@ export default function TeamBoardRotationImpact({ read, loading = false, error =
           )}
 
           {handoffTarget && handoffSummary && receiptGames.length > 0 && (
-            <a
-              href={`#${handoffTarget}`}
-              className="mt-row inline-flex min-h-11 items-center text-brand-blue focus:outline-none focus-visible:ring-2 focus-visible:ring-line-focus"
-              onClick={event => focusReliefWork(event, handoffTarget)}
-            >
-              {handoffSummary}
-            </a>
+            <div className="mt-panel border-t border-line-subtle pt-panel">
+              <a
+                href={`#${handoffTarget}`}
+                className="inline-flex min-h-11 items-center font-board text-board-body font-medium text-brand-blue focus:outline-none focus-visible:ring-2 focus-visible:ring-line-focus"
+                onClick={event => focusReliefWork(event, handoffTarget)}
+              >
+                {handoffSummary}
+              </a>
+            </div>
           )}
 
           {statusName === 'partial' && (
-            <SectionState status="partial" title="Rotation Impact is partially available" message={limitation || 'Some recent rotation context is unavailable.'} className={hasFacts ? 'mt-row' : ''} />
+            <SectionState status="partial" title="Rotation Impact is partially available" message={limitation || 'Some recent rotation context is unavailable.'} className={hasFacts ? 'mt-panel' : ''} />
           )}
           {statusName === 'available' && !hasFacts && (
             <div className="section-state" role="status" data-state="empty">
