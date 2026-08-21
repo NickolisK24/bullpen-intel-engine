@@ -209,7 +209,12 @@ export default function TonightsBullpenBoard({
                 error={teamBoardV2State.error}
                 onRetry={teamBoardV2State.refetch}
               />
-              <TeamBoardPerformance />
+              <TeamBoardPerformance
+                read={teamBoardRead}
+                loading={teamBoardV2State.loading}
+                error={teamBoardV2State.error}
+                onRetry={teamBoardV2State.refetch}
+              />
             </SectionPair>
             <SectionPair label="Rotation and transactions">
               <TeamBoardRotationImpact

@@ -40,6 +40,14 @@ function read(overrides = {}) {
     },
     summary: 'The bullpen enters the next game with its core options rested.',
     activeBullpen: { arm_count: 8, arms: [] },
+    recentlyUsedArms: {
+      contract: 'team_board_recently_used_arms_v1',
+      status: 'available',
+      value: 5,
+      window_days: 3,
+      window_label: 'Last 3 days',
+      through: '2026-08-16',
+    },
     restStatus: {
       available: true,
       active_arm_count: 8,
@@ -53,6 +61,7 @@ function read(overrides = {}) {
     sectionStatus: {
       team_state: { status: 'available', limitations: [] },
       active_bullpen: { status: 'available', limitations: [] },
+      recently_used_arms: { status: 'available', limitations: [] },
       rest_status: { status: 'available', limitations: [] },
     },
     ...overrides,
@@ -107,13 +116,13 @@ test('fail-closed Team State renders the governed message and no manufactured st
   }
 })
 
-test('Bullpen Summary publishes exact fields and withholds undefined target meanings', () => {
+test('Bullpen Summary publishes the backend-owned recent-use count and window', () => {
   const figures = getBullpenSummaryView(read())
   const publishedHtml = render({ read: read() })
   assert.deepEqual(figures.map(({ label, value }) => ({ label, value })), [
     { label: 'Active arms', value: 8 },
     { label: 'Rested options', value: 5 },
-    { label: 'Recently used arms', value: null },
+    { label: 'Recently used arms', value: 5 },
     { label: 'Off-active count', value: null },
     { label: '7-day workload', value: 0 },
   ])
@@ -121,10 +130,17 @@ test('Bullpen Summary publishes exact fields and withholds undefined target mean
   const missingRead = read({
     activeBullpen: { arm_count: null, arms: [] },
     restStatus: { available: false, active_arm_count: null },
+    recentlyUsedArms: {
+      status: 'unavailable',
+      value: null,
+      window_days: 3,
+      window_label: 'Last 3 days',
+    },
     workloadOverview: { windows: [{ window_days: 7, pitches_total: null }] },
     sectionStatus: {
       ...read().sectionStatus,
       active_bullpen: { status: 'partial', limitations: [] },
+      recently_used_arms: { status: 'unavailable', limitations: [] },
       rest_status: { status: 'unavailable', limitations: [] },
     },
   })
@@ -132,8 +148,9 @@ test('Bullpen Summary publishes exact fields and withholds undefined target mean
   const withheldHtml = render({ read: missingRead })
   assert.equal(text(withheldHtml).includes('Active arms 0'), false)
   assert.equal(text(withheldHtml).includes('Rested options 0'), false)
+  assert.ok(text(publishedHtml).includes('Recently used arms 5 Last 3 days'))
   assert.ok(text(publishedHtml).includes('7-day workload 0 Pitches'))
-  assert.ok(text(withheldHtml).includes('Recently used arms — Public window not defined'))
+  assert.ok(text(withheldHtml).includes('Recently used arms — Not published'))
 })
 
 test('header keeps one governed state, one currentness line, and the answer intact', () => {

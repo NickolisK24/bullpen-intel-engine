@@ -33,6 +33,13 @@ const payload = {
   },
   rest_status: { available: false, active_arm_count: null },
   recent_usage: { appearances: [{ pitcher_name: 'Exact Source Name', pitches_thrown: null }] },
+  recently_used_arms: {
+    contract: 'team_board_recently_used_arms_v1',
+    status: 'available',
+    value: 1,
+    window_days: 3,
+    window_label: 'Last 3 days',
+  },
   workload_overview: {
     windows: [{ window_days: 7, relief_appearances: 3, pitches_total: null }],
     concentration: { label: 'Exact Concentration', summary: 'Backend workload sentence.' },
@@ -86,6 +93,7 @@ test('adapter passes backend semantics and nulls through unchanged', () => {
   assert.equal(view.activeBullpen.arms[0].workload.pitches_last_7_days, null)
   assert.equal(view.restStatus.active_arm_count, null)
   assert.equal(view.recentUsage, payload.recent_usage)
+  assert.equal(view.recentlyUsedArms, payload.recently_used_arms)
   assert.equal(view.recentUsage.appearances[0].pitches_thrown, null)
   assert.equal(view.workloadOverview, payload.workload_overview)
   assert.equal(view.workloadOverview.windows[0].pitches_total, null)

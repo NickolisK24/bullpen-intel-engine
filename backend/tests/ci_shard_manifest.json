@@ -957,6 +957,10 @@
           "measured_seconds": 60.417
         },
         {
+          "path": "tests/test_public_team_performance.py",
+          "measured_seconds": 0.0
+        },
+        {
           "path": "tests/test_phantom_game_log_reconciliation.py",
           "measured_seconds": 4.594
         },

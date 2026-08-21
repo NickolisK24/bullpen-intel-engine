@@ -234,6 +234,28 @@ def test_approved_paths_are_subtracted():
     ) == []
 
 
+def test_team_board_performance_exception_is_exact_and_decision_linked():
+    approved = freeze_policy.TEAM_BOARD_PERFORMANCE_INTELLIGENCE_PATHS
+    assert approved == ('backend/api/team_board_v2.py',)
+    assert freeze_policy.protected_hits(
+        ['backend/api/team_board_v2.py'],
+        prefixes=(freeze_policy.PUBLIC_API_PREFIX,),
+        approved=approved,
+    ) == []
+    assert freeze_policy.protected_hits(
+        ['backend/api/bullpen.py'],
+        prefixes=(freeze_policy.PUBLIC_API_PREFIX,),
+        approved=approved,
+    ) == ['backend/api/bullpen.py']
+
+    decision = (
+        Path(__file__).resolve().parents[2]
+        / 'docs/decisions/2026-08-21-team-board-performance-intelligence.md'
+    ).read_text(encoding='utf-8')
+    assert 'Team Board may publish M-001 Active Bullpen ERA' in decision
+    assert 'Team State and Share Artifact performance gates remain' in decision
+
+
 def test_d054_exception_is_exact_decision_linked_and_does_not_unfreeze_paths():
     approved = freeze_policy.D054_LEAGUE_TEAM_STATE_LISTING_PATHS
     assert approved == (

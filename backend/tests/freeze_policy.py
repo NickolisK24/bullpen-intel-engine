@@ -340,6 +340,16 @@ ROLES_DEPLOYMENT_INTELLIGENCE_PATHS = (
     'backend/services/share_artifact_generation.py',
 )
 
+# Team Board Performance, August 21 2026. The existing Team Board v2 route may
+# add the approved M-001 Current Active-Pen ERA read using the represented
+# default-visible bullpen population and the established season-to-date
+# performance authority. No Team State, share artifact, historical, ranking,
+# or additional performance-metric gate is opened. Decision authority:
+# docs/decisions/2026-08-21-team-board-performance-intelligence.md.
+TEAM_BOARD_PERFORMANCE_INTELLIGENCE_PATHS = (
+    'backend/api/team_board_v2.py',
+)
+
 
 def normalize(path):
     """Repository-relative path with forward slashes and no surrounding space."""
