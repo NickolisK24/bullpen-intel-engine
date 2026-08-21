@@ -48,6 +48,13 @@ function read(overrides = {}) {
       window_label: 'Last 3 days',
       through: '2026-08-16',
     },
+    offActiveCount: {
+      contract: 'team_board_off_active_count_v1',
+      status: 'available',
+      value: 2,
+      through: '2026-08-16',
+      context_label: 'Current roster context',
+    },
     restStatus: {
       available: true,
       active_arm_count: 8,
@@ -62,6 +69,7 @@ function read(overrides = {}) {
       team_state: { status: 'available', limitations: [] },
       active_bullpen: { status: 'available', limitations: [] },
       recently_used_arms: { status: 'available', limitations: [] },
+      off_active_count: { status: 'available', limitations: [] },
       rest_status: { status: 'available', limitations: [] },
     },
     ...overrides,
@@ -123,7 +131,7 @@ test('Bullpen Summary publishes the backend-owned recent-use count and window', 
     { label: 'Active arms', value: 8 },
     { label: 'Rested options', value: 5 },
     { label: 'Recently used arms', value: 5 },
-    { label: 'Off-active count', value: null },
+    { label: 'Off-active count', value: 2 },
     { label: '7-day workload', value: 0 },
   ])
 
@@ -136,11 +144,17 @@ test('Bullpen Summary publishes the backend-owned recent-use count and window', 
       window_days: 3,
       window_label: 'Last 3 days',
     },
+    offActiveCount: {
+      status: 'unavailable',
+      value: null,
+      context_label: 'Current roster context',
+    },
     workloadOverview: { windows: [{ window_days: 7, pitches_total: null }] },
     sectionStatus: {
       ...read().sectionStatus,
       active_bullpen: { status: 'partial', limitations: [] },
       recently_used_arms: { status: 'unavailable', limitations: [] },
+      off_active_count: { status: 'unavailable', limitations: [] },
       rest_status: { status: 'unavailable', limitations: [] },
     },
   })
@@ -149,8 +163,10 @@ test('Bullpen Summary publishes the backend-owned recent-use count and window', 
   assert.equal(text(withheldHtml).includes('Active arms 0'), false)
   assert.equal(text(withheldHtml).includes('Rested options 0'), false)
   assert.ok(text(publishedHtml).includes('Recently used arms 5 Last 3 days'))
+  assert.ok(text(publishedHtml).includes('Off-active count 2 Current roster context'))
   assert.ok(text(publishedHtml).includes('7-day workload 0 Pitches'))
   assert.ok(text(withheldHtml).includes('Recently used arms — Not published'))
+  assert.ok(text(withheldHtml).includes('Off-active count — Not published'))
 })
 
 test('header keeps one governed state, one currentness line, and the answer intact', () => {
