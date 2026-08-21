@@ -97,25 +97,34 @@ function AnswerHeading({ teamName, teamAbbreviation, teamSwitcher = null }) {
   return (
     <div className="flex min-w-0 flex-1 flex-col gap-panel tablet:flex-row tablet:items-end">
       <div className="min-w-0 flex-1">
-        <div className="type-overline">Team Board</div>
-        <h2 id="team-board-answer-title" className="mt-meta break-words font-board text-2xl font-semibold leading-tight text-text-primary tablet:text-[1.75rem] lg:text-3xl">
-          {teamName}
-        </h2>
-        {teamAbbreviation && teamAbbreviation !== teamName && (
-          <div className="type-metadata mt-meta">{teamAbbreviation}</div>
-        )}
+        <div className="type-overline text-brand-blue">Team Board</div>
+        <div className="mt-meta flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1">
+          <h2 id="team-board-answer-title" className="break-words font-board text-[1.75rem] font-semibold leading-[1.08] tracking-[-0.02em] text-text-primary tablet:text-[2rem] desktop:text-[2.25rem]">
+            {teamName}
+          </h2>
+          {teamAbbreviation && teamAbbreviation !== teamName && (
+            <span className="type-overline text-text-withheld" aria-hidden="true">{teamAbbreviation}</span>
+          )}
+        </div>
       </div>
       {teamSwitcher}
     </div>
   )
 }
 
+const answerSurfaceClass = [
+  'foundation-panel -mx-4 overflow-hidden border-y border-line-default bg-surface-raised/55 px-4 py-5',
+  'md:-mx-6 md:px-6 md:py-6',
+  'xl:-mx-8 xl:px-8',
+  'desktop:mx-0 desktop:rounded-md desktop:border desktop:px-7 desktop:py-7',
+].join(' ')
+
 export function TeamBoardAnswerSkeleton({ team, teamSwitcher = null }) {
   const teamName = team?.team_name || team?.team_abbreviation || 'Team bullpen'
   const teamAbbreviation = team?.team_abbreviation || null
   return (
     <section
-      className="foundation-panel"
+      className={answerSurfaceClass}
       aria-labelledby="team-board-answer-title"
       aria-busy="true"
       aria-live="polite"
@@ -124,10 +133,12 @@ export function TeamBoardAnswerSkeleton({ team, teamSwitcher = null }) {
       <span className="sr-only">Loading the current Team Board answer.</span>
       <div className="flex min-w-0 flex-col gap-panel tablet:flex-row tablet:items-start tablet:justify-between">
         <AnswerHeading teamName={teamName} teamAbbreviation={teamAbbreviation} teamSwitcher={teamSwitcher} />
-        <SkeletonBlock className="h-8 w-28 shrink-0" />
+        <SkeletonBlock className="h-9 w-32 shrink-0" />
       </div>
-      <SkeletonBlock className="mt-section h-5 w-full max-w-2xl" />
-      <SkeletonBlock className="mt-panel h-3 w-36" />
+      <SkeletonBlock className="mt-section h-6 w-full max-w-2xl" />
+      <div className="mt-section border-t border-line-subtle pt-panel">
+        <SkeletonBlock className="h-3 w-40" />
+      </div>
     </section>
   )
 }
@@ -136,19 +147,26 @@ function BullpenSummary({ read }) {
   const figures = getBullpenSummaryView(read)
 
   return (
-    <section className="foundation-panel mt-section" aria-labelledby="bullpen-summary-title" data-testid="bullpen-summary">
-      <h3 id="bullpen-summary-title" className="type-section-title">Bullpen Summary</h3>
-      <dl className="mt-panel grid grid-cols-2 gap-x-panel gap-y-section border-t border-dirt pt-panel tablet:grid-cols-3 desktop:grid-cols-5">
+    <section
+      className="foundation-panel -mx-4 border-b border-line-default bg-surface-nav/45 px-4 pb-5 pt-4 md:-mx-6 md:px-6 xl:-mx-8 xl:px-8 desktop:mx-0 desktop:mt-2 desktop:rounded-md desktop:border desktop:px-6 desktop:py-5"
+      aria-labelledby="bullpen-summary-title"
+      data-testid="bullpen-summary"
+    >
+      <div className="flex items-center justify-between gap-panel">
+        <h3 id="bullpen-summary-title" className="type-overline text-text-secondary">Bullpen Summary</h3>
+        <span className="type-metadata hidden text-text-withheld tablet:inline">Current bullpen snapshot</span>
+      </div>
+      <dl className="mt-panel grid grid-cols-2 border-t border-line-subtle tablet:grid-cols-3 desktop:grid-cols-5 desktop:divide-x desktop:divide-line-subtle">
         {figures.map((figure, index) => (
           <div
             key={figure.key}
-            className={`min-w-0 ${index === figures.length - 1 ? 'col-span-2 tablet:col-span-1' : ''}`}
+            className={`min-w-0 border-b border-line-subtle py-panel pr-panel desktop:border-b-0 desktop:px-panel desktop:first:pl-0 desktop:last:pr-0 ${index % 2 === 1 ? 'border-l pl-panel tablet:border-l-0 tablet:pl-0' : ''} ${index === figures.length - 1 ? 'col-span-2 tablet:col-span-1' : ''}`}
           >
-            <dt className="type-overline break-words">{figure.label}</dt>
-            <dd className={`type-data mt-meta text-2xl ${figure.value === null ? 'text-text-withheld' : 'text-text-primary'}`}>
+            <dt className="type-overline break-words text-text-tertiary">{figure.label}</dt>
+            <dd className={`mt-meta font-board text-[1.65rem] font-semibold leading-none tabular-nums ${figure.value === null ? 'text-text-withheld' : 'text-text-primary'}`}>
               {figure.value ?? '—'}
             </dd>
-            <p className="type-metadata mt-meta break-words">{figure.qualifier}</p>
+            <p className="type-metadata mt-meta break-words text-text-withheld">{figure.qualifier}</p>
           </div>
         ))}
       </dl>
@@ -172,92 +190,96 @@ export default function TeamBoardAnswerBlock({
 
   return (
     <>
-      <section className="foundation-panel" aria-labelledby="team-board-answer-title" data-testid="team-board-answer-block">
-      <div className="flex min-w-0 flex-col gap-panel tablet:flex-row tablet:items-start tablet:justify-between">
-        <AnswerHeading teamName={view.teamName} teamAbbreviation={view.teamAbbreviation} teamSwitcher={teamSwitcher} />
-        {view.teamState.available && (
-          <div
-            className="inline-flex min-h-8 w-fit items-center gap-2 rounded-sm border px-3 py-1.5 font-board text-board-metadata"
-            style={{
-              borderColor: view.teamState.tone.borderColor,
-              backgroundColor: view.teamState.tone.backgroundColor,
-              color: view.teamState.tone.color,
-            }}
-            aria-label={`Team State: ${view.teamState.publicLabel}`}
-          >
-            <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: view.teamState.tone.dot }} aria-hidden="true" />
-            <span>Team State: {view.teamState.publicLabel}</span>
-          </div>
+      <section className={answerSurfaceClass} aria-labelledby="team-board-answer-title" data-testid="team-board-answer-block">
+        <div className="flex min-w-0 flex-col gap-panel tablet:flex-row tablet:items-start tablet:justify-between">
+          <AnswerHeading teamName={view.teamName} teamAbbreviation={view.teamAbbreviation} teamSwitcher={teamSwitcher} />
+          {view.teamState.available && (
+            <div
+              className="inline-flex min-h-9 w-fit shrink-0 items-center gap-2 rounded-sm border px-3 py-2 font-board text-board-metadata font-semibold"
+              style={{
+                borderColor: view.teamState.tone.borderColor,
+                backgroundColor: view.teamState.tone.backgroundColor,
+                color: view.teamState.tone.color,
+              }}
+              aria-label={`Team State: ${view.teamState.publicLabel}`}
+            >
+              <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: view.teamState.tone.dot }} aria-hidden="true" />
+              <span>Team State: {view.teamState.publicLabel}</span>
+            </div>
+          )}
+        </div>
+
+        {hasError ? (
+          <SectionState
+            status="error"
+            title="Team Board answer unavailable"
+            message="The current Team Board answer could not be loaded."
+            onRetry={onRetry}
+            className="mt-section"
+          />
+        ) : !read ? (
+          <SectionState
+            status="unavailable"
+            title="Team Board answer unavailable"
+            message="A current Team Board answer is not available."
+            onRetry={onRetry}
+            className="mt-section"
+          />
+        ) : (
+          <>
+            <div className="mt-section min-w-0 desktop:grid desktop:grid-cols-[minmax(0,1fr)_minmax(16rem,0.42fr)] desktop:gap-section-lg">
+              <div className="min-w-0">
+                {view.teamState.available ? (
+                  view.summary && <p className="max-w-3xl font-board text-[1rem] font-medium leading-[1.6] text-text-primary tablet:text-[1.0625rem]">{view.summary}</p>
+                ) : (
+                  <p className="type-body max-w-3xl text-text-secondary" role="status">
+                    {view.teamState.unavailableMessage}
+                  </p>
+                )}
+              </div>
+
+              <div className="mt-section min-w-0 border-t border-line-subtle pt-panel desktop:mt-0 desktop:border-l desktop:border-t-0 desktop:pl-section desktop:pt-0">
+                {view.representedDate && (
+                  <p className="type-metadata flex items-center gap-2 text-text-secondary">
+                    <span className={`h-2 w-2 shrink-0 rounded-full ${view.isStale ? 'bg-warning' : 'bg-brand-gold'}`} aria-hidden="true" />
+                    <span>{view.isStale ? 'Stale · data through ' : 'Data through '}</span>
+                    <time dateTime={view.representedDate}>
+                      {formatFreshnessDate(view.representedDate) || view.representedDate}
+                    </time>
+                  </p>
+                )}
+                {view.gameContext && (
+                  <p className="type-metadata mt-meta break-words text-text-tertiary" aria-label="Game context">
+                    {view.gameContext.statusLabel}
+                    {view.gameContext.opponent ? ` vs ${view.gameContext.opponent}` : ''}
+                    {view.gameContext.gameDate ? ` · ${view.gameContext.gameDate}` : ''}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {view.isSample && (
+              <p className="type-compact mt-panel text-warning" role="status">
+                Sample data — not live MLB data.
+              </p>
+            )}
+
+            {view.limitation && (
+              <SectionState
+                status={view.limitation.status}
+                title="Limited read"
+                message={view.limitation.limitation}
+                className="mt-panel"
+              />
+            )}
+
+            {evidenceDisclosure && (
+              <div className="mt-section border-t border-line-subtle pt-panel">
+                {evidenceDisclosure}
+              </div>
+            )}
+          </>
         )}
-      </div>
-
-      {hasError ? (
-        <SectionState
-          status="error"
-          title="Team Board answer unavailable"
-          message="The current Team Board answer could not be loaded."
-          onRetry={onRetry}
-          className="mt-section"
-        />
-      ) : !read ? (
-        <SectionState
-          status="unavailable"
-          title="Team Board answer unavailable"
-          message="A current Team Board answer is not available."
-          onRetry={onRetry}
-          className="mt-section"
-        />
-      ) : (
-        <>
-          <div className="mt-section min-w-0 desktop:grid desktop:grid-cols-[minmax(0,42rem)_minmax(14rem,1fr)] desktop:gap-section-lg">
-            <div className="min-w-0">
-              {view.teamState.available ? (
-                view.summary && <p className="type-body max-w-3xl text-chalk200">{view.summary}</p>
-              ) : (
-                <p className="type-body max-w-3xl text-chalk300" role="status">
-                  {view.teamState.unavailableMessage}
-                </p>
-              )}
-            </div>
-
-            <div className="mt-panel min-w-0 border-t border-dirt pt-panel desktop:mt-0 desktop:border-l desktop:border-t-0 desktop:pl-section desktop:pt-0">
-              {view.representedDate && (
-                <p className="type-metadata flex items-center gap-2">
-                  <span className={`h-2 w-2 shrink-0 rounded-full ${view.isStale ? 'bg-warning' : 'bg-gold'}`} aria-hidden="true" />
-                  <span>{view.isStale ? 'Stale · data through ' : 'Data through '}</span>
-                  <time dateTime={view.representedDate}>
-                    {formatFreshnessDate(view.representedDate) || view.representedDate}
-                  </time>
-                </p>
-              )}
-              {view.gameContext && (
-                <p className="type-metadata mt-meta break-words" aria-label="Game context">
-                  {view.gameContext.statusLabel}
-                  {view.gameContext.opponent ? ` vs ${view.gameContext.opponent}` : ''}
-                  {view.gameContext.gameDate ? ` · ${view.gameContext.gameDate}` : ''}
-                </p>
-              )}
-            </div>
-          </div>
-
-          {view.isSample && (
-            <p className="type-compact mt-panel text-warning" role="status">
-              Sample data — not live MLB data.
-            </p>
-          )}
-
-          {view.limitation && (
-            <SectionState
-              status={view.limitation.status}
-              title="Limited read"
-              message={view.limitation.limitation}
-              className="mt-panel"
-            />
-          )}
-
-          {evidenceDisclosure}
-        </>
-      )}
       </section>
       {!hasError && read && <BullpenSummary read={read} />}
     </>
