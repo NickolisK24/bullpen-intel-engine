@@ -152,6 +152,39 @@ def test_team_relief_work_anchor_from_public_freshness_and_exact_payload(client)
 
     body = client.get(f'/api/bullpen/teams/{TEAM_ID}/relief-work').get_json()
 
+    deployment = body.pop('deployment_profile')
+    assert deployment['contract'] == 'team_board_deployment_profile_carrier_v1'
+    assert deployment['status'] == 'complete'
+    assert deployment['data_through'] == '2026-07-05'
+    assert deployment['window_days'] == 14
+    assert deployment['population_basis'] == 'official_appearance_team_relief_appearances'
+    assert deployment['team_summary'] == {
+        'represented_arm_count': 2,
+        'pitchers_with_save_or_hold': 1,
+        'pitchers_with_multi_inning_appearance': 2,
+    }
+    assert [item['pitcher_id'] for item in deployment['profiles']] == [alpha_id, beta_id]
+    assert deployment['profiles'][0] == {
+        'pitcher_id': alpha_id,
+        'pitcher_mlb_id': 90001,
+        'pitcher_name': 'Alpha Reliever',
+        'appearances_analyzed': 2,
+        'saves': 1,
+        'holds': 1,
+        'games_finished': 0,
+        'appearances_with_games_finished': 0,
+        'multi_inning_appearances': 1,
+        'appearances_with_outs': 2,
+        'most_recent_multi_inning_date': '2026-07-03',
+        'limitations': [
+            'Games-finished counts include only appearances with recorded finish authority.'
+        ],
+        'summary': (
+            'Alpha Reliever recorded 1 save, 1 hold, and worked multiple innings '
+            'in 1 of 2 relief appearances with recorded outs during the 14-day window.'
+        ),
+    }
+
     assert body == {
         'capability': 'public_team_relief_work',
         'team': {
@@ -421,6 +454,12 @@ def test_team_relief_work_absence_and_zero_windows(client):
         'pitchers_sentence': '0 pitchers appeared in relief in the 14 days through July 5.',
         'pitches_sentence': '0 pitches across those 0 relief appearances.',
     }
+    assert body['deployment_profile']['profiles'] == []
+    assert body['deployment_profile']['team_summary'] == {
+        'represented_arm_count': 0,
+        'pitchers_with_save_or_hold': 0,
+        'pitchers_with_multi_inning_appearance': 0,
+    }
 
 
 def test_team_relief_work_known_subtotal_pitch_wording(client):
@@ -442,6 +481,47 @@ def test_team_relief_work_known_subtotal_pitch_wording(client):
         'Pitch count unavailable for 1 of 2 relief appearances; '
         '17 pitches across the other 1.'
     )
+
+
+def test_deployment_profile_uses_team_at_appearance_and_outs_boundary(client):
+    with client.application.app_context():
+        current = _pitcher(name='Current Marker', mlb_id=90100)
+        departed = _pitcher(
+            name='Departed Reliever', mlb_id=90101, team_id=111, active=False
+        )
+        db.session.add_all([current, departed])
+        db.session.flush()
+        db.session.add_all([
+            _log(
+                departed.id, 9351, date(2026, 7, 5), outs=4,
+                save=True, hold=True, games_finished=1,
+                appearance_team_id=TEAM_ID,
+            ),
+            _log(
+                departed.id, 9352, date(2026, 7, 4), outs=3,
+                appearance_team_id=TEAM_ID,
+            ),
+        ])
+        db.session.commit()
+
+        carrier = public_team_relief_work.author_deployment_profile(
+            TEAM_ID,
+            data_through=date(2026, 7, 5),
+        )
+
+    profile = carrier['profiles'][0]
+    assert profile['pitcher_name'] == 'Departed Reliever'
+    assert profile['appearances_analyzed'] == 2
+    assert profile['saves'] == 1
+    assert profile['holds'] == 1
+    assert profile['games_finished'] == 1
+    assert profile['appearances_with_games_finished'] == 1
+    assert profile['multi_inning_appearances'] == 1
+    assert profile['appearances_with_outs'] == 2
+    assert profile['most_recent_multi_inning_date'] == '2026-07-05'
+    assert profile['limitations'] == [
+        'Games-finished counts include only appearances with recorded finish authority.'
+    ]
 
 
 def test_team_relief_work_distinct_pitcher_count_and_no_denominator(client):
@@ -1256,6 +1336,7 @@ def test_existing_public_routes_behavior_freeze(monkeypatch):
             + freeze_policy.D055_TEAM_BOARD_WORKLOAD_CONTEXT_PATHS
             + freeze_policy.GAP51_REST_STATUS_CARRIER_PATHS
             + freeze_policy.GAP32_WORKLOAD_WINDOW_PATHS
+            + freeze_policy.ROLES_DEPLOYMENT_INTELLIGENCE_PATHS
             + freeze_policy.PRE02_TEAM_BOARD_V2_PATHS
         ),
     )
@@ -1605,6 +1686,7 @@ def _log(
     blown_save=False,
     win=False,
     loss=False,
+    games_finished=None,
     appearance_team_id=TEAM_ID,
     appearance_team_status=GameLog.APPEARANCE_TEAM_RESOLVED,
     final_game=True,
@@ -1622,7 +1704,7 @@ def _log(
         appearance_team_status=appearance_team_status,
         appearance_team_source='boxscore_side',
         appearance_team_reason='appearance_team_resolved_boxscore',
-        innings_pitched=outs / 3,
+        innings_pitched=(outs / 3 if outs is not None else None),
         innings_pitched_outs=outs,
         pitches_thrown=pitches,
         strikeouts=strikeouts,
@@ -1634,6 +1716,7 @@ def _log(
         blown_save=blown_save,
         win=win,
         loss=loss,
+        games_finished=games_finished,
     )
 
 

@@ -28,6 +28,19 @@ WORKLOAD_WINDOWS_MEMBERSHIP_AUTHORITY = (
 )
 WORKLOAD_WINDOWS_REFERENCE_DATE_POLICY = 'calendar_day_inclusive_through_date_v1'
 
+DEPLOYMENT_PROFILE_WINDOW_DAYS = 14
+DEPLOYMENT_PROFILE_METHOD_VERSION = 'public_team_deployment_profile_v1'
+DEPLOYMENT_PROFILE_PUBLIC_CONTRACT_VERSION = 'public_team_deployment_profile_public_v1'
+DEPLOYMENT_PROFILE_CARRIER_CONTRACT = 'team_board_deployment_profile_carrier_v1'
+DEPLOYMENT_PROFILE_POPULATION_BASIS = WORKLOAD_WINDOWS_POPULATION_BASIS
+DEPLOYMENT_PROFILE_POPULATION_AUTHORITY = WORKLOAD_WINDOWS_POPULATION_AUTHORITY
+DEPLOYMENT_PROFILE_MEMBERSHIP_AUTHORITY = WORKLOAD_WINDOWS_MEMBERSHIP_AUTHORITY
+DEPLOYMENT_PROFILE_REFERENCE_DATE_POLICY = WORKLOAD_WINDOWS_REFERENCE_DATE_POLICY
+DEPLOYMENT_PROFILE_MULTI_INNING_MIN_OUTS = 4
+DEPLOYMENT_PROFILE_COMPLETE = 'complete'
+DEPLOYMENT_PROFILE_WITHHELD = 'withheld'
+DEPLOYMENT_PROFILE_DATA_THROUGH_MISSING = 'data_through_missing'
+
 WORKLOAD_WINDOWS_COMPLETE = 'complete'
 WORKLOAD_WINDOWS_WITHHELD = 'withheld'
 WORKLOAD_WINDOWS_DATA_THROUGH_MISSING = 'data_through_missing'
@@ -108,6 +121,7 @@ def build_public_team_relief_work_payload(team_id):
     start_date = anchor - timedelta(days=LOOKBACK_DAYS - 1)
     rows = _appearance_rows(team_id, start_date, anchor)
     carrier = _workload_windows_from_rows(rows, anchor)
+    deployment = _deployment_profile_from_rows(rows, anchor)
     relief_rows = [
         (log, pitcher)
         for log, pitcher in rows
@@ -133,6 +147,7 @@ def build_public_team_relief_work_payload(team_id):
             f'{_appearance_word(unattributed)} are not counted here.'
         )
     payload['windows'] = carrier['windows']
+    payload['deployment_profile'] = deployment
     return payload
 
 
@@ -158,6 +173,140 @@ def author_workload_windows(team_id, *, data_through):
     start_date = anchor - timedelta(days=LOOKBACK_DAYS - 1)
     rows = _appearance_rows(team_id, start_date, anchor)
     return _workload_windows_from_rows(rows, anchor)
+
+
+def author_deployment_profile(team_id, *, data_through):
+    """Author the exact public deployment profile for one publication.
+
+    This is one bounded team/window query, never one query per pitcher.  It
+    reuses the same official team-at-appearance relief rows as Recent Relief
+    Work and does not infer bullpen job titles or managerial intent.
+    """
+    anchor = _parse_data_through(data_through)
+    if anchor is None:
+        return {
+            'contract': DEPLOYMENT_PROFILE_CARRIER_CONTRACT,
+            'status': DEPLOYMENT_PROFILE_WITHHELD,
+            'reason_code': DEPLOYMENT_PROFILE_DATA_THROUGH_MISSING,
+            'data_through': None,
+            'window_days': DEPLOYMENT_PROFILE_WINDOW_DAYS,
+            'profiles': [],
+            'summary': None,
+            'limitations': [],
+        }
+
+    start_date = anchor - timedelta(days=LOOKBACK_DAYS - 1)
+    rows = _appearance_rows(team_id, start_date, anchor)
+    return _deployment_profile_from_rows(rows, anchor)
+
+
+def _deployment_profile_from_rows(rows, anchor):
+    start = anchor - timedelta(days=DEPLOYMENT_PROFILE_WINDOW_DAYS - 1)
+    relief_rows = [
+        (log, pitcher)
+        for log, pitcher in rows
+        if log.game_date >= start and _start_relief_state(log) == RELIEF
+    ]
+    by_pitcher = {}
+    for log, pitcher in relief_rows:
+        entry = by_pitcher.setdefault(pitcher.id, {
+            'pitcher_id': pitcher.id,
+            'pitcher_mlb_id': pitcher.mlb_id,
+            'pitcher_name': pitcher.full_name,
+            'appearances_analyzed': 0,
+            'saves': 0,
+            'holds': 0,
+            'games_finished': 0,
+            'appearances_with_games_finished': 0,
+            'multi_inning_appearances': 0,
+            'appearances_with_outs': 0,
+            'most_recent_multi_inning_date': None,
+            'limitations': [],
+        })
+        entry['appearances_analyzed'] += 1
+        entry['saves'] += int(bool(log.save))
+        entry['holds'] += int(bool(log.hold))
+        if log.games_finished is not None:
+            entry['appearances_with_games_finished'] += 1
+            entry['games_finished'] += int(log.games_finished == 1)
+        outs = _known_outs(log)
+        if outs is not None:
+            entry['appearances_with_outs'] += 1
+            if outs >= DEPLOYMENT_PROFILE_MULTI_INNING_MIN_OUTS:
+                entry['multi_inning_appearances'] += 1
+                represented = log.game_date.isoformat()
+                if (
+                    entry['most_recent_multi_inning_date'] is None
+                    or represented > entry['most_recent_multi_inning_date']
+                ):
+                    entry['most_recent_multi_inning_date'] = represented
+
+    profiles = []
+    for profile in by_pitcher.values():
+        limitations = []
+        if profile['appearances_with_outs'] < profile['appearances_analyzed']:
+            limitations.append(
+                'Multi-inning counts include only appearances with recorded outs.'
+            )
+        if (
+            profile['appearances_with_games_finished']
+            < profile['appearances_analyzed']
+        ):
+            limitations.append(
+                'Games-finished counts include only appearances with recorded finish authority.'
+            )
+        profile['limitations'] = limitations
+        name = profile.get('pitcher_name') or 'This pitcher'
+        profile['summary'] = (
+            f'{name} recorded {profile["saves"]} {_plural(profile["saves"], "save")}, '
+            f'{profile["holds"]} {_plural(profile["holds"], "hold")}, and worked '
+            f'multiple innings in {profile["multi_inning_appearances"]} of '
+            f'{profile["appearances_with_outs"]} relief '
+            f'{_plural(profile["appearances_with_outs"], "appearance")} with recorded outs '
+            f'during the {DEPLOYMENT_PROFILE_WINDOW_DAYS}-day window.'
+        )
+        profiles.append(profile)
+
+    profiles.sort(key=lambda item: (
+        -item['appearances_analyzed'],
+        str(item.get('pitcher_name') or '').lower(),
+        item['pitcher_id'],
+    ))
+    save_hold_pitchers = sum(
+        1 for item in profiles if item['saves'] or item['holds']
+    )
+    multi_inning_pitchers = sum(
+        1 for item in profiles if item['multi_inning_appearances']
+    )
+    summary = (
+        f'Over the {DEPLOYMENT_PROFILE_WINDOW_DAYS} days through {_month_day(anchor)}, '
+        f'{save_hold_pitchers} {_plural(save_hold_pitchers, "pitcher")} recorded a save or hold and '
+        f'{multi_inning_pitchers} {_plural(multi_inning_pitchers, "pitcher")} worked multiple innings.'
+    )
+    return {
+        'contract': DEPLOYMENT_PROFILE_CARRIER_CONTRACT,
+        'status': DEPLOYMENT_PROFILE_COMPLETE,
+        'reason_code': None,
+        'data_through': anchor.isoformat(),
+        'window_days': DEPLOYMENT_PROFILE_WINDOW_DAYS,
+        'population_basis': DEPLOYMENT_PROFILE_POPULATION_BASIS,
+        'profiles': profiles,
+        'team_summary': {
+            'represented_arm_count': len(profiles),
+            'pitchers_with_save_or_hold': save_hold_pitchers,
+            'pitchers_with_multi_inning_appearance': multi_inning_pitchers,
+        },
+        'summary': summary,
+        'limitations': sorted({
+            limitation
+            for profile in profiles
+            for limitation in profile.get('limitations') or []
+        }),
+    }
+
+
+def _plural(count, singular):
+    return singular if count == 1 else f'{singular}s'
 
 
 def _workload_windows_from_rows(rows, anchor):
