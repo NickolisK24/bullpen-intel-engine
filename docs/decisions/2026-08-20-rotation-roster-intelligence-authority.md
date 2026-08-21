@@ -64,6 +64,13 @@ reason may be attached by a future reader package only when an independently
 governed official event matches; absence of such an event never licenses an
 inferred reason.
 
+Carrier capture and comparison validate these authority fields against their
+canonical owners, not merely for non-empty values. A missing or incorrect
+population basis, population or membership authority, reference policy, or
+`roster_authority_version` is incompatible. Two endpoints carrying the same
+malformed authority do not become comparable merely because their malformed
+values match.
+
 The eventual current-state placement for descriptive churn is a supporting
 read within Recent Transactions, with roster movement also eligible for a
 separate What Changed lane. Neither reader surface is activated by this package.
@@ -89,6 +96,11 @@ the following authority:
 
 The comparison is descriptive. Increased or decreased bullpen outs do not
 mean better, worse, healthier, or more vulnerable.
+
+Rotation capture and comparison likewise require the canonical method, public,
+carrier, population/source, package, and reference-policy authority. A
+non-empty but incorrect authority value is incompatible, including when both
+endpoints carry the same incorrect value.
 
 ## Prospective delta architecture
 

@@ -33,14 +33,22 @@ from services.public_team_relief_work import (
 )
 from services.public_serving_authority import (
     BULLPEN_MEMBERSHIP_CARRIER_CONTRACT,
+    BULLPEN_MEMBERSHIP_MEMBERSHIP_AUTHORITY,
     BULLPEN_MEMBERSHIP_METHOD_VERSION,
+    BULLPEN_MEMBERSHIP_POPULATION_AUTHORITY,
+    BULLPEN_MEMBERSHIP_POPULATION_BASIS,
     BULLPEN_MEMBERSHIP_PUBLIC_CONTRACT_VERSION,
+    BULLPEN_MEMBERSHIP_REFERENCE_DATE_POLICY,
     TEAM_BOARD_PACKAGE_CONTRACT,
 )
 from services.rotation_support_pressure import (
     CAPABILITY as ROTATION_IMPACT_CAPABILITY,
     DELTA_CARRIER_CONTRACT as ROTATION_IMPACT_CARRIER_CONTRACT,
+    MEMBERSHIP_AUTHORITY as ROTATION_IMPACT_MEMBERSHIP_AUTHORITY,
+    POPULATION_AUTHORITY as ROTATION_IMPACT_POPULATION_AUTHORITY,
+    POPULATION_BASIS as ROTATION_IMPACT_POPULATION_BASIS,
     PUBLIC_CONTRACT_VERSION as ROTATION_IMPACT_PUBLIC_CONTRACT_VERSION,
+    REFERENCE_DATE_POLICY as ROTATION_IMPACT_REFERENCE_DATE_POLICY,
     VERSION as ROTATION_IMPACT_METHOD_VERSION,
 )
 from services.roster_authority import VERSION as ROSTER_AUTHORITY_VERSION
@@ -95,6 +103,25 @@ DOMAIN_READINESS = MappingProxyType({
     'role_movement': READINESS_NOT_YET_COMPARABLE,
     'roster_transactions': READINESS_NOT_PART_OF_SUBSTRATE,
 })
+
+FROZEN_TEAM_BOARD_SOURCE_AUTHORITY = 'trusted_team_board_publication'
+
+
+def _canonical_rotation_population_basis():
+    return {
+        'basis': ROTATION_IMPACT_POPULATION_BASIS,
+        'population_authority': ROTATION_IMPACT_POPULATION_AUTHORITY,
+        'membership_authority': ROTATION_IMPACT_MEMBERSHIP_AUTHORITY,
+    }
+
+
+def _canonical_membership_population_basis():
+    return {
+        'basis': BULLPEN_MEMBERSHIP_POPULATION_BASIS,
+        'population_authority': BULLPEN_MEMBERSHIP_POPULATION_AUTHORITY,
+        'membership_authority': BULLPEN_MEMBERSHIP_MEMBERSHIP_AUTHORITY,
+        'roster_authority_version': ROSTER_AUTHORITY_VERSION,
+    }
 
 
 class DeltaStampError(ValueError):
@@ -333,7 +360,7 @@ def build_workload_window_capture(*, snapshot, team_id) -> dict | None:
         'contract_version': authority.get('team_board_package_contract'),
         'population_basis': deepcopy(dict(population_basis)),
         'reference_date_policy': authority.get('reference_date_policy'),
-        'source_authority': 'trusted_team_board_publication',
+        'source_authority': FROZEN_TEAM_BOARD_SOURCE_AUTHORITY,
         'windows': frozen,
     }
 
@@ -410,13 +437,14 @@ def build_rotation_impact_capture(*, snapshot, team_id) -> dict | None:
     ):
         raise DeltaStampError('rotation_contract_unproven')
     population_basis = authority.get('population_basis')
-    if not isinstance(population_basis, Mapping) or any(
-        population_basis.get(field) in (None, '')
-        for field in ('basis', 'population_authority', 'membership_authority')
+    if (
+        not isinstance(population_basis, Mapping)
+        or dict(population_basis) != _canonical_rotation_population_basis()
     ):
         raise DeltaStampError('rotation_population_basis_unproven')
     if (
-        authority.get('reference_date_policy') in (None, '')
+        authority.get('reference_date_policy')
+        != ROTATION_IMPACT_REFERENCE_DATE_POLICY
         or authority.get('reference_date') != rotation_reference_date
     ):
         raise DeltaStampError('rotation_reference_date_unproven')
@@ -430,7 +458,7 @@ def build_rotation_impact_capture(*, snapshot, team_id) -> dict | None:
         'population_basis': deepcopy(dict(population_basis)),
         'reference_date_policy': authority.get('reference_date_policy'),
         'reference_date': rotation_reference_date,
-        'source_authority': 'trusted_team_board_publication',
+        'source_authority': FROZEN_TEAM_BOARD_SOURCE_AUTHORITY,
         'value': deepcopy(dict(value)),
     }
 
@@ -484,13 +512,14 @@ def build_bullpen_membership_capture(*, snapshot, team_id) -> dict | None:
     ):
         raise DeltaStampError('membership_contract_unproven')
     population_basis = authority.get('population_basis')
-    if not isinstance(population_basis, Mapping) or any(
-        population_basis.get(field) in (None, '')
-        for field in ('basis', 'population_authority', 'membership_authority')
+    if (
+        not isinstance(population_basis, Mapping)
+        or dict(population_basis) != _canonical_membership_population_basis()
     ):
         raise DeltaStampError('membership_population_basis_unproven')
     if (
-        authority.get('reference_date_policy') in (None, '')
+        authority.get('reference_date_policy')
+        != BULLPEN_MEMBERSHIP_REFERENCE_DATE_POLICY
         or _as_date(authority.get('membership_reference_date')) is None
         or authority.get('membership_reference_date')
         != package.get('availability_reference_date')
@@ -506,7 +535,7 @@ def build_bullpen_membership_capture(*, snapshot, team_id) -> dict | None:
         'population_basis': deepcopy(dict(population_basis)),
         'reference_date_policy': authority.get('reference_date_policy'),
         'membership_reference_date': authority.get('membership_reference_date'),
-        'source_authority': 'trusted_team_board_publication',
+        'source_authority': FROZEN_TEAM_BOARD_SOURCE_AUTHORITY,
         'member_pitcher_ids': member_ids,
         'members': members,
     }
@@ -1226,6 +1255,26 @@ def _compatible_rotation_domain(previous, current):
         return base
     previous_metadata = _domain_metadata(_payload(previous), domain)
     current_metadata = _domain_metadata(_payload(current), domain)
+    expected_population = _canonical_rotation_population_basis()
+    for metadata in (previous_metadata, current_metadata):
+        if (
+            metadata.get('method_version') != ROTATION_IMPACT_METHOD_VERSION
+            or metadata.get('contract_version') != TEAM_BOARD_PACKAGE_CONTRACT
+            or metadata.get('public_contract_version')
+            != ROTATION_IMPACT_PUBLIC_CONTRACT_VERSION
+            or metadata.get('carrier_contract_version')
+            != ROTATION_IMPACT_CARRIER_CONTRACT
+            or metadata.get('source_authority')
+            != FROZEN_TEAM_BOARD_SOURCE_AUTHORITY
+            or metadata.get('reference_date_policy')
+            != ROTATION_IMPACT_REFERENCE_DATE_POLICY
+        ):
+            return _withheld(domain, CONTRACT_INCOMPATIBLE)
+        population = metadata.get('population_basis')
+        if not isinstance(population, Mapping):
+            return _withheld(domain, POPULATION_BASIS_MISSING)
+        if dict(population) != expected_population:
+            return _withheld(domain, POPULATION_BASIS_MISMATCH)
     for field in (
         'carrier_contract_version', 'reference_date_policy', 'source_authority',
         'window_days',
@@ -1310,6 +1359,26 @@ def _compatible_membership_domain(previous, current):
         return base
     previous_metadata = _domain_metadata(_payload(previous), domain)
     current_metadata = _domain_metadata(_payload(current), domain)
+    expected_population = _canonical_membership_population_basis()
+    for metadata in (previous_metadata, current_metadata):
+        if (
+            metadata.get('method_version') != BULLPEN_MEMBERSHIP_METHOD_VERSION
+            or metadata.get('contract_version') != TEAM_BOARD_PACKAGE_CONTRACT
+            or metadata.get('public_contract_version')
+            != BULLPEN_MEMBERSHIP_PUBLIC_CONTRACT_VERSION
+            or metadata.get('carrier_contract_version')
+            != BULLPEN_MEMBERSHIP_CARRIER_CONTRACT
+            or metadata.get('source_authority')
+            != FROZEN_TEAM_BOARD_SOURCE_AUTHORITY
+            or metadata.get('reference_date_policy')
+            != BULLPEN_MEMBERSHIP_REFERENCE_DATE_POLICY
+        ):
+            return _withheld(domain, CONTRACT_INCOMPATIBLE)
+        population = metadata.get('population_basis')
+        if not isinstance(population, Mapping):
+            return _withheld(domain, POPULATION_BASIS_MISSING)
+        if dict(population) != expected_population:
+            return _withheld(domain, POPULATION_BASIS_MISMATCH)
     for field in ('carrier_contract_version', 'reference_date_policy', 'source_authority'):
         if (
             previous_metadata.get(field) in (None, '')

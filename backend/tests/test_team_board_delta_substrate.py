@@ -322,6 +322,7 @@ def _membership_capture(represented_date, members):
             'basis': public_serving_authority.BULLPEN_MEMBERSHIP_POPULATION_BASIS,
             'population_authority': public_serving_authority.BULLPEN_MEMBERSHIP_POPULATION_AUTHORITY,
             'membership_authority': public_serving_authority.BULLPEN_MEMBERSHIP_MEMBERSHIP_AUTHORITY,
+            'roster_authority_version': public_serving_authority.ROSTER_AUTHORITY_VERSION,
         },
         'reference_date_policy': public_serving_authority.BULLPEN_MEMBERSHIP_REFERENCE_DATE_POLICY,
         'membership_reference_date': represented_date.isoformat(),
@@ -407,7 +408,7 @@ def _rotation_membership_carrier_snapshot(represented_date):
                 'basis': public_serving_authority.BULLPEN_MEMBERSHIP_POPULATION_BASIS,
                 'population_authority': public_serving_authority.BULLPEN_MEMBERSHIP_POPULATION_AUTHORITY,
                 'membership_authority': public_serving_authority.BULLPEN_MEMBERSHIP_MEMBERSHIP_AUTHORITY,
-                'roster_authority_version': '2026-06-25.foundation',
+                'roster_authority_version': public_serving_authority.ROSTER_AUTHORITY_VERSION,
             },
             'reference_date_policy': public_serving_authority.BULLPEN_MEMBERSHIP_REFERENCE_DATE_POLICY,
             'membership_reference_date': represented_date.isoformat(),
@@ -818,6 +819,39 @@ def test_membership_unchanged_and_empty_populations_are_comparable():
     assert comparison['removed'] == []
 
 
+@pytest.mark.parametrize(
+    ('before', 'after', 'added_count', 'removed_count'),
+    (
+        (((1, 'Stayed Arm'),), ((1, 'Stayed Arm'), (2, 'Added Arm')), 1, 0),
+        (((1, 'Stayed Arm'), (2, 'Removed Arm')), ((1, 'Stayed Arm'),), 0, 1),
+    ),
+)
+def test_membership_addition_and_removal_are_independently_descriptive(
+    before, after, added_count, removed_count,
+):
+    previous_date = date(2026, 8, 17)
+    current_date = date(2026, 8, 18)
+    previous = _snapshot(
+        previous_date,
+        snapshot_id=1,
+        membership_capture=_membership_capture(previous_date, before),
+    )
+    current = _snapshot(
+        current_date,
+        snapshot_id=2,
+        membership_capture=_membership_capture(current_date, after),
+    )
+
+    comparison = delta.compare_snapshots(previous, current)['domains'][
+        'bullpen_membership'
+    ]
+
+    assert comparison['status'] == delta.COMPARABLE
+    assert comparison['movement'] is True
+    assert len(comparison['added']) == added_count
+    assert len(comparison['removed']) == removed_count
+
+
 def test_rotation_and_membership_domains_fail_independently():
     previous_date = date(2026, 8, 17)
     current_date = date(2026, 8, 18)
@@ -837,6 +871,131 @@ def test_rotation_and_membership_domains_fail_independently():
 
     assert result['rotation_impact']['status'] == delta.VALUE_MISSING
     assert result['bullpen_membership']['status'] == delta.COMPARABLE
+
+
+def test_missing_membership_value_leaves_rotation_comparable():
+    previous_date = date(2026, 8, 17)
+    current_date = date(2026, 8, 18)
+    previous = _snapshot(
+        previous_date,
+        snapshot_id=1,
+        rotation_capture=_rotation_capture(previous_date),
+        membership_capture=_membership_capture(previous_date, ((1, 'Arm'),)),
+    )
+    current = _snapshot(
+        current_date,
+        snapshot_id=2,
+        rotation_capture=_rotation_capture(current_date),
+        membership_capture=_membership_capture(current_date, ((1, 'Arm'),)),
+    )
+    current.payload['values'].pop('bullpen_membership')
+
+    result = delta.compare_snapshots(previous, current)['domains']
+
+    assert result['bullpen_membership']['status'] == delta.VALUE_MISSING
+    assert result['rotation_impact']['status'] == delta.COMPARABLE
+
+
+@pytest.mark.parametrize(
+    ('field', 'bad_value', 'expected_status'),
+    (
+        ('roster_authority_version', None, delta.POPULATION_BASIS_MISMATCH),
+        (
+            'roster_authority_version',
+            'wrong_roster_authority_version',
+            delta.POPULATION_BASIS_MISMATCH,
+        ),
+        ('basis', 'wrong_population', delta.POPULATION_BASIS_MISMATCH),
+        (
+            'population_authority',
+            'wrong_population_authority',
+            delta.POPULATION_BASIS_MISMATCH,
+        ),
+        (
+            'membership_authority',
+            'wrong_membership_authority',
+            delta.POPULATION_BASIS_MISMATCH,
+        ),
+    ),
+)
+def test_equally_malformed_membership_endpoints_never_compare(
+    field, bad_value, expected_status,
+):
+    previous_date = date(2026, 8, 17)
+    current_date = date(2026, 8, 18)
+    previous = _snapshot(
+        previous_date,
+        snapshot_id=1,
+        membership_capture=_membership_capture(previous_date, ((1, 'Arm'),)),
+    )
+    current = _snapshot(
+        current_date,
+        snapshot_id=2,
+        membership_capture=_membership_capture(current_date, ((1, 'Arm'),)),
+    )
+    for endpoint in (previous, current):
+        population = endpoint.payload['domains']['bullpen_membership'][
+            'population_basis'
+        ]
+        if bad_value is None:
+            population.pop(field)
+        else:
+            population[field] = bad_value
+
+    result = delta.compare_snapshots(previous, current)['domains']
+
+    assert result['bullpen_membership']['status'] == expected_status
+    assert result['rotation_impact']['status'] == delta.DOMAIN_NOT_READY
+
+
+def test_equally_malformed_membership_reference_policy_never_compares():
+    previous_date = date(2026, 8, 17)
+    current_date = date(2026, 8, 18)
+    previous = _snapshot(
+        previous_date,
+        snapshot_id=1,
+        membership_capture=_membership_capture(previous_date, ((1, 'Arm'),)),
+    )
+    current = _snapshot(
+        current_date,
+        snapshot_id=2,
+        membership_capture=_membership_capture(current_date, ((1, 'Arm'),)),
+    )
+    for endpoint in (previous, current):
+        endpoint.payload['domains']['bullpen_membership'][
+            'reference_date_policy'
+        ] = 'wrong_reference_policy'
+
+    comparison = delta.compare_snapshots(previous, current)['domains'][
+        'bullpen_membership'
+    ]
+
+    assert comparison['status'] == delta.CONTRACT_INCOMPATIBLE
+
+
+def test_equally_malformed_rotation_endpoints_never_compare():
+    previous_date = date(2026, 8, 17)
+    current_date = date(2026, 8, 18)
+    previous = _snapshot(
+        previous_date,
+        snapshot_id=1,
+        rotation_capture=_rotation_capture(previous_date),
+    )
+    current = _snapshot(
+        current_date,
+        snapshot_id=2,
+        rotation_capture=_rotation_capture(current_date),
+    )
+    for endpoint in (previous, current):
+        metadata = endpoint.payload['domains']['rotation_impact']
+        metadata['population_basis']['basis'] = 'wrong_population'
+        metadata['reference_date_policy'] = 'wrong_reference_policy'
+
+    comparison = delta.compare_snapshots(previous, current)['domains'][
+        'rotation_impact'
+    ]
+
+    assert comparison['status'] == delta.CONTRACT_INCOMPATIBLE
 
 
 def test_missing_prior_prospective_arm_domain_does_not_block_team_state():
@@ -899,6 +1058,95 @@ def test_rotation_and_membership_capture_copy_same_cycle_publication_values():
     membership['members'][0]['pitcher_name'] = 'Mutated'
     assert frozen_team['rotation_support_pressure']['bullpen_outs_required'] == 18
     assert frozen_team['records'][0]['name'] == 'First Arm'
+
+
+@pytest.mark.parametrize(
+    ('field', 'bad_value'),
+    (
+        ('basis', 'wrong_population'),
+        ('population_authority', 'wrong_population_authority'),
+        ('membership_authority', 'wrong_membership_authority'),
+        ('roster_authority_version', None),
+        ('roster_authority_version', 'wrong_roster_authority_version'),
+    ),
+)
+def test_membership_capture_requires_exact_canonical_population_authority(
+    field, bad_value,
+):
+    snapshot = _rotation_membership_carrier_snapshot(date(2026, 8, 18))
+    authority = snapshot.payload['trusted_team_boards']['by_team_id'][
+        str(TEAM_ID)
+    ]['bullpen_membership_authority']
+    population = authority['population_basis']
+    if bad_value is None:
+        population.pop(field)
+    else:
+        population[field] = bad_value
+
+    with pytest.raises(delta.DeltaStampError, match='membership_population_basis_unproven'):
+        delta.build_bullpen_membership_capture(snapshot=snapshot, team_id=TEAM_ID)
+    assert delta.try_build_bullpen_membership_capture(
+        snapshot=snapshot, team_id=TEAM_ID
+    ) is None
+
+
+@pytest.mark.parametrize('bad_value', (None, 'wrong_reference_policy'))
+def test_membership_capture_requires_exact_reference_policy(bad_value):
+    snapshot = _rotation_membership_carrier_snapshot(date(2026, 8, 18))
+    authority = snapshot.payload['trusted_team_boards']['by_team_id'][
+        str(TEAM_ID)
+    ]['bullpen_membership_authority']
+    if bad_value is None:
+        authority.pop('reference_date_policy')
+    else:
+        authority['reference_date_policy'] = bad_value
+
+    with pytest.raises(delta.DeltaStampError, match='membership_reference_date_unproven'):
+        delta.build_bullpen_membership_capture(snapshot=snapshot, team_id=TEAM_ID)
+
+
+@pytest.mark.parametrize(
+    ('field', 'bad_value'),
+    (
+        ('basis', None),
+        ('basis', 'wrong_population'),
+        ('population_authority', 'wrong_population_authority'),
+        ('membership_authority', 'wrong_membership_authority'),
+    ),
+)
+def test_rotation_capture_requires_exact_canonical_population_authority(
+    field, bad_value,
+):
+    snapshot = _rotation_membership_carrier_snapshot(date(2026, 8, 18))
+    authority = snapshot.payload['trusted_team_boards']['by_team_id'][
+        str(TEAM_ID)
+    ]['rotation_support_pressure_authority']
+    population = authority['population_basis']
+    if bad_value is None:
+        population.pop(field)
+    else:
+        population[field] = bad_value
+
+    with pytest.raises(delta.DeltaStampError, match='rotation_population_basis_unproven'):
+        delta.build_rotation_impact_capture(snapshot=snapshot, team_id=TEAM_ID)
+    assert delta.try_build_rotation_impact_capture(
+        snapshot=snapshot, team_id=TEAM_ID
+    ) is None
+
+
+@pytest.mark.parametrize('bad_value', (None, 'wrong_reference_policy'))
+def test_rotation_capture_requires_exact_reference_policy(bad_value):
+    snapshot = _rotation_membership_carrier_snapshot(date(2026, 8, 18))
+    authority = snapshot.payload['trusted_team_boards']['by_team_id'][
+        str(TEAM_ID)
+    ]['rotation_support_pressure_authority']
+    if bad_value is None:
+        authority.pop('reference_date_policy')
+    else:
+        authority['reference_date_policy'] = bad_value
+
+    with pytest.raises(delta.DeltaStampError, match='rotation_reference_date_unproven'):
+        delta.build_rotation_impact_capture(snapshot=snapshot, team_id=TEAM_ID)
 
 
 def test_missing_rotation_or_membership_carrier_is_not_reconstructed():
