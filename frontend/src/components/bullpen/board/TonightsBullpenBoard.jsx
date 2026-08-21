@@ -233,7 +233,18 @@ export default function TonightsBullpenBoard({
               onRetry={changesState.refetch}
               onSelectPitcher={onSelectPitcher}
             />
-            <div className="mt-6">
+
+            <div
+              className="relative left-1/2 mt-section-lg w-screen -translate-x-1/2 border-y border-line-default bg-surface-base px-4 py-section tablet:left-auto tablet:w-auto tablet:translate-x-0 tablet:rounded-sm tablet:border tablet:px-section tablet:py-section-lg"
+              role="group"
+              aria-label="Relief work receipts"
+            >
+              <div className="mb-section border-b border-line-default pb-panel">
+                <div className="type-overline text-text-tertiary">Receipts</div>
+                <p className="type-compact mt-meta max-w-reading text-text-secondary">
+                  Official recent relief work, organized as the supporting ledger beneath the current bullpen read.
+                </p>
+              </div>
               <TeamReliefWorkPanel
                 read={teamBoardRead}
                 loading={teamBoardV2State.loading}
@@ -242,7 +253,8 @@ export default function TonightsBullpenBoard({
                 onSelectPitcher={onSelectPitcher}
               />
             </div>
-            <div className="mt-4 flex justify-end">
+
+            <div className="mt-section flex justify-end">
               <EvidenceShareMenu
                 variant="team-board"
                 cardModel={teamCard}
