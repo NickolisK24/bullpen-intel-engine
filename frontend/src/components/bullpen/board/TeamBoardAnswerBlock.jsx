@@ -58,6 +58,14 @@ export function getBullpenSummaryView(read) {
   const activeArms = activeAvailable ? countOrNull(read?.activeBullpen?.arm_count) : null
   const restedOptions = restAvailable ? countOrNull(read?.restStatus?.rested_arm_count) : null
   const sevenDayPitches = countOrNull(sevenDayWindow?.pitches_total)
+  const recentlyUsedAvailable = read?.sectionStatus?.recently_used_arms?.status === 'available'
+    && read?.recentlyUsedArms?.status === 'available'
+  const recentlyUsedArms = recentlyUsedAvailable
+    ? countOrNull(read?.recentlyUsedArms?.value)
+    : null
+  const recentlyUsedQualifier = recentlyUsedArms === null
+    ? 'Not published'
+    : read?.recentlyUsedArms?.window_label
 
   return [
     {
@@ -75,8 +83,8 @@ export function getBullpenSummaryView(read) {
     {
       key: 'recently-used-arms',
       label: 'Recently used arms',
-      value: null,
-      qualifier: 'Public window not defined',
+      value: recentlyUsedArms,
+      qualifier: recentlyUsedQualifier || 'Not published',
     },
     {
       key: 'off-active-count',

@@ -30,6 +30,7 @@ export function readTeamBoardV2(payload) {
     summary: payload.summary,
     activeBullpen: payload.active_bullpen,
     recentUsage: payload.recent_usage,
+    recentlyUsedArms: payload.recently_used_arms,
     restStatus: payload.rest_status,
     workloadOverview: payload.workload_overview,
     rolesDeployment: payload.roles_deployment,
