@@ -528,34 +528,165 @@ def test_phase1_carrier_stamps_exact_authority(trusted_app):
         }
 
 
-def test_phase1_readers_ignore_dormant_carrier_and_keep_live_behavior(trusted_app):
+def _forbid_trusted_d055_reauthoring(monkeypatch):
+    def forbidden(*_args, **_kwargs):
+        raise AssertionError('trusted reader attempted request-time D-055 authoring')
+
+    monkeypatch.setattr(bullpen_board_service, 'build_rest_status', forbidden)
+    monkeypatch.setattr(bullpen_board_service, 'author_rest_status', forbidden)
+    monkeypatch.setattr(public_serving_authority, 'author_rest_status', forbidden)
+
+
+def test_phase2_board_and_board_v2_share_frozen_carrier_without_reauthoring(
+    trusted_app,
+    monkeypatch,
+):
     app = trusted_app['app']
     snapshot = trusted_app['snapshot']
     package = snapshot.payload[public_serving_authority.TEAM_BOARD_PACKAGE_KEY]
+    frozen = deepcopy(package['by_team_id'][str(TEAM_ID)]['rest_status'])
     calls_after_publication = len(trusted_app['rest_status_calls'])
+    _forbid_trusted_d055_reauthoring(monkeypatch)
 
-    board_before = app.test_client().get(
-        f'/api/bullpen/teams/{TEAM_ID}/board'
-    ).get_json()
-    assert len(trusted_app['rest_status_calls']) == calls_after_publication + 1
+    client = app.test_client()
+    reads = [
+        client.get(f'/api/bullpen/teams/{TEAM_ID}/board').get_json(),
+        client.get(f'/api/bullpen/teams/{TEAM_ID}/board-v2').get_json(),
+        client.get(f'/api/bullpen/teams/{TEAM_ID}/board-v2').get_json(),
+        client.get(f'/api/bullpen/teams/{TEAM_ID}/board').get_json(),
+    ]
 
-    v2_before = app.test_client().get(
-        f'/api/bullpen/teams/{TEAM_ID}/board-v2'
-    ).get_json()
-    assert len(trusted_app['rest_status_calls']) == calls_after_publication + 2
+    assert [read['rest_status'] for read in reads] == [frozen] * 4
+    assert len(trusted_app['rest_status_calls']) == calls_after_publication
 
-    package['by_team_id'][str(TEAM_ID)].pop('rest_status', None)
-    package['by_team_id'][str(TEAM_ID)].pop('rest_status_authority', None)
-    board_after = app.test_client().get(
-        f'/api/bullpen/teams/{TEAM_ID}/board'
-    ).get_json()
-    v2_after = app.test_client().get(
-        f'/api/bullpen/teams/{TEAM_ID}/board-v2'
-    ).get_json()
 
-    assert board_after['rest_status'] == board_before['rest_status']
-    assert v2_after['rest_status'] == v2_before['rest_status']
-    assert len(trusted_app['rest_status_calls']) == calls_after_publication + 4
+def test_phase2_governed_unavailable_is_verbatim_across_both_routes(
+    trusted_app,
+    monkeypatch,
+):
+    package = trusted_app['snapshot'].payload[
+        public_serving_authority.TEAM_BOARD_PACKAGE_KEY
+    ]
+    frozen_team = deepcopy(package['by_team_id'][str(TEAM_ID)])
+    frozen_team['rest_status'] = {
+        'available': False,
+        'active_arm_count': None,
+        'rested_arm_count': None,
+        'worked_yesterday_count': None,
+        'back_to_back_count': None,
+        'summary': None,
+        'reason_code': bullpen_board_service.REST_STATUS_WORKLOAD_EVIDENCE_INCOMPLETE,
+    }
+    monkeypatch.setattr(
+        public_serving_authority,
+        '_team_package',
+        lambda _snapshot, _team_id: (frozen_team, None),
+    )
+    _forbid_trusted_d055_reauthoring(monkeypatch)
+
+    client = trusted_app['app'].test_client()
+    board = client.get(f'/api/bullpen/teams/{TEAM_ID}/board').get_json()
+    board_v2 = client.get(f'/api/bullpen/teams/{TEAM_ID}/board-v2').get_json()
+
+    assert board['rest_status'] == frozen_team['rest_status']
+    assert board_v2['rest_status'] == frozen_team['rest_status']
+
+
+def test_phase2_zero_and_positive_counts_remain_exact_across_both_routes(
+    trusted_app,
+    monkeypatch,
+):
+    package = trusted_app['snapshot'].payload[
+        public_serving_authority.TEAM_BOARD_PACKAGE_KEY
+    ]
+    _forbid_trusted_d055_reauthoring(monkeypatch)
+    client = trusted_app['app'].test_client()
+
+    for team_id, expected_rested in ((TEAM_ID, 1), (ZERO_TEAM_ID, 0)):
+        frozen = package['by_team_id'][str(team_id)]['rest_status']
+        board = client.get(f'/api/bullpen/teams/{team_id}/board').get_json()
+        board_v2 = client.get(f'/api/bullpen/teams/{team_id}/board-v2').get_json()
+        assert frozen['rested_arm_count'] == expected_rested
+        assert board['rest_status'] == frozen
+        assert board_v2['rest_status'] == frozen
+
+
+@pytest.mark.parametrize(
+    ('mutation', 'expected_reason'),
+    (
+        (
+            lambda team: (team.pop('rest_status', None), team.pop('rest_status_authority', None)),
+            bullpen_board_service.REST_STATUS_FROZEN_VALUE_MISSING,
+        ),
+        (
+            lambda team: team['rest_status_authority'].__setitem__(
+                'method_version', 'wrong_method'
+            ),
+            bullpen_board_service.REST_STATUS_FROZEN_VALUE_INVALID,
+        ),
+        (
+            lambda team: team['rest_status'].__setitem__('rested_arm_count', None),
+            bullpen_board_service.REST_STATUS_FROZEN_VALUE_INVALID,
+        ),
+    ),
+)
+def test_phase2_legacy_or_invalid_carrier_fails_closed_on_both_routes(
+    trusted_app,
+    monkeypatch,
+    mutation,
+    expected_reason,
+):
+    package = trusted_app['snapshot'].payload[
+        public_serving_authority.TEAM_BOARD_PACKAGE_KEY
+    ]
+    frozen_team = deepcopy(package['by_team_id'][str(TEAM_ID)])
+    mutation(frozen_team)
+    before = deepcopy(frozen_team)
+    monkeypatch.setattr(
+        public_serving_authority,
+        '_team_package',
+        lambda _snapshot, _team_id: (frozen_team, None),
+    )
+    _forbid_trusted_d055_reauthoring(monkeypatch)
+
+    client = trusted_app['app'].test_client()
+    board = client.get(f'/api/bullpen/teams/{TEAM_ID}/board').get_json()
+    board_v2 = client.get(f'/api/bullpen/teams/{TEAM_ID}/board-v2').get_json()
+
+    expected = {
+        'available': False,
+        'active_arm_count': None,
+        'rested_arm_count': None,
+        'worked_yesterday_count': None,
+        'back_to_back_count': None,
+        'summary': None,
+        'reason_code': expected_reason,
+    }
+    assert board['rest_status'] == expected
+    assert board_v2['rest_status'] == expected
+    assert frozen_team == before
+
+
+def test_phase2_live_workload_changes_cannot_refresh_frozen_rest_status(
+    trusted_app,
+    monkeypatch,
+):
+    package = trusted_app['snapshot'].payload[
+        public_serving_authority.TEAM_BOARD_PACKAGE_KEY
+    ]
+    frozen = deepcopy(package['by_team_id'][str(TEAM_ID)]['rest_status'])
+    trusted_app['score'].days_since_last_appearance = 0
+    trusted_app['score'].appearances_last_7 = 99
+    trusted_app['score'].pitches_last_7_days = 999
+    db.session.commit()
+    _forbid_trusted_d055_reauthoring(monkeypatch)
+
+    client = trusted_app['app'].test_client()
+    board = client.get(f'/api/bullpen/teams/{TEAM_ID}/board').get_json()
+    board_v2 = client.get(f'/api/bullpen/teams/{TEAM_ID}/board-v2').get_json()
+
+    assert board['rest_status'] == frozen
+    assert board_v2['rest_status'] == frozen
 
 
 def test_workload_window_carrier_is_dormant_for_board_and_board_v2(trusted_app):
