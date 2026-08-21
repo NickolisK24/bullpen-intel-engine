@@ -82,18 +82,40 @@ function firstLimitation(status) {
     : null
 }
 
+function ActiveBullpenHeader({ teamName, populationBasis }) {
+  return (
+    <header className="mb-panel border-b border-line-default pb-panel tablet:flex tablet:min-w-0 tablet:items-end tablet:justify-between tablet:gap-section">
+      <div className="min-w-0">
+        <p className="type-overline text-brand-blue">Current bullpen</p>
+        <h2 id="active-bullpen-title" className="mt-meta font-board text-xl font-semibold leading-tight text-text-primary tablet:text-2xl">
+          Active Bullpen
+          {teamName ? <span className="sr-only"> — {teamName}</span> : null}
+        </h2>
+        <p className="type-compact mt-meta max-w-reading">
+          Current reliever roles, reads, rest, and recent workload in one scan.
+        </p>
+      </div>
+      {populationBasis && (
+        <p className="type-metadata mt-row shrink-0 tablet:mt-0 tablet:max-w-56 tablet:text-right">
+          Current visible active-bullpen population
+        </p>
+      )}
+    </header>
+  )
+}
+
 export function ActiveBullpenSkeleton() {
   return (
     <section
       id="pitcher-lanes"
-      className="foundation-section scroll-mt-24"
+      className="foundation-section scroll-mt-24 border-t border-line-strong pt-section-lg"
       aria-labelledby="active-bullpen-title"
       aria-busy="true"
       data-testid="active-bullpen-skeleton"
     >
-      <h2 id="active-bullpen-title" className="type-section-title">Active Bullpen</h2>
+      <ActiveBullpenHeader />
       <span className="sr-only">Loading the active bullpen.</span>
-      <div className="mt-row border-y border-dirt">
+      <div className="overflow-hidden rounded-sm border border-line-default bg-surface-raised/25 px-panel">
         {[0, 1, 2].map(index => <ActiveArmRowSkeleton key={index} />)}
       </div>
     </section>
@@ -124,19 +146,11 @@ export default function TeamBoardActiveBullpen({
     <section
       id="pitcher-lanes"
       tabIndex={-1}
-      className="foundation-section scroll-mt-24 focus:outline-none focus-visible:ring-2 focus-visible:ring-signal/70"
+      className="foundation-section scroll-mt-24 border-t border-line-strong pt-section-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-signal/70"
       aria-labelledby="active-bullpen-title"
       data-testid="team-board-active-bullpen"
     >
-      <header className="mb-row flex min-w-0 flex-wrap items-end justify-between gap-meta">
-        <h2 id="active-bullpen-title" className="type-section-title">
-          Active Bullpen
-          {teamName ? <span className="sr-only"> — {teamName}</span> : null}
-        </h2>
-        {activeBullpen?.population_basis && (
-          <p className="type-metadata">Current visible active-bullpen population</p>
-        )}
-      </header>
+      <ActiveBullpenHeader teamName={teamName} populationBasis={activeBullpen?.population_basis} />
 
       {hasError ? (
         <SectionState
@@ -155,7 +169,7 @@ export default function TeamBoardActiveBullpen({
       ) : (
         <>
           {rows.length > 0 && (
-            <div className="active-arm-table border-y border-line-default">
+            <div className="active-arm-table overflow-hidden rounded-sm border border-line-default bg-surface-raised/20 px-panel tablet:px-section">
               <TableHeader showLastGamePitches={showLastGamePitches} />
               <div role="list" aria-label="Active bullpen pitchers">
                 {rows.map((row, index) => (
