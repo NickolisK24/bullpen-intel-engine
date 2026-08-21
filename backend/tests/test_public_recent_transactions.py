@@ -8,6 +8,7 @@ from models.pitcher import Pitcher
 from models.player_transaction import PlayerTransaction, PlayerTransactionSyncWindow
 from services.public_recent_transactions import (
     POPULATION_BASIS,
+    TRANSACTION_PUBLIC_DESCRIPTIONS,
     TRANSACTION_PUBLIC_LABELS,
     build_public_recent_transactions,
 )
@@ -140,10 +141,15 @@ def test_projects_typed_team_events_in_newest_first_source_order(app):
     assert payload['status'] == 'available'
     assert [event['event_id'] for event in payload['events']] == ['newer', 'older']
     assert [event['label'] for event in payload['events']] == ['Recalled', 'Optioned']
+    assert [event['description'] for event in payload['events']] == [
+        'Newer Arm was recalled.',
+        'Older Arm was optioned.',
+    ]
     assert payload['events'][0]['player_id'] == newer.id
     assert payload['events'][0]['player_mlb_id'] == newer.mlb_id
     assert set(payload['events'][0]) == {
-        'event_id', 'player_id', 'player_mlb_id', 'player_name', 'date', 'type', 'label'
+        'event_id', 'player_id', 'player_mlb_id', 'player_name', 'date', 'type',
+        'label', 'description'
     }
     assert payload['window_start_date'] == '2026-08-11'
     assert payload['represented_date'] == '2026-08-18'
@@ -168,6 +174,31 @@ def test_event_team_comes_from_stored_transaction_not_current_pitcher_assignment
 
     assert [event['event_id'] for event in selected['events']] == ['team-at-event']
     assert current['events'] == []
+
+
+@pytest.mark.parametrize(
+    ('category', 'description'),
+    (
+        ('il_placement', 'Typed Arm was placed on the injured list.'),
+        ('il_activation', 'Typed Arm was activated from the injured list.'),
+        ('contract_selection', "Typed Arm's contract was selected."),
+    ),
+)
+def test_structured_categories_author_reader_descriptions(app, category, description):
+    with app.app_context():
+        _window()
+        pitcher = _pitcher(mlb_id=700011, name='Typed Arm')
+        _transaction(
+            pitcher,
+            transaction_id=f'typed-{category}',
+            transaction_date=date(2026, 8, 17),
+            category=category,
+        )
+        db.session.commit()
+
+        payload = build_public_recent_transactions(113, reference_date=date(2026, 8, 18))
+
+    assert payload['events'][0]['description'] == description
 
 
 def test_unverified_identity_or_type_is_withheld_and_section_is_partial(app):
@@ -240,6 +271,7 @@ def test_public_vocabulary_is_exactly_the_existing_typed_categories():
         'paternity': 'Placed on paternity list',
         'restricted': 'Placed on restricted list',
     }
+    assert set(TRANSACTION_PUBLIC_DESCRIPTIONS) == set(TRANSACTION_PUBLIC_LABELS)
 
 
 def test_projection_is_read_only_and_contains_no_change_or_impact_engine():

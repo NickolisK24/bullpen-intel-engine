@@ -38,7 +38,7 @@ from services.transaction_ingestion import (
 
 
 CAPABILITY = 'public_recent_transactions_v1'
-VERSION = '2026-08-18.team-board'
+VERSION = '2026-08-20.rotation-roster'
 POPULATION_BASIS = (
     'explanatory_eligible_pitcher_transactions_touching_selected_team_'
     'in_latest_source_sync_window'
@@ -64,6 +64,24 @@ TRANSACTION_PUBLIC_LABELS = {
     CATEGORY_BEREAVEMENT: 'Placed on bereavement list',
     CATEGORY_PATERNITY: 'Placed on paternity list',
     CATEGORY_RESTRICTED: 'Placed on restricted list',
+}
+
+TRANSACTION_PUBLIC_DESCRIPTIONS = {
+    CATEGORY_RECALL: '{name} was recalled.',
+    CATEGORY_OPTION: '{name} was optioned.',
+    CATEGORY_IL_PLACEMENT: '{name} was placed on the injured list.',
+    CATEGORY_IL_ACTIVATION: '{name} was activated from the injured list.',
+    CATEGORY_ROSTER_ACTIVATION: '{name} was activated.',
+    CATEGORY_ROSTER_DEACTIVATION: '{name} was deactivated.',
+    CATEGORY_TRADE: '{name} was traded.',
+    CATEGORY_DFA: '{name} was designated for assignment.',
+    CATEGORY_OUTRIGHT: '{name} was outrighted.',
+    CATEGORY_RELEASE: '{name} was released.',
+    CATEGORY_CONTRACT_SELECTION: "{name}'s contract was selected.",
+    CATEGORY_SUSPENSION: '{name} was suspended.',
+    CATEGORY_BEREAVEMENT: '{name} was placed on the bereavement list.',
+    CATEGORY_PATERNITY: '{name} was placed on the paternity list.',
+    CATEGORY_RESTRICTED: '{name} was placed on the restricted list.',
 }
 
 SOURCE_UNAVAILABLE_LIMITATION = 'Recent official transaction records are unavailable.'
@@ -174,11 +192,15 @@ def build_public_recent_transactions(team_id, *, reference_date=None):
     for row in rows:
         pitcher = pitchers.get(row.pitcher_id)
         label = TRANSACTION_PUBLIC_LABELS.get(row.normalized_category)
+        description_template = TRANSACTION_PUBLIC_DESCRIPTIONS.get(
+            row.normalized_category
+        )
         if (
             row.explanatory_linkage_eligible is not True
             or pitcher is None
             or not str(pitcher.full_name or '').strip()
             or not label
+            or not description_template
         ):
             withheld_count += 1
             continue
@@ -190,6 +212,9 @@ def build_public_recent_transactions(team_id, *, reference_date=None):
             'date': _iso(row.transaction_date),
             'type': row.normalized_category,
             'label': label,
+            'description': description_template.format(
+                name=str(pitcher.full_name).strip()
+            ),
         })
 
     limitations = []
@@ -215,6 +240,7 @@ __all__ = [
     'CAPABILITY',
     'POPULATION_BASIS',
     'TRANSACTION_PUBLIC_LABELS',
+    'TRANSACTION_PUBLIC_DESCRIPTIONS',
     'VERSION',
     'build_public_recent_transactions',
 ]

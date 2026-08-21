@@ -33,6 +33,11 @@ const rotationImpact = {
     bullpen_innings_required: 8,
     short_start_count: 0,
     summary: 'The rotation averaged 5.3 innings per start over the last 7 days, requiring 8.0 bullpen innings.',
+    relief_work_handoff: {
+      target: 'team-relief-work',
+      summary: 'View the matching Recent Relief Work receipts.',
+      games: [{ mlb_game_pk: 123, game_date: '2026-08-16' }],
+    },
     limitations: [],
     starter_outs: 64,
     bullpen_outs_required: 24,
@@ -64,6 +69,8 @@ test('Rotation Impact renders the backend summary and supplied metrics verbatim'
   assert.ok(html.includes('4 starts analyzed'))
   assert.ok(html.includes('7-day window'))
   assert.match(html, /date(?:T|t)ime="2026-08-16"/)
+  assert.ok(html.includes('href="#team-relief-work"'))
+  assert.ok(html.includes('View the matching Recent Relief Work receipts.'))
 })
 
 test('Rotation Impact omits unknown metrics without converting them to zero', () => {
@@ -125,6 +132,22 @@ test('Rotation Impact does not expose raw diagnostic split fields or predictive 
   ]) {
     assert.equal(html.toLowerCase().includes(forbidden), false, forbidden)
   }
+})
+
+test('Rotation Impact withholds the receipts handoff when governed game identities are absent', () => {
+  const withoutReceipts = {
+    ...rotationImpact,
+    read: {
+      ...rotationImpact.read,
+      relief_work_handoff: {
+        ...rotationImpact.read.relief_work_handoff,
+        games: [],
+      },
+    },
+  }
+  const html = renderRotation({ read: { ...read, rotationImpact: withoutReceipts } })
+
+  assert.equal(html.includes('View the matching Recent Relief Work receipts.'), false)
 })
 
 test('Team Board retires its legacy browser-authored rotation evidence only', () => {

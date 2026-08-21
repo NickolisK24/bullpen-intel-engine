@@ -24,8 +24,8 @@ const recentTransactions = {
   population_basis: 'explanatory_eligible_pitcher_transactions_touching_selected_team_in_latest_source_sync_window',
   status: 'available',
   events: [
-    { event_id: 'newer', player_id: 9, player_name: 'A Very Long Reliever Name', date: '2026-08-18', type: 'recall', label: 'Recalled' },
-    { event_id: 'older', player_id: 7, player_name: 'Example Arm', date: '2026-08-16', type: 'option', label: 'Optioned' },
+    { event_id: 'newer', player_id: 9, player_name: 'A Very Long Reliever Name', date: '2026-08-18', type: 'recall', label: 'Recalled', description: 'A Very Long Reliever Name was recalled.' },
+    { event_id: 'older', player_id: 7, player_name: 'Example Arm', date: '2026-08-16', type: 'option', label: 'Optioned', description: 'Example Arm was optioned.' },
   ],
   window_start_date: '2026-08-11',
   window_end_date: '2026-08-18',
@@ -80,8 +80,8 @@ test('Recent Transactions preserves backend chronology, labels, identity, and da
 
   assert.deepEqual(rows.map(row => row.key), ['newer', 'older'])
   assert.ok(html.indexOf('A Very Long Reliever Name') < html.indexOf('Example Arm'))
-  assert.ok(html.includes('Recalled'))
-  assert.ok(html.includes('Optioned'))
+  assert.ok(html.includes('A Very Long Reliever Name was recalled.'))
+  assert.ok(html.includes('Example Arm was optioned.'))
   assert.match(html, /date(?:T|t)ime="2026-08-18"/)
   assert.match(html, /date(?:T|t)ime="2026-08-16"/)
   assert.ok(html.includes('Recent movement'))
