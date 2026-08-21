@@ -16,7 +16,7 @@ after(async () => server.close())
 
 const { default: SectionPair } = await server.ssrLoadModule('/src/components/UI/SectionPair.jsx')
 
-test('section pair stays stacked below 1024 and preserves two columns at 1024', () => {
+test('section pair stays stacked through tablet and only becomes two columns at the 1280 desktop breakpoint', () => {
   const html = renderToStaticMarkup(React.createElement(
     SectionPair,
     { label: 'Rest and workload' },
@@ -25,10 +25,11 @@ test('section pair stays stacked below 1024 and preserves two columns at 1024', 
   ))
 
   assert.ok(html.includes('gap-section'))
-  assert.ok(html.includes('lg:grid-cols-2'))
-  assert.ok(html.includes('lg:gap-8'))
+  assert.ok(html.includes('desktop:grid-cols-2'))
+  assert.ok(html.includes('desktop:gap-8'))
   assert.ok(html.includes('[&amp;&gt;*]:min-w-0'))
   assert.equal(html.includes('tablet:grid-cols-2'), false)
+  assert.equal(html.includes('lg:grid-cols-2'), false)
   assert.ok(html.includes('Available'))
   assert.ok(html.includes('Unavailable'))
   assert.ok(html.includes('data-ratio="1:1"'))
@@ -42,13 +43,13 @@ test('section pair reuses the same primitive for the approved 7:5 desktop ratio'
     React.createElement('section', null, 'Performance unavailable'),
   ))
 
-  assert.ok(html.includes('lg:grid-cols-[minmax(0,7fr)_minmax(0,5fr)]'))
+  assert.ok(html.includes('desktop:grid-cols-[minmax(0,7fr)_minmax(0,5fr)]'))
   assert.ok(html.includes('data-ratio="7:5"'))
-  assert.equal(html.includes('lg:grid-cols-2'), false)
+  assert.equal(html.includes('desktop:grid-cols-2'), false)
   assert.ok(html.includes('Performance unavailable'))
 })
 
-test('Rotation and Transactions reuse the default 1:1 pair at 1024', () => {
+test('Rotation and Transactions reuse the default 1:1 pair at desktop width', () => {
   const html = renderToStaticMarkup(React.createElement(
     SectionPair,
     { label: 'Rotation and transactions' },
@@ -56,7 +57,7 @@ test('Rotation and Transactions reuse the default 1:1 pair at 1024', () => {
     React.createElement('section', null, 'Transactions unavailable'),
   ))
 
-  assert.ok(html.includes('lg:grid-cols-2'))
+  assert.ok(html.includes('desktop:grid-cols-2'))
   assert.ok(html.includes('data-ratio="1:1"'))
   assert.ok(html.includes('Transactions unavailable'))
 })
