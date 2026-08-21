@@ -194,7 +194,7 @@ def _game_context():
 def _recent_transactions(*, status='available', events=None, limitations=None):
     return {
         'capability': 'public_recent_transactions_v1',
-        'version': '2026-08-18.team-board',
+        'version': '2026-08-20.rotation-roster',
         'population_basis': RECENT_TRANSACTIONS_POPULATION_BASIS,
         'status': status,
         'events': events if events is not None else [{
@@ -205,6 +205,7 @@ def _recent_transactions(*, status='available', events=None, limitations=None):
             'date': '2026-08-16',
             'type': 'recall',
             'label': 'Recalled',
+            'description': 'Example Arm was recalled.',
         }],
         'window_start_date': '2026-08-10',
         'window_end_date': '2026-08-17',

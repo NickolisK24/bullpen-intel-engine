@@ -4,6 +4,15 @@ import { SkeletonBlock } from '../../UI/Skeleton'
 const textValue = value => typeof value === 'string' && value.trim() ? value.trim() : null
 const numberValue = value => typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null
 
+function focusReliefWork(event, targetId) {
+  if (typeof document === 'undefined') return
+  const target = document.getElementById(targetId)
+  if (!target) return
+  event.preventDefault()
+  target.focus({ preventScroll: true })
+  target.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
 export function getRotationImpactMetrics(rotationImpact) {
   const read = rotationImpact?.read || {}
   const gamesAnalyzed = numberValue(read.games_analyzed)
@@ -58,6 +67,10 @@ export default function TeamBoardRotationImpact({ read, loading = false, error =
   const gamesInWindow = numberValue(rotationRead?.games_in_window)
   const representedDate = textValue(rotationRead?.reference_date) || textValue(status?.represented_date)
   const limitation = firstLimitation(status, rotationImpact)
+  const handoff = rotationRead?.relief_work_handoff
+  const handoffTarget = textValue(handoff?.target)
+  const handoffSummary = textValue(handoff?.summary)
+  const receiptGames = Array.isArray(handoff?.games) ? handoff.games : []
   const hasFacts = Boolean(summary || metrics.length > 0)
 
   return (
@@ -97,6 +110,16 @@ export default function TeamBoardRotationImpact({ read, loading = false, error =
               {gamesAnalyzed != null && representedDate ? ' · ' : null}
               {representedDate ? <>Through <time dateTime={representedDate}>{representedDate}</time></> : null}
             </p>
+          )}
+
+          {handoffTarget && handoffSummary && receiptGames.length > 0 && (
+            <a
+              href={`#${handoffTarget}`}
+              className="mt-row inline-flex min-h-11 items-center text-brand-blue focus:outline-none focus-visible:ring-2 focus-visible:ring-line-focus"
+              onClick={event => focusReliefWork(event, handoffTarget)}
+            >
+              {handoffSummary}
+            </a>
           )}
 
           {statusName === 'partial' && (

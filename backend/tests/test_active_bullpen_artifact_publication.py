@@ -30,6 +30,7 @@ from services import team_board_delta_substrate as delta_substrate
 from services import team_state_source as source_module
 from services import public_serving_authority
 from services import public_team_relief_work
+from services import rotation_support_pressure
 from services.share_artifact_batch_generation import (
     BATCH_OUTCOME_GENERATED,
     BATCH_OUTCOME_REFUSED,
@@ -190,13 +191,70 @@ def _attach_workload_carrier(snapshot, team_id):
         team_id,
         data_through=PRODUCT_DATE,
     )
+    member_rows = Pitcher.query.filter_by(team_id=team_id, active=True).all()
+    member_ids = sorted(pitcher.id for pitcher in member_rows)
+    rotation = {
+        'capability': rotation_support_pressure.CAPABILITY,
+        'version': rotation_support_pressure.VERSION,
+        'source': 'backend',
+        'team_id': team_id,
+        'status': 'neutral',
+        'window_days': 7,
+        'reference_date': PRODUCT_DATE.isoformat(),
+        'games_in_window': 3,
+        'games_analyzed': 3,
+        'games_excluded': 0,
+        'opener_bulk_games': 0,
+        'bullpen_games': 0,
+        'starter_outs': 45,
+        'starter_avg_outs': 15.0,
+        'bullpen_outs_required': 18,
+        'short_start_count': 1,
+        'short_start_rate': 0.33,
+        'summary': 'Rotation burden summary.',
+        'limitations': [],
+    }
     snapshot.payload = {
         public_serving_authority.TEAM_BOARD_PACKAGE_KEY: {
             'contract': public_serving_authority.TEAM_BOARD_PACKAGE_CONTRACT,
             'data_through': PRODUCT_DATE.isoformat(),
+            'availability_reference_date': PRODUCT_DATE.isoformat(),
             'by_team_id': {
                 str(team_id): {
                     'team': {'team_id': team_id},
+                    'records': [
+                        {'pitcher_id': pitcher.id, 'name': pitcher.full_name}
+                        for pitcher in member_rows
+                    ],
+                    'default_pitcher_ids': member_ids,
+                    'bullpen_membership_authority': {
+                        'method_version': public_serving_authority.BULLPEN_MEMBERSHIP_METHOD_VERSION,
+                        'public_contract_version': public_serving_authority.BULLPEN_MEMBERSHIP_PUBLIC_CONTRACT_VERSION,
+                        'carrier_contract_version': public_serving_authority.BULLPEN_MEMBERSHIP_CARRIER_CONTRACT,
+                        'team_board_package_contract': public_serving_authority.TEAM_BOARD_PACKAGE_CONTRACT,
+                        'population_basis': {
+                            'basis': public_serving_authority.BULLPEN_MEMBERSHIP_POPULATION_BASIS,
+                            'population_authority': public_serving_authority.BULLPEN_MEMBERSHIP_POPULATION_AUTHORITY,
+                            'membership_authority': public_serving_authority.BULLPEN_MEMBERSHIP_MEMBERSHIP_AUTHORITY,
+                            'roster_authority_version': '2026-06-25.foundation',
+                        },
+                        'reference_date_policy': public_serving_authority.BULLPEN_MEMBERSHIP_REFERENCE_DATE_POLICY,
+                        'membership_reference_date': PRODUCT_DATE.isoformat(),
+                    },
+                    'rotation_support_pressure': rotation,
+                    'rotation_support_pressure_authority': {
+                        'method_version': rotation_support_pressure.VERSION,
+                        'public_contract_version': rotation_support_pressure.PUBLIC_CONTRACT_VERSION,
+                        'carrier_contract_version': rotation_support_pressure.DELTA_CARRIER_CONTRACT,
+                        'team_board_package_contract': public_serving_authority.TEAM_BOARD_PACKAGE_CONTRACT,
+                        'population_basis': {
+                            'basis': rotation_support_pressure.POPULATION_BASIS,
+                            'population_authority': rotation_support_pressure.POPULATION_AUTHORITY,
+                            'membership_authority': rotation_support_pressure.MEMBERSHIP_AUTHORITY,
+                        },
+                        'reference_date_policy': rotation_support_pressure.REFERENCE_DATE_POLICY,
+                        'reference_date': PRODUCT_DATE.isoformat(),
+                    },
                     'workload_windows': carrier,
                     'workload_windows_authority': {
                         'method_version': (
@@ -233,7 +291,7 @@ def _attach_workload_carrier(snapshot, team_id):
             },
         },
     }
-    return carrier
+    return carrier, rotation, member_ids
 
 
 # ============================ FIXTURE A — HIGH =================================
@@ -300,7 +358,7 @@ def test_new_publication_copies_frozen_workload_windows_into_delta_sidecar(
     _seed_team(31, usable=8, total=8)
     _sync_run()
     seed_roster_readiness_snapshots()
-    carrier = _attach_workload_carrier(snapshot, 31)
+    carrier, rotation, member_ids = _attach_workload_carrier(snapshot, 31)
 
     result = generate_team_state_artifact(31, snapshot=snapshot)
 
@@ -313,6 +371,10 @@ def test_new_publication_copies_frozen_workload_windows_into_delta_sidecar(
     assert sidecar.payload['domains']['workload_7d']['method_version'] == (
         public_team_relief_work.WORKLOAD_WINDOWS_METHOD_VERSION
     )
+    assert sidecar.payload['values']['rotation_impact'] == rotation
+    assert sidecar.payload['values']['bullpen_membership'][
+        'member_pitcher_ids'
+    ] == member_ids
 
 # =========================== FIXTURE B — MEDIUM ===============================
 

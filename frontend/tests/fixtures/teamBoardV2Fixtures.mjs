@@ -96,7 +96,7 @@ export function teamBoardV2Fixture(board, overrides = {}) {
     rotation_impact: { population_basis: 'stored_team_game_pitching_splits', read: board?.rotation_support_pressure || {} },
     recent_transactions: {
       capability: 'public_recent_transactions_v1',
-      version: '2026-08-18.team-board',
+      version: '2026-08-20.rotation-roster',
       population_basis: 'explanatory_eligible_pitcher_transactions_touching_selected_team_in_latest_source_sync_window',
       status: 'available',
       events: [],

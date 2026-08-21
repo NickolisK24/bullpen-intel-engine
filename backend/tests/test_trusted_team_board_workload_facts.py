@@ -382,6 +382,20 @@ def test_workload_windows_are_authored_once_and_frozen_with_publication_authorit
             ),
             'data_through': snapshot.data_through.isoformat(),
         }
+        assert team['bullpen_membership_authority'] == {
+            'method_version': public_serving_authority.BULLPEN_MEMBERSHIP_METHOD_VERSION,
+            'public_contract_version': public_serving_authority.BULLPEN_MEMBERSHIP_PUBLIC_CONTRACT_VERSION,
+            'carrier_contract_version': public_serving_authority.BULLPEN_MEMBERSHIP_CARRIER_CONTRACT,
+            'team_board_package_contract': public_serving_authority.TEAM_BOARD_PACKAGE_CONTRACT,
+            'population_basis': {
+                'basis': public_serving_authority.BULLPEN_MEMBERSHIP_POPULATION_BASIS,
+                'population_authority': public_serving_authority.BULLPEN_MEMBERSHIP_POPULATION_AUTHORITY,
+                'membership_authority': public_serving_authority.BULLPEN_MEMBERSHIP_MEMBERSHIP_AUTHORITY,
+                'roster_authority_version': '2026-06-25.foundation',
+            },
+            'reference_date_policy': public_serving_authority.BULLPEN_MEMBERSHIP_REFERENCE_DATE_POLICY,
+            'membership_reference_date': trusted_app['reference_date'].isoformat(),
+        }
 
 
 def test_frozen_workload_windows_match_the_canonical_public_owner(trusted_app):

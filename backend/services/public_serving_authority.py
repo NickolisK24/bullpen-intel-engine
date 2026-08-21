@@ -58,6 +58,16 @@ from services.public_team_relief_work import (
     author_workload_windows,
 )
 from services.roster_authority import build_roster_authority
+from services.roster_authority import VERSION as ROSTER_AUTHORITY_VERSION
+from services.rotation_support_pressure import (
+    DELTA_CARRIER_CONTRACT as ROTATION_IMPACT_CARRIER_CONTRACT,
+    MEMBERSHIP_AUTHORITY as ROTATION_IMPACT_MEMBERSHIP_AUTHORITY,
+    POPULATION_AUTHORITY as ROTATION_IMPACT_POPULATION_AUTHORITY,
+    POPULATION_BASIS as ROTATION_IMPACT_POPULATION_BASIS,
+    PUBLIC_CONTRACT_VERSION as ROTATION_IMPACT_PUBLIC_CONTRACT_VERSION,
+    REFERENCE_DATE_POLICY as ROTATION_IMPACT_REFERENCE_DATE_POLICY,
+    VERSION as ROTATION_IMPACT_METHOD_VERSION,
+)
 from services.published_team_state import project_published_team_state_artifact
 from services.team_state_payload import TEAM_STATE_ARTIFACT_TYPE
 from services.team_state_public_vocabulary import (
@@ -75,6 +85,13 @@ REST_STATUS_POPULATION_AUTHORITY = 'trusted_team_boards.default_pitcher_ids'
 REST_STATUS_MEMBERSHIP_AUTHORITY = 'eligible_bullpen_pitcher_contexts'
 REST_STATUS_REFERENCE_DATE_POLICY = 'd055_availability_reference_date_v1'
 PUBLICATION_AUTHORITY_CONTRACT = 'trusted_dashboard_publication_v1'
+BULLPEN_MEMBERSHIP_METHOD_VERSION = 'team_board_default_bullpen_membership_v1'
+BULLPEN_MEMBERSHIP_PUBLIC_CONTRACT_VERSION = 'bullpen_membership_snapshot_public_v1'
+BULLPEN_MEMBERSHIP_CARRIER_CONTRACT = 'team_board_bullpen_membership_carrier_v1'
+BULLPEN_MEMBERSHIP_POPULATION_BASIS = 'represented_default_visible_active_bullpen'
+BULLPEN_MEMBERSHIP_POPULATION_AUTHORITY = 'trusted_team_boards.default_pitcher_ids'
+BULLPEN_MEMBERSHIP_MEMBERSHIP_AUTHORITY = 'current_availability_records'
+BULLPEN_MEMBERSHIP_REFERENCE_DATE_POLICY = 'team_board_membership_reference_date_v1'
 TEAM_BOARD_UNAVAILABLE = 'trusted_team_board_unavailable'
 TEAM_BOARD_PACKAGE_MISSING = 'trusted_team_board_package_missing'
 TEAM_BOARD_TEAM_MISSING = 'trusted_team_board_team_missing'
@@ -317,10 +334,35 @@ def build_frozen_team_board_package(dashboard_payload):
                 or freshness.get('latest_workload_date')
             ),
         )
+        rotation_support_pressure = _support_for_team(
+            payload, 'rotation_support_pressure', team_id
+        )
         by_team_id[str(team_id)] = {
             'team': deepcopy(team_info.get(team_id) or {'team_id': team_id}),
             'records': records,
             'default_pitcher_ids': default_ids,
+            'bullpen_membership_authority': {
+                'method_version': BULLPEN_MEMBERSHIP_METHOD_VERSION,
+                'public_contract_version': (
+                    BULLPEN_MEMBERSHIP_PUBLIC_CONTRACT_VERSION
+                ),
+                'carrier_contract_version': BULLPEN_MEMBERSHIP_CARRIER_CONTRACT,
+                'team_board_package_contract': TEAM_BOARD_PACKAGE_CONTRACT,
+                'population_basis': {
+                    'basis': BULLPEN_MEMBERSHIP_POPULATION_BASIS,
+                    'population_authority': (
+                        BULLPEN_MEMBERSHIP_POPULATION_AUTHORITY
+                    ),
+                    'membership_authority': (
+                        BULLPEN_MEMBERSHIP_MEMBERSHIP_AUTHORITY
+                    ),
+                    'roster_authority_version': ROSTER_AUTHORITY_VERSION,
+                },
+                'reference_date_policy': (
+                    BULLPEN_MEMBERSHIP_REFERENCE_DATE_POLICY
+                ),
+                'membership_reference_date': reference_date.isoformat(),
+            },
             'roster_authority': deepcopy(roster_authority),
             'workload_concentration': deepcopy(workload_concentration),
             'workload_windows': deepcopy(workload_windows),
@@ -352,7 +394,22 @@ def build_frozen_team_board_package(dashboard_payload):
                 'availability_reference_date': reference_date.isoformat(),
             },
             'capacity_intelligence': _support_for_team(payload, 'capacity_intelligence', team_id),
-            'rotation_support_pressure': _support_for_team(payload, 'rotation_support_pressure', team_id),
+            'rotation_support_pressure': deepcopy(rotation_support_pressure),
+            'rotation_support_pressure_authority': {
+                'method_version': ROTATION_IMPACT_METHOD_VERSION,
+                'public_contract_version': (
+                    ROTATION_IMPACT_PUBLIC_CONTRACT_VERSION
+                ),
+                'carrier_contract_version': ROTATION_IMPACT_CARRIER_CONTRACT,
+                'team_board_package_contract': TEAM_BOARD_PACKAGE_CONTRACT,
+                'population_basis': {
+                    'basis': ROTATION_IMPACT_POPULATION_BASIS,
+                    'population_authority': ROTATION_IMPACT_POPULATION_AUTHORITY,
+                    'membership_authority': ROTATION_IMPACT_MEMBERSHIP_AUTHORITY,
+                },
+                'reference_date_policy': ROTATION_IMPACT_REFERENCE_DATE_POLICY,
+                'reference_date': rotation_support_pressure.get('reference_date'),
+            },
             'bullpen_stability': _support_for_team(payload, 'bullpen_stability', team_id),
             'bullpen_environment': _support_for_team(payload, 'bullpen_environment', team_id),
         }
