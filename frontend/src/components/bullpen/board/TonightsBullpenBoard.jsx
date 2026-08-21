@@ -139,6 +139,8 @@ export default function TonightsBullpenBoard({
       ) : (
         <div key={selectedTeam} className="flex flex-col gap-6 2xl:flex-row 2xl:items-start">
           <div className="min-w-0 flex-1">
+            {/* The retired titleOwnedByPage handoff remains a heading boundary:
+                the route owns H1; this subtree owns the selected-club H2. */}
             <div className="mb-4">
               <TeamBoardAnswerBlock
                 read={teamBoardAnswerRead}
