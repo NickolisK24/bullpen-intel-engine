@@ -40,6 +40,13 @@ const payload = {
     window_days: 3,
     window_label: 'Last 3 days',
   },
+  off_active_count: {
+    contract: 'team_board_off_active_count_v1',
+    status: 'available',
+    value: 2,
+    through: '2026-08-16',
+    context_label: 'Current roster context',
+  },
   workload_overview: {
     windows: [{ window_days: 7, relief_appearances: 3, pitches_total: null }],
     concentration: { label: 'Exact Concentration', summary: 'Backend workload sentence.' },
@@ -94,6 +101,7 @@ test('adapter passes backend semantics and nulls through unchanged', () => {
   assert.equal(view.restStatus.active_arm_count, null)
   assert.equal(view.recentUsage, payload.recent_usage)
   assert.equal(view.recentlyUsedArms, payload.recently_used_arms)
+  assert.equal(view.offActiveCount, payload.off_active_count)
   assert.equal(view.recentUsage.appearances[0].pitches_thrown, null)
   assert.equal(view.workloadOverview, payload.workload_overview)
   assert.equal(view.workloadOverview.windows[0].pitches_total, null)

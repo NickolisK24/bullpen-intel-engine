@@ -66,6 +66,14 @@ export function getBullpenSummaryView(read) {
   const recentlyUsedQualifier = recentlyUsedArms === null
     ? 'Not published'
     : read?.recentlyUsedArms?.window_label
+  const offActiveAvailable = read?.sectionStatus?.off_active_count?.status === 'available'
+    && read?.offActiveCount?.status === 'available'
+  const offActiveCount = offActiveAvailable
+    ? countOrNull(read?.offActiveCount?.value)
+    : null
+  const offActiveQualifier = offActiveCount === null
+    ? 'Not published'
+    : read?.offActiveCount?.context_label
 
   return [
     {
@@ -89,8 +97,8 @@ export function getBullpenSummaryView(read) {
     {
       key: 'off-active-count',
       label: 'Off-active count',
-      value: null,
-      qualifier: 'Exact count not published',
+      value: offActiveCount,
+      qualifier: offActiveQualifier || 'Not published',
     },
     {
       key: 'seven-day-workload',

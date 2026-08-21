@@ -13,6 +13,17 @@ from services.pitcher_public_labels import (
     PUBLIC_ROLE_COMPOSITION_KEYS,
     ROLE_PUBLIC_LABELS,
 )
+from services.roster_authority import (
+    CAPABILITY as ROSTER_AUTHORITY_CAPABILITY,
+    ROSTER_STATUS_CATEGORY_ACTIVE,
+    ROSTER_STATUS_CATEGORY_FORTY_MAN_NOT_ACTIVE,
+    ROSTER_STATUS_CATEGORY_INJURED_LIST,
+    ROSTER_STATUS_CATEGORY_NON_ROSTER_DEPTH,
+    ROSTER_STATUS_CATEGORY_OPTIONED_OR_MINORS,
+    ROSTER_STATUS_CATEGORY_RESTRICTED_OR_SPECIAL,
+    ROSTER_STATUS_CATEGORY_UNKNOWN,
+    VERSION as ROSTER_AUTHORITY_VERSION,
+)
 
 
 CAPABILITY = 'team_board_v2'
@@ -27,6 +38,20 @@ RECENT_USAGE_POPULATION_BASIS = 'official_recent_team_relief_appearance_rows'
 RECENTLY_USED_ARMS_CONTRACT = 'team_board_recently_used_arms_v1'
 RECENTLY_USED_ARMS_WINDOW_DAYS = 3
 RECENTLY_USED_ARMS_WINDOW_POLICY = 'calendar_day_inclusive_through_date_v1'
+OFF_ACTIVE_COUNT_CONTRACT = 'team_board_off_active_count_v1'
+OFF_ACTIVE_COUNT_POPULATION_BASIS = 'canonical_bullpen_eligible_roster_population'
+OFF_ACTIVE_COUNT_AUTHORITY = 'roster_authority_v1.counts.inactive_roster_context_count'
+OFF_ACTIVE_COUNT_QUALIFYING_CATEGORIES = (
+    ROSTER_STATUS_CATEGORY_INJURED_LIST,
+    ROSTER_STATUS_CATEGORY_OPTIONED_OR_MINORS,
+    ROSTER_STATUS_CATEGORY_FORTY_MAN_NOT_ACTIVE,
+    ROSTER_STATUS_CATEGORY_RESTRICTED_OR_SPECIAL,
+    ROSTER_STATUS_CATEGORY_NON_ROSTER_DEPTH,
+)
+OFF_ACTIVE_COUNT_EXCLUDED_CATEGORIES = (
+    ROSTER_STATUS_CATEGORY_ACTIVE,
+    ROSTER_STATUS_CATEGORY_UNKNOWN,
+)
 WORKLOAD_OVERVIEW_POPULATION_BASIS = (
     'official_team_relief_appearances_and_current_bullpen_eligible_pitchers'
 )
@@ -431,6 +456,135 @@ def _recently_used_arms(arms, relief_work, active_status, error, represented_dat
     return read
 
 
+def _off_active_count(board):
+    """Project the canonical roster authority's exact off-active count.
+
+    The roster authority already owns the bullpen-eligible population, current
+    roster classification, evidence identities, and readiness gate. This read
+    validates and copies that authority; it never counts cards, status history,
+    transaction rows, or frontend-rendered evidence.
+    """
+    roster = board.get('roster_authority') if isinstance(board, dict) else None
+    roster = roster if isinstance(roster, dict) else {}
+    readiness = roster.get('readiness')
+    readiness = readiness if isinstance(readiness, dict) else {}
+    through = readiness.get('data_through') or roster.get('reference_date')
+    read = {
+        'contract': OFF_ACTIVE_COUNT_CONTRACT,
+        'status': STATUS_UNAVAILABLE,
+        'reason_code': None,
+        'value': None,
+        'through': through if _date_value(through) is not None else None,
+        'population_basis': OFF_ACTIVE_COUNT_POPULATION_BASIS,
+        'authority': OFF_ACTIVE_COUNT_AUTHORITY,
+        'roster_authority_version': ROSTER_AUTHORITY_VERSION,
+        'qualifying_roster_categories': list(OFF_ACTIVE_COUNT_QUALIFYING_CATEGORIES),
+        'excluded_roster_categories': list(OFF_ACTIVE_COUNT_EXCLUDED_CATEGORIES),
+        'context_label': 'Current roster context',
+        'summary': None,
+        'limitations': [],
+    }
+
+    if (
+        roster.get('capability') != ROSTER_AUTHORITY_CAPABILITY
+        or roster.get('version') != ROSTER_AUTHORITY_VERSION
+        or roster.get('invariant') is not True
+    ):
+        read['reason_code'] = 'roster_authority_incompatible'
+        return read
+    if (
+        readiness.get('claims_available') is not True
+        or readiness.get('counts_withheld') is not False
+    ):
+        read['reason_code'] = 'roster_authority_unavailable'
+        read['limitations'] = list(readiness.get('reader_limitations') or [])
+        return read
+    if read['through'] is None:
+        read['reason_code'] = 'roster_reference_date_unavailable'
+        return read
+
+    counts = roster.get('counts')
+    evidence = roster.get('evidence')
+    category_counts = roster.get('category_counts')
+    if not all(isinstance(value, dict) for value in (counts, evidence, category_counts)):
+        read['reason_code'] = 'roster_authority_invalid'
+        return read
+
+    value = counts.get('inactive_roster_context_count')
+    unknown_count = counts.get('roster_unknown_count')
+    off_active = evidence.get('inactive_roster_context_count')
+    if (
+        type(value) is not int
+        or value < 0
+        or type(unknown_count) is not int
+        or unknown_count < 0
+        or not isinstance(off_active, list)
+    ):
+        read['reason_code'] = 'off_active_count_invalid'
+        return read
+    if unknown_count > 0:
+        read['reason_code'] = 'roster_status_incomplete'
+        read['limitations'] = list(roster.get('limitations') or [])
+        return read
+
+    pitcher_ids = []
+    for entry in off_active:
+        pitcher_id = entry.get('pitcher_id') if isinstance(entry, dict) else None
+        category = (
+            entry.get('roster_status_category')
+            if isinstance(entry, dict)
+            else None
+        )
+        if (
+            type(pitcher_id) is not int
+            or pitcher_id <= 0
+            or category not in OFF_ACTIVE_COUNT_QUALIFYING_CATEGORIES
+        ):
+            read['reason_code'] = 'off_active_evidence_invalid'
+            return read
+        pitcher_ids.append(pitcher_id)
+    if len(pitcher_ids) != value or len(set(pitcher_ids)) != value:
+        read['reason_code'] = 'off_active_evidence_invalid'
+        return read
+
+    qualifying_total = 0
+    for category in OFF_ACTIVE_COUNT_QUALIFYING_CATEGORIES:
+        category_count = category_counts.get(category)
+        if type(category_count) is not int or category_count < 0:
+            read['reason_code'] = 'off_active_categories_invalid'
+            return read
+        qualifying_total += category_count
+    if qualifying_total != value:
+        read['reason_code'] = 'off_active_categories_invalid'
+        return read
+
+    excluded_ids = set()
+    for field in ('bullpen_arms', 'roster_unknown_count'):
+        entries = evidence.get(field)
+        if not isinstance(entries, list):
+            read['reason_code'] = 'roster_authority_invalid'
+            return read
+        for entry in entries:
+            pitcher_id = entry.get('pitcher_id') if isinstance(entry, dict) else None
+            if type(pitcher_id) is not int or pitcher_id <= 0:
+                read['reason_code'] = 'roster_authority_invalid'
+                return read
+            excluded_ids |= {pitcher_id}
+    if set(pitcher_ids) & excluded_ids:
+        read['reason_code'] = 'off_active_population_overlap'
+        return read
+
+    arm_word = 'arm' if value == 1 else 'arms'
+    verb = 'is' if value == 1 else 'are'
+    read.update({
+        'status': STATUS_AVAILABLE,
+        'reason_code': None,
+        'value': value,
+        'summary': f'{value} bullpen {arm_word} {verb} currently off the active roster.',
+    })
+    return read
+
+
 def _workload_overview(board, relief_work):
     """Project only the already-public relief windows and concentration read."""
     source_windows = (
@@ -587,6 +741,7 @@ def build_team_board_v2_payload(
         errors.get('recent_relief_work'),
         represented_date,
     )
+    off_active_count = _off_active_count(board)
 
     section_status = {
         'team_state': _section_status(
@@ -610,6 +765,12 @@ def build_team_board_v2_payload(
             recently_used_arms['status'],
             reason_code=recently_used_arms['reason_code'],
             represented_date=recently_used_arms['through'],
+        ),
+        'off_active_count': _section_status(
+            off_active_count['status'],
+            reason_code=off_active_count['reason_code'],
+            limitations=off_active_count['limitations'],
+            represented_date=off_active_count['through'],
         ),
         'workload_overview': _workload_overview_status(
             board,
@@ -650,6 +811,7 @@ def build_team_board_v2_payload(
         'rest_status': deepcopy(board.get('rest_status') or {}),
         'recent_usage': _recent_usage(relief_work),
         'recently_used_arms': recently_used_arms,
+        'off_active_count': off_active_count,
         'workload_overview': _workload_overview(board, relief_work),
         'roles_deployment': roles_deployment,
         'rotation_impact': {
@@ -673,6 +835,11 @@ __all__ = [
     'ACTIVE_BULLPEN_POPULATION_BASIS',
     'CAPABILITY',
     'CONTRACT_VERSION',
+    'OFF_ACTIVE_COUNT_AUTHORITY',
+    'OFF_ACTIVE_COUNT_CONTRACT',
+    'OFF_ACTIVE_COUNT_EXCLUDED_CATEGORIES',
+    'OFF_ACTIVE_COUNT_POPULATION_BASIS',
+    'OFF_ACTIVE_COUNT_QUALIFYING_CATEGORIES',
     'RECENT_USAGE_POPULATION_BASIS',
     'RECENTLY_USED_ARMS_CONTRACT',
     'RECENTLY_USED_ARMS_WINDOW_DAYS',
