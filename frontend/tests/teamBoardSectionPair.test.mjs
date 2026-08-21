@@ -61,12 +61,17 @@ test('Rotation and Transactions reuse the default 1:1 pair at 1024', () => {
   assert.ok(html.includes('Transactions unavailable'))
 })
 
-test('Rest and Workload are the only first-pair members and later sections remain outside it', async () => {
+test('Current workload picture contains Recent Usage plus the Rest and Workload pair only', async () => {
   const source = await readFile(new URL('../src/components/bullpen/board/TonightsBullpenBoard.jsx', import.meta.url), 'utf8')
-  const pairStart = source.indexOf('<SectionPair label="Rest and workload">')
+  const chapterStart = source.indexOf('aria-label="Current workload picture"')
+  const usageStart = source.indexOf('<TeamBoardRecentUsage', chapterStart)
+  const pairStart = source.indexOf('<SectionPair label="Rest and workload"', usageStart)
   const pairEnd = source.indexOf('</SectionPair>', pairStart)
 
+  assert.ok(chapterStart >= 0)
+  assert.ok(usageStart > chapterStart)
   assert.ok(pairStart >= 0)
+  assert.ok(pairStart > usageStart)
   assert.ok(source.indexOf('<TeamBoardRestStatus', pairStart) < pairEnd)
   assert.ok(source.indexOf('<TeamBoardWorkloadOverview', pairStart) < pairEnd)
   assert.ok(source.indexOf('<TeamBoardRolesDeployment') > pairEnd)
