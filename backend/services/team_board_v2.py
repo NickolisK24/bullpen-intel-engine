@@ -411,12 +411,32 @@ def _game_context_status(game_context, error, represented_date):
     )
 
 
+def _performance_status(performance, error, represented_date):
+    if error:
+        return deepcopy(error)
+    if not isinstance(performance, dict):
+        return unavailable_section('performance_unavailable')
+    status = performance.get('status')
+    if status not in (STATUS_AVAILABLE, STATUS_PARTIAL):
+        return unavailable_section(
+            performance.get('reason_code') or 'performance_unavailable',
+            limitations=performance.get('limitations') or [],
+        )
+    return _section_status(
+        status,
+        reason_code=performance.get('reason_code'),
+        limitations=performance.get('limitations') or [],
+        represented_date=performance.get('through') or represented_date,
+    )
+
+
 def build_team_board_v2_payload(
     board,
     *,
     recent_relief_work=None,
     recent_transactions=None,
     game_context=None,
+    performance=None,
     section_errors=None,
 ):
     """Compose existing public read models without mutating their payloads."""
@@ -436,6 +456,7 @@ def build_team_board_v2_payload(
     roles_deployment = _roles_deployment(arms, represented_date, relief_work)
     rotation = deepcopy(board.get('rotation_support_pressure') or {})
     context = deepcopy(game_context) if isinstance(game_context, dict) else None
+    performance_read = deepcopy(performance) if isinstance(performance, dict) else None
 
     section_status = {
         'team_state': _section_status(
@@ -470,6 +491,11 @@ def build_team_board_v2_payload(
         ),
         'recent_relief_work': _relief_work_status(relief_work, errors.get('recent_relief_work'), represented_date),
         'game_context': _game_context_status(context, errors.get('game_context'), represented_date),
+        'performance': _performance_status(
+            performance_read,
+            errors.get('performance'),
+            represented_date,
+        ),
     }
 
     return {
@@ -501,6 +527,7 @@ def build_team_board_v2_payload(
             'read': relief_work,
         },
         'game_context': context,
+        'performance': performance_read,
         'section_status': section_status,
         'limitations': deepcopy(board.get('limitations') or []),
     }

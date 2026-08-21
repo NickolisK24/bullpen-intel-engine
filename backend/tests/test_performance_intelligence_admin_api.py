@@ -264,15 +264,16 @@ def test_no_mutating_method_is_exposed(client):
         assert response.status_code == 405
 
 
-# ── No public surface consumes M-001 ───────────────────────────────────────
-def test_no_public_surface_imports_the_performance_framework():
-    """Only the internal admin route and the metric registry may consume it."""
+# ── Only the governed Team Board projection consumes public M-001 ──────────
+def test_only_approved_surfaces_import_the_performance_framework():
+    """The internal route, registry, and governed Team Board projection consume it."""
     from pathlib import Path
 
     backend = Path(__file__).resolve().parents[1]
     allowed = {
         backend / 'services' / 'performance_intelligence.py',
         backend / 'services' / 'performance_metrics.py',
+        backend / 'services' / 'public_team_performance.py',
         backend / 'api' / 'performance_intelligence_admin.py',
     }
     offenders = []
@@ -285,7 +286,7 @@ def test_no_public_surface_imports_the_performance_framework():
     assert offenders == []
 
 
-def test_no_frontend_source_references_the_metric():
+def test_frontend_does_not_own_performance_metric_semantics_or_copy():
     from pathlib import Path
 
     repo = Path(__file__).resolve().parents[2]

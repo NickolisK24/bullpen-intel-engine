@@ -38,6 +38,7 @@ export function readTeamBoardV2(payload) {
     rosterContext: payload.roster_context,
     recentReliefWork: payload.recent_relief_work,
     gameContext: payload.game_context,
+    performance: payload.performance,
     sectionStatus: payload.section_status,
     limitations: payload.limitations,
   }

@@ -10,6 +10,7 @@ from services.public_team_relief_work import (
     build_public_team_relief_work_payload,
 )
 from services.public_recent_transactions import build_public_recent_transactions
+from services.public_team_performance import build_public_team_performance_payload
 from services.team_board_v2 import build_team_board_v2_payload, unavailable_section
 
 
@@ -70,10 +71,19 @@ def get_team_board_v2(team_id):
     if transactions_error:
         section_errors['recent_transactions'] = transactions_error
 
+    performance, performance_error = _optional_failure(
+        'performance',
+        'performance_unavailable',
+        lambda: build_public_team_performance_payload(team_id, board=board),
+    )
+    if performance_error:
+        section_errors['performance'] = performance_error
+
     return jsonify(build_team_board_v2_payload(
         board,
         recent_relief_work=relief_work,
         recent_transactions=recent_transactions,
         game_context=game_context,
+        performance=performance,
         section_errors=section_errors,
     ))

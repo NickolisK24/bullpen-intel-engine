@@ -23,10 +23,10 @@ the failure mode this contract exists to prevent:
     FOR THIS TEAM into the window and leaves his prior organization's
     appearances where they belong.
 
-Nothing here is public. The contract keeps SC-05, ``public_reader_gate``,
-``team_state_performance_gate`` and ``share_card_performance_gate`` blocked,
-and this module publishes no metric until its definitional parameters are
-approved by a governed decision.
+Publication remains surface-specific. The Team Board may consume only a
+metric whose registry entry names that surface; SC-05, Team State, Share Card,
+and every unnamed reader remain blocked. A computed value alone never opens a
+publication gate.
 """
 
 from __future__ import annotations
@@ -96,6 +96,7 @@ BLOCKED_GATES = {
 # questions were deliberately given separate names rather than one ambiguous
 # ready_for_review, because conflating them is how a gate opens by accident.
 PUBLICATION_BLOCKED_BY_GATE = 'public_reader_gate_blocked'
+PUBLIC_SURFACE_TEAM_BOARD = 'team_board'
 
 
 # ── Shared components every metric reads from ───────────────────────────────
@@ -164,6 +165,7 @@ class MetricDefinition:
     evidence_authority: Optional[str] = None
     effective_date: Optional[str] = None
     family_id: str = FAMILY_ID
+    approved_surfaces: tuple = ()
 
 
 class MetricRegistry:
@@ -508,6 +510,8 @@ def build_metric_read(
     reference_date=None,
     through_date=None,
     freshness=None,
+    group=None,
+    publication_surface=None,
 ):
     """Compute one registered metric for one team's current active pen.
 
@@ -527,11 +531,12 @@ def build_metric_read(
     if freshness is None:
         freshness = resolve_freshness(reference_date)
 
-    group = resolve_active_group(team_id, reference_date=reference_date)
+    group = group or resolve_active_group(team_id, reference_date=reference_date)
     if not group['pitcher_ids']:
         return _refusal(
             metric_id, team_id, REFUSAL_ACTIVE_GROUP_EMPTY,
             season=season, group=group, definition=definition, freshness=freshness,
+            publication_surface=publication_surface,
         )
 
     selection = qualifying_appearances(
@@ -547,6 +552,7 @@ def build_metric_read(
             season=season, group=group, definition=definition,
             freshness=freshness,
             invalid_rows=[i.to_dict() for i in selection.blocking],
+            publication_surface=publication_surface,
         )
 
     logs = selection.rows
@@ -557,6 +563,7 @@ def build_metric_read(
             metric_id, team_id, REFUSAL_NO_QUALIFYING_APPEARANCES,
             season=season, group=group, definition=definition,
             components=components, freshness=freshness, membership=membership,
+            publication_surface=publication_surface,
         )
 
     # Pooled components only. The rate is sum(numerator) over sum(denominator)
@@ -597,10 +604,12 @@ def build_metric_read(
         'evidence': _evidence(definition, group, membership, components, logs),
         'freshness': freshness,
         'limitations': _limitations(definition, components, membership),
-        'gates': dict(BLOCKED_GATES),
+        'gates': _gates_for(definition, publication_surface),
     }
     read['metric_readiness'] = _metric_readiness(read, sample)
-    read['publication'] = _publication_decision(definition, read, sample)
+    read['publication'] = _publication_decision(
+        definition, read, sample, publication_surface=publication_surface,
+    )
     return read
 
 
@@ -852,12 +861,19 @@ def _limitations(definition, components, membership=None):
     return limitations
 
 
-def _publication_decision(definition, read, sample):
+def _gates_for(definition, publication_surface):
+    gates = dict(BLOCKED_GATES)
+    if publication_surface in definition.approved_surfaces:
+        gates['public_reader_gate'] = 'open'
+    return gates
+
+
+def _publication_decision(definition, read, sample, *, publication_surface=None):
     """Fail closed. A computed value is not automatically a publishable one.
 
-    Nothing here opens a gate. Satisfying an approved sample makes a metric
-    internally reviewable; publishing it still requires a governed gate that is
-    explicitly open, and all three remain blocked.
+    Satisfying an approved sample makes a metric internally reviewable;
+    publishing it additionally requires a governed surface that is explicitly
+    approved in the metric registry.
     """
     if read['value'] is None:
         return {'publishable': False, 'reason': read['reason_code']}
@@ -868,12 +884,18 @@ def _publication_decision(definition, read, sample):
         return {'publishable': False, 'reason': REFUSAL_BELOW_MINIMUM_SAMPLE}
     if not _freshness_is_provable(read.get('freshness')):
         return {'publishable': False, 'reason': REFUSAL_FRESHNESS_UNPROVABLE}
-    return {'publishable': False, 'reason': PUBLICATION_BLOCKED_BY_GATE}
+    if publication_surface not in definition.approved_surfaces:
+        return {'publishable': False, 'reason': PUBLICATION_BLOCKED_BY_GATE}
+    return {
+        'publishable': True,
+        'reason': None,
+        'surface': publication_surface,
+    }
 
 
 def _refusal(metric_id, team_id, reason, *, season=None, group=None,
              definition=None, components=None, freshness=None,
-             invalid_rows=None, membership=None):
+             invalid_rows=None, membership=None, publication_surface=None):
     outs = components.outs if components else 0
     payload = {
         'capability': CAPABILITY,
@@ -908,7 +930,10 @@ def _refusal(metric_id, team_id, reason, *, season=None, group=None,
         'evidence': None,
         'freshness': freshness,
         'limitations': ['No supportable value; nothing is published.'],
-        'gates': dict(BLOCKED_GATES),
+        'gates': (
+            _gates_for(definition, publication_surface)
+            if definition else dict(BLOCKED_GATES)
+        ),
         'metric_readiness': {'ready_for_internal_review': False, 'reason': reason},
         'publication': {'publishable': False, 'reason': reason},
     }

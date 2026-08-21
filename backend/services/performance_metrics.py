@@ -12,9 +12,9 @@ framework change and, by design, almost no framework test.
 
 Only M-001 is registered. No other metric is approved.
 
-M-001's parameters are approved by D-023 through D-030 and are set here. That
-makes the metric internally reviewable. It does not make it public: every
-publication gate stays blocked, and nothing consumes this on a public surface.
+M-001's parameters are approved by D-023 through D-030 and are set here. The
+Team Board is its sole approved public surface; SC-05, Team State, Share Card,
+and every other surface remain blocked.
 """
 
 from __future__ import annotations
@@ -133,6 +133,7 @@ CURRENT_ACTIVE_PEN_ERA = MetricDefinition(
     below_sample_language_authority=ERA_BELOW_SAMPLE_LANGUAGE_AUTHORITY,
     below_sample_public_wording=ERA_BELOW_SAMPLE_WORDING,
     evidence_authority=ERA_EVIDENCE_AUTHORITY,
+    approved_surfaces=('team_board',),
 )
 
 

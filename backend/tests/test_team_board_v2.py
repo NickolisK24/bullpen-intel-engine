@@ -28,9 +28,14 @@ TEAM = {
 
 
 @pytest.fixture
-def client():
+def client(monkeypatch):
     app = Flask(__name__)
     app.register_blueprint(team_board_v2_api.team_board_v2_bp, url_prefix='/api/bullpen')
+    monkeypatch.setattr(
+        team_board_v2_api,
+        'build_public_team_performance_payload',
+        lambda _team_id, board: _performance(),
+    )
     return app.test_client()
 TEAM_STATE = {
     'contract': 'public_team_state_v1',
@@ -213,6 +218,36 @@ def _recent_transactions(*, status='available', events=None, limitations=None):
     }
 
 
+def _performance(*, status='partial'):
+    return {
+        'capability': 'public_team_performance',
+        'contract_version': 'public_team_performance_v1',
+        'status': status,
+        'reason_code': 'additional_metrics_not_governed' if status == 'partial' else None,
+        'through': '2026-08-16',
+        'window': {
+            'policy': 'current_mlb_regular_season_through_represented_date',
+            'season': 2026,
+            'start': '2026-01-01',
+            'through': '2026-08-16',
+        },
+        'active_pitcher_count': 1,
+        'pitchers_with_sample': 1,
+        'relief_appearances': 36,
+        'innings_pitched': '36.0',
+        'metrics': [{
+            'key': 'active_bullpen_era',
+            'metric_id': 'M-001',
+            'label': 'Active Bullpen ERA',
+            'value': '3.00',
+            'method_version': '1.1.0',
+        }],
+        'sample_summary': 'Current regular season · 1 active arm · 1 with a sample · 36 relief appearances · 36.0 innings · Through Aug 16, 2026',
+        'summary': 'Active Bullpen ERA is supporting context.',
+        'limitations': ['Additional metrics are not governed.'],
+    }
+
+
 def test_contract_pins_version_and_preserves_canonical_owner_outputs():
     board = _board()
     relief = _relief_work()
@@ -224,6 +259,7 @@ def test_contract_pins_version_and_preserves_canonical_owner_outputs():
         recent_relief_work=relief,
         recent_transactions=_recent_transactions(),
         game_context=context,
+        performance=_performance(),
     )
 
     assert payload['capability'] == CAPABILITY
@@ -236,6 +272,8 @@ def test_contract_pins_version_and_preserves_canonical_owner_outputs():
     assert payload['recent_relief_work']['read'] == relief
     assert payload['section_status']['recent_relief_work']['status'] == 'available'
     assert payload['game_context'] == context
+    assert payload['performance'] == _performance()
+    assert payload['section_status']['performance']['status'] == 'partial'
     assert (board, relief, context) == originals
 
 
@@ -739,6 +777,43 @@ def test_route_scopes_optional_failure_without_destroying_core(client, monkeypat
     assert payload['recent_relief_work']['read'] is None
     assert payload['section_status']['recent_relief_work'] == unavailable_section(
         'recent_relief_work_unavailable'
+    )
+
+
+def test_route_scopes_performance_failure_without_changing_other_sections(client, monkeypatch):
+    monkeypatch.setattr(
+        team_board_v2_api,
+        'build_published_team_board',
+        lambda _team_id: _board(),
+    )
+    monkeypatch.setattr(
+        team_board_v2_api,
+        'build_public_team_relief_work_payload',
+        lambda _team_id: _relief_work(),
+    )
+    monkeypatch.setattr(
+        team_board_v2_api,
+        'build_team_game_context',
+        lambda _team_id, reference_date=None: _game_context(),
+    )
+    monkeypatch.setattr(
+        team_board_v2_api,
+        'build_public_recent_transactions',
+        lambda _team_id, reference_date=None: _recent_transactions(),
+    )
+    monkeypatch.setattr(
+        team_board_v2_api,
+        'build_public_team_performance_payload',
+        lambda _team_id, board: (_ for _ in ()).throw(RuntimeError('fixture failure')),
+    )
+
+    response = client.get('/api/bullpen/teams/1/board-v2')
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload['team_state'] == TEAM_STATE
+    assert payload['performance'] is None
+    assert payload['section_status']['performance'] == unavailable_section(
+        'performance_unavailable'
     )
 
 

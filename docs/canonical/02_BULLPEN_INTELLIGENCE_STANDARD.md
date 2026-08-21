@@ -223,7 +223,7 @@ A future reinforcement read must distinguish observable roster eligibility from 
 
 This is a **family contract**, not a metric. Every approved metric that describes how a team's current active bullpen has performed inherits it. Adding a metric under this family does not reopen the family contract. Changing the family contract does.
 
-Current Active-Pen ERA is the first planned metric under this family. It is not itself the contract, and it is not implemented or public.
+Current Active-Pen ERA is the first implemented metric under this family. Its Team Board public reader is approved; it is not itself the family contract and it remains unavailable to Team State and Share Artifact performance consumers.
 
 ### Governing question
 
@@ -360,7 +360,7 @@ This extends the methodology-versioning requirements in Section 13; it does not 
 
 | ID | Registry name | Public name | Family | Status |
 |---|---|---|---|---|
-| M-001 | Current Active-Pen ERA | Active Bullpen ERA | Current Active-Pen Performance | Specified — see Section 7C; not implemented, not public |
+| M-001 | Current Active-Pen ERA | Active Bullpen ERA | Current Active-Pen Performance | Implemented for Team Board — see Section 7C |
 
 M-001's formula, denominator, minimum sample, precision, public name, below-sample wording, evidence contract, and membership rule **are** established, by D-023 through D-030. Section 7C records them. Wiring them is a separate implementation package, and the metric remains non-public until it passes the normal trust gates.
 
@@ -382,7 +382,7 @@ A metric may be registered before its minimum sample is approved. It will comput
 
 Approved July 30, 2026 by D-023 through D-030. Public name **Active Bullpen ERA**. Registry name and stable identity unchanged.
 
-**M-001 is specified, not published.** `public_reader_gate`, `team_state_performance_gate`, and `share_card_performance_gate` remain blocked. This section opens no gate.
+**M-001 is published only on the Team Board.** The Team Board reader gate is open under the August 21, 2026 implementation decision. `team_state_performance_gate` and `share_card_performance_gate` remain blocked.
 
 ### Formula and denominator authority
 
@@ -773,8 +773,8 @@ Before publication verify source authority, completeness, currentness, evidence 
 | Starter exposure / rotation load transfer | Partial |
 | Canonical season bullpen aggregation - team-side relief totals | Production - internal; official validation reconciled; no public reader |
 | Current Active-Pen Performance family contract | Established - see Section 7A; governs every later performance metric |
-| Current Active-Pen Performance framework | Production-internal foundation - reusable group resolution, qualifying-appearance selection, sample evaluation, evidence assembly, and fail-closed publication; unwired, no public consumer |
-| Current Active-Pen ERA / Active Bullpen ERA (M-001) | Specified - see Section 7C; formula, denominator, minimum sample, precision, public name, below-sample wording, evidence contract, and membership rule approved; not implemented, not public, all gates blocked |
+| Current Active-Pen Performance framework | Production foundation - reusable group resolution, qualifying-appearance selection, sample evaluation, evidence assembly, and fail-closed surface-specific publication; Team Board consumes only approved M-001 |
+| Current Active-Pen ERA / Active Bullpen ERA (M-001) | Production - Team Board public reader; formula, denominator, minimum sample, precision, public name, below-sample wording, evidence contract, and membership rule unchanged; Team State and Share Artifact gates blocked |
 | Pitch-characteristic trends | Experimental / planned |
 | Leverage concentration | Partial / planned |
 | Organizational reinforcement depth | Partial / planned |
@@ -788,4 +788,5 @@ Before publication verify source authority, completeness, currentness, evidence 
 | 1.1 | July 29, 2026 | Nickolis Kacludis | Expanded performance context into the reusable Current Active-Pen Performance family contract (Section 7A): active-group, window, sample, date/freshness, evidence, evidence-level, and limitation contracts. Added the metric-family and metric-registry model with M-001 Current Active-Pen ERA reserved as contract-pending and non-public (Section 7B). Corrected the capability registry to separate the production-internal season bullpen aggregation from the unimplemented public metric. State is not performance, canonical integer outs, and historical appearance-team ownership are preserved unchanged. |
 | 1.2 | July 30, 2026 | Nickolis Kacludis | Specified M-001 in a new Section 7C: formula and denominator authority, the derived 108-out minimum sample stated in the denominator's own unit, family-wide rounding mechanics with worked examples, the approved below-sample read Not Enough Innings Yet, the no-usage call-up membership rule with its two group counts, and the filled four-level evidence contract. Added the inheritance split to Section 7B, the public performance vocabulary to Section 8, and corrected the capability registry. No gate is opened; M-001 remains unimplemented and non-public. |
 | 1.3 | August 11, 2026 | Nickolis Kacludis | Established public-language authority in Section 8 after VOC-001: the semantic owner of every governed public family is named in code - Team State wording in `team_state_public_vocabulary.py`, arm availability wording in `public_bullpen_copy.py`, pitcher role and pitcher current read in `pitcher_public_labels.py`, and bullpen supporting reads in `team_bullpen_shape.py`. Separated the families explicitly: Team State, arm availability, pitcher role, pitcher current read, read confidence, and bullpen supporting read answer different questions and may never substitute for one another. Recorded the backend-governed pass-through rule - the backend decides the semantic label, the frontend renders it, and the retired frontend semantic-substitution path may not return - scoped to governed vocabulary. Recorded that only the Team State authority may publish Fresh, Stretched, or Vulnerable, and that no supporting-read tier or adjective becomes a Team State. Separated the two fail-closed labels, Role Unclear for missing usage evidence and Limited Read for missing current-read evidence. Retired the team-level concept `Trusted Arms` in favor of `Late-Inning Options`, reserving `Trusted Arm` to the pitcher-role family. Retired `Healthy Rested Bullpen` in favor of `Stable Rested Options` and tied that retirement to the Unobservable class in Section 2, which now forbids reader-facing labels that assert private physical condition. Clarified the reader-facing temporal stamps and the data-status family in Section 10. No model, threshold, source authority, classification, publication, sync/write, recommendation, or prediction behavior changed. |
+| 1.5 | August 21, 2026 | Nickolis Kacludis | Activated M-001 Active Bullpen ERA for the Team Board only, preserving the current-season window, represented current active-bullpen group, team-at-appearance ownership, 108-out sample, fixed precision, evidence chain, and fail-closed behavior. Team State and Share Artifact gates remain blocked; unapproved performance metrics remain withheld. |
 | 1.4 | August 14, 2026 | Nickolis Kacludis | Gave the Workload Data family a canonical home in Section 8 (H-12). PR #659 shipped the family into the product because pitcher workload-record status is a different question from platform Data Status, but the meaning existed only in shared frontend utilities, so no canonical document defined it. Section 8 now lists Workload Data among the semantic families with its governing question, records its exact seven-label public catalog, states that Workload Data is not Data Status and that the two may honestly disagree about the same screen, and records the ownership split: the backend decides the state through `availability.data_state` and nothing downstream may derive, infer, or override it, while the governed label catalogue currently resides in shared frontend utilities as an implementation location rather than a transfer of semantic authority, fails closed to `Unavailable` on an unrecognised state, and may be relocated to a backend or shared owner without changing this contract. Section 10 now cross-references the family so the two data-state stamps are separated where a reader meets them. No threshold, classification, derivation, availability rule, source authority, publication gate, or freshness computation changed, and no public label was added, renamed, or retired. |
