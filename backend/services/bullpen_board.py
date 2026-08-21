@@ -414,6 +414,11 @@ REST_STATUS_NO_ELIGIBLE_ARMS = 'no_eligible_arms'
 REST_STATUS_BOARD_CONTEXT_UNAVAILABLE = 'board_context_unavailable'
 REST_STATUS_ROSTER_CONTEXT_UNAVAILABLE = 'roster_context_unavailable'
 REST_STATUS_WORKLOAD_EVIDENCE_INCOMPLETE = 'workload_evidence_incomplete'
+REST_STATUS_FROZEN_VALUE_MISSING = 'frozen_rest_status_missing'
+REST_STATUS_FROZEN_VALUE_INVALID = 'frozen_rest_status_invalid'
+
+
+_FROZEN_REST_STATUS_UNSET = object()
 
 
 def _board_workload_facts(workload_facts, availability):
@@ -481,6 +486,15 @@ def is_valid_rest_status_carrier(value):
             and bool(value['reason_code'].strip())
         )
     return False
+
+
+def project_frozen_rest_status(value):
+    """Project one published D-055 carrier without recalculating it."""
+    if value is None:
+        return _unavailable_rest_status(REST_STATUS_FROZEN_VALUE_MISSING)
+    if not is_valid_rest_status_carrier(value):
+        return _unavailable_rest_status(REST_STATUS_FROZEN_VALUE_INVALID)
+    return dict(value)
 
 
 def _arm_word(count):
@@ -804,6 +818,7 @@ def build_board_payload(
     rotation_support_pressure=None,
     bullpen_stability=None,
     bullpen_environment=None,
+    frozen_rest_status=_FROZEN_REST_STATUS_UNSET,
 ):
     """
     Assemble the full Tonight's Bullpen Board payload.
@@ -835,11 +850,17 @@ def build_board_payload(
         or (freshness or {}).get('degradation_state') == 'unavailable'
         or (freshness or {}).get('freshness_state') == 'metadata_unavailable'
     )
-    rest_status = build_rest_status(
-        cards,
-        counts_withheld=counts_withheld,
-        board_context_unavailable=board_context_unavailable,
-    )
+    if frozen_rest_status is _FROZEN_REST_STATUS_UNSET:
+        rest_status = build_rest_status(
+            cards,
+            counts_withheld=counts_withheld,
+            board_context_unavailable=board_context_unavailable,
+        )
+    else:
+        # Trusted serving passes an explicit carrier, including ``None`` for a
+        # historical package that never carried D-055. Projection validates and
+        # copies the completed public object; it never replays Rest Status.
+        rest_status = project_frozen_rest_status(frozen_rest_status)
     grouped_total = None if counts_withheld else sum(group['count'] for group in groups)
     generated = generated_at or datetime.now(timezone.utc).isoformat()
     context = build_team_context(groups, freshness=freshness)
