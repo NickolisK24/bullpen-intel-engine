@@ -37,14 +37,14 @@ JULY_5 = date(2026, 7, 5)
 JULY_6 = date(2026, 7, 6)
 
 
-def _split(pk, game_date, pitches=15):
+def _split(pk, game_date, pitches=15, hits=1, walks=0):
     return {
         'game': {'gamePk': pk, 'gameType': 'R'},
         'date': game_date.isoformat(),
         'opponent': {'id': 111, 'name': 'Boston Red Sox'},
         'stat': {
             'inningsPitched': '1.0', 'numberOfPitches': pitches, 'strikes': 8,
-            'hits': 1, 'runs': 0, 'earnedRuns': 0, 'baseOnBalls': 0,
+            'hits': hits, 'runs': 0, 'earnedRuns': 0, 'baseOnBalls': walks,
             'strikeOuts': 2, 'homeRuns': 0, 'gamesStarted': 0,
         },
     }
@@ -99,14 +99,14 @@ def _seed_final(pk, game_date):
     ))
 
 
-def _seed_row(pitcher, pk, game_date, pitches=15):
+def _seed_row(pitcher, pk, game_date, pitches=15, hits=1, walks=0):
     # Field-for-field identical to _split() so a re-sync is 'unchanged'.
     db.session.add(GameLog(
         pitcher_id=pitcher.id, mlb_game_pk=pk, game_date=game_date,
         opponent='Boston Red Sox',
         games_started=0,
         innings_pitched=1.0, innings_pitched_outs=3, pitches_thrown=pitches,
-        strikes=8, hits_allowed=1, strikeouts=2,
+        strikes=8, hits_allowed=hits, walks=walks, strikeouts=2,
     ))
 
 
@@ -114,6 +114,14 @@ def _count_game_log_selects(statements):
     return sum(
         1 for statement in statements
         if statement.lstrip().upper().startswith('SELECT')
+        and 'game_logs' in statement
+    )
+
+
+def _count_game_log_updates(statements):
+    return sum(
+        1 for statement in statements
+        if statement.lstrip().upper().startswith('UPDATE')
         and 'game_logs' in statement
     )
 
@@ -152,8 +160,174 @@ def test_window_rows_are_prefetched_in_one_select(app, monkeypatch):
             event.remove(engine, 'before_cursor_execute', track)
 
     assert result['logs_unchanged'] == 5
+    assert result['logs_corrected'] == 0
     assert result['lane_health'] == 'ok'
     assert _count_game_log_selects(statements) == 1
+    assert _count_game_log_updates(statements) == 0
+
+
+def test_authoritative_zero_whip_inputs_are_unchanged(app, monkeypatch):
+    with app.app_context():
+        pitcher = _seed_pitcher(700150, 'Zero WHIP Inputs')
+        _seed_final(824905, JULY_5)
+        _seed_row(pitcher, 824905, JULY_5, hits=0, walks=0)
+        db.session.commit()
+        monkeypatch.setattr(
+            mlb_client, 'get_pitcher_game_logs',
+            lambda mlb_id, season=None: [
+                _split(824905, JULY_5, hits=0, walks=0)
+            ],
+        )
+
+        statements = []
+
+        def track(conn, cursor, statement, parameters, context, executemany):
+            statements.append(statement)
+
+        engine = db.session.get_bind()
+        event.listen(engine, 'before_cursor_execute', track)
+        try:
+            result = sync_service.sync_recent_logs(
+                days_back=7, reference_date=REFERENCE_DATE,
+            )
+        finally:
+            event.remove(engine, 'before_cursor_execute', track)
+        db.session.expire_all()
+        row = GameLog.query.filter_by(mlb_game_pk=824905).one()
+
+    assert result['logs_unchanged'] == 1
+    assert result['logs_corrected'] == 0
+    assert row.hits_allowed == 0
+    assert row.walks == 0
+    assert _count_game_log_updates(statements) == 0
+
+
+def test_missing_whip_inputs_remain_unknown_without_an_update(app, monkeypatch):
+    with app.app_context():
+        pitcher = _seed_pitcher(700151, 'Unknown WHIP Inputs')
+        _seed_final(824906, JULY_5)
+        _seed_row(pitcher, 824906, JULY_5, hits=None, walks=None)
+        db.session.commit()
+        source = _split(824906, JULY_5)
+        source['stat'].pop('hits')
+        source['stat'].pop('baseOnBalls')
+        monkeypatch.setattr(
+            mlb_client, 'get_pitcher_game_logs',
+            lambda mlb_id, season=None: [source],
+        )
+
+        statements = []
+
+        def track(conn, cursor, statement, parameters, context, executemany):
+            statements.append(statement)
+
+        engine = db.session.get_bind()
+        event.listen(engine, 'before_cursor_execute', track)
+        try:
+            result = sync_service.sync_recent_logs(
+                days_back=7, reference_date=REFERENCE_DATE,
+            )
+        finally:
+            event.remove(engine, 'before_cursor_execute', track)
+        db.session.expire_all()
+        row = GameLog.query.filter_by(mlb_game_pk=824906).one()
+
+    assert result['logs_corrected'] == 0
+    assert result['correction_attempts_failed'] == 1
+    assert row.hits_allowed is None
+    assert row.walks is None
+    assert _count_game_log_updates(statements) == 0
+
+
+@pytest.mark.parametrize(
+    (
+        'stored_hits', 'stored_walks', 'incoming_hits', 'incoming_walks',
+        'expected_hits', 'expected_walks',
+    ),
+    [
+        (1, 1, 2, 1, 2, 1),
+        (None, None, 0, 0, 0, 0),
+    ],
+)
+def test_authoritative_whip_input_changes_update_once(
+    app,
+    monkeypatch,
+    stored_hits,
+    stored_walks,
+    incoming_hits,
+    incoming_walks,
+    expected_hits,
+    expected_walks,
+):
+    with app.app_context():
+        pitcher = _seed_pitcher(700152, 'Changed WHIP Inputs')
+        _seed_final(824907, JULY_5)
+        _seed_row(
+            pitcher,
+            824907,
+            JULY_5,
+            hits=stored_hits,
+            walks=stored_walks,
+        )
+        db.session.commit()
+        monkeypatch.setattr(
+            mlb_client, 'get_pitcher_game_logs',
+            lambda mlb_id, season=None: [
+                _split(
+                    824907,
+                    JULY_5,
+                    hits=incoming_hits,
+                    walks=incoming_walks,
+                )
+            ],
+        )
+
+        statements = []
+
+        def track(conn, cursor, statement, parameters, context, executemany):
+            statements.append(statement)
+
+        engine = db.session.get_bind()
+        event.listen(engine, 'before_cursor_execute', track)
+        try:
+            result = sync_service.sync_recent_logs(
+                days_back=7, reference_date=REFERENCE_DATE,
+            )
+        finally:
+            event.remove(engine, 'before_cursor_execute', track)
+        db.session.expire_all()
+        row = GameLog.query.filter_by(mlb_game_pk=824907).one()
+
+    assert result['logs_corrected'] == 1
+    assert result['logs_unchanged'] == 0
+    assert row.hits_allowed == expected_hits
+    assert row.walks == expected_walks
+    assert _count_game_log_updates(statements) == 1
+
+
+def test_missing_whip_source_does_not_erase_numeric_authority(app, monkeypatch):
+    with app.app_context():
+        pitcher = _seed_pitcher(700153, 'Preserved WHIP Inputs')
+        _seed_final(824908, JULY_5)
+        _seed_row(pitcher, 824908, JULY_5, hits=2, walks=1)
+        db.session.commit()
+        source = _split(824908, JULY_5, hits=2, walks=1)
+        source['stat'].pop('baseOnBalls')
+        monkeypatch.setattr(
+            mlb_client, 'get_pitcher_game_logs',
+            lambda mlb_id, season=None: [source],
+        )
+
+        result = sync_service.sync_recent_logs(
+            days_back=7, reference_date=REFERENCE_DATE,
+        )
+        db.session.expire_all()
+        row = GameLog.query.filter_by(mlb_game_pk=824908).one()
+
+    assert result['logs_corrected'] == 0
+    assert result['correction_attempts_failed'] == 1
+    assert row.hits_allowed == 2
+    assert row.walks == 1
 
 
 def test_map_miss_still_queries_before_insert(app, monkeypatch):
