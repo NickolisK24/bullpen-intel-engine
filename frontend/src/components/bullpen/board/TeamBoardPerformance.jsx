@@ -26,6 +26,7 @@ export default function TeamBoardPerformance({ read, loading = false, error = nu
   const metrics = Array.isArray(performance?.metrics)
     ? performance.metrics.filter(metric => textValue(metric?.label) && textValue(metric?.value))
     : []
+  const metricColumns = metrics.length > 1 ? 'grid-cols-2' : 'grid-cols-1'
   const summary = textValue(performance?.summary)
   const sampleSummary = textValue(performance?.sample_summary)
   const limitation = (Array.isArray(performance?.limitations) ? performance.limitations : [])
@@ -47,7 +48,7 @@ export default function TeamBoardPerformance({ read, loading = false, error = nu
       ) : (
         <>
           {metrics.length > 0 ? (
-            <dl className="grid grid-cols-1 gap-px overflow-hidden rounded-sm border border-line-subtle bg-line-subtle" aria-label="Active bullpen performance metrics">
+            <dl className={`grid ${metricColumns} gap-px overflow-hidden rounded-sm border border-line-subtle bg-line-subtle`} aria-label="Active bullpen performance metrics">
               {metrics.map(metric => (
                 <div key={metric.key || metric.metric_id} className="min-w-0 bg-surface-base p-panel">
                   <dt className="type-overline break-words text-text-tertiary">{metric.label}</dt>

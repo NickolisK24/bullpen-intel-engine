@@ -103,10 +103,12 @@ class GameLog(db.Model):
     innings_pitched_outs = db.Column(db.Integer, nullable=False)
     pitches_thrown = db.Column(db.Integer, nullable=True)
     strikes = db.Column(db.Integer, default=0)
-    hits_allowed = db.Column(db.Integer, default=0)
+    # Required rate inputs stay nullable at storage so an omitted official
+    # value cannot acquire false zero authority before metric validation.
+    hits_allowed = db.Column(db.Integer, nullable=True)
     runs_allowed = db.Column(db.Integer, default=0)
     earned_runs = db.Column(db.Integer, default=0)
-    walks = db.Column(db.Integer, default=0)
+    walks = db.Column(db.Integer, nullable=True)
     strikeouts = db.Column(db.Integer, default=0)
     home_runs_allowed = db.Column(db.Integer, default=0)
     batters_faced = db.Column(db.Integer, nullable=True)

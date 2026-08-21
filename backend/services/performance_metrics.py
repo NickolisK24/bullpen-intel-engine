@@ -5,12 +5,12 @@ approved metadata. Group resolution, qualifying appearances, sample
 validation, evidence, freshness, limitations and fail-closed publication all
 belong to :mod:`services.performance_intelligence`.
 
-Adding WHIP, K%, BB%, K-BB%, HR/9, FIP, xFIP or SIERA later means adding a
+Adding K%, BB%, K-BB%, HR/9, FIP, xFIP or SIERA later means adding a
 ``MetricDefinition`` here and registering it — including its own sample
 measure, so publication logic never grows a metric-specific branch. No
 framework change and, by design, almost no framework test.
 
-Only M-001 is registered. No other metric is approved.
+M-001 ERA and M-002 WHIP are registered for the Team Board only.
 
 M-001's parameters are approved by D-023 through D-030 and are set here. The
 Team Board is its sole approved public surface; SC-05, Team State, Share Card,
@@ -27,6 +27,7 @@ from services.performance_intelligence import (
 
 
 METRIC_CURRENT_ACTIVE_PEN_ERA = 'M-001'
+METRIC_CURRENT_ACTIVE_PEN_WHIP = 'M-002'
 
 # ERA over integer recorded outs. The canonical convention already in
 # production-internal use (season_bullpen_aggregation_2026._era_components) is
@@ -79,6 +80,29 @@ ERA_EFFECTIVE_DATE = '2026-07-30'
 # D-025. Two decimal places, always, including trailing zeros.
 ERA_DISPLAY_PRECISION = 2
 
+# Independently approved for M-002 by the August 21 WHIP decision. It equals
+# M-001's 108-out floor because both rates observe the same group, window, and
+# innings denominator, not because ERA qualification automatically transfers.
+# At 108 outs one additional hit or walk moves WHIP by 3/108 (0.0278 before
+# display rounding), bounding single-event sensitivity to less than 0.03.
+WHIP_INNINGS_MULTIPLIER = 3
+WHIP_DENOMINATOR_ZERO = 'whip_denominator_zero'
+WHIP_MINIMUM_SAMPLE = 108
+WHIP_MINIMUM_SAMPLE_UNIT = 'recorded_outs'
+WHIP_MINIMUM_SAMPLE_AUTHORITY = (
+    '2026-08-21-team-board-active-bullpen-whip'
+)
+WHIP_DENOMINATOR_AUTHORITY = WHIP_MINIMUM_SAMPLE_AUTHORITY
+WHIP_ROUNDING_AUTHORITY = WHIP_MINIMUM_SAMPLE_AUTHORITY
+WHIP_BELOW_SAMPLE_LANGUAGE_AUTHORITY = WHIP_MINIMUM_SAMPLE_AUTHORITY
+WHIP_EVIDENCE_AUTHORITY = WHIP_MINIMUM_SAMPLE_AUTHORITY
+WHIP_BELOW_SAMPLE_WORDING = 'Not Enough Innings Yet'
+WHIP_PUBLIC_NAME = 'Active Bullpen WHIP'
+WHIP_INTERNAL_NAME = 'Current Active-Pen WHIP'
+WHIP_METHOD_VERSION = '1.0.0'
+WHIP_EFFECTIVE_DATE = '2026-08-21'
+WHIP_DISPLAY_PRECISION = 2
+
 
 def _era_numerator(components: AppearanceComponents) -> int:
     return int(components.earned_runs) * ERA_INNINGS_MULTIPLIER
@@ -100,6 +124,22 @@ def _era_formatter(value):
     produced verbatim so trailing zeros survive and no second rounding can
     occur. A real ``'0.00'`` passes through as a value.
     """
+    return None if value is None else str(value)
+
+
+def _whip_numerator(components: AppearanceComponents) -> int:
+    return int(components.hits + components.walks) * WHIP_INNINGS_MULTIPLIER
+
+
+def _whip_denominator(components: AppearanceComponents) -> int:
+    return int(components.outs)
+
+
+def _whip_sample_measure(components: AppearanceComponents) -> int:
+    return int(components.outs)
+
+
+def _whip_formatter(value):
     return None if value is None else str(value)
 
 
@@ -137,10 +177,50 @@ CURRENT_ACTIVE_PEN_ERA = MetricDefinition(
 )
 
 
+CURRENT_ACTIVE_PEN_WHIP = MetricDefinition(
+    metric_id=METRIC_CURRENT_ACTIVE_PEN_WHIP,
+    public_name=WHIP_PUBLIC_NAME,
+    internal_name=WHIP_INTERNAL_NAME,
+    version=WHIP_METHOD_VERSION,
+    effective_date=WHIP_EFFECTIVE_DATE,
+    formula='(walks + hits_allowed) * 3 / recorded_outs',
+    numerator=_whip_numerator,
+    denominator=_whip_denominator,
+    formatter=_whip_formatter,
+    denominator_zero_reason=WHIP_DENOMINATOR_ZERO,
+    evidence_requirements=(
+        'official_completed_pitching_line',
+        'official_hits_allowed',
+        'official_base_on_balls',
+        'appearance_team_authority',
+        'governed_bullpen_population',
+        'canonical_completed_game_authority',
+    ),
+    required_row_components=(
+        'innings_pitched_outs',
+        'hits_allowed',
+        'walks',
+    ),
+    minimum_sample=WHIP_MINIMUM_SAMPLE,
+    minimum_sample_unit=WHIP_MINIMUM_SAMPLE_UNIT,
+    minimum_sample_authority=WHIP_MINIMUM_SAMPLE_AUTHORITY,
+    sample_measure=_whip_sample_measure,
+    display_precision=WHIP_DISPLAY_PRECISION,
+    denominator_authority=WHIP_DENOMINATOR_AUTHORITY,
+    rounding_authority=WHIP_ROUNDING_AUTHORITY,
+    below_sample_language_authority=WHIP_BELOW_SAMPLE_LANGUAGE_AUTHORITY,
+    below_sample_public_wording=WHIP_BELOW_SAMPLE_WORDING,
+    evidence_authority=WHIP_EVIDENCE_AUTHORITY,
+    approved_surfaces=('team_board',),
+)
+
+
 def register_approved_metrics():
     """Idempotent registration of every approved metric."""
     if registry.get(METRIC_CURRENT_ACTIVE_PEN_ERA) is None:
         registry.register(CURRENT_ACTIVE_PEN_ERA)
+    if registry.get(METRIC_CURRENT_ACTIVE_PEN_WHIP) is None:
+        registry.register(CURRENT_ACTIVE_PEN_WHIP)
     return registry
 
 

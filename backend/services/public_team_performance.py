@@ -2,7 +2,8 @@
 
 The calculation remains owned by ``performance_intelligence``.  This module
 only supplies the trusted Team Board's represented active population, invokes
-the approved M-001 read once, and shapes the compact public contract.
+the approved metric family over one common appearance selection, and shapes
+the compact public contract.
 """
 
 from __future__ import annotations
@@ -25,8 +26,17 @@ STATUS_PARTIAL = 'partial'
 STATUS_UNAVAILABLE = 'unavailable'
 
 ADDITIONAL_METRICS_LIMITATION = (
-    'WHIP, K-BB%, home-run rate, and inherited-runner outcomes are not included '
+    'K-BB%, home-run rate, and inherited-runner outcomes are not included '
     'because they do not yet have approved public metric and sample contracts.'
+)
+WHIP_INPUT_LIMITATION = (
+    'Active Bullpen WHIP is withheld because at least one qualifying official '
+    'pitching line lacks authoritative hits or walks.'
+)
+
+METRIC_IDS = (
+    performance_metrics.METRIC_CURRENT_ACTIVE_PEN_ERA,
+    performance_metrics.METRIC_CURRENT_ACTIVE_PEN_WHIP,
 )
 
 
@@ -39,8 +49,8 @@ def build_public_team_performance_payload(team_id, *, board):
         return _unavailable('active_group_empty', group=group, through=represented)
 
     freshness = board.get('freshness') or {}
-    read = performance_intelligence.build_metric_read(
-        performance_metrics.METRIC_CURRENT_ACTIVE_PEN_ERA,
+    reads = performance_intelligence.build_metric_reads(
+        METRIC_IDS,
         team_id,
         season=represented.year,
         reference_date=represented,
@@ -56,7 +66,7 @@ def build_public_team_performance_payload(team_id, *, board):
         group=group,
         publication_surface=performance_intelligence.PUBLIC_SURFACE_TEAM_BOARD,
     )
-    return _project_read(read, represented)
+    return _project_reads(reads, represented)
 
 
 def _represented_date(board):
@@ -101,33 +111,44 @@ def _represented_active_group(board, represented):
     }
 
 
-def _project_read(read, represented):
-    sample = read.get('sample') or {}
-    publication = read.get('publication') or {}
-    publishable = publication.get('publishable') is True
-    below_sample = (
-        read.get('value') is not None
-        and sample.get('meets_minimum_sample') is False
-    )
-    value = read.get('display_value') if publishable else None
+def _project_reads(reads, represented):
+    era_read = reads[performance_metrics.METRIC_CURRENT_ACTIVE_PEN_ERA]
+    whip_read = reads[performance_metrics.METRIC_CURRENT_ACTIVE_PEN_WHIP]
+    metric_reads = (era_read, whip_read)
+    metrics = [_metric_payload(read) for read in metric_reads]
+    published = [metric for metric in metrics if metric['value'] is not None]
+    below_sample = [
+        metric for metric in metrics
+        if metric['qualification']['status'] == 'below_minimum'
+    ]
 
-    if publishable:
+    if published:
         status = STATUS_PARTIAL
-        reason_code = 'additional_metrics_not_governed'
+        reason_code = (
+            'additional_metrics_not_governed'
+            if len(published) == len(metrics)
+            else 'metric_partially_available'
+        )
+        names = [metric['label'] for metric in published]
         summary = (
-            'Active Bullpen ERA describes recorded results for the current active '
-            'bullpen and remains supporting context.'
+            f'{" and ".join(names)} describe recorded results for the current '
+            'active bullpen and remain supporting context.'
         )
     elif below_sample:
         status = STATUS_PARTIAL
-        reason_code = read.get('reason_code') or 'below_minimum_sample'
+        reason_code = 'below_minimum_sample'
         summary = performance_metrics.ERA_BELOW_SAMPLE_WORDING
     else:
         status = STATUS_UNAVAILABLE
-        reason_code = read.get('reason_code') or (publication.get('reason'))
+        reason_code = _first_reason(metric_reads)
         summary = None
 
-    read_group = read.get('group') or {}
+    sample_read = next(
+        (read for read in metric_reads if (read.get('sample') or {}).get('appearances')),
+        era_read,
+    )
+    sample = sample_read.get('sample') or {}
+    read_group = sample_read.get('group') or {}
     active_count = read_group.get('active_group_size')
     if not isinstance(active_count, int):
         active_count = read_group.get('size')
@@ -153,13 +174,7 @@ def _project_read(read, represented):
         'pitchers_with_sample': contributing_count,
         'relief_appearances': appearances,
         'innings_pitched': innings,
-        'metrics': [{
-            'key': 'active_bullpen_era',
-            'metric_id': performance_metrics.METRIC_CURRENT_ACTIVE_PEN_ERA,
-            'label': performance_metrics.ERA_PUBLIC_NAME,
-            'value': value,
-            'method_version': performance_metrics.ERA_METHOD_VERSION,
-        }],
+        'metrics': metrics,
         'sample': {
             'recorded_outs': sample.get('outs'),
             'innings_pitched': innings,
@@ -173,9 +188,73 @@ def _project_read(read, represented):
         'sample_summary': _sample_summary(
             active_count, contributing_count, appearances, innings, represented,
         ),
-        'limitations': [ADDITIONAL_METRICS_LIMITATION],
-        'evidence': read.get('evidence'),
+        'limitations': _limitations(metrics),
+        'evidence': era_read.get('evidence'),
+        'evidence_by_metric': {
+            read.get('metric_id'): read.get('evidence') for read in metric_reads
+        },
     }
+
+
+def _metric_payload(read):
+    sample = read.get('sample') or {}
+    publication = read.get('publication') or {}
+    publishable = publication.get('publishable') is True
+    is_below = (
+        read.get('value') is not None
+        and sample.get('meets_minimum_sample') is False
+    )
+    if publishable:
+        qualification_status = 'qualified'
+        reason_code = None
+    elif is_below:
+        qualification_status = 'below_minimum'
+        reason_code = publication.get('reason') or 'below_minimum_sample'
+    else:
+        qualification_status = 'unavailable'
+        reason_code = read.get('reason_code') or publication.get('reason')
+    metric_id = read.get('metric_id')
+    return {
+        'key': {
+            performance_metrics.METRIC_CURRENT_ACTIVE_PEN_ERA:
+                'active_bullpen_era',
+            performance_metrics.METRIC_CURRENT_ACTIVE_PEN_WHIP:
+                'active_bullpen_whip',
+        }.get(metric_id),
+        'metric_id': metric_id,
+        'label': read.get('metric_name'),
+        'value': read.get('display_value') if publishable else None,
+        'method_version': read.get('metric_version'),
+        'qualification': {
+            'status': qualification_status,
+            'reason_code': reason_code,
+            'measured_sample': sample.get('measured_sample'),
+            'minimum_sample': sample.get('minimum_sample'),
+            'sample_unit': sample.get('minimum_sample_unit'),
+            'sample_authority': sample.get('minimum_sample_authority'),
+        },
+    }
+
+
+def _limitations(metrics):
+    whip = next(
+        (metric for metric in metrics if metric['metric_id'] ==
+         performance_metrics.METRIC_CURRENT_ACTIVE_PEN_WHIP),
+        None,
+    )
+    if whip and whip['qualification']['status'] == 'unavailable':
+        reason = whip['qualification']['reason_code'] or ''
+        if reason == performance_intelligence.REFUSAL_QUALIFYING_ROW_INVALID:
+            return [WHIP_INPUT_LIMITATION, ADDITIONAL_METRICS_LIMITATION]
+    return [ADDITIONAL_METRICS_LIMITATION]
+
+
+def _first_reason(reads):
+    for read in reads:
+        reason = read.get('reason_code') or (read.get('publication') or {}).get('reason')
+        if reason:
+            return reason
+    return 'performance_unavailable'
 
 
 def _sample_summary(active_count, contributing_count, appearances, innings, represented):
@@ -213,6 +292,7 @@ def _unavailable(reason_code, *, group=None, through=None):
         'sample_summary': None,
         'limitations': [ADDITIONAL_METRICS_LIMITATION],
         'evidence': None,
+        'evidence_by_metric': {},
     }
 
 
@@ -230,6 +310,7 @@ __all__ = [
     'MEMBERSHIP_AUTHORITY',
     'POPULATION_AUTHORITY',
     'POPULATION_BASIS',
+    'WHIP_INPUT_LIMITATION',
     'WINDOW_POLICY',
     'build_public_team_performance_payload',
 ]

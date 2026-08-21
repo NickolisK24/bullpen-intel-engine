@@ -524,10 +524,13 @@ def _game_log_values_from_stats(
         'innings_pitched_outs': innings_pitched_outs,
         'pitches_thrown': _int_stat_or_none(stats, 'numberOfPitches'),
         'strikes': _int_stat(stats, 'strikes'),
-        'hits_allowed': _int_stat(stats, 'hits'),
+        # Hits and walks are publication-critical WHIP inputs. Preserve an
+        # omitted or malformed source value as unknown; zero is authoritative
+        # only when the official source explicitly supplies zero.
+        'hits_allowed': _int_stat_or_none(stats, 'hits'),
         'runs_allowed': _int_stat(stats, 'runs'),
         'earned_runs': _int_stat(stats, 'earnedRuns'),
-        'walks': _int_stat(stats, 'baseOnBalls'),
+        'walks': _int_stat_or_none(stats, 'baseOnBalls'),
         'strikeouts': _int_stat(stats, 'strikeOuts'),
         'home_runs_allowed': _int_stat(stats, 'homeRuns'),
         'batters_faced': _int_stat_or_none_any(stats, ('battersFaced', 'batters_faced')),

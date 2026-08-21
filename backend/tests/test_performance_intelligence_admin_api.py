@@ -293,7 +293,8 @@ def test_frontend_does_not_own_performance_metric_semantics_or_copy():
     frontend = repo / 'frontend' / 'src'
     if not frontend.exists():
         return
-    for pattern in ('Active Bullpen ERA', 'Not Enough Innings Yet',
+    for pattern in ('Active Bullpen ERA', 'Active Bullpen WHIP',
+                    'Not Enough Innings Yet',
                     'performance_intelligence', 'active-bullpen-era'):
         hits = [
             str(path.relative_to(repo))

@@ -34,11 +34,11 @@ frontend renders this backend-authored read and performs no baseball arithmetic.
 
 ## Unsupported metrics
 
-WHIP and HR/9 have source components but no approved public metric/sample
-contract. K-BB% additionally requires complete publication-critical batters-
-faced authority. Inherited-runner outcomes remain incomplete. They are not
-published or represented as zero. The Team Board exposes a concise limitation
-and keeps the supported M-001 read independently usable.
+HR/9 has source components but no approved public metric/sample contract.
+K-BB% additionally requires complete publication-critical batters-faced
+authority. Inherited-runner outcomes remain incomplete. They are not published
+or represented as zero. M-002 WHIP is governed separately by the August 21
+Active Bullpen WHIP decision and keeps M-001 independently usable.
 
 ## Why the window is not 14 days
 
@@ -53,6 +53,6 @@ This decision does not:
 
 - change Team State, arm reads, workload, Rest Status, or deployment;
 - create a score, grade, ranking, quality label, or future-performance claim;
-- publish WHIP, K-BB%, HR/9, or inherited-runner values;
+- publish K-BB%, HR/9, or inherited-runner values;
 - add a historical performance comparison or mutate a publication;
 - open performance authority for Share Artifacts or any non-Team-Board surface.

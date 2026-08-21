@@ -1,4 +1,4 @@
-"""Current Active-Pen Performance framework and M-001 (D-021).
+"""Current Active-Pen Performance framework, M-001, and M-002 (D-021).
 
 The framework owns group resolution, qualifying appearances, sample
 validation, evidence, freshness, limitations and fail-closed publication, so
@@ -38,6 +38,7 @@ OTHER_TEAM_ID = 158
 SEASON = 2026
 REFERENCE_DATE = date(2026, 7, 30)
 M001 = performance_metrics.METRIC_CURRENT_ACTIVE_PEN_ERA
+M002 = performance_metrics.METRIC_CURRENT_ACTIVE_PEN_WHIP
 
 
 @pytest.fixture()
@@ -124,18 +125,23 @@ def _read(team_id=TEAM_ID, metric_id=M001):
 
 
 # ── Registry ────────────────────────────────────────────────────────────────
-def test_m001_is_registered_and_is_the_only_approved_metric():
-    assert pi.registry.metric_ids() == [M001]
+def test_m001_and_m002_are_the_only_approved_metrics():
+    assert pi.registry.metric_ids() == [M001, M002]
     definition = pi.registry.get(M001)
     assert definition.public_name == 'Active Bullpen ERA'
     assert definition.internal_name == 'Current Active-Pen ERA'
     assert definition.family_id == pi.FAMILY_ID
     assert definition.formula == 'earned_runs * 27 / recorded_outs'
+    whip = pi.registry.get(M002)
+    assert whip.public_name == 'Active Bullpen WHIP'
+    assert whip.formula == '(walks + hits_allowed) * 3 / recorded_outs'
 
 
 def test_registry_rejects_duplicate_registration():
     with pytest.raises(ValueError):
         pi.registry.register(performance_metrics.CURRENT_ACTIVE_PEN_ERA)
+    with pytest.raises(ValueError):
+        pi.registry.register(performance_metrics.CURRENT_ACTIVE_PEN_WHIP)
 
 
 def test_registration_is_idempotent():
@@ -161,6 +167,19 @@ def test_era_formula_matches_the_canonical_convention():
     assert definition.denominator(components) == 27
     # 4 earned runs over 9 innings is a 4.00 ERA.
     assert pi._exact_ratio(108, 27) == '4.00'
+
+
+def test_whip_formula_uses_pooled_hits_walks_and_integer_outs():
+    components = pi.AppearanceComponents(hits=25, walks=11, outs=108)
+    definition = pi.registry.get(M002)
+    assert definition.numerator(components) == 108
+    assert definition.denominator(components) == 108
+    assert pi._exact_ratio(
+        definition.numerator(components), definition.denominator(components),
+    ) == '1.00'
+    assert definition.required_row_components == (
+        'innings_pitched_outs', 'hits_allowed', 'walks',
+    )
 
 
 def test_formatter_never_substitutes_a_placeholder():
@@ -692,6 +711,17 @@ def test_approved_minimum_sample_is_108_recorded_outs_under_d023():
     assert (27 * 1) / d.minimum_sample == 0.25
 
 
+def test_whip_has_an_independently_governed_108_out_sample():
+    definition = pi.registry.get(M002)
+    assert definition.minimum_sample == 108
+    assert definition.minimum_sample_unit == 'recorded_outs'
+    assert definition.minimum_sample_authority == (
+        '2026-08-21-team-board-active-bullpen-whip'
+    )
+    assert definition.minimum_sample_authority != 'D-023'
+    assert (3 * 1) / definition.minimum_sample < 0.03
+
+
 def test_threshold_never_travels_as_a_bare_number():
     """A registry entry cannot gate on an unexplained integer."""
     base = dict(
@@ -1153,7 +1183,11 @@ def test_evidence_rows_carry_official_identity_not_raw_rows(app):
     assert set(row) == {
         'pitcher_id', 'mlb_game_pk', 'game_date', 'opponent',
         'opponent_abbreviation', 'appearance_team_id', 'outs',
-        'innings_display', 'earned_runs',
+        'innings_display', 'earned_runs', 'metric_inputs',
+    }
+    assert row['metric_inputs'] == {
+        'innings_pitched_outs': 3,
+        'earned_runs': row['earned_runs'],
     }
     # No stored internals leak.
     assert 'id' not in row and 'pitches_thrown' not in row

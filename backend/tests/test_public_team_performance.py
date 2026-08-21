@@ -10,8 +10,11 @@ from services.public_team_performance import (
     ADDITIONAL_METRICS_LIMITATION,
     CONTRACT_VERSION,
     POPULATION_BASIS,
+    WHIP_INPUT_LIMITATION,
     build_public_team_performance_payload,
 )
+from services import performance_intelligence
+from services import sync as sync_service
 from tests.db_config import configure_test_database, create_test_schema, drop_test_schema
 from utils.db import db
 
@@ -114,10 +117,19 @@ def test_public_read_uses_represented_active_group_and_team_owned_relief_only(ap
     active = _pitcher('Active Arm', 700001)
     former = _pitcher('Off Active Arm', 700002)
     for index in range(36):
-        _log(active, index, earned_runs=1 if index < 12 else 0)
-    _log(active, 100, outs=12, earned_runs=10, games_started=1)
-    _log(active, 101, outs=12, earned_runs=10, appearance_team_id=OTHER_TEAM_ID)
-    _log(former, 102, outs=27, earned_runs=20)
+        _log(
+            active,
+            index,
+            earned_runs=1 if index < 12 else 0,
+            hits=1 if index < 18 else 0,
+            walks=1 if index < 9 else 0,
+        )
+    _log(active, 100, outs=12, earned_runs=10, hits=20, walks=20, games_started=1)
+    _log(
+        active, 101, outs=12, earned_runs=10, hits=20, walks=20,
+        appearance_team_id=OTHER_TEAM_ID,
+    )
+    _log(former, 102, outs=27, earned_runs=20, hits=20, walks=20)
     db.session.commit()
 
     payload = build_public_team_performance_payload(
@@ -131,7 +143,11 @@ def test_public_read_uses_represented_active_group_and_team_owned_relief_only(ap
     assert payload['pitchers_with_sample'] == 1
     assert payload['relief_appearances'] == 36
     assert payload['innings_pitched'] == '36.0'
-    assert payload['metrics'][0]['value'] == '3.00'
+    assert [metric['value'] for metric in payload['metrics']] == ['3.00', '0.75']
+    assert all(
+        metric['qualification']['status'] == 'qualified'
+        for metric in payload['metrics']
+    )
     assert payload['sample']['recorded_outs'] == 108
     assert payload['sample']['meets_minimum'] is True
     assert payload['status'] == 'partial'
@@ -150,7 +166,11 @@ def test_below_sample_is_partial_and_never_exposes_the_internal_value(app):
 
     assert payload['status'] == 'partial'
     assert payload['summary'] == 'Not Enough Innings Yet'
-    assert payload['metrics'][0]['value'] is None
+    assert [metric['value'] for metric in payload['metrics']] == [None, None]
+    assert all(
+        metric['qualification']['status'] == 'below_minimum'
+        for metric in payload['metrics']
+    )
     assert payload['sample']['recorded_outs'] == 27
     assert payload['sample']['minimum_recorded_outs'] == 108
     assert payload['sample']['meets_minimum'] is False
@@ -176,7 +196,7 @@ def test_empty_and_zero_out_samples_fail_closed(app):
     assert zero_payload['reason_code'] == 'era_denominator_zero'
 
 
-def test_missing_optional_domains_never_become_fabricated_zero_metrics(app):
+def test_missing_ungoverned_domains_do_not_block_era_or_whip(app):
     active = _pitcher('Optional Data Arm', 700006)
     for index in range(36):
         _log(active, 400 + index, batters_faced=None)
@@ -186,13 +206,97 @@ def test_missing_optional_domains_never_become_fabricated_zero_metrics(app):
         TEAM_ID, board=_board([_card(active)]),
     )
 
-    assert payload['metrics'] == [{
-        'key': 'active_bullpen_era',
-        'metric_id': 'M-001',
-        'label': 'Active Bullpen ERA',
-        'value': '0.00',
-        'method_version': '1.1.0',
-    }]
+    assert [
+        (metric['metric_id'], metric['value']) for metric in payload['metrics']
+    ] == [('M-001', '0.00'), ('M-002', '0.00')]
     assert payload['status'] == 'partial'
-    assert 'WHIP' in payload['limitations'][0]
+    assert 'K-BB%' in payload['limitations'][0]
     assert 'inherited-runner' in payload['limitations'][0]
+
+
+@pytest.mark.parametrize('missing_field', ['hits_allowed', 'walks'])
+def test_unknown_whip_input_never_becomes_zero_and_era_remains_visible(
+    app, missing_field,
+):
+    active = _pitcher(f'Missing {missing_field}', 700010)
+    for index in range(36):
+        kwargs = {'hits': 1, 'walks': 1}
+        kwargs['hits' if missing_field == 'hits_allowed' else 'walks'] = (
+            None if index == 0 else 1
+        )
+        _log(active, 500 + index, **kwargs)
+    db.session.commit()
+
+    payload = build_public_team_performance_payload(
+        TEAM_ID, board=_board([_card(active)]),
+    )
+
+    era, whip = payload['metrics']
+    assert era['value'] == '0.00'
+    assert era['qualification']['status'] == 'qualified'
+    assert whip['value'] is None
+    assert whip['qualification']['status'] == 'unavailable'
+    assert whip['qualification']['reason_code'] == 'qualifying_row_invalid'
+    assert payload['status'] == 'partial'
+    assert payload['limitations'][0] == WHIP_INPUT_LIMITATION
+
+
+def test_whip_rounds_once_at_the_metric_boundary(app):
+    active = _pitcher('Rounding Arm', 700020)
+    for index in range(36):
+        _log(active, 600 + index, hits=2 if index < 7 else 1)
+    db.session.commit()
+
+    payload = build_public_team_performance_payload(
+        TEAM_ID, board=_board([_card(active)]),
+    )
+
+    # 43 baserunners * 3 / 108 outs = 1.19444..., rounded once to 1.19.
+    assert payload['metrics'][1]['value'] == '1.19'
+    assert payload['evidence_by_metric']['M-002']['context'][
+        'metric_input_totals'
+    ] == {'innings_pitched_outs': 108, 'hits_allowed': 43, 'walks': 0}
+
+
+def test_public_projection_queries_the_common_appearance_sample_once(
+    app, monkeypatch,
+):
+    active = _pitcher('One Query Arm', 700030)
+    for index in range(36):
+        _log(active, 700 + index, hits=1)
+    db.session.commit()
+    original = performance_intelligence.qualifying_appearances
+    calls = []
+
+    def counted(*args, **kwargs):
+        calls.append((args, kwargs))
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(
+        performance_intelligence, 'qualifying_appearances', counted,
+    )
+    payload = build_public_team_performance_payload(
+        TEAM_ID, board=_board([_card(active)]),
+    )
+
+    assert len(calls) == 1
+    assert [metric['value'] for metric in payload['metrics']] == ['0.00', '1.00']
+
+
+def test_ingestion_and_orm_preserve_missing_whip_inputs_as_unknown(app):
+    active = _pitcher('Source Missing Arm', 700040)
+    values = sync_service._game_log_values_from_stats(
+        stats={'inningsPitched': '1.0'},
+        pitcher=active,
+        game_pk=999991,
+        game_date=THROUGH,
+        game_type='R',
+        opponent='Other',
+        opponent_abbreviation='OTH',
+        games_started=0,
+    )
+
+    assert values['hits_allowed'] is None
+    assert values['walks'] is None
+    assert GameLog.__table__.c.hits_allowed.default is None
+    assert GameLog.__table__.c.walks.default is None

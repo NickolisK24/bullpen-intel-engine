@@ -9,7 +9,7 @@ resolution, qualifying-appearance resolution, sample validation, evidence
 construction, freshness, limitations, and fail-closed publication. A metric
 contributes only what is genuinely per-metric: its formula, its numerator and
 denominator over the shared components, its formatting, and its approved
-metadata. Adding WHIP, K%, BB%, HR/9 or FIP later is a registry entry, not a
+metadata. Adding K%, BB%, HR/9 or FIP later is a registry entry, not a
 new service.
 
 Two authorities are evaluated at two different times, and conflating them is
@@ -416,6 +416,38 @@ def qualifying_appearances(
     )
 
 
+def _selection_with_required_components(selection, required_components):
+    """Apply one metric's input requirements to an already-selected sample.
+
+    Common team, finality, ownership, and relief authority is queried once.
+    Metric-local missing inputs then fail only that metric, so a missing WHIP
+    component cannot suppress an independently valid ERA read.
+    """
+    rows = []
+    blocking = list(selection.blocking)
+    for log in selection.rows:
+        def issue(reason, field=None):
+            return RowIssue(
+                getattr(log, 'mlb_game_pk', None),
+                getattr(log, 'pitcher_id', None),
+                field,
+                reason,
+            )
+
+        row_issue = _validate_required_components(
+            log, required_components, issue,
+        )
+        if row_issue is None:
+            rows.append(log)
+        else:
+            blocking.append(row_issue)
+    return QualifyingSelection(
+        rows=tuple(rows),
+        excluded=tuple(selection.excluded),
+        blocking=tuple(blocking),
+    )
+
+
 def _validate_required_components(log, required_components, issue):
     """Every required source field must be a real, well-formed value."""
     for field_name in required_components:
@@ -512,6 +544,7 @@ def build_metric_read(
     freshness=None,
     group=None,
     publication_surface=None,
+    selection=None,
 ):
     """Compute one registered metric for one team's current active pen.
 
@@ -539,10 +572,15 @@ def build_metric_read(
             publication_surface=publication_surface,
         )
 
-    selection = qualifying_appearances(
-        team_id, group['pitcher_ids'], season=season, through_date=through_date,
-        required_components=definition.required_row_components,
-    )
+    if selection is None:
+        selection = qualifying_appearances(
+            team_id, group['pitcher_ids'], season=season, through_date=through_date,
+            required_components=definition.required_row_components,
+        )
+    else:
+        selection = _selection_with_required_components(
+            selection, definition.required_row_components,
+        )
     if not selection.is_valid:
         # A row that cannot be proved usable blocks the whole read. Ignoring it
         # or treating it as zero would publish a rate over a sample that is not
@@ -611,6 +649,47 @@ def build_metric_read(
         definition, read, sample, publication_surface=publication_surface,
     )
     return read
+
+
+def build_metric_reads(
+    metric_ids,
+    team_id,
+    *,
+    season,
+    reference_date=None,
+    through_date=None,
+    freshness=None,
+    group=None,
+    publication_surface=None,
+):
+    """Build multiple metric reads from one common appearance selection."""
+    metric_ids = tuple(metric_ids or ())
+    if freshness is None:
+        freshness = resolve_freshness(reference_date)
+    group = group or resolve_active_group(team_id, reference_date=reference_date)
+    selection = (
+        qualifying_appearances(
+            team_id,
+            group['pitcher_ids'],
+            season=season,
+            through_date=through_date,
+        )
+        if group['pitcher_ids'] else QualifyingSelection()
+    )
+    return {
+        metric_id: build_metric_read(
+            metric_id,
+            team_id,
+            season=season,
+            reference_date=reference_date,
+            through_date=through_date,
+            freshness=freshness,
+            group=group,
+            publication_surface=publication_surface,
+            selection=selection,
+        )
+        for metric_id in metric_ids
+    }
 
 
 def _exact_ratio(numerator, denominator, precision=2):
@@ -766,6 +845,7 @@ def _evidence(definition, group, membership, components, logs):
             'recorded_outs': components.outs,
             'innings_display': innings_display(components.outs),
             'earned_runs': components.earned_runs,
+            'metric_input_totals': _metric_input_totals(definition, components),
             'exact_numerator': definition.numerator(components),
             'exact_denominator': definition.denominator(components),
             'minimum_sample': definition.minimum_sample,
@@ -799,6 +879,10 @@ def _evidence(definition, group, membership, components, logs):
                     'innings_display': innings_display(
                         _optional_int(getattr(log, 'innings_pitched_outs', None))),
                     'earned_runs': _optional_int(getattr(log, 'earned_runs', None)),
+                    'metric_inputs': {
+                        field: _required_int(getattr(log, field, None))[1]
+                        for field in definition.required_row_components
+                    },
                 }
                 for log in logs
             ],
@@ -818,6 +902,7 @@ def _evidence(definition, group, membership, components, logs):
             'appearance_count': components.appearances,
             'outs': components.outs,
             'earned_runs': components.earned_runs,
+            'metric_input_totals': _metric_input_totals(definition, components),
         },
         'requirements': list(definition.evidence_requirements),
         'authorities': {
@@ -890,6 +975,24 @@ def _publication_decision(definition, read, sample, *, publication_surface=None)
         'publishable': True,
         'reason': None,
         'surface': publication_surface,
+    }
+
+
+def _metric_input_totals(definition, components):
+    component_attributes = {
+        'innings_pitched_outs': 'outs',
+        'earned_runs': 'earned_runs',
+        'runs_allowed': 'runs',
+        'hits_allowed': 'hits',
+        'walks': 'walks',
+        'strikeouts': 'strikeouts',
+        'home_runs_allowed': 'home_runs',
+        'batters_faced': 'batters_faced',
+    }
+    return {
+        field: int(getattr(components, component_attributes[field]))
+        for field in definition.required_row_components
+        if field in component_attributes
     }
 
 

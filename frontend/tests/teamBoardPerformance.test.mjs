@@ -25,24 +25,30 @@ const { default: SectionPair } = await server.ssrLoadModule('/src/components/UI/
 const availableRead = {
   performance: {
     status: 'partial',
-    metrics: [{ key: 'active_bullpen_era', label: 'Active Bullpen ERA', value: '3.42' }],
-    summary: 'Active Bullpen ERA describes recorded results for the current active bullpen and remains supporting context.',
+    metrics: [
+      { key: 'active_bullpen_era', label: 'Active Bullpen ERA', value: '3.42' },
+      { key: 'active_bullpen_whip', label: 'Active Bullpen WHIP', value: '1.18' },
+    ],
+    summary: 'Active Bullpen ERA and Active Bullpen WHIP describe recorded results for the current active bullpen and remain supporting context.',
     sample_summary: 'Current regular season · 8 active arms · 7 with a sample · 31 relief appearances · 42.0 innings · Through Aug 20, 2026',
-    limitations: ['WHIP, K-BB%, home-run rate, and inherited-runner outcomes are not included because they do not yet have approved public metric and sample contracts.'],
+    limitations: ['K-BB%, home-run rate, and inherited-runner outcomes are not included because they do not yet have approved public metric and sample contracts.'],
   },
   sectionStatus: { performance: { status: 'partial' } },
 }
 
-test('Performance renders the backend-owned active bullpen ERA and sample context', () => {
+test('Performance renders backend-owned ERA and WHIP with shared sample context', () => {
   const html = renderToStaticMarkup(React.createElement(TeamBoardPerformance, { read: availableRead }))
 
   assert.ok(html.includes('team-board-performance'))
   assert.ok(html.includes('Supporting context for the current active bullpen.'))
   assert.ok(html.includes('Active Bullpen ERA'))
   assert.ok(html.includes('3.42'))
+  assert.ok(html.includes('Active Bullpen WHIP'))
+  assert.ok(html.includes('1.18'))
+  assert.ok(html.includes('grid-cols-2'))
   assert.ok(html.includes('31 relief appearances'))
   assert.ok(html.includes('Through Aug 20, 2026'))
-  assert.ok(html.includes('WHIP, K-BB%'))
+  assert.ok(html.includes('K-BB%, home-run rate'))
   assert.ok(html.includes('data-state="partial"'))
   assert.equal(html.includes('<button'), false)
 })
@@ -72,6 +78,44 @@ test('Performance preserves below-sample and unavailable states without a number
   assert.equal(partial.includes('3.42'), false)
   assert.ok(unavailable.includes(PERFORMANCE_UNAVAILABLE_MESSAGE))
   assert.ok(unavailable.includes('data-state="unavailable"'))
+})
+
+test('Performance preserves ERA when WHIP is unavailable and renders backend limitation', () => {
+  const html = renderToStaticMarkup(React.createElement(TeamBoardPerformance, {
+    read: {
+      performance: {
+        status: 'partial',
+        metrics: [
+          { key: 'active_bullpen_era', label: 'Active Bullpen ERA', value: '3.42' },
+          { key: 'active_bullpen_whip', label: 'Active Bullpen WHIP', value: null },
+        ],
+        summary: 'Active Bullpen ERA describes recorded results for the current active bullpen and remains supporting context.',
+        sample_summary: 'Current regular season · 8 active arms · 31 relief appearances · Through Aug 20, 2026',
+        limitations: ['Active Bullpen WHIP is withheld because at least one qualifying official pitching line lacks authoritative hits or walks.'],
+      },
+      sectionStatus: { performance: { status: 'partial' } },
+    },
+  }))
+
+  assert.ok(html.includes('Active Bullpen ERA'))
+  assert.ok(html.includes('3.42'))
+  assert.equal(html.includes('1.18'), false)
+  assert.ok(html.includes('Active Bullpen WHIP is withheld'))
+  assert.ok(html.includes('grid-cols-1'))
+})
+
+test('Performance loading and error states retain existing SectionState behavior', () => {
+  const loading = renderToStaticMarkup(React.createElement(
+    TeamBoardPerformance, { loading: true },
+  ))
+  const error = renderToStaticMarkup(React.createElement(
+    TeamBoardPerformance, { read: availableRead, error: new Error('failed') },
+  ))
+
+  assert.ok(loading.includes('performance-skeleton'))
+  assert.ok(loading.includes('aria-busy="true"'))
+  assert.ok(error.includes('Performance unavailable'))
+  assert.ok(error.includes('Current performance context could not be loaded.'))
 })
 
 test('Team Board has no internal Performance fetch or browser-authored metric calculation', async () => {
