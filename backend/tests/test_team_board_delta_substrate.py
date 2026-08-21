@@ -12,6 +12,8 @@ from sqlalchemy import event
 from models.dashboard_snapshot import DashboardSnapshot
 from services import team_board_delta_substrate as delta
 from services import public_team_relief_work
+from services import public_serving_authority
+from services import rotation_support_pressure
 from team_operations import TEAM_STATE_METHOD_VERSION
 from tests.db_config import (
     configure_test_database,
@@ -141,6 +143,8 @@ def _snapshot(
     active_count=7,
     arm_capture=None,
     workload_capture=None,
+    rotation_capture=None,
+    membership_capture=None,
 ):
     envelope = delta.build_prospective_envelope(
         source=_source(represented_date=represented_date, snapshot_id=100 + snapshot_id),
@@ -148,6 +152,8 @@ def _snapshot(
         artifact=_artifact(artifact_id=200 + snapshot_id, state=state, label=state.title()),
         arm_read_capture=arm_capture,
         workload_window_capture=workload_capture,
+        rotation_impact_capture=rotation_capture,
+        bullpen_membership_capture=membership_capture,
     )
     return SimpleNamespace(id=snapshot_id, payload=envelope)
 
@@ -236,6 +242,95 @@ def _workload_capture(
     }
 
 
+def _rotation_value(represented_date, *, bullpen_outs=18, short_starts=1):
+    return {
+        'capability': rotation_support_pressure.CAPABILITY,
+        'version': rotation_support_pressure.VERSION,
+        'source': 'backend',
+        'team_id': TEAM_ID,
+        'status': 'neutral',
+        'window_days': 7,
+        'reference_date': represented_date.isoformat(),
+        'window_start': (represented_date - timedelta(days=6)).isoformat(),
+        'games_in_window': 3,
+        'games_analyzed': 3,
+        'games_excluded': 0,
+        'opener_bulk_games': 0,
+        'bullpen_games': 0,
+        'starter_outs': 45,
+        'starter_innings': 15.0,
+        'starter_avg_outs': 15.0,
+        'starter_avg_innings': 5.0,
+        'bullpen_outs_required': bullpen_outs,
+        'bullpen_innings_required': round(bullpen_outs / 3, 1),
+        'bullpen_avg_innings_required': round(bullpen_outs / 9, 2),
+        'short_start_count': short_starts,
+        'short_start_rate': round(short_starts / 3, 2),
+        'bulk_follower_outs': 0,
+        'bulk_follower_innings': 0.0,
+        'bullpen_game_outs': 0,
+        'bullpen_game_innings': 0.0,
+        'game_shape_distribution': {'normal_start': 3},
+        'excluded_game_reasons': {},
+        'source_reason_codes': {},
+        'limitation_reasons': [],
+        'rows_without_game_pk': 0,
+        'definitions': {},
+        'thresholds': {},
+        'methodology_notes': [],
+        'source_limitations': [],
+        'source_window': {'source': 'team_game_pitching_splits'},
+        'relief_work_handoff': {'target': 'team-relief-work', 'summary': 'View receipts.', 'games': []},
+        'summary': 'Rotation burden summary.',
+        'limitations': [],
+    }
+
+
+def _rotation_capture(represented_date, **value_overrides):
+    return {
+        'team_id': TEAM_ID,
+        'represented_date': represented_date.isoformat(),
+        'method_version': rotation_support_pressure.VERSION,
+        'public_contract_version': rotation_support_pressure.PUBLIC_CONTRACT_VERSION,
+        'carrier_contract_version': rotation_support_pressure.DELTA_CARRIER_CONTRACT,
+        'contract_version': public_serving_authority.TEAM_BOARD_PACKAGE_CONTRACT,
+        'population_basis': {
+            'basis': rotation_support_pressure.POPULATION_BASIS,
+            'population_authority': rotation_support_pressure.POPULATION_AUTHORITY,
+            'membership_authority': rotation_support_pressure.MEMBERSHIP_AUTHORITY,
+        },
+        'reference_date_policy': rotation_support_pressure.REFERENCE_DATE_POLICY,
+        'reference_date': represented_date.isoformat(),
+        'source_authority': 'trusted_team_board_publication',
+        'value': _rotation_value(represented_date, **value_overrides),
+    }
+
+
+def _membership_capture(represented_date, members):
+    records = [
+        {'pitcher_id': pitcher_id, 'pitcher_name': name}
+        for pitcher_id, name in members
+    ]
+    return {
+        'team_id': TEAM_ID,
+        'represented_date': represented_date.isoformat(),
+        'method_version': public_serving_authority.BULLPEN_MEMBERSHIP_METHOD_VERSION,
+        'public_contract_version': public_serving_authority.BULLPEN_MEMBERSHIP_PUBLIC_CONTRACT_VERSION,
+        'carrier_contract_version': public_serving_authority.BULLPEN_MEMBERSHIP_CARRIER_CONTRACT,
+        'contract_version': public_serving_authority.TEAM_BOARD_PACKAGE_CONTRACT,
+        'population_basis': {
+            'basis': public_serving_authority.BULLPEN_MEMBERSHIP_POPULATION_BASIS,
+            'population_authority': public_serving_authority.BULLPEN_MEMBERSHIP_POPULATION_AUTHORITY,
+            'membership_authority': public_serving_authority.BULLPEN_MEMBERSHIP_MEMBERSHIP_AUTHORITY,
+        },
+        'reference_date_policy': public_serving_authority.BULLPEN_MEMBERSHIP_REFERENCE_DATE_POLICY,
+        'membership_reference_date': represented_date.isoformat(),
+        'source_authority': 'trusted_team_board_publication',
+        'member_pitcher_ids': [item['pitcher_id'] for item in records],
+        'members': records,
+    }
+
+
 def _workload_carrier_snapshot(represented_date, *, team_id=TEAM_ID, carrier=None):
     carrier = carrier or {
         'contract': public_team_relief_work.WORKLOAD_WINDOWS_CARRIER_CONTRACT,
@@ -251,6 +346,7 @@ def _workload_carrier_snapshot(represented_date, *, team_id=TEAM_ID, carrier=Non
             'trusted_team_boards': {
                 'contract': 'trusted_team_board_publication_v1',
                 'data_through': represented_date.isoformat(),
+                'availability_reference_date': represented_date.isoformat(),
                 'by_team_id': {
                     str(team_id): {
                         'team': {'team_id': team_id},
@@ -291,6 +387,47 @@ def _workload_carrier_snapshot(represented_date, *, team_id=TEAM_ID, carrier=Non
             },
         },
     )
+
+
+def _rotation_membership_carrier_snapshot(represented_date):
+    snapshot = _workload_carrier_snapshot(represented_date)
+    team = snapshot.payload['trusted_team_boards']['by_team_id'][str(TEAM_ID)]
+    team.update({
+        'records': [
+            {'pitcher_id': 1, 'name': 'First Arm'},
+            {'pitcher_id': 2, 'name': 'Second Arm'},
+        ],
+        'default_pitcher_ids': [1, 2],
+        'bullpen_membership_authority': {
+            'method_version': public_serving_authority.BULLPEN_MEMBERSHIP_METHOD_VERSION,
+            'public_contract_version': public_serving_authority.BULLPEN_MEMBERSHIP_PUBLIC_CONTRACT_VERSION,
+            'carrier_contract_version': public_serving_authority.BULLPEN_MEMBERSHIP_CARRIER_CONTRACT,
+            'team_board_package_contract': public_serving_authority.TEAM_BOARD_PACKAGE_CONTRACT,
+            'population_basis': {
+                'basis': public_serving_authority.BULLPEN_MEMBERSHIP_POPULATION_BASIS,
+                'population_authority': public_serving_authority.BULLPEN_MEMBERSHIP_POPULATION_AUTHORITY,
+                'membership_authority': public_serving_authority.BULLPEN_MEMBERSHIP_MEMBERSHIP_AUTHORITY,
+                'roster_authority_version': '2026-06-25.foundation',
+            },
+            'reference_date_policy': public_serving_authority.BULLPEN_MEMBERSHIP_REFERENCE_DATE_POLICY,
+            'membership_reference_date': represented_date.isoformat(),
+        },
+        'rotation_support_pressure': _rotation_value(represented_date),
+        'rotation_support_pressure_authority': {
+            'method_version': rotation_support_pressure.VERSION,
+            'public_contract_version': rotation_support_pressure.PUBLIC_CONTRACT_VERSION,
+            'carrier_contract_version': rotation_support_pressure.DELTA_CARRIER_CONTRACT,
+            'team_board_package_contract': public_serving_authority.TEAM_BOARD_PACKAGE_CONTRACT,
+            'population_basis': {
+                'basis': rotation_support_pressure.POPULATION_BASIS,
+                'population_authority': rotation_support_pressure.POPULATION_AUTHORITY,
+                'membership_authority': rotation_support_pressure.MEMBERSHIP_AUTHORITY,
+            },
+            'reference_date_policy': rotation_support_pressure.REFERENCE_DATE_POLICY,
+            'reference_date': represented_date.isoformat(),
+        },
+    })
+    return snapshot
 
 
 def test_prospective_envelope_uses_canonical_team_state_method_owner():
@@ -586,8 +723,120 @@ def test_unready_domains_are_explicitly_withheld():
     assert result['domains']['arm_read']['status'] == delta.DOMAIN_NOT_READY
     assert result['domains']['workload_7d']['status'] == delta.DOMAIN_NOT_READY
     assert result['domains']['workload_14d']['status'] == delta.DOMAIN_NOT_READY
+    assert result['domains']['rotation_impact']['status'] == delta.DOMAIN_NOT_READY
+    assert result['domains']['bullpen_membership']['status'] == delta.DOMAIN_NOT_READY
     assert result['domains']['role_movement']['status'] == delta.DOMAIN_NOT_READY
     assert result['domains']['roster_transactions']['status'] == delta.DOMAIN_NOT_INCLUDED
+
+
+def test_rotation_impact_compares_frozen_outs_without_directional_judgment():
+    previous_date = date(2026, 8, 17)
+    current_date = date(2026, 8, 18)
+    previous = _snapshot(
+        previous_date, snapshot_id=1,
+        rotation_capture=_rotation_capture(previous_date, bullpen_outs=18),
+    )
+    current = _snapshot(
+        current_date, snapshot_id=2,
+        rotation_capture=_rotation_capture(current_date, bullpen_outs=24),
+    )
+
+    comparison = delta.compare_snapshots(previous, current)['domains']['rotation_impact']
+
+    assert comparison['status'] == delta.COMPARABLE
+    assert comparison['movement'] is True
+    assert 'bullpen_outs_required' in comparison['changed_fields']
+    assert 'better' not in str(comparison).lower()
+    assert 'worse' not in str(comparison).lower()
+
+
+def test_rotation_impact_preserves_zero_and_fails_closed_on_contract_mismatch():
+    previous_date = date(2026, 8, 17)
+    current_date = date(2026, 8, 18)
+    previous = _snapshot(
+        previous_date, snapshot_id=1,
+        rotation_capture=_rotation_capture(previous_date, bullpen_outs=0, short_starts=0),
+    )
+    current = _snapshot(
+        current_date, snapshot_id=2,
+        rotation_capture=_rotation_capture(current_date, bullpen_outs=0, short_starts=0),
+    )
+    comparison = delta.compare_snapshots(previous, current)['domains']['rotation_impact']
+    assert comparison['status'] == delta.COMPARABLE
+    assert comparison['movement'] is False
+    assert comparison['previous']['bullpen_outs_required'] == 0
+
+    current.payload['domains']['rotation_impact']['carrier_contract_version'] = 'v2'
+    assert delta.compare_snapshots(previous, current)['domains']['rotation_impact'][
+        'status'
+    ] == delta.CONTRACT_INCOMPATIBLE
+
+
+def test_bullpen_membership_reports_additions_and_removals_without_inventing_reasons():
+    previous_date = date(2026, 8, 17)
+    current_date = date(2026, 8, 18)
+    previous = _snapshot(
+        previous_date, snapshot_id=1,
+        membership_capture=_membership_capture(
+            previous_date, ((1, 'Stayed Arm'), (2, 'Removed Arm'))
+        ),
+    )
+    current = _snapshot(
+        current_date, snapshot_id=2,
+        membership_capture=_membership_capture(
+            current_date, ((1, 'Stayed Arm'), (3, 'Added Arm'))
+        ),
+    )
+
+    comparison = delta.compare_snapshots(previous, current)['domains']['bullpen_membership']
+
+    assert comparison['status'] == delta.COMPARABLE
+    assert comparison['movement'] is True
+    assert comparison['added'] == [{'pitcher_id': 3, 'pitcher_name': 'Added Arm'}]
+    assert comparison['removed'] == [{'pitcher_id': 2, 'pitcher_name': 'Removed Arm'}]
+    assert 'reason' not in comparison['added'][0]
+    assert 'reason' not in comparison['removed'][0]
+
+
+def test_membership_unchanged_and_empty_populations_are_comparable():
+    previous_date = date(2026, 8, 17)
+    current_date = date(2026, 8, 18)
+    previous = _snapshot(
+        previous_date, snapshot_id=1,
+        membership_capture=_membership_capture(previous_date, ()),
+    )
+    current = _snapshot(
+        current_date, snapshot_id=2,
+        membership_capture=_membership_capture(current_date, ()),
+    )
+
+    comparison = delta.compare_snapshots(previous, current)['domains']['bullpen_membership']
+
+    assert comparison['status'] == delta.COMPARABLE
+    assert comparison['movement'] is False
+    assert comparison['added'] == []
+    assert comparison['removed'] == []
+
+
+def test_rotation_and_membership_domains_fail_independently():
+    previous_date = date(2026, 8, 17)
+    current_date = date(2026, 8, 18)
+    previous = _snapshot(
+        previous_date, snapshot_id=1,
+        rotation_capture=_rotation_capture(previous_date),
+        membership_capture=_membership_capture(previous_date, ((1, 'Arm'),)),
+    )
+    current = _snapshot(
+        current_date, snapshot_id=2,
+        rotation_capture=_rotation_capture(current_date),
+        membership_capture=_membership_capture(current_date, ((1, 'Arm'),)),
+    )
+    current.payload['values'].pop('rotation_impact')
+
+    result = delta.compare_snapshots(previous, current)['domains']
+
+    assert result['rotation_impact']['status'] == delta.VALUE_MISSING
+    assert result['bullpen_membership']['status'] == delta.COMPARABLE
 
 
 def test_missing_prior_prospective_arm_domain_does_not_block_team_state():
@@ -629,6 +878,37 @@ def test_workload_capture_copies_exact_same_cycle_carrier_without_calculation():
     assert capture['carrier_contract_version'] == (
         public_team_relief_work.WORKLOAD_WINDOWS_CARRIER_CONTRACT
     )
+
+
+def test_rotation_and_membership_capture_copy_same_cycle_publication_values():
+    represented_date = date(2026, 8, 18)
+    snapshot = _rotation_membership_carrier_snapshot(represented_date)
+    frozen_team = snapshot.payload['trusted_team_boards']['by_team_id'][str(TEAM_ID)]
+
+    rotation = delta.build_rotation_impact_capture(snapshot=snapshot, team_id=TEAM_ID)
+    membership = delta.build_bullpen_membership_capture(snapshot=snapshot, team_id=TEAM_ID)
+
+    assert rotation['value'] == frozen_team['rotation_support_pressure']
+    assert rotation['value'] is not frozen_team['rotation_support_pressure']
+    assert membership['member_pitcher_ids'] == [1, 2]
+    assert membership['members'] == [
+        {'pitcher_id': 1, 'pitcher_name': 'First Arm'},
+        {'pitcher_id': 2, 'pitcher_name': 'Second Arm'},
+    ]
+    rotation['value']['bullpen_outs_required'] = 999
+    membership['members'][0]['pitcher_name'] = 'Mutated'
+    assert frozen_team['rotation_support_pressure']['bullpen_outs_required'] == 18
+    assert frozen_team['records'][0]['name'] == 'First Arm'
+
+
+def test_missing_rotation_or_membership_carrier_is_not_reconstructed():
+    snapshot = _rotation_membership_carrier_snapshot(date(2026, 8, 18))
+    team = snapshot.payload['trusted_team_boards']['by_team_id'][str(TEAM_ID)]
+    team.pop('rotation_support_pressure')
+    team.pop('default_pitcher_ids')
+
+    assert delta.build_rotation_impact_capture(snapshot=snapshot, team_id=TEAM_ID) is None
+    assert delta.build_bullpen_membership_capture(snapshot=snapshot, team_id=TEAM_ID) is None
 
 
 def test_workload_capture_preserves_legitimate_zero_values():
