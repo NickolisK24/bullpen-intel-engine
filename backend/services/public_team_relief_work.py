@@ -175,6 +175,26 @@ def author_workload_windows(team_id, *, data_through):
     return _workload_windows_from_rows(rows, anchor)
 
 
+def author_public_team_relief_authority(team_id, *, data_through):
+    """Author workload windows and deployment from one bounded row query."""
+    anchor = _parse_data_through(data_through)
+    if anchor is None:
+        return {
+            'workload_windows': author_workload_windows(
+                team_id, data_through=None
+            ),
+            'deployment_profile': author_deployment_profile(
+                team_id, data_through=None
+            ),
+        }
+    start_date = anchor - timedelta(days=LOOKBACK_DAYS - 1)
+    rows = _appearance_rows(team_id, start_date, anchor)
+    return {
+        'workload_windows': _workload_windows_from_rows(rows, anchor),
+        'deployment_profile': _deployment_profile_from_rows(rows, anchor),
+    }
+
+
 def author_deployment_profile(team_id, *, data_through):
     """Author the exact public deployment profile for one publication.
 
