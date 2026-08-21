@@ -14,7 +14,7 @@ function ArmRead({ label, tone = 'withheld', marker = 'ring' }) {
   return (
     <span className={`active-arm-read active-arm-read--${tone}`}>
       <span className={`active-arm-read__marker ${markerClass[marker] || markerClass.ring}`} aria-hidden="true" />
-      <span>{label || '—'}</span>
+      <span className="font-medium">{label || '—'}</span>
     </span>
   )
 }
@@ -66,25 +66,27 @@ export default function ActiveArmRow({
   const content = (
     <>
       <span className="active-arm-row__identity min-w-0">
-        <span className="type-section-title active-arm-row__name">{name || 'Reliever'}</span>
-        <span className={`type-metadata active-arm-row__role mt-meta ${roleWithheld || !roleLabel ? 'text-text-withheld' : ''}`}>
+        <span className="active-arm-row__name font-board text-base font-semibold leading-tight text-text-primary tablet:text-[0.9375rem]">
+          {name || 'Reliever'}
+        </span>
+        <span className={`type-metadata active-arm-row__role mt-meta ${roleWithheld || !roleLabel ? 'text-text-withheld' : 'text-text-tertiary'}`}>
           {roleLabel || '—'}
         </span>
-        {pattern && <span className="type-metadata active-arm-row__tablet-pattern mt-meta">{pattern}</span>}
+        {pattern && <span className="type-metadata active-arm-row__tablet-pattern mt-meta font-medium text-state-caution">{pattern}</span>}
       </span>
 
       <span className="active-arm-row__read min-w-0">
         <ArmRead label={readLabel} tone={readTone} marker={readMarker} />
       </span>
 
-      <span className="active-arm-row__mobile-meta type-metadata min-w-0">
-        <span className={daysSince == null ? 'text-text-withheld' : ''}>{daysSince == null ? '— rest' : `${daysSince}d rest`}</span>
+      <span className="active-arm-row__mobile-meta type-metadata min-w-0 border-t border-line-subtle/70 pt-meta">
+        <span className={daysSince == null ? 'text-text-withheld' : 'text-text-secondary'}>{daysSince == null ? '— rest' : `${daysSince}d rest`}</span>
         <span aria-hidden="true"> · </span>
         <span className={appearancesLast7 == null ? 'text-text-withheld' : ''}>{displayValue(appearancesLast7)} app</span>
         <span> / </span>
         <span className={pitchesLast7 == null ? 'text-text-withheld' : ''}>{displayValue(pitchesLast7)} p (7d)</span>
         {lastGamePitches != null && <><span aria-hidden="true"> · </span><span>{lastGamePitches} last P</span></>}
-        {pattern && <><span aria-hidden="true"> · </span><span>{pattern}</span></>}
+        {pattern && <><span aria-hidden="true"> · </span><span className="font-medium text-state-caution">{pattern}</span></>}
       </span>
 
       <TableCell value={daysSince == null ? null : `${daysSince}d`} className="active-arm-row__rest" />
@@ -92,7 +94,7 @@ export default function ActiveArmRow({
       <TableCell value={appearancesLast7} className="active-arm-row__app" />
       <TableCell value={pitchesLast7} className="active-arm-row__pitches" />
       <TableCell value={pattern} className="active-arm-row__pattern" />
-      <span className="active-arm-row__destination type-metadata">Open</span>
+      <span className="active-arm-row__destination type-metadata font-medium">Open</span>
 
       {partialMessage && (
         <span className="active-arm-row__partial type-metadata text-text-withheld" role="status">
