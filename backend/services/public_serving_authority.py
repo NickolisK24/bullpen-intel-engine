@@ -48,6 +48,15 @@ from services.bullpen_visibility import build_visibility_contract
 from services.pitcher_role_authority import author_role_read_labels, role_logs_by_pitcher
 from services.public_fatigue_view import public_workload_facts
 from services.public_roster_readiness import apply_public_roster_readiness, build_public_roster_readiness
+from services.public_team_relief_work import (
+    WORKLOAD_WINDOWS_MEMBERSHIP_AUTHORITY,
+    WORKLOAD_WINDOWS_METHOD_VERSION,
+    WORKLOAD_WINDOWS_POPULATION_AUTHORITY,
+    WORKLOAD_WINDOWS_POPULATION_BASIS,
+    WORKLOAD_WINDOWS_PUBLIC_CONTRACT_VERSION,
+    WORKLOAD_WINDOWS_REFERENCE_DATE_POLICY,
+    author_workload_windows,
+)
 from services.roster_authority import build_roster_authority
 from services.published_team_state import project_published_team_state_artifact
 from services.team_state_payload import TEAM_STATE_ARTIFACT_TYPE
@@ -301,12 +310,34 @@ def build_frozen_team_board_package(dashboard_payload):
             freshness=deepcopy(freshness),
             roster_authority=deepcopy(roster_authority),
         )
+        workload_windows = author_workload_windows(
+            team_id,
+            data_through=(
+                freshness.get('data_through')
+                or freshness.get('latest_workload_date')
+            ),
+        )
         by_team_id[str(team_id)] = {
             'team': deepcopy(team_info.get(team_id) or {'team_id': team_id}),
             'records': records,
             'default_pitcher_ids': default_ids,
             'roster_authority': deepcopy(roster_authority),
             'workload_concentration': deepcopy(workload_concentration),
+            'workload_windows': deepcopy(workload_windows),
+            'workload_windows_authority': {
+                'method_version': WORKLOAD_WINDOWS_METHOD_VERSION,
+                'public_contract_version': (
+                    WORKLOAD_WINDOWS_PUBLIC_CONTRACT_VERSION
+                ),
+                'team_board_package_contract': TEAM_BOARD_PACKAGE_CONTRACT,
+                'population_basis': {
+                    'basis': WORKLOAD_WINDOWS_POPULATION_BASIS,
+                    'population_authority': WORKLOAD_WINDOWS_POPULATION_AUTHORITY,
+                    'membership_authority': WORKLOAD_WINDOWS_MEMBERSHIP_AUTHORITY,
+                },
+                'reference_date_policy': WORKLOAD_WINDOWS_REFERENCE_DATE_POLICY,
+                'data_through': workload_windows.get('data_through'),
+            },
             'rest_status': deepcopy(rest_status),
             'rest_status_authority': {
                 'method_version': REST_STATUS_METHOD_VERSION,

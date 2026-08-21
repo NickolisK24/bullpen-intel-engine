@@ -404,6 +404,36 @@ def test_gap51_phase1_exception_is_exact_and_decision_linked():
     assert 'Readers retain their pre-Phase-1 behavior' in decision
 
 
+def test_gap32_workload_window_exception_is_exact_and_decision_linked():
+    approved = freeze_policy.GAP32_WORKLOAD_WINDOW_PATHS
+    assert approved == (
+        'backend/services/public_team_relief_work.py',
+        'backend/services/share_artifact_generation.py',
+    )
+
+    assert freeze_policy.protected_hits(
+        list(approved),
+        exact=(
+            freeze_policy.FROZEN_PUBLIC_ROUTE_PATHS
+            + freeze_policy.TB09A_DELTA_SUBSTRATE_PATHS
+        ),
+        approved=approved,
+    ) == []
+    assert freeze_policy.protected_hits(
+        ['backend/api/team_board_v2.py'],
+        prefixes=(freeze_policy.PUBLIC_API_PREFIX,),
+        approved=approved,
+    ) == ['backend/api/team_board_v2.py']
+
+    decision = (
+        Path(__file__).resolve().parents[2]
+        / 'docs/decisions/2026-08-20-prospective-workload-window-delta-substrate.md'
+    ).read_text(encoding='utf-8')
+    assert '`backend/services/public_team_relief_work.py`' in decision
+    assert '`backend/services/share_artifact_generation.py`' in decision
+    assert 'No historical GameLog replay or backfill is authorized' in decision
+
+
 def test_no_catalogue_uses_a_bare_directory_as_an_invariant():
     """H-1's success condition, stated as an assertion.
 

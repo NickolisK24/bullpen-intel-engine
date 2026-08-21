@@ -28,6 +28,8 @@ from models.share_artifact_generation_audit import ShareArtifactGenerationAudit
 from models.sync_run import SyncRun
 from services import team_board_delta_substrate as delta_substrate
 from services import team_state_source as source_module
+from services import public_serving_authority
+from services import public_team_relief_work
 from services.share_artifact_batch_generation import (
     BATCH_OUTCOME_GENERATED,
     BATCH_OUTCOME_REFUSED,
@@ -183,6 +185,57 @@ def _publish(team_id):
     return generate_team_state_artifact(team_id)
 
 
+def _attach_workload_carrier(snapshot, team_id):
+    carrier = public_team_relief_work.author_workload_windows(
+        team_id,
+        data_through=PRODUCT_DATE,
+    )
+    snapshot.payload = {
+        public_serving_authority.TEAM_BOARD_PACKAGE_KEY: {
+            'contract': public_serving_authority.TEAM_BOARD_PACKAGE_CONTRACT,
+            'data_through': PRODUCT_DATE.isoformat(),
+            'by_team_id': {
+                str(team_id): {
+                    'team': {'team_id': team_id},
+                    'workload_windows': carrier,
+                    'workload_windows_authority': {
+                        'method_version': (
+                            public_team_relief_work.WORKLOAD_WINDOWS_METHOD_VERSION
+                        ),
+                        'public_contract_version': (
+                            public_team_relief_work
+                            .WORKLOAD_WINDOWS_PUBLIC_CONTRACT_VERSION
+                        ),
+                        'team_board_package_contract': (
+                            public_serving_authority.TEAM_BOARD_PACKAGE_CONTRACT
+                        ),
+                        'population_basis': {
+                            'basis': (
+                                public_team_relief_work
+                                .WORKLOAD_WINDOWS_POPULATION_BASIS
+                            ),
+                            'population_authority': (
+                                public_team_relief_work
+                                .WORKLOAD_WINDOWS_POPULATION_AUTHORITY
+                            ),
+                            'membership_authority': (
+                                public_team_relief_work
+                                .WORKLOAD_WINDOWS_MEMBERSHIP_AUTHORITY
+                            ),
+                        },
+                        'reference_date_policy': (
+                            public_team_relief_work
+                            .WORKLOAD_WINDOWS_REFERENCE_DATE_POLICY
+                        ),
+                        'data_through': PRODUCT_DATE.isoformat(),
+                    },
+                },
+            },
+        },
+    }
+    return carrier
+
+
 # ============================ FIXTURE A — HIGH =================================
 
 
@@ -238,6 +291,28 @@ def test_fixture_a_high_confidence_publishes_verifies_reuses_projects(app, monke
     assert view['status_code'] in SUPPORTED
     assert view['trust']['confidence'] == 'high'
 
+
+def test_new_publication_copies_frozen_workload_windows_into_delta_sidecar(
+    app,
+    monkeypatch,
+):
+    snapshot = _install_trusted_snapshot(monkeypatch)
+    _seed_team(31, usable=8, total=8)
+    _sync_run()
+    seed_roster_readiness_snapshots()
+    carrier = _attach_workload_carrier(snapshot, 31)
+
+    result = generate_team_state_artifact(31, snapshot=snapshot)
+
+    assert result.outcome == OUTCOME_PUBLISHED
+    sidecar = DashboardSnapshot.query.filter_by(
+        snapshot_type=delta_substrate.SNAPSHOT_TYPE,
+    ).one()
+    assert sidecar.payload['values']['workload_7d'] == carrier['windows']['window_7']
+    assert sidecar.payload['values']['workload_14d'] == carrier['windows']['window_14']
+    assert sidecar.payload['domains']['workload_7d']['method_version'] == (
+        public_team_relief_work.WORKLOAD_WINDOWS_METHOD_VERSION
+    )
 
 # =========================== FIXTURE B — MEDIUM ===============================
 

@@ -16,6 +16,21 @@ CAPABILITY = 'public_team_relief_work'
 RECENT_GAME_DATES_MAX = 5
 LOOKBACK_DAYS = 30
 WINDOW_DAYS = (7, 14)
+WORKLOAD_WINDOWS_METHOD_VERSION = 'public_team_relief_work_windows_v1'
+WORKLOAD_WINDOWS_PUBLIC_CONTRACT_VERSION = (
+    'public_team_relief_work_windows_public_v1'
+)
+WORKLOAD_WINDOWS_CARRIER_CONTRACT = 'team_board_workload_windows_carrier_v1'
+WORKLOAD_WINDOWS_POPULATION_BASIS = 'official_appearance_team_relief_appearances'
+WORKLOAD_WINDOWS_POPULATION_AUTHORITY = 'game_log.appearance_team_id_resolved'
+WORKLOAD_WINDOWS_MEMBERSHIP_AUTHORITY = (
+    'historical_appearance_team_not_current_roster'
+)
+WORKLOAD_WINDOWS_REFERENCE_DATE_POLICY = 'calendar_day_inclusive_through_date_v1'
+
+WORKLOAD_WINDOWS_COMPLETE = 'complete'
+WORKLOAD_WINDOWS_WITHHELD = 'withheld'
+WORKLOAD_WINDOWS_DATA_THROUGH_MISSING = 'data_through_missing'
 
 # Every appearance on this board is owned by the team the pitcher REPRESENTED in
 # that game (GameLog.appearance_team_id, Foundation 1), never by the pitcher's
@@ -91,22 +106,8 @@ def build_public_team_relief_work_payload(team_id):
         return payload
 
     start_date = anchor - timedelta(days=LOOKBACK_DAYS - 1)
-    # Scoped by official game-side ownership, not by who is on the roster today.
-    # This both keeps another club's game out of this board and keeps this
-    # club's own game complete when a pitcher has since left the organization.
-    rows = (
-        GameLog.query
-        .join(Pitcher, Pitcher.id == GameLog.pitcher_id)
-        .add_entity(Pitcher)
-        .filter(
-            GameLog.appearance_team_status == APPEARANCE_TEAM_RESOLVED,
-            GameLog.appearance_team_id == team_id,
-            GameLog.game_date >= start_date,
-            GameLog.game_date <= anchor,
-        )
-        .order_by(desc(GameLog.game_date), asc(Pitcher.full_name), asc(GameLog.id))
-        .all()
-    )
+    rows = _appearance_rows(team_id, start_date, anchor)
+    carrier = _workload_windows_from_rows(rows, anchor)
     relief_rows = [
         (log, pitcher)
         for log, pitcher in rows
@@ -131,11 +132,64 @@ def build_public_team_relief_work_payload(team_id):
             f'{LOOKBACK_DAYS} days through {_month_day(anchor)}; those '
             f'{_appearance_word(unattributed)} are not counted here.'
         )
-    payload['windows'] = {
-        f'window_{window_days}': _window(rows, anchor, window_days)
-        for window_days in WINDOW_DAYS
-    }
+    payload['windows'] = carrier['windows']
     return payload
+
+
+def author_workload_windows(team_id, *, data_through):
+    """Author the exact governed 7/14-day public windows for one publication.
+
+    The caller supplies the immutable publication's represented date. This is
+    the same canonical calculation used by the public relief-work payload; it
+    neither consults the current roster for membership nor reconstructs an old
+    publication. A missing represented date freezes an explicit unavailable
+    carrier rather than manufacturing zeroes.
+    """
+    anchor = _parse_data_through(data_through)
+    if anchor is None:
+        return {
+            'contract': WORKLOAD_WINDOWS_CARRIER_CONTRACT,
+            'status': WORKLOAD_WINDOWS_WITHHELD,
+            'reason_code': WORKLOAD_WINDOWS_DATA_THROUGH_MISSING,
+            'data_through': None,
+            'windows': {},
+        }
+
+    start_date = anchor - timedelta(days=LOOKBACK_DAYS - 1)
+    rows = _appearance_rows(team_id, start_date, anchor)
+    return _workload_windows_from_rows(rows, anchor)
+
+
+def _workload_windows_from_rows(rows, anchor):
+    return {
+        'contract': WORKLOAD_WINDOWS_CARRIER_CONTRACT,
+        'status': WORKLOAD_WINDOWS_COMPLETE,
+        'reason_code': None,
+        'data_through': anchor.isoformat(),
+        'windows': {
+            f'window_{window_days}': _window(rows, anchor, window_days)
+            for window_days in WINDOW_DAYS
+        },
+    }
+
+
+def _appearance_rows(team_id, start_date, anchor):
+    # Scoped by official game-side ownership, not by who is on the roster today.
+    # This both keeps another club's game out of this board and keeps this
+    # club's own game complete when a pitcher has since left the organization.
+    return (
+        GameLog.query
+        .join(Pitcher, Pitcher.id == GameLog.pitcher_id)
+        .add_entity(Pitcher)
+        .filter(
+            GameLog.appearance_team_status == APPEARANCE_TEAM_RESOLVED,
+            GameLog.appearance_team_id == team_id,
+            GameLog.game_date >= start_date,
+            GameLog.game_date <= anchor,
+        )
+        .order_by(desc(GameLog.game_date), asc(Pitcher.full_name), asc(GameLog.id))
+        .all()
+    )
 
 
 def _start_relief_state(log):

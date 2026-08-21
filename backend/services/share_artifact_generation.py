@@ -43,6 +43,7 @@ from services.team_state_payload import (
 from services.team_state_source import gather_team_state_source
 from services.team_board_delta_substrate import (
     build_arm_read_capture,
+    try_build_workload_window_capture,
     try_stamp_prospective_snapshot,
 )
 from utils.db import db
@@ -609,11 +610,16 @@ def generate_team_state_artifact(
         # not backfilled. Capture is fail-closed for comparison but non-blocking for
         # the already-authoritative Share Artifact publication.
         if created_new:
+            workload_window_capture = try_build_workload_window_capture(
+                snapshot=snapshot,
+                team_id=team_id,
+            ) if snapshot is not None else None
             try_stamp_prospective_snapshot(
                 source=source,
                 readiness=readiness,
                 artifact=artifact,
                 arm_read_capture=arm_read_capture or None,
+                workload_window_capture=workload_window_capture,
                 session=session,
             )
         audit = _record_audit(
