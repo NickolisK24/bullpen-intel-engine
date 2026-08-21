@@ -10,6 +10,9 @@ from services.team_board_v2 import (
     CAPABILITY,
     CONTRACT_VERSION,
     RECENT_USAGE_POPULATION_BASIS,
+    RECENTLY_USED_ARMS_CONTRACT,
+    RECENTLY_USED_ARMS_WINDOW_DAYS,
+    RECENTLY_USED_ARMS_WINDOW_POLICY,
     RECENT_RELIEF_WORK_POPULATION_BASIS,
     ROLES_DEPLOYMENT_POPULATION_BASIS,
     ROTATION_IMPACT_POPULATION_BASIS,
@@ -496,6 +499,11 @@ def test_recent_usage_scopes_source_limitations_without_partial_rows():
         'limitations': ['August 16 — relief work is unavailable.'],
         'represented_date': '2026-08-16',
     }
+    assert payload['recently_used_arms']['value'] is None
+    assert payload['recently_used_arms']['reason_code'] == (
+        'recent_relief_work_incomplete'
+    )
+    assert payload['rest_status'] == _board()['rest_status']
 
 
 def test_recent_relief_work_status_recognizes_reconciled_withheld_groups():
@@ -535,6 +543,118 @@ def test_recent_usage_distinguishes_missing_anchor_from_empty_population():
     )
     assert empty_payload['section_status']['recent_usage']['status'] == 'available'
     assert empty_payload['recent_usage']['appearances'] == []
+
+
+def test_recently_used_arms_counts_distinct_current_arms_in_inclusive_three_day_window():
+    board = _board()
+    cards = []
+    for pitcher_id in (7, 8, 9):
+        card = deepcopy(ARM)
+        card['pitcher_id'] = pitcher_id
+        card['name'] = f'Active Arm {pitcher_id}'
+        cards.append(card)
+    off_active = deepcopy(ARM)
+    off_active['pitcher_id'] = 10
+    off_active['name'] = 'Off Active Arm'
+    off_active['roster_status'] = {'status': '15-day injured list'}
+    off_active['visibility'] = {'is_visible_by_default': False}
+    board['groups'][1]['pitchers'] = [*cards, off_active]
+    board['groups'][1]['count'] = 4
+    board['total_pitchers'] = 3
+
+    relief = _relief_work()
+    relief['relief_by_date'] = [
+        {
+            'game_date': '2026-08-16',
+            'available': True,
+            'appearances': [
+                {'pitcher_id': 7},
+                {'pitcher_id': 7},
+                {'pitcher_id': 10},
+            ],
+        },
+        {
+            'game_date': '2026-08-14',
+            'available': True,
+            'appearances': [{'pitcher_id': 8}],
+        },
+        {
+            'game_date': '2026-08-13',
+            'available': True,
+            'appearances': [{'pitcher_id': 9}],
+        },
+    ]
+
+    payload = build_team_board_v2_payload(board, recent_relief_work=relief)
+    read = payload['recently_used_arms']
+
+    assert read == {
+        'contract': RECENTLY_USED_ARMS_CONTRACT,
+        'status': 'available',
+        'reason_code': None,
+        'value': 2,
+        'window_days': RECENTLY_USED_ARMS_WINDOW_DAYS,
+        'window_label': 'Last 3 days',
+        'window_start': '2026-08-14',
+        'through': '2026-08-16',
+        'window_policy': RECENTLY_USED_ARMS_WINDOW_POLICY,
+        'population_basis': ACTIVE_BULLPEN_POPULATION_BASIS,
+        'appearance_population_basis': RECENT_USAGE_POPULATION_BASIS,
+        'summary': (
+            '2 current active bullpen arms appeared in relief during the last 3 days.'
+        ),
+    }
+    assert payload['section_status']['recently_used_arms']['status'] == 'available'
+
+
+def test_recently_used_arms_empty_authoritative_window_is_zero():
+    relief = _relief_work()
+    relief['relief_by_date'] = []
+
+    payload = build_team_board_v2_payload(_board(), recent_relief_work=relief)
+
+    assert payload['recently_used_arms']['value'] == 0
+    assert payload['recently_used_arms']['status'] == 'available'
+    assert payload['recently_used_arms']['summary'].startswith(
+        '0 current active bullpen arms'
+    )
+
+
+@pytest.mark.parametrize(
+    ('mutate', 'reason_code'),
+    [
+        (
+            lambda relief: relief['relief_by_date'].insert(0, {
+                'game_date': '2026-08-17',
+                'available': True,
+                'appearances': [{'pitcher_id': 7}],
+            }),
+            'recent_relief_work_invalid',
+        ),
+        (
+            lambda relief: relief.update({'unattributed_appearance_count': 1}),
+            'recent_relief_work_attribution_incomplete',
+        ),
+        (
+            lambda relief: relief.update({'data_through': '2026-08-15'}),
+            'recent_relief_work_reference_mismatch',
+        ),
+    ],
+)
+def test_recently_used_arms_fails_closed_without_suppressing_other_reads(
+    mutate,
+    reason_code,
+):
+    relief = _relief_work()
+    mutate(relief)
+
+    payload = build_team_board_v2_payload(_board(), recent_relief_work=relief)
+
+    assert payload['recently_used_arms']['value'] is None
+    assert payload['recently_used_arms']['status'] == 'unavailable'
+    assert payload['recently_used_arms']['reason_code'] == reason_code
+    assert payload['rest_status']['available'] is True
+    assert payload['active_bullpen']['arms'][0]['pitcher_id'] == 7
 
 
 def test_workload_overview_projects_only_governed_windows_and_concentration():
@@ -754,6 +874,8 @@ def test_route_composes_each_owner_once_without_frontend_derivation(client, monk
     assert calls == {'board': 1, 'relief': 1, 'game': 1, 'transactions': 1}
     assert payload['contract_version'] == CONTRACT_VERSION
     assert payload['summary'] == TEAM_STATE['summary']
+    assert payload['recently_used_arms']['value'] == 1
+    assert payload['recently_used_arms']['window_label'] == 'Last 3 days'
 
 
 def test_route_scopes_optional_failure_without_destroying_core(client, monkeypatch):

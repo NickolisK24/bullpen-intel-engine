@@ -7,6 +7,7 @@ consumer. It does not query, classify, score, publish, or persist anything.
 from __future__ import annotations
 
 from copy import deepcopy
+from datetime import date, timedelta
 
 from services.pitcher_public_labels import (
     PUBLIC_ROLE_COMPOSITION_KEYS,
@@ -23,6 +24,9 @@ STATUS_UNAVAILABLE = 'unavailable'
 
 ACTIVE_BULLPEN_POPULATION_BASIS = 'current_scored_bullpen_eligible_pitchers'
 RECENT_USAGE_POPULATION_BASIS = 'official_recent_team_relief_appearance_rows'
+RECENTLY_USED_ARMS_CONTRACT = 'team_board_recently_used_arms_v1'
+RECENTLY_USED_ARMS_WINDOW_DAYS = 3
+RECENTLY_USED_ARMS_WINDOW_POLICY = 'calendar_day_inclusive_through_date_v1'
 WORKLOAD_OVERVIEW_POPULATION_BASIS = (
     'official_team_relief_appearances_and_current_bullpen_eligible_pitchers'
 )
@@ -309,6 +313,124 @@ def _recent_usage_status(relief_work, error, represented_date):
     )
 
 
+def _date_value(value):
+    if isinstance(value, date):
+        return value
+    if not value:
+        return None
+    try:
+        return date.fromisoformat(str(value))
+    except (TypeError, ValueError):
+        return None
+
+
+def _recently_used_arms(arms, relief_work, active_status, error, represented_date):
+    """Count current active arms in the governed three-day relief chronology.
+
+    The population comes from the already-built active Team Board projection;
+    appearances come from the existing official Recent Relief Work read. This
+    composer intersects those authorities and performs no query or baseball
+    reclassification of its own.
+    """
+    through = _date_value(represented_date)
+    window_start = (
+        through - timedelta(days=RECENTLY_USED_ARMS_WINDOW_DAYS - 1)
+        if through is not None
+        else None
+    )
+    read = {
+        'contract': RECENTLY_USED_ARMS_CONTRACT,
+        'status': STATUS_UNAVAILABLE,
+        'reason_code': None,
+        'value': None,
+        'window_days': RECENTLY_USED_ARMS_WINDOW_DAYS,
+        'window_label': f'Last {RECENTLY_USED_ARMS_WINDOW_DAYS} days',
+        'window_start': window_start.isoformat() if window_start else None,
+        'through': through.isoformat() if through else None,
+        'window_policy': RECENTLY_USED_ARMS_WINDOW_POLICY,
+        'population_basis': ACTIVE_BULLPEN_POPULATION_BASIS,
+        'appearance_population_basis': RECENT_USAGE_POPULATION_BASIS,
+        'summary': None,
+    }
+
+    if through is None:
+        read['reason_code'] = 'represented_date_unavailable'
+        return read
+    if active_status.get('status') != STATUS_AVAILABLE:
+        read['reason_code'] = 'active_bullpen_population_unavailable'
+        return read
+    if error or not isinstance(relief_work, dict):
+        read['reason_code'] = 'recent_relief_work_unavailable'
+        return read
+    if _date_value(relief_work.get('data_through')) != through:
+        read['reason_code'] = 'recent_relief_work_reference_mismatch'
+        return read
+    unattributed = relief_work.get('unattributed_appearance_count', 0)
+    if type(unattributed) is not int or unattributed < 0:
+        read['reason_code'] = 'recent_relief_work_invalid'
+        return read
+    if unattributed > 0:
+        read['reason_code'] = 'recent_relief_work_attribution_incomplete'
+        return read
+
+    active_id_values = [
+        arm.get('pitcher_id') if isinstance(arm, dict) else None
+        for arm in arms
+    ]
+    if any(type(pitcher_id) is not int or pitcher_id <= 0 for pitcher_id in active_id_values):
+        read['reason_code'] = 'active_bullpen_population_invalid'
+        return read
+    active_ids = set(active_id_values)
+
+    groups = relief_work.get('relief_by_date')
+    if not isinstance(groups, list):
+        read['reason_code'] = 'recent_relief_work_invalid'
+        return read
+
+    used_ids = set()
+    for group in groups:
+        if not isinstance(group, dict):
+            read['reason_code'] = 'recent_relief_work_invalid'
+            return read
+        game_date = _date_value(group.get('game_date'))
+        if game_date is None or game_date > through:
+            read['reason_code'] = 'recent_relief_work_invalid'
+            return read
+        if game_date < window_start:
+            continue
+        if group.get('unavailable') is True or group.get('available') is not True:
+            read['reason_code'] = 'recent_relief_work_incomplete'
+            return read
+        appearances = group.get('appearances')
+        if not isinstance(appearances, list):
+            read['reason_code'] = 'recent_relief_work_invalid'
+            return read
+        for appearance in appearances:
+            pitcher_id = (
+                appearance.get('pitcher_id')
+                if isinstance(appearance, dict)
+                else None
+            )
+            if type(pitcher_id) is not int or pitcher_id <= 0:
+                read['reason_code'] = 'recent_relief_work_invalid'
+                return read
+            if pitcher_id in active_ids:
+                used_ids |= {pitcher_id}
+
+    value = len(used_ids)
+    arm_word = 'arm' if value == 1 else 'arms'
+    read.update({
+        'status': STATUS_AVAILABLE,
+        'reason_code': None,
+        'value': value,
+        'summary': (
+            f'{value} current active bullpen {arm_word} appeared in relief '
+            f'during the last {RECENTLY_USED_ARMS_WINDOW_DAYS} days.'
+        ),
+    })
+    return read
+
+
 def _workload_overview(board, relief_work):
     """Project only the already-public relief windows and concentration read."""
     source_windows = (
@@ -457,6 +579,14 @@ def build_team_board_v2_payload(
     rotation = deepcopy(board.get('rotation_support_pressure') or {})
     context = deepcopy(game_context) if isinstance(game_context, dict) else None
     performance_read = deepcopy(performance) if isinstance(performance, dict) else None
+    active_status = _active_status(board, represented_date)
+    recently_used_arms = _recently_used_arms(
+        arms,
+        relief_work,
+        active_status,
+        errors.get('recent_relief_work'),
+        represented_date,
+    )
 
     section_status = {
         'team_state': _section_status(
@@ -465,7 +595,7 @@ def build_team_board_v2_payload(
             limitations=[team_state.get('unavailable_message')] if team_state.get('unavailable_message') else [],
             represented_date=team_state.get('data_through') or represented_date,
         ),
-        'active_bullpen': _active_status(board, represented_date),
+        'active_bullpen': active_status,
         'rest_status': _section_status(
             STATUS_AVAILABLE if (board.get('rest_status') or {}).get('available') is True else STATUS_UNAVAILABLE,
             reason_code=(board.get('rest_status') or {}).get('reason_code'),
@@ -475,6 +605,11 @@ def build_team_board_v2_payload(
             relief_work,
             errors.get('recent_relief_work'),
             represented_date,
+        ),
+        'recently_used_arms': _section_status(
+            recently_used_arms['status'],
+            reason_code=recently_used_arms['reason_code'],
+            represented_date=recently_used_arms['through'],
         ),
         'workload_overview': _workload_overview_status(
             board,
@@ -514,6 +649,7 @@ def build_team_board_v2_payload(
         },
         'rest_status': deepcopy(board.get('rest_status') or {}),
         'recent_usage': _recent_usage(relief_work),
+        'recently_used_arms': recently_used_arms,
         'workload_overview': _workload_overview(board, relief_work),
         'roles_deployment': roles_deployment,
         'rotation_impact': {
@@ -538,6 +674,9 @@ __all__ = [
     'CAPABILITY',
     'CONTRACT_VERSION',
     'RECENT_USAGE_POPULATION_BASIS',
+    'RECENTLY_USED_ARMS_CONTRACT',
+    'RECENTLY_USED_ARMS_WINDOW_DAYS',
+    'RECENTLY_USED_ARMS_WINDOW_POLICY',
     'ROLES_DEPLOYMENT_POPULATION_BASIS',
     'WORKLOAD_OVERVIEW_POPULATION_BASIS',
     'RECENT_RELIEF_WORK_POPULATION_BASIS',

@@ -69,6 +69,20 @@ export function teamBoardV2Fixture(board, overrides = {}) {
       represented_date: representedDate,
       limitations: [],
     },
+    recently_used_arms: {
+      contract: 'team_board_recently_used_arms_v1',
+      status: 'unavailable',
+      reason_code: 'recent_relief_work_unavailable',
+      value: null,
+      window_days: 3,
+      window_label: 'Last 3 days',
+      window_start: null,
+      through: representedDate,
+      window_policy: 'calendar_day_inclusive_through_date_v1',
+      population_basis: 'current_scored_bullpen_eligible_pitchers',
+      appearance_population_basis: 'official_recent_team_relief_appearance_rows',
+      summary: null,
+    },
     workload_overview: {
       population_basis: 'official_team_relief_appearances_and_current_bullpen_eligible_pitchers',
       window_population_basis: 'official_appearance_team_relief_appearances',
@@ -124,6 +138,12 @@ export function teamBoardV2Fixture(board, overrides = {}) {
       recent_usage: {
         status: 'available',
         reason_code: null,
+        limitations: [],
+        represented_date: representedDate,
+      },
+      recently_used_arms: {
+        status: 'unavailable',
+        reason_code: 'recent_relief_work_unavailable',
         limitations: [],
         represented_date: representedDate,
       },
