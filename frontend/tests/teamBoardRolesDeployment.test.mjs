@@ -14,7 +14,7 @@ const server = await createServer({
 
 after(async () => server.close())
 
-const { default: TeamBoardRolesDeployment, getRoleCompositionRows } = await server.ssrLoadModule(
+const { default: TeamBoardRolesDeployment, getRoleCompositionRows, getDeploymentRows } = await server.ssrLoadModule(
   '/src/components/bullpen/board/TeamBoardRolesDeployment.jsx',
 )
 
@@ -28,6 +28,15 @@ const rolesDeployment = {
     { role_key: 'trust_arm', label: 'Trusted Arm', arm_count: 1 },
     { role_key: 'limited_read', label: 'Role Unclear', arm_count: 1 },
   ],
+  deployment_profile: {
+    status: 'complete',
+    summary: 'Two arms recorded a save or hold and one arm worked multiple innings.',
+    profiles: [{
+      pitcher_id: 41,
+      pitcher_name: 'Example Pitcher',
+      summary: 'Example Pitcher recorded 0 saves, 2 holds, and worked multiple innings in 1 of 4 relief appearances with recorded outs during the 14-day window.',
+    }],
+  },
 }
 
 const read = {
@@ -69,18 +78,20 @@ test('missing role stays neutral and is not rewritten as a governed role', () =>
   assert.equal(html.includes('Role Unclear'), false)
 })
 
-test('role composition remains team-level and exposes no unsupported deployment intelligence', () => {
+test('observed deployment renders backend-authored prose verbatim without role inference', () => {
   const html = renderRoles({ read })
+  const deploymentRows = getDeploymentRows(rolesDeployment)
 
-  for (const forbidden of [
-    'leverage', 'closer hierarchy', 'manager', 'preferred', 'role movement',
-    'save', 'hold', 'inning entered', 'multi-inning',
-  ]) {
+  assert.deepEqual(deploymentRows, [{
+    key: 'pitcher-41',
+    name: 'Example Pitcher',
+    summary: rolesDeployment.deployment_profile.profiles[0].summary,
+  }])
+  assert.ok(html.includes(rolesDeployment.deployment_profile.summary))
+  assert.ok(html.includes(rolesDeployment.deployment_profile.profiles[0].summary))
+  for (const forbidden of ['leverage', 'closer hierarchy', 'manager', 'preferred', 'role movement']) {
     assert.equal(html.toLowerCase().includes(forbidden.toLowerCase()), false, forbidden)
   }
-  assert.equal(html.includes('Example Pitcher'), false)
-  assert.ok(html.includes('Deployment detail unavailable'))
-  assert.ok(html.includes('Detailed team deployment context is not published for Team Board.'))
 })
 
 test('role labels stay neutral and role composition is never rebuilt in the browser', async () => {
@@ -93,7 +104,7 @@ test('role labels stay neutral and role composition is never rebuilt in the brow
   for (const forbiddenClass of ['state-clear', 'state-caution', 'state-constrained', 'rounded-full', 'role-marker']) {
     assert.equal(componentSource.includes(forbiddenClass), false, forbiddenClass)
   }
-  for (const forbiddenCalculation of ['.reduce(', 'saves', 'holds', 'leverage_share', 'multi_inning', 'role_movement']) {
+  for (const forbiddenCalculation of ['.reduce(', 'Math.', 'leverage_share', 'role_movement']) {
     assert.equal(componentSource.includes(forbiddenCalculation), false, forbiddenCalculation)
   }
 })

@@ -118,13 +118,13 @@ def _active_status(board, represented_date):
     return _section_status(STATUS_AVAILABLE, represented_date=represented_date)
 
 
-def _roles_deployment(arms, represented_date):
-    """Summarize final public role reads without reclassifying any pitcher.
+def _roles_deployment(arms, represented_date, relief_work=None):
+    """Combine governed role reads with observed public deployment evidence.
 
     The active-arm projection already carries the output of the one public role
     authority. This composition only counts its governed keys in that owner's
-    stable display order. Unsupported deployment domains are intentionally not
-    represented in this contract.
+    stable display order. Deployment is copied from the canonical Recent Relief
+    Work owner; this composer performs no appearance aggregation or role inference.
     """
     counts = {key: 0 for key in PUBLIC_ROLE_COMPOSITION_KEYS}
     missing_role_count = 0
@@ -146,12 +146,19 @@ def _roles_deployment(arms, represented_date):
         for key in PUBLIC_ROLE_COMPOSITION_KEYS
         if counts[key] > 0
     ]
+    deployment = (
+        deepcopy(relief_work.get('deployment_profile'))
+        if isinstance(relief_work, dict)
+        and isinstance(relief_work.get('deployment_profile'), dict)
+        else None
+    )
     return {
         'population_basis': ROLES_DEPLOYMENT_POPULATION_BASIS,
         'arm_count': len(arms),
         'role_arm_count': len(arms) - missing_role_count,
         'missing_role_count': missing_role_count,
         'roles': roles,
+        'deployment_profile': deployment,
         'represented_date': represented_date,
     }
 
@@ -159,12 +166,26 @@ def _roles_deployment(arms, represented_date):
 def _roles_deployment_status(board, roles_deployment, represented_date):
     active_status = _active_status(board, represented_date)
     missing_role_count = roles_deployment['missing_role_count']
-    if active_status['status'] == STATUS_AVAILABLE and missing_role_count == 0:
+    deployment = roles_deployment.get('deployment_profile')
+    deployment_available = (
+        isinstance(deployment, dict)
+        and deployment.get('status') == 'complete'
+    )
+    if (
+        active_status['status'] == STATUS_AVAILABLE
+        and missing_role_count == 0
+        and deployment_available
+        and not deployment.get('limitations')
+    ):
         return _section_status(STATUS_AVAILABLE, represented_date=represented_date)
 
     limitations = list(active_status.get('limitations') or [])
     if missing_role_count:
         limitations.append('Some current arms do not have a public role read.')
+    if not deployment_available:
+        limitations.append('Observed deployment detail is unavailable.')
+    elif deployment.get('limitations'):
+        limitations.extend(deployment.get('limitations') or [])
     return _section_status(
         STATUS_PARTIAL,
         reason_code='role_composition_limited',
@@ -411,9 +432,9 @@ def build_team_board_v2_payload(
         or freshness.get('latest_workload_date')
     )
     arms = _active_arms(board)
-    roles_deployment = _roles_deployment(arms, represented_date)
-    rotation = deepcopy(board.get('rotation_support_pressure') or {})
     relief_work = deepcopy(recent_relief_work) if isinstance(recent_relief_work, dict) else None
+    roles_deployment = _roles_deployment(arms, represented_date, relief_work)
+    rotation = deepcopy(board.get('rotation_support_pressure') or {})
     context = deepcopy(game_context) if isinstance(game_context, dict) else None
 
     section_status = {

@@ -317,6 +317,18 @@ ROTATION_ROSTER_INTELLIGENCE_PATHS = (
     'backend/services/share_artifact_generation.py',
 )
 
+# Roles & Deployment Intelligence, August 20 2026. The canonical public relief
+# owner may add descriptive 14-day save/hold/finish/multi-inning profiles, and
+# Share Artifact generation may hand their already-frozen carrier to the
+# existing prospective delta sidecar. No inning-band publication, leverage
+# promotion, role-title inference, historical replay, or reader delta is
+# authorized. Decision authority:
+# docs/decisions/2026-08-20-roles-deployment-intelligence-authority.md.
+ROLES_DEPLOYMENT_INTELLIGENCE_PATHS = (
+    'backend/services/public_team_relief_work.py',
+    'backend/services/share_artifact_generation.py',
+)
+
 
 def normalize(path):
     """Repository-relative path with forward slashes and no surrounding space."""

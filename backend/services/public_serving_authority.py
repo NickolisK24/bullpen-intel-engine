@@ -49,13 +49,20 @@ from services.pitcher_role_authority import author_role_read_labels, role_logs_b
 from services.public_fatigue_view import public_workload_facts
 from services.public_roster_readiness import apply_public_roster_readiness, build_public_roster_readiness
 from services.public_team_relief_work import (
+    DEPLOYMENT_PROFILE_CARRIER_CONTRACT,
+    DEPLOYMENT_PROFILE_MEMBERSHIP_AUTHORITY,
+    DEPLOYMENT_PROFILE_METHOD_VERSION,
+    DEPLOYMENT_PROFILE_POPULATION_AUTHORITY,
+    DEPLOYMENT_PROFILE_POPULATION_BASIS,
+    DEPLOYMENT_PROFILE_PUBLIC_CONTRACT_VERSION,
+    DEPLOYMENT_PROFILE_REFERENCE_DATE_POLICY,
     WORKLOAD_WINDOWS_MEMBERSHIP_AUTHORITY,
     WORKLOAD_WINDOWS_METHOD_VERSION,
     WORKLOAD_WINDOWS_POPULATION_AUTHORITY,
     WORKLOAD_WINDOWS_POPULATION_BASIS,
     WORKLOAD_WINDOWS_PUBLIC_CONTRACT_VERSION,
     WORKLOAD_WINDOWS_REFERENCE_DATE_POLICY,
-    author_workload_windows,
+    author_public_team_relief_authority,
 )
 from services.roster_authority import build_roster_authority
 from services.roster_authority import VERSION as ROSTER_AUTHORITY_VERSION
@@ -327,13 +334,15 @@ def build_frozen_team_board_package(dashboard_payload):
             freshness=deepcopy(freshness),
             roster_authority=deepcopy(roster_authority),
         )
-        workload_windows = author_workload_windows(
+        relief_authority = author_public_team_relief_authority(
             team_id,
             data_through=(
                 freshness.get('data_through')
                 or freshness.get('latest_workload_date')
             ),
         )
+        workload_windows = relief_authority['workload_windows']
+        deployment_profile = relief_authority['deployment_profile']
         rotation_support_pressure = _support_for_team(
             payload, 'rotation_support_pressure', team_id
         )
@@ -379,6 +388,22 @@ def build_frozen_team_board_package(dashboard_payload):
                 },
                 'reference_date_policy': WORKLOAD_WINDOWS_REFERENCE_DATE_POLICY,
                 'data_through': workload_windows.get('data_through'),
+            },
+            'deployment_profile': deepcopy(deployment_profile),
+            'deployment_profile_authority': {
+                'method_version': DEPLOYMENT_PROFILE_METHOD_VERSION,
+                'public_contract_version': (
+                    DEPLOYMENT_PROFILE_PUBLIC_CONTRACT_VERSION
+                ),
+                'carrier_contract_version': DEPLOYMENT_PROFILE_CARRIER_CONTRACT,
+                'team_board_package_contract': TEAM_BOARD_PACKAGE_CONTRACT,
+                'population_basis': {
+                    'basis': DEPLOYMENT_PROFILE_POPULATION_BASIS,
+                    'population_authority': DEPLOYMENT_PROFILE_POPULATION_AUTHORITY,
+                    'membership_authority': DEPLOYMENT_PROFILE_MEMBERSHIP_AUTHORITY,
+                },
+                'reference_date_policy': DEPLOYMENT_PROFILE_REFERENCE_DATE_POLICY,
+                'data_through': deployment_profile.get('data_through'),
             },
             'rest_status': deepcopy(rest_status),
             'rest_status_authority': {
