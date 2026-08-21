@@ -28,10 +28,6 @@ const staticFetchState = (data) => ({
   refetch: () => {},
 })
 
-// Tonight's Bullpen Board lives inside the Bullpen workflow. It receives the
-// shared teams fetch so it does not double-load the team list, manages its own
-// single-team selection, and renders the grouped board for that team. A
-// `requestedTeam` deep-link (e.g. from the landscape drilldown) preselects a team.
 export default function TonightsBullpenBoard({
   teams,
   requestedTeam = null,
@@ -62,8 +58,6 @@ export default function TonightsBullpenBoard({
     () => (selectedTeam == null ? Promise.resolve(null) : getTeamChanges(selectedTeam)),
     [selectedTeam],
   )
-  // SC-03A cutover: the Share Card is sourced from the canonical, published,
-  // integrity-verified immutable artifact (never composed client-side).
   const shareCard = useFetch(
     () => (selectedTeam == null ? Promise.resolve(null) : getTeamShareCard(selectedTeam)),
     [selectedTeam],
@@ -92,14 +86,9 @@ export default function TonightsBullpenBoard({
     team: boardState.data?.team,
     cta: { href: '#pitcher-lanes', label: 'Review pitcher lanes' },
     density: 'compact',
-    // Rotation Impact now owns this Team Board fact family through v2. Keep
-    // the legacy operating-state adapter available to its other consumers,
-    // but do not repeat its browser-authored starter interpretation here.
     includeRotationSupport: false,
   })
   const normalizedRequestedSection = String(requestedSection || '').replace(/^#/, '')
-  // Canonical artifact-backed card; null when no published artifact exists, which
-  // drives the share menu's controlled unavailable state (no legacy fallback).
   const teamCard = buildTeamShareCardFromArtifact(shareCard.data)
   const teamLinkFallbackPath = buildTeamBoardHref(selectedTeamRecord, { section: normalizedRequestedSection })
   const teamDestinationUrl = teamCard?.destinationUrl
@@ -148,14 +137,8 @@ export default function TonightsBullpenBoard({
       ) : boardState.error ? (
         <ErrorState message={boardState.error} onRetry={boardState.refetch} />
       ) : (
-        // Keyed by team so a team switch fully remounts the answer: no prior
-        // team's state, distribution, evidence, or disclosure state can linger.
         <div key={selectedTeam} className="flex flex-col gap-6 2xl:flex-row 2xl:items-start">
           <div className="min-w-0 flex-1">
-            {/* TB-01 adopts only the v2-backed answer. Every section below this
-                block remains on its legacy owner until its migration package.
-                The former titleOwnedByPage operating-card handoff is retired:
-                the route owns the H1 and this block owns the selected-club H2. */}
             <div className="mb-4">
               <TeamBoardAnswerBlock
                 read={teamBoardAnswerRead}
@@ -181,27 +164,42 @@ export default function TonightsBullpenBoard({
               onRetry={teamBoardV2State.refetch}
               onSelectPitcher={onSelectPitcher}
             />
-            <TeamBoardRecentUsage
-              read={teamBoardRead}
-              loading={teamBoardV2State.loading}
-              error={teamBoardV2State.error}
-              onRetry={teamBoardV2State.refetch}
-              onSelectPitcher={onSelectPitcher}
-            />
-            <SectionPair label="Rest and workload">
-              <TeamBoardRestStatus
+
+            <div
+              className="relative left-1/2 mt-section-lg w-screen -translate-x-1/2 border-y border-line-subtle bg-surface-nav/35 px-4 py-section tablet:left-auto tablet:w-auto tablet:translate-x-0 tablet:rounded-sm tablet:border tablet:px-section tablet:py-section-lg"
+              role="group"
+              aria-label="Current workload picture"
+            >
+              <div className="mb-section border-b border-line-default pb-panel">
+                <div className="type-overline text-brand-gold">Current workload picture</div>
+                <p className="type-compact mt-meta max-w-reading text-text-tertiary">
+                  Recent use, recovery runway, and the bullpen&apos;s accumulated group burden.
+                </p>
+              </div>
+
+              <TeamBoardRecentUsage
                 read={teamBoardRead}
                 loading={teamBoardV2State.loading}
                 error={teamBoardV2State.error}
                 onRetry={teamBoardV2State.refetch}
+                onSelectPitcher={onSelectPitcher}
               />
-              <TeamBoardWorkloadOverview
-                read={teamBoardRead}
-                loading={teamBoardV2State.loading}
-                error={teamBoardV2State.error}
-                onRetry={teamBoardV2State.refetch}
-              />
-            </SectionPair>
+              <SectionPair label="Rest and workload" className="mt-section-lg border-t border-line-default pt-section">
+                <TeamBoardRestStatus
+                  read={teamBoardRead}
+                  loading={teamBoardV2State.loading}
+                  error={teamBoardV2State.error}
+                  onRetry={teamBoardV2State.refetch}
+                />
+                <TeamBoardWorkloadOverview
+                  read={teamBoardRead}
+                  loading={teamBoardV2State.loading}
+                  error={teamBoardV2State.error}
+                  onRetry={teamBoardV2State.refetch}
+                />
+              </SectionPair>
+            </div>
+
             <SectionPair label="Roles and performance" ratio="7:5">
               <TeamBoardRolesDeployment
                 read={teamBoardRead}
