@@ -17,6 +17,7 @@ from types import MappingProxyType
 from typing import Any, Mapping
 
 from models.dashboard_snapshot import DashboardSnapshot
+from models.share_artifact import LIFECYCLE_PUBLISHED, ShareArtifact
 from services.availability_snapshot import CURRENT_AVAILABILITY_MODE
 from services.pitcher_public_labels import (
     ARM_READ_METHOD_VERSION,
@@ -1690,7 +1691,51 @@ def resolve_latest_team_state_comparison(*, team_id, session=None) -> dict:
     comparable. If none qualifies, the nearest fail-closed result is returned.
     """
     session = session or db.session
-    current = get_latest_snapshot(team_id=team_id, session=session)
+    snapshots = (
+        session.query(DashboardSnapshot)
+        .filter(DashboardSnapshot.snapshot_type == SNAPSHOT_TYPE)
+        .filter(DashboardSnapshot.status == 'ready')
+        .filter(DashboardSnapshot.payload_version == SNAPSHOT_PAYLOAD_VERSION)
+        .filter(DashboardSnapshot.published_at.isnot(None))
+        .filter(DashboardSnapshot.source == f'{SNAPSHOT_SOURCE_PREFIX}{int(team_id)}')
+        .order_by(
+            DashboardSnapshot.data_through.desc(),
+            DashboardSnapshot.id.desc(),
+        )
+        .all()
+    )
+    artifact_ids = {
+        _mapping(_payload(snapshot).get('source')).get('artifact_id')
+        for snapshot in snapshots
+    }
+    artifact_ids.discard(None)
+    active_artifact_ids = set()
+    if artifact_ids:
+        active_artifact_ids = {
+            artifact_id
+            for artifact_id, in (
+                session.query(ShareArtifact.id)
+                .filter(ShareArtifact.id.in_(artifact_ids))
+                .filter(ShareArtifact.lifecycle_state == LIFECYCLE_PUBLISHED)
+                .all()
+            )
+        }
+    latest_represented_date = (
+        _as_date(getattr(snapshots[0], 'data_through', None))
+        if snapshots else None
+    )
+    active_snapshots = [
+        snapshot
+        for snapshot in snapshots
+        if _mapping(_payload(snapshot).get('source')).get('artifact_id')
+        in active_artifact_ids
+    ]
+    current = next((
+        snapshot
+        for snapshot in active_snapshots
+        if _as_date(getattr(snapshot, 'data_through', None))
+        == latest_represented_date
+    ), None)
     if current is None:
         return compare_snapshots(None, None)
 
@@ -1699,19 +1744,15 @@ def resolve_latest_team_state_comparison(*, team_id, session=None) -> dict:
     if current_date is None:
         return nearest_withheld
 
-    candidates = (
-        session.query(DashboardSnapshot)
-        .filter(DashboardSnapshot.snapshot_type == SNAPSHOT_TYPE)
-        .filter(DashboardSnapshot.status == 'ready')
-        .filter(DashboardSnapshot.payload_version == SNAPSHOT_PAYLOAD_VERSION)
-        .filter(DashboardSnapshot.published_at.isnot(None))
-        .filter(DashboardSnapshot.source == f'{SNAPSHOT_SOURCE_PREFIX}{int(team_id)}')
-        .filter(DashboardSnapshot.data_through < current_date)
-        .order_by(
-            DashboardSnapshot.data_through.desc(),
-            DashboardSnapshot.id.desc(),
-        )
-    )
+    candidates = []
+    for snapshot in active_snapshots:
+        represented_date = _as_date(getattr(snapshot, 'data_through', None))
+        if (
+            snapshot.id != current.id
+            and represented_date is not None
+            and represented_date < current_date
+        ):
+            candidates.append(snapshot)
     for previous in candidates:
         result = compare_snapshots(previous, current)
         if nearest_withheld['domains']['team_state']['status'] == PREVIOUS_MISSING:

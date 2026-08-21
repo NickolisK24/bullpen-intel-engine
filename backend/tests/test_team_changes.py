@@ -13,6 +13,7 @@ from models.game_log import GameLog
 from models.pitcher import Pitcher
 from models.postgame_processed_game import PostgameProcessedGame
 from models.scheduled_game import ScheduledGame
+from models.share_artifact import ShareArtifact
 from models.sync_run import SyncRun
 import models.prospect  # noqa: F401  (register on db.metadata)
 from services.availability import ACTIVE_WINDOW_DAYS
@@ -191,11 +192,28 @@ def _team_state_sidecar(
         'population_authority': 'resolve_readiness_population',
         'membership_authority': 'resolve_active_bullpen_membership',
     }
+    published_at = datetime.combine(represented_date, datetime.min.time())
+    db.session.add(ShareArtifact(
+        id=artifact_id,
+        public_id=f'team-state-{artifact_id}',
+        artifact_type='team_state',
+        render_version='team-state-1.2.0',
+        team_id=team_id,
+        source_snapshot_id=1000 + artifact_id,
+        product_date=represented_date,
+        lifecycle_state='published',
+        payload={},
+        trust_metadata={},
+        equivalence_key=f'team-state-{artifact_id}',
+        integrity_hash=f'integrity-{artifact_id}',
+        source='test',
+        published_at=published_at,
+    ))
     row = DashboardSnapshot(
         snapshot_type=delta_substrate.SNAPSHOT_TYPE,
         status='ready',
         is_published=False,
-        published_at=datetime.combine(represented_date, datetime.min.time()),
+        published_at=published_at,
         payload_version=delta_substrate.SNAPSHOT_PAYLOAD_VERSION,
         data_through=represented_date,
         snapshot_generated_at=datetime.combine(represented_date, datetime.min.time()),
@@ -262,6 +280,8 @@ class TestTeamChangesEndpoint:
         (
             ('fresh', 'Fresh', 'stretched', 'Stretched'),
             ('stretched', 'Stretched', 'vulnerable', 'Vulnerable'),
+            ('vulnerable', 'Vulnerable', 'stretched', 'Stretched'),
+            ('stretched', 'Stretched', 'fresh', 'Fresh'),
             ('vulnerable', 'Vulnerable', 'fresh', 'Fresh'),
         ),
     )
