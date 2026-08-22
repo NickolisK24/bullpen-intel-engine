@@ -1333,6 +1333,15 @@ def test_approved_public_consumers_use_appearance_team_authority_only():
         assert inference not in panel, inference
 
 
+def test_team_game_split_derivation_uses_canonical_appearance_team_authority():
+    service = (
+        REPO_ROOT_FOR_DIFF / 'backend/services/team_game_pitching_splits.py'
+    ).read_text(encoding='utf-8')
+
+    assert "resolve_appearance_team(entry['log'])" in service
+    assert "team_id = entry['pitcher'].team_id" not in service
+
+
 def test_public_vocabulary_files_read_no_appearance_team_authority():
     """The VOC-001 allowlist is an exemption from the path guard, not its purpose.
 

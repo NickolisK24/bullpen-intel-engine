@@ -70,6 +70,9 @@ def _add_log(
         mlb_game_pk=game_pk,
         game_date=game_date,
         game_type='R',
+        appearance_team_id=pitcher.team_id,
+        appearance_team_status=GameLog.APPEARANCE_TEAM_RESOLVED,
+        appearance_team_source='test:schedule',
         games_started=games_started,
         innings_pitched=outs / 3.0,
         innings_pitched_outs=outs,
@@ -80,6 +83,34 @@ def _add_log(
     db.session.add(log)
     db.session.flush()
     return log
+
+
+def test_split_derivation_uses_historical_appearance_team_after_roster_move(app):
+    with app.app_context():
+        game_day = date(2026, 6, 9)
+        _seed_game(7000, game_day)
+        starter = _add_pitcher(2991, 116, 'Moved Starter')
+        reliever = _add_pitcher(2992, 116, 'Moved Reliever')
+        _add_log(starter, 7000, game_day, games_started=1, outs=18, pitches=90,
+                 batters_faced=23, balls=34)
+        _add_log(reliever, 7000, game_day, games_started=0, outs=9, pitches=31,
+                 batters_faced=10, balls=11)
+        db.session.commit()
+
+        starter.team_id = 142
+        reliever.team_id = 142
+        db.session.commit()
+
+        split_service.recompute_team_game_pitching_splits_for_game(7000)
+        db.session.commit()
+
+        historical = _split(116, 7000)
+        opposing = _split(142, 7000)
+        assert historical.starter_pitcher_id == starter.id
+        assert historical.starter_outs_recorded == 18
+        assert historical.bullpen_outs_recorded == 9
+        assert opposing.starter_identity_status == TeamGamePitchingSplit.STARTER_UNKNOWN
+        assert opposing.total_team_outs is None
 
 
 def _seed_game(

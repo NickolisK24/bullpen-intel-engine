@@ -549,6 +549,19 @@ def test_rotation_roster_intelligence_exception_is_exact_and_decision_linked():
     assert 'No historical recomputation or backfill is authorized.' in decision
 
 
+def test_rotation_impact_completeness_decision_pins_authority_boundary():
+    decision = (
+        Path(__file__).resolve().parents[2]
+        / 'docs/decisions/2026-08-21-rotation-impact-completeness.md'
+    ).read_text(encoding='utf-8')
+
+    assert 'inclusive seven-calendar-day interval `[D-6, D]`' in decision
+    assert '`GameLog.appearance_team_id` authority' in decision
+    assert 'Mutable `Pitcher.team_id` has no role in historical attribution.' in decision
+    assert 'Source notes remain present in `source_limitations`' in decision
+    assert 'They no longer force a partial section' in decision
+
+
 def test_roles_deployment_intelligence_exception_is_exact_and_decision_linked():
     approved = freeze_policy.ROLES_DEPLOYMENT_INTELLIGENCE_PATHS
     assert approved == (

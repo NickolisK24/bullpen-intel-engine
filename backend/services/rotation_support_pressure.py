@@ -869,12 +869,12 @@ def _split_limitations(exclusion_reasons, limitation_reasons):
         _append_unique(limitations, INCOMPLETE_HISTORICAL_ATTRIBUTION_LIMITATION)
     if REASON_INCOMPLETE_STARTER_IDENTIFICATION in limitation_reasons:
         _append_unique(limitations, INCOMPLETE_STARTER_IDENTIFICATION_LIMITATION)
+    if REASON_OPENER_BULK_HANDLING in limitation_reasons:
+        _append_unique(limitations, OPENER_BULK_LIMITATION)
     if REASON_PARTIAL_SOURCE_COVERAGE in limitation_reasons:
         _append_unique(limitations, PARTIAL_SOURCE_COVERAGE_LIMITATION)
     if REASON_MATERIAL_EXCLUSION_SHARE in limitation_reasons:
         _append_unique(limitations, MATERIAL_EXCLUSION_LIMITATION)
-    for limitation in SPLIT_SOURCE_LIMITATIONS:
-        _append_unique(limitations, limitation)
     return limitations
 
 

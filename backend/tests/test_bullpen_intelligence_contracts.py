@@ -448,8 +448,8 @@ def test_source_limitations_and_definitions_survive_in_final_board_payload(clien
 
     assert ROTATION_HISTORICAL_ATTRIBUTION_LIMITATION in rotation['source_limitations']
     assert OPENER_BULK_LIMITATION in rotation['source_limitations']
-    assert ROTATION_HISTORICAL_ATTRIBUTION_LIMITATION in rotation['limitations']
-    assert OPENER_BULK_LIMITATION in rotation['limitations']
+    assert ROTATION_HISTORICAL_ATTRIBUTION_LIMITATION not in rotation['limitations']
+    assert OPENER_BULK_LIMITATION not in rotation['limitations']
     assert all('currently assigned pitchers' not in item for item in rotation['source_limitations'])
     assert STABILITY_CURRENT_ASSIGNMENT_LIMITATION in stability['source_limitations']
     assert STABILITY_USAGE_PATTERN_LIMITATION in stability['source_limitations']
