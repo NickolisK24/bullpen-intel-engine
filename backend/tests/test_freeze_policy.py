@@ -616,6 +616,20 @@ def test_non_material_rehab_assignment_decision_pins_fail_closed_authority():
     assert '`SC`, `CLW`, `SFA`' in decision
 
 
+def test_waiver_claim_authority_decision_pins_bounded_taxonomy():
+    decision = (
+        Path(__file__).resolve().parents[2]
+        / 'docs/decisions/2026-08-22-waiver-claim-transaction-authority.md'
+    ).read_text(encoding='utf-8')
+    decision_flat = ' '.join(decision.split())
+
+    assert '`CLW` to `waiver_claim`' in decision
+    assert 'structured `typeDesc` value `Claimed Off Waivers`' in decision
+    assert 'public-material organizational transfer' in decision
+    assert 'exact transaction-date roster snapshot' in decision_flat
+    assert '`SC`, `SFA`, and uncertified `ASG` remain unresolved' in decision
+
+
 def test_roles_deployment_intelligence_exception_is_exact_and_decision_linked():
     approved = freeze_policy.ROLES_DEPLOYMENT_INTELLIGENCE_PATHS
     assert approved == (
