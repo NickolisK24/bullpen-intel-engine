@@ -234,6 +234,36 @@ def test_event_team_comes_from_stored_transaction_not_current_pitcher_assignment
     assert current['events'] == []
 
 
+def test_waiver_claim_ownership_uses_transaction_endpoints_not_current_team(app):
+    with app.app_context():
+        _window()
+        pitcher = _pitcher(mlb_id=700013, name='Claimed Arm', team_id=999)
+        _transaction(
+            pitcher,
+            transaction_id='waiver-claim-team-at-event',
+            transaction_date=date(2026, 8, 17),
+            from_team_id=113,
+            to_team_id=114,
+            category='waiver_claim',
+            transaction_type_code='CLW',
+        )
+        db.session.commit()
+
+        source = build_public_recent_transactions(
+            113, reference_date=date(2026, 8, 18)
+        )
+        destination = build_public_recent_transactions(
+            114, reference_date=date(2026, 8, 18)
+        )
+        current = build_public_recent_transactions(
+            999, reference_date=date(2026, 8, 18)
+        )
+
+    assert source['events'][0]['label'] == 'Claimed off waivers'
+    assert destination['events'][0]['label'] == 'Claimed off waivers'
+    assert current['events'] == []
+
+
 def test_reference_date_bounds_public_chronology_without_rewriting_source_window(app):
     with app.app_context():
         _window()
@@ -283,6 +313,7 @@ def test_reference_date_before_latest_source_window_fails_closed(app):
         ('recall', 'Recalled', 'Typed Arm was recalled.'),
         ('dfa', 'Designated for assignment', 'Typed Arm was designated for assignment.'),
         ('contract_selection', 'Contract selected', "Typed Arm's contract was selected."),
+        ('waiver_claim', 'Claimed off waivers', 'Typed Arm was claimed off waivers.'),
         ('il_placement', 'Placed on injured list', 'Typed Arm was placed on the injured list.'),
         ('il_activation', 'Activated from injured list', 'Typed Arm was activated from the injured list.'),
     ),
@@ -581,6 +612,7 @@ def test_public_vocabulary_is_exactly_the_existing_typed_categories():
         'outright': 'Outrighted',
         'release': 'Released',
         'contract_selection': 'Contract selected',
+        'waiver_claim': 'Claimed off waivers',
         'suspension': 'Suspended',
         'bereavement': 'Placed on bereavement list',
         'paternity': 'Placed on paternity list',

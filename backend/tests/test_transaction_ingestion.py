@@ -28,6 +28,7 @@ from services.transaction_ingestion import (
     CATEGORY_OPTION,
     CATEGORY_RECALL,
     CATEGORY_UNKNOWN,
+    CATEGORY_WAIVER_CLAIM,
     TRANSACTION_FETCH_ENTITY_TYPE,
     TRANSACTION_IDENTITY_ENTITY_TYPE,
     normalize_transaction_category,
@@ -489,27 +490,94 @@ def test_unknown_type_maps_to_unknown_and_is_excluded_from_linkage(app):
         ('CU', CATEGORY_RECALL),
         ('DES', CATEGORY_DFA),
         ('SE', CATEGORY_CONTRACT_SELECTION),
+        ('CLW', CATEGORY_WAIVER_CLAIM),
     ),
 )
 def test_structured_event_codes_map_to_existing_categories(type_code, category):
     assert normalize_transaction_category(type_code) == category
 
 
-@pytest.mark.parametrize('type_code', ('SC', 'ASG', 'CLW', 'SFA', 'NEW_CODE'))
+@pytest.mark.parametrize('type_code', ('SC', 'ASG', 'SFA', 'NEW_CODE'))
 def test_unapproved_structured_event_codes_remain_unknown(type_code):
     assert normalize_transaction_category(type_code) == CATEGORY_UNKNOWN
 
 
-def test_natural_resync_corrects_newly_governed_event_authority(app, monkeypatch):
+def test_waiver_claim_uses_exact_event_date_endpoint_alignment(app):
+    with app.app_context():
+        pitcher = _pitcher(team_id=113)
+        _snapshot(pitcher, team_id=113)
+
+        sync_transactions(
+            client=FakeTransactionClient([
+                _tx(
+                    transaction_id='tx-waiver-claim',
+                    transaction_type_code='CLW',
+                    from_team_id=113,
+                    to_team_id=114,
+                ),
+            ]),
+            start_date=date(2026, 6, 27),
+            end_date=date(2026, 7, 4),
+            timestamp=datetime(2026, 7, 4, 12, 0, 0),
+        )
+        row = PlayerTransaction.query.one()
+
+    assert row.normalized_category == CATEGORY_WAIVER_CLAIM
+    assert row.roster_snapshot_alignment == ALIGNMENT_ALIGNED
+    assert row.alignment_reason_code == 'roster_snapshot_team_match'
+    assert row.explanatory_linkage_eligible is True
+    assert row.from_team_id == 113
+    assert row.to_team_id == 114
+
+
+def test_waiver_claim_does_not_imply_active_membership_without_snapshot(app):
+    with app.app_context():
+        _pitcher(team_id=999)
+
+        sync_transactions(
+            client=FakeTransactionClient([
+                _tx(
+                    transaction_id='tx-waiver-claim-no-snapshot',
+                    transaction_type_code='CLW',
+                    from_team_id=113,
+                    to_team_id=114,
+                ),
+            ]),
+            start_date=date(2026, 6, 27),
+            end_date=date(2026, 7, 4),
+            timestamp=datetime(2026, 7, 4, 12, 0, 0),
+        )
+        row = PlayerTransaction.query.one()
+
+    assert row.normalized_category == CATEGORY_WAIVER_CLAIM
+    assert row.roster_snapshot_alignment == ALIGNMENT_NO_SNAPSHOT
+    assert row.explanatory_linkage_eligible is False
+    assert row.from_team_id == 113
+    assert row.to_team_id == 114
+
+
+@pytest.mark.parametrize(
+    ('type_code', 'category'),
+    (
+        ('CU', CATEGORY_RECALL),
+        ('CLW', CATEGORY_WAIVER_CLAIM),
+    ),
+)
+def test_natural_resync_corrects_newly_governed_event_authority(
+    app, monkeypatch, type_code, category
+):
     import services.transaction_ingestion as transaction_ingestion
 
     with app.app_context():
         pitcher = _pitcher()
         _snapshot(pitcher)
-        monkeypatch.delitem(transaction_ingestion._CATEGORY_BY_TYPE_CODE, 'CU')
+        monkeypatch.delitem(transaction_ingestion._CATEGORY_BY_TYPE_CODE, type_code)
         first = sync_transactions(
             client=FakeTransactionClient([
-                _tx(transaction_id='tx-natural-correction', transaction_type_code='CU'),
+                _tx(
+                    transaction_id='tx-natural-correction',
+                    transaction_type_code=type_code,
+                ),
             ]),
             start_date=date(2026, 6, 27),
             end_date=date(2026, 7, 4),
@@ -521,12 +589,15 @@ def test_natural_resync_corrects_newly_governed_event_authority(app, monkeypatch
 
         monkeypatch.setitem(
             transaction_ingestion._CATEGORY_BY_TYPE_CODE,
-            'CU',
-            CATEGORY_RECALL,
+            type_code,
+            category,
         )
         second = sync_transactions(
             client=FakeTransactionClient([
-                _tx(transaction_id='tx-natural-correction', transaction_type_code='CU'),
+                _tx(
+                    transaction_id='tx-natural-correction',
+                    transaction_type_code=type_code,
+                ),
             ]),
             start_date=date(2026, 6, 27),
             end_date=date(2026, 7, 4),
@@ -536,7 +607,7 @@ def test_natural_resync_corrects_newly_governed_event_authority(app, monkeypatch
 
     assert first['records_created'] == 1
     assert second['records_corrected'] == 1
-    assert row.normalized_category == CATEGORY_RECALL
+    assert row.normalized_category == category
     assert row.roster_snapshot_alignment == ALIGNMENT_ALIGNED
     assert row.explanatory_linkage_eligible is True
     assert row.correction_count == 1
