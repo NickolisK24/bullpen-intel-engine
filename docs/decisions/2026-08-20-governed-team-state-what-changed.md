@@ -8,6 +8,12 @@ nearest prior publication whose existing Team State domain contract proves
 compatibility. Compatibility remains owned by the delta substrate and includes
 the method, public and source contracts, population authority, team identity,
 represented-date ordering, source identity, and publication trust gates.
+Endpoint selection also verifies the source Share Artifact lifecycle in one
+bounded lookup. Only artifacts that remain published may supply the latest or
+prior endpoint. A superseded or withdrawn same-date artifact is retained for
+audit but cannot re-enter comparison if its replacement fails compatibility.
+If the newest represented date has no active published artifact, comparison
+fails closed rather than rolling back and presenting an older pair as current.
 
 The public `/changes` payload adds a separate `team_state_change` object and a
 `team_state_comparison` status block. A movement carries the stable frozen state
